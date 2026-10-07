@@ -49,7 +49,9 @@ public sealed class EcsScenarioParityTests
         Assert.Equal(EventJson(expectedResult.Events), EventJson(runtime.DrainSimulationEvents(playerId)));
         Assert.Equal(wallet.Balances.OrderBy(balance => balance.Asset.ToString()).Select(balance => (balance.Asset, balance.Quantity)),
             runtime.ExportSnapshot(playerId).Assets.OrderBy(pair => pair.Key.ToString()).Select(pair => (pair.Key, pair.Value)));
-        if (durationSeconds >= 120) Assert.True(actual.Progression.CompletedActions >= 2);
+        // 怪物底座=期望玩家面板（含六维固定值）后，零六维无装备 Lv1 玩家打不过魔化野兔波次：
+        // 门禁只要求战斗以「完成或败走」形成结论，不卡死在零消耗循环。
+        if (durationSeconds >= 120) Assert.True(actual.Progression.CompletedActions + actual.Progression.TotalDefeats >= 1);
         if (durationSeconds >= 300) Assert.True(actual.Progression.TotalDefeats >= 1);
 
         var encounters = runtime.World.Entities.Values

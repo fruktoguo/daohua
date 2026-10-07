@@ -59,6 +59,8 @@ public sealed class EcsActionExecutionComponent : YuoComponent
     internal readonly List<CombatEvent> BattleEvents = [];
     internal readonly List<double> BattleDeaths = [];
     internal readonly List<double> BattleRespawns = [];
+    internal readonly List<(int MemberIndex, double AtSeconds)> BattleAllyDeaths = [];
+    internal readonly List<(int MemberIndex, double AtSeconds)> BattleAllyRespawns = [];
 
     internal int BulkStepCount { get; set; }
     /// <summary>调用方请求的原始目标时刻（未封顶）；实际推进以 ComputeTarget 为界。</summary>
@@ -115,6 +117,8 @@ public sealed class EcsActionExecutionComponent : YuoComponent
         component.BattleEvents.Clear();
         component.BattleDeaths.Clear();
         component.BattleRespawns.Clear();
+        component.BattleAllyDeaths.Clear();
+        component.BattleAllyRespawns.Clear();
         component.BulkStepCount = 0;
         return component;
     }
@@ -271,6 +275,8 @@ public static class EcsActionSession
             e.BattleEvents.AddRange(result.Events);
             if (result.PlayerDeathTimestamps is { } deaths) e.BattleDeaths.AddRange(deaths);
             if (result.PlayerRespawnTimestamps is { } respawns) e.BattleRespawns.AddRange(respawns);
+            if (result.AllyDeathMarks is { } allyDeaths) e.BattleAllyDeaths.AddRange(allyDeaths);
+            if (result.AllyRespawnMarks is { } allyRespawns) e.BattleAllyRespawns.AddRange(allyRespawns);
         }
         e.CombatStepDue = state.Outcome != CombatOutcome.Running || state.ElapsedSeconds >= e.BattleTarget - 1e-12;
     }
@@ -282,7 +288,8 @@ public static class EcsActionSession
         if (!e.CombatStepDue || e.Battle is not { } encounter || e.PreparedAction is not { } action || e.Definition is not { } definition) return;
         var state = encounter.State;
         var result = new CombatAdvanceResult(state.EncounterId, e.BattleFrom, e.BattleTarget,
-            state.Outcome, e.BattleEvents, state.Sequence, e.BattleDeaths, e.BattleRespawns);
+            state.Outcome, e.BattleEvents, state.Sequence, e.BattleDeaths, e.BattleRespawns,
+            e.BattleAllyDeaths, e.BattleAllyRespawns);
         e.RemainingSeconds = CombatActionRules.CompleteCombatAdvance(e.Player, action, definition,
             e.Catalog.CombatEncounters[state.EncounterId], e.Catalog, state, result,
             e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core);

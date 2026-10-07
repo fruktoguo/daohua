@@ -9,17 +9,20 @@
     const target = ctx.targets[0];
     if (!target) return 0;
     VFX.motion(ctx.caster.el, 'attack');
+    const s = VFX.center(ctx.caster.el.querySelector('.arena-avatar-stage') || ctx.caster.el);
     const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
+    // 攻击行进方向：出手方在目标右侧时斩击几何整体水平镜像
+    const dir = t.x < s.x ? -1 : 1;
 
     VFX.after(120, () => {
       const host = VFX.node(null, t.x, t.y);
       host.style.setProperty('--c', '#ffd166');
-      // 弧光主刃：从右上向左下的一串密集光点（拖尾成刃形）
-      VFX.trail(t.x + 52, t.y - 110, t.x - 18, t.y + 38, {
+      // 弧光主刃：自上斜向劈落的一串密集光点（拖尾成刃形，迎击侧起手）
+      VFX.trail(t.x + 52 * dir, t.y - 110, t.x - 18 * dir, t.y + 38, {
         cls: 'vfx-p-glow', count: 46, size: [7, 14], jitter: 8, scatter: 42, dur: [360, 620],
       });
       // 刃缘亮芯
-      VFX.trail(t.x + 46, t.y - 100, t.x - 14, t.y + 32, {
+      VFX.trail(t.x + 46 * dir, t.y - 100, t.x - 14 * dir, t.y + 32, {
         cls: 'vfx-p-mote', count: 26, size: [3, 6], jitter: 4, scatter: 18, dur: [280, 460],
       });
       // 落点：火花喷泉 + 尘雾 + 冲击环 + 爆闪

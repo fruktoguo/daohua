@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Domain.Common;
 using Domain.Combat;
@@ -35,9 +36,66 @@ internal static class CombatActionRules
         ActionDefinition definition, GameDataCatalog gameData, DateTimeOffset at, ActionMutationBatch mutations)
     {
         if (action.Expedition is not null) return;
+        if (action.PartySession?.Spec is { } spec)
+        {
+            // 组队会话：遭遇与首波种子由共享剧本钉死，不走节点池与完成轮次派生（总纲 §21.13）。
+            var pinned = gameData.CombatEncounters.TryGetValue(spec.EncounterId, out var found)
+                ? found
+                : throw new DomainException(DomainErrorCode.NotFound, $"组队会话遭遇 {spec.EncounterId} 不存在。");
+            action.Expedition = CreateSearchState(player, action, pinned, CombatExpeditionPhase.InitialSearch, gameData);
+            mutations.AddEvent(new SimulationEvent(at, "combat.search.started", $"随队搜寻：{pinned.Name}。", definition.Id));
+            return;
+        }
         var encounter = ResolveCombatEncounterForAction(player, definition, action.CompletedRepeats, gameData);
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.InitialSearch, gameData);
         mutations.AddEvent(new SimulationEvent(at, "combat.search.started", $"开始搜寻：{encounter.Name}。", definition.Id));
+    }
+
+    /// <summary>
+    /// 驻留远征遭遇是否仍由当前位置供给：钉死（CreateEncounter 手动入战）或
+    /// 斗法相位（匹配等待/剧本回放）的远征与地点无关恒可续跑；池选远征按驻留节点遭遇池判定——
+    /// 驻足且有池须命中池内遭遇，旅途或空池节点回落行动钉死遭遇口径。
+    /// </summary>
+    internal static bool ExpeditionServedHere(IPlayerResourceContext player, ActionDefinition definition,
+        CombatExpeditionState expedition, GameDataCatalog gameData)
+    {
+        if (expedition.IsPinned
+            || expedition.Phase is CombatExpeditionPhase.DuelPending or CombatExpeditionPhase.Duel)
+            return true;
+        var pool = player.NodeEncounterIds
+            ?? (gameData.WorldGraph.TryGetNode(player.World.NodeId, out var node) ? node.EncounterIds : []);
+        return pool.Count > 0 && string.IsNullOrWhiteSpace(player.World.EdgeId)
+            ? pool.Contains(expedition.EncounterId)
+            : string.Equals(expedition.EncounterId, definition.CombatEncounterId, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 讨伐迁地重锚：远征遭遇不属于当前驻留地点时按新地点重建——
+    /// 一般相位直接作废远征，交由初始化就地重开搜寻；团灭复活读条相位保留「仍待起身」语义，
+    /// 改挂新地点遭遇的复活读条。返回 true 表示发生重锚（调用方负责释放挂接中的旧战斗实体）。
+    /// </summary>
+    internal static bool ReanchorExpeditionIfMoved(IPlayerResourceContext player, IPlayerActionState action,
+        ActionDefinition definition, GameDataCatalog gameData)
+    {
+        if (action.Expedition is not { } expedition
+            || ExpeditionServedHere(player, definition, expedition, gameData))
+            return false;
+        if (expedition.Phase == CombatExpeditionPhase.Respawning)
+        {
+            var encounter = ResolveCombatEncounterForAction(player, definition, action.CompletedRepeats, gameData);
+            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
+                gameData, DeterministicSequence.NextSeed(expedition.Seed), expedition.WaveNumber) with
+            {
+                Phase = CombatExpeditionPhase.Respawning,
+                PhaseDurationSeconds = encounter.PlayerRespawnSeconds
+            };
+        }
+        else
+        {
+            action.Expedition = null;
+        }
+        action.ProgressSeconds = 0;
+        return true;
     }
 
     /// <summary>只完成一次搜索、复活或斗法回放片段；入场返回供实体直接持有的战斗单位。</summary>
@@ -111,14 +169,20 @@ internal static class CombatActionRules
             action.Expedition = expedition with { PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + step };
             action.ProgressSeconds = action.Expedition.PhaseElapsedSeconds;
             if (action.ProgressSeconds + 1e-9 < expedition.PhaseDurationSeconds) return null;
-            player.Resources.Hitpoints = player.Resources.MaxHitpoints;
-            player.Resources.Manapoints = player.Resources.MaxManapoints;
+            var respawnSpec = action.PartySession?.Spec;
+            // 组队会话复活上限取冻结面板：资源池展示值可越过实时属性上限，但入场钳制始终以冻结上限为准。
+            var respawnMember = respawnSpec is not null && expedition.SelfIndex < respawnSpec.Members.Count
+                ? respawnSpec.Members[expedition.SelfIndex] : null;
+            player.Resources.Hitpoints = respawnMember?.Stats.MaxHitpoints ?? player.Resources.MaxHitpoints;
+            player.Resources.Manapoints = respawnMember?.Stats.MaxManapoints ?? player.Resources.MaxManapoints;
             player.Combat.Skills = PlayerCombatSkillState.Empty;
             for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
                 player.Settings.AutoUseSlots[i] = player.Settings.AutoUseSlots[i] with { CooldownUntilUnixSeconds = 0 };
             player.MarkDirty(PlayerSectionKind.Settings);
             player.MarkDirty(PlayerSectionKind.Combat);
-            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, DeterministicSequence.NextSeed(expedition.Seed));
+            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData,
+                DeterministicSequence.NextSeed(expedition.Seed),
+                allies: respawnSpec is not null ? ResetAllyCarry(respawnSpec, expedition.SelfIndex) : null);
             action.ProgressSeconds = 0;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.respawned", "复活完成，气血与灵力恢复。", definition.Id);
             return null;
@@ -202,10 +266,12 @@ internal static class CombatActionRules
         // battleTo 由 battleFrom 加法得到，回减时浮点误差可能让 consumed 比剩余预算大 1e-15 量级；
         // 不收敛到剩余预算会把外层 remainingSeconds 减成负数触发不变量。
         var consumed = Math.Clamp(battleState.ElapsedSeconds - battleFrom, 0, remainingSeconds);
+        var spec = action.PartySession?.Spec;
         // 战斗持续消耗品按战斗存活时钟扣减：仅战斗进行中消耗（含躺尸等待复活）；
-        // 寻敌、团灭复活读条与退出战斗后均不消耗。
-        DrainCombatSustainedSlots(player, gameData, consumed,
-            from.AddSeconds(actionElapsedBeforeCombat + consumed), definition.Id, ref events);
+        // 寻敌、团灭复活读条与退出战斗后均不消耗。组队会话消费开打定格画面，槽位不扣减。
+        if (spec is null)
+            DrainCombatSustainedSlots(player, gameData, consumed,
+                from.AddSeconds(actionElapsedBeforeCombat + consumed), definition.Id, ref events);
         // 玩家技能与普攻共用同一条动作时间线：战后把通用槽位状态折算回跨战持久化形态。
         player.Combat.Skills = PlayerCombatSkillState.FromCombatant(battleState.Player, battleState.ElapsedSeconds);
         remainingSeconds -= consumed;
@@ -233,18 +299,24 @@ internal static class CombatActionRules
         // 战斗日志名称惰性化：只有确实产生日志帧时才解析怪物名，空事件帧战斗零字典/字符串成本。
         string? waveNames = null;
         string WaveNames() => waveNames ??= string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name));
-        string NameOf(string combatantId) => combatantId == "player" ? "你"
+        string LabelOf(string combatantId) => combatantId == "player" ? "你"
+            : combatantId.StartsWith("ally:", StringComparison.Ordinal)
+                && int.TryParse(combatantId[5..], out var allyIndex) && spec is not null
+                && allyIndex >= 0 && allyIndex < spec.Members.Count
+                ? spec.Members[allyIndex].DisplayName
             : combatantId.StartsWith("enemy:", StringComparison.Ordinal)
                 && int.TryParse(combatantId[6..], out var enemyIndex) && enemyIndex >= 0 && enemyIndex < waveEnemies.Count
-                ? gameData.CombatMonsters[waveEnemies[enemyIndex].EnemyId].Name
+                ? $"{{{{enemy:{waveEnemies[enemyIndex].EnemyId}|{gameData.CombatMonsters[waveEnemies[enemyIndex].EnemyId].Name}}}}}"
                 : combatantId;
         // 阵亡/起身与战斗事件共用同一战斗时钟：按时刻交错落日志，每次阵亡逐帧计败走与死亡。
         var deaths = combatResult.PlayerDeathTimestamps ?? [];
         var respawns = combatResult.PlayerRespawnTimestamps ?? [];
+        var allyDeaths = combatResult.AllyDeathMarks ?? [];
+        var allyRespawns = combatResult.AllyRespawnMarks ?? [];
         // 局部函数无法捕获外层 ref 参数：提前初始化后用普通引用落事件。
         events ??= new SimulationEventTail();
         var eventSink = events;
-        int deathCursor = 0, respawnCursor = 0;
+        int deathCursor = 0, respawnCursor = 0, allyDeathCursor = 0, allyRespawnCursor = 0;
         void FlushDownedEvents(double uptoBattleSeconds)
         {
             while (deathCursor < deaths.Count && deaths[deathCursor] <= uptoBattleSeconds + 1e-9)
@@ -262,19 +334,49 @@ internal static class CombatActionRules
                 eventSink.Add(new SimulationEvent(respawnAt,
                     "combat.respawned", "原地起身：气血回满，战斗继续。", definition.Id));
             }
+            // 队友倒地/起身走同一时钟游标：只落战报不计本机败绩（败绩由各成员自身模拟记）。
+            while (allyDeathCursor < allyDeaths.Count && allyDeaths[allyDeathCursor].AtSeconds <= uptoBattleSeconds + 1e-9)
+            {
+                var mark = allyDeaths[allyDeathCursor++];
+                var allyAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, mark.AtSeconds - battleFrom));
+                var allyName = spec is not null && mark.MemberIndex >= 0 && mark.MemberIndex < spec.Members.Count
+                    ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
+                eventSink.Add(new SimulationEvent(allyAt,
+                    "combat.lost", $"队友 {allyName} 阵亡，原地调息等待复活。", definition.Id));
+            }
+            while (allyRespawnCursor < allyRespawns.Count && allyRespawns[allyRespawnCursor].AtSeconds <= uptoBattleSeconds + 1e-9)
+            {
+                var mark = allyRespawns[allyRespawnCursor++];
+                var allyAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, mark.AtSeconds - battleFrom));
+                var allyName = spec is not null && mark.MemberIndex >= 0 && mark.MemberIndex < spec.Members.Count
+                    ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
+                eventSink.Add(new SimulationEvent(allyAt,
+                    "combat.respawned", $"队友 {allyName} 原地起身，气血回满。", definition.Id));
+            }
         }
-        // 尾窗门控：战斗事件超过尾窗容量时，按时间序直接跳过注定被丢弃的帧，
-        // 不再为它们构造日志文本；窗口内的阵亡/起身衍生帧仍按战斗时钟交错落日志。
-        var emittedIndex = 0;
-        var keepFrom = combatResult.Events.Count > SimulationEventTail.TailCapacity
-            ? combatResult.Events[combatResult.Events.Count - SimulationEventTail.TailCapacity].AtSeconds
-            : double.NegativeInfinity;
+        // 功法经验按帧入账：日志尾窗裁剪与施放合并都只影响展示，每帧结算不丢账。
         foreach (var combatEvent in combatResult.Events)
         {
-            // 技能每次成功施放结算 1 点功法经验：日志尾窗裁剪丢帧不丢入账。
             if (combatEvent.AttackerId == "player" && combatEvent.AbilityId is { } usedAbility)
                 GrantAbilityUseExperience(player, action.Id, usedAbility,
                     from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom)).ToUnixTimeMilliseconds() / 1000d);
+        }
+        // 尾窗门控按「可产出日志的帧」计容量：普攻与无技能衍生帧不产行不占额；
+        // 技能帧按成员帧计数（合并后实际行数只少不多，不超尾窗），超额帧按时间序直接跳过，
+        // 不再为它们构造日志文本；窗口内的阵亡/起身衍生帧仍按战斗时钟交错落日志。
+        var emittedIndex = 0;
+        var keepFrom = double.NegativeInfinity;
+        var emittable = 0;
+        for (var i = combatResult.Events.Count - 1; i >= 0 && emittable < SimulationEventTail.TailCapacity; i--)
+        {
+            var frame = combatResult.Events[i];
+            if (frame.AbilityId is not null && ++emittable == SimulationEventTail.TailCapacity)
+                keepFrom = frame.AtSeconds;
+        }
+        var eventIndex = 0;
+        while (eventIndex < combatResult.Events.Count)
+        {
+            var combatEvent = combatResult.Events[eventIndex];
             if (combatEvent.AtSeconds < keepFrom)
             {
                 // 该帧不可保留：折叠已滞留域事件并推进阵亡/起身游标，跳过名称与消息构造。
@@ -282,21 +384,38 @@ internal static class CombatActionRules
                 emittedIndex = eventSink.Count;
                 FlushDownedEvents(combatEvent.AtSeconds);
                 emittedIndex = eventSink.Count;
+                eventIndex++;
                 continue;
             }
-            var attacker = NameOf(combatEvent.AttackerId);
-            var targetName = NameOf(combatEvent.TargetId);
+            // 普通攻击与无技能衍生帧不进战报：只推进阵亡/起身游标，不构造名称与文本。
+            if (combatEvent.AbilityId is not { } abilityId)
+            {
+                FlushDownedEvents(combatEvent.AtSeconds);
+                emittedIndex = eventSink.Count;
+                eventIndex++;
+                continue;
+            }
+            // 同一次施放的连续帧合并为一条战报：AoE 逐目标各产一帧，汲取类衍生帧同属该次施放。
+            var castEnd = eventIndex + 1;
+            while (castEnd < combatResult.Events.Count
+                && combatResult.Events[castEnd].AbilityId == abilityId
+                && combatResult.Events[castEnd].AttackerId == combatEvent.AttackerId
+                && combatResult.Events[castEnd].AtSeconds == combatEvent.AtSeconds)
+                castEnd++;
             var eventAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom));
-            // 技能施放与普攻共用同一事件流；携带 AbilityId 的帧按施放口径落日志。
-            if (combatEvent.AbilityId is { } abilityId)
-                AddCombatEventAt(ref events, eventAt,
-                    "combat.skill", $"{attacker}施放 {abilityId}，伤害 {combatEvent.Damage:0.##}，治疗 {combatEvent.Healing:0.##}。", definition.Id);
-            else
-                AddCombatEventAt(ref events, eventAt,
-                    "combat.attack", $"{attacker}{(combatEvent.Hit ? $"命中{targetName}，造成 {combatEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
+            var clauses = new List<string>(castEnd - eventIndex);
+            for (var i = eventIndex; i < castEnd; i++)
+            {
+                var frame = combatResult.Events[i];
+                AppendCastClause(clauses, LabelOf(frame.TargetId), frame.Hit, frame.Damage, frame.Healing);
+            }
+            var builder = BeginCastMessage(LabelOf(combatEvent.AttackerId), abilityId, gameData);
+            AppendCastClauses(builder, clauses);
+            AddCombatEventAt(ref events, eventAt, "combat.skill", builder.Append('。').ToString(), definition.Id);
             emittedIndex = eventSink.Count;
             FlushDownedEvents(combatEvent.AtSeconds);
             emittedIndex = eventSink.Count;
+            eventIndex = castEnd;
         }
         FlushDownedEvents(double.MaxValue);
         if (combatResult.Outcome == CombatOutcome.Running) return;
@@ -310,8 +429,9 @@ internal static class CombatActionRules
             player.RecordStats(action.Id,
                 from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
                 new PlayerStatsDelta { Deaths = 1 });
+            // 组队散场保留全员倒地镜像供复活读条展示；读条完成时统一重置满状态。
             action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, updatedBattle.Seed,
-                waveNumber: 1) with
+                waveNumber: 1, allies: spec is not null ? CarryAllies(battleState, spec, reviveDowned: false) : null) with
             { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
             action.ProgressSeconds = 0;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{WaveNames()}。", definition.Id);
@@ -319,13 +439,24 @@ internal static class CombatActionRules
         }
 
         // 波次清空才结算掉落与完成一次重复；逐只发放击杀奖励并计入生平斩妖。
+        // 组队会话：本机倒地被队友带赢时按原地复活口径满状态起身（复活读条同规：气血灵力全满、技能复位）。
+        if (spec is not null && !battleState.Player.IsAlive)
+        {
+            var member = spec.Members[expedition.SelfIndex];
+            player.Resources.Hitpoints = member.Stats.MaxHitpoints;
+            player.Resources.Manapoints = member.Stats.MaxManapoints;
+            player.Combat.Skills = PlayerCombatSkillState.Empty;
+            battleState.Player.Hitpoints = member.Stats.MaxHitpoints;
+            battleState.Player.Manapoints = member.Stats.MaxManapoints;
+        }
         var pvpEnabled = action.Intent.PvpEnabled;
         var killAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         var killSeed = updatedBattle.Seed;
         foreach (var enemy in waveEnemies)
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
-            ApplyCombatRewards(player, monster, killSeed, pvpEnabled, killAtUnix, gameData, action.Id, ref deltas);
+            ApplyCombatRewards(player, monster, killSeed, pvpEnabled, killAtUnix, gameData, action.Id, ref deltas,
+                spec, expedition.SelfIndex);
             killSeed = DeterministicSequence.NextSeed(killSeed);
             switch (monster.Rank)
             {
@@ -353,28 +484,38 @@ internal static class CombatActionRules
         player.MarkDirty(PlayerSectionKind.Progression);
         AddCombatEvent(ref events, from, target, remainingSeconds, "combat.won",
             $"讨伐成功：{string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name))}。", definition.Id);
+        // 新手引导战斗里程碑口径 = 讨伐行动完成一轮（波次清空），与战报同一时序入账。
+        // 组队会话不参与引导推进：伪行动由散场裁决收尾，引导强退会破坏共享剧本一致性。
+        var tutorialAdvanced = !definition.IsPartySession
+            && TutorialRules.OnActionRoundCompleted(player, definition.Id,
+                from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events);
 
         completedActions += 1;
         completedRepeats += 1;
         PlayerActionQueueRules.RecordCompletedRound(action);
+        // 引导推进时截断剩余轮次并强制离队（loopable=false 压制 LoopEnabled 轮转）：
+        // 否则 ∞ 讨伐永驻队首，引导完成后玩家行动队列仍被占着。
+        if (tutorialAdvanced) action.RemainingRepeats = 0;
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.Combat);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
         if (action.RemainingRepeats == 0)
         {
-            if (player.Settings.LoopEnabled)
+            if (player.Settings.LoopEnabled && !tutorialAdvanced)
             {
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1);
+                    gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1,
+                    allies: spec is not null ? CarryAllies(battleState, spec) : null);
                 player.FinishActionRound(action.Id, loopable: true, killAtUnix);
                 return;
             }
-            player.FinishActionRound(action.Id, loopable: true, killAtUnix);
+            player.FinishActionRound(action.Id, loopable: !tutorialAdvanced, killAtUnix);
             return;
         }
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-            gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1);
+            gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1,
+            allies: spec is not null ? CarryAllies(battleState, spec) : null);
         action.ProgressSeconds = 0;
     }
 
@@ -389,27 +530,66 @@ internal static class CombatActionRules
             var monster = gameData.CombatMonsters[enemy.EnemyId];
             return new CombatantTemplate(monster.Stats, monster.Skills);
         }).ToArray();
-        // 玩家方技能槽与怪物同构：装配功法折叠为通用技能槽进入同一条动作时间线。
-        var playerTemplate = new CombatantTemplate(
-            player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
-            SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities));
-        var battleState = CombatEncounterState.Restore(
-            encounter.Id,
-            expedition.Seed,
-            playerTemplate,
-            expedition.PlayerState ?? new CombatantSnapshot(expedition.PlayerHitpoints, expedition.PlayerManapoints,
-                expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat),
-            templates,
-            waveEnemies.Select(enemy => enemy.State).ToArray(),
-            expedition.BattleElapsedSeconds,
-            expedition.Outcome,
-            expedition.PlayerAttackCount + SumEnemyAttackCounts(waveEnemies),
-            InBattleRespawnSeconds(encounter),
-            expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
+        var selfSnapshot = expedition.PlayerState ?? new CombatantSnapshot(
+            expedition.PlayerHitpoints, expedition.PlayerManapoints,
+            expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat);
+        CombatEncounterState battleState;
+        if (action.PartySession?.Spec is { } spec)
+        {
+            // 组队恢复：盟友模板/快照按共享剧本成员序重建，战外 Buff 消费开打定格视图。
+            var selfIndex = expedition.SelfIndex;
+            var allyTemplates = new CombatantTemplate[spec.Members.Count];
+            var allySnapshots = new CombatantSnapshot[spec.Members.Count];
+            for (var i = 0; i < spec.Members.Count; i++)
+            {
+                allyTemplates[i] = new CombatantTemplate(spec.Members[i].Stats, spec.Members[i].Skills);
+                allySnapshots[i] = i == selfIndex
+                    ? selfSnapshot with { RespawnAtSeconds = expedition.PlayerRespawnAtSeconds }
+                    : FindAllyCarry(expedition.Allies, i)?.State
+                        ?? throw new DomainException(DomainErrorCode.InvariantViolation,
+                            $"组队远征缺少成员 {i} 的战斗快照。");
+            }
+            battleState = CombatEncounterState.RestoreAllied(
+                encounter.Id,
+                expedition.Seed,
+                allyTemplates,
+                allySnapshots,
+                selfIndex,
+                templates,
+                waveEnemies.Select(enemy => enemy.State).ToArray(),
+                expedition.BattleElapsedSeconds,
+                expedition.Outcome,
+                SumAllyAttackCounts(allySnapshots) + SumEnemyAttackCounts(waveEnemies),
+                InBattleRespawnSeconds(encounter));
+            for (var i = 0; i < spec.Members.Count; i++)
+            {
+                var memberBuffs = spec.Members[i].ExternalBuffs;
+                battleState.PlayerAllies[i].ExternalBuffStacks = buffId => SumFrozenBuffStacks(memberBuffs, buffId);
+            }
+        }
+        else
+        {
+            // 玩家方技能槽与怪物同构：装配功法折叠为通用技能槽进入同一条动作时间线。
+            var playerTemplate = new CombatantTemplate(
+                player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
+                SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities, player.Loadout.AbilityTriggers));
+            battleState = CombatEncounterState.Restore(
+                encounter.Id,
+                expedition.Seed,
+                playerTemplate,
+                selfSnapshot,
+                templates,
+                waveEnemies.Select(enemy => enemy.State).ToArray(),
+                expedition.BattleElapsedSeconds,
+                expedition.Outcome,
+                expedition.PlayerAttackCount + SumEnemyAttackCounts(waveEnemies),
+                InBattleRespawnSeconds(encounter),
+                expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
+            // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
+            battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
+        }
         for (var i = 0; i < waveEnemies.Count; i++)
             battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
-        // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
-        battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
         return battleState;
     }
 
@@ -417,6 +597,9 @@ internal static class CombatActionRules
     /// 创建战斗行动的搜寻阶段快照。该原语只生成可持久化的阶段数据，供 ECS 的搜寻系统
     /// 作为实体组件状态写入；战斗实体创建、边界推进和奖励结算仍由各自 ECS 系统负责。
     /// </summary>
+    /// <param name="spec">组队会话共享剧本规格：非空时遭遇钉死、种子取自剧本链、寻敌速度取全队最大、
+    /// 附带盟友镜像；null 为单人池选遭遇。</param>
+    /// <param name="allies">跨波携带的盟友镜像（仅组队）；null 时按规格冻结面板重建初始镜像。</param>
     public static CombatExpeditionState CreateCombatSearchState(
         IPlayerResourceContext player,
         CombatEncounterDefinition encounter,
@@ -424,7 +607,9 @@ internal static class CombatActionRules
         GameDataCatalog gameData,
         double completedRepeats,
         long? seed = null,
-        int waveNumber = 1)
+        int waveNumber = 1,
+        PartyExpeditionSpec? spec = null,
+        IReadOnlyList<ExpeditionAllyState>? allies = null)
     {
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(encounter);
@@ -436,19 +621,21 @@ internal static class CombatActionRules
         if (waveNumber < 1)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗波次无效。");
 
-        // 首波使用遭遇固定搜寻读条；波间搜寻使用玩家当前寻敌速度修正。
-        var delayFactor = player.ResolveAttributes(gameData).SearchDelayFactor;
+        // 首波使用遭遇固定搜寻读条；波间搜寻按行动速度点数除数缩短（境界成长已注入该通道）。
+        // 组队会话寻敌速度取共享剧本定格的全队最大值（探路最快者带路），各成员推演位级一致。
+        var actionSpeedPoints = spec?.SearchSpeedPoints ?? player.ResolveAttributes(gameData).ActionSpeedPoints;
         var duration = phase == CombatExpeditionPhase.InitialSearch
             ? encounter.SearchSeconds
-            : encounter.RespawnSeconds * delayFactor;
+            : encounter.RespawnSeconds * PercentValue.Multiplier(actionSpeedPoints, PercentCurveMode.NonLinear);
         if (!double.IsFinite(duration) || duration <= 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻时长无效。");
+        var selfIndex = spec?.SelfIndexOf(player.PlayerId) ?? 0;
         return new CombatExpeditionState(
             encounter.Id,
             phase,
             0,
             duration,
-            seed ?? CreateSeed(encounter.Id, completedRepeats),
+            seed ?? spec?.Seed ?? CreateSeed(encounter.Id, completedRepeats),
             0,
             player.Resources.Hitpoints,
             player.Resources.Manapoints,
@@ -457,7 +644,14 @@ internal static class CombatActionRules
             0,
             CombatOutcome.Running,
             waveNumber,
-            null);
+            null)
+        {
+            OriginNodeId = spec?.NodeId ?? player.World.NodeId,
+            // 组队远征钉死（会话剧本供给）+ 本机成员下标 + 盟友镜像。
+            IsPinned = spec is not null,
+            SelfIndex = selfIndex,
+            Allies = spec is null ? null : allies ?? BuildAllyCarry(spec, selfIndex)
+        };
     }
 
     /// <summary>按领域行动实例创建搜寻阶段的便捷重载；不会推进行动或修改玩家状态。</summary>
@@ -468,11 +662,12 @@ internal static class CombatActionRules
         CombatExpeditionPhase phase,
         GameDataCatalog gameData,
         long? seed = null,
-        int waveNumber = 1)
+        int waveNumber = 1,
+        IReadOnlyList<ExpeditionAllyState>? allies = null)
     {
         ArgumentNullException.ThrowIfNull(action);
         return CreateCombatSearchState(player, encounter, phase, gameData,
-            action.CompletedRepeats, seed, waveNumber);
+            action.CompletedRepeats, seed, waveNumber, action.PartySession?.Spec, allies);
     }
 
     /// <summary>
@@ -502,23 +697,80 @@ internal static class CombatActionRules
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻尚未完成，不能进入战斗。");
         var wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters,
             completedSearch.Seed, completedSearch.WaveNumber);
-        var battle = CombatEncounterState.Create(
-            encounter.Id,
-            completedSearch.Seed,
-            new CombatantTemplate(player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
-                SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities)),
-            wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray(),
-            InBattleRespawnSeconds(encounter));
+        var enemyTemplates = wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray();
+        var respawnSeconds = InBattleRespawnSeconds(encounter);
+        var spec = action.PartySession?.Spec;
+        CombatEncounterState battle;
+        if (spec is not null)
+        {
+            // 组队入场：全部成员以开打定格面板为盟友阵列（总纲 §21.13），本机成员也不例外——
+            // 战外 Buff/技能冷却一律消费冻结值，否则各成员模拟里同一单位状态不同步。
+            var selfIndex = completedSearch.SelfIndex;
+            var allyTemplates = new CombatantTemplate[spec.Members.Count];
+            for (var i = 0; i < spec.Members.Count; i++)
+                allyTemplates[i] = new CombatantTemplate(spec.Members[i].Stats, spec.Members[i].Skills);
+            battle = CombatEncounterState.CreateAllied(encounter.Id, completedSearch.Seed,
+                allyTemplates, selfIndex, enemyTemplates, respawnSeconds);
+            var carried = completedSearch.Allies;
+            for (var i = 0; i < spec.Members.Count; i++)
+            {
+                var member = spec.Members[i];
+                var unit = battle.PlayerAllies[i];
+                if (i == selfIndex)
+                {
+                    // 本机成员入场镜像 = 战外资源池（战间回复已入账），上限按冻结面板钳制——
+                    // 会话期间换装漂移不进入共享战斗，否则各成员推演的同一单位不逐位一致。
+                    unit.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, member.Stats.MaxHitpoints);
+                    unit.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, member.Stats.MaxManapoints);
+                    player.Combat.Skills.ApplyTo(unit);
+                }
+                else
+                {
+                    var carry = FindAllyCarry(carried, i);
+                    unit.Hitpoints = Math.Clamp(carry?.State.Hitpoints ?? member.InitialHitpoints, 0, member.Stats.MaxHitpoints);
+                    unit.Manapoints = Math.Clamp(carry?.State.Manapoints ?? member.InitialManapoints, 0, member.Stats.MaxManapoints);
+                    (carry?.CombatSkills ?? member.CombatSkills)?.ApplyTo(unit);
+                }
+                unit.ExternalBuffStacks = buffId => SumFrozenBuffStacks(member.ExternalBuffs, buffId);
+                // 持续消耗品 Buff 按开打定格注入：剩余时长按会话墙钟折算（入场时刻 - 开打时刻），
+                // 波间搜索同样消耗 Buff 时长；会话期间不补能、不扣减本地槽位（各成员推演位级一致）。
+                if (member.SustainedBuffs is { } sustained)
+                {
+                    var entryAtUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
+                    var sessionElapsed = Math.Max(0, entryAtUnix - spec.StartedAtUnixSeconds);
+                    foreach (var frozen in sustained)
+                    {
+                        var sustainedRemaining = frozen.RemainingSeconds - sessionElapsed;
+                        if (sustainedRemaining <= 0) continue;
+                        unit.Buffs.RemoveAll(entry => entry.BuffId == frozen.BuffId);
+                        unit.Buffs.Add(new CombatBuffState(frozen.BuffId, battle.ElapsedSeconds + sustainedRemaining,
+                            frozen.Stacks, frozen.HpRegen, frozen.MpRegen, frozen.AttackSpeedPoints,
+                            frozen.DamageAbsorptionPoints, frozen.ThreatPoints,
+                            frozen.HpRegenPostRatio, frozen.MpRegenPostRatio, frozen.DamageBonusPoints));
+                    }
+                }
+            }
+        }
+        else
+        {
+            battle = CombatEncounterState.Create(
+                encounter.Id,
+                completedSearch.Seed,
+                new CombatantTemplate(player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
+                    SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities, player.Loadout.AbilityTriggers)),
+                enemyTemplates,
+                respawnSeconds);
+            battle.Player.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, player.Resources.MaxHitpoints);
+            battle.Player.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, player.Resources.MaxManapoints);
+            battle.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
+            player.Combat.Skills.ApplyTo(battle.Player);
+        }
         for (var i = 0; i < wave.Count; i++) battle.Enemies[i].DefinitionId = wave[i].Id;
-        battle.Player.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, player.Resources.MaxHitpoints);
-        battle.Player.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, player.Resources.MaxManapoints);
-        battle.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
-        player.Combat.Skills.ApplyTo(battle.Player);
 
         Dictionary<AssetKey, double>? deltas = null;
         SimulationEventTail? events = null;
         var waveNames = string.Join("、", wave.Select(monster => monster.Name));
-        if (battle.Player.Hitpoints <= 0)
+        if (battle.Player.Hitpoints <= 0 && spec is null)
         {
             action.Status = ActionQueueStatus.Blocked;
             action.Expedition = completedSearch;
@@ -528,11 +780,24 @@ internal static class CombatActionRules
             return new CombatEntryPreparation(null, completedSearch,
                 deltas ?? new Dictionary<AssetKey, double>(), events?.View ?? [], true);
         }
+        if (battle.Player.Hitpoints <= 0 && spec is not null)
+        {
+            // 组队入场即倒地（开打定格气血为 0）：共享剧本照常开打，本机成员按倒地口径登记——
+            // 原地复活遭遇进入复活读条，否则等波次清空满状态起身；会话行动不可阻塞/轮转离队首。
+            if (respawnSeconds > 0)
+                battle.Player.RespawnAtSeconds = battle.ElapsedSeconds + respawnSeconds;
+            AddCombatEventAt(ref events, entryAt, "combat.lost",
+                $"你以倒地状态随队迎战：{waveNames}。", definition.Id);
+        }
 
         var atUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
-        RechargeCombatSustainedSlots(player, gameData, assetBalances, atUnix, action.Id, battle,
-            ref deltas, ref events);
-        InjectSustainedCombatBuffs(player, gameData, battle);
+        if (spec is null)
+        {
+            // 持续消耗品补能/注入只对本机钱包生效；组队会话消费开打定格画面，不走实时槽位。
+            RechargeCombatSustainedSlots(player, gameData, assetBalances, atUnix, action.Id, battle,
+                ref deltas, ref events);
+            InjectSustainedCombatBuffs(player, gameData, battle);
+        }
         CombatActSystem.DecideInitialActions(battle);
         var combatState = CaptureCombatState(battle, completedSearch with
         {
@@ -578,26 +843,51 @@ internal static class CombatActionRules
         var opponentHp = playback.OpponentHitpoints;
         var viewerMp = expedition.PlayerManapoints;
         var opponentMp = playback.OpponentManapoints;
+        // 帧记账与日志合并分离：血蓝镜像与功法经验逐帧结算，战报按同次施放合并产出。
+        void ApplyDuelFrame(DuelScriptEvent frame)
+        {
+            var frameTargetIsViewer = frame.TargetIsInitiator == playback.ViewerIsInitiator;
+            var frameAttackerIsViewer = frame.AttackerIsInitiator == playback.ViewerIsInitiator;
+            // 斗法本方施放同样计每次 1 点功法经验；镜像方施放不重复入账。
+            if (frameAttackerIsViewer && frame.AbilityId is { } frameAbility)
+                GrantAbilityUseExperience(player, action.Id, frameAbility,
+                    from.AddSeconds(elapsedBefore + Math.Max(0, frame.AtSeconds - expedition.BattleElapsedSeconds)).ToUnixTimeMilliseconds() / 1000d);
+            if (frameTargetIsViewer) { viewerHp = frame.TargetHitpointsAfter; viewerMp = frame.TargetManapointsAfter; }
+            else { opponentHp = frame.TargetHitpointsAfter; opponentMp = frame.TargetManapointsAfter; }
+            if (frameAttackerIsViewer) viewerMp = frame.AttackerManapointsAfter;
+            else opponentMp = frame.AttackerManapointsAfter;
+        }
+        string DuelLabel(bool initiatorSide) => initiatorSide == playback.ViewerIsInitiator ? "你" : playback.OpponentName;
         // 回放游标前的事件已全部应用过；游标到 playbackTo 之间的事件逐条应用并写日志。
+        // 普攻帧不落日志；同一次施放的连续帧（同出手方+技能+时刻）合并为一条施放行。
         for (var i = cursor; i < playback.Events.Count; i++)
         {
             var duelEvent = playback.Events[i];
             if (duelEvent.AtSeconds > playbackTo + 1e-9) break;
             cursor = i + 1;
-            var targetIsViewer = duelEvent.TargetIsInitiator == playback.ViewerIsInitiator;
-            var attackerIsViewer = duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator;
-            // 斗法本方施放同样计每次 1 点功法经验；镜像方施放不重复入账。
-            if (attackerIsViewer && duelEvent.AbilityId is { } duelAbility)
-                GrantAbilityUseExperience(player, action.Id, duelAbility,
-                    from.AddSeconds(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)).ToUnixTimeMilliseconds() / 1000d);
-            if (targetIsViewer) { viewerHp = duelEvent.TargetHitpointsAfter; viewerMp = duelEvent.TargetManapointsAfter; }
-            else { opponentHp = duelEvent.TargetHitpointsAfter; opponentMp = duelEvent.TargetManapointsAfter; }
-            if (attackerIsViewer) viewerMp = duelEvent.AttackerManapointsAfter;
-            else opponentMp = duelEvent.AttackerManapointsAfter;
-            var attacker = duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator ? "你" : playback.OpponentName;
-            var targetName = targetIsViewer ? "你" : playback.OpponentName;
+            ApplyDuelFrame(duelEvent);
+            if (duelEvent.AbilityId is null) continue;
+            var castEnd = i + 1;
+            while (castEnd < playback.Events.Count
+                && playback.Events[castEnd].AtSeconds == duelEvent.AtSeconds
+                && playback.Events[castEnd].AbilityId == duelEvent.AbilityId
+                && playback.Events[castEnd].AttackerIsInitiator == duelEvent.AttackerIsInitiator)
+            {
+                cursor = castEnd + 1;
+                ApplyDuelFrame(playback.Events[castEnd]);
+                castEnd++;
+            }
+            var clauses = new List<string>(castEnd - i);
+            for (var j = i; j < castEnd; j++)
+            {
+                var member = playback.Events[j];
+                AppendCastClause(clauses, DuelLabel(member.TargetIsInitiator), member.Hit, member.Damage, member.Healing);
+            }
+            var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData);
+            AppendCastClauses(builder, clauses);
             AddCombatEventAt(ref events, from.AddSeconds(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)),
-                "combat.attack", $"{attacker}{(duelEvent.Hit ? $"命中{targetName}，造成 {duelEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
+                "combat.skill", builder.Append('。').ToString(), definition.Id);
+            i = castEnd - 1;
         }
         var updated = expedition with
         {
@@ -702,12 +992,13 @@ internal static class CombatActionRules
         CombatExpeditionPhase phase,
         GameDataCatalog? gameData,
         long? seed = null,
-        int waveNumber = 1)
+        int waveNumber = 1,
+        IReadOnlyList<ExpeditionAllyState>? allies = null)
     {
         if (gameData is null)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻配表不能为空。");
         return CreateCombatSearchState(player, encounter, phase, gameData,
-            action.CompletedRepeats, seed, waveNumber);
+            action.CompletedRepeats, seed, waveNumber, action.PartySession?.Spec, allies);
     }
 
     internal static CombatExpeditionState CaptureCombatState(CombatEncounterState battle, CombatExpeditionState template) => template with
@@ -723,20 +1014,27 @@ internal static class CombatActionRules
         PlayerRespawnAtSeconds = double.IsFinite(battle.PlayerRespawnAtSeconds) ? battle.PlayerRespawnAtSeconds : null,
         // 玩家单位的完整战斗快照（吟唱槽位/逐槽冷却/施放计数/战内 Buff）随相位持久化，恢复后序列不漂移。
         PlayerState = CombatEncounterState.Snapshot(battle.Player),
+        // 组队会话：全部非本机盟友的完整战斗快照随相位持久化（崩溃恢复后序列不漂移）。
+        SelfIndex = battle.SelfIndex,
+        Allies = battle.PlayerAllies.Count > 1 ? CarryAllies(battle, null, reviveDowned: false) : null,
         Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
             enemy.DefinitionId ?? enemy.Id,
             CombatEncounterState.Snapshot(enemy),
             enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
                 ? DeterministicCombatEngine.AbilityText(enemy.Skills[enemy.PendingSkillIndex].Ability, "id") : null,
             enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
-                ? DeterministicCombatEngine.AbilityNumber(enemy.Skills[enemy.PendingSkillIndex].Ability, "castMilliseconds") / 1000d * enemy.Stats.CastTimeFactor
+                ? DeterministicCombatEngine.AbilityNumber(enemy.Skills[enemy.PendingSkillIndex].Ability, "castMilliseconds") / 1000d
                     * PercentValue.Multiplier(enemy.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear)
-                : enemy.Stats.AttackIntervalSeconds)).ToArray()
+                : enemy.Stats.AttackIntervalSeconds
+                    * PercentValue.Multiplier(enemy.Stats.AttackSpeedPoints, PercentCurveMode.NonLinear)
+                    * PercentValue.Multiplier(enemy.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear))).ToArray()
     };
 
     /// <summary>
     /// 击杀单只怪物的全部奖励：修为、底蕴、六维经验与掉落。
     /// 斗法开启时掉落爆率乘以配置加成、掉落物进入暂存区；所有收益计入当前战斗账本。
+    /// 组队会话：经验按在场人头平分并乘本机成员等级惩罚；掉率乘全队增幅合计，单件按归属
+    /// 权重掷点——本机账本只记归属自己的件（各成员模拟逐位一致地掷出同一归属）。
     /// </summary>
     private static void ApplyCombatRewards(
         IPlayerResourceContext player,
@@ -746,25 +1044,33 @@ internal static class CombatActionRules
         double killAtUnixSeconds,
         GameDataCatalog gameData,
         Guid actionInstanceId,
-        ref Dictionary<AssetKey, double>? deltas)
+        ref Dictionary<AssetKey, double>? deltas,
+        PartyExpeditionSpec? spec = null,
+        int selfIndex = 0)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.reward");
         if (monster.Experience > 0)
         {
             // 击杀奖励单参数（总纲 §7.11.1）：experience 一笔同时结算——修为入账（瓶颈截断 + 底蕴
-            // 1:1 兑换放大 ≤3×、溢量沉淀）、战斗经验按基础量等额入账、六维按总量等额分配；
+            // 1:1 兑换放大 ≤3×、溢量沉淀）、战斗经验按基础量等额入账、六维各归属维度得全额；
             // 满级（cap≤0）修为部分全额沉淀为底蕴，六维与战斗经验不受影响。
+            // 组队会话份额 = 基础量 ÷ 在场人头 ×(1-等级惩罚)（总纲 §21.13）。
+            var experience = spec is null
+                ? monster.Experience
+                : monster.Experience / spec.Members.Count * (1 - spec.LevelMalusFor(selfIndex));
             var expCap = gameData.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
-            var creditedExp = player.Progression.CreditExperience(monster.Experience, monster.Experience, expCap);
+            var creditedExp = player.Progression.CreditExperience(experience, experience, expCap);
             player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta
             {
                 Experience = creditedExp,
-                Foundation = monster.Experience - creditedExp,
-                CombatExperience = monster.Experience
+                Foundation = experience - creditedExp,
+                CombatExperience = experience
             });
-            DistributeRootExp(player, monster.Experience, gameData, actionInstanceId, killAtUnixSeconds);
+            DistributeRootExp(player, experience, gameData, actionInstanceId, killAtUnixSeconds);
         }
-        var dropBonus = pvpEnabled ? PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear) : 1;
+        var dropBonus = pvpEnabled ? PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear)
+            : spec is not null ? 1 + spec.TotalDropBonusPoints / 100d
+            : 1;
         foreach (var drop in monster.DropTable)
         {
             if (!drop.ItemId.IsValid || drop.MinQuantity <= 0 || drop.MaxQuantity < drop.MinQuantity || drop.DropChance <= 0) continue;
@@ -785,16 +1091,48 @@ internal static class CombatActionRules
             }
             else
             {
+                // 组队掉落归属：按各成员 (1+增幅)×(1-惩罚) 加权抽样，全零退化均等；
+                // 归属掷点走独立盐位侧流——全体成员的模拟掷出同一归属，各自账本只记自己的件。
+                if (spec is not null
+                    && RollDropAssignment(spec, seed ^ DropAssignmentChannelSalt) != selfIndex)
+                    continue;
                 AddDelta(deltas ??= new Dictionary<AssetKey, double>(), drop.ItemId, quantity);
                 player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = drop.ItemId, GainedQuantity = quantity });
             }
         }
     }
 
+    /// <summary>掉落归属掷点专用盐位（与判定/数量侧流互不相同）。</summary>
+    private const long DropAssignmentChannelSalt = unchecked((long)0xC2B2AE3D27D4EB4FUL);
+
     /// <summary>
-    /// 六维经验分配：默认六个维度严格均分（各得总量 1/6）；
-    /// 仅已装备内功（discipline=internal）按其 rootAttribute 归属集合调整分配比例，
-    /// 未装备内功时任何神通/外功都不改变均分。内功未声明归属视为全修（仍六维均分）。
+    /// 共享掉落的单件归属抽样：权重 = 各成员 (1+掉落增幅点数/100)×(1-等级惩罚)，
+    /// 全零权重退化为均匀抽样。掷点输入为规格内冻结面板，各成员模拟逐位一致。
+    /// </summary>
+    private static int RollDropAssignment(PartyExpeditionSpec spec, long seed)
+    {
+        var roll = (unchecked((ulong)DeterministicSequence.NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
+        var total = 0d;
+        for (var i = 0; i < spec.Members.Count; i++) total += spec.AssignmentWeightFor(i);
+        if (total <= 1e-12)
+        {
+            // 权重全零：均匀抽签。
+            return Math.Min(spec.Members.Count - 1, (int)Math.Floor(roll * spec.Members.Count));
+        }
+        var threshold = roll * total;
+        var cumulative = 0d;
+        for (var i = 0; i < spec.Members.Count; i++)
+        {
+            cumulative += spec.AssignmentWeightFor(i);
+            if (threshold < cumulative) return i;
+        }
+        return spec.Members.Count - 1;
+    }
+
+    /// <summary>
+    /// 六维经验分配：每个归属维度各得全额 amount（总量 = amount × 归属维度数，无内功恒为 6×）；
+    /// 仅已装备内功（discipline=internal）按其 rootAttribute 归属集合调整归属范围，
+    /// 未装备内功时任何神通/外功都不改变全维归属。内功未声明归属视为全修（仍覆盖全部六维）。
     /// </summary>
     private static void DistributeRootExp(IPlayerResourceContext player, double amount, GameDataCatalog gameData,
         Guid actionInstanceId, double atUnixSeconds)
@@ -817,7 +1155,8 @@ internal static class CombatActionRules
         }
         if (!anyInternal || targets.Count == 0)
             targets.UnionWith(Enum.GetValues<CoreAspectKind>());
-        var share = amount / targets.Count;
+        // 六维全额口径：每个归属维度各得 amount，总量 = amount × 归属维度数（总纲 §7.10.3）。
+        var share = amount;
         var core = player.Loadout.CoreAttributes;
         foreach (var attribute in targets)
         {
@@ -863,6 +1202,46 @@ internal static class CombatActionRules
             || !ability.TryGetProperty("rootAttribute", out var property) || property.ValueKind != JsonValueKind.String)
             return false;
         return Enum.TryParse(property.GetString(), true, out attribute) && Enum.IsDefined(attribute);
+    }
+
+    /// <summary>功法显示名：配表缺失或无名时回退 ID 本体，保证日志引用标签不为空。</summary>
+    private static string AbilityName(GameDataCatalog gameData, string abilityId)
+        => gameData.Abilities.TryGetValue(abilityId, out var ability)
+            ? DeterministicCombatEngine.AbilityText(ability, "name") ?? abilityId
+            : abilityId;
+
+    /// <summary>施放行起手段：「{出手方}施放 {{ability:id|名称}}」，功法名走引用标记供前端悬浮卡解析。</summary>
+    private static StringBuilder BeginCastMessage(string attackerLabel, string abilityId, GameDataCatalog gameData)
+        => new StringBuilder(attackerLabel).Append("施放 {{ability:").Append(abilityId).Append('|')
+            .Append(AbilityName(gameData, abilityId)).Append("}}");
+
+    /// <summary>施放合并行的单帧子句收集：未命中 / 伤害 / 治疗按帧序入列；零效果帧（纯增益起手）不产生子句。</summary>
+    private static void AppendCastClause(List<string> clauses, string targetLabel, bool hit, double damage, double healing)
+    {
+        if (!hit)
+        {
+            clauses.Add($"对{targetLabel}未命中");
+            return;
+        }
+        if (damage > 0)
+            clauses.Add($"对{targetLabel}造成 {damage:0.##} 点伤害");
+        if (healing > 0)
+            clauses.Add($"为{targetLabel}回复 {healing:0.##} 点气血");
+    }
+
+    /// <summary>拼装施放子句：单子句沿用行内「，」；多子句以 \n 作分隔符逐条开行，
+    /// 前端 LogRow 按 \n 拆行并为续行渲染隐藏前缀占位，使所有「对/为」像素级对齐
+    /// （对齐语义同 daojie 的多目标合并战报，服务端不下发缩进字符）。</summary>
+    private static void AppendCastClauses(StringBuilder builder, List<string> clauses)
+    {
+        if (clauses.Count == 1)
+        {
+            builder.Append('，').Append(clauses[0]);
+            return;
+        }
+        builder.Append('，');
+        foreach (var clause in clauses)
+            builder.Append('\n').Append(clause);
     }
 
     private static void AddCombatEvent(ref SimulationEventTail? events, DateTimeOffset from, DateTimeOffset target, double remainingSeconds, string code, string message, ActionId actionId)
@@ -920,7 +1299,7 @@ internal static class CombatActionRules
                         && (triggerTarget is null || battleEnemies[i].EffectiveThreat > triggerTarget.EffectiveThreat))
                         triggerTarget = battleEnemies[i];
                 if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, battle.Player,
-                        triggerTarget, [battle.Player], battleEnemies)) continue;
+                        triggerTarget, battle.PlayerAllies, battleEnemies)) continue;
             }
             var itemId = item.Id;
             var available = (assetBalances?.Get(new AssetKey(itemId)) ?? 0d)
@@ -1001,5 +1380,111 @@ internal static class CombatActionRules
         return total;
     }
 
+    /// <summary>盟友攻击计数求和：与 <see cref="SumEnemyAttackCounts"/> 同序逐项累加，喂给共享剧本的计数维度。</summary>
+    private static double SumAllyAttackCounts(IReadOnlyList<CombatantSnapshot> allySnapshots)
+    {
+        var total = 0d;
+        for (var i = 0; i < allySnapshots.Count; i++) total += allySnapshots[i].AttackCount;
+        return total;
+    }
 
+    /// <summary>按成员下标取跨相位盟友镜像；无镜像返回 null（调用方回落开打定格初值）。</summary>
+    private static ExpeditionAllyState? FindAllyCarry(IReadOnlyList<ExpeditionAllyState>? carried, int memberIndex)
+    {
+        if (carried is null) return null;
+        for (var i = 0; i < carried.Count; i++)
+            if (carried[i].MemberIndex == memberIndex) return carried[i];
+        return null;
+    }
+
+    /// <summary>
+    /// 冻结战外 Buff 层数合计：会话成员开打定格视图（buffId → 层数）的求值体，
+    /// 与 <see cref="ActionExecutionRules.SumActiveBuffStacks"/> 同语义（null 词条合计全部层数）。
+    /// </summary>
+    internal static double SumFrozenBuffStacks(IReadOnlyDictionary<string, double>? frozen, string? buffId)
+    {
+        if (frozen is null) return 0;
+        if (buffId is not null) return frozen.TryGetValue(buffId, out var stacks) ? stacks : 0;
+        var total = 0d;
+        foreach (var pair in frozen) total += pair.Value;
+        return total;
+    }
+
+    /// <summary>
+    /// 搜寻相位盟友镜像初始构建：非本机成员以开打定格气血/灵力 + 冻结跨战技能状态入场；
+    /// 本机成员由 PlayerState/资源池镜像承载不进列表；搜索相位不推进出手与复活时钟。
+    /// </summary>
+    private static IReadOnlyList<ExpeditionAllyState> BuildAllyCarry(PartyExpeditionSpec spec, int selfIndex)
+    {
+        var allies = new List<ExpeditionAllyState>(spec.Members.Count - 1);
+        for (var i = 0; i < spec.Members.Count; i++)
+        {
+            if (i == selfIndex) continue;
+            var member = spec.Members[i];
+            allies.Add(new ExpeditionAllyState(i,
+                new CombatantSnapshot(member.InitialHitpoints, member.InitialManapoints, 0, 0, 0),
+                CombatSkills: member.CombatSkills));
+        }
+        return allies;
+    }
+
+    /// <summary>
+    /// 波次清空时的盟友携带导出：存活成员带出完整战斗快照 + 跨战技能态（折算回冷却轴）；
+    /// 倒地成员按原地复活口径满状态起身（气血灵力全满、技能复位），与本机成员的复活同规。
+    /// reviveDowned=false 用于团灭拆场：保留倒地镜像供复活读条相位展示。
+    /// </summary>
+    private static IReadOnlyList<ExpeditionAllyState> CarryAllies(CombatEncounterState battle,
+        PartyExpeditionSpec? spec, bool reviveDowned = true)
+    {
+        var allies = battle.PlayerAllies;
+        var list = new List<ExpeditionAllyState>(allies.Count - 1);
+        for (var i = 0; i < allies.Count; i++)
+        {
+            if (i == battle.SelfIndex) continue;
+            var ally = allies[i];
+            if (!ally.IsAlive && reviveDowned && spec is not null)
+            {
+                var member = spec.Members[i];
+                list.Add(new ExpeditionAllyState(i,
+                    new CombatantSnapshot(member.Stats.MaxHitpoints, member.Stats.MaxManapoints, 0, 0, 0),
+                    CombatSkills: PlayerCombatSkillState.Empty));
+                continue;
+            }
+            list.Add(new ExpeditionAllyState(i,
+                CombatEncounterState.Snapshot(ally),
+                PendingActionText(ally), PendingActionDurationOf(ally),
+                PlayerCombatSkillState.FromCombatant(ally, battle.ElapsedSeconds)));
+        }
+        return list;
+    }
+
+    /// <summary>复活读条完成时的盟友镜像重置：全员满状态（与本机成员复活满血同规）。</summary>
+    private static IReadOnlyList<ExpeditionAllyState> ResetAllyCarry(PartyExpeditionSpec spec, int selfIndex)
+    {
+        var allies = new List<ExpeditionAllyState>(spec.Members.Count - 1);
+        for (var i = 0; i < spec.Members.Count; i++)
+        {
+            if (i == selfIndex) continue;
+            var member = spec.Members[i];
+            allies.Add(new ExpeditionAllyState(i,
+                new CombatantSnapshot(member.Stats.MaxHitpoints, member.Stats.MaxManapoints, 0, 0, 0),
+                CombatSkills: PlayerCombatSkillState.Empty));
+        }
+        return allies;
+    }
+
+    /// <summary>吟唱技能 ID 展示文本（未吟唱为 null）。</summary>
+    private static string? PendingActionText(CombatantState unit)
+        => unit.PendingSkillIndex >= 0 && unit.PendingSkillIndex < unit.Skills.Count
+            ? DeterministicCombatEngine.AbilityText(unit.Skills[unit.PendingSkillIndex].Ability, "id")
+            : null;
+
+    /// <summary>当前动作展示时长：吟唱取技能读条，普攻取攻速结算间隔（与敌人快照导出同一公式）。</summary>
+    private static double PendingActionDurationOf(CombatantState unit)
+        => unit.PendingSkillIndex >= 0 && unit.PendingSkillIndex < unit.Skills.Count
+            ? DeterministicCombatEngine.AbilityNumber(unit.Skills[unit.PendingSkillIndex].Ability, "castMilliseconds") / 1000d
+                * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear)
+            : unit.Stats.AttackIntervalSeconds
+                * PercentValue.Multiplier(unit.Stats.AttackSpeedPoints, PercentCurveMode.NonLinear)
+                * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
 }

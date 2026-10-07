@@ -2,7 +2,7 @@
   {
     "id": "ability.palm-lightning",
     "name": "掌心雷",
-    "description": "从掌心发出一道雷光",
+    "description": "袖中掌起一声雷。",
     "style": "fiveElements",
     "tier": 1,
     "category": "spell",
@@ -26,7 +26,7 @@
   {
     "id": "ability.blazing-blast",
     "name": "轰炎",
-    "description": "轰出一片灼热烈焰",
+    "description": "轰炎一怒焚千里。",
     "style": "fiveElements",
     "tier": 1,
     "category": "spell",
@@ -52,7 +52,7 @@
   {
     "id": "ability.qingping-melody",
     "name": "清平乐",
-    "description": "奏响清平雅乐",
+    "description": "清平一曲起，枯木又逢春。",
     "style": "fiveElements",
     "tier": 2,
     "category": "spell",
@@ -80,7 +80,7 @@
   {
     "id": "ability.lightning-attraction",
     "name": "雷光引",
-    "description": "引动九天雷光轰击敌阵",
+    "description": "九霄雷落，万钧天威。",
     "style": "fiveElements",
     "tier": 2,
     "category": "spell",
@@ -106,7 +106,7 @@
   {
     "id": "ability.pozhen-melody",
     "name": "破阵子",
-    "description": "奏响破阵战歌",
+    "description": "一曲破阵壮军威。",
     "style": "talisman",
     "tier": 2,
     "category": "spell",
@@ -117,8 +117,8 @@
     "damageRatio": 0.0,
     "buff": {
       "name": "破阵子",
-      "durationSeconds": 30.0,
-      "damageAbsorptionPoints": 15
+      "durationSeconds": 10.0,
+      "damageBonusPoints": 40
     },
     "defaultTriggers": [
       {

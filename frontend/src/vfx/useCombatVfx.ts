@@ -11,7 +11,8 @@
  *   · 玩家普攻：expedition.playerNextAttackAtSeconds 到达时播普攻爆闪；
  *   · 斗法回放：duel.events[].abilityId + atSeconds 按剧本时刻逐条调度；
  * - signature 防重：同一出手事件在任意 rerender/快照增量下只播放一次；
- * - 纯表现层：不读写任何战斗状态，结算由服务端快照驱动既有组件完成。
+ * - 纯表现层：不读写任何战斗状态，结算由服务端快照驱动既有组件完成；
+ * - 返回运行时引用：调用方可在快照调度之外主动触发一次性演出（如尸体消散）。
  */
 import { useEffect, useRef, type RefObject } from 'react'
 import { useGameStore } from '../game/gameStore'
@@ -31,11 +32,12 @@ const STALE_THRESHOLD_MS = 600
  * 挂载战斗特效运行时并调度出手演出。
  * @param shellRef   .combat-arena-shell 元素 ref
  * @param overlayRef .vfx-stage-overlay 元素 ref
+ * @returns 运行时引用（就绪前为 null），供调用方主动触发一次性演出
  */
 export function useCombatVfx(
   shellRef: RefObject<HTMLElement | null>,
   overlayRef: RefObject<HTMLElement | null>,
-): void {
+): RefObject<CombatVfxRuntime | null> {
   const runtimeRef = useRef<CombatVfxRuntime | null>(null)
   /** signature -> timeout id：同一出手事件只调度一次 */
   const pendingRef = useRef(new Map<string, number>())
@@ -188,4 +190,6 @@ export function useCombatVfx(
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duelScheduleSig])
+
+  return runtimeRef
 }

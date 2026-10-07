@@ -57,7 +57,10 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
       value: entry.experience,
     }))
   // 等级提升行：realm→「境界」、root→六维标签（targetId 为六维键）、ability→功法名（targetId 为功法 ID）。
-  const levelUpEntries = report.levelUps.map((entry, index) => {
+  // 同一目标在账期内的多段升级合并为一条「首段起点 → 末段终点」，顺序按目标首次出现排列。
+  const levelUpEntries: Array<{ key: string; name: string; from: number; to: number }> = []
+  const levelUpByTarget = new Map<string, { key: string; name: string; from: number; to: number }>()
+  for (const entry of report.levelUps) {
     let name: string
     if (entry.kind === 'realm') {
       name = t('combat.report.realmLabel')
@@ -67,8 +70,17 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
     } else {
       name = findAbilityInCatalog(abilities, entry.targetId)?.name || entry.targetId
     }
-    return { key: `${entry.kind}:${entry.targetId}:${index}`, name, from: entry.fromLevel, to: entry.toLevel }
-  })
+    const key = `${entry.kind}:${entry.targetId}`
+    const existing = levelUpByTarget.get(key)
+    if (existing) {
+      existing.from = Math.min(existing.from, entry.fromLevel)
+      existing.to = Math.max(existing.to, entry.toLevel)
+    } else {
+      const merged = { key, name, from: entry.fromLevel, to: entry.toLevel }
+      levelUpByTarget.set(key, merged)
+      levelUpEntries.push(merged)
+    }
+  }
 
   const hasAny = report.experience > 0 || report.foundation !== 0 || report.combatExperience > 0
     || rootExpEntries.length > 0 || abilityExpEntries.length > 0 || levelUpEntries.length > 0

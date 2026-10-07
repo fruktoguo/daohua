@@ -113,6 +113,35 @@ export function parseLogTemplate(template: string): readonly LogSegment[] {
 }
 
 /**
+ * 按 \n 把已解析的日志分词切成逐行分词组。
+ * 服务端多目标施放合并行以 \n 分隔各目标子句（首行=施放前缀行，后续每行一条子句）；
+ * text 分段内的 \n 在切分处一分为二，引用分段天然不跨界。无 \n 时返回 null（调用方走平铺渲染）。
+ */
+export function splitLogSegmentsByLines(segments: readonly LogSegment[]): LogSegment[][] | null {
+  let sawNewline = false
+  const lines: LogSegment[][] = []
+  let current: LogSegment[] = []
+  for (const segment of segments) {
+    if (segment.type === 'text' && segment.value.includes('\n')) {
+      const parts = segment.value.split('\n')
+      for (let i = 0; i < parts.length; i++) {
+        if (i > 0) {
+          lines.push(current)
+          current = []
+        }
+        if (parts[i].length > 0) current.push({ type: 'text', value: parts[i] })
+      }
+      sawNewline = true
+    } else {
+      current.push(segment)
+    }
+  }
+  if (!sawNewline) return null
+  lines.push(current)
+  return lines
+}
+
+/**
  * 将连续相同语义模板（template）的日志合并折叠。
  * 紧邻且 template 完全相同的日志将合并为单条 GameLogEntry，
  * 累计 count 并在 latestTimestampMs 记录最近触发时间戳。

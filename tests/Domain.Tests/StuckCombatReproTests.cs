@@ -20,17 +20,17 @@ public sealed class StuckCombatReproTests
             0, -1, 0,
             new CombatExpeditionState(
                 "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, unchecked((long)4122577177101012044UL),
-                15.472613, 113.48821196563904, 60, 16, 15, 88.20322454180142, CombatOutcome.Running, 1,
+                15.472613, 88.20322454180142, 45, 16, 15, 88.20322454180142, CombatOutcome.Running, 1,
                 [new ExpeditionEnemyState("enemy.wood-spirit",
                     new CombatantSnapshot(150, 4.752941176470588, 15.997984378936762, 7, 13.111788034361007, 1))])
             {
-                // 玩家完整战斗快照：吟唱/逐槽冷却/战内 Buff 的恢复依据。
-                PlayerState = new CombatantSnapshot(113.48821196563904, 60, 16, 15, 88.20322454180142)
+                // 玩家完整战斗快照：吟唱/逐槽冷却/战内 Buff 的恢复依据；数值须落在当前 Lv1 裸面板上限内。
+                PlayerState = new CombatantSnapshot(88.20322454180142, 45, 16, 15, 88.20322454180142)
             });
         return PlayerAggregate.Restore(exported with
         {
             Actions = [action],
-            Combat = new PlayerCombatStateDocument(113.48821196563904, 120, 60, 60, 11, 11, 1.5453399),
+            Combat = new PlayerCombatStateDocument(88.20322454180142, 100, 45, 50, 11, 11, 1.5453399),
         });
     }
 

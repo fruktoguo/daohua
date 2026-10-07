@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using DaoHua.Ecs;
 using Domain.Common;
@@ -33,7 +35,9 @@ public sealed class EcsPlayerRuntimeAdapter(
     NodeBuildingRegistry? nodeBuildings = null,
     MarketRuntime? marketRuntime = null,
     IAccountRepository? accounts = null,
-    IPlayerOwnershipStore? ownership = null) : IPlayerRuntime
+    IPlayerOwnershipStore? ownership = null,
+    Server.Clean.Social.IInvitationRepository? invitations = null,
+    Server.Clean.Social.ISocialRepository? socialRepository = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, PlayerRuntimeSnapshot> _loaded = new();
     // 钱包以存储余额为权威：ECS 库存组件由它同步重建，市场等外部入账经失效标记触发重读。
@@ -158,6 +162,59 @@ public sealed class EcsPlayerRuntimeAdapter(
             var snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
             _loaded[playerId] = snapshot;
             _attributeRevisions[playerId] = ecs.AttributeRevision(playerId);
+            // 组队讨伐装载对账（总纲 §21.13，防崩溃漏网）：
+            // 1. 队首挂着未散场绑定而社交侧会话行缺失/已散场/本人已离队 → 按权威时刻就地收尾；
+            // 2. 所在队伍有活跃会话而队首无对应绑定（开打投递丢失） → 按持久化规格补发会话行动。
+            if (socialRepository is not null)
+            {
+                var partyId = await socialRepository.GetPartyIdAsync(playerId, cancellationToken).ConfigureAwait(false);
+                var headBinding = snapshot.State.Actions.Count > 0 ? snapshot.State.Actions[0].PartySession : null;
+                if (headBinding is { } staleBinding && double.IsPositiveInfinity(staleBinding.EndsAtUnixSeconds))
+                {
+                    var row = await socialRepository.GetPartySessionAsync(staleBinding.Spec.SessionId, cancellationToken).ConfigureAwait(false);
+                    if (row is null || row.EndedAt is not null || partyId != row.PartyId)
+                    {
+                        var endsAt = (row?.EndedAt ?? _simulationClock.UtcNow).ToUnixTimeMilliseconds() / 1000d;
+                        ecs.MutatePlayer(playerId, aggregate => aggregate.EndPartyExpedition(staleBinding.Spec.SessionId, endsAt));
+                        TrackDirty(playerId);
+                        snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+                        _loaded[playerId] = snapshot;
+                    }
+                }
+                // 补发与收尾独立判定（死绑定终局后仍可能命中在途会话）：所在队伍有活跃会话且
+                // 本人在名册内，而队首并非本会话的活绑定（开打投递丢失/崩溃漏网）→ 按持久化规格补发。
+                if (partyId is { } ownedPartyId)
+                {
+                    var active = await socialRepository.GetActivePartySessionAsync(ownedPartyId, cancellationToken).ConfigureAwait(false);
+                    var aliveSpec = active is { } alive && alive.MemberIds.Contains(playerId)
+                        ? JsonSerializer.Deserialize<PartyExpeditionSpec>(alive.SpecJson, PersistenceJson.Options)
+                        : null;
+                    if (active is { } live && aliveSpec is { IsValid: true } spec
+                        && spec.SelfIndexOf(new PlayerId(playerId)) >= 0
+                        && !(snapshot.State.Actions.Count > 0
+                            && snapshot.State.Actions[0].PartySession is { } head
+                            && string.Equals(head.Spec.SessionId, live.SessionId, StringComparison.Ordinal)
+                            && double.IsPositiveInfinity(head.EndsAtUnixSeconds)
+                            && snapshot.State.Actions.Skip(1).All(action => action.PartySession is null)))
+                    {
+                        ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            // 队首异会话残留（终局未收尾/异会话遗留）先扫净，再幂等补发本会话行动。
+                            for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
+                            {
+                                var binding = aggregate.Actions[i].PartySession;
+                                if (binding is null) continue;
+                                if (i == 0 && string.Equals(binding.Spec.SessionId, live.SessionId, StringComparison.Ordinal)) continue;
+                                aggregate.RemoveAction(aggregate.Actions[i].Id);
+                            }
+                            aggregate.StartPartyExpedition(spec, live.StartedAt, gameData.Actions);
+                        });
+                        TrackDirty(playerId);
+                        snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+                        _loaded[playerId] = snapshot;
+                    }
+                }
+            }
             RuntimeInstrumentation.Count("lifecycle.player_loaded");
             notifications.Add(new RuntimeNotification(playerId, logs));
             return snapshot;
@@ -258,6 +315,8 @@ public sealed class EcsPlayerRuntimeAdapter(
                 var dirtyMarksBefore = ecs.GetDirtyMarks(playerId);
                 IReadOnlySet<PlayerSectionKind>? touched = null;
                 (Guid DuelId, Guid PeerId)? forfeit = null;
+                IReadOnlyList<Server.Clean.Social.InvitationMilestoneGrant>? invitationGrants = null;
+                List<LogEventDto>? tutorialSkipLogs = null;
                 var wallet = WalletOf(playerId);
                 switch (command)
                 {
@@ -270,6 +329,12 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount,
                             request.TargetNodeId, request.Parameters, request.PvpEnabled)
                             with { TargetItemId = request.TargetItemId, AuxItemId = request.AuxItemId };
+                        // 组队讨伐会话行动是系统内置高优行动：只能由社交仲裁投递，客户端不得手动入队。
+                        if (intent.ActionId == ActionCatalog.PartyExpeditionActionId)
+                            return new PlayerCommandResult(false, "INVALID_ACTION", "组队讨伐行动由系统会话管理，不能手动入队。", before);
+                        // 会话进行中禁止斗法撮合（总纲 §21.13：阵容冻结期间不可进入斗法）。
+                        if (request.PvpEnabled && IsPartyExpeditionActive(before.State))
+                            return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，无法参与斗法撮合。", before);
                         if (gameData.Actions.TryGet(intent.ActionId, out var actionDefinition))
                         {
                             // 强化行动必须指定目标装备；缺 targetItemId 载荷无效，不入队。
@@ -294,6 +359,9 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var wasHead = before.State.Actions.Count > 0 && before.State.Actions[0].Id == actionId;
                         if (!wasHead && before.State.Actions.All(action => action.Id != actionId))
                             return new PlayerCommandResult(false, "ACTION_NOT_FOUND", "行动不存在。", before);
+                        // 进行中的讨伐会话行动只能由社交仲裁写散场时刻收尾，客户端不得摘除（总纲 §21.13）。
+                        if (wasHead && IsPartyExpeditionActive(before.State))
+                            return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，不能取消会话行动。", before);
                         // 沿袭历史 OOP 运行时的次序基线：移除队首先把已流逝模拟结算掉，再进行弃战判定与移除。
                         if (wasHead && _simulationClock.UtcNow > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
@@ -329,6 +397,12 @@ public sealed class EcsPlayerRuntimeAdapter(
                             || !payload.TryGetProperty("direction", out var directionElement)
                             || !directionElement.TryGetInt32(out var direction))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "行动移动参数无效。", before);
+                        // 会话进行中不得把队首会话行动挤下/移走（会话行动必须在队首才有推进语义）。
+                        if (IsPartyExpeditionActive(before.State)
+                            && (before.State.Actions[0].Id == actionInstanceId
+                                || (direction < 0 && before.State.Actions.Count > 1
+                                    && before.State.Actions[1].Id == actionInstanceId)))
+                            return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，不能调整会话行动次序。", before);
                         // 沿袭历史 OOP 运行时的次序基线：先推进到当前，再按是否挪动队首做弃战判定。
                         if (_simulationClock.UtcNow > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
@@ -346,6 +420,9 @@ public sealed class EcsPlayerRuntimeAdapter(
                     {
                         if (before.State.Actions.Count == 0)
                             return new PlayerCommandResult(false, "QUEUE_EMPTY", "队列已为空。", before);
+                        // 会话进行中清空等于摘除会话行动：与 action.remove 同口径拒绝。
+                        if (IsPartyExpeditionActive(before.State))
+                            return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，不能清空行动队列。", before);
                         // 与 action.remove 同序：先把已流逝模拟结算掉，再对队首斗法做弃战判定并整队清空。
                         if (_simulationClock.UtcNow > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
@@ -367,7 +444,10 @@ public sealed class EcsPlayerRuntimeAdapter(
                         if (!Enum.TryParse<ActionKind>(actionType, true, out var slotKind))
                             return new PlayerCommandResult(false, "INVALID_ACTION_TYPE", "自动使用行动类型无效。", before);
                         ItemDefinition? slotItem = null;
+                        // 自动使用槽仅收自动消耗品（category=consumable）：手动消耗品（秘籍/宝箱/礼包等）
+                        // 即使误配 usableInActionTypes 也一律拒绝，防止永不触发的死槽位配置。
                         if (itemId is not null && (!gameData.Items.TryGetValue(new ItemId(itemId), out slotItem)
+                            || slotItem.Category != ItemDefinition.CategoryConsumable
                             || slotItem.Consumable is null || !slotItem.Consumable.UsableInActionKinds.Contains(slotKind)))
                             return new PlayerCommandResult(false, "INVALID_CONSUMABLE", "物品不适用于该自动使用槽。", before);
                         if (group == AutoUseSlotState.SlotGroupPotion
@@ -443,6 +523,12 @@ public sealed class EcsPlayerRuntimeAdapter(
                     case "progression.breakthrough":
                     {
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Breakthrough(gameData.RealmProgression));
+                        // 邀请里程碑：突破成功后按新境界等级发放到期奖励（仓储内幂等+同事务翻转标记）。
+                        if (invitations is not null)
+                        {
+                            var realmAfter = ecs.ExportSnapshot(playerId).State.Progression.RealmLevel;
+                            invitationGrants = await GrantInvitationMilestonesAsync(playerId, realmAfter, cancellationToken).ConfigureAwait(false);
+                        }
                         break;
                     }
                     case "world.travel":
@@ -614,6 +700,9 @@ public sealed class EcsPlayerRuntimeAdapter(
                         // 仅同 itemId 且同强化等级的已装备件拦截出售，其他等级变体挂单互不挤占。
                         if (side == MarketSide.Sell && before.State.Loadout.Equipment.Any(slot => slot.ItemId == assetId && (int)slot.EnhancementLevel == variantLevel))
                             return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法挂单出售，请先卸下。", before);
+                        // 绑定物品（isTradable=false，如功德·绑定）不得进入坊市挂单。
+                        if (gameData.Items.TryGetValue(new ItemId(assetId), out var instrumentItem) && !instrumentItem.IsTradable)
+                            return new PlayerCommandResult(false, "ITEM_NOT_TRADABLE", "绑定物品无法交易。", before);
                         await marketRuntime.PlaceAsync(new PlaceOrderRequest(new OrderId(orderId), new PlayerId(playerId),
                             new MarketInstrument(new ItemId(assetId), variant), side, price, quantity,
                             DateTimeOffset.UtcNow, new IdempotencyKey($"market:{playerId:D}:{orderId:D}")), cancellationToken).ConfigureAwait(false);
@@ -732,6 +821,54 @@ public sealed class EcsPlayerRuntimeAdapter(
                         ecs.SetPresence(playerId, state);
                         break;
                     }
+                    case "tutorial.skip":
+                    {
+                        // 跳过引导：步骤收敛到终态，剩余未领赠送/终奖在命令事务内一次性补发
+                        // （奖励游标兜底——重复跳过或已领过的里程碑不再重复入账）。
+                        IReadOnlyDictionary<ItemId, double> skipGrants = new Dictionary<ItemId, double>();
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            skipGrants = DaoHua.Ecs.Systems.TutorialRules.PendingSkipGrants(aggregate.Settings);
+                            aggregate.SkipTutorial();
+                        });
+                        if (skipGrants.Count > 0)
+                        {
+                            var skipNow = DateTimeOffset.UtcNow;
+                            var skipSnapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+                            var skipDirty = ecs.GetDirtySections(playerId);
+                            var skipWrites = SectionCodec.EncodeAggregateFull(skipSnapshot.State, skipNow)
+                                .Where(write => skipDirty.Contains(SectionCodec.FromStorageKind(write.SectionKind))).ToArray();
+                            var skipResult = await economy.CommitAsync(new EconomyTransactionRequest(
+                                requestId,
+                                $"tutorial-skip:{playerId:D}:{requestId:D}",
+                                command,
+                                playerId,
+                                skipGrants.Select(pair => new Server.Clean.AssetDelta(playerId, pair.Key.Value, string.Empty, pair.Value)).ToArray(),
+                                skipNow,
+                                JsonSerializer.SerializeToUtf8Bytes(new { granted = skipGrants.Count }),
+                                skipWrites,
+                                Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, skipSnapshot.StateVersion)]),
+                                cancellationToken).ConfigureAwait(false);
+                            if (!skipResult.Applied)
+                            {
+                                // 事务未提交：跳过产生的 settings 变更一并回滚，保持 ECS 与钱包一致。
+                                RestoreUncommittedPlayer(playerId, before);
+                                return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "跳过引导奖励事务未提交。", before);
+                            }
+                            var skipKinds = skipWrites.Select(write => SectionCodec.FromStorageKind(write.SectionKind)).ToArray();
+                            ecs.AcknowledgeDirtySections(playerId, skipKinds);
+                            foreach (var kind in skipKinds) _dirtyAt[playerId].Remove(kind);
+                            await SyncWalletAfterCommitAsync(playerId, skipResult, cancellationToken).ConfigureAwait(false);
+                            tutorialSkipLogs = [AppendTutorialSkipLog(playerId, skipGrants)];
+                        }
+                        break;
+                    }
+                    case "tutorial.restart":
+                    {
+                        // 重新学习引导：里程碑重置为起点，奖励游标保持不动——重走不重复发已领奖励。
+                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.RestartTutorial());
+                        break;
+                    }
                     default:
                         return new PlayerCommandResult(false, "UNKNOWN_COMMAND", "未知领域命令。", before);
                 }
@@ -757,8 +894,25 @@ public sealed class EcsPlayerRuntimeAdapter(
                 // 版本未推进的命令（market.*/item.* 钱包类）不附加快照推送：
                 // 同版本推送会被客户端版本门禁丢弃，却前移会话推送基线、把回执的资产差集烧空；
                 // 此类差额只能由必达的命令回执 delta 携带（客户端按同版本回执合入资产）。
-                notifications.Add(new RuntimeNotification(playerId, outcome.Logs,
+                // 跳过引导的补发入账日志：与本命令推送同帧下发，不依赖下一次模拟结算。
+                var mergedLogs = tutorialSkipLogs is null ? outcome.Logs
+                    : outcome.Logs is null ? tutorialSkipLogs
+                    : [.. outcome.Logs, .. tutorialSkipLogs];
+                notifications.Add(new RuntimeNotification(playerId, mergedLogs,
                     after.StateVersion != before.StateVersion ? after : null));
+                // 邀请里程碑入账日志：排在突破战报之后；在线邀请者附钱包失效 + 日志推送，离线者下次装载读余额。
+                if (invitationGrants is { Count: > 0 })
+                    foreach (var grant in invitationGrants)
+                    {
+                        notifications.Add(new RuntimeNotification(playerId,
+                            [AppendInvitationLog(playerId, Server.Clean.Social.InvitationRewards.InviteeRewardLogTemplate(grant.Milestone))]));
+                        if (_loaded.ContainsKey(grant.InviterId))
+                        {
+                            _walletReloadRequired[grant.InviterId] = 0;
+                            notifications.Add(new RuntimeNotification(grant.InviterId,
+                                [AppendInvitationLog(grant.InviterId, Server.Clean.Social.InvitationRewards.InviterRewardLogTemplate(grant.Milestone, before.DisplayName))]));
+                        }
+                    }
                 if (forfeit is { } resolvedForfeit)
                     await RouteDuelForfeitAsync(resolvedForfeit, notifications, cancellationToken).ConfigureAwait(false);
                 return new PlayerCommandResult(true, "OK", SuccessNotice(command), after, outcome.Simulation, outcome.Logs);
@@ -773,6 +927,42 @@ public sealed class EcsPlayerRuntimeAdapter(
             }
         }
         finally { gate.Release(); }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken = default)
+    {
+        // 社交仲裁通道：与命令路径同构——玩家门内装载（离线成员强制装载+补算）、就地变更、
+        // 标脏入刷盘轨道、刷新驻留快照，版本推进时在锁外推送。不附加战报/回执（无结算语义）。
+        var notifications = new List<RuntimeNotification>();
+        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var before = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
+            var dirtyMarksBefore = ecs.GetDirtyMarks(playerId);
+            var touched = ecs.MutatePlayer(playerId, mutate);
+            TrackDirty(playerId);
+            var after = ToSnapshot(ecs.ExportSnapshot(playerId));
+            var revisionNow = ecs.AttributeRevision(playerId);
+            var revisionBefore = _attributeRevisions.GetValueOrDefault(playerId, revisionNow);
+            after = after with
+            {
+                TouchedSections = touched,
+                WireAttributesChanged = revisionNow != revisionBefore
+            };
+            _attributeRevisions[playerId] = revisionNow;
+            _loaded[playerId] = after;
+            if (after.StateVersion != before.StateVersion)
+                notifications.Add(new RuntimeNotification(playerId, null, after));
+            return after;
+        }
+        finally
+        {
+            gate.Release();
+            await EmitNotificationsAsync(notifications).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
@@ -941,6 +1131,64 @@ public sealed class EcsPlayerRuntimeAdapter(
         => ValueTask.FromResult<IReadOnlyList<PlayerRuntimeSnapshot>>(_loaded.Values.OrderBy(value => value.PlayerId).ToArray());
 
     /// <summary>
+    /// 邀请奖励的外部入账通知（注册结成/里程碑）：在线玩家标记钱包失效并向其会话推送
+    /// 结构化入账日志；未加载玩家直接返回——余额已由持久层入账，下次装载自然读到。
+    /// </summary>
+    public async ValueTask NotifyInvitationRewardAsync(Guid playerId, string logTemplate)
+    {
+        if (!_loaded.ContainsKey(playerId)) return;
+        _walletReloadRequired[playerId] = 0;
+        var logEvent = AppendInvitationLog(playerId, logTemplate);
+        if (LogBatchEmitted is { } handler) await handler(playerId, [logEvent]).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 突破命令内的邀请里程碑结算：仓储内部幂等 + 钱与标记同事务；
+    /// 发放失败只记日志不阻断已生效的突破——领取标记未翻转，下次突破自动幂等重试。
+    /// </summary>
+    private async ValueTask<IReadOnlyList<Server.Clean.Social.InvitationMilestoneGrant>?> GrantInvitationMilestonesAsync(
+        Guid playerId, int realmLevel, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await invitations!.GrantMilestonesAsync(playerId, realmLevel, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "邀请里程碑奖励发放失败，下次突破将幂等重试 player={PlayerId} realm={RealmLevel}", playerId, realmLevel);
+            return null;
+        }
+    }
+
+    /// <summary>追加一条邀请入账日志到玩家回放缓冲；返回事件供当前会话实时推送。</summary>
+    private LogEventDto AppendInvitationLog(Guid playerId, string template)
+    {
+        var buffer = _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity));
+        var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), template, 1, "system");
+        buffer.Append(logEvent);
+        return logEvent;
+    }
+
+    /// <summary>跳过引导的补发入账日志：主句 + {{item:id|名称|数量}} 引用列表（与 SimulationLogMapper 同语法）。</summary>
+    private LogEventDto AppendTutorialSkipLog(Guid playerId, IReadOnlyDictionary<ItemId, double> grants)
+    {
+        var builder = new StringBuilder("新手引导已跳过，剩余奖励入账：");
+        var first = true;
+        foreach (var pair in grants.OrderBy(pair => pair.Key.Value, StringComparer.Ordinal))
+        {
+            if (!first) builder.Append('、');
+            var name = gameData.Items.TryGetValue(pair.Key, out var def) ? def.Name : pair.Key.Value;
+            builder.Append("{{item:").Append(pair.Key.Value).Append('|').Append(name).Append('|')
+                .AppendFormat(CultureInfo.InvariantCulture, "{0:0.######}", pair.Value).Append("}}");
+            first = false;
+        }
+        var buffer = _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity));
+        var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), builder.ToString(), 1, "system");
+        buffer.Append(logEvent);
+        return logEvent;
+    }
+
+    /// <summary>
     /// 市场结算把资产计入该玩家余额（成交对手方/撤单与到期退款/结算领取）：
     /// 在线玩家的缓存钱包标记失效，下一次玩家门内推进重读存储余额并推进版本，
     /// 推送以新版本差量把入账带给客户端；未加载玩家的余额由下次装载读取，无需标记。
@@ -1069,6 +1317,11 @@ public sealed class EcsPlayerRuntimeAdapter(
         _logger.LogError("玩家运行时租约已失效，逐出 ECS 实体 player={PlayerId}", playerId);
     }
 
+    /// <summary>队首讨伐会话是否进行中（与 PlayerAggregate.IsInPartyExpedition 同口径，作用于不可变快照）。</summary>
+    private static bool IsPartyExpeditionActive(PlayerAggregateState state) =>
+        state.Actions.Count > 0 && state.Actions[0].PartySession is { } binding
+            && binding.EndsAtUnixSeconds > state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
+
     /// <summary>按分段脏流水号差集得出本次操作触及分段；空集表示零触及（与"不可判定"的 null 区分）。</summary>
     private static HashSet<PlayerSectionKind> TouchedSectionsSince(
         IReadOnlyDictionary<PlayerSectionKind, long> marksBefore,
@@ -1106,13 +1359,15 @@ public sealed class EcsPlayerRuntimeAdapter(
         if (nodeBuildings is null) return;
         if (!string.IsNullOrWhiteSpace(world.EdgeId) || string.IsNullOrWhiteSpace(world.NodeId))
         {
-            ecs.ApplyNodeBuildingProjection(playerId, new(0, [], BuildingEffectSet.Empty, null), now);
+            ecs.ApplyNodeBuildingProjection(playerId, new(0, [], BuildingEffectSet.Empty, null, []), now);
             return;
         }
+        var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
         var view = await nodeBuildings.BuildingsForAsync(world.NodeId, now, cancellationToken).ConfigureAwait(false);
-        var effects = NodeBuildingRules.AggregateEffects(view.Buildings, gameData.Buildings,
-            now.ToUnixTimeMilliseconds() / 1000d);
-        ecs.ApplyNodeBuildingProjection(playerId, new(view.Version, view.Buildings, effects, world.NodeId), now);
+        var counts = await nodeBuildings.UsageForAsync(world.NodeId, now, cancellationToken).ConfigureAwait(false);
+        var effects = NodeBuildingRules.AggregateEffects(view.Buildings, gameData.Buildings, nowUnixSeconds, counts);
+        var usages = nodeBuildings.UsagesFor(view.Buildings, counts, nowUnixSeconds);
+        ecs.ApplyNodeBuildingProjection(playerId, new(view.Version, view.Buildings, effects, world.NodeId, usages), now);
     }
 
     private sealed record CommitOutcome(IReadOnlyList<LogEventDto>? Logs, SimulationResult? Simulation);
@@ -1259,7 +1514,7 @@ public sealed class EcsPlayerRuntimeAdapter(
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
         "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
         "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "market.claim" or
-        "item.discard" or "item.sell";
+        "item.discard" or "item.sell" or "tutorial.skip" or "tutorial.restart";
 
     private void RestoreUncommittedPlayer(Guid playerId, PlayerRuntimeSnapshot before)
     {

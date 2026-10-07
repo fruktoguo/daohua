@@ -12,10 +12,10 @@ internal static class CombatPhaseSystems
     public static void DispatchInline<TTag>(CombatPhaseContext context) where TTag : ISystemTag
     {
         if (typeof(TTag) == typeof(ICombatBuffTickPhase)) { CombatBuffTickSystem.Apply(context); return; }
-        if (typeof(TTag) == typeof(ICombatPlayerRespawnPhase)) { CombatPlayerRespawnSystem.Apply(context); return; }
-        if (typeof(TTag) == typeof(ICombatPlayerActPhase)) { CombatPlayerActSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatAllyRespawnPhase)) { CombatAllyRespawnSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatAllyActPhase)) { CombatAllyActSystem.Apply(context); return; }
         if (typeof(TTag) == typeof(ICombatEnemyActPhase)) { CombatEnemyActSystem.Apply(context); return; }
-        if (typeof(TTag) == typeof(ICombatPlayerDownedPhase)) { CombatPlayerDownedSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatAllyDownedPhase)) { CombatAllyDownedSystem.Apply(context); return; }
         if (typeof(TTag) == typeof(ICombatOutcomePhase)) { CombatOutcomeSystem.Apply(context); return; }
         throw new InvalidOperationException($"未登记的战斗相位 tag：{typeof(TTag).Name}。");
     }
@@ -40,12 +40,13 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
     {
         var encounter = context.Encounter;
         var at = context.EffectAt;
-        encounter.Player.Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+            encounter.PlayerAllies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         for (var i = 0; i < encounter.Enemies.Count; i++)
             encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         if (Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) > 1e-9) return;
-        // 结算顺序与原 Prepend(player) 一致：先玩家后敌人。
-        Tick(encounter.Player);
+        // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i]);
         for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i]);
 
         static void Tick(CombatantState unit)
@@ -71,43 +72,53 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
     }
 }
 
-/// <summary>玩家复活相位（order 110）：倒地倒计时到期时恢复满气血并重新决策初始动作。</summary>
+/// <summary>友方复活相位（order 110）：单个盟友倒地倒计时到期时恢复满气血并重新决策动作。</summary>
 [SystemOrder(110)]
-public sealed class CombatPlayerRespawnSystem : YuoSystem<CombatEncounterComponent>, ICombatPlayerRespawnPhase
+public sealed class CombatAllyRespawnSystem : YuoSystem<CombatEncounterComponent>, ICombatAllyRespawnPhase
 {
     /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
-    /// <summary>玩家复活相位：倒地倒计时到期时恢复满气血、清空复活计时并重新决策初始动作。</summary>
+    /// <summary>友方复活相位：倒地倒计时到期的盟友恢复满气血、清空复活计时，未定动作的全体单位补决策。</summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
-        encounter.Player.Hitpoints = encounter.Player.Stats.MaxHitpoints;
-        encounter.PlayerRespawnAtSeconds = double.PositiveInfinity;
+        var ally = context.Ally ?? throw new InvalidOperationException("复活相位缺少盟友上下文。");
+        ally.Hitpoints = ally.Stats.MaxHitpoints;
+        ally.RespawnAtSeconds = double.PositiveInfinity;
         CombatActSystem.DecideInitialActions(encounter);
-        (context.PlayerRespawns ??= []).Add(encounter.ElapsedSeconds);
+        // 复活标记分流：本机成员走 PlayerRespawns（沿用单人写回口径），其余成员进盟友标记列表。
+        if (context.AllyIndex == encounter.SelfIndex)
+            (context.PlayerRespawns ??= []).Add(encounter.ElapsedSeconds);
+        else
+            (context.AllyRespawns ??= []).Add((context.AllyIndex, encounter.ElapsedSeconds));
     }
 }
 
-/// <summary>玩家出手相位（order 120）：结算待完成动作（普攻/吟唱完成的技能）后决策下一动作。</summary>
+/// <summary>友方出手相位（order 120）：单个盟友结算待完成动作（普攻/吟唱完成的技能）后决策下一动作。</summary>
 [SystemOrder(120)]
-public sealed class CombatPlayerActSystem : CombatActSystem, ICombatPlayerActPhase
+public sealed class CombatAllyActSystem : CombatActSystem, ICombatAllyActPhase
 {
     /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
-    /// <summary>玩家方出手相位：先结算待完成动作（普攻或吟唱完成的技能），再决策下一动作。</summary>
+    /// <summary>
+    /// 友方出手相位：先结算当前盟友待完成动作（普攻或吟唱完成的技能），再决策下一动作。
+    /// 随机侧位按成员下标固定分配（成员 0 沿用单人位 0，其余成员高位偏移），
+    /// 与所在分片/在线状态无关，保证各成员重放同一剧本。
+    /// </summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
-        var player = encounter.Player;
+        var ally = context.Ally ?? throw new InvalidOperationException("出手相位缺少盟友上下文。");
+        var side = AllySide(context.AllyIndex);
         var allies = encounter.PlayerAllies;
-        ResolvePending(encounter, player, allies, encounter.Enemies,
-            SelectEnemyTarget(encounter, player.AttackCount, 3), 0, ref context.Events);
-        DecideNextAction(encounter, player, allies, encounter.Enemies,
-            SelectEnemyTarget(encounter, player.AttackCount, 3));
+        ResolvePending(encounter, ally, allies, encounter.Enemies,
+            SelectEnemyTarget(encounter, side, ally.AttackCount, 3), side, ref context.Events);
+        DecideNextAction(encounter, ally, allies, encounter.Enemies,
+            SelectEnemyTarget(encounter, side, ally.AttackCount, 3));
     }
 }
 
@@ -138,39 +149,52 @@ public sealed class CombatEnemyActSystem : CombatActSystem, ICombatEnemyActPhase
     }
 }
 
-/// <summary>玩家死亡相位（order 140）：倒地瞬间进入复活倒计时，全场吟唱作废并记录死亡时刻。</summary>
+/// <summary>
+/// 友方倒地相位（order 140）：单个盟友阵亡瞬间进入复活倒计时并作废其吟唱；
+/// 若构成全灭则按单人口径作废全场吟唱。死亡时刻按本机/队友分流记录。
+/// </summary>
 [SystemOrder(140)]
-public sealed class CombatPlayerDownedSystem : YuoSystem<CombatEncounterComponent>, ICombatPlayerDownedPhase
+public sealed class CombatAllyDownedSystem : YuoSystem<CombatEncounterComponent>, ICombatAllyDownedPhase
 {
     /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
-    /// <summary>玩家死亡相位：倒地瞬间进入复活倒计时，全场吟唱作废并记录死亡时刻。</summary>
+    /// <summary>
+    /// 友方倒地相位：倒地盟友进入复活倒计时，自身吟唱作废退还；
+    /// 全灭瞬间（单人恒成立）全场吟唱作废，与单人口径逐位一致。
+    /// </summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
-        encounter.PlayerRespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
-        InterruptCasts(encounter);
-        (context.PlayerDeaths ??= []).Add(encounter.ElapsedSeconds);
+        var ally = context.Ally ?? throw new InvalidOperationException("倒地相位缺少盟友上下文。");
+        ally.RespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
+        if (encounter.IsAllAlliesDowned) InterruptCasts(encounter);
+        else InterruptCast(ally);
+        if (context.AllyIndex == encounter.SelfIndex)
+            (context.PlayerDeaths ??= []).Add(encounter.ElapsedSeconds);
+        else
+            (context.AllyDeaths ??= []).Add((context.AllyIndex, encounter.ElapsedSeconds));
     }
 
-    /// <summary>团灭瞬间全场吟唱作废：未完成的吟唱视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
+    /// <summary>全灭瞬间全场吟唱作废：未完成的吟唱视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
     private static void InterruptCasts(CombatEncounterState encounter)
     {
-        // 处理顺序与原 Prepend(player) 一致：先玩家后敌人。
-        InterruptCast(encounter.Player);
+        // 处理顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++) InterruptCast(encounter.PlayerAllies[i]);
         for (var i = 0; i < encounter.Enemies.Count; i++) InterruptCast(encounter.Enemies[i]);
-        static void InterruptCast(CombatantState unit)
-        {
-            var pending = unit.PendingSkillIndex;
-            unit.PendingSkillIndex = -1;
-            if (pending < 0 || pending >= unit.Skills.Count) return;
-            unit.Manapoints = Math.Min(unit.Stats.MaxManapoints,
-                unit.Manapoints + AbilityNumber(unit.Skills[pending].Ability, "manaCost"));
-            if (unit.SkillCooldownUntil is { } cooldowns && pending < cooldowns.Length)
-                cooldowns[pending] = 0;
-        }
+    }
+
+    /// <summary>作废单个单位未完成的吟唱：视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
+    private static void InterruptCast(CombatantState unit)
+    {
+        var pending = unit.PendingSkillIndex;
+        unit.PendingSkillIndex = -1;
+        if (pending < 0 || pending >= unit.Skills.Count) return;
+        unit.Manapoints = Math.Min(unit.Stats.MaxManapoints,
+            unit.Manapoints + AbilityNumber(unit.Skills[pending].Ability, "manaCost"));
+        if (unit.SkillCooldownUntil is { } cooldowns && pending < cooldowns.Length)
+            cooldowns[pending] = 0;
     }
 }
 
@@ -183,15 +207,15 @@ public sealed class CombatOutcomeSystem : YuoSystem<CombatEncounterComponent>, I
         => Apply(encounter.PhaseContext!);
 
     /// <summary>
-    /// 按双方存活状态裁决战局；原地复活待触发期间团灭不算终局（保持 Running，起身后统一裁定）。
+    /// 按双方存活状态裁决战局；原地复活待触发期间全灭不算终局（保持 Running，任一盟友起身后统一裁定）。
     /// </summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
-        encounter.Outcome = (encounter.Player.IsAlive, AnyAlive(encounter.Enemies)) switch
+        encounter.Outcome = (AnyAlive(encounter.PlayerAllies), AnyAlive(encounter.Enemies)) switch
         {
-            // 原地复活待触发期间团灭不是终局：敌方残存或被持续伤害跳死全灭都保持 Running，起身后统一裁定。
-            (false, _) when double.IsFinite(encounter.PlayerRespawnAtSeconds) => CombatOutcome.Running,
+            // 原地复活待触发期间全灭不是终局：敌方残存或被持续伤害跳死全灭都保持 Running，起身后统一裁定。
+            (false, _) when double.IsFinite(encounter.NextAllyRespawnAtSeconds) => CombatOutcome.Running,
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,
             (false, true) => CombatOutcome.EnemyWon,

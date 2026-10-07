@@ -148,6 +148,26 @@ export class CombatVfxRuntime {
     })
   }
 
+  /**
+   * 尸体消散：搜寻相位收尾时对全部在场敌方单位发射残魂萤火
+   * （参数与画廊 core.js defeat() 一致；尸体槽位淡出由 CSS 承担，此处只补粒子层）。
+   */
+  playCorpseDissipate(): void {
+    const corpses = this.shellEl.querySelectorAll<HTMLElement>('.arena-actor--enemy')
+    for (const corpseEl of corpses) {
+      const t = actorStageCenter(this.engine, corpseEl)
+      this.engine.particles(t.x, t.y, {
+        cls: 'vfx-soul-particle',
+        count: 22,
+        spread: 46,
+        size: [2, 5],
+        dur: [700, 1300],
+        dist: [18, 55],
+        rise: 55,
+      })
+    }
+  }
+
   /** 卸载：清理全部特效节点与计时器 */
   dispose(): void {
     this.engine.dispose()

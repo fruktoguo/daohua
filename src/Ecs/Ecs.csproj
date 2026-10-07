@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Ecs.Tests" />
+    <InternalsVisibleTo Include="Server" />
+    <InternalsVisibleTo Include="Domain.Tests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Domain/Domain.csproj" />

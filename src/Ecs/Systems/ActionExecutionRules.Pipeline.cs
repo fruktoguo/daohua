@@ -102,17 +102,42 @@ internal static partial class ActionExecutionRules
                 CountTransition(e);
                 continue;
             }
+            // 组队会话权威散场：资源窗口已把推进切在散场点（cursor 越线即收队），
+            // 伪行动移出队列并释放战斗实体；被挂起的原行动由队列原语顶回队首恢复推进。
+            if (action.PartySession is { } session && double.IsFinite(session.EndsAtUnixSeconds)
+                && e.Cursor.ToUnixTimeMilliseconds() / 1000d + 1e-6 >= session.EndsAtUnixSeconds)
+            {
+                FlushCombatState(e);
+                var sessionCombat = e.Entity.GetComponent<PlayerCombatComponent>();
+                if (sessionCombat is { EncounterEntityId: not 0 })
+                    e.Entity.World.WorldMain.GetComponent<EcsClockComponent>()!.ReleaseCombatBattle!(e.Entity);
+                e.Battle = null;
+                e.Player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: session.EndsAtUnixSeconds);
+                e.Core.AddEvent(new SimulationEvent(e.Cursor, "party.session.ended", "组队讨伐已散场。", action.Intent.ActionId));
+                CountTransition(e);
+                continue;
+            }
             CountTransition(e);
             var definition = e.Catalog.Actions.Get(action.Intent.ActionId);
+            // 讨伐迁地判定须在准入前取值：TryStartAction 准入重锚后远征已被重建或清空。
+            var staleExpedition = definition.ExecutionKind == ActionExecutionKind.CombatEncounter
+                && action.Expedition is { } expedition
+                && !CombatActionRules.ExpeditionServedHere(e.Player, definition, expedition, e.Catalog);
             if (!TryStartAction(e.Player, action, definition, e.Catalog, e.WorkingWallet, e.Cursor, e.Core)) continue;
             if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
             {
                 e.PreparedAction = action;
                 e.Definition = definition;
+                var playerCombat = e.Entity.GetComponent<PlayerCombatComponent>()!;
+                // 模拟内挂起的旧地点战斗实体随迁地直接释放，由新地点搜寻重新入场。
+                if (staleExpedition && playerCombat.EncounterEntityId != 0)
+                {
+                    e.Entity.World.WorldMain.GetComponent<EcsClockComponent>()!.ReleaseCombatBattle!(e.Entity);
+                    e.Battle = null;
+                }
                 CombatActionRules.InitializeCombatAction(e.Player, action, definition, e.Catalog, e.Cursor, e.Core);
                 if (action.Expedition!.Phase == CombatExpeditionPhase.Combat)
                 {
-                    var playerCombat = e.Entity.GetComponent<PlayerCombatComponent>()!;
                     e.Battle = playerCombat.EncounterEntityId == 0 ? null
                         : e.Entity.World.GetEntity(playerCombat.EncounterEntityId)?.GetComponent<CombatEncounterComponent>();
                     if (e.Battle is null)
@@ -121,18 +146,30 @@ internal static partial class ActionExecutionRules
                         var restored = CombatActionRules.RestoreCombatBattle(e.Player, action, encounter, e.Catalog);
                         e.Battle = AttachCombat(e, restored, e.Cursor.AddSeconds(-restored.ElapsedSeconds));
                     }
-                    var revision = PlayerAttributeResolver.InputRevision(e.Player.Progression, e.Player.World, e.Player.Buffs, e.Player.Loadout);
-                    if (e.Catalog.BaseAttributes is null || revision != e.Battle.AttributeRevision)
+                    if (action.PartySession?.Spec is { } sessionSpec)
                     {
-                        e.Battle.State.Player.RefreshStats(e.Player.ResolveAttributes(e.Catalog).ToCombatant(e.Player.Progression.CombatExperience));
-                        CombatTriggerSurface.Sync(e.Entity, e.Battle.State.Player);
-                        e.Battle.AttributeRevision = revision;
+                        // 组队会话面板开打即冻结：不随属性输入修订刷新，战外 Buff 视图取成员定格。
+                        var selfMemberBuffs = sessionSpec.Members[e.Battle.State.SelfIndex].ExternalBuffs;
+                        e.Battle.State.Player.ExternalBuffStacks = buffId
+                            => CombatActionRules.SumFrozenBuffStacks(selfMemberBuffs, buffId);
+                    }
+                    else
+                    {
+                        var revision = PlayerAttributeResolver.InputRevision(e.Player.Progression, e.Player.World, e.Player.Buffs, e.Player.Loadout);
+                        if (e.Catalog.BaseAttributes is null || revision != e.Battle.AttributeRevision)
+                        {
+                            e.Battle.State.Player.RefreshStats(e.Player.ResolveAttributes(e.Catalog).ToCombatant(e.Player.Progression.CombatExperience));
+                            CombatTriggerSurface.Sync(e.Entity, e.Battle.State.Player);
+                            e.Battle.AttributeRevision = revision;
+                        }
                     }
                     e.BattleFrom = e.Battle.State.ElapsedSeconds;
                     e.BattleTarget = e.BattleFrom + e.RemainingSeconds;
                     e.BattleEvents.Clear();
                     e.BattleDeaths.Clear();
                     e.BattleRespawns.Clear();
+                    e.BattleAllyDeaths.Clear();
+                    e.BattleAllyRespawns.Clear();
                     e.CombatStepDue = false;
                 }
                 return;

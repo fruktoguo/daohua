@@ -87,6 +87,17 @@ internal static partial class ActionExecutionRules
                 step = Math.Min(step, untilStaged);
             }
         }
+        // 组队会话权威散场时刻并入自然边界：模拟窗口正好切在散场点，伪行动移除由行动准入在下一拍执行。
+        if (player.Actions.Count > 0 && player.Actions[0].PartySession is { } session
+            && double.IsFinite(session.EndsAtUnixSeconds))
+        {
+            var untilSessionEnd = session.EndsAtUnixSeconds - nowUnix;
+            if (untilSessionEnd > 1e-9)
+            {
+                naturalStep = Math.Min(naturalStep, untilSessionEnd);
+                step = Math.Min(step, untilSessionEnd);
+            }
+        }
         return new(step, naturalStep <= step + 1e-9, changed);
     }
 
@@ -138,8 +149,14 @@ internal static partial class ActionExecutionRules
         r.MaxManapoints = attributes.MaxManapoints;
         c.AttackPower = attributes.PhysicalAttack;
         c.Defense = attributes.Armor;
-        r.Hitpoints = Math.Min(r.Hitpoints, r.MaxHitpoints);
-        r.Manapoints = Math.Min(r.Manapoints, r.MaxManapoints);
+        // 组队会话期间资源钳制上限取冻结面板：实时换装漂移不进入共享战斗的单位输入。
+        var sessionMember = player.Actions.Count > 0
+            && player.Actions[0].PartySession?.Spec is { } sessionSpec
+            && player.Actions[0].Expedition is { SelfIndex: var selfIndex }
+            && selfIndex >= 0 && selfIndex < sessionSpec.Members.Count
+                ? sessionSpec.Members[selfIndex] : null;
+        r.Hitpoints = Math.Min(r.Hitpoints, sessionMember?.Stats.MaxHitpoints ?? r.MaxHitpoints);
+        r.Manapoints = Math.Min(r.Manapoints, sessionMember?.Stats.MaxManapoints ?? r.MaxManapoints);
         return attributes;
     }
 
@@ -149,9 +166,30 @@ internal static partial class ActionExecutionRules
 
     internal static bool AdvanceIdleSkillResources(IPlayerResourceContext player, double stepSeconds)
     {
-        if (player.Actions.Count > 0 && player.Actions[0].Expedition?.Phase == CombatExpeditionPhase.Combat) return false;
+        var expedition = player.Actions.Count > 0 ? player.Actions[0].Expedition : null;
+        if (expedition?.Phase == CombatExpeditionPhase.Combat) return false;
+        var changed = false;
+        // 组队会话：盟友镜像的跨战技能冷却与本机同口径折算（各成员模拟消费同一冻结起值 → 位级一致）。
+        if (expedition?.Allies is { Count: > 0 } allies)
+        {
+            var updated = new ExpeditionAllyState[allies.Count];
+            for (var i = 0; i < allies.Count; i++)
+            {
+                var ally = allies[i];
+                var allySkills = ally.CombatSkills;
+                if (allySkills is { } nonEmpty && !nonEmpty.IsEmpty
+                    && (nonEmpty.Cooldowns.Count > 0 || nonEmpty.CastingAbilityId is not null))
+                {
+                    updated[i] = ally with { CombatSkills = nonEmpty.AdvanceIdle(stepSeconds) };
+                    changed = true;
+                }
+                else updated[i] = ally;
+            }
+            if (changed && player.Actions.Count > 0)
+                player.Actions[0].Expedition = expedition! with { Allies = updated };
+        }
         var skills = player.Combat.Skills;
-        if (skills.Cooldowns.Count == 0 && skills.CastingAbilityId is null) return false;
+        if (skills.Cooldowns.Count == 0 && skills.CastingAbilityId is null) return changed;
         player.Combat.Skills = skills.AdvanceIdle(stepSeconds);
         player.MarkDirty(PlayerSectionKind.Combat);
         return true;
@@ -163,12 +201,33 @@ internal static partial class ActionExecutionRules
         player.Resources.RegenCarrySeconds += stepSeconds;
         if (player.Resources.RegenCarrySeconds < 5 - 1e-9) return false;
         player.Resources.RegenCarrySeconds = 0;
-        var attributes = ApplyResourceAttributes(player, gameData);
+        var partySpec = player.Actions.Count > 0 ? player.Actions[0].PartySession?.Spec : null;
+        var partySelf = partySpec is not null
+            && player.Actions[0].Expedition is { SelfIndex: var si } && si >= 0 && si < partySpec.Members.Count
+            ? partySpec.Members[si] : null;
+        // 组队会话期间本机成员回复率取开打冻结面板（各成员模拟消费同一数值 → 位级一致）；
+        // 单人路径维持实时属性口径。
+        double maxHitpoints, maxManapoints, hpRegen, mpRegen;
+        if (partySelf is not null)
+        {
+            maxHitpoints = partySelf.Stats.MaxHitpoints;
+            maxManapoints = partySelf.Stats.MaxManapoints;
+            hpRegen = partySelf.Stats.HpRegen;
+            mpRegen = partySelf.Stats.MpRegen;
+        }
+        else
+        {
+            var attributes = ApplyResourceAttributes(player, gameData);
+            maxHitpoints = attributes.MaxHitpoints;
+            maxManapoints = attributes.MaxManapoints;
+            hpRegen = attributes.HpRegen;
+            mpRegen = attributes.MpRegen;
+        }
         var hitpoints = player.Resources.Hitpoints;
         var manapoints = player.Resources.Manapoints;
         if (player.Resources.Hitpoints > 0)
-            player.Resources.Hitpoints = Math.Min(attributes.MaxHitpoints, player.Resources.Hitpoints + attributes.HpRegen);
-        player.Resources.Manapoints = Math.Min(attributes.MaxManapoints, player.Resources.Manapoints + attributes.MpRegen);
+            player.Resources.Hitpoints = Math.Min(maxHitpoints, player.Resources.Hitpoints + hpRegen);
+        player.Resources.Manapoints = Math.Min(maxManapoints, player.Resources.Manapoints + mpRegen);
         if (player.Actions.Count > 0 && player.Actions[0].Expedition is { } expedition
             && (expedition.PlayerHitpoints != player.Resources.Hitpoints || expedition.PlayerManapoints != player.Resources.Manapoints))
             player.Actions[0].Expedition = expedition with
@@ -176,7 +235,32 @@ internal static partial class ActionExecutionRules
                 PlayerHitpoints = player.Resources.Hitpoints,
                 PlayerManapoints = player.Resources.Manapoints
             };
-        if (player.Resources.Hitpoints == hitpoints && player.Resources.Manapoints == manapoints) return false;
+        // 盟友镜像回复：只在非战斗相位按冻结面板结算（战斗相位由战斗内状态权威承载）。
+        var anyAllyChange = false;
+        if (partySpec is not null && player.Actions[0].Expedition is { Phase: not CombatExpeditionPhase.Combat } regenExpedition
+            && regenExpedition.Allies is { Count: > 0 } regenAllies)
+        {
+            var updated = new ExpeditionAllyState[regenAllies.Count];
+            for (var i = 0; i < regenAllies.Count; i++)
+            {
+                var ally = regenAllies[i];
+                if (ally.MemberIndex >= partySpec.Members.Count) { updated[i] = ally; continue; }
+                var memberStats = partySpec.Members[ally.MemberIndex].Stats;
+                var allyHp = ally.State.Hitpoints > 0
+                    ? Math.Min(memberStats.MaxHitpoints, ally.State.Hitpoints + memberStats.HpRegen)
+                    : ally.State.Hitpoints;
+                var allyMp = Math.Min(memberStats.MaxManapoints, ally.State.Manapoints + memberStats.MpRegen);
+                if (allyHp != ally.State.Hitpoints || allyMp != ally.State.Manapoints)
+                {
+                    updated[i] = ally with { State = ally.State with { Hitpoints = allyHp, Manapoints = allyMp } };
+                    anyAllyChange = true;
+                }
+                else updated[i] = ally;
+            }
+            if (anyAllyChange)
+                player.Actions[0].Expedition = player.Actions[0].Expedition! with { Allies = updated };
+        }
+        if (player.Resources.Hitpoints == hitpoints && player.Resources.Manapoints == manapoints) return anyAllyChange;
         player.MarkDirty(PlayerSectionKind.Combat);
         return true;
     }
@@ -201,6 +285,9 @@ internal static partial class ActionExecutionRules
         LiveCombatBattle? live = null)
     {
         if (player.Actions.Count == 0 || player.Resources.Hitpoints <= 0) return [];
+        // 组队会话期间不激活即时消耗品：其他成员的钱包/槽位不可见，共享剧本只消费开打定格画面
+        // （否则本机雷击符/药品在别的成员模拟里不存在 → 战斗状态分歧）。
+        if (player.Actions[0].PartySession is not null) return [];
         // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与 MatchesActionType 固定税。
         var slots = player.Settings.AutoUseSlots;
         var anyEnabled = false;
@@ -262,11 +349,13 @@ internal static partial class ActionExecutionRules
                 if (evalTarget is null || player.Resources.Manapoints < manaCost - 1e-9) continue;
                 var targetIndex = evalEnemies!.IndexOf(evalTarget);
                 if (targetIndex < 0) continue;
+                // 打击威力 = (灵力倍率×灵力上限 + 术攻倍率×术攻) ×(1+技能增幅点数/100)，
+                // 增幅并入原始威力乘位，与技能命中口径一致（总纲 §7.7.1）。
                 var strikeStats = evalCaster.Stats with
                 {
-                    AttackPower = strike.ManaDamageRatio * evalCaster.Stats.MaxManapoints
-                        + strike.SpellAttackRatio * evalCaster.Stats.SpellAttack,
-                    BasicAttackRatio = 1,
+                    AttackPower = (strike.ManaDamageRatio * evalCaster.Stats.MaxManapoints
+                        + strike.SpellAttackRatio * evalCaster.Stats.SpellAttack)
+                        * PercentValue.Multiplier(evalCaster.Stats.SkillBonusPoints, PercentCurveMode.Linear),
                     DamageKind = CombatDamageKind.Spell,
                     Element = strike.Element
                 };
@@ -429,25 +518,37 @@ internal static partial class ActionExecutionRules
     /// 把配表 buffs 注入 ActiveBuff（+∞ 过期随槽位驻留，随 5 秒回复边界生效）；
     /// 条件失效时该物品注入的 Buff 立即清除。durable 不消耗物品、不耗竭时长。
     /// </summary>
+    /// <summary>durable 注入 buff 的唯一标记：永不自然过期（注入写 MaxValue 时刻，Strict JSON 下 +∞ 不可落库）。</summary>
+    private static bool IsDurableManagedBuff(ActiveBuff buff)
+        => !double.IsFinite(buff.ExpiresAtUnixSeconds) || buff.ExpiresAtUnixSeconds >= double.MaxValue;
+
     internal static bool SyncDurableConsumableBuffs(IPlayerResourceContext player, GameDataCatalog gameData,
         AssetWallet wallet)
     {
         var slots = player.Settings.AutoUseSlots;
         var activeBuffs = player.Buffs.Active;
+        // 无 durable 槽位且无 durable 注入残留时整段跳过：避免每资源边界分配期望清单。
+        var managed = false;
+        for (var i = 0; i < activeBuffs.Count; i++)
+            if (IsDurableManagedBuff(activeBuffs[i])) { managed = true; break; }
+        for (var i = 0; !managed && i < slots.Count; i++)
+        {
+            var text = slots[i].ItemId;
+            if (text is not null && new ItemId(text) is { IsValid: true } probe
+                && gameData.Items.TryGetValue(probe, out var probeItem)
+                && probeItem.Consumable is { Durable: true }) managed = true;
+        }
+        if (!managed) return false;
         var changed = false;
-        if (slots.Count == 0) return false;
         var kind = player.Actions.Count > 0
             ? gameData.Actions.Get(player.Actions[0].Intent.ActionId).Kind
             : (ActionKind?)null;
         var desired = new List<ActiveBuff>();
-        var durableItemIds = new List<string>();
         for (var i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
             if (slot.ItemId is not { } text || new ItemId(text) is not { IsValid: true } id
                 || !gameData.Items.TryGetValue(id, out var item) || item.Consumable is not { Durable: true }) continue;
-            if (!durableItemIds.Contains(item.Id.Value)) durableItemIds.Add(item.Id.Value);
-            // 配表缺 consumable.buffs 时无注入目标；移除仍按 SourceItemId 兜底。
             if (kind is not { } k || !slot.Enabled
                 || !item.Consumable.UsableInActionKinds.Contains(k)
                 || !MatchesActionType(slot.ActionType, k)
@@ -466,15 +567,15 @@ internal static partial class ActionExecutionRules
                     Read(buff, "hpRegenPostRatio"), Read(buff, "mpRegenPostRatio")));
             }
         }
-        if (durableItemIds.Count == 0) return false;
-        // 先移除"条件已失效"的注入：SourceItemId 属于 durable 物品但不在期望集合内。
+        // durable 注入按标记全量接管：凡不在期望集合内的永不自然过期 buff 一律清除，
+        // 覆盖撤槽、配表去 durable、物品失效等 SourceItemId 已不可追的全部残留路径。
         for (var i = activeBuffs.Count - 1; i >= 0; i--)
         {
             var current = activeBuffs[i];
-            if (current.SourceItemId is not { } source || !durableItemIds.Contains(source)) continue;
+            if (!IsDurableManagedBuff(current)) continue;
             var kept = false;
             for (var j = 0; j < desired.Count; j++)
-                if (desired[j].BuffId == current.BuffId && desired[j].SourceItemId == source) { kept = true; break; }
+                if (desired[j].BuffId == current.BuffId && desired[j].SourceItemId == current.SourceItemId) { kept = true; break; }
             if (!kept)
             {
                 activeBuffs.RemoveAt(i);

@@ -91,11 +91,13 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             var same = world.NodeBuildingProjectionVersion == projection.Version
                 && string.Equals(current.NodeBuildingNodeId, projection.NodeId, StringComparison.Ordinal)
                 && current.NodeBuildingEffects == projection.Effects
-                && current.NodeBuildings.SequenceEqual(projection.Buildings);
+                && current.NodeBuildings.SequenceEqual(projection.Buildings)
+                && current.NodeBuildingUsages.SequenceEqual(projection.Usages);
             if (same) return false;
             current.NodeBuildings = projection.Buildings.ToList();
             current.NodeBuildingEffects = projection.Effects;
             current.NodeBuildingNodeId = projection.NodeId;
+            current.NodeBuildingUsages = projection.Usages.ToList();
             world.NodeBuildingProjectionVersion = projection.Version;
             // 节点实体侧镜像：MapNodeEntity.NodeBuildingComponent 承载公共建筑投影，
             // 供节点实体查询/驻留统计使用；权威状态仍在宿主侧 NodeBuildingRegistry。
@@ -450,12 +452,21 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         {
             _encounters.TryRemove(encounterId, out _);
             if (World.GetEntity(encounterId) is not { } encounterEntity) continue;
-            var enemyIds = encounterEntity.GetComponent<CombatEncounterComponent>()?.EnemyEntityIds ?? [];
+            var encounterComponent = encounterEntity.GetComponent<CombatEncounterComponent>();
+            var enemyIds = encounterComponent?.EnemyEntityIds ?? [];
             foreach (var enemyId in enemyIds)
                 if (World.GetEntity(enemyId) is { } enemyEntity)
                 {
                     YuoWorld.DestroyEntityForce(enemyEntity);
                     RuntimeInstrumentation.Count("lifecycle.entity_destroyed.monster");
+                }
+            // 组队盟友实体随遭遇一并销毁（纯战斗容器，非真实玩家实体）。
+            var allyIds = encounterComponent?.AllyEntityIds ?? [];
+            foreach (var allyId in allyIds)
+                if (World.GetEntity(allyId) is { } allyEntity)
+                {
+                    YuoWorld.DestroyEntityForce(allyEntity);
+                    RuntimeInstrumentation.Count("lifecycle.entity_destroyed.ally");
                 }
             YuoWorld.DestroyEntityForce(encounterEntity);
             RuntimeInstrumentation.Count("lifecycle.entity_destroyed.encounter");
@@ -540,9 +551,31 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 if (executions.Values.All(EcsActionSession.IsComplete)) break;
                 // 真实系统分别推进自己的自然边界；UTC 只决定执行顺序，不再回减成战斗预算。
                 var next = executions.Values.Where(e => !EcsActionSession.IsComplete(e)).Min(EcsActionSession.NextBoundaryAt);
-                if (next < cursor) throw new DomainException(DomainErrorCode.InvariantViolation, "ECS 自然边界时钟发生倒退。");
+                if (next < cursor)
+                {
+                    // 不变量违例必须携带现场证据：外层游标与各会话的窗口/预算/战斗段状态，
+                    // 否则离线补算的倒退无法离线归因。
+                    var diag = string.Join(";", executions.Select(pair =>
+                    {
+                        var execution = pair.Value;
+                        string boundary;
+                        try { boundary = EcsActionSession.NextBoundaryAt(execution).ToString("o"); }
+                        catch (Exception error) { boundary = $"error:{error.Message}"; }
+                        return $"{pair.Key:N}:cursor={EcsActionSession.Current(execution):o},next={boundary}," +
+                            $"window=[{execution.WindowStart:o}..{execution.WindowEnd:o}]," +
+                            $"elapsed={execution.WindowElapsedSeconds:0.########},remaining={execution.RemainingSeconds:0.########}," +
+                            $"open={execution.WindowOpen},waiting={execution.Waiting},prepared={execution.PreparedAction is not null}," +
+                            $"kind={execution.Definition?.ExecutionKind.ToString() ?? "-"},battle={execution.Battle is not null}," +
+                            $"battleFrom={execution.BattleFrom:0.###},battleTarget={execution.BattleTarget:0.###}," +
+                            $"frame={execution.FrameTarget:o},target={execution.Target:o},compute={execution.ComputeTarget:o}";
+                    }));
+                    throw new DomainException(DomainErrorCode.InvariantViolation,
+                        $"ECS 自然边界时钟发生倒退。outer={cursor:o} [{diag}]");
+                }
                 await Tick(next, false).ConfigureAwait(false);
-                cursor = next;
+                // 战斗段边界是预算承诺（窗口末），战斗提前终局时会话实际只推进到胜利时刻；
+                // 外层游标必须跟随会话真实游标，否则下一轮合法边界会被误判为时钟倒退。
+                cursor = executions.Values.Min(EcsActionSession.Current);
             }
             }
             using (RuntimeInstrumentation.Measure("ecs.mailbox.post", scenario))
@@ -762,12 +795,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var loadout = player.GetComponent<PlayerLoadoutComponent>()?.Loadout;
         var playerSkills = loadout is null
             ? []
-            : loadout.AbilitySlots
-                .Where(slot => slot.AbilityId is not null && GameData.Abilities.TryGetValue(slot.AbilityId, out _))
-                .Select(slot => new SkillSlot(
-                    GameData.Abilities[slot.AbilityId!].Clone(),
-                    slot.Level,
-                    slot.Triggers.Count == 0 ? null : slot.Triggers.Select(trigger => trigger.Clone()).ToArray()))
+            : SkillSlot.FromAbilitySlots(loadout.AbilitySlots, GameData.Abilities, loadout.AbilityTriggers)
                 .ToArray();
         var enemyDefinitions = EncounterWaveSelector.Select(definition, GameData.CombatMonsters, seed, 1).ToArray();
         if (enemyDefinitions.Length == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇没有可用怪物。");
@@ -819,7 +847,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         if (queue is { Actions.Count: > 0 })
         {
             // CreateEncounter 是显式进入战斗的调试/服务入口，已经完成搜寻，
-            // 因此直接记录 Combat 阶段，不能被行动准备系统重新覆盖为 InitialSearch。
+            // 因此直接记录 Combat 阶段并钉死遭遇（IsPinned），不能被行动准备系统
+            // 重新覆盖为 InitialSearch，也不参与节点池迁地重锚判定。
             queue.Actions[0].Expedition = new CombatExpeditionState(
                 encounterId,
                 CombatExpeditionPhase.Combat,
@@ -845,7 +874,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                         : null,
                     0)).ToArray())
             {
-                PlayerState = CombatEncounterState.Snapshot(state.Player)
+                PlayerState = CombatEncounterState.Snapshot(state.Player),
+                IsPinned = true
             };
         }
         _encounters[encounterEntity.ID] = player.ID;
@@ -888,6 +918,25 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             enemyIds.Add(enemy.ID);
         }
         encounter.EnemyEntityIds = enemyIds;
+        // 组队会话的非本机盟友挂接为纯战斗实体：触发器派发需要实体句柄（EntityId=-1 会不变量失败），
+        // 盟友实体不属于任何真实玩家——只是本机模拟里的友方单位容器。
+        var allyIds = new List<long>(Math.Max(0, state.PlayerAllies.Count - 1));
+        for (var i = 0; i < state.PlayerAllies.Count; i++)
+        {
+            if (i == state.SelfIndex) continue;
+            var allyState = state.PlayerAllies[i];
+            var ally = new YuoEntity(World);
+            RuntimeInstrumentation.Count("lifecycle.entity_created.ally");
+            ally.EntityName = $"ally:{i}:{state.Seed}";
+            var allyCombatant = ally.AddComponent<CombatantComponent>();
+            allyCombatant.State = allyState;
+            allyCombatant.IsPlayer = false;
+            ally.AddComponent<SkillStateComponent>();
+            ally.AddComponent<BuffComponent>();
+            CombatTriggerSurface.Attach(ally, allyState);
+            allyIds.Add(ally.ID);
+        }
+        encounter.AllyEntityIds = allyIds;
         var playerCombatant = player.GetOrAddComponent<CombatantComponent>();
         playerCombatant.State = state.Player;
         playerCombatant.IsPlayer = true;
@@ -965,12 +1014,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var settings = entity.GetComponent<PlayerSettingsComponent>()!;
         var duel = entity.GetComponent<PlayerDuelComponent>()!;
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
-        var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel)).ToArray();
+        var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel, a.PartySession)).ToArray();
         var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.StateVersion, identity.GameDataFingerprint,
             new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience),
-            new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId),
+            new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId, world.World.NodeBuildingUsages),
             new PlayerCombatStateDocument(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints, combat.AttackPower, combat.Defense, resources.Resources.RegenCarrySeconds) { Skills = combat.Combat.Skills },
-            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds, settings.Settings.QueuePaused), actions, loadout.Loadout.Export(), duel.Document,
+            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds, settings.Settings.QueuePaused, settings.Settings.TutorialStep, settings.Settings.TutorialRewardsStep), actions, loadout.Loadout.Export(), duel.Document,
             loadout.Loadout.EquippedItemIds.ToArray());
         var inventory = entity.GetComponent<PlayerInventoryComponent>()?.Items.ToDictionary(p => p.Key, p => p.Value) ?? new Dictionary<AssetKey, double>();
         return new EcsPlayerSnapshot(identity.PlayerId, entity.ID, state, inventory);
@@ -1004,13 +1053,15 @@ public sealed record EcsPlayerSnapshot(Guid PlayerId, long EntityId, PlayerAggre
 /// <summary>Server.Clean 与 ECS 之间的纯数据节点建筑投影，避免 Ecs 项目反向引用宿主程序集。</summary>
 /// <param name="Version">宿主侧投影版本号；相同版本且内容一致时跳过写入。</param>
 /// <param name="Buildings">节点公共建筑列表。</param>
-/// <param name="Effects">建筑效果集合（属性乘区输入）。</param>
+/// <param name="Effects">建筑效果集合（属性乘区输入，已按拥挤人数衰减）。</param>
 /// <param name="NodeId">投影所属节点 ID；null 表示无驻留节点。</param>
+/// <param name="Usages">各建筑拥挤使用快照（使用中人数/承载上限/效率系数），供建筑 tab 展示。</param>
 public sealed record EcsNodeBuildingProjection(
     long Version,
     IReadOnlyList<NodeBuildingState> Buildings,
     BuildingEffectSet Effects,
-    string? NodeId);
+    string? NodeId,
+    IReadOnlyList<NodeBuildingUsage> Usages);
 
 internal static class CombatantStatsExtensions
 {

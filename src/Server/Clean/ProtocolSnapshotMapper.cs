@@ -328,12 +328,12 @@ public static class ProtocolSnapshotMapper
         a.Armor, a.MagicResistance,
         a.Accuracy, a.Evasion,
         critical = a.Critical, criticalResistance = a.CriticalAvoidance,
-        criticalMultiplier = a.CriticalMultiplier,
+        criticalDamagePoints = a.CriticalDamagePoints,
         breakPower = a.BreakPower, parryResolve = a.Parry,
         hpRegenPerFiveSeconds = a.HpRegen, mpRegenPerFiveSeconds = a.MpRegen,
-        attackIntervalMilliseconds = a.AttackIntervalSeconds * 1000,
-        basicAttackRatio = a.BasicAttackRatio, a.SkillIntensity,
-        a.CooldownFactor, a.CastTimeFactor,
+        attackIntervalMilliseconds = a.AttackIntervalSeconds * 1000
+            * PercentValue.Multiplier(a.AttackSpeedPoints, PercentCurveMode.NonLinear)
+            * PercentValue.Multiplier(a.ActionSpeedPoints, PercentCurveMode.NonLinear),
         a.PhysicalDamageBonusPoints, a.SpellDamageBonusPoints,
         a.MetalDamageBonusPoints, a.WoodDamageBonusPoints, a.WaterDamageBonusPoints,
         a.FireDamageBonusPoints, a.EarthDamageBonusPoints,
@@ -356,12 +356,12 @@ public static class ProtocolSnapshotMapper
         armor = s.Defense, s.MagicResistance,
         s.Accuracy, s.Evasion,
         critical = s.Critical, criticalResistance = s.CriticalResistance,
-        criticalMultiplier = s.CriticalMultiplier,
+        criticalDamagePoints = s.CriticalDamagePoints,
         s.BreakPower, s.ParryResolve,
         hpRegenPerFiveSeconds = s.HpRegen, mpRegenPerFiveSeconds = s.MpRegen,
-        attackIntervalMilliseconds = s.AttackIntervalSeconds * 1000,
-        s.BasicAttackRatio, s.SkillIntensity,
-        s.CooldownFactor, s.CastTimeFactor,
+        attackIntervalMilliseconds = s.AttackIntervalSeconds * 1000
+            * PercentValue.Multiplier(s.AttackSpeedPoints, PercentCurveMode.NonLinear)
+            * PercentValue.Multiplier(s.ActionSpeedPoints, PercentCurveMode.NonLinear),
         s.PhysicalDamageBonusPoints, s.SpellDamageBonusPoints,
         s.MetalDamageBonusPoints, s.WoodDamageBonusPoints, s.WaterDamageBonusPoints,
         s.FireDamageBonusPoints, s.EarthDamageBonusPoints,
@@ -393,13 +393,13 @@ public static class ProtocolSnapshotMapper
                 consumableCooldowns[index] = Math.Max(0, (slot.CooldownUntilUnixSeconds - nowUnix) * 1000);
             }
         }
-        // 吟唱总时长 = 配表吟唱毫秒 × 施法时间乘区，仅在吟唱中下发；前端行动条不得回读配表推算。
+        // 吟唱总时长 = 配表吟唱毫秒 ÷(1+行动速度点数/100)，仅在吟唱中下发；前端行动条不得回读配表推算。
         double? castTotalMilliseconds = null;
         if (state.Combat.Skills.CastingAbilityId is { } castingId
             && catalog.Abilities.TryGetValue(castingId, out var castingAbility)
             && castingAbility.TryGetProperty("castMilliseconds", out var castProperty)
             && castProperty.TryGetDouble(out var castMilliseconds))
-            castTotalMilliseconds = castMilliseconds * a.CastTimeFactor
+            castTotalMilliseconds = castMilliseconds
                 * PercentValue.Multiplier(a.ActionSpeedPoints, PercentCurveMode.NonLinear);
         return new
         {
@@ -472,7 +472,14 @@ public static class ProtocolSnapshotMapper
                 remainingRepeats = action.RemainingRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, gameData, inspectedEnemyIndex, onAttributesProjected),
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.PartySession?.Spec, gameData, inspectedEnemyIndex, onAttributesProjected),
+                // 组队讨伐会话伪行动标记：会话由队伍统一调度，散场时刻为社交仲裁权威值（+∞ 进行中 → null）。
+                partySession = action.PartySession is { } sessionBinding ? new
+                {
+                    sessionId = sessionBinding.Spec.SessionId,
+                    endsAtUnixSeconds = double.IsPositiveInfinity(sessionBinding.EndsAtUnixSeconds)
+                        ? (double?)null : sessionBinding.EndsAtUnixSeconds
+                } : null,
                 travelDestinationNodeId = action.Travel?.TargetNodeId ?? action.Intent.TargetNodeId,
                 travelTotalDistance = action.Travel is null || gameData is null
                     ? (double?)null
@@ -512,7 +519,7 @@ public static class ProtocolSnapshotMapper
     /// 敌方条目实时字段（血蓝/出手/威胁）常驻下发；属性面板为按需投影——仅当
     /// 会话观察目标（UnitInspect）命中该下标时才携带 attributes，未点开的怪不占快照带宽。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, GameDataCatalog? gameData, int? inspectedEnemyIndex, Action? onAttributesProjected = null) => new
+    private static object ToExpeditionDto(CombatExpeditionState expedition, PartyExpeditionSpec? spec, GameDataCatalog? gameData, int? inspectedEnemyIndex, Action? onAttributesProjected = null) => new
     {
         expedition.EncounterId,
         phase = MapExpeditionPhase(expedition.Phase),
@@ -529,8 +536,85 @@ public static class ProtocolSnapshotMapper
             && gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
                 ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
         enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected)).ToArray(),
-        duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected)
+        duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
+        // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
+        selfIndex = spec is null ? (int?)null : expedition.SelfIndex,
+        allies = spec is null ? null : ToExpeditionAlliesDto(expedition, spec)
     };
+
+    /// <summary>
+    /// 盟友阵列投影：按会话规格成员序铺满；本机位由远征标量镜像+PlayerState 快照合成，
+    /// 其余位取盟友镜像。血蓝上限取自冻结面板（共享剧本唯一公共输入）。
+    /// </summary>
+    private static object[] ToExpeditionAlliesDto(CombatExpeditionState expedition, PartyExpeditionSpec spec)
+    {
+        var result = new object[spec.Members.Count];
+        for (var i = 0; i < spec.Members.Count; i++)
+        {
+            var member = spec.Members[i];
+            CombatantSnapshot state;
+            string? pendingAbilityId;
+            double pendingDuration;
+            if (i == expedition.SelfIndex)
+            {
+                state = expedition.PlayerState ?? new CombatantSnapshot(
+                    expedition.PlayerHitpoints, expedition.PlayerManapoints,
+                    expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat,
+                    RespawnAtSeconds: expedition.PlayerRespawnAtSeconds);
+                pendingAbilityId = PendingAbilityIdOf(member, state);
+                pendingDuration = PendingDurationOf(member, state);
+            }
+            else
+            {
+                var ally = FindAllyMirror(expedition.Allies, i);
+                // 镜像缺失时以开打定格初值兜底展示（战斗相位内盟友镜像恒在，搜索相位口径一致）。
+                state = ally?.State ?? new CombatantSnapshot(member.InitialHitpoints, member.InitialManapoints, 0, 0, 0);
+                pendingAbilityId = ally?.PendingAbilityId;
+                pendingDuration = ally?.PendingActionDurationSeconds ?? 0;
+            }
+            result[i] = new
+            {
+                memberIndex = i,
+                playerId = member.PlayerId,
+                member.DisplayName,
+                state.Hitpoints, state.Manapoints,
+                maxHitpoints = member.Stats.MaxHitpoints,
+                maxManapoints = member.Stats.MaxManapoints,
+                state.NextAttackAtSeconds, state.AttackCount, state.Threat,
+                pendingAbilityId, pendingActionDurationSeconds = pendingDuration,
+                respawnAtSeconds = state.RespawnAtSeconds
+            };
+        }
+        return result;
+
+        static ExpeditionAllyState? FindAllyMirror(IReadOnlyList<ExpeditionAllyState>? allies, int memberIndex)
+        {
+            if (allies is null) return null;
+            for (var i = 0; i < allies.Count; i++)
+                if (allies[i].MemberIndex == memberIndex) return allies[i];
+            return null;
+        }
+
+        /// <summary>本机位吟唱技能 ID：与远征导出同口径——挂起技能槽位反查冻结面板槽位能力。</summary>
+        static string? PendingAbilityIdOf(PartyMemberSnapshot member, CombatantSnapshot state)
+            => state.PendingSkillIndex >= 0 && state.PendingSkillIndex < member.Skills.Count
+                && member.Skills[state.PendingSkillIndex].Ability.TryGetProperty("id", out var idElement)
+                ? idElement.GetString()
+                : null;
+
+        /// <summary>本机位动作时长：吟唱按配表毫秒×行动速度乘率，普攻按间隔×攻速×行动速度（与引擎导出公式一致）。</summary>
+        static double PendingDurationOf(PartyMemberSnapshot member, CombatantSnapshot state)
+        {
+            var speed = PercentValue.Multiplier(member.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+            if (state.PendingSkillIndex >= 0 && state.PendingSkillIndex < member.Skills.Count
+                && member.Skills[state.PendingSkillIndex].Ability is { } ability
+                && ability.TryGetProperty("castMilliseconds", out var castElement)
+                && castElement.TryGetDouble(out var castMs) && castMs > 0)
+                return castMs / 1000 * speed;
+            return member.Stats.AttackIntervalSeconds
+                * PercentValue.Multiplier(member.Stats.AttackSpeedPoints, PercentCurveMode.NonLinear) * speed;
+        }
+    }
 
     private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData, bool includeAttributes, Action? onAttributesProjected = null)
     {
@@ -724,6 +808,9 @@ public static class ProtocolSnapshotMapper
         var x = onEdge ? world.X : projection?.X ?? world.X;
         var y = onEdge ? world.Y : projection?.Y ?? world.Y;
         var nowUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d;
+        // 拥挤使用快照按 buildingId 建索引：与建筑投影同节拍下发，缺失条目按零拥挤展示。
+        var usageIndex = world.NodeBuildingUsages?.ToDictionary(
+            usage => usage.BuildingId, StringComparer.Ordinal);
         return new
         {
             mapId = projection?.MapId ?? "map.qingyun-mountains",
@@ -754,7 +841,7 @@ public static class ProtocolSnapshotMapper
             nodeBuildings = onEdge
                 ? Array.Empty<object>()
                 : (world.NodeBuildings ?? [])
-                    .Select(entry => ToNodeBuilding(gameData, entry, nowUnixSeconds))
+                    .Select(entry => ToNodeBuilding(gameData, entry, nowUnixSeconds, usageIndex))
                     .Where(entry => entry is not null)
                     .ToArray(),
             minBudget = projection?.MinBudget ?? 0.0,
@@ -771,7 +858,8 @@ public static class ProtocolSnapshotMapper
     /// 把节点公共建筑记录投影为附近面板消费的建筑 DTO：
     /// 含等级、建造中目标等级、双进度（材料/时间）与逐项材料需求-已交明细；配表缺失的定义直接丢弃。
     /// </summary>
-    private static object? ToNodeBuilding(GameDataCatalog? gameData, Domain.World.NodeBuildingState state, double nowUnixSeconds)
+    private static object? ToNodeBuilding(GameDataCatalog? gameData, Domain.World.NodeBuildingState state,
+        double nowUnixSeconds, IReadOnlyDictionary<string, Domain.World.NodeBuildingUsage>? usageIndex)
     {
         if (gameData is null || !gameData.Buildings.TryGetValue(state.BuildingId, out var definition)) return null;
         var required = state.TargetLevel > 0
@@ -780,6 +868,9 @@ public static class ProtocolSnapshotMapper
         var materialProgress = Domain.World.NodeBuildingRules.MaterialFraction(state, definition);
         // 工期条显示有效工时：材料不足时工程停滞，已流逝的墙钟时间不计入进度，封顶于材料进度。
         var timeProgress = Math.Min(Domain.World.NodeBuildingRules.TimeFraction(state, nowUnixSeconds), materialProgress);
+        var level = Domain.World.NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds);
+        // 拥挤快照缺失（旧投影/未刷新）按零人数满效口径展示，不产生误导性超载提示。
+        var usage = usageIndex?.GetValueOrDefault(state.BuildingId);
         return new
         {
             entityId = definition.Id,
@@ -788,11 +879,14 @@ public static class ProtocolSnapshotMapper
             description = definition.Description,
             effect = definition.Effect,
             group = definition.Group,
-            level = Domain.World.NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds),
+            level,
             targetLevel = state.TargetLevel,
             buildProgress = Domain.World.NodeBuildingRules.BuildProgress(state, definition, nowUnixSeconds),
             materialProgress,
             timeProgress,
+            activeUsers = usage?.ActiveUsers ?? 0,
+            capacity = usage?.Capacity ?? Domain.World.NodeBuildingRules.CrowdCapacity(level),
+            efficiency = usage?.Efficiency ?? 1d,
             requiredSeconds = state.TargetLevel > 0 ? Domain.World.NodeBuildingRules.RequiredBuildSeconds(state.TargetLevel) : 0,
             elapsedSeconds = state.TargetLevel > 0 ? Math.Max(0, nowUnixSeconds - state.StartedAtUnixSeconds) : 0,
             materials = required

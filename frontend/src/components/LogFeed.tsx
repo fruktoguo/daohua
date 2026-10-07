@@ -7,6 +7,7 @@ import type { ChatMessage } from '../logging/chatService'
 import { gameClient } from '../network/gameClient'
 import type { PartyLinkDto } from '../network/protocol'
 import type { GameLogEntry, LogSegment } from '../logging/gameLogService'
+import { splitLogSegmentsByLines } from '../logging/gameLogService'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
 import { ItemReference } from './ItemDisplay'
 import { ValueText } from './ValueText'
@@ -170,19 +171,39 @@ const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.J
       })
     : undefined
 
+  // 多目标施放合并行：服务端以 \n 分隔各目标子句，拆成「前缀行 + 逐条子句行」。
+  // 视觉首行 = 前缀行 + 第一条子句；续行前置一个 visibility:hidden 的前缀克隆占位，
+  // 使每条续行的「对/为」与首行「对」字像素级对齐（同 daojie 的 chat-merged-combat-indent 方案）。
+  const lines = splitLogSegmentsByLines(entry.segments)
+  const repeatCapsule = isRepeated ? (
+    <span className="log-repeat-capsule" title={repeatTitle}>× {entry.count}</span>
+  ) : null
+
   return (
     <li>
       <time dateTime={new Date(entry.latestTimestampMs ?? entry.timestampMs).toISOString()}>{displayTime}</time>
       <span className="log-message">
-        {entry.segments.map((segment, index) => <LogContent key={`${entry.id}-${index}`} segment={segment} />)}
-        {isRepeated && (
-          <span
-            className="log-repeat-capsule"
-            title={repeatTitle}
-          >
-            × {entry.count}
-          </span>
+        {lines === null ? (
+          entry.segments.map((segment, index) => <LogContent key={`${entry.id}-${index}`} segment={segment} />)
+        ) : (
+          <>
+            <span className="log-combat-line">
+              {lines[0].map((segment, index) => <LogContent key={`${entry.id}-h-${index}`} segment={segment} />)}
+              {lines[1].map((segment, index) => <LogContent key={`${entry.id}-c0-${index}`} segment={segment} />)}
+              {lines.length === 2 && isRepeated && repeatCapsule}
+            </span>
+            {lines.slice(2).map((clause, clauseIndex) => (
+              <span className="log-combat-line" key={`${entry.id}-l${clauseIndex + 2}`}>
+                <span aria-hidden="true" className="log-combat-indent">
+                  {lines[0].map((segment, index) => <LogContent key={`${entry.id}-i${clauseIndex}-${index}`} segment={segment} />)}
+                </span>
+                {clause.map((segment, index) => <LogContent key={`${entry.id}-c${clauseIndex + 2}-${index}`} segment={segment} />)}
+                {clauseIndex === lines.length - 3 && isRepeated && repeatCapsule}
+              </span>
+            ))}
+          </>
         )}
+        {(lines === null) && isRepeated && repeatCapsule}
       </span>
     </li>
   )

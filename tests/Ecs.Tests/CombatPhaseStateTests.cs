@@ -21,7 +21,7 @@ public sealed class CombatPhaseStateTests
         var now = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
         var player = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()),
             "战斗生命周期", now, catalog.Fingerprint);
-        player.ReplaceCombatSlots([new PlayerAbilitySlot("ability.heavy-slash", 1, [])], []);
+        player.ReplaceCombatSlots([new PlayerAbilitySlot("ability.heavy-slash", 1)], []);
         using var runtime = new EcsGameRuntime(catalog, now);
         runtime.CreatePlayer(player);
         var actionId = Guid.NewGuid();
@@ -108,10 +108,10 @@ public sealed class CombatPhaseStateTests
         Assert.Empty(buffView.Active);
         Assert.Equal(actual.Player.PendingSkillIndex, skillView.PendingSkillIndex);
         Assert.Contains(typeof(ICombatBuffTickPhase), dispatch.Tags);
-        Assert.Contains(typeof(ICombatPlayerRespawnPhase), dispatch.Tags);
-        Assert.Contains(typeof(ICombatPlayerActPhase), dispatch.Tags);
+        Assert.Contains(typeof(ICombatAllyRespawnPhase), dispatch.Tags);
+        Assert.Contains(typeof(ICombatAllyActPhase), dispatch.Tags);
         Assert.Contains(typeof(ICombatEnemyActPhase), dispatch.Tags);
-        Assert.Contains(typeof(ICombatPlayerDownedPhase), dispatch.Tags);
+        Assert.Contains(typeof(ICombatAllyDownedPhase), dispatch.Tags);
         Assert.Contains(typeof(ICombatOutcomePhase), dispatch.Tags);
         Assert.Null(host.PhaseContext);
 

@@ -610,8 +610,8 @@ public sealed partial class PlayerAggregate
     {
         // 战斗经验随冻结面板进入镜像：撮合后回放期不再二次解析（总纲 §7.7.6）。
         var stats = PlayerAttributeResolver.Resolve(this, gameData).ToCombatant(Progression.CombatExperience);
-        // 斗法镜像与玩家/怪物共用同一套通用技能槽：触发条件与装配口径完全一致。
-        var skills = SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities);
+        // 斗法镜像与玩家/怪物共用同一套通用技能槽：触发条件与装配口径完全一致（按功法 ID 挂接）。
+        var skills = SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities, Loadout.AbilityTriggers);
         return new DuelCombatant(PlayerId, DisplayName, DuelPower, stats, skills, Duel.StagedItems.ToArray());
     }
 

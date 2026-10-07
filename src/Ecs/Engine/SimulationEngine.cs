@@ -500,6 +500,18 @@ public static partial class SimulationEngine
                 throw new DomainException(DomainErrorCode.InvariantViolation,
                     $"单次模拟超过最大状态转换数（action={action.Intent.ActionId} phase={action.Expedition?.Phase} remaining={remainingSeconds:0.######}）。");
 
+            // 组队会话权威散场：资源窗口已把推进切在散场点上，此刻墙钟越线即移出伪行动
+            // （归档战报/挂起行动自动顶回队首由 RemoveAction 队列原语统一处理）。
+            var nowUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+            if (action.PartySession is { } session && double.IsFinite(session.EndsAtUnixSeconds)
+                && nowUnix + 1e-6 >= session.EndsAtUnixSeconds)
+            {
+                player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: session.EndsAtUnixSeconds);
+                events ??= new SimulationEventTail();
+                events.Add(new SimulationEvent(from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                    "party.session.ended", "组队讨伐已散场。", action.Intent.ActionId));
+                continue;
+            }
             var actionId = action.Intent.ActionId;
             if (lastDefinition is null || lastActionId != actionId)
             {
@@ -675,13 +687,24 @@ public static partial class SimulationEngine
             // 同一场进行中的战斗跨步续用内存态：仅当属性输入修订号变化（Buff 到期、
             // 消耗品生效、六维经验等）时把最新结算面板换入存活单位，与每步 Restore 的
             // 模板刷新语义逐位一致；BaseAttributes 旁路目录不经修订号覆盖，逐次重算。
+            // 组队会话面板开打即冻结：不做修订刷新，战外 Buff 视图同样取定格——
+            // 会话期内的换装/增益漂移不进入共享战斗，否则各成员推演不逐位一致。
             battleState = session!.Battle;
-            if (gameData.BaseAttributes is null || session.AttributeRevision != player.AttributeInputRevision)
+            if (action.PartySession?.Spec is { } liveSpec)
             {
-                battleState.Player.RefreshStats(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(player.Progression.CombatExperience));
-                session.AttributeRevision = player.AttributeInputRevision;
+                var selfMemberBuffs = liveSpec.Members[battleState.SelfIndex].ExternalBuffs;
+                battleState.Player.ExternalBuffStacks = buffId
+                    => Systems.CombatActionRules.SumFrozenBuffStacks(selfMemberBuffs, buffId);
             }
-            battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+            else
+            {
+                if (gameData.BaseAttributes is null || session.AttributeRevision != player.AttributeInputRevision)
+                {
+                    battleState.Player.RefreshStats(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(player.Progression.CombatExperience));
+                    session.AttributeRevision = player.AttributeInputRevision;
+                }
+                battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+            }
         }
         else
         {

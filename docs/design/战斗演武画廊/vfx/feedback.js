@@ -78,8 +78,12 @@
     if (target) {
       VFX.after(300, () => {
         const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
+        // 攻击行进方向：出手方在目标右侧时（敌方/右侧玩家出手）命中轮廓整体水平镜像
+        const cStage = ctx.caster.el.querySelector('.arena-avatar-stage') || ctx.caster.el;
+        const dir = t.x < VFX.center(cStage).x ? -1 : 1;
         const host = VFX.node(null, t.x, t.y);
         host.style.setProperty('--c', '#ffd166');
+        if (dir < 0) host.style.transform = 'scaleX(-1)';
         const variant = nextAttackVariant(ctx.caster.el, ctx.variant);
         if (variant === 'cleave') {
           const first = VFX.child(host, 'vfx-attack-streak');
@@ -93,7 +97,7 @@
         } else if (variant === 'thrust') {
           const thrust = VFX.child(host, 'vfx-attack-thrust');
           thrust.style.setProperty('--c', '#f2d58e');
-          VFX.particles(t.x - 18, t.y, { cls: 'vfx-p-spark', count: 5, directional: true, angle: 0, arc: .18, size: [7, 13], dur: [220, 360], dist: [26, 52], c: '#f6dfaa' });
+          VFX.particles(t.x - 18 * dir, t.y, { cls: 'vfx-p-spark', count: 5, directional: true, angle: dir > 0 ? 0 : Math.PI, arc: .18, size: [7, 13], dur: [220, 360], dist: [26, 52], c: '#f6dfaa' });
         } else if (variant === 'sweep') {
           const sweep = VFX.child(host, 'vfx-attack-sweep');
           sweep.style.setProperty('--rot', '-46deg');

@@ -89,10 +89,16 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
         }
     }
 
-    /// <summary>经驻留节点实体读取遭遇池；旅途中（无驻留节点实体）返回 null 走配表查询。</summary>
+    /// <summary>
+    /// 经驻留节点实体读取遭遇池；旅途中（无驻留节点实体）或成员关系尚未同步到
+    /// World.NodeId 的新驻留节点时返回 null，由调用方回退配表 WorldGraph 查询——
+    /// 节点实体成员关系在会话提交时才迁移，会话内以权威 World.NodeId 为准。
+    /// </summary>
     public IReadOnlyList<string>? NodeEncounterIds
         => _world.CurrentNodeEntityId != 0
-            && entity.World.GetEntity(_world.CurrentNodeEntityId)?.GetComponent<EncounterProfileComponent>() is { } profile
+            && entity.World.GetEntity(_world.CurrentNodeEntityId) is { } nodeEntity
+            && nodeEntity.GetComponent<MapNodeComponent>()?.NodeId == _world.World.NodeId
+            && nodeEntity.GetComponent<EncounterProfileComponent>() is { } profile
             ? profile.EncounterIds
             : null;
 
@@ -147,9 +153,10 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
     /// 新行动插入队首立即 Running；自动移动与 world.travel 命令共用此通道。
     /// </summary>
     public IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog actionCatalog,
-        TravelActionState? travel = null, bool incrementVersion = true)
+        TravelActionState? travel = null, bool incrementVersion = true, PartySessionBinding? partySession = null)
         => _actionQueueSink.Dispatch(this, Queue.Actions, new(PlayerActionQueueMutationKind.EnqueuePriority,
-            Intent: intent, At: at, Catalog: actionCatalog, Travel: travel, IncrementVersion: incrementVersion)).Action!;
+            Intent: intent, At: at, Catalog: actionCatalog, Travel: travel, PartySession: partySession,
+            IncrementVersion: incrementVersion)).Action!;
 
     /// <summary>仅在网络或落盘快照边界导出斗法分段，行动边界不调用此方法。</summary>
     public PlayerDuelStateDocument ExportDuelDocument()

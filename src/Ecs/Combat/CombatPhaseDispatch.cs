@@ -10,14 +10,14 @@ namespace DaoHua.Ecs.Combat;
 /// 每个 tag 对应边界管线上的一个固定相位；同 tag 订阅者按 SystemOrder 顺序消费。
 /// </summary>
 public interface ICombatBuffTickPhase : ISystemTag;
-/// <summary>玩家复活相位：倒地→复活判定与决策重置。</summary>
-public interface ICombatPlayerRespawnPhase : ISystemTag;
-/// <summary>玩家出手相位：结算待完成动作并决策下一动作。</summary>
-public interface ICombatPlayerActPhase : ISystemTag;
+/// <summary>友方复活相位：单个倒地盟友倒计时到点→复活判定与决策重置；多盟友按成员序逐个派发。</summary>
+public interface ICombatAllyRespawnPhase : ISystemTag;
+/// <summary>友方出手相位：结算待完成动作并决策下一动作；多盟友按成员序逐个派发。</summary>
+public interface ICombatAllyActPhase : ISystemTag;
 /// <summary>敌方出手相位：与玩家同构，按敌索引逐一结算。</summary>
 public interface ICombatEnemyActPhase : ISystemTag;
-/// <summary>玩家死亡处理相位：倒地瞬间打断吟唱并记录死亡时刻。</summary>
-public interface ICombatPlayerDownedPhase : ISystemTag;
+/// <summary>友方倒地相位：单个盟友阵亡瞬间打断吟唱并记录死亡时刻；全灭时顺带作废全场吟唱。</summary>
+public interface ICombatAllyDownedPhase : ISystemTag;
 /// <summary>边界收尾相位：序列推进与终局裁决。</summary>
 public interface ICombatOutcomePhase : ISystemTag;
 
@@ -41,6 +41,14 @@ public sealed class CombatPhaseContext
     public double EffectAt;
     /// <summary>敌方出手相位的当前敌人单位（EnemyIndex 对应引用）。</summary>
     public CombatantState? Enemy;
+    /// <summary>盟友出手/倒地/复活相位的当前成员下标（共享剧本成员序）；其它相位保持 -1。</summary>
+    public int AllyIndex = -1;
+    /// <summary>盟友出手/倒地/复活相位的当前友方单位（AllyIndex 对应引用）。</summary>
+    public CombatantState? Ally;
+    /// <summary>非本机成员阵亡时刻列表（MemberIndex, 战斗时钟秒）；无阵亡保持 null。</summary>
+    public List<(int MemberIndex, double AtSeconds)>? AllyDeaths;
+    /// <summary>非本机成员复活时刻列表（MemberIndex, 战斗时钟秒）；无复活保持 null。</summary>
+    public List<(int MemberIndex, double AtSeconds)>? AllyRespawns;
 }
 
 /// <summary>

@@ -42,6 +42,7 @@ public sealed class EcsActionParityTests
         Assert.Equal(actionId, action.Intent.ActionId);
         Assert.Equal(-1, action.RemainingRepeats);
         Assert.Equal(1, action.ProgressSeconds, 12);
+        // 6 = 两轮采集产出（seed 玩家引导已终态，无首轮赠送）。
         Assert.Equal(6, actual.Assets[new AssetKey(new ItemId("item.ningxue-grass"))], 12);
     }
 
@@ -120,6 +121,9 @@ public sealed class EcsActionParityTests
     {
         var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId),
             displayName, SeedTime, catalog.Fingerprint);
+        // parity 门禁与引导语义无关：终态化避免教程里程碑推进对绑定行动
+        // 的强制出队截断改变无限重复边界。
+        player.SkipTutorial();
         player.Enqueue(new ActionIntent(actionId, repeatCount), SeedTime, catalog.Actions);
         return player.ExportState();
     }

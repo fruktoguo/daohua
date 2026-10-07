@@ -9,7 +9,10 @@
     const target = ctx.targets[0];
     if (!target) return 0;
     VFX.motion(ctx.caster.el, 'attack');
+    const s = VFX.center(ctx.caster.el.querySelector('.arena-avatar-stage') || ctx.caster.el);
     const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
+    // 攻击行进方向：出手方在目标右侧时斩切几何整体水平镜像
+    const dir = t.x < s.x ? -1 : 1;
 
     // 三段斩：角度交替的粒子刀光（跨度加大、光点更粗）
     const cuts = [
@@ -22,10 +25,10 @@
       VFX.after(at, () => {
         const host = VFX.node(null, t.x, t.y - 6);
         host.style.setProperty('--c', i === 1 ? '#ffe9a8' : '#ffd166');
-        VFX.trail(t.x + c.x1, t.y - 6 + c.y1, t.x + c.x2, t.y - 6 + c.y2, {
+        VFX.trail(t.x + c.x1 * dir, t.y - 6 + c.y1, t.x + c.x2 * dir, t.y - 6 + c.y2, {
           cls: 'vfx-p-glow', count: 32, size: [5, 11], jitter: 6, scatter: 30, dur: [260, 460],
         });
-        VFX.trail(t.x + c.x1, t.y - 6 + c.y1, t.x + c.x2, t.y - 6 + c.y2, {
+        VFX.trail(t.x + c.x1 * dir, t.y - 6 + c.y1, t.x + c.x2 * dir, t.y - 6 + c.y2, {
           cls: 'vfx-p-mote', count: 18, size: [3, 5], jitter: 4, scatter: 14, dur: [220, 380],
         });
         VFX.particles(t.x, t.y - 4, { cls: 'vfx-p-spark', count: 15, directional: true, spread: 16, size: [11, 20], dur: [260, 460], dist: [30, 74] });

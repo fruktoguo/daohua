@@ -53,7 +53,7 @@ public sealed class EcsStateRoundTripTests
         player.Buffs.Active.Add(new ActiveBuff("buff.seed", SeedTime.AddSeconds(42).ToUnixTimeSeconds(), 2,
             "种子增益", AttackSpeedPoints: 35, DamageAbsorptionPoints: 4));
         player.ReplaceCombatSlots(
-            [new PlayerAbilitySlot("ability.heavy-slash", 2, [])],
+            [new PlayerAbilitySlot("ability.heavy-slash", 2)],
             [new PlayerEquipmentSlot("equipment.qingfeng-sword", 3)]);
         player.Settings.LoopEnabled = false;
         player.Settings.NotificationsEnabled = false;

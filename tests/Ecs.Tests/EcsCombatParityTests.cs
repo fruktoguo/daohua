@@ -32,7 +32,7 @@ public sealed class EcsCombatParityTests
         var player = PlayerAggregate.Create(new PlayerId(PlayerIdValue), new AccountId(AccountIdValue),
             "Ecs战斗", SeedTime, catalog.Fingerprint);
         player.ReplaceCombatSlots(
-            [new PlayerAbilitySlot("ability.heavy-slash", 1, [])],
+            [new PlayerAbilitySlot("ability.heavy-slash", 1)],
             [new PlayerEquipmentSlot("equipment.qingfeng-sword", 2)]);
         var resolved = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(player.Progression.CombatExperience);
         player.Resources.MaxHitpoints = resolved.MaxHitpoints;

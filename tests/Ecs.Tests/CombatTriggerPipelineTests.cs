@@ -83,7 +83,8 @@ public sealed class CombatTriggerPipelineTests
         var enemyHit = result.Events.First(e => e.AttackerId == "enemy:0");
         Assert.True(enemyHit.Hit);
         // 力微饭否贡献 = 同种子对照战斗的玩家威胁差（隔离玩家自身普攻的实伤威胁）。
-        var expected = enemy.AttackPower * enemy.BasicAttackRatio;
+        var expected = enemy.AttackPower
+            * PercentValue.Multiplier(enemy.BasicAttackBonusPoints, PercentCurveMode.Linear);
         Assert.Equal(expected, state.Player.Threat - baseline.Player.Threat, 6);
         // 无效果参数的对照组：受击不涨威胁，威胁全部来自玩家自身普攻实伤。
         Assert.True(baseline.Player.Threat > 0);

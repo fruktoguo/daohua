@@ -47,11 +47,12 @@ public static class DeterministicCombatEngine
 
     /// <summary>按存活敌人有效威胁权重抽取玩家攻击目标；全零威胁退化为等概率。</summary>
     /// <param name="encounter">遭遇战状态。</param>
+    /// <param name="side">攻击方随机侧位（盟友按成员序固定分配，成员 0 沿用单人位 0）。</param>
     /// <param name="attackerCount">攻击方出手计数（确定性抽样的计数维度）。</param>
     /// <param name="channel">随机通道号（与其他判定隔离的抽样流）。</param>
     /// <returns>被选中的存活敌人；无存活敌人返回 null。</returns>
-    public static CombatantState? SelectEnemyTarget(CombatEncounterState encounter, double attackerCount, ulong channel)
-        => SelectTarget(encounter.Enemies, encounter.Seed, 0, attackerCount, channel);
+    public static CombatantState? SelectEnemyTarget(CombatEncounterState encounter, ulong side, double attackerCount, ulong channel)
+        => SelectTarget(encounter.Enemies, encounter.Seed, side, attackerCount, channel);
 
     /// <summary>不可重复命中的多目标抽取：动态缩减概率池（Sequential Elimination）。</summary>
     /// <param name="encounter">遭遇战状态。</param>
@@ -59,8 +60,8 @@ public static class DeterministicCombatEngine
     /// <param name="attackerCount">攻击方出手计数（确定性抽样的计数维度）。</param>
     /// <param name="channel">随机通道号；多目标逐位递增以隔离抽样流。</param>
     /// <returns>按抽取顺序排列的不重复存活敌人。</returns>
-    public static IReadOnlyList<CombatantState> SelectEnemyTargets(CombatEncounterState encounter, int maxTargets, double attackerCount, ulong channel)
-        => SelectTargets(encounter.Enemies, maxTargets, encounter.Seed, 0, attackerCount, channel);
+    public static IReadOnlyList<CombatantState> SelectEnemyTargets(CombatEncounterState encounter, ulong side, int maxTargets, double attackerCount, ulong channel)
+        => SelectTargets(encounter.Enemies, maxTargets, encounter.Seed, side, attackerCount, channel);
 
     /// <summary>按有效威胁权重从任意存活目标列表抽取单个目标；全零威胁退化为等概率。</summary>
     /// <remarks>
@@ -226,11 +227,15 @@ public static class DeterministicCombatEngine
             < criticalPoints / (criticalPoints + defense.CriticalResistance + 100);
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
         resistance *= parried ? 2 : 1;
-        var rawDamage = attack.AttackPower * attack.BasicAttackRatio;
+        // 原始威力口径（总纲 §7.7.1）：普攻 = AttackPower ×(1+普攻增幅点数/100)；
+        // 技能命中的 AttackPower 已在出手构造时并入技能增幅与倍率，此处不再二次乘算。
+        var rawDamage = abilityId is null
+            ? attack.AttackPower * PercentValue.Multiplier(attack.BasicAttackBonusPoints, PercentCurveMode.Linear)
+            : attack.AttackPower;
         context.RawDamage = rawDamage;
         // 第一层：大类抗性平方穿甲。等价于 RawDamage² / (RawDamage + RES × K + 1)，先除后乘避免平方中间值溢出。
         var damage = hit ? rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1)) : 0;
-        // 第二层：攻方分类增伤（Linear 点数逐项乘算）：大类增伤 × 五行增伤 × 总增伤 × 普攻/技能增幅。
+        // 第二层：攻方分类增伤（Linear 点数逐项乘算）：大类增伤 × 五行增伤 × 总增伤。
         damage *= PercentValue.Multiplier(
             attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalDamageBonusPoints : attack.SpellDamageBonusPoints,
             PercentCurveMode.Linear);
@@ -244,11 +249,9 @@ public static class DeterministicCombatEngine
                 CombatElement.Earth => attack.EarthDamageBonusPoints,
                 _ => 0
             }, PercentCurveMode.Linear);
-        damage *= PercentValue.Multiplier(attack.TotalDamageBonusPoints, PercentCurveMode.Linear);
-        // 普攻/技能增幅互斥取一：abilityId 为空即普攻（「普通攻击」tag 机制待配表落地）。
+        // 总增伤 = 面板点数 + 战内 Buff 增伤点数（同 Linear 乘区合并，如破阵子战阵增益）。
         damage *= PercentValue.Multiplier(
-            abilityId is null ? attack.BasicAttackBonusPoints : attack.SkillBonusPoints,
-            PercentCurveMode.Linear);
+            attack.TotalDamageBonusPoints + context.Attacker.BuffDamageBonusPoints, PercentCurveMode.Linear);
         // 第三层：守方分类减伤（NonLinear 点数逐项收敛）：大类减伤 × 对应五行减伤。
         damage *= PercentValue.Multiplier(
             attack.DamageKind == CombatDamageKind.Physical ? defense.PhysicalDamageReductionPoints : defense.SpellDamageReductionPoints,
@@ -263,7 +266,8 @@ public static class DeterministicCombatEngine
                 CombatElement.Earth => defense.EarthDamageReductionPoints,
                 _ => 0
             }, PercentCurveMode.NonLinear);
-        if (critical) damage *= attack.CriticalMultiplier;
+        // 暴击倍率 = 1 + 暴击伤害点数/100（Linear：基础 50 点即 150%）。
+        if (critical) damage *= PercentValue.Multiplier(attack.CriticalDamagePoints, PercentCurveMode.Linear);
         // 末位收口：总减伤（免伤点数）NonLinear——面板、临时与战内 Buff 免伤同乘区合并。
         damage *= PercentValue.Multiplier(
             defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffAbsorptionPoints,
@@ -278,14 +282,14 @@ public static class DeterministicCombatEngine
 
     /// <summary>
     /// 雷击符类打击伤害（总纲 §20.2）：无命中/破招/格挡/暴击掷点、不消耗随机通道；
-    /// 固定走抗性平方穿透 → 攻方 Linear 增伤 → 守方 NonLinear 减伤 → 免伤收口，
-    /// 普攻/技能乘位按技能侧（SkillBonusPoints）取值。
+    /// 固定走抗性平方穿透 → 攻方 Linear 增伤 → 守方 NonLinear 减伤 → 免伤收口。
+    /// 调用方在构造打击属性时已把技能增幅并入 AttackPower（与技能命中同口径）。
     /// </summary>
     internal static double ResolveStrikeDamage(CombatantStats attack, CombatantState target)
     {
         var defense = target.Stats;
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
-        var rawDamage = attack.AttackPower * attack.BasicAttackRatio;
+        var rawDamage = attack.AttackPower;
         // 第一层：大类抗性平方穿甲（与 ResolveHit 同式）。
         var damage = rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1));
         // 第二层：攻方分类增伤（Linear）：大类 × 五行 × 总增伤 × 技能增幅。
@@ -303,7 +307,6 @@ public static class DeterministicCombatEngine
                 _ => 0
             }, PercentCurveMode.Linear);
         damage *= PercentValue.Multiplier(attack.TotalDamageBonusPoints, PercentCurveMode.Linear);
-        damage *= PercentValue.Multiplier(attack.SkillBonusPoints, PercentCurveMode.Linear);
         // 第三层：守方分类减伤（NonLinear）：大类 × 对应五行。
         damage *= PercentValue.Multiplier(
             attack.DamageKind == CombatDamageKind.Physical ? defense.PhysicalDamageReductionPoints : defense.SpellDamageReductionPoints,

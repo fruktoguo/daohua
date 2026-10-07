@@ -17,6 +17,14 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
 {
     /// <summary>技能随机侧位与普攻隔离，偏移保持既有确定性流。</summary>
     private const ulong SkillSideOffset = 0x1000;
+    /// <summary>非本机盟友随机侧位基底：成员下标 ≥1 的盟友用 0x400+下标，与敌侧位（1..8）和技能偏移域隔离。</summary>
+    private const ulong AllySideBase = 0x400;
+
+    /// <summary>
+    /// 盟友随机侧位：成员 0 沿用单人位 0（单人路径位级不变），其余成员高位偏移，
+    /// 只依赖共享剧本成员下标——与成员所在分片/在线状态无关，各端重放逐位一致。
+    /// </summary>
+    internal static ulong AllySide(int memberIndex) => memberIndex == 0 ? 0UL : AllySideBase + (ulong)memberIndex;
 
     /// <summary>开战即决策各单位的首次出手动作：可放技能直接进入吟唱，否则按普攻周期蓄势。
     /// 已恢复吟唱中的单位（PendingSkillIndex ≥ 0）跳过决策，保留跨战延续的施放。</summary>
@@ -28,9 +36,11 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             if (encounter.Enemies[i].IsAlive && encounter.Enemies[i].PendingSkillIndex < 0)
                 DecideNextAction(encounter, encounter.Enemies[i], encounter.Enemies, encounter.PlayerAllies,
                     SelectTarget(encounter.PlayerAllies, encounter.Seed, (ulong)(1 + i), encounter.Enemies[i].AttackCount, 19));
-        if (encounter.Player.PendingSkillIndex < 0)
-            DecideNextAction(encounter, encounter.Player, encounter.PlayerAllies, encounter.Enemies,
-                SelectEnemyTarget(encounter, 0, 3));
+        // 盟友按成员序逐个决策：目标抽样沿用计数 0/通道 3 口径，成员 0 与单人逐位一致。
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+            if (encounter.PlayerAllies[i].IsAlive && encounter.PlayerAllies[i].PendingSkillIndex < 0)
+                DecideNextAction(encounter, encounter.PlayerAllies[i], encounter.PlayerAllies, encounter.Enemies,
+                    SelectEnemyTarget(encounter, AllySide(i), 0, 3));
     }
 
     /// <summary>
@@ -55,7 +65,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
 
     /// <summary>
     /// 出手决策：按槽位顺序挑选首个可用技能进入吟唱——触发条件（统一求值器）、冷却就绪与
-    /// 灵力消耗在起手时判定并预扣；吟唱占用整条动作时间线，时长 = castMilliseconds × 行动速度乘区，
+    /// 灵力消耗在起手时判定并预扣；吟唱占用整条动作时间线，时长 = castMilliseconds ÷(1+行动速度点数/100)，
     /// 冷却自吟唱完成时刻起算。无可用技能时下一次出手回落为普通攻击，普攻间隔吃战内攻速 Buff。
     /// </summary>
     internal static void DecideNextAction(CombatEncounterState encounter, CombatantState unit,
@@ -76,15 +86,15 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 var manaCost = AbilityNumber(slot.Ability, "manaCost");
                 if (unit.Manapoints < manaCost) continue;
                 unit.Manapoints -= manaCost;
-                // 吟唱时长 = 配表 × 成长乘区 ÷ 行动速度除数（NonLinear 点数）。
+                // 吟唱时长 = 配表 ÷ 行动速度除数（NonLinear 点数，境界成长已注入本通道）。
                 var castSeconds = Math.Max(1e-9,
-                    AbilityNumber(slot.Ability, "castMilliseconds") / 1000d * unit.Stats.CastTimeFactor
+                    AbilityNumber(slot.Ability, "castMilliseconds") / 1000d
                     * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear));
                 unit.PendingSkillIndex = i;
                 unit.NextAttackAtSeconds = encounter.ElapsedSeconds + castSeconds;
-                // 冷却自吟唱完成起算：配表 × 成长乘区 ÷ 冷却缩减除数（NonLinear 点数）。
+                // 冷却自吟唱完成起算：配表 ÷ 冷却缩减除数（NonLinear 点数，境界成长已注入本通道）。
                 cooldowns[i] = unit.NextAttackAtSeconds
-                    + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d * unit.Stats.CooldownFactor
+                    + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d
                     * PercentValue.Multiplier(unit.Stats.CooldownReductionPoints, PercentCurveMode.NonLinear);
                 return;
             }
@@ -116,7 +126,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         // 威胁类字段是施放方修正，与技能效果类型无关：任何施放都可携带仇恨增益。
         caster.Threat += AbilityNumber(ability, "threatGain");
         caster.ThreatBonusPoints += AbilityNumber(ability, "threatPoints");
-        var healOutput = attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "healingRatio") * ratioBonus
+        // 治疗量吃技能增幅点数（Linear，含等阶成长注入），与技能伤害同通道。
+        var healOutput = attackBase * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear)
+            * AbilityNumber(ability, "healingRatio") * ratioBonus
             + AbilityNumber(ability, "flatHealing") * flatBonus;
         if (AbilityText(ability, "effectType") == "heal" || healOutput > 0)
         {
@@ -165,7 +177,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                     AbilityNumber(buff, "hpRegen"), AbilityNumber(buff, "mpRegen"),
                     AbilityNumber(buff, "attackSpeedPoints"), AbilityNumber(buff, "damageAbsorptionPoints"),
                     AbilityNumber(buff, "threatPoints"),
-                    AbilityNumber(buff, "hpRegenPostRatio"), AbilityNumber(buff, "mpRegenPostRatio"));
+                    AbilityNumber(buff, "hpRegenPostRatio"), AbilityNumber(buff, "mpRegenPostRatio"),
+                    AbilityNumber(buff, "damageBonusPoints"));
                 // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
                 var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
                 void GrantBuff(CombatantState ally)
@@ -204,11 +217,13 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             });
             return;
         }
+        // 技能单发威力 = 攻基 ×(1+技能增幅/100) × 技能倍率 + 固定值——技能增幅并入原始威力乘位，
+        // 与普攻增幅在普攻威力上的口径一致，先增减后抗穿（总纲 §7.7.1 原始伤害口径）。
         var stats = caster.Stats with
         {
-            AttackPower = attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "damageRatio") * ratioBonus
+            AttackPower = attackBase * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear)
+                * AbilityNumber(ability, "damageRatio") * ratioBonus
                 + AbilityNumber(ability, "flatDamage") * flatBonus,
-            BasicAttackRatio = 1,
             DamageKind = spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
             Element = AbilityElement(ability)
         };
@@ -225,8 +240,25 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             return;
         }
         var single = target is { IsAlive: true } ? target : SelectTarget(opponents, encounter.Seed, side, count, 16);
-        if (single is not null)
+        if (single is null) return;
+        ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id);
+        // 多段打击（hitCount>1，连环等）：对同一目标逐段独立结算完整技能伤害——后续段沿用
+        // 普攻计数随机流（countOverride=null → 取 attacker.AttackCount 自增序列），各段命中/
+        // 暴击独立掷点；目标中途死亡即终止剩余连段，不转火不空掷。
+        var hitCount = Math.Max(1, (int)AbilityNumber(ability, "hitCount"));
+        for (var hitIndex = 1; hitIndex < hitCount && single.IsAlive; hitIndex++)
+            ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, null, id);
+        // 击杀连锁（chainOnKillCount）：目标阵亡后按威胁轮盘抽另一存活敌方再结算一次完整技能
+        // 伤害，至多追加 chainOnKillCount 次；连锁未致死即终止。被击杀目标已离存活池，
+        // 连锁命中未死者时循环结束，故天然不重复命中、总目标数 ≤ 1 + chainOnKillCount。
+        // 连锁帧沿用同一次施放的抽样计数，命中/暴击掷点继承本次出手运气（贯穿语义）。
+        var chainMax = (int)AbilityNumber(ability, "chainOnKillCount");
+        for (var chainIndex = 0; chainIndex < chainMax && !single.IsAlive; chainIndex++)
+        {
+            single = SelectTarget(opponents, encounter.Seed, side, count, 20 + (ulong)chainIndex);
+            if (single is null) break;
             ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id);
+        }
     }
 
     /// <summary>按破招化解、闪避、暴击顺序判定后，沿「大类抗性穿甲 → 攻方分类增伤 → 守方分类减伤 → 暴击 → 总免伤收口」结算链结算；

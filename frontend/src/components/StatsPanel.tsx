@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
+import { localizeActionDisplayText, resolveActionDefinition } from '../game/ids'
 import { useT } from '../i18n'
 import { ItemReference } from './ItemDisplay'
 import { ReportBlock } from './reportSections'
@@ -17,6 +18,8 @@ import { ReportBlock } from './reportSections'
 export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   const t = useT()
   const duel = useGameStore(state => state.duel)
+  const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
   const headEntry = useGameStore(state => state.queue.entries[0])
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
@@ -62,7 +65,11 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
               className="battle-report-block--current"
               nowSeconds={estimatedServerNow}
               report={current}
-              title={current.actionName || current.actionId || t('combat.report.currentSection')}
+              title={localizeActionDisplayText(
+                // 标题以 actionId 回查的目录定义名为准：存档 actionName 可能滞留旧地点的本地化文本，
+                // 已不含地图名时无法二次替换；定义名回退存档名再回退通用标题。
+                resolveActionDefinition(current.actionId)?.name
+                  || current.actionName || current.actionId || t('combat.report.currentSection'), world, maps)}
             />
           )}
           {showStaged && (

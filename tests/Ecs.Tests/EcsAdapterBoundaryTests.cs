@@ -113,6 +113,35 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(0, snapshot.Assets.Single(asset => asset.AssetId == "item.fragment.heavy-slash").Quantity);
     }
 
+    [Fact]
+    public async Task ManualConsumableIsRejectedFromAutoUseSlots()
+    {
+        var fixture = CreateFixture(
+            new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 1, 1),
+            new AssetBalanceRecord(Guid.Empty, "item.qi-gathering-pill", "", 2, 1));
+        await using var adapter = fixture.Adapter;
+        // 手动消耗品（category=manual）即使声明了行动域也不得进自动使用槽（含通用栏）。
+        var manualPayload = JsonSerializer.SerializeToElement(
+            new { actionType = "cultivation", slotIndex = 0, itemId = "item.tome.heavy-slash", quantity = 1, enabled = true, group = "general" },
+            ProtocolJson.Options);
+
+        var rejected = await adapter.ExecuteAsync(fixture.PlayerId, "queue.auto_use.configure", manualPayload, 0, Guid.NewGuid());
+
+        Assert.False(rejected.Success);
+        Assert.Equal("INVALID_CONSUMABLE", rejected.Code);
+        Assert.Empty(rejected.Snapshot.State.Settings.AutoUseSlots ?? []);
+
+        // 正例对照：自动消耗品正常入槽，防止准入门禁误伤。
+        var pillPayload = JsonSerializer.SerializeToElement(
+            new { actionType = "cultivation", slotIndex = 0, itemId = "item.qi-gathering-pill", quantity = 1, enabled = true, group = "general" },
+            ProtocolJson.Options);
+
+        var accepted = await adapter.ExecuteAsync(fixture.PlayerId, "queue.auto_use.configure", pillPayload, 0, Guid.NewGuid());
+
+        Assert.True(accepted.Success, accepted.Message);
+        Assert.Single(accepted.Snapshot.State.Settings.AutoUseSlots ?? []);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(2.5)]
@@ -272,6 +301,7 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Null(actual.Sections);
         Assert.NotNull(result!.Simulation);
         var balance = result.Snapshot.Assets.Single(row => row.AssetId == "item.ningxue-grass");
+        // 15 = 初始 3 + 四轮产出 12（fixture 玩家引导已终态，无首轮赠送）。
         Assert.Equal(15, balance.Quantity);
         Assert.Equal(5, balance.Version);
         await adapter.RemoveAsync(fixture.PlayerId, true);
@@ -316,13 +346,14 @@ public sealed class EcsAdapterBoundaryTests
         expected.World.NodeBuildings = [];
         expected.World.NodeBuildingEffects = BuildingEffectSet.Empty;
         expected.World.NodeBuildingNodeId = expected.World.NodeId;
+        expected.World.NodeBuildingUsages = [];
         expected.MarkDirty(PlayerSectionKind.World);
 
         Assert.True(fixture.Ecs.ApplyNodeBuildingProjection(fixture.PlayerId,
-            new(0, [], BuildingEffectSet.Empty, expected.World.NodeId), Epoch));
+            new(0, [], BuildingEffectSet.Empty, expected.World.NodeId, []), Epoch));
         Assert.Equal(initial.StateVersion, fixture.Ecs.ExportSnapshot(fixture.PlayerId).State.StateVersion);
         Assert.False(fixture.Ecs.ApplyNodeBuildingProjection(fixture.PlayerId,
-            new(0, [], BuildingEffectSet.Empty, expected.World.NodeId), Epoch));
+            new(0, [], BuildingEffectSet.Empty, expected.World.NodeId, []), Epoch));
         SimulationEngine.AdvanceTo(expected, Epoch.AddSeconds(3.6), fixture.Catalog, new AssetWallet(expected.PlayerId));
         await AdvanceAsync(fixture, Epoch.AddSeconds(3.6), batch: false);
         expected.SetPresence(PresenceState.Offline);
@@ -413,6 +444,9 @@ public sealed class EcsAdapterBoundaryTests
         var playerId = Guid.Parse("10000000-0000-4000-8000-000000000023");
         var aggregate = PlayerAggregate.Create(new PlayerId(playerId),
             new AccountId(Guid.Parse("20000000-0000-4000-8000-000000000023")), "适配器测试", Epoch, catalog.Fingerprint);
+        // 适配器边界测试与引导语义无关：统一终态，避免教程里程碑推进对绑定行动的
+        // 强制出队截断干扰无限重复类 parity 断言。
+        aggregate.SkipTutorial();
         if (initialAction is not null) aggregate.Enqueue(new(new ActionId(initialAction), -1), Epoch, catalog.Actions);
         aggregate.SetPresence(PresenceState.Offline);
         var initialState = aggregate.ExportState();

@@ -41,21 +41,36 @@ public sealed partial class CombatEventAdvanceSystem
         if (encounter.Outcome != CombatOutcome.Running || encounter.ElapsedSeconds >= targetSeconds)
             return encounter.ElapsedSeconds;
 
-        var next = encounter.IsPlayerDowned ? encounter.PlayerRespawnAtSeconds : encounter.Player.NextAttackAtSeconds;
-        if (!encounter.IsPlayerDowned)
-        {
-            for (var i = 0; i < encounter.Enemies.Count; i++)
-            {
-                var enemy = encounter.Enemies[i];
-                if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
-            }
-        }
+        var next = NaturalNextAttackOrRespawn(encounter);
 
         var effectAt = NextBuffBoundary(encounter);
         if (effectAt < next) next = effectAt;
         if (!double.IsFinite(next))
             throw new DomainException(DomainErrorCode.InvariantViolation, "战斗攻击时间无效。");
         return Math.Min(next, targetSeconds);
+    }
+
+    /// <summary>
+    /// 下一出手/复活自然边界：存活盟友与存活敌人的出手时刻取最小；全灭倒地窗口内只等待
+    /// 最早的盟友复活截止点（敌方无可打目标不出手），与单人倒地口径逐位一致。
+    /// </summary>
+    private static double NaturalNextAttackOrRespawn(CombatEncounterState encounter)
+    {
+        var next = double.PositiveInfinity;
+        if (encounter.IsAllAlliesDowned)
+            return encounter.NextAllyRespawnAtSeconds;
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+        {
+            var ally = encounter.PlayerAllies[i];
+            if (ally.IsAlive && ally.NextAttackAtSeconds < next) next = ally.NextAttackAtSeconds;
+            else if (!ally.IsAlive && ally.RespawnAtSeconds < next) next = ally.RespawnAtSeconds;
+        }
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+        {
+            var enemy = encounter.Enemies[i];
+            if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
+        }
+        return next;
     }
 
     /// <summary>
@@ -75,7 +90,8 @@ public sealed partial class CombatEventAdvanceSystem
         var context = new CombatPhaseContext { Encounter = encounter };
         AdvanceBoundary(encounter, targetSeconds, dispatcher ?? InlineCombatPhaseDispatcher.Instance, host, context);
         return new CombatAdvanceResult(encounter.EncounterId, from, encounter.ElapsedSeconds, encounter.Outcome,
-            (IReadOnlyList<CombatEvent>?)context.Events ?? [], encounter.Sequence, context.PlayerDeaths, context.PlayerRespawns);
+            (IReadOnlyList<CombatEvent>?)context.Events ?? [], encounter.Sequence, context.PlayerDeaths, context.PlayerRespawns,
+            context.AllyDeaths, context.AllyRespawns);
     }
 
     /// <summary>
@@ -100,7 +116,8 @@ public sealed partial class CombatEventAdvanceSystem
             if (!AdvanceBoundary(encounter, targetSeconds, dispatcher, host, context)) break;
         }
         return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome,
-            (IReadOnlyList<CombatEvent>?)context.Events ?? [], encounter.Sequence, context.PlayerDeaths, context.PlayerRespawns);
+            (IReadOnlyList<CombatEvent>?)context.Events ?? [], encounter.Sequence, context.PlayerDeaths, context.PlayerRespawns,
+            context.AllyDeaths, context.AllyRespawns);
     }
 
     private static void ValidateTarget(CombatEncounterState encounter, double targetSeconds)
@@ -133,15 +150,34 @@ public sealed partial class CombatEventAdvanceSystem
             dispatcher.Dispatch<ICombatBuffTickPhase>(host, context);
         }
 
-        if (encounter.IsPlayerDowned)
+        // 倒地复活先结算：到点的盟友起身；单人路径等价于 IsPlayerDowned 分支的复活派发。
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++)
         {
-            if (encounter.PlayerRespawnAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                dispatcher.Dispatch<ICombatPlayerRespawnPhase>(host, context);
+            var ally = encounter.PlayerAllies[i];
+            if (ally.IsAlive || !double.IsFinite(ally.RespawnAtSeconds)
+                || ally.RespawnAtSeconds > encounter.ElapsedSeconds + 1e-12) continue;
+            context.AllyIndex = i;
+            context.Ally = ally;
+            dispatcher.Dispatch<ICombatAllyRespawnPhase>(host, context);
         }
-        else
+        context.AllyIndex = -1;
+        context.Ally = null;
+
+        // 全灭倒地窗口内全场冻结：存活盟友出手、敌方出手与倒地登记全部跳过（单人口径延续）。
+        if (!encounter.IsAllAlliesDowned)
         {
-            if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                dispatcher.Dispatch<ICombatPlayerActPhase>(host, context);
+            for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+            {
+                var ally = encounter.PlayerAllies[i];
+                if (ally.IsAlive && ally.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                {
+                    context.AllyIndex = i;
+                    context.Ally = ally;
+                    dispatcher.Dispatch<ICombatAllyActPhase>(host, context);
+                }
+            }
+            context.AllyIndex = -1;
+            context.Ally = null;
             for (var i = 0; i < encounter.Enemies.Count; i++)
             {
                 var enemy = encounter.Enemies[i];
@@ -152,9 +188,21 @@ public sealed partial class CombatEventAdvanceSystem
                     dispatcher.Dispatch<ICombatEnemyActPhase>(host, context);
                 }
             }
+            context.EnemyIndex = -1;
+            context.Enemy = null;
 
-            if (!encounter.Player.IsAlive && encounter.PlayerRespawnSeconds > 0)
-                dispatcher.Dispatch<ICombatPlayerDownedPhase>(host, context);
+            // 倒地登记：本边界阵亡且尚未记账的盟友逐个进入倒地相位（仅原地复活遭遇可达）。
+            for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+            {
+                var ally = encounter.PlayerAllies[i];
+                if (ally.IsAlive || double.IsFinite(ally.RespawnAtSeconds)
+                    || encounter.PlayerRespawnSeconds <= 0) continue;
+                context.AllyIndex = i;
+                context.Ally = ally;
+                dispatcher.Dispatch<ICombatAllyDownedPhase>(host, context);
+            }
+            context.AllyIndex = -1;
+            context.Ally = null;
         }
 
         encounter.Sequence += 1;
@@ -164,15 +212,7 @@ public sealed partial class CombatEventAdvanceSystem
 
     private static double GetNaturalBoundarySeconds(CombatEncounterState encounter, out double effectAt)
     {
-        var next = encounter.IsPlayerDowned ? encounter.PlayerRespawnAtSeconds : encounter.Player.NextAttackAtSeconds;
-        if (!encounter.IsPlayerDowned)
-        {
-            for (var i = 0; i < encounter.Enemies.Count; i++)
-            {
-                var enemy = encounter.Enemies[i];
-                if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
-            }
-        }
+        var next = NaturalNextAttackOrRespawn(encounter);
 
         effectAt = NextBuffBoundary(encounter);
         if (effectAt < next) next = effectAt;
@@ -186,8 +226,8 @@ public sealed partial class CombatEventAdvanceSystem
     {
         var next = double.PositiveInfinity;
         var regenPending = false;
-        // 扫描顺序与原 Prepend(player) 一致：先玩家后敌人；min 求值无平局歧义。
-        Scan(encounter.Player);
+        // 扫描顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人；min 求值无平局歧义。
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Scan(encounter.PlayerAllies[i]);
         for (var i = 0; i < encounter.Enemies.Count; i++) Scan(encounter.Enemies[i]);
         if (regenPending)
             next = Math.Min(next, (Math.Floor(encounter.ElapsedSeconds / Systems.CombatBuffTickSystem.TickSeconds) + 1) * Systems.CombatBuffTickSystem.TickSeconds);

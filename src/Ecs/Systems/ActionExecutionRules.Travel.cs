@@ -230,5 +230,6 @@ internal static partial class ActionExecutionRules
             "world.arrived",
             $"已抵达地点：{nodeName}。",
             definition.Id));
+        TutorialRules.OnTravelArrived(player, arrivalTime, ref events);
     }
 }

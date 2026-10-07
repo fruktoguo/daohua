@@ -60,9 +60,12 @@ internal static partial class ActionExecutionRules
                 hasInputs = false;
                 break;
             }
+        // 讨伐行动不走「地点不符」口径：地点校验失败按条件不足阻断；其余行动维持原文案。
         var blockedReason = availableHere
             ? "材料不足，行动受阻。"
-            : "当前位置不允许执行该行动。";
+            : definition.ExecutionKind == ActionExecutionKind.CombatEncounter
+                ? "条件不足，行动受阻。"
+                : "当前位置不允许执行该行动。";
         if (availableHere && hasInputs && definition.Kind == ActionKind.Enhancement)
         {
             // 强化准入：目标装备/等级上限/意图目标/材料/护符一次结算；已达标则整行动提前完成出队。
@@ -90,13 +93,18 @@ internal static partial class ActionExecutionRules
         if (!availableHere || !hasInputs)
         {
             // 地点不符且自动移动开启：插队赶路至入队锚点替代 Blocked；任一前置不满足回落原语义。
-            if (!availableHere && TryEnqueueAutoTravel(player, action, definition, gameData, at, ref events))
+            // 讨伐行动除外——讨伐跟随玩家移动，当前地点不可执行时直接条件不足阻断，不赶回锚点。
+            if (!availableHere && definition.ExecutionKind != ActionExecutionKind.CombatEncounter
+                && TryEnqueueAutoTravel(player, action, definition, gameData, at, ref events))
                 return false;
             action.Status = ActionQueueStatus.Blocked;
             events ??= new();
             events.Add(new SimulationEvent(at, "action.blocked", blockedReason, definition.Id));
             return false;
         }
+        // 讨伐跟随驻留地点：准入通过但远征遭遇不属于此地时，就地按新地点重锚续跑。
+        if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter && gameData is not null)
+            CombatActionRules.ReanchorExpeditionIfMoved(player, action, definition, gameData);
         player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
         action.Status = ActionQueueStatus.Running;
         return true;
@@ -115,7 +123,7 @@ internal static partial class ActionExecutionRules
         var travelId = new ActionId("world.travel");
         // 锚点准入口径与开轮门禁同构：白名单须在列；黑名单须不含锚点（未配约束时全图可执行）。
         var anchorUnavailable = definition.AllowedNodeIds is { Count: > 0 } allowedNodes
-            ? !allowedNodes.Contains(anchor)
+            ? anchor is null || !allowedNodes.Contains(anchor)
             : definition.ExcludedNodeIds is { } excludedNodes && anchor is not null && excludedNodes.Contains(anchor);
         if (!player.Settings.AutoTravelEnabled
             || gameData?.WorldGraph is not { } worldGraph
@@ -147,7 +155,9 @@ internal static partial class ActionExecutionRules
 
     /// <summary>
     /// 计时行动的时长结算：强化按当次目标等级取 5+t 动态时长，其余取配表静态时长；
-    /// 节点建筑速度乘区与对应技艺等级速度乘区（每级 +5%）同点除法结算，保持确定性。
+    /// 节点建筑速度乘区独立除法，技艺等级速度乘区（每级 +5%）与已装备技艺工具
+    /// techniqueBonus.speedRatio 并入同一除数（duration /= 1 + 0.05×L + Σ工具加成），
+    /// 保持同点加算语义与确定性。
     /// </summary>
     public static double TimedActionDuration(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData,
@@ -171,7 +181,10 @@ internal static partial class ActionExecutionRules
             var level = TechniqueCatalog.LevelFor(
                 player.Loadout.TechniqueExperiences.TryGetValue(technique, out var exp) ? exp : 0,
                 gameData?.RealmProgression);
-            if (level > 0) duration /= 1 + TechniqueCatalog.SpeedBonusRatio(level);
+            // 技艺等级加成与已装备工具加成并入同一除数；level≤0 时 SpeedBonusRatio 为 0，
+            // 无加成时除数为 1 语义不变。
+            duration /= 1 + TechniqueCatalog.SpeedBonusRatio(level)
+                + TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, technique, gameData);
         }
         return duration;
     }
@@ -431,7 +444,12 @@ internal static partial class ActionExecutionRules
             definition.Name,
             definition.Id,
             itemRewards));
-        player.FinishActionRound(action.Id, definition.ExecutionKind != ActionExecutionKind.Travel,
+        // 引导里程碑推进的行动完成当轮即离队：∞ 循环与 LoopEnabled 轮转都会驻留队首，
+        // 不截断则阻塞后续引导行动（采集 ∞ 占位导致炼丹永远排不上）。
+        var tutorialAdvanced = TutorialRules.OnActionRoundCompleted(player, definition.Id, target, ref deltas, ref events);
+        if (tutorialAdvanced) action.RemainingRepeats = 0;
+        player.FinishActionRound(action.Id,
+            !tutorialAdvanced && definition.ExecutionKind != ActionExecutionKind.Travel,
             target.ToUnixTimeMilliseconds() / 1000d);
     }
 
