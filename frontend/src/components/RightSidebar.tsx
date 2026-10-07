@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { useGameStore } from '../game/gameStore'
-import { INVENTORY_GROUP_ORDER, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
+import { INVENTORY_GROUP_ORDER, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
 import type { InventoryItem } from '../game/types'
 import { useUiStore, type RightColumnTab } from '../uiStore'
 import { useT } from '../i18n'
@@ -21,11 +21,18 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
   const equippedList = useGameStore(state => state.combat?.equipment)
 
   const groups = useMemo(() => {
-    // 已穿戴装备留在装备面板管理：背包不再陈列该 itemId（资产仍计钱包持存，卸下后回到背包）。
-    const equippedIds = new Set((equippedList ?? []).map(entry => entry.itemId))
+    // 已穿戴装备留在装备面板管理：按 (itemId, 强化等级) 精确扣减已装备件数，
+    // 背包只陈列「钱包持存 − 同级已装备」仍有剩余的变体行；同物不同 +N 行互不串位。
+    const equippedCounts = new Map<string, number>()
+    for (const entry of equippedList ?? []) {
+      const key = `${entry.itemId}#${Math.floor(entry.enhancementLevel)}`
+      equippedCounts.set(key, (equippedCounts.get(key) ?? 0) + 1)
+    }
     const buckets = new Map<InventoryGroupKey, InventoryItem[]>()
     for (const item of inventory) {
-      if (item.amount <= 0 || equippedIds.has(item.itemId)) continue
+      if (item.amount <= 0) continue
+      const wornCount = equippedCounts.get(`${item.itemId}#${parseEnhancementVariant(item.variant)}`) ?? 0
+      if (item.amount - wornCount <= 0) continue
       const key = resolveInventoryGroup(item.itemId, items, equipment)
       const bucket = buckets.get(key)
       if (bucket) bucket.push(item)

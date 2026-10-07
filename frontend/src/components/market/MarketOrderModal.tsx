@@ -235,6 +235,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           amount={selectedAmount}
           category={metadata.category}
           className="inventory-cell"
+          enhancementLevel={enhancementLevel}
           itemId={instrument.itemId}
           level={metadata.level}
           name={displayName}

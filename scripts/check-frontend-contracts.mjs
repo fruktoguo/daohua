@@ -29,7 +29,8 @@ try {
     nodeBuildings: [{
       entityId: 'building.player-test', name: '自建建筑', kind: 'building', description: '', effect: '',
       group: 'production', level: 2, targetLevel: 0, buildProgress: 1, materialProgress: 1,
-      timeProgress: 1, requiredSeconds: 0, elapsedSeconds: 0, materials: [],
+      timeProgress: 1, requiredSeconds: 0, elapsedSeconds: 0,
+      activeUsers: 40, capacity: 100, efficiency: 1, materials: [],
     }],
     buildableBuildingIds: ['building.player-test'],
     monsters: [{
@@ -40,7 +41,7 @@ try {
   }
   // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 10, sectionVersion: 1,
+    section: 'world', schemaVersion: 20, sectionVersion: 1,
     data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }

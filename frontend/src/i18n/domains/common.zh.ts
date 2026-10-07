@@ -7,7 +7,7 @@ export const commonZh = {
     cancel: '取消',
     close: '关闭',
     emptyData: '暂无数据',
-    pickerEmpty: '不使用物品',
+    pickerEmpty: '无',
     selectItem: '选择使用物品',
     selectItemSlot: '选择使用物品 · 槽 {n}',
     repeatsCount: '{n}次',

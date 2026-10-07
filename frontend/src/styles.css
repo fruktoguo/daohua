@@ -14,6 +14,8 @@
   --gold-faint: rgba(201, 180, 109, 0.16);
   --text: #e9e3d2;
   --text-dim: rgba(233, 227, 210, 0.56);
+  --scrollbar-thumb: rgba(201, 180, 109, 0.3);
+  --scrollbar-thumb-hover: rgba(201, 180, 109, 0.5);
   --jade: #72a98c;
   --qi: #75a9ad;
   --danger: #c8523f;
@@ -25,6 +27,9 @@
 
 * {
   box-sizing: border-box;
+  /* Firefox 标准滚动条属性；Chrome 内核在 ::-webkit-scrollbar 生效时忽略这两项 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 html,
@@ -252,16 +257,17 @@ input[type="checkbox"] {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2413;
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #463c1e;
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-track {
@@ -634,6 +640,14 @@ input[type="checkbox"] {
   inherits: false;
 }
 
+/* 冷却/持续时长扇形遮罩驱动量：注册为可继承数值属性后，WAAPI 可直接动画，
+   冷却全程由动画时间轴驱动，无需 JS 逐帧 setProperty。未声明时取 0 = 无遮罩。 */
+@property --cooldown-ratio {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
+}
+
 .qc-current {
   position: relative;
   display: flex;
@@ -741,6 +755,9 @@ input[type="checkbox"] {
   inset: 0;
   width: 100%;
   height: 100%;
+  /* 斜切条（.progress / .queue-combat-vital）对角会越出裁切盒（14px 高半边水平偏移 ≈ 4px），
+     条缘与 overflow hidden 裁切盒齐平会被齐边裁角，统一留水平内距避让 */
+  padding: 0 5px;
 }
 
 .qc-expedition-meta {
@@ -902,10 +919,22 @@ input[type="checkbox"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* 主行动卡右上角常驻停止钮：顶部对齐落在卡片右上，flex 子项天然避让标题区 */
+.qc-stop {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 1px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* 斜切轮廓与战斗血条同口径：skewX 连边框整体倾斜成平行四边形，
+   条内文字经 .progress-text 反向 skewX 抵消保持直立；填充前缘随盒倾斜与其他条斜边平行 */
 .progress {
   position: relative;
   height: 14px;
   overflow: hidden;
+  transform: skewX(-30deg);
   border: 1px solid rgba(110, 96, 56, 0.62);
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(201, 180, 109, 0.035)),
@@ -989,16 +1018,35 @@ input[type="checkbox"] {
   to { transform: translate3d(410%, 0, 0); }
 }
 
-.progress-text {
+/* 条内进度文字统一口径：主行动进度条与战斗敌我血条共用——绝对定位居中 + 暗色描边。
+   用 flex 而非 grid：血条文字内含多个子节点（标签/数值/百分比），grid 会把每个子节点
+   竖着堆成独立网格项导致只露出第一个字；flex 沿主轴横排居中才符合条内单行语义。
+   反向 skewX 抵消斜切盒的倾斜保持文字直立（与父盒 skewX(-30deg) 同中心叠加为恒等）。
+   描边优于光晕：填充后段为亮金，亮晕会进一步降低对比度，暗色柔晕在 14px 条内 10px 小字下发虚，
+   8 方向 1px 暗描边在暗轨与亮填充两种背景上都能保证文字边缘分离。 */
+.progress-text,
+.queue-combat-vital > strong {
   position: absolute;
   inset: 0;
-  display: grid;
+  display: flex;
   z-index: 3;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  transform: skewX(30deg);
   color: var(--text);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  text-shadow:
+    1px 0 0 rgba(0, 0, 0, 0.78),
+    -1px 0 0 rgba(0, 0, 0, 0.78),
+    0 1px 0 rgba(0, 0, 0, 0.78),
+    0 -1px 0 rgba(0, 0, 0, 0.78),
+    1px 1px 0 rgba(0, 0, 0, 0.78),
+    -1px 1px 0 rgba(0, 0, 0, 0.78),
+    1px -1px 0 rgba(0, 0, 0, 0.78),
+    -1px -1px 0 rgba(0, 0, 0, 0.78),
+    0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .queue-combat-vitals {
@@ -1009,23 +1057,28 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
+/* 战斗敌我血条：完整进度条 + 文字内嵌条内居中（标签并入文字前缀）。
+   斜切轮廓用 skewX 变换而非 clip-path：clip 会把边框一起裁掉（斜边断线），
+   skew 让整个盒连边框一起倾斜成完整平行四边形（与战场 .arena-action-track 同技法）；
+   条内文字反向 skewX 抵消保持直立。倾斜角对齐原 10px 高 6px 斜切口径（arctan 0.6 ≈ 30°）。 */
 .queue-combat-vital {
-  display: grid;
+  position: relative;
+  height: 14px;
   min-width: 0;
-  grid-template-columns: 16px minmax(52px, 1fr) auto;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-dim);
-  font-size: 8px;
-  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  transform: skewX(-30deg);
+  border: 1px solid rgba(110, 96, 56, 0.62);
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(201, 180, 109, 0.035)),
+    #090805;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.85);
 }
 
 .queue-combat-vital > i {
+  position: absolute;
+  inset: 2px;
   display: block;
-  height: 10px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
-  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 
 .queue-combat-vital > i b {
@@ -1041,11 +1094,14 @@ input[type="checkbox"] {
   background: linear-gradient(90deg, #873e35, #e19b8e);
 }
 
-.queue-combat-vital strong {
-  color: var(--text);
-  font-size: 8px;
+.queue-combat-vital > strong {
   font-weight: var(--font-weight-regular);
   white-space: nowrap;
+}
+
+/* 条内前缀标签（己/敌）沿用旧独立标签的暗色弱化口径 */
+.queue-combat-vital > strong > span:first-child {
+  color: var(--text-dim);
 }
 
 .badge {
@@ -1068,6 +1124,14 @@ input[type="checkbox"] {
   border-color: rgba(148, 103, 189, 0.5);
   color: #c9a2e8;
   background: rgba(148, 103, 189, 0.14);
+}
+
+/* 组队讨伐徽标（同图共战伪行动标识，§21.13） */
+.badge-party {
+  border-color: rgba(114, 169, 140, 0.55);
+  color: #9fd0b4;
+  background: rgba(114, 169, 140, 0.12);
+  white-space: nowrap;
 }
 
 .queue-backdrop {
@@ -1469,6 +1533,18 @@ input[type="checkbox"] {
 .log-message {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* 多目标施放合并行的续行容器：各占一整行 */
+.log-combat-line {
+  display: block;
+}
+
+/* 续行隐藏占位：克隆施放前缀（出手方+「施放」+功法引用+标点）完整占宽，
+   visibility:hidden 不参与交互与选读，让每条续行的「对/为」与首行对齐 */
+.log-combat-indent {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .event-log .log-state-row {
@@ -2860,6 +2936,11 @@ input[type="checkbox"] {
   box-shadow: 0 0 8px rgba(201, 180, 109, 0.2);
   font-weight: 600;
 }
+
+/* 技艺模式切换栏：桌面侧边栏二级菜单的移动端替身，桌面视口隐藏 */
+.crafting-mode-tabs {
+  display: none;
+}
 .location-sub-badge {
   display: inline-flex;
   align-items: center;
@@ -3716,7 +3797,8 @@ input[type="checkbox"] {
   min-height: 0;
   max-height: 100%;
   overflow-y: auto;
-  padding: 12px 6px 8px;
+  /* 左右 padding 与网格 gap 一致（6px）：space-evenly 均分余量后，视觉外边距与列间距相等 */
+  padding: 8px 6px;
   align-content: start;
   align-items: start;
   grid-auto-rows: var(--item-slot-size);
@@ -3762,8 +3844,16 @@ input[type="checkbox"] {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   gap: 14px;
+}
+
+/* 详情视图只滚内容子窗口：顶部导航条钉住，盘口表/强化等级列表在剩余空间内自滚 */
+.market-instrument-detail-view > .market-book-panel,
+.market-instrument-detail-view > .market-enhance {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .market-detail-navbar {
@@ -4009,7 +4099,7 @@ input[type="checkbox"] {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   gap: 12px;
 }
 
@@ -4019,6 +4109,7 @@ input[type="checkbox"] {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .market-claim {
@@ -4034,8 +4125,12 @@ input[type="checkbox"] {
   background: rgba(201, 180, 109, 0.22);
 }
 
+/* 委托列表作为子窗口滚动：工具条（统计/结清）与底部汇总钉住，只滚订单区 */
 .market-own-orders {
+  flex: 1;
+  min-height: 0;
   margin-top: 6px;
+  overflow-y: auto;
 }
 
 .market-own-empty {
@@ -4107,6 +4202,7 @@ input[type="checkbox"] {
 
 .market-footer {
   display: flex;
+  flex-shrink: 0;
   margin-top: auto;
   padding-top: 14px;
   justify-content: flex-end;
@@ -4701,40 +4797,12 @@ input[type="checkbox"] {
   color: var(--text-dim);
 }
 
+/* 七个技艺工具槽位复用 .equipment-slot-btn 两态视觉，窄屏自动换行 */
 .equipment-tools-grid {
   display: grid;
-  grid-template-columns: repeat(4, var(--item-slot-size, 64px));
+  grid-template-columns: repeat(auto-fill, var(--item-slot-size, 64px));
   gap: 8px;
   justify-content: center;
-}
-
-.equipment-tool-slot {
-  display: grid;
-  place-items: center;
-  width: var(--item-slot-size, 64px);
-  height: var(--item-slot-size, 64px);
-  min-height: var(--item-slot-size, 64px);
-  padding: 0;
-  border: 1px dashed rgba(201, 180, 109, 0.28);
-  border-radius: 6px;
-  background: rgba(16, 20, 24, 0.5);
-  transition: all 0.2s ease;
-  user-select: none;
-  box-sizing: border-box;
-}
-
-.equipment-tool-slot:hover {
-  border-color: rgba(201, 180, 109, 0.5);
-  background: rgba(24, 30, 36, 0.75);
-}
-
-.equipment-tool-empty-label {
-  font-family: var(--font-kaiti, serif);
-  font-size: 13px;
-  font-weight: var(--font-weight-regular);
-  color: var(--gold-dim);
-  text-align: center;
-  letter-spacing: 0.5px;
 }
 
 /* ---------------- 功法面板 (AbilitiesPanel) ---------------- */
@@ -4955,6 +5023,14 @@ input[type="checkbox"] {
 
 .item-corner--top-right { top: -9px; right: -5px; }
 .item-corner--bottom-right { right: -5px; bottom: -9px; color: var(--text); font-family: Arial, sans-serif; }
+
+/* 强化等级徽标：左下角 "+N" 胶囊，收进瓦片内部（左侧无外延避免出格），金色高亮与数量区分 */
+.item-corner--bottom-left {
+  left: 4px;
+  bottom: 4px;
+  color: var(--gold-bright);
+  font-weight: 700;
+}
 
 .item-tooltip-target {
   cursor: help;
@@ -5520,6 +5596,70 @@ input[type="checkbox"] {
     box-shadow: 0 0 10px rgba(201, 180, 109, 0.2);
   }
 
+  /* 技艺模式切换栏：竖屏补在技艺页底部、全局底部导航之上的第二层页签 */
+  .crafting-mode-tabs {
+    display: flex;
+    flex-shrink: 0;
+    gap: 2px;
+    padding: 6px 4px 4px;
+    overflow-x: auto;
+    border-top: 1px solid var(--gold-faint);
+    scrollbar-width: thin;
+  }
+
+  .crafting-mode-tab-btn {
+    display: flex;
+    min-width: 0;
+    flex: 1 0 62px;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 2px;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    background: transparent;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .crafting-mode-tab-btn.active {
+    color: var(--gold-bright);
+  }
+
+  .crafting-mode-tab-glyph {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 1px solid var(--gold-faint);
+    color: currentColor;
+  }
+
+  .crafting-mode-tab-btn.active .crafting-mode-tab-glyph {
+    border-color: var(--gold);
+    box-shadow: 0 0 10px rgba(201, 180, 109, 0.2);
+  }
+
+  .crafting-mode-tab-text {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+  }
+
+  /* 与侧边栏 nav-sub-level 同款：去下划线与加粗，仅留 pill-tone 分色数字 */
+  .crafting-mode-tab-level.underlined-value {
+    padding: 0;
+    border-bottom: none;
+    font-weight: 400;
+    font-size: 10px;
+  }
+
+  /* 竖屏强化页内容增高时收进自身滚动，避免把页底托盘与技艺页签挤出视口 */
+  .enhancement-layout {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
   .notice {
     right: 10px;
     bottom: calc(72px + env(safe-area-inset-bottom));
@@ -5593,21 +5733,18 @@ input[type="checkbox"] {
     padding: 7px 6px;
   }
 
-  /* 竖屏：队列卡内敌我血条改为上下两行，避免数值溢出重叠 */
+  /* 竖屏：队列卡内敌我血条改为上下两行（12+2+12 恰好填满 26px 战斗状态区），避免数值溢出重叠 */
   .queue-combat-vitals {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
   }
 
   .queue-combat-vital {
-    grid-template-columns: 12px minmax(24px, 1fr) auto;
-    gap: 4px;
-    font-size: 7px;
+    height: 12px;
   }
 
-  .queue-combat-vital strong {
-    font-size: 7px;
-    letter-spacing: -0.2px;
+  .queue-combat-vital > strong {
+    font-size: 9px;
   }
 
   /* 坊市详情导航：窄屏把发起求购/挂售挪到第二行整行，避免文字竖排截断 */
@@ -7688,14 +7825,18 @@ input[type="checkbox"] {
   position: absolute;
   top: 0;
   bottom: 0;
+  left: 0;
   width: 35%;
   background: linear-gradient(90deg, transparent, var(--gold-bright), transparent);
   animation: progress-slide 1.6s ease-in-out infinite;
+  will-change: transform;
 }
 
+/* 元素宽度为父级 35%：left -35%→100% 等效于 translateX(-100%)→translateX(285.714%)，
+   改用 transform 让扫光走合成器，不再逐帧触发 layout/paint。 */
 @keyframes progress-slide {
-  0% { left: -35%; }
-  100% { left: 100%; }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(285.714%); }
 }
 
 .status-actions {
@@ -8123,6 +8264,48 @@ input[type="checkbox"] {
   font-size: 11px;
 }
 
+/* 准备状态汇总行与成员就绪徽标（§21.13 同图共战） */
+.party-ready-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.party-ready-tag {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.party-ready-tag.is-ready {
+  color: var(--jade);
+}
+
+/* 同图共战活跃会话横幅：会话期间钉死遭遇与阵容（§21.13） */
+.party-session {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--jade);
+  background: rgba(114, 169, 140, 0.08);
+  font-size: 12px;
+}
+
+.party-session-title {
+  color: var(--jade);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 13px;
+}
+
+.party-session-warn {
+  flex-basis: 100%;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
 .party-invite-row {
   display: flex;
   flex-wrap: wrap;
@@ -8132,6 +8315,170 @@ input[type="checkbox"] {
   border-top: 1px solid var(--gold-faint);
   color: var(--text-dim);
   font-size: 11px;
+}
+
+/* 战斗页队伍面板条（§21.13，对齐银河奶牛成员卡片条：名册+就绪开关+会话血蓝） */
+.party-strip {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--gold-faint);
+  border-right: 0;
+  border-left: 0;
+  background: rgba(201, 180, 109, 0.03);
+}
+
+.party-strip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.party-strip-name {
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 13px;
+}
+
+.party-strip-count {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.party-strip-hint {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.party-strip-cards {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.party-slot {
+  display: flex;
+  min-width: 128px;
+  flex: 1 1 128px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(6, 7, 6, 0.42);
+}
+
+.party-slot--self {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.06);
+}
+
+.party-slot--downed {
+  border-color: rgba(200, 82, 63, 0.4);
+}
+
+.party-slot--empty {
+  justify-content: center;
+  border-style: dashed;
+  color: var(--text-dim);
+}
+
+.party-slot-empty-label {
+  font-size: 10px;
+}
+
+.party-slot-seal {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 15px;
+}
+
+.party-slot--downed .party-slot-seal {
+  border-color: rgba(200, 82, 63, 0.5);
+  color: rgba(200, 82, 63, 0.8);
+}
+
+.party-slot-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.party-slot-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-slot-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.party-slot-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.party-slot-bar {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.party-slot-bar i {
+  display: block;
+  height: 100%;
+  background: var(--blood, #b03a2e);
+  transition: width 0.3s linear;
+}
+
+.party-slot-bar--mp i {
+  background: var(--jade);
+}
+
+.party-join-toggle {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--gold-dim);
+  background: transparent;
+  color: var(--gold);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.party-join-toggle.is-on {
+  border-color: var(--jade);
+  background: rgba(114, 169, 140, 0.12);
+  color: var(--jade);
+}
+
+.party-join-toggle.danger {
+  border-color: rgba(200, 82, 63, 0.5);
+  color: rgba(200, 82, 63, 0.9);
+}
+
+.party-join-toggle:hover {
+  filter: brightness(1.2);
 }
 
 /* 传音消息内嵌的队伍链接卡 */
@@ -8160,6 +8507,120 @@ input[type="checkbox"] {
 
 .party-link-join {
   flex-shrink: 0;
+}
+
+/* ===== 同道页 · 邀请面板（InviteView） ===== */
+
+.invite-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.invite-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.invite-label {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.invite-code {
+  min-width: 0;
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px dashed var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(0, 0, 0, 0.35);
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invite-code--link {
+  letter-spacing: 0;
+}
+
+.invite-copy-btn {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold);
+  background: rgba(201, 180, 109, 0.06);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.invite-copy-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.14);
+}
+
+.invite-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(201, 180, 109, 0.08);
+}
+
+.invite-list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.06);
+  font-size: 12px;
+}
+
+.invite-list-row:last-child {
+  border-bottom: 0;
+}
+
+.invite-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invite-realm {
+  flex-shrink: 0;
+  color: var(--gold);
+  font-size: 11px;
+}
+
+.invite-milestone {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 2px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.invite-milestone.is-done {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.10);
+}
+
+.invite-date {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-family: Arial, sans-serif;
+  font-size: 10px;
 }
 
 /* ============================================================
@@ -8199,10 +8660,16 @@ input[type="checkbox"] {
 }
 
 .market-enhance-row--header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
   min-height: 0;
   padding: 4px 10px;
   color: var(--text-dim);
-  background: rgba(201, 180, 109, 0.06);
+  /* 表头吸顶需不透明底，否则滚动时行内容会透上来；观感与原 6% 金色罩一致 */
+  background:
+    linear-gradient(rgba(201, 180, 109, 0.06), rgba(201, 180, 109, 0.06)),
+    var(--panel);
   font-size: 10px;
 }
 

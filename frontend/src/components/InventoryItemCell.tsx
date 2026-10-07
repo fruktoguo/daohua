@@ -124,13 +124,19 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const t = useT()
   const definition = useGameStore(state => findItemInCatalog(state.items, item.itemId))
   const equipmentDef = useGameStore(state => findEquipmentInCatalog(state.equipment, item.itemId))
-  // 已装配判定按 (itemId, 强化等级) 精确匹配：背包中同物不同 +N 变体行互不串位。
+  // 已装配计数按 (itemId, 强化等级) 精确匹配：背包中同物不同 +N 变体行互不串位。
   const enhancementLevel = parseEnhancementVariant(item.variant)
-  const equipped = useGameStore(
-    state => state.combat?.equipment?.some(
-      entry => entry.itemId === item.itemId && Math.floor(entry.enhancementLevel) === enhancementLevel
-    ) ?? false
+  const equippedCount = useGameStore(
+    state => (state.combat?.equipment ?? []).reduce(
+      (count, entry) => entry.itemId === item.itemId && Math.floor(entry.enhancementLevel) === enhancementLevel
+        ? count + 1
+        : count,
+      0
+    )
   )
+  // 钱包持存含已装备件数：背包可支配数量需扣除同级已装备件；全数穿戴时视为已装备（背包层已过滤不渲染）。
+  const equipped = equippedCount >= item.amount
+  const bagItem = equippedCount > 0 ? { ...item, amount: item.amount - equippedCount } : item
   const [dialog, setDialog] = useState<ItemQuantityDialogMode | null>(null)
 
   const isManual = item.itemId.startsWith('item.tome.') || item.itemId.startsWith('item.fragment.')
@@ -218,11 +224,11 @@ export const InventoryItemCell = memo(function InventoryItemCell({
         size="auto"
         trigger="click"
       >
-        <ItemCard definition={definition} equipmentDefinition={equipmentDef} item={item} />
+        <ItemCard definition={definition} equipmentDefinition={equipmentDef} item={bagItem} />
       </FloatingPopover>
       {dialog !== null && (
         <ItemQuantityDialog
-          item={item}
+          item={bagItem}
           mode={dialog}
           onClose={() => setDialog(null)}
           unitPrice={definition?.sellPrice ?? 0}

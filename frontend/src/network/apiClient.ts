@@ -6,7 +6,7 @@ import { createRequestId } from './protocol'
 const REQUEST_TIMEOUT_MS = 15_000
 
 /**
- * 最近一次配表响应的游戏数据指纹（ETag 裸值，已去引号）。
+ * 最近一次配表响应的游戏数据指纹（ETag 裸值，已去引号与压缩代理追加的编码后缀）。
  * WebSocket Hello 握手回传该值，服务端不一致时以 GAME_DATA_MISMATCH 拒绝并触发配表重载。
  */
 let catalogFingerprint: string | null = null
@@ -110,9 +110,11 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
     })
     if (!response.ok) throw await parseError(response)
     // 配表端点的 ETag 即游戏数据指纹，随每次成功响应刷新，供 Hello 握手回传。
+    // 压缩代理会改写 ETag 表示压缩变体（Caddy encode 追加 -zstd/-gzip 等后缀），
+    // 指纹必须与传输层解耦：剥离编码后缀还原服务端权威值，否则握手恒 GAME_DATA_MISMATCH。
     if (path.startsWith('/api/v1/catalog/')) {
       const etag = response.headers.get('ETag')
-      if (etag) catalogFingerprint = etag.replace(/^"|"$/g, '')
+      if (etag) catalogFingerprint = etag.replace(/^(?:W\/)?"|"$/g, '').replace(/-(?:zstd|gzip|br|deflate)$/, '')
     }
     if (response.status === 204) return undefined as T
     return response.json() as Promise<T>

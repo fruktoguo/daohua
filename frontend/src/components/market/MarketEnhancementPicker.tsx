@@ -67,6 +67,7 @@ const MarketEnhancementRow = memo(function MarketEnhancementRow({
             <ItemTile
               category={metadata.category}
               className="market-enhance-tile"
+              enhancementLevel={level}
               itemId={instrument.itemId}
               level={metadata.level}
               name={displayName}

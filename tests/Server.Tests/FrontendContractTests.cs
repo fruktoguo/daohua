@@ -26,10 +26,10 @@ public sealed class FrontendContractTests
             .Order(StringComparer.Ordinal).Select(path => (ReadOnlyMemory<byte>)File.ReadAllBytes(path)));
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "协议契约", DateTimeOffset.UtcNow, catalog.Fingerprint);
         player.LearnAbility(new AbilityId("ability.heavy-slash"));
-        player.ReplaceCombatSlots([new("ability.heavy-slash", 1, [])], []);
+        player.ReplaceCombatSlots([new("ability.heavy-slash", 1)], []);
         var restored = PlayerAggregate.Restore(player.ExportState());
         Assert.Equal("ability.heavy-slash", restored.Loadout.AbilitySlots[0].AbilityId);
-        Assert.Equal(10, restored.Loadout.CoreAttributes.StaminaLevel);
+        Assert.Equal(0, restored.Loadout.CoreAttributes.StaminaLevel);
         var state = restored.ExportState();
         var snapshot = new PlayerRuntimeSnapshot(player.PlayerId.Value, player.AccountId.Value.ToString(), player.DisplayName,
             player.StateVersion, player.LastSimulatedAt, state, 0, []);

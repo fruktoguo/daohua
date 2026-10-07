@@ -33,6 +33,8 @@
   --on-accent: #fffaf0;
   --font-weight-regular: 600;
   --font-weight-medium: 600;
+  --scrollbar-thumb: rgba(125, 82, 26, 0.38);
+  --scrollbar-thumb-hover: rgba(125, 82, 26, 0.6);
 }
 
 /* 纸白材质与墨色文字分别配对，不对图像或特效施加反色滤镜；背景平色，不叠渐变。 */
@@ -160,7 +162,6 @@
   color: var(--danger);
 }
 
-:root[data-theme="light"] ::-webkit-scrollbar-thumb,
 :root[data-theme="light"] .queue-dropdown,
 :root[data-theme="light"] .choice-menu-popover,
 :root[data-theme="light"] .item-tooltip,
@@ -294,6 +295,7 @@
 :root[data-theme="light"] .arena-buff-square--jade .arena-buff-glyph,
 :root[data-theme="light"] .arena-buff-tooltip-desc,
 :root[data-theme="light"] .arena-travel-tag,
+:root[data-theme="light"] .badge-party,
 :root[data-theme="light"] .daohua-floating-menu-item--jade:hover:not(:disabled) {
   color: var(--jade);
 }
@@ -399,13 +401,8 @@
 }
 
 :root[data-theme="light"] .equipment-slot-btn.is-empty:hover,
-:root[data-theme="light"] .equipment-tool-slot:hover,
 :root[data-theme="light"] .avatar-tile {
   background: rgba(var(--surface-rgb), 0.75);
-}
-
-:root[data-theme="light"] .equipment-tool-slot {
-  background: rgba(var(--surface-rgb), 0.5);
 }
 
 :root[data-theme="light"] .abilities-slot-tag-badge.is-internal,
