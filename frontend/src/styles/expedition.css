@@ -520,6 +520,7 @@
 
 .world-location-sections::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 
 .world-location-sections::-webkit-scrollbar-track {
@@ -1064,6 +1065,32 @@
   margin-top: 6px;
 }
 
+/* 建筑拥挤使用展示：使用中人数/承载上限与超载衰减提示 */
+.building-usage {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.building-usage-overload {
+  margin-left: 6px;
+  color: var(--danger);
+}
+
+.building-usage-detail {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.building-usage-idle {
+  color: var(--jade);
+  font-size: 11px;
+}
+
 .building-progress-track {
   display: block;
   height: 4px;
@@ -1210,7 +1237,8 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: minmax(220px, 1fr) auto;
+  /* 三行：战斗场景 + 队伍面板条（无队伍时组件返回 null，auto 行塌缩为 0）+ 装备配置 */
+  grid-template-rows: minmax(220px, 1fr) auto auto;
   gap: 0;
   overflow: hidden;
 }
@@ -1487,6 +1515,11 @@
   --arena-hit-shift: -7px;
   --arena-lunge: 16px;
   --arena-windup: -4px;
+  /* 方位修正（竖屏纵列由 JS 按目标方位量取写入；零值即纯横向，桌面九宫不变） */
+  --arena-aim-y: 0px;
+  --arena-aim-angle: 0deg;
+  --arena-hit-y: 0px;
+  --arena-impact-angle: 0deg;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1554,6 +1587,17 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
   letter-spacing: 0.5px;
   -webkit-font-smoothing: antialiased;
+}
+
+/* 组队讨伐本人位「我」标记（§21.13）：行内小徽标，不抢占名条宽度 */
+.arena-self-tag {
+  margin-left: 4px;
+  color: var(--gold-bright);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  vertical-align: 1px;
 }
 
 .arena-avatar-stage {
@@ -1677,6 +1721,32 @@
 .arena-actor.is-dead .arena-avatar {
   opacity: 0.4;
   filter: grayscale(1);
+}
+
+/* 尸体槽位：搜寻相位留存的阵亡敌方单位，纯展示不响应交互 */
+.arena-slot--corpse .arena-actor {
+  cursor: default;
+}
+
+/* 尸体消散：寻敌倒数最后一秒统一触发，残魂萤火（VFX 覆盖层）上浮同时尸体淡出收束，
+   --corpse-fade-ms 由阵型容器按寻敌剩余时长下发，末帧即新一波入场 */
+.arena-slot--dissipating {
+  animation: arena-corpse-dissipate var(--corpse-fade-ms, 900ms) cubic-bezier(0.45, 0, 0.65, 0.35) forwards;
+  pointer-events: none;
+}
+
+@keyframes arena-corpse-dissipate {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: none;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.88);
+    filter: blur(3px);
+  }
 }
 
 .arena-seal {
@@ -2179,14 +2249,17 @@
   left: 48%;
   width: 110px;
   height: 48px;
-  transform: translateY(-50%);
+  transform: translateY(-50%) rotate(var(--arena-aim-angle, 0deg));
+  /* 弹道绕贴近头像的出射边缘摆动，而非绕容器中点，瞄准时才有出手感 */
+  transform-origin: 0% 50%;
   overflow: visible;
 }
 
 .arena-actor--enemy .arena-action-fx--attack {
   right: 48%;
   left: auto;
-  transform: translateY(-50%) scaleX(-1);
+  transform: translateY(-50%) scaleX(-1) rotate(calc(var(--arena-aim-angle, 0deg) * -1));
+  transform-origin: 100% 50%;
 }
 
 .arena-action-fx--attack>i {
@@ -2257,10 +2330,12 @@
   inset: 15% 2% 17%;
   filter: drop-shadow(0 0 3px rgba(218, 116, 85, 0.45));
   overflow: visible;
+  /* 刀光沿攻击来向斜率倾斜（竖屏纵列由 JS 写入方位角，默认 0 即纯横向） */
+  transform: rotate(var(--arena-impact-angle, 0deg));
 }
 
 .arena-actor--player .arena-impact-fx {
-  transform: scaleX(-1);
+  transform: scaleX(-1) rotate(calc(var(--arena-impact-angle, 0deg) * -1));
 }
 
 .arena-impact-fx>i {
@@ -2370,12 +2445,12 @@
 
   43% {
     filter: brightness(1.3);
-    transform: translate3d(var(--arena-lunge), -2px, 0) rotate(1.5deg) scale(1.05, 0.97);
+    transform: translate3d(var(--arena-lunge), calc(-2px + var(--arena-aim-y)), 0) rotate(1.5deg) scale(1.05, 0.97);
   }
 
   54% {
     filter: brightness(1.15);
-    transform: translate3d(var(--arena-lunge), -2px, 0) rotate(0.5deg) scale(1.02, 0.99);
+    transform: translate3d(var(--arena-lunge), calc(-2px + var(--arena-aim-y)), 0) rotate(0.5deg) scale(1.02, 0.99);
   }
 
   76% {
@@ -2495,15 +2570,15 @@
   }
 
   15% {
-    transform: translate3d(var(--arena-hit-shift), 0, 0);
+    transform: translate3d(var(--arena-hit-shift), var(--arena-hit-y, 0px), 0);
   }
 
   28% {
-    transform: translate3d(var(--arena-hit-return), -1px, 0);
+    transform: translate3d(var(--arena-hit-return), calc(var(--arena-hit-y, 0px) * 0.5 - 1px), 0);
   }
 
   46% {
-    transform: translate3d(var(--arena-hit-settle), 0, 0);
+    transform: translate3d(var(--arena-hit-settle), calc(var(--arena-hit-y, 0px) * 0.25), 0);
   }
 
   68% {
@@ -3294,22 +3369,35 @@
   }
 
   .world-map-layout {
+    /* 竖屏：块级纵向滚动列表——grid 的 auto 行轨会把详情面板压成剩余空间导致内容被裁，块级流按内容自然撑高 */
+    display: block;
     min-height: 0;
-    grid-template-columns: minmax(0, 1fr);
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
   }
 
   .world-map-stage {
     /* 显式宽高：aspect-ratio 配 min-height 会在窄屏把宽度反推撑出容器，导致右上工具栏溢出 */
     width: 100%;
     min-width: 0;
-    height: 420px;
+    height: clamp(220px, 36vh, 360px);
     min-height: 0;
-    justify-self: stretch;
+    margin-bottom: 10px;
   }
 
   .world-location-panel {
+    height: auto;
+    max-height: none;
+    overflow: visible;
     border-top: 1px solid var(--gold-faint);
     border-left: 0;
+  }
+
+  /* 详情分区不再内部滚动，随面板自然撑高，由外层布局统一滚动 */
+  .world-location-sections {
+    flex: none;
+    overflow-y: visible;
   }
 
   .combat-arena-shell {
@@ -3325,32 +3413,66 @@
     padding: 6px 4px;
   }
 
+  /* 竖屏：九宫阵型退化为纵向角色列，空槽收起；纵列自上而下即铺位顺序（前排居中槽优先） */
   .arena-formation {
-    gap: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: safe center;
+    overflow-y: auto;
+    scrollbar-width: thin;
   }
 
+  .arena-formation .arena-slot {
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
+  }
+
+  .arena-slot--empty {
+    display: none;
+  }
+
+  /* 角色保持原版竖向卡片样式、整体缩小一档，纵列下多个角色才站得下 */
   .arena-actor {
-    width: 80px;
+    width: 60px;
+    gap: 2px;
   }
 
   .arena-avatar-stage,
   .arena-avatar,
-  .arena-avatar .vector-character {
-    width: 75px;
-    height: 100px;
-    min-width: 75px;
-    min-height: 100px;
-    max-width: 75px;
-    max-height: 100px;
+  .arena-avatar .vector-character,
+  .arena-avatar .character-avatar {
+    width: 48px;
+    height: 64px;
+    min-width: 48px;
+    min-height: 64px;
+    max-width: 48px;
+    max-height: 64px;
+  }
+
+  /* 48px 头像框容不下 42px 字印，随卡片同步收缩 */
+  .arena-avatar span {
+    font-size: 20px;
   }
 
   .arena-overhead>strong {
-    font-size: 10px;
+    font-size: 9px;
+  }
+
+  .arena-vitals {
+    gap: 3px;
   }
 
   .arena-resource {
     font-size: 8px;
     gap: 2px;
+  }
+
+  /* 增益小方块从卡片底部浮层收进卡片流内，避免遮挡下一行角色 */
+  .arena-actor-buff-list {
+    position: static;
+    transform: none;
   }
 
   .arena-transition {
@@ -3364,8 +3486,6 @@
   }
 
   .combat-slot-tray {
-    --item-slot-size: 64px;
-    --item-tile-size: 64px;
     min-width: 0;
   }
 
@@ -3426,21 +3546,43 @@
     background: rgba(10, 9, 6, 0.97);
   }
 
-  /* 竖屏：战斗槽位托盘三组纵向堆叠，格子均分整行宽度 */
+  /* 竖屏：消耗药品/通用物品两组并列一行、功法组独占一行；格子统一缩至桌面 2/3（64→42px） */
   .combat-slot-tray {
-    flex-direction: column;
+    --item-slot-size: 42px;
+    --item-tile-size: 42px;
+    flex-direction: row;
+    flex-wrap: wrap;
     align-items: stretch;
-    gap: 6px;
     overflow-x: hidden;
   }
 
   .combat-slot-section {
-    width: 100%;
+    flex: 1 1 0;
+    width: auto;
     min-width: 0;
-    flex: none;
   }
 
+  /* 42px 槽高容纳不下带字距的竖排标签（4 字约 48px），竖屏收紧字距避免裁切 */
+  .combat-slot-section .slot-group-label {
+    letter-spacing: 0;
+  }
+
+  /* 缩小后的格上角标过小难辨，竖屏详情栏隐藏（丝带保留品类色块可辨，不做隐藏） */
+  .combat-slot-tray :is(.item-corner, .abilities-slot-tag-badge, .combat-ability-level-control) {
+    display: none;
+  }
+
+  /* 同排两组物品之间沿用竖向分隔线 */
   .combat-slot-section + .combat-slot-section {
+    padding-top: 0;
+    border-top: 0;
+    border-left: 1px solid var(--gold-faint);
+  }
+
+  /* 功法组折行独占一行，分隔线回到顶边 */
+  .combat-slot-tray .combat-slot-section:last-child {
+    flex: 1 1 100%;
+    width: 100%;
     padding-top: 6px;
     border-top: 1px solid var(--gold-faint);
     border-left: 0;
@@ -3474,7 +3616,7 @@
   }
 
   .world-map-stage {
-    min-height: 340px;
+    min-height: 220px;
   }
 
   .world-location-panel {
@@ -3493,19 +3635,25 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* 极窄竖屏：竖向卡片再降一档 */
   .arena-actor {
-    width: 68px;
+    width: 52px;
   }
 
   .arena-avatar-stage,
   .arena-avatar,
-  .arena-avatar .vector-character {
-    width: 63px;
-    height: 84px;
-    min-width: 63px;
-    min-height: 84px;
-    max-width: 63px;
-    max-height: 84px;
+  .arena-avatar .vector-character,
+  .arena-avatar .character-avatar {
+    width: 40px;
+    height: 54px;
+    min-width: 40px;
+    min-height: 54px;
+    max-width: 40px;
+    max-height: 54px;
+  }
+
+  .arena-avatar span {
+    font-size: 16px;
   }
 
   .arena-resource {

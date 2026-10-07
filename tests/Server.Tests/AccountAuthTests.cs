@@ -22,7 +22,7 @@ public sealed class AccountAuthTests
     {
         var (source, repository) = await OpenRepositoryAsync();
         var account = UniqueAccount();
-        var registered = await repository.RegisterAsync(account, "old-pass-1", null, new AccountRiskSignals(DeviceId: account));
+        var registered = await repository.RegisterAsync(account, "old-pass-1", null, null, new AccountRiskSignals(DeviceId: account));
         Assert.True(registered.Success);
 
         var result = await repository.ChangePasswordAsync(
@@ -42,7 +42,7 @@ public sealed class AccountAuthTests
     {
         var (source, repository) = await OpenRepositoryAsync();
         var account = UniqueAccount();
-        var registered = await repository.RegisterAsync(account, "old-pass-1", null, new AccountRiskSignals(DeviceId: account));
+        var registered = await repository.RegisterAsync(account, "old-pass-1", null, null, new AccountRiskSignals(DeviceId: account));
         Assert.True(registered.Success);
 
         var result = await repository.ChangePasswordAsync(
@@ -63,7 +63,7 @@ public sealed class AccountAuthTests
     {
         var (source, repository) = await OpenRepositoryAsync();
         var account = UniqueAccount();
-        var registered = await repository.RegisterAsync(account, "old-pass-1", null, new AccountRiskSignals(DeviceId: account));
+        var registered = await repository.RegisterAsync(account, "old-pass-1", null, null, new AccountRiskSignals(DeviceId: account));
         Assert.True(registered.Success);
         var firstToken = registered.SessionToken!;
         var secondLogin = await repository.LoginAsync(account, "old-pass-1", new AccountRiskSignals(DeviceId: account));

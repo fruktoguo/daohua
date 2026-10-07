@@ -4,9 +4,10 @@ import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
 import { RecordsPanel } from './components/RecordsPanel'
 import { CombatArena } from './components/CombatArena'
+import { PartyPanel } from './components/PartyPanel'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
-import { EffectTooltipTarget } from './components/EffectTooltip'
+import { ConditionedTile } from './components/ConditionedTile'
 import { EnhancementPage } from './components/EnhancementPage'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
@@ -26,11 +27,13 @@ import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage
 import { RightSidebar } from './components/RightSidebar'
 import { SocialPage } from './components/SocialPage'
 import { TaijiToggle } from './components/TaijiToggle'
+import { TutorialOverlay } from './tutorial/TutorialOverlay'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
+import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
 import { calculateActionYieldPreview, isActionAvailableAtNode } from './game/actionCalculations'
@@ -334,14 +337,18 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
     <div className="queue-combat-state queue-combat-state--combat">
       <div className="queue-combat-vitals" role="status" aria-label={t('app.queue.combatVitalsAria')}>
         <div className="queue-combat-vital queue-combat-vital--player">
-          <span>{t('app.queue.combatVitalSelf')}</span>
           <i><b style={{ transform: `scaleX(${playerValue / playerMax})` }} /></i>
-          <strong><UnitNumber maxDecimals={0} value={playerValue} /> / <UnitNumber maxDecimals={0} value={playerMax} />（{Math.round(playerValue / playerMax * 100)}%）</strong>
+          <strong>
+            <span>{t('app.queue.combatVitalSelf')}</span>
+            <span><UnitNumber maxDecimals={0} value={playerValue} /> / <UnitNumber maxDecimals={0} value={playerMax} />（{Math.round(playerValue / playerMax * 100)}%）</span>
+          </strong>
         </div>
         <div className="queue-combat-vital queue-combat-vital--enemy">
-          <span>{t('app.queue.combatVitalEnemy')}</span>
           <i><b style={{ transform: `scaleX(${enemyValue / enemyMax})` }} /></i>
-          <strong><UnitNumber maxDecimals={0} value={enemyValue} /> / <UnitNumber maxDecimals={0} value={enemyMax} />（{Math.round(enemyValue / enemyMax * 100)}%）</strong>
+          <strong>
+            <span>{t('app.queue.combatVitalEnemy')}</span>
+            <span><UnitNumber maxDecimals={0} value={enemyValue} /> / <UnitNumber maxDecimals={0} value={enemyMax} />（{Math.round(enemyValue / enemyMax * 100)}%）</span>
+          </strong>
         </div>
       </div>
     </div>
@@ -351,7 +358,7 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
 /**
  * 当前正在执行的行动卡片（支持出场/入场平滑过渡动画）
  */
-const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = false }: { entry: QueueEntry; departing?: boolean }): React.JSX.Element {
+const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = false, onStop }: { entry: QueueEntry; departing?: boolean; onStop?: () => void }): React.JSX.Element {
   const t = useT()
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
@@ -393,6 +400,16 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
             ? <ExpeditionActionProgress entry={entry} />
             : <SmoothProgressBar entry={entry} />}
       </div>
+      {/* 右上角常驻停止钮：直接复用队列移除确认链，无需展开列表或进详情 */}
+      {onStop && (
+        <button
+          aria-label={t('app.queue.stopAria')}
+          className="qc-stop danger"
+          onClick={onStop}
+          title={t('app.queue.stopTitle')}
+          type="button"
+        >{t('app.queue.stop')}</button>
+      )}
     </div>
   )
 })
@@ -400,7 +417,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
 /**
  * 队列中当前行动展示区（支持切换动画）
  */
-const QueueCurrentStage = memo(function QueueCurrentStage({ entry }: { entry?: QueueEntry }): React.JSX.Element {
+const QueueCurrentStage = memo(function QueueCurrentStage({ entry, onStop }: { entry?: QueueEntry; onStop?: () => void }): React.JSX.Element {
   const t = useT()
   const previousRef = useRef<QueueEntry | undefined>(entry)
   const exitTimerRef = useRef<number | undefined>(undefined)
@@ -422,7 +439,7 @@ const QueueCurrentStage = memo(function QueueCurrentStage({ entry }: { entry?: Q
 
   return (
     <div className="qc-current-stage">
-      {entry ? <CurrentActionCard entry={entry} key={entry.entryId} /> : <div className="qc-current qc-idle">{t('app.queue.idle')}</div>}
+      {entry ? <CurrentActionCard entry={entry} key={entry.entryId} onStop={onStop} /> : <div className="qc-current qc-idle">{t('app.queue.idle')}</div>}
       {departing && <CurrentActionCard departing entry={departing} key={`departing-${departing.entryId}`} />}
     </div>
   )
@@ -436,11 +453,26 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
   const queue = useGameStore(state => state.queue)
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
+  // 组队讨伐伪行动（§21.13）：徽标成员数取自队伍活跃会话，会话可能先于快照到达
+  const partyMemberCount = useSocialStore(state => state.party?.activeSession?.memberIds.length ?? 0)
   const [open, setOpen] = useState(false)
   const [pendingRemoval, setPendingRemoval] = useState<QueueEntry | null>(null)
   const [pendingClearAll, setPendingClearAll] = useState(false)
   const current = queue.entries[0]
   const upcoming = queue.entries.slice(1, 3)
+  // 组队讨伐伪行动不受个人移除/停止：点击提示回到队伍页取消准备或离队
+  const notifyPartyLocked = useCallback(() => {
+    useGameStore.getState().setNotice(t('social.session.cancelHint'))
+  }, [t])
+  // 主行动卡停止钮与队列列表移除共用同一确认弹窗：确认后 action.remove 移除队首即停止
+  const requestStopCurrent = useCallback(() => {
+    if (!current) return
+    if (current.partySession != null) {
+      notifyPartyLocked()
+      return
+    }
+    setPendingRemoval(current)
+  }, [current, notifyPartyLocked])
 
   useEffect(() => {
     if (queue.entries.length === 0) setOpen(false)
@@ -448,7 +480,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
 
   return (
     <div className="queue-center">
-      <QueueCurrentStage entry={current} />
+      <QueueCurrentStage entry={current} onStop={current ? requestStopCurrent : undefined} />
 
       <div className="qc-upcoming" aria-label={t('app.queue.upcomingAria')}>
         {upcoming.map(entry => (
@@ -523,27 +555,39 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                   <Icon name={entry.type} />
                 </span>
                 <span className="queue-name">{resolveQueueEntryName(entry, undefined, world, maps)}</span>
+                {entry.partySession != null && (
+                  <span className="badge badge-party">
+                    {partyMemberCount > 0 ? t('social.session.badgeCount', { count: partyMemberCount }) : t('social.session.badge')}
+                  </span>
+                )}
                 <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
                 <div className="queue-actions">
                   <button
                     aria-label={t('app.queue.moveUpAria')}
-                    disabled={index === 0}
+                    disabled={index === 0 || entry.partySession != null}
                     onClick={() => gameClient.sendCommand('queue.move', { actionInstanceId: entry.entryId, direction: -1 })}
-                    title={t('app.queue.moveUpTitle')}
+                    title={entry.partySession != null ? t('social.session.cancelHint') : t('app.queue.moveUpTitle')}
                     type="button"
                   >↑</button>
                   <button
                     aria-label={t('app.queue.moveDownAria')}
-                    disabled={index === queue.entries.length - 1}
+                    disabled={index === queue.entries.length - 1 || entry.partySession != null}
                     onClick={() => gameClient.sendCommand('queue.move', { actionInstanceId: entry.entryId, direction: 1 })}
-                    title={t('app.queue.moveDownTitle')}
+                    title={entry.partySession != null ? t('social.session.cancelHint') : t('app.queue.moveDownTitle')}
                     type="button"
                   >↓</button>
                   <button
                     aria-label={t('app.queue.removeAria')}
                     className="queue-remove"
-                    onClick={() => setPendingRemoval(entry)}
-                    title={t('app.queue.removeTitle')}
+                    onClick={() => {
+                      // 组队讨伐伪行动不走 action.remove（§21.13.6）：提示走队伍页取消准备/离队
+                      if (entry.partySession != null) {
+                        notifyPartyLocked()
+                        return
+                      }
+                      setPendingRemoval(entry)
+                    }}
+                    title={entry.partySession != null ? t('social.session.cancelHint') : t('app.queue.removeTitle')}
                     type="button"
                   >×</button>
                 </div>
@@ -821,6 +865,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
 
         <button
           className={`nav-item${activeTab === 'map' ? ' active' : ''}`}
+          data-tour="nav-map"
           onClick={() => setActiveTab('map')}
           type="button"
         >
@@ -892,8 +937,8 @@ const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyExt
   { id: 'combat', labelKey: 'alchemyCombat' },
 ]
 
-/** 炼器页顶部子选项卡配置（精炼 + 六大装备部位） */
-const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefining' | 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' }> = [
+/** 炼器页顶部子选项卡配置（精炼 + 六大装备部位 + 技艺工具分组） */
+const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefining' | 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' | 'forgeTechnique' }> = [
   { id: 'refining', labelKey: 'forgeRefining' },
   { id: 'weapon', labelKey: 'forgeWeapon' },
   { id: 'head', labelKey: 'forgeHead' },
@@ -901,7 +946,44 @@ const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefin
   { id: 'legs', labelKey: 'forgeLegs' },
   { id: 'boots', labelKey: 'forgeBoots' },
   { id: 'trinket', labelKey: 'forgeTrinket' },
+  { id: 'technique', labelKey: 'forgeTechnique' },
 ]
+
+/**
+ * 竖屏技艺模式切换栏（炼丹/炼器/符箓/阵法/强化）
+ * 桌面端由侧边栏可折叠二级菜单承载，竖屏侧边栏整体隐藏，此处补一层底部页签；
+ * 桌面视口由 CSS display:none 隐藏，仅 ≤960px 显示。
+ */
+const CraftingModeTabs = memo(function CraftingModeTabs(): React.JSX.Element {
+  const t = useT()
+  const craftingMode = useUiStore(state => state.craftingMode)
+  const setCraftingMode = useUiStore(state => state.setCraftingMode)
+  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
+  return (
+    <nav aria-label={t('app.nav.crafting')} className="crafting-mode-tabs" role="tablist">
+      {CRAFTING_NAV_MODES.map(mode => {
+        const level = calculateTechniqueProgress(techniqueExperiences?.[mode.id] ?? 0).level
+        return (
+          <button
+            aria-selected={craftingMode === mode.id}
+            className={`crafting-mode-tab-btn${craftingMode === mode.id ? ' active' : ''}`}
+            key={mode.id}
+            onClick={() => setCraftingMode(mode.id)}
+            role="tab"
+            type="button"
+          >
+            <span className="crafting-mode-tab-glyph" aria-hidden="true"><Icon name={mode.icon} /></span>
+            {/* 等级数字经 pill-tone 容器对子级 underlined-value 分色，与侧边栏技艺色一致 */}
+            <span className={`crafting-mode-tab-text pill-tone--${mode.tone}`}>
+              {t(`app.crafting.${mode.id}`)}
+              <span className="crafting-mode-tab-level underlined-value">{level}</span>
+            </span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+})
 
 /**
  * 技艺页面（整合炼丹与炼器两大修仙工艺系统，支持二级模式切换与顶部多子选项卡）
@@ -987,6 +1069,14 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
           a.id.startsWith('craft.refine-') ||
           (a.id.startsWith('craft.') && !a.id.startsWith('craft.extract-'))
         )
+      } else if (forgingSubTab === 'technique') {
+        // 技艺工具配方：任一产出物在装备目录中命中 tool-* 专属槽位即归入本组
+        list = pool.filter(a => (a.yields ?? []).some(yieldEntry =>
+          yieldEntry.kind === 'item'
+          && yieldEntry.id !== null
+          && yieldEntry.id !== undefined
+          && (equipmentSlotMap[yieldEntry.id]?.startsWith('tool-') ?? false)
+        ))
       } else {
         list = pool.filter(a => {
           for (const yieldEntry of a.yields ?? []) {
@@ -1069,6 +1159,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         </div>
       )}
       <AutoUse type={craftingMode === 'enhancement' ? 'enhancement' : 'alchemy'} />
+      <CraftingModeTabs />
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
@@ -1109,8 +1200,8 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   const itemCatalog = useGameStore(state => state.items)
   const [picker, setPicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
   const pickerItems = useMemo<ItemPickerEntry[]>(() => itemCatalog
-      .filter(item => item.usableActionTypes.includes(type) && itemAmount(inventory, item.itemId) > 0
-        // 药品栏只放药品类即时消耗品；通用栏任意适用消耗品皆可。
+      .filter(item => item.category === 'consumable' && item.usableActionTypes.includes(type) && itemAmount(inventory, item.itemId) > 0
+        // 药品栏只放药品类即时消耗品；通用栏任意适用自动消耗品皆可（手动消耗品不入栏）。
         && (slotGroup !== 'potion' || (item.subCategory === 'pill' && !item.isContinuous)))
       .map(item => ({
         itemId: item.itemId,
@@ -1178,7 +1269,6 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       </div>
       <ItemGridPicker
         anchor={picker?.anchor ?? null}
-        emptyLabel={t('common.pickerEmpty')}
         onClose={() => setPicker(null)}
         onSelect={itemId => {
           if (picker === null) return
@@ -1242,6 +1332,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
     <button
       aria-haspopup="dialog"
       className={`action-card${isCrafting ? ' action-card--crafting' : ''}`}
+      data-action-id={action.id}
       data-rarity={rarity}
       onClick={() => onOpen(action)}
       type="button"
@@ -1279,11 +1370,16 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
   const stats = useGameStore(state => state.stats)
+  const combat = useGameStore(state => state.combat)
+  const equipmentCatalog = useGameStore(state => state.equipment)
   const queueLength = useGameStore(state => state.queue.entries.length)
   const duel = useGameStore(state => state.duel)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
-  const [repeats, setRepeats] = useState(-1)
+  // 制造类行动（炼丹/炼器/精炼/强化）默认单轮：材料逐轮消耗结算，无限默认会烧穿背包；
+  // 其余行动（探索/修炼/战斗/赶路）维持无限循环口径不变。
+  const isManufacture = action.type === 'alchemy' || action.type === 'enhancement'
+  const [repeats, setRepeats] = useState(isManufacture ? 1 : -1)
   const [pvpEnabled, setPvpEnabled] = useState(false)
   const [, setClockTick] = useState(0)
 
@@ -1294,7 +1390,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     autoUseSlots,
     world,
     stats,
-  }), [action, inventory, items, autoUseSlots, world, stats])
+    combat,
+    equipmentCatalog,
+  }), [action, inventory, items, autoUseSlots, world, stats, combat, equipmentCatalog])
 
   // 耗时加速类加成不乘产出倍率：拆出单独徽标常显，不并入「总加成」构成明细
   const multiplierBonuses = useMemo(
@@ -1510,6 +1608,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
 
       <button
         className="action-modal-submit"
+        data-tour="action-submit"
         onClick={() => {
           if (gameClient.sendCommand('action.enqueue', {
             actionId: action.id,
@@ -1553,18 +1652,34 @@ const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
     const startedAt = performance.now()
     const initialRemaining = Math.max(0, remainingMilliseconds)
     const total = Math.max(1, totalMilliseconds)
-    let animationFrame = 0
 
-    const update = () => {
+    // 文本与可见性：0.1s 显示精度只需 100ms 唤醒，内容未变化不写 DOM
+    const syncText = () => {
       const remaining = Math.max(0, initialRemaining - (performance.now() - startedAt))
-      overlay.style.setProperty('--cooldown-ratio', String(Math.min(1, remaining / total)))
-      overlay.textContent = remaining > 0 ? `${(remaining / 1000).toFixed(1)}s` : ''
-      overlay.hidden = remaining <= 0
-      if (remaining > 0) animationFrame = window.requestAnimationFrame(update)
+      const text = remaining > 0 ? `${(remaining / 1000).toFixed(1)}s` : ''
+      if (overlay.textContent !== text) overlay.textContent = text
+      const hidden = remaining <= 0
+      if (overlay.hidden !== hidden) overlay.hidden = hidden
+      return remaining
     }
+    if (syncText() <= 0) return
 
-    update()
-    return () => window.cancelAnimationFrame(animationFrame)
+    // 扇形遮罩经 @property 注册的 --cooldown-ratio 走 WAAPI 动画时间轴，
+    // 冷却全程不再逐帧 setProperty 触发主线程样式重算。
+    const ratioFrom = Math.min(1, initialRemaining / total)
+    overlay.style.setProperty('--cooldown-ratio', String(ratioFrom))
+    const anim = overlay.animate(
+      [{ '--cooldown-ratio': String(ratioFrom) }, { '--cooldown-ratio': '0' }],
+      { duration: initialRemaining, easing: 'linear', fill: 'forwards' },
+    )
+    const timer = window.setInterval(() => {
+      if (syncText() <= 0) window.clearInterval(timer)
+    }, 100)
+
+    return () => {
+      window.clearInterval(timer)
+      anim.cancel()
+    }
   }, [remainingMilliseconds, totalMilliseconds])
 
   return <span className="combat-ability-cooldown" ref={overlayRef} />
@@ -1581,10 +1696,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const abilityCooldowns = useGameStore(
     state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
-  const [editingTrigger, setEditingTrigger] = useState<{
-    kind: 'ability'
-    index: number
-  } | null>(null)
+  const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
   const [pickerTarget, setPickerTarget] = useState<CombatPickerTarget | null>(null)
   // hooks 必须在早退之前调用：combat 在 undefined 与对象间切换时保持 hook 数量稳定。
   const learnedAbilityIds = useMemo(() => new Set(combat?.learnedAbilityIds ?? []), [combat?.learnedAbilityIds])
@@ -1599,12 +1711,15 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const abilityLevelFor = (abilityId: string) => learnedAbilityLevel(combat.abilityExperiences, abilityId)
   // 重复装配按「移动」处理：assignAbilityToSlot 会把功法从原槽位移到新槽位。
   const withAbility = (index: number, abilityId: string | null) => assignAbilityToSlot(combat.abilitySlots, index, abilityId)
-  const getTriggers = (target: NonNullable<typeof editingTrigger>): CombatTrigger[] =>
-    combat.abilitySlots[target.index]?.triggers ?? []
+  // 触发条件跟随功法而非槽位：按功法 ID 读写 combat.abilityTriggers。
   const saveTriggers = (triggers: CombatTrigger[] | null) => {
-    if (!editingTrigger) return
-    const nextTriggers = triggers ?? []
-    update({ abilitySlots: combat.abilitySlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers: nextTriggers } : slot) })
+    if (editingTriggerAbilityId === null) return
+    update({
+      abilityTriggers: {
+        ...(combat.abilityTriggers ?? {}),
+        [editingTriggerAbilityId]: triggers ?? [],
+      },
+    })
   }
 
   const pickerValue = pickerTarget === null
@@ -1679,32 +1794,31 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   )}
                 </button>
               )
-              const slotExtras = ability && (
-                <>
-                  {/* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */}
-                  <span className="combat-ability-level-control">
-                    <span aria-hidden="true">Lv.</span>
-                    <span className="combat-ability-level-value">{abilityLevelFor(ability.abilityId)}</span>
-                  </span>
-                  <button
-                    aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
-                    className="item-slot-inline-action item-slot-inline-action--condition"
-                    onClick={() => setEditingTrigger({ kind: 'ability', index })}
-                    title={t('app.combatPanel.editTriggersTitle')}
-                    type="button"
-                  >{t('app.combatPanel.triggerConditionBtn', { count: (slot.triggers?.length ?? 0) > 0 ? (slot.triggers?.length ?? 0) : '' })}</button>
-                </>
-              )
+              const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
               return (
-                <div className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`} key={index}>
-                  {ability ? (
-                    <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, abilityLevelFor(ability.abilityId))} tabIndex={-1}>
-                      {slotButton}
-                    </EffectTooltipTarget>
-                  ) : <span className="combat-ability-slot-shell">{slotButton}</span>}
-                  {/* Lv 徽标与条件按钮移出 tooltip 触发域：避免点开触发器编辑器时 tooltip 叠在 modal 上 */}
-                  {slotExtras}
-                </div>
+                <ConditionedTile
+                  as="div"
+                  className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`}
+                  condition={ability ? {
+                    ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
+                    label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
+                    onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+                    title: t('app.combatPanel.editTriggersTitle'),
+                  } : null}
+                  content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
+                  extras={ability && (
+                    /* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */
+                    <span className="combat-ability-level-control">
+                      <span aria-hidden="true">Lv.</span>
+                      <span className="combat-ability-level-value">{abilityLevelFor(ability.abilityId)}</span>
+                    </span>
+                  )}
+                  key={index}
+                  triggerClassName="combat-ability-slot-shell"
+                  triggerTabIndex={-1}
+                >
+                  {slotButton}
+                </ConditionedTile>
               )
             })}
           </div>
@@ -1723,15 +1837,14 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
         title={pickerTitle}
         value={pickerValue}
       />
-      {editingTrigger && (
+      {editingTriggerAbilityId !== null && (
         <CombatTriggerEditor
-          initialTriggers={getTriggers(editingTrigger)}
-          onClose={() => setEditingTrigger(null)}
+          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? []}
+          onClose={() => setEditingTriggerAbilityId(null)}
           onSave={saveTriggers}
           open
           title={t('app.combatPanel.triggerEditorTitle', {
-            kind: t('app.rightTab.abilities'),
-            n: editingTrigger.index + 1,
+            name: findAbilityInCatalog(abilities, editingTriggerAbilityId)?.name ?? editingTriggerAbilityId,
           })}
         />
       )}
@@ -1873,7 +1986,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
   const closeRecords = useCallback(() => setRecordsOpen(false), [])
 
   return (
-    <section className="panel expedition-page" hidden={hidden}>
+    <section className="panel expedition-page" data-tour="combat-detail" hidden={hidden}>
       <header className="panel-header">
         <h2>{t('app.nav.combat')}</h2>
         <button
@@ -1895,6 +2008,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
       <div className="expedition-content expedition-content--duel">
         <div className="expedition-duel">
           <CombatArena onOpenAction={setSelectedAction} />
+          <PartyPanel />
           <div className="expedition-duel-config">
             <CombatLoadoutPanel />
           </div>
@@ -1951,6 +2065,7 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
       {BOTTOM_TABS.map(item => (
         <button
           className={activeTab === item.tab ? 'active' : ''}
+          data-tour={item.tab === 'map' ? 'nav-map' : undefined}
           key={item.tab}
           onClick={() => setActiveTab(item.tab)}
           type="button"
@@ -2108,6 +2223,7 @@ export default function App(): React.JSX.Element {
       </div>
       <BottomNav />
       <Notice />
+      <TutorialOverlay />
     </div>
   )
 }

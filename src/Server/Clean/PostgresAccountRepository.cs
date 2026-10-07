@@ -9,10 +9,11 @@ namespace Server.Clean;
 /// <param name="PlayerId">新建玩家标识。</param>
 /// <param name="Account">规范化后的登录账号。</param>
 /// <param name="DisplayName">最终生效的道号。</param>
-/// <param name="ErrorCode">失败错误码（如 DUPLICATE_ACCOUNT_OR_NAME）。</param>
+/// <param name="ErrorCode">失败错误码（如 DUPLICATE_ACCOUNT_OR_NAME、INVALID_INVITATION_CODE）。</param>
 /// <param name="Message">面向用户的失败描述。</param>
 /// <param name="SessionToken">注册即登录签发的会话令牌明文，仅此一次返回给客户端。</param>
 /// <param name="SequenceId">角色序号（identity.players.player_seq 自增编号）。</param>
+/// <param name="InviterPlayerId">命中有效邀请码时的邀请者玩家标识（用于在线钱包失效通知）；未受邀注册为 null。</param>
 public sealed record AccountRegistrationResult(
     bool Success,
     Guid? AccountId,
@@ -22,7 +23,8 @@ public sealed record AccountRegistrationResult(
     string? ErrorCode,
     string? Message,
     string? SessionToken = null,
-    long? SequenceId = null);
+    long? SequenceId = null,
+    Guid? InviterPlayerId = null);
 
 /// <summary>改密结局；失败时 Success=false 且只携带 ErrorCode/Message（INVALID_CREDENTIALS=旧密码错误，INVALID_PASSWORD=新密码不合法）。</summary>
 /// <param name="Success">改密是否成功。</param>
@@ -54,8 +56,9 @@ public sealed record AccountLoginResult(
 /// <summary>账号、凭据与认证会话的持久化边界。</summary>
 public interface IAccountRepository
 {
-    /// <summary>注册账号并创建绑定玩家，同一事务执行风控并写入初始会话与注册审计事件。</summary>
-    ValueTask<AccountRegistrationResult> RegisterAsync(string account, string password, string? displayName, AccountRiskSignals? riskSignals,
+    /// <summary>注册账号并创建绑定玩家，同一事务执行风控并写入初始会话与注册审计事件；邀请码命中时同事务建关系并发双方注册奖励。</summary>
+    ValueTask<AccountRegistrationResult> RegisterAsync(string account, string password, string? displayName, string? invitationCode,
+        AccountRiskSignals? riskSignals,
         CancellationToken cancellationToken = default, AccountRiskPolicy? policySnapshot = null);
     /// <summary>校验账号密码后，同一事务执行风控；通过才刷新 last_seen_at 并签发新会话。</summary>
     ValueTask<AccountLoginResult> LoginAsync(string account, string password, AccountRiskSignals? riskSignals,
@@ -113,12 +116,14 @@ public sealed class PostgresAccountRepository(
     private static readonly Regex AccountPattern = new("^[a-zA-Z0-9_]{3,32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// 注册账号：同一 ReadCommitted 事务内执行风控并写账号、玩家、初始会话与 outbox 注册事件，
-    /// 任何一步失败整体回滚；账号名或道号撞唯一索引映射为 DUPLICATE_ACCOUNT_OR_NAME。
+    /// 注册账号：同一 ReadCommitted 事务内执行风控并写账号、玩家、初始会话、邀请关系与注册奖励，
+    /// 任何一步失败整体回滚；账号名或道号撞唯一索引映射为 DUPLICATE_ACCOUNT_OR_NAME，
+    /// 邀请码不存在的映射为 INVALID_INVITATION_CODE；自身邀请码撞唯一索引时换码整体重试。
     /// </summary>
     /// <param name="account">登录账号，入库前统一小写规范化。</param>
     /// <param name="password">明文密码，PBKDF2-SHA512 哈希后入库，明文不落盘。</param>
     /// <param name="displayName">初始道号；为空时回退为规范化账号名。</param>
+    /// <param name="invitationCode">可选邀请码；命中有效邀请者时同事务建立邀请关系并向双方发放注册奖励。</param>
     /// <param name="riskSignals">注册设备与身份信号；服务端规范化后只保存 HMAC 摘要。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <param name="policySnapshot">宿主已读取的可信策略快照，确保该次注册不受并发策略替换影响。</param>
@@ -127,6 +132,7 @@ public sealed class PostgresAccountRepository(
         string account,
         string password,
         string? displayName,
+        string? invitationCode,
         AccountRiskSignals? riskSignals,
         CancellationToken cancellationToken = default,
         AccountRiskPolicy? policySnapshot = null)
@@ -139,6 +145,10 @@ public sealed class PostgresAccountRepository(
             return FailureRegistration("INVALID_PASSWORD", $"密码长度须在 {MinPasswordLength}-{MaxPasswordLength} 个字符之间。");
         if (normalizedName.Length is < 1 or > 64)
             return FailureRegistration("INVALID_DISPLAY_NAME", "角色名长度无效。");
+        // 邀请码统一大写裁剪；空白视为未填写。不在词表/长度内的输入必然查无此行，统一走 INVALID_INVITATION_CODE。
+        var normalizedInvitation = string.IsNullOrWhiteSpace(invitationCode)
+            ? null
+            : invitationCode.Trim().ToUpperInvariant();
 
         var accountId = Guid.NewGuid();
         var playerId = Guid.NewGuid();
@@ -150,76 +160,136 @@ public sealed class PostgresAccountRepository(
         var riskPolicy = policySnapshot ?? riskPolicyRegistry.Current;
         var riskHashes = riskHasher.Hash(riskSignals, riskPolicy);
 
-        long playerSeq;
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
-        try
+        // 专属邀请码极小概率撞唯一索引：整个事务换新码重试。
+        for (var attempt = 1; ; attempt++)
         {
-            // 风控按信号取得事务锁；后续查询可见前一个持锁注册刚提交的关联行。
-            var decision = await PostgresAccountRiskRepository.EvaluateAsync(
-                connection, transaction, accountId, riskHashes, riskPolicy, cancellationToken);
-            if (!decision.Allowed)
+            var ownInviteCode = GenerateInviteCode();
+            long playerSeq;
+            Guid? inviterId = null;
+            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
+            try
             {
-                // 此时尚未建账号；提交拒绝审计保留无信号和额度拒绝的证据。
-                await PostgresAccountRiskRepository.AppendEventAsync(
-                    connection, transaction, null, decision, now, cancellationToken);
+                // 风控按信号取得事务锁；后续查询可见前一个持锁注册刚提交的关联行。
+                var decision = await PostgresAccountRiskRepository.EvaluateAsync(
+                    connection, transaction, accountId, riskHashes, riskPolicy, cancellationToken);
+                if (!decision.Allowed)
+                {
+                    // 此时尚未建账号；提交拒绝审计保留无信号和额度拒绝的证据。
+                    await PostgresAccountRiskRepository.AppendEventAsync(
+                        connection, transaction, null, decision, now, cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return FailureRegistration(decision.ErrorCode!, decision.Message!);
+                }
+
+                await using (var accountCommand = new NpgsqlCommand("""
+                    INSERT INTO identity.accounts
+                        (account_id, login_normalized, password_hash, password_salt,
+                         password_iterations, status, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, 1, $6, $6)
+                    """, connection, transaction))
+                {
+                    accountCommand.Parameters.Add(new NpgsqlParameter { Value = accountId });
+                    accountCommand.Parameters.Add(new NpgsqlParameter { Value = normalizedAccount });
+                    accountCommand.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = hash });
+                    accountCommand.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = salt });
+                    accountCommand.Parameters.Add(new NpgsqlParameter { Value = Pbkdf2Iterations });
+                    accountCommand.Parameters.Add(new NpgsqlParameter { Value = now });
+                    await accountCommand.ExecuteNonQueryAsync(cancellationToken);
+                }
+
+                // 邀请者在本人玩家行插入之前解析：本事务内自己的邀请码尚未入库，结构上不可能命中自己。
+                if (normalizedInvitation is not null)
+                {
+                    await using var findInviter = new NpgsqlCommand(
+                        "SELECT player_id FROM identity.players WHERE invite_code = $1", connection, transaction);
+                    findInviter.Parameters.Add(new NpgsqlParameter { Value = normalizedInvitation });
+                    inviterId = await findInviter.ExecuteScalarAsync(cancellationToken) as Guid?;
+                    if (inviterId is null)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return FailureRegistration("INVALID_INVITATION_CODE", "邀请码无效。");
+                    }
+                }
+
+                await using (var playerCommand = new NpgsqlCommand("""
+                    INSERT INTO identity.players
+                        (player_id, account_id, display_name, display_name_normalized,
+                         invite_code, created_at, last_seen_at, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $6, 1)
+                    RETURNING player_seq
+                    """, connection, transaction))
+                {
+                    playerCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                    playerCommand.Parameters.Add(new NpgsqlParameter { Value = accountId });
+                    playerCommand.Parameters.Add(new NpgsqlParameter { Value = normalizedName });
+                    playerCommand.Parameters.Add(new NpgsqlParameter { Value = NormalizeNameForLookup(normalizedName) });
+                    playerCommand.Parameters.Add(new NpgsqlParameter { Value = ownInviteCode });
+                    playerCommand.Parameters.Add(new NpgsqlParameter { Value = now });
+                    playerSeq = (long)(await playerCommand.ExecuteScalarAsync(cancellationToken))!;
+                }
+
+                await InsertSessionAsync(connection, transaction, accountId, sessionTokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
+
+                if (riskHashes.Count > 0)
+                    await PostgresAccountRiskRepository.PersistSignalsAsync(connection, transaction, accountId, riskHashes, now, cancellationToken);
+                await PostgresAccountRiskRepository.AppendEventAsync(connection, transaction, accountId, decision, now, cancellationToken);
+
+                if (inviterId is { } inviter)
+                {
+                    await using (var inviteCommand = new NpgsqlCommand("""
+                        INSERT INTO social.player_invitations
+                            (invitee_id, inviter_id, invitation_code, highest_realm_level,
+                             qi_rewarded, foundation_rewarded, created_at, updated_at)
+                        VALUES ($1, $2, $3, 1, false, false, $4, $4)
+                        """, connection, transaction))
+                    {
+                        inviteCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                        inviteCommand.Parameters.Add(new NpgsqlParameter { Value = inviter });
+                        inviteCommand.Parameters.Add(new NpgsqlParameter { Value = normalizedInvitation! });
+                        inviteCommand.Parameters.Add(new NpgsqlParameter { Value = now });
+                        await inviteCommand.ExecuteNonQueryAsync(cancellationToken);
+                    }
+
+                    // 注册奖励随注册事务原子落库：幂等键以被邀请者为界，天然一次性。
+                    var rewardResult = await PostgresEconomyRepository.CommitCoreAsync(connection, transaction,
+                        new EconomyTransactionRequest(
+                            Guid.NewGuid(),
+                            $"invitation.signup:{playerId:D}",
+                            "invitation.signup",
+                            playerId,
+                            [
+                                new AssetDelta(playerId, Social.InvitationRewards.BoundMeritItemId, string.Empty, Social.InvitationRewards.SignupInviteeMerit),
+                                new AssetDelta(playerId, Social.InvitationRewards.SpiritStoneItemId, string.Empty, Social.InvitationRewards.SignupInviteeSpiritStones),
+                                new AssetDelta(inviter, Social.InvitationRewards.BoundMeritItemId, string.Empty, Social.InvitationRewards.SignupInviterMerit),
+                            ],
+                            now),
+                        cancellationToken);
+                    if (!rewardResult.Applied)
+                        throw new InvalidOperationException($"邀请注册奖励事务未提交：invitee={playerId:D}");
+                }
+
+                await outbox.AppendAsync(connection, transaction, accountId, "account",
+                    "auth.account.registered",
+                    JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId, account = normalizedAccount }),
+                    now, cancellationToken);
+
                 await transaction.CommitAsync(cancellationToken);
-                return FailureRegistration(decision.ErrorCode!, decision.Message!);
             }
-
-            await using (var accountCommand = new NpgsqlCommand("""
-                INSERT INTO identity.accounts
-                    (account_id, login_normalized, password_hash, password_salt,
-                     password_iterations, status, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 1, $6, $6)
-                """, connection, transaction))
+            catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UniqueViolation)
             {
-                accountCommand.Parameters.Add(new NpgsqlParameter { Value = accountId });
-                accountCommand.Parameters.Add(new NpgsqlParameter { Value = normalizedAccount });
-                accountCommand.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = hash });
-                accountCommand.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = salt });
-                accountCommand.Parameters.Add(new NpgsqlParameter { Value = Pbkdf2Iterations });
-                accountCommand.Parameters.Add(new NpgsqlParameter { Value = now });
-                await accountCommand.ExecuteNonQueryAsync(cancellationToken);
+                await transaction.RollbackAsync(cancellationToken);
+                if (ex.ConstraintName == "ux_players_invite_code" && attempt < 4)
+                    continue;
+                return ex.ConstraintName == "ux_players_invite_code"
+                    ? FailureRegistration("INVITE_CODE_CONFLICT", "邀请码生成冲突，请重试。")
+                    : FailureRegistration("DUPLICATE_ACCOUNT_OR_NAME", "账号或角色名已存在。");
             }
 
-            await using (var playerCommand = new NpgsqlCommand("""
-                INSERT INTO identity.players
-                    (player_id, account_id, display_name, display_name_normalized,
-                     created_at, last_seen_at, status)
-                VALUES ($1, $2, $3, $4, $5, $5, 1)
-                RETURNING player_seq
-                """, connection, transaction))
-            {
-                playerCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
-                playerCommand.Parameters.Add(new NpgsqlParameter { Value = accountId });
-                playerCommand.Parameters.Add(new NpgsqlParameter { Value = normalizedName });
-                playerCommand.Parameters.Add(new NpgsqlParameter { Value = NormalizeNameForLookup(normalizedName) });
-                playerCommand.Parameters.Add(new NpgsqlParameter { Value = now });
-                playerSeq = (long)(await playerCommand.ExecuteScalarAsync(cancellationToken))!;
-            }
-
-            await InsertSessionAsync(connection, transaction, accountId, sessionTokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
-
-            if (riskHashes.Count > 0)
-                await PostgresAccountRiskRepository.PersistSignalsAsync(connection, transaction, accountId, riskHashes, now, cancellationToken);
-            await PostgresAccountRiskRepository.AppendEventAsync(connection, transaction, accountId, decision, now, cancellationToken);
-
-            await outbox.AppendAsync(connection, transaction, accountId, "account",
-                "auth.account.registered",
-                JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId, account = normalizedAccount }),
-                now, cancellationToken);
-
-            await transaction.CommitAsync(cancellationToken);
+            logger.LogInformation("新账号注册成功 accountId={AccountId} playerId={PlayerId}", accountId, playerId);
+            return new AccountRegistrationResult(true, accountId, playerId, normalizedAccount, normalizedName,
+                null, null, sessionToken, playerSeq, inviterId);
         }
-        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UniqueViolation)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            return FailureRegistration("DUPLICATE_ACCOUNT_OR_NAME", "账号或角色名已存在。");
-        }
-
-        logger.LogInformation("新账号注册成功 accountId={AccountId} playerId={PlayerId}", accountId, playerId);
-        return new AccountRegistrationResult(true, accountId, playerId, normalizedAccount, normalizedName, null, null, sessionToken, playerSeq);
     }
 
     /// <summary>
@@ -511,6 +581,10 @@ public sealed class PostgresAccountRepository(
         .TrimEnd('=')
         .Replace('+', '-')
         .Replace('/', '_');
+
+    /// <summary>专属邀请码字母表：剔除 0/O/1/I 易混字符，10 位长度约 32^10 空间。</summary>
+    private static readonly char[] InviteCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".ToCharArray();
+    private static string GenerateInviteCode() => new(RandomNumberGenerator.GetItems(InviteCodeAlphabet, 10));
 
     private static string NormalizeAccount(string value) => (value ?? string.Empty).Trim().ToLowerInvariant();
     private static string NormalizeDisplayName(string? value, string account) => string.IsNullOrWhiteSpace(value) ? account : value.Trim();

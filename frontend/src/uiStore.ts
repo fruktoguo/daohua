@@ -16,8 +16,8 @@ import { create } from 'zustand'
  */
 export type TabId = 'insight' | 'market' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'
 
-/** 同道页子选项卡：当前仅「队伍」，后续同道玩法（宗门、结义等）沿用同一结构扩展 */
-export type SocialSubTab = 'party'
+/** 同道页子选项卡：队伍 / 邀请（后续同道玩法沿用同一结构扩展） */
+export type SocialSubTab = 'party' | 'invite'
 
 /**
  * 队伍页内部页签：
@@ -31,8 +31,8 @@ export type CraftingMode = 'alchemy' | 'forging' | 'talisman' | 'formation' | 'e
 
 /** 炼丹顶部子选项卡：提炼 vs 修炼丹药 vs 斗法药剂 */
 export type AlchemySubTab = 'extraction' | 'cultivation' | 'combat'
-/** 炼器顶部子选项卡：精炼 vs 六大装备部位 */
-export type ForgingSubTab = 'refining' | 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket'
+/** 炼器顶部子选项卡：精炼 vs 六大装备部位 vs 技艺工具分组 */
+export type ForgingSubTab = 'refining' | 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket' | 'technique'
 
 /** 右侧主栏顶层子选项卡：储物袋 vs 装备 vs 功法 */
 export type RightColumnTab = 'inventory' | 'equipment' | 'abilities'
@@ -56,7 +56,7 @@ interface UiStore {
   alchemySubTab: AlchemySubTab
   /** 切换炼丹子分类 */
   setAlchemySubTab: (tab: AlchemySubTab) => void
-  /** 炼器顶部当前子分类（精炼及六大部位） */
+  /** 炼器顶部当前子分类（精炼、六大装备部位与技艺工具分组） */
   forgingSubTab: ForgingSubTab
   /** 切换炼器子分类 */
   setForgingSubTab: (tab: ForgingSubTab) => void

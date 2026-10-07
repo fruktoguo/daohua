@@ -20,6 +20,7 @@ import type {
   CombatResourceState,
   CombatTrigger,
   DuelState,
+  ExpeditionAlly,
   ExpeditionDuel,
   ExpeditionDuelEvent,
   ExpeditionEnemy,
@@ -39,8 +40,8 @@ import type {
 } from '../game/types'
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
-/** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion（v8）保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 10
+/** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
+const SNAPSHOT_SCHEMA_VERSION = 20
 
 type JsonObject = Record<string, unknown>
 
@@ -314,9 +315,9 @@ function mapCombatAttributes(value: unknown, name: string): CombatAttributes {
   const source = requiredObject(value, name)
   const numericKeys = [
     'maxHitpoints', 'maxManapoints', 'physicalAttack', 'spellAttack', 'armor', 'magicResistance',
-    'accuracy', 'evasion', 'critical', 'criticalResistance', 'criticalMultiplier',
+    'accuracy', 'evasion', 'critical', 'criticalResistance', 'criticalDamagePoints',
     'breakPower', 'parryResolve', 'hpRegenPerFiveSeconds', 'mpRegenPerFiveSeconds',
-    'attackIntervalMilliseconds', 'basicAttackRatio', 'skillIntensity', 'cooldownFactor', 'castTimeFactor',
+    'attackIntervalMilliseconds',
     'physicalDamageBonusPoints', 'spellDamageBonusPoints',
     'metalDamageBonusPoints', 'woodDamageBonusPoints', 'waterDamageBonusPoints',
     'fireDamageBonusPoints', 'earthDamageBonusPoints',
@@ -528,6 +529,41 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     })
   const primary = enemies.find(enemy => enemy.hitpoints > 0) ?? enemies[0] ?? null
 
+  // 组队讨伐盟友阵列（仅 party.expedition 会话行动携带）：按会话规格成员序下发、含本机位；
+  // 盟友不携带属性面板（UnitInspect 观察通道仅对敌怪开放）。
+  const allies: ExpeditionAlly[] | null = row.allies === null || row.allies === undefined
+    ? null
+    : arrayValue(row.allies).map((entry, index) => {
+        const ally = object(entry)
+        const label = `行动 ${actionId} 的 allies[${index}]`
+        return {
+          memberIndex: finiteInteger(ally.memberIndex, `${label}.memberIndex`),
+          playerId: stringValue(ally.playerId),
+          displayName: stringValue(ally.displayName),
+          hitpoints: finiteNumber(ally.hitpoints, `${label}.hitpoints`),
+          manapoints: finiteNumber(ally.manapoints, `${label}.manapoints`),
+          maxHitpoints: ally.maxHitpoints === null || ally.maxHitpoints === undefined
+            ? null
+            : finiteNumber(ally.maxHitpoints, `${label}.maxHitpoints`),
+          maxManapoints: ally.maxManapoints === null || ally.maxManapoints === undefined
+            ? null
+            : finiteNumber(ally.maxManapoints, `${label}.maxManapoints`),
+          nextAttackAtSeconds: finiteNumber(ally.nextAttackAtSeconds, `${label}.nextAttackAtSeconds`),
+          attackCount: finiteNumber(ally.attackCount, `${label}.attackCount`),
+          threat: finiteNumber(ally.threat, `${label}.threat`),
+          pendingAbilityId: ally.pendingAbilityId === null || ally.pendingAbilityId === undefined
+            ? null
+            : identifierValue(ally.pendingAbilityId, `${label}.pendingAbilityId`),
+          pendingActionDurationSeconds: finiteNumber(ally.pendingActionDurationSeconds, `${label}.pendingActionDurationSeconds`),
+          respawnAtSeconds: ally.respawnAtSeconds === null || ally.respawnAtSeconds === undefined
+            ? null
+            : finiteNumber(ally.respawnAtSeconds, `${label}.respawnAtSeconds`),
+        }
+      })
+  const selfIndex = row.selfIndex === null || row.selfIndex === undefined
+    ? null
+    : finiteInteger(row.selfIndex, `行动 ${actionId} 的 selfIndex`)
+
   return {
     phase,
     progress: durationSeconds > 0 ? Math.max(0, Math.min(1, elapsedSeconds / durationSeconds)) : 0,
@@ -547,6 +583,8 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     playerThreat,
     encounterId,
     duel: mapExpeditionDuel(row.duel, actionId),
+    allies,
+    selfIndex,
   }
 }
 
@@ -652,6 +690,19 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       : (typeof object(intent.parameters).targetLevel === 'number' && Number.isFinite(object(intent.parameters).targetLevel)
           ? object(intent.parameters).targetLevel as number
           : null)
+    // 组队讨伐会话伪行动标记：携带 sessionId 与权威散场时刻；非会话行动为 null。
+    const partySessionRow = row.partySession
+    const partySession = partySessionRow === null || partySessionRow === undefined
+      ? null
+      : (() => {
+          const session = object(partySessionRow)
+          return {
+            sessionId: identifierValue(session.sessionId, `行动 ${actionId} 的 partySession.sessionId`),
+            endsAtUnixSeconds: session.endsAtUnixSeconds === null || session.endsAtUnixSeconds === undefined
+              ? null
+              : finiteNumber(session.endsAtUnixSeconds, `行动 ${actionId} 的 partySession.endsAtUnixSeconds`),
+          }
+        })()
     const entry: QueueEntry = {
       entryId,
       actionId,
@@ -671,6 +722,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       targetItemId,
       auxItemId,
       targetLevel,
+      partySession,
     }
     return entry
   })
@@ -785,7 +837,7 @@ function mapLoadout(value: unknown): CombatLoadout {
     consciousnessExp: numberValue(core.consciousnessExp),
     abilitySlots: row.abilitySlots.map(item => {
       const slot = requiredObject(item, 'loadout.abilitySlot')
-      return { abilityId: optionalString(slot.abilityId, 'abilitySlot.abilityId'), level: finiteNumber(slot.level, 'abilitySlot.level'), triggers: mapTriggers(slot.triggers) }
+      return { abilityId: optionalString(slot.abilityId, 'abilitySlot.abilityId'), level: finiteNumber(slot.level, 'abilitySlot.level') }
     }),
     equipment: row.equipment.map(item => {
       const equipment = requiredObject(item, 'loadout.equipment')
@@ -795,7 +847,18 @@ function mapLoadout(value: unknown): CombatLoadout {
     abilityExperiences: mapAbilityExperiences(row.abilityExperiences),
     // 技艺经验表与功法经验表同构（缺省空对象，键值经同一数值校验）。
     techniqueExperiences: mapAbilityExperiences(row.techniqueExperiences),
+    // 功法触发条件按功法 ID 挂接（跟随功法而非槽位）；缺省空对象。
+    abilityTriggers: mapAbilityTriggers(row.abilityTriggers),
   }
+}
+
+/** 功法触发条件 map 解码：abilityId -> CombatTrigger[]；缺省/空对象均返回 {}。 */
+function mapAbilityTriggers(value: unknown): Record<string, CombatTrigger[]> {
+  if (value === undefined || value === null) return {}
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('loadout.abilityTriggers section 载荷必须是对象。')
+  const result: Record<string, CombatTrigger[]> = {}
+  for (const [key, triggers] of Object.entries(value as JsonObject)) result[key] = mapTriggers(triggers)
+  return result
 }
 
 function mapAbilityExperiences(value: unknown): Record<string, number> {
@@ -887,6 +950,9 @@ function mapNodeBuildings(value: unknown): NodeBuilding[] {
       timeProgress: numberValue(row.timeProgress, 0),
       requiredSeconds: numberValue(row.requiredSeconds, 0),
       elapsedSeconds: numberValue(row.elapsedSeconds, 0),
+      activeUsers: numberValue(row.activeUsers, 0),
+      capacity: numberValue(row.capacity, 0),
+      efficiency: numberValue(row.efficiency, 1),
       materials: Array.isArray(row.materials)
         ? row.materials.map(material => {
             const materialRow = requiredObject(material, 'world 节点建筑材料')
@@ -1202,6 +1268,7 @@ export async function decodePlayerSnapshotDto(
     // 待突破 = 境界经验已填满当前层所需（容差 0.0001 吸收浮点误差）且确有修为存量
     isPendingBreakthrough: statsRealm.expToNext > 0 && statsRealm.expToNext - statsRealm.currentLayerExp <= 0.0001 && stats.experience > 0,
     renameCooldownSeconds: Math.max(0, renameCooldownUntil - serverTime),
+    tutorialStep: numberValue(settings.tutorialStep, 0),
   }
 }
 
@@ -1245,6 +1312,7 @@ export async function decodePlayerSnapshotDeltaDto(
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
     patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: booleanValue(settings.queuePaused, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
     patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)
+    patch.tutorialStep = numberValue(settings.tutorialStep, 0)
   }
   if (sections.has('progression')) {
     patch.stats = mapStats(sections.get('progression'))

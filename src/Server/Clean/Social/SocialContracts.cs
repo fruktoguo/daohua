@@ -23,7 +23,8 @@ public sealed record FriendRecord(Guid FriendId, string DisplayName);
 /// <summary>队伍成员持久化行。</summary>
 /// <param name="PlayerId">成员玩家 ID。</param>
 /// <param name="DisplayName">成员道号。</param>
-public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName);
+/// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）。</param>
+public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool Ready = false);
 
 /// <summary>队伍档案（招募标签口径，不参与行动/战斗结算）。</summary>
 /// <param name="Name">队伍名称；空串表示尚未命名（展示层回落「{队长道号}的小队」）。</param>
@@ -43,7 +44,35 @@ public sealed record PartyProfileRecord(string Name, string ActivityKind, string
 /// <param name="Profile">队伍档案。</param>
 /// <param name="CreatedAt">创建时刻。</param>
 /// <param name="Members">成员列表（含队长，按加入时间排序）。</param>
-public sealed record PartyRecord(Guid PartyId, Guid LeaderId, PartyProfileRecord Profile, DateTimeOffset CreatedAt, IReadOnlyList<PartyMemberRecord> Members);
+/// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；满员判定与讨伐开战条件均以此为上限。</param>
+public sealed record PartyRecord(Guid PartyId, Guid LeaderId, PartyProfileRecord Profile, DateTimeOffset CreatedAt,
+    IReadOnlyList<PartyMemberRecord> Members, int OpenSlots = 5);
+
+/// <summary>组队讨伐会话持久化行（总纲 §21.13）。</summary>
+/// <param name="SessionId">会话唯一标识（party:{partyId}:{unixSec}:{rand} 文本）。</param>
+/// <param name="PartyId">所属队伍。</param>
+/// <param name="EncounterId">钉死的遭遇 ID。</param>
+/// <param name="NodeId">讨伐节点 ID。</param>
+/// <param name="StartedAt">开战时刻（权威墙钟）。</param>
+/// <param name="MemberIds">冻结成员名册（spec.members 顺序）。</param>
+/// <param name="EndedAt">散场时刻；null 表示会话活跃。</param>
+/// <param name="EndReason">散场原因标签（member-left/party-disbanded/…/server.restart）。</param>
+/// <param name="SpecJson">冻结的共享剧本规格原始 JSON（装载对账补发行动时反序列化为 <c>PartyExpeditionSpec</c>）。</param>
+public sealed record PartySessionRecord(
+    string SessionId,
+    Guid PartyId,
+    string EncounterId,
+    string NodeId,
+    DateTimeOffset StartedAt,
+    IReadOnlyList<Guid> MemberIds,
+    string SpecJson,
+    DateTimeOffset? EndedAt = null,
+    string? EndReason = null);
+
+/// <summary>48h 离线逐出结果：一条被删除的成员行。</summary>
+/// <param name="PlayerId">被逐出玩家 ID。</param>
+/// <param name="PartyId">原队伍 ID。</param>
+public sealed record PartyMemberEviction(Guid PlayerId, Guid PartyId);
 
 /// <summary>待处理的队伍邀请。</summary>
 /// <param name="PartyId">邀请方队伍。</param>
@@ -70,13 +99,15 @@ public sealed record PartySeekerRecord(Guid PlayerId, string DisplayName, string
 /// <param name="Party">所在队伍与成员；未组队或队伍记录缺失时为 null。</param>
 /// <param name="Invitation">待处理的队伍邀请；无邀请时为 null。</param>
 /// <param name="Seeker">本人匹配中登记；未登记为 null。</param>
+/// <param name="PartySession">所在队伍的活跃组队讨伐会话；无会话或已散场为 null。</param>
 public sealed record SocialStateSnapshot(
     IReadOnlyList<FriendRecord> Friends,
     IReadOnlyList<FriendRequestView> IncomingRequests,
     IReadOnlyList<FriendRequestView> OutgoingRequests,
     PartyRecord? Party,
     PartyInvitationRecord? Invitation,
-    PartySeekerRecord? Seeker);
+    PartySeekerRecord? Seeker,
+    PartySessionRecord? PartySession = null);
 
 /// <summary>传音消息内嵌的队伍卡片持久化视图。</summary>
 /// <param name="PartyId">队伍唯一标识。</param>
@@ -215,10 +246,10 @@ public interface ISocialRepository
     ValueTask<bool> TryUpdatePartyProfileAsync(Guid partyId, PartyProfileRecord profile, DateTimeOffset now, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 原子加队：party 行 FOR UPDATE 串行化并发加入，事务内复核满员与互斥；
+    /// 原子加队：party 行 FOR UPDATE 串行化并发加入，事务内以 open_slots 复核满员与互斥；
     /// 成功时同事务清除该玩家的匹配登记与待处理邀请。
     /// </summary>
-    ValueTask<PartyJoinResult> TryJoinPartyAsync(Guid partyId, Guid playerId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken = default);
+    ValueTask<PartyJoinResult> TryJoinPartyAsync(Guid partyId, Guid playerId, DateTimeOffset now, CancellationToken cancellationToken = default);
 
     /// <summary>解散队伍：删除 parties 行（成员/邀请级联、聊天链接置空），返回解散前成员列表；队伍不存在返回 null。</summary>
     ValueTask<IReadOnlyList<PartyMemberRecord>?> DisbandPartyAsync(Guid partyId, CancellationToken cancellationToken = default);
@@ -258,6 +289,39 @@ public interface ISocialRepository
 
     /// <summary>移交队长（队长离开队伍时把队长位交给剩余成员）。</summary>
     ValueTask TryTransferPartyLeaderAsync(Guid partyId, Guid leaderId, CancellationToken cancellationToken = default);
+
+    /// <summary>切换本人队伍就绪标记（party.ready/unready）；玩家不在队伍中返回 false。</summary>
+    ValueTask<bool> TrySetPartyMemberReadyAsync(Guid playerId, bool ready, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 调整开启槽位（party.slots，队长专用）：2~5 且不得低于当前队员数，
+    /// 条件不满足返回 false；行锁内复核保证与并发加入/退出互斥。
+    /// </summary>
+    ValueTask<bool> TryUpdatePartyOpenSlotsAsync(Guid partyId, int openSlots, DateTimeOffset now, CancellationToken cancellationToken = default);
+
+    /// <summary>按会话 ID 读取组队讨伐会话；不存在返回 null（含已散场行）。</summary>
+    ValueTask<PartySessionRecord?> GetPartySessionAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>读取队伍当前活跃讨伐会话（ended_at IS NULL）；无活跃会话返回 null。</summary>
+    ValueTask<PartySessionRecord?> GetActivePartySessionAsync(Guid partyId, CancellationToken cancellationToken = default);
+
+    /// <summary>写入新讨伐会话（specJson 为冻结的共享剧本规格）；并发撞活跃唯一索引返回 false。</summary>
+    ValueTask<bool> TryInsertPartySessionAsync(string sessionId, Guid partyId, string specJson, DateTimeOffset startedAt, CancellationToken cancellationToken = default);
+
+    /// <summary>按权威时刻散场：ended_at 已写入的行不再更新（幂等），返回本次是否实际写终态。</summary>
+    ValueTask<bool> TryEndPartySessionAsync(string sessionId, DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default);
+
+    /// <summary>服务重启扫尾：把全部活跃会话统一写终态（成员队首绑定由装载对账兜底收尾），返回被结束的行。</summary>
+    ValueTask<IReadOnlyList<PartySessionRecord>> EndAllActivePartySessionsAsync(DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default);
+
+    /// <summary>批量读取玩家投影节点（game.player_projection.current_node_id，离线成员的位置口径）；无投影行的玩家缺席。</summary>
+    ValueTask<IReadOnlyDictionary<Guid, string>> GetPlayerNodeMapAsync(IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 48h 离线逐出（总纲 §21.13）：删除 last_active_at 早于 cutoff 且非在线标记的成员行，
+    /// 返回被逐出的成员列表供逐队仲裁（移交队长/空队解散/散场）。
+    /// </summary>
+    ValueTask<IReadOnlyList<PartyMemberEviction>> DeleteInactivePartyMembersAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
 }
 
 /// <summary>传音消息持久化边界。</summary>

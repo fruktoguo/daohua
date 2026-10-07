@@ -440,6 +440,12 @@ export const SocialAction = {
   PartyMatchClear: 'party.match.clear',
   /** 把当前队伍卡片发布到指定传音频道（channel 必填，好友频道附带 targetPlayerId） */
   PartyShare: 'party.share',
+  /** 切换本人共战准备状态为已准备（无额外字段；§21.13 全员就绪+槽位占满自动开打） */
+  PartyReady: 'party.ready',
+  /** 取消本人共战准备状态（无额外字段；会话进行中取消即全队散场） */
+  PartyUnready: 'party.unready',
+  /** 队长设置开启槽位数（party 载荷携带 openSlots，2~5，不得低于当前队员数） */
+  PartySlots: 'party.slots',
 } as const
 /** SocialAction 常量表对应的值联合类型（社交指令标识） */
 export type SocialAction = (typeof SocialAction)[keyof typeof SocialAction]
@@ -456,6 +462,8 @@ export interface PartyProfileDto {
   minValuation?: number | null
   /** 是否进入组队大厅 */
   isPublic?: boolean | null
+  /** 开启槽位数（2~5）；仅 party.slots 使用 */
+  openSlots?: number | null
 }
 
 /** SocialAction 社交指令请求载荷 */
@@ -496,6 +504,25 @@ export interface PartyMemberDto {
   online: boolean
   /** 成员身价（服务端估值口径，非战斗属性） */
   valuation: number
+  /** 共战准备状态（§21.13：成员自开关，队长不能代备） */
+  ready: boolean
+}
+
+/**
+ * 组队讨伐（同图共战）活跃会话：开打裁决产生，任一成员变动即散场。
+ * 会话期间每名成员行动队首为 party.expedition 会话伪行动。
+ */
+export interface PartySessionDto {
+  /** 会话唯一标识（与行动条目 partySession.sessionId 配对） */
+  sessionId: string
+  /** 钉死的战斗遭遇 ID */
+  encounterId: string
+  /** 共战节点 ID；空串表示以队长当前节点为准 */
+  nodeId: string
+  /** 开打时刻（Unix 毫秒） */
+  startedAtUnixMilliseconds: number
+  /** 在场成员玩家 ID 名单（倒地未离场仍计入） */
+  memberIds: string[]
 }
 
 /** 队伍状态 */
@@ -512,6 +539,10 @@ export interface PartyDto {
   minValuation: number
   /** 是否进入组队大厅 */
   isPublic: boolean
+  /** 开启槽位数（2~5，默认 5）；开打条件要求成员数等于该值 */
+  openSlots: number
+  /** 进行中的组队讨伐会话；无会话为 null */
+  activeSession?: PartySessionDto | null
   members: PartyMemberDto[]
 }
 
@@ -586,6 +617,8 @@ export interface PartyLobbyEntryDto {
   leaderId: string
   leaderName: string
   minValuation: number
+  /** 开启槽位数（2~5，§21.13）；快照缺省时按默认满编 5 展示 */
+  openSlots?: number | null
   createdAtUnixMilliseconds: number
   members: PartyLobbyMemberDto[]
 }

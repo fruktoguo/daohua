@@ -11,12 +11,18 @@ namespace Server.Clean.Social;
 /// 2. 所有状态变更落 PostgreSQL 后，向受影响玩家推送完整 <see cref="SocialStateDto"/>；
 /// 3. 在线存在感变化（上线/下线/换节点）会触发相关玩家的社交状态刷新（好友在线状态与附近修士列表）；
 /// 4. 队伍档案/匹配/大厅是招募标签层（docs/design/总纲/21）：身价裁决与并发加队由服务端权威完成，
-///    加队满员判定在 <see cref="ISocialRepository.TryJoinPartyAsync"/> 的行锁事务内收敛。
+///    加队满员判定在 <see cref="ISocialRepository.TryJoinPartyAsync"/> 的行锁事务内收敛（open_slots 口径）；
+/// 5. 组队讨伐（总纲 §21.13）：每次队伍状态变化后经 <see cref="ArbitratePartySessionAsync"/> 仲裁——
+///    满槽+全员就绪+全员位于目标节点自动开打；任一条件失效或解散即写终态并逐成员收尾队首绑定。
+///    会话规格（冻结面板/遭遇/种子）随 spec jsonb 持久化；成员行动入队走玩家运行时单写者边界，
+///    离线成员强制装载变更后即卸落盘，装载对账与重启扫尾兜底崩溃漏网。
 /// </summary>
 public sealed class SocialRuntime
 {
     /// <summary>队伍人数上限（含队长）。</summary>
     public const int MaxPartyMembers = 5;
+    /// <summary>组队讨伐开启槽位下限（总纲 §21.13，与领域规格 2~5 一致）。</summary>
+    public const int MinOpenSlots = 2;
     /// <summary>组队大厅各类列表的最大返回条数。</summary>
     public const int LobbyListLimit = 50;
 
@@ -32,29 +38,45 @@ public sealed class SocialRuntime
     private readonly ILogger<SocialRuntime> _logger;
     /// <summary>配表已知世界节点 ID 集合：party profile 的 nodeId 合法性判定。</summary>
     private readonly HashSet<string> _nodeIds;
+    /// <summary>游戏配表：会话开战时的遭遇池钉死与成员面板冻结采集。</summary>
+    private readonly GameDataCatalog _gameData;
+    /// <summary>玩家运行时（组队讨伐成员变更通道）；单测装配可为 null 时仲裁退化跳过。</summary>
+    private readonly IPlayerRuntime? _players;
+    /// <summary>模拟时钟：会话开打/散场时刻与玩家推进同时间轴（确定性基准模式对齐）。</summary>
+    private readonly IPlayerSimulationClock _clock;
+    /// <summary>组队讨伐的每队伍裁决门：开打/散场仲裁串行化，跨实例竞态由 DB 唯一索引收敛。</summary>
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _partyGates = new();
 
     /// <summary>构造并接管在线存在感变化订阅。</summary>
     /// <param name="repository">好友/队伍持久化边界。</param>
     /// <param name="presence">在线存在感注册表。</param>
     /// <param name="valuation">身价估值服务。</param>
     /// <param name="chat">传音运行时（party.share 复用频道作用域与限频）。</param>
-    /// <param name="catalog">游戏配表（节点合法性校验）。</param>
+    /// <param name="catalog">游戏配表（节点合法性校验、世界遭遇池与成员面板采集）。</param>
     /// <param name="logger">日志记录器。</param>
+    /// <param name="players">玩家运行时适配器（组队讨伐开打/散场经单写者边界改成员行动）；为 null 时仲裁退化不动作。</param>
+    /// <param name="simulationClock">模拟时钟；缺省按环境装配（与玩家运行时同口径）。</param>
     public SocialRuntime(
         ISocialRepository repository,
         OnlinePresenceRegistry presence,
         PartyValuationService valuation,
         ChatRuntime chat,
         GameDataCatalog catalog,
-        ILogger<SocialRuntime> logger)
+        ILogger<SocialRuntime> logger,
+        IPlayerRuntime? players = null,
+        IPlayerSimulationClock? simulationClock = null)
     {
         _repository = repository;
         _presence = presence;
         _valuation = valuation;
         _chat = chat;
         _logger = logger;
+        _gameData = catalog;
+        _players = players;
+        _clock = simulationClock ?? PlayerSimulationClock.FromEnvironment();
         _nodeIds = catalog.WorldGraph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
         _presence.PresenceChanged += OnPresenceChangedAsync;
+        _presence.NodeChanged += OnNodeChangedAsync;
     }
 
     /// <summary>某玩家社交状态发生变化；订阅者按玩家过滤后下发。</summary>
@@ -112,7 +134,14 @@ public sealed class SocialRuntime
                     [.. party.Members.Select(member => new PartyMemberDto(
                         member.PlayerId.ToString("D"), member.DisplayName,
                         _presence.IsOnline(member.PlayerId),
-                        valuations.TryGetValue(member.PlayerId, out var value) ? value : 0))]),
+                        valuations.TryGetValue(member.PlayerId, out var value) ? value : 0,
+                        member.Ready))],
+                    party.OpenSlots,
+                    snapshot.PartySession is { } session
+                        ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,
+                            [.. session.MemberIds.Select(id => id.ToString("D"))],
+                            session.StartedAt.ToUnixTimeMilliseconds())
+                        : null),
             invitation is null
                 ? null
                 : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName, invitation.PartyName),
@@ -269,7 +298,7 @@ public sealed class SocialRuntime
                 var party = await _repository.GetPartyAsync(partyId, cancellationToken);
                 if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
-                if (party.Members.Count >= MaxPartyMembers) return new SocialOutcome(SocialFailure.PartyFull);
+                if (party.Members.Count >= party.OpenSlots) return new SocialOutcome(SocialFailure.PartyFull);
                 if (await _repository.GetPartyIdAsync(targetId.Value, cancellationToken) is not null)
                     return new SocialOutcome(SocialFailure.TargetAlreadyInParty);
                 await _repository.UpsertPartyInvitationAsync(partyId, targetId.Value, playerId, now, cancellationToken);
@@ -294,7 +323,7 @@ public sealed class SocialRuntime
                 if (party.Profile.MinValuation > 0
                     && await _valuation.ComputeAsync(playerId, cancellationToken) < party.Profile.MinValuation)
                     return new SocialOutcome(SocialFailure.ValuationTooLow);
-                var join = await _repository.TryJoinPartyAsync(invitation.PartyId, playerId, MaxPartyMembers, now, cancellationToken);
+                var join = await _repository.TryJoinPartyAsync(invitation.PartyId, playerId, now, cancellationToken);
                 if (join != PartyJoinResult.Joined)
                 {
                     if (join == PartyJoinResult.NotFound) await _repository.TryClearPartyInvitationAsync(playerId, cancellationToken);
@@ -305,6 +334,8 @@ public sealed class SocialRuntime
                         _ => SocialFailure.AlreadyInParty
                     });
                 }
+                // 成员加入是讨伐仲裁触发点（总纲 §21.13）：阵容变化先裁决再广播。
+                await ArbitratePartySessionAsync(invitation.PartyId, "member-joined", cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), playerId, invitation.InviterId], playerId);
                 return SocialOutcome.Ok;
             }
@@ -327,7 +358,7 @@ public sealed class SocialRuntime
                 if (party.Profile.MinValuation > 0
                     && await _valuation.ComputeAsync(playerId, cancellationToken) < party.Profile.MinValuation)
                     return new SocialOutcome(SocialFailure.ValuationTooLow);
-                var join = await _repository.TryJoinPartyAsync(partyId, playerId, MaxPartyMembers, now, cancellationToken);
+                var join = await _repository.TryJoinPartyAsync(partyId, playerId, now, cancellationToken);
                 if (join != PartyJoinResult.Joined)
                 {
                     return new SocialOutcome(join switch
@@ -337,6 +368,8 @@ public sealed class SocialRuntime
                         _ => SocialFailure.AlreadyInParty
                     });
                 }
+                // 成员加入是讨伐仲裁触发点（总纲 §21.13）：阵容变化先裁决再广播。
+                await ArbitratePartySessionAsync(partyId, "member-joined", cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), playerId], playerId);
                 return SocialOutcome.Ok;
             }
@@ -351,6 +384,8 @@ public sealed class SocialRuntime
                     return new SocialOutcome(SocialFailure.InvalidPartyProfile);
                 if (!await _repository.TryUpdatePartyProfileAsync(partyId.Value, profile, now, cancellationToken))
                     return new SocialOutcome(SocialFailure.PartyNotFound);
+                // 目标节点/目标类型变化是讨伐仲裁触发点：会话成立性随新档案重评。
+                await ArbitratePartySessionAsync(partyId.Value, "profile-changed", cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
                 return SocialOutcome.Ok;
             }
@@ -366,6 +401,8 @@ public sealed class SocialRuntime
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
                 if (!await _repository.TryKickPartyMemberAsync(partyId.Value, targetId.Value, cancellationToken))
                     return new SocialOutcome(SocialFailure.TargetNotFound);
+                // 踢出使阵容收缩：活跃会话条件必然失效，先仲裁散场再广播。
+                await ArbitratePartySessionAsync(partyId.Value, "member-kicked", cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), targetId.Value], playerId);
                 return SocialOutcome.Ok;
             }
@@ -376,6 +413,9 @@ public sealed class SocialRuntime
                 var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
                 if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+                // 先对活跃讨伐会话做权威散场（spec 名册含当前成员），再删 parties 行——
+                // 顺序不可颠倒：行删除后 spec 名册不可考，成员队首绑定只能等装载对账兜底。
+                await ArbitratePartySessionAsync(partyId.Value, "party-disbanded", cancellationToken, forceDissolve: true);
                 // 成员/邀请随 ON DELETE CASCADE 清除，聊天卡片链接置空失效。
                 var former = await _repository.DisbandPartyAsync(partyId.Value, cancellationToken);
                 if (former is null) return new SocialOutcome(SocialFailure.PartyNotFound);
@@ -395,7 +435,7 @@ public sealed class SocialRuntime
                 PartyRecord? best = null;
                 foreach (var candidate in candidates)
                 {
-                    if (candidate.Members.Count >= MaxPartyMembers) continue;
+                    if (candidate.Members.Count >= candidate.OpenSlots) continue;
                     if (candidate.Profile.MinValuation > myValuation) continue;
                     if (minValuation > 0)
                     {
@@ -421,9 +461,11 @@ public sealed class SocialRuntime
                 }
                 if (best is not null)
                 {
-                    var join = await _repository.TryJoinPartyAsync(best.PartyId, playerId, MaxPartyMembers, now, cancellationToken);
+                    var join = await _repository.TryJoinPartyAsync(best.PartyId, playerId, now, cancellationToken);
                     if (join == PartyJoinResult.Joined)
                     {
+                        // 匹配并入改变阵容：并入后仲裁一次（新成员未就绪时只会散场评估）。
+                        await ArbitratePartySessionAsync(best.PartyId, "member-joined", cancellationToken);
                         await NotifyAsync([.. best.Members.Select(member => member.PlayerId), playerId], playerId);
                         return SocialOutcome.Ok;
                     }
@@ -478,7 +520,42 @@ public sealed class SocialRuntime
                     }
                 }
                 await _repository.DeletePartyIfEmptyAsync(partyId.Value, cancellationToken);
+                // 离队使活跃会话的冻结名册失效：先仲裁散场，再广播新旧成员。
+                await ArbitratePartySessionAsync(partyId.Value, "member-left", cancellationToken);
                 await NotifyAsync(affected, playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyReady or SocialActions.PartyUnready:
+            {
+                // 就绪标记是成员本人的会话意愿开关（总纲 §21.13）；重复置位幂等。
+                var ready = action.Action == SocialActions.PartyReady;
+                if (!await _repository.TrySetPartyMemberReadyAsync(playerId, ready, cancellationToken))
+                    return new SocialOutcome(SocialFailure.NotInParty);
+                if (await _repository.GetPartyIdAsync(playerId, cancellationToken) is { } ownedPartyId)
+                {
+                    await ArbitratePartySessionAsync(ownedPartyId, ready ? "member-ready" : "member-unready", cancellationToken);
+                    if (await _repository.GetPartyAsync(ownedPartyId, cancellationToken) is { } refreshed)
+                        await NotifyAsync([.. refreshed.Members.Select(member => member.PlayerId)], playerId);
+                }
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartySlots:
+            {
+                var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
+                if (partyId is null) return new SocialOutcome(SocialFailure.NotInParty);
+                var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
+                if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
+                if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+                // 开启槽位 2~5 且不得低于当前队员数（收窄不逐人，只收紧后续加入与开战判定）。
+                if (action.Party?.OpenSlots is not { } openSlots
+                    || openSlots < MinOpenSlots || openSlots > MaxPartyMembers
+                    || openSlots < party.Members.Count)
+                    return new SocialOutcome(SocialFailure.InvalidPartyProfile);
+                if (!await _repository.TryUpdatePartyOpenSlotsAsync(partyId.Value, openSlots, now, cancellationToken))
+                    return new SocialOutcome(SocialFailure.PartyNotFound);
+                // 槽位收窄使「满槽」失效直接散场；放开后若仍满槽也可能满足开战——统一重裁。
+                await ArbitratePartySessionAsync(partyId.Value, "open-slots-changed", cancellationToken);
+                await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
                 return SocialOutcome.Ok;
             }
             default:
@@ -635,6 +712,328 @@ public sealed class SocialRuntime
 
     private static Guid? ResolveTargetId(SocialActionDto action) =>
         Guid.TryParse(action.TargetPlayerId, out var targetId) && targetId != Guid.Empty ? targetId : null;
+
+    // ============================================================================
+    // 组队讨伐仲裁（总纲 §21.13）：共享剧本各自推演——开打冻结全员面板+钉死遭遇，
+    // 任一成立条件失效（离队/踢出/取消就绪/槽位变化/节点变化/解散/离线逐出）即散场重建。
+    // ============================================================================
+
+    /// <summary>成员节点变化触发讨伐仲裁（Unregister 不触发：离线保留席位，逐出走 48h 扫描）。</summary>
+    private async ValueTask OnNodeChangedAsync(Guid playerId)
+    {
+        try
+        {
+            if (await _repository.GetPartyIdAsync(playerId, CancellationToken.None) is { } partyId)
+                await ArbitratePartySessionAsync(partyId, "member-node-changed", CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            // 仲裁失败只影响本次触发：就绪/节点等后续变更会再次进入仲裁，会话行是唯一收敛点。
+            _logger.LogError(exception, "节点变化触发组队讨伐仲裁失败（玩家 {PlayerId}）。", playerId);
+        }
+    }
+
+    /// <summary>
+    /// 队伍讨伐会话仲裁入口：每次队伍状态变化后裁决一次。进程内经每队伍门串行；
+    /// 跨实例并发由 ux_party_sessions_active 部分唯一索引与 ended_at IS NULL 条件更新收敛。
+    /// </summary>
+    /// <param name="partyId">待裁决队伍。</param>
+    /// <param name="reason">仲裁原因标签（散场时落入 end_reason）。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <param name="forceDissolve">true 时忽略成立条件强制散场（解散队伍等终局路径）。</param>
+    private async ValueTask ArbitratePartySessionAsync(Guid partyId, string reason, CancellationToken cancellationToken, bool forceDissolve = false)
+    {
+        if (_players is null) return; // 无玩家运行时的装配（社交单测）：仲裁退化，社交状态照常落库。
+        var gate = _partyGates.GetOrAdd(partyId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            await ArbitratePartySessionOwnedAsync(partyId, reason, forceDissolve, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>裁决体（必须持有队伍门后调用）：条件齐备开打，条件失效散场，二者互斥且幂等。</summary>
+    private async ValueTask ArbitratePartySessionOwnedAsync(Guid partyId, string reason, bool forceDissolve, CancellationToken cancellationToken)
+    {
+        var party = await _repository.GetPartyAsync(partyId, cancellationToken);
+        var session = await _repository.GetActivePartySessionAsync(partyId, cancellationToken);
+        if (party is null)
+        {
+            // 队伍已删但残留活跃会话（解散竞态漏网）：按名册散场收尾。
+            if (session is not null)
+                await DissolveSessionAsync(session, reason, cancellationToken);
+            return;
+        }
+        if (session is not null)
+        {
+            // 会话存续要求名册冻结：成员变动/目标节点漂移/满槽就绪失任一条件即散场。
+            var stillTarget = await ResolveReadyTargetNodeAsync(party, cancellationToken);
+            var rosterIntact = session.MemberIds.Count == party.Members.Count
+                && party.Members.All(member => session.MemberIds.Contains(member.PlayerId));
+            if (forceDissolve
+                || stillTarget is null
+                || !rosterIntact
+                || !string.Equals(stillTarget, session.NodeId, StringComparison.Ordinal))
+                await DissolveSessionAsync(session, reason, cancellationToken);
+            return;
+        }
+        if (!forceDissolve
+            && await ResolveReadyTargetNodeAsync(party, cancellationToken) is { } targetNode)
+            await StartSessionAsync(party, targetNode, cancellationToken);
+    }
+
+    /// <summary>
+    /// 开战条件齐备判定：成员数=开启槽位（2~5）、全员就绪、全员位于目标节点。
+    /// 目标节点：档案指定优先，空串回落队长所在节点；任一成员不在目标节点即不成立。
+    /// 返回成立时的目标节点 ID，不成立返回 null。
+    /// </summary>
+    private async ValueTask<string?> ResolveReadyTargetNodeAsync(PartyRecord party, CancellationToken cancellationToken)
+    {
+        if (party.Members.Count < MinOpenSlots || party.Members.Count != party.OpenSlots) return null;
+        if (party.Members.Any(member => !member.Ready)) return null;
+        var nodeMap = await _repository.GetPlayerNodeMapAsync(
+            [.. party.Members.Select(member => member.PlayerId)], cancellationToken);
+        var target = party.Profile.NodeId.Length > 0
+            ? party.Profile.NodeId
+            : ResolveMemberNode(party.LeaderId, nodeMap);
+        if (string.IsNullOrEmpty(target)) return null;
+        foreach (var member in party.Members)
+            if (!string.Equals(ResolveMemberNode(member.PlayerId, nodeMap), target, StringComparison.Ordinal))
+                return null;
+        return target;
+    }
+
+    /// <summary>成员节点口径：已装载实体以内存态为准（快照比投影新）；未装载成员走持久化投影（迁地途中为缺席）。</summary>
+    private string? ResolveMemberNode(Guid memberId, IReadOnlyDictionary<Guid, string> projections)
+    {
+        if (_players?.TryGetLoaded(memberId) is { } live)
+            return live.State.World.EdgeId is null ? live.State.World.NodeId : null;
+        return projections.TryGetValue(memberId, out var nodeId) ? nodeId : null;
+    }
+
+    /// <summary>
+    /// 开打：冻结全员面板 → 钉死遭遇 → 写会话行占活跃位（并发仲裁收敛点）→ 逐成员入队 session 行动。
+    /// 行先行、行动后投递：投递失败的成员由各自装载对账与看门狗兜底补发。
+    /// </summary>
+    private async ValueTask StartSessionAsync(PartyRecord party, string targetNode, CancellationToken cancellationToken)
+    {
+        var startedAt = _clock.UtcNow;
+        if (!_gameData.WorldGraph.TryGetNode(targetNode, out var node) || node.EncounterIds.Count == 0)
+        {
+            _logger.LogWarning("组队讨伐开战放弃：目标节点 {NodeId} 不在世界图或无遭遇池（队伍 {PartyId}）。", targetNode, party.PartyId);
+            return;
+        }
+        var seed = Random.Shared.NextInt64(long.MaxValue);
+        var encounterId = node.EncounterIds[(int)(seed % node.EncounterIds.Count)];
+        var sessionId = $"party:{party.PartyId:N}:{startedAt.ToUnixTimeSeconds()}:{RandomNumberGenerator.GetHexString(3)}";
+
+        // 逐成员装载并冻结面板（离线成员强制装载后即卸）；任一失败整局放弃，不开半个会话。
+        var snapshots = new PartyMemberSnapshot?[party.Members.Count];
+        for (var i = 0; i < party.Members.Count; i++)
+        {
+            var member = party.Members[i];
+            try
+            {
+                await ApplySessionMutationAsync(member.PlayerId,
+                    aggregate => snapshots[i] = aggregate.CapturePartyMemberSnapshot(_gameData),
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "组队讨伐开战放弃：成员 {PlayerId} 冻结面板采集异常（队伍 {PartyId}）。", member.PlayerId, party.PartyId);
+                return;
+            }
+            if (snapshots[i] is null)
+            {
+                _logger.LogError("组队讨伐开战放弃：成员 {PlayerId} 冻结面板为空（队伍 {PartyId}）。", member.PlayerId, party.PartyId);
+                return;
+            }
+        }
+
+        var spec = new PartyExpeditionSpec(
+            sessionId, encounterId, targetNode, seed,
+            snapshots.Max(member => member!.SearchSpeedPoints),
+            startedAt.ToUnixTimeMilliseconds() / 1000d,
+            [.. snapshots.Select(member => member!)]);
+        if (!spec.IsValid)
+        {
+            _logger.LogError("组队讨伐开战放弃：会话规格不合法（队伍 {PartyId}，会话 {SessionId}）。", party.PartyId, sessionId);
+            return;
+        }
+        var specJson = JsonSerializer.Serialize(spec, PersistenceJson.Options);
+        // 占活跃位：并发仲裁由部分唯一索引收敛，败方直接放弃（成员变更未投递，无副作用残留）。
+        if (!await _repository.TryInsertPartySessionAsync(sessionId, party.PartyId, specJson, startedAt, cancellationToken))
+            return;
+
+        var undelivered = 0;
+        foreach (var member in party.Members)
+        {
+            try
+            {
+                await ApplySessionMutationAsync(member.PlayerId, aggregate =>
+                {
+                    // 先扫净残留会话绑定（崩溃/重启遗留的异会话或非队首同名绑定），再幂等入队本会话。
+                    for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
+                    {
+                        var binding = aggregate.Actions[i].PartySession;
+                        if (binding is null) continue;
+                        if (i == 0 && string.Equals(binding.Spec.SessionId, spec.SessionId, StringComparison.Ordinal)) continue;
+                        aggregate.RemoveAction(aggregate.Actions[i].Id);
+                    }
+                    aggregate.StartPartyExpedition(spec, startedAt, _gameData.Actions);
+                }, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                undelivered++;
+                _logger.LogError(exception, "组队讨伐行动投递失败：成员 {PlayerId}（会话 {SessionId}）。", member.PlayerId, sessionId);
+            }
+        }
+        if (undelivered > 0)
+            _logger.LogWarning("组队讨伐会话 {SessionId} 有 {Count} 名成员行动未投递；其装载对账将按活跃会话行补发。", sessionId, undelivered);
+        await NotifyAsync([.. party.Members.Select(member => member.PlayerId)]);
+        _logger.LogInformation("组队讨伐会话 {SessionId} 开打：队伍 {PartyId}，遭遇 {EncounterId}，成员 {Count} 人。",
+            sessionId, party.PartyId, encounterId, party.Members.Count);
+    }
+
+    /// <summary>
+    /// 散场：先写会话行终态（幂等收敛并发散场），再逐成员收尾——
+    /// 队首本会话绑定写权威散场时刻（引擎推进到该时刻自然收尾），其余残留绑定一律移除。
+    /// </summary>
+    private async ValueTask DissolveSessionAsync(PartySessionRecord session, string reason, CancellationToken cancellationToken)
+    {
+        var endedAt = _clock.UtcNow;
+        var endsAtUnixSeconds = endedAt.ToUnixTimeMilliseconds() / 1000d;
+        await _repository.TryEndPartySessionAsync(session.SessionId, endedAt, reason, cancellationToken);
+        foreach (var memberId in session.MemberIds)
+        {
+            try
+            {
+                await ApplySessionMutationAsync(memberId, aggregate =>
+                {
+                    for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
+                    {
+                        var binding = aggregate.Actions[i].PartySession;
+                        if (binding is null) continue;
+                        // 队首本会话绑定写权威散场时刻；异会话遗留与非队首残留直接移除（不在队首无推进语义）。
+                        if (i == 0 && string.Equals(binding.Spec.SessionId, session.SessionId, StringComparison.Ordinal))
+                            aggregate.EndPartyExpedition(session.SessionId, endsAtUnixSeconds);
+                        else
+                            aggregate.RemoveAction(aggregate.Actions[i].Id);
+                    }
+                }, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "组队讨伐散场收尾失败：成员 {PlayerId}（会话 {SessionId}）。", memberId, session.SessionId);
+            }
+        }
+        await NotifyAsync([.. session.MemberIds]);
+        _logger.LogInformation("组队讨伐会话 {SessionId} 散场：{Reason}。", session.SessionId, reason);
+    }
+
+    /// <summary>
+    /// 会话成员变更通道：在线/离线成员统一经玩家运行时门内装载+变更，标脏进刷盘轨道；
+    /// 本会话强拉的离线实体变更后即卸并强制落盘，不留驻内存、不落「在线」假状态。
+    /// </summary>
+    private async ValueTask ApplySessionMutationAsync(Guid memberId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken)
+    {
+        if (_players is null) return;
+        var wasLoaded = _players.TryGetLoaded(memberId) is not null;
+        await _players.MutateOwnedAsync(memberId, aggregate =>
+        {
+            mutate(aggregate);
+            // 强制装载走统一上线路径（LoadAsync 内置置 Online），门内按注册表复位离线。
+            if (!_presence.IsOnline(memberId)) aggregate.SetPresence(PresenceState.Offline);
+        }, cancellationToken);
+        // 仅卸载本会话强拉的实体：真在线玩家与既有驻留实体不动（变更后复核注册表收窄竞态）。
+        if (!wasLoaded && !_presence.IsOnline(memberId))
+            await _players.RemoveAsync(memberId, flush: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// 48h 离线成员逐出（看门狗调用）：逐队在队伍门内完成队长移交/空队清理/讨伐仲裁，
+    /// 再向剩余成员与被逐者广播（被逐者离线时被推送层过滤，其上线对账兜底）。
+    /// </summary>
+    public async ValueTask EvictOfflinePartyMembersAsync(TimeSpan offlineLimit, CancellationToken cancellationToken = default)
+    {
+        var evicted = await _repository.DeleteInactivePartyMembersAsync(_clock.UtcNow - offlineLimit, cancellationToken);
+        if (evicted.Count == 0) return;
+        foreach (var group in evicted.GroupBy(item => item.PartyId))
+        {
+            var partyId = group.Key;
+            var gate = _partyGates.GetOrAdd(partyId, static _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                var party = await _repository.GetPartyAsync(partyId, cancellationToken);
+                if (party is null) continue;
+                // 被逐出者是队长时移交最早剩余成员（与离队路径同规则）。
+                if (group.Any(item => item.PlayerId == party.LeaderId))
+                {
+                    var next = party.Members.FirstOrDefault(member => group.All(item => item.PlayerId != member.PlayerId));
+                    if (next is not null)
+                        await _repository.TryTransferPartyLeaderAsync(partyId, next.PlayerId, cancellationToken);
+                }
+                await _repository.DeletePartyIfEmptyAsync(partyId, cancellationToken);
+                await ArbitratePartySessionOwnedAsync(partyId, "member-offline-timeout", forceDissolve: false, cancellationToken);
+                await NotifyAsync([.. party.Members.Select(member => member.PlayerId), .. group.Select(item => item.PlayerId)]);
+                _logger.LogInformation("48h 离线逐出完成：队伍 {PartyId} 移除 {Count} 人。", partyId, group.Count());
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 已装载玩家的队首死会话兜底收尾（看门狗调用）：散场行已写而成员绑定未终局
+    /// （散场投递与终止更新之间崩溃的漏网），或本人已离开会话所属队伍时，按权威时刻补写。
+    /// </summary>
+    public async ValueTask ReconcileLoadedSessionBindingsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_players is null) return;
+        var loaded = await _players.GetLoadedSnapshotsAsync(cancellationToken);
+        var stale = new List<(Guid PlayerId, string SessionId)>();
+        foreach (var snapshot in loaded)
+        {
+            if (snapshot.State.Actions.Count > 0 && snapshot.State.Actions[0].PartySession is { } binding
+                && double.IsPositiveInfinity(binding.EndsAtUnixSeconds))
+                stale.Add((snapshot.PlayerId, binding.Spec.SessionId));
+        }
+        if (stale.Count == 0) return;
+        var endedCache = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        var aliveCache = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (memberId, sessionId) in stale)
+        {
+            try
+            {
+                if (!aliveCache.Contains(sessionId) && !endedCache.ContainsKey(sessionId))
+                {
+                    // 死会话判定：行缺失/已散场/本人已不在会话所属队伍（离队与散场间崩溃的漏网）。
+                    var row = await _repository.GetPartySessionAsync(sessionId, cancellationToken);
+                    var memberParty = await _repository.GetPartyIdAsync(memberId, cancellationToken);
+                    if (row is not null && row.EndedAt is null && memberParty == row.PartyId)
+                        aliveCache.Add(sessionId);
+                    else
+                        endedCache[sessionId] = row?.EndedAt ?? _clock.UtcNow;
+                }
+                if (aliveCache.Contains(sessionId) || !endedCache.TryGetValue(sessionId, out var endedAt)) continue;
+                await ApplySessionMutationAsync(memberId,
+                    aggregate => aggregate.EndPartyExpedition(sessionId, endedAt.ToUnixTimeMilliseconds() / 1000d),
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "组队讨伐绑定兜底收尾失败：成员 {PlayerId}（会话 {SessionId}）。", memberId, sessionId);
+            }
+        }
+    }
 
     private static FriendRequestDto ToRequestDto(FriendRequestView view) =>
         new(view.RequestId.ToString("D"), view.PlayerId.ToString("D"), view.DisplayName, view.CreatedAt.ToUnixTimeMilliseconds());

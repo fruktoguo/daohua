@@ -98,6 +98,12 @@ public interface IPlayerRuntime : IAsyncDisposable
     DateTimeOffset? NextAdvanceBoundaryUtc { get; }
     /// <summary>卸载玩家实体并清缓存；flush 为 true 时先转离线并强制落盘，不丢未提交状态。</summary>
     ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 跨实体裁决变更通道（组队讨伐开打/散场等社交仲裁，总纲 §21.13）：
+    /// 在玩家单写者门内装载（如需）并执行聚合变更——标脏纳入刷盘轨道、刷新驻留快照、
+    /// 版本推进时向订阅者广播快照；不走命令回执/幂等语义，仅供服务端仲裁组件调用。
+    /// </summary>
+    ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken = default);
     /// <summary>玩家战报回放缓冲的当前快照；仅进程内存，供断线重连补齐日志。</summary>
     IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId);
     /// <summary>全部已加载玩家快照的稳定排序副本；供批量推进度量与运维旁路读取。</summary>

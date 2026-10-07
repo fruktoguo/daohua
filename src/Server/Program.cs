@@ -128,6 +128,7 @@ if (processRole == ServerProcessRole.Api)
     // 传音与社交：不属于玩家聚合，独立单例运行时；聊天记录落 PostgreSQL（每作用域保留 100 条）。
     builder.Services.AddSingleton<Server.Clean.Social.OnlinePresenceRegistry>();
     builder.Services.AddSingleton<Server.Clean.Social.ISocialRepository, Server.Clean.Social.PostgresSocialRepository>();
+    builder.Services.AddSingleton<Server.Clean.Social.IInvitationRepository, Server.Clean.Social.PostgresInvitationRepository>();
     builder.Services.AddSingleton<Server.Clean.Social.IChatRepository, Server.Clean.Social.PostgresChatRepository>();
     builder.Services.AddSingleton<Server.Clean.Social.PartyValuationService>();
     builder.Services.AddSingleton<Server.Clean.Social.ChatRuntime>();
@@ -148,6 +149,7 @@ if (processRole == ServerProcessRole.Api)
 builder.Services.AddSingleton<PostgresSectionRepository>();
 builder.Services.AddSingleton<IPlayerStateRepository>(sp => sp.GetRequiredService<PostgresSectionRepository>());
 builder.Services.AddSingleton<PostgresNodeBuildingRepository>();
+builder.Services.AddSingleton<PostgresNodeActivityRepository>();
 builder.Services.AddSingleton<NodeBuildingRegistry>();
 builder.Services.AddSingleton<IOutboxRepository, PostgresOutboxRepository>();
 builder.Services.AddSingleton<ICommandReceiptStore, PostgresCommandReceiptRepository>();
@@ -189,6 +191,8 @@ if (processRole == ServerProcessRole.Api)
     {
         builder.Services.AddHostedService<PlayerFlushHostedService>();
         builder.Services.AddHostedService<PlayerSimulationHostedService>();
+        // 组队讨伐看门狗（总纲 §21.13）：重启扫尾残留会话 + 周期逐出 48h 离线成员 + 装载绑定兜底。
+        builder.Services.AddHostedService<Server.Clean.Social.PartySessionWatchdog>();
     }
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MarketRuntime>());
 }
@@ -335,7 +339,7 @@ if (processRole == ServerProcessRole.Api)
         var policy = await risk.LoadPolicyAsync(ct);
         return Results.Ok(new { tabGuardEnabled = policy.Enabled && policy.Modules.Single(item => item.Id == "tabGuard").Enabled });
     });
-    auth.MapPost("/register", async (RegisterRequest request, IAccountRepository accounts, PostgresAccountRiskRepository risk, AccountRiskRequestContext riskContext, IPlayerRuntime runtime, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
+    auth.MapPost("/register", async (RegisterRequest request, IAccountRepository accounts, PostgresAccountRiskRepository risk, AccountRiskRequestContext riskContext, IPlayerRuntime runtime, EcsPlayerRuntimeAdapter adapter, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
     {
         AccountRiskSignals signals;
         try { signals = riskContext.Collect(context, request.RiskSignals); }
@@ -345,9 +349,14 @@ if (processRole == ServerProcessRole.Api)
             return Results.BadRequest(Problem(400, "INVALID_RISK_SIGNALS", "设备校验信息无效。"));
         }
         var policy = await risk.LoadPolicyAsync(ct);
-        var result = await accounts.RegisterAsync(request.Account, request.Password, request.DisplayName, signals, ct, policy);
+        var result = await accounts.RegisterAsync(request.Account, request.Password, request.DisplayName, request.InvitationCode, signals, ct, policy);
         if (!result.Success)
             return Results.BadRequest(Problem(400, result.ErrorCode ?? "REGISTRATION_FAILED", result.Message ?? "注册失败。"));
+        // 邀请者的注册奖励已随注册事务入账：在线邀请者标记钱包失效并推送入账日志。
+        if (result.InviterPlayerId is { } inviterId)
+            await adapter.NotifyInvitationRewardAsync(inviterId,
+                Server.Clean.Social.InvitationRewards.InviterRewardLogTemplate(
+                    Server.Clean.Social.InvitationRewards.MilestoneSignup, result.DisplayName!));
         await runtime.LoadAsync(result.PlayerId!.Value, ct);
         await runtime.FlushAsync(result.PlayerId.Value, true, ct);
         StampSessionCookie(context, result.SessionToken!, serverOptions.SessionLifetime);
@@ -410,6 +419,29 @@ if (processRole == ServerProcessRole.Api)
             playerId,
             displayName = user.FindFirstValue("display_name"),
             sequenceId = long.TryParse(user.FindFirstValue("sequence_id"), out var sequenceId) ? sequenceId : 0L
+        });
+    }).RequireAuthorization();
+
+    // 邀请总览：本人邀请码 + 被邀请人进度列表；低频拉取，不走 WebSocket 帧。
+    app.MapGet("/api/v1/invitation", async (ClaimsPrincipal user, Server.Clean.Social.IInvitationRepository invitations, CancellationToken ct) =>
+    {
+        if (user.Identity?.IsAuthenticated != true || !Guid.TryParse(user.FindFirstValue("player_id"), out var playerId))
+            return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
+        var overview = await invitations.GetOverviewAsync(playerId, ct);
+        if (overview is null) return Results.NotFound(Problem(404, "PLAYER_NOT_FOUND", "玩家不存在。"));
+        return Results.Ok(new
+        {
+            overview.InviteCode,
+            InviteeCount = overview.Invitees.Count,
+            Invitees = overview.Invitees.Select(row => new
+            {
+                row.DisplayName,
+                row.HighestRealmLevel,
+                row.QiRewarded,
+                row.FoundationRewarded,
+                row.CreatedAt,
+            }).ToArray(),
+            overview.InvitedByName,
         });
     }).RequireAuthorization();
 
@@ -660,8 +692,9 @@ static async Task WriteHealthResponse(HttpContext context, HealthReport report, 
 /// <param name="Account">登录账号（3-32 位字母、数字或下划线，大小写不敏感）。</param>
 /// <param name="Password">明文密码，仅在传输层出现；服务端 PBKDF2 哈希后入库。</param>
 /// <param name="DisplayName">可选初始道号。</param>
+/// <param name="InvitationCode">可选邀请码；无效码使注册失败（INVALID_INVITATION_CODE）。</param>
 /// <param name="RiskSignals">客户端采集的设备摘要；IP 和主体键由服务端生成。</param>
-public sealed record RegisterRequest(string Account, string Password, string? DisplayName = null, AccountRiskClientSignals? RiskSignals = null);
+public sealed record RegisterRequest(string Account, string Password, string? DisplayName = null, string? InvitationCode = null, AccountRiskClientSignals? RiskSignals = null);
 /// <summary>登录请求体。</summary>
 /// <param name="Account">登录账号。</param>
 /// <param name="Password">明文密码，仅用于与服务端哈希比对。</param>

@@ -1,8 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
-import { useSocialStore } from '../game/socialStore'
+import { PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
+import { findEncounterInCatalog } from '../game/ids'
 import { formatNumber } from '../game/format'
+import { calculateRealmInfo } from '../game/combatConstants'
 import { useT } from '../i18n'
+import { requestJson } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
 import { PartyActivityKind, type ChatChannel, type PartyActivityKind as PartyActivityKindType, type PartyProfileDto } from '../network/protocol'
 import { useUiStore, type SocialSubTab } from '../uiStore'
@@ -55,7 +58,7 @@ const DropdownSelect = memo(function DropdownSelect({
   label: string
   /** 当前选中项 id */
   value: string
-  options: readonly { id: string; label: string }[]
+  options: readonly { id: string; label: string; disabled?: boolean }[]
   onSelect: (id: string) => void
   className?: string
 }): React.JSX.Element {
@@ -98,6 +101,7 @@ const DropdownSelect = memo(function DropdownSelect({
             <button
               aria-selected={option.id === value}
               className={`party-select-option${option.id === value ? ' is-selected' : ''}`}
+              disabled={option.disabled === true}
               key={option.id}
               onClick={() => {
                 onSelect(option.id)
@@ -176,6 +180,12 @@ const PartyProfileFields = memo(function PartyProfileFields({
   )
 })
 
+/** 开启槽位下拉固定选项集（2~5，§21.13.5）；低于当前队员数的档位由调用方禁用。 */
+const SLOT_OPTIONS: readonly number[] = Array.from(
+  { length: PARTY_OPEN_SLOTS_MAX - PARTY_OPEN_SLOTS_MIN + 1 },
+  (_, index) => PARTY_OPEN_SLOTS_MIN + index,
+)
+
 /** 待处理队伍邀请横幅（无队伍时置顶显示）。 */
 const PartyInvitationBanner = memo(function PartyInvitationBanner(): React.JSX.Element | null {
   const t = useT()
@@ -188,6 +198,29 @@ const PartyInvitationBanner = memo(function PartyInvitationBanner(): React.JSX.E
         <button onClick={() => gameClient.sendSocialAction('party.accept')} type="button">{t('social.action.accept')}</button>
         <button onClick={() => gameClient.sendSocialAction('party.decline')} type="button">{t('social.action.decline')}</button>
       </span>
+    </div>
+  )
+})
+
+/**
+ * 组队讨伐活跃会话横幅（§21.13）：展示钉死遭遇、共战地点、开打时刻与参战人数；
+ * 会话全程阵容锁定，横幅内附散场提示（成员变动即终止本次讨伐）。
+ */
+const PartySessionBanner = memo(function PartySessionBanner({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
+  const t = useT()
+  const session = useSocialStore(state => state.party?.activeSession ?? null)
+  const encounters = useGameStore(state => state.encounters)
+  if (!session) return null
+  const encounterName = findEncounterInCatalog(encounters, session.encounterId)?.name ?? session.encounterId
+  const nodeName = session.nodeId ? nodeLabel(session.nodeId, nodeNames, t('social.field.anyNode')) : t('social.field.anyNode')
+  return (
+    <div className="party-session" role="status">
+      <strong className="party-session-title">{t('social.session.banner')}</strong>
+      <span>{t('social.session.encounter', { name: encounterName })}</span>
+      <span>{t('social.session.node', { name: nodeName })}</span>
+      <span>{t('social.session.startedAt', { time: new Date(session.startedAtUnixMilliseconds).toLocaleTimeString() })}</span>
+      <span>{t('social.session.members', { count: session.memberIds.length })}</span>
+      <span className="party-session-warn">{t('social.session.disbandWarn')}</span>
     </div>
   )
 })
@@ -279,7 +312,11 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
                 <strong>{entry.name}</strong>
                 <span className="badge">{t(`social.activity.${entry.activityKind}`)}</span>
                 <span className="party-lobby-node">{nodeLabel(entry.nodeId, nodeNames, t('social.field.anyNode'))}</span>
-                <span className="party-lobby-count">{t('social.memberCount', { count: entry.members.length })}</span>
+                <span className="party-lobby-count">
+                  {entry.openSlots != null
+                    ? t('social.memberCountOf', { count: entry.members.length, slots: entry.openSlots })
+                    : t('social.memberCount', { count: entry.members.length })}
+                </span>
               </div>
               <div className="party-lobby-entry-meta">
                 <span>{t('social.lobby.leader', { name: entry.leaderName })}</span>
@@ -409,10 +446,11 @@ const PartylessView = memo(function PartylessView({ nodeNames }: { nodeNames: Re
   )
 })
 
-/** 队长档案编辑区：改名 + 三件套 + 公开开关，一键提交 party.update 补丁。 */
+/** 队长档案编辑区：改名 + 三件套 + 公开开关 + 开启槽位（槽位走独立 party.slots 指令即选即调）。 */
 const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
   const t = useT()
   const party = useSocialStore(state => state.party)
+  const setPartySlots = useSocialStore(state => state.setPartySlots)
   const [name, setName] = useState(party?.name ?? '')
   const [form, setForm] = useState({
     activityKind: (party?.activityKind ?? PartyActivityKind.Any) as PartyActivityKindType,
@@ -420,6 +458,8 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { n
     minValuation: party && party.minValuation > 0 ? String(party.minValuation) : '',
     isPublic: party?.isPublic ?? true,
   })
+  // 会话进行中调整槽位需二次确认（§21.13：阵容锁定，变动即散场）
+  const [pendingSlots, setPendingSlots] = useState<number | null>(null)
   if (!party) return null
 
   const submit = (): void => {
@@ -433,6 +473,14 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { n
     gameClient.sendSocialAction('party.update', undefined, undefined, { party: partyPatch })
   }
 
+  const openSlots = party.openSlots ?? PARTY_OPEN_SLOTS_MAX
+  const selectSlots = (id: string): void => {
+    const next = Number(id)
+    // 低于当前队员数的档位在选项上即禁用；会话中调整先经确认弹窗提示散场。
+    if (party.activeSession !== null && party.activeSession !== undefined) setPendingSlots(next)
+    else setPartySlots(next)
+  }
+
   return (
     <section className="party-card">
       <h3>{t('social.manage.heading')}</h3>
@@ -441,11 +489,28 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { n
           <span>{t('social.field.name')}</span>
           <input maxLength={32} onChange={event => setName(event.target.value)} value={name} />
         </label>
+        <div className="party-field">
+          <span>{t('social.field.openSlots')}</span>
+          <DropdownSelect
+            label={t('social.field.openSlots')}
+            onSelect={selectSlots}
+            options={SLOT_OPTIONS.map(n => ({ id: String(n), label: `${n}`, disabled: n < party.members.length }))}
+            value={String(openSlots)}
+          />
+        </div>
       </div>
       <PartyProfileFields nodeNames={nodeNames} onChange={setForm} showPublic value={form} />
+      <p className="party-card-desc">{t('social.field.openSlotsHint')}</p>
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={submit} type="button">{t('social.action.saveProfile')}</button>
       </div>
+      <ConfirmDialog
+        description={`${t('social.confirm.slotsDesc', { slots: pendingSlots ?? openSlots })}${t('social.confirm.sessionSuffix')}`}
+        onClose={() => setPendingSlots(null)}
+        onConfirm={() => { if (pendingSlots !== null) setPartySlots(pendingSlots) }}
+        open={pendingSlots !== null}
+        title={t('social.confirm.slotsTitle')}
+      />
     </section>
   )
 })
@@ -496,10 +561,13 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const party = useSocialStore(state => state.party)
   const myPlayerId = useGameStore(state => state.playerId)
   const friends = useSocialStore(state => state.friends)
+  const readyParty = useSocialStore(state => state.readyParty)
+  const unreadyParty = useSocialStore(state => state.unreadyParty)
   const partySubTab = useUiStore(state => state.partySubTab)
   const setPartySubTab = useUiStore(state => state.setPartySubTab)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmDisband, setConfirmDisband] = useState(false)
+  const [confirmQuitSession, setConfirmQuitSession] = useState(false)
   const [kickTarget, setKickTarget] = useState<{ playerId: string; name: string } | null>(null)
   if (!party) return null
 
@@ -508,6 +576,12 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const manageTab = partySubTab === 'lobby' ? 'lobby' : 'overview'
   const memberIds = new Set(party.members.map(member => member.playerId))
   const invitableFriends = friends.filter(friend => !memberIds.has(friend.playerId))
+  // 同图共战（§21.13）：开启槽位即队伍容量；会话进行中阵容冻结，本人参战开关转为「退出斗法」散场确认。
+  const openSlots = party.openSlots ?? PARTY_OPEN_SLOTS_MAX
+  const sessionActive = party.activeSession !== null && party.activeSession !== undefined
+  const readyCount = party.members.filter(member => member.ready).length
+  // 会话期间成员变动（离队/移出/收窄槽位）即散场：确认弹窗统一追加散场提示。
+  const sessionSuffix = sessionActive ? t('social.confirm.sessionSuffix') : ''
 
   return (
     <>
@@ -520,7 +594,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
             {party.isPublic ? t('social.visibility.public') : t('social.visibility.private')}
           </span>
           {party.minValuation > 0 && <span className="badge">{t('social.minValuationValue', { value: formatNumber(party.minValuation) })}</span>}
-          <span className="party-lobby-count">{t('social.memberCount', { count: party.members.length })}</span>
+          <span className="party-lobby-count">{t('social.memberCountOf', { count: party.members.length, slots: openSlots })}</span>
         </div>
       </section>
 
@@ -542,8 +616,13 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
         <LobbySection nodeNames={nodeNames} />
       ) : (
         <>
+          <PartySessionBanner nodeNames={nodeNames} />
           <section className="party-card">
             <h3>{t('social.members.heading')}</h3>
+            <div className="party-ready-row">
+              <span className="badge">{t('social.ready.count', { ready: readyCount, count: party.members.length })}</span>
+              <span className="party-card-desc">{t('social.ready.hint')}</span>
+            </div>
             <ul className="party-member-list">
               {party.members.map(member => (
                 <li className="party-member" key={member.playerId}>
@@ -554,7 +633,24 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                   <span className={`chat-presence chat-presence--${member.online ? 'online' : 'offline'}`}>
                     {member.online ? t('social.online') : t('social.offline')}
                   </span>
+                  <span className={`party-ready-tag${member.ready ? ' is-ready' : ''}`}>
+                    {member.ready ? t('social.ready.status') : t('social.ready.notReady')}
+                  </span>
                   <span className="party-member-valuation">{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>
+                  {member.playerId === myPlayerId && (
+                    <button
+                      className={sessionActive ? 'danger' : undefined}
+                      onClick={() => {
+                        // 会话中取消参战=散场（名册冻结铁律），需确认；待命期自由开关。
+                        if (sessionActive) setConfirmQuitSession(true)
+                        else if (member.ready) unreadyParty()
+                        else readyParty()
+                      }}
+                      type="button"
+                    >{sessionActive
+                      ? t('social.action.quitParticipation')
+                      : member.ready ? t('social.action.leaveParticipation') : t('social.action.participate')}</button>
+                  )}
                   {isLeader && member.playerId !== myPlayerId && (
                     <button onClick={() => setKickTarget({ playerId: member.playerId, name: member.displayName })} type="button">
                       {t('social.action.kick')}
@@ -590,7 +686,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
       )}
 
       <ConfirmDialog
-        description={isLeader ? t('social.confirm.leaveLeaderDesc') : t('social.confirm.leaveDesc')}
+        description={(isLeader ? t('social.confirm.leaveLeaderDesc') : t('social.confirm.leaveDesc')) + sessionSuffix}
         onClose={() => setConfirmLeave(false)}
         onConfirm={() => gameClient.sendSocialAction('party.leave')}
         open={confirmLeave}
@@ -598,7 +694,15 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
       />
       <ConfirmDialog
         danger
-        description={t('social.confirm.disbandDesc')}
+        description={t('social.confirm.quitSessionDesc')}
+        onClose={() => setConfirmQuitSession(false)}
+        onConfirm={() => unreadyParty()}
+        open={confirmQuitSession}
+        title={t('social.confirm.quitSessionTitle')}
+      />
+      <ConfirmDialog
+        danger
+        description={t('social.confirm.disbandDesc') + sessionSuffix}
         onClose={() => setConfirmDisband(false)}
         onConfirm={() => gameClient.sendSocialAction('party.disband')}
         open={confirmDisband}
@@ -606,7 +710,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
       />
       <ConfirmDialog
         danger
-        description={t('social.confirm.kickDesc', { name: kickTarget?.name ?? '' })}
+        description={t('social.confirm.kickDesc', { name: kickTarget?.name ?? '' }) + sessionSuffix}
         onClose={() => setKickTarget(null)}
         onConfirm={() => { if (kickTarget) gameClient.sendSocialAction('party.kick', kickTarget.playerId) }}
         open={kickTarget !== null}
@@ -616,10 +720,140 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   )
 })
 
-/** 同道页子选项卡表（当前仅「队伍」一栏）。 */
+/** 同道页子选项卡表：队伍 + 邀请。 */
 const SOCIAL_SUB_TABS: ReadonlyArray<{ id: SocialSubTab; labelKey: string }> = [
   { id: 'party', labelKey: 'social.sub.party' },
+  { id: 'invite', labelKey: 'social.sub.invite' },
 ]
+
+/** GET /api/v1/invitation 的响应形态（HTTP 低频拉取，不进 WebSocket 协议帧）。 */
+interface InvitationOverviewDto {
+  inviteCode: string
+  inviteeCount: number
+  invitees: {
+    displayName: string
+    highestRealmLevel: number
+    qiRewarded: boolean
+    foundationRewarded: boolean
+    createdAt: string
+  }[]
+  invitedByName: string | null
+}
+
+/** 剪贴板写入：优先异步 Clipboard API，非安全上下文降级 execCommand；返回是否成功。 */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* 继续走降级路径 */ }
+  try {
+    const helper = document.createElement('textarea')
+    helper.value = text
+    helper.style.position = 'fixed'
+    helper.style.opacity = '0'
+    document.body.appendChild(helper)
+    helper.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(helper)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 邀请面板 (InviteView)：展示专属邀请码/邀请链接并提供一键复制，
+ * 下方列出被邀请人境界进度与练气/筑基里程碑达成状态；数据来自 GET /api/v1/invitation。
+ */
+const InviteView = memo(function InviteView(): React.JSX.Element | null {
+  const t = useT()
+  const [overview, setOverview] = useState<InvitationOverviewDto | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [copiedKey, setCopiedKey] = useState<'code' | 'link' | null>(null)
+  const copyTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    requestJson<InvitationOverviewDto>('/api/v1/invitation')
+      .then(dto => {
+        if (cancelled) return
+        setOverview(dto)
+        setLoadFailed(false)
+      })
+      .catch(() => { if (!cancelled) setLoadFailed(true) })
+    return () => {
+      cancelled = true
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    }
+  }, [])
+
+  const inviteLink = overview ? `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(overview.inviteCode)}` : ''
+
+  const handleCopy = (key: 'code' | 'link', text: string) => {
+    copyText(text).then(ok => {
+      if (!ok) return
+      setCopiedKey(key)
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = window.setTimeout(() => setCopiedKey(null), 1600)
+    })
+  }
+
+  if (loadFailed) return <div className="party-card"><p className="party-card-desc">{t('social.invite.loadFailed')}</p></div>
+  if (overview === null) return null
+
+  return (
+    <div className="invite-panel">
+      <div className="party-card">
+        <h3>{t('social.invite.title')}</h3>
+        <div className="invite-row">
+          <span className="invite-label">{t('social.invite.codeLabel')}</span>
+          <code className="invite-code">{overview.inviteCode}</code>
+          <button type="button" className="invite-copy-btn" onClick={() => handleCopy('code', overview.inviteCode)}>
+            {copiedKey === 'code' ? t('social.invite.copied') : t('social.invite.copy')}
+          </button>
+        </div>
+        <div className="invite-row">
+          <span className="invite-label">{t('social.invite.linkLabel')}</span>
+          <code className="invite-code invite-code--link">{inviteLink}</code>
+          <button type="button" className="invite-copy-btn" onClick={() => handleCopy('link', inviteLink)}>
+            {copiedKey === 'link' ? t('social.invite.copied') : t('social.invite.copy')}
+          </button>
+        </div>
+        {overview.invitedByName !== null && (
+          <p className="party-card-desc">{t('social.invite.invitedBy', { name: overview.invitedByName })}</p>
+        )}
+      </div>
+
+      <div className="party-card">
+        <h3>{t('social.invite.rulesTitle')}</h3>
+        <p className="party-card-desc">{t('social.invite.rewardSignup')}</p>
+        <p className="party-card-desc">{t('social.invite.rewardQi')}</p>
+        <p className="party-card-desc">{t('social.invite.rewardFoundation')}</p>
+      </div>
+
+      <div className="party-card">
+        <h3>{t('social.invite.listTitle', { count: overview.inviteeCount })}</h3>
+        {overview.invitees.length === 0 ? (
+          <p className="party-card-desc">{t('social.invite.empty')}</p>
+        ) : (
+          <div className="invite-list">
+            {overview.invitees.map(invitee => (
+              <div className="invite-list-row" key={invitee.displayName}>
+                <span className="invite-name">{invitee.displayName}</span>
+                <span className="invite-realm">{calculateRealmInfo(0, invitee.highestRealmLevel).minorName}</span>
+                <span className={`invite-milestone${invitee.qiRewarded ? ' is-done' : ''}`}>{t('social.invite.milestoneQi')}</span>
+                <span className={`invite-milestone${invitee.foundationRewarded ? ' is-done' : ''}`}>{t('social.invite.milestoneFoundation')}</span>
+                <span className="invite-date">{new Date(invitee.createdAt).toLocaleDateString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
 
 /**
  * 同道页 (SocialPage)
@@ -660,6 +894,7 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
       </header>
       <div className="social-page-body">
         {socialSubTab === 'party' && (party ? <PartyView nodeNames={nodeNames} /> : <PartylessView nodeNames={nodeNames} />)}
+        {socialSubTab === 'invite' && <InviteView />}
       </div>
     </section>
   )

@@ -90,7 +90,9 @@ export type ItemCategoryKey =
 /**
  * 装备穿戴槽位：主手武器 (weapon)、双手武器 (two-hand)、副手/盾牌 (off-hand)、
  * 头部 (head)、护甲/上衣 (armor)、腿部/下装 (legs)、鞋靴 (boots)、
- * 戒指 (ring)、项链 (neck)、饰品/法宝 (trinket)、符箓/灵宝 (talisman)
+ * 戒指 (ring)、项链 (neck)、饰品/法宝 (trinket)、符箓/灵宝 (talisman)、
+ * 七技艺工具专属槽位 tool-<techniqueId>（采集/挖掘/炼丹/炼器/符箓/阵法/强化各一，
+ * 服务端按 slot 字符串唯一互斥，仅容纳对应技艺的工具装备）。
  */
 export type EquipmentSlot =
   | 'weapon'
@@ -104,6 +106,13 @@ export type EquipmentSlot =
   | 'neck'
   | 'trinket'
   | 'talisman'
+  | 'tool-alchemy'
+  | 'tool-forging'
+  | 'tool-talisman'
+  | 'tool-enhancement'
+  | 'tool-formation'
+  | 'tool-gathering'
+  | 'tool-mining'
 
 /**
  * 参战单位/怪物生命层次：
@@ -298,6 +307,11 @@ export interface QueueEntry {
   auxItemId?: string | null
   /** 行动参数中的目标强化等级（ActionIntent.Parameters["targetLevel"] 投影） */
   targetLevel?: number | null
+  /**
+   * 组队讨伐会话伪行动标记（仅 party.expedition 内置行动携带）：
+   * 会话由队伍统一调度，不允许手动取消/移除（散场走 party.unready 或离队语义）。
+   */
+  partySession?: { sessionId: string; endsAtUnixSeconds?: number | null } | null
 }
 /**
  * 旅行移动路段数据（服务端世界图权威分段）
@@ -385,6 +399,40 @@ export interface ExpeditionEnemy {
 }
 
 /**
+ * 组队讨伐盟友单位快照（expedition.allies 数组元素，§21.13）。
+ * 按会话规格成员序排列，包含全部在场成员（含本机成员位）；盟友不携带属性面板——
+ * UnitInspect 观察通道仅对敌怪开放。
+ */
+export interface ExpeditionAlly {
+  /** 会话规格成员序下标（0 起，与 allies 数组序一致） */
+  memberIndex: number
+  /** 成员玩家 ID（与队伍名册 playerId 配对键） */
+  playerId: string
+  /** 成员道号 */
+  displayName: string
+  /** 当前气血 */
+  hitpoints: number
+  /** 当前灵力 */
+  manapoints: number
+  /** 气血上限（血蓝条分母，快照缺失时为 null） */
+  maxHitpoints?: number | null
+  /** 灵力上限 */
+  maxManapoints?: number | null
+  /** 下一次出手的战斗时刻（秒，与 battleElapsedSeconds 同一时钟） */
+  nextAttackAtSeconds: number
+  /** 累计出手次数 */
+  attackCount: number
+  /** 累积威胁值 */
+  threat: number
+  /** 正在吟唱的技能 ID；为 null 时下一次出手是普通攻击 */
+  pendingAbilityId?: string | null
+  /** 当前动作总时长秒数（吟唱时长或普攻间隔，服务端权威值） */
+  pendingActionDurationSeconds: number
+  /** 倒地复活截止点（战斗时钟秒）；存活或无复活窗口时为 null */
+  respawnAtSeconds?: number | null
+}
+
+/**
  * 远征探索与战斗实时进度结构
  */
 export interface ExpeditionProgress {
@@ -424,6 +472,10 @@ export interface ExpeditionProgress {
   encounterId?: string | null
   /** 斗法回放显示信息（仅 phase 为 duel / duel-pending 时可能下发） */
   duel?: ExpeditionDuel | null
+  /** 组队讨伐盟友阵列（仅 party.expedition 会话行动下发；含本机成员位，按规格成员序） */
+  allies?: ExpeditionAlly[] | null
+  /** 本机成员在 allies 中的下标 */
+  selfIndex?: number | null
 }
 
 /**
@@ -673,8 +725,8 @@ export interface CombatAttributes {
   critical: number
   /** 免暴点数（降低被暴击概率） */
   criticalResistance: number
-  /** 暴击伤害倍率（≥1，直存倍率） */
-  criticalMultiplier: number
+  /** 暴击伤害点数（Linear：暴击倍率 = 1+点数/100，基础 50 点即 150%） */
+  criticalDamagePoints: number
   /** 破招点数（与化解对抗） */
   breakPower: number
   /** 化解点数（与破招对抗） */
@@ -682,14 +734,6 @@ export interface CombatAttributes {
   hpRegenPerFiveSeconds: number
   mpRegenPerFiveSeconds: number
   attackIntervalMilliseconds: number
-  /** 普攻伤害倍率（成长曲线） */
-  basicAttackRatio: number
-  /** 技能强度乘区 */
-  skillIntensity: number
-  /** 冷却乘区 */
-  cooldownFactor: number
-  /** 吟唱乘区 */
-  castTimeFactor: number
   /** 物理增伤点数（Linear） */
   physicalDamageBonusPoints: number
   /** 法术增伤点数（Linear） */
@@ -952,8 +996,6 @@ export interface CombatAbilitySlot {
   abilityId: string | null
   /** 功法演练等级 */
   level: number
-  /** 自动释放触发条件列表 */
-  triggers?: CombatTrigger[]
 }
 
 /**
@@ -1019,7 +1061,11 @@ export interface CombatAbilityDefinition {
   /** 根骨加成属性键（配表声明） */
   rootAttribute?: string
   /** 支援类：施放后施加的战内 Buff（破阵子等）；修饰字段为点数口径 */
-  buff?: { name?: string; durationSeconds?: number; damageAbsorptionPoints?: number; hpRegen?: number; mpRegen?: number; attackSpeedPoints?: number; threatPoints?: number } | null
+  buff?: { name?: string; durationSeconds?: number; damageAbsorptionPoints?: number; hpRegen?: number; mpRegen?: number; attackSpeedPoints?: number; threatPoints?: number; damageBonusPoints?: number } | null
+  /** 击杀连锁次数：单体技能击杀目标后对另一存活敌方追加一次完整结算（贯星等），缺省 0 */
+  chainOnKillCount?: number
+  /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */
+  hitCount?: number
 }
 
 /**
@@ -1136,6 +1182,12 @@ export interface CombatEquipmentDefinition {
   specialMechanics?: Record<string, number>
   /** 强化保护材料白名单：配置后可用列表内任一材料代护；缺省时以同装备无强化基础件代护 */
   enhanceProtectionItems?: string[]
+  /**
+   * 技艺工具加成块（仅 tool-* 槽位工具携带；普通装备为 null/缺省）：
+   * technique 命中行动所属技艺时，speedRatio 与技艺等级加成并入同一除数
+   * （duration /= 1 + 0.05×技艺等级 + Σ工具speedRatio）。
+   */
+  techniqueBonus?: { technique: string; speedRatio: number } | null
 }
 
 /**
@@ -1194,6 +1246,8 @@ export interface CombatLoadout {
   abilityExperiences?: Record<string, number>
   /** 技艺经验表：TechniqueId -> 累计经验（等级由累计经验按修为曲线导出，默认 0 级） */
   techniqueExperiences?: Record<string, number>
+  /** 功法自动释放触发条件：abilityId -> 条件列表（跟随功法而非槽位，卸下再装不丢） */
+  abilityTriggers?: Record<string, CombatTrigger[]>
 }
 
 /**
@@ -1340,6 +1394,12 @@ export interface NodeBuilding {
   elapsedSeconds: number
   /** 本级材料需求与已交明细 */
   materials: NodeBuildingMaterial[]
+  /** 正在使用人数（服务行动类别下 Running 行动的玩家数） */
+  activeUsers: number
+  /** 当前等级拥挤承载上限 */
+  capacity: number
+  /** 拥挤衰减后效率系数（1 = 满效，超载时 < 1，下限 0.5） */
+  efficiency: number
 }
 
 /**
@@ -1528,6 +1588,8 @@ export interface PlayerSnapshot {
   createdAtUnixSeconds?: number
   /** 改名冷却倒计时（秒） */
   renameCooldownSeconds?: number
+  /** 新手引导里程碑下标（settings 分段权威；0~6 进行中，7 完成/跳过终态） */
+  tutorialStep: number
 }
 
 /**
@@ -1556,6 +1618,7 @@ export interface PlayerPatch {
   sequenceId?: number
   createdAtUnixSeconds?: number
   renameCooldownSeconds?: number
+  tutorialStep?: number
 }
 
 /**

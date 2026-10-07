@@ -817,6 +817,12 @@ public static class SocialActions
     public const string PartyMatchClear = "party.match.clear";
     /// <summary>把当前队伍卡片发布到指定传音频道（Channel 必填，好友频道附带 TargetPlayerId）</summary>
     public const string PartyShare = "party.share";
+    /// <summary>组队讨伐就绪（成员本人；总纲 §21.13，全员就绪且满槽位于目标节点时自动开战）</summary>
+    public const string PartyReady = "party.ready";
+    /// <summary>取消组队讨伐就绪（成员本人；会话进行中触发散场）</summary>
+    public const string PartyUnready = "party.unready";
+    /// <summary>调整开启槽位（队长；Party 载荷内 openSlots 必填，2~5 且不得低于当前人数）</summary>
+    public const string PartySlots = "party.slots";
 
     /// <summary>判定是否为受支持的社交动作。</summary>
     /// <param name="action">动作标识。</param>
@@ -825,7 +831,8 @@ public static class SocialActions
         FriendRequest or FriendAccept or FriendReject or FriendRemove or
         PartyInvite or PartyAccept or PartyDecline or PartyLeave or
         PartyCreate or PartyUpdate or PartyDisband or PartyKick or PartyJoin or
-        PartyMatchSet or PartyMatchClear or PartyShare;
+        PartyMatchSet or PartyMatchClear or PartyShare or
+        PartyReady or PartyUnready or PartySlots;
 }
 
 /// <summary>队伍档案补丁载荷：party.create 时 name/activityKind/nodeId/minValuation/isPublic 语义齐全，party.update 仅应用非空字段。</summary>
@@ -834,12 +841,14 @@ public static class SocialActions
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
 /// <param name="MinValuation">身价门槛；0 表示不设门槛</param>
 /// <param name="IsPublic">是否进入组队大厅（false 只能经邀请或聊天队伍链接进入）</param>
+/// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；仅 <c>party.slots</c> 消费，create/update/match.set 忽略</param>
 public sealed record PartyProfileDto(
     string? Name = null,
     string? ActivityKind = null,
     string? NodeId = null,
     double? MinValuation = null,
-    bool? IsPublic = null);
+    bool? IsPublic = null,
+    int? OpenSlots = null);
 
 /// <summary>客户端社交指令请求。</summary>
 /// <param name="RequestId">请求唯一标识，服务端回执配对键</param>
@@ -848,7 +857,7 @@ public sealed record PartyProfileDto(
 /// <param name="TargetName">目标道号；仅在 <c>friend.request</c> 且未提供 TargetPlayerId 时用于检索目标</param>
 /// <param name="PartyId">目标队伍 ID；仅 <c>party.join</c> 使用</param>
 /// <param name="Channel">目标传音频道；仅 <c>party.share</c> 使用</param>
-/// <param name="Party">队伍档案补丁；<c>party.create</c>/<c>party.update</c>/<c>party.match.set</c> 使用</param>
+/// <param name="Party">队伍档案补丁；<c>party.create</c>/<c>party.update</c>/<c>party.match.set</c>/<c>party.slots</c> 使用</param>
 public sealed record SocialActionDto(
     string RequestId,
     string Action,
@@ -876,7 +885,21 @@ public sealed record FriendRequestDto(string RequestId, string PlayerId, string 
 /// <param name="DisplayName">成员道号</param>
 /// <param name="Online">是否在线</param>
 /// <param name="Valuation">成员身价（服务端估值口径，非战斗属性）</param>
-public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation);
+/// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
+public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready);
+
+/// <summary>组队讨伐活跃会话（总纲 §21.13：共享剧本各自推演，规格由服务端钉死并冻结入档）。</summary>
+/// <param name="SessionId">会话唯一标识</param>
+/// <param name="EncounterId">钉死的遭遇 ID（全员同剧本）</param>
+/// <param name="NodeId">讨伐节点 ID</param>
+/// <param name="MemberIds">冻结成员名册（玩家 ID 字符串，下标即 spec 内成员序）</param>
+/// <param name="StartedAtUnixMilliseconds">开战时刻（Unix 毫秒）</param>
+public sealed record PartySessionDto(
+    string SessionId,
+    string EncounterId,
+    string NodeId,
+    IReadOnlyList<string> MemberIds,
+    long StartedAtUnixMilliseconds);
 
 /// <summary>队伍状态。</summary>
 /// <param name="PartyId">队伍唯一标识</param>
@@ -887,6 +910,8 @@ public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool On
 /// <param name="MinValuation">身价门槛；0 表示不设门槛</param>
 /// <param name="IsPublic">是否进入组队大厅</param>
 /// <param name="Members">成员列表（含队长）</param>
+/// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；成员数达到槽位且全员就绪位于目标节点时自动开战</param>
+/// <param name="ActiveSession">进行中的组队讨伐会话；无会话为 null（散场即随下次状态推送消失）</param>
 public sealed record PartyDto(
     string PartyId,
     string LeaderId,
@@ -895,7 +920,9 @@ public sealed record PartyDto(
     string NodeId,
     double MinValuation,
     bool IsPublic,
-    IReadOnlyList<PartyMemberDto> Members);
+    IReadOnlyList<PartyMemberDto> Members,
+    int OpenSlots,
+    PartySessionDto? ActiveSession = null);
 
 /// <summary>同节点在线修士条目。</summary>
 /// <param name="PlayerId">修士玩家 ID</param>

@@ -32,9 +32,17 @@ const RANDOM_DAO_NAMES = [
  * 2. 注册模式：支持账号、修仙道号（支持一键随机起名）、密码及确认密码校验；
  * 3. 严格的前端格式校验与错误提示，并连接底层 account 鉴权仓库 (useAccountStore)。
  */
+/** 从当前 URL 查询串读取邀请码（?invite=<code>）；无参数或非法值返回空串。 */
+function readInviteCodeFromLocation(): string {
+  const code = new URLSearchParams(window.location.search).get('invite')
+  return code?.trim() ?? ''
+}
+
 export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
   const t = useT()
-  const [mode, setMode] = useState<AuthMode>('login')
+  // 邀请链接进入时自动切到注册页并预填邀请码（仍可手动修改）。
+  const initialInviteCode = useState(readInviteCodeFromLocation)[0]
+  const [mode, setMode] = useState<AuthMode>(initialInviteCode ? 'register' : 'login')
   const savedAccounts = useAccountStore(state => state.savedAccounts)
   const loginWithAuth = useAccountStore(state => state.loginWithAuth)
   const registerWithAuth = useAccountStore(state => state.registerWithAuth)
@@ -49,6 +57,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
   const [regCharName, setRegCharName] = useState('')
   const [regPassword, setRegPassword] = useState('')
   const [regConfirmPassword, setRegConfirmPassword] = useState('')
+  const [regInviteCode, setRegInviteCode] = useState(initialInviteCode)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -138,7 +147,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
     setLoading(true)
     setError(null)
     try {
-      const res = await registerWithAuth(cleanAcc, regPassword, cleanName)
+      const res = await registerWithAuth(cleanAcc, regPassword, cleanName, regInviteCode.trim() || undefined)
       if (!res.success) {
         setError(res.message || t('app.login.errorRegisterFailed'))
       } else {
@@ -350,6 +359,24 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
                   value={regConfirmPassword}
                   onChange={e => {
                     setRegConfirmPassword(e.target.value)
+                    setError(null)
+                  }}
+                />
+              </div>
+
+              <div className="login-field">
+                <label htmlFor="reg-invite-input" className="login-label">
+                  {t('app.login.regInviteLabel')}
+                </label>
+                <input
+                  id="reg-invite-input"
+                  className="login-input"
+                  type="text"
+                  maxLength={16}
+                  placeholder={t('app.login.regInvitePlaceholder')}
+                  value={regInviteCode}
+                  onChange={e => {
+                    setRegInviteCode(e.target.value)
                     setError(null)
                   }}
                 />

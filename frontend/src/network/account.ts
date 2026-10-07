@@ -109,12 +109,12 @@ function authFailure(error: unknown): AuthResponseDto {
 }
 
 /** 注册账号并建立会话（HttpOnly Cookie 由服务端下发）；UI 层按返回 message 展示错误 */
-export async function requestRegister(account: string, password: string, displayName?: string): Promise<AuthResponseDto> {
+export async function requestRegister(account: string, password: string, displayName?: string, invitationCode?: string): Promise<AuthResponseDto> {
   try {
     const signals = await collectAccountSignals()
     const dto = await requestJson<ServerAuthDto>('/api/v1/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ account: account.trim(), password, displayName: displayName?.trim() || null, riskSignals: signals }),
+      body: JSON.stringify({ account: account.trim(), password, displayName: displayName?.trim() || null, invitationCode: invitationCode?.trim() || null, riskSignals: signals }),
     })
     return authSuccess(dto)
   } catch (error) {
@@ -170,7 +170,7 @@ interface AccountStore {
   /** 登录并同步会话状态；成功后立即触发 gameClient 连接 */
   loginWithAuth: (account: string, password: string) => Promise<AuthResponseDto>
   /** 注册并登录；成功后立即触发 gameClient 连接 */
-  registerWithAuth: (account: string, password: string, displayName?: string) => Promise<AuthResponseDto>
+  registerWithAuth: (account: string, password: string, displayName?: string, invitationCode?: string) => Promise<AuthResponseDto>
   /** 启动时用 Cookie 恢复会话；返回是否恢复成功 */
   restoreSession: () => Promise<boolean>
   /** 登出：通知服务端注销、清空本地账号态、断开游戏连接并重置游戏 Store */
@@ -216,8 +216,8 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     return response
   },
 
-  registerWithAuth: async (account, password, displayName) => {
-    const response = await requestRegister(account, password, displayName)
+  registerWithAuth: async (account, password, displayName, invitationCode) => {
+    const response = await requestRegister(account, password, displayName, invitationCode)
     if (!response.success) return response
     const info = accountFromResponse(response)
     setSessionAccount(info)

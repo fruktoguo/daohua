@@ -1,12 +1,12 @@
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -52,6 +52,10 @@ type ActorMotionKind = 'attack' | 'cast'
 interface ActorMotion {
   id: number
   kind: ActorMotionKind
+  /** 突进纵向分量（px）：正 = 朝下方目标偏 */
+  aimY: number
+  /** 攻击弹道倾斜角（度）：正 = 弹道朝下方偏 */
+  aimAngleDeg: number
 }
 
 /** 实体受击震颤与冲击特效状态 */
@@ -60,6 +64,10 @@ interface ActorImpact {
   variant: typeof actorImpactVariants[number]
   distance: number
   opacity: number
+  /** 受击退散纵向分量（px）：沿来向继续推移 */
+  hitY: number
+  /** 冲击刀光倾斜角（度）：与攻击来向同一斜率 */
+  impactAngleDeg: number
 }
 
 const actorImpactVariants = ['cleave', 'ripple', 'splinter'] as const
@@ -77,6 +85,24 @@ const actorMotionLeadMilliseconds: Record<ActorMotionKind, number> = {
 const actorMotionDurationMilliseconds: Record<ActorMotionKind, number> = {
   attack: 520,
   cast: 720,
+}
+
+/**
+ * 竖屏纵列下量取两点连线的方位斜率（仅 ≤760px 布局启用；桌面九宫横排不需要方向分量）。
+ * 返回 slope = tan(方位角) 供位移按横向基准换算纵向分量，angleDeg 供弹道/刀光倾斜；
+ * 方位角钳制在 ±35° 内，避免跨行过远时斜率失真。
+ */
+function measureArenaAim(fromEl: Element | null, toEl: Element | null): { slope: number; angleDeg: number } {
+  if (!fromEl || !toEl || fromEl === toEl) return { slope: 0, angleDeg: 0 }
+  if (typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 760px)').matches) {
+    return { slope: 0, angleDeg: 0 }
+  }
+  const from = fromEl.getBoundingClientRect()
+  const to = toEl.getBoundingClientRect()
+  const dx = Math.abs(to.left + to.width / 2 - (from.left + from.width / 2)) || 1
+  const dy = to.top + to.height / 2 - (from.top + from.height / 2)
+  const angle = Math.max(-0.62, Math.min(0.62, Math.atan2(dy, dx)))
+  return { slope: Math.tan(angle), angleDeg: angle * 180 / Math.PI }
 }
 
 /**
@@ -276,7 +302,7 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
 /**
  * 行动条倒计时文字徽章 (ActionCountdownBadge)
  *
- * 基于 requestAnimationFrame 高频更新显示当前技能名称与精确到 0.1s 的倒计时。
+ * 基于 100ms 低频 interval 更新显示当前技能名称与精确到 0.1s 的倒计时（与显示精度对齐）。
  */
 const ActionCountdownBadge = memo(function ActionCountdownBadge({
   action,
@@ -308,7 +334,6 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
     }
 
     badge.style.display = ''
-    let animationFrameId = 0
     const duration = Math.max(1, action.durationMilliseconds)
     // 基础攻击 (kind === 'attack') 统一显示本地化名称，其余直接展示服务端 wire 名称
     let baseName = action.name.replace(/\s*\([\d.]+s\/[\d.]+s\)/, '').trim()
@@ -338,15 +363,18 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
         badge.textContent = formatted
       }
 
-      if (currentRemaining > 0) {
-        animationFrameId = requestAnimationFrame(tick)
+      if (currentRemaining <= 0 && intervalId !== undefined) {
+        window.clearInterval(intervalId)
+        intervalId = undefined
       }
     }
 
+    // 倒计时文本精度 0.1s：100ms 低频刷新与显示精度对齐，不再占用 rAF 逐帧唤醒
+    let intervalId: number | undefined = window.setInterval(tick, 100)
     tick()
 
     return () => {
-      if (animationFrameId) cancelAnimationFrame(animationFrameId)
+      if (intervalId !== undefined) window.clearInterval(intervalId)
     }
   }, [
     action?.completesAtUnixMilliseconds,
@@ -418,26 +446,31 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
     if (!circle) return
 
     circle.style.strokeDasharray = `${circumference}`
-    // 常驻 Buff 环形遮罩恒满（offset=0），不启动 RAF 循环。
+    // 常驻 Buff 环形遮罩恒满（offset=0），不启动刷新循环。
     if (buff.expiresAtUnixSeconds >= 1e15) {
       circle.style.strokeDashoffset = '0'
       return
     }
-    let animationFrameId: number
-
+    // 环形倒计时按 200ms 低频刷新：Buff 以秒计剩余时长，逐帧更新没有可读性收益。
+    let lastOffset = ''
+    let intervalId: number | undefined
     const update = () => {
       const currentRemaining = Math.max(0, buff.expiresAtUnixSeconds - Date.now() / 1000)
       const ratio = Math.min(1, Math.max(0, currentRemaining / total))
-      const offset = circumference * (1 - ratio)
-      circle.style.strokeDashoffset = `${offset}`
-
-      if (currentRemaining > 0) {
-        animationFrameId = requestAnimationFrame(update)
+      const offset = `${circumference * (1 - ratio)}`
+      if (offset !== lastOffset) {
+        lastOffset = offset
+        circle.style.strokeDashoffset = offset
+      }
+      if (currentRemaining <= 0 && intervalId !== undefined) {
+        window.clearInterval(intervalId)
+        intervalId = undefined
       }
     }
 
+    intervalId = window.setInterval(update, 200)
     update()
-    return () => cancelAnimationFrame(animationFrameId)
+    return () => window.clearInterval(intervalId!)
   }, [buff.expiresAtUnixSeconds, circumference, total])
 
   return (
@@ -636,6 +669,7 @@ function ArenaActor({
   buffs = [],
   onInspect,
   visual,
+  marker,
   visible = true,
   compact = false,
 }: {
@@ -653,17 +687,28 @@ function ArenaActor({
   maxMp: number
   action?: CombatActionState | null
   buffs?: readonly Buff[]
-  /** 点击/回车唤起属性详情模态窗回调 */
-  onInspect: () => void
+  /** 点击/回车唤起属性详情模态窗回调；缺省退化为纯展示态（尸体等不可交互单位） */
+  onInspect?: () => void
   visual?: CharacterVisual | null
   /** 非激活态（搜寻阶段敌方未入场）时置灰休眠且不可聚焦 */
   visible?: boolean
   compact?: boolean
+  /** 名称行内附加徽标（如组队讨伐本人位「我」标记），不参与交互 */
+  marker?: React.ReactNode
 }): React.JSX.Element {
   const t = useT()
+  const articleRef = useRef<HTMLElement | null>(null)
   const nextMotionId = useRef(1)
   const nextImpactSequence = useRef(0)
   const previousHitpoints = useRef({ actorKey, hp })
+  /** 对方阵营最前存活单位（纵列顺序即铺位顺序，前排居中槽优先），作为无目标协议下攻击方位的几何近似 */
+  const findOpposingActor = useCallback((): Element | null => {
+    const field = articleRef.current?.closest('.combat-arena-field')
+    const selector = role === 'enemy'
+      ? '.arena-formation--allies .arena-slot--occupied:not(.arena-slot--slain) .arena-actor:not(.is-dormant):not(.is-dead)'
+      : '.arena-formation--enemies .arena-slot--occupied:not(.arena-slot--slain):not(.arena-slot--corpse) .arena-actor:not(.is-dormant)'
+    return field?.querySelector(selector) ?? null
+  }, [role])
   const scheduledAction = useRef<{
     signature: string
     deadline: number
@@ -688,18 +733,22 @@ function ArenaActor({
 
     if (hp < previous.hp) {
       const strength = Math.max(0.25, Math.min(1, (previous.hp - hp) / Math.max(1, maxHp)))
+      // 竖屏纵列：按攻击来向（对方首位存活单位 → 自身）量取方位，退散与刀光沿同一斜率走
+      const aim = measureArenaAim(findOpposingActor(), articleRef.current)
       const nextImpact = {
         id: nextMotionId.current++,
         variant: actorImpactVariants[nextImpactSequence.current++ % actorImpactVariants.length],
         distance: 3 + strength * 6,
         opacity: 0.75 + strength * 0.25,
+        hitY: aim.slope * 7,
+        impactAngleDeg: aim.angleDeg,
       }
       setImpact(nextImpact)
       if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
       clearImpactTimer.current = window.setTimeout(() => setImpact(null), 560)
     }
     previousHitpoints.current = { actorKey, hp }
-  }, [actorKey, hp, maxHp])
+  }, [actorKey, hp, maxHp, findOpposingActor])
 
   useEffect(() => {
     const kind = resolveActorMotionKind(action)
@@ -722,14 +771,18 @@ function ArenaActor({
     }
 
     const play = () => {
-      const nextMotion = { id: nextMotionId.current++, kind }
+      // 竖屏纵列：量取自身到对方首位存活单位的方位，突进与弹道特效随之向目标上下偏转
+      const aim = kind === 'attack'
+        ? measureArenaAim(articleRef.current, findOpposingActor())
+        : { slope: 0, angleDeg: 0 }
+      const nextMotion = { id: nextMotionId.current++, kind, aimY: aim.slope * 16, aimAngleDeg: aim.angleDeg }
       setActionMotion(nextMotion)
       if (clearActionMotionTimer.current !== null) window.clearTimeout(clearActionMotionTimer.current)
       clearActionMotionTimer.current = window.setTimeout(() => setActionMotion(null), duration)
     }
     const timer = window.setTimeout(play, Math.max(0, delay))
     scheduledAction.current = { signature, deadline, kind, timer }
-  }, [action?.completesAtUnixMilliseconds, action?.kind, actorKey, hp, visible])
+  }, [action?.completesAtUnixMilliseconds, action?.kind, actorKey, hp, visible, findOpposingActor])
 
   useEffect(() => () => {
     if (scheduledAction.current !== null) window.clearTimeout(scheduledAction.current.timer)
@@ -737,22 +790,30 @@ function ArenaActor({
     if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
   }, [])
 
+  const interactive = onInspect !== undefined
   return (
     <article
       aria-label={t('combat.arena.inspectAria', { name: name || t('combat.arena.defaultActorName') })}
       className={`arena-actor arena-actor--${role}${compact ? ' arena-actor--compact' : ''}${visible ? '' : ' is-dormant'}${hp <= 0 ? ' is-dead' : ''}${actionMotion ? ` is-action-${actionMotion.kind}` : ''}${impact ? ' is-hit' : ''}`}
+      ref={articleRef}
+      style={{
+        '--arena-aim-angle': `${actionMotion?.aimAngleDeg ?? 0}deg`,
+        '--arena-aim-y': `${actionMotion?.aimY ?? 0}px`,
+        '--arena-hit-y': `${impact?.hitY ?? 0}px`,
+        '--arena-impact-angle': `${impact?.impactAngleDeg ?? 0}deg`,
+      } as CSSProperties}
       onClick={onInspect}
-      onKeyDown={event => {
+      onKeyDown={interactive ? event => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
           onInspect()
         }
-      }}
-      role="button"
-      tabIndex={visible ? 0 : -1}
+      } : undefined}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive && visible ? 0 : -1}
     >
       <header className="arena-overhead">
-        <strong>{name || '\u00a0'}</strong>
+        <strong>{name || '\u00a0'}{marker}</strong>
         <div className="arena-vitals">
           <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} />
           <ArenaResource actorKey={actorKey} max={maxMp} tone="mp" value={mp} />
@@ -832,11 +893,13 @@ function ArenaLifeGoalCard({
 }): React.JSX.Element {
   const t = useT()
   const itemCatalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
   const inventory = useGameStore(state => state.inventory)
   const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
   const stats = useGameStore(state => state.stats)
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
+  const combat = useGameStore(state => state.combat)
 
   const actionId = queueEntry?.actionId ?? actionDef?.id ?? ''
   // forge.* 与 craft.* 精炼归炼器，alchemy.* 与 craft.extract-* 提炼归炼丹：两者同为 alchemy 大类，按 id 前缀区分
@@ -858,6 +921,8 @@ function ArenaLifeGoalCard({
     autoUseSlots,
     world,
     stats,
+    combat,
+    equipmentCatalog,
   }) : null
 
   // 产出展示行：首项为主产物（驱动大图标/目标产物/计划总量），其余进「其余产出」清单
@@ -1208,6 +1273,16 @@ function CharacterAttributeModal({
 
 /** 敌方单位铺位顺序：纵深优先（前排中→中排中→后排中→前排上→…），同波敌人沿前后轴展开而非上下堆叠 */
 const ENEMY_DEPTH_SLOTS: readonly number[] = [1, 4, 7, 2, 5, 8, 3, 6, 9]
+/** 己方阵列填入序（§21.13）：首名成员坐镇正中，后续盟友按 成员序→中排中→后排中→中列上→中列下 铺开。 */
+const ALLY_DEPTH_SLOTS: readonly number[] = [1, 4, 7, 2, 5, 8, 3, 6, 9]
+
+/** 尸体消散提前量：寻敌倒数最后一秒统一播消散动画，末帧与新一波入场对齐 */
+const CORPSE_DISSIPATE_LEAD_MS = 1000
+
+/** 展示态空表：尸体/实时波次均无时的稳定引用 */
+const EMPTY_DISPLAY_ENTRIES: EnemyDisplayState[] = []
+/** 盟友展示态空表：未组队讨伐时的稳定引用 */
+const EMPTY_ALLY_ENTRIES: AllyDisplayState[] = []
 
 /** 敌方单位展示态：实时字段来自 wire 快照（enemies[] 或 duel 载荷）；属性面板为按需投影（UnitInspect） */
 interface EnemyDisplayState {
@@ -1223,6 +1298,20 @@ interface EnemyDisplayState {
   visual?: CharacterVisual | null
   /** 服务端按需投影的完整战斗属性（详情弹窗唯一数值来源；未登记观察目标时为 null） */
   attributes?: CombatAttributes | null
+}
+
+/** 己方盟友展示态（§21.13 组队讨伐）：按 memberIndex 序铺位，倒地灰显、复活读条由 wire 帧合成。 */
+interface AllyDisplayState {
+  memberIndex: number
+  actorKey: string
+  name: string
+  seal: string
+  hp: number
+  maxHp: number
+  mp: number
+  maxMp: number
+  isSelf: boolean
+  action?: CombatActionState | null
 }
 
 /**
@@ -1277,6 +1366,55 @@ function enemyActionState(
   return {
     kind: 'attack',
     // name 仅需非空以通过徽章的待机判定；kind === 'attack' 时统一显示本地化普攻名。
+    name: 'attack',
+    durationMilliseconds: duration,
+    elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+    completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
+  }
+}
+
+/**
+ * 组队讨伐盟友行动条：与 enemyActionState 同一战斗时钟口径，
+ * 但盟友载荷不携带攻击间隔属性，动作时长恒走 pendingActionDurationSeconds 权威值；
+ * 倒地时按 respawnAtSeconds（战斗时钟秒）合成复活读条，总时长取遭遇配表复活毫秒数。
+ */
+function allyActionState(
+  ally: ExpeditionAlly,
+  battleElapsedSeconds: number,
+  serverNowUnixMilliseconds: number,
+  abilities: readonly CombatAbilityDefinition[],
+  respawnDurationMilliseconds: number,
+  respawnName: string,
+  phase?: ExpeditionProgress['phase'],
+): CombatActionState | null {
+  if (ally.hitpoints <= 0) {
+    if (ally.respawnAtSeconds == null) return null
+    const duration = Math.max(1, respawnDurationMilliseconds)
+    const remaining = Math.max(0, (ally.respawnAtSeconds - battleElapsedSeconds) * 1000)
+    return {
+      kind: 'respawn',
+      name: respawnName,
+      durationMilliseconds: duration,
+      elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+      completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
+    }
+  }
+  // 与敌方一致：仅战斗相位推进出手条；搜寻/复活相位盟友待机不读条。
+  if (phase !== 'combat') return null
+  const remaining = Math.max(0, (ally.nextAttackAtSeconds - battleElapsedSeconds) * 1000)
+  const duration = Math.max(1, ally.pendingActionDurationSeconds > 0 ? ally.pendingActionDurationSeconds * 1000 : 2000)
+  if (ally.pendingAbilityId) {
+    const ability = findAbilityInCatalog(abilities, ally.pendingAbilityId)
+    return {
+      kind: 'cast',
+      name: ability?.name ?? ally.pendingAbilityId,
+      durationMilliseconds: duration,
+      elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+      completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
+    }
+  }
+  return {
+    kind: 'attack',
     name: 'attack',
     durationMilliseconds: duration,
     elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
@@ -1366,6 +1504,12 @@ export const CombatArena = memo(function CombatArena({
   // 单位属性缓存：敌方/镜像属性为定义级静态值，服务端仅在 UnitInspect 登记后一次性交付；
   // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名}。
   const inspectedAttributesCacheRef = useRef(new Map<string, CombatAttributes>())
+  // 尸体留存：服务端切搜寻相位即清空 enemies[]，这里在战斗相位逐帧缓存当波展示态，
+  // 胜利转入搜寻后整波以尸体形态继续渲染，倒数最后一秒统一播消散动画后随新波入场移除。
+  const combatWaveRef = useRef<{ entryId: string; entries: EnemyDisplayState[] } | null>(null)
+  const prevPhaseRef = useRef<string | null>(null)
+  const [corpseWave, setCorpseWave] = useState<EnemyDisplayState[] | null>(null)
+  const [corpseDissipating, setCorpseDissipating] = useState(false)
   const t = useT()
 
   // 观察目标同步（UnitInspect 火忘帧）：敌方属性面板为按需投影，点开详情才向服务端登记；
@@ -1378,7 +1522,7 @@ export const CombatArena = memo(function CombatArena({
   // 战斗特效：overlay 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
   const arenaShellRef = useRef<HTMLDivElement | null>(null)
   const vfxOverlayRef = useRef<HTMLDivElement | null>(null)
-  useCombatVfx(arenaShellRef, vfxOverlayRef)
+  const vfxRuntimeRef = useCombatVfx(arenaShellRef, vfxOverlayRef)
 
   const current = queue[0] ?? null
   const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
@@ -1460,16 +1604,103 @@ export const CombatArena = memo(function CombatArena({
     })
   }, [abilities, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
 
+  // 组队讨伐盟友阵列（§21.13）：allies 按 memberIndex 序铺九宫格，memberIndex === selfIndex
+  // 的格子复用完整玩家展示态并加「我」标记；其余盟友为纯展示单位（协议不下发属性，不可点详情）。
+  const allyEntries = useMemo<AllyDisplayState[]>(() => {
+    const allies = expedition?.allies
+    if (!allies || allies.length === 0) return EMPTY_ALLY_ENTRIES
+    const battleElapsed = expedition?.battleElapsedSeconds ?? 0
+    const serverNow = estimateServerNowUnixMilliseconds()
+    const selfIndex = expedition?.selfIndex ?? -1
+    // 盟友复活读条总时长：优先服务端本次下发的权威秒数，其次遭遇配表复活毫秒数。
+    const respawnMs = Math.max(1,
+      Math.round((expedition?.playerRespawnDurationSeconds ?? 0) * 1000)
+      || (expedition?.encounterId ? findEncounterInCatalog(encounters, expedition.encounterId)?.playerRespawnMilliseconds : undefined)
+      || 10000)
+    const respawnName = t('combat.arena.phaseDeath')
+    return [...allies]
+      .sort((a, b) => a.memberIndex - b.memberIndex)
+      .slice(0, ALLY_DEPTH_SLOTS.length)
+      .map(ally => ({
+        memberIndex: ally.memberIndex,
+        actorKey: `ally:${ally.memberIndex}:${ally.displayName}`,
+        name: ally.displayName,
+        seal: ally.displayName.slice(0, 1) || '?',
+        hp: ally.hitpoints,
+        maxHp: Math.max(1, ally.maxHitpoints ?? ally.hitpoints),
+        mp: ally.manapoints,
+        maxMp: Math.max(1, ally.maxManapoints ?? ally.manapoints),
+        isSelf: ally.memberIndex === selfIndex,
+        action: allyActionState(ally, battleElapsed, serverNow, abilities, respawnMs, respawnName, expedition?.phase),
+      }))
+  }, [expedition?.allies, expedition?.selfIndex, expedition?.battleElapsedSeconds, expedition?.phase, expedition?.encounterId, expedition?.playerRespawnDurationSeconds, encounters, abilities, t])
+
   const inspectedEnemyIndex = inspectedActor?.startsWith('enemy:')
     ? Number(inspectedActor.slice(6))
     : null
   const inspectedEnemy = inspectedEnemyIndex !== null && Number.isInteger(inspectedEnemyIndex)
     ? enemyEntries[inspectedEnemyIndex] ?? null
     : null
-  const enemyVisible = isCombat && (phase === 'combat' || isDuelPhase || enemyEntries.some(entry => entry.hp > 0))
+  // 尸体缓存生命周期：combat 相位逐帧刷新缓存；combat→search（服务端语义=波次清空，
+  // 团灭走 respawn、斗法走 duel-pending/duel 均不经过此迁移）时固化为尸体阵容
+  // （气血归零、行动条置空）；相位离开 search 或切换行动实例即丢弃。
+  useEffect(() => {
+    const entryId = current?.entryId ?? null
+    const prevPhase = prevPhaseRef.current
+    prevPhaseRef.current = phase
+    if (phase === 'combat') {
+      if (enemyEntries.length > 0 && entryId !== null)
+        combatWaveRef.current = { entryId, entries: enemyEntries }
+      if (prevPhase === 'search') {
+        setCorpseWave(null)
+        setCorpseDissipating(false)
+      }
+      return
+    }
+    if (phase === 'search') {
+      if (prevPhase === 'combat') {
+        const wave = combatWaveRef.current
+        setCorpseWave(wave !== null && wave.entryId === entryId && wave.entries.length > 0
+          ? wave.entries.map(entry => ({ ...entry, hp: 0, mp: 0, action: null }))
+          : null)
+        setCorpseDissipating(false)
+      }
+      return
+    }
+    combatWaveRef.current = null
+    setCorpseWave(null)
+    setCorpseDissipating(false)
+  }, [phase, enemyEntries, current?.entryId])
+
+  // 消散调度：尸体保留到寻敌倒数最后一秒；到点置消散标志并触发残魂萤火粒子，
+  // 淡出动画时长收敛到剩余寻敌毫秒（触发晚于计划时自动压缩），末帧即新一波入场。
+  useEffect(() => {
+    if (phase !== 'search' || corpseWave === null || corpseDissipating || expedition == null) return
+    const remainingMs = Math.max(0,
+      (expedition.durationSeconds - expedition.elapsedSeconds) * 1000
+      - Math.max(0, performance.now() - lastQueueSyncPerformanceTime))
+    const timer = window.setTimeout(() => {
+      // 到点复核：队列暂停期间寻敌时钟冻结（暂停不重排本定时器），跳过触发等恢复后的补丁重排
+      const live = useGameStore.getState()
+      if (live.queue.paused || live.queue.entries[0]?.expedition?.phase !== 'search') return
+      setCorpseDissipating(true)
+      vfxRuntimeRef.current?.playCorpseDissipate()
+    }, Math.max(0, remainingMs - CORPSE_DISSIPATE_LEAD_MS))
+    return () => window.clearTimeout(timer)
+  }, [phase, corpseWave, corpseDissipating, expedition, lastQueueSyncPerformanceTime, vfxRuntimeRef])
+
+  const corpseEntries = phase === 'search' && corpseWave !== null ? corpseWave : EMPTY_DISPLAY_ENTRIES
+  const displayEntries = enemyEntries.length > 0 ? enemyEntries : corpseEntries
+  const corpseSlotsActive = enemyEntries.length === 0 && corpseEntries.length > 0
+  const enemyVisible = isCombat && (phase === 'combat' || isDuelPhase || enemyEntries.some(entry => entry.hp > 0) || corpseEntries.length > 0)
   // 空槽只补纵深占位之外的格子：敌怪按 ENEMY_DEPTH_SLOTS 摆位（2 个怪占 1/4 号槽），
   // 若按顺序编号补空会叠进实体槽位，透明空槽在 DOM 后层拦截点击，导致部分怪点不中。
-  const occupiedEnemySlots = new Set(ENEMY_DEPTH_SLOTS.slice(0, enemyEntries.length))
+  const occupiedEnemySlots = new Set(ENEMY_DEPTH_SLOTS.slice(0, displayEntries.length))
+  // 消散动画时长：实时收敛到寻敌剩余毫秒；未触发时取提前量兜底。
+  const corpseFadeMs = corpseDissipating && expedition != null
+    ? Math.max(80, (expedition.durationSeconds - expedition.elapsedSeconds) * 1000
+      - Math.max(0, performance.now() - lastQueueSyncPerformanceTime))
+    : CORPSE_DISSIPATE_LEAD_MS
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (isCombat) {
@@ -1559,36 +1790,94 @@ export const CombatArena = memo(function CombatArena({
       {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
-        {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方) */}
+        {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
+            组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格保留玩家完整展示态与「我」标记 */}
         <div className="arena-side arena-side--allies">
           <div className="arena-formation arena-formation--allies">
-            <div className="arena-slot arena-slot--occupied arena-slot--slot-1" key="ally-slot-1">
-              <ArenaActor
-                action={playerAction}
-                actorId="player"
-                actorKey="player"
-                buffs={buffs}
-                compact
-                hp={playerHp}
-                maxHp={playerMaxHp}
-                maxMp={playerMaxMp}
-                mp={playerMp}
-                name={playerName}
-                onInspect={() => setInspectedActor('player')}
-                role="player"
-                seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
-                visual={playerVisual}
-              />
-            </div>
-            {/* 预留空槽维持九宫格与前中后排比例 */}
-            <div className="arena-slot arena-slot--empty arena-slot--slot-2" key="ally-slot-2" />
-            <div className="arena-slot arena-slot--empty arena-slot--slot-3" key="ally-slot-3" />
-            <div className="arena-slot arena-slot--empty arena-slot--slot-4" key="ally-slot-4" />
-            <div className="arena-slot arena-slot--empty arena-slot--slot-5" key="ally-slot-5" />
-            <div className="arena-slot arena-slot--empty arena-slot--slot-6" key="ally-slot-6" />
-            <div className="arena-slot arena-slot--empty arena-slot--slot-7" key="ally-slot-7" />
-            <div className="arena-slot arena-slot--empty arena-slot--slot-8" key="ally-slot-8" />
-            <div className="arena-slot arena-slot--empty arena-slot--slot-9" key="ally-slot-9" />
+            {allyEntries.length > 0 ? (
+              <>
+                {allyEntries.map((ally, index) => {
+                  const slot = ALLY_DEPTH_SLOTS[Math.min(index, ALLY_DEPTH_SLOTS.length - 1)]
+                  if (ally.isSelf) {
+                    return (
+                      <div className={`arena-slot arena-slot--occupied arena-slot--slot-${slot}${ally.hp <= 0 ? ' arena-slot--slain' : ''}`} key={ally.actorKey}>
+                        <ArenaActor
+                          action={playerAction}
+                          actorId="player"
+                          actorKey="player"
+                          buffs={buffs}
+                          compact
+                          hp={playerHp}
+                          maxHp={playerMaxHp}
+                          maxMp={playerMaxMp}
+                          marker={<em className="arena-self-tag">{t('social.session.selfTag')}</em>}
+                          mp={playerMp}
+                          name={playerName}
+                          onInspect={() => setInspectedActor('player')}
+                          role="player"
+                          seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
+                          visual={playerVisual}
+                        />
+                      </div>
+                    )
+                  }
+                  return (
+                    <div
+                      aria-label={t('social.session.allyAria', { name: ally.name })}
+                      className={`arena-slot arena-slot--occupied arena-slot--slot-${slot}${ally.hp <= 0 ? ' arena-slot--slain' : ''}`}
+                      key={ally.actorKey}
+                    >
+                      <ArenaActor
+                        action={ally.action}
+                        actorKey={ally.actorKey}
+                        compact
+                        hp={ally.hp}
+                        maxHp={ally.maxHp}
+                        maxMp={ally.maxMp}
+                        mp={ally.mp}
+                        name={ally.name}
+                        role="player"
+                        seal={ally.seal}
+                      />
+                    </div>
+                  )
+                })}
+                {/* 预留空槽维持九宫格与前中后排比例 */}
+                {ALLY_DEPTH_SLOTS.slice(allyEntries.length).map(slot => (
+                  <div className={`arena-slot arena-slot--empty arena-slot--slot-${slot}`} key={`ally-slot-${slot}`} />
+                ))}
+              </>
+            ) : (
+              <>
+                <div className="arena-slot arena-slot--occupied arena-slot--slot-1" key="ally-slot-1">
+                  <ArenaActor
+                    action={playerAction}
+                    actorId="player"
+                    actorKey="player"
+                    buffs={buffs}
+                    compact
+                    hp={playerHp}
+                    maxHp={playerMaxHp}
+                    maxMp={playerMaxMp}
+                    mp={playerMp}
+                    name={playerName}
+                    onInspect={() => setInspectedActor('player')}
+                    role="player"
+                    seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
+                    visual={playerVisual}
+                  />
+                </div>
+                {/* 预留空槽维持九宫格与前中后排比例 */}
+                <div className="arena-slot arena-slot--empty arena-slot--slot-2" key="ally-slot-2" />
+                <div className="arena-slot arena-slot--empty arena-slot--slot-3" key="ally-slot-3" />
+                <div className="arena-slot arena-slot--empty arena-slot--slot-4" key="ally-slot-4" />
+                <div className="arena-slot arena-slot--empty arena-slot--slot-5" key="ally-slot-5" />
+                <div className="arena-slot arena-slot--empty arena-slot--slot-6" key="ally-slot-6" />
+                <div className="arena-slot arena-slot--empty arena-slot--slot-7" key="ally-slot-7" />
+                <div className="arena-slot arena-slot--empty arena-slot--slot-8" key="ally-slot-8" />
+                <div className="arena-slot arena-slot--empty arena-slot--slot-9" key="ally-slot-9" />
+              </>
+            )}
           </div>
         </div>
 
@@ -1603,10 +1892,13 @@ export const CombatArena = memo(function CombatArena({
         <div className="arena-side arena-side--enemies">
           {isCombat ? (
             enemyVisible ? (
-              <div className="arena-formation arena-formation--enemies">
-                {enemyEntries.map((entry, index) => (
+              <div
+                className="arena-formation arena-formation--enemies"
+                style={{ '--corpse-fade-ms': `${corpseFadeMs}ms` } as CSSProperties}
+              >
+                {displayEntries.map((entry, index) => (
                   <div
-                    className={`arena-slot arena-slot--occupied arena-slot--slot-${ENEMY_DEPTH_SLOTS[Math.min(index, ENEMY_DEPTH_SLOTS.length - 1)]}${entry.hp <= 0 ? ' arena-slot--slain' : ''}`}
+                    className={`arena-slot arena-slot--occupied arena-slot--slot-${ENEMY_DEPTH_SLOTS[Math.min(index, ENEMY_DEPTH_SLOTS.length - 1)]}${entry.hp <= 0 ? ' arena-slot--slain' : ''}${corpseSlotsActive ? ' arena-slot--corpse' : ''}${corpseSlotsActive && corpseDissipating ? ' arena-slot--dissipating' : ''}`}
                     key={`enemy-slot-${index + 1}`}
                   >
                     <ArenaActor
@@ -1619,7 +1911,7 @@ export const CombatArena = memo(function CombatArena({
                       maxMp={entry.maxMp}
                       mp={entry.mp}
                       name={entry.name}
-                      onInspect={() => setInspectedActor(`enemy:${index}`)}
+                      onInspect={corpseSlotsActive ? undefined : () => setInspectedActor(`enemy:${index}`)}
                       role="enemy"
                       seal={entry.seal}
                       visual={entry.visual}
@@ -1666,7 +1958,14 @@ export const CombatArena = memo(function CombatArena({
           isCombat ? (
             <button
               className="danger"
-              onClick={() => setPendingStopEntryId(current.entryId)}
+              onClick={() => {
+                // 组队讨伐伪行动不受个人终止（§21.13.6）：提示回队伍页取消准备/离队散场
+                if (current.partySession != null) {
+                  useGameStore.getState().setNotice(t('social.session.cancelHint'))
+                  return
+                }
+                setPendingStopEntryId(current.entryId)
+              }}
               type="button"
             >
               {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName, world, maps) })}

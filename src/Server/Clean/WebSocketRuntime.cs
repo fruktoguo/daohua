@@ -317,8 +317,10 @@ public static class WebSocketEndpoint
         async ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot)
         {
             if (snapshot.PlayerId != session.PlayerId) return;
-            // 权威位置随快照推进：换节点会触发同节点修士的附近列表刷新。
-            await presence.UpdateNodeAsync(snapshot.PlayerId, snapshot.State.World.NodeId, token);
+            // 权威位置随快照推进：迁地途中（EdgeId 非空）按「不在节点」上报——
+            // 换节点会触发同节点修士的附近列表刷新，也是组队讨伐在场条件的仲裁触发源。
+            await presence.UpdateNodeAsync(snapshot.PlayerId,
+                snapshot.State.World.EdgeId is null ? snapshot.State.World.NodeId : null, token);
             // 读基线 → 按触及分段窄化编码 → 入队 → 提交基线，在会话锁内整体串行：
             // 推送可由模拟循环与斗法撮合多线程并发触发，交错会把未送达内容误记为已推送基线。
             lock (session.OutboundSync)
@@ -573,7 +575,9 @@ public static class WebSocketEndpoint
                         var worldChatTask = chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(ChatChannels.World), cancellationToken);
                         var nearbyChatTask = chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(ChatChannels.Nearby), cancellationToken);
                         // 在线存在感登记：世界/附近广播与好友在线状态都依赖它；登记是独立副作用，与上方读取并行。
-                        var presenceTask = presence.RegisterAsync(session.PlayerId, displayName, initial.State.World.NodeId, cancellationToken);
+                        // 迁地途中（EdgeId 非空）按「不在节点」登记，与 UpdateNodeAsync 口径一致。
+                        var presenceTask = presence.RegisterAsync(session.PlayerId, displayName,
+                            initial.State.World.EdgeId is null ? initial.State.World.NodeId : null, cancellationToken);
                         var initialSnapshot = await snapshotTask;
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
                         // 握手快照必达：属性面板实际写入即解除一次性交付武装。

@@ -20,6 +20,12 @@ public sealed class OnlinePresenceRegistry
     /// <summary>存在感变化事件：参数为附近列表可能发生变化的玩家 ID 集合。</summary>
     public event Func<IReadOnlyList<Guid>, ValueTask>? PresenceChanged;
 
+    /// <summary>
+    /// 节点变化事件：仅携带移动者本人（Unregister 不触发——离线保留讨伐席位，
+    /// 逐出由 48h 扫描负责；总纲 §21.13 全员在节点条件由社交层据此裁决）。
+    /// </summary>
+    public event Func<Guid, ValueTask>? NodeChanged;
+
     private readonly record struct Entry(string DisplayName, string? NodeId);
 
     /// <summary>登记或刷新在线玩家；节点变化时返回受影响的玩家集合。</summary>
@@ -30,18 +36,20 @@ public sealed class OnlinePresenceRegistry
     public ValueTask RegisterAsync(Guid playerId, string displayName, string? nodeId, CancellationToken cancellationToken = default)
     {
         List<Guid> affected;
+        bool nodeChanged;
         lock (_gate)
         {
             _entries.TryGetValue(playerId, out var previous);
             _entries[playerId] = new Entry(displayName, nodeId);
-            if (previous.NodeId != nodeId)
+            nodeChanged = previous.NodeId != nodeId;
+            if (nodeChanged)
             {
                 RemoveFromNodeIndex(previous.NodeId, playerId);
                 AddToNodeIndex(nodeId, playerId);
             }
             affected = CollectAffected(previous.NodeId, nodeId);
         }
-        return PublishAsync(affected);
+        return PublishAsync(affected, nodeChanged ? playerId : null);
     }
 
     /// <summary>更新玩家当前节点；未登记的玩家（已离线）为空操作。</summary>
@@ -60,7 +68,7 @@ public sealed class OnlinePresenceRegistry
             AddToNodeIndex(nodeId, playerId);
             affected = CollectAffected(previous.NodeId, nodeId);
         }
-        return PublishAsync(affected);
+        return PublishAsync(affected, playerId);
     }
 
     /// <summary>移除在线登记（会话关闭）。</summary>
@@ -154,10 +162,18 @@ public sealed class OnlinePresenceRegistry
         return [.. affected];
     }
 
-    private async ValueTask PublishAsync(List<Guid> affected)
+    private async ValueTask PublishAsync(List<Guid> affected, Guid? movedPlayer = null)
     {
-        if (affected.Count == 0) return;
-        var handler = PresenceChanged;
-        if (handler is not null) await handler(affected);
+        // 附近集合为空不代表无事发生：移动者本人仍需经 NodeChanged 触发组队讨伐仲裁。
+        if (affected.Count > 0)
+        {
+            var handler = PresenceChanged;
+            if (handler is not null) await handler(affected);
+        }
+        if (movedPlayer is { } mover)
+        {
+            var nodeHandler = NodeChanged;
+            if (nodeHandler is not null) await nodeHandler(mover);
+        }
     }
 }

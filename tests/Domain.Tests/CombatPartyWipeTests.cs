@@ -62,9 +62,9 @@ public sealed class CombatPartyWipeTests
             with { MaxManapoints = 1000 };
         var ability = catalog.Abilities["ability.heavy-slash"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
-        // 敌方双单位：A 以 0.4s 普攻周期击杀玩家；B 吟唱长技能（1s × CastTimeFactor 10 = 10s）未及释放。
+        // 敌方双单位：A 以 0.4s 普攻周期击杀玩家；B 吟唱长技能（1s ×(1−(−900)/100) = 10s）未及释放。
         var killer = CombatantStats.Create(100_000, 1_000, 0, 0.4);
-        var caster = CombatantStats.Create(100_000, 1, 0, 100) with { MaxManapoints = 100, CastTimeFactor = 10 };
+        var caster = CombatantStats.Create(100_000, 1, 0, 100) with { MaxManapoints = 100, ActionSpeedPoints = -900 };
         var encounter = DeterministicCombatEngine.Start("interrupt", 7, playerTemplate,
             [new CombatantTemplate(killer), new CombatantTemplate(caster, [new SkillSlot(ability, 1)])],
             playerRespawnSeconds: 30);

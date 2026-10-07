@@ -1,4 +1,5 @@
 using Domain.GameData;
+using Domain.Player;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -530,6 +531,8 @@ public sealed class ChatAndSocialTests
         public ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) => [];
         public ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult<IReadOnlyList<PlayerRuntimeSnapshot>>([]);
@@ -545,7 +548,7 @@ public sealed class ChatAndSocialTests
             "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())",
             playerId, $"{playerId:N}@test");
         await SqlAsync(source,
-            "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$3,now(),now(),1)",
+            "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,invite_code,created_at,last_seen_at,status) VALUES ($1,$1,$2,$3,(left(replace($1::text,'-',''),16)),now(),now(),1)",
             playerId, displayName, displayName.ToUpperInvariant());
         return (playerId, displayName);
     }

@@ -124,12 +124,12 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         batch.BatchCommands.Add(Command(
             "SELECT party_id FROM social.party_members WHERE player_id = $1", playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at, open_slots
             FROM social.parties
             WHERE party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
             """, playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT m.player_id, p.display_name
+            SELECT m.player_id, p.display_name, m.ready
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
@@ -146,6 +146,12 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             SELECT s.activity_kind, s.node_id, s.min_valuation, s.created_at
             FROM social.party_seekers s
             WHERE s.player_id = $1
+            """, playerId));
+        batch.BatchCommands.Add(Command("""
+            SELECT s.session_id, s.party_id, s.spec::text, s.started_at, s.ended_at, s.end_reason
+            FROM social.party_sessions s
+            WHERE s.party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
+              AND s.ended_at IS NULL
             """, playerId));
 
         await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
@@ -174,6 +180,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         PartyProfileRecord? profile = null;
         Guid? leaderId = null;
         DateTimeOffset partyCreatedAt = default;
+        var openSlots = 0;
         await reader.NextResultAsync(cancellationToken);
         if (await reader.ReadAsync(cancellationToken))
         {
@@ -182,12 +189,13 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                 reader.GetString(1), reader.GetString(2), reader.GetString(3),
                 reader.GetDouble(4), reader.GetBoolean(5));
             partyCreatedAt = reader.GetFieldValue<DateTimeOffset>(6);
+            openSlots = reader.GetInt16(7);
         }
 
         var members = new List<PartyMemberRecord>();
         await reader.NextResultAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1)));
+            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2)));
 
         await reader.NextResultAsync(cancellationToken);
         var invitation = await reader.ReadAsync(cancellationToken)
@@ -204,11 +212,16 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                 reader.GetDouble(2), reader.GetFieldValue<DateTimeOffset>(3));
         }
 
+        PartySessionRecord? partySession = null;
+        await reader.NextResultAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+            partySession = ReadPartySession(reader);
+
         // 成员行存在但 parties 行缺失时视为未组队，与 GetPartyAsync 的判定一致。
         var party = partyId is { } id && leaderId is { } leader && profile is { } found
-            ? new PartyRecord(id, leader, found, partyCreatedAt, members)
+            ? new PartyRecord(id, leader, found, partyCreatedAt, members, openSlots)
             : null;
-        return new SocialStateSnapshot(friends, incoming, outgoing, party, invitation, seeker);
+        return new SocialStateSnapshot(friends, incoming, outgoing, party, invitation, seeker, partySession);
     }
 
     /// <summary>判断双方是否已是好友。</summary>
@@ -318,8 +331,9 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         Guid leaderId;
         PartyProfileRecord? profile = null;
         DateTimeOffset createdAt = default;
+        var openSlots = 0;
         await using (var partyCommand = new NpgsqlCommand("""
-            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at, open_slots
             FROM social.parties WHERE party_id = $1
             """, connection))
         {
@@ -331,9 +345,10 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                 partyReader.GetString(1), partyReader.GetString(2), partyReader.GetString(3),
                 partyReader.GetDouble(4), partyReader.GetBoolean(5));
             createdAt = partyReader.GetFieldValue<DateTimeOffset>(6);
+            openSlots = partyReader.GetInt16(7);
         }
         await using var membersCommand = new NpgsqlCommand("""
-            SELECT m.player_id, p.display_name
+            SELECT m.player_id, p.display_name, m.ready
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = $1
@@ -343,8 +358,8 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         var members = new List<PartyMemberRecord>();
         await using var reader = await membersCommand.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1)));
-        return new PartyRecord(partyId, leaderId, profile, createdAt, members);
+            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2)));
+        return new PartyRecord(partyId, leaderId, profile, createdAt, members, openSlots);
     }
 
     /// <summary>创建队伍并写入队长成员行（同一事务）；档案为招募标签。</summary>
@@ -400,22 +415,24 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     }
 
     /// <summary>
-    /// 原子加队：parties 行 FOR UPDATE 串行化并发加入，事务内复核满员与互斥；
+    /// 原子加队：parties 行 FOR UPDATE 串行化并发加入，事务内以 open_slots 复核满员与互斥；
     /// 成功时同事务清除该玩家的匹配登记与待处理邀请。
     /// </summary>
-    public async ValueTask<PartyJoinResult> TryJoinPartyAsync(Guid partyId, Guid playerId, int maxMembers, DateTimeOffset now, CancellationToken cancellationToken = default)
+    public async ValueTask<PartyJoinResult> TryJoinPartyAsync(Guid partyId, Guid playerId, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        int openSlots;
         await using (var gate = new NpgsqlCommand(
-            "SELECT 1 FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+            "SELECT open_slots FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
         {
             gate.Parameters.Add(new NpgsqlParameter { Value = partyId });
-            if (await gate.ExecuteScalarAsync(cancellationToken) is null)
+            if (await gate.ExecuteScalarAsync(cancellationToken) is not short slots)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return PartyJoinResult.NotFound;
             }
+            openSlots = slots;
         }
         int memberCount;
         await using (var count = new NpgsqlCommand(
@@ -424,7 +441,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             count.Parameters.Add(new NpgsqlParameter { Value = partyId });
             memberCount = Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken));
         }
-        if (memberCount >= maxMembers)
+        if (memberCount >= openSlots)
         {
             await transaction.RollbackAsync(cancellationToken);
             return PartyJoinResult.Full;
@@ -470,7 +487,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var members = new List<PartyMemberRecord>();
         await using (var collect = new NpgsqlCommand("""
-            SELECT m.player_id, p.display_name
+            SELECT m.player_id, p.display_name, m.ready
             FROM social.party_members m JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = $1
             """, connection, transaction))
@@ -478,7 +495,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             collect.Parameters.Add(new NpgsqlParameter { Value = partyId });
             await using var reader = await collect.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
-                members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1)));
+                members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2)));
         }
         int deleted;
         await using (var remove = new NpgsqlCommand(
@@ -525,7 +542,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var parties = new List<(PartyRecord Seed, List<PartyMemberRecord> Members)>();
         await using (var command = new NpgsqlCommand("""
-            SELECT party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at
+            SELECT party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at, open_slots
             FROM social.parties
             WHERE is_public
               AND ($1 = '' OR $1 = 'any' OR activity_kind = 'any' OR activity_kind = $1)
@@ -545,14 +562,14 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                     reader.GetDouble(5), reader.GetBoolean(6));
                 parties.Add((new PartyRecord(
                     reader.GetGuid(0), reader.GetGuid(1), profile,
-                    reader.GetFieldValue<DateTimeOffset>(7), []), []));
+                    reader.GetFieldValue<DateTimeOffset>(7), [], reader.GetInt16(8)), []));
             }
         }
         if (parties.Count == 0) return [];
         var ids = parties.Select(p => p.Seed.PartyId).ToArray();
         var membersByParty = parties.ToDictionary(p => p.Seed.PartyId, p => p.Members);
         await using (var command = new NpgsqlCommand("""
-            SELECT m.party_id, m.player_id, p.display_name
+            SELECT m.party_id, m.player_id, p.display_name, m.ready
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = ANY($1)
@@ -562,7 +579,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             command.Parameters.Add(new NpgsqlParameter { Value = ids });
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
-                membersByParty[reader.GetGuid(0)].Add(new PartyMemberRecord(reader.GetGuid(1), reader.GetString(2)));
+                membersByParty[reader.GetGuid(0)].Add(new PartyMemberRecord(reader.GetGuid(1), reader.GetString(2), reader.GetBoolean(3)));
         }
         return parties
             .Select(p => p.Seed with { Members = p.Members })
@@ -710,6 +727,218 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         command.Parameters.Add(new NpgsqlParameter { Value = partyId });
         command.Parameters.Add(new NpgsqlParameter { Value = leaderId });
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>切换本人队伍就绪标记（party.ready/unready）。</summary>
+    public async ValueTask<bool> TrySetPartyMemberReadyAsync(Guid playerId, bool ready, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "UPDATE social.party_members SET ready = $2 WHERE player_id = $1", connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        command.Parameters.Add(new NpgsqlParameter { Value = ready });
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    /// <summary>
+    /// 调整开启槽位：parties 行 FOR UPDATE 串行化与加入/退出并发，
+    /// 锁内复核 2~5 区间与「不得低于当前队员数」不变量。
+    /// </summary>
+    public async ValueTask<bool> TryUpdatePartyOpenSlotsAsync(Guid partyId, int openSlots, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        if (openSlots < 2 || openSlots > 5) return false;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var gate = new NpgsqlCommand(
+            "SELECT 1 FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+        {
+            gate.Parameters.Add(new NpgsqlParameter { Value = partyId });
+            if (await gate.ExecuteScalarAsync(cancellationToken) is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        int memberCount;
+        await using (var count = new NpgsqlCommand(
+            "SELECT count(*) FROM social.party_members WHERE party_id = $1", connection, transaction))
+        {
+            count.Parameters.Add(new NpgsqlParameter { Value = partyId });
+            memberCount = Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken));
+        }
+        // 收窄不得低于当前人数：这是领域不变量而非裁剪——拒绝而非逐出。
+        if (openSlots < memberCount)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+        await using (var update = new NpgsqlCommand(
+            "UPDATE social.parties SET open_slots = $2, updated_at = $3 WHERE party_id = $1", connection, transaction))
+        {
+            update.Parameters.Add(new NpgsqlParameter { Value = partyId });
+            update.Parameters.Add(new NpgsqlParameter { Value = (short)openSlots });
+            update.Parameters.Add(new NpgsqlParameter { Value = now });
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>按会话 ID 读取讨伐会话行（含已散场行）。</summary>
+    public async ValueTask<PartySessionRecord?> GetPartySessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return null;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT session_id, party_id, spec::text, started_at, ended_at, end_reason
+            FROM social.party_sessions WHERE session_id = $1
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = sessionId });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadPartySession(reader) : null;
+    }
+
+    /// <summary>读取队伍当前活跃讨伐会话。</summary>
+    public async ValueTask<PartySessionRecord?> GetActivePartySessionAsync(Guid partyId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT session_id, party_id, spec::text, started_at, ended_at, end_reason
+            FROM social.party_sessions WHERE party_id = $1 AND ended_at IS NULL
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = partyId });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadPartySession(reader) : null;
+    }
+
+    /// <summary>写入新讨伐会话；并发撞活跃唯一索引返回 false（仲裁竞态收敛）。</summary>
+    public async ValueTask<bool> TryInsertPartySessionAsync(string sessionId, Guid partyId, string specJson, DateTimeOffset startedAt, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO social.party_sessions(session_id, party_id, spec, started_at)
+            VALUES ($1, $2, $3::jsonb, $4)
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = sessionId });
+        command.Parameters.Add(new NpgsqlParameter { Value = partyId });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = specJson });
+        command.Parameters.Add(new NpgsqlParameter { Value = startedAt });
+        try
+        {
+            return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            // 并发仲裁者先建会话：由 ux_party_sessions_active 收敛，败方放弃本会话。
+            return false;
+        }
+    }
+
+    /// <summary>按权威时刻写散场终态；已散场行不再更新（幂等收敛并发散场）。</summary>
+    public async ValueTask<bool> TryEndPartySessionAsync(string sessionId, DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            UPDATE social.party_sessions
+            SET ended_at = $2, end_reason = $3
+            WHERE session_id = $1 AND ended_at IS NULL
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = sessionId });
+        command.Parameters.Add(new NpgsqlParameter { Value = endedAt });
+        command.Parameters.Add(new NpgsqlParameter { Value = endReason });
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    /// <summary>重启扫尾：全部活跃会话统一写终态，返回被结束的行（含 spec 供调用方广播名册）。</summary>
+    public async ValueTask<IReadOnlyList<PartySessionRecord>> EndAllActivePartySessionsAsync(DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            UPDATE social.party_sessions SET ended_at = $1, end_reason = $2
+            WHERE ended_at IS NULL
+            RETURNING session_id, party_id, spec::text, started_at, ended_at, end_reason
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = endedAt });
+        command.Parameters.Add(new NpgsqlParameter { Value = endReason });
+        var result = new List<PartySessionRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(ReadPartySession(reader));
+        return result;
+    }
+
+    /// <summary>批量读取玩家投影节点；无投影行或正在迁地（current_node_id 为 NULL）的玩家缺席。</summary>
+    public async ValueTask<IReadOnlyDictionary<Guid, string>> GetPlayerNodeMapAsync(IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default)
+    {
+        var map = new Dictionary<Guid, string>();
+        if (playerIds.Count == 0) return map;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT player_id, current_node_id
+            FROM game.player_projection
+            WHERE player_id = ANY($1) AND current_node_id IS NOT NULL
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = playerIds.ToArray() });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            map[reader.GetGuid(0)] = reader.GetString(1);
+        return map;
+    }
+
+    /// <summary>
+    /// 48h 离线逐出：last_active_at 口径=「最后一次真实活跃提交」（冷挂机补算不推进该列），
+    /// presence='online' 兜底防删——投影在线标记与实际连接脱节的窗口期不误逐。
+    /// </summary>
+    public async ValueTask<IReadOnlyList<PartyMemberEviction>> DeleteInactivePartyMembersAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            DELETE FROM social.party_members m
+            USING game.player_projection p
+            WHERE m.player_id = p.player_id
+              AND p.last_active_at < $1
+              AND p.presence <> 'online'
+            RETURNING m.player_id, m.party_id
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = cutoff });
+        var evicted = new List<PartyMemberEviction>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            evicted.Add(new PartyMemberEviction(reader.GetGuid(0), reader.GetGuid(1)));
+        return evicted;
+    }
+
+    /// <summary>
+    /// 会话行 → 领域可读记录：spec jsonb 只解析浅层字段（encounterId/nodeId/members[].playerId），
+    /// 成员冻结面板整体不还原——规格真源在行动队列绑定内，本表是裁决/对账镜像。
+    /// 载荷缺字段属于数据损坏，抛 InvalidDataException 快速失败。
+    /// </summary>
+    private static PartySessionRecord ReadPartySession(NpgsqlDataReader reader)
+    {
+        var spec = reader.GetString(2);
+        using var document = JsonDocument.Parse(spec);
+        var root = document.RootElement;
+        var members = new List<Guid>();
+        foreach (var member in root.GetProperty("members").EnumerateArray())
+        {
+            if (!member.TryGetProperty("playerId", out var id) || !Guid.TryParse(id.GetString(), out var memberId))
+                throw new InvalidDataException("组队会话规格 members[].playerId 缺失或非法。");
+            members.Add(memberId);
+        }
+        var encounterId = root.GetProperty("encounterId").GetString();
+        var nodeId = root.GetProperty("nodeId").GetString();
+        if (string.IsNullOrEmpty(encounterId) || string.IsNullOrEmpty(nodeId))
+            throw new InvalidDataException("组队会话规格缺 encounterId/nodeId。");
+        return new PartySessionRecord(
+            reader.GetString(0),
+            reader.GetGuid(1),
+            encounterId,
+            nodeId,
+            reader.GetFieldValue<DateTimeOffset>(3),
+            members,
+            spec,
+            reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5));
     }
 
     /// <summary>
