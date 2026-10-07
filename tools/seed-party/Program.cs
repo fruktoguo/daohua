@@ -105,7 +105,9 @@ foreach (var mate in teammates)
         """, connection))
     {
         command.Parameters.Add(new NpgsqlParameter { Value = accountId });
-        command.Parameters.Add(new NpgsqlParameter { Value = mate.Account.ToUpperInvariant() });
+        // login_normalized 与 PostgresAccountRepository.NormalizeAccount 同口径（小写归一），
+        // 不能与 display_name_normalized 的 ToUpperInvariant 索引口径混用。
+        command.Parameters.Add(new NpgsqlParameter { Value = mate.Account.ToLowerInvariant() });
         command.Parameters.Add(new NpgsqlParameter { Value = hash });
         command.Parameters.Add(new NpgsqlParameter { Value = salt });
         command.Parameters.Add(new NpgsqlParameter { Value = Pbkdf2Iterations });
