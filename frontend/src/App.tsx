@@ -4,7 +4,6 @@ import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
 import { RecordsPanel } from './components/RecordsPanel'
 import { CombatArena } from './components/CombatArena'
-import { PartyPanel } from './components/PartyPanel'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
 import { ConditionedTile } from './components/ConditionedTile'
@@ -340,14 +339,14 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
           <i><b style={{ transform: `scaleX(${playerValue / playerMax})` }} /></i>
           <strong>
             <span>{t('app.queue.combatVitalSelf')}</span>
-            <span><UnitNumber maxDecimals={0} value={playerValue} /> / <UnitNumber maxDecimals={0} value={playerMax} />（{Math.round(playerValue / playerMax * 100)}%）</span>
+            <span><UnitNumber value={playerValue} /> / <UnitNumber value={playerMax} />（{Math.round(playerValue / playerMax * 100)}%）</span>
           </strong>
         </div>
         <div className="queue-combat-vital queue-combat-vital--enemy">
           <i><b style={{ transform: `scaleX(${enemyValue / enemyMax})` }} /></i>
           <strong>
             <span>{t('app.queue.combatVitalEnemy')}</span>
-            <span><UnitNumber maxDecimals={0} value={enemyValue} /> / <UnitNumber maxDecimals={0} value={enemyMax} />（{Math.round(enemyValue / enemyMax * 100)}%）</span>
+            <span><UnitNumber value={enemyValue} /> / <UnitNumber value={enemyMax} />（{Math.round(enemyValue / enemyMax * 100)}%）</span>
           </strong>
         </div>
       </div>
@@ -2008,7 +2007,6 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
       <div className="expedition-content expedition-content--duel">
         <div className="expedition-duel">
           <CombatArena onOpenAction={setSelectedAction} />
-          <PartyPanel />
           <div className="expedition-duel-config">
             <CombatLoadoutPanel />
           </div>

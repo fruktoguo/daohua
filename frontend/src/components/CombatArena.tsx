@@ -174,7 +174,7 @@ function ArenaResource({
         <div className="arena-resource-track">
           <i style={{ transform: `scaleX(${normalizedValue / normalizedMax})` }} />
           <span className="arena-resource-badge">
-            <UnitNumber disableTooltip maxDecimals={0} value={normalizedValue} /> / <UnitNumber disableTooltip maxDecimals={0} value={normalizedMax} />
+            <UnitNumber disableTooltip value={normalizedValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
           </span>
         </div>
         <span className="arena-resource-shards" aria-hidden="true">
@@ -669,7 +669,6 @@ function ArenaActor({
   buffs = [],
   onInspect,
   visual,
-  marker,
   visible = true,
   compact = false,
 }: {
@@ -693,8 +692,6 @@ function ArenaActor({
   /** 非激活态（搜寻阶段敌方未入场）时置灰休眠且不可聚焦 */
   visible?: boolean
   compact?: boolean
-  /** 名称行内附加徽标（如组队讨伐本人位「我」标记），不参与交互 */
-  marker?: React.ReactNode
 }): React.JSX.Element {
   const t = useT()
   const articleRef = useRef<HTMLElement | null>(null)
@@ -813,7 +810,7 @@ function ArenaActor({
       tabIndex={interactive && visible ? 0 : -1}
     >
       <header className="arena-overhead">
-        <strong>{name || '\u00a0'}{marker}</strong>
+        <strong>{name || '\u00a0'}</strong>
         <div className="arena-vitals">
           <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} />
           <ArenaResource actorKey={actorKey} max={maxMp} tone="mp" value={mp} />
@@ -1605,7 +1602,7 @@ export const CombatArena = memo(function CombatArena({
   }, [abilities, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
 
   // 组队讨伐盟友阵列（§21.13）：allies 按 memberIndex 序铺九宫格，memberIndex === selfIndex
-  // 的格子复用完整玩家展示态并加「我」标记；其余盟友为纯展示单位（协议不下发属性，不可点详情）。
+  // 的格子复用完整玩家展示态；其余盟友为纯展示单位（协议不下发属性，不可点详情）。
   const allyEntries = useMemo<AllyDisplayState[]>(() => {
     const allies = expedition?.allies
     if (!allies || allies.length === 0) return EMPTY_ALLY_ENTRIES
@@ -1791,7 +1788,7 @@ export const CombatArena = memo(function CombatArena({
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
-            组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格保留玩家完整展示态与「我」标记 */}
+            组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}
         <div className="arena-side arena-side--allies">
           <div className="arena-formation arena-formation--allies">
             {allyEntries.length > 0 ? (
@@ -1810,7 +1807,6 @@ export const CombatArena = memo(function CombatArena({
                           hp={playerHp}
                           maxHp={playerMaxHp}
                           maxMp={playerMaxMp}
-                          marker={<em className="arena-self-tag">{t('social.session.selfTag')}</em>}
                           mp={playerMp}
                           name={playerName}
                           onInspect={() => setInspectedActor('player')}

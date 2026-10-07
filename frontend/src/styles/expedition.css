@@ -1237,8 +1237,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  /* 三行：战斗场景 + 队伍面板条（无队伍时组件返回 null，auto 行塌缩为 0）+ 装备配置 */
-  grid-template-rows: minmax(220px, 1fr) auto auto;
+  grid-template-rows: minmax(220px, 1fr) auto;
   gap: 0;
   overflow: hidden;
 }
@@ -1587,17 +1586,6 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
   letter-spacing: 0.5px;
   -webkit-font-smoothing: antialiased;
-}
-
-/* 组队讨伐本人位「我」标记（§21.13）：行内小徽标，不抢占名条宽度 */
-.arena-self-tag {
-  margin-left: 4px;
-  color: var(--gold-bright);
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 400;
-  letter-spacing: 0;
-  vertical-align: 1px;
 }
 
 .arena-avatar-stage {
@@ -2258,7 +2246,8 @@
 .arena-actor--enemy .arena-action-fx--attack {
   right: 48%;
   left: auto;
-  transform: translateY(-50%) scaleX(-1) rotate(calc(var(--arena-aim-angle, 0deg) * -1));
+  /* scaleX(-1) 镜像本身已反转旋转方向，角度保持正号：再乘 -1 构成双重否定，会把朝目标的下偏错翻成上偏 */
+  transform: translateY(-50%) scaleX(-1) rotate(var(--arena-aim-angle, 0deg));
   transform-origin: 100% 50%;
 }
 

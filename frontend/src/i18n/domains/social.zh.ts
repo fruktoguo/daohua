@@ -125,16 +125,6 @@ export const socialZh = {
       count: '参战就绪 {ready}/{count}',
       hint: '全员勾选「参与斗法」且槽位占满即自动开赴同图共战',
     },
-    // 战斗页队伍面板（成员卡片条）：待命态就绪标记与会话中实时血蓝共用同一名册。
-    strip: {
-      aria: '组队面板',
-      fighting: '战斗中',
-      emptySlot: '空槽位',
-      joined: '参战就绪',
-      notJoined: '暂不参战',
-      idleHint: '全员勾选「参与斗法」且槽位占满即自动开赴共战',
-      sessionHint: '同图共战中，任一成员变动即散场',
-    },
     session: {
       banner: '同图共战进行中',
       encounter: '遭遇 {name}',
@@ -145,7 +135,6 @@ export const socialZh = {
       cancelHint: '组队讨伐由队伍统一调度，无法单独移除；如需终止，请在队伍页离队（将解散本次共战）',
       badge: '组队讨伐',
       badgeCount: '组队讨伐 · {count} 人',
-      selfTag: '我',
       allyAria: '队友 {name}',
     },
     share: {
