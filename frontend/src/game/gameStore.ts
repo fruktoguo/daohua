@@ -49,6 +49,8 @@ interface GameStore {
   isPendingBreakthrough: boolean
   /** 是否已成功接收到服务端全量快照 */
   hasReceivedSnapshot: boolean
+  /** 新手引导里程碑下标（settings 分段权威；0~6 进行中，7 完成/跳过终态） */
+  tutorialStep: number
   /** 行动队列状态（当前执行、等待列表、自动消耗槽位） */
   queue: PlayerSnapshot['queue']
   /** 背包物品列表 */
@@ -197,6 +199,7 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
       nodeBuildings: [],
       buildableBuildingIds: null,
     },
+    tutorialStep: 0,
   }
 }
 
@@ -258,7 +261,6 @@ function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['comb
   const normalizedAbilitySlots = Array.from({ length: targetSlotCount }, (_, index) => ({
     abilityId: abilitySlots[index]?.abilityId ?? null,
     level: Math.max(1, abilitySlots[index]?.level ?? 1),
-    triggers: abilitySlots[index]?.triggers ?? [],
   }))
   const learnedAbilityIds = Array.isArray(combat.learnedAbilityIds)
     ? combat.learnedAbilityIds
@@ -267,6 +269,8 @@ function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['comb
     ...combat,
     abilitySlots: normalizedAbilitySlots,
     learnedAbilityIds,
+    // 功法触发条件按功法 ID 挂接；快照缺省时兜底为空表，读取方无需再判空。
+    abilityTriggers: combat.abilityTriggers ?? {},
   }
 }
 
@@ -289,6 +293,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   presenceMode: initial.presenceMode,
   isPendingBreakthrough: false,
   hasReceivedSnapshot: false,
+  tutorialStep: 0,
   queue: initial.queue,
   inventory: initial.inventory,
   buffs: initial.buffs,
@@ -379,6 +384,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combatAttributes: snapshot.combatAttributes,
       world: snapshot.world ?? initial.world!,
       duel: snapshot.duel,
+      tutorialStep: snapshot.tutorialStep,
     })
     // 刷新自动进详情：首个权威快照且行动队列非空时，直接切到「详情」页查看当前行动统计与战况。
     if (isFirstSnapshot && snapshot.queue.entries.length > 0) {
@@ -429,6 +435,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combatAttributes: patch.combatAttributes ?? state.combatAttributes,
       world: patch.world ?? state.world,
       duel: patch.duel ?? state.duel,
+      tutorialStep: patch.tutorialStep ?? state.tutorialStep,
     })
   },
   toSnapshotView: () => {
@@ -455,6 +462,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combatAttributes: state.combatAttributes,
       world: state.world,
       duel: state.duel,
+      tutorialStep: state.tutorialStep,
     }
   },
   resetGameStore: () => set({

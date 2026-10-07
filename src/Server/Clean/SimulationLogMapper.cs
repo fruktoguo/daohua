@@ -63,6 +63,8 @@ public static class SimulationLogMapper
     private static string ToTemplate(SimulationEvent simulationEvent, GameDataCatalog gameData) => simulationEvent.Code switch
     {
         "action.completed" => BuildActionCompleted(simulationEvent, gameData),
+        // 新手引导赠送/终奖：Message 为不带句号的主句，结构化物品明细按同一引用语法拼接。
+        "tutorial.grant" or "tutorial.completed" => BuildTutorial(simulationEvent, gameData),
         _ => simulationEvent.Message
     };
 
@@ -75,7 +77,22 @@ public static class SimulationLogMapper
             .Append("}}");
         if (simulationEvent.ItemDeltas is not { Count: > 0 } deltas) return builder.ToString();
         builder.Append("，获得 ");
+        AppendItemList(builder, deltas, gameData);
+        return builder.ToString();
+    }
 
+    /// <summary>新手引导事件：主句 + 物品明细（与行动完成同一引用语法）。</summary>
+    private static string BuildTutorial(SimulationEvent simulationEvent, GameDataCatalog gameData)
+    {
+        if (simulationEvent.ItemDeltas is not { Count: > 0 } deltas) return simulationEvent.Message;
+        var builder = new StringBuilder(simulationEvent.Message).Append('：');
+        AppendItemList(builder, deltas, gameData);
+        return builder.ToString();
+    }
+
+    /// <summary>按 ItemId 排序追加 {{item:id|名称|数量}} 引用列表，保证同一模拟产出同一条文本。</summary>
+    private static void AppendItemList(StringBuilder builder, IReadOnlyDictionary<ItemId, double> deltas, GameDataCatalog gameData)
+    {
         var items = new KeyValuePair<ItemId, double>[deltas.Count];
         var idx = 0;
         foreach (var kv in deltas) items[idx++] = kv;
@@ -99,7 +116,6 @@ public static class SimulationLogMapper
                 .Append("}}");
             first = false;
         }
-        return builder.ToString();
     }
 
     private static string ItemName(GameDataCatalog gameData, ItemId itemId) =>

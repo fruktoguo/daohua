@@ -11,6 +11,7 @@ import './styles/expedition.css'
 import './styles/floating-popover.css'
 import './styles/vfx.css'
 import './styles/theme.css'
+import './styles/tutorial.css'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('找不到应用挂载点。')

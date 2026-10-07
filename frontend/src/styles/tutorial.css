@@ -1,0 +1,233 @@
+/**
+ * 新手引导遮罩层样式（总纲 §22.4）：四块半透明遮罩 + 金色高亮框 + 气泡卡 + 箭头。
+ * 视觉对齐父项目 daojie-yusheng 的步骤式导览，配色收拢到本仓金色系。
+ */
+
+.tutorial-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  pointer-events: none;
+}
+
+.tutorial-mask {
+  position: fixed;
+  background: rgba(7, 6, 4, 0.58);
+  backdrop-filter: blur(1px);
+  pointer-events: auto;
+  transition: top 0.18s var(--ease), left 0.18s var(--ease), width 0.18s var(--ease), height 0.18s var(--ease);
+}
+
+.tutorial-mask--full {
+  inset: 0;
+}
+
+.tutorial-highlight {
+  position: fixed;
+  border: 2px solid var(--gold-bright);
+  border-radius: 8px;
+  /* 外层亮金描线 + 外发光 + 内圈淡光：浅色主题下与纸白背景拉开对比 */
+  box-shadow: 0 0 0 2px rgba(255, 244, 214, 0.9), 0 0 22px 4px rgba(201, 180, 109, 0.55), inset 0 0 14px rgba(201, 180, 109, 0.15);
+  animation: tutorial-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+  transition: top 0.18s var(--ease), left 0.18s var(--ease), width 0.18s var(--ease), height 0.18s var(--ease);
+}
+
+/* 高亮框四角加 L 形角标：目标指示感更强，对齐 daojie 的聚焦符号 */
+.tutorial-highlight::before,
+.tutorial-highlight::after {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--gold-bright);
+  content: "";
+}
+.tutorial-highlight::before { top: -3px; left: -3px; border-right: none; border-bottom: none; }
+.tutorial-highlight::after { right: -3px; bottom: -3px; border-top: none; border-left: none; }
+
+@keyframes tutorial-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 244, 214, 0.9), 0 0 16px 2px rgba(201, 180, 109, 0.4), inset 0 0 12px rgba(201, 180, 109, 0.12); }
+  50% { box-shadow: 0 0 0 3px rgba(255, 244, 214, 1), 0 0 30px 6px rgba(201, 180, 109, 0.65), inset 0 0 18px rgba(201, 180, 109, 0.22); }
+}
+
+/* 浅色主题：遮罩压深一档、高亮框改用更亮的金并带白色衬底，避免与纸面融为一体 */
+:root[data-theme="light"] .tutorial-highlight {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(255, 252, 240, 0.95), 0 0 20px 5px rgba(125, 82, 26, 0.4), inset 0 0 14px rgba(125, 82, 26, 0.1);
+}
+
+/* 展示性聚焦（等待步）：静态描边无脉冲——「请看这里」而非「请点击这里」 */
+.tutorial-highlight--focus {
+  animation: none;
+  border-style: dashed;
+}
+
+/* 展示聚焦的透明拦截层：覆盖镂空区吃掉点击，详情可看不可点 */
+.tutorial-focus-blocker {
+  position: fixed;
+  pointer-events: auto;
+}
+
+.tutorial-card {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-dim);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(201, 180, 109, 0.08);
+  pointer-events: auto;
+}
+
+.tutorial-arrow {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+/* 指向目标的呼吸圆点：钉在高亮框上方，强化「点这里」的手势引导 */
+.tutorial-pointer {
+  position: fixed;
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--gold-bright);
+  border-radius: 50%;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 4px rgba(201, 180, 109, 0.25), 0 0 14px rgba(201, 180, 109, 0.5);
+  pointer-events: none;
+  animation: tutorial-pointer-bob 1.4s ease-in-out infinite;
+}
+
+@keyframes tutorial-pointer-bob {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -62%) scale(1.18); }
+}
+
+:root[data-theme="light"] .tutorial-pointer {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 4px rgba(125, 82, 26, 0.18), 0 0 14px rgba(125, 82, 26, 0.4);
+}
+
+.tutorial-card[data-placement="bottom"] .tutorial-arrow { top: -7px; left: 50%; margin-left: -6px; border-right: none; border-bottom: none; }
+.tutorial-card[data-placement="top"] .tutorial-arrow { bottom: -7px; left: 50%; margin-left: -6px; border-left: none; border-top: none; }
+.tutorial-card[data-placement="right"] .tutorial-arrow { left: -7px; top: 50%; margin-top: -6px; border-right: none; border-top: none; }
+.tutorial-card[data-placement="left"] .tutorial-arrow { right: -7px; top: 50%; margin-top: -6px; border-left: none; border-bottom: none; }
+
+.tutorial-kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+}
+
+.tutorial-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text);
+}
+
+.tutorial-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  white-space: pre-line;
+}
+
+.tutorial-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--gold-faint);
+  border-radius: 8px;
+}
+
+/* 阶段奖励预览行：与结算卡奖励同构但更紧凑 */
+.tutorial-stage-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--gold-faint);
+  border-radius: 8px;
+}
+
+.tutorial-stage-rewards-label {
+  font-size: 11px;
+  color: var(--gold-dim, var(--text-dim));
+  letter-spacing: 0.05em;
+}
+
+.tutorial-progress {
+  height: 3px;
+  background: var(--gold-faint);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tutorial-progress > i {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  transition: width 0.3s var(--ease);
+}
+
+.tutorial-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tutorial-spacer { flex: 1; }
+
+.tutorial-btn {
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-dim);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.tutorial-btn:hover { color: var(--text); border-color: var(--gold); }
+
+.tutorial-btn--primary {
+  color: #1a150c;
+  background: var(--gold);
+  border-color: var(--gold);
+  font-weight: var(--font-weight-medium);
+}
+
+.tutorial-btn--primary:hover { background: var(--gold-bright); border-color: var(--gold-bright); color: #1a150c; }
+
+.tutorial-waiting {
+  font-size: 12px;
+  color: var(--gold);
+  letter-spacing: 0.08em;
+  animation: tutorial-waiting-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes tutorial-waiting-blink {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 720px) {
+  .tutorial-card {
+    left: 12px !important;
+    right: 12px;
+    width: auto !important;
+    max-height: 42dvh;
+    overflow-y: auto;
+  }
+}

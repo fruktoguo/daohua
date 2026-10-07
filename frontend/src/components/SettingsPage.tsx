@@ -7,15 +7,17 @@ import { gameClient } from '../network/gameClient'
 import { LOCALES, useI18nStore, useT } from '../i18n'
 import { AVATAR_OPTIONS, getPlayerAvatarSrc, useAvatarStore } from '../game/avatarStore'
 import { useThemeStore } from '../game/themeStore'
+import { TUTORIAL_DONE } from '../tutorial/steps'
 
-/** 设置页面分类（账号、显示偏好与形象） */
-type SettingsTab = 'account' | 'display' | 'avatar'
+/** 设置页面分类（账号、显示偏好、形象与引导） */
+type SettingsTab = 'account' | 'display' | 'avatar' | 'tutorial'
 
 /** 设置分类导航配置：顺序即左栏展示顺序 */
-const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; labelKey: 'tabAccount' | 'tabDisplay' | 'tabAvatar' }> = [
+const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; labelKey: 'tabAccount' | 'tabDisplay' | 'tabAvatar' | 'tabTutorial' }> = [
   { id: 'account', labelKey: 'tabAccount' },
   { id: 'display', labelKey: 'tabDisplay' },
   { id: 'avatar', labelKey: 'tabAvatar' },
+  { id: 'tutorial', labelKey: 'tabTutorial' },
 ]
 
 /** 左栏分类小图标（22px 格内 13px 描边矢量，与全局 Icon 同风格） */
@@ -37,6 +39,12 @@ const SETTINGS_NAV_ICONS: Record<SettingsTab, React.JSX.Element> = {
       <rect x="5" y="3.5" width="14" height="17" rx="1.5" />
       <circle cx="12" cy="9.5" r="2.4" />
       <path d="M7.8 17.2c.9-2.5 2.5-3.7 4.2-3.7s3.3 1.2 4.2 3.7" />
+    </svg>
+  ),
+  tutorial: (
+    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
+      <path d="M4.5 5.5A2 2 0 0 1 6.5 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2z" />
+      <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
     </svg>
   ),
 }
@@ -89,6 +97,9 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const [renameModalOpen, setRenameModalOpen] = useState(false)
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false)
+
+  const tutorialStep = useGameStore(state => state.tutorialStep)
 
   const name = useGameStore(state => state.name)
   const account = useGameStore(state => state.account)
@@ -255,6 +266,31 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
             </>
           )}
 
+          {activeTab === 'tutorial' && (
+            <section className="settings-group" aria-label={t('app.settings.tutorialHeading')}>
+              <h3 className="settings-group-title">{t('app.settings.tutorialHeading')}</h3>
+              <div className="setting-row">
+                <span className="setting-label">{t('app.settings.tutorialHeading')}</span>
+                <span className="setting-value">
+                  {tutorialStep >= TUTORIAL_DONE
+                    ? t('app.settings.tutorialStatusDone')
+                    : t('app.settings.tutorialStatusInProgress', { step: tutorialStep + 1 })}
+                </span>
+              </div>
+              <div className="setting-row">
+                <span className="setting-label">{t('app.settings.tutorialRestartLabel')}</span>
+                <button
+                  type="button"
+                  className="inline-modify-btn"
+                  onClick={() => setRestartConfirmOpen(true)}
+                >
+                  {t('app.settings.tutorialRestartBtn')}
+                </button>
+              </div>
+              <p className="setting-desc">{t('app.settings.tutorialRestartDesc')}</p>
+            </section>
+          )}
+
           {activeTab === 'avatar' && (
             <section className="settings-group" aria-label={t('app.settings.avatarHeading')}>
               <h3 className="settings-group-title">{t('app.settings.avatarHeading')}</h3>
@@ -302,6 +338,18 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
           gameClient.logout()
         }}
         onClose={() => setLogoutConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={restartConfirmOpen}
+        title={t('app.settings.tutorialRestartConfirmTitle')}
+        description={t('app.settings.tutorialRestartConfirmDesc')}
+        confirmLabel={t('app.settings.tutorialRestartConfirmBtn')}
+        onConfirm={() => {
+          setRestartConfirmOpen(false)
+          gameClient.sendCommand('tutorial.restart', {})
+        }}
+        onClose={() => setRestartConfirmOpen(false)}
       />
     </section>
   )
