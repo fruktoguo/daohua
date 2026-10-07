@@ -256,7 +256,7 @@ public sealed class DuelSimulationTests
         Assert.DoesNotContain(result.AssetDeltas, delta => delta.Asset.ItemId.Value == "item.loot");
     }
 
-    /// <summary>击杀奖励入账收益账本：单参数 experience 同时喂修为、战斗经验与六维均分。</summary>
+    /// <summary>击杀奖励入账收益账本：单参数 experience 同时喂修为、战斗经验，六维各得全额（总量 6×）。</summary>
     [Fact]
     public void BattleReportAccumulatesConfiguredKillRewards()
     {
@@ -270,7 +270,7 @@ public sealed class DuelSimulationTests
         Assert.NotNull(report);
         Assert.Equal(10, report.Experience);
         Assert.Equal(10, report.CombatExperience);
-        Assert.Equal(10, report.RootExp.Total);
+        Assert.Equal(60, report.RootExp.Total);
     }
 
     /// <summary>行动实例出队时归档其账本，归档上限取配置 MaxBattleReports。</summary>

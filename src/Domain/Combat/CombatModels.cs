@@ -58,14 +58,6 @@ public sealed record CombatantStats(
     public double SpellAttack { get; init; }
     /// <summary>灵力上限；敌方技能耗蓝与玩家吟唱共用同构资源池。</summary>
     public double MaxManapoints { get; init; }
-    /// <summary>普通攻击伤害倍率（全单位统一成长曲线 100%→200% AD）。</summary>
-    public double BasicAttackRatio { get; init; } = 1;
-    /// <summary>技能吟唱时长乘区（行动速度 ATR）：吟唱时间 = castMilliseconds × 本系数，与攻击速度无关。</summary>
-    public double CastTimeFactor { get; init; } = 1;
-    /// <summary>技能冷却乘区（冷却缩减 CDR）：冷却自吟唱完成时刻起算。</summary>
-    public double CooldownFactor { get; init; } = 1;
-    /// <summary>技能强度乘区（SkillIntensity = 1 + (Tier-1) × 0.30）。</summary>
-    public double SkillIntensity { get; init; } = 1;
     /// <summary>法术抗性点数（Spell 伤害的主抗性池）。</summary>
     public double MagicResistance { get; init; }
     /// <summary>抗性缩放倍率（等于等阶 Tier，放大全部抗性点数的效果）。</summary>
@@ -74,8 +66,8 @@ public sealed record CombatantStats(
     public double Critical { get; init; }
     /// <summary>暴击抗性点数（降低被暴击概率）。</summary>
     public double CriticalResistance { get; init; }
-    /// <summary>暴击伤害倍率（≥1，暴击时乘入最终伤害）。</summary>
-    public double CriticalMultiplier { get; init; } = 1.5;
+    /// <summary>暴击伤害点数（Linear：暴击倍率 = 1+点数/100；基础自带 50 点即 150%，境界成长注入同通道）。</summary>
+    public double CriticalDamagePoints { get; init; } = CombatGrowthCurve.CriticalDamageBasePoints;
     /// <summary>破防威力点数（与招架结算对抗；胜出时削弱目标闪避与抗性）。</summary>
     public double BreakPower { get; init; }
     /// <summary>招架结算点数（与破防威力对抗；胜出时提升自身闪避与抗性）。</summary>
@@ -164,11 +156,7 @@ public sealed record CombatantStats(
             || !double.IsFinite(MaxHitpoints) || MaxHitpoints <= 0
             || !double.IsFinite(AttackIntervalSeconds) || AttackIntervalSeconds <= 0
             || !double.IsFinite(ResistanceScale) || ResistanceScale <= 0
-            || !double.IsFinite(CriticalMultiplier) || CriticalMultiplier < 1
-            || !double.IsFinite(BasicAttackRatio) || BasicAttackRatio <= 0
-            || !double.IsFinite(CastTimeFactor) || CastTimeFactor <= 0
-            || !double.IsFinite(CooldownFactor) || CooldownFactor <= 0
-            || !double.IsFinite(SkillIntensity) || SkillIntensity <= 0
+            || !double.IsFinite(CriticalDamagePoints) || CriticalDamagePoints < 0
             || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind)
             || (Traits is not null && Traits.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
@@ -220,7 +208,8 @@ public sealed record CombatBuffState(
     string BuffId, double ExpiresAtSeconds, double Stacks = 1,
     double HpRegen = 0, double MpRegen = 0, double AttackSpeedPoints = 0,
     double DamageAbsorptionPoints = 0, double ThreatPoints = 0,
-    double HpRegenPostRatio = 0, double MpRegenPostRatio = 0)
+    double HpRegenPostRatio = 0, double MpRegenPostRatio = 0,
+    double DamageBonusPoints = 0)
 {
     /// <summary>校验 Buff 字段满足持久化不变量。</summary>
     internal bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
@@ -229,7 +218,8 @@ public sealed record CombatBuffState(
         && double.IsFinite(HpRegen) && double.IsFinite(MpRegen)
         && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
         && double.IsFinite(ThreatPoints)
-        && double.IsFinite(HpRegenPostRatio) && double.IsFinite(MpRegenPostRatio);
+        && double.IsFinite(HpRegenPostRatio) && double.IsFinite(MpRegenPostRatio)
+        && double.IsFinite(DamageBonusPoints);
 }
 
 /// <summary>战斗单位生成模板：静态属性 + 可选技能槽。</summary>
@@ -294,6 +284,11 @@ public sealed class CombatantState
     public double[]? SkillCooldownUntil { get; internal set; }
     /// <summary>累计完成施放的技能次数，作为技能出手的确定性抽样独立计数器。</summary>
     public double SkillCastCount { get; internal set; }
+    /// <summary>
+    /// 倒地复活截止点（战斗时钟秒）：仅友方单位使用——阵亡瞬间置为 ElapsedSeconds + 遭遇复活读条，
+    /// 起身后回 +∞；敌方单位与团灭即败遭遇恒为 +∞。倒地单位不出手，回复/冷却照常推进。
+    /// </summary>
+    public double RespawnAtSeconds { get; internal set; } = double.PositiveInfinity;
     /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
     /// <summary>参与目标抽取的有效威胁值：Threat ×(1 + (面板威胁增幅 + 嘲讽修正 + 战内 Buff 威胁)/100)。</summary>
@@ -328,6 +323,16 @@ public sealed class CombatantState
             return total;
         }
     }
+    /// <summary>战内 Buff 合计总伤害增幅点数（与 <see cref="CombatantStats.TotalDamageBonusPoints"/> 同乘区 Linear 合并）。</summary>
+    internal double BuffDamageBonusPoints
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].DamageBonusPoints * Buffs[i].Stacks;
+            return total;
+        }
+    }
 
     /// <summary>
     /// 换入重新结算的战斗属性面板：供进行中战斗在外层推进步间跨步复用时同步最新属性输入
@@ -357,6 +362,7 @@ public sealed class CombatantState
 }
 
 /// <summary>战斗单位可持久化的运行时快照。</summary>
+/// <param name="RespawnAtSeconds">友方倒地复活截止点（战斗时钟秒）；null 表示未倒地或敌方单位（恒无复活点）。</param>
 public sealed record CombatantSnapshot(
     double Hitpoints,
     double Manapoints,
@@ -368,7 +374,8 @@ public sealed record CombatantSnapshot(
     double BonusAbsorptionPoints = 0,
     IReadOnlyList<double>? SkillCooldownUntil = null,
     double SkillCastCount = 0,
-    IReadOnlyList<CombatBuffState>? Buffs = null)
+    IReadOnlyList<CombatBuffState>? Buffs = null,
+    double? RespawnAtSeconds = null)
 {
     /// <summary>快照字段的有限性/取值域校验（不含上限比对——上限依赖施法时面板）。</summary>
     internal bool IsValid => double.IsFinite(Hitpoints) && Hitpoints >= 0
@@ -380,21 +387,24 @@ public sealed record CombatantSnapshot(
         && double.IsFinite(BonusAbsorptionPoints)
         && PendingSkillIndex >= -1
         && double.IsFinite(SkillCastCount) && SkillCastCount >= 0
+        && (RespawnAtSeconds is null || (double.IsFinite(RespawnAtSeconds.Value) && RespawnAtSeconds.Value >= 0))
         && (SkillCooldownUntil is null || SkillCooldownUntil.All(value => double.IsFinite(value) && value >= 0))
         && (Buffs is null || Buffs.All(buff => buff is not null && buff.IsValid));
 }
 
 /// <summary>
-/// 单场战斗遭遇战状态聚合：一名玩家对阵同波全体敌人。
+/// 单场战斗遭遇战状态聚合：玩家方盟友阵列（单人即 1 盟友）对阵同波全体敌人。
+/// 组队共战时盟友即各成员的冻结面板单位（总纲 §21.13），共享剧本逐位重放。
 /// </summary>
 public sealed class CombatEncounterState
 {
-    private CombatEncounterState(string encounterId, long seed, CombatantState player, IReadOnlyList<CombatantState> enemies,
-        double playerRespawnSeconds)
+    private CombatEncounterState(string encounterId, long seed, IReadOnlyList<CombatantState> playerAllies,
+        int selfIndex, IReadOnlyList<CombatantState> enemies, double playerRespawnSeconds)
     {
         EncounterId = encounterId;
         Seed = seed;
-        Player = player;
+        PlayerAllies = playerAllies;
+        SelfIndex = selfIndex;
         Enemies = enemies;
         PlayerRespawnSeconds = playerRespawnSeconds;
     }
@@ -405,8 +415,12 @@ public sealed class CombatEncounterState
     public long Seed { get; }
     /// <summary>当前战斗已推进的总时间（秒）</summary>
     public double ElapsedSeconds { get; internal set; }
-    /// <summary>玩家方战斗单位</summary>
-    public CombatantState Player { get; }
+    /// <summary>玩家方盟友阵列（含本机成员，按下标稳定排序；顺序即共享剧本成员序）。</summary>
+    public IReadOnlyList<CombatantState> PlayerAllies { get; }
+    /// <summary>本机成员在盟友阵列中的下标；单人恒为 0。</summary>
+    public int SelfIndex { get; }
+    /// <summary>本机成员战斗单位（PlayerAllies[SelfIndex] 的便捷别名）。</summary>
+    public CombatantState Player => PlayerAllies[SelfIndex];
     /// <summary>同波全体敌方单位（含已阵亡者，按下标稳定排序）。</summary>
     public IReadOnlyList<CombatantState> Enemies { get; }
     /// <summary>当前对决胜负裁决</summary>
@@ -414,17 +428,39 @@ public sealed class CombatEncounterState
     /// <summary>状态转换序号（递增帧号）</summary>
     public double Sequence { get; internal set; }
     /// <summary>
-    /// 团灭分流：原地复活读条秒数（战斗时钟口径）。&gt; 0 时玩家阵亡不终局，进入躺尸窗口；
+    /// 团灭分流：原地复活读条秒数（战斗时钟口径）。&gt; 0 时友方阵亡不终局，各单位各自进入躺尸窗口；
     /// 0 表示团灭即败（斗法/副本类遭遇），玩家方全灭立即 EnemyWon 终局。
     /// </summary>
     public double PlayerRespawnSeconds { get; }
     /// <summary>
-    /// 原地复活截止点（战斗时钟秒）：玩家阵亡瞬间置为 ElapsedSeconds + PlayerRespawnSeconds，
-    /// 起身后回到 +∞。倒地窗口内双方不出手，回复/冷却/到期照常推进。
+    /// 本机成员的原地复活截止点（战斗时钟秒）：阵亡瞬间置为 ElapsedSeconds + PlayerRespawnSeconds，
+    /// 起身后回到 +∞。全员倒地窗口内双方不出手，回复/冷却/到期照常推进。
     /// </summary>
-    public double PlayerRespawnAtSeconds { get; internal set; } = double.PositiveInfinity;
-    /// <summary>倒地窗口判定：玩家已阵亡且存在待触发复活点（仅原地复活模式可达）。</summary>
-    public bool IsPlayerDowned => !Player.IsAlive && double.IsFinite(PlayerRespawnAtSeconds);
+    public double PlayerRespawnAtSeconds { get => Player.RespawnAtSeconds; internal set => Player.RespawnAtSeconds = value; }
+    /// <summary>倒地窗口判定：本机成员已阵亡且存在待触发复活点（仅原地复活模式可达）。</summary>
+    public bool IsPlayerDowned => !Player.IsAlive && double.IsFinite(Player.RespawnAtSeconds);
+    /// <summary>全灭判定：友方盟友全部阵亡（单人即玩家阵亡，组队即全队倒地）。</summary>
+    public bool IsAllAlliesDowned
+    {
+        get
+        {
+            for (var i = 0; i < PlayerAllies.Count; i++)
+                if (PlayerAllies[i].IsAlive) return false;
+            return true;
+        }
+    }
+    /// <summary>倒地盟友中最早的复活截止点；无待复活单位为 +∞。</summary>
+    public double NextAllyRespawnAtSeconds
+    {
+        get
+        {
+            var next = double.PositiveInfinity;
+            for (var i = 0; i < PlayerAllies.Count; i++)
+                if (!PlayerAllies[i].IsAlive && PlayerAllies[i].RespawnAtSeconds < next)
+                    next = PlayerAllies[i].RespawnAtSeconds;
+            return next;
+        }
+    }
     /// <summary>
     /// 段内待派发触发器队列：伤害落账等结算点按序入队，战斗边界在同一序列点统一消费。
     /// 运行时字段，不进入快照——纯领域路径由引擎内联数学消费，ECS 宿主由 RunSystem 派发消费。
@@ -435,10 +471,7 @@ public sealed class CombatEncounterState
     /// 不进入快照；恢复战斗由宿主在挂接时重新装配。
     /// </summary>
     internal ICombatTriggerSink? TriggerSink { get; set; }
-    /// <summary>玩家方友方列表的会话缓存：玩家独自成军恒定 [Player]，出手边界每帧复用免分配。</summary>
-    private CombatantState[]? _playerAllies;
-    internal IReadOnlyList<CombatantState> PlayerAllies => _playerAllies ??= [Player];
-    /// <summary>玩家当前集火目标：存活敌人中有效威胁最高者。</summary>
+    /// <summary>本机成员当前集火目标：存活敌人中有效威胁最高者。</summary>
     public CombatantState? PrimaryEnemy
     {
         get
@@ -458,26 +491,41 @@ public sealed class CombatEncounterState
     /// </summary>
     public static CombatEncounterState Create(string encounterId, long seed, CombatantTemplate player,
         IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
+        => CreateAllied(encounterId, seed, [player], 0, enemies, playerRespawnSeconds);
+
+    /// <summary>
+    /// 创建多盟友遭遇但不决策首次出手（组队共战/召唤物）：
+    /// 盟友模板顺序即共享剧本成员序，selfIndex 为本机成员下标（其单位 ID 恒为 "player"，
+    /// 其余盟友 ID 为 ally:{成员下标}——各成员推演的事件标签以自身视角呈现，力学序列逐位一致）。
+    /// </summary>
+    public static CombatEncounterState CreateAllied(string encounterId, long seed,
+        IReadOnlyList<CombatantTemplate> allies, int selfIndex,
+        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
     {
         if (string.IsNullOrWhiteSpace(encounterId) || encounterId.Length > 128)
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇标识无效。");
-        ArgumentNullException.ThrowIfNull(player);
-        if (player.Stats is null)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇玩家模板无效。");
+        if (allies is null || allies.Count == 0 || allies.Any(template => template?.Stats is null))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇盟友阵容无效。");
+        if (selfIndex < 0 || selfIndex >= allies.Count)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇本机成员下标无效。");
         if (enemies is null || enemies.Count == 0 || enemies.Any(template => template?.Stats is null))
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇敌方阵容无效。");
         if (!double.IsFinite(playerRespawnSeconds) || playerRespawnSeconds < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇原地复活时长无效。");
-        var states = new CombatantState[enemies.Count];
+        var allyStates = new CombatantState[allies.Count];
+        for (var i = 0; i < allies.Count; i++)
+            allyStates[i] = new CombatantState(i == selfIndex ? "player" : $"ally:{i}", allies[i].Stats, allies[i].Skills);
+        var enemyStates = new CombatantState[enemies.Count];
         for (var i = 0; i < enemies.Count; i++)
-            states[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
-        var playerState = new CombatantState("player", player.Stats, player.Skills);
+            enemyStates[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
         // 特质开战授予（如看不到我→隐身 buff）：仅首次开战路径生效；
         // 快照恢复由 Buffs 还原不重复授予，复活起身亦不视为开战。
-        CombatTraitRules.ApplyBattleStartTraits(playerState);
-        for (var i = 0; i < states.Length; i++)
-            CombatTraitRules.ApplyBattleStartTraits(states[i]);
-        return new CombatEncounterState(encounterId, seed, playerState, states, playerRespawnSeconds);
+        // 授予顺序为盟友序→敌方序：单人退化为 玩家→敌人，与既有序列逐位一致。
+        for (var i = 0; i < allyStates.Length; i++)
+            CombatTraitRules.ApplyBattleStartTraits(allyStates[i]);
+        for (var i = 0; i < enemyStates.Length; i++)
+            CombatTraitRules.ApplyBattleStartTraits(enemyStates[i]);
+        return new CombatEncounterState(encounterId, seed, allyStates, selfIndex, enemyStates, playerRespawnSeconds);
     }
 
     /// <summary>从持久化快照恢复一场多敌遭遇战。</summary>
@@ -494,28 +542,65 @@ public sealed class CombatEncounterState
         double playerRespawnSeconds = 0,
         double playerRespawnAtSeconds = double.PositiveInfinity)
     {
+        if (!double.IsFinite(playerRespawnAtSeconds) && playerRespawnAtSeconds != double.PositiveInfinity)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点无效。");
+        var snapshot = playerSnapshot with
+        {
+            RespawnAtSeconds = double.IsFinite(playerRespawnAtSeconds) ? playerRespawnAtSeconds : null
+        };
+        return RestoreAllied(encounterId, seed, [player], [snapshot], 0, enemies, enemySnapshots,
+            elapsedSeconds, outcome, sequence, playerRespawnSeconds);
+    }
+
+    /// <summary>
+    /// 从持久化快照恢复一场多盟友遭遇战：盟友模板/快照顺序即共享剧本成员序，
+    /// 各成员的倒地复活截止点由各自快照字段回填（单人路径等价于仅玩家携带该字段）。
+    /// </summary>
+    public static CombatEncounterState RestoreAllied(
+        string encounterId,
+        long seed,
+        IReadOnlyList<CombatantTemplate> allies,
+        IReadOnlyList<CombatantSnapshot> allySnapshots,
+        int selfIndex,
+        IReadOnlyList<CombatantTemplate> enemies,
+        IReadOnlyList<CombatantSnapshot> enemySnapshots,
+        double elapsedSeconds,
+        CombatOutcome outcome,
+        double sequence = 0,
+        double playerRespawnSeconds = 0)
+    {
         // 恢复路径跳过开局决策：全部出手状态由快照逐字段回填，避免重复预扣灵力。
-        var encounter = Create(encounterId, seed, player, enemies, playerRespawnSeconds);
-        if (enemySnapshots is null || enemySnapshots.Count != enemies.Count
+        var encounter = CreateAllied(encounterId, seed, allies, selfIndex, enemies, playerRespawnSeconds);
+        if (allySnapshots is null || allySnapshots.Count != allies.Count
+            || enemySnapshots is null || enemySnapshots.Count != enemies.Count
             || !double.IsFinite(elapsedSeconds) || elapsedSeconds < 0
             || !double.IsFinite(sequence) || sequence < 0
-            || !Enum.IsDefined(outcome)
-            || (double.IsFinite(playerRespawnAtSeconds) && playerRespawnAtSeconds < elapsedSeconds))
+            || !Enum.IsDefined(outcome))
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗状态无效。");
-        ApplySnapshot(encounter.Player, playerSnapshot, player.Stats.MaxHitpoints, player.Stats.MaxManapoints);
+        for (var i = 0; i < allies.Count; i++)
+            ApplySnapshot(encounter.PlayerAllies[i], allySnapshots[i], allies[i].Stats.MaxHitpoints, allies[i].Stats.MaxManapoints);
         for (var i = 0; i < enemies.Count; i++)
             ApplySnapshot(encounter.Enemies[i], enemySnapshots[i], enemies[i].Stats.MaxHitpoints, enemies[i].Stats.MaxManapoints);
         encounter.ElapsedSeconds = elapsedSeconds;
         encounter.Outcome = outcome;
         encounter.Sequence = sequence;
-        encounter.PlayerRespawnAtSeconds = playerRespawnAtSeconds;
-        // 复活截止点只在倒地窗口内有意义：存活玩家携带该字段属于损坏快照。
-        if (double.IsFinite(playerRespawnAtSeconds) && encounter.Player.IsAlive)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点与生命状态不一致。");
-        var expectedOutcome = (encounter.Player.IsAlive, encounter.Enemies.Any(static e => e.IsAlive)) switch
+        // 复活截止点只在倒地窗口内有意义：存活单位携带该字段、或截止点早于当前时钟、
+        // 或遭遇禁止原地复活却携带截止点，均属损坏快照。
+        for (var i = 0; i < allies.Count; i++)
+        {
+            var respawnAt = encounter.PlayerAllies[i].RespawnAtSeconds;
+            if (double.IsFinite(respawnAt)
+                && (encounter.PlayerAllies[i].IsAlive || respawnAt < elapsedSeconds || playerRespawnSeconds <= 0))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点与生命状态不一致。");
+        }
+        var alliesAlive = !encounter.IsAllAlliesDowned;
+        var respawnPending = false;
+        for (var i = 0; i < allies.Count; i++)
+            respawnPending |= double.IsFinite(encounter.PlayerAllies[i].RespawnAtSeconds);
+        var expectedOutcome = (alliesAlive, encounter.Enemies.Any(static e => e.IsAlive)) switch
         {
             // 倒地等待原地复活不是终局：存活敌人或已被跳死全灭都保持 Running，起身后统一裁定。
-            (false, _) when double.IsFinite(playerRespawnAtSeconds) => CombatOutcome.Running,
+            (false, _) when respawnPending => CombatOutcome.Running,
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,
             (false, true) => CombatOutcome.EnemyWon,
@@ -531,7 +616,8 @@ public sealed class CombatEncounterState
         => new(state.Hitpoints, state.Manapoints, state.NextAttackAtSeconds, state.AttackCount,
             state.Threat, state.PendingSkillIndex, state.ThreatBonusPoints, state.BonusAbsorptionPoints,
             state.SkillCooldownUntil, state.SkillCastCount,
-            state.Buffs.Count == 0 ? null : state.Buffs.ToArray());
+            state.Buffs.Count == 0 ? null : state.Buffs.ToArray(),
+            double.IsFinite(state.RespawnAtSeconds) ? state.RespawnAtSeconds : null);
 
     private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
     {
@@ -544,6 +630,7 @@ public sealed class CombatEncounterState
             || !double.IsFinite(snapshot.BonusAbsorptionPoints)
             || snapshot.PendingSkillIndex < -1
             || !double.IsFinite(snapshot.SkillCastCount) || snapshot.SkillCastCount < 0
+            || (snapshot.RespawnAtSeconds is { } respawnAt && (!double.IsFinite(respawnAt) || respawnAt < 0))
             || (snapshot.SkillCooldownUntil is { } cooldowns
                 && (cooldowns.Count != state.Skills.Count || cooldowns.Any(value => !double.IsFinite(value) || value < 0)))
             || (snapshot.Buffs is { } buffs && buffs.Any(buff => buff is null || !buff.IsValid)))
@@ -560,6 +647,8 @@ public sealed class CombatEncounterState
             ? snapshot.PendingSkillIndex : -1;
         state.SkillCooldownUntil = snapshot.SkillCooldownUntil?.ToArray();
         state.SkillCastCount = snapshot.SkillCastCount;
+        // 倒地复活截止点随快照恢复（友方单位口径）；null 表示未倒地。
+        state.RespawnAtSeconds = snapshot.RespawnAtSeconds ?? double.PositiveInfinity;
         // 战内 Buff 随快照恢复：过期时刻是战斗时钟值，恢复后按原时刻到期，事件序列不漂移。
         state.Buffs.Clear();
         if (snapshot.Buffs is not null) state.Buffs.AddRange(snapshot.Buffs);
@@ -603,8 +692,10 @@ public sealed record CombatEvent(
 /// <param name="Outcome">切片结束时的战斗结局；未分出胜负为 Running。</param>
 /// <param name="Events">切片内按时间序的攻击/受创事件明细。</param>
 /// <param name="Sequence">切片序号，用于回放端校验切片连续性。</param>
-/// <param name="PlayerDeathTimestamps">本段内玩家阵亡的战斗时钟时刻（仅原地复活模式可多次出现）。</param>
-/// <param name="PlayerRespawnTimestamps">本段内玩家原地起身的战斗时钟时刻。</param>
+/// <param name="PlayerDeathTimestamps">本段内本机玩家阵亡的战斗时钟时刻（仅原地复活模式可多次出现）。</param>
+/// <param name="PlayerRespawnTimestamps">本段内本机玩家原地起身的战斗时钟时刻。</param>
+/// <param name="AllyDeathMarks">本段内非本机队友阵亡的（成员下标, 战斗时钟时刻）；单人恒为 null。</param>
+/// <param name="AllyRespawnMarks">本段内非本机队友原地起身的（成员下标, 战斗时钟时刻）；单人恒为 null。</param>
 public sealed record CombatAdvanceResult(
     string EncounterId,
     double FromSeconds,
@@ -613,7 +704,9 @@ public sealed record CombatAdvanceResult(
     IReadOnlyList<CombatEvent> Events,
     double Sequence,
     IReadOnlyList<double>? PlayerDeathTimestamps = null,
-    IReadOnlyList<double>? PlayerRespawnTimestamps = null);
+    IReadOnlyList<double>? PlayerRespawnTimestamps = null,
+    IReadOnlyList<(int MemberIndex, double AtSeconds)>? AllyDeathMarks = null,
+    IReadOnlyList<(int MemberIndex, double AtSeconds)>? AllyRespawnMarks = null);
 
 /// <summary>妖兽试炼远征阶段；状态会随行动队列一同持久化。</summary>
 public enum CombatExpeditionPhase : byte
@@ -642,6 +735,19 @@ public sealed record ExpeditionEnemyState(
     CombatantSnapshot State,
     string? PendingAbilityId = null,
     double PendingActionDurationSeconds = 0);
+
+/// <summary>远征波次中其他队伍成员的可持久化战斗快照：与本机成员共用同一 <see cref="CombatantSnapshot"/> 形态。</summary>
+/// <param name="MemberIndex">成员在共享剧本 Members 序列中的下标（决定盟友单位 ID ally:{i} 与出手次序）。</param>
+/// <param name="State">成员完整战斗快照（属性/吟唱/冷却/施放计数/倒地复活点）；搜索相位只承载气血/灵力镜像。</param>
+/// <param name="PendingAbilityId">正在吟唱的技能 ID（展示用；出手决策以 State.PendingSkillIndex 为准）。</param>
+/// <param name="PendingActionDurationSeconds">当前动作总时长秒数（吟唱时长或普攻间隔，展示用）。</param>
+/// <param name="CombatSkills">跨战技能状态（冷却/吟唱）——波间搜索相位按真实墙钟推进折算，与本机 Combat.Skills 同口径。</param>
+public sealed record ExpeditionAllyState(
+    int MemberIndex,
+    CombatantSnapshot State,
+    string? PendingAbilityId = null,
+    double PendingActionDurationSeconds = 0,
+    PlayerCombatSkillState? CombatSkills = null);
 
 /// <summary>
 /// 可持久化的妖兽试炼远征状态。
@@ -677,6 +783,26 @@ public sealed record CombatExpeditionState(
     /// 其余相位与存活状态必须为 null。倒地窗口内 Enemies 保持原波次阵容不拆场。
     /// </summary>
     public double? PlayerRespawnAtSeconds { get; init; }
+    /// <summary>
+    /// 遭遇供给模式：true 表示显式钉死（CreateEncounter 手动入战/服务入口），与地点无关、
+    /// 任何节点均可续跑；false 表示经节点遭遇池选出，迁地时按驻留节点池判定是否重锚。
+    /// 旧存档缺省为 false——历史远征皆出自节点池，天然按池选口径处理。
+    /// </summary>
+    public bool IsPinned { get; init; }
+    /// <summary>
+    /// 池选远征的产出节点，仅作诊断记录；旧存档缺省为 null，不影响重锚判定（以 IsPinned 为准）。
+    /// </summary>
+    public string? OriginNodeId { get; init; }
+    /// <summary>
+    /// 组队会话中本机成员在共享剧本 Members 序列中的下标（总纲 §21.13）；单人恒为 0。
+    /// </summary>
+    public int SelfIndex { get; init; }
+    /// <summary>
+    /// 其他队伍成员的战斗快照（组队会话全相位携带；单人恒为 null）。
+    /// Combat 相位承载完整战斗快照，波间搜索/复活相位退化为气血灵力 + 技能冷却镜像（跨波携带）。
+    /// 成员顺序按 MemberIndex 对应会话规格 Members 序列，本机成员仍由 PlayerState/Player* 镜像承载。
+    /// </summary>
+    public IReadOnlyList<ExpeditionAllyState>? Allies { get; init; }
 
     /// <summary>校验远征状态是否满足持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
@@ -697,21 +823,33 @@ public sealed record CombatExpeditionState(
             && enemy.State is not null && enemy.State.IsValid
             && double.IsFinite(enemy.PendingActionDurationSeconds) && enemy.PendingActionDurationSeconds >= 0)))
         && (PlayerState is null || PlayerState.IsValid)
+        && (Allies is null || (Allies.Count is >= 1 and <= 4 && Allies.All(ally => ally is not null
+            && ally.MemberIndex >= 0 && ally.MemberIndex <= 4 && ally.State is not null && ally.State.IsValid
+            && double.IsFinite(ally.PendingActionDurationSeconds) && ally.PendingActionDurationSeconds >= 0)
+            && Allies.Select(ally => ally.MemberIndex).Distinct().Count() == Allies.Count))
+        && SelfIndex >= 0 && SelfIndex <= 4
+        && (Allies is null || Allies.All(ally => ally.MemberIndex != SelfIndex))
+        && (OriginNodeId is null || (OriginNodeId.Length is > 0 and <= 128))
         // 复活截止点只存在于倒地窗口：必须落在当前战斗时钟之后；非 Combat 相位不得携带。
         && (PlayerRespawnAtSeconds is null || (double.IsFinite(PlayerRespawnAtSeconds.Value)
             && PlayerRespawnAtSeconds.Value > BattleElapsedSeconds - 1e-9 && Phase == CombatExpeditionPhase.Combat))
         && Phase switch
         {
             CombatExpeditionPhase.DuelPending => Outcome == CombatOutcome.Running
-                && (Enemies is null || Enemies.Count == 0) && Duel is null,
+                && (Enemies is null || Enemies.Count == 0) && Duel is null && Allies is null,
             CombatExpeditionPhase.Duel => Outcome == CombatOutcome.Running
                 && Duel is { } duel && duel.IsValid
-                && (Enemies is null || Enemies.Count == 0) && PhaseElapsedSeconds <= 1e-9,
+                && (Enemies is null || Enemies.Count == 0) && PhaseElapsedSeconds <= 1e-9 && Allies is null,
+            // 组队会话的盟友镜像跨相位携带（波间搜索/复活读条期间保留气血灵力与技能冷却镜像）；
+            // 仅斗法相位仍强制无盟友——组队行动不可斗法，两种相位天然互斥。
             CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search or CombatExpeditionPhase.Respawning
                 => Outcome == CombatOutcome.Running && (Enemies is null || Enemies.Count == 0) && Duel is null,
-            // Combat 相位允许玩家气血为 0：等价于倒地窗口存在（复活截止点非空），团灭即败遭遇不会留下该形态。
+            // Combat 相位允许玩家气血为 0：倒地窗口存在（复活截止点非空）、或队战中有盟友仍存活/待复活；
+            // 单人团灭即败遭遇不会留下该形态。
             _ => Enemies is { Count: > 0 } && PhaseElapsedSeconds <= 1e-9 && Duel is null
                 && PlayerState is { }
-                && (PlayerHitpoints > 1e-9 || PlayerRespawnAtSeconds is not null)
+                && (PlayerHitpoints > 1e-9 || PlayerRespawnAtSeconds is not null
+                    || (Allies is { } allies && allies.Any(ally =>
+                        ally.State.Hitpoints > 1e-9 || ally.State.RespawnAtSeconds is not null)))
         };
 }

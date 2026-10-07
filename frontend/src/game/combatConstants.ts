@@ -168,45 +168,62 @@ export const BASE_CRITICAL_DAMAGE_MULTIPLIER = 1.5
 // =========================================================================
 
 /**
- * 六维根基每级属性增益系数表（比例为每级叠加的百分比点数）。
+ * 六维根基每级属性增益系数表（每点同时提供固定值与百分比；与服务端 PlayerAttributeResolver 口径一致）。
  * 六维的名称、拼音、描述与增益文案属展示文本，统一走 i18n（insight.root.*），此处仅保留数值系数。
  */
 export const ROOT_ATTRIBUTES_CONFIG = {
   stamina: {
+    hpFlatPerLevel: 12,
     hpRatioPerLevel: 0.01,
+    armorFlatPerLevel: 1,
     armorRatioPerLevel: 0.01,
+    hpRegenFlatPerLevel: 1,
     hpRegenRatioPerLevel: 0.01,
   },
   meridians: {
+    mpFlatPerLevel: 7,
     mpRatioPerLevel: 0.01,
+    magicResFlatPerLevel: 1,
     magicResRatioPerLevel: 0.01,
+    mpRegenFlatPerLevel: 1,
     mpRegenRatioPerLevel: 0.01,
   },
   bone: {
+    hpFlatPerLevel: 12,
     hpRatioPerLevel: 0.01,
+    mpFlatPerLevel: 7,
     mpRatioPerLevel: 0.01,
+    parryFlatPerLevel: 1,
     parryRatioPerLevel: 0.01,
   },
   strength: {
+    physAtkFlatPerLevel: 1,
     physAtkRatioPerLevel: 0.01,
+    critFlatPerLevel: 1,
     critRatioPerLevel: 0.01,
+    breakFlatPerLevel: 1,
     breakRatioPerLevel: 0.01,
   },
   consciousness: {
+    spellAtkFlatPerLevel: 2,
     spellAtkRatioPerLevel: 0.02,
+    hitFlatPerLevel: 1,
     hitRatioPerLevel: 0.01,
   },
   agility: {
+    evasionFlatPerLevel: 1,
     evasionRatioPerLevel: 0.01,
+    critAvoidFlatPerLevel: 1,
     critAvoidRatioPerLevel: 0.01,
+    parryFlatPerLevel: 1,
     parryRatioPerLevel: 0.01,
   },
 } as const
 
 /**
- * 默认初始六维点数 (全 10 点/重)
+ * 初始六维点数（全 0 点/重，经验 0 起算）
  */
-export const DEFAULT_ROOT_ATTRIBUTE_POINTS = 10.0
+export const DEFAULT_ROOT_ATTRIBUTE_POINTS = 0.0
 
 /**
  * 普通攻击 (Basic Attack) 规则常数
@@ -247,7 +264,7 @@ export const BASELINE_COMBAT_ATTRIBUTES = {
 
 /**
  * 六维累计经验到等级换算方法（经验累加不清空）。
- * 每级累计所需经验 = 100 * (level ^ 3)。
+ * 每级累计所需经验 = 100 * (level ^ 3)，0 级起算（0 经验即 0 级）。
  * @param totalCumulativeExp 累计获得的总经验值
  * @returns 包含当前等级、本级当前进度经验、升至下一级所需经验的对象
  */
@@ -257,7 +274,7 @@ export function calculateRootLevelAndProgress(totalCumulativeExp: number): {
   levelRequirement: number
 } {
   const exp = Math.max(0.0, totalCumulativeExp)
-  let level = 1.0
+  let level = 0.0
   while (getCumulativeExpForLevel(level + 1.0) <= exp) {
     level += 1.0
   }
@@ -279,9 +296,7 @@ export function calculateRootLevelAndProgress(totalCumulativeExp: number): {
  * @param level 目标等级
  */
 export function getCumulativeExpForLevel(level: number): number {
-  if (level <= 1.0) return 0.0
-  const l = level - 1.0
-  return 100.0 * Math.pow(l, 3.0)
+  return 100.0 * Math.pow(Math.max(0.0, level), 3.0)
 }
 
 // 单位生命层次显示名走 i18n（combat.nearby.rankMonster/rankElite/rankBoss），此处仅保留数值倍率。

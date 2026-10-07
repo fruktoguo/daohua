@@ -134,7 +134,7 @@ public sealed class ActionReportTests
         var abilityId = new AbilityId("ability.test");
         player.LearnAbility(abilityId);
 
-        // 立方曲线：经验 100 → 2 级，产生一条 ability 升级记录。
+        // 功法曲线保持 1 基：经验 100 → 2 级（floor(cbrt(100/100))+1），产生一条 ability 升级记录。
         player.GrantAbilityExperience(abilityId, 100);
         var daily = player.Duel.DailyReport;
         Assert.Contains(daily.AbilityExp, entry => entry.AbilityId == "ability.test" && entry.Experience == 100);
@@ -151,7 +151,7 @@ public sealed class ActionReportTests
     [Fact]
     public void CombatPathRecordsEncountersKillsAndRootExp()
     {
-        // 高额六维奖励（20 万均分六维 ≈ 33333/维）足以把默认 10 级推到 11 级，触发 root 升级记录。
+        // 高额六维奖励（20 万全额入各维）足以把 0 级推到 12 级（cbrt(2000)≈12.6），触发 root 升级记录。
         var catalog = CreateCombatCatalog(experience: 200_000);
         var player = CreatePlayer("甲");
         var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
@@ -167,7 +167,7 @@ public sealed class ActionReportTests
         Assert.Equal(0, report.BossKills);
         Assert.Equal(0, report.Deaths);
         Assert.True(report.RootExp.Total > 0);
-        Assert.Contains(report.LevelUps, entry => entry.Kind == "root" && entry.ToLevel == 11);
+        Assert.Contains(report.LevelUps, entry => entry.Kind == "root" && entry.ToLevel == 12);
     }
 
     /// <summary>技能每次成功施放结算 1 点功法经验：装配分段与战报 AbilityExp 同步入账。</summary>
@@ -183,7 +183,7 @@ public sealed class ActionReportTests
         var player = CreatePlayer("甲");
         var abilityId = new AbilityId("ability.heavy-slash");
         player.LearnAbility(abilityId);
-        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.heavy-slash", 1, []);
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.heavy-slash", 1);
         var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
 
         // 单波内重斩（18s 冷却）至多施放一次：短时窗内恰好结算 1 点。

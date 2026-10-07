@@ -50,7 +50,7 @@ flowchart TD
 
 当前标准战斗节奏为：
 - `searchMilliseconds`：历练**首次搜寻**读条时长，默认 20000ms（20.0 秒）。首搜是防「反复启停行动刷场」的固定读条，**不吃寻敌速度成长乘区**，字段原样消费；
-- `respawnMilliseconds`：波次间**再搜寻**耗时，默认 5000ms（5.0 秒）。结算时乘以玩家寻敌速度成长乘区 `SearchDelayFactor = 1 - 0.5·x²`（x 为境界成长进度，曲线见 `CombatGrowthCurve.CastTimeFactor`，前期衰减趋近于零）；
+- `respawnMilliseconds`：波次间**再搜寻**耗时，默认 5000ms（5.0 秒）。结算时除以玩家行动速度点数 `×100/(100+行动速度点数)`（行动速度含境界保送成长点数，见 `CombatGrowthCurve`，满成长 5.0s→2.5s）；
 - `playerRespawnMilliseconds`：玩家方团灭后的复活读条时长，默认 180000ms（180 秒）。语义由 `onPartyWipe` 决定：`respawn` 时为战斗内原地起身读条，`defeat` 时为拆场复活点读条。玩家死亡不会完成当前波次，只有当前波怪物全灭才计入一次战斗通关；
 - `onPartyWipe`：团灭分流规则枚举，`"respawn"`（原地复活续战）或 `"defeat"`（团灭即败终局），缺省 `respawn`；规则细则见 [战斗规约 §7.9.4](../design/总纲/07-战斗数值与内视规约.md#794-团灭分流规约原地复活-vs-团灭即败)。
 
@@ -121,8 +121,8 @@ scripts/verify.sh
 ## 7. 斗法与击杀收益配表字段
 
 - `duel.json`（`id = duel.settings`）：`encounterChancePerBattle`（每次进入战斗计数 +1 概率）、`powerBandRatio`（实力匹配 ± 带宽）、`defeatCooldownSeconds`（败北冷却）、`stagedSettleSeconds`（暂存入账延迟）、`stagedBucketSeconds`（暂存批次量化桶长，入账时刻向上取整到桶尾）、`dropChanceBonusPercent`（斗法爆率加成点数）、`maxDuelSeconds`（剧本超时判平）、`maxBattleReports`（战报归档上限）。所有斗法数值以该配表为唯一真源，禁止代码内硬编码。
-- 怪物 `monsters/*.json`：击杀收益为单参数 `experience`（缺省 0）——同额经 `CreditExperience` 结算修为三池（`Experience`/`Foundation`/`CombatExperience`），并按六维归属均分入账六维经验。怪物**战斗经验不入配表**，按其 `level` 对应累计修为 `Σ expToNext[1..level-1]` 派生（`RealmProgressionCatalog.CumulativeExpFor(level)`，详见 [总纲第七篇 §7.7.6](../design/总纲/07-战斗数值与内视规约.md)）。
-- 功法 `abilities/*.json`：`rootAttribute` 声明六维归属（`stamina`/`intelligence`/`attack`/`defense`/`swordsmanship`/`talisman`）；击杀 `experience` 的六维分配仅由已装备内功（`discipline=internal`）的归属集合调整，未装备内功时六维严格均分（各得 1/6）。
+- 怪物 `monsters/*.json`：击杀收益为单参数 `experience`——同额经 `CreditExperience` 结算修为三池（`Experience`/`Foundation`/`CombatExperience`），归属维度各得全额入账六维经验（无内功总量 6×）。配表 `experience` 为显式覆盖项，缺省按 `level`+`rank` 派生 `expToNext[level]/1000 × 0.9^(level-1) × 层次倍率`（精英 3×、妖王 10×，`RealmProgressionCatalog.MonsterKillExperience`，详见 [总纲第七篇 §7.10.3](../design/总纲/07-战斗数值与内视规约.md)）。怪物**战斗经验不入配表**，按其 `level` 对应累计修为 `Σ expToNext[1..level-1]` 派生（`RealmProgressionCatalog.CumulativeExpFor(level)`，详见 [总纲第七篇 §7.7.6](../design/总纲/07-战斗数值与内视规约.md)）。
+- 功法 `abilities/*.json`：`discipline` 划分 `internal`（0 号内功位常驻被动心法）/`spell`（术法，缺省）；`rootAttribute` 声明六维归属（`stamina`/`meridians`/`attack`/`bone`/`agility`/`consciousness`），对内功仅为主修标识。击杀 `experience` 六维分配：未装内功六维各得全额（每维 `experience`，总量 6×）；装备内功按 `rootExpMultipliers` 乘率表逐维入账（`share_i = exp×mult_i×eff`，`eff = 1 + rootExpEfficiencyPerLevel×(参悟Lv−1)`，非守恒）；`cultivationExpBonusPoints` 调整修为类收益，`passive` 携带常驻面板效果（总纲第五篇 §5.3）。
 
 ---
 

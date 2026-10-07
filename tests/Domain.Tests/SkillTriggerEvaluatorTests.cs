@@ -232,7 +232,7 @@ public sealed class SkillTriggerEvaluatorTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "镜像", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
-        player.Loadout.AbilitySlots.Add(new("ability.heavy-slash", 1, []));
+        player.Loadout.AbilitySlots.Add(new("ability.heavy-slash", 1));
         var mirror = player.BuildDuelMirror(catalog);
         var slot = Assert.Single(mirror.Skills);
         // 装配缺省触发条件折叠为配表 defaultTriggers，与怪物槽位同构。
@@ -264,31 +264,33 @@ public sealed class SkillTriggerEvaluatorTests
     }
 
     /// <summary>
-    /// 成长乘区单点门禁：怪物配表属性与玩家属性解析必须走同一 CombatGrowthCurve 公式，
-    /// 任何一侧漂移（普攻倍率/吟唱乘区/冷却乘区/暴击倍率/技能强度）都会立即破防。
+    /// 成长点数单点门禁：怪物配表属性与玩家属性解析必须走同一 CombatGrowthCurve 公式，
+    /// 任何一侧漂移（攻速/行动速度/冷却缩减/普攻增幅/暴击伤害/技能增幅点数）都会立即破防。
     /// </summary>
     [Fact]
     public void PlayerAndMonsterShareTheSameGrowthCurve()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var spirit = catalog.CombatMonsters["enemy.wood-spirit"];
-        Assert.Equal(CombatGrowthCurve.CastTimeFactor(spirit.Level), spirit.Stats.CastTimeFactor, 12);
-        Assert.Equal(CombatGrowthCurve.CooldownFactor(spirit.Level), spirit.Stats.CooldownFactor, 12);
-        Assert.Equal(CombatGrowthCurve.BasicAttackRatio(spirit.Level), spirit.Stats.BasicAttackRatio, 12);
-        Assert.Equal(CombatGrowthCurve.CriticalMultiplier(spirit.Level), spirit.Stats.CriticalMultiplier, 12);
-        Assert.Equal(CombatGrowthCurve.SkillIntensity(catalog.BaseAttributes!.TierAt(spirit.Level)),
-            spirit.Stats.SkillIntensity, 12);
+        Assert.Equal(CombatGrowthCurve.ActionSpeedPoints(spirit.Level), spirit.Stats.ActionSpeedPoints, 12);
+        Assert.Equal(CombatGrowthCurve.AttackSpeedPoints(spirit.Level), spirit.Stats.AttackSpeedPoints, 12);
+        Assert.Equal(CombatGrowthCurve.CooldownReductionPoints(spirit.Level), spirit.Stats.CooldownReductionPoints, 12);
+        Assert.Equal(CombatGrowthCurve.BasicAttackBonusPoints(spirit.Level), spirit.Stats.BasicAttackBonusPoints, 12);
+        Assert.Equal(CombatGrowthCurve.CriticalDamagePoints(spirit.Level), spirit.Stats.CriticalDamagePoints, 12);
+        Assert.Equal(CombatGrowthCurve.SkillBonusPoints(catalog.BaseAttributes!.TierAt(spirit.Level)),
+            spirit.Stats.SkillBonusPoints, 12);
 
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "曲线", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
         PlayerAttributeResolver.Apply(player, catalog);
         var level = player.Progression.RealmLevel;
         var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0);
-        Assert.Equal(CombatGrowthCurve.CastTimeFactor(level), stats.CastTimeFactor, 12);
-        Assert.Equal(CombatGrowthCurve.CooldownFactor(level), stats.CooldownFactor, 12);
-        Assert.Equal(CombatGrowthCurve.BasicAttackRatio(level), stats.BasicAttackRatio, 12);
-        Assert.Equal(CombatGrowthCurve.CriticalMultiplier(level), stats.CriticalMultiplier, 12);
-        Assert.Equal(CombatGrowthCurve.SkillIntensity(catalog.BaseAttributes.TierAt(level)),
-            stats.SkillIntensity, 12);
+        Assert.Equal(CombatGrowthCurve.ActionSpeedPoints(level), stats.ActionSpeedPoints, 12);
+        Assert.Equal(CombatGrowthCurve.AttackSpeedPoints(level), stats.AttackSpeedPoints, 12);
+        Assert.Equal(CombatGrowthCurve.CooldownReductionPoints(level), stats.CooldownReductionPoints, 12);
+        Assert.Equal(CombatGrowthCurve.BasicAttackBonusPoints(level), stats.BasicAttackBonusPoints, 12);
+        Assert.Equal(CombatGrowthCurve.CriticalDamagePoints(level), stats.CriticalDamagePoints, 12);
+        Assert.Equal(CombatGrowthCurve.SkillBonusPoints(catalog.BaseAttributes.TierAt(level)),
+            stats.SkillBonusPoints, 12);
     }
 
     /// <summary>

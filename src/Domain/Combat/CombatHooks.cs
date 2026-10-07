@@ -69,7 +69,7 @@ public sealed class CombatHitContext
     public bool Parried { get; set; }
     /// <summary>最终结算伤害；落账前触发器可改写（护盾/上限/免死），引擎按非负夹取落账。</summary>
     public double Damage { get; set; }
-    /// <summary>减免链前原始威力（<c>AttackPower × BasicAttackRatio</c>，由核心结算填充）；
+    /// <summary>减免链前原始威力（普攻 <c>AttackPower ×(1+普攻增幅点数/100)</c>，技能取并入增幅后的出手威力，由核心结算填充）；
     /// 未命中时仍有值，触发器须以 <see cref="Hit"/> 决定生效。力微饭否类「减免前」口径读此字段。</summary>
     public double RawDamage { get; set; }
 

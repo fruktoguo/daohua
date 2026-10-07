@@ -64,8 +64,7 @@
         "level": 1,
         "triggerHpRatio": 0.5
       }
-    ],
-    "experience": 10
+    ]
   },
   {
     "id": "enemy.fallen-devil-priest",
@@ -132,8 +131,7 @@
         "level": 1,
         "triggerHpRatio": 0.6
       }
-    ],
-    "experience": 10
+    ]
   },
   {
     "id": "enemy.falling-star-beast",
@@ -229,7 +227,6 @@
         "level": 1,
         "triggerHpRatio": 0.3
       }
-    ],
-    "experience": 10
+    ]
   }
 ]

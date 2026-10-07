@@ -14,12 +14,7 @@ public sealed record PlayerAttributes(
     double Critical, double CriticalAvoidance, double BreakPower, double Parry,
     double HpRegen, double MpRegen, double AttackIntervalSeconds,
     double DamageAbsorptionPoints = 0,
-    double CriticalMultiplier = 1.5,
-    double SkillIntensity = 1,
-    double CooldownFactor = 1,
-    double CastTimeFactor = 1,
-    double BasicAttackRatio = 1,
-    double SearchDelayFactor = 1,
+    double CriticalDamagePoints = CombatGrowthCurve.CriticalDamageBasePoints,
     double ThreatBonusPoints = 0)
 {
     // ── 增减伤点数（Linear 增伤 / NonLinear 减伤）──
@@ -65,6 +60,8 @@ public sealed record PlayerAttributes(
     public double ActionSpeedPoints { get; init; }
     /// <summary>冷却缩减点数（NonLinear：缩短全部冷却）。</summary>
     public double CooldownReductionPoints { get; init; }
+    /// <summary>掉落增幅点数（Linear：队战共享掉率合计与单件归属权重；100 点 = 100%，总纲 §21.13）。</summary>
+    public double DropBonusPoints { get; init; }
 
     /// <summary>抗性缩放倍率（等于当前等阶 Tier）。</summary>
     public double ResistanceScale { get; init; } = 1;
@@ -85,14 +82,10 @@ public sealed record PlayerAttributes(
             MaxManapoints = MaxManapoints,
             HpRegen = HpRegen,
             MpRegen = MpRegen,
-            BasicAttackRatio = BasicAttackRatio,
-            SkillIntensity = SkillIntensity,
-            CastTimeFactor = CastTimeFactor,
-            CooldownFactor = CooldownFactor,
             DamageAbsorptionPoints = DamageAbsorptionPoints,
             ThreatBonusPoints = ThreatBonusPoints,
             MagicResistance = MagicResistance, Critical = Critical, CriticalResistance = CriticalAvoidance,
-            CriticalMultiplier = CriticalMultiplier,
+            CriticalDamagePoints = CriticalDamagePoints,
             BreakPower = BreakPower, ParryResolve = Parry, ResistanceScale = ResistanceScale,
             PhysicalDamageBonusPoints = PhysicalDamageBonusPoints,
             SpellDamageBonusPoints = SpellDamageBonusPoints,
@@ -184,9 +177,9 @@ public static class PlayerAttributeResolver
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
         // 点数通道汇总：装备 specialMechanics 全量点数键 + Buff 点数通道（100 点 = 100%）。
         double threat = 0, hpDrain = 0, mpDrain = 0, reflect = 0, healingBonus = 0;
-        double attackSpeed = 0, actionSpeed = 0, cooldownReduction = 0;
+        double attackSpeed = 0, actionSpeed = 0, cooldownReduction = 0, criticalDamage = 0;
         double physicalBonus = 0, spellBonus = 0, totalBonus = 0, basicAttackBonus = 0, skillBonus = 0;
-        double physicalReduction = 0, spellReduction = 0;
+        double physicalReduction = 0, spellReduction = 0, dropBonus = 0;
         double metalBonus = 0, woodBonus = 0, waterBonus = 0, fireBonus = 0, earthBonus = 0;
         double metalReduction = 0, woodReduction = 0, waterReduction = 0, fireReduction = 0, earthReduction = 0;
         foreach (var id in equipment)
@@ -194,8 +187,10 @@ public static class PlayerAttributeResolver
             if (!catalog.RawEquipments.TryGetValue(id.Value, out var item))
                 throw new DomainException(DomainErrorCode.NotFound, $"装备 {id} 不存在。");
             var enhancement = loadout.Equipment.FirstOrDefault(slot => slot.ItemId == id.Value)?.EnhancementLevel ?? 0;
-            Add(item, "flatStats", flat, 1 + enhancement * 0.02);
-            Add(item, "baseStatRatios", ratios, 1 + enhancement * 0.02);
+            // 强化总倍率 = 1.05^等级（总纲 §4.2 指数成长，+20 ≈ 2.653×）
+            var enhancementScale = Math.Pow(1.05, enhancement);
+            Add(item, "flatStats", flat, enhancementScale);
+            Add(item, "baseStatRatios", ratios, enhancementScale);
             if (item.TryGetProperty("specialMechanics", out var mechanics) && mechanics.ValueKind == JsonValueKind.Object)
             {
                 threat += ReadMechanic(mechanics, "threatBonusPoints");
@@ -207,6 +202,7 @@ public static class PlayerAttributeResolver
                 attackSpeed += ReadMechanic(mechanics, "attackSpeedPoints");
                 actionSpeed += ReadMechanic(mechanics, "actionSpeedPoints");
                 cooldownReduction += ReadMechanic(mechanics, "cooldownReductionPoints");
+                criticalDamage += ReadMechanic(mechanics, "criticalDamageBonusPoints");
                 physicalBonus += ReadMechanic(mechanics, "physicalDamageBonusPoints");
                 spellBonus += ReadMechanic(mechanics, "spellDamageBonusPoints");
                 totalBonus += ReadMechanic(mechanics, "totalDamageBonusPoints");
@@ -224,10 +220,26 @@ public static class PlayerAttributeResolver
                 waterReduction += ReadMechanic(mechanics, "waterDamageReductionPoints");
                 fireReduction += ReadMechanic(mechanics, "fireDamageReductionPoints");
                 earthReduction += ReadMechanic(mechanics, "earthDamageReductionPoints");
+                dropBonus += ReadMechanic(mechanics, "dropBonusPoints");
             }
         }
         var core = loadout.CoreAttributes;
-        double Root(string key) => key switch
+        // 六维每点同时提供固定值与百分比（总纲 §3.2.2/§7.5）：固定值并入基础池，百分比为独立乘区；
+        // 体魄/根骨每点 +12 生命、经脉/根骨每点 +7 灵力，其余映射属性每点 +1（神识术攻 +2）。
+        double RootFlat(string key) => key switch
+        {
+            "maxHitpoints" => (core.StaminaLevel + core.BoneLevel) * 12,
+            "maxManapoints" => (core.MeridiansLevel + core.BoneLevel) * 7,
+            "physicalArmor" or "hitpointRegen" => core.StaminaLevel,
+            "spellResistance" or "manapointRegen" => core.MeridiansLevel,
+            "physicalAttack" or "criticalChance" or "break" => core.AttackLevel,
+            "evasion" or "criticalAvoidance" => core.AgilityLevel,
+            "parry" => core.BoneLevel + core.AgilityLevel,
+            "spellAttack" => core.ConsciousnessLevel * 2,
+            "accuracy" => core.ConsciousnessLevel,
+            _ => 0
+        };
+        double RootRatio(string key) => key switch
         {
             "maxHitpoints" => (core.StaminaLevel + core.BoneLevel) * 0.01,
             "maxManapoints" => (core.MeridiansLevel + core.BoneLevel) * 0.01,
@@ -262,37 +274,33 @@ public static class PlayerAttributeResolver
                 foreach (var pair in buff.StatRatios)
                     buffRatios[pair.Key] = buffRatios.GetValueOrDefault(pair.Key) + pair.Value * buff.Stacks;
         }
-        // 四乘区：基础锚点 ×(1+六维%) +装备固定值 → ×(1+装备%) → ×(1+Buff%)，负向按比例软着陆。
+        // 属性管线：(基础锚点+六维固定值) ×(1+六维%) +装备固定值 → ×(1+装备%) → ×(1+Buff%)，负向按比例软着陆。
         double Stat(string key, double value) =>
-            (value * (1 + Root(key)) + flat.GetValueOrDefault(key))
+            ((value + RootFlat(key)) * (1 + RootRatio(key)) + flat.GetValueOrDefault(key))
             * SoftRatio(ratios.GetValueOrDefault(key))
             * SoftRatio(buffRatios.GetValueOrDefault(key));
         // 回复收口公式（总纲 §20.3）：(面板回复 + Σ固定加成) × (1 + Σ后段比率)。
         double hpRegen = (Stat("hitpointRegen", a.HpRegen) + hpRegenFlat) * (1 + hpRegenPost);
         double mpRegen = (Stat("manapointRegen", a.MpRegen) + mpRegenFlat) * (1 + mpRegenPost);
-        // 成长乘区与怪物同构：统一走 CombatGrowthCurve 单点实现。
-        var progress = CombatGrowthCurve.Progress(level);
+        // 境界成长保送点数与怪物同构：统一走 CombatGrowthCurve 单点实现，
+        // 折算为点数注入既有点数通道，与装备/Buff 点数同池相加（总纲 §7.7.5/§11.2.3.2）。
         var tier = catalog.BaseAttributes.TierAt(level);
-        var skillIntensity = CombatGrowthCurve.SkillIntensity(tier);
-        var cooldownFactor = CombatGrowthCurve.CooldownFactor(level);
-        var castTimeFactor = CombatGrowthCurve.CastTimeFactor(level);
+        attackSpeed += CombatGrowthCurve.AttackSpeedPoints(level);
+        actionSpeed += CombatGrowthCurve.ActionSpeedPoints(level);
+        cooldownReduction += CombatGrowthCurve.CooldownReductionPoints(level);
+        basicAttackBonus += CombatGrowthCurve.BasicAttackBonusPoints(level);
+        skillBonus += CombatGrowthCurve.SkillBonusPoints(tier);
+        criticalDamage += CombatGrowthCurve.CriticalDamagePoints(level);
         var physical = Stat("physicalAttack", a.Ad);
         var spell = Stat("spellAttack", a.Ap);
-        // 普攻基准读条 = 基准 1.0s × 成长曲线平方（行动速度+攻速双成长通道）；
-        // 攻击速度/行动速度点数由引擎在出手边界按 NonLinear 除数结算，不在此预折。
-        var interval = castTimeFactor * castTimeFactor;
-        var basicRatio = CombatGrowthCurve.BasicAttackRatio(level);
+        // 普攻基准读条恒为 1.0s：成长与装备点数由引擎在出手边界按 NonLinear 双除数结算，不在此预折。
+        const double interval = 1;
         return new(Stat("maxHitpoints", a.Hp), Stat("maxManapoints", a.Mp), physical,
             spell, Stat("physicalArmor", a.Armor), Stat("spellResistance", a.Mr),
             Stat("accuracy", a.Acc), Stat("evasion", a.Eva), Stat("criticalChance", a.Crit),
             Stat("criticalAvoidance", a.Cavoid), Stat("break", a.BreakPt), Stat("parry", a.Parry),
             hpRegen, mpRegen, interval, Math.Max(0, absorption),
-            CriticalMultiplier: CombatGrowthCurve.CriticalMultiplier(level),
-            SkillIntensity: skillIntensity,
-            CooldownFactor: cooldownFactor,
-            CastTimeFactor: castTimeFactor,
-            BasicAttackRatio: basicRatio,
-            SearchDelayFactor: castTimeFactor,
+            CriticalDamagePoints: criticalDamage,
             ThreatBonusPoints: threat)
         {
             PhysicalDamageBonusPoints = physicalBonus,
@@ -315,6 +323,7 @@ public static class PlayerAttributeResolver
             AttackSpeedPoints = attackSpeed,
             ActionSpeedPoints = actionSpeed,
             CooldownReductionPoints = cooldownReduction,
+            DropBonusPoints = dropBonus,
             ResistanceScale = tier,
             Traits = traits,
             Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect, healingBonus, threatOnTaken)

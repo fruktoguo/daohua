@@ -26,15 +26,15 @@
 
 星陨异境区域位于青云仙山**正东方**（全局坐标 `x+100, y-10` 偏移落位），由跨域边 `edge.gate-rift`（青云山门 → 裂天界隙，60s）连通：
 
-| 节点 ID | 节点名称 | 坐标 (x, y) |
-| --- | --- | --- |
-| `node.astral-rift` | 裂天界隙 | (115, 40) |
-| `node.carrion-tomb` | 腐生古冢 | (132, 65) |
-| `node.scorched-pines` | 畸木焦林 | (135, 15) |
-| `node.fluorite-abyss` | 荧石铜渊 | (160, 70) |
-| `node.blood-pool` | 冥煞血池 | (155, 35) |
-| `node.bone-pit` | 白骨荒坑 | (175, 55) |
-| `node.meteor-crater` | 坠星天坑 | (188, 25) |
+| 节点 ID | 节点名称 | 坐标 (x, y) | 生态遭遇（`encounterIds`） |
+| --- | --- | --- | --- |
+| `node.astral-rift` | 裂天界隙 | (115, 40) | `encounter.rift-edge` 界隙狼踪：裂齿妖狼主 + 星屑火鸦辅，入门猎场 |
+| `node.carrion-tomb` | 腐生古冢 | (132, 65) | `encounter.carrion-tomb` 古冢尸气：掠灵邪修（盗墓）+ 食腐火鸦，精英残刃尸煞每 6 波 |
+| `node.scorched-pines` | 畸木焦林 | (135, 15) | `encounter.charred-pines` 焦林鸦巢：星屑火鸦主 + 裂齿妖狼辅 |
+| `node.fluorite-abyss` | 荧石铜渊 | (160, 70) | `encounter.crimson-abyss` 铜渊灼穴：火鸦 + 盗矿邪修 + 妖狼混编 |
+| `node.blood-pool` | 冥煞血池 | (155, 35) | `encounter.blood-rite` 血池祭仪：掠灵邪修主 + 嗜血妖狼，精英坠魔祭司每 5 波 |
+| `node.bone-pit` | 白骨荒坑 | (175, 55) | `encounter.bone-pit` 白骨煞坑：收尸邪修 + 妖狼，精英残刃尸煞每 4 波（巢穴密度） |
+| `node.meteor-crater` | 坠星天坑 | (188, 25) | `encounter.twilight-valley` 坠星天坑：三怪混编，精英坠魔祭司每 5 波，领主坠星兽每 20 波 |
 
 地图节点提供行动入口和遭遇引用；怪物强度预算属于遭遇及怪物配置，不能把多个遭遇的预算伪造为节点的单一危险度。同一遭遇可跨节点复用，显示名相同不表示引用错误。行动地点许可与节点入口分别定义可执行范围和入口展示，不能仅凭列表不同认定配置错误。
 

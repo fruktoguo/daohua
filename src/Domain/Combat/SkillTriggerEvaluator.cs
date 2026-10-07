@@ -60,6 +60,7 @@ public static class SkillTriggerEvaluator
             JsonRead.Number(buffElement, "hpRegen"); JsonRead.Number(buffElement, "mpRegen");
             JsonRead.Number(buffElement, "attackSpeedPoints"); JsonRead.Number(buffElement, "damageAbsorptionPoints");
             JsonRead.Number(buffElement, "threatPoints"); JsonRead.Number(buffElement, "maxStacks");
+            JsonRead.Number(buffElement, "damageBonusPoints");
             if (duration <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 必须配置正持续时长。");
         }

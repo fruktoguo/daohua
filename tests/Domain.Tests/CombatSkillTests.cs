@@ -89,29 +89,122 @@ public sealed class CombatSkillTests
     }
 
     /// <summary>
-    /// 破阵子回归：无 effectType 的零伤害 Buff 技能必须走支援管线授予战内 Buff，
-    /// Buff 免伤按比率折点进入同一乘区并按战斗时钟到期。
+    /// 破阵子回归：全体友方授予 40% 总增伤 Buff（10s），与面板总增伤点数同 Linear 乘区；
+    /// Buff 期内普攻伤害按倍率放大，到期随战斗时钟移除、伤害回落。
     /// </summary>
     [Fact]
-    public void PozhenMelodyGrantsTimedAbsorptionBuffToAllAllies()
+    public void PozhenMelodyGrantsTimedDamageBonusBuffToAllAllies()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer(catalog);
-        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0) with { MaxManapoints = 1000 };
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0)
+            with { MaxManapoints = 1000, AttackIntervalSeconds = 1 };
         var ability = catalog.Abilities["ability.pozhen-melody"];
         var playerTemplate = new CombatantTemplate(stats with { MaxHitpoints = 10_000_000 }, [new SkillSlot(ability, 1)]);
-        var enemy = CombatantStats.Create(100000, 100, 0, 1);
+        var enemy = CombatantStats.Create(100_000_000, 0, 0, 100);
         var encounter = DeterministicCombatEngine.Start("buff", 13, playerTemplate, [new CombatantTemplate(enemy)]);
-        // 起手即吟唱破阵子（5s×CastTimeFactor）；完成时刻授予全体友方 Buff。
+        // 起手即吟唱破阵子（5s÷(1+行动速度点数/100)）；完成时刻授予全体友方 Buff。
         Assert.Equal(0, encounter.Player.PendingSkillIndex);
         Assert.Equal(1000 - 50, encounter.Player.Manapoints);
-        DeterministicCombatEngine.AdvanceTo(encounter, 5 * stats.CastTimeFactor + 1e-9);
+        var castDoneAt = 5 * PercentValue.Multiplier(stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+        DeterministicCombatEngine.AdvanceTo(encounter, castDoneAt + 1e-9);
         var buff = Assert.Single(encounter.Player.Buffs);
-        Assert.True(buff.DamageAbsorptionPoints > 0);
-        Assert.Equal(5 * stats.CastTimeFactor + 30, buff.ExpiresAtSeconds, 6);
-        // 到期后 Buff 移除：推进超过过期时刻后列表清空。
-        DeterministicCombatEngine.AdvanceTo(encounter, 5 * stats.CastTimeFactor + 31);
+        Assert.Equal(40, buff.DamageBonusPoints, 9);
+        Assert.Equal(0, buff.DamageAbsorptionPoints, 9);
+        Assert.Equal(castDoneAt + 10, buff.ExpiresAtSeconds, 6);
+
+        // Buff 期内普攻帧伤害 = 面板总增伤 + Buff 点数合并后的 Linear 乘区放大。
+        var inside = DeterministicCombatEngine.AdvanceTo(encounter, castDoneAt + 9).Events
+            .Where(e => e.AbilityId is null && e.AttackerId == "player"
+                && e.AtSeconds > castDoneAt && e.AtSeconds < castDoneAt + 10 && e.Damage > 0).ToList();
+        Assert.NotEmpty(inside);
+        var expectedRatio = PercentValue.Multiplier(stats.TotalDamageBonusPoints + 40, PercentCurveMode.Linear)
+            / PercentValue.Multiplier(stats.TotalDamageBonusPoints, PercentCurveMode.Linear);
+        // 到期后 Buff 移除、伤害回落：期内外普攻帧伤害比值恰为增伤乘区倍率。
+        var outside = DeterministicCombatEngine.AdvanceTo(encounter, castDoneAt + 12.5).Events
+            .Where(e => e.AbilityId is null && e.AttackerId == "player"
+                && e.AtSeconds > castDoneAt + 10.5 && e.Damage > 0).ToList();
         Assert.Empty(encounter.Player.Buffs);
+        Assert.NotEmpty(outside);
+        Assert.Equal(inside[0].Damage, outside[0].Damage * expectedRatio, 6);
+    }
+
+    /// <summary>
+    /// 贯星击杀连锁回归：主目标阵亡后按威胁轮盘贯穿下一存活敌方再结算一次完整伤害，
+    /// 至多追加 2 次——三敌全歼共 3 帧同刻同技能事件；目标未死或敌方不足时不连锁。
+    /// </summary>
+    [Fact]
+    public void StarPiercerChainsOnKillUpToTwoAdditionalTargets()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0)
+            with { MaxManapoints = 1000, AttackPower = 1_000_000, AttackIntervalSeconds = 100 };
+        var ability = catalog.Abilities["ability.star-piercer"];
+        var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
+        var fragile = CombatantStats.Create(10, 0, 0, 100);
+
+        // 三敌场：贯星 300%×1e6+50 一击必杀，连锁 2 次全歼，共 3 帧不同目标同刻事件。
+        var three = DeterministicCombatEngine.Start("chain", 5, playerTemplate,
+            [new CombatantTemplate(fragile), new CombatantTemplate(fragile), new CombatantTemplate(fragile)]);
+        var threeResult = DeterministicCombatEngine.AdvanceTo(three, 2.5);
+        var hits = threeResult.Events.Where(e => e.AbilityId == "ability.star-piercer" && e.Damage > 0).ToList();
+        Assert.Equal(3, hits.Count);
+        Assert.Equal(3, hits.Select(h => h.TargetId).Distinct().Count());
+        Assert.All(hits, h => Assert.Equal(2.0, h.AtSeconds, 6));
+        Assert.All(three.Enemies, e => Assert.False(e.IsAlive));
+
+        // 两敌场：连锁 1 次后无存活目标终止，共 2 帧。
+        var two = DeterministicCombatEngine.Start("chain", 5, playerTemplate,
+            [new CombatantTemplate(fragile), new CombatantTemplate(fragile)]);
+        var twoHits = DeterministicCombatEngine.AdvanceTo(two, 2.5).Events
+            .Where(e => e.AbilityId == "ability.star-piercer" && e.Damage > 0).ToList();
+        Assert.Equal(2, twoHits.Count);
+        Assert.Equal(2, twoHits.Select(h => h.TargetId).Distinct().Count());
+
+        // 未致死不连锁：敌方血量高于贯星伤害时仅主目标一帧。
+        var tanky = CombatantStats.Create(10_000_000, 0, 0, 100);
+        var sturdy = DeterministicCombatEngine.Start("chain", 5, playerTemplate,
+            [new CombatantTemplate(tanky), new CombatantTemplate(tanky)]);
+        var sturdyHits = DeterministicCombatEngine.AdvanceTo(sturdy, 2.5).Events
+            .Where(e => e.AbilityId == "ability.star-piercer" && e.Damage > 0).ToList();
+        Assert.Single(sturdyHits);
+        Assert.All(sturdy.Enemies, e => Assert.True(e.IsAlive));
+    }
+
+    /// <summary>
+    /// 连环多段打击回归：对同一目标逐段独立结算 3 次 80%AD+10，
+    /// 三帧同刻同目标同技能事件；目标中途死亡即终止剩余连段。
+    /// </summary>
+    [Fact]
+    public void ChainStrikeHitsSameTargetThreeTimesAndStopsOnKill()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0)
+            with { MaxManapoints = 1000, AttackIntervalSeconds = 100 };
+        var ability = catalog.Abilities["ability.chain-strike"];
+        var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
+
+        // 高血量目标：三段全部命中同一目标，帧刻相同、段间独立掷点。
+        var sturdy = CombatantStats.Create(10_000_000, 0, 0, 100);
+        var full = DeterministicCombatEngine.Start("multihit", 7, playerTemplate, [new CombatantTemplate(sturdy)]);
+        var fullHits = DeterministicCombatEngine.AdvanceTo(full, 1.5).Events
+            .Where(e => e.AbilityId == "ability.chain-strike").ToList();
+        Assert.Equal(3, fullHits.Count);
+        Assert.All(fullHits, h => Assert.Equal("enemy:0", h.TargetId));
+        Assert.All(fullHits, h => Assert.Equal(1.0, h.AtSeconds, 6));
+        Assert.All(fullHits, h => Assert.True(h.Hit && h.Damage > 0));
+
+        // 低血量目标：首段致死即终止，不再产生后续连段帧。
+        var fragile = CombatantStats.Create(10, 0, 0, 100);
+        var kills = DeterministicCombatEngine.Start("multihit", 7,
+            new CombatantTemplate(stats with { AttackPower = 1_000_000 }, [new SkillSlot(ability, 1)]),
+            [new CombatantTemplate(fragile), new CombatantTemplate(fragile)]);
+        var killHits = DeterministicCombatEngine.AdvanceTo(kills, 1.5).Events
+            .Where(e => e.AbilityId == "ability.chain-strike").ToList();
+        Assert.Single(killHits);
+        Assert.Equal(1, kills.Enemies.Count(e => !e.IsAlive)); // 只死目标一个，不转火
     }
 
     /// <summary>

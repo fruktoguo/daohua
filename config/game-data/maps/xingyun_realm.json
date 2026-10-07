@@ -15,7 +15,7 @@
           "combat.sweep-twilight-valley"
         ],
         "encounterIds": [
-          "encounter.twilight-valley"
+          "encounter.rift-edge"
         ],
         "buildings": [
           {
@@ -38,7 +38,7 @@
           "explore.gather-banling-flower"
         ],
         "encounterIds": [
-          "encounter.twilight-valley"
+          "encounter.carrion-tomb"
         ],
         "buildableTemplate": "all"
       },
@@ -52,7 +52,7 @@
           "explore.chop-yinlingsong"
         ],
         "encounterIds": [
-          "encounter.twilight-valley"
+          "encounter.charred-pines"
         ],
         "buildableTemplate": "all"
       },
@@ -66,7 +66,7 @@
           "explore.mine-crimson-copper"
         ],
         "encounterIds": [
-          "encounter.twilight-valley"
+          "encounter.crimson-abyss"
         ],
         "buildableTemplate": "all"
       },
@@ -81,7 +81,7 @@
           "combat.sweep-twilight-valley"
         ],
         "encounterIds": [
-          "encounter.twilight-valley"
+          "encounter.blood-rite"
         ],
         "buildings": [
           {
@@ -105,7 +105,7 @@
           "combat.sweep-twilight-valley"
         ],
         "encounterIds": [
-          "encounter.twilight-valley"
+          "encounter.bone-pit"
         ],
         "buildings": [
           {

@@ -7,7 +7,7 @@ namespace Domain.Tests;
 public sealed class CombatActionTimelineTests
 {
     /// <summary>
-    /// 木灵（术法系怪物）普攻与物理系完全同构：基准 1.0s ×(1-ATR)×(1-攻速成长)、
+    /// 木灵（术法系怪物）普攻与物理系完全同构：基准 1.0s ÷(1+攻速点数/100)÷(1+行动速度点数/100)、
     /// 100% 物理攻击力、物理伤害；掌心雷的 2 秒只属于技能吟唱，不得污染普攻间隔。
     /// </summary>
     [Fact]
@@ -17,10 +17,12 @@ public sealed class CombatActionTimelineTests
         var stats = catalog.CombatMonsters["enemy.wood-spirit"].Stats;
         var progress = Math.Pow(2d / 126d, 2);
         var actionFactor = 1 - 0.5 * progress;
-        Assert.Equal(actionFactor * actionFactor, stats.AttackIntervalSeconds, 9);
+        // 基准间隔恒为 1.0s，攻速/行动速度成长点在出手边界以 NonLinear 双除数生效（等效原双乘区）。
+        Assert.Equal(1, stats.AttackIntervalSeconds, 9);
         Assert.Equal(CombatDamageKind.Physical, stats.DamageKind);
-        Assert.Equal(1 + progress, stats.BasicAttackRatio, 9);
-        Assert.Equal(actionFactor, stats.CastTimeFactor, 9);
+        Assert.Equal(100 * progress, stats.BasicAttackBonusPoints, 9);
+        Assert.Equal(actionFactor, PercentValue.Multiplier(stats.ActionSpeedPoints, PercentCurveMode.NonLinear), 9);
+        Assert.Equal(actionFactor, PercentValue.Multiplier(stats.AttackSpeedPoints, PercentCurveMode.NonLinear), 9);
         Assert.True(stats.AttackPower > 0 && stats.SpellAttack > 0,
             "木灵普攻应走 AD，AP 仅保留给掌心雷结算。");
     }
@@ -40,7 +42,10 @@ public sealed class CombatActionTimelineTests
         var spiritStats = spirit.Stats with { MaxManapoints = 17 };
         var state = DeterministicCombatEngine.Start("timeline", 7, player,
             [new CombatantTemplate(spiritStats, spirit.Skills)]);
-        var castSeconds = 2 * spirit.Stats.CastTimeFactor;
+        var castSeconds = 2 * PercentValue.Multiplier(spiritStats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+        var basicInterval = spiritStats.AttackIntervalSeconds
+            * PercentValue.Multiplier(spiritStats.AttackSpeedPoints, PercentCurveMode.NonLinear)
+            * PercentValue.Multiplier(spiritStats.ActionSpeedPoints, PercentCurveMode.NonLinear);
         var result = DeterministicCombatEngine.AdvanceTo(state, 30);
         var enemyEvents = result.Events.Where(item => item.AttackerId == "enemy:0").ToArray();
         var casts = enemyEvents.Where(item => item.AbilityId == "ability.palm-lightning").ToArray();
@@ -49,7 +54,7 @@ public sealed class CombatActionTimelineTests
         // 单时间线：任意相邻两次敌方出手的间隔不小于当次动作时长（普攻间隔或吟唱时长）。
         for (var i = 1; i < enemyEvents.Length; i++)
             Assert.True(enemyEvents[i].AtSeconds - enemyEvents[i - 1].AtSeconds >=
-                Math.Min(state.Enemies[0].Stats.AttackIntervalSeconds, castSeconds) - 1e-9,
+                Math.Min(basicInterval, castSeconds) - 1e-9,
                 "吟唱期间不得并行普通攻击。");
         // 灵力耗尽后回落普攻：事件序列尾部出现无技能 ID 的物理普攻。
         Assert.Contains(enemyEvents, item => item.AbilityId is null && item.DamageKind == CombatDamageKind.Physical);
@@ -58,7 +63,7 @@ public sealed class CombatActionTimelineTests
     }
 
     /// <summary>
-    /// 吟唱时长只受行动速度影响：普攻间隔（攻击速度乘区）不同而 CastTimeFactor 相同的单位，
+    /// 吟唱时长只受行动速度影响：普攻间隔（攻击速度通道）不同而行动速度点数相同的单位，
     /// 掌心雷完成时刻完全一致。
     /// </summary>
     [Fact]
@@ -70,7 +75,7 @@ public sealed class CombatActionTimelineTests
         var player = CombatantStats.Create(1_000_000, 30, 0, 1);
         CombatantStats Caster(double interval) => CombatantStats.Create(1000, 20, 0, interval) with
         {
-            SpellAttack = 40, MaxManapoints = 100, CastTimeFactor = 0.8
+            SpellAttack = 40, MaxManapoints = 100, ActionSpeedPoints = 25
         };
         var slow = DeterministicCombatEngine.Start("cast-slow", 3, player, [new CombatantTemplate(Caster(2.5), [slot])]);
         var fast = DeterministicCombatEngine.Start("cast-fast", 3, player, [new CombatantTemplate(Caster(0.4), [slot])]);
@@ -78,7 +83,7 @@ public sealed class CombatActionTimelineTests
             .Single(item => item.AttackerId == "enemy:0" && item.AbilityId is not null);
         var fastCast = DeterministicCombatEngine.AdvanceTo(fast, 1.61).Events
             .Single(item => item.AttackerId == "enemy:0" && item.AbilityId is not null);
-        // 吟唱 2s × CastTimeFactor 0.8 = 1.6s 完成，与普攻间隔无关。
+        // 吟唱 2s ÷(1+25/100) = 1.6s 完成，与普攻间隔无关。
         Assert.Equal(1.6, slowCast.AtSeconds, 9);
         Assert.Equal(1.6, fastCast.AtSeconds, 9);
     }

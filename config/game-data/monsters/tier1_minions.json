@@ -21,8 +21,7 @@
         "minQuantity": 1,
         "maxQuantity": 1
       }
-    ],
-    "experience": 10
+    ]
   },
   {
     "id": "enemy.wood-spirit",
@@ -74,8 +73,7 @@
     ],
     "modifiers": {
       "woodDamageReductionPoints": 10.8
-    },
-    "experience": 10
+    }
   },
   {
     "id": "enemy.fire-spirit",
@@ -127,7 +125,6 @@
     ],
     "modifiers": {
       "fireDamageReductionPoints": 13.0
-    },
-    "experience": 10
+    }
   }
 ]

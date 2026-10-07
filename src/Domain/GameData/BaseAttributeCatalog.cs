@@ -42,6 +42,34 @@ public sealed class BaseAttributeCatalog
             ?? throw new DomainException(DomainErrorCode.InvalidArgument, "基础属性配置无效。"));
     }
 
+    /// <summary>
+    /// 从 expected-attributes.json 的 `tiers[].finalExpected` 解析期望玩家面板锚点目录（四乘区完全体）。
+    /// 怪物同构建模以此面板为底座（总纲 §7.3/§10.1），而非裸 `baseAttributeAnchors`；
+    /// 期望面板不建模回复列，HpRegen/MpRegen 置 0（怪物面板不消费回复属性）。
+    /// </summary>
+    /// <param name="tiers">expected-attributes 的 tiers 数组 JSON。</param>
+    /// <returns>按等阶锚点等级排列的期望属性目录。</returns>
+    public static BaseAttributeCatalog ParseExpected(JsonElement tiers)
+    {
+        var anchors = new List<BaseAttributeAnchor>();
+        foreach (var tier in tiers.EnumerateArray())
+        {
+            if (tier.ValueKind != JsonValueKind.Object
+                || !tier.TryGetProperty("finalExpected", out var expected) || expected.ValueKind != JsonValueKind.Object)
+                continue;
+            double Field(string key) => JsonRead.Number(expected, key, 0);
+            anchors.Add(new BaseAttributeAnchor(
+                JsonRead.Number(tier, "level", 0),
+                Field("maxHitpoints"), Field("maxManapoints"),
+                Field("physicalAttack"), Field("magicAttack"),
+                Field("armor"), Field("magicResistance"),
+                Field("accuracyRating"), Field("evasionRating"),
+                Field("criticalRating"), Field("criticalAvoidance"),
+                Field("breakRating"), Field("parryRating"), 0, 0));
+        }
+        return new BaseAttributeCatalog(anchors);
+    }
+
     /// <summary>按等级在相邻锚点间线性插值；越界时钳制到端点锚点。</summary>
     /// <param name="level">目标境界等级。</param>
     /// <returns>插值后的属性基准（Level 字段为目标等级）。</returns>
@@ -99,6 +127,18 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
         var total = 0d;
         for (var i = 0; i < count; i++) total += ExpToNext[i];
         return total;
+    }
+
+    /// <summary>
+    /// 怪物击杀修为奖励派生（总纲 §7.10.3）：expToNext[level] / 1000 × 0.9^(level-1) × 层次倍率
+    /// （小怪 1×/精英 3×/妖王 10×）。份额以 Lv1 = 1/1000 为基准每级指数衰减 10% 渐近 0；
+    /// 等级超出配表上界时按末档非零修为条派生。配表 experience 显式声明时覆盖本值。
+    /// </summary>
+    public double MonsterKillExperience(int level, CombatMonsterRank rank)
+    {
+        var capLevel = Math.Clamp(level, 1, Math.Max(1, ExpToNext.Count - 1));
+        var multiplier = rank switch { CombatMonsterRank.Elite => 3d, CombatMonsterRank.Boss => 10d, _ => 1d };
+        return ExpCapFor(capLevel) / 1000d * Math.Pow(0.9, Math.Max(1, level) - 1) * multiplier;
     }
 
     /// <summary>等阶对应寿元上限（年）；越界取末档。</summary>

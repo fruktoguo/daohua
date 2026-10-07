@@ -11,7 +11,7 @@ namespace Domain.Combat;
 /// 单时间线出手语义：出手边界先结算待完成动作，再按槽位顺序挑选首个可用技能进入吟唱
 /// （吟唱占用动作时长，仅吃行动速度 ATR），无可用技能时回落普通攻击；
 /// 技能施放后按 cooldownMilliseconds 进入冷却循环，槽位顺序即优先级（0CD 填充技应放末尾）。
-/// 触发条件解析顺序：槽位 triggers → 配表 defaultTriggers → 空表（恒可用）；
+/// 触发条件解析顺序：玩家按功法 ID 配置的自定义条件 → 配表 defaultTriggers → 空表（恒可用）；
 /// 怪物配表的 triggerHpRatio 在解析期折叠为等价触发器（self current-hp-percentage ≤ 阈值）。
 /// </summary>
 public sealed record SkillSlot(JsonElement Ability, double Level = 1, IReadOnlyList<JsonElement>? Triggers = null)
@@ -32,16 +32,22 @@ public sealed record SkillSlot(JsonElement Ability, double Level = 1, IReadOnlyL
     /// <summary>由玩家装配槽位构建通用技能槽：触发条件缺省回退配表 defaultTriggers。</summary>
     /// <param name="slots">玩家装配槽位列表（空槽跳过）。</param>
     /// <param name="abilities">全局功法配表。</param>
+    /// <param name="abilityTriggers">按功法 ID 挂接的自定义触发条件 map；键命中且非空时覆盖配表默认值。</param>
     /// <returns>按装配顺序排列的通用技能槽。</returns>
     internal static List<SkillSlot> FromAbilitySlots(IReadOnlyList<PlayerAbilitySlot> slots,
-        IReadOnlyDictionary<string, JsonElement> abilities)
+        IReadOnlyDictionary<string, JsonElement> abilities,
+        IReadOnlyDictionary<string, JsonElement[]>? abilityTriggers = null)
     {
         var skills = new List<SkillSlot>();
         foreach (var slot in slots)
         {
             if (slot.AbilityId is null || !abilities.TryGetValue(slot.AbilityId, out var ability)) continue;
-            skills.Add(new SkillSlot(ability.Clone(), slot.Level,
-                slot.Triggers.Count > 0 ? slot.Triggers.Select(trigger => trigger.Clone()).ToArray() : null));
+            var triggers = abilityTriggers is not null
+                && abilityTriggers.TryGetValue(slot.AbilityId, out var custom)
+                && custom.Length > 0
+                ? custom.Select(trigger => trigger.Clone()).ToArray()
+                : null;
+            skills.Add(new SkillSlot(ability.Clone(), slot.Level, triggers));
         }
         return skills;
     }

@@ -20,7 +20,7 @@
   {
     "id": "combat.sweep-twilight-valley",
     "name": "讨伐 星陨异境",
-    "description": "深入星陨异境搜寻妖兽踪迹，迎战妖狼、火鸦与变异尸煞。",
+    "description": "深入星陨异境搜寻妖兽踪迹——界隙狼群、焦林火鸦、血池邪修、荒坑尸煞，各险地盘踞不同妖物。",
     "type": "combat",
     "durationSeconds": 0,
     "executionKind": "combatEncounter",

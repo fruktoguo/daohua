@@ -208,4 +208,26 @@ public sealed class ProgressionPoolTests
         Assert.True(accA is >= 50 and <= 100 && evaA is >= 80 and <= 160);
         Assert.True(double.IsFinite(accA) && double.IsFinite(evaA));
     }
+
+    // ── 怪物击杀奖励派生（总纲 §7.10.3）──
+
+    /// <summary>expToNext[level]/1000×0.9^(level-1)×层次倍率：Lv1 基准 1/1000，精英 3×、妖王 10×。</summary>
+    [Fact]
+    public void MonsterKillExperience_DerivesFromCurveAndRank()
+    {
+        var realm = new RealmProgressionCatalog([10_000, 20_000, 30_000, 0], [80]);
+        Assert.Equal(10, realm.MonsterKillExperience(1, CombatMonsterRank.Minion), 6);
+        Assert.Equal(18, realm.MonsterKillExperience(2, CombatMonsterRank.Minion), 6);
+        Assert.Equal(72.9, realm.MonsterKillExperience(3, CombatMonsterRank.Elite), 6);
+        Assert.Equal(243, realm.MonsterKillExperience(3, CombatMonsterRank.Boss), 6);
+    }
+
+    /// <summary>等级超出配表上界（末档 expToNext=0 的满级段）时按末档非零修为条派生，衰减仍按真实等级。</summary>
+    [Fact]
+    public void MonsterKillExperience_BeyondCap_UsesLastNonZeroCap()
+    {
+        var realm = new RealmProgressionCatalog([10_000, 20_000, 30_000, 0], [80]);
+        // Lv4 配表已满级：钳到 expToNext[3]=30000，衰减 0.9^3=0.729 → 21.87。
+        Assert.Equal(21.87, realm.MonsterKillExperience(4, CombatMonsterRank.Minion), 3);
+    }
 }

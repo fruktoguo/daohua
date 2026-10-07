@@ -1,7 +1,7 @@
 import { memo, type ReactNode, useCallback } from 'react'
 import { describeAbility, formatAbilityCategory, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition, MonsterDropDefinition } from '../game/types'
@@ -46,6 +46,8 @@ export interface ItemTileProps {
   bottomRightLabel?: ReactNode
   /** 物品品类名称（展示在左上角丝带 Ribbon） */
   category: string
+  /** 装备强化等级：>0 时左下角显示 "+N" 徽标，+0 不显示 */
+  enhancementLevel?: number
   /** 外部样式类名 */
   className: string
   /** 物品唯一 ID：命中图标资源时整块瓦片改用图片渲染，未命中则回退为文本名称 */
@@ -118,6 +120,7 @@ function ItemTooltipCardContent({
   const t = useT()
   const itemCatalog = useGameStore((state) => state.items)
   const equipmentCatalog = useGameStore((state) => state.equipment)
+  const abilityCatalog = useGameStore((state) => state.abilities)
 
   const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
   const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
@@ -158,6 +161,7 @@ function ItemTooltipCardContent({
   const effectLines = [
     ...describeItemEffects(itemDef),
     ...describeEquipmentEffects(eqDef, enhancementLevel),
+    ...describeManualEffects(itemId, abilityCatalog),
   ]
 
   const stats: { label: string; value: ReactNode; tone?: FloatingTone }[] = [
@@ -183,7 +187,7 @@ function ItemTooltipCardContent({
       description={metadata.description}
       lines={effectLines}
       stats={stats}
-      title={metadata.label}
+      title={enhancementLevel > 0 ? `${metadata.label} +${enhancementLevel}` : metadata.label}
       titleIcon={resolveItemIconUrl(itemId)}
     />
   )
@@ -395,6 +399,53 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
     )
   }
   return lines
+}
+
+/**
+ * 功法秘籍/残卷的研读提示行：完本可修习对应功法，残卷须先习得后研读，两者均产出功法经验。
+ * 功法名由物品 ID 后缀（item.tome|fragment.<slug> → ability.<slug>）在功法目录中解析。
+ */
+function describeManualEffects(
+  itemId: string,
+  abilities: readonly CombatAbilityDefinition[],
+): ReactNode[] {
+  const isTome = itemId.startsWith('item.tome.')
+  const isFragment = itemId.startsWith('item.fragment.')
+  if (!isTome && !isFragment) return []
+  const t = getT()
+  const slug = itemId.slice(isTome ? 'item.tome.'.length : 'item.fragment.'.length)
+  const abilityName = findAbilityInCatalog(abilities, `ability.${slug}`)?.name ?? slug
+  const bookTitle = `《${abilityName}》`
+  if (isTome) {
+    return [
+      <PillBonusLabel
+        key="manual-learn"
+        label={t('market.effect.manualLearn')}
+        tone="gold"
+        value={bookTitle}
+      />,
+      <PillBonusLabel
+        key="manual-exp"
+        label={t('market.effect.manualTomeExp')}
+        tone="emerald"
+        value={t('market.effect.manualExpValue', { n: formatNumber(10_000) })}
+      />,
+    ]
+  }
+  return [
+    <PillBonusLabel
+      key="manual-require"
+      label={t('market.effect.manualRequire')}
+      tone="crimson"
+      value={t('market.effect.manualRequireValue', { name: bookTitle })}
+    />,
+    <PillBonusLabel
+      key="manual-exp"
+      label={t('market.effect.manualFragmentExp')}
+      tone="emerald"
+      value={t('market.effect.manualExpValue', { n: formatNumber(500) })}
+    />,
+  ]
 }
 
 /** statRatios 通用属性比率字典 key -> i18n 词条键；未登记的新属性回退原始 wire key */
@@ -787,9 +838,9 @@ function describeEquipmentEffects(
   }
 
   // 装备数值唯一真源为配表原始数值块（baseStatRatios/flatStats），协议不再下发派生 stats 幻影块。
-  // 强化结算口径与服务端 PlayerAttributeResolver 一致：两段基础属性同乘 (1 + 0.02 × 强化等级)，
+  // 强化结算口径与服务端 PlayerAttributeResolver 一致：两段基础属性同乘 1.05^强化等级（指数成长），
   // 悬浮卡直接显示结算后真实值（战斗属性展示约定为下取整，不出现小数）。
-  const enhanceScale = 1 + enhancementLevel * 0.02
+  const enhanceScale = Math.pow(1.05, enhancementLevel)
   if (equipment.baseStatRatios) {
     for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
       if (val !== 0) {
@@ -858,6 +909,7 @@ export function resolveEquipmentAsideCards(
     attackSpeedPoints: { label: 'market.stat.attackSpeed', curve: 'rate' },
     actionSpeedPoints: { label: 'market.stat.actionSpeed', curve: 'rate' },
     cooldownReductionPoints: { label: 'market.stat.cooldownReduction', curve: 'rate' },
+    criticalDamageBonusPoints: { label: 'market.stat.criticalDamage', curve: 'linear' },
     threatBonusPoints: { label: 'market.effect.threatBonus', curve: 'linear' },
     hpDrainPoints: { label: 'market.stat.hpDrain', curve: 'linear' },
     mpDrainPoints: { label: 'market.stat.mpDrain', curve: 'linear' },
@@ -927,7 +979,7 @@ export function createBuffAsideCard(
 /**
  * 物品标准卡片瓦片组件 (ItemTile)
  *
- * 紧凑的修仙网格方块：左上角品类丝带、右上角等阶 Lv、中间名称与右下角拥有数量。
+ * 紧凑的修仙网格方块：左上角品类丝带、右上角等阶 Lv、左下角强化 +N（仅强化装备）、中间名称与右下角拥有数量。
  * 若该物品 ID 已配备图标资源，中间的文本名称会被图标整块替换；未配备时保持文本渲染。
  */
 export function ItemTile({
@@ -935,6 +987,7 @@ export function ItemTile({
   bottomRightLabel,
   category,
   className,
+  enhancementLevel = 0,
   itemId,
   level,
   name,
@@ -956,6 +1009,9 @@ export function ItemTile({
       {iconUrl
         ? <img alt={name} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
         : <strong className="item-tile-name">{name}</strong>}
+      {enhancementLevel > 0 && (
+        <span className="item-corner item-corner--bottom-left">+{Math.floor(enhancementLevel)}</span>
+      )}
       {bottomRight !== null && <span className="item-corner item-corner--bottom-right">{bottomRight}</span>}
       {/* hover 辉光叠加层：常驻 opacity:0，hover 时只动画 opacity（合成器线程），
           替代原先逐帧重绘瓦片的 box-shadow 过渡（见 selection-grid.css） */}
@@ -994,6 +1050,7 @@ export function ItemCard({ item, definition, equipmentDefinition }: { item: Inve
         amount={item.amount}
         category={resolveItemCategoryLabel(resolveItemSubCategory(item.itemId, definition, equipmentDefinition, item.subCategory), t)}
         className="inventory-cell"
+        enhancementLevel={enhancementLevel}
         itemId={item.itemId}
         level={metadata.level}
         name={displayName}

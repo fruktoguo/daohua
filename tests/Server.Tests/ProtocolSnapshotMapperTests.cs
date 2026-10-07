@@ -231,7 +231,7 @@ public sealed class ProtocolAttributesPointsTests
         Assert.Equal(attributes.CriticalAvoidance, root.GetProperty("criticalResistance").GetDouble());
         Assert.Equal(attributes.DamageAbsorptionPoints, root.GetProperty("damageAbsorptionPoints").GetDouble());
         Assert.Equal(attributes.AttackSpeedPoints, root.GetProperty("attackSpeedPoints").GetDouble());
-        Assert.Equal(attributes.CriticalMultiplier, root.GetProperty("criticalMultiplier").GetDouble());
+        Assert.Equal(attributes.CriticalDamagePoints, root.GetProperty("criticalDamagePoints").GetDouble());
         // 增减伤 16 项全字段在场（点数）。
         foreach (var key in new[]
         {

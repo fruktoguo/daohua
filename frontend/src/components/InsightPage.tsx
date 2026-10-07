@@ -32,7 +32,7 @@ type RootsSubTab = 'sixDimensions' | 'baseAttributes'
  * 体系与交互结构：
  * 1. 头部修仙境界展示：当前大境界/境界阶段/小境界 (RealmBadge)、所在地灵气倍率、修为突破进度条与一键突破按钮；
  * 2. 根基 Tab (roots)：
- *    - 六维根基 (sixDimensions)：体魄、经脉、根骨、力道、神识、身法等级与属性百分比加成；
+ *    - 六维根基 (sixDimensions)：体魄、经脉、根骨、力道、神识、身法等级与属性固定值加成；
  *    - 基础属性 (baseAttributes)：展示当前境界的基础属性底座数值 (Base Pool)；
  * 3. 底蕴 Tab (foundation)：道行底蕴与战斗历练值纯净展示；
  * 4. 斗法 Tab (combat)：展示攻防、博弈对抗 (命中/闪避/暴击/化解)、时序与五行增免伤等全量乘区，以及运转中的丹药与神通 Buff；
@@ -58,12 +58,12 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
   // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
   const dimensions = useMemo(() => {
-    const staminaLevel = Math.floor(Math.max(10, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 体魄 10
-    const meridiansLevel = Math.floor(Math.max(10, loadout?.meridiansLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 经脉 10
-    const boneLevel = Math.floor(Math.max(10, loadout?.boneLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 根骨 10
-    const strengthLevel = Math.floor(Math.max(10, loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 力道 10
-    const consciousnessLevel = Math.floor(Math.max(10, loadout?.consciousnessLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识 10
-    const agilityLevel = Math.floor(Math.max(10, loadout?.agilityLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法 10
+    const staminaLevel = Math.floor(Math.max(0, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 体魄
+    const meridiansLevel = Math.floor(Math.max(0, loadout?.meridiansLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 经脉
+    const boneLevel = Math.floor(Math.max(0, loadout?.boneLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 根骨
+    const strengthLevel = Math.floor(Math.max(0, loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 力道
+    const consciousnessLevel = Math.floor(Math.max(0, loadout?.consciousnessLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识
+    const agilityLevel = Math.floor(Math.max(0, loadout?.agilityLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法
 
     // 格式化经验进度：升级所需经验 = 下一级累计经验 - 当前级累计经验；
     // 当前经验 = loadout 下发的真实六维经验 - 当前级累计经验（缺省按 0 处理）。
@@ -86,9 +86,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: staminaLevel,
         progress: getProgress(staminaLevel, loadout?.staminaExp),
         bonuses: [
-          { value: `+${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
-          { value: `+${Math.floor(staminaLevel)}%`, tone: 'bronze' as PillTone },
-          { value: `+${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
+          { value: `+${Math.floor(staminaLevel * 12)} +${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
+          { value: `+${Math.floor(staminaLevel)} +${Math.floor(staminaLevel)}%`, tone: 'bronze' as PillTone },
+          { value: `+${Math.floor(staminaLevel)} +${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
         ],
       },
       {
@@ -97,9 +97,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: meridiansLevel,
         progress: getProgress(meridiansLevel, loadout?.meridiansExp),
         bonuses: [
-          { value: `+${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
-          { value: `+${Math.floor(meridiansLevel)}%`, tone: 'violet' as PillTone },
-          { value: `+${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
+          { value: `+${Math.floor(meridiansLevel * 7)} +${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
+          { value: `+${Math.floor(meridiansLevel)} +${Math.floor(meridiansLevel)}%`, tone: 'violet' as PillTone },
+          { value: `+${Math.floor(meridiansLevel)} +${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
         ],
       },
       {
@@ -108,9 +108,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: boneLevel,
         progress: getProgress(boneLevel, loadout?.boneExp),
         bonuses: [
-          { value: `+${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
-          { value: `+${Math.floor(boneLevel)}%`, tone: 'silver' as PillTone },
-          { value: `+${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
+          { value: `+${Math.floor(boneLevel * 12)} +${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
+          { value: `+${Math.floor(boneLevel * 7)} +${Math.floor(boneLevel)}%`, tone: 'silver' as PillTone },
+          { value: `+${Math.floor(boneLevel)} +${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
         ],
       },
       {
@@ -119,9 +119,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: strengthLevel,
         progress: getProgress(strengthLevel, loadout?.attackExp),
         bonuses: [
-          { value: `+${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
-          { value: `+${Math.floor(strengthLevel)}%`, tone: 'slate' as PillTone },
-          { value: `+${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
+          { value: `+${Math.floor(strengthLevel)} +${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
+          { value: `+${Math.floor(strengthLevel)} +${Math.floor(strengthLevel)}%`, tone: 'slate' as PillTone },
+          { value: `+${Math.floor(strengthLevel)} +${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
         ],
       },
       {
@@ -130,8 +130,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: consciousnessLevel,
         progress: getProgress(consciousnessLevel, loadout?.consciousnessExp),
         bonuses: [
-          { value: `+${Math.floor(consciousnessLevel * 2)}%`, tone: 'purple' as PillTone },
-          { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
+          { value: `+${Math.floor(consciousnessLevel * 2)} +${Math.floor(consciousnessLevel * 2)}%`, tone: 'purple' as PillTone },
+          { value: `+${Math.floor(consciousnessLevel)} +${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
         ],
       },
       {
@@ -140,9 +140,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: agilityLevel,
         progress: getProgress(agilityLevel, loadout?.agilityExp),
         bonuses: [
-          { value: `+${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
-          { value: `+${Math.floor(agilityLevel)}%`, tone: 'muted' as PillTone },
-          { value: `+${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
+          { value: `+${Math.floor(agilityLevel)} +${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
+          { value: `+${Math.floor(agilityLevel)} +${Math.floor(agilityLevel)}%`, tone: 'muted' as PillTone },
+          { value: `+${Math.floor(agilityLevel)} +${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
         ],
       },
     ]

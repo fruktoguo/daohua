@@ -1,9 +1,9 @@
 [
   {
-    "id": "encounter.twilight-valley",
-    "name": "坠星天坑",
-    "minBudget": 60,
-    "maxBudget": 150,
+    "id": "encounter.rift-edge",
+    "name": "界隙狼踪",
+    "minBudget": 40,
+    "maxBudget": 95,
     "randomSpawns": [
       {
         "enemyId": "enemy.rift-wolf",
@@ -12,20 +12,151 @@
       },
       {
         "enemyId": "enemy.star-flame-crow",
+        "weight": 1,
+        "strength": 35
+      }
+    ],
+    "maxTotalStrength": 95
+  },
+  {
+    "id": "encounter.carrion-tomb",
+    "name": "古冢尸气",
+    "minBudget": 45,
+    "maxBudget": 100,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.plunder-cultivator",
+        "weight": 2,
+        "strength": 40
+      },
+      {
+        "enemyId": "enemy.star-flame-crow",
+        "weight": 1,
+        "strength": 35
+      }
+    ],
+    "maxTotalStrength": 100,
+    "eliteEnemyIds": [
+      "enemy.blade-corpse"
+    ],
+    "battlesPerElite": 6
+  },
+  {
+    "id": "encounter.charred-pines",
+    "name": "焦林鸦巢",
+    "minBudget": 45,
+    "maxBudget": 105,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.star-flame-crow",
+        "weight": 3,
+        "strength": 35
+      },
+      {
+        "enemyId": "enemy.rift-wolf",
+        "weight": 1,
+        "strength": 30
+      }
+    ],
+    "maxTotalStrength": 105
+  },
+  {
+    "id": "encounter.crimson-abyss",
+    "name": "铜渊灼穴",
+    "minBudget": 50,
+    "maxBudget": 115,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.star-flame-crow",
         "weight": 2,
         "strength": 35
       },
       {
         "enemyId": "enemy.plunder-cultivator",
+        "weight": 1,
+        "strength": 40
+      },
+      {
+        "enemyId": "enemy.rift-wolf",
+        "weight": 1,
+        "strength": 30
+      }
+    ],
+    "maxTotalStrength": 110
+  },
+  {
+    "id": "encounter.blood-rite",
+    "name": "血池祭仪",
+    "minBudget": 55,
+    "maxBudget": 130,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.plunder-cultivator",
+        "weight": 3,
+        "strength": 40
+      },
+      {
+        "enemyId": "enemy.rift-wolf",
+        "weight": 1,
+        "strength": 30
+      }
+    ],
+    "maxTotalStrength": 120,
+    "eliteEnemyIds": [
+      "enemy.fallen-devil-priest"
+    ],
+    "battlesPerElite": 5
+  },
+  {
+    "id": "encounter.bone-pit",
+    "name": "白骨煞坑",
+    "minBudget": 55,
+    "maxBudget": 125,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.plunder-cultivator",
         "weight": 2,
+        "strength": 40
+      },
+      {
+        "enemyId": "enemy.rift-wolf",
+        "weight": 1,
+        "strength": 30
+      }
+    ],
+    "maxTotalStrength": 115,
+    "eliteEnemyIds": [
+      "enemy.blade-corpse"
+    ],
+    "battlesPerElite": 4
+  },
+  {
+    "id": "encounter.twilight-valley",
+    "name": "坠星天坑",
+    "minBudget": 60,
+    "maxBudget": 150,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.rift-wolf",
+        "weight": 2,
+        "strength": 30
+      },
+      {
+        "enemyId": "enemy.star-flame-crow",
+        "weight": 1,
+        "strength": 35
+      },
+      {
+        "enemyId": "enemy.plunder-cultivator",
+        "weight": 1,
         "strength": 40
       }
     ],
     "maxTotalStrength": 150,
     "eliteEnemyIds": [
-      "enemy.blade-corpse",
       "enemy.fallen-devil-priest"
     ],
+    "battlesPerElite": 5,
     "bossEnemyIds": [
       "enemy.falling-star-beast"
     ],

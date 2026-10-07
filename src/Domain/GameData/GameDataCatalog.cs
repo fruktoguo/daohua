@@ -50,6 +50,8 @@ public enum ActionExecutionKind : byte
 /// <param name="Technique">关联的技艺 ID（对应技艺等级提供行动速度加成）；无关联为 null。</param>
 /// <param name="ExcludedNodeIds">禁止执行该行动的地图节点集合（黑名单）：AllowedNodeIds 缺省时行动默认全图可行，
 /// 仅此处列出的节点被排除（如引气入体之类常驻行动按地点裁剪）；与 AllowedNodeIds 互斥。</param>
+/// <param name="IsPartySession">组队会话行动：遭遇由会话规格钉死（CombatEncounterId 恒为空），
+/// 仅能经社交层会话命令入队，战斗推演与收益结算走共享剧本路径（总纲 §21.13）。</param>
 public sealed record ActionDefinition(
     ActionId Id,
     string Name,
@@ -62,7 +64,8 @@ public sealed record ActionDefinition(
     ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
     string? CombatEncounterId = null,
     string? Technique = null,
-    IReadOnlySet<string>? ExcludedNodeIds = null)
+    IReadOnlySet<string>? ExcludedNodeIds = null,
+    bool IsPartySession = false)
 {
 }
 
@@ -189,6 +192,9 @@ public sealed record ItemDefinition(
     string Category = "general",
     string? SubCategory = null)
 {
+    /// <summary>自动消耗品主分类键：自动使用槽位仅接受本主分类的物品；手动消耗品（manual/chest 等）不入槽。</summary>
+    public const string CategoryConsumable = "consumable";
+
     /// <summary>展示用子类型键：缺省时回落主类型（左上角品类丝带与分类筛选的统一口径）。</summary>
     public string DisplaySubCategory => SubCategory ?? Category;
 }
@@ -196,6 +202,14 @@ public sealed record ItemDefinition(
 /// <summary>纯内存行动目录，运行时可由配置载入；不依赖数据库或宿主。</summary>
 public sealed class ActionCatalog
 {
+    /// <summary>组队会话伪行动 ID（总纲 §21.13）：不开放给内容配置覆写，目录构造时强制注册。</summary>
+    public static readonly ActionId PartyExpeditionActionId = new("party.expedition");
+
+    /// <summary>组队会话伪行动定义：时长占位 0（战斗驱动），遭遇由行动上的 PartySession 规格钉死。</summary>
+    public static readonly ActionDefinition PartyExpeditionDefinition = new(
+        PartyExpeditionActionId, "随队讨伐", ActionKind.Combat, 0, new Dictionary<ItemId, double>(), [],
+        HiddenFromCatalog: true, ExecutionKind: ActionExecutionKind.CombatEncounter, IsPartySession: true);
+
     private readonly IReadOnlyDictionary<ActionId, ActionDefinition> _definitions;
 
     /// <summary>以行动定义集合创建目录；逐项校验、规范化收益/输入并拒绝重复 ID。</summary>
@@ -204,6 +218,10 @@ public sealed class ActionCatalog
     {
         ArgumentNullException.ThrowIfNull(definitions);
         var map = new Dictionary<ActionId, ActionDefinition>();
+        // 系统内置行动强制注册：party.expedition 是引擎行为而非内容配置，缺失或覆写均拒绝以保判定收敛。
+        if (definitions.Any(definition => definition.Id == PartyExpeditionActionId))
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"{PartyExpeditionActionId} 为系统内置行动，不允许内容配置。");
+        map[PartyExpeditionActionId] = PartyExpeditionDefinition;
         foreach (var definition in definitions)
         {
             Validate(definition);
@@ -262,7 +280,9 @@ public sealed class ActionCatalog
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的数值无效。");
         if (!Enum.IsDefined(definition.ExecutionKind)
             || (definition.ExecutionKind == ActionExecutionKind.CombatEncounter
-                && string.IsNullOrWhiteSpace(definition.CombatEncounterId)))
+                && string.IsNullOrWhiteSpace(definition.CombatEncounterId) && !definition.IsPartySession)
+            || (definition.IsPartySession
+                && (definition.ExecutionKind != ActionExecutionKind.CombatEncounter || !definition.HiddenFromCatalog)))
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的执行元数据无效。");
         // 地点约束互斥：白名单（仅列处可执行）与黑名单（仅列处禁执行）不可同配，否则语义含糊。
         if (definition.AllowedNodeIds is { Count: > 0 } && definition.ExcludedNodeIds is { Count: > 0 })
@@ -341,10 +361,11 @@ public sealed class GameDataCatalog
     /// <param name="monsters">怪物原始 JSON 表。</param>
     /// <param name="rawItems">物品原始 JSON 表。</param>
     /// <param name="rawEquipments">装备原始 JSON 表。</param>
-    /// <param name="combatMonsters">预解析怪物战斗定义（可空，空时由 monsters + baseAttributes 自动解析）。</param>
+    /// <param name="combatMonsters">预解析怪物战斗定义（可空，空时由 monsters + expectedAttributes 自动解析）。</param>
     /// <param name="combatEncounters">预解析遭遇定义（可空，空时由 encounters 自动解析）。</param>
     /// <param name="worldGraph">世界拓扑图（可空，空时由 maps 自动构建）。</param>
-    /// <param name="baseAttributes">境界属性锚点目录（可空）。</param>
+    /// <param name="baseAttributes">境界属性锚点目录（可空，玩家裸底座）。</param>
+    /// <param name="expectedAttributes">期望玩家面板锚点目录（可空，怪物同构建模的基准底座，源自 tiers[].finalExpected）。</param>
     /// <param name="abilities">功法原始 JSON 表。</param>
     /// <param name="duel">斗法全局调参（可空，缺省用内建默认）。</param>
     /// <param name="realmProgression">境界修为上限与寿元配置（可空）。</param>
@@ -363,6 +384,7 @@ public sealed class GameDataCatalog
         IReadOnlyDictionary<string, CombatEncounterDefinition>? combatEncounters = null,
         WorldGraph? worldGraph = null,
         BaseAttributeCatalog? baseAttributes = null,
+        BaseAttributeCatalog? expectedAttributes = null,
         IReadOnlyDictionary<string, JsonElement>? abilities = null,
         DuelSettings? duel = null,
         RealmProgressionCatalog? realmProgression = null,
@@ -394,15 +416,18 @@ public sealed class GameDataCatalog
                 throw new DomainException(error.Code, $"功法 {abilityId} 配表无效：{error.Message}");
             }
         Duel = duel ?? DuelSettings.Default;
-        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, baseAttributes, Abilities, realmProgression);
+        // 怪物同构建模底座 = 期望玩家面板（expectedAttributes / tiers[].finalExpected），禁止回退裸锚点；
+        // 期望目录与基础锚点同为 1/18/30/…/127 等阶边界，TierAt 口径一致可复用。
+        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, expectedAttributes, Abilities, realmProgression);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
         WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
         BaseAttributes = baseAttributes;
+        ExpectedAttributes = expectedAttributes;
         RealmProgression = realmProgression;
         Buildings = NormalizeBuildings(buildings);
         foreach (var action in Actions.All)
         {
-            if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
+            if (action.ExecutionKind == ActionExecutionKind.CombatEncounter && !action.IsPartySession
                 && (string.IsNullOrWhiteSpace(action.CombatEncounterId)
                     || !CombatEncounters.ContainsKey(action.CombatEncounterId)))
                 throw new DomainException(DomainErrorCode.NotFound, $"行动 {action.Id} 关联的遭遇不存在。");
@@ -433,8 +458,10 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<string, CombatMonsterDefinition> CombatMonsters { get; }
     /// <summary>已解析的遭遇战定义，键为 encounter ID。</summary>
     public IReadOnlyDictionary<string, CombatEncounterDefinition> CombatEncounters { get; }
-    /// <summary>境界基础属性锚点目录；未加载 expected-attributes 配置时为 null。</summary>
+    /// <summary>境界基础属性锚点目录（玩家裸底座）；未加载 expected-attributes 配置时为 null。</summary>
     public BaseAttributeCatalog? BaseAttributes { get; }
+    /// <summary>期望玩家面板锚点目录（tiers[].finalExpected 四乘区完全体）；怪物同构建模的基准底座，未加载时为 null。</summary>
+    public BaseAttributeCatalog? ExpectedAttributes { get; }
     /// <summary>功法/神通原始 JSON 定义，键为 ability ID。</summary>
     public IReadOnlyDictionary<string, JsonElement> Abilities { get; }
     /// <summary>斗法玩法全局调参（duel.json）。</summary>
@@ -464,6 +491,7 @@ public sealed class GameDataCatalog
         var buildings = new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal);
         DuelSettings? duel = null;
         BaseAttributeCatalog? baseAttributes = null;
+        BaseAttributeCatalog? expectedAttributes = null;
         RealmProgressionCatalog? realmProgression = null;
         var contentVersion = "unknown";
         var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -472,7 +500,12 @@ public sealed class GameDataCatalog
             digest.AppendData(bytes.Span);
             using var document = JsonDocument.Parse(bytes.ToArray());
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("baseAttributeAnchors", out var anchors))
+            {
                 baseAttributes = BaseAttributeCatalog.Parse(anchors);
+                // 同一文件的 tiers[].finalExpected = 期望玩家面板（四乘区完全体），怪物同构建模底座。
+                if (document.RootElement.TryGetProperty("tiers", out var tiers) && tiers.ValueKind == JsonValueKind.Array)
+                    expectedAttributes = BaseAttributeCatalog.ParseExpected(tiers);
+            }
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("realmProgression", out var progression))
                 realmProgression = RealmProgressionCatalog.Parse(progression);
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("contentVersion", out var version))
@@ -528,7 +561,7 @@ public sealed class GameDataCatalog
             }
         }
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
-        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings);
+        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, expectedAttributes: expectedAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings);
     }
 
     /// <summary>
@@ -825,7 +858,7 @@ public sealed class GameDataCatalog
     };
 
     private static Dictionary<string, CombatMonsterDefinition> ParseMonsterDefinitions(
-        IReadOnlyDictionary<string, JsonElement> raw, BaseAttributeCatalog? baseAttributes,
+        IReadOnlyDictionary<string, JsonElement> raw, BaseAttributeCatalog? playerBaseline,
         IReadOnlyDictionary<string, JsonElement> abilities, RealmProgressionCatalog? realmProgression)
     {
         var result = new Dictionary<string, CombatMonsterDefinition>(StringComparer.Ordinal);
@@ -835,10 +868,13 @@ public sealed class GameDataCatalog
             var weights = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("weights", out var weightsValue) && weightsValue.ValueKind == JsonValueKind.Object
                 ? weightsValue : default;
             double Weight(string key) => JsonRead.Number(weights, key, 1);
-            // 怪我同构建模：以同等级玩家基准属性锚点为底座，按生命层次倍率 + 倾向权重派生全部战斗属性。
+            // 怪我同构建模：以同等级期望玩家面板（tiers[].finalExpected 四乘区完全体）为底座，
+            // 按生命层次倍率 + 倾向权重派生全部战斗属性——非裸 baseAttributeAnchors（总纲 §7.3/§10.1）。
             var level = JsonRead.Integer(value, "level", 1);
-            var anchor = baseAttributes?.At(level)
-                ?? new BaseAttributeAnchor(level, 100, 50, 10, 5, 10, 0, 1, 1, 1, 1, 1, 1, 2, 1);
+            if (playerBaseline is null)
+                throw new DomainException(DomainErrorCode.InvalidArgument,
+                    $"怪物 {id} 缺少期望玩家面板基准：expected-attributes 的 tiers 未加载。");
+            var anchor = playerBaseline.At(level);
             var rank = JsonRead.Text(value, "rank", "minion").ToLowerInvariant() switch
             {
                 "elite" => CombatMonsterRank.Elite,
@@ -847,16 +883,15 @@ public sealed class GameDataCatalog
             };
             var attrMultiplier = rank switch { CombatMonsterRank.Elite => 1.2, CombatMonsterRank.Boss => 1.5, _ => 0.8 };
             var hpMultiplier = rank switch { CombatMonsterRank.Elite => 5.0, CombatMonsterRank.Boss => 20.0, _ => 3.0 };
-            // 成长乘区全单位同构：与玩家属性解析共用 CombatGrowthCurve 单点实现。
-            var actionFactor = CombatGrowthCurve.CastTimeFactor(level);
-            var cooldownFactor = CombatGrowthCurve.CooldownFactor(level);
+            // 成长点数全单位同构：与玩家属性解析共用 CombatGrowthCurve 单点实现，
+            // 折算为点数注入对应通道（下方与 modifiers 同池相加）。
             var interval = JsonRead.Number(value, "attackIntervalMilliseconds", 0) / 1_000d;
-            // 普攻节奏全单位统一：基准 1.0s（或配表覆写基准）×(1-ATR)×(1-攻速成长)；
-            // 技能吟唱时长走另一条线：castMilliseconds ×(1-ATR)，不占普攻间隔。
-            interval = (interval > 0 ? interval : 1) * actionFactor * actionFactor;
+            // 普攻节奏全单位统一：基准 1.0s（或配表覆写基准）÷(1+攻速/100)÷(1+行动速度/100)，
+            // 双除数由引擎在出手边界结算；技能吟唱另一条线：castMilliseconds ÷(1+行动速度/100)。
+            interval = interval > 0 ? interval : 1;
             var ad = anchor.Ad * attrMultiplier * Weight("ad");
             var ap = anchor.Ap * attrMultiplier * Weight("ap");
-            var tier = baseAttributes?.TierAt(level) ?? 1;
+            var tier = playerBaseline.TierAt(level);
             var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
                 ? dropValue.EnumerateArray().Select(drop => new CombatDropDefinition(
                     new ItemId(JsonRead.Text(drop, "itemId", "")),
@@ -895,7 +930,6 @@ public sealed class GameDataCatalog
                 }
                 return new SkillSlot(ability.Clone(), JsonRead.Number(skill, "level", 1), triggers);
             }).ToArray();
-            var skillIntensity = CombatGrowthCurve.SkillIntensity(tier);
             // modifiers 段直接声明百分比点数（100 点 = 100%）：增减伤、速度与特殊修饰全单位同构。
             var modifiers = value.ValueKind == JsonValueKind.Object
                 && value.TryGetProperty("modifiers", out var modifiersValue)
@@ -912,16 +946,12 @@ public sealed class GameDataCatalog
             {
                 SpellAttack = ap,
                 MaxManapoints = anchor.Mp * attrMultiplier * Weight("mp"),
-                // 普攻倍率与玩家同构：全单位统一 100%→200% AD 物理伤害。
-                BasicAttackRatio = CombatGrowthCurve.BasicAttackRatio(level),
-                SkillIntensity = skillIntensity,
-                CastTimeFactor = actionFactor,
-                CooldownFactor = cooldownFactor,
                 MagicResistance = anchor.Mr * attrMultiplier * Weight("mres"),
                 ResistanceScale = tier,
                 Critical = anchor.Crit * attrMultiplier * Weight("crit"),
                 CriticalResistance = anchor.Cavoid * attrMultiplier * Weight("cavoid"),
-                CriticalMultiplier = CombatGrowthCurve.CriticalMultiplier(level),
+                // 暴击伤害 = 基础 50 点 + 境界成长 + 配表加点，与玩家同池（倍率 = 1+点数/100）。
+                CriticalDamagePoints = CombatGrowthCurve.CriticalDamagePoints(level) + Modifier("criticalDamageBonusPoints"),
                 BreakPower = anchor.BreakPt * attrMultiplier * Weight("break"),
                 ParryResolve = anchor.Parry * attrMultiplier * Weight("parry"),
                 Element = Enum.Parse<CombatElement>(JsonRead.Text(value, "element", "none"), true),
@@ -933,8 +963,8 @@ public sealed class GameDataCatalog
                 FireDamageBonusPoints = Modifier("fireDamageBonusPoints"),
                 EarthDamageBonusPoints = Modifier("earthDamageBonusPoints"),
                 TotalDamageBonusPoints = Modifier("totalDamageBonusPoints"),
-                BasicAttackBonusPoints = Modifier("basicAttackBonusPoints"),
-                SkillBonusPoints = Modifier("skillBonusPoints"),
+                BasicAttackBonusPoints = Modifier("basicAttackBonusPoints") + CombatGrowthCurve.BasicAttackBonusPoints(level),
+                SkillBonusPoints = Modifier("skillBonusPoints") + CombatGrowthCurve.SkillBonusPoints(tier),
                 PhysicalDamageReductionPoints = Modifier("physicalDamageReductionPoints"),
                 SpellDamageReductionPoints = Modifier("spellDamageReductionPoints"),
                 MetalDamageReductionPoints = Modifier("metalDamageReductionPoints"),
@@ -943,9 +973,9 @@ public sealed class GameDataCatalog
                 FireDamageReductionPoints = Modifier("fireDamageReductionPoints"),
                 EarthDamageReductionPoints = Modifier("earthDamageReductionPoints"),
                 DamageAbsorptionPoints = Modifier("damageAbsorptionPoints"),
-                AttackSpeedPoints = Modifier("attackSpeedPoints"),
-                ActionSpeedPoints = Modifier("actionSpeedPoints"),
-                CooldownReductionPoints = Modifier("cooldownReductionPoints"),
+                AttackSpeedPoints = Modifier("attackSpeedPoints") + CombatGrowthCurve.AttackSpeedPoints(level),
+                ActionSpeedPoints = Modifier("actionSpeedPoints") + CombatGrowthCurve.ActionSpeedPoints(level),
+                CooldownReductionPoints = Modifier("cooldownReductionPoints") + CombatGrowthCurve.CooldownReductionPoints(level),
                 ThreatBonusPoints = Modifier("threatBonusPoints"),
                 // 反应效果参数包：配表直接声明汲取/反弹/治疗加成点数，由钩子管线在结算中读取。
                 Effects = new CombatEffectProfile(
@@ -956,8 +986,11 @@ public sealed class GameDataCatalog
                 // 战斗经验不入配表：怪物按配表 level 取「升到该级的累计修为」派生（总纲 §7.7.6）。
                 CombatExperience = realmProgression?.CumulativeExpFor(level) ?? 0
             };
-            // 击杀奖励单参数：experience 同时喂修为结算（瓶颈/底蕴/战斗经验）与六维均分入账（总纲 §7.11）。
-            var experience = JsonRead.Number(value, "experience", 0);
+            // 击杀奖励单参数：experience 同时喂修为结算（瓶颈/底蕴/战斗经验）与六维入账（总纲 §7.11）。
+            // 配表显式声明时生效；缺省按境界曲线派生 expToNext[level]/1000×0.9^(level-1)×层次倍率（§7.10.3）。
+            var experience = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("experience", out _)
+                ? JsonRead.Number(value, "experience", 0)
+                : realmProgression?.MonsterKillExperience(level, rank) ?? 0;
             if (experience < 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 的击杀奖励不能为负。");
             result[id] = new CombatMonsterDefinition(id, JsonRead.Text(value, "name", id), budget, level, rank, stats, drops, skills,

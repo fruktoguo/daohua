@@ -53,8 +53,7 @@
         "level": 1,
         "triggerHpRatio": 0.9
       }
-    ],
-    "experience": 10
+    ]
   },
   {
     "id": "enemy.armored-bear",
@@ -121,8 +120,7 @@
         "level": 1,
         "triggerHpRatio": 0.8
       }
-    ],
-    "experience": 10
+    ]
   },
   {
     "id": "enemy.chang-tiger",
@@ -215,7 +213,6 @@
     ],
     "modifiers": {
       "fireDamageReductionPoints": 5.8
-    },
-    "experience": 10
+    }
   }
 ]

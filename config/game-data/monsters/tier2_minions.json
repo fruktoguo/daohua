@@ -45,8 +45,7 @@
         "level": 1,
         "triggerHpRatio": 0.85
       }
-    ],
-    "experience": 10
+    ]
   },
   {
     "id": "enemy.star-flame-crow",
@@ -111,8 +110,7 @@
     ],
     "modifiers": {
       "fireDamageReductionPoints": 11.299999999999999
-    },
-    "experience": 10
+    }
   },
   {
     "id": "enemy.plunder-cultivator",
@@ -165,7 +163,6 @@
     ],
     "modifiers": {
       "woodDamageReductionPoints": 9.200000000000001
-    },
-    "experience": 10
+    }
   }
 ]

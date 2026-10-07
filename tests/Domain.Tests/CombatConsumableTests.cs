@@ -254,6 +254,26 @@ public sealed class CombatConsumableTests
     }
 
     /// <summary>
+    /// durable 时代注入的永驻 Buff（MaxValue 过期）由资源边界同步兜底回收：
+    /// 物品转为普通持续品或撤槽后 SourceItemId 已不可追，仍须在下一边界清除。
+    /// </summary>
+    [Fact]
+    public void OrphanedDurableBuffIsReclaimedAtResourceBoundary()
+    {
+        var catalog = CreateCatalog(enemyHitpoints: 100_000, enemyAttackPower: 0);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var wallet = CreateWallet(player);
+        // 模拟 durable 时代残留：阵盘现为普通持续品且槽位未装配，MaxValue 过期永不自然到期。
+        player.Buffs.Active.Add(new ActiveBuff("formation.test", double.MaxValue, 1,
+            "聚灵测试", DiskId.Value, MpRegen: 5, MpRegenPostRatio: 0.3));
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "formation.test");
+    }
+
+    /// <summary>
     /// 药品回复走 Buff 通道：激活不写即时回血，30s Buff 折叠进属性回复收口，
     /// 战外按 5 秒结算点入账，到期后回复回落到基础值。
     /// </summary>

@@ -37,13 +37,13 @@ public sealed class ResourceSimulationTests
         Assert.Equal(4.5, online.Resources.RegenCarrySeconds);
         online = PlayerAggregate.Restore(online.ExportState());
         SimulationEngine.AdvanceTo(online, Baseline.AddSeconds(5), catalog);
-        Assert.Equal(1520, online.Resources.MaxHitpoints);
-        Assert.Equal(8.07, online.Resources.Hitpoints, 6);
-        Assert.Equal(3.03, online.Resources.Manapoints, 6);
+        Assert.Equal(1500, online.Resources.MaxHitpoints);
+        Assert.Equal(8, online.Resources.Hitpoints, 6);
+        Assert.Equal(3, online.Resources.Manapoints, 6);
         SimulationEngine.AdvanceTo(online, Baseline.AddSeconds(12), catalog);
         SimulationEngine.AdvanceTo(offline, Baseline.AddSeconds(12), catalog);
-        Assert.Equal(15.14, offline.Resources.Hitpoints, 6);
-        Assert.Equal(6.06, offline.Resources.Manapoints, 6);
+        Assert.Equal(15, offline.Resources.Hitpoints, 6);
+        Assert.Equal(6, offline.Resources.Manapoints, 6);
         Assert.Equal(offline.Resources.Hitpoints, online.Resources.Hitpoints);
         Assert.Equal(offline.Resources.Manapoints, online.Resources.Manapoints);
         Assert.Equal(2, online.Resources.RegenCarrySeconds);

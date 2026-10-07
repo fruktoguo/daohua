@@ -32,8 +32,9 @@ function abilityRatioPercent(ratio: number): string {
 
 /**
  * 根据功法技能定义与当前等级，生成用于 Tooltip 展示的结构化说明数据：
- * 主描述 = 配表招式描述 + 效果句（目标/五行/伤害类别）；
- * 词条行 = 等级、冷却、吟唱、灵力与伤害/治疗构成胶囊（标明所吃攻击属性）。
+ * 主描述 = 配表韵文 + 完整效果叙述句（参照英雄联盟技能说明：全部机制融在一段
+ * 连贯文本里，数值以 [[ ]] 胶囊内嵌高亮，而非拆散成配置项式的标签行）；
+ * 词条行 = 等级、冷却、吟唱、灵力消耗等资源元数据。
  * @param ability 技能定义
  * @param level 当前技能等级
  * @returns Tooltip 数据结构
@@ -59,7 +60,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     ? t('game.abilityDesc.damageKindElement', { element: elementWord, category: categoryLabel })
     : t('game.abilityDesc.damageKindPlain', { category: categoryLabel })
 
-  // 伤害/治疗构成表达式：嵌入主描述句，[[ ]] 由 ValueText 渲染为整组胶囊，
+  // 伤害/治疗构成表达式：嵌入叙述句，[[ ]] 由 ValueText 渲染为整组胶囊，
   // 标明所吃攻击属性（术法吃术法攻击、物理吃物理攻击），与服务端结算一致。
   const attackStat = t(`game.abilityDesc.attackStat.${ability.category === 'spell' ? 'spell' : 'physical'}`)
   const composition = (ratio: number, flat: number) => {
@@ -71,16 +72,54 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const damageExpr = composition(damageRatio, flatDamage)
   const healExpr = composition(healingRatio, flatHealing)
 
-  // 主描述：配表招式描述（如「从掌心发出一道雷光」）+ 按效果类型生成的效果句。
+  // 效果叙述主句：按效果类型一次性写清目标、数值与伤害类别。
+  const hitCount = ability.hitCount ?? 0
   const healing = ability.effectType === 'heal'
-  const clause = healing
-    ? t('game.abilityDesc.effectHeal', { target, expr: healExpr })
-    : damageExpr
-      ? t('game.abilityDesc.effectDamage', { target, expr: damageExpr, damageKind })
-      : (ability.threatGain ?? 0) > 0 || (ability.threatPoints ?? 0) > 0
-        ? t('game.abilityDesc.effectThreat')
+  const threatGain = ability.threatGain ?? 0
+  const threatPoints = ability.threatPoints ?? 0
+  const buff = ability.buff
+  const clauses: string[] = []
+  if (healing) {
+    clauses.push(t('game.abilityDesc.effectHeal', { target, expr: healExpr }))
+  } else if (damageExpr) {
+    clauses.push(hitCount > 1
+      ? t('game.abilityDesc.effectMultiHit', { target, count: hitCount, expr: damageExpr, damageKind })
+      : t('game.abilityDesc.effectDamage', { target, expr: damageExpr, damageKind }))
+  } else if (threatGain > 0 || threatPoints > 0) {
+    let clause = threatGain > 0
+      ? t('game.abilityDesc.effectThreatGain', { n: formatNumber(threatGain) })
+      : ''
+    if (threatPoints > 0) {
+      const ratio = t('game.abilityDesc.threatRatioClause', { n: abilityPercent(threatPoints / 100) })
+      clause = clause ? `${clause}，${ratio}` : ratio
+    }
+    clauses.push(clause || t('game.abilityDesc.effectThreat'))
+  } else if (buff) {
+    const duration = buff.durationSeconds ?? 0
+    const bonusPoints = buff.damageBonusPoints ?? 0
+    const absorbPoints = buff.damageAbsorptionPoints ?? 0
+    let effect = bonusPoints !== 0
+      ? t('game.abilityDesc.effectBuffDamage', { target, n: abilityPercent(bonusPoints / 100) })
+      : absorbPoints !== 0
+        ? t('game.abilityDesc.effectBuffAbsorb', { target, n: abilityPercent(absorbPoints / (100 + absorbPoints)) })
         : t('game.abilityDesc.effectBuff', { target })
-  const description = ability.description ? `${ability.description}，${clause}。` : `${clause}。`
+    if (duration > 0) {
+      effect = `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
+    }
+    clauses.push(effect)
+  } else {
+    clauses.push(t('game.abilityDesc.effectBuff', { target }))
+  }
+  // 机制附加子句：连击中止条件与击杀连锁与主句连成同一段，不另起配置行。
+  if (hitCount > 1) {
+    clauses.push(t('game.abilityDesc.multiHitEnd'))
+  }
+  const chainCount = ability.chainOnKillCount ?? 0
+  if (chainCount > 0) {
+    clauses.push(t('game.abilityDesc.chainOnKill', { n: formatNumber(chainCount) }))
+  }
+  const effectSentence = `${clauses.join('；')}。`
+  const description = ability.description ? `${ability.description}\n${effectSentence}` : effectSentence
 
   const lines = [
     t('game.abilityDesc.level', { n: normalizedLevel }),
@@ -89,17 +128,6 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     t('game.abilityDesc.castTime', { n: ((ability.castMilliseconds ?? 0) / 1000).toFixed(1) }),
     t('game.abilityDesc.manaCost', { n: formatNumber(ability.manaCost ?? 0) }),
   ]
-  // 支援类效果数值（嘲讽威胁、破阵子减伤屏障等）。
-  if ((ability.threatGain ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.threatGain', { n: formatNumber(ability.threatGain ?? 0) }))
-  }
-  if ((ability.threatPoints ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.threatRatio', { n: abilityPercent((ability.threatPoints ?? 0) / 100) }))
-  }
-  if ((ability.buff?.damageAbsorptionPoints ?? 0) !== 0) {
-    const points = ability.buff?.damageAbsorptionPoints ?? 0
-    lines.push(t('game.abilityDesc.buffAbsorb', { n: abilityPercent(points / (100 + points)) }))
-  }
   return {
     title: ability.name,
     badge: formatAbilityCategory(ability.category, ability.element),

@@ -56,4 +56,44 @@ public sealed class GameDataCatalogTests
         Assert.Equal(1.3d, consumable.CultivationMultiplier);
         Assert.Contains(ActionKind.Cultivation, consumable.UsableInActionKinds);
     }
+
+    /// <summary>
+    /// 怪物同构建模底座回归：必须以期望玩家面板 tiers[].finalExpected 派生，而非裸 baseAttributeAnchors。
+    /// 坠星兽 Lv24 Boss = 期望面板（HP≈3370.9/AD≈245.6/AP≈398.0）× Boss 倍率（HP×20/属性×1.5）× 倾向权重。
+    /// 错用基础锚点时物攻只有 ~35、术攻 ~25（回归信号）。
+    /// </summary>
+    [Fact]
+    public void MonsterStatsDeriveFromExpectedPlayerPanel()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        var beast = catalog.CombatMonsters["enemy.falling-star-beast"];
+        Assert.Equal(24, beast.Level);
+        Assert.Equal(CombatMonsterRank.Boss, beast.Rank);
+
+        var stats = beast.Stats;
+        Assert.Equal(45170.46, stats.MaxHitpoints, 2);
+        Assert.Equal(383.18, stats.AttackPower, 2);
+        Assert.Equal(597.0, stats.SpellAttack, 1);
+        Assert.Equal(349.85, stats.Defense, 2);
+        Assert.Equal(244.97, stats.MagicResistance, 2);
+    }
+
+    /// <summary>
+    /// 击杀奖励缺省派生回归（总纲 §7.10.3）：全部配表怪均未声明 experience，
+    /// 一律按 expToNext[level]/1000×0.9^(level-1)×层次倍率公式派生——
+    /// Lv1 小怪锚定 1/1000=10，Lv12 妖王锚定 10× 倍率。
+    /// </summary>
+    [Fact]
+    public void MonsterKillExperienceDerivesFromRealmCurve()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var realm = catalog.RealmProgression!;
+        Assert.Equal(12, catalog.CombatMonsters.Count);
+        foreach (var (_, monster) in catalog.CombatMonsters)
+            Assert.Equal(realm.MonsterKillExperience(monster.Level, monster.Rank), monster.Experience);
+        Assert.Equal(10, catalog.CombatMonsters["enemy.demonized-rabbit"].Experience, 6);
+        Assert.Equal(realm.ExpCapFor(12) / 1000d * Math.Pow(0.9, 11) * 10,
+            catalog.CombatMonsters["enemy.chang-tiger"].Experience, 6);
+    }
 }
