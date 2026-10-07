@@ -6,12 +6,24 @@ public static class PostgresSchema
     /// <summary>当前本地库内容版本（表结构 + 存档载荷标签）；与 platform.schema_version 表中的
     /// 最大版本必须一致。约定：SectionCodec.CurrentSchemaVersion 每次升级时本常量同步 +1，
     /// 存档标签 UPDATE 内嵌在 migrations/NNNN_vX_to_vY.sql 对应版本文件中。</summary>
+    /// v14：settings 分段载荷新增 tutorialStep 新手引导里程碑（可缺省解码为 0），存档标签推进，表结构未变。
+    /// v13：identity.players 增 invite_code 唯一邀请码，新增 social.player_invitations 邀请关系与里程碑领奖标记；存档载荷未变。
+    /// v12：loadout 分段触发条件迁移为 abilityTriggers 按功法 ID 映射（可缺省解码），存档标签推进，表结构未变。
+    /// v11：重建 account_risk_events.event_kind 约束纳入 'handshake'（修复开发中间态 v10 库的旧约束），存档载荷未变。
     /// v10：账号注册风控信号、判定事件与设备/身份关联索引。
     /// v9：progression 分段载荷新增 traitIds 特质 ID 集合，可缺省解码，无存档结构变更。
     /// v8：settings 分段载荷新增 queuePaused 队列暂停开关，可缺省解码，无存档结构变更。
     /// v7：social.parties 追加队伍档案列（name/activity_kind/node_id/min_valuation/is_public/updated_at）、
     /// 新增 social.party_seekers 散人池、social.chat_messages 增 party_ref 队伍链接外键；存档载荷未变。
-    public const int Version = 10;
+    /// v16：actionQueue 分段远征载荷新增 isPinned 遭遇供给标记（可缺省解码），存档标签推进，表结构未变。
+    /// v17：world 分段载荷新增 nodeBuildingUsages 拥挤使用快照（可缺省解码），存档标签推进，表结构未变。
+    /// v18：战斗面板语义收敛为纯点数通道（actionQueue/duel 载荷内 CombatantStats 移除六个独立乘区字段、
+    /// 新增 criticalDamagePoints，旧字段忽略解码、新字段缺省默认值），存档标签推进，表结构未变。
+    /// v19：组队讨伐（总纲 §21.13）——social.parties 增 open_slots 开启槽位（2..5，默认 5），
+    /// social.party_members 增 ready 就绪标记，新增 social.party_sessions 持久化会话规格；无存档载荷变更。
+    /// v20：actionQueue 分段组队讨伐载荷落地——行动项新增 partySession 会话绑定，远征状态新增
+    /// selfIndex/allies 盟友镜像与 respawnAtSeconds 倒地截止点（全部可缺省解码），表结构未变。
+    public const int Version = 20;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -39,11 +51,16 @@ public static class PostgresSchema
         account_id uuid NOT NULL REFERENCES identity.accounts(account_id),
         display_name varchar(64) NOT NULL,
         display_name_normalized varchar(128) NOT NULL UNIQUE,
+        -- 默认值为易测种子/迁移回补兜底：正式注册路径仍由服务端显式写入随机码。
+        invite_code varchar(16) NOT NULL
+            DEFAULT upper(substr(md5(random()::text || clock_timestamp()::text), 1, 10)),
         created_at timestamptz NOT NULL,
         last_seen_at timestamptz NOT NULL,
         status smallint NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2))
     );
     CREATE INDEX IF NOT EXISTS ix_players_account ON identity.players(account_id);
+    -- 专属邀请码全局唯一：注册时生成，撞码按唯一冲突重试新码。
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_players_invite_code ON identity.players(invite_code);
 
     CREATE TABLE IF NOT EXISTS identity.auth_sessions (
         session_id uuid PRIMARY KEY,
@@ -411,6 +428,8 @@ public static class PostgresSchema
         node_id varchar(128) NOT NULL DEFAULT '',
         min_valuation double precision NOT NULL DEFAULT 0 CHECK (min_valuation >= 0),
         is_public boolean NOT NULL DEFAULT false,
+        -- 开启槽位（总纲 §21.13）：2~5，默认 5；收窄后不得低于当前队员数（由社交层裁决保证）。
+        open_slots smallint NOT NULL DEFAULT 5 CHECK (open_slots BETWEEN 2 AND 5),
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -422,9 +441,25 @@ public static class PostgresSchema
     CREATE TABLE IF NOT EXISTS social.party_members (
         player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
         party_id uuid NOT NULL REFERENCES social.parties(party_id) ON DELETE CASCADE,
-        joined_at timestamptz NOT NULL
+        joined_at timestamptz NOT NULL,
+        -- 组队讨伐就绪标记（总纲 §21.13）：成员自开关，离队/被踢即随成员行删除。
+        ready boolean NOT NULL DEFAULT false
     );
     CREATE INDEX IF NOT EXISTS ix_party_members_party ON social.party_members(party_id);
+
+    -- 组队讨伐会话（总纲 §21.13）：spec 为冻结的共享剧本规格（成员快照/遭遇/种子），
+    -- session_id 为社交层生成的文本标识（party:{partyId}:{unixSec}:{rand}），非 uuid。
+    -- 同一队伍同时至多一个活跃会话：由 ended_at IS NULL 部分唯一索引收敛并发仲裁。
+    CREATE TABLE IF NOT EXISTS social.party_sessions (
+        session_id varchar(64) PRIMARY KEY,
+        party_id uuid NOT NULL REFERENCES social.parties(party_id) ON DELETE CASCADE,
+        spec jsonb NOT NULL,
+        started_at timestamptz NOT NULL,
+        ended_at timestamptz NULL,
+        end_reason varchar(64) NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_party_sessions_active
+        ON social.party_sessions(party_id) WHERE ended_at IS NULL;
 
     -- 待处理的队伍邀请：每名玩家最多一条（被邀请人作主键），接受/拒绝/过期后清除。
     CREATE TABLE IF NOT EXISTS social.party_invitations (
@@ -447,6 +482,20 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_party_seekers_goal ON social.party_seekers(activity_kind, node_id);
 
+    -- 注册邀请关系：invitee_id 主键（一人终身至多一条），里程碑奖励按行级领取标记幂等发放。
+    CREATE TABLE IF NOT EXISTS social.player_invitations (
+        invitee_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        inviter_id uuid NOT NULL REFERENCES identity.players(player_id),
+        invitation_code varchar(16) NOT NULL,
+        highest_realm_level integer NOT NULL DEFAULT 1,
+        qi_rewarded boolean NOT NULL DEFAULT false,
+        foundation_rewarded boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL,
+        CHECK (inviter_id <> invitee_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_player_invitations_inviter ON social.player_invitations(inviter_id);
+
     -- 传音消息：每个 (channel, scope_key) 作用域只保留最近 100 条，写入时同事务裁剪。
     -- party_ref 为队伍卡片外键：队伍解散后置空，消息正文仍保留为普通文本。
     CREATE TABLE IF NOT EXISTS social.chat_messages (
@@ -467,7 +516,7 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (10, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (19, now()), (20, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 

@@ -23,7 +23,7 @@ public sealed class AbilityLearningPersistenceTests
         await PostgresTestSchema.EnsureAsync(source);
         var player = Guid.NewGuid();
         await Sql(source, "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", player, player.ToString());
-        await Sql(source, "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,now(),now(),1)", player, player.ToString());
+        await Sql(source, "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,invite_code,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,(left(replace($1::text,'-',''),16)),now(),now(),1)", player, player.ToString());
         await Sql(source, "INSERT INTO economy.player_asset_balances VALUES ($1,'item.tome.heavy-slash','',2,1,now())", player);
         var repository = new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance);
         var now = DateTimeOffset.UtcNow;

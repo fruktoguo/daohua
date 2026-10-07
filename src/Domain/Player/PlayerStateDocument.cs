@@ -55,7 +55,9 @@ public sealed record PlayerWorldStateDocument(
     double EdgeProgress = 0,
     IReadOnlyList<Domain.World.NodeBuildingState>? NodeBuildings = null,
     Domain.World.BuildingEffectSet? NodeBuildingEffects = null,
-    string? NodeBuildingNodeId = null)
+    string? NodeBuildingNodeId = null,
+    /// <summary>各节点建筑拥挤使用快照（与 NodeBuildings 同节拍投影；可缺省解码为 null）。</summary>
+    IReadOnlyList<Domain.World.NodeBuildingUsage>? NodeBuildingUsages = null)
 {
     /// <summary>当前位置生效的节点建筑效果；投影属于其他节点或缺失时返回空集（与聚合侧同名语义一致）。计算属性不参与持久化。</summary>
     [JsonIgnore]
@@ -87,7 +89,11 @@ public sealed record PlayerSettingsStateDocument(
     bool AutoTravelEnabled = false,
     IReadOnlyList<AutoUseSlotState>? AutoUseSlots = null,
     double RenameCooldownUntilUnixSeconds = 0,
-    bool QueuePaused = false);
+    bool QueuePaused = false,
+    /// <summary>新手引导里程碑下标（0~6 进行中，7 完成/跳过终态；缺省解码为 0）</summary>
+    int TutorialStep = 0,
+    /// <summary>新手引导奖励游标（已发放至第几里程碑；缺省解码为 0，重学不重复发已领奖励）</summary>
+    int TutorialRewardsStep = 0);
 
 /// <summary>行动项状态快照 DTO，记录进度与剩余轮次</summary>
 public sealed record QueuedActionState(
@@ -99,7 +105,8 @@ public sealed record QueuedActionState(
     double RemainingRepeats,
     double CompletedRepeats,
     CombatExpeditionState? Expedition = null,
-    TravelActionState? Travel = null);
+    TravelActionState? Travel = null,
+    PartySessionBinding? PartySession = null);
 
 /// <summary>玩家聚合的快照导出与恢复分部。</summary>
 public sealed partial class PlayerAggregate
@@ -137,7 +144,7 @@ public sealed partial class PlayerAggregate
                 Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds,
                 Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
                 Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null),
-            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
+            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
             GetCachedEquippedInstances(),
@@ -157,7 +164,7 @@ public sealed partial class PlayerAggregate
         for (var i = 0; i < _actions.Count; i++)
         {
             var action = _actions[i];
-            actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel);
+            actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel, action.PartySession);
         }
         return actions;
     }
@@ -252,6 +259,8 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.AutoTravelEnabled == Settings.AutoTravelEnabled
             && _cachedSettingsDoc.QueuePaused == Settings.QueuePaused
             && _cachedSettingsDoc.RenameCooldownUntilUnixSeconds == Settings.RenameCooldownUntilUnixSeconds
+            && _cachedSettingsDoc.TutorialStep == Settings.TutorialStep
+            && _cachedSettingsDoc.TutorialRewardsStep == Settings.TutorialRewardsStep
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
         {
             return _cachedSettingsDoc;
@@ -263,7 +272,9 @@ public sealed partial class PlayerAggregate
             Settings.AutoTravelEnabled,
             slots,
             Settings.RenameCooldownUntilUnixSeconds,
-            Settings.QueuePaused);
+            Settings.QueuePaused,
+            Settings.TutorialStep,
+            Settings.TutorialRewardsStep);
     }
 
     private AutoUseSlotState[] GetCachedAutoUseSlots()
@@ -373,6 +384,15 @@ public sealed partial class PlayerAggregate
         }
         aggregate.World.NodeBuildingEffects = state.World.NodeBuildingEffects ?? Domain.World.BuildingEffectSet.Empty;
         aggregate.World.NodeBuildingNodeId = state.World.NodeBuildingNodeId;
+        foreach (var usage in state.World.NodeBuildingUsages ?? [])
+        {
+            if (usage is null || string.IsNullOrWhiteSpace(usage.BuildingId) || usage.BuildingId.Length > 128
+                || !double.IsFinite(usage.ActiveUsers) || usage.ActiveUsers < 0
+                || usage.Capacity < 0
+                || !double.IsFinite(usage.Efficiency) || usage.Efficiency < 0 || usage.Efficiency > 1)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "节点建筑使用记录无效。");
+            aggregate.World.NodeBuildingUsages.Add(usage);
+        }
         aggregate.Resources.Hitpoints = state.Combat.Hitpoints;
         aggregate.Resources.MaxHitpoints = state.Combat.MaxHitpoints;
         aggregate.Resources.Manapoints = state.Combat.Manapoints;
@@ -397,6 +417,8 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.AutoTravelEnabled = state.Settings.AutoTravelEnabled;
         aggregate.Settings.QueuePaused = state.Settings.QueuePaused;
         aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
+        aggregate.Settings.TutorialStep = state.Settings.TutorialStep;
+        aggregate.Settings.TutorialRewardsStep = state.Settings.TutorialRewardsStep;
         aggregate.Settings.AutoUseSlots.AddRange(state.Settings.AutoUseSlots ?? []);
         if (state.Actions.Count > MaxActionQueueLength)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
@@ -426,6 +448,10 @@ public sealed partial class PlayerAggregate
             var repeatCountValid = double.IsFinite(repeatCount) && (repeatCount == -1 || repeatCount is >= 1 and <= 1_000_000);
             var remainingRepeatsValid = double.IsFinite(remainingRepeats) && (remainingRepeats == -1 || remainingRepeats >= 1);
             if (!repeatCountValid || !remainingRepeatsValid) continue;
+            // 会话绑定只许挂在内置 party.expedition 行动上；脏快照按自愈规约剔除该行动不阻断恢复。
+            if (actionState.PartySession is { } session
+                && (!session.IsValid || intent.ActionId != ActionCatalog.PartyExpeditionActionId))
+                continue;
             if (actionState.Expedition is { } expedition
                 && ((expedition.Phase == CombatExpeditionPhase.Combat
                         && Math.Abs(actionState.ProgressSeconds) > 1e-9)
@@ -450,7 +476,8 @@ public sealed partial class PlayerAggregate
                 RemainingRepeats = remainingRepeats,
                 CompletedRepeats = actionState.CompletedRepeats,
                 Expedition = actionState.Expedition,
-                Travel = actionState.Travel
+                Travel = actionState.Travel,
+                PartySession = actionState.PartySession
             };
             aggregate._actions.Add(action);
         }
@@ -521,6 +548,8 @@ public sealed partial class PlayerAggregate
         Settings.AutoTravelEnabled = restored.Settings.AutoTravelEnabled;
         Settings.QueuePaused = restored.Settings.QueuePaused;
         Settings.RenameCooldownUntilUnixSeconds = restored.Settings.RenameCooldownUntilUnixSeconds;
+        Settings.TutorialStep = restored.Settings.TutorialStep;
+        Settings.TutorialRewardsStep = restored.Settings.TutorialRewardsStep;
         Settings.AutoUseSlots.Clear();
         Settings.AutoUseSlots.AddRange(restored.Settings.AutoUseSlots);
         _actions.Clear();
@@ -636,7 +665,8 @@ public sealed partial class PlayerAggregate
         long EquipmentVersion,
         long AbilityExperiencesVersion,
         long TechniqueExperiencesVersion,
-        long EquippedItemIdsVersion);
+        long EquippedItemIdsVersion,
+        long AbilityTriggersVersion);
     private sealed record SettingsCheckpoint(PlayerSettingsStateDocument State);
     private sealed record ActionQueueCheckpoint(QueuedActionState[] Actions);
     private sealed record DuelCheckpoint(
@@ -678,7 +708,7 @@ public sealed partial class PlayerAggregate
             Progression.TraitIds.Version),
         PlayerSectionKind.World => new WorldCheckpoint(
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress,
-                World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
+                World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
             World.AttributeInputVersion),
         PlayerSectionKind.Combat => new CombatCheckpoint(
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints,
@@ -694,11 +724,12 @@ public sealed partial class PlayerAggregate
             Loadout.Equipment.Version,
             Loadout.AbilityExperiences.Version,
             Loadout.TechniqueExperiences.Version,
-            Loadout.EquippedItemIds.Version),
+            Loadout.EquippedItemIds.Version,
+            Loadout.AbilityTriggers.Version),
         PlayerSectionKind.Settings => new SettingsCheckpoint(
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
                 Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds,
-                Settings.QueuePaused)),
+                Settings.QueuePaused, Settings.TutorialStep, Settings.TutorialRewardsStep)),
         PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
         PlayerSectionKind.Duel => new DuelCheckpoint(
             ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),
@@ -760,7 +791,7 @@ public sealed partial class PlayerAggregate
                 Loadout.LearnedAbilities.AddRange(data.LearnedAbilities);
                 Loadout.RestoreRevisionCounters(
                     data.CoreAttributesVersion, data.AbilitySlotsVersion, data.EquipmentVersion,
-                    data.AbilityExperiencesVersion, data.TechniqueExperiencesVersion);
+                    data.AbilityExperiencesVersion, data.TechniqueExperiencesVersion, data.AbilityTriggersVersion);
                 Loadout.EquippedItemIds.RestoreVersion(data.EquippedItemIdsVersion);
                 break;
             }
@@ -773,6 +804,8 @@ public sealed partial class PlayerAggregate
                 Settings.AutoTravelEnabled = data.State.AutoTravelEnabled;
                 Settings.QueuePaused = data.State.QueuePaused;
                 Settings.RenameCooldownUntilUnixSeconds = data.State.RenameCooldownUntilUnixSeconds;
+                Settings.TutorialStep = data.State.TutorialStep;
+        Settings.TutorialRewardsStep = data.State.TutorialRewardsStep;
                 Settings.AutoUseSlots.Clear();
                 Settings.AutoUseSlots.AddRange(data.State.AutoUseSlots ?? []);
                 break;
@@ -790,7 +823,8 @@ public sealed partial class PlayerAggregate
                         RemainingRepeats = actionState.RemainingRepeats,
                         CompletedRepeats = actionState.CompletedRepeats,
                         Expedition = actionState.Expedition,
-                        Travel = actionState.Travel
+                        Travel = actionState.Travel,
+                        PartySession = actionState.PartySession
                     });
                 }
                 break;

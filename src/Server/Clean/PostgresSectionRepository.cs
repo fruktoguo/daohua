@@ -740,6 +740,20 @@ public sealed class PostgresSectionRepository(
             }
         }
 
+        // 冷挂机回写同样维护读模型投影（建筑拥挤计数依赖 current_node_id）：补算迁地/上下线
+        // 状态变化经本路径落库时必须同步投影，否则节点使用人数会按滞留旧节点聚合。
+        // 不算玩家活跃——last_active_at 不推进，避免扭曲冷扫描窗口口径。
+        var projectable = deduped
+            .Where(write => applied.Contains((write.PlayerId, write.SectionKind))
+                && write.SectionKind is PlayerSectionKinds.Progression
+                    or PlayerSectionKinds.World
+                    or PlayerSectionKinds.Settings)
+            .Select(write => new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
+                write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt))
+            .ToArray();
+        if (projectable.Length > 0)
+            await UpsertProjectionAsync(connection, transaction, playerId, projectable, now, markActive: false, cancellationToken);
+
         var checkpoints = await ReadSectionChecksumsAsync(connection, transaction, playerId, cancellationToken);
         var headChecksum = ComputeHeadChecksum(checkpoints, out _);
         // 提交头条件更新兜底：行锁已保证串行，此处仍带版本谓词作为最后防线。
@@ -1030,7 +1044,8 @@ public sealed class PostgresSectionRepository(
         }
 
         // 读模型投影与真源提交同事务顺带维护；不参与一致性判定，可随时从 section 重建。
-        await UpsertProjectionAsync(connection, transaction, first.PlayerId, applied, now, cancellationToken);
+        await UpsertProjectionAsync(connection, transaction, first.PlayerId,
+            applied.Select(ToStoredSection).ToArray(), now, markActive: true, cancellationToken);
 
         // 已落盘队列行单语句删除；逐行 (kind, state_version, lease_token) 谓词语义不变。
         var deleteKinds = new string[items.Count];
@@ -1185,14 +1200,16 @@ public sealed class PostgresSectionRepository(
 
     /// <summary>
     /// 顺带维护 game.player_projection 读模型：只取本批真实写入的 section 中可投影的字段，
-    /// 未涉及的字段保留既有值；last_active_at 随每次真源提交刷新。
+    /// 未涉及的字段保留既有值；markActive 时 last_active_at 随真源提交刷新
+    /// （ComputeNode 冷挂机回写不算玩家活跃，不推进该字段，避免扭曲冷扫描窗口口径）。
     /// </summary>
     private static async Task UpsertProjectionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid playerId,
-        IReadOnlyList<FlushQueueItem> applied,
+        IReadOnlyList<StoredSection> applied,
         DateTimeOffset now,
+        bool markActive,
         CancellationToken cancellationToken)
     {
         double? realmRank = null;
@@ -1222,7 +1239,7 @@ public sealed class PostgresSectionRepository(
                 realm_rank = COALESCE($2, game.player_projection.realm_rank),
                 current_node_id = COALESCE($3, game.player_projection.current_node_id),
                 presence = COALESCE($4, game.player_projection.presence),
-                last_active_at = $5,
+                last_active_at = CASE WHEN $6 THEN $5 ELSE game.player_projection.last_active_at END,
                 projection_version = game.player_projection.projection_version + 1,
                 updated_at = $5
             """, connection, transaction);
@@ -1231,10 +1248,11 @@ public sealed class PostgresSectionRepository(
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)nodeId ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)presence ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
+        command.Parameters.Add(new NpgsqlParameter { Value = markActive });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static double? ReadProjectionDouble(FlushQueueItem item, string property)
+    private static double? ReadProjectionDouble(StoredSection item, string property)
     {
         using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
         return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
@@ -1242,7 +1260,7 @@ public sealed class PostgresSectionRepository(
             : null;
     }
 
-    private static string? ReadProjectionString(FlushQueueItem item, string property)
+    private static string? ReadProjectionString(StoredSection item, string property)
     {
         using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
         return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
@@ -1250,7 +1268,7 @@ public sealed class PostgresSectionRepository(
             : null;
     }
 
-    private static string? ReadProjectionPresence(FlushQueueItem item)
+    private static string? ReadProjectionPresence(StoredSection item)
     {
         using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
         if (!document.RootElement.TryGetProperty("presence", out var value)) return null;

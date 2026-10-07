@@ -349,7 +349,7 @@ public sealed class ComputeJobRepositoryTests
             "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())",
             playerId, playerId.ToString());
         await SqlAsync(source,
-            "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,now(),now(),1)",
+            "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,invite_code,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,(left(replace($1::text,'-',''),16)),now(),now(),1)",
             playerId, playerId.ToString());
         return playerId;
     }

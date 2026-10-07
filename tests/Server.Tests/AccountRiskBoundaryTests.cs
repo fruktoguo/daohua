@@ -70,8 +70,8 @@ public sealed class AccountRiskBoundaryTests
         var firstSignals = new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N"),
             IpAddress: sharedIp, NetworkHash: sharedNetwork, PersonKey: person);
         var secondSignals = firstSignals with { DeviceId = Guid.NewGuid().ToString("N") };
-        var first = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, firstSignals);
-        var second = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, secondSignals);
+        var first = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, null, firstSignals);
+        var second = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, null, secondSignals);
         Assert.True(first.Success);
         Assert.True(second.Success);
 
@@ -113,7 +113,7 @@ public sealed class AccountRiskBoundaryTests
         for (var index = 0; index < 3; index++)
         {
             var registered = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null,
-                new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N")));
+                null, new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N")));
             Assert.True(registered.Success);
             accounts.Add(registered.AccountId!.Value);
         }
@@ -226,7 +226,7 @@ public sealed class AccountRiskBoundaryTests
             var context = new DefaultHttpContext();
             context.Connection.RemoteIpAddress = ip;
             var missing = collector.Collect(context, new(null, null, null, null), false);
-            var rejected = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, missing);
+            var rejected = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, null, missing);
             Assert.Equal(AccountRiskErrorCodes.RiskSignalRequired, rejected.ErrorCode);
         }
         for (var index = 0; index < 2; index++)
@@ -234,7 +234,7 @@ public sealed class AccountRiskBoundaryTests
             var context = new DefaultHttpContext();
             context.Connection.RemoteIpAddress = ip;
             var signals = collector.Collect(context, new(config, Guid.NewGuid().ToString("D"), null, null), false);
-            var result = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, signals);
+            var result = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, null, signals);
             Assert.True(result.Success, result.ErrorCode);
         }
     }

@@ -103,6 +103,8 @@ public sealed class PlayerAggregateTests
     public void InfiniteActionKeepsQueueEntryAfterCompletedRounds()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        // 无限重复语义与引导无关：终态化避免教程推进对绑定行动的强制出队截断。
+        player.SkipTutorial();
         var action = player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), Baseline, ActionCatalog.Default);
 
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(17), ActionCatalog.Default);

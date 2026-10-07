@@ -163,6 +163,11 @@ public sealed class PlayerWorldState
     /// </summary>
     public List<Domain.World.NodeBuildingState> NodeBuildings { get; set; } = [];
     /// <summary>
+    /// 各节点建筑拥挤使用快照（与 NodeBuildings 同节拍投影并持久化；
+    /// 供建筑 tab 展示「使用中/承载」与超载衰减）。
+    /// </summary>
+    public List<Domain.World.NodeBuildingUsage> NodeBuildingUsages { get; set; } = [];
+    /// <summary>
     /// 当前节点已建成建筑的汇总效果（运行时按节拍从共享注册表解析写入；
     /// 持久化副本供离线补算沿用最近已知状态）。
     /// </summary>
@@ -212,6 +217,7 @@ public sealed class PlayerWorldState
         NodeBuildings = state.NodeBuildings?.ToList() ?? [];
         _nodeBuildingEffects = state.NodeBuildingEffects ?? Domain.World.BuildingEffectSet.Empty;
         _nodeBuildingNodeId = state.NodeBuildingNodeId;
+        NodeBuildingUsages = state.NodeBuildingUsages?.ToList() ?? [];
         AttributeInputVersion = attributeInputVersion;
     }
 }
@@ -310,6 +316,35 @@ public sealed class PlayerSettingsState
     public List<AutoUseSlotState> AutoUseSlots { get; } = [];
     /// <summary>改名冷却截止时刻（Unix 秒）；0 表示未冷却。</summary>
     public double RenameCooldownUntilUnixSeconds { get; set; }
+    /// <summary>新手引导里程碑下标（见 <see cref="TutorialSteps"/>；服务端权威推进，达到终态后不再回退）</summary>
+    public int TutorialStep { get; set; }
+    /// <summary>新手引导奖励游标（已发放至第几里程碑）：推进仅当 nextStep &gt; 游标才入账，
+    /// 跳过时补发游标+1..Done 的剩余奖励；重学（restart）只重置 TutorialStep、游标不动。</summary>
+    public int TutorialRewardsStep { get; set; }
+}
+
+/// <summary>
+/// 新手引导里程碑常量表（总纲 §22.2）。步骤单调递增：0 采集、1 炼丹、2 炼器、
+/// 3 前往云巅草庐、4 修炼、5 返回云溪村、6 讨伐、7 完成/跳过终态。
+/// </summary>
+public static class TutorialSteps
+{
+    /// <summary>采集凝血草一轮</summary>
+    public const int Gather = 0;
+    /// <summary>炼制引气丹一轮</summary>
+    public const int Alchemy = 1;
+    /// <summary>锻造青锋剑一轮</summary>
+    public const int Forge = 2;
+    /// <summary>旅行到达云巅草庐</summary>
+    public const int TravelToPeak = 3;
+    /// <summary>引气入体一轮</summary>
+    public const int Cultivate = 4;
+    /// <summary>旅行返回云溪村</summary>
+    public const int TravelToVillage = 5;
+    /// <summary>讨伐行动完成一轮</summary>
+    public const int Combat = 6;
+    /// <summary>引导终态（完成或跳过均收敛到此值）</summary>
+    public const int Done = 7;
 }
 
 /// <summary>
@@ -408,6 +443,8 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
     public CombatExpeditionState? Expedition { get; internal set; }
     /// <summary>移动行动当前路径与路段行进状态；普通行动保持为空。</summary>
     public TravelActionState? Travel { get; internal set; }
+    /// <summary>组队讨伐会话绑定：仅 party.expedition 队首行动携带（总纲 §21.13）。</summary>
+    public PartySessionBinding? PartySession { get; internal set; }
 
     TravelActionState? Domain.Simulation.IPlayerActionState.Travel { get => Travel; set => Travel = value; }
     CombatExpeditionState? Domain.Simulation.IPlayerActionState.Expedition { get => Expedition; set => Expedition = value; }
@@ -424,7 +461,8 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
         RemainingRepeats = RemainingRepeats,
         CompletedRepeats = CompletedRepeats,
         Expedition = Expedition,
-        Travel = Travel
+        Travel = Travel,
+        PartySession = PartySession
     };
 }
 
@@ -720,9 +758,11 @@ public sealed partial class PlayerAggregate
         DateTimeOffset now,
         ActionCatalog catalog,
         TravelActionState? travel = null,
-        bool incrementVersion = true)
+        bool incrementVersion = true,
+        PartySessionBinding? partySession = null)
         => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.EnqueuePriority,
-            Intent: intent, At: now, Catalog: catalog, Travel: travel, IncrementVersion: incrementVersion)).Action!;
+            Intent: intent, At: now, Catalog: catalog, Travel: travel, IncrementVersion: incrementVersion,
+            PartySession: partySession)).Action!;
 
     /// <summary>
     /// 从队列中显式取消/移除指定行动实例。
@@ -764,6 +804,29 @@ public sealed partial class PlayerAggregate
     {
         if (Settings.AutoTravelEnabled == enabled) return;
         Settings.AutoTravelEnabled = enabled;
+        Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 跳过新手引导：收敛到终态并把奖励游标推进到 Done——剩余未领赠送/终奖的补发
+    /// 由 ECS 层 TutorialRules 在命令事务内统一结算；已达终态时幂等空转。
+    /// </summary>
+    public void SkipTutorial()
+    {
+        if (Settings.TutorialStep >= TutorialSteps.Done) return;
+        Settings.TutorialStep = TutorialSteps.Done;
+        Settings.TutorialRewardsStep = TutorialSteps.Done;
+        Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 重新学习引导：里程碑重置为起点，奖励游标保持不动——重走可再完成全部交互步骤，
+    /// 已领过的奖励不再重复发放（由 TutorialRules.Advance 的游标判定兜底）。
+    /// </summary>
+    public void RestartTutorial()
+    {
+        if (Settings.TutorialStep <= TutorialSteps.Gather) return;
+        Settings.TutorialStep = TutorialSteps.Gather;
         Touch(PlayerSectionKind.Settings);
     }
 

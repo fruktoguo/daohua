@@ -70,4 +70,4 @@
 
 接口为 `GET /ops/api/account-abuse` 与 `POST /ops/api/account-abuse/policy`。沿用面板 Development-only 边界；生产不装配 Ops 路由，生产 Caddy 拦截 `/ops`。当前生产部署中修改策略需另行授权受控运维流程，本任务没有将开发面板开放到公网。
 
-风险事件按 `Storage:AccountRiskEventRetentionDays`（默认 30 天）分批清理，稳定账号关联和 HMAC 密钥不随事件清理。schema 与分段标签统一为 v10，载荷结构未改变；一次性迁移位于 `migrations/0010_v9_to_v10.sql`，不参与运行时。独立压测环境若需要大量注册，应显式调整策略，禁止在生产绕过检测。
+风险事件按 `Storage:AccountRiskEventRetentionDays`（默认 30 天）分批清理，稳定账号关联和 HMAC 密钥不随事件清理。schema 与分段标签统一为 v11（v11 重建 `account_risk_events.event_kind` 约束纳入 `handshake`，修复开发中间态 v10 库的旧约束；载荷结构未改变）；一次性迁移位于 `migrations/0010_v9_to_v10.sql` 与 `migrations/0011_v10_to_v11.sql`，不参与运行时。独立压测环境若需要大量注册，应显式调整策略，禁止在生产绕过检测。

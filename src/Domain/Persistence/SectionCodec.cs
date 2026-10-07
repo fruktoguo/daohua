@@ -19,16 +19,36 @@ namespace Domain.Persistence;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本；v10：账号检测表结构升级，载荷不变，仅同步内容标签。
+    /// <summary>当前分段编解码模式版本；v18：战斗属性语义收敛为纯点数通道——战斗面板
+    /// （CombatantStats 随 actionQueue/duel 载荷持久化）移除 castTimeFactor/cooldownFactor/
+    /// basicAttackRatio/skillIntensity/criticalMultiplier/searchDelayFactor 六个独立乘区字段，
+    /// 等级成长折算点数注入行动速度/攻击速度/冷却缩减/普攻增幅/技能增幅通道，新增
+    /// criticalDamagePoints（基础 50 点 = 150% 暴伤）。旧载荷的已删字段按未知属性忽略，
+    /// 新字段缺省解码为类型默认值（criticalDamagePoints=50 即基础暴伤，其余点数 0），
+    /// 表结构未变，仅存档标签推进。
+    /// v17：world 分段载荷新增 nodeBuildingUsages 节点建筑拥挤使用快照
+    /// （可缺省解码为 null=未知拥挤，按零人数满效口径；仅展示与投影数据，不改写结算语义）。
+    /// v16：actionQueue 分段远征载荷新增 isPinned 遭遇供给标记
+    /// （可缺省解码为 false=池选口径；历史远征皆出自节点池，缺省语义天然正确）。
+    /// v15：settings 分段载荷新增 tutorialRewardsStep 新手引导奖励游标（可缺省解码回填）。
+    /// v14：settings 分段载荷新增 tutorialStep 新手引导里程碑
+    /// （可缺省解码为 0，无表结构变化）。v13：邀请系统表结构落地，载荷不变，仅同步内容标签。
+    /// v12：loadout 分段触发条件从 abilitySlots[].triggers
+    /// 槽位字段迁移为 abilityTriggers 按功法 ID 映射（可缺省解码，旧槽位 triggers 字段丢弃）。
+    /// v11：account_risk_events 约束修复，载荷不变，仅同步内容标签。
+    /// v10：账号检测表结构升级，载荷不变，仅同步内容标签。
     /// v9：progression 分段载荷新增 traitIds 特质 ID 集合
     /// （可缺省解码，无表结构变化）。v8：settings 分段载荷新增 queuePaused 队列暂停开关
     /// （可缺省解码，无表结构变化）。v7：平台社交表结构升级（队伍档案/散人池/聊天队伍链接），
     /// 存档载荷本体无字段变化，仅标签随库内容版本同步推进（v6：loadout 分段新增 techniqueExperiences
     /// 技艺累计经验、行动意图新增 targetItemId/auxItemId 目标与辅助物品、战报新增 techniqueExp）。
+    /// v19：actionQueue 分段组队讨伐载荷落地——行动项新增 partySession 会话绑定
+    /// （共享剧本 PartyExpeditionSpec：成员冻结面板/战外 Buff/持续消耗品定格），远征状态新增
+    /// selfIndex/allies 盟友镜像、玩家快照新增 respawnAtSeconds 倒地截止点（全部可缺省解码）。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进（前提：新增字段可缺省解码）；本地启动链自动执行迁移，
     /// 仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 10;
+    public const int CurrentSchemaVersion = 20;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -178,7 +198,7 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Presence),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence),
                 DomainSectionKind.ActionQueue => state.Actions,
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -206,7 +226,7 @@ public static class SectionCodec
             (PlayerSectionKinds.Combat, state.Combat),
             (PlayerSectionKinds.Buffs, state.Buffs),
             (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
-            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Presence)),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence)),
             (PlayerSectionKinds.ActionQueue, state.Actions),
             (PlayerSectionKinds.Duel, state.Duel)
         };
@@ -269,12 +289,27 @@ public static class SectionCodec
             buffs,
             loadout.EquippedInstances,
             loadout.LearnedAbilities,
-            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoTravelEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds, settings.QueuePaused),
+            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoTravelEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds, settings.QueuePaused, settings.TutorialStep,
+                // v14 载荷无奖励游标：按 tutorialStep 回填「必然已领过」的最高赠送步下限，
+                // 防止升级后重学/推进重复领取阶段赠送（v15 起载荷自带游标，max 不生效）。
+                Math.Max(settings.TutorialRewardsStep, ImplyTutorialRewardsStep(settings.TutorialStep))),
             actions,
             loadout.State,
             duel,
             loadout.EquippedItemIds);
     }
+
+    /// <summary>
+    /// v14 存档的奖励游标下限：tutorialStep 已进过某里程碑 ⇒ 该步赠送必然已入账；
+    /// 无赠送的里程碑（3/4/5/6）归并到上一个有赠送的步。
+    /// </summary>
+    private static int ImplyTutorialRewardsStep(int tutorialStep) => tutorialStep switch
+    {
+        >= TutorialSteps.Done => TutorialSteps.Done,
+        >= TutorialSteps.Forge => TutorialSteps.Forge,
+        >= TutorialSteps.Alchemy => TutorialSteps.Alchemy,
+        _ => 0
+    };
 
     /// <summary>领域分段枚举到持久化键的单向映射。</summary>
     public static string ToStorageKind(DomainSectionKind section) => section switch
@@ -352,5 +387,9 @@ public static class SectionCodec
         IReadOnlyList<AutoUseSlotState> AutoUseSlots,
         double RenameCooldownUntilUnixSeconds,
         bool QueuePaused,
+        /// <summary>新手引导里程碑；v13 及更早载荷缺省解码为 0。</summary>
+        int TutorialStep,
+        /// <summary>新手引导奖励游标；v14 及更早载荷缺省解码为 0。</summary>
+        int TutorialRewardsStep,
         PresenceState Presence);
 }

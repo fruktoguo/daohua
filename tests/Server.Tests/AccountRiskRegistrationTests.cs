@@ -21,8 +21,8 @@ public sealed class AccountRiskRegistrationTests
         await using var fixture = await OpenRepositoryAsync();
         var signals = new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N"));
 
-        var first = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, signals);
-        var second = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, signals);
+        var first = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null, signals);
+        var second = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null, signals);
 
         Assert.True(first.Success);
         Assert.False(second.Success);
@@ -41,7 +41,7 @@ public sealed class AccountRiskRegistrationTests
         for (var index = 0; index < 3; index++)
         {
             var signals = new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N"), PersonKey: person);
-            results.Add(await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, signals));
+            results.Add(await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null, signals));
         }
 
         Assert.True(results[0].Success);
@@ -63,7 +63,7 @@ public sealed class AccountRiskRegistrationTests
         var registrations = Enumerable.Range(0, 2).Select(_ => Task.Run(async () =>
         {
             await start.Task;
-            return await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, signals);
+            return await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null, signals);
         })).ToArray();
 
         start.SetResult();
@@ -83,7 +83,7 @@ public sealed class AccountRiskRegistrationTests
         await using var fixture = await OpenRepositoryAsync();
         var deviceConfig = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Guid.NewGuid().ToString("N"))));
         var firstSignals = new AccountRiskSignals(DeviceConfigHash: deviceConfig, DeviceId: Guid.NewGuid().ToString("N"));
-        var first = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, firstSignals);
+        var first = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null, firstSignals);
         Assert.True(first.Success);
 
         var current = fixture.Registry.Current;
@@ -94,7 +94,7 @@ public sealed class AccountRiskRegistrationTests
                 : module).ToArray()
         });
         var secondSignals = firstSignals with { DeviceId = Guid.NewGuid().ToString("N") };
-        var second = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, secondSignals);
+        var second = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null, secondSignals);
 
         Assert.True(second.Success);
         Assert.DoesNotContain(fixture.Hasher.Hash(secondSignals, fixture.Registry.Current),
@@ -109,7 +109,7 @@ public sealed class AccountRiskRegistrationTests
         await using var fixture = await OpenRepositoryAsync();
         var before = await CountMissingSignalDenialsAsync(fixture.Source);
 
-        var result = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null);
+        var result = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null, null, null);
 
         Assert.False(result.Success);
         Assert.Equal(AccountRiskErrorCodes.RiskSignalRequired, result.ErrorCode);
@@ -136,9 +136,9 @@ public sealed class AccountRiskRegistrationTests
         });
         var ip = new System.Net.IPAddress(Guid.NewGuid().ToByteArray()).ToString();
         var first = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null,
-            new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N"), IpAddress: ip));
+            null, new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N"), IpAddress: ip));
         var second = await fixture.Repository.RegisterAsync(UniqueAccount(), "risk-pass-1", null,
-            new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N"), IpAddress: ip));
+            null, new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N"), IpAddress: ip));
         Assert.True(first.Success);
         Assert.True(second.Success);
 

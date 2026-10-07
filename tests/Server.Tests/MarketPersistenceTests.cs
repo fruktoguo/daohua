@@ -186,7 +186,7 @@ public sealed class MarketPersistenceTests
     private static async Task Seed(NpgsqlDataSource source, Guid playerId, string asset, double amount)
     {
         await Sql(source, "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", playerId, playerId.ToString());
-        await Sql(source, "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,now(),now(),1)", playerId, playerId.ToString());
+        await Sql(source, "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,invite_code,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,(left(replace($1::text,'-',''),16)),now(),now(),1)", playerId, playerId.ToString());
         await Sql(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES ($1,$2,'',$3,1,now())", playerId, asset, amount);
     }
 

@@ -31,7 +31,7 @@ public sealed class AccountRiskLoginTests
         foreach (var account in accounts)
         {
             var registration = await repository.RegisterAsync(account, "risk-pass-1", null,
-                new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N")));
+                null, new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N")));
             Assert.True(registration.Success);
             registrations.Add(registration);
         }

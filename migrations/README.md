@@ -40,5 +40,6 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0005_v5_to_v6.sql` | 仅存档载荷标签 v5→v6：loadout 分段新增 `techniqueExperiences`、ActionIntent 新增 `targetItemId`/`auxItemId`、LoadoutDocument 新增 `TechniqueExperiences`，均可缺省解码，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 6 |
 | `0006_v6_to_v7.sql` | `social.parties` 追加队伍档案列（name/activity_kind/map_id/min_valuation/is_public/updated_at）、新增 `social.party_seekers` 散人池、`social.chat_messages` 增 `party_ref` 队伍链接外键（ON DELETE SET NULL）；无存档载荷变更，schema_version 写入 7 |
 | `0007_v7_to_v8.sql` | 仅存档载荷标签 v7→v8：settings 分段新增 `queuePaused` 队列暂停开关，可缺省解码，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 8 |
+| `0018_v17_to_v18.sql` | 仅存档载荷标签 v17→v18：战斗面板收敛为纯点数通道——移除 castTimeFactor/cooldownFactor/basicAttackRatio/skillIntensity/criticalMultiplier/searchDelayFactor 六个乘区字段，新增 `criticalDamagePoints`（缺省 50 点 = 150% 暴伤），组队规格 `searchDelayFactor` 更名 `searchSpeedPoints`；旧字段忽略解码、新字段缺省默认值，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 18 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。
