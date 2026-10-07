@@ -237,7 +237,8 @@ export const MONSTER_MODIFIER_KEYS: { key: string; label: string }[] = [
   { key: 'attackSpeedPoints', label: '攻击速度点' },
   { key: 'actionSpeedPoints', label: '行动速度点' },
   { key: 'cooldownReductionPoints', label: '冷却缩减点' },
-  { key: 'threatBonusPoints', label: '威胁增幅点' }
+  { key: 'threatBonusPoints', label: '威胁增幅点' },
+  { key: 'criticalDamageBonusPoints', label: '暴击伤害点' }
 ];
 
 // 13e. 行动收益类型与结算频率 —— ParseYields 词汇表

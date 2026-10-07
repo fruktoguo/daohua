@@ -273,6 +273,11 @@ static void ValidateReferences(string directory)
             foreach (var kind in StringArray(consumable, "usableInActionTypes"))
                 Require(ActionKindVocabulary().Contains(kind),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 usableInActionTypes.{kind} 不是合法行动类型。");
+            // consumable 块为自动消耗品专属规格：必须声明可入槽行动域，否则该物品永远无法装配成静默死物品；
+            // 手动消耗品（秘籍/宝箱/礼包等）不配 consumable 块，不受此约束。
+            if (consumable.ValueKind == JsonValueKind.Object)
+                Require(StringArray(consumable, "usableInActionTypes").Any(),
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 声明了 consumable 块但 usableInActionTypes 为空。");
             foreach (var buff in Elements(Property(consumable, "buffs")))
                 foreach (var key in ObjectKeys(buff))
                     Require(consumableBuffKeys.Contains(key),
@@ -400,14 +405,15 @@ static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
     "fireDamageReductionPoints", "earthDamageReductionPoints",
     "damageAbsorptionPoints",
     "attackSpeedPoints", "actionSpeedPoints", "cooldownReductionPoints", "threatBonusPoints",
+    "criticalDamageBonusPoints",
     "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints", "threatOnTakenPoints"
 };
 
-/// <summary>技能战内 Buff 授权键：读条/免伤/威胁点数与回复、时长、叠层上限。</summary>
+/// <summary>技能战内 Buff 授权键：读条/免伤/增伤/威胁点数与回复、时长、叠层上限。</summary>
 static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
-    "attackSpeedPoints", "damageAbsorptionPoints", "threatPoints", "maxStacks",
+    "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "threatPoints", "maxStacks",
     "hpRegenPostRatio", "mpRegenPostRatio"
 };
 
