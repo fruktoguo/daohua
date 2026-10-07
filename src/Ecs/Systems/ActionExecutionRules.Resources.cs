@@ -87,8 +87,8 @@ internal static partial class ActionExecutionRules
                 step = Math.Min(step, untilStaged);
             }
         }
-        // 组队会话权威散场时刻并入自然边界：模拟窗口正好切在散场点，伪行动移除由行动准入在下一拍执行。
-        if (player.Actions.Count > 0 && player.Actions[0].PartySession is { } session
+        // 参与会话权威散场时刻并入自然边界：模拟窗口正好切在散场点，参与行动移除由行动准入在下一拍执行。
+        if (player.Actions.Count > 0 && player.Actions[0].Participation is { } session
             && double.IsFinite(session.EndsAtUnixSeconds))
         {
             var untilSessionEnd = session.EndsAtUnixSeconds - nowUnix;
@@ -149,9 +149,9 @@ internal static partial class ActionExecutionRules
         r.MaxManapoints = attributes.MaxManapoints;
         c.AttackPower = attributes.PhysicalAttack;
         c.Defense = attributes.Armor;
-        // 组队会话期间资源钳制上限取冻结面板：实时换装漂移不进入共享战斗的单位输入。
+        // 参与会话期间资源钳制上限取冻结面板：实时换装漂移不进入共享战斗的单位输入。
         var sessionMember = player.Actions.Count > 0
-            && player.Actions[0].PartySession?.Spec is { } sessionSpec
+            && player.Actions[0].Participation?.Spec is { } sessionSpec
             && player.Actions[0].Expedition is { SelfIndex: var selfIndex }
             && selfIndex >= 0 && selfIndex < sessionSpec.Members.Count
                 ? sessionSpec.Members[selfIndex] : null;
@@ -169,7 +169,7 @@ internal static partial class ActionExecutionRules
         var expedition = player.Actions.Count > 0 ? player.Actions[0].Expedition : null;
         if (expedition?.Phase == CombatExpeditionPhase.Combat) return false;
         var changed = false;
-        // 组队会话：盟友镜像的跨战技能冷却与本机同口径折算（各成员模拟消费同一冻结起值 → 位级一致）。
+        // 参与会话：盟友镜像的跨战技能冷却与本机同口径折算（各成员模拟消费同一冻结起值 → 位级一致）。
         if (expedition?.Allies is { Count: > 0 } allies)
         {
             var updated = new ExpeditionAllyState[allies.Count];
@@ -201,19 +201,19 @@ internal static partial class ActionExecutionRules
         player.Resources.RegenCarrySeconds += stepSeconds;
         if (player.Resources.RegenCarrySeconds < 5 - 1e-9) return false;
         player.Resources.RegenCarrySeconds = 0;
-        var partySpec = player.Actions.Count > 0 ? player.Actions[0].PartySession?.Spec : null;
-        var partySelf = partySpec is not null
-            && player.Actions[0].Expedition is { SelfIndex: var si } && si >= 0 && si < partySpec.Members.Count
-            ? partySpec.Members[si] : null;
-        // 组队会话期间本机成员回复率取开打冻结面板（各成员模拟消费同一数值 → 位级一致）；
+        var participationSpec = player.Actions.Count > 0 ? player.Actions[0].Participation?.Spec : null;
+        var participant = participationSpec is not null
+            && player.Actions[0].Expedition is { SelfIndex: var si } && si >= 0 && si < participationSpec.Members.Count
+            ? participationSpec.Members[si] : null;
+        // 行动参与期间成员回复率取开打冻结面板（各成员模拟消费同一数值 → 位级一致）；
         // 单人路径维持实时属性口径。
         double maxHitpoints, maxManapoints, hpRegen, mpRegen;
-        if (partySelf is not null)
+        if (participant is not null)
         {
-            maxHitpoints = partySelf.Stats.MaxHitpoints;
-            maxManapoints = partySelf.Stats.MaxManapoints;
-            hpRegen = partySelf.Stats.HpRegen;
-            mpRegen = partySelf.Stats.MpRegen;
+            maxHitpoints = participant.Stats.MaxHitpoints;
+            maxManapoints = participant.Stats.MaxManapoints;
+            hpRegen = participant.Stats.HpRegen;
+            mpRegen = participant.Stats.MpRegen;
         }
         else
         {
@@ -237,15 +237,15 @@ internal static partial class ActionExecutionRules
             };
         // 盟友镜像回复：只在非战斗相位按冻结面板结算（战斗相位由战斗内状态权威承载）。
         var anyAllyChange = false;
-        if (partySpec is not null && player.Actions[0].Expedition is { Phase: not CombatExpeditionPhase.Combat } regenExpedition
+        if (participationSpec is not null && player.Actions[0].Expedition is { Phase: not CombatExpeditionPhase.Combat } regenExpedition
             && regenExpedition.Allies is { Count: > 0 } regenAllies)
         {
             var updated = new ExpeditionAllyState[regenAllies.Count];
             for (var i = 0; i < regenAllies.Count; i++)
             {
                 var ally = regenAllies[i];
-                if (ally.MemberIndex >= partySpec.Members.Count) { updated[i] = ally; continue; }
-                var memberStats = partySpec.Members[ally.MemberIndex].Stats;
+                if (ally.MemberIndex >= participationSpec.Members.Count) { updated[i] = ally; continue; }
+                var memberStats = participationSpec.Members[ally.MemberIndex].Stats;
                 var allyHp = ally.State.Hitpoints > 0
                     ? Math.Min(memberStats.MaxHitpoints, ally.State.Hitpoints + memberStats.HpRegen)
                     : ally.State.Hitpoints;
@@ -285,9 +285,9 @@ internal static partial class ActionExecutionRules
         LiveCombatBattle? live = null)
     {
         if (player.Actions.Count == 0 || player.Resources.Hitpoints <= 0) return [];
-        // 组队会话期间不激活即时消耗品：其他成员的钱包/槽位不可见，共享剧本只消费开打定格画面
+        // 参与会话期间不激活即时消耗品：其他成员的钱包/槽位不可见，共享剧本只消费开打定格画面
         // （否则本机雷击符/药品在别的成员模拟里不存在 → 战斗状态分歧）。
-        if (player.Actions[0].PartySession is not null) return [];
+        if (player.Actions[0].Participation is not null) return [];
         // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与 MatchesActionType 固定税。
         var slots = player.Settings.AutoUseSlots;
         var anyEnabled = false;

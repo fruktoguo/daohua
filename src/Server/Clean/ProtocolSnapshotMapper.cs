@@ -472,13 +472,13 @@ public static class ProtocolSnapshotMapper
                 remainingRepeats = action.RemainingRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.PartySession?.Spec, gameData, inspectedEnemyIndex, onAttributesProjected),
-                // 组队讨伐会话伪行动标记：会话由队伍统一调度，散场时刻为社交仲裁权威值（+∞ 进行中 → null）。
-                partySession = action.PartySession is { } sessionBinding ? new
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedEnemyIndex, onAttributesProjected),
+                // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
+                participation = action.Participation is { } participationBinding ? new
                 {
-                    sessionId = sessionBinding.Spec.SessionId,
-                    endsAtUnixSeconds = double.IsPositiveInfinity(sessionBinding.EndsAtUnixSeconds)
-                        ? (double?)null : sessionBinding.EndsAtUnixSeconds
+                    sessionId = participationBinding.Spec.SessionId,
+                    endsAtUnixSeconds = double.IsPositiveInfinity(participationBinding.EndsAtUnixSeconds)
+                        ? (double?)null : participationBinding.EndsAtUnixSeconds
                 } : null,
                 travelDestinationNodeId = action.Travel?.TargetNodeId ?? action.Intent.TargetNodeId,
                 travelTotalDistance = action.Travel is null || gameData is null
@@ -519,7 +519,7 @@ public static class ProtocolSnapshotMapper
     /// 敌方条目实时字段（血蓝/出手/威胁）常驻下发；属性面板为按需投影——仅当
     /// 会话观察目标（UnitInspect）命中该下标时才携带 attributes，未点开的怪不占快照带宽。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, PartyExpeditionSpec? spec, GameDataCatalog? gameData, int? inspectedEnemyIndex, Action? onAttributesProjected = null) => new
+    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, int? inspectedEnemyIndex, Action? onAttributesProjected = null) => new
     {
         expedition.EncounterId,
         phase = MapExpeditionPhase(expedition.Phase),
@@ -546,7 +546,7 @@ public static class ProtocolSnapshotMapper
     /// 盟友阵列投影：按会话规格成员序铺满；本机位由远征标量镜像+PlayerState 快照合成，
     /// 其余位取盟友镜像。血蓝上限取自冻结面板（共享剧本唯一公共输入）。
     /// </summary>
-    private static object[] ToExpeditionAlliesDto(CombatExpeditionState expedition, PartyExpeditionSpec spec)
+    private static object[] ToExpeditionAlliesDto(CombatExpeditionState expedition, ActionParticipationSpec spec)
     {
         var result = new object[spec.Members.Count];
         for (var i = 0; i < spec.Members.Count; i++)
@@ -596,14 +596,14 @@ public static class ProtocolSnapshotMapper
         }
 
         /// <summary>本机位吟唱技能 ID：与远征导出同口径——挂起技能槽位反查冻结面板槽位能力。</summary>
-        static string? PendingAbilityIdOf(PartyMemberSnapshot member, CombatantSnapshot state)
+        static string? PendingAbilityIdOf(ActionParticipantSnapshot member, CombatantSnapshot state)
             => state.PendingSkillIndex >= 0 && state.PendingSkillIndex < member.Skills.Count
                 && member.Skills[state.PendingSkillIndex].Ability.TryGetProperty("id", out var idElement)
                 ? idElement.GetString()
                 : null;
 
         /// <summary>本机位动作时长：吟唱按配表毫秒×行动速度乘率，普攻按间隔×攻速×行动速度（与引擎导出公式一致）。</summary>
-        static double PendingDurationOf(PartyMemberSnapshot member, CombatantSnapshot state)
+        static double PendingDurationOf(ActionParticipantSnapshot member, CombatantSnapshot state)
         {
             var speed = PercentValue.Multiplier(member.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
             if (state.PendingSkillIndex >= 0 && state.PendingSkillIndex < member.Skills.Count

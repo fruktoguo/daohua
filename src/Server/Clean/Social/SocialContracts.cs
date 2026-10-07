@@ -57,7 +57,7 @@ public sealed record PartyRecord(Guid PartyId, Guid LeaderId, PartyProfileRecord
 /// <param name="MemberIds">冻结成员名册（spec.members 顺序）。</param>
 /// <param name="EndedAt">散场时刻；null 表示会话活跃。</param>
 /// <param name="EndReason">散场原因标签（member-left/party-disbanded/…/server.restart）。</param>
-/// <param name="SpecJson">冻结的共享剧本规格原始 JSON（装载对账补发行动时反序列化为 <c>PartyExpeditionSpec</c>）。</param>
+/// <param name="SpecJson">冻结的共享剧本规格原始 JSON（装载对账补发行动时反序列化为 <c>ActionParticipationSpec</c>）。</param>
 public sealed record PartySessionRecord(
     string SessionId,
     Guid PartyId,

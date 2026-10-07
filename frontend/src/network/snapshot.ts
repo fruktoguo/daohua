@@ -41,7 +41,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 20
+const SNAPSHOT_SCHEMA_VERSION = 21
 
 type JsonObject = Record<string, unknown>
 
@@ -529,7 +529,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     })
   const primary = enemies.find(enemy => enemy.hitpoints > 0) ?? enemies[0] ?? null
 
-  // 组队讨伐盟友阵列（仅 party.expedition 会话行动携带）：按会话规格成员序下发、含本机位；
+  // 行动参与会话盟友阵列：按参与者固定顺序下发、含本机位；
   // 盟友不携带属性面板（UnitInspect 观察通道仅对敌怪开放）。
   const allies: ExpeditionAlly[] | null = row.allies === null || row.allies === undefined
     ? null
@@ -690,17 +690,17 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       : (typeof object(intent.parameters).targetLevel === 'number' && Number.isFinite(object(intent.parameters).targetLevel)
           ? object(intent.parameters).targetLevel as number
           : null)
-    // 组队讨伐会话伪行动标记：携带 sessionId 与权威散场时刻；非会话行动为 null。
-    const partySessionRow = row.partySession
-    const partySession = partySessionRow === null || partySessionRow === undefined
+    // 行动参与会话标记：携带 sessionId 与权威散场时刻；非参与行动为 null。
+    const participationRow = row.participation
+    const participation = participationRow === null || participationRow === undefined
       ? null
       : (() => {
-          const session = object(partySessionRow)
+          const session = object(participationRow)
           return {
-            sessionId: identifierValue(session.sessionId, `行动 ${actionId} 的 partySession.sessionId`),
+            sessionId: identifierValue(session.sessionId, `行动 ${actionId} 的 participation.sessionId`),
             endsAtUnixSeconds: session.endsAtUnixSeconds === null || session.endsAtUnixSeconds === undefined
               ? null
-              : finiteNumber(session.endsAtUnixSeconds, `行动 ${actionId} 的 partySession.endsAtUnixSeconds`),
+              : finiteNumber(session.endsAtUnixSeconds, `行动 ${actionId} 的 participation.endsAtUnixSeconds`),
           }
         })()
     const entry: QueueEntry = {
@@ -722,7 +722,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       targetItemId,
       auxItemId,
       targetLevel,
-      partySession,
+      participation,
     }
     return entry
   })

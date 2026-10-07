@@ -21,9 +21,10 @@ public static class PostgresSchema
     /// 新增 criticalDamagePoints，旧字段忽略解码、新字段缺省默认值），存档标签推进，表结构未变。
     /// v19：组队讨伐（总纲 §21.13）——social.parties 增 open_slots 开启槽位（2..5，默认 5），
     /// social.party_members 增 ready 就绪标记，新增 social.party_sessions 持久化会话规格；无存档载荷变更。
-    /// v20：actionQueue 分段组队讨伐载荷落地——行动项新增 partySession 会话绑定，远征状态新增
+    /// v20：actionQueue 分段战斗参与载荷落地——行动项新增 participation 绑定，远征状态新增
     /// selfIndex/allies 盟友镜像与 respawnAtSeconds 倒地截止点（全部可缺省解码），表结构未变。
-    public const int Version = 20;
+    /// v21：参与绑定改为组织无关字段并携带真实 ActionId；旧 partySession 载荷不兼容，内测库按清零规则处理。
+    public const int Version = 21;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -516,7 +517,7 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (19, now()), (20, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (19, now()), (20, now()), (21, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 

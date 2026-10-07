@@ -1,3 +1,4 @@
+import { hasActionParticipation } from '../game/types'
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
@@ -1955,8 +1956,8 @@ export const CombatArena = memo(function CombatArena({
             <button
               className="danger"
               onClick={() => {
-                // 组队讨伐伪行动不受个人终止（§21.13.6）：提示回队伍页取消准备/离队散场
-                if (current.partySession != null) {
+                // 行动参与会话不受个人终止：提示回队伍页取消准备/离队散场
+                if (hasActionParticipation(current)) {
                   useGameStore.getState().setNotice(t('social.session.cancelHint'))
                   return
                 }

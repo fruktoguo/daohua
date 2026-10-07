@@ -202,12 +202,12 @@ public sealed class EcsActionQueueMutationTests
     }
 
     /// <summary>
-    /// 组队会话绑定经 ECS 快照导出必须原样保留：ExportSnapshotCore 重建 QueuedActionState
-    /// 曾漏传 PartySession，导致协议层拿不到规格（盟友阵列恒空、装载对账误判绑定缺失）。
+    /// 行动参与绑定经 ECS 快照导出必须原样保留：ExportSnapshotCore 重建 QueuedActionState
+    /// 曾漏传 Participation，导致协议层拿不到参与规格（盟友阵列恒空、装载对账误判绑定缺失）。
     /// 以 OOP ExportState 序列化逐位一致收口——同字段两处导出永远对齐。
     /// </summary>
     [Fact]
-    public void PartySessionBindingSurvivesEcsSnapshotExport()
+    public void ActionParticipationBindingSurvivesEcsSnapshotExport()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var memberA = CreatePlayer(catalog);
@@ -215,26 +215,29 @@ public sealed class EcsActionQueueMutationTests
         PlayerAttributeResolver.Apply(memberA, catalog);
         PlayerAttributeResolver.Apply(memberB, catalog);
         var stats = CombatantStats.Create(50_000, 2_000, 500, 1.0);
-        PartyMemberSnapshot MakeSnapshot(PlayerAggregate member) => new(
+        ActionParticipantSnapshot MakeSnapshot(PlayerAggregate member) => new(
             member.PlayerId.Value.ToString("D"), member.DisplayName, member.Progression.RealmLevel,
             0, 0, stats.MaxHitpoints, stats.MaxManapoints, stats, [], null, PlayerCombatSkillState.Empty);
-        var spec = new PartyExpeditionSpec("session.export", "encounter.qi-beast", "node.test", 97,
-            0, From.ToUnixTimeMilliseconds() / 1000d, [MakeSnapshot(memberA), MakeSnapshot(memberB)]);
+        var spec = new ActionParticipationSpec("session.export", "encounter.qi-beast", "node.test", 97,
+            0, From.ToUnixTimeMilliseconds() / 1000d, [MakeSnapshot(memberA), MakeSnapshot(memberB)])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
 
         var expected = PlayerAggregate.Restore(memberA.ExportState());
-        Assert.NotNull(expected.StartPartyExpedition(spec, From, catalog.Actions));
+        Assert.NotNull(expected.StartActionParticipation(spec, From, catalog.Actions));
 
         using var runtime = new EcsGameRuntime(catalog, From);
         var id = runtime.CreatePlayer(memberA.ExportState());
-        runtime.MutatePlayer(id, aggregate => aggregate.StartPartyExpedition(spec, From, catalog.Actions));
+        runtime.MutatePlayer(id, aggregate => aggregate.StartActionParticipation(spec, From, catalog.Actions));
         var actual = runtime.ExportSnapshot(id).State;
 
-        var binding = actual.Actions[0].PartySession;
+        var binding = actual.Actions[0].Participation;
         Assert.NotNull(binding);
         Assert.Equal("session.export", binding.Spec.SessionId);
         Assert.True(double.IsPositiveInfinity(binding.EndsAtUnixSeconds));
         Assert.Equal(2, binding.Spec.Members.Count);
-        Assert.Equal(expected.Actions[0].PartySession!.Spec.Members.Select(member => member.PlayerId),
+        Assert.Equal(expected.Actions[0].Participation!.Spec.Members.Select(member => member.PlayerId),
             binding.Spec.Members.Select(member => member.PlayerId));
         AssertWorkReleased(runtime, id);
     }

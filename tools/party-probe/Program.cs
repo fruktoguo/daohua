@@ -9,7 +9,7 @@ using Protocol;
 
 /// <summary>
 /// 组队共战视角探针（本地开发工具）：以指定账号登录 → 建立 /ws 长连接 →
-/// 抓首份全量快照与社交帧，打印该成员在 party.expedition 会话中实际收到的
+/// 抓首份全量快照与社交帧，打印该成员在行动参与会话中实际收到的
 /// 盟友阵列（allies）与本机位（selfIndex），用于交叉验证「同一场战斗、各成员视角一致」。
 /// 用法：dotnet run --project tools/party-probe -- &lt;account&gt; &lt;password&gt; [account password ...]
 /// </summary>
@@ -127,18 +127,17 @@ static async Task<MemberView> ProbeAsync(string account, string password)
             var st = entry.TryGetProperty("status", out var s)
                 ? s.ValueKind == JsonValueKind.Number ? s.GetInt32().ToString() : s.GetRawText()
                 : "?";
-            var hasSession = entry.TryGetProperty("partySession", out var p2) && p2.ValueKind == JsonValueKind.Object;
+            var hasSession = entry.TryGetProperty("participation", out var p2) && p2.ValueKind == JsonValueKind.Object;
             var hasExp = entry.TryGetProperty("expedition", out var e2) && e2.ValueKind == JsonValueKind.Object;
-            Console.WriteLine($"    queue[{slotNo}] {intentId} status={st} partySession={hasSession} expedition={hasExp}");
+            Console.WriteLine($"    queue[{slotNo}] {intentId} status={st} participation={hasSession} expedition={hasExp}");
             slotNo++;
             if (!entry.TryGetProperty("expedition", out var expedition) || expedition.ValueKind != JsonValueKind.Object) continue;
-            if (entry.TryGetProperty("partySession", out var ps) && ps.ValueKind == JsonValueKind.Object)
+            if (entry.TryGetProperty("participation", out var ps) && ps.ValueKind == JsonValueKind.Object)
             {
                 sessionId = ps.GetProperty("sessionId").GetString();
-                var specEl = ps.TryGetProperty("spec", out var sp) ? sp : ps;
-                specSeed = specEl.TryGetProperty("seed", out var sd) && sd.ValueKind == JsonValueKind.Number ? sd.GetInt64() : null;
-                specStartedAt = specEl.TryGetProperty("startedAtUnixSeconds", out var sa) && sa.ValueKind == JsonValueKind.Number ? sa.GetDouble() : null;
-                specHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(specEl.GetRawText())))[..16];
+                specSeed = null;
+                specStartedAt = null;
+                specHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ps.GetRawText())))[..16];
             }
             encounterId = expedition.TryGetProperty("encounterId", out var e) ? e.GetString() : encounterId;
             phase = expedition.TryGetProperty("phase", out var p) ? p.GetString() : phase;

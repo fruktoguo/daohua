@@ -1,3 +1,4 @@
+import { hasActionParticipation } from './game/types'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
@@ -466,7 +467,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
   // 主行动卡停止钮与队列列表移除共用同一确认弹窗：确认后 action.remove 移除队首即停止
   const requestStopCurrent = useCallback(() => {
     if (!current) return
-    if (current.partySession != null) {
+    if (hasActionParticipation(current)) {
       notifyPartyLocked()
       return
     }
@@ -554,7 +555,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                   <Icon name={entry.type} />
                 </span>
                 <span className="queue-name">{resolveQueueEntryName(entry, undefined, world, maps)}</span>
-                {entry.partySession != null && (
+                {hasActionParticipation(entry) && (
                   <span className="badge badge-party">
                     {partyMemberCount > 0 ? t('social.session.badgeCount', { count: partyMemberCount }) : t('social.session.badge')}
                   </span>
@@ -563,30 +564,30 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 <div className="queue-actions">
                   <button
                     aria-label={t('app.queue.moveUpAria')}
-                    disabled={index === 0 || entry.partySession != null}
+                    disabled={index === 0 || hasActionParticipation(entry)}
                     onClick={() => gameClient.sendCommand('queue.move', { actionInstanceId: entry.entryId, direction: -1 })}
-                    title={entry.partySession != null ? t('social.session.cancelHint') : t('app.queue.moveUpTitle')}
+                    title={hasActionParticipation(entry) ? t('social.session.cancelHint') : t('app.queue.moveUpTitle')}
                     type="button"
                   >↑</button>
                   <button
                     aria-label={t('app.queue.moveDownAria')}
-                    disabled={index === queue.entries.length - 1 || entry.partySession != null}
+                    disabled={index === queue.entries.length - 1 || hasActionParticipation(entry)}
                     onClick={() => gameClient.sendCommand('queue.move', { actionInstanceId: entry.entryId, direction: 1 })}
-                    title={entry.partySession != null ? t('social.session.cancelHint') : t('app.queue.moveDownTitle')}
+                    title={hasActionParticipation(entry) ? t('social.session.cancelHint') : t('app.queue.moveDownTitle')}
                     type="button"
                   >↓</button>
                   <button
                     aria-label={t('app.queue.removeAria')}
                     className="queue-remove"
                     onClick={() => {
-                      // 组队讨伐伪行动不走 action.remove（§21.13.6）：提示走队伍页取消准备/离队
-                      if (entry.partySession != null) {
+                      // 行动参与会话不走 action.remove：提示走队伍页取消准备/离队
+                      if (hasActionParticipation(entry)) {
                         notifyPartyLocked()
                         return
                       }
                       setPendingRemoval(entry)
                     }}
-                    title={entry.partySession != null ? t('social.session.cancelHint') : t('app.queue.removeTitle')}
+                    title={hasActionParticipation(entry) ? t('social.session.cancelHint') : t('app.queue.removeTitle')}
                     type="button"
                   >×</button>
                 </div>

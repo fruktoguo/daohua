@@ -469,9 +469,22 @@ public static partial class SimulationEngine
         // 余量按浮点可表达性收尾：战斗时钟以秒级 double 推进，1e-9 以下的残差在 battleFrom + step
         // 回加时会被 ULP 吸收成零消耗，使循环永远不消耗时间而触顶转换上限。
         // 队列停泊开关：暂停时行动整体冻结，墙钟资源窗口仍由外层资源边界照常结算。
-        while (remainingSeconds > 1e-9 && player.Actions.Count > 0 && !player.Settings.QueuePaused)
+        while (remainingSeconds > 1e-9 && player.Actions.Count > 0)
         {
             var action = player.Actions[0];
+            var nowUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+            // 参与会话结束是权威队列边界，必须先于暂停和阻塞判断处理，避免暂停永久阻挡散场清理。
+            if (action.Participation is { } participation && double.IsFinite(participation.EndsAtUnixSeconds)
+                && nowUnix + 1e-6 >= participation.EndsAtUnixSeconds)
+            {
+                player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: participation.EndsAtUnixSeconds);
+                events ??= new SimulationEventTail();
+                events.Add(new SimulationEvent(from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                    "action.participation.ended", "行动参与会话已结束。", action.Intent.ActionId));
+                continue;
+            }
+            // 暂停只冻结仍然有效的行动，不能改变已到期参与会话的收尾优先级。
+            if (player.Settings.QueuePaused) break;
             // 阻塞项是明确的停泊状态。它不能被本次推进重新标记为 Running，
             // 否则战斗失败等不消费时间的结果会在队头空转直到转换上限。
             if (action.Status == ActionQueueStatus.Blocked)
@@ -479,16 +492,13 @@ public static partial class SimulationEngine
                 if (!player.Settings.LoopEnabled)
                 {
                     player.RemoveAction(action.Id, incrementVersion: false,
-                        endedAtUnixSeconds: from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d);
+                        endedAtUnixSeconds: nowUnix);
                     transitions++;
                     continue;
                 }
                 if (player.Settings.LoopEnabled && player.Actions.Count > 1)
                 {
-                    if (AllActionsBlocked(player.Actions))
-                    {
-                        break;
-                    }
+                    if (AllActionsBlocked(player.Actions)) break;
                     player.RotateActionToTail(action.Id);
                     if (++transitions > MaxTransitionsPerAdvance)
                         throw new DomainException(DomainErrorCode.InvariantViolation, "单次模拟超过最大状态转换数。");
@@ -499,19 +509,6 @@ public static partial class SimulationEngine
             if (++transitions > MaxTransitionsPerAdvance)
                 throw new DomainException(DomainErrorCode.InvariantViolation,
                     $"单次模拟超过最大状态转换数（action={action.Intent.ActionId} phase={action.Expedition?.Phase} remaining={remainingSeconds:0.######}）。");
-
-            // 组队会话权威散场：资源窗口已把推进切在散场点上，此刻墙钟越线即移出伪行动
-            // （归档战报/挂起行动自动顶回队首由 RemoveAction 队列原语统一处理）。
-            var nowUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
-            if (action.PartySession is { } session && double.IsFinite(session.EndsAtUnixSeconds)
-                && nowUnix + 1e-6 >= session.EndsAtUnixSeconds)
-            {
-                player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: session.EndsAtUnixSeconds);
-                events ??= new SimulationEventTail();
-                events.Add(new SimulationEvent(from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
-                    "party.session.ended", "组队讨伐已散场。", action.Intent.ActionId));
-                continue;
-            }
             var actionId = action.Intent.ActionId;
             if (lastDefinition is null || lastActionId != actionId)
             {
@@ -687,10 +684,10 @@ public static partial class SimulationEngine
             // 同一场进行中的战斗跨步续用内存态：仅当属性输入修订号变化（Buff 到期、
             // 消耗品生效、六维经验等）时把最新结算面板换入存活单位，与每步 Restore 的
             // 模板刷新语义逐位一致；BaseAttributes 旁路目录不经修订号覆盖，逐次重算。
-            // 组队会话面板开打即冻结：不做修订刷新，战外 Buff 视图同样取定格——
+            // 参与会话面板开打即冻结：不做修订刷新，战外 Buff 视图同样取定格——
             // 会话期内的换装/增益漂移不进入共享战斗，否则各成员推演不逐位一致。
             battleState = session!.Battle;
-            if (action.PartySession?.Spec is { } liveSpec)
+            if (action.Participation?.Spec is { } liveSpec)
             {
                 var selfMemberBuffs = liveSpec.Members[battleState.SelfIndex].ExternalBuffs;
                 battleState.Player.ExternalBuffStacks = buffId

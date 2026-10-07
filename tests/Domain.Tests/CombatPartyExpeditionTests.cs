@@ -221,7 +221,7 @@ public sealed class CombatPartyExpeditionTests
     }
 
     /// <summary>
-    /// 聚合级端到端：两名玩家携带同一份 PartyExpeditionSpec 各自独立推演——
+    /// 聚合级端到端：两名玩家携带同一份 ActionParticipationSpec 各自独立推演——
     /// 双方击杀数与远征相位逐位一致（确定性铁律）、经验按在场人头平分、
     /// 共享掉落归属不重不漏（必掉品两钱包之和恒等于击杀数）。
     /// </summary>
@@ -236,22 +236,25 @@ public sealed class CombatPartyExpeditionTests
         PlayerAttributeResolver.Apply(memberB, catalog);
         // 冻结面板手工构造：Lv1 新号打不过 Lv3 木灵，组局成员面板给足强度保证波次推进。
         var memberStats = CombatantStats.Create(50_000, 2_000, 500, 1.0);
-        PartyMemberSnapshot MakeSnapshot(PlayerAggregate member, double dropBonus) => new(
+        ActionParticipantSnapshot MakeSnapshot(PlayerAggregate member, double dropBonus) => new(
             member.PlayerId.Value.ToString("D"), member.DisplayName, member.Progression.RealmLevel,
             dropBonus, 0, memberStats.MaxHitpoints, memberStats.MaxManapoints,
             memberStats, [], null, PlayerCombatSkillState.Empty);
         var snapshotA = MakeSnapshot(memberA, 0);
         var snapshotB = MakeSnapshot(memberB, 0);
-        var spec = new PartyExpeditionSpec(
+        var spec = new ActionParticipationSpec(
             "session.test", "encounter.qi-beast", "node.test", 97,
-            0, baseline.ToUnixTimeMilliseconds() / 1000d, [snapshotA, snapshotB]);
+            0, baseline.ToUnixTimeMilliseconds() / 1000d, [snapshotA, snapshotB])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
         Assert.True(spec.IsValid);
 
         // 两端各自把会话行动插到队首（社交仲裁投递的领域等价物）。
-        Assert.NotNull(memberA.StartPartyExpedition(spec, baseline, catalog.Actions));
-        Assert.NotNull(memberB.StartPartyExpedition(spec, baseline, catalog.Actions));
-        Assert.Equal(ActionCatalog.PartyExpeditionActionId, memberA.Actions[0].Intent.ActionId);
-        Assert.Equal(ActionCatalog.PartyExpeditionActionId, memberB.Actions[0].Intent.ActionId);
+        Assert.NotNull(memberA.StartActionParticipation(spec, baseline, catalog.Actions));
+        Assert.NotNull(memberB.StartActionParticipation(spec, baseline, catalog.Actions));
+        Assert.Equal(spec.ActionId, memberA.Actions[0].Intent.ActionId);
+        Assert.Equal(spec.ActionId, memberB.Actions[0].Intent.ActionId);
 
         // AdvanceTo 内部以传入余额快照建独立钱包，产出经 SimulationResult.AssetDeltas 返回——
         // 逐段 Apply 回测试钱包，复现收益入账的真实口径。
@@ -297,7 +300,31 @@ public sealed class CombatPartyExpeditionTests
     }
 
     /// <summary>
-    /// 散场收尾：EndsAt 写入后推进越过该时刻，会话伪行动自动出队回到原队首；
+    /// 单人行动也可通过同一参与绑定入口：组织适配器不改变真实行动 ID，队列仍走普通讨伐执行器。
+    /// </summary>
+    [Fact]
+    public void SingleMemberUsesSameActionParticipationPath()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var member = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "单人", baseline, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(member, catalog);
+        var spec = new ActionParticipationSpec(
+            "session.single", "encounter.qi-beast", "node.test", 101, 0,
+            baseline.ToUnixTimeMilliseconds() / 1000d, [member.CaptureActionParticipantSnapshot(catalog)])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
+
+        Assert.True(spec.IsValid);
+        Assert.NotNull(member.StartActionParticipation(spec, baseline, catalog.Actions));
+        Assert.Single(member.Actions);
+        Assert.Equal(spec.ActionId, member.Actions[0].Intent.ActionId);
+        Assert.NotNull(member.Actions[0].Participation);
+    }
+
+    /// <summary>
+    /// 散场收尾：EndsAt 写入后推进越过该时刻，会话行动自动出队回到原队首；
     /// EndsAt 未到前会话行动推进战斗不散场。
     /// </summary>
     [Fact]
@@ -309,27 +336,32 @@ public sealed class CombatPartyExpeditionTests
         var memberB = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "乙", baseline, catalog.Fingerprint);
         PlayerAttributeResolver.Apply(memberA, catalog);
         PlayerAttributeResolver.Apply(memberB, catalog);
-        var spec = new PartyExpeditionSpec(
+        var spec = new ActionParticipationSpec(
             "session.end", "encounter.qi-beast", "node.test", 99,
             0, baseline.ToUnixTimeMilliseconds() / 1000d,
-            [memberA.CapturePartyMemberSnapshot(catalog), memberB.CapturePartyMemberSnapshot(catalog)]);
+            [memberA.CaptureActionParticipantSnapshot(catalog), memberB.CaptureActionParticipantSnapshot(catalog)])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
 
-        // 成员 A 原本挂着修炼行动；开打会话插队队首。
-        memberA.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), baseline, catalog.Actions);
+        // 成员 A 原本已有同一个讨伐行动；参与会话插队时不得因 ActionId 去重而丢失原行动。
+        memberA.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), baseline, catalog.Actions);
         var soloActionId = memberA.Actions[0].Id;
-        Assert.NotNull(memberA.StartPartyExpedition(spec, baseline, catalog.Actions));
+        Assert.NotNull(memberA.StartActionParticipation(spec, baseline, catalog.Actions));
         Assert.Equal(2, memberA.Actions.Count);
-        Assert.Equal(ActionCatalog.PartyExpeditionActionId, memberA.Actions[0].Intent.ActionId);
-        Assert.True(memberA.IsInPartyExpedition);
+        Assert.Equal(spec.ActionId, memberA.Actions[0].Intent.ActionId);
+        Assert.True(memberA.IsInActionParticipation);
 
-        // 权威散场：写散场时刻（未来 30s），推进越过该时刻后伪行动出队、原行动回到队首。
+        // 到期散场必须优先于个人暂停，否则参与行动会永久占据队首。
+        memberA.SetQueuePaused(true);
+        // 写入权威散场时刻（未来 30s），推进越过该时刻后参与行动出队、原行动回到队首。
         var endsAt = baseline.AddSeconds(30).ToUnixTimeMilliseconds() / 1000d;
-        Assert.True(memberA.EndPartyExpedition(spec.SessionId, endsAt));
+        Assert.True(memberA.EndActionParticipation(spec.SessionId, endsAt));
         SimulationEngine.AdvanceTo(memberA, baseline.AddSeconds(60), catalog, new AssetWallet(memberA.PlayerId));
-        Assert.False(memberA.IsInPartyExpedition);
+        Assert.False(memberA.IsInActionParticipation);
         Assert.Single(memberA.Actions);
         Assert.Equal(soloActionId, memberA.Actions[0].Id);
-        Assert.Null(memberA.Actions[0].PartySession);
+        Assert.Null(memberA.Actions[0].Participation);
     }
 
     /// <summary>单位 ID → 成员序归一：self 位 "player"、盟友 "ally:{i}"、敌人 "enemy:{i}" 映射为整数序，跨视角比对用。</summary>

@@ -106,7 +106,7 @@ public sealed record QueuedActionState(
     double CompletedRepeats,
     CombatExpeditionState? Expedition = null,
     TravelActionState? Travel = null,
-    PartySessionBinding? PartySession = null);
+    ActionParticipationBinding? Participation = null);
 
 /// <summary>玩家聚合的快照导出与恢复分部。</summary>
 public sealed partial class PlayerAggregate
@@ -164,7 +164,7 @@ public sealed partial class PlayerAggregate
         for (var i = 0; i < _actions.Count; i++)
         {
             var action = _actions[i];
-            actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel, action.PartySession);
+            actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel, action.Participation);
         }
         return actions;
     }
@@ -448,9 +448,8 @@ public sealed partial class PlayerAggregate
             var repeatCountValid = double.IsFinite(repeatCount) && (repeatCount == -1 || repeatCount is >= 1 and <= 1_000_000);
             var remainingRepeatsValid = double.IsFinite(remainingRepeats) && (remainingRepeats == -1 || remainingRepeats >= 1);
             if (!repeatCountValid || !remainingRepeatsValid) continue;
-            // 会话绑定只许挂在内置 party.expedition 行动上；脏快照按自愈规约剔除该行动不阻断恢复。
-            if (actionState.PartySession is { } session
-                && (!session.IsValid || intent.ActionId != ActionCatalog.PartyExpeditionActionId))
+            // 参与绑定只需满足自身持久化不变量；行动 ID 是规格中的真实行动 ID。
+            if (actionState.Participation is { IsValid: false })
                 continue;
             if (actionState.Expedition is { } expedition
                 && ((expedition.Phase == CombatExpeditionPhase.Combat
@@ -477,7 +476,7 @@ public sealed partial class PlayerAggregate
                 CompletedRepeats = actionState.CompletedRepeats,
                 Expedition = actionState.Expedition,
                 Travel = actionState.Travel,
-                PartySession = actionState.PartySession
+                Participation = actionState.Participation
             };
             aggregate._actions.Add(action);
         }
@@ -824,7 +823,7 @@ public sealed partial class PlayerAggregate
                         CompletedRepeats = actionState.CompletedRepeats,
                         Expedition = actionState.Expedition,
                         Travel = actionState.Travel,
-                        PartySession = actionState.PartySession
+                        Participation = actionState.Participation
                     });
                 }
                 break;

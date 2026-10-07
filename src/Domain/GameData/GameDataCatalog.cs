@@ -50,8 +50,6 @@ public enum ActionExecutionKind : byte
 /// <param name="Technique">关联的技艺 ID（对应技艺等级提供行动速度加成）；无关联为 null。</param>
 /// <param name="ExcludedNodeIds">禁止执行该行动的地图节点集合（黑名单）：AllowedNodeIds 缺省时行动默认全图可行，
 /// 仅此处列出的节点被排除（如引气入体之类常驻行动按地点裁剪）；与 AllowedNodeIds 互斥。</param>
-/// <param name="IsPartySession">组队会话行动：遭遇由会话规格钉死（CombatEncounterId 恒为空），
-/// 仅能经社交层会话命令入队，战斗推演与收益结算走共享剧本路径（总纲 §21.13）。</param>
 public sealed record ActionDefinition(
     ActionId Id,
     string Name,
@@ -64,8 +62,7 @@ public sealed record ActionDefinition(
     ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
     string? CombatEncounterId = null,
     string? Technique = null,
-    IReadOnlySet<string>? ExcludedNodeIds = null,
-    bool IsPartySession = false)
+    IReadOnlySet<string>? ExcludedNodeIds = null)
 {
 }
 
@@ -202,13 +199,7 @@ public sealed record ItemDefinition(
 /// <summary>纯内存行动目录，运行时可由配置载入；不依赖数据库或宿主。</summary>
 public sealed class ActionCatalog
 {
-    /// <summary>组队会话伪行动 ID（总纲 §21.13）：不开放给内容配置覆写，目录构造时强制注册。</summary>
-    public static readonly ActionId PartyExpeditionActionId = new("party.expedition");
-
-    /// <summary>组队会话伪行动定义：时长占位 0（战斗驱动），遭遇由行动上的 PartySession 规格钉死。</summary>
-    public static readonly ActionDefinition PartyExpeditionDefinition = new(
-        PartyExpeditionActionId, "随队讨伐", ActionKind.Combat, 0, new Dictionary<ItemId, double>(), [],
-        HiddenFromCatalog: true, ExecutionKind: ActionExecutionKind.CombatEncounter, IsPartySession: true);
+    /// <summary>行动目录内容。</summary>
 
     private readonly IReadOnlyDictionary<ActionId, ActionDefinition> _definitions;
 
@@ -218,10 +209,6 @@ public sealed class ActionCatalog
     {
         ArgumentNullException.ThrowIfNull(definitions);
         var map = new Dictionary<ActionId, ActionDefinition>();
-        // 系统内置行动强制注册：party.expedition 是引擎行为而非内容配置，缺失或覆写均拒绝以保判定收敛。
-        if (definitions.Any(definition => definition.Id == PartyExpeditionActionId))
-            throw new DomainException(DomainErrorCode.InvalidArgument, $"{PartyExpeditionActionId} 为系统内置行动，不允许内容配置。");
-        map[PartyExpeditionActionId] = PartyExpeditionDefinition;
         foreach (var definition in definitions)
         {
             Validate(definition);
@@ -280,9 +267,7 @@ public sealed class ActionCatalog
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的数值无效。");
         if (!Enum.IsDefined(definition.ExecutionKind)
             || (definition.ExecutionKind == ActionExecutionKind.CombatEncounter
-                && string.IsNullOrWhiteSpace(definition.CombatEncounterId) && !definition.IsPartySession)
-            || (definition.IsPartySession
-                && (definition.ExecutionKind != ActionExecutionKind.CombatEncounter || !definition.HiddenFromCatalog)))
+                && string.IsNullOrWhiteSpace(definition.CombatEncounterId)))
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的执行元数据无效。");
         // 地点约束互斥：白名单（仅列处可执行）与黑名单（仅列处禁执行）不可同配，否则语义含糊。
         if (definition.AllowedNodeIds is { Count: > 0 } && definition.ExcludedNodeIds is { Count: > 0 })
@@ -427,7 +412,7 @@ public sealed class GameDataCatalog
         Buildings = NormalizeBuildings(buildings);
         foreach (var action in Actions.All)
         {
-            if (action.ExecutionKind == ActionExecutionKind.CombatEncounter && !action.IsPartySession
+            if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
                 && (string.IsNullOrWhiteSpace(action.CombatEncounterId)
                     || !CombatEncounters.ContainsKey(action.CombatEncounterId)))
                 throw new DomainException(DomainErrorCode.NotFound, $"行动 {action.Id} 关联的遭遇不存在。");

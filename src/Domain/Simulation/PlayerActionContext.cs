@@ -19,8 +19,8 @@ public interface IPlayerActionState
     CombatExpeditionState? Expedition { get; set; }
     /// <summary>移动行动当前路径与路段行进状态；普通行动为 null。</summary>
     TravelActionState? Travel { get; set; }
-    /// <summary>组队会话绑定（party.expedition 伪行动携带共享剧本规格与权威散场时刻）；非会话行动为 null。</summary>
-    Domain.Player.PartySessionBinding? PartySession => null;
+    /// <summary>行动参与绑定（共享剧本规格与权威散场时刻）；非参与行动为 null。</summary>
+    Domain.Player.ActionParticipationBinding? Participation => null;
 }
 
 /// <summary>
@@ -56,10 +56,10 @@ public interface IPlayerActionContext
     bool RotateActionToTail(Guid actionInstanceId);
     /// <summary>收益落账后的轮完成裁决；只有重复次数为 0 才循环或离队。</summary>
     PlayerActionRoundDisposition FinishActionRound(Guid actionInstanceId, bool loopable, double endedAtUnixSeconds);
-    /// <summary>队首高优插队（自动移动/手动赶路/组队会话开打共用）：同类去重、挂起运行中队首、新行动立即 Running；模拟内传 incrementVersion: false。</summary>
+    /// <summary>队首高优插队（自动移动/手动赶路/行动参与开打共用）：同类去重、挂起运行中队首、新行动立即 Running；模拟内传 incrementVersion: false。</summary>
     IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog catalog,
         TravelActionState? travel = null, bool incrementVersion = true,
-        Domain.Player.PartySessionBinding? partySession = null);
+        Domain.Player.ActionParticipationBinding? participation = null);
 }
 
 /// <summary>资源自然窗口需要的直接分段引用；不要求任何聚合或序列化文档。</summary>

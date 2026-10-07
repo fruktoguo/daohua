@@ -42,13 +42,13 @@ public static class SectionCodec
     /// （可缺省解码，无表结构变化）。v7：平台社交表结构升级（队伍档案/散人池/聊天队伍链接），
     /// 存档载荷本体无字段变化，仅标签随库内容版本同步推进（v6：loadout 分段新增 techniqueExperiences
     /// 技艺累计经验、行动意图新增 targetItemId/auxItemId 目标与辅助物品、战报新增 techniqueExp）。
-    /// v19：actionQueue 分段组队讨伐载荷落地——行动项新增 partySession 会话绑定
-    /// （共享剧本 PartyExpeditionSpec：成员冻结面板/战外 Buff/持续消耗品定格），远征状态新增
-    /// selfIndex/allies 盟友镜像、玩家快照新增 respawnAtSeconds 倒地截止点（全部可缺省解码）。
+    /// v19：actionQueue 分段组队讨伐载荷落地——行动项新增参与会话绑定，远征状态新增
+    /// selfIndex/allies 盟友镜像、玩家快照新增 respawnAtSeconds 倒地截止点。
+    /// v21：行动参与绑定改为组织无关的 participation 字段，绑定规格新增真实 ActionId；旧
+    /// partySession/party.expedition 载荷不再兼容，内测库按清零规则处理。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
-    /// 内嵌 UPDATE schema_version 标签推进（前提：新增字段可缺省解码）；本地启动链自动执行迁移，
-    /// 仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 20;
+    /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
+    public const int CurrentSchemaVersion = 21;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>

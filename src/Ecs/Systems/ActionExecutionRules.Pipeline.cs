@@ -87,11 +87,28 @@ internal static partial class ActionExecutionRules
     {
         using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.queue");
         if (IsComplete(e) || !e.WindowOpen || e.PreparedAction is not null || e.Waiting) return;
-        // 队列暂停时本窗口不准备任何行动：结构与进度原样保留，恢复后下一窗口继续。
-        if (e.Player.Settings.QueuePaused) { e.Waiting = true; return; }
+        // 暂停不能绕过已到期参与会话；具体到期判断在队首循环内先于暂停执行。
         while (e.RemainingSeconds > 1e-9 && e.Player.Actions.Count > 0)
         {
             var action = e.Queue.Actions[0];
+            if (action.Participation is { } participation && double.IsFinite(participation.EndsAtUnixSeconds)
+                && e.Cursor.ToUnixTimeMilliseconds() / 1000d + 1e-6 >= participation.EndsAtUnixSeconds)
+            {
+                FlushCombatState(e);
+                var sessionCombat = e.Entity.GetComponent<PlayerCombatComponent>();
+                if (sessionCombat is { EncounterEntityId: not 0 })
+                    e.Entity.World.WorldMain.GetComponent<EcsClockComponent>()!.ReleaseCombatBattle!(e.Entity);
+                e.Battle = null;
+                e.Player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: participation.EndsAtUnixSeconds);
+                e.Core.AddEvent(new SimulationEvent(e.Cursor, "action.participation.ended", "行动参与会话已结束。", action.Intent.ActionId));
+                CountTransition(e);
+                continue;
+            }
+            if (e.Player.Settings.QueuePaused)
+            {
+                e.Waiting = true;
+                return;
+            }
             if (action.Status == ActionQueueStatus.Blocked)
             {
                 if (!AdvanceBlockedAction(e.Player, action, e.Cursor))
@@ -99,21 +116,6 @@ internal static partial class ActionExecutionRules
                     e.Waiting = true;
                     return;
                 }
-                CountTransition(e);
-                continue;
-            }
-            // 组队会话权威散场：资源窗口已把推进切在散场点（cursor 越线即收队），
-            // 伪行动移出队列并释放战斗实体；被挂起的原行动由队列原语顶回队首恢复推进。
-            if (action.PartySession is { } session && double.IsFinite(session.EndsAtUnixSeconds)
-                && e.Cursor.ToUnixTimeMilliseconds() / 1000d + 1e-6 >= session.EndsAtUnixSeconds)
-            {
-                FlushCombatState(e);
-                var sessionCombat = e.Entity.GetComponent<PlayerCombatComponent>();
-                if (sessionCombat is { EncounterEntityId: not 0 })
-                    e.Entity.World.WorldMain.GetComponent<EcsClockComponent>()!.ReleaseCombatBattle!(e.Entity);
-                e.Battle = null;
-                e.Player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: session.EndsAtUnixSeconds);
-                e.Core.AddEvent(new SimulationEvent(e.Cursor, "party.session.ended", "组队讨伐已散场。", action.Intent.ActionId));
                 CountTransition(e);
                 continue;
             }
@@ -146,9 +148,9 @@ internal static partial class ActionExecutionRules
                         var restored = CombatActionRules.RestoreCombatBattle(e.Player, action, encounter, e.Catalog);
                         e.Battle = AttachCombat(e, restored, e.Cursor.AddSeconds(-restored.ElapsedSeconds));
                     }
-                    if (action.PartySession?.Spec is { } sessionSpec)
+                    if (action.Participation?.Spec is { } sessionSpec)
                     {
-                        // 组队会话面板开打即冻结：不随属性输入修订刷新，战外 Buff 视图取成员定格。
+                        // 参与会话面板开打即冻结：不随属性输入修订刷新，战外 Buff 视图取成员定格。
                         var selfMemberBuffs = sessionSpec.Members[e.Battle.State.SelfIndex].ExternalBuffs;
                         e.Battle.State.Player.ExternalBuffStacks = buffId
                             => CombatActionRules.SumFrozenBuffStacks(selfMemberBuffs, buffId);

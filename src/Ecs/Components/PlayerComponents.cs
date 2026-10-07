@@ -390,7 +390,7 @@ public sealed class CombatEncounterComponent : YuoComponent
     /// <summary>敌方单位实体 ID 列表（与 State.Enemies 按下标一一对应）。</summary>
     public IReadOnlyList<long> EnemyEntityIds { get; set; } = [];
     /// <summary>
-    /// 非本机盟友单位实体 ID 列表（组队会话挂接的纯战斗实体，与 State.PlayerAllies 中非本机下标对应）；
+    /// 非本机盟友单位实体 ID 列表（参与会话挂接的纯战斗实体，与 State.PlayerAllies 中非本机下标对应）；
     /// 单人恒为空列表。盟友实体只承载触发器派发的实体句柄，不映射真实玩家实体。
     /// </summary>
     public IReadOnlyList<long> AllyEntityIds { get; set; } = [];

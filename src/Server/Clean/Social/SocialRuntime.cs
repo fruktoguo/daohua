@@ -827,19 +827,36 @@ public sealed class SocialRuntime
             _logger.LogWarning("组队讨伐开战放弃：目标节点 {NodeId} 不在世界图或无遭遇池（队伍 {PartyId}）。", targetNode, party.PartyId);
             return;
         }
+        if (party.Profile.ActivityKind is not ("any" or "combat"))
+        {
+            _logger.LogInformation("行动参与开战跳过：队伍目标类型 {ActivityKind} 不是讨伐（队伍 {PartyId}）。", party.Profile.ActivityKind, party.PartyId);
+            return;
+        }
+        var action = _gameData.Actions.All
+            .Where(definition => definition.Kind == ActionKind.Combat
+                && definition.ExecutionKind == ActionExecutionKind.CombatEncounter
+                && (definition.AllowedNodeIds is null || definition.AllowedNodeIds.Contains(targetNode))
+                && (definition.ExcludedNodeIds is null || !definition.ExcludedNodeIds.Contains(targetNode)))
+            .OrderBy(definition => definition.Id.Value, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (action is null)
+        {
+            _logger.LogWarning("行动参与开战放弃：目标节点 {NodeId} 没有可用讨伐行动（队伍 {PartyId}）。", targetNode, party.PartyId);
+            return;
+        }
         var seed = Random.Shared.NextInt64(long.MaxValue);
         var encounterId = node.EncounterIds[(int)(seed % node.EncounterIds.Count)];
-        var sessionId = $"party:{party.PartyId:N}:{startedAt.ToUnixTimeSeconds()}:{RandomNumberGenerator.GetHexString(3)}";
+        var sessionId = $"action:{Guid.NewGuid():N}";
 
         // 逐成员装载并冻结面板（离线成员强制装载后即卸）；任一失败整局放弃，不开半个会话。
-        var snapshots = new PartyMemberSnapshot?[party.Members.Count];
+        var snapshots = new ActionParticipantSnapshot?[party.Members.Count];
         for (var i = 0; i < party.Members.Count; i++)
         {
             var member = party.Members[i];
             try
             {
                 await ApplySessionMutationAsync(member.PlayerId,
-                    aggregate => snapshots[i] = aggregate.CapturePartyMemberSnapshot(_gameData),
+                    aggregate => snapshots[i] = aggregate.CaptureActionParticipantSnapshot(_gameData),
                     cancellationToken);
             }
             catch (Exception exception)
@@ -854,11 +871,14 @@ public sealed class SocialRuntime
             }
         }
 
-        var spec = new PartyExpeditionSpec(
+        var spec = new ActionParticipationSpec(
             sessionId, encounterId, targetNode, seed,
             snapshots.Max(member => member!.SearchSpeedPoints),
             startedAt.ToUnixTimeMilliseconds() / 1000d,
-            [.. snapshots.Select(member => member!)]);
+            [.. snapshots.Select(member => member!)])
+        {
+            ActionId = action.Id
+        };
         if (!spec.IsValid)
         {
             _logger.LogError("组队讨伐开战放弃：会话规格不合法（队伍 {PartyId}，会话 {SessionId}）。", party.PartyId, sessionId);
@@ -879,12 +899,12 @@ public sealed class SocialRuntime
                     // 先扫净残留会话绑定（崩溃/重启遗留的异会话或非队首同名绑定），再幂等入队本会话。
                     for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
                     {
-                        var binding = aggregate.Actions[i].PartySession;
+                        var binding = aggregate.Actions[i].Participation;
                         if (binding is null) continue;
                         if (i == 0 && string.Equals(binding.Spec.SessionId, spec.SessionId, StringComparison.Ordinal)) continue;
                         aggregate.RemoveAction(aggregate.Actions[i].Id);
                     }
-                    aggregate.StartPartyExpedition(spec, startedAt, _gameData.Actions);
+                    aggregate.StartActionParticipation(spec, startedAt, _gameData.Actions);
                 }, cancellationToken);
             }
             catch (Exception exception)
@@ -917,11 +937,11 @@ public sealed class SocialRuntime
                 {
                     for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
                     {
-                        var binding = aggregate.Actions[i].PartySession;
+                        var binding = aggregate.Actions[i].Participation;
                         if (binding is null) continue;
                         // 队首本会话绑定写权威散场时刻；异会话遗留与非队首残留直接移除（不在队首无推进语义）。
                         if (i == 0 && string.Equals(binding.Spec.SessionId, session.SessionId, StringComparison.Ordinal))
-                            aggregate.EndPartyExpedition(session.SessionId, endsAtUnixSeconds);
+                            aggregate.EndActionParticipation(session.SessionId, endsAtUnixSeconds);
                         else
                             aggregate.RemoveAction(aggregate.Actions[i].Id);
                     }
@@ -1002,11 +1022,10 @@ public sealed class SocialRuntime
         var stale = new List<(Guid PlayerId, string SessionId)>();
         foreach (var snapshot in loaded)
         {
-            if (snapshot.State.Actions.Count > 0 && snapshot.State.Actions[0].PartySession is { } binding
+            if (snapshot.State.Actions.Count > 0 && snapshot.State.Actions[0].Participation is { } binding
                 && double.IsPositiveInfinity(binding.EndsAtUnixSeconds))
                 stale.Add((snapshot.PlayerId, binding.Spec.SessionId));
         }
-        if (stale.Count == 0) return;
         var endedCache = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
         var aliveCache = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (memberId, sessionId) in stale)
@@ -1025,12 +1044,49 @@ public sealed class SocialRuntime
                 }
                 if (aliveCache.Contains(sessionId) || !endedCache.TryGetValue(sessionId, out var endedAt)) continue;
                 await ApplySessionMutationAsync(memberId,
-                    aggregate => aggregate.EndPartyExpedition(sessionId, endedAt.ToUnixTimeMilliseconds() / 1000d),
+                    aggregate => aggregate.EndActionParticipation(sessionId, endedAt.ToUnixTimeMilliseconds() / 1000d),
                     cancellationToken);
             }
             catch (Exception exception)
             {
                 _logger.LogError(exception, "组队讨伐绑定兜底收尾失败：成员 {PlayerId}（会话 {SessionId}）。", memberId, sessionId);
+            }
+        }
+
+        // 开打记录先落库、逐成员投递后可能因崩溃漏投；周期对账必须扫描“活跃会话但队首无绑定”的在线玩家，
+        // 不能只扫描已经存在的死绑定。
+        foreach (var snapshot in loaded)
+        {
+            try
+            {
+                var partyId = await _repository.GetPartyIdAsync(snapshot.PlayerId, cancellationToken);
+                if (partyId is not { } ownedPartyId) continue;
+                var active = await _repository.GetActivePartySessionAsync(ownedPartyId, cancellationToken);
+                if (active is not { } live || !live.MemberIds.Contains(snapshot.PlayerId)) continue;
+                var spec = JsonSerializer.Deserialize<ActionParticipationSpec>(live.SpecJson, PersistenceJson.Options);
+                if (spec is not { IsValid: true } participationSpec
+                    || participationSpec.SelfIndexOf(new PlayerId(snapshot.PlayerId)) < 0)
+                    continue;
+                var current = _players.TryGetLoaded(snapshot.PlayerId) ?? snapshot;
+                var bound = current.State.Actions.Count > 0
+                    && current.State.Actions[0].Participation is { } participation
+                    && string.Equals(participation.Spec.SessionId, live.SessionId, StringComparison.Ordinal)
+                    && double.IsPositiveInfinity(participation.EndsAtUnixSeconds)
+                    && current.State.Actions.Skip(1).All(action => action.Participation is null);
+                if (bound) continue;
+                await ApplySessionMutationAsync(snapshot.PlayerId, aggregate =>
+                {
+                    for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
+                    {
+                        if (aggregate.Actions[i].Participation is null) continue;
+                        aggregate.RemoveAction(aggregate.Actions[i].Id);
+                    }
+                    aggregate.StartActionParticipation(participationSpec, live.StartedAt, _gameData.Actions);
+                }, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "行动参与绑定补发失败：成员 {PlayerId}。", snapshot.PlayerId);
             }
         }
     }

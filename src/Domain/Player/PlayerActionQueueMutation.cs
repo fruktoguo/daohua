@@ -40,7 +40,7 @@ public enum PlayerActionRoundDisposition : byte
 /// <param name="At">操作发生的墙钟时刻，用于入队时间与归档时刻推导。</param>
 /// <param name="Catalog">行动配表目录，用于校验意图合法性。</param>
 /// <param name="Travel">插队移动行动附带的路径状态。</param>
-/// <param name="PartySession">插队组队会话行动附带的会话绑定（party.expedition 专用）。</param>
+/// <param name="Participation">插队行动附带的行动参与绑定。</param>
 /// <param name="IncrementVersion">本次变更是否提交聚合版本号；模拟内部推进传 false。</param>
 /// <param name="EndedAtUnixSeconds">归档结束时刻（Unix 秒）；负数表示按变更类型推导。</param>
 /// <param name="Direction">Move 方向，仅允许 -1/1。</param>
@@ -52,7 +52,7 @@ public readonly record struct PlayerActionQueueMutation(
     DateTimeOffset At = default,
     ActionCatalog? Catalog = null,
     TravelActionState? Travel = null,
-    PartySessionBinding? PartySession = null,
+    ActionParticipationBinding? Participation = null,
     bool IncrementVersion = true,
     double EndedAtUnixSeconds = -1,
     int Direction = 0,
@@ -172,16 +172,16 @@ public static class PlayerActionQueueRules
             {
                 var priority = mutation.Kind == PlayerActionQueueMutationKind.EnqueuePriority;
                 var intent = ValidateIntent(mutation.Intent, mutation.Catalog, priority);
-                if (priority)
+                if (priority && mutation.Participation is null)
                     for (var i = actions.Count - 1; i >= 0; i--)
                         if (actions[i].Intent.ActionId == intent.ActionId) work.ArchiveIds.Add(actions[i].Id);
                 if (actions.Count - work.ArchiveIds.Count >= PlayerAggregate.MaxActionQueueLength)
                     throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {PlayerAggregate.MaxActionQueueLength} 项。");
                 var instanceId = mutation.InstanceId == Guid.Empty ? Guid.NewGuid() : mutation.InstanceId;
-                // 插队行动默认只跑一轮（RepeatCount=1）；组队会话行动例外——无限驻留队首
-                // 直至散场时刻收尾（总纲 §21.13），否则波次清空即走离队裁决导致 WaveNumber 恒 1。
+                // 插队行动默认只跑一轮（RepeatCount=1）；行动参与例外——无限驻留队首
+                // 直至散场时刻收尾（共享参与剧本），否则波次清空即走离队裁决导致 WaveNumber 恒 1。
                 var normalized = new ActionIntent(intent.ActionId,
-                    priority && mutation.PartySession is null ? 1 : intent.RepeatCount,
+                    priority && mutation.Participation is null ? 1 : intent.RepeatCount,
                     intent.TargetNodeId,
                     intent.Parameters is null ? null : new ReadOnlyDictionary<string, double>(
                         intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
@@ -191,7 +191,7 @@ public static class PlayerActionQueueRules
                     intent.TargetItemId,
                     intent.AuxItemId);
                 work.Action = new(instanceId, normalized, mutation.At)
-                    { Travel = mutation.Travel, PartySession = mutation.PartySession };
+                    { Travel = mutation.Travel, Participation = mutation.Participation };
                 work.ActivateHead = priority;
                 work.Changed = true;
                 return;
@@ -294,8 +294,9 @@ public static class PlayerActionQueueRules
                 actions.Add(work.Action!);
                 break;
             case PlayerActionQueueMutationKind.EnqueuePriority:
-                for (var i = actions.Count - 1; i >= 0; i--)
-                    if (actions[i].Intent.ActionId == work.Action!.Intent.ActionId) actions.RemoveAt(i);
+                if (work.Mutation.Participation is null)
+                    for (var i = actions.Count - 1; i >= 0; i--)
+                        if (actions[i].Intent.ActionId == work.Action!.Intent.ActionId) actions.RemoveAt(i);
                 if (actions.Count > 0 && actions[0].Status == ActionQueueStatus.Running)
                     actions[0].Status = ActionQueueStatus.Pending;
                 work.Action!.Status = ActionQueueStatus.Running;

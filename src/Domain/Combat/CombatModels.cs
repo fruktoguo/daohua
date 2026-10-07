@@ -794,13 +794,13 @@ public sealed record CombatExpeditionState(
     /// </summary>
     public string? OriginNodeId { get; init; }
     /// <summary>
-    /// 组队会话中本机成员在共享剧本 Members 序列中的下标（总纲 §21.13）；单人恒为 0。
+    /// 行动参与会话中本机成员在共享剧本 Members 序列中的下标；单人恒为 0。
     /// </summary>
     public int SelfIndex { get; init; }
     /// <summary>
-    /// 其他队伍成员的战斗快照（组队会话全相位携带；单人恒为 null）。
+    /// 其他参与成员的战斗快照（参与会话全相位携带；单人恒为 null）。
     /// Combat 相位承载完整战斗快照，波间搜索/复活相位退化为气血灵力 + 技能冷却镜像（跨波携带）。
-    /// 成员顺序按 MemberIndex 对应会话规格 Members 序列，本机成员仍由 PlayerState/Player* 镜像承载。
+    /// 成员顺序按 MemberIndex 对应参与规格 Members 序列，本机成员仍由 PlayerState/Player* 镜像承载。
     /// </summary>
     public IReadOnlyList<ExpeditionAllyState>? Allies { get; init; }
 

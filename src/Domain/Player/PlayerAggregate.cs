@@ -443,11 +443,12 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
     public CombatExpeditionState? Expedition { get; internal set; }
     /// <summary>移动行动当前路径与路段行进状态；普通行动保持为空。</summary>
     public TravelActionState? Travel { get; internal set; }
-    /// <summary>组队讨伐会话绑定：仅 party.expedition 队首行动携带（总纲 §21.13）。</summary>
-    public PartySessionBinding? PartySession { get; internal set; }
+    /// <summary>行动参与绑定：共享剧本规格与权威散场时刻。</summary>
+    public ActionParticipationBinding? Participation { get; internal set; }
 
     TravelActionState? Domain.Simulation.IPlayerActionState.Travel { get => Travel; set => Travel = value; }
     CombatExpeditionState? Domain.Simulation.IPlayerActionState.Expedition { get => Expedition; set => Expedition = value; }
+    ActionParticipationBinding? Domain.Simulation.IPlayerActionState.Participation => Participation;
     ActionQueueStatus Domain.Simulation.IPlayerActionState.Status { get => Status; set => Status = value; }
     double Domain.Simulation.IPlayerActionState.ProgressSeconds { get => ProgressSeconds; set => ProgressSeconds = value; }
     double Domain.Simulation.IPlayerActionState.RemainingRepeats { get => RemainingRepeats; set => RemainingRepeats = value; }
@@ -462,7 +463,7 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
         CompletedRepeats = CompletedRepeats,
         Expedition = Expedition,
         Travel = Travel,
-        PartySession = PartySession
+        Participation = Participation
     };
 }
 
@@ -759,10 +760,10 @@ public sealed partial class PlayerAggregate
         ActionCatalog catalog,
         TravelActionState? travel = null,
         bool incrementVersion = true,
-        PartySessionBinding? partySession = null)
+        ActionParticipationBinding? participation = null)
         => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.EnqueuePriority,
             Intent: intent, At: now, Catalog: catalog, Travel: travel, IncrementVersion: incrementVersion,
-            PartySession: partySession)).Action!;
+            Participation: participation)).Action!;
 
     /// <summary>
     /// 从队列中显式取消/移除指定行动实例。

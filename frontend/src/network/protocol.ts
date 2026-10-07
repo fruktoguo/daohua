@@ -508,12 +508,9 @@ export interface PartyMemberDto {
   ready: boolean
 }
 
-/**
- * 组队讨伐（同图共战）活跃会话：开打裁决产生，任一成员变动即散场。
- * 会话期间每名成员行动队首为 party.expedition 会话伪行动。
- */
+/** 行动参与所属组织的活跃会话视图：开战裁决产生，成员变动即散场。 */
 export interface PartySessionDto {
-  /** 会话唯一标识（与行动条目 partySession.sessionId 配对） */
+  /** 会话唯一标识（与行动参与队列 participation.sessionId 配对） */
   sessionId: string
   /** 钉死的战斗遭遇 ID */
   encounterId: string

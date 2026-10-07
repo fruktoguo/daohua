@@ -149,6 +149,49 @@ public sealed class EcsPlayerRuntimeAdapter(
             var target = _simulationClock.UtcNow;
             await RefreshNodeBuildingsAsync(playerId, before.State.World, target, cancellationToken).ConfigureAwait(false);
             before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            // 参与会话必须在离线补算前完成权威对账：否则旧绑定会先越过散场时刻结算，再被发现已经结束。
+            if (socialRepository is not null)
+            {
+                var ownedPartyId = await socialRepository.GetPartyIdAsync(playerId, cancellationToken).ConfigureAwait(false);
+                var loadedState = ecs.ExportSnapshot(playerId).State;
+                var headParticipation = loadedState.Actions.Count > 0 ? loadedState.Actions[0].Participation : null;
+                if (headParticipation is { } staleParticipation && double.IsPositiveInfinity(staleParticipation.EndsAtUnixSeconds))
+                {
+                    var row = await socialRepository.GetPartySessionAsync(staleParticipation.Spec.SessionId, cancellationToken).ConfigureAwait(false);
+                    if (row is null || row.EndedAt is not null || ownedPartyId != row.PartyId)
+                    {
+                        var endedAt = (row?.EndedAt ?? _simulationClock.UtcNow).ToUnixTimeMilliseconds() / 1000d;
+                        ecs.MutatePlayer(playerId, aggregate => aggregate.EndActionParticipation(staleParticipation.Spec.SessionId, endedAt));
+                    }
+                }
+                if (ownedPartyId is { } partyId)
+                {
+                    var active = await socialRepository.GetActivePartySessionAsync(partyId, cancellationToken).ConfigureAwait(false);
+                    var activeSpec = active is { } live && live.MemberIds.Contains(playerId)
+                        ? JsonSerializer.Deserialize<ActionParticipationSpec>(live.SpecJson, PersistenceJson.Options)
+                        : null;
+                    var current = ecs.ExportSnapshot(playerId).State;
+                    var alreadyBound = current.Actions.Count > 0
+                        && current.Actions[0].Participation is { } currentParticipation
+                        && string.Equals(currentParticipation.Spec.SessionId, active?.SessionId, StringComparison.Ordinal)
+                        && double.IsPositiveInfinity(currentParticipation.EndsAtUnixSeconds)
+                        && current.Actions.Skip(1).All(action => action.Participation is null);
+                    if (active is { } liveSession && activeSpec is { IsValid: true } spec
+                        && spec.SelfIndexOf(new PlayerId(playerId)) >= 0 && !alreadyBound)
+                    {
+                        ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
+                            {
+                                if (aggregate.Actions[i].Participation is null) continue;
+                                aggregate.RemoveAction(aggregate.Actions[i].Id);
+                            }
+                            aggregate.StartActionParticipation(spec, liveSession.StartedAt, gameData.Actions);
+                        });
+                    }
+                }
+                before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            }
             TrackDirty(playerId);
             if (target > state.LastSimulatedAt)
             {
@@ -168,14 +211,14 @@ public sealed class EcsPlayerRuntimeAdapter(
             if (socialRepository is not null)
             {
                 var partyId = await socialRepository.GetPartyIdAsync(playerId, cancellationToken).ConfigureAwait(false);
-                var headBinding = snapshot.State.Actions.Count > 0 ? snapshot.State.Actions[0].PartySession : null;
+                var headBinding = snapshot.State.Actions.Count > 0 ? snapshot.State.Actions[0].Participation : null;
                 if (headBinding is { } staleBinding && double.IsPositiveInfinity(staleBinding.EndsAtUnixSeconds))
                 {
                     var row = await socialRepository.GetPartySessionAsync(staleBinding.Spec.SessionId, cancellationToken).ConfigureAwait(false);
                     if (row is null || row.EndedAt is not null || partyId != row.PartyId)
                     {
                         var endsAt = (row?.EndedAt ?? _simulationClock.UtcNow).ToUnixTimeMilliseconds() / 1000d;
-                        ecs.MutatePlayer(playerId, aggregate => aggregate.EndPartyExpedition(staleBinding.Spec.SessionId, endsAt));
+                        ecs.MutatePlayer(playerId, aggregate => aggregate.EndActionParticipation(staleBinding.Spec.SessionId, endsAt));
                         TrackDirty(playerId);
                         snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
                         _loaded[playerId] = snapshot;
@@ -187,27 +230,27 @@ public sealed class EcsPlayerRuntimeAdapter(
                 {
                     var active = await socialRepository.GetActivePartySessionAsync(ownedPartyId, cancellationToken).ConfigureAwait(false);
                     var aliveSpec = active is { } alive && alive.MemberIds.Contains(playerId)
-                        ? JsonSerializer.Deserialize<PartyExpeditionSpec>(alive.SpecJson, PersistenceJson.Options)
+                        ? JsonSerializer.Deserialize<ActionParticipationSpec>(alive.SpecJson, PersistenceJson.Options)
                         : null;
                     if (active is { } live && aliveSpec is { IsValid: true } spec
                         && spec.SelfIndexOf(new PlayerId(playerId)) >= 0
                         && !(snapshot.State.Actions.Count > 0
-                            && snapshot.State.Actions[0].PartySession is { } head
+                            && snapshot.State.Actions[0].Participation is { } head
                             && string.Equals(head.Spec.SessionId, live.SessionId, StringComparison.Ordinal)
                             && double.IsPositiveInfinity(head.EndsAtUnixSeconds)
-                            && snapshot.State.Actions.Skip(1).All(action => action.PartySession is null)))
+                            && snapshot.State.Actions.Skip(1).All(action => action.Participation is null)))
                     {
                         ecs.MutatePlayer(playerId, aggregate =>
                         {
                             // 队首异会话残留（终局未收尾/异会话遗留）先扫净，再幂等补发本会话行动。
                             for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
                             {
-                                var binding = aggregate.Actions[i].PartySession;
+                                var binding = aggregate.Actions[i].Participation;
                                 if (binding is null) continue;
                                 if (i == 0 && string.Equals(binding.Spec.SessionId, live.SessionId, StringComparison.Ordinal)) continue;
                                 aggregate.RemoveAction(aggregate.Actions[i].Id);
                             }
-                            aggregate.StartPartyExpedition(spec, live.StartedAt, gameData.Actions);
+                            aggregate.StartActionParticipation(spec, live.StartedAt, gameData.Actions);
                         });
                         TrackDirty(playerId);
                         snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
@@ -329,11 +372,10 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount,
                             request.TargetNodeId, request.Parameters, request.PvpEnabled)
                             with { TargetItemId = request.TargetItemId, AuxItemId = request.AuxItemId };
-                        // 组队讨伐会话行动是系统内置高优行动：只能由社交仲裁投递，客户端不得手动入队。
-                        if (intent.ActionId == ActionCatalog.PartyExpeditionActionId)
-                            return new PlayerCommandResult(false, "INVALID_ACTION", "组队讨伐行动由系统会话管理，不能手动入队。", before);
+                        // 行动参与会话由组织适配器投递，客户端只能入队普通行动。
+                        // 参与期间仍禁止手动进入斗法撮合。
                         // 会话进行中禁止斗法撮合（总纲 §21.13：阵容冻结期间不可进入斗法）。
-                        if (request.PvpEnabled && IsPartyExpeditionActive(before.State))
+                        if (request.PvpEnabled && IsActionParticipationActive(before.State))
                             return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，无法参与斗法撮合。", before);
                         if (gameData.Actions.TryGet(intent.ActionId, out var actionDefinition))
                         {
@@ -360,7 +402,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                         if (!wasHead && before.State.Actions.All(action => action.Id != actionId))
                             return new PlayerCommandResult(false, "ACTION_NOT_FOUND", "行动不存在。", before);
                         // 进行中的讨伐会话行动只能由社交仲裁写散场时刻收尾，客户端不得摘除（总纲 §21.13）。
-                        if (wasHead && IsPartyExpeditionActive(before.State))
+                        if (wasHead && IsActionParticipationActive(before.State))
                             return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，不能取消会话行动。", before);
                         // 沿袭历史 OOP 运行时的次序基线：移除队首先把已流逝模拟结算掉，再进行弃战判定与移除。
                         if (wasHead && _simulationClock.UtcNow > before.State.LastSimulatedAt)
@@ -398,7 +440,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                             || !directionElement.TryGetInt32(out var direction))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "行动移动参数无效。", before);
                         // 会话进行中不得把队首会话行动挤下/移走（会话行动必须在队首才有推进语义）。
-                        if (IsPartyExpeditionActive(before.State)
+                        if (IsActionParticipationActive(before.State)
                             && (before.State.Actions[0].Id == actionInstanceId
                                 || (direction < 0 && before.State.Actions.Count > 1
                                     && before.State.Actions[1].Id == actionInstanceId)))
@@ -421,7 +463,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                         if (before.State.Actions.Count == 0)
                             return new PlayerCommandResult(false, "QUEUE_EMPTY", "队列已为空。", before);
                         // 会话进行中清空等于摘除会话行动：与 action.remove 同口径拒绝。
-                        if (IsPartyExpeditionActive(before.State))
+                        if (IsActionParticipationActive(before.State))
                             return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，不能清空行动队列。", before);
                         // 与 action.remove 同序：先把已流逝模拟结算掉，再对队首斗法做弃战判定并整队清空。
                         if (_simulationClock.UtcNow > before.State.LastSimulatedAt)
@@ -1317,9 +1359,9 @@ public sealed class EcsPlayerRuntimeAdapter(
         _logger.LogError("玩家运行时租约已失效，逐出 ECS 实体 player={PlayerId}", playerId);
     }
 
-    /// <summary>队首讨伐会话是否进行中（与 PlayerAggregate.IsInPartyExpedition 同口径，作用于不可变快照）。</summary>
-    private static bool IsPartyExpeditionActive(PlayerAggregateState state) =>
-        state.Actions.Count > 0 && state.Actions[0].PartySession is { } binding
+    /// <summary>队首行动参与会话是否进行中。</summary>
+    private static bool IsActionParticipationActive(PlayerAggregateState state) =>
+        state.Actions.Count > 0 && state.Actions[0].Participation is { } binding
             && binding.EndsAtUnixSeconds > state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
 
     /// <summary>按分段脏流水号差集得出本次操作触及分段；空集表示零触及（与"不可判定"的 null 区分）。</summary>

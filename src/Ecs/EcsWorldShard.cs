@@ -221,7 +221,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     RemainingRepeats = action.RemainingRepeats,
                     CompletedRepeats = action.CompletedRepeats,
                     Expedition = action.Expedition,
-                    Travel = action.Travel
+                    Travel = action.Travel,
+                    Participation = action.Participation
                 });
             }
             entity.AddComponent<PlayerActionQueueMutationComponent>().Sink
@@ -918,8 +919,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             enemyIds.Add(enemy.ID);
         }
         encounter.EnemyEntityIds = enemyIds;
-        // 组队会话的非本机盟友挂接为纯战斗实体：触发器派发需要实体句柄（EntityId=-1 会不变量失败），
-        // 盟友实体不属于任何真实玩家——只是本机模拟里的友方单位容器。
+        // 参与会话的非本机盟友挂接为纯战斗实体：触发器派发需要实体句柄（EntityId=-1 会不变量失败），
+        // 盟友实体不属于任何真实玩家，只是本机模拟里的友方单位容器。
         var allyIds = new List<long>(Math.Max(0, state.PlayerAllies.Count - 1));
         for (var i = 0; i < state.PlayerAllies.Count; i++)
         {
@@ -991,7 +992,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 RemainingRepeats = action.RemainingRepeats,
                 CompletedRepeats = action.CompletedRepeats,
                 Expedition = action.Expedition,
-                Travel = action.Travel
+                Travel = action.Travel,
+                Participation = action.Participation
             });
         }
         var inventory = entity.GetOrAddComponent<PlayerInventoryComponent>();
@@ -1014,7 +1016,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var settings = entity.GetComponent<PlayerSettingsComponent>()!;
         var duel = entity.GetComponent<PlayerDuelComponent>()!;
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
-        var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel, a.PartySession)).ToArray();
+        var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel, a.Participation)).ToArray();
         var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.StateVersion, identity.GameDataFingerprint,
             new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience),
             new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId, world.World.NodeBuildingUsages),

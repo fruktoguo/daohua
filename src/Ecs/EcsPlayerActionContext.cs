@@ -153,9 +153,9 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
     /// 新行动插入队首立即 Running；自动移动与 world.travel 命令共用此通道。
     /// </summary>
     public IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog actionCatalog,
-        TravelActionState? travel = null, bool incrementVersion = true, PartySessionBinding? partySession = null)
+        TravelActionState? travel = null, bool incrementVersion = true, ActionParticipationBinding? participation = null)
         => _actionQueueSink.Dispatch(this, Queue.Actions, new(PlayerActionQueueMutationKind.EnqueuePriority,
-            Intent: intent, At: at, Catalog: actionCatalog, Travel: travel, PartySession: partySession,
+            Intent: intent, At: at, Catalog: actionCatalog, Travel: travel, Participation: participation,
             IncrementVersion: incrementVersion)).Action!;
 
     /// <summary>仅在网络或落盘快照边界导出斗法分段，行动边界不调用此方法。</summary>

@@ -307,11 +307,13 @@ export interface QueueEntry {
   auxItemId?: string | null
   /** 行动参数中的目标强化等级（ActionIntent.Parameters["targetLevel"] 投影） */
   targetLevel?: number | null
-  /**
-   * 组队讨伐会话伪行动标记（仅 party.expedition 内置行动携带）：
-   * 会话由队伍统一调度，不允许手动取消/移除（散场走 party.unready 或离队语义）。
-   */
-  partySession?: { sessionId: string; endsAtUnixSeconds?: number | null } | null
+  /** 行动参与会话标记：组织适配器创建，行动执行与表现不识别组织类型。 */
+  participation?: { sessionId: string; endsAtUnixSeconds?: number | null } | null
+}
+
+/** 判断队列行动是否属于行动参与会话。 */
+export function hasActionParticipation(entry: Pick<QueueEntry, 'participation'>): boolean {
+  return entry.participation != null
 }
 /**
  * 旅行移动路段数据（服务端世界图权威分段）
@@ -472,7 +474,7 @@ export interface ExpeditionProgress {
   encounterId?: string | null
   /** 斗法回放显示信息（仅 phase 为 duel / duel-pending 时可能下发） */
   duel?: ExpeditionDuel | null
-  /** 组队讨伐盟友阵列（仅 party.expedition 会话行动下发；含本机成员位，按规格成员序） */
+  /** 行动参与会话盟友阵列：按参与者固定顺序下发，含本机成员位。 */
   allies?: ExpeditionAlly[] | null
   /** 本机成员在 allies 中的下标 */
   selfIndex?: number | null
