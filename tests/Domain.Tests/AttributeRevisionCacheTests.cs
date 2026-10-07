@@ -132,12 +132,12 @@ public sealed class AttributeRevisionCacheTests
         Assert.Equal(10, equipped.AttackSpeedPoints);
         Assert.Equal(5, equipped.PhysicalDamageBonusPoints);
 
-        // 强化 +5：flatStats ×1.1，specialMechanics 点数不经强化缩放。
-        player.ReplaceCombatSlots([new PlayerAbilitySlot(TestAbility.Value, 1, [])],
+        // 强化 +5：flatStats ×1.05^5（≈1.2763），specialMechanics 点数不经强化缩放。
+        player.ReplaceCombatSlots([new PlayerAbilitySlot(TestAbility.Value, 1)],
             [new PlayerEquipmentSlot(TestEquipment.Value, 5)]);
         var enhanced = AssertConsistentResolve(player, catalog);
         Assert.NotSame(equipped, enhanced);
-        Assert.Equal(baseline.PhysicalAttack + 55, enhanced.PhysicalAttack);
+        Assert.Equal(baseline.PhysicalAttack + 50 * Math.Pow(1.05, 5), enhanced.PhysicalAttack);
         Assert.Equal(10, enhanced.AttackSpeedPoints);
 
         player.ReplaceLoadout([], [], []);
@@ -273,8 +273,11 @@ public sealed class AttributeRevisionCacheTests
         Assert.NotSame(d2, d3);
 
         // 触发器克隆仅在装配变更时发生：连续两次导出复用同文档（同 JsonElement 实例）。
-        var t1 = player.ExportState().Loadout.AbilitySlots[0].Triggers;
-        var t2 = player.ExportState().Loadout.AbilitySlots[0].Triggers;
+        var trigger = JsonDocument.Parse("""{"condition":"current-hp-percentage","dependency":"self","operator":"less-than-equal","value":30}""").RootElement.Clone();
+        player.ReplaceCombatSlots([new PlayerAbilitySlot(TestAbility.Value, 1)], [],
+            new Dictionary<string, JsonElement[]>(StringComparer.Ordinal) { [TestAbility.Value] = [trigger] });
+        var t1 = player.ExportState().Loadout.AbilityTriggers![TestAbility.Value];
+        var t2 = player.ExportState().Loadout.AbilityTriggers![TestAbility.Value];
         Assert.Same(t1, t2);
 
         // 字节逐位一致：独立恢复的聚合首轮导出（无缓存命中）与缓存路径序列化字节相同。

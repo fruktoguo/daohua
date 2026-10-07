@@ -42,6 +42,34 @@ public sealed class LoadoutEquipReproTests
         Assert.True(attackAfter > attackBefore, $"装备后物攻 {attackAfter} 未高于装备前 {attackBefore}");
     }
 
+    /// <summary>技艺工具槽（tool-*）与战斗槽互不冲突：武器与药锄可同时装配。</summary>
+    [Fact]
+    public async Task LoadoutReplace_ToolSlotCoexistsWithWeapon()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), new EquipmentAssets(playerId), new NoopEconomy(),
+            GameDataCatalog.LoadEmbedded());
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            equipment = new[]
+            {
+                new { itemId = "equipment.qingfeng-sword", enhancementLevel = 0d },
+                new { itemId = "equipment.tool-herb-hoe", enhancementLevel = 0d }
+            },
+            abilitySlots = Enumerable.Range(0, 4)
+                .Select(_ => new { abilityId = (string?)null, level = 1d, triggers = Array.Empty<JsonElement>() })
+                .ToArray(),
+            requestId = requestId.ToString("D"),
+        }, ProtocolJson.Options);
+
+        var result = await runtime.ExecuteAsync(playerId, "loadout.replace", payload, 0, requestId);
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+        Assert.Contains(result.Snapshot.State.Loadout.Equipment, slot => slot.ItemId == "equipment.tool-herb-hoe");
+        Assert.Contains(result.Snapshot.State.Loadout.Equipment, slot => slot.ItemId == "equipment.qingfeng-sword");
+    }
+
     private sealed class FakeRepository(Guid playerId) : IPlayerStateRepository
     {
         private readonly PlayerStateBundle _bundle = new(
@@ -61,7 +89,10 @@ public sealed class LoadoutEquipReproTests
     {
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(
-                [new AssetBalanceRecord(playerId, "equipment.qingfeng-sword", string.Empty, 1, 0)]);
+            [
+                new AssetBalanceRecord(playerId, "equipment.qingfeng-sword", string.Empty, 1, 0),
+                new AssetBalanceRecord(playerId, "equipment.tool-herb-hoe", string.Empty, 1, 0)
+            ]);
     }
 
     private sealed class NoopEconomy : IEconomyTransactionStore

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChoiceMenu } from './CatalogPicker'
 import { Modal } from './Modal'
 import { describeCombatTrigger, formatNumber } from '../game/format'
@@ -50,10 +50,14 @@ export function CombatTriggerEditor({
   const titleId = useId()
   const [triggers, setTriggers] = useState<CombatTrigger[]>(() => cloneTriggers(initialTriggers))
 
-  // 打开弹窗时重新同步外部 initialTriggers
+  // initialTriggers 经 ref 中转：战斗快照刷新会让外部 combat 对象（含 triggers 数组）整体换引用，
+  // 若把 initialTriggers 放进依赖，弹窗打开期间每次快照下发都会把未保存的编辑内容重置回旧值。
+  // 因此只在 open 变为 true 的瞬间经 ref 同步一次，打开期间外部刷新一律不打断编辑。
+  const initialTriggersRef = useRef(initialTriggers)
+  initialTriggersRef.current = initialTriggers
   useEffect(() => {
-    if (open) setTriggers(cloneTriggers(initialTriggers))
-  }, [initialTriggers, open])
+    if (open) setTriggers(cloneTriggers(initialTriggersRef.current))
+  }, [open])
 
   const isStatusCondition = (condition: string) => condition.endsWith('-status')
   const isPercentage = (condition: string) => condition.includes('percentage')

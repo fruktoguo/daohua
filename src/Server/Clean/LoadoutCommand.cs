@@ -9,11 +9,11 @@ namespace Server.Clean;
 public static class LoadoutCommand
 {
     /// <summary>
-    /// 校验 loadout.replace 载荷并整体替换玩家的功法槽与装备槽。
+    /// 校验 loadout.replace 载荷并整体替换玩家的功法槽、装备槽与功法触发条件。
     /// JSON 形状与取值错误统一翻译成 InvalidArgument DomainException，
     /// 避免把反序列化细节直接泄露给协议层。
     /// </summary>
-    /// <param name="payload">客户端命令载荷（equipment 与 abilitySlots 数组）</param>
+    /// <param name="payload">客户端命令载荷（equipment、abilitySlots 数组与 abilityTriggers 功法触发条件 map）</param>
     /// <param name="player">目标玩家聚合</param>
     /// <param name="wallet">玩家资产钱包，用于校验装备确已持有</param>
     /// <param name="catalog">当前激活配表，用于校验装备与功法定义</param>
@@ -28,9 +28,11 @@ public static class LoadoutCommand
 
     private static void ApplyValidated(JsonElement payload, PlayerAggregate player, AssetWallet wallet, GameDataCatalog catalog)
     {
+        // 装备槽上限 24：战斗槽位与七个技艺工具槽（tool-<技艺>）合计约 18 个，留扩容余量；
+        // 功法槽位仍维持 16。
         if (!payload.TryGetProperty("equipment", out var rawEquipment) || rawEquipment.ValueKind != JsonValueKind.Array
             || !payload.TryGetProperty("abilitySlots", out var rawAbilities) || rawAbilities.ValueKind != JsonValueKind.Array
-            || rawEquipment.GetArrayLength() > 16 || rawAbilities.GetArrayLength() > 16)
+            || rawEquipment.GetArrayLength() > 24 || rawAbilities.GetArrayLength() > 16)
             throw new DomainException(DomainErrorCode.InvalidArgument, "装配槽位载荷无效。");
         var equipment = new List<PlayerEquipmentSlot>();
         var slots = new HashSet<string>(StringComparer.Ordinal);
@@ -81,14 +83,28 @@ public static class LoadoutCommand
                     throw new DomainException(DomainErrorCode.InvalidArgument,
                         slotIndex == 0 ? "内功位只能装配心法内功。" : "术法位只能装配神通术法。");
             }
-            var triggers = raw.TryGetProperty("triggers", out var rules) ? ReadTriggers(rules) : [];
-            abilities.Add(new(id, level, triggers));
+            abilities.Add(new(id, level));
             slotIndex++;
         }
-        player.ReplaceCombatSlots(abilities, equipment);
+        // 触发条件跟随功法而非槽位：按功法 ID 收成全量 map，键必须指向已习得功法（不要求当前装配）。
+        Dictionary<string, JsonElement[]>? abilityTriggers = null;
+        if (payload.TryGetProperty("abilityTriggers", out var rawTriggers))
+        {
+            if (rawTriggers.ValueKind != JsonValueKind.Object)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "功法触发条件载荷无效。");
+            abilityTriggers = new Dictionary<string, JsonElement[]>(StringComparer.Ordinal);
+            foreach (var entry in rawTriggers.EnumerateObject())
+            {
+                if (!player.Loadout.LearnedAbilities.Contains(new AbilityId(entry.Name)))
+                    throw new DomainException(DomainErrorCode.InvalidArgument, "功法未习得，无法配置触发条件。");
+                var triggers = ReadTriggers(entry.Value);
+                if (triggers.Length > 0) abilityTriggers[entry.Name] = triggers;
+            }
+        }
+        player.ReplaceCombatSlots(abilities, equipment, abilityTriggers);
     }
 
-    /// <summary>装配槽位触发条件解析：字段词表校验复用领域层统一实现（SkillTriggerEvaluator）。</summary>
+    /// <summary>功法触发条件解析：字段词表校验复用领域层统一实现（SkillTriggerEvaluator）。</summary>
     private static JsonElement[] ReadTriggers(JsonElement rules)
     {
         if (rules.ValueKind != JsonValueKind.Array || rules.GetArrayLength() > 4)

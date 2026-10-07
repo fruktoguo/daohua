@@ -19,30 +19,28 @@ public enum CoreAspectKind : byte
     Consciousness = 5
 }
 
-/// <summary>六维经验→等级曲线：Level = floor(cbrt(exp/100)) + 1，与前端 getCumulativeExpForLevel 反函数一致。</summary>
+/// <summary>六维经验→等级曲线：Level = floor(cbrt(exp/100))，0 级起算；与前端 getCumulativeExpForLevel 反函数一致。</summary>
 public static class RootAttributeCurve
 {
-    /// <summary>初始 10 级对应的经验锚点：100×(10-1)³。</summary>
-    public const double BaseExp = 72_900;
-    /// <summary>经验换算等级（1~127 级）。</summary>
+    /// <summary>经验换算等级（0~127 级；0 经验即 0 级，无基础等级）。</summary>
     public static double LevelFor(double exp)
-        => !double.IsFinite(exp) || exp <= 0 ? 1 : Math.Min(127, Math.Floor(Math.Cbrt(exp / 100d)) + 1);
-    /// <summary>达到指定等级所需的累计经验。</summary>
+        => !double.IsFinite(exp) || exp <= 0 ? 0 : Math.Min(127, Math.Floor(Math.Cbrt(exp / 100d)));
+    /// <summary>达到指定等级所需的累计经验：100×level³。</summary>
     public static double ExpForLevel(double level)
-        => 100d * Math.Pow(Math.Max(1, level) - 1, 3);
+        => 100d * Math.Pow(Math.Max(0, level), 3);
 }
 
 /// <summary>
 /// 玩家六维根骨：持久化经验值，等级由经验曲线导出。
-/// 初始经验 72900 对应 10 级，与历史默认等级保持数值等价。
+/// 初始 0 级（0 经验）：六维加成从零开始，不提供任何出生白送属性。
 /// </summary>
 public sealed record PlayerCoreAttributes(
-    double StaminaExp = RootAttributeCurve.BaseExp,
-    double MeridiansExp = RootAttributeCurve.BaseExp,
-    double AttackExp = RootAttributeCurve.BaseExp,
-    double BoneExp = RootAttributeCurve.BaseExp,
-    double AgilityExp = RootAttributeCurve.BaseExp,
-    double ConsciousnessExp = RootAttributeCurve.BaseExp)
+    double StaminaExp = 0,
+    double MeridiansExp = 0,
+    double AttackExp = 0,
+    double BoneExp = 0,
+    double AgilityExp = 0,
+    double ConsciousnessExp = 0)
 {
     /// <summary>体魄等级（由经验导出）</summary>
     public double StaminaLevel => RootAttributeCurve.LevelFor(StaminaExp);
@@ -60,15 +58,15 @@ public sealed record PlayerCoreAttributes(
     public double TotalLevel => StaminaLevel + MeridiansLevel + AttackLevel + BoneLevel + AgilityLevel + ConsciousnessLevel;
 }
 
-/// <summary>技能经验→等级曲线：与六维共用立方曲线，技能书/残卷按点数注入经验。</summary>
+/// <summary>技能经验→等级曲线：与六维共用立方曲线但保持 1 基（习得即 1 级），技能书/残卷按点数注入经验。</summary>
 public static class AbilityExpCurve
 {
     /// <summary>经验换算技能等级（1~127 级）。</summary>
-    public static double LevelFor(double exp) => RootAttributeCurve.LevelFor(exp);
+    public static double LevelFor(double exp) => Math.Min(127, RootAttributeCurve.LevelFor(exp) + 1);
 }
 
-/// <summary>功法/神通装配槽位：技能 ID（可空）、参悟等级与自定义触发条件。</summary>
-public sealed record PlayerAbilitySlot(string? AbilityId, double Level, IReadOnlyList<JsonElement> Triggers);
+/// <summary>功法/神通装配槽位：技能 ID（可空）与参悟等级；自定义触发条件按功法 ID 挂在 AbilityTriggers，不随槽位走。</summary>
+public sealed record PlayerAbilitySlot(string? AbilityId, double Level);
 /// <summary>装备槽位记录：配表装备 ID 与强化等级。</summary>
 public sealed record PlayerEquipmentSlot(string ItemId, double EnhancementLevel);
 /// <summary>装配分段的可持久化文档形态。</summary>
@@ -77,7 +75,8 @@ public sealed record PlayerLoadoutDocument(
     IReadOnlyList<PlayerAbilitySlot> AbilitySlots,
     IReadOnlyList<PlayerEquipmentSlot> Equipment,
     IReadOnlyDictionary<string, double>? AbilityExperiences = null,
-    IReadOnlyDictionary<string, double>? TechniqueExperiences = null);
+    IReadOnlyDictionary<string, double>? TechniqueExperiences = null,
+    IReadOnlyDictionary<string, JsonElement[]>? AbilityTriggers = null);
 
 /// <summary>装配分段运行时状态（六维根骨、功法槽位、装备与技能经验）。</summary>
 public sealed partial class PlayerLoadoutState
@@ -109,10 +108,13 @@ public sealed partial class PlayerLoadoutState
     public VersionedDictionary<AbilityId, double> AbilityExperiences { get; } = new();
     /// <summary>七技艺的累计经验，键为 TechniqueId；等级经境界修为曲线逐段推进导出；写入递增版本号。</summary>
     public VersionedDictionary<string, double> TechniqueExperiences { get; } = new();
+    /// <summary>功法自定义触发条件，键为 ability ID 字符串；跟随功法而非装配槽位，写入递增版本号。</summary>
+    public VersionedDictionary<string, JsonElement[]> AbilityTriggers { get; } = new();
 
-    /// <summary>装配文档导出修订号：槽位/装备/技能经验/技艺经验/六维任一写入严格增大。</summary>
+    /// <summary>装配文档导出修订号：槽位/装备/技能经验/技艺经验/触发条件/六维任一写入严格增大。</summary>
     internal long ExportRevision =>
-        AbilitySlots.Version + Equipment.Version + AbilityExperiences.Version + TechniqueExperiences.Version + CoreAttributesVersion;
+        AbilitySlots.Version + Equipment.Version + AbilityExperiences.Version + TechniqueExperiences.Version
+        + AbilityTriggers.Version + CoreAttributesVersion;
 
     /// <summary>导出可持久化装配文档；触发条件 JSON 做防御性深拷贝。
     /// 修订号未变时直接复用上轮文档（位级一致），仅在装配变更时才重新克隆触发器与字典。</summary>
@@ -121,10 +123,12 @@ public sealed partial class PlayerLoadoutState
     {
         if (_exportedDocument is { } cached && _exportedRevision == ExportRevision) return cached;
         var document = new PlayerLoadoutDocument(CoreAttributes,
-            AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }).ToArray(),
+            AbilitySlots.ToArray(),
             Equipment.ToArray(),
             AbilityExperiences.Count == 0 ? null : AbilityExperiences.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
-            TechniqueExperiences.Count == 0 ? null : TechniqueExperiences.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+            TechniqueExperiences.Count == 0 ? null : TechniqueExperiences.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+            AbilityTriggers.Count == 0 ? null : AbilityTriggers.ToDictionary(
+                pair => pair.Key, pair => pair.Value.Select(trigger => trigger.Clone()).ToArray(), StringComparer.Ordinal));
         _exportedDocument = document;
         _exportedRevision = ExportRevision;
         return document;
@@ -139,18 +143,19 @@ public sealed partial class PlayerLoadoutState
         if (core is null || document.AbilitySlots is null || document.Equipment is null
             || new[] { core.StaminaExp, core.MeridiansExp, core.AttackExp, core.BoneExp, core.AgilityExp, core.ConsciousnessExp }
                 .Any(value => !double.IsFinite(value) || value < 0)
-            || document.AbilitySlots.Any(slot => slot is null || !double.IsFinite(slot.Level) || slot.Level < 1 || slot.Triggers is null
-                || slot.Triggers.Any(trigger => trigger.ValueKind != JsonValueKind.Object))
+            || document.AbilitySlots.Any(slot => slot is null || !double.IsFinite(slot.Level) || slot.Level < 1)
             || document.Equipment.Any(item => item is null || string.IsNullOrWhiteSpace(item.ItemId)
                 || !double.IsFinite(item.EnhancementLevel) || item.EnhancementLevel < 0)
             || (document.AbilityExperiences?.Any(pair => string.IsNullOrWhiteSpace(pair.Key)
                 || !double.IsFinite(pair.Value) || pair.Value < 0) ?? false)
             || (document.TechniqueExperiences?.Any(pair => !Domain.GameData.TechniqueCatalog.IsKnown(pair.Key)
-                || !double.IsFinite(pair.Value) || pair.Value < 0) ?? false))
+                || !double.IsFinite(pair.Value) || pair.Value < 0) ?? false)
+            || (document.AbilityTriggers?.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null
+                || pair.Value.Any(trigger => trigger.ValueKind != JsonValueKind.Object)) ?? false))
             throw new DomainException(DomainErrorCode.InvalidArgument, "装配快照无效。");
         CoreAttributes = core;
         AbilitySlots.Clear();
-        AbilitySlots.AddRange(document.AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }));
+        AbilitySlots.AddRange(document.AbilitySlots);
         Equipment.Clear();
         Equipment.AddRange(document.Equipment);
         // 功法参悟经验与技艺经验同语义：只在文档显式携带时覆盖；
@@ -168,17 +173,25 @@ public sealed partial class PlayerLoadoutState
             foreach (var pair in document.TechniqueExperiences)
                 TechniqueExperiences[pair.Key] = pair.Value;
         }
+        // 触发条件是全量配置项而非累计值：无论文档是否显式携带都覆盖（缺省即清空）。
+        AbilityTriggers.Clear();
+        if (document.AbilityTriggers is not null)
+        {
+            foreach (var pair in document.AbilityTriggers)
+                AbilityTriggers[pair.Key] = pair.Value.Select(trigger => trigger.Clone()).ToArray();
+        }
     }
 
     /// <summary>分段回滚检查点专用：把装配各输入源修订号写回备份值；调用方须先把内容恢复到与版本一致的状态。</summary>
     internal void RestoreRevisionCounters(long coreAttributesVersion, long abilitySlotsVersion, long equipmentVersion,
-        long abilityExperiencesVersion, long techniqueExperiencesVersion = 0)
+        long abilityExperiencesVersion, long techniqueExperiencesVersion = 0, long abilityTriggersVersion = 0)
     {
         CoreAttributesVersion = coreAttributesVersion;
         AbilitySlots.RestoreVersion(abilitySlotsVersion);
         Equipment.RestoreVersion(equipmentVersion);
         AbilityExperiences.RestoreVersion(abilityExperiencesVersion);
         TechniqueExperiences.RestoreVersion(techniqueExperiencesVersion);
+        AbilityTriggers.RestoreVersion(abilityTriggersVersion);
     }
 }
 
@@ -193,7 +206,7 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvalidArgument, "功法无效或已习得。");
         Loadout.LearnedAbilities.Add(abilityId);
         if (Loadout.AbilitySlots.Count == 0)
-            Loadout.AbilitySlots.AddRange(Enumerable.Range(0, 4).Select(_ => new PlayerAbilitySlot(null, 1, [])));
+            Loadout.AbilitySlots.AddRange(Enumerable.Range(0, 4).Select(_ => new PlayerAbilitySlot(null, 1)));
         Touch(PlayerSectionKind.Loadout);
     }
 
@@ -265,10 +278,14 @@ public sealed partial class PlayerAggregate
         Touch(PlayerSectionKind.Loadout);
     }
 
-    /// <summary>装配不授予功法或属性成长，只修改已授权的槽位配置。</summary>
-    public void ReplaceCombatSlots(IReadOnlyList<PlayerAbilitySlot> abilities, IReadOnlyList<PlayerEquipmentSlot> equipment)
+    /// <summary>装配不授予功法或属性成长，只修改已授权的槽位配置与功法触发条件。</summary>
+    /// <param name="abilities">权威功法槽位列表（至多 4 槽）。</param>
+    /// <param name="equipment">权威装备槽位列表。</param>
+    /// <param name="abilityTriggers">功法触发条件全量 map（键为已习得功法 ID）；null 表示清空全部自定义条件。</param>
+    public void ReplaceCombatSlots(IReadOnlyList<PlayerAbilitySlot> abilities, IReadOnlyList<PlayerEquipmentSlot> equipment,
+        IReadOnlyDictionary<string, JsonElement[]>? abilityTriggers = null)
     {
-        Loadout.Restore(new(Loadout.CoreAttributes, abilities, equipment));
+        Loadout.Restore(new(Loadout.CoreAttributes, abilities, equipment, AbilityTriggers: abilityTriggers));
         Loadout.EquippedItemIds.Clear();
         Loadout.EquippedItemIds.AddRange(equipment.Select(item => new ItemId(item.ItemId)));
         Touch(PlayerSectionKind.Loadout);
