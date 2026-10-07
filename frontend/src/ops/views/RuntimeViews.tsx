@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { opsGet } from '../opsClient'
 import type { OpsCompute, OpsLogEntry, OpsScheduler } from '../opsTypes'
 import {
@@ -174,6 +174,84 @@ export function OpsComputeView({ intervalMs }: { intervalMs: number }): React.JS
   )
 }
 
+/** 日志条目头行文本：[时间] [级别] 类别: 消息。 */
+function formatLogHead(entry: OpsLogEntry): string {
+  return `[${formatTime(entry.timestamp)}] [${levelLabel(entry.level)}] ${entry.category}: ${entry.message}`
+}
+
+/** 日志条目完整文本：头行 + 异常堆栈（另起一段）。 */
+function formatLogText(entry: OpsLogEntry): string {
+  return entry.exception ? `${formatLogHead(entry)}\n${entry.exception}` : formatLogHead(entry)
+}
+
+/** 错误重复判定：类别、消息与异常全文一致视为同一条错误（时间戳不参与）。 */
+function sameError(a: OpsLogEntry, b: OpsLogEntry): boolean {
+  return a.category === b.category && a.message === b.message && a.exception === b.exception
+}
+
+/**
+ * 相邻重复压缩：连续同错误合并为一条并在头行末尾加 ×N（如 10 条全同 → 1 条 + ×10），
+ * 时间取组内最新（列表按序号倒序，组内首条即最新）。
+ */
+function compressLogRuns(entries: OpsLogEntry[]): string {
+  const lines: string[] = []
+  let run: OpsLogEntry[] = []
+  const flush = (): void => {
+    if (run.length === 0) return
+    const head = formatLogHead(run[0])
+    const line = run.length > 1 ? `${head} ×${run.length}` : head
+    lines.push(run[0].exception ? `${line}\n${run[0].exception}` : line)
+    run = []
+  }
+  for (const entry of entries) {
+    if (run.length > 0 && !sameError(run[0], entry)) flush()
+    run.push(entry)
+  }
+  flush()
+  return lines.join('\n')
+}
+
+/** 剪贴板写入：优先异步 Clipboard API，非安全上下文（如局域网 IP 访问）降级 execCommand。 */
+async function writeClipboard(text: string): Promise<void> {
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.appendChild(area)
+  area.select()
+  const ok = document.execCommand('copy')
+  area.remove()
+  if (!ok) throw new Error('剪贴板不可用')
+}
+
+/** 日志复制按钮：点击后异步取文本写入剪贴板，短暂反馈结果后恢复原文案。 */
+function OpsCopyButton({ label, disabled, getText }: {
+  label: string
+  disabled?: boolean
+  getText: () => Promise<string>
+}): React.JSX.Element {
+  const [state, setState] = useState<'idle' | 'ok' | 'empty' | 'fail'>('idle')
+  const timerRef = useRef<number | undefined>(undefined)
+  const handleClick = (): void => {
+    window.clearTimeout(timerRef.current)
+    getText()
+      .then(async text => {
+        if (text) await writeClipboard(text)
+        setState(text ? 'ok' : 'empty')
+      })
+      .catch(() => setState('fail'))
+      .finally(() => {
+        timerRef.current = window.setTimeout(() => setState('idle'), 2000)
+      })
+  }
+  const text = state === 'ok' ? '已复制' : state === 'empty' ? '暂无内容' : state === 'fail' ? '复制失败' : label
+  return <button type="button" disabled={disabled} onClick={handleClick}>{text}</button>
+}
+
 /** 日志视图：级别、类别与关键词过滤。 */
 export function OpsLogsView({ intervalMs }: { intervalMs: number }): React.JSX.Element {
   const [level, setLevel] = useState('Information')
@@ -232,7 +310,22 @@ export function OpsLogsView({ intervalMs }: { intervalMs: number }): React.JSX.E
         </div>
       </OpsCard>
       <OpsAsyncView loading={loading} error={error} hasData={data !== null} onRetry={reload}>
-        <OpsCard title={`最近日志（${formatNumber(data?.length ?? 0)} 条）`}>
+        <OpsCard
+          title={`最近日志（${formatNumber(data?.length ?? 0)} 条）`}
+          extra={(
+            <>
+              <OpsCopyButton
+                label="复制最近100条"
+                disabled={!data || data.length === 0}
+                getText={async () => (data ?? []).slice(0, 100).map(formatLogText).join('\n')}
+              />
+              <OpsCopyButton
+                label="复制最近10条错误"
+                getText={async () => compressLogRuns(await opsGet<OpsLogEntry[]>('/logs?level=Error&limit=10'))}
+              />
+            </>
+          )}
+        >
           {data && data.length > 0 ? (
             <div className="ops-log-list">
               {data.map(entry => (

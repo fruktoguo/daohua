@@ -146,6 +146,10 @@
 }
 
 .ops-card-extra {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--text-dim);
 }

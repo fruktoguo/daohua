@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Domain.Player;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -296,6 +297,9 @@ public sealed class OpsWriteEndpointTests
             RemoveCalls++;
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
 
         public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) => [];
 

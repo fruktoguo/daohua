@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Player;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -157,6 +158,8 @@ public sealed class OpsComputeEndpointTests
         public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) => [];
         public ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default)
