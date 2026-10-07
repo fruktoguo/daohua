@@ -299,8 +299,12 @@ export interface FloatingPopoverProps {
   quantity?: number | bigint | string
   /** 数量副气泡标题，默认取 i18n 词条 common.quantity */
   quantityTitle?: string
-  /** 触发器右键（contextmenu）回调：供「右键直接使用」等快捷交互挂载，回调内自行 preventDefault */
+  /** 触发器右键（contextmenu）回调：供「右键直接使用」等快捷交互挂载，回调内自行 preventDefault；
+      仅桌面端生效——触屏端长按（原生 contextmenu）由组件统一改为展示本触发器 hover 详情气泡，不转发业务回调 */
   onContextMenu?: (e: React.MouseEvent) => void
+  /** 实际落位变化回调：每次重定位产出 actualPlacement（含上下翻转结果）时同步通知，
+      供宿主侧按悬浮卡真实方向避让附件元素（如瓦片框外条件按钮） */
+  onPlacementChange?: (placement: FloatingPlacement) => void
   /** 外部锚点元素：提供后浮层以该元素为锚点做定位、判外点击排除与滚动跟随
       （manual 受控模式下让待选列表等浮层贴靠任意槽位元素）；缺省用自身触发器 */
   anchorEl?: HTMLElement | null
@@ -360,6 +364,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       quantity,
       quantityTitle,
       onContextMenu,
+      onPlacementChange,
       anchorEl,
     },
     ref
@@ -374,6 +379,9 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
     const openTimerRef = useRef<number | null>(null)
     const closeTimerRef = useRef<number | null>(null)
     const repositionRafRef = useRef<number | null>(null)
+    const lastPlacementRef = useRef<FloatingPlacement | null>(null)
+    const onPlacementChangeRef = useRef(onPlacementChange)
+    onPlacementChangeRef.current = onPlacementChange
 
     // 初始坐标先放到屏幕外：浮层挂载后由 useLayoutEffect 立即完成首次测量定位，避免在 (0,0) 闪一帧。
     const [pos, setPos] = useState<PositionResult>({
@@ -495,6 +503,10 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         }
         return result
       })
+      if (lastPlacementRef.current !== result.actualPlacement) {
+        lastPlacementRef.current = result.actualPlacement
+        onPlacementChangeRef.current?.(result.actualPlacement)
+      }
     }, [gap, getEffectiveAnchorElement, isOpen, padding, placement, setOpen])
 
     useLayoutEffect(() => {
@@ -655,6 +667,20 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       }
     }
 
+    const handleTriggerContextMenu = (e: React.MouseEvent) => {
+      if (isTouchPointerDevice()) {
+        // 触屏端长按（浏览器原生派发 contextmenu）统一改为展示本触发器的 hover 详情气泡：
+        // 屏蔽系统右键/长按菜单，并阻断冒泡防止外层业务右键回调（如背包格「快捷使用」）被长按误触发
+        e.preventDefault()
+        e.stopPropagation()
+        if (trigger === 'hover') {
+          handleOpen()
+        }
+        return
+      }
+      onContextMenu?.(e)
+    }
+
     const handleFloatingMouseEnter = () => {
       if (interactive && trigger === 'hover' && !isTouchPointerDevice()) {
         if (closeTimerRef.current) {
@@ -689,7 +715,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         className={`daohua-floating-trigger ${displayContents ? 'daohua-floating-trigger--contents' : ''} ${triggerClassName}`.trim()}
         data-floating-trigger={trigger}
         onClick={handleTriggerClick}
-        onContextMenu={onContextMenu}
+        onContextMenu={handleTriggerContextMenu}
         onMouseEnter={handleTriggerMouseEnter}
         onMouseLeave={handleTriggerMouseLeave}
         ref={anchorRef as RefObject<HTMLSpanElement>}

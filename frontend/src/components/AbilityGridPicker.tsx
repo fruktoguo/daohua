@@ -24,8 +24,6 @@ export interface AbilityGridPickerProps {
   onSelect: (abilityId: string | null) => void
   /** 是否提供空选/卸下槽位按钮（默认 true） */
   allowEmpty?: boolean
-  /** 空选项文本标签 */
-  emptyLabel?: string
   /** 正在选择的槽位索引（0 为内功槽位，1+ 为术法槽位） */
   slotIndex?: number
   /** 已参悟等级查询（用于瓦片角标与悬浮详情展示；缺省按 1 级显示） */
@@ -48,7 +46,6 @@ export function AbilityGridPicker({
   onClose,
   onSelect,
   allowEmpty = true,
-  emptyLabel,
   slotIndex,
   levelFor,
 }: AbilityGridPickerProps): React.JSX.Element {
@@ -108,7 +105,6 @@ export function AbilityGridPicker({
     <CandidatePicker
       allowEmpty={allowEmpty}
       anchor={anchor}
-      emptyLabel={emptyLabel}
       onClose={onClose}
       onSelect={onSelect}
       open={open}

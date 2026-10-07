@@ -44,8 +44,6 @@ interface CatalogPickerProps {
   onSelect: (id: string | null) => void
   /** 是否允许选择空选项（默认 true） */
   allowEmpty?: boolean
-  /** 空选项文本标签（未提供时使用默认国际化文本） */
-  emptyLabel?: string
 }
 
 /**
@@ -62,7 +60,6 @@ export function CatalogPicker({
   onClose,
   onSelect,
   allowEmpty = true,
-  emptyLabel,
 }: CatalogPickerProps): React.JSX.Element | null {
   const t = useT()
   const titleId = useId()
@@ -88,8 +85,8 @@ export function CatalogPicker({
 
   if (!open) return null
 
-  // 默认参数不能在解构处调用 hook，收拢到组件体内解析。
-  const emptyText = emptyLabel ?? t('market.picker.emptyDefault')
+  // 空选项文案统一收拢为通用词条「无」（t 来自 hook，需在组件体内解析）。
+  const emptyText = t('common.pickerEmpty')
   const select = (id: string | null) => {
     onSelect(id)
     onClose()

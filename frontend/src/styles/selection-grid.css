@@ -16,6 +16,10 @@
 }
 
 .market-browse-grid {
+  /* 外边距与列间距严格相等：auto-fill 恒按满行算列轨数（非满行/稀疏列表条目仍占同列位），
+     space-evenly 把余量均分到首列前/列间/末列后每个位置；配合左右 padding = gap 6px，
+     视觉外边距 = 6 + 均分额 = 列间距，完全一致。 */
+  justify-content: space-evenly;
   contain: paint;
 }
 
@@ -530,17 +534,75 @@
 }
 
 .item-slot-inline-action--condition {
-  bottom: 0;
-  left: 0;
-  transform-origin: bottom left;
+  /* 框外条件入口：默认悬于瓦片上缘外侧居中（bottom:100% 零间隙贴合瓦片边缘，
+     鼠标上移进入按钮时 hover 链不断）；悬浮卡经视口翻转到瓦片上方时由组件加
+     is-below 切到下缘外侧避让。只用 opacity + pointer-events 隐藏而不用
+     visibility/display，保留键盘 Tab 聚焦可达性。 */
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.item-slot-inline-action--condition.is-below {
+  bottom: auto;
+  top: 100%;
+  transform-origin: top center;
+}
+
+/* 已学功法目录瓦片的条件容器：ConditionedTile 作为 grid cell 包裹瓦片，
+   提供相对定位基准并令瓦片居中 */
+.abilities-learned-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+/* 浮现触发域统一为 ConditionedTile 容器（conditioned-tile）；ItemUseSlot 的
+   item-use-slot-tooltip 挂点保留给物品槽形态。条件按钮一律挂在悬浮卡触发域之外，
+   hover 期间容器提升层叠防止框外按钮被相邻瓦片遮挡。 */
+:is(
+  .conditioned-tile,
+  .item-use-slot-tooltip
+):is(:hover, :focus-visible, :focus-within) {
+  z-index: 7;
 }
 
 :is(
-  .item-use-slot-tooltip,
-  .combat-ability-slot-shell
+  .conditioned-tile,
+  .item-use-slot-tooltip
+):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition {
+  pointer-events: auto;
+  /* keyframe 的 opacity/transform 走合成器线程（同丝带/角标缩放模式），密集瓦片 hover 不逐帧重绘 */
+  animation: item-condition-rise-in 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) both;
+}
+
+:is(
+  .conditioned-tile,
+  .item-use-slot-tooltip
+):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition.is-below {
+  animation-name: item-condition-rise-in-below;
+}
+
+/* 上缘浮现：从略下方浮入；下缘浮现（is-below）：从略上方浮入 */
+@keyframes item-condition-rise-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes item-condition-rise-in-below {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* 鼠标落到浮现后的按钮上：提亮反馈（不再清 transform，translateX(-50%) 居中须保持） */
+:is(
+  .conditioned-tile,
+  .item-use-slot-tooltip
 ):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition:hover:not(:disabled) {
   filter: brightness(1.12) drop-shadow(0 0 4px rgba(201, 180, 109, 0.28));
-  transform: none;
 }
 
 /* 持续消耗品剩余时间旋转填充遮罩与倒计时数字。
@@ -811,12 +873,8 @@
   transform-origin: top right;
 }
 
-.combat-ability-slot-shell .item-slot-inline-action--condition {
-  bottom: 2px;
-  left: 2px;
-}
-
-.combat-ability-slot-shell:is(:hover, :focus-visible, :focus-within) .combat-ability-level-control {
+/* Lv 徽标已随条件按钮移到槽位卡片层，hover 提亮触发域随卡片 */
+:is(.abilities-slot-card, .combat-slot-card):is(:hover, :focus-visible, :focus-within) .combat-ability-level-control {
   filter: brightness(1.12) drop-shadow(0 0 4px rgba(201, 180, 109, 0.28));
   transform: none;
 }
@@ -1118,7 +1176,7 @@
 }
 
 @media (max-width: 960px) {
-  /* 竖屏：自动消耗品槽位均分整行宽度，避免最小定宽造成横向溢出 */
+  /* 竖屏：行动页自动消耗品槽位均分整行宽度，避免最小定宽造成横向溢出 */
   .auto-use-tray {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1132,26 +1190,27 @@
     min-width: 0;
   }
 
-  .auto-use-slot {
+  /* 拉伸仅限行动页托盘：战斗详情页 combat-slot-tray 由 expedition.css 缩至 42px 固定尺寸 */
+  .auto-use-tray .auto-use-slot {
     width: auto;
     min-width: 0;
     flex: 1 1 0;
     aspect-ratio: auto;
   }
 
-  .item-use-slot-tooltip,
-  .item-use-slot-shell {
+  .auto-use-tray .item-use-slot-tooltip,
+  .auto-use-tray .item-use-slot-shell {
     width: 100%;
     height: 100%;
   }
 
-  .item-use-slot {
+  .auto-use-tray .item-use-slot {
     width: 100%;
     height: 100%;
     min-width: 0;
   }
 
-  .item-use-slot--empty {
+  .auto-use-tray .item-use-slot--empty {
     min-width: 0;
     min-height: 60px;
   }
@@ -1164,10 +1223,10 @@
     justify-content: flex-start;
   }
 
-  /* 压过基础规则里 .combat-slot-tray .slot-group:last-child 的 min-width: max-content */
+  /* 压过基础规则里 .combat-slot-tray .slot-group:last-child 的 min-width: max-content；
+     宽度交由 expedition.css 按排位分配（两组物品同行、功法组独占一行） */
   .combat-slot-tray .slot-group.combat-slot-section,
   .combat-slot-section {
-    width: 100%;
     min-width: 0;
   }
 }

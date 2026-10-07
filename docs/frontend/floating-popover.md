@@ -74,6 +74,7 @@
 #### B. 移动端 (Touch 模式)
 - 自动检测 `(pointer: coarse)` 与 `(hover: none)`；
 - 点击触发元素展开提示，**绝不调用 `e.preventDefault()` / `e.stopPropagation()`**，确保业务自身 `onClick` 100% 正常执行；
+- **长按（浏览器原生派发 `contextmenu`）统一展示本触发器的 hover 详情气泡**：`preventDefault()` 屏蔽系统右键/长按菜单，`stopPropagation()` 阻断冒泡——外层触发器挂载的业务右键回调（如背包格「右键快捷使用」）在触屏端不会被执行，桌面端语义不变；
 - 滑动屏幕（`scroll` / `touchmove`）时平滑收起当前气泡；
 - 点击外部空白处静默关闭，且不拦截目标元素的点击事件。
 

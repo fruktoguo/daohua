@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
+import { FloatingInfoCard, FloatingPopover, type FloatingPlacement } from './FloatingPopover'
 import { ValueText } from './ValueText'
 
 /**
@@ -27,6 +27,7 @@ export function EffectTooltipTarget({
   className = '',
   content,
   tabIndex = 0,
+  onPlacementChange,
 }: {
   /** 被包裹的触发子节点 */
   children: ReactNode
@@ -36,6 +37,8 @@ export function EffectTooltipTarget({
   content?: EffectTooltipContent | null
   /** 无障碍键盘聚焦顺序 */
   tabIndex?: number
+  /** 悬浮卡实际落位变化回调（含视口翻转结果），供宿主避让附件元素 */
+  onPlacementChange?: (placement: FloatingPlacement) => void
 }): React.JSX.Element {
   if (!content) {
     return <span className={className} tabIndex={tabIndex}>{children}</span>
@@ -57,6 +60,7 @@ export function EffectTooltipTarget({
       }
       gap={8}
       interactive={false}
+      onPlacementChange={onPlacementChange}
       openDelay={60}
       placement="bottom"
       tabIndex={tabIndex}

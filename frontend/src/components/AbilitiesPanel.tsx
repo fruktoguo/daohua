@@ -8,7 +8,7 @@ import { useT } from '../i18n'
 import type { CombatTrigger } from '../game/types'
 import { AbilityGridPicker } from './AbilityGridPicker'
 import { CombatTriggerEditor } from './CombatTriggerEditor'
-import { EffectTooltipTarget } from './EffectTooltip'
+import { ConditionedTile } from './ConditionedTile'
 
 // 共享的冻结空表：combatResources 未下发冷却数据时给选择器返回同一引用，避免每次取新对象触发重渲染。
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
@@ -58,7 +58,8 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   ) ?? EMPTY_ABILITY_COOLDOWNS
 
   const [activePicker, setActivePicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
-  const [editingTriggerSlotIndex, setEditingTriggerSlotIndex] = useState<number | null>(null)
+  // 触发条件按功法 ID 编辑（跟随功法而非槽位），编辑器打开的是功法维度的条件配置。
+  const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
 
   if (!combat) return <div className="abilities-panel-empty">{t('common.emptyData')}</div>
 
@@ -69,12 +70,12 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const withAbility = (index: number, abilityId: string | null) => assignAbilityToSlot(combat.abilitySlots, index, abilityId)
 
   const saveTriggers = (triggers: CombatTrigger[] | null) => {
-    if (editingTriggerSlotIndex === null) return
-    const nextTriggers = triggers ?? []
+    if (editingTriggerAbilityId === null) return
     update({
-      abilitySlots: combat.abilitySlots.map((slot, index) =>
-        index === editingTriggerSlotIndex ? { ...slot, triggers: nextTriggers } : slot,
-      ),
+      abilityTriggers: {
+        ...(combat.abilityTriggers ?? {}),
+        [editingTriggerAbilityId]: triggers ?? [],
+      },
     })
   }
 
@@ -142,76 +143,75 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         ? t('app.combatPanel.chooseInternalSlotAria')
         : t('app.combatPanel.chooseSpellSlotAria', { slot: index })
 
-    const slotContent = (
-      <>
-        <button
-          aria-label={slotAriaLabel}
-          className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
-          onClick={event => {
-            const anchor = event.currentTarget
-            setActivePicker(prev => prev?.index === index ? null : { index, anchor })
-          }}
-          type="button"
-        >
-          <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
-            {slotTypeTag}
-          </span>
+    const slotButton = (
+      <button
+        aria-label={slotAriaLabel}
+        className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
+        onClick={event => {
+          const anchor = event.currentTarget
+          setActivePicker(prev => prev?.index === index ? null : { index, anchor })
+        }}
+        type="button"
+      >
+        <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
+          {slotTypeTag}
+        </span>
 
-          {ability ? (
-            <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
-              <span className="item-type-ribbon" aria-hidden="true">
-                <span>{ribbonLabel}</span>
-              </span>
-              {abilityIconUrl
-                ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
-                : <strong className="item-tile-name">{ability.name}</strong>}
-              <span className="item-corner item-corner--bottom-right">
-                {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}
-              </span>
-              {remainingCooldown > 0 && (
-                <AbilityCooldownOverlay
-                  remainingMilliseconds={remainingCooldown}
-                  totalMilliseconds={ability.cooldownMilliseconds ?? 0}
-                />
-              )}
-              <span aria-hidden="true" className="item-tile-glow" />
+        {ability ? (
+          <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
+            <span className="item-type-ribbon" aria-hidden="true">
+              <span>{ribbonLabel}</span>
             </span>
-          ) : (
-            <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
-          )}
-        </button>
+            {abilityIconUrl
+              ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
+              : <strong className="item-tile-name">{ability.name}</strong>}
+            <span className="item-corner item-corner--bottom-right">
+              {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}
+            </span>
+            {remainingCooldown > 0 && (
+              <AbilityCooldownOverlay
+                remainingMilliseconds={remainingCooldown}
+                totalMilliseconds={ability.cooldownMilliseconds ?? 0}
+              />
+            )}
+            <span aria-hidden="true" className="item-tile-glow" />
+          </span>
+        ) : (
+          <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
+        )}
+      </button>
+    )
 
-        {ability && (
+    // Lv 徽标与条件按钮都在悬浮卡触发域之外（ConditionedTile 统一收拢）：
+    // 鼠标落在徽标/按钮上时不再弹出悬浮卡，点开条件编辑器也不会出现 tooltip 叠 modal。
+    // 条件跟随功法：按 abilityId 读写 combat.abilityTriggers，卸下再装配条件保留。
+    const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
+    return (
+      <ConditionedTile
+        as="div"
+        className={`abilities-slot-card${isInternal ? ' is-internal' : ''}${activePicker?.index === index ? ' is-picking' : ''}`}
+        condition={ability ? {
+          ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
+          label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
+          onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+          title: t('app.combatPanel.editTriggersTitle'),
+        } : null}
+        content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
+        extras={ability && (
           <div className="combat-ability-slot-actions">
             {/* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */}
             <span className="combat-ability-level-control">
               <span aria-hidden="true">Lv.</span>
               <span className="combat-ability-level-value">{abilityLevelFor(ability.abilityId)}</span>
             </span>
-            <button
-              aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
-              className="item-slot-inline-action item-slot-inline-action--condition"
-              onClick={() => setEditingTriggerSlotIndex(index)}
-              title={t('app.combatPanel.editTriggersTitle')}
-              type="button"
-            >
-              {t('app.combatPanel.triggerConditionBtn', { count: (slot.triggers?.length ?? 0) > 0 ? (slot.triggers?.length ?? 0) : '' })}
-            </button>
           </div>
         )}
-      </>
-    )
-
-    return (
-      <div className={`abilities-slot-card${isInternal ? ' is-internal' : ''}${activePicker?.index === index ? ' is-picking' : ''}`} key={index}>
-        {ability ? (
-          <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, abilityLevelFor(ability.abilityId))} tabIndex={-1}>
-            {slotContent}
-          </EffectTooltipTarget>
-        ) : (
-          <span className="combat-ability-slot-shell">{slotContent}</span>
-        )}
-      </div>
+        key={index}
+        triggerClassName="combat-ability-slot-shell"
+        triggerTabIndex={-1}
+      >
+        {slotButton}
+      </ConditionedTile>
     )
   }
 
@@ -279,12 +279,20 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                   const ribbonLabel = ability.element && ability.element !== 'none'
                     ? t(`combat.encounter.element.${ability.element}`)
                     : formatAbilityCategory(ability.category)
+                  const triggerCount = combat.abilityTriggers?.[ability.abilityId]?.length ?? 0
 
                   return (
-                    <EffectTooltipTarget
-                      className="item-grid-picker-tooltip"
+                    <ConditionedTile
+                      className="abilities-learned-cell"
+                      condition={{
+                        ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
+                        label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
+                        onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+                        title: t('app.combatPanel.editTriggersTitle'),
+                      }}
                       content={describeAbility(ability, learnedLevel)}
                       key={ability.abilityId}
+                      triggerClassName="item-grid-picker-tooltip"
                     >
                       <span
                         className={`item-tile combat-ability-cell${equippedIndex !== null ? ' is-equipped' : ''}`}
@@ -308,7 +316,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                         )}
                         <span aria-hidden="true" className="item-tile-glow" />
                       </span>
-                    </EffectTooltipTarget>
+                    </ConditionedTile>
                   )
                 })}
               </div>
@@ -336,17 +344,15 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         value={currentPickerValue}
       />
 
-      {/* 触发条件编辑器 */}
-      {editingTriggerSlotIndex !== null && (
+      {/* 触发条件编辑器（功法维度：title 用功法名） */}
+      {editingTriggerAbilityId !== null && (
         <CombatTriggerEditor
-          initialTriggers={combat.abilitySlots[editingTriggerSlotIndex]?.triggers ?? []}
-          onClose={() => setEditingTriggerSlotIndex(null)}
+          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? []}
+          onClose={() => setEditingTriggerAbilityId(null)}
           onSave={saveTriggers}
           open
           title={t('app.abilitiesPanel.triggerEditorTitle', {
-            slot: editingTriggerSlotIndex === 0
-              ? t('app.abilitiesPanel.slotInternalBadge')
-              : t('app.abilitiesPanel.slotSpell', { n: editingTriggerSlotIndex }),
+            name: abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.name ?? editingTriggerAbilityId,
           })}
         />
       )}

@@ -125,6 +125,7 @@
 /* 滚动条精细化 */
 .daohua-floating-card::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 .daohua-floating-card::-webkit-scrollbar-thumb {
   background: rgba(201, 180, 109, 0.25);
@@ -449,6 +450,7 @@
   font-size: 12px;
   line-height: 1.6;
   color: var(--text, #e9e3d2);
+  white-space: pre-line;
 }
 
 /* 键值对网格 */

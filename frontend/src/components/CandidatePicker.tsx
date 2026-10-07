@@ -42,8 +42,6 @@ interface CandidatePickerProps {
   onSelect: (key: string | null) => void
   /** 是否提供空选/卸下首格（默认 true） */
   allowEmpty?: boolean
-  /** 空选格文本 */
-  emptyLabel?: string
   /** 候选数超过该阈值才显示搜索框（默认 12） */
   searchThreshold?: number
   /** 浮层优选方向（默认 'top'：候选框浮于槽位上方，空间不足自动翻转） */
@@ -68,7 +66,6 @@ export function CandidatePicker({
   onClose,
   onSelect,
   allowEmpty = true,
-  emptyLabel,
   searchThreshold = DEFAULT_SEARCH_THRESHOLD,
   placement = 'top',
 }: CandidatePickerProps): React.JSX.Element | null {
@@ -87,7 +84,7 @@ export function CandidatePicker({
       (option.searchText ?? '').toLocaleLowerCase('zh-CN').includes(normalizedQuery))
   }, [options, normalizedQuery])
 
-  const emptyText = emptyLabel ?? t('common.pickerEmpty')
+  const emptyText = t('common.pickerEmpty')
   const titleText = typeof title === 'string' ? title : undefined
   const select = (key: string | null) => {
     onSelect(key)

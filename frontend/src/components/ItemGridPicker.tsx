@@ -61,8 +61,6 @@ interface ItemGridPickerProps {
   onSelect: (itemId: string | null, entry?: ItemPickerEntry | null) => void
   /** 是否提供空选/卸下槽位按钮（默认 true） */
   allowEmpty?: boolean
-  /** 空选项文本标签 */
-  emptyLabel?: string
 }
 
 // 未注册物品的兜底元数据：名称/品类/描述保留服务端数据。
@@ -109,7 +107,6 @@ export function ItemGridPicker({
   onClose,
   onSelect,
   allowEmpty = true,
-  emptyLabel,
 }: ItemGridPickerProps): React.JSX.Element {
   const t = useT()
   const options = useMemo<readonly CandidateOption[]>(() => items.map(item => {
@@ -123,6 +120,7 @@ export function ItemGridPicker({
           amount={item.amount}
           category={categoryLabel}
           className="item-grid-picker-cell"
+          enhancementLevel={item.enhancementLevel}
           itemId={item.itemId}
           level={metadata.level}
           name={item.name}
@@ -153,7 +151,6 @@ export function ItemGridPicker({
     <CandidatePicker
       allowEmpty={allowEmpty}
       anchor={anchor}
-      emptyLabel={emptyLabel}
       onClose={onClose}
       onSelect={key => {
         const entry = key === null ? null : items.find(item => itemPickerEntryKey(item.itemId, item.variant) === key) ?? null
@@ -191,24 +188,45 @@ function SustainedDurationOverlay({
     const actionDuration = Math.max(0, activeEntry?.durationSeconds ?? 0)
     const baseProgress = Math.max(0, activeEntry?.progressSeconds ?? 0)
     const isRunning = activeEntry?.status === 'running' && actionDuration > 0
-    let frameId: number | undefined
+    const now = performance.now()
+    const elapsed = isRunning ? Math.max(0, (now - lastQueueSyncPerformanceTime) / 1000) : 0
+    const progressAtStart = Math.min(actionDuration, baseProgress + elapsed)
 
-    const update = () => {
-      const elapsed = isRunning
-        ? Math.max(0, (performance.now() - lastQueueSyncPerformanceTime) / 1000)
-        : 0
-      const currentActionProgress = Math.min(actionDuration, baseProgress + elapsed)
-      const remaining = Math.max(0, remainingDurationSeconds - currentActionProgress)
-      overlay.style.setProperty('--cooldown-ratio', String(Math.min(1, remaining / total)))
+    const renderText = (progressSec: number) => {
+      const remaining = Math.max(0, remainingDurationSeconds - progressSec)
       // 只写数字子元素的 textContent：遮罩自身还要承载外圈虚线弧的嵌套层，
       // 直接写遮罩的 textContent 会连子元素一并清空。
-      if (textRef.current) textRef.current.textContent = `${Math.ceil(remaining)}s`
-      if (isRunning && currentActionProgress < actionDuration) frameId = window.requestAnimationFrame(update)
+      const text = `${Math.ceil(remaining)}s`
+      if (textRef.current && textRef.current.textContent !== text) {
+        textRef.current.textContent = text
+      }
     }
 
-    update()
+    // 扇形遮罩经 @property 注册的 --cooldown-ratio 走 WAAPI 动画时间轴：
+    // 当前轮内剩余时长随行动进度线性流逝，一次动画直达轮末，不再逐帧 setProperty。
+    const ratioFrom = Math.min(1, Math.max(0, remainingDurationSeconds - progressAtStart) / total)
+    overlay.style.setProperty('--cooldown-ratio', String(ratioFrom))
+    let anim: Animation | undefined
+    let interval: number | undefined
+    if (isRunning && progressAtStart < actionDuration) {
+      const ratioEnd = Math.min(1, Math.max(0, remainingDurationSeconds - actionDuration) / total)
+      anim = overlay.animate(
+        [{ '--cooldown-ratio': String(ratioFrom) }, { '--cooldown-ratio': String(ratioEnd) }],
+        { duration: (actionDuration - progressAtStart) * 1000, easing: 'linear', fill: 'forwards' },
+      )
+      renderText(progressAtStart)
+      interval = window.setInterval(() => {
+        const progress = Math.min(actionDuration, progressAtStart + (performance.now() - now) / 1000)
+        renderText(progress)
+        if (progress >= actionDuration && interval !== undefined) window.clearInterval(interval)
+      }, 250)
+    } else {
+      renderText(progressAtStart)
+    }
+
     return () => {
-      if (frameId !== undefined) window.cancelAnimationFrame(frameId)
+      if (interval !== undefined) window.clearInterval(interval)
+      anim?.cancel()
     }
   }, [
     activeEntry?.durationSeconds,
@@ -311,6 +329,7 @@ export function ItemUseSlot({
             category={resolveItemCategoryLabel(
               resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.category), t)}
             className="item-use-slot-cell"
+            enhancementLevel={item.enhancementLevel}
             itemId={item.itemId}
             level={metadata.level}
             name={item.name}
