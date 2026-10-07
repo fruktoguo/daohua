@@ -1205,7 +1205,7 @@ export const ActionDetailItem = memo(function ActionDetailItem({
     <span className="action-detail-item">
       <ItemReference amount={current} itemId={itemId} label={metadata?.label ?? itemId} />
       <strong className={insufficient ? 'is-insufficient' : ''}>
-        {current === undefined ? <UnitNumber maxDecimals={0} prefix="×" value={amount} /> : <><UnitNumber maxDecimals={0} value={current} /> / <UnitNumber maxDecimals={0} value={amount} /></>}
+        {current === undefined ? <UnitNumber prefix="×" value={amount} /> : <><UnitNumber value={current} /> / <UnitNumber value={amount} /></>}
       </strong>
     </span>
   )

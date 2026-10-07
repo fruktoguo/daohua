@@ -404,12 +404,12 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
               : []),
           ]}
           stats={[
-            { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.maxHitpoints} /> },
-            { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.maxManapoints} /> },
-            { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.physicalAttack} /> },
-            { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.spellAttack} /> },
-            { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.armor} /> },
-            { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.magicResistance} /> },
+            { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={monsterAttributes.maxHitpoints} /> },
+            { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip value={monsterAttributes.maxManapoints} /> },
+            { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip value={monsterAttributes.physicalAttack} /> },
+            { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip value={monsterAttributes.spellAttack} /> },
+            { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip value={monsterAttributes.armor} /> },
+            { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip value={monsterAttributes.magicResistance} /> },
           ]}
           subtitle={t('combat.map.monsterSubtitle', {
             realm: realm.minorName,

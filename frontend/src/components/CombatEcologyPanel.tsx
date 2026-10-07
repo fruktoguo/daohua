@@ -64,9 +64,9 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
       badge={rankLabel}
       badgeTone={badgeTone}
       stats={[
-        { label: t('combat.nearby.statMaxHp'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.maxHitpoints} /> },
-        { label: t('combat.nearby.statMaxDamage'), value: <UnitNumber disableTooltip maxDecimals={0} value={enemy.category === 'spell' ? attrs.spellAttack : attrs.physicalAttack} /> },
-        { label: t('combat.nearby.statArmor'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.armor} /> },
+        { label: t('combat.nearby.statMaxHp'), value: <UnitNumber disableTooltip value={attrs.maxHitpoints} /> },
+        { label: t('combat.nearby.statMaxDamage'), value: <UnitNumber disableTooltip value={enemy.category === 'spell' ? attrs.spellAttack : attrs.physicalAttack} /> },
+        { label: t('combat.nearby.statArmor'), value: <UnitNumber disableTooltip value={attrs.armor} /> },
       ]}
       subtitle={subtitle}
       title={enemy.name}
@@ -104,12 +104,12 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
           : []),
       ]}
       stats={[
-        { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.maxHitpoints} /> },
-        { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.maxManapoints} /> },
-        { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.physicalAttack} /> },
-        { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.spellAttack} /> },
-        { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.armor} /> },
-        { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.magicResistance} /> },
+        { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={attrs.maxHitpoints} /> },
+        { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip value={attrs.maxManapoints} /> },
+        { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip value={attrs.physicalAttack} /> },
+        { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip value={attrs.spellAttack} /> },
+        { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip value={attrs.armor} /> },
+        { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip value={attrs.magicResistance} /> },
         { label: t('combat.encounter.statInterval'), value: `${formatNumber(attrs.attackIntervalMilliseconds / 1000)}s` },
       ]}
       subtitle={subtitle}

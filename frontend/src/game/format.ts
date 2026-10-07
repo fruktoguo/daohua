@@ -185,10 +185,13 @@ export function formatNumber(
 }
 
 /**
- * 战斗属性与收益预览的整数显示约定：统一下取整，保证展示层不出现小数。
+ * 战斗属性与收益预览的整数显示约定：原始值先向零取整，再按默认精度走大数缩写。
+ * 注意不能直接传 maxDecimals=0——那会把取整应用在万进制换算后的值上，
+ * 导致 1.8万 被截成 1万（万以下尾数全丢）。
  */
 export function formatInteger(value: number | bigint | string): string {
-  return formatUnitNumber(value, { maxDecimals: 0 })
+  const integral = typeof value === 'bigint' ? value : Math.trunc(Number(value))
+  return formatUnitNumber(integral)
 }
 
 /** formatProgressText 的展示选项 */
@@ -269,7 +272,7 @@ export const CHINESE_SECTION_UNITS = [
  * 单位数值格式化选项
  */
 export interface FormatUnitOptions {
-  /** 小数点后最多位数，默认 2 */
+  /** 小数点后最多位数（默认 2）；整数部分达到 3 位时小数自动不再显示 */
   maxDecimals?: number
   /** 数字最大字符数（包含整数和小数，不含符号与单位），默认 6 */
   maxDigits?: number
@@ -477,12 +480,13 @@ export function formatChineseSplitNumber(
 
 /**
  * 自动改后缀单位格式化：
- * 1. 小数点后最多两位 (maxDecimals=2)
- * 2. 数字最多六个字符 (maxDigits=6，整数1~4位 + 小数0~2位)
+ * 1. 智能精度——整数部分达到 3 位后不再显示小数（如 1447.89 → 1447、106万 → 106万），
+ *    不足 3 位时最多保留 maxDecimals 位（默认 2，如 1.06万、9.99万）；
+ * 2. 数字最多六个字符 (maxDigits=6) 兜底；
  * 3. 满万、亿、兆、京等阶梯自动进位改后缀，默认向下取整 (floor)
  * 例如：
  * 99999 -> "9.99万" (floor)
- * 99999999 -> "9999.99万" (floor)
+ * 99999999 -> "9999.99万" -> 整数位超 3 位收敛为 "9999万" (floor)
  * 2000000000 -> "20亿"
  * 200000000 -> "2亿"
  */
@@ -552,8 +556,9 @@ function countNumericDigits(text: string): number {
 }
 
 /**
- * 在数字位数上限内格式化：先按 maxDecimals 取整，若数字位数超出 maxDigits 则逐位降低小数精度。
- * maxDigits 不小于默认输出位数时输出与直接取整完全一致，保证既有调用点行为不变。
+ * 在数字位数上限内格式化：智能精度——整数部分达到 3 位后不再显示小数（如 1447.89 → 1447），
+ * 不足 3 位时保留最多 maxDecimals 位小数（如 1.06 → 1.06、9.999 → 9.99）；
+ * 若数字位数仍超出 maxDigits 则逐位降低小数精度兜底。
  */
 function formatWithinDigitLimit(
   val: number,
@@ -562,7 +567,7 @@ function formatWithinDigitLimit(
   roundMode: 'round' | 'floor' | 'ceil',
   padDecimals: boolean,
 ): string {
-  let decimals = maxDecimals
+  let decimals = val >= 100 ? 0 : maxDecimals
   let formatted = roundToMaxDecimals(val, decimals, roundMode, padDecimals)
   while (countNumericDigits(formatted) > maxDigits && decimals > 0) {
     decimals -= 1
