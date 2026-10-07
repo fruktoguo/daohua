@@ -247,7 +247,7 @@
 
 - **适用场景**：
   - **角色虚影与六部位装备环绕**：中间展示修士角色立绘虚影与灵光法阵，左三（头部/衣服/腿部）右三（武器/饰品/鞋靴）竖排对称排列，支持穿脱交互与网格拾取 -> `EquipmentPanel`
-  - **技艺生活工具扩展槽位**：底部排布 4 个预留技艺工具法宝槽位（采矿/伐木/炼丹/炼器）。
+  - **技艺生活工具扩展槽位**：底部排布 7 个技艺工具专属槽位（采集/挖掘/炼丹/炼器/符箓/阵法/强化，槽位即 `tool-<techniqueId>`），点击呼出 `ItemGridPicker` 按槽位过滤穿脱，经 `loadout.replace` 上行；已装备工具为对应技艺行动提供 `techniqueBonus.speedRatio` 速度加成。
 - **组件源码**：[`frontend/src/components/EquipmentPanel.tsx`](../../frontend/src/components/EquipmentPanel.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.equipment-view-panel`, `.equipment-stage`, `.equipment-slot-btn`)
 
@@ -259,7 +259,7 @@
   - **右侧多 Tab 顶层容器**（聚合储物袋、装备、功法三大核心面板，支持平滑切换） -> `RightSidebar`
   - **储物袋分段陈列**：`InventoryPanel` 按「重要/消耗品/装备法宝/功法/材料」五组小标题分段展示物品网格（非 Tab），分组判定统一走 `resolveInventoryGroup`（物品目录 kind/category + 装备目录命中，itemId 前缀兜底），空组不渲染。
   - **储物袋物品交互单元**（背包格子完整交互收拢：悬停保留 `ItemTooltipTarget` 详情卡片；左键弹出 `FloatingPopover` 操作菜单——秘籍/残卷「参悟」(`ability.learn` 数量弹窗批量研读)、装备「装备」(`loadout.replace` 槽位互斥剔除)、可交易物品「交易」跳转坊市标的详情、`sellPrice > 0` 物品「出售」(`item.sell`)、任意物品「丢弃」(`item.discard`)；右键触发使用——秘籍/残卷进批量研读弹窗、装备直接穿戴；使用/丢弃/出售经统一 `Modal` + `QuantitySelector` 数量确认弹窗执行；已装备物品禁用丢弃/出售） -> `InventoryItemCell`
-  - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级徽标；已习得功法按内功心法/神通术法两组方块瓦片网格分列（`item-tile` 方形瓦片：左上元素丝带、右上 Lv 参悟等级、右下装配槽位角标）；槽位与功法 `discipline` 双向互斥——内功位只收 internal、术法位只收 spell；装配等级恒等于已参悟等级（由 `abilityExperiences` 立方曲线导出）；重复装配按「移动」处理——`assignAbilityToSlot` 把功法从原槽位移至新槽位并随迁触发条件；所有 `loadout.replace` 发送点统一经 `sendLoadoutReplace` 归一化） -> `AbilitiesPanel`
+  - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级徽标；已习得功法按内功心法/神通术法两组方块瓦片网格分列（`item-tile` 方形瓦片：左上元素丝带、右上 Lv 参悟等级、右下装配槽位角标）；槽位与功法 `discipline` 双向互斥——内功位只收 internal、术法位只收 spell；装配等级恒等于已参悟等级（由 `abilityExperiences` 立方曲线导出）；重复装配按「移动」处理——`assignAbilityToSlot` 把功法从原槽位移至新槽位（触发条件按功法 ID 跟随，见 §22 末尾）；所有 `loadout.replace` 发送点统一经 `sendLoadoutReplace` 归一化） -> `AbilitiesPanel`
 - **组件源码**：
   - [`frontend/src/components/RightSidebar.tsx`](../../frontend/src/components/RightSidebar.tsx)
   - [`frontend/src/components/InventoryItemCell.tsx`](../../frontend/src/components/InventoryItemCell.tsx)
@@ -295,9 +295,12 @@
 ## 22. 战斗技能触发条件编辑器 (Combat Trigger Editor)
 
 - **适用场景**：
-  - 战斗技能槽位自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
-- **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.combat-trigger-card`, `.combat-trigger-fields`)
+  - 功法自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
+  - **触发条件跟随功法 ID 而非槽位**：`combat.abilityTriggers`（`abilityId → CombatTrigger[]` 映射）是玩家侧唯一的条件存储——卸下再装配、跨槽位移动同一功法时条件保留；已学功法目录瓦片与装配槽位均可打开同一功法维度的编辑器，编辑器标题用功法名。槽位字段 `CombatAbilitySlot` 不再携带 `triggers`。
+  - **条件入口框外浮现交互（ConditionedTile）**：「瓦片 + 悬浮卡 + 框外条件按钮」三件套由 [`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx) 统一封装——条件按钮（`item-slot-inline-action--condition`）默认隐藏，容器 `.conditioned-tile` hover/focus-within 时经 keyframe 动画（opacity + translateY，合成器线程零重绘）从瓦片**画框之外**浮现，鼠标移到按钮上点击打开条件编辑器。按钮默认悬于瓦片上缘外侧（`bottom: 100%` 零间隙贴合保持 hover 连续）；`FloatingPopover` 的 `onPlacementChange` 回调回传悬浮卡实际落位，悬浮卡翻转到瓦片上方时按钮自动切到下缘外侧（`.is-below`）避让。按钮位于悬浮卡触发域之外，悬停按钮不再弹卡，点开编辑器也不会出现 tooltip 叠 modal（FloatingPopover z-index 10000 > Modal 70）。
+  - **编辑态抗快照刷新**：编辑器打开期间外部 `combat` 快照刷新（战斗进行中/结束）不会重置未保存的编辑内容——`initialTriggers` 经 ref 中转，仅在弹窗打开瞬间同步一次。
+- **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)、[`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.combat-trigger-card`, `.combat-trigger-fields`)、条件按钮框外浮现样式在 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.item-slot-inline-action--condition`、`.conditioned-tile`)
 
 ---
 
@@ -329,12 +332,12 @@
 ## 25. 斗法战斗属性统一面板 (CombatAttributePanel)
 
 - **适用场景**：
-  - 内视「斗法」Tab 与战场单位详情弹窗（`CharacterAttributeModal`，单击己方角色/敌怪头像呼出）共用同一属性面板，三组以 `.insight-sub-tabs` 二级导航 Tab 切换，外加可选「当前运转丹药与神通加持」Buff 分区：
-  - **敌怪详情追加第四「掉落」Tab**：传入 `drops`（`MonsterDropDefinition[]`，由 `findCombatantInCatalog(encounters, maps, enemyId)` 从遭遇/节点生态静态目录解析）时渲染，内容为 `ItemDropReference` 复合胶囊列表（`图标 名称 ×数量区间（概率）`，容器复用 `.world-monster-drops-row`）；空列表展示「没有掉落物」空态，未传 `drops`（内视面板/玩家/斗法镜像）维持原三 Tab。
+  - 内视「斗法」Tab 与战场单位详情弹窗（`CharacterAttributeModal`，单击己方角色/敌怪头像呼出）共用同一属性面板，两组以 `.insight-sub-tabs` 二级导航 Tab 切换，外加可选「当前运转丹药与神通加持」Buff 分区：
+  - **敌怪详情追加第三「掉落」Tab**：传入 `drops`（`MonsterDropDefinition[]`，由 `findCombatantInCatalog(encounters, maps, enemyId)` 从遭遇/节点生态静态目录解析）时渲染，内容为 `ItemDropReference` 复合胶囊列表（`图标 名称 ×数量区间（概率）`，容器复用 `.world-monster-drops-row`）；空列表展示「没有掉落物」空态，未传 `drops`（内视面板/玩家/斗法镜像）维持原两 Tab。
     - **基础**：气血/灵力/五秒回复、物理/术法攻击、护甲/法抗、命中/闪避/暴击/免暴/破招/化解（全部为点数原值，暴击/免暴不预折百分比）；
-    - **特殊**：攻击速度/行动速度/冷却缩减（NonLinear 点数）、暴击伤害倍率/普攻增幅/技能增幅/威胁增幅、治疗增幅/气血汲取/灵力汲取/伤害反弹（Linear 点数）、成长乘区展示行（普攻倍率/技能强度/吟唱系数/冷却系数，原始倍率直显）；出手间隔为系统常量机制，不上面板；
-    - **伤害增减**：全部伤害/物理伤害/术法伤害 + 金/木/水/火/土 共 8 个条目，每条目以 `增伤 / 减伤` 成对显示（增伤按 Linear、减伤按 NonLinear 各自曲线换算为有效百分比），Hover 只写语义不写公式。
-  - **服务端权威直渲**：面板直接接收 `CombatAttributes` 协议终值（40 键全点数口径，玩家/敌怪/斗法镜像同一形状），不做任何本地估算或配表反查；格式化统一由面板渲染层完成（`linearText`/`nonLinearText`/`factorText`/`boostReduceText`）。
+    - **特殊**：攻击速度/行动速度/冷却缩减（NonLinear 点数，含境界保送成长分量）、暴击伤害（点数折算倍率显示）/普攻增幅/技能增幅/威胁增幅、治疗增幅/气血汲取/灵力汲取/伤害反弹（Linear 点数），**伤害增减**整组以 `insight-pill-group` 分组收在本 Tab 最下面（全部伤害/物理伤害/术法伤害 + 金/木/水/火/土 共 8 个条目，每条目以 `增伤 / 减伤` 成对显示）；出手间隔为系统常量机制，不上面板；
+    - **默认值隐藏**：等于默认值的属性不渲染——点数类修饰与基础数值默认 0（1e-9 容差吸收浮点残差）；增减伤对两侧皆默认才隐藏、单边非零整对显示；整行默认整行不渲染、增减伤全默认整组隐藏；暴击伤害为例外恒显。
+  - **服务端权威直渲**：面板直接接收 `CombatAttributes` 协议终值（全点数口径，玩家/敌怪/斗法镜像同一形状），不做任何本地估算或配表反查；格式化统一由面板渲染层完成（`linearText`/`nonLinearText`/`factorText`/`boostReduceText`），条目为数据驱动渲染（词条按 `insight.combat.{key}`/`{key}Tooltip` 约定派生）。
   - **敌方属性为按需一次性交付**：`enemies[].attributes`/`duel.opponentAttributes` 不随快照常驻下发——`CombatArena` 将 `inspectedActor`（`enemy:{下标}`）经 `UnitInspect` 火忘帧登记为会话观察目标，服务端在下一份成功入队的快照帧中投影一次即自动解除武装（帧被丢弃则保留武装重投）；前端按 `enemy:{enemyId}`/`duel:{对手名}` 缓存已交付属性，重复点开即显不触发加载态；图鉴/生态/地图等战前查看走 `CombatantDefinition.attributes` 本地目录反查，与战斗详情通道相互独立。
   - 新增战斗属性字段时只改协议字段集与面板一处，禁止在弹窗/其他页面另写属性行。
 - **组件源码**：[`frontend/src/components/CombatAttributePanel.tsx`](../../frontend/src/components/CombatAttributePanel.tsx)
@@ -372,9 +375,10 @@
   - **触发源**：玩家 `combatResources.castingAbilityId`（出现播 `feedback.castRing`、完成时刻播技能）；敌方 `ExpeditionEnemy.pendingAbilityId` + `nextAttackAtSeconds`；斗法 `duel.events[].abilityId + atSeconds`；普攻出手时刻播 `feedback.attack`；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
   - **结算边界**：伤害跳字/血条碎条/受击震颤/出手动作由服务端快照驱动的既有组件（`ArenaResource`/`ArenaActor`）承担，特效模块不触碰战斗状态。
   - **普攻与受击变体**：常态攻击变化复用共享 `vfx/feedback.js`；气血下降的局部反馈复用 `ArenaActor` 与 `expedition.css` 的 `.arena-impact-fx`，画廊由 `vfx/core.js` 挂载相同样式。逐项查看使用画廊演武控制台。
+  - **尸体消散**：波次清空转入搜寻相位后服务端即清空 `enemies[]`，`CombatArena` 缓存战斗相位末帧敌方阵容继续以尸体形态（`is-dead`、不可交互）展示至寻敌倒数 1 秒，到点调 `CombatVfxRuntime.playCorpseDissipate()` 对全部 `.arena-actor--enemy` 播残魂萤火（画廊 `core.js` `defeat()` 同参数），槽位 CSS 淡出（`arena-corpse-dissipate` + `--corpse-fade-ms`）同步收束至新一波入场。
 - **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` 引擎原语+DaohuaVFX 门面 · `useCombatVfx.ts` React 桥 · `index.ts` 加载器与目标解析）；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
 - **样式文件**：[`frontend/src/styles/vfx.css`](../../frontend/src/styles/vfx.css)（`.vfx-stage-overlay`/`.vfx-node`/震屏 keyframes；技能专属样式各脚本 `VFX.injectStyles` 自含）
-- **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef)` 一行。
+- **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef)` 一行；返回值是运行时 ref，供快照调度之外的一次性演出主动触发（当前仅尸体消散）。
 - **注意**：`vite.config.ts` 的 `server.fs.allow: ['..']` 为 dev server serve 仓库根共享脚本所必需，勿删。
 
 ---
