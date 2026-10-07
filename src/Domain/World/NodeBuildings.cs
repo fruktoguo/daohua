@@ -62,6 +62,13 @@ public sealed record BuildingEffectSet(
 public sealed record BuildingMaterial(string ItemId, double Quantity);
 
 /// <summary>
+/// 单座节点建筑的拥挤使用快照：随节点建筑投影一并发入玩家分段并持久化，供建筑 tab 展示。
+/// ActiveUsers 为该建筑服务类别下的正在使用人数（玩家 Running 行动类别命中建筑服务类别），
+/// Capacity 为当前有效等级承载上限，Efficiency 为拥挤衰减后有效系数（超载时 &lt; 1）。
+/// </summary>
+public sealed record NodeBuildingUsage(string BuildingId, double ActiveUsers, int Capacity, double Efficiency);
+
+/// <summary>
 /// 某世界节点上一座公共建筑的持久化状态。
 /// Level 为已建成等级（0 = 尚未建成）；TargetLevel 为进行中的工程目标等级（0 = 无工程）。
 /// 建造中建筑的卡片已存在于节点，但效果按 Level 结算——首建期间 Level=0 不生效，
@@ -95,6 +102,49 @@ public static class NodeBuildingRules
     public const string GroupOther = "other";
     /// <summary>全部建筑的可建模板标识。</summary>
     public const string TemplateAll = "all";
+
+    /// <summary>一级建筑拥挤承载基数（人）。</summary>
+    public const int CrowdBaseCapacity = 100;
+    /// <summary>承载上限随等级线性成长（每级 +10% 基数：capacity = 100 + 10×(L-1)）。</summary>
+    public const double CrowdCapacityGrowthPerLevel = 0.1;
+    /// <summary>超载时每超出 1 人效果衰减 0.1%（即每 100 人 -10%）。</summary>
+    public const double CrowdReductionPerExtraUser = 0.001;
+    /// <summary>拥挤衰减幅度封顶 50%（超载 +500 人后效果恒为 50%，永不归零）。</summary>
+    public const double CrowdMaxReduction = 0.5;
+
+    /// <summary>建筑有效等级的拥挤承载上限（人）；未建成（L≤0）按一级口径给出展示基数。</summary>
+    public static int CrowdCapacity(int level)
+        => CrowdBaseCapacity + (int)Math.Round(CrowdBaseCapacity * CrowdCapacityGrowthPerLevel * Math.Max(0, level - 1));
+
+    /// <summary>拥挤效率系数：人数不超承载为 1；超载线性衰减（每超 1 人 -0.1%），减幅封顶 50%。</summary>
+    public static double CrowdEfficiency(int level, double activeUsers)
+    {
+        var capacity = CrowdCapacity(level);
+        if (activeUsers <= capacity) return 1;
+        return 1 - Math.Min(CrowdMaxReduction, (activeUsers - capacity) * CrowdReductionPerExtraUser);
+    }
+
+    /// <summary>
+    /// 建筑修饰集服务的行动类别集合：按非零修饰项映射（exploration*→Exploration、alchemy*→Alchemy、
+    /// cultivationOutputRatio→Cultivation、combat*→Combat）；空集表示该建筑不提供增益型服务。
+    /// </summary>
+    public static ActionKind[] ServedKinds(BuildingEffectSet modifiers)
+    {
+        var kinds = new List<ActionKind>(2);
+        if (modifiers.ExplorationSpeedRatio != 0 || modifiers.ExplorationOutputRatio != 0) kinds.Add(ActionKind.Exploration);
+        if (modifiers.AlchemySpeedRatio != 0 || modifiers.AlchemyOutputRatio != 0) kinds.Add(ActionKind.Alchemy);
+        if (modifiers.CultivationOutputRatio != 0) kinds.Add(ActionKind.Cultivation);
+        if (modifiers.CombatHitpointRegen != 0 || modifiers.CombatDamageReductionRatio != 0) kinds.Add(ActionKind.Combat);
+        return kinds.ToArray();
+    }
+
+    /// <summary>建筑在服务类别下的正在使用人数：各类别计数求和（行动队列串行，同一玩家不会重复计）。</summary>
+    public static double ActiveUsers(BuildingEffectSet modifiers, IReadOnlyDictionary<ActionKind, double> countsByKind)
+    {
+        double users = 0;
+        foreach (var kind in ServedKinds(modifiers)) users += countsByKind.GetValueOrDefault(kind);
+        return users;
+    }
 
     /// <summary>目标等级建造所需秒数；N≥1，线性 +20%/级。</summary>
     public static double RequiredBuildSeconds(int targetLevel)
@@ -159,6 +209,18 @@ public static class NodeBuildingRules
         IEnumerable<NodeBuildingState> buildings,
         IReadOnlyDictionary<string, BuildingDefinition> definitions,
         double nowUnixSeconds)
+        => AggregateEffects(buildings, definitions, nowUnixSeconds, null);
+
+    /// <summary>
+    /// 汇总一组节点建筑的当前效果：只计入已建成等级，效果 = 每级基准 × 等级 × 拥挤效率。
+    /// <paramref name="countsByKind"/> 为该节点各行动类别的正在使用人数（null 视为零拥挤，
+    /// 等价旧口径）；单座建筑使用人数按其服务类别计数求和后统一缩放全部修饰项。
+    /// </summary>
+    public static BuildingEffectSet AggregateEffects(
+        IEnumerable<NodeBuildingState> buildings,
+        IReadOnlyDictionary<string, BuildingDefinition> definitions,
+        double nowUnixSeconds,
+        IReadOnlyDictionary<ActionKind, double>? countsByKind)
     {
         var total = BuildingEffectSet.Empty;
         foreach (var state in buildings)
@@ -166,7 +228,9 @@ public static class NodeBuildingRules
             if (!definitions.TryGetValue(state.BuildingId, out var definition)) continue;
             var level = EffectiveLevel(state, definition, nowUnixSeconds);
             if (level <= 0) continue;
-            total = total.Add(definition.Modifiers.Scale(level));
+            var efficiency = countsByKind is null ? 1
+                : CrowdEfficiency(level, ActiveUsers(definition.Modifiers, countsByKind));
+            total = total.Add(definition.Modifiers.Scale(level * efficiency));
         }
         return total;
     }

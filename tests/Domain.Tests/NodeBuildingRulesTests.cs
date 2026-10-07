@@ -92,6 +92,83 @@ public sealed class NodeBuildingRulesTests
     }
 
     [Fact]
+    public void CrowdCapacityGrowsTenPercentOfBasePerLevel()
+    {
+        Assert.Equal(100, NodeBuildingRules.CrowdCapacity(1));
+        // 未建成按一级口径给展示基数。
+        Assert.Equal(100, NodeBuildingRules.CrowdCapacity(0));
+        Assert.Equal(110, NodeBuildingRules.CrowdCapacity(2));
+        Assert.Equal(200, NodeBuildingRules.CrowdCapacity(11));
+        Assert.Equal(600, NodeBuildingRules.CrowdCapacity(51));
+    }
+
+    [Fact]
+    public void CrowdEfficiencyDecaysLinearlyAndFloorsAtHalf()
+    {
+        // 承载内满效（含边界恰好等于上限）。
+        Assert.Equal(1, NodeBuildingRules.CrowdEfficiency(1, 0));
+        Assert.Equal(1, NodeBuildingRules.CrowdEfficiency(1, 100));
+        // 超载线性衰减：每超 1 人 -0.1%，即每超 100 人 -10%。
+        Assert.Equal(0.9, NodeBuildingRules.CrowdEfficiency(1, 200), 6);
+        Assert.Equal(0.8, NodeBuildingRules.CrowdEfficiency(1, 300), 6);
+        // 减幅封顶 50%：cap+500 处触底，之后恒 50%，永不归零。
+        Assert.Equal(0.5, NodeBuildingRules.CrowdEfficiency(1, 600), 6);
+        Assert.Equal(0.5, NodeBuildingRules.CrowdEfficiency(1, 1000), 6);
+        Assert.Equal(0.5, NodeBuildingRules.CrowdEfficiency(1, 10000), 6);
+        // 更高等级承载同步上移：Lv2 cap=110，110 人仍满效。
+        Assert.Equal(1, NodeBuildingRules.CrowdEfficiency(2, 110));
+        Assert.Equal(0.99, NodeBuildingRules.CrowdEfficiency(2, 120), 6);
+    }
+
+    [Fact]
+    public void ServedKindsMapsNonZeroModifiersToActionKinds()
+    {
+        Assert.Empty(NodeBuildingRules.ServedKinds(BuildingEffectSet.Empty));
+        Assert.Equal([ActionKind.Exploration],
+            NodeBuildingRules.ServedKinds(new BuildingEffectSet(ExplorationOutputRatio: 0.05)));
+        Assert.Equal([ActionKind.Exploration, ActionKind.Alchemy, ActionKind.Cultivation],
+            NodeBuildingRules.ServedKinds(new BuildingEffectSet(
+                ExplorationSpeedRatio: 0.1, AlchemyOutputRatio: 0.1, CultivationOutputRatio: 0.2)));
+        Assert.Equal([ActionKind.Combat],
+            NodeBuildingRules.ServedKinds(new BuildingEffectSet(CombatHitpointRegen: 5)));
+    }
+
+    [Fact]
+    public void AggregateEffectsAppliesCrowdingIndependentlyPerBuilding()
+    {
+        var exploration = new BuildingDefinition("building.exp", "历练台", "", "", 1, null, NodeBuildingRules.GroupProduction, [])
+        { Modifiers = new BuildingEffectSet(ExplorationOutputRatio: 0.1) };
+        var alchemy = new BuildingDefinition("building.alc", "丹房", "", "", 1, null, NodeBuildingRules.GroupProduction, [])
+        { Modifiers = new BuildingEffectSet(AlchemyOutputRatio: 0.1) };
+        var definitions = new Dictionary<string, BuildingDefinition>
+        {
+            [exploration.Id] = exploration,
+            [alchemy.Id] = alchemy,
+        };
+        var buildings = new[]
+        {
+            new NodeBuildingState("building.exp", 1, 0, 0, new Dictionary<string, double>()),
+            new NodeBuildingState("building.alc", 1, 0, 0, new Dictionary<string, double>()),
+        };
+        // 探索 300 人（超 cap100 的 200 人 → 效率 0.8），炼丹 50 人（满效）：按服务类别独立计数。
+        var counts = new Dictionary<ActionKind, double>
+        {
+            [ActionKind.Exploration] = 300,
+            [ActionKind.Alchemy] = 50,
+        };
+        var effects = NodeBuildingRules.AggregateEffects(buildings, definitions, 0, counts);
+        Assert.Equal(0.08, effects.ExplorationOutputRatio, 6);
+        Assert.Equal(0.1, effects.AlchemyOutputRatio, 6);
+        // 无关类别（修炼 5000 人）不影响这两座建筑的结算。
+        counts[ActionKind.Cultivation] = 5000;
+        var unaffected = NodeBuildingRules.AggregateEffects(buildings, definitions, 0, counts);
+        Assert.Equal(effects, unaffected);
+        // counts 为 null 退化为旧满效口径。
+        var legacy = NodeBuildingRules.AggregateEffects(buildings, definitions, 0);
+        Assert.Equal(0.1, legacy.ExplorationOutputRatio, 6);
+    }
+
+    [Fact]
     public void ResolveBuildableIdsPrefersExplicitListThenTemplate()
     {
         var definitions = new Dictionary<string, BuildingDefinition>
@@ -122,6 +199,7 @@ public sealed class NodeBuildingRulesTests
             new Dictionary<string, double> { ["item.peach-wood"] = 30 }));
         aggregate.World.NodeBuildingEffects = new BuildingEffectSet(ExplorationOutputRatio: 0.1);
         aggregate.World.NodeBuildingNodeId = aggregate.World.NodeId;
+        aggregate.World.NodeBuildingUsages.Add(new NodeBuildingUsage("building.test", 150, 110, 0.9));
         var restored = PlayerAggregate.Restore(aggregate.ExportState());
         var entry = Assert.Single(restored.World.NodeBuildings);
         Assert.Equal("building.test", entry.BuildingId);
@@ -131,6 +209,11 @@ public sealed class NodeBuildingRulesTests
         Assert.Equal(0.1, restored.World.NodeBuildingEffects.ExplorationOutputRatio, 6);
         Assert.Equal(restored.World.NodeId, restored.World.NodeBuildingNodeId);
         Assert.Equal(0.1, restored.World.EffectiveNodeBuildingEffects.ExplorationOutputRatio, 6);
+        var usage = Assert.Single(restored.World.NodeBuildingUsages);
+        Assert.Equal("building.test", usage.BuildingId);
+        Assert.Equal(150, usage.ActiveUsers);
+        Assert.Equal(110, usage.Capacity);
+        Assert.Equal(0.9, usage.Efficiency);
     }
 
     [Fact]

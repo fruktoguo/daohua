@@ -637,11 +637,14 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       y: Math.round(stageH / 2 - playerPxY * z),
     })
   }, [zoom])
-  // 视口适配可见区域并集：缩放至区域包围盒（含边距）恰好填满视口并居中。
-  // 常态单区域约等于满幅；驻留关口/行进跨界时自动缩放至双区域全景。
-  const fitToVisibleRegions = useCallback(() => {
+  // 视口自动适配锚框：驻留节点 → 所在区域全部节点 ∪ 相邻节点（跨域关口含对侧节点）；
+  // 行进在边上 → 就近端点所在区域 ∪ 两端点邻居；兜底 world.mapId 区域。
+  // 邻接区域仍整体渲染、可漫游查看，但不整个纳入适配范围，
+  // 避免驻留关口或跨界途中按双区并集缩放把整图压得过小。
+  const edgeNearFromSide = world.edgeProgress < 0.5
+  const fitToAnchorRegion = useCallback(() => {
     const stage = stageRef.current
-    if (!stage || visibleRegions.length === 0) return
+    if (!stage || worldIndex.nodes.length === 0) return
     const stageW = stage.clientWidth
     const stageH = stage.clientHeight
     if (!stageW || !stageH) return
@@ -650,12 +653,42 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     let minY = Infinity
     let maxX = -Infinity
     let maxY = -Infinity
-    for (const region of visibleRegions) {
-      minX = Math.min(minX, region.bounds.minX)
-      minY = Math.min(minY, region.bounds.minY)
-      maxX = Math.max(maxX, region.bounds.maxX)
-      maxY = Math.max(maxY, region.bounds.maxY)
+    const include = (nodeId: string | null | undefined) => {
+      const node = worldIndex.nodes.find(n => n.nodeId === nodeId)
+      if (!node) return
+      if (node.x < minX) minX = node.x
+      if (node.x > maxX) maxX = node.x
+      if (node.y < minY) minY = node.y
+      if (node.y > maxY) maxY = node.y
     }
+    const includeNeighbors = (nodeId: string | null | undefined) => {
+      if (!nodeId) return
+      include(nodeId)
+      for (const edge of worldIndex.edges) {
+        if (edge.fromNodeId === nodeId) include(edge.toNodeId)
+        else if (edge.toNodeId === nodeId) include(edge.fromNodeId)
+      }
+    }
+    const includeRegion = (mapId: string | undefined) => {
+      const region = maps.find(m => m.mapId === mapId)
+      if (!region) return
+      for (const node of region.nodes) include(node.nodeId)
+    }
+
+    if (world.nodeId) {
+      includeRegion(worldIndex.nodeOwner.get(world.nodeId))
+      includeNeighbors(world.nodeId)
+    } else if (world.edgeId) {
+      const edge = worldIndex.edges.find(e => e.edgeId === world.edgeId)
+      if (edge) {
+        includeRegion(worldIndex.nodeOwner.get(edgeNearFromSide ? edge.fromNodeId : edge.toNodeId))
+        includeNeighbors(edge.fromNodeId)
+        includeNeighbors(edge.toNodeId)
+      }
+    }
+    if (!Number.isFinite(minX)) includeRegion(world.mapId)
+    if (!Number.isFinite(minX)) return
+
     const pad = 10
     minX -= pad
     minY -= pad
@@ -673,7 +706,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       x: Math.round(stageW / 2 - (cx / 100) * stageW * nextZoom),
       y: Math.round(stageH / 2 - (cy / 100) * stageH * nextZoom),
     })
-  }, [visibleRegions])
+  }, [worldIndex, maps, world.nodeId, world.edgeId, world.mapId, edgeNearFromSide])
 
   // 区域可见集合变化（含首次布局就绪）时自动适配视口；集合不变期间不打断玩家手动漫游
   const fittedKeyRef = useRef<string | null>(null)
@@ -683,7 +716,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
     const tryFit = () => {
       if (stage.clientWidth > 0 && stage.clientHeight > 0 && fittedKeyRef.current !== visibleKey) {
-        fitToVisibleRegions()
+        fitToAnchorRegion()
         fittedKeyRef.current = visibleKey
       }
     }
@@ -703,7 +736,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       cancelAnimationFrame(rafId)
       resizeObserver.disconnect()
     }
-  }, [visibleKey, fitToVisibleRegions])
+  }, [visibleKey, fitToAnchorRegion])
 
   // 选中节点离开可见区域（区域切换）时回退到当前驻留节点或首个可见节点
   useEffect(() => {
@@ -853,6 +886,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       <section
         aria-label={t('combat.map.stageAria', { name: visibleRegions.map(r => r.map.name).join(' · ') || world.locationName })}
         className={`world-map-stage${isDragging ? ' is-dragging' : ''}`}
+        data-tour="world-map"
         onPointerCancel={handlePointerUp}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -893,7 +927,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             >－</button>
             <button
               className="world-map-tool-btn icon-only"
-              onClick={fitToVisibleRegions}
+              onClick={fitToAnchorRegion}
               title={t('combat.map.resetView')}
               type="button"
             >↺</button>
@@ -1131,6 +1165,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               <div className="world-location-actions">
                 <button
                   className="confirm-primary world-travel-btn is-ready"
+                  data-tour="travel-plan"
                   disabled={travellingToSelected}
                   onClick={() => setTravelModalOpen(true)}
                   type="button"
@@ -1222,6 +1257,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               </button>
               <button
                 className="confirm-primary"
+                data-tour="travel-confirm"
                 onClick={() => {
                   gameClient.sendCommand('world.travel', { targetNodeId: selectedNode.nodeId })
                   setTravelModalOpen(false)

@@ -274,6 +274,36 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
     }
 }
 
+/// <summary>
+/// 建筑拥挤使用读模型仓储：由既有读模型表派生 (节点, 行动 ID) → 正在使用人数。
+/// 写路径零新增——game.player_action_queue 随分段刷盘与 ComputeNode 回写事务性全量重建，
+/// game.player_projection.current_node_id 同事务维护；本仓储只做 GROUP BY 聚合读。
+/// </summary>
+public sealed class PostgresNodeActivityRepository(NpgsqlDataSource dataSource)
+{
+    /// <summary>
+    /// 聚合当前全图使用计数：玩家行动队列中 Running 行动按其驻留节点归类；
+    /// suspended 玩家不计（状态挂起不参与增益占用）。返回 (节点, 行动 ID, 人数) 明细行，
+    /// 行动 ID → 行动类别的归并由注册表按配表完成。
+    /// </summary>
+    public async ValueTask<IReadOnlyList<(string NodeId, string ActionId, int Count)>> LoadActionCountsAsync(CancellationToken cancellationToken)
+    {
+        var result = new List<(string, string, int)>();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT p.current_node_id, q.action_id, COUNT(*)::int
+            FROM game.player_action_queue q
+            JOIN game.player_projection p ON p.player_id = q.player_id
+            WHERE q.status = 'running' AND p.presence <> 'suspended' AND p.current_node_id IS NOT NULL
+            GROUP BY p.current_node_id, q.action_id
+            """, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add((reader.GetString(0), reader.GetString(1), reader.GetInt32(2)));
+        return result;
+    }
+}
+
 /// <summary>建筑命令结局；贡献命令在 AppliedMaterials 中回传实际入库的材料量（按剩余需求封顶）。</summary>
 public sealed record NodeBuildingMutationResult(
     bool Success,
@@ -305,12 +335,25 @@ public sealed record NodeBuildingSnapshot(long Version, IReadOnlyList<NodeBuildi
 public sealed class NodeBuildingRegistry(
     PostgresNodeBuildingRepository repository,
     GameDataCatalog gameData,
-    ILogger<NodeBuildingRegistry> logger)
+    ILogger<NodeBuildingRegistry> logger,
+    PostgresNodeActivityRepository? activity = null)
 {
     /// <summary>「节点无建筑」的空快照：版本恒 0。</summary>
     private static readonly NodeBuildingSnapshot EmptySnapshot = new(0, []);
+    /// <summary>「节点无使用人数」的空计数集。</summary>
+    private static readonly IReadOnlyDictionary<ActionKind, double> EmptyUsage =
+        new Dictionary<ActionKind, double>();
+    /// <summary>使用计数读模型刷新间隔：与 15s 分段脏龄去抖同量级，更快刷新也拿不到更新的落库数据。</summary>
+    private static readonly TimeSpan UsageRefreshInterval = TimeSpan.FromSeconds(15);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    /// <summary>使用计数读模型的独立刷新门：与建筑写锁分离，GROUP BY 不阻塞建筑读路径。</summary>
+    private readonly SemaphoreSlim _usageGate = new(1, 1);
+    /// <summary>使用计数上次刷新的 UTC ticks（long 读写原子，避免 DateTimeOffset 撕裂读）。</summary>
+    private long _usageRefreshedTicks = long.MinValue;
+    /// <summary>已发布使用计数：节点 → 行动类别 → 正在使用人数；锁内整体替换引用。</summary>
+    private IReadOnlyDictionary<string, IReadOnlyDictionary<ActionKind, double>> _usage =
+        new Dictionary<string, IReadOnlyDictionary<ActionKind, double>>(StringComparer.Ordinal);
     private readonly Dictionary<string, List<NodeBuildingState>> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _versions = new(StringComparer.Ordinal);
     /// <summary>已发布只读快照：锁内整体替换引用；锁外 Volatile 读取，数组内容不可变。</summary>
@@ -358,12 +401,74 @@ public sealed class NodeBuildingRegistry(
         finally { _gate.Release(); }
     }
 
-    /// <summary>汇总指定节点已建成建筑效果；无建筑返回空效果集。</summary>
+    /// <summary>汇总指定节点已建成建筑效果（含拥挤衰减）；无建筑返回空效果集。</summary>
     public async ValueTask<BuildingEffectSet> EffectsForAsync(string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var snapshot = await BuildingsForAsync(nodeId, now, cancellationToken);
         if (snapshot.Buildings.Count == 0) return BuildingEffectSet.Empty;
-        return NodeBuildingRules.AggregateEffects(snapshot.Buildings, gameData.Buildings, now.ToUnixTimeMilliseconds() / 1000d);
+        var counts = await UsageForAsync(nodeId, now, cancellationToken);
+        return NodeBuildingRules.AggregateEffects(snapshot.Buildings, gameData.Buildings,
+            now.ToUnixTimeMilliseconds() / 1000d, counts);
+    }
+
+    /// <summary>
+    /// 指定节点各行动类别的正在使用人数（秒级最终一致读模型）。
+    /// 读模型仓储未装配时恒空——等价零拥挤满效口径，单元测试与无库环境行为不变。
+    /// </summary>
+    public async ValueTask<IReadOnlyDictionary<ActionKind, double>> UsageForAsync(
+        string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (activity is null) return EmptyUsage;
+        if (Volatile.Read(ref _usageRefreshedTicks) <= now.UtcTicks - UsageRefreshInterval.Ticks)
+            await RefreshUsageAsync(now, cancellationToken);
+        return _usage.TryGetValue(nodeId, out var counts) ? counts : EmptyUsage;
+    }
+
+    /// <summary>
+    /// 按建筑快照逐座汇总拥挤使用三元组（使用中人数/承载上限/效率系数）；
+    /// 与效果投影同一口径——同一份计数既驱动衰减也驱动展示。
+    /// </summary>
+    public IReadOnlyList<NodeBuildingUsage> UsagesFor(
+        IReadOnlyList<NodeBuildingState> buildings,
+        IReadOnlyDictionary<ActionKind, double> countsByKind,
+        double nowUnixSeconds)
+    {
+        var usages = new List<NodeBuildingUsage>(buildings.Count);
+        foreach (var state in buildings)
+        {
+            if (!gameData.Buildings.TryGetValue(state.BuildingId, out var definition)) continue;
+            var level = NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds);
+            var users = NodeBuildingRules.ActiveUsers(definition.Modifiers, countsByKind);
+            usages.Add(new(state.BuildingId, users,
+                NodeBuildingRules.CrowdCapacity(level), NodeBuildingRules.CrowdEfficiency(level, users)));
+        }
+        return usages;
+    }
+
+    /// <summary>
+    /// 到期重建使用计数读模型：单条 GROUP BY 覆盖全图节点，行动 ID 按配表归并到行动类别；
+    /// 读模型故障向上抛出由调用方按既有节拍重试，不污染已发布计数。
+    /// </summary>
+    private async ValueTask RefreshUsageAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await _usageGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (Volatile.Read(ref _usageRefreshedTicks) > now.UtcTicks - UsageRefreshInterval.Ticks) return;
+            var rows = await activity!.LoadActionCountsAsync(cancellationToken);
+            var usage = new Dictionary<string, IReadOnlyDictionary<ActionKind, double>>(StringComparer.Ordinal);
+            foreach (var (nodeId, actionId, count) in rows)
+            {
+                if (!gameData.Actions.TryGet(new ActionId(actionId), out var definition)) continue;
+                if (!usage.TryGetValue(nodeId, out var byKind))
+                    usage[nodeId] = byKind = new Dictionary<ActionKind, double>();
+                var kinds = (Dictionary<ActionKind, double>)byKind;
+                kinds[definition.Kind] = kinds.GetValueOrDefault(definition.Kind) + count;
+            }
+            Volatile.Write(ref _usage, usage);
+            Volatile.Write(ref _usageRefreshedTicks, now.UtcTicks);
+        }
+        finally { _usageGate.Release(); }
     }
 
     /// <summary>发起新建筑建造（目标等级 1）；同节点同种仅允许一座。</summary>

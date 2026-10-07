@@ -281,4 +281,102 @@ public sealed class NodeBuildingRegistryTests
         var foreignSnapshot = await registry.BuildingsForAsync(foreignNodeId, now, CancellationToken.None);
         Assert.Equal(2d, Assert.Single(foreignSnapshot.Buildings).ContributedMaterials["item.test-wood"]);
     }
+
+    /// <summary>
+    /// 使用人数读模型（player_action_queue×player_projection GROUP BY 派生）：Running 行动按驻留
+    /// 节点与行动类别聚合——离线挂机计入、suspended 与 pending 不计、跨节点隔离、未配表行动忽略；
+    /// 使用计数同时驱动建筑效果衰减与「使用中 n/cap」展示，两个出口同一份数据。
+    /// </summary>
+    [Fact]
+    public async Task UsageReadModelCountsRunningActionsPerNodeAndKind()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("建筑使用人数读模型集成测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var repository = new PostgresNodeBuildingRepository(source);
+        var activity = new PostgresNodeActivityRepository(source);
+        var catalog = CatalogWithTestBuilding();
+        var registry = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance, activity);
+        var nodeId = $"node.test-{Guid.NewGuid():N}";
+        var otherNode = $"node.test-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var accountId = Guid.NewGuid();
+
+        await using (var connection = await source.OpenConnectionAsync())
+        {
+            await using var account = new NpgsqlCommand("""
+                INSERT INTO identity.accounts (account_id, login_normalized, password_hash, password_salt, password_iterations, created_at, updated_at)
+                VALUES ($1, $2, '\x00'::bytea, '\x00'::bytea, 100000, now(), now())
+                """, connection);
+            account.Parameters.Add(new NpgsqlParameter { Value = accountId });
+            account.Parameters.Add(new NpgsqlParameter { Value = $"usage-{accountId:N}" });
+            await account.ExecuteNonQueryAsync();
+
+            // 一座已建成的修炼增益建筑（Lv1 → 承载 100）；直建行，本用例只测使用计数链路。
+            await using var building = new NpgsqlCommand("""
+                INSERT INTO game.node_buildings (node_id, building_id, level, target_level, started_at_unix_seconds, contributed_materials, updated_at)
+                VALUES ($1, 'building.test-hut', 1, 0, 0, '{}'::jsonb, now())
+                """, connection);
+            building.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+            await building.ExecuteNonQueryAsync();
+
+            var ordinal = 0;
+            async Task SeedAsync(string node, string presence, string actionId, string status)
+            {
+                var playerId = Guid.NewGuid();
+                await using var player = new NpgsqlCommand("""
+                    INSERT INTO identity.players (player_id, account_id, display_name, display_name_normalized, created_at, last_seen_at)
+                    VALUES ($1, $2, $3, $4, now(), now())
+                    """, connection);
+                player.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                player.Parameters.Add(new NpgsqlParameter { Value = accountId });
+                player.Parameters.Add(new NpgsqlParameter { Value = $"u{ordinal}" });
+                player.Parameters.Add(new NpgsqlParameter { Value = $"u{ordinal++}-{accountId:N}" });
+                await player.ExecuteNonQueryAsync();
+                await using var projection = new NpgsqlCommand("""
+                    INSERT INTO game.player_projection (player_id, current_node_id, presence, last_active_at, updated_at)
+                    VALUES ($1, $2, $3, now(), now())
+                    """, connection);
+                projection.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                projection.Parameters.Add(new NpgsqlParameter { Value = node });
+                projection.Parameters.Add(new NpgsqlParameter { Value = presence });
+                await projection.ExecuteNonQueryAsync();
+                await using var queue = new NpgsqlCommand("""
+                    INSERT INTO game.player_action_queue (player_id, slot, action_id, action_payload, action_version, status, idempotency_key, updated_at)
+                    VALUES ($1, 0, $2, '\x7b7d'::bytea, 1, $3, $4, now())
+                    """, connection);
+                queue.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                queue.Parameters.Add(new NpgsqlParameter { Value = actionId });
+                queue.Parameters.Add(new NpgsqlParameter { Value = status });
+                queue.Parameters.Add(new NpgsqlParameter { Value = $"usage-{playerId:N}" });
+                await queue.ExecuteNonQueryAsync();
+            }
+
+            await SeedAsync(nodeId, "online", "cultivation.draw-qi", "running");
+            await SeedAsync(nodeId, "offline", "cultivation.draw-qi", "running");
+            await SeedAsync(nodeId, "suspended", "cultivation.draw-qi", "running");
+            await SeedAsync(nodeId, "online", "world.travel", "running");
+            await SeedAsync(nodeId, "online", "cultivation.draw-qi", "pending");
+            await SeedAsync(otherNode, "online", "cultivation.draw-qi", "running");
+            await SeedAsync(nodeId, "online", "action.unmapped", "running");
+        }
+
+        // 节点级类别计数：修炼在线+离线挂机=2（suspended/pending/跨节点/未配表不计），赶路=1。
+        var counts = await registry.UsageForAsync(nodeId, now, CancellationToken.None);
+        Assert.Equal(2, counts[ActionKind.Cultivation]);
+        Assert.Equal(1, counts[ActionKind.Travel]);
+        Assert.Equal(2, counts.Count);
+
+        // 展示与衰减共用同一份计数：建筑服务修炼类别 → 使用中 2/100，满效。
+        var view = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
+        var usages = registry.UsagesFor(view.Buildings, counts, now.ToUnixTimeMilliseconds() / 1000d);
+        var usage = Assert.Single(usages);
+        Assert.Equal("building.test-hut", usage.BuildingId);
+        Assert.Equal(2, usage.ActiveUsers);
+        Assert.Equal(NodeBuildingRules.CrowdCapacity(1), usage.Capacity);
+        Assert.Equal(1, usage.Efficiency);
+
+        var effects = await registry.EffectsForAsync(nodeId, now, CancellationToken.None);
+        Assert.Equal(0.05, effects.CultivationOutputRatio, 6);
+    }
 }

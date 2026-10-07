@@ -316,6 +316,17 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       </span>
                     </div>
                     <small>{building.effect}</small>
+                    <small className="building-usage">
+                      {t('combat.nearby.buildingUsage', { users: formatInteger(building.activeUsers), capacity: formatInteger(building.capacity) })}
+                      {building.efficiency < 1 && (
+                        <span className="building-usage-overload">
+                          {t('combat.nearby.buildingOverloaded', {
+                            overPercent: Math.round((building.activeUsers / Math.max(1, building.capacity) - 1) * 100),
+                            effectPercent: Math.round((1 - building.efficiency) * 100),
+                          })}
+                        </span>
+                      )}
+                    </small>
                     {building.targetLevel > 0 && (
                       <span className="building-card-progress">
                         <ProgressBar value={building.buildProgress} />
@@ -409,6 +420,22 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
           <div className="building-detail-body">
             <p>{detailBuilding.description}</p>
             <small>{detailBuilding.level > 0 ? detailBuilding.effect : t('combat.nearby.buildingEffectNone')}</small>
+
+            <section className="building-usage-detail">
+              <span>
+                {t('combat.nearby.buildingUsage', { users: formatInteger(detailBuilding.activeUsers), capacity: formatInteger(detailBuilding.capacity) })}
+              </span>
+              {detailBuilding.efficiency < 1 ? (
+                <span className="building-usage-overload">
+                  {t('combat.nearby.buildingOverloaded', {
+                    overPercent: Math.round((detailBuilding.activeUsers / Math.max(1, detailBuilding.capacity) - 1) * 100),
+                    effectPercent: Math.round((1 - detailBuilding.efficiency) * 100),
+                  })}
+                </span>
+              ) : (
+                <span className="building-usage-idle">{t('combat.nearby.buildingUsageIdle')}</span>
+              )}
+            </section>
 
             {detailBuilding.targetLevel > 0 && (
               <section className="building-detail-progress">
