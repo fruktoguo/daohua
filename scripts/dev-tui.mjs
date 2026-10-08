@@ -40,16 +40,25 @@ const labels = {
   backend: "后端",
   frontend: "前端",
 };
-const colors = {
-  main: "\x1b[36m",
-  backend: "\x1b[35m",
-  frontend: "\x1b[33m",
+
+const ansi = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  text: "\x1b[37m",
+  muted: "\x1b[90m",
+  cyan: "\x1b[36m",
+  blue: "\x1b[34m",
+  magenta: "\x1b[35m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  red: "\x1b[31m",
 };
-const reset = "\x1b[0m";
 const maxEvents = 1_000;
 const offsets = new Map();
 const pendingBytes = new Map();
 const events = [];
+const startedAt = Date.now();
 
 let view = "all";
 let shuttingDown = false;
@@ -64,6 +73,10 @@ function parseArgs(values) {
     index += 1;
   }
   return result;
+}
+
+function paint(color, value) {
+  return `${color}${value}${ansi.reset}`;
 }
 
 function readText(path) {
@@ -133,7 +146,7 @@ function collectEvents() {
       if (combined[index] !== 10) continue;
       let lineEnd = index;
       if (lineEnd > lineStart && combined[lineEnd - 1] === 13) lineEnd -= 1;
-      const line = combined.subarray(lineStart, lineEnd).toString("utf8");
+      const line = stripAnsi(combined.subarray(lineStart, lineEnd).toString("utf8"));
       if (line.length > 0) events.push({ source, line });
       lineStart = index + 1;
     }
@@ -145,9 +158,13 @@ function collectEvents() {
   }
 }
 
+function stripAnsi(value) {
+  return value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
 function cellWidth(value) {
   let width = 0;
-  for (const character of value) {
+  for (const character of stripAnsi(value)) {
     const code = character.codePointAt(0);
     const wide = code >= 0x1100 && (
       code <= 0x115f || code === 0x2329 || code === 0x232a
@@ -170,7 +187,7 @@ function fit(text, width) {
   if (width <= 0) return "";
   let output = "";
   let used = 0;
-  for (const character of String(text)) {
+  for (const character of stripAnsi(String(text))) {
     const nextWidth = cellWidth(character);
     if (used + nextWidth > width) return `${output}…`;
     output += character;
@@ -179,13 +196,130 @@ function fit(text, width) {
   return output;
 }
 
-function horizontal(width) {
-  return "─".repeat(Math.max(1, width));
+function padCell(text, width, align = "left") {
+  const value = fit(text, width);
+  const padding = Math.max(0, width - cellWidth(value));
+  if (align === "right") return `${" ".repeat(padding)}${value}`;
+  if (align === "center") {
+    const left = Math.floor(padding / 2);
+    return `${" ".repeat(left)}${value}${" ".repeat(padding - left)}`;
+  }
+  return `${value}${" ".repeat(padding)}`;
 }
 
-function statusLine(name, pid) {
-  const state = isAlive(pid) ? "运行中" : "未运行";
-  return `${name.padEnd(4, " ")} ${state.padEnd(3, " ")} ${pid ? `PID ${pid}` : ""}`;
+function borderTop(width, title, color = ansi.cyan, right = "") {
+  const innerWidth = Math.max(4, width - 2);
+  const left = `─ ${title} `;
+  const rightPart = right ? ` ${right} ─` : "─";
+  const fill = Math.max(1, innerWidth - cellWidth(left) - cellWidth(rightPart));
+  return `╭${paint(color, left)}${paint(ansi.muted, "─".repeat(fill))}${paint(ansi.muted, rightPart)}╮`;
+}
+
+function borderBottom(width) {
+  return paint(ansi.muted, `╰${"─".repeat(Math.max(1, width - 2))}╯`);
+}
+
+function frameRow(width, content) {
+  const innerWidth = Math.max(1, width - 4);
+  return `${paint(ansi.muted, "│")} ${content}${" ".repeat(Math.max(0, innerWidth - cellWidth(content)))} ${paint(ansi.muted, "│")}`;
+}
+
+function statusColor(state) {
+  if (state === "运行中") return ansi.green;
+  if (state === "正在停止") return ansi.yellow;
+  if (state.includes("错误") || state.includes("失败")) return ansi.red;
+  return ansi.cyan;
+}
+
+function formatElapsed() {
+  const seconds = Math.floor((Date.now() - startedAt) / 1_000);
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  const remainder = seconds % 60;
+  return hours > 0
+    ? `${hours}h ${String(minutes).padStart(2, "0")}m`
+    : `${minutes}m ${String(remainder).padStart(2, "0")}s`;
+}
+
+function formatClock() {
+  return new Date().toLocaleTimeString("zh-CN", { hour12: false });
+}
+
+function serviceStatus(pid) {
+  return pid && isAlive(pid) ? "运行中" : "等待中";
+}
+
+function serviceCard(width, title, pid, endpoint, color) {
+  const status = serviceStatus(pid);
+  const running = status === "运行中";
+  const dot = running ? "●" : "○";
+  const top = borderTop(width, title, color, status);
+  const statusText = `${paint(running ? ansi.green : ansi.yellow, dot)} ${paint(running ? ansi.green : ansi.yellow, status)}`;
+  const pidText = pid ? `PID ${pid}` : "尚未拉起";
+  const row = frameRow(width, `${statusText}  ${paint(ansi.muted, padCell(pidText, Math.max(1, width - 20), "right"))}`);
+  const endpointRow = frameRow(width, paint(ansi.dim, fit(endpoint, Math.max(1, width - 4))));
+  return [top, row, endpointRow, borderBottom(width)];
+}
+
+function combineColumns(left, right, totalWidth) {
+  const gap = 1;
+  const leftWidth = Math.floor((totalWidth - gap) / 2);
+  const rightWidth = totalWidth - gap - leftWidth;
+  const lines = [];
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const leftLine = left[index] ?? "";
+    const rightLine = right[index] ?? "";
+    lines.push(`${leftLine}${" ".repeat(gap)}${rightLine}`);
+  }
+  return { lines, leftWidth, rightWidth };
+}
+
+function eventLevel(line) {
+  const normalized = line.toLowerCase();
+  if (/error|exception|failed|失败|错误|fatal/.test(normalized)) return "ERR";
+  if (/warn|warning|警告/.test(normalized)) return "WARN";
+  if (/ready|listening|started|成功|就绪|启动/.test(normalized)) return "OK";
+  return "LOG";
+}
+
+function levelColor(level) {
+  if (level === "ERR") return ansi.red;
+  if (level === "WARN") return ansi.yellow;
+  if (level === "OK") return ansi.green;
+  return ansi.muted;
+}
+
+function sourceColor(source) {
+  if (source === "backend") return ansi.magenta;
+  if (source === "frontend") return ansi.yellow;
+  return ansi.cyan;
+}
+
+function logRow(width, event) {
+  const source = padCell(labels[event.source], 4);
+  const level = padCell(eventLevel(event.line), 4);
+  const prefixWidth = 4 + 1 + 4 + 1;
+  const message = fit(event.line, Math.max(1, width - prefixWidth - 4));
+  return frameRow(
+    width,
+    `${paint(sourceColor(event.source), source)} ${paint(levelColor(eventLevel(event.line)), level)} ${message}`,
+  );
+}
+
+function viewTab(label, key, count, active) {
+  const text = `${key} ${label} ${count}`;
+  return active ? paint(`${ansi.bold}${ansi.cyan}`, `[${text}]`) : paint(ansi.muted, ` ${text} `);
+}
+
+function buildViewTabs() {
+  const counts = { all: events.length, main: 0, backend: 0, frontend: 0 };
+  for (const event of events) counts[event.source] += 1;
+  return [
+    viewTab("全部", "A", counts.all, view === "all"),
+    viewTab("启动", "S", counts.main, view === "main"),
+    viewTab("后端", "B", counts.backend, view === "backend"),
+    viewTab("前端", "F", counts.frontend, view === "frontend"),
+  ].join("  ");
 }
 
 function render() {
@@ -194,33 +328,46 @@ function render() {
 
   const width = Math.max(40, process.stdout.columns || 100);
   const height = Math.max(12, process.stdout.rows || 30);
+  const state = readState();
   const backendPid = readPid("backend");
   const frontendPid = readPid("frontend");
-  const logLines = events.filter((event) => view === "all" || event.source === view);
-  const visible = logLines.slice(-Math.max(1, height - 9));
-  const lines = [
-    `${colors.main}道化太初 本地开发${reset}  ${readState()}  ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`,
-    horizontal(width),
-    `${statusLine("后端", backendPid)}    ${statusLine("前端", frontendPid)}    日志：${view === "all" ? "全部" : labels[view]}`,
-    "快捷键  q/Ctrl+C 停止  a 全部  b 后端  f 前端  r 刷新",
-    horizontal(width),
+  const stateText = paint(statusColor(state), `${ansi.bold}${state}`);
+  const narrow = width < 76;
+  const header = [
+    borderTop(width, narrow ? "道化太初 · DEV" : "道化太初 · 本地开发控制台", ansi.cyan, formatClock()),
+    frameRow(width, `${paint(ansi.bold, "DEV")}${paint(ansi.muted, "  ·  ")}阶段 ${stateText}${paint(ansi.muted, "  ·  ")}运行 ${paint(ansi.text, formatElapsed())}`),
+    borderBottom(width),
   ];
 
-  if (visible.length === 0) {
-    lines.push("等待日志……");
-  } else {
-    for (const event of visible) {
-      const label = `[${labels[event.source]}]`;
-      const prefix = `${colors[event.source]}${label}${reset}`;
-      lines.push(`${prefix} ${fit(event.line, width - cellWidth(`${label} `))}`);
-    }
-  }
+  const cardWidth = Math.floor((width - 1) / 2);
+  const backendCard = serviceCard(cardWidth, "后端服务", backendPid, "127.0.0.1:5128  ·  ws /ws", ansi.blue);
+  const frontendCard = serviceCard(width - cardWidth - 1, "前端 Vite", frontendPid, "127.0.0.1:15172  ·  /ops", ansi.yellow);
+  const cards = combineColumns(backendCard, frontendCard, width).lines;
 
-  while (lines.length < height - 1) lines.push("");
-  lines.push(`${colors.main}日志窗口${reset}  ${logDir}`);
+  const logEvents = events.filter((event) => view === "all" || event.source === view);
+  const logHeight = Math.max(2, height - header.length - cards.length - 5);
+  const visible = logEvents.slice(-logHeight);
+  const logs = [
+    borderTop(width, "实时日志", ansi.cyan, narrow ? "" : buildViewTabs()),
+    ...(visible.length === 0
+      ? [frameRow(width, paint(ansi.dim, "等待服务输出 · 启动阶段日志会显示在这里"))]
+      : visible.map((event) => logRow(width, event))),
+    borderBottom(width),
+  ];
+
+  const footer = [
+    frameRow(width, narrow
+      ? `${paint(ansi.bold + ansi.cyan, "Q")} 退出  ${paint(ansi.bold + ansi.cyan, "A/S/B/F")} 日志  ${paint(ansi.bold + ansi.cyan, "R")} 刷新`
+      : `${paint(ansi.muted, "快捷键")}  ${paint(ansi.bold + ansi.cyan, "Q")} 退出  ${paint(ansi.bold + ansi.cyan, "A/S/B/F")} 切换日志  ${paint(ansi.bold + ansi.cyan, "R")} 刷新`),
+    paint(ansi.muted, `╰─ ${narrow ? "日志" : "日志目录"} ${fit(logDir, Math.max(1, width - 8))} ${"─".repeat(Math.max(1, width - cellWidth(logDir) - 10))}╯`),
+  ];
+
+  const lines = [...header, ...cards, ...logs, ...footer];
+  while (lines.length < height) lines.push("");
   process.stdout.write(`\x1b[?25l\x1b[H\x1b[2J${lines.slice(0, height).join("\n")}`);
   rendered = true;
 }
+
 
 function stopParent(signal = "SIGINT") {
   if (shuttingDown) return;
@@ -256,6 +403,9 @@ if (process.stdin.isTTY) {
         stopParent();
       } else if (byte === 97 || byte === 65) {
         view = "all";
+        render();
+      } else if (byte === 115 || byte === 83) {
+        view = "main";
         render();
       } else if (byte === 98 || byte === 66) {
         view = "backend";
