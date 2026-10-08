@@ -32,9 +32,12 @@ BACKEND_SUPERVISOR_PID=""
 FRONTEND_PID=""
 TUI_PID=""
 TUI_ENABLED=0
+TTY_STATE=""
+TTY_RAW=0
 # 本地域名入口容器名（docker --rm：停止即自动删除）。
 CADDY_CONTAINER="daohua-local-caddy"
 LOG_DIR="${TMPDIR:-/tmp}/daohua-dev-$$"
+INPUT_FILE="$LOG_DIR/input"
 mkdir -p "$LOG_DIR"
 
 write_state() {
@@ -45,11 +48,16 @@ start_tui() {
   if [[ ! -t 0 || ! -t 1 || "${DAOHUA_TUI:-1}" == "0" ]]; then
     return 0
   fi
-  node scripts/dev-tui.mjs --log-dir "$LOG_DIR" --parent-pid "$$" </dev/tty >/dev/tty 2>/dev/tty &
-  TUI_PID=$!
   TUI_ENABLED=1
-  # TUI 使用独立终端句柄，编排脚本及子服务改写入固定日志文件，避免刷屏。
+  # TUI 不直接读取控制终端；交互读取由当前前台 shell 完成，再通过文件转发给 TUI。
+  # 这样不会触发后台进程读取 tty 时的 SIGTTIN，macOS/Linux 均可稳定响应按键。
+  TTY_STATE="$(stty -g < /dev/tty)"
+  stty -icanon min 1 time 0 -echo < /dev/tty
+  TTY_RAW=1
   exec >> "$LOG_DIR/main.log" 2>&1
+  node scripts/dev-tui.mjs --log-dir "$LOG_DIR" --parent-pid "$$" --input-file "$INPUT_FILE" </dev/null >/dev/tty 2>/dev/tty &
+  TUI_PID=$!
+  : > "$INPUT_FILE"
 }
 port_in_use() {
   local port="$1"
@@ -87,6 +95,10 @@ kill_tree() {
 cleanup() {
   trap - SIGINT SIGTERM EXIT
   SHUTTING_DOWN=1
+  if [[ "$TTY_RAW" -eq 1 ]]; then
+    stty "$TTY_STATE" < /dev/tty 2>/dev/null || true
+    TTY_RAW=0
+  fi
   write_state "正在停止"
   printf '\n==> 正在停止前后端服务...\n'
   if [[ -n "${CADDY_CONTAINER:-}" ]] && command -v docker >/dev/null 2>&1; then
@@ -114,11 +126,33 @@ cleanup() {
   wait 2>/dev/null || true
   printf '服务已全部停止。\n'
 }
+
+run_tui_input_loop() {
+  if [[ "$TUI_ENABLED" -ne 1 ]]; then
+    return 0
+  fi
+  while kill -0 "$BACKEND_SUPERVISOR_PID" 2>/dev/null \
+      && kill -0 "$FRONTEND_PID" 2>/dev/null \
+      && kill -0 "$TUI_PID" 2>/dev/null; do
+    key=""
+    if ! IFS= read -r -n 1 key < /dev/tty; then
+      break
+    fi
+    case "$key" in
+      q|Q)
+        kill -INT "$$"
+        return 0
+        ;;
+      a|A|s|S|b|B|f|F|r|R)
+        printf '%s\n' "$key" >> "$INPUT_FILE"
+        ;;
+    esac
+  done
+}
 write_state "准备环境"
 trap cleanup EXIT
 trap 'cleanup; exit 130' SIGINT
 trap 'cleanup; exit 143' SIGTERM
-start_tui
 
 # 1. 检查 YuoCore submodule
 write_state "检查依赖"
@@ -206,6 +240,10 @@ if ! scripts/reset-outdated-players.sh; then
   printf '错误: 存档版本漂移未处置（迁移失败或已取消重置），启动中止。\n' >&2
   exit 1
 fi
+
+# TUI 延到全部前置自检之后启动：存档处置的 RESET 确认需要独占 /dev/tty 行缓冲交互，
+# TUI 的 raw 模式会抢占输入并让提示永远答不完。
+start_tui
 
 # 5. 启动服务端（dev-hot.mjs 守护进程：源码变更进入 60s 防抖静默期，期间有新变更则刷新；
 #    静默期满先 dotnet build，编译失败保持旧进程，成功才优雅重启并自动拉起异常退出）
@@ -315,11 +353,15 @@ printf '  按 q 或 Ctrl+C 停止全部服务\n'
 printf '  ----------------------------------------------------\n'
 printf '====================================================\n\n'
 
-# 挂起等待监督循环或前端退出；任一退出即触发 cleanup 停止全部服务
-# 兼容 macOS 自带 Bash 3.2 (不支持 wait -n) 与 Linux Bash 4.3+
-if ! wait -n "$BACKEND_SUPERVISOR_PID" "$FRONTEND_PID" 2>/dev/null; then
-  while kill -0 "$BACKEND_SUPERVISOR_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null; do
-    sleep 1 &
-    wait $! 2>/dev/null || true
-  done
+# 挂起等待监督循环或前端退出；TUI 模式由前台 shell 读取控制终端按键，非 TUI 保留原等待逻辑。
+if [[ "$TUI_ENABLED" -eq 1 ]]; then
+  run_tui_input_loop
+else
+  # 兼容 macOS 自带 Bash 3.2 (不支持 wait -n) 与 Linux Bash 4.3+
+  if ! wait -n "$BACKEND_SUPERVISOR_PID" "$FRONTEND_PID" 2>/dev/null; then
+    while kill -0 "$BACKEND_SUPERVISOR_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null; do
+      sleep 1 &
+      wait $! 2>/dev/null || true
+    done
+  fi
 fi

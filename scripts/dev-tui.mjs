@@ -24,6 +24,7 @@ import process from "node:process";
 const args = parseArgs(process.argv.slice(2));
 const logDir = args.get("log-dir");
 const parentPid = Number.parseInt(args.get("parent-pid") ?? "", 10);
+const inputFile = args.get("input-file");
 
 if (!logDir || !Number.isInteger(parentPid) || parentPid <= 0) {
   process.stderr.write("dev-tui.mjs 需要 --log-dir 和有效的 --parent-pid\n");
@@ -394,33 +395,49 @@ function shutdown() {
   process.exit(0);
 }
 
-if (process.stdin.isTTY) {
+function handleKey(byte) {
+  if (byte === 3 || byte === 113 || byte === 81) {
+    stopParent();
+  } else if (byte === 97 || byte === 65) {
+    view = "all";
+    render();
+  } else if (byte === 115 || byte === 83) {
+    view = "main";
+    render();
+  } else if (byte === 98 || byte === 66) {
+    view = "backend";
+    render();
+  } else if (byte === 102 || byte === 70) {
+    view = "frontend";
+    render();
+  } else if (byte === 114 || byte === 82) {
+    render();
+  }
+}
+
+let inputOffset = 0;
+function readInputFile() {
+  if (!inputFile) return;
+  const text = readText(inputFile);
+  if (text.length < inputOffset) inputOffset = 0;
+  const pending = text.slice(inputOffset);
+  inputOffset = text.length;
+  for (const command of pending.split("\n")) {
+    if (command.length > 0) handleKey(command.charCodeAt(0));
+  }
+}
+
+if (inputFile) {
+  process.stdin.pause();
+} else if (process.stdin.isTTY) {
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.on("data", (buffer) => {
-    for (const byte of buffer) {
-      if (byte === 3 || byte === 113 || byte === 81) {
-        stopParent();
-      } else if (byte === 97 || byte === 65) {
-        view = "all";
-        render();
-      } else if (byte === 115 || byte === 83) {
-        view = "main";
-        render();
-      } else if (byte === 98 || byte === 66) {
-        view = "backend";
-        render();
-      } else if (byte === 102 || byte === 70) {
-        view = "frontend";
-        render();
-      } else if (byte === 114 || byte === 82) {
-        render();
-      }
-    }
+    for (const byte of buffer) handleKey(byte);
   });
   process.stdin.on("end", () => stopParent("SIGTERM"));
 } else {
-  process.stderr.write("dev-tui.mjs 需要在 TTY 中运行\n");
+  process.stderr.write("dev-tui.mjs 需要在 TTY 中运行，或传入 --input-file\n");
   process.exit(2);
 }
 
@@ -429,13 +446,14 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 const timer = setInterval(() => {
+  readInputFile();
   if (!existsSync(logDir)) {
     shutdown();
     return;
   }
   render();
 }, 250);
-timer.unref();
+if (!inputFile) timer.unref();
 
 process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
 render();
