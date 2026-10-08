@@ -338,7 +338,7 @@
     - **特殊**：攻击速度/行动速度/冷却缩减（NonLinear 点数，含境界保送成长分量）、暴击伤害（点数折算倍率显示）/普攻增幅/技能增幅/威胁增幅、治疗增幅/气血汲取/灵力汲取/伤害反弹（Linear 点数），**伤害增减**整组以 `insight-pill-group` 分组收在本 Tab 最下面（全部伤害/物理伤害/术法伤害 + 金/木/水/火/土 共 8 个条目，每条目以 `增伤 / 减伤` 成对显示）；出手间隔为系统常量机制，不上面板；
     - **默认值隐藏**：等于默认值的属性不渲染——点数类修饰与基础数值默认 0（1e-9 容差吸收浮点残差）；增减伤对两侧皆默认才隐藏、单边非零整对显示；整行默认整行不渲染、增减伤全默认整组隐藏；暴击伤害为例外恒显。
   - **服务端权威直渲**：面板直接接收 `CombatAttributes` 协议终值（全点数口径，玩家/敌怪/斗法镜像同一形状），不做任何本地估算或配表反查；格式化统一由面板渲染层完成（`linearText`/`nonLinearText`/`factorText`/`boostReduceText`），条目为数据驱动渲染（词条按 `insight.combat.{key}`/`{key}Tooltip` 约定派生）。
-  - **敌方属性为按需一次性交付**：`enemies[].attributes`/`duel.opponentAttributes` 不随快照常驻下发——`CombatArena` 将 `inspectedActor`（`enemy:{下标}`）经 `UnitInspect` 火忘帧登记为会话观察目标，服务端在下一份成功入队的快照帧中投影一次即自动解除武装（帧被丢弃则保留武装重投）；前端按 `enemy:{enemyId}`/`duel:{对手名}` 缓存已交付属性，重复点开即显不触发加载态；图鉴/生态/地图等战前查看走 `CombatantDefinition.attributes` 本地目录反查，与战斗详情通道相互独立。
+  - **敌方/盟友属性为按需一次性交付**：`enemies[].attributes`/`duel.opponentAttributes`/`allies[].attributes` 不随快照常驻下发——`CombatArena` 将 `inspectedActor`（`enemy:{下标}`/`ally:{memberIndex}`）经 `UnitInspect` 火忘帧登记为会话观察目标，服务端在下一份成功入队的快照帧中投影一次即自动解除武装（帧被丢弃则保留武装重投）；前端按 `enemy:{enemyId}`/`duel:{对手名}`/`ally:{playerId}` 缓存已交付属性，重复点开即显不触发加载态；盟友投影的是开打冻结面板（`ActionParticipantSnapshot.Stats`），与敌怪定义级静态值同一交付口径；图鉴/生态/地图等战前查看走 `CombatantDefinition.attributes` 本地目录反查，与战斗详情通道相互独立。
   - 新增战斗属性字段时只改协议字段集与面板一处，禁止在弹窗/其他页面另写属性行。
 - **组件源码**：[`frontend/src/components/CombatAttributePanel.tsx`](../../frontend/src/components/CombatAttributePanel.tsx)
 - **样式类名**：复用 `.insight-pill-group` / `.insight-base-layout` / `.insight-base-row` 与 `PillStatLabel` 胶囊体系
