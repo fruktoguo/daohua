@@ -12,7 +12,7 @@ BEGIN
 END
 $roles$;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA identity, game, economy, market, platform TO daohua_api, daohua_worker;
+GRANT USAGE ON SCHEMA identity, game, economy, market, platform, social TO daohua_api, daohua_worker;
 GRANT SELECT ON platform.schema_version TO daohua_api, daohua_worker;
 -- API 当前内置刷盘、outbox 和 retention worker，所以同时需要其运行权限。
 GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
@@ -23,12 +23,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
     economy.player_asset_balances, economy.player_asset_instances, economy.transactions,
     economy.transaction_lines, economy.reservations, market.partition_leases,
     market.orders, market.trades, market.settlement_claims, platform.section_flush_queue,
-    platform.integration_outbox, platform.command_receipts, platform.compute_jobs TO daohua_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_state_sections,
-    game.player_action_queue, game.player_projection, platform.section_flush_queue,
-    platform.integration_outbox TO daohua_worker;
-GRANT SELECT, DELETE ON identity.auth_sessions, identity.audit_events, identity.data_protection_keys, identity.account_risk_events,
-    platform.compute_jobs, platform.command_receipts, market.settlement_claims TO daohua_worker;
+    platform.integration_outbox, platform.command_receipts, platform.compute_jobs,
+    social.friend_requests, social.friendships, social.parties, social.party_members,
+    social.party_sessions, social.party_invitations, social.party_seekers,
+    social.player_invitations, social.chat_messages TO daohua_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_state_sections, game.player_action_queue,
+    game.player_projection, platform.section_flush_queue, platform.integration_outbox,
+    social.friend_requests, social.friendships, social.parties, social.party_members,
+    social.party_sessions, social.party_invitations, social.party_seekers,
+    social.player_invitations, social.chat_messages TO daohua_worker;
 -- metrics 只读取 PostgreSQL 统计，不获得账号、密钥、玩家载荷或账本的 SELECT。
 GRANT pg_read_all_stats TO daohua_metrics;
 -- 归档脚本需要创建月分区；仅开放两个归档所在 schema 及对应热表。
@@ -39,8 +42,8 @@ DO $owners$
 DECLARE object_record record;
 BEGIN
     FOR object_record IN SELECT schemaname, tablename FROM pg_tables
-        WHERE schemaname IN ('identity','game','economy','market','platform')
-            AND tablename NOT LIKE '%\_archive%' ESCAPE '\' LOOP
+        WHERE schemaname IN ('identity','game','economy','market','platform','social')
+            AND tablename NOT LIKE '%\_archive%' ESCAPE '\\' LOOP
         EXECUTE format('ALTER TABLE %I.%I OWNER TO daohua_bootstrap', object_record.schemaname, object_record.tablename);
     END LOOP;
 END

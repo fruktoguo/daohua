@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Domain.Combat;
 
 namespace Domain.Player;
@@ -151,8 +152,10 @@ public sealed record ActionParticipationSpec(
 
 /// <summary>队首参与行动携带的绑定：共享剧本规格 + 权威散场时刻。</summary>
 /// <param name="Spec">会话规格（含全部成员冻结面板）。</param>
-/// <param name="EndsAtUnixSeconds">权威散场墙钟（Unix 秒）；+∞ 表示进行中。</param>
-public sealed record ActionParticipationBinding(ActionParticipationSpec Spec, double EndsAtUnixSeconds = double.PositiveInfinity)
+/// <param name="EndsAtUnixSeconds">权威散场墙钟（Unix 秒）；+∞ 表示进行中，落盘写为 Infinity 字面量（仅此字段豁免 strict 数字口径）。</param>
+public sealed record ActionParticipationBinding(
+    ActionParticipationSpec Spec,
+    [property: JsonNumberHandling(JsonNumberHandling.AllowNamedFloatingPointLiterals)] double EndsAtUnixSeconds = double.PositiveInfinity)
 {
     /// <summary>持久化不变量：规格合法且散场时刻有限或 +∞。</summary>
     public bool IsValid => Spec is not null && Spec.IsValid

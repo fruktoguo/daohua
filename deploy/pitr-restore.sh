@@ -14,7 +14,7 @@ usage() {
   printf '%s\n' \
     '用法：pitr-restore.sh --base <base.tar.gz> --target-time <UTC时间> --output <目录> --confirm [--start]' \
     '  默认仅解包、校验 backup_manifest 并生成 recovery.signal。' \
-    '  --start 会启动临时容器 daohua-pitr-restore（仍不会触碰生产卷）。'
+    '  --start 仅启动隔离临时实例，不代表恢复已验收；必须另行执行 SQL/业务核对。'
 }
 
 while (($# > 0)); do

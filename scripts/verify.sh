@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 合并必跑最小充分门禁：工具链、Release 构建、Domain/Ecs/Server 三套测试（自动供给
 # daohua_market_test 集成测试库）、DataTool 校验、Compose 配置与前端构建。
-# 容量门禁不在合并必跑内：容量相关变更与发布前执行 scripts/capacity-target.sh（AGENTS.md §9）。
+# 容量门禁不在合并必跑内：容量相关变更与发布前，在本地或受控测试库执行
+# scripts/capacity-target.sh（AGENTS.md §9）；本脚本不执行远程发布或生产恢复验证。
 
 set -Eeuo pipefail
 
@@ -94,7 +95,12 @@ fi
 printf '%s\n' '==> 校验 Compose 配置'
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   docker compose -f compose.yaml config >/dev/null
-  DB_PASSWORD=verify-db-password \
+  DB_BOOTSTRAP_USER=daohua_bootstrap \
+  DB_BOOTSTRAP_PASSWORD=verify-bootstrap-password \
+  DB_APP_USER=daohua_api_login \
+  DB_APP_PASSWORD=verify-app-password \
+  DB_WORKER_USER=daohua_worker_login \
+  DB_WORKER_PASSWORD=verify-worker-password \
   APP_IMAGE=daohua:verify \
   COMPUTE_IMAGE=daohua-compute:verify \
   COMPUTE_TOKEN=verify-compute-token \

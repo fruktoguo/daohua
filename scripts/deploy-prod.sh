@@ -7,8 +7,8 @@
 #   1. 远端前置环境检查: 验证远端 SSH 连通性、Docker 与 Docker Compose 运行时就绪；
 #   2. CCR 镜像权限验证: 验证远端是否具备拉取 Server/ComputeNode 成对镜像权限；
 #   3. 同步生产资产: 创建安全临时目录，上传 Compose、Caddy、备份脚本及 systemd 配置文件；
-#   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置 PostgreSQL 与 ComputeNode 密钥；
-#   5. 安装资产与触发更新: 将资产安装到 /opt/daohua，显式指定 --image 时固化 APP_IMAGE 后触发 ccr-auto-update.sh 平滑更新；
+#   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置分离的 PostgreSQL 登录角色与 ComputeNode 密钥；
+#   5. 安装资产与触发更新: 将资产安装到 /opt/daohua，显式指定 Server/ComputeNode digest 后触发成对更新；
 #   6. systemd 服务与定时器配置: 启用并启动 CCR 自动更新 timer 与数据库备份 timer；
 #   7. Caddy 反向代理部署: 可选校验并无缝热重载 Caddy 站点配置 (daohua.yuohira.com.caddy)；
 #   8. 服务就绪与双层烟测: 检查容器健康与回环 /readyz，先在服务器回环跑全量烟测，
@@ -16,7 +16,8 @@
 #
 # 参数说明:
 #   --host HOST       远端 SSH 主机名（默认 yuohira）
-#   --image IMAGE     指定的生产 CCR 镜像引用（默认 ccr.ccs.tencentyun.com/yuohira/daohua:prod）
+#   --image IMAGE     指定 Server 不可变 @sha256 镜像引用
+#   --compute-image IMAGE  指定 ComputeNode 不可变 @sha256 镜像引用
 #   --skip-caddy      跳过远端 Caddy 站点配置的安装与 reload
 #   --skip-smoke      跳过发布后的内网/公网 HTTP/WebSocket 烟测
 #   -h, --help        显示帮助信息
@@ -26,13 +27,14 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${SSH_HOST:-yuohira}"
-IMAGE="${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+IMAGE="${APP_IMAGE:-}"
 COMPUTE_IMAGE="${COMPUTE_IMAGE:-}"
 IMAGE_EXPLICIT=0
 COMPUTE_IMAGE_EXPLICIT=0
 INSTALL_CADDY=1
 RUN_PUBLIC_SMOKE=1
 REMOTE_TMP=""
+SMOKE_ENV_FILE=""
 
 usage() {
   printf '%s\n' \
@@ -87,28 +89,30 @@ if [[ ! "$REMOTE_HOST" =~ ^[A-Za-z0-9._-]+$ ]]; then
   printf 'SSH 主机名包含非法字符: %s\n' "$REMOTE_HOST" >&2
   exit 1
 fi
-if [[ ! "$IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]]; then
-  printf '镜像引用包含非法字符: %s\n' "$IMAGE" >&2
+if [[ -z "$IMAGE" || -z "$COMPUTE_IMAGE" ]]; then
+  printf '生产发布必须显式提供 --image 与 --compute-image，不接受默认镜像。\n' >&2
   exit 1
 fi
-if [[ -z "$COMPUTE_IMAGE" ]]; then
-  if [[ "$IMAGE" == *"/daohua:"* ]]; then
-    COMPUTE_IMAGE="${IMAGE/daohua:/daohua-compute:}"
-  elif [[ "$IMAGE" == daohua:* ]]; then
-    COMPUTE_IMAGE="${IMAGE/daohua:/daohua-compute:}"
-  else
-    printf '无法从 Server 镜像推导 ComputeNode 镜像，请显式传入 --compute-image。\n' >&2
-    exit 1
-  fi
-fi
-if [[ ! "$COMPUTE_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]]; then
-  printf 'ComputeNode 镜像引用包含非法字符: %s\n' "$COMPUTE_IMAGE" >&2
+if [[ ! "$IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ || ! "$COMPUTE_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]]; then
+  printf '镜像引用包含非法字符。\n' >&2
   exit 1
 fi
+if [[ ! "$IMAGE" =~ @sha256:[a-f0-9]{64}$ || ! "$COMPUTE_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]; then
+  printf '生产发布要求 Server/ComputeNode 均使用完整 @sha256 digest。\n' >&2
+  exit 1
+fi
+if [[ "$RUN_PUBLIC_SMOKE" == "1" ]] && [[ -z "${SMOKE_COOKIE:-}" && -z "${SMOKE_SESSION_TOKEN:-}" && ( -z "${SMOKE_ACCOUNT:-}" || -z "${SMOKE_PASSWORD:-}" ) ]]; then
+  printf '启用发布烟测时必须显式提供 SMOKE_COOKIE、SMOKE_SESSION_TOKEN，或 SMOKE_ACCOUNT+SMOKE_PASSWORD；否则使用 --skip-smoke。\n' >&2
+  exit 1
+fi
+
 
 cleanup() {
   if [[ -n "$REMOTE_TMP" && "$REMOTE_TMP" == /tmp/daohua-deploy.* ]]; then
     ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf -- '$REMOTE_TMP'" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$SMOKE_ENV_FILE" ]]; then
+    rm -f -- "$SMOKE_ENV_FILE"
   fi
 }
 trap cleanup EXIT
@@ -125,6 +129,22 @@ if [[ "$REMOTE_TMP" != /tmp/daohua-deploy.* ]]; then
   printf '远端临时目录不符合预期: %s\n' "$REMOTE_TMP" >&2
   exit 1
 fi
+if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
+  SMOKE_ENV_FILE="$(mktemp "${TMPDIR:-/tmp}/daohua-smoke-env.XXXXXX")"
+  chmod 600 "$SMOKE_ENV_FILE"
+  if [[ -n "${SMOKE_COOKIE:-}" ]]; then
+    printf 'SMOKE_COOKIE=%q\n' "$SMOKE_COOKIE" > "$SMOKE_ENV_FILE"
+  elif [[ -n "${SMOKE_SESSION_TOKEN:-}" ]]; then
+    printf 'SMOKE_SESSION_TOKEN=%q\n' "$SMOKE_SESSION_TOKEN" > "$SMOKE_ENV_FILE"
+  else
+    printf 'SMOKE_ACCOUNT=%q\nSMOKE_PASSWORD=%q\n' "$SMOKE_ACCOUNT" "$SMOKE_PASSWORD" > "$SMOKE_ENV_FILE"
+    if [[ "${SMOKE_REGISTER:-0}" == "1" ]]; then
+      printf 'SMOKE_REGISTER=1\n' >> "$SMOKE_ENV_FILE"
+    fi
+  fi
+  scp -q "$SMOKE_ENV_FILE" "${REMOTE_HOST}:${REMOTE_TMP}/smoke.env"
+fi
+
 
 printf '==> 上传部署资产\n'
 scp -q \
@@ -157,18 +177,22 @@ printf '==> 校验生产环境变量\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" '
   set -Eeuo pipefail
   if ! sudo test -f /opt/daohua/daohua.env; then
-    printf "缺少 /opt/daohua/daohua.env，请设置 DB_PASSWORD。\n" >&2
+    printf "缺少 /opt/daohua/daohua.env，请配置 DB_BOOTSTRAP_USER/DB_APP_USER/DB_WORKER_USER 与对应凭据。\n" >&2
     exit 1
   fi
-  if ! sudo grep -Eq "^COMPUTE_TOKEN=[^[:space:]#]{24,}$" /opt/daohua/daohua.env; then
-    printf "COMPUTE_TOKEN 必须是至少 24 个字符且不含空白或注释字符，拒绝部署。\n" >&2
+  if ! sudo grep -Eq "^DB_BOOTSTRAP_USER=[^[:space:]#]{1,63}$" /opt/daohua/daohua.env || ! sudo grep -Eq "^DB_BOOTSTRAP_PASSWORD=[^[:space:]#]{24,}$" /opt/daohua/daohua.env; then
+    printf "DB_BOOTSTRAP_USER/DB_BOOTSTRAP_PASSWORD 必须显式配置，仅供数据库初始化使用。\n" >&2
     exit 1
   fi
-  if ! sudo grep -Eq "^DB_PASSWORD=[^[:space:]#]{24,}$" /opt/daohua/daohua.env; then
-    printf "DB_PASSWORD 必须是至少 24 个字符且不含空白或注释字符，拒绝部署。\n" >&2
+  if ! sudo grep -Eq "^DB_APP_USER=[^[:space:]#]{1,63}$" /opt/daohua/daohua.env || ! sudo grep -Eq "^DB_APP_PASSWORD=[^[:space:]#]{24,}$" /opt/daohua/daohua.env; then
+    printf "DB_APP_USER/DB_APP_PASSWORD 必须显式配置专用业务角色凭据。\n" >&2
     exit 1
   fi
-  if sudo grep -Eq "^(DB_PASSWORD|COMPUTE_TOKEN)=(change-me|replace-me|password|secret|verify-)" /opt/daohua/daohua.env; then
+  if ! sudo grep -Eq "^DB_WORKER_USER=[^[:space:]#]{1,63}$" /opt/daohua/daohua.env || ! sudo grep -Eq "^DB_WORKER_PASSWORD=[^[:space:]#]{24,}$" /opt/daohua/daohua.env; then
+    printf "DB_WORKER_USER/DB_WORKER_PASSWORD 必须显式配置专用 worker 角色凭据。\n" >&2
+    exit 1
+  fi
+  if sudo grep -Eq "^(DB_BOOTSTRAP_PASSWORD|DB_APP_PASSWORD|DB_WORKER_PASSWORD|COMPUTE_TOKEN)=(change-me|replace-me|password|secret|verify-)" /opt/daohua/daohua.env; then
     printf "生产环境变量仍使用明显占位值，拒绝部署。\n" >&2
     exit 1
   fi
@@ -204,6 +228,13 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
       sudo sed -i "s|^APP_IMAGE=.*|APP_IMAGE=$IMAGE|" /opt/daohua/daohua.env
     else
       printf 'APP_IMAGE=%s\n' '$IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
+    fi
+  fi
+  if [[ $COMPUTE_IMAGE_EXPLICIT == 1 ]]; then
+    if sudo grep -q '^COMPUTE_IMAGE=' /opt/daohua/daohua.env; then
+      sudo sed -i "s|^COMPUTE_IMAGE=.*|COMPUTE_IMAGE=$COMPUTE_IMAGE|" /opt/daohua/daohua.env
+    else
+      printf 'COMPUTE_IMAGE=%s\n' '$COMPUTE_IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
     fi
   fi
   sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' /opt/daohua/ccr-auto-update.sh
@@ -248,7 +279,7 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
 
 if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
   printf '==> 服务器回环全量烟测（信任边界内，含 /readyz）\n'
-  ssh -o BatchMode=yes "$REMOTE_HOST" "node '$REMOTE_TMP/smoke-production.mjs' http://127.0.0.1:15128"
+  ssh -o BatchMode=yes "$REMOTE_HOST" "set -Eeuo pipefail; set -a; . '$REMOTE_TMP/smoke.env'; set +a; node '$REMOTE_TMP/smoke-production.mjs' http://127.0.0.1:15128"
 
   printf '==> 公网 HTTPS 与 WebSocket 烟测（/readyz 应被拦截）\n'
   smoke_ok=0

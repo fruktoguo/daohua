@@ -71,8 +71,9 @@ if (upstreamUrls.Count > 0)
     var nodeName = builder.Configuration["ComputeNode:NodeName"]
                    ?? Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_NODE_NAME")
                    ?? Environment.MachineName;
+    var allowInsecureInternal = builder.Configuration.GetValue("ComputeNode:AllowInsecureLoopback", false);
     builder.Services.AddHostedService(sp => new UpstreamLinkWorker(
-        upstreamUrls, token, nodeName,
+        upstreamUrls, token, nodeName, allowInsecureInternal,
         sp.GetRequiredService<DeterministicBatchEngine>(),
         sp.GetRequiredService<GameDataCatalog>(),
         sp.GetRequiredService<ComputeMetrics>(),

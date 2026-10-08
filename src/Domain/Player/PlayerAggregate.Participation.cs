@@ -47,7 +47,7 @@ public sealed partial class PlayerAggregate
             || !string.Equals(participation.Spec.SessionId, sessionId, StringComparison.Ordinal))
             return false;
         _actions[0].Participation = participation with { EndsAtUnixSeconds = endsAtUnixSeconds };
-        MarkDirty(PlayerSectionKind.ActionQueue);
+        Touch(PlayerSectionKind.ActionQueue);
         return true;
     }
 

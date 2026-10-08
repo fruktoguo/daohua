@@ -402,8 +402,9 @@ export interface ExpeditionEnemy {
 
 /**
  * 组队讨伐盟友单位快照（expedition.allies 数组元素，§21.13）。
- * 按会话规格成员序排列，包含全部在场成员（含本机成员位）；盟友不携带属性面板——
- * UnitInspect 观察通道仅对敌怪开放。
+ * 按会话规格成员序排列，包含全部在场成员（含本机成员位）。
+ * 属性面板为按需一次性交付——UnitInspect 登记 side:ally + memberIndex 后随下一帧快照
+ * 携带一次开打冻结面板即停止，前端按 ally:{playerId} 缓存复用。
  */
 export interface ExpeditionAlly {
   /** 会话规格成员序下标（0 起，与 allies 数组序一致） */
@@ -432,6 +433,8 @@ export interface ExpeditionAlly {
   pendingActionDurationSeconds: number
   /** 倒地复活截止点（战斗时钟秒）；存活或无复活窗口时为 null */
   respawnAtSeconds?: number | null
+  /** 开打冻结战斗属性面板（与玩家 combat.attributes 同一形状）；仅被观察目标命中时随快照携带 */
+  attributes?: CombatAttributes | null
 }
 
 /**
@@ -524,16 +527,23 @@ export interface BattleReportAbilityExp {
 }
 
 /**
- * 战报等级提升条目：kind 区分境界 / 六维 / 功法三类目标。
+ * 战报等级提升条目：kind 区分境界 / 六维 / 功法 / 技艺四类目标。
  * - realm：境界提升，targetId 为空串；
  * - root：六维提升，targetId 为六维键（stamina/meridians/attack/bone/agility/consciousness）；
- * - ability：功法提升，targetId 为功法 ID。
+ * - ability：功法提升，targetId 为功法 ID；
+ * - technique：技艺提升，targetId 为技艺 ID。
  */
 export interface BattleReportLevelUp {
-  kind: 'realm' | 'root' | 'ability'
+  kind: 'realm' | 'root' | 'ability' | 'technique'
   targetId: string
   fromLevel: number
   toLevel: number
+}
+
+/** 战报技艺经验条目（按 techniqueId 聚合）。 */
+export interface BattleReportTechniqueExp {
+  techniqueId: TechniqueId | string
+  experience: number
 }
 
 /**
@@ -561,7 +571,9 @@ export interface BattleReport {
   rootExp: BattleReportRootExp
   /** 功法技能经验入账列表 */
   abilityExp: BattleReportAbilityExp[]
-  /** 期间发生的等级提升（境界/六维/功法） */
+  /** 生活技艺经验入账列表 */
+  techniqueExp: BattleReportTechniqueExp[]
+  /** 期间发生的等级提升（境界/六维/功法/技艺） */
   levelUps: BattleReportLevelUp[]
   /** 物品获得列表 */
   items: BattleReportItem[]

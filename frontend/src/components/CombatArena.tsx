@@ -1301,6 +1301,7 @@ interface EnemyDisplayState {
 /** 己方盟友展示态（§21.13 组队讨伐）：按 memberIndex 序铺位，倒地灰显、复活读条由 wire 帧合成。 */
 interface AllyDisplayState {
   memberIndex: number
+  playerId: string
   actorKey: string
   name: string
   seal: string
@@ -1310,6 +1311,8 @@ interface AllyDisplayState {
   maxMp: number
   isSelf: boolean
   action?: CombatActionState | null
+  /** 开打冻结战斗属性（详情弹窗唯一数值来源；未登记观察目标时为 null） */
+  attributes?: CombatAttributes | null
 }
 
 /**
@@ -1495,12 +1498,12 @@ export const CombatArena = memo(function CombatArena({
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
   // 否则角色行动条与右侧行动卡片会因「非队列补丁」（入灵气、掉落等）产生 0~1 秒的显示差。
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
-  // 详情弹窗目标：'player' 或 `enemy:{下标}`（同波多敌人逐只可查）。
+  // 详情弹窗目标：'player'、`enemy:{下标}`（同波多敌人逐只可查）或 `ally:{memberIndex}`（组队盟友）。
   const [inspectedActor, setInspectedActor] = useState<string | null>(null)
   // 终止当前行动的二次确认目标（队首 entryId）；目标离开队首（自然完成/被移除）时自动失效收起弹窗
   const [pendingStopEntryId, setPendingStopEntryId] = useState<string | null>(null)
-  // 单位属性缓存：敌方/镜像属性为定义级静态值，服务端仅在 UnitInspect 登记后一次性交付；
-  // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名}。
+  // 单位属性缓存：敌方/镜像属性为定义级静态值、盟友属性为开打冻结面板，服务端仅在 UnitInspect 登记后一次性交付；
+  // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名} / ally:{playerId}。
   const inspectedAttributesCacheRef = useRef(new Map<string, CombatAttributes>())
   // 尸体留存：服务端切搜寻相位即清空 enemies[]，这里在战斗相位逐帧缓存当波展示态，
   // 胜利转入搜寻后整波以尸体形态继续渲染，倒数最后一秒统一播消散动画后随新波入场移除。
@@ -1510,11 +1513,11 @@ export const CombatArena = memo(function CombatArena({
   const [corpseDissipating, setCorpseDissipating] = useState(false)
   const t = useT()
 
-  // 观察目标同步（UnitInspect 火忘帧）：敌方属性面板为按需投影，点开详情才向服务端登记；
+  // 观察目标同步（UnitInspect 火忘帧）：敌方/盟友属性面板为按需投影，点开详情才向服务端登记；
   // 选玩家/关闭弹窗即清除，未点开的单位不占快照带宽；组件常驻战斗页，会话断开自然失效。
   useEffect(() => {
-    const match = inspectedActor?.match(/^enemy:(\d+)$/)
-    gameClient.sendUnitInspect(match ? { side: 'enemy', index: Number(match[1]) } : null)
+    const match = inspectedActor?.match(/^(enemy|ally):(\d+)$/)
+    gameClient.sendUnitInspect(match ? { side: match[1] as 'enemy' | 'ally', index: Number(match[2]) } : null)
   }, [inspectedActor])
 
   // 战斗特效：overlay 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
@@ -1532,6 +1535,9 @@ export const CombatArena = memo(function CombatArena({
     const cache = inspectedAttributesCacheRef.current
     for (const enemy of expedition?.enemies ?? []) {
       if (enemy.attributes) cache.set(`enemy:${enemy.enemyId}`, enemy.attributes)
+    }
+    for (const ally of expedition?.allies ?? []) {
+      if (ally.attributes) cache.set(`ally:${ally.playerId}`, ally.attributes)
     }
     if (expedition?.duel?.opponentAttributes && expedition.duel.opponentName)
       cache.set(`duel:${expedition.duel.opponentName}`, expedition.duel.opponentAttributes)
@@ -1603,7 +1609,7 @@ export const CombatArena = memo(function CombatArena({
   }, [abilities, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
 
   // 组队讨伐盟友阵列（§21.13）：allies 按 memberIndex 序铺九宫格，memberIndex === selfIndex
-  // 的格子复用完整玩家展示态；其余盟友为纯展示单位（协议不下发属性，不可点详情）。
+  // 的格子复用完整玩家展示态；其余盟友可点详情，属性面板走 UnitInspect side:ally 按需投影。
   const allyEntries = useMemo<AllyDisplayState[]>(() => {
     const allies = expedition?.allies
     if (!allies || allies.length === 0) return EMPTY_ALLY_ENTRIES
@@ -1621,6 +1627,7 @@ export const CombatArena = memo(function CombatArena({
       .slice(0, ALLY_DEPTH_SLOTS.length)
       .map(ally => ({
         memberIndex: ally.memberIndex,
+        playerId: ally.playerId,
         actorKey: `ally:${ally.memberIndex}:${ally.displayName}`,
         name: ally.displayName,
         seal: ally.displayName.slice(0, 1) || '?',
@@ -1630,6 +1637,7 @@ export const CombatArena = memo(function CombatArena({
         maxMp: Math.max(1, ally.maxManapoints ?? ally.manapoints),
         isSelf: ally.memberIndex === selfIndex,
         action: allyActionState(ally, battleElapsed, serverNow, abilities, respawnMs, respawnName, expedition?.phase),
+        attributes: ally.attributes ?? null,
       }))
   }, [expedition?.allies, expedition?.selfIndex, expedition?.battleElapsedSeconds, expedition?.phase, expedition?.encounterId, expedition?.playerRespawnDurationSeconds, encounters, abilities, t])
 
@@ -1638,6 +1646,12 @@ export const CombatArena = memo(function CombatArena({
     : null
   const inspectedEnemy = inspectedEnemyIndex !== null && Number.isInteger(inspectedEnemyIndex)
     ? enemyEntries[inspectedEnemyIndex] ?? null
+    : null
+  const inspectedAllyIndex = inspectedActor?.startsWith('ally:')
+    ? Number(inspectedActor.slice(5))
+    : null
+  const inspectedAlly = inspectedAllyIndex !== null && Number.isInteger(inspectedAllyIndex)
+    ? allyEntries.find(ally => ally.memberIndex === inspectedAllyIndex) ?? null
     : null
   // 尸体缓存生命周期：combat 相位逐帧刷新缓存；combat→search（服务端语义=波次清空，
   // 团灭走 respawn、斗法走 duel-pending/duel 均不经过此迁移）时固化为尸体阵容
@@ -1760,8 +1774,8 @@ export const CombatArena = memo(function CombatArena({
   }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities, world, maps, t])
 
   // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时取用属性；
-  // 角色/敌怪/斗法镜像全部渲染服务端下发的 CombatAttributes 终值，无任何本地估算。
-  // 敌方属性为一次性交付：wire 未携带时回退身份缓存（重复点开即显，命中缓存不触发加载态）。
+  // 角色/敌怪/斗法镜像/盟友全部渲染服务端下发的 CombatAttributes 终值，无任何本地估算。
+  // 敌方/盟友属性为一次性交付：wire 未携带时回退身份缓存（重复点开即显，命中缓存不触发加载态）。
   const inspectedAttributes: CombatAttributes | null = inspectedActor === null
     ? null
     : inspectedEnemy
@@ -1771,7 +1785,11 @@ export const CombatArena = memo(function CombatArena({
             ? `enemy:${inspectedEnemy.enemyId}`
             : `duel:${expedition?.duel?.opponentName ?? 'opponent'}`)
         ?? null
-      : combatAttributes ?? null
+      : inspectedAlly
+        ? inspectedAlly.attributes
+          ?? inspectedAttributesCacheRef.current.get(`ally:${inspectedAlly.playerId}`)
+          ?? null
+        : combatAttributes ?? null
 
   // 敌怪掉落明细：静态配表查询（与生态面板同根同源）；斗法镜像 enemyId=null 不解析。
   const inspectedDrops = useMemo<readonly MonsterDropDefinition[] | undefined>(() => {
@@ -1833,6 +1851,7 @@ export const CombatArena = memo(function CombatArena({
                         maxMp={ally.maxMp}
                         mp={ally.mp}
                         name={ally.name}
+                        onInspect={() => setInspectedActor(`ally:${ally.memberIndex}`)}
                         role="player"
                         seal={ally.seal}
                       />
@@ -1992,11 +2011,11 @@ export const CombatArena = memo(function CombatArena({
         attributes={inspectedAttributes}
         buffs={inspectedActor === 'player' ? buffs : []}
         drops={inspectedDrops}
-        name={inspectedEnemy?.name ?? playerName}
+        name={inspectedEnemy?.name ?? inspectedAlly?.name ?? playerName}
         onClose={() => setInspectedActor(null)}
         open={inspectedActor !== null}
         role={inspectedEnemy ? 'enemy' : 'player'}
-        title={inspectedEnemy?.name ?? playerName}
+        title={inspectedEnemy?.name ?? inspectedAlly?.name ?? playerName}
         visual={inspectedEnemy?.visual ?? null}
       />
     </div>

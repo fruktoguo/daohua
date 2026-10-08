@@ -8,8 +8,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: daohua
-      POSTGRES_USER: daohua
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DB_PASSWORD}
+      POSTGRES_USER: ${DB_BOOTSTRAP_USER:?需要在 /opt/daohua/daohua.env 设置专用 DB_BOOTSTRAP_USER}
+      POSTGRES_PASSWORD: ${DB_BOOTSTRAP_PASSWORD:?需要在 /opt/daohua/daohua.env 设置专用 DB_BOOTSTRAP_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     command:
       - postgres
@@ -54,7 +54,7 @@ services:
       - ${WAL_ARCHIVE_DIR:-/opt/daohua/wal-archive}:/var/lib/postgresql/wal-archive
       - /opt/daohua/postgres-wal-archive.sh:/usr/local/bin/postgres-wal-archive.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U daohua -d daohua"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_BOOTSTRAP_USER:?需要设置 DB_BOOTSTRAP_USER} -d daohua"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -88,8 +88,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
-      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DB_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=2;Timeout=5;Command Timeout=30;Keepalive=30
-      Storage__EnableSchemaBootstrap: "true"
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=${DB_APP_USER:?需要设置 DB_APP_USER};Password=${DB_APP_PASSWORD:?需要设置 DB_APP_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=2;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__EnableSchemaBootstrap: "false"
       Storage__SectionFlushBatchSize: "256"
       Storage__SectionFlushIntervalMilliseconds: "1000"
       Storage__SectionFlushLeaseSeconds: "30"
@@ -144,9 +144,11 @@ services:
       ASPNETCORE_URLS: http://+:8090
       ComputeNode__Urls: http://+:8090
       ComputeNode__Token: ${COMPUTE_TOKEN:?需要设置 COMPUTE_TOKEN}
-      # 反向拨入：节点主动 WebSocket 连接主服链路，进入动态节点组接收批次。
-      ComputeNode__UpstreamUrl: "http://app:8080/internal/compute-link"
+      # 生产内部网络仅允许明文回环/Compose 上游；令牌不离开该隔离网络。
+      ComputeNode__AllowInsecureLoopback: "true"
+      # 反向拨入：节点主动 WebSocket 连接主服链路。
       ComputeNode__NodeName: "${COMPUTE_NODE_NAME:-compose-node}"
+      ComputeNode__UpstreamUrl: "http://app:8080/internal/compute-link"
       ComputeNode__MaxJobsPerBatch: "${COMPUTE_MAX_JOBS_PER_BATCH:-128}"
       ComputeNode__MaxConcurrentBatches: "${COMPUTE_MAX_CONCURRENT_BATCHES:-2}"
       GameData__Directory: /app/config/game-data
@@ -187,7 +189,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://127.0.0.1:8081
       DAOHUA_PROCESS_ROLE: persistence-worker
-      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:?需要设置 DB_PASSWORD};Maximum Pool Size=16;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=${DB_WORKER_USER:?需要设置 DB_WORKER_USER};Password=${DB_WORKER_PASSWORD:?需要设置 DB_WORKER_PASSWORD};Maximum Pool Size=16;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "false"
       Storage__SectionFlushBatchSize: "256"
       Storage__SectionFlushIntervalMilliseconds: "1000"

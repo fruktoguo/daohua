@@ -1028,6 +1028,6 @@ public sealed record PartyLobbyDto(
     IReadOnlyList<PartyLobbySeekerDto> Seekers);
 
 /// <summary>单位详情观察目标（UnitInspect 火忘帧载荷）。</summary>
-/// <param name="Side">观察侧：<c>enemy</c> 敌方 / <c>ally</c> 己方（预留队友）；与 <paramref name="Index"/> 同为 null 时表示清除观察目标</param>
-/// <param name="Index">该侧阵型下标（与前端 enemy:i / 未来 ally:i 一致）</param>
+/// <param name="Side">观察侧：<c>enemy</c> 敌方 / <c>ally</c> 己方盟友；与 <paramref name="Index"/> 同为 null 时表示清除观察目标</param>
+/// <param name="Index">该侧阵型下标：enemy 为 enemies[] 数组序，ally 为 allies 成员序 memberIndex（与前端 enemy:i / ally:i 一致）</param>
 public sealed record UnitInspectDto(string? Side, int? Index);

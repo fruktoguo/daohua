@@ -51,11 +51,11 @@ public static class ProtocolSnapshotMapper
     /// 将玩家运行时快照（PlayerRuntimeSnapshot）转换为公开的全量快照 DTO。
     /// 自动结合激活的 GameDataCatalog 透传地图与节点动态生态。
     /// </summary>
-    public static PlayerSnapshotDto ToSnapshot(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog gameData, int? inspectedEnemyIndex = null, Action? onAttributesProjected = null)
+    public static PlayerSnapshotDto ToSnapshot(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null)
     {
         var state = runtime.State;
         var sections = new List<PlayerSectionDto>(8);
-        foreach (var (kind, value) in EnumerateSections(state, gameData, inspectedEnemyIndex, onAttributesProjected))
+        foreach (var (kind, value) in EnumerateSections(state, gameData, inspectedUnit, onAttributesProjected))
         {
             // WebSocket v1 的浏览器载荷为内嵌规范化 JSON；Brotli 只用于 PostgreSQL/compute 链路的
             // 字节通道，避免客户端依赖不一致的 Brotli WASM/浏览器实现。
@@ -112,7 +112,7 @@ public static class ProtocolSnapshotMapper
     /// 构造增量快照 DTO：touchedSections 为触发本次快照的操作在锁内新增的脏标记分段差集，
     /// 仅用于窄化 JSON/SHA256/Base64 编码范围；最终是否下发仍由 checksum 与基线裁决，
     /// 语义与全量编码后 DiffSections 完全一致。null 表示未知触及集，回退为全段编码。
-    /// inspectedEnemyIndex 为会话级待交付观察目标：命中下标的敌怪/斗法镜像才投影属性面板；
+    /// inspectedUnit 为会话级待交付观察目标：命中下标的敌怪/斗法镜像/盟友单位才投影属性面板；
     /// onAttributesProjected 在属性面板实际写入载荷时回调，供调用方解除一次性交付武装。
     /// </summary>
     public static PlayerSnapshotDeltaDto BuildDelta(
@@ -124,7 +124,7 @@ public static class ProtocolSnapshotMapper
         IReadOnlyList<AssetBalanceDto>? previousAssets,
         out IReadOnlyDictionary<string, string> nextSectionChecksums,
         out IReadOnlyList<AssetBalanceDto> nextAssets,
-        int? inspectedEnemyIndex = null,
+        UnitInspectDto? inspectedUnit = null,
         Action? onAttributesProjected = null)
     {
         var state = runtime.State;
@@ -142,7 +142,7 @@ public static class ProtocolSnapshotMapper
                 next[name] = previousChecksum!;
                 continue;
             }
-            var dto = EncodeSection(runtime.PlayerId, name, runtime.StateVersion, SectionPayload(state, section, gameData, inspectedEnemyIndex, onAttributesProjected), runtime.LastSimulatedAt);
+            var dto = EncodeSection(runtime.PlayerId, name, runtime.StateVersion, SectionPayload(state, section, gameData, inspectedUnit, onAttributesProjected), runtime.LastSimulatedAt);
             next[name] = dto.Checksum;
             // checksum 最终裁决：无论是否被触及候选覆盖，编码后校验和变化必须纳入增量。
             if (!hasBaseline || !string.Equals(previousChecksum, dto.Checksum, StringComparison.Ordinal))
@@ -205,9 +205,9 @@ public static class ProtocolSnapshotMapper
         GameDataCatalog gameData,
         IReadOnlyDictionary<string, string>? previousSectionChecksums = null,
         IReadOnlyList<AssetBalanceDto>? previousAssets = null,
-        int? inspectedEnemyIndex = null,
+        UnitInspectDto? inspectedUnit = null,
         Action? onAttributesProjected = null)
-        => BuildDelta(runtime, gameDataFingerprint, gameData, null, previousSectionChecksums, previousAssets, out _, out _, inspectedEnemyIndex, onAttributesProjected);
+        => BuildDelta(runtime, gameDataFingerprint, gameData, null, previousSectionChecksums, previousAssets, out _, out _, inspectedUnit, onAttributesProjected);
 
     /// <summary>对比上次推送基线，返回校验和发生变化的分段；无基线时返回全部当前分段。</summary>
     public static IReadOnlyList<PlayerSectionDto> DiffSections(IReadOnlyDictionary<string, string>? previousChecksums, IReadOnlyList<PlayerSectionDto> current)
@@ -248,20 +248,20 @@ public static class ProtocolSnapshotMapper
         return changed ?? [];
     }
 
-    private static IEnumerable<(string Kind, object Value)> EnumerateSections(PlayerAggregateState state, GameDataCatalog? gameData, int? inspectedEnemyIndex, Action? onAttributesProjected = null)
+    private static IEnumerable<(string Kind, object Value)> EnumerateSections(PlayerAggregateState state, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null)
     {
-        yield return (PlayerSectionKinds.Progression, SectionPayload(state, PlayerSectionKind.Progression, gameData, inspectedEnemyIndex, onAttributesProjected));
-        yield return (PlayerSectionKinds.World, SectionPayload(state, PlayerSectionKind.World, gameData, inspectedEnemyIndex, onAttributesProjected));
-        yield return (PlayerSectionKinds.Combat, SectionPayload(state, PlayerSectionKind.Combat, gameData, inspectedEnemyIndex, onAttributesProjected));
-        yield return (PlayerSectionKinds.Buffs, SectionPayload(state, PlayerSectionKind.Buffs, gameData, inspectedEnemyIndex, onAttributesProjected));
-        yield return (PlayerSectionKinds.Loadout, SectionPayload(state, PlayerSectionKind.Loadout, gameData, inspectedEnemyIndex, onAttributesProjected));
-        yield return (PlayerSectionKinds.Settings, SectionPayload(state, PlayerSectionKind.Settings, gameData, inspectedEnemyIndex, onAttributesProjected));
-        yield return (PlayerSectionKinds.ActionQueue, SectionPayload(state, PlayerSectionKind.ActionQueue, gameData, inspectedEnemyIndex, onAttributesProjected));
-        yield return (PlayerSectionKinds.Duel, SectionPayload(state, PlayerSectionKind.Duel, gameData, inspectedEnemyIndex, onAttributesProjected));
+        yield return (PlayerSectionKinds.Progression, SectionPayload(state, PlayerSectionKind.Progression, gameData, inspectedUnit, onAttributesProjected));
+        yield return (PlayerSectionKinds.World, SectionPayload(state, PlayerSectionKind.World, gameData, inspectedUnit, onAttributesProjected));
+        yield return (PlayerSectionKinds.Combat, SectionPayload(state, PlayerSectionKind.Combat, gameData, inspectedUnit, onAttributesProjected));
+        yield return (PlayerSectionKinds.Buffs, SectionPayload(state, PlayerSectionKind.Buffs, gameData, inspectedUnit, onAttributesProjected));
+        yield return (PlayerSectionKinds.Loadout, SectionPayload(state, PlayerSectionKind.Loadout, gameData, inspectedUnit, onAttributesProjected));
+        yield return (PlayerSectionKinds.Settings, SectionPayload(state, PlayerSectionKind.Settings, gameData, inspectedUnit, onAttributesProjected));
+        yield return (PlayerSectionKinds.ActionQueue, SectionPayload(state, PlayerSectionKind.ActionQueue, gameData, inspectedUnit, onAttributesProjected));
+        yield return (PlayerSectionKinds.Duel, SectionPayload(state, PlayerSectionKind.Duel, gameData, inspectedUnit, onAttributesProjected));
     }
 
     /// <summary>单段协议载荷投影：全量快照逐段遍历与增量候选编码共用同一构造，保证两边编码内容逐位一致。</summary>
-    private static object SectionPayload(PlayerAggregateState state, PlayerSectionKind section, GameDataCatalog? gameData, int? inspectedEnemyIndex, Action? onAttributesProjected = null) => section switch
+    private static object SectionPayload(PlayerAggregateState state, PlayerSectionKind section, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null) => section switch
     {
         PlayerSectionKind.Progression => new
         {
@@ -290,7 +290,7 @@ public static class ProtocolSnapshotMapper
         }).ToArray(),
         PlayerSectionKind.Loadout => ToLoadoutSection(state),
         PlayerSectionKind.Settings => new { state.Settings, state.Presence },
-        PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedEnemyIndex, onAttributesProjected),
+        PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedUnit, onAttributesProjected),
         // 斗法分段白名单：ActiveReports（在队行动实例账本）不面向客户端，协议只下发
         // 当前账本/归档/离线/每日四类已消费通道。
         PlayerSectionKind.Duel => new
@@ -314,7 +314,8 @@ public static class ProtocolSnapshotMapper
         state.Loadout.Equipment,
         learnedAbilityIds = state.LearnedAbilities.Select(id => id.Value).ToArray(),
         abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>(),
-        techniqueExperiences = state.Loadout.TechniqueExperiences ?? new Dictionary<string, double>()
+        techniqueExperiences = state.Loadout.TechniqueExperiences ?? new Dictionary<string, double>(),
+        abilityTriggers = state.Loadout.AbilityTriggers ?? new Dictionary<string, JsonElement[]>(),
     };
 
     /// <summary>
@@ -431,9 +432,9 @@ public static class ProtocolSnapshotMapper
     /// </summary>
     /// <param name="actions">聚合当前的行动队列。</param>
     /// <param name="gameData">激活配表；为 null 时仅输出队列原始字段（名称等降级为 null）。</param>
-    /// <param name="inspectedEnemyIndex">会话级单位详情观察目标（enemy 侧下标）；命中下标的敌怪/斗法镜像才投影属性面板。</param>
+    /// <param name="inspectedUnit">会话级单位详情观察目标；命中下标的敌怪/斗法镜像/盟友单位才投影属性面板。</param>
     /// <param name="onAttributesProjected">属性面板实际写入本次载荷时的出站记账回调；供会话解除一次性交付武装。</param>
-    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, int? inspectedEnemyIndex = null, Action? onAttributesProjected = null)
+    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null)
     {
         if (actions is null || actions.Count == 0) return [];
         var result = new object[actions.Count];
@@ -472,7 +473,7 @@ public static class ProtocolSnapshotMapper
                 remainingRepeats = action.RemainingRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedEnemyIndex, onAttributesProjected),
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected),
                 // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
                 participation = action.Participation is { } participationBinding ? new
                 {
@@ -516,37 +517,44 @@ public static class ProtocolSnapshotMapper
     /// <summary>
     /// 战斗远征白名单投影：只保留界面渲染与确定性回放所需的字段；
     /// Seed/Outcome 等审计标量保留下发供前端校验，PlayerState/内部撮合标记不外泄。
-    /// 敌方条目实时字段（血蓝/出手/威胁）常驻下发；属性面板为按需投影——仅当
-    /// 会话观察目标（UnitInspect）命中该下标时才携带 attributes，未点开的怪不占快照带宽。
+    /// 敌方/盟友条目实时字段（血蓝/出手/威胁）常驻下发；属性面板为按需投影——仅当
+    /// 会话观察目标（UnitInspect）命中该侧下标时才携带 attributes，未点开的单位不占快照带宽。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, int? inspectedEnemyIndex, Action? onAttributesProjected = null) => new
+    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null)
     {
-        expedition.EncounterId,
-        phase = MapExpeditionPhase(expedition.Phase),
-        expedition.PhaseElapsedSeconds, expedition.PhaseDurationSeconds,
-        expedition.BattleElapsedSeconds,
-        expedition.PlayerHitpoints, expedition.PlayerManapoints,
-        expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat,
-        expedition.WaveNumber,
-        outcome = (byte)expedition.Outcome,
-        expedition.Seed,
-        // 倒地窗口（原地复活遭遇）：复活截止点与读条时长（战斗时钟秒），前端据此渲染阵亡置灰与复活读条。
-        playerRespawnAtSeconds = expedition.PlayerRespawnAtSeconds,
-        playerRespawnDurationSeconds = expedition.PlayerRespawnAtSeconds is not null
-            && gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
-                ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
-        enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected)).ToArray(),
-        duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
-        // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
-        selfIndex = spec is null ? (int?)null : expedition.SelfIndex,
-        allies = spec is null ? null : ToExpeditionAlliesDto(expedition, spec)
-    };
+        var inspectedEnemyIndex = inspectedUnit is { Side: "enemy", Index: >= 0 } enemyTarget ? enemyTarget.Index.Value : (int?)null;
+        var inspectedAllyIndex = inspectedUnit is { Side: "ally", Index: >= 0 } allyTarget ? allyTarget.Index.Value : (int?)null;
+        return new
+        {
+            expedition.EncounterId,
+            phase = MapExpeditionPhase(expedition.Phase),
+            expedition.PhaseElapsedSeconds, expedition.PhaseDurationSeconds,
+            expedition.BattleElapsedSeconds,
+            expedition.PlayerHitpoints, expedition.PlayerManapoints,
+            expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat,
+            expedition.WaveNumber,
+            outcome = (byte)expedition.Outcome,
+            expedition.Seed,
+            // 倒地窗口（原地复活遭遇）：复活截止点与读条时长（战斗时钟秒），前端据此渲染阵亡置灰与复活读条。
+            playerRespawnAtSeconds = expedition.PlayerRespawnAtSeconds,
+            playerRespawnDurationSeconds = expedition.PlayerRespawnAtSeconds is not null
+                && gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
+                    ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
+            enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected)).ToArray(),
+            duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
+            // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
+            selfIndex = spec is null ? (int?)null : expedition.SelfIndex,
+            allies = spec is null ? null : ToExpeditionAlliesDto(expedition, spec, inspectedAllyIndex, onAttributesProjected)
+        };
+    }
 
     /// <summary>
     /// 盟友阵列投影：按会话规格成员序铺满；本机位由远征标量镜像+PlayerState 快照合成，
     /// 其余位取盟友镜像。血蓝上限取自冻结面板（共享剧本唯一公共输入）。
+    /// 属性面板为按需一次性交付：会话观察目标（UnitInspect side=ally）命中 memberIndex 时
+    /// 才投影开打冻结面板 attributes，未点开的队友不占快照带宽。
     /// </summary>
-    private static object[] ToExpeditionAlliesDto(CombatExpeditionState expedition, ActionParticipationSpec spec)
+    private static object[] ToExpeditionAlliesDto(CombatExpeditionState expedition, ActionParticipationSpec spec, int? inspectedAllyIndex, Action? onAttributesProjected = null)
     {
         var result = new object[spec.Members.Count];
         for (var i = 0; i < spec.Members.Count; i++)
@@ -572,6 +580,9 @@ public static class ProtocolSnapshotMapper
                 pendingAbilityId = ally?.PendingAbilityId;
                 pendingDuration = ally?.PendingActionDurationSeconds ?? 0;
             }
+            // 观察目标命中该成员位才投影属性：冻结面板即共享剧本唯一公共输入，与敌怪同一交付口径。
+            var attributes = inspectedAllyIndex == i ? ToAttributesDto(member.Stats) : null;
+            if (attributes is not null) onAttributesProjected?.Invoke();
             result[i] = new
             {
                 memberIndex = i,
@@ -582,7 +593,8 @@ public static class ProtocolSnapshotMapper
                 maxManapoints = member.Stats.MaxManapoints,
                 state.NextAttackAtSeconds, state.AttackCount, state.Threat,
                 pendingAbilityId, pendingActionDurationSeconds = pendingDuration,
-                respawnAtSeconds = state.RespawnAtSeconds
+                respawnAtSeconds = state.RespawnAtSeconds,
+                attributes
             };
         }
         return result;

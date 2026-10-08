@@ -1,3 +1,4 @@
+using System.Net;
 namespace DaoHua.ComputeNode;
 
 /// <summary>
@@ -15,6 +16,7 @@ public sealed class UpstreamLinkWorker(
     IReadOnlyList<string> upstreamUrls,
     string token,
     string nodeName,
+    bool allowInsecureInternal,
     DeterministicBatchEngine engine,
     GameDataCatalog gameData,
     ComputeMetrics metrics,
@@ -110,7 +112,7 @@ public sealed class UpstreamLinkWorker(
         // 与主服 UseWebSockets 的全局口径一致。
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
         socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(60);
-        var uri = BuildWebSocketUri(upstream);
+        var uri = BuildWebSocketUri(upstream, allowInsecureInternal);
         await socket.ConnectAsync(uri, cancellationToken);
 
         await socket.SendAsync(
@@ -314,11 +316,18 @@ public sealed class UpstreamLinkWorker(
         return LinkCodec.Decode(buffer.WrittenMemory);
     }
 
-    /// <summary>把 http(s)/ws(s) 上游地址归一化为 WebSocket URI。</summary>
-    private static Uri BuildWebSocketUri(string upstream)
+    /// <summary>把安全 http(s) 上游地址归一化为 WebSocket URI；明文仅允许显式开启的回环或 Compose 内部主机。</summary>
+    private static Uri BuildWebSocketUri(string upstream, bool allowInsecureInternal)
     {
         if (!Uri.TryCreate(upstream.Trim(), UriKind.Absolute, out var uri))
             throw new InvalidOperationException($"ComputeNode:UpstreamUrls 含非法上游地址：{upstream}。");
+        if (uri.Scheme is "ws" or "http")
+        {
+            var loopback = IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address);
+            var composeInternal = uri.Host.Equals("app", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("compute-node", StringComparison.OrdinalIgnoreCase);
+            if (!allowInsecureInternal || (!loopback && !composeInternal))
+                throw new InvalidOperationException("远程 Compute 上游必须使用 wss/https；明文 ws/http 仅允许显式开启的回环或 Compose 内部主机。");
+        }
         var builder = new UriBuilder(uri);
         builder.Scheme = uri.Scheme switch
         {
@@ -326,8 +335,7 @@ public sealed class UpstreamLinkWorker(
             "wss" => "wss",
             "http" => "ws",
             "https" => "wss",
-            var scheme => throw new InvalidOperationException(
-                $"ComputeNode:UpstreamUrls 只支持 ws/wss/http/https：{scheme}。")
+            var scheme => throw new InvalidOperationException($"ComputeNode:UpstreamUrls 只支持 ws/wss/http/https：{scheme}。")
         };
         builder.Port = uri.IsDefaultPort ? -1 : uri.Port;
         return builder.Uri;

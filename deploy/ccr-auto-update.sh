@@ -22,16 +22,6 @@ compose() {
   fi
 }
 
-derive_compute_image() {
-  local image="$1"
-  if [[ "$image" == *"/daohua:"* ]]; then
-    printf '%s\n' "${image/daohua:/daohua-compute:}"
-  elif [[ "$image" == daohua:* ]]; then
-    printf '%s\n' "${image/daohua:/daohua-compute:}"
-  else
-    return 1
-  fi
-}
 
 requested_app_image="${APP_IMAGE:-}"
 requested_compute_image="${COMPUTE_IMAGE:-}"
@@ -41,11 +31,20 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
 fi
-APP_IMAGE="${requested_app_image:-${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}}"
+APP_IMAGE="${requested_app_image:-${APP_IMAGE:-}}"
 COMPUTE_IMAGE="${requested_compute_image:-${COMPUTE_IMAGE:-}}"
-if [[ -z "$COMPUTE_IMAGE" ]]; then
-  COMPUTE_IMAGE="$(derive_compute_image "$APP_IMAGE")"
+if [[ -z "$APP_IMAGE" ]]; then
+  printf '生产自动更新必须显式提供 APP_IMAGE=@sha256 digest，拒绝默认可变 tag。\n' >&2
+  exit 1
 fi
+if [[ -z "$COMPUTE_IMAGE" ]]; then
+  printf '生产更新必须显式提供 COMPUTE_IMAGE=@sha256 digest，拒绝推导可变或不成对版本。\n' >&2
+  exit 1
+fi
+[[ "$APP_IMAGE" =~ @sha256:[a-f0-9]{64}$ && "$COMPUTE_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]] || {
+  printf '生产更新拒绝无 digest 的镜像引用；APP_IMAGE 与 COMPUTE_IMAGE 必须均为 @sha256。\n' >&2
+  exit 1
+}
 
 [[ -f "$COMPOSE_FILE" ]] || { printf '缺少生产 Compose 文件: %s\n' "$COMPOSE_FILE" >&2; exit 1; }
 [[ "$APP_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ && "$COMPUTE_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]] || {

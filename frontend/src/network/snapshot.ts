@@ -530,7 +530,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const primary = enemies.find(enemy => enemy.hitpoints > 0) ?? enemies[0] ?? null
 
   // 行动参与会话盟友阵列：按参与者固定顺序下发、含本机位；
-  // 盟友不携带属性面板（UnitInspect 观察通道仅对敌怪开放）。
+  // 属性面板为按需投影——仅观察目标（UnitInspect side:ally）命中 memberIndex 时携带开打冻结面板。
   const allies: ExpeditionAlly[] | null = row.allies === null || row.allies === undefined
     ? null
     : arrayValue(row.allies).map((entry, index) => {
@@ -558,6 +558,9 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
           respawnAtSeconds: ally.respawnAtSeconds === null || ally.respawnAtSeconds === undefined
             ? null
             : finiteNumber(ally.respawnAtSeconds, `${label}.respawnAtSeconds`),
+          attributes: ally.attributes === null || ally.attributes === undefined
+            ? null
+            : mapCombatAttributes(ally.attributes, `${label}.attributes`),
         }
       })
   const selfIndex = row.selfIndex === null || row.selfIndex === undefined
@@ -1054,13 +1057,14 @@ function mapBattleReportItems(value: unknown, name: string): BattleReport['items
 }
 
 /**
- * 战报等级提升 kind 归一化：契约约定 "realm"|"root"|"ability" 字符串，
- * 同时容忍 System.Text.Json 默认数值枚举（0/1/2）；未知值条目丢弃，避免整包失败。
+ * 战报等级提升 kind 归一化：契约约定 "realm"|"root"|"ability"|"technique" 字符串，
+ * 同时容忍 System.Text.Json 默认数值枚举（0/1/2/3）；未知值条目丢弃，避免整包失败。
  */
 function mapBattleReportLevelUpKind(value: unknown): BattleReport['levelUps'][number]['kind'] | null {
   if (value === 'realm' || value === 0) return 'realm'
   if (value === 'root' || value === 1) return 'root'
   if (value === 'ability' || value === 2) return 'ability'
+  if (value === 'technique' || value === 3) return 'technique'
   return null
 }
 
@@ -1092,6 +1096,16 @@ function mapBattleReport(value: unknown, name: string): BattleReport {
       return [{
         abilityId,
         experience: finiteValue(entry.experience, `${name}.abilityExp[${index}].experience`),
+      }]
+    }),
+    techniqueExp: arrayValue(row.techniqueExp).flatMap((item, index) => {
+      const entry = object(item)
+      const techniqueId = stringValue(entry.techniqueId)
+      // 未知技艺 ID 按原有条目边界策略丢弃，合法技艺经验完整保留。
+      if (!techniqueId) return []
+      return [{
+        techniqueId,
+        experience: finiteValue(entry.experience, `${name}.techniqueExp[${index}].experience`),
       }]
     }),
     levelUps: arrayValue(row.levelUps).flatMap((item) => {

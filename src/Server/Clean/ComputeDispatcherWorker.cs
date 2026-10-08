@@ -363,7 +363,7 @@ public sealed class ComputeDispatcherWorker(
             if (result.SourceStateVersion != entry.Request.SourceStateVersion
                 || result.TargetStateVersion < result.SourceStateVersion)
                 throw new InvalidDataException("结果版本与任务输入不一致。");
-            var deltas = MergeAssetDeltas(claim.PlayerId, result.AssetDeltas);
+            var deltas = ValidateAndMergeAssetDeltas(claim.PlayerId, entry.Request, result.AssetDeltas, gameData);
             var now = DateTimeOffset.UtcNow;
             var writes = Array.Empty<SectionWrite>();
             if (result.TargetStateVersion == result.SourceStateVersion)
@@ -482,15 +482,19 @@ public sealed class ComputeDispatcherWorker(
         exception.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected;
 
     /// <summary>
-    /// 校验并合并节点回传的资产增量行：逐行字段与上限校验（非法即契约违反抛 <see cref="InvalidDataException"/>），
-    /// 同 (assetId, variant) 键合并、零和与非有限值过滤，Ordinal 排序保证确定性的入账行序。
+    /// 正负资产增量都无法证明由输入状态产生，故存在任意资产增量即 fail-closed 判 INVALID_OUTPUT；
+    /// 零增量的合法状态推进仍可提交，收益性结果保留失败证据而不静默丢收益。
     /// </summary>
-    private static Server.Clean.AssetDelta[] MergeAssetDeltas(Guid playerId, IReadOnlyList<ComputeAssetDelta>? rows)
+    public static Server.Clean.AssetDelta[] ValidateAndMergeAssetDeltas(
+        Guid playerId, ComputeAdvanceJobRequest request, IReadOnlyList<ComputeAssetDelta>? rows, GameDataCatalog catalog)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(catalog);
         if (rows is not { Count: > 0 }) return [];
         if (rows.Count > ComputeDispatchContract.MaxAssetDeltasPerResult)
             throw new InvalidDataException("资产增量行数超过上限。");
-        var merged = new Dictionary<(string AssetId, string Variant), double>();
+
+
         foreach (var row in rows)
         {
             if (row is null
@@ -498,15 +502,25 @@ public sealed class ComputeDispatcherWorker(
                 || row.Variant is null || row.Variant.Length > 128
                 || !double.IsFinite(row.QuantityDelta) || row.QuantityDelta == 0)
                 throw new InvalidDataException("资产增量行字段无效。");
-            var key = (row.AssetId, row.Variant);
-            merged[key] = merged.TryGetValue(key, out var sum) ? sum + row.QuantityDelta : row.QuantityDelta;
+            if (!IsKnownAssetVariant(row.AssetId, row.Variant, catalog))
+                throw new InvalidDataException($"资产标识或变体不属于当前配表：{row.AssetId}:{row.Variant}。");
+            throw new InvalidDataException("节点资产增量无法由主服独立重演验证，拒绝整个任务结果。");
         }
-        return merged
-            .Where(pair => pair.Value != 0 && double.IsFinite(pair.Value))
-            .Select(pair => new Server.Clean.AssetDelta(playerId, pair.Key.AssetId, pair.Key.Variant, pair.Value))
-            .OrderBy(delta => delta.AssetId, StringComparer.Ordinal)
-            .ThenBy(delta => delta.Variant, StringComparer.Ordinal)
-            .ToArray();
+        return [];
+    }
+
+    private static bool IsKnownAssetVariant(string assetId, string variant, GameDataCatalog catalog)
+    {
+        if (assetId == Domain.Player.EnhancementRules.SpiritStoneItemId)
+            return variant.Length == 0;
+        var id = new Domain.Common.ItemId(assetId);
+        if (!id.IsValid) return false;
+        if (variant.Length == 0)
+            return catalog.Items.ContainsKey(id) || catalog.RawEquipments.ContainsKey(assetId);
+        if (!catalog.RawEquipments.ContainsKey(assetId)) return false;
+        var level = Domain.Player.EnhancementRules.ParseLevel(variant);
+        return level is > 0 and <= Domain.Player.EnhancementRules.MaxLevel
+            && variant == "+" + level.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>

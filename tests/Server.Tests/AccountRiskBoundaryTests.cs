@@ -198,12 +198,14 @@ public sealed class AccountRiskBoundaryTests
 
         var original = new DefaultHttpContext();
         var id = Guid.NewGuid().ToString("D");
-        collector.Collect(original, new(null, id, null, null));
+        var first = collector.Collect(original, new(null, id, null, null));
+        Assert.NotNull(first.DeviceId);
+        Assert.NotEqual(id, first.DeviceId);
         var restored = new DefaultHttpContext();
         restored.Request.Headers.Cookie = original.Response.Headers.SetCookie.ToString().Split(';')[0];
         var actual = collector.Collect(restored, new(null, Guid.NewGuid().ToString("D"), null, null), false);
-        Assert.Equal(id, actual.DeviceId);
-        Assert.Equal($"device:{id}", actual.PersonKey);
+        Assert.Equal(first.DeviceId, actual.DeviceId);
+        Assert.Equal($"device:{first.DeviceId}", actual.PersonKey);
     }
 
     /// <summary>配置相同的不同真机不会共用硬注册额度，缺信号拒绝也不污染共享 IP 注册速度。</summary>

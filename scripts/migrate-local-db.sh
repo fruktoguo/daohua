@@ -52,8 +52,11 @@ done
 
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
+case "$DB_HOST" in
+  127.0.0.1|localhost|::1) ;;
+  *) printf '错误: migrate-local-db.sh 仅允许回环 DB_HOST，拒绝远程地址: %s\n' "$DB_HOST" >&2; exit 1 ;;
+esac
 DB_PASSWORD="${DB_PASSWORD:-daohua-local-dev}"
-
 psql_exec() {
   if command -v docker >/dev/null 2>&1 \
       && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$DB_CONTAINER"; then

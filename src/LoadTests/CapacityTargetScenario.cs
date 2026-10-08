@@ -45,11 +45,19 @@ public static class CapacityTargetScenario
         var warnings = new List<string>();
         var errors = 0;
 
+        // 这些结果只表示可重复的合成估算，不能代表生产业务路径；超预算仅告警，不参与主结论。
         var storage = CapacitySynthetic.EstimateStorage(RegisteredAccountTarget);
         var network = CapacitySynthetic.EstimatePeakNetwork(PeakNetworkTarget);
         var compute = await ComputeLoadScenario.RunLocalAsync(
             ColdComputeTarget,
             cancellationToken);
+        warnings.Add("synthetic 存储、网络和 CPU 结果仅作预算估算，不参与容量门禁通过判定。");
+        if (storage.EstimatedBytes > DataDiskBudgetBytes)
+            warnings.Add("synthetic 存储估算超过预算；该结果不会替代真实数据库容量探测。");
+        if (network.BytesPerSecond > PeakNetworkBudgetBytesPerSecond)
+            warnings.Add("synthetic 网络估算超过预算；该结果不会替代真实 HTTP/WS 业务压测。");
+        if (compute.ElapsedMilliseconds > ColdComputeBudgetMilliseconds)
+            warnings.Add("synthetic CPU 估算超过预算；该结果不会替代真实 ComputeNode/compute-link 补算。");
 
         PostgresProbeResult? postgres = null;
         try
@@ -70,9 +78,48 @@ public static class CapacityTargetScenario
             }
         }
 
-        if (storage.EstimatedBytes > DataDiskBudgetBytes) errors++;
-        if (network.BytesPerSecond > PeakNetworkBudgetBytesPerSecond) errors++;
-        if (compute.ElapsedMilliseconds > ColdComputeBudgetMilliseconds) errors++;
+        // 只有显式配置真实测试库和 compute-link 开关，才允许执行真实 ComputeNode/ECS/SectionCodec 路径。
+        // 未配置时必须失败关闭，避免 synthetic CPU 结果被误报为冷挂机业务容量。
+        var realComputeRequested = IsEnabled(Environment.GetEnvironmentVariable("CAPACITY_REAL_COMPUTE_LINK"));
+        var realDatabase = Environment.GetEnvironmentVariable("CAPACITY_REAL_DATABASE_URL");
+        LoadTestReport? realCompute = null;
+        if (!realComputeRequested)
+        {
+            errors++;
+            warnings.Add("未执行真实 ComputeNode compute-link 场景；需要显式设置 CAPACITY_REAL_COMPUTE_LINK=1 才能通过容量门禁。");
+        }
+        else if (string.IsNullOrWhiteSpace(realDatabase))
+        {
+            errors++;
+            warnings.Add("已请求真实 ComputeNode 场景但缺少 CAPACITY_REAL_DATABASE_URL；为避免误报，容量门禁失败关闭。");
+        }
+        else
+        {
+            var realOptions = options with
+            {
+                Scenario = "compute-link",
+                DatabaseConnectionString = realDatabase,
+                DatabaseExplicit = true,
+                Players = ReadEnvironmentInt("CAPACITY_REAL_COMPUTE_PLAYERS", 1, 1, ColdComputeTarget),
+                DurationSeconds = ReadEnvironmentInt("CAPACITY_REAL_COMPUTE_DURATION_SECONDS", 180, 1, 86_400),
+                NodeKill = false
+            };
+            try
+            {
+                realCompute = await ComputeLinkLoadScenario.RunReportAsync(realOptions, cancellationToken);
+                if (!realCompute.GatePassed || realCompute.Errors != 0)
+                {
+                    errors++;
+                    warnings.Add("真实 ComputeNode compute-link 场景未通过；不能由 synthetic 结果替代。");
+                }
+            }
+            catch (Exception exception)
+            {
+                errors++;
+                warnings.Add($"真实 ComputeNode compute-link 场景执行失败: {exception.Message}");
+            }
+        }
+
 
         process.Refresh();
         var workingSet = process.WorkingSet64;
@@ -115,13 +162,42 @@ public static class CapacityTargetScenario
                     coldComputeMilliseconds = ColdComputeBudgetMilliseconds,
                     processWorkingSetBytes = ProcessWorkingSetBudgetBytes
                 },
-                ["syntheticStorage"] = storage,
-                ["syntheticNetwork"] = network,
-                ["coldCompute"] = compute,
+                ["syntheticEstimate"] = new
+                {
+                    storage,
+                    network,
+                    compute,
+                    gateRole = "warning-only"
+                },
+                ["realBusinessPath"] = new
+                {
+                    configured = realComputeRequested && !string.IsNullOrWhiteSpace(realDatabase),
+                    executed = realCompute is not null,
+                    scenario = "compute-link",
+                    computeNodeRequest = realCompute is not null,
+                    sectionCodec = realCompute is not null,
+                    report = realCompute
+                },
                 ["postgres"] = postgres
             },
             warnings);
     }
+
+    /// <summary>解析显式容量门禁开关，避免空值或任意字符串误启用真实路径。</summary>
+    private static bool IsEnabled(string? value) =>
+        string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>读取真实路径的有限整数配置。</summary>
+    private static int ReadEnvironmentInt(string name, int fallback, int minimum, int maximum)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        if (!int.TryParse(value, out var parsed) || parsed < minimum || parsed > maximum)
+            throw new InvalidOperationException($"{name} 必须是 {minimum} 到 {maximum} 之间的整数。");
+        return parsed;
+    }
+
 
     /// <summary>
     /// 账号与 section 的存储估算。

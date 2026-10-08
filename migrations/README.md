@@ -31,16 +31,29 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 
 ## 现有迁移
 
+下表按仓库实际文件列出全部迁移；当前目录有一个**文件序号**缺口（没有 `0009_*.sql`），但版本链没有缺口：`0008_v8_to_v9.sql` 后接实际存在的 `0010_v9_to_v10.sql`。不得按文件序号猜测迁移，必须按文件名中的 `vX_to_vY` 与 `platform.schema_version` 对账。若目标库版本不在下列链路中、链路执行失败，或 v20→v21 旧玩家载荷无法迁移，必须重建/清零，不得假装可升级。
+
 | 文件 | 覆盖范围 |
 | :--- | :--- |
-| `0001_v1_to_v2.sql` | `market.orders` 增加 `expires_at`（存量回填 `created_at + 30天`）与过期索引，schema_version 写入 2 |
-| `0002_v2_to_v3.sql` | `platform.compute_jobs` 增加 `lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，schema_version 写入 3 |
-| `0003_v3_to_v4.sql` | 新增 `social` schema 与 `friend_requests`/`friendships`/`parties`/`party_members`/`party_invitations`/`chat_messages` 六张表（传音频道与好友、组队社交），schema_version 写入 4 |
-| `0004_v4_to_v5.sql` | `identity.players` 增加 `player_seq` 自增序号列（存量由序列回填）；并存档载荷 v4→v5：settings 新增 `autoTravelEnabled`、ActionIntent 新增 `anchorNodeId` 均可缺省解码，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 5 |
-| `0005_v5_to_v6.sql` | 仅存档载荷标签 v5→v6：loadout 分段新增 `techniqueExperiences`、ActionIntent 新增 `targetItemId`/`auxItemId`、LoadoutDocument 新增 `TechniqueExperiences`，均可缺省解码，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 6 |
-| `0006_v6_to_v7.sql` | `social.parties` 追加队伍档案列（name/activity_kind/map_id/min_valuation/is_public/updated_at）、新增 `social.party_seekers` 散人池、`social.chat_messages` 增 `party_ref` 队伍链接外键（ON DELETE SET NULL）；无存档载荷变更，schema_version 写入 7 |
-| `0007_v7_to_v8.sql` | 仅存档载荷标签 v7→v8：settings 分段新增 `queuePaused` 队列暂停开关，可缺省解码，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 8 |
-| `0018_v17_to_v18.sql` | 仅存档载荷标签 v17→v18：战斗面板收敛为纯点数通道——移除 castTimeFactor/cooldownFactor/basicAttackRatio/skillIntensity/criticalMultiplier/searchDelayFactor 六个乘区字段，新增 `criticalDamagePoints`（缺省 50 点 = 150% 暴伤），组队规格 `searchDelayFactor` 更名 `searchSpeedPoints`；旧字段忽略解码、新字段缺省默认值，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 18 |
-| `0021_v20_to_v21.sql` | 行动队列参与载荷改为组织无关 `participation` 绑定并携带真实 ActionId；旧 party.expedition 载荷不能无损迁移，脚本只推进库级版本，旧玩家行由 reset-outdated-players.sh 检出并交互确认清零 |
+| `0001_v1_to_v2.sql` | `market.orders` 增加到期时间与过期索引，schema_version 写入 2 |
+| `0002_v2_to_v3.sql` | `platform.compute_jobs` 增加租约字段与未完结任务唯一索引，schema_version 写入 3 |
+| `0003_v3_to_v4.sql` | 新增 `social` schema 及好友、队伍、邀请、传音表，schema_version 写入 4 |
+| `0004_v4_to_v5.sql` | `identity.players` 增加 `player_seq`；推进 settings/ActionIntent 存档标签至 5 |
+| `0005_v5_to_v6.sql` | 推进 loadout、ActionIntent、LoadoutDocument 存档标签至 6 |
+| `0006_v6_to_v7.sql` | 扩展队伍档案、散人池和聊天队伍链接字段，schema_version 写入 7 |
+| `0007_v7_to_v8.sql` | 推进 settings `queuePaused` 存档标签至 8 |
+| `0008_v8_to_v9.sql` | 推进 progression `traitIds` 存档标签至 9 |
+| `0010_v9_to_v10.sql` | 新增账号风控信号/事件表与索引，schema_version 写入 10 |
+| `0011_v10_to_v11.sql` | 修复账号风控事件约束，schema_version 写入 11 |
+| `0012_v11_to_v12.sql` | 推进 loadout `abilityTriggers` 存档标签至 12 |
+| `0013_v12_to_v13.sql` | 新增邀请码与玩家邀请关系，schema_version 写入 13 |
+| `0014_v13_to_v14.sql` | 推进 settings `tutorialStep` 存档标签至 14 |
+| `0015_v14_to_v15.sql` | 推进 settings `tutorialRewardsStep` 存档标签至 15 |
+| `0016_v15_to_v16.sql` | 推进 actionQueue `isPinned` 存档标签至 16 |
+| `0017_v16_to_v17.sql` | 推进 world `nodeBuildingUsages` 存档标签至 17 |
+| `0018_v17_to_v18.sql` | 推进战斗属性点数通道与 `criticalDamagePoints` 存档标签至 18 |
+| `0019_v18_to_v19.sql` | 新增组队讨伐持久化字段与会话表，schema_version 写入 19 |
+| `0020_v19_to_v20.sql` | 推进 actionQueue 组队讨伐参与载荷标签至 20 |
+| `0021_v20_to_v21.sql` | 仅推进库级版本至 21；旧 partySession/party.expedition 玩家载荷不能无损迁移，须由 `reset-outdated-players.sh` 交互确认清零 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

@@ -78,10 +78,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     public int PlayerCount => _players.Count;
     public int MapNodeCount => _nodes.Count;
 
-    /// <summary>
     /// 把宿主从公共节点注册表读取的不可变投影写入玩家世界分段。
-    /// 与 OOP 的公共建筑刷新一致：投影刷新只标记 World 分段，不递增玩家业务版本。
-    /// </summary>
+    /// 实际投影变化推进状态版本并标记 World；相同投影保持幂等。
     public bool ApplyNodeBuildingProjection(Guid playerId, EcsNodeBuildingProjection projection, DateTimeOffset now)
         => ExecuteOwned(() =>
         {
@@ -108,8 +106,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 nodeBuilding.Effects = projection.Effects;
                 nodeBuilding.Buildings = projection.Buildings;
             }
-            var identity = entity.GetOrAddComponent<PlayerIdentityComponent>();
-            identity.MarkDirty(PlayerSectionKind.World);
+            entity.GetOrAddComponent<PlayerIdentityComponent>().MarkDirty(PlayerSectionKind.World);
             return true;
         });
 

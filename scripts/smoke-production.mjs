@@ -1,11 +1,11 @@
 /**
  * daohua 新基线跨边界烟测。
  * 使用 Node 内置 net/tls 实现 WebSocket 握手与帧读写，不引入 ws 运行时依赖，
- * 可以正确携带 Cookie/Authorization，并且只使用固定烟测账号避免每次运行创建新账号。
+ * 可以正确携带 Cookie/Authorization。生产烟测必须显式提供已有会话 Cookie、会话令牌，
+ * 或账号与口令；不会在未明确要求时自动注册账号。
  *
- * 鉴权优先级：SMOKE_COOKIE > SMOKE_SESSION_TOKEN > SMOKE_ACCOUNT/SMOKE_PASSWORD 登录注册。
- * 默认烟测口令仅为本地/内测占位值，满足服务端 6-24 字符要求；对任何真实环境
- * 必须通过 SMOKE_PASSWORD 注入专用口令，不得复用默认口令。
+ * 鉴权优先级：SMOKE_COOKIE > SMOKE_SESSION_TOKEN > SMOKE_ACCOUNT/SMOKE_PASSWORD 登录。
+ * 仅当显式设置 SMOKE_REGISTER=1 时，登录失败后才尝试注册。
  */
 import crypto from 'node:crypto'
 import http from 'node:http'
@@ -121,8 +121,11 @@ async function getWebSocketAuthHeaders() {
   const sessionToken = process.env.SMOKE_SESSION_TOKEN || ''
   if (sessionToken) return { mode: 'bearer-session', headers: { Authorization: `Bearer ${sessionToken}` } }
 
-  const account = process.env.SMOKE_ACCOUNT || 'smoke_probe'
-  const password = process.env.SMOKE_PASSWORD || 'Daohua-Smoke-2026!'
+  const account = process.env.SMOKE_ACCOUNT || ''
+  const password = process.env.SMOKE_PASSWORD || ''
+  if (!account || !password) {
+    throw new Error('烟测必须显式提供 SMOKE_COOKIE、SMOKE_SESSION_TOKEN，或同时提供 SMOKE_ACCOUNT 与 SMOKE_PASSWORD。')
+  }
   if (!/^[a-zA-Z0-9_]{3,32}$/.test(account) || password.length < 6 || password.length > 24) {
     throw new Error('SMOKE_ACCOUNT/SMOKE_PASSWORD 不符合账号鉴权要求。')
   }
@@ -135,8 +138,8 @@ async function getWebSocketAuthHeaders() {
     loginError = error
   }
 
-  if (process.env.SMOKE_REGISTER === '0') {
-    throw new Error(`烟测账号登录失败，且 SMOKE_REGISTER=0: ${loginError?.message || 'unknown'}`)
+  if (process.env.SMOKE_REGISTER !== '1') {
+    throw new Error(`烟测账号登录失败；如需使用注册流程必须显式设置 SMOKE_REGISTER=1：${loginError?.message || 'unknown'}`)
   }
   try {
     const registration = await requestHttp('/api/v1/auth/register', 'application/json', 'POST', {
@@ -167,7 +170,6 @@ async function smokeWebSocket(gameDataFingerprint, authHeaders) {
   const target = new URL('/ws', baseUrl)
   const socket = await openWebSocket(target, authHeaders)
   try {
-    const requestId = crypto.randomUUID()
     socket.write(encodeClientFrame(encodeEnvelope(1, {
       clientVersion: 'smoke',
       deviceFingerprint: smokeDeviceConfig,
@@ -189,11 +191,13 @@ async function smokeWebSocket(gameDataFingerprint, authHeaders) {
       const packet = decodeEnvelope(frame.payload)
       if (packet.protocolVersion !== 1) throw new Error('WebSocket 协议版本异常。')
       if (packet.type === 2) {
+        validateHelloAck(packet, gameDataFingerprint)
         helloAck = packet
         continue
       }
       if (packet.type === 3) {
         if (!helloAck || packet.sequence <= helloAck.sequence) throw new Error('WebSocket hello/snapshot 序列不符合 wire.v1。')
+        validateSnapshot(packet)
         return packet
       }
       if (packet.type === 10) throw new Error('WebSocket 返回错误帧。')
@@ -201,6 +205,41 @@ async function smokeWebSocket(gameDataFingerprint, authHeaders) {
     throw new Error('WebSocket 烟测超时。')
   } finally {
     socket.close()
+  }
+}
+
+function validateHelloAck(packet, expectedFingerprint) {
+  const payload = packet.payload
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('HelloAck JSON 载荷必须是对象。')
+  if (typeof payload.serverVersion !== 'string' || payload.serverVersion.length === 0) throw new Error('HelloAck 缺少 serverVersion。')
+  if (payload.protocolVersion !== 1) throw new Error('HelloAck protocolVersion 无效。')
+  if (typeof payload.gameDataFingerprint !== 'string' || payload.gameDataFingerprint.length === 0) throw new Error('HelloAck 缺少 gameDataFingerprint。')
+  if (expectedFingerprint && payload.gameDataFingerprint !== expectedFingerprint) throw new Error('HelloAck 配表指纹不匹配。')
+  if (!Number.isSafeInteger(payload.serverSequence) || payload.serverSequence !== packet.sequence || payload.serverSequence <= 0) throw new Error('HelloAck serverSequence 无效。')
+}
+
+function validateSnapshot(packet) {
+  const payload = packet.payload
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Snapshot JSON 载荷必须是对象。')
+  if (typeof payload.playerId !== 'string' || payload.playerId.length === 0) throw new Error('Snapshot 缺少 playerId。')
+  if (typeof payload.displayName !== 'string') throw new Error('Snapshot displayName 类型无效。')
+  if (typeof payload.lastSimulatedAt !== 'string' || !Number.isFinite(Date.parse(payload.lastSimulatedAt))) throw new Error('Snapshot lastSimulatedAt 无效。')
+  if (!Number.isSafeInteger(payload.stateVersion) || payload.stateVersion <= 0) throw new Error('Snapshot stateVersion 无效。')
+  if (!payload.head || typeof payload.head !== 'object' || Array.isArray(payload.head)) throw new Error('Snapshot 缺少 head。')
+  if (!Number.isSafeInteger(payload.head.stateVersion) || payload.head.stateVersion !== payload.stateVersion) throw new Error('Snapshot head.stateVersion 无效。')
+  if (!Number.isSafeInteger(payload.head.schemaVersion) || payload.head.schemaVersion <= 0) throw new Error('Snapshot head.schemaVersion 无效。')
+  if (!Array.isArray(payload.sections) || payload.sections.length < 8) throw new Error('Snapshot sections 不完整。')
+  const sections = new Set()
+  for (const section of payload.sections) {
+    if (!section || typeof section !== 'object' || Array.isArray(section) || typeof section.section !== 'string' || !section.section) throw new Error('Snapshot section 标识无效。')
+    if (sections.has(section.section)) throw new Error('Snapshot sections 存在重复分段。')
+    sections.add(section.section)
+    if (!Number.isSafeInteger(section.sectionVersion) || section.sectionVersion <= 0) throw new Error('Snapshot sectionVersion 无效。')
+    if (!Number.isSafeInteger(section.schemaVersion) || section.schemaVersion <= 0) throw new Error('Snapshot section schemaVersion 无效。')
+    if (!section.data || typeof section.data !== 'object') throw new Error('Snapshot section data 无效。')
+  }
+  for (const required of ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue', 'duel']) {
+    if (!sections.has(required)) throw new Error(`Snapshot 缺少 ${required} 分段。`)
   }
 }
 
@@ -224,10 +263,20 @@ function decodeEnvelope(buffer) {
   if (buffer.readUInt16BE(4) !== 1 || buffer.readUInt8(7) !== 1 || payloadLength !== buffer.length - 36 || payloadLength > 1_048_576) {
     throw new Error('WebSocket DHW1 帧头校验失败。')
   }
+  let payload
+  try {
+    payload = JSON.parse(buffer.subarray(36).toString('utf8'))
+  } catch {
+    throw new Error('WebSocket JSON 载荷无效。')
+  }
+  const sequenceBigInt = buffer.readBigInt64BE(24)
+  const sequence = Number(sequenceBigInt)
+  if (sequenceBigInt <= 0n || !Number.isSafeInteger(sequence)) throw new Error('WebSocket 序列无效。')
   return {
     protocolVersion: buffer.readUInt16BE(4),
     type: buffer.readUInt8(6),
-    sequence: Number(buffer.readBigInt64BE(24)),
+    sequence,
+    payload,
   }
 }
 

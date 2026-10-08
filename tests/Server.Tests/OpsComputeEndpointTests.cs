@@ -1,3 +1,5 @@
+using System.IO;
+using Domain.GameData;
 using System.Text.Json;
 using Domain.Player;
 using Microsoft.AspNetCore.Builder;
@@ -18,8 +20,33 @@ namespace Server.Tests;
 /// 运维面板 /ops/api/compute 端点回归：节点组视图、计数快照与安全红线
 /// （响应不得携带令牌/连接串/玩家数据）。
 /// </summary>
+
 public sealed class OpsComputeEndpointTests
 {
+    /// <summary>资产回传只接受已知键并对所有无法独立重演的增量 fail-closed；无收益冷挂机结果仍可提交。</summary>
+    [Fact]
+    public void ComputeAssetDeltaValidationFailsClosedAndAllowsNoRewardResult()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var request = new ComputeAdvanceJobRequest(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "测试玩家", 1, 7, 1000, 2000,
+            "checksum", catalog.Fingerprint, [],
+            [new ComputeAssetBalance("item.ningxue-grass", "", 3)]);
+        var playerId = request.PlayerId;
+
+        Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
+            playerId, request, [new ComputeAssetDelta("item.audit-forged", "", -1)], catalog));
+        Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
+            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "+1", -1)], catalog));
+        Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
+            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", double.NaN)], catalog));
+        Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
+            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", -4)], catalog));
+        Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
+            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", 1)], catalog));
+
+        Assert.Empty(ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(playerId, request, null, catalog));
+    }
     private const string ComputeToken = "ops-endpoint-secret-token";
 
     /// <summary>端点必须暴露节点名/容量/在飞/拨入时长/运行时指纹与链路计数，且不泄露令牌。</summary>

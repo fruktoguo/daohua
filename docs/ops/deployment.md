@@ -103,11 +103,11 @@ scripts/docker-build-prod.sh --push-existing
 
 ```bash
 scripts/deploy-prod.sh \
-  --image ccr.ccs.tencentyun.com/yuohira/daohua:sha-<commit前12位> \
-  --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute:sha-<commit前12位>
+  --image ccr.ccs.tencentyun.com/yuohira/daohua@sha256:<Server digest> \
+  --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute@sha256:<ComputeNode digest>
 ```
 
-脚本会只读检查远端 Docker/Compose/权限，校验 `DB_PASSWORD` 与 `COMPUTE_TOKEN`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对镜像后调用 `ccr-auto-update.sh`：`compose up --force-recreate` 先替换应用与计算节点容器，再依次等待容器 healthy 与回环 `/readyz`；`/healthz` 由镜像 HEALTHCHECK 与 Compose 健康检查覆盖，`deploy-prod.sh` 只直接 curl `/readyz`。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
+脚本会只读检查远端 Docker/Compose/权限，校验 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅数据库初始化）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD` 与 `COMPUTE_TOKEN`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对 digest 镜像后调用 `ccr-auto-update.sh`：`compose up --force-recreate` 先替换应用与计算节点容器，再依次等待容器 healthy 与回环 `/readyz`；`/healthz` 由镜像 HEALTHCHECK 与 Compose 健康检查覆盖，`deploy-prod.sh` 只直接 curl `/readyz`。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
 
 部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）、`daohua-ledger-archive.timer`（每日流水分区归档）和 `daohua-wal-archive.timer`（每小时 WAL 巡检/轮转）。任一定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
 

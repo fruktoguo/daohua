@@ -160,25 +160,19 @@ public sealed class PlayerAggregateTests
         Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
     }
 
-    /// <summary>
-    /// 存量快照中残留的非整数次数在恢复时自愈：向下取整；取整后耗尽或为负的行动安全出队，
-    /// 且负值不得被翻转成 -1 无限语义。
-    /// </summary>
+    /// <summary>非法小数或越界重复次数恢复时必须快速失败，不得静默丢弃行动。</summary>
     [Fact]
-    public void RestoreHealsNonIntegerRepeatCountsFromLegacySnapshots()
+    public void RestoreRejectsInvalidRepeatCountsWithoutDroppingActions()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
-        var healable = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionQueueStatus.Pending, 0, 1.5, 0);
-        var exhausted = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionQueueStatus.Pending, 0, 0.5, 2);
-        var negative = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionQueueStatus.Pending, 0, -0.5, 3);
-        var state = player.ExportState() with { Actions = [healable, exhausted, negative] };
+        var invalid = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5),
+            Baseline, ActionQueueStatus.Pending, 0, 1.5, 0);
+        var state = player.ExportState() with { Actions = [invalid] };
 
-        var restored = PlayerAggregate.Restore(state);
+        var error = Assert.Throws<DomainException>(() => PlayerAggregate.Restore(state));
 
-        // 非整数向下取整自愈；已耗尽（取整后为 0）与负值（不得翻转为 -1 无限语义）的行动安全出队。
-        var action = Assert.Single(restored.Actions);
-        Assert.Equal(2, action.Intent.RepeatCount);
-        Assert.Equal(1, action.RemainingRepeats);
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+        Assert.Contains("行动状态", error.Message);
     }
 
     /// <summary>

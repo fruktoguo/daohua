@@ -86,7 +86,9 @@ export class GameClient {
   private catalogRefreshPending = false
   /** 最近一次登记的单位详情观察目标；重连握手完成后按原样重放，恢复按需属性投影。 */
   private lastInspectTarget: { side: 'enemy' | 'ally'; index: number } | null = null
+  /** 待处理请求计时器；连接关闭后保留元数据，避免把可能已执行的命令静默判定为失败。 */
   private readonly pendingRequests = new Map<string, number>()
+  private readonly awaitingReconnectRequests = new Set<string>()
   /**
    * 入站帧串行链：delta 的 section checksum 解码是真异步（crypto.subtle），
    * 并发处理会让多帧共享同一旧基线互相覆盖应用结果；串行后应用顺序恒等于通道到达序。
@@ -163,7 +165,6 @@ export class GameClient {
     this.lastServerSequence = 0
     // 新会话起一条干净的入站串行链；旧链残留任务由 handleMessage 的 socket 一致性检查拦截。
     this.messageChain = Promise.resolve()
-    this.clearPendingRequests()
     this.open()
   }
 
@@ -179,7 +180,7 @@ export class GameClient {
     this.clearReconnectTimer()
     this.stopHeartbeat()
     this.clearPendingRequests()
-    this.lastInspectTarget = null
+    this.awaitingReconnectRequests.clear()
     chatService.reset()
     useSocialStore.getState().reset()
     const socket = this.socket
@@ -220,8 +221,10 @@ export class GameClient {
         payload: commandPayload,
         expectedStateVersion,
       }))
+      this.awaitingReconnectRequests.delete(requestId)
       this.pendingRequests.set(requestId, window.setTimeout(() => {
         if (!this.pendingRequests.delete(requestId)) return
+        this.awaitingReconnectRequests.add(requestId)
         useGameStore.getState().setNotice(getT()('common.net.requestTimeout'))
       }, GameClient.REQUEST_TIMEOUT_MS))
       return true
@@ -253,7 +256,7 @@ export class GameClient {
 
   /**
    * 登记/清除单位详情观察目标（UnitInspect 火忘帧，无回执）。
-   * 服务端仅对命中下标的敌怪/斗法镜像随快照投影属性面板；target=null 清除。
+   * 服务端仅对命中下标的敌怪/斗法镜像/盟友单位随快照投影属性面板；target=null 清除。
    */
   sendUnitInspect(target: { side: 'enemy' | 'ally'; index: number } | null): boolean {
     // 相同目标去重：属性为登记后一次性交付，重复登记只会让服务端无谓重投。
@@ -293,8 +296,10 @@ export class GameClient {
     if (!this.trySend(socket, WireMessageType.SocialAction, requestId, payload)) return false
     // 社交成功应答是带 requestId 的 SocialState（必达）、失败是 Error 帧：登记超时计时器做兜底，
     // 超时仅提示——状态由重连全量握手或下一次 StateChanged 广播最终一致。
+    this.awaitingReconnectRequests.delete(requestId)
     this.pendingRequests.set(requestId, window.setTimeout(() => {
       if (!this.pendingRequests.delete(requestId)) return
+      this.awaitingReconnectRequests.add(requestId)
       useGameStore.getState().setNotice(getT()('common.net.requestTimeout'))
     }, GameClient.REQUEST_TIMEOUT_MS))
     return true
@@ -357,7 +362,8 @@ export class GameClient {
         return
       }
       this.reconnectDelay = 500
-      useGameStore.getState().setConnection('online')
+      // WebSocket transport open 仅代表 TCP 已建立；在合法 HelloAck 前仍保持 connecting。
+      useGameStore.getState().setConnection('connecting')
       this.startHeartbeat()
       void this.sendHello()
     })
@@ -375,7 +381,7 @@ export class GameClient {
       this.stopHeartbeat()
       if (this.socket !== socket) return
       this.socket = null
-      this.clearPendingRequests()
+      this.markPendingRequestsAwaitingReconnect()
       if (this.disposed) return
       // 配表指纹不匹配：挂起自动重连，等待 App 重新拉取配表成功后显式 connect() 放行。
       if (this.catalogRefreshPending) {
@@ -404,6 +410,17 @@ export class GameClient {
   private clearPendingRequests(): void {
     for (const timer of this.pendingRequests.values()) window.clearTimeout(timer)
     this.pendingRequests.clear()
+  }
+
+  private markPendingRequestsAwaitingReconnect(): void {
+    for (const [requestId, timer] of this.pendingRequests) {
+      window.clearTimeout(timer)
+      this.pendingRequests.delete(requestId)
+      this.awaitingReconnectRequests.add(requestId)
+    }
+    if (this.awaitingReconnectRequests.size > 0) {
+      useGameStore.getState().setNotice(getT()('common.net.requestAwaitingReconnect'))
+    }
   }
 
   private async sendHello(): Promise<void> {
@@ -454,8 +471,20 @@ export class GameClient {
       switch (envelope.messageType) {
         case WireMessageType.HelloAck: {
           const hello = decodeJsonPayload<HelloResponse>(envelope)
-          if (hello.protocolVersion !== 1) throw new Error('服务端协议版本不匹配。')
+          const expectedFingerprint = getCatalogFingerprint()
+          if (!hello || hello.protocolVersion !== 1 || typeof hello.serverVersion !== 'string' || hello.serverVersion.length === 0
+            || typeof hello.gameDataFingerprint !== 'string' || hello.gameDataFingerprint.length === 0
+            || !Number.isSafeInteger(hello.serverSequence) || hello.serverSequence !== envelope.sequence || hello.serverSequence <= 0) {
+            throw new Error('服务端 HelloAck 载荷无效。')
+          }
+          if (expectedFingerprint && hello.gameDataFingerprint !== expectedFingerprint) {
+            this.catalogRefreshPending = true
+            sourceSocket.close(1000, '服务端配表指纹不匹配')
+            window.dispatchEvent(new Event(GAME_DATA_MISMATCH_EVENT))
+            return
+          }
           applyAntiMultiOpenConfig(hello.antiMultiOpen)
+          useGameStore.getState().setConnection('online')
           // 重连后重放观察目标：服务端会话级浏览态随旧连接销毁，不补发则详情属性面板停在空态；
           // 先清账再登记绕开相同目标去重，保证新会话重新武装一次性交付。
           const inspectReplay = this.lastInspectTarget
@@ -485,6 +514,7 @@ export class GameClient {
             window.clearTimeout(timer)
             this.pendingRequests.delete(result.requestId)
           }
+          this.awaitingReconnectRequests.delete(result.requestId)
           // 超 15s 晚到的回执仍要合入快照：pending 计时器只负责超时提示，资产差额仅由回执
           // 携带（推送基线已前移后不再重发），整帧丢弃会造成永久缺失；过旧/重复内容
           // 由 applyPatch/applySnapshot 的版本门禁幂等丢弃，requestId 必须与信封一致。
@@ -510,6 +540,7 @@ export class GameClient {
             const timer = this.pendingRequests.get(error.requestId)
             if (timer !== undefined) window.clearTimeout(timer)
             this.pendingRequests.delete(error.requestId)
+            this.awaitingReconnectRequests.delete(error.requestId)
           }
           if (error.code === 'GAME_DATA_MISMATCH') {
             // 客户端配表落后于服务端：服务端保持连接但不放行握手，
@@ -545,6 +576,7 @@ export class GameClient {
             const timer = this.pendingRequests.get(state.requestId)
             if (timer !== undefined) window.clearTimeout(timer)
             this.pendingRequests.delete(state.requestId)
+            this.awaitingReconnectRequests.delete(state.requestId)
           }
           if (state) useSocialStore.getState().applyState(state)
           break

@@ -18,6 +18,7 @@ export const commonZh = {
       invalidCommand: '操作格式无效。',
       requestTimeout: '操作等待服务端响应超时，请检查连接后重试。',
       sessionExpired: '登录会话已失效，请重新登录。',
+      requestAwaitingReconnect: '连接已断开，已提交的操作正在等待服务端确认。',
       kickedByOther: '账号已在其他窗口或设备登录，当前连接已被替换。',
       duplicateSession: '该账号已有在线连接，请关闭其他窗口后重试。',
       deviceQuotaExceeded: '当前设备同时在线的账号数量已达上限。',

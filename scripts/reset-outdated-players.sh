@@ -45,15 +45,15 @@ DRY_RUN=0
 case "$DB_HOST" in
   127.0.0.1|localhost|::1) ;;
   *)
-    printf '==> [存档处置] 跳过：DB_HOST=%s 非本地回环地址，拒绝自动处置玩家数据。\n' "$DB_HOST" >&2
-    exit 0
+    printf '错误: DB_HOST=%s 非本地回环地址，拒绝自动处置玩家数据。\n' "$DB_HOST" >&2
+    exit 1
     ;;
 esac
 
 SECTION_SCHEMA_VERSION="$(sed -n 's/.*CurrentSchemaVersion = \([0-9][0-9]*\).*/\1/p' src/Domain/Persistence/SectionCodec.cs | head -n 1)"
 if [[ -z "$SECTION_SCHEMA_VERSION" ]]; then
-  printf '==> [存档处置] 跳过：无法从 SectionCodec.cs 提取 CurrentSchemaVersion。\n' >&2
-  exit 0
+  printf '错误: 无法从 SectionCodec.cs 提取 CurrentSchemaVersion。\n' >&2
+  exit 1
 fi
 
 run_psql() {
@@ -77,11 +77,11 @@ count_stale() {
   run_psql -tA -c "SELECT CASE
     WHEN to_regclass('game.player_state_heads') IS NULL THEN 0
     ELSE (SELECT COUNT(DISTINCT player_id) FROM (${STALE_TABLES}) stale)
-  END;" 2>/dev/null
+  END;"
 }
 
 list_stale_players() {
-  run_psql -tA <<SQL || true
+  run_psql -tA <<SQL
 SELECT p.display_name || ' (' || p.player_id || ')'
 FROM identity.players p
 WHERE EXISTS (SELECT 1 FROM game.player_state_heads h WHERE h.player_id = p.player_id AND h.schema_version <> ${SECTION_SCHEMA_VERSION})
@@ -90,16 +90,19 @@ WHERE EXISTS (SELECT 1 FROM game.player_state_heads h WHERE h.player_id = p.play
 SQL
 }
 
-STALE_COUNT="$(count_stale)" || STALE_COUNT=""
-if [[ -z "${STALE_COUNT}" ]]; then
-  printf '==> [存档处置] 跳过：无法连接本地 PostgreSQL（docker 容器 %s 与本机 psql 均不可用）。\n' "$DB_CONTAINER" >&2
-  exit 0
+if ! STALE_COUNT="$(count_stale)"; then
+  printf '错误: 查询旧存档失败，拒绝跳过玩家数据处置。\n' >&2
+  exit 1
 fi
-
-# platform.schema_version（库级表结构+存档标签的统一内容版本）落后于
-# PostgresSchema.Version 时同样需要走 migrations/ 链补齐。
+if [[ -z "${STALE_COUNT}" ]]; then
+  printf '错误: 查询旧存档返回空结果，拒绝继续。\n' >&2
+  exit 1
+fi
 PLATFORM_REQUIRED="$(grep -oE 'Version = [0-9]+' src/Server/Clean/PostgresSchema.cs | head -n 1 | grep -oE '[0-9]+' || true)"
-PLATFORM_CURRENT="$(run_psql -tA -c "SELECT CASE WHEN to_regclass('platform.schema_version') IS NULL THEN 0 ELSE COALESCE((SELECT max(version) FROM platform.schema_version), 0) END;" 2>/dev/null || true)"
+if ! PLATFORM_CURRENT="$(run_psql -tA -c "SELECT CASE WHEN to_regclass('platform.schema_version') IS NULL THEN 0 ELSE COALESCE((SELECT max(version) FROM platform.schema_version), 0) END;")"; then
+  printf '错误: 查询 platform.schema_version 失败，中止处置。\n' >&2
+  exit 1
+fi
 [[ "${PLATFORM_CURRENT:-}" =~ ^[0-9]+$ ]] || PLATFORM_CURRENT=0
 
 NEED_MIGRATE=0
@@ -126,7 +129,10 @@ if ! scripts/migrate-local-db.sh; then
   exit 1
 fi
 
-STALE_COUNT="$(count_stale)" || STALE_COUNT=""
+if ! STALE_COUNT="$(count_stale)"; then
+  printf '错误: 迁移后查询旧存档失败，中止清理。\n' >&2
+  exit 1
+fi
 if [[ "${STALE_COUNT:-0}" == "0" ]]; then
   printf '==> [存档处置] 迁移完成，存档已升级到 v%s，无需重置。\n' "$SECTION_SCHEMA_VERSION"
   exit 0
@@ -168,6 +174,8 @@ DELETE FROM market.orders WHERE owner_player_id IN (SELECT player_id FROM _stale
 DELETE FROM social.party_invitations WHERE invitee_id IN (SELECT player_id FROM _stale_players)
    OR inviter_id IN (SELECT player_id FROM _stale_players)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players));
+DELETE FROM social.party_seekers WHERE player_id IN (SELECT player_id FROM _stale_players);
+DELETE FROM social.party_sessions WHERE party_id IN (SELECT party_id FROM social.party_members WHERE player_id IN (SELECT player_id FROM _stale_players));
 DELETE FROM social.party_members WHERE player_id IN (SELECT player_id FROM _stale_players)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players));
 DELETE FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players);
@@ -175,6 +183,8 @@ DELETE FROM social.friendships WHERE player_id IN (SELECT player_id FROM _stale_
    OR friend_id IN (SELECT player_id FROM _stale_players);
 DELETE FROM social.friend_requests WHERE requester_id IN (SELECT player_id FROM _stale_players)
    OR target_id IN (SELECT player_id FROM _stale_players);
+DELETE FROM social.player_invitations WHERE invitee_id IN (SELECT player_id FROM _stale_players)
+   OR inviter_id IN (SELECT player_id FROM _stale_players);
 DELETE FROM social.chat_messages WHERE sender_id IN (SELECT player_id FROM _stale_players);
 DELETE FROM platform.compute_jobs WHERE player_id IN (SELECT player_id FROM _stale_players);
 DELETE FROM platform.command_receipts WHERE player_id IN (SELECT player_id FROM _stale_players);

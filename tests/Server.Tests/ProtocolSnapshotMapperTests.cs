@@ -272,7 +272,7 @@ public sealed class ProtocolAttributesPointsTests
             restored.DisplayName, 1, restored.LastSimulatedAt, restored.ExportState(), 0, []);
 
         var projected = 0;
-        var inspected = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData, 0, () => projected++);
+        var inspected = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData, new UnitInspectDto("enemy", 0), () => projected++);
         Assert.Equal(1, projected);
         var inspectedEnemies = inspected.Sections.Single(section => section.Section == PlayerSectionKinds.ActionQueue)
             .Data[0].GetProperty("expedition").GetProperty("enemies");
@@ -287,5 +287,55 @@ public sealed class ProtocolAttributesPointsTests
         Assert.False(plainEnemies[0].TryGetProperty("attributes", out _));
         Assert.Equal(JsonValueKind.Number, plainEnemies[0].GetProperty("maxHitpoints").ValueKind);
         Assert.Equal(JsonValueKind.Number, plainEnemies[0].GetProperty("maxManapoints").ValueKind);
+    }
+
+    /// <summary>
+    /// 盟友属性按需交付门禁：观察目标 side=ally 命中 memberIndex 的成员才投影开打冻结面板
+    /// attributes 并触发出站记账回调；未命中成员与本机位不携带属性、不触发回调。
+    /// </summary>
+    [Fact]
+    public void ToSnapshot_InspectedAlly_ProjectsFrozenAttributesOnceWithEmissionMark()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.NewGuid();
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), "本机", DateTimeOffset.UtcNow, "fp");
+        var selfStats = CombatantStats.Create(113, 10, 5, 2) with { MaxManapoints = 60 };
+        var allyStats = CombatantStats.Create(200, 20, 8, 2) with { MaxManapoints = 80 };
+        var spec = new ActionParticipationSpec(
+            Guid.NewGuid().ToString("D"), "encounter.qi-beast", "node.qi-den", 1, 0, 0,
+            [
+                new ActionParticipantSnapshot(playerId.ToString("D"), "本机", 1, 0, 0, 113, 60, selfStats, []),
+                new ActionParticipantSnapshot(Guid.NewGuid().ToString("D"), "队友", 1, 0, 0, 200, 80, allyStats, []),
+            ])
+        { ActionId = new ActionId("combat.hunt-qi-beast") };
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, "node.qi-den"),
+            DateTimeOffset.UtcNow, ActionQueueStatus.Running, 0, -1, 0,
+            new CombatExpeditionState(
+                "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, 1,
+                15.47, 113, 60, 16, 15, 0, CombatOutcome.Running, 1,
+                [new ExpeditionEnemyState("enemy.wood-spirit",
+                    new CombatantSnapshot(362, 4.75, 15.99, 7, 0, 1))])
+            {
+                PlayerState = new CombatantSnapshot(113, 60, 16, 15, 0),
+                Allies = [new ExpeditionAllyState(1, new CombatantSnapshot(200, 80, 5, 2, 0))],
+            },
+            Participation: new ActionParticipationBinding(spec));
+        var restored = PlayerAggregate.Restore(aggregate.ExportState() with { Actions = [action] });
+        var runtime = new PlayerRuntimeSnapshot(playerId, restored.AccountId.Value.ToString("D"),
+            restored.DisplayName, 1, restored.LastSimulatedAt, restored.ExportState(), 0, []);
+
+        var projected = 0;
+        var inspected = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData, new UnitInspectDto("ally", 1), () => projected++);
+        Assert.Equal(1, projected);
+        var allies = inspected.Sections.Single(section => section.Section == PlayerSectionKinds.ActionQueue)
+            .Data[0].GetProperty("expedition").GetProperty("allies");
+        // 本机位（memberIndex=0）与未命中成员不携带属性：WhenWritingNull 口径下字段整体缺席。
+        Assert.False(allies[0].TryGetProperty("attributes", out _));
+        Assert.True(allies[1].TryGetProperty("attributes", out var inspectedAttributes));
+        Assert.Equal(JsonValueKind.Object, inspectedAttributes.ValueKind);
+        Assert.Equal(200, inspectedAttributes.GetProperty("maxHitpoints").GetDouble());
+        Assert.Equal(20, inspectedAttributes.GetProperty("physicalAttack").GetDouble());
     }
 }

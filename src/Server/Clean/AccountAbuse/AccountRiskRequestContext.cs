@@ -21,8 +21,11 @@ public sealed class AccountRiskRequestContext(IDataProtectionProvider protection
         ValidateHash(client?.BrowserFingerprint);
         if (client?.DeviceId is { } requestedId && !Guid.TryParseExact(requestedId, "D", out _))
             throw new ArgumentException("设备标识无效。");
-        // 不为缺失的设备输入生成随机锚点，否则空对象可以不断取得新额度。
-        var deviceId = ReadDeviceId(context) ?? (client?.DeviceId is { } id ? Guid.Parse(id) : (Guid?)null);
+        // 客户端自报 DeviceId 仅作为软信号输入；首次请求由服务端随机生成硬设备锚点，
+        // 只有服务端签发并解密成功的 Cookie 才能进入设备配额与 PersonKey。
+        var deviceId = ReadDeviceId(context);
+        if (!deviceId.HasValue && client?.DeviceId is not null)
+            deviceId = Guid.NewGuid();
         if (persistCookie && deviceId.HasValue) context.Response.Cookies.Append(DeviceCookie, _protector.Protect(deviceId.Value.ToString("D")), new CookieOptions
         {
             HttpOnly = true, Secure = context.Request.IsHttps, SameSite = SameSiteMode.Lax,

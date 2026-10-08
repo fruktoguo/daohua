@@ -67,15 +67,17 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj
 ```
 
-默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v3**（`PostgresSchema.Version = 3`），启动时校验版本并拒绝旧 schema。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立 SQL 脚本（该目录可整体删除，全新初始化行为不变）。若本地 schema 与当前基线不一致，应在确认数据无需保留后重新初始化本地数据库。
+默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v21**（`PostgresSchema.Version = 21`），启动时校验版本并拒绝旧 schema。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立 SQL 脚本（当前覆盖 v1→v21，详见 [`migrations/README.md`](migrations/README.md)）。其中 v20→v21 的参与载荷不能无损迁移，旧玩家行必须由 `reset-outdated-players.sh` 交互确认清零；任何版本链缺口或无法迁移的库均不得假装升级，应在确认数据无需保留后重建/清零。本目录可整体删除，全新初始化行为不变。
 
-同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回；只有 schema 版本变化才需要重新初始化本地数据库。
+同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回。schema 版本变化通常要求迁移或重新初始化；其中 v20→v21 的旧参与载荷不能无损迁移，必须按迁移说明由 `reset-outdated-players.sh` 交互确认清零。
 
 启动正式前端：
 
 ```bash
 npm --prefix frontend run dev
 ```
+
+也可以使用 `scripts/dev.sh` 一键启动前后端。终端中显示分区式 TUI 控制台：顶部显示阶段和运行时间，中部显示后端/前端状态卡，底部显示实时日志。按 `a` 查看全部、`s` 查看启动日志、`b` 查看后端、`f` 查看前端，按 `r` 刷新，按 `q` 或 `Ctrl+C` 停止服务；非交互终端自动退回普通日志输出。
 
 Vite 默认监听 `http://127.0.0.1:15172`，把 `/api`、`/ops/api` 和 `/ws` 代理到 `127.0.0.1:5128`。浏览器认证使用服务端 `HttpOnly` Cookie；前端 localStorage 只保存非敏感的账号显示信息和 UI 偏好，不保存 token、玩家快照、日志或消息历史。
 
@@ -99,7 +101,7 @@ Vite 默认监听 `http://127.0.0.1:15172`，把 `/api`、`/ops/api` 和 `/ws` �
 
 ## 冷挂机计算节点
 
-`ComputeNode` 只接受带 `X-Compute-Token` 的内部批处理 HTTP 请求，验证契约版本、配置指纹、任务数量和载荷大小后执行无状态确定性补算。它不接受公网业务流量，不处理账号、在线连接、市场写入，也不持有 PostgreSQL 凭据。
+`ComputeNode` 只接受带 `X-Compute-Token` 的内部批处理 HTTP 请求，或反向拨入主服的内部 WebSocket 链路；它验证契约版本、配置指纹、任务数量和载荷大小后执行无状态确定性补算。它不接受公网业务流量，不处理账号、在线连接、市场写入，也不持有 PostgreSQL 凭据。令牌只提供节点鉴权，不提供传输加密。远程部署必须使用 `https`/`wss`；生产 Compose 的内部 HTTP/WS 仅在隔离容器网络并显式启用 `AllowInsecureLoopback` 时允许，不能暴露到公网或不可信网络。
 
 ```bash
 ComputeNode__Token='<内部随机令牌>' \
@@ -107,7 +109,7 @@ ComputeNode__Urls=http://127.0.0.1:5129 \
 dotnet run --project src/ComputeNode/ComputeNode.csproj
 ```
 
-正式部署时，ComputeNode 应放在独立网络边界；主服务只把可验证的批处理载荷发送给它，结果仍由主服务校验后写回 PostgreSQL。
+正式部署时，ComputeNode 应放在独立网络边界且仅允许主服务访问；跨主机链路必须使用 `https`/`wss` 或受控加密隧道，并单独验证证书/隧道边界。主服务只把可验证的批处理载荷发送给它，结果仍由主服务校验后写回 PostgreSQL。这里的本地 HTTP 示例不代表生产跨主机传输配置。
 
 ## 构建、测试与容量门禁
 
@@ -133,6 +135,7 @@ scripts/verify.sh
 dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
   --scenario capacity-target --require-database
 ```
+`capacity-target` 是本地/受控测试库上的真实 PostgreSQL、WAL、latest-only Worker 容量门禁，只对容量相关变更与发布前适用，不是未经实测的生产容量承诺，也不会执行远程发布或生产恢复。`syntheticEstimate` 永不作为业务通过依据；发布前必须提供 `CAPACITY_REAL_COMPUTE_LINK=1` 与 `CAPACITY_REAL_DATABASE_URL`，必要时同时设置 `CAPACITY_REAL_COMPUTE_PLAYERS`、`CAPACITY_REAL_COMPUTE_DURATION_SECONDS`，缺失时 `capacity-target` 必须 fail closed。只有真实报告同时满足 `realBusinessPath.executed=true`、`computeNodeRequest=true` 和 `sectionCodec=true`，才能声称冷挂机业务路径完成。
 
 压测工具支持的场景：`capacity-target`（容量综合门禁）、`websocket`（真实 WS 连接与协议握手）、`http-read`（只读 HTTP 端点）、`compute`（本地冷挂机补算）、`postgres`（PostgreSQL/WAL 真实探测）。各场景参数语义以 `src/LoadTests/LoadTestOptions.cs` 为准。
 
@@ -160,13 +163,14 @@ dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
   --scenario postgres --database 'Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=daohua-local-dev'
 ```
 
-`compute` 场景的 `--players` 表示补算玩家数，时间预算按 2000 人/30 秒线性缩放；`postgres` 场景在临时 schema 中探测，数据库不可达即报告失败。
+`compute` 场景的 `--players` 表示补算玩家数，时间预算按 2000 人/30 秒线性缩放；`postgres` 场景在临时 schema 中探测，数据库不可达即报告失败。上述容量/数据库场景均为本地或受控环境验证，不能替代远程生产容量验收、发布验收或恢复演练。
 
-`scripts/smoke-production.mjs` 验证健康、就绪、同源静态入口（容器模式）和 WebSocket 首帧。直接从源码启动 API 时如果没有 `wwwroot`，可用 `SMOKE_REQUIRE_STATIC=0` 只验证 API/WS 边界：
+`scripts/smoke-production.mjs` 验证健康、就绪、同源静态入口（容器模式）和 WebSocket 首帧。直接从源码启动 API 时如果没有 `wwwroot`，可用 `SMOKE_REQUIRE_STATIC=0` 只验证 API/WS 边界。当前工作区未执行远程发布、远程烟测或生产恢复；这些结果不能从本地门禁推断。
 
 ```bash
 SMOKE_REQUIRE_STATIC=0 node scripts/smoke-production.mjs http://127.0.0.1:5128
 ```
+
 
 ## 本地三版本基准控制面
 
@@ -195,14 +199,14 @@ node scripts/smoke-production.mjs http://127.0.0.1:5128
 docker compose -f compose.yaml down
 ```
 
-生产同构拓扑以 `deploy/compose.prod.yaml` 为准（`Production` 环境、独立 `compute-node` 与 `persistence-worker` 服务、端口 `127.0.0.1:15128`，要求预先构建的不可变镜像）。
+生产同构拓扑以 `deploy/compose.prod.yaml` 为准（`Production` 环境、独立 `compute-node` 与 `persistence-worker` 服务、端口 `127.0.0.1:15128`，要求预先构建并按不可变 **digest** 固定的镜像；移动 `prod` 标签不得作为生产运行引用）。
 
 正式 CCR 发布、服务器更新、备份、Caddy、回滚和持久卷规则见 [`docs/ops/deployment.md`](docs/ops/deployment.md)。完整持久化与 Redis ADR 见 [`docs/backend/commercial-persistence-architecture.md`](docs/backend/commercial-persistence-architecture.md)。
 
 生产发布前必须确认：
 
-- 工作区已提交且通过 Release 构建、领域/服务端测试、前端构建和容量门禁；
-- Server 与 ComputeNode 使用 `linux/amd64` 不可变镜像标签，并保留 `prod` 移动标签；
+- 工作区已提交且通过 Release 构建、领域/服务端测试、前端构建和适用的容量门禁；
+- Server 与 ComputeNode 使用 `linux/amd64`、不可变 digest 固定的镜像引用（构建时可保留 `sha-<commit>` 标签，但生产 Compose 必须解析并固定 `@sha256:...`），`prod` 仅作移动发布指针；
 - PostgreSQL 卷 `daohua_daohua-postgres` 未被替换，备份归档和 SHA-256 校验可恢复；
 - Caddy 配置已 `caddy validate`，公网只暴露 HTTPS、HTTP API 和 WebSocket；
 - 应用日志、WAL、队列和备份均有硬上限，禁止把 WebSocket/聊天/战斗 Tick 变成持久化日志。

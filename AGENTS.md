@@ -132,7 +132,8 @@ docker compose -f deploy/compose.prod.yaml down
 | 脚本 | 用途 |
 | --- | --- |
 | `verify.sh` | 合并必跑最小门禁：工具链、Release 构建、Domain/Ecs/Server 三套测试（自动供给 `daohua_market_test` 集成测试库）、DataTool 校验、Compose 配置、前端构建；容量门禁不在其中，见 `capacity-target.sh` |
-| `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite、Docker 化 Caddy 域名入口 `http://daohua.localhost`） |
+| `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite、Docker 化 Caddy 域名入口 `http://daohua.localhost`）；交互终端显示分区式 TUI，`q`/`Ctrl+C` 停止，`a`/`s`/`b`/`f` 切换日志视图，`r` 刷新，非 TTY 使用普通日志流 |
+| `dev-tui.mjs` | `dev.sh` 的无依赖 TUI 日志观察器（由 `dev.sh` 调用） |
 | `dev-hot.mjs` | C# 源码监听与后端平滑热重启（由 `dev.sh` 调用） |
 | `dev-service.sh` | 本地容器化同构环境管理：`up`/`restart`/`down`/`status`/`logs`/`smoke` |
 | `config-editor.sh` | 启动 `tools/config-editor` 可视化配表编辑器（127.0.0.1:5199） |

@@ -32,17 +32,18 @@ export function formatReportTime(unixSeconds: number): string {
 export function reportHasContent(report: BattleReport): boolean {
   if (report.experience !== 0 || report.foundation !== 0 || report.combatExperience !== 0) return true
   if (ROOT_EXP_ROWS.some(row => report.rootExp[row.key] !== 0)) return true
-  if (report.abilityExp.length > 0 || report.levelUps.length > 0) return true
+  if (report.abilityExp.length > 0 || report.techniqueExp.length > 0 || report.levelUps.length > 0) return true
   if (report.items.length > 0 || report.itemsLost.length > 0) return true
   if (report.cycles > 0 || report.encounters > 0 || report.deaths > 0) return true
   if (report.normalKills > 0 || report.eliteKills > 0 || report.bossKills > 0) return true
   return report.duelWins > 0 || report.duelLosses > 0
 }
 
-/**
- * 「获取经验」小节：修为 / 底蕴净变动 / 战斗经验 / 六维 / 功法技能经验 + 期间等级提升（境界/六维/功法）。
- * 除底蕴（净变动，可为负，非零即展示）外，其余数值行仅在 >0 时展示；功法名按目录解析，未命中回退 abilityId。
- */
+/** 技艺名称使用现有 insight.technique 翻译词条，未知 ID 回退原始标识。 */
+function techniqueLabel(translate: (key: string) => string, techniqueId: string): string {
+  const translated = translate(`insight.technique.${techniqueId}`)
+  return translated === `insight.technique.${techniqueId}` ? techniqueId : translated
+}
 export const ReportExpSection = memo(function ReportExpSection({ report }: { report: BattleReport }): React.JSX.Element | null {
   const t = useT()
   const abilities = useGameStore(state => state.abilities)
@@ -56,7 +57,14 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
       label: findAbilityInCatalog(abilities, entry.abilityId)?.name || entry.abilityId,
       value: entry.experience,
     }))
-  // 等级提升行：realm→「境界」、root→六维标签（targetId 为六维键）、ability→功法名（targetId 为功法 ID）。
+  const techniqueExpEntries = report.techniqueExp
+    .filter(entry => entry.experience > 0)
+    .map(entry => ({
+      techniqueId: entry.techniqueId,
+      label: techniqueLabel(t, entry.techniqueId),
+      value: entry.experience,
+    }))
+  // 等级提升行：realm→「境界」、root→六维标签、ability→功法名、technique→技艺名。
   // 同一目标在账期内的多段升级合并为一条「首段起点 → 末段终点」，顺序按目标首次出现排列。
   const levelUpEntries: Array<{ key: string; name: string; from: number; to: number }> = []
   const levelUpByTarget = new Map<string, { key: string; name: string; from: number; to: number }>()
@@ -67,6 +75,8 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
     } else if (entry.kind === 'root') {
       const row = ROOT_EXP_ROWS.find(item => item.key === entry.targetId)
       name = row ? t(row.labelKey) : entry.targetId
+    } else if (entry.kind === 'technique') {
+      name = techniqueLabel(t, entry.targetId)
     } else {
       name = findAbilityInCatalog(abilities, entry.targetId)?.name || entry.targetId
     }
@@ -83,7 +93,7 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
   }
 
   const hasAny = report.experience > 0 || report.foundation !== 0 || report.combatExperience > 0
-    || rootExpEntries.length > 0 || abilityExpEntries.length > 0 || levelUpEntries.length > 0
+    || rootExpEntries.length > 0 || abilityExpEntries.length > 0 || techniqueExpEntries.length > 0 || levelUpEntries.length > 0
   if (!hasAny) return null
 
   return (
@@ -104,6 +114,9 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
         ))}
         {abilityExpEntries.map(entry => (
           <span key={entry.abilityId}>{entry.label} <strong><UnitNumber disableTooltip prefix="+" value={entry.value} /></strong></span>
+        ))}
+        {techniqueExpEntries.map(entry => (
+          <span key={`technique:${entry.techniqueId}`}>{entry.label} <strong><UnitNumber disableTooltip prefix="+" value={entry.value} /></strong></span>
         ))}
       </div>
       {levelUpEntries.length > 0 && (

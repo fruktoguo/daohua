@@ -54,7 +54,7 @@ function storedArray<T>(value: unknown): T[] {
 }
 
 /**
- * 旧版本缓存条目缺少账本泛化后新增的字段（abilityExp/levelUps/itemsLost/计数器等），
+ * 旧版本缓存条目缺少账本泛化后新增的字段（abilityExp/techniqueExp/levelUps/itemsLost/计数器等），
  * 读取时统一补齐默认值，保证渲染路径不依赖字段存在性。
  */
 function normalizeStoredReport(report: BattleReport): BattleReport {
@@ -76,8 +76,8 @@ function normalizeStoredReport(report: BattleReport): BattleReport {
       consciousness: storedNumber(rootExp.consciousness),
     },
     abilityExp: storedArray(report.abilityExp),
+    techniqueExp: storedArray(report.techniqueExp),
     levelUps: storedArray(report.levelUps),
-    items: storedArray(report.items),
     itemsLost: storedArray(report.itemsLost),
     cycles: storedNumber(report.cycles),
     encounters: storedNumber(report.encounters),

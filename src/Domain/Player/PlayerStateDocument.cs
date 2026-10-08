@@ -337,6 +337,22 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家基础 section 标识无效。");
         if (state.Duel is null || !IsValidDuelDocument(state.Duel))
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家斗法分段无效。");
+        var buffIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var buff in state.Buffs)
+        {
+            if (buff is null || string.IsNullOrWhiteSpace(buff.BuffId) || buff.BuffId.Length > 128
+                || !buffIds.Add(buff.BuffId)
+                || !double.IsFinite(buff.ExpiresAtUnixSeconds) || buff.ExpiresAtUnixSeconds < 0
+                || !double.IsFinite(buff.Stacks) || buff.Stacks <= 0
+                || buff.Name is null || buff.Name.Length > 128
+                || (buff.SourceItemId is not null && (buff.SourceItemId.Length == 0 || buff.SourceItemId.Length > 128))
+                || !double.IsFinite(buff.HpRegen) || !double.IsFinite(buff.MpRegen)
+                || !double.IsFinite(buff.AttackSpeedPoints) || !double.IsFinite(buff.DamageAbsorptionPoints)
+                || !double.IsFinite(buff.HpRegenPostRatio) || !double.IsFinite(buff.MpRegenPostRatio)
+                || (buff.StatRatios is not null && buff.StatRatios.Any(pair => string.IsNullOrWhiteSpace(pair.Key)
+                    || pair.Key.Length > 128 || !double.IsFinite(pair.Value))))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "玩家 Buff 分段无效。");
+        }
         if (state.EquippedInstances.Any(item => item.IsEmpty)
             || (state.Settings.AutoUseSlots ?? []).Any(slot => slot is null || string.IsNullOrWhiteSpace(slot.ActionType)
                 || slot.ActionType.Length > 32 || slot.SlotIndex is < 0 || slot.SlotIndex > AutoUseSlotState.MaxSlotIndex
@@ -423,56 +439,46 @@ public sealed partial class PlayerAggregate
         if (state.Actions.Count > MaxActionQueueLength)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
         var actionIds = new HashSet<Guid>();
-        foreach (var actionState in state.Actions)
+        var participationSessions = new HashSet<string>(StringComparer.Ordinal);
+        for (var actionIndex = 0; actionIndex < state.Actions.Count; actionIndex++)
         {
+            var actionState = state.Actions[actionIndex];
             var intent = actionState?.Intent;
-            if (actionState is null || intent is null || actionState.Id == Guid.Empty || !actionIds.Add(actionState.Id) || !intent.ActionId.IsValid ||
-                !Enum.IsDefined(actionState.Status) ||
-                (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128)) ||
-                (intent.AnchorNodeId is not null && (intent.AnchorNodeId.Length == 0 || intent.AnchorNodeId.Length > 128)) ||
-                (intent.TargetItemId is not null && (intent.TargetItemId.Length == 0 || intent.TargetItemId.Length > 128)) ||
-                (intent.AuxItemId is not null && (intent.AuxItemId.Length == 0 || intent.AuxItemId.Length > 128)) ||
-                HasInvalidParameters(intent.Parameters) ||
-                !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
-                !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0 ||
-                actionState.Expedition is { IsValid: false } ||
-                actionState.Travel is { IsValid: false })
+            if (actionState is null || intent is null || actionState.Id == Guid.Empty || !actionIds.Add(actionState.Id) || !intent.ActionId.IsValid
+                || !Enum.IsDefined(actionState.Status)
+                || (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128))
+                || (intent.AnchorNodeId is not null && (intent.AnchorNodeId.Length == 0 || intent.AnchorNodeId.Length > 128))
+                || (intent.TargetItemId is not null && (intent.TargetItemId.Length == 0 || intent.TargetItemId.Length > 128))
+                || (intent.AuxItemId is not null && (intent.AuxItemId.Length == 0 || intent.AuxItemId.Length > 128))
+                || HasInvalidParameters(intent.Parameters)
+                || !double.IsFinite(intent.RepeatCount) || (intent.RepeatCount != -1
+                    && (intent.RepeatCount < 1 || intent.RepeatCount > 1_000_000 || intent.RepeatCount != Math.Floor(intent.RepeatCount)))
+                || !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0
+                || !double.IsFinite(actionState.RemainingRepeats) || (actionState.RemainingRepeats != -1
+                    && (actionState.RemainingRepeats < 0 || actionState.RemainingRepeats > 1_000_000
+                        || actionState.RemainingRepeats != Math.Floor(actionState.RemainingRepeats)))
+                || !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0
+                || actionState.CompletedRepeats != Math.Floor(actionState.CompletedRepeats)
+                || actionState.Expedition is { IsValid: false }
+                || actionState.Travel is { IsValid: false })
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
-            // 开发期容错自愈：旧版本曾允许非整数 RepeatCount 入队，递减后 RemainingRepeats 会落入 (0,1) 或负数区间，
-            // 造成 "== 0" 永不成立的事实无限行动。此处对非整数值向下取整修正；负值不参与取整，避免翻转为 -1 无限语义；
-            // 修正后仍无效（含已耗尽为 0）的行动按自愈规约安全出队，不阻断整个存档恢复。
-            var repeatCount = intent.RepeatCount == -1 || intent.RepeatCount <= 0 ? intent.RepeatCount : Math.Floor(intent.RepeatCount);
-            var remainingRepeats = actionState.RemainingRepeats == -1 || actionState.RemainingRepeats <= 0
-                ? actionState.RemainingRepeats
-                : Math.Floor(actionState.RemainingRepeats);
-            var repeatCountValid = double.IsFinite(repeatCount) && (repeatCount == -1 || repeatCount is >= 1 and <= 1_000_000);
-            var remainingRepeatsValid = double.IsFinite(remainingRepeats) && (remainingRepeats == -1 || remainingRepeats >= 1);
-            if (!repeatCountValid || !remainingRepeatsValid) continue;
-            // 参与绑定只需满足自身持久化不变量；行动 ID 是规格中的真实行动 ID。
-            if (actionState.Participation is { IsValid: false })
-                continue;
+            if (actionState.Participation is { } participation
+                && (!participation.IsValid || actionIndex != 0
+                    || participation.Spec.ActionId != intent.ActionId
+                    || !string.Equals(participation.Spec.NodeId, intent.TargetNodeId, StringComparison.Ordinal)
+                    || !participationSessions.Add(participation.Spec.SessionId)))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "行动参与绑定无效。");
             if (actionState.Expedition is { } expedition
                 && ((expedition.Phase == CombatExpeditionPhase.Combat
                         && Math.Abs(actionState.ProgressSeconds) > 1e-9)
                     || (expedition.Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search
                         && Math.Abs(actionState.ProgressSeconds - expedition.PhaseElapsedSeconds) > 1e-9)))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "战斗行动进度与远征阶段不一致。");
-            var normalizedIntent = new ActionIntent(
-                intent.ActionId,
-                repeatCount,
-                intent.TargetNodeId,
-                intent.Parameters is null
-                    ? null
-                    : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
-                intent.PvpEnabled,
-                intent.AnchorNodeId,
-                intent.TargetItemId,
-                intent.AuxItemId);
-            var action = new QueuedAction(actionState.Id, normalizedIntent, actionState.EnqueuedAt)
+            var action = new QueuedAction(actionState.Id, intent, actionState.EnqueuedAt)
             {
                 Status = actionState.Status,
                 ProgressSeconds = actionState.ProgressSeconds,
-                RemainingRepeats = remainingRepeats,
+                RemainingRepeats = actionState.RemainingRepeats,
                 CompletedRepeats = actionState.CompletedRepeats,
                 Expedition = actionState.Expedition,
                 Travel = actionState.Travel,

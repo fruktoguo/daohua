@@ -1,3 +1,4 @@
+using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
@@ -79,6 +80,36 @@ public sealed class SectionCodecTests
             ServerJson.Options);
         Assert.NotNull(legacy);
         Assert.Equal(0d, legacy.RemainingDurationSeconds);
+    }
+    /// <summary>进行中参与绑定的 +∞ 散场时刻以 null 落盘并还原为 +∞；NaN/-∞ 仍被 strict 口径拒绝。</summary>
+    [Fact]
+    public void ParticipationBinding_InfiniteEnd_RoundTripsAsNull()
+    {
+        var member = new ActionParticipantSnapshot(
+            Guid.NewGuid().ToString("D"), "甲", 1, 0, 0, 100, 60,
+            new CombatantStats(100, 10, 5, 2), []);
+        var spec = new ActionParticipationSpec(
+            Guid.NewGuid().ToString("N"), "encounter.test", "node.test", 1, 0, 0, [member])
+        { ActionId = new ActionId("combat.hunt-qi-beast") };
+        var playerId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        var openEnd = CleanSectionCodec.Encode(
+            playerId, PlayerSectionKinds.ActionQueue, 1,
+            new ActionParticipationBinding(spec), now, compress: false);
+        Assert.Equal(CleanSectionCodec.RawJson, openEnd.Codec);
+        Assert.Contains("\"endsAtUnixSeconds\":\"Infinity\"", System.Text.Encoding.UTF8.GetString(openEnd.Payload.Span));
+        var storedOpen = new StoredSection(playerId, openEnd.SectionKind, openEnd.StateVersion,
+            openEnd.SchemaVersion, openEnd.Codec, openEnd.Payload.ToArray(), openEnd.RawBytes, openEnd.Checksum, now);
+        var restored = CleanSectionCodec.Decode<ActionParticipationBinding>(storedOpen);
+        Assert.True(double.IsPositiveInfinity(restored.EndsAtUnixSeconds));
+
+        var ended = CleanSectionCodec.Encode(
+            playerId, PlayerSectionKinds.ActionQueue, 1,
+            new ActionParticipationBinding(spec, 1234.5), now, compress: false);
+        var storedEnded = new StoredSection(playerId, ended.SectionKind, ended.StateVersion,
+            ended.SchemaVersion, ended.Codec, ended.Payload.ToArray(), ended.RawBytes, ended.Checksum, now);
+        Assert.Equal(1234.5, CleanSectionCodec.Decode<ActionParticipationBinding>(storedEnded).EndsAtUnixSeconds);
     }
     /// <summary>SectionWrite 校验拒绝未知 codec 与超过 4MB 的载荷。</summary>
 

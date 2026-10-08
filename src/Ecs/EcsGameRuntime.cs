@@ -76,7 +76,7 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     /// <summary>按玩家路由取其所在分片的 Fiber；未加载玩家抛异常。</summary>
     public YuoFiber GetFiber(Guid playerId) => GetShard(playerId).Fiber;
 
-    /// <summary>把宿主侧公共建筑不可变投影写入玩家世界分段；只标脏 World 分段，不递增业务版本。</summary>
+    /// <summary>把宿主侧公共建筑不可变投影写入玩家世界分段；实际变化推进版本并标脏 World。</summary>
     public bool ApplyNodeBuildingProjection(Guid playerId, EcsNodeBuildingProjection projection, DateTimeOffset now)
         => GetShard(playerId).ApplyNodeBuildingProjection(playerId, projection, now);
 
