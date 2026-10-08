@@ -9,13 +9,13 @@
 #   3. 数据库自检自愈: 检查 PostgreSQL 并按需拉起；
 #   4. 端口占用检查: 检测 5128 (后端服务) 与 15172 (前端 Vite)；
 #      若占用者命令行指向本仓库（上次会话残留的孤儿进程），自动清理后继续，外来进程报错退出；
-#   5. 启动后端守护: 启动 scripts/dev-hot.mjs 监听 C# 源码并在变更时平滑热重启后端；
+#   5. 启动后端守护: 启动 scripts/dev-hot.mjs 监听 C# 源码并在变更时平滑热重启；交互终端由 TUI 收拢日志；
 #   6. 等待后端就绪: 轮询探测 http://127.0.0.1:5128/healthz 就绪状态；
 #   7. 启动前端服务: 启动 Vite 开发服务器 (127.0.0.1:15172)，反向代理 /api、/ops/api 与 /ws；
 #   8. 启动本地域名入口: 若 Docker 可用且 80 端口空闲，以容器方式拉起 Caddy
 #      （deploy/caddy-local.Caddyfile），把 http://daohua.localhost 反代到前端（免记端口）；
 #      Docker 不可用、80 被占用或容器启动失败时仅提示并跳过，不影响 15172 直连；
-#   9. 信号捕获清理: 捕获 Ctrl+C (SIGINT) 及退出信号，级联停止域名入口、前后端全部子进程树。
+#   9. 信号捕获清理: 捕获 Ctrl+C (SIGINT) 及退出信号，级联停止域名入口、前后端全部子进程树；按 q/Ctrl+C 也可从 TUI 触发。
 #
 # 使用场景:
 #   - 本地日常前后端交互功能开发与联调测试。
@@ -28,12 +28,29 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
-
 BACKEND_SUPERVISOR_PID=""
 FRONTEND_PID=""
+TUI_PID=""
+TUI_ENABLED=0
 # 本地域名入口容器名（docker --rm：停止即自动删除）。
 CADDY_CONTAINER="daohua-local-caddy"
+LOG_DIR="${TMPDIR:-/tmp}/daohua-dev-$$"
+mkdir -p "$LOG_DIR"
 
+write_state() {
+  printf '%s\n' "$1" > "$LOG_DIR/state"
+}
+
+start_tui() {
+  if [[ ! -t 0 || ! -t 1 || "${DAOHUA_TUI:-1}" == "0" ]]; then
+    return 0
+  fi
+  node scripts/dev-tui.mjs --log-dir "$LOG_DIR" --parent-pid "$$" </dev/tty >/dev/tty 2>/dev/tty &
+  TUI_PID=$!
+  TUI_ENABLED=1
+  # TUI 使用独立终端句柄，编排脚本及子服务改写入固定日志文件，避免刷屏。
+  exec >> "$LOG_DIR/main.log" 2>&1
+}
 port_in_use() {
   local port="$1"
   if command -v ss >/dev/null 2>&1; then
@@ -70,6 +87,7 @@ kill_tree() {
 cleanup() {
   trap - SIGINT SIGTERM EXIT
   SHUTTING_DOWN=1
+  write_state "正在停止"
   printf '\n==> 正在停止前后端服务...\n'
   if [[ -n "${CADDY_CONTAINER:-}" ]] && command -v docker >/dev/null 2>&1; then
     # 域名入口是 docker --rm 容器：stop 即停止并自动删除。
@@ -90,11 +108,18 @@ cleanup() {
   if [[ -n "${BACKEND_SUPERVISOR_PID:-}" ]]; then
     kill_tree "$BACKEND_SUPERVISOR_PID" KILL
   fi
+  if [[ -n "${TUI_PID:-}" ]]; then
+    kill_tree "$TUI_PID" TERM
+  fi
   wait 2>/dev/null || true
   printf '服务已全部停止。\n'
 }
+write_state "准备环境"
+trap cleanup SIGINT SIGTERM EXIT
+start_tui
 
 # 1. 检查 YuoCore submodule
+write_state "检查依赖"
 if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   printf '==> 初始化 YuoCore submodule...\n'
   git submodule update --init --recursive
@@ -106,6 +131,7 @@ if [[ ! -d frontend/node_modules ]]; then
   npm --prefix frontend install
 fi
 
+write_state "检查数据库"
 # 3. 检查并准备 PostgreSQL 数据库
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
@@ -163,10 +189,11 @@ free_port_or_fail() {
   fi
 }
 
+write_state "检查端口"
 free_port_or_fail 5128 "127.0.0.1:5128 (后端服务)"
 free_port_or_fail 15172 "127.0.0.1:15172 (前端 Vite)"
 
-trap cleanup SIGINT SIGTERM EXIT
+write_state "处理存档版本"
 
 # 4.5 存档版本漂移处置：SectionCodec schema 升级后旧版本玩家的 head/section 载荷会被
 #     运行时直接拒绝（连接即抛「schema 版本不受支持」）。在后端启动前（此时旧进程已清理、
@@ -180,11 +207,18 @@ fi
 
 # 5. 启动服务端（dev-hot.mjs 守护进程：源码变更进入 60s 防抖静默期，期间有新变更则刷新；
 #    静默期满先 dotnet build，编译失败保持旧进程，成功才优雅重启并自动拉起异常退出）
+write_state "启动后端"
 printf '==> 启动服务端 (http://127.0.0.1:5128, 源码变更静默 60s 后重建重启)...\n'
-node scripts/dev-hot.mjs &
+if [[ "$TUI_ENABLED" -eq 1 ]]; then
+  node scripts/dev-hot.mjs > "$LOG_DIR/backend.log" 2>&1 &
+else
+  node scripts/dev-hot.mjs &
+fi
 BACKEND_SUPERVISOR_PID=$!
+printf '%s\n' "$BACKEND_SUPERVISOR_PID" > "$LOG_DIR/backend.pid"
 
 # 6. 等待服务端健康端点就绪（监督循环会自动拉起异常退出的进程，这里只探测端点）
+write_state "等待后端就绪"
 printf '==> 等待服务端就绪...\n'
 BACKEND_READY=0
 for _ in {1..120}; do
@@ -209,13 +243,20 @@ else
 fi
 
 # 7. 启动前端（不打开浏览器）
+write_state "启动前端"
 printf '==> 启动前端开发服务器 (http://127.0.0.1:15172)...\n'
-npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open &
+if [[ "$TUI_ENABLED" -eq 1 ]]; then
+  npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open > "$LOG_DIR/frontend.log" 2>&1 &
+else
+  npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open &
+fi
 FRONTEND_PID=$!
+printf '%s\n' "$FRONTEND_PID" > "$LOG_DIR/frontend.pid"
 
 # 8. 本地域名入口（可选）：Docker 化 Caddy 绑 80，把 http://daohua.localhost 反代到前端 dev server。
 #    *.localhost 由浏览器自动解析到回环，无需改 /etc/hosts；容器端口转发由 Docker Desktop 处理，无需 sudo。
 #    Docker 不可用、80 被占用或容器启动失败时一律只提示并跳过，不阻断 15172 直连。
+write_state "准备本地域名入口"
 LOCAL_ENTRY_STATE="未启用"
 CADDY_CONFIG="$ROOT_DIR/deploy/caddy-local.Caddyfile"
 if [[ "${DAOHUA_LOCAL_PROXY:-1}" == "1" ]]; then
@@ -254,6 +295,7 @@ if [[ "${DAOHUA_LOCAL_PROXY:-1}" == "1" ]]; then
   fi
 fi
 
+write_state "运行中"
 printf '\n'
 printf '  道化太初 本地开发服务已启动\n'
 printf '  热更新:      源码变更静默 60s 后重建重启（编译失败保持旧进程）\n'
@@ -266,6 +308,8 @@ if [[ "$LOCAL_ENTRY_STATE" == 已就绪* ]]; then
 else
   printf '  域名入口:    %s（需 Docker 可用且 80 端口空闲）\n' "$LOCAL_ENTRY_STATE"
 fi
+printf '  日志目录:    %s\n' "$LOG_DIR"
+printf '  按 q 或 Ctrl+C 停止全部服务\n'
 printf '  ----------------------------------------------------\n'
 printf '====================================================\n\n'
 
