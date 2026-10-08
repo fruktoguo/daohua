@@ -115,7 +115,9 @@ cleanup() {
   printf '服务已全部停止。\n'
 }
 write_state "准备环境"
-trap cleanup SIGINT SIGTERM EXIT
+trap cleanup EXIT
+trap 'cleanup; exit 130' SIGINT
+trap 'cleanup; exit 143' SIGTERM
 start_tui
 
 # 1. 检查 YuoCore submodule
