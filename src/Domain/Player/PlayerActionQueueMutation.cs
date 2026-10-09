@@ -171,12 +171,32 @@ public static class PlayerActionQueueRules
             case PlayerActionQueueMutationKind.EnqueuePriority:
             {
                 var priority = mutation.Kind == PlayerActionQueueMutationKind.EnqueuePriority;
-                var intent = ValidateIntent(mutation.Intent, mutation.Catalog, priority);
-                if (priority && mutation.Participation is null)
-                    for (var i = actions.Count - 1; i >= 0; i--)
-                        if (actions[i].Intent.ActionId == intent.ActionId) work.ArchiveIds.Add(actions[i].Id);
-                if (actions.Count - work.ArchiveIds.Count >= PlayerAggregate.MaxActionQueueLength)
-                    throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {PlayerAggregate.MaxActionQueueLength} 项。");
+                var intent = ValidateIntent(mutation.Intent, mutation.Catalog, priority, mutation.Participation);
+                var personalActionCount = 0;
+                var hasParticipation = false;
+                for (var i = 0; i < actions.Count; i++)
+                {
+                    if (actions[i].Participation is not null) hasParticipation = true;
+                    else personalActionCount++;
+                }
+                if (mutation.Participation is { } participation)
+                {
+                    if (!priority || !participation.IsValid)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, "行动参与绑定必须合法且优先入队。");
+                    if (hasParticipation)
+                        throw new DomainException(DomainErrorCode.Conflict, "行动队列只能包含一个参与引用。");
+                }
+                else
+                {
+                    if (priority && hasParticipation)
+                        throw new DomainException(DomainErrorCode.Conflict, "行动参与期间不能优先插队。");
+                    if (priority)
+                        for (var i = actions.Count - 1; i >= 0; i--)
+                            if (actions[i].Intent.ActionId == intent.ActionId) work.ArchiveIds.Add(actions[i].Id);
+                    // 参与引用占独立槽位；个人优先插队只沿用同类去重，不删除其他行动腾槽。
+                    if (personalActionCount - work.ArchiveIds.Count >= PlayerAggregate.MaxActionQueueLength)
+                        throw new DomainException(DomainErrorCode.Conflict, $"个人行动队列最多只能包含 {PlayerAggregate.MaxActionQueueLength} 项。");
+                }
                 var instanceId = mutation.InstanceId == Guid.Empty ? Guid.NewGuid() : mutation.InstanceId;
                 // 插队行动默认只跑一轮（RepeatCount=1）；行动参与例外——无限驻留队首
                 // 直至散场时刻收尾（共享参与剧本），否则波次清空即走离队裁决导致 WaveNumber 恒 1。
@@ -248,7 +268,8 @@ public static class PlayerActionQueueRules
         }
     }
 
-    private static ActionIntent ValidateIntent(ActionIntent? intent, ActionCatalog? catalog, bool priority)
+    private static ActionIntent ValidateIntent(ActionIntent? intent, ActionCatalog? catalog, bool priority,
+        ActionParticipationBinding? participation)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         if (intent is null || !intent.ActionId.IsValid || (!priority && (!double.IsFinite(intent.RepeatCount)
@@ -264,6 +285,9 @@ public static class PlayerActionQueueRules
         if (intent.Parameters is not null && intent.Parameters.Any(pair =>
             string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动参数无效。");
+        // 已收尾会话只补投持久化引用并归档，不执行被新配表删除的行动。
+        if (priority && participation is { IsValid: true } && double.IsFinite(participation.EndsAtUnixSeconds))
+            return intent;
         if (!catalog.Contains(intent.ActionId))
             throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
         var definition = catalog.Get(intent.ActionId);

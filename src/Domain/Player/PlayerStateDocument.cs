@@ -310,6 +310,9 @@ public sealed partial class PlayerAggregate
         if (state.Progression is null || state.World is null || state.Combat is null || state.Settings is null || state.Buffs is null ||
             state.EquippedInstances is null || state.LearnedAbilities is null || state.Actions is null)
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家 section 不能为空。");
+        // 参与期间资源上限由会话冻结面板裁决；成员实时换装可使个人展示上限低于权威终值。
+        var hasParticipationReference = state.Actions.Count > 0
+            && state.Actions[0]?.Participation is { IsValid: true };
         if (!double.IsFinite(state.Progression.Experience) || state.Progression.Experience < 0 ||
             !double.IsFinite(state.Progression.CompletedActions) || state.Progression.CompletedActions < 0 ||
             !double.IsFinite(state.Progression.SimulationCarrySeconds) || state.Progression.SimulationCarrySeconds < 0 ||
@@ -325,9 +328,11 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.World.X) || !double.IsFinite(state.World.Y) || !double.IsFinite(state.World.ExplorationSeed) ||
             !double.IsFinite(state.World.EdgeProgress) || state.World.EdgeProgress < 0 || state.World.EdgeProgress > 1 ||
             !double.IsFinite(state.Combat.Hitpoints) || state.Combat.Hitpoints < 0 ||
-            !double.IsFinite(state.Combat.MaxHitpoints) || state.Combat.MaxHitpoints <= 0 || state.Combat.Hitpoints > state.Combat.MaxHitpoints ||
+            !double.IsFinite(state.Combat.MaxHitpoints) || state.Combat.MaxHitpoints <= 0
+                || (!hasParticipationReference && state.Combat.Hitpoints > state.Combat.MaxHitpoints) ||
             !double.IsFinite(state.Combat.Manapoints) || state.Combat.Manapoints < 0 ||
-            !double.IsFinite(state.Combat.MaxManapoints) || state.Combat.MaxManapoints <= 0 || state.Combat.Manapoints > state.Combat.MaxManapoints ||
+            !double.IsFinite(state.Combat.MaxManapoints) || state.Combat.MaxManapoints <= 0
+                || (!hasParticipationReference && state.Combat.Manapoints > state.Combat.MaxManapoints) ||
             !double.IsFinite(state.Combat.AttackPower) || state.Combat.AttackPower < 0 ||
             !double.IsFinite(state.Combat.Defense) || state.Combat.Defense < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家数值状态无效。");
@@ -443,16 +448,17 @@ public sealed partial class PlayerAggregate
                 && slot.Group is AutoUseSlotState.SlotGroupGeneral or AutoUseSlotState.SlotGroupPotion
                 && (slot.Group != AutoUseSlotState.SlotGroupPotion || slot.ActionType == Domain.GameData.AutoUseBar.Combat))
                 aggregate.Settings.AutoUseSlots.Add(slot);
-        if (state.Actions.Count > MaxActionQueueLength)
-            throw new DomainException(DomainErrorCode.InvalidArgument, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
+        // 参与引用只占队首独立槽位，个人行动仍受 256 项上限约束。
+        if (state.Actions.Count > MaxActionQueueLength + (hasParticipationReference ? 1 : 0))
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"个人行动队列最多只能包含 {MaxActionQueueLength} 项，并允许一个参与引用。");
         var actionIds = new HashSet<Guid>();
-        var participationSessions = new HashSet<string>(StringComparer.Ordinal);
         for (var actionIndex = 0; actionIndex < state.Actions.Count; actionIndex++)
         {
             var actionState = state.Actions[actionIndex];
             var intent = actionState?.Intent;
             if (actionState is null || intent is null || actionState.Id == Guid.Empty || !actionIds.Add(actionState.Id) || !intent.ActionId.IsValid
                 || !Enum.IsDefined(actionState.Status)
+                || (actionIndex > 0 && actionState.Status == ActionQueueStatus.Running)
                 || (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128))
                 || (intent.AnchorNodeId is not null && (intent.AnchorNodeId.Length == 0 || intent.AnchorNodeId.Length > 128))
                 || (intent.TargetItemId is not null && (intent.TargetItemId.Length == 0 || intent.TargetItemId.Length > 128))
@@ -471,10 +477,8 @@ public sealed partial class PlayerAggregate
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
             if (actionState.Participation is { } participation
                 && (!participation.IsValid || actionIndex != 0
-                    || participation.Spec.ActionId != intent.ActionId
-                    || !string.Equals(participation.Spec.NodeId, intent.TargetNodeId, StringComparison.Ordinal)
-                    || !participationSessions.Add(participation.Spec.SessionId)))
-                throw new DomainException(DomainErrorCode.InvalidArgument, "行动参与绑定无效。");
+                    || actionState.Status != ActionQueueStatus.Running))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "行动参与绑定必须是唯一且正在运行的队首引用。");
             if (actionState.Expedition is { } expedition
                 && ((expedition.Phase == CombatExpeditionPhase.Combat
                         && Math.Abs(actionState.ProgressSeconds) > 1e-9)

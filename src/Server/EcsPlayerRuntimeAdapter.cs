@@ -15,6 +15,7 @@ using Domain.Simulation;
 using Domain.World;
 using Protocol;
 using Server.Clean;
+using Server.Clean.Social;
 
 namespace Server;
 
@@ -22,7 +23,7 @@ namespace Server;
 /// Clean 宿主到 ECS 世界的单写者适配边界。鉴权、协议、SectionCodec、资产事务和
 /// durable outbox 仍由宿主提供；Entity 只保存长期领域状态，所有请求都经玩家锁串行进入 Fiber。
 /// </summary>
-public sealed class EcsPlayerRuntimeAdapter(
+public sealed partial class EcsPlayerRuntimeAdapter(
     EcsGameRuntime ecs,
     IPlayerStateRepository sections,
     IAssetBalanceRepository assets,
@@ -37,7 +38,9 @@ public sealed class EcsPlayerRuntimeAdapter(
     IAccountRepository? accounts = null,
     IPlayerOwnershipStore? ownership = null,
     Server.Clean.Social.IInvitationRepository? invitations = null,
-    Server.Clean.Social.ISocialRepository? socialRepository = null) : IPlayerRuntime
+    Server.Clean.Social.ISocialRepository? socialRepository = null,
+    IActionParticipationRuntime? participationRuntime = null,
+    IParticipationSessionStore? participationSessions = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, PlayerRuntimeSnapshot> _loaded = new();
     // 钱包以存储余额为权威：ECS 库存组件由它同步重建，市场等外部入账经失效标记触发重读。
@@ -57,6 +60,10 @@ public sealed class EcsPlayerRuntimeAdapter(
     private readonly ConcurrentDictionary<Guid, RecentRequests> _recentRequests = new();
     // 上次推送时的属性流水号：命令后用差值判定 WireAttributesChanged，驱动网络层是否发属性增量。
     private readonly ConcurrentDictionary<Guid, long> _attributeRevisions = new();
+    // 已发布推送的版本区间（Floor=最近一批推送开始前的版本，Latest=最新已发布版本）：
+    // 乐观并发校验在命令收包瞬间取样该区间——玩家门等待与门内会话对账期间的服务端推进
+    // 都不构成客户端过期证据，只有落后整整一个推送批次才算真正并发冲突。
+    private readonly ConcurrentDictionary<Guid, (long Floor, long Latest)> _publishedVersions = new();
     // 本实例在 player_runtime_leases 上的持有者标识：租约获取/续租/归还都以它 fence 防误删他实例租约。
     private readonly Guid _ownerInstanceId = Guid.NewGuid();
     private static readonly TimeSpan OwnershipLease = TimeSpan.FromSeconds(45);
@@ -91,7 +98,16 @@ public sealed class EcsPlayerRuntimeAdapter(
     /// <inheritdoc />
     public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
     /// <inheritdoc />
-    public DateTimeOffset? NextAdvanceBoundaryUtc => ecs.NextAdvanceBoundaryUtc;
+    public DateTimeOffset? NextAdvanceBoundaryUtc
+    {
+        get
+        {
+            var playerBoundary = ecs.NextAdvanceBoundaryUtc;
+            var sessionBoundary = participationRuntime?.NextAdvanceBoundaryUtc;
+            return playerBoundary is null ? sessionBoundary : sessionBoundary is null ? playerBoundary
+                : playerBoundary < sessionBoundary ? playerBoundary : sessionBoundary;
+        }
+    }
 
     /// <summary>
     /// 装载玩家到内存：经玩家 gate 串行，先获取所有权租约（被他实例持有则 fail-closed），
@@ -152,51 +168,13 @@ public sealed class EcsPlayerRuntimeAdapter(
             var target = _simulationClock.UtcNow;
             await RefreshNodeBuildingsAsync(playerId, before.State.World, target, cancellationToken).ConfigureAwait(false);
             before = ToSnapshot(ecs.ExportSnapshot(playerId));
-            // 参与会话必须在离线补算前完成权威对账：否则旧绑定会先越过散场时刻结算，再被发现已经结束。
-            if (socialRepository is not null)
-            {
-                var ownedPartyId = await socialRepository.GetPartyIdAsync(playerId, cancellationToken).ConfigureAwait(false);
-                var loadedState = ecs.ExportSnapshot(playerId).State;
-                var headParticipation = loadedState.Actions.Count > 0 ? loadedState.Actions[0].Participation : null;
-                if (headParticipation is { } staleParticipation && double.IsPositiveInfinity(staleParticipation.EndsAtUnixSeconds))
-                {
-                    var row = await socialRepository.GetPartySessionAsync(staleParticipation.Spec.SessionId, cancellationToken).ConfigureAwait(false);
-                    if (row is null || row.EndedAt is not null || ownedPartyId != row.PartyId)
-                    {
-                        var endedAt = (row?.EndedAt ?? _simulationClock.UtcNow).ToUnixTimeMilliseconds() / 1000d;
-                        ecs.MutatePlayer(playerId, aggregate => aggregate.EndActionParticipation(staleParticipation.Spec.SessionId, endedAt));
-                    }
-                }
-                if (ownedPartyId is { } partyId)
-                {
-                    var active = await socialRepository.GetActivePartySessionAsync(partyId, cancellationToken).ConfigureAwait(false);
-                    var activeSpec = active is { } live && live.MemberIds.Contains(playerId)
-                        ? JsonSerializer.Deserialize<ActionParticipationSpec>(live.SpecJson, PersistenceJson.Options)
-                        : null;
-                    var current = ecs.ExportSnapshot(playerId).State;
-                    var alreadyBound = current.Actions.Count > 0
-                        && current.Actions[0].Participation is { } currentParticipation
-                        && string.Equals(currentParticipation.Spec.SessionId, active?.SessionId, StringComparison.Ordinal)
-                        && double.IsPositiveInfinity(currentParticipation.EndsAtUnixSeconds)
-                        && current.Actions.Skip(1).All(action => action.Participation is null);
-                    if (active is { } liveSession && activeSpec is { IsValid: true } spec
-                        && spec.SelfIndexOf(new PlayerId(playerId)) >= 0 && !alreadyBound)
-                    {
-                        ecs.MutatePlayer(playerId, aggregate =>
-                        {
-                            for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
-                            {
-                                if (aggregate.Actions[i].Participation is null) continue;
-                                aggregate.RemoveAction(aggregate.Actions[i].Id);
-                            }
-                            aggregate.StartActionParticipation(spec, liveSession.StartedAt, gameData.Actions);
-                        });
-                    }
-                }
-                before = ToSnapshot(ecs.ExportSnapshot(playerId));
-            }
+            // 先消费会话权威结算，再推进个人行动；成员从不恢复同场战斗。
+            await ReconcileParticipationOwnedAsync(playerId, target, notifications, cancellationToken, initialLoad: true).ConfigureAwait(false);
+            before = ToSnapshot(ecs.ExportSnapshot(playerId));
             TrackDirty(playerId);
-            if (target > state.LastSimulatedAt)
+            // 守卫必须用对账后的实体时刻：收件箱消费已把 LastSimulatedAt 推进到最新结算时刻，
+            // 可能已超过 target——若仍按装载前的持久化时刻判断，补推会因目标倒退而抛异常。
+            if (target > before.State.LastSimulatedAt)
             {
                 var loadDirtyBefore = ecs.GetDirtySections(playerId);
                 await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
@@ -208,60 +186,9 @@ public sealed class EcsPlayerRuntimeAdapter(
             TrackDirty(playerId);
             var snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
             _loaded[playerId] = snapshot;
+            // 装载快照经握手回执即对外可见：记入已发布区间，避免重连后首条命令撞上批推进窗口。
+            _publishedVersions[playerId] = (snapshot.StateVersion, snapshot.StateVersion);
             _attributeRevisions[playerId] = ecs.AttributeRevision(playerId);
-            // 组队讨伐装载对账（总纲 §21.13，防崩溃漏网）：
-            // 1. 队首挂着未散场绑定而社交侧会话行缺失/已散场/本人已离队 → 按权威时刻就地收尾；
-            // 2. 所在队伍有活跃会话而队首无对应绑定（开打投递丢失） → 按持久化规格补发会话行动。
-            if (socialRepository is not null)
-            {
-                var partyId = await socialRepository.GetPartyIdAsync(playerId, cancellationToken).ConfigureAwait(false);
-                var headBinding = snapshot.State.Actions.Count > 0 ? snapshot.State.Actions[0].Participation : null;
-                if (headBinding is { } staleBinding && double.IsPositiveInfinity(staleBinding.EndsAtUnixSeconds))
-                {
-                    var row = await socialRepository.GetPartySessionAsync(staleBinding.Spec.SessionId, cancellationToken).ConfigureAwait(false);
-                    if (row is null || row.EndedAt is not null || partyId != row.PartyId)
-                    {
-                        var endsAt = (row?.EndedAt ?? _simulationClock.UtcNow).ToUnixTimeMilliseconds() / 1000d;
-                        ecs.MutatePlayer(playerId, aggregate => aggregate.EndActionParticipation(staleBinding.Spec.SessionId, endsAt));
-                        TrackDirty(playerId);
-                        snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
-                        _loaded[playerId] = snapshot;
-                    }
-                }
-                // 补发与收尾独立判定（死绑定终局后仍可能命中在途会话）：所在队伍有活跃会话且
-                // 本人在名册内，而队首并非本会话的活绑定（开打投递丢失/崩溃漏网）→ 按持久化规格补发。
-                if (partyId is { } ownedPartyId)
-                {
-                    var active = await socialRepository.GetActivePartySessionAsync(ownedPartyId, cancellationToken).ConfigureAwait(false);
-                    var aliveSpec = active is { } alive && alive.MemberIds.Contains(playerId)
-                        ? JsonSerializer.Deserialize<ActionParticipationSpec>(alive.SpecJson, PersistenceJson.Options)
-                        : null;
-                    if (active is { } live && aliveSpec is { IsValid: true } spec
-                        && spec.SelfIndexOf(new PlayerId(playerId)) >= 0
-                        && !(snapshot.State.Actions.Count > 0
-                            && snapshot.State.Actions[0].Participation is { } head
-                            && string.Equals(head.Spec.SessionId, live.SessionId, StringComparison.Ordinal)
-                            && double.IsPositiveInfinity(head.EndsAtUnixSeconds)
-                            && snapshot.State.Actions.Skip(1).All(action => action.Participation is null)))
-                    {
-                        ecs.MutatePlayer(playerId, aggregate =>
-                        {
-                            // 队首异会话残留（终局未收尾/异会话遗留）先扫净，再幂等补发本会话行动。
-                            for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
-                            {
-                                var binding = aggregate.Actions[i].Participation;
-                                if (binding is null) continue;
-                                if (i == 0 && string.Equals(binding.Spec.SessionId, live.SessionId, StringComparison.Ordinal)) continue;
-                                aggregate.RemoveAction(aggregate.Actions[i].Id);
-                            }
-                            aggregate.StartActionParticipation(spec, live.StartedAt, gameData.Actions);
-                        });
-                        TrackDirty(playerId);
-                        snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
-                        _loaded[playerId] = snapshot;
-                    }
-                }
-            }
             RuntimeInstrumentation.Count("lifecycle.player_loaded");
             notifications.Add(new RuntimeNotification(playerId, logs));
             return snapshot;
@@ -279,6 +206,7 @@ public sealed class EcsPlayerRuntimeAdapter(
             _walletReloadRequired.TryRemove(playerId, out _);
             _recentRequests.TryRemove(playerId, out _);
             _attributeRevisions.TryRemove(playerId, out _);
+            _publishedVersions.TryRemove(playerId, out _);
             if (ownership is not null)
             {
                 try { await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false); }
@@ -302,11 +230,15 @@ public sealed class EcsPlayerRuntimeAdapter(
     public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
         long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
     {
+        // 收包瞬间的已发布版本区间是客户端视野上限：玩家门等待与门内对账期间的一切推进
+        // 都发生在命令到达之后，不能把进门时刻的最新版本当作客户端本应看到的基线。
+        var publishedAtReceipt = _publishedVersions.TryGetValue(playerId, out var published)
+            ? published : ((long Floor, long Latest)?)null;
         var notifications = new List<RuntimeNotification>();
         try
         {
             var result = await ExecuteOwnedAsync(playerId, command, payload, expectedStateVersion, requestId,
-                notifications, cancellationToken).ConfigureAwait(false);
+                publishedAtReceipt, notifications, cancellationToken).ConfigureAwait(false);
             // 所有权失效的清理必须在命令返回后、锁外执行，避免同链路的下一条命令撞上已释放的 gate。
             if (result.Code == "PLAYER_OWNERSHIP_LOST") await EvictOwnershipLostAsync(playerId).ConfigureAwait(false);
             return result;
@@ -315,8 +247,8 @@ public sealed class EcsPlayerRuntimeAdapter(
     }
 
     private async ValueTask<PlayerCommandResult> ExecuteOwnedAsync(Guid playerId, string command, JsonElement payload,
-        long expectedStateVersion, Guid requestId, List<RuntimeNotification> notifications,
-        CancellationToken cancellationToken)
+        long expectedStateVersion, Guid requestId, (long Floor, long Latest)? publishedAtReceipt,
+        List<RuntimeNotification> notifications, CancellationToken cancellationToken)
     {
         if (requestId == Guid.Empty)
         {
@@ -339,6 +271,11 @@ public sealed class EcsPlayerRuntimeAdapter(
                 return new PlayerCommandResult(false, "PLAYER_OWNERSHIP_LOST", "玩家当前由其他服务实例持有，请稍后重试。", before);
             }
             await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+            // 乐观并发基线取收包瞬间的已发布版本区间：随后的会话对账与批推进可能继续推高
+            // StateVersion——那属于本命令管线之后的合法推进；只有落后整整一个推送批次
+            // （收包时已低于 Floor）或声称比已发布更新，才判定客户端真正过期。
+            var entryStateVersion = before.StateVersion;
+            await ReconcileParticipationOwnedAsync(playerId, _simulationClock.UtcNow, notifications, cancellationToken).ConfigureAwait(false);
             before = ToSnapshot(ecs.ExportSnapshot(playerId));
             if (payload.ValueKind == JsonValueKind.Object
                 && payload.TryGetProperty("requestId", out var requestElement)
@@ -364,7 +301,9 @@ public sealed class EcsPlayerRuntimeAdapter(
                     return new PlayerCommandResult(true, "IDEMPOTENT_REPLAY", SuccessNotice(command), before);
                 }
             }
-            if (expectedStateVersion > 0 && before.StateVersion != expectedStateVersion)
+            if (expectedStateVersion > 0 && (publishedAtReceipt is { } published
+                    ? expectedStateVersion < published.Floor || expectedStateVersion > published.Latest
+                    : entryStateVersion != expectedStateVersion))
                 return new PlayerCommandResult(false, "STATE_VERSION_CONFLICT", "玩家状态版本已变化。", before);
 
             try
@@ -588,6 +527,18 @@ public sealed class EcsPlayerRuntimeAdapter(
                         if (!worldGraph.ContainsNode(targetNodeId))
                             return new PlayerCommandResult(false, "NODE_NOT_FOUND", $"目标世界节点不存在：{targetNodeId}。", before);
                         var travelNow = _simulationClock.UtcNow;
+                        if ((!string.Equals(before.State.World.NodeId, targetNodeId, StringComparison.Ordinal)
+                                || before.State.World.EdgeId is not null)
+                            && before.State.Actions.FirstOrDefault()?.Participation is { } travelParticipation)
+                        {
+                            await (participationRuntime ?? throw new InvalidOperationException("未装配行动参与权威宿主。"))
+                                .EndAsync(travelParticipation.SessionId, travelNow, "member-node-changed", cancellationToken).ConfigureAwait(false);
+                            await ReconcileParticipationOwnedAsync(playerId, travelNow, notifications, cancellationToken,
+                                advanceSession: false).ConfigureAwait(false);
+                            before = ToSnapshot(ecs.ExportSnapshot(playerId));
+                            dirtySectionsBefore = ecs.GetDirtySections(playerId);
+                            wallet = WalletOf(playerId);
+                        }
                         if (travelNow > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, travelNow, cancellationToken).ConfigureAwait(false);
                         touched = ecs.MutatePlayer(playerId, aggregate =>
@@ -959,8 +910,10 @@ public sealed class EcsPlayerRuntimeAdapter(
         try
         {
             var before = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
-            var dirtyMarksBefore = ecs.GetDirtyMarks(playerId);
             await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken, force: true).ConfigureAwait(false);
+            await ReconcileParticipationOwnedAsync(playerId, _simulationClock.UtcNow, notifications, cancellationToken).ConfigureAwait(false);
+            before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            var dirtyMarksBefore = ecs.GetDirtyMarks(playerId);
             var touched = ecs.MutatePlayer(playerId, mutate);
             TrackDirty(playerId);
             var after = ToSnapshot(ecs.ExportSnapshot(playerId));
@@ -1007,10 +960,16 @@ public sealed class EcsPlayerRuntimeAdapter(
     /// <summary>
     /// 把全部已加载玩家统一推进到 target：按 ID 稳定排序一次性获取全部玩家 gate（避免与单玩家命令交叉死锁），
     /// 取得 gate 后重检加载成员，完成租约续期与失效钱包重读，仅推进本批持有 gate 且目标未过时的玩家。
-    /// 任一玩家提交失败时把本批未提交玩家回滚到推进前快照并整体抛出，不留半提交状态。
+    /// 会话推进与个人收件失败按所有权隔离，健康玩家继续；个人模拟提交失败仍回滚本批尚未提交状态。
     /// </summary>
     public async ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
     {
+        // 会话先独占推进并 durable 投递，随后成员在自己的 gate 内原子消费。
+        var failures = new List<Exception>();
+        if (participationRuntime is not null)
+            try { await participationRuntime.AdvanceOnlineAsync(target, cancellationToken).ConfigureAwait(false); }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            { failures.Add(exception); }
         var ids = _loaded.Keys.OrderBy(id => id).ToArray();
         var gates = ids.Select(id => _playerGates.GetOrAdd(id, static _ => new SemaphoreSlim(1, 1))).ToArray();
         var notifications = new List<RuntimeNotification>();
@@ -1061,10 +1020,20 @@ public sealed class EcsPlayerRuntimeAdapter(
                     await RefreshNodeBuildingsAsync(playerId, _loaded[playerId].State.World, target, cancellationToken).ConfigureAwait(false);
                 TrackDirty(playerId);
             }
+            var failedMembers = new HashSet<Guid>();
+            foreach (var playerId in ids)
+                try { await ReconcileParticipationOwnedAsync(playerId, target, notifications, cancellationToken, advanceSession: false).ConfigureAwait(false); }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failedMembers.Add(playerId);
+                    failures.Add(new InvalidOperationException($"成员会话结算失败 playerId={playerId:D}。", exception));
+                }
+            ids = ids.Where(id => !failedMembers.Contains(id)).ToArray();
+            uncommitted.ExceptWith(failedMembers);
             before = ids.ToDictionary(id => id, id => ToSnapshot(ecs.ExportSnapshot(id)));
             var marksBefore = ids.ToDictionary(id => id, ecs.GetDirtyMarks);
             dirtyBefore = ids.ToDictionary(id => id, ecs.GetDirtySections);
-            foreach (var playerId in walletsSynced) ecs.MarkExternalStateChanged(playerId);
+            foreach (var playerId in walletsSynced.Except(failedMembers)) ecs.MarkExternalStateChanged(playerId);
             // World 可能已有本批取样后刚创建、仍在装载中的实体；全世界 Tick 会越过其玩家 gate。
             foreach (var playerId in ids)
                 if (target > before[playerId].LastSimulatedAt)
@@ -1118,6 +1087,7 @@ public sealed class EcsPlayerRuntimeAdapter(
             while (acquired > 0) gates[--acquired].Release();
             await EmitNotificationsAsync(notifications).ConfigureAwait(false);
         }
+        if (failures.Count > 0) throw new AggregateException("会话或成员结算失败，健康玩家已完成当批推进。", failures);
     }
 
     /// <inheritdoc />
@@ -1151,6 +1121,7 @@ public sealed class EcsPlayerRuntimeAdapter(
             _pendingReceipts.TryRemove(playerId, out _);
             _walletReloadRequired.TryRemove(playerId, out _);
             _attributeRevisions.TryRemove(playerId, out _);
+            _publishedVersions.TryRemove(playerId, out _);
             // 归还租约：仅当本实例确实持有时才释放，避免误删他实例租约。
             if (_leaseRenewedAt.TryRemove(playerId, out _) && ownership is not null)
                 await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false);
@@ -1350,6 +1321,7 @@ public sealed class EcsPlayerRuntimeAdapter(
         _logs.TryRemove(playerId, out _);
         _recentRequests.TryRemove(playerId, out _);
         _attributeRevisions.TryRemove(playerId, out _);
+        _publishedVersions.TryRemove(playerId, out _);
         _leaseRenewedAt.TryRemove(playerId, out _);
         _logger.LogError("玩家运行时租约已失效，逐出 ECS 实体 player={PlayerId}", playerId);
     }
@@ -1618,6 +1590,14 @@ public sealed class EcsPlayerRuntimeAdapter(
     private async ValueTask EmitNotificationsAsync(List<RuntimeNotification> notifications)
     {
         // 网络订阅者只能在玩家锁外执行；缓冲与快照已经在锁内一起前移。
+        // 先按玩家登记本次派发的末版本：Floor=本批开始前版本、Latest=本批末版本——
+        // 一次派发内同玩家的多条快照视为同一推送批次，批次是客户端视野推进的最小单位。
+        var lastEmitted = new Dictionary<Guid, long>();
+        foreach (var notification in notifications)
+            if (notification.Snapshot is { } snapshot)
+                lastEmitted[notification.PlayerId] = snapshot.StateVersion;
+        foreach (var (playerId, version) in lastEmitted)
+            _publishedVersions.AddOrUpdate(playerId, (version, version), (_, old) => (old.Latest, version));
         foreach (var notification in notifications)
         {
             if (notification.Logs is { Count: > 0 } logs && LogBatchEmitted is { } logHandler)

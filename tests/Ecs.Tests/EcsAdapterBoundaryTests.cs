@@ -11,6 +11,7 @@ using Domain.World;
 using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
 using Server.Clean;
+using Server.Clean.Social;
 using Server;
 using Xunit;
 
@@ -111,6 +112,35 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(41_500d, fragments.Snapshot.State.Loadout.AbilityExperiences!["ability.heavy-slash"]);
         snapshot = await adapter.LoadAsync(fixture.PlayerId);
         Assert.Equal(0, snapshot.Assets.Single(asset => asset.AssetId == "item.fragment.heavy-slash").Quantity);
+    }
+
+    /// <summary>
+    /// 活跃会话成员携带已发布版本执行命令：命令管线内的会话对账会消费本次推进新投递的结算
+    /// 并推高 StateVersion——乐观并发基线必须取命令进入玩家门时的版本，否则会话成员每条
+    /// 带版本命令都与自身刚推进的版本错位而必然冲突；真正落后于进入版本的请求仍须冲突。
+    /// </summary>
+    [Fact]
+    public async Task SessionMemberCommandChecksEntryVersionAndStillRejectsStale()
+    {
+        var fixture = CreateParticipationFixture(
+            new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 3, 1));
+        await using var adapter = fixture.Adapter;
+        var loaded = await adapter.LoadAsync(fixture.PlayerId);
+        var payload = JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash", quantity = 1 },
+            ProtocolJson.Options);
+
+        var learned = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
+            loaded.StateVersion, Guid.NewGuid());
+        var second = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
+            learned.Snapshot.StateVersion, Guid.NewGuid());
+        var stale = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
+            learned.Snapshot.StateVersion, Guid.NewGuid());
+
+        Assert.True(learned.Success, learned.Message);
+        Assert.True(second.Success, second.Message);
+        Assert.Equal(1, second.Snapshot.Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
+        Assert.False(stale.Success);
+        Assert.Equal("STATE_VERSION_CONFLICT", stale.Code);
     }
 
     [Theory]
@@ -731,6 +761,43 @@ public sealed class EcsAdapterBoundaryTests
         return new Fixture(playerId, adapter, sections, economy, catalog, initialState, ecs, assets);
     }
 
+    /// <summary>
+    /// 装配含会话对账依赖的适配器：会话宿主桩每次成员推进都调用真实会话引擎产出一条新结算，
+    /// 与生产中「命令前推进会话 + 消费收件箱」的版本推进行为一致，用于回归版本基线口径。
+    /// </summary>
+    private static Fixture CreateParticipationFixture(params AssetBalanceRecord[] balances)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-000000000023");
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId),
+            new AccountId(Guid.Parse("20000000-0000-4000-8000-000000000023")), "适配器测试", Epoch, catalog.Fingerprint);
+        aggregate.SkipTutorial();
+        aggregate.SetPresence(PresenceState.Offline);
+        var frozen = aggregate.CaptureActionParticipantSnapshot(catalog);
+        var spec = new ActionParticipationSpec("session.adapter-boundary", "encounter.qi-beast",
+            aggregate.World.NodeId, 91, 0, Epoch.ToUnixTimeSeconds(), [frozen])
+        {
+            ActionId = new("combat.hunt-qi-beast"),
+        };
+        var initialState = aggregate.ExportState();
+        var sections = new MemorySections(ToBundle(initialState));
+        var assets = new MemoryAssets(balances.Length == 0
+            ? []
+            : balances.Select(balance => balance with { PlayerId = playerId }).ToArray());
+        var economy = new MemoryEconomy(sections, assets);
+        var clock = new FixedClock(Epoch);
+        var ecs = new EcsGameRuntime(catalog, Epoch);
+        var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity(),
+            socialRepository: new SessionSocialStub(new PartySessionRecord(spec.SessionId, Guid.NewGuid(),
+                spec.EncounterId, spec.NodeId, Epoch, [playerId],
+                JsonSerializer.Serialize(spec, PersistenceJson.Options))),
+            participationRuntime: new SessionAdvanceStub(spec, catalog),
+            participationSessions: new SessionStoreStub());
+        return new Fixture(playerId, adapter, sections, economy, catalog, initialState, ecs, assets);
+    }
+
     private static PlayerStateBundle ToBundle(PlayerAggregateState state)
     {
         var writes = SectionCodec.EncodeAggregateFull(state, state.LastSimulatedAt);
@@ -889,5 +956,138 @@ public sealed class EcsAdapterBoundaryTests
             }
             return result;
         }
+    }
+
+    /// <summary>
+    /// 会话宿主桩：每次成员推进都用真实会话引擎产出一条新个人结算并以收件箱条目回投，
+    /// 与生产宿主「命令前推进会话 + 投递收件箱」的版本推进行为一致。
+    /// </summary>
+    private sealed class SessionAdvanceStub(ActionParticipationSpec spec, GameDataCatalog catalog)
+        : IActionParticipationRuntime
+    {
+        private ActionParticipationSessionEngine? _engine;
+        public DateTimeOffset? NextAdvanceBoundaryUtc => null;
+        public bool RequiresReconciliation(Guid playerId) => true;
+        public ValueTask CreateAsync(Guid partyId, ActionParticipationSpec sessionSpec,
+            CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
+            => ValueTask.CompletedTask;
+        public ValueTask EndAsync(string sessionId, DateTimeOffset at, string reason,
+            CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask<IReadOnlyList<ParticipationInboxItem>> LoadPendingAsync(Guid playerId,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyList<ParticipationInboxItem>>([]);
+        public ValueTask<IReadOnlyList<ParticipationInboxItem>> AdvanceForMemberAsync(Guid playerId,
+            DateTimeOffset target, CancellationToken cancellationToken = default)
+        {
+            _engine ??= ActionParticipationSessionEngine.Create(spec, catalog);
+            var settlement = _engine.AdvanceTo(target).Single();
+            return ValueTask.FromResult<IReadOnlyList<ParticipationInboxItem>>(
+                [new ParticipationInboxItem(spec.SessionId, playerId, settlement.Sequence,
+                    JsonSerializer.Serialize(settlement, PersistenceJson.Options), settlement.To)]);
+        }
+    }
+
+    /// <summary>会话检查点存储桩：适配器只做非空校验，本条链路不触达。</summary>
+    private sealed class SessionStoreStub : IParticipationSessionStore
+    {
+        public ValueTask<ActionParticipationSessionRecord?> LoadAsync(string sessionId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<ActionParticipationSessionRecord>> ListActiveAsync(
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<ActionParticipationSessionRecord>> ListActiveForMemberAsync(
+            Guid playerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<string?> GetInvalidationReasonAsync(string sessionId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<DateTimeOffset?> GetOfflineExpiryAsync(string sessionId, TimeSpan offlineLimit,
+            IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(
+            ActionParticipationSessionRecord session, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<bool> CommitAdvanceAsync(string sessionId, long expectedVersion, string stateJson,
+            DateTimeOffset lastSimulatedAt, IReadOnlyList<ParticipationInboxItem> inbox,
+            DateTimeOffset? endedAt = null, string? endReason = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<ParticipationInboxItem>> LoadPendingAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>社交仓储桩：仅实现会话查询，其余通道本条链路不触达。</summary>
+    private sealed class SessionSocialStub(PartySessionRecord session) : ISocialRepository
+    {
+        public ValueTask<PartySessionRecord?> GetPartySessionAsync(string sessionId,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(session.SessionId == sessionId ? session : null);
+        public ValueTask<Guid?> GetPartyIdAsync(Guid playerId,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<Guid?>(session.PartyId);
+        public ValueTask<PartySessionRecord?> GetActivePartySessionAsync(Guid partyId,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(partyId == session.PartyId ? session : null);
+        public ValueTask<Guid?> FindPlayerByNameAsync(string displayName,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<string?> GetDisplayNameAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<FriendRecord>> ListFriendsAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<FriendRequestView>> ListPendingRequestsAsync(Guid playerId,
+            bool incoming, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<SocialStateSnapshot> LoadStateSnapshotAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> AreFriendsAsync(Guid left, Guid right,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryCreateFriendRequestAsync(Guid requestId, Guid requesterId, Guid targetId,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryAcceptFriendRequestAsync(Guid requesterId, Guid targetId,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryRejectFriendRequestAsync(Guid requesterId, Guid targetId,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryRemoveFriendAsync(Guid playerId, Guid friendId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PartyRecord?> GetPartyAsync(Guid partyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<Guid> CreatePartyAsync(Guid leaderId, PartyProfileRecord profile,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryUpdatePartyProfileAsync(Guid partyId, PartyProfileRecord profile,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PartyJoinResult> TryJoinPartyAsync(Guid partyId, Guid playerId,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<PartyMemberRecord>?> DisbandPartyAsync(Guid partyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryKickPartyMemberAsync(Guid partyId, Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryRemovePartyMemberAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask DeletePartyIfEmptyAsync(Guid partyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<PartyRecord>> ListPublicPartiesAsync(string activityKind,
+            string nodeId, int limit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask UpsertPartySeekerAsync(Guid playerId, string activityKind, string nodeId,
+            double minValuation, DateTimeOffset now, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<bool> TryClearPartySeekerAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PartySeekerRecord?> GetPartySeekerAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<PartySeekerRecord>> ListPartySeekersAsync(string activityKind,
+            string nodeId, int limit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask UpsertPartyInvitationAsync(Guid partyId, Guid inviteeId, Guid inviterId,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PartyInvitationRecord?> GetPartyInvitationAsync(Guid inviteeId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryClearPartyInvitationAsync(Guid inviteeId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask TryTransferPartyLeaderAsync(Guid partyId, Guid leaderId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TrySetPartyMemberReadyAsync(Guid playerId, bool ready,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryUpdatePartyOpenSlotsAsync(Guid partyId, int openSlots,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyDictionary<Guid, string>> GetPlayerNodeMapAsync(
+            IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<PartyMemberEviction>> DeleteInactivePartyMembersAsync(
+            DateTimeOffset cutoff, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

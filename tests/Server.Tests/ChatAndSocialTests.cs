@@ -93,6 +93,40 @@ public sealed class ChatAndSocialTests
         }
     }
 
+    /// <summary>构建被阻塞时的重复刷新合并，最后一次位置变化仍可见，订阅不得并发乱序。</summary>
+    [Fact]
+    public async Task ConcurrentSocialRefreshDeliversLatestPresenceWithoutParallelSubscriberCalls()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var disposedSource = source;
+        var presence = new OnlinePresenceRegistry();
+        var (player, _) = await SeedPlayerAsync(source, "迁地修士");
+        await presence.RegisterAsync(player, "迁地修士", "node.first");
+        var social = CreateSocialRuntime(source, repository, presence);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var nodes = new List<string?>();
+        var running = 0;
+        social.StateChanged += async id =>
+        {
+            Assert.Equal(1, Interlocked.Increment(ref running));
+            nodes.Add(presence.GetNodeId(id));
+            if (nodes.Count == 1)
+            {
+                started.SetResult();
+                await release.Task;
+            }
+            Interlocked.Decrement(ref running);
+        };
+        var first = social.PushAsync(player).AsTask();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var refreshes = Enumerable.Range(0, 40).Select(_ => social.PushAsync(player).AsTask()).ToArray();
+        var moved = presence.UpdateNodeAsync(player, "node.final").AsTask();
+        release.SetResult();
+        await Task.WhenAll(refreshes.Append(first).Append(moved)).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(new[] { "node.first", "node.final" }, nodes);
+    }
+
     /// <summary>非末尾订阅在异步等待后失败时，异常必须传播到主动推送调用方而不是被丢弃。</summary>
     [Fact]
     public async Task SocialPushAsync_PropagatesNonLastAsyncSubscriberFailure()

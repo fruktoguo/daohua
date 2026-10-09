@@ -811,62 +811,6 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         return await reader.ReadAsync(cancellationToken) ? ReadPartySession(reader) : null;
     }
 
-    /// <summary>写入新讨伐会话；并发撞活跃唯一索引返回 false（仲裁竞态收敛）。</summary>
-    public async ValueTask<bool> TryInsertPartySessionAsync(string sessionId, Guid partyId, string specJson, DateTimeOffset startedAt, CancellationToken cancellationToken = default)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("""
-            INSERT INTO social.party_sessions(session_id, party_id, spec, started_at)
-            VALUES ($1, $2, $3::jsonb, $4)
-            """, connection);
-        command.Parameters.Add(new NpgsqlParameter { Value = sessionId });
-        command.Parameters.Add(new NpgsqlParameter { Value = partyId });
-        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = specJson });
-        command.Parameters.Add(new NpgsqlParameter { Value = startedAt });
-        try
-        {
-            return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
-        }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
-        {
-            // 并发仲裁者先建会话：由 ux_party_sessions_active 收敛，败方放弃本会话。
-            return false;
-        }
-    }
-
-    /// <summary>按权威时刻写散场终态；已散场行不再更新（幂等收敛并发散场）。</summary>
-    public async ValueTask<bool> TryEndPartySessionAsync(string sessionId, DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("""
-            UPDATE social.party_sessions
-            SET ended_at = $2, end_reason = $3
-            WHERE session_id = $1 AND ended_at IS NULL
-            """, connection);
-        command.Parameters.Add(new NpgsqlParameter { Value = sessionId });
-        command.Parameters.Add(new NpgsqlParameter { Value = endedAt });
-        command.Parameters.Add(new NpgsqlParameter { Value = endReason });
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
-    /// <summary>重启扫尾：全部活跃会话统一写终态，返回被结束的行（含 spec 供调用方广播名册）。</summary>
-    public async ValueTask<IReadOnlyList<PartySessionRecord>> EndAllActivePartySessionsAsync(DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("""
-            UPDATE social.party_sessions SET ended_at = $1, end_reason = $2
-            WHERE ended_at IS NULL
-            RETURNING session_id, party_id, spec::text, started_at, ended_at, end_reason
-            """, connection);
-        command.Parameters.Add(new NpgsqlParameter { Value = endedAt });
-        command.Parameters.Add(new NpgsqlParameter { Value = endReason });
-        var result = new List<PartySessionRecord>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-            result.Add(ReadPartySession(reader));
-        return result;
-    }
-
     /// <summary>批量读取玩家投影节点；无投影行或正在迁地（current_node_id 为 NULL）的玩家缺席。</summary>
     public async ValueTask<IReadOnlyDictionary<Guid, string>> GetPlayerNodeMapAsync(IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default)
     {

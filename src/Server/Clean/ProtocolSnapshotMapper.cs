@@ -491,7 +491,7 @@ public static class ProtocolSnapshotMapper
                 // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
                 participation = action.Participation is { } participationBinding ? new
                 {
-                    sessionId = participationBinding.Spec.SessionId,
+                    sessionId = participationBinding.SessionId,
                     endsAtUnixSeconds = double.IsPositiveInfinity(participationBinding.EndsAtUnixSeconds)
                         ? (double?)null : participationBinding.EndsAtUnixSeconds
                 } : null,

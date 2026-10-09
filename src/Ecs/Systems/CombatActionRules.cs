@@ -320,42 +320,44 @@ internal static class CombatActionRules
         // 局部函数无法捕获外层 ref 参数：提前初始化后用普通引用落事件。
         events ??= new SimulationEventTail();
         var eventSink = events;
-        int deathCursor = 0, respawnCursor = 0, allyDeathCursor = 0, allyRespawnCursor = 0;
+        var downedEvents = new List<(double At, int MemberIndex, bool Respawn)>(
+            deaths.Count + respawns.Count + allyDeaths.Count + allyRespawns.Count);
+        var selfIndex = expedition.SelfIndex;
+        foreach (var at in deaths) downedEvents.Add((at, selfIndex, false));
+        foreach (var at in respawns) downedEvents.Add((at, selfIndex, true));
+        foreach (var mark in allyDeaths) downedEvents.Add((mark.AtSeconds, mark.MemberIndex, false));
+        foreach (var mark in allyRespawns) downedEvents.Add((mark.AtSeconds, mark.MemberIndex, true));
+        downedEvents.Sort(static (left, right) =>
+        {
+            var order = left.At.CompareTo(right.At);
+            if (order != 0) return order;
+            order = left.Respawn.CompareTo(right.Respawn);
+            return order != 0 ? order : left.MemberIndex.CompareTo(right.MemberIndex);
+        });
+        var downedCursor = 0;
         void FlushDownedEvents(double uptoBattleSeconds)
         {
-            while (deathCursor < deaths.Count && deaths[deathCursor] <= uptoBattleSeconds + 1e-9)
+            while (downedCursor < downedEvents.Count && downedEvents[downedCursor].At <= uptoBattleSeconds + 1e-9)
             {
-                var deathAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, deaths[deathCursor++] - battleFrom));
-                player.Progression.TotalDefeats += 1;
-                player.MarkDirty(PlayerSectionKind.Progression);
-                player.RecordStats(action.Id, deathAt.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta { Deaths = 1 });
-                eventSink.Add(new SimulationEvent(deathAt,
-                    "combat.lost", $"阵亡：被 {WaveNames()} 击倒，原地调息等待复活。", definition.Id));
-            }
-            while (respawnCursor < respawns.Count && respawns[respawnCursor] <= uptoBattleSeconds + 1e-9)
-            {
-                var respawnAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, respawns[respawnCursor++] - battleFrom));
-                eventSink.Add(new SimulationEvent(respawnAt,
-                    "combat.respawned", "原地起身：气血回满，战斗继续。", definition.Id));
-            }
-            // 队友倒地/起身走同一时钟游标：只落战报不计本机败绩（败绩由各成员自身模拟记）。
-            while (allyDeathCursor < allyDeaths.Count && allyDeaths[allyDeathCursor].AtSeconds <= uptoBattleSeconds + 1e-9)
-            {
-                var mark = allyDeaths[allyDeathCursor++];
-                var allyAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, mark.AtSeconds - battleFrom));
-                var allyName = spec is not null && mark.MemberIndex >= 0 && mark.MemberIndex < spec.Members.Count
-                    ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
-                eventSink.Add(new SimulationEvent(allyAt,
-                    "combat.lost", $"队友 {allyName} 阵亡，原地调息等待复活。", definition.Id));
-            }
-            while (allyRespawnCursor < allyRespawns.Count && allyRespawns[allyRespawnCursor].AtSeconds <= uptoBattleSeconds + 1e-9)
-            {
-                var mark = allyRespawns[allyRespawnCursor++];
-                var allyAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, mark.AtSeconds - battleFrom));
-                var allyName = spec is not null && mark.MemberIndex >= 0 && mark.MemberIndex < spec.Members.Count
-                    ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
-                eventSink.Add(new SimulationEvent(allyAt,
-                    "combat.respawned", $"队友 {allyName} 原地起身，气血回满。", definition.Id));
+                var mark = downedEvents[downedCursor++];
+                var at = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, mark.At - battleFrom));
+                var isSelf = mark.MemberIndex == selfIndex;
+                var name = spec is not null ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
+                if (mark.Respawn)
+                    eventSink.Add(new SimulationEvent(at, "combat.respawned", isSelf
+                        ? "原地起身：气血回满，战斗继续。" : $"队友 {name} 原地起身，气血回满。", definition.Id));
+                else
+                {
+                    if (isSelf)
+                    {
+                        player.Progression.TotalDefeats += 1;
+                        player.MarkDirty(PlayerSectionKind.Progression);
+                        player.RecordStats(action.Id, at.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta { Deaths = 1 });
+                    }
+                    eventSink.Add(new SimulationEvent(at, "combat.lost", isSelf
+                        ? $"阵亡：被 {WaveNames()} 击倒，原地调息等待复活。"
+                        : $"队友 {name} 阵亡，原地调息等待复活。", definition.Id));
+                }
             }
         }
         // 功法经验按帧入账：日志尾窗裁剪与施放合并都只影响展示，每帧结算不丢账。
@@ -674,7 +676,7 @@ internal static class CombatActionRules
             // 组队远征钉死（会话剧本供给）+ 本机成员下标 + 盟友镜像。
             IsPinned = spec is not null,
             SelfIndex = selfIndex,
-            Allies = spec is null ? null : allies ?? BuildAllyCarry(spec, selfIndex)
+            Allies = spec is null || spec.Members.Count == 1 ? null : allies ?? BuildAllyCarry(spec, selfIndex)
         };
     }
 
@@ -755,6 +757,9 @@ internal static class CombatActionRules
                     unit.Manapoints = Math.Clamp(carry?.State.Manapoints ?? member.InitialManapoints, 0, member.Stats.MaxManapoints);
                     (carry?.CombatSkills ?? member.CombatSkills)?.ApplyTo(unit);
                 }
+                // 会话只创建一份战斗，入场倒地者的复活时钟必须覆盖全部成员。
+                if (!unit.IsAlive && respawnSeconds > 0)
+                    unit.RespawnAtSeconds = battle.ElapsedSeconds + respawnSeconds;
                 unit.ExternalBuffStacks = buffId => SumFrozenBuffStacks(member.ExternalBuffs, buffId);
                 // 持续消耗品 Buff 按开打定格注入：剩余时长按会话墙钟折算（入场时刻 - 开打时刻），
                 // 波间搜索同样消耗 Buff 时长；会话期间不补能、不扣减本地槽位（各成员推演位级一致）。
@@ -1448,7 +1453,7 @@ internal static class CombatActionRules
             var member = spec.Members[i];
             allies.Add(new ExpeditionAllyState(i,
                 new CombatantSnapshot(member.InitialHitpoints, member.InitialManapoints, 0, 0, 0),
-                CombatSkills: member.CombatSkills));
+                CombatSkills: member.CombatSkills ?? PlayerCombatSkillState.Empty));
         }
         return allies;
     }

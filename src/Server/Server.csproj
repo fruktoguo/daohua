@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 主服 768 MiB 工作集预算内为 JIT、线程、连接与本机缓冲保留 256 MiB。 -->
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="536870912" />
     <Compile Remove="Clean/**/*.cs" />
     <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Ecs/Ecs.csproj" />

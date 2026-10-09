@@ -104,6 +104,12 @@ internal static partial class ActionExecutionRules
                 CountTransition(e);
                 continue;
             }
+            // 成员参与行动仅是会话引用：等待 inbox 投影，禁止初始化或重演队伍战斗。
+            if (action.Participation is not null)
+            {
+                e.Waiting = true;
+                return;
+            }
             if (e.Player.Settings.QueuePaused)
             {
                 e.Waiting = true;

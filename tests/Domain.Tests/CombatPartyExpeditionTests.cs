@@ -221,12 +221,12 @@ public sealed class CombatPartyExpeditionTests
     }
 
     /// <summary>
-    /// 聚合级端到端：两名玩家携带同一份 ActionParticipationSpec 各自独立推演——
+    /// 聚合级端到端：唯一会话推演，两名玩家只消费各自结算投影——
     /// 双方击杀数与远征相位逐位一致（确定性铁律）、经验按在场人头平分、
     /// 共享掉落归属不重不漏（必掉品两钱包之和恒等于击杀数）。
     /// </summary>
     [Fact]
-    public void TwoMembersReplaySameSpecWithSharedDrops()
+    public void SharedSessionProjectsPersonalRewardsWithoutDuplicateDrops()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -261,9 +261,11 @@ public sealed class CombatPartyExpeditionTests
         var walletA = new AssetWallet(memberA.PlayerId);
         var walletB = new AssetWallet(memberB.PlayerId);
         var target = baseline.AddSeconds(600);
-        foreach (var delta in SimulationEngine.AdvanceTo(memberA, target, catalog, walletA).AssetDeltas)
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var settlements = session.AdvanceTo(target);
+        foreach (var delta in memberA.ApplyActionParticipationSettlement(settlements[0], catalog).AssetDeltas)
             walletA.Apply(delta);
-        foreach (var delta in SimulationEngine.AdvanceTo(memberB, target, catalog, walletB).AssetDeltas)
+        foreach (var delta in memberB.ApplyActionParticipationSettlement(settlements[1], catalog).AssetDeltas)
             walletB.Apply(delta);
 
         // 确定性铁律：两端推演同一场战斗——波次、相位、击杀数逐位一致。

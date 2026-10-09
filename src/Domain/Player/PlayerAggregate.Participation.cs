@@ -2,12 +2,142 @@ using System.Text.Json;
 using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
+using Domain.Simulation;
 
 namespace Domain.Player;
 
 /// <summary>行动参与的聚合入口：开打插队、散场收尾与成员面板冻结采集。</summary>
 public sealed partial class PlayerAggregate
 {
+    /// <summary>会话计算容器借用收集器记录个人增量，不向真实成员状态写入。</summary>
+    internal void SetParticipationStatsSink(IPlayerStatsSink sink)
+    {
+        _statsSink = sink;
+        IsParticipationSessionContainer = true;
+    }
+
+    /// <summary>仅会话计算工作态可推进全队资源；真实成员始终等待投影。</summary>
+    internal bool IsParticipationSessionContainer { get; private set; }
+
+    /// <summary>
+    /// 在成员单写者内消费权威投影。游标与个人变更一起落盘，重投不会重复发奖；
+    /// 修为瓶颈及参悟升级以消费时的个人状态结算，冻结装备只决定原始份额。
+    /// </summary>
+    public SimulationResult ApplyActionParticipationSettlement(
+        ActionParticipationMemberSettlement settlement, GameDataCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(settlement);
+        ArgumentNullException.ThrowIfNull(catalog);
+        if (settlement.PlayerId != PlayerId || settlement.Sequence <= 0 || settlement.To < settlement.From
+            || !double.IsFinite(settlement.Hitpoints) || settlement.Hitpoints < 0
+            || !double.IsFinite(settlement.Manapoints) || settlement.Manapoints < 0
+            || !double.IsFinite(settlement.RegenCarrySeconds) || settlement.RegenCarrySeconds < 0
+            || settlement.RegenCarrySeconds >= 5
+            || !double.IsFinite(settlement.CompletedRepeats) || settlement.CompletedRepeats < 0
+            || settlement.Expedition is not { IsValid: true } || settlement.CombatStats is null)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "会话成员结算无效。");
+        if (_actions.Count == 0 || _actions[0].Participation is not { } binding
+            || !string.Equals(binding.SessionId, settlement.SessionId, StringComparison.Ordinal))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "会话结算与成员绑定不一致。");
+        if (settlement.Sequence <= binding.AppliedSequence)
+            return new(PlayerId, LastSimulatedAt, LastSimulatedAt, 0, 0, 0, [], [], StateVersion, false);
+        if (settlement.Sequence != binding.AppliedSequence + 1)
+            throw new DomainException(DomainErrorCode.InvariantViolation, "会话个人结算序号不连续。");
+
+        var action = _actions[0];
+        var actionName = Duel.ReportFor(action.Id)?.ActionName
+            ?? (catalog.Actions.TryGet(action.Intent.ActionId, out var definition) ? definition.Name
+                : settlement.EndsAtUnixSeconds is not null || double.IsFinite(binding.EndsAtUnixSeconds)
+                    ? action.Intent.ActionId.Value
+                : catalog.Actions.Get(action.Intent.ActionId).Name);
+        EnsureActionReport(action.Id, action.Intent.ActionId, actionName, settlement.From);
+        var completed = 0d;
+        foreach (var entry in settlement.Stats)
+        {
+            var delta = entry.Delta;
+            if (delta.CombatExperience > 0)
+            {
+                var amount = delta.CombatExperience;
+                var cap = catalog.RealmProgression?.ExpCapFor(Progression.RealmLevel) ?? double.PositiveInfinity;
+                var credited = Progression.CreditExperience(amount, amount, cap);
+                delta = delta with { Experience = credited, Foundation = amount - credited };
+            }
+            if (delta.RootAspect is { } aspect)
+            {
+                var before = ParticipationRootExperience(Loadout.CoreAttributes, aspect);
+                Loadout.CoreAttributes = AddParticipationRootExperience(Loadout.CoreAttributes, aspect, delta.RootExperience);
+                var fromLevel = RootAttributeCurve.LevelFor(before, catalog.RealmProgression);
+                var toLevel = RootAttributeCurve.LevelFor(before + delta.RootExperience, catalog.RealmProgression);
+                delta = delta with { LevelUp = toLevel > fromLevel
+                    ? new PlayerReportLevelUp("root", aspect.ToString().ToLowerInvariant(), fromLevel, toLevel) : null };
+            }
+            if (delta.AbilityId is { } abilityText)
+            {
+                var abilityId = new AbilityId(abilityText);
+                if (!Loadout.LearnedAbilities.Contains(abilityId)) continue;
+                var before = Loadout.AbilityExperiences.GetValueOrDefault(abilityId);
+                var after = before + delta.AbilityExperience;
+                Loadout.AbilityExperiences[abilityId] = after;
+                var fromLevel = AbilityExpCurve.LevelFor(before);
+                var toLevel = AbilityExpCurve.LevelFor(after);
+                delta = delta with { LevelUp = toLevel > fromLevel
+                    ? new PlayerReportLevelUp("ability", abilityText, fromLevel, toLevel) : null };
+            }
+            Progression.CompletedActions += delta.Cycles;
+            completed += delta.Cycles;
+            for (double i = 0; i < delta.NormalKills; i++) Progression.NormalKills += 1;
+            for (double i = 0; i < delta.EliteKills; i++) Progression.EliteKills += 1;
+            for (double i = 0; i < delta.BossKills; i++) Progression.BossKills += 1;
+            Progression.TotalDefeats += delta.Deaths;
+            RecordStats(action.Id, entry.AtUnixSeconds, delta);
+        }
+        Resources.Hitpoints = settlement.Hitpoints;
+        Resources.Manapoints = settlement.Manapoints;
+        Resources.RegenCarrySeconds = settlement.RegenCarrySeconds;
+        Combat.Skills = settlement.Skills;
+        action.Expedition = settlement.Expedition;
+        action.ProgressSeconds = settlement.ProgressSeconds;
+        action.CompletedRepeats = settlement.CompletedRepeats;
+        action.Participation = binding with
+        {
+            AppliedSequence = settlement.Sequence,
+            EndsAtUnixSeconds = settlement.EndsAtUnixSeconds ?? binding.EndsAtUnixSeconds
+        };
+        var book = Duel.ReportFor(action.Id)!.CombatStats;
+        book.Clear();
+        foreach (var row in settlement.CombatStats) book.Import(row);
+        ActionReportBook.FlushCombatStats(this, action.Id);
+        MarkDirty(PlayerSectionKind.Progression);
+        MarkDirty(PlayerSectionKind.Loadout);
+        MarkDirty(PlayerSectionKind.Combat);
+        MarkDirty(PlayerSectionKind.ActionQueue);
+        StateVersion = checked(StateVersion + 1);
+        return new(PlayerId, settlement.From, settlement.To, (settlement.To - settlement.From).TotalSeconds,
+            completed, completed, settlement.AssetDeltas, settlement.Events, StateVersion, true,
+            settlement.DroppedEventCount);
+    }
+
+    private static double ParticipationRootExperience(PlayerCoreAttributes core, CoreAspectKind aspect) => aspect switch
+    {
+        CoreAspectKind.Stamina => core.StaminaExp,
+        CoreAspectKind.Meridians => core.MeridiansExp,
+        CoreAspectKind.Attack => core.AttackExp,
+        CoreAspectKind.Bone => core.BoneExp,
+        CoreAspectKind.Agility => core.AgilityExp,
+        _ => core.ConsciousnessExp
+    };
+
+    private static PlayerCoreAttributes AddParticipationRootExperience(PlayerCoreAttributes core,
+        CoreAspectKind aspect, double amount) => aspect switch
+    {
+        CoreAspectKind.Stamina => core with { StaminaExp = core.StaminaExp + amount },
+        CoreAspectKind.Meridians => core with { MeridiansExp = core.MeridiansExp + amount },
+        CoreAspectKind.Attack => core with { AttackExp = core.AttackExp + amount },
+        CoreAspectKind.Bone => core with { BoneExp = core.BoneExp + amount },
+        CoreAspectKind.Agility => core with { AgilityExp = core.AgilityExp + amount },
+        _ => core with { ConsciousnessExp = core.ConsciousnessExp + amount }
+    };
+
     /// <summary>
     /// 开始行动参与：参与行动高优插队队首（挂起原队首行动，散场后恢复）。
     /// 重复会话 ID 幂等——同一 sessionId 已在队首时直接返回现状。
@@ -15,8 +145,10 @@ public sealed partial class PlayerAggregate
     /// <param name="spec">行动参与规格（含全部成员冻结面板与真实行动 ID）。</param>
     /// <param name="at">开打墙钟。</param>
     /// <param name="catalog">行动配表。</param>
+    /// <param name="endsAtUnixSeconds">终局补投时的确定散场时刻；活动开场为正无穷。</param>
     /// <returns>队首参与行动实例；本成员不在名单中或已在其他会话时返回 null。</returns>
-    public QueuedAction? StartActionParticipation(ActionParticipationSpec spec, DateTimeOffset at, ActionCatalog catalog)
+    public QueuedAction? StartActionParticipation(ActionParticipationSpec spec, DateTimeOffset at, ActionCatalog catalog,
+        double endsAtUnixSeconds = double.PositiveInfinity)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -25,13 +157,14 @@ public sealed partial class PlayerAggregate
         if (spec.SelfIndexOf(PlayerId) < 0) return null;
         if (_actions.Count > 0 && _actions[0].Participation is { } existing)
         {
-            if (existing.Spec.ActionId == spec.ActionId
-                && string.Equals(existing.Spec.SessionId, spec.SessionId, StringComparison.Ordinal))
+            if (_actions[0].Intent.ActionId == spec.ActionId
+                && string.Equals(existing.SessionId, spec.SessionId, StringComparison.Ordinal))
                 return _actions[0];
             return null;
         }
         var intent = new ActionIntent(spec.ActionId, -1, spec.NodeId, PvpEnabled: false);
-        return EnqueuePriority(intent, at, catalog, participation: new ActionParticipationBinding(spec)) as QueuedAction;
+        return EnqueuePriority(intent, at, catalog,
+            participation: new ActionParticipationBinding(spec, endsAtUnixSeconds)) as QueuedAction;
     }
 
     /// <summary>
@@ -46,7 +179,7 @@ public sealed partial class PlayerAggregate
             || !double.IsFinite(endsAtUnixSeconds) || endsAtUnixSeconds < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动参与散场参数无效。");
         if (_actions.Count == 0 || _actions[0].Participation is not { } participation
-            || !string.Equals(participation.Spec.SessionId, sessionId, StringComparison.Ordinal))
+            || !string.Equals(participation.SessionId, sessionId, StringComparison.Ordinal))
             return false;
         _actions[0].Participation = participation with { EndsAtUnixSeconds = endsAtUnixSeconds };
         if (Resources.Hitpoints <= 0)
@@ -82,7 +215,8 @@ public sealed partial class PlayerAggregate
             externalBuffs.Count > 0 ? externalBuffs : null,
             Combat.Skills,
             CaptureSustainedBuffs(Settings.AutoUseSlots, gameData),
-            Loadout.Equipment.ToArray());
+            Loadout.Equipment.ToArray(),
+            Resources.RegenCarrySeconds);
     }
 
     /// <summary>
@@ -117,7 +251,8 @@ public sealed partial class PlayerAggregate
                     JsonRead.Number(buff, "hpRegen"), JsonRead.Number(buff, "mpRegen"),
                     JsonRead.Number(buff, "attackSpeedPoints"), JsonRead.Number(buff, "damageAbsorptionPoints"),
                     JsonRead.Number(buff, "threatPoints"),
-                    JsonRead.Number(buff, "hpRegenPostRatio"), JsonRead.Number(buff, "mpRegenPostRatio")));
+                    JsonRead.Number(buff, "hpRegenPostRatio"), JsonRead.Number(buff, "mpRegenPostRatio"),
+                    JsonRead.Number(buff, "damageBonusPoints")));
             }
         }
         return list;
@@ -150,6 +285,7 @@ public sealed partial record ActionParticipantSnapshot
             externalBuffs.Count > 0 ? externalBuffs : null,
             state.Combat.Skills,
             PlayerAggregate.CaptureSustainedBuffs(state.Settings.AutoUseSlots ?? [], catalog),
-            loadout.Equipment);
+            loadout.Equipment,
+            state.Combat.RegenCarrySeconds);
     }
 }

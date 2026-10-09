@@ -8,7 +8,9 @@ public enum ComputeEnqueueResult : byte
     /// <summary>已存在 pending 行，目标时间与输入载荷已就地刷新。</summary>
     Refreshed,
     /// <summary>已存在 leased/终态同键行，本次入队被跳过。</summary>
-    SkippedExisting
+    SkippedExisting,
+    /// <summary>玩家由会话推进或仍有待消费份额，不允许个人冷算。</summary>
+    SkippedParticipation
 }
 
 /// <summary>派发器领取到的一条冷挂机任务。</summary>
@@ -98,6 +100,26 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // 扫描与入队之间可能开场：先与会话交付共用身份行锁，再在当前快照复核。
+        await using (var identity = new NpgsqlCommand("SELECT player_id FROM identity.players WHERE player_id = $1 FOR UPDATE", connection, transaction))
+        {
+            identity.Parameters.AddWithValue(playerId);
+            await identity.ExecuteScalarAsync(cancellationToken);
+        }
+        await using (var participation = new NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1 FROM social.party_sessions s
+                WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
+                    'members', jsonb_build_array(jsonb_build_object('playerId', $1::uuid::text))))
+                OR EXISTS (
+                    SELECT 1 FROM social.party_session_inbox i
+                    WHERE i.player_id = $1 AND i.consumed_at IS NULL)
+            """, connection, transaction))
+        {
+            participation.Parameters.AddWithValue(playerId);
+            if (await participation.ExecuteScalarAsync(cancellationToken) is true)
+                return ComputeEnqueueResult.SkippedParticipation;
+        }
 
         // 同一确定性 job_id 若已存在（终态历史行或他人并发插入），视为等价任务已登记，直接跳过；
         // 必须先于 pending 刷新检查，否则刷新 job_id 时会与终态行撞主键。
@@ -389,6 +411,13 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
               AND NOT EXISTS (
                   SELECT 1 FROM platform.compute_jobs j
                   WHERE j.player_id = p.player_id AND j.status IN ('pending', 'leased'))
+              AND NOT EXISTS (
+                  SELECT 1 FROM social.party_sessions s
+                  WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
+                      'members', jsonb_build_array(jsonb_build_object('playerId', p.player_id::text))))
+              AND NOT EXISTS (
+                  SELECT 1 FROM social.party_session_inbox i
+                  WHERE i.player_id = p.player_id AND i.consumed_at IS NULL)
             ORDER BY h.last_simulated_at
             LIMIT $4
             """, connection);

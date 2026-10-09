@@ -179,6 +179,9 @@ public sealed class PostgresEconomyRepository(
             return new EconomyTransactionResult(transactionId, request.IdempotencyKey, true, true, committedAt, payload);
         }
 
+        if (request.ParticipationReceipt is { } participationReceipt)
+            await LockParticipationInboxAsync(connection, transaction, participationReceipt, cancellationToken);
+
         // 固定排序后逐行单语句 upsert：行锁按序获取，避免两个跨玩家交易以不同顺序锁余额而死锁。
         // 每行一次往返完成「存在则累加、不存在则插入」，RETURNING 顺路带回提交后余额与版本，
         // 供调用方直接同步内存钱包，替代旧的 FOR UPDATE 锁读 + upsert + 提交后整包重读。
@@ -221,7 +224,37 @@ public sealed class PostgresEconomyRepository(
 
         await PostgresSectionRepository.EnqueueInTransactionAsync(connection, transaction,
             request.Sections ?? [], request.Receipts ?? [], cancellationToken);
+        if (request.ParticipationReceipt is { } consumedReceipt)
+        {
+            await using var consume = new NpgsqlCommand("""
+                UPDATE social.party_session_inbox SET consumed_at = $4, consumed_transaction_id = $5
+                WHERE session_id = $1 AND player_id = $2 AND sequence = $3 AND consumed_at IS NULL
+                """, connection, transaction);
+            consume.Parameters.AddWithValue(consumedReceipt.SessionId);
+            consume.Parameters.AddWithValue(consumedReceipt.PlayerId);
+            consume.Parameters.AddWithValue(consumedReceipt.Sequence);
+            consume.Parameters.AddWithValue(occurredAt);
+            consume.Parameters.AddWithValue(request.TransactionId);
+            if (await consume.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new InvalidOperationException("组队会话结算收件箱消费确认失败，拒绝提交成员状态与资产。");
+        }
         return new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, occurredAt, request.ResultPayload, committedBalances);
+    }
+
+    /// <summary>锁定待消费结算，阻止不同经济幂等键重复确认同一成员份额。</summary>
+    private static async ValueTask LockParticipationInboxAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        Social.ParticipationInboxReceipt receipt, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT sequence FROM social.party_session_inbox
+            WHERE session_id = $1 AND player_id = $2 AND sequence = $3 AND consumed_at IS NULL
+            FOR UPDATE
+            """, connection, transaction);
+        command.Parameters.AddWithValue(receipt.SessionId);
+        command.Parameters.AddWithValue(receipt.PlayerId);
+        command.Parameters.AddWithValue(receipt.Sequence);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not long)
+            throw new InvalidOperationException("组队会话结算收件箱不存在或已消费。");
     }
 
     /// <summary>
@@ -298,8 +331,14 @@ public sealed class PostgresEconomyRepository(
         if (request.ActorId == Guid.Empty) throw new ArgumentException("ActorId 不能为空。", nameof(request));
         if (request.Deltas is null || request.Deltas.Count > 512
             || (request.Deltas.Count == 0 && (request.Sections is null || request.Sections.Count == 0)
-                && (request.Receipts is null || request.Receipts.Count == 0)))
-            throw new ArgumentException("资产事务必须至少包含一笔资产变更、分段写回或命令回执。", nameof(request));
+                && (request.Receipts is null || request.Receipts.Count == 0) && request.ParticipationReceipt is null))
+            throw new ArgumentException("资产事务必须至少包含一笔资产变更、分段写回或结算回执。", nameof(request));
+        if (request.ParticipationReceipt is { } receipt
+            && (string.IsNullOrWhiteSpace(receipt.SessionId) || receipt.SessionId.Length > 64
+                || receipt.PlayerId != request.ActorId || receipt.Sequence < 1
+                || request.Deltas.Any(delta => delta.PlayerId != receipt.PlayerId)
+                || (request.Sections?.Any(section => section.PlayerId != receipt.PlayerId) ?? false)))
+            throw new ArgumentException("组队会话结算只能确认本人收件箱并写入本人状态与资产。", nameof(request));
         if (request.ResultPayload.Length > 64 * 1024)
             throw new ArgumentException("资产事务结果载荷超过大小上限。", nameof(request));
         foreach (var delta in request.Deltas)
@@ -323,6 +362,9 @@ public sealed class PostgresEconomyRepository(
         foreach (var receipt in (request.Receipts ?? []).OrderBy(receipt => receipt.PlayerId).ThenBy(receipt => receipt.RequestId))
             canonical.Append(receipt.PlayerId).Append('|').Append(receipt.RequestId).Append('|')
                 .Append(receipt.Command).Append('|').Append(receipt.PayloadHash).Append('\n');
+        if (request.ParticipationReceipt is { } participationReceipt)
+            canonical.Append("participation|").Append(participationReceipt.SessionId).Append('|')
+                .Append(participationReceipt.PlayerId).Append('|').Append(participationReceipt.Sequence).Append('\n');
         foreach (var delta in deltas
                      .OrderBy(value => value.PlayerId)
                      .ThenBy(value => value.AssetId, StringComparer.Ordinal)

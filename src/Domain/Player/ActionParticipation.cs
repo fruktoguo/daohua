@@ -5,7 +5,7 @@ namespace Domain.Player;
 
 /// <summary>
 /// 行动参与成员冻结快照：会话创建时由成员面板结算冻结，
-/// 作为全部在场成员共享剧本的确定性输入之一；每名成员各自的模拟按同一规格逐位重放。
+/// 作为唯一队伍会话的确定性输入；成员只消费该会话的个人结算投影。
 /// </summary>
 /// <param name="PlayerId">成员玩家 ID（文本形态便于快照直存）。</param>
 /// <param name="DisplayName">成员显示名：战报标签与掉落归属文案使用。</param>
@@ -22,6 +22,7 @@ namespace Domain.Player;
 /// 会话期间不做槽位补能/扣减——其他成员的钱包不可见，定格画面是唯一公共输入。</param>
 /// <param name="Equipment">开打定格的已穿戴装备清单（物品 ID + 强化等级）；仅用于详情弹窗
 /// 装配展示，不参与共享剧本结算——与冻结面板同源采集，定格口径与其他成员可见信息一致。</param>
+/// <param name="RegenCarrySeconds">开场自然回复周期的个人进度余数。</param>
 public sealed partial record ActionParticipantSnapshot(
     string PlayerId,
     string DisplayName,
@@ -35,20 +36,23 @@ public sealed partial record ActionParticipantSnapshot(
     IReadOnlyDictionary<string, double>? ExternalBuffs = null,
     PlayerCombatSkillState? CombatSkills = null,
     IReadOnlyList<ActionSustainedBuff>? SustainedBuffs = null,
-    IReadOnlyList<PlayerEquipmentSlot>? Equipment = null)
+    IReadOnlyList<PlayerEquipmentSlot>? Equipment = null,
+    double RegenCarrySeconds = 0)
 {
     /// <summary>成员快照持久化不变量校验。</summary>
-    public bool IsValid => !string.IsNullOrWhiteSpace(PlayerId) && PlayerId.Length <= 64
+    public bool IsValid => Guid.TryParse(PlayerId, out var id) && id != Guid.Empty
         && !string.IsNullOrWhiteSpace(DisplayName) && DisplayName.Length <= 64
         && RealmLevel >= 0
         && double.IsFinite(DropBonusPoints)
         && double.IsFinite(SearchSpeedPoints) && SearchSpeedPoints >= 0
         && double.IsFinite(InitialHitpoints) && InitialHitpoints >= 0
         && double.IsFinite(InitialManapoints) && InitialManapoints >= 0
+        && double.IsFinite(RegenCarrySeconds) && RegenCarrySeconds >= 0 && RegenCarrySeconds < 5
         && Stats is not null
         && Skills is not null && Skills.Count <= 16 && Skills.All(slot => slot is not null)
         && (ExternalBuffs is null || ExternalBuffs.All(pair =>
             !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 128 && double.IsFinite(pair.Value) && pair.Value >= 0))
+        && (CombatSkills is null || CombatSkills.IsValid)
         && (SustainedBuffs is null || SustainedBuffs.All(buff => buff is not null && buff.IsValid))
         && (Equipment is null || (Equipment.Count <= 24 && Equipment.All(item => item is not null
             && !string.IsNullOrWhiteSpace(item.ItemId) && item.ItemId.Length <= 128
@@ -84,7 +88,7 @@ public sealed record ActionSustainedBuff(
 
 /// <summary>
 /// 行动参与会话冻结快照：会话创建时由参与成员面板结算冻结，
-/// 作为全部在场成员共享剧本的确定性输入之一；每名成员各自的模拟按同一规格逐位重放。
+/// 作为唯一队伍会话的确定性输入；成员不再独立推演该战斗。
 /// </summary>
 /// <param name="SessionId">会话唯一标识（组织层裁决产生，Guid 文本）。</param>
 /// <param name="EncounterId">目标遭遇 ID：会话创建时按参与目标节点遭遇池钉死，会话内不走节点池重锚。</param>
@@ -112,7 +116,8 @@ public sealed record ActionParticipationSpec(
         && !string.IsNullOrWhiteSpace(NodeId) && NodeId.Length <= 128
         && double.IsFinite(SearchSpeedPoints) && SearchSpeedPoints >= 0
         && double.IsFinite(StartedAtUnixSeconds) && StartedAtUnixSeconds >= 0
-        && Members is { Count: >= 1 and <= 5 } && Members.All(member => member is not null && member.IsValid);
+        && Members is { Count: >= 1 and <= 5 } && Members.All(member => member is not null && member.IsValid)
+        && Members.Select(member => Guid.Parse(member.PlayerId)).Distinct().Count() == Members.Count;
 
     /// <summary>本机成员在盟友阵列中的下标；未找到返回 -1（规格不合法时不应进入会话）。</summary>
     public int SelfIndexOf(PlayerId playerId)
@@ -156,15 +161,48 @@ public sealed record ActionParticipationSpec(
     }
 }
 
-/// <summary>队首参与行动携带的绑定：共享剧本规格 + 权威散场时刻。</summary>
-/// <param name="Spec">会话规格（含全部成员冻结面板）。</param>
-/// <param name="EndsAtUnixSeconds">权威散场墙钟（Unix 秒）；+∞ 表示进行中，落盘写为 Infinity 字面量（仅此字段豁免 strict 数字口径）。</param>
-public sealed record ActionParticipationBinding(
-    ActionParticipationSpec Spec,
-    [property: JsonNumberHandling(JsonNumberHandling.AllowNamedFloatingPointLiterals)] double EndsAtUnixSeconds = double.PositiveInfinity)
+/// <summary>成员持久化会话引用；冻结输入集中存放在唯一会话检查点。</summary>
+public sealed record ActionParticipationReference(string SessionId);
+
+/// <summary>成员队首只持有会话引用、个人消费游标及权威散场时刻。</summary>
+public sealed record ActionParticipationBinding
 {
-    /// <summary>持久化不变量：规格合法且散场时刻有限或 +∞。</summary>
-    public bool IsValid => Spec is not null && Spec.IsValid
+    /// <summary>引用信封；沿用参与载荷的 spec 槽位，内容只含会话标识。</summary>
+    [JsonPropertyName("spec")]
+    public ActionParticipationReference Reference { get; init; }
+    /// <summary>唯一会话标识；持久化恢复后由宿主按此引用装配展示规格。</summary>
+    [JsonIgnore]
+    public string SessionId => Reference.SessionId;
+    /// <summary>运行时只读展示输入；不进入成员存档，也不能授权成员计算战斗。</summary>
+    [JsonIgnore]
+    public ActionParticipationSpec? Spec { get; init; }
+    /// <summary>权威散场墙钟；+∞ 表示进行中。</summary>
+    [JsonNumberHandling(JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+    public double EndsAtUnixSeconds { get; init; }
+    /// <summary>已应用的个人结算序号，与个人变更原子持久化。</summary>
+    public long AppliedSequence { get; init; }
+
+    /// <summary>持久化只恢复会话引用；冻结输入始终由唯一会话检查点供给。</summary>
+    [JsonConstructor]
+    public ActionParticipationBinding(ActionParticipationReference reference, double endsAtUnixSeconds = double.PositiveInfinity,
+        long appliedSequence = 0)
+    {
+        Reference = reference;
+        EndsAtUnixSeconds = endsAtUnixSeconds;
+        AppliedSequence = appliedSequence;
+    }
+
+    /// <summary>以会话标识创建成员引用。</summary>
+    public ActionParticipationBinding(string sessionId, double endsAtUnixSeconds = double.PositiveInfinity,
+        long appliedSequence = 0) : this(new ActionParticipationReference(sessionId), endsAtUnixSeconds, appliedSequence) { }
+
+    /// <summary>开场时附带当前会话展示规格；导出成员载荷时仍只序列化引用。</summary>
+    public ActionParticipationBinding(ActionParticipationSpec spec, double endsAtUnixSeconds = double.PositiveInfinity,
+        long appliedSequence = 0) : this(spec.SessionId, endsAtUnixSeconds, appliedSequence) => Spec = spec;
+
+    /// <summary>持久化不变量：引用及消费游标合法，散场时刻有限或 +∞。</summary>
+    public bool IsValid => Reference is not null && !string.IsNullOrWhiteSpace(SessionId) && SessionId.Length <= 64
+        && AppliedSequence >= 0
         && (double.IsPositiveInfinity(EndsAtUnixSeconds)
             || (double.IsFinite(EndsAtUnixSeconds) && EndsAtUnixSeconds >= 0));
 }

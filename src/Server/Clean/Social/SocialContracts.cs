@@ -305,15 +305,6 @@ public interface ISocialRepository
     /// <summary>读取队伍当前活跃讨伐会话（ended_at IS NULL）；无活跃会话返回 null。</summary>
     ValueTask<PartySessionRecord?> GetActivePartySessionAsync(Guid partyId, CancellationToken cancellationToken = default);
 
-    /// <summary>写入新讨伐会话（specJson 为冻结的共享剧本规格）；并发撞活跃唯一索引返回 false。</summary>
-    ValueTask<bool> TryInsertPartySessionAsync(string sessionId, Guid partyId, string specJson, DateTimeOffset startedAt, CancellationToken cancellationToken = default);
-
-    /// <summary>按权威时刻散场：ended_at 已写入的行不再更新（幂等），返回本次是否实际写终态。</summary>
-    ValueTask<bool> TryEndPartySessionAsync(string sessionId, DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default);
-
-    /// <summary>服务重启扫尾：把全部活跃会话统一写终态（成员队首绑定由装载对账兜底收尾），返回被结束的行。</summary>
-    ValueTask<IReadOnlyList<PartySessionRecord>> EndAllActivePartySessionsAsync(DateTimeOffset endedAt, string endReason, CancellationToken cancellationToken = default);
-
     /// <summary>批量读取玩家投影节点（game.player_projection.current_node_id，离线成员的位置口径）；无投影行的玩家缺席。</summary>
     ValueTask<IReadOnlyDictionary<Guid, string>> GetPlayerNodeMapAsync(IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default);
 

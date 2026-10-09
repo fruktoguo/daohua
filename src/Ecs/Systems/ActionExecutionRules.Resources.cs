@@ -60,8 +60,10 @@ internal static partial class ActionExecutionRules
         // 即时消耗品扣件/注入 Buff/冷却回写是真实可见变更：不计 changed 会让资产已落库
         // 但 SimulationResult.Changed=false，推进推送跳过该玩家直到下一条命令。
         changed |= instantDeltas.Count > 0;
-        var untilRegen = 5 - player.Resources.RegenCarrySeconds;
-        var naturalStep = untilRegen;
+        // 真实成员不推进回复余数；不能用被冻结的余数重复切个人资源窗口。
+        var waitsForSession = player.Actions.Count > 0 && player.Actions[0].Participation is not null
+            && player is not PlayerAggregate { IsParticipationSessionContainer: true };
+        var naturalStep = waitsForSession ? double.PositiveInfinity : 5 - player.Resources.RegenCarrySeconds;
         if (double.IsFinite(nextBuffExpiry)) naturalStep = Math.Min(naturalStep, nextBuffExpiry - nowUnix);
         var step = Math.Min((computeTarget - now).TotalSeconds, naturalStep);
         var slots = player.Settings.AutoUseSlots;
@@ -149,6 +151,9 @@ internal static partial class ActionExecutionRules
         r.MaxManapoints = attributes.MaxManapoints;
         c.AttackPower = attributes.PhysicalAttack;
         c.Defense = attributes.Armor;
+        // 会话投影是参与期间的血蓝权威；实时换装只更新展示上限，不能钳制会话资源。
+        if (player.Actions.Count > 0 && player.Actions[0].Participation is not null
+            && player is not PlayerAggregate { IsParticipationSessionContainer: true }) return attributes;
         // 参与会话期间资源钳制上限取冻结面板：实时换装漂移不进入共享战斗的单位输入。
         var sessionMember = player.Actions.Count > 0
             && player.Actions[0].Participation?.Spec is { } sessionSpec
@@ -166,6 +171,8 @@ internal static partial class ActionExecutionRules
 
     internal static bool AdvanceIdleSkillResources(IPlayerResourceContext player, double stepSeconds)
     {
+        if (player.Actions.Count > 0 && player.Actions[0].Participation is not null
+            && player is not PlayerAggregate { IsParticipationSessionContainer: true }) return false;
         var expedition = player.Actions.Count > 0 ? player.Actions[0].Expedition : null;
         if (expedition?.Phase == CombatExpeditionPhase.Combat) return false;
         var changed = false;
@@ -195,11 +202,14 @@ internal static partial class ActionExecutionRules
         return true;
     }
 
-    internal static bool CompleteResourceRegeneration(IPlayerResourceContext player, GameDataCatalog gameData, double stepSeconds)
+    internal static bool CompleteResourceRegeneration(IPlayerResourceContext player, GameDataCatalog gameData,
+        double stepSeconds, bool regenerateAllies = true)
     {
+        if (player.Actions.Count > 0 && player.Actions[0].Participation is not null
+            && player is not PlayerAggregate { IsParticipationSessionContainer: true }) return false;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.resource.regen");
         player.Resources.RegenCarrySeconds += stepSeconds;
-        if (player.Resources.RegenCarrySeconds < 5 - 1e-9) return false;
+        if (player.Resources.RegenCarrySeconds < 5 - 1d / TimeSpan.TicksPerSecond) return false;
         player.Resources.RegenCarrySeconds = 0;
         var participationSpec = player.Actions.Count > 0 ? player.Actions[0].Participation?.Spec : null;
         var participant = participationSpec is not null
@@ -243,7 +253,7 @@ internal static partial class ActionExecutionRules
             };
         // 盟友镜像回复：只在非战斗相位按冻结面板结算（战斗相位由战斗内状态权威承载）。
         var anyAllyChange = false;
-        if (participationSpec is not null && player.Actions[0].Expedition is { Phase: not CombatExpeditionPhase.Combat } regenExpedition
+        if (regenerateAllies && participationSpec is not null && player.Actions[0].Expedition is { Phase: not CombatExpeditionPhase.Combat } regenExpedition
             && regenExpedition.Allies is { Count: > 0 } regenAllies)
         {
             var updated = new ExpeditionAllyState[regenAllies.Count];

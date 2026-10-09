@@ -27,7 +27,8 @@ public static class PostgresSchema
     /// v22：duel 分段行动账本载荷新增 combatants 战斗单位统计（可缺省解码），存档标签推进，表结构未变。
     /// v23：actionQueue 分段装配展示载荷落地——参与成员快照增 equipment、斗法回放增 opponentSkills/
     /// opponentEquipment（可缺省解码），存档标签推进，表结构未变。
-    public const int Version = 23;
+    /// v24：组队讨伐会话持有唯一权威运行态，新增成员结算收件箱；会话历史不随队伍解散删除。
+    public const int Version = 24;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -451,19 +452,38 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_party_members_party ON social.party_members(party_id);
 
-    -- 组队讨伐会话（总纲 §21.13）：spec 为冻结的共享剧本规格（成员快照/遭遇/种子），
-    -- session_id 为社交层生成的文本标识（party:{partyId}:{unixSec}:{rand}），非 uuid。
+    -- 组队讨伐会话（总纲 §21.13）：spec 为冻结输入，runtime_state 为唯一权威运行态。
+    -- party_id 仅保留历史引用，队伍解散不能级联删除尚待成员消费的结算证据。
     -- 同一队伍同时至多一个活跃会话：由 ended_at IS NULL 部分唯一索引收敛并发仲裁。
     CREATE TABLE IF NOT EXISTS social.party_sessions (
         session_id varchar(64) PRIMARY KEY,
-        party_id uuid NOT NULL REFERENCES social.parties(party_id) ON DELETE CASCADE,
+        party_id uuid NOT NULL,
         spec jsonb NOT NULL,
         started_at timestamptz NOT NULL,
+        runtime_state jsonb NULL,
+        state_version bigint NOT NULL DEFAULT 0 CHECK (state_version >= 0),
+        last_simulated_at timestamptz NULL,
         ended_at timestamptz NULL,
-        end_reason varchar(64) NULL
+        end_reason varchar(64) NULL,
+        CONSTRAINT ck_party_sessions_checkpoint_presence CHECK ((runtime_state IS NULL) = (last_simulated_at IS NULL))
     );
     CREATE UNIQUE INDEX IF NOT EXISTS ux_party_sessions_active
         ON social.party_sessions(party_id) WHERE ended_at IS NULL;
+
+    -- 仅实际结算批次进入收件箱；成员在自身单写者上下文中与资产、分段一并确认。
+    CREATE TABLE IF NOT EXISTS social.party_session_inbox (
+        session_id varchar(64) NOT NULL REFERENCES social.party_sessions(session_id),
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        sequence bigint NOT NULL CHECK (sequence > 0),
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL,
+        consumed_at timestamptz NULL,
+        consumed_transaction_id uuid NULL REFERENCES economy.transactions(transaction_id),
+        PRIMARY KEY (session_id, player_id, sequence),
+        CHECK ((consumed_at IS NULL) = (consumed_transaction_id IS NULL))
+    );
+    CREATE INDEX IF NOT EXISTS ix_party_session_inbox_pending
+        ON social.party_session_inbox(player_id, created_at, session_id, sequence) WHERE consumed_at IS NULL;
 
     -- 待处理的队伍邀请：每名玩家最多一条（被邀请人作主键），接受/拒绝/过期后清除。
     CREATE TABLE IF NOT EXISTS social.party_invitations (
@@ -520,7 +540,7 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 

@@ -19,7 +19,7 @@ public interface IPlayerActionState
     CombatExpeditionState? Expedition { get; set; }
     /// <summary>移动行动当前路径与路段行进状态；普通行动为 null。</summary>
     TravelActionState? Travel { get; set; }
-    /// <summary>行动参与绑定（共享剧本规格与权威散场时刻）；非参与行动为 null。</summary>
+    /// <summary>行动参与绑定（会话引用、消费游标与权威散场时刻）；非参与行动为 null。</summary>
     Domain.Player.ActionParticipationBinding? Participation => null;
 }
 

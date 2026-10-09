@@ -122,6 +122,8 @@ if (processRole == ServerProcessRole.Api)
             ? parsed.ToUniversalTime() : simulationClock.UtcNow;
         return new EcsGameRuntime(catalog, epoch, options.EcsShardCount);
     });
+    builder.Services.AddSingleton<Server.Clean.Social.IParticipationSessionStore, Server.Clean.Social.PostgresParticipationSessionStore>();
+    builder.Services.AddSingleton<Server.Clean.Social.IActionParticipationRuntime, ActionParticipationRuntime>();
     builder.Services.AddSingleton<EcsPlayerRuntimeAdapter>();
     builder.Services.AddSingleton<IPlayerRuntime>(sp => sp.GetRequiredService<EcsPlayerRuntimeAdapter>());
     builder.Services.AddSingleton<SessionRegistry>();
@@ -192,7 +194,7 @@ if (processRole == ServerProcessRole.Api)
     {
         builder.Services.AddHostedService<PlayerFlushHostedService>();
         builder.Services.AddHostedService<PlayerSimulationHostedService>();
-        // 组队讨伐看门狗（总纲 §21.13）：重启扫尾残留会话 + 周期逐出 48h 离线成员 + 装载绑定兜底。
+        // 组队讨伐看门狗（总纲 §21.13）：周期逐出 48h 离线成员并对账参与绑定；重启保留检查点。
         builder.Services.AddHostedService<Server.Clean.Social.PartySessionWatchdog>();
     }
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MarketRuntime>());

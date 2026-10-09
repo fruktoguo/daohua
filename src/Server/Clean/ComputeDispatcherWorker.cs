@@ -537,6 +537,22 @@ public sealed class ComputeDispatcherWorker(
                 || reader.GetBoolean(5))
                 throw new ComputeSourceDriftException("玩家已上线或被其他运行时实例持有。");
         }
+        // 会话开战与结果回写共用成员身份 MVCC fence；锁后复核，避免个人冷算和同场会话各自推进。
+        await using (var participation = new NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1 FROM social.party_sessions s
+                WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
+                    'members', jsonb_build_array(jsonb_build_object('playerId', $1::uuid::text))))
+                OR EXISTS (
+                    SELECT 1 FROM social.party_session_inbox i
+                    WHERE i.player_id = $1 AND i.consumed_at IS NULL)
+            """, connection, transaction))
+        {
+            participation.Parameters.AddWithValue(claim.PlayerId);
+            if (await participation.ExecuteScalarAsync(cancellationToken) is true)
+                throw new ComputeSourceDriftException("玩家已由行动参与会话推进或仍有待消费结算。");
+        }
+
 
         var bundle = await PostgresSectionRepository.LoadInTransactionAsync(
             connection, transaction, claim.PlayerId, cancellationToken)

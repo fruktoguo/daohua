@@ -175,6 +175,7 @@ public sealed record AssetBalanceRecord(
 /// <param name="ResultPayload">随事务持久化的结果载荷，重放时原样返回。</param>
 /// <param name="Sections">随事务一并入队的玩家 section 写回。</param>
 /// <param name="Receipts">随事务一并写入的命令幂等回执。</param>
+/// <param name="ParticipationReceipt">随成员资产和分段一并确认的组队会话结算收件箱。</param>
 public sealed record EconomyTransactionRequest(
     Guid TransactionId,
     string IdempotencyKey,
@@ -184,7 +185,8 @@ public sealed record EconomyTransactionRequest(
     DateTimeOffset? OccurredAt = null,
     ReadOnlyMemory<byte> ResultPayload = default,
     IReadOnlyList<SectionWrite>? Sections = null,
-    IReadOnlyList<CommandReceipt>? Receipts = null);
+    IReadOnlyList<CommandReceipt>? Receipts = null,
+    Social.ParticipationInboxReceipt? ParticipationReceipt = null);
 
 /// <summary>资产事务提交结局。</summary>
 /// <param name="TransactionId">实际落库的事务标识（幂等命中时为已存事务 ID）。</param>

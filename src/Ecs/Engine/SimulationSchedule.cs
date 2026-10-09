@@ -40,7 +40,8 @@ public static class SimulationSchedule
 
         var action = player.Actions.Count > 0 ? player.Actions[0] : null;
         // 队列暂停时行动侧边界全部冻结；Buff/技能/自动使用等墙钟边界照常参与调度。
-        if (action is not null && action.Status != ActionQueueStatus.Blocked && !player.Settings.QueuePaused)
+        if (action is not null && action.Participation is null
+            && action.Status != ActionQueueStatus.Blocked && !player.Settings.QueuePaused)
         {
             if (action.Expedition is { } expedition)
             {
@@ -105,11 +106,15 @@ public static class SimulationSchedule
         }
 
         // 脱战技能冷却：非交战相位按墙钟扣减（AdvanceIdle 口径）。
-        if (action?.Expedition?.Phase != CombatExpeditionPhase.Combat)
+        if (action?.Participation is null && action?.Expedition?.Phase != CombatExpeditionPhase.Combat)
         {
             var idleSkillBoundary = player.Combat.Skills.NextBoundarySeconds;
             if (double.IsFinite(idleSkillBoundary)) Consider(Math.Max(0, idleSkillBoundary));
         }
+
+        // 成员展示态不参与个人战斗调度；仅权威散场截止点需要唤醒个人队列收尾。
+        if (action?.Participation is { } participation && double.IsFinite(participation.EndsAtUnixSeconds))
+            Consider(Math.Max(0, participation.EndsAtUnixSeconds - fromUnix));
 
         // Buff 到期与自动使用冷却到点均为墙钟事件且影响界面展示。
         foreach (var buff in player.Buffs.Active)

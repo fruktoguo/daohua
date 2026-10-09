@@ -126,6 +126,182 @@ public sealed class EcsActionQueueMutationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task FullPersonalQueueAllowsParticipationAndRestoresEveryPersonalAction(bool commandView)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        for (var i = 0; i < PlayerAggregate.MaxActionQueueLength; i++)
+            player.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), From, catalog.Actions);
+        var originalActions = player.ExportState().Actions;
+        var spec = CreateParticipationSpec(player, catalog);
+        var expected = PlayerAggregate.Restore(player.ExportState());
+        Assert.NotNull(expected.StartActionParticipation(spec, From, catalog.Actions));
+
+        using var runtime = new EcsGameRuntime(catalog, From);
+        var id = runtime.CreatePlayer(player.ExportState());
+        if (commandView)
+            runtime.MutatePlayer(id, aggregate => Assert.NotNull(aggregate.StartActionParticipation(spec, From, catalog.Actions)));
+        else
+        {
+            var entity = runtime.World.GetEntity(runtime.ExportSnapshot(id).EntityId)!;
+            await runtime.Fiber.PostAsync((_, _) =>
+            {
+                new EcsPlayerActionContext(entity).EnqueuePriority(new(spec.ActionId, -1, spec.NodeId), From,
+                    catalog.Actions, participation: new ActionParticipationBinding(spec, double.PositiveInfinity));
+                return ValueTask.CompletedTask;
+            });
+            await runtime.Fiber.TickAsync();
+        }
+        var participating = runtime.ExportSnapshot(id).State;
+        Assert.Equal(PlayerAggregate.MaxActionQueueLength + 1, participating.Actions.Count);
+        Assert.Equal(ActionQueueStatus.Running, participating.Actions[0].Status);
+        Assert.Single(participating.Actions, action => action.Participation is not null);
+        Assert.Equal(JsonSerializer.Serialize(originalActions), JsonSerializer.Serialize(participating.Actions.Skip(1)));
+        Assert.Equal(expected.Actions.Select(action => action.Intent), participating.Actions.Select(action => action.Intent));
+        var before = JsonSerializer.Serialize(participating);
+        Assert.Equal(DomainErrorCode.Conflict,
+            Assert.Throws<DomainException>(() => runtime.EnqueueAction(id, new("cultivation.draw-qi"))).Code);
+        Assert.Equal(DomainErrorCode.Conflict, Assert.Throws<DomainException>(() => runtime.MutatePlayer(id,
+            aggregate => aggregate.Enqueue(new(new ActionId("cultivation.draw-qi")), From, catalog.Actions))).Code);
+        Assert.Equal(before, JsonSerializer.Serialize(runtime.ExportSnapshot(id).State));
+        AssertWorkReleased(runtime, id);
+
+        // 持久化只留引用，257 项文档恢复后仍完整保留所有个人行动。
+        var json = JsonSerializer.Serialize(participating, Domain.Persistence.PersistenceJson.Options);
+        var document = JsonSerializer.Deserialize<PlayerAggregateState>(json, Domain.Persistence.PersistenceJson.Options)!;
+        var restored = PlayerAggregate.Restore(document);
+        Assert.Equal(json, JsonSerializer.Serialize(restored.ExportState(), Domain.Persistence.PersistenceJson.Options));
+        Assert.Null(restored.Actions[0].Participation!.Spec);
+        runtime.RestorePlayer(id, restored.ExportState(), []);
+        runtime.MutatePlayer(id, aggregate => Assert.True(aggregate.EndActionParticipation(spec.SessionId, From.ToUnixTimeSeconds())));
+        await runtime.RunOnceAsync(From.AddSeconds(1));
+
+        var ended = runtime.ExportSnapshot(id).State;
+        Assert.Equal(originalActions.Select(action => action.Id), ended.Actions.Select(action => action.Id));
+        Assert.All(ended.Actions, action => Assert.Null(action.Participation));
+        Assert.Equal(ActionQueueStatus.Running, ended.Actions[0].Status);
+        Assert.All(ended.Actions.Skip(1), action => Assert.Equal(ActionQueueStatus.Pending, action.Status));
+        var afterEnding = JsonSerializer.Serialize(ended);
+        Assert.Equal(DomainErrorCode.Conflict, Assert.Throws<DomainException>(() => runtime.MutatePlayer(id,
+            aggregate => aggregate.EnqueuePriority(new(new ActionId("world.travel"), 1, "node.cloud-gate"),
+                From.AddSeconds(1), catalog.Actions, new("node.cloud-gate", 100, [], [])))).Code);
+        Assert.Equal(afterEnding, JsonSerializer.Serialize(runtime.ExportSnapshot(id).State));
+        Assert.True(runtime.RemoveAction(id, originalActions[0].Id));
+        runtime.EnqueueAction(id, new("cultivation.draw-qi"));
+        Assert.Equal(PlayerAggregate.MaxActionQueueLength, runtime.ExportSnapshot(id).State.Actions.Count);
+        runtime.MutatePlayer(id, aggregate => Assert.True(aggregate.ClearActions()));
+        Assert.Empty(runtime.ExportSnapshot(id).State.Actions);
+        AssertWorkReleased(runtime, id);
+    }
+
+    [Fact]
+    public void ParticipationLeavesAllPersonalCapacityAvailable()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        for (var i = 0; i < PlayerAggregate.MaxActionQueueLength - 1; i++)
+            player.Enqueue(new(new ActionId("cultivation.draw-qi")), From, catalog.Actions);
+        var spec = CreateParticipationSpec(player, catalog);
+        Assert.NotNull(player.StartActionParticipation(spec, From, catalog.Actions));
+        using var runtime = new EcsGameRuntime(catalog, From);
+        var id = runtime.CreatePlayer(player.ExportState());
+        runtime.EnqueueAction(id, new("cultivation.draw-qi"));
+        Assert.Equal(PlayerAggregate.MaxActionQueueLength + 1, runtime.ExportSnapshot(id).State.Actions.Count);
+        var before = JsonSerializer.Serialize(runtime.ExportSnapshot(id).State);
+        Assert.Equal(DomainErrorCode.Conflict,
+            Assert.Throws<DomainException>(() => runtime.EnqueueAction(id, new("cultivation.draw-qi"))).Code);
+        Assert.Equal(before, JsonSerializer.Serialize(runtime.ExportSnapshot(id).State));
+        AssertWorkReleased(runtime, id);
+    }
+
+    [Fact]
+    public void PriorityTravelAtPersonalCapacityDoesNotRemoveUnrelatedActions()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        for (var i = 0; i < PlayerAggregate.MaxActionQueueLength; i++)
+            player.Enqueue(new(new ActionId("cultivation.draw-qi")), From, catalog.Actions);
+        using var runtime = new EcsGameRuntime(catalog, From);
+        var id = runtime.CreatePlayer(player.ExportState());
+        var before = JsonSerializer.Serialize(runtime.ExportSnapshot(id).State);
+        Assert.Equal(DomainErrorCode.Conflict, Assert.Throws<DomainException>(() => runtime.MutatePlayer(id,
+            aggregate => aggregate.EnqueuePriority(new(new ActionId("world.travel"), 1, "node.cloud-gate"),
+                From, catalog.Actions, new("node.cloud-gate", 100, [], [])))).Code);
+        Assert.Equal(before, JsonSerializer.Serialize(runtime.ExportSnapshot(id).State));
+        AssertWorkReleased(runtime, id);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    public void RestoreRejectsInvalidParticipationCapacityOrQueueStatus(int invalidCase)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        for (var i = 0; i < PlayerAggregate.MaxActionQueueLength; i++)
+            player.Enqueue(new(new ActionId("cultivation.draw-qi")), From, catalog.Actions);
+        var spec = CreateParticipationSpec(player, catalog);
+        Assert.NotNull(player.StartActionParticipation(spec, From, catalog.Actions));
+        var state = player.ExportState();
+        var actions = state.Actions.ToArray();
+        switch (invalidCase)
+        {
+            case 0: // 257 个个人行动，不能冒充参与额外槽位。
+                actions[0] = actions[0] with { Participation = null };
+                break;
+            case 1: // 即使总数未越界，也只允许一个参与引用。
+                actions = actions.Take(2).ToArray();
+                actions[1] = actions[1] with { Participation = actions[0].Participation };
+                break;
+            case 2:
+                actions[0] = actions[0] with { Participation = null, Status = ActionQueueStatus.Pending };
+                actions[1] = actions[1] with { Participation = state.Actions[0].Participation, Status = ActionQueueStatus.Running };
+                break;
+            case 3:
+                actions[0] = actions[0] with { Participation = actions[0].Participation! with { EndsAtUnixSeconds = -1 } };
+                break;
+            case 4:
+                actions[0] = actions[0] with { Status = ActionQueueStatus.Pending };
+                break;
+            case 5:
+                actions[0] = actions[0] with { Status = ActionQueueStatus.Blocked };
+                break;
+            case 6:
+                actions[1] = actions[1] with { Status = ActionQueueStatus.Running };
+                break;
+            case 7:
+                actions = [.. actions, actions[1] with { Id = Guid.NewGuid() }];
+                break;
+        }
+        Assert.Equal(DomainErrorCode.InvalidArgument,
+            Assert.Throws<DomainException>(() => PlayerAggregate.Restore(state with { Actions = actions })).Code);
+    }
+
+    [Fact]
+    public void PriorityEnqueueCannotDuplicateOrDisplaceParticipationReference()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        var spec = CreateParticipationSpec(player, catalog);
+        Assert.NotNull(player.StartActionParticipation(spec, From, catalog.Actions));
+        var before = JsonSerializer.Serialize(player.ExportState());
+        Assert.Equal(DomainErrorCode.Conflict, Assert.Throws<DomainException>(() => player.EnqueuePriority(
+            new(spec.ActionId, -1, spec.NodeId), From, catalog.Actions,
+            participation: new ActionParticipationBinding(spec, double.PositiveInfinity))).Code);
+        Assert.Equal(DomainErrorCode.Conflict, Assert.Throws<DomainException>(() => player.EnqueuePriority(
+            new(spec.ActionId), From, catalog.Actions)).Code);
+        Assert.Equal(before, JsonSerializer.Serialize(player.ExportState()));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task RoundCompletionKeepsNormalAndBulkQueuesReportsAndEventsEqual(bool loopEnabled)
     {
         var actions = new ActionCatalog([
@@ -234,13 +410,39 @@ public sealed class EcsActionQueueMutationTests
 
         var binding = actual.Actions[0].Participation;
         Assert.NotNull(binding);
-        Assert.Equal("session.export", binding.Spec.SessionId);
+        Assert.Equal("session.export", binding.SessionId);
         Assert.True(double.IsPositiveInfinity(binding.EndsAtUnixSeconds));
-        Assert.Equal(2, binding.Spec.Members.Count);
-        Assert.Equal(expected.Actions[0].Participation!.Spec.Members.Select(member => member.PlayerId),
+        Assert.Equal(2, binding.Spec!.Members.Count);
+        Assert.Equal(expected.Actions[0].Participation!.Spec!.Members.Select(member => member.PlayerId),
             binding.Spec.Members.Select(member => member.PlayerId));
+        var json = JsonSerializer.Serialize(binding, Domain.Persistence.PersistenceJson.Options);
+        Assert.DoesNotContain("members", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("stats", json, StringComparison.OrdinalIgnoreCase);
+        var restoredBinding = JsonSerializer.Deserialize<ActionParticipationBinding>(json,
+            Domain.Persistence.PersistenceJson.Options)!;
+        Assert.Equal(binding.SessionId, restoredBinding.SessionId);
+        Assert.Null(restoredBinding.Spec);
+        Assert.True(restoredBinding.IsValid);
+        var expandedEnvelope = JsonSerializer.Serialize(new
+        {
+            spec,
+            endsAtUnixSeconds = From.AddMinutes(1).ToUnixTimeSeconds(),
+            appliedSequence = 7
+        }, Domain.Persistence.PersistenceJson.Options);
+        var referenceOnly = JsonSerializer.Deserialize<ActionParticipationBinding>(expandedEnvelope,
+            Domain.Persistence.PersistenceJson.Options)!;
+        Assert.Equal(spec.SessionId, referenceOnly.SessionId);
+        Assert.Equal(7, referenceOnly.AppliedSequence);
+        Assert.Null(referenceOnly.Spec);
         AssertWorkReleased(runtime, id);
     }
+
+    private static ActionParticipationSpec CreateParticipationSpec(PlayerAggregate player, GameDataCatalog catalog)
+        => new("session.capacity", "encounter.qi-beast", "node.test", 97, 0, From.ToUnixTimeSeconds(),
+            [player.CaptureActionParticipantSnapshot(catalog)])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
 
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
         => PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "队列回归", From, catalog.Fingerprint);

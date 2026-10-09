@@ -9,7 +9,7 @@ public sealed class PostgresRetentionRepository(
     ServerOptions options,
     ILogger<PostgresRetentionRepository> logger)
 {
-    /// <summary>对七类可清理表各删一小批过期行（同一事务），返回各类删除行数。</summary>
+    /// <summary>对可清理表各删一小批过期行，并回收已结束会话的已消费结算载荷（同一事务）。</summary>
     public async ValueTask<RetentionResult> PruneAsync(
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
@@ -72,12 +72,21 @@ public sealed class PostgresRetentionRepository(
             ORDER BY claimed_at
             LIMIT $2
             """, "DELETE FROM market.settlement_claims c USING ({0}) doomed WHERE c.player_id = doomed.player_id AND c.request_id = doomed.request_id", claimsBefore, cancellationToken);
+        // 终局后不再有下一检查点，复用低频清理回收末批已确认载荷；未消费结算始终保留。
+        var deletedParticipationInboxes = await DeleteBatchAsync(connection, transaction, """
+            SELECT inbox.session_id, inbox.player_id, inbox.sequence
+            FROM social.party_session_inbox inbox
+            JOIN social.party_sessions session ON session.session_id = inbox.session_id
+            WHERE session.ended_at IS NOT NULL AND inbox.consumed_at <= $1
+            ORDER BY inbox.consumed_at
+            LIMIT $2
+            """, "DELETE FROM social.party_session_inbox inbox USING ({0}) doomed WHERE inbox.session_id = doomed.session_id AND inbox.player_id = doomed.player_id AND inbox.sequence = doomed.sequence", now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk);
+        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes);
         if (result.Total > 0)
-            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents}",
-                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents);
+            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes}",
+                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes);
         return result;
     }
 
@@ -107,6 +116,8 @@ public sealed class PostgresRetentionRepository(
 /// <param name="ComputeJobs">已删除的终态冷挂机任务行数。</param>
 /// <param name="DataProtectionKeys">已删除的过期 Data Protection key 行数。</param>
 /// <param name="SettlementClaims">已删除的过期结算确认游标行数。</param>
+/// <param name="AccountRiskEvents">已删除的过期账号风险事件行数。</param>
+/// <param name="ParticipationInboxes">已删除的终态会话已消费结算载荷行数。</param>
 public sealed record RetentionResult(
     int Outbox,
     int Sessions,
@@ -114,10 +125,11 @@ public sealed record RetentionResult(
     int ComputeJobs,
     int DataProtectionKeys,
     int SettlementClaims,
-    int AccountRiskEvents)
+    int AccountRiskEvents,
+    int ParticipationInboxes = 0)
 {
     /// <summary>本轮删除总行数。</summary>
-    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents;
+    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes;
 }
 
 /// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后每小时一批。</summary>

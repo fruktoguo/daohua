@@ -888,9 +888,9 @@ public sealed record FriendRequestDto(string RequestId, string PlayerId, string 
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
 public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready);
 
-/// <summary>组队讨伐活跃会话（总纲 §21.13：共享剧本各自推演，规格由服务端钉死并冻结入档）。</summary>
+/// <summary>组队讨伐活跃会话（总纲 §21.13：会话持有唯一权威战斗状态，成员读取个人结算投影）。</summary>
 /// <param name="SessionId">会话唯一标识</param>
-/// <param name="EncounterId">钉死的遭遇 ID（全员同剧本）</param>
+/// <param name="EncounterId">钉死的遭遇 ID（会话权威输入）</param>
 /// <param name="NodeId">讨伐节点 ID</param>
 /// <param name="MemberIds">冻结成员名册（玩家 ID 字符串，下标即 spec 内成员序）</param>
 /// <param name="StartedAtUnixMilliseconds">开战时刻（Unix 毫秒）</param>

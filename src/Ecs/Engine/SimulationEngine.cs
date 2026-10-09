@@ -483,6 +483,8 @@ public static partial class SimulationEngine
                     "action.participation.ended", "行动参与会话已结束。", action.Intent.ActionId));
                 continue;
             }
+            // 队伍战斗由会话计算容器推进；个人补算只走墙钟，消费投影前不得独立出手。
+            if (action.Participation is not null) break;
             // 暂停只冻结仍然有效的行动，不能改变已到期参与会话的收尾优先级。
             if (player.Settings.QueuePaused) break;
             // 阻塞项是明确的停泊状态。它不能被本次推进重新标记为 Running，

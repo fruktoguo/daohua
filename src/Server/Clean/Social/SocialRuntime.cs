@@ -15,7 +15,7 @@ namespace Server.Clean.Social;
 /// 5. 组队讨伐（总纲 §21.13）：每次队伍状态变化后经 <see cref="ArbitratePartySessionAsync"/> 仲裁——
 ///    满槽+全员就绪+全员位于目标节点自动开打；任一条件失效或解散即写终态并逐成员收尾队首绑定。
 ///    会话规格（冻结面板/遭遇/种子）随 spec jsonb 持久化；成员行动入队走玩家运行时单写者边界，
-///    离线成员强制装载变更后即卸落盘，装载对账与重启扫尾兜底崩溃漏网。
+///    离线成员强制装载变更后即卸落盘；独立权威检查点与成员收件箱负责崩溃恢复。
 /// </summary>
 public sealed class SocialRuntime
 {
@@ -44,10 +44,20 @@ public sealed class SocialRuntime
     private readonly IPlayerRuntime? _players;
     /// <summary>模拟时钟：会话开打/散场时刻与玩家推进同时间轴（确定性基准模式对齐）。</summary>
     private readonly IPlayerSimulationClock _clock;
+    private readonly IActionParticipationRuntime? _participation;
     /// <summary>组队讨伐的每队伍裁决门：开打/散场仲裁串行化，跨实例竞态由 DB 唯一索引收敛。</summary>
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _partyGates = new();
     /// <summary>实例级通知并发门：跨并发存在感触发共享 4 个实际通知槽位。</summary>
     private readonly SemaphoreSlim _notifyGate = new(MaxNotifyParallelism, MaxNotifyParallelism);
+    private readonly object _pendingNotifyLock = new();
+    private readonly Dictionary<Guid, PendingNotification> _pendingNotifications = [];
+
+    private sealed class PendingNotification(Delegate[] subscribers)
+    {
+        public Delegate[] Subscribers = subscribers;
+        public bool NeedsRefresh = true;
+        public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     /// <summary>构造并接管在线存在感变化订阅。</summary>
     /// <param name="repository">好友/队伍持久化边界。</param>
@@ -66,7 +76,8 @@ public sealed class SocialRuntime
         GameDataCatalog catalog,
         ILogger<SocialRuntime> logger,
         IPlayerRuntime? players = null,
-        IPlayerSimulationClock? simulationClock = null)
+        IPlayerSimulationClock? simulationClock = null,
+        IActionParticipationRuntime? participation = null)
     {
         _repository = repository;
         _presence = presence;
@@ -76,6 +87,7 @@ public sealed class SocialRuntime
         _gameData = catalog;
         _players = players;
         _clock = simulationClock ?? PlayerSimulationClock.FromEnvironment();
+        _participation = participation;
         _nodeIds = catalog.WorldGraph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
         _presence.PresenceChanged += OnPresenceChangedAsync;
         _presence.NodeChanged += OnNodeChangedAsync;
@@ -690,19 +702,56 @@ public sealed class SocialRuntime
             pending.Add(NotifyOneAsync(playerId));
         await Task.WhenAll(pending);
 
-        async Task NotifyOneAsync(Guid playerId)
+        Task NotifyOneAsync(Guid playerId)
         {
-            // 仅持有实际通知槽位，不包存在感/节点仲裁入口，避免仲裁的嵌套通知再次获取同一槽位。
-            await _notifyGate.WaitAsync();
-            try
+            PendingNotification notification;
+            lock (_pendingNotifyLock)
             {
-                foreach (Func<Guid, ValueTask> subscriber in subscribers)
-                    await subscriber(playerId);
+                if (_pendingNotifications.TryGetValue(playerId, out notification!))
+                {
+                    notification.NeedsRefresh = true;
+                    notification.Subscribers = subscribers;
+                    return notification.Completion.Task;
+                }
+                notification = new(subscribers);
+                _pendingNotifications.Add(playerId, notification);
             }
-            finally
+            _ = DispatchNotificationAsync(playerId, notification);
+            return notification.Completion.Task;
+        }
+    }
+
+    private async Task DispatchNotificationAsync(Guid playerId, PendingNotification notification)
+    {
+        try
+        {
+            while (true)
             {
-                _notifyGate.Release();
+                await _notifyGate.WaitAsync();
+                try
+                {
+                    Delegate[] subscribers;
+                    lock (_pendingNotifyLock)
+                    {
+                        notification.NeedsRefresh = false;
+                        subscribers = notification.Subscribers;
+                    }
+                    foreach (Func<Guid, ValueTask> subscriber in subscribers) await subscriber(playerId);
+                }
+                finally { _notifyGate.Release(); }
+                lock (_pendingNotifyLock)
+                {
+                    if (notification.NeedsRefresh) continue;
+                    _pendingNotifications.Remove(playerId);
+                    notification.Completion.SetResult();
+                    return;
+                }
             }
+        }
+        catch (Exception exception)
+        {
+            lock (_pendingNotifyLock) _pendingNotifications.Remove(playerId);
+            notification.Completion.SetException(exception);
         }
     }
 
@@ -718,7 +767,7 @@ public sealed class SocialRuntime
         Guid.TryParse(action.TargetPlayerId, out var targetId) && targetId != Guid.Empty ? targetId : null;
 
     // ============================================================================
-    // 组队讨伐仲裁（总纲 §21.13）：共享剧本各自推演——开打冻结全员面板+钉死遭遇，
+    // 组队讨伐仲裁（总纲 §21.13）：冻结全员面板后交付唯一权威会话，成员只消费自己的结算，
     // 任一成立条件失效（离队/踢出/取消就绪/槽位变化/节点变化/解散/离线逐出）即散场重建。
     // ============================================================================
 
@@ -862,6 +911,8 @@ public sealed class SocialRuntime
                 await ApplySessionMutationAsync(member.PlayerId,
                     aggregate => snapshots[i] = aggregate.CaptureActionParticipantSnapshot(_gameData),
                     cancellationToken);
+                // 恢复从 durable 队列读取驻留真源；冻结后先提交成员状态，再交付会话检查点。
+                await _players!.FlushAsync(member.PlayerId, force: true, cancellationToken);
             }
             catch (Exception exception)
             {
@@ -875,6 +926,8 @@ public sealed class SocialRuntime
             }
         }
 
+        // 冻结采集完成后再定统一开场边界，避免成员装载时钟晚于会话开始。
+        startedAt = _clock.UtcNow;
         var spec = new ActionParticipationSpec(
             sessionId, encounterId, targetNode, seed,
             snapshots.Max(member => member!.SearchSpeedPoints),
@@ -888,28 +941,17 @@ public sealed class SocialRuntime
             _logger.LogError("组队讨伐开战放弃：会话规格不合法（队伍 {PartyId}，会话 {SessionId}）。", party.PartyId, sessionId);
             return;
         }
-        var specJson = JsonSerializer.Serialize(spec, PersistenceJson.Options);
-        // 占活跃位：并发仲裁由部分唯一索引收敛，败方直接放弃（成员变更未投递，无副作用残留）。
-        if (!await _repository.TryInsertPartySessionAsync(sessionId, party.PartyId, specJson, startedAt, cancellationToken))
-            return;
+        // 冻结规格与权威初态同事务占活跃位；成员入队失败不影响检查点恢复。
+        await (_participation ?? throw new InvalidOperationException("未装配行动参与权威宿主。"))
+            .CreateAsync(party.PartyId, spec, cancellationToken);
 
         var undelivered = 0;
         foreach (var member in party.Members)
         {
             try
             {
-                await ApplySessionMutationAsync(member.PlayerId, aggregate =>
-                {
-                    // 先扫净残留会话绑定（崩溃/重启遗留的异会话或非队首同名绑定），再幂等入队本会话。
-                    for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
-                    {
-                        var binding = aggregate.Actions[i].Participation;
-                        if (binding is null) continue;
-                        if (i == 0 && string.Equals(binding.Spec.SessionId, spec.SessionId, StringComparison.Ordinal)) continue;
-                        aggregate.RemoveAction(aggregate.Actions[i].Id);
-                    }
-                    aggregate.StartActionParticipation(spec, startedAt, _gameData.Actions);
-                }, cancellationToken);
+                // 玩家变更通道先按持久化真源建立活动引用或消费终局；不重复执行旧开场规格。
+                await ApplySessionMutationAsync(member.PlayerId, null, cancellationToken);
             }
             catch (Exception exception)
             {
@@ -924,32 +966,18 @@ public sealed class SocialRuntime
             sessionId, party.PartyId, encounterId, party.Members.Count);
     }
 
-    /// <summary>
-    /// 散场：先写会话行终态（幂等收敛并发散场），再逐成员收尾——
-    /// 队首本会话绑定写权威散场时刻（引擎推进到该时刻自然收尾），其余残留绑定一律移除。
+    /// 散场：权威会话推进到结束边界并投递末批，随后成员在自身所有权内消费并恢复个人行动。
     /// </summary>
     private async ValueTask DissolveSessionAsync(PartySessionRecord session, string reason, CancellationToken cancellationToken)
     {
         var endedAt = _clock.UtcNow;
-        var endsAtUnixSeconds = endedAt.ToUnixTimeMilliseconds() / 1000d;
-        await _repository.TryEndPartySessionAsync(session.SessionId, endedAt, reason, cancellationToken);
+        await (_participation ?? throw new InvalidOperationException("未装配行动参与权威宿主。"))
+            .EndAsync(session.SessionId, endedAt, reason, cancellationToken);
         foreach (var memberId in session.MemberIds)
         {
             try
             {
-                await ApplySessionMutationAsync(memberId, aggregate =>
-                {
-                    for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
-                    {
-                        var binding = aggregate.Actions[i].Participation;
-                        if (binding is null) continue;
-                        // 队首本会话绑定写权威散场时刻；异会话遗留与非队首残留直接移除（不在队首无推进语义）。
-                        if (i == 0 && string.Equals(binding.Spec.SessionId, session.SessionId, StringComparison.Ordinal))
-                            aggregate.EndActionParticipation(session.SessionId, endsAtUnixSeconds);
-                        else
-                            aggregate.RemoveAction(aggregate.Actions[i].Id);
-                    }
-                }, cancellationToken);
+                await ApplySessionMutationAsync(memberId, null, cancellationToken);
             }
             catch (Exception exception)
             {
@@ -961,16 +989,16 @@ public sealed class SocialRuntime
     }
 
     /// <summary>
-    /// 会话成员变更通道：在线/离线成员统一经玩家运行时门内装载+变更，标脏进刷盘轨道；
+    /// 会话成员对账通道：在线/离线成员统一经玩家运行时门内装载、结算消费与可选变更；
     /// 本会话强拉的离线实体变更后即卸并强制落盘，不留驻内存、不落「在线」假状态。
     /// </summary>
-    private async ValueTask ApplySessionMutationAsync(Guid memberId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken)
+    private async ValueTask ApplySessionMutationAsync(Guid memberId, Action<PlayerAggregate>? mutate, CancellationToken cancellationToken)
     {
         if (_players is null) return;
         var wasLoaded = _players.TryGetLoaded(memberId) is not null;
         await _players.MutateOwnedAsync(memberId, aggregate =>
         {
-            mutate(aggregate);
+            mutate?.Invoke(aggregate);
             // 强制装载走统一上线路径（LoadAsync 内置置 Online），门内按注册表复位离线。
             if (!_presence.IsOnline(memberId)) aggregate.SetPresence(PresenceState.Offline);
         }, cancellationToken);
@@ -1016,83 +1044,33 @@ public sealed class SocialRuntime
     }
 
     /// <summary>
-    /// 已装载玩家的队首死会话兜底收尾（看门狗调用）：散场行已写而成员绑定未终局
-    /// （散场投递与终止更新之间崩溃的漏网），或本人已离开会话所属队伍时，按权威时刻补写。
+    /// 周期先按组织条件裁决会话，再让已装载成员进入自己的所有权通道消费结算并补齐引用。
+    /// 不从成员旧战斗态自行散场；漏投、取消准备与成员关系落库后崩溃均由权威会话收敛。
     /// </summary>
     public async ValueTask ReconcileLoadedSessionBindingsAsync(CancellationToken cancellationToken = default)
     {
         if (_players is null) return;
-        var loaded = await _players.GetLoadedSnapshotsAsync(cancellationToken);
-        var stale = new List<(Guid PlayerId, string SessionId)>();
+        var loaded = (await _players.GetLoadedSnapshotsAsync(cancellationToken))
+            .Where(snapshot => snapshot.State.Actions.Any(action => action.Participation is not null)
+                || _participation?.RequiresReconciliation(snapshot.PlayerId) == true).ToArray();
+        var parties = new HashSet<Guid>();
         foreach (var snapshot in loaded)
         {
-            if (snapshot.State.Actions.Count > 0 && snapshot.State.Actions[0].Participation is { } binding
-                && double.IsPositiveInfinity(binding.EndsAtUnixSeconds))
-                stale.Add((snapshot.PlayerId, binding.Spec.SessionId));
-        }
-        var endedCache = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
-        var aliveCache = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (memberId, sessionId) in stale)
-        {
-            try
+            if (await _repository.GetPartyIdAsync(snapshot.PlayerId, cancellationToken) is { } partyId)
+                parties.Add(partyId);
+            if (snapshot.State.Actions.Count > 0 && snapshot.State.Actions[0].Participation is { } binding)
             {
-                if (!aliveCache.Contains(sessionId) && !endedCache.ContainsKey(sessionId))
-                {
-                    // 死会话判定：行缺失/已散场/本人已不在会话所属队伍（离队与散场间崩溃的漏网）。
-                    var row = await _repository.GetPartySessionAsync(sessionId, cancellationToken);
-                    var memberParty = await _repository.GetPartyIdAsync(memberId, cancellationToken);
-                    if (row is not null && row.EndedAt is null && memberParty == row.PartyId)
-                        aliveCache.Add(sessionId);
-                    else
-                        endedCache[sessionId] = row?.EndedAt ?? _clock.UtcNow;
-                }
-                if (aliveCache.Contains(sessionId) || !endedCache.TryGetValue(sessionId, out var endedAt)) continue;
-                await ApplySessionMutationAsync(memberId,
-                    aggregate => aggregate.EndActionParticipation(sessionId, endedAt.ToUnixTimeMilliseconds() / 1000d),
-                    cancellationToken);
-            }
-            catch (Exception exception)
-            {
-                _logger.LogError(exception, "组队讨伐绑定兜底收尾失败：成员 {PlayerId}（会话 {SessionId}）。", memberId, sessionId);
+                var session = await _repository.GetPartySessionAsync(binding.SessionId, cancellationToken)
+                    ?? throw new InvalidOperationException("参与引用缺少权威会话记录。");
+                parties.Add(session.PartyId);
             }
         }
-
-        // 开打记录先落库、逐成员投递后可能因崩溃漏投；周期对账必须扫描“活跃会话但队首无绑定”的在线玩家，
-        // 不能只扫描已经存在的死绑定。
+        foreach (var partyId in parties)
+            await ArbitratePartySessionAsync(partyId, "organization-reconciled", cancellationToken);
         foreach (var snapshot in loaded)
-        {
-            try
-            {
-                var partyId = await _repository.GetPartyIdAsync(snapshot.PlayerId, cancellationToken);
-                if (partyId is not { } ownedPartyId) continue;
-                var active = await _repository.GetActivePartySessionAsync(ownedPartyId, cancellationToken);
-                if (active is not { } live || !live.MemberIds.Contains(snapshot.PlayerId)) continue;
-                var spec = JsonSerializer.Deserialize<ActionParticipationSpec>(live.SpecJson, PersistenceJson.Options);
-                if (spec is not { IsValid: true } participationSpec
-                    || participationSpec.SelfIndexOf(new PlayerId(snapshot.PlayerId)) < 0)
-                    continue;
-                var current = _players.TryGetLoaded(snapshot.PlayerId) ?? snapshot;
-                var bound = current.State.Actions.Count > 0
-                    && current.State.Actions[0].Participation is { } participation
-                    && string.Equals(participation.Spec.SessionId, live.SessionId, StringComparison.Ordinal)
-                    && double.IsPositiveInfinity(participation.EndsAtUnixSeconds)
-                    && current.State.Actions.Skip(1).All(action => action.Participation is null);
-                if (bound) continue;
-                await ApplySessionMutationAsync(snapshot.PlayerId, aggregate =>
-                {
-                    for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
-                    {
-                        if (aggregate.Actions[i].Participation is null) continue;
-                        aggregate.RemoveAction(aggregate.Actions[i].Id);
-                    }
-                    aggregate.StartActionParticipation(participationSpec, live.StartedAt, _gameData.Actions);
-                }, cancellationToken);
-            }
-            catch (Exception exception)
-            {
-                _logger.LogError(exception, "行动参与绑定补发失败：成员 {PlayerId}。", snapshot.PlayerId);
-            }
-        }
+            await _players.MutateOwnedAsync(snapshot.PlayerId,
+                aggregate => aggregate.SetPresence(_presence.IsOnline(snapshot.PlayerId)
+                    ? PresenceState.Online : PresenceState.Offline), cancellationToken);
     }
 
     private static FriendRequestDto ToRequestDto(FriendRequestView view) =>
