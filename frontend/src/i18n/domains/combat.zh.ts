@@ -25,6 +25,8 @@ export const combatZh = {
       defaultActorName: '角色',
       portraitAria: '{name}形象',
       sealFallback: '修',
+      threatGlyph: '威',
+      threatAria: '威胁 {n}',
       stopCurrent: '终止当前行动 ({name})',
       stopConfirmTitle: '终止行动',
       stopConfirmDesc: '确定终止当前行动“{name}”吗？',

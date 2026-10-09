@@ -1814,6 +1814,39 @@
   --arena-resource-glow: none;
 }
 
+/* 灵力条下威胁值行：徽标 + 实时数值，随快照帧刷新 */
+.arena-threat {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-end;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 1px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: #f87171;
+  text-shadow: 0 0 2px #000, 1px 1px 0 #090a0f;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.arena-threat>i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 1px 2.5px;
+  border-radius: 2px;
+  color: #0b0c10;
+  background: #f87171;
+}
+
+.arena-threat>b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .arena-resource-meter {
   position: relative;
   display: block;

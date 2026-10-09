@@ -667,6 +667,7 @@ function ArenaActor({
   maxHp,
   mp,
   maxMp,
+  threat = null,
   action,
   buffs = [],
   onInspect,
@@ -686,6 +687,8 @@ function ArenaActor({
   maxHp: number
   mp: number
   maxMp: number
+  /** 累积威胁值（灵力条下方实时展示；为 null 时不渲染该行） */
+  threat?: number | null
   action?: CombatActionState | null
   buffs?: readonly Buff[]
   /** 点击/回车唤起属性详情模态窗回调；缺省退化为纯展示态（尸体等不可交互单位） */
@@ -816,6 +819,12 @@ function ArenaActor({
         <div className="arena-vitals">
           <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} />
           <ArenaResource actorKey={actorKey} max={maxMp} tone="mp" value={mp} />
+          {threat != null && (
+            <span aria-label={t('combat.arena.threatAria', { n: formatInteger(threat) })} className="arena-threat">
+              <i aria-hidden="true">{t('combat.arena.threatGlyph')}</i>
+              <b><UnitNumber disableTooltip value={threat} /></b>
+            </span>
+          )}
         </div>
       </header>
       <div className="arena-avatar-stage">
@@ -1296,6 +1305,8 @@ interface EnemyDisplayState {
   maxHp: number
   mp: number
   maxMp: number
+  /** 累积威胁值；斗法镜像无威胁语义时为 null（不渲染威胁行） */
+  threat: number | null
   action?: CombatActionState | null
   visual?: CharacterVisual | null
   /** 服务端按需投影的完整战斗属性（详情弹窗唯一数值来源；未登记观察目标时为 null） */
@@ -1314,6 +1325,8 @@ interface AllyDisplayState {
   mp: number
   maxMp: number
   isSelf: boolean
+  /** 累积威胁值（敌方出手按全队威胁轮盘选目标的权重来源） */
+  threat: number
   action?: CombatActionState | null
   /** 开打冻结战斗属性（详情弹窗唯一数值来源；未登记观察目标时为 null） */
   attributes?: CombatAttributes | null
@@ -1580,6 +1593,7 @@ export const CombatArena = memo(function CombatArena({
   const playerMaxMp = Math.max(1, combatResources?.maxManapoints ?? combatAttributes?.maxManapoints ?? 1)
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
+  const playerThreat = expedition?.playerThreat ?? null
   const phase = expedition?.phase ?? (isTravel ? 'travel' : isLifeAction ? 'life-action' : 'idle')
   const isDuelPhase = phase === 'duel'
 
@@ -1608,6 +1622,7 @@ export const CombatArena = memo(function CombatArena({
         maxHp,
         mp,
         maxMp,
+        threat: null,
         action: duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities),
         visual: null,
         attributes: opponentAttributes,
@@ -1625,6 +1640,7 @@ export const CombatArena = memo(function CombatArena({
         maxHp: Math.max(1, entry.maxHitpoints ?? entry.attributes?.maxHitpoints ?? entry.hitpoints),
         mp: entry.manapoints,
         maxMp: Math.max(1, entry.maxManapoints ?? entry.attributes?.maxManapoints ?? entry.manapoints),
+        threat: entry.threat,
         action: entry.hitpoints > 0 && expedition?.phase === 'combat' && expedition.playerRespawnAtSeconds == null
           ? enemyActionState(entry, battleElapsed, serverNow, abilities)
           : null,
@@ -1662,6 +1678,7 @@ export const CombatArena = memo(function CombatArena({
         mp: ally.manapoints,
         maxMp: Math.max(1, ally.maxManapoints ?? ally.manapoints),
         isSelf: ally.memberIndex === selfIndex,
+        threat: ally.threat,
         action: allyActionState(ally, battleElapsed, serverNow, abilities, respawnMs, respawnName, expedition?.phase),
         attributes: ally.attributes ?? null,
         skills: ally.skills ?? null,
@@ -1887,6 +1904,7 @@ export const CombatArena = memo(function CombatArena({
                           onInspect={() => setInspectedActor('player')}
                           role="player"
                           seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
+                          threat={playerThreat}
                           visual={playerVisual}
                         />
                       </div>
@@ -1910,6 +1928,7 @@ export const CombatArena = memo(function CombatArena({
                         onInspect={() => setInspectedActor(`ally:${ally.memberIndex}`)}
                         role="player"
                         seal={ally.seal}
+                        threat={ally.threat}
                       />
                     </div>
                   )
@@ -1936,6 +1955,7 @@ export const CombatArena = memo(function CombatArena({
                     onInspect={() => setInspectedActor('player')}
                     role="player"
                     seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
+                    threat={playerThreat}
                     visual={playerVisual}
                   />
                 </div>
@@ -1986,6 +2006,7 @@ export const CombatArena = memo(function CombatArena({
                       onInspect={corpseSlotsActive ? undefined : () => setInspectedActor(`enemy:${index}`)}
                       role="enemy"
                       seal={entry.seal}
+                      threat={entry.threat}
                       visual={entry.visual}
                     />
                   </div>
