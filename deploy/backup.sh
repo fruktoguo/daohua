@@ -22,7 +22,7 @@ set -Eeuo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
-ENV_FILE="${DEPLOY_DIR}/daohua.env"
+ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
 BACKUP_DIR="${BACKUP_DIR:-${DEPLOY_DIR}/backups}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
 LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
@@ -30,6 +30,10 @@ LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
 if [[ "${EUID}" -ne 0 && "${ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
   printf '该脚本必须以 root 运行。\n' >&2
   exit 1
+fi
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  set -a; source "$ENV_FILE"; set +a
 fi
 
 
@@ -56,14 +60,12 @@ if [[ -z "$db_state" || "$db_state" != true\ healthy ]]; then
   exit 1
 fi
 
-if ! compose exec -T db pg_dump \
-  --username=daohua \
-  --dbname=daohua \
-  --format=custom \
-  --compress=gzip:9 \
-  --no-owner \
-  --no-privileges \
-  >"$partial"; then
+if ! compose exec -T db sh -ceu '
+  exec pg_dump \
+    --username="${POSTGRES_USER:?POSTGRES_USER 未注入}" \
+    --dbname="${POSTGRES_DB:?POSTGRES_DB 未注入}" \
+    --format=custom --compress=gzip:9 --no-owner --no-privileges
+' >"$partial"; then
   rm -f "$partial"
   printf '数据库备份失败。\n' >&2
   exit 1

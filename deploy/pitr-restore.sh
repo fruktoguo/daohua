@@ -6,9 +6,17 @@ set -Eeuo pipefail
 BASE_ARCHIVE=""
 TARGET_TIME=""
 OUTPUT_DIR=""
-WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-/opt/daohua/wal-archive}"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
+ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
+WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 START_INSTANCE=0
 CONFIRM=0
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  set -a; source "$ENV_FILE"; set +a
+fi
+WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
 
 usage() {
   printf '%s\n' \
@@ -32,25 +40,21 @@ done
 
 [[ "$CONFIRM" == 1 ]] || { printf '恢复属于高风险操作，必须显式传入 --confirm。\n' >&2; exit 1; }
 [[ -f "$BASE_ARCHIVE" ]] || { printf '找不到物理备份: %s\n' "$BASE_ARCHIVE" >&2; exit 1; }
-[[ -n "$TARGET_TIME" && "$TARGET_TIME" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] || { printf 'target-time 必须为 ISO-8601 UTC 时间。\n' >&2; exit 2; }
+[[ "$TARGET_TIME" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|\+00:00)$ ]] || { printf 'target-time 必须为 ISO-8601 UTC 时间。\n' >&2; exit 2; }
+# PostgreSQL 的恢复参数使用数值 UTC 偏移；保留小数秒，避免 Z 形式在恢复启动时被拒绝。
+if [[ "$TARGET_TIME" == *Z ]]; then TARGET_TIME="${TARGET_TIME%Z}+00:00"; fi
 [[ -n "$OUTPUT_DIR" && "$OUTPUT_DIR" == /tmp/daohua-pitr-* ]] || { printf 'output 必须是 /tmp/daohua-pitr-* 隔离目录。\n' >&2; exit 2; }
 [[ ! -e "$OUTPUT_DIR" ]] || { printf '输出目录已存在，为避免覆盖请换用新目录: %s\n' "$OUTPUT_DIR" >&2; exit 1; }
 [[ -d "$WAL_ARCHIVE_DIR" ]] || { printf '找不到 WAL 归档目录: %s\n' "$WAL_ARCHIVE_DIR" >&2; exit 1; }
+WAL_ARCHIVE_DIR="$WAL_ARCHIVE_DIR" "$SCRIPT_DIR/wal-archive.sh" verify
 
-if [[ -f "${BASE_ARCHIVE}.sha256" ]]; then
-  (cd "$(dirname "$BASE_ARCHIVE")" && sha256sum --check "$(basename "${BASE_ARCHIVE}.sha256")")
-fi
+[[ -f "${BASE_ARCHIVE}.sha256" ]] || { printf '物理备份缺少 SHA-256 校验文件，拒绝恢复。\n' >&2; exit 1; }
+(cd "$(dirname "$BASE_ARCHIVE")" && sha256sum --check "$(basename "${BASE_ARCHIVE}.sha256")")
 
 mkdir -p "$OUTPUT_DIR"
 tar -xzf "$BASE_ARCHIVE" -C "$OUTPUT_DIR"
 [[ -f "$OUTPUT_DIR/backup_manifest" ]] || { printf '物理备份缺少 backup_manifest，拒绝继续。\n' >&2; exit 1; }
 
-cat >"$OUTPUT_DIR/postgresql.auto.conf" <<EOF
-restore_command = 'cp /wal-archive/%f %p'
-recovery_target_time = '${TARGET_TIME}'
-recovery_target_action = 'pause'
-EOF
-touch "$OUTPUT_DIR/recovery.signal"
 chmod 0700 "$OUTPUT_DIR"
 docker run --rm -u 0 -v "$OUTPUT_DIR:/var/lib/postgresql/data" postgres:18-alpine \
   chown -R postgres:postgres /var/lib/postgresql/data
@@ -59,13 +63,47 @@ docker run --rm --user postgres \
   -v "$OUTPUT_DIR:/var/lib/postgresql/data:ro" \
   postgres:18-alpine pg_verifybackup /var/lib/postgresql/data
 
+# 必须先核验原始 manifest，再写恢复配置，否则会自行破坏备份校验和。
+cat >"$OUTPUT_DIR/postgresql.auto.conf" <<EOF
+restore_command = 'gzip -dc /wal-archive/%f.gz > %p'
+recovery_target_time = '${TARGET_TIME}'
+recovery_target_action = 'pause'
+EOF
+touch "$OUTPUT_DIR/recovery.signal"
+docker run --rm -u 0 -v "$OUTPUT_DIR:/var/lib/postgresql/data" postgres:18-alpine \
+  chown postgres:postgres /var/lib/postgresql/data/postgresql.auto.conf /var/lib/postgresql/data/recovery.signal
+
 if [[ "$START_INSTANCE" == 1 ]]; then
-  docker rm -f daohua-pitr-restore >/dev/null 2>&1 || true
-  docker run -d --name daohua-pitr-restore \
+  [[ -n "${DB_BOOTSTRAP_USER:-}" ]] || { printf '隔离恢复需要 DB_BOOTSTRAP_USER。
+' >&2; exit 1; }
+  [[ -n "${DB_BOOTSTRAP_PASSWORD:-}" ]] || { printf '隔离恢复需要 DB_BOOTSTRAP_PASSWORD。
+' >&2; exit 1; }
+  export POSTGRES_USER="$DB_BOOTSTRAP_USER"
+  export POSTGRES_PASSWORD="$DB_BOOTSTRAP_PASSWORD"
+  export POSTGRES_DB="${POSTGRES_DB:-${DB_NAME:-}}"
+  [[ -n "$POSTGRES_DB" ]] || { printf '隔离恢复需要 POSTGRES_DB 或 DB_NAME。\n' >&2; exit 1; }
+  container_name="daohua-pitr-restore-$$"
+  docker run -d --name "$container_name" \
+    --env POSTGRES_USER --env POSTGRES_PASSWORD --env POSTGRES_DB \
+    --env PGDATA=/var/lib/postgresql/data \
     -p 127.0.0.1:15432:5432 \
     -v "$OUTPUT_DIR:/var/lib/postgresql/data" \
     -v "$WAL_ARCHIVE_DIR:/wal-archive:ro" \
-    postgres:18-alpine >/dev/null
-  printf 'PITR 临时实例已启动: 127.0.0.1:15432（完成核对后执行 docker rm -f daohua-pitr-restore）\n'
+    postgres:18-alpine postgres -c archive_mode=off >/dev/null
+  recovered=0
+  for ((attempt=0; attempt<60; attempt++)); do
+    if [[ "$(docker exec "$container_name" sh -ceu '
+      export PGPASSWORD="$POSTGRES_PASSWORD"
+      psql -X -t -A -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 \
+        -c "SELECT pg_is_in_recovery() AND pg_is_wal_replay_paused();"
+    ' 2>/dev/null)" == t ]]; then recovered=1; break; fi
+    sleep 1
+  done
+  if [[ "$recovered" != 1 ]]; then
+    printf 'PITR 未到达指定恢复目标并暂停，拒绝报告恢复成功；已停止本次隔离实例。\n' >&2
+    docker rm -f "$container_name" >/dev/null
+    exit 1
+  fi
+  printf 'PITR 已到达恢复目标并暂停: 127.0.0.1:15432，容器 %s（业务核对后手动移除该容器）。\n' "$container_name"
 fi
 printf 'PITR 恢复目录已准备: %s\n' "$OUTPUT_DIR"

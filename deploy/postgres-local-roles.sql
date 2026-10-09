@@ -19,7 +19,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
     identity.auth_sessions, identity.audit_events, identity.data_protection_keys,
     identity.account_risk_signals, identity.account_risk_events, platform.account_risk_policy, platform.account_risk_key,
     game.player_state_heads, game.player_state_sections, game.player_action_queue,
-    game.player_runtime_leases, game.player_projection,
+    game.player_runtime_leases, game.player_projection, game.node_buildings,
     economy.player_asset_balances, economy.player_asset_instances, economy.transactions,
     economy.transaction_lines, economy.reservations, market.partition_leases,
     market.orders, market.trades, market.settlement_claims, platform.section_flush_queue,
@@ -43,7 +43,7 @@ DECLARE object_record record;
 BEGIN
     FOR object_record IN SELECT schemaname, tablename FROM pg_tables
         WHERE schemaname IN ('identity','game','economy','market','platform','social')
-            AND tablename NOT LIKE '%\_archive%' ESCAPE '\\' LOOP
+            AND tablename NOT LIKE '%\_archive%' ESCAPE '\' LOOP
         EXECUTE format('ALTER TABLE %I.%I OWNER TO daohua_bootstrap', object_record.schemaname, object_record.tablename);
     END LOOP;
 END
@@ -53,4 +53,5 @@ ALTER SCHEMA game OWNER TO daohua_bootstrap;
 ALTER SCHEMA economy OWNER TO daohua_bootstrap;
 ALTER SCHEMA market OWNER TO daohua_bootstrap;
 ALTER SCHEMA platform OWNER TO daohua_bootstrap;
+ALTER SCHEMA social OWNER TO daohua_bootstrap;
 COMMIT;

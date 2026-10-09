@@ -225,14 +225,14 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo rm -f /opt/daohua/failed-image.id
   if [[ $IMAGE_EXPLICIT == 1 ]]; then
     if sudo grep -q '^APP_IMAGE=' /opt/daohua/daohua.env; then
-      sudo sed -i "s|^APP_IMAGE=.*|APP_IMAGE=$IMAGE|" /opt/daohua/daohua.env
+      sudo sed -i \"s|^APP_IMAGE=.*|APP_IMAGE=$IMAGE|\" /opt/daohua/daohua.env
     else
       printf 'APP_IMAGE=%s\n' '$IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
     fi
   fi
   if [[ $COMPUTE_IMAGE_EXPLICIT == 1 ]]; then
     if sudo grep -q '^COMPUTE_IMAGE=' /opt/daohua/daohua.env; then
-      sudo sed -i "s|^COMPUTE_IMAGE=.*|COMPUTE_IMAGE=$COMPUTE_IMAGE|" /opt/daohua/daohua.env
+      sudo sed -i \"s|^COMPUTE_IMAGE=.*|COMPUTE_IMAGE=$COMPUTE_IMAGE|\" /opt/daohua/daohua.env
     else
       printf 'COMPUTE_IMAGE=%s\n' '$COMPUTE_IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
     fi
@@ -262,8 +262,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   compute_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-compute)\"
   sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-app
   sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-compute
-  if [[ "\$app_health" != healthy || "\$compute_health" != healthy ]]; then
-    printf '容器健康检查未通过: app=%s compute=%s\n' "\$app_health" "\$compute_health" >&2
+  if [[ \"\$app_health\" != healthy || \"\$compute_health\" != healthy ]]; then
+    printf '容器健康检查未通过: app=%s compute=%s\n' \"\$app_health\" \"\$compute_health\" >&2
     exit 1
   fi
   # /readyz 只校验服务就绪，不依赖旧存储能力字段。

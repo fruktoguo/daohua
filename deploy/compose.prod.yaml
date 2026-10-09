@@ -104,6 +104,8 @@ services:
       Storage__DataProtectionKeyRetentionDays: "180"
       Server__MaxWebSocketMessageBytes: "1048576"
       Server__WebSocketOutboundCapacity: "256"
+      # 主机名过滤：公网域名 + 回环 + Compose 内部服务名（compute-link 反向拨入用 app 主机名）。
+      AllowedHosts: "${ALLOWED_HOSTS:-daohua.yuohira.com;localhost;127.0.0.1;app}"
       Auth__SessionLifetimeDays: "30"
       Market__PartitionCount: "${MARKET_PARTITION_COUNT:-1}"
       Market__PartitionId: "${MARKET_PARTITION_ID:-0}"

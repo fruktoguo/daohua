@@ -85,10 +85,11 @@ deploy_pair() {
   APP_IMAGE="$app_image" COMPUTE_IMAGE="$compute_image" compose up \
     --detach \
     --force-recreate \
-    app compute-node
-  wait_healthy "$COMPUTE_CONTAINER_NAME"
-  wait_healthy "$CONTAINER_NAME"
-  wait_ready
+    app compute-node || return 1
+  wait_healthy "$COMPUTE_CONTAINER_NAME" || return 1
+  wait_healthy "$CONTAINER_NAME" || return 1
+  wait_ready || return 1
+  return 0
 }
 
 docker pull "$APP_IMAGE" >/dev/null

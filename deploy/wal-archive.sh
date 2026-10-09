@@ -38,30 +38,36 @@ action="${1:-status}"
 
 wal_files=()
 while IFS= read -r -d '' file; do
-  if [[ "$(basename "$file")" =~ ^[0-9A-Fa-f]{24}$ ]]; then
+  if [[ "$(basename "$file")" =~ ^([0-9A-Fa-f]{24}|[0-9A-Fa-f]{24}\.[0-9A-Fa-f]{8}\.backup|[0-9A-Fa-f]{8}\.history)\.gz$ ]]; then
     wal_files+=("$file")
   fi
 done < <(find "$WAL_ARCHIVE_DIR" -maxdepth 1 -type f -print0 | sort -z)
 case "$action" in
   verify)
     shopt -s nullglob
-    temporary_files=("$WAL_ARCHIVE_DIR"/.*.tmp.*)
+    temporary_files=("$WAL_ARCHIVE_DIR"/.*.tmp.* "$WAL_ARCHIVE_DIR"/.*.verify.*)
     if ((${#temporary_files[@]} > 0)); then
       printf '发现未清理的 WAL 临时文件: %s\n' "${temporary_files[*]}" >&2
       exit 1
     fi
+    while IFS= read -r -d '' file; do
+      [[ "$(basename "$file")" =~ ^([0-9A-Fa-f]{24}|[0-9A-Fa-f]{24}\.[0-9A-Fa-f]{8}\.backup|[0-9A-Fa-f]{8}\.history)\.gz$ ]] || {
+        printf '发现不支持的 WAL 归档对象，拒绝忽略: %s\n' "$file" >&2
+        exit 1
+      }
+    done < <(find "$WAL_ARCHIVE_DIR" -maxdepth 1 -type f -print0)
     for file in "${wal_files[@]}"; do
       [[ "$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file")" == "600" ]] || {
         printf 'WAL 文件权限必须为 0600: %s\n' "$file" >&2
         exit 1
       }
-      [[ -s "$file" ]] || { printf 'WAL 文件为空: %s\n' "$file" >&2; exit 1; }
+      gzip -t "$file" || { printf 'WAL 压缩归档损坏: %s\n' "$file" >&2; exit 1; }
     done
     printf 'WAL 归档校验通过: files=%s dir=%s\n' "${#wal_files[@]}" "$WAL_ARCHIVE_DIR"
     ;;
   prune)
     while IFS= read -r -d '' file; do
-      if [[ "$(basename "$file")" =~ ^[0-9A-Fa-f]{24}$ ]]; then
+      if [[ "$(basename "$file")" =~ ^([0-9A-Fa-f]{24}|[0-9A-Fa-f]{24}\.[0-9A-Fa-f]{8}\.backup|[0-9A-Fa-f]{8}\.history)\.gz$ ]]; then
         if [[ "$(find "$file" -prune -mtime "+$((WAL_RETENTION_DAYS - 1))" -print)" == "$file" ]]; then
           printf '%s\n' "$file"
           rm -f -- "$file"
@@ -72,7 +78,7 @@ case "$action" in
     ;;
   status)
     du -sh "$WAL_ARCHIVE_DIR"
-    printf 'WAL 文件数: %s\n' "${#wal_files[@]}"
+    printf 'WAL 压缩归档文件数: %s\n' "${#wal_files[@]}"
     if ((${#wal_files[@]} > 0)); then
       printf '最早: %s\n' "${wal_files[0]}"
       printf '最晚: %s\n' "${wal_files[${#wal_files[@]} - 1]}"

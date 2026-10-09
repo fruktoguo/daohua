@@ -20,8 +20,11 @@ compose() {
   if [[ -f "$ENV_FILE" ]]; then docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; else docker compose -f "$COMPOSE_FILE" "$@"; fi
 }
 
-compose exec -T db psql -v ON_ERROR_STOP=1 --username=daohua --dbname=daohua \
-  -v before_days="$ARCHIVE_BEFORE_DAYS" <<'SQL'
+compose exec -T db sh -ceu '
+  export PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未注入}"
+  exec psql -v ON_ERROR_STOP=1 --username="${POSTGRES_USER:?POSTGRES_USER 未注入}" \
+    --dbname="${POSTGRES_DB:?POSTGRES_DB 未注入}" -v before_days="$1"
+' sh "$ARCHIVE_BEFORE_DAYS" <<'SQL'
 BEGIN;
 CREATE TABLE IF NOT EXISTS market.trades_archive (
     trade_id uuid NOT NULL,

@@ -1,6 +1,6 @@
 # daohua 生产构建与部署
 
-本文只描述本次 clean-room 重写后的生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v4，本地 schema 不一致时默认直接重新初始化。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
+本文描述当前生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v21。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 
 ## 拓扑与边界
 
@@ -8,7 +8,7 @@
 浏览器 -- HTTPS/WebSocket --> Caddy -- 127.0.0.1:15128 --> daohua API
                                                    |
                                                    +--> PostgreSQL 18（唯一 durable 真源）
-                                                   +--> ComputeNode（内部 HTTP/Token，冷挂机）
+                                                   <-- ComputeNode（反向 compute-link / Token，冷挂机）
 ```
 
 API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取得 `player_id`；客户端不能在 URL 或请求体中声明另一个玩家取得权限。内测账号密码长度为 6-24 个字符。ComputeNode 仅接受 `X-Compute-Token` 头（无 `Authorization` 回退）；节点不连接生产数据库、不处理账号和市场写入。
@@ -20,7 +20,7 @@ API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取
 - Ubuntu Server 24.04 LTS、linux/amd64。
 - .NET SDK 10、Node.js 22、npm、Docker Engine/Compose/Buildx。
 - 服务器 SSH 别名 `yuohira`，生产目录 `/opt/daohua`，Compose 项目名 `daohua`。
-- `/opt/daohua/daohua.env` 只保存 `DB_PASSWORD`、`COMPUTE_TOKEN`、`APP_IMAGE`、`COMPUTE_IMAGE`、`WAL_ARCHIVE_DIR` 等部署变量；不保存玩家 token、快照或日志。`WAL_ARCHIVE_DIR` 默认 `/opt/daohua/wal-archive`，必须位于独立持久磁盘；部署脚本以 `install -d -m 0700 -o 70 -g 70` 创建该目录（属主为容器内 postgres UID/GID 70），目录内 WAL 文件权限为 0600。
+- `/opt/daohua/daohua.env` 保存 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅初始化与受控备份）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD`、`COMPUTE_TOKEN`、`APP_IMAGE`、`COMPUTE_IMAGE`、`WAL_ARCHIVE_DIR` 等部署变量；业务运行账号不得具有超级用户或 bootstrap 权限。不保存玩家 token、快照或日志。`WAL_ARCHIVE_DIR` 默认 `/opt/daohua/wal-archive`；部署脚本以 `install -d -m 0700 -o 70 -g 70` 创建目录，压缩归档权限为 0600。
 - CCR 登录只允许 `docker login --password-stdin`，不得把 auth 配置写入仓库或镜像。
 
 首次克隆：
@@ -48,7 +48,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v4 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。v2 为市场订单增加持久化到期时间，v3 增加 `platform.compute_jobs` 租约字段与节点公共建筑表 `game.node_buildings`，v4 新增 `social` schema（好友、队伍、队伍邀请与传音消息）：空库由 `PostgresSchema.Sql` 直建 v4，本地旧库默认重新初始化；如需保留本地数据，可执行 `scripts/migrate-local-db.sh`（人工显式调用，按 `platform.schema_version` 链式执行 `migrations/` 中落后的脚本，如 `0001_v1_to_v2.sql`、`0002_v2_to_v3.sql`、`0003_v3_to_v4.sql`）就地升级，也可用 `psql -f` 手工逐个执行（该目录可整体删除，运行时无任何依赖）。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v21 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建；本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行 `migrations/` 中的独立 SQL。迁移不可用或失败时必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
 
 启动正式前端：
 
@@ -126,9 +126,9 @@ ssh yuohira 'curl -fsS http://127.0.0.1:15128/readyz'
 
 ## 备份、恢复与硬盘控制
 
-当前备份链路同时保留三类证据：`backup.sh` 每小时生成 custom dump（`pg_restore --list` + SHA-256，hourly 24 / daily 7 / weekly 4）；`base-backup.sh` 每日生成带 `backup_manifest` 的物理基线；PostgreSQL `archive_mode=on`、`archive_timeout=300s` 通过 `postgres-wal-archive.sh` 将 WAL 原子写入 `${WAL_ARCHIVE_DIR}`。`wal-archive.sh` 每小时巡检并默认保留 8 天 WAL。备份长期归档应转移到 COS/S3 兼容对象存储，本地只保留恢复窗口内的最小副本。
+当前备份链路同时保留三类证据：`backup.sh` 每小时生成 custom dump（`pg_restore --list` + SHA-256，hourly 24 / daily 7 / weekly 4）；`base-backup.sh` 每日生成带 `backup_manifest` 的物理基线；PostgreSQL `archive_mode=on`、`archive_timeout=300s` 通过 `postgres-wal-archive.sh` 将 WAL 段、时间线历史 `.history` 和备份历史 `.backup` 压缩后原子写入 `${WAL_ARCHIVE_DIR}/<原名>.gz`。重试须确认解压内容一致；PITR 的 `restore_command` 使用 `gzip -dc` 还原原始字节。`wal-archive.sh` 每小时巡检权限与 gzip 完整性并默认保留 8 天归档。禁止手动删除 `pg_wal`：积压必须恢复归档后由 PostgreSQL 自行回收。备份长期归档应转移到 COS/S3 兼容对象存储，本地只保留恢复窗口内的最小副本。
 
-验证入口为 `/opt/daohua/verify-backup.sh`：它会校验最新 custom dump、物理备份 `backup_manifest`（`pg_verifybackup`）和 WAL 文件权限/完整性。PITR 恢复只能在隔离目录执行：
+验证入口为 `/opt/daohua/verify-backup.sh`：它会校验最新 custom dump、物理备份 `backup_manifest`（`pg_verifybackup`）和 WAL 文件权限/完整性。追加 `VERIFY_BACKUP_ISOLATED_RESTORE=1` 时启动隔离恢复实例并检查 ready 与最小业务 SQL；否则仅能报告格式/manifest通过。隔离实例使用 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`，库名与运行中数据库的 `POSTGRES_DB` 一致；恢复载荷挂载于 `/var/lib/postgresql/data` 时必须显式指定同路径的 `PGDATA`，不允许 PostgreSQL 18 默认新建 `18/docker` 空库冒充恢复。PITR 恢复只能在隔离目录执行：
 
 ```bash
 sudo /opt/daohua/pitr-restore.sh \

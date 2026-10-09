@@ -46,7 +46,7 @@ docker exec "$DB_CONTAINER_NAME" sh -ceu '
   rm -rf -- "$1"
   mkdir -p "$1"
   PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未注入}" \
-    pg_basebackup -h 127.0.0.1 -U daohua -D "$1" -Fp -X stream -c fast -P
+    pg_basebackup -h 127.0.0.1 -U "${POSTGRES_USER:?POSTGRES_USER 未注入}" -D "$1" -Fp -X stream -c fast -P
 ' sh "$container_tmp"
 docker exec "$DB_CONTAINER_NAME" tar -C "$container_tmp" -czf - . >"$partial"
 mv "$partial" "$archive"
