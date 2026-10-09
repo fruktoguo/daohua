@@ -348,8 +348,9 @@ public static class TutorialSteps
 }
 
 /// <summary>
-/// 自动化使用快捷槽配置项。战斗域按 Group 分为药品栏（potion，仅药品类即时消耗品）
-/// 与通用栏（general，任意战斗消耗品）两组，各 3 槽；其余行动域仅通用栏。
+/// 自动化使用快捷槽配置项。ActionType 承载物品栏域标识（<see cref="Domain.GameData.AutoUseBar"/>）：
+/// 历练栏（修炼/历练类行动共用，6 槽）与制造技艺栏、战斗栏（药品栏 potion 仅药品类即时消耗品，
+/// 通用栏 general 任意战斗消耗品，各 3 槽）。
 /// </summary>
 public sealed record AutoUseSlotState(
     string ActionType,
@@ -361,14 +362,12 @@ public sealed record AutoUseSlotState(
     double CooldownUntilUnixSeconds = 0,
     string Group = "general")
 {
-    /// <summary>每组自动使用槽位数；与前端槽位网格（每组 3 槽）保持一致。</summary>
-    public const int MaxSlotIndex = 2;
     /// <summary>通用栏：任意适用消耗品（符咒、阵法、特殊道具、药品等）。</summary>
     public const string SlotGroupGeneral = "general";
-    /// <summary>药品栏：仅限药品类即时消耗品；仅战斗行动域有效。</summary>
+    /// <summary>药品栏：仅限药品类即时消耗品；仅战斗物品栏域有效。</summary>
     public const string SlotGroupPotion = "potion";
-    /// <summary>战斗行动域槽位总数（药品栏 3 + 通用栏 3）。</summary>
-    public const int CombatSlotCount = (MaxSlotIndex + 1) * 2;
+    /// <summary>战斗物品栏域槽位总数（药品栏 3 + 通用栏 3）。</summary>
+    public const int CombatSlotCount = Domain.GameData.AutoUseBar.DefaultSlotCount * 2;
 }
 
 /// <summary>
@@ -950,12 +949,13 @@ public sealed partial class PlayerAggregate
     public void ConfigureAutoUse(string actionType, int slotIndex, string? itemId, double quantity, bool enabled,
         string? group = null)
     {
-        actionType = actionType?.Trim() ?? string.Empty;
+        actionType = actionType?.Trim().ToLowerInvariant() ?? string.Empty;
         itemId = itemId?.Trim();
         group = string.IsNullOrWhiteSpace(group) ? AutoUseSlotState.SlotGroupGeneral : group.Trim();
-        if (string.IsNullOrWhiteSpace(actionType) || actionType.Length > 32 || slotIndex is < 0 || slotIndex > AutoUseSlotState.MaxSlotIndex
+        if (!Domain.GameData.AutoUseBar.IsKnown(actionType)
+            || slotIndex is < 0 || slotIndex >= Domain.GameData.AutoUseBar.SlotCountFor(actionType)
             || group is not (AutoUseSlotState.SlotGroupGeneral or AutoUseSlotState.SlotGroupPotion)
-            || (group == AutoUseSlotState.SlotGroupPotion && !string.Equals(actionType, "combat", StringComparison.OrdinalIgnoreCase))
+            || (group == AutoUseSlotState.SlotGroupPotion && actionType != Domain.GameData.AutoUseBar.Combat)
             || (itemId is not null && (itemId.Length == 0 || itemId.Length > 128))
             || !double.IsFinite(quantity) || quantity <= 0 || quantity > 1_000_000)
             throw new DomainException(DomainErrorCode.InvalidArgument, "自动使用配置无效。");

@@ -35,7 +35,8 @@ public sealed class AttributeRevisionCacheTests
             baseAttributes: new BaseAttributeCatalog([
                 new(1, 1000, 100, 10, 5, 10, 8, 100, 5, 0.1, 0.1, 0.2, 0.15, 7, 3),
                 new(2, 2000, 200, 20, 10, 20, 16, 200, 10, 0.2, 0.2, 0.4, 0.3, 14, 6)]),
-            rawEquipments: new Dictionary<string, JsonElement> { [TestEquipment.Value] = equipment.RootElement });
+            rawEquipments: new Dictionary<string, JsonElement> { [TestEquipment.Value] = equipment.RootElement },
+            realmProgression: GameDataCatalog.LoadEmbedded().RealmProgression);
     }
 
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)

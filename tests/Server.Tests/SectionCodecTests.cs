@@ -56,7 +56,7 @@ public sealed class SectionCodecTests
     public void SettingsSectionAlwaysSerializesRemainingDurationAndLegacySlotsDefaultToZero()
     {
         var aggregate = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()), "槽位序列化", DateTimeOffset.UtcNow, "fp");
-        aggregate.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 1, true);
+        aggregate.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 1, true);
         var settingsWrite = CleanSectionCodec.EncodeAggregate(aggregate, DateTimeOffset.UtcNow, 1)
             .Single(write => write.SectionKind == PlayerSectionKinds.Settings);
         var stored = new StoredSection(

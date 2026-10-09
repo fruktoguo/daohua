@@ -56,20 +56,20 @@ public sealed class CombatConsumableTests
         var items = new Dictionary<ItemId, ItemDefinition>
         {
             [PillId] = new(PillId, "测试丹药", "", true, 0,
-                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                new ConsumableDefinition(new HashSet<string> { "combat" },
                     Triggers: [Json("""{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than-equal","value":50}""")],
                     CooldownSeconds: 60),
                 "pill"),
             [TalismanId] = new(TalismanId, "护身符", "", true, 0,
-                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                new ConsumableDefinition(new HashSet<string> { "combat" },
                     DurationSeconds: 60, IsContinuous: true),
                 "talisman"),
             [DiskId] = new(DiskId, "测试阵盘", "", true, 0,
-                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                new ConsumableDefinition(new HashSet<string> { "combat" },
                     DurationSeconds: 2, IsContinuous: true, CooldownSeconds: 40),
                 "formation"),
             [RegenPillId] = new(RegenPillId, "测试回春散", "", true, 0,
-                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                new ConsumableDefinition(new HashSet<string> { "combat" },
                     Triggers: [Json("""{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than-equal","value":50}""")],
                     CooldownSeconds: 60),
                 "pill"),
@@ -105,7 +105,7 @@ public sealed class CombatConsumableTests
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
         Assert.Throws<DomainException>(() =>
-            player.ConfigureAutoUse("cultivation", 0, PillId.Value, 1, true, AutoUseSlotState.SlotGroupPotion));
+            player.ConfigureAutoUse("exploration", 0, PillId.Value, 1, true, AutoUseSlotState.SlotGroupPotion));
         player.ConfigureAutoUse("combat", 0, PillId.Value, 1, true, AutoUseSlotState.SlotGroupPotion);
         var slot = Assert.Single(player.Settings.AutoUseSlots);
         Assert.Equal(AutoUseSlotState.SlotGroupPotion, slot.Group);

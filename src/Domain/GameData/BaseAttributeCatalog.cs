@@ -43,11 +43,11 @@ public sealed class BaseAttributeCatalog
     }
 
     /// <summary>
-    /// 从 expected-attributes.json 的 `tiers[].finalExpected` 解析期望玩家面板锚点目录（四乘区完全体）。
+    /// 从 expected-attributes.json 的 `levelExpected[].finalExpected` 解析每级期望玩家面板锚点目录（四乘区完全体）。
     /// 怪物同构建模以此面板为底座（总纲 §7.3/§10.1），而非裸 `baseAttributeAnchors`；
     /// 期望面板不建模回复列，HpRegen/MpRegen 置 0（怪物面板不消费回复属性）。
     /// </summary>
-    /// <param name="tiers">expected-attributes 的 tiers 数组 JSON。</param>
+    /// <param name="tiers">expected-attributes 中携带 level/finalExpected 的锚点数组 JSON（levelExpected 或 tiers 均可）。</param>
     /// <returns>按等阶锚点等级排列的期望属性目录。</returns>
     public static BaseAttributeCatalog ParseExpected(JsonElement tiers)
     {
@@ -128,6 +128,54 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
         for (var i = 0; i < count; i++) total += ExpToNext[i];
         return total;
     }
+
+    /// <summary>六维点数上限：每级境界对应 3 点，共 3×MaxLevel（127 级表为 381 点）。</summary>
+    public int RootPointCap => ExpToNext.Count * 3;
+
+    /// <summary>六维升级成本表（懒构建缓存）：PointCost[p] 为升至第 p 点所需经验，Cumulative[p] 为升至 p 点的累计经验。</summary>
+    private (double[] PointCost, double[] Cumulative)? _rootPointTable;
+
+    private (double[] PointCost, double[] Cumulative) RootPointTable => _rootPointTable ??= BuildRootPointTable();
+
+    /// <summary>
+    /// 由境界修为表展开六维点成本表（总纲 §3.2.2）：记 B[i] = expToNext[max(0, i−1)]
+    /// （跨入第 i+1 级消耗的那格修为条，B[0] 取第一条），升至第 p 点成本 =
+    /// B 在 t=(p−1)/3 处的线性插值——一级境界摊三点，相邻档间平滑过渡；
+    /// 单维累计至 3Lv 点 ≈ 3×ΣexpToNext[1..Lv−1]（约 3.05~3.25 倍境界累计修为）。
+    /// </summary>
+    private (double[] PointCost, double[] Cumulative) BuildRootPointTable()
+    {
+        var cap = RootPointCap;
+        var cost = new double[cap + 1];
+        var cumulative = new double[cap + 1];
+        for (var p = 1; p <= cap; p++)
+        {
+            var t = (p - 1) / 3d;
+            var i0 = (int)Math.Floor(t);
+            var i1 = Math.Min(i0 + 1, ExpToNext.Count - 1);
+            var b0 = ExpToNext[i0 <= 0 ? 0 : i0 - 1];
+            var b1 = ExpToNext[i1 - 1];
+            cost[p] = b0 + (b1 - b0) * (t - i0);
+            cumulative[p] = cumulative[p - 1] + cost[p];
+        }
+        return (cost, cumulative);
+    }
+
+    /// <summary>累计六维经验换算点数（0 点起算）；经验非有限或 ≤0 返回 0。</summary>
+    public int RootLevelFor(double exp)
+    {
+        if (!double.IsFinite(exp) || exp <= 0) return 0;
+        var index = Array.BinarySearch(RootPointTable.Cumulative, exp);
+        return Math.Clamp(index >= 0 ? index : ~index - 1, 0, RootPointCap);
+    }
+
+    /// <summary>升至指定点数所需的累计六维经验；越界按下限 0/上限截断。</summary>
+    public double RootCumulativeExpFor(int points)
+        => RootPointTable.Cumulative[Math.Clamp(points, 0, RootPointCap)];
+
+    /// <summary>points → points+1 点所需六维经验；已满点返回 0。</summary>
+    public double RootExpToNextFor(int points)
+        => points < 0 || points >= RootPointCap ? 0 : RootPointTable.PointCost[points + 1];
 
     /// <summary>
     /// 怪物击杀修为奖励派生（总纲 §7.10.3）：expToNext[level] / 1000 × 0.9^(level-1) × 层次倍率

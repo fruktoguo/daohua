@@ -22,6 +22,64 @@ public enum ActionKind : byte
     Enhancement = 5
 }
 
+/// <summary>
+/// 自动使用物品栏域（总纲 §6.2.3）：独立于行动大类的槽位归属键。
+/// 槽位 actionType、物品 usableInActionTypes 值域与 queue.auto_use.configure 命令统一承载本词表。
+/// </summary>
+public static class AutoUseBar
+{
+    /// <summary>历练栏：修炼与历练两大类行动共用（吐纳修炼/采集/挖掘/探索等非制造行动），6 槽。</summary>
+    public const string Exploration = "exploration";
+    /// <summary>炼丹栏。</summary>
+    public const string Alchemy = "alchemy";
+    /// <summary>炼器栏。</summary>
+    public const string Forging = "forging";
+    /// <summary>符箓栏。</summary>
+    public const string Talisman = "talisman";
+    /// <summary>阵法栏。</summary>
+    public const string Formation = "formation";
+    /// <summary>强化栏。</summary>
+    public const string Enhancement = "enhancement";
+    /// <summary>战斗栏：药品栏（potion）+ 通用栏（general）各 3 槽。</summary>
+    public const string Combat = "combat";
+
+    /// <summary>历练栏槽位数。</summary>
+    public const int ExplorationSlotCount = 6;
+    /// <summary>其余栏域单组槽位数（战斗栏药品/通用各一组）。</summary>
+    public const int DefaultSlotCount = 3;
+
+    private static readonly HashSet<string> Known = new(StringComparer.Ordinal)
+        { Exploration, Alchemy, Forging, Talisman, Formation, Enhancement, Combat };
+    /// <summary>制造技艺栏域：Alchemy 大类行动按配表 technique 归属对应栏。</summary>
+    private static readonly HashSet<string> Manufacturing = new(StringComparer.Ordinal)
+        { Alchemy, Forging, Talisman, Formation };
+
+    /// <summary>判断标识是否为合法物品栏域（词表内小写标识）。</summary>
+    public static bool IsKnown(string? barId) => barId is not null && Known.Contains(barId);
+
+    /// <summary>判断技艺标识是否属于制造技艺（Alchemy 大类行动的栏域归属词表）。</summary>
+    public static bool IsManufacturingTechnique(string? technique) => technique is not null && Manufacturing.Contains(technique);
+
+    /// <summary>物品栏域单组槽位数：历练栏 6，其余每组 3。</summary>
+    public static int SlotCountFor(string barId)
+        => string.Equals(barId, Exploration, StringComparison.OrdinalIgnoreCase) ? ExplorationSlotCount : DefaultSlotCount;
+
+    /// <summary>行动定义 → 所属物品栏域；赶路等无栏域行动返回 null。</summary>
+    public static string? For(ActionDefinition action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        return action.Kind switch
+        {
+            ActionKind.Cultivation or ActionKind.Exploration => Exploration,
+            ActionKind.Combat => Combat,
+            ActionKind.Enhancement => Enhancement,
+            // 炼丹制造大类按配表 technique 归属对应技艺栏；装载校验保证为制造技艺标识。
+            ActionKind.Alchemy => action.Technique is { } technique && Manufacturing.Contains(technique) ? technique : null,
+            _ => null
+        };
+    }
+}
+
 /// <summary>行动在模拟器中的执行方式。</summary>
 public enum ActionExecutionKind : byte
 {
@@ -129,9 +187,12 @@ public sealed record ConsumableStrike(
     double SpellAttackRatio,
     Domain.Combat.CombatElement Element);
 
-/// <summary>持续/自动消耗品对各行动类型提供的权威效果定义。</summary>
+/// <summary>
+/// 持续/自动消耗品对各行动类型提供的权威效果定义。
+/// </summary>
+/// <param name="UsableInBars">物品可装配的物品栏域集合（<see cref="AutoUseBar"/> 词表）；物品栏准入唯一权威键。</param>
 public sealed record ConsumableDefinition(
-    IReadOnlySet<ActionKind> UsableInActionKinds,
+    IReadOnlySet<string> UsableInBars,
     double DurationSeconds = 0,
     bool IsContinuous = false,
     double CultivationMultiplier = 1,
@@ -255,7 +316,7 @@ public sealed class ActionCatalog
         new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 },
         [
             new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, new ItemId("item.qi-gathering-pill"))
-        ]),
+        ], Technique: "alchemy"),
         new(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1, new Dictionary<ItemId, double>(), [], null, true, ActionExecutionKind.Travel)
     ]);
 
@@ -403,7 +464,7 @@ public sealed class GameDataCatalog
         Duel = duel ?? DuelSettings.Default;
         // 怪物同构建模底座 = 期望玩家面板（expectedAttributes / tiers[].finalExpected），禁止回退裸锚点；
         // 期望目录与基础锚点同为 1/18/30/…/127 等阶边界，TierAt 口径一致可复用。
-        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, expectedAttributes, Abilities, realmProgression);
+        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, expectedAttributes, baseAttributes, Abilities, realmProgression);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
         WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
         BaseAttributes = baseAttributes;
@@ -487,9 +548,10 @@ public sealed class GameDataCatalog
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("baseAttributeAnchors", out var anchors))
             {
                 baseAttributes = BaseAttributeCatalog.Parse(anchors);
-                // 同一文件的 tiers[].finalExpected = 期望玩家面板（四乘区完全体），怪物同构建模底座。
-                if (document.RootElement.TryGetProperty("tiers", out var tiers) && tiers.ValueKind == JsonValueKind.Array)
-                    expectedAttributes = BaseAttributeCatalog.ParseExpected(tiers);
+                // 同一文件的 levelExpected[].finalExpected = 逐级期望玩家面板（四乘区完全体），怪物同构建模底座；
+                // 按整级锚点建目录避免跨等阶线性插值把 T2 面板提前摊进 T1 中后段。
+                if (document.RootElement.TryGetProperty("levelExpected", out var levelExpected) && levelExpected.ValueKind == JsonValueKind.Array)
+                    expectedAttributes = BaseAttributeCatalog.ParseExpected(levelExpected);
             }
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("realmProgression", out var progression))
                 realmProgression = RealmProgressionCatalog.Parse(progression);
@@ -769,9 +831,14 @@ public sealed class GameDataCatalog
         ConsumableDefinition? consumable = null;
         if (entry.TryGetProperty("consumable", out var consumableProperty) && consumableProperty.ValueKind == JsonValueKind.Object)
         {
-            var usableKinds = new HashSet<ActionKind>();
+            var usableBars = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var value in JsonRead.StringArray(consumableProperty, "usableInActionTypes"))
-                usableKinds.Add(ParseExplicitKind(value));
+            {
+                var bar = value.Trim().ToLowerInvariant();
+                if (!AutoUseBar.IsKnown(bar))
+                    throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品适用物品栏域无效：{value}。");
+                usableBars.Add(bar);
+            }
             List<JsonElement>? triggers = null;
             if (consumableProperty.TryGetProperty("triggers", out var triggersProperty)
                 && triggersProperty.ValueKind == JsonValueKind.Array)
@@ -794,7 +861,7 @@ public sealed class GameDataCatalog
                     element);
             }
             consumable = new ConsumableDefinition(
-                new ReadOnlySet<ActionKind>(usableKinds),
+                new ReadOnlySet<string>(usableBars),
                 JsonRead.Number(consumableProperty, "durationSeconds"),
                 JsonRead.Boolean(consumableProperty, "isContinuous"),
                 JsonRead.Number(consumableProperty, "cultivationMultiplier", 1),
@@ -831,19 +898,9 @@ public sealed class GameDataCatalog
         _ => ActionKind.Exploration
     };
 
-    private static ActionKind ParseExplicitKind(string value) => value.ToLowerInvariant() switch
-    {
-        "cultivation" => ActionKind.Cultivation,
-        "exploration" => ActionKind.Exploration,
-        "alchemy" => ActionKind.Alchemy,
-        "combat" => ActionKind.Combat,
-        "travel" => ActionKind.Travel,
-        "enhancement" => ActionKind.Enhancement,
-        _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品适用行动类型无效：{value}。")
-    };
-
     private static Dictionary<string, CombatMonsterDefinition> ParseMonsterDefinitions(
         IReadOnlyDictionary<string, JsonElement> raw, BaseAttributeCatalog? playerBaseline,
+        BaseAttributeCatalog? tierBoundaries,
         IReadOnlyDictionary<string, JsonElement> abilities, RealmProgressionCatalog? realmProgression)
     {
         var result = new Dictionary<string, CombatMonsterDefinition>(StringComparer.Ordinal);
@@ -856,9 +913,9 @@ public sealed class GameDataCatalog
             // 怪我同构建模：以同等级期望玩家面板（tiers[].finalExpected 四乘区完全体）为底座，
             // 按生命层次倍率 + 倾向权重派生全部战斗属性——非裸 baseAttributeAnchors（总纲 §7.3/§10.1）。
             var level = JsonRead.Integer(value, "level", 1);
-            if (playerBaseline is null)
+            if (playerBaseline is null || tierBoundaries is null)
                 throw new DomainException(DomainErrorCode.InvalidArgument,
-                    $"怪物 {id} 缺少期望玩家面板基准：expected-attributes 的 tiers 未加载。");
+                    $"怪物 {id} 缺少期望玩家面板基准：expected-attributes 的 levelExpected 未加载。");
             var anchor = playerBaseline.At(level);
             var rank = JsonRead.Text(value, "rank", "minion").ToLowerInvariant() switch
             {
@@ -876,7 +933,8 @@ public sealed class GameDataCatalog
             interval = interval > 0 ? interval : 1;
             var ad = anchor.Ad * attrMultiplier * Weight("ad");
             var ap = anchor.Ap * attrMultiplier * Weight("ap");
-            var tier = playerBaseline.TierAt(level);
+            // 等阶边界由 12 阶锚点目录判定——levelExpected 是 127 个每级锚点，不能直接当等阶边界用。
+            var tier = tierBoundaries.TierAt(level);
             var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
                 ? dropValue.EnumerateArray().Select(drop => new CombatDropDefinition(
                     new ItemId(JsonRead.Text(drop, "itemId", "")),
@@ -1034,7 +1092,8 @@ public sealed class GameDataCatalog
             if (id != definition.Id || !id.IsValid || string.IsNullOrWhiteSpace(definition.Name) || definition.Name.Length > 128 ||
                 !double.IsFinite(definition.SellPrice) || definition.SellPrice < 0 ||
                 consumable is not null && (
-                    consumable.UsableInActionKinds is null || consumable.UsableInActionKinds.Any(kind => !Enum.IsDefined(kind)) ||
+                    consumable.UsableInBars is null || consumable.UsableInBars.Count == 0
+                    || consumable.UsableInBars.Any(bar => !AutoUseBar.IsKnown(bar)) ||
                     !double.IsFinite(consumable.DurationSeconds) || consumable.DurationSeconds < 0 ||
                     !double.IsFinite(consumable.CooldownSeconds) || consumable.CooldownSeconds < 0 ||
                     // durable 持续消耗品持有即生效、无时长耗竭，不要求 durationSeconds；非 durable 持续品仍需正时长。

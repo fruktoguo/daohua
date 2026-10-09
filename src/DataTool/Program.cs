@@ -270,9 +270,9 @@ static void ValidateReferences(string directory)
             foreach (var key in ObjectKeys(consumable))
                 Require(ConsumableKeys().Contains(key),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 consumable.{key} 不在授权词汇表内。");
-            foreach (var kind in StringArray(consumable, "usableInActionTypes"))
-                Require(ActionKindVocabulary().Contains(kind),
-                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 usableInActionTypes.{kind} 不是合法行动类型。");
+            foreach (var bar in StringArray(consumable, "usableInActionTypes"))
+                Require(AutoUseBarVocabulary().Contains(bar),
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 usableInActionTypes.{bar} 不是合法物品栏域。");
             // consumable 块为自动消耗品专属规格：必须声明可入槽行动域，否则该物品永远无法装配成静默死物品；
             // 手动消耗品（秘籍/宝箱/礼包等）不配 consumable 块，不受此约束。
             if (consumable.ValueKind == JsonValueKind.Object)
@@ -311,6 +311,9 @@ static void ValidateReferences(string directory)
             var technique = Text(action, "technique");
             Require(technique.Length == 0 || TechniqueVocabulary().Contains(technique),
                 $"{Rel(directory, file)} 行动 {id} 的 technique={technique} 不是合法技艺。");
+            // 制造大类行动按 technique 归属对应技艺物品栏：必须声明制造技艺（总纲 §6.2.3）。
+            Require(type != "alchemy" || ManufacturingTechniqueVocabulary().Contains(technique),
+                $"{Rel(directory, file)} 行动 {id} 为制造大类，technique={technique} 必须是制造技艺之一。");
             var encounterId = Text(action, "combatEncounterId");
             if (encounterId.Length > 0)
                 Require(encounters.Contains(encounterId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的遭遇 {encounterId}。");
@@ -439,10 +442,22 @@ static HashSet<string> StrikeKeys() => new(StringComparer.Ordinal)
     "manaCostRatio", "manaDamageRatio", "spellAttackRatio", "element"
 };
 
-/// <summary>行动类型词汇表：与 GameDataCatalog.ParseKind/ParseExplicitKind 同口径。</summary>
+/// <summary>行动类型词汇表：与 GameDataCatalog.ParseKind 同口径。</summary>
 static HashSet<string> ActionKindVocabulary() => new(StringComparer.Ordinal)
 {
     "cultivation", "exploration", "alchemy", "combat", "travel", "enhancement"
+};
+
+/// <summary>物品栏域词汇表：与 AutoUseBar 栏域常量同口径（历练涵盖修炼/历练两大类行动）。</summary>
+static HashSet<string> AutoUseBarVocabulary() => new(StringComparer.Ordinal)
+{
+    "exploration", "alchemy", "forging", "talisman", "formation", "enhancement", "combat"
+};
+
+/// <summary>制造技艺词汇表：Alchemy 大类行动的栏域归属词表。</summary>
+static HashSet<string> ManufacturingTechniqueVocabulary() => new(StringComparer.Ordinal)
+{
+    "alchemy", "forging", "talisman", "formation"
 };
 
 /// <summary>七技艺词汇表：与 TechniqueCatalog 固定标识同口径。</summary>

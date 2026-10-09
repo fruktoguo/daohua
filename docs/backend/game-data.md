@@ -6,7 +6,7 @@
 
 - **`expected-attributes.json`**：**全 12 等阶（T1~T12）数值底座、标准期望面板、特殊属性与战斗模拟产出基准**。
 - `manifest.json`：结构版本和内容版本。
-- `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。物品分类为两级模型：必填 `category` 是一级主类型（`material`/`consumable`/`manual`/`currency`/`equipment` 等），可选 `subCategory` 是二级细分品类（`herb`/`mineral`/`pill`/`alchemySupply`/`explorationSupply`/`manualTome`/`manualFragment` 等）；目录 DTO 原样下发两个字段，前端品类丝带与坊市二级筛选统一按 `subCategory`（缺省回落主类型，见 `ItemDefinition.DisplaySubCategory`）展示，药品栏门控按细分键 `pill` 判定。
+- `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。物品分类为两级模型：必填 `category` 是一级主类型（`material`/`consumable`/`manual`/`currency`/`equipment` 等），可选 `subCategory` 是二级细分品类（`herb`/`mineral`/`pill`/`alchemySupply`/`explorationSupply`/`manualTome`/`manualFragment` 等）；目录 DTO 原样下发两个字段，前端品类丝带与坊市二级筛选统一按 `subCategory`（缺省回落主类型，见 `ItemDefinition.DisplaySubCategory`）展示，药品栏门控按细分键 `pill` 判定。自动消耗品的 `consumable.usableInActionTypes` 声明可装配的**物品栏域**（`exploration` 历练栏/`alchemy`/`forging`/`talisman`/`formation`/`enhancement` 制造技艺栏/`combat` 战斗栏，详见总纲 §6.2.3），值域独立于行动 `type`。
 - `equipment/`：武器、防具与饰品（`weapons.json`, `armors.json`, `accessories.json`）。
 - `abilities/`：物理武技与术法神通（`physical_abilities.json`, `spell_abilities.json`）。
 - `monsters/`：各等阶妖兽、精英与妖王（`tier1_minions.json`, `tier1_elites_bosses.json`, `tier2_minions.json`, `tier2_elites_bosses.json`）。
@@ -22,7 +22,7 @@
 - **静默处理（不报错）**：重复 ID 后者覆盖前者、地图邻接表追加不去重；
 - **尚未校验**：`dropChance`/`minQuantity`/`maxQuantity` 无范围校验，`eliteEnemyIds`/`bossEnemyIds` 未做跨文件引用校验。配表评审须人工核对这两类风险。
 
-> `DataTool validate --strict` 另做结构性校验：建筑 `group` 合法性、`materials[].itemId` 物品引用与数量为正、节点 `buildableList` 建筑引用与 `buildableTemplate` 模板名（`all`/`production`/`combat`/`other`）、节点 `encounterIds`/`availableActionIds` 跨文件引用、边端点节点引用、建筑 `availableNodeIds` 节点引用，以及行动 `type`/`technique` 词汇表、`combatEncounterId` 遭遇引用、`availableNodeIds`/`excludedNodeIds` 节点引用与两者互斥。
+> `DataTool validate --strict` 另做结构性校验：建筑 `group` 合法性、`materials[].itemId` 物品引用与数量为正、节点 `buildableList` 建筑引用与 `buildableTemplate` 模板名（`all`/`production`/`combat`/`other`）、节点 `encounterIds`/`availableActionIds` 跨文件引用、边端点节点引用、建筑 `availableNodeIds` 节点引用，以及行动 `type`/`technique` 词汇表、`combatEncounterId` 遭遇引用、`availableNodeIds`/`excludedNodeIds` 节点引用与两者互斥；制造大类（`type=alchemy`）行动必须声明制造技艺（`alchemy`/`forging`/`talisman`/`formation` 之一，决定其物品栏域归属），消耗品 `usableInActionTypes` 必须是合法物品栏域且非空。
 
 ---
 
@@ -141,4 +141,4 @@ scripts/verify.sh
 | `simulationCarrySeconds` | 连续收益整秒量化进位余数（离线/在线位级一致保障） |
 
 - **schema 版本**：分段载荷版本由 `SectionCodec.CurrentSchemaVersion` 承载——v3 新增斗法分段（`duel`），v4 为 `progression` 追加 `foundation`/`combatExperience`/`lifetimeExperience` 并移除废案字段 `qi`/`lifetimeQi`，v5 为 `settings` 追加 `autoTravelEnabled` 并为行动意图追加 `anchorNodeId` 入队锚点；内测期直接改载荷结构、不做运行时旧档兼容，旧版本本地存档由 `migrations/` 迁移链推进版本标签（`SectionCodec` bump 时 `PostgresSchema.Version` 同步 +1），不可迁移版本经控制台确认后清零。
-- **`expToNext` 访问器**：`RealmProgressionCatalog.ExpCapFor(level)` 返回本层修为上限；新增 `CumulativeExpFor(level)` 返回 `Σ expToNext[1..level-1]` 累计修为，专供怪物战斗经验派生（见 §7）。
+- **`expToNext` 访问器**：`RealmProgressionCatalog.ExpCapFor(level)` 返回本层修为上限；`CumulativeExpFor(level)` 返回 `Σ expToNext[1..level-1]` 累计修为，专供怪物战斗经验派生（见 §7）。六维升级成本由同一表派生：`RootLevelFor(exp)`/`RootCumulativeExpFor(level)`/`RootExpToNextFor(level)`（每维 3×境界级数点，第 p 点经验为「跨入 ⌈p/3⌉ 级修为条」的相邻档线性插值）供六维等级导出与升级判定（`RootAttributeCurve`，见总纲 §3.2.2）。

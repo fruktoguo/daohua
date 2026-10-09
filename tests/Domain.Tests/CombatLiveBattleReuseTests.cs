@@ -248,7 +248,7 @@ public sealed class CombatLiveBattleReuseTests
             items = new Dictionary<ItemId, ItemDefinition>
             {
                 [PillId] = new(PillId, "测试丹药", "", true, 0,
-                    new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                    new ConsumableDefinition(new HashSet<string> { "combat" },
                         Triggers: [Json(trigger)],
                         CooldownSeconds: 30),
                     "pill")

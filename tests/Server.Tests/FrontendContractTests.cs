@@ -29,7 +29,7 @@ public sealed class FrontendContractTests
         player.ReplaceCombatSlots([new("ability.heavy-slash", 1)], []);
         var restored = PlayerAggregate.Restore(player.ExportState());
         Assert.Equal("ability.heavy-slash", restored.Loadout.AbilitySlots[0].AbilityId);
-        Assert.Equal(0, restored.Loadout.CoreAttributes.StaminaLevel);
+        Assert.Equal(0, restored.Loadout.CoreAttributes.Levels(catalog.RealmProgression).Stamina);
         var state = restored.ExportState();
         var snapshot = new PlayerRuntimeSnapshot(player.PlayerId.Value, player.AccountId.Value.ToString(), player.DisplayName,
             player.StateVersion, player.LastSimulatedAt, state, 0, []);

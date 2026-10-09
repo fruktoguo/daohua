@@ -230,7 +230,7 @@ Buff 提供的百分比增幅同样遵循 1 点预算 = 1% 增幅的规则。持
 
 怪物属性 = 目标等级**期望玩家面板** × 层级倍率 × 倾向权重
 
-> **底座口径**：基准玩家属性 = `expected-attributes.json` 的 `tiers[].finalExpected`（(基础数值池 + 六维固定值 `rootFlat`) × (1+六维% `rootMultiplier`) × 装备乘区 × Buff 乘区），按怪物 `level` 在相邻等阶锚点间线性插值；**不是** `baseAttributeAnchors` 裸底座。误用裸底座会让高阶怪物攻防全面掉队（T12 妖王对玩家近零伤害）。六维每点同时给固定值与百分比（固定值：生命 +12、灵力 +7、术攻 +2、其余 +1；百分比：映射属性 +1%、神识术攻 +2%），期望建模为各属性 `level × 3` 点 + `rootPercentage = level × 3%`。
+> **底座口径**：基准玩家属性 = `expected-attributes.json` 的 `levelExpected[].finalExpected`（(基础数值池 + 六维固定值 `rootFlat`) × (1+六维% `rootMultiplier`) × 装备乘区 × Buff 乘区），按怪物 `level` 取每级锚点（Lv1~127 逐级求解）；**不是** `baseAttributeAnchors` 裸底座。误用裸底座会让高阶怪物攻防全面掉队（T12 妖王对玩家近零伤害）。六维每点同时给固定值与百分比（固定值：生命 +12、灵力 +7、术攻 +2、其余 +1；百分比：映射属性 +1%、神识术攻 +2%），期望建模为各属性 `ExpectPoints(Level)` 点：`3×Level`（全线性，一级境界对应三点，Lv18 收敛 54、Lv127 收敛 381）。六维升级成本侧由 `RealmProgressionCatalog` 派生的 381 点成本表结算（每维 127 级×3 点；第 p 点 ≈ 跨入 ⌈p/3⌉ 级的一格修为条，相邻档线性插值），单维满培养累计 ≈ 3× 境界累计修为——期望线是满配基准，自然击杀 1:1 入账的节奏低于期望，缺口靠内功 `rootExpMultipliers` 与效率通道补。
 
 | 怪物层级 | 全属性倍率 | HP 倍率 |
 | :--- | :--: | :--: |

@@ -41,6 +41,29 @@ public sealed class GameDataCatalogTests
     }
 
     /// <summary>
+    /// 行动 → 物品栏域权威映射：修炼/历练归历练栏，制造大类按 technique 归对应技艺栏，
+    /// 未声明制造技艺的制造行动与赶路行动无栏域。
+    /// </summary>
+    [Fact]
+    public void AutoUseBarForResolvesActionBar()
+    {
+        static ActionDefinition Action(string id, ActionKind kind, string? technique = null) =>
+            new(new ActionId(id), id, kind, 1, new Dictionary<ItemId, double>(), [], Technique: technique);
+
+        Assert.Equal(AutoUseBar.Exploration, AutoUseBar.For(Action("t.cultivate", ActionKind.Cultivation)));
+        Assert.Equal(AutoUseBar.Exploration, AutoUseBar.For(Action("t.gather", ActionKind.Exploration)));
+        Assert.Equal(AutoUseBar.Alchemy, AutoUseBar.For(Action("t.refine", ActionKind.Alchemy, "alchemy")));
+        Assert.Equal(AutoUseBar.Forging, AutoUseBar.For(Action("t.forge", ActionKind.Alchemy, "forging")));
+        Assert.Equal(AutoUseBar.Talisman, AutoUseBar.For(Action("t.draw", ActionKind.Alchemy, "talisman")));
+        Assert.Equal(AutoUseBar.Formation, AutoUseBar.For(Action("t.deploy", ActionKind.Alchemy, "formation")));
+        Assert.Null(AutoUseBar.For(Action("t.craft", ActionKind.Alchemy)));
+        Assert.Null(AutoUseBar.For(Action("t.mine", ActionKind.Alchemy, "gathering")));
+        Assert.Equal(AutoUseBar.Combat, AutoUseBar.For(Action("t.hunt", ActionKind.Combat)));
+        Assert.Equal(AutoUseBar.Enhancement, AutoUseBar.For(Action("t.enhance", ActionKind.Enhancement)));
+        Assert.Null(AutoUseBar.For(Action("t.travel", ActionKind.Travel)));
+    }
+
+    /// <summary>
     /// 嵌入配表中的持续型消耗品（聚气丹）必须解析出持续时长、修炼倍率与适用行动类型，
     /// 防止配表结构调整后自动用药静默失效。
     /// </summary>
@@ -54,12 +77,12 @@ public sealed class GameDataCatalogTests
         Assert.True(consumable.IsContinuous);
         Assert.Equal(300d, consumable.DurationSeconds);
         Assert.Equal(1.3d, consumable.CultivationMultiplier);
-        Assert.Contains(ActionKind.Cultivation, consumable.UsableInActionKinds);
+        Assert.Contains("exploration", consumable.UsableInBars);
     }
 
     /// <summary>
-    /// 怪物同构建模底座回归：必须以期望玩家面板 tiers[].finalExpected 派生，而非裸 baseAttributeAnchors。
-    /// 坠星兽 Lv24 Boss = 期望面板（HP≈3370.9/AD≈245.6/AP≈398.0）× Boss 倍率（HP×20/属性×1.5）× 倾向权重。
+    /// 怪物同构建模底座回归：必须以每级期望玩家面板 levelExpected[].finalExpected 派生，而非裸 baseAttributeAnchors。
+    /// 坠星兽 Lv24 Boss = 期望面板（HP≈3081.0/AD≈224.5/AP≈349.4）× Boss 倍率（HP×20/属性×1.5）× 倾向权重。
     /// 错用基础锚点时物攻只有 ~35、术攻 ~25（回归信号）。
     /// </summary>
     [Fact]
@@ -72,11 +95,11 @@ public sealed class GameDataCatalogTests
         Assert.Equal(CombatMonsterRank.Boss, beast.Rank);
 
         var stats = beast.Stats;
-        Assert.Equal(45170.46, stats.MaxHitpoints, 2);
-        Assert.Equal(383.18, stats.AttackPower, 2);
-        Assert.Equal(597.0, stats.SpellAttack, 1);
-        Assert.Equal(349.85, stats.Defense, 2);
-        Assert.Equal(244.97, stats.MagicResistance, 2);
+        Assert.Equal(41285.35, stats.MaxHitpoints, 2);
+        Assert.Equal(350.33, stats.AttackPower, 2);
+        Assert.Equal(544.63, stats.SpellAttack, 2);
+        Assert.Equal(320.86, stats.Defense, 2);
+        Assert.Equal(222.01, stats.MagicResistance, 2);
     }
 
     /// <summary>

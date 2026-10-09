@@ -224,32 +224,33 @@ public static class PlayerAttributeResolver
             }
         }
         var core = loadout.CoreAttributes;
+        var root = core.Levels(catalog.RealmProgression);
         // 六维每点同时提供固定值与百分比（总纲 §3.2.2/§7.5）：固定值并入基础池，百分比为独立乘区；
         // 体魄/根骨每点 +12 生命、经脉/根骨每点 +7 灵力，其余映射属性每点 +1（神识术攻 +2）。
         double RootFlat(string key) => key switch
         {
-            "maxHitpoints" => (core.StaminaLevel + core.BoneLevel) * 12,
-            "maxManapoints" => (core.MeridiansLevel + core.BoneLevel) * 7,
-            "physicalArmor" or "hitpointRegen" => core.StaminaLevel,
-            "spellResistance" or "manapointRegen" => core.MeridiansLevel,
-            "physicalAttack" or "criticalChance" or "break" => core.AttackLevel,
-            "evasion" or "criticalAvoidance" => core.AgilityLevel,
-            "parry" => core.BoneLevel + core.AgilityLevel,
-            "spellAttack" => core.ConsciousnessLevel * 2,
-            "accuracy" => core.ConsciousnessLevel,
+            "maxHitpoints" => (root.Stamina + root.Bone) * 12,
+            "maxManapoints" => (root.Meridians + root.Bone) * 7,
+            "physicalArmor" or "hitpointRegen" => root.Stamina,
+            "spellResistance" or "manapointRegen" => root.Meridians,
+            "physicalAttack" or "criticalChance" or "break" => root.Attack,
+            "evasion" or "criticalAvoidance" => root.Agility,
+            "parry" => root.Bone + root.Agility,
+            "spellAttack" => root.Consciousness * 2,
+            "accuracy" => root.Consciousness,
             _ => 0
         };
         double RootRatio(string key) => key switch
         {
-            "maxHitpoints" => (core.StaminaLevel + core.BoneLevel) * 0.01,
-            "maxManapoints" => (core.MeridiansLevel + core.BoneLevel) * 0.01,
-            "physicalArmor" or "hitpointRegen" => core.StaminaLevel * 0.01,
-            "spellResistance" or "manapointRegen" => core.MeridiansLevel * 0.01,
-            "physicalAttack" or "criticalChance" or "break" => core.AttackLevel * 0.01,
-            "evasion" or "criticalAvoidance" => core.AgilityLevel * 0.01,
-            "parry" => (core.BoneLevel + core.AgilityLevel) * 0.01,
-            "spellAttack" => core.ConsciousnessLevel * 0.02,
-            "accuracy" => core.ConsciousnessLevel * 0.01,
+            "maxHitpoints" => (root.Stamina + root.Bone) * 0.01,
+            "maxManapoints" => (root.Meridians + root.Bone) * 0.01,
+            "physicalArmor" or "hitpointRegen" => root.Stamina * 0.01,
+            "spellResistance" or "manapointRegen" => root.Meridians * 0.01,
+            "physicalAttack" or "criticalChance" or "break" => root.Attack * 0.01,
+            "evasion" or "criticalAvoidance" => root.Agility * 0.01,
+            "parry" => (root.Bone + root.Agility) * 0.01,
+            "spellAttack" => root.Consciousness * 0.02,
+            "accuracy" => root.Consciousness * 0.01,
             _ => 0
         };
         var buffRatios = new Dictionary<string, double>(StringComparer.Ordinal);

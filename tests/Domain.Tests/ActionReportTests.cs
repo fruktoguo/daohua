@@ -151,7 +151,7 @@ public sealed class ActionReportTests
     [Fact]
     public void CombatPathRecordsEncountersKillsAndRootExp()
     {
-        // 高额六维奖励（20 万全额入各维）足以把 0 级推到 12 级（cbrt(2000)≈12.6），触发 root 升级记录。
+        // 高额六维奖励（20 万全额入各维）按境界派生点成本表升到 14 点（累计 192,667 ≤ 20 万 < 216,000），触发 root 升级记录。
         var catalog = CreateCombatCatalog(experience: 200_000);
         var player = CreatePlayer("甲");
         var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
@@ -167,7 +167,7 @@ public sealed class ActionReportTests
         Assert.Equal(0, report.BossKills);
         Assert.Equal(0, report.Deaths);
         Assert.True(report.RootExp.Total > 0);
-        Assert.Contains(report.LevelUps, entry => entry.Kind == "root" && entry.ToLevel == 12);
+        Assert.Contains(report.LevelUps, entry => entry.Kind == "root" && entry.ToLevel == 14);
     }
 
     /// <summary>技能每次成功施放结算 1 点功法经验：装配分段与战报 AbilityExp 同步入账。</summary>
@@ -284,6 +284,7 @@ public sealed class ActionReportTests
             actions,
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
             combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },
-            abilities: abilities);
+            abilities: abilities,
+            realmProgression: GameDataCatalog.LoadEmbedded().RealmProgression);
     }
 }

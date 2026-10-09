@@ -209,7 +209,7 @@
   ],
   "fourMultiplierFormula": "FinalStat = (BaseFlat + RootFlat) * (1 + Root%) * (1 + Equip%) * (1 + Buff%)",
   "rules": {
-    "rootScalingFormula": "RootFlat = 3×Level 个期望六维点 × 每点固定值（生命+12/灵力+7/术攻+2/其余+1），Root% = 3%×Level 为独立乘区——每点六维同时提供固定值与百分比加成（体魄:生命+12且+1%/护甲+1且+1%/回血+1且+1%，经脉:灵力+7且+1%/法抗+1且+1%/回蓝+1且+1%，根骨:生命+12且+1%/灵力+7且+1%/化解+1且+1%，力道:物攻+1且+1%/暴击+1且+1%/破招+1且+1%，神识:术攻+2且+2%/命中+1且+1%，身法:闪避+1且+1%/免爆+1且+1%/化解+1且+1%）",
+    "rootScalingFormula": "RootFlat = ExpectPoints(Level) × 每点固定值（生命+12/灵力+7/术攻+2/其余+1），Root% = ExpectPoints(Level)%——每点六维同时提供固定值与百分比加成（体魄:生命+12且+1%/护甲+1且+1%/回血+1且+1%，经脉:灵力+7且+1%/法抗+1且+1%/回蓝+1且+1%，根骨:生命+12且+1%/灵力+7且+1%/化解+1且+1%，力道:物攻+1且+1%/暴击+1且+1%/破招+1且+1%，神识:术攻+2且+2%/命中+1且+1%，身法:闪避+1且+1%/免爆+1且+1%/化解+1且+1%）",
     "singleBuffSingleStatFormula": "EquipPieceBase / 4 (精确整数百分比)",
     "singleBuffAllStatsFormula": "EquipPieceBase / 48",
     "expectedBuffCountFormula": "round(Tier * 1.1^Tier)",
@@ -378,7 +378,9 @@
         "finalDamageRatioPct": 200.0,
         "description": "基准 1.0s 同时受攻击速度与行动速度点数双除数缩短，造成 100%->200% 物理攻击力物理伤害；法术系单位的普攻与物理系完全相同，AP 仅供技能结算。"
       }
-    }
+    },
+    "expectedPointsFormula": "ExpectPoints(Level) = 3×Level（全线性，一级境界对应三点六维）；Lv18 收敛 54 点、Lv127 收敛 381 点",
+    "levelExpectedNote": "levelExpected 为 Lv1~127 每级期望玩家面板锚点（同一四乘区公式逐级求解）；怪物同构建模底座以此为数据源，相邻整级线性插值误差可忽略，不再跨等阶插值。"
   },
   "tiers": [
     {
@@ -401,7 +403,7 @@
       },
       "rootFlat": {
         "densityPointsPerLevel": 3,
-        "expectedPointsPerStat": 3,
+        "expectedPointsPerStat": 3.0,
         "perPointFlat": {
           "maxHitpoints": 12,
           "maxManapoints": 7,
@@ -409,18 +411,18 @@
           "default": 1
         },
         "flat": {
-          "maxHitpoints": 36,
-          "maxManapoints": 21,
-          "physicalAttack": 3,
-          "magicAttack": 6,
-          "armor": 3,
-          "magicResistance": 3,
-          "accuracyRating": 3,
-          "evasionRating": 3,
-          "criticalRating": 3,
-          "criticalAvoidance": 3,
-          "breakRating": 3,
-          "parryRating": 3
+          "maxHitpoints": 36.0,
+          "maxManapoints": 21.0,
+          "physicalAttack": 3.0,
+          "magicAttack": 6.0,
+          "armor": 3.0,
+          "magicResistance": 3.0,
+          "accuracyRating": 3.0,
+          "evasionRating": 3.0,
+          "criticalRating": 3.0,
+          "criticalAvoidance": 3.0,
+          "breakRating": 3.0,
+          "parryRating": 3.0
         }
       },
       "equipBaseline": {
@@ -440,18 +442,18 @@
       },
       "compoundMultiplier": 1.1541,
       "finalExpected": {
-        "maxHitpoints": 156.96,
-        "maxManapoints": 81.94,
-        "physicalAttack": 15.0,
-        "magicAttack": 12.7,
-        "armor": 15.0,
-        "magicResistance": 3.46,
-        "accuracyRating": 4.62,
-        "evasionRating": 4.62,
-        "criticalRating": 4.62,
-        "criticalAvoidance": 4.62,
-        "breakRating": 4.62,
-        "parryRating": 4.62
+        "maxHitpoints": 156.9577,
+        "maxManapoints": 81.9412,
+        "physicalAttack": 15.0033,
+        "magicAttack": 12.6951,
+        "armor": 15.0033,
+        "magicResistance": 3.4623,
+        "accuracyRating": 4.6164,
+        "evasionRating": 4.6164,
+        "criticalRating": 4.6164,
+        "criticalAvoidance": 4.6164,
+        "breakRating": 4.6164,
+        "parryRating": 4.6164
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -604,7 +606,7 @@
       },
       "rootFlat": {
         "densityPointsPerLevel": 3,
-        "expectedPointsPerStat": 54,
+        "expectedPointsPerStat": 54.0,
         "perPointFlat": {
           "maxHitpoints": 12,
           "maxManapoints": 7,
@@ -612,18 +614,18 @@
           "default": 1
         },
         "flat": {
-          "maxHitpoints": 648,
-          "maxManapoints": 378,
-          "physicalAttack": 54,
-          "magicAttack": 108,
-          "armor": 54,
-          "magicResistance": 54,
-          "accuracyRating": 54,
-          "evasionRating": 54,
-          "criticalRating": 54,
-          "criticalAvoidance": 54,
-          "breakRating": 54,
-          "parryRating": 54
+          "maxHitpoints": 648.0,
+          "maxManapoints": 378.0,
+          "physicalAttack": 54.0,
+          "magicAttack": 108.0,
+          "armor": 54.0,
+          "magicResistance": 54.0,
+          "accuracyRating": 54.0,
+          "evasionRating": 54.0,
+          "criticalRating": 54.0,
+          "criticalAvoidance": 54.0,
+          "breakRating": 54.0,
+          "parryRating": 54.0
         }
       },
       "equipBaseline": {
@@ -643,18 +645,18 @@
       },
       "compoundMultiplier": 1.8791,
       "finalExpected": {
-        "maxHitpoints": 1901.65,
-        "maxManapoints": 954.58,
-        "physicalAttack": 139.05,
-        "magicAttack": 219.85,
-        "armor": 131.54,
-        "magicResistance": 101.47,
-        "accuracyRating": 110.87,
-        "evasionRating": 103.35,
-        "criticalRating": 103.35,
-        "criticalAvoidance": 103.35,
-        "breakRating": 103.35,
-        "parryRating": 103.35
+        "maxHitpoints": 1901.682,
+        "maxManapoints": 954.5993,
+        "physicalAttack": 139.0558,
+        "magicAttack": 219.8585,
+        "armor": 131.5393,
+        "magicResistance": 101.4732,
+        "accuracyRating": 110.8688,
+        "evasionRating": 103.3523,
+        "criticalRating": 103.3523,
+        "criticalAvoidance": 103.3523,
+        "breakRating": 103.3523,
+        "parryRating": 103.3523
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -846,18 +848,18 @@
       },
       "compoundMultiplier": 2.5157,
       "finalExpected": {
-        "maxHitpoints": 4840.21,
-        "maxManapoints": 4327.0,
-        "physicalAttack": 352.2,
-        "magicAttack": 576.1,
-        "armor": 316.98,
-        "magicResistance": 296.85,
-        "accuracyRating": 259.12,
-        "evasionRating": 244.02,
-        "criticalRating": 238.99,
-        "criticalAvoidance": 233.96,
-        "breakRating": 233.96,
-        "parryRating": 233.96
+        "maxHitpoints": 4840.2726,
+        "maxManapoints": 4327.0628,
+        "physicalAttack": 352.2028,
+        "magicAttack": 576.1031,
+        "armor": 316.9825,
+        "magicResistance": 296.8566,
+        "accuracyRating": 259.1206,
+        "evasionRating": 244.0262,
+        "criticalRating": 238.9947,
+        "criticalAvoidance": 233.9633,
+        "breakRating": 233.9633,
+        "parryRating": 233.9633
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -1049,18 +1051,18 @@
       },
       "compoundMultiplier": 3.5602,
       "finalExpected": {
-        "maxHitpoints": 12916.41,
-        "maxManapoints": 12944.89,
-        "physicalAttack": 854.45,
-        "magicAttack": 1356.44,
-        "armor": 740.52,
-        "magicResistance": 740.52,
-        "accuracyRating": 530.47,
-        "evasionRating": 501.99,
-        "criticalRating": 487.75,
-        "criticalAvoidance": 473.51,
-        "breakRating": 473.51,
-        "parryRating": 473.51
+        "maxHitpoints": 12916.3668,
+        "maxManapoints": 12944.8483,
+        "physicalAttack": 854.4454,
+        "magicAttack": 1356.4321,
+        "armor": 740.5194,
+        "magicResistance": 740.5194,
+        "accuracyRating": 530.4682,
+        "evasionRating": 501.9867,
+        "criticalRating": 487.7459,
+        "criticalAvoidance": 473.5052,
+        "breakRating": 473.5052,
+        "parryRating": 473.5052
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -1252,18 +1254,18 @@
       },
       "compoundMultiplier": 4.904,
       "finalExpected": {
-        "maxHitpoints": 30267.49,
-        "maxManapoints": 32484.1,
-        "physicalAttack": 1883.14,
-        "magicAttack": 2868.84,
-        "armor": 1559.47,
-        "magicResistance": 1628.13,
-        "accuracyRating": 975.9,
-        "evasionRating": 936.66,
-        "criticalRating": 917.05,
-        "criticalAvoidance": 868.01,
-        "breakRating": 858.2,
-        "parryRating": 858.2
+        "maxHitpoints": 30267.5293,
+        "maxManapoints": 32484.1403,
+        "physicalAttack": 1883.1386,
+        "magicAttack": 2868.8439,
+        "armor": 1559.4741,
+        "magicResistance": 1628.1302,
+        "accuracyRating": 975.8973,
+        "evasionRating": 936.6653,
+        "criticalRating": 917.0493,
+        "criticalAvoidance": 868.0092,
+        "breakRating": 858.2012,
+        "parryRating": 858.2012
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -1455,18 +1457,18 @@
       },
       "compoundMultiplier": 6.952,
       "finalExpected": {
-        "maxHitpoints": 80114.85,
-        "maxManapoints": 68157.41,
-        "physicalAttack": 4032.16,
-        "magicAttack": 5943.96,
-        "armor": 3225.73,
-        "magicResistance": 3489.9,
-        "accuracyRating": 1758.86,
-        "evasionRating": 1703.24,
-        "criticalRating": 1675.43,
-        "criticalAvoidance": 1564.2,
-        "breakRating": 1550.3,
-        "parryRating": 1536.39
+        "maxHitpoints": 80115.2867,
+        "maxManapoints": 68157.7812,
+        "physicalAttack": 4032.1821,
+        "magicAttack": 5943.9925,
+        "armor": 3225.7457,
+        "magicResistance": 3489.9231,
+        "accuracyRating": 1758.8656,
+        "evasionRating": 1703.2493,
+        "criticalRating": 1675.4412,
+        "criticalAvoidance": 1564.2086,
+        "breakRating": 1550.3045,
+        "parryRating": 1536.4004
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -1658,18 +1660,18 @@
       },
       "compoundMultiplier": 11.2231,
       "finalExpected": {
-        "maxHitpoints": 211218.74,
-        "maxManapoints": 158829.31,
-        "physicalAttack": 9427.4,
-        "magicAttack": 13478.94,
-        "armor": 7317.46,
-        "magicResistance": 8147.97,
-        "accuracyRating": 3490.38,
-        "evasionRating": 3400.6,
-        "criticalRating": 3355.71,
-        "criticalAvoidance": 3176.14,
-        "breakRating": 3131.24,
-        "parryRating": 3063.91
+        "maxHitpoints": 211218.3786,
+        "maxManapoints": 158829.038,
+        "physicalAttack": 9427.3878,
+        "magicAttack": 13478.9199,
+        "armor": 7317.4486,
+        "magicResistance": 8147.9566,
+        "accuracyRating": 3490.3781,
+        "evasionRating": 3400.5934,
+        "criticalRating": 3355.7011,
+        "criticalAvoidance": 3176.1318,
+        "breakRating": 3131.2395,
+        "parryRating": 3063.901
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -1861,18 +1863,18 @@
       },
       "compoundMultiplier": 17.3947,
       "finalExpected": {
-        "maxHitpoints": 459707.13,
-        "maxManapoints": 330708.04,
-        "physicalAttack": 19482.06,
-        "magicAttack": 27292.28,
-        "armor": 14855.07,
-        "magicResistance": 16768.49,
-        "accuracyRating": 6418.64,
-        "evasionRating": 6279.49,
-        "criticalRating": 6209.91,
-        "criticalAvoidance": 5931.59,
-        "breakRating": 5862.01,
-        "parryRating": 5722.86
+        "maxHitpoints": 459706.3718,
+        "maxManapoints": 330707.4898,
+        "physicalAttack": 19482.0318,
+        "magicAttack": 27292.2392,
+        "armor": 14855.0492,
+        "magicResistance": 16768.4631,
+        "accuracyRating": 6418.6337,
+        "evasionRating": 6279.4763,
+        "criticalRating": 6209.8976,
+        "criticalAvoidance": 5931.5829,
+        "breakRating": 5862.0042,
+        "parryRating": 5722.8468
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -2064,18 +2066,18 @@
       },
       "compoundMultiplier": 30.1243,
       "finalExpected": {
-        "maxHitpoints": 1093271.1,
-        "maxManapoints": 762988.27,
-        "physicalAttack": 44463.47,
-        "magicAttack": 61182.45,
-        "armor": 33377.72,
-        "magicResistance": 38137.36,
-        "accuracyRating": 13104.07,
-        "evasionRating": 12863.08,
-        "criticalRating": 12742.58,
-        "criticalAvoidance": 12200.34,
-        "breakRating": 12079.84,
-        "parryRating": 11838.85
+        "maxHitpoints": 1093269.8689,
+        "maxManapoints": 762987.4143,
+        "physicalAttack": 44463.4169,
+        "magicAttack": 61182.3847,
+        "armor": 33377.6869,
+        "magicResistance": 38137.321,
+        "accuracyRating": 13104.0558,
+        "evasionRating": 12863.0617,
+        "criticalRating": 12742.5646,
+        "criticalAvoidance": 12200.3278,
+        "breakRating": 12079.8307,
+        "parryRating": 11838.8366
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -2267,18 +2269,18 @@
       },
       "compoundMultiplier": 51.4919,
       "finalExpected": {
-        "maxHitpoints": 2510127.14,
-        "maxManapoints": 1714268.33,
-        "physicalAttack": 98864.45,
-        "magicAttack": 133930.43,
-        "armor": 73221.48,
-        "magicResistance": 84549.7,
-        "accuracyRating": 26209.38,
-        "evasionRating": 25694.46,
-        "criticalRating": 25488.49,
-        "criticalAvoidance": 24561.64,
-        "breakRating": 24355.67,
-        "parryRating": 23943.73
+        "maxHitpoints": 2510126.8975,
+        "maxManapoints": 1714268.1683,
+        "physicalAttack": 98864.4384,
+        "magicAttack": 133930.4189,
+        "armor": 73221.4747,
+        "magicResistance": 84549.6916,
+        "accuracyRating": 26209.3746,
+        "evasionRating": 25694.4556,
+        "criticalRating": 25488.488,
+        "criticalAvoidance": 24561.6339,
+        "breakRating": 24355.6663,
+        "parryRating": 23943.7312
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -2470,18 +2472,18 @@
       },
       "compoundMultiplier": 99.5695,
       "finalExpected": {
-        "maxHitpoints": 6380811.84,
-        "maxManapoints": 4292640.28,
-        "physicalAttack": 245140.11,
-        "magicAttack": 327683.22,
-        "armor": 179424.24,
-        "magicResistance": 208896.81,
-        "accuracyRating": 58845.57,
-        "evasionRating": 57849.88,
-        "criticalRating": 57451.6,
-        "criticalAvoidance": 55659.35,
-        "breakRating": 55261.07,
-        "parryRating": 54265.38
+        "maxHitpoints": 6380811.9083,
+        "maxManapoints": 4292640.3313,
+        "physicalAttack": 245140.1117,
+        "magicAttack": 327683.2281,
+        "armor": 179424.241,
+        "magicResistance": 208896.8133,
+        "accuracyRating": 58845.5751,
+        "evasionRating": 57849.8801,
+        "criticalRating": 57451.6021,
+        "criticalAvoidance": 55659.3511,
+        "breakRating": 55261.0731,
+        "parryRating": 54265.3781
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -2673,18 +2675,18 @@
       },
       "compoundMultiplier": 182.0474,
       "finalExpected": {
-        "maxHitpoints": 14967209.04,
-        "maxManapoints": 9966913.1,
-        "physicalAttack": 560523.94,
-        "magicAttack": 736745.83,
-        "armor": 405055.47,
-        "magicResistance": 475689.86,
-        "accuracyRating": 118330.81,
-        "evasionRating": 116510.34,
-        "criticalRating": 115782.15,
-        "criticalAvoidance": 112505.29,
-        "breakRating": 111413.01,
-        "parryRating": 109592.53
+        "maxHitpoints": 14967210.3246,
+        "maxManapoints": 9966913.9591,
+        "physicalAttack": 560523.9928,
+        "magicAttack": 736745.8911,
+        "armor": 405055.4998,
+        "magicResistance": 475689.8971,
+        "accuracyRating": 118330.8202,
+        "evasionRating": 116510.346,
+        "criticalRating": 115782.1563,
+        "criticalAvoidance": 112505.3029,
+        "breakRating": 111413.0184,
+        "parryRating": 109592.5442
       },
       "combatSimulationDualStyle": {
         "physicalStyle": {
@@ -2815,6 +2817,2167 @@
       "rootMultiplier": {
         "rootPercentage": 3.81,
         "multiplier": 4.81
+      }
+    }
+  ],
+  "levelExpected": [
+    {
+      "level": 1,
+      "finalExpected": {
+        "maxHitpoints": 156.9577,
+        "maxManapoints": 81.9412,
+        "physicalAttack": 15.0033,
+        "magicAttack": 12.6951,
+        "armor": 15.0033,
+        "magicResistance": 3.4623,
+        "accuracyRating": 4.6164,
+        "evasionRating": 4.6164,
+        "criticalRating": 4.6164,
+        "criticalAvoidance": 4.6164,
+        "breakRating": 4.6164,
+        "parryRating": 4.6164
+      }
+    },
+    {
+      "level": 2,
+      "finalExpected": {
+        "maxHitpoints": 222.7316,
+        "maxManapoints": 114.8591,
+        "physicalAttack": 19.7021,
+        "magicAttack": 20.4706,
+        "armor": 19.4226,
+        "magicResistance": 7.1263,
+        "accuracyRating": 8.5935,
+        "evasionRating": 8.314,
+        "criticalRating": 8.314,
+        "criticalAvoidance": 8.314,
+        "breakRating": 8.314,
+        "parryRating": 8.314
+      }
+    },
+    {
+      "level": 3,
+      "finalExpected": {
+        "maxHitpoints": 291.9697,
+        "maxManapoints": 149.5052,
+        "physicalAttack": 24.6421,
+        "magicAttack": 28.6653,
+        "armor": 24.0674,
+        "magicResistance": 10.992,
+        "accuracyRating": 12.788,
+        "evasionRating": 12.2133,
+        "criticalRating": 12.2133,
+        "criticalAvoidance": 12.2133,
+        "breakRating": 12.2133,
+        "parryRating": 12.2133
+      }
+    },
+    {
+      "level": 4,
+      "finalExpected": {
+        "maxHitpoints": 364.6722,
+        "maxManapoints": 185.8795,
+        "physicalAttack": 29.8234,
+        "magicAttack": 37.2792,
+        "armor": 28.9375,
+        "magicResistance": 15.0593,
+        "accuracyRating": 17.2001,
+        "evasionRating": 16.3143,
+        "criticalRating": 16.3143,
+        "criticalAvoidance": 16.3143,
+        "breakRating": 16.3143,
+        "parryRating": 16.3143
+      }
+    },
+    {
+      "level": 5,
+      "finalExpected": {
+        "maxHitpoints": 440.8389,
+        "maxManapoints": 223.9819,
+        "physicalAttack": 35.2459,
+        "magicAttack": 46.3123,
+        "armor": 34.0331,
+        "magicResistance": 19.3284,
+        "accuracyRating": 21.8297,
+        "evasionRating": 20.6169,
+        "criticalRating": 20.6169,
+        "criticalAvoidance": 20.6169,
+        "breakRating": 20.6169,
+        "parryRating": 20.6169
+      }
+    },
+    {
+      "level": 6,
+      "finalExpected": {
+        "maxHitpoints": 520.4699,
+        "maxManapoints": 263.8126,
+        "physicalAttack": 40.9096,
+        "magicAttack": 55.7646,
+        "armor": 39.3541,
+        "magicResistance": 23.7991,
+        "accuracyRating": 26.6768,
+        "evasionRating": 25.1213,
+        "criticalRating": 25.1213,
+        "criticalAvoidance": 25.1213,
+        "breakRating": 25.1213,
+        "parryRating": 25.1213
+      }
+    },
+    {
+      "level": 7,
+      "finalExpected": {
+        "maxHitpoints": 603.5651,
+        "maxManapoints": 305.3714,
+        "physicalAttack": 46.8146,
+        "magicAttack": 65.6361,
+        "armor": 44.9005,
+        "magicResistance": 28.4716,
+        "accuracyRating": 31.7414,
+        "evasionRating": 29.8273,
+        "criticalRating": 29.8273,
+        "criticalAvoidance": 29.8273,
+        "breakRating": 29.8273,
+        "parryRating": 29.8273
+      }
+    },
+    {
+      "level": 8,
+      "finalExpected": {
+        "maxHitpoints": 690.1247,
+        "maxManapoints": 348.6584,
+        "physicalAttack": 52.9608,
+        "magicAttack": 75.9268,
+        "armor": 50.6723,
+        "magicResistance": 33.3457,
+        "accuracyRating": 37.0235,
+        "evasionRating": 34.7351,
+        "criticalRating": 34.7351,
+        "criticalAvoidance": 34.7351,
+        "breakRating": 34.7351,
+        "parryRating": 34.7351
+      }
+    },
+    {
+      "level": 9,
+      "finalExpected": {
+        "maxHitpoints": 780.1485,
+        "maxManapoints": 393.6737,
+        "physicalAttack": 59.3482,
+        "magicAttack": 86.6367,
+        "armor": 56.6696,
+        "magicResistance": 38.4215,
+        "accuracyRating": 42.5231,
+        "evasionRating": 39.8445,
+        "criticalRating": 39.8445,
+        "criticalAvoidance": 39.8445,
+        "breakRating": 39.8445,
+        "parryRating": 39.8445
+      }
+    },
+    {
+      "level": 10,
+      "finalExpected": {
+        "maxHitpoints": 873.6366,
+        "maxManapoints": 440.4171,
+        "physicalAttack": 65.9769,
+        "magicAttack": 97.7657,
+        "armor": 62.8922,
+        "magicResistance": 43.699,
+        "accuracyRating": 48.2402,
+        "evasionRating": 45.1556,
+        "criticalRating": 45.1556,
+        "criticalAvoidance": 45.1556,
+        "breakRating": 45.1556,
+        "parryRating": 45.1556
+      }
+    },
+    {
+      "level": 11,
+      "finalExpected": {
+        "maxHitpoints": 970.589,
+        "maxManapoints": 488.8886,
+        "physicalAttack": 72.8468,
+        "magicAttack": 109.314,
+        "armor": 69.3403,
+        "magicResistance": 49.1781,
+        "accuracyRating": 54.1749,
+        "evasionRating": 50.6684,
+        "criticalRating": 50.6684,
+        "criticalAvoidance": 50.6684,
+        "breakRating": 50.6684,
+        "parryRating": 50.6684
+      }
+    },
+    {
+      "level": 12,
+      "finalExpected": {
+        "maxHitpoints": 1071.0057,
+        "maxManapoints": 539.0884,
+        "physicalAttack": 79.9579,
+        "magicAttack": 121.2814,
+        "armor": 76.0138,
+        "magicResistance": 54.859,
+        "accuracyRating": 60.327,
+        "evasionRating": 56.3829,
+        "criticalRating": 56.3829,
+        "criticalAvoidance": 56.3829,
+        "breakRating": 56.3829,
+        "parryRating": 56.3829
+      }
+    },
+    {
+      "level": 13,
+      "finalExpected": {
+        "maxHitpoints": 1174.8866,
+        "maxManapoints": 591.0163,
+        "physicalAttack": 87.3103,
+        "magicAttack": 133.6681,
+        "armor": 82.9127,
+        "magicResistance": 60.7416,
+        "accuracyRating": 66.6966,
+        "evasionRating": 62.299,
+        "criticalRating": 62.299,
+        "criticalAvoidance": 62.299,
+        "breakRating": 62.299,
+        "parryRating": 62.299
+      }
+    },
+    {
+      "level": 14,
+      "finalExpected": {
+        "maxHitpoints": 1282.2319,
+        "maxManapoints": 644.6725,
+        "physicalAttack": 94.9039,
+        "magicAttack": 146.4739,
+        "armor": 90.037,
+        "magicResistance": 66.8258,
+        "accuracyRating": 73.2838,
+        "evasionRating": 68.4169,
+        "criticalRating": 68.4169,
+        "criticalAvoidance": 68.4169,
+        "breakRating": 68.4169,
+        "parryRating": 68.4169
+      }
+    },
+    {
+      "level": 15,
+      "finalExpected": {
+        "maxHitpoints": 1393.0414,
+        "maxManapoints": 700.0568,
+        "physicalAttack": 102.7387,
+        "magicAttack": 159.699,
+        "armor": 97.3867,
+        "magicResistance": 73.1117,
+        "accuracyRating": 80.0884,
+        "evasionRating": 74.7364,
+        "criticalRating": 74.7364,
+        "criticalAvoidance": 74.7364,
+        "breakRating": 74.7364,
+        "parryRating": 74.7364
+      }
+    },
+    {
+      "level": 16,
+      "finalExpected": {
+        "maxHitpoints": 1507.3152,
+        "maxManapoints": 757.1693,
+        "physicalAttack": 110.8148,
+        "magicAttack": 173.3432,
+        "armor": 104.9619,
+        "magicResistance": 79.5994,
+        "accuracyRating": 87.1106,
+        "evasionRating": 81.2577,
+        "criticalRating": 81.2577,
+        "criticalAvoidance": 81.2577,
+        "breakRating": 81.2577,
+        "parryRating": 81.2577
+      }
+    },
+    {
+      "level": 17,
+      "finalExpected": {
+        "maxHitpoints": 1625.0532,
+        "maxManapoints": 816.01,
+        "physicalAttack": 119.1321,
+        "magicAttack": 187.4066,
+        "armor": 112.7625,
+        "magicResistance": 86.2887,
+        "accuracyRating": 94.3502,
+        "evasionRating": 87.9806,
+        "criticalRating": 87.9806,
+        "criticalAvoidance": 87.9806,
+        "breakRating": 87.9806,
+        "parryRating": 87.9806
+      }
+    },
+    {
+      "level": 18,
+      "finalExpected": {
+        "maxHitpoints": 1901.682,
+        "maxManapoints": 954.5993,
+        "physicalAttack": 139.0558,
+        "magicAttack": 219.8585,
+        "armor": 131.5393,
+        "magicResistance": 101.4732,
+        "accuracyRating": 110.8688,
+        "evasionRating": 103.3523,
+        "criticalRating": 103.3523,
+        "criticalAvoidance": 103.3523,
+        "breakRating": 103.3523,
+        "parryRating": 103.3523
+      }
+    },
+    {
+      "level": 19,
+      "finalExpected": {
+        "maxHitpoints": 2084.3239,
+        "maxManapoints": 1166.685,
+        "physicalAttack": 152.3012,
+        "magicAttack": 242.0217,
+        "armor": 143.0418,
+        "magicResistance": 113.6672,
+        "accuracyRating": 120.053,
+        "evasionRating": 112.0707,
+        "criticalRating": 111.7514,
+        "criticalAvoidance": 111.4321,
+        "breakRating": 111.4321,
+        "parryRating": 111.4321
+      }
+    },
+    {
+      "level": 20,
+      "finalExpected": {
+        "maxHitpoints": 2272.53,
+        "maxManapoints": 1386.1652,
+        "physicalAttack": 165.9494,
+        "magicAttack": 264.8682,
+        "armor": 154.8861,
+        "magicResistance": 126.2517,
+        "accuracyRating": 129.5056,
+        "evasionRating": 121.0454,
+        "criticalRating": 120.3946,
+        "criticalAvoidance": 119.7438,
+        "breakRating": 119.7438,
+        "parryRating": 119.7438
+      }
+    },
+    {
+      "level": 21,
+      "finalExpected": {
+        "maxHitpoints": 2466.3003,
+        "maxManapoints": 1613.04,
+        "physicalAttack": 180.0001,
+        "magicAttack": 288.398,
+        "armor": 167.072,
+        "magicResistance": 139.2266,
+        "accuracyRating": 139.2266,
+        "evasionRating": 130.2763,
+        "criticalRating": 129.2819,
+        "criticalAvoidance": 128.2874,
+        "breakRating": 128.2874,
+        "parryRating": 128.2874
+      }
+    },
+    {
+      "level": 22,
+      "finalExpected": {
+        "maxHitpoints": 2665.6348,
+        "maxManapoints": 1847.3092,
+        "physicalAttack": 194.4536,
+        "magicAttack": 312.6112,
+        "armor": 179.5995,
+        "magicResistance": 152.5921,
+        "accuracyRating": 149.2161,
+        "evasionRating": 139.7635,
+        "criticalRating": 138.4132,
+        "criticalAvoidance": 137.0628,
+        "breakRating": 137.0628,
+        "parryRating": 137.0628
+      }
+    },
+    {
+      "level": 23,
+      "finalExpected": {
+        "maxHitpoints": 2870.5334,
+        "maxManapoints": 2088.9729,
+        "physicalAttack": 209.3097,
+        "magicAttack": 337.5076,
+        "armor": 192.4687,
+        "magicResistance": 166.348,
+        "accuracyRating": 159.4741,
+        "evasionRating": 149.5069,
+        "criticalRating": 147.7885,
+        "criticalAvoidance": 146.07,
+        "breakRating": 146.07,
+        "parryRating": 146.07
+      }
+    },
+    {
+      "level": 24,
+      "finalExpected": {
+        "maxHitpoints": 3080.9962,
+        "maxManapoints": 2338.0312,
+        "physicalAttack": 224.5685,
+        "magicAttack": 363.0874,
+        "armor": 205.6796,
+        "magicResistance": 180.4943,
+        "accuracyRating": 170.0005,
+        "evasionRating": 159.5066,
+        "criticalRating": 157.4078,
+        "criticalAvoidance": 155.3091,
+        "breakRating": 155.3091,
+        "parryRating": 155.3091
+      }
+    },
+    {
+      "level": 25,
+      "finalExpected": {
+        "maxHitpoints": 3297.0233,
+        "maxManapoints": 2594.484,
+        "physicalAttack": 240.23,
+        "magicAttack": 389.3505,
+        "armor": 219.2321,
+        "magicResistance": 195.0312,
+        "accuracyRating": 180.7953,
+        "evasionRating": 169.7625,
+        "criticalRating": 167.2713,
+        "criticalAvoidance": 164.78,
+        "breakRating": 164.78,
+        "parryRating": 164.78
+      }
+    },
+    {
+      "level": 26,
+      "finalExpected": {
+        "maxHitpoints": 3518.6145,
+        "maxManapoints": 2858.3312,
+        "physicalAttack": 256.2941,
+        "magicAttack": 416.297,
+        "armor": 233.1263,
+        "magicResistance": 209.9585,
+        "accuracyRating": 191.8586,
+        "evasionRating": 180.2747,
+        "criticalRating": 177.3787,
+        "criticalAvoidance": 174.4827,
+        "breakRating": 174.4827,
+        "parryRating": 174.4827
+      }
+    },
+    {
+      "level": 27,
+      "finalExpected": {
+        "maxHitpoints": 3745.7698,
+        "maxManapoints": 3129.573,
+        "physicalAttack": 272.761,
+        "magicAttack": 443.9267,
+        "armor": 247.3622,
+        "magicResistance": 225.2763,
+        "accuracyRating": 203.1903,
+        "evasionRating": 191.0431,
+        "criticalRating": 187.7302,
+        "criticalAvoidance": 184.4173,
+        "breakRating": 184.4173,
+        "parryRating": 184.4173
+      }
+    },
+    {
+      "level": 28,
+      "finalExpected": {
+        "maxHitpoints": 3978.4894,
+        "maxManapoints": 3408.2093,
+        "physicalAttack": 289.6304,
+        "magicAttack": 472.2398,
+        "armor": 261.9397,
+        "magicResistance": 240.9845,
+        "accuracyRating": 214.7905,
+        "evasionRating": 202.0677,
+        "criticalRating": 198.3258,
+        "criticalAvoidance": 194.5838,
+        "breakRating": 194.5838,
+        "parryRating": 194.5838
+      }
+    },
+    {
+      "level": 29,
+      "finalExpected": {
+        "maxHitpoints": 4216.7732,
+        "maxManapoints": 3694.2401,
+        "physicalAttack": 306.9026,
+        "magicAttack": 501.2362,
+        "armor": 276.8588,
+        "magicResistance": 257.0832,
+        "accuracyRating": 226.6592,
+        "evasionRating": 213.3486,
+        "criticalRating": 209.1653,
+        "criticalAvoidance": 204.982,
+        "breakRating": 204.982,
+        "parryRating": 204.982
+      }
+    },
+    {
+      "level": 30,
+      "finalExpected": {
+        "maxHitpoints": 4840.2726,
+        "maxManapoints": 4327.0628,
+        "physicalAttack": 352.2028,
+        "magicAttack": 576.1031,
+        "armor": 316.9825,
+        "magicResistance": 296.8566,
+        "accuracyRating": 259.1206,
+        "evasionRating": 244.0262,
+        "criticalRating": 238.9947,
+        "criticalAvoidance": 233.9633,
+        "breakRating": 233.9633,
+        "parryRating": 233.9633
+      }
+    },
+    {
+      "level": 31,
+      "finalExpected": {
+        "maxHitpoints": 5279.5727,
+        "maxManapoints": 4803.406,
+        "physicalAttack": 379.0594,
+        "magicAttack": 617.5686,
+        "armor": 339.4498,
+        "magicResistance": 320.7098,
+        "accuracyRating": 273.0079,
+        "evasionRating": 257.2493,
+        "criticalRating": 251.7124,
+        "criticalAvoidance": 246.1756,
+        "breakRating": 246.1756,
+        "parryRating": 246.1756
+      }
+    },
+    {
+      "level": 32,
+      "finalExpected": {
+        "maxHitpoints": 5730.1539,
+        "maxManapoints": 5292.4338,
+        "physicalAttack": 406.578,
+        "magicAttack": 660.0404,
+        "armor": 362.4599,
+        "magicResistance": 345.1587,
+        "accuracyRating": 287.1997,
+        "evasionRating": 270.7636,
+        "criticalRating": 264.7082,
+        "criticalAvoidance": 258.6528,
+        "breakRating": 258.6528,
+        "parryRating": 258.6528
+      }
+    },
+    {
+      "level": 33,
+      "finalExpected": {
+        "maxHitpoints": 6192.0163,
+        "maxManapoints": 5794.1463,
+        "physicalAttack": 434.7586,
+        "magicAttack": 703.5184,
+        "armor": 386.0129,
+        "magicResistance": 370.2035,
+        "accuracyRating": 301.6961,
+        "evasionRating": 284.5693,
+        "criticalRating": 277.982,
+        "criticalAvoidance": 271.3948,
+        "breakRating": 271.3948,
+        "parryRating": 271.3948
+      }
+    },
+    {
+      "level": 34,
+      "finalExpected": {
+        "maxHitpoints": 6665.1596,
+        "maxManapoints": 6308.5433,
+        "physicalAttack": 463.6013,
+        "magicAttack": 748.0028,
+        "armor": 410.1088,
+        "magicResistance": 395.8442,
+        "accuracyRating": 316.497,
+        "evasionRating": 298.6662,
+        "criticalRating": 291.5339,
+        "criticalAvoidance": 284.4015,
+        "breakRating": 284.4015,
+        "parryRating": 284.4015
+      }
+    },
+    {
+      "level": 35,
+      "finalExpected": {
+        "maxHitpoints": 7149.5841,
+        "maxManapoints": 6835.6249,
+        "physicalAttack": 493.106,
+        "magicAttack": 793.4935,
+        "armor": 434.7476,
+        "magicResistance": 422.0806,
+        "accuracyRating": 331.6025,
+        "evasionRating": 313.0544,
+        "criticalRating": 305.3638,
+        "criticalAvoidance": 297.6731,
+        "breakRating": 297.6731,
+        "parryRating": 297.6731
+      }
+    },
+    {
+      "level": 36,
+      "finalExpected": {
+        "maxHitpoints": 7645.2897,
+        "maxManapoints": 7375.3911,
+        "physicalAttack": 523.2727,
+        "magicAttack": 839.9904,
+        "armor": 459.9292,
+        "magicResistance": 448.9129,
+        "accuracyRating": 347.0124,
+        "evasionRating": 327.734,
+        "criticalRating": 319.4718,
+        "criticalAvoidance": 311.2096,
+        "breakRating": 311.2096,
+        "parryRating": 311.2096
+      }
+    },
+    {
+      "level": 37,
+      "finalExpected": {
+        "maxHitpoints": 8152.2763,
+        "maxManapoints": 7927.8419,
+        "physicalAttack": 554.1015,
+        "magicAttack": 887.4936,
+        "armor": 485.6537,
+        "magicResistance": 476.341,
+        "accuracyRating": 362.7269,
+        "evasionRating": 342.7048,
+        "criticalRating": 333.8578,
+        "criticalAvoidance": 325.0108,
+        "breakRating": 325.0108,
+        "parryRating": 325.0108
+      }
+    },
+    {
+      "level": 38,
+      "finalExpected": {
+        "maxHitpoints": 8670.544,
+        "maxManapoints": 8492.9774,
+        "physicalAttack": 585.5923,
+        "magicAttack": 936.0032,
+        "armor": 511.921,
+        "magicResistance": 504.365,
+        "accuracyRating": 378.746,
+        "evasionRating": 357.9669,
+        "criticalRating": 348.5219,
+        "criticalAvoidance": 339.0768,
+        "breakRating": 339.0768,
+        "parryRating": 339.0768
+      }
+    },
+    {
+      "level": 39,
+      "finalExpected": {
+        "maxHitpoints": 9200.0929,
+        "maxManapoints": 9070.7974,
+        "physicalAttack": 617.7451,
+        "magicAttack": 985.519,
+        "armor": 538.7312,
+        "magicResistance": 532.9848,
+        "accuracyRating": 395.0696,
+        "evasionRating": 373.5203,
+        "criticalRating": 363.464,
+        "criticalAvoidance": 353.4077,
+        "breakRating": 353.4077,
+        "parryRating": 353.4077
+      }
+    },
+    {
+      "level": 40,
+      "finalExpected": {
+        "maxHitpoints": 9740.9227,
+        "maxManapoints": 9661.302,
+        "physicalAttack": 650.56,
+        "magicAttack": 1036.0411,
+        "armor": 566.0843,
+        "magicResistance": 562.2004,
+        "accuracyRating": 411.6977,
+        "evasionRating": 389.365,
+        "criticalRating": 378.6842,
+        "criticalAvoidance": 368.0034,
+        "breakRating": 368.0034,
+        "parryRating": 368.0034
+      }
+    },
+    {
+      "level": 41,
+      "finalExpected": {
+        "maxHitpoints": 10293.0337,
+        "maxManapoints": 10264.4912,
+        "physicalAttack": 684.037,
+        "magicAttack": 1087.5695,
+        "armor": 593.9803,
+        "magicResistance": 592.0118,
+        "accuracyRating": 428.6303,
+        "evasionRating": 405.501,
+        "criticalRating": 394.1824,
+        "criticalAvoidance": 382.8638,
+        "breakRating": 382.8638,
+        "parryRating": 382.8638
+      }
+    },
+    {
+      "level": 42,
+      "finalExpected": {
+        "maxHitpoints": 12916.3668,
+        "maxManapoints": 12944.8483,
+        "physicalAttack": 854.4454,
+        "magicAttack": 1356.4321,
+        "armor": 740.5194,
+        "magicResistance": 740.5194,
+        "accuracyRating": 530.4682,
+        "evasionRating": 501.9867,
+        "criticalRating": 487.7459,
+        "criticalAvoidance": 473.5052,
+        "breakRating": 473.5052,
+        "parryRating": 473.5052
+      }
+    },
+    {
+      "level": 43,
+      "finalExpected": {
+        "maxHitpoints": 13852.602,
+        "maxManapoints": 14014.9372,
+        "physicalAttack": 909.077,
+        "magicAttack": 1435.7645,
+        "armor": 783.4176,
+        "magicResistance": 787.6262,
+        "accuracyRating": 552.5409,
+        "evasionRating": 523.6813,
+        "criticalRating": 509.2515,
+        "criticalAvoidance": 493.018,
+        "breakRating": 492.4167,
+        "parryRating": 492.4167
+      }
+    },
+    {
+      "level": 44,
+      "finalExpected": {
+        "maxHitpoints": 14808.8752,
+        "maxManapoints": 15108.5612,
+        "physicalAttack": 964.8428,
+        "magicAttack": 1516.7037,
+        "armor": 827.1822,
+        "magicResistance": 835.7098,
+        "accuracyRating": 575.0073,
+        "evasionRating": 545.7697,
+        "criticalRating": 531.1508,
+        "criticalAvoidance": 512.8773,
+        "breakRating": 511.6591,
+        "parryRating": 511.6591
+      }
+    },
+    {
+      "level": 45,
+      "finalExpected": {
+        "maxHitpoints": 15785.1862,
+        "maxManapoints": 16225.7203,
+        "physicalAttack": 1021.7428,
+        "magicAttack": 1599.2496,
+        "armor": 871.8132,
+        "magicResistance": 884.7701,
+        "accuracyRating": 597.8676,
+        "evasionRating": 568.2519,
+        "criticalRating": 553.444,
+        "criticalAvoidance": 533.0832,
+        "breakRating": 531.2322,
+        "parryRating": 531.2322
+      }
+    },
+    {
+      "level": 46,
+      "finalExpected": {
+        "maxHitpoints": 16781.5351,
+        "maxManapoints": 17366.4144,
+        "physicalAttack": 1079.7771,
+        "magicAttack": 1683.4024,
+        "armor": 917.3106,
+        "magicResistance": 934.807,
+        "accuracyRating": 621.1218,
+        "evasionRating": 591.128,
+        "criticalRating": 576.131,
+        "criticalAvoidance": 553.6357,
+        "breakRating": 551.1362,
+        "parryRating": 551.1362
+      }
+    },
+    {
+      "level": 47,
+      "finalExpected": {
+        "maxHitpoints": 17797.9219,
+        "maxManapoints": 18530.6435,
+        "physicalAttack": 1138.9455,
+        "magicAttack": 1769.162,
+        "armor": 963.6745,
+        "magicResistance": 985.8206,
+        "accuracyRating": 644.7697,
+        "evasionRating": 614.3978,
+        "criticalRating": 599.2119,
+        "criticalAvoidance": 574.5347,
+        "breakRating": 571.371,
+        "parryRating": 571.371
+      }
+    },
+    {
+      "level": 48,
+      "finalExpected": {
+        "maxHitpoints": 18834.3466,
+        "maxManapoints": 19718.4077,
+        "physicalAttack": 1199.2482,
+        "magicAttack": 1856.5284,
+        "armor": 1010.9047,
+        "magicResistance": 1037.8109,
+        "accuracyRating": 668.8115,
+        "evasionRating": 638.0615,
+        "criticalRating": 622.6866,
+        "criticalAvoidance": 595.7804,
+        "breakRating": 591.9366,
+        "parryRating": 591.9366
+      }
+    },
+    {
+      "level": 49,
+      "finalExpected": {
+        "maxHitpoints": 19890.8091,
+        "maxManapoints": 20929.707,
+        "physicalAttack": 1260.6851,
+        "magicAttack": 1945.5017,
+        "armor": 1059.0014,
+        "magicResistance": 1090.7779,
+        "accuracyRating": 693.2471,
+        "evasionRating": 662.1191,
+        "criticalRating": 646.5551,
+        "criticalAvoidance": 617.3725,
+        "breakRating": 612.833,
+        "parryRating": 612.833
+      }
+    },
+    {
+      "level": 50,
+      "finalExpected": {
+        "maxHitpoints": 20967.3096,
+        "maxManapoints": 22164.5413,
+        "physicalAttack": 1323.2562,
+        "magicAttack": 2036.0817,
+        "armor": 1107.9645,
+        "magicResistance": 1144.7216,
+        "accuracyRating": 718.0765,
+        "evasionRating": 686.5704,
+        "criticalRating": 670.8174,
+        "criticalAvoidance": 639.3113,
+        "breakRating": 634.0603,
+        "parryRating": 634.0603
+      }
+    },
+    {
+      "level": 51,
+      "finalExpected": {
+        "maxHitpoints": 22063.8479,
+        "maxManapoints": 23422.9107,
+        "physicalAttack": 1386.9615,
+        "magicAttack": 2128.2686,
+        "armor": 1157.794,
+        "magicResistance": 1199.642,
+        "accuracyRating": 743.2998,
+        "evasionRating": 711.4156,
+        "criticalRating": 695.4735,
+        "criticalAvoidance": 661.5966,
+        "breakRating": 655.6183,
+        "parryRating": 655.6183
+      }
+    },
+    {
+      "level": 52,
+      "finalExpected": {
+        "maxHitpoints": 23180.424,
+        "maxManapoints": 24704.8152,
+        "physicalAttack": 1451.8011,
+        "magicAttack": 2222.0622,
+        "armor": 1208.49,
+        "magicResistance": 1255.5391,
+        "accuracyRating": 768.9169,
+        "evasionRating": 736.6546,
+        "criticalRating": 720.5235,
+        "criticalAvoidance": 684.2285,
+        "breakRating": 677.5072,
+        "parryRating": 677.5072
+      }
+    },
+    {
+      "level": 53,
+      "finalExpected": {
+        "maxHitpoints": 24317.0381,
+        "maxManapoints": 26010.2547,
+        "physicalAttack": 1517.7749,
+        "magicAttack": 2317.4627,
+        "armor": 1260.0523,
+        "magicResistance": 1312.4129,
+        "accuracyRating": 794.9278,
+        "evasionRating": 762.2875,
+        "criticalRating": 745.9673,
+        "criticalAvoidance": 707.2069,
+        "breakRating": 699.7269,
+        "parryRating": 699.7269
+      }
+    },
+    {
+      "level": 54,
+      "finalExpected": {
+        "maxHitpoints": 30267.5293,
+        "maxManapoints": 32484.1403,
+        "physicalAttack": 1883.1386,
+        "magicAttack": 2868.8439,
+        "armor": 1559.4741,
+        "magicResistance": 1628.1302,
+        "accuracyRating": 975.8973,
+        "evasionRating": 936.6653,
+        "criticalRating": 917.0493,
+        "criticalAvoidance": 868.0092,
+        "breakRating": 858.2012,
+        "parryRating": 858.2012
+      }
+    },
+    {
+      "level": 55,
+      "finalExpected": {
+        "maxHitpoints": 32826.3352,
+        "maxManapoints": 34170.5384,
+        "physicalAttack": 1985.7172,
+        "magicAttack": 3013.2969,
+        "armor": 1637.6793,
+        "magicResistance": 1717.0419,
+        "accuracyRating": 1009.3924,
+        "evasionRating": 969.7112,
+        "criticalRating": 949.8705,
+        "criticalAvoidance": 897.7889,
+        "breakRating": 887.8685,
+        "parryRating": 887.0418
+      }
+    },
+    {
+      "level": 56,
+      "finalExpected": {
+        "maxHitpoints": 35435.2293,
+        "maxManapoints": 35886.6974,
+        "physicalAttack": 2090.1301,
+        "magicAttack": 3160.2767,
+        "armor": 1717.2509,
+        "magicResistance": 1807.5445,
+        "accuracyRating": 1043.3929,
+        "evasionRating": 1003.2624,
+        "criticalRating": 983.1972,
+        "criticalAvoidance": 928.0178,
+        "breakRating": 917.9851,
+        "parryRating": 916.313
+      }
+    },
+    {
+      "level": 57,
+      "finalExpected": {
+        "maxHitpoints": 38094.2117,
+        "maxManapoints": 37632.6174,
+        "physicalAttack": 2196.3773,
+        "magicAttack": 3309.7834,
+        "armor": 1798.1888,
+        "magicResistance": 1899.6381,
+        "accuracyRating": 1077.8988,
+        "evasionRating": 1037.3191,
+        "criticalRating": 1017.0292,
+        "criticalAvoidance": 958.6959,
+        "breakRating": 948.5509,
+        "parryRating": 946.0147
+      }
+    },
+    {
+      "level": 58,
+      "finalExpected": {
+        "maxHitpoints": 40803.2823,
+        "maxManapoints": 39408.2983,
+        "physicalAttack": 2304.4589,
+        "magicAttack": 3461.8169,
+        "armor": 1880.4932,
+        "magicResistance": 1993.3227,
+        "accuracyRating": 1112.91,
+        "evasionRating": 1071.8811,
+        "criticalRating": 1051.3666,
+        "criticalAvoidance": 989.8232,
+        "breakRating": 979.566,
+        "parryRating": 976.1469
+      }
+    },
+    {
+      "level": 59,
+      "finalExpected": {
+        "maxHitpoints": 43562.4412,
+        "maxManapoints": 41213.7402,
+        "physicalAttack": 2414.3748,
+        "magicAttack": 3616.3774,
+        "armor": 1964.1639,
+        "magicResistance": 2088.5984,
+        "accuracyRating": 1148.4267,
+        "evasionRating": 1106.9485,
+        "criticalRating": 1086.2094,
+        "criticalAvoidance": 1021.3998,
+        "breakRating": 1011.0302,
+        "parryRating": 1006.7096
+      }
+    },
+    {
+      "level": 60,
+      "finalExpected": {
+        "maxHitpoints": 46371.6883,
+        "maxManapoints": 43048.943,
+        "physicalAttack": 2526.125,
+        "magicAttack": 3773.4647,
+        "armor": 2049.201,
+        "magicResistance": 2185.465,
+        "accuracyRating": 1184.4486,
+        "evasionRating": 1142.5213,
+        "criticalRating": 1121.5576,
+        "criticalAvoidance": 1053.4256,
+        "breakRating": 1042.9437,
+        "parryRating": 1037.7028
+      }
+    },
+    {
+      "level": 61,
+      "finalExpected": {
+        "maxHitpoints": 49231.0237,
+        "maxManapoints": 44913.9068,
+        "physicalAttack": 2639.7095,
+        "magicAttack": 3933.0789,
+        "armor": 2135.6044,
+        "magicResistance": 2283.9226,
+        "accuracyRating": 1220.976,
+        "evasionRating": 1178.5994,
+        "criticalRating": 1157.4111,
+        "criticalAvoidance": 1085.9006,
+        "breakRating": 1075.3064,
+        "parryRating": 1069.1265
+      }
+    },
+    {
+      "level": 62,
+      "finalExpected": {
+        "maxHitpoints": 52140.4474,
+        "maxManapoints": 46808.6316,
+        "physicalAttack": 2755.1284,
+        "magicAttack": 4095.2199,
+        "armor": 2223.3743,
+        "magicResistance": 2383.9712,
+        "accuracyRating": 1258.0087,
+        "evasionRating": 1215.1829,
+        "criticalRating": 1193.77,
+        "criticalAvoidance": 1118.8248,
+        "breakRating": 1108.1183,
+        "parryRating": 1100.9807
+      }
+    },
+    {
+      "level": 63,
+      "finalExpected": {
+        "maxHitpoints": 55099.9592,
+        "maxManapoints": 48733.1173,
+        "physicalAttack": 2872.3815,
+        "magicAttack": 4259.8879,
+        "armor": 2312.5106,
+        "magicResistance": 2485.6108,
+        "accuracyRating": 1295.5469,
+        "evasionRating": 1252.2718,
+        "criticalRating": 1230.6343,
+        "criticalAvoidance": 1152.1982,
+        "breakRating": 1141.3795,
+        "parryRating": 1133.2654
+      }
+    },
+    {
+      "level": 64,
+      "finalExpected": {
+        "maxHitpoints": 58109.5594,
+        "maxManapoints": 50687.364,
+        "physicalAttack": 2991.469,
+        "magicAttack": 4427.0827,
+        "armor": 2403.0132,
+        "magicResistance": 2588.8414,
+        "accuracyRating": 1333.5903,
+        "evasionRating": 1289.8661,
+        "criticalRating": 1268.0039,
+        "criticalAvoidance": 1186.0209,
+        "breakRating": 1175.0898,
+        "parryRating": 1165.9806
+      }
+    },
+    {
+      "level": 65,
+      "finalExpected": {
+        "maxHitpoints": 61169.2478,
+        "maxManapoints": 52671.3716,
+        "physicalAttack": 3112.3909,
+        "magicAttack": 4596.8044,
+        "armor": 2494.8822,
+        "magicResistance": 2693.6629,
+        "accuracyRating": 1372.1392,
+        "evasionRating": 1327.9657,
+        "criticalRating": 1305.879,
+        "criticalAvoidance": 1220.2928,
+        "breakRating": 1209.2494,
+        "parryRating": 1199.1263
+      }
+    },
+    {
+      "level": 66,
+      "finalExpected": {
+        "maxHitpoints": 80115.2867,
+        "maxManapoints": 68157.7812,
+        "physicalAttack": 4032.1821,
+        "magicAttack": 5943.9925,
+        "armor": 3225.7457,
+        "magicResistance": 3489.9231,
+        "accuracyRating": 1758.8656,
+        "evasionRating": 1703.2493,
+        "criticalRating": 1675.4412,
+        "criticalAvoidance": 1564.2086,
+        "breakRating": 1550.3045,
+        "parryRating": 1536.4004
+      }
+    },
+    {
+      "level": 67,
+      "finalExpected": {
+        "maxHitpoints": 85191.2076,
+        "maxManapoints": 71388.2471,
+        "physicalAttack": 4224.9184,
+        "magicAttack": 6206.2998,
+        "armor": 3368.2313,
+        "magicResistance": 3656.1344,
+        "accuracyRating": 1810.5121,
+        "evasionRating": 1754.3359,
+        "criticalRating": 1726.2478,
+        "criticalAvoidance": 1613.8954,
+        "breakRating": 1598.681,
+        "parryRating": 1582.2963
+      }
+    },
+    {
+      "level": 68,
+      "finalExpected": {
+        "maxHitpoints": 90352.2327,
+        "maxManapoints": 74669.4302,
+        "physicalAttack": 4420.6875,
+        "magicAttack": 6472.6429,
+        "armor": 3512.9099,
+        "magicResistance": 3824.9585,
+        "accuracyRating": 1862.8351,
+        "evasionRating": 1806.0991,
+        "criticalRating": 1777.731,
+        "criticalAvoidance": 1664.2588,
+        "breakRating": 1647.7108,
+        "parryRating": 1628.7988
+      }
+    },
+    {
+      "level": 69,
+      "finalExpected": {
+        "maxHitpoints": 95598.362,
+        "maxManapoints": 78001.3305,
+        "physicalAttack": 4619.4893,
+        "magicAttack": 6743.022,
+        "armor": 3659.7815,
+        "magicResistance": 3996.3954,
+        "accuracyRating": 1915.8347,
+        "evasionRating": 1858.5387,
+        "criticalRating": 1829.8907,
+        "criticalAvoidance": 1715.2987,
+        "breakRating": 1697.3938,
+        "parryRating": 1675.9078
+      }
+    },
+    {
+      "level": 70,
+      "finalExpected": {
+        "maxHitpoints": 100929.5953,
+        "maxManapoints": 81383.9481,
+        "physicalAttack": 4821.3239,
+        "magicAttack": 7017.437,
+        "armor": 3808.8459,
+        "magicResistance": 4170.4452,
+        "accuracyRating": 1969.5108,
+        "evasionRating": 1911.6549,
+        "criticalRating": 1882.727,
+        "criticalAvoidance": 1767.0152,
+        "breakRating": 1747.7299,
+        "parryRating": 1723.6233
+      }
+    },
+    {
+      "level": 71,
+      "finalExpected": {
+        "maxHitpoints": 106345.9329,
+        "maxManapoints": 84817.2828,
+        "physicalAttack": 5026.1913,
+        "magicAttack": 7295.8879,
+        "armor": 3960.1033,
+        "magicResistance": 4347.1078,
+        "accuracyRating": 2023.8635,
+        "evasionRating": 1965.4477,
+        "criticalRating": 1936.2398,
+        "criticalAvoidance": 1819.4082,
+        "breakRating": 1798.7193,
+        "parryRating": 1771.9454
+      }
+    },
+    {
+      "level": 72,
+      "finalExpected": {
+        "maxHitpoints": 111847.3745,
+        "maxManapoints": 88301.3348,
+        "physicalAttack": 5234.0915,
+        "magicAttack": 7578.3747,
+        "armor": 4113.5536,
+        "magicResistance": 4526.3833,
+        "accuracyRating": 2078.8927,
+        "evasionRating": 2019.917,
+        "criticalRating": 1990.4292,
+        "criticalAvoidance": 1872.4778,
+        "breakRating": 1850.3619,
+        "parryRating": 1820.8741
+      }
+    },
+    {
+      "level": 73,
+      "finalExpected": {
+        "maxHitpoints": 117433.9203,
+        "maxManapoints": 91836.104,
+        "physicalAttack": 5445.0244,
+        "magicAttack": 7864.8974,
+        "armor": 4269.1968,
+        "magicResistance": 4708.2717,
+        "accuracyRating": 2134.5984,
+        "evasionRating": 2075.0628,
+        "criticalRating": 2045.295,
+        "criticalAvoidance": 1926.2239,
+        "breakRating": 1902.6577,
+        "parryRating": 1870.4093
+      }
+    },
+    {
+      "level": 74,
+      "finalExpected": {
+        "maxHitpoints": 123105.5703,
+        "maxManapoints": 95421.5904,
+        "physicalAttack": 5658.9901,
+        "magicAttack": 8155.4561,
+        "armor": 4427.033,
+        "magicResistance": 4892.7728,
+        "accuracyRating": 2190.9807,
+        "evasionRating": 2130.8852,
+        "criticalRating": 2100.8375,
+        "criticalAvoidance": 1980.6465,
+        "breakRating": 1955.6068,
+        "parryRating": 1920.5511
+      }
+    },
+    {
+      "level": 75,
+      "finalExpected": {
+        "maxHitpoints": 128862.3244,
+        "maxManapoints": 99057.7941,
+        "physicalAttack": 5875.9886,
+        "magicAttack": 8450.0506,
+        "armor": 4587.062,
+        "magicResistance": 5079.8869,
+        "accuracyRating": 2248.0395,
+        "evasionRating": 2187.3841,
+        "criticalRating": 2157.0564,
+        "criticalAvoidance": 2035.7457,
+        "breakRating": 2009.209,
+        "parryRating": 1971.2994
+      }
+    },
+    {
+      "level": 76,
+      "finalExpected": {
+        "maxHitpoints": 134704.1826,
+        "maxManapoints": 102744.7149,
+        "physicalAttack": 6096.0198,
+        "magicAttack": 8748.6811,
+        "armor": 4749.284,
+        "magicResistance": 5269.6137,
+        "accuracyRating": 2305.7748,
+        "evasionRating": 2244.5596,
+        "criticalRating": 2213.952,
+        "criticalAvoidance": 2091.5214,
+        "breakRating": 2063.4644,
+        "parryRating": 2022.6543
+      }
+    },
+    {
+      "level": 77,
+      "finalExpected": {
+        "maxHitpoints": 140631.145,
+        "maxManapoints": 106482.353,
+        "physicalAttack": 6319.0838,
+        "magicAttack": 9051.3475,
+        "armor": 4913.699,
+        "magicResistance": 5461.9535,
+        "accuracyRating": 2364.1867,
+        "evasionRating": 2302.4116,
+        "criticalRating": 2271.524,
+        "criticalAvoidance": 2147.9737,
+        "breakRating": 2118.3731,
+        "parryRating": 2074.6157
+      }
+    },
+    {
+      "level": 78,
+      "finalExpected": {
+        "maxHitpoints": 211218.3786,
+        "maxManapoints": 158829.038,
+        "physicalAttack": 9427.3878,
+        "magicAttack": 13478.9199,
+        "armor": 7317.4486,
+        "magicResistance": 8147.9566,
+        "accuracyRating": 3490.3781,
+        "evasionRating": 3400.5934,
+        "criticalRating": 3355.7011,
+        "criticalAvoidance": 3176.1318,
+        "breakRating": 3131.2395,
+        "parryRating": 3063.901
+      }
+    },
+    {
+      "level": 79,
+      "finalExpected": {
+        "maxHitpoints": 220294.8939,
+        "maxManapoints": 164841.8202,
+        "physicalAttack": 9776.2889,
+        "magicAttack": 13947.2539,
+        "armor": 7573.793,
+        "magicResistance": 8445.7322,
+        "accuracyRating": 3576.4609,
+        "evasionRating": 3485.8698,
+        "criticalRating": 3440.5743,
+        "criticalAvoidance": 3259.3921,
+        "breakRating": 3214.0965,
+        "parryRating": 3144.2659
+      }
+    },
+    {
+      "level": 80,
+      "finalExpected": {
+        "maxHitpoints": 229499.2314,
+        "maxManapoints": 170936.2555,
+        "physicalAttack": 10129.8944,
+        "magicAttack": 14421.7707,
+        "armor": 7833.5311,
+        "magicResistance": 8747.5065,
+        "accuracyRating": 3663.5182,
+        "evasionRating": 3572.1207,
+        "criticalRating": 3526.4219,
+        "criticalAvoidance": 3343.6268,
+        "breakRating": 3297.928,
+        "parryRating": 3225.5716
+      }
+    },
+    {
+      "level": 81,
+      "finalExpected": {
+        "maxHitpoints": 238831.391,
+        "maxManapoints": 177112.3437,
+        "physicalAttack": 10488.2041,
+        "magicAttack": 14902.4703,
+        "armor": 8096.6631,
+        "magicResistance": 9053.2795,
+        "accuracyRating": 3751.5499,
+        "evasionRating": 3659.3459,
+        "criticalRating": 3613.2439,
+        "criticalAvoidance": 3428.836,
+        "breakRating": 3382.734,
+        "parryRating": 3307.8182
+      }
+    },
+    {
+      "level": 82,
+      "finalExpected": {
+        "maxHitpoints": 248291.3727,
+        "maxManapoints": 183370.0848,
+        "physicalAttack": 10851.2181,
+        "magicAttack": 15389.3526,
+        "armor": 8363.1888,
+        "magicResistance": 9363.0511,
+        "accuracyRating": 3840.5561,
+        "evasionRating": 3747.5457,
+        "criticalRating": 3701.0405,
+        "criticalAvoidance": 3515.0196,
+        "breakRating": 3468.5144,
+        "parryRating": 3391.0057
+      }
+    },
+    {
+      "level": 83,
+      "finalExpected": {
+        "maxHitpoints": 257879.1767,
+        "maxManapoints": 189709.4789,
+        "physicalAttack": 11218.9364,
+        "magicAttack": 15882.4177,
+        "armor": 8633.1084,
+        "magicResistance": 9676.8213,
+        "accuracyRating": 3930.5368,
+        "evasionRating": 3836.7199,
+        "criticalRating": 3789.8115,
+        "criticalAvoidance": 3602.1777,
+        "breakRating": 3555.2692,
+        "parryRating": 3475.134
+      }
+    },
+    {
+      "level": 84,
+      "finalExpected": {
+        "maxHitpoints": 267594.8027,
+        "maxManapoints": 196130.5259,
+        "physicalAttack": 11591.359,
+        "magicAttack": 16381.6656,
+        "armor": 8906.4218,
+        "magicResistance": 9994.5902,
+        "accuracyRating": 4021.4919,
+        "evasionRating": 3926.8686,
+        "criticalRating": 3879.5569,
+        "criticalAvoidance": 3690.3102,
+        "breakRating": 3642.9986,
+        "parryRating": 3560.2031
+      }
+    },
+    {
+      "level": 85,
+      "finalExpected": {
+        "maxHitpoints": 277438.2509,
+        "maxManapoints": 202633.2259,
+        "physicalAttack": 11968.4859,
+        "magicAttack": 16887.0962,
+        "armor": 9183.129,
+        "magicResistance": 10316.3577,
+        "accuracyRating": 4113.4215,
+        "evasionRating": 4017.9917,
+        "criticalRating": 3970.2768,
+        "criticalAvoidance": 3779.4172,
+        "breakRating": 3731.7023,
+        "parryRating": 3646.2131
+      }
+    },
+    {
+      "level": 86,
+      "finalExpected": {
+        "maxHitpoints": 287409.5213,
+        "maxManapoints": 209217.5789,
+        "physicalAttack": 12350.3171,
+        "magicAttack": 17398.7097,
+        "armor": 9463.23,
+        "magicResistance": 10642.1239,
+        "accuracyRating": 4206.3255,
+        "evasionRating": 4110.0893,
+        "criticalRating": 4061.9712,
+        "criticalAvoidance": 3869.4987,
+        "breakRating": 3821.3806,
+        "parryRating": 3733.164
+      }
+    },
+    {
+      "level": 87,
+      "finalExpected": {
+        "maxHitpoints": 297508.6138,
+        "maxManapoints": 215883.5848,
+        "physicalAttack": 12736.8525,
+        "magicAttack": 17916.5059,
+        "armor": 9746.7247,
+        "magicResistance": 10971.8887,
+        "accuracyRating": 4300.204,
+        "evasionRating": 4203.1613,
+        "criticalRating": 4154.64,
+        "criticalAvoidance": 3960.5546,
+        "breakRating": 3912.0333,
+        "parryRating": 3821.0558
+      }
+    },
+    {
+      "level": 88,
+      "finalExpected": {
+        "maxHitpoints": 307735.5285,
+        "maxManapoints": 222631.2436,
+        "physicalAttack": 13128.0922,
+        "magicAttack": 18440.4848,
+        "armor": 10033.6133,
+        "magicResistance": 11305.6521,
+        "accuracyRating": 4395.057,
+        "evasionRating": 4297.2078,
+        "criticalRating": 4248.2833,
+        "criticalAvoidance": 4052.585,
+        "breakRating": 4003.6604,
+        "parryRating": 3909.8883
+      }
+    },
+    {
+      "level": 89,
+      "finalExpected": {
+        "maxHitpoints": 318090.2653,
+        "maxManapoints": 229460.5554,
+        "physicalAttack": 13524.0362,
+        "magicAttack": 18970.6466,
+        "armor": 10323.8958,
+        "magicResistance": 11643.4142,
+        "accuracyRating": 4490.8844,
+        "evasionRating": 4392.2288,
+        "criticalRating": 4342.901,
+        "criticalAvoidance": 4145.5898,
+        "breakRating": 4096.262,
+        "parryRating": 3999.6618
+      }
+    },
+    {
+      "level": 90,
+      "finalExpected": {
+        "maxHitpoints": 459706.3718,
+        "maxManapoints": 330707.4898,
+        "physicalAttack": 19482.0318,
+        "magicAttack": 27292.2392,
+        "armor": 14855.0492,
+        "magicResistance": 16768.4631,
+        "accuracyRating": 6418.6337,
+        "evasionRating": 6279.4763,
+        "criticalRating": 6209.8976,
+        "criticalAvoidance": 5931.5829,
+        "breakRating": 5862.0042,
+        "parryRating": 5722.8468
+      }
+    },
+    {
+      "level": 91,
+      "finalExpected": {
+        "maxHitpoints": 477848.0737,
+        "maxManapoints": 342618.5301,
+        "physicalAttack": 20160.2203,
+        "magicAttack": 28188.6524,
+        "armor": 15346.6681,
+        "magicResistance": 17345.7389,
+        "accuracyRating": 6567.1231,
+        "evasionRating": 6426.8374,
+        "criticalRating": 6356.6946,
+        "criticalAvoidance": 6073.2006,
+        "breakRating": 6003.0578,
+        "parryRating": 5862.7721
+      }
+    },
+    {
+      "level": 92,
+      "finalExpected": {
+        "maxHitpoints": 496221.6418,
+        "maxManapoints": 354678.0363,
+        "physicalAttack": 20846.777,
+        "magicAttack": 29095.9256,
+        "armor": 15844.2576,
+        "magicResistance": 17930.1137,
+        "accuracyRating": 6717.1639,
+        "evasionRating": 6575.7499,
+        "criticalRating": 6505.0429,
+        "criticalAvoidance": 6216.3227,
+        "breakRating": 6145.6157,
+        "parryRating": 6004.2017
+      }
+    },
+    {
+      "level": 93,
+      "finalExpected": {
+        "maxHitpoints": 514827.0762,
+        "maxManapoints": 366886.0084,
+        "physicalAttack": 21541.7019,
+        "magicAttack": 30014.0586,
+        "armor": 16347.8176,
+        "magicResistance": 18521.5874,
+        "accuracyRating": 6868.7561,
+        "evasionRating": 6726.2138,
+        "criticalRating": 6654.9427,
+        "criticalAvoidance": 6360.9492,
+        "breakRating": 6289.6781,
+        "parryRating": 6147.1358
+      }
+    },
+    {
+      "level": 94,
+      "finalExpected": {
+        "maxHitpoints": 533664.3768,
+        "maxManapoints": 379242.4463,
+        "physicalAttack": 22244.9951,
+        "magicAttack": 30943.0516,
+        "armor": 16857.3483,
+        "magicResistance": 19120.16,
+        "accuracyRating": 7021.8997,
+        "evasionRating": 6878.2291,
+        "criticalRating": 6806.3938,
+        "criticalAvoidance": 6507.0801,
+        "breakRating": 6435.2448,
+        "parryRating": 6291.5742
+      }
+    },
+    {
+      "level": 95,
+      "finalExpected": {
+        "maxHitpoints": 552733.5438,
+        "maxManapoints": 391747.3501,
+        "physicalAttack": 22956.6566,
+        "magicAttack": 31882.9045,
+        "armor": 17372.8496,
+        "magicResistance": 19725.8314,
+        "accuracyRating": 7176.5947,
+        "evasionRating": 7031.7959,
+        "criticalRating": 6959.3964,
+        "criticalAvoidance": 6654.7154,
+        "breakRating": 6582.316,
+        "parryRating": 6437.5171
+      }
+    },
+    {
+      "level": 96,
+      "finalExpected": {
+        "maxHitpoints": 572034.577,
+        "maxManapoints": 404400.7197,
+        "physicalAttack": 23676.6863,
+        "magicAttack": 32833.6173,
+        "armor": 17894.3214,
+        "magicResistance": 20338.6018,
+        "accuracyRating": 7332.8412,
+        "evasionRating": 7186.914,
+        "criticalRating": 7113.9504,
+        "criticalAvoidance": 6803.8551,
+        "breakRating": 6730.8915,
+        "parryRating": 6584.9644
+      }
+    },
+    {
+      "level": 97,
+      "finalExpected": {
+        "maxHitpoints": 591567.4764,
+        "maxManapoints": 417202.5553,
+        "physicalAttack": 24405.0842,
+        "magicAttack": 33795.19,
+        "armor": 18421.7639,
+        "magicResistance": 20958.4711,
+        "accuracyRating": 7490.6391,
+        "evasionRating": 7343.5836,
+        "criticalRating": 7270.0558,
+        "criticalAvoidance": 6954.4993,
+        "breakRating": 6880.9715,
+        "parryRating": 6733.916
+      }
+    },
+    {
+      "level": 98,
+      "finalExpected": {
+        "maxHitpoints": 611332.2421,
+        "maxManapoints": 430152.8567,
+        "physicalAttack": 25141.8504,
+        "magicAttack": 34767.6227,
+        "armor": 18955.177,
+        "magicResistance": 21585.4393,
+        "accuracyRating": 7649.9884,
+        "evasionRating": 7501.8046,
+        "criticalRating": 7427.7127,
+        "criticalAvoidance": 7106.6478,
+        "breakRating": 7032.5559,
+        "parryRating": 6884.3721
+      }
+    },
+    {
+      "level": 99,
+      "finalExpected": {
+        "maxHitpoints": 631328.8741,
+        "maxManapoints": 443251.624,
+        "physicalAttack": 25886.9848,
+        "magicAttack": 35750.9152,
+        "armor": 19494.5607,
+        "magicResistance": 22219.5064,
+        "accuracyRating": 7810.8891,
+        "evasionRating": 7661.577,
+        "criticalRating": 7586.9209,
+        "criticalAvoidance": 7260.3007,
+        "breakRating": 7185.6447,
+        "parryRating": 7036.3326
+      }
+    },
+    {
+      "level": 100,
+      "finalExpected": {
+        "maxHitpoints": 651557.3724,
+        "maxManapoints": 456498.8571,
+        "physicalAttack": 26640.4875,
+        "magicAttack": 36745.0677,
+        "armor": 20039.9149,
+        "magicResistance": 22860.6724,
+        "accuracyRating": 7973.3412,
+        "evasionRating": 7822.9008,
+        "criticalRating": 7747.6806,
+        "criticalAvoidance": 7415.458,
+        "breakRating": 7340.2378,
+        "parryRating": 7189.7974
+      }
+    },
+    {
+      "level": 101,
+      "finalExpected": {
+        "maxHitpoints": 672017.7369,
+        "maxManapoints": 469894.5561,
+        "physicalAttack": 27402.3584,
+        "magicAttack": 37750.0801,
+        "armor": 20591.2398,
+        "magicResistance": 23508.9374,
+        "accuracyRating": 8137.3447,
+        "evasionRating": 7985.776,
+        "criticalRating": 7909.9917,
+        "criticalAvoidance": 7572.1198,
+        "breakRating": 7496.3354,
+        "parryRating": 7344.7667
+      }
+    },
+    {
+      "level": 102,
+      "finalExpected": {
+        "maxHitpoints": 1093269.8689,
+        "maxManapoints": 762987.4143,
+        "physicalAttack": 44463.4169,
+        "magicAttack": 61182.3847,
+        "armor": 33377.6869,
+        "magicResistance": 38137.321,
+        "accuracyRating": 13104.0558,
+        "evasionRating": 12863.0617,
+        "criticalRating": 12742.5646,
+        "criticalAvoidance": 12200.3278,
+        "breakRating": 12079.8307,
+        "parryRating": 11838.8366
+      }
+    },
+    {
+      "level": 103,
+      "finalExpected": {
+        "maxHitpoints": 1132848.2577,
+        "maxManapoints": 788765.4513,
+        "physicalAttack": 45914.7981,
+        "magicAttack": 63075.9471,
+        "armor": 34418.3963,
+        "magicResistance": 39369.9921,
+        "accuracyRating": 13388.0228,
+        "evasionRating": 13140.1901,
+        "criticalRating": 13018.8026,
+        "criticalAvoidance": 12472.5592,
+        "breakRating": 12351.1717,
+        "parryRating": 12108.3969
+      }
+    },
+    {
+      "level": 104,
+      "finalExpected": {
+        "maxHitpoints": 1172888.7497,
+        "maxManapoints": 814838.9435,
+        "physicalAttack": 47382.6512,
+        "magicAttack": 64990.6558,
+        "armor": 35470.7546,
+        "magicResistance": 40616.6124,
+        "accuracyRating": 13674.735,
+        "evasionRating": 13419.9896,
+        "criticalRating": 13297.7118,
+        "criticalAvoidance": 12747.4617,
+        "breakRating": 12625.1838,
+        "parryRating": 12380.6282
+      }
+    },
+    {
+      "level": 105,
+      "finalExpected": {
+        "maxHitpoints": 1213391.345,
+        "maxManapoints": 841207.891,
+        "physicalAttack": 48866.9762,
+        "magicAttack": 66926.5109,
+        "armor": 36534.762,
+        "magicResistance": 41877.1819,
+        "accuracyRating": 13964.1926,
+        "evasionRating": 13702.4602,
+        "criticalRating": 13579.2921,
+        "criticalAvoidance": 13025.0352,
+        "breakRating": 12901.8671,
+        "parryRating": 12655.5307
+      }
+    },
+    {
+      "level": 106,
+      "finalExpected": {
+        "maxHitpoints": 1254356.0435,
+        "maxManapoints": 867872.2937,
+        "physicalAttack": 50367.7731,
+        "magicAttack": 68883.5123,
+        "armor": 37610.4184,
+        "magicResistance": 43151.7005,
+        "accuracyRating": 14256.3955,
+        "evasionRating": 13987.602,
+        "criticalRating": 13863.5435,
+        "criticalAvoidance": 13305.28,
+        "breakRating": 13181.2214,
+        "parryRating": 12933.1043
+      }
+    },
+    {
+      "level": 107,
+      "finalExpected": {
+        "maxHitpoints": 1295782.8454,
+        "maxManapoints": 894832.1517,
+        "physicalAttack": 51885.0419,
+        "magicAttack": 70861.6601,
+        "armor": 38697.7239,
+        "magicResistance": 44440.1683,
+        "accuracyRating": 14551.3438,
+        "evasionRating": 14275.4149,
+        "criticalRating": 14150.466,
+        "criticalAvoidance": 13588.1958,
+        "breakRating": 13463.2469,
+        "parryRating": 13213.349
+      }
+    },
+    {
+      "level": 108,
+      "finalExpected": {
+        "maxHitpoints": 1337671.7505,
+        "maxManapoints": 922087.4649,
+        "physicalAttack": 53418.7825,
+        "magicAttack": 72860.9542,
+        "armor": 39796.6784,
+        "magicResistance": 45742.5853,
+        "accuracyRating": 14849.0373,
+        "evasionRating": 14565.8989,
+        "criticalRating": 14440.0596,
+        "criticalAvoidance": 13873.7827,
+        "breakRating": 13747.9434,
+        "parryRating": 13496.2648
+      }
+    },
+    {
+      "level": 109,
+      "finalExpected": {
+        "maxHitpoints": 1380022.7589,
+        "maxManapoints": 949638.2333,
+        "physicalAttack": 54968.9951,
+        "magicAttack": 74881.3947,
+        "armor": 40907.2819,
+        "magicResistance": 47058.9514,
+        "accuracyRating": 15149.4762,
+        "evasionRating": 14859.054,
+        "criticalRating": 14732.3243,
+        "criticalAvoidance": 14162.0408,
+        "breakRating": 14035.3111,
+        "parryRating": 13781.8518
+      }
+    },
+    {
+      "level": 110,
+      "finalExpected": {
+        "maxHitpoints": 1422835.8706,
+        "maxManapoints": 977484.457,
+        "physicalAttack": 56535.6795,
+        "magicAttack": 76922.9815,
+        "armor": 42029.5345,
+        "magicResistance": 48389.2667,
+        "accuracyRating": 15452.6603,
+        "evasionRating": 15154.8802,
+        "criticalRating": 15027.2602,
+        "criticalAvoidance": 14452.97,
+        "breakRating": 14325.3499,
+        "parryRating": 14070.1099
+      }
+    },
+    {
+      "level": 111,
+      "finalExpected": {
+        "maxHitpoints": 1466111.0855,
+        "maxManapoints": 1005626.1359,
+        "physicalAttack": 58118.8358,
+        "magicAttack": 78985.7147,
+        "armor": 43163.4361,
+        "magicResistance": 49733.5311,
+        "accuracyRating": 15758.5898,
+        "evasionRating": 15453.3776,
+        "criticalRating": 15324.8672,
+        "criticalAvoidance": 14746.5703,
+        "breakRating": 14618.0599,
+        "parryRating": 14361.039
+      }
+    },
+    {
+      "level": 112,
+      "finalExpected": {
+        "maxHitpoints": 1509848.4037,
+        "maxManapoints": 1034063.2701,
+        "physicalAttack": 59718.464,
+        "magicAttack": 81069.5942,
+        "armor": 44308.9868,
+        "magicResistance": 51091.7448,
+        "accuracyRating": 16067.2646,
+        "evasionRating": 15754.546,
+        "criticalRating": 15625.1452,
+        "criticalAvoidance": 15042.8417,
+        "breakRating": 14913.4409,
+        "parryRating": 14654.6393
+      }
+    },
+    {
+      "level": 113,
+      "finalExpected": {
+        "maxHitpoints": 1554047.8252,
+        "maxManapoints": 1062795.8595,
+        "physicalAttack": 61334.5641,
+        "magicAttack": 83174.62,
+        "armor": 45466.1865,
+        "magicResistance": 52463.9076,
+        "accuracyRating": 16378.6847,
+        "evasionRating": 16058.3856,
+        "criticalRating": 15928.0945,
+        "criticalAvoidance": 15341.7842,
+        "breakRating": 15211.4931,
+        "parryRating": 14950.9107
+      }
+    },
+    {
+      "level": 114,
+      "finalExpected": {
+        "maxHitpoints": 2510126.8975,
+        "maxManapoints": 1714268.1683,
+        "physicalAttack": 98864.4384,
+        "magicAttack": 133930.4189,
+        "armor": 73221.4747,
+        "magicResistance": 84549.6916,
+        "accuracyRating": 26209.3746,
+        "evasionRating": 25694.4556,
+        "criticalRating": 25488.488,
+        "criticalAvoidance": 24561.6339,
+        "breakRating": 24355.6663,
+        "parryRating": 23943.7312
+      }
+    },
+    {
+      "level": 115,
+      "finalExpected": {
+        "maxHitpoints": 2593417.2511,
+        "maxManapoints": 1768327.0081,
+        "physicalAttack": 101876.9667,
+        "magicAttack": 137820.3287,
+        "armor": 75360.097,
+        "magicResistance": 87093.531,
+        "accuracyRating": 26741.5157,
+        "evasionRating": 26223.1018,
+        "criticalRating": 26015.7363,
+        "criticalAvoidance": 25082.5913,
+        "breakRating": 24875.2258,
+        "parryRating": 24451.8544
+      }
+    },
+    {
+      "level": 116,
+      "finalExpected": {
+        "maxHitpoints": 2677600.9075,
+        "maxManapoints": 1822957.8506,
+        "physicalAttack": 104921.0658,
+        "magicAttack": 141750.4301,
+        "armor": 77520.8538,
+        "magicResistance": 89663.9318,
+        "accuracyRating": 27278.4333,
+        "evasionRating": 26756.5245,
+        "criticalRating": 26547.761,
+        "criticalAvoidance": 25608.3251,
+        "breakRating": 25399.5616,
+        "parryRating": 24964.6376
+      }
+    },
+    {
+      "level": 117,
+      "finalExpected": {
+        "maxHitpoints": 2762677.8668,
+        "maxManapoints": 1878160.6958,
+        "physicalAttack": 107996.7357,
+        "magicAttack": 145720.7231,
+        "armor": 79703.7451,
+        "magicResistance": 92260.8941,
+        "accuracyRating": 27820.1272,
+        "evasionRating": 27294.7235,
+        "criticalRating": 27084.562,
+        "criticalAvoidance": 26138.8353,
+        "breakRating": 25928.6738,
+        "parryRating": 25482.0807
+      }
+    },
+    {
+      "level": 118,
+      "finalExpected": {
+        "maxHitpoints": 2848648.1289,
+        "maxManapoints": 1933935.5437,
+        "physicalAttack": 111103.9764,
+        "magicAttack": 149731.2078,
+        "armor": 81908.7709,
+        "magicResistance": 94884.4178,
+        "accuracyRating": 28366.5976,
+        "evasionRating": 27837.6989,
+        "criticalRating": 27626.1395,
+        "criticalAvoidance": 26674.1219,
+        "breakRating": 26462.5625,
+        "parryRating": 26004.1836
+      }
+    },
+    {
+      "level": 119,
+      "finalExpected": {
+        "maxHitpoints": 2935511.6938,
+        "maxManapoints": 1990282.3943,
+        "physicalAttack": 114242.788,
+        "magicAttack": 153781.8841,
+        "armor": 84135.9313,
+        "magicResistance": 97534.5029,
+        "accuracyRating": 28917.8443,
+        "evasionRating": 28385.4508,
+        "criticalRating": 28172.4933,
+        "criticalAvoidance": 27214.1849,
+        "breakRating": 27001.2275,
+        "parryRating": 26530.9465
+      }
+    },
+    {
+      "level": 120,
+      "finalExpected": {
+        "maxHitpoints": 3023268.5616,
+        "maxManapoints": 2047201.2477,
+        "physicalAttack": 117413.1703,
+        "magicAttack": 157872.7521,
+        "armor": 86385.2262,
+        "magicResistance": 100211.1495,
+        "accuracyRating": 29473.8675,
+        "evasionRating": 28937.979,
+        "criticalRating": 28723.6236,
+        "criticalAvoidance": 27759.0243,
+        "breakRating": 27544.6689,
+        "parryRating": 27062.3692
+      }
+    },
+    {
+      "level": 121,
+      "finalExpected": {
+        "maxHitpoints": 3111918.7322,
+        "maxManapoints": 2104692.1038,
+        "physicalAttack": 120615.1236,
+        "magicAttack": 162003.8117,
+        "armor": 88656.6556,
+        "magicResistance": 102914.3575,
+        "accuracyRating": 30034.667,
+        "evasionRating": 29495.2836,
+        "criticalRating": 29279.5303,
+        "criticalAvoidance": 28308.6401,
+        "breakRating": 28092.8867,
+        "parryRating": 27598.4519
+      }
+    },
+    {
+      "level": 122,
+      "finalExpected": {
+        "maxHitpoints": 3201462.2056,
+        "maxManapoints": 2162754.9626,
+        "physicalAttack": 123848.6476,
+        "magicAttack": 166175.0629,
+        "armor": 90950.2196,
+        "magicResistance": 105644.1269,
+        "accuracyRating": 30600.243,
+        "evasionRating": 30057.3646,
+        "criticalRating": 29840.2133,
+        "criticalAvoidance": 28863.0323,
+        "breakRating": 28645.8809,
+        "parryRating": 28139.1945
+      }
+    },
+    {
+      "level": 123,
+      "finalExpected": {
+        "maxHitpoints": 3291898.9819,
+        "maxManapoints": 2221389.8242,
+        "physicalAttack": 127113.7424,
+        "magicAttack": 170386.5058,
+        "armor": 93265.918,
+        "magicResistance": 108400.4578,
+        "accuracyRating": 31170.5953,
+        "evasionRating": 30624.2221,
+        "criticalRating": 30405.6728,
+        "criticalAvoidance": 29422.2009,
+        "breakRating": 29203.6515,
+        "parryRating": 28684.5969
+      }
+    },
+    {
+      "level": 124,
+      "finalExpected": {
+        "maxHitpoints": 3383229.061,
+        "maxManapoints": 2280596.6884,
+        "physicalAttack": 130410.4081,
+        "magicAttack": 174638.1403,
+        "armor": 95603.751,
+        "magicResistance": 111183.35,
+        "accuracyRating": 31745.7241,
+        "evasionRating": 31195.8559,
+        "criticalRating": 30975.9086,
+        "criticalAvoidance": 29986.1458,
+        "breakRating": 29766.1986,
+        "parryRating": 29234.6593
+      }
+    },
+    {
+      "level": 125,
+      "finalExpected": {
+        "maxHitpoints": 3475452.4429,
+        "maxManapoints": 2340375.5554,
+        "physicalAttack": 133738.6446,
+        "magicAttack": 178929.9665,
+        "armor": 97963.7186,
+        "magicResistance": 113992.8037,
+        "accuracyRating": 32325.6292,
+        "evasionRating": 31772.2661,
+        "criticalRating": 31550.9208,
+        "criticalAvoidance": 30554.8672,
+        "breakRating": 30333.522,
+        "parryRating": 29789.3816
+      }
+    },
+    {
+      "level": 126,
+      "finalExpected": {
+        "maxHitpoints": 6380811.9083,
+        "maxManapoints": 4292640.3313,
+        "physicalAttack": 245140.1117,
+        "magicAttack": 327683.2281,
+        "armor": 179424.241,
+        "magicResistance": 208896.8133,
+        "accuracyRating": 58845.5751,
+        "evasionRating": 57849.8801,
+        "criticalRating": 57451.6021,
+        "criticalAvoidance": 55659.3511,
+        "breakRating": 55261.0731,
+        "parryRating": 54265.3781
+      }
+    },
+    {
+      "level": 127,
+      "finalExpected": {
+        "maxHitpoints": 14967210.3246,
+        "maxManapoints": 9966913.9591,
+        "physicalAttack": 560523.9928,
+        "magicAttack": 736745.8911,
+        "armor": 405055.4998,
+        "magicResistance": 475689.8971,
+        "accuracyRating": 118330.8202,
+        "evasionRating": 116510.346,
+        "criticalRating": 115782.1563,
+        "criticalAvoidance": 112505.3029,
+        "breakRating": 111413.0184,
+        "parryRating": 109592.5442
       }
     }
   ],

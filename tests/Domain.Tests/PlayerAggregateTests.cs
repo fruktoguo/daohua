@@ -28,6 +28,57 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
+    /// 物品栏域词表与槽位容量：历练栏 6 槽（下标 0-5），技艺栏与战斗每组各 3 槽；
+    /// 旧行动类型 cultivation 已并入历练栏，不再是合法栏域。
+    /// </summary>
+    [Fact]
+    public void AutoUseBarVocabularyAndSlotCapacitiesAreEnforced()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "栏域", Baseline, "catalog-a");
+
+        player.ConfigureAutoUse("exploration", 5, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("forging", 2, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("combat", 2, "item.zhixue-powder", 1, true, AutoUseSlotState.SlotGroupPotion);
+        Assert.Equal(3, player.Settings.AutoUseSlots.Count);
+
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("cultivation", 0, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("travel", 0, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("exploration", 6, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("forging", 3, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("combat", 3, null, 1, false));
+        Assert.Equal(3, player.Settings.AutoUseSlots.Count);
+    }
+
+    /// <summary>
+    /// 恢复边界丢弃非法栏域槽位：旧存档中的 cultivation 槽位、越界下标与非法分组
+    /// 在恢复时静默失效，不阻断读档也不混入新词表的匹配路径。
+    /// </summary>
+    [Fact]
+    public void RestoreDropsSlotsWithUnknownBarOrOutOfRangeIndex()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "旧档", Baseline, "catalog-a");
+        player.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 1, true);
+        var state = player.ExportState();
+        var tampered = state with
+        {
+            Settings = state.Settings with
+            {
+                AutoUseSlots = (state.Settings.AutoUseSlots ?? []).Concat(
+                [
+                    new AutoUseSlotState("cultivation", 0, "item.tongmai-pill", 1, true),
+                    new AutoUseSlotState("exploration", 9, "item.tongmai-pill", 1, true),
+                    new AutoUseSlotState("combat", 0, "item.zhixue-powder", 1, true, Group: "bogus"),
+                ]).ToArray(),
+            },
+        };
+
+        var restored = PlayerAggregate.Restore(tampered);
+
+        var slot = Assert.Single(restored.Settings.AutoUseSlots);
+        Assert.Equal("exploration", slot.ActionType);
+    }
+
+    /// <summary>
     /// 自动用药剩余时长随快照持久化：同款药仅调数量时保留，停用或换药时清零，
     /// 防止把旧药时长误算到新药上。
     /// </summary>
@@ -35,20 +86,20 @@ public sealed class PlayerAggregateTests
     public void AutoUseRemainingDurationPersistsAndClearsWhenDisabledOrSwitched()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "丹药槽", Baseline, "catalog-a");
-        player.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 1, true);
         player.Settings.AutoUseSlots[0] = player.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 180d };
 
         var restored = PlayerAggregate.Restore(player.ExportState());
         Assert.Equal(180d, Assert.Single(restored.Settings.AutoUseSlots).RemainingDurationSeconds);
 
-        restored.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 2, true);
+        restored.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 2, true);
         Assert.Equal(180d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
 
-        restored.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 2, false);
+        restored.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 2, false);
         Assert.Equal(0d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
 
         restored.Settings.AutoUseSlots[0] = restored.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 30d };
-        restored.ConfigureAutoUse("cultivation", 0, "item.tongmai-pill", 1, true);
+        restored.ConfigureAutoUse("exploration", 0, "item.tongmai-pill", 1, true);
         Assert.Equal(0d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 

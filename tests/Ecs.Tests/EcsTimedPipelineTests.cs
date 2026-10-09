@@ -26,12 +26,12 @@ public sealed class EcsTimedPipelineTests
             new(new ActionId("test.gather"), "采集", ActionKind.Exploration, 2,
                 new Dictionary<ItemId, double>(), [new(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, herb)]),
             new(new ActionId("test.craft"), "制造", ActionKind.Alchemy, 2,
-                new Dictionary<ItemId, double> { [herb] = 3 }, [new(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, pill)])
+                new Dictionary<ItemId, double> { [herb] = 3 }, [new(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, pill)], Technique: "alchemy")
         ]);
         var catalog = new GameDataCatalog("test", "test", actions, new Dictionary<ItemId, ItemDefinition>
         {
-            [incense] = new(incense, "寻灵香", "", Consumable: new(new HashSet<ActionKind> { ActionKind.Exploration }, 300, true, GatheringMultiplier: 1.5)),
-            [flame] = new(flame, "地火引", "", Consumable: new(new HashSet<ActionKind> { ActionKind.Alchemy }, 300, true, AlchemyMultiplier: 1.25))
+            [incense] = new(incense, "寻灵香", "", Consumable: new(new HashSet<string> { "exploration" }, 300, true, GatheringMultiplier: 1.5)),
+            [flame] = new(flame, "地火引", "", Consumable: new(new HashSet<string> { "alchemy" }, 300, true, AlchemyMultiplier: 1.25))
         });
         var player = PlayerAggregate.Create(new(Guid.Parse("10000000-0000-4000-8000-000000000090")),
             new(Guid.Parse("20000000-0000-4000-8000-000000000090")), "阶段回归", from, catalog.Fingerprint);

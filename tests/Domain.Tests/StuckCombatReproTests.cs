@@ -69,10 +69,14 @@ public sealed class StuckCombatReproTests
             SimulationEngine.AdvanceTo(player, cursor, catalog, duel: new DuelAdvanceOptions(MatchingEnabled: true));
         }
         Assert.Equal(cursor, player.LastSimulatedAt);
-        // 战斗持续推进即视为健康：仍在交战则战斗时钟前进；已分出胜负则相位已离开 Combat。
+        // 战斗持续推进即视为健康：仍在交战则战斗时钟前进；波次更替说明玩家已能击杀削弱后的小怪，
+        // 新波战斗时钟从 0 起算属正常推进而非原地踏步。
         var expedition = player.Actions[0].Expedition!;
         Assert.True(expedition.Phase != CombatExpeditionPhase.Combat
-            || expedition.BattleElapsedSeconds > 15.472613,
-            "逐拍推进下战斗时钟与相位均不得原地踏步。");
+            || expedition.BattleElapsedSeconds > 15.472613
+            || expedition.WaveNumber > 1,
+            $"逐拍推进下战斗时钟与相位均不得原地踏步（phase={expedition.Phase} " +
+            $"elapsed={expedition.BattleElapsedSeconds} wave={expedition.WaveNumber} " +
+            $"kills={player.Progression.NormalKills} defeats={player.Progression.TotalDefeats}）。");
     }
 }

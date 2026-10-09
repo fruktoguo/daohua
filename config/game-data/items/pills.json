@@ -8,7 +8,7 @@
     "sellPrice": 35,
     "consumable": {
       "usableInActionTypes": [
-        "cultivation"
+        "exploration"
       ],
       "durationSeconds": 300,
       "isContinuous": true,
@@ -90,7 +90,7 @@
     "sellPrice": 200,
     "consumable": {
       "usableInActionTypes": [
-        "cultivation"
+        "exploration"
       ],
       "durationSeconds": 300,
       "isContinuous": true,

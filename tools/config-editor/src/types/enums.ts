@@ -85,14 +85,27 @@ export const UNIT_RANKS: EnumOption[] = [
   { value: 'boss', label: '秘境首领 (Boss)', en: 'Boss', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' }
 ];
 
-// 8. 行动类型 (ActionKind) —— ParseKind/ParseExplicitKind 词汇表
-/** 行动类型词表：与引擎 ParseKind/ParseExplicitKind 同口径，也用于消耗品 usableInActionTypes 的合法性校验。 */
+// 8. 行动类型 (ActionKind) —— ParseKind 词汇表
+/** 行动类型词表：与引擎 ParseKind 同口径，用于行动 type 字段的合法性校验。 */
 export const ACTION_TYPES: EnumOption[] = [
   { value: 'cultivation', label: '打坐吐纳 / 修炼 (Cultivation)', en: 'Cultivation', badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
   { value: 'exploration', label: '灵山采撷 / 探索 (Exploration)', en: 'Exploration', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
   { value: 'alchemy', label: '开炉炼丹 / 炼制 (Alchemy)', en: 'Alchemy', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
   { value: 'combat', label: '除魔历练 / 战斗 (Combat)', en: 'Combat', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
-  { value: 'travel', label: '御剑腾云 / 赶路 (Travel)', en: 'Travel', badgeColor: 'bg-teal-500/10 text-teal-300 border-teal-500/20' }
+  { value: 'travel', label: '御剑腾云 / 赶路 (Travel)', en: 'Travel', badgeColor: 'bg-teal-500/10 text-teal-300 border-teal-500/20' },
+  { value: 'enhancement', label: '铭纹强化 / 强化 (Enhancement)', en: 'Enhancement', badgeColor: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/20' }
+];
+
+// 8b. 自动使用物品栏域 (AutoUseBar) —— 消耗品 usableInActionTypes 词表（总纲 §6.2.3）
+/** 物品栏域词表：消耗品 usableInActionTypes 声明可装配的物品栏域；历练栏涵盖修炼/历练两大类行动。 */
+export const AUTO_USE_BARS: EnumOption[] = [
+  { value: 'exploration', label: '历练物品栏 (Exploration)', en: 'Exploration', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  { value: 'alchemy', label: '炼丹物品栏 (Alchemy)', en: 'Alchemy', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'forging', label: '炼器物品栏 (Forging)', en: 'Forging', badgeColor: 'bg-orange-500/10 text-orange-300 border-orange-500/20' },
+  { value: 'talisman', label: '符箓物品栏 (Talisman)', en: 'Talisman', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
+  { value: 'formation', label: '阵法物品栏 (Formation)', en: 'Formation', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
+  { value: 'enhancement', label: '强化物品栏 (Enhancement)', en: 'Enhancement', badgeColor: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/20' },
+  { value: 'combat', label: '战斗物品栏 (Combat)', en: 'Combat', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' }
 ];
 
 // 9. 行动执行模式 (ActionExecutionKind) —— ParseExecutionKind 词汇表；缺省按行动类型推导

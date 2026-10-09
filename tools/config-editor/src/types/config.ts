@@ -64,7 +64,7 @@ export interface BuffEffectConfig {
   damageAbsorptionPoints?: number;
 }
 
-/** 消耗品服食规格（ItemConfig.consumable）。usableInActionTypes 声明可在哪些行动类型中生效；顶层键受 DataTool ConsumableKeys 白名单约束，未知键直接校验失败。 */
+/** 消耗品服食规格（ItemConfig.consumable）。usableInActionTypes 声明可装配的物品栏域（历练/各制造技艺/战斗，总纲 §6.2.3）；顶层键受 DataTool ConsumableKeys 白名单约束，未知键直接校验失败。 */
 export interface ConsumableConfig {
   usableInActionTypes: string[]; // ActionKind set
   durationSeconds?: number;

@@ -6,7 +6,7 @@
 import { useState, useMemo } from 'react';
 import { useConfigContext } from '../../context/ConfigContext';
 import type { ItemConfig, ConsumableConfig, BuffEffectConfig } from '../../types/config';
-import { ITEM_KINDS, ITEM_CATEGORIES, TIER_OPTIONS, ACTION_TYPES } from '../../types/enums';
+import { ITEM_KINDS, ITEM_CATEGORIES, TIER_OPTIONS, AUTO_USE_BARS } from '../../types/enums';
 import { EnumSelect, MultiEnumSelect } from '../common/EnumSelect';
 import { BooleanSelect } from '../common/BooleanSelect';
 import { NumberInput } from '../common/NumberInput';
@@ -57,7 +57,7 @@ export function ItemsEditor() {
       handleUpdate({ consumable: undefined });
       return;
     }
-    const currentConsumable = currentItem.consumable || { usableInActionTypes: ['cultivation', 'combat'] };
+    const currentConsumable = currentItem.consumable || { usableInActionTypes: ['exploration', 'combat'] };
     handleUpdate({ consumable: { ...currentConsumable, ...patch } });
   };
 
@@ -336,7 +336,7 @@ export function ItemsEditor() {
                   type="button"
                   onClick={() =>
                     handleUpdateConsumable({
-                      usableInActionTypes: ['cultivation', 'exploration', 'combat', 'alchemy']
+                      usableInActionTypes: ['exploration', 'combat', 'alchemy']
                     })
                   }
                   className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition-colors shadow-sm"
@@ -349,10 +349,10 @@ export function ItemsEditor() {
             {currentItem.consumable && (
               <div className="flex flex-col gap-5">
                 <MultiEnumSelect
-                  label="允许服食生效的行动 (UsableInActionTypes)"
-                  description="在哪些行动挂机时自动/手动允许使用"
+                  label="允许装配的物品栏域 (UsableInActionTypes)"
+                  description="该自动消耗品可放入哪些物品栏（历练/各制造技艺/战斗）"
                   values={currentItem.consumable.usableInActionTypes}
-                  options={ACTION_TYPES}
+                  options={AUTO_USE_BARS}
                   onChange={vals => handleUpdateConsumable({ usableInActionTypes: vals })}
                 />
 

@@ -19,19 +19,34 @@ public enum CoreAspectKind : byte
     Consciousness = 5
 }
 
-/// <summary>六维经验→等级曲线：Level = floor(cbrt(exp/100))，0 级起算；与前端 getCumulativeExpForLevel 反函数一致。</summary>
+/// <summary>
+/// 六维经验→等级曲线：等级（点数）由 <see cref="Domain.GameData.RealmProgressionCatalog"/> 派生的
+/// 3×境界级数点成本表导出（总纲 §3.2.2，一级境界对应三点、相邻修为条线性插值），0 级起算；
+/// 与前端 ROOT_CUMULATIVE_EXP 同源。配表缺失时按 0 级计。
+/// </summary>
 public static class RootAttributeCurve
 {
-    /// <summary>经验换算等级（0~127 级；0 经验即 0 级，无基础等级）。</summary>
-    public static double LevelFor(double exp)
-        => !double.IsFinite(exp) || exp <= 0 ? 0 : Math.Min(127, Math.Floor(Math.Cbrt(exp / 100d)));
-    /// <summary>达到指定等级所需的累计经验：100×level³。</summary>
-    public static double ExpForLevel(double level)
-        => 100d * Math.Pow(Math.Max(0, level), 3);
+    /// <summary>经验换算六维等级（0~3×境界表长度点；0 经验即 0 级，无基础等级）。</summary>
+    public static double LevelFor(double exp, Domain.GameData.RealmProgressionCatalog? catalog)
+        => catalog?.RootLevelFor(exp) ?? 0;
+    /// <summary>达到指定等级所需的累计经验（查表）。</summary>
+    public static double ExpForLevel(double level, Domain.GameData.RealmProgressionCatalog? catalog)
+        => catalog?.RootCumulativeExpFor((int)Math.Max(0, Math.Floor(level))) ?? 0;
+    /// <summary>level → level+1 点所需经验；已满点返回 0。</summary>
+    public static double ExpToNextFor(double level, Domain.GameData.RealmProgressionCatalog? catalog)
+        => catalog?.RootExpToNextFor((int)Math.Max(0, Math.Floor(level))) ?? 0;
+}
+
+/// <summary>六维等级视图：由经验经境界修为表派生点成本表结算，不持久化。</summary>
+public readonly record struct RootAttributeLevels(
+    double Stamina, double Meridians, double Attack, double Bone, double Agility, double Consciousness)
+{
+    /// <summary>六维等级总和，斗法实力匹配的当前口径。</summary>
+    public double Total => Stamina + Meridians + Attack + Bone + Agility + Consciousness;
 }
 
 /// <summary>
-/// 玩家六维根骨：持久化经验值，等级由经验曲线导出。
+/// 玩家六维根骨：持久化经验值，等级由 <see cref="Levels"/> 经点成本表导出。
 /// 初始 0 级（0 经验）：六维加成从零开始，不提供任何出生白送属性。
 /// </summary>
 public sealed record PlayerCoreAttributes(
@@ -42,27 +57,22 @@ public sealed record PlayerCoreAttributes(
     double AgilityExp = 0,
     double ConsciousnessExp = 0)
 {
-    /// <summary>体魄等级（由经验导出）</summary>
-    public double StaminaLevel => RootAttributeCurve.LevelFor(StaminaExp);
-    /// <summary>经脉等级（由经验导出）</summary>
-    public double MeridiansLevel => RootAttributeCurve.LevelFor(MeridiansExp);
-    /// <summary>力道等级（由经验导出）</summary>
-    public double AttackLevel => RootAttributeCurve.LevelFor(AttackExp);
-    /// <summary>根骨等级（由经验导出）</summary>
-    public double BoneLevel => RootAttributeCurve.LevelFor(BoneExp);
-    /// <summary>身法等级（由经验导出）</summary>
-    public double AgilityLevel => RootAttributeCurve.LevelFor(AgilityExp);
-    /// <summary>神识等级（由经验导出）</summary>
-    public double ConsciousnessLevel => RootAttributeCurve.LevelFor(ConsciousnessExp);
-    /// <summary>六维等级总和，斗法实力匹配的当前口径。</summary>
-    public double TotalLevel => StaminaLevel + MeridiansLevel + AttackLevel + BoneLevel + AgilityLevel + ConsciousnessLevel;
+    /// <summary>经验结算为六维等级视图；配表缺失时六维全 0 级。</summary>
+    public RootAttributeLevels Levels(Domain.GameData.RealmProgressionCatalog? catalog) => new(
+        RootAttributeCurve.LevelFor(StaminaExp, catalog),
+        RootAttributeCurve.LevelFor(MeridiansExp, catalog),
+        RootAttributeCurve.LevelFor(AttackExp, catalog),
+        RootAttributeCurve.LevelFor(BoneExp, catalog),
+        RootAttributeCurve.LevelFor(AgilityExp, catalog),
+        RootAttributeCurve.LevelFor(ConsciousnessExp, catalog));
 }
 
-/// <summary>技能经验→等级曲线：与六维共用立方曲线但保持 1 基（习得即 1 级），技能书/残卷按点数注入经验。</summary>
+/// <summary>技能经验→等级曲线：独立立方曲线 floor(cbrt(exp/100))+1，保持 1 基（习得即 1 级），技能书/残卷按点数注入经验。</summary>
 public static class AbilityExpCurve
 {
     /// <summary>经验换算技能等级（1~127 级）。</summary>
-    public static double LevelFor(double exp) => Math.Min(127, RootAttributeCurve.LevelFor(exp) + 1);
+    public static double LevelFor(double exp)
+        => !double.IsFinite(exp) || exp <= 0 ? 1 : Math.Min(127, Math.Floor(Math.Cbrt(exp / 100d)) + 1);
 }
 
 /// <summary>功法/神通装配槽位：技能 ID（可空）与参悟等级；自定义触发条件按功法 ID 挂在 AbilityTriggers，不随槽位走。</summary>
@@ -85,7 +95,7 @@ public sealed partial class PlayerLoadoutState
     private PlayerLoadoutDocument? _exportedDocument;
     private long _exportedRevision = -1;
 
-    /// <summary>六维根骨经验；等级由立方曲线导出；写入递增版本号（属性解析与装配导出共用输入）。</summary>
+    /// <summary>六维根骨经验；等级由境界修为表派生点成本表导出；写入递增版本号（属性解析与装配导出共用输入）。</summary>
     public PlayerCoreAttributes CoreAttributes
     {
         get => _coreAttributes;

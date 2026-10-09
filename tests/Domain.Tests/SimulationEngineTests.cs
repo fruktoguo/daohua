@@ -69,8 +69,8 @@ public sealed class SimulationEngineTests
         var pill = new ItemId("item.qi-gathering-pill");
         var singleWallet = CreateWallet(single, (pill, 1d));
         var splitWallet = CreateWallet(split, (pill, 1d));
-        single.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
-        split.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        single.ConfigureAutoUse("exploration", 0, pill.Value, 1, true);
+        split.ConfigureAutoUse("exploration", 0, pill.Value, 1, true);
         single.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
         split.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
@@ -105,7 +105,7 @@ public sealed class SimulationEngineTests
         player.SetLoopEnabled(false);
         var pill = new ItemId("item.qi-gathering-pill");
         var wallet = CreateWallet(player, (pill, 1d));
-        player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        player.ConfigureAutoUse("exploration", 0, pill.Value, 1, true);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, catalog.Actions);
 
         var first = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
@@ -136,7 +136,7 @@ public sealed class SimulationEngineTests
         var player = CreatePlayer("进位残差");
         var pill = new ItemId("item.qi-gathering-pill");
         var wallet = CreateWallet(player, (pill, 1d));
-        player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        player.ConfigureAutoUse("exploration", 0, pill.Value, 1, true);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
         // 离线补算会留下非零的亚秒进位余数，它属于全局浮点残差，不得参与“动作开始扣件”的判定。
         player.Progression.SimulationCarrySeconds = 0.6965839999875751d;
@@ -159,7 +159,7 @@ public sealed class SimulationEngineTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("透支");
-        player.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 1, true);
         player.Settings.AutoUseSlots[0] = player.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 3d };
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
@@ -182,7 +182,7 @@ public sealed class SimulationEngineTests
         var player = CreatePlayer("中途补货");
         var pill = new ItemId("item.qi-gathering-pill");
         var wallet = CreateWallet(player);
-        player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        player.ConfigureAutoUse("exploration", 0, pill.Value, 1, true);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
         // 本轮已有进度（推进过 1 秒），中途补货只能等下一轮周期起点，不得追溯激活本轮。
@@ -214,7 +214,7 @@ public sealed class SimulationEngineTests
         var pill = new ItemId("item.test-pill");
         var actions = new ActionCatalog([
             new ActionDefinition(new ActionId("test.gather"), "采集", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, herb)]),
-            new ActionDefinition(new ActionId("test.alchemy"), "炼制", ActionKind.Alchemy, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, pill)])
+            new ActionDefinition(new ActionId("test.alchemy"), "炼制", ActionKind.Alchemy, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, pill)], Technique: "alchemy")
         ]);
         var catalog = new GameDataCatalog(
             "test",
@@ -222,8 +222,8 @@ public sealed class SimulationEngineTests
             actions,
             new Dictionary<ItemId, ItemDefinition>
             {
-                [gatheringIncense] = new(gatheringIncense, "寻灵香", "", Consumable: new ConsumableDefinition(new HashSet<ActionKind> { ActionKind.Exploration }, 300, true, GatheringMultiplier: 1.5)),
-                [alchemyFlame] = new(alchemyFlame, "地火引", "", Consumable: new ConsumableDefinition(new HashSet<ActionKind> { ActionKind.Alchemy }, 300, true, AlchemyMultiplier: 1.25))
+                [gatheringIncense] = new(gatheringIncense, "寻灵香", "", Consumable: new ConsumableDefinition(new HashSet<string> { "exploration" }, 300, true, GatheringMultiplier: 1.5)),
+                [alchemyFlame] = new(alchemyFlame, "地火引", "", Consumable: new ConsumableDefinition(new HashSet<string> { "alchemy" }, 300, true, AlchemyMultiplier: 1.25))
             });
         var player = CreatePlayer("产出");
         var wallet = CreateWallet(player, (gatheringIncense, 1d), (alchemyFlame, 1d));
@@ -241,6 +241,70 @@ public sealed class SimulationEngineTests
         Assert.Equal(-1d, deltas[alchemyFlame]);
         Assert.Equal(298d, player.Settings.AutoUseSlots.Single(slot => slot.ActionType == "exploration").RemainingDurationSeconds);
         Assert.Equal(298d, player.Settings.AutoUseSlots.Single(slot => slot.ActionType == "alchemy").RemainingDurationSeconds);
+    }
+
+    /// <summary>
+    /// 生效守卫：历练栏共用后，仅对修炼大类生效的丹药挂在历练栏跑采集行动时
+    /// 不扣件、不充能、不消耗剩余时长（无效场景不烧药）。
+    /// </summary>
+    [Fact]
+    public void SustainedConsumableDoesNotChargeOrDrainWhenActionKindHasNoBonus()
+    {
+        var qiPill = new ItemId("item.test-qi-pill");
+        var herb = new ItemId("item.test-herb");
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.gather"), "采集", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, herb)])
+        ]);
+        var catalog = new GameDataCatalog(
+            "test",
+            "test",
+            actions,
+            new Dictionary<ItemId, ItemDefinition>
+            {
+                [qiPill] = new(qiPill, "引气丹", "", Consumable: new ConsumableDefinition(new HashSet<string> { "exploration" }, 300, true, CultivationMultiplier: 1.3))
+            });
+        var player = CreatePlayer("空挂");
+        var wallet = CreateWallet(player, (qiPill, 1d));
+        player.ConfigureAutoUse("exploration", 0, qiPill.Value, 1, true);
+        player.Enqueue(new ActionIntent(new ActionId("test.gather")), Baseline, actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), catalog, wallet);
+        var deltas = result.AssetDeltas.ToDictionary(delta => delta.Asset.ItemId, delta => delta.QuantityDelta);
+
+        Assert.Equal(6d, deltas[herb]);
+        Assert.False(deltas.ContainsKey(qiPill));
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+    }
+
+    /// <summary>
+    /// 反向校验：同一引气丹跑修炼大类行动时正常扣件充能（守卫不误伤有效场景）。
+    /// </summary>
+    [Fact]
+    public void SustainedConsumableChargesAndDrainsOnMatchingActionKind()
+    {
+        var qiPill = new ItemId("item.test-qi-pill");
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.cultivate"), "吐纳", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
+        ]);
+        var catalog = new GameDataCatalog(
+            "test",
+            "test",
+            actions,
+            new Dictionary<ItemId, ItemDefinition>
+            {
+                [qiPill] = new(qiPill, "引气丹", "", Consumable: new ConsumableDefinition(new HashSet<string> { "exploration" }, 300, true, CultivationMultiplier: 1.3))
+            });
+        var player = CreatePlayer("吐纳");
+        var wallet = CreateWallet(player, (qiPill, 1d));
+        player.ConfigureAutoUse("exploration", 0, qiPill.Value, 1, true);
+        player.Enqueue(new ActionIntent(new ActionId("test.cultivate")), Baseline, actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), catalog, wallet);
+
+        Assert.Contains(result.AssetDeltas, delta => delta.Asset.ItemId == qiPill && delta.QuantityDelta == -1d);
+        // 扣时长按完成轮数×单轮时长：2s×2 轮 = 4s。
+        Assert.Equal(296d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+        Assert.Equal(4d * 1.3d, player.Progression.Experience, 6);
     }
 
     private static AssetWallet CreateWallet(PlayerAggregate player, params (ItemId ItemId, double Quantity)[] balances)

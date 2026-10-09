@@ -352,7 +352,7 @@ public sealed class TechniqueAndEnhancementTests
         var items = new Dictionary<ItemId, ItemDefinition>
         {
             [strike] = new(strike, "测试雷符", "", true, 0,
-                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                new ConsumableDefinition(new HashSet<string> { "combat" },
                     Strike: new ConsumableStrike(0.05, 0.2, 2.0, CombatElement.Wood),
                     CooldownSeconds: 60),
                 "talisman"),
@@ -404,7 +404,7 @@ public sealed class TechniqueAndEnhancementTests
         var items = new Dictionary<ItemId, ItemDefinition>
         {
             [strike] = new(strike, "测试雷符", "", true, 0,
-                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                new ConsumableDefinition(new HashSet<string> { "combat" },
                     Strike: new ConsumableStrike(0.5, 0.2, 2.0, CombatElement.Wood),
                     CooldownSeconds: 60),
                 "talisman"),

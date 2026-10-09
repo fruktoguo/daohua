@@ -70,7 +70,7 @@ public sealed class PlayerCheckpointTests
         player.Buffs.Active.Add(new ActiveBuff("buff.test", 999, 2));
         player.MarkDirty(PlayerSectionKind.Buffs);
         player.LearnAbility(new AbilityId("ability.test-strike"));
-        player.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 1, true);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 3), Baseline, ActionCatalog.Default);
         player.StageItem(new ItemId("item.iron-ore"), 2, 100);
         player.Duel.EncounterCharges = 3;
