@@ -608,6 +608,8 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       const handleKeyDown = (event: KeyboardEvent) => {
         if (closeOnEsc && event.key === 'Escape') {
           event.preventDefault()
+          // 浮层是视觉最顶层：消费掉 Esc，避免冒泡到 document 上的模态窗监听导致联动关闭。
+          event.stopPropagation()
           setOpen(false)
         }
       }

@@ -29,7 +29,6 @@ export const socialZh = {
     },
     tab: {
       aria: '队伍页模式',
-      overview: '队伍信息',
       lobby: '组队大厅',
       match: '队伍匹配',
       create: '创建队伍',
@@ -80,6 +79,7 @@ export const socialZh = {
       matchSet: '开始匹配',
       matchClear: '取消匹配',
       refreshLobby: '刷新大厅',
+      editProfile: '修改队伍',
       saveProfile: '保存队伍设置',
       participate: '参与斗法',
       leaveParticipation: '暂不参战',
@@ -114,9 +114,9 @@ export const socialZh = {
       heading: '队伍管理',
     },
     members: {
-      heading: '队伍成员',
       leader: '队长',
       inviteFriend: '邀请好友：',
+      emptySlot: '空槽位',
     },
     // 同图共战（组队讨伐）：参战状态、开启槽位与活跃会话（§21.13）
     ready: {
@@ -126,25 +126,10 @@ export const socialZh = {
       hint: '全员勾选「参与斗法」且槽位占满即自动开赴同图共战',
     },
     session: {
-      banner: '同图共战进行中',
-      encounter: '遭遇 {name}',
-      node: '地点 {name}',
-      startedAt: '开打 {time}',
-      members: '参战 {count} 人',
-      disbandWarn: '成员变动（离队/移出/调整槽位）将终止本次讨伐',
       cancelHint: '组队讨伐由队伍统一调度，无法单独移除；如需终止，请在队伍页离队（将解散本次共战）',
       badge: '组队讨伐',
       badgeCount: '组队讨伐 · {count} 人',
       allyAria: '队友 {name}',
-    },
-    share: {
-      heading: '分享队伍',
-      desc: '把队伍卡片发到传音频道，同道点击卡片即可加入（含非公开队伍）。',
-      world: '发到世界频道',
-      nearby: '发到附近频道',
-      pickFriend: '选择好友…',
-      friendField: '私聊对象',
-      friend: '私聊分享',
     },
     confirm: {
       leaveTitle: '离开队伍',

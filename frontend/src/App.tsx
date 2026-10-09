@@ -1,10 +1,10 @@
 import { hasActionParticipation } from './game/types'
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
+import { CombatStatsPanel } from './components/CombatStatsPanel'
 import { RecordsPanel } from './components/RecordsPanel'
-import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
 import { ConditionedTile } from './components/ConditionedTile'
@@ -13,32 +13,28 @@ import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components
 import { GameLogPanel } from './components/GameLogPanel'
 import { ActionDetailItem, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
-import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
-import { InsightPage } from './components/InsightPage'
 import type { PillTone } from './components/PillLabel'
 import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel, type NearbyTab } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
-import { SettingsPage } from './components/SettingsPage'
 import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
 import { RightSidebar } from './components/RightSidebar'
-import { SocialPage } from './components/SocialPage'
 import { TaijiToggle } from './components/TaijiToggle'
 import { TutorialOverlay } from './tutorial/TutorialOverlay'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
+import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
 import { calculateActionYieldPreview, isActionAvailableAtNode } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
-import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
+import type { ActionDefinition, ActionType, AutoUseBarType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
 import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
 import { installAntiMultiOpen, disposeAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
 import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
@@ -46,6 +42,22 @@ import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
 import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab } from './uiStore'
 import { useT, getT } from './i18n'
+
+// 非首屏页面按首次进入时拆包；页面组件仍只挂载于 activeTab，保持原有隐藏/卸载生命周期语义。
+const InsightPage = lazy(() => import('./components/InsightPage').then(module => ({ default: module.InsightPage })))
+const MarketPage = lazy(() => import('./components/MarketPage').then(module => ({ default: module.MarketPage })))
+const SocialPage = lazy(() => import('./components/SocialPage').then(module => ({ default: module.SocialPage })))
+const SettingsPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.SettingsPage })))
+// 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
+const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
+
+/** 延迟模块的可见加载态；复用已有进度样式和页面名称，不吞掉模块加载异常。 */
+function PanelLoading({ label }: { label: string }): React.JSX.Element {
+  return <div aria-busy="true" role="status">
+    <span>{label}</span>
+    <div className="status-progress-bar"><div className="status-progress-glow" /></div>
+  </div>
+}
 
 /** 全局共享的空冷却表（冻结对象）：避免每次渲染创建新引用触发下游 memo 失效 */
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
@@ -458,21 +470,21 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [pendingRemoval, setPendingRemoval] = useState<QueueEntry | null>(null)
   const [pendingClearAll, setPendingClearAll] = useState(false)
+  const [pendingQuitSession, setPendingQuitSession] = useState(false)
+  const unreadyParty = useSocialStore(state => state.unreadyParty)
   const current = queue.entries[0]
   const upcoming = queue.entries.slice(1, 3)
-  // 组队讨伐伪行动不受个人移除/停止：点击提示回到队伍页取消准备或离队
-  const notifyPartyLocked = useCallback(() => {
-    useGameStore.getState().setNotice(t('social.session.cancelHint'))
-  }, [t])
-  // 主行动卡停止钮与队列列表移除共用同一确认弹窗：确认后 action.remove 移除队首即停止
+  // 主行动卡停止钮与队列列表移除共用同一确认弹窗：确认后 action.remove 移除队首即停止。
+  // 组队讨伐伪行动不受 action.remove（服务端 IN_PARTY_EXPEDITION 拒绝）：「停止」语义 = 取消参战，
+  // 经散场确认派发 party.unready；散场后挂起的个人队首行动由服务端自动恢复续跑（§21.13）。
   const requestStopCurrent = useCallback(() => {
     if (!current) return
     if (hasActionParticipation(current)) {
-      notifyPartyLocked()
+      setPendingQuitSession(true)
       return
     }
     setPendingRemoval(current)
-  }, [current, notifyPartyLocked])
+  }, [current])
 
   useEffect(() => {
     if (queue.entries.length === 0) setOpen(false)
@@ -580,14 +592,14 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                     aria-label={t('app.queue.removeAria')}
                     className="queue-remove"
                     onClick={() => {
-                      // 行动参与会话不走 action.remove：提示走队伍页取消准备/离队
+                      // 行动参与会话不走 action.remove：「移除」= 取消参战，经散场确认派发 party.unready
                       if (hasActionParticipation(entry)) {
-                        notifyPartyLocked()
+                        setPendingQuitSession(true)
                         return
                       }
                       setPendingRemoval(entry)
                     }}
-                    title={hasActionParticipation(entry) ? t('social.session.cancelHint') : t('app.queue.removeTitle')}
+                    title={hasActionParticipation(entry) ? t('social.action.quitParticipation') : t('app.queue.removeTitle')}
                     type="button"
                   >×</button>
                 </div>
@@ -632,6 +644,14 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
         }}
         open={pendingClearAll}
         title={t('app.queue.clearAllConfirmTitle')}
+      />
+      <ConfirmDialog
+        danger
+        description={t('social.confirm.quitSessionDesc')}
+        onClose={() => setPendingQuitSession(false)}
+        onConfirm={() => unreadyParty()}
+        open={pendingQuitSession}
+        title={t('social.confirm.quitSessionTitle')}
       />
     </div>
   )
@@ -1158,7 +1178,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
           {filteredActions.length === 0 && <p className="location-action-empty">{t('app.crafting.empty')}</p>}
         </div>
       )}
-      <AutoUse type={craftingMode === 'enhancement' ? 'enhancement' : 'alchemy'} />
+      <AutoUse bar={craftingMode} />
       <CraftingModeTabs />
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
@@ -1170,37 +1190,40 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
  * 自动消耗品槽位组选择与配置组件
  */
 const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
+  bar,
   className = '',
   hideLabel = false,
   label,
   slotGroup = 'general',
-  type,
 }: {
+  /** 物品栏域：历练/各制造技艺/战斗，决定本组槽位来源与物品准入 */
+  bar: AutoUseBarType
   className?: string
   hideLabel?: boolean
   label: string
-  /** 栏位分组：仅战斗域区分 potion（药品栏）/general（通用栏） */
+  /** 栏位分组：仅战斗栏域区分 potion（药品栏）/general（通用栏） */
   slotGroup?: 'potion' | 'general'
-  type: ActionType
 }): React.JSX.Element {
   const t = useT()
-  const allSlots = useGameStore(state => state.queue.autoUseSlots[type])
-  // 战斗域槽位数组布局：0-2 药品栏，3-5 通用栏；非战斗域恒为通用栏 0-2。
-  const slotOffset = type === 'combat' && slotGroup === 'general' ? 3 : 0
-  const slots = allSlots.slice(slotOffset, slotOffset + 3)
+  const allSlots = useGameStore(state => state.queue.autoUseSlots[bar])
+  // 战斗栏域槽位数组布局：0-2 药品栏，3-5 通用栏；其余栏域整段通用栏（历练 6 槽、技艺 3 槽）。
+  const slotOffset = bar === 'combat' && slotGroup === 'general' ? 3 : 0
+  const slots = allSlots.slice(slotOffset, slotOffset + (bar === 'combat' ? 3 : allSlots.length))
   const activeEntry = useGameStore(state => {
     const current = state.queue.entries[0]
-    return current?.type === type ? current : null
+    if (!current) return null
+    const definition = resolveActionDefinition(current.actionId)
+    return autoUseBarFor({ type: current.type, technique: definition?.technique ?? null }) === bar ? current : null
   })
-  // 消耗品冷却仅 combat 类槽位由服务端按双组下标定长下发（药品栏 0-2、通用栏 3-5）。
+  // 消耗品冷却仅 combat 栏域槽位由服务端按双组下标定长下发（药品栏 0-2、通用栏 3-5）。
   const consumableCooldowns = useGameStore(
-    state => type === 'combat' ? state.combatResources?.consumableCooldownMilliseconds : undefined,
+    state => bar === 'combat' ? state.combatResources?.consumableCooldownMilliseconds : undefined,
   )
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
   const [picker, setPicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
   const pickerItems = useMemo<ItemPickerEntry[]>(() => itemCatalog
-      .filter(item => item.category === 'consumable' && item.usableActionTypes.includes(type) && itemAmount(inventory, item.itemId) > 0
+      .filter(item => item.category === 'consumable' && item.usableBars.includes(bar) && itemAmount(inventory, item.itemId) > 0
         // 药品栏只放药品类即时消耗品；通用栏任意适用自动消耗品皆可（手动消耗品不入栏）。
         && (slotGroup !== 'potion' || (item.subCategory === 'pill' && !item.isContinuous)))
       .map(item => ({
@@ -1211,18 +1234,18 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
         tier: item.tier,
         amount: itemAmount(inventory, item.itemId),
         definition: item,
-      })), [inventory, itemCatalog, slotGroup, t, type])
+      })), [inventory, itemCatalog, slotGroup, t, bar])
 
   const updateSlot = useCallback((index: number, itemId: string | null) => {
     gameClient.sendCommand('queue.auto_use.configure', {
-      actionType: type,
+      actionType: bar,
       slotIndex: index,
       itemId,
       quantity: 1,
       enabled: Boolean(itemId),
       group: slotGroup,
     })
-  }, [slotGroup, type])
+  }, [slotGroup, bar])
 
   const pickerSlot = picker === null ? null : slots[picker.index] ?? null
 
@@ -1286,11 +1309,11 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
 /**
  * 各行动页签下的自动消耗品快捷托盘
  */
-const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX.Element {
+const AutoUse = memo(function AutoUse({ bar }: { bar: AutoUseBarType }): React.JSX.Element {
   const t = useT()
   return (
-    <div className="auto-use-tray" aria-label={t('app.action.autoUseTrayAria', { name: actionTabLabel(type) })}>
-      <AutoUseSlotGroup hideLabel label={t('app.action.autoUseLabel')} type={type} />
+    <div className="auto-use-tray" aria-label={t('app.action.autoUseTrayAria', { name: autoUseBarLabel(bar) })}>
+      <AutoUseSlotGroup bar={bar} hideLabel label={t('app.action.autoUseLabel')} />
     </div>
   )
 })
@@ -1736,8 +1759,8 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   return (
     <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
       <div className="combat-slot-tray">
-        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" type="combat" />
-        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.generalGroup')} slotGroup="general" type="combat" />
+        <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" />
+        <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.generalGroup')} slotGroup="general" />
 
         <section className="slot-group combat-slot-section" aria-label={t('app.combatPanel.abilitiesAria')}>
           <span className="slot-group-label">{t('app.combatPanel.abilitiesGroup')}</span>
@@ -1925,8 +1948,7 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
         ))}
         {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
       </div>
-      <AutoUse type="cultivation" />
-      <AutoUse type="exploration" />
+      <AutoUse bar="exploration" />
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
@@ -1978,17 +2000,29 @@ const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JS
  */
 const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
+  const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
+  // 只延迟首次查看：后续切回其它页签不卸载战场，保留详情、动画与观察目标生命周期。
+  if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
   const [recordsOpen, setRecordsOpen] = useState(false)
   const closeModal = useCallback(() => setSelectedAction(null), [])
   const closeReport = useCallback(() => setReportOpen(false), [])
+  const closeStats = useCallback(() => setStatsOpen(false), [])
   const closeRecords = useCallback(() => setRecordsOpen(false), [])
 
   return (
     <section className="panel expedition-page" data-tour="combat-detail" hidden={hidden}>
       <header className="panel-header">
         <h2>{t('app.nav.combat')}</h2>
+        <button
+          className="ghost-button combat-stats-open"
+          onClick={() => setStatsOpen(true)}
+          type="button"
+        >
+          {t('combat.stats.title')}
+        </button>
         <button
           className="ghost-button battle-report-open"
           onClick={() => setReportOpen(true)}
@@ -2007,12 +2041,25 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
       </header>
       <div className="expedition-content expedition-content--duel">
         <div className="expedition-duel">
-          <CombatArena onOpenAction={setSelectedAction} />
+          {hasBeenVisible && (
+            <Suspense fallback={<PanelLoading label={t('app.nav.combat')} />}>
+              <CombatArena onOpenAction={setSelectedAction} />
+            </Suspense>
+          )}
           <div className="expedition-duel-config">
             <CombatLoadoutPanel />
           </div>
         </div>
       </div>
+      <Modal
+        className="battle-report-modal"
+        labelledBy="combat-stats-panel-title"
+        onClose={closeStats}
+        open={statsOpen}
+        size="medium"
+      >
+        <CombatStatsPanel />
+      </Modal>
       <Modal
         className="battle-report-modal"
         labelledBy="battle-report-panel-title"
@@ -2205,14 +2252,22 @@ export default function App(): React.JSX.Element {
         <Sidebar />
         <div className="center-column">
           <main className="main-content">
-            {activeTab === 'insight' && <InsightPage />}
             <ExplorationPage hidden={activeTab !== 'exploration'} />
             <CraftingPage hidden={activeTab !== 'crafting'} />
             <MapPage hidden={activeTab !== 'map'} />
             <CombatDetailsPage hidden={activeTab !== 'combat'} />
-            {activeTab === 'market' && <MarketPage />}
-            {activeTab === 'social' && <SocialPage />}
-            {activeTab === 'settings' && <SettingsPage />}
+            <Suspense fallback={null}>
+              {activeTab === 'insight' && <InsightPage />}
+            </Suspense>
+            <Suspense fallback={null}>
+              {activeTab === 'market' && <MarketPage />}
+            </Suspense>
+            <Suspense fallback={null}>
+              {activeTab === 'social' && <SocialPage />}
+            </Suspense>
+            <Suspense fallback={null}>
+              {activeTab === 'settings' && <SettingsPage />}
+            </Suspense>
             {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
             {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" />}
           </main>

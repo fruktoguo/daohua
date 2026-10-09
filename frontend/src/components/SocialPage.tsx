@@ -1,15 +1,17 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
-import { findEncounterInCatalog } from '../game/ids'
 import { formatNumber } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { useT } from '../i18n'
 import { requestJson } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
-import { PartyActivityKind, type ChatChannel, type PartyActivityKind as PartyActivityKindType, type PartyProfileDto } from '../network/protocol'
+import { PartyActivityKind, type PartyActivityKind as PartyActivityKindType, type PartyMemberDto, type PartyProfileDto } from '../network/protocol'
 import { useUiStore, type SocialSubTab } from '../uiStore'
+import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
+import { FloatingPopover, type FloatingPlacement } from './FloatingPopover'
+import { Modal } from './Modal'
 
 /** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
@@ -41,11 +43,34 @@ function useDefaultNodeId(): string {
   return useGameStore(state => state.world.nodeId) ?? ''
 }
 
+/** 表单节点字段默认值口径：activityKind 固定讨伐，nodeId 跟随玩家当前节点。 */
+const DEFAULT_PROFILE_FORM = { activityKind: PartyActivityKind.Combat as PartyActivityKindType, minValuation: '', isPublic: true }
+
+/**
+ * 目标节点「跟随当前位置」表单态：返回 {value, onChange} 直接对接 PartyProfileFields。
+ * 用户未手动选择过节点时展示并提交玩家当前节点（挂载瞬间可能在途中/快照未装载，
+ * 初始值会停在空串，不能用 useState 一次性固化）；手动选择（含「不限」）后以手选值为准。
+ */
+function useCurrentNodeField(form: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean },
+  setForm: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }) => void,
+): { nodeId: string; onChange: (next: typeof form) => void } {
+  const defaultNodeId = useDefaultNodeId()
+  const [touched, setTouched] = useState(false)
+  const nodeId = touched ? form.nodeId : defaultNodeId
+  const onChange = (next: typeof form): void => {
+    // 手选回当前节点视为恢复跟随；其余节点值差异（含选「不限」）锁手选
+    setTouched(next.nodeId !== defaultNodeId)
+    setForm(next)
+  }
+  return { nodeId, onChange }
+}
+
 /**
  * 细条内联下拉 (DropdownSelect)
  *
- * 点击触发器在下方展开贴边小列表（非模态），点外部或 Esc 关闭；
- * 与 ChoiceMenu 的模态/瓦片形态区分——本组件面向队伍表单的轻量单选场景。
+ * 点击触发器展开贴边选项列表，选项层经 FloatingPopover 以 Portal 挂载到 body
+ * （fixed 定位 + 视口夹持 + 上下翻转 + 滚动跟随）——不会被 modal/overflow 容器
+ * 裁剪，也不改变任何布局尺寸；点外部或 Esc 关闭。面向队伍表单的轻量单选场景。
  */
 const DropdownSelect = memo(function DropdownSelect({
   label,
@@ -54,7 +79,7 @@ const DropdownSelect = memo(function DropdownSelect({
   onSelect,
   className = '',
 }: {
-  /** 字段名（作 aria-label；可见标签由外层 .party-field span 或占位项承担） */
+  /** 字段名（触发器无选中项时的占位文案） */
   label: string
   /** 当前选中项 id */
   value: string
@@ -63,56 +88,54 @@ const DropdownSelect = memo(function DropdownSelect({
   className?: string
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  // 打开瞬间量取触发器宽度：选项列表至少与触发器等宽（内容更宽时卡片自适应放大）。
+  const [triggerWidth, setTriggerWidth] = useState(0)
+  const [placement, setPlacement] = useState<FloatingPlacement>('bottom-start')
   const rootRef = useRef<HTMLDivElement>(null)
   const selected = options.find(option => option.id === value)
 
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: PointerEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open])
-
   return (
     <div className={`party-select${open ? ' is-open' : ''} ${className}`.trim()} ref={rootRef}>
-      <button
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        aria-label={label}
-        className="party-select-trigger"
-        onClick={() => setOpen(current => !current)}
-        type="button"
+      <FloatingPopover
+        className="party-select-popover-card"
+        content={({ close }) => (
+          <div
+            className="party-select-options"
+            role="listbox"
+            style={triggerWidth > 0 ? { minWidth: triggerWidth } : undefined}
+          >
+            {options.map(option => (
+              <button
+                aria-selected={option.id === value}
+                className={`party-select-option${option.id === value ? ' is-selected' : ''}`}
+                disabled={option.disabled === true}
+                key={option.id}
+                onClick={() => {
+                  onSelect(option.id)
+                  close()
+                }}
+                role="option"
+                type="button"
+              >{option.label}</button>
+            ))}
+          </div>
+        )}
+        gap={3}
+        onOpenChange={next => {
+          setOpen(next)
+          if (next && rootRef.current) setTriggerWidth(Math.ceil(rootRef.current.getBoundingClientRect().width))
+        }}
+        onPlacementChange={setPlacement}
+        open={open}
+        placement="bottom-start"
+        size="auto"
+        trigger="click"
+        triggerAs="button"
+        triggerClassName="party-select-trigger"
       >
         <span className="party-select-value">{selected?.label ?? label}</span>
-        <span aria-hidden="true" className="party-select-arrow">▾</span>
-      </button>
-      {open && (
-        <div className="party-select-popover" role="listbox">
-          {options.map(option => (
-            <button
-              aria-selected={option.id === value}
-              className={`party-select-option${option.id === value ? ' is-selected' : ''}`}
-              disabled={option.disabled === true}
-              key={option.id}
-              onClick={() => {
-                onSelect(option.id)
-                setOpen(false)
-              }}
-              role="option"
-              type="button"
-            >{option.label}</button>
-          ))}
-        </div>
-      )}
+        <span aria-hidden="true" className="party-select-arrow">{placement.startsWith('top') ? '▴' : '▾'}</span>
+      </FloatingPopover>
     </div>
   )
 })
@@ -202,40 +225,17 @@ const PartyInvitationBanner = memo(function PartyInvitationBanner(): React.JSX.E
   )
 })
 
-/**
- * 组队讨伐活跃会话横幅（§21.13）：展示钉死遭遇、共战地点、开打时刻与参战人数；
- * 会话全程阵容锁定，横幅内附散场提示（成员变动即终止本次讨伐）。
- */
-const PartySessionBanner = memo(function PartySessionBanner({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
-  const t = useT()
-  const session = useSocialStore(state => state.party?.activeSession ?? null)
-  const encounters = useGameStore(state => state.encounters)
-  if (!session) return null
-  const encounterName = findEncounterInCatalog(encounters, session.encounterId)?.name ?? session.encounterId
-  const nodeName = session.nodeId ? nodeLabel(session.nodeId, nodeNames, t('social.field.anyNode')) : t('social.field.anyNode')
-  return (
-    <div className="party-session" role="status">
-      <strong className="party-session-title">{t('social.session.banner')}</strong>
-      <span>{t('social.session.encounter', { name: encounterName })}</span>
-      <span>{t('social.session.node', { name: nodeName })}</span>
-      <span>{t('social.session.startedAt', { time: new Date(session.startedAtUnixMilliseconds).toLocaleTimeString() })}</span>
-      <span>{t('social.session.members', { count: session.memberIds.length })}</span>
-      <span className="party-session-warn">{t('social.session.disbandWarn')}</span>
-    </div>
-  )
-})
-
 /** 队伍匹配卡片：登记散人条件；已登记时展示当前条件与撤下入口。 */
 const MatchSection = memo(function MatchSection({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element {
   const t = useT()
   const seeking = useSocialStore(state => state.seeking)
-  const defaultNodeId = useDefaultNodeId()
-  const [form, setForm] = useState({ activityKind: PartyActivityKind.Combat as PartyActivityKindType, nodeId: defaultNodeId, minValuation: '', isPublic: true })
+  const [form, setForm] = useState({ ...DEFAULT_PROFILE_FORM, nodeId: '' })
+  const nodeField = useCurrentNodeField(form, setForm)
 
   const submit = (): void => {
     const party: PartyProfileDto = {
       activityKind: form.activityKind,
-      nodeId: form.nodeId,
+      nodeId: nodeField.nodeId,
       minValuation: parseMinValuation(form.minValuation),
     }
     gameClient.sendSocialAction('party.match.set', undefined, undefined, { party })
@@ -254,7 +254,7 @@ const MatchSection = memo(function MatchSection({ nodeNames }: { nodeNames: Read
         </div>
       ) : (
         <>
-          <PartyProfileFields nodeNames={nodeNames} onChange={setForm} value={form} />
+          <PartyProfileFields nodeNames={nodeNames} onChange={nodeField.onChange} value={{ ...form, nodeId: nodeField.nodeId }} />
           <div className="party-card-actions">
             <button className="confirm-primary" onClick={submit} type="button">{t('social.action.matchSet')}</button>
           </div>
@@ -373,14 +373,14 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
 const CreateSection = memo(function CreateSection({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element {
   const t = useT()
   const [name, setName] = useState('')
-  const defaultNodeId = useDefaultNodeId()
-  const [form, setForm] = useState({ activityKind: PartyActivityKind.Combat as PartyActivityKindType, nodeId: defaultNodeId, minValuation: '', isPublic: true })
+  const [form, setForm] = useState({ ...DEFAULT_PROFILE_FORM, nodeId: '' })
+  const nodeField = useCurrentNodeField(form, setForm)
 
   const submit = (): void => {
     const party: PartyProfileDto = {
       name: name.trim() || null,
       activityKind: form.activityKind,
-      nodeId: form.nodeId,
+      nodeId: nodeField.nodeId,
       minValuation: parseMinValuation(form.minValuation),
       isPublic: form.isPublic,
     }
@@ -402,7 +402,7 @@ const CreateSection = memo(function CreateSection({ nodeNames }: { nodeNames: Re
           />
         </label>
       </div>
-      <PartyProfileFields nodeNames={nodeNames} onChange={setForm} showPublic value={form} />
+      <PartyProfileFields nodeNames={nodeNames} onChange={nodeField.onChange} showPublic value={{ ...form, nodeId: nodeField.nodeId }} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={submit} type="button">{t('social.action.create')}</button>
       </div>
@@ -446,8 +446,15 @@ const PartylessView = memo(function PartylessView({ nodeNames }: { nodeNames: Re
   )
 })
 
-/** 队长档案编辑区：改名 + 三件套 + 公开开关 + 开启槽位（槽位走独立 party.slots 指令即选即调）。 */
-const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
+/**
+ * 队长档案编辑弹窗 (LeaderProfileModal)：改名 + 三件套 + 公开开关 + 开启槽位。
+ * 仅由「修改队伍」按钮挂载（关闭即卸载），每次打开从 party 快照重新初始化表单；
+ * 槽位走独立 party.slots 指令即选即调，档案字段经 party.update 一次性提交后关闭。
+ */
+const LeaderProfileModal = memo(function LeaderProfileModal({ nodeNames, onClose }: {
+  nodeNames: ReadonlyMap<string, string>
+  onClose: () => void
+}): React.JSX.Element | null {
   const t = useT()
   const party = useSocialStore(state => state.party)
   const setPartySlots = useSocialStore(state => state.setPartySlots)
@@ -471,6 +478,7 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { n
       isPublic: form.isPublic,
     }
     gameClient.sendSocialAction('party.update', undefined, undefined, { party: partyPatch })
+    onClose()
   }
 
   const openSlots = party.openSlots ?? PARTY_OPEN_SLOTS_MAX
@@ -482,8 +490,10 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { n
   }
 
   return (
-    <section className="party-card">
-      <h3>{t('social.manage.heading')}</h3>
+    <Modal labelledBy="party-edit-modal-title" onClose={onClose} open size="medium">
+      <header className="panel-header modal-form-header">
+        <h2 id="party-edit-modal-title">{t('social.manage.heading')}</h2>
+      </header>
       <div className="party-fields">
         <label className="party-field">
           <span>{t('social.field.name')}</span>
@@ -501,8 +511,9 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { n
       </div>
       <PartyProfileFields nodeNames={nodeNames} onChange={setForm} showPublic value={form} />
       <p className="party-card-desc">{t('social.field.openSlotsHint')}</p>
-      <div className="party-card-actions">
-        <button className="confirm-primary" onClick={submit} type="button">{t('social.action.saveProfile')}</button>
+      <div className="modal-form-actions">
+        <button className="modal-form-cancel" onClick={onClose} type="button">{t('common.cancel')}</button>
+        <button className="modal-form-submit active" onClick={submit} type="button">{t('social.action.saveProfile')}</button>
       </div>
       <ConfirmDialog
         description={`${t('social.confirm.slotsDesc', { slots: pendingSlots ?? openSlots })}${t('social.confirm.sessionSuffix')}`}
@@ -511,51 +522,11 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { n
         open={pendingSlots !== null}
         title={t('social.confirm.slotsTitle')}
       />
-    </section>
+    </Modal>
   )
 })
 
-/** 队伍分享区：世界/附近频道快捷分享 + 好友私聊定向分享。 */
-const ShareSection = memo(function ShareSection(): React.JSX.Element {
-  const t = useT()
-  const friends = useSocialStore(state => state.friends)
-  const nodeId = useGameStore(state => state.world.nodeId)
-  const [friendId, setFriendId] = useState('')
-
-  const share = (channel: ChatChannel): void => {
-    gameClient.sendSocialAction('party.share', channel === 'friend' ? friendId || null : null, undefined, { channel })
-  }
-
-  return (
-    <section className="party-card">
-      <h3>{t('social.share.heading')}</h3>
-      <p className="party-card-desc">{t('social.share.desc')}</p>
-      <div className="party-card-actions">
-        <button onClick={() => share('world')} type="button">{t('social.share.world')}</button>
-        <button disabled={!nodeId} onClick={() => share('nearby')} type="button">{t('social.share.nearby')}</button>
-        <DropdownSelect
-          className="party-share-friend"
-          label={t('social.share.friendField')}
-          onSelect={setFriendId}
-          options={[
-            { id: '', label: t('social.share.pickFriend') },
-            ...friends.map(friend => ({ id: friend.playerId, label: friend.displayName })),
-          ]}
-          value={friendId}
-        />
-        <button disabled={!friendId} onClick={() => share('friend')} type="button">{t('social.share.friend')}</button>
-      </div>
-    </section>
-  )
-})
-
-/** 在队态页签：队伍信息 / 组队大厅（招募散人入口，邀请按钮仅队长可见）。 */
-const PARTY_TABS: ReadonlyArray<{ id: 'overview' | 'lobby'; labelKey: string }> = [
-  { id: 'overview', labelKey: 'social.tab.overview' },
-  { id: 'lobby', labelKey: 'social.tab.lobby' },
-]
-
-/** 在队视图：档案头 + 「队伍信息/组队大厅」页签；信息页含成员表、队长管理、分享与离队/解散。 */
+/** 在队视图：顶部操作条 + 档案摘要 + 槽位横排成员卡（银河奶牛式）；大厅与创建只在无队伍态出现。 */
 const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
   const t = useT()
   const party = useSocialStore(state => state.party)
@@ -563,8 +534,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const friends = useSocialStore(state => state.friends)
   const readyParty = useSocialStore(state => state.readyParty)
   const unreadyParty = useSocialStore(state => state.unreadyParty)
-  const partySubTab = useUiStore(state => state.partySubTab)
-  const setPartySubTab = useUiStore(state => state.setPartySubTab)
+  const [editing, setEditing] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmDisband, setConfirmDisband] = useState(false)
   const [confirmQuitSession, setConfirmQuitSession] = useState(false)
@@ -572,8 +542,6 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   if (!party) return null
 
   const isLeader = party.leaderId === myPlayerId
-  // 在队态只认 overview/lobby 两页签；match/create 等无队伍态残留值回落为概览。
-  const manageTab = partySubTab === 'lobby' ? 'lobby' : 'overview'
   const memberIds = new Set(party.members.map(member => member.playerId))
   const invitableFriends = friends.filter(friend => !memberIds.has(friend.playerId))
   // 同图共战（§21.13）：开启槽位即队伍容量；会话进行中阵容冻结，本人参战开关转为「退出斗法」散场确认。
@@ -582,108 +550,117 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const readyCount = party.members.filter(member => member.ready).length
   // 会话期间成员变动（离队/移出/收窄槽位）即散场：确认弹窗统一追加散场提示。
   const sessionSuffix = sessionActive ? t('social.confirm.sessionSuffix') : ''
+  const selfMember = party.members.find(member => member.playerId === myPlayerId)
+  // 本人参战开关：待命期自由切换；会话中取消即散场，先经确认弹窗（顶部按钮与本人卡勾选共用）。
+  const toggleSelfReady = (): void => {
+    if (sessionActive) setConfirmQuitSession(true)
+    else if (selfMember?.ready) unreadyParty()
+    else readyParty()
+  }
+  // 槽位阵列：队长固定首槽，其余按名册序；不足 openSlots 以空槽占位。
+  const sortedMembers = [...party.members].sort(
+    (a, b) => Number(b.playerId === party.leaderId) - Number(a.playerId === party.leaderId),
+  )
+  const slotMembers: (PartyMemberDto | null)[] = [...sortedMembers]
+  while (slotMembers.length < openSlots) slotMembers.push(null)
 
   return (
     <>
       <section className="party-card party-card--header">
-        <div className="party-header">
-          <h3 className="party-name">{party.name}</h3>
-          <span className="badge">{t(`social.activity.${party.activityKind}`)}</span>
-          <span className="badge">{nodeLabel(party.nodeId, nodeNames, t('social.field.anyNode'))}</span>
-          <span className={`badge ${party.isPublic ? '' : 'badge-danger'}`}>
-            {party.isPublic ? t('social.visibility.public') : t('social.visibility.private')}
+        <div className="party-actions">
+          <span className="party-actions-group">
+            {isLeader && (
+              <button onClick={() => setEditing(true)} type="button">{t('social.action.editProfile')}</button>
+            )}
+            {selfMember && (
+              <button
+                className={sessionActive ? 'danger' : 'confirm-primary'}
+                onClick={toggleSelfReady}
+                type="button"
+              >{sessionActive
+                ? t('social.action.quitParticipation')
+                : selfMember.ready ? t('social.action.leaveParticipation') : t('social.action.participate')}</button>
+            )}
           </span>
-          {party.minValuation > 0 && <span className="badge">{t('social.minValuationValue', { value: formatNumber(party.minValuation) })}</span>}
-          <span className="party-lobby-count">{t('social.memberCountOf', { count: party.members.length, slots: openSlots })}</span>
+          <span className="party-actions-group">
+            <button onClick={() => setConfirmLeave(true)} type="button">{t('social.action.leave')}</button>
+            {isLeader && (
+              <button className="danger" onClick={() => setConfirmDisband(true)} type="button">{t('social.action.disband')}</button>
+            )}
+          </span>
         </div>
+        <h3 className="party-name">{party.name}</h3>
+        <p className="party-meta">
+          {t(`social.activity.${party.activityKind}`)}
+          {' · '}{nodeLabel(party.nodeId, nodeNames, t('social.field.anyNode'))}
+          {' · '}{party.isPublic ? t('social.visibility.public') : t('social.visibility.private')}
+          {party.minValuation > 0 && ` · ${t('social.minValuationValue', { value: formatNumber(party.minValuation) })}`}
+          {' · '}{t('social.memberCountOf', { count: party.members.length, slots: openSlots })}
+        </p>
       </section>
 
-      <nav aria-label={t('social.tab.aria')} className="market-tabs party-mode-tabs" role="tablist">
-        {PARTY_TABS.map(tab => (
-          <button
-            aria-selected={manageTab === tab.id}
-            className={manageTab === tab.id ? 'active' : ''}
-            key={tab.id}
-            onClick={() => setPartySubTab(tab.id)}
-            role="tab"
-            type="button"
-          >{t(tab.labelKey)}</button>
-        ))}
-      </nav>
-
-      {manageTab === 'lobby' ? (
-        /* 大厅对在队成员开放浏览；散人条目上的「邀请」按钮仅队长可见（§21.5/§21.6）。 */
-        <LobbySection nodeNames={nodeNames} />
-      ) : (
-        <>
-          <PartySessionBanner nodeNames={nodeNames} />
-          <section className="party-card">
-            <h3>{t('social.members.heading')}</h3>
-            <div className="party-ready-row">
-              <span className="badge">{t('social.ready.count', { ready: readyCount, count: party.members.length })}</span>
-              <span className="party-card-desc">{t('social.ready.hint')}</span>
-            </div>
-            <ul className="party-member-list">
-              {party.members.map(member => (
-                <li className="party-member" key={member.playerId}>
-                  <span className="chat-entry-name">
+      <section className="party-card">
+        <div className="party-ready-row">
+          <span className="badge">{t('social.ready.count', { ready: readyCount, count: party.members.length })}</span>
+          <span className="party-card-desc">{t('social.ready.hint')}</span>
+        </div>
+        <ul className="party-slot-grid">
+          {slotMembers.map((member, index) => member === null ? (
+            <li className="party-slot" key={`empty-${index}`}>
+              <div className="party-slot-empty">{t('social.members.emptySlot')}</div>
+            </li>
+          ) : (
+            <li className={`party-slot${member.playerId === myPlayerId ? ' is-self' : ''}`} key={member.playerId}>
+              <div className="party-slot-card">
+                <div className="party-slot-head">
+                  <strong className="chat-entry-name">
                     {member.displayName}
                     {member.playerId === party.leaderId && <em className="chat-leader-mark">{t('social.members.leader')}</em>}
-                  </span>
+                  </strong>
                   <span className={`chat-presence chat-presence--${member.online ? 'online' : 'offline'}`}>
                     {member.online ? t('social.online') : t('social.offline')}
                   </span>
-                  <span className={`party-ready-tag${member.ready ? ' is-ready' : ''}`}>
-                    {member.ready ? t('social.ready.status') : t('social.ready.notReady')}
-                  </span>
+                </div>
+                <div className="party-slot-avatar" aria-hidden="true">
+                  <CharacterAvatar name={member.displayName} role="player" />
+                </div>
+                <div className="party-slot-meta">
                   <span className="party-member-valuation">{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>
-                  {member.playerId === myPlayerId && (
-                    <button
-                      className={sessionActive ? 'danger' : undefined}
-                      onClick={() => {
-                        // 会话中取消参战=散场（名册冻结铁律），需确认；待命期自由开关。
-                        if (sessionActive) setConfirmQuitSession(true)
-                        else if (member.ready) unreadyParty()
-                        else readyParty()
-                      }}
-                      type="button"
-                    >{sessionActive
-                      ? t('social.action.quitParticipation')
-                      : member.ready ? t('social.action.leaveParticipation') : t('social.action.participate')}</button>
+                </div>
+                <div className="party-slot-foot">
+                  {member.playerId === myPlayerId ? (
+                    <label className="party-slot-ready">
+                      <input checked={member.ready} onChange={toggleSelfReady} type="checkbox" />
+                      <span>{t('social.ready.status')}</span>
+                    </label>
+                  ) : (
+                    <span className={`party-ready-tag${member.ready ? ' is-ready' : ''}`}>
+                      {member.ready ? t('social.ready.status') : t('social.ready.notReady')}
+                    </span>
                   )}
                   {isLeader && member.playerId !== myPlayerId && (
                     <button onClick={() => setKickTarget({ playerId: member.playerId, name: member.displayName })} type="button">
                       {t('social.action.kick')}
                     </button>
                   )}
-                </li>
-              ))}
-            </ul>
-            {isLeader && invitableFriends.length > 0 && (
-              <div className="party-invite-row">
-                <span>{t('social.members.inviteFriend')}</span>
-                {invitableFriends.map(friend => (
-                  <button key={friend.playerId} onClick={() => gameClient.sendSocialAction('party.invite', friend.playerId)} type="button">
-                    {friend.displayName}
-                  </button>
-                ))}
+                </div>
               </div>
-            )}
-          </section>
+            </li>
+          ))}
+        </ul>
+        {isLeader && invitableFriends.length > 0 && (
+          <div className="party-invite-row">
+            <span>{t('social.members.inviteFriend')}</span>
+            {invitableFriends.map(friend => (
+              <button key={friend.playerId} onClick={() => gameClient.sendSocialAction('party.invite', friend.playerId)} type="button">
+                {friend.displayName}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
-          {isLeader && <LeaderProfileEditor nodeNames={nodeNames} />}
-          <ShareSection />
-
-          <section className="party-card party-card--danger">
-            <div className="party-card-actions">
-              <button onClick={() => setConfirmLeave(true)} type="button">{t('social.action.leave')}</button>
-              {isLeader && (
-                <button className="danger" onClick={() => setConfirmDisband(true)} type="button">{t('social.action.disband')}</button>
-              )}
-            </div>
-          </section>
-        </>
-      )}
+      {editing && <LeaderProfileModal nodeNames={nodeNames} onClose={() => setEditing(false)} />}
 
       <ConfirmDialog
         description={(isLeader ? t('social.confirm.leaveLeaderDesc') : t('social.confirm.leaveDesc')) + sessionSuffix}
