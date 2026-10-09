@@ -212,6 +212,7 @@ export const ReportInfoSection = memo(function ReportInfoSection({ report, nowSe
 /**
  * 单本账本的完整渲染块：可选头行（标题 + 徽标）+ 三小节。
  * 统计面板与记录面板的各账本分区共用同一结构。
+ * 行动内战斗单位统计不在账本块内——它归「战斗统计」独立面板（CombatStatsPanel）承载。
  */
 export const ReportBlock = memo(function ReportBlock({ report, title, badge, nowSeconds, className = '' }: {
   report: BattleReport

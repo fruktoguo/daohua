@@ -88,6 +88,8 @@ function normalizeStoredReport(report: BattleReport): BattleReport {
     dayIndex: storedNumber(report.dayIndex),
     duelWins: storedNumber(report.duelWins),
     duelLosses: storedNumber(report.duelLosses),
+    // 战斗单位统计仅进行中账本携带；归档/旧缓存统一归空列表。
+    combatants: storedArray(report.combatants),
   }
 }
 

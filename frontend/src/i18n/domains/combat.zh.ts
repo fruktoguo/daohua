@@ -102,6 +102,24 @@ export const combatZh = {
       duelRecord: '斗法 {wins} 胜 {losses} 负',
       stagedTitle: '斗法暂存区',
       historyTitle: '近期战报',
+      // 行动内战斗单位统计（独立「战斗统计」面板：伤害/承伤/减免按物理·术法分段，治疗分自动回复/其他治疗）
+      combatantAllyTag: '盟友',
+      combatantMonsterTag: '妖兽',
+      combatantRegenTag: '回复',
+      combatantOtherTag: '其他',
+    },
+    // 战斗统计独立面板（敌我页签 × 指标页签 + 全单位对比条形图）
+    stats: {
+      title: '战斗统计',
+      empty: '该侧暂无战斗数据。',
+      sideAlly: '我方',
+      sideEnemy: '敌方',
+      sideAria: '敌我切换',
+      metricAria: '统计指标切换',
+      dealt: '输出',
+      taken: '承伤',
+      mitigated: '减免',
+      healing: '治疗',
     },
     // 角色属性弹窗阵营徽章
     attrs: {

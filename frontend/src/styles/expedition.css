@@ -3216,6 +3216,136 @@
   color: #c9a2e8;
 }
 
+/* ===== 战斗统计独立面板（敌我页签 × 指标页签 + 全单位对比条形图） ===== */
+/* 分段配色面板级变量：物理=红、术法=蓝、自动回复=翠、其他治疗=紫（浅色主题在 theme.css 覆写） */
+.combat-stats-panel {
+  --cs-phys: var(--danger);
+  --cs-spell: #5b9bd5;
+  --cs-regen: var(--jade);
+  --cs-other: #b08ad4;
+}
+
+/* 头部右侧敌我页签与标题同排 */
+.combat-stats-panel .battle-report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.combat-stats-tabs button {
+  min-width: 0;
+  padding: 3px 10px;
+}
+
+/* 指标页签独占一行 */
+.combat-stats-metric-tabs {
+  border-bottom: 1px solid var(--gold-faint);
+  padding-bottom: 2px;
+}
+
+.combat-stats-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 对比行：名次 + 单位名 + 条形轨 + 总值 + 分段明细 */
+.combat-stats-row {
+  display: grid;
+  grid-template-columns: 16px minmax(72px, 1fr) minmax(0, 3fr) min-content;
+  grid-template-areas: "rank name bar value" ". . split split";
+  column-gap: 8px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.combat-stats-rank {
+  grid-area: rank;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-align: right;
+}
+
+.combat-stats-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gold-bright);
+  font-size: 11px;
+}
+
+.combat-stats-tag {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+.combat-stats-bar {
+  grid-area: bar;
+  display: flex;
+  height: 9px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(148, 103, 189, 0.08);
+}
+
+.combat-stats-seg {
+  display: block;
+  height: 100%;
+}
+
+.combat-stats-seg--physical { background: var(--cs-phys); }
+.combat-stats-seg--spell { background: var(--cs-spell); }
+.combat-stats-seg--regen { background: var(--cs-regen); }
+.combat-stats-seg--other { background: var(--cs-other); }
+
+.combat-stats-value {
+  grid-area: value;
+  color: var(--gold-bright);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.combat-stats-split {
+  grid-area: split;
+  display: flex;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 9px;
+  opacity: 0.75;
+}
+
+.combat-stats-split em {
+  font-style: normal;
+}
+
+/* 图例：与条形分段同色的小色块 + 文本 */
+.combat-stats-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.combat-stats-legend .combat-stats-seg {
+  display: inline-block;
+  width: 10px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 1px;
+  vertical-align: 1px;
+}
+
 /* 物品胶囊横排换行：auto-fill 网格在不定宽弹性列中会塌缩为单列，必须用 flex */
 .battle-report-items {
   display: flex;

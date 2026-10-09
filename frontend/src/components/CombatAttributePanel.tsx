@@ -1,13 +1,43 @@
 import { memo, useState } from 'react'
 import { PillStatLabel, type PillTone } from './PillLabel'
-import { formatNumber } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { PercentValue } from '../game/combatConstants'
-import type { Buff, CombatAttributes, MonsterDropDefinition } from '../game/types'
+import { useGameStore } from '../game/gameStore'
+import {
+  findAbilityInCatalog,
+  findEquipmentInCatalog,
+  findItemInCatalog,
+  resolveItemCategoryLabel,
+  resolveItemMetadata,
+  resolveItemSubCategory,
+  withItemGrade,
+} from '../game/ids'
+import { resolveItemIconUrl } from '../game/itemIcons'
+import type {
+  Buff,
+  CombatAbilitySlot,
+  CombatAttributes,
+  EquippedItem,
+  MonsterDropDefinition,
+} from '../game/types'
 import { useT } from '../i18n'
-import { describeBuffEffectLines, ItemDropReference } from './ItemDisplay'
+import { ConditionedTile } from './ConditionedTile'
+import { describeBuffEffectLines, ItemDropReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
 
-/** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊与增减伤属性 | 掉落明细（仅敌怪详情） */
-type CombatAttributeGroupTab = 'base' | 'special' | 'drops'
+/** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊与增减伤属性 | 功法与装备装配 | 掉落明细（仅敌怪详情） */
+type CombatAttributeGroupTab = 'base' | 'special' | 'loadout' | 'drops'
+
+/**
+ * 单位装配视图（详情弹窗「装配」Tab 的数据载荷）：
+ * 四类目标同构——玩家取本地 combat 装配、敌怪取静态目录功法槽、
+ * 盟友/斗法镜像取开打定格的 UnitInspect 一次性投影（与属性面板同一交付窗口）。
+ */
+export interface UnitLoadoutView {
+  /** 功法槽位（CombatAbilitySlot 形状：怪物为配表施放等级、玩家/镜像为参悟等级；null abilityId 为空槽不渲染） */
+  skills?: readonly CombatAbilitySlot[] | null
+  /** 已穿戴装备清单；未提供时装备分组不渲染（怪物等无装备概念的单位） */
+  equipment?: readonly EquippedItem[] | null
+}
 
 /**
  * 面板属性条目：文案按 `insight.combat.{key}` / `insight.combat.{key}Tooltip` 词条约定取。
@@ -32,18 +62,23 @@ const DEFAULT_EPSILON = 1e-9
  * 「基础」「特殊」两组以 Tab 切换，增减伤十六项整组收在「特殊」最下面，
  * 全部条目按默认值隐藏（点数 0 / 数值 0 不显示，暴击伤害恒显）。
  * 以及可选的增益（Buff）分区：条目平铺「名称×层数」，悬浮气泡展示具体效果行。
- * 敌怪详情额外提供 drops（静态配表 CombatantDefinition.drops）时追加第三个「掉落」Tab。
+ * 敌怪详情额外提供 drops（静态配表 CombatantDefinition.drops）时追加第四个「掉落」Tab；
+ * 提供 loadout 时追加「装配」Tab——功法瓦片悬浮详情与功法面板同构、装备瓦片与背包同构，
+ * 怪物等无装备概念的单位只展示功法分组。
  */
 export const CombatAttributePanel = memo(function CombatAttributePanel({
   attributes,
   buffs = [],
   drops,
+  loadout,
 }: {
   /** 服务端权威战斗属性终值（玩家 combat.attributes / 敌怪 attributes / 斗法镜像 opponentAttributes 同一形状） */
   attributes: CombatAttributes
   buffs?: readonly Buff[]
   /** 敌怪掉落条目（仅战场敌怪详情提供；undefined = 不渲染掉落 Tab） */
   drops?: readonly MonsterDropDefinition[]
+  /** 单位装配（功法槽 + 已穿戴装备）；null/undefined = 不渲染装配 Tab */
+  loadout?: UnitLoadoutView | null
 }): React.JSX.Element {
   const t = useT()
   const [activeGroup, setActiveGroup] = useState<CombatAttributeGroupTab>('base')
@@ -156,6 +191,15 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
         >
           {t('insight.combat.groupSpecial')}
         </button>
+        {loadout != null && (
+          <button
+            className={`insight-sub-tab-btn ${activeGroup === 'loadout' ? 'active' : ''}`}
+            onClick={() => setActiveGroup('loadout')}
+            type="button"
+          >
+            {t('insight.combat.groupLoadout')}
+          </button>
+        )}
         {drops !== undefined && (
           <button
             className={`insight-sub-tab-btn ${activeGroup === 'drops' ? 'active' : ''}`}
@@ -186,6 +230,10 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
         </div>
       )}
 
+      {activeGroup === 'loadout' && loadout != null && (
+        <UnitLoadoutSection loadout={loadout} />
+      )}
+
       {activeGroup === 'drops' && drops !== undefined && (
         drops.length > 0 ? (
           <div className="world-monster-drops-row">
@@ -213,6 +261,125 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
                   tone="gold"
                   tooltip={effectLines.length > 0 ? effectLines.join('；') : undefined}
                 />
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})
+
+/**
+ * 单位装配只读视图（详情弹窗「装配」Tab 内容区）：
+ * 功法瓦片与已学功法目录同构（元素丝带 + Lv 角标 + 图标/名 + 悬浮详情卡）；
+ * 装备瓦片与装备槽/背包同构（ItemTile + ItemTooltipTarget 详情卡）；
+ * 纯展示不带装配交互——槽位编辑只在功法面板、穿脱只在装备面板发生。
+ * 两组均为空时回退空态文案；equipment 未提供的单位（怪物）整组不渲染。
+ */
+const UnitLoadoutSection = memo(function UnitLoadoutSection({
+  loadout,
+}: {
+  loadout: UnitLoadoutView
+}): React.JSX.Element {
+  const t = useT()
+  const abilities = useGameStore(state => state.abilities)
+  const equipmentCatalog = useGameStore(state => state.equipment)
+  const itemCatalog = useGameStore(state => state.items)
+
+  const skills = (loadout.skills ?? []).filter(
+    (slot): slot is CombatAbilitySlot & { abilityId: string } => slot.abilityId !== null && slot.abilityId.length > 0,
+  )
+  const equipment = loadout.equipment ?? []
+
+  if (skills.length === 0 && equipment.length === 0) {
+    return <p className="nearby-empty">{t('insight.combat.loadoutEmpty')}</p>
+  }
+
+  return (
+    <div className="insight-base-layout">
+      {skills.length > 0 && (
+        <div className="insight-pill-group">
+          <h4 className="insight-pill-group-title">{t('insight.combat.loadoutAbilities')}</h4>
+          <div className="abilities-learned-grid">
+            {skills.map(slot => {
+              const ability = findAbilityInCatalog(abilities, slot.abilityId)
+              const iconUrl = resolveItemIconUrl(slot.abilityId)
+              const level = Math.max(1, Math.floor(slot.level))
+              // 丝带文案与已学功法目录同口径：非无属性优先元素名，否则按功法大类。
+              const ribbonLabel = ability?.element && ability.element !== 'none'
+                ? t(`combat.encounter.element.${ability.element}`)
+                : formatAbilityCategory(ability?.category)
+              return (
+                <ConditionedTile
+                  className="abilities-learned-cell"
+                  content={ability ? describeAbility(ability, level) : null}
+                  key={slot.abilityId}
+                  triggerClassName="item-grid-picker-tooltip"
+                >
+                  <span
+                    className="item-tile combat-ability-cell"
+                    data-rarity={ability?.discipline === 'internal' ? 'emperor' : 'mystic'}
+                  >
+                    <span aria-hidden="true" className="item-type-ribbon"><span>{ribbonLabel}</span></span>
+                    <span className="item-corner item-corner--top-right">Lv. {level}</span>
+                    {iconUrl
+                      ? <img alt={ability?.name ?? slot.abilityId} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+                      : <strong className="item-tile-name">{ability?.name ?? slot.abilityId}</strong>}
+                    <span aria-hidden="true" className="item-tile-glow" />
+                  </span>
+                </ConditionedTile>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {equipment.length > 0 && (
+        <div className="insight-pill-group">
+          <h4 className="insight-pill-group-title">{t('insight.combat.loadoutEquipment')}</h4>
+          <div className="abilities-learned-grid">
+            {equipment.map(item => {
+              const equipmentDef = findEquipmentInCatalog(equipmentCatalog, item.itemId)
+              const itemDef = findItemInCatalog(itemCatalog, item.itemId)
+              const meta = resolveItemMetadata(item.itemId)
+              // 元数据/等阶解析与装备槽位卡同口径：品质档按等阶覆盖，缺配表时回退物品兜底。
+              const metadata = withItemGrade(
+                meta ?? {
+                  label: equipmentDef?.name ?? item.itemId,
+                  glyph: '⚔️',
+                  tone: 'gray',
+                  category: resolveItemCategoryLabel(equipmentDef?.slot ?? 'equipment', t),
+                  rarity: 'mundane',
+                  rarityLabel: '',
+                  description: equipmentDef?.description ?? itemDef?.description ?? '',
+                  source: '',
+                  usage: '',
+                },
+                equipmentDef?.tier ?? meta?.level ?? 1,
+              )
+              const enhancementLevel = Math.max(0, Math.floor(item.enhancementLevel))
+              const baseName = equipmentDef?.name ?? itemDef?.name ?? item.itemId
+              const displayName = enhancementLevel > 0 ? `${baseName} +${enhancementLevel}` : baseName
+              return (
+                <ItemTooltipTarget
+                  definition={itemDef}
+                  enhancementLevel={enhancementLevel}
+                  equipmentDefinition={equipmentDef}
+                  itemId={item.itemId}
+                  key={item.itemId}
+                  metadata={metadata}
+                >
+                  <ItemTile
+                    category={resolveItemCategoryLabel(
+                      resolveItemSubCategory(item.itemId, itemDef, equipmentDef), t)}
+                    className="inventory-cell"
+                    enhancementLevel={enhancementLevel}
+                    itemId={item.itemId}
+                    level={metadata.level}
+                    name={displayName}
+                    rarity={metadata.rarity}
+                  />
+                </ItemTooltipTarget>
               )
             })}
           </div>

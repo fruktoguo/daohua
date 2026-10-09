@@ -37,6 +37,14 @@
   --scrollbar-thumb-hover: rgba(125, 82, 26, 0.6);
 }
 
+/* 战斗统计分段配色（浅色底加深对比）：物理=印红、术法=蓝、自动回复=翠、其他治疗=紫 */
+:root[data-theme="light"] .combat-stats-panel {
+  --cs-phys: #b23327;
+  --cs-spell: #2f6bb3;
+  --cs-regen: #2e7d4f;
+  --cs-other: #7d4fa0;
+}
+
 /* 纸白材质与墨色文字分别配对，不对图像或特效施加反色滤镜；背景平色，不叠渐变。 */
 :root[data-theme="light"] body {
   background: var(--bg);

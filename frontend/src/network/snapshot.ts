@@ -8,18 +8,21 @@
  * 3. 将扁平的分段载荷（Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue）及资产钱包投影为前端响应式 PlayerSnapshot 与 PlayerPatch。
  */
 import { calculateRealmProgress } from '../game/combatConstants'
-import { ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
+import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
 import type {
   ActionType,
+  AutoUseBarType,
   AutoUseSlot,
   BattleReport,
   Buff,
   CharacterVisual,
+  CombatAbilitySlot,
   CombatAttributes,
   CombatLoadout,
   CombatResourceState,
   CombatTrigger,
   DuelState,
+  EquippedItem,
   ExpeditionAlly,
   ExpeditionDuel,
   ExpeditionDuelEvent,
@@ -41,7 +44,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 21
+const SNAPSHOT_SCHEMA_VERSION = 23
 
 type JsonObject = Record<string, unknown>
 
@@ -347,12 +350,12 @@ function mapCharacterVisual(value: unknown, name: string): CharacterVisual | nul
 }
 
 function defaultAutoUseSlots(): QueueState['autoUseSlots'] {
-  // 战斗域双组栏位：前 3 槽药品栏（potion），后 3 槽通用栏（general）；其余行动域 3 槽通用栏。
-  return Object.fromEntries(ACTION_TYPES.map(type => [
-    type,
-    Array.from({ length: type === 'combat' ? 6 : 3 }, (_, index) => ({
+  // 战斗栏域双组栏位：前 3 槽药品栏（potion），后 3 槽通用栏（general）；其余栏域通用栏（历练 6 槽、技艺 3 槽）。
+  return Object.fromEntries(AUTO_USE_BARS.map(bar => [
+    bar,
+    Array.from({ length: AUTO_USE_BAR_SLOT_COUNT[bar] }, (_, index) => ({
       ...emptySlot(),
-      group: type === 'combat' ? (index < 3 ? 'potion' : 'general') : 'general',
+      group: bar === 'combat' ? (index < 3 ? 'potion' : 'general') : 'general',
     } as AutoUseSlot)),
   ])) as QueueState['autoUseSlots']
 }
@@ -454,11 +457,38 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
     opponentMaxHitpoints,
     opponentMaxManapoints,
     opponentAttributes,
+    // 镜像功法槽与已穿戴装备与 opponentAttributes 同帧一次性交付，未观察时缺省。
+    opponentSkills: mapUnitSkillSlots(row.opponentSkills, `行动 ${actionId} 的 duel.opponentSkills`),
+    opponentEquipment: mapEquippedItems(row.opponentEquipment, `行动 ${actionId} 的 duel.opponentEquipment`),
     opponentHitpoints,
     opponentManapoints,
     durationSeconds: finiteNumber(row.durationSeconds, `行动 ${actionId} 的 duel.durationSeconds`),
     events,
   }
+}
+
+/** 单位功法槽数组解码（CombatAbilitySlot[]）；缺省/ null 返回 null —— 按需投影字段未命中观察目标时不下发。 */
+function mapUnitSkillSlots(value: unknown, label: string): CombatAbilitySlot[] | null {
+  if (value === null || value === undefined) return null
+  return arrayValue(value).map((entry, index) => {
+    const slot = object(entry)
+    return {
+      abilityId: optionalString(slot.abilityId, `${label}[${index}].abilityId`),
+      level: finiteNumber(slot.level, `${label}[${index}].level`),
+    }
+  })
+}
+
+/** 已穿戴装备数组解码（EquippedItem[]）；缺省/ null 返回 null —— 与功法槽同一按需交付口径。 */
+function mapEquippedItems(value: unknown, label: string): EquippedItem[] | null {
+  if (value === null || value === undefined) return null
+  return arrayValue(value).map((entry, index) => {
+    const item = object(entry)
+    return {
+      itemId: identifierValue(item.itemId, `${label}[${index}].itemId`),
+      enhancementLevel: finiteNumber(item.enhancementLevel, `${label}[${index}].enhancementLevel`),
+    }
+  })
 }
 
 function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
@@ -561,6 +591,9 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
           attributes: ally.attributes === null || ally.attributes === undefined
             ? null
             : mapCombatAttributes(ally.attributes, `${label}.attributes`),
+          // 开打冻结功法槽与已穿戴装备与 attributes 同帧一次性交付，未观察时缺省。
+          skills: mapUnitSkillSlots(ally.skills, `${label}.skills`),
+          equipment: mapEquippedItems(ally.equipment, `${label}.equipment`),
         }
       })
   const selfIndex = row.selfIndex === null || row.selfIndex === undefined
@@ -597,11 +630,13 @@ function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
   for (const raw of arrayValue(value)) {
     const slot = object(raw)
     if (Object.keys(slot).length === 0) throw new Error('settings.autoUseSlots 中存在无效槽位。')
-    const actionType = stringValue(slot.actionType) as ActionType
+    const actionType = stringValue(slot.actionType) as AutoUseBarType
     const slotIndex = numberValue(slot.slotIndex, -1)
     const group = slot.group === 'potion' ? 'potion' : 'general'
-    if (!ACTION_TYPES.includes(actionType) || !Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= 3) continue
-    // 战斗域映射：potion 组占前 3 位，general 组占后 3 位；非战斗域只有 general 组。
+    // 未知栏域或越界索引直接丢弃（词表过滤，与服务端恢复边界同口径）。
+    if (!AUTO_USE_BARS.includes(actionType) || !Number.isInteger(slotIndex) || slotIndex < 0
+      || slotIndex >= (actionType === 'combat' ? 3 : AUTO_USE_BAR_SLOT_COUNT[actionType])) continue
+    // 战斗栏域映射：potion 组占前 3 位，general 组占后 3 位；其余栏域只有 general 组。
     const mappedIndex = actionType === 'combat'
       ? (group === 'potion' ? slotIndex : slotIndex + 3)
       : slotIndex
@@ -1130,7 +1165,34 @@ function mapBattleReport(value: unknown, name: string): BattleReport {
     dayIndex: numberValue(row.dayIndex),
     duelWins: numberValue(row.duelWins),
     duelLosses: numberValue(row.duelLosses),
+    // 行动内战斗单位统计：仅进行中行动账本携带；kind 契约数值枚举 0/1/2 容错字符串形态。
+    combatants: arrayValue(row.combatants).flatMap((item, index) => {
+      const entry = object(item)
+      const kind = mapBattleReportCombatantKind(entry.kind)
+      if (kind === null) return []
+      return [{
+        unitKey: identifierValue(entry.unitKey, `${name}.combatants[${index}].unitKey`),
+        kind,
+        displayName: stringValue(entry.displayName),
+        damageDealtPhysical: numberValue(entry.damageDealtPhysical),
+        damageDealtSpell: numberValue(entry.damageDealtSpell),
+        damageTakenPhysical: numberValue(entry.damageTakenPhysical),
+        damageTakenSpell: numberValue(entry.damageTakenSpell),
+        damageMitigatedPhysical: numberValue(entry.damageMitigatedPhysical),
+        damageMitigatedSpell: numberValue(entry.damageMitigatedSpell),
+        healingRegen: numberValue(entry.healingRegen),
+        healingOther: numberValue(entry.healingOther),
+      }]
+    }),
   }
+}
+
+/** 战斗单位类别归一化：契约数值枚举 0=self / 1=ally / 2=monster，容忍字符串形态；未知值丢弃条目。 */
+function mapBattleReportCombatantKind(value: unknown): BattleReport['combatants'][number]['kind'] | null {
+  if (value === 0 || value === 'self') return 'self'
+  if (value === 1 || value === 'ally') return 'ally'
+  if (value === 2 || value === 'monster') return 'monster'
+  return null
 }
 
 /** 可空账本字段解析：null/undefined → null，其余按 BattleReport 校验 */

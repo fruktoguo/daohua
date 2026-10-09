@@ -5,6 +5,13 @@
 export type ActionType = 'cultivation' | 'exploration' | 'alchemy' | 'combat' | 'enhancement'
 
 /**
+ * 自动使用物品栏域（独立于行动大类的归属键，见总纲 §6.2.3）：
+ * exploration 历练栏涵盖修炼/历练两大类行动；alchemy/forging/talisman/formation
+ * 为制造技艺栏（制造大类行动按 technique 归属）；enhancement 强化栏；combat 战斗栏。
+ */
+export type AutoUseBarType = 'exploration' | 'alchemy' | 'forging' | 'talisman' | 'formation' | 'enhancement' | 'combat'
+
+/**
  * 生活技艺标识（七技）：炼丹 alchemy、炼器 forging、符箓 talisman、强化 enhancement、
  * 阵法 formation、采集 gathering、挖掘 mining。配表行动经 technique 字段归属到对应技艺。
  */
@@ -360,8 +367,8 @@ export interface QueueState {
   autoTravelEnabled: boolean
   /** 队列是否处于手动暂停 */
   paused: boolean
-  /** 各行动类型对应的自动消耗品槽位映射 */
-  autoUseSlots: Record<ActionType, AutoUseSlot[]>
+  /** 各物品栏域对应的自动消耗品槽位映射（历练 6 槽、技艺 3 槽、战斗药品 3+通用 3） */
+  autoUseSlots: Record<AutoUseBarType, AutoUseSlot[]>
 }
 
 /**
@@ -435,6 +442,10 @@ export interface ExpeditionAlly {
   respawnAtSeconds?: number | null
   /** 开打冻结战斗属性面板（与玩家 combat.attributes 同一形状）；仅被观察目标命中时随快照携带 */
   attributes?: CombatAttributes | null
+  /** 开打冻结功法槽位（CombatAbilitySlot 形状）；与 attributes 同帧一次性交付，未观察时为 null */
+  skills?: CombatAbilitySlot[] | null
+  /** 开打定格已穿戴装备（仅装配展示用）；与 attributes 同帧一次性交付，未观察时为 null */
+  equipment?: EquippedItem[] | null
 }
 
 /**
@@ -547,6 +558,42 @@ export interface BattleReportTechniqueExp {
 }
 
 /**
+ * 行动内战斗单位类别（wire 数值枚举）：本机玩家 / 参与会话盟友 / 怪物类型桶。
+ * 斗法对方玩家队伍不入账；同类型怪物合并为一个 monster 单位。
+ */
+export type BattleReportCombatantKind = 'self' | 'ally' | 'monster'
+
+/**
+ * 行动内单个统计单位的战斗累计行：伤害输出/实收/减免按物理·术法分列，
+ * 治疗分自动回复（healingRegen）与其他治疗输出（healingOther）。
+ * 减免 = 命中时原始威力 − 实际落账伤害。
+ */
+export interface BattleReportCombatant {
+  /** 单位键：player / ally:{成员下标} / monster:{怪物定义 ID} */
+  unitKey: string
+  /** 单位类别 */
+  kind: BattleReportCombatantKind
+  /** 展示名（道号/成员名/怪物名） */
+  displayName: string
+  /** 造成物理伤害 */
+  damageDealtPhysical: number
+  /** 造成术法伤害 */
+  damageDealtSpell: number
+  /** 实收物理伤害 */
+  damageTakenPhysical: number
+  /** 实收术法伤害 */
+  damageTakenSpell: number
+  /** 减免物理伤害 */
+  damageMitigatedPhysical: number
+  /** 减免术法伤害 */
+  damageMitigatedSpell: number
+  /** 自动回复量（战内 5 秒 tick 与行动期间战外自然回复） */
+  healingRegen: number
+  /** 其他治疗输出量（技能治疗、气血汲取、药品瞬回） */
+  healingOther: number
+}
+
+/**
  * 行动收益账本（当前行动实例 / 离线挂机 / 每日统计 / 归档历史共用结构）。
  * reportId 为行动实例 ID；离线账本固定 "offline"，每日账本固定 "daily"（两者 actionId/actionName 允许空串）。
  */
@@ -597,6 +644,8 @@ export interface BattleReport {
   duelWins: number
   /** 本场行动内斗法负场数 */
   duelLosses: number
+  /** 行动内战斗单位统计（仅进行中行动账本下发；归档账本为空列表） */
+  combatants: BattleReportCombatant[]
 }
 
 /**
@@ -657,6 +706,10 @@ export interface ExpeditionDuel {
   opponentMaxManapoints?: number | null
   /** 对手镜像完整战斗属性（撮合时冻结；按需投影——仅观察目标命中镜像位时随快照携带） */
   opponentAttributes?: CombatAttributes | null
+  /** 对手镜像功法槽位（撮合时冻结；与 opponentAttributes 同帧一次性交付） */
+  opponentSkills?: CombatAbilitySlot[] | null
+  /** 对手镜像已穿戴装备（撮合时冻结；与 opponentAttributes 同帧一次性交付） */
+  opponentEquipment?: EquippedItem[] | null
   /** 对手当前生命值（随回放事件推进） */
   opponentHitpoints: number
   /** 对手当前灵力值（随回放事件推进） */
@@ -840,8 +893,8 @@ export interface ItemDefinition {
   sellPrice: number
   /** 是否允许市场挂单交易 */
   isTradable: boolean
-  /** 可挂载自动使用槽位的行动类型 */
-  usableActionTypes: ActionType[]
+  /** 可挂载自动使用槽位的物品栏域集合（自动消耗品准入声明） */
+  usableBars: AutoUseBarType[]
   /** 使用冷却秒数 */
   cooldownSeconds: number
   /** 使用后即时恢复气血 */
@@ -1124,8 +1177,8 @@ export interface CombatantDefinition {
   budgetCost?: number
   /** 掉落条目列表（先按 dropChance 判定，再在数量区间均匀抽取） */
   drops?: MonsterDropDefinition[]
-  /** 该单位可使用的功法 ID 列表 */
-  abilityIds: string[]
+  /** 该单位可使用的功法槽位（abilityId + 配表施放等级；怪物无装备概念，详情「装配」Tab 只展示功法） */
+  skills: CombatAbilitySlot[]
 }
 
 /**

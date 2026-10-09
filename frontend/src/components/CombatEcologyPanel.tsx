@@ -74,7 +74,9 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
   )
 
   const drops = enemy.drops ?? []
-  const abilityNames = enemy.abilityIds
+  const abilityNames = enemy.skills
+    .map(slot => slot.abilityId)
+    .filter((id): id is string => id !== null && id.length > 0)
     .map(id => findAbilityInCatalog(abilities, id)?.name ?? id)
     .filter(name => name.length > 0)
   const rewardParts = [

@@ -4,17 +4,18 @@ import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
+import { useSocialStore } from '../game/socialStore'
 import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatAbilitySlot, CombatActionState, CombatAttributes, EquippedItem, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
-import { CombatAttributePanel } from './CombatAttributePanel'
+import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
 import { ConfirmDialog } from './ConfirmDialog'
 import { describeBuffEffectLines } from './ItemDisplay'
 import { useCombatVfx } from '../vfx/useCombatVfx'
@@ -1218,6 +1219,7 @@ function ArenaIdleCard(): React.JSX.Element {
 function CharacterAttributeModal({
   actorId,
   attributes,
+  loadout,
   name,
   role = 'player',
   visual,
@@ -1230,6 +1232,8 @@ function CharacterAttributeModal({
   actorId?: string | null
   /** 服务端权威战斗属性终值（缺省时面板不渲染数值区） */
   attributes: CombatAttributes | null
+  /** 单位装配（功法槽 + 已穿戴装备）；null/undefined 时属性面板不渲染「装配」Tab */
+  loadout?: UnitLoadoutView | null
   name?: string | null
   role?: 'player' | 'enemy'
   visual?: CharacterVisual | null
@@ -1263,7 +1267,7 @@ function CharacterAttributeModal({
         </div>
       </header>
       {attributes
-        ? <CombatAttributePanel attributes={attributes} buffs={buffs} drops={drops} />
+        ? <CombatAttributePanel attributes={attributes} buffs={buffs} drops={drops} loadout={loadout} />
         : <p className="nearby-empty">{t('insight.combat.attributesLoading')}</p>}
     </Modal>
   )
@@ -1313,6 +1317,10 @@ interface AllyDisplayState {
   action?: CombatActionState | null
   /** 开打冻结战斗属性（详情弹窗唯一数值来源；未登记观察目标时为 null） */
   attributes?: CombatAttributes | null
+  /** 开打冻结功法槽（按需投影，与 attributes 同帧交付；未观察时为 null） */
+  skills?: CombatAbilitySlot[] | null
+  /** 开打定格已穿戴装备（按需投影，与 attributes 同帧交付；未观察时为 null） */
+  equipment?: EquippedItem[] | null
 }
 
 /**
@@ -1500,11 +1508,19 @@ export const CombatArena = memo(function CombatArena({
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
   // 详情弹窗目标：'player'、`enemy:{下标}`（同波多敌人逐只可查）或 `ally:{memberIndex}`（组队盟友）。
   const [inspectedActor, setInspectedActor] = useState<string | null>(null)
+  // 玩家本地装配：详情弹窗「装配」Tab 的玩家数据源（功法槽 + 已穿戴装备，实时值）。
+  const combatLoadout = useGameStore(state => state.combat)
   // 终止当前行动的二次确认目标（队首 entryId）；目标离开队首（自然完成/被移除）时自动失效收起弹窗
   const [pendingStopEntryId, setPendingStopEntryId] = useState<string | null>(null)
+  // 组队讨伐终止确认：参与行动不可 action.remove，「终止」语义=取消参战（party.unready 散场）
+  const [pendingQuitSession, setPendingQuitSession] = useState(false)
+  const unreadyParty = useSocialStore(state => state.unreadyParty)
   // 单位属性缓存：敌方/镜像属性为定义级静态值、盟友属性为开打冻结面板，服务端仅在 UnitInspect 登记后一次性交付；
   // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名} / ally:{playerId}。
   const inspectedAttributesCacheRef = useRef(new Map<string, CombatAttributes>())
+  // 装配缓存：盟友/斗法镜像的功法与装备与属性面板同一按需交付窗口（一次性投影），
+  // 按身份键缓存复用，key 口径与属性缓存一致（ally:{playerId} / duel:{对手名}）。
+  const inspectedLoadoutCacheRef = useRef(new Map<string, UnitLoadoutView>())
   // 尸体留存：服务端切搜寻相位即清空 enemies[]，这里在战斗相位逐帧缓存当波展示态，
   // 胜利转入搜寻后整波以尸体形态继续渲染，倒数最后一秒统一播消散动画后随新波入场移除。
   const combatWaveRef = useRef<{ entryId: string; entries: EnemyDisplayState[] } | null>(null)
@@ -1533,14 +1549,24 @@ export const CombatArena = memo(function CombatArena({
   // 一次性交付落账：wire 携带属性时按身份写入缓存，后续快照不再携带也能稳定显示。
   useEffect(() => {
     const cache = inspectedAttributesCacheRef.current
+    const loadoutCache = inspectedLoadoutCacheRef.current
     for (const enemy of expedition?.enemies ?? []) {
       if (enemy.attributes) cache.set(`enemy:${enemy.enemyId}`, enemy.attributes)
     }
     for (const ally of expedition?.allies ?? []) {
       if (ally.attributes) cache.set(`ally:${ally.playerId}`, ally.attributes)
+      // 功法槽/装备与属性同帧一次性交付；空数组同为合法交付（开打确无装配），均需落缓存。
+      if (ally.skills || ally.equipment)
+        loadoutCache.set(`ally:${ally.playerId}`, { skills: ally.skills, equipment: ally.equipment })
     }
     if (expedition?.duel?.opponentAttributes && expedition.duel.opponentName)
       cache.set(`duel:${expedition.duel.opponentName}`, expedition.duel.opponentAttributes)
+    if (expedition?.duel?.opponentName
+      && (expedition.duel.opponentSkills || expedition.duel.opponentEquipment))
+      loadoutCache.set(`duel:${expedition.duel.opponentName}`, {
+        skills: expedition.duel.opponentSkills,
+        equipment: expedition.duel.opponentEquipment,
+      })
   }, [expedition])
   const activeAction = current ? actions.find(action => action.id === current.actionId) : null
   const activeEncounterId = expedition?.encounterId ?? activeAction?.combatEncounterId
@@ -1638,6 +1664,8 @@ export const CombatArena = memo(function CombatArena({
         isSelf: ally.memberIndex === selfIndex,
         action: allyActionState(ally, battleElapsed, serverNow, abilities, respawnMs, respawnName, expedition?.phase),
         attributes: ally.attributes ?? null,
+        skills: ally.skills ?? null,
+        equipment: ally.equipment ?? null,
       }))
   }, [expedition?.allies, expedition?.selfIndex, expedition?.battleElapsedSeconds, expedition?.phase, expedition?.encounterId, expedition?.playerRespawnDurationSeconds, encounters, abilities, t])
 
@@ -1797,6 +1825,34 @@ export const CombatArena = memo(function CombatArena({
     const combatant = findCombatantInCatalog(encounters, maps, inspectedEnemy.enemyId)
     return combatant?.drops ?? []
   }, [inspectedEnemy?.enemyId, encounters, maps])
+
+  // 详情弹窗「装配」Tab 数据源（四类目标同构 UnitLoadoutView）：
+  // 玩家=本地 combat 装配实时值；敌怪=静态目录功法槽（无装备概念，equipment 缺省即不渲染分组）；
+  // 盟友/斗法镜像=UnitInspect 一次性交付，wire 未携带时回退身份缓存（与属性缓存同一口径）。
+  const inspectedLoadout = useMemo<UnitLoadoutView | null>(() => {
+    if (inspectedActor === null) return null
+    if (inspectedEnemy) {
+      if (inspectedEnemy.enemyId !== null) {
+        return { skills: findCombatantInCatalog(encounters, maps, inspectedEnemy.enemyId)?.skills ?? [] }
+      }
+      const cached = inspectedLoadoutCacheRef.current.get(`duel:${expedition?.duel?.opponentName ?? 'opponent'}`)
+      return {
+        skills: expedition?.duel?.opponentSkills ?? cached?.skills ?? [],
+        equipment: expedition?.duel?.opponentEquipment ?? cached?.equipment ?? null,
+      }
+    }
+    if (inspectedAlly) {
+      const cached = inspectedLoadoutCacheRef.current.get(`ally:${inspectedAlly.playerId}`)
+      return {
+        skills: inspectedAlly.skills ?? cached?.skills ?? [],
+        equipment: inspectedAlly.equipment ?? cached?.equipment ?? null,
+      }
+    }
+    return {
+      skills: combatLoadout?.abilitySlots ?? [],
+      equipment: combatLoadout?.equipment ?? [],
+    }
+  }, [inspectedActor, inspectedEnemy, inspectedAlly, expedition?.duel, encounters, maps, combatLoadout])
 
   // 待终止目标仅在仍为队首时有效；自然完成或被队列他处移除后，确认弹窗自动收起
   const stopTarget = current && current.entryId === pendingStopEntryId ? current : null
@@ -1975,9 +2031,10 @@ export const CombatArena = memo(function CombatArena({
             <button
               className="danger"
               onClick={() => {
-                // 行动参与会话不受个人终止：提示回队伍页取消准备/离队散场
+                // 行动参与会话不受 action.remove：「终止」= 取消参战，经散场确认派发 party.unready；
+                // 散场后挂起的个人队首行动由服务端自动恢复续跑（§21.13）
                 if (hasActionParticipation(current)) {
-                  useGameStore.getState().setNotice(t('social.session.cancelHint'))
+                  setPendingQuitSession(true)
                   return
                 }
                 setPendingStopEntryId(current.entryId)
@@ -2006,10 +2063,19 @@ export const CombatArena = memo(function CombatArena({
         open={stopTarget !== null}
         title={t('combat.arena.stopConfirmTitle')}
       />
+      <ConfirmDialog
+        danger
+        description={t('social.confirm.quitSessionDesc')}
+        onClose={() => setPendingQuitSession(false)}
+        onConfirm={() => unreadyParty()}
+        open={pendingQuitSession}
+        title={t('social.confirm.quitSessionTitle')}
+      />
       <CharacterAttributeModal
         actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
         attributes={inspectedAttributes}
         buffs={inspectedActor === 'player' ? buffs : []}
+        loadout={inspectedLoadout}
         drops={inspectedDrops}
         name={inspectedEnemy?.name ?? inspectedAlly?.name ?? playerName}
         onClose={() => setInspectedActor(null)}
