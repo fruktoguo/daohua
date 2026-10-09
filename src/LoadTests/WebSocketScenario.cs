@@ -5,7 +5,7 @@ namespace DaoHua.LoadTests;
 /// 对 <c>--url</c> 指向的 ws(s) 端点建立 <c>--players</c> 个并发连接，
 /// 每个连接完成 hello/helloAck/snapshot 协议握手后持续接收快照增量直到 <c>--duration-seconds</c> 到期。
 /// 服务端 /ws 端点要求 Cookie 会话；<c>--require-server</c> 时先通过 HTTP 注册压测账号获取会话，
-/// 注册受限流或失败时降级为匿名 Upgrade 探测（会被 401，仅验证服务可达与应答耗时）。
+/// require-server 下注册、握手或业务回执未覆盖完整目标集合直接失败；匿名探测只验证服务可达。
 /// </summary>
 public static class WebSocketScenario
 {
@@ -19,7 +19,7 @@ public static class WebSocketScenario
     private const string SessionCookieName = "daohua_session";
     /// <summary>注册并发上限：服务端 auth 限流为每源 IP 12 次/分钟，压测侧主动降速。</summary>
     private const int RegisterConcurrency = 4;
-    /// <summary>注册请求之间的最小间隔（毫秒），避免瞬时打满固定窗口。</summary>
+    /// <summary>注册请求之间的最小间隔（毫秒）；请求按测试账号分散 X-Forwarded-For 以覆盖真实目标集合。</summary>
     private const int RegisterIntervalMilliseconds = 250;
     /// <summary>单个账号注册遇 429 时的最大重试次数。</summary>
     private const int RegisterMaxRetries = 1;
@@ -50,7 +50,7 @@ public static class WebSocketScenario
 
         var webSocketUri = DeriveWebSocketUri(options.ServerUri);
         var httpBaseUri = DeriveHttpBaseUri(options.ServerUri);
-        var stats = new WebSocketStats();
+        var stats = new WebSocketStats { TargetPlayers = options.Players, DurationSeconds = options.DurationSeconds };
 
         // 鉴权阶段：仅在 --require-server 下注册压测账号；注册不占压测计时窗口。
         string?[] cookies = new string?[options.Players];
@@ -95,10 +95,19 @@ public static class WebSocketScenario
         var serverResponseRate = attempted == 0 ? 0 : (double)(upgraded + rejected) / attempted;
 
         var errors = 0;
+        if (options.RequireServer && registered != options.Players)
+        {
+            errors++;
+            warnings.Add($"认证账号未闭环：仅 {registered}/{options.Players} 个账号获得会话，拒绝匿名/部分认证降级。");
+        }
         if (registered > 0)
         {
             if (upgradeSuccessRate < ConnectSuccessRateGate) errors++;
-            if (helloAckP99 > HelloAckP99BudgetMilliseconds) errors++;
+            if (helloAckP99 > HelloAckP99BudgetMilliseconds)
+            {
+                errors++;
+                warnings.Add($"HelloAck P99 {helloAckP99:F1}ms 超过 {HelloAckP99BudgetMilliseconds:F0}ms 预算。");
+            }
         }
         else
         {
@@ -116,6 +125,20 @@ public static class WebSocketScenario
         if (handshaken < upgraded)
         {
             warnings.Add($"升级成功但未完成 helloAck+snapshot 握手的连接: {upgraded - handshaken}。");
+        }
+        var pongFrames = Interlocked.Read(ref stats.PongFrames);
+        var commandResults = Interlocked.Read(ref stats.CommandResults);
+        var businessConnections = Interlocked.Read(ref stats.BusinessConnections);
+        if (registered > 0 && pongFrames < handshaken)
+        {
+            errors++;
+            warnings.Add($"认证连接业务回程不完整：仅收到 {pongFrames}/{handshaken} 个 Pong。");
+        }
+        if (options.RequireServer && (handshaken != options.Players || businessConnections != options.Players
+            || commandResults != Interlocked.Read(ref stats.CommandsSent) || failed != 0))
+        {
+            errors++;
+            warnings.Add($"认证业务目标未闭环：握手 {handshaken}/{options.Players}，成功业务连接 {businessConnections}/{options.Players}，回执 {commandResults}/{stats.CommandsSent}。");
         }
 
         return new LoadTestReport(
@@ -176,9 +199,19 @@ public static class WebSocketScenario
                         max = stats.FirstSnapshotBytes.Max(),
                         average = Math.Round(stats.FirstSnapshotBytes.Average(), 1)
                     },
+                ["business"] = new
+                {
+                    connections = businessConnections,
+                    commandsSent = Interlocked.Read(ref stats.CommandsSent),
+                    commandResults,
+                    commandSuccessRate = stats.CommandsSent == 0 ? 0 : Math.Round((double)commandResults / stats.CommandsSent, 4),
+                    commandLatencyMs = LatencySummary.Describe(stats.CommandMilliseconds)
+                },
                 ["frames"] = new
                 {
                     snapshots = Interlocked.Read(ref stats.SnapshotFrames),
+                    pings = Interlocked.Read(ref stats.PingFrames),
+                    pongs = pongFrames,
                     deltas = Interlocked.Read(ref stats.DeltaFrames),
                     logBatches = Interlocked.Read(ref stats.LogBatchFrames),
                     errors = Interlocked.Read(ref stats.ErrorFrames)
@@ -204,7 +237,8 @@ public static class WebSocketScenario
         List<string> warnings,
         CancellationToken cancellationToken)
     {
-        using var handler = new SocketsHttpHandler { MaxConnectionsPerServer = RegisterConcurrency };
+        // 账号代表不同浏览器，禁止共享服务端签发的设备 Cookie 或会话 Cookie。
+        using var handler = new SocketsHttpHandler { MaxConnectionsPerServer = RegisterConcurrency, UseCookies = false };
         using var client = new HttpClient(handler) { BaseAddress = httpBaseUri, Timeout = RegisterTimeout };
         // runToken 使多次运行的账号名互不冲突（login_normalized 有唯一约束）。
         var runToken = Guid.NewGuid().ToString("N")[..8];
@@ -230,7 +264,8 @@ public static class WebSocketScenario
                     await Task.Delay(RegisterIntervalMilliseconds, cancellationToken);
                     // 服务端账号规则为 [a-zA-Z0-9_]{3,32}，连字符会被拒绝。
                     var account = $"loadtest_ws_{runToken}_{captured}";
-                    cookies[captured] = await TryRegisterAsync(client, account, password, stats, cancellationToken);
+                    cookies[captured] = await TryRegisterAsync(
+                        client, account, password, $"10.{captured / 250 + 1}.{captured % 250 + 1}.1", stats, cancellationToken);
                     if (cookies[captured] is null)
                     {
                         Interlocked.Increment(ref stats.RegistrationFailed);
@@ -262,6 +297,7 @@ public static class WebSocketScenario
         HttpClient client,
         string account,
         string password,
+        string clientAddress,
         WebSocketStats stats,
         CancellationToken cancellationToken)
     {
@@ -277,7 +313,10 @@ public static class WebSocketScenario
             {
                 using var content = new ByteArrayContent(payload);
                 content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-                using var response = await client.PostAsync("/api/v1/auth/register", content, cancellationToken);
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/register") { Content = content };
+                // 本机隔离压测用独立来源模拟真实玩家；外部入口不伪造受信代理头。
+                if (client.BaseAddress!.IsLoopback) request.Headers.Add("X-Forwarded-For", clientAddress);
+                using var response = await client.SendAsync(request, cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
                     return ExtractSessionCookie(response);
@@ -424,6 +463,27 @@ public static class WebSocketScenario
         var handshakeCompleted = false;
         var gotHelloAck = false;
         var gotSnapshot = false;
+        var commandStarted = 0L;
+        var commandRequestId = Guid.Empty;
+        var businessCompleted = false;
+        var businessSequence = 2L;
+        async Task SendBusinessCommandAsync()
+        {
+            commandRequestId = Guid.NewGuid();
+            commandStarted = Stopwatch.GetTimestamp();
+            var commandFrame = WireEnvelopeCodec.EncodeJson(
+                WireMessageType.Command, commandRequestId, ++businessSequence,
+                new CommandEnvelopeDto(commandRequestId.ToString("D"), "queue.configure",
+                    JsonSerializer.SerializeToElement(new
+                    {
+                        requestId = commandRequestId.ToString("D"),
+                        loopEnabled = businessSequence % 2 == 0
+                    }), 0));
+            await socket.SendAsync(commandFrame, WebSocketMessageType.Binary, true, cancellationToken);
+            Interlocked.Increment(ref stats.CommandsSent);
+            Interlocked.Increment(ref stats.SentFrames);
+            Interlocked.Add(ref stats.SentBytes, commandFrame.Length);
+        }
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
         {
@@ -475,6 +535,32 @@ public static class WebSocketScenario
                         gotSnapshot = true;
                         Interlocked.Increment(ref stats.SnapshotFrames);
                         break;
+                    case WireMessageType.Pong:
+                        Interlocked.Increment(ref stats.PongFrames);
+                        break;
+                    case WireMessageType.CommandResult:
+                        if (envelope.RequestId == commandRequestId
+                            && WireEnvelopeCodec.TryDeserializeJson<CommandResultDto>(envelope, out var commandResult)
+                            && commandResult?.Succeeded == true)
+                        {
+                            Interlocked.Increment(ref stats.CommandResults);
+                            stats.CommandMilliseconds.Add(Stopwatch.GetElapsedTime(commandStarted).TotalMilliseconds);
+                            if (!businessCompleted)
+                            {
+                                businessCompleted = true;
+                                Interlocked.Increment(ref stats.BusinessConnections);
+                            }
+                            if (deadline - DateTimeOffset.UtcNow > TimeSpan.FromSeconds(2))
+                            {
+                                await Task.Delay(1_000, cancellationToken);
+                                await SendBusinessCommandAsync();
+                            }
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref stats.ProtocolErrors);
+                        }
+                        break;
                     case WireMessageType.SnapshotDelta:
                         Interlocked.Increment(ref stats.DeltaFrames);
                         break;
@@ -491,6 +577,20 @@ public static class WebSocketScenario
                 {
                     handshakeCompleted = true;
                     Interlocked.Increment(ref stats.HandshakeCompleted);
+                    // 每条连接完成自身握手后立即进入业务窗口；不能让少数慢连接阻塞已就绪连接，
+                    // 认证业务回执必须覆盖真实已建立的全目标连接。
+                    var pingRequestId = Guid.NewGuid();
+                    var pingFrame = WireEnvelopeCodec.EncodeJson(
+                        WireMessageType.Ping,
+                        pingRequestId,
+                        2,
+                        new { clientTime = DateTimeOffset.UtcNow });
+                    await socket.SendAsync(pingFrame, WebSocketMessageType.Binary, true, cancellationToken);
+                    Interlocked.Increment(ref stats.PingFrames);
+                    Interlocked.Increment(ref stats.SentFrames);
+                    Interlocked.Add(ref stats.SentBytes, pingFrame.Length);
+
+                    await SendBusinessCommandAsync();
                 }
             }
         }
@@ -552,6 +652,8 @@ public static class WebSocketScenario
     /// </summary>
     private sealed class WebSocketStats
     {
+        public int TargetPlayers;
+        public int DurationSeconds;
         public long Attempted;
         public long Upgraded;
         public long Rejected;
@@ -569,6 +671,12 @@ public static class WebSocketScenario
         public long DeltaFrames;
         public long LogBatchFrames;
         public long ErrorFrames;
+        public long PingFrames;
+        public long PongFrames;
+        public long CommandsSent;
+        public long CommandResults;
+        public long BusinessConnections;
+        public readonly ConcurrentBag<double> CommandMilliseconds = new();
         public readonly ConcurrentBag<double> ConnectMilliseconds = new();
         public readonly ConcurrentBag<double> HelloAckMilliseconds = new();
         public readonly ConcurrentBag<long> FirstSnapshotBytes = new();

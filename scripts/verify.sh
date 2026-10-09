@@ -20,7 +20,7 @@ node --version
 npm --version
 
 printf '%s\n' '==> 安装前端锁定依赖'
-npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+npm --prefix frontend ci --include=dev --ignore-scripts --no-audit --no-fund
 
 printf '%s\n' '==> Release 构建'
 dotnet build Game.slnx --configuration Release --disable-build-servers --nologo

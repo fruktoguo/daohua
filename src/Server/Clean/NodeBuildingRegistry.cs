@@ -26,7 +26,18 @@ public enum NodeBuildingWriteStatus : byte
 public sealed record NodeBuildingWriteOutcome(
     NodeBuildingWriteStatus Status,
     NodeBuildingState? State = null,
-    IReadOnlyDictionary<string, double>? AppliedMaterials = null);
+    IReadOnlyDictionary<string, double>? AppliedMaterials = null,
+    EconomyTransactionResult? Economy = null);
+
+/// <summary>建筑贡献与资产、回执同事务提交所需的纯值上下文，不携带数据库或异步副作用。</summary>
+public sealed record NodeBuildingContributionTransaction(
+    Guid PlayerId,
+    Guid RequestId,
+    string IdempotencyKey,
+    string TransactionType,
+    DateTimeOffset OccurredAt,
+    IReadOnlyList<SectionWrite>? Sections = null,
+    IReadOnlyList<CommandReceipt>? Receipts = null);
 
 /// <summary>
 /// 节点公共建筑持久化适配：game.node_buildings 按 (node_id, building_id) 主键读写，
@@ -105,45 +116,116 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
-    /// 贡献材料事务：行锁内读活行 → 按活行剩余需求封顶 → 锁内回调扣减背包 → 合并写回。
-    /// 封顶基数只认活行，跨实例并发贡献在行锁上串行合并，既不丢也不重复接纳；
-    /// 扣减失败即整体回滚，材料扣减与贡献登记同生同灭。
+    /// 贡献材料事务：先按幂等键读取历史经济事务，再锁建筑活行计算实际接纳量；资产、建筑、回执和分段写回
+    /// 均在同一个 Serializable 事务中完成。历史幂等命中时不重新按当前活行封顶，也不更新建筑行。
     /// </summary>
     public async ValueTask<NodeBuildingWriteOutcome> ContributeAsync(
-        string nodeId,
-        string buildingId,
-        BuildingDefinition definition,
-        IReadOnlyDictionary<string, double> requested,
-        Func<IReadOnlyDictionary<string, double>, ValueTask<bool>> commitDebitAsync,
+        string nodeId, string buildingId, BuildingDefinition definition,
+        IReadOnlyDictionary<string, double> requested, NodeBuildingContributionTransaction context,
+        CancellationToken cancellationToken)
+    {
+        EconomyCommitOutcomeUnknownException? unknown = null;
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var confirmation = unknown is null ? null : new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                return await ContributeCoreAsync(nodeId, buildingId, definition, requested, context,
+                    confirmation?.Token ?? cancellationToken);
+            }
+            catch (PostgresException exception) when (exception.SqlState is "40001" or "40P01"
+                && attempt < 5 && unknown is null && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(25 * (attempt + 1)), cancellationToken);
+            }
+            catch (EconomyCommitOutcomeUnknownException exception) when (unknown is null)
+            {
+                // 原上下文精确重放：先查询历史 applied；没有历史事实才重做整笔原子事务。
+                unknown = exception;
+            }
+            catch (Exception exception) when (unknown is not null)
+            {
+                unknown.Data["ConfirmationError"] = exception;
+                throw unknown;
+            }
+            catch (EconomyInsufficientBalanceException)
+            {
+                return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.DebitDenied);
+            }
+        }
+    }
+
+    private async ValueTask<NodeBuildingWriteOutcome> ContributeCoreAsync(
+        string nodeId, string buildingId, BuildingDefinition definition,
+        IReadOnlyDictionary<string, double> requested, NodeBuildingContributionTransaction context,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var existing = await PostgresEconomyRepository.TryLoadCommittedAsync(
+            connection, transaction, context.IdempotencyKey, cancellationToken);
+        if (existing is not null)
+        {
+            var applied = ReadAppliedMaterials(existing.ResultPayload);
+            var replayRequest = CreateContributionRequest(nodeId, buildingId, requested, applied, context);
+            var replay = PostgresEconomyRepository.ValidateReplay(replayRequest, existing);
+            // 返回当前活行仅刷新派生缓存，不改变建筑；实际接纳量始终来自首次提交的结果。
+            var live = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, live, applied, replay);
+        }
+
         var row = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
-        if (row is null)
-            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NotFound);
-        if (row.TargetLevel <= 0)
-            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Idle, row);
+        if (row is null) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NotFound);
+        if (row.TargetLevel <= 0) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Idle, row);
         var required = NodeBuildingRules.RequiredMaterials(definition, row.TargetLevel);
-        var applied = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var (itemId, quantity) in requested)
+        var appliedMaterials = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var (itemId, quantity) in requested.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             if (!required.TryGetValue(itemId, out var need) || !double.IsFinite(quantity) || quantity <= 0) continue;
             var remaining = need - row.ContributedMaterials.GetValueOrDefault(itemId);
             var accepted = Math.Min(remaining, quantity);
-            if (accepted > 0) applied[itemId] = accepted;
+            if (accepted > 0) appliedMaterials[itemId] = accepted;
         }
-        if (applied.Count == 0)
+        if (appliedMaterials.Count == 0)
             return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NothingToContribute, row);
-        if (!await commitDebitAsync(applied))
-            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.DebitDenied, row);
+
+        var request = CreateContributionRequest(nodeId, buildingId, requested, appliedMaterials, context);
+        var economy = await PostgresEconomyRepository.CommitCoreAsync(connection, transaction, request, cancellationToken);
+        if (economy.AlreadyCommitted)
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, null, ReadAppliedMaterials(economy.ResultPayload), economy);
+
         var merged = new Dictionary<string, double>(row.ContributedMaterials, StringComparer.Ordinal);
-        foreach (var (itemId, quantity) in applied)
+        foreach (var (itemId, quantity) in appliedMaterials)
             merged[itemId] = merged.GetValueOrDefault(itemId) + quantity;
         var updated = row with { ContributedMaterials = merged };
         await UpdateLockedRowAsync(connection, transaction, nodeId, updated, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, updated, applied);
+        await PostgresEconomyRepository.CommitTransactionAsync(transaction, context.RequestId, cancellationToken);
+        return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, updated, appliedMaterials, economy);
+    }
+
+    private static EconomyTransactionRequest CreateContributionRequest(string nodeId, string buildingId,
+        IReadOnlyDictionary<string, double> requested, IReadOnlyDictionary<string, double> applied,
+        NodeBuildingContributionTransaction context)
+        => new(context.RequestId, context.IdempotencyKey, context.TransactionType, context.PlayerId,
+            applied.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => new AssetDelta(context.PlayerId, pair.Key, string.Empty, -pair.Value)).ToArray(),
+            context.OccurredAt, JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                nodeId,
+                buildingId,
+                requested = requested.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value),
+                applied = applied.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value)
+            }), context.Sections, context.Receipts);
+
+    private static IReadOnlyDictionary<string, double> ReadAppliedMaterials(ReadOnlyMemory<byte> payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+        if (!document.RootElement.TryGetProperty("applied", out var applied)
+            || applied.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("建筑幂等事务结果缺少 applied 明细。");
+        return applied.EnumerateObject()
+            .Where(property => property.Value.ValueKind == JsonValueKind.Number && property.Value.TryGetDouble(out var quantity) && double.IsFinite(quantity) && quantity > 0)
+            .ToDictionary(property => property.Name, property => property.Value.GetDouble(), StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -309,7 +391,8 @@ public sealed record NodeBuildingMutationResult(
     bool Success,
     string? ErrorCode = null,
     string? Message = null,
-    IReadOnlyDictionary<string, double>? AppliedMaterials = null)
+    IReadOnlyDictionary<string, double>? AppliedMaterials = null,
+    EconomyTransactionResult? Economy = null)
 {
     /// <summary>构造失败结局；不携带材料回执。</summary>
     /// <param name="code">机器可读错误码（如 BUILDING_EXISTS、INSUFFICIENT_MATERIALS）。</param>
@@ -529,20 +612,12 @@ public sealed class NodeBuildingRegistry(
         finally { _gate.Release(); }
     }
 
-    /// <summary>
-    /// 提交建造材料：行锁事务内按活行剩余需求封顶后，先经 commitDebitAsync 扣减玩家背包，
-    /// 扣减成功才合并写回；全部已满或无有效数量时不做任何变更。
-    /// </summary>
-    /// <param name="commitDebitAsync">在建筑行锁内执行的背包扣减回调；返回 false 视为材料不足放弃。</param>
-    /// <param name="nodeId">目标节点标识。</param>
-    /// <param name="buildingId">目标建筑定义 ID。</param>
-    /// <param name="requested">本次提交的材料数量（按材料 ID）；仅有限正数项生效。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
+    /// <summary>仓储原子提交成功后才采纳建筑活行；玩家 World 仅是随后刷新的派生投影。</summary>
     public async ValueTask<NodeBuildingMutationResult> ContributeAsync(
         string nodeId,
         string buildingId,
         IReadOnlyDictionary<string, double> requested,
-        Func<IReadOnlyDictionary<string, double>, ValueTask<bool>> commitDebitAsync,
+        NodeBuildingContributionTransaction context,
         CancellationToken cancellationToken)
     {
         await EnsureLoadedAsync(cancellationToken);
@@ -551,11 +626,11 @@ public sealed class NodeBuildingRegistry(
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var outcome = await repository.ContributeAsync(nodeId, buildingId, definition, requested, commitDebitAsync, cancellationToken);
+            var outcome = await repository.ContributeAsync(nodeId, buildingId, definition, requested, context, cancellationToken);
             if (outcome.State is { } live) AdoptState(nodeId, live);
             return outcome.Status switch
             {
-                NodeBuildingWriteStatus.Applied => new NodeBuildingMutationResult(true, AppliedMaterials: outcome.AppliedMaterials),
+                NodeBuildingWriteStatus.Applied => new NodeBuildingMutationResult(true, AppliedMaterials: outcome.AppliedMaterials, Economy: outcome.Economy),
                 NodeBuildingWriteStatus.Idle => NodeBuildingMutationResult.Fail("BUILDING_IDLE", "该建筑当前没有进行中的工程。"),
                 NodeBuildingWriteStatus.NothingToContribute => NodeBuildingMutationResult.Fail("NOTHING_TO_CONTRIBUTE", "没有可提交的材料数量。"),
                 NodeBuildingWriteStatus.DebitDenied => NodeBuildingMutationResult.Fail("INSUFFICIENT_MATERIALS", "背包材料不足。"),

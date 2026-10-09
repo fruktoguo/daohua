@@ -9,6 +9,9 @@ globalThis.document = { documentElement: { lang: '' } }
 const server = await createServer({ root: new URL('../frontend', import.meta.url).pathname, server: { middlewareMode: true } })
 try {
   const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } = await server.ssrLoadModule('/src/network/snapshot.ts')
+  const { encodeJsonEnvelope, WireMessageType, createRequestId } = await server.ssrLoadModule('/src/network/protocol.ts')
+  const { GameClient } = await server.ssrLoadModule('/src/network/gameClient.ts')
+  const { setSessionAccount } = await server.ssrLoadModule('/src/network/sessionState.ts')
   if (process.argv[2]) {
     // fixture 文件字节即信封 JSON 原始字节：section data 区间校验按线上字节逐位复算。
     const fixtureBytes = await readFile(process.argv[2])
@@ -41,7 +44,7 @@ try {
   }
   // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 21, sectionVersion: 1,
+    section: 'world', schemaVersion: 23, sectionVersion: 1,
     data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
@@ -65,6 +68,37 @@ try {
   assert.equal(patch.world.monsters[0].drops[0].maxQuantity, 3)
   assert.equal(patch.serverTimeUnixSeconds, Date.parse(delta.lastSimulatedAt) / 1000)
   await assert.rejects(decodePlayerSnapshotDeltaDto({ ...delta, lastSimulatedAt: undefined }, current, deltaBytes), /lastSimulatedAt/)
+  // 坏 checksum 必须在完整业务解码阶段失败，不能被合法 envelope 提前清零。
+  const badChecksum = { ...delta, changedSections: [{ ...section, checksum: '0'.repeat(64) }] }
+  await assert.rejects(decodePlayerSnapshotDeltaDto(badChecksum, current, Buffer.from(JSON.stringify(badChecksum))), /checksum|校验/i)
+
+  // 真实坏帧计数：坏 JSON 计入失败，合法 Pong 不清零；完整业务 payload 成功应用后恢复。
+  setSessionAccount({ accountId: 'account.test', playerId: 'player.test', account: 'account.test', name: '契约测试' })
+  const client = new GameClient()
+  const socket = { readyState: 1 }
+  Object.assign(client, {
+    disposed: false, socket, sessionGeneration: 7, playerId: 'player.test', account: 'account.test', sequenceId: 0,
+    lastServerSequence: 0, parseFailureCount: 0, parseFailureWindowStart: 0, parseFailureResynced: false,
+  })
+  await client.handleMessage(encodeJsonEnvelope(WireMessageType.Pong, createRequestId(), 1, {}), socket, 7, 'player.test')
+  assert.equal(client.parseFailureCount, 0)
+  await client.handleMessage(new TextEncoder().encode('{bad-json').buffer, socket, 7, 'player.test')
+  assert.equal(client.parseFailureCount, 1)
+  await client.handleMessage(encodeJsonEnvelope(WireMessageType.LogBatch, createRequestId(), 2, { events: [] }), socket, 7, 'player.test')
+  assert.equal(client.parseFailureCount, 0)
+
+  // 旧 socket 的延迟 Blob 解码完成后必须被世代校验拦截，不能写入新会话。
+  let releaseDelayedBlob
+  const delayedBlob = new Blob([encodeJsonEnvelope(WireMessageType.LogBatch, createRequestId(), 3, { events: [] })])
+  delayedBlob.arrayBuffer = () => new Promise(resolve => { releaseDelayedBlob = resolve })
+  const delayed = client.handleMessage(delayedBlob, socket, 7, 'player.test')
+  const replacementSocket = { readyState: 1 }
+  client.socket = replacementSocket
+  client.sessionGeneration = 8
+  releaseDelayedBlob(new ArrayBuffer(0))
+  await delayed
+  assert.equal(client.parseFailureCount, 0)
+
   // 命令回执增量形态：snapshotForm=delta 时 changedSections 位于 snapshot 成员内，
   // data 字节区间按同一校验和口径复算（与服务端 CommandResultDto 内嵌结构一致）。
   const receipt = {

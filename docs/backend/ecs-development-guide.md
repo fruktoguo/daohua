@@ -43,7 +43,7 @@
 
 1. **分片单写者**：玩家按 `PlayerId` 稳定哈希路由到唯一 `EcsWorldShard`；该分片的一切变更必须经 `ExecuteOwned`/`ExecutePlayerOwned` 在其 `YuoFiber` 内执行。**禁止在 Fiber 外读写组件。**
 2. **跨边界不持引用**：`EcsPlayerRuntimeAdapter`、WS/HTTP 层、其它分片不得缓存 `YuoEntity`/`YuoComponent`/`PlayerAggregate` 引用；跨边界一律传数据（DTO、快照、值）。
-3. **玩家级 gate**：适配器对同一 `playerId` 的命令与推进以 `SemaphoreSlim` 串行；分片所有权 gate 为兜底，不得依赖 Fiber 调度巧合。
+3. **玩家级 gate**：适配器对同一 `playerId` 的命令与推进以 `SemaphoreSlim` 串行；分片所有权 gate 为兜底，不得依赖 Fiber 调度巧合。批次取得 gate 后必须重新确认玩家仍已加载且目标时刻晚于当前时钟；只能推进实际持有 gate 的玩家，不能用全世界 Tick 包含本批开始后新加载的实体。装载失败必须清理部分建立的缓存/实体并归还已知未隔离的租约，提交结局未知的 fenced 玩家例外保留恢复证据。
 4. **多实例租约闸门**：`IPlayerOwnershipStore`/`game.player_runtime_leases` 是跨实例写保护——加载 `Acquire`、命令/推进/刷盘前去抖 `Renew`（lease/3）、卸载 `Release`；丢失即 `PlayerOwnershipLostException` fail-closed 并逐出实体。新增"加载玩家/遍历已加载玩家"的路径都必须走同一闸门，不得绕过。
 5. **活动实体过滤**：逐玩家 Tick 前 `World.SetActiveEntities(玩家+遭遇)`、`finally` 清除；新增 `IUpdate` 系统必须遵守 `ShouldUpdate` 或战斗活动闸门。显式指定实体的同步业务 tag 只消费当前负载，不能套用 Update 的跳过闸门，否则命令和批量路径会漏执行。
 6. **`EcsClockComponent` 三开关**：`ActivePlayerId`（当前活动玩家）、`SkipWorldUpdate`（本 tick 是否整体跳过世界系统）、`SkipWorldUpdateEntities`（批量管线计数）——语义由 shard 管理，业务代码只读不改。
@@ -68,7 +68,9 @@ case "biz.someCommand":
 
 - **属性输入修订号随组件状态存活**：`MutatePlayer` 视图直接修改组件持有的分段；版本化集合与输入修订号不重建、不回退。`WireAttributesChanged` 与 `AttributeRevision` 依赖其单调性，不得绕过所有权通道手写头字段。
 - **脏标记用 `MarkDirty`/`DirtySectionMarks` 流水号差集**，不是脏集合差集：已脏分段再次被触及也必须计入 `TouchedSections`（回执窄化依赖）。
-- **资产副作用**（物品/灵石/装备实例）走 `AssetWallet` + `economy.*` 事务通道，`SyncAssetBalances`/`SyncWalletAfterCommit` 对齐内存镜像；聚合内**永不**存资产。
+- **资产副作用**（物品/灵石/装备实例）走 `AssetWallet` + `economy.*` 事务通道；消耗/奖励来源分段、模拟时钟与命令回执必须随资产事务原子写入 durable 队列。纯模拟时钟推进也必须留下 durable 状态，不依赖事后脏龄刷盘。提交只编码实际脏分段，禁止先全量编码再过滤造成无关分段热路径分配；该优化不改变 durable 提交频率、原子性或业务时钟。
+- **失败恢复**：请求前冻结快照与 DirtySections 集合；确定未提交时恢复该快照和集合，DirtySectionMarks 流水号始终单调不回退。提交结果未知必须以原幂等键核验，仍不明确则 fail-closed，不能盲目回滚后继续写。成功事务仅确认真正写入的脏段。
+- `SyncAssetBalances`/`SyncWalletAfterCommit` 对齐内存镜像；聚合内**永不**存资产。
 - **幂等回执**：写命令必须接 `requestId` 幂等检查；`ShouldPersistReceipt` 语义与原聚合运行时一致（回执仅在携带脏段/状态变化时落库）。
 - **决斗/遭遇副作用**：需要弃战路由时用 `destroyEncounters: true` + `RouteDuelForfeit`，不得手写销毁。
 - **不确定性的新命令一律复用 `MutatePlayer`**；只有纯队列/状态操作（入队、移除、presence）才允许直接走 ECS 原语（`EnqueueAction`/`RemoveAction`/`SetPresence`）。

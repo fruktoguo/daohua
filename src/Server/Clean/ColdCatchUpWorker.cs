@@ -11,8 +11,7 @@ namespace Server.Clean;
 /// </summary>
 public sealed class ColdCatchUpWorker(
     PostgresComputeJobRepository jobs,
-    IPlayerStateRepository playerStates,
-    IAssetBalanceRepository assetBalances,
+    PostgresSectionRepository playerStates,
     NpgsqlDataSource dataSource,
     ServerOptions options,
     ILogger<ColdCatchUpWorker> logger) : BackgroundService
@@ -134,9 +133,10 @@ public sealed class ColdCatchUpWorker(
     {
         try
         {
-            var bundle = await playerStates.LoadAsync(candidate.PlayerId, cancellationToken);
-            // 无提交头或 section 不全的玩家没有可推进状态；LoadAsync 对不完整存档直接抛错。
-            if (bundle is null || bundle.Head.StateVersion <= 0) return false;
+            var frozen = await playerStates.LoadComputeInputAsync(candidate.PlayerId, cancellationToken);
+            // 存档与余额必须来自同一 RepeatableRead 快照；不完整状态直接跳过。
+            if (frozen is null || frozen.Bundle.Head.StateVersion <= 0) return false;
+            var bundle = frozen.Bundle;
 
             var now = DateTimeOffset.UtcNow;
             var from = bundle.Head.LastSimulatedAt;
@@ -155,8 +155,8 @@ public sealed class ColdCatchUpWorker(
 
             // 余额快照随任务冻结：节点钱包还原仅作可用性判定，实际入账仍以回传增量经经济事务为准。
             // Ordinal 排序保证同一输入产出同一载荷字节（入队幂等键绑定目标时刻，载荷参与存档）。
-            var balances = (await assetBalances.LoadBalancesAsync(candidate.PlayerId, cancellationToken))
-                .Select(row => new ComputeAssetBalance(row.AssetId, row.Variant, row.Quantity))
+            var balances = frozen.Balances
+                .Select(row => new ComputeAssetBalance(row.AssetId, row.Variant, row.Quantity, row.Version))
                 .OrderBy(row => row.AssetId, StringComparer.Ordinal)
                 .ThenBy(row => row.Variant, StringComparer.Ordinal)
                 .ToArray();

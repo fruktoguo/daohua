@@ -15,6 +15,48 @@ namespace Server.Tests;
 [Collection("PostgresIntegration")]
 public sealed class NodeBuildingRegistryTests
 {
+    private static async Task<NodeBuildingContributionTransaction> SeedContributorAsync(NpgsqlDataSource source, double quantity)
+    {
+        var playerId = Guid.NewGuid();
+        await ExecuteSqlAsync(source, """
+            INSERT INTO identity.accounts(account_id, login_normalized, password_hash, password_salt, password_iterations, created_at, updated_at)
+            VALUES ($1, $2, '\x00'::bytea, '\x00'::bytea, 100000, now(), now())
+            """, playerId, playerId.ToString("N"));
+        await ExecuteSqlAsync(source, """
+            INSERT INTO identity.players(player_id, account_id, display_name, display_name_normalized, created_at, last_seen_at)
+            VALUES ($1, $1, $2, $2, now(), now())
+            """, playerId, playerId.ToString("N"));
+        await ExecuteSqlAsync(source, """
+            INSERT INTO economy.player_asset_balances(player_id, asset_id, variant, quantity, version, updated_at)
+            VALUES ($1, 'item.test-wood', '', $2, 1, now())
+            """, playerId, quantity);
+        var now = DateTimeOffset.UtcNow;
+        var requestId = Guid.NewGuid();
+        return new(playerId, requestId, $"building-test:{requestId:D}", "building.contribute", now,
+            Receipts: [new CommandReceipt(playerId, requestId, "building.contribute", new string('a', 64), 1, now, now.AddMinutes(30))]);
+    }
+
+    private static async Task ExecuteSqlAsync(NpgsqlDataSource source, string sql, params object[] values)
+    {
+        await using var command = source.CreateCommand(sql);
+        foreach (var value in values) command.Parameters.Add(new NpgsqlParameter { Value = value });
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<long> CountAsync(NpgsqlDataSource source, string sql, Guid id)
+    {
+        await using var command = source.CreateCommand(sql);
+        command.Parameters.Add(new NpgsqlParameter { Value = id });
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<double> BalanceAsync(NpgsqlDataSource source, Guid playerId)
+    {
+        await using var command = source.CreateCommand("SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-wood'");
+        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        return (double)(await command.ExecuteScalarAsync())!;
+    }
+
     /// <summary>测试配表：单座需 5 份 item.test-wood 的采集小屋（一级工期 600s）。</summary>
     private static GameDataCatalog CatalogWithTestBuilding() => GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
         [
@@ -59,17 +101,11 @@ public sealed class NodeBuildingRegistryTests
         Assert.Equal(underConstruction.Version, reread.Version);
 
         // 贡献超量材料按剩余需求封顶：申请 8，实际入账 5。
-        var debited = new Dictionary<string, double>(StringComparer.Ordinal);
+        var contributor = await SeedContributorAsync(source, 8);
         var contribute = await registry.ContributeAsync(nodeId, "building.test-hut",
-            new Dictionary<string, double> { ["item.test-wood"] = 8 },
-            debit =>
-            {
-                foreach (var pair in debit) debited[pair.Key] = pair.Value;
-                return ValueTask.FromResult(true);
-            },
-            CancellationToken.None);
+            new Dictionary<string, double> { ["item.test-wood"] = 8 }, contributor, CancellationToken.None);
         Assert.True(contribute.Success);
-        Assert.Equal(5d, debited["item.test-wood"]);
+        Assert.Equal(3d, await BalanceAsync(source, contributor.PlayerId));
         Assert.Equal(5d, contribute.AppliedMaterials!["item.test-wood"]);
 
         // 材料+时间双满：下一次读即触发惰性完工，版本再递增且数据库行落成 level=1。
@@ -125,11 +161,11 @@ public sealed class NodeBuildingRegistryTests
         Assert.False(premature.Success);
         Assert.Equal("BUILDING_INCOMPLETE", premature.ErrorCode);
 
-        // 扣减回调返回 false：材料不叠加、不落库、版本不变。
+        // 仓储余额不足：材料、流水、回执全部回滚，缓存版本不变。
+        var contributor = await SeedContributorAsync(source, 0);
         var before = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
         var denied = await registry.ContributeAsync(nodeId, "building.test-hut",
-            new Dictionary<string, double> { ["item.test-wood"] = 2 },
-            _ => ValueTask.FromResult(false), CancellationToken.None);
+            new Dictionary<string, double> { ["item.test-wood"] = 2 }, contributor, CancellationToken.None);
         Assert.False(denied.Success);
         Assert.Equal("INSUFFICIENT_MATERIALS", denied.ErrorCode);
         var after = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
@@ -140,7 +176,7 @@ public sealed class NodeBuildingRegistryTests
         // 贡献 0/未知物品无效；对完工后建筑贡献报 BUILDING_IDLE。
         var idleProbe = await registry.ContributeAsync(nodeId, "building.test-hut",
             new Dictionary<string, double> { ["item.unrelated"] = 1 },
-            _ => ValueTask.FromResult(true), CancellationToken.None);
+            contributor, CancellationToken.None);
         Assert.False(idleProbe.Success);
         Assert.Equal("NOTHING_TO_CONTRIBUTE", idleProbe.ErrorCode);
     }
@@ -179,18 +215,19 @@ public sealed class NodeBuildingRegistryTests
 
         // 本实例按旧缓存看到的剩余需求是 5：若整行覆盖会扣 min(5,4)=4 并吞掉外部的 3；
         // 行锁内按活行封顶只接纳剩余 2，合并后落库为 3+2=5。
-        var debited = new Dictionary<string, double>(StringComparer.Ordinal);
+        var contributor = await SeedContributorAsync(source, 4);
         var result = await registry.ContributeAsync(nodeId, "building.test-hut",
-            new Dictionary<string, double> { ["item.test-wood"] = 4 },
-            debit =>
-            {
-                foreach (var pair in debit) debited[pair.Key] = pair.Value;
-                return ValueTask.FromResult(true);
-            },
-            CancellationToken.None);
+            new Dictionary<string, double> { ["item.test-wood"] = 4 }, contributor, CancellationToken.None);
         Assert.True(result.Success);
         Assert.Equal(2d, result.AppliedMaterials!["item.test-wood"]);
-        Assert.Equal(2d, debited["item.test-wood"]);
+        Assert.Equal(2d, await BalanceAsync(source, contributor.PlayerId));
+        var replay = await registry.ContributeAsync(nodeId, "building.test-hut",
+            new Dictionary<string, double> { ["item.test-wood"] = 4 }, contributor, CancellationToken.None);
+        Assert.True(replay.Economy!.AlreadyCommitted);
+        Assert.Equal(2d, replay.AppliedMaterials!["item.test-wood"]);
+        Assert.Equal(2d, await BalanceAsync(source, contributor.PlayerId));
+        await Assert.ThrowsAsync<EconomyIdempotencyConflictException>(async () => await registry.ContributeAsync(
+            nodeId, "building.test-hut", new Dictionary<string, double> { ["item.test-wood"] = 3 }, contributor, CancellationToken.None));
 
         // 数据库行为权威：两份贡献合并保留，外部写入未被覆盖。
         await using var verify = await source.OpenConnectionAsync();
@@ -239,19 +276,13 @@ public sealed class NodeBuildingRegistryTests
             Assert.Equal(1, await external.ExecuteNonQueryAsync());
         }
 
-        // 旧缓存认为工程仍在进行：行锁内读活行应按 BUILDING_IDLE 拒绝，且扣减回调不被触发。
-        var debitInvoked = false;
+        // 旧缓存认为工程仍在进行：行锁内读活行应按 BUILDING_IDLE 拒绝，不产生扣款流水。
+        var contributor = await SeedContributorAsync(source, 2);
         var idle = await registry.ContributeAsync(nodeId, "building.test-hut",
-            new Dictionary<string, double> { ["item.test-wood"] = 1 },
-            _ =>
-            {
-                debitInvoked = true;
-                return ValueTask.FromResult(true);
-            },
-            CancellationToken.None);
+            new Dictionary<string, double> { ["item.test-wood"] = 1 }, contributor, CancellationToken.None);
         Assert.False(idle.Success);
         Assert.Equal("BUILDING_IDLE", idle.ErrorCode);
-        Assert.False(debitInvoked);
+        Assert.Equal(2d, await BalanceAsync(source, contributor.PlayerId));
 
         // 缓存采纳完工活行：快照即刻反映已建成状态。
         var snapshot = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
@@ -274,12 +305,54 @@ public sealed class NodeBuildingRegistryTests
 
         var foreign = await registry.ContributeAsync(foreignNodeId, "building.test-hut",
             new Dictionary<string, double> { ["item.test-wood"] = 2 },
-            _ => ValueTask.FromResult(true),
+            contributor,
             CancellationToken.None);
         Assert.True(foreign.Success);
         Assert.Equal(2d, foreign.AppliedMaterials!["item.test-wood"]);
         var foreignSnapshot = await registry.BuildingsForAsync(foreignNodeId, now, CancellationToken.None);
         Assert.Equal(2d, Assert.Single(foreignSnapshot.Buildings).ContributedMaterials["item.test-wood"]);
+    }
+
+    /// <summary>建筑更新在扣款、流水和回执之后失败时，数据库必须整体回滚；同一原请求可以安全重试。</summary>
+    [Fact]
+    public async Task BuildingWriteFailureRollsBackDebitReceiptAndLedgerTogether()
+    {
+        await using var source = NpgsqlDataSource.Create(PostgresTestSchema.RequireConnectionString("建筑原子回滚测试"));
+        await PostgresTestSchema.EnsureAsync(source);
+        var catalog = CatalogWithTestBuilding();
+        var repository = new PostgresNodeBuildingRepository(source);
+        var registry = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance);
+        var nodeId = $"node.atomic-{Guid.NewGuid():N}";
+        var contributor = await SeedContributorAsync(source, 5);
+        await registry.StartConstructionAsync(nodeId, catalog.Buildings["building.test-hut"], DateTimeOffset.UtcNow, CancellationToken.None);
+        var name = $"reject_building_{Guid.NewGuid():N}";
+        // 触发器仅针对本用例节点，避免污染同库其他测试；真实故障发生在经济写入之后的建筑 UPDATE。
+        await ExecuteSqlAsync(source, $"""
+            CREATE FUNCTION game.{name}() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW.node_id = '{nodeId}' THEN RAISE EXCEPTION '注入建筑写失败'; END IF;
+                RETURN NEW;
+            END $$;
+            CREATE TRIGGER {name} BEFORE UPDATE ON game.node_buildings FOR EACH ROW EXECUTE FUNCTION game.{name}();
+            """);
+        var requested = new Dictionary<string, double> { ["item.test-wood"] = 5 };
+        try
+        {
+            await Assert.ThrowsAsync<PostgresException>(async () => await registry.ContributeAsync(
+                nodeId, "building.test-hut", requested, contributor, CancellationToken.None));
+            Assert.Equal(5d, await BalanceAsync(source, contributor.PlayerId));
+            Assert.Equal(0L, await CountAsync(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", contributor.RequestId));
+            Assert.Equal(0L, await CountAsync(source, "SELECT count(*) FROM platform.command_receipts WHERE request_id=$1", contributor.RequestId));
+            Assert.Empty(Assert.Single((await registry.BuildingsForAsync(nodeId, DateTimeOffset.UtcNow, CancellationToken.None)).Buildings).ContributedMaterials);
+        }
+        finally
+        {
+            await ExecuteSqlAsync(source, $"DROP TRIGGER {name} ON game.node_buildings; DROP FUNCTION game.{name}();");
+        }
+        var result = await registry.ContributeAsync(nodeId, "building.test-hut", requested, contributor, CancellationToken.None);
+        Assert.True(result.Success);
+        Assert.Equal(0d, await BalanceAsync(source, contributor.PlayerId));
+        Assert.Equal(1L, await CountAsync(source, "SELECT count(*) FROM platform.command_receipts WHERE request_id=$1", contributor.RequestId));
     }
 
     /// <summary>

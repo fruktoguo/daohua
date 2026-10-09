@@ -12,6 +12,41 @@ namespace Server.Tests;
 [Collection("PostgresIntegration")]
 public sealed class EconomyCommitTests
 {
+    /// <summary>零资产变化的模拟进度仍须与回执 durable，重放不重复写；坏回执不能留下孤立 section。</summary>
+    [Fact]
+    public async Task ClockOnlyTransactionCommitsSectionsAndReceiptWithoutAssetLines()
+    {
+        var (source, repository, player) = await ArrangeAsync();
+        await using var ownedSource = source;
+        var id = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var simulatedAt = now.AddHours(-1);
+        var section = SectionCodec.Encode(player, PlayerSectionKinds.Progression, 7,
+            new { ageSeconds = 60d }, now) with { LastSimulatedAt = simulatedAt };
+        var receipt = new CommandReceipt(player, id, "simulation.advance", new string('a', 64), 7, now, now.AddMinutes(30));
+        var request = new EconomyTransactionRequest(id, $"clock:{id:D}", "simulation.reward", player, [], simulatedAt,
+            Sections: [section], Receipts: [receipt]);
+        Assert.True((await repository.CommitAsync(request)).Applied);
+        Assert.True((await repository.CommitAsync(request)).AlreadyCommitted);
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", id));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM platform.command_receipts WHERE request_id=$1", id));
+        var queued = Assert.Single(await Rows(source,
+            "SELECT last_simulated_at, next_attempt_at, updated_at FROM platform.section_flush_queue WHERE player_id=$1", player));
+        Assert.Equal(simulatedAt.ToUnixTimeMilliseconds(), new DateTimeOffset(Assert.IsType<DateTime>(queued[0])).ToUnixTimeMilliseconds());
+        Assert.Equal(now.ToUnixTimeMilliseconds(), new DateTimeOffset(Assert.IsType<DateTime>(queued[1])).ToUnixTimeMilliseconds());
+        Assert.Equal(now.ToUnixTimeMilliseconds(), new DateTimeOffset(Assert.IsType<DateTime>(queued[2])).ToUnixTimeMilliseconds());
+        var rejectedId = Guid.NewGuid();
+        await Assert.ThrowsAsync<PostgresException>(async () => await repository.CommitAsync(request with
+        {
+            TransactionId = rejectedId,
+            IdempotencyKey = $"clock:{rejectedId:D}",
+            Sections = [section with { StateVersion = 8 }],
+            Receipts = [receipt with { PlayerId = Guid.NewGuid(), RequestId = rejectedId }]
+        }));
+        Assert.Equal(7L, await Scalar(source, "SELECT state_version FROM platform.section_flush_queue WHERE player_id=$1", player));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", rejectedId));
+    }
+
     /// <summary>首次提交插入新余额行：RETURNING 回传提交后余额与版本，流水行按原始行序落库。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]

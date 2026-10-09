@@ -78,8 +78,50 @@ public static class CapacityTargetScenario
             }
         }
 
-        // 只有显式配置真实测试库和 compute-link 开关，才允许执行真实 ComputeNode/ECS/SectionCodec 路径。
-        // 未配置时必须失败关闭，避免 synthetic CPU 结果被误报为冷挂机业务容量。
+        // 只有显式配置真实服务端、测试库和 compute-link 开关，才允许执行真实业务路径。
+        // 未配置时必须失败关闭，避免 synthetic 结果被误报为容量通过。
+        var realServerUrl = Environment.GetEnvironmentVariable("CAPACITY_REAL_SERVER_URL");
+        var realNetworkDuration = ReadEnvironmentInt("CAPACITY_REAL_NETWORK_DURATION_SECONDS", 60, 60, 86_400);
+        var realNetwork = new Dictionary<string, LoadTestReport>();
+        if (string.IsNullOrWhiteSpace(realServerUrl))
+        {
+            warnings.Add("认证网络门禁在 compute-link 拉起的隔离主服执行，不要求预先启动外部服务。");
+        }
+        else if (!Uri.TryCreate(realServerUrl, UriKind.Absolute, out var realServerUri))
+        {
+            errors++;
+            warnings.Add("CAPACITY_REAL_SERVER_URL 无效。");
+        }
+        else
+        {
+            foreach (var target in new[] { SustainedNetworkTarget, PeakNetworkTarget })
+            {
+                var networkOptions = options with
+                {
+                    Scenario = "websocket",
+                    Players = target,
+                    DurationSeconds = realNetworkDuration,
+                    ServerUri = realServerUri,
+                    RequireServer = true
+                };
+                try
+                {
+                    var report = await WebSocketScenario.RunAsync(networkOptions, cancellationToken);
+                    realNetwork[target.ToString()] = report;
+                    if (!report.GatePassed || report.Errors != 0)
+                    {
+                        errors++;
+                        warnings.Add($"真实 {target} 个认证 WebSocket 业务收发未通过；不接受匿名或部分注册降级。");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    errors++;
+                    warnings.Add($"真实 {target} 个认证 WebSocket 业务收发执行失败: {exception.Message}");
+                }
+            }
+        }
+
         var realComputeRequested = IsEnabled(Environment.GetEnvironmentVariable("CAPACITY_REAL_COMPUTE_LINK"));
         var realDatabase = Environment.GetEnvironmentVariable("CAPACITY_REAL_DATABASE_URL");
         LoadTestReport? realCompute = null;
@@ -100,8 +142,11 @@ public static class CapacityTargetScenario
                 Scenario = "compute-link",
                 DatabaseConnectionString = realDatabase,
                 DatabaseExplicit = true,
-                Players = ReadEnvironmentInt("CAPACITY_REAL_COMPUTE_PLAYERS", 1, 1, ColdComputeTarget),
+                Players = ColdComputeTarget,
                 DurationSeconds = ReadEnvironmentInt("CAPACITY_REAL_COMPUTE_DURATION_SECONDS", 180, 1, 86_400),
+                RequireDatabase = true,
+                CapacityGate = true,
+                CapacityNetworkOnLocalServer = string.IsNullOrWhiteSpace(realServerUrl),
                 NodeKill = false
             };
             try
@@ -121,6 +166,10 @@ public static class CapacityTargetScenario
         }
 
 
+        if (realCompute?.Metrics.GetValueOrDefault("networkReports") is Dictionary<string, LoadTestReport> localNetwork)
+        {
+            foreach (var entry in localNetwork) realNetwork[entry.Key] = entry.Value;
+        }
         process.Refresh();
         var workingSet = process.WorkingSet64;
         var managedAfter = GC.GetTotalMemory(forceFullCollection: false);
@@ -171,12 +220,16 @@ public static class CapacityTargetScenario
                 },
                 ["realBusinessPath"] = new
                 {
-                    configured = realComputeRequested && !string.IsNullOrWhiteSpace(realDatabase),
-                    executed = realCompute is not null,
-                    scenario = "compute-link",
+                    serverConfigured = !string.IsNullOrWhiteSpace(realServerUrl),
+                    authenticatedNetworkTargets = new[] { SustainedNetworkTarget, PeakNetworkTarget },
+                    networkDurationSeconds = realNetworkDuration,
+                    networkReports = realNetwork,
+                    computeConfigured = realComputeRequested && !string.IsNullOrWhiteSpace(realDatabase),
+                    computeExecuted = realCompute is not null,
+                    computeScenario = "compute-link",
                     computeNodeRequest = realCompute is not null,
                     sectionCodec = realCompute is not null,
-                    report = realCompute
+                    computeReport = realCompute
                 },
                 ["postgres"] = postgres
             },

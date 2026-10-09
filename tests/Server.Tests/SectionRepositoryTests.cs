@@ -120,10 +120,10 @@ public sealed class SectionRepositoryTests
             "SELECT count(*) FROM game.player_state_sections WHERE player_id = $1", missing));
     }
 
-    /// <summary>同玩家同 (kind) 重复段在合批 upsert 中只生效首条，与旧逐条语义一致。</summary>
+    /// <summary>同玩家同 kind 的重复结果必须拒绝，不能静默取第一份写入权威存档。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
-    public async Task ApplyComputeResultDeduplicatesSameKindKeepingFirst()
+    public async Task ApplyComputeResultRejectsDuplicateKinds()
     {
         var (source, repository) = await OpenRepositoryAsync();
         var player = await SeedPlayerAsync(source);
@@ -133,17 +133,16 @@ public sealed class SectionRepositoryTests
 
         var writes = BuildAllSections(player, 2, now.AddMinutes(30), actionCount: 2).ToList();
         var progression = writes.Single(write => write.SectionKind == PlayerSectionKinds.Progression);
-        // 追加一条同 (player, kind) 但载荷不同的重复写：旧语义下首条生效、后者按版本谓词被跳过。
+        // 追加一份互相矛盾的重复分段，必须整批拒绝而非挑选一份。
         writes.Add(progression with
         {
             Payload = CleanSectionCodec.Encode(player, PlayerSectionKinds.Progression, 2,
                 new { realmLevel = 999d }, now).Payload
         });
 
-        var outcome = await repository.ApplyComputeResultAsync(
-            player, 1, 2, writes, now.AddMinutes(30), "fp.test");
-        Assert.Equal(ComputeApplyOutcome.Applied, outcome);
-        Assert.Equal(8L, await Scalar(source,
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.ApplyComputeResultAsync(
+            player, 1, 2, writes, now.AddMinutes(30), "fp.test").AsTask());
+        Assert.Equal(0L, await Scalar(source,
             "SELECT count(*) FROM game.player_state_sections WHERE player_id = $1 AND section_version = 2", player));
     }
 

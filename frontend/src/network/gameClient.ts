@@ -74,6 +74,8 @@ export class GameClient {
   private reconnectTimer: number | undefined
   private heartbeatTimer: number | undefined
   private disposed = false
+  /** 会话世代：账号切换、连接重建和 dispose 后，旧 socket 的异步回调一律失效。 */
+  private sessionGeneration = 0
   private reconnectDelay = 500
   private lastServerSequence = 0
   private outboundSequence = 0
@@ -110,12 +112,12 @@ export class GameClient {
     }
   }
 
-  private startHeartbeat(): void {
+  private startHeartbeat(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): void {
     this.stopHeartbeat()
     this.heartbeatTimer = window.setInterval(() => {
-      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
+      if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId) || sourceSocket.readyState !== WebSocket.OPEN) return
       try {
-        this.socket.send(encodeJsonEnvelope(WireMessageType.Ping, createRequestId(), this.nextOutboundSequence(), { clientTime: Date.now() }))
+        sourceSocket.send(encodeJsonEnvelope(WireMessageType.Ping, createRequestId(), this.nextOutboundSequence(), { clientTime: Date.now() }))
       } catch {
         // 发送失败由 WebSocket close 事件统一处理。
       }
@@ -153,7 +155,20 @@ export class GameClient {
       useGameStore.getState().setConnection('offline')
       return
     }
+    const accountChanged = accountInfo.playerId !== this.playerId
+      || accountInfo.account !== this.account
+      || (accountInfo.sequenceId ?? 0) !== this.sequenceId
+    if (accountChanged) {
+      this.sessionGeneration += 1
+      const staleSocket = this.socket
+      this.socket = null
+      this.stopHeartbeat()
+      if (staleSocket && (staleSocket.readyState === WebSocket.OPEN || staleSocket.readyState === WebSocket.CONNECTING)) {
+        staleSocket.close(1000, '账号会话已切换')
+      }
+    }
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
+    this.sessionGeneration += 1
     this.playerId = accountInfo.playerId
     this.account = accountInfo.account
     this.sequenceId = accountInfo.sequenceId ?? 0
@@ -176,6 +191,7 @@ export class GameClient {
 
   /** 彻底停用客户端：停心跳/重连/挂起请求并关闭 socket；dispose 后不再自动重连 */
   dispose(): void {
+    this.sessionGeneration += 1
     this.disposed = true
     this.clearReconnectTimer()
     this.stopHeartbeat()
@@ -318,6 +334,14 @@ export class GameClient {
     return this.trySend(socket, WireMessageType.PartyLobbyRequest, payload.requestId, payload)
   }
 
+  private isCurrentSession(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): boolean {
+    return !this.disposed
+      && this.socket === sourceSocket
+      && this.sessionGeneration === sourceGeneration
+      && this.playerId === sourcePlayerId
+      && getSessionAccount()?.playerId === sourcePlayerId
+  }
+
   private ensureOpenSocket(): WebSocket | null {
     const socket = this.socket
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -339,7 +363,11 @@ export class GameClient {
 
   private open(): void {
     this.clearReconnectTimer()
-    if (this.disposed || !getSessionAccount()) return
+    const session = getSessionAccount()
+    if (this.disposed || !session || session.playerId !== this.playerId || session.account !== this.account || (session.sequenceId ?? 0) !== this.sequenceId) return
+    this.sessionGeneration += 1
+    this.stopHeartbeat()
+    this.messageChain = Promise.resolve()
     this.outboundSequence = 0
     this.lastServerSequence = 0
     // 新连接发起即清除上一次的终态断连原因，避免旧原因残留到下一次断连。
@@ -355,31 +383,36 @@ export class GameClient {
     }
     socket.binaryType = 'arraybuffer'
     this.socket = socket
+    const sourceGeneration = this.sessionGeneration
+    const sourcePlayerId = this.playerId
 
     socket.addEventListener('open', () => {
-      if (this.disposed || this.socket !== socket) {
+      if (!this.isCurrentSession(socket, sourceGeneration, sourcePlayerId)) {
         socket.close(1000, '客户端已停止')
         return
       }
       this.reconnectDelay = 500
       // WebSocket transport open 仅代表 TCP 已建立；在合法 HelloAck 前仍保持 connecting。
       useGameStore.getState().setConnection('connecting')
-      this.startHeartbeat()
-      void this.sendHello()
+      this.startHeartbeat(socket, sourceGeneration, sourcePlayerId)
+      void this.sendHello(socket, sourceGeneration, sourcePlayerId)
     })
     socket.addEventListener('message', event => {
       const data = event.data
       // handleMessage 自身消化协议解析异常；链上兜底防意外异常永久阻塞后续全部帧。
       this.messageChain = this.messageChain
-        .then(() => this.handleMessage(data, socket))
-        .catch(error => this.handleParseFailure(error))
+        .then(() => this.handleMessage(data, socket, sourceGeneration, sourcePlayerId))
+        .catch(error => {
+          if (this.isCurrentSession(socket, sourceGeneration, sourcePlayerId)) this.handleParseFailure(error)
+        })
     })
     socket.addEventListener('error', () => {
       // close 事件统一重连，避免重复提示。
     })
     socket.addEventListener('close', event => {
+      // 旧连接关闭不能停止新连接心跳，也不能改变新会话状态。
+      if (!this.isCurrentSession(socket, sourceGeneration, sourcePlayerId)) return
       this.stopHeartbeat()
-      if (this.socket !== socket) return
       this.socket = null
       this.markPendingRequestsAwaitingReconnect()
       if (this.disposed) return
@@ -423,13 +456,13 @@ export class GameClient {
     }
   }
 
-  private async sendHello(): Promise<void> {
-    const socket = this.socket
-    if (!socket || socket.readyState !== WebSocket.OPEN) return
+  private async sendHello(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): Promise<void> {
+    const socket = sourceSocket
+    if (!this.isCurrentSession(socket, sourceGeneration, sourcePlayerId) || socket.readyState !== WebSocket.OPEN) return
     // 设备指纹采集是异步的：等待其完成再发送 Hello，避免配额开启时因缺指纹被拒。
     const accountSignals = await collectAccountSignals()
     const deviceFingerprint = accountSignals.browserFingerprint
-    if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) return
+    if (!this.isCurrentSession(socket, sourceGeneration, sourcePlayerId) || socket.readyState !== WebSocket.OPEN) return
     try {
       socket.send(encodeJsonEnvelope(WireMessageType.Hello, createRequestId(), this.nextOutboundSequence(), {
         clientVersion: APP_VERSION,
@@ -450,23 +483,20 @@ export class GameClient {
     return next
   }
 
-  private async handleMessage(data: unknown, sourceSocket: WebSocket): Promise<void> {
-    if (this.socket !== sourceSocket) return
+  private async handleMessage(data: unknown, sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): Promise<void> {
+    if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
     let bytes: Uint8Array
     if (data instanceof ArrayBuffer) bytes = new Uint8Array(data)
     else if (data instanceof Blob) bytes = new Uint8Array(await data.arrayBuffer())
-    else {
-      useGameStore.getState().setNotice(getT()('app.login.errorNetworkFailed'))
-      return
-    }
-    if (this.socket !== sourceSocket) return
+    else throw new Error('协议帧载荷类型无效。')
+    if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
 
     try {
       const envelope = decodeEnvelope(bytes)
+      if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
       if (envelope.sequence <= this.lastServerSequence) return
       this.lastServerSequence = envelope.sequence
-      // 帧结构解析成功即视为连接恢复健康，清空解析失败计数。
-      this.resetParseFailureState()
+      let appliedBusinessPayload = false
 
       switch (envelope.messageType) {
         case WireMessageType.HelloAck: {
@@ -496,14 +526,18 @@ export class GameClient {
           const dto = decodeJsonPayload<PlayerSnapshotDto>(envelope)
           // 传入信封原始字节：section checksum 校验直接对线上 data 成员字节区间复算。
           const snapshot = await decodePlayerSnapshotDto(dto, envelope.payload, this.account, this.sequenceId)
+          if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
           useGameStore.getState().applySnapshot(snapshot)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.SnapshotDelta: {
           const dto = decodeJsonPayload<PlayerSnapshotDeltaDto>(envelope)
           const current = useGameStore.getState().toSnapshotView()
           const patch = await decodePlayerSnapshotDeltaDto(dto, current, envelope.payload)
+          if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
           useGameStore.getState().applyPatch(patch)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.CommandResult: {
@@ -521,21 +555,32 @@ export class GameClient {
           if (result.snapshotForm === CommandResultSnapshotForm.Delta && isPlayerSnapshotDeltaDto(result.snapshot)) {
             const current = useGameStore.getState().toSnapshotView()
             const patch = await decodePlayerSnapshotDeltaDto(result.snapshot, current, envelope.payload, ['snapshot', 'changedSections'])
+            if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
             // 钱包类命令（market.*/item.*）不推状态版本：同版本回执仍携带资产差额必须合入，仅丢弃严格更旧的回执。
             useGameStore.getState().applyPatch(patch, { allowSameVersion: true })
+            appliedBusinessPayload = true
           } else if (result.snapshotForm === CommandResultSnapshotForm.Snapshot && isPlayerSnapshotDto(result.snapshot)) {
             // 内嵌全量快照的 sections 位于信封 JSON 的 snapshot 成员内，按路径定位 data 字节区间。
             const snapshot = await decodePlayerSnapshotDto(result.snapshot, envelope.payload, this.account, this.sequenceId, ['snapshot', 'sections'])
+            if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
             useGameStore.getState().applySnapshot(snapshot)
+            appliedBusinessPayload = true
           }
           if (result.message) useGameStore.getState().setNotice(result.message)
+          appliedBusinessPayload = true
           break
         }
-        case WireMessageType.ActionResult:
+        case WireMessageType.ActionResult: {
           // ActionIntent 的专用回执只确认排队结果；权威状态随后由 snapshot/delta 推送。
+          const actionResult = decodeJsonPayload<{ requestId?: unknown }>(envelope)
+          if (!actionResult || actionResult.requestId !== envelope.requestId) return
+          appliedBusinessPayload = true
           break
+        }
         case WireMessageType.Error: {
           const error = decodeJsonPayload<ErrorDto>(envelope)
+          if (!error || typeof error.code !== 'string' || typeof error.message !== 'string') throw new Error('协议错误载荷无效。')
+          if (error.requestId && error.requestId !== envelope.requestId) return
           if (error.requestId) {
             const timer = this.pendingRequests.get(error.requestId)
             if (timer !== undefined) window.clearTimeout(timer)
@@ -550,23 +595,28 @@ export class GameClient {
             window.dispatchEvent(new Event(GAME_DATA_MISMATCH_EVENT))
           }
           useGameStore.getState().setNotice(error.message || error.code)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.LogBatch: {
           const batch = decodeJsonPayload<LogBatchDto>(envelope)
-          if (batch?.events && Array.isArray(batch.events) && batch.events.length > 0) {
-            gameLogService.ingestBatch(this.playerId, batch.events)
-          }
+          if (!batch || !Array.isArray(batch.events)) throw new Error('日志批次载荷无效。')
+          if (batch.events.length > 0) gameLogService.ingestBatch(this.playerId, batch.events)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.ChatMessage: {
           const message = decodeJsonPayload<ChatMessageDto>(envelope)
-          if (message?.messageId) chatService.appendMessage(message)
+          if (!message || typeof message.messageId !== 'string' || !message.messageId) throw new Error('传音消息载荷无效。')
+          chatService.appendMessage(message)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.ChatHistory: {
           const history = decodeJsonPayload<ChatHistoryDto>(envelope)
-          if (history?.channel) chatService.applyHistory(history)
+          if (!history || typeof history.channel !== 'string' || !Array.isArray(history.messages)) throw new Error('传音历史载荷无效。')
+          chatService.applyHistory(history)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.SocialState: {
@@ -578,12 +628,16 @@ export class GameClient {
             this.pendingRequests.delete(state.requestId)
             this.awaitingReconnectRequests.delete(state.requestId)
           }
-          if (state) useSocialStore.getState().applyState(state)
+          if (!state) throw new Error('社交状态载荷无效。')
+          useSocialStore.getState().applyState(state)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.PartyLobby: {
           const lobby = decodeJsonPayload<PartyLobbyDto>(envelope)
-          if (lobby) useSocialStore.getState().applyLobby(lobby)
+          if (!lobby) throw new Error('组队大厅载荷无效。')
+          useSocialStore.getState().applyLobby(lobby)
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.Pong:
@@ -596,14 +650,16 @@ export class GameClient {
         case WireMessageType.ChatHistoryRequest:
         case WireMessageType.SocialAction:
         case WireMessageType.PartyLobbyRequest:
-          break
+          // 这些类型是客户端上行回显，服务端不会作为业务帧下发；合法 envelope 不代表业务成功。
+          return
         default:
           throw new Error('收到未知协议消息。')
       }
+      if (appliedBusinessPayload) this.resetParseFailureState()
     } catch (error) {
       // 解析失败不主动断开：丢弃该帧，仅按阈值渐进升级（提示 -> resync -> 断开重连），
       // 避免坏帧与"close -> 重连 -> 再失败"形成无限循环。
-      this.handleParseFailure(error)
+      if (this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) this.handleParseFailure(error)
     }
   }
 
@@ -615,6 +671,7 @@ export class GameClient {
   }
 
   private handleParseFailure(error: unknown): void {
+    if (this.disposed || !this.socket) return
     const now = Date.now()
     if (now - this.parseFailureWindowStart > PARSE_FAILURE_WINDOW_MS) {
       this.parseFailureWindowStart = now

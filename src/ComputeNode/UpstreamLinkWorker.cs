@@ -230,7 +230,7 @@ public sealed class UpstreamLinkWorker(
                 // 形成「再生产→整批判死」循环）。
                 results = (batch.Request.Jobs ?? [])
                     .Select(job => job is null
-                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null, null,
+                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, 0, null, null, null,
                             violation.Code, violation.Message, true)
                         : AdvanceJobResult.Failed(job, violation.Code, violation.Message, retryable: true))
                     .ToList();
@@ -260,7 +260,7 @@ public sealed class UpstreamLinkWorker(
                     // 任务级契约违规只判死该任务自身（non-retryable），不连坐批内其他任务。
                     var jobViolation = ComputeContract.ValidateJob(job);
                     var result = job is null
-                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null, null,
+                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, 0, null, null, null,
                             jobViolation?.Code ?? "INVALID_JOB_ID", jobViolation?.Message ?? "任务为空。", false)
                         : jobViolation is not null
                             ? AdvanceJobResult.Failed(job, jobViolation.Code, jobViolation.Message)

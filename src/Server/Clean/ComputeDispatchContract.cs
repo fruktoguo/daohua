@@ -18,7 +18,7 @@ namespace Server.Clean;
 public static class ComputeDispatchContract
 {
     /// <summary>契约版本字符串，必须与 ComputeNode 端 compute.v2 完全一致。</summary>
-    public const string Version = "compute.v2";
+    public const string Version = "compute.v3";
     /// <summary>内部鉴权令牌的 HTTP 请求头名称。</summary>
     public const string TokenHeader = "X-Compute-Token";
     /// <summary>批处理端点相对路径。</summary>
@@ -96,7 +96,7 @@ public sealed record ComputeSectionPayload(
 /// <param name="AssetId">资产标识（物品/货币定义 ID）。</param>
 /// <param name="Variant">资产变体；普通资产为空串。</param>
 /// <param name="Quantity">当前可用余额。</param>
-public sealed record ComputeAssetBalance(string AssetId, string Variant, double Quantity);
+public sealed record ComputeAssetBalance(string AssetId, string Variant, double Quantity, long Version);
 
 /// <summary>compute.v2 结果回传的一行资产增量；主服按现有经济事务口径原子入账。</summary>
 /// <param name="AssetId">资产标识（物品/货币定义 ID）。</param>
@@ -121,6 +121,7 @@ public sealed record ComputeAdvanceBatchResponse(
 /// <param name="Success">是否推进成功。</param>
 /// <param name="SourceStateVersion">源状态版本号。</param>
 /// <param name="TargetStateVersion">目标状态版本号；无实质推进时与源版本相同（仅推进模拟时钟）。</param>
+/// <param name="LastSimulatedAtUnixMilliseconds">推进完成后的实际模拟时钟，必须来自 ECS 快照而非请求目标时间。</param>
 /// <param name="Sections">推进后发生变更的 section 载荷；无变更时为空数组，失败时为 <see langword="null"/>。</param>
 /// <param name="AssetDeltas">推进结算出的资产增量行（QuantityDelta 非零）；无增量或失败时为 <see langword="null"/>。</param>
 /// <param name="Metrics">推进计算指标，失败时为 <see langword="null"/>。</param>
@@ -133,6 +134,7 @@ public sealed record ComputeAdvanceJobResult(
     bool Success,
     long SourceStateVersion,
     long TargetStateVersion,
+    long LastSimulatedAtUnixMilliseconds,
     IReadOnlyList<ComputeSectionPayload>? Sections,
     IReadOnlyList<ComputeAssetDelta>? AssetDeltas,
     ComputeAdvanceMetrics? Metrics,

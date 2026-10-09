@@ -37,6 +37,12 @@ public sealed record LoadTestOptions(
     bool NodeKill,
     string? RepoRoot)
 {
+    /// <summary>综合容量门禁要求真实目标、进程资源证据与预算同时闭环；独立小规模场景不冒充容量验收。</summary>
+    public bool CapacityGate { get; init; }
+
+    /// <summary>在本场景自动启动的隔离主服执行 100/500 认证网络业务门禁。</summary>
+    public bool CapacityNetworkOnLocalServer { get; init; }
+
     /// <summary>
     /// 从命令行参数解析压测选项。
     /// </summary>

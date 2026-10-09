@@ -113,6 +113,105 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(0, snapshot.Assets.Single(asset => asset.AssetId == "item.fragment.heavy-slash").Quantity);
     }
 
+    [Theory]
+    [InlineData("ability.learn")]
+    [InlineData("tutorial.skip")]
+    public async Task AtomicCommandFailureRestoresStateAndExactDirtyBoundary(string command)
+    {
+        var fixture = CreateFixtureWithTutorial(Epoch, null, command != "tutorial.skip",
+            new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 1, 1));
+        await using var adapter = fixture.Adapter;
+        var before = await adapter.LoadAsync(fixture.PlayerId);
+        // 直接标一段尚未进入宿主 _dirtyAt 的旧脏数据，防止回滚误用宿主缓存丢失真实 dirty。
+        fixture.Ecs.MarkDirty(fixture.PlayerId, PlayerSectionKind.World);
+        var dirtyBefore = fixture.Ecs.GetDirtySections(fixture.PlayerId).OrderBy(kind => kind).ToArray();
+        fixture.Economy.FailNextCommit = true;
+        var payload = command == "ability.learn"
+            ? JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash" })
+            : JsonSerializer.SerializeToElement(new { });
+        var requestId = Guid.NewGuid();
+        await Assert.ThrowsAsync<IOException>(async () => await adapter.ExecuteAsync(fixture.PlayerId, command, payload, 0, requestId));
+        Assert.Equal(JsonSerializer.Serialize(before.State), JsonSerializer.Serialize(fixture.Ecs.ExportSnapshot(fixture.PlayerId).State));
+        Assert.Equal(dirtyBefore, fixture.Ecs.GetDirtySections(fixture.PlayerId).OrderBy(kind => kind));
+        Assert.Empty(fixture.Sections.Receipts);
+        var success = await adapter.ExecuteAsync(fixture.PlayerId, command, payload, 0, requestId);
+        Assert.True(success.Success);
+        Assert.Contains(fixture.Sections.Receipts, receipt => receipt.RequestId == requestId && receipt.Command == command);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ClockOnlyAdvanceIsDurableAndAcknowledgesWrittenSections(bool batch)
+    {
+        var fixture = CreateFixture();
+        await using var adapter = fixture.Adapter;
+        await adapter.LoadAsync(fixture.PlayerId);
+        await adapter.FlushAsync(fixture.PlayerId, true);
+        await AdvanceAsync(fixture, Epoch.AddSeconds(10), batch);
+        await AdvanceAsync(fixture, Epoch.AddSeconds(20), batch);
+        Assert.Equal(2, fixture.Economy.Requests.Count);
+        Assert.All(fixture.Economy.Requests, request =>
+        {
+            Assert.Empty(request.Deltas);
+            Assert.Contains(request.Sections!, section => section.SectionKind == PlayerSectionKinds.Progression);
+        });
+        var persisted = SectionCodec.DecodeAggregate((await fixture.Sections.LoadAsync(fixture.PlayerId))!);
+        Assert.Equal(Epoch.AddSeconds(20), persisted.LastSimulatedAt);
+        Assert.Empty(fixture.Ecs.GetDirtySections(fixture.PlayerId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnknownCommitReplaysExactRequestAndFencesWhenConfirmationFails(bool unavailable)
+    {
+        var fixture = CreateFixture(new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 1, 1));
+        await using var adapter = fixture.Adapter;
+        await adapter.LoadAsync(fixture.PlayerId);
+        fixture.Economy.CommitThenUnknown = true;
+        fixture.Economy.FailConfirmation = unavailable;
+        var payload = JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash" });
+        var id = Guid.NewGuid();
+        if (unavailable)
+        {
+            var unknown = await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () =>
+                await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload, 0, id));
+            Assert.IsType<IOException>(unknown.InnerException);
+            Assert.IsType<IOException>(unknown.Data["ConfirmationError"]);
+            Assert.Same(unknown, await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.LoadAsync(fixture.PlayerId)));
+            await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.FlushAsync(fixture.PlayerId, true));
+            await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.MutateOwnedAsync(fixture.PlayerId, aggregate => aggregate.SkipTutorial()));
+            var frozen = fixture.Ecs.ExportSnapshot(fixture.PlayerId).State;
+            await adapter.AdvanceAllAsync(Epoch.AddSeconds(60));
+            Assert.Equal(JsonSerializer.Serialize(frozen), JsonSerializer.Serialize(fixture.Ecs.ExportSnapshot(fixture.PlayerId).State));
+        }
+        else
+        {
+            Assert.True((await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload, 0, id)).Success);
+            Assert.Single(fixture.Economy.Requests);
+            Assert.Same(fixture.Economy.Attempts[0], fixture.Economy.Attempts[1]);
+            Assert.Equal(0d, (await adapter.LoadAsync(fixture.PlayerId)).Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
+        }
+    }
+
+    [Fact]
+    public async Task OwnedMutationRenewsBeforeTouchingStateAndRejectsLostLease()
+    {
+        var ownership = new MemoryOwnership();
+        var fixture = CreateOwnedFixture(Epoch, null, true, ownership);
+        await using var adapter = fixture.Adapter;
+        var before = await adapter.LoadAsync(fixture.PlayerId);
+        ownership.AllowRenew = false;
+        var called = false;
+        await Assert.ThrowsAsync<PlayerOwnershipLostException>(async () => await adapter.MutateOwnedAsync(
+            fixture.PlayerId, aggregate => { called = true; aggregate.SetLoopEnabled(true); }));
+        Assert.False(called);
+        Assert.Equal(1, ownership.RenewCalls);
+        Assert.Equal(JsonSerializer.Serialize(before.State), JsonSerializer.Serialize(fixture.Ecs.ExportSnapshot(fixture.PlayerId).State));
+        ownership.AllowRenew = true;
+    }
+
     [Fact]
     public async Task ManualConsumableIsRejectedFromAutoUseSlots()
     {
@@ -122,7 +221,7 @@ public sealed class EcsAdapterBoundaryTests
         await using var adapter = fixture.Adapter;
         // 手动消耗品（category=manual）即使声明了行动域也不得进自动使用槽（含通用栏）。
         var manualPayload = JsonSerializer.SerializeToElement(
-            new { actionType = "cultivation", slotIndex = 0, itemId = "item.tome.heavy-slash", quantity = 1, enabled = true, group = "general" },
+            new { actionType = "exploration", slotIndex = 0, itemId = "item.tome.heavy-slash", quantity = 1, enabled = true, group = "general" },
             ProtocolJson.Options);
 
         var rejected = await adapter.ExecuteAsync(fixture.PlayerId, "queue.auto_use.configure", manualPayload, 0, Guid.NewGuid());
@@ -133,11 +232,43 @@ public sealed class EcsAdapterBoundaryTests
 
         // 正例对照：自动消耗品正常入槽，防止准入门禁误伤。
         var pillPayload = JsonSerializer.SerializeToElement(
-            new { actionType = "cultivation", slotIndex = 0, itemId = "item.qi-gathering-pill", quantity = 1, enabled = true, group = "general" },
+            new { actionType = "exploration", slotIndex = 0, itemId = "item.qi-gathering-pill", quantity = 1, enabled = true, group = "general" },
             ProtocolJson.Options);
 
         var accepted = await adapter.ExecuteAsync(fixture.PlayerId, "queue.auto_use.configure", pillPayload, 0, Guid.NewGuid());
 
+        Assert.True(accepted.Success, accepted.Message);
+        Assert.Single(accepted.Snapshot.State.Settings.AutoUseSlots ?? []);
+    }
+
+    /// <summary>物品栏域词表与物品栏域准入：旧行动类型 cultivation 已并入历练栏域不再是合法标识；
+    /// 物品未声明目标栏域时拒绝装配；历练栏 6 槽上限允许第 6 槽（下标 5）入槽。</summary>
+    [Fact]
+    public async Task AutoUseConfigureValidatesBarVocabularyAndItemBarMembership()
+    {
+        var fixture = CreateFixture(
+            new AssetBalanceRecord(Guid.Empty, "item.qi-gathering-pill", "", 3, 1));
+        await using var adapter = fixture.Adapter;
+
+        var staleBarPayload = JsonSerializer.SerializeToElement(
+            new { actionType = "cultivation", slotIndex = 0, itemId = "item.qi-gathering-pill", quantity = 1, enabled = true, group = "general" },
+            ProtocolJson.Options);
+        var rejectedBar = await adapter.ExecuteAsync(fixture.PlayerId, "queue.auto_use.configure", staleBarPayload, 0, Guid.NewGuid());
+        Assert.False(rejectedBar.Success);
+        Assert.Equal("INVALID_ACTION_TYPE", rejectedBar.Code);
+
+        // 引气丹只声明历练栏域：炼器栏域拒绝装配。
+        var wrongBarPayload = JsonSerializer.SerializeToElement(
+            new { actionType = "forging", slotIndex = 0, itemId = "item.qi-gathering-pill", quantity = 1, enabled = true, group = "general" },
+            ProtocolJson.Options);
+        var rejectedItem = await adapter.ExecuteAsync(fixture.PlayerId, "queue.auto_use.configure", wrongBarPayload, 0, Guid.NewGuid());
+        Assert.False(rejectedItem.Success);
+        Assert.Equal("INVALID_CONSUMABLE", rejectedItem.Code);
+
+        var sixthSlotPayload = JsonSerializer.SerializeToElement(
+            new { actionType = "exploration", slotIndex = 5, itemId = "item.qi-gathering-pill", quantity = 1, enabled = true, group = "general" },
+            ProtocolJson.Options);
+        var accepted = await adapter.ExecuteAsync(fixture.PlayerId, "queue.auto_use.configure", sixthSlotPayload, 0, Guid.NewGuid());
         Assert.True(accepted.Success, accepted.Message);
         Assert.Single(accepted.Snapshot.State.Settings.AutoUseSlots ?? []);
     }
@@ -298,7 +429,10 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(expectedRequest.OccurredAt, actual.OccurredAt);
         Assert.Equal(expectedRequest.Deltas, actual.Deltas);
         Assert.Equal(expectedRequest.ResultPayload.ToArray(), actual.ResultPayload.ToArray());
-        Assert.Null(actual.Sections);
+        Assert.NotEmpty(actual.Sections!);
+        Assert.Contains(actual.Sections!, section => section.SectionKind == PlayerSectionKinds.Progression
+            && section.LastSimulatedAt == Epoch.AddSeconds(37));
+        Assert.Contains(actual.Receipts!, receipt => receipt.Command == "simulation.advance");
         Assert.NotNull(result!.Simulation);
         var balance = result.Snapshot.Assets.Single(row => row.AssetId == "item.ningxue-grass");
         // 15 = 初始 3 + 四轮产出 12（fixture 玩家引导已终态，无首轮赠送）。
@@ -411,6 +545,133 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(enqueues, fixture.Sections.EnqueueCount);
     }
 
+    [Fact]
+    public async Task BatchSkipsExpiredTargetWithoutRollingBackOrAddingTransaction()
+    {
+        var fixture = CreateFixture();
+        await using var adapter = fixture.Adapter;
+        await EnqueueGatheringAsync(fixture);
+        await AdvanceAsync(fixture, Epoch.AddSeconds(37), batch: false);
+        var before = adapter.TryGetLoaded(fixture.PlayerId)!;
+        var transactions = fixture.Economy.Requests.Count;
+
+        await adapter.AdvanceAllAsync(Epoch.AddSeconds(1));
+
+        Assert.Equal(JsonSerializer.Serialize(before), JsonSerializer.Serialize(adapter.TryGetLoaded(fixture.PlayerId)));
+        Assert.Equal(transactions, fixture.Economy.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("sections")]
+    [InlineData("wallet")]
+    [InlineData("committed-wallet")]
+    public async Task LoadFailureCleansPartialRuntimeAndLeaseBeforeReload(string failure)
+    {
+        var ownership = new MemoryOwnership();
+        var fixture = CreateOwnedFixture(Epoch.AddSeconds(37), "explore.gather-ningxue-grass", true, ownership);
+        await using var adapter = fixture.Adapter;
+        if (failure == "sections") fixture.Sections.FailNextLoad = true;
+        else fixture.Assets.FailOnLoadCall = failure == "wallet" ? 1 : 2;
+        // 同步钱包故障可发生在 durable 提交成功、_loaded 已暂存新时钟之后。
+        fixture.Economy.ReturnBalances = failure != "committed-wallet";
+
+        await Assert.ThrowsAsync<IOException>(async () => await adapter.LoadAsync(fixture.PlayerId));
+
+        Assert.Null(adapter.TryGetLoaded(fixture.PlayerId));
+        Assert.Throws<KeyNotFoundException>(() => fixture.Ecs.ExportSnapshot(fixture.PlayerId));
+        Assert.Equal(1, ownership.ReleaseCalls);
+        Assert.Empty(adapter.GetRecentLogEvents(fixture.PlayerId));
+        var committed = failure == "committed-wallet" ? Assert.Single(fixture.Economy.Requests) : null;
+        var restored = await adapter.LoadAsync(fixture.PlayerId);
+        Assert.Equal(PresenceState.Online, restored.State.Presence);
+        Assert.Equal(Epoch.AddSeconds(37), restored.LastSimulatedAt);
+        Assert.Equal(2, ownership.AcquireCalls);
+        if (committed is not null) Assert.Same(committed, Assert.Single(fixture.Economy.Requests));
+    }
+
+    [Fact]
+    public async Task UnknownCommitDuringLoadRetainsEntityAndLeaseForRecovery()
+    {
+        var ownership = new MemoryOwnership();
+        var fixture = CreateOwnedFixture(Epoch.AddSeconds(37), "explore.gather-ningxue-grass", true, ownership);
+        await using var adapter = fixture.Adapter;
+        fixture.Economy.CommitThenUnknown = true;
+        fixture.Economy.FailConfirmation = true;
+
+        var unknown = await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.LoadAsync(fixture.PlayerId));
+
+        Assert.NotNull(adapter.TryGetLoaded(fixture.PlayerId));
+        Assert.Equal(0, ownership.ReleaseCalls);
+        var frozen = JsonSerializer.Serialize(fixture.Ecs.ExportSnapshot(fixture.PlayerId).State);
+        await adapter.AdvanceAllAsync(Epoch.AddSeconds(74));
+        Assert.Equal(frozen, JsonSerializer.Serialize(fixture.Ecs.ExportSnapshot(fixture.PlayerId).State));
+        Assert.Same(unknown, await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.LoadAsync(fixture.PlayerId)));
+    }
+
+    [Fact]
+    public async Task BatchRechecksLoadedPlayersAfterWaitingForUnloadGate()
+    {
+        var fixture = CreateFixture();
+        await using var adapter = fixture.Adapter;
+        await adapter.LoadAsync(fixture.PlayerId);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Sections.BeforeEnqueueAsync = async () =>
+        {
+            entered.SetResult();
+            await release.Task;
+        };
+        // 卸载持有 gate 等待刷盘；批次取样该玩家后只能等卸载完成再取得 gate。
+        var unloading = adapter.RemoveAsync(fixture.PlayerId, true).AsTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var advancing = adapter.AdvanceAllAsync(Epoch.AddSeconds(37)).AsTask();
+        Assert.False(advancing.IsCompleted);
+        release.SetResult();
+        await unloading.WaitAsync(TimeSpan.FromSeconds(5));
+        await advancing.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Null(adapter.TryGetLoaded(fixture.PlayerId));
+        Assert.Empty(fixture.Economy.Requests);
+    }
+
+    [Fact]
+    public async Task BatchDoesNotAdvanceEntityWhoseLoadStillOwnsItsGate()
+    {
+        var fixture = CreateFixtureCore(Epoch.AddSeconds(37), null);
+        await using var adapter = fixture.Adapter;
+        await adapter.LoadAsync(fixture.PlayerId);
+        var newId = Guid.Parse("10000000-0000-4000-8000-000000000099");
+        var newPlayer = PlayerAggregate.Create(new PlayerId(newId), fixture.InitialState.AccountId,
+            "装载中玩家", Epoch, fixture.Catalog.Fingerprint);
+        newPlayer.SkipTutorial();
+        newPlayer.SetPresence(PresenceState.Offline);
+        fixture.Sections.Register(ToBundle(newPlayer.ExportState()));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Economy.BeforeCommitAsync = async request =>
+        {
+            if (request.ActorId != newId) return;
+            entered.SetResult();
+            await release.Task;
+        };
+        var loading = adapter.LoadAsync(newId).AsTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Null(adapter.TryGetLoaded(newId));
+        try
+        {
+            await adapter.AdvanceAllAsync(Epoch.AddSeconds(74));
+            Assert.Equal(Epoch.AddSeconds(37), fixture.Ecs.ExportSnapshot(newId).State.LastSimulatedAt);
+            Assert.Null(fixture.Ecs.DrainSimulationResult(newId));
+        }
+        finally
+        {
+            release.SetResult();
+            await loading.WaitAsync(TimeSpan.FromSeconds(5));
+            fixture.Economy.BeforeCommitAsync = null;
+        }
+        Assert.Equal(Epoch.AddSeconds(37), adapter.TryGetLoaded(newId)!.LastSimulatedAt);
+    }
+
     private static async Task<PlayerRuntimeSnapshot> EnqueueGatheringAsync(Fixture fixture)
     {
         var requestId = Guid.Parse("10000000-0000-4000-8000-000000000025");
@@ -439,6 +700,14 @@ public sealed class EcsAdapterBoundaryTests
         => CreateFixtureCore(Epoch, null, balances);
 
     private static Fixture CreateFixtureCore(DateTimeOffset clockAt, string? initialAction, params AssetBalanceRecord[] balances)
+        => CreateFixtureWithTutorial(clockAt, initialAction, true, balances);
+
+    private static Fixture CreateFixtureWithTutorial(DateTimeOffset clockAt, string? initialAction, bool skipTutorial,
+        params AssetBalanceRecord[] balances)
+        => CreateOwnedFixture(clockAt, initialAction, skipTutorial, null, balances);
+
+    private static Fixture CreateOwnedFixture(DateTimeOffset clockAt, string? initialAction, bool skipTutorial,
+        IPlayerOwnershipStore? ownership, params AssetBalanceRecord[] balances)
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var playerId = Guid.Parse("10000000-0000-4000-8000-000000000023");
@@ -446,7 +715,7 @@ public sealed class EcsAdapterBoundaryTests
             new AccountId(Guid.Parse("20000000-0000-4000-8000-000000000023")), "适配器测试", Epoch, catalog.Fingerprint);
         // 适配器边界测试与引导语义无关：统一终态，避免教程里程碑推进对绑定行动的
         // 强制出队截断干扰无限重复类 parity 断言。
-        aggregate.SkipTutorial();
+        if (skipTutorial) aggregate.SkipTutorial();
         if (initialAction is not null) aggregate.Enqueue(new(new ActionId(initialAction), -1), Epoch, catalog.Actions);
         aggregate.SetPresence(PresenceState.Offline);
         var initialState = aggregate.ExportState();
@@ -458,8 +727,8 @@ public sealed class EcsAdapterBoundaryTests
         var clock = new FixedClock(clockAt);
         var ecs = new EcsGameRuntime(catalog, Epoch);
         var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, assets, economy, catalog,
-            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity());
-        return new Fixture(playerId, adapter, sections, economy, catalog, initialState, ecs);
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity(), ownership: ownership);
+        return new Fixture(playerId, adapter, sections, economy, catalog, initialState, ecs, assets);
     }
 
     private static PlayerStateBundle ToBundle(PlayerAggregateState state)
@@ -478,7 +747,30 @@ public sealed class EcsAdapterBoundaryTests
             write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt);
 
     private sealed record Fixture(Guid PlayerId, EcsPlayerRuntimeAdapter Adapter, MemorySections Sections,
-        MemoryEconomy Economy, GameDataCatalog Catalog, PlayerAggregateState InitialState, EcsGameRuntime Ecs);
+        MemoryEconomy Economy, GameDataCatalog Catalog, PlayerAggregateState InitialState, EcsGameRuntime Ecs, MemoryAssets Assets);
+
+    private sealed class MemoryOwnership : IPlayerOwnershipStore
+    {
+        public bool AllowRenew { get; set; } = true;
+        public int AcquireCalls { get; private set; }
+        public int RenewCalls { get; private set; }
+        public int ReleaseCalls { get; private set; }
+        public ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
+        {
+            AcquireCalls++;
+            return ValueTask.FromResult(true);
+        }
+        public ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
+        {
+            RenewCalls++;
+            return ValueTask.FromResult(AllowRenew);
+        }
+        public ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default)
+        {
+            ReleaseCalls++;
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class FixedClock(DateTimeOffset value) : IPlayerSimulationClock
     {
@@ -490,26 +782,34 @@ public sealed class EcsAdapterBoundaryTests
     private sealed class MemorySections(PlayerStateBundle initial) : IPlayerStateRepository
     {
         private readonly object _sync = new();
-        private PlayerStateBundle _bundle = initial;
+        private readonly Dictionary<Guid, PlayerStateBundle> _bundles = new() { [initial.Identity.PlayerId] = initial };
+        public bool FailNextLoad { get; set; }
         public bool FailNextEnqueue { get; set; }
+        public Func<ValueTask>? BeforeEnqueueAsync { get; set; }
         public int EnqueueCount { get; private set; }
         public IReadOnlyCollection<SectionWrite> LastWrites { get; private set; } = [];
         public List<CommandReceipt> Receipts { get; } = [];
-        public IReadOnlyDictionary<string, StoredSection> LatestSections { get { lock (_sync) return _bundle.Sections; } }
+        public IReadOnlyDictionary<string, StoredSection> LatestSections { get { lock (_sync) return _bundles[initial.Identity.PlayerId].Sections; } }
+        public void Register(PlayerStateBundle bundle) { lock (_sync) _bundles.Add(bundle.Identity.PlayerId, bundle); }
         public ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<PlayerStateBundle?>(_bundle.Identity.PlayerId == playerId ? _bundle : null);
-        public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default)
         {
+            if (FailNextLoad) { FailNextLoad = false; throw new IOException("注入装载分段读取失败。"); }
+            lock (_sync) return ValueTask.FromResult(_bundles.GetValueOrDefault(playerId));
+        }
+        public async ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default)
+        {
+            if (BeforeEnqueueAsync is { } beforeEnqueue) await beforeEnqueue();
             lock (_sync)
             {
                 if (FailNextEnqueue) { FailNextEnqueue = false; throw new IOException("注入分段队列写入失败。"); }
                 EnqueueCount++;
                 LastWrites = sections.ToArray();
-                if (sections.Count == 0) return ValueTask.CompletedTask;
-                var values = _bundle.Sections.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-                foreach (var write in sections) values[write.SectionKind] = ToStored(write);
+                if (sections.Count == 0) return;
                 var first = sections.First();
-                _bundle = _bundle with
+                var bundle = _bundles[first.PlayerId];
+                var values = bundle.Sections.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+                foreach (var write in sections) values[write.SectionKind] = ToStored(write);
+                _bundles[first.PlayerId] = bundle with
                 {
                     Head = new PlayerStateHead(first.PlayerId, sections.Max(section => section.StateVersion), first.SchemaVersion,
                         sections.Max(section => section.LastSimulatedAt ?? first.UpdatedAt), first.GameDataFingerprint,
@@ -517,7 +817,6 @@ public sealed class EcsAdapterBoundaryTests
                     Sections = values
                 };
             }
-            return ValueTask.CompletedTask;
         }
         public ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(new FlushBatchResult(0, 0, 0, TimeSpan.Zero));
@@ -533,8 +832,15 @@ public sealed class EcsAdapterBoundaryTests
     {
         private readonly ConcurrentDictionary<(Guid, string, string), AssetBalanceRecord> _rows = new(
             values.ToDictionary(value => (value.PlayerId, value.AssetId, value.Variant)));
+        public int FailOnLoadCall { get; set; }
+        private int _loadCalls;
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(_rows.Values.Where(value => value.PlayerId == playerId).ToArray());
+        {
+            if (++_loadCalls == FailOnLoadCall) throw new IOException("注入权威钱包读取失败。");
+            return ValueTask.FromResult(ReadBalances(playerId));
+        }
+        public IReadOnlyList<AssetBalanceRecord> ReadBalances(Guid playerId)
+            => _rows.Values.Where(value => value.PlayerId == playerId).ToArray();
         public void Apply(IEnumerable<Server.Clean.AssetDelta> deltas)
         {
             foreach (var delta in deltas)
@@ -551,20 +857,37 @@ public sealed class EcsAdapterBoundaryTests
         private readonly ConcurrentDictionary<string, EconomyTransactionResult> _committed = new();
         public List<EconomyTransactionRequest> Requests { get; } = [];
         public bool FailNextCommit { get; set; }
-        public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        public bool CommitThenUnknown { get; set; }
+        public bool FailConfirmation { get; set; }
+        public bool ReturnBalances { get; set; } = true;
+        public Func<EconomyTransactionRequest, ValueTask>? BeforeCommitAsync { get; set; }
+        public int Calls { get; private set; }
+        public List<EconomyTransactionRequest> Attempts { get; } = [];
+        public async ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
         {
+            if (BeforeCommitAsync is { } beforeCommit) await beforeCommit(request);
+            Calls++;
+            Attempts.Add(request);
+            if (FailConfirmation && Calls > 1) throw new IOException("注入结局核验不可达。");
             if (FailNextCommit)
             {
                 FailNextCommit = false;
                 throw new IOException("注入资产事务失败，验证未提交日志不可见。");
             }
-            if (_committed.TryGetValue(request.IdempotencyKey, out var previous)) return ValueTask.FromResult(previous with { AlreadyCommitted = true });
+            if (_committed.TryGetValue(request.IdempotencyKey, out var previous)) return previous with { AlreadyCommitted = true };
             Requests.Add(request);
+            if (request.Sections is not null || request.Receipts is not null)
+                await sections.EnqueueSectionsAsync(request.Sections ?? [], request.Receipts ?? [], cancellationToken);
             assets.Apply(request.Deltas);
-            if (request.Sections is { Count: > 0 }) sections.EnqueueSectionsAsync(request.Sections, cancellationToken).GetAwaiter().GetResult();
-            var result = new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload, assets.LoadBalancesAsync(request.ActorId).GetAwaiter().GetResult());
+            var result = new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false,
+                DateTimeOffset.UtcNow, request.ResultPayload, ReturnBalances ? assets.ReadBalances(request.ActorId) : null);
             _committed[request.IdempotencyKey] = result;
-            return ValueTask.FromResult(result);
+            if (CommitThenUnknown)
+            {
+                CommitThenUnknown = false;
+                throw new EconomyCommitOutcomeUnknownException(request.TransactionId, new IOException("注入 COMMIT 回包丢失。"));
+            }
+            return result;
         }
     }
 }

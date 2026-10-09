@@ -23,15 +23,15 @@ namespace Server.Tests;
 
 public sealed class OpsComputeEndpointTests
 {
-    /// <summary>资产回传只接受已知键并对所有无法独立重演的增量 fail-closed；无收益冷挂机结果仍可提交。</summary>
+    /// <summary>格式边界拒绝未知资产、非法变体、非有限值及重复键；收益可信性另由独立重演测试守门。</summary>
     [Fact]
-    public void ComputeAssetDeltaValidationFailsClosedAndAllowsNoRewardResult()
+    public void ComputeAssetDeltaFormatValidationRejectsMalformedRows()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var request = new ComputeAdvanceJobRequest(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "测试玩家", 1, 7, 1000, 2000,
             "checksum", catalog.Fingerprint, [],
-            [new ComputeAssetBalance("item.ningxue-grass", "", 3)]);
+            [new ComputeAssetBalance("item.ningxue-grass", "", 3, 1)]);
         var playerId = request.PlayerId;
 
         Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
@@ -41,9 +41,9 @@ public sealed class OpsComputeEndpointTests
         Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
             playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", double.NaN)], catalog));
         Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
-            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", -4)], catalog));
-        Assert.Throws<InvalidDataException>(() => ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
-            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", 1)], catalog));
+            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", 1), new ComputeAssetDelta("item.ningxue-grass", "", 1)], catalog));
+        Assert.Equal(1, Assert.Single(ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
+            playerId, request, [new ComputeAssetDelta("item.ningxue-grass", "", 1)], catalog)).Delta);
 
         Assert.Empty(ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(playerId, request, null, catalog));
     }

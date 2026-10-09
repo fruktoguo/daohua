@@ -27,7 +27,7 @@ public sealed class ComputeDispatchTests
                 ComputeDispatchContract.Version, "fp123", [job])),
             new ComputeLinkResult(batchId, new ComputeAdvanceBatchResponse(
                 ComputeDispatchContract.Version, "fp123", 1_700_000_000_000,
-                [new ComputeAdvanceJobResult(job.JobId, job.PlayerId, true, 7, 8, [], null, null, null, null, false)])),
+                [new ComputeAdvanceJobResult(job.JobId, job.PlayerId, true, 7, 8, 2_000, [], null, null, null, null, false)])),
             new ComputeLinkError("NODE_LIMIT", "上限")
         ];
 

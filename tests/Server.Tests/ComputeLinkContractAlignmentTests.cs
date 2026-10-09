@@ -49,8 +49,8 @@ public sealed class ComputeLinkContractAlignmentTests
         AssertRecordFieldsMatch<ComputeAdvanceJobResult>(source, "AdvanceJobResult");
         AssertRecordFieldsMatch<ComputeAdvanceMetrics>(source, "ComputeAdvanceMetrics");
 
-        Assert.Equal("compute.v2", ComputeDispatchContract.Version);
-        Assert.Contains("public const string Version = \"compute.v2\";", source);
+        Assert.Equal("compute.v3", ComputeDispatchContract.Version);
+        Assert.Contains("public const string Version = \"compute.v3\";", source);
         Assert.Equal(ComputeDispatchContract.TokenHeader, "X-Compute-Token");
         Assert.Contains("public const string TokenHeader = \"X-Compute-Token\";", source);
         Assert.Equal(256, ComputeDispatchContract.HardMaxJobsPerBatch);

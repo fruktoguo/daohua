@@ -35,7 +35,7 @@ public sealed class PostgresEconomyRepository(
                 await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
                 await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
                 var result = await CommitCoreAsync(connection, transaction, stableRequest, cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
+                await CommitTransactionAsync(transaction, stableRequest.TransactionId, cancellationToken);
                 logger.LogDebug("资产事务提交 transactionId={TransactionId} lines={Lines} attempt={Attempt}",
                     stableRequest.TransactionId, stableRequest.Deltas.Count, attempt);
                 return result;
@@ -54,6 +54,57 @@ public sealed class PostgresEconomyRepository(
                 await Task.Delay(SerializableRetryBackoff[attempt - 1] + jitter, cancellationToken);
             }
         }
+    }
+
+    internal sealed record CommittedEconomyRecord(
+        Guid TransactionId,
+        string IdempotencyKey,
+        string RequestHash,
+        string TransactionType,
+        Guid ActorId,
+        ReadOnlyMemory<byte> ResultPayload,
+        DateTimeOffset CommittedAt);
+
+    internal static async ValueTask<CommittedEconomyRecord?> TryLoadCommittedAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT transaction_id, idempotency_key, request_hash, transaction_type, actor_id, result_payload, created_at
+            FROM economy.transactions
+            WHERE idempotency_key = $1
+            FOR SHARE
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = idempotencyKey });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new CommittedEconomyRecord(
+            reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetGuid(4),
+            reader.GetFieldValue<byte[]>(5), reader.GetFieldValue<DateTimeOffset>(6));
+    }
+
+    internal static async ValueTask CommitTransactionAsync(
+        NpgsqlTransaction transaction, Guid transactionId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try { await transaction.CommitAsync(cancellationToken); }
+        catch (PostgresException) { throw; }
+        catch (Exception exception)
+        {
+            // COMMIT 已发送后异常不能证明服务端回滚；保留幂等键供请求重放查明事实。
+            throw new EconomyCommitOutcomeUnknownException(transactionId, exception);
+        }
+    }
+
+    internal static EconomyTransactionResult ValidateReplay(
+        EconomyTransactionRequest request, CommittedEconomyRecord existing)
+    {
+        var deltas = request.Deltas.GroupBy(delta => (delta.PlayerId, delta.AssetId, delta.Variant))
+            .Select(group => new AssetDelta(group.Key.PlayerId, group.Key.AssetId, group.Key.Variant, group.Sum(delta => delta.Delta))).ToArray();
+        if (existing.ActorId != request.ActorId || existing.TransactionType != request.TransactionType
+            || existing.RequestHash != ComputeRequestHash(request, deltas))
+            throw new EconomyIdempotencyConflictException(request.IdempotencyKey);
+        return new(existing.TransactionId, existing.IdempotencyKey, true, true, existing.CommittedAt, existing.ResultPayload);
     }
 
     private static bool IsSerializableConflict(PostgresException exception) =>
@@ -245,8 +296,10 @@ public sealed class PostgresEconomyRepository(
         if (string.IsNullOrWhiteSpace(request.TransactionType) || request.TransactionType.Length > 96)
             throw new ArgumentException("事务类型无效。", nameof(request));
         if (request.ActorId == Guid.Empty) throw new ArgumentException("ActorId 不能为空。", nameof(request));
-        if (request.Deltas is null || request.Deltas.Count == 0 || request.Deltas.Count > 512)
-            throw new ArgumentException("资产事务行数必须在 1..512。", nameof(request));
+        if (request.Deltas is null || request.Deltas.Count > 512
+            || (request.Deltas.Count == 0 && (request.Sections is null || request.Sections.Count == 0)
+                && (request.Receipts is null || request.Receipts.Count == 0)))
+            throw new ArgumentException("资产事务必须至少包含一笔资产变更、分段写回或命令回执。", nameof(request));
         if (request.ResultPayload.Length > 64 * 1024)
             throw new ArgumentException("资产事务结果载荷超过大小上限。", nameof(request));
         foreach (var delta in request.Deltas)
@@ -267,6 +320,9 @@ public sealed class PostgresEconomyRepository(
         foreach (var section in (request.Sections ?? []).OrderBy(section => section.SectionKind, StringComparer.Ordinal))
             canonical.Append(section.PlayerId).Append('|').Append(section.SectionKind).Append('|')
                 .Append(section.StateVersion).Append('|').Append(section.Checksum).Append('\n');
+        foreach (var receipt in (request.Receipts ?? []).OrderBy(receipt => receipt.PlayerId).ThenBy(receipt => receipt.RequestId))
+            canonical.Append(receipt.PlayerId).Append('|').Append(receipt.RequestId).Append('|')
+                .Append(receipt.Command).Append('|').Append(receipt.PayloadHash).Append('\n');
         foreach (var delta in deltas
                      .OrderBy(value => value.PlayerId)
                      .ThenBy(value => value.AssetId, StringComparer.Ordinal)

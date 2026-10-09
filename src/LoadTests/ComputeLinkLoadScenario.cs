@@ -102,7 +102,32 @@ internal static class ComputeLinkLoadScenario
                 warnings.Add("运维面板节点数未在预算内达到预期，继续执行（节点注册计数可能滞后可观测）。");
             }
 
-            // 模板玩家：优先复用库中已有全段存档；缺失时经真实注册接口创建（生产链一致）。
+            var resources = new ResourceEvidence();
+            using var resourceStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var resourceTask = MonitorResourcesAsync(spawned.ToArray(), resources, resourceStop.Token);
+            var networkReports = new Dictionary<string, LoadTestReport>();
+            try
+            {
+                if (options.CapacityNetworkOnLocalServer)
+                {
+                    var networkDuration = int.Parse(Environment.GetEnvironmentVariable("CAPACITY_REAL_NETWORK_DURATION_SECONDS") ?? "60");
+                    foreach (var target in new[] { CapacityTargetScenario.SustainedNetworkTarget, CapacityTargetScenario.PeakNetworkTarget })
+                    {
+                        var networkReport = await WebSocketScenario.RunAsync(options with
+                        {
+                            Scenario = "websocket", Players = target, DurationSeconds = networkDuration,
+                            ServerUri = new Uri($"http://127.0.0.1:{apiPort}"), RequireServer = true
+                        }, cancellationToken);
+                        networkReports[target.ToString()] = networkReport;
+                        if (!networkReport.GatePassed || networkReport.Errors != 0)
+                        {
+                            errors++;
+                            warnings.AddRange(networkReport.Warnings.Select(warning => $"认证网络 {target}: {warning}"));
+                        }
+                    }
+                }
+
+            // 模板与身份拥有同一时钟基线；不复用测试库中其他玩家的运行状态。
             (templatePlayerId, templateCreatedByUs) = await EnsureTemplatePlayerAsync(
                 dataSource, apiPort, runTag, cancellationToken);
             runPlayerIds = await ClonePlayersAsync(dataSource, templatePlayerId, options.Players, runTag, cancellationToken);
@@ -110,14 +135,48 @@ internal static class ComputeLinkLoadScenario
 
             var result = await MeasureAsync(
                 dataSource, opsBase, spawned, runPlayerIds, options, cancellationToken);
+            // cleanup 会删除本轮任务；先保存最小脱敏证据，避免后续资源采样失败抹掉唯一诊断。
+            result.DeadJobs = await QueryDeadJobsAsync(dataSource, runPlayerIds, cancellationToken);
+            if (result.DeadJobs.Count > 0)
+            {
+                var diagnosticJson = JsonSerializer.Serialize(result.DeadJobs,
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+                var diagnosticPath = Path.Combine(logDir, "dead-jobs.json");
+                await File.WriteAllTextAsync(diagnosticPath, diagnosticJson, cancellationToken);
+                Log($"已保留 {result.DeadJobs.Count} 个 dead 任务的脱敏诊断：{diagnosticPath}");
+                Log(diagnosticJson);
+            }
             result.JobsEnqueued = result.Waves.Values.Sum();
             errors += result.Errors + (result.JobsDead > 0 ? 1 : 0);
+            if (options.CapacityGate && result.FirstJobAt is { } first && result.LastTerminalAt is { } last
+                && (last - first).TotalMilliseconds > CapacityTargetScenario.ColdComputeBudgetMilliseconds)
+            {
+                errors++;
+                warnings.Add("真实冷挂机补算活跃窗口超过 30 秒预算。");
+            }
             if (result.JobsSucceeded < result.JobsEnqueued)
             {
                 errors++;
                 warnings.Add($"完结任务 {result.JobsSucceeded}/{result.JobsEnqueued}，存在未完成任务。");
             }
             warnings.AddRange(result.Warnings);
+            resourceStop.Cancel();
+            await resourceTask;
+            await resources.CapturePostgresAsync(dataSource, cancellationToken);
+            if (options.CapacityGate && (!resources.Complete
+                || resources.Processes.Count(entry => entry.Key.StartsWith("lt-node-", StringComparison.Ordinal) && entry.Value.Samples > 0) != options.ComputeNodes
+                || resources.Processes.GetValueOrDefault("server")?.PeakWorkingSetBytes > CapacityTargetScenario.ProcessWorkingSetBudgetBytes
+                || resources.TotalPeakWorkingSetBytes > 4L * 1024 * 1024 * 1024
+                || resources.PostgresDataBytes > CapacityTargetScenario.DataDiskBudgetBytes
+                || resources.PostgresWalBytes > CapacityTargetScenario.WalBudgetBytes
+                || resources.LogBytes > CapacityTargetScenario.LocalLogBudgetBytes))
+            {
+                errors++;
+                warnings.Add("Server/ComputeNode/PostgreSQL 资源证据缺失或超预算，容量门禁失败关闭。");
+            }
+            var metrics = result.ToMetrics(options, connectionString);
+            metrics["resources"] = resources;
+            metrics["networkReports"] = networkReports;
 
             var elapsed = Stopwatch.GetElapsedTime(started);
             process.Refresh();
@@ -137,8 +196,14 @@ internal static class ComputeLinkLoadScenario
                 result.JobsSucceeded,
                 errors,
                 errors == 0,
-                result.ToMetrics(options, connectionString),
+                metrics,
                 warnings);
+            }
+            finally
+            {
+                resourceStop.Cancel();
+                await resourceTask;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -253,7 +318,12 @@ internal static class ComputeLinkLoadScenario
         };
         psi.Environment["ASPNETCORE_URLS"] = $"http://127.0.0.1:{apiPort}";
         psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
-        psi.Environment["ConnectionStrings__daohua"] = connectionString;
+        // 宿主连接池对齐生产 Compose（32），压测客户端自身仍使用独立 16 连接池。
+        var serverConnection = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            MaxPoolSize = 32, MinPoolSize = 2, KeepAlive = 30
+        };
+        psi.Environment["ConnectionStrings__daohua"] = serverConnection.ConnectionString;
         psi.Environment["Storage__EnableSchemaBootstrap"] = "true";
         psi.Environment["ComputeNode__Enabled"] = "true";
         psi.Environment["ComputeNode__Token"] = token;
@@ -286,6 +356,7 @@ internal static class ComputeLinkLoadScenario
             WorkingDirectory = Path.GetDirectoryName(nodeDll)!
         };
         psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        psi.Environment["ComputeNode__AllowInsecureLoopback"] = "true";
         psi.Environment["DAOHUA_COMPUTE_TOKEN"] = token;
         psi.Environment["DAOHUA_COMPUTE_UPSTREAM_URL"] = $"http://127.0.0.1:{apiPort}/internal/compute-link";
         psi.Environment["DAOHUA_COMPUTE_NODE_NAME"] = nodeName;
@@ -353,33 +424,25 @@ internal static class ComputeLinkLoadScenario
     }
 
     /// <summary>
-    /// 模板玩家选取：优先复用库中已有「全段（8）存档」玩家；没有时经真实注册接口创建
-    /// （注册路径会 Load+Flush 完整初始状态，与生产一致）。
+    /// 经真实注册接口创建干净模板，等待全段（8）存档，避免复制测试库内其他玩家的运行态。
     /// </summary>
     private static async Task<(Guid PlayerId, bool CreatedByUs)> EnsureTemplatePlayerAsync(
         NpgsqlDataSource source, int apiPort, string runTag, CancellationToken cancellationToken)
     {
-        await using (var connection = await source.OpenConnectionAsync(cancellationToken))
-        await using (var command = new NpgsqlCommand("""
-            SELECT p.player_id
-            FROM identity.players p
-            JOIN game.player_state_heads h ON h.player_id = p.player_id
-            WHERE (SELECT count(*) FROM game.player_state_sections s WHERE s.player_id = p.player_id) = $1
-            ORDER BY p.created_at DESC
-            LIMIT 1
-            """, connection))
-        {
-            command.Parameters.Add(new NpgsqlParameter { Value = SectionCountExpected });
-            var existing = await command.ExecuteScalarAsync(cancellationToken);
-            if (existing is Guid playerId) return (playerId, false);
-        }
-
-        // 库中无可复用存档：走真实注册（创建账号+玩家+初始分段落库）。
+        // 每次创建干净模板，避免把其他玩家的行动、战斗时钟或奖励游标复制为容量种子。
         var account = $"{runTag}_tpl";
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         using var response = await http.PostAsJsonAsync(
             $"http://127.0.0.1:{apiPort}/api/v1/auth/register",
-            new { account, password = $"pw-{runTag}", displayName = $"模板{runTag}" },
+            new
+            {
+                account, password = $"pw-{runTag}", displayName = $"模板{runTag}",
+                riskSignals = new
+                {
+                    deviceId = Guid.NewGuid().ToString("D"),
+                    deviceConfigHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(account)))
+                }
+            },
             cancellationToken);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException(
@@ -413,8 +476,8 @@ internal static class ComputeLinkLoadScenario
 
     /// <summary>
     /// 以模板玩家为源克隆 count 个冷挂机种子玩家：账号/玩家/提交头/8 段/投影/余额整行复制，
-    /// 提交头 last_simulated_at 与投影 last_active_at 回拨 2 小时使其落入冷扫描窗口
-    /// （离线 + 过宽限 + 48h 窗口内）。head.checksum 覆盖 section 集与玩家 ID 无关，克隆行自洽。
+    /// CreatedAt 统一设为两小时前，克隆时暂不制造欠债；每波事务回拨为一小时欠债后再允许冷扫描。
+    /// section 本体不含 CreatedAt，身份表是唯一真源；原始 section 字节与校验和保持绑定。
     /// </summary>
     private static async Task<Guid[]> ClonePlayersAsync(
         NpgsqlDataSource source, Guid templatePlayerId, int count, string runTag, CancellationToken cancellationToken)
@@ -437,19 +500,21 @@ internal static class ComputeLinkLoadScenario
         await ExecAsync(connection, transaction, """
             INSERT INTO identity.accounts
                 (account_id, login_normalized, password_hash, password_salt, password_iterations, status, created_at, updated_at)
-            SELECT m.account_id, $1 || '_' || m.idx, a.password_hash, a.password_salt, a.password_iterations, a.status, now(), now()
+            SELECT m.account_id, $1 || '_' || m.idx, a.password_hash, a.password_salt, a.password_iterations, a.status,
+                   now() - interval '2 hours', now() - interval '2 hours'
             FROM lt_map m JOIN identity.accounts a ON a.account_id = $2
             """, runTag, templateAccountId);
         await ExecAsync(connection, transaction, """
             INSERT INTO identity.players
                 (player_id, account_id, display_name, display_name_normalized, created_at, last_seen_at, status)
-            SELECT m.player_id, m.account_id, $1 || m.idx, $1 || m.idx, now(), now() - interval '2 hours', 1
+            SELECT m.player_id, m.account_id, $1 || m.idx, $1 || m.idx,
+                   now() - interval '2 hours', now() - interval '1 hour', 1
             FROM lt_map m
             """, $"测{runTag}-");
         await ExecAsync(connection, transaction, """
             INSERT INTO game.player_state_heads
                 (player_id, state_version, schema_version, last_simulated_at, game_data_fingerprint, checksum, updated_at)
-            SELECT m.player_id, h.state_version, h.schema_version, now() - interval '2 hours',
+            SELECT m.player_id, h.state_version, h.schema_version, now(),
                    h.game_data_fingerprint, h.checksum, now()
             FROM lt_map m JOIN game.player_state_heads h ON h.player_id = $1
             """, templatePlayerId);
@@ -463,7 +528,7 @@ internal static class ComputeLinkLoadScenario
         await ExecAsync(connection, transaction, """
             INSERT INTO game.player_projection
                 (player_id, realm_rank, current_node_id, presence, last_active_at, projection_version, updated_at)
-            SELECT m.player_id, 0, NULL, 'offline', now() - interval '2 hours', 1, now()
+            SELECT m.player_id, 0, NULL, 'offline', now(), 1, now()
             FROM lt_map m
             """);
         await ExecAsync(connection, transaction, """
@@ -486,7 +551,7 @@ internal static class ComputeLinkLoadScenario
     }
 
     /// <summary>
-    /// 测量主循环：每波把种子玩家回拨为「离线且模拟欠债 2h」，等冷扫描生产任务并经真实链路完结；
+    /// 测量主循环：每波把种子玩家回拨为「离线且模拟欠债一小时」，等全目标集合经真实链路 Applied；
     /// 单波内按 compute_jobs 状态迁移统计吞吐/回写速率/单任务时延；
     /// 开启 node-kill 且节点数 ≥2 时在任务完成过半后杀掉末位节点测断线改派，随后重启测重连。
     /// </summary>
@@ -528,30 +593,31 @@ internal static class ComputeLinkLoadScenario
                 var counts = await QueryStatusCountsAsync(source, playerIds, waveStart, cancellationToken);
                 var pending = counts.GetValueOrDefault("pending");
                 var leased = counts.GetValueOrDefault("leased");
-                var succeeded = counts.GetValueOrDefault("succeeded");
+                var applied = counts.GetValueOrDefault("applied");
+                var discarded = counts.GetValueOrDefault("discarded");
                 var dead = counts.GetValueOrDefault("dead");
-                var total = pending + leased + succeeded + dead;
+                var total = pending + leased + applied + discarded + dead;
                 if (total > 0 && firstJobAt is null) firstJobAt = DateTimeOffset.UtcNow;
                 waveEnqueued = Math.Max(waveEnqueued, total);
-                result.JobsSucceeded += Math.Max(0, succeeded - result.WaveSucceededBaseline(wave));
+                result.JobsSucceeded += Math.Max(0, applied - result.WaveSucceededBaseline(wave));
                 result.JobsDead += Math.Max(0, dead - result.WaveDeadBaseline(wave));
-                result.SetWaveBaseline(wave, succeeded, dead);
+                result.SetWaveBaseline(wave, applied, dead);
 
                 // 回写速率：succeeded 计数差分换算每秒完结数。
                 var now = DateTimeOffset.UtcNow;
-                var delta = succeeded - previousSucceeded;
+                var delta = applied - previousSucceeded;
                 var span = (now - previousSampleAt).TotalSeconds;
                 if (delta > 0 && span > 0)
                 {
                     writeBackSamples.Add(delta / span);
                     lastTerminalAt = now;
                 }
-                previousSucceeded = succeeded;
+                previousSucceeded = applied;
                 previousSampleAt = now;
 
                 // 断线改派测量：首次观测到在飞租约即杀持有最多在飞批次的节点；
                 // 若轮询错过在飞窗口则退化为任务过半时杀最后拉起的节点（保底有信号）。
-                var killDue = leased > 0 || (waveEnqueued > 0 && succeeded + dead >= waveEnqueued / 2.0);
+                var killDue = leased > 0 || (waveEnqueued > 0 && applied + discarded + dead >= waveEnqueued / 2.0);
                 if (!killDone && killDue)
                 {
                     killed = await PickKillTargetAsync(spawned, opsBase, cancellationToken);
@@ -574,7 +640,7 @@ internal static class ComputeLinkLoadScenario
                     if (open == 0) reassignMs = (DateTimeOffset.UtcNow - killedAt).TotalMilliseconds;
                 }
 
-                if (pending == 0 && leased == 0 && total > 0)
+                if (pending == 0 && leased == 0 && total >= playerIds.Length)
                 {
                     // 本波全部终态：重启被杀节点测重连，然后进入下一波。
                     if (killed is not null && rejoinMs is null)
@@ -592,7 +658,11 @@ internal static class ComputeLinkLoadScenario
                 await Task.Delay(PollInterval, cancellationToken);
             }
             result.WaveEnqueued(wave, waveEnqueued);
-
+            if (waveEnqueued != playerIds.Length)
+            {
+                result.Errors++;
+                result.Warnings.Add($"第 {wave} 波目标集合未闭环：入队 {waveEnqueued}/{playerIds.Length}，拒绝部分完成门禁。");
+            }
             if (DateTimeOffset.UtcNow >= waveDeadline)
             {
                 result.Errors++;
@@ -626,12 +696,21 @@ internal static class ComputeLinkLoadScenario
     private static async Task RewindPlayersAsync(NpgsqlDataSource source, Guid[] playerIds, CancellationToken cancellationToken)
     {
         await using var connection = await source.OpenConnectionAsync(cancellationToken);
-        await ExecAsync(connection, null,
-            "UPDATE game.player_state_heads SET last_simulated_at = now() - interval '2 hours' WHERE player_id = ANY($1)",
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await ExecAsync(connection, transaction,
+            "UPDATE game.player_state_heads SET last_simulated_at = now() - interval '1 hour' WHERE player_id = ANY($1)",
             playerIds);
-        await ExecAsync(connection, null,
-            "UPDATE game.player_projection SET presence = 'offline', last_active_at = now() - interval '2 hours' WHERE player_id = ANY($1)",
+        await ExecAsync(connection, transaction,
+            "UPDATE game.player_projection SET presence = 'offline', last_active_at = now() - interval '1 hour' WHERE player_id = ANY($1)",
             playerIds);
+        await using var verify = new NpgsqlCommand("""
+            SELECT count(*) FROM identity.players p JOIN game.player_state_heads h USING (player_id)
+            WHERE p.player_id = ANY($1) AND p.created_at <= h.last_simulated_at AND h.last_simulated_at < now()
+            """, connection, transaction);
+        verify.Parameters.AddWithValue(playerIds);
+        if ((long)(await verify.ExecuteScalarAsync(cancellationToken))! != playerIds.Length)
+            throw new InvalidDataException("容量种子必须完整满足 CreatedAt <= From < Target。");
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>统计本波次（created_at ≥ waveStart）任务按状态计数。</summary>
@@ -641,7 +720,10 @@ internal static class ComputeLinkLoadScenario
         var counts = new Dictionary<string, long>(StringComparer.Ordinal);
         await using var connection = await source.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT status, count(*) FROM platform.compute_jobs
+            SELECT status, count(*) AS total,
+                   count(DISTINCT player_id) FILTER (WHERE status = 'succeeded' AND convert_from(output_payload, 'UTF8')::jsonb->>'outcome' = 'Applied') AS applied,
+                   count(*) FILTER (WHERE status = 'succeeded' AND convert_from(output_payload, 'UTF8')::jsonb->>'outcome' IS DISTINCT FROM 'Applied') AS discarded
+            FROM platform.compute_jobs
             WHERE player_id = ANY($1) AND created_at >= $2
             GROUP BY status
             """, connection);
@@ -649,9 +731,65 @@ internal static class ComputeLinkLoadScenario
         command.Parameters.Add(new NpgsqlParameter { Value = waveStart });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            counts[reader.GetString(0)] = reader.GetInt64(1);
+        {
+            var status = reader.GetString(0);
+            counts[status] = reader.GetInt64(1);
+            if (status == "succeeded")
+            {
+                counts["applied"] = reader.GetInt64(2);
+                counts["discarded"] = reader.GetInt64(3);
+            }
+        }
         return counts;
     }
+
+    /// <summary>仅查询本轮目标的 dead 元数据；禁止读取输入、输出载荷或连接凭据。</summary>
+    private static async Task<List<DeadJobDiagnostic>> QueryDeadJobsAsync(
+        NpgsqlDataSource source, Guid[] playerIds, CancellationToken cancellationToken)
+    {
+        var diagnostics = new List<DeadJobDiagnostic>();
+        await using var connection = await source.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT job_id, player_id, attempts, last_error
+            FROM platform.compute_jobs
+            WHERE player_id = ANY($1) AND status = 'dead'
+            ORDER BY created_at, job_id
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = playerIds });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var summary = SanitizeJobError(reader.IsDBNull(3) ? null : reader.GetString(3));
+            var separator = summary?.IndexOf(':') ?? -1;
+            string? errorCode = null;
+            if (separator is > 0 and <= 64)
+            {
+                var prefix = summary![..separator];
+                if (char.IsAsciiLetter(prefix[0]) && prefix.All(character => char.IsAsciiLetterOrDigit(character) || character == '_'))
+                    errorCode = prefix;
+            }
+            diagnostics.Add(new DeadJobDiagnostic(reader.GetGuid(0), reader.GetGuid(1), reader.GetInt32(2), errorCode, summary));
+        }
+        return diagnostics;
+    }
+
+    /// <summary>疑似凭据或连接串整段拒写；其他错误仅保留至多 512 字符的单行摘要。</summary>
+    private static string? SanitizeJobError(string? error)
+    {
+        if (error is null) return null;
+        string[] sensitiveMarkers =
+        [
+            "password", "pwd", "token", "secret", "connectionstring", "connection string",
+            "authorization", "cookie", "private key", "host=", "host =", "username=", "username =",
+            "user id=", "user id =", "postgres://", "postgresql://", "payloadbase64", "password_hash", "password_salt"
+        ];
+        if (sensitiveMarkers.Any(marker => error.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+            return "[已隐藏疑似敏感信息]";
+        return new string(error.Take(512).Select(character => char.IsControl(character) ? ' ' : character).ToArray());
+    }
+
+    /// <summary>保留失败标识、领取次数与脱敏错误摘要，不包含任意任务载荷。</summary>
+    private sealed record DeadJobDiagnostic(Guid JobId, Guid PlayerId, int Attempts, string? ErrorCode, string? LastError);
 
     /// <summary>取当前指定状态的 job_id 集（断线时点记录在飞任务）。</summary>
     private static async Task<Guid[]> QueryJobIdsAsync(
@@ -694,6 +832,7 @@ internal static class ComputeLinkLoadScenario
             SELECT EXTRACT(EPOCH FROM (updated_at - created_at)) * 1000.0
             FROM platform.compute_jobs
             WHERE player_id = ANY($1) AND status = 'succeeded'
+              AND convert_from(output_payload, 'UTF8')::jsonb->>'outcome' = 'Applied'
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = playerIds });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -728,6 +867,8 @@ internal static class ComputeLinkLoadScenario
         var allPlayers = templatePlayerId is { } tpl ? playerIds.Append(tpl).ToArray() : playerIds;
         await using var connection = await source.OpenConnectionAsync();
         // 按 FK 依赖序删除：先清引用 players/accounts 的下游行，再清身份行。
+        await ExecAsync(connection, null,
+            "DELETE FROM platform.section_flush_queue WHERE player_id = ANY($1)", allPlayers);
         await ExecAsync(connection, null,
             "DELETE FROM platform.compute_jobs WHERE player_id = ANY($1)", allPlayers);
         await ExecAsync(connection, null,
@@ -803,6 +944,88 @@ internal static class ComputeLinkLoadScenario
 
     private static void Log(string message) => Console.Error.WriteLine($"[compute-link] {message}");
 
+    /// <summary>采样真实子进程和隔离 PostgreSQL 容器；监测失败保留缺口，不把压测客户端资源当主服资源。</summary>
+    private static async Task MonitorResourcesAsync(SpawnedProcess[] children, ResourceEvidence evidence, CancellationToken cancellationToken)
+    {
+        var pgContainer = Environment.GetEnvironmentVariable("CAPACITY_POSTGRES_CONTAINER");
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            foreach (var child in children)
+            {
+                if (child.Process.HasExited) continue;
+                child.Process.Refresh();
+                var sample = evidence.Processes.GetValueOrDefault(child.Name) ?? new ProcessResource();
+                sample.PeakWorkingSetBytes = Math.Max(sample.PeakWorkingSetBytes, child.Process.WorkingSet64);
+                sample.CpuMilliseconds = child.Process.TotalProcessorTime.TotalMilliseconds;
+                sample.Samples++;
+                evidence.Processes[child.Name] = sample;
+            }
+            evidence.LogBytes = children.Select(child => child.LogDir).Distinct()
+                .Sum(dir => Directory.EnumerateFiles(dir, "*.log").Sum(file => new FileInfo(file).Length));
+            if (!string.IsNullOrWhiteSpace(pgContainer))
+            {
+                var info = new ProcessStartInfo("docker") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+                foreach (var arg in new[] { "stats", "--no-stream", "--format", "{{json .}}", pgContainer }) info.ArgumentList.Add(arg);
+                using var stats = Process.Start(info) ?? throw new InvalidOperationException("无法启动 PostgreSQL 容器资源采样。");
+                var output = await stats.StandardOutput.ReadToEndAsync();
+                await stats.WaitForExitAsync();
+                if (stats.ExitCode == 0)
+                {
+                    using var document = JsonDocument.Parse(output);
+                    var memory = ParseDockerBytes(document.RootElement.GetProperty("MemUsage").GetString()!.Split('/')[0].Trim());
+                    evidence.PostgresPeakWorkingSetBytes = Math.Max(evidence.PostgresPeakWorkingSetBytes, memory);
+                    evidence.PostgresPeakCpuPercent = Math.Max(evidence.PostgresPeakCpuPercent,
+                        double.Parse(document.RootElement.GetProperty("CPUPerc").GetString()!.TrimEnd('%'), System.Globalization.CultureInfo.InvariantCulture));
+                    evidence.PostgresSamples++;
+                }
+            }
+            try { await Task.Delay(1_000, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+        }
+    }
+
+    private static long ParseDockerBytes(string value)
+    {
+        var units = new[] { "GiB", "MiB", "KiB", "GB", "MB", "kB", "B" };
+        foreach (var unit in units)
+        {
+            if (!value.EndsWith(unit, StringComparison.Ordinal)) continue;
+            var multiplier = unit switch { "GiB" => 1073741824d, "MiB" => 1048576d, "KiB" => 1024d, "GB" => 1e9, "MB" => 1e6, "kB" => 1e3, _ => 1d };
+            return (long)(double.Parse(value[..^unit.Length], System.Globalization.CultureInfo.InvariantCulture) * multiplier);
+        }
+        throw new InvalidDataException("无法解析 Docker 内存采样单位。");
+    }
+
+    private sealed class ProcessResource
+    {
+        public long PeakWorkingSetBytes { get; set; }
+        public double CpuMilliseconds { get; set; }
+        public int Samples { get; set; }
+    }
+
+    private sealed class ResourceEvidence
+    {
+        public Dictionary<string, ProcessResource> Processes { get; } = new();
+        public long PostgresPeakWorkingSetBytes { get; set; }
+        public double PostgresPeakCpuPercent { get; set; }
+        public int PostgresSamples { get; set; }
+        public long PostgresDataBytes { get; set; }
+        public long PostgresWalBytes { get; set; }
+        public long LogBytes { get; set; }
+        public bool Complete => Processes.ContainsKey("server") && Processes.Keys.Any(key => key.StartsWith("lt-node-", StringComparison.Ordinal)) && PostgresSamples > 0;
+        public long TotalPeakWorkingSetBytes => Processes.Values.Sum(sample => sample.PeakWorkingSetBytes) + PostgresPeakWorkingSetBytes;
+
+        public async Task CapturePostgresAsync(NpgsqlDataSource source, CancellationToken cancellationToken)
+        {
+            await using var connection = await source.OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand("SELECT pg_database_size(current_database()), COALESCE((SELECT sum(size) FROM pg_ls_waldir()), 0)", connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            PostgresDataBytes = reader.GetInt64(0);
+            PostgresWalBytes = Convert.ToInt64(reader.GetValue(1));
+        }
+    }
+
     /// <summary>子进程簿记：尾部日志环形缓冲 + 全量 stdout/stderr 落盘 + 进程树清理。</summary>
     private sealed class SpawnedProcess : IDisposable
     {
@@ -868,6 +1091,7 @@ internal static class ComputeLinkLoadScenario
         public int Errors;
         public long BytesSent;
         public List<double> JobLatencyMs = [];
+        public List<DeadJobDiagnostic> DeadJobs = [];
         public List<double> WriteBackSamples = [];
         public double? ReleaseMs;
         public double? ReassignMs;
@@ -922,6 +1146,7 @@ internal static class ComputeLinkLoadScenario
                     reassignToTerminalMs = ReassignMs.HasValue ? Math.Round(ReassignMs.Value, 1) : (double?)null,
                     rejoinMs = RejoinMs.HasValue && RejoinMs >= 0 ? Math.Round(RejoinMs.Value, 1) : (double?)null
                 },
+                ["deadJobs"] = DeadJobs,
                 ["database"] = MaskConnectionString(connectionString)
             };
         }

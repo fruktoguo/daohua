@@ -12,6 +12,8 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
         Validate(playerId, ownerInstanceId, lease);
         var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await LockPlayerIdentityAsync(connection, transaction, playerId, cancellationToken);
         await using var command = new NpgsqlCommand("""
             INSERT INTO game.player_runtime_leases(player_id, owner_instance_id, lease_until, renewed_at)
             VALUES ($1, $2, $3, $4)
@@ -22,12 +24,14 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
             WHERE game.player_runtime_leases.lease_until <= $4
                OR game.player_runtime_leases.owner_instance_id = $2
             RETURNING owner_instance_id
-            """, connection);
+            """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId });
         command.Parameters.Add(new NpgsqlParameter { Value = now.Add(lease) });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
-        return await command.ExecuteScalarAsync(cancellationToken) is Guid owner && owner == ownerInstanceId;
+        var acquired = await command.ExecuteScalarAsync(cancellationToken) is Guid owner && owner == ownerInstanceId;
+        await transaction.CommitAsync(cancellationToken);
+        return acquired;
     }
 
     /// <summary>持有者续租；返回 false 表示租约已被其他实例接管，调用方必须按租约丢失处理。</summary>
@@ -38,16 +42,20 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
         Validate(playerId, ownerInstanceId, lease);
         var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await LockPlayerIdentityAsync(connection, transaction, playerId, cancellationToken);
         await using var command = new NpgsqlCommand("""
             UPDATE game.player_runtime_leases
             SET lease_until = $1, renewed_at = $2
             WHERE player_id = $3 AND owner_instance_id = $4
-            """, connection);
+            """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = now.Add(lease) });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId });
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        var renewed = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        await transaction.CommitAsync(cancellationToken);
+        return renewed;
     }
 
     /// <summary>主动释放租约；ownerInstanceId 谓词防止误删已被其他实例接管的新租约。</summary>
@@ -55,13 +63,33 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
     {
         if (playerId == Guid.Empty || ownerInstanceId == Guid.Empty) return;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await LockPlayerIdentityAsync(connection, transaction, playerId, cancellationToken);
         await using var command = new NpgsqlCommand("""
             DELETE FROM game.player_runtime_leases
             WHERE player_id = $1 AND owner_instance_id = $2
-            """, connection);
+            """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId });
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 所有权操作与 Compute 共用身份行 fence。等值 UPDATE 不改业务身份，却推进 MVCC 行版本：
+    /// Compute Serializable 快照在等待 Acquire/Renew 后必须产生冲突重演，不能读取旧的不存在租约谓词。
+    /// </summary>
+    internal static async ValueTask LockPlayerIdentityAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid playerId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            UPDATE identity.players SET status = status
+            WHERE player_id = $1 AND status = 1
+            RETURNING player_id
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        if (await command.ExecuteScalarAsync(cancellationToken) is not Guid)
+            throw new InvalidDataException("玩家身份不存在或已停用，不能更改运行时所有权。");
     }
 
     private static void Validate(Guid playerId, Guid ownerInstanceId, TimeSpan lease)

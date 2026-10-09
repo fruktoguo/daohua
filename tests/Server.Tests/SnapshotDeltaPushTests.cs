@@ -338,8 +338,9 @@ public sealed class SnapshotDeltaPushTests
         };
 
         var initial = await runtime.LoadAsync(playerId);
+        // 精确使用已模拟时刻才是无变化命令；真实时间前进现在必须持久化游标并推进版本。
         var advance = await runtime.ExecuteAsync(playerId, "simulation.advance",
-            JsonSerializer.SerializeToElement(new { targetTime = DateTimeOffset.UtcNow }), 0, Guid.NewGuid());
+            JsonSerializer.SerializeToElement(new { targetTime = initial.LastSimulatedAt }), 0, Guid.NewGuid());
         Assert.True(advance.Success);
         Assert.Equal(initial.StateVersion, advance.Snapshot.StateVersion);
         Assert.Empty(pushed);

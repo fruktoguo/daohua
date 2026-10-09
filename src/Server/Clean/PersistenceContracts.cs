@@ -211,6 +211,14 @@ public interface IEconomyTransactionStore
     ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default);
 }
 
+/// <summary>COMMIT 已发出但连接中断或取消，无法断言事务结局；调用方必须重载权威状态，不能盲目回滚后重复结算。</summary>
+public sealed class EconomyCommitOutcomeUnknownException(Guid transactionId, Exception innerException)
+    : InvalidOperationException($"资产事务提交结局未知 transaction={transactionId:D}", innerException)
+{
+    /// <summary>用于查询持久化幂等事实的事务标识。</summary>
+    public Guid TransactionId { get; } = transactionId;
+}
+
 /// <summary>一笔待落库的市场挂单输入。</summary>
 /// <param name="OrderId">订单唯一标识，由调用方生成以支持幂等重试。</param>
 /// <param name="PartitionId">订单归属的市场分片。</param>

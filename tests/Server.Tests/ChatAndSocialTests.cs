@@ -48,6 +48,139 @@ public sealed class ChatAndSocialTests
         Assert.Contains(right.ToString("D"), forward, StringComparison.Ordinal);
     }
 
+    /// <summary>非末尾异步订阅必须完成后才调用下一订阅，整次推送等待最后的异步订阅完成。</summary>
+    [Fact]
+    public async Task SocialPushAsync_AwaitsEveryAsyncSubscriberInOrder()
+    {
+        // 通知回归仅使用在线注册表与受控订阅，不访问持久化边界。
+        await using var source = NpgsqlDataSource.Create("Host=unused;Database=unused");
+        var presence = new OnlinePresenceRegistry();
+        var playerId = Guid.NewGuid();
+        await presence.RegisterAsync(playerId, "通知修士", null);
+        var social = CreateSocialRuntime(source, new PostgresSocialRepository(source), presence);
+        var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lastEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lastCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        social.StateChanged += async _ =>
+        {
+            firstEntered.SetResult();
+            await firstCompleted.Task;
+        };
+        social.StateChanged += async _ =>
+        {
+            lastEntered.SetResult();
+            await lastCompleted.Task;
+        };
+
+        var push = social.PushAsync(playerId).AsTask();
+        try
+        {
+            await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(push.IsCompleted);
+            Assert.False(lastEntered.Task.IsCompleted);
+            firstCompleted.SetResult();
+            await lastEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(push.IsCompleted);
+            lastCompleted.SetResult();
+            await push.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            firstCompleted.TrySetResult();
+            lastCompleted.TrySetResult();
+            await push.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    /// <summary>非末尾订阅在异步等待后失败时，异常必须传播到主动推送调用方而不是被丢弃。</summary>
+    [Fact]
+    public async Task SocialPushAsync_PropagatesNonLastAsyncSubscriberFailure()
+    {
+        await using var source = NpgsqlDataSource.Create("Host=unused;Database=unused");
+        var presence = new OnlinePresenceRegistry();
+        var playerId = Guid.NewGuid();
+        await presence.RegisterAsync(playerId, "通知修士", null);
+        var social = CreateSocialRuntime(source, new PostgresSocialRepository(source), presence);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var expected = new InvalidOperationException("受控通知失败");
+        var lastCalls = 0;
+        social.StateChanged += async _ =>
+        {
+            entered.SetResult();
+            await completion.Task;
+            throw expected;
+        };
+        social.StateChanged += _ =>
+        {
+            lastCalls++;
+            return ValueTask.CompletedTask;
+        };
+
+        var push = social.PushAsync(playerId).AsTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        completion.SetResult();
+        var actual = await Assert.ThrowsAsync<InvalidOperationException>(() => push.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Same(expected, actual);
+        Assert.Equal(0, lastCalls);
+    }
+
+    /// <summary>并发主动推送共享实例并发上限，不能各自占用 4 个额外通知槽位。</summary>
+    [Fact]
+    public async Task SocialPushAsync_ConcurrentPushesShareFourNotificationSlots()
+    {
+        await using var source = NpgsqlDataSource.Create("Host=unused;Database=unused");
+        var presence = new OnlinePresenceRegistry();
+        var playerIds = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray();
+        foreach (var playerId in playerIds)
+            await presence.RegisterAsync(playerId, "通知修士", null);
+        var social = CreateSocialRuntime(source, new PostgresSocialRepository(source), presence);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fourStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var counterGate = new object();
+        var started = 0;
+        var active = 0;
+        var peak = 0;
+        social.StateChanged += NotifyAsync;
+
+        var pushes = playerIds.Select(playerId => social.PushAsync(playerId).AsTask()).ToArray();
+        var all = Task.WhenAll(pushes);
+        try
+        {
+            await fourStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            lock (counterGate) Assert.Equal(4, started);
+            Assert.False(all.IsCompleted);
+        }
+        finally
+        {
+            completion.SetResult();
+            await all.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.Equal(5, started);
+        Assert.Equal(4, peak);
+        Assert.Equal(0, active);
+
+        async ValueTask NotifyAsync(Guid _)
+        {
+            lock (counterGate)
+            {
+                started++;
+                active++;
+                peak = Math.Max(peak, active);
+                if (started == 4) fourStarted.TrySetResult();
+            }
+            try
+            {
+                await completion.Task;
+            }
+            finally
+            {
+                lock (counterGate) active--;
+            }
+        }
+    }
+
     /// <summary>
     /// 聊天裁剪按作用域写计数每 16 条摊销一次：周期内最多超限 15 条，触发裁剪后回到恰好 100 条；
     /// 历史回放始终只取最近 100 条并按时间正序。

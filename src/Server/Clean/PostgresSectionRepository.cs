@@ -19,6 +19,15 @@ public sealed class PostgresSectionRepository(
         // 头、section、action queue 和 latest-only 队列必须来自同一快照；
         // 否则 worker 恰好在读取中间提交会把旧 section 与新 head 拼成假状态。
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return bundle;
+    }
+
+    /// <summary>在调用方的一致事务快照中加载有效头、全集分段与耐久队列；不提交事务。</summary>
+    internal static async ValueTask<PlayerStateBundle?> LoadInTransactionAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid playerId, CancellationToken cancellationToken)
+    {
         PlayerIdentity? identity = null;
         await using (var command = new NpgsqlCommand("""
             SELECT player_id, account_id, display_name, created_at
@@ -125,8 +134,38 @@ public sealed class PostgresSectionRepository(
             ? DecodeQueuedActions(effectiveAction)
             : await LoadStoredActionsAsync(connection, transaction, playerId, cancellationToken);
 
-        await transaction.CommitAsync(cancellationToken);
         return new PlayerStateBundle(identity, head, sections, actions);
+    }
+
+    /// <summary>
+    /// 读取 Compute 任务所需的完整玩家状态与余额版本快照；两者在同一 RepeatableRead 事务内冻结。
+    /// </summary>
+    public async ValueTask<ComputeFrozenInput?> LoadComputeInputAsync(
+        Guid playerId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken);
+        if (bundle is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+        var balances = new List<AssetBalanceRecord>();
+        await using (var command = new NpgsqlCommand("""
+            SELECT player_id, asset_id, variant, quantity, version
+            FROM economy.player_asset_balances
+            WHERE player_id = $1 AND quantity > 0
+            ORDER BY asset_id, variant
+            """, connection, transaction))
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                balances.Add(new AssetBalanceRecord(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDouble(3), reader.GetInt64(4)));
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return new ComputeFrozenInput(bundle, balances);
     }
 
     /// <summary>
@@ -412,6 +451,10 @@ public sealed class PostgresSectionRepository(
         foreach (var receipt in receipts) ValidateReceipt(receipt);
         if (sections.Count > 0)
         {
+            var uniqueKinds = new HashSet<(Guid PlayerId, string SectionKind)>();
+            foreach (var section in sections)
+                if (!uniqueKinds.Add((section.PlayerId, section.SectionKind)))
+                    throw new InvalidDataException("section 队列包含重复分段。");
             await using var batch = connection.CreateBatch();
             batch.Transaction = transaction;
             foreach (var section in sections)
@@ -421,7 +464,7 @@ public sealed class PostgresSectionRepository(
                         (player_id, section_kind, state_version, schema_version, codec, payload,
                          raw_bytes, checksum, game_data_fingerprint, last_simulated_at,
                          attempts, next_attempt_at, lease_until, lease_token, last_error, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $10, NULL, NULL, NULL, $10)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, NULL, NULL, NULL, $11)
                     ON CONFLICT (player_id, section_kind) DO UPDATE SET
                         state_version = EXCLUDED.state_version,
                         schema_version = EXCLUDED.schema_version,
@@ -449,6 +492,7 @@ public sealed class PostgresSectionRepository(
                 batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.Checksum });
                 batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.GameDataFingerprint ?? string.Empty });
                 batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.LastSimulatedAt ?? section.UpdatedAt });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.UpdatedAt });
                 batch.BatchCommands.Add(batchCommand);
             }
             await batch.ExecuteNonQueryAsync(cancellationToken);
@@ -683,9 +727,15 @@ public sealed class PostgresSectionRepository(
         if (targetStateVersion < sourceStateVersion
             || (targetStateVersion == sourceStateVersion && writes.Count > 0))
             throw new ArgumentException("计算结果版本与载荷无效。");
-        // 同一 (player, kind) 重复出现时只保留首条，与旧逐条 upsert「先到者写入、同版本跳过」语义一致。
-        var deduped = writes.DistinctBy(write => (write.PlayerId, write.SectionKind)).ToArray();
-        foreach (var write in deduped) write.Validate();
+        // 重复 (player, kind) 是跨边界载荷歧义，必须 fail-closed，不能用 DistinctBy 静默吞掉。
+        var uniqueKinds = new HashSet<(Guid PlayerId, string SectionKind)>();
+        foreach (var write in writes)
+        {
+            write.Validate();
+            if (!uniqueKinds.Add((write.PlayerId, write.SectionKind)))
+                throw new InvalidDataException("计算结果包含重复 section。");
+        }
+        var deduped = writes.ToArray();
 
         var now = DateTimeOffset.UtcNow;
         long headVersion;

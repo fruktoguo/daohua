@@ -26,7 +26,7 @@ public sealed class SocialRuntime
     /// <summary>组队大厅各类列表的最大返回条数。</summary>
     public const int LobbyListLimit = 50;
 
-    /// <summary>一次扇出推送的最大并行构建数：限制并发占用的数据库连接数。</summary>
+    /// <summary>实例内推送的最大并行构建数：限制并发占用的数据库连接数。</summary>
     private const int MaxNotifyParallelism = 4;
     /// <summary>队伍名称长度上限（字符）。</summary>
     private const int MaxPartyNameLength = 32;
@@ -46,6 +46,8 @@ public sealed class SocialRuntime
     private readonly IPlayerSimulationClock _clock;
     /// <summary>组队讨伐的每队伍裁决门：开打/散场仲裁串行化，跨实例竞态由 DB 唯一索引收敛。</summary>
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _partyGates = new();
+    /// <summary>实例级通知并发门：跨并发存在感触发共享 4 个实际通知槽位。</summary>
+    private readonly SemaphoreSlim _notifyGate = new(MaxNotifyParallelism, MaxNotifyParallelism);
 
     /// <summary>构造并接管在线存在感变化订阅。</summary>
     /// <param name="repository">好友/队伍持久化边界。</param>
@@ -665,6 +667,8 @@ public sealed class SocialRuntime
     {
         var handler = StateChanged;
         if (handler is null || playerIds.Count == 0) return;
+        // 固定本次订阅快照；直接调用多播异步委托只能得到最后一个订阅的 ValueTask。
+        var subscribers = handler.GetInvocationList();
         // 收件人去重；离线玩家没有会话，构建状态只会白跑数据库查询。
         var recipients = new List<Guid>(playerIds.Count);
         var seen = new HashSet<Guid>();
@@ -677,27 +681,27 @@ public sealed class SocialRuntime
         if (recipients.Count == 0) return;
         if (recipients.Count == 1)
         {
-            await handler(recipients[0]);
+            await NotifyOneAsync(recipients[0]);
             return;
         }
-        // 小并行扇出：不同玩家的状态构建与推送互不阻塞，上限 4 避免打满连接池；
-        // 同一玩家的推送顺序仍由调用方的串行触发保证，语义不变。
-        using var throttler = new SemaphoreSlim(MaxNotifyParallelism);
+        // 不同收件人并行；完整状态与存在感投影、单人推送与多次扇出都共享实例上限 4。
         var pending = new List<Task>(recipients.Count);
         foreach (var playerId in recipients)
-            pending.Add(NotifyOneAsync(handler, playerId, throttler));
+            pending.Add(NotifyOneAsync(playerId));
         await Task.WhenAll(pending);
 
-        static async Task NotifyOneAsync(Func<Guid, ValueTask> handler, Guid playerId, SemaphoreSlim throttler)
+        async Task NotifyOneAsync(Guid playerId)
         {
-            await throttler.WaitAsync();
+            // 仅持有实际通知槽位，不包存在感/节点仲裁入口，避免仲裁的嵌套通知再次获取同一槽位。
+            await _notifyGate.WaitAsync();
             try
             {
-                await handler(playerId);
+                foreach (Func<Guid, ValueTask> subscriber in subscribers)
+                    await subscriber(playerId);
             }
             finally
             {
-                throttler.Release();
+                _notifyGate.Release();
             }
         }
     }

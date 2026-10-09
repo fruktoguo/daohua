@@ -109,7 +109,7 @@ ComputeNode__Urls=http://127.0.0.1:5129 \
 dotnet run --project src/ComputeNode/ComputeNode.csproj
 ```
 
-正式部署时，ComputeNode 应放在独立网络边界且仅允许主服务访问；跨主机链路必须使用 `https`/`wss` 或受控加密隧道，并单独验证证书/隧道边界。主服务只把可验证的批处理载荷发送给它，结果仍由主服务校验后写回 PostgreSQL。这里的本地 HTTP 示例不代表生产跨主机传输配置。
+正式部署时，ComputeNode 位于隔离网络，反向拨入主服 `/internal/compute-link`；跨主机链路必须使用 `https`/`wss` 或受控加密隧道，并单独验证证书/隧道边界。`compute.v3` 任务冻结同一事务快照中的身份、提交头、全集分段、队列与钱包版本；节点返回候选结果后，主服以独立 ECS 世界重演，逐字节校验状态与资产增量。源基线、钱包、运行时所有权及任务租约全部有效才原子写入可信资产、分段和任务完成；合法上线/源漂移丢弃，不信任节点自报校验和。这里的本地 HTTP 示例不代表生产跨主机传输配置。
 
 ## 构建、测试与容量门禁
 
@@ -135,7 +135,7 @@ scripts/verify.sh
 dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
   --scenario capacity-target --require-database
 ```
-`capacity-target` 是本地/受控测试库上的真实 PostgreSQL、WAL、latest-only Worker 容量门禁，只对容量相关变更与发布前适用，不是未经实测的生产容量承诺，也不会执行远程发布或生产恢复。`syntheticEstimate` 永不作为业务通过依据；发布前必须提供 `CAPACITY_REAL_COMPUTE_LINK=1` 与 `CAPACITY_REAL_DATABASE_URL`，必要时同时设置 `CAPACITY_REAL_COMPUTE_PLAYERS`、`CAPACITY_REAL_COMPUTE_DURATION_SECONDS`，缺失时 `capacity-target` 必须 fail closed。只有真实报告同时满足 `realBusinessPath.executed=true`、`computeNodeRequest=true` 和 `sectionCodec=true`，才能声称冷挂机业务路径完成。
+`scripts/capacity-target.sh` 缺省创建随机回环端口的独立 tmpfs PostgreSQL，结束只清理本次容器，不操作已有开发库或数据卷；显式外部库使用 `CAPACITY_REAL_DATABASE_URL` 并提供 `CAPACITY_POSTGRES_CONTAINER` 资源证据。门禁真实运行5000账号存储、100/500认证业务收发与2000名一小时欠债玩家的 ComputeNode → 主服独立重演 → 原子写回。目标集合全部握手、业务回执与 `Applied` 终态、Server/节点/PG资源证据和预算必须同时满足；任一缺失、dead、超时或超预算均非零，`syntheticEstimate` 永不替代。容量门禁不执行远程发布或生产恢复，报告也不是未经实测的生产性能承诺。
 
 压测工具支持的场景：`capacity-target`（容量综合门禁）、`websocket`（真实 WS 连接与协议握手）、`http-read`（只读 HTTP 端点）、`compute`（本地冷挂机补算）、`postgres`（PostgreSQL/WAL 真实探测）。各场景参数语义以 `src/LoadTests/LoadTestOptions.cs` 为准。
 
