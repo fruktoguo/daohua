@@ -355,7 +355,7 @@ public sealed partial class PlayerAggregate
         }
         if (state.EquippedInstances.Any(item => item.IsEmpty)
             || (state.Settings.AutoUseSlots ?? []).Any(slot => slot is null || string.IsNullOrWhiteSpace(slot.ActionType)
-                || slot.ActionType.Length > 32 || slot.SlotIndex is < 0 || slot.SlotIndex > AutoUseSlotState.MaxSlotIndex
+                || slot.ActionType.Length > 32 || slot.SlotIndex < 0
                 || !double.IsFinite(slot.Quantity) || slot.Quantity <= 0
                 || !double.IsFinite(slot.RemainingDurationSeconds) || slot.RemainingDurationSeconds < 0
                 || (slot.ItemId is not null && (slot.ItemId.Length == 0 || slot.ItemId.Length > 128))))
@@ -435,7 +435,14 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
         aggregate.Settings.TutorialStep = state.Settings.TutorialStep;
         aggregate.Settings.TutorialRewardsStep = state.Settings.TutorialRewardsStep;
-        aggregate.Settings.AutoUseSlots.AddRange(state.Settings.AutoUseSlots ?? []);
+        // 物品栏域词表是领域不变量：未知栏域、越界索引或非法分组的槽位在恢复边界丢弃
+        // （词表演进后的失效词项属于非法枚举值过滤，不为旧词保留任何匹配路径）。
+        foreach (var slot in state.Settings.AutoUseSlots ?? [])
+            if (Domain.GameData.AutoUseBar.IsKnown(slot.ActionType)
+                && slot.SlotIndex < Domain.GameData.AutoUseBar.SlotCountFor(slot.ActionType)
+                && slot.Group is AutoUseSlotState.SlotGroupGeneral or AutoUseSlotState.SlotGroupPotion
+                && (slot.Group != AutoUseSlotState.SlotGroupPotion || slot.ActionType == Domain.GameData.AutoUseBar.Combat))
+                aggregate.Settings.AutoUseSlots.Add(slot);
         if (state.Actions.Count > MaxActionQueueLength)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
         var actionIds = new HashSet<Guid>();
@@ -610,7 +617,17 @@ public sealed partial class PlayerAggregate
                 .All(value => double.IsFinite(value) && value >= 0)
             && report.DayIndex >= -1
             && double.IsFinite(report.DuelWins) && report.DuelWins >= 0
-            && double.IsFinite(report.DuelLosses) && report.DuelLosses >= 0);
+            && double.IsFinite(report.DuelLosses) && report.DuelLosses >= 0
+            && (report.Combatants is null || report.Combatants.Count <= 64
+                && report.Combatants.All(unit => unit is not null
+                    && !string.IsNullOrWhiteSpace(unit.UnitKey) && unit.UnitKey.Length <= 128
+                    && Enum.IsDefined(unit.Kind)
+                    && (unit.DisplayName?.Length ?? 0) <= 128
+                    && new[] { unit.DamageDealtPhysical, unit.DamageDealtSpell,
+                        unit.DamageTakenPhysical, unit.DamageTakenSpell,
+                        unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
+                        unit.HealingRegen, unit.HealingOther }
+                        .All(value => double.IsFinite(value) && value >= 0))));
 
     private static bool IsValidDuelDocument(PlayerDuelStateDocument document)
         => double.IsFinite(document.EncounterCharges) && document.EncounterCharges >= 0

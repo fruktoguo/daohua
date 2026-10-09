@@ -67,6 +67,8 @@ public interface IPlayerResourceContext : IPlayerActionContext
 {
     /// <summary>玩家标识。</summary>
     PlayerId PlayerId { get; }
+    /// <summary>玩家道号（战斗统计/战报展示用）。</summary>
+    string DisplayName { get; }
     /// <summary>装备配置与已习得功法分段。</summary>
     PlayerLoadoutState Loadout { get; }
     /// <summary>斗法分段：撮合状态、回放载荷与暂存区。</summary>

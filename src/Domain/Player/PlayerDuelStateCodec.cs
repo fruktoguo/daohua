@@ -1,3 +1,5 @@
+using Domain.Combat;
+
 namespace Domain.Player;
 
 /// <summary>斗法与行动账本分段的单一文档边界；允许组件直接导出/恢复该分段。</summary>
@@ -54,7 +56,13 @@ public static class PlayerDuelStateCodec
         report.Items.ToArray(), report.DuelWins, report.DuelLosses,
         report.ItemsLost.ToArray(), report.AbilityExp.ToArray(), report.TechniqueExp.ToArray(), report.LevelUps.ToArray(),
         report.Cycles, report.Encounters, report.NormalKills, report.EliteKills, report.BossKills,
-        report.Deaths, report.DayIndex, report.Foundation, report.CombatExperience);
+        report.Deaths, report.DayIndex, report.Foundation, report.CombatExperience,
+        report.CombatStats.Entries.Count == 0 ? null : report.CombatStats.Entries.Select(unit =>
+            new CombatUnitStatDocument(unit.UnitKey, unit.Kind, unit.DisplayName,
+                unit.DamageDealtPhysical, unit.DamageDealtSpell,
+                unit.DamageTakenPhysical, unit.DamageTakenSpell,
+                unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
+                unit.HealingRegen, unit.HealingOther)).ToArray());
 
     /// <summary>逐账本导出：未脏账本复用已登记文档；记账路径仅令被写账本重建。</summary>
     private static PlayerBattleReportDocument ExportReportCached(PlayerBattleReport report)
@@ -101,6 +109,9 @@ public static class PlayerDuelStateCodec
         report.AbilityExp.AddRange(document.AbilityExp ?? []);
         report.TechniqueExp.AddRange(document.TechniqueExp ?? []);
         report.LevelUps.AddRange(document.LevelUps ?? []);
+        if (document.Combatants is { } combatants)
+            foreach (var unit in combatants) report.CombatStats.Import(unit);
+        report.CombatStats.ClearDirty();
         return report;
     }
 }

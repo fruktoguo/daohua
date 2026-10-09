@@ -239,7 +239,7 @@ public sealed class SkillTriggerEvaluatorTests
         Assert.Equal("target-enemy", JsonReadProbe.Text(Assert.Single(slot.Triggers), "dependency"));
 
         var defender = new DuelCombatant(PlayerId.New(), "对手", 0,
-            CombatantStats.Create(10_000, 50, 0, 1), [], []);
+            CombatantStats.Create(10_000, 50, 0, 1), [], [], []);
         var initiator = mirror with { Stats = mirror.Stats with { MaxHitpoints = 10_000 } };
         var script = DuelScriptEngine.Resolve(initiator, defender, 42, catalog.Duel);
         Assert.Contains(script.Events, item => item.AbilityId == "ability.heavy-slash");

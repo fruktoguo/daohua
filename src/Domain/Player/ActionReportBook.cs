@@ -45,6 +45,8 @@ public static class ActionReportBook
     public static void ArchiveActionReport(IPlayerResourceContext player, Guid instanceId, double endedAtUnixSeconds, int maxBattleReports)
     {
         if (!player.Duel.ActionReports.Remove(instanceId, out var report)) return;
+        // 战斗单位统计随行动结束即弃：不进入归档战报与历史持久化。
+        report.CombatStats.Clear();
         report.EndedAtUnixSeconds = endedAtUnixSeconds;
         report.MarkExportDirty();
         if (report.HasContent)
@@ -53,6 +55,18 @@ public static class ActionReportBook
             while (player.Duel.Reports.Count > maxBattleReports)
                 player.Duel.Reports.RemoveAt(player.Duel.Reports.Count - 1);
         }
+        player.MarkDirty(PlayerSectionKind.Duel);
+    }
+
+    /// <summary>
+    /// 战斗单位统计标脏收口：行动实例账本的统计簿有未消费写入时，
+    /// 令账本导出文档重建并把 duel 分段记入推送集合。战斗边界与战外记录路径共用。
+    /// </summary>
+    public static void FlushCombatStats(IPlayerResourceContext player, Guid actionInstanceId)
+    {
+        if (player.Duel.ReportFor(actionInstanceId) is not { CombatStats.Dirty: true } report) return;
+        report.CombatStats.ClearDirty();
+        report.MarkExportDirty();
         player.MarkDirty(PlayerSectionKind.Duel);
     }
 

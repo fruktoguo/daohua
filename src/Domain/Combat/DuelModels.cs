@@ -84,13 +84,19 @@ public sealed record DuelScriptEvent(
     double AttackerManapointsAfter = 0,
     double TargetManapointsAfter = 0);
 
-/// <summary>斗法完整结算剧本：撮合时一次性推演完毕，双方各自回放同一份确定性结果。</summary>
+/// <summary>
+/// 斗法完整结算剧本：撮合时一次性推演完毕，双方各自回放同一份确定性结果。
+/// InitiatorStats/DefenderStats 为推演时按本机视角累计的战斗单位统计（unitKey=player），
+/// 仅携带本方一行——对方队伍数据不进入任何一方的行动账本。
+/// </summary>
 public sealed record DuelScript(
     CombatOutcome Outcome,
     double DurationSeconds,
     IReadOnlyList<DuelScriptEvent> Events,
     IReadOnlyList<DuelStagedItem> InitiatorStagedItems,
-    IReadOnlyList<DuelStagedItem> DefenderStagedItems);
+    IReadOnlyList<DuelStagedItem> DefenderStagedItems,
+    IReadOnlyList<CombatUnitStatDocument>? InitiatorStats = null,
+    IReadOnlyList<CombatUnitStatDocument>? DefenderStats = null);
 
 /// <summary>
 /// 单个玩家视角的斗法回放状态；随战斗远征分段持久化，断线重连按事件游标续播。
@@ -111,6 +117,9 @@ public sealed record DuelScript(
 /// <param name="EventCursor">已回放事件游标；断线重连按它续播。</param>
 /// <param name="Resolved">结算是否已入账（暂存与胜负已落账）。</param>
 /// <param name="Forfeited">本方是否认输弃赛。</param>
+/// <param name="ViewerStats">本方单位战斗统计（撮合时确定性锁定，挂载时并入队首行动账本）。</param>
+/// <param name="OpponentSkills">对手镜像功法槽位（撮合时冻结；详情弹窗「装配」Tab 按需投影的唯一数据源）。</param>
+/// <param name="OpponentEquipment">对手镜像已穿戴装备（撮合时冻结；与功法槽同为装配展示数据，不参与回放结算）。</param>
 public sealed record DuelPlaybackState(
     string DuelId,
     string OpponentPlayerId,
@@ -126,7 +135,10 @@ public sealed record DuelPlaybackState(
     double OpponentManapoints,
     double EventCursor = 0,
     bool Resolved = false,
-    bool Forfeited = false)
+    bool Forfeited = false,
+    IReadOnlyList<CombatUnitStatDocument>? ViewerStats = null,
+    IReadOnlyList<PlayerAbilitySlot>? OpponentSkills = null,
+    IReadOnlyList<PlayerEquipmentSlot>? OpponentEquipment = null)
 {
     /// <summary>校验回放状态不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(DuelId) && DuelId.Length <= 64
@@ -143,7 +155,21 @@ public sealed record DuelPlaybackState(
         && OpponentHitpoints <= OpponentStats.MaxHitpoints
         && double.IsFinite(OpponentManapoints) && OpponentManapoints >= 0
         && OpponentManapoints <= OpponentStats.MaxManapoints
-        && double.IsFinite(EventCursor) && EventCursor >= 0 && EventCursor <= Events.Count;
+        && double.IsFinite(EventCursor) && EventCursor >= 0 && EventCursor <= Events.Count
+        && (ViewerStats is null || (ViewerStats.Count <= 8 && ViewerStats.All(unit => unit is not null
+            && !string.IsNullOrWhiteSpace(unit.UnitKey) && unit.UnitKey.Length <= 128
+            && Enum.IsDefined(unit.Kind) && (unit.DisplayName?.Length ?? 0) <= 128
+            && new[] { unit.DamageDealtPhysical, unit.DamageDealtSpell,
+                unit.DamageTakenPhysical, unit.DamageTakenSpell,
+                unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
+                unit.HealingRegen, unit.HealingOther }
+                .All(value => double.IsFinite(value) && value >= 0))))
+        && (OpponentSkills is null || (OpponentSkills.Count <= 16 && OpponentSkills.All(slot => slot is not null
+            && (slot.AbilityId?.Length ?? 0) <= 128
+            && double.IsFinite(slot.Level) && slot.Level >= 1)))
+        && (OpponentEquipment is null || (OpponentEquipment.Count <= 24 && OpponentEquipment.All(item => item is not null
+            && !string.IsNullOrWhiteSpace(item.ItemId) && item.ItemId.Length <= 128
+            && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)));
 
     /// <summary>把撮合剧本翻译为单视角回放载荷：胜负与双方暂存快照按观看方翻转。</summary>
     public static DuelPlaybackState ForViewer(DuelScript script, string duelId,
@@ -168,16 +194,22 @@ public sealed record DuelPlaybackState(
             viewerIsInitiator ? script.DefenderStagedItems : script.InitiatorStagedItems,
             opponent.Stats,
             opponent.Stats.MaxHitpoints,
-            opponent.Stats.MaxManapoints);
+            opponent.Stats.MaxManapoints,
+            ViewerStats: viewerIsInitiator ? script.InitiatorStats : script.DefenderStats,
+            OpponentSkills: opponent.Skills
+                .Select(slot => new PlayerAbilitySlot(JsonRead.Text(slot.Ability, "id"), slot.Level))
+                .ToArray(),
+            OpponentEquipment: opponent.Equipment);
     }
 }
 
-/// <summary>斗法剧本推演输入：一方开战瞬间的镜像快照（属性/技能/暂存物在撮合时冻结）。</summary>
+/// <summary>斗法剧本推演输入：一方开战瞬间的镜像快照（属性/技能/装备/暂存物在撮合时冻结）。</summary>
 public sealed record DuelCombatant(
     PlayerId PlayerId,
     string DisplayName,
     double Power,
     CombatantStats Stats,
     IReadOnlyList<SkillSlot> Skills,
-    IReadOnlyList<DuelStagedItem> StagedItems);
+    IReadOnlyList<DuelStagedItem> StagedItems,
+    IReadOnlyList<PlayerEquipmentSlot> Equipment);
 

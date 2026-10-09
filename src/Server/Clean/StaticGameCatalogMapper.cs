@@ -29,7 +29,8 @@ public static class StaticGameCatalogMapper
             var consumable = item.TryGetProperty("consumable", out var cons) && cons.ValueKind == JsonValueKind.Object ? cons : default;
             var hasConsumable = consumable.ValueKind == JsonValueKind.Object;
 
-            var usableActionTypes = hasConsumable ? ReadStringArray(consumable, "usableInActionTypes") : [];
+            // 配表 usableInActionTypes 承载物品栏域集合（§6.2.3），出站字段直接按栏域语义命名。
+            var usableBars = hasConsumable ? ReadStringArray(consumable, "usableInActionTypes") : [];
             var durationSeconds = hasConsumable ? ReadDouble(consumable, "durationSeconds", 0) : 0;
             var isContinuous = hasConsumable && ReadBool(consumable, "isContinuous", false);
             var cultivationMultiplier = hasConsumable ? ReadDouble(consumable, "cultivationMultiplier", 1) : 1;
@@ -80,7 +81,7 @@ public static class StaticGameCatalogMapper
                 tier,
                 sellPrice,
                 isTradable,
-                usableActionTypes,
+                usableBars,
                 durationSeconds,
                 isContinuous,
                 cultivationMultiplier,
@@ -319,7 +320,15 @@ public static class StaticGameCatalogMapper
                 minQuantity = drop.MinQuantity,
                 maxQuantity = drop.MaxQuantity
             }).ToArray(),
-            abilityIds = ReadArray(monster, "skills").Select(skill => ReadString(skill, "abilityId")).Where(id => id.Length > 0).ToArray()
+            // 功法槽按 CombatAbilitySlot 形状投影（abilityId+level，等级取配表施放等级），
+            // 详情弹窗「装配」Tab 与生态面板共用此来源。
+            skills = definition.Skills.Select(skill => new
+            {
+                abilityId = skill.Ability.TryGetProperty("id", out var abilityIdElement)
+                    ? abilityIdElement.GetString() ?? string.Empty
+                    : string.Empty,
+                level = skill.Level,
+            }).Where(skill => skill.abilityId.Length > 0).ToArray()
         };
     }
 
@@ -329,7 +338,7 @@ public static class StaticGameCatalogMapper
         level = 1, tier = 1, budgetCost = 0d,
         attributes = ProtocolSnapshotMapper.ToAttributesDto(CombatantStats.Create(1, 0, 0, 2)),
         experience = 0d,
-        drops = Array.Empty<object>(), abilityIds = Array.Empty<string>()
+        drops = Array.Empty<object>(), skills = Array.Empty<object>()
     };
 
     private static bool IsMonsterInRank(GameDataCatalog catalog, string id, string rank) => catalog.Monsters.TryGetValue(id, out var monster)

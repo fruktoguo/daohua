@@ -875,6 +875,19 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 PlayerState = CombatEncounterState.Snapshot(state.Player),
                 IsPinned = true
             };
+            // 钉死入战同样挂接行动统计簿：注册本机与本波怪物类型桶。
+            if (player.GetComponent<PlayerDuelComponent>()?.Duel.ReportFor(queue.Actions[0].Id) is { } pinReport)
+            {
+                var statsBook = pinReport.CombatStats;
+                state.StatsBook = statsBook;
+                statsBook.Register("player",
+                    player.GetComponent<PlayerIdentityComponent>()?.DisplayName ?? "");
+                foreach (var enemy in state.Enemies)
+                    if (enemy.DefinitionId is { } pinDefId)
+                        statsBook.Register($"monster:{pinDefId}",
+                            GameData.CombatMonsters.TryGetValue(pinDefId, out var pinMonster)
+                                ? pinMonster.Name : pinDefId);
+            }
         }
         _encounters[encounterEntity.ID] = player.ID;
         return encounterEntity.ID;

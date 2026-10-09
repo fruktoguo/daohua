@@ -20,6 +20,8 @@ namespace Domain.Player;
 /// <param name="CombatSkills">跨战技能状态（冷却/槽位）冻结值。</param>
 /// <param name="SustainedBuffs">开打定格的激活持续消耗品 Buff（剩余时长冻结）；
 /// 会话期间不做槽位补能/扣减——其他成员的钱包不可见，定格画面是唯一公共输入。</param>
+/// <param name="Equipment">开打定格的已穿戴装备清单（物品 ID + 强化等级）；仅用于详情弹窗
+/// 装配展示，不参与共享剧本结算——与冻结面板同源采集，定格口径与其他成员可见信息一致。</param>
 public sealed partial record ActionParticipantSnapshot(
     string PlayerId,
     string DisplayName,
@@ -32,7 +34,8 @@ public sealed partial record ActionParticipantSnapshot(
     IReadOnlyList<SkillSlot> Skills,
     IReadOnlyDictionary<string, double>? ExternalBuffs = null,
     PlayerCombatSkillState? CombatSkills = null,
-    IReadOnlyList<ActionSustainedBuff>? SustainedBuffs = null)
+    IReadOnlyList<ActionSustainedBuff>? SustainedBuffs = null,
+    IReadOnlyList<PlayerEquipmentSlot>? Equipment = null)
 {
     /// <summary>成员快照持久化不变量校验。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(PlayerId) && PlayerId.Length <= 64
@@ -46,7 +49,10 @@ public sealed partial record ActionParticipantSnapshot(
         && Skills is not null && Skills.Count <= 16 && Skills.All(slot => slot is not null)
         && (ExternalBuffs is null || ExternalBuffs.All(pair =>
             !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 128 && double.IsFinite(pair.Value) && pair.Value >= 0))
-        && (SustainedBuffs is null || SustainedBuffs.All(buff => buff is not null && buff.IsValid));
+        && (SustainedBuffs is null || SustainedBuffs.All(buff => buff is not null && buff.IsValid))
+        && (Equipment is null || (Equipment.Count <= 24 && Equipment.All(item => item is not null
+            && !string.IsNullOrWhiteSpace(item.ItemId) && item.ItemId.Length <= 128
+            && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)));
 }
 
 /// <summary>开打定格的持续消耗品 Buff：成员快照内以剩余时长承载，入场时 ExpiresAt = 战斗时钟 + 定格剩余。</summary>

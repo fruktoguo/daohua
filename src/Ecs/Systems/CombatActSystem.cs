@@ -141,6 +141,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             {
                 var healed = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, Math.Max(0, output));
                 ally.Hitpoints += healed;
+                // 治疗按施放方归属计入「其他治疗」输出。
+                if (healed > 0) encounter.StatsBook?.RecordHealing(caster, autoRegen: false, healed);
                 ev ??= new List<CombatEvent>();
                 ev.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, ally.Id, 0, true,
                     spell ? CombatDamageKind.Spell : CombatDamageKind.Physical, ally.Hitpoints)
@@ -280,6 +282,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             AtSeconds = at
         };
         ResolveHit(context);
+        // 行动级战斗统计：攻方按伤害类别计输出、守方计实收与减免（减免 = 原始威力 − 实收，未命中不落账）。
+        encounter.StatsBook?.RecordHit(attacker, target, context.AttackStats.DamageKind,
+            context.Damage, context.Hit ? Math.Max(0, context.RawDamage - context.Damage) : 0);
         target.Hitpoints = Math.Max(0, target.Hitpoints - context.Damage);
         attacker.AttackCount += 1;
         attacker.Threat += context.Damage;

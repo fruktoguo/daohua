@@ -191,7 +191,7 @@ public static class ProtocolSnapshotMapper
     {
         foreach (var slot in state.Settings.AutoUseSlots ?? [])
         {
-            if (slot.ActionType == "combat" && slot.SlotIndex <= AutoUseSlotState.MaxSlotIndex
+            if (slot.ActionType == Domain.GameData.AutoUseBar.Combat && slot.SlotIndex < Domain.GameData.AutoUseBar.DefaultSlotCount
                 && slot.CooldownUntilUnixSeconds > 0)
                 return true;
         }
@@ -288,7 +288,7 @@ public static class ProtocolSnapshotMapper
             buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints, buff.StatRatios,
             buff.HpRegenPostRatio, buff.MpRegenPostRatio
         }).ToArray(),
-        PlayerSectionKind.Loadout => ToLoadoutSection(state),
+        PlayerSectionKind.Loadout => ToLoadoutSection(state, gameData),
         PlayerSectionKind.Settings => new { state.Settings, state.Presence },
         PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedUnit, onAttributesProjected),
         // 斗法分段白名单：ActiveReports（在队行动实例账本）不面向客户端，协议只下发
@@ -307,16 +307,30 @@ public static class ProtocolSnapshotMapper
         _ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
     };
 
-    private static object ToLoadoutSection(PlayerAggregateState state) => new
+    private static object ToLoadoutSection(PlayerAggregateState state, GameDataCatalog? gameData)
     {
-        state.Loadout.CoreAttributes,
-        state.Loadout.AbilitySlots,
-        state.Loadout.Equipment,
-        learnedAbilityIds = state.LearnedAbilities.Select(id => id.Value).ToArray(),
-        abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>(),
-        techniqueExperiences = state.Loadout.TechniqueExperiences ?? new Dictionary<string, double>(),
-        abilityTriggers = state.Loadout.AbilityTriggers ?? new Dictionary<string, JsonElement[]>(),
-    };
+        // 六维等级为配表派生值（RootAttributeCurve 查 RealmProgressionCatalog 点成本表），
+        // 不再随持久化记录序列化，协议显式投影保持既有 wire 键名不变。
+        var core = state.Loadout.CoreAttributes;
+        var levels = core.Levels(gameData?.RealmProgression);
+        return new
+        {
+            coreAttributes = new
+            {
+                core.StaminaExp, core.MeridiansExp, core.AttackExp,
+                core.BoneExp, core.AgilityExp, core.ConsciousnessExp,
+                staminaLevel = levels.Stamina, meridiansLevel = levels.Meridians, attackLevel = levels.Attack,
+                boneLevel = levels.Bone, agilityLevel = levels.Agility, consciousnessLevel = levels.Consciousness,
+                totalLevel = levels.Total
+            },
+            state.Loadout.AbilitySlots,
+            state.Loadout.Equipment,
+            learnedAbilityIds = state.LearnedAbilities.Select(id => id.Value).ToArray(),
+            abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>(),
+            techniqueExperiences = state.Loadout.TechniqueExperiences ?? new Dictionary<string, double>(),
+            abilityTriggers = state.Loadout.AbilityTriggers ?? new Dictionary<string, JsonElement[]>(),
+        };
+    }
 
     /// <summary>
     /// 统一战斗属性投影：玩家、妖兽与斗法镜像共用同一字段集与语义。
@@ -386,11 +400,11 @@ public static class ProtocolSnapshotMapper
         var consumableCooldowns = new double[AutoUseSlotState.CombatSlotCount];
         foreach (var slot in state.Settings.AutoUseSlots ?? [])
         {
-            if (slot.ActionType == "combat" && slot.SlotIndex <= AutoUseSlotState.MaxSlotIndex)
+            if (slot.ActionType == Domain.GameData.AutoUseBar.Combat && slot.SlotIndex < Domain.GameData.AutoUseBar.DefaultSlotCount)
             {
                 var index = slot.Group == AutoUseSlotState.SlotGroupPotion
                     ? slot.SlotIndex
-                    : slot.SlotIndex + AutoUseSlotState.MaxSlotIndex + 1;
+                    : slot.SlotIndex + Domain.GameData.AutoUseBar.DefaultSlotCount;
                 consumableCooldowns[index] = Math.Max(0, (slot.CooldownUntilUnixSeconds - nowUnix) * 1000);
             }
         }
@@ -580,8 +594,16 @@ public static class ProtocolSnapshotMapper
                 pendingAbilityId = ally?.PendingAbilityId;
                 pendingDuration = ally?.PendingActionDurationSeconds ?? 0;
             }
-            // 观察目标命中该成员位才投影属性：冻结面板即共享剧本唯一公共输入，与敌怪同一交付口径。
-            var attributes = inspectedAllyIndex == i ? ToAttributesDto(member.Stats) : null;
+            // 观察目标命中该成员位才投影属性与装配：冻结面板、功法槽与已穿戴装备均为开打定格的
+            // 共享剧本输入，与敌怪同一交付口径（一次性携带，前端按 ally:{playerId} 缓存复用）。
+            var inspected = inspectedAllyIndex == i;
+            var attributes = inspected ? ToAttributesDto(member.Stats) : null;
+            var skills = inspected
+                ? member.Skills.Select(slot => new PlayerAbilitySlot(
+                    slot.Ability.TryGetProperty("id", out var idElement) ? idElement.GetString() : null,
+                    slot.Level)).ToArray()
+                : null;
+            var equipment = inspected ? member.Equipment : null;
             if (attributes is not null) onAttributesProjected?.Invoke();
             result[i] = new
             {
@@ -594,7 +616,9 @@ public static class ProtocolSnapshotMapper
                 state.NextAttackAtSeconds, state.AttackCount, state.Threat,
                 pendingAbilityId, pendingActionDurationSeconds = pendingDuration,
                 respawnAtSeconds = state.RespawnAtSeconds,
-                attributes
+                attributes,
+                skills,
+                equipment
             };
         }
         return result;
@@ -681,6 +705,9 @@ public static class ProtocolSnapshotMapper
             opponentMaxHitpoints = duel.OpponentStats.MaxHitpoints,
             opponentMaxManapoints = duel.OpponentStats.MaxManapoints,
             opponentAttributes,
+            // 镜像功法槽与已穿戴装备与属性同帧一次性交付（撮合时冻结），前端按 duel:{对手名} 缓存。
+            opponentSkills = includeOpponentAttributes ? duel.OpponentSkills : null,
+            opponentEquipment = includeOpponentAttributes ? duel.OpponentEquipment : null,
             duel.Resolved,
             duel.Forfeited,
             events = duel.Events.Select(duelEvent => new

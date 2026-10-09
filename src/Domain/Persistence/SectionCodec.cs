@@ -46,9 +46,14 @@ public static class SectionCodec
     /// selfIndex/allies 盟友镜像、玩家快照新增 respawnAtSeconds 倒地截止点。
     /// v21：行动参与绑定改为组织无关的 participation 字段，绑定规格新增真实 ActionId；旧
     /// partySession/party.expedition 载荷不再兼容，内测库按清零规则处理。
+    /// v22：duel 分段行动账本载荷新增 combatants 战斗单位统计（物理/术法输出承伤减免、
+    /// 自动回复/其他治疗；可缺省解码，无表结构变化）。
+    /// v23：actionQueue 分段装配展示载荷落地——行动参与成员快照新增 equipment 冻结装备、
+    /// 斗法回放状态新增 opponentSkills/opponentEquipment 镜像装配（全部可缺省解码为 null，
+    /// 仅详情弹窗「装配」Tab 按需投影消费，不改写结算语义），表结构未变。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 21;
+    public const int CurrentSchemaVersion = 23;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>

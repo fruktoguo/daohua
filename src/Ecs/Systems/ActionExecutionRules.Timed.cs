@@ -469,7 +469,8 @@ internal static partial class ActionExecutionRules
         for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
         {
             var slot = player.Settings.AutoUseSlots[i];
-            if (!TryGetSustainedConsumable(slot, definition.Kind, gameData, out var item, out var consumable)) continue;
+            if (!TryGetSustainedConsumable(slot, Domain.GameData.AutoUseBar.For(definition), definition.Kind,
+                gameData, out var item, out var consumable)) continue;
 
             if (slot.RemainingDurationSeconds > consumable.DurationSeconds)
             {
@@ -521,7 +522,8 @@ internal static partial class ActionExecutionRules
         for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
         {
             var slot = player.Settings.AutoUseSlots[i];
-            if (!TryGetSustainedConsumable(slot, definition.Kind, gameData, out var item, out var consumable)
+            if (!TryGetSustainedConsumable(slot, Domain.GameData.AutoUseBar.For(definition), definition.Kind,
+                gameData, out var item, out var consumable)
                 || slot.RemainingDurationSeconds <= 0)
                 continue;
             var remaining = Math.Max(0d, slot.RemainingDurationSeconds - definition.DurationSeconds);
@@ -548,8 +550,11 @@ internal static partial class ActionExecutionRules
         }
     }
 
+    /// <summary>槽位是否对运行中行动产出持续消耗品：
+    /// 同栏域 + 物品声明该栏域 + 对该行动大类确有加成（倍率 &gt; 1，无效场景不充能不扣时长）。</summary>
     internal static bool TryGetSustainedConsumable(
         AutoUseSlotState slot,
+        string? actionBarId,
         ActionKind actionKind,
         GameDataCatalog gameData,
         out ItemDefinition item,
@@ -557,25 +562,16 @@ internal static partial class ActionExecutionRules
     {
         item = null!;
         consumable = null!;
-        if (!slot.Enabled || string.IsNullOrWhiteSpace(slot.ItemId) || !MatchesActionType(slot.ActionType, actionKind)) return false;
+        if (!slot.Enabled || string.IsNullOrWhiteSpace(slot.ItemId) || actionBarId is null
+            || !string.Equals(slot.ActionType, actionBarId, StringComparison.OrdinalIgnoreCase)) return false;
         var itemId = new ItemId(slot.ItemId);
         if (!itemId.IsValid || !gameData.Items.TryGetValue(itemId, out item!)) return false;
         consumable = item.Consumable!;
         // durable 持续品（阵盘）不走时长扣件路径：由资源边界的 ActiveBuff 注入/清除承载。
         return consumable is { IsContinuous: true, DurationSeconds: > 0, Durable: false }
-            && consumable.UsableInActionKinds.Contains(actionKind);
+            && consumable.UsableInBars.Contains(actionBarId)
+            && consumable.GetMultiplier(actionKind) > 1d;
     }
-
-    internal static bool MatchesActionType(string actionType, ActionKind kind) => kind switch
-    {
-        ActionKind.Cultivation => string.Equals(actionType, "cultivation", StringComparison.OrdinalIgnoreCase),
-        ActionKind.Exploration => string.Equals(actionType, "exploration", StringComparison.OrdinalIgnoreCase),
-        ActionKind.Alchemy => string.Equals(actionType, "alchemy", StringComparison.OrdinalIgnoreCase),
-        ActionKind.Combat => string.Equals(actionType, "combat", StringComparison.OrdinalIgnoreCase),
-        ActionKind.Travel => string.Equals(actionType, "travel", StringComparison.OrdinalIgnoreCase),
-        ActionKind.Enhancement => string.Equals(actionType, "enhancement", StringComparison.OrdinalIgnoreCase),
-        _ => false
-    };
 
     internal static double CultivationMultiplier(GameDataCatalog catalog, string nodeId)
     {

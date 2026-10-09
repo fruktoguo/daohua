@@ -38,6 +38,8 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
 
     /// <summary>玩家标识。</summary>
     public PlayerId PlayerId => new(Identity.PlayerId);
+    /// <summary>玩家道号（战斗统计/战报展示用）。</summary>
+    public string DisplayName => _identity.DisplayName;
     /// <summary>成长分段：修为/底蕴/战斗经验/境界与道龄（组件本体直接暴露）。</summary>
     public PlayerProgression Progression => _progression.Progression;
     /// <summary>世界漫游分段：驻留节点、旅途进度与探索种子。</summary>

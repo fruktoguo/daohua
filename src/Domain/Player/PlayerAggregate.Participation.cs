@@ -36,7 +36,9 @@ public sealed partial class PlayerAggregate
 
     /// <summary>
     /// 结束行动参与：给队首参与行动写入权威结束时刻，推进到该时刻自然收尾离队。
-    /// 非本会话或当前无参与行动时返回 false（幂等）。
+    /// 非本会话或当前无参与行动时返回 false（幂等）。散场时刻倒地成员即刻以最低气血
+    /// （1 点）起身——与移除死亡中远征的恢复口径一致（§21.13），不依赖成员下次推进，
+    /// 保证离线成员与紧随其后的新会话冻结面板都读到复活后的气血；灵力不恢复。
     /// </summary>
     public bool EndActionParticipation(string sessionId, double endsAtUnixSeconds)
     {
@@ -47,6 +49,11 @@ public sealed partial class PlayerAggregate
             || !string.Equals(participation.Spec.SessionId, sessionId, StringComparison.Ordinal))
             return false;
         _actions[0].Participation = participation with { EndsAtUnixSeconds = endsAtUnixSeconds };
+        if (Resources.Hitpoints <= 0)
+        {
+            Resources.Hitpoints = 1;
+            Touch(PlayerSectionKind.Combat);
+        }
         Touch(PlayerSectionKind.ActionQueue);
         return true;
     }
@@ -74,7 +81,8 @@ public sealed partial class PlayerAggregate
             SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities, Loadout.AbilityTriggers),
             externalBuffs.Count > 0 ? externalBuffs : null,
             Combat.Skills,
-            CaptureSustainedBuffs(Settings.AutoUseSlots, gameData));
+            CaptureSustainedBuffs(Settings.AutoUseSlots, gameData),
+            Loadout.Equipment.ToArray());
     }
 
     /// <summary>
@@ -89,12 +97,12 @@ public sealed partial class PlayerAggregate
         {
             var slot = slots[i];
             if (!slot.Enabled || slot.ItemId is null || slot.Group != AutoUseSlotState.SlotGroupGeneral
-                || !string.Equals(slot.ActionType, "combat", StringComparison.OrdinalIgnoreCase)
+                || slot.ActionType != Domain.GameData.AutoUseBar.Combat
                 || slot.RemainingDurationSeconds <= 0) continue;
             var itemId = new ItemId(slot.ItemId);
             if (!gameData.Items.TryGetValue(itemId, out var item)
                 || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0, Durable: false }
-                || !item.Consumable.UsableInActionKinds.Contains(ActionKind.Combat)
+                || !item.Consumable.UsableInBars.Contains(Domain.GameData.AutoUseBar.Combat)
                 || !gameData.RawItems.TryGetValue(itemId.Value, out var rawItem)
                 || !rawItem.TryGetProperty("consumable", out var raw)
                 || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array)
@@ -141,6 +149,7 @@ public sealed partial record ActionParticipantSnapshot
             SkillSlot.FromAbilitySlots(loadout.AbilitySlots, catalog.Abilities, loadout.AbilityTriggers),
             externalBuffs.Count > 0 ? externalBuffs : null,
             state.Combat.Skills,
-            PlayerAggregate.CaptureSustainedBuffs(state.Settings.AutoUseSlots ?? [], catalog));
+            PlayerAggregate.CaptureSustainedBuffs(state.Settings.AutoUseSlots ?? [], catalog),
+            loadout.Equipment);
     }
 }

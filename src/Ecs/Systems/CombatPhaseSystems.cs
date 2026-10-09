@@ -45,11 +45,12 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         for (var i = 0; i < encounter.Enemies.Count; i++)
             encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         if (Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) > 1e-9) return;
+        var statsBook = encounter.StatsBook;
         // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
-        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i]);
-        for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i]);
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook);
+        for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook);
 
-        static void Tick(CombatantState unit)
+        static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook)
         {
             // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次；
             // 收口公式（总纲 §20.3）：(固定回复合计) × (1 + Σ后段比率)。
@@ -66,7 +67,14 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
             hp *= 1 + hpPost;
             mp *= 1 + mpPost;
             // 阵亡单位气血锁 0 不结算回血，灵力回复照常入账（死亡灵力运转规约战内同构）。
-            if (unit.IsAlive && hp != 0) unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
+            if (unit.IsAlive && hp != 0)
+            {
+                var hitpointsBefore = unit.Hitpoints;
+                unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
+                // 周期回复计「自动回复」；负向回复（减益跳血）不归属任何单位，不入账。
+                if (unit.Hitpoints > hitpointsBefore)
+                    statsBook?.RecordHealing(unit, autoRegen: true, unit.Hitpoints - hitpointsBefore);
+            }
             if (mp != 0) unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);
         }
     }

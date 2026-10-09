@@ -55,5 +55,7 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0019_v18_to_v19.sql` | 新增组队讨伐持久化字段与会话表，schema_version 写入 19 |
 | `0020_v19_to_v20.sql` | 推进 actionQueue 组队讨伐参与载荷标签至 20 |
 | `0021_v20_to_v21.sql` | 仅推进库级版本至 21；旧 partySession/party.expedition 玩家载荷不能无损迁移，须由 `reset-outdated-players.sh` 交互确认清零 |
+| `0022_v21_to_v22.sql` | 推进 duel 分段行动账本 `combatants` 战斗单位统计标签至 22（可缺省解码，表结构未变） |
+| `0023_v22_to_v23.sql` | 推进 actionQueue 装配展示载荷标签至 23：参与成员快照增 `equipment`、斗法回放增 `opponentSkills`/`opponentEquipment`（可缺省解码，表结构未变） |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

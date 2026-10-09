@@ -24,7 +24,10 @@ public static class PostgresSchema
     /// v20：actionQueue 分段战斗参与载荷落地——行动项新增 participation 绑定，远征状态新增
     /// selfIndex/allies 盟友镜像与 respawnAtSeconds 倒地截止点（全部可缺省解码），表结构未变。
     /// v21：参与绑定改为组织无关字段并携带真实 ActionId；旧 partySession 载荷不兼容，内测库按清零规则处理。
-    public const int Version = 21;
+    /// v22：duel 分段行动账本载荷新增 combatants 战斗单位统计（可缺省解码），存档标签推进，表结构未变。
+    /// v23：actionQueue 分段装配展示载荷落地——参与成员快照增 equipment、斗法回放增 opponentSkills/
+    /// opponentEquipment（可缺省解码），存档标签推进，表结构未变。
+    public const int Version = 23;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -517,7 +520,7 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (19, now()), (20, now()), (21, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 

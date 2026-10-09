@@ -364,6 +364,47 @@ public sealed class CombatPartyExpeditionTests
         Assert.Null(memberA.Actions[0].Participation);
     }
 
+    /// <summary>
+    /// 散场时刻倒地成员即刻以 1 点气血起身（§21.13）：写入权威结束时刻即恢复，
+    /// 不依赖成员下次模拟推进——离线成员与紧随其后的新会话冻结面板都读到复活后气血；
+    /// 灵力不恢复，参与绑定仍驻留队首待推进到散场时刻收尾。
+    /// </summary>
+    [Fact]
+    public void SessionEndRevivesDownedMemberToOneHitpoint()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var memberA = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", baseline, catalog.Fingerprint);
+        var memberB = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "乙", baseline, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(memberA, catalog);
+        PlayerAttributeResolver.Apply(memberB, catalog);
+        var spec = new ActionParticipationSpec(
+            "session.downed", "encounter.qi-beast", "node.test", 99,
+            0, baseline.ToUnixTimeMilliseconds() / 1000d,
+            [memberA.CaptureActionParticipantSnapshot(catalog), memberB.CaptureActionParticipantSnapshot(catalog)])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
+        Assert.NotNull(memberA.StartActionParticipation(spec, baseline, catalog.Actions));
+
+        // 会话中倒地：气血归零、灵力同样耗空（验证散场复活不碰灵力）。
+        memberA.Resources.Hitpoints = 0;
+        memberA.Resources.Manapoints = 0;
+        var endsAt = baseline.AddSeconds(30).ToUnixTimeMilliseconds() / 1000d;
+        Assert.True(memberA.EndActionParticipation(spec.SessionId, endsAt));
+        Assert.Equal(1, memberA.Resources.Hitpoints);
+        Assert.Equal(0, memberA.Resources.Manapoints);
+        // 绑定仍在队首（推进到散场时刻才收尾出队），结束时刻已写入。
+        Assert.True(memberA.Actions[0].Participation is not null);
+        Assert.Equal(endsAt, memberA.Actions[0].Participation!.EndsAtUnixSeconds);
+
+        SimulationEngine.AdvanceTo(memberA, baseline.AddSeconds(60), catalog, new AssetWallet(memberA.PlayerId));
+        Assert.False(memberA.IsInActionParticipation);
+        Assert.Empty(memberA.Actions);
+        // 推进窗内气血自然回复会继续生效——断言只锁「已复活且未被再次清零」。
+        Assert.True(memberA.Resources.Hitpoints > 0);
+    }
+
     /// <summary>单位 ID → 成员序归一：self 位 "player"、盟友 "ally:{i}"、敌人 "enemy:{i}" 映射为整数序，跨视角比对用。</summary>
     private static int MemberOrdinal(CombatEncounterState encounter, string id)
     {

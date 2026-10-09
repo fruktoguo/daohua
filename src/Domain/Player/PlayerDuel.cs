@@ -131,6 +131,12 @@ public sealed class PlayerBattleReport
     public double DuelLosses { get; set; }
     /// <summary>UTC+8 自然日序号（仅每日账本使用，-1 表示尚未归属任何自然日）</summary>
     public long DayIndex { get; set; } = -1;
+    /// <summary>
+    /// 行动级战斗单位统计簿：记录本行动内全部战斗单位的伤害/承伤/减免与治疗
+    /// （自动回复/其他治疗分列，伤害三项按物理·术法分列）；仅行动实例账本承载，
+    /// 行动出队归档时清空即弃，不进入归档战报。
+    /// </summary>
+    public CombatUnitStatsBook CombatStats { get; } = new();
 
     /// <summary>是否存在任何可记录内容；空账本归档时丢弃。</summary>
     public bool HasContent => Experience > 0 || Foundation != 0 || CombatExperience > 0
@@ -210,6 +216,7 @@ public sealed class PlayerBattleReport
         Deaths = 0;
         DuelWins = 0;
         DuelLosses = 0;
+        CombatStats.Clear();
         DayIndex = dayIndex;
         StartedAtUnixSeconds = atUnixSeconds;
         EndedAtUnixSeconds = atUnixSeconds;
@@ -385,7 +392,9 @@ public sealed record PlayerBattleReportDocument(
     double Deaths = 0,
     long DayIndex = -1,
     double Foundation = 0,
-    double CombatExperience = 0);
+    double CombatExperience = 0,
+    /// <summary>行动内战斗单位统计（仅行动实例账本承载；归档战报恒为 null）。</summary>
+    IReadOnlyList<CombatUnitStatDocument>? Combatants = null);
 
 /// <summary>六维经验文档形态。</summary>
 public sealed record PlayerRootExpDocument(
@@ -398,8 +407,9 @@ public sealed partial class PlayerAggregate
     /// <summary>斗法玩法分段状态（遭遇计数、失败冷却、暂存区与战报）。</summary>
     public PlayerDuelState Duel { get; }
 
-    /// <summary>当前斗法实力值：六维等级总和（后续可替换为更复杂口径）。</summary>
-    public double DuelPower => Loadout.CoreAttributes.TotalLevel;
+    /// <summary>当前斗法实力值：六维等级总和（后续可替换为更复杂口径）；等级经配表派生点成本表结算。</summary>
+    public double DuelPower(GameDataCatalog? gameData)
+        => Loadout.CoreAttributes.Levels(gameData?.RealmProgression).Total;
 
     /// <summary>当前战斗行动的斗法开关（仅队首战斗行动生效）。</summary>
     public bool IsDuelSeeking => _actions.Count > 0 && _actions[0].Intent.PvpEnabled
@@ -480,8 +490,16 @@ public sealed partial class PlayerAggregate
             DuelSeekFailed = false
         };
         _actions[0].ProgressSeconds = 0;
+        // 斗法本方战斗统计并入队首行动账本（对方队伍数据不入账）；剧本结算在撮合时已锁定。
+        if (playback.ViewerStats is { Count: > 0 } viewerStats
+            && Duel.ReportFor(_actions[0].Id) is { } headReport)
+        {
+            foreach (var unit in viewerStats) headReport.CombatStats.MergeSelf(DisplayName, unit);
+            headReport.MarkExportDirty();
+        }
         MarkDirty(PlayerSectionKind.ActionQueue);
         MarkDirty(PlayerSectionKind.Combat);
+        if (playback.ViewerStats is { Count: > 0 }) MarkDirty(PlayerSectionKind.Duel);
     }
 
     /// <summary>
@@ -612,7 +630,8 @@ public sealed partial class PlayerAggregate
         var stats = PlayerAttributeResolver.Resolve(this, gameData).ToCombatant(Progression.CombatExperience);
         // 斗法镜像与玩家/怪物共用同一套通用技能槽：触发条件与装配口径完全一致（按功法 ID 挂接）。
         var skills = SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities, Loadout.AbilityTriggers);
-        return new DuelCombatant(PlayerId, DisplayName, DuelPower, stats, skills, Duel.StagedItems.ToArray());
+        return new DuelCombatant(PlayerId, DisplayName, DuelPower(gameData), stats, skills,
+            Duel.StagedItems.ToArray(), Loadout.Equipment.ToArray());
     }
 
     /// <summary>斗法调参当前生效值；由模拟推进在配表上下文中刷新。</summary>

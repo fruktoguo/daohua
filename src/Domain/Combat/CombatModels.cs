@@ -471,6 +471,11 @@ public sealed class CombatEncounterState
     /// 不进入快照；恢复战斗由宿主在挂接时重新装配。
     /// </summary>
     internal ICombatTriggerSink? TriggerSink { get; set; }
+    /// <summary>
+    /// 行动级战斗单位统计簿（运行时）：由战斗入场/恢复挂接到队首行动实例账本，
+    /// null 时全部结算点零成本旁路。不进入快照——簿本体随 duel 分段独立持久化。
+    /// </summary>
+    internal CombatUnitStatsBook? StatsBook { get; set; }
     /// <summary>本机成员当前集火目标：存活敌人中有效威胁最高者。</summary>
     public CombatantState? PrimaryEnemy
     {

@@ -36,6 +36,8 @@ internal static class CombatActionRules
         ActionDefinition definition, GameDataCatalog gameData, DateTimeOffset at, ActionMutationBatch mutations)
     {
         if (action.Expedition is not null) return;
+        // 行动账本在搜寻阶段即建立：搜寻期的自然回复/药品激活等战外结算也要计入本次行动统计。
+        player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
         if (action.Participation?.Spec is { } spec)
         {
             // 行动参与会话：遭遇与首波种子由共享剧本钉死，不走节点池与完成轮次派生（总纲 §21.13）。
@@ -279,6 +281,8 @@ internal static class CombatActionRules
         player.Resources.Manapoints = battleState.Player.Manapoints;
         // 战斗中气血是独立持久化分段；仅标记行动队列会导致重连后回退到旧气血。
         player.MarkDirty(PlayerSectionKind.Combat);
+        // 战斗单位统计标脏收口：本次推进内若有伤害/治疗落账，重建行动账本导出文档并推送 duel 分段。
+        ActionReportBook.FlushCombatStats(player, action.Id);
         // 复用会话驻留期间只回写标量镜像字段：玩家/敌人完整快照由 Flush 在补算收尾、
         // 触发器读文档或会话顶替时统一导出，标量部分与 CaptureCombatState 逐位一致。
         var updatedBattle = expedition with
@@ -590,7 +594,27 @@ internal static class CombatActionRules
         }
         for (var i = 0; i < waveEnemies.Count; i++)
             battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
+        AttachCombatStats(player, action, battleState, action.Participation?.Spec, gameData);
         return battleState;
+    }
+
+    /// <summary>
+    /// 把行动实例账本的战斗单位统计簿挂接到遭遇战：预注册本机/盟友单位与本波怪物类型桶
+    /// （同类型怪合并为 monster:{defId} 单位），账本不存在时保持 null 由结算点零成本旁路。
+    /// </summary>
+    private static void AttachCombatStats(IPlayerResourceContext player, IPlayerActionState action,
+        CombatEncounterState battle, ActionParticipationSpec? spec, GameDataCatalog gameData)
+    {
+        battle.StatsBook = player.Duel.ReportFor(action.Id)?.CombatStats;
+        if (battle.StatsBook is not { } book) return;
+        var selfIndex = battle.SelfIndex;
+        for (var i = 0; i < battle.PlayerAllies.Count; i++)
+            book.Register(i == selfIndex ? "player" : $"ally:{i}",
+                spec?.Members[i].DisplayName ?? (i == selfIndex ? player.DisplayName : ""));
+        foreach (var enemy in battle.Enemies)
+            if (enemy.DefinitionId is { } definitionId)
+                book.Register($"monster:{definitionId}",
+                    gameData.CombatMonsters.TryGetValue(definitionId, out var monster) ? monster.Name : definitionId);
     }
 
     /// <summary>
@@ -766,6 +790,7 @@ internal static class CombatActionRules
             player.Combat.Skills.ApplyTo(battle.Player);
         }
         for (var i = 0; i < wave.Count; i++) battle.Enemies[i].DefinitionId = wave[i].Id;
+        AttachCombatStats(player, action, battle, spec, gameData);
 
         Dictionary<AssetKey, double>? deltas = null;
         SimulationEventTail? events = null;
@@ -1161,8 +1186,8 @@ internal static class CombatActionRules
         foreach (var attribute in targets)
         {
             var expBefore = RootExpOf(core, attribute);
-            var levelBefore = RootAttributeCurve.LevelFor(expBefore);
-            var levelAfter = RootAttributeCurve.LevelFor(expBefore + share);
+            var levelBefore = RootAttributeCurve.LevelFor(expBefore, gameData.RealmProgression);
+            var levelAfter = RootAttributeCurve.LevelFor(expBefore + share, gameData.RealmProgression);
             core = attribute switch
             {
                 CoreAspectKind.Stamina => core with { StaminaExp = core.StaminaExp + share },
@@ -1268,11 +1293,11 @@ internal static class CombatActionRules
         item = null!;
         consumable = null!;
         if (!slot.Enabled || slot.ItemId is null || slot.Group != AutoUseSlotState.SlotGroupGeneral
-            || !string.Equals(slot.ActionType, "combat", StringComparison.OrdinalIgnoreCase)) return false;
+            || slot.ActionType != Domain.GameData.AutoUseBar.Combat) return false;
         var itemId = new ItemId(slot.ItemId);
         if (!gameData.Items.TryGetValue(itemId, out item!)
             || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0, Durable: false } found
-            || !found.UsableInActionKinds.Contains(ActionKind.Combat)) return false;
+            || !found.UsableInBars.Contains(Domain.GameData.AutoUseBar.Combat)) return false;
         consumable = found;
         return true;
     }

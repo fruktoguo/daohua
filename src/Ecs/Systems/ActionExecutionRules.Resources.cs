@@ -225,9 +225,15 @@ internal static partial class ActionExecutionRules
         }
         var hitpoints = player.Resources.Hitpoints;
         var manapoints = player.Resources.Manapoints;
+        // 行动级战斗统计：讨伐远征存续期间的战外自然回复计入「自动回复」。
+        var statsBook = player.Actions.Count > 0 && player.Actions[0].Expedition is not null
+            ? player.Duel.ReportFor(player.Actions[0].Id)?.CombatStats : null;
         if (player.Resources.Hitpoints > 0)
             player.Resources.Hitpoints = Math.Min(maxHitpoints, player.Resources.Hitpoints + hpRegen);
         player.Resources.Manapoints = Math.Min(maxManapoints, player.Resources.Manapoints + mpRegen);
+        if (player.Resources.Hitpoints > hitpoints)
+            statsBook?.RecordHealing("player", player.DisplayName, autoRegen: true,
+                player.Resources.Hitpoints - hitpoints);
         if (player.Actions.Count > 0 && player.Actions[0].Expedition is { } expedition
             && (expedition.PlayerHitpoints != player.Resources.Hitpoints || expedition.PlayerManapoints != player.Resources.Manapoints))
             player.Actions[0].Expedition = expedition with
@@ -250,6 +256,10 @@ internal static partial class ActionExecutionRules
                     ? Math.Min(memberStats.MaxHitpoints, ally.State.Hitpoints + memberStats.HpRegen)
                     : ally.State.Hitpoints;
                 var allyMp = Math.Min(memberStats.MaxManapoints, ally.State.Manapoints + memberStats.MpRegen);
+                if (allyHp > ally.State.Hitpoints)
+                    statsBook?.RecordHealing($"ally:{ally.MemberIndex}",
+                        participationSpec.Members[ally.MemberIndex].DisplayName, autoRegen: true,
+                        allyHp - ally.State.Hitpoints);
                 if (allyHp != ally.State.Hitpoints || allyMp != ally.State.Manapoints)
                 {
                     updated[i] = ally with { State = ally.State with { Hitpoints = allyHp, Manapoints = allyMp } };
@@ -260,6 +270,8 @@ internal static partial class ActionExecutionRules
             if (anyAllyChange)
                 player.Actions[0].Expedition = player.Actions[0].Expedition! with { Allies = updated };
         }
+        // 统计簿有写入时统一标脏：重建账本导出文档并推送 duel 分段。
+        if (statsBook is not null) ActionReportBook.FlushCombatStats(player, player.Actions[0].Id);
         if (player.Resources.Hitpoints == hitpoints && player.Resources.Manapoints == manapoints) return anyAllyChange;
         player.MarkDirty(PlayerSectionKind.Combat);
         return true;
@@ -288,13 +300,13 @@ internal static partial class ActionExecutionRules
         // 参与会话期间不激活即时消耗品：其他成员的钱包/槽位不可见，共享剧本只消费开打定格画面
         // （否则本机雷击符/药品在别的成员模拟里不存在 → 战斗状态分歧）。
         if (player.Actions[0].Participation is not null) return [];
-        // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与 MatchesActionType 固定税。
+        // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与栏域匹配的固定税。
         var slots = player.Settings.AutoUseSlots;
         var anyEnabled = false;
         for (var i = 0; i < slots.Count; i++)
             if (slots[i].Enabled) { anyEnabled = true; break; }
         if (!anyEnabled) return [];
-        var kind = catalog.Actions.Get(player.Actions[0].Intent.ActionId).Kind;
+        var actionBarId = Domain.GameData.AutoUseBar.For(catalog.Actions.Get(player.Actions[0].Intent.ActionId));
         List<AssetDelta>? deltas = null;
         var now = at.ToUnixTimeMilliseconds() / 1000d;
         // 触发求值上下文惰性构建：仅当存在带条件的消耗品时才装配战斗单位视图。
@@ -305,12 +317,13 @@ internal static partial class ActionExecutionRules
         for (var i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
-            if (!slot.Enabled || slot.ItemId is null || !MatchesActionType(slot.ActionType, kind)
+            if (!slot.Enabled || slot.ItemId is null || actionBarId is null
+                || !string.Equals(slot.ActionType, actionBarId, StringComparison.OrdinalIgnoreCase)
                 || slot.CooldownUntilUnixSeconds > now) continue;
             var id = new ItemId(slot.ItemId);
             var item = catalog.Items[id];
             if (item.Consumable is not { IsContinuous: false, Durable: false } definition
-                || !definition.UsableInActionKinds.Contains(kind)
+                || !definition.UsableInBars.Contains(actionBarId)
                 || !catalog.RawItems[id.Value].TryGetProperty("consumable", out var raw)) continue;
             // 消耗品使用条件与技能共用同一套触发判定模型；求值失败一律跳过本槽。
             if (definition.Triggers is { Count: > 0 } triggers)
@@ -363,6 +376,19 @@ internal static partial class ActionExecutionRules
                 player.Resources.Manapoints = Math.Max(0, player.Resources.Manapoints - manaCost);
                 SyncConsumableResourcesToBattle(player, player.Actions[0], live);
                 ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, live);
+                // 雷击符打击计入行动统计簿：本机术法输出；目标怪按类型桶计术法承伤与减免（原始威力 − 实收）。
+                if (evalTarget!.DefinitionId is { } strikeMonsterId
+                    && player.Duel.ReportFor(player.Actions[0].Id) is { } strikeReport)
+                {
+                    var strikeBook = strikeReport.CombatStats;
+                    strikeBook.Register("player", player.DisplayName);
+                    strikeBook.Register($"monster:{strikeMonsterId}",
+                        catalog.CombatMonsters.TryGetValue(strikeMonsterId, out var strikeMonster)
+                            ? strikeMonster.Name : strikeMonsterId);
+                    strikeBook.RecordHit("player", $"monster:{strikeMonsterId}", CombatDamageKind.Spell,
+                        damage, Math.Max(0, strikeStats.AttackPower - damage));
+                    ActionReportBook.FlushCombatStats(player, player.Actions[0].Id);
+                }
                 player.Settings.AutoUseSlots[i] = slot with { CooldownUntilUnixSeconds = now + cooldown };
                 player.MarkDirty(PlayerSectionKind.Settings);
                 player.MarkDirty(PlayerSectionKind.Combat);
@@ -374,8 +400,24 @@ internal static partial class ActionExecutionRules
                     ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
                 continue;
             }
+            var hitpointsBeforePotion = player.Resources.Hitpoints;
             player.Resources.Hitpoints = Math.Min(player.Resources.MaxHitpoints, player.Resources.Hitpoints + hp);
             player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + mp);
+            // 药品瞬回计「其他治疗」输出。即时消耗品只限战斗行动域；激活可能发生在行动首步的
+            // T0 资源边界（先于远征初始化），此时按队首行动口径补建账本再入账。
+            if (player.Resources.Hitpoints > hitpointsBeforePotion)
+            {
+                var headAction = player.Actions[0];
+                player.EnsureActionReport(headAction.Id,
+                    catalog.Actions.Get(headAction.Intent.ActionId).Id,
+                    catalog.Actions.Get(headAction.Intent.ActionId).Name, at);
+                if (player.Duel.ReportFor(headAction.Id) is { } healReport)
+                {
+                    healReport.CombatStats.RecordHealing("player", player.DisplayName, autoRegen: false,
+                        player.Resources.Hitpoints - hitpointsBeforePotion);
+                    ActionReportBook.FlushCombatStats(player, headAction.Id);
+                }
+            }
             // 战斗中即时药品同样要把恢复量压回战内单位/文档镜像，否则下一战斗步以战内值覆盖战外资源池。
             SyncConsumableResourcesToBattle(player, player.Actions[0], live);
             if (buffs.ValueKind == JsonValueKind.Array)
@@ -426,7 +468,9 @@ internal static partial class ActionExecutionRules
                     Hitpoints = enemy.State.Hitpoints,
                     Manapoints = enemy.State.Manapoints,
                     Threat = enemy.State.Threat,
-                    ThreatBonusPoints = enemy.State.ThreatBonusPoints
+                    ThreatBonusPoints = enemy.State.ThreatBonusPoints,
+                    // 求值单位同样携带怪物定义 ID：打击记账按 monster:{defId} 类型桶归并。
+                    DefinitionId = enemy.EnemyId
                 };
                 if (enemy.State.Buffs is { Count: > 0 } buffs) unit.Buffs.AddRange(buffs);
                 enemies.Add(unit);
@@ -540,18 +584,18 @@ internal static partial class ActionExecutionRules
         }
         if (!managed) return false;
         var changed = false;
-        var kind = player.Actions.Count > 0
-            ? gameData.Actions.Get(player.Actions[0].Intent.ActionId).Kind
-            : (ActionKind?)null;
+        var actionBarId = player.Actions.Count > 0
+            ? Domain.GameData.AutoUseBar.For(gameData.Actions.Get(player.Actions[0].Intent.ActionId))
+            : null;
         var desired = new List<ActiveBuff>();
         for (var i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
             if (slot.ItemId is not { } text || new ItemId(text) is not { IsValid: true } id
                 || !gameData.Items.TryGetValue(id, out var item) || item.Consumable is not { Durable: true }) continue;
-            if (kind is not { } k || !slot.Enabled
-                || !item.Consumable.UsableInActionKinds.Contains(k)
-                || !MatchesActionType(slot.ActionType, k)
+            if (actionBarId is not { } barId || !slot.Enabled
+                || !item.Consumable.UsableInBars.Contains(barId)
+                || !string.Equals(slot.ActionType, barId, StringComparison.OrdinalIgnoreCase)
                 || wallet.Get(new AssetKey(item.Id)) < 1
                 || !gameData.RawItems[id.Value].TryGetProperty("consumable", out var raw)
                 || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array) continue;
