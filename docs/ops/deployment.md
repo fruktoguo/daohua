@@ -1,6 +1,6 @@
 # daohua 生产构建与部署
 
-本文描述当前生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v21。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
+本文描述当前生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v24。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 
 ## 拓扑与边界
 
@@ -14,6 +14,8 @@
 API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取得 `player_id`；客户端不能在 URL 或请求体中声明另一个玩家取得权限。内测账号密码长度为 6-24 个字符。ComputeNode 仅接受 `X-Compute-Token` 头（无 `Authorization` 回退）；节点不连接生产数据库、不处理账号和市场写入。
 
 目标主机按 `2c4g/40g` 设计：5000+ 账号、100+ 持续连接、500+ 峰值收发和 2000+ 冷挂机补算。容量门禁见 `scripts/capacity-target.sh` 与 `src/LoadTests`。
+
+API 的 GC 采用渐进式驻留策略（`src/Server/Server.csproj`）：`DynamicAdaptationMode=1` 自适应堆尺寸随真实负载伸缩，`ConserveMemory=7` 偏置小堆段勤收集使堆贴住存活数据，`HeapCount=4` 封顶按核堆数量（大内存开发机上默认十余个堆各自囤段是虚胖主因）。不设 `HeapHardLimit` 硬顶，本地运行与发布镜像使用同一设置；不强制 GC、不改容量采样窗口或通过阈值，实际工作集仍由容量门禁验收（768 MiB 预算不变）。
 
 ## 环境与凭据
 
@@ -48,7 +50,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v21 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建；本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行 `migrations/` 中的独立 SQL。迁移不可用或失败时必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v24 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建；本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行 `migrations/` 中的独立 SQL。迁移不可用或失败时必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
 
 启动正式前端：
 
@@ -186,3 +188,11 @@ sudo /opt/daohua/pitr-restore.sh \
 默认稳定设备只注册一个账号、关联最多两个账号；配置/IP/网段/指纹/成功注册频率参与风险评分。自然人身份无法仅凭浏览器确定。Development 运维面板新增“账号检测”，策略写入仍需令牌、私有来源和确认；生产 Ops 访问边界保持关闭。规则与模块独立关闭语义见 [`anti-multi-open.md`](../backend/anti-multi-open.md)。
 
 数据库备份必须包括 `identity.account_risk_signals`、`identity.account_risk_events`、`platform.account_risk_policy`、`platform.account_risk_key` 与现有 Data Protection key。丢失 HMAC 密钥会破坏历史关联匹配；设备 Cookie 依赖 Data Protection key，二者不得独立清空。风险事件按独立 `Storage:AccountRiskEventRetentionDays`（默认 30 天、范围 1..365）小批量清理，每小时批次为普通清理批次的 16 倍且不超过 10000，稳定关联和风险密钥保留。API/worker 角色授权已同步 `deploy/postgres-local-roles.sql`。本任务未执行任何远端迁移或发布；生产升级 schema v10 须另行授权、先备份并显式应用独立迁移脚本。
+
+## 组队权威会话与恢复（schema v24）
+
+- `social.party_sessions` 同时保存冻结输入、权威战斗检查点、推进时刻与版本；`social.party_session_inbox` 保存各成员待消费结算。两者必须随全库备份/恢复，不可仅恢复玩家分段。
+- 检查点与成员结算一次事务交付；成员消费时，资产、分段与消费回执一次事务提交。重启恢复会话，不再无条件标记 `server.restart` 散场。
+- 队伍解散不会删除会话或未消费结算；离线成员下次装载先消费，再恢复个人行动。个人 ComputeNode 冷挂机扫描排除活跃会话成员与未消费收件箱。
+- 本地 v23→v24 必须先停止全部服务，确认 `game.player_runtime_leases` 无有效租约，再人工执行 `node migrations/0024_v23_to_v24.mjs`；工具通过 `docker exec psql` 在单事务内校验并转换 `game.player_state_sections` 与 `platform.section_flush_queue` 的 Brotli/raw checksum，移除旧 participation 行动、按 Remove 规则激活原队列下一首，并把最后已结算远征血蓝折回 combat（倒地固定 1 血、不回蓝）。它随后 CAS 校验版本/checksum 后执行同一 `0024_v23_to_v24.sql`；失败自动回滚，不会清除角色、队伍、资产或经验。默认容器/用户/库为 `daohua-local-db`/`daohua`/`daohua`，可用 `DB_CONTAINER`、`DB_USER`、`DB_NAME` 覆盖。该 `.mjs` 仅供一次性离线手工运行，不参与启动链、编译或镜像；SQL 单独遇到旧 v23 `action_queue` 会拒绝并提示此路径。
+- 检查点提交无法确认时保留会话与版本证据并拒绝继续写；成员资产提交无法确认沿用玩家 fence，不能靠重启或删除收件箱消除错误。

@@ -197,3 +197,10 @@ PlayerActionQueueMutationComponent.Work.Begin
 - `scripts/verify.sh`：最小完整门禁（构建+三测试套件+DataTool+compose）。
 - `tests/Ecs.Tests`：ECS 运行时/适配器边界回归（30+ 用例）；`tests/Domain.Tests`：领域纯逻辑；`tests/Server.Tests`：宿主+PG 集成（需 `DAOHUA_MARKET_TEST_CONNECTION`）。
 - 内核改动（`vendor/YuoCore`）先读其 `AGENTS.md` 规范链；内核测试 `YuoCore.Game.Tests`/`Runtime.Tests` 必须全绿；submodule 本地提交不推送，父仓只更新 gitlink + `CORE_SHA` 钉。
+
+## 9. 行动参与会话（TASK-20261009-05）
+
+- `ActionParticipationSessionEngine` 是独立会话的唯一战斗推进入口，持有冻结名册与当前战斗检查点；成员行动管线遇到参与引用时等待，不恢复/推进同场遭遇，也不重复计算战间回复。
+- 会话与玩家分片各自串行；会话不得同步获取成员 gate。推进检查点和成员收件箱先 durable，再由 `EcsPlayerRuntimeAdapter` 在玩家门内消费个人增量。
+- 消费只通过 `ApplyActionParticipationSettlement`，同序号不重奖；资产、玩家分段与收件箱回执原子提交。保留事件时刻、原账本统计入口与个人装配/设置。
+- 会话独立于队长/队伍生命周期；服务重启从检查点恢复，成员加载必须先消费结束结算再推进后续个人行动。
