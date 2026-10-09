@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import '../network/gameClient'
-import { findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
+import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
 import { mergeBattleReportHistory } from './battleReportStore'
 import { useUiStore } from '../uiStore'
-import type { ActionDefinition, ActionType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
+import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
 /**
  * 前端与服务端的网络连接生命周期状态：
@@ -121,23 +121,14 @@ interface GameStore {
   resetGameStore: () => void
 }
 
-/** 非战斗行动域的自动消耗槽位数（仅通用栏）。 */
+/** 单组自动消耗槽位数（技艺各栏与战斗栏的单组均为 3 槽）。 */
 const AUTO_USE_SLOT_COUNT = 3
-/** 战斗域自动消耗槽为双组栏位（药品栏 potion ×3 + 通用栏 general ×3），共 6 槽。 */
-const COMBAT_AUTO_USE_SLOT_COUNT = AUTO_USE_SLOT_COUNT * 2
 /** 战斗装配的功法槽位下限（1 内功心法位 + 4 术法位；服务端扩容时取 max 保留）。 */
 const COMBAT_ABILITY_SLOT_COUNT = 5
-/** 行动域全集，归一化时按此顺序补齐槽位，保证与协议字段顺序一致。 */
-const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat', 'enhancement']
 
-/** 各行动域自动消耗槽位数：战斗域 6 槽（双组），其余行动域 3 槽（仅通用栏）。 */
-function autoUseSlotCount(type: ActionType): number {
-  return type === 'combat' ? COMBAT_AUTO_USE_SLOT_COUNT : AUTO_USE_SLOT_COUNT
-}
-
-/** 槽位分组按下标位置判定：战斗域前 3 槽为药品栏，其余槽位（含非战斗域全部）为通用栏。 */
-function autoUseSlotGroup(type: ActionType, index: number): AutoUseSlot['group'] {
-  return type === 'combat' && index < AUTO_USE_SLOT_COUNT ? 'potion' : 'general'
+/** 槽位分组按下标位置判定：战斗栏域前 3 槽为药品栏，其余槽位（含非战斗栏域全部）为通用栏。 */
+function autoUseSlotGroup(bar: AutoUseBarType, index: number): AutoUseSlot['group'] {
+  return bar === 'combat' && index < AUTO_USE_SLOT_COUNT ? 'potion' : 'general'
 }
 
 /** 登录前/登出后的离线占位投影：为渲染层提供全部必需字段的安全默认值，首个权威快照到达后被整体覆盖。 */
@@ -156,11 +147,13 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
       autoTravelEnabled: false,
       paused: false,
       autoUseSlots: {
-        cultivation: emptyAutoUseSlots('cultivation'),
         exploration: emptyAutoUseSlots('exploration'),
         alchemy: emptyAutoUseSlots('alchemy'),
-        combat: emptyAutoUseSlots('combat'),
+        forging: emptyAutoUseSlots('forging'),
+        talisman: emptyAutoUseSlots('talisman'),
+        formation: emptyAutoUseSlots('formation'),
         enhancement: emptyAutoUseSlots('enhancement'),
+        combat: emptyAutoUseSlots('combat'),
       },
       entries: [],
     },
@@ -205,14 +198,14 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
 
 const initial = createInitialSnapshot()
 
-/** 生成指定行动域的空自动消耗槽位集（含分组标记）。 */
-function emptyAutoUseSlots(type: ActionType): AutoUseSlot[] {
-  return Array.from({ length: autoUseSlotCount(type) }, (_, index) => ({
+/** 生成指定物品栏域的空自动消耗槽位集（含分组标记）。 */
+function emptyAutoUseSlots(bar: AutoUseBarType): AutoUseSlot[] {
+  return Array.from({ length: AUTO_USE_BAR_SLOT_COUNT[bar] }, (_, index) => ({
     itemId: null,
     quantity: 1,
     enabled: false,
     remainingDurationSeconds: 0,
-    group: autoUseSlotGroup(type, index),
+    group: autoUseSlotGroup(bar, index),
   }))
 }
 
@@ -230,15 +223,15 @@ function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined, group: AutoU
 }
 
 /**
- * 归一化各行动类型的自动消耗槽位集合：战斗域 6 槽（前 3 药品栏、后 3 通用栏），其余行动域 3 槽
+ * 归一化各物品栏域的自动消耗槽位集合：历练/战斗 6 槽（战斗前 3 药品栏、后 3 通用栏），技艺各栏 3 槽
  */
 function normalizeAutoUseSlots(
-  slots: Partial<Record<ActionType, AutoUseSlot[]>> | null | undefined,
+  slots: Partial<Record<AutoUseBarType, AutoUseSlot[]>> | null | undefined,
 ): QueueState['autoUseSlots'] {
   const normalized = {} as QueueState['autoUseSlots']
-  for (const type of ACTION_TYPE_KEYS) {
-    const list = Array.isArray(slots?.[type]) ? slots[type] : []
-    normalized[type] = Array.from({ length: autoUseSlotCount(type) }, (_, index) => normalizeAutoUseSlot(list[index], autoUseSlotGroup(type, index)))
+  for (const bar of AUTO_USE_BARS) {
+    const list = Array.isArray(slots?.[bar]) ? slots[bar] : []
+    normalized[bar] = Array.from({ length: AUTO_USE_BAR_SLOT_COUNT[bar] }, (_, index) => normalizeAutoUseSlot(list[index], autoUseSlotGroup(bar, index)))
   }
   return normalized
 }

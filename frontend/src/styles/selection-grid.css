@@ -721,7 +721,9 @@
 .auto-use-tray {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  /* 每个托盘只承载一组栏域槽位（历练 6 槽、技艺/战斗组各 3 槽）：auto-fit 折叠空轨道，
+     槽组撑满整行宽度，轨道同时按 min-content 兜底保证边框容纳任意槽位数。 */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 5px;
   margin-top: auto;
   overflow-x: auto;

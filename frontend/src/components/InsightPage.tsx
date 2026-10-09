@@ -8,7 +8,7 @@ import {
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
   TECHNIQUE_IDS,
   TECHNIQUE_SPEED_RATIO_PER_LEVEL,
-  getCumulativeExpForLevel,
+  getRootCumulativeExpForLevel,
   calculateRealmInfo,
   calculateRealmProgress,
   calculateBaseAttributes,
@@ -68,8 +68,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     // 格式化经验进度：升级所需经验 = 下一级累计经验 - 当前级累计经验；
     // 当前经验 = loadout 下发的真实六维经验 - 当前级累计经验（缺省按 0 处理）。
     const getProgress = (level: number, exp: number | undefined) => {
-      const baseExp = getCumulativeExpForLevel(level)
-      const nextExp = getCumulativeExpForLevel(level + 1.0)
+      const baseExp = getRootCumulativeExpForLevel(level)
+      const nextExp = getRootCumulativeExpForLevel(level + 1.0)
       const req = Math.max(1, Math.floor(nextExp - baseExp))
       const cur = Math.min(req, Math.max(0, Math.floor((exp ?? 0) - baseExp)))
       return {
@@ -497,7 +497,13 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         {/* ========================================================================= */}
         {activeTab === 'combat' && (
           <div className="insight-panel insight-panel--combat">
-            {attributes && <CombatAttributePanel attributes={attributes} buffs={buffs} />}
+            {attributes && (
+              <CombatAttributePanel
+                attributes={attributes}
+                buffs={buffs}
+                loadout={{ skills: loadout?.abilitySlots ?? [], equipment: loadout?.equipment }}
+              />
+            )}
           </div>
         )}
 

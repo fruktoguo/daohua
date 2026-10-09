@@ -2,9 +2,9 @@
  * 行动产出、持续消耗品加成与动态加成解算器
  */
 
-import type { ActionDefinition, ActionType, AutoUseSlot, InventoryItem, ItemDefinition, NodeBuildingEffectSet, Stats } from './types'
+import type { ActionDefinition, AutoUseBarType, AutoUseSlot, InventoryItem, ItemDefinition, NodeBuildingEffectSet, Stats } from './types'
 import { calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './combatConstants'
-import { findEquipmentInCatalog } from './ids'
+import { autoUseBarFor, findEquipmentInCatalog } from './ids'
 import { getT } from '../i18n'
 
 /** 非物品、非增益的资源类收益类别（修为/灵力/气血） */
@@ -76,7 +76,7 @@ interface CalculateActionParams {
   action: ActionDefinition
   inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>
   items: readonly ItemDefinition[] | ItemDefinition[]
-  autoUseSlots?: Record<ActionType, AutoUseSlot[]>
+  autoUseSlots?: Record<AutoUseBarType, AutoUseSlot[]>
   world?: {
     locationName?: string
     cultivationMultiplier?: number
@@ -140,15 +140,16 @@ export function calculateActionYieldPreview({
   const bonuses: ActiveBonusDetail[] = []
 
   // 1. 持续消耗品 / 丹药加成（与服务端 TryGetSustainedConsumable 同口径：
-  //    槽位启用、物品存在、持续型且时长为正、适用行动类型匹配）
+  //    槽位启用、物品存在、持续型且时长为正、行动归属栏域匹配且物品声明该栏域）
   let autoUseMultiplier = 1.0
-  const slotsForType = autoUseSlots?.[actionType] ?? []
+  const actionBar = autoUseBarFor(action)
+  const slotsForType = actionBar ? (autoUseSlots?.[actionBar] ?? []) : []
   for (const slot of slotsForType) {
     if (!slot || !slot.enabled || !slot.itemId) continue
     const itemDef = items.find(item => item.itemId === slot.itemId)
     if (!itemDef) continue
     const isContinuous = itemDef.isContinuous === true && (itemDef.durationSeconds ?? 0) > 0
-    const isApplicable = isContinuous && (itemDef.usableActionTypes?.includes(actionType) ?? false)
+    const isApplicable = isContinuous && actionBar !== null && (itemDef.usableBars?.includes(actionBar) ?? false)
     if (!isApplicable) continue
 
     // 检查是否有持续时间或背包有货可自动补充

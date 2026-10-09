@@ -263,24 +263,24 @@ export const BASELINE_COMBAT_ATTRIBUTES = {
 } as const
 
 /**
- * 六维累计经验到等级换算方法（经验累加不清空）。
+ * 功法参悟累计经验到等级换算（经验累加不清空，与服务端 AbilityExpCurve 同式）。
  * 每级累计所需经验 = 100 * (level ^ 3)，0 级起算（0 经验即 0 级）。
  * @param totalCumulativeExp 累计获得的总经验值
  * @returns 包含当前等级、本级当前进度经验、升至下一级所需经验的对象
  */
-export function calculateRootLevelAndProgress(totalCumulativeExp: number): {
+export function calculateAbilityLevelAndProgress(totalCumulativeExp: number): {
   level: number
   currentProgress: number
   levelRequirement: number
 } {
   const exp = Math.max(0.0, totalCumulativeExp)
   let level = 0.0
-  while (getCumulativeExpForLevel(level + 1.0) <= exp) {
+  while (getAbilityCumulativeExpForLevel(level + 1.0) <= exp) {
     level += 1.0
   }
 
-  const currentLevelBaseExp = getCumulativeExpForLevel(level)
-  const nextLevelBaseExp = getCumulativeExpForLevel(level + 1.0)
+  const currentLevelBaseExp = getAbilityCumulativeExpForLevel(level)
+  const nextLevelBaseExp = getAbilityCumulativeExpForLevel(level + 1.0)
   const currentProgress = exp - currentLevelBaseExp
   const levelRequirement = nextLevelBaseExp - currentLevelBaseExp
 
@@ -292,10 +292,10 @@ export function calculateRootLevelAndProgress(totalCumulativeExp: number): {
 }
 
 /**
- * 获取升到指定六维等级所需的累计经验总和
+ * 功法参悟：升到指定等级所需的累计经验总和（立方曲线）
  * @param level 目标等级
  */
-export function getCumulativeExpForLevel(level: number): number {
+export function getAbilityCumulativeExpForLevel(level: number): number {
   return 100.0 * Math.pow(Math.max(0.0, level), 3.0)
 }
 
@@ -551,6 +551,37 @@ export const REALM_LEVEL_CUMULATIVE_EXP: readonly number[] = (() => {
   }
   return cum
 })()
+
+/** 六维点数上限：每级境界对应 3 点，共 3×127 = 381 点（总纲 §3.2.2） */
+export const ROOT_LEVEL_CAP = MAX_REALM_LEVEL * 3
+
+/**
+ * 六维累计经验查表（索引即六维点数），由境界修为表展开、与服务端
+ * RealmProgressionCatalog 派生点成本表同源：记 B[i] = REALM_LEVEL_EXP_TO_NEXT[max(0, i−1)]
+ * （跨入第 i+1 级的那格修为条），升至第 p 点成本 = B 在 t=(p−1)/3 处的线性插值；
+ * 一级境界摊三点、相邻档间平滑过渡，单维累计至 3Lv 点 ≈ 3× 境界累计修为。
+ */
+export const ROOT_CUMULATIVE_EXP: readonly number[] = (() => {
+  const cum = new Array<number>(ROOT_LEVEL_CAP + 1)
+  cum[0] = 0
+  for (let p = 1; p <= ROOT_LEVEL_CAP; p++) {
+    const t = (p - 1) / 3.0
+    const i0 = Math.floor(t)
+    const i1 = Math.min(i0 + 1, MAX_REALM_LEVEL - 1)
+    const b0 = REALM_LEVEL_EXP_TO_NEXT[Math.max(0, i0 - 1)]
+    const b1 = REALM_LEVEL_EXP_TO_NEXT[i1 - 1]
+    cum[p] = cum[p - 1] + b0 + (b1 - b0) * (t - i0)
+  }
+  return cum
+})()
+
+/**
+ * 六维根基：升到指定点数所需的累计经验总和（查表）
+ * @param level 目标点数（0..381）
+ */
+export function getRootCumulativeExpForLevel(level: number): number {
+  return ROOT_CUMULATIVE_EXP[Math.max(0, Math.min(ROOT_LEVEL_CAP, Math.floor(level)))]
+}
 
 /**
  * 根据总修为或当前层修为+显式境界等级计算境界进度与当前等级

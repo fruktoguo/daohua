@@ -12,6 +12,15 @@ export const gameZh = {
       enhancement: '强化',
       map: '地图',
     },
+    bar: {
+      exploration: '历练物品',
+      alchemy: '炼丹物品',
+      forging: '炼器物品',
+      talisman: '符箓物品',
+      formation: '阵法物品',
+      enhancement: '强化物品',
+      combat: '战斗物品',
+    },
     grade: {
       mundane: '凡',
       yellow: '黄',

@@ -1,6 +1,6 @@
 import { getT, type TFunction } from '../i18n'
-import { calculateRootLevelAndProgress } from './combatConstants'
-import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, WorldMapDefinition, WorldState } from './types'
+import { calculateAbilityLevelAndProgress } from './combatConstants'
+import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, WorldMapDefinition, WorldState } from './types'
 
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
@@ -335,7 +335,7 @@ export function learnedAbilityLevel(
   abilityExperiences: Readonly<Record<string, number>> | undefined,
   abilityId: string,
 ): number {
-  return calculateRootLevelAndProgress(abilityExperiences?.[abilityId] ?? 0).level
+  return calculateAbilityLevelAndProgress(abilityExperiences?.[abilityId] ?? 0).level
 }
 
 /**
@@ -557,6 +557,50 @@ export const ACTION_TAB_META: Record<ActionType, { glyph: string; accent: string
  */
 export function actionTabLabel(type: ActionType): string {
   return getT()(`game.tab.${type}`)
+}
+
+/** 自动使用物品栏域全集（独立于行动大类的归属键，见总纲 §6.2.3）。 */
+export const AUTO_USE_BARS: readonly AutoUseBarType[] = ['exploration', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement', 'combat']
+
+/** 制造技艺栏域词表：制造大类行动按 technique 归属这些栏域之一。 */
+const MANUFACTURING_BARS: readonly AutoUseBarType[] = ['alchemy', 'forging', 'talisman', 'formation']
+
+/** 各物品栏域槽位数（战斗栏 = 药品栏 3 + 通用栏 3 的合并数组长度）。 */
+export const AUTO_USE_BAR_SLOT_COUNT: Record<AutoUseBarType, number> = {
+  exploration: 6,
+  alchemy: 3,
+  forging: 3,
+  talisman: 3,
+  formation: 3,
+  enhancement: 3,
+  combat: 6,
+}
+
+/**
+ * 行动定义 → 归属物品栏域：修炼/历练 → exploration；制造大类 → technique 同名栏域；
+ * 强化 → enhancement；战斗 → combat；无对应栏域（如赶路）返回 null。
+ */
+export function autoUseBarFor(action: { type: ActionType; technique?: string | null }): AutoUseBarType | null {
+  switch (action.type) {
+    case 'cultivation':
+    case 'exploration':
+      return 'exploration'
+    case 'alchemy':
+      return (MANUFACTURING_BARS as readonly string[]).includes(action.technique ?? '')
+        ? action.technique as AutoUseBarType
+        : null
+    case 'enhancement':
+      return 'enhancement'
+    case 'combat':
+      return 'combat'
+    default:
+      return null
+  }
+}
+
+/** 获取物品栏域的多语言显示标签。 */
+export function autoUseBarLabel(bar: AutoUseBarType): string {
+  return getT()(`game.bar.${bar}`)
 }
 
 /**
@@ -846,7 +890,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     tier: 1,
     sellPrice: 35,
     isTradable: true,
-    usableActionTypes: ['cultivation'],
+    usableBars: ['exploration'],
     durationSeconds: 300,
     isContinuous: true,
     cultivationMultiplier: 1.3,
@@ -861,7 +905,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     tier: 1,
     sellPrice: 25,
     isTradable: true,
-    usableActionTypes: ['combat'],
+    usableBars: ['combat'],
     cooldownSeconds: 60,
     hitpointRestore: 0,
     buffEffects: [
@@ -884,7 +928,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     tier: 1,
     sellPrice: 25,
     isTradable: true,
-    usableActionTypes: ['combat'],
+    usableBars: ['combat'],
     cooldownSeconds: 60,
     buffEffects: [
       {
@@ -906,7 +950,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     tier: 2,
     sellPrice: 200,
     isTradable: true,
-    usableActionTypes: ['cultivation'],
+    usableBars: ['exploration'],
     durationSeconds: 300,
     isContinuous: true,
     cultivationMultiplier: 1.5,
@@ -921,7 +965,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     tier: 1,
     sellPrice: 20,
     isTradable: true,
-    usableActionTypes: ['exploration'],
+    usableBars: ['exploration'],
     durationSeconds: 300,
     isContinuous: true,
     gatheringMultiplier: 1.5,
@@ -936,7 +980,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     tier: 1,
     sellPrice: 22,
     isTradable: true,
-    usableActionTypes: ['alchemy'],
+    usableBars: ['alchemy'],
     durationSeconds: 300,
     isContinuous: true,
     alchemyMultiplier: 1.25,
@@ -1096,7 +1140,7 @@ export function resolveDefaultItemDefinition(itemId: string): ItemDefinition | u
     tier: def.tier ?? 1,
     sellPrice: def.sellPrice ?? 0,
     isTradable: def.isTradable ?? true,
-    usableActionTypes: def.usableActionTypes ?? [],
+    usableBars: def.usableBars ?? [],
     cooldownSeconds: def.cooldownSeconds ?? 0,
     hitpointRestore: def.hitpointRestore ?? 0,
     manapointRestore: def.manapointRestore ?? 0,
