@@ -115,15 +115,15 @@ public sealed class EcsAdapterBoundaryTests
     }
 
     /// <summary>
-    /// 活跃会话成员携带已发布版本执行命令：命令管线内的会话对账会消费本次推进新投递的结算
-    /// 并推高 StateVersion——乐观并发基线必须取命令进入玩家门时的版本，否则会话成员每条
-    /// 带版本命令都与自身刚推进的版本错位而必然冲突；真正落后于进入版本的请求仍须冲突。
+    /// 活跃会话成员携带已发布版本执行命令：服务端以每秒一次的会话结算持续推进
+    /// StateVersion，乐观并发校验必须以命令收包瞬间的已发布版本区间为界——容忍尚在途的
+    /// 一个推送批次；真正落后整整一批（或声称未发布版本）的请求仍须冲突。
     /// </summary>
     [Fact]
-    public async Task SessionMemberCommandChecksEntryVersionAndStillRejectsStale()
+    public async Task SessionMemberCommandChecksPublishedRangeAndStillRejectsStale()
     {
         var fixture = CreateParticipationFixture(
-            new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 3, 1));
+            balances: [new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 3, 1)]);
         await using var adapter = fixture.Adapter;
         var loaded = await adapter.LoadAsync(fixture.PlayerId);
         var payload = JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash", quantity = 1 },
@@ -133,14 +133,40 @@ public sealed class EcsAdapterBoundaryTests
             loaded.StateVersion, Guid.NewGuid());
         var second = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
             learned.Snapshot.StateVersion, Guid.NewGuid());
-        var stale = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
+        // 客户端没等到上一条推送就发出下一条命令（推送在途）：落后一个批次必须放行。
+        var inFlight = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
             learned.Snapshot.StateVersion, Guid.NewGuid());
+        // 装载基线已落后两个推送批次：属于真正过期，必须冲突。
+        var stale = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
+            loaded.StateVersion, Guid.NewGuid());
+        // 声称比已发布区间更新的版本不可能是合法客户端视野，同样按冲突拒绝。
+        var ahead = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload,
+            inFlight.Snapshot.StateVersion + 99, Guid.NewGuid());
 
         Assert.True(learned.Success, learned.Message);
         Assert.True(second.Success, second.Message);
-        Assert.Equal(1, second.Snapshot.Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
+        Assert.True(inFlight.Success, inFlight.Message);
+        Assert.Equal(0, inFlight.Snapshot.Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
         Assert.False(stale.Success);
         Assert.Equal("STATE_VERSION_CONFLICT", stale.Code);
+        Assert.False(ahead.Success);
+        Assert.Equal("STATE_VERSION_CONFLICT", ahead.Code);
+    }
+
+    /// <summary>
+    /// 装载期对账回归：会话收件箱由其他成员的推进持续生产，队首结算可能把成员模拟时刻
+    /// 推进到装载目标之后；个人补算守卫必须比对账后的实体时刻（而非持久化装载时刻），
+    /// 否则补推向过去发起会因「行动目标时间不能倒退」让整个装载失败。
+    /// </summary>
+    [Fact]
+    public async Task LoadSkipsPersonalAdvanceWhenSettlementRanPastTarget()
+    {
+        var fixture = CreateParticipationFixture(Epoch.AddHours(1), TimeSpan.FromHours(2));
+        await using var adapter = fixture.Adapter;
+
+        var loaded = await adapter.LoadAsync(fixture.PlayerId);
+
+        Assert.True(loaded.LastSimulatedAt > Epoch.AddHours(1), $"LastSimulatedAt={loaded.LastSimulatedAt:o}");
     }
 
     [Theory]
@@ -765,7 +791,9 @@ public sealed class EcsAdapterBoundaryTests
     /// 装配含会话对账依赖的适配器：会话宿主桩每次成员推进都调用真实会话引擎产出一条新结算，
     /// 与生产中「命令前推进会话 + 消费收件箱」的版本推进行为一致，用于回归版本基线口径。
     /// </summary>
-    private static Fixture CreateParticipationFixture(params AssetBalanceRecord[] balances)
+    private static Fixture CreateParticipationFixture(
+        DateTimeOffset? now = null, TimeSpan sessionAdvanceShift = default,
+        params AssetBalanceRecord[] balances)
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var playerId = Guid.Parse("10000000-0000-4000-8000-000000000023");
@@ -785,7 +813,7 @@ public sealed class EcsAdapterBoundaryTests
             ? []
             : balances.Select(balance => balance with { PlayerId = playerId }).ToArray());
         var economy = new MemoryEconomy(sections, assets);
-        var clock = new FixedClock(Epoch);
+        var clock = new FixedClock(now ?? Epoch);
         var ecs = new EcsGameRuntime(catalog, Epoch);
         var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, assets, economy, catalog,
             NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
@@ -793,7 +821,7 @@ public sealed class EcsAdapterBoundaryTests
             socialRepository: new SessionSocialStub(new PartySessionRecord(spec.SessionId, Guid.NewGuid(),
                 spec.EncounterId, spec.NodeId, Epoch, [playerId],
                 JsonSerializer.Serialize(spec, PersistenceJson.Options))),
-            participationRuntime: new SessionAdvanceStub(spec, catalog),
+            participationRuntime: new SessionAdvanceStub(spec, catalog, sessionAdvanceShift),
             participationSessions: new SessionStoreStub());
         return new Fixture(playerId, adapter, sections, economy, catalog, initialState, ecs, assets);
     }
@@ -962,8 +990,8 @@ public sealed class EcsAdapterBoundaryTests
     /// 会话宿主桩：每次成员推进都用真实会话引擎产出一条新个人结算并以收件箱条目回投，
     /// 与生产宿主「命令前推进会话 + 投递收件箱」的版本推进行为一致。
     /// </summary>
-    private sealed class SessionAdvanceStub(ActionParticipationSpec spec, GameDataCatalog catalog)
-        : IActionParticipationRuntime
+    private sealed class SessionAdvanceStub(ActionParticipationSpec spec, GameDataCatalog catalog,
+        TimeSpan advanceShift = default) : IActionParticipationRuntime
     {
         private ActionParticipationSessionEngine? _engine;
         public DateTimeOffset? NextAdvanceBoundaryUtc => null;
@@ -981,7 +1009,8 @@ public sealed class EcsAdapterBoundaryTests
             DateTimeOffset target, CancellationToken cancellationToken = default)
         {
             _engine ??= ActionParticipationSessionEngine.Create(spec, catalog);
-            var settlement = _engine.AdvanceTo(target).Single();
+            // advanceShift 模拟收件箱由更晚时刻的推进生产的真实形态（装载目标早于结算时刻）。
+            var settlement = _engine.AdvanceTo(target + advanceShift).Single();
             return ValueTask.FromResult<IReadOnlyList<ParticipationInboxItem>>(
                 [new ParticipationInboxItem(spec.SessionId, playerId, settlement.Sequence,
                     JsonSerializer.Serialize(settlement, PersistenceJson.Options), settlement.To)]);

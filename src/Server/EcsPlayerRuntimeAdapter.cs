@@ -60,10 +60,36 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private readonly ConcurrentDictionary<Guid, RecentRequests> _recentRequests = new();
     // 上次推送时的属性流水号：命令后用差值判定 WireAttributesChanged，驱动网络层是否发属性增量。
     private readonly ConcurrentDictionary<Guid, long> _attributeRevisions = new();
-    // 已发布推送的版本区间（Floor=最近一批推送开始前的版本，Latest=最新已发布版本）：
-    // 乐观并发校验在命令收包瞬间取样该区间——玩家门等待与门内会话对账期间的服务端推进
-    // 都不构成客户端过期证据，只有落后整整一个推送批次才算真正并发冲突。
-    private readonly ConcurrentDictionary<Guid, (long Floor, long Latest)> _publishedVersions = new();
+    // 近期已发布版本滑窗（上限 RecentPublished.Keep）：乐观并发校验在命令收包瞬间取样，
+    // 客户端 expected 命中窗口内任一已发布版本即放行——玩家门等待与门内对账期间的服务端推进
+    // 都不构成过期证据；只有声称从未发布的更晚版本、或落后滑窗的真正过期请求才判冲突。
+    private readonly ConcurrentDictionary<Guid, RecentPublished> _publishedVersions = new();
+
+    /// <summary>单玩家近期已发布版本集合：单调记录 Latest，滑窗保留最近 Keep 条供命中判断。</summary>
+    private sealed class RecentPublished
+    {
+        public const int Keep = 4;
+        public long Latest;
+        private readonly Queue<long> _order = new();
+        private readonly HashSet<long> _set = new();
+
+        /// <summary>登记一条已发布版本；可对同版本幂等，可容忍乱序（Latest 永不回退）。</summary>
+        public void Record(long version)
+        {
+            lock (_order)
+            {
+                Latest = Math.Max(Latest, version);
+                if (_set.Add(version)) _order.Enqueue(version);
+                while (_order.Count > Keep) _set.Remove(_order.Dequeue());
+            }
+        }
+
+        /// <summary>判断期望版本是否为仍在滑窗内的已发布版本。</summary>
+        public bool Contains(long version)
+        {
+            lock (_order) return _set.Contains(version);
+        }
+    }
     // 本实例在 player_runtime_leases 上的持有者标识：租约获取/续租/归还都以它 fence 防误删他实例租约。
     private readonly Guid _ownerInstanceId = Guid.NewGuid();
     private static readonly TimeSpan OwnershipLease = TimeSpan.FromSeconds(45);
@@ -186,8 +212,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             TrackDirty(playerId);
             var snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
             _loaded[playerId] = snapshot;
-            // 装载快照经握手回执即对外可见：记入已发布区间，避免重连后首条命令撞上批推进窗口。
-            _publishedVersions[playerId] = (snapshot.StateVersion, snapshot.StateVersion);
+            // 装载快照经握手回执即对外可见：记入已发布滑窗，避免重连后首条命令撞上批推进窗口。
+            _publishedVersions.GetOrAdd(playerId, static _ => new RecentPublished()).Record(snapshot.StateVersion);
             _attributeRevisions[playerId] = ecs.AttributeRevision(playerId);
             RuntimeInstrumentation.Count("lifecycle.player_loaded");
             notifications.Add(new RuntimeNotification(playerId, logs));
@@ -230,10 +256,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
         long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
     {
-        // 收包瞬间的已发布版本区间是客户端视野上限：玩家门等待与门内对账期间的一切推进
+        // 收包瞬间的已发布版本滑窗是客户端视野上限：玩家门等待与门内对账期间的一切推进
         // 都发生在命令到达之后，不能把进门时刻的最新版本当作客户端本应看到的基线。
         var publishedAtReceipt = _publishedVersions.TryGetValue(playerId, out var published)
-            ? published : ((long Floor, long Latest)?)null;
+            ? published : null;
         var notifications = new List<RuntimeNotification>();
         try
         {
@@ -247,7 +273,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     }
 
     private async ValueTask<PlayerCommandResult> ExecuteOwnedAsync(Guid playerId, string command, JsonElement payload,
-        long expectedStateVersion, Guid requestId, (long Floor, long Latest)? publishedAtReceipt,
+        long expectedStateVersion, Guid requestId, RecentPublished? publishedAtReceipt,
         List<RuntimeNotification> notifications, CancellationToken cancellationToken)
     {
         if (requestId == Guid.Empty)
@@ -271,9 +297,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 return new PlayerCommandResult(false, "PLAYER_OWNERSHIP_LOST", "玩家当前由其他服务实例持有，请稍后重试。", before);
             }
             await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
-            // 乐观并发基线取收包瞬间的已发布版本区间：随后的会话对账与批推进可能继续推高
-            // StateVersion——那属于本命令管线之后的合法推进；只有落后整整一个推送批次
-            // （收包时已低于 Floor）或声称比已发布更新，才判定客户端真正过期。
+            // 乐观并发基线取收包瞬间的已发布版本滑窗：随后的会话对账与批推进可能继续推高
+            // StateVersion——那属于本命令管线之后的合法推进与在途推送；只有期望版本落在
+            // 滑窗外的（声称未发布版本或落后整个窗口）才判定客户端真正过期。
             var entryStateVersion = before.StateVersion;
             await ReconcileParticipationOwnedAsync(playerId, _simulationClock.UtcNow, notifications, cancellationToken).ConfigureAwait(false);
             before = ToSnapshot(ecs.ExportSnapshot(playerId));
@@ -302,7 +328,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 }
             }
             if (expectedStateVersion > 0 && (publishedAtReceipt is { } published
-                    ? expectedStateVersion < published.Floor || expectedStateVersion > published.Latest
+                    ? !published.Contains(expectedStateVersion)
                     : entryStateVersion != expectedStateVersion))
                 return new PlayerCommandResult(false, "STATE_VERSION_CONFLICT", "玩家状态版本已变化。", before);
 
@@ -1590,14 +1616,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private async ValueTask EmitNotificationsAsync(List<RuntimeNotification> notifications)
     {
         // 网络订阅者只能在玩家锁外执行；缓冲与快照已经在锁内一起前移。
-        // 先按玩家登记本次派发的末版本：Floor=本批开始前版本、Latest=本批末版本——
-        // 一次派发内同玩家的多条快照视为同一推送批次，批次是客户端视野推进的最小单位。
-        var lastEmitted = new Dictionary<Guid, long>();
+        // 先登记本次派发的全部已发布版本：同一派发内同玩家的多条快照（对账中段与命令后态）
+        // 都计入滑窗——版本可能因锁内后移的未推送推进而乱序，集合语义天然容忍。
         foreach (var notification in notifications)
             if (notification.Snapshot is { } snapshot)
-                lastEmitted[notification.PlayerId] = snapshot.StateVersion;
-        foreach (var (playerId, version) in lastEmitted)
-            _publishedVersions.AddOrUpdate(playerId, (version, version), (_, old) => (old.Latest, version));
+                _publishedVersions.GetOrAdd(notification.PlayerId, static _ => new RecentPublished())
+                    .Record(snapshot.StateVersion);
         foreach (var notification in notifications)
         {
             if (notification.Logs is { Count: > 0 } logs && LogBatchEmitted is { } logHandler)
