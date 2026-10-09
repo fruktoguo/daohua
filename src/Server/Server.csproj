@@ -9,8 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 主服 768 MiB 工作集预算内为 JIT、线程、连接与本机缓冲保留 256 MiB。 -->
-    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="536870912" />
+    <!-- 渐进式堆驻留：DATAS 自适应堆尺寸随真实负载伸缩，ConserveMemory=7 偏置小堆段勤收集，
+         HeapCount=4 封顶按核堆数量（Server GC 默认每逻辑核一堆，大内存开发机上成堆囤段的主因）。
+         不设 HeapHardLimit 硬顶；768 MiB 工作集预算由容量门禁验收兜底。 -->
+    <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="1" />
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <RuntimeHostConfigurationOption Include="System.GC.HeapCount" Value="4" />
     <Compile Remove="Clean/**/*.cs" />
     <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Ecs/Ecs.csproj" />
