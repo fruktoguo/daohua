@@ -113,11 +113,12 @@ public sealed class PostgresParticipationSessionStore(NpgsqlDataSource dataSourc
         IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
     {
         await using var command = dataSource.CreateCommand("""
-            SELECT min(p.last_active_at + $2)
+            SELECT min(p.offline_since + $2)
             FROM social.party_sessions s
             CROSS JOIN LATERAL jsonb_array_elements(s.spec -> 'members') member
             JOIN game.player_projection p ON p.player_id = (member ->> 'playerId')::uuid
             WHERE s.session_id = $1 AND NOT (p.player_id = ANY($3))
+              AND p.offline_since IS NOT NULL
             """);
         command.Parameters.AddWithValue(sessionId);
         command.Parameters.AddWithValue(NpgsqlDbType.Interval, offlineLimit);
@@ -211,6 +212,8 @@ public sealed class PostgresParticipationSessionStore(NpgsqlDataSource dataSourc
                 return false;
             }
         }
+        // 就绪位跨会话常驻（总纲 §21.13）：散场不改写名册 ready，仅成员本人
+        // party.unready 清除；条件再次齐备时由下一次仲裁直接重开新会话。
         // 已确认份额的审计事实保留在经济流水；下一检查点移除其载荷，避免在线帧结算无界占盘。
         // 未消费份额仍是离线成员唯一收益交付证据，任何推进都不得删除。
         await using (var prune = new NpgsqlCommand("DELETE FROM social.party_session_inbox WHERE session_id = $1 AND consumed_at IS NOT NULL", connection, transaction))

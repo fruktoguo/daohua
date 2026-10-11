@@ -252,6 +252,8 @@ public sealed class PlayerCombatState
     public double Defense { get; set; } = 10;
     /// <summary>技能调度状态（冷却、吟唱与施放计数）。</summary>
     public PlayerCombatSkillState Skills { get; set; } = PlayerCombatSkillState.Empty;
+    /// <summary>战内 Buff 跨波携带态：整场战斗行动存续期间随波次清空折算携带，行动结束统一移除。</summary>
+    public PlayerCombatBuffState Buffs { get; set; } = PlayerCombatBuffState.Empty;
 }
 
 /// <summary>
@@ -542,6 +544,8 @@ public sealed partial class PlayerAggregate
     public DateTimeOffset LastSimulatedAt { get; internal set; }
     /// <summary>当前在线状态。</summary>
     public PresenceState Presence { get; private set; } = PresenceState.Offline;
+    /// <summary>离线锚点：最近一次由在线转为非在线状态的时刻；在线时为 null。</summary>
+    public DateTimeOffset? OfflineSinceAt { get; private set; }
     /// <summary>聚合单调版本号，持久化层 CAS 乐观锁依据。</summary>
     public long StateVersion { get; internal set; }
     /// <summary>当前绑定的配表内容指纹。</summary>
@@ -648,6 +652,7 @@ public sealed partial class PlayerAggregate
         string gameDataFingerprint,
         long stateVersion,
         PresenceState presence,
+        DateTimeOffset? offlineSinceAt,
         DateTimeOffset lastSimulatedAt,
         PlayerProgression progression,
         PlayerWorldState world,
@@ -665,20 +670,25 @@ public sealed partial class PlayerAggregate
         {
             StateVersion = stateVersion,
             Presence = presence,
+            OfflineSinceAt = offlineSinceAt,
             LastSimulatedAt = lastSimulatedAt,
             _statsSink = statsSink,
             _actionQueueSink = actionQueueSink
         };
 
     /// <summary>
-    /// 设置在线状态；状态变更时标记 Settings 分段为脏。
+    /// 设置在线状态并维护离线锚点：转入在线清空锚点，由在线转为非在线以 at 记锚，
+    /// 非在线状态之间切换保留原锚点；状态变更时标记 Settings 分段为脏。
     /// </summary>
-    public void SetPresence(PresenceState presence)
+    public void SetPresence(PresenceState presence, DateTimeOffset at)
     {
         if (!Enum.IsDefined(presence))
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家在线状态无效。");
         if (Presence == presence) return;
+        var wasOnline = Presence == PresenceState.Online;
         Presence = presence;
+        if (presence == PresenceState.Online) OfflineSinceAt = null;
+        else if (wasOnline) OfflineSinceAt = at;
         // 每次离线会话重置离线账本：进入离线即清空上一会话的挂机统计，收益从本次离线起算。
         if (presence == PresenceState.Offline)
         {

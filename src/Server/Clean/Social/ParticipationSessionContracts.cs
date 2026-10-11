@@ -53,7 +53,7 @@ public interface IParticipationSessionStore
     /// <summary>从持久化队伍、冻结名册与最新世界分段复核会话成立条件；成立返回 null，否则返回散场原因。</summary>
     ValueTask<string?> GetInvalidationReasonAsync(string sessionId, CancellationToken cancellationToken = default);
 
-    /// <summary>读取冻结名册中当前离线成员最早的逐出截止时刻，防止回线冷算越过组织失效边界。</summary>
+    /// <summary>读取冻结名册中当前离线成员最早的逐出截止时刻（离线锚点 + 宽限），防止回线冷算越过组织失效边界。</summary>
     ValueTask<DateTimeOffset?> GetOfflineExpiryAsync(string sessionId, TimeSpan offlineLimit,
         IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default);
 

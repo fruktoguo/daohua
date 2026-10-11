@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Server.Clean;
 
-/// <summary>玩家 section 与 latest-only 刷盘队列的 PostgreSQL 实现。</summary>
+/// <summary>玩家 section 与追加式刷盘收件箱队列的 PostgreSQL 实现。</summary>
 public sealed class PostgresSectionRepository(
     NpgsqlDataSource dataSource,
     ILogger<PostgresSectionRepository> logger) : IPlayerStateRepository
@@ -16,7 +16,7 @@ public sealed class PostgresSectionRepository(
     public async ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        // 头、section、action queue 和 latest-only 队列必须来自同一快照；
+        // 头、section、action queue 和刷盘收件箱必须来自同一快照；
         // 否则 worker 恰好在读取中间提交会把旧 section 与新 head 拼成假状态。
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken);
@@ -86,7 +86,7 @@ public sealed class PostgresSectionRepository(
             }
         }
 
-        // section 进入 durable latest-only 队列后，worker 可能尚未完成落库。
+        // section 进入 durable 刷盘收件箱后，worker 可能尚未完成落库。
         // 加载必须把队列中的更新叠加到 game 表，否则进程在这段窗口崩溃会回退到旧快照。
         var pendingSections = await LoadPendingSectionsAsync(connection, transaction, playerId, cancellationToken);
         foreach (var pending in pendingSections)
@@ -170,7 +170,7 @@ public sealed class PostgresSectionRepository(
 
     /// <summary>
     /// 读取玩家单个分段的生效载荷：已落盘行 + 刷盘队列中较新版本叠加（与 <see cref="LoadAsync"/> 同一口径）。
-    /// 供身价估值等轻量场景只取目标分段，不必加载全部八段与整包校验。
+    /// 供身家估值等轻量场景只取目标分段，不必加载全部八段与整包校验。
     /// </summary>
     /// <param name="playerId">玩家 ID。</param>
     /// <param name="sectionKind">分段键（见 <see cref="PlayerSectionKinds"/>）。</param>
@@ -202,13 +202,13 @@ public sealed class PostgresSectionRepository(
                    payload, raw_bytes, checksum, updated_at
             FROM platform.section_flush_queue
             WHERE player_id = $1 AND section_kind = $2
-            ORDER BY state_version DESC
+            ORDER BY state_version DESC, queue_id DESC
             """, connection))
         {
             command.Parameters.Add(new NpgsqlParameter { Value = playerId });
             command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            // 队列为 latest-only：首个（最新）行即候选；比已落盘版本新则采用，同版本校验不一致载荷。
+            // 收件箱允许同 kind 多行：首个（最新版本）行即候选；比已落盘版本新则采用，同版本校验不一致载荷。
             if (await reader.ReadAsync(cancellationToken))
             {
                 var pending = new StoredSection(
@@ -319,7 +319,7 @@ public sealed class PostgresSectionRepository(
     {
         var result = new List<FlushQueueItem>();
         await using var command = new NpgsqlCommand("""
-            SELECT player_id, section_kind, state_version, schema_version, codec,
+            SELECT queue_id, player_id, section_kind, state_version, schema_version, codec,
                    payload, raw_bytes, checksum, attempts, next_attempt_at,
                    updated_at, game_data_fingerprint, last_simulated_at, lease_token
             FROM platform.section_flush_queue
@@ -331,20 +331,21 @@ public sealed class PostgresSectionRepository(
         while (await reader.ReadAsync(cancellationToken))
         {
             result.Add(new FlushQueueItem(
-                reader.GetGuid(0),
-                reader.GetString(1),
-                reader.GetInt64(2),
-                reader.GetInt32(3),
-                reader.GetString(4),
-                reader.GetFieldValue<byte[]>(5),
-                reader.GetInt32(6),
-                reader.GetString(7),
+                reader.GetInt64(0),
+                reader.GetGuid(1),
+                reader.GetString(2),
+                reader.GetInt64(3),
+                reader.GetInt32(4),
+                reader.GetString(5),
+                reader.GetFieldValue<byte[]>(6),
+                reader.GetInt32(7),
+                reader.GetString(8),
+                reader.GetFieldValue<DateTimeOffset>(11),
+                reader.GetInt32(9),
                 reader.GetFieldValue<DateTimeOffset>(10),
-                reader.GetInt32(8),
-                reader.GetFieldValue<DateTimeOffset>(9),
-                reader.IsDBNull(13) ? Guid.Empty : reader.GetGuid(13),
-                reader.GetString(11),
-                reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12)));
+                reader.IsDBNull(14) ? Guid.Empty : reader.GetGuid(14),
+                reader.GetString(12),
+                reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13)));
         }
 
         return result;
@@ -418,7 +419,7 @@ public sealed class PostgresSectionRepository(
             $"action:{action.Id:D}")).ToArray();
     }
 
-    /// <summary>把脏 section 写入 latest-only 刷盘队列（无回执场景）。</summary>
+    /// <summary>把脏 section 追加写入刷盘收件箱队列（无回执场景）。</summary>
     public async ValueTask EnqueueSectionsAsync(
         IReadOnlyCollection<SectionWrite> sections,
         CancellationToken cancellationToken = default)
@@ -442,7 +443,7 @@ public sealed class PostgresSectionRepository(
 
     /// <summary>
     /// 在调用方事务内写入 flush 队列与命令回执；供经济事务等需要「结算 + 状态写回」
-    /// 原子提交的路径复用。队列 UPSERT 只接受更高 state_version，旧版本写回被静默丢弃。
+    /// 原子提交的路径复用。队列纯 INSERT 追加，同 kind 旧版本行由应用侧版本守卫在落盘时收敛。
     /// </summary>
     internal static async ValueTask EnqueueInTransactionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken)
@@ -455,9 +456,16 @@ public sealed class PostgresSectionRepository(
             foreach (var section in sections)
                 if (!uniqueKinds.Add((section.PlayerId, section.SectionKind)))
                     throw new InvalidDataException("section 队列包含重复分段。");
+            // 队列是追加式收件箱：纯 INSERT 不触碰既有行，与资产事务/刷盘 worker 的并发
+            // lease/delete 不再共享元组，从根上消除该路径的 40001/40P01；同 kind 旧版本
+            // 收件箱行由应用侧 state_version 守卫在落盘时收敛。
+            var orderedSections = sections
+                .OrderBy(section => section.PlayerId)
+                .ThenBy(section => section.SectionKind, StringComparer.Ordinal)
+                .ToArray();
             await using var batch = connection.CreateBatch();
             batch.Transaction = transaction;
-            foreach (var section in sections)
+            foreach (var section in orderedSections)
             {
                 var batchCommand = new NpgsqlBatchCommand("""
                     INSERT INTO platform.section_flush_queue
@@ -465,22 +473,6 @@ public sealed class PostgresSectionRepository(
                          raw_bytes, checksum, game_data_fingerprint, last_simulated_at,
                          attempts, next_attempt_at, lease_until, lease_token, last_error, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, NULL, NULL, NULL, $11)
-                    ON CONFLICT (player_id, section_kind) DO UPDATE SET
-                        state_version = EXCLUDED.state_version,
-                        schema_version = EXCLUDED.schema_version,
-                        codec = EXCLUDED.codec,
-                        payload = EXCLUDED.payload,
-                        raw_bytes = EXCLUDED.raw_bytes,
-                        checksum = EXCLUDED.checksum,
-                        game_data_fingerprint = EXCLUDED.game_data_fingerprint,
-                        last_simulated_at = EXCLUDED.last_simulated_at,
-                        attempts = 0,
-                        next_attempt_at = EXCLUDED.next_attempt_at,
-                        lease_until = NULL,
-                        lease_token = NULL,
-                        last_error = NULL,
-                        updated_at = EXCLUDED.updated_at
-                    WHERE EXCLUDED.state_version > platform.section_flush_queue.state_version
                     """);
                 batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.PlayerId });
                 batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.SectionKind });
@@ -581,22 +573,24 @@ public sealed class PostgresSectionRepository(
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
             // 以 UPDATE ... FROM CTE 原子领取，避免 SELECT 后事务回滚导致租约没有落盘。
+            // 追加式收件箱按 queue_id 锁定单行：写入方只做 INSERT，与本认领/update/delete
+            // 不共享元组，Serializable 资产事务不再因本 worker 的并发更新而回退。
             await using var command = new NpgsqlCommand("""
                 WITH candidates AS (
-                    SELECT player_id, section_kind
+                    SELECT queue_id
                     FROM platform.section_flush_queue
                     WHERE ($5 OR next_attempt_at <= $1)
                       AND (lease_until IS NULL OR lease_until < $1)
-                    ORDER BY updated_at
+                    ORDER BY updated_at, queue_id
                     FOR UPDATE SKIP LOCKED
                     LIMIT $2
                 )
                 UPDATE platform.section_flush_queue AS q
                 SET lease_until = $3, lease_token = $4
                 FROM candidates AS c
-                WHERE q.player_id = c.player_id AND q.section_kind = c.section_kind
-                RETURNING q.player_id, q.section_kind, q.state_version, q.schema_version, q.codec,
-                          q.payload, q.raw_bytes, q.checksum, q.attempts, q.next_attempt_at,
+                WHERE q.queue_id = c.queue_id
+                RETURNING q.queue_id, q.player_id, q.section_kind, q.state_version, q.schema_version,
+                          q.codec, q.payload, q.raw_bytes, q.checksum, q.attempts, q.next_attempt_at,
                           q.updated_at, q.game_data_fingerprint, q.last_simulated_at
                 """, connection, transaction);
             command.Parameters.Add(new NpgsqlParameter { Value = now });
@@ -609,10 +603,11 @@ public sealed class PostgresSectionRepository(
                 while (await reader.ReadAsync(cancellationToken))
                 {
                     claimed.Add(new FlushQueueItem(
-                        reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
-                        reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(10),
-                        reader.GetInt32(8), reader.GetFieldValue<DateTimeOffset>(9), leaseToken,
-                        reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12)));
+                        reader.GetInt64(0), reader.GetGuid(1), reader.GetString(2), reader.GetInt64(3), reader.GetInt32(4),
+                        reader.GetString(5), reader.GetFieldValue<byte[]>(6), reader.GetInt32(7), reader.GetString(8),
+                        reader.GetFieldValue<DateTimeOffset>(11), reader.GetInt32(9), reader.GetFieldValue<DateTimeOffset>(10),
+                        leaseToken, reader.GetString(12),
+                        reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13)));
                 }
             }
             await transaction.CommitAsync(cancellationToken);
@@ -626,31 +621,51 @@ public sealed class PostgresSectionRepository(
 
         var applied = 0;
         var failed = 0;
+        // 追加式收件箱允许同 (player,kind) 多行共存：认领后仅最高版本行保留为应用项，
+        // 落选行并入其胜者所在分组——apply 成功时随组删除，失败时随组归还队列重试。
+        var winners = new List<FlushQueueItem>(claimed.Count);
+        var supersededByWinner = new Dictionary<FlushQueueItem, List<long>>();
+        foreach (var pair in claimed.GroupBy(item => (item.PlayerId, item.SectionKind)))
+        {
+            var winner = pair
+                .OrderByDescending(item => item.StateVersion)
+                .ThenByDescending(item => item.QueueId)
+                .First();
+            winners.Add(winner);
+            var superseded = pair.Where(item => !ReferenceEquals(item, winner))
+                .Select(item => item.QueueId).ToList();
+            if (superseded.Count > 0) supersededByWinner[winner] = superseded;
+        }
+
         // 同一玩家、同一状态版本在一个事务内完成；不同玩家之间独立提交，避免一名玩家的坏载荷阻塞整批。
         // 同一玩家可能因不同 section 的刷盘时机出现多个版本；严格按版本升序应用，
         // 避免旧 action_queue 覆盖已经提交的新队列。
-        foreach (var group in claimed
+        foreach (var group in winners
                      .GroupBy(item => (item.PlayerId, item.StateVersion))
                      .OrderBy(group => group.Key.PlayerId)
                      .ThenBy(group => group.Key.StateVersion))
         {
             var items = group.ToArray();
+            var queueIds = items.Select(item => item.QueueId)
+                .Concat(items.Where(supersededByWinner.ContainsKey)
+                             .SelectMany(item => supersededByWinner[item]))
+                .ToArray();
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             try
             {
-                await ApplyBatchAsync(connection, transaction, items, now, cancellationToken);
+                await ApplyBatchAsync(connection, transaction, items, queueIds, now, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
-                applied += items.Length;
+                applied += queueIds.Length;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
-                failed += items.Length;
+                failed += queueIds.Length;
                 if (_flushErrorLog.TryAcquire())
                     logger.LogError(ex, "写入玩家 section 批次失败 player={PlayerId} version={Version} sections={Sections}",
                         group.Key.PlayerId, group.Key.StateVersion, string.Join(',', items.Select(item => item.SectionKind)));
                 await using var releaseTransaction = await connection.BeginTransactionAsync(cancellationToken);
-                await ReleaseClaimsAsync(connection, releaseTransaction, items, ex.Message, cancellationToken);
+                await ReleaseClaimsAsync(connection, releaseTransaction, queueIds, leaseToken, ex.Message, cancellationToken);
                 await releaseTransaction.CommitAsync(cancellationToken);
             }
         }
@@ -965,6 +980,7 @@ public sealed class PostgresSectionRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         IReadOnlyList<FlushQueueItem> items,
+        IReadOnlyList<long> queueIds,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -1097,29 +1113,15 @@ public sealed class PostgresSectionRepository(
         await UpsertProjectionAsync(connection, transaction, first.PlayerId,
             applied.Select(ToStoredSection).ToArray(), now, markActive: true, cancellationToken);
 
-        // 已落盘队列行单语句删除；逐行 (kind, state_version, lease_token) 谓词语义不变。
-        var deleteKinds = new string[items.Count];
-        var deleteVersions = new long[items.Count];
-        var deleteTokens = new Guid[items.Count];
-        for (var i = 0; i < items.Count; i++)
-        {
-            deleteKinds[i] = items[i].SectionKind;
-            deleteVersions[i] = items[i].StateVersion;
-            deleteTokens[i] = items[i].LeaseToken;
-        }
+        // 已落盘收件箱行按 queue_id 主键删除（含被新版本取代的落选行）；租约令牌双确认，
+        // 绝不误删本批之外或其他 worker 认领的行。写入方为纯 INSERT，与本删除不共享元组。
         await using (var delete = new NpgsqlCommand("""
-            DELETE FROM platform.section_flush_queue AS q
-            USING (SELECT * FROM unnest($1, $2, $3)) AS t(section_kind, state_version, lease_token)
-            WHERE q.player_id = $4
-              AND q.section_kind = t.section_kind
-              AND q.state_version <= t.state_version
-              AND q.lease_token = t.lease_token
+            DELETE FROM platform.section_flush_queue
+            WHERE queue_id = ANY($1) AND lease_token = $2
             """, connection, transaction))
         {
-            delete.Parameters.Add(new NpgsqlParameter { Value = deleteKinds });
-            delete.Parameters.Add(new NpgsqlParameter { Value = deleteVersions });
-            delete.Parameters.Add(new NpgsqlParameter { Value = deleteTokens });
-            delete.Parameters.Add(new NpgsqlParameter { Value = first.PlayerId });
+            delete.Parameters.Add(new NpgsqlParameter { Value = queueIds.ToArray() });
+            delete.Parameters.Add(new NpgsqlParameter { Value = items[0].LeaseToken });
             await delete.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -1265,6 +1267,8 @@ public sealed class PostgresSectionRepository(
         double? realmRank = null;
         string? nodeId = null;
         string? presence = null;
+        DateTimeOffset? offlineSince = null;
+        var hasSettings = false;
         foreach (var item in applied)
         {
             switch (item.SectionKind)
@@ -1276,19 +1280,22 @@ public sealed class PostgresSectionRepository(
                     nodeId = ReadProjectionString(item, "nodeId");
                     break;
                 case PlayerSectionKinds.Settings:
+                    hasSettings = true;
                     presence = ReadProjectionPresence(item);
+                    offlineSince = ReadProjectionOfflineSince(item);
                     break;
             }
         }
 
         await using var command = new NpgsqlCommand("""
             INSERT INTO game.player_projection
-                (player_id, realm_rank, current_node_id, presence, last_active_at, projection_version, updated_at)
-            VALUES ($1, COALESCE($2, 0), $3, COALESCE($4, 'offline'), $5, 1, $5)
+                (player_id, realm_rank, current_node_id, presence, offline_since, last_active_at, projection_version, updated_at)
+            VALUES ($1, COALESCE($2, 0), $3, COALESCE($4, 'offline'), CASE WHEN $7 THEN $8 ELSE NULL END, $5, 1, $5)
             ON CONFLICT (player_id) DO UPDATE SET
                 realm_rank = COALESCE($2, game.player_projection.realm_rank),
                 current_node_id = COALESCE($3, game.player_projection.current_node_id),
                 presence = COALESCE($4, game.player_projection.presence),
+                offline_since = CASE WHEN $7 THEN $8 ELSE game.player_projection.offline_since END,
                 last_active_at = CASE WHEN $6 THEN $5 ELSE game.player_projection.last_active_at END,
                 projection_version = game.player_projection.projection_version + 1,
                 updated_at = $5
@@ -1299,6 +1306,13 @@ public sealed class PostgresSectionRepository(
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)presence ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
         command.Parameters.Add(new NpgsqlParameter { Value = markActive });
+        // 离线锚点允许写回 NULL（转在线清空）：以「本批是否含 settings」判定是否权威覆写，不能用 COALESCE。
+        command.Parameters.Add(new NpgsqlParameter { Value = hasSettings });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            Value = (object?)offlineSince ?? DBNull.Value,
+            NpgsqlDbType = NpgsqlDbType.TimestampTz
+        });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1333,23 +1347,26 @@ public sealed class PostgresSectionRepository(
         };
     }
 
-    /// <summary>整组释放 flush 队列租约：逐行 attempts+1 并按其旧值算指数退避，unnest 单语句合批。</summary>
+    /// <summary>读取 settings 载荷中的离线锚点；字段缺省或显式 null 统一返回 null（在线或旧档）。</summary>
+    private static DateTimeOffset? ReadProjectionOfflineSince(StoredSection item)
+    {
+        using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
+        return document.RootElement.TryGetProperty("offlineSinceAt", out var value)
+            && value.ValueKind == JsonValueKind.String
+            && value.TryGetDateTimeOffset(out var parsed)
+                ? parsed.ToUniversalTime()
+                : null;
+    }
+
+    /// <summary>整组释放 flush 队列租约：按 queue_id 定位本批认领行，attempts+1 并按其旧值算指数退避。</summary>
     private static async Task ReleaseClaimsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        IReadOnlyList<FlushQueueItem> items,
+        IReadOnlyList<long> queueIds,
+        Guid leaseToken,
         string error,
         CancellationToken cancellationToken)
     {
-        var playerIds = new Guid[items.Count];
-        var sectionKinds = new string[items.Count];
-        var leaseTokens = new Guid[items.Count];
-        for (var i = 0; i < items.Count; i++)
-        {
-            playerIds[i] = items[i].PlayerId;
-            sectionKinds[i] = items[i].SectionKind;
-            leaseTokens[i] = items[i].LeaseToken;
-        }
         await using var command = new NpgsqlCommand("""
             UPDATE platform.section_flush_queue AS q
             SET attempts = q.attempts + 1,
@@ -1358,18 +1375,16 @@ public sealed class PostgresSectionRepository(
                 lease_token = NULL,
                 last_error = left($1, 512),
                 updated_at = now()
-            FROM (SELECT * FROM unnest($2, $3, $4)) AS t(player_id, section_kind, lease_token)
-            WHERE q.player_id = t.player_id AND q.section_kind = t.section_kind AND q.lease_token = t.lease_token
+            WHERE q.queue_id = ANY($2) AND q.lease_token = $3
             """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = error });
-        command.Parameters.Add(new NpgsqlParameter { Value = playerIds });
-        command.Parameters.Add(new NpgsqlParameter { Value = sectionKinds });
-        command.Parameters.Add(new NpgsqlParameter { Value = leaseTokens });
+        command.Parameters.Add(new NpgsqlParameter { Value = queueIds.ToArray() });
+        command.Parameters.Add(new NpgsqlParameter { Value = leaseToken });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
 
-/// <summary>latest-only section 刷盘后台任务；队列故障不被静默吞掉。</summary>
+/// <summary>section 刷盘收件箱后台任务；队列故障不被静默吞掉。</summary>
 public sealed class SectionFlushWorker(
     IPlayerStateRepository repository,
     ServerOptions options,

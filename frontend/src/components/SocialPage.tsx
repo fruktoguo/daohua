@@ -12,6 +12,7 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FloatingPopover, type FloatingPlacement } from './FloatingPopover'
 import { Modal } from './Modal'
+import { PlayerCardModal } from './PlayerCardModal'
 
 /** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
@@ -26,7 +27,7 @@ const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
   PartyActivityKind.Enhancement,
 ]
 
-/** 身价门槛输入框解析：空串/0 视为不设门槛（协议约定 minValuation=0），负数与非法输入钳制为 0。 */
+/** 身家门槛输入框解析：空串/0 视为不设门槛（协议约定 minValuation=0），负数与非法输入钳制为 0。 */
 function parseMinValuation(raw: string): number {
   const value = Number.parseFloat(raw)
   return Number.isFinite(value) && value > 0 ? value : 0
@@ -140,25 +141,35 @@ const DropdownSelect = memo(function DropdownSelect({
   )
 })
 
-/** 目标类型/地图/门槛三件套的选择器行：无队伍三表单与队长编辑共用同一组控件。 */
+/** 目标类型/区域/地点/门槛的选择器行：无队伍三表单与队长编辑共用同一组控件。 */
 const PartyProfileFields = memo(function PartyProfileFields({
   value,
   onChange,
-  nodeNames,
   showPublic = false,
 }: {
   value: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }
   onChange: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }) => void
-  nodeNames: ReadonlyMap<string, string>
   showPublic?: boolean
 }): React.JSX.Element {
   const t = useT()
   const maps = useGameStore(state => state.maps)
-  // 目标节点选项：不限 + 全图节点，标签「区域 · 地点」。
-  const nodeOptions = useMemo(() => [
-    { id: '', label: t('social.field.anyNode') },
-    ...maps.flatMap(map => map.nodes.map(node => ({ id: node.nodeId, label: nodeNames.get(node.nodeId) ?? `${map.name} · ${node.name}` }))),
-  ], [maps, nodeNames, t])
+  // 区域选项：不限 + 全部地图区域。
+  const regionOptions = useMemo(() => [
+    { id: '', label: t('social.field.anyRegion') },
+    ...maps.map(map => ({ id: map.mapId, label: map.name })),
+  ], [maps, t])
+  // 区域为派生态：由当前 nodeId 反查所属地图（不限/未知节点 → 空串即「不限」）。
+  const regionId = useMemo(
+    () => maps.find(map => map.nodes.some(node => node.nodeId === value.nodeId))?.mapId ?? '',
+    [maps, value.nodeId],
+  )
+  // 地点选项随区域级联：不限区域只给「不限」（协议无区域级任意节点语义）；
+  // 选定区域后列该区域节点，切换区域时由 onSelect 自动落到首节点。
+  const nodeOptions = useMemo(() => {
+    const region = maps.find(map => map.mapId === regionId)
+    if (!region) return [{ id: '', label: t('social.field.anyNode') }]
+    return region.nodes.map(node => ({ id: node.nodeId, label: node.name }))
+  }, [maps, regionId, t])
   return (
     <div className="party-fields">
       <div className="party-field">
@@ -168,6 +179,19 @@ const PartyProfileFields = memo(function PartyProfileFields({
           onSelect={id => onChange({ ...value, activityKind: id as PartyActivityKindType })}
           options={ACTIVITY_OPTIONS.map(kind => ({ id: kind, label: t(`social.activity.${kind}`) }))}
           value={value.activityKind}
+        />
+      </div>
+      <div className="party-field">
+        <span>{t('social.field.region')}</span>
+        <DropdownSelect
+          label={t('social.field.region')}
+          onSelect={id => {
+            // 同区域重选不动当前地点；跨区域切换落到该区域首节点（不限 → nodeId 空串）。
+            if (id === regionId) return
+            onChange({ ...value, nodeId: maps.find(map => map.mapId === id)?.nodes[0]?.nodeId ?? '' })
+          }}
+          options={regionOptions}
+          value={regionId}
         />
       </div>
       <div className="party-field">
@@ -254,7 +278,7 @@ const MatchSection = memo(function MatchSection({ nodeNames }: { nodeNames: Read
         </div>
       ) : (
         <>
-          <PartyProfileFields nodeNames={nodeNames} onChange={nodeField.onChange} value={{ ...form, nodeId: nodeField.nodeId }} />
+          <PartyProfileFields onChange={nodeField.onChange} value={{ ...form, nodeId: nodeField.nodeId }} />
           <div className="party-card-actions">
             <button className="confirm-primary" onClick={submit} type="button">{t('social.action.matchSet')}</button>
           </div>
@@ -295,7 +319,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
     <section className="party-card">
       <h3>{t('social.lobby.heading')}</h3>
       <p className="party-card-desc">{t('social.lobby.desc')}</p>
-      <PartyProfileFields nodeNames={nodeNames} onChange={setFilter} value={filter} />
+      <PartyProfileFields onChange={setFilter} value={filter} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={refresh} type="button">{t('social.action.refreshLobby')}</button>
         {myValuation !== null && <span className="party-my-valuation">{t('social.lobby.myValuation', { value: formatNumber(myValuation) })}</span>}
@@ -370,7 +394,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
 })
 
 /** 创建队伍卡片：名称 + 目标三件套 + 公开开关，提交 party.create。 */
-const CreateSection = memo(function CreateSection({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element {
+const CreateSection = memo(function CreateSection(): React.JSX.Element {
   const t = useT()
   const [name, setName] = useState('')
   const [form, setForm] = useState({ ...DEFAULT_PROFILE_FORM, nodeId: '' })
@@ -402,7 +426,7 @@ const CreateSection = memo(function CreateSection({ nodeNames }: { nodeNames: Re
           />
         </label>
       </div>
-      <PartyProfileFields nodeNames={nodeNames} onChange={nodeField.onChange} showPublic value={{ ...form, nodeId: nodeField.nodeId }} />
+      <PartyProfileFields onChange={nodeField.onChange} showPublic value={{ ...form, nodeId: nodeField.nodeId }} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={submit} type="button">{t('social.action.create')}</button>
       </div>
@@ -441,7 +465,7 @@ const PartylessView = memo(function PartylessView({ nodeNames }: { nodeNames: Re
       </nav>
       {entryTab === 'lobby' && <LobbySection nodeNames={nodeNames} />}
       {entryTab === 'match' && <MatchSection nodeNames={nodeNames} />}
-      {entryTab === 'create' && <CreateSection nodeNames={nodeNames} />}
+      {entryTab === 'create' && <CreateSection />}
     </>
   )
 })
@@ -451,8 +475,7 @@ const PartylessView = memo(function PartylessView({ nodeNames }: { nodeNames: Re
  * 仅由「修改队伍」按钮挂载（关闭即卸载），每次打开从 party 快照重新初始化表单；
  * 槽位走独立 party.slots 指令即选即调，档案字段经 party.update 一次性提交后关闭。
  */
-const LeaderProfileModal = memo(function LeaderProfileModal({ nodeNames, onClose }: {
-  nodeNames: ReadonlyMap<string, string>
+const LeaderProfileModal = memo(function LeaderProfileModal({ onClose }: {
   onClose: () => void
 }): React.JSX.Element | null {
   const t = useT()
@@ -509,7 +532,7 @@ const LeaderProfileModal = memo(function LeaderProfileModal({ nodeNames, onClose
           />
         </div>
       </div>
-      <PartyProfileFields nodeNames={nodeNames} onChange={setForm} showPublic value={form} />
+      <PartyProfileFields onChange={setForm} showPublic value={form} />
       <p className="party-card-desc">{t('social.field.openSlotsHint')}</p>
       <div className="modal-form-actions">
         <button className="modal-form-cancel" onClick={onClose} type="button">{t('common.cancel')}</button>
@@ -534,6 +557,8 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const friends = useSocialStore(state => state.friends)
   const readyParty = useSocialStore(state => state.readyParty)
   const unreadyParty = useSocialStore(state => state.unreadyParty)
+  const setPartyPvp = useSocialStore(state => state.setPartyPvp)
+  const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const [editing, setEditing] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmDisband, setConfirmDisband] = useState(false)
@@ -572,14 +597,16 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
             {isLeader && (
               <button onClick={() => setEditing(true)} type="button">{t('social.action.editProfile')}</button>
             )}
-            {selfMember && (
-              <button
-                className={sessionActive ? 'danger' : 'confirm-primary'}
-                onClick={toggleSelfReady}
-                type="button"
-              >{sessionActive
-                ? t('social.action.quitParticipation')
-                : selfMember.ready ? t('social.action.leaveParticipation') : t('social.action.participate')}</button>
+            {party.activityKind === 'combat' && (
+              <label className="party-pvp-toggle" title={t('social.pvp.hint')}>
+                <input
+                  checked={party.pvpEnabled}
+                  disabled={!isLeader}
+                  onChange={event => setPartyPvp(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>{t('social.pvp.label')}</span>
+              </label>
             )}
           </span>
           <span className="party-actions-group">
@@ -611,7 +638,19 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
             </li>
           ) : (
             <li className={`party-slot${member.playerId === myPlayerId ? ' is-self' : ''}`} key={member.playerId}>
-              <div className="party-slot-card">
+              {/* 整卡可点击打开角色信息卡（§21.14）；内部移出 × 与就绪勾选均阻断冒泡。 */}
+              <div
+                aria-label={t('social.card.viewAria', { name: member.displayName })}
+                className="party-slot-card is-viewable"
+                onClick={() => requestPlayerCard(member.playerId)}
+                onKeyDown={event => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  requestPlayerCard(member.playerId)
+                }}
+                role="button"
+                tabIndex={0}
+              >
                 <div className="party-slot-head">
                   <strong className="chat-entry-name">
                     {member.displayName}
@@ -621,13 +660,26 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                     {member.online ? t('social.online') : t('social.offline')}
                   </span>
                 </div>
+                {isLeader && member.playerId !== myPlayerId && (
+                  <button
+                    aria-label={t('social.action.kick')}
+                    className="party-slot-kick"
+                    onClick={event => {
+                      event.stopPropagation()
+                      setKickTarget({ playerId: member.playerId, name: member.displayName })
+                    }}
+                    title={t('social.action.kick')}
+                    type="button"
+                  >×</button>
+                )}
                 <div className="party-slot-avatar" aria-hidden="true">
                   <CharacterAvatar name={member.displayName} role="player" />
                 </div>
                 <div className="party-slot-meta">
                   <span className="party-member-valuation">{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>
                 </div>
-                <div className="party-slot-foot">
+                {/* 就绪勾选是卡内独立控件：拦截冒泡避免误触角色卡。 */}
+                <div className="party-slot-foot" onClick={event => event.stopPropagation()}>
                   {member.playerId === myPlayerId ? (
                     <label className="party-slot-ready">
                       <input checked={member.ready} onChange={toggleSelfReady} type="checkbox" />
@@ -637,11 +689,6 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                     <span className={`party-ready-tag${member.ready ? ' is-ready' : ''}`}>
                       {member.ready ? t('social.ready.status') : t('social.ready.notReady')}
                     </span>
-                  )}
-                  {isLeader && member.playerId !== myPlayerId && (
-                    <button onClick={() => setKickTarget({ playerId: member.playerId, name: member.displayName })} type="button">
-                      {t('social.action.kick')}
-                    </button>
                   )}
                 </div>
               </div>
@@ -660,7 +707,9 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
         )}
       </section>
 
-      {editing && <LeaderProfileModal nodeNames={nodeNames} onClose={() => setEditing(false)} />}
+      {editing && <LeaderProfileModal onClose={() => setEditing(false)} />}
+
+      <PlayerCardModal />
 
       <ConfirmDialog
         description={(isLeader ? t('social.confirm.leaveLeaderDesc') : t('social.confirm.leaveDesc')) + sessionSuffix}

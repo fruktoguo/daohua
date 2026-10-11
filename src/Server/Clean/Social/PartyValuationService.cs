@@ -8,9 +8,9 @@ using Domain.Player;
 namespace Server.Clean.Social;
 
 /// <summary>
-/// 身价（valuation）估值服务：招募匹配用的量化参照，不是战斗属性（docs/design/总纲/21 §21.3）。
+/// 身家（valuation）估值服务：招募匹配用的量化参照，不是战斗属性（docs/design/总纲/21 §21.3）。
 /// 口径：
-///   身价 = Σ 已穿戴装备单价（强化 +N 按 "itemId:+N" 变体独立计价）
+///   身家 = Σ 已穿戴装备单价（强化 +N 按 "itemId:+N" 变体独立计价）
 ///        + Σ 每门已参悟功法（参悟等级 × 对应秘籍单价）；
 ///   单价 = 坊市当前最低挂售（卖一档）价 ?? 配表回收价 ItemDefinition.SellPrice ?? 0；
 ///   功法↔物品映射：ability.X → item.tome.X，配表无该秘籍时回落 item.fragment.X。
@@ -32,10 +32,10 @@ public sealed class PartyValuationService
     private readonly PostgresSectionRepository _sections;
     private readonly MarketRuntime _market;
     private readonly GameDataCatalog _catalog;
-    /// <summary>展示估值缓存：playerId → (身价, TickCount64 过期点)。</summary>
+    /// <summary>展示估值缓存：playerId → (身家, TickCount64 过期点)。</summary>
     private readonly ConcurrentDictionary<Guid, (double Value, long ExpiresAt)> _displayCache = new();
 
-    /// <summary>构造身价估值服务。</summary>
+    /// <summary>构造身家估值服务。</summary>
     /// <param name="runtime">玩家运行时（已装载快照只读）。</param>
     /// <param name="sections">分段仓储（离线玩家 loadout 读取）。</param>
     /// <param name="market">市场运行时（卖一档价只读出口）。</param>
@@ -48,20 +48,20 @@ public sealed class PartyValuationService
         _catalog = catalog;
     }
 
-    /// <summary>实时身价：入队裁决与匹配自动并入使用，不走缓存。</summary>
+    /// <summary>实时身家：入队裁决与匹配自动并入使用，不走缓存。</summary>
     /// <param name="playerId">玩家 ID。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    /// <returns>身价估值；玩家无装配分段时返回 0。</returns>
+    /// <returns>身家估值；玩家无装配分段时返回 0。</returns>
     public async ValueTask<double> ComputeAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var loadout = await LoadLoadoutAsync(playerId, cancellationToken);
         return loadout is null ? 0 : Compute(loadout);
     }
 
-    /// <summary>批量展示身价：≤30s 缓存摊薄大厅/队伍面板的重复估值，缺席玩家计 0。</summary>
+    /// <summary>批量展示身家：≤30s 缓存摊薄大厅/队伍面板的重复估值，缺席玩家计 0。</summary>
     /// <param name="playerIds">玩家 ID 集合。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    /// <returns>playerId → 身价的完整映射。</returns>
+    /// <returns>playerId → 身家的完整映射。</returns>
     public async ValueTask<IReadOnlyDictionary<Guid, double>> ComputeDisplayAsync(
         IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default)
     {
@@ -89,7 +89,7 @@ public sealed class PartyValuationService
         return result;
     }
 
-    /// <summary>个人展示身价（缓存版单点入口）。</summary>
+    /// <summary>个人展示身家（缓存版单点入口）。</summary>
     public async ValueTask<double> ComputeDisplayAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var values = await ComputeDisplayAsync([playerId], cancellationToken);

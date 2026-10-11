@@ -6,6 +6,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Market;
@@ -120,7 +121,8 @@ if (processRole == ServerProcessRole.Api)
         var rawEpoch = Environment.GetEnvironmentVariable("DAOHUA_BENCH_EPOCH");
         var epoch = DateTimeOffset.TryParse(rawEpoch, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
             ? parsed.ToUniversalTime() : simulationClock.UtcNow;
-        return new EcsGameRuntime(catalog, epoch, options.EcsShardCount);
+        // 在线主服开启斗法撮合：遭遇计数耗尽后进入匹配等待相位，由 AdvanceAllAsync 内的撮合循环配对。
+        return new EcsGameRuntime(catalog, epoch, options.EcsShardCount, new DuelAdvanceOptions(MatchingEnabled: true));
     });
     builder.Services.AddSingleton<Server.Clean.Social.IParticipationSessionStore, Server.Clean.Social.PostgresParticipationSessionStore>();
     builder.Services.AddSingleton<Server.Clean.Social.IActionParticipationRuntime, ActionParticipationRuntime>();
@@ -129,6 +131,8 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<SessionRegistry>();
     // 传音与社交：不属于玩家聚合，独立单例运行时；聊天记录落 PostgreSQL（每作用域保留 100 条）。
     builder.Services.AddSingleton<Server.Clean.Social.OnlinePresenceRegistry>();
+    // 在线断线宽限（总纲18 §14.3）：断线后在线位与实体常驻宽限期，到期按断线时刻收尾。
+    builder.Services.AddSingleton<Server.Clean.DisconnectGraceRegistry>();
     builder.Services.AddSingleton<Server.Clean.Social.ISocialRepository, Server.Clean.Social.PostgresSocialRepository>();
     builder.Services.AddSingleton<Server.Clean.Social.IInvitationRepository, Server.Clean.Social.PostgresInvitationRepository>();
     builder.Services.AddSingleton<Server.Clean.Social.IChatRepository, Server.Clean.Social.PostgresChatRepository>();
@@ -197,6 +201,8 @@ if (processRole == ServerProcessRole.Api)
         // 组队讨伐看门狗（总纲 §21.13）：周期逐出 48h 离线成员并对账参与绑定；重启保留检查点。
         builder.Services.AddHostedService<Server.Clean.Social.PartySessionWatchdog>();
     }
+    // 同一宽限注册表单例兼任 hosted service：停机时立即收尾全部在途宽限条目。
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<Server.Clean.DisconnectGraceRegistry>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MarketRuntime>());
 }
 
@@ -223,6 +229,11 @@ if (processRole == ServerProcessRole.Api)
     // 由下一次玩家门内推进经推送带给客户端（DisposeAsync 中解绑）。
     var marketRuntime = app.Services.GetRequiredService<MarketRuntime>();
     marketRuntime.WalletCredited += app.Services.GetRequiredService<EcsPlayerRuntimeAdapter>().NotifyMarketWalletCredited;
+    // 断线宽限到期卸载的玩家若仍在有人在线的会话名册中，重新常驻（总纲18 §14.6）；
+    // 在装配处订阅避免 SocialRuntime 构造依赖环。
+    var disconnectGrace = app.Services.GetRequiredService<Server.Clean.DisconnectGraceRegistry>();
+    disconnectGrace.Expired += _ => app.Services.GetRequiredService<Server.Clean.Social.SocialRuntime>()
+        .ReconcileResidentMembersAsync(CancellationToken.None);
 
     // 生产镜像把前端构建产物拷入 wwwroot；本地开发由 Vite 提供前端，wwwroot 不存在。
     // 仅在静态站点根存在时装配静态文件与 SPA 回退，避免开发态刷出 WebRootPath 告警。

@@ -82,14 +82,16 @@ public sealed record ServerOptions(
     public TimeSpan ComputeRequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
     /// <summary>任务最大领取次数；超过后进入 dead 终态保留诊断窗口</summary>
     public int ComputeMaxAttempts { get; init; } = 5;
-    /// <summary>冷挂机扫描间隔</summary>
+    /// <summary>离线挂机批算扫描间隔（OfflineIdle:ScanIntervalSeconds）</summary>
     public TimeSpan ColdCatchUpInterval { get; init; } = TimeSpan.FromMinutes(1);
-    /// <summary>冷挂机单次扫描玩家上限</summary>
+    /// <summary>离线挂机批算单次扫描玩家上限（OfflineIdle:ScanBatchSize）</summary>
     public int ColdCatchUpBatchSize { get; init; } = 128;
-    /// <summary>离线宽限与最小补算步长：断线不足该时长或上次模拟时间距今不足该时长不入队</summary>
-    public TimeSpan ColdCatchUpMinIdle { get; init; } = TimeSpan.FromMinutes(5);
-    /// <summary>冷挂机筛选窗口：只处理最近活跃不超过该时长的玩家（对齐 48 小时离线收益封顶）</summary>
-    public TimeSpan ColdCatchUpWindow { get; init; } = TimeSpan.FromHours(48);
+    /// <summary>离线挂机批算间隔：距上次结算不足该时长的玩家不入队；到达封顶边界的终末批不受限</summary>
+    public TimeSpan OfflineBatchInterval { get; init; } = TimeSpan.FromHours(1);
+    /// <summary>节点溢出阈值：pending 积压超过该时长的任务才派发给计算节点；0 表示立即可派</summary>
+    public TimeSpan ComputeOverflowAfter { get; init; } = TimeSpan.FromSeconds(300);
+    /// <summary>在线断线宽限（OfflineIdle:GraceSeconds）：断线后在线位与实体保留该时长，0 表示断开即卸载</summary>
+    public TimeSpan OfflineGrace { get; init; } = TimeSpan.FromSeconds(300);
 
     /// <summary>派发链是否具备可运行配置（启用 + 共享令牌或任一节点映射令牌齐备；节点组经 compute-link 动态拨入）</summary>
     public bool ComputeNodeConfigured =>
@@ -136,10 +138,11 @@ public sealed record ServerOptions(
         var computeLeaseSeconds = configuration.GetValue("ComputeNode:LeaseSeconds", 120);
         var computeTimeoutSeconds = configuration.GetValue("ComputeNode:RequestTimeoutSeconds", 30);
         var computeMaxAttempts = configuration.GetValue("ComputeNode:MaxAttempts", 5);
-        var coldScanSeconds = configuration.GetValue("ComputeNode:ColdCatchUpIntervalSeconds", 60);
-        var coldBatchSize = configuration.GetValue("ComputeNode:ColdCatchUpBatchSize", 128);
-        var coldMinIdleMinutes = configuration.GetValue("ComputeNode:ColdCatchUpMinIdleMinutes", 5);
-        var coldWindowHours = configuration.GetValue("ComputeNode:ColdCatchUpWindowHours", 48);
+        var coldScanSeconds = configuration.GetValue("OfflineIdle:ScanIntervalSeconds", 60);
+        var coldBatchSize = configuration.GetValue("OfflineIdle:ScanBatchSize", 128);
+        var offlineBatchMinutes = configuration.GetValue("OfflineIdle:BatchIntervalMinutes", 60);
+        var computeOverflowAfterSeconds = configuration.GetValue("ComputeNode:OverflowAfterSeconds", 300);
+        var offlineGraceSeconds = configuration.GetValue("OfflineIdle:GraceSeconds", 300);
 
         if (batchSize is < 1 or > 10_000) throw new InvalidOperationException("Storage:SectionFlushBatchSize 必须在 1..10000。");
         if (flushIntervalMs is < 100 or > 60_000) throw new InvalidOperationException("Storage:SectionFlushIntervalMilliseconds 必须在 100..60000。");
@@ -169,10 +172,11 @@ public sealed record ServerOptions(
         if (computeLeaseSeconds is < 10 or > 3600) throw new InvalidOperationException("ComputeNode:LeaseSeconds 必须在 10..3600。");
         if (computeTimeoutSeconds is < 5 or > 600) throw new InvalidOperationException("ComputeNode:RequestTimeoutSeconds 必须在 5..600。");
         if (computeMaxAttempts is < 1 or > 100) throw new InvalidOperationException("ComputeNode:MaxAttempts 必须在 1..100。");
-        if (coldScanSeconds is < 10 or > 86_400) throw new InvalidOperationException("ComputeNode:ColdCatchUpIntervalSeconds 必须在 10..86400。");
-        if (coldBatchSize is < 1 or > 2_000) throw new InvalidOperationException("ComputeNode:ColdCatchUpBatchSize 必须在 1..2000。");
-        if (coldMinIdleMinutes is < 1 or > 1440) throw new InvalidOperationException("ComputeNode:ColdCatchUpMinIdleMinutes 必须在 1..1440。");
-        if (coldWindowHours is < 1 or > 720) throw new InvalidOperationException("ComputeNode:ColdCatchUpWindowHours 必须在 1..720。");
+        if (coldScanSeconds is < 10 or > 86_400) throw new InvalidOperationException("OfflineIdle:ScanIntervalSeconds 必须在 10..86400。");
+        if (coldBatchSize is < 1 or > 2_000) throw new InvalidOperationException("OfflineIdle:ScanBatchSize 必须在 1..2000。");
+        if (offlineBatchMinutes is < 1 or > 1440) throw new InvalidOperationException("OfflineIdle:BatchIntervalMinutes 必须在 1..1440。");
+        if (computeOverflowAfterSeconds is < 0 or > 86_400) throw new InvalidOperationException("ComputeNode:OverflowAfterSeconds 必须在 0..86400。");
+        if (offlineGraceSeconds is < 0 or > 3_600) throw new InvalidOperationException("OfflineIdle:GraceSeconds 必须在 0..3600。");
         if (computeToken is { Length: > 512 }) throw new InvalidOperationException("ComputeNode:Token 长度不能超过 512。");
         // 每节点独立凭证映射：ComputeNode:Tokens:<节点名> = 令牌（环境变量 ComputeNode__Tokens__<名> 同口径）。
         var computeNodeTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -223,8 +227,9 @@ public sealed record ServerOptions(
             ComputeMaxAttempts = computeMaxAttempts,
             ColdCatchUpInterval = TimeSpan.FromSeconds(coldScanSeconds),
             ColdCatchUpBatchSize = coldBatchSize,
-            ColdCatchUpMinIdle = TimeSpan.FromMinutes(coldMinIdleMinutes),
-            ColdCatchUpWindow = TimeSpan.FromHours(coldWindowHours),
+            OfflineBatchInterval = TimeSpan.FromMinutes(offlineBatchMinutes),
+            ComputeOverflowAfter = TimeSpan.FromSeconds(computeOverflowAfterSeconds),
+            OfflineGrace = TimeSpan.FromSeconds(offlineGraceSeconds),
             EcsShardCount = ecsShardCount
         };
     }

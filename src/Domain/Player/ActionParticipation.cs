@@ -18,6 +18,7 @@ namespace Domain.Player;
 /// <param name="Skills">冻结功法槽（装配技能与触发条件）。</param>
 /// <param name="ExternalBuffs">战外持久 Buff 层数冻结视图（buffId → 层数）。</param>
 /// <param name="CombatSkills">跨战技能状态（冷却/槽位）冻结值。</param>
+/// <param name="CombatBuffs">战内 Buff 跨波携带态冻结值（剩余秒数口径）；与 CombatSkills 同帧定格。</param>
 /// <param name="SustainedBuffs">开打定格的激活持续消耗品 Buff（剩余时长冻结）；
 /// 会话期间不做槽位补能/扣减——其他成员的钱包不可见，定格画面是唯一公共输入。</param>
 /// <param name="Equipment">开打定格的已穿戴装备清单（物品 ID + 强化等级）；仅用于详情弹窗
@@ -35,6 +36,7 @@ public sealed partial record ActionParticipantSnapshot(
     IReadOnlyList<SkillSlot> Skills,
     IReadOnlyDictionary<string, double>? ExternalBuffs = null,
     PlayerCombatSkillState? CombatSkills = null,
+    PlayerCombatBuffState? CombatBuffs = null,
     IReadOnlyList<ActionSustainedBuff>? SustainedBuffs = null,
     IReadOnlyList<PlayerEquipmentSlot>? Equipment = null,
     double RegenCarrySeconds = 0)
@@ -53,6 +55,7 @@ public sealed partial record ActionParticipantSnapshot(
         && (ExternalBuffs is null || ExternalBuffs.All(pair =>
             !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 128 && double.IsFinite(pair.Value) && pair.Value >= 0))
         && (CombatSkills is null || CombatSkills.IsValid)
+        && (CombatBuffs is null || CombatBuffs.IsValid)
         && (SustainedBuffs is null || SustainedBuffs.All(buff => buff is not null && buff.IsValid))
         && (Equipment is null || (Equipment.Count <= 24 && Equipment.All(item => item is not null
             && !string.IsNullOrWhiteSpace(item.ItemId) && item.ItemId.Length <= 128
@@ -63,6 +66,8 @@ public sealed partial record ActionParticipantSnapshot(
 /// <param name="BuffId">Buff 标识。</param>
 /// <param name="RemainingSeconds">定格时刻的剩余生效秒数。</param>
 /// <param name="Stacks">层数（与战内 Buff 同口径）。</param>
+/// <param name="TeamWide">全队生效（阵法类消耗品）：注入己方全部在场单位而非仅使用者；
+/// 多名成员同 buffId 阵法时按成员序后者覆盖（与战内 Buff RemoveAll+Add 同口径）。</param>
 public sealed record ActionSustainedBuff(
     string BuffId,
     double RemainingSeconds,
@@ -74,7 +79,9 @@ public sealed record ActionSustainedBuff(
     double ThreatPoints = 0,
     double HpRegenPostRatio = 0,
     double MpRegenPostRatio = 0,
-    double DamageBonusPoints = 0)
+    double DamageBonusPoints = 0,
+    string Name = "",
+    bool TeamWide = false)
 {
     /// <summary>持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
@@ -108,6 +115,12 @@ public sealed record ActionParticipationSpec(
 {
     /// <summary>参与绑定对应的真实行动 ID。</summary>
     public ActionId ActionId { get; init; }
+
+    /// <summary>
+    /// 队伍斗法开关（总纲 §7.10.4）：会话创建时从队伍档案冻结——勾选斗法的会话整队
+    /// 作为一个匹配单位进入斗法撮合；档案值与会话冻结值漂移即散场重建。
+    /// </summary>
+    public bool PvpEnabled { get; init; }
 
     /// <summary>会话规格持久化不变量。</summary>
     public bool IsValid => ActionId.IsValid

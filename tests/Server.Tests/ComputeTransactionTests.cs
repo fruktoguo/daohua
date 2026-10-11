@@ -61,14 +61,17 @@ public sealed class ComputeTransactionTests
     public async Task TerminalDiagnosticSurvivesConsumedRetryAndFailureThrottle()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var logger = new TerminalLogger();
-        using var worker = fixture.CreateWorker(logger);
+        // 终态判死日志由共享提交器承载：捕获 ComputeResultCommitter 的日志输出。
+        var logger = new TerminalLogger<ComputeResultCommitter>();
+        var committer = fixture.CreateCommitter(logger);
+        using var worker = fixture.CreateWorker(committer: committer);
         // 复现容量场景：预期 SSI 重试与基础设施错误刚占满节流窗口，紧接着真实任务判死。
-        foreach (var name in new[] { "_serializationFailureLog", "_failureLog" })
-        {
-            var throttle = (LogThrottle)typeof(ComputeDispatcherWorker).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(worker)!;
-            Assert.True(throttle.TryAcquire());
-        }
+        var serializationThrottle = (LogThrottle)typeof(ComputeResultCommitter)
+            .GetField("_serializationFailureLog", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(committer)!;
+        Assert.True(serializationThrottle.TryAcquire());
+        var workerThrottle = (LogThrottle)typeof(ComputeDispatcherWorker)
+            .GetField("_failureLog", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(worker)!;
+        Assert.True(workerThrottle.TryAcquire());
         var method = typeof(ComputeDispatcherWorker).GetMethod("RunBatchAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var badClaim = fixture.Claim with { InputPayload = System.Text.Encoding.UTF8.GetBytes("payload-secret-not-for-logs") };
         await (Task)method.Invoke(worker, [new ComputeLinkNode("diagnostic-test", 1), new[] { badClaim }, CancellationToken.None])!;
@@ -81,7 +84,7 @@ public sealed class ComputeTransactionTests
         Assert.DoesNotContain("payload-secret-not-for-logs", log.Message, StringComparison.Ordinal);
     }
 
-    private sealed class TerminalLogger : ILogger<ComputeDispatcherWorker>
+    private sealed class TerminalLogger<T> : ILogger<T>
     {
         public List<(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> State)> Entries { get; } = [];
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
@@ -185,19 +188,21 @@ public sealed class ComputeTransactionTests
         public ComputeAdvanceJobResult Result { get; } = result;
         public ComputeJobClaim Claim { get; } = claim;
 
-        public ComputeDispatcherWorker CreateWorker(ILogger<ComputeDispatcherWorker>? logger = null) => new(jobs, sections, Source, new ComputeLinkRegistry(), new ComputeLinkMetrics(),
-            new ServerOptions("compute-test", Source.ConnectionString, 256, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(1),
-                128, TimeSpan.FromSeconds(1), TimeSpan.FromDays(1), 65536, 64, 1, 0, false),
-            Catalog, verifier, logger ?? NullLogger<ComputeDispatcherWorker>.Instance);
+        private ServerOptions Options() => new("compute-test", Source.ConnectionString, 256, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(1),
+            128, TimeSpan.FromSeconds(1), TimeSpan.FromDays(1), 65536, 64, 1, 0, false);
 
-        public async Task<ComputeApplyOutcome> CommitAsync()
-        {
-            using var worker = CreateWorker();
-            var method = typeof(ComputeDispatcherWorker).GetMethod("CommitResultAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var task = (Task<ComputeApplyOutcome>)method.Invoke(worker,
-                [Claim, Request, Result, verification.Writes.ToArray(), verification.AssetDeltas.ToArray(), verification.LastSimulatedAt, CancellationToken.None])!;
-            return await task;
-        }
+        /// <summary>统一提交边界：节点候选与本地执行共用同一事务实现。</summary>
+        public ComputeResultCommitter CreateCommitter(ILogger<ComputeResultCommitter>? logger = null) => new(Source, sections, jobs, Catalog,
+            Options(), logger ?? NullLogger<ComputeResultCommitter>.Instance);
+
+        public ComputeDispatcherWorker CreateWorker(ILogger<ComputeDispatcherWorker>? logger = null,
+            ComputeResultCommitter? committer = null) => new(jobs, Source,
+            new ComputeLinkRegistry(), new ComputeLinkMetrics(), committer ?? CreateCommitter(),
+            Options(), Catalog, verifier, logger ?? NullLogger<ComputeDispatcherWorker>.Instance);
+
+        public async Task<ComputeApplyOutcome> CommitAsync() =>
+            await CreateCommitter().CommitAsync(Claim, Request, verification,
+                Result.Metrics, Result.ErrorCode, Result.ErrorMessage, CancellationToken.None);
 
         public static async Task<Fixture> CreateAsync()
         {
@@ -212,7 +217,7 @@ public sealed class ComputeTransactionTests
                 VALUES ($1,$1,$2,$2,$3,$3,1)
                 """, playerId, playerId.ToString(), baseline);
             var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(playerId), playerId.ToString(), baseline, Catalog.Fingerprint);
-            player.SetPresence(PresenceState.Offline);
+            player.SetPresence(PresenceState.Offline, baseline);
             player.Enqueue(new ActionIntent(new ActionId("alchemy.refine-qi-pill"), 3), baseline, Catalog.Actions);
             var sections = new PostgresSectionRepository(source, NullLogger<PostgresSectionRepository>.Instance);
             var writes = SectionCodec.EncodeAggregate(player, baseline);
@@ -229,7 +234,7 @@ public sealed class ComputeTransactionTests
                 frozen.Balances.Select(row => new ComputeAssetBalance(row.AssetId, row.Variant, row.Quantity, row.Version)).ToArray());
             var jobs = new PostgresComputeJobRepository(source);
             await jobs.EnqueueAsync(playerId, target, JsonSerializer.SerializeToUtf8Bytes(request, ServerJson.Options));
-            var claim = Assert.Single(await jobs.ClaimDueAsync(256, TimeSpan.FromMinutes(1)), row => row.PlayerId == playerId);
+            var claim = Assert.Single(await jobs.ClaimDueAsync(256, TimeSpan.FromMinutes(1), TimeSpan.Zero), row => row.PlayerId == playerId);
             using var engine = new DeterministicBatchEngine(Catalog);
             var nodeRequest = JsonSerializer.Deserialize<AdvanceJobRequest>(JsonSerializer.SerializeToUtf8Bytes(request, ServerJson.Options), ServerJson.Options)!;
             var candidate = await engine.AdvanceAsync(nodeRequest);

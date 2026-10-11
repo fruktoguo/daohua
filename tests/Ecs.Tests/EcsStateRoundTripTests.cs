@@ -26,6 +26,7 @@ public sealed class EcsStateRoundTripTests
             "Ecs种子",
             SeedTime,
             catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, SeedTime);
         player.Progression.RealmLevel = 3;
         player.Progression.Experience = 12.5;
         player.Progression.Experience = 7.25;

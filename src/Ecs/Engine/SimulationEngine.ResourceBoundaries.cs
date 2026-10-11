@@ -48,7 +48,9 @@ public static partial class SimulationEngine
     private static bool CompleteResourceRegeneration(IPlayerResourceContext player, GameDataCatalog gameData, double stepSeconds)
         => DaoHua.Ecs.Systems.ActionExecutionRules.CompleteResourceRegeneration(player, gameData, stepSeconds);
 
-    /// <summary>超过48小时收益上限后只清理过期状态与推进时钟，不推进任何行动。</summary>
-    public static bool ApplyOfflineCap(IPlayerResourceContext player, DateTimeOffset target, ActionMutationBatch request)
-        => DaoHua.Ecs.Systems.ActionExecutionRules.ApplyOfflineCap(player, target, request);
+    /// <summary>超过离线收益上限后只清理过期状态与推进时钟，不推进任何行动；
+    /// emitEvent 仅在本请求实际跨越封顶边界时为 true。</summary>
+    public static bool ApplyOfflineCap(IPlayerResourceContext player, DateTimeOffset target, ActionMutationBatch request,
+        bool emitEvent = true)
+        => DaoHua.Ecs.Systems.ActionExecutionRules.ApplyOfflineCap(player, target, request, emitEvent);
 }

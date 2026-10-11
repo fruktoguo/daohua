@@ -271,6 +271,9 @@ public sealed class OpsWriteEndpointTests
         public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public ValueTask<PlayerRuntimeSnapshot> AttachConnectionAsync(Guid playerId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => null;
 
         public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
@@ -292,7 +295,7 @@ public sealed class OpsWriteEndpointTests
         public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
             => ValueTask.CompletedTask;
 
-        public ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
+        public ValueTask RemoveAsync(Guid playerId, bool flush, DateTimeOffset? offlineSince, CancellationToken cancellationToken = default)
         {
             RemoveCalls++;
             return ValueTask.CompletedTask;

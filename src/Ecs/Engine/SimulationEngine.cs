@@ -360,8 +360,12 @@ public static partial class SimulationEngine
         var changed = false;
         // 进行中战斗的跨步复用会话：仅本次调用内有效，结束时统一 Flush 回写完整快照。
         var live = new LiveCombatBattle();
-        // 离线/挂起补算收益上限 48 小时：超出部分只推进模拟时钟与过期清理，不再产出行动收益。
-        var capAt = from.AddHours(48);
+        // 离线收益封顶（§14.2）：边界 = min(请求起点 + 48h 保险丝, 离线锚点 + 48h)；
+        // 无锚点时只受保险丝约束。超出部分只推进模拟时钟与过期清理，不再产出行动收益。
+        var fuse = from.Add(PlayerLifecycleRules.OfflineIdleLimit);
+        var capAt = player.OfflineSinceAt is { } anchor
+            && anchor.Add(PlayerLifecycleRules.OfflineIdleLimit) < fuse
+                ? anchor.Add(PlayerLifecycleRules.OfflineIdleLimit) : fuse;
         var computeTarget = target > capAt ? capAt : target;
         try
         {
@@ -429,7 +433,9 @@ public static partial class SimulationEngine
             }
             player.LastSimulatedAt = target;
             changed = true;
-            events.Add(new SimulationEvent(target, "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。", null));
+            // offline.capped 只在跨越封顶边界的请求发一次：起点已越界的请求静默推进时钟。
+            if (from <= capAt)
+                events.Add(new SimulationEvent(target, "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。", null));
         }
         if (changed) player.StateVersion = checked(player.StateVersion + 1);
         return new(player.PlayerId, from, target, (target - from).TotalSeconds, actions, repeats,
@@ -487,21 +493,22 @@ public static partial class SimulationEngine
             if (action.Participation is not null) break;
             // 暂停只冻结仍然有效的行动，不能改变已到期参与会话的收尾优先级。
             if (player.Settings.QueuePaused) break;
-            // 阻塞项是明确的停泊状态。它不能被本次推进重新标记为 Running，
-            // 否则战斗失败等不消费时间的结果会在队头空转直到转换上限。
+            // 阻塞恢复复核：停泊队首先按濒死复苏口径归一气血，再重跑准入——
+            // 阵亡不回血（§7.9.3）意味着 hp=0 的受阻战斗行动永远等不到回血，必须经复苏解除。
+            // 恢复成功即转 Running 由正常分派接管；仍受阻才出队/轮转/停泊。
             if (action.Status == ActionQueueStatus.Blocked)
             {
-                if (!player.Settings.LoopEnabled)
+                var blockedActionId = action.Intent.ActionId;
+                if (lastDefinition is null || lastActionId != blockedActionId)
                 {
-                    player.RemoveAction(action.Id, incrementVersion: false,
-                        endedAtUnixSeconds: nowUnix);
-                    transitions++;
-                    continue;
+                    lastDefinition = catalog.Get(blockedActionId);
+                    lastActionId = blockedActionId;
                 }
-                if (player.Settings.LoopEnabled && player.Actions.Count > 1)
+                if (Systems.ActionExecutionRules.AdvanceBlockedAction(player, action, lastDefinition,
+                        gameData, assetBalances,
+                        from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                        deltas, ref events))
                 {
-                    if (AllActionsBlocked(player.Actions)) break;
-                    player.RotateActionToTail(action.Id);
                     if (++transitions > MaxTransitionsPerAdvance)
                         throw new DomainException(DomainErrorCode.InvariantViolation, "单次模拟超过最大状态转换数。");
                     continue;
@@ -714,7 +721,8 @@ public static partial class SimulationEngine
         var combatResult = Systems.CombatEventAdvanceSystem.AdvanceTo(battleState, battleFrom + remainingSeconds);
         if (combatResult.Outcome != CombatOutcome.Running) live?.Release(action);
         CompleteCombatAdvanceCore(player, action, definition, encounter, gameData, battleState, combatResult,
-            from, target, ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats);
+            from, target, ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats,
+            assetBalances);
     }
 
     /// <summary>无世界调用复用 ECS 战斗状态导出。</summary>

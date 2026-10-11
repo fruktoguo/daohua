@@ -147,7 +147,7 @@ public sealed class ParticipationPersistenceTests
         var inactiveAt = fixture.StartedAt.AddHours(-49);
         for (var index = 0; index < fixture.Players.Length; index++)
             await fixture.ScalarAsync("""
-                UPDATE game.player_projection SET last_active_at=$2, updated_at=$2 WHERE player_id=$1
+                UPDATE game.player_projection SET offline_since=$2, presence='offline', updated_at=$2 WHERE player_id=$1
                 """, fixture.Players[index], inactiveAt.AddHours(index));
         Assert.Equal(inactiveAt.AddHours(49), await fixture.Store.GetOfflineExpiryAsync(
             fixture.SessionId, TimeSpan.FromHours(48), [fixture.Players[0]]));

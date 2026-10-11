@@ -22,6 +22,8 @@ import {
   type PartyLobbyDto,
   type PartyLobbyRequestDto,
   type PartyProfileDto,
+  type PlayerCardDto,
+  type PlayerCardRequestDto,
   type PlayerSnapshotDeltaDto,
   type PlayerSnapshotDto,
   type SocialAction,
@@ -334,6 +336,24 @@ export class GameClient {
     return this.trySend(socket, WireMessageType.PartyLobbyRequest, payload.requestId, payload)
   }
 
+  /**
+   * 请求队伍成员角色信息卡（PlayerCardRequest 信封）；服务端以 PlayerCard 必达应答。
+   * 返回本次请求 ID（用于和应答 requestId 配对）；发送失败为 null。
+   */
+  requestPlayerCard(playerId: string): string | null {
+    const socket = this.ensureOpenSocket()
+    if (!socket) {
+      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
+      return null
+    }
+    const payload: PlayerCardRequestDto = { requestId: createRequestId(), playerId }
+    if (!this.trySend(socket, WireMessageType.PlayerCardRequest, payload.requestId, payload)) {
+      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
+      return null
+    }
+    return payload.requestId
+  }
+
   private isCurrentSession(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): boolean {
     return !this.disposed
       && this.socket === sourceSocket
@@ -415,6 +435,8 @@ export class GameClient {
       this.stopHeartbeat()
       this.socket = null
       this.markPendingRequestsAwaitingReconnect()
+      // 连接中断时在途角色信息卡请求必然失效：直接收起弹窗，避免加载态永久悬挂。
+      useSocialStore.getState().closePlayerCard()
       if (this.disposed) return
       // 配表指纹不匹配：挂起自动重连，等待 App 重新拉取配表成功后显式 connect() 放行。
       if (this.catalogRefreshPending) {
@@ -640,6 +662,13 @@ export class GameClient {
           appliedBusinessPayload = true
           break
         }
+        case WireMessageType.PlayerCard: {
+          const card = decodeJsonPayload<PlayerCardDto>(envelope)
+          if (!card) throw new Error('角色信息卡载荷无效。')
+          useSocialStore.getState().applyPlayerCard(card)
+          appliedBusinessPayload = true
+          break
+        }
         case WireMessageType.Pong:
         case WireMessageType.AssetView:
         case WireMessageType.MarketBook:
@@ -650,6 +679,7 @@ export class GameClient {
         case WireMessageType.ChatHistoryRequest:
         case WireMessageType.SocialAction:
         case WireMessageType.PartyLobbyRequest:
+        case WireMessageType.PlayerCardRequest:
           // 这些类型是客户端上行回显，服务端不会作为业务帧下发；合法 envelope 不代表业务成功。
           return
         default:

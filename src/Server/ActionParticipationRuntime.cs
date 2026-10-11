@@ -13,10 +13,9 @@ public sealed class ActionParticipationRuntime(
     IParticipationSessionStore store,
     OnlinePresenceRegistry presence,
     IPlayerSimulationClock clock,
-    ILogger<ActionParticipationRuntime> logger,
-    ServerOptions? options = null) : IActionParticipationRuntime
+    ILogger<ActionParticipationRuntime> logger) : IActionParticipationRuntime
 {
-    private readonly TimeSpan _offlineLimit = options?.ColdCatchUpWindow ?? TimeSpan.FromHours(48);
+    private readonly TimeSpan _offlineLimit = Domain.Player.PlayerLifecycleRules.OfflineIdleLimit;
     private readonly object _gateRegistryLock = new();
     private readonly Dictionary<string, SessionGate> _gates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Exception> _fencedSessions = new(StringComparer.Ordinal);
@@ -54,7 +53,9 @@ public sealed class ActionParticipationRuntime(
                     ?? throw new InvalidOperationException($"会话初始化提交结局尚未确认 session={spec.SessionId}，保留冻结输入供重试。", exception);
                 logger.LogWarning(exception, "会话 {SessionId} 初始化提交响应丢失，已读取版本 {Version} 确认权威检查点。", spec.SessionId, stored.Version);
             }
-            if (stored.PartyId != partyId || !JsonEquals(stored.SpecJson, candidate.SpecJson))
+            // 冻结输入按解码后的规范化形态比较：新增可缺省字段不构成输入漂移。
+            if (stored.PartyId != partyId
+                || !JsonEquals(JsonSerializer.Serialize(ReadSpec(stored), PersistenceJson.Options), candidate.SpecJson))
                 throw new InvalidOperationException($"会话初始化输入冲突 session={spec.SessionId} version={stored.Version}。");
             foreach (var member in spec.Members) _participants[Guid.Parse(member.PlayerId)] = spec.SessionId;
         }
@@ -97,6 +98,43 @@ public sealed class ActionParticipationRuntime(
         }
         // 故障会话的 fence 不能阻塞其他队伍，批次结束再统一向后台报告持久化故障。
         if (failures is not null) throw new AggregateException("部分在线组队会话推进失败。", failures);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<Guid>> AdvanceOfflineDueAsync(DateTimeOffset now,
+        TimeSpan batchInterval, CancellationToken cancellationToken = default)
+    {
+        var online = presence.SnapshotOnlinePlayerIds().ToHashSet();
+        var sessions = await store.ListActiveAsync(cancellationToken);
+        var advanced = new HashSet<Guid>();
+        List<Exception>? failures = null;
+        foreach (var session in sessions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var spec = ReadSpec(session);
+                var memberIds = spec.Members.Select(member => Guid.Parse(member.PlayerId)).ToArray();
+                foreach (var memberId in memberIds) _participants[memberId] = session.SessionId;
+                // 名册有人在线（含断线宽限期）的会话由在线推进通道实时推进，不在离线批算范围。
+                if (memberIds.Any(online.Contains)) continue;
+                // 到期条件：距上次推进满批算间隔，或名册最早离线边界已到期（终末批收尾）。
+                var due = now - session.LastSimulatedAt >= batchInterval
+                    || await store.GetOfflineExpiryAsync(session.SessionId, _offlineLimit,
+                        online, cancellationToken) is { } expiry && expiry <= now;
+                if (!due) continue;
+                // AdvanceSessionAsync 自身按名册离线截止裁剪目标并以 member-offline-timeout 收尾。
+                await AdvanceSessionAsync(session.SessionId, now, endReason: null, cancellationToken);
+                foreach (var memberId in memberIds) advanced.Add(memberId);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                (failures ??= []).Add(exception);
+            }
+        }
+        // 与在线推进同口径：单会话故障不阻塞其他队伍，批次结束聚合抛出。
+        if (failures is not null) throw new AggregateException("部分全员离线组队会话推进失败。", failures);
+        return [.. advanced];
     }
 
     /// <inheritdoc />
@@ -328,8 +366,10 @@ public sealed class ActionParticipationRuntime(
     {
         var document = JsonSerializer.Deserialize<ActionParticipationSessionDocument>(session.StateJson, PersistenceJson.Options)
             ?? throw new InvalidOperationException($"会话检查点载荷为空 session={session.SessionId} version={session.Version}。");
+        // 冻结输入按解码后的规范化形态比较：新增可缺省字段不构成输入漂移。
         if (document.Spec.SessionId != session.SessionId
-            || !JsonEquals(session.SpecJson, JsonSerializer.Serialize(document.Spec, PersistenceJson.Options))
+            || !JsonEquals(JsonSerializer.Serialize(ReadSpec(session), PersistenceJson.Options),
+                JsonSerializer.Serialize(document.Spec, PersistenceJson.Options))
             || AtUnixSeconds(document.AdvancedAtUnixSeconds) != session.LastSimulatedAt)
             throw new InvalidOperationException($"会话检查点输入或时间索引不一致 session={session.SessionId} version={session.Version}。");
         return document;

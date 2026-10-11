@@ -1,11 +1,13 @@
 namespace Server.Clean;
 
 /// <summary>
-/// 冷挂机任务生产者：周期性从 game.player_projection JOIN game.player_state_heads 预筛
-/// 离线且提交头模拟欠债落在窗口内的玩家（last_simulated_at 过滤已前移进扫描 SQL），
-/// 只对入选候选做全量状态加载（含 durable 队列叠加）+ 正余额快照，编码为 compute.v2 任务请求入队。
+/// 离线挂机批算任务生产者：周期性从 game.player_projection JOIN game.player_state_heads
+/// 预筛投影离线且带离线锚点、提交头欠债仍在收益边界内、距上次结算已满批算间隔（或已到
+/// 边界仍有欠债的终末批）的玩家，只对入选候选做全量状态加载（含 durable 队列叠加）+ 正
+/// 余额快照，编码为 compute.v2 任务请求入队；批目标 = min(now, offline_since + 48h)。
 /// 任务携带完整身份与提交头快照：节点凭此重建 PlayerStateBundle 并逐字节还原聚合。
 /// 玩家上线或所有权租约生效期间自动跳过；同一玩家最多一个未完结任务由数据库唯一约束保证。
+/// 扫描与入队不依赖计算节点配置：本地执行器常驻消费同一队列，节点只承接溢出积压。
 /// 多副本部署时由会话级咨询锁选出唯一生产者：未持锁实例每轮空转跳过，
 /// 锁随连接断开/进程退出自动释放，无残留状态（见 docs/distributed-readiness.md §H）。
 /// </summary>
@@ -18,6 +20,10 @@ public sealed class ColdCatchUpWorker(
 {
     /// <summary>冷挂机生产 leader 会话级咨询锁键：全集群固定，持有者才执行扫描与入队。</summary>
     private const long ProducerLockKey = 772_311;
+    /// <summary>候选入队并行度：每候选一次 RepeatableRead 快照读加一次 upsert 往返，串行在数千
+    /// 候选量级成为补算吞吐短板；4 路足以抹平往返延迟，又不会挤占共享 PG 上在线事务与
+    /// 本地执行器/派发提交所需的连接与锁资源。</summary>
+    private const int EnqueueParallelism = 4;
 
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
     private readonly LogThrottle _playerErrorLog = new(TimeSpan.FromMinutes(5));
@@ -27,21 +33,15 @@ public sealed class ColdCatchUpWorker(
     private bool _isProducer;
 
     /// <summary>
-    /// 扫描主循环：未配置计算节点派发链时直接退出；启动延迟 30 秒避开建库热路径后，
-    /// 每 ColdCatchUpInterval 一轮——仅持有生产咨询锁的实例扫描离线欠债玩家并逐个入队，
+    /// 扫描主循环：不受计算节点配置门控（本地执行器始终消费该队列）；启动延迟 30 秒避开建库
+    /// 热路径后，每 ColdCatchUpInterval 一轮——仅持有生产咨询锁的实例扫描离线欠债玩家并逐个入队，
     /// 循环异常经节流记录后 5 秒退避重试，停机时释放持锁连接（会话结束即让出生产权）。
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!options.ComputeNodeConfigured)
-        {
-            // 派发链未配置时不生产任务，避免 pending 行无意义堆积。
-            logger.LogInformation("冷挂机扫描未启用：ComputeNode 未配置或未开启。");
-            return;
-        }
-
-        logger.LogInformation("ColdCatchUpWorker started interval={Interval} window={Window} batch={Batch}.",
-            options.ColdCatchUpInterval, options.ColdCatchUpWindow, options.ColdCatchUpBatchSize);
+        logger.LogInformation(
+            "ColdCatchUpWorker started interval={Interval} batchInterval={BatchInterval} batch={Batch}.",
+            options.ColdCatchUpInterval, options.OfflineBatchInterval, options.ColdCatchUpBatchSize);
         // 启动后先让一轮：避开建库与在线恢复热路径，也给 projection 留出首笔提交时间。
         try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
@@ -55,13 +55,17 @@ public sealed class ColdCatchUpWorker(
                     if (await TryHoldProducerLockAsync(stoppingToken))
                     {
                         var candidates = await jobs.ScanColdPlayersAsync(
-                            options.ColdCatchUpMinIdle, options.ColdCatchUpWindow,
+                            options.OfflineBatchInterval,
                             options.ColdCatchUpBatchSize, stoppingToken);
                         var enqueued = 0;
-                        foreach (var candidate in candidates)
-                        {
-                            if (await TryEnqueueAsync(candidate, stoppingToken)) enqueued++;
-                        }
+                        // 有界并行入队：仓储无共享状态（每次调用自开连接）、日志节流器为 CAS 实现，
+                        // 并行仅放大数据库往返并发度，语义与串行逐个入队一致。
+                        await Parallel.ForEachAsync(candidates,
+                            new ParallelOptions { MaxDegreeOfParallelism = EnqueueParallelism, CancellationToken = stoppingToken },
+                            async (candidate, token) =>
+                            {
+                                if (await TryEnqueueAsync(candidate, token)) Interlocked.Increment(ref enqueued);
+                            });
                         if (enqueued > 0)
                             logger.LogInformation("冷挂机入队 {Enqueued}/{Candidates} 个玩家。", enqueued, candidates.Count);
                     }
@@ -140,11 +144,12 @@ public sealed class ColdCatchUpWorker(
 
             var now = DateTimeOffset.UtcNow;
             var from = bundle.Head.LastSimulatedAt;
-            // 轻量复核：扫描 SQL 已按提交头 last_simulated_at 预筛，但叠加 durable 队列后的
-            // 有效头可能更新；距上次模拟不足最小步长则跳过（既给刚断线玩家宽限，也限制补算频率）。
-            if (from >= now || now - from < options.ColdCatchUpMinIdle) return false;
-            // 收益封顶 48 小时后只推进模拟时钟，无必要再派发任务。
-            if (now - from > options.ColdCatchUpWindow) return false;
+            // 批目标锚点取扫描候选的投影 offline_since（总纲18 §14.1 离线时长判定列），
+            // 不做逐玩家全量解码：执行器内部仍按存档内锚点封顶，目标取投影锚点不影响收益正确性。
+            // 轻量复核：扫描 SQL 已预筛，但叠加 durable 队列后的有效头可能更新；
+            // 距上次结算不足批算间隔（且未到封顶边界）则本轮跳过。
+            if (ComputeBatchTarget(from, candidate.OfflineSince, now, options.OfflineBatchInterval) is not { } target)
+                return false;
 
             var sections = bundle.Sections.Values
                 .OrderBy(section => section.SectionKind, StringComparer.Ordinal)
@@ -161,7 +166,6 @@ public sealed class ColdCatchUpWorker(
                 .ThenBy(row => row.Variant, StringComparer.Ordinal)
                 .ToArray();
 
-            var target = now;
             var request = new ComputeAdvanceJobRequest(
                 PostgresComputeJobRepository.DeriveJobId(candidate.PlayerId, target.ToUnixTimeMilliseconds()),
                 candidate.PlayerId,
@@ -187,5 +191,20 @@ public sealed class ColdCatchUpWorker(
                 logger.LogWarning("冷挂机候选玩家存档无效，已跳过 player={PlayerId} error={Error}", candidate.PlayerId, exception.Message);
             return false;
         }
+    }
+
+    /// <summary>
+    /// 批算目标判定：from 为提交头已结算时刻，anchor 为离线锚点，边界 = anchor + OfflineIdleLimit。
+    /// from 已到/越过边界 → null（无收益欠债可补）；目标 = min(now, boundary)，距上次结算不足
+    /// 批算间隔且未触边界 → null（未到批算点）；触边界的终末批不受间隔限制，直接补到边界。
+    /// </summary>
+    internal static DateTimeOffset? ComputeBatchTarget(
+        DateTimeOffset from, DateTimeOffset anchor, DateTimeOffset now, TimeSpan batchInterval)
+    {
+        var boundary = anchor.Add(PlayerLifecycleRules.OfflineIdleLimit);
+        if (from >= boundary) return null;
+        var target = now < boundary ? now : boundary;
+        if (target < boundary && target - from < batchInterval) return null;
+        return target;
     }
 }

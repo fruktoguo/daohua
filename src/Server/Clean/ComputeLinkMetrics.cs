@@ -39,6 +39,12 @@ public sealed class ComputeLinkMetrics
     private long _jobsPersistFailed;
     private long _jobsDead;
 
+    private long _localJobsClaimed;
+    private long _localJobsApplied;
+    private long _localJobsDriftDiscarded;
+    private long _localJobsPersistFailed;
+    private long _localJobsDead;
+
     private readonly object _sampleGate = new();
     private readonly BatchSample[] _samples = new BatchSample[SampleCapacity];
     private int _sampleHead;
@@ -145,6 +151,17 @@ public sealed class ComputeLinkMetrics
         node.RecordJobFailed();
     }
 
+    /// <summary>本地执行器领取到一个到期任务。</summary>
+    public void RecordLocalJobClaimed() => Interlocked.Increment(ref _localJobsClaimed);
+    /// <summary>本地执行器结果落库 Applied（含空推进与资产入账）。</summary>
+    public void RecordLocalJobApplied() => Interlocked.Increment(ref _localJobsApplied);
+    /// <summary>本地执行结果因版本漂移被丢弃（任务仍按完成归档）。</summary>
+    public void RecordLocalJobDriftDiscarded() => Interlocked.Increment(ref _localJobsDriftDiscarded);
+    /// <summary>本地执行结果落库异常退回（可重试）。</summary>
+    public void RecordLocalJobPersistFailed() => Interlocked.Increment(ref _localJobsPersistFailed);
+    /// <summary>本地执行任务被判 dead 终态（坏载荷/本地重演拒绝）。</summary>
+    public void RecordLocalJobDead() => Interlocked.Increment(ref _localJobsDead);
+
     /// <summary>汇总当前计数与样本统计为只读快照；快照本身不引用实时状态。</summary>
     public ComputeLinkMetricsSnapshot Snapshot()
     {
@@ -176,6 +193,11 @@ public sealed class ComputeLinkMetrics
             Interlocked.Read(ref _jobsNodeFailed),
             Interlocked.Read(ref _jobsPersistFailed),
             Interlocked.Read(ref _jobsDead),
+            Interlocked.Read(ref _localJobsClaimed),
+            Interlocked.Read(ref _localJobsApplied),
+            Interlocked.Read(ref _localJobsDriftDiscarded),
+            Interlocked.Read(ref _localJobsPersistFailed),
+            Interlocked.Read(ref _localJobsDead),
             ComputeBatchSampleSummary.From(samples));
     }
 }
@@ -204,6 +226,11 @@ public sealed record ComputeLinkMetricsSnapshot(
     long JobsNodeFailed,
     long JobsPersistFailed,
     long JobsDead,
+    long LocalJobsClaimed,
+    long LocalJobsApplied,
+    long LocalJobsDriftDiscarded,
+    long LocalJobsPersistFailed,
+    long LocalJobsDead,
     ComputeBatchSampleSummary RecentBatches);
 
 /// <summary>最近完成批次样本的分位数与规模分布统计。</summary>

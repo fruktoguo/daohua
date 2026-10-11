@@ -1,3 +1,4 @@
+using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
 using Microsoft.Extensions.Configuration;
@@ -391,7 +392,7 @@ public sealed class ChatAndSocialTests
         Assert.Null(await repository.GetPartyAsync(partyId.Value));
     }
 
-    /// <summary>创建公开队伍后进入组队大厅：档案字段、成员预览与请求者身价齐备；非法档案被拒。</summary>
+    /// <summary>创建公开队伍后进入组队大厅：档案字段、成员预览与请求者身家齐备；非法档案被拒。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task PartyCreate_PublicParty_AppearsInLobby()
@@ -404,7 +405,7 @@ public sealed class ChatAndSocialTests
         // 大厅是全局视图：清掉历史用例遗留的队伍/散人行，断言只认本用例建的队。
         await ResetPartyTablesAsync(source);
 
-        // 非法档案：未知活动类型 / 超长队名 / 负身价门槛 / 未知地图一律拒绝。
+        // 非法档案：未知活动类型 / 超长队名 / 负身家门槛 / 未知地图一律拒绝。
         foreach (var bad in new[]
         {
             new PartyProfileDto(ActivityKind: "dungeon"),
@@ -438,7 +439,190 @@ public sealed class ChatAndSocialTests
         Assert.Contains(anyFilter.Parties, party => party.PartyId == partyId.ToString("D"));
     }
 
-    /// <summary>不公开队伍不进大厅；持有 partyId 的链接点击仍可加入，身价门槛照旧裁决。</summary>
+    /// <summary>角色信息卡（§21.14）：本人查询自身返回完整身份与默认聚合投影，无授权拦截。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PlayerCard_Self_ReturnsIdentityAndDefaultProjection()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (alice, aliceName) = await SeedPlayerAsync(source, "自照修士");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+
+        var card = await social.BuildPlayerCardAsync(alice,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), alice.ToString("D")));
+
+        Assert.Null(card.Error);
+        Assert.Equal(alice.ToString("D"), card.PlayerId);
+        Assert.Equal(aliceName, card.DisplayName);
+        Assert.True(card.PlayerSeq > 0);
+        Assert.False(card.Online);
+        Assert.Equal(1, card.RealmLevel);
+        Assert.Empty(card.Equipment!);
+        Assert.Empty(card.AbilitySlots!);
+        Assert.Empty(card.AutoUseSlots!);
+    }
+
+    /// <summary>同队成员可查离线队友角色卡：从持久化分段真源投影境界/六维/装备/功法/战斗物品配置。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PlayerCard_PartyMember_ProjectsOfflineSections()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (viewer, _) = await SeedPlayerAsync(source, "观礼修士");
+        var (target, targetName) = await SeedPlayerAsync(source, "藏锋修士");
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+        await ResetPartyTablesAsync(source);
+
+        // 离线队友的持久化真源：境界/六维/装备/功法/战斗物品全量播种后整版落盘。
+        var now = DateTimeOffset.UtcNow;
+        var baseState = PlayerAggregate.Create(new PlayerId(target), new AccountId(Guid.NewGuid()),
+            targetName, now.AddMinutes(-5), catalog.Fingerprint).ExportState();
+        var seeded = baseState with
+        {
+            Progression = baseState.Progression with { RealmLevel = 12, Experience = 5000, CombatExperience = 321 },
+            LearnedAbilities = [new AbilityId("ability.palm-lightning")],
+            Loadout = new PlayerLoadoutDocument(
+                new PlayerCoreAttributes(StaminaExp: 1_000_000, MeridiansExp: 200, AttackExp: 100, BoneExp: 50, AgilityExp: 25, ConsciousnessExp: 10),
+                [new PlayerAbilitySlot("ability.palm-lightning", 3), new PlayerAbilitySlot(null, 0)],
+                [new PlayerEquipmentSlot("equipment.qingfeng-sword", 2), new PlayerEquipmentSlot("equipment.tool-herb-hoe", 0)],
+                new Dictionary<string, double> { ["ability.palm-lightning"] = 2700 }),
+            Settings = baseState.Settings with
+            {
+                AutoUseSlots =
+                [
+                    new AutoUseSlotState(Domain.GameData.AutoUseBar.Combat, 0, "item.qi-gathering-pill", 2, true,
+                        Group: AutoUseSlotState.SlotGroupPotion),
+                    new AutoUseSlotState(Domain.GameData.AutoUseBar.Combat, 1, "item.gathering-incense", 1, false,
+                        Group: AutoUseSlotState.SlotGroupGeneral),
+                ],
+            },
+        };
+        var sections = new PostgresSectionRepository(source, NullLogger<PostgresSectionRepository>.Instance);
+        await sections.EnqueueSectionsAsync(SectionCodec.EncodeAggregateFull(seeded, now));
+        await FlushSectionsAsync(sections, source, target);
+
+        Assert.True((await social.ApplyAsync(viewer, new SocialActionDto(Guid.NewGuid().ToString("D"),
+            SocialActions.PartyInvite, target.ToString("D")))).Success);
+        Assert.True((await social.ApplyAsync(target, new SocialActionDto(Guid.NewGuid().ToString("D"),
+            SocialActions.PartyAccept))).Success);
+
+        var card = await social.BuildPlayerCardAsync(viewer,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+
+        Assert.Null(card.Error);
+        Assert.Equal(targetName, card.DisplayName);
+        Assert.Equal(12, card.RealmLevel);
+        Assert.Equal(5000, card.Experience);
+        Assert.Equal(321, card.CombatExperience);
+        Assert.True(card.Valuation >= 0);
+        Assert.NotNull(card.CoreAttributes);
+        Assert.Equal(1_000_000, card.CoreAttributes!.StaminaExp);
+        Assert.True(card.CoreAttributes.StaminaLevel > 0);
+        Assert.True(card.CoreAttributes.TotalLevel > 0);
+        Assert.Contains(card.Equipment!, entry => entry.ItemId == "equipment.qingfeng-sword" && entry.EnhancementLevel == 2);
+        Assert.Contains(card.Equipment!, entry => entry.ItemId == "equipment.tool-herb-hoe");
+        Assert.Contains(card.AbilitySlots!, slot => slot.AbilityId == "ability.palm-lightning" && slot.Level == 3);
+        Assert.Contains(card.AbilitySlots!, slot => slot.AbilityId is null);
+        Assert.Contains(card.LearnedAbilityIds!, id => id == "ability.palm-lightning");
+        Assert.Equal(2700, card.AbilityExperiences!["ability.palm-lightning"]);
+        Assert.Contains(card.AutoUseSlots!, slot => slot.Group == "potion" && slot.SlotIndex == 0
+            && slot.ItemId == "item.qi-gathering-pill" && slot.Quantity == 2 && slot.Enabled);
+        Assert.Contains(card.AutoUseSlots!, slot => slot.Group == "general" && slot.SlotIndex == 1
+            && slot.ItemId == "item.gathering-incense" && !slot.Enabled);
+    }
+
+    /// <summary>已装载队友读运行时内存态而非持久化分段：装载口径优先。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PlayerCard_LoadedMember_UsesRuntimeState()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (viewer, _) = await SeedPlayerAsync(source, "旁观者");
+        var (target, targetName) = await SeedPlayerAsync(source, "在线修士");
+        var catalog = GameDataCatalog.LoadEmbedded();
+        await ResetPartyTablesAsync(source);
+
+        var now = DateTimeOffset.UtcNow;
+        var runtimeState = PlayerAggregate.Create(new PlayerId(target), new AccountId(Guid.NewGuid()),
+            targetName, now, catalog.Fingerprint).ExportState();
+        runtimeState = runtimeState with
+        {
+            StateVersion = 9,
+            Progression = runtimeState.Progression with { RealmLevel = 30, CombatExperience = 88 },
+        };
+        var snapshot = new PlayerRuntimeSnapshot(target, "acct.test", targetName, 9, now, runtimeState, 0, []);
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry(),
+            new EmptyPlayerRuntime(new Dictionary<Guid, PlayerRuntimeSnapshot> { [target] = snapshot }));
+
+        Assert.True((await social.ApplyAsync(viewer, new SocialActionDto(Guid.NewGuid().ToString("D"),
+            SocialActions.PartyInvite, target.ToString("D")))).Success);
+        Assert.True((await social.ApplyAsync(target, new SocialActionDto(Guid.NewGuid().ToString("D"),
+            SocialActions.PartyAccept))).Success);
+
+        var card = await social.BuildPlayerCardAsync(viewer,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+
+        Assert.Null(card.Error);
+        Assert.Equal(30, card.RealmLevel);
+        Assert.Equal(88, card.CombatExperience);
+    }
+
+    /// <summary>授权边界：非本人且不同队一律 forbidden；请求者有队但目标不在队同样拒绝。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PlayerCard_Stranger_ReturnsForbidden()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (viewer, _) = await SeedPlayerAsync(source, "门外修士");
+        var (target, _) = await SeedPlayerAsync(source, "陌生修士");
+        var (ally, _) = await SeedPlayerAsync(source, "同道修士");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+        await ResetPartyTablesAsync(source);
+
+        var noParty = await social.BuildPlayerCardAsync(viewer,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Equal("forbidden", noParty.Error);
+        Assert.Equal(target.ToString("D"), noParty.PlayerId);
+        Assert.Null(noParty.DisplayName);
+        Assert.Null(noParty.CoreAttributes);
+
+        // 请求者已有队伍、目标不在队内：仍属越权查询。
+        Assert.True((await social.ApplyAsync(viewer, new SocialActionDto(Guid.NewGuid().ToString("D"),
+            SocialActions.PartyInvite, ally.ToString("D")))).Success);
+        Assert.True((await social.ApplyAsync(ally, new SocialActionDto(Guid.NewGuid().ToString("D"),
+            SocialActions.PartyAccept))).Success);
+        var wrongParty = await social.BuildPlayerCardAsync(viewer,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Equal("forbidden", wrongParty.Error);
+
+        // 同队成员正向口径：ally 与 viewer 同队，可被查。
+        var allowed = await social.BuildPlayerCardAsync(viewer,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), ally.ToString("D")));
+        Assert.Null(allowed.Error);
+    }
+
+    /// <summary>不存在的玩家身份（无队伍关系的陌生目标）按 forbidden 拦截，不暴露存在性差异。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PlayerCard_NonExistentStranger_ReturnsForbidden()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (viewer, _) = await SeedPlayerAsync(source, "探查修士");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+
+        var card = await social.BuildPlayerCardAsync(viewer,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D")));
+
+        Assert.Equal("forbidden", card.Error);
+    }
+
+    /// <summary>不公开队伍不进大厅；持有 partyId 的链接点击仍可加入，身家门槛照旧裁决。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task PartyJoin_PrivatePartyViaId_NotInLobbyButJoinable()
@@ -463,7 +647,7 @@ public sealed class ChatAndSocialTests
         var ghost = await social.ApplyAsync(joiner, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyJoin, PartyId: Guid.NewGuid().ToString("D")));
         Assert.Equal(SocialFailure.PartyNotFound, ghost.Failure);
 
-        // 队长把门槛抬到 1：散人身价为 0，链接加入被门槛拒。
+        // 队长把门槛抬到 1：散人身家为 0，链接加入被门槛拒。
         Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyUpdate,
             Party: new PartyProfileDto(MinValuation: 1)))).Success);
         var blocked = await social.ApplyAsync(gate, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyJoin, PartyId: partyId.Value.ToString("D")));
@@ -661,10 +845,11 @@ public sealed class ChatAndSocialTests
     }
 
     /// <summary>
-    /// 装配集成测试用的社交运行时：市场分片不启动（未就绪时卖一档价返回 null，身价全部回落回收价），
-    /// 运行时宿主为永不装载替身（离线估值只走 loadout 分段读取路径）。
+    /// 装配集成测试用的社交运行时：市场分片不启动（未就绪时卖一档价返回 null，身家全部回落回收价）。
+    /// players 缺省为永不装载替身（离线估值与角色卡只走持久化分段真源路径）。
     /// </summary>
-    private static SocialRuntime CreateSocialRuntime(NpgsqlDataSource source, PostgresSocialRepository repository, OnlinePresenceRegistry presence)
+    private static SocialRuntime CreateSocialRuntime(NpgsqlDataSource source, PostgresSocialRepository repository, OnlinePresenceRegistry presence,
+        IPlayerRuntime? players = null)
     {
         var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -676,28 +861,32 @@ public sealed class ChatAndSocialTests
             NullLogger<MarketRuntime>.Instance);
         var sections = new PostgresSectionRepository(source, NullLogger<PostgresSectionRepository>.Instance);
         var catalog = GameDataCatalog.LoadEmbedded();
-        var valuation = new PartyValuationService(new EmptyPlayerRuntime(), sections, market, catalog);
+        var runtime = players ?? new EmptyPlayerRuntime();
+        var valuation = new PartyValuationService(runtime, sections, market, catalog);
         var chat = new ChatRuntime(new PostgresChatRepository(source), repository, presence);
-        return new SocialRuntime(repository, presence, valuation, chat, catalog, NullLogger<SocialRuntime>.Instance);
+        return new SocialRuntime(repository, presence, valuation, chat, catalog, NullLogger<SocialRuntime>.Instance,
+            players: runtime, sections: sections);
     }
 
-    /// <summary>估值测试路径不触发装载的运行时替身。</summary>
-    private sealed class EmptyPlayerRuntime : IPlayerRuntime
+    /// <summary>估值/角色卡测试路径的运行时替身；loaded 表内玩家按已装载返回快照。</summary>
+    private sealed class EmptyPlayerRuntime(IReadOnlyDictionary<Guid, PlayerRuntimeSnapshot>? loaded = null) : IPlayerRuntime
     {
-        public int LoadedCount => 0;
+        public int LoadedCount => loaded?.Count ?? 0;
         public DateTimeOffset? NextAdvanceBoundaryUtc => null;
         public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated { add { } remove { } }
         public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted { add { } remove { } }
         public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
-        public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => null;
+        public ValueTask<PlayerRuntimeSnapshot> AttachConnectionAsync(Guid playerId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => loaded?.GetValueOrDefault(playerId);
         public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
             long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        public ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask RemoveAsync(Guid playerId, bool flush, DateTimeOffset? offlineSince, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) => [];
@@ -718,6 +907,20 @@ public sealed class ChatAndSocialTests
             "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,invite_code,created_at,last_seen_at,status) VALUES ($1,$1,$2,$3,(left(replace($1::text,'-',''),16)),now(),now(),1)",
             playerId, displayName, displayName.ToUpperInvariant());
         return (playerId, displayName);
+    }
+
+    /// <summary>刷空指定玩家的 section 落盘队列：Enqueue 走异步收件箱，断言前必须确认落库。</summary>
+    private static async Task FlushSectionsAsync(PostgresSectionRepository repository, NpgsqlDataSource source, Guid playerId)
+    {
+        for (var guard = 0; guard < 8; guard++)
+        {
+            var result = await repository.FlushPendingAsync(256, TimeSpan.FromMinutes(1));
+            Assert.Equal(0, result.Failed);
+            var pending = (long)(await ScalarAsync(source,
+                "SELECT count(*) FROM platform.section_flush_queue WHERE player_id = $1", playerId))!;
+            if (pending == 0) return;
+        }
+        throw new InvalidOperationException("本玩家 flush 队列未在有限批次内清空。");
     }
 
     private static async Task<object?> ScalarAsync(NpgsqlDataSource source, string sql, params object[] values)

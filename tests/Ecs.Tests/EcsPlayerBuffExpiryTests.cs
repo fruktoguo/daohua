@@ -22,6 +22,7 @@ public sealed class EcsPlayerBuffExpiryTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "增益自然到期", Start, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, Start);
         player.Enqueue(new(new ActionId("explore.gather-ningxue-grass"), -1), Start, catalog.Actions);
         var nowUnix = Start.ToUnixTimeSeconds();
         player.Buffs.Active.Add(new("test.expired", nowUnix));
@@ -58,6 +59,7 @@ public sealed class EcsPlayerBuffExpiryTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "增益封顶到期", Start, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, Start);
         var nowUnix = Start.ToUnixTimeSeconds();
         player.Buffs.Active.Add(new("test.old-state", nowUnix + 70 * 3600));
         using var runtime = new EcsGameRuntime(catalog, Start);

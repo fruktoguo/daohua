@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.Combat;
 using Domain.Common;
 using Domain.Economy;
 using Domain.GameData;
@@ -25,7 +26,9 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     /// <param name="gameData">配表目录；缺省使用内置 BuiltIn 目录。</param>
     /// <param name="startAt">世界时钟起点；缺省 UnixEpoch，各分片 EcsClockComponent 由此起算。</param>
     /// <param name="shardCount">分片数量（1..64）；每名玩家按稳定哈希在进程生命周期内固定路由。</param>
-    public EcsGameRuntime(GameDataCatalog? gameData = null, DateTimeOffset? startAt = null, int shardCount = 1)
+    /// <param name="duelAdvance">斗法推进选项；仅在线主服启用撮合，离线补算与 ComputeNode 传 null。</param>
+    public EcsGameRuntime(GameDataCatalog? gameData = null, DateTimeOffset? startAt = null, int shardCount = 1,
+        DuelAdvanceOptions? duelAdvance = null)
     {
         if (shardCount is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(shardCount), "ECS shard 数量必须在 1..64。");
         InlineCombatTriggerRegistry.EnsureInitialized();
@@ -39,7 +42,7 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
         try
         {
             for (var index = 0; index < shardCount; index++)
-                shards.Add(new EcsWorldShard(GameData, StartAt, $"daohua-ecs-shard-{index}", index == 0, ownCloseSystemTry: false));
+                shards.Add(new EcsWorldShard(GameData, StartAt, $"daohua-ecs-shard-{index}", index == 0, ownCloseSystemTry: false, duelAdvance));
             _shards = shards;
         }
         catch
@@ -199,9 +202,9 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
         return removed;
     }
 
-    /// <summary>更新玩家在线状态；切到离线时重置离线战报并推进状态版本。</summary>
-    public bool SetPresence(Guid playerId, PresenceState presence)
-        => GetShard(playerId).SetPresence(playerId, presence);
+    /// <summary>更新玩家在线状态并维护离线锚点；切到离线时重置离线战报并推进状态版本。</summary>
+    public bool SetPresence(Guid playerId, PresenceState presence, DateTimeOffset at)
+        => GetShard(playerId).SetPresence(playerId, presence, at);
 
     /// <summary>资产事务失败或宿主回滚时，在原实体上恢复完整快照与钱包。</summary>
     public void RestorePlayer(Guid playerId, PlayerAggregateState state, IReadOnlyCollection<AssetBalance> balances)

@@ -14,19 +14,16 @@ namespace Server.Clean;
 /// </summary>
 public sealed class ComputeDispatcherWorker(
     PostgresComputeJobRepository jobs,
-    PostgresSectionRepository sections,
     NpgsqlDataSource dataSource,
     ComputeLinkRegistry registry,
     ComputeLinkMetrics metrics,
+    ComputeResultCommitter committer,
     ServerOptions options,
     GameDataCatalog gameData,
     IComputeResultVerifier resultVerifier,
     ILogger<ComputeDispatcherWorker> logger) : BackgroundService
 {
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
-    private readonly LogThrottle _serializationFailureLog = new(TimeSpan.FromMinutes(1));
-    // SSI/死锁只做有限次原地重放；最终仍交给既有可重试失败路径，不把其他持久化异常吞掉。
-    private const int MaxSerializableReplayAttempts = 8;
     /// <summary>在飞派发任务簿记：停机时统一等待排空；各任务槽位已在 Acquire 时预留。</summary>
     private readonly ConcurrentDictionary<Task, byte> _dispatches = new();
     /// <summary>
@@ -78,7 +75,9 @@ public sealed class ComputeDispatcherWorker(
                         var maxJobs = node.MaxJobsPerBatch > 0
                             ? Math.Min(options.ComputeBatchSize, node.MaxJobsPerBatch)
                             : options.ComputeBatchSize;
-                        claims = await jobs.ClaimDueAsync(maxJobs, options.ComputeLease, stoppingToken);
+                        // 节点派发只承接 pending 超过溢出阈值的积压：本地执行器实时消费新任务。
+                        claims = await jobs.ClaimDueAsync(maxJobs, options.ComputeLease,
+                            options.ComputeOverflowAfter, stoppingToken);
                         metrics.RecordJobsClaimed(claims.Count);
                     }
                     catch
@@ -215,7 +214,7 @@ public sealed class ComputeDispatcherWorker(
                 || request.Sections.Any(section => section is null || string.IsNullOrEmpty(section.PayloadBase64)))
             {
                 metrics.RecordJobDead(node);
-                await FailWithDiagnosticsAsync(claim, "INVALID_INPUT", "input_payload 无效", retryable: false,
+                await committer.FailWithDiagnosticsAsync(claim, "INVALID_INPUT", "input_payload 无效", retryable: false,
                     TimeSpan.Zero, cancellationToken);
                 continue;
             }
@@ -234,7 +233,7 @@ public sealed class ComputeDispatcherWorker(
             if (entry.DecodedBytes > groupBudget)
             {
                 metrics.RecordJobDead(node);
-                await FailWithDiagnosticsAsync(entry.Claim, "JOB_TOO_LARGE",
+                await committer.FailWithDiagnosticsAsync(entry.Claim, "JOB_TOO_LARGE",
                     $"JOB_TOO_LARGE: 单任务解码后 {entry.DecodedBytes}B 超过节点组批次预算 {groupBudget}B",
                     retryable: false, TimeSpan.Zero, cancellationToken);
                 continue;
@@ -335,7 +334,7 @@ public sealed class ComputeDispatcherWorker(
             foreach (var entry in fits)
             {
                 metrics.RecordJobDead(node);
-                await FailWithDiagnosticsAsync(entry.Claim, "INVALID_OUTPUT",
+                await committer.FailWithDiagnosticsAsync(entry.Claim, "INVALID_OUTPUT",
                     "INVALID_OUTPUT:批次含重复或额外任务结果", retryable: false,
                     TimeSpan.Zero, cancellationToken);
             }
@@ -362,16 +361,16 @@ public sealed class ComputeDispatcherWorker(
         if (result is null || result.PlayerId != claim.PlayerId)
         {
             metrics.RecordJobNodeFailed(node);
-            await FailWithDiagnosticsAsync(claim, "MISSING_RESULT", "节点响应缺少对应任务结果",
-                retryable: true, Backoff(claim.Attempts), cancellationToken);
+            await committer.FailWithDiagnosticsAsync(claim, "MISSING_RESULT", "节点响应缺少对应任务结果",
+                retryable: true, ComputeResultCommitter.Backoff(claim.Attempts), cancellationToken);
             return;
         }
         if (!result.Success)
         {
             metrics.RecordJobNodeFailed(node);
-            await FailWithDiagnosticsAsync(claim, "NODE_FAILURE",
+            await committer.FailWithDiagnosticsAsync(claim, "NODE_FAILURE",
                 $"{result.ErrorCode}:{result.ErrorMessage}",
-                result.Retryable, Backoff(claim.Attempts), cancellationToken);
+                result.Retryable, ComputeResultCommitter.Backoff(claim.Attempts), cancellationToken);
             return;
         }
 
@@ -381,31 +380,10 @@ public sealed class ComputeDispatcherWorker(
             var verification = await resultVerifier.VerifyAsync(entry.Request, result, cancellationToken);
             if (!verification.Accepted)
                 throw new InvalidDataException(verification.Error ?? "主服独立重演拒绝节点结果。");
-            var deltas = verification.AssetDeltas.ToArray();
-            var now = DateTimeOffset.UtcNow;
-            var writes = verification.Writes.Select(write => write with { UpdatedAt = now }).ToArray();
 
-            // 结果回写走 Serializable：并发批次命中同一提交头/资产谓词范围会产 40001/40P01，
-            // 属可预期并发代价而非节点或任务错误——事务原地重放（短退避），不烧任务领取次数。
-            ComputeApplyOutcome applied;
-            for (var attempt = 0; ; attempt++)
-            {
-                try
-                {
-                    applied = await CommitResultAsync(claim, entry.Request, result, writes, deltas, verification.LastSimulatedAt, cancellationToken);
-                    break;
-                }
-                catch (PostgresException exception) when (IsSerializationConflict(exception)
-                    && attempt < MaxSerializableReplayAttempts - 1)
-                {
-                    if (_serializationFailureLog.TryAcquire())
-                        logger.LogWarning("冷挂机结果落库串行化冲突，重放事务 job={JobId} attempt={Attempt}/{MaxAttempts} sqlstate={SqlState}",
-                            claim.JobId, attempt + 1, MaxSerializableReplayAttempts, exception.SqlState);
-                    var delayMilliseconds = Math.Min(1_000, 40 * (attempt + 1))
-                        + Random.Shared.Next(0, 80);
-                    await Task.Delay(TimeSpan.FromMilliseconds(delayMilliseconds), cancellationToken);
-                }
-            }
+            // 可信产物经统一提交器落库：租约/基线/钱包复核、section CAS、资产入账与任务完结同事务。
+            var applied = await committer.CommitAsync(claim, entry.Request, verification,
+                result.Metrics, result.ErrorCode, result.ErrorMessage, cancellationToken);
             if (applied == ComputeApplyOutcome.Applied)
             {
                 metrics.RecordJobApplied(node);
@@ -422,7 +400,7 @@ public sealed class ComputeDispatcherWorker(
         {
             // 节点产出污染不能重试出正确结果：进 dead 保留诊断窗口，实际终态日志不受重试节流影响。
             metrics.RecordJobDead(node);
-            await FailWithDiagnosticsAsync(claim, "INVALID_OUTPUT", $"INVALID_OUTPUT:{exception.Message}",
+            await committer.FailWithDiagnosticsAsync(claim, "INVALID_OUTPUT", $"INVALID_OUTPUT:{exception.Message}",
                 retryable: false, TimeSpan.Zero, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -430,206 +408,10 @@ public sealed class ComputeDispatcherWorker(
             metrics.RecordJobPersistFailed();
             if (_failureLog.TryAcquire())
                 logger.LogError(exception, "冷挂机结果落库失败 job={JobId} player={PlayerId}", claim.JobId, claim.PlayerId);
-            await FailWithDiagnosticsAsync(claim, "PERSISTENCE_FAILURE", exception.Message,
-                retryable: true, Backoff(claim.Attempts), cancellationToken);
+            await committer.FailWithDiagnosticsAsync(claim, "PERSISTENCE_FAILURE", exception.Message,
+                retryable: true, ComputeResultCommitter.Backoff(claim.Attempts), cancellationToken);
         }
     }
-
-    /// <summary>
-    /// 单任务结果回写事务体：section CAS、资产增量入账与任务完结并入同一 Serializable 事务。
-    /// 从 <see cref="ApplyJobResultAsync"/> 抽出供串行化冲突原地重放；事务内任何幂等冲突都以异常上交。
-    /// </summary>
-    private async Task<ComputeApplyOutcome> CommitResultAsync(
-        ComputeJobClaim claim, ComputeAdvanceJobRequest request, ComputeAdvanceJobResult result, SectionWrite[] writes,
-        Server.Clean.AssetDelta[] deltas, DateTimeOffset actualSimulatedAt, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        // 先锁当前任务租约，防止验证/写回期间过期任务被重新领取；最终 Complete 仍必须成功。
-        await using (var lease = new NpgsqlCommand("""
-            SELECT job_id FROM platform.compute_jobs
-            WHERE job_id = $1 AND player_id = $2 AND lease_token = $3
-              AND status = 'leased' AND lease_until > now()
-            FOR UPDATE
-            """, connection, transaction))
-        {
-            lease.Parameters.Add(new NpgsqlParameter { Value = claim.JobId });
-            lease.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
-            lease.Parameters.Add(new NpgsqlParameter { Value = claim.LeaseToken });
-            if (await lease.ExecuteScalarAsync(cancellationToken) is not Guid)
-                throw new InvalidOperationException("冷挂机任务租约已失效，拒绝结果写回。");
-        }
-        ComputeApplyOutcome applied;
-        try
-        {
-            await ValidateFrozenBaselineInTransactionAsync(connection, transaction, claim, request, result, cancellationToken);
-            applied = await sections.ApplyComputeResultInTransactionAsync(
-                connection, transaction,
-                claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
-                writes, actualSimulatedAt, gameData.Fingerprint, cancellationToken);
-        }
-        catch (ComputeSourceDriftException)
-        {
-            // 合法源漂移只归档丢弃，不写 section 或钱包，也不把诚实节点判死。
-            applied = ComputeApplyOutcome.StaleVersion;
-        }
-        // output_payload 只存摘要：result JSON 内含全量 base64 section，整存会把单任务存储放大 ~2.3 倍。
-        var output = JsonSerializer.SerializeToUtf8Bytes(new ComputeJobOutputSummary(
-            claim.JobId, claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
-            applied.ToString(), deltas.Length, result.Metrics, result.ErrorCode, result.ErrorMessage), ServerJson.Options);
-        if (applied == ComputeApplyOutcome.Applied && deltas.Length > 0)
-        {
-            // 资产增量随本事务原子入账：幂等键绑定 job_id，重派重放不重复记账。
-            // 节点不持有数据库权限、不创造第二套资产协议，本事务是节点收益的唯一入账点。
-            var committed = await PostgresEconomyRepository.CommitCoreAsync(
-                connection, transaction,
-                new EconomyTransactionRequest(
-                    claim.JobId,
-                    $"simulation.compute:{claim.JobId:D}",
-                    "simulation.reward",
-                    claim.PlayerId,
-                    deltas,
-                    actualSimulatedAt,
-                    output),
-                cancellationToken);
-            if (!committed.Applied)
-                throw new InvalidOperationException("冷挂机资产事务未提交。");
-        }
-        if (!await PostgresComputeJobRepository.CompleteInTransactionAsync(
-                connection, transaction, claim.JobId, claim.LeaseToken, output, cancellationToken))
-            throw new InvalidOperationException("冷挂机任务租约已失效，拒绝提交 section 与资产事务。");
-        await transaction.CommitAsync(cancellationToken);
-        return applied;
-    }
-
-    /// <summary>
-    /// 在同一 Serializable 事务中重新核对任务冻结的完整源基线：身份/头/全集 section、离线状态、运行时所有权与钱包版本。
-    /// 合法源漂移通过专用异常丢弃结果并归档任务；载荷损坏仍按异常拒绝，不能混淆为诚实节点错误。
-    /// </summary>
-    private static async ValueTask ValidateFrozenBaselineInTransactionAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ComputeJobClaim claim,
-        ComputeAdvanceJobRequest request,
-        ComputeAdvanceJobResult result,
-        CancellationToken cancellationToken)
-    {
-        await using (var player = new NpgsqlCommand("""
-            SELECT i.player_id, i.account_id, i.display_name, i.created_at, p.presence,
-                   EXISTS (SELECT 1 FROM game.player_runtime_leases l
-                           WHERE l.player_id = i.player_id AND l.lease_until > now())
-            FROM identity.players i
-            JOIN game.player_projection p ON p.player_id = i.player_id
-            WHERE i.player_id = $1 AND i.status = 1
-            FOR UPDATE OF i, p
-            """, connection, transaction))
-        {
-            player.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
-            await using var reader = await player.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
-                throw new ComputeSourceDriftException("Compute 玩家源身份已不存在。");
-            if (reader.GetGuid(0) != claim.PlayerId
-                || reader.GetGuid(1) != request.AccountId
-                || !string.Equals(reader.GetString(2), request.DisplayName, StringComparison.Ordinal)
-                || reader.GetFieldValue<DateTimeOffset>(3).ToUnixTimeMilliseconds() != request.CreatedAtUnixMilliseconds)
-                throw new ComputeSourceDriftException("Compute 玩家身份已漂移。");
-            if (!string.Equals(reader.GetString(4), "offline", StringComparison.OrdinalIgnoreCase)
-                || reader.GetBoolean(5))
-                throw new ComputeSourceDriftException("玩家已上线或被其他运行时实例持有。");
-        }
-        // 会话开战与结果回写共用成员身份 MVCC fence；锁后复核，避免个人冷算和同场会话各自推进。
-        await using (var participation = new NpgsqlCommand("""
-            SELECT EXISTS (
-                SELECT 1 FROM social.party_sessions s
-                WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
-                    'members', jsonb_build_array(jsonb_build_object('playerId', $1::uuid::text))))
-                OR EXISTS (
-                    SELECT 1 FROM social.party_session_inbox i
-                    WHERE i.player_id = $1 AND i.consumed_at IS NULL)
-            """, connection, transaction))
-        {
-            participation.Parameters.AddWithValue(claim.PlayerId);
-            if (await participation.ExecuteScalarAsync(cancellationToken) is true)
-                throw new ComputeSourceDriftException("玩家已由行动参与会话推进或仍有待消费结算。");
-        }
-
-
-        var bundle = await PostgresSectionRepository.LoadInTransactionAsync(
-            connection, transaction, claim.PlayerId, cancellationToken)
-            ?? throw new ComputeSourceDriftException("Compute 玩家完整源基线不存在。");
-        if (bundle.Head.StateVersion != result.SourceStateVersion
-            || bundle.Head.StateVersion <= 0
-            || !string.Equals(bundle.Head.Checksum, request.HeadChecksum, StringComparison.Ordinal))
-            throw new ComputeSourceDriftException("玩家提交头版本或校验和已漂移。");
-
-        if (request.PlayerId != claim.PlayerId
-            || request.SourceStateVersion != bundle.Head.StateVersion
-            || request.AccountId != bundle.Identity.AccountId
-            || !string.Equals(request.DisplayName, bundle.Identity.DisplayName, StringComparison.Ordinal)
-            || request.CreatedAtUnixMilliseconds != bundle.Identity.CreatedAt.ToUnixTimeMilliseconds()
-            || request.FromUnixMilliseconds != bundle.Head.LastSimulatedAt.ToUnixTimeMilliseconds()
-            || !string.Equals(request.HeadChecksum, bundle.Head.Checksum, StringComparison.Ordinal)
-            || !string.Equals(request.HeadGameDataFingerprint, bundle.Head.GameDataFingerprint, StringComparison.Ordinal)
-            || request.Sections.Count != bundle.Sections.Count)
-            throw new ComputeSourceDriftException("Compute 完整源基线与任务冻结输入不一致。");
-
-        var expected = bundle.Sections.Values
-            .OrderBy(section => section.SectionKind, StringComparer.Ordinal)
-            .Select(ComputeSectionCodec.ToWire)
-            .ToArray();
-        if (request.AssetBalances is { Count: > 0 } requestBalances)
-        {
-            if (requestBalances.Any(balance => balance.Version < 0 || !double.IsFinite(balance.Quantity) || balance.Quantity <= 0))
-                throw new InvalidDataException("Compute 冻结钱包字段无效。");
-        }
-        var actual = request.Sections
-            .OrderBy(section => section.Kind, StringComparer.Ordinal)
-            .ToArray();
-        if (expected.Length != actual.Length)
-            throw new ComputeSourceDriftException("Compute 冻结 section 数量已漂移。");
-        for (var i = 0; i < expected.Length; i++)
-        {
-            if (!string.Equals(expected[i].Kind, actual[i].Kind, StringComparison.Ordinal)
-                || expected[i].Version != actual[i].Version
-                || !string.Equals(expected[i].Codec, actual[i].Codec, StringComparison.Ordinal)
-                || !string.Equals(expected[i].PayloadBase64, actual[i].PayloadBase64, StringComparison.Ordinal)
-                || !string.Equals(expected[i].Checksum, actual[i].Checksum, StringComparison.OrdinalIgnoreCase))
-                throw new ComputeSourceDriftException($"Compute 冻结 section {actual[i].Kind} 已漂移。");
-        }
-
-        var seenBalances = new HashSet<(string AssetId, string Variant)>();
-        var balances = request.AssetBalances ?? [];
-        foreach (var balance in balances)
-        {
-            if (!seenBalances.Add((balance.AssetId, balance.Variant)))
-                throw new InvalidDataException("Compute 冻结钱包存在重复资产键。");
-        }
-        await using var wallet = new NpgsqlCommand("""
-            SELECT asset_id, variant, quantity, version
-            FROM economy.player_asset_balances
-            WHERE player_id = $1 AND quantity > 0
-            ORDER BY asset_id, variant
-            FOR UPDATE
-            """, connection, transaction);
-        wallet.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
-        await using var walletReader = await wallet.ExecuteReaderAsync(cancellationToken);
-        var rows = new List<(string AssetId, string Variant, double Quantity, long Version)>();
-        while (await walletReader.ReadAsync(cancellationToken))
-            rows.Add((walletReader.GetString(0), walletReader.GetString(1), walletReader.GetDouble(2), walletReader.GetInt64(3)));
-        if (rows.Count != balances.Count)
-            throw new ComputeSourceDriftException("Compute 冻结钱包行集合已漂移。");
-        var balancesByKey = balances.ToDictionary(row => (row.AssetId, row.Variant));
-        foreach (var row in rows)
-        {
-            if (!balancesByKey.TryGetValue((row.AssetId, row.Variant), out var expectedBalance)
-                || row.Quantity != expectedBalance.Quantity || row.Version != expectedBalance.Version)
-                throw new ComputeSourceDriftException("Compute 冻结钱包数量或版本已漂移。");
-        }
-    }
-
-    /// <summary>串行化冲突（SSI 40001）与死锁（40P01）判定：两类都是可原地重放的可恢复事务失败。</summary>
-    private static bool IsSerializationConflict(PostgresException exception) =>
-        exception.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected;
 
     /// <summary>
     /// 校验并按资产键合并节点回传的资产增量。该方法只负责边界格式与配表键校验；
@@ -685,23 +467,6 @@ public sealed class ComputeDispatcherWorker(
             && variant == "+" + level.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    /// <summary>失败状态真实落库后记录终态证据；预期串行化重试与重复故障节流不得压掉判死事件。</summary>
-    private async Task<bool> FailWithDiagnosticsAsync(
-        ComputeJobClaim claim, string category, string error, bool retryable,
-        TimeSpan retryAfter, CancellationToken cancellationToken)
-    {
-        var updated = await jobs.FailAsync(claim.JobId, claim.LeaseToken, error,
-            retryable, retryAfter, options.ComputeMaxAttempts, cancellationToken);
-        if (updated && (!retryable || claim.Attempts >= options.ComputeMaxAttempts))
-            LogTerminalFailure(claim, category);
-        return updated;
-    }
-
-    /// <summary>只记录固定错误类别与任务元信息，不输出节点载荷、异常正文或凭据。</summary>
-    private void LogTerminalFailure(ComputeJobClaim claim, string category) =>
-        logger.LogWarning("冷挂机任务判死 job={JobId} category={Category} attempts={Attempts} maxAttempts={MaxAttempts}",
-            claim.JobId, category, claim.Attempts, options.ComputeMaxAttempts);
-
     /// <summary>
     /// 按租约令牌整批退回 pending：同一批领取共享一个令牌，但各 job 的 attempts 可能不同
     /// （孤儿行重取会累加）。retryAfter 未指定时按 attempts 分组施加各自指数退避；
@@ -727,7 +492,7 @@ public sealed class ComputeDispatcherWorker(
             {
                 released += await jobs.ReleaseLeaseAsync(claims[0].LeaseToken,
                     group.Select(claim => claim.JobId).ToArray(), error,
-                    Backoff(group.Key), options.ComputeMaxAttempts, cancellationToken);
+                    ComputeResultCommitter.Backoff(group.Key), options.ComputeMaxAttempts, cancellationToken);
             }
         }
         // ReleaseLease 批量返回总更新行数；只查询达到终态次数的候选，避免把已完结或租约丢失任务误记判死。
@@ -744,7 +509,7 @@ public sealed class ComputeDispatcherWorker(
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             var finalById = finalAttempts.ToDictionary(claim => claim.JobId);
             while (await reader.ReadAsync(cancellationToken))
-                LogTerminalFailure(finalById[reader.GetGuid(0)], "BATCH_FAILURE");
+                committer.LogTerminalFailure(finalById[reader.GetGuid(0)], "BATCH_FAILURE");
         }
         // 保持现有释放计数口径，本次只补终态日志。
         metrics.RecordJobsReleased(released);
@@ -753,14 +518,9 @@ public sealed class ComputeDispatcherWorker(
     private static IReadOnlyList<ComputeJobClaim> ClaimsOf(IReadOnlyList<ReadyJob> entries) =>
         entries.Select(entry => entry.Claim).ToArray();
 
-    private static TimeSpan Backoff(int attempts) =>
-        TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Min(Math.Max(attempts - 1, 0), 8))));
-
     /// <summary>一个通过载荷校验、可参与装批的任务及其解码后字节估算。</summary>
     private sealed record ReadyJob(ComputeJobClaim Claim, ComputeAdvanceJobRequest Request, long DecodedBytes);
 
-    /// <summary>独立重演已通过，但权威源状态在任务冻结之后合法变化。</summary>
-    private sealed class ComputeSourceDriftException(string message) : Exception(message);
 }
 
 /// <summary>
@@ -771,13 +531,16 @@ public sealed class ComputeDispatcherWorker(
 public static class ComputeDispatchServiceCollectionExtensions
 {
     /// <summary>
-    /// 注册冷挂机派发链：任务仓库、在线节点注册表、派发 worker 与冷挂机扫描 worker。
+    /// 注册离线挂机批算链：任务仓库、结果提交器、在线节点注册表、本地执行器、
+    /// 派发 worker 与离线批算扫描 worker。扫描与本地执行不受计算节点配置门控。
     /// </summary>
     public static IServiceCollection AddComputeDispatch(this IServiceCollection services)
     {
         services.AddSingleton<PostgresComputeJobRepository>();
         services.AddSingleton<ComputeLinkMetrics>();
         services.AddSingleton<ComputeLinkRegistry>();
+        services.AddSingleton<ComputeResultCommitter>();
+        services.AddHostedService<LocalComputeExecutorWorker>();
         services.AddHostedService<ComputeDispatcherWorker>();
         services.AddHostedService<ColdCatchUpWorker>();
         return services;

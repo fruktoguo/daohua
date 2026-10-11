@@ -445,7 +445,13 @@ public sealed class EcsActionQueueMutationTests
         };
 
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
-        => PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "队列回归", From, catalog.Fingerprint);
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "队列回归", From, catalog.Fingerprint);
+        // 种子按「已断线存档」播种：装载规范化对持久化 Online 一律转离线，
+        // 离线种子让 expected=Restore(种子) 镜像与实体逐位一致。
+        player.SetPresence(PresenceState.Offline, From);
+        return player;
+    }
 
     private static void AssertWorkReleased(EcsGameRuntime runtime, Guid id)
     {

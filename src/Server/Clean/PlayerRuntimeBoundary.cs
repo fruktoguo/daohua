@@ -79,8 +79,13 @@ public interface IPlayerRuntime : IAsyncDisposable
     event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
     /// <summary>一批战报日志产生后向订阅者回调；同样在玩家写锁外触发。</summary>
     event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
-    /// <summary>装载玩家到内存：读取持久化状态并补算离线欠债；玩家不存在抛异常。</summary>
+    /// <summary>装载玩家到内存：读取持久化状态并补算离线欠债；不改变在线状态，玩家不存在抛异常。</summary>
     ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 真实连接建立（WebSocket 握手）：装载并补算离线欠债后把在线状态置为 Online、清空离线锚点。
+    /// 在线状态只由本方法与 <see cref="RemoveAsync"/> 驱动；强拉离线玩家的业务变更通道不受影响。
+    /// </summary>
+    ValueTask<PlayerRuntimeSnapshot> AttachConnectionAsync(Guid playerId, CancellationToken cancellationToken = default);
     /// <summary>读取已加载玩家的最新快照；未加载返回 null（不触发装载，供估值等只读旁路）。</summary>
     PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId);
     /// <summary>
@@ -96,8 +101,9 @@ public interface IPlayerRuntime : IAsyncDisposable
     ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default);
     /// <summary>下一次需要全量推进的最早到期时刻（UTC）；null 表示无待结算行动，后台可空转。</summary>
     DateTimeOffset? NextAdvanceBoundaryUtc { get; }
-    /// <summary>卸载玩家实体并清缓存；flush 为 true 时先转离线并强制落盘，不丢未提交状态。</summary>
-    ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default);
+    /// <summary>卸载玩家实体并清缓存；flush 为 true 时先转离线并强制落盘，不丢未提交状态。
+    /// offlineSince 为真实断线时刻的离线锚点（宽限收尾由调用方传入），null 时以当前模拟时刻记锚。</summary>
+    ValueTask RemoveAsync(Guid playerId, bool flush, DateTimeOffset? offlineSince, CancellationToken cancellationToken = default);
     /// <summary>
     /// 跨实体裁决变更通道（组队讨伐开打/散场等社交仲裁，总纲 §21.13）：
     /// 在玩家单写者门内装载（如需）并执行聚合变更——标脏纳入刷盘轨道、刷新驻留快照、

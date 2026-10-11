@@ -57,5 +57,13 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0021_v20_to_v21.sql` | 仅推进库级版本至 21；旧 partySession/party.expedition 玩家载荷不能无损迁移，须由 `reset-outdated-players.sh` 交互确认清零 |
 | `0022_v21_to_v22.sql` | 推进 duel 分段行动账本 `combatants` 战斗单位统计标签至 22（可缺省解码，表结构未变） |
 | `0023_v22_to_v23.sql` | 推进 actionQueue 装配展示载荷标签至 23：参与成员快照增 `equipment`、斗法回放增 `opponentSkills`/`opponentEquipment`（可缺省解码，表结构未变） |
+| `0024_v23_to_v24.sql` | 组队讨伐会话唯一权威运行态与成员结算收件箱（`social.party_sessions`/`party_session_inbox`），schema_version 写入 24 |
+| `0025_v24_to_v25.sql` | `economy.transactions` 增 (created_at, transaction_type) 时间窗索引，schema_version 写入 25 |
+| `0026_v25_to_v26.sql` | `market.trades` 增 (buyer_id, traded_at)/(seller_id, traded_at) 复合索引，schema_version 写入 26 |
+| `0027_v26_to_v27.sql` | `section_flush_queue` 改追加式收件箱（queue_id 自增主键），schema_version 写入 27 |
+| `0028_v27_to_v28.sql` | 新增 `market.settlement_cursors` 每玩家结算游标，schema_version 写入 28 |
+| `0029_v28_to_v29.sql` | `social.parties` 增 `pvp_enabled` 队伍斗法开关（§7.10.4），schema_version 写入 29 |
+| `0030_v29_to_v30.sql` | 推进战内 Buff 跨波携带态 `combatBuffs`、组队讨伐参与载荷与阵法全队标记存档标签至 30（可缺省解码，表结构未变） |
+| `0031_v30_to_v31.sql` | `game.player_projection` 增 `offline_since` 离线锚点投影列（存量离线行按提交头补锚），settings 分段增 `offlineSinceAt`（可缺省解码），schema_version 写入 31 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

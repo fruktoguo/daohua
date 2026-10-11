@@ -27,10 +27,14 @@ public sealed class EcsActionExecutionComponent : YuoComponent
     internal ActionMutationBatch Request = null!;
     internal SimulationEngine.StateVersionCommitSession Versions = null!;
     internal ActionMutationBatch Core = null!;
+    /// <summary>斗法推进选项：仅在线主服装配非 null；离线补算与冷挂机为 null，匹配等待会确定性回退。</summary>
+    internal DuelAdvanceOptions? DuelAdvance;
 
     // —— 推进游标与窗口 ——
     internal DateTimeOffset From;
     internal DateTimeOffset Cursor;
+    /// <summary>本请求的收益封顶边界：min(请求起点 + 48h 保险丝, 离线锚点 + 48h)；锚点缺失时只有保险丝。</summary>
+    internal DateTimeOffset IncomeCapBoundary;
     internal DateTimeOffset WindowStart;
     internal DateTimeOffset WindowEnd;
     internal DateTimeOffset FrameTarget;
@@ -73,8 +77,10 @@ public sealed class EcsActionExecutionComponent : YuoComponent
     /// <param name="entity">玩家实体。</param>
     /// <param name="catalog">本请求使用的配表目录。</param>
     /// <param name="target">请求目标时刻；不得早于玩家上次推进时刻。</param>
+    /// <param name="duelAdvance">斗法推进选项；null 表示无撮合环境（离线/冷挂机补算）。</param>
     public static EcsActionExecutionComponent Attach(
-        YuoEntity entity, GameDataCatalog catalog, DateTimeOffset target)
+        YuoEntity entity, GameDataCatalog catalog, DateTimeOffset target,
+        DuelAdvanceOptions? duelAdvance = null)
     {
         var component = entity.GetOrAddComponent<EcsActionExecutionComponent>();
         if (component.Queue is not null && !component.Committed)
@@ -98,10 +104,18 @@ public sealed class EcsActionExecutionComponent : YuoComponent
         component.Request = new();
         component.Versions = new();
         component.Core = new();
+        component.DuelAdvance = duelAdvance;
         component.From = component.Cursor = from;
-        // 离线补算单请求最多推进 48 小时：超出部分由调用方分段请求，
-        // 防止单请求的事件量与转换预算失控（MaxTransitionsPerAdvance 保险丝）。
-        component.ComputeTarget = target > from.AddHours(48) ? from.AddHours(48) : target;
+        // 离线收益封顶（§14.2）：边界 = min(请求起点 + 48h 保险丝, 离线锚点 + 48h)。
+        // 保险丝既限收益也防单请求事件量与转换预算失控（MaxTransitionsPerAdvance）；
+        // 无锚点时只受保险丝约束，锚点存在时封顶以真实断线时刻起算。
+        var fuse = from.Add(PlayerLifecycleRules.OfflineIdleLimit);
+        component.IncomeCapBoundary = player.OfflineSinceAt is { } anchor
+            && anchor.Add(PlayerLifecycleRules.OfflineIdleLimit) < fuse
+                ? anchor.Add(PlayerLifecycleRules.OfflineIdleLimit) : fuse;
+        component.ComputeTarget = target < component.IncomeCapBoundary ? target : component.IncomeCapBoundary;
+        // 起点已越过收益边界：本请求不产生收益窗口，但仍执行到时钟推进（时间只前进不后退）。
+        if (component.ComputeTarget < from) component.ComputeTarget = from;
         component.Target = target;
         component.WindowStart = component.WindowEnd = component.FrameTarget = from;
         component.WindowStepSeconds = component.RemainingSeconds = component.WindowElapsedSeconds = 0;
@@ -246,7 +260,7 @@ public static class EcsActionSession
         if (e.PreparedAction is not { } action || e.Definition is not { ExecutionKind: ActionExecutionKind.CombatEncounter } definition
             || e.Battle is not null || e.FrameTarget < NextBoundaryAt(e)) return;
         var step = CombatActionRules.AdvanceCombatPreparation(e.Player, action, definition, e.Catalog,
-            e.WorkingWallet, e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core);
+            e.WorkingWallet, e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core, e.DuelAdvance);
         e.RemainingSeconds = step.RemainingSeconds;
         e.Cursor = e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds);
         if (step.Battle is { } battle) AttachCombat(e, battle, e.Cursor);
@@ -292,7 +306,7 @@ public static class EcsActionSession
             e.BattleAllyDeaths, e.BattleAllyRespawns);
         e.RemainingSeconds = CombatActionRules.CompleteCombatAdvance(e.Player, action, definition,
             e.Catalog.CombatEncounters[state.EncounterId], e.Catalog, state, result,
-            e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core);
+            e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core, e.WorkingWallet);
         e.Cursor = e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds);
         var combat = e.Entity.GetComponent<PlayerCombatComponent>()!;
         combat.LastOutcome = state.Outcome;

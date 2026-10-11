@@ -49,7 +49,7 @@ public sealed class ComputeJobRepositoryTests
         await SqlAsync(source,
             "UPDATE platform.compute_jobs SET target_time = now() - interval '1 minute' WHERE player_id = $1",
             player);
-        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero);
         Assert.Contains(claims, claim => claim.PlayerId == player);
         Assert.Equal(ComputeEnqueueResult.SkippedExisting,
             await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(30), payload));
@@ -66,21 +66,21 @@ public sealed class ComputeJobRepositoryTests
         await jobs.EnqueueAsync(due, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
         await jobs.EnqueueAsync(future, DateTimeOffset.UtcNow.AddHours(1), new byte[] { 1 });
 
-        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2));
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2), TimeSpan.Zero);
         var claim = Assert.Single(claims, entry => entry.PlayerId == due);
         Assert.DoesNotContain(claims, entry => entry.PlayerId == future);
         Assert.Equal(1, claim.Attempts);
         Assert.NotEqual(Guid.Empty, claim.LeaseToken);
 
         // 租约未到期：同一任务不可被重取。
-        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2)),
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2), TimeSpan.Zero),
             entry => entry.JobId == claim.JobId);
 
         // 租约过期后孤儿行可被重取，attempts 继续累加。
         await SqlAsync(source,
             "UPDATE platform.compute_jobs SET lease_until = now() - interval '1 second' WHERE job_id = $1",
             claim.JobId);
-        var orphan = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2)),
+        var orphan = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2), TimeSpan.Zero),
             entry => entry.JobId == claim.JobId);
         Assert.Equal(2, orphan.Attempts);
     }
@@ -93,7 +93,7 @@ public sealed class ComputeJobRepositoryTests
         var (source, jobs) = await OpenRepositoryAsync();
         var player = await SeedPlayerAsync(source);
         await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
-        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.PlayerId == player);
 
         Assert.False(await jobs.CompleteAsync(claim.JobId, Guid.NewGuid(), new byte[] { 2 }));
@@ -104,7 +104,7 @@ public sealed class ComputeJobRepositoryTests
             "SELECT output_payload FROM platform.compute_jobs WHERE job_id = $1", claim.JobId))!);
         // 已完结的任务不再被任何令牌更新，也不再被领取。
         Assert.False(await jobs.CompleteAsync(claim.JobId, claim.LeaseToken, new byte[] { 3 }));
-        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.JobId == claim.JobId);
     }
 
@@ -116,7 +116,7 @@ public sealed class ComputeJobRepositoryTests
         var (source, jobs) = await OpenRepositoryAsync();
         var player = await SeedPlayerAsync(source);
         await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
-        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.PlayerId == player);
 
         Assert.True(await jobs.FailAsync(claim.JobId, claim.LeaseToken, "节点超时",
@@ -126,13 +126,13 @@ public sealed class ComputeJobRepositoryTests
         Assert.Equal("节点超时", await ScalarAsync(source,
             "SELECT last_error FROM platform.compute_jobs WHERE job_id = $1", claim.JobId));
         // 重试闸门未到期：暂不可领取。
-        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.JobId == claim.JobId);
 
         await SqlAsync(source,
             "UPDATE platform.compute_jobs SET next_attempt_at = now() - interval '1 second' WHERE job_id = $1",
             claim.JobId);
-        var retry = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        var retry = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.JobId == claim.JobId);
         Assert.Equal(2, retry.Attempts);
 
@@ -141,13 +141,13 @@ public sealed class ComputeJobRepositoryTests
             retryable: true, TimeSpan.Zero, maxAttempts: 2));
         Assert.Equal("dead", await ScalarAsync(source,
             "SELECT status FROM platform.compute_jobs WHERE job_id = $1", claim.JobId));
-        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.JobId == claim.JobId);
 
         // 不可重试错误直接 dead。
         var other = await SeedPlayerAsync(source);
         await jobs.EnqueueAsync(other, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
-        var fatal = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        var fatal = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.PlayerId == other);
         Assert.True(await jobs.FailAsync(fatal.JobId, fatal.LeaseToken, "载荷非法",
             retryable: false, TimeSpan.Zero, MaxAttempts));
@@ -165,7 +165,7 @@ public sealed class ComputeJobRepositoryTests
         var second = await SeedPlayerAsync(source);
         await jobs.EnqueueAsync(first, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
         await jobs.EnqueueAsync(second, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
-        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero);
         Assert.Equal(2, claims.Count(entry => entry.PlayerId == first || entry.PlayerId == second));
         var token = Assert.Single(claims.Where(entry => entry.PlayerId == first || entry.PlayerId == second)
             .Select(entry => entry.LeaseToken).Distinct());
@@ -184,7 +184,7 @@ public sealed class ComputeJobRepositoryTests
         await SqlAsync(source,
             "UPDATE platform.compute_jobs SET next_attempt_at = now() - interval '1 second' WHERE player_id IN ($1, $2)",
             first, second);
-        var reclaims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        var reclaims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero);
         var scoped = Assert.Single(reclaims, entry => entry.PlayerId == first);
         Assert.Equal(1, await jobs.ReleaseLeaseAsync(scoped.LeaseToken, [scoped.JobId], "部分释放",
             TimeSpan.FromMinutes(1), MaxAttempts));
@@ -215,65 +215,120 @@ public sealed class ComputeJobRepositoryTests
             Assert.NotNull(await lockCommand.ExecuteScalarAsync());
         }
 
-        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero);
         Assert.DoesNotContain(claims, entry => entry.PlayerId == locked);
         Assert.Contains(claims, entry => entry.PlayerId == free);
         await transaction.RollbackAsync();
     }
 
-    /// <summary>冷挂机扫描只筛出离线、在窗口内、过宽限且无未完结任务/存活租约的玩家；
-    /// 模拟欠债窗口按提交头 last_simulated_at 判定（JOIN player_state_heads），投影活跃时间不替代。</summary>
+    /// <summary>离线挂机批算扫描：投影离线 + 有离线锚点 + 提交头欠债在收益边界内 +
+    /// 距上次结算满批算间隔（或已到边界终末批）+ 无未完结任务/存活租约/活跃会话/待消费收件箱。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
-    public async Task ScanColdPlayersFiltersPresenceWindowAndOpenJobs()
+    public async Task ScanColdPlayersFiltersPresenceAnchorAndBatchInterval()
     {
         var (source, jobs) = await OpenRepositoryAsync();
-        var minIdle = TimeSpan.FromMinutes(5);
-        var window = TimeSpan.FromHours(48);
+        var batchInterval = TimeSpan.FromHours(1);
         var now = DateTimeOffset.UtcNow;
 
         var eligible = await SeedPlayerAsync(source);
-        var online = await SeedPlayerAsync(source);
-        var tooOld = await SeedPlayerAsync(source);
         var tooFresh = await SeedPlayerAsync(source);
+        var terminal = await SeedPlayerAsync(source);
+        var capped = await SeedPlayerAsync(source);
+        var online = await SeedPlayerAsync(source);
         var busy = await SeedPlayerAsync(source);
         var leased = await SeedPlayerAsync(source);
+        var inSession = await SeedPlayerAsync(source);
+        var hasInbox = await SeedPlayerAsync(source);
+        var noAnchor = await SeedPlayerAsync(source);
         var headless = await SeedPlayerAsync(source);
-        var simTooOld = await SeedPlayerAsync(source);
-        var simTooFresh = await SeedPlayerAsync(source);
-        var seeded = new HashSet<Guid> { eligible, online, tooOld, tooFresh, busy, leased, headless, simTooOld, simTooFresh };
+        var seeded = new HashSet<Guid> { eligible, tooFresh, terminal, capped, online, busy, leased, inSession, hasInbox, noAnchor, headless };
 
-        await UpsertProjectionAsync(source, eligible, "offline", now.AddMinutes(-10));
-        await UpsertProjectionAsync(source, online, "online", now.AddMinutes(-10));
-        await UpsertProjectionAsync(source, tooOld, "offline", now.AddHours(-60));
-        await UpsertProjectionAsync(source, tooFresh, "offline", now.AddMinutes(-1));
-        await UpsertProjectionAsync(source, busy, "offline", now.AddMinutes(-10));
-        await UpsertProjectionAsync(source, leased, "offline", now.AddMinutes(-10));
-        await UpsertProjectionAsync(source, headless, "offline", now.AddMinutes(-10));
-        await UpsertProjectionAsync(source, simTooOld, "offline", now.AddMinutes(-10));
-        await UpsertProjectionAsync(source, simTooFresh, "offline", now.AddMinutes(-10));
+        // eligible：锚点 now-3h、距上次结算 2h（满批算间隔）→ 选中。
+        await UpsertProjectionAsync(source, eligible, "offline", now.AddHours(-3), now.AddMinutes(-30));
+        // tooFresh：距上次结算 30min（不足批算间隔且未到边界）→ 不选。
+        await UpsertProjectionAsync(source, tooFresh, "offline", now.AddHours(-3), now.AddMinutes(-30));
+        // terminal：锚点 now-49h → 边界 now-1h 已过，欠债仍在（last_sim now-90min < 边界）→ 终末批选中。
+        await UpsertProjectionAsync(source, terminal, "offline", now.AddHours(-49), now.AddHours(-49));
+        // capped：last_sim 已 ≥ 锚点+48h → 无收益欠债，不选。
+        await UpsertProjectionAsync(source, capped, "offline", now.AddHours(-50), now.AddHours(-50));
+        // online：在线位不参与离线批算。
+        await UpsertProjectionAsync(source, online, "online", null, now.AddMinutes(-10));
+        // busy/leased/inSession/hasInbox：未完结任务、存活运行时租约、活跃会话成员、待消费收件箱各挡一。
+        await UpsertProjectionAsync(source, busy, "offline", now.AddHours(-3), now.AddMinutes(-30));
+        await UpsertProjectionAsync(source, leased, "offline", now.AddHours(-3), now.AddMinutes(-30));
+        await UpsertProjectionAsync(source, inSession, "offline", now.AddHours(-3), now.AddMinutes(-30));
+        await UpsertProjectionAsync(source, hasInbox, "offline", now.AddHours(-3), now.AddMinutes(-30));
+        // noAnchor：离线但缺锚点（v30 遗留投影）→ 不选。
+        await UpsertProjectionAsync(source, noAnchor, "offline", null, now.AddMinutes(-30));
+        // headless：有投影无提交头，JOIN 即排除。
+        await UpsertProjectionAsync(source, headless, "offline", now.AddHours(-3), now.AddMinutes(-30));
 
-        // 提交头 last_simulated_at 才是补算窗口口径：simTooOld/simTooFresh 活跃投影在窗内但模拟时间出窗，必须被 SQL 排除。
-        await InsertHeadAsync(source, eligible, now.AddMinutes(-10));
-        await InsertHeadAsync(source, online, now.AddMinutes(-10));
-        await InsertHeadAsync(source, tooOld, now.AddHours(-60));
-        await InsertHeadAsync(source, tooFresh, now.AddMinutes(-10));
-        await InsertHeadAsync(source, busy, now.AddMinutes(-10));
-        await InsertHeadAsync(source, leased, now.AddMinutes(-10));
-        await InsertHeadAsync(source, simTooOld, now.AddHours(-60));
-        await InsertHeadAsync(source, simTooFresh, now.AddMinutes(-1));
+        await InsertHeadAsync(source, eligible, now.AddHours(-2));
+        await InsertHeadAsync(source, tooFresh, now.AddMinutes(-30));
+        await InsertHeadAsync(source, terminal, now.AddMinutes(-90));
+        await InsertHeadAsync(source, capped, now.AddHours(-1));
+        await InsertHeadAsync(source, online, now.AddHours(-2));
+        await InsertHeadAsync(source, busy, now.AddHours(-2));
+        await InsertHeadAsync(source, leased, now.AddHours(-2));
+        await InsertHeadAsync(source, inSession, now.AddHours(-2));
+        await InsertHeadAsync(source, hasInbox, now.AddHours(-2));
+        await InsertHeadAsync(source, noAnchor, now.AddHours(-2));
 
-        // busy 已有未完结任务；leased 仍被运行时实例持有。
+        // busy 已有未完结任务；leased 仍被运行时实例持有；inSession 在活跃会话名册；
+        // hasInbox 有待消费结算行（需一条会话行供外键）。
         await jobs.EnqueueAsync(busy, now.AddMinutes(-1), new byte[] { 1 });
         await SqlAsync(source,
             "INSERT INTO game.player_runtime_leases VALUES ($1, $2, now() + interval '5 minutes', now())",
             leased, Guid.NewGuid());
+        var sessionId = $"scan-test-{Guid.NewGuid():N}";
+        var spec = $$"""{"actionId":"action.test","members":[{"playerId":"{{inSession}}"}]}""";
+        await SqlAsync(source,
+            "INSERT INTO social.party_sessions(session_id,party_id,spec,started_at) VALUES ($1,$2,$3::jsonb,$4)",
+            sessionId, Guid.NewGuid(), spec, now.AddMinutes(-10));
+        await SqlAsync(source,
+            "INSERT INTO social.party_session_inbox(session_id,player_id,sequence,payload,created_at) VALUES ($1,$2,1,'{}'::jsonb,$3)",
+            sessionId, hasInbox, now.AddMinutes(-5));
 
-        var candidates = await jobs.ScanColdPlayersAsync(minIdle, window, 64);
+        var candidates = await jobs.ScanColdPlayersAsync(batchInterval, 64);
         var picked = candidates.Select(candidate => candidate.PlayerId).ToHashSet();
         Assert.Contains(eligible, picked);
-        Assert.Equal(now.AddMinutes(-10), Assert.Single(candidates, c => c.PlayerId == eligible).LastSimulatedAt, TimeSpan.FromSeconds(5));
-        Assert.DoesNotContain(picked, id => seeded.Contains(id) && id != eligible);
+        Assert.Contains(terminal, picked);
+        Assert.Equal(now.AddHours(-3), Assert.Single(candidates, c => c.PlayerId == eligible).OfflineSince, TimeSpan.FromSeconds(5));
+        Assert.Equal(now.AddHours(-2), Assert.Single(candidates, c => c.PlayerId == eligible).LastSimulatedAt, TimeSpan.FromSeconds(5));
+        Assert.DoesNotContain(picked, id => seeded.Contains(id) && id != eligible && id != terminal);
+    }
+
+    /// <summary>领取的 pending 门槛：不满 minPendingAge 的新 pending 不领，老 pending 领，
+    /// 过期租约孤儿行不受门槛影响；零门槛即领（本地执行器口径）。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ClaimDueHonorsMinPendingAge()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var fresh = await SeedPlayerAsync(source);
+        var aged = await SeedPlayerAsync(source);
+        var orphan = await SeedPlayerAsync(source);
+        // orphan 先单独入队领取（此刻库内只有它到期），再拨过期租约制造失联孤儿行；
+        // 零门槛领取会把同期 pending 一并租走，必须在 fresh/aged 入队前完成。
+        await jobs.EnqueueAsync(orphan, DateTimeOffset.UtcNow.AddMinutes(-10), new byte[] { 1 });
+        var lease = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
+            entry => entry.PlayerId == orphan);
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET lease_until = now() - interval '1 second' WHERE job_id = $1",
+            lease.JobId);
+        await jobs.EnqueueAsync(fresh, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        await jobs.EnqueueAsync(aged, DateTimeOffset.UtcNow.AddMinutes(-10), new byte[] { 1 });
+
+        // 溢出阈值 5 分钟：fresh 的 target_time 距今仅 1 分钟不领；aged 与孤儿行照领。
+        var nodeClaims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5));
+        Assert.DoesNotContain(nodeClaims, entry => entry.PlayerId == fresh);
+        Assert.Contains(nodeClaims, entry => entry.PlayerId == aged);
+        Assert.Contains(nodeClaims, entry => entry.JobId == lease.JobId);
+
+        // 零门槛（本地执行器）：剩余 fresh 立即领取。
+        var localClaims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero);
+        Assert.Contains(localClaims, entry => entry.PlayerId == fresh);
     }
 
     /// <summary>积压快照必须按状态聚合：pending/due/leased/终态计数与最老积压年龄。</summary>
@@ -296,7 +351,7 @@ public sealed class ComputeJobRepositoryTests
         var dueBefore = before.PendingDue;
         var pendingBefore = before.Pending;
 
-        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.PlayerId == due);
         var after = await jobs.GetBacklogAsync();
         Assert.Equal(pendingBefore - 1, after.Pending);
@@ -313,7 +368,7 @@ public sealed class ComputeJobRepositoryTests
 
         // 不可重试失败进入 dead 计数。
         await jobs.EnqueueAsync(due, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
-        var fatal = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+        var fatal = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
             entry => entry.PlayerId == due);
         Assert.True(await jobs.FailAsync(fatal.JobId, fatal.LeaseToken, "载荷非法",
             retryable: false, TimeSpan.Zero, MaxAttempts));
@@ -355,12 +410,17 @@ public sealed class ComputeJobRepositoryTests
     }
 
     private static Task UpsertProjectionAsync(
-        NpgsqlDataSource source, Guid playerId, string presence, DateTimeOffset lastActiveAt) =>
+        NpgsqlDataSource source, Guid playerId, string presence,
+        DateTimeOffset? offlineSince, DateTimeOffset lastActiveAt) =>
         SqlAsync(source, """
             INSERT INTO game.player_projection
-                (player_id, realm_rank, current_node_id, presence, last_active_at, projection_version, updated_at)
-            VALUES ($1, 0, 'node.test', $2, $3, 1, now())
-            """, playerId, presence, lastActiveAt);
+                (player_id, realm_rank, current_node_id, presence, offline_since, last_active_at, projection_version, updated_at)
+            VALUES ($1, 0, 'node.test', $2, $3, $4, 1, now())
+            ON CONFLICT (player_id) DO UPDATE SET
+                presence = EXCLUDED.presence, offline_since = EXCLUDED.offline_since,
+                last_active_at = EXCLUDED.last_active_at,
+                projection_version = game.player_projection.projection_version + 1, updated_at = now()
+            """, playerId, presence, (object?)offlineSince ?? DBNull.Value, lastActiveAt);
 
     private static Task InsertHeadAsync(
         NpgsqlDataSource source, Guid playerId, DateTimeOffset lastSimulatedAt) =>

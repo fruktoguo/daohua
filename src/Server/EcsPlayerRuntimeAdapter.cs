@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DaoHua.Ecs;
+using Domain.Combat;
 using Domain.Common;
 using Domain.Economy;
 using Domain.GameData;
@@ -153,6 +154,36 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
     }
 
+    /// <summary>
+    /// 真实连接建立（WebSocket 握手）：玩家门内装载（含离线补算）后把在线状态置为 Online
+    /// 并清空离线锚点，刷新驻留快照与已发布版本滑窗；与 LoadAsync 同样经玩家 gate 串行。
+    /// </summary>
+    public async ValueTask<PlayerRuntimeSnapshot> AttachConnectionAsync(Guid playerId, CancellationToken cancellationToken = default)
+    {
+        var notifications = new List<RuntimeNotification>();
+        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var snapshot = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
+            if (snapshot.State.Presence != PresenceState.Online)
+            {
+                ecs.SetPresence(playerId, PresenceState.Online, _simulationClock.UtcNow);
+                TrackDirty(playerId);
+                snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+                _loaded[playerId] = snapshot;
+                _publishedVersions.GetOrAdd(playerId, static _ => new RecentPublished()).Record(snapshot.StateVersion);
+            }
+            return snapshot;
+        }
+        finally
+        {
+            gate.Release();
+            await EmitNotificationsAsync(notifications).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>读取已加载玩家的最新快照；未加载返回 null（不触发装载）。</summary>
     public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) =>
         _loaded.TryGetValue(playerId, out var snapshot) ? snapshot : null;
@@ -207,8 +238,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 var advanced = ToSnapshot(ecs.ExportSnapshot(playerId));
                 logs = (await CommitSimulationAsync(playerId, before, advanced, null, loadDirtyBefore, cancellationToken).ConfigureAwait(false)).Logs;
             }
-            // 离线收益先完成事务，随后再转在线；未提交的加载结果不能进入日志回放。
-            ecs.SetPresence(playerId, PresenceState.Online);
+            // 离线收益先完成事务；装载本身不改变在线状态，上线由 AttachConnectionAsync 驱动。
             TrackDirty(playerId);
             var snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
             _loaded[playerId] = snapshot;
@@ -836,7 +866,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             "offline" => PresenceState.Offline,
                             _ => throw new DomainException(DomainErrorCode.InvalidArgument, "Presence 状态无效。")
                         };
-                        ecs.SetPresence(playerId, state);
+                        ecs.SetPresence(playerId, state, _simulationClock.UtcNow);
                         break;
                     }
                     case "tutorial.skip":
@@ -1064,6 +1094,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             foreach (var playerId in ids)
                 if (target > before[playerId].LastSimulatedAt)
                     await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+            // 斗法撮合（总纲 §7.10.1）：推进完成后的同一 gate 窗口内配对等待者，
+            // 预约/镜像/挂载全部落在本轮提交窗口，快照推送复用下方既有提交流程。
+            MatchDuelsOwned(target, ids, notifications);
             foreach (var playerId in ids)
             {
                 var after = ToSnapshot(ecs.ExportSnapshot(playerId));
@@ -1116,8 +1149,133 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         if (failures.Count > 0) throw new AggregateException("会话或成员结算失败，健康玩家已完成当批推进。", failures);
     }
 
+    /// <summary>
+    /// 斗法撮合（总纲 §7.10.1）：在已加载玩家中给处于匹配等待相位的寻求者配实力 ±PowerBandRatio
+    /// 带内的候选，双方先预约后冻结镜像、一次性推演确定性剧本并各自挂载回放；
+    /// 任一步失败全部回滚，无候选时退出等待静默转正常波次。仅在全体玩家 gate 持有的推进窗口内调用。
+    /// </summary>
+    private void MatchDuelsOwned(DateTimeOffset target, IReadOnlyList<Guid> ids, List<RuntimeNotification> notifications)
+    {
+        var nowUnix = target.ToUnixTimeMilliseconds() / 1000d;
+        var band = gameData.Duel.PowerBandRatio;
+        // 候选池先行快照：门禁内 MutatePlayer 的原子判据仍是最终裁决，池只承担初选与随机。
+        var candidates = new List<(Guid PlayerId, double Power)>();
+        foreach (var id in ids)
+        {
+            (Guid PlayerId, double Power)? info = null;
+            ecs.MutatePlayer(id, aggregate =>
+            {
+                if (aggregate.CanJoinDuel(nowUnix)) info = (id, aggregate.DuelPower(gameData));
+            });
+            if (info is { } entry) candidates.Add(entry);
+        }
+        if (candidates.Count == 0) return;
+        foreach (var seekerId in ids)
+        {
+            double seekerPower = 0;
+            var pending = false;
+            ecs.MutatePlayer(seekerId, aggregate =>
+            {
+                if (aggregate.IsDuelPending) { pending = true; seekerPower = aggregate.DuelPower(gameData); }
+            });
+            if (!pending) continue;
+            var pool = candidates
+                .Where(candidate => candidate.PlayerId != seekerId
+                    && candidate.Power >= seekerPower * (1 - band) && candidate.Power <= seekerPower * (1 + band))
+                .ToList();
+            if (pool.Count == 0)
+            {
+                AbortDuelSeekOwned(seekerId);
+                continue;
+            }
+            var picked = pool[Random.Shared.Next(pool.Count)];
+            var duelId = Guid.NewGuid();
+            DuelCombatant? initiatorMirror = null;
+            ecs.MutatePlayer(seekerId, aggregate =>
+            {
+                if (aggregate.TryReserveDuel(duelId, nowUnix)) initiatorMirror = aggregate.BuildDuelMirror(gameData);
+            });
+            if (initiatorMirror is null)
+            {
+                AbortDuelSeekOwned(seekerId);
+                continue;
+            }
+            DuelCombatant? defenderMirror = null;
+            ecs.MutatePlayer(picked.PlayerId, aggregate =>
+            {
+                if (aggregate.TryReserveDuel(duelId, nowUnix)) defenderMirror = aggregate.BuildDuelMirror(gameData);
+            });
+            if (defenderMirror is null)
+            {
+                ecs.MutatePlayer(seekerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                AbortDuelSeekOwned(seekerId);
+                continue;
+            }
+            var seed = BitConverter.ToInt64(SHA256.HashData(duelId.ToByteArray()));
+            var script = DuelScriptEngine.Resolve(initiatorMirror, defenderMirror, seed, gameData.Duel);
+            var duelIdText = duelId.ToString("N");
+            var initiatorAttached = AttachDuelOwned(seekerId, duelId,
+                DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: true));
+            if (!initiatorAttached)
+            {
+                ecs.MutatePlayer(seekerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                ecs.MutatePlayer(picked.PlayerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                AbortDuelSeekOwned(seekerId);
+                continue;
+            }
+            var defenderAttached = AttachDuelOwned(picked.PlayerId, duelId,
+                DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: false));
+            if (!defenderAttached)
+            {
+                ecs.MutatePlayer(picked.PlayerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                ecs.MutatePlayer(seekerId, aggregate => aggregate.DetachDuel(duelId));
+                continue;
+            }
+            // 应战方挂载成功即退出候选池：斗法期间不能被第二场撮合重复拉走。
+            candidates.RemoveAll(candidate => candidate.PlayerId == picked.PlayerId);
+            // 撮合成立才补「斗法遭遇」日志：匹配等待与静默回退阶段不下发提示（总纲 §7.10.2）。
+            notifications.Add(new RuntimeNotification(seekerId,
+                [AppendDuelMatchedLog(seekerId, defenderMirror.DisplayName)]));
+            notifications.Add(new RuntimeNotification(picked.PlayerId,
+                [AppendDuelMatchedLog(picked.PlayerId, initiatorMirror.DisplayName)]));
+        }
+    }
+
+    /// <summary>挂载斗法回放并推进版本（撮合挂载必须产生快照推送）；领域校验失败返回 false 供回滚。</summary>
+    private bool AttachDuelOwned(Guid playerId, Guid duelId, DuelPlaybackState playback)
+    {
+        try
+        {
+            ecs.MutatePlayer(playerId, aggregate =>
+            {
+                aggregate.AttachDuel(playback);
+                aggregate.Touch(PlayerSectionKind.ActionQueue);
+            });
+            return true;
+        }
+        catch (DomainException exception)
+        {
+            _logger.LogWarning(exception, "斗法回放挂载失败，预约侧将回滚 duelId={DuelId} player={PlayerId}", duelId, playerId);
+            return false;
+        }
+    }
+
+    /// <summary>撮合无可用对手：退出匹配等待相位、本波转正常怪物波次；仅标脏不推版本（无玩家可见差异）。</summary>
+    private void AbortDuelSeekOwned(Guid playerId)
+        => ecs.MutatePlayer(playerId, aggregate => aggregate.AbortDuelSeek());
+
+    /// <summary>撮合成功通知：以玩家战报日志通道写一条「斗法遭遇」；缓冲不存在时跳过（与旧口径一致）。</summary>
+    private LogEventDto AppendDuelMatchedLog(Guid playerId, string opponentName)
+    {
+        var buffer = _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity));
+        var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            $"斗法遭遇：{opponentName} 与你狭路相逢。", 1, "system");
+        buffer.Append(logEvent);
+        return logEvent;
+    }
+
     /// <inheritdoc />
-    public async ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
+    public async ValueTask RemoveAsync(Guid playerId, bool flush, DateTimeOffset? offlineSince, CancellationToken cancellationToken = default)
     {
         if (!_loaded.TryGetValue(playerId, out var snapshot)) return;
         var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
@@ -1130,7 +1288,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false);
             if (flush)
             {
-                if (snapshot.State.Presence == PresenceState.Online) ecs.SetPresence(playerId, PresenceState.Offline);
+                if (snapshot.State.Presence == PresenceState.Online)
+                    ecs.SetPresence(playerId, PresenceState.Offline, offlineSince ?? _simulationClock.UtcNow);
                 ecs.MarkDirty(playerId, PlayerSectionKind.Progression);
                 var offline = ToSnapshot(ecs.ExportSnapshot(playerId));
                 _loaded[playerId] = snapshot = offline;
@@ -1242,7 +1401,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         if (marketRuntime is not null) marketRuntime.WalletCredited -= NotifyMarketWalletCredited;
         foreach (var playerId in _loaded.Keys.ToArray())
         {
-            try { await RemoveAsync(playerId, true, CancellationToken.None).ConfigureAwait(false); }
+            try { await RemoveAsync(playerId, true, null, CancellationToken.None).ConfigureAwait(false); }
             catch (Exception exception) { _logger.LogError(exception, "ECS 玩家运行时关闭时释放失败 player={PlayerId}", playerId); }
         }
         _disposed = true;

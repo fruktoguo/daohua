@@ -9,6 +9,7 @@ using Server.Clean;
 using Server.Clean.Social;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Server.Tests;
@@ -270,6 +271,52 @@ public sealed class ActionParticipationRuntimeTests
         Assert.Equal(checkpoint, await fixture.Store.LoadAsync(oldSpec.SessionId));
         foreach (var member in fixture.Members)
             Assert.Single(await fixture.Store.LoadPendingAsync(member));
+    }
+
+    /// <summary>旧版检查点缺少 pvpEnabled/buffs 等新增可缺省字段：规范化比较不算输入漂移，缺失携带态按空恢复推进。</summary>
+    [Fact]
+    public async Task CheckpointMissingNewOptionalFieldsAdvancesWithDefaults()
+    {
+        var fixture = new Fixture();
+        var checkpointAt = StartedAt.AddSeconds(10);
+        var document = ActionParticipationSessionEngine.Create(fixture.Spec, fixture.Catalog).Export()
+            with { AdvancedAtUnixSeconds = checkpointAt.ToUnixTimeMilliseconds() / 1000d };
+        // 模拟新增字段写入前的持久化形态：冻结输入与内嵌 spec 无 pvpEnabled，检查点无 buffs。
+        var specNode = JsonNode.Parse(JsonSerializer.Serialize(fixture.Spec, PersistenceJson.Options))!.AsObject();
+        specNode.Remove("pvpEnabled");
+        var documentNode = JsonNode.Parse(JsonSerializer.Serialize(document, PersistenceJson.Options))!.AsObject();
+        documentNode.Remove("buffs");
+        documentNode["spec"]!.AsObject().Remove("pvpEnabled");
+        var before = new ActionParticipationSessionRecord(fixture.Spec.SessionId, Guid.NewGuid(),
+            specNode.ToJsonString(), documentNode.ToJsonString(), 4, checkpointAt);
+        await fixture.Store.CreateOrInitializeAsync(before);
+
+        var target = checkpointAt.AddSeconds(30);
+        var deliveries = await fixture.Runtime.AdvanceForMemberAsync(fixture.Members[0], target);
+        var checkpoint = (await fixture.Store.LoadAsync(fixture.Spec.SessionId))!;
+        Assert.Equal(before.Version + 1, checkpoint.Version);
+        Assert.Equal(target, checkpoint.LastSimulatedAt);
+        var resumed = JsonSerializer.Deserialize<ActionParticipationSessionDocument>(checkpoint.StateJson, PersistenceJson.Options)!;
+        Assert.NotNull(resumed.Buffs);
+        Assert.Single(deliveries);
+    }
+
+    /// <summary>同一会话在旧版冻结输入上重复开场：规范化比较一致的输入不算冲突。</summary>
+    [Fact]
+    public async Task CreateOverRecordMissingNewOptionalFieldsDoesNotConflict()
+    {
+        var fixture = new Fixture();
+        var specNode = JsonNode.Parse(JsonSerializer.Serialize(fixture.Spec, PersistenceJson.Options))!.AsObject();
+        specNode.Remove("pvpEnabled");
+        var documentNode = JsonNode.Parse(JsonSerializer.Serialize(
+            ActionParticipationSessionEngine.Create(fixture.Spec, fixture.Catalog).Export(), PersistenceJson.Options))!.AsObject();
+        documentNode["spec"]!.AsObject().Remove("pvpEnabled");
+        var partyId = Guid.NewGuid();
+        await fixture.Store.CreateOrInitializeAsync(new ActionParticipationSessionRecord(fixture.Spec.SessionId,
+            partyId, specNode.ToJsonString(), documentNode.ToJsonString(), 0, StartedAt));
+
+        await fixture.Runtime.CreateAsync(partyId, fixture.Spec);
+        Assert.True(fixture.Runtime.RequiresReconciliation(fixture.Members[0]));
     }
 
     /// <summary>单名在线成员也唤醒唯一战斗自然边界；全员离线后既不推进也不保留唤醒时刻。</summary>

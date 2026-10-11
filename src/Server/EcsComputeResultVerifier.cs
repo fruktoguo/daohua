@@ -29,13 +29,7 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
                 || candidate.TargetStateVersion < candidate.SourceStateVersion)
                 return ComputeVerificationResult.Rejected("结果版本与冻结任务不一致。");
 
-            var bundle = DecodeFrozenBundle(request);
-            var balances = request.AssetBalances is { Count: > 0 } rows
-                ? rows.Select(row => new AssetBalance(
-                    new PlayerId(request.PlayerId), new AssetKey(new ItemId(row.AssetId), row.Variant), row.Quantity, row.Version)).ToArray()
-                : null;
-            var target = DateTimeOffset.FromUnixTimeMilliseconds(request.TargetUnixMilliseconds);
-            var replay = await _engine.AdvanceAsync(bundle, balances, target, target, cancellationToken).ConfigureAwait(false);
+            var replay = await ReplayAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (replay.SourceStateVersion != candidate.SourceStateVersion
                 || replay.TargetStateVersion != candidate.TargetStateVersion
@@ -66,6 +60,50 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
         {
             return ComputeVerificationResult.Rejected($"独立重演拒绝：{exception.Message}");
         }
+    }
+
+    /// <summary>
+    /// 主服本地执行入口（§14.4）：独立重演产物本身即可信结果，作为写回依据直接返回；
+    /// 不再携带候选比较。解码/领域异常与 <see cref="VerifyAsync"/> 同口径转 Rejected。
+    /// </summary>
+    public async ValueTask<ComputeVerificationResult> ExecuteAsync(
+        ComputeAdvanceJobRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var replay = await ReplayAsync(request, cancellationToken).ConfigureAwait(false);
+            return new ComputeVerificationResult(
+                true,
+                null,
+                replay.Sections,
+                MergeReplayAssetDeltas(request.PlayerId, replay.AssetDeltas),
+                replay.SourceStateVersion,
+                replay.TargetStateVersion,
+                replay.LastSimulatedAt);
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidDataException or JsonException
+            or ArgumentException or DomainException or NotSupportedException)
+        {
+            return ComputeVerificationResult.Rejected($"本地执行重演拒绝：{exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 独立重演公共路径：解码冻结 bundle + 还原钱包快照 + 在独立 ECS 世界推进到目标时刻。
+    /// 验证与本地执行共用同一 <see cref="DeterministicCatchUpEngine"/>，其内部门串行即可。
+    /// </summary>
+    private async ValueTask<DeterministicCatchUpResult> ReplayAsync(
+        ComputeAdvanceJobRequest request, CancellationToken cancellationToken)
+    {
+        var bundle = DecodeFrozenBundle(request);
+        var balances = request.AssetBalances is { Count: > 0 } rows
+            ? rows.Select(row => new AssetBalance(
+                new PlayerId(request.PlayerId), new AssetKey(new ItemId(row.AssetId), row.Variant), row.Quantity, row.Version)).ToArray()
+            : null;
+        var target = DateTimeOffset.FromUnixTimeMilliseconds(request.TargetUnixMilliseconds);
+        return await _engine.AdvanceAsync(bundle, balances, target, target, cancellationToken).ConfigureAwait(false);
     }
 
     private static Server.Clean.AssetDelta[] MergeReplayAssetDeltas(

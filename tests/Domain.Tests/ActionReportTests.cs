@@ -97,14 +97,14 @@ public sealed class ActionReportTests
         Assert.Equal(10, player.Duel.DailyReport.Experience);
 
         // 转入离线重置离线账本后推进：收益同时进离线账本与每日账本。
-        player.SetPresence(PresenceState.Offline);
+        player.SetPresence(PresenceState.Offline, Baseline);
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog.Actions);
         Assert.Equal(10, player.Duel.OfflineReport.Experience);
         Assert.Equal(20, player.Duel.DailyReport.Experience);
 
         // 再次离线会话重置离线账本。
-        player.SetPresence(PresenceState.Online);
-        player.SetPresence(PresenceState.Offline);
+        player.SetPresence(PresenceState.Online, Baseline);
+        player.SetPresence(PresenceState.Offline, Baseline);
         Assert.Equal(0, player.Duel.OfflineReport.Experience);
     }
 
@@ -216,7 +216,7 @@ public sealed class ActionReportTests
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("甲");
         var action = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
-        player.SetPresence(PresenceState.Offline);
+        player.SetPresence(PresenceState.Offline, Baseline);
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog.Actions);
 
         var restored = PlayerAggregate.Restore(player.ExportState());

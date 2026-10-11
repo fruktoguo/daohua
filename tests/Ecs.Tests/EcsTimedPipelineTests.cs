@@ -35,6 +35,7 @@ public sealed class EcsTimedPipelineTests
         });
         var player = PlayerAggregate.Create(new(Guid.Parse("10000000-0000-4000-8000-000000000090")),
             new(Guid.Parse("20000000-0000-4000-8000-000000000090")), "阶段回归", from, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, from);
         player.ConfigureAutoUse("exploration", 0, incense.Value, 1, true);
         player.ConfigureAutoUse("alchemy", 0, flame.Value, 1, true);
         player.Buffs.Active.Add(new("test.expiry", from.AddSeconds(3).ToUnixTimeSeconds()));

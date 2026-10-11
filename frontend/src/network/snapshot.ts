@@ -18,6 +18,7 @@ import type {
   CharacterVisual,
   CombatAbilitySlot,
   CombatAttributes,
+  CombatBuffEntry,
   CombatLoadout,
   CombatResourceState,
   CombatTrigger,
@@ -44,7 +45,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 24
+const SNAPSHOT_SCHEMA_VERSION = 31
 
 type JsonObject = Record<string, unknown>
 
@@ -491,6 +492,33 @@ function mapEquippedItems(value: unknown, label: string): EquippedItem[] | null 
   })
 }
 
+/**
+ * 战内 Buff 数组解码：到期时刻为战斗时钟秒（与 battleElapsedSeconds 同域），
+ * 效果字段允许负值（隐身等减益），仅做有限性兜底不做取值域校验。
+ */
+function mapCombatBuffs(value: unknown, label: string): CombatBuffEntry[] | null {
+  if (value === null || value === undefined) return null
+  return arrayValue(value).map((entry, index) => {
+    const buff = object(entry)
+    const at = `${label}[${index}]`
+    return {
+      buffId: identifierValue(buff.buffId, `${at}.buffId`),
+      name: stringValue(buff.name) || identifierValue(buff.buffId, `${at}.buffId`),
+      stacks: finiteNumber(buff.stacks, `${at}.stacks`),
+      expiresAtSeconds: finiteNumber(buff.expiresAtSeconds, `${at}.expiresAtSeconds`),
+      hpRegen: numberValue(buff.hpRegen, 0),
+      mpRegen: numberValue(buff.mpRegen, 0),
+      attackSpeedPoints: numberValue(buff.attackSpeedPoints, 0),
+      damageAbsorptionPoints: numberValue(buff.damageAbsorptionPoints, 0),
+      threatPoints: numberValue(buff.threatPoints, 0),
+      damageBonusPoints: numberValue(buff.damageBonusPoints, 0),
+      threatPerSecondMaxHpPoints: numberValue(buff.threatPerSecondMaxHpPoints, 0),
+      hpRegenPostRatio: numberValue(buff.hpRegenPostRatio, 0),
+      mpRegenPostRatio: numberValue(buff.mpRegenPostRatio, 0),
+    }
+  })
+}
+
 function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const row = object(value)
   if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的战斗远征载荷无效。`)
@@ -555,6 +583,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
         attributes: enemy.attributes === null || enemy.attributes === undefined
           ? null
           : mapCombatAttributes(enemy.attributes, `${label}.attributes`),
+        buffs: mapCombatBuffs(enemy.buffs, `${label}.buffs`),
       }
     })
   const primary = enemies.find(enemy => enemy.hitpoints > 0) ?? enemies[0] ?? null
@@ -594,6 +623,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
           // 开打冻结功法槽与已穿戴装备与 attributes 同帧一次性交付，未观察时缺省。
           skills: mapUnitSkillSlots(ally.skills, `${label}.skills`),
           equipment: mapEquippedItems(ally.equipment, `${label}.equipment`),
+          buffs: mapCombatBuffs(ally.buffs, `${label}.buffs`),
         }
       })
   const selfIndex = row.selfIndex === null || row.selfIndex === undefined
@@ -617,6 +647,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     playerRespawnDurationSeconds,
     waveNumber,
     playerThreat,
+    playerBuffs: mapCombatBuffs(row.playerBuffs, `行动 ${actionId} 的 playerBuffs`),
     encounterId,
     duel: mapExpeditionDuel(row.duel, actionId),
     allies,

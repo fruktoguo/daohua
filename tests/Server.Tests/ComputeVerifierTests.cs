@@ -92,7 +92,7 @@ public sealed class ComputeVerifierTests
         var playerId = Guid.NewGuid();
         var accountId = Guid.NewGuid();
         var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId), "验证者", Baseline, Catalog.Fingerprint);
-        player.SetPresence(PresenceState.Offline);
+        player.SetPresence(PresenceState.Offline, Baseline);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 1), Baseline, Catalog.Actions);
         var writes = SectionCodec.EncodeAggregate(player, Baseline);
         var sections = writes.ToDictionary(

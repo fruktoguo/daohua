@@ -28,11 +28,11 @@ public sealed record ComputeJobClaim(
     int Attempts,
     Guid LeaseToken);
 
-/// <summary>冷挂机扫描选中的离线玩家候选。</summary>
+/// <summary>离线挂机批算扫描选中的玩家候选。</summary>
 /// <param name="PlayerId">玩家唯一标识。</param>
-/// <param name="LastActiveAt">投影中的最近活跃时刻。</param>
-/// <param name="LastSimulatedAt">提交头中的已结算模拟时刻；扫描 SQL 的窗口过滤口径。</param>
-public sealed record ColdPlayerCandidate(Guid PlayerId, DateTimeOffset LastActiveAt, DateTimeOffset LastSimulatedAt);
+/// <param name="OfflineSince">投影中的离线锚点；收益封顶边界取该值 + OfflineIdleLimit。</param>
+/// <param name="LastSimulatedAt">提交头中的已结算模拟时刻；批算欠债的判定口径。</param>
+public sealed record ColdPlayerCandidate(Guid PlayerId, DateTimeOffset OfflineSince, DateTimeOffset LastSimulatedAt);
 
 /// <summary>
 /// compute_jobs.output_payload 的持久化口径：完结任务的摘要证据。
@@ -185,15 +185,18 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
-    /// 原子领取到期任务：pending 且到点且过重试闸门的行，或租约已过期的 leased 孤儿行。
+    /// 原子领取到期任务：pending 行须到点且 pending 时长超过 minPendingAge（节点溢出阈值；
+    /// 本地执行器传 TimeSpan.Zero 即领），过重试闸门；租约已过期的 leased 孤儿行不受影响。
     /// </summary>
     public async ValueTask<IReadOnlyList<ComputeJobClaim>> ClaimDueAsync(
         int maxRows,
         TimeSpan lease,
+        TimeSpan minPendingAge,
         CancellationToken cancellationToken = default)
     {
         if (maxRows <= 0) return [];
         var now = DateTimeOffset.UtcNow;
+        var pendingCutoff = now.Subtract(minPendingAge);
         var leaseUntil = now.Add(lease);
         var leaseToken = Guid.NewGuid();
         var claimed = new List<ComputeJobClaim>(maxRows);
@@ -204,7 +207,7 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             WITH candidates AS (
                 SELECT job_id
                 FROM platform.compute_jobs
-                WHERE (status = 'pending' AND target_time <= $1
+                WHERE (status = 'pending' AND target_time <= $5
                        AND (next_attempt_at IS NULL OR next_attempt_at <= $1))
                    OR (status = 'leased' AND lease_until < $1)
                 ORDER BY target_time
@@ -222,6 +225,7 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add(new NpgsqlParameter { Value = maxRows });
         command.Parameters.Add(new NpgsqlParameter { Value = leaseUntil });
         command.Parameters.Add(new NpgsqlParameter { Value = leaseToken });
+        command.Parameters.Add(new NpgsqlParameter { Value = pendingCutoff });
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
             while (await reader.ReadAsync(cancellationToken))
@@ -380,15 +384,13 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
-    /// 从读模型投影筛选冷挂机候选：离线、最近活跃在封顶窗口内、已过断线宽限、
-    /// 未被任何运行时实例持有、且当前没有未完结任务。
-    /// JOIN player_state_heads 把 last_simulated_at 窗口过滤前移到扫描 SQL：
-    /// 只有提交头模拟欠债落在 [now-window, now-minIdle] 内的玩家才需要全量状态加载，
-    /// 已在收益封顶窗外或不足最小步长的玩家在扫描侧直接排除，不再为丢弃做全量 Load。
+    /// 从读模型投影筛选离线挂机批算候选：投影离线且携带离线锚点、提交头模拟欠债未到
+    /// 收益边界（offline_since + OfflineIdleLimit）、距上次结算已满批算间隔或已到边界
+    /// 仍有欠债（终末批）、未被运行时实例持有、无未完结任务、无活跃会话与待消费结算。
+    /// 批目标 = min(now, offline_since + 48h)：欠债推进只补到边界，不再越过。
     /// </summary>
     public async ValueTask<IReadOnlyList<ColdPlayerCandidate>> ScanColdPlayersAsync(
-        TimeSpan minIdle,
-        TimeSpan window,
+        TimeSpan batchInterval,
         int maxRows,
         CancellationToken cancellationToken = default)
     {
@@ -397,14 +399,13 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
         var result = new List<ColdPlayerCandidate>(maxRows);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT p.player_id, p.last_active_at, h.last_simulated_at
+            SELECT p.player_id, p.offline_since, h.last_simulated_at
             FROM game.player_projection p
             JOIN game.player_state_heads h ON h.player_id = p.player_id
             WHERE p.presence = 'offline'
-              AND p.last_active_at >= $2
-              AND p.last_active_at <= $3
-              AND h.last_simulated_at >= $2
-              AND h.last_simulated_at <= $3
+              AND p.offline_since IS NOT NULL
+              AND h.last_simulated_at < LEAST($1, p.offline_since + $2)
+              AND (h.last_simulated_at <= $1 - $3 OR p.offline_since + $2 <= $1)
               AND NOT EXISTS (
                   SELECT 1 FROM game.player_runtime_leases l
                   WHERE l.player_id = p.player_id AND l.lease_until > $1)
@@ -422,8 +423,8 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             LIMIT $4
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = now });
-        command.Parameters.Add(new NpgsqlParameter { Value = now - window });
-        command.Parameters.Add(new NpgsqlParameter { Value = now - minIdle });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Interval, Value = Domain.Player.PlayerLifecycleRules.OfflineIdleLimit });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Interval, Value = batchInterval });
         command.Parameters.Add(new NpgsqlParameter { Value = maxRows });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

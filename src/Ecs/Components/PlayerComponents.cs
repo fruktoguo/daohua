@@ -31,6 +31,8 @@ public sealed class PlayerIdentityComponent : YuoComponent
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>在线状态；转入 Offline 时由宿主重置离线账本并标脏 Duel 分段。</summary>
     public PresenceState Presence { get; set; } = PresenceState.Online;
+    /// <summary>离线锚点：最近一次由在线转为非在线状态的时刻；在线时为 null。</summary>
+    public DateTimeOffset? OfflineSinceAt { get; set; }
     /// <summary>组件持久化脏集合跨请求保留，由宿主成功入 durable queue 后确认。</summary>
     public HashSet<PlayerSectionKind> DirtySections { get; } = [];
     /// <summary>分段脏流水号：每次标脏单调递增（已脏分段再次触及也递增），

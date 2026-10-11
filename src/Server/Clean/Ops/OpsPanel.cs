@@ -399,8 +399,11 @@ public static class OpsPanel
                 pollIntervalMs = serverOptions.ComputePollInterval.TotalMilliseconds,
                 leaseSeconds = serverOptions.ComputeLease.TotalSeconds,
                 maxAttempts = serverOptions.ComputeMaxAttempts,
+                overflowAfterSeconds = serverOptions.ComputeOverflowAfter.TotalSeconds,
                 coldCatchUpIntervalSeconds = serverOptions.ColdCatchUpInterval.TotalSeconds,
-                coldCatchUpWindowHours = serverOptions.ColdCatchUpWindow.TotalHours
+                coldCatchUpBatchSize = serverOptions.ColdCatchUpBatchSize,
+                offlineBatchIntervalMinutes = serverOptions.OfflineBatchInterval.TotalMinutes,
+                offlineIdleLimitHours = Domain.Player.PlayerLifecycleRules.OfflineIdleLimit.TotalHours
             },
             antiMultiOpen = new
             {
@@ -453,7 +456,7 @@ public static class OpsPanel
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
             if (request.PlayerId == Guid.Empty)
                 return Results.BadRequest(new { code = "INVALID_PLAYER", message = "必须提供 playerId。" });
-            await players.RemoveAsync(request.PlayerId, request.Flush, cancellationToken);
+            await players.RemoveAsync(request.PlayerId, request.Flush, null, cancellationToken);
             Audit(loggerFactory, context, "unload", request.PlayerId);
             return Results.Ok(new { action = "unload", playerId = request.PlayerId, flushed = request.Flush });
         });

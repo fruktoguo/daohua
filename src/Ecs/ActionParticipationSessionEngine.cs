@@ -71,6 +71,7 @@ public sealed class ActionParticipationSessionEngine
             member.Resources.Manapoints = frozen.InitialManapoints;
             member.Resources.RegenCarrySeconds = frozen.RegenCarrySeconds;
             member.Combat.Skills = frozen.CombatSkills ?? PlayerCombatSkillState.Empty;
+            member.Combat.Buffs = frozen.CombatBuffs ?? PlayerCombatBuffState.Empty;
             member.Loadout.AbilitySlots.Clear();
             foreach (var skill in frozen.Skills)
             {
@@ -120,6 +121,7 @@ public sealed class ActionParticipationSessionEngine
         for (var i = 0; i < engine._members.Length; i++)
             engine._members[i].Resources.RegenCarrySeconds = document.MemberRegenCarrySeconds[i];
         engine.Canonical.Combat.Skills = document.Skills;
+        engine.Canonical.Combat.Buffs = document.Buffs ?? PlayerCombatBuffState.Empty;
         var stats = engine.Canonical.Duel.ReportFor(engine.Action.Id)!.CombatStats;
         foreach (var row in document.CombatStats) stats.Import(row);
         if (document.EndsAtUnixSeconds is null && document.Expedition.Phase == CombatExpeditionPhase.Combat)
@@ -157,12 +159,14 @@ public sealed class ActionParticipationSessionEngine
         var settlements = new ActionParticipationMemberSettlement[document.Spec.Members.Count];
         for (var i = 0; i < settlements.Length; i++)
         {
-            var view = ProjectExpedition(expedition, i, document.Skills);
+            var view = ProjectExpedition(expedition, i, document.Skills, document.Buffs);
             var skills = i == 0 ? document.Skills
                 : expedition.Allies!.First(ally => ally.MemberIndex == i).CombatSkills ?? PlayerCombatSkillState.Empty;
+            var buffs = i == 0 ? document.Buffs
+                : expedition.Allies!.First(ally => ally.MemberIndex == i).CombatBuffs ?? PlayerCombatBuffState.Empty;
             settlements[i] = new(document.Spec.SessionId, ended.Sequence,
                 new PlayerId(Guid.Parse(document.Spec.Members[i].PlayerId)), at, at,
-                view.PlayerHitpoints, view.PlayerManapoints, document.MemberRegenCarrySeconds[i], skills, view,
+                view.PlayerHitpoints, view.PlayerManapoints, document.MemberRegenCarrySeconds[i], skills, buffs, view,
                 view.Phase == CombatExpeditionPhase.Combat ? 0 : view.PhaseElapsedSeconds,
                 document.CompletedRepeats, [], [], [], ProjectStats(document.CombatStats, i),
                 EndsAtUnixSeconds: document.AdvancedAtUnixSeconds);
@@ -176,6 +180,7 @@ public sealed class ActionParticipationSessionEngine
             || !double.IsFinite(document.AdvancedAtUnixSeconds)
             || document.AdvancedAtUnixSeconds < document.Spec.StartedAtUnixSeconds || document.Sequence < 0
             || document.Expedition is not { IsValid: true, SelfIndex: 0 } || !document.Skills.IsValid
+            || (document.Buffs is not null && !document.Buffs.IsValid)
             || document.MemberRegenCarrySeconds is null || document.MemberRegenCarrySeconds.Count != document.Spec.Members.Count
             || document.MemberRegenCarrySeconds.Any(value => !double.IsFinite(value) || value < 0 || value >= 5)
             || !double.IsFinite(document.CompletedRepeats) || document.CompletedRepeats < 0
@@ -203,7 +208,8 @@ public sealed class ActionParticipationSessionEngine
             throw new DomainException(DomainErrorCode.InvalidArgument, "会话目标时间倒退或已经结束。");
         // 会话层按 5 秒窗口拆分，战斗边界消耗值必须与外层时间游标严格相等。
         var from = _advancedAt;
-        var cappedTarget = target > from.AddHours(48) ? from.AddHours(48) : target;
+        var cappedTarget = target > from.Add(PlayerLifecycleRules.OfflineIdleLimit)
+            ? from.Add(PlayerLifecycleRules.OfflineIdleLimit) : target;
         var cursor = from;
         while (cursor < cappedTarget)
         {
@@ -275,6 +281,7 @@ public sealed class ActionParticipationSessionEngine
                 expedition = expedition with { PlayerHitpoints = member.Resources.Hitpoints };
             results[i] = new(_spec.SessionId, _sequence, member.PlayerId, from, target,
                 member.Resources.Hitpoints, member.Resources.Manapoints, member.Resources.RegenCarrySeconds, member.Combat.Skills,
+                member.Combat.Buffs,
                 expedition, action.ProgressSeconds, action.CompletedRepeats, collector.Stats.ToArray(),
                 collector.Assets.Select(pair => new AssetDelta(member.PlayerId, pair.Key, pair.Value, "simulation")).ToArray(),
                 collector.Events.View.ToArray(), ProjectStats(canonicalStats, i), collector.Events.Dropped, _endsAt);
@@ -320,6 +327,7 @@ public sealed class ActionParticipationSessionEngine
             Canonical.Resources.Hitpoints = enteredBattle.Player.Hitpoints;
             Canonical.Resources.Manapoints = enteredBattle.Player.Manapoints;
             Canonical.Combat.Skills = PlayerCombatSkillState.FromCombatant(enteredBattle.Player, enteredBattle.ElapsedSeconds);
+            Canonical.Combat.Buffs = PlayerCombatBuffState.FromCombatant(enteredBattle.Player, enteredBattle.ElapsedSeconds);
         }
         SynchronizeViews();
         return step.RemainingSeconds;
@@ -386,7 +394,8 @@ public sealed class ActionParticipationSessionEngine
     {
         FlushBattle();
         return new(_spec, _catalog.Fingerprint, ToUnix(_advancedAt), _sequence, Action.Expedition,
-            Canonical.Combat.Skills, _members.Select(member => member.Resources.RegenCarrySeconds).ToArray(), Action.CompletedRepeats,
+            Canonical.Combat.Skills, Canonical.Combat.Buffs,
+            _members.Select(member => member.Resources.RegenCarrySeconds).ToArray(), Action.CompletedRepeats,
             StatsDocuments(Canonical.Duel.ReportFor(Action.Id)!.CombatStats), _endsAt);
     }
 
@@ -413,7 +422,7 @@ public sealed class ActionParticipationSessionEngine
         ValidateCheckpoint(document);
         var index = document.Spec.SelfIndexOf(playerId);
         if (index < 0) throw new DomainException(DomainErrorCode.NotFound, "玩家不在会话中。");
-        return ProjectExpedition(document.Expedition!, index, document.Skills);
+        return ProjectExpedition(document.Expedition!, index, document.Skills, document.Buffs);
     }
 
     /// <summary>从检查点累计账本读取成员视角，不恢复或推进战斗。</summary>
@@ -448,14 +457,16 @@ public sealed class ActionParticipationSessionEngine
             member.Resources.Manapoints = view.PlayerManapoints;
             member.Combat.Skills = canonical.Allies!.First(ally => ally.MemberIndex == i).CombatSkills
                 ?? _spec.Members[i].CombatSkills ?? PlayerCombatSkillState.Empty;
+            member.Combat.Buffs = canonical.Allies!.First(ally => ally.MemberIndex == i).CombatBuffs
+                ?? _spec.Members[i].CombatBuffs ?? PlayerCombatBuffState.Empty;
         }
     }
 
     private CombatExpeditionState ProjectExpedition(CombatExpeditionState canonical, int memberIndex)
-        => ProjectExpedition(canonical, memberIndex, Canonical.Combat.Skills);
+        => ProjectExpedition(canonical, memberIndex, Canonical.Combat.Skills, Canonical.Combat.Buffs);
 
     private static CombatExpeditionState ProjectExpedition(CombatExpeditionState canonical, int memberIndex,
-        PlayerCombatSkillState canonicalSkills)
+        PlayerCombatSkillState canonicalSkills, PlayerCombatBuffState canonicalBuffs)
     {
         if (memberIndex == 0) return canonical;
         var self = canonical.Allies!.First(ally => ally.MemberIndex == memberIndex);
@@ -463,7 +474,7 @@ public sealed class ActionParticipationSessionEngine
             canonical.PlayerManapoints, canonical.PlayerNextAttackAtSeconds, canonical.PlayerAttackCount,
             canonical.PlayerThreat);
         var others = canonical.Allies!.Where(ally => ally.MemberIndex != memberIndex).ToList();
-        others.Add(new(0, previousSelf, CombatSkills: canonicalSkills));
+        others.Add(new(0, previousSelf, CombatSkills: canonicalSkills, CombatBuffs: canonicalBuffs));
         others.Sort((left, right) => left.MemberIndex.CompareTo(right.MemberIndex));
         return canonical with
         {

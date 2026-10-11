@@ -174,6 +174,8 @@ public sealed class OpsComputeEndpointTests
         public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted { add { } remove { } }
         public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public ValueTask<PlayerRuntimeSnapshot> AttachConnectionAsync(Guid playerId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => null;
         public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
             long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
@@ -184,7 +186,7 @@ public sealed class OpsComputeEndpointTests
             => throw new NotSupportedException();
         public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
-        public ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
+        public ValueTask RemoveAsync(Guid playerId, bool flush, DateTimeOffset? offlineSince, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId, Action<PlayerAggregate> mutate, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();

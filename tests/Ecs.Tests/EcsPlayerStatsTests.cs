@@ -34,7 +34,7 @@ public sealed class EcsPlayerStatsTests
         player.Progression.Experience = 8;
         player.Progression.Foundation = 6;
         var action = player.Enqueue(new(actionId, -1), from, actions);
-        player.SetPresence(PresenceState.Offline);
+        player.SetPresence(PresenceState.Offline, from);
         var seed = player.ExportState();
         var expected = PlayerAggregate.Restore(seed);
         var balances = new[] { new AssetBalance(player.PlayerId, new(herb), 10, 0) };
@@ -79,7 +79,7 @@ public sealed class EcsPlayerStatsTests
         var action = player.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), from, catalog.Actions);
         player.Duel.GetOrCreateReport(action.Id, action.Intent.ActionId.Value, "引气", from.ToUnixTimeSeconds());
         player.LearnAbility(abilityId);
-        player.SetPresence(PresenceState.Offline);
+        player.SetPresence(PresenceState.Offline, from);
         var seed = player.ExportState();
         var expected = PlayerAggregate.Restore(seed);
         expected.GrantAbilityExperience(abilityId, 100);

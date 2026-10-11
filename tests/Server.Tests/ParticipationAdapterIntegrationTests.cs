@@ -52,7 +52,7 @@ public sealed class ParticipationAdapterIntegrationTests
 
         var offline = fixture.Players[2];
         await fixture.Presence.UnregisterAsync(offline);
-        await fixture.Adapter.RemoveAsync(offline, flush: true);
+        await fixture.Adapter.RemoveAsync(offline, flush: true, offlineSince: null);
         fixture.Clock.AdvanceTo(fixture.StartedAt.AddSeconds(90));
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         fixture.Clock.AdvanceTo(fixture.StartedAt.AddSeconds(120));
@@ -159,7 +159,7 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Empty(consumed.State.Duel.StagedItems);
         Assert.Equal(7, Assert.Single(consumed.Assets, asset => asset.AssetId == "item.refined-copper").Quantity);
         Assert.Equal(1, consumed.State.Actions[0].Participation!.AppliedSequence);
-        await fixture.Adapter.RemoveAsync(player, flush: true);
+        await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var restored = await fixture.Adapter.LoadAsync(player);
         Assert.Empty(restored.State.Duel.StagedItems);
         Assert.Equal(7, Assert.Single(restored.Assets, asset => asset.AssetId == "item.refined-copper").Quantity);
@@ -207,7 +207,7 @@ public sealed class ParticipationAdapterIntegrationTests
         await using var fixture = await Fixture.CreateAsync();
         var player = fixture.Players[0];
         await fixture.Adapter.MutateOwnedAsync(player, aggregate => aggregate.RemoveAction(aggregate.Actions[0].Id));
-        await fixture.Adapter.RemoveAsync(player, flush: true);
+        await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var row = (await fixture.Store.LoadAsync(fixture.SessionId))!;
         var document = JsonSerializer.Deserialize<ActionParticipationSessionDocument>(row.StateJson, PersistenceJson.Options)!;
         var retiredSpec = document.Spec with { ActionId = new("combat.retired-session") };
@@ -225,7 +225,7 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Equal(document.Expedition.PlayerManapoints, restored.State.Combat.Manapoints);
         Assert.Empty(await fixture.Store.LoadPendingAsync(player));
         Assert.Equal(1L, await fixture.SettlementTransactionCountAsync());
-        await fixture.Adapter.RemoveAsync(player, flush: true);
+        await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var reloaded = await fixture.Adapter.LoadAsync(player);
         Assert.Equal(restored.State.Progression.CombatExperience, reloaded.State.Progression.CombatExperience);
         Assert.Equal(fixture.PersonalActions[player], Assert.Single(reloaded.State.Actions).Id);
@@ -238,17 +238,8 @@ public sealed class ParticipationAdapterIntegrationTests
     public async Task OpeningDeliveryDoesNotReinsertSessionEndedBeforeMemberMutation()
     {
         await using var fixture = await Fixture.CreateAsync(startSession: false);
-        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Storage:ConnectionString"] = "Host=unused;Database=unused"
-        }).Build());
-        var market = new MarketRuntime(new PostgresMarketRepository(fixture.Source, options,
-            NullLogger<PostgresMarketRepository>.Instance), options, NullLogger<MarketRuntime>.Instance);
         var opening = new EndDuringOpeningRuntime(fixture);
-        var social = new SocialRuntime(fixture.Social, fixture.Presence,
-            new PartyValuationService(fixture.Adapter, fixture.Sections, market, fixture.Catalog),
-            new ChatRuntime(new PostgresChatRepository(fixture.Source), fixture.Social, fixture.Presence),
-            fixture.Catalog, NullLogger<SocialRuntime>.Instance, fixture.Adapter, fixture.Clock, opening);
+        var social = await fixture.CreateSocialRuntimeAsync(opening);
         Assert.True((await social.ApplyAsync(fixture.Players[0],
             new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyReady))).Success);
         Assert.NotNull(opening.SessionId);
@@ -269,6 +260,294 @@ public sealed class ParticipationAdapterIntegrationTests
         }
     }
 
+    /// <summary>末位就绪的 party.ready 走完整仲裁链路：会话行与成员挂载在同指令内完成，
+    /// 首个推进边界后成员远征投影即刻显示搜寻相位。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task LastReadyStartsSessionAndShowsSearchOnFirstAdvance()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        Assert.True((await social.ApplyAsync(fixture.Players[0],
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyReady))).Success);
+        var session = await fixture.Social.GetActivePartySessionAsync(fixture.PartyId);
+        Assert.NotNull(session);
+        try
+        {
+            foreach (var player in fixture.Players)
+                Assert.Equal(session.SessionId,
+                    fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation?.SessionId);
+            fixture.Clock.AdvanceTo(fixture.StartedAt.AddSeconds(3));
+            await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
+            foreach (var player in fixture.Players)
+            {
+                var head = fixture.Adapter.TryGetLoaded(player)!.State.Actions[0];
+                Assert.NotNull(head.Expedition);
+                Assert.Equal(CombatExpeditionPhase.InitialSearch, head.Expedition!.Phase);
+            }
+        }
+        finally
+        {
+            await fixture.SqlAsync("DELETE FROM social.party_session_inbox WHERE session_id=$1", session.SessionId);
+            await fixture.SqlAsync("DELETE FROM social.party_sessions WHERE session_id=$1", session.SessionId);
+        }
+    }
+
+    /// <summary>未装载成员的开场冻结直接解码持久化真源（冻结采集不强拉装载）；
+    /// 开打后名册有人在线，离线成员按 §14.6 对账为常驻实体并就地完成参与挂载。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task UnloadedMemberFreezesFromPersistedStateWithoutForceLoad()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var offline = fixture.Players[1];
+        // 模拟离线成员：卸载实体并注销在线位，仅留持久化状态参与仲裁。
+        await fixture.Adapter.RemoveAsync(offline, flush: true, offlineSince: null);
+        await fixture.Presence.UnregisterAsync(offline);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        Assert.True((await social.ApplyAsync(fixture.Players[0],
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyReady))).Success);
+        var session = await fixture.Social.GetActivePartySessionAsync(fixture.PartyId);
+        Assert.NotNull(session);
+        try
+        {
+            // 未装载成员冻结面板入 spec；开打后名册有人在线，离线成员按 §14.6 常驻装载并就地完成挂载。
+            var spec = JsonSerializer.Deserialize<ActionParticipationSpec>(session.SpecJson, PersistenceJson.Options)!;
+            Assert.Equal(3, spec.Members.Count);
+            Assert.Contains(spec.Members, member => member.PlayerId == offline.ToString("D"));
+            var resident = fixture.Adapter.TryGetLoaded(offline);
+            Assert.NotNull(resident);
+            Assert.Equal(session.SessionId, resident.State.Actions[0].Participation?.SessionId);
+        }
+        finally
+        {
+            await fixture.SqlAsync("DELETE FROM social.party_session_inbox WHERE session_id=$1", session.SessionId);
+            await fixture.SqlAsync("DELETE FROM social.party_sessions WHERE session_id=$1", session.SessionId);
+        }
+    }
+
+    /// <summary>离线成员散场时被强拉消费终局结算（总纲18 §14.6）：会话内倒地成员随散场复活回血定格为 1 点气血，
+    /// 持久化状态即时恢复，下一场会话冻结面板直接读到消费后状态，不能从旧态开下一场（总纲 §21.13）。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task UnloadedMemberFreezesFromConsumedTerminalState()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var offline = fixture.Players[1];
+        // 开打前压低气血：会话战斗内倒地，终局结算记倒地值，消费后复活回血为 1 点气血落盘。
+        await fixture.Adapter.MutateOwnedAsync(offline, aggregate => aggregate.Resources.Hitpoints = 1);
+        await StartSessionAtAsync(fixture, fixture.StartedAt);
+        await fixture.Adapter.RemoveAsync(offline, flush: true, offlineSince: null);
+        await fixture.Presence.UnregisterAsync(offline);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        Assert.True((await social.ApplyAsync(fixture.Players[0],
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyUnready))).Success);
+        Assert.Equal("member-unready", (await fixture.Store.LoadAsync(fixture.SessionId))!.EndReason);
+        // 散场已强拉消费：收件箱清空、实体卸载、持久化气血按倒地复活规则定格。
+        Assert.Empty(await fixture.Store.LoadPendingAsync(offline));
+        Assert.Null(fixture.Adapter.TryGetLoaded(offline));
+        // 取消者重新准备，常驻就绪位让仲裁直接重开。
+        Assert.True((await social.ApplyAsync(fixture.Players[0],
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyReady))).Success);
+        var session = await fixture.Social.GetActivePartySessionAsync(fixture.PartyId);
+        Assert.NotNull(session);
+        try
+        {
+            var spec = JsonSerializer.Deserialize<ActionParticipationSpec>(session.SpecJson, PersistenceJson.Options)!;
+            var frozen = Assert.Single(spec.Members, member => member.PlayerId == offline.ToString("D"));
+            Assert.Equal(1d, frozen.InitialHitpoints);
+            Assert.Empty(await fixture.Store.LoadPendingAsync(offline));
+            // 新会话名册仍有人在线：离线成员被对账为常驻装载（§14.6）。
+            Assert.NotNull(fixture.Adapter.TryGetLoaded(offline));
+        }
+        finally
+        {
+            await fixture.SqlAsync("DELETE FROM social.party_session_inbox WHERE session_id=$1", session.SessionId);
+            await fixture.SqlAsync("DELETE FROM social.party_sessions WHERE session_id=$1", session.SessionId);
+        }
+    }
+
+    /// <summary>任一成员取消准备触发散场时，就绪位跨会话常驻：仅取消者被清位，
+    /// 其余名册成员保持 ready，条件再齐备可由下一次仲裁直接重开。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task SessionDissolveKeepsReadyForOtherMembers()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var social = await fixture.CreateSocialRuntimeAsync();
+        Assert.True((await social.ApplyAsync(fixture.Players[1],
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyUnready))).Success);
+        Assert.Equal("member-unready", (await fixture.Store.LoadAsync(fixture.SessionId))!.EndReason);
+        var party = await fixture.Social.GetPartyAsync(fixture.PartyId);
+        Assert.NotNull(party);
+        foreach (var member in party.Members)
+            Assert.Equal(member.PlayerId != fixture.Players[1], member.Ready);
+    }
+
+    /// <summary>名册有人在线的会话，离线成员常驻装载并实时消费结算（总纲18 §14.6）：
+    /// 常驻不改变在线态与离线锚点；名册全员离线后对账卸载归还，锚点不回拨。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ResidentMembersStayLoadedWhileRosterHasOnlineMember()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var online = fixture.Players[0];
+        var first = fixture.Players[1];
+        var second = fixture.Players[2];
+        // 两名离线成员各带确定断线锚点卸载：先走连接建立转在线（清锚），再按断线时刻收尾。
+        var firstAnchor = await TakeOfflineAsync(fixture, first, DateTimeOffset.UtcNow.AddMinutes(-10));
+        var secondAnchor = await TakeOfflineAsync(fixture, second, DateTimeOffset.UtcNow.AddMinutes(-8));
+        Assert.Null(fixture.Adapter.TryGetLoaded(first));
+
+        await social.ReconcileResidentMembersAsync(CancellationToken.None);
+        Assert.NotNull(fixture.Adapter.TryGetLoaded(first));
+        Assert.NotNull(fixture.Adapter.TryGetLoaded(second));
+        Assert.False(fixture.Presence.IsOnline(first));
+        Assert.Equal(firstAnchor, await ReadOfflineSinceAsync(fixture, first));
+        Assert.Equal(secondAnchor, await ReadOfflineSinceAsync(fixture, second));
+
+        // 在线批推进一轮：常驻成员实时消费结算，收件箱不积压。
+        fixture.Clock.AdvanceTo(fixture.StartedAt.AddSeconds(60));
+        await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
+        Assert.Empty(await fixture.Store.LoadPendingAsync(first));
+        Assert.Empty(await fixture.Store.LoadPendingAsync(second));
+
+        // 名册全员离线后再对账：常驻成员卸载归还，离线锚点不回拨。
+        await fixture.Presence.UnregisterAsync(online);
+        await social.ReconcileResidentMembersAsync(CancellationToken.None);
+        Assert.Null(fixture.Adapter.TryGetLoaded(first));
+        Assert.Null(fixture.Adapter.TryGetLoaded(second));
+        await fixture.Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
+        Assert.Equal(firstAnchor, await ReadOfflineSinceAsync(fixture, first));
+        Assert.Equal(secondAnchor, await ReadOfflineSinceAsync(fixture, second));
+    }
+
+    /// <summary>名册全员离线的会话按批算间隔推进到当前，推进后逐成员强拉消费结算再卸载（§14.6）；
+    /// 不足批算间隔不推进。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task OfflineSessionAdvancesOnBatchIntervalAndMembersConsume()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        foreach (var player in fixture.Players)
+        {
+            await fixture.Presence.UnregisterAsync(player);
+            await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
+        }
+        await fixture.Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
+        var social = await fixture.CreateSocialRuntimeAsync();
+        // 会话检查点停在 startedAt：模拟时钟推进 30 分钟，40 分钟批算间隔不足期不推进。
+        fixture.Clock.AdvanceTo(fixture.StartedAt.AddMinutes(30));
+        var before = (await fixture.Store.LoadAsync(fixture.SessionId))!.LastSimulatedAt;
+        await social.AdvanceOfflineSessionsAsync(TimeSpan.FromMinutes(40), CancellationToken.None);
+        Assert.Equal(before, (await fixture.Store.LoadAsync(fixture.SessionId))!.LastSimulatedAt);
+
+        await social.AdvanceOfflineSessionsAsync(TimeSpan.FromMinutes(20), CancellationToken.None);
+        var advanced = await fixture.Store.LoadAsync(fixture.SessionId);
+        var expected = DateTimeOffset.FromUnixTimeMilliseconds(fixture.Clock.UtcNow.ToUnixTimeMilliseconds());
+        Assert.Equal(expected, advanced!.LastSimulatedAt);
+        Assert.Null(advanced.EndedAt);
+        foreach (var player in fixture.Players)
+        {
+            Assert.Empty(await fixture.Store.LoadPendingAsync(player));
+            Assert.Null(fixture.Adapter.TryGetLoaded(player));
+        }
+    }
+
+    /// <summary>全员离线批算不得越过名册最早离线边界：某成员 offline_since+48h 已过期时，
+    /// 会话收尾在该边界并以 member-offline-timeout 散场，成员结算即时消费（§14.6/§14.5）。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task OfflineSessionEndsAtEarliestOfflineBoundary()
+    {
+        // 夹具时钟锚定 2 小时前：会话检查点合法停在 now-2h（名册全员离线后无人推进）。
+        await using var fixture = await Fixture.CreateAsync(age: TimeSpan.FromHours(2));
+        var laggard = fixture.Players[2];
+        var laggardAnchor = await TakeOfflineAsync(fixture, laggard, DateTimeOffset.UtcNow.AddHours(-49));
+        foreach (var player in fixture.Players.Take(2))
+        {
+            await fixture.Presence.UnregisterAsync(player);
+            await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
+        }
+        await fixture.Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
+        var social = await fixture.CreateSocialRuntimeAsync();
+        fixture.Clock.AdvanceTo(DateTimeOffset.UtcNow);
+        await social.AdvanceOfflineSessionsAsync(TimeSpan.FromMinutes(60), CancellationToken.None);
+        var session = await fixture.Store.LoadAsync(fixture.SessionId);
+        Assert.Equal("member-offline-timeout", session!.EndReason);
+        Assert.Equal(laggardAnchor.Add(PlayerLifecycleRules.OfflineIdleLimit), session.EndedAt);
+        foreach (var player in fixture.Players)
+        {
+            Assert.Empty(await fixture.Store.LoadPendingAsync(player));
+            Assert.Null(fixture.Adapter.TryGetLoaded(player));
+        }
+    }
+
+    /// <summary>散场后未装载的离线成员同样强拉消费终局结算再卸载（§14.6）：
+    /// 收件箱清空、持久化状态按终局规则恢复，倒地成员气血定格为 1。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task DissolveForceLoadsOfflineMembersToConsumeTerminal()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var offline = fixture.Players[1];
+        // 倒地成员：开打前把气血压到 1，会话战斗内阵亡，终局结算记倒地值。
+        await fixture.Adapter.MutateOwnedAsync(offline, aggregate => aggregate.Resources.Hitpoints = 1);
+        await StartSessionAtAsync(fixture, fixture.StartedAt);
+        await fixture.Adapter.RemoveAsync(offline, flush: true, offlineSince: null);
+        await fixture.Presence.UnregisterAsync(offline);
+        await fixture.Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
+
+        var social = await fixture.CreateSocialRuntimeAsync();
+        Assert.True((await social.ApplyAsync(fixture.Players[0],
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyUnready))).Success);
+        Assert.NotNull((await fixture.Store.LoadAsync(fixture.SessionId))!.EndedAt);
+        Assert.Empty(await fixture.Store.LoadPendingAsync(offline));
+        Assert.Null(fixture.Adapter.TryGetLoaded(offline));
+        await fixture.Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
+        var bundle = await fixture.Sections.LoadAsync(offline);
+        Assert.Equal(1d, SectionCodec.DecodeAggregate(bundle!).Combat.Hitpoints);
+    }
+
+    /// <summary>按指定开场时刻创建讨伐会话并逐成员挂载参与行动（fixture 开场块的可变时刻版本）。</summary>
+    private static async Task StartSessionAtAsync(Fixture fixture, DateTimeOffset startedAt)
+    {
+        var frozen = new List<ActionParticipantSnapshot>();
+        foreach (var player in fixture.Players)
+            await fixture.Adapter.MutateOwnedAsync(player,
+                aggregate => frozen.Add(aggregate.CaptureActionParticipantSnapshot(fixture.Catalog)));
+        var spec = new ActionParticipationSpec(fixture.SessionId, "encounter.qi-beast", "node.yunxi-village", 97,
+            frozen.Max(member => member.SearchSpeedPoints), startedAt.ToUnixTimeMilliseconds() / 1000d, frozen)
+        { ActionId = new("combat.hunt-qi-beast") };
+        await fixture.Runtime.CreateAsync(fixture.PartyId, spec);
+        foreach (var player in fixture.Players)
+            await fixture.Adapter.MutateOwnedAsync(player,
+                aggregate => aggregate.StartActionParticipation(spec, startedAt, fixture.Catalog.Actions));
+    }
+
+    /// <summary>模拟真实断线收尾：先经连接建立转在线（清锚），再按断线时刻注销卸载，返回写入的离线锚点。</summary>
+    private static async Task<DateTimeOffset> TakeOfflineAsync(Fixture fixture, Guid player, DateTimeOffset disconnectedAt)
+    {
+        var anchor = DateTimeOffset.FromUnixTimeMilliseconds(disconnectedAt.ToUnixTimeMilliseconds());
+        await fixture.Adapter.AttachConnectionAsync(player);
+        await fixture.Presence.UnregisterAsync(player);
+        await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: anchor);
+        await fixture.Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
+        return anchor;
+    }
+
+    /// <summary>只读读取投影离线锚点；无列值返回 null。</summary>
+    private static async Task<DateTimeOffset?> ReadOfflineSinceAsync(Fixture fixture, Guid player)
+    {
+        await using var command = fixture.Source.CreateCommand(
+            "SELECT offline_since FROM game.player_projection WHERE player_id = $1");
+        command.Parameters.AddWithValue(player);
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync() && !await reader.IsDBNullAsync(0)
+            ? reader.GetFieldValue<DateTimeOffset>(0) : null;
+    }
+
     // 在检查点已提交、开场调用尚未返回的边界插入真实数据库取消准备及后台散场。
     private sealed class EndDuringOpeningRuntime(Fixture fixture) : IActionParticipationRuntime
     {
@@ -284,6 +563,9 @@ public sealed class ParticipationAdapterIntegrationTests
         }
         public ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default) =>
             fixture.Runtime.AdvanceOnlineAsync(target, cancellationToken);
+        public ValueTask<IReadOnlyList<Guid>> AdvanceOfflineDueAsync(DateTimeOffset now, TimeSpan batchInterval,
+            CancellationToken cancellationToken = default) =>
+            fixture.Runtime.AdvanceOfflineDueAsync(now, batchInterval, cancellationToken);
         public ValueTask<IReadOnlyList<ParticipationInboxItem>> AdvanceForMemberAsync(Guid playerId,
             DateTimeOffset target, CancellationToken cancellationToken = default) =>
             fixture.Runtime.AdvanceForMemberAsync(playerId, target, cancellationToken);
@@ -329,11 +611,13 @@ public sealed class ParticipationAdapterIntegrationTests
         public EcsGameRuntime Ecs { get; }
         public EcsPlayerRuntimeAdapter Adapter { get; }
 
-        public static async Task<Fixture> CreateAsync(bool owned = false, bool startSession = true)
+        public static async Task<Fixture> CreateAsync(bool owned = false, bool startSession = true, TimeSpan? age = null)
         {
             var source = NpgsqlDataSource.Create(PostgresTestSchema.RequireConnectionString("三成员会话装配集成测试"));
             await PostgresTestSchema.EnsureAsync(source);
-            var startedAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeMilliseconds());
+            // age 让整场夹具时钟锚定到过去：会话/成员时钟自该时刻起算，模拟「会话已停更 age」的合法形态。
+            var startedAt = DateTimeOffset.FromUnixTimeMilliseconds(
+                DateTimeOffset.UtcNow.Subtract(age ?? TimeSpan.FromMinutes(5)).ToUnixTimeMilliseconds());
             var bytes = Guid.NewGuid().ToByteArray();
             var players = Enumerable.Range(0, 3).Select(index =>
             {
@@ -378,6 +662,22 @@ public sealed class ParticipationAdapterIntegrationTests
             await Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
             await Adapter.LoadAsync(player);
             await Presence.RegisterAsync(player, aggregate.DisplayName, aggregate.World.NodeId);
+        }
+
+        /// <summary>装配真实社交运行时：完整仲裁链路（开打/散场/成员就绪位常驻）与生产同构。</summary>
+        public async Task<SocialRuntime> CreateSocialRuntimeAsync(IActionParticipationRuntime? participation = null)
+        {
+            var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Storage:ConnectionString"] = "Host=unused;Database=unused"
+            }).Build());
+            var market = new MarketRuntime(new PostgresMarketRepository(Source, options,
+                NullLogger<PostgresMarketRepository>.Instance), options, NullLogger<MarketRuntime>.Instance);
+            return await Task.FromResult(new SocialRuntime(Social, Presence,
+                new PartyValuationService(Adapter, Sections, market, Catalog),
+                new ChatRuntime(new PostgresChatRepository(Source), Social, Presence),
+                Catalog, NullLogger<SocialRuntime>.Instance, Adapter, Clock,
+                participation ?? Runtime, Sections));
         }
 
         public string RewardSnapshot(Guid player)

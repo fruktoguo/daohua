@@ -1,6 +1,7 @@
 using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
+using Domain.Persistence;
 using Domain.Player;
 using Server.Clean;
 using System.Text.Json;
@@ -139,6 +140,73 @@ public sealed class SectionCodecTests
             new string('a', 64),
             now).Validate());
     }
+    /// <summary>settings 分段离线锚点：在线（null）与离线（有值）两种形态整包往返一致。</summary>
+    [Fact]
+    public void SettingsOfflineSinceAt_RoundTripsNullAndValue()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var online = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()), "在线锚点", now, "fp");
+        var onlineDecoded = DecodeBundleAggregate(online, now);
+        Assert.Null(onlineDecoded.OfflineSinceAt);
+        Assert.Equal(PresenceState.Online, onlineDecoded.Presence);
+
+        var offline = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()), "离线锚点", now, "fp");
+        var disconnectedAt = now.AddMinutes(-7);
+        offline.SetPresence(PresenceState.Offline, disconnectedAt);
+        var offlineDecoded = DecodeBundleAggregate(offline, now);
+        Assert.Equal(disconnectedAt, offlineDecoded.OfflineSinceAt);
+        Assert.Equal(PresenceState.Offline, offlineDecoded.Presence);
+    }
+
+    /// <summary>v30 及更早的 settings 载荷不含 offlineSinceAt：可缺省解码为 null 锚点，presence 不受影响。</summary>
+    [Fact]
+    public void SettingsWithoutOfflineSinceAt_DecodesAnchorAsNull()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var aggregate = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()), "旧档", now, "fp");
+        aggregate.SetPresence(PresenceState.Offline, now.AddMinutes(-3));
+        var state = aggregate.ExportState();
+        var writes = CleanSectionCodec.EncodeAggregateFull(state, now);
+        var sections = writes.ToDictionary(write => write.SectionKind, ToStored, StringComparer.Ordinal);
+
+        // 手工剔除载荷里的 offlineSinceAt 字段，模拟旧 schema 载荷（checksum 随编码重算）。
+        var settingsWrite = writes.Single(write => write.SectionKind == PlayerSectionKinds.Settings);
+        using var document = JsonDocument.Parse(CleanSectionCodec.DecodeRaw(settingsWrite.Codec, settingsWrite.Payload.ToArray()));
+        var legacyFields = document.RootElement.EnumerateObject()
+            .Where(property => property.Name != "offlineSinceAt")
+            .ToDictionary(property => property.Name, property => property.Value.Clone());
+        var legacyWrite = CleanSectionCodec.Encode(aggregate.PlayerId.Value, PlayerSectionKinds.Settings,
+            state.StateVersion, legacyFields, now);
+        sections[PlayerSectionKinds.Settings] = ToStored(legacyWrite);
+
+        var bundle = new PlayerStateBundle(
+            new PlayerIdentity(state.PlayerId.Value, state.AccountId.Value, state.DisplayName, state.CreatedAt),
+            new PlayerStateHead(state.PlayerId.Value, state.StateVersion, CleanSectionCodec.CurrentSchemaVersion,
+                state.LastSimulatedAt, state.GameDataFingerprint, CleanSectionCodec.ComputeHeadChecksum(sections.Values), now),
+            sections, []);
+        var decoded = CleanSectionCodec.DecodeAggregate(bundle);
+        Assert.Null(decoded.OfflineSinceAt);
+        Assert.Equal(PresenceState.Offline, decoded.Presence);
+    }
+
+    /// <summary>整包编码→StoredSection→DecodeAggregate 往返，返回还原后的聚合状态头字段。</summary>
+    private static PlayerAggregateState DecodeBundleAggregate(PlayerAggregate aggregate, DateTimeOffset now)
+    {
+        var state = aggregate.ExportState();
+        var writes = CleanSectionCodec.EncodeAggregateFull(state, now);
+        var sections = writes.ToDictionary(write => write.SectionKind, ToStored, StringComparer.Ordinal);
+        var bundle = new PlayerStateBundle(
+            new PlayerIdentity(state.PlayerId.Value, state.AccountId.Value, state.DisplayName, state.CreatedAt),
+            new PlayerStateHead(state.PlayerId.Value, state.StateVersion, CleanSectionCodec.CurrentSchemaVersion,
+                state.LastSimulatedAt, state.GameDataFingerprint, CleanSectionCodec.ComputeHeadChecksum(sections.Values), now),
+            sections, []);
+        return CleanSectionCodec.DecodeAggregate(bundle);
+    }
+
+    private static StoredSection ToStored(SectionWrite write)
+        => new(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
+            write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt);
+
     /// <summary>刷写队列项在应用（requireLease）时必须携带非空租约令牌。</summary>
 
     [Fact]
@@ -146,6 +214,7 @@ public sealed class SectionCodecTests
     {
         var encoded = CleanSectionCodec.Encode(Guid.NewGuid(), PlayerSectionKinds.Settings, 1, new { locale = "zh-CN" }, DateTimeOffset.UtcNow);
         var item = new FlushQueueItem(
+            0,
             encoded.PlayerId,
             encoded.SectionKind,
             encoded.StateVersion,

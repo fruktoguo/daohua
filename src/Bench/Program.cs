@@ -341,7 +341,7 @@ public static class TestCharacterSeeder
             player.Resources.Hitpoints = player.Resources.MaxHitpoints = resolved.MaxHitpoints;
             player.Resources.Manapoints = player.Resources.MaxManapoints = resolved.MaxManapoints;
             player.Enqueue(new ActionIntent(action.Id, -1), epoch, catalog.Actions);
-            player.SetPresence(PresenceState.Offline);
+            player.SetPresence(PresenceState.Offline, epoch);
             var generated = player.ExportState();
             var state = generated with { Actions = generated.Actions.Select(action => action with { Id = actionInstanceId }).ToArray() };
             result.Add(new(playerId, accountId, player.DisplayName, scenario, local, randomSeed, epoch, fingerprint,

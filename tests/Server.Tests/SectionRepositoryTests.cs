@@ -211,7 +211,7 @@ public sealed class SectionRepositoryTests
         await SqlAsync(source, "UPDATE identity.players SET created_at=$2 WHERE player_id=$1", playerId, createdAt);
         var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(initial.Identity.AccountId),
             initial.Identity.DisplayName, createdAt, catalog.Fingerprint);
-        player.SetPresence(PresenceState.Online);
+        player.SetPresence(PresenceState.Online, player.CreatedAt);
         player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), player.CreatedAt, catalog.Actions);
         var target = player.CreatedAt.AddSeconds(3.6);
         SimulationEngine.AdvanceTo(player, target, catalog, new AssetWallet(player.PlayerId));
@@ -222,11 +222,12 @@ public sealed class SectionRepositoryTests
         await using var runtime = EcsRuntimeFactory.Create(repository, new PostgresAssetRepository(source),
             new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance),
             catalog, simulationClock: new FixedSimulationClock(target));
+        // 播种态为持久化 Online 崩溃残留：装载即规范化转离线（锚点=LastSimulatedAt），v7→v8 在装载完成。
         var loaded = await runtime.LoadAsync(playerId);
-        Assert.Equal(7, loaded.StateVersion);
-        Assert.Equal(0, loaded.State.Duel!.OfflineReport!.StartedAtUnixSeconds);
+        Assert.Equal(8, loaded.StateVersion);
+        Assert.Equal(target.ToUnixTimeMilliseconds() / 1000d, loaded.State.Duel!.OfflineReport!.StartedAtUnixSeconds);
 
-        await runtime.RemoveAsync(playerId, flush: true);
+        await runtime.RemoveAsync(playerId, flush: true, offlineSince: null);
         Assert.Equal(3L, await Scalar(source,
             "SELECT count(*) FROM platform.section_flush_queue WHERE player_id=$1 AND state_version=8 AND section_kind IN ('duel','settings','progression')", playerId));
         await FlushUntilDrainedAsync(repository, source, playerId);
@@ -239,6 +240,71 @@ public sealed class SectionRepositoryTests
         Assert.Equal(8, persisted.StateVersion);
         Assert.Equal(target.ToUnixTimeMilliseconds() / 1000d, persisted.Duel!.OfflineReport!.StartedAtUnixSeconds);
         Assert.Equal(persisted.Duel.OfflineReport.StartedAtUnixSeconds, persisted.Duel.OfflineReport.EndedAtUnixSeconds);
+    }
+
+    /// <summary>
+    /// 连接驱动的生命周期（§14.1 + 投影）：强拉未装载离线玩家不转在线也不改锚点与投影；
+    /// AttachConnectionAsync 转在线并清空锚点；RemoveAsync(flush, offlineSince) 把断线时刻写回投影。
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ConnectionLifecycleDrivesPresenceAndProjectionOfflineSince()
+    {
+        var (source, repository) = await OpenRepositoryAsync();
+        var playerId = await SeedPlayerAsync(source);
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).AddMinutes(-5);
+        var anchor = createdAt.AddMinutes(1);
+        var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(playerId),
+            playerId.ToString(), createdAt, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, anchor);
+        var seeded = player.ExportState();
+        await repository.EnqueueSectionsAsync(CleanSectionCodec.EncodeAggregateFull(seeded, DateTimeOffset.UtcNow));
+        await FlushUntilDrainedAsync(repository, source, playerId);
+        await AssertProjectionAsync(source, playerId, "offline", anchor);
+
+        await using var runtime = EcsRuntimeFactory.Create(repository, new PostgresAssetRepository(source),
+            new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance), catalog);
+
+        // 强拉未装载离线玩家后卸载：presence 仍离线，OfflineSinceAt 与投影 offline_since 不变。
+        var forced = await runtime.MutateOwnedAsync(playerId, _ => { });
+        Assert.Equal(PresenceState.Offline, forced.State.Presence);
+        Assert.Equal(anchor, forced.State.OfflineSinceAt);
+        await runtime.RemoveAsync(playerId, flush: true, offlineSince: null);
+        await FlushUntilDrainedAsync(repository, source, playerId);
+        await AssertProjectionAsync(source, playerId, "offline", anchor);
+
+        // 连接附着：转在线并清空锚点，刷盘后投影 presence=online、offline_since 为 NULL。
+        var attached = await runtime.AttachConnectionAsync(playerId);
+        Assert.Equal(PresenceState.Online, attached.State.Presence);
+        Assert.Null(attached.State.OfflineSinceAt);
+        await runtime.FlushAsync(playerId, true);
+        await FlushUntilDrainedAsync(repository, source, playerId);
+        await AssertProjectionAsync(source, playerId, "online", null);
+
+        // 断线卸载：offlineSince 作为真实断线时刻写回持久化与投影。
+        var disconnectAt = anchor.AddMinutes(2);
+        await runtime.RemoveAsync(playerId, flush: true, offlineSince: disconnectAt);
+        await FlushUntilDrainedAsync(repository, source, playerId);
+        await AssertProjectionAsync(source, playerId, "offline", disconnectAt);
+    }
+
+    /// <summary>断言读模型投影的 presence 与 offline_since；timestamptz 按毫秒容差比对断线时刻。</summary>
+    private static async Task AssertProjectionAsync(NpgsqlDataSource source, Guid playerId,
+        string expectedPresence, DateTimeOffset? expectedOfflineSince)
+    {
+        Assert.Equal(expectedPresence, (string)(await Scalar(source,
+            "SELECT presence FROM game.player_projection WHERE player_id = $1", playerId))!);
+        var stored = await Scalar(source,
+            "SELECT offline_since FROM game.player_projection WHERE player_id = $1", playerId);
+        if (expectedOfflineSince is null)
+        {
+            Assert.True(stored is null or DBNull);
+            return;
+        }
+        var storedAt = Assert.IsType<DateTime>(stored);
+        Assert.True(Math.Abs((storedAt - expectedOfflineSince.Value.UtcDateTime).TotalMilliseconds) < 1,
+            $"offline_since 不一致：stored={storedAt:O} expected={expectedOfflineSince.Value.UtcDateTime:O}");
     }
 
     private sealed class FixedSimulationClock(DateTimeOffset value) : IPlayerSimulationClock

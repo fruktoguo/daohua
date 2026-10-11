@@ -27,6 +27,7 @@ public sealed class EcsScenarioParityTests
         var player = PlayerAggregate.Create(new PlayerId(playerId),
             new AccountId(Guid.Parse("20000000-0000-4000-8000-000000000021")),
             "Ecs长战斗", SeedTime, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, SeedTime);
         player.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), SeedTime, catalog.Actions);
         var seed = player.ExportState();
         var expected = PlayerAggregate.Restore(seed);
@@ -68,6 +69,7 @@ public sealed class EcsScenarioParityTests
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = PlayerAggregate.Create(new(Guid.Parse("10000000-0000-4000-8000-000000000031")),
             new(Guid.Parse("20000000-0000-4000-8000-000000000031")), "移动回归", SeedTime, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, SeedTime);
         player.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), SeedTime, catalog.Actions);
         var path = catalog.WorldGraph.PlanFromPosition(null, 0, player.World.NodeId, "node.cloud-gate");
         player.EnqueuePriority(new(new ActionId("world.travel"), 1, TargetNodeId: "node.cloud-gate"), SeedTime,
@@ -93,6 +95,7 @@ public sealed class EcsScenarioParityTests
         {
             var player = PlayerAggregate.Create(new(Guid.Parse($"10000000-0000-4000-8000-{40 + index:D12}")),
                 new(Guid.Parse($"20000000-0000-4000-8000-{40 + index:D12}")), $"混合边界{index}", SeedTime, catalog.Fingerprint);
+            player.SetPresence(PresenceState.Offline, SeedTime);
             player.Enqueue(new(new ActionId(actionId), index == 0 ? 6 : -1), SeedTime, catalog.Actions);
             return player;
         }).ToArray();
@@ -132,6 +135,7 @@ public sealed class EcsScenarioParityTests
                 var aggregate = PlayerAggregate.Create(new PlayerId(id),
                     new AccountId(Guid.Parse($"20000000-0000-4000-8000-{(300 + index):D12}")),
                     $"批量{index}", SeedTime, catalog.Fingerprint);
+                aggregate.SetPresence(PresenceState.Offline, SeedTime);
                 aggregate.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), SeedTime, catalog.Actions);
                 return aggregate.ExportState();
             }).ToArray();

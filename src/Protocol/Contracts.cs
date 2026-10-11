@@ -70,7 +70,11 @@ public enum WireMessageType : byte
     /// <summary>客户端请求组队大厅筛选结果（仅 WebSocket 上行）</summary>
     PartyLobbyRequest = 25,
     /// <summary>服务端下发组队大厅：公开队伍与匹配中散人列表（仅 WebSocket 下行）</summary>
-    PartyLobby = 26
+    PartyLobby = 26,
+    /// <summary>客户端请求队伍成员角色信息卡（仅 WebSocket 上行）</summary>
+    PlayerCardRequest = 27,
+    /// <summary>服务端下发角色信息卡（仅 WebSocket 下行）</summary>
+    PlayerCard = 28
 }
 
 /// <summary>信封内有效载荷的编码格式</summary>
@@ -711,7 +715,7 @@ public sealed record ChatSendDto(string RequestId, string Channel, string Body, 
 /// <param name="Name">队伍名称</param>
 /// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
-/// <param name="MinValuation">加入身价门槛；0 表示不设门槛</param>
+/// <param name="MinValuation">加入身家门槛；0 表示不设门槛</param>
 /// <param name="MemberCount">发布时刻的队伍人数</param>
 public sealed record PartyLinkDto(
     string PartyId,
@@ -839,8 +843,10 @@ public static class SocialActions
 /// <param name="Name">队伍名称（1~32 字符；创建时空值由服务端生成「{队长道号}的小队」）</param>
 /// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
-/// <param name="MinValuation">身价门槛；0 表示不设门槛</param>
+/// <param name="MinValuation">身家门槛；0 表示不设门槛</param>
 /// <param name="IsPublic">是否进入组队大厅（false 只能经邀请或聊天队伍链接进入）</param>
+/// <param name="PvpEnabled">队伍斗法开关（总纲 §7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
+/// 仅 activityKind='combat' 可为 true、仅队长经 <c>party.update</c> 修改，会话存续期间修改触发散场重建</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；仅 <c>party.slots</c> 消费，create/update/match.set 忽略</param>
 public sealed record PartyProfileDto(
     string? Name = null,
@@ -848,6 +854,7 @@ public sealed record PartyProfileDto(
     string? NodeId = null,
     double? MinValuation = null,
     bool? IsPublic = null,
+    bool? PvpEnabled = null,
     int? OpenSlots = null);
 
 /// <summary>客户端社交指令请求。</summary>
@@ -884,7 +891,7 @@ public sealed record FriendRequestDto(string RequestId, string PlayerId, string 
 /// <param name="PlayerId">成员玩家 ID</param>
 /// <param name="DisplayName">成员道号</param>
 /// <param name="Online">是否在线</param>
-/// <param name="Valuation">成员身价（服务端估值口径，非战斗属性）</param>
+/// <param name="Valuation">成员身家（服务端估值口径，非战斗属性）</param>
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
 public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready);
 
@@ -907,8 +914,9 @@ public sealed record PartySessionDto(
 /// <param name="Name">队伍名称</param>
 /// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
-/// <param name="MinValuation">身价门槛；0 表示不设门槛</param>
+/// <param name="MinValuation">身家门槛；0 表示不设门槛</param>
 /// <param name="IsPublic">是否进入组队大厅</param>
+/// <param name="PvpEnabled">队伍斗法开关（总纲 §7.10.4）：仅讨伐目标可为 true、仅队长可改、队员只读</param>
 /// <param name="Members">成员列表（含队长）</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；成员数达到槽位且全员就绪位于目标节点时自动开战</param>
 /// <param name="ActiveSession">进行中的组队讨伐会话；无会话为 null（散场即随下次状态推送消失）</param>
@@ -920,6 +928,7 @@ public sealed record PartyDto(
     string NodeId,
     double MinValuation,
     bool IsPublic,
+    bool PvpEnabled,
     IReadOnlyList<PartyMemberDto> Members,
     int OpenSlots,
     PartySessionDto? ActiveSession = null);
@@ -939,7 +948,7 @@ public sealed record PartyInvitationDto(string PartyId, string InviterId, string
 /// <summary>本人「匹配中」散人登记。</summary>
 /// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
-/// <param name="MinValuation">期望队友的最低身价；0 表示不设要求</param>
+/// <param name="MinValuation">期望队友的最低身家；0 表示不设要求</param>
 /// <param name="CreatedAtUnixMilliseconds">登记时刻（Unix 毫秒）</param>
 public sealed record PartySeekerDto(string ActivityKind, string NodeId, double MinValuation, long CreatedAtUnixMilliseconds);
 
@@ -966,14 +975,14 @@ public sealed record SocialStateDto(
 /// <param name="RequestId">请求唯一标识，回执配对键</param>
 /// <param name="ActivityKind">目标类型筛选；空/缺省表示不限</param>
 /// <param name="NodeId">目标节点筛选；空/缺省表示不限</param>
-/// <param name="MinValuation">身价下限筛选：队伍按成员最低身价、散人按本人身价过滤；空/0 表示不限</param>
+/// <param name="MinValuation">身家下限筛选：队伍按成员最低身家、散人按本人身家过滤；空/0 表示不限</param>
 public sealed record PartyLobbyRequestDto(string RequestId, string? ActivityKind = null, string? NodeId = null, double? MinValuation = null);
 
 /// <summary>大厅公开队伍的成员预览条目。</summary>
 /// <param name="PlayerId">成员玩家 ID</param>
 /// <param name="DisplayName">成员道号</param>
 /// <param name="Online">是否在线</param>
-/// <param name="Valuation">成员身价</param>
+/// <param name="Valuation">成员身家</param>
 public sealed record PartyLobbyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation);
 
 /// <summary>大厅公开队伍条目。</summary>
@@ -983,7 +992,7 @@ public sealed record PartyLobbyMemberDto(string PlayerId, string DisplayName, bo
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
 /// <param name="LeaderId">队长玩家 ID</param>
 /// <param name="LeaderName">队长道号</param>
-/// <param name="MinValuation">身价门槛</param>
+/// <param name="MinValuation">身家门槛</param>
 /// <param name="CreatedAtUnixMilliseconds">创建时刻（Unix 毫秒）</param>
 /// <param name="Members">成员预览（含队长）</param>
 public sealed record PartyLobbyEntryDto(
@@ -1001,10 +1010,10 @@ public sealed record PartyLobbyEntryDto(
 /// <param name="PlayerId">散人玩家 ID</param>
 /// <param name="DisplayName">散人道号</param>
 /// <param name="Online">是否在线</param>
-/// <param name="Valuation">散人身价</param>
+/// <param name="Valuation">散人身家</param>
 /// <param name="ActivityKind">目标类型</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
-/// <param name="MinValuation">期望队友的最低身价</param>
+/// <param name="MinValuation">期望队友的最低身家</param>
 /// <param name="CreatedAtUnixMilliseconds">登记时刻（Unix 毫秒）</param>
 public sealed record PartyLobbySeekerDto(
     string PlayerId,
@@ -1018,7 +1027,7 @@ public sealed record PartyLobbySeekerDto(
 
 /// <summary>组队大厅下发载荷。</summary>
 /// <param name="RequestId">关联的 <see cref="PartyLobbyRequestDto"/> 请求 ID</param>
-/// <param name="MyValuation">请求者本人当前身价（供前端判定加入可行性）</param>
+/// <param name="MyValuation">请求者本人当前身家（供前端判定加入可行性）</param>
 /// <param name="Parties">公开队伍列表（按创建时间倒序，至多 50 条）</param>
 /// <param name="Seekers">匹配中散人列表（按登记时间倒序，至多 50 条）</param>
 public sealed record PartyLobbyDto(
@@ -1031,3 +1040,74 @@ public sealed record PartyLobbyDto(
 /// <param name="Side">观察侧：<c>enemy</c> 敌方 / <c>ally</c> 己方盟友；与 <paramref name="Index"/> 同为 null 时表示清除观察目标</param>
 /// <param name="Index">该侧阵型下标：enemy 为 enemies[] 数组序，ally 为 allies 成员序 memberIndex（与前端 enemy:i / ally:i 一致）</param>
 public sealed record UnitInspectDto(string? Side, int? Index);
+
+/// <summary>角色信息卡请求载荷（总纲 §21.14）。</summary>
+/// <param name="RequestId">请求唯一标识，与信封头 RequestId 一致，应答配对键</param>
+/// <param name="PlayerId">目标玩家 ID（GUID 文本）；仅可查询本人或同队成员</param>
+public sealed record PlayerCardRequestDto(string RequestId, string? PlayerId = null);
+
+/// <summary>角色信息卡六维投影：与 loadout 分段 coreAttributes 协议形状一致（经验 + 服务端派生等级）。</summary>
+public sealed record PlayerCardCoreDto(
+    double StaminaExp, double MeridiansExp, double AttackExp,
+    double BoneExp, double AgilityExp, double ConsciousnessExp,
+    double StaminaLevel, double MeridiansLevel, double AttackLevel,
+    double BoneLevel, double AgilityLevel, double ConsciousnessLevel,
+    double TotalLevel);
+
+/// <summary>角色信息卡功法槽位（与 loadout 分段 abilitySlots 协议形状一致）。</summary>
+/// <param name="AbilityId">功法 ID；null 为空槽</param>
+/// <param name="Level">装配槽位参悟等级</param>
+public sealed record PlayerCardAbilitySlotDto(string? AbilityId, double Level);
+
+/// <summary>角色信息卡已穿戴装备（与 loadout 分段 equipment 协议形状一致；槽位语义由配表 slot 决定，含 tool-* 技艺工具）。</summary>
+/// <param name="ItemId">装备配置 ID</param>
+/// <param name="EnhancementLevel">强化等级</param>
+public sealed record PlayerCardEquipmentDto(string ItemId, double EnhancementLevel);
+
+/// <summary>角色信息卡战斗栏域消耗品槽位（settings.autoUseSlots 中 ActionType=combat 的子集）。</summary>
+/// <param name="SlotIndex">栏内槽位下标（0~2）</param>
+/// <param name="ItemId">配置物品 ID；null 为空槽</param>
+/// <param name="Quantity">单次使用数量</param>
+/// <param name="Enabled">是否启用自动使用</param>
+/// <param name="Group">栏位分组：<c>potion</c> 药品栏 / <c>general</c> 通用栏</param>
+public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, double Quantity, bool Enabled, string Group);
+
+/// <summary>
+/// 角色信息卡应答（总纲 §21.14）。
+/// <paramref name="Error"/> 非空时其余字段为缺省值：<c>forbidden</c> 非同队成员、<c>not-found</c> 身份不存在。
+/// </summary>
+/// <param name="RequestId">关联的请求 ID</param>
+/// <param name="PlayerId">目标玩家 ID（请求原样回传）</param>
+/// <param name="Error">错误码；null 表示成功</param>
+/// <param name="DisplayName">道号</param>
+/// <param name="PlayerSeq">角色序号（identity.players.player_seq 注册自增编号）</param>
+/// <param name="Online">是否在线</param>
+/// <param name="RealmLevel">境界等级</param>
+/// <param name="Experience">当前层修为进度</param>
+/// <param name="ExperienceToNext">升至下一级所需修为（满级为 0）</param>
+/// <param name="CombatExperience">战斗经验对抗池累计值</param>
+/// <param name="Valuation">身家（服务端估值口径）</param>
+/// <param name="CoreAttributes">六维经验与等级投影</param>
+/// <param name="AbilitySlots">功法装配槽位</param>
+/// <param name="LearnedAbilityIds">已学功法 ID 列表</param>
+/// <param name="AbilityExperiences">功法经验表（abilityId → 累计经验）</param>
+/// <param name="Equipment">已穿戴装备（战斗装备与技艺工具合并清单）</param>
+/// <param name="AutoUseSlots">战斗栏域消耗品配置（丹药栏 + 通用栏）</param>
+public sealed record PlayerCardDto(
+    string RequestId,
+    string PlayerId,
+    string? Error = null,
+    string? DisplayName = null,
+    long PlayerSeq = 0,
+    bool Online = false,
+    int RealmLevel = 0,
+    double Experience = 0,
+    double ExperienceToNext = 0,
+    double CombatExperience = 0,
+    double Valuation = 0,
+    PlayerCardCoreDto? CoreAttributes = null,
+    IReadOnlyList<PlayerCardAbilitySlotDto>? AbilitySlots = null,
+    IReadOnlyList<string>? LearnedAbilityIds = null,
+    IReadOnlyDictionary<string, double>? AbilityExperiences = null,
+    IReadOnlyList<PlayerCardEquipmentDto>? Equipment = null,
+    IReadOnlyList<PlayerCardAutoUseSlotDto>? AutoUseSlots = null);

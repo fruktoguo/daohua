@@ -1,6 +1,6 @@
 /**
  * social 域词典（zh-CN）：同道页、队伍组队、匹配登记、组队大厅与队伍管理文本收拢。
- * 注：valuation 对应「身价」口径（装备+功法的市场估值，非战斗属性），后续若改名只需改本域文案。
+ * 注：valuation 对应「身家」口径（装备+功法的市场估值，非战斗属性），后续若改名只需改本域文案。
  */
 export const socialZh = {
   social: {
@@ -37,8 +37,8 @@ export const socialZh = {
     offline: '离线',
     memberCount: '{count} 人',
     memberCountOf: '{count}/{slots}',
-    valuationValue: '身价 {value}',
-    minValuationValue: '身价 ≥ {value}',
+    valuationValue: '身家 {value}',
+    minValuationValue: '身家 ≥ {value}',
     activity: {
       any: '不限',
       combat: '讨伐',
@@ -58,9 +58,11 @@ export const socialZh = {
       name: '队伍名称',
       namePlaceholder: '留空自动生成',
       activity: '目标',
+      region: '区域',
+      anyRegion: '不限',
       node: '地点',
       anyNode: '不限',
-      minValuation: '最低身价',
+      minValuation: '最低身家',
       minValuationPlaceholder: '0 = 不设门槛',
       isPublic: '公开到大厅',
       openSlots: '开启槽位',
@@ -69,7 +71,7 @@ export const socialZh = {
     action: {
       create: '创建队伍',
       join: '加入',
-      joinLocked: '身价不足',
+      joinLocked: '身家不足',
       leave: '离开队伍',
       disband: '解散队伍',
       kick: '移出',
@@ -81,9 +83,7 @@ export const socialZh = {
       refreshLobby: '刷新大厅',
       editProfile: '修改队伍',
       saveProfile: '保存队伍设置',
-      participate: '参与斗法',
-      leaveParticipation: '暂不参战',
-      quitParticipation: '退出斗法',
+      quitParticipation: '退出共战',
     },
     invitation: {
       body: '{name} 邀请你加入「{party}」',
@@ -96,13 +96,13 @@ export const socialZh = {
     },
     lobby: {
       heading: '组队大厅',
-      desc: '按目标筛选公开队伍与匹配中的散人，身价门槛由服务端实时裁决。',
-      myValuation: '我的身价 {value}',
+      desc: '按目标筛选公开队伍与匹配中的散人，身家门槛由服务端实时裁决。',
+      myValuation: '我的身家 {value}',
       partiesHeading: '公开队伍',
       seekersHeading: '匹配中的散人',
       leader: '队长 {name}',
       myParty: '当前队伍',
-      seekerWants: '期望队友身价 ≥ {value}',
+      seekerWants: '期望队友身家 ≥ {value}',
       noParties: '暂无公开队伍',
       noSeekers: '暂无匹配中的散人',
     },
@@ -118,12 +118,41 @@ export const socialZh = {
       inviteFriend: '邀请好友：',
       emptySlot: '空槽位',
     },
-    // 同图共战（组队讨伐）：参战状态、开启槽位与活跃会话（§21.13）
+    // 队伍成员角色信息卡（§21.14）：点击成员卡按需查询服务端白名单投影
+    card: {
+      viewAria: '查看 {name} 的角色信息',
+      loading: '正在读取角色信息…',
+      errorForbidden: '无权查看该角色的信息',
+      errorNotFound: '该角色不存在',
+      errorGeneric: '角色信息读取失败',
+      seq: '序号 #{seq}',
+      cultivation: '修为',
+      combatExp: '战斗经验',
+      valuation: '身家',
+      sixDimensions: '六维',
+      combatEquipment: '战斗装备',
+      toolEquipment: '技艺装备',
+      noEquipment: '未装备',
+      abilities: '技能',
+      noAbility: '未装配功法',
+      abilityLevel: 'Lv.{level}',
+      consumables: '战斗物品',
+      potionGroup: '丹药',
+      generalGroup: '通用消耗品',
+      slotEmpty: '未配置',
+      slotDisabled: '停用',
+    },
+    // 同图共战（组队讨伐）：成员准备状态、开启槽位与活跃会话（§21.13）
     ready: {
-      status: '参战就绪',
-      notReady: '暂不参战',
-      count: '参战就绪 {ready}/{count}',
-      hint: '全员勾选「参与斗法」且槽位占满即自动开赴同图共战',
+      status: '准备',
+      notReady: '未准备',
+      count: '准备 {ready}/{count}',
+      hint: '全员勾选「准备」且槽位占满即自动开赴同图共战',
+    },
+    // 队伍斗法开关（§7.10.4）：整队作为一个匹配单位参与 PVP 撮合，仅队长可改
+    pvp: {
+      label: '斗法',
+      hint: '整队作为一个单位参与斗法（PVP）撮合；仅队长可修改',
     },
     session: {
       cancelHint: '组队讨伐由队伍统一调度，无法单独移除；如需终止，请在队伍页离队（将解散本次共战）',
@@ -141,8 +170,8 @@ export const socialZh = {
       kickDesc: '确定将 {name} 移出队伍吗？',
       slotsTitle: '调整开启槽位',
       slotsDesc: '确定将开启槽位调整为 {slots} 吗？',
-      quitSessionTitle: '退出斗法',
-      quitSessionDesc: '取消参战将令全队散场、本次讨伐终止，确定退出吗？',
+      quitSessionTitle: '退出共战',
+      quitSessionDesc: '取消准备将令全队散场、本次讨伐终止，确定退出吗？',
       sessionSuffix: '当前同图共战进行中，此操作将终止本次讨伐。',
     },
   },

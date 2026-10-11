@@ -33,6 +33,8 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     private volatile UnitInspectDto? _inspectedUnit;
     /// <summary>观察目标的属性面板尚未随成功入队的帧交付：武装于登记，交付后解除，避免观察期间逐拍重复下发。</summary>
     private volatile bool _inspectDeliveryPending;
+    /// 快照增量帧被拥塞丢弃且尚未补投：基线停在旧内容上，静止态分段（如落地后的 world）可能再无推送事件触发重投。
+    private volatile bool _deltaResyncPending;
     private int _consecutiveDrops;
     private long _firstDropUtcTicks;
 
@@ -194,6 +196,13 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
             _lastPushedAssets = assets;
         }
     }
+
+    /// 是否存在被拥塞丢弃且尚未补投的快照增量：为 true 时发送循环排空后应触发一次全段重投。
+    public bool DeltaResyncPending => _deltaResyncPending;
+    /// 快照增量入队失败时登记重投需求：只由快照推送路径调用，聊天/战报等其它可丢弃帧各有回放通道不置位。
+    public void MarkDeltaDropped() => _deltaResyncPending = true;
+    /// 全段重投帧成功入队后解除标记；窄化增量与回执的基线提交不视作补投——它们不覆盖被丢的未触及分段。
+    public void CompleteDeltaResync() => _deltaResyncPending = false;
 }
 
 /// <summary>
@@ -301,6 +310,8 @@ public static class WebSocketEndpoint
         var chat = context.RequestServices.GetRequiredService<Social.ChatRuntime>();
         var social = context.RequestServices.GetRequiredService<Social.SocialRuntime>();
         var presence = context.RequestServices.GetRequiredService<Social.OnlinePresenceRegistry>();
+        var grace = context.RequestServices.GetRequiredService<DisconnectGraceRegistry>();
+        var simulationClock = context.RequestServices.GetRequiredService<IPlayerSimulationClock>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("WebSocketEndpoint");
         var accountRisk = context.RequestServices.GetRequiredService<AccountAbuse.PostgresAccountRiskRepository>();
         var riskContext = context.RequestServices.GetRequiredService<AccountAbuse.AccountRiskRequestContext>();
@@ -319,26 +330,9 @@ public static class WebSocketEndpoint
             // 换节点会触发同节点修士的附近列表刷新，也是组队讨伐在场条件的仲裁触发源。
             await presence.UpdateNodeAsync(snapshot.PlayerId,
                 snapshot.State.World.EdgeId is null ? snapshot.State.World.NodeId : null, token);
-            // 读基线 → 按触及分段窄化编码 → 入队 → 提交基线，在会话锁内整体串行：
-            // 推送可由模拟循环与斗法撮合多线程并发触发，交错会把未送达内容误记为已推送基线。
-            lock (session.OutboundSync)
-            {
-                var (previousSections, previousAssets) = session.ReadPushBaseline();
-                // 按需属性为一次性交付：仅「登记后尚未送达」期间投影；本帧实际写入属性且入队成功才解除武装，
-                // 被慢消费者丢弃时保留武装由下一拍重投，保证客户端最终拿到面板数据。
-                var pendingInspect = session.PendingInspectedUnit;
-                var attributesProjected = false;
-                var delta = ProtocolSnapshotMapper.BuildDelta(
-                    snapshot, gameData.Fingerprint, gameData, snapshot.TouchedSections,
-                    previousSections, previousAssets,
-                    out var nextSections, out var nextAssets,
-                    pendingInspect, () => attributesProjected = true);
-                var packet = EncodeJson(WireMessageType.SnapshotDelta, Guid.NewGuid(), session.NextOutboundSequence(), delta);
-                // 可丢弃帧入队成功才前移基线；被丢弃时基线保持上次已送达内容，避免客户端永久漂移。
-                if (!session.TrySendDroppable(packet)) return;
-                if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspect);
-                session.CommitPushBaseline(nextSections, nextAssets);
-            }
+            // 入队失败登记重投：静止态角色可能再无推送事件，仅靠基线保留无法补回被丢分段。
+            if (!TryPushDelta(session, snapshot, gameData, snapshot.TouchedSections))
+                session.MarkDeltaDropped();
         }
         ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events) => eventPlayerId != session.PlayerId
             ? ValueTask.CompletedTask
@@ -354,9 +348,18 @@ public static class WebSocketEndpoint
         social.StateChanged += OnSocialStateChanged;
         try
         {
-            var sendTask = SendLoopAsync(socket, session, token);
+            // 丢帧重投：增量被丢后基线停在旧内容，静止角色可能再无 SnapshotUpdated 触发补发；
+            // 由发送循环在通道排空时回调，按当前已装载快照全段重建差集（touched=null）补投。
+            void ResyncDroppedDelta()
+            {
+                if (!session.DeltaResyncPending) return;
+                var snapshot = runtime.TryGetLoaded(session.PlayerId);
+                if (snapshot is not null && TryPushDelta(session, snapshot, gameData, null))
+                    session.CompleteDeltaResync();
+            }
+            var sendTask = SendLoopAsync(socket, session, ResyncDroppedDelta, token);
             var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions,
-                accountRisk, riskContext, context, accountId);
+                accountRisk, riskContext, context, accountId, grace);
             await Task.WhenAny(sendTask, receiveTask);
             // 服务端主动终止路径（被顶替/准入拒绝）：先冲刷通知帧再发关闭帧。
             // 顺序硬约束：取消令牌会中止阻塞中的 ReceiveAsync 并把 socket 置为 Aborted，
@@ -388,13 +391,9 @@ public static class WebSocketEndpoint
             social.StateChanged -= OnSocialStateChanged;
             // 会话释放按实例配对：被顶替的旧会话返回 false，不得触碰新会话已加载的 Actor。
             var owned = admission.Release(session);
-            // 在线存在感以玩家为键：只有仍是当前会话的持有者才能摘除登记，
-            // 否则被顶替的旧会话拆除时会把新会话的存在感一起抹掉。
-            if (owned)
-            {
-                try { await presence.UnregisterAsync(playerId, CancellationToken.None); }
-                catch (Exception exception) { logger.LogError(exception, "在线存在感注销失败 playerId={PlayerId}", playerId); }
-            }
+            // 断线宽限（总纲18 §14.3）：在线位与实体常驻宽限期，到期才注销存在感并按断线时刻落盘卸载；
+            // 宽限为 0 时等价于断开即卸载。被顶替的旧会话不做任何拆除，由新会话接管同一实体。
+            if (owned) await grace.ScheduleAsync(playerId, simulationClock.UtcNow);
             // 兜底关闭：主流程未发出关闭帧时（如发送循环异常）仍尝试按 CloseHint 收尾。
             if (session.CloseHint is { } closeHint && socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
@@ -402,7 +401,6 @@ public static class WebSocketEndpoint
             }
             // 关闭连接时使用独立取消令牌：请求已断开并不应中断权威状态刷盘。
             // 若数据库暂时不可用，RemoveAsync 保留 actor 与脏标记，后台 flush worker 会继续重试。
-            if (owned) await runtime.RemoveAsync(playerId, true, CancellationToken.None);
             session.MarkTeardownCompleted();
         }
     }
@@ -417,10 +415,46 @@ public static class WebSocketEndpoint
     private static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T payload) =>
         WireEnvelopeCodec.EncodeJson(messageType, requestId, Math.Max(0, sequence), payload);
 
-    private static async Task SendLoopAsync(WebSocket socket, WebSocketSession session, CancellationToken cancellationToken)
+    /// <summary>
+    /// 增量推送共用路径：「读基线 → 按触及分段窄化编码 → 取号入队 → 提交基线」在会话锁内整体串行——
+    /// 推送可由模拟循环与斗法撮合多线程并发触发，交错会把未送达内容误记为已推送基线。
+    /// touchedSections 为 null 时退化为全段重编码、校验和裁决，供丢帧重投兜住所有漂移分段。
+    /// </summary>
+    /// <returns>帧已入队返回 true；出站队列拥塞被丢弃返回 false，由调用方登记 <see cref="WebSocketSession.MarkDeltaDropped"/>。</returns>
+    private static bool TryPushDelta(WebSocketSession session, PlayerRuntimeSnapshot snapshot,
+        Domain.GameData.GameDataCatalog gameData, IReadOnlySet<PlayerSectionKind>? touchedSections)
+    {
+        lock (session.OutboundSync)
+        {
+            var (previousSections, previousAssets) = session.ReadPushBaseline();
+            // 按需属性为一次性交付：仅「登记后尚未送达」期间投影；本帧实际写入属性且入队成功才解除武装，
+            // 被慢消费者丢弃时保留武装由下一拍重投，保证客户端最终拿到面板数据。
+            var pendingInspect = session.PendingInspectedUnit;
+            var attributesProjected = false;
+            var delta = ProtocolSnapshotMapper.BuildDelta(
+                snapshot, gameData.Fingerprint, gameData, touchedSections,
+                previousSections, previousAssets,
+                out var nextSections, out var nextAssets,
+                pendingInspect, () => attributesProjected = true);
+            var packet = EncodeJson(WireMessageType.SnapshotDelta, Guid.NewGuid(), session.NextOutboundSequence(), delta);
+            // 可丢弃帧入队成功才前移基线；被丢弃时基线保持上次已送达内容，避免客户端永久漂移。
+            if (!session.TrySendDroppable(packet)) return false;
+            if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspect);
+            session.CommitPushBaseline(nextSections, nextAssets);
+            return true;
+        }
+    }
+
+    private static async Task SendLoopAsync(WebSocket socket, WebSocketSession session, Action deltaResync, CancellationToken cancellationToken)
     {
         await foreach (var packet in session.Outbound.ReadAllAsync(cancellationToken))
+        {
             await socket.SendAsync(packet, WebSocketMessageType.Binary, true, cancellationToken);
+            // 被丢增量在通道排空（Count==0）时补投：仍拥塞时重投必然再丢且白费全段编码，
+            // 排空瞬间即最早可送达时机；若竞态再满，重投失败由标记保留等下一次排空。
+            if (session.DeltaResyncPending && session.Outbound.Count == 0)
+                deltaResync();
+        }
     }
 
     private static async Task ReceiveLoopAsync(
@@ -439,7 +473,8 @@ public static class WebSocketEndpoint
         AccountAbuse.PostgresAccountRiskRepository accountRisk,
         AccountAbuse.AccountRiskRequestContext riskContext,
         HttpContext context,
-        Guid accountId)
+        Guid accountId,
+        DisconnectGraceRegistry grace)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(options.MaxWebSocketMessageBytes, 64 * 1024));
         long lastInboundSequence = 0;
@@ -560,7 +595,9 @@ public static class WebSocketEndpoint
                                     new AntiMultiOpenConfigDto(riskPolicy.Enabled && riskPolicy.Modules.Single(item => item.Id == "tabGuard").Enabled)));
                         }
                         await session.SendAsync(helloAckPacket, cancellationToken);
-                        var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
+                        // 重连取消在途宽限：未触发的定时作废；收尾已在执行则等待完成，保证与装载串行（§14.3）。
+                        await grace.CancelAsync(session.PlayerId, cancellationToken);
+                        var initial = await runtime.AttachConnectionAsync(session.PlayerId, cancellationToken);
                         displayName = initial.DisplayName;
                         // 握手数据获取并行化：快照编码（CPU）、社交/聊天/存在感（独立 IO 与内存计算）互不依赖，
                         // 总耗时取最大而非求和；下行发送顺序保持 HelloAck → Snapshot → LogBatch → SocialState → ChatHistory 不变。
@@ -761,6 +798,23 @@ public static class WebSocketEndpoint
                         await QueueJsonAsync(session, WireMessageType.PartyLobby, envelope.RequestId,
                             await social.BuildLobbyAsync(session.PlayerId, lobbyRequest, cancellationToken), cancellationToken);
                         break;
+                    case WireMessageType.PlayerCardRequest:
+                        if (!handshaken)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        if (!WireEnvelopeCodec.TryDeserializeJson<PlayerCardRequestDto>(envelope, out var cardRequest) || cardRequest is null
+                            || !Guid.TryParse(cardRequest.RequestId, out var cardRequestId) || cardRequestId != envelope.RequestId
+                            || !Guid.TryParse(cardRequest.PlayerId, out _))
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_PLAYER_CARD", "角色信息卡请求无效。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        // 查询应答必达：弹窗加载态等不回可丢帧兜底；错误语义经载荷 error 字段下发。
+                        await session.SendJsonAsync(WireMessageType.PlayerCard, envelope.RequestId,
+                            await social.BuildPlayerCardAsync(session.PlayerId, cardRequest, cancellationToken), cancellationToken);
+                        break;
                     case WireMessageType.UnitInspect:
                         if (!handshaken)
                         {
@@ -921,7 +975,7 @@ public static class WebSocketEndpoint
         Social.SocialFailure.NotLeader => "只有队长可以执行该操作。",
         Social.SocialFailure.InvitationNotFound => "没有待处理的队伍邀请。",
         Social.SocialFailure.PartyNotFound => "队伍不存在或已解散。",
-        Social.SocialFailure.ValuationTooLow => "身价未达到队伍门槛。",
+        Social.SocialFailure.ValuationTooLow => "身家未达到队伍门槛。",
         Social.SocialFailure.InvalidPartyProfile => "队伍配置无效。",
         Social.SocialFailure.SeekingNotFound => "你没有进行中的队伍匹配。",
         Social.SocialFailure.RateLimited => "操作过于频繁，请稍后再试。",

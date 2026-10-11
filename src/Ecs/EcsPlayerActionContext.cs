@@ -58,6 +58,8 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
     public PlayerDuelState Duel => _duel.Duel;
     /// <summary>在线状态（Offline/Online/Suspended）。</summary>
     public PresenceState Presence => Identity.Presence;
+    /// <summary>离线锚点：最近一次由在线转为非在线的时刻；在线或无锚点为 null。</summary>
+    public DateTimeOffset? OfflineSinceAt => Identity.OfflineSinceAt;
     /// <summary>最近一次模拟推进到的墙钟时刻；离线补算与在线推进共用同一推进游标。</summary>
     public DateTimeOffset LastSimulatedAt { get => Queue.LastAdvancedAt; set => Queue.LastAdvancedAt = value; }
     /// <summary>聚合状态版本号；每次对外可见变更递增，用于并发冲突检测。</summary>

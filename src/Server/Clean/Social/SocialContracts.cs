@@ -30,12 +30,14 @@ public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool R
 /// <param name="Name">队伍名称；空串表示尚未命名（展示层回落「{队长道号}的小队」）。</param>
 /// <param name="ActivityKind">目标类型：any/combat/exploration/cultivation。</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限。</param>
-/// <param name="MinValuation">身价门槛；0 表示不设门槛。</param>
+/// <param name="MinValuation">身家门槛；0 表示不设门槛。</param>
 /// <param name="IsPublic">是否进入组队大厅。</param>
-public sealed record PartyProfileRecord(string Name, string ActivityKind, string NodeId, double MinValuation, bool IsPublic)
+/// <param name="PvpEnabled">队伍斗法开关（总纲 §7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
+/// 仅 activityKind='combat' 可为 true、仅队长可改、会话创建时冻结进参与规格。</param>
+public sealed record PartyProfileRecord(string Name, string ActivityKind, string NodeId, double MinValuation, bool IsPublic, bool PvpEnabled)
 {
-    /// <summary>默认档案：不限目标、无门槛、不公开（邀请制自建队伍沿用）。</summary>
-    public static readonly PartyProfileRecord Default = new("", "any", "", 0, false);
+    /// <summary>默认档案：不限目标、无门槛、不公开、不斗法（邀请制自建队伍沿用）。</summary>
+    public static readonly PartyProfileRecord Default = new("", "any", "", 0, false, false);
 }
 
 /// <summary>队伍与其成员。</summary>
@@ -58,6 +60,7 @@ public sealed record PartyRecord(Guid PartyId, Guid LeaderId, PartyProfileRecord
 /// <param name="EndedAt">散场时刻；null 表示会话活跃。</param>
 /// <param name="EndReason">散场原因标签（member-left/party-disbanded/…/server.restart）。</param>
 /// <param name="SpecJson">冻结的共享剧本规格原始 JSON（装载对账补发行动时反序列化为 <c>ActionParticipationSpec</c>）。</param>
+/// <param name="PvpEnabled">冻结的队伍斗法开关（spec.pvpEnabled 浅层解析）：档案值漂移即触发散场重建。</param>
 public sealed record PartySessionRecord(
     string SessionId,
     Guid PartyId,
@@ -67,7 +70,8 @@ public sealed record PartySessionRecord(
     IReadOnlyList<Guid> MemberIds,
     string SpecJson,
     DateTimeOffset? EndedAt = null,
-    string? EndReason = null);
+    string? EndReason = null,
+    bool PvpEnabled = false);
 
 /// <summary>48h 离线逐出结果：一条被删除的成员行。</summary>
 /// <param name="PlayerId">被逐出玩家 ID。</param>
@@ -86,7 +90,7 @@ public sealed record PartyInvitationRecord(Guid PartyId, Guid InviterId, string 
 /// <param name="DisplayName">散人道号。</param>
 /// <param name="ActivityKind">目标类型。</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限。</param>
-/// <param name="MinValuation">期望队友的最低身价。</param>
+/// <param name="MinValuation">期望队友的最低身家。</param>
 /// <param name="CreatedAt">登记时刻。</param>
 public sealed record PartySeekerRecord(Guid PlayerId, string DisplayName, string ActivityKind, string NodeId, double MinValuation, DateTimeOffset CreatedAt);
 
@@ -114,7 +118,7 @@ public sealed record SocialStateSnapshot(
 /// <param name="Name">队伍名称。</param>
 /// <param name="ActivityKind">目标类型。</param>
 /// <param name="NodeId">目标节点 ID。</param>
-/// <param name="MinValuation">身价门槛。</param>
+/// <param name="MinValuation">身家门槛。</param>
 /// <param name="MemberCount">当前队伍人数。</param>
 public sealed record PartyLinkRecord(Guid PartyId, string Name, string ActivityKind, string NodeId, double MinValuation, int MemberCount);
 
@@ -162,7 +166,7 @@ public enum SocialFailure : byte
     InvitationNotFound,
     /// <summary>目标队伍不存在或已解散。</summary>
     PartyNotFound,
-    /// <summary>加入者身价未达队伍门槛。</summary>
+    /// <summary>加入者身家未达队伍门槛。</summary>
     ValuationTooLow,
     /// <summary>队伍档案字段非法（目标类型/节点/门槛/名称）。</summary>
     InvalidPartyProfile,
@@ -197,6 +201,11 @@ public enum PartyJoinResult : byte
     AlreadyInParty
 }
 
+/// <summary>玩家身份视图（角色信息卡身份区数据源）。</summary>
+/// <param name="DisplayName">道号。</param>
+/// <param name="PlayerSeq">角色序号（identity.players.player_seq 注册自增编号）。</param>
+public sealed record PlayerIdentityView(string DisplayName, long PlayerSeq);
+
 /// <summary>好友、队伍与队伍邀请的持久化边界。</summary>
 public interface ISocialRepository
 {
@@ -205,6 +214,9 @@ public interface ISocialRepository
 
     /// <summary>读取玩家道号；玩家不存在返回 null。</summary>
     ValueTask<string?> GetDisplayNameAsync(Guid playerId, CancellationToken cancellationToken = default);
+
+    /// <summary>读取玩家身份视图（道号 + 角色序号）；玩家不存在返回 null。</summary>
+    ValueTask<PlayerIdentityView?> GetPlayerIdentityAsync(Guid playerId, CancellationToken cancellationToken = default);
 
     /// <summary>列出好友关系与对端道号。</summary>
     ValueTask<IReadOnlyList<FriendRecord>> ListFriendsAsync(Guid playerId, CancellationToken cancellationToken = default);
@@ -305,11 +317,14 @@ public interface ISocialRepository
     /// <summary>读取队伍当前活跃讨伐会话（ended_at IS NULL）；无活跃会话返回 null。</summary>
     ValueTask<PartySessionRecord?> GetActivePartySessionAsync(Guid partyId, CancellationToken cancellationToken = default);
 
+    /// <summary>列出全部未散场的讨伐会话；常驻成员对账与全员离线批算的遍历源。</summary>
+    ValueTask<IReadOnlyList<PartySessionRecord>> ListActivePartySessionsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>批量读取玩家投影节点（game.player_projection.current_node_id，离线成员的位置口径）；无投影行的玩家缺席。</summary>
     ValueTask<IReadOnlyDictionary<Guid, string>> GetPlayerNodeMapAsync(IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 48h 离线逐出（总纲 §21.13）：删除 last_active_at 早于 cutoff 且非在线标记的成员行，
+    /// 48h 离线逐出（总纲 §21.13）：删除离线锚点 offline_since 早于 cutoff 且非在线标记的成员行，
     /// 返回被逐出的成员列表供逐队仲裁（移交队长/空队解散/散场）。
     /// </summary>
     ValueTask<IReadOnlyList<PartyMemberEviction>> DeleteInactivePartyMembersAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);

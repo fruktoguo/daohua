@@ -287,8 +287,10 @@ internal static partial class ActionExecutionRules
         return true;
     }
 
-    /// <summary>超过48小时收益上限后只清理过期状态与推进时钟，不推进任何行动。</summary>
-    public static bool ApplyOfflineCap(IPlayerResourceContext player, DateTimeOffset target, ActionMutationBatch request)
+    /// <summary>超过离线收益上限后只清理过期状态与推进时钟，不推进任何行动；
+    /// emitEvent 仅在本请求实际跨越封顶边界时为 true（起点已越界的请求只推进时钟不发事件）。</summary>
+    public static bool ApplyOfflineCap(IPlayerResourceContext player, DateTimeOffset target, ActionMutationBatch request,
+        bool emitEvent = true)
     {
         if (player.LastSimulatedAt >= target) return false;
         player.ExpireBuffs(target.ToUnixTimeMilliseconds() / 1000d);
@@ -298,7 +300,8 @@ internal static partial class ActionExecutionRules
             player.MarkDirty(PlayerSectionKind.Combat);
         }
         player.LastSimulatedAt = target;
-        request.AddEvent(new SimulationEvent(target, "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。", null));
+        if (emitEvent)
+            request.AddEvent(new SimulationEvent(target, "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。", null));
         return true;
     }
 
@@ -520,15 +523,19 @@ internal static partial class ActionExecutionRules
             return;
         }
         if (action.Expedition is not { Phase: CombatExpeditionPhase.Combat } snap) return;
+        // 战外资源可能因会话结算等路径暂超当前上限；与 live 路径同口径钳制后再落文档镜像，
+        // 否则恢复校验按模板上限判损坏，实体将无法装载。
+        var clampedHitpoints = Math.Clamp(player.Resources.Hitpoints, 0, player.Resources.MaxHitpoints);
+        var clampedManapoints = Math.Clamp(player.Resources.Manapoints, 0, player.Resources.MaxManapoints);
         action.Expedition = snap with
         {
-            PlayerHitpoints = player.Resources.Hitpoints,
-            PlayerManapoints = player.Resources.Manapoints,
+            PlayerHitpoints = clampedHitpoints,
+            PlayerManapoints = clampedManapoints,
             PlayerState = snap.PlayerState is { } snapshot
                 ? snapshot with
                 {
-                    Hitpoints = player.Resources.Hitpoints,
-                    Manapoints = player.Resources.Manapoints
+                    Hitpoints = clampedHitpoints,
+                    Manapoints = clampedManapoints
                 }
                 : snap.PlayerState
         };

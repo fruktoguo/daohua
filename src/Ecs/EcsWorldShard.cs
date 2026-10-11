@@ -28,11 +28,14 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     private readonly YuoFiber _fiber;
     private readonly bool _previousCloseSystemTry;
     private readonly bool _ownsCloseSystemTry;
+    private readonly DuelAdvanceOptions? _duelAdvance;
     private EcsCombatTriggerSink? _triggerSink;
     private bool _disposed;
 
-    public EcsWorldShard(GameDataCatalog? gameData = null, DateTimeOffset? startAt = null, string? fiberName = null, bool setWorldAsDefault = true, bool ownCloseSystemTry = true)
+    public EcsWorldShard(GameDataCatalog? gameData = null, DateTimeOffset? startAt = null, string? fiberName = null, bool setWorldAsDefault = true, bool ownCloseSystemTry = true,
+        DuelAdvanceOptions? duelAdvance = null)
     {
+        _duelAdvance = duelAdvance;
         // 业务运行时不允许 YuoCore 把 System 异常隔离成成功请求；宿主通过异常
         // 感知本次命令失败并执行数据库回滚。
         _ownsCloseSystemTry = ownCloseSystemTry;
@@ -228,6 +231,26 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             if (balances is not null)
                 foreach (var balance in balances)
                     inventory.Items[balance.Asset] = balance.Quantity;
+            // 生命周期规范化（§14.1）：持久化 Online 视为崩溃残留，按断线时刻=LastSimulatedAt
+            // 转离线（与 SetPresence 同效果：重置离线账本、标脏 Duel/Settings）；
+            // 旧档缺失离线锚点时以 LastSimulatedAt 补锚。两种情形都推进版本并标脏待回写。
+            identity.OfflineSinceAt = state.OfflineSinceAt;
+            if (identity.Presence == PresenceState.Online)
+            {
+                identity.Presence = PresenceState.Offline;
+                identity.OfflineSinceAt = queue.LastAdvancedAt;
+                entity.GetComponent<PlayerDuelComponent>()!.Duel.ResetOfflineReport(
+                    queue.LastAdvancedAt.ToUnixTimeMilliseconds() / 1000d);
+                identity.MarkDirty(PlayerSectionKind.Duel);
+                identity.StateVersion = checked(identity.StateVersion + 1);
+                identity.MarkDirty(PlayerSectionKind.Settings);
+            }
+            else if (identity.OfflineSinceAt is null)
+            {
+                identity.OfflineSinceAt = queue.LastAdvancedAt;
+                identity.StateVersion = checked(identity.StateVersion + 1);
+                identity.MarkDirty(PlayerSectionKind.Settings);
+            }
             _players[state.PlayerId.Value] = entity.ID;
             SyncNodeMembership(entity);
             return state.PlayerId.Value;
@@ -315,15 +338,19 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             return true;
         });
 
-    /// <summary>在 Fiber 所有权内更新玩家在线状态并记录可见版本变更。</summary>
-    public bool SetPresence(Guid playerId, PresenceState presence)
+    /// <summary>在 Fiber 所有权内更新玩家在线状态并维护离线锚点、记录可见版本变更。</summary>
+    public bool SetPresence(Guid playerId, PresenceState presence, DateTimeOffset at)
         => ExecuteOwned(() =>
         {
             var player = GetPlayer(playerId);
             var identity = player.GetOrAddComponent<PlayerIdentityComponent>();
             if (!Enum.IsDefined(presence)) throw new DomainException(DomainErrorCode.InvalidArgument, "玩家在线状态无效。");
             if (identity.Presence == presence) return false;
+            var wasOnline = identity.Presence == PresenceState.Online;
             identity.Presence = presence;
+            // 离线锚点：转在线清空；由在线转非在线以 at 记锚；非在线之间切换保留原锚点。
+            if (presence == PresenceState.Online) identity.OfflineSinceAt = null;
+            else if (wasOnline) identity.OfflineSinceAt = at;
             if (presence == PresenceState.Offline)
             {
                 player.GetComponent<PlayerDuelComponent>()!.Duel.ResetOfflineReport(
@@ -383,9 +410,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
             var aggregate = WrapViewAggregate(entity, identity, queue);
             mutate(aggregate);
-            // 聚合标量头字段回写组件：改名/在线态/指纹/版本号/推进游标由命令方法就地修改。
+            // 聚合标量头字段回写组件：改名/在线态/离线锚点/指纹/版本号/推进游标由命令方法就地修改。
             identity.DisplayName = aggregate.DisplayName;
             identity.Presence = aggregate.Presence;
+            identity.OfflineSinceAt = aggregate.OfflineSinceAt;
             identity.StateVersion = aggregate.StateVersion;
             identity.GameDataFingerprint = aggregate.GameDataFingerprint;
             queue.LastAdvancedAt = aggregate.LastSimulatedAt;
@@ -410,6 +438,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             identity.GameDataFingerprint,
             identity.StateVersion,
             identity.Presence,
+            identity.OfflineSinceAt,
             queue.LastAdvancedAt,
             entity.GetComponent<PlayerProgressionComponent>()!.Progression,
             entity.GetComponent<PlayerWorldComponent>()!.World,
@@ -514,7 +543,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 var assets = entity.GetComponent<PlayerInventoryComponent>()!.Items
                     .Select(pair => new AssetBalance(new PlayerId(id), pair.Key, pair.Value, 0)).ToArray();
                 backups[id] = (state, assets, entity.GetComponent<PlayerIdentityComponent>()!.DirtySections.ToArray());
-                executions[id] = EcsActionExecutionComponent.Attach(entity, GameData, target);
+                executions[id] = EcsActionExecutionComponent.Attach(entity, GameData, target, _duelAdvance);
             }
             var cursor = executions.Count > 0 ? executions.Values.Min(EcsActionSession.Current) : target;
             var steps = 0;
@@ -809,7 +838,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 : double.MaxValue;
             state.Player.Buffs.Add(new CombatBuffState(active.BuffId, expiresAt, active.Stacks,
                 active.HpRegen, active.MpRegen, active.AttackSpeedPoints, active.DamageAbsorptionPoints,
-                0, active.HpRegenPostRatio, active.MpRegenPostRatio));
+                0, active.HpRegenPostRatio, active.MpRegenPostRatio, 0, 0, active.Name, ResetOnWave: true));
         }
         var encounterEntity = new YuoEntity(World); encounterEntity.EntityName = $"encounter:{encounterId}:{seed}";
         RuntimeInstrumentation.Count("lifecycle.entity_created.encounter");
@@ -976,6 +1005,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var identity = entity.GetOrAddComponent<PlayerIdentityComponent>();
         identity.StateVersion = restored.StateVersion;
         identity.Presence = restored.Presence;
+        identity.OfflineSinceAt = restored.OfflineSinceAt;
         identity.GameDataFingerprint = restored.GameDataFingerprint;
         var progression = entity.GetOrAddComponent<PlayerProgressionComponent>();
         progression.Progression = restored.Progression;
@@ -1027,10 +1057,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var duel = entity.GetComponent<PlayerDuelComponent>()!;
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
         var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel, a.Participation)).ToArray();
-        var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.StateVersion, identity.GameDataFingerprint,
+        var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.OfflineSinceAt, identity.StateVersion, identity.GameDataFingerprint,
             new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience),
             new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId, world.World.NodeBuildingUsages),
-            new PlayerCombatStateDocument(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints, combat.AttackPower, combat.Defense, resources.Resources.RegenCarrySeconds) { Skills = combat.Combat.Skills },
+            new PlayerCombatStateDocument(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints, combat.AttackPower, combat.Defense, resources.Resources.RegenCarrySeconds) { Skills = combat.Combat.Skills, Buffs = combat.Combat.Buffs },
             buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds, settings.Settings.QueuePaused, settings.Settings.TutorialStep, settings.Settings.TutorialRewardsStep), actions, loadout.Loadout.Export(), duel.Document,
             loadout.Loadout.EquippedItemIds.ToArray());
         var inventory = entity.GetComponent<PlayerInventoryComponent>()?.Items.ToDictionary(p => p.Key, p => p.Value) ?? new Dictionary<AssetKey, double>();

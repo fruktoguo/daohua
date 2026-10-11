@@ -14,6 +14,7 @@ public sealed record PlayerAggregateState(
     DateTimeOffset CreatedAt,
     DateTimeOffset LastSimulatedAt,
     PresenceState Presence,
+    DateTimeOffset? OfflineSinceAt,
     long StateVersion,
     string GameDataFingerprint,
     PlayerProgressionState Progression,
@@ -79,6 +80,8 @@ public sealed record PlayerCombatStateDocument(
 {
     /// <summary>技能调度状态快照。</summary>
     public PlayerCombatSkillState Skills { get; init; } = PlayerCombatSkillState.Empty;
+    /// <summary>战内 Buff 跨波携带态快照。</summary>
+    public PlayerCombatBuffState Buffs { get; init; } = PlayerCombatBuffState.Empty;
 }
 
 /// <summary>客户端设置与快捷自动使用配置快照 DTO</summary>
@@ -138,6 +141,7 @@ public sealed partial class PlayerAggregate
             CreatedAt,
             LastSimulatedAt,
             Presence,
+            OfflineSinceAt,
             StateVersion,
             GameDataFingerprint,
             new PlayerProgressionState(Progression.RealmLevel, Progression.Experience, Progression.CompletedActions, Progression.SimulationCarrySeconds,
@@ -145,7 +149,7 @@ public sealed partial class PlayerAggregate
                 Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
                 Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
-            new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills },
+            new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs },
             GetCachedBuffs(),
             GetCachedEquippedInstances(),
             GetCachedLearnedAbilities(),
@@ -303,6 +307,7 @@ public sealed partial class PlayerAggregate
         {
             LastSimulatedAt = state.LastSimulatedAt.ToUniversalTime(),
             Presence = state.Presence,
+            OfflineSinceAt = state.OfflineSinceAt,
             StateVersion = state.StateVersion
         };
         if (state.StateVersion < 0 || aggregate.LastSimulatedAt < aggregate.CreatedAt)
@@ -426,6 +431,9 @@ public sealed partial class PlayerAggregate
         if (state.Combat.Skills is null || !state.Combat.Skills.IsValid)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能时钟状态无效。");
         aggregate.Combat.Skills = state.Combat.Skills;
+        if (state.Combat.Buffs is null || !state.Combat.Buffs.IsValid)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "战内 Buff 携带态无效。");
+        aggregate.Combat.Buffs = state.Combat.Buffs;
         aggregate.Buffs.Active.AddRange(state.Buffs);
         aggregate.Loadout.EquippedInstances.AddRange(state.EquippedInstances);
         aggregate.Loadout.EquippedItemIds.AddRange(state.EquippedItemIds ?? []);
@@ -672,6 +680,7 @@ public sealed partial class PlayerAggregate
         string DisplayName,
         DateTimeOffset LastSimulatedAt,
         PresenceState Presence,
+        DateTimeOffset? OfflineSinceAt,
         long StateVersion,
         string GameDataFingerprint,
         long SectionVersion,
@@ -704,7 +713,7 @@ public sealed partial class PlayerAggregate
 
     /// <summary>捕获聚合头标量与分段版本游标的回滚副本；每次受保护写操作起点随基线一并刷新。</summary>
     internal PlayerHeadCheckpoint CaptureHeadCheckpoint() =>
-        new(DisplayName, LastSimulatedAt, Presence, StateVersion, GameDataFingerprint, _sectionVersion, DuelSettingsTuning);
+        new(DisplayName, LastSimulatedAt, Presence, OfflineSinceAt, StateVersion, GameDataFingerprint, _sectionVersion, DuelSettingsTuning);
 
     /// <summary>把头标量与分段版本游标写回备份值；不回退脏流水戳号（已消耗戳号不复用，差集判定不会漏报）。</summary>
     internal void RestoreHeadCheckpoint(PlayerHeadCheckpoint head)
@@ -712,6 +721,7 @@ public sealed partial class PlayerAggregate
         DisplayName = head.DisplayName;
         LastSimulatedAt = head.LastSimulatedAt;
         Presence = head.Presence;
+        OfflineSinceAt = head.OfflineSinceAt;
         StateVersion = head.StateVersion;
         GameDataFingerprint = head.GameDataFingerprint;
         _sectionVersion = head.SectionVersion;
@@ -738,7 +748,7 @@ public sealed partial class PlayerAggregate
             World.AttributeInputVersion),
         PlayerSectionKind.Combat => new CombatCheckpoint(
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints,
-                Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills }),
+                Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs }),
         PlayerSectionKind.Buffs => new BuffsCheckpoint(Buffs.Active.ToArray(), Buffs.Active.Version),
         PlayerSectionKind.Loadout => new LoadoutCheckpoint(
             Loadout.Export(),
@@ -795,6 +805,7 @@ public sealed partial class PlayerAggregate
                 Combat.Defense = data.State.Defense;
                 Resources.RegenCarrySeconds = data.State.RegenCarrySeconds;
                 Combat.Skills = data.State.Skills;
+                Combat.Buffs = data.State.Buffs;
                 break;
             }
             case PlayerSectionKind.Buffs:

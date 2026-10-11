@@ -51,9 +51,15 @@ public static class SectionCodec
     /// v23：actionQueue 分段装配展示载荷落地——行动参与成员快照新增 equipment 冻结装备、
     /// 斗法回放状态新增 opponentSkills/opponentEquipment 镜像装配（全部可缺省解码为 null，
     /// 仅详情弹窗「装配」Tab 按需投影消费，不改写结算语义），表结构未变。
+    /// v25-v29：库内容版本链推进（事务时间窗索引、市场结算游标、flush 队列改追加式、
+    /// parties.pvp_enabled 队伍斗法开关），存档载荷本体无字段变化，仅标签随库版本同步推进。
+    /// v30：combat 分段新增战内 Buff 跨波携带态（Combat.Buffs）、参与成员快照新增 CombatBuffs
+    /// 冻结字段——全部可缺省解码（缺省为空携带态），表结构未变。
+    /// v31：settings 分段新增 offlineSinceAt 离线锚点（可缺省解码为 null）；
+    /// player_projection 表新增 offline_since 投影列。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 24;
+    public const int CurrentSchemaVersion = 31;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -203,7 +209,7 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt),
                 DomainSectionKind.ActionQueue => state.Actions,
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -231,7 +237,7 @@ public static class SectionCodec
             (PlayerSectionKinds.Combat, state.Combat),
             (PlayerSectionKinds.Buffs, state.Buffs),
             (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
-            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence)),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt)),
             (PlayerSectionKinds.ActionQueue, state.Actions),
             (PlayerSectionKinds.Duel, state.Duel)
         };
@@ -286,6 +292,7 @@ public static class SectionCodec
             bundle.Identity.CreatedAt,
             head.LastSimulatedAt < bundle.Identity.CreatedAt ? bundle.Identity.CreatedAt : head.LastSimulatedAt,
             settings.Presence,
+            settings.OfflineSinceAt,
             Math.Max(0, head.StateVersion),
             fingerprint,
             progression,
@@ -366,7 +373,7 @@ public static class SectionCodec
     }
 
     /// <summary>解码 loadout 分段的装配文档。
-    /// 供身价估值等轻量读取场景只取装备与功法经验，不必校验整包聚合的完整性。</summary>
+    /// 供身家估值等轻量读取场景只取装备与功法经验，不必校验整包聚合的完整性。</summary>
     /// <param name="section">loadout 分段的持久化行。</param>
     /// <returns>装配文档（装备槽位 + 功法经验等）。</returns>
     public static PlayerLoadoutDocument DecodeLoadout(StoredSection section)
@@ -396,5 +403,7 @@ public static class SectionCodec
         int TutorialStep,
         /// <summary>新手引导奖励游标；v14 及更早载荷缺省解码为 0。</summary>
         int TutorialRewardsStep,
-        PresenceState Presence);
+        PresenceState Presence,
+        /// <summary>离线锚点；v31 前载荷缺省解码为 null。</summary>
+        DateTimeOffset? OfflineSinceAt);
 }

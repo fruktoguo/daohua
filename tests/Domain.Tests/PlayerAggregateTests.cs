@@ -326,10 +326,10 @@ public sealed class PlayerAggregateTests
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
         player.ConsumeDirtySections(); // 新建聚合自带全段脏标记，先清空再断言操作增量
-        player.SetPresence(PresenceState.Online);
+        player.SetPresence(PresenceState.Online, Baseline);
         Assert.DoesNotContain(PlayerSectionKind.Duel, player.DirtySections);
 
-        player.SetPresence(PresenceState.Offline);
+        player.SetPresence(PresenceState.Offline, Baseline);
         Assert.Contains(PlayerSectionKind.Duel, player.DirtySections);
         Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
     }

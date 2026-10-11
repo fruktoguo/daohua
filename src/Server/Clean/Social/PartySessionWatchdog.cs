@@ -30,8 +30,12 @@ public sealed class PartySessionWatchdog(
             }
             try
             {
-                await social.EvictOfflinePartyMembersAsync(options.ColdCatchUpWindow, stoppingToken);
+                // 三态化周期顺序（总纲18 §14.5/§14.6）：先逐出越过 48h 边界的成员，
+                // 再批算推进全员离线会话并强拉消费，随后修复已装载成员绑定，最后对账常驻集合。
+                await social.EvictOfflinePartyMembersAsync(Domain.Player.PlayerLifecycleRules.OfflineIdleLimit, stoppingToken);
+                await social.AdvanceOfflineSessionsAsync(options.OfflineBatchInterval, stoppingToken);
                 await social.ReconcileLoadedSessionBindingsAsync(stoppingToken);
+                await social.ReconcileResidentMembersAsync(stoppingToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

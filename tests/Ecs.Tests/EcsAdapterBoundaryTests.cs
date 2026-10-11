@@ -76,8 +76,9 @@ public sealed class EcsAdapterBoundaryTests
         Assert.True(enqueued.Success, enqueued.Message);
         var beforeUnload = await adapter.LoadAsync(fixture.PlayerId);
 
-        await adapter.RemoveAsync(fixture.PlayerId, flush: true);
-        var restored = await adapter.LoadAsync(fixture.PlayerId);
+        await adapter.RemoveAsync(fixture.PlayerId, flush: true, offlineSince: null);
+        // 断开重连走 AttachConnectionAsync：装载不再自行上线，重连握手才恢复 Online。
+        var restored = await adapter.AttachConnectionAsync(fixture.PlayerId);
 
         Assert.Equal(beforeUnload.State.Actions.Select(action => action.Id), restored.State.Actions.Select(action => action.Id));
         Assert.True(restored.State.StateVersion >= beforeUnload.State.StateVersion);
@@ -443,7 +444,7 @@ public sealed class EcsAdapterBoundaryTests
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var snapshot = await adapter.LoadAsync(playerId, timeout.Token);
-            Assert.Equal(PresenceState.Online, snapshot.State.Presence);
+            Assert.Equal(PresenceState.Offline, snapshot.State.Presence);
             await adapter.FlushAsync(playerId, true, timeout.Token);
             Assert.Equal(Epoch.AddSeconds(37), SectionCodec.DecodeAggregate((await fixture.Sections.LoadAsync(playerId))!).LastSimulatedAt);
             emitted.AddRange(logs);
@@ -456,7 +457,6 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Empty(adapter.GetRecentLogEvents(fixture.PlayerId));
         Assert.Empty(emitted);
         var loaded = await adapter.LoadAsync(fixture.PlayerId);
-        expectedPlayer.SetPresence(PresenceState.Online);
         Assert.Equal(JsonSerializer.Serialize(expectedPlayer.ExportState()), JsonSerializer.Serialize(loaded.State));
         Assert.Equal(expectedLogs, emitted);
         Assert.Equal(expectedBuffer.SnapshotRecent(), adapter.GetRecentLogEvents(fixture.PlayerId));
@@ -494,7 +494,7 @@ public sealed class EcsAdapterBoundaryTests
         // 15 = 初始 3 + 四轮产出 12（fixture 玩家引导已终态，无首轮赠送）。
         Assert.Equal(15, balance.Quantity);
         Assert.Equal(5, balance.Version);
-        await adapter.RemoveAsync(fixture.PlayerId, true);
+        await adapter.RemoveAsync(fixture.PlayerId, true, null);
         var reloaded = await adapter.LoadAsync(fixture.PlayerId);
         Assert.Equal(balance, reloaded.Assets.Single(row => row.AssetId == balance.AssetId));
     }
@@ -506,7 +506,7 @@ public sealed class EcsAdapterBoundaryTests
     {
         var fixture = CreateFixtureCore(Epoch.AddSeconds(37), "explore.gather-ningxue-grass");
         await using var adapter = fixture.Adapter;
-        var loaded = await adapter.LoadAsync(fixture.PlayerId);
+        var loaded = await adapter.AttachConnectionAsync(fixture.PlayerId);
         Assert.NotEmpty(loaded.State.Duel.OfflineReport!.Items);
         if (suspended)
         {
@@ -516,9 +516,9 @@ public sealed class EcsAdapterBoundaryTests
             loaded = presence.Snapshot;
         }
         var expected = PlayerAggregate.Restore(loaded.State);
-        if (!suspended) expected.SetPresence(PresenceState.Offline);
+        if (!suspended) expected.SetPresence(PresenceState.Offline, Epoch.AddSeconds(37));
 
-        await adapter.RemoveAsync(fixture.PlayerId, true);
+        await adapter.RemoveAsync(fixture.PlayerId, true, null);
 
         var actual = SectionCodec.DecodeAggregate((await fixture.Sections.LoadAsync(fixture.PlayerId))!);
         Assert.Equal(JsonSerializer.Serialize(expected.ExportState()), JsonSerializer.Serialize(actual));
@@ -530,7 +530,7 @@ public sealed class EcsAdapterBoundaryTests
     {
         var fixture = CreateFixtureCore(Epoch, "explore.gather-ningxue-grass");
         await using var adapter = fixture.Adapter;
-        var initial = await adapter.LoadAsync(fixture.PlayerId);
+        var initial = await adapter.AttachConnectionAsync(fixture.PlayerId);
         var expected = PlayerAggregate.Restore(initial.State);
         // OOP RefreshNodeBuildingsAsync 的空节点投影：只标 World 脏，不推进业务版本。
         expected.World.NodeBuildings = [];
@@ -546,10 +546,10 @@ public sealed class EcsAdapterBoundaryTests
             new(0, [], BuildingEffectSet.Empty, expected.World.NodeId, []), Epoch));
         SimulationEngine.AdvanceTo(expected, Epoch.AddSeconds(3.6), fixture.Catalog, new AssetWallet(expected.PlayerId));
         await AdvanceAsync(fixture, Epoch.AddSeconds(3.6), batch: false);
-        expected.SetPresence(PresenceState.Offline);
+        expected.SetPresence(PresenceState.Offline, Epoch);
         expected.MarkDirty(PlayerSectionKind.Progression);
 
-        await adapter.RemoveAsync(fixture.PlayerId, true);
+        await adapter.RemoveAsync(fixture.PlayerId, true, null);
 
         var persisted = SectionCodec.DecodeAggregate((await fixture.Sections.LoadAsync(fixture.PlayerId))!);
         Assert.Equal(expected.World.NodeId, persisted.World.NodeBuildingNodeId);
@@ -562,7 +562,7 @@ public sealed class EcsAdapterBoundaryTests
     {
         var fixture = CreateFixture();
         await using var adapter = fixture.Adapter;
-        var before = await adapter.LoadAsync(fixture.PlayerId);
+        var before = await adapter.AttachConnectionAsync(fixture.PlayerId);
         var requestId = Guid.NewGuid();
 
         var rejected = await adapter.ExecuteAsync(fixture.PlayerId, "player.presence",
@@ -582,6 +582,8 @@ public sealed class EcsAdapterBoundaryTests
         await adapter.LoadAsync(fixture.PlayerId);
         await adapter.FlushAsync(fixture.PlayerId, false);
         Assert.Equal(0, fixture.Sections.EnqueueCount);
+        // 装载不再改在线状态也不标脏 settings：以连接附着产生 settings 写项，延续脏段合批回归。
+        await adapter.AttachConnectionAsync(fixture.PlayerId);
         await adapter.FlushAsync(fixture.PlayerId, true);
         Assert.Single(fixture.Sections.LastWrites);
         Assert.Equal(PlayerSectionKinds.Settings, fixture.Sections.LastWrites.Single().SectionKind);
@@ -638,7 +640,7 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(1, ownership.ReleaseCalls);
         Assert.Empty(adapter.GetRecentLogEvents(fixture.PlayerId));
         var committed = failure == "committed-wallet" ? Assert.Single(fixture.Economy.Requests) : null;
-        var restored = await adapter.LoadAsync(fixture.PlayerId);
+        var restored = await adapter.AttachConnectionAsync(fixture.PlayerId);
         Assert.Equal(PresenceState.Online, restored.State.Presence);
         Assert.Equal(Epoch.AddSeconds(37), restored.LastSimulatedAt);
         Assert.Equal(2, ownership.AcquireCalls);
@@ -678,7 +680,7 @@ public sealed class EcsAdapterBoundaryTests
             await release.Task;
         };
         // 卸载持有 gate 等待刷盘；批次取样该玩家后只能等卸载完成再取得 gate。
-        var unloading = adapter.RemoveAsync(fixture.PlayerId, true).AsTask();
+        var unloading = adapter.RemoveAsync(fixture.PlayerId, true, null).AsTask();
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var advancing = adapter.AdvanceAllAsync(Epoch.AddSeconds(37)).AsTask();
         Assert.False(advancing.IsCompleted);
@@ -700,7 +702,7 @@ public sealed class EcsAdapterBoundaryTests
         var newPlayer = PlayerAggregate.Create(new PlayerId(newId), fixture.InitialState.AccountId,
             "装载中玩家", Epoch, fixture.Catalog.Fingerprint);
         newPlayer.SkipTutorial();
-        newPlayer.SetPresence(PresenceState.Offline);
+        newPlayer.SetPresence(PresenceState.Offline, Epoch);
         fixture.Sections.Register(ToBundle(newPlayer.ExportState()));
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -726,6 +728,57 @@ public sealed class EcsAdapterBoundaryTests
             fixture.Economy.BeforeCommitAsync = null;
         }
         Assert.Equal(Epoch.AddSeconds(37), adapter.TryGetLoaded(newId)!.LastSimulatedAt);
+    }
+
+    /// <summary>
+    /// 装载生命周期规范化（§14.1）：持久化 Online 视为崩溃残留转离线（锚点=LastSimulatedAt，
+    /// 版本+1、Settings/Duel 标脏）；离线缺锚点旧档补锚（版本+1、Settings 标脏）；
+    /// 已有锚点的离线档原样装载不推进版本。装载本身不转在线。
+    /// </summary>
+    [Fact]
+    public async Task LoadNormalizesPersistedPresenceAndOfflineAnchor()
+    {
+        var fixture = CreateFixture();
+        await using var adapter = fixture.Adapter;
+
+        // 情形 1：持久化 Online 崩溃残留 → 按断线时刻=LastSimulatedAt 转离线。
+        var residueId = Guid.Parse("10000000-0000-4000-8000-0000000000a1");
+        var residue = PlayerAggregate.Create(new PlayerId(residueId), fixture.InitialState.AccountId,
+            "崩溃残留", Epoch, fixture.Catalog.Fingerprint);
+        fixture.Sections.Register(ToBundle(residue.ExportState()));
+        var residueLoaded = await adapter.LoadAsync(residueId);
+        Assert.Equal(PresenceState.Offline, residueLoaded.State.Presence);
+        Assert.Equal(Epoch, residueLoaded.State.OfflineSinceAt);
+        Assert.Equal(residue.StateVersion + 1, residueLoaded.StateVersion);
+        var residueDirty = fixture.Ecs.GetDirtySections(residueId);
+        Assert.Contains(PlayerSectionKind.Settings, residueDirty);
+        Assert.Contains(PlayerSectionKind.Duel, residueDirty);
+
+        // 情形 2：离线旧档缺锚点 → 以 LastSimulatedAt 补锚，presence 不变。
+        var legacyId = Guid.Parse("10000000-0000-4000-8000-0000000000a2");
+        var legacy = PlayerAggregate.Create(new PlayerId(legacyId), fixture.InitialState.AccountId,
+            "旧档离线", Epoch, fixture.Catalog.Fingerprint);
+        legacy.SetPresence(PresenceState.Offline, Epoch);
+        var legacyState = legacy.ExportState() with { OfflineSinceAt = null };
+        fixture.Sections.Register(ToBundle(legacyState));
+        var legacyLoaded = await adapter.LoadAsync(legacyId);
+        Assert.Equal(PresenceState.Offline, legacyLoaded.State.Presence);
+        Assert.Equal(Epoch, legacyLoaded.State.OfflineSinceAt);
+        Assert.Equal(legacyState.StateVersion + 1, legacyLoaded.StateVersion);
+        Assert.Contains(PlayerSectionKind.Settings, fixture.Ecs.GetDirtySections(legacyId));
+
+        // 情形 3：离线且已有锚点 → 原样装载，不推进版本、不标脏 Settings。
+        var anchoredId = Guid.Parse("10000000-0000-4000-8000-0000000000a3");
+        var anchored = PlayerAggregate.Create(new PlayerId(anchoredId), fixture.InitialState.AccountId,
+            "有锚离线", Epoch, fixture.Catalog.Fingerprint);
+        anchored.SetPresence(PresenceState.Offline, Epoch.AddMinutes(-7));
+        var anchoredState = anchored.ExportState();
+        fixture.Sections.Register(ToBundle(anchoredState));
+        var anchoredLoaded = await adapter.LoadAsync(anchoredId);
+        Assert.Equal(PresenceState.Offline, anchoredLoaded.State.Presence);
+        Assert.Equal(Epoch.AddMinutes(-7), anchoredLoaded.State.OfflineSinceAt);
+        Assert.Equal(anchoredState.StateVersion, anchoredLoaded.StateVersion);
+        Assert.DoesNotContain(PlayerSectionKind.Settings, fixture.Ecs.GetDirtySections(anchoredId));
     }
 
     private static async Task<PlayerRuntimeSnapshot> EnqueueGatheringAsync(Fixture fixture)
@@ -773,7 +826,7 @@ public sealed class EcsAdapterBoundaryTests
         // 强制出队截断干扰无限重复类 parity 断言。
         if (skipTutorial) aggregate.SkipTutorial();
         if (initialAction is not null) aggregate.Enqueue(new(new ActionId(initialAction), -1), Epoch, catalog.Actions);
-        aggregate.SetPresence(PresenceState.Offline);
+        aggregate.SetPresence(PresenceState.Offline, Epoch);
         var initialState = aggregate.ExportState();
         var sections = new MemorySections(ToBundle(initialState));
         var assets = new MemoryAssets(balances.Length == 0
@@ -800,7 +853,7 @@ public sealed class EcsAdapterBoundaryTests
         var aggregate = PlayerAggregate.Create(new PlayerId(playerId),
             new AccountId(Guid.Parse("20000000-0000-4000-8000-000000000023")), "适配器测试", Epoch, catalog.Fingerprint);
         aggregate.SkipTutorial();
-        aggregate.SetPresence(PresenceState.Offline);
+        aggregate.SetPresence(PresenceState.Offline, Epoch);
         var frozen = aggregate.CaptureActionParticipantSnapshot(catalog);
         var spec = new ActionParticipationSpec("session.adapter-boundary", "encounter.qi-beast",
             aggregate.World.NodeId, 91, 0, Epoch.ToUnixTimeSeconds(), [frozen])
@@ -1000,6 +1053,9 @@ public sealed class EcsAdapterBoundaryTests
             CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
             => ValueTask.CompletedTask;
+        public ValueTask<IReadOnlyList<Guid>> AdvanceOfflineDueAsync(DateTimeOffset now, TimeSpan batchInterval,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyList<Guid>>([]);
         public ValueTask EndAsync(string sessionId, DateTimeOffset at, string reason,
             CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<IReadOnlyList<ParticipationInboxItem>> LoadPendingAsync(Guid playerId,
@@ -1054,9 +1110,13 @@ public sealed class EcsAdapterBoundaryTests
         public ValueTask<PartySessionRecord?> GetActivePartySessionAsync(Guid partyId,
             CancellationToken cancellationToken = default)
             => ValueTask.FromResult(partyId == session.PartyId ? session : null);
+        public ValueTask<IReadOnlyList<PartySessionRecord>> ListActivePartySessionsAsync(
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<Guid?> FindPlayerByNameAsync(string displayName,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<string?> GetDisplayNameAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<PlayerIdentityView?> GetPlayerIdentityAsync(Guid playerId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<IReadOnlyList<FriendRecord>> ListFriendsAsync(Guid playerId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

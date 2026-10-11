@@ -44,7 +44,7 @@ public sealed class ComputeGoldenVectorTests
         // 造一个真实离线玩家：转入离线 + 排队一个消耗材料的炼制行动（12s/轮，3 轮）。
         var bundle = NewBundle(playerId, accountId, "金丹客", Catalog.Fingerprint, player =>
         {
-            player.SetPresence(PresenceState.Offline);
+            player.SetPresence(PresenceState.Offline, Baseline);
             player.Enqueue(new ActionIntent(new ActionId("alchemy.refine-qi-pill"), 3), Baseline, Catalog.Actions);
         });
         // 钱包快照：3 轮炼制共需凝血草×9。
@@ -77,7 +77,7 @@ public sealed class ComputeGoldenVectorTests
         var bundle = NewBundle(PlayerId.New(), AccountId.New(), "闲云", Catalog.Fingerprint,
             player =>
             {
-                player.SetPresence(PresenceState.Offline);
+                player.SetPresence(PresenceState.Offline, Baseline);
                 // 一小时预推进：完成 Combat 属性规范化并把自然回复吃到满值，
                 // 此后空闲推进才是真正的空推进（离线空闲回血是真实状态变化）。
                 SimulationEngine.AdvanceTo(player, Baseline.AddHours(1), Catalog,
@@ -112,7 +112,7 @@ public sealed class ComputeGoldenVectorTests
         var bundle = NewBundle(PlayerId.New(), AccountId.New(), "归隐者", Catalog.Fingerprint,
             player =>
             {
-                player.SetPresence(PresenceState.Offline);
+                player.SetPresence(PresenceState.Offline, Baseline);
                 // 先规范化 Combat 并把回血吃满：保证 48h 封顶尾段产出「版本前进 + 零 section」形态。
                 SimulationEngine.AdvanceTo(player, Baseline.AddHours(1), Catalog,
                     new AssetWallet(player.PlayerId));
@@ -139,7 +139,7 @@ public sealed class ComputeGoldenVectorTests
     public void FingerprintRebindProducesIdenticalOutput()
     {
         var bundle = NewBundle(PlayerId.New(), AccountId.New(), "转世重修", "legacy-fingerprint",
-            player => player.SetPresence(PresenceState.Offline));
+            player => player.SetPresence(PresenceState.Offline, Baseline));
         var request = NewJobRequest(bundle, Baseline.AddSeconds(30), []);
 
         var nodeResult = RunNodeJobOverWire(request);
@@ -164,7 +164,7 @@ public sealed class ComputeGoldenVectorTests
         var playerId = PlayerId.New();
         var bundle = NewBundle(playerId, AccountId.New(), "复算者", Catalog.Fingerprint, player =>
         {
-            player.SetPresence(PresenceState.Offline);
+            player.SetPresence(PresenceState.Offline, Baseline);
             player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, Catalog.Actions);
         });
         var request = NewJobRequest(bundle, Baseline.AddMinutes(5), []);
@@ -192,7 +192,7 @@ public sealed class ComputeGoldenVectorTests
         var playerId = PlayerId.New();
         var bundle = NewBundle(playerId, AccountId.New(), "压缩者", Catalog.Fingerprint, player =>
         {
-            player.SetPresence(PresenceState.Offline);
+            player.SetPresence(PresenceState.Offline, Baseline);
             // 多项行动把 action_queue 原始载荷推过 512B 自适应压缩阈值。
             for (var i = 0; i < 12; i++)
                 player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 1), Baseline, Catalog.Actions);
@@ -214,7 +214,7 @@ public sealed class ComputeGoldenVectorTests
     public void CorruptedInputsAreRejectedWithoutRetry()
     {
         var bundle = NewBundle(PlayerId.New(), AccountId.New(), "受害者", Catalog.Fingerprint,
-            player => player.SetPresence(PresenceState.Offline));
+            player => player.SetPresence(PresenceState.Offline, Baseline));
 
         // checksum 篡改：头校验和验证或段校验和验证必有一环拒绝。
         var tampered = NewJobRequest(bundle, Baseline.AddSeconds(30), []);
@@ -254,7 +254,7 @@ public sealed class ComputeGoldenVectorTests
     public void NodeContractValidationRejectsMalformedJobs()
     {
         var bundle = NewBundle(PlayerId.New(), AccountId.New(), "边界", Catalog.Fingerprint,
-            player => player.SetPresence(PresenceState.Offline));
+            player => player.SetPresence(PresenceState.Offline, Baseline));
         var request = NewJobRequest(bundle, Baseline.AddSeconds(30), []);
 
         // 缺一段。

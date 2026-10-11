@@ -86,6 +86,7 @@ public sealed class EcsActionParityTests
         var accountId = Guid.Parse("20000000-0000-4000-8000-000000000013");
         var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId),
             "采集接战斗", SeedTime, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, SeedTime);
         player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), 1), SeedTime, catalog.Actions);
         player.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), SeedTime, catalog.Actions);
         var seed = player.ExportState();
@@ -111,6 +112,98 @@ public sealed class EcsActionParityTests
         Assert.Equal(EventJson(result.Events), EventJson(runtime.DrainSimulationEvents(playerId)));
     }
 
+    /// <summary>
+    /// 离线锚点封顶（§14.2）：同一份断线存档一次推进 60h 与按 20h/40h/60h 三段推进，
+    /// 导出状态、钱包增量与完成轮次逐项一致，收益都只算到锚点 + 48h；
+    /// offline.capped 全程恰好一次，且出现在跨越边界的那段。
+    /// </summary>
+    [Fact]
+    public async Task OfflineAnchorCapIsIdenticalAcrossOneShotAndSegmentedAdvances()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-000000000014");
+        var accountId = Guid.Parse("20000000-0000-4000-8000-000000000014");
+        var seed = CreateSeedState(catalog, playerId, accountId, "离线封顶",
+            new ActionId("cultivation.draw-qi"), -1);
+        var target = SeedTime.AddHours(60);
+
+        // 收益基准：同一初态只推进到锚点 + 48h（离线收益边界）。
+        var reference = PlayerAggregate.Restore(seed);
+        var referenceWallet = CreateWallet(reference, []);
+        SimulationEngine.AdvanceTo(reference, SeedTime.AddHours(48), catalog, referenceWallet);
+
+        // 一次性推进 T0 → T0+60h。
+        using var oneShot = new EcsGameRuntime(catalog, SeedTime);
+        oneShot.CreatePlayer(seed);
+        await oneShot.RunPlayerOnceAsync(playerId, target);
+        var oneShotSnapshot = oneShot.ExportSnapshot(playerId);
+        var oneShotEvents = oneShot.DrainSimulationEvents(playerId);
+
+        // 相同初态按 T0→+20h →+40h →+60h 三段推进。
+        using var segmented = new EcsGameRuntime(catalog, SeedTime);
+        segmented.CreatePlayer(seed);
+        var segmentedEvents = new List<SimulationEvent>();
+        var cappedSegments = new List<int>();
+        for (var index = 0; index < 3; index++)
+        {
+            await segmented.RunPlayerOnceAsync(playerId, SeedTime.AddHours((index + 1) * 20));
+            var drained = segmented.DrainSimulationEvents(playerId);
+            if (drained.Any(entry => entry.Code == "offline.capped")) cappedSegments.Add(index);
+            segmentedEvents.AddRange(drained);
+        }
+        var segmentedSnapshot = segmented.ExportSnapshot(playerId);
+
+        // 一次性与三段推进的导出状态、钱包增量、完成轮次逐项一致。
+        // StateVersion 按请求次数推进（三段多两次请求级版本递增），不属收益口径，比对时归零。
+        var oneShotState = oneShotSnapshot.State with { StateVersion = 0 };
+        var segmentedState = segmentedSnapshot.State with { StateVersion = 0 };
+        Assert.Equal(JsonSerializer.Serialize(oneShotState), JsonSerializer.Serialize(segmentedState));
+        Assert.Equal(JsonSerializer.Serialize(oneShotSnapshot.Assets), JsonSerializer.Serialize(segmentedSnapshot.Assets));
+        Assert.Equal(oneShotSnapshot.State.Actions[0].CompletedRepeats, segmentedSnapshot.State.Actions[0].CompletedRepeats);
+
+        // 两种推进方式的收益都等于只推进到锚点 + 48h。
+        Assert.Equal(reference.Progression.Experience, oneShotSnapshot.State.Progression.Experience, 9);
+        Assert.Equal(reference.Progression.Experience, segmentedSnapshot.State.Progression.Experience, 9);
+        Assert.Equal(reference.Progression.CompletedActions, oneShotSnapshot.State.Progression.CompletedActions);
+        Assert.Equal(reference.Progression.CompletedActions, segmentedSnapshot.State.Progression.CompletedActions);
+        AssertAssetsEqual(referenceWallet, oneShotSnapshot.Assets, "一次性 60h 封顶");
+        AssertAssetsEqual(referenceWallet, segmentedSnapshot.Assets, "三段 60h 封顶");
+
+        // offline.capped 全程恰好一次：一次性请求一个，三段里只在跨边界的 +60h 段出现。
+        Assert.Equal(1, oneShotEvents.Count(entry => entry.Code == "offline.capped"));
+        Assert.Equal(1, segmentedEvents.Count(entry => entry.Code == "offline.capped"));
+        Assert.Equal([2], cappedSegments);
+    }
+
+    /// <summary>请求起点已越过锚点边界：不再产生收益、不再发 offline.capped，时钟照常推进到目标。</summary>
+    [Fact]
+    public async Task AdvanceStartingBeyondAnchorCapYieldsNoIncomeAndNoCappedEvent()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-000000000015");
+        var accountId = Guid.Parse("20000000-0000-4000-8000-000000000015");
+        var seed = CreateSeedState(catalog, playerId, accountId, "越界请求",
+            new ActionId("cultivation.draw-qi"), -1);
+
+        using var runtime = new EcsGameRuntime(catalog, SeedTime);
+        runtime.CreatePlayer(seed);
+        // 首次请求跨越锚点 +48h 边界：该次的 capped 事件先消费掉。
+        await runtime.RunPlayerOnceAsync(playerId, SeedTime.AddHours(50));
+        Assert.Equal(1, runtime.DrainSimulationEvents(playerId).Count(entry => entry.Code == "offline.capped"));
+        var before = runtime.ExportSnapshot(playerId);
+
+        await runtime.RunPlayerOnceAsync(playerId, SeedTime.AddHours(60));
+        var after = runtime.ExportSnapshot(playerId);
+        var events = runtime.DrainSimulationEvents(playerId);
+
+        Assert.DoesNotContain(events, entry => entry.Code == "offline.capped");
+        Assert.Equal(SeedTime.AddHours(60), after.State.LastSimulatedAt);
+        Assert.Equal(before.State.Progression.Experience, after.State.Progression.Experience);
+        Assert.Equal(before.State.Progression.CompletedActions, after.State.Progression.CompletedActions);
+        Assert.Equal(before.State.Actions[0].CompletedRepeats, after.State.Actions[0].CompletedRepeats);
+        Assert.Equal(JsonSerializer.Serialize(before.Assets), JsonSerializer.Serialize(after.Assets));
+    }
+
     private static PlayerAggregateState CreateSeedState(
         GameDataCatalog catalog,
         Guid playerId,
@@ -121,6 +214,7 @@ public sealed class EcsActionParityTests
     {
         var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId),
             displayName, SeedTime, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, SeedTime);
         // parity 门禁与引导语义无关：终态化避免教程里程碑推进对绑定行动
         // 的强制出队截断改变无限重复边界。
         player.SkipTutorial();

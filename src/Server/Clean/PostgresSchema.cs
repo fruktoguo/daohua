@@ -28,7 +28,24 @@ public static class PostgresSchema
     /// v23：actionQueue 分段装配展示载荷落地——参与成员快照增 equipment、斗法回放增 opponentSkills/
     /// opponentEquipment（可缺省解码），存档标签推进，表结构未变。
     /// v24：组队讨伐会话持有唯一权威运行态，新增成员结算收件箱；会话历史不随队伍解散删除。
-    public const int Version = 24;
+    /// v25：economy.transactions 增 (created_at, transaction_type) 时间窗索引——流水已至千万级，
+    /// 运维与监控按时间窗统计依赖全表扫描超时；存档载荷未变。
+    /// v26：market.trades 增 (buyer_id, traded_at)/(seller_id, traded_at) 复合索引——结算领取的
+    /// 谓词读原本落在时间尾部索引上，与一切并发成交插入产生 SSI 冲突；存档载荷未变。
+    /// v27：section_flush_queue 改为追加式收件箱（queue_id 自增主键、去除 (player_id,section_kind)
+    /// 唯一约束）——upsert 共享行被资产事务与 flush worker 的并发 upsert/lease/delete 反复争夺，
+    /// 在 Serializable 下持续产生 40001 与同元组死锁；纯 INSERT 入队 + 按 queue_id 租约认领
+    /// 使写入方与清理方不再接触同一元组，同 kind 旧版本行由应用侧版本守卫收敛。
+    /// v28：新增 market.settlement_cursors 每玩家结算游标——领取原按 trades 时间窗谓词计数，
+    /// 与一切同玩家成交插入 SSI 冲突（~2-3/min 持续 40001）；游标行由成交事务 upsert 累加、
+    /// 领取事务 FOR UPDATE 清零，行锁互斥替代谓词读，领取可降级 ReadCommitted 且无 SSI 表面。
+    /// v29：social.parties 增 pvp_enabled 队伍斗法开关（总纲 §7.10.4）——仅讨伐目标可为 true、
+    /// 仅队长可改、随会话创建冻结进参与规格；存档载荷未变。
+    /// v30：combat 分段新增战内 Buff 跨波携带态、参与成员快照 CombatBuffs 冻结字段
+    /// 与持续消耗品 Buff 全队标记（阵法）——可缺省解码，存档标签推进，表结构未变。
+    /// v31：settings 分段新增 offlineSinceAt 离线锚点，player_projection 增 offline_since 投影列——
+    /// 离线生命周期判定（逐出/会话离线截止）改读该列，在线时恒为 NULL。
+    public const int Version = 31;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -192,6 +209,7 @@ public static class PostgresSchema
         realm_rank double precision NOT NULL DEFAULT 0,
         current_node_id varchar(128) NULL,
         presence varchar(32) NOT NULL DEFAULT 'offline',
+        offline_since timestamptz NULL,
         last_active_at timestamptz NOT NULL,
         projection_version bigint NOT NULL DEFAULT 1,
         updated_at timestamptz NOT NULL
@@ -238,6 +256,7 @@ public static class PostgresSchema
         result_payload bytea NOT NULL DEFAULT ''::bytea,
         created_at timestamptz NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS ix_transactions_created_at ON economy.transactions(created_at, transaction_type);
 
     CREATE TABLE IF NOT EXISTS economy.transaction_lines (
         transaction_id uuid NOT NULL REFERENCES economy.transactions(transaction_id),
@@ -314,6 +333,15 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_market_trades_time ON market.trades(traded_at DESC);
     CREATE INDEX IF NOT EXISTS ix_market_trades_partition ON market.trades(partition_id, traded_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_market_trades_buyer ON market.trades(buyer_id, traded_at);
+    CREATE INDEX IF NOT EXISTS ix_market_trades_seller ON market.trades(seller_id, traded_at);
+
+    CREATE TABLE IF NOT EXISTS market.settlement_cursors (
+        player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        pending_count integer NOT NULL DEFAULT 0 CHECK (pending_count >= 0),
+        settled_count bigint NOT NULL DEFAULT 0,
+        updated_at timestamptz NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS market.settlement_claims (
         player_id uuid NOT NULL REFERENCES identity.players(player_id),
@@ -325,6 +353,7 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_settlement_claims_player_time ON market.settlement_claims(player_id, claimed_at DESC);
 
     CREATE TABLE IF NOT EXISTS platform.section_flush_queue (
+        queue_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         player_id uuid NOT NULL REFERENCES identity.players(player_id),
         section_kind varchar(32) NOT NULL,
         state_version bigint NOT NULL CHECK (state_version > 0),
@@ -340,10 +369,10 @@ public static class PostgresSchema
         lease_until timestamptz NULL,
         lease_token uuid NULL,
         last_error varchar(512) NULL,
-        updated_at timestamptz NOT NULL,
-        PRIMARY KEY (player_id, section_kind)
+        updated_at timestamptz NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ix_section_flush_ready ON platform.section_flush_queue(next_attempt_at, lease_until);
+    CREATE INDEX IF NOT EXISTS ix_section_flush_player ON platform.section_flush_queue(player_id, section_kind, state_version DESC);
 
     CREATE TABLE IF NOT EXISTS platform.integration_outbox (
         outbox_id uuid PRIMARY KEY,
@@ -426,13 +455,16 @@ public static class PostgresSchema
     CREATE TABLE IF NOT EXISTS social.parties (
         party_id uuid PRIMARY KEY,
         leader_id uuid NOT NULL REFERENCES identity.players(player_id),
-        -- 队伍档案：招募标签口径（目标类型/目标节点/身价门槛/公开性），不参与行动或战斗结算。
+        -- 队伍档案：招募标签口径（目标类型/目标节点/身家门槛/公开性），不参与行动或战斗结算。
         name varchar(32) NOT NULL DEFAULT '',
         activity_kind varchar(16) NOT NULL DEFAULT 'any'
             CHECK (activity_kind IN ('any', 'combat', 'exploration', 'cultivation', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement')),
         node_id varchar(128) NOT NULL DEFAULT '',
         min_valuation double precision NOT NULL DEFAULT 0 CHECK (min_valuation >= 0),
         is_public boolean NOT NULL DEFAULT false,
+        -- 队伍斗法开关（总纲 §7.10.4）：仅 activity_kind='combat' 可为 true、仅队长可改、
+        -- 会话创建时冻结进参与规格；改离讨伐目标由社交层归位 false。
+        pvp_enabled boolean NOT NULL DEFAULT false,
         -- 开启槽位（总纲 §21.13）：2~5，默认 5；收窄后不得低于当前队员数（由社交层裁决保证）。
         open_slots smallint NOT NULL DEFAULT 5 CHECK (open_slots BETWEEN 2 AND 5),
         created_at timestamptz NOT NULL,
@@ -540,7 +572,9 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
+        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now())
+    ON CONFLICT (version) DO NOTHING;
     """;
 }
 

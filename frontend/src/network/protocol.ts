@@ -68,6 +68,10 @@ export const WireMessageType = {
   PartyLobbyRequest: 25,
   /** 服务端下发组队大厅：公开队伍与匹配中散人列表 */
   PartyLobby: 26,
+  /** 客户端请求队伍成员角色信息卡 */
+  PlayerCardRequest: 27,
+  /** 服务端下发角色信息卡（按需查询应答，不随社交状态常驻下发） */
+  PlayerCard: 28,
 } as const
 /** WireMessageType 常量表对应的值联合类型（帧类型编号） */
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
@@ -355,7 +359,7 @@ export interface PartyLinkDto {
   activityKind: PartyActivityKind
   /** 目标节点 ID；空串表示不限 */
   nodeId: string
-  /** 加入身价门槛；0 表示不设门槛 */
+  /** 加入身家门槛；0 表示不设门槛 */
   minValuation: number
   /** 发布时刻的队伍人数 */
   memberCount: number
@@ -458,10 +462,13 @@ export interface PartyProfileDto {
   activityKind?: PartyActivityKind | null
   /** 目标节点 ID；空串表示不限 */
   nodeId?: string | null
-  /** 身价门槛；0 表示不设门槛 */
+  /** 身家门槛；0 表示不设门槛 */
   minValuation?: number | null
   /** 是否进入组队大厅 */
   isPublic?: boolean | null
+  /** 队伍斗法开关（§7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
+   * 仅 activityKind='combat' 可为 true、仅队长经 party.update 修改，会话中修改触发散场重建 */
+  pvpEnabled?: boolean | null
   /** 开启槽位数（2~5）；仅 party.slots 使用 */
   openSlots?: number | null
 }
@@ -502,7 +509,7 @@ export interface PartyMemberDto {
   playerId: string
   displayName: string
   online: boolean
-  /** 成员身价（服务端估值口径，非战斗属性） */
+  /** 成员身家（服务端估值口径，非战斗属性） */
   valuation: number
   /** 共战准备状态（§21.13：成员自开关，队长不能代备） */
   ready: boolean
@@ -532,10 +539,12 @@ export interface PartyDto {
   activityKind: PartyActivityKind
   /** 目标节点 ID；空串表示不限 */
   nodeId: string
-  /** 身价门槛；0 表示不设门槛 */
+  /** 身家门槛；0 表示不设门槛 */
   minValuation: number
   /** 是否进入组队大厅 */
   isPublic: boolean
+  /** 队伍斗法开关（§7.10.4）：仅讨伐目标可为 true、仅队长可改、队员只读 */
+  pvpEnabled: boolean
   /** 开启槽位数（2~5，默认 5）；开打条件要求成员数等于该值 */
   openSlots: number
   /** 进行中的组队讨伐会话；无会话为 null */
@@ -564,7 +573,7 @@ export interface PartySeekerDto {
   activityKind: PartyActivityKind
   /** 目标节点 ID；空串表示不限 */
   nodeId: string
-  /** 期望队友的最低身价；0 表示不设要求 */
+  /** 期望队友的最低身家；0 表示不设要求 */
   minValuation: number
   /** 登记时刻（Unix 毫秒） */
   createdAtUnixMilliseconds: number
@@ -592,7 +601,7 @@ export interface PartyLobbyRequestDto {
   activityKind?: PartyActivityKind | null
   /** 目标节点筛选；空/缺省表示不限 */
   nodeId?: string | null
-  /** 身价下限筛选：队伍按成员最低身价、散人按本人身价过滤；空/0 表示不限 */
+  /** 身家下限筛选：队伍按成员最低身家、散人按本人身家过滤；空/0 表示不限 */
   minValuation?: number | null
 }
 
@@ -636,12 +645,100 @@ export interface PartyLobbySeekerDto {
 export interface PartyLobbyDto {
   /** 关联的 PartyLobbyRequest 请求 ID */
   requestId: string
-  /** 请求者本人当前身价（判定加入可行性） */
+  /** 请求者本人当前身家（判定加入可行性） */
   myValuation: number
   /** 公开队伍列表（按创建时间倒序，至多 50 条） */
   parties: PartyLobbyEntryDto[]
   /** 匹配中散人列表（按登记时间倒序，至多 50 条） */
   seekers: PartyLobbySeekerDto[]
+}
+
+/** PlayerCardRequest 角色信息卡查询请求载荷 */
+export interface PlayerCardRequestDto {
+  /** 本次请求唯一 ID，服务端应答原样回传 */
+  requestId: string
+  /** 目标玩家 ID（本人或同队成员，UUID） */
+  playerId: string
+}
+
+/** 角色信息卡中的装配功法槽条目 */
+export interface PlayerCardAbilitySlotDto {
+  /** 功法 ID；null 为空槽 */
+  abilityId: string | null
+  level: number
+}
+
+/** 角色信息卡中的装备条目 */
+export interface PlayerCardEquipmentDto {
+  itemId: string
+  enhancementLevel: number
+}
+
+/** 角色信息卡中的战斗自动使用栏位条目 */
+export interface PlayerCardAutoUseSlotDto {
+  /** 栏内槽位下标（0~2） */
+  slotIndex: number
+  /** 配置物品 ID；null 为空槽 */
+  itemId: string | null
+  quantity: number
+  enabled: boolean
+  /** 栏位分组：potion（丹药栏）/general（通用栏） */
+  group: string
+}
+
+/** 角色信息卡六维投影：经验 + 服务端经境界修为表派生的等级（与 loadout 分段同形） */
+export interface PlayerCardCoreDto {
+  staminaExp: number
+  meridiansExp: number
+  attackExp: number
+  boneExp: number
+  agilityExp: number
+  consciousnessExp: number
+  staminaLevel: number
+  meridiansLevel: number
+  attackLevel: number
+  boneLevel: number
+  agilityLevel: number
+  consciousnessLevel: number
+  totalLevel: number
+}
+
+/** PlayerCard 角色信息卡下发载荷（总纲 §21.14：展示白名单投影）；error 非空时其余字段为缺省值 */
+export interface PlayerCardDto {
+  /** 关联的 PlayerCardRequest 请求 ID */
+  requestId: string
+  /** 目标玩家 ID */
+  playerId: string
+  /** 失败错误码：forbidden（非本人非同队）/not-found（身份不存在）；成功时为空 */
+  error?: string | null
+  /** 道号 */
+  displayName?: string | null
+  /** 角色序号（注册顺序） */
+  playerSeq: number
+  /** 当前是否在线 */
+  online: boolean
+  /** 境界等级 */
+  realmLevel: number
+  /** 当前修为 */
+  experience: number
+  /** 下一境界所需修为（0 表示已满/无表） */
+  experienceToNext: number
+  /** 战斗经验 */
+  combatExperience: number
+  /** 装备与功法估值身家 */
+  valuation: number
+  /** 六维经验与等级投影 */
+  coreAttributes: PlayerCardCoreDto | null
+  /** 已穿戴装备（战斗装备与技艺工具合并清单，槽位语义由配表 slot 判定） */
+  equipment?: PlayerCardEquipmentDto[] | null
+  /** 功法装配槽位 */
+  abilitySlots?: PlayerCardAbilitySlotDto[] | null
+  /** 已学功法 ID 列表 */
+  learnedAbilityIds?: string[] | null
+  /** 功法经验表（abilityId → 经验） */
+  abilityExperiences?: Record<string, number> | null
+  /** 战斗栏域消耗品配置（丹药栏 + 通用栏） */
+  autoUseSlots?: PlayerCardAutoUseSlotDto[] | null
 }
 
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1
@@ -683,7 +780,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.PartyLobby
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.PlayerCard
 }
 
 function isWireCodec(value: number): value is WireCodec {

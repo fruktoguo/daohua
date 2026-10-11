@@ -31,6 +31,7 @@ public sealed class EcsCombatParityTests
         var ability = catalog.Abilities["ability.heavy-slash"];
         var player = PlayerAggregate.Create(new PlayerId(PlayerIdValue), new AccountId(AccountIdValue),
             "Ecs战斗", SeedTime, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Offline, SeedTime);
         player.ReplaceCombatSlots(
             [new PlayerAbilitySlot("ability.heavy-slash", 1)],
             [new PlayerEquipmentSlot("equipment.qingfeng-sword", 2)]);
@@ -50,7 +51,8 @@ public sealed class EcsCombatParityTests
             new CombatantTemplate(resolved, [new SkillSlot(ability, 1)]),
             monsters.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray(),
             encounterDefinition.PlayerRespawnSeconds);
-        expected.Player.Buffs.Add(new CombatBuffState("buff.test-haste", 2, 1, AttackSpeedPoints: 500));
+        // 战外 Buff 注入的战内副本恒为每波重置（由 Buffs.Active 真源每波重注入）。
+        expected.Player.Buffs.Add(new CombatBuffState("buff.test-haste", 2, 1, AttackSpeedPoints: 500, Name: "疾风", ResetOnWave: true));
         const double targetSeconds = 1.5;
         var expectedResult = DeterministicCombatEngine.AdvanceTo(expected, targetSeconds);
 
@@ -96,6 +98,7 @@ public sealed class EcsCombatParityTests
         var catalog = GameDataCatalog.LoadEmbedded();
         var seedPlayer = PlayerAggregate.Create(new PlayerId(Guid.Parse("10000000-0000-4000-8000-000000000004")),
             new AccountId(Guid.Parse("20000000-0000-4000-8000-000000000004")), "Ecs行动", SeedTime, catalog.Fingerprint);
+        seedPlayer.SetPresence(PresenceState.Offline, SeedTime);
         seedPlayer.Enqueue(new ActionIntent(new ActionId(ActionId), 1), SeedTime, catalog.Actions);
         var seedState = seedPlayer.ExportState();
         var expectedPlayer = PlayerAggregate.Restore(seedState);
