@@ -4,8 +4,10 @@ namespace Server.Clean;
 // StoredSection/PlayerStateBundle/StoredAction）与 SectionCodec 已统一收拢到
 // Domain.Persistence：主服与 ComputeNode 共用同一份编解码实现，本文件只保留宿主侧契约。
 
-/// <summary>分段异步刷盘工作队列中的待处理项</summary>
+/// <summary>分段异步刷盘工作队列中的待处理项；QueueId 为追加式收件箱行的自增主键，
+/// 同一 (player,kind) 允许并发存在多行，应用时按 state_version 取最新。</summary>
 public sealed record FlushQueueItem(
+    long QueueId,
     Guid PlayerId,
     string SectionKind,
     long StateVersion,
@@ -63,7 +65,7 @@ public interface IPlayerStateRepository
 {
     /// <summary>加载玩家完整持久化状态；玩家存在但从未落盘时返回带空头的 bundle，不存在时返回 null。</summary>
     ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default);
-    /// <summary>把脏 section 写入 latest-only 刷盘队列，由 worker 异步落库。</summary>
+    /// <summary>把脏 section 追加写入刷盘收件箱队列，由 worker 异步落库。</summary>
     ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default);
     /// <summary>同事务入队 section 与命令回执，保证「状态写回 + 幂等回执」原子生效。</summary>
     async ValueTask EnqueueSectionsAsync(
@@ -73,7 +75,7 @@ public interface IPlayerStateRepository
     {
         await EnqueueSectionsAsync(sections, cancellationToken);
     }
-    /// <summary>租约认领一批到期队列行并落库；行级冲突与坏载荷不回滚整批。</summary>
+    /// <summary>租约认领一批到期收件箱行并落库；行级冲突与坏载荷不回滚整批。</summary>
     ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default);
 }
 

@@ -90,7 +90,7 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=${DB_APP_USER:?需要设置 DB_APP_USER};Password=${DB_APP_PASSWORD:?需要设置 DB_APP_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=2;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "false"
-      Storage__SectionFlushBatchSize: "256"
+      Storage__SectionFlushBatchSize: "8192"
       Storage__SectionFlushIntervalMilliseconds: "1000"
       Storage__SectionFlushLeaseSeconds: "30"
       Storage__OutboxBatchSize: "128"
@@ -193,7 +193,7 @@ services:
       DAOHUA_PROCESS_ROLE: persistence-worker
       Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=${DB_WORKER_USER:?需要设置 DB_WORKER_USER};Password=${DB_WORKER_PASSWORD:?需要设置 DB_WORKER_PASSWORD};Maximum Pool Size=16;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "false"
-      Storage__SectionFlushBatchSize: "256"
+      Storage__SectionFlushBatchSize: "8192"
       Storage__SectionFlushIntervalMilliseconds: "1000"
       Storage__SectionFlushLeaseSeconds: "30"
       Storage__OutboxBatchSize: "128"

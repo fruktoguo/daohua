@@ -16,6 +16,26 @@ public sealed class PostgresEconomyRepository(
     ];
 
     /// <summary>
+    /// 收集事务实际触碰的玩家（发起者、资产行、写回分段、回执与结算收件箱），
+    /// 交由共享条带门串行化同玩家提交。
+    /// </summary>
+    private static int[] CollectGateStripes(EconomyTransactionRequest request)
+    {
+        var players = new List<Guid>(1 + request.Deltas.Count
+            + (request.Sections?.Count ?? 0) + (request.Receipts?.Count ?? 0) + 1)
+        {
+            request.ActorId
+        };
+        foreach (var delta in request.Deltas) players.Add(delta.PlayerId);
+        if (request.Sections is not null)
+            foreach (var section in request.Sections) players.Add(section.PlayerId);
+        if (request.Receipts is not null)
+            foreach (var receipt in request.Receipts) players.Add(receipt.PlayerId);
+        if (request.ParticipationReceipt is { } participation) players.Add(participation.PlayerId);
+        return PlayerCommitGates.StripesFor(players);
+    }
+
+    /// <summary>
     /// 在单个 Serializable 事务内提交一笔资产变更：幂等键去重、按固定顺序对余额行加锁更新、写入不可变流水，
     /// 并将分段快照写回与命令回执同事务入队。幂等键已存在时校验请求指纹一致后直接返回首次提交结果。
     /// </summary>
@@ -28,31 +48,40 @@ public sealed class PostgresEconomyRepository(
     {
         // 缺省发生时间在重试前固定，保证同一事务重放时的审计时间不变。
         var stableRequest = request with { OccurredAt = request.OccurredAt ?? DateTimeOffset.UtcNow };
-        for (var attempt = 1; ; attempt++)
+        var gateStripes = CollectGateStripes(stableRequest);
+        await PlayerCommitGates.AcquireAllAsync(gateStripes, cancellationToken);
+        try
         {
-            try
+            for (var attempt = 1; ; attempt++)
             {
-                await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-                await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-                var result = await CommitCoreAsync(connection, transaction, stableRequest, cancellationToken);
-                await CommitTransactionAsync(transaction, stableRequest.TransactionId, cancellationToken);
-                logger.LogDebug("资产事务提交 transactionId={TransactionId} lines={Lines} attempt={Attempt}",
-                    stableRequest.TransactionId, stableRequest.Deltas.Count, attempt);
-                return result;
-            }
-            catch (PostgresException exception) when (IsSerializableConflict(exception)
-                                                       && !cancellationToken.IsCancellationRequested)
-            {
-                if (attempt >= SerializableRetryAttempts)
-                    throw;
+                try
+                {
+                    await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+                    await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+                    var result = await CommitCoreAsync(connection, transaction, stableRequest, cancellationToken);
+                    await CommitTransactionAsync(transaction, stableRequest.TransactionId, cancellationToken);
+                    logger.LogDebug("资产事务提交 transactionId={TransactionId} lines={Lines} attempt={Attempt}",
+                        stableRequest.TransactionId, stableRequest.Deltas.Count, attempt);
+                    return result;
+                }
+                catch (PostgresException exception) when (IsSerializableConflict(exception)
+                                                           && !cancellationToken.IsCancellationRequested)
+                {
+                    if (attempt >= SerializableRetryAttempts)
+                        throw;
 
-                logger.LogWarning(exception,
-                    "资产事务遇到 Serializable 瞬态冲突 transactionId={TransactionId} sqlState={SqlState} attempt={Attempt}/{MaxAttempts}，退避后重试",
-                    stableRequest.TransactionId, exception.SqlState, attempt, SerializableRetryAttempts);
-                // 加少量线程安全抖动，避免同一批并发请求在固定退避点再次形成冲突波峰。
-                var jitter = TimeSpan.FromMilliseconds(Random.Shared.Next(0, 25));
-                await Task.Delay(SerializableRetryBackoff[attempt - 1] + jitter, cancellationToken);
+                    logger.LogWarning(exception,
+                        "资产事务遇到 Serializable 瞬态冲突 transactionId={TransactionId} sqlState={SqlState} attempt={Attempt}/{MaxAttempts}，退避后重试",
+                        stableRequest.TransactionId, exception.SqlState, attempt, SerializableRetryAttempts);
+                    // 加少量线程安全抖动，避免同一批并发请求在固定退避点再次形成冲突波峰。
+                    var jitter = TimeSpan.FromMilliseconds(Random.Shared.Next(0, 25));
+                    await Task.Delay(SerializableRetryBackoff[attempt - 1] + jitter, cancellationToken);
+                }
             }
+        }
+        finally
+        {
+            PlayerCommitGates.ReleaseAll(gateStripes);
         }
     }
 
@@ -399,3 +428,44 @@ public sealed class EconomyInsufficientBalanceException(AssetDelta delta, double
 /// <param name="idempotencyKey">发生冲突的幂等键。</param>
 public sealed class EconomyIdempotencyConflictException(string idempotencyKey)
     : InvalidOperationException($"资产事务幂等键已绑定其他请求 idempotencyKey={idempotencyKey}");
+
+/// <summary>
+/// 跨仓储共享的按玩家提交闸：Serializable 写事务在进程内按玩家条带串行化，
+/// 同玩家并发提交从「SSI 回退 + 整事务重放」变为排队等待，开销低一个量级。
+/// 市场仓储写路径复用同一闸门，保证跨仓储的同玩家写入同样排队。
+/// 桶数固定为 2 的幂，误共享只造成轻微过度串行、不影响正确性。
+/// </summary>
+internal static class PlayerCommitGates
+{
+    private const int Stripes = 128;
+    private static readonly SemaphoreSlim[] Gates = CreateGates();
+
+    private static SemaphoreSlim[] CreateGates()
+    {
+        var gates = new SemaphoreSlim[Stripes];
+        for (var i = 0; i < gates.Length; i++) gates[i] = new SemaphoreSlim(1, 1);
+        return gates;
+    }
+
+    /// <summary>把一组玩家标识映射为去重且升序的条带序号；序号排序保证多方加锁无环。</summary>
+    public static int[] StripesFor(IEnumerable<Guid> playerIds)
+    {
+        var set = new HashSet<int>();
+        foreach (var playerId in playerIds) set.Add(playerId.GetHashCode() & (Stripes - 1));
+        var ordered = set.ToArray();
+        Array.Sort(ordered);
+        return ordered;
+    }
+
+    public static async ValueTask AcquireAllAsync(int[] stripes, CancellationToken cancellationToken)
+    {
+        foreach (var stripe in stripes)
+            await Gates[stripe].WaitAsync(cancellationToken);
+    }
+
+    public static void ReleaseAll(int[] stripes)
+    {
+        foreach (var stripe in stripes)
+            Gates[stripe].Release();
+    }
+}

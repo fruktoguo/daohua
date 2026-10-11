@@ -10,6 +10,16 @@ public sealed class PostgresMarketRepository(
     ILogger<PostgresMarketRepository> logger) : IMarketTransactionStore
 {
     private static readonly string CoinsAsset = "currency.spirit-stone";
+
+    /// <summary>
+    /// 市场分片单写者语义的进程内闸门：分区内全部写事务串行排队，消除订单行/成交谓词上的
+    /// 分区内部 SSI 竞争；不同分区互不影响。与 <see cref="PlayerCommitGates"/> 配合时先取
+    /// 分区闸再取玩家条带，与经济仓储的「只取条带」构成一致的全局加锁序。
+    /// </summary>
+    private static readonly ConcurrentDictionary<int, SemaphoreSlim> PartitionGates = new();
+
+    private static SemaphoreSlim PartitionGateFor(int partitionId)
+        => PartitionGates.GetOrAdd(partitionId, _ => new SemaphoreSlim(1, 1));
     /// <summary>底层数据源，供需要在同一连接上组合市场读模型的调用方使用。</summary>
     public NpgsqlDataSource DataSource => dataSource;
 
@@ -22,7 +32,8 @@ public sealed class PostgresMarketRepository(
         if (playerId == Guid.Empty || requestId == Guid.Empty) throw new ArgumentException("结算领取标识无效。", nameof(playerId));
         var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        // 游标行锁已与同玩家成交互斥，领取不再需要 Serializable 谓词读；ReadCommitted 下本方法无 SSI 表面。
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
         await using (var existing = new NpgsqlCommand("""
             SELECT settled_trade_count, claimed_at
             FROM market.settlement_claims
@@ -43,32 +54,43 @@ public sealed class PostgresMarketRepository(
             }
         }
 
-        var previous = DateTimeOffset.MinValue;
+        // 确保游标行存在（首次领取的玩家行尚缺）；随后 FOR UPDATE 锁定——同玩家成交事务
+        // 的游标 upsert 会在此行上等待本领取提交，新成交要么计入本次要么留待下次，不丢不重。
+        await using (var ensure = new NpgsqlCommand("""
+            INSERT INTO market.settlement_cursors (player_id, pending_count, settled_count, updated_at)
+            VALUES ($1, 0, 0, $2)
+            ON CONFLICT (player_id) DO NOTHING
+            """, connection, transaction))
+        {
+            ensure.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            ensure.Parameters.Add(new NpgsqlParameter { Value = now });
+            await ensure.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        int settlementCount;
         await using (var cursor = new NpgsqlCommand("""
-            SELECT claimed_at
-            FROM market.settlement_claims
+            SELECT pending_count
+            FROM market.settlement_cursors
             WHERE player_id = $1
-            ORDER BY claimed_at DESC
-            LIMIT 1
             FOR UPDATE
             """, connection, transaction))
         {
             cursor.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            var value = await cursor.ExecuteScalarAsync(cancellationToken);
-            if (value is DateTimeOffset timestamp) previous = timestamp;
+            settlementCount = (int)(await cursor.ExecuteScalarAsync(cancellationToken) ?? 0);
         }
 
-        int settlementCount;
-        await using (var countCommand = new NpgsqlCommand("""
-            SELECT count(*)::int
-            FROM market.trades
-            WHERE traded_at > $2 AND (buyer_id = $1 OR seller_id = $1)
+        await using (var settle = new NpgsqlCommand("""
+            UPDATE market.settlement_cursors
+            SET pending_count = 0, settled_count = settled_count + $2, updated_at = $3
+            WHERE player_id = $1
             """, connection, transaction))
         {
-            countCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            countCommand.Parameters.Add(new NpgsqlParameter { Value = previous });
-            settlementCount = (int)(await countCommand.ExecuteScalarAsync(cancellationToken) ?? 0);
+            settle.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            settle.Parameters.Add(new NpgsqlParameter { Value = settlementCount });
+            settle.Parameters.Add(new NpgsqlParameter { Value = now });
+            await settle.ExecuteNonQueryAsync(cancellationToken);
         }
+
         await using (var insert = new NpgsqlCommand("""
             INSERT INTO market.settlement_claims(player_id, request_id, settled_trade_count, claimed_at)
             VALUES ($1, $2, $3, $4)
@@ -166,28 +188,37 @@ public sealed class PostgresMarketRepository(
     {
         if (ownerInstanceId == Guid.Empty) throw new ArgumentException("ownerInstanceId 不能为空。", nameof(ownerInstanceId));
         var now = DateTimeOffset.UtcNow;
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        await using var command = new NpgsqlCommand("""
-            INSERT INTO market.partition_leases
-                (partition_id, owner_instance_id, fence_token, expires_at, renewed_at)
-            VALUES ($1, $2, 1, $3, $4)
-            ON CONFLICT (partition_id) DO UPDATE SET
-                owner_instance_id = EXCLUDED.owner_instance_id,
-                fence_token = market.partition_leases.fence_token + 1,
-                expires_at = EXCLUDED.expires_at,
-                renewed_at = EXCLUDED.renewed_at
-            WHERE market.partition_leases.expires_at <= $4
-               OR market.partition_leases.owner_instance_id = $2
-            RETURNING fence_token
-            """, connection, transaction);
-        command.Parameters.Add(new NpgsqlParameter { Value = options.MarketPartitionId });
-        command.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId });
-        command.Parameters.Add(new NpgsqlParameter { Value = now.Add(options.SectionFlushLease) });
-        command.Parameters.Add(new NpgsqlParameter { Value = now });
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return value is long;
+        var partitionGate = PartitionGateFor(options.MarketPartitionId);
+        await partitionGate.WaitAsync(cancellationToken);
+        try
+        {
+                await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+                await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+                await using var command = new NpgsqlCommand("""
+                    INSERT INTO market.partition_leases
+                        (partition_id, owner_instance_id, fence_token, expires_at, renewed_at)
+                    VALUES ($1, $2, 1, $3, $4)
+                    ON CONFLICT (partition_id) DO UPDATE SET
+                        owner_instance_id = EXCLUDED.owner_instance_id,
+                        fence_token = market.partition_leases.fence_token + 1,
+                        expires_at = EXCLUDED.expires_at,
+                        renewed_at = EXCLUDED.renewed_at
+                    WHERE market.partition_leases.expires_at <= $4
+                       OR market.partition_leases.owner_instance_id = $2
+                    RETURNING fence_token
+                    """, connection, transaction);
+                command.Parameters.Add(new NpgsqlParameter { Value = options.MarketPartitionId });
+                command.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId });
+                command.Parameters.Add(new NpgsqlParameter { Value = now.Add(options.SectionFlushLease) });
+                command.Parameters.Add(new NpgsqlParameter { Value = now });
+                var value = await command.ExecuteScalarAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return value is long;
+        }
+        finally
+        {
+            partitionGate.Release();
+        }
     }
 
     /// <summary>
@@ -216,76 +247,94 @@ public sealed class PostgresMarketRepository(
         if (double.IsNaN(total) || double.IsInfinity(total) || total <= 0)
             throw new ArgumentException("订单总额无效。", nameof(order));
 
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        await EnsureLeaseAsync(connection, transaction, order.PartitionId, fenceToken, cancellationToken);
-
-        var inserted = await InsertOrderAsync(connection, transaction, order, now, cancellationToken);
-        if (!inserted)
+        var partitionGate = PartitionGateFor(order.PartitionId);
+        var stripes = PlayerCommitGates.StripesFor(PlacementPlayerIds(order, fills));
+        await partitionGate.WaitAsync(cancellationToken);
+        try
         {
-            await EnsureExistingOrderMatchesAsync(connection, transaction, order, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return new MarketCommitResult(order.OrderId, true, true, []);
-        }
-
-        // 先冻结挂单资产，再应用成交；所有余额按 player/asset 排序锁定。
-        var reservationId = Guid.NewGuid();
-        var reserveAsset = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? CoinsAsset : order.AssetId;
-        var reserveVariant = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? string.Empty : order.Variant;
-        // 冻结 quantity 始终表示标的数量；买单的灵石金额单独放在 reserved_value。
-        var reserveQuantity = order.Quantity;
-        var reserveDebit = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? total : reserveQuantity;
-        await ChangeBalanceAsync(connection, transaction,
-            new AssetDelta(order.OwnerPlayerId, reserveAsset, reserveVariant, -reserveDebit), now, cancellationToken);
-            await using (var reservation = new NpgsqlCommand("""
-                INSERT INTO economy.reservations
-                    (reservation_id, order_id, player_id, asset_id, variant, instance_id, side, quantity,
-                     reserved_value, status, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 'active', $9, $9)
-                """, connection, transaction))
+            await PlayerCommitGates.AcquireAllAsync(stripes, cancellationToken);
+            try
             {
-                reservation.Parameters.Add(new NpgsqlParameter { Value = reservationId });
-                reservation.Parameters.Add(new NpgsqlParameter { Value = order.OrderId });
-                reservation.Parameters.Add(new NpgsqlParameter { Value = order.OwnerPlayerId });
-                reservation.Parameters.Add(new NpgsqlParameter { Value = reserveAsset });
-                reservation.Parameters.Add(new NpgsqlParameter { Value = reserveVariant });
-                reservation.Parameters.Add(new NpgsqlParameter { Value = order.Side.ToLowerInvariant() });
-                reservation.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = reserveQuantity });
-                reservation.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? total : 0d });
-                reservation.Parameters.Add(new NpgsqlParameter { Value = now });
-                await reservation.ExecuteNonQueryAsync(cancellationToken);
+                await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+                await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+                await EnsureLeaseAsync(connection, transaction, order.PartitionId, fenceToken, cancellationToken);
+
+                var inserted = await InsertOrderAsync(connection, transaction, order, now, cancellationToken);
+                if (!inserted)
+                {
+                    await EnsureExistingOrderMatchesAsync(connection, transaction, order, cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return new MarketCommitResult(order.OrderId, true, true, []);
+                }
+
+                // 先冻结挂单资产，再应用成交；所有余额按 player/asset 排序锁定。
+                var reservationId = Guid.NewGuid();
+                var reserveAsset = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? CoinsAsset : order.AssetId;
+                var reserveVariant = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? string.Empty : order.Variant;
+                // 冻结 quantity 始终表示标的数量；买单的灵石金额单独放在 reserved_value。
+                var reserveQuantity = order.Quantity;
+                var reserveDebit = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? total : reserveQuantity;
+                await ChangeBalanceAsync(connection, transaction,
+                    new AssetDelta(order.OwnerPlayerId, reserveAsset, reserveVariant, -reserveDebit), now, cancellationToken);
+                    await using (var reservation = new NpgsqlCommand("""
+                        INSERT INTO economy.reservations
+                            (reservation_id, order_id, player_id, asset_id, variant, instance_id, side, quantity,
+                             reserved_value, status, created_at, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 'active', $9, $9)
+                        """, connection, transaction))
+                    {
+                        reservation.Parameters.Add(new NpgsqlParameter { Value = reservationId });
+                        reservation.Parameters.Add(new NpgsqlParameter { Value = order.OrderId });
+                        reservation.Parameters.Add(new NpgsqlParameter { Value = order.OwnerPlayerId });
+                        reservation.Parameters.Add(new NpgsqlParameter { Value = reserveAsset });
+                        reservation.Parameters.Add(new NpgsqlParameter { Value = reserveVariant });
+                        reservation.Parameters.Add(new NpgsqlParameter { Value = order.Side.ToLowerInvariant() });
+                        reservation.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = reserveQuantity });
+                        reservation.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? total : 0d });
+                        reservation.Parameters.Add(new NpgsqlParameter { Value = now });
+                        await reservation.ExecuteNonQueryAsync(cancellationToken);
+                    }
+                await AppendEconomyTransactionAsync(
+                    connection,
+                    transaction,
+                    order.OrderId,
+                    $"market-order:{order.IdempotencyKey}",
+                    order.OwnerPlayerId,
+                    [new AssetDelta(order.OwnerPlayerId, reserveAsset, reserveVariant, -reserveDebit)],
+                    now,
+                    cancellationToken);
+
+                var tradeIds = new List<Guid>(fills.Count);
+                var tradeIdSet = new HashSet<Guid>();
+                var incomingFillQuantity = 0d;
+                foreach (var fill in fills)
+                {
+                    ValidateFill(fill, order.PartitionId);
+                    if (!tradeIdSet.Add(fill.TradeId)
+                        || (fill.BuyOrderId != order.OrderId && fill.SellOrderId != order.OrderId)
+                        || !string.Equals(fill.AssetId, order.AssetId, StringComparison.Ordinal)
+                        || !string.Equals(fill.Variant, order.Variant, StringComparison.Ordinal))
+                        throw new InvalidOperationException("成交必须唯一且属于当前订单品种。");
+                    incomingFillQuantity += (fill.BuyOrderId == order.OrderId || fill.SellOrderId == order.OrderId) ? fill.Quantity : 0d;
+                    if (!double.IsFinite(incomingFillQuantity) || incomingFillQuantity > order.Quantity + 1e-9)
+                        throw new InvalidOperationException("当前订单成交总量超过订单数量。");
+                    await ApplyFillAsync(connection, transaction, fill, order.PartitionId, now, cancellationToken);
+                    tradeIds.Add(fill.TradeId);
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+                logger.LogDebug("市场挂单提交 orderId={OrderId} fills={FillCount}", order.OrderId, fills.Count);
+                return new MarketCommitResult(order.OrderId, true, false, tradeIds);
             }
-        await AppendEconomyTransactionAsync(
-            connection,
-            transaction,
-            order.OrderId,
-            $"market-order:{order.IdempotencyKey}",
-            order.OwnerPlayerId,
-            [new AssetDelta(order.OwnerPlayerId, reserveAsset, reserveVariant, -reserveDebit)],
-            now,
-            cancellationToken);
-
-        var tradeIds = new List<Guid>(fills.Count);
-        var tradeIdSet = new HashSet<Guid>();
-        var incomingFillQuantity = 0d;
-        foreach (var fill in fills)
-        {
-            ValidateFill(fill, order.PartitionId);
-            if (!tradeIdSet.Add(fill.TradeId)
-                || (fill.BuyOrderId != order.OrderId && fill.SellOrderId != order.OrderId)
-                || !string.Equals(fill.AssetId, order.AssetId, StringComparison.Ordinal)
-                || !string.Equals(fill.Variant, order.Variant, StringComparison.Ordinal))
-                throw new InvalidOperationException("成交必须唯一且属于当前订单品种。");
-            incomingFillQuantity += (fill.BuyOrderId == order.OrderId || fill.SellOrderId == order.OrderId) ? fill.Quantity : 0d;
-            if (!double.IsFinite(incomingFillQuantity) || incomingFillQuantity > order.Quantity + 1e-9)
-                throw new InvalidOperationException("当前订单成交总量超过订单数量。");
-            await ApplyFillAsync(connection, transaction, fill, order.PartitionId, now, cancellationToken);
-            tradeIds.Add(fill.TradeId);
+            finally
+            {
+                PlayerCommitGates.ReleaseAll(stripes);
+            }
         }
-
-        await transaction.CommitAsync(cancellationToken);
-        logger.LogDebug("市场挂单提交 orderId={OrderId} fills={FillCount}", order.OrderId, fills.Count);
-        return new MarketCommitResult(order.OrderId, true, false, tradeIds);
+        finally
+        {
+            partitionGate.Release();
+        }
     }
 
     /// <summary>主动撤单并退还冻结资产；幂等键必须绑定玩家与订单，防止跨玩家重放。</summary>
@@ -323,21 +372,39 @@ public sealed class PostgresMarketRepository(
     {
         if (orders is null || orders.Count == 0) return true;
         if (fenceToken <= 0) throw new ArgumentOutOfRangeException(nameof(fenceToken));
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        await EnsureLeaseAsync(connection, transaction, options.MarketPartitionId, fenceToken, cancellationToken);
-        foreach (var target in orders)
+        var partitionGate = PartitionGateFor(options.MarketPartitionId);
+        var stripes = PlayerCommitGates.StripesFor(orders.Select(o => o.OwnerPlayerId));
+        await partitionGate.WaitAsync(cancellationToken);
+        try
         {
-            var canonicalIdempotencyKey = $"market-expire:{target.OwnerPlayerId:D}:{target.OrderId:D}";
-            if (!await CloseOrderCoreAsync(connection, transaction, target.OrderId, target.OwnerPlayerId,
-                    canonicalIdempotencyKey, cutoff, cancellationToken))
+            await PlayerCommitGates.AcquireAllAsync(stripes, cancellationToken);
+            try
             {
-                await transaction.RollbackAsync(cancellationToken);
-                return false;
+                await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+                await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+                await EnsureLeaseAsync(connection, transaction, options.MarketPartitionId, fenceToken, cancellationToken);
+                foreach (var target in orders)
+                {
+                    var canonicalIdempotencyKey = $"market-expire:{target.OwnerPlayerId:D}:{target.OrderId:D}";
+                    if (!await CloseOrderCoreAsync(connection, transaction, target.OrderId, target.OwnerPlayerId,
+                            canonicalIdempotencyKey, cutoff, cancellationToken))
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return false;
+                    }
+                }
+                await transaction.CommitAsync(cancellationToken);
+                return true;
+            }
+            finally
+            {
+                PlayerCommitGates.ReleaseAll(stripes);
             }
         }
-        await transaction.CommitAsync(cancellationToken);
-        return true;
+        finally
+        {
+            partitionGate.Release();
+        }
     }
 
     private async ValueTask<bool> CloseOrderAsync(Guid orderId, Guid ownerPlayerId, int partitionId, long fenceToken,
@@ -350,16 +417,34 @@ public sealed class PostgresMarketRepository(
         var canonicalIdempotencyKey = $"market-{operation}:{ownerPlayerId:D}:{orderId:D}";
         if (!string.Equals(idempotencyKey, canonicalIdempotencyKey, StringComparison.Ordinal))
             throw new ArgumentException("撤单幂等键必须绑定当前玩家和订单。", nameof(idempotencyKey));
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        await EnsureLeaseAsync(connection, transaction, partitionId, fenceToken, cancellationToken);
-        if (!await CloseOrderCoreAsync(connection, transaction, orderId, ownerPlayerId, canonicalIdempotencyKey, expirationCutoff, cancellationToken))
+        var partitionGate = PartitionGateFor(partitionId);
+        var stripes = PlayerCommitGates.StripesFor([ownerPlayerId]);
+        await partitionGate.WaitAsync(cancellationToken);
+        try
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return false;
+            await PlayerCommitGates.AcquireAllAsync(stripes, cancellationToken);
+            try
+            {
+                await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+                await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+                await EnsureLeaseAsync(connection, transaction, partitionId, fenceToken, cancellationToken);
+                if (!await CloseOrderCoreAsync(connection, transaction, orderId, ownerPlayerId, canonicalIdempotencyKey, expirationCutoff, cancellationToken))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return false;
+                }
+                await transaction.CommitAsync(cancellationToken);
+                return true;
+            }
+            finally
+            {
+                PlayerCommitGates.ReleaseAll(stripes);
+            }
         }
-        await transaction.CommitAsync(cancellationToken);
-        return true;
+        finally
+        {
+            partitionGate.Release();
+        }
     }
 
     /// <summary>
@@ -554,7 +639,9 @@ public sealed class PostgresMarketRepository(
             trade.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = fill.Quantity });
             trade.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = fill.SellerTax });
             trade.Parameters.Add(new NpgsqlParameter { Value = fill.TradedAt ?? fallbackTime });
-            await trade.ExecuteNonQueryAsync(cancellationToken);
+            // 仅真实插入的成交才累加结算游标；ON CONFLICT 命中的重试不重复计数。
+            if (await trade.ExecuteNonQueryAsync(cancellationToken) == 1)
+                await BumpSettlementCursorsAsync(connection, transaction, fill, cancellationToken);
         }
 
         await using var update = new NpgsqlCommand("""
@@ -583,6 +670,46 @@ public sealed class PostgresMarketRepository(
         updateSell.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = fill.Quantity });
         if (await updateSell.ExecuteNonQueryAsync(cancellationToken) != 1)
             throw new InvalidOperationException("卖单成交数量超出剩余冻结。");
+    }
+
+    /// <summary>挂单事务触及的玩家集合：属主加上每笔成交的买卖双方（自交腿按集合去重）。</summary>
+    private static IEnumerable<Guid> PlacementPlayerIds(MarketOrderInput order, IReadOnlyList<MarketFillInput> fills)
+    {
+        yield return order.OwnerPlayerId;
+        foreach (var fill in fills)
+        {
+            yield return fill.BuyerId;
+            yield return fill.SellerId;
+        }
+    }
+
+    /// <summary>
+    /// 成交落库后给买卖双方各记一腿待领取结算；游标行锁与领取事务的 FOR UPDATE 物理互斥，
+    /// 使领取不再依赖 Serializable 谓词读——这是消除领取侧 40001 的结构来源。
+    /// </summary>
+    private static async Task BumpSettlementCursorsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, MarketFillInput fill, CancellationToken cancellationToken)
+    {
+        var legs = new[] { fill.BuyerId, fill.SellerId }
+            .GroupBy(playerId => playerId)
+            .Select(group => (PlayerId: group.Key, Count: group.Count()));
+        await using var batch = connection.CreateBatch();
+        batch.Transaction = transaction;
+        foreach (var leg in legs)
+        {
+            var command = new NpgsqlBatchCommand("""
+                INSERT INTO market.settlement_cursors (player_id, pending_count, settled_count, updated_at)
+                VALUES ($1, $2, 0, $3)
+                ON CONFLICT (player_id) DO UPDATE SET
+                    pending_count = market.settlement_cursors.pending_count + EXCLUDED.pending_count,
+                    updated_at = EXCLUDED.updated_at
+                """);
+            command.Parameters.Add(new NpgsqlParameter { Value = leg.PlayerId });
+            command.Parameters.Add(new NpgsqlParameter { Value = leg.Count });
+            command.Parameters.Add(new NpgsqlParameter { Value = fill.TradedAt ?? DateTimeOffset.UtcNow });
+            batch.BatchCommands.Add(command);
+        }
+        await batch.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task ValidateFillOrdersAsync(

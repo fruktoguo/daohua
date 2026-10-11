@@ -3,9 +3,9 @@ namespace DaoHua.LoadTests;
 /// <summary>
 /// 压测命令行选项。
 /// </summary>
-/// <param name="Scenario">压测场景名：capacity-target / websocket / http-read / compute / postgres / compute-link。</param>
+/// <param name="Scenario">压测场景名：capacity-target / websocket / http-read / compute / postgres / compute-link / fleet。</param>
 /// <param name="Players">模拟玩家数；缺省时按场景取容量目标默认值（如 websocket=100、http-read=500）。</param>
-/// <param name="DurationSeconds">持续收发压测窗口（秒），worker 在该窗口内尽量多发。</param>
+/// <param name="DurationSeconds">持续收发压测窗口（秒），worker 在该窗口内尽量多发；fleet 场景传 0 表示常驻运行直到进程被取消。</param>
 /// <param name="Concurrency">同时进行中的连接或握手数上限。</param>
 /// <param name="ServerUri">目标服务端地址；ws(s) 与 http(s) 可混写，由各场景归一化方案与路径。</param>
 /// <param name="DatabaseConnectionString">PostgreSQL 连接串；缺省取 DAOHUA_DATABASE_URL 环境变量，再回退本地开发库。</param>
@@ -80,15 +80,23 @@ public sealed record LoadTestOptions(
             "postgres" => CapacityTargetScenario.RegisteredAccountTarget,
             // compute-link 的 --players 是播种的离线玩家数（每玩家一个冷挂机任务）。
             "compute-link" => 32,
+            // fleet 持续仿真默认 520 角色（500+ 全量分工矩阵）。
+            "fleet" => 520,
             _ => throw new ArgumentException($"未知场景: {scenario}")
         };
-        var defaultDuration = scenario == "compute-link" ? 180 : 1;
+        var defaultDuration = scenario switch
+        {
+            "compute-link" => 180,
+            // fleet 是常驻仿真：缺省 0 表示不自行停止，直到进程被取消。
+            "fleet" => 0,
+            _ => 1
+        };
         var defaultConnection = Environment.GetEnvironmentVariable("DAOHUA_DATABASE_URL")
                                 ?? "Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=daohua-local-dev;Maximum Pool Size=16;Timeout=5;Command Timeout=30";
         return new LoadTestOptions(
             scenario,
             ReadInt(values, "players", defaultPlayers, 1, 1_000_000),
-            ReadInt(values, "duration-seconds", defaultDuration, 1, 86_400),
+            ReadInt(values, "duration-seconds", defaultDuration, scenario == "fleet" ? 0 : 1, 86_400),
             ReadInt(values, "concurrency", ReadInt(values, "connect-concurrency", 64, 1, 2_048), 1, 2_048),
             ParseUri(values.GetValueOrDefault("url", "ws://127.0.0.1:5128/ws")),
             values.GetValueOrDefault("database", defaultConnection),

@@ -1,0 +1,80 @@
+[
+  {
+    "id": "equipment.trial-blade",
+    "name": "演武剑",
+    "description": "宗门试炼堂统一颁发的钝口铁剑。\n剑身未开刃却沉重扎实，专为初入门弟子演武试炼而铸。",
+    "slot": "weapon",
+    "baseStatRatios": {
+      "physicalAttack": 0.5
+    },
+    "flatStats": {
+      "physicalAttack": 55,
+      "accuracy": 30
+    }
+  },
+  {
+    "id": "equipment.trial-helm",
+    "name": "演武冠",
+    "description": "护额藏铁片，演武不轻伤。\n内衬薄铁片的布冠，护住头面要害。",
+    "slot": "head",
+    "baseStatRatios": {
+      "physicalArmor": 0.3
+    },
+    "flatStats": {
+      "physicalArmor": 25,
+      "maxHitpoints": 90
+    }
+  },
+  {
+    "id": "equipment.trial-armor",
+    "name": "演武甲",
+    "description": "厚甲裹新丁，试炼见真章。\n多层皮革缀铁片的试炼护甲，沉重却能保命。",
+    "slot": "armor",
+    "baseStatRatios": {
+      "physicalArmor": 0.4
+    },
+    "flatStats": {
+      "physicalArmor": 40,
+      "maxHitpoints": 180
+    }
+  },
+  {
+    "id": "equipment.trial-legs",
+    "name": "演武绑腿",
+    "description": "缠腿束劲，下盘生根。\n紧束小腿的厚布绑腿，稳扎马步不惧冲撞。",
+    "slot": "legs",
+    "baseStatRatios": {
+      "physicalArmor": 0.3
+    },
+    "flatStats": {
+      "physicalArmor": 25,
+      "maxHitpoints": 90
+    }
+  },
+  {
+    "id": "equipment.trial-boots",
+    "name": "演武靴",
+    "description": "靴钉抓地，闪转自如。\n底钉铁齿的演武短靴，进退腾挪轻快稳当。",
+    "slot": "boots",
+    "baseStatRatios": {
+      "evasion": 0.3
+    },
+    "flatStats": {
+      "evasion": 40,
+      "maxHitpoints": 70
+    }
+  },
+  {
+    "id": "equipment.trial-charm",
+    "name": "演武佩",
+    "description": "师门试炼凭证，贴身温养气血。\n刻着演武堂印记的木佩，佩于腰间以验身份。",
+    "slot": "trinket",
+    "baseStatRatios": {
+      "physicalAttack": 0.2
+    },
+    "flatStats": {
+      "criticalChance": 25,
+      "hitpointRegen": 15
+    }
+  }
+]

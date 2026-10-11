@@ -333,9 +333,11 @@ internal static class ComputeLinkLoadScenario
         psi.Environment["ComputeNode__LeaseSeconds"] = "30";
         // 单批 8 任务：多节点均摊在飞批次，断线改派测量才杀得到持有在飞任务的节点。
         psi.Environment["ComputeNode__BatchSize"] = "8";
-        psi.Environment["ComputeNode__ColdCatchUpIntervalSeconds"] = "10";
-        psi.Environment["ComputeNode__ColdCatchUpMinIdleMinutes"] = "1";
-        psi.Environment["ComputeNode__ColdCatchUpBatchSize"] = "2000";
+        // 批算间隔 1 分钟 + 溢出阈值 0：本地执行器与节点共同承接，对齐生产形态。
+        psi.Environment["OfflineIdle__ScanIntervalSeconds"] = "10";
+        psi.Environment["OfflineIdle__ScanBatchSize"] = "2000";
+        psi.Environment["OfflineIdle__BatchIntervalMinutes"] = "1";
+        psi.Environment["ComputeNode__OverflowAfterSeconds"] = "0";
         psi.Environment["Ops__Enabled"] = "true";
         psi.Environment["Logging__LogLevel__Default"] = "Information";
         psi.Environment["Logging__LogLevel__Microsoft.AspNetCore"] = "Warning";
@@ -527,8 +529,8 @@ internal static class ComputeLinkLoadScenario
             """, templatePlayerId);
         await ExecAsync(connection, transaction, """
             INSERT INTO game.player_projection
-                (player_id, realm_rank, current_node_id, presence, last_active_at, projection_version, updated_at)
-            SELECT m.player_id, 0, NULL, 'offline', now(), 1, now()
+                (player_id, realm_rank, current_node_id, presence, offline_since, last_active_at, projection_version, updated_at)
+            SELECT m.player_id, 0, NULL, 'offline', now() - interval '2 hours', now(), 1, now()
             FROM lt_map m
             """);
         await ExecAsync(connection, transaction, """
@@ -701,7 +703,7 @@ internal static class ComputeLinkLoadScenario
             "UPDATE game.player_state_heads SET last_simulated_at = now() - interval '1 hour' WHERE player_id = ANY($1)",
             playerIds);
         await ExecAsync(connection, transaction,
-            "UPDATE game.player_projection SET presence = 'offline', last_active_at = now() - interval '1 hour' WHERE player_id = ANY($1)",
+            "UPDATE game.player_projection SET presence = 'offline', offline_since = now() - interval '1 hour', last_active_at = now() - interval '1 hour' WHERE player_id = ANY($1)",
             playerIds);
         await using var verify = new NpgsqlCommand("""
             SELECT count(*) FROM identity.players p JOIN game.player_state_heads h USING (player_id)

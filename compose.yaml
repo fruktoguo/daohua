@@ -35,11 +35,7 @@ services:
       - -c
       - wal_compression=on
       - -c
-      - archive_mode=on
-      - -c
-      - archive_timeout=300s
-      - -c
-      - archive_command=/usr/local/bin/postgres-wal-archive.sh %p %f
+      - archive_mode=off
       - -c
       - checkpoint_timeout=15min
       - -c
@@ -54,8 +50,6 @@ services:
       - autovacuum_max_workers=2
     volumes:
       - daohua-postgres:/var/lib/postgresql/data
-      - ${WAL_ARCHIVE_DIR:-./temp/wal-archive}:/var/lib/postgresql/wal-archive
-      - ./deploy/postgres-wal-archive.sh:/usr/local/bin/postgres-wal-archive.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U daohua -d daohua"]
       interval: 10s
@@ -92,7 +86,7 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=32;Minimum Pool Size=2;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "true"
-      Storage__SectionFlushBatchSize: "256"
+      Storage__SectionFlushBatchSize: "8192"
       Storage__SectionFlushIntervalMilliseconds: "1000"
       Storage__SectionFlushLeaseSeconds: "30"
       Storage__OutboxBatchSize: "128"
@@ -201,7 +195,7 @@ services:
       DAOHUA_PROCESS_ROLE: persistence-worker
       Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=16;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "false"
-      Storage__SectionFlushBatchSize: "256"
+      Storage__SectionFlushBatchSize: "8192"
       Storage__SectionFlushIntervalMilliseconds: "1000"
       Storage__SectionFlushLeaseSeconds: "30"
       Storage__OutboxBatchSize: "128"

@@ -184,7 +184,9 @@ function startServer() {
     if (shuttingDown || wasExpected) return;
     const delayMs = computeBackoffDelayMs();
     log(`服务端异常退出 (code=${code ?? "null"}, signal=${signal ?? "none"})，${delayMs}ms 后自动拉起`);
-    setTimeout(() => startServer(), delayMs).unref();
+    // 不能 unref：子进程退出后事件循环只剩本定时器与 unref 的轮询句柄，
+    // unref 会让守护进程在拉起前静默退出（已实证：意外崩溃后服务再未被拉起）。
+    setTimeout(() => startServer(), delayMs);
   });
 }
 

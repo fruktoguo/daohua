@@ -1,0 +1,116 @@
+[
+  {
+    "id": "forge.trial-blade",
+    "name": "演武剑",
+    "description": "以凡铁粗坯敲打成形的演武钝剑。",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.trial-blade",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.trial-helm",
+    "name": "演武冠",
+    "description": "麻布冠内衬薄铁片。",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.ningxue-grass": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.trial-helm",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.trial-armor",
+    "name": "演武甲",
+    "description": "皮革缀铁片的试炼护甲。",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.ningxue-grass": 3
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.trial-armor",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.trial-legs",
+    "name": "演武绑腿",
+    "description": "厚布缠腿的护胫。",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.ningxue-grass": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.trial-legs",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.trial-boots",
+    "name": "演武靴",
+    "description": "底钉铁齿的演武短靴。",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.morning-dew": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.trial-boots",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.trial-charm",
+    "name": "演武佩",
+    "description": "演武堂印记木佩。",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.morning-dew": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.trial-charm",
+        "amount": 1
+      }
+    ]
+  }
+]
