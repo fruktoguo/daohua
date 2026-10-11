@@ -264,11 +264,11 @@ public sealed class SkillTriggerEvaluatorTests
     }
 
     /// <summary>
-    /// 成长点数单点门禁：怪物配表属性与玩家属性解析必须走同一 CombatGrowthCurve 公式，
-    /// 任何一侧漂移（攻速/行动速度/冷却缩减/普攻增幅/暴击伤害/技能增幅点数）都会立即破防。
+    /// 基准点数口径门禁：怪物配表属性解析走 CombatGrowthCurve 基准注入（攻速/行动/冷却/普攻/暴伤/技能增幅），
+    /// 漂移即破防；玩家侧特殊属性为获取型——无装备/内功等来源时各通道恒为 0，仅暴伤通道保留基础 50 点。
     /// </summary>
     [Fact]
-    public void PlayerAndMonsterShareTheSameGrowthCurve()
+    public void MonsterBaselineGrowthCurve_PlayerReceivesNoInjection()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var spirit = catalog.CombatMonsters["enemy.wood-spirit"];
@@ -282,15 +282,13 @@ public sealed class SkillTriggerEvaluatorTests
 
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "曲线", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
         PlayerAttributeResolver.Apply(player, catalog);
-        var level = player.Progression.RealmLevel;
         var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0);
-        Assert.Equal(CombatGrowthCurve.ActionSpeedPoints(level), stats.ActionSpeedPoints, 12);
-        Assert.Equal(CombatGrowthCurve.AttackSpeedPoints(level), stats.AttackSpeedPoints, 12);
-        Assert.Equal(CombatGrowthCurve.CooldownReductionPoints(level), stats.CooldownReductionPoints, 12);
-        Assert.Equal(CombatGrowthCurve.BasicAttackBonusPoints(level), stats.BasicAttackBonusPoints, 12);
-        Assert.Equal(CombatGrowthCurve.CriticalDamagePoints(level), stats.CriticalDamagePoints, 12);
-        Assert.Equal(CombatGrowthCurve.SkillBonusPoints(catalog.BaseAttributes.TierAt(level)),
-            stats.SkillBonusPoints, 12);
+        Assert.Equal(0, stats.ActionSpeedPoints);
+        Assert.Equal(0, stats.AttackSpeedPoints);
+        Assert.Equal(0, stats.CooldownReductionPoints);
+        Assert.Equal(0, stats.BasicAttackBonusPoints);
+        Assert.Equal(CombatGrowthCurve.CriticalDamageBasePoints, stats.CriticalDamagePoints, 12);
+        Assert.Equal(0, stats.SkillBonusPoints);
     }
 
     /// <summary>

@@ -283,18 +283,13 @@ public static class PlayerAttributeResolver
         // 回复收口公式（总纲 §20.3）：(面板回复 + Σ固定加成) × (1 + Σ后段比率)。
         double hpRegen = (Stat("hitpointRegen", a.HpRegen) + hpRegenFlat) * (1 + hpRegenPost);
         double mpRegen = (Stat("manapointRegen", a.MpRegen) + mpRegenFlat) * (1 + mpRegenPost);
-        // 境界成长保送点数与怪物同构：统一走 CombatGrowthCurve 单点实现，
-        // 折算为点数注入既有点数通道，与装备/Buff 点数同池相加（总纲 §7.7.5/§11.2.3.2）。
+        // 玩家特殊属性为获取型——境界不保送成长点数（装备/内功/特质/Buff 等渠道见上方汇总），
+        // 仅保留暴击伤害通道基础 50 点（总纲 §7.7.5）；等阶仅作动态抗性系数 ResistanceScale。
         var tier = catalog.BaseAttributes.TierAt(level);
-        attackSpeed += CombatGrowthCurve.AttackSpeedPoints(level);
-        actionSpeed += CombatGrowthCurve.ActionSpeedPoints(level);
-        cooldownReduction += CombatGrowthCurve.CooldownReductionPoints(level);
-        basicAttackBonus += CombatGrowthCurve.BasicAttackBonusPoints(level);
-        skillBonus += CombatGrowthCurve.SkillBonusPoints(tier);
-        criticalDamage += CombatGrowthCurve.CriticalDamagePoints(level);
+        criticalDamage += CombatGrowthCurve.CriticalDamageBasePoints;
         var physical = Stat("physicalAttack", a.Ad);
         var spell = Stat("spellAttack", a.Ap);
-        // 普攻基准读条恒为 1.0s：成长与装备点数由引擎在出手边界按 NonLinear 双除数结算，不在此预折。
+        // 普攻基准读条恒为 1.0s：速度点数由引擎在出手边界按 NonLinear 双除数结算，不在此预折。
         const double interval = 1;
         return new(Stat("maxHitpoints", a.Hp), Stat("maxManapoints", a.Mp), physical,
             spell, Stat("physicalArmor", a.Armor), Stat("spellResistance", a.Mr),

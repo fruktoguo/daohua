@@ -229,12 +229,12 @@
       "description": "二次函数模型，前期平缓，中后期爆发式提升"
     },
     "advancedMechanicsFormulas": {
-      "pointsInjectionNote": "成长不产出独立乘区字段，全部折算为点数注入既有点数通道（与装备/Buff 点数同池）；NonLinear 类由旧乘区 f 反解 p = 100*(1/f - 1)，Linear 类直接 ×100，等效生效值与原曲线逐位等价",
+      "pointsInjectionNote": "成长不产出独立乘区字段，全部折算为点数注入既有点数通道（与配表 modifiers 同池）；NonLinear 类由旧乘区 f 反解 p = 100*(1/f - 1)，Linear 类直接 ×100，等效生效值与原曲线逐位等价。本组公式为怪物同构基准注入口径：玩家侧特殊属性不随境界保送，仅经装备/内功/特质/Buff 等获取（总纲 §7.7.5）",
       "cooldownReductionFormula": "冷却缩减成长点数 = 100*(1/(1 - 0.75*x^2) - 1)（0 -> +300 点，有效缩减 0% -> 75%，仅负责主动技能 CD 缩减）",
       "actionSpeedReductionFormula": "行动速度成长点数 = 100*(1/(1 - 0.5*x^2) - 1)（0 -> +100 点，动作/吟唱/寻怪读条 ÷(1+p/100)，等效加成 0% -> 50%）；同额注入攻击速度通道负责普攻间隔第二除数",
       "criticalDamageRatioFormula": "暴击伤害点数 = 50 + 350*x^2（基础 50 点 = 150%，满级 400 点）；暴伤倍率 = 1 + 点数/100（150% -> 500% 二次曲线）",
       "waveSearchDelayFormula": "波间寻怪读条 = respawnMilliseconds ÷ (1 + 行动速度点数/100)（5.0s -> 2.5s）",
-      "skillIntensityFormula": "技能增幅成长点数 = 30*(Tier - 1)（0 -> +330 点，等效威力 ×1.00 ~ 4.30，原「技能强度」乘区并入技能增幅通道）"
+      "skillIntensityFormula": "技能增幅基准点数（怪物）= 30*(Tier - 1)（0 -> +330 点，等效威力 ×1.00 ~ 4.30，原「技能强度」乘区并入技能增幅通道；玩家侧仅经装备/内功等获取，如法杖/琴 T1 +5、T2 +15）"
     },
     "damageMitigationFormula": {
       "model": "Damage Squared Resistance Penetration (攻击力与伤害非线性平方模型)",
@@ -253,7 +253,7 @@
       }
     },
     "benchmarkCombatSkillsModel": {
-      "note": "本节引用真实配表技能（config/game-data/abilities/physical_abilities.json 与 spell_abilities.json）作为基准负载；数值为配表基础值，技能等级成长与技能增幅等级点数（30*(Tier-1) 点，等效 ×1.0~4.3）在结算时另行放大。",
+      "note": "本节引用真实配表技能（config/game-data/abilities/physical_abilities.json 与 spell_abilities.json）作为基准负载；数值为配表基础值，技能等级成长（+2%/级）与技能增幅点数（怪物基准 30*(Tier-1)，等效 ×1.0~4.3；玩家按装备等获取渠道另计）在结算时另行放大。",
       "physicalStyle": {
         "name": "物理系标准技能基准 (1 AD : 1 暴击 : 1 破招)",
         "autoAttack": {
@@ -315,7 +315,7 @@
             "slot": 5,
             "abilityId": "ability.taunt",
             "name": "嘲讽",
-            "description": "自身威胁爆发 (threatGain 500 / threatRatio 2.0)，CD 55s，动作 0.2s，消耗 20 MP；不参与伤害施法"
+            "description": "自身威胁爆发 (threatGain 500 / 60s 嘲讽增益 threatPoints +400)，CD 55s，动作 0.2s，消耗 20 MP；不参与伤害施法"
           }
         ]
       },

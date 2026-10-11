@@ -1013,6 +1013,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 1,
     baseStatRatios: { spellAttack: 0.2 },
     flatStats: { spellAttack: 10, accuracy: 10 },
+    specialMechanics: { skillBonusPoints: 5 },
   },
   'equipment.suxin-zither': {
     equipmentId: 'equipment.suxin-zither',
@@ -1021,7 +1022,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 1,
     baseStatRatios: { spellAttack: 0.14 },
     flatStats: { spellAttack: 8, manapointRegen: 2 },
-    specialMechanics: { healingBonusPoints: 50 },
+    specialMechanics: { healingBonusPoints: 50, skillBonusPoints: 5 },
   },
   'equipment.shufa-scarf': {
     equipmentId: 'equipment.shufa-scarf',
@@ -1111,6 +1112,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 2,
     baseStatRatios: { spellAttack: 0.28 },
     flatStats: { spellAttack: 14, accuracy: 14 },
+    specialMechanics: { skillBonusPoints: 15 },
   },
   'equipment.songfeng-zither': {
     equipmentId: 'equipment.songfeng-zither',
@@ -1119,7 +1121,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 2,
     baseStatRatios: { spellAttack: 0.18 },
     flatStats: { spellAttack: 12, manapointRegen: 3 },
-    specialMechanics: { healingBonusPoints: 50 },
+    specialMechanics: { healingBonusPoints: 50, skillBonusPoints: 15 },
   },
 }
 
