@@ -1514,6 +1514,8 @@
   --arena-hit-shift: -7px;
   --arena-lunge: 16px;
   --arena-windup: -4px;
+  /* 突进/回摆的倾斜旋向：敌方朝左出手时取 -1 镜像（前倾朝向来袭方向） */
+  --arena-tilt-sign: 1;
   /* 方位修正（竖屏纵列由 JS 按目标方位量取写入；零值即纯横向，桌面九宫不变） */
   --arena-aim-y: 0px;
   --arena-aim-angle: 0deg;
@@ -1557,6 +1559,7 @@
   --arena-hit-shift: 7px;
   --arena-lunge: -16px;
   --arena-windup: 4px;
+  --arena-tilt-sign: -1;
 }
 
 .arena-actor.is-hit .arena-avatar {
@@ -1789,6 +1792,7 @@
 }
 
 .arena-vitals {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -1814,11 +1818,14 @@
   --arena-resource-glow: none;
 }
 
-/* 灵力条下威胁值行：徽标 + 实时数值，随快照帧刷新 */
+/* 灵力条下威胁值行：徽标 + 实时数值，随快照帧刷新。
+   绝对定位悬浮于灵力条下沿空档，不占纵向布局空间（避免挤压立绘与阵型）。 */
 .arena-threat {
+  position: absolute;
+  top: calc(100% + 1px);
+  right: 0;
   display: inline-flex;
   align-items: center;
-  align-self: flex-end;
   gap: 3px;
   min-width: 0;
   padding: 0 1px;
@@ -2277,11 +2284,13 @@
 }
 
 .arena-actor--enemy .arena-action-fx--attack {
-  right: 48%;
-  left: auto;
-  /* scaleX(-1) 镜像本身已反转旋转方向，角度保持正号：再乘 -1 构成双重否定，会把朝目标的下偏错翻成上偏 */
+  /* 己方 left:48% 关于卡片中线的镜像位：左缘 52%(=100%−48%)；scaleX(-1) 绕左缘翻转后
+     110px 弹道盒整体落在卡片左侧，渲染后右缘即贴近头像的出射点。
+     注意翻转原点必须钉在出射缘（左缘）——若绕右缘翻，整盒会被翻到卡片右侧打成反方向。
+     scaleX(-1) 镜像本身已反转旋转方向，角度保持正号：再乘 -1 构成双重否定，会把朝目标的下偏错翻成上偏 */
+  left: 52%;
   transform: translateY(-50%) scaleX(-1) rotate(var(--arena-aim-angle, 0deg));
-  transform-origin: 100% 50%;
+  transform-origin: 0% 50%;
 }
 
 .arena-action-fx--attack>i {
@@ -2462,22 +2471,22 @@
 
   18% {
     filter: brightness(0.96);
-    transform: translate3d(var(--arena-windup), 1px, 0) rotate(-1deg) scale(0.98, 1.02);
+    transform: translate3d(var(--arena-windup), 1px, 0) rotate(calc(-1deg * var(--arena-tilt-sign, 1))) scale(0.98, 1.02);
   }
 
   43% {
     filter: brightness(1.3);
-    transform: translate3d(var(--arena-lunge), calc(-2px + var(--arena-aim-y)), 0) rotate(1.5deg) scale(1.05, 0.97);
+    transform: translate3d(var(--arena-lunge), calc(-2px + var(--arena-aim-y)), 0) rotate(calc(1.5deg * var(--arena-tilt-sign, 1))) scale(1.05, 0.97);
   }
 
   54% {
     filter: brightness(1.15);
-    transform: translate3d(var(--arena-lunge), calc(-2px + var(--arena-aim-y)), 0) rotate(0.5deg) scale(1.02, 0.99);
+    transform: translate3d(var(--arena-lunge), calc(-2px + var(--arena-aim-y)), 0) rotate(calc(0.5deg * var(--arena-tilt-sign, 1))) scale(1.02, 0.99);
   }
 
   76% {
     filter: brightness(0.98);
-    transform: translate3d(var(--arena-windup), 0, 0) rotate(-0.6deg) scale(0.99, 1.01);
+    transform: translate3d(var(--arena-windup), 0, 0) rotate(calc(-0.6deg * var(--arena-tilt-sign, 1))) scale(0.99, 1.01);
   }
 
   100% {
