@@ -376,6 +376,39 @@ export interface QueueState {
  * 属性面板为按需一次性交付——UnitInspect 登记后随下一帧快照携带一次即停止，
  * 前端按 enemyId 缓存复用；未点开详情的怪不占带宽；图鉴/生态等战前查看走 CombatantDefinition 本地目录。
  */
+/**
+ * 战内 Buff 快照（服务端投影）：战斗时钟到期时刻与效果字段随单位快照下发，
+ * 结算权威在服务端；expiresAtSeconds 与 battleElapsedSeconds 同一时钟域。
+ */
+export interface CombatBuffEntry {
+  /** Buff 配置 ID */
+  buffId: string
+  /** Buff 显示名（授予时定格） */
+  name: string
+  /** 当前叠加层数 */
+  stacks: number
+  /** 到期时刻（战斗时钟秒，与 battleElapsedSeconds 同域；double.MaxValue 表示永驻） */
+  expiresAtSeconds: number
+  /** 每 5 秒结算点气血回复量 */
+  hpRegen?: number
+  /** 每 5 秒结算点灵力回复量 */
+  mpRegen?: number
+  /** 攻击速度点数 */
+  attackSpeedPoints?: number
+  /** 免伤点数 */
+  damageAbsorptionPoints?: number
+  /** 威胁增幅点数 */
+  threatPoints?: number
+  /** 伤害增幅点数 */
+  damageBonusPoints?: number
+  /** 每秒威胁成长点数（最大气血×点数/100） */
+  threatPerSecondMaxHpPoints?: number
+  /** 气血回复后段比率 */
+  hpRegenPostRatio?: number
+  /** 灵力回复后段比率 */
+  mpRegenPostRatio?: number
+}
+
 export interface ExpeditionEnemy {
   /** 配表怪物定义 ID */
   enemyId: string
@@ -397,7 +430,7 @@ export interface ExpeditionEnemy {
   nextAttackAtSeconds: number
   /** 累计出手次数 */
   attackCount: number
-  /** 累积威胁值 */
+  /** 有效威胁值：基础实际值×(1+威胁增幅点数/100)，与目标判定同口径 */
   threat: number
   /** 正在吟唱的技能 ID；为 null 时下一次出手是普通攻击 */
   pendingAbilityId?: string | null
@@ -405,6 +438,8 @@ export interface ExpeditionEnemy {
   pendingActionDurationSeconds: number
   /** 完整战斗属性面板（与玩家 combat.attributes 同一形状）；仅被观察目标命中时随快照携带 */
   attributes?: CombatAttributes | null
+  /** 生效中的战内 Buff（战斗时钟到期时刻随快照下发） */
+  buffs?: CombatBuffEntry[] | null
 }
 
 /**
@@ -432,7 +467,7 @@ export interface ExpeditionAlly {
   nextAttackAtSeconds: number
   /** 累计出手次数 */
   attackCount: number
-  /** 累积威胁值 */
+  /** 有效威胁值：基础实际值×(1+威胁增幅点数/100)，与目标判定同口径 */
   threat: number
   /** 正在吟唱的技能 ID；为 null 时下一次出手是普通攻击 */
   pendingAbilityId?: string | null
@@ -446,6 +481,8 @@ export interface ExpeditionAlly {
   skills?: CombatAbilitySlot[] | null
   /** 开打定格已穿戴装备（仅装配展示用）；与 attributes 同帧一次性交付，未观察时为 null */
   equipment?: EquippedItem[] | null
+  /** 生效中的战内 Buff（战斗时钟到期时刻随快照下发） */
+  buffs?: CombatBuffEntry[] | null
 }
 
 /**
@@ -482,8 +519,10 @@ export interface ExpeditionProgress {
   playerRespawnDurationSeconds?: number | null
   /** 当前波次序号 */
   waveNumber?: number | null
-  /** 玩家累积威胁值 */
+  /** 玩家有效威胁值：基础实际值×(1+威胁增幅点数/100)，与目标判定同口径 */
   playerThreat?: number | null
+  /** 本机生效中的战内 Buff（含开战注入的消耗品副本）；非战斗相位 PlayerState 为空为 null */
+  playerBuffs?: CombatBuffEntry[] | null
   /** 遭遇战 ID */
   encounterId?: string | null
   /** 斗法回放显示信息（仅 phase 为 duel / duel-pending 时可能下发） */
@@ -1003,6 +1042,12 @@ export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen'
   mpRegenPostRatio?: number
   /** 通用属性比率字典（可选） */
   statRatios?: Record<string, number> | null
+  /** 威胁增幅点数（仅战内 Buff 投影携带） */
+  threatPoints?: number
+  /** 伤害增幅点数（仅战内 Buff 投影携带） */
+  damageBonusPoints?: number
+  /** 每秒威胁成长点数（仅战内 Buff 投影携带） */
+  threatPerSecondMaxHpPoints?: number
 }
 
 /**
@@ -1128,7 +1173,7 @@ export interface CombatAbilityDefinition {
   /** 根骨加成属性键（配表声明） */
   rootAttribute?: string
   /** 支援类：施放后施加的战内 Buff（破阵子等）；修饰字段为点数口径 */
-  buff?: { name?: string; durationSeconds?: number; damageAbsorptionPoints?: number; hpRegen?: number; mpRegen?: number; attackSpeedPoints?: number; threatPoints?: number; damageBonusPoints?: number } | null
+  buff?: { name?: string; durationSeconds?: number; damageAbsorptionPoints?: number; hpRegen?: number; mpRegen?: number; attackSpeedPoints?: number; threatPoints?: number; damageBonusPoints?: number; threatPerSecondMaxHpPoints?: number } | null
   /** 击杀连锁次数：单体技能击杀目标后对另一存活敌方追加一次完整结算（贯星等），缺省 0 */
   chainOnKillCount?: number
   /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */

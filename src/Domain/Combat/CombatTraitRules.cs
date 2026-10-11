@@ -25,7 +25,8 @@ internal static class CombatTraitRules
     internal static void ApplyBattleStartTraits(CombatantState unit)
     {
         if (ContainsTrait(unit.Stats.Traits, UnseenTraitId))
-            unit.Buffs.Add(new CombatBuffState(UnseenBuffId, UnseenBuffDurationSeconds, ThreatPoints: -100));
+            unit.Buffs.Add(new CombatBuffState(UnseenBuffId, UnseenBuffDurationSeconds, ThreatPoints: -100, Name: "隐身",
+                ResetOnWave: true));
     }
 
     private static bool ContainsTrait(IReadOnlyList<string>? traits, string traitId)

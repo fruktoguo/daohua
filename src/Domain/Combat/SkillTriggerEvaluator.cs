@@ -61,6 +61,11 @@ public static class SkillTriggerEvaluator
             JsonRead.Number(buffElement, "attackSpeedPoints"); JsonRead.Number(buffElement, "damageAbsorptionPoints");
             JsonRead.Number(buffElement, "threatPoints"); JsonRead.Number(buffElement, "maxStacks");
             JsonRead.Number(buffElement, "damageBonusPoints");
+            JsonRead.Number(buffElement, "threatPerSecondMaxHpPoints");
+            // resetOnWave 只接受布尔字面量：true = 该 Buff 不进入跨波携带（波次清空即消散）。
+            if (buffElement.TryGetProperty("resetOnWave", out var resetFlag)
+                && resetFlag.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 resetOnWave 必须为布尔值。");
             if (duration <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 必须配置正持续时长。");
         }

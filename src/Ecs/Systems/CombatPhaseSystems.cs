@@ -35,7 +35,10 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
     /// <summary>战内回复沿既有 5 秒网格落账。</summary>
     internal const double TickSeconds = 5;
 
-    /// <summary>战内效果相位结算：先剔除到期 Buff，再按 5 秒网格对存活单位结算周期回复。</summary>
+    /// <summary>每秒威胁成长沿 1 秒网格落账（嘲讽类周期性仇恨累积）。</summary>
+    internal const double ThreatTickSeconds = 1;
+
+    /// <summary>战内效果相位结算：先剔除到期 Buff，再按各自网格结算周期效果（5s 回复 / 1s 每秒威胁）。</summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
@@ -44,19 +47,32 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
             encounter.PlayerAllies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         for (var i = 0; i < encounter.Enemies.Count; i++)
             encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
-        if (Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) > 1e-9) return;
+        var regenTick = Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) <= 1e-9;
+        var threatTick = Math.Abs(at / ThreatTickSeconds - Math.Round(at / ThreatTickSeconds)) <= 1e-9;
+        if (!regenTick && !threatTick) return;
         var statsBook = encounter.StatsBook;
         // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
-        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook);
-        for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook);
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook, regenTick, threatTick);
+        for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook, regenTick, threatTick);
 
-        static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook)
+        static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, bool regenTick, bool threatTick)
         {
+            var buffs = unit.Buffs;
+            // 每秒威胁成长：单位最大气血 × Σ(点数×层数)/100 直接累进基础威胁（与 threatGain 同通道）；
+            // 与灵力回复同口径——倒地单位照常累积，复活后仇恨不回退。负值配置按减仇恨递减、0 托底。
+            if (threatTick)
+            {
+                var threatPoints = 0d;
+                for (var i = 0; i < buffs.Count; i++)
+                    threatPoints += buffs[i].ThreatPerSecondMaxHpPoints * buffs[i].Stacks;
+                if (threatPoints != 0)
+                    unit.Threat = Math.Max(0, unit.Threat + unit.Stats.MaxHitpoints * threatPoints / 100);
+            }
+            if (!regenTick) return;
             // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次；
             // 收口公式（总纲 §20.3）：(固定回复合计) × (1 + Σ后段比率)。
             double hp = unit.Stats.HpRegen, mp = unit.Stats.MpRegen;
             double hpPost = 0, mpPost = 0;
-            var buffs = unit.Buffs;
             for (var i = 0; i < buffs.Count; i++)
             {
                 hp += buffs[i].HpRegen * buffs[i].Stacks;

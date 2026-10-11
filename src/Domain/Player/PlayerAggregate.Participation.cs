@@ -95,6 +95,7 @@ public sealed partial class PlayerAggregate
         Resources.Manapoints = settlement.Manapoints;
         Resources.RegenCarrySeconds = settlement.RegenCarrySeconds;
         Combat.Skills = settlement.Skills;
+        Combat.Buffs = settlement.Buffs ?? PlayerCombatBuffState.Empty;
         action.Expedition = settlement.Expedition;
         action.ProgressSeconds = settlement.ProgressSeconds;
         action.CompletedRepeats = settlement.CompletedRepeats;
@@ -214,6 +215,7 @@ public sealed partial class PlayerAggregate
             SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities, Loadout.AbilityTriggers),
             externalBuffs.Count > 0 ? externalBuffs : null,
             Combat.Skills,
+            Combat.Buffs,
             CaptureSustainedBuffs(Settings.AutoUseSlots, gameData),
             Loadout.Equipment.ToArray(),
             Resources.RegenCarrySeconds);
@@ -252,7 +254,9 @@ public sealed partial class PlayerAggregate
                     JsonRead.Number(buff, "attackSpeedPoints"), JsonRead.Number(buff, "damageAbsorptionPoints"),
                     JsonRead.Number(buff, "threatPoints"),
                     JsonRead.Number(buff, "hpRegenPostRatio"), JsonRead.Number(buff, "mpRegenPostRatio"),
-                    JsonRead.Number(buff, "damageBonusPoints")));
+                    JsonRead.Number(buff, "damageBonusPoints"), JsonRead.Text(buff, "name") ?? buffId,
+                    // 阵法类（subCategory=formation）持续消耗品 Buff 全队生效——注入己方阵列而非仅使用者。
+                    TeamWide: string.Equals(item.SubCategory, Domain.GameData.AutoUseBar.Formation, StringComparison.Ordinal)));
             }
         }
         return list;
@@ -284,6 +288,7 @@ public sealed partial record ActionParticipantSnapshot
             SkillSlot.FromAbilitySlots(loadout.AbilitySlots, catalog.Abilities, loadout.AbilityTriggers),
             externalBuffs.Count > 0 ? externalBuffs : null,
             state.Combat.Skills,
+            state.Combat.Buffs,
             PlayerAggregate.CaptureSustainedBuffs(state.Settings.AutoUseSlots ?? [], catalog),
             loadout.Equipment,
             state.Combat.RegenCarrySeconds);

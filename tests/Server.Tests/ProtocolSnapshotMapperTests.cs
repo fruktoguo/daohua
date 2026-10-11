@@ -338,4 +338,103 @@ public sealed class ProtocolAttributesPointsTests
         Assert.Equal(200, inspectedAttributes.GetProperty("maxHitpoints").GetDouble());
         Assert.Equal(20, inspectedAttributes.GetProperty("physicalAttack").GetDouble());
     }
+
+    /// <summary>
+    /// 有效威胁投影门禁（总纲 §7.8.1）：玩家/盟友/敌人的 threat 字段统一下发
+    /// 基础存储值×(1+增幅点数/100) 的有效值——本机面板增幅、冻结面板增幅、
+    /// 镜像修正与战内 Buff 点数全部参与放大，不再仅透传基础累积值。
+    /// </summary>
+    [Fact]
+    public void ToActionQueueSection_ProjectsEffectiveThreat()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var selfStats = CombatantStats.Create(113, 10, 5, 2) with { MaxManapoints = 60, ThreatBonusPoints = 50 };
+        var allyStats = CombatantStats.Create(200, 20, 8, 2) with { MaxManapoints = 80, ThreatBonusPoints = 100 };
+        var spec = new ActionParticipationSpec(
+            Guid.NewGuid().ToString("D"), "encounter.qi-beast", "node.qi-den", 1, 0, 0,
+            [
+                new ActionParticipantSnapshot(Guid.NewGuid().ToString("D"), "本机", 1, 0, 0, 113, 60, selfStats, []),
+                new ActionParticipantSnapshot(Guid.NewGuid().ToString("D"), "队友", 1, 0, 0, 200, 80, allyStats, []),
+            ])
+        { ActionId = new ActionId("combat.hunt-qi-beast") };
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, "node.qi-den"),
+            DateTimeOffset.UtcNow, ActionQueueStatus.Running, 0, -1, 0,
+            new CombatExpeditionState(
+                "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, 1,
+                15.47, 113, 60, 16, 15, 100, CombatOutcome.Running, 1,
+                [new ExpeditionEnemyState("enemy.wood-spirit",
+                    new CombatantSnapshot(362, 4.75, 15.99, 7, 100, 1, ThreatBonusPoints: 200))])
+            {
+                PlayerState = new CombatantSnapshot(113, 60, 16, 15, 100,
+                    Buffs: [new CombatBuffState("ability-buff:ability.taunt", 60, 1,
+                        ThreatPoints: 200, ThreatPerSecondMaxHpPoints: 5, Name: "嘲讽")]),
+                Allies = [new ExpeditionAllyState(1, new CombatantSnapshot(200, 80, 5, 2, 200))],
+            },
+            Participation: new ActionParticipationBinding(spec));
+
+        var section = ProtocolSnapshotMapper.ToActionQueueSection([action], gameData, null, null, 300);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(section, ProtocolJson.Options));
+        var expedition = doc.RootElement[0].GetProperty("expedition");
+        // 本机标量：基础 100 ×(1+(面板 300+战内 Buff 200)/100)=600；盟友位走冻结面板与镜像。
+        Assert.Equal(600, expedition.GetProperty("playerThreat").GetDouble());
+        var allies = expedition.GetProperty("allies");
+        // 本机盟友位同源 PlayerState 镜像：基础 100 ×(1+(冻结面板 50+Buff 200)/100)=350。
+        Assert.Equal(350, allies[0].GetProperty("threat").GetDouble());
+        Assert.Equal(400, allies[1].GetProperty("threat").GetDouble());
+        Assert.Equal(300, expedition.GetProperty("enemies")[0].GetProperty("threat").GetDouble());
+        // 战内 Buff 投影：本机位标量与盟友位数组同源携带（名称/层数/战斗时钟到期/效果字段）。
+        var playerBuff = expedition.GetProperty("playerBuffs")[0];
+        Assert.Equal("ability-buff:ability.taunt", playerBuff.GetProperty("buffId").GetString());
+        Assert.Equal("嘲讽", playerBuff.GetProperty("name").GetString());
+        Assert.Equal(60, playerBuff.GetProperty("expiresAtSeconds").GetDouble());
+        Assert.Equal(200, playerBuff.GetProperty("threatPoints").GetDouble());
+        Assert.Equal(5, playerBuff.GetProperty("threatPerSecondMaxHpPoints").GetDouble());
+        Assert.Equal("嘲讽", allies[0].GetProperty("buffs")[0].GetProperty("name").GetString());
+        Assert.False(expedition.GetProperty("enemies")[0].TryGetProperty("buffs", out _));
+    }
+
+    /// <summary>
+    /// 跨波携带 Buff 门禁（总纲 §7.9.5）：非战斗相位 playerBuffs/盟友 buffs 改投携带态
+    /// （expiresAt = 冻结时钟基准 + 剩余秒数）；详情属性面板的威胁增幅折入 Buff 点数，
+    /// 与 §7.8.1 有效威胁判定同乘区。
+    /// </summary>
+    [Fact]
+    public void CarriedCombatBuffsProjectDuringSearchAndFoldIntoThreatBonus()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var aggregate = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()),
+            "携带", DateTimeOffset.UtcNow, "fp");
+        aggregate.Combat.Buffs = new PlayerCombatBuffState(
+            [new CombatBuffCarry("ability-buff:ability.taunt", 40, 2, ThreatPoints: 400, Name: "嘲讽")]);
+        var state = aggregate.ExportState();
+
+        // 搜寻相位远征：携带态经 playerCarriedBuffs 入参下发，expiresAt = battleElapsed + 剩余。
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, "node.qi-den"),
+            DateTimeOffset.UtcNow, ActionQueueStatus.Running, 0, -1, 0,
+            new CombatExpeditionState(
+                "encounter.qi-beast", CombatExpeditionPhase.Search, 3, 8, 1, 12.5,
+                113, 60, 0, 0, 100, CombatOutcome.Running, 2));
+        var section = ProtocolSnapshotMapper.ToActionQueueSection([action], gameData, null, null, 0,
+            state.Combat.Buffs);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(section, ProtocolJson.Options));
+        var expedition = doc.RootElement[0].GetProperty("expedition");
+        var carried = Assert.Single(expedition.GetProperty("playerBuffs").EnumerateArray());
+        Assert.Equal("ability-buff:ability.taunt", carried.GetProperty("buffId").GetString());
+        Assert.Equal("嘲讽", carried.GetProperty("name").GetString());
+        Assert.Equal(2, carried.GetProperty("stacks").GetDouble());
+        // 12.5 + 40 = 52.5：前端 serverNow + (expiresAt - battleElapsed) 得剩余 40s。
+        Assert.Equal(52.5, carried.GetProperty("expiresAtSeconds").GetDouble(), 6);
+        Assert.Equal(400, carried.GetProperty("threatPoints").GetDouble());
+
+        // 详情属性面板：威胁增幅 = 面板 0 + 携带 Buff 合计 400×2。
+        var runtime = new PlayerRuntimeSnapshot(state.PlayerId.Value, state.AccountId.Value.ToString("D"),
+            state.DisplayName, 1, state.LastSimulatedAt, state, 0, []);
+        var snapshot = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData);
+        var combat = snapshot.Sections.Single(section => section.Section == "combat");
+        Assert.Equal(800, combat.Data.GetProperty("attributes").GetProperty("threatBonusPoints").GetDouble());
+    }
 }

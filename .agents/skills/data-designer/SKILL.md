@@ -131,11 +131,7 @@ $$B_{\text{skill}} = B_T \times K$$
 
 ### 4.4 等级成长自动推导
 
-若未显式指定：
-
-- `DamageRatioLevelBonus` = `DamageRatio × 0.006`
-- `FlatDamageLevelBonus` = `FlatDamage × 0.01`
-- 治疗同理
+若未显式指定：全部数值项按 `LevelGrowth = 1 + 0.02 × (Lv − 1)` 每级 +2.0% 线性成长（伤害倍率、固定伤害、治疗与支援数值同式，时长/叠层上限不成长）。
 
 代码位置：[`DataBudgetResolver.ResolveAbility()`](file:///home/yuohira/game/daohua/src/Domain/GameData/DataBudgetResolver.cs#L186-L305)
 

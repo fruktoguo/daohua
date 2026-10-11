@@ -481,6 +481,9 @@ export function describeBuffEffectLines(buff: {
   damageAbsorptionPoints?: number
   attackSpeedPoints?: number
   statRatios?: Record<string, number> | null
+  threatPoints?: number
+  damageBonusPoints?: number
+  threatPerSecondMaxHpPoints?: number
 }): string[] {
   const t = getT()
   const lines: string[] = []
@@ -508,6 +511,17 @@ export function describeBuffEffectLines(buff: {
   }
   if (buff.attackSpeedPoints && buff.attackSpeedPoints !== 0) {
     lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedPoints / 100)}`)
+  }
+
+  // 2b. 战内点数修饰（技能 Buff 投影：增伤/威胁增幅/每秒威胁成长，Linear 点数直读）。
+  if (buff.damageBonusPoints && buff.damageBonusPoints !== 0) {
+    lines.push(t('market.effect.damageBonusPoints', { n: signedPercent(buff.damageBonusPoints / 100) }))
+  }
+  if (buff.threatPoints && buff.threatPoints !== 0) {
+    lines.push(t('market.effect.buffThreatPoints', { n: signedPercent(buff.threatPoints / 100) }))
+  }
+  if (buff.threatPerSecondMaxHpPoints && buff.threatPerSecondMaxHpPoints !== 0) {
+    lines.push(t('market.effect.threatPerSecondMaxHp', { n: signedPercent(buff.threatPerSecondMaxHpPoints / 100) }))
   }
 
   // 3. 通用属性比率字典（领域 BuffModifiers.statRatios 透传键）

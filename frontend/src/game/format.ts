@@ -43,13 +43,12 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const t = getT()
   const normalizedLevel = Math.max(1, level)
   const levelOffset = normalizedLevel - 1
-  // 等级成长与服务端 CombatSkillEngine.Complete 同式：倍率项每级 +0.6%，固定值项每级 +1.0%。
-  const ratioBonus = 1 + levelOffset * 0.006
-  const flatBonus = 1 + levelOffset * 0.01
-  const damageRatio = (ability.damageRatio ?? 0) * ratioBonus
-  const flatDamage = (ability.flatDamage ?? 0) * flatBonus
-  const healingRatio = (ability.healingRatio ?? 0) * ratioBonus
-  const flatHealing = (ability.flatHealing ?? 0) * flatBonus
+  // 等级成长与服务端 CastSkill 同式：全部数值项每级 +2.0% 线性成长。
+  const levelGrowth = 1 + levelOffset * 0.02
+  const damageRatio = (ability.damageRatio ?? 0) * levelGrowth
+  const flatDamage = (ability.flatDamage ?? 0) * levelGrowth
+  const healingRatio = (ability.healingRatio ?? 0) * levelGrowth
+  const flatHealing = (ability.flatHealing ?? 0) * levelGrowth
   // wire 上 targetType 已是 kebab 规范化词（enemy/all-enemies/self/all-allies/lowest-hp-ally）。
   const target = t(`game.abilityTarget.${ability.targetType ?? 'enemy'}`)
   const categoryLabel = t(`combat.encounter.damageCategory.${ability.category}`)
@@ -75,9 +74,28 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   // 效果叙述主句：按效果类型一次性写清目标、数值与伤害类别。
   const hitCount = ability.hitCount ?? 0
   const healing = ability.effectType === 'heal'
-  const threatGain = ability.threatGain ?? 0
-  const threatPoints = ability.threatPoints ?? 0
+  // 支援类数值同样吃 levelGrowth：固定威胁与 Buff 点数项均按每级 +2% 放大。
+  const threatGain = (ability.threatGain ?? 0) * levelGrowth
+  const threatPoints = (ability.threatPoints ?? 0) * levelGrowth
   const buff = ability.buff
+  // 战内 Buff 效果子句：增伤/免伤/威胁增幅/每秒威胁逐条并列描述，全零回退通用增益文案。
+  const buffClause = () => {
+    const duration = buff?.durationSeconds ?? 0
+    const bonusPoints = (buff?.damageBonusPoints ?? 0) * levelGrowth
+    const absorbPoints = (buff?.damageAbsorptionPoints ?? 0) * levelGrowth
+    const buffThreatPoints = (buff?.threatPoints ?? 0) * levelGrowth
+    const threatPerSecond = (buff?.threatPerSecondMaxHpPoints ?? 0) * levelGrowth
+    const effects: string[] = []
+    if (bonusPoints !== 0) effects.push(t('game.abilityDesc.effectBuffDamage', { target, n: abilityPercent(bonusPoints / 100) }))
+    if (absorbPoints !== 0) effects.push(t('game.abilityDesc.effectBuffAbsorb', { target, n: abilityPercent(absorbPoints / (100 + absorbPoints)) }))
+    if (buffThreatPoints !== 0) effects.push(t('game.abilityDesc.threatRatioClause', { n: abilityPercent(buffThreatPoints / 100) }))
+    if (threatPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffThreatPerSecond', { n: abilityPercent(threatPerSecond / 100) }))
+    let effect = effects.length > 0 ? effects.join('，') : t('game.abilityDesc.effectBuff', { target })
+    if (duration > 0) {
+      effect = `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
+    }
+    return effect
+  }
   const clauses: string[] = []
   if (healing) {
     clauses.push(t('game.abilityDesc.effectHeal', { target, expr: healExpr }))
@@ -93,20 +111,11 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
       const ratio = t('game.abilityDesc.threatRatioClause', { n: abilityPercent(threatPoints / 100) })
       clause = clause ? `${clause}，${ratio}` : ratio
     }
+    // 嘲讽类技能即时威胁与限时 Buff 并存：Buff 子句并连，不被威胁主句吞掉。
+    if (buff) clause = clause ? `${clause}，${buffClause()}` : buffClause()
     clauses.push(clause || t('game.abilityDesc.effectThreat'))
   } else if (buff) {
-    const duration = buff.durationSeconds ?? 0
-    const bonusPoints = buff.damageBonusPoints ?? 0
-    const absorbPoints = buff.damageAbsorptionPoints ?? 0
-    let effect = bonusPoints !== 0
-      ? t('game.abilityDesc.effectBuffDamage', { target, n: abilityPercent(bonusPoints / 100) })
-      : absorbPoints !== 0
-        ? t('game.abilityDesc.effectBuffAbsorb', { target, n: abilityPercent(absorbPoints / (100 + absorbPoints)) })
-        : t('game.abilityDesc.effectBuff', { target })
-    if (duration > 0) {
-      effect = `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
-    }
-    clauses.push(effect)
+    clauses.push(buffClause())
   } else {
     clauses.push(t('game.abilityDesc.effectBuff', { target }))
   }

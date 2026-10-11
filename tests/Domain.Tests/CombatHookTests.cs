@@ -73,7 +73,8 @@ public sealed class CombatHookTests
         const double reflected_damage = 100d * 100 / 101 * 0.5;
         Assert.Equal(reflected_damage, reflected.Damage, 10);
         Assert.Equal(1000 - reflected_damage, state.Player.Hitpoints, 10);
-        Assert.Equal(reflected_damage, state.Enemies[0].Threat, 10);
+        // 开战基础威胁 100 + 反伤累积：受击方存储值 = BaseThreat + 弹回实伤。
+        Assert.Equal(CombatantState.BaseThreat + reflected_damage, state.Enemies[0].Threat, 10);
     }
 
     /// <summary>

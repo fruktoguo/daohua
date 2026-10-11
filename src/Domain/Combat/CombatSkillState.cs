@@ -187,3 +187,132 @@ public sealed record PlayerCombatSkillState(
         return new(cooldowns, castingId, castRemaining, unit.SkillCastCount);
     }
 }
+
+/// <summary>
+/// 跨波携带的单个战内 Buff：与 <see cref="CombatBuffState"/> 字段同构，
+/// 但把战斗时钟到期时刻折算为剩余秒数——战内 Buff 只随「遭遇战存活时钟」折算，
+/// 波间搜寻/复活等脱战相位时钟冻结（与持续消耗品扣减同模型，总纲 §6.3）。
+/// </summary>
+/// <param name="BuffId">Buff 标识。</param>
+/// <param name="RemainingSeconds">定格时刻的剩余生效秒数（战斗时钟口径）。</param>
+/// <param name="Stacks">层数。</param>
+public sealed record CombatBuffCarry(
+    string BuffId,
+    double RemainingSeconds,
+    double Stacks = 1,
+    double HpRegen = 0,
+    double MpRegen = 0,
+    double AttackSpeedPoints = 0,
+    double DamageAbsorptionPoints = 0,
+    double ThreatPoints = 0,
+    double HpRegenPostRatio = 0,
+    double MpRegenPostRatio = 0,
+    double DamageBonusPoints = 0,
+    double ThreatPerSecondMaxHpPoints = 0,
+    string Name = "")
+{
+    /// <summary>持久化不变量：剩余秒数必须为正有限值（含 MaxValue 永驻哨兵）。</summary>
+    public bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
+        && double.IsFinite(RemainingSeconds) && RemainingSeconds > 0
+        && double.IsFinite(Stacks) && Stacks > 0
+        && double.IsFinite(HpRegen) && double.IsFinite(MpRegen)
+        && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
+        && double.IsFinite(ThreatPoints) && double.IsFinite(ThreatPerSecondMaxHpPoints)
+        && double.IsFinite(HpRegenPostRatio) && double.IsFinite(MpRegenPostRatio)
+        && double.IsFinite(DamageBonusPoints)
+        && Name is not null && Name.Length <= 64;
+}
+
+/// <summary>
+/// 玩家战内 Buff 的跨波携带态：战斗行动存续期间全部战内 Buff 随波次清空折算携带、
+/// 下一波入场按剩余秒数重注入；只在整场战斗行动结束（行动移除/散场/重锚）时清空。
+/// 标记 <c>resetOnWave</c> 的 Buff（战外 Buff/消耗品槽/特质等由外部真源每波重注入者）
+/// 不进入携带——由注入方各自重建，避免携带副本逃逸其真实生命周期。
+/// </summary>
+public sealed record PlayerCombatBuffState(IReadOnlyList<CombatBuffCarry> Buffs)
+{
+    /// <summary>空 Buff 状态单例。</summary>
+    public static PlayerCombatBuffState Empty { get; } = new([]);
+
+    /// <summary>语义空判定：无携带条目。</summary>
+    [JsonIgnore]
+    public bool IsEmpty => Buffs is null || Buffs.Count == 0;
+
+    /// <summary>校验状态不变量：条目非空合法、BuffId 唯一。</summary>
+    public bool IsValid
+    {
+        get
+        {
+            if (Buffs is null) return false;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < Buffs.Count; i++)
+                if (Buffs[i] is null || !Buffs[i].IsValid || !seen.Add(Buffs[i].BuffId)) return false;
+            return true;
+        }
+    }
+
+    /// <summary>携带条目合计威胁增幅点数（与 <see cref="CombatantState.SumBuffThreatPoints"/> 同式，供详情面板折入）。</summary>
+    public double SumThreatPoints()
+    {
+        var total = 0d;
+        if (Buffs is not null)
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].ThreatPoints * Buffs[i].Stacks;
+        return total;
+    }
+
+    /// <summary>最早到期剩余秒数；空态返回 +∞（计算属性不参与持久化）。</summary>
+    [JsonIgnore]
+    public double NextBoundarySeconds
+    {
+        get
+        {
+            var next = double.PositiveInfinity;
+            if (Buffs is not null)
+                for (var i = 0; i < Buffs.Count; i++)
+                    if (Buffs[i].RemainingSeconds < next) next = Buffs[i].RemainingSeconds;
+            return next;
+        }
+    }
+
+    /// <summary>开战时把携带 Buff 重注入战斗单位：到期时刻 = 当前战斗时钟 + 定格剩余。</summary>
+    /// <param name="unit">目标战斗单位。</param>
+    /// <param name="battleElapsedSeconds">新战斗的当前时钟秒数（新开场恒为 0）。</param>
+    public void ApplyTo(CombatantState unit, double battleElapsedSeconds)
+    {
+        if (Buffs is null) return;
+        for (var i = 0; i < Buffs.Count; i++)
+        {
+            var carry = Buffs[i];
+            unit.Buffs.RemoveAll(entry => entry.BuffId == carry.BuffId);
+            var expiresAt = battleElapsedSeconds + carry.RemainingSeconds;
+            unit.Buffs.Add(new CombatBuffState(carry.BuffId,
+                double.IsFinite(expiresAt) ? expiresAt : double.MaxValue,
+                carry.Stacks, carry.HpRegen, carry.MpRegen, carry.AttackSpeedPoints,
+                carry.DamageAbsorptionPoints, carry.ThreatPoints,
+                carry.HpRegenPostRatio, carry.MpRegenPostRatio,
+                carry.DamageBonusPoints, carry.ThreatPerSecondMaxHpPoints, carry.Name));
+        }
+    }
+
+    /// <summary>波次清空（或战斗切片收尾）时把单位战内 Buff 折算回携带形态。</summary>
+    /// <param name="unit">战斗单位（玩家方或盟友）。</param>
+    /// <param name="elapsedSeconds">当前战斗时钟秒数（剩余折算基准）。</param>
+    /// <returns>携带态；无可携带条目时为语义空。</returns>
+    public static PlayerCombatBuffState FromCombatant(CombatantState unit, double elapsedSeconds)
+    {
+        List<CombatBuffCarry>? carries = null;
+        for (var i = 0; i < unit.Buffs.Count; i++)
+        {
+            var buff = unit.Buffs[i];
+            if (buff.ResetOnWave) continue;
+            var remaining = buff.ExpiresAtSeconds - elapsedSeconds;
+            if (!(remaining > 1e-9)) continue;
+            carries ??= new List<CombatBuffCarry>(unit.Buffs.Count - i);
+            carries.Add(new CombatBuffCarry(buff.BuffId, remaining, buff.Stacks,
+                buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints,
+                buff.ThreatPoints, buff.HpRegenPostRatio, buff.MpRegenPostRatio,
+                buff.DamageBonusPoints, buff.ThreatPerSecondMaxHpPoints, buff.Name));
+        }
+        return new(carries ?? (IReadOnlyList<CombatBuffCarry>)[]);
+    }
+}

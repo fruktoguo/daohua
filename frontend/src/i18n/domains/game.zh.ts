@@ -363,6 +363,7 @@ export const gameZh = {
       chainOnKill: '若击杀目标，余势贯穿至另一名敌人造成同等伤害，至多贯穿{n}次',
       effectThreatGain: '引动敌意向己，获得{n}点威胁值',
       threatRatioClause: '使自身威胁值获取提升{n}',
+      effectBuffThreatPerSecond: '每秒获得相当于自身最大生命{n}的威胁值',
       effectBuffDamage: '使{target}伤害提升{n}',
       effectBuffAbsorb: '使{target}伤害减免{n}',
       buffDuration: '持续{n}秒',

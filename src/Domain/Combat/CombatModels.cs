@@ -204,12 +204,17 @@ public sealed record CombatantStats(
 /// <param name="ThreatPoints">威胁增幅点数：叠加进有效威胁乘区。</param>
 /// <param name="HpRegenPostRatio">气血回复后段乘区比率：所有固定回复合并后再乘 (1+Σ)。</param>
 /// <param name="MpRegenPostRatio">灵力回复后段乘区比率：所有固定回复合并后再乘 (1+Σ)。</param>
+/// <param name="ThreatPerSecondMaxHpPoints">每秒威胁成长点数：每个整秒结算点增加 单位最大气血×点数/100 的基础威胁。</param>
+/// <param name="Name">Buff 显示名（授予时定格，仅展示用；缺省退回 BuffId）。</param>
+/// <param name="ResetOnWave">每波重置标记：true 的 Buff 不进入跨波携带（波次清空即消散）；
+/// 战外 Buff/消耗品槽/特质等由外部真源每波重注入者恒置 true，技能授予 Buff 默认 false 跨波存续。</param>
 public sealed record CombatBuffState(
     string BuffId, double ExpiresAtSeconds, double Stacks = 1,
     double HpRegen = 0, double MpRegen = 0, double AttackSpeedPoints = 0,
     double DamageAbsorptionPoints = 0, double ThreatPoints = 0,
     double HpRegenPostRatio = 0, double MpRegenPostRatio = 0,
-    double DamageBonusPoints = 0)
+    double DamageBonusPoints = 0, double ThreatPerSecondMaxHpPoints = 0,
+    string Name = "", bool ResetOnWave = false)
 {
     /// <summary>校验 Buff 字段满足持久化不变量。</summary>
     internal bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
@@ -217,7 +222,7 @@ public sealed record CombatBuffState(
         && double.IsFinite(Stacks) && Stacks > 0
         && double.IsFinite(HpRegen) && double.IsFinite(MpRegen)
         && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
-        && double.IsFinite(ThreatPoints)
+        && double.IsFinite(ThreatPoints) && double.IsFinite(ThreatPerSecondMaxHpPoints)
         && double.IsFinite(HpRegenPostRatio) && double.IsFinite(MpRegenPostRatio)
         && double.IsFinite(DamageBonusPoints);
 }
@@ -244,9 +249,13 @@ public sealed class CombatantState
         Manapoints = stats.MaxManapoints;
         // 普攻引导：各单位首次出手需先完成一个完整攻击周期的蓄势，而非开战瞬发。
         NextAttackAtSeconds = stats.AttackIntervalSeconds;
+        // 每场战斗开始时全体单位基础威胁重置为常量值（总纲 §7.8.1）。
+        Threat = BaseThreat;
         Skills = skills ?? [];
     }
 
+    /// <summary>单位进入战斗的基础威胁值：每场战斗开始时重置为该值（总纲 §7.8.1）。</summary>
+    public const double BaseThreat = 100;
     /// <summary>战斗者标识（player 或 enemy:{index}）</summary>
     public string Id { get; }
     /// <summary>
@@ -272,7 +281,7 @@ public sealed class CombatantState
     public double NextAttackAtSeconds { get; internal set; }
     /// <summary>累计出手攻击次数</summary>
     public double AttackCount { get; internal set; }
-    /// <summary>累积威胁值：本场对敌方全体造成的总伤害。</summary>
+    /// <summary>基础威胁实际值：开战重置为 <see cref="BaseThreat"/>，伤害/嘲讽等增减直接改动该值（不预乘增幅）。</summary>
     public double Threat { get; internal set; }
     /// <summary>嘲讽/威胁增幅加成点数；有效威胁 = Threat ×(1 + 合计增幅点数/100)。</summary>
     public double ThreatBonusPoints { get; internal set; }
@@ -291,8 +300,8 @@ public sealed class CombatantState
     public double RespawnAtSeconds { get; internal set; } = double.PositiveInfinity;
     /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
-    /// <summary>参与目标抽取的有效威胁值：Threat ×(1 + (面板威胁增幅 + 嘲讽修正 + 战内 Buff 威胁)/100)。</summary>
-    public double EffectiveThreat => Threat * Math.Max(0, 1 + (Stats.ThreatBonusPoints + ThreatBonusPoints + BuffThreatPoints) / 100);
+    /// <summary>参与目标抽取与对外展示的有效威胁值：Threat ×(1 + (面板威胁增幅 + 嘲讽修正 + 战内 Buff 威胁)/100)。</summary>
+    public double EffectiveThreat => ComputeEffectiveThreat(Threat, Stats.ThreatBonusPoints, ThreatBonusPoints, Buffs);
     /// <summary>战内 Buff 合计攻击速度点数。</summary>
     internal double BuffAttackSpeedPoints
     {
@@ -314,14 +323,23 @@ public sealed class CombatantState
         }
     }
     /// <summary>战内 Buff 合计威胁增幅点数。</summary>
-    internal double BuffThreatPoints
+    internal double BuffThreatPoints => SumBuffThreatPoints(Buffs);
+
+    /// <summary>
+    /// 有效威胁统一结算口径：基础实际值 ×(1+(面板增幅+嘲讽修正+战内 Buff 威胁点数)/100)，乘区下限归零。
+    /// 快照映射等战场外投影沿用同式，杜绝显示口径与目标判定分叉。
+    /// </summary>
+    public static double ComputeEffectiveThreat(double threat, double statsThreatBonusPoints,
+        double threatBonusPoints, IReadOnlyList<CombatBuffState>? buffs)
+        => threat * Math.Max(0, 1 + (statsThreatBonusPoints + threatBonusPoints + SumBuffThreatPoints(buffs)) / 100);
+
+    /// <summary>Buff 表合计威胁增幅点数（空表为 0）；快照映射的详情面板折入同式复用。</summary>
+    public static double SumBuffThreatPoints(IReadOnlyList<CombatBuffState>? buffs)
     {
-        get
-        {
-            var total = 0d;
-            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].ThreatPoints * Buffs[i].Stacks;
-            return total;
-        }
+        var total = 0d;
+        if (buffs is not null)
+            for (var i = 0; i < buffs.Count; i++) total += buffs[i].ThreatPoints * buffs[i].Stacks;
+        return total;
     }
     /// <summary>战内 Buff 合计总伤害增幅点数（与 <see cref="CombatantStats.TotalDamageBonusPoints"/> 同乘区 Linear 合并）。</summary>
     internal double BuffDamageBonusPoints
@@ -626,8 +644,8 @@ public sealed class CombatEncounterState
 
     private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
     {
-        if (!double.IsFinite(snapshot.Hitpoints) || snapshot.Hitpoints < 0 || snapshot.Hitpoints > maxHitpoints
-            || !double.IsFinite(snapshot.Manapoints) || snapshot.Manapoints < 0 || snapshot.Manapoints > maxManapoints
+        if (!double.IsFinite(snapshot.Hitpoints) || snapshot.Hitpoints < 0
+            || !double.IsFinite(snapshot.Manapoints) || snapshot.Manapoints < 0
             || !double.IsFinite(snapshot.NextAttackAtSeconds) || snapshot.NextAttackAtSeconds < 0
             || !double.IsFinite(snapshot.AttackCount) || snapshot.AttackCount < 0
             || !double.IsFinite(snapshot.Threat) || snapshot.Threat < 0
@@ -640,8 +658,9 @@ public sealed class CombatEncounterState
                 && (cooldowns.Count != state.Skills.Count || cooldowns.Any(value => !double.IsFinite(value) || value < 0)))
             || (snapshot.Buffs is { } buffs && buffs.Any(buff => buff is null || !buff.IsValid)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
-        state.Hitpoints = snapshot.Hitpoints;
-        state.Manapoints = snapshot.Manapoints;
+        // 上限来自恢复时点解析面板，随装备/Buff/境界/配表漂移；历史快照可合法超出，越界按上限钳制。
+        state.Hitpoints = Math.Max(0, Math.Min(snapshot.Hitpoints, maxHitpoints));
+        state.Manapoints = Math.Max(0, Math.Min(snapshot.Manapoints, maxManapoints));
         state.NextAttackAtSeconds = snapshot.NextAttackAtSeconds;
         state.AttackCount = snapshot.AttackCount;
         state.Threat = snapshot.Threat;
@@ -747,12 +766,14 @@ public sealed record ExpeditionEnemyState(
 /// <param name="PendingAbilityId">正在吟唱的技能 ID（展示用；出手决策以 State.PendingSkillIndex 为准）。</param>
 /// <param name="PendingActionDurationSeconds">当前动作总时长秒数（吟唱时长或普攻间隔，展示用）。</param>
 /// <param name="CombatSkills">跨战技能状态（冷却/吟唱）——波间搜索相位按真实墙钟推进折算，与本机 Combat.Skills 同口径。</param>
+/// <param name="CombatBuffs">战内 Buff 跨波携带态（剩余秒数、战斗时钟口径）——搜寻相位时钟冻结，与本机 Combat.Buffs 同口径。</param>
 public sealed record ExpeditionAllyState(
     int MemberIndex,
     CombatantSnapshot State,
     string? PendingAbilityId = null,
     double PendingActionDurationSeconds = 0,
-    PlayerCombatSkillState? CombatSkills = null);
+    PlayerCombatSkillState? CombatSkills = null,
+    PlayerCombatBuffState? CombatBuffs = null);
 
 /// <summary>
 /// 可持久化的妖兽试炼远征状态。
@@ -830,6 +851,7 @@ public sealed record CombatExpeditionState(
         && (PlayerState is null || PlayerState.IsValid)
         && (Allies is null || (Allies.Count is >= 1 and <= 4 && Allies.All(ally => ally is not null
             && ally.MemberIndex >= 0 && ally.MemberIndex <= 4 && ally.State is not null && ally.State.IsValid
+            && (ally.CombatBuffs is null || ally.CombatBuffs.IsValid)
             && double.IsFinite(ally.PendingActionDurationSeconds) && ally.PendingActionDurationSeconds >= 0)
             && Allies.Select(ally => ally.MemberIndex).Distinct().Count() == Allies.Count))
         && SelfIndex >= 0 && SelfIndex <= 4

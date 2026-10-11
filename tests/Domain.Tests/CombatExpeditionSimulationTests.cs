@@ -199,6 +199,69 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
+    /// 战内 Buff 跨波携带回归（总纲 §7.8.1）：resetOnWave=false 的 Buff 在整场战斗行动存续期间
+    /// 随波次清空折算携带、下一波入场按剩余秒数重注入；行动实例离队时统一移除。
+    /// </summary>
+    [Fact]
+    public void CombatBuffsCarryAcrossWavesAndClearOnActionRemoval()
+    {
+        var catalog = CreateCatalog(enemyHitpoints: 1, enemyAttackPower: 0);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        // 预置跨波携带态（等价于上一场已折算的嘲讽类 Buff）：2 层、剩余 30s、威胁增幅 400 点。
+        player.Combat.Buffs = new PlayerCombatBuffState(
+            [new CombatBuffCarry("buff.carry-test", 30, 2, ThreatPoints: 400, Name: "携带增益")]);
+
+        var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+        // 搜寻 1s 后进入首波战斗：携带 Buff 注入战斗单位并随快照下发。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1.2), catalog);
+        Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition!.Phase);
+        var injected = Assert.Single(action.Expedition.PlayerState!.Buffs!);
+        Assert.Equal("buff.carry-test", injected.BuffId);
+        Assert.Equal(2, injected.Stacks);
+        Assert.Equal(400, injected.ThreatPoints, 9);
+        Assert.Equal(30, injected.ExpiresAtSeconds, 6);
+
+        // 波次清空（怪 1 气血秒杀）回到搜寻：Buff 折算回携带态、剩余随战斗时钟略减。
+        var guard = 0;
+        while (action.Expedition.Phase == CombatExpeditionPhase.Combat && guard++ < 60)
+            SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(0.5), catalog);
+        Assert.Equal(CombatExpeditionPhase.Search, action.Expedition.Phase);
+        var carried = Assert.Single(player.Combat.Buffs.Buffs);
+        Assert.Equal("buff.carry-test", carried.BuffId);
+        Assert.True(carried.RemainingSeconds is < 30 and > 0);
+
+        // 第二波入场按定格剩余重注入：到期时刻 = 新时钟 0 + 剩余秒数。
+        while (action.Expedition.Phase != CombatExpeditionPhase.Combat && guard++ < 120)
+            SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(0.5), catalog);
+        var reinjected = Assert.Single(action.Expedition.PlayerState!.Buffs!);
+        Assert.Equal("buff.carry-test", reinjected.BuffId);
+        Assert.Equal(carried.RemainingSeconds, reinjected.ExpiresAtSeconds, 6);
+
+        // 行动移除 = 整场战斗行动结束：携带态统一清空。
+        Assert.True(player.RemoveAction(action.Id));
+        Assert.True(player.Combat.Buffs.IsEmpty);
+    }
+
+    /// <summary>
+    /// 战内 Buff 跨波携带序列化回归：携带态经导出/恢复 JSON 往返后仍满足不变量，
+    /// 且搜寻相位存续的 Buff 在恢复副本中逐条一致。
+    /// </summary>
+    [Fact]
+    public void CombatBuffCarrySurvivesStateRoundTrip()
+    {
+        var catalog = CreateCatalog(enemyHitpoints: 1, enemyAttackPower: 0);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Combat.Buffs = new PlayerCombatBuffState(
+            [new CombatBuffCarry("buff.carry-test", 30, 2, ThreatPoints: 400, Name: "携带增益")]);
+        var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3.5), catalog);
+
+        var restored = PlayerAggregate.Restore(player.ExportState());
+        Assert.Equal(player.Combat.Buffs.Buffs, restored.Combat.Buffs.Buffs);
+        Assert.True(restored.Combat.Buffs.IsValid);
+    }
+
+    /// <summary>
     /// 恢复遭遇状态时血量与结局矛盾（敌人已清零却仍为 Running）必须拒绝，防止损坏快照静默进入模拟。
     /// </summary>
     [Fact]
@@ -211,6 +274,51 @@ public sealed class CombatExpeditionSimulationTests
             new CombatantSnapshot(10, 0, 0, 0, 0),
             [new CombatantTemplate(stats)],
             [new CombatantSnapshot(0, 0, 0, 0, 0)],
+            0, CombatOutcome.Running));
+    }
+
+    /// <summary>
+    /// 快照生命/灵力超出恢复时点模板上限（装备/Buff/配表漂移可使历史快照合法超限）按上限钳制恢复，
+    /// 而不是判损坏拒绝——否则该玩家实体将永久不可装载。
+    /// </summary>
+    [Fact]
+    public void CombatRestoreClampsSnapshotAboveRestoredMax()
+    {
+        var stats = CombatantStats.Create(100, 1, 0, 1) with { MaxManapoints = 50 };
+        var enemyStats = CombatantStats.Create(10, 1, 0, 1);
+
+        var restored = CombatEncounterState.Restore(
+            "encounter.test", 1, new CombatantTemplate(stats),
+            new CombatantSnapshot(240, 90, 0, 0, 0),
+            [new CombatantTemplate(enemyStats)],
+            [new CombatantSnapshot(10, 0, 0, 0, 0)],
+            0, CombatOutcome.Running);
+
+        Assert.Equal(100, restored.Player.Hitpoints);
+        Assert.Equal(50, restored.Player.Manapoints);
+        Assert.Equal(CombatOutcome.Running, restored.Outcome);
+    }
+
+    /// <summary>
+    /// 负值/非有限生命灵力仍是真损坏：拒绝恢复而非静默钳制。
+    /// </summary>
+    [Fact]
+    public void CombatRestoreRejectsNegativeOrNonFiniteVitalSnapshot()
+    {
+        var stats = CombatantStats.Create(100, 1, 0, 1) with { MaxManapoints = 50 };
+        var enemyStats = CombatantStats.Create(10, 1, 0, 1);
+
+        Assert.Throws<DomainException>(() => CombatEncounterState.Restore(
+            "encounter.test", 1, new CombatantTemplate(stats),
+            new CombatantSnapshot(-1, 10, 0, 0, 0),
+            [new CombatantTemplate(enemyStats)],
+            [new CombatantSnapshot(10, 0, 0, 0, 0)],
+            0, CombatOutcome.Running));
+        Assert.Throws<DomainException>(() => CombatEncounterState.Restore(
+            "encounter.test", 1, new CombatantTemplate(stats),
+            new CombatantSnapshot(10, double.NaN, 0, 0, 0),
+            [new CombatantTemplate(enemyStats)],
+            [new CombatantSnapshot(10, 0, 0, 0, 0)],
             0, CombatOutcome.Running));
     }
 

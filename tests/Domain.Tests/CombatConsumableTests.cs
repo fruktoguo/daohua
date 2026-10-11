@@ -46,7 +46,8 @@ public sealed class CombatConsumableTests
         """;
 
     private static GameDataCatalog CreateCatalog(double enemyHitpoints, double enemyAttackPower,
-        double searchSeconds = 1, double respawnSeconds = 1, BaseAttributeCatalog? baseAttributes = null)
+        double searchSeconds = 1, double respawnSeconds = 1, BaseAttributeCatalog? baseAttributes = null,
+        PartyWipeRule onPartyWipe = PartyWipeRule.Respawn, double playerRespawnSeconds = 180)
     {
         var actions = new ActionCatalog([
             new ActionDefinition(new ActionId("combat.test"), "讨伐测试", ActionKind.Combat, 0,
@@ -83,8 +84,8 @@ public sealed class CombatConsumableTests
         };
         var monster = new CombatMonsterDefinition("enemy.test", "测试妖兽", 1, 1, CombatMonsterRank.Minion,
             CombatantStats.Create(enemyHitpoints, enemyAttackPower, 0, 2), [], []);
-        var encounter = new CombatEncounterDefinition("encounter.test", "测试遭遇", 1, 1, 1, searchSeconds, respawnSeconds, 180,
-            [new CombatSpawnDefinition("enemy.test", 1, 1)], [], [], 0);
+        var encounter = new CombatEncounterDefinition("encounter.test", "测试遭遇", 1, 1, 1, searchSeconds, respawnSeconds, playerRespawnSeconds,
+            [new CombatSpawnDefinition("enemy.test", 1, 1)], [], [], 0, OnPartyWipe: onPartyWipe);
         return new GameDataCatalog("test-1", "test-fingerprint", actions,
             items: items, rawItems: rawItems,
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
@@ -188,6 +189,43 @@ public sealed class CombatConsumableTests
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(55), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(frozenAt, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+    }
+
+    /// <summary>
+    /// 战中续补回归：原地复活遭遇下玩家阵亡-起身循环、波次永不结束（不存在任何新入场），
+    /// 持续消耗品槽位冷却（墙钟）到点后必须在战中直接补能并重新注入 Buff，
+    /// 而不是等下一次入场才恢复——对齐「复活后阵盘不自动生效」的线上反馈。
+    /// </summary>
+    [Fact]
+    public void SustainedSlotRechargesMidCombatWithoutReentry()
+    {
+        // 怪不可击杀：本场战斗永不结算；玩家被秒杀→原地复活 10s 读条→起身续打循环。
+        var catalog = CreateCatalog(enemyHitpoints: 100_000_000, enemyAttackPower: 100_000,
+            searchSeconds: 5, playerRespawnSeconds: 10);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var wallet = CreateWallet(player, (DiskId, 2));
+        player.ConfigureAutoUse("combat", 0, DiskId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        // T+15：入场扣第 1 件充入 2s，战斗时钟（含躺尸窗口）耗竭后写入冷却（耗竭时刻 +40s）。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(15), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(1d, wallet.Get(new AssetKey(DiskId)));
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+        var firstCooldown = player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds;
+        Assert.True(firstCooldown > 0);
+
+        // T+50：冷却已在战中走完并自动补能（无新入场可解释这次扣件）；
+        // 2s 生效窗内阵法 Buff 重新在场，玩家倒地投影同样可见。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(50), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(0d, wallet.Get(new AssetKey(DiskId)));
+        var secondSlot = player.Settings.AutoUseSlots[0];
+        var buffs = player.Actions[0].Expedition?.PlayerState?.Buffs ?? [];
+        Assert.True(secondSlot.RemainingDurationSeconds > 0
+            || secondSlot.CooldownUntilUnixSeconds > firstCooldown
+            || buffs.Any(buff => buff.BuffId == "formation.test"),
+            "冷却走完未在战中续补：槽位未被重新充能且 Buff 未重新注入。");
     }
 
     /// <summary>躺尸等待期间仍持续扣减：玩家阵亡等待复活时钟不冻结持续消耗。</summary>

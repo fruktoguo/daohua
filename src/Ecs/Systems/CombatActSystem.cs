@@ -120,16 +120,16 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var spell = AbilityText(ability, "category") == "spell";
         var attackBase = spell ? caster.Stats.SpellAttack : caster.Stats.AttackPower;
         var id = AbilityText(ability, "id") ?? string.Empty;
-        var ratioBonus = CombatGrowthCurve.AbilityRatioGrowth(slot.Level);
-        var flatBonus = CombatGrowthCurve.AbilityFlatGrowth(slot.Level);
+        var levelGrowth = CombatGrowthCurve.AbilityLevelGrowth(slot.Level);
         var targetType = AbilityText(ability, "targetType");
         // 威胁类字段是施放方修正，与技能效果类型无关：任何施放都可携带仇恨增益。
-        caster.Threat += AbilityNumber(ability, "threatGain");
-        caster.ThreatBonusPoints += AbilityNumber(ability, "threatPoints");
+        // 等级成长与伤害同式（总纲 §5.2）：全部数值项同吃每级 +2% 线性成长。
+        caster.Threat += AbilityNumber(ability, "threatGain") * levelGrowth;
+        caster.ThreatBonusPoints += AbilityNumber(ability, "threatPoints") * levelGrowth;
         // 治疗量吃技能增幅点数（Linear，含等阶成长注入），与技能伤害同通道。
         var healOutput = attackBase * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear)
-            * AbilityNumber(ability, "healingRatio") * ratioBonus
-            + AbilityNumber(ability, "flatHealing") * flatBonus;
+            * AbilityNumber(ability, "healingRatio") * levelGrowth
+            + AbilityNumber(ability, "flatHealing") * levelGrowth;
         if (AbilityText(ability, "effectType") == "heal" || healOutput > 0)
         {
             // 治疗目标范围按 targetType 解析；治疗增益（healingBonusRatio）对一切施放单位通用。
@@ -174,13 +174,19 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             if (ability.TryGetProperty("buff", out var buff) && buff.ValueKind == JsonValueKind.Object)
             {
                 var buffId = AbilityText(buff, "buffId") ?? $"ability-buff:{id}";
+                // Buff 效果量随技能等级成长（全部数值项同式）；时长/叠层上限不成长。
                 var grant = new CombatBuffState(buffId,
                     encounter.ElapsedSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), 1,
-                    AbilityNumber(buff, "hpRegen"), AbilityNumber(buff, "mpRegen"),
-                    AbilityNumber(buff, "attackSpeedPoints"), AbilityNumber(buff, "damageAbsorptionPoints"),
-                    AbilityNumber(buff, "threatPoints"),
-                    AbilityNumber(buff, "hpRegenPostRatio"), AbilityNumber(buff, "mpRegenPostRatio"),
-                    AbilityNumber(buff, "damageBonusPoints"));
+                    AbilityNumber(buff, "hpRegen") * levelGrowth, AbilityNumber(buff, "mpRegen") * levelGrowth,
+                    AbilityNumber(buff, "attackSpeedPoints") * levelGrowth,
+                    AbilityNumber(buff, "damageAbsorptionPoints") * levelGrowth,
+                    AbilityNumber(buff, "threatPoints") * levelGrowth,
+                    AbilityNumber(buff, "hpRegenPostRatio") * levelGrowth,
+                    AbilityNumber(buff, "mpRegenPostRatio") * levelGrowth,
+                    AbilityNumber(buff, "damageBonusPoints") * levelGrowth,
+                    AbilityNumber(buff, "threatPerSecondMaxHpPoints") * levelGrowth,
+                    AbilityText(buff, "name") ?? buffId,
+                    ResetOnWave: buff.TryGetProperty("resetOnWave", out var resetFlag) && resetFlag.ValueKind == JsonValueKind.True);
                 // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
                 var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
                 void GrantBuff(CombatantState ally)
@@ -224,8 +230,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var stats = caster.Stats with
         {
             AttackPower = attackBase * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear)
-                * AbilityNumber(ability, "damageRatio") * ratioBonus
-                + AbilityNumber(ability, "flatDamage") * flatBonus,
+                * AbilityNumber(ability, "damageRatio") * levelGrowth
+                + AbilityNumber(ability, "flatDamage") * levelGrowth,
             DamageKind = spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
             Element = AbilityElement(ability)
         };

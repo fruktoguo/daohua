@@ -63,7 +63,12 @@
     "targetType": "self",
     "damageRatio": 0.0,
     "threatGain": 500.0,
-    "threatPoints": 200,
+    "buff": {
+      "name": "嘲讽",
+      "durationSeconds": 60.0,
+      "threatPoints": 400,
+      "threatPerSecondMaxHpPoints": 10
+    },
     "defaultTriggers": [
       {
         "dependency": "self",
@@ -75,7 +80,7 @@
     ],
     "manaCost": 20.0,
     "rootAttribute": "stamina",
-    "discipline": "internal"
+    "discipline": "spell"
   },
   {
     "id": "ability.heavy-clouds",

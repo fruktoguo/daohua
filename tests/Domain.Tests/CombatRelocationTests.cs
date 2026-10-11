@@ -148,6 +148,50 @@ public sealed class CombatRelocationTests
     }
 
     /// <summary>
+    /// 濒死复苏回归：hp=0 驻留的战斗行动入场受阻后不得永久停泊——
+    /// 下一轮推进按脱战复苏 1 HP 归一并重准入续战（阵亡不回血口径下 hp=0 无自愈路径，
+    /// 永久停泊会把槽位、Buff 与远征投影全部冻结）。对齐「复活后阵盘不生效+怪物行动条消失」反馈。
+    /// </summary>
+    [Fact]
+    public void CombatAction_BlockedAtZeroHitpoints_RevivesAndResumesOnNextAdvance()
+    {
+        var gameData = CreateWorld(out var actions, enemyHitpoints: 10_000, enemyAttackPower: 0);
+        var player = CreatePlayer("力竭者");
+        player.TravelTo("n1");
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, actions);
+        // 倒地驻留：复苏 1 HP 前的 hp=0 状态（插队顶替/旧链路遗留均可到达）。
+        player.Resources.Hitpoints = 0;
+
+        // 推进：搜寻完成后入场判定 hp=0 → 受阻写「无法迎战」——但同轮推进内立即
+        // 濒死复苏归一 1 HP 并恢复准入，重新入场开打（不停泊、无需再手动干预）。
+        var blocked = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), gameData);
+        Assert.Contains(blocked.Events, e => e.Code == "combat.lost");
+        Assert.NotEqual(ActionQueueStatus.Blocked, player.Actions[0].Status);
+        Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
+    }
+
+    /// <summary>
+    /// 插队顶替复苏：同类远征行动被高优先级顶替离队且玩家气血归零时，
+    /// 与手动移除/清空同口径复苏 1 HP——否则 hp=0 驻留会让新行动在入场处永久受阻。
+    /// </summary>
+    [Fact]
+    public void CombatAction_PriorityEnqueueRevivesHitpoints_WhenReplacingDownedExpedition()
+    {
+        var gameData = CreateWorld(out var actions, enemyHitpoints: 10_000, enemyAttackPower: 10_000);
+        var player = CreatePlayer("插队者");
+        player.TravelTo("n1");
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, actions);
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3), gameData);
+        Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
+        // 阵亡驻留：远征在场 + hp=0（阵亡状态真实形态）。
+        player.Resources.Hitpoints = 0;
+
+        player.EnqueuePriority(new ActionIntent(new ActionId("combat.test"), -1), Baseline, actions);
+
+        Assert.Equal(1, player.Resources.Hitpoints);
+    }
+
+    /// <summary>
     /// 不可讨伐节点的阻断语义：报「条件不足」而非地点不符；
     /// 即便开启自动移动也不回入队锚点，原地受阻停泊。
     /// </summary>

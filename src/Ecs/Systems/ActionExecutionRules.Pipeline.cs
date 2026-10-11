@@ -59,7 +59,8 @@ internal static partial class ActionExecutionRules
         {
             if (e.Cursor >= e.ComputeTarget)
             {
-                var capped = ApplyOfflineCap(e.Player, e.Target, e.Request);
+                // offline.capped 只在跨越封顶边界的请求发一次：起点已越界的请求静默推进时钟。
+                var capped = ApplyOfflineCap(e.Player, e.Target, e.Request, e.From <= e.IncomeCapBoundary);
                 e.Versions.MarkRequestChanged(capped);
                 e.Changed |= capped;
                 e.Cursor = e.Target;
@@ -115,9 +116,13 @@ internal static partial class ActionExecutionRules
                 e.Waiting = true;
                 return;
             }
+            var definition = e.Catalog.Actions.Get(action.Intent.ActionId);
+            // 阻塞恢复复核与 OOP 管线同一原语：濒死复苏归一气血 + 准入重跑，
+            // 恢复转 Running 由后续分派接管；仍受阻才出队/轮转/停泊。
             if (action.Status == ActionQueueStatus.Blocked)
             {
-                if (!AdvanceBlockedAction(e.Player, action, e.Cursor))
+                if (!AdvanceBlockedAction(e.Player, action, definition, e.Catalog,
+                        e.WorkingWallet, e.Cursor, e.Core))
                 {
                     e.Waiting = true;
                     return;
@@ -126,7 +131,6 @@ internal static partial class ActionExecutionRules
                 continue;
             }
             CountTransition(e);
-            var definition = e.Catalog.Actions.Get(action.Intent.ActionId);
             // 讨伐迁地判定须在准入前取值：TryStartAction 准入重锚后远征已被重建或清空。
             var staleExpedition = definition.ExecutionKind == ActionExecutionKind.CombatEncounter
                 && action.Expedition is { } expedition

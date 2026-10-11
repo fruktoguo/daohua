@@ -66,9 +66,12 @@ public sealed class ActionMutationBatch
 
 public static partial class SimulationEngine
 {
-    /// <summary>受阻队首只执行一次出队或轮转；false 表示当前窗口剩余时间保持停泊。</summary>
-    public static bool AdvanceBlockedAction(IPlayerActionContext player, IPlayerActionState action, DateTimeOffset at)
-        => DaoHua.Ecs.Systems.ActionExecutionRules.AdvanceBlockedAction(player, action, at);
+    /// <summary>受阻队首先复核准入（含濒死复苏），仍受阻才出队或轮转；false 表示保持停泊。</summary>
+    public static bool AdvanceBlockedAction(IPlayerResourceContext player, IPlayerActionState action,
+        ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
+        DateTimeOffset at, ActionMutationBatch mutations)
+        => DaoHua.Ecs.Systems.ActionExecutionRules.AdvanceBlockedAction(player, action, definition,
+            gameData, assets, at, mutations);
 
     /// <summary>按窗口工作钱包与尚未提交的材料增量检查地点和库存，再建账并激活队首。</summary>
     public static bool TryStartAction(IPlayerResourceContext player, IPlayerActionState action,

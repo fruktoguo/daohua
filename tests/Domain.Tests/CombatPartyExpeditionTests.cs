@@ -47,9 +47,9 @@ public sealed class CombatPartyExpeditionTests
     [Fact]
     public void SingleAllyDownedDoesNotStopBattle()
     {
-        // 盟友 1 气血薄会被秒杀，盟友 0 高血量站住：倒地窗口只覆盖盟友 1。
-        var tanky = CombatantStats.Create(1_000_000, 100, 10, 5) with { ThreatBonusPoints = 10_000 };
-        var fragile = CombatantStats.Create(10, 100, 10, 5);
+        // 盟友 1 气血薄且威胁增幅最高（101:1 吸火）会被秒杀，盟友 0 高血量站住：倒地窗口只覆盖盟友 1。
+        var tanky = CombatantStats.Create(1_000_000, 100, 10, 5);
+        var fragile = CombatantStats.Create(10, 100, 10, 5) with { ThreatBonusPoints = 10_000 };
         var allies = new[] { new CombatantTemplate(tanky), new CombatantTemplate(fragile) };
         var killer = CombatantStats.Create(100_000, 50, 0, 1);
         var encounter = CombatEncounterState.CreateAllied("party.downed", 41,
@@ -323,6 +323,69 @@ public sealed class CombatPartyExpeditionTests
         Assert.Single(member.Actions);
         Assert.Equal(spec.ActionId, member.Actions[0].Intent.ActionId);
         Assert.NotNull(member.Actions[0].Participation);
+    }
+
+    /// <summary>
+    /// 阵法全队生效回归（总纲 §21.13）：TeamWide 定格的持续消耗品 Buff 经 PrepareCombatEntry
+    /// 注入己方全部在场单位（按持有者定格剩余时长折算）；非阵法持续 Buff 仍只加使用者自身。
+    /// </summary>
+    [Fact]
+    public void TeamWideSustainedBuffsApplyToWholeParty()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var memberA = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", baseline, catalog.Fingerprint);
+        var memberB = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "乙", baseline, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(memberA, catalog);
+        PlayerAttributeResolver.Apply(memberB, catalog);
+        var memberStats = CombatantStats.Create(50_000, 2_000, 500, 1.0);
+        ActionParticipantSnapshot MakeSnapshot(PlayerAggregate member) => new(
+            member.PlayerId.Value.ToString("D"), member.DisplayName, member.Progression.RealmLevel,
+            0, 0, memberStats.MaxHitpoints, memberStats.MaxManapoints,
+            memberStats, [], null, PlayerCombatSkillState.Empty);
+        // 甲的定格 Buff：阵法（TeamWide）+ 药品（仅自身）两类并存。
+        var snapshotA = MakeSnapshot(memberA) with
+        {
+            SustainedBuffs =
+            [
+                new ActionSustainedBuff("formation.juling", 240, 1, MpRegen: 5, MpRegenPostRatio: 0.3,
+                    Name: "聚灵阵", TeamWide: true),
+                new ActionSustainedBuff("buff.tonic", 120, 1, HpRegen: 3, Name: "回春", TeamWide: false),
+            ]
+        };
+        var spec = new ActionParticipationSpec(
+            "session.formation", "encounter.qi-beast", "node.test", 97,
+            0, baseline.ToUnixTimeMilliseconds() / 1000d, [snapshotA, MakeSnapshot(memberB)])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
+        Assert.NotNull(memberA.StartActionParticipation(spec, baseline, catalog.Actions));
+
+        var completedSearch = new CombatExpeditionState(
+            "encounter.qi-beast", CombatExpeditionPhase.Search, 10, 8, 97, 0,
+            memberA.Resources.Hitpoints, memberA.Resources.Manapoints, 0, 0,
+            CombatantState.BaseThreat, CombatOutcome.Running, 1)
+        {
+            SelfIndex = 0
+        };
+        var preparation = CombatActionRules.PrepareCombatEntry(memberA, memberA.Actions[0],
+            catalog.Actions.Get(spec.ActionId), catalog.CombatEncounters["encounter.qi-beast"],
+            completedSearch, catalog, null, baseline.AddSeconds(10));
+
+        var battle = preparation.Battle!;
+        Assert.NotNull(battle);
+        // 阵法散布全队：甲乙两单位都持有聚灵阵；定格剩余 240s 按会话墙钟 10s 折算为 230s。
+        foreach (var unit in battle.PlayerAllies)
+        {
+            var formation = Assert.Single(unit.Buffs, buff => buff.BuffId == "formation.juling");
+            Assert.Equal(230, formation.ExpiresAtSeconds - battle.ElapsedSeconds, 6);
+            Assert.Equal(5, formation.MpRegen);
+            Assert.Equal(0.3, formation.MpRegenPostRatio);
+            Assert.True(formation.ResetOnWave);
+        }
+        // 非阵法 Buff 仍只加使用者：乙的 Buff 列表里没有 buff.tonic。
+        Assert.Single(battle.PlayerAllies[0].Buffs, buff => buff.BuffId == "buff.tonic");
+        Assert.DoesNotContain(battle.PlayerAllies[1].Buffs, buff => buff.BuffId == "buff.tonic");
     }
 
     /// <summary>

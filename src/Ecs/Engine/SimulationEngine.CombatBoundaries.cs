@@ -31,18 +31,18 @@ public static partial class SimulationEngine
     public static double CompleteCombatAdvance(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, CombatEncounterDefinition encounter, GameDataCatalog gameData,
         CombatEncounterState battle, CombatAdvanceResult result, DateTimeOffset from, DateTimeOffset target,
-        double remainingSeconds, ActionMutationBatch mutations)
+        double remainingSeconds, ActionMutationBatch mutations, AssetWallet? assetBalances = null)
         => Systems.CombatActionRules.CompleteCombatAdvance(player, action, definition, encounter, gameData,
-            battle, result, from, target, remainingSeconds, mutations);
+            battle, result, from, target, remainingSeconds, mutations, assetBalances);
 
     private static void CompleteCombatAdvanceCore(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, CombatEncounterDefinition encounter, GameDataCatalog gameData,
         CombatEncounterState battleState, CombatAdvanceResult combatResult, DateTimeOffset from, DateTimeOffset target,
         ref double remainingSeconds, ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events,
-        ref double completedActions, ref double completedRepeats)
+        ref double completedActions, ref double completedRepeats, AssetWallet? assetBalances = null)
         => Systems.CombatActionRules.CompleteCombatAdvanceCore(player, action, definition, encounter, gameData,
             battleState, combatResult, from, target, ref remainingSeconds, ref deltas, ref events,
-            ref completedActions, ref completedRepeats);
+            ref completedActions, ref completedRepeats, assetBalances);
 
     /// <summary>无世界调用复用 ECS 战斗恢复规则。</summary>
     public static CombatEncounterState RestoreCombatBattle(IPlayerResourceContext player, IPlayerActionState action,

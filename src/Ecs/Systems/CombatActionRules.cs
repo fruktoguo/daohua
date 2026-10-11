@@ -24,7 +24,10 @@ internal static class CombatActionRules
             ?? throw new DomainException(DomainErrorCode.InvariantViolation, "战斗搜寻状态缺失。");
         var remaining = Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
         var step = Math.Min(availableSeconds, remaining);
-        if (step <= 0 && !expedition.DuelSeekFailed)
+        // 相位已完成（elapsed>=duration）是合法入口：受阻恢复锚点、斗法失败重入等路径
+        // 以「搜寻完成待入场」形态回来，此时无可推进量应直接放行（step=0 走入场判定），
+        // 只有「相位仍有剩余读条却拿不到预算」才是推进循环的不变量破坏。
+        if (step <= 0 && remaining > 0 && !expedition.DuelSeekFailed)
             throw new DomainException(DomainErrorCode.InvariantViolation, "战斗搜寻阶段没有可推进的时间。");
         action.Expedition = expedition with { PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + step };
         action.ProgressSeconds = action.Expedition.PhaseElapsedSeconds;
@@ -94,7 +97,10 @@ internal static class CombatActionRules
         }
         else
         {
+            // 迁地重锚 = 本场战斗行动实质结束：跨波携带的战内 Buff 统一移除。
             action.Expedition = null;
+            player.Combat.Buffs = PlayerCombatBuffState.Empty;
+            player.MarkDirty(PlayerSectionKind.Combat);
         }
         action.ProgressSeconds = 0;
         return true;
@@ -103,9 +109,10 @@ internal static class CombatActionRules
     /// <summary>只完成一次搜索、复活或斗法回放片段；入场返回供实体直接持有的战斗单位。</summary>
     public static CombatEntryPreparationStep AdvanceCombatPreparation(IPlayerResourceContext player,
         IPlayerActionState action, ActionDefinition definition, GameDataCatalog gameData, AssetWallet? wallet,
-        DateTimeOffset from, DateTimeOffset target, double remainingSeconds, ActionMutationBatch mutations)
+        DateTimeOffset from, DateTimeOffset target, double remainingSeconds, ActionMutationBatch mutations,
+        DuelAdvanceOptions? duel = null)
     {
-        var battle = AdvanceCombatPreparationCore(player, action, definition, gameData, wallet, null,
+        var battle = AdvanceCombatPreparationCore(player, action, definition, gameData, wallet, duel,
             from, target, ref remainingSeconds, ref mutations.Deltas, ref mutations.EventTail);
         return new(battle, remainingSeconds);
     }
@@ -184,7 +191,7 @@ internal static class CombatActionRules
             player.MarkDirty(PlayerSectionKind.Combat);
             action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData,
                 DeterministicSequence.NextSeed(expedition.Seed),
-                allies: respawnSpec is not null ? ResetAllyCarry(respawnSpec, expedition.SelfIndex) : null);
+                allies: respawnSpec is not null ? ResetAllyCarry(respawnSpec, expedition.SelfIndex, expedition.Allies) : null);
             action.ProgressSeconds = 0;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.respawned", "复活完成，气血与灵力恢复。", definition.Id);
             return null;
@@ -246,11 +253,11 @@ internal static class CombatActionRules
     public static double CompleteCombatAdvance(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, CombatEncounterDefinition encounter, GameDataCatalog gameData,
         CombatEncounterState battle, CombatAdvanceResult result, DateTimeOffset from, DateTimeOffset target,
-        double remainingSeconds, ActionMutationBatch mutations)
+        double remainingSeconds, ActionMutationBatch mutations, AssetWallet? assetBalances = null)
     {
         CompleteCombatAdvanceCore(player, action, definition, encounter, gameData, battle, result,
             from, target, ref remainingSeconds, ref mutations.Deltas, ref mutations.EventTail,
-            ref mutations.ActionCount, ref mutations.RepeatCount);
+            ref mutations.ActionCount, ref mutations.RepeatCount, assetBalances);
         return remainingSeconds;
     }
 
@@ -258,7 +265,7 @@ internal static class CombatActionRules
         ActionDefinition definition, CombatEncounterDefinition encounter, GameDataCatalog gameData,
         CombatEncounterState battleState, CombatAdvanceResult combatResult, DateTimeOffset from, DateTimeOffset target,
         ref double remainingSeconds, ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events,
-        ref double completedActions, ref double completedRepeats)
+        ref double completedActions, ref double completedRepeats, AssetWallet? assetBalances = null)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.yield");
         var expedition = action.Expedition!;
@@ -272,10 +279,20 @@ internal static class CombatActionRules
         // 战斗持续消耗品按战斗存活时钟扣减：仅战斗进行中消耗（含躺尸等待复活）；
         // 参与会话消费开打定格画面，槽位不扣减。
         if (spec is null)
-            DrainCombatSustainedSlots(player, gameData, consumed,
-                from.AddSeconds(actionElapsedBeforeCombat + consumed), definition.Id, ref events);
+        {
+            var sustainedAt = from.AddSeconds(actionElapsedBeforeCombat + consumed);
+            DrainCombatSustainedSlots(player, gameData, consumed, sustainedAt, definition.Id, ref events);
+            // 战内续补：冷却到点即重新补能并注入 Buff，覆盖原地复活续打等不再经过入场的路径。
+            // 补能判定与入场共用同一套槽位规则（剩余为 0、冷却走完、触发条件、库存扣件）。
+            var sustainedAtUnix = sustainedAt.ToUnixTimeMilliseconds() / 1000d;
+            if (RechargeCombatSustainedSlots(player, gameData, assetBalances, sustainedAtUnix,
+                    action.Id, battleState, ref deltas, ref events))
+                InjectSustainedCombatBuffs(player, gameData, battleState);
+        }
         // 玩家技能与普攻共用同一条动作时间线：战后把通用槽位状态折算回跨战持久化形态。
         player.Combat.Skills = PlayerCombatSkillState.FromCombatant(battleState.Player, battleState.ElapsedSeconds);
+        // 战内 Buff 同口径折算为跨波携带态：战斗时钟剩余秒数定格，resetOnWave 条目不携带。
+        player.Combat.Buffs = PlayerCombatBuffState.FromCombatant(battleState.Player, battleState.ElapsedSeconds);
         remainingSeconds -= consumed;
         player.Resources.Hitpoints = battleState.Player.Hitpoints;
         player.Resources.Manapoints = battleState.Player.Manapoints;
@@ -749,6 +766,7 @@ internal static class CombatActionRules
                     unit.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, member.Stats.MaxHitpoints);
                     unit.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, member.Stats.MaxManapoints);
                     player.Combat.Skills.ApplyTo(unit);
+                    player.Combat.Buffs.ApplyTo(unit, battle.ElapsedSeconds);
                 }
                 else
                 {
@@ -756,6 +774,7 @@ internal static class CombatActionRules
                     unit.Hitpoints = Math.Clamp(carry?.State.Hitpoints ?? member.InitialHitpoints, 0, member.Stats.MaxHitpoints);
                     unit.Manapoints = Math.Clamp(carry?.State.Manapoints ?? member.InitialManapoints, 0, member.Stats.MaxManapoints);
                     (carry?.CombatSkills ?? member.CombatSkills)?.ApplyTo(unit);
+                    (carry?.CombatBuffs ?? member.CombatBuffs)?.ApplyTo(unit, battle.ElapsedSeconds);
                 }
                 // 会话只创建一份战斗，入场倒地者的复活时钟必须覆盖全部成员。
                 if (!unit.IsAlive && respawnSeconds > 0)
@@ -769,13 +788,41 @@ internal static class CombatActionRules
                     var sessionElapsed = Math.Max(0, entryAtUnix - spec.StartedAtUnixSeconds);
                     foreach (var frozen in sustained)
                     {
+                        if (frozen.TeamWide) continue;
                         var sustainedRemaining = frozen.RemainingSeconds - sessionElapsed;
                         if (sustainedRemaining <= 0) continue;
                         unit.Buffs.RemoveAll(entry => entry.BuffId == frozen.BuffId);
                         unit.Buffs.Add(new CombatBuffState(frozen.BuffId, battle.ElapsedSeconds + sustainedRemaining,
                             frozen.Stacks, frozen.HpRegen, frozen.MpRegen, frozen.AttackSpeedPoints,
                             frozen.DamageAbsorptionPoints, frozen.ThreatPoints,
-                            frozen.HpRegenPostRatio, frozen.MpRegenPostRatio, frozen.DamageBonusPoints));
+                            frozen.HpRegenPostRatio, frozen.MpRegenPostRatio, frozen.DamageBonusPoints, 0, frozen.Name,
+                            ResetOnWave: true));
+                    }
+                }
+            }
+            // 阵法类持续消耗品 Buff 全队生效：第二遍把全部成员的 TeamWide 定格条目散布到己方阵列
+            // （成员序即注入序，同 buffId 后者覆盖——与战内 Buff RemoveAll+Add 口径一致）。
+            {
+                var entryAtUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
+                var sessionElapsed = Math.Max(0, entryAtUnix - spec.StartedAtUnixSeconds);
+                for (var sourceIndex = 0; sourceIndex < spec.Members.Count; sourceIndex++)
+                {
+                    if (spec.Members[sourceIndex].SustainedBuffs is not { } sustained) continue;
+                    foreach (var frozen in sustained)
+                    {
+                        if (!frozen.TeamWide) continue;
+                        var sustainedRemaining = frozen.RemainingSeconds - sessionElapsed;
+                        if (sustainedRemaining <= 0) continue;
+                        for (var unitIndex = 0; unitIndex < battle.PlayerAllies.Count; unitIndex++)
+                        {
+                            var target = battle.PlayerAllies[unitIndex];
+                            target.Buffs.RemoveAll(entry => entry.BuffId == frozen.BuffId);
+                            target.Buffs.Add(new CombatBuffState(frozen.BuffId, battle.ElapsedSeconds + sustainedRemaining,
+                                frozen.Stacks, frozen.HpRegen, frozen.MpRegen, frozen.AttackSpeedPoints,
+                                frozen.DamageAbsorptionPoints, frozen.ThreatPoints,
+                                frozen.HpRegenPostRatio, frozen.MpRegenPostRatio, frozen.DamageBonusPoints, 0, frozen.Name,
+                                ResetOnWave: true));
+                        }
                     }
                 }
             }
@@ -793,6 +840,7 @@ internal static class CombatActionRules
             battle.Player.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, player.Resources.MaxManapoints);
             battle.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
             player.Combat.Skills.ApplyTo(battle.Player);
+            player.Combat.Buffs.ApplyTo(battle.Player, battle.ElapsedSeconds);
         }
         for (var i = 0; i < wave.Count; i++) battle.Enemies[i].DefinitionId = wave[i].Id;
         AttachCombatStats(player, action, battle, spec, gameData);
@@ -1308,10 +1356,12 @@ internal static class CombatActionRules
     }
 
     /// <summary>遭遇入场时为空的通用栏持续消耗品槽补能：消耗 1 件物品充入整段时长，条件不满足则跳过。</summary>
-    private static void RechargeCombatSustainedSlots(IPlayerResourceContext player, GameDataCatalog gameData,
+    /// <summary>冷却走完的空槽位按入场同款规则补能；返回是否有槽位实际被补能（调用方据此决定是否重新注入 Buff）。</summary>
+    private static bool RechargeCombatSustainedSlots(IPlayerResourceContext player, GameDataCatalog gameData,
         AssetWallet? assetBalances, double atUnix, Guid actionInstanceId, CombatEncounterState battle,
         ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
     {
+        var recharged = false;
         for (var index = 0; index < player.Settings.AutoUseSlots.Count; index++)
         {
             if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out var consumable)) continue;
@@ -1343,10 +1393,13 @@ internal static class CombatActionRules
             events.Add(new SimulationEvent(DateTimeOffset.FromUnixTimeMilliseconds((long)(atUnix * 1000)),
                 "auto-use.activated", $"自动使用 {item.Name}，可生效 {consumable.DurationSeconds:0.######} 秒。",
                 null, new Dictionary<ItemId, double> { [itemId] = -1d }));
+            recharged = true;
         }
+        return recharged;
     }
 
-    /// <summary>将持续消耗品的生效 Buff 注入本次遭遇：时长对齐槽位剩余时长，耗尽即自然过期。</summary>
+    /// <summary>将持续消耗品的生效 Buff 注入本次遭遇：时长对齐槽位剩余时长，耗尽即自然过期。
+    /// 阵法类（subCategory=formation）Buff 全队生效，注入己方全部在场单位；其余仅加使用者。</summary>
     private static void InjectSustainedCombatBuffs(IPlayerResourceContext player, GameDataCatalog gameData,
         CombatEncounterState battle)
     {
@@ -1358,16 +1411,23 @@ internal static class CombatActionRules
                 || !rawItem.TryGetProperty("consumable", out var raw)
                 || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array)
                 continue;
+            var teamWide = string.Equals(item.SubCategory, Domain.GameData.AutoUseBar.Formation, StringComparison.Ordinal);
             foreach (var buff in buffs.EnumerateArray())
             {
                 var buffId = buff.GetProperty("buffId").GetString()!;
-                battle.Player.Buffs.RemoveAll(current => current.BuffId == buffId);
-                battle.Player.Buffs.Add(new CombatBuffState(buffId,
-                    battle.ElapsedSeconds + slot.RemainingDurationSeconds, 1,
-                    JsonRead.Number(buff, "hpRegen"), JsonRead.Number(buff, "mpRegen"),
-                    JsonRead.Number(buff, "attackSpeedPoints"), JsonRead.Number(buff, "damageAbsorptionPoints"),
-                    JsonRead.Number(buff, "threatPoints"),
-                    JsonRead.Number(buff, "hpRegenPostRatio"), JsonRead.Number(buff, "mpRegenPostRatio")));
+                for (var unitIndex = 0; unitIndex < battle.PlayerAllies.Count; unitIndex++)
+                {
+                    var unit = battle.PlayerAllies[unitIndex];
+                    if (!teamWide && !ReferenceEquals(unit, battle.Player)) continue;
+                    unit.Buffs.RemoveAll(current => current.BuffId == buffId);
+                    unit.Buffs.Add(new CombatBuffState(buffId,
+                        battle.ElapsedSeconds + slot.RemainingDurationSeconds, 1,
+                        JsonRead.Number(buff, "hpRegen"), JsonRead.Number(buff, "mpRegen"),
+                        JsonRead.Number(buff, "attackSpeedPoints"), JsonRead.Number(buff, "damageAbsorptionPoints"),
+                        JsonRead.Number(buff, "threatPoints"),
+                        JsonRead.Number(buff, "hpRegenPostRatio"), JsonRead.Number(buff, "mpRegenPostRatio"),
+                        0, 0, JsonRead.Text(buff, "name") ?? buffId, ResetOnWave: true));
+                }
             }
         }
     }
@@ -1453,7 +1513,8 @@ internal static class CombatActionRules
             var member = spec.Members[i];
             allies.Add(new ExpeditionAllyState(i,
                 new CombatantSnapshot(member.InitialHitpoints, member.InitialManapoints, 0, 0, 0),
-                CombatSkills: member.CombatSkills ?? PlayerCombatSkillState.Empty));
+                CombatSkills: member.CombatSkills ?? PlayerCombatSkillState.Empty,
+                CombatBuffs: member.CombatBuffs));
         }
         return allies;
     }
@@ -1477,19 +1538,24 @@ internal static class CombatActionRules
                 var member = spec.Members[i];
                 list.Add(new ExpeditionAllyState(i,
                     new CombatantSnapshot(member.Stats.MaxHitpoints, member.Stats.MaxManapoints, 0, 0, 0),
-                    CombatSkills: PlayerCombatSkillState.Empty));
+                    CombatSkills: PlayerCombatSkillState.Empty,
+                    // 倒地复活只复位技能与气血灵力；战内 Buff 跨波存续口径下不清除。
+                    CombatBuffs: PlayerCombatBuffState.FromCombatant(ally, battle.ElapsedSeconds)));
                 continue;
             }
             list.Add(new ExpeditionAllyState(i,
                 CombatEncounterState.Snapshot(ally),
                 PendingActionText(ally), PendingActionDurationOf(ally),
-                PlayerCombatSkillState.FromCombatant(ally, battle.ElapsedSeconds)));
+                PlayerCombatSkillState.FromCombatant(ally, battle.ElapsedSeconds),
+                PlayerCombatBuffState.FromCombatant(ally, battle.ElapsedSeconds)));
         }
         return list;
     }
 
-    /// <summary>复活读条完成时的盟友镜像重置：全员满状态（与本机成员复活满血同规）。</summary>
-    private static IReadOnlyList<ExpeditionAllyState> ResetAllyCarry(ActionParticipationSpec spec, int selfIndex)
+    /// <summary>复活读条完成时的盟友镜像重置：全员满状态（与本机成员复活满血同规）；
+    /// 战内 Buff 跨波存续口径下保留各自携带态（倒地/复活不清除）。</summary>
+    private static IReadOnlyList<ExpeditionAllyState> ResetAllyCarry(ActionParticipationSpec spec, int selfIndex,
+        IReadOnlyList<ExpeditionAllyState>? previous)
     {
         var allies = new List<ExpeditionAllyState>(spec.Members.Count - 1);
         for (var i = 0; i < spec.Members.Count; i++)
@@ -1498,7 +1564,8 @@ internal static class CombatActionRules
             var member = spec.Members[i];
             allies.Add(new ExpeditionAllyState(i,
                 new CombatantSnapshot(member.Stats.MaxHitpoints, member.Stats.MaxManapoints, 0, 0, 0),
-                CombatSkills: PlayerCombatSkillState.Empty));
+                CombatSkills: PlayerCombatSkillState.Empty,
+                CombatBuffs: FindAllyCarry(previous, i)?.CombatBuffs));
         }
         return allies;
     }

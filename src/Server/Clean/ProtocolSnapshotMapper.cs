@@ -290,7 +290,11 @@ public static class ProtocolSnapshotMapper
         }).ToArray(),
         PlayerSectionKind.Loadout => ToLoadoutSection(state, gameData),
         PlayerSectionKind.Settings => new { state.Settings, state.Presence },
-        PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedUnit, onAttributesProjected),
+        // 玩家威胁增幅来自面板解析（装备 specialMechanics.threatBonusPoints）；无配表/无远征时退化为 0。
+        PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedUnit, onAttributesProjected,
+            gameData is not null && state.Actions.Any(action => action.Expedition is not null)
+                ? PlayerAttributeResolver.Resolve(state, gameData).ThreatBonusPoints : 0,
+            state.Combat.Buffs),
         // 斗法分段白名单：ActiveReports（在队行动实例账本）不面向客户端，协议只下发
         // 当前账本/归档/离线/每日四类已消费通道。
         PlayerSectionKind.Duel => new
@@ -336,7 +340,8 @@ public static class ProtocolSnapshotMapper
     /// 统一战斗属性投影：玩家、妖兽与斗法镜像共用同一字段集与语义。
     /// 全部百分比属性按点数下发（100 点 = 100%，总纲第七篇 §7.7.5），前端只按对应曲线渲染不得二次换算。
     /// </summary>
-    public static object ToAttributesDto(PlayerAttributes a) => new
+    /// <param name="extraThreatBonusPoints">折入的威胁增幅点数（战内 Buff 合计），与有效威胁判定同乘区。</param>
+    public static object ToAttributesDto(PlayerAttributes a, double extraThreatBonusPoints = 0) => new
     {
         a.MaxHitpoints, a.MaxManapoints,
         physicalAttack = a.PhysicalAttack, a.SpellAttack,
@@ -358,13 +363,14 @@ public static class ProtocolSnapshotMapper
         a.FireDamageReductionPoints, a.EarthDamageReductionPoints,
         a.DamageAbsorptionPoints,
         a.AttackSpeedPoints, a.ActionSpeedPoints, a.CooldownReductionPoints,
-        a.ThreatBonusPoints,
+        threatBonusPoints = a.ThreatBonusPoints + extraThreatBonusPoints,
         hpDrainPoints = a.Effects.HpDrainPoints, mpDrainPoints = a.Effects.MpDrainPoints,
         damageReflectPoints = a.Effects.DamageReflectPoints, healingBonusPoints = a.Effects.HealingBonusPoints
     };
 
-    /// <summary>战斗单位静态属性（怪物/斗法镜像）到统一属性投影的重载。</summary>
-    public static object ToAttributesDto(CombatantStats s) => new
+    /// <summary>战斗单位静态属性（怪物/斗法镜像）到统一属性投影的重载；
+    /// <paramref name="extraThreatBonusPoints"/> 折入战内 Buff 威胁点，使详情增幅与有效威胁同口径。</summary>
+    public static object ToAttributesDto(CombatantStats s, double extraThreatBonusPoints = 0) => new
     {
         s.MaxHitpoints, s.MaxManapoints,
         physicalAttack = s.AttackPower, s.SpellAttack,
@@ -386,7 +392,7 @@ public static class ProtocolSnapshotMapper
         s.FireDamageReductionPoints, s.EarthDamageReductionPoints,
         s.DamageAbsorptionPoints,
         s.AttackSpeedPoints, s.ActionSpeedPoints, s.CooldownReductionPoints,
-        s.ThreatBonusPoints,
+        threatBonusPoints = s.ThreatBonusPoints + extraThreatBonusPoints,
         hpDrainPoints = s.Effects.HpDrainPoints, mpDrainPoints = s.Effects.MpDrainPoints,
         damageReflectPoints = s.Effects.DamageReflectPoints, healingBonusPoints = s.Effects.HealingBonusPoints
     };
@@ -436,7 +442,12 @@ public static class ProtocolSnapshotMapper
                 castTotalMilliseconds
             },
             consumableCooldownMilliseconds = consumableCooldowns,
-            attributes = ToAttributesDto(a)
+            // 威胁增幅折入战内 Buff 点数：战斗相位取波中实时快照，脱战取跨波携带态（与有效威胁同乘区）。
+            attributes = ToAttributesDto(a,
+                state.Actions.Count > 0 && state.Actions[0].Expedition is
+                    { Phase: CombatExpeditionPhase.Combat, PlayerState.Buffs: { } liveBuffs }
+                    ? CombatantState.SumBuffThreatPoints(liveBuffs)
+                    : state.Combat.Buffs.SumThreatPoints())
         };
     }
 
@@ -448,7 +459,9 @@ public static class ProtocolSnapshotMapper
     /// <param name="gameData">激活配表；为 null 时仅输出队列原始字段（名称等降级为 null）。</param>
     /// <param name="inspectedUnit">会话级单位详情观察目标；命中下标的敌怪/斗法镜像/盟友单位才投影属性面板。</param>
     /// <param name="onAttributesProjected">属性面板实际写入本次载荷时的出站记账回调；供会话解除一次性交付武装。</param>
-    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null)
+    /// <param name="playerThreatBonusPoints">本机面板威胁增幅点数：有效威胁投影口径与目标判定同式（总纲 §7.8.1）。</param>
+    /// <param name="playerCarriedBuffs">本机战内 Buff 跨波携带态：非战斗相位下用于 Buff 图标续显。</param>
+    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null)
     {
         if (actions is null || actions.Count == 0) return [];
         var result = new object[actions.Count];
@@ -487,7 +500,7 @@ public static class ProtocolSnapshotMapper
                 remainingRepeats = action.RemainingRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected),
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs),
                 // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
                 participation = action.Participation is { } participationBinding ? new
                 {
@@ -533,8 +546,9 @@ public static class ProtocolSnapshotMapper
     /// Seed/Outcome 等审计标量保留下发供前端校验，PlayerState/内部撮合标记不外泄。
     /// 敌方/盟友条目实时字段（血蓝/出手/威胁）常驻下发；属性面板为按需投影——仅当
     /// 会话观察目标（UnitInspect）命中该侧下标时才携带 attributes，未点开的单位不占快照带宽。
+    /// 威胁字段统一投影有效威胁值（基础实际值×(1+增幅点数/100)），与目标判定口径一致。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null)
+    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null)
     {
         var inspectedEnemyIndex = inspectedUnit is { Side: "enemy", Index: >= 0 } enemyTarget ? enemyTarget.Index.Value : (int?)null;
         var inspectedAllyIndex = inspectedUnit is { Side: "ally", Index: >= 0 } allyTarget ? allyTarget.Index.Value : (int?)null;
@@ -545,7 +559,11 @@ public static class ProtocolSnapshotMapper
             expedition.PhaseElapsedSeconds, expedition.PhaseDurationSeconds,
             expedition.BattleElapsedSeconds,
             expedition.PlayerHitpoints, expedition.PlayerManapoints,
-            expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat,
+            expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount,
+            // 本机有效威胁：镜像基础值 ×(1+面板增幅+PlayerState 修正/战内 Buff 点数/100)。
+            playerThreat = CombatantState.ComputeEffectiveThreat(
+                expedition.PlayerThreat, playerThreatBonusPoints,
+                expedition.PlayerState?.ThreatBonusPoints ?? 0, expedition.PlayerState?.Buffs),
             expedition.WaveNumber,
             outcome = (byte)expedition.Outcome,
             expedition.Seed,
@@ -554,11 +572,17 @@ public static class ProtocolSnapshotMapper
             playerRespawnDurationSeconds = expedition.PlayerRespawnAtSeconds is not null
                 && gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
                     ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
+            // 本机战内 Buff（含开战注入的消耗品副本）：战斗时钟到期时刻随快照下发，
+            // 前端按 battleElapsedSeconds 反推剩余；非战斗相位改投跨波携带态
+            // （expiresAt = 冻结时钟基准 + 剩余秒数，前端换算后倒计时即剩余时长）。
+            playerBuffs = expedition.Phase == CombatExpeditionPhase.Combat
+                ? ToCombatBuffsDto(expedition.PlayerState?.Buffs)
+                : ToCombatBuffsDto(playerCarriedBuffs, expedition.BattleElapsedSeconds),
             enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected)).ToArray(),
             duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
             // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
             selfIndex = spec is null ? (int?)null : expedition.SelfIndex,
-            allies = spec is null ? null : ToExpeditionAlliesDto(expedition, spec, inspectedAllyIndex, onAttributesProjected)
+            allies = spec is null ? null : ToExpeditionAlliesDto(expedition, spec, inspectedAllyIndex, onAttributesProjected, playerCarriedBuffs)
         };
     }
 
@@ -568,17 +592,19 @@ public static class ProtocolSnapshotMapper
     /// 属性面板为按需一次性交付：会话观察目标（UnitInspect side=ally）命中 memberIndex 时
     /// 才投影开打冻结面板 attributes，未点开的队友不占快照带宽。
     /// </summary>
-    private static object[] ToExpeditionAlliesDto(CombatExpeditionState expedition, ActionParticipationSpec spec, int? inspectedAllyIndex, Action? onAttributesProjected = null)
+    private static object[] ToExpeditionAlliesDto(CombatExpeditionState expedition, ActionParticipationSpec spec, int? inspectedAllyIndex, Action? onAttributesProjected = null, PlayerCombatBuffState? playerCarriedBuffs = null)
     {
         var result = new object[spec.Members.Count];
         for (var i = 0; i < spec.Members.Count; i++)
         {
             var member = spec.Members[i];
             CombatantSnapshot state;
+            ExpeditionAllyState? ally;
             string? pendingAbilityId;
             double pendingDuration;
             if (i == expedition.SelfIndex)
             {
+                ally = null;
                 state = expedition.PlayerState ?? new CombatantSnapshot(
                     expedition.PlayerHitpoints, expedition.PlayerManapoints,
                     expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat,
@@ -588,7 +614,7 @@ public static class ProtocolSnapshotMapper
             }
             else
             {
-                var ally = FindAllyMirror(expedition.Allies, i);
+                ally = FindAllyMirror(expedition.Allies, i);
                 // 镜像缺失时以开打定格初值兜底展示（战斗相位内盟友镜像恒在，搜索相位口径一致）。
                 state = ally?.State ?? new CombatantSnapshot(member.InitialHitpoints, member.InitialManapoints, 0, 0, 0);
                 pendingAbilityId = ally?.PendingAbilityId;
@@ -597,7 +623,10 @@ public static class ProtocolSnapshotMapper
             // 观察目标命中该成员位才投影属性与装配：冻结面板、功法槽与已穿戴装备均为开打定格的
             // 共享剧本输入，与敌怪同一交付口径（一次性携带，前端按 ally:{playerId} 缓存复用）。
             var inspected = inspectedAllyIndex == i;
-            var attributes = inspected ? ToAttributesDto(member.Stats) : null;
+            var attributes = inspected ? ToAttributesDto(member.Stats,
+                expedition.Phase == CombatExpeditionPhase.Combat
+                    ? CombatantState.SumBuffThreatPoints(state.Buffs)
+                    : (i == expedition.SelfIndex ? playerCarriedBuffs : ally?.CombatBuffs)?.SumThreatPoints() ?? 0) : null;
             var skills = inspected
                 ? member.Skills.Select(slot => new PlayerAbilitySlot(
                     slot.Ability.TryGetProperty("id", out var idElement) ? idElement.GetString() : null,
@@ -613,9 +642,19 @@ public static class ProtocolSnapshotMapper
                 state.Hitpoints, state.Manapoints,
                 maxHitpoints = member.Stats.MaxHitpoints,
                 maxManapoints = member.Stats.MaxManapoints,
-                state.NextAttackAtSeconds, state.AttackCount, state.Threat,
+                state.NextAttackAtSeconds, state.AttackCount,
+                // 有效威胁：镜像基础值 ×(1+冻结面板增幅+镜像修正/战内 Buff 点数/100)。
+                threat = CombatantState.ComputeEffectiveThreat(
+                    state.Threat, member.Stats.ThreatBonusPoints,
+                    state.ThreatBonusPoints, state.Buffs),
                 pendingAbilityId, pendingActionDurationSeconds = pendingDuration,
                 respawnAtSeconds = state.RespawnAtSeconds,
+                // 战内 Buff：战斗相位投波中实时快照；非战斗相位投跨波携带态
+                // （本机位取 playerCarriedBuffs，盟友位取镜像 CombatBuffs）。
+                buffs = expedition.Phase == CombatExpeditionPhase.Combat
+                    ? ToCombatBuffsDto(state.Buffs)
+                    : ToCombatBuffsDto(i == expedition.SelfIndex ? playerCarriedBuffs : ally?.CombatBuffs,
+                        expedition.BattleElapsedSeconds),
                 attributes,
                 skills,
                 equipment
@@ -663,7 +702,9 @@ public static class ProtocolSnapshotMapper
             && raw.TryGetProperty("visual", out var visualElement)
             && visualElement.ValueKind == JsonValueKind.Object)
             visual = visualElement.Clone();
-        var attributes = found && includeAttributes ? ToAttributesDto(definition!.Stats) : null;
+        var attributes = found && includeAttributes
+            ? ToAttributesDto(definition!.Stats, CombatantState.SumBuffThreatPoints(enemy.State.Buffs))
+            : null;
         if (attributes is not null) onAttributesProjected?.Invoke();
         return new
         {
@@ -677,13 +718,48 @@ public static class ProtocolSnapshotMapper
             },
             visual,
             enemy.State.Hitpoints, enemy.State.Manapoints,
-            enemy.State.NextAttackAtSeconds, enemy.State.AttackCount, enemy.State.Threat,
+            enemy.State.NextAttackAtSeconds, enemy.State.AttackCount,
+            // 有效威胁：镜像基础值 ×(1+配表面板增幅+镜像修正/战内 Buff 点数/100)。
+            threat = CombatantState.ComputeEffectiveThreat(
+                enemy.State.Threat, definition?.Stats.ThreatBonusPoints ?? 0,
+                enemy.State.ThreatBonusPoints, enemy.State.Buffs),
             enemy.PendingAbilityId, enemy.PendingActionDurationSeconds,
+            buffs = ToCombatBuffsDto(enemy.State.Buffs),
             // 血蓝条分母常驻：血/蓝当前值没有上限无法渲染进度条，两个标量属实时字段。
             maxHitpoints = found ? definition!.Stats.MaxHitpoints : (double?)null,
             maxManapoints = found ? definition!.Stats.MaxManapoints : (double?)null,
             attributes
         };
+    }
+
+    /// <summary>战内 Buff 投影：名称/层数/战斗时钟到期时刻与效果字段随单位快照下发，结算权威在服务端。</summary>
+    private static object[]? ToCombatBuffsDto(IReadOnlyList<CombatBuffState>? buffs)
+    {
+        if (buffs is null || buffs.Count == 0) return null;
+        return buffs.Select(buff => (object)new
+        {
+            buff.BuffId, buff.Name, buff.Stacks,
+            expiresAtSeconds = buff.ExpiresAtSeconds,
+            buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints,
+            buff.ThreatPoints, buff.DamageBonusPoints, buff.ThreatPerSecondMaxHpPoints,
+            buff.HpRegenPostRatio, buff.MpRegenPostRatio
+        }).ToArray();
+    }
+
+    /// <summary>跨波携带 Buff 投影：剩余秒数折算为冻结时钟基准上的到期时刻（expiresAt = battleElapsed + 剩余），
+    /// 前端按同一 battleElapsed 反推后倒计时即剩余时长，与战斗相位 DTO 同构。</summary>
+    private static object[]? ToCombatBuffsDto(PlayerCombatBuffState? carried, double battleElapsedSeconds)
+    {
+        if (carried is null || carried.Buffs.Count == 0) return null;
+        return carried.Buffs.Select(carry => (object)new
+        {
+            carry.BuffId, carry.Name, carry.Stacks,
+            expiresAtSeconds = double.IsFinite(battleElapsedSeconds + carry.RemainingSeconds)
+                ? battleElapsedSeconds + carry.RemainingSeconds : double.MaxValue,
+            carry.HpRegen, carry.MpRegen, carry.AttackSpeedPoints, carry.DamageAbsorptionPoints,
+            carry.ThreatPoints, carry.DamageBonusPoints, carry.ThreatPerSecondMaxHpPoints,
+            carry.HpRegenPostRatio, carry.MpRegenPostRatio
+        }).ToArray();
     }
 
     /// <summary>斗法回放白名单投影：对手资源与事件级 MP 快照常驻下发；属性面板仅在观察目标命中镜像位（enemy:0）时投影。</summary>

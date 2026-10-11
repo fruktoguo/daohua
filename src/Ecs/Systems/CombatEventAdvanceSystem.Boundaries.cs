@@ -221,16 +221,19 @@ public sealed partial class CombatEventAdvanceSystem
         return next;
     }
 
-    /// <summary>最近的战内效果边界：全体单位 Buff 的最早到期时刻；存在回复类 Buff 时叠加 5 秒结算网格。</summary>
+    /// <summary>最近的战内效果边界：全体单位 Buff 的最早到期时刻；存在回复类 Buff 时叠加 5 秒结算网格、存在每秒威胁 Buff 时叠加 1 秒结算网格。</summary>
     private static double NextBuffBoundary(CombatEncounterState encounter)
     {
         var next = double.PositiveInfinity;
         var regenPending = false;
+        var threatTickPending = false;
         // 扫描顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人；min 求值无平局歧义。
         for (var i = 0; i < encounter.PlayerAllies.Count; i++) Scan(encounter.PlayerAllies[i]);
         for (var i = 0; i < encounter.Enemies.Count; i++) Scan(encounter.Enemies[i]);
         if (regenPending)
             next = Math.Min(next, (Math.Floor(encounter.ElapsedSeconds / Systems.CombatBuffTickSystem.TickSeconds) + 1) * Systems.CombatBuffTickSystem.TickSeconds);
+        if (threatTickPending)
+            next = Math.Min(next, (Math.Floor(encounter.ElapsedSeconds / Systems.CombatBuffTickSystem.ThreatTickSeconds) + 1) * Systems.CombatBuffTickSystem.ThreatTickSeconds);
         return next;
 
         void Scan(CombatantState unit)
@@ -242,6 +245,7 @@ public sealed partial class CombatEventAdvanceSystem
                 if (buffs[i].ExpiresAtSeconds < next) next = buffs[i].ExpiresAtSeconds;
                 if (buffs[i].HpRegen != 0 || buffs[i].MpRegen != 0
                     || buffs[i].HpRegenPostRatio != 0 || buffs[i].MpRegenPostRatio != 0) regenPending = true;
+                if (buffs[i].ThreatPerSecondMaxHpPoints != 0) threatTickPending = true;
             }
         }
     }

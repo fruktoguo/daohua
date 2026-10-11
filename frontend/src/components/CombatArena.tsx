@@ -8,7 +8,7 @@ import { useSocialStore } from '../game/socialStore'
 import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatAbilitySlot, CombatActionState, CombatAttributes, EquippedItem, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatAbilitySlot, CombatActionState, CombatAttributes, CombatBuffEntry, EquippedItem, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -1311,6 +1311,8 @@ interface EnemyDisplayState {
   visual?: CharacterVisual | null
   /** 服务端按需投影的完整战斗属性（详情弹窗唯一数值来源；未登记观察目标时为 null） */
   attributes?: CombatAttributes | null
+  /** 生效中的战内 Buff（到期时刻已换算到服务端时钟域） */
+  buffs?: Buff[]
 }
 
 /** 己方盟友展示态（§21.13 组队讨伐）：按 memberIndex 序铺位，倒地灰显、复活读条由 wire 帧合成。 */
@@ -1334,6 +1336,31 @@ interface AllyDisplayState {
   skills?: CombatAbilitySlot[] | null
   /** 开打定格已穿戴装备（按需投影，与 attributes 同帧交付；未观察时为 null） */
   equipment?: EquippedItem[] | null
+  /** 生效中的战内 Buff（到期时刻已换算到服务端时钟域） */
+  buffs?: Buff[]
+}
+
+/**
+ * 战内 Buff → 展示 Buff 形状：到期时刻从战斗时钟换算到服务端时钟域（serverNow + 剩余），
+ * 与行动条 completesAtUnixMilliseconds 同一口径；永驻哨兵（>1e15 剩余）按常驻展示。
+ */
+function combatBuffToBuff(entry: CombatBuffEntry, battleElapsedSeconds: number, serverNowUnixMilliseconds: number): Buff {
+  const remaining = entry.expiresAtSeconds - battleElapsedSeconds
+  return {
+    buffId: entry.buffId,
+    name: entry.name,
+    stacks: entry.stacks,
+    expiresAtUnixSeconds: remaining > 1e15 ? 1e15 : serverNowUnixMilliseconds / 1000 + Math.max(0, remaining),
+    hpRegen: entry.hpRegen ?? 0,
+    mpRegen: entry.mpRegen ?? 0,
+    attackSpeedPoints: entry.attackSpeedPoints ?? 0,
+    damageAbsorptionPoints: entry.damageAbsorptionPoints ?? 0,
+    hpRegenPostRatio: entry.hpRegenPostRatio,
+    mpRegenPostRatio: entry.mpRegenPostRatio,
+    threatPoints: entry.threatPoints,
+    damageBonusPoints: entry.damageBonusPoints,
+    threatPerSecondMaxHpPoints: entry.threatPerSecondMaxHpPoints,
+  }
 }
 
 /**
@@ -1594,6 +1621,19 @@ export const CombatArena = memo(function CombatArena({
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
   const playerThreat = expedition?.playerThreat ?? null
+  // 玩家展示 Buff：战斗相位以战内列表（含开战注入的消耗品副本）为准，战外持久 Buff 按 buffId
+  // 去重后补充；非战斗相位 PlayerState 为空，退回战外 ActiveBuff 视图。
+  const playerDisplayBuffs = useMemo<Buff[]>(() => {
+    const combatBuffs = expedition?.playerBuffs
+    if (!combatBuffs || combatBuffs.length === 0) return buffs
+    const battleElapsed = expedition?.battleElapsedSeconds ?? 0
+    const serverNow = estimateServerNowUnixMilliseconds()
+    const combatIds = new Set(combatBuffs.map(entry => entry.buffId))
+    return [
+      ...combatBuffs.map(entry => combatBuffToBuff(entry, battleElapsed, serverNow)),
+      ...buffs.filter(buff => !combatIds.has(buff.buffId)),
+    ]
+  }, [buffs, expedition?.playerBuffs, expedition?.battleElapsedSeconds])
   const phase = expedition?.phase ?? (isTravel ? 'travel' : isLifeAction ? 'life-action' : 'idle')
   const isDuelPhase = phase === 'duel'
 
@@ -1646,6 +1686,7 @@ export const CombatArena = memo(function CombatArena({
           : null,
         visual: entry.visual ?? null,
         attributes: entry.attributes ?? null,
+        buffs: entry.buffs?.map(buff => combatBuffToBuff(buff, battleElapsed, serverNow)),
       }
     })
   }, [abilities, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
@@ -1683,6 +1724,7 @@ export const CombatArena = memo(function CombatArena({
         attributes: ally.attributes ?? null,
         skills: ally.skills ?? null,
         equipment: ally.equipment ?? null,
+        buffs: ally.buffs?.map(buff => combatBuffToBuff(buff, battleElapsed, serverNow)),
       }))
   }, [expedition?.allies, expedition?.selfIndex, expedition?.battleElapsedSeconds, expedition?.phase, expedition?.encounterId, expedition?.playerRespawnDurationSeconds, encounters, abilities, t])
 
@@ -1894,7 +1936,7 @@ export const CombatArena = memo(function CombatArena({
                           action={playerAction}
                           actorId="player"
                           actorKey="player"
-                          buffs={buffs}
+                          buffs={playerDisplayBuffs}
                           compact
                           hp={playerHp}
                           maxHp={playerMaxHp}
@@ -1925,6 +1967,7 @@ export const CombatArena = memo(function CombatArena({
                         maxMp={ally.maxMp}
                         mp={ally.mp}
                         name={ally.name}
+                        buffs={ally.buffs}
                         onInspect={() => setInspectedActor(`ally:${ally.memberIndex}`)}
                         role="player"
                         seal={ally.seal}
@@ -1945,7 +1988,7 @@ export const CombatArena = memo(function CombatArena({
                     action={playerAction}
                     actorId="player"
                     actorKey="player"
-                    buffs={buffs}
+                    buffs={playerDisplayBuffs}
                     compact
                     hp={playerHp}
                     maxHp={playerMaxHp}
@@ -1997,6 +2040,7 @@ export const CombatArena = memo(function CombatArena({
                       action={entry.action}
                       actorId={entry.enemyId ?? activeEncounterId}
                       actorKey={entry.actorKey}
+                      buffs={entry.buffs}
                       compact
                       hp={entry.hp}
                       maxHp={entry.maxHp}
@@ -2095,7 +2139,9 @@ export const CombatArena = memo(function CombatArena({
       <CharacterAttributeModal
         actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
         attributes={inspectedAttributes}
-        buffs={inspectedActor === 'player' ? buffs : []}
+        buffs={inspectedActor === 'player' || inspectedAlly?.isSelf
+          ? playerDisplayBuffs
+          : inspectedEnemy?.buffs ?? inspectedAlly?.buffs ?? []}
         loadout={inspectedLoadout}
         drops={inspectedDrops}
         name={inspectedEnemy?.name ?? inspectedAlly?.name ?? playerName}

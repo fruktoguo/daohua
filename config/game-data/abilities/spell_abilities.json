@@ -75,7 +75,7 @@
     ],
     "manaCost": 10.0,
     "rootAttribute": "meridians",
-    "discipline": "internal"
+    "discipline": "spell"
   },
   {
     "id": "ability.lightning-attraction",
@@ -131,6 +131,6 @@
     ],
     "manaCost": 50.0,
     "rootAttribute": "consciousness",
-    "discipline": "internal"
+    "discipline": "spell"
   }
 ]

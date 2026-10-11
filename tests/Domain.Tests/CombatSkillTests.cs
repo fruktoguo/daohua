@@ -130,6 +130,100 @@ public sealed class CombatSkillTests
     }
 
     /// <summary>
+    /// 嘲讽回归（总纲 §5.1/§7.8.1）：归类为术法可装配施放；开战全体基础威胁为 100；
+    /// 0.2s 施放完成即时 +500 基础威胁并授予 60s「嘲讽」增益（威胁增幅 +400 点）——
+    /// Buff 覆盖期长于 55s 冷却、有效威胁按基础值×(1+增幅点数/100) 放大。
+    /// </summary>
+    [Fact]
+    public void TauntIsSpellAndGrantsSixtySecondThreatBuff()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0) with { MaxManapoints = 1000 };
+        var ability = catalog.Abilities["ability.taunt"];
+        Assert.Equal("spell", ability.GetProperty("discipline").GetString());
+        var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
+        var enemy = CombatantStats.Create(100_000_000, 0, 0, 100);
+        var encounter = DeterministicCombatEngine.Start("taunt", 29, playerTemplate, [new CombatantTemplate(enemy)]);
+        // 开战全体基础威胁重置为 100；嘲讽起手即决策吟唱。
+        Assert.Equal(CombatantState.BaseThreat, encounter.Player.Threat);
+        Assert.Equal(CombatantState.BaseThreat, encounter.Enemies[0].Threat);
+        Assert.Equal(0, encounter.Player.PendingSkillIndex);
+
+        var castDoneAt = 0.2 * PercentValue.Multiplier(stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+        DeterministicCombatEngine.AdvanceTo(encounter, castDoneAt + 1e-9);
+        // 施放完成：+500 基础威胁直接改写存储值（不预乘增幅），并授予 60s 嘲讽增益。
+        Assert.Equal(CombatantState.BaseThreat + 500, encounter.Player.Threat, 6);
+        var buff = Assert.Single(encounter.Player.Buffs);
+        Assert.Equal("ability-buff:ability.taunt", buff.BuffId);
+        Assert.Equal(400, buff.ThreatPoints, 9);
+        Assert.Equal(castDoneAt + 60, buff.ExpiresAtSeconds, 6);
+        // 技能授予 Buff 默认跨波存续（resetOnWave 未配置即 false）。
+        Assert.False(buff.ResetOnWave);
+        // Buff 覆盖 60s > 冷却 55s：冷却窗口内增幅恒生效，有效威胁 600×5=3000。
+        var cooldownEnd = castDoneAt + 55 * PercentValue.Multiplier(stats.CooldownReductionPoints, PercentCurveMode.NonLinear);
+        Assert.Equal(cooldownEnd, encounter.Player.SkillCooldownUntil![0], 6);
+        Assert.True(buff.ExpiresAtSeconds > cooldownEnd);
+        Assert.Equal(600 * 5, encounter.Player.EffectiveThreat, 6);
+    }
+
+    /// <summary>
+    /// 嘲讽等级成长回归（总纲 §5.2）：即时威胁与 Buff 威胁增幅点数同吃每级 +2% 线性成长——
+    /// Lv3 下 500×1.04=520、400×1.04=416。
+    /// </summary>
+    [Fact]
+    public void TauntThreatValuesScaleWithAbilityLevel()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0) with { MaxManapoints = 1000 };
+        var ability = catalog.Abilities["ability.taunt"];
+        var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 3)]);
+        var enemy = CombatantStats.Create(100_000_000, 0, 0, 100);
+        var encounter = DeterministicCombatEngine.Start("taunt.level", 31, playerTemplate, [new CombatantTemplate(enemy)]);
+
+        var castDoneAt = 0.2 * PercentValue.Multiplier(stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+        DeterministicCombatEngine.AdvanceTo(encounter, castDoneAt + 1e-9);
+        // Lv3：统一成长 ×1.04 → threatGain 520、Buff 威胁增幅 416 点。
+        // 成长率字面断言锁死「每级 +2% 线性」口径：Lv1=1.00、Lv2=1.02、Lv3=1.04，防平方化回归。
+        Assert.Equal(1.0, CombatGrowthCurve.AbilityLevelGrowth(1), 9);
+        Assert.Equal(1.02, CombatGrowthCurve.AbilityLevelGrowth(2), 9);
+        Assert.Equal(1.04, CombatGrowthCurve.AbilityLevelGrowth(3), 9);
+        Assert.Equal(CombatantState.BaseThreat + 520, encounter.Player.Threat, 6);
+        var buff = Assert.Single(encounter.Player.Buffs);
+        Assert.Equal(416, buff.ThreatPoints, 6);
+        Assert.Equal(10 * 1.04, buff.ThreatPerSecondMaxHpPoints, 6);
+    }
+
+    /// <summary>
+    /// 嘲讽每秒威胁累积回归（总纲 §7.8.1）：Buff 携带 threatPerSecondMaxHpPoints=10 时，
+    /// 沿全局 1 秒结算网格每整秒 +最大气血×10% 基础威胁——与伤害涨威胁通道隔离观测。
+    /// </summary>
+    [Fact]
+    public void TauntBuffAccruesThreatEverySecond()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var ability = catalog.Abilities["ability.taunt"];
+        // 超长普攻间隔：嘲讽吟唱完成后双方不再出手，隔离「伤害累积威胁」通道，只观测周期累积。
+        var stats = CombatantStats.Create(2000, 0, 0, 1e9) with { MaxManapoints = 1000 };
+        var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
+        var enemy = CombatantStats.Create(100_000_000, 0, 0, 1e9);
+        var encounter = DeterministicCombatEngine.Start("taunt.tick", 37, playerTemplate, [new CombatantTemplate(enemy)]);
+
+        var castDoneAt = 0.2 * PercentValue.Multiplier(stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+        DeterministicCombatEngine.AdvanceTo(encounter, castDoneAt + 1e-9);
+        Assert.Equal(CombatantState.BaseThreat + 500, encounter.Player.Threat, 6);
+        var buff = Assert.Single(encounter.Player.Buffs);
+        Assert.Equal(10, buff.ThreatPerSecondMaxHpPoints, 9);
+
+        // 整秒网格结算：0.2s 授予后 t=1/2/3 各 +2000×10%=200，三跳后基础威胁 600+600=1200。
+        DeterministicCombatEngine.AdvanceTo(encounter, 3.5);
+        Assert.Equal(CombatantState.BaseThreat + 500 + 3 * 200, encounter.Player.Threat, 6);
+        // 周期累积写入基础威胁存储值，仍被 Buff 增幅放大：1200×(1+400/100)=6000。
+        Assert.Equal(1200 * 5, encounter.Player.EffectiveThreat, 6);
+    }
+
+    /// <summary>
     /// 贯星击杀连锁回归：主目标阵亡后按威胁轮盘贯穿下一存活敌方再结算一次完整伤害，
     /// 至多追加 2 次——三敌全歼共 3 帧同刻同技能事件；目标未死或敌方不足时不连锁。
     /// </summary>
@@ -205,6 +299,47 @@ public sealed class CombatSkillTests
             .Where(e => e.AbilityId == "ability.chain-strike").ToList();
         Assert.Single(killHits);
         Assert.Equal(1, kills.Enemies.Count(e => !e.IsAlive)); // 只死目标一个，不转火
+    }
+
+    /// <summary>
+    /// 跨波携带折算回归：resetOnWave=false 的 Buff 按战斗时钟剩余秒数定格携带，
+    /// resetOnWave=true 与已到期的条目不携带；重注入按新时钟折算到期时刻、同 ID 覆盖。
+    /// </summary>
+    [Fact]
+    public void CombatBuffCarryFiltersResetOnWaveAndExpiredEntries()
+    {
+        var stats = CombatantStats.Create(1000, 0, 0, 100);
+        var unit = new CombatantState("player", stats);
+        unit.Buffs.Add(new CombatBuffState("buff.keep", 60, 2, ThreatPoints: 400, Name: "存续"));
+        unit.Buffs.Add(new CombatBuffState("buff.reset", 60, 1, ThreatPoints: 50, Name: "波清", ResetOnWave: true));
+        unit.Buffs.Add(new CombatBuffState("buff.expired", 4.9, 1, Name: "到期"));
+
+        var carried = PlayerCombatBuffState.FromCombatant(unit, elapsedSeconds: 10);
+        var entry = Assert.Single(carried.Buffs);
+        Assert.Equal("buff.keep", entry.BuffId);
+        Assert.Equal(50, entry.RemainingSeconds, 9); // 60 - 10
+        Assert.Equal(2, entry.Stacks);
+        Assert.Equal(400, entry.ThreatPoints, 9);
+        Assert.Equal(400 * 2, carried.SumThreatPoints(), 9);
+        Assert.True(carried.IsValid);
+
+        // JSON 往返：列表为引用比较语义（同技能态口径），逐条断言载荷一致。
+        var roundtripped = JsonSerializer.Deserialize<PlayerCombatBuffState>(
+            JsonSerializer.Serialize(carried))!;
+        Assert.Equal(carried.Buffs, roundtripped.Buffs);
+        Assert.True(roundtripped.IsValid);
+
+        // 重注入：到期时刻 = 新时钟 + 定格剩余；同 ID 旧条目先移除（防叠影）。
+        var next = new CombatantState("player", stats);
+        next.Buffs.Add(new CombatBuffState("buff.keep", 999, 9, ThreatPoints: 1, Name: "残留"));
+        next.Buffs.Add(new CombatBuffState("buff.other", 20, 1, Name: "旁证"));
+        carried.ApplyTo(next, battleElapsedSeconds: 0);
+        var injected = Assert.Single(next.Buffs, buff => buff.BuffId == "buff.keep");
+        Assert.Equal(50, injected.ExpiresAtSeconds, 9);
+        Assert.Equal(2, injected.Stacks);
+        Assert.Equal(400, injected.ThreatPoints, 9);
+        Assert.False(injected.ResetOnWave); // 重注入条目按默认口径继续跨波
+        Assert.Single(next.Buffs, buff => buff.BuffId == "buff.other");
     }
 
     /// <summary>

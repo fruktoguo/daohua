@@ -417,7 +417,7 @@ static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
     "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "threatPoints", "maxStacks",
-    "hpRegenPostRatio", "mpRegenPostRatio"
+    "hpRegenPostRatio", "mpRegenPostRatio", "threatPerSecondMaxHpPoints", "resetOnWave"
 };
 
 /// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典与回复后段乘区）。</summary>

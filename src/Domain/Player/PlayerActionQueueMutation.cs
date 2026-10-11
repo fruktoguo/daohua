@@ -212,6 +212,15 @@ public static class PlayerActionQueueRules
                     intent.AuxItemId);
                 work.Action = new(instanceId, normalized, mutation.At)
                     { Travel = mutation.Travel, Participation = mutation.Participation };
+                // 插队顶替会移除同类远征行动：被顶替者携带远征且玩家气血归零时按脱战复苏 1 HP，
+                // 否则 hp=0 驻留会让新行动在入场判定卡进永久停泊（阵亡不回血口径下无自愈路径）。
+                if (work.Player.Resources.Hitpoints <= 0)
+                    for (var i = 0; i < actions.Count; i++)
+                        if (actions[i].Intent.ActionId == intent.ActionId && actions[i].Expedition is not null)
+                        {
+                            work.RecoverHitpoints = true;
+                            break;
+                        }
                 work.ActivateHead = priority;
                 work.Changed = true;
                 return;
@@ -312,6 +321,9 @@ public static class PlayerActionQueueRules
     {
         if (!work.Changed) return;
         var actions = work.Actions;
+        // 战内 Buff 生命周期 = 整场战斗行动：仅当携带远征的行动实例真正离队才统一移除，
+        // 轮转/换位/暂停不清理（远征状态随行动保留，回到队首按携带态续战）。
+        var expeditionEnded = false;
         switch (work.Mutation.Kind)
         {
             case PlayerActionQueueMutationKind.Enqueue:
@@ -320,13 +332,18 @@ public static class PlayerActionQueueRules
             case PlayerActionQueueMutationKind.EnqueuePriority:
                 if (work.Mutation.Participation is null)
                     for (var i = actions.Count - 1; i >= 0; i--)
-                        if (actions[i].Intent.ActionId == work.Action!.Intent.ActionId) actions.RemoveAt(i);
+                        if (actions[i].Intent.ActionId == work.Action!.Intent.ActionId)
+                        {
+                            expeditionEnded |= actions[i].Expedition is not null;
+                            actions.RemoveAt(i);
+                        }
                 if (actions.Count > 0 && actions[0].Status == ActionQueueStatus.Running)
                     actions[0].Status = ActionQueueStatus.Pending;
                 work.Action!.Status = ActionQueueStatus.Running;
                 actions.Insert(0, work.Action);
                 break;
             case PlayerActionQueueMutationKind.Remove:
+                expeditionEnded = actions[work.Index].Expedition is not null;
                 actions.RemoveAt(work.Index);
                 break;
             case PlayerActionQueueMutationKind.Move:
@@ -339,7 +356,10 @@ public static class PlayerActionQueueRules
                 break;
             case PlayerActionQueueMutationKind.FinishRound:
                 if (work.RoundDisposition == PlayerActionRoundDisposition.Removed)
+                {
+                    expeditionEnded = actions[work.Index].Expedition is not null;
                     actions.RemoveAt(work.Index);
+                }
                 else
                 {
                     work.Action!.RemainingRepeats = work.Action.Intent.RepeatCount;
@@ -348,8 +368,14 @@ public static class PlayerActionQueueRules
                 }
                 break;
             case PlayerActionQueueMutationKind.Clear:
+                expeditionEnded = actions.Any(action => action.Expedition is not null);
                 actions.Clear();
                 break;
+        }
+        if (expeditionEnded && work.Player.Combat.Buffs is { IsEmpty: false })
+        {
+            work.Player.Combat.Buffs = PlayerCombatBuffState.Empty;
+            work.Player.MarkDirty(PlayerSectionKind.Combat);
         }
     }
 

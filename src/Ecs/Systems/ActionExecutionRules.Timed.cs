@@ -17,9 +17,27 @@ internal static partial class ActionExecutionRules
     private const double SecondQuantizationEpsilon = 1e-9;
     private const double MaxWholeSecondsPerApply = 1_000_000_000;
 
-    /// <summary>受阻队首只执行一次出队或轮转；false 表示当前窗口剩余时间保持停泊。</summary>
-    public static bool AdvanceBlockedAction(IPlayerActionContext player, IPlayerActionState action, DateTimeOffset at)
+    /// <summary>受阻队首先复核准入（含濒死复苏归一气血）；仍受阻才执行一次出队或轮转。
+    /// true 表示本轮已处理（恢复/移除/轮转），false 表示条件未满足保持停泊。</summary>
+    public static bool AdvanceBlockedAction(IPlayerResourceContext player, IPlayerActionState action,
+        ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
+        DateTimeOffset at, ActionMutationBatch mutations)
+        => AdvanceBlockedAction(player, action, definition, gameData, assets, at,
+            mutations.Deltas, ref mutations.EventTail);
+
+    internal static bool AdvanceBlockedAction(IPlayerResourceContext player, IPlayerActionState action,
+        ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
+        DateTimeOffset at, Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
     {
+        // 濒死复苏：阵亡不回血口径下 hp=0 的受阻战斗行动永远等不到回血，按脱战复苏 1 HP
+        // 归一后复核准入；复苏或条件补足即恢复 Running，由正常分派接管，不再永久停泊。
+        if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter && player.Resources.Hitpoints <= 0)
+        {
+            player.Resources.Hitpoints = 1;
+            player.MarkDirty(PlayerSectionKind.Combat);
+        }
+        if (TryStartActionCore(player, action, definition, gameData, assets, at, deltas, ref events))
+            return true;
         if (!player.Settings.LoopEnabled)
         {
             player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
@@ -97,9 +115,13 @@ internal static partial class ActionExecutionRules
             if (!availableHere && definition.ExecutionKind != ActionExecutionKind.CombatEncounter
                 && TryEnqueueAutoTravel(player, action, definition, gameData, at, ref events))
                 return false;
-            action.Status = ActionQueueStatus.Blocked;
-            events ??= new();
-            events.Add(new SimulationEvent(at, "action.blocked", blockedReason, definition.Id));
+            // 已是停泊状态的行动每轮复核准入：仍不满足时静默维持，不重复刷阻塞事件。
+            if (action.Status != ActionQueueStatus.Blocked)
+            {
+                action.Status = ActionQueueStatus.Blocked;
+                events ??= new();
+                events.Add(new SimulationEvent(at, "action.blocked", blockedReason, definition.Id));
+            }
             return false;
         }
         // 讨伐跟随驻留地点：准入通过但远征遭遇不属于此地时，就地按新地点重锚续跑。

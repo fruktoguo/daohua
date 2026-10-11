@@ -149,7 +149,9 @@ public sealed class SimulationActionBoundaryTests
                 var at = windowStart.AddSeconds(plan.StepSeconds - remaining);
                 if (action.Status == ActionQueueStatus.Blocked)
                 {
-                    if (!SimulationEngine.AdvanceBlockedAction(player, action, at)) break;
+                    var blockedDefinition = catalog.Actions.Get(action.Intent.ActionId);
+                    if (!SimulationEngine.AdvanceBlockedAction(player, action, blockedDefinition,
+                            catalog, wallet, at, core)) break;
                     transitions++;
                     continue;
                 }
