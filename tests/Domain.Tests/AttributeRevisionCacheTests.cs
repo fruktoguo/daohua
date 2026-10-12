@@ -23,8 +23,8 @@ public sealed class AttributeRevisionCacheTests
     private static GameDataCatalog CreateCatalog()
     {
         using var equipment = JsonDocument.Parse("""
-            {"flatStats":{"physicalAttack":50,"physicalArmor":20},
-             "specialMechanics":{"attackSpeedPoints":10,"physicalDamageBonusPoints":5}}
+            {"flatStats":{"physicalAttack":50,"physicalArmor":20,
+             "attackSpeedPoints":10,"physicalDamageBonusPoints":5}}
             """);
         var actions = new ActionCatalog([
             new ActionDefinition(new ActionId("test.gather"), "采集", ActionKind.Exploration, 2,
@@ -117,7 +117,7 @@ public sealed class AttributeRevisionCacheTests
         Assert.Equal(0, expired.AttackSpeedPoints);
     }
 
-    /// <summary>穿戴、强化与卸下装备均令缓存失效；flatStats 按强化缩放、specialMechanics 不缩放。</summary>
+    /// <summary>穿戴、强化与卸下装备均令缓存失效；flatStats（含 *Points 点数键）整体按强化缩放。</summary>
     [Fact]
     public void EquipmentMutationsInvalidateCache()
     {
@@ -133,13 +133,13 @@ public sealed class AttributeRevisionCacheTests
         Assert.Equal(10, equipped.AttackSpeedPoints);
         Assert.Equal(5, equipped.PhysicalDamageBonusPoints);
 
-        // 强化 +5：flatStats ×1.05^5（≈1.2763），specialMechanics 点数不经强化缩放。
+        // 强化 +5：flatStats（含点数键）×1.05^5（≈1.2763）。
         player.ReplaceCombatSlots([new PlayerAbilitySlot(TestAbility.Value, 1)],
             [new PlayerEquipmentSlot(TestEquipment.Value, 5)]);
         var enhanced = AssertConsistentResolve(player, catalog);
         Assert.NotSame(equipped, enhanced);
         Assert.Equal(baseline.PhysicalAttack + 50 * Math.Pow(1.05, 5), enhanced.PhysicalAttack);
-        Assert.Equal(10, enhanced.AttackSpeedPoints);
+        Assert.Equal(10 * Math.Pow(1.05, 5), enhanced.AttackSpeedPoints, 9);
 
         player.ReplaceLoadout([], [], []);
         var stripped = AssertConsistentResolve(player, catalog);

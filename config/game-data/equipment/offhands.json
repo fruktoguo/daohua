@@ -1,0 +1,118 @@
+[
+  {
+    "id": "equipment.fan-tie-dart",
+    "name": "凡铁镖",
+    "description": "袖中藏锋，脱手取命。\n百炼铁打制的三棱飞镖，镖身短小精悍，出手快疾。",
+    "slot": "off-hand",
+    "baseStatRatios": {
+      "physicalAttack": 0.1
+    },
+    "flatStats": {
+      "physicalAttack": 6,
+      "accuracy": 6,
+      "physicalDamageBonusPoints": 4
+    }
+  },
+  {
+    "id": "equipment.qingmu-bead",
+    "name": "青木珠",
+    "description": "青木含灵，珠转法生。\n老桃木芯磨成的法珠，握于掌心可助法诀流转。",
+    "slot": "off-hand",
+    "baseStatRatios": {
+      "spellAttack": 0.1
+    },
+    "flatStats": {
+      "spellAttack": 6,
+      "accuracy": 6,
+      "skillBonusPoints": 4
+    }
+  },
+  {
+    "id": "equipment.tiepi-guard",
+    "name": "铁皮盾",
+    "description": "方寸铁皮，亦可挡锋。\n铆接铁皮的蒙皮小盾，轻便顺手，护住身前要害。",
+    "slot": "off-hand",
+    "baseStatRatios": {
+      "physicalArmor": 0.06,
+      "spellResistance": 0.06
+    },
+    "flatStats": {
+      "maxHitpoints": 10
+    }
+  },
+  {
+    "id": "equipment.ganlu-flask",
+    "name": "甘露瓶",
+    "description": "甘露一滴，枯木回春。\n盛有清晨甘露的小瓷瓶，贴身携带可润养经脉。",
+    "slot": "off-hand",
+    "flatStats": {
+      "hitpointRegen": 2,
+      "manapointRegen": 1,
+      "maxManapoints": 10,
+      "cooldownReductionPoints": 3,
+      "healingBonusPoints": 5
+    }
+  },
+  {
+    "id": "equipment.xuantie-dart",
+    "name": "玄铁镖",
+    "description": "玄铁淬芒，一掷破军。\n赤铜精淬炼的重棱飞镖，脱手呼啸，破空穿甲。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.14
+    },
+    "flatStats": {
+      "physicalAttack": 8,
+      "accuracy": 10,
+      "physicalDamageBonusPoints": 6
+    }
+  },
+  {
+    "id": "equipment.yaoling-bead",
+    "name": "曜灵珠",
+    "description": "曜光蕴珠，法随念转。\n灵松晶温养出的曜灵法珠，珠内光华流转不息。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "spellAttack": 0.14
+    },
+    "flatStats": {
+      "spellAttack": 8,
+      "accuracy": 10,
+      "skillBonusPoints": 6
+    }
+  },
+  {
+    "id": "equipment.xuanjia-guard",
+    "name": "玄甲盾",
+    "description": "玄甲覆面，不动如山。\n赤铜甲片拼合的护手战盾，盾面厚重，可挡刀剑术法。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalArmor": 0.08,
+      "spellResistance": 0.08
+    },
+    "flatStats": {
+      "maxHitpoints": 16
+    }
+  },
+  {
+    "id": "equipment.huichun-bell",
+    "name": "回春铃",
+    "description": "铃动回春，息续不绝。\n镂刻回春符纹的铜铃，铃声清越，闻者气血渐苏。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "flatStats": {
+      "hitpointRegen": 3,
+      "manapointRegen": 1,
+      "maxManapoints": 16,
+      "cooldownReductionPoints": 5,
+      "healingBonusPoints": 6
+    }
+  }
+]

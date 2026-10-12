@@ -5,11 +5,13 @@
     "description": "束发整冠，行脚生风。\n以细密麻布缝制的行脚束发头巾，简朴干练。",
     "slot": "head",
     "baseStatRatios": {
-      "physicalArmor": 0.1
+      "physicalArmor": 0.08,
+      "spellResistance": 0.02
     },
     "flatStats": {
       "maxHitpoints": 6,
-      "accuracy": 6
+      "accuracy": 6,
+      "physicalDamageBonusPoints": 2
     }
   },
   {
@@ -18,11 +20,14 @@
     "description": "百衲联皮布，缝缀成坚甲。\n多层坚韧粗布与兽皮拼接缝制的护身短甲，结实耐磨。",
     "slot": "armor",
     "baseStatRatios": {
-      "physicalArmor": 0.2
+      "physicalArmor": 0.16,
+      "spellResistance": 0.04
     },
     "flatStats": {
       "maxHitpoints": 10,
-      "physicalArmor": 10
+      "physicalArmor": 8,
+      "spellResistance": 2,
+      "physicalDamageBonusPoints": 2
     }
   },
   {
@@ -31,24 +36,14 @@
     "description": "扎口轻绑踏千山。\n下摆收口绑扎的武行布裤，便于翻山越岭与近身搏击。",
     "slot": "legs",
     "baseStatRatios": {
-      "physicalArmor": 0.1
+      "physicalArmor": 0.08,
+      "spellResistance": 0.02
     },
     "flatStats": {
-      "physicalArmor": 6,
-      "maxHitpoints": 6
-    }
-  },
-  {
-    "id": "equipment.xingshan-boots",
-    "name": "行山靴",
-    "description": "鹿皮踏岭，落足无声。\n鹿皮底厚麻短靴，靴帮结实，行走山林落足无声。",
-    "slot": "boots",
-    "baseStatRatios": {
-      "evasion": 0.1
-    },
-    "flatStats": {
-      "evasion": 6,
-      "maxHitpoints": 6
+      "physicalArmor": 5,
+      "spellResistance": 1,
+      "maxHitpoints": 6,
+      "physicalDamageBonusPoints": 2
     }
   },
   {
@@ -57,11 +52,13 @@
     "description": "素巾笼道髻，混元养太和。\n道家修士常戴的素色道巾，轻柔透气。",
     "slot": "head",
     "baseStatRatios": {
-      "spellResistance": 0.1
+      "spellResistance": 0.08,
+      "physicalArmor": 0.02
     },
     "flatStats": {
       "maxManapoints": 6,
-      "accuracy": 6
+      "accuracy": 6,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -70,11 +67,14 @@
     "description": "宽袍麻袖不染尘。\n以粗麻纺织的宽松道袍，宽袖飘逸，不染俗尘。",
     "slot": "armor",
     "baseStatRatios": {
-      "spellResistance": 0.2
+      "spellResistance": 0.16,
+      "physicalArmor": 0.04
     },
     "flatStats": {
       "maxManapoints": 10,
-      "spellResistance": 10
+      "spellResistance": 8,
+      "physicalArmor": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -83,24 +83,14 @@
     "description": "宽裤行气，周天自畅。\n宽大舒适的练功长裤，透气吸汗，利于周天行气。",
     "slot": "legs",
     "baseStatRatios": {
-      "spellResistance": 0.1
+      "spellResistance": 0.08,
+      "physicalArmor": 0.02
     },
     "flatStats": {
-      "spellResistance": 6,
-      "maxManapoints": 6
-    }
-  },
-  {
-    "id": "equipment.shifang-shoes",
-    "name": "十方鞋",
-    "description": "云游踏十方，鞋底生轻云。\n云游道人常穿的十方布鞋，鞋底轻软舒适。",
-    "slot": "boots",
-    "baseStatRatios": {
-      "evasion": 0.1
-    },
-    "flatStats": {
-      "evasion": 6,
-      "maxManapoints": 6
+      "spellResistance": 5,
+      "physicalArmor": 1,
+      "maxManapoints": 6,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -111,11 +101,13 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.16
+      "physicalArmor": 0.12,
+      "spellResistance": 0.04
     },
     "flatStats": {
       "maxHitpoints": 8,
-      "accuracy": 8
+      "accuracy": 8,
+      "physicalDamageBonusPoints": 2
     }
   },
   {
@@ -126,11 +118,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.28
+      "physicalArmor": 0.22,
+      "spellResistance": 0.06
     },
     "flatStats": {
       "maxHitpoints": 14,
-      "physicalArmor": 14
+      "physicalArmor": 11,
+      "spellResistance": 3,
+      "physicalDamageBonusPoints": 2
     }
   },
   {
@@ -141,26 +136,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.16
+      "physicalArmor": 0.12,
+      "spellResistance": 0.04
     },
     "flatStats": {
-      "physicalArmor": 8,
-      "maxHitpoints": 8
-    }
-  },
-  {
-    "id": "equipment.tashan-boots",
-    "name": "踏山靴",
-    "description": "重靴踏地稳如山。\n外衬赤铜甲片的战将重靴，踏地沉稳如山。",
-    "slot": "boots",
-    "tier": 2,
-    "quality": 2,
-    "baseStatRatios": {
-      "evasion": 0.16
-    },
-    "flatStats": {
-      "evasion": 8,
-      "maxHitpoints": 8
+      "physicalArmor": 6,
+      "spellResistance": 2,
+      "maxHitpoints": 8,
+      "physicalDamageBonusPoints": 2
     }
   },
   {
@@ -171,11 +154,13 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellResistance": 0.16
+      "spellResistance": 0.12,
+      "physicalArmor": 0.04
     },
     "flatStats": {
       "maxManapoints": 8,
-      "accuracy": 8
+      "accuracy": 8,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -186,11 +171,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellResistance": 0.28
+      "spellResistance": 0.22,
+      "physicalArmor": 0.06
     },
     "flatStats": {
       "maxManapoints": 14,
-      "spellResistance": 14
+      "spellResistance": 11,
+      "physicalArmor": 3,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -201,26 +189,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellResistance": 0.16
+      "spellResistance": 0.12,
+      "physicalArmor": 0.04
     },
     "flatStats": {
-      "spellResistance": 8,
-      "maxManapoints": 8
-    }
-  },
-  {
-    "id": "equipment.bichen-shoes",
-    "name": "避尘履",
-    "description": "灵羽为履，踏云避尘。\n灵羽为底、云丝为面的法靴，步履轻盈如踏云霄。",
-    "slot": "boots",
-    "tier": 2,
-    "quality": 2,
-    "baseStatRatios": {
-      "evasion": 0.16
-    },
-    "flatStats": {
-      "evasion": 8,
-      "maxManapoints": 8
+      "spellResistance": 6,
+      "physicalArmor": 2,
+      "maxManapoints": 8,
+      "skillBonusPoints": 2
     }
   }
 ]

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Domain.Tests;
 
 /// <summary>
@@ -100,6 +102,26 @@ public sealed class GameDataCatalogTests
         Assert.Equal(544.63, stats.SpellAttack, 2);
         Assert.Equal(320.86, stats.Defense, 2);
         Assert.Equal(222.01, stats.MagicResistance, 2);
+    }
+
+    /// <summary>
+    /// 怪物配表反应效果键回归（总纲 §7.12.1）：threatOnTakenPoints 与汲取/反弹/治疗加成
+    /// 同构，直接声明在怪物根对象并解析进 Stats.Effects，供受击涨威胁钩子消费。
+    /// </summary>
+    [Fact]
+    public void MonsterThreatOnTakenPointsParsesIntoEffects()
+    {
+        using var monster = JsonDocument.Parse("""
+            {"id":"enemy.threat-test","name":"受击涨威胁测试兽","level":1,"threatOnTakenPoints":75}
+            """);
+        var attributes = new BaseAttributeCatalog([new(1, 1000, 100, 10, 5, 10, 0, 100, 0, 0, 0, 0, 0, 7, 3)]);
+        var catalog = new GameDataCatalog("test", "test", new ActionCatalog([]),
+            monsters: new Dictionary<string, JsonElement> { ["enemy.threat-test"] = monster.RootElement },
+            baseAttributes: attributes, expectedAttributes: attributes);
+
+        var parsed = catalog.CombatMonsters["enemy.threat-test"];
+        Assert.Equal(75, parsed.Stats.Effects.ThreatOnTakenPoints);
+        Assert.Equal(0, parsed.Stats.Effects.HpDrainPoints);
     }
 
     /// <summary>

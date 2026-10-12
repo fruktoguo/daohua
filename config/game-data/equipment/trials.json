@@ -52,16 +52,16 @@
     }
   },
   {
-    "id": "equipment.trial-boots",
-    "name": "演武靴",
-    "description": "靴钉抓地，闪转自如。\n底钉铁齿的演武短靴，进退腾挪轻快稳当。",
-    "slot": "boots",
+    "id": "equipment.trial-dart",
+    "name": "演武飞刀",
+    "description": "飞刀试手，先声夺人。\n演武堂配发的练习飞刀，刀身沉实，掷出虎虎生风。",
+    "slot": "off-hand",
     "baseStatRatios": {
-      "evasion": 0.3
+      "physicalAttack": 0.3
     },
     "flatStats": {
-      "evasion": 40,
-      "maxHitpoints": 70
+      "physicalAttack": 40,
+      "accuracy": 30
     }
   },
   {

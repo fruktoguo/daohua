@@ -175,13 +175,11 @@ public static class PlayerAttributeResolver
         var a = catalog.BaseAttributes.At(level);
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
-        // 点数通道汇总：装备 specialMechanics 全量点数键 + Buff 点数通道（100 点 = 100%）。
-        double threat = 0, hpDrain = 0, mpDrain = 0, reflect = 0, healingBonus = 0;
-        double attackSpeed = 0, actionSpeed = 0, cooldownReduction = 0, criticalDamage = 0;
-        double physicalBonus = 0, spellBonus = 0, totalBonus = 0, basicAttackBonus = 0, skillBonus = 0;
-        double physicalReduction = 0, spellReduction = 0, dropBonus = 0;
-        double metalBonus = 0, woodBonus = 0, waterBonus = 0, fireBonus = 0, earthBonus = 0;
-        double metalReduction = 0, woodReduction = 0, waterReduction = 0, fireReduction = 0, earthReduction = 0;
+        // 点数通道汇总：装备 flatStats 中 *Points 键（随强化缩放，总纲 §4）+ Buff/特质点数通道（100 点 = 100%）。
+        var points = new Dictionary<string, double>(StringComparer.Ordinal);
+        double P(string key) => points.GetValueOrDefault(key);
+        void AddPoint(string key, double value) { if (value != 0) points[key] = P(key) + value; }
+        AddPoint("threatOnTakenPoints", threatOnTaken);
         foreach (var id in equipment)
         {
             if (!catalog.RawEquipments.TryGetValue(id.Value, out var item))
@@ -189,39 +187,16 @@ public static class PlayerAttributeResolver
             var enhancement = loadout.Equipment.FirstOrDefault(slot => slot.ItemId == id.Value)?.EnhancementLevel ?? 0;
             // 强化总倍率 = 1.05^等级（总纲 §4.2 指数成长，+20 ≈ 2.653×）
             var enhancementScale = Math.Pow(1.05, enhancement);
-            Add(item, "flatStats", flat, enhancementScale);
+            // flatStats 以 Points 结尾的键为百分比点数通道（增幅/冷却/治疗等），与其余固定值同受强化缩放。
+            if (item.TryGetProperty("flatStats", out var flatProps) && flatProps.ValueKind == JsonValueKind.Object)
+                foreach (var stat in flatProps.EnumerateObject())
+                {
+                    var number = stat.Value.GetDouble();
+                    if (!double.IsFinite(number)) throw new DomainException(DomainErrorCode.InvalidArgument, "装备属性必须为有限数值。");
+                    var target = stat.Name.EndsWith("Points", StringComparison.Ordinal) ? points : flat;
+                    target[stat.Name] = target.GetValueOrDefault(stat.Name) + number * enhancementScale;
+                }
             Add(item, "baseStatRatios", ratios, enhancementScale);
-            if (item.TryGetProperty("specialMechanics", out var mechanics) && mechanics.ValueKind == JsonValueKind.Object)
-            {
-                threat += ReadMechanic(mechanics, "threatBonusPoints");
-                hpDrain += ReadMechanic(mechanics, "hpDrainPoints");
-                mpDrain += ReadMechanic(mechanics, "mpDrainPoints");
-                reflect += ReadMechanic(mechanics, "damageReflectPoints");
-                healingBonus += ReadMechanic(mechanics, "healingBonusPoints");
-                threatOnTaken += ReadMechanic(mechanics, "threatOnTakenPoints");
-                attackSpeed += ReadMechanic(mechanics, "attackSpeedPoints");
-                actionSpeed += ReadMechanic(mechanics, "actionSpeedPoints");
-                cooldownReduction += ReadMechanic(mechanics, "cooldownReductionPoints");
-                criticalDamage += ReadMechanic(mechanics, "criticalDamageBonusPoints");
-                physicalBonus += ReadMechanic(mechanics, "physicalDamageBonusPoints");
-                spellBonus += ReadMechanic(mechanics, "spellDamageBonusPoints");
-                totalBonus += ReadMechanic(mechanics, "totalDamageBonusPoints");
-                basicAttackBonus += ReadMechanic(mechanics, "basicAttackBonusPoints");
-                skillBonus += ReadMechanic(mechanics, "skillBonusPoints");
-                physicalReduction += ReadMechanic(mechanics, "physicalDamageReductionPoints");
-                spellReduction += ReadMechanic(mechanics, "spellDamageReductionPoints");
-                metalBonus += ReadMechanic(mechanics, "metalDamageBonusPoints");
-                woodBonus += ReadMechanic(mechanics, "woodDamageBonusPoints");
-                waterBonus += ReadMechanic(mechanics, "waterDamageBonusPoints");
-                fireBonus += ReadMechanic(mechanics, "fireDamageBonusPoints");
-                earthBonus += ReadMechanic(mechanics, "earthDamageBonusPoints");
-                metalReduction += ReadMechanic(mechanics, "metalDamageReductionPoints");
-                woodReduction += ReadMechanic(mechanics, "woodDamageReductionPoints");
-                waterReduction += ReadMechanic(mechanics, "waterDamageReductionPoints");
-                fireReduction += ReadMechanic(mechanics, "fireDamageReductionPoints");
-                earthReduction += ReadMechanic(mechanics, "earthDamageReductionPoints");
-                dropBonus += ReadMechanic(mechanics, "dropBonusPoints");
-            }
         }
         var core = loadout.CoreAttributes;
         var root = core.Levels(catalog.RealmProgression);
@@ -254,14 +229,13 @@ public static class PlayerAttributeResolver
             _ => 0
         };
         var buffRatios = new Dictionary<string, double>(StringComparer.Ordinal);
-        double absorption = 0;
         double hpRegenFlat = 0, mpRegenFlat = 0;
         double hpRegenPost = 0, mpRegenPost = 0;
         // 节点公共建筑效果：气血自然回复固定值与额外减伤并入同名乘区（比率键 ×100 折点）。
         if (nodeBuildingEffects is not null)
         {
             hpRegenFlat += nodeBuildingEffects.CombatHitpointRegen;
-            absorption += nodeBuildingEffects.CombatDamageReductionRatio * 100;
+            AddPoint("damageAbsorptionPoints", nodeBuildingEffects.CombatDamageReductionRatio * 100);
         }
         foreach (var buff in buffs)
         {
@@ -269,8 +243,8 @@ public static class PlayerAttributeResolver
             mpRegenFlat += buff.MpRegen * buff.Stacks;
             hpRegenPost += buff.HpRegenPostRatio * buff.Stacks;
             mpRegenPost += buff.MpRegenPostRatio * buff.Stacks;
-            attackSpeed += buff.AttackSpeedPoints * buff.Stacks;
-            absorption += buff.DamageAbsorptionPoints * buff.Stacks;
+            AddPoint("attackSpeedPoints", buff.AttackSpeedPoints * buff.Stacks);
+            AddPoint("damageAbsorptionPoints", buff.DamageAbsorptionPoints * buff.Stacks);
             if (buff.StatRatios is not null)
                 foreach (var pair in buff.StatRatios)
                     buffRatios[pair.Key] = buffRatios.GetValueOrDefault(pair.Key) + pair.Value * buff.Stacks;
@@ -286,7 +260,7 @@ public static class PlayerAttributeResolver
         // 玩家特殊属性为获取型——境界不保送成长点数（装备/内功/特质/Buff 等渠道见上方汇总），
         // 仅保留暴击伤害通道基础 50 点（总纲 §7.7.5）；等阶仅作动态抗性系数 ResistanceScale。
         var tier = catalog.BaseAttributes.TierAt(level);
-        criticalDamage += CombatGrowthCurve.CriticalDamageBasePoints;
+        AddPoint("criticalDamageBonusPoints", CombatGrowthCurve.CriticalDamageBasePoints);
         var physical = Stat("physicalAttack", a.Ad);
         var spell = Stat("spellAttack", a.Ap);
         // 普攻基准读条恒为 1.0s：速度点数由引擎在出手边界按 NonLinear 双除数结算，不在此预折。
@@ -295,47 +269,40 @@ public static class PlayerAttributeResolver
             spell, Stat("physicalArmor", a.Armor), Stat("spellResistance", a.Mr),
             Stat("accuracy", a.Acc), Stat("evasion", a.Eva), Stat("criticalChance", a.Crit),
             Stat("criticalAvoidance", a.Cavoid), Stat("break", a.BreakPt), Stat("parry", a.Parry),
-            hpRegen, mpRegen, interval, Math.Max(0, absorption),
-            CriticalDamagePoints: criticalDamage,
-            ThreatBonusPoints: threat)
+            hpRegen, mpRegen, interval, Math.Max(0, P("damageAbsorptionPoints")),
+            CriticalDamagePoints: P("criticalDamageBonusPoints"),
+            ThreatBonusPoints: P("threatBonusPoints"))
         {
-            PhysicalDamageBonusPoints = physicalBonus,
-            SpellDamageBonusPoints = spellBonus,
-            TotalDamageBonusPoints = totalBonus,
-            BasicAttackBonusPoints = basicAttackBonus,
-            SkillBonusPoints = skillBonus,
-            PhysicalDamageReductionPoints = physicalReduction,
-            SpellDamageReductionPoints = spellReduction,
-            MetalDamageBonusPoints = metalBonus,
-            WoodDamageBonusPoints = woodBonus,
-            WaterDamageBonusPoints = waterBonus,
-            FireDamageBonusPoints = fireBonus,
-            EarthDamageBonusPoints = earthBonus,
-            MetalDamageReductionPoints = metalReduction,
-            WoodDamageReductionPoints = woodReduction,
-            WaterDamageReductionPoints = waterReduction,
-            FireDamageReductionPoints = fireReduction,
-            EarthDamageReductionPoints = earthReduction,
-            AttackSpeedPoints = attackSpeed,
-            ActionSpeedPoints = actionSpeed,
-            CooldownReductionPoints = cooldownReduction,
-            DropBonusPoints = dropBonus,
+            PhysicalDamageBonusPoints = P("physicalDamageBonusPoints"),
+            SpellDamageBonusPoints = P("spellDamageBonusPoints"),
+            TotalDamageBonusPoints = P("totalDamageBonusPoints"),
+            BasicAttackBonusPoints = P("basicAttackBonusPoints"),
+            SkillBonusPoints = P("skillBonusPoints"),
+            PhysicalDamageReductionPoints = P("physicalDamageReductionPoints"),
+            SpellDamageReductionPoints = P("spellDamageReductionPoints"),
+            MetalDamageBonusPoints = P("metalDamageBonusPoints"),
+            WoodDamageBonusPoints = P("woodDamageBonusPoints"),
+            WaterDamageBonusPoints = P("waterDamageBonusPoints"),
+            FireDamageBonusPoints = P("fireDamageBonusPoints"),
+            EarthDamageBonusPoints = P("earthDamageBonusPoints"),
+            MetalDamageReductionPoints = P("metalDamageReductionPoints"),
+            WoodDamageReductionPoints = P("woodDamageReductionPoints"),
+            WaterDamageReductionPoints = P("waterDamageReductionPoints"),
+            FireDamageReductionPoints = P("fireDamageReductionPoints"),
+            EarthDamageReductionPoints = P("earthDamageReductionPoints"),
+            AttackSpeedPoints = P("attackSpeedPoints"),
+            ActionSpeedPoints = P("actionSpeedPoints"),
+            CooldownReductionPoints = P("cooldownReductionPoints"),
+            DropBonusPoints = P("dropBonusPoints"),
             ResistanceScale = tier,
             Traits = traits,
-            Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect, healingBonus, threatOnTaken)
+            Effects = new CombatEffectProfile(P("hpDrainPoints"), P("mpDrainPoints"), P("damageReflectPoints"), P("healingBonusPoints"), P("threatOnTakenPoints"))
         };
     }
 
     /// <summary>百分比比率按双模式 Linear 结算：正值 1+x，负值 1/(1+|x|) 软着陆。</summary>
     private static double SoftRatio(double ratio)
         => ratio >= 0 ? 1 + ratio : 1 / (1 - ratio);
-
-    private static double ReadMechanic(JsonElement mechanics, string key)
-    {
-        var number = mechanics.TryGetProperty(key, out var value) && value.TryGetDouble(out var parsed) ? parsed : 0;
-        if (!double.IsFinite(number)) throw new DomainException(DomainErrorCode.InvalidArgument, "装备特殊机制数值必须有限。");
-        return number;
-    }
 
     private static void Add(JsonElement item, string key, Dictionary<string, double> target, double scale)
     {

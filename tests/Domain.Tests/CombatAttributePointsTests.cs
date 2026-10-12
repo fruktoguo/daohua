@@ -7,7 +7,7 @@ namespace Domain.Tests;
 
 /// <summary>
 /// 百分比点数属性模型测试（战斗设计 §7.5/§7.1）：增减伤 Linear/NonLinear 结算链、
-/// 速率点数读条与冷却结算、装备 specialMechanics 点数汇总到属性面板。
+/// 速率点数读条与冷却结算、装备 flatStats 点数键汇总到属性面板。
 /// </summary>
 public sealed class CombatAttributePointsTests
 {
@@ -99,13 +99,13 @@ public sealed class CombatAttributePointsTests
         Assert.Equal(2 + 4, fast.Player.SkillCooldownUntil![0], 9);
     }
 
-    /// <summary>装备 specialMechanics 点数键逐项汇入属性面板（含增减伤/速度/汲取全套词汇表）。</summary>
+    /// <summary>装备 flatStats 点数键逐项汇入属性面板（含增减伤/速度/汲取全套词汇表）。</summary>
     [Fact]
     public void EquipmentMechanicsPointsFlowIntoResolvedAttributes()
     {
         var attributes = new BaseAttributeCatalog([new(1, 1000, 100, 10, 5, 10, 0, 100, 0, 0, 0, 0, 0, 7, 3)]);
         using var equipment = JsonDocument.Parse("""
-            {"specialMechanics":{"physicalDamageBonusPoints":50,"fireDamageReductionPoints":100,
+            {"flatStats":{"physicalDamageBonusPoints":50,"fireDamageReductionPoints":100,
              "attackSpeedPoints":25,"cooldownReductionPoints":50,"threatBonusPoints":200,
              "hpDrainPoints":10,"healingBonusPoints":50}}
             """);

@@ -145,20 +145,19 @@ export interface AbilityConfig {
 }
 
 // 5. Equipment (equipment.json)
-// 真实消费集：LoadoutCommand 读 slot；PlayerAttributeResolver 读 flatStats/baseStatRatios/
-// specialMechanics 全量百分比点数键（战斗设计 §7.5 词汇表，DataTool 强制校验）；
-// StaticGameCatalogMapper 投影 baseStatRatios/flatStats/specialMechanics/enhancementBonus。
+// 真实消费集：LoadoutCommand 读 slot；PlayerAttributeResolver 读 baseStatRatios/flatStats，
+// 其中 flatStats 的 *Points 键为百分比点数（战斗设计 §7.5 词汇表，DataTool 强制校验）；
+// StaticGameCatalogMapper 投影 baseStatRatios/flatStats/enhancementBonus。
 // stats/style/category/element/attackIntervalMilliseconds/intensity/budget/weights 均无消费方。
-/** 装备定义（equipment.json 条目）。slot 为 LoadoutCommand 强制读取的装配槽位；三个属性字典的键集受 DataTool 百分比点数词汇表校验，未知键直接校验失败。 */
+/** 装备定义（equipment.json 条目）。slot 为 LoadoutCommand 强制读取的装配槽位；flatStats 中 *Points 键受 DataTool 百分比点数词汇表校验，未知键直接校验失败。 */
 export interface EquipmentConfig {
   id: string;
   name: string;
   slot: string; // EquipmentSlot（LoadoutCommand 强制读取）
   tier?: number;
   quality?: number;
-  baseStatRatios?: Record<string, number>; // 百分比加成，强化每级 +2%
-  flatStats?: Record<string, number>; // 固定点数，强化每级 +2%
-  specialMechanics?: Record<string, number>; // 特殊机制点数键：threatBonusPoints/hpDrainPoints/damageReflectPoints/各增减伤 Points 等
+  baseStatRatios?: Record<string, number>; // 百分比加成，强化每级 ×1.05
+  flatStats?: Record<string, number>; // 固定值与百分比点数键（*Points），强化每级 ×1.05
   enhancementBonus?: Record<string, number>; // 每级强化额外加成（映射层透传展示）
   description?: string;
 }

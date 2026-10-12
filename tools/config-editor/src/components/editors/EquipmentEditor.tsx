@@ -291,20 +291,11 @@ export function EquipmentEditor() {
 
             <StatDictEditor
               label="固定附加属性点 (FlatStats)"
-              description="直接附加固定的命中/闪避/攻防点数"
+              description="固定附加值；*Points 键为百分比点数（如 skillBonusPoints、threatBonusPoints），同受强化缩放"
               value={currentEquipment.flatStats}
               onChange={dict => handleUpdate({ flatStats: dict })}
               unit="点"
               step={1}
-            />
-
-            <StatDictEditor
-              label="特殊机制属性 (SpecialMechanics)"
-              description="百分比点数键：threatBonusPoints/hpDrainPoints/damageReflectPoints/各增减伤 Points 等"
-              value={currentEquipment.specialMechanics}
-              onChange={dict => handleUpdate({ specialMechanics: dict })}
-              unit="%"
-              step={0.01}
             />
 
             <StatDictEditor

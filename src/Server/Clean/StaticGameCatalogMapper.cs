@@ -97,7 +97,7 @@ public static class StaticGameCatalogMapper
         }).ToArray();
 
     /// <summary>
-    /// 装备静态目录投影：只透传配表原始数值块（baseStatRatios/flatStats/specialMechanics/
+    /// 装备静态目录投影：只透传配表原始数值块（baseStatRatios/flatStats/
     /// enhancementBonus）。战斗终值由服务端 PlayerAttributeResolver 统一结算并经 combat.attributes
     /// 下发，协议不再提供派生 stats 幻影块，前端也不得本地重建。
     /// </summary>
@@ -118,10 +118,6 @@ public static class StaticGameCatalogMapper
 
             var flatStats = eq.TryGetProperty("flatStats", out var fs) && fs.ValueKind == JsonValueKind.Object
                 ? fs.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
-                : new Dictionary<string, double>();
-
-            var specialMechanics = eq.TryGetProperty("specialMechanics", out var sm) && sm.ValueKind == JsonValueKind.Object
-                ? sm.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
                 : new Dictionary<string, double>();
 
             var enhancementBonus = eq.TryGetProperty("enhancementBonus", out var eb) && eb.ValueKind == JsonValueKind.Object
@@ -152,7 +148,6 @@ public static class StaticGameCatalogMapper
                 tier,
                 baseStatRatios,
                 flatStats,
-                specialMechanics,
                 enhancementBonus,
                 enhanceProtectionItems,
                 techniqueBonus

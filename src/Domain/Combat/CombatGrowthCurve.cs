@@ -3,7 +3,7 @@ namespace Domain.Combat;
 /// <summary>
 /// 怪物同构基准成长曲线单点实现：配表等级换算的成长点数注入 §7.7.5 既有点数通道，
 /// 与配表 modifiers 同池相加后统一过 <see cref="PercentValue"/> 曲线。
-/// 玩家侧特殊属性为获取型（装备 specialMechanics/内功/特质/Buff 等），境界不保送、不调用本组注入。
+/// 玩家侧特殊属性为获取型（装备 flatStats 点数键/内功/特质/Buff 等），境界不保送、不调用本组注入。
 /// NonLinear 类由旧乘区 f 反解点数 p = 100·(1/f−1)，Linear 类直接 ×100，等效生效值与原曲线逐位一致。
 /// 所有输入输出均为 double。
 /// </summary>

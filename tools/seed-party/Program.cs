@@ -149,7 +149,7 @@ foreach (var mate in teammates)
             new PlayerEquipmentSlot("equipment.ziwu-crown", 20),
             new PlayerEquipmentSlot("equipment.pichen-shirt", 20),
             new PlayerEquipmentSlot("equipment.liuyun-skirt", 20),
-            new PlayerEquipmentSlot("equipment.bichen-shoes", 20),
+            new PlayerEquipmentSlot("equipment.yaoling-bead", 20),
             new PlayerEquipmentSlot(mate.TrinketId, 20),
         });
     aggregate.World.NodeId = TargetNodeId;

@@ -241,14 +241,14 @@ static void ValidateReferences(string directory)
         }
     }
 
-    // 装备 specialMechanics 与怪物 modifiers 共用同一百分比点数词汇表。
+    // 装备 flatStats 中 Points 结尾的键为百分比点数通道，与怪物 modifiers 共用同一授权词汇表。
     foreach (var file in JsonFiles(directory, "equipment"))
     {
         using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
         foreach (var equipment in Elements(doc.RootElement))
-            foreach (var key in ObjectKeys(Property(equipment, "specialMechanics")))
+            foreach (var key in ObjectKeys(Property(equipment, "flatStats")).Where(name => name.EndsWith("Points", StringComparison.Ordinal)))
                 Require(percentPointKeys.Contains(key),
-                    $"{Rel(directory, file)} 装备 {Text(equipment, "id")} 的 specialMechanics.{key} 不在授权词汇表内。");
+                    $"{Rel(directory, file)} 装备 {Text(equipment, "id")} 的 flatStats.{key} 不在授权词汇表内。");
     }
 
     // 技能 Buff 与消耗品 Buff 修饰键同样是授权词汇表；ratio 后缀旧键已废除。
@@ -396,7 +396,7 @@ static IEnumerable<string> ObjectKeys(JsonElement element)
     foreach (var property in element.EnumerateObject()) yield return property.Name;
 }
 
-/// <summary>百分比点数属性授权词汇表（总纲第七篇 §7.7.5）：装备 specialMechanics 与怪物 modifiers 共用。</summary>
+/// <summary>百分比点数属性授权词汇表（总纲第七篇 §7.7.5）：装备 flatStats 点数键与怪物 modifiers 共用。</summary>
 static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
 {
     "physicalDamageBonusPoints", "spellDamageBonusPoints",

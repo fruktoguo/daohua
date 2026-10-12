@@ -76,9 +76,9 @@
     ]
   },
   {
-    "id": "forge.trial-boots",
-    "name": "演武靴",
-    "description": "底钉铁齿的演武短靴。",
+    "id": "forge.trial-dart",
+    "name": "演武飞刀",
+    "description": "演武堂配发的练习飞刀。",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 10,
@@ -89,7 +89,7 @@
       {
         "kind": "item",
         "per": "repeat",
-        "id": "equipment.trial-boots",
+        "id": "equipment.trial-dart",
         "amount": 1
       }
     ]

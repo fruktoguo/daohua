@@ -230,8 +230,7 @@ function resolveItemTooltipAsideCards(
 
   const list: FloatingAsideCard[] = []
   const itemAsides = resolveItemAsideCards(itemDef, rawMetadata.label)
-  const equipAsides = resolveEquipmentAsideCards(eqDef)
-  list.push(...itemAsides, ...equipAsides)
+  list.push(...itemAsides)
   if (!itemAsides.some(c => c.id?.startsWith('aside-manual-'))) {
     const manualAside = resolveManualAsideCard(itemId, rawMetadata.category, abilitiesCatalog)
     if (manualAside) {
@@ -800,7 +799,7 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
 }
 
 /**
- * 提取装备的主干攻防数值与强化加成（留在主卡片）
+ * 提取装备的主干攻防数值、百分比点数与强化加成（同属主卡片，统一按强化倍率结算）
  */
 function describeEquipmentEffects(
   equipment?: CombatEquipmentDefinition,
@@ -873,90 +872,67 @@ function describeEquipmentEffects(
   }
   if (equipment.flatStats) {
     for (const [key, val] of Object.entries(equipment.flatStats)) {
-      if (val !== 0) {
-        const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
-        const tone = STAT_TONE_MAP[key] ?? 'default'
+      if (val === 0) continue
+      const point = POINT_STAT_LABELS[key]
+      if (point) {
+        // 点数键（*Points）为百分比点数通道，与固定值同乘强化倍率（口径同服务端 PlayerAttributeResolver）。
+        const scaled = val * enhanceScale
+        const effective = +(point.curve === 'nonlinear' ? scaled / (100 + Math.abs(scaled)) * 100 : scaled).toFixed(1)
+        const isTemplate = point.label.startsWith('market.effect.')
         lines.push(
           <PillBonusLabel
-            key={`flat-${key}`}
-            label={label}
-            tone={tone}
-            value={`+${formatInteger(val * enhanceScale)}`}
+            key={`point-${key}`}
+            label={isTemplate ? t(point.label, { n: effective }) : t(point.label)}
+            tone={STAT_TONE_MAP[key] ?? 'default'}
+            value={isTemplate ? '' : `${effective >= 0 ? '+' : ''}${effective}%`}
           />
         )
+        continue
       }
+      const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
+      const tone = STAT_TONE_MAP[key] ?? 'default'
+      lines.push(
+        <PillBonusLabel
+          key={`flat-${key}`}
+          label={label}
+          tone={tone}
+          value={`+${formatInteger(val * enhanceScale)}`}
+        />
+      )
     }
   }
   return lines
 }
 
-/**
- * 提取装备的特殊机制与词缀 Buff，构造为独立的附属气泡卡片 (Aside Cards)
- */
-export function resolveEquipmentAsideCards(
-  equipment?: CombatEquipmentDefinition
-): FloatingAsideCard[] {
-  if (!equipment) return []
-  const t = getT()
-  const cards: FloatingAsideCard[] = []
-
-  // specialMechanics 键 → 词条标签与曲线口径（战斗设计 §7.5：增伤类 Linear / 减伤速率类 NonLinear）。
-  const specialLabelKeys: Record<string, { label: string; curve: 'linear' | 'nonlinear' | 'rate' }> = {
-    physicalDamageBonusPoints: { label: 'market.stat.physicalDamageBonus', curve: 'linear' },
-    spellDamageBonusPoints: { label: 'market.stat.spellDamageBonus', curve: 'linear' },
-    metalDamageBonusPoints: { label: 'market.stat.metalDamageBonus', curve: 'linear' },
-    woodDamageBonusPoints: { label: 'market.stat.woodDamageBonus', curve: 'linear' },
-    waterDamageBonusPoints: { label: 'market.stat.waterDamageBonus', curve: 'linear' },
-    fireDamageBonusPoints: { label: 'market.stat.fireDamageBonus', curve: 'linear' },
-    earthDamageBonusPoints: { label: 'market.stat.earthDamageBonus', curve: 'linear' },
-    totalDamageBonusPoints: { label: 'market.stat.totalDamageBonus', curve: 'linear' },
-    basicAttackBonusPoints: { label: 'market.stat.basicAttackBonus', curve: 'linear' },
-    skillBonusPoints: { label: 'market.stat.skillBonus', curve: 'linear' },
-    physicalDamageReductionPoints: { label: 'market.stat.physicalDamageReduction', curve: 'nonlinear' },
-    spellDamageReductionPoints: { label: 'market.stat.spellDamageReduction', curve: 'nonlinear' },
-    metalDamageReductionPoints: { label: 'market.stat.metalDamageReduction', curve: 'nonlinear' },
-    woodDamageReductionPoints: { label: 'market.stat.woodDamageReduction', curve: 'nonlinear' },
-    waterDamageReductionPoints: { label: 'market.stat.waterDamageReduction', curve: 'nonlinear' },
-    fireDamageReductionPoints: { label: 'market.stat.fireDamageReduction', curve: 'nonlinear' },
-    earthDamageReductionPoints: { label: 'market.stat.earthDamageReduction', curve: 'nonlinear' },
-    damageAbsorptionPoints: { label: 'market.stat.damageReduction', curve: 'nonlinear' },
-    attackSpeedPoints: { label: 'market.stat.attackSpeed', curve: 'rate' },
-    actionSpeedPoints: { label: 'market.stat.actionSpeed', curve: 'rate' },
-    cooldownReductionPoints: { label: 'market.stat.cooldownReduction', curve: 'rate' },
-    criticalDamageBonusPoints: { label: 'market.stat.criticalDamage', curve: 'linear' },
-    threatBonusPoints: { label: 'market.effect.threatBonus', curve: 'linear' },
-    hpDrainPoints: { label: 'market.stat.hpDrain', curve: 'linear' },
-    mpDrainPoints: { label: 'market.stat.mpDrain', curve: 'linear' },
-    damageReflectPoints: { label: 'market.stat.damageReflect', curve: 'linear' },
-    healingBonusPoints: { label: 'market.effect.healingBonus', curve: 'linear' },
-  }
-
-  if (equipment.specialMechanics && Object.keys(equipment.specialMechanics).length > 0) {
-    const lines: string[] = []
-    for (const [key, val] of Object.entries(equipment.specialMechanics)) {
-      if (val !== 0) {
-        const spec = specialLabelKeys[key]
-        if (!spec) { lines.push(`${key}: +${val}`); continue }
-        // Linear 点数等值即有效百分比；NonLinear 减伤有效值 = x/(100+x)；速率类 +x% 即增速。
-        const effective = spec.curve === 'nonlinear' ? val / (100 + Math.abs(val)) * 100 : val
-        const label = t(spec.label)
-        lines.push(spec.label.startsWith('market.effect.')
-          ? t(spec.label, { n: +effective.toFixed(1) })
-          : `${label} ${effective >= 0 ? '+' : ''}${+effective.toFixed(1)}%`)
-      }
-    }
-    if (lines.length > 0) {
-      cards.push({
-        id: `aside-equip-special-${equipment.equipmentId}`,
-        mark: t('market.aside.buff'),
-        title: t('market.effect.specialMechanicTitle', { name: equipment.name }),
-        tone: 'gold',
-        lines,
-      })
-    }
-  }
-
-  return cards
+/** 点数键 → 词条标签与曲线口径（战斗设计 §7.5：增伤类 Linear / 减伤速率类 NonLinear / 速率类 rate） */
+const POINT_STAT_LABELS: Record<string, { label: string; curve: 'linear' | 'nonlinear' | 'rate' }> = {
+  physicalDamageBonusPoints: { label: 'market.stat.physicalDamageBonus', curve: 'linear' },
+  spellDamageBonusPoints: { label: 'market.stat.spellDamageBonus', curve: 'linear' },
+  metalDamageBonusPoints: { label: 'market.stat.metalDamageBonus', curve: 'linear' },
+  woodDamageBonusPoints: { label: 'market.stat.woodDamageBonus', curve: 'linear' },
+  waterDamageBonusPoints: { label: 'market.stat.waterDamageBonus', curve: 'linear' },
+  fireDamageBonusPoints: { label: 'market.stat.fireDamageBonus', curve: 'linear' },
+  earthDamageBonusPoints: { label: 'market.stat.earthDamageBonus', curve: 'linear' },
+  totalDamageBonusPoints: { label: 'market.stat.totalDamageBonus', curve: 'linear' },
+  basicAttackBonusPoints: { label: 'market.stat.basicAttackBonus', curve: 'linear' },
+  skillBonusPoints: { label: 'market.stat.skillBonus', curve: 'linear' },
+  physicalDamageReductionPoints: { label: 'market.stat.physicalDamageReduction', curve: 'nonlinear' },
+  spellDamageReductionPoints: { label: 'market.stat.spellDamageReduction', curve: 'nonlinear' },
+  metalDamageReductionPoints: { label: 'market.stat.metalDamageReduction', curve: 'nonlinear' },
+  woodDamageReductionPoints: { label: 'market.stat.woodDamageReduction', curve: 'nonlinear' },
+  waterDamageReductionPoints: { label: 'market.stat.waterDamageReduction', curve: 'nonlinear' },
+  fireDamageReductionPoints: { label: 'market.stat.fireDamageReduction', curve: 'nonlinear' },
+  earthDamageReductionPoints: { label: 'market.stat.earthDamageReduction', curve: 'nonlinear' },
+  damageAbsorptionPoints: { label: 'market.stat.damageReduction', curve: 'nonlinear' },
+  attackSpeedPoints: { label: 'market.stat.attackSpeed', curve: 'rate' },
+  actionSpeedPoints: { label: 'market.stat.actionSpeed', curve: 'rate' },
+  cooldownReductionPoints: { label: 'market.stat.cooldownReduction', curve: 'rate' },
+  criticalDamageBonusPoints: { label: 'market.stat.criticalDamage', curve: 'linear' },
+  threatBonusPoints: { label: 'market.effect.threatBonus', curve: 'linear' },
+  hpDrainPoints: { label: 'market.stat.hpDrain', curve: 'linear' },
+  mpDrainPoints: { label: 'market.stat.mpDrain', curve: 'linear' },
+  damageReflectPoints: { label: 'market.stat.damageReflect', curve: 'linear' },
+  healingBonusPoints: { label: 'market.effect.healingBonus', curve: 'linear' },
 }
 
 /**

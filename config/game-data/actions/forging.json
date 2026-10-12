@@ -100,8 +100,28 @@
     ]
   },
   {
-    "id": "forge.xingshan-boots",
-    "name": "行山靴",
+    "id": "forge.fan-tie-dart",
+    "name": "凡铁镖",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-bone": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.fan-tie-dart",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.tiepi-guard",
+    "name": "铁皮盾",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -114,7 +134,7 @@
       {
         "kind": "item",
         "per": "repeat",
-        "id": "equipment.xingshan-boots",
+        "id": "equipment.tiepi-guard",
         "amount": 1
       }
     ]
@@ -240,21 +260,41 @@
     ]
   },
   {
-    "id": "forge.shifang-shoes",
-    "name": "十方鞋",
+    "id": "forge.qingmu-bead",
+    "name": "青木珠",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.peach-wood-crystal": 5,
-      "item.beast-hide": 1
+      "item.broken-spirit-core": 1
     },
     "yields": [
       {
         "kind": "item",
         "per": "repeat",
-        "id": "equipment.shifang-shoes",
+        "id": "equipment.qingmu-bead",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.ganlu-flask",
+    "name": "甘露瓶",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.ganlu-flask",
         "amount": 1
       }
     ]
@@ -385,8 +425,8 @@
     ]
   },
   {
-    "id": "forge.tashan-boots",
-    "name": "踏山靴",
+    "id": "forge.xuantie-dart",
+    "name": "玄铁镖",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -394,13 +434,34 @@
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
-      "equipment.xingshan-boots": 2
+      "equipment.fan-tie-dart": 2
     },
     "yields": [
       {
         "kind": "item",
         "per": "repeat",
-        "id": "equipment.tashan-boots",
+        "id": "equipment.xuantie-dart",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.xuanjia-guard",
+    "name": "玄甲盾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.tiepi-guard": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xuanjia-guard",
         "amount": 1
       }
     ]
@@ -532,8 +593,29 @@
     ]
   },
   {
-    "id": "forge.bichen-shoes",
-    "name": "避尘履",
+    "id": "forge.yaoling-bead",
+    "name": "曜灵珠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.spirit-pine-crystal": 5,
+      "item.soul-talisman": 1,
+      "equipment.qingmu-bead": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.yaoling-bead",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.huichun-bell",
+    "name": "回春铃",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -541,13 +623,13 @@
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.fire-feather": 1,
-      "equipment.shifang-shoes": 2
+      "equipment.ganlu-flask": 2
     },
     "yields": [
       {
         "kind": "item",
         "per": "repeat",
-        "id": "equipment.bichen-shoes",
+        "id": "equipment.huichun-bell",
         "amount": 1
       }
     ]

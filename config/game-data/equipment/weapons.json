@@ -23,9 +23,7 @@
     },
     "flatStats": {
       "physicalAttack": 8,
-      "physicalArmor": 8
-    },
-    "specialMechanics": {
+      "physicalArmor": 8,
       "threatBonusPoints": 200
     }
   },
@@ -39,9 +37,7 @@
     },
     "flatStats": {
       "spellAttack": 10,
-      "accuracy": 10
-    },
-    "specialMechanics": {
+      "accuracy": 10,
       "skillBonusPoints": 5
     }
   },
@@ -55,9 +51,7 @@
     },
     "flatStats": {
       "spellAttack": 8,
-      "manapointRegen": 2
-    },
-    "specialMechanics": {
+      "manapointRegen": 2,
       "healingBonusPoints": 50,
       "skillBonusPoints": 5
     }
@@ -90,9 +84,7 @@
     },
     "flatStats": {
       "physicalAttack": 11,
-      "physicalArmor": 11
-    },
-    "specialMechanics": {
+      "physicalArmor": 11,
       "threatBonusPoints": 300
     }
   },
@@ -108,9 +100,7 @@
     },
     "flatStats": {
       "spellAttack": 14,
-      "accuracy": 14
-    },
-    "specialMechanics": {
+      "accuracy": 14,
       "skillBonusPoints": 15
     }
   },
@@ -126,9 +116,7 @@
     },
     "flatStats": {
       "spellAttack": 12,
-      "manapointRegen": 3
-    },
-    "specialMechanics": {
+      "manapointRegen": 3,
       "healingBonusPoints": 50,
       "skillBonusPoints": 15
     }

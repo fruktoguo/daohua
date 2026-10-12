@@ -1020,12 +1020,13 @@ public sealed class GameDataCatalog
                 ActionSpeedPoints = Modifier("actionSpeedPoints") + CombatGrowthCurve.ActionSpeedPoints(level),
                 CooldownReductionPoints = Modifier("cooldownReductionPoints") + CombatGrowthCurve.CooldownReductionPoints(level),
                 ThreatBonusPoints = Modifier("threatBonusPoints"),
-                // 反应效果参数包：配表直接声明汲取/反弹/治疗加成点数，由钩子管线在结算中读取。
+                // 反应效果参数包：配表直接声明汲取/反弹/治疗加成/受击涨威胁点数，由钩子管线在结算中读取。
                 Effects = new CombatEffectProfile(
                     JsonRead.Number(value, "hpDrainPoints"),
                     JsonRead.Number(value, "mpDrainPoints"),
                     JsonRead.Number(value, "damageReflectPoints"),
-                    JsonRead.Number(value, "healingBonusPoints")),
+                    JsonRead.Number(value, "healingBonusPoints"),
+                    JsonRead.Number(value, "threatOnTakenPoints")),
                 // 战斗经验不入配表：怪物按配表 level 取「升到该级的累计修为」派生（总纲 §7.7.6）。
                 CombatExperience = realmProgression?.CumulativeExpFor(level) ?? 0
             };

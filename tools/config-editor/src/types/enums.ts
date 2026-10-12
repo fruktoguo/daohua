@@ -68,13 +68,22 @@ export const ITEM_CATEGORIES: EnumOption[] = [
 /** 装备槽位词表：LoadoutCommand 强制读取 slot 字段，非法槽位会导致装配失败。 */
 export const EQUIPMENT_SLOTS: EnumOption[] = [
   { value: 'weapon', label: '本命神兵 (Weapon)', en: 'Weapon', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
+  { value: 'two-hand', label: '双手重器 (Two-Hand)', en: 'Two-Hand', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
+  { value: 'off-hand', label: '副手法器 (Off-Hand)', en: 'Off-Hand', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
   { value: 'head', label: '道冠护额 (Head)', en: 'Head', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
-  { value: 'chest', label: '护心道袍 (Chest)', en: 'Chest', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
+  { value: 'armor', label: '护心道袍 (Armor)', en: 'Armor', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
   { value: 'legs', label: '玄法道履 (Legs)', en: 'Legs', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
   { value: 'ring', label: '储灵戒 (Ring)', en: 'Ring', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
-  { value: 'necklace', label: '太虚佩 (Necklace)', en: 'Necklace', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
-  { value: 'belt', label: '束灵带 (Belt)', en: 'Belt', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
-  { value: 'boots', label: '踏云靴 (Boots)', en: 'Boots', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' }
+  { value: 'neck', label: '太虚佩 (Neck)', en: 'Neck', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
+  { value: 'trinket', label: '法宝饰品 (Trinket)', en: 'Trinket', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
+  { value: 'talisman', label: '符箓灵宝 (Talisman)', en: 'Talisman', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
+  { value: 'tool-gathering', label: '采药法器 (Tool·Gathering)', en: 'Tool·Gathering', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'tool-mining', label: '探矿法器 (Tool·Mining)', en: 'Tool·Mining', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'tool-alchemy', label: '炼丹法器 (Tool·Alchemy)', en: 'Tool·Alchemy', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'tool-forging', label: '炼器法器 (Tool·Forging)', en: 'Tool·Forging', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'tool-talisman', label: '符箓法器 (Tool·Talisman)', en: 'Tool·Talisman', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'tool-formation', label: '阵法法器 (Tool·Formation)', en: 'Tool·Formation', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'tool-enhancement', label: '强化法器 (Tool·Enhancement)', en: 'Tool·Enhancement', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' }
 ];
 
 // 7. 怪物生命层次 (CombatMonsterRank) —— ParseMonsterDefinitions: elite/boss 之外一律 minion

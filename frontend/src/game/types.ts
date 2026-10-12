@@ -95,8 +95,8 @@ export type ItemCategoryKey =
   | 'resource'
 
 /**
- * 装备穿戴槽位：主手武器 (weapon)、双手武器 (two-hand)、副手/盾牌 (off-hand)、
- * 头部 (head)、护甲/上衣 (armor)、腿部/下装 (legs)、鞋靴 (boots)、
+ * 装备穿戴槽位：主手武器 (weapon)、双手武器 (two-hand)、副手 (off-hand，盾牌/暗器/法珠/丹瓶)、
+ * 头部 (head)、护甲/上衣 (armor)、腿部/下装 (legs)、
  * 戒指 (ring)、项链 (neck)、饰品/法宝 (trinket)、符箓/灵宝 (talisman)、
  * 七技艺工具专属槽位 tool-<techniqueId>（采集/挖掘/炼丹/炼器/符箓/阵法/强化各一，
  * 服务端按 slot 字符串唯一互斥，仅容纳对应技艺的工具装备）。
@@ -108,7 +108,6 @@ export type EquipmentSlot =
   | 'head'
   | 'armor'
   | 'legs'
-  | 'boots'
   | 'ring'
   | 'neck'
   | 'trinket'
@@ -1288,10 +1287,8 @@ export interface CombatEquipmentDefinition {
   enhancementBonus?: Record<string, number>
   /** 配表原始比例段（服务端透传，供详情面板展示） */
   baseStatRatios?: Record<string, number>
-  /** 配表原始固定值段 */
+  /** 配表原始固定值段（*Points 键为百分比点数，与固定值同受强化缩放） */
   flatStats?: Record<string, number>
-  /** 特殊机制段（如 threatBonusPoints 威胁增幅、healingBonusPoints 治疗增幅等点数键） */
-  specialMechanics?: Record<string, number>
   /** 强化保护材料白名单：配置后可用列表内任一材料代护；缺省时以同装备无强化基础件代护 */
   enhanceProtectionItems?: string[]
   /**

@@ -28,7 +28,7 @@ public static class FleetScenario
         ("equipment.trial-helm", "forge.trial-helm", "item.ningxue-grass", 2),
         ("equipment.trial-armor", "forge.trial-armor", "item.ningxue-grass", 3),
         ("equipment.trial-legs", "forge.trial-legs", "item.ningxue-grass", 2),
-        ("equipment.trial-boots", "forge.trial-boots", "item.morning-dew", 2),
+        ("equipment.trial-dart", "forge.trial-dart", "item.morning-dew", 2),
         ("equipment.trial-charm", "forge.trial-charm", "item.morning-dew", 2),
     ];
 
@@ -1183,7 +1183,7 @@ public static class FleetScenario
                 0 => (HerbValley, new[] { ("explore.gather-ningxue-grass", 6), ("alchemy.refine-qi-pill", 2) }),
                 1 => (RockBeach, new[] { ("explore.mine-dark-iron", 9), ("craft.refine-iron", 3) }),
                 2 => (PeachForest, new[] { ("explore.chop-peach-wood", 9), ("craft.refine-peach-wood-crystal", 3) }),
-                _ => (Brook, new[] { ("explore.collect-morning-dew", 8), ("forge.trial-boots", 2) }),
+                _ => (Brook, new[] { ("explore.collect-morning-dew", 8), ("forge.trial-dart", 2) }),
             };
             if (!await TravelAndSettleAsync(node, cancellationToken)) return;
             foreach (var (action, repeats) in loop)

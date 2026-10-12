@@ -290,7 +290,7 @@ public static class ProtocolSnapshotMapper
         }).ToArray(),
         PlayerSectionKind.Loadout => ToLoadoutSection(state, gameData),
         PlayerSectionKind.Settings => new { state.Settings, state.Presence },
-        // 玩家威胁增幅来自面板解析（装备 specialMechanics.threatBonusPoints）；无配表/无远征时退化为 0。
+        // 玩家威胁增幅来自面板解析（装备 flatStats.threatBonusPoints）；无配表/无远征时退化为 0。
         PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedUnit, onAttributesProjected,
             gameData is not null && state.Actions.Any(action => action.Expedition is not null)
                 ? PlayerAttributeResolver.Resolve(state, gameData).ThreatBonusPoints : 0,
