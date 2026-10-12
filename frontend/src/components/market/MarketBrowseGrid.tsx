@@ -65,7 +65,7 @@ const PRIMARY_TABS: ReadonlyArray<TabConfig<PrimaryCategory>> = [
 ]
 
 type MaterialSubCategory = 'all' | 'mineral' | 'herb' | 'other'
-type EquipmentSubCategory = 'all' | 'weapon' | 'armor' | 'trinket'
+type EquipmentSubCategory = 'all' | 'weapon' | 'offHand' | 'head' | 'armor' | 'legs' | 'trinket'
 type ConsumableSubCategory = 'all' | 'pill' | 'supply'
 type ManualSubCategory = 'all' | 'tome' | 'fragment'
 
@@ -79,7 +79,10 @@ const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
 const EQUIPMENT_SUB_TABS: ReadonlyArray<TabConfig<EquipmentSubCategory>> = [
   { id: 'all', labelKey: 'market.browse.sub.allEquipment', fallback: '全部装备' },
   { id: 'weapon', labelKey: 'market.browse.sub.weapon', fallback: '武器' },
-  { id: 'armor', labelKey: 'market.browse.sub.armor', fallback: '防具' },
+  { id: 'offHand', labelKey: 'market.browse.sub.offHand', fallback: '副手' },
+  { id: 'head', labelKey: 'market.browse.sub.head', fallback: '头部' },
+  { id: 'armor', labelKey: 'market.browse.sub.armor', fallback: '衣服' },
+  { id: 'legs', labelKey: 'market.browse.sub.legs', fallback: '下装' },
   { id: 'trinket', labelKey: 'market.browse.sub.trinket', fallback: '饰品' },
 ]
 
@@ -95,11 +98,10 @@ const MANUAL_SUB_TABS: ReadonlyArray<TabConfig<ManualSubCategory>> = [
   { id: 'fragment', labelKey: 'market.browse.sub.fragment', fallback: '招式残卷' },
 ]
 
-const ARMOR_SLOTS = new Set(['head', 'armor', 'legs', 'boots'])
-const TRINKET_SLOTS = new Set(['trinket', 'ring', 'neck', 'talisman'])
-const WEAPON_SLOTS = new Set(['weapon', 'two-hand', 'off-hand'])
+const WEAPON_SLOTS: Record<string, true> = { weapon: true, 'two-hand': true, mainHandImplement: true, twoHandImplement: true }
+const TRINKET_SLOTS: Record<string, true> = { trinket: true, ring: true, neck: true, talisman: true }
 // 补给类消耗品细分键（炼丹耗材/探索补给），坊市合并为「补给耗材」子 Tab
-const SUPPLY_SUB_CATEGORIES = new Set(['alchemySupply', 'explorationSupply'])
+const SUPPLY_SUB_CATEGORIES: Record<string, true> = { alchemySupply: true, explorationSupply: true }
 
 function isMaterial(item: MarketInstrument): boolean {
   return item.category === 'material' || item.definition?.kind === 'material'
@@ -148,9 +150,12 @@ function matchesCategory(
     case 'equipment': {
       if (!isEquipment(item)) return false
       if (sub === 'all') return true
-      if (sub === 'weapon') return WEAPON_SLOTS.has(subKey) || subKey === '' || subKey === 'weapon'
-      if (sub === 'armor') return ARMOR_SLOTS.has(subKey)
-      if (sub === 'trinket') return TRINKET_SLOTS.has(subKey)
+      if (sub === 'weapon') return Boolean(WEAPON_SLOTS[subKey] || subKey === 'weapon')
+      if (sub === 'offHand') return subKey === 'off-hand'
+      if (sub === 'head') return subKey === 'head'
+      if (sub === 'armor') return subKey === 'armor'
+      if (sub === 'legs') return subKey === 'legs'
+      if (sub === 'trinket') return Boolean(TRINKET_SLOTS[subKey])
       return true
     }
 
@@ -158,7 +163,7 @@ function matchesCategory(
       if (!isConsumable(item)) return false
       if (sub === 'all') return true
       if (sub === 'pill') return subKey === 'pill'
-      if (sub === 'supply') return SUPPLY_SUB_CATEGORIES.has(subKey)
+      if (sub === 'supply') return Boolean(SUPPLY_SUB_CATEGORIES[subKey])
       return true
     }
 

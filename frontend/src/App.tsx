@@ -958,13 +958,13 @@ const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyExt
 ]
 
 /** 炼器页顶部子选项卡配置（精炼 + 六大装备部位 + 技艺工具分组） */
-const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefining' | 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' | 'forgeTechnique' }> = [
+const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefining' | 'forgeWeapon' | 'forgeOffHand' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeTrinket' | 'forgeTechnique' }> = [
   { id: 'refining', labelKey: 'forgeRefining' },
   { id: 'weapon', labelKey: 'forgeWeapon' },
+  { id: 'off-hand', labelKey: 'forgeOffHand' },
   { id: 'head', labelKey: 'forgeHead' },
   { id: 'armor', labelKey: 'forgeArmor' },
   { id: 'legs', labelKey: 'forgeLegs' },
-  { id: 'boots', labelKey: 'forgeBoots' },
   { id: 'trinket', labelKey: 'forgeTrinket' },
   { id: 'technique', labelKey: 'forgeTechnique' },
 ]
@@ -1108,7 +1108,6 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
           if (forgingSubTab === 'head' && (a.id.includes('scarf') || a.id.includes('helmet') || a.id.includes('crown'))) return true
           if (forgingSubTab === 'armor' && (a.id.includes('armor') || a.id.includes('robe') || a.id.includes('shirt'))) return true
           if (forgingSubTab === 'legs' && (a.id.includes('pants') || a.id.includes('greaves') || a.id.includes('skirt'))) return true
-          if (forgingSubTab === 'boots' && (a.id.includes('boots') || a.id.includes('shoes'))) return true
           if (forgingSubTab === 'trinket' && (a.id.includes('pendant') || a.id.includes('talisman') || a.id.includes('ring'))) return true
           return false
         })

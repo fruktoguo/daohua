@@ -32,7 +32,7 @@ export type CraftingMode = 'alchemy' | 'forging' | 'talisman' | 'formation' | 'e
 /** 炼丹顶部子选项卡：提炼 vs 修炼丹药 vs 斗法药剂 */
 export type AlchemySubTab = 'extraction' | 'cultivation' | 'combat'
 /** 炼器顶部子选项卡：精炼 vs 六大装备部位 vs 技艺工具分组 */
-export type ForgingSubTab = 'refining' | 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket' | 'technique'
+export type ForgingSubTab = 'refining' | 'weapon' | 'off-hand' | 'head' | 'armor' | 'legs' | 'trinket' | 'technique'
 
 /** 右侧主栏顶层子选项卡：储物袋 vs 装备 vs 功法 */
 export type RightColumnTab = 'inventory' | 'equipment' | 'abilities'

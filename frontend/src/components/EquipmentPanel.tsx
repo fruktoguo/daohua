@@ -12,7 +12,7 @@ import { calculateRealmInfo } from '../game/combatConstants'
 
 /** 槽位标签词条键（app.equipmentPanel 段下）：六部位 + 七技艺工具空槽文案 */
 type EquipmentSlotLabelKey =
-  | 'slotHead' | 'slotArmor' | 'slotLegs' | 'slotWeapon' | 'slotTrinket' | 'slotBoots'
+  | 'slotHead' | 'slotArmor' | 'slotLegs' | 'slotWeapon' | 'slotTrinket' | 'slotOffHand'
   | 'toolGathering' | 'toolMining' | 'toolAlchemy' | 'toolForging'
   | 'toolTalisman' | 'toolFormation' | 'toolEnhancement'
 
@@ -23,18 +23,25 @@ interface SlotConfig {
 }
 
 const LEFT_SLOTS: readonly SlotConfig[] = [
+  { slot: 'weapon', labelKey: 'slotWeapon' },
   { slot: 'head', labelKey: 'slotHead' },
-  { slot: 'armor', labelKey: 'slotArmor' },
   { slot: 'legs', labelKey: 'slotLegs' },
 ]
 
 const RIGHT_SLOTS: readonly SlotConfig[] = [
-  { slot: 'weapon', labelKey: 'slotWeapon' },
+  { slot: 'off-hand', labelKey: 'slotOffHand' },
+  { slot: 'armor', labelKey: 'slotArmor' },
   { slot: 'trinket', labelKey: 'slotTrinket' },
-  { slot: 'boots', labelKey: 'slotBoots' },
 ]
 
-const ALL_SLOTS = [...LEFT_SLOTS, ...RIGHT_SLOTS]
+const ALL_SLOTS: readonly SlotConfig[] = [
+  LEFT_SLOTS[0], // weapon
+  RIGHT_SLOTS[0], // off-hand
+  LEFT_SLOTS[1], // head
+  RIGHT_SLOTS[1], // armor
+  LEFT_SLOTS[2], // legs
+  RIGHT_SLOTS[2], // trinket
+]
 
 /**
  * 技艺工具专属槽位（tool-<techniqueId>）：采集/挖掘/炼丹/炼器/符箓/阵法/强化。
@@ -155,7 +162,8 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
  *
  * 核心特性：
  * 1. 【角色虚影居中】：中间展示角色立绘虚影与灵光法阵；
- * 2. 【六大部位环绕】：左侧（头部/衣服/腿部）与右侧（武器/饰品/鞋靴）对称竖排排列；
+ * 2. 【六大部位环绕】：左侧（武器/头部/下装）与右侧（副手/衣服/饰品）对称竖排排列，
+ *    横向按「武器、副手、头部、衣服、下装、饰品」整体顺序对齐；
  * 3. 【穿脱与挑选】：点击槽位打开专属物品网格挑选弹窗，支持一键穿戴与卸下；
  * 4. 【技艺工具槽位】：底部排布 7 个技艺工具专属槽位（采集/挖掘/炼丹/炼器/符箓/阵法/强化），
  *    点击同样呼出网格挑选穿脱，已装备工具为对应技艺行动提供速度加成。
@@ -301,7 +309,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     <div className="equipment-view-panel">
       {/* 上部主舞台：六部位装备对称环绕角色虚影 */}
       <div className="equipment-stage">
-        {/* 左侧三槽位：头部、衣服、腿部 */}
+        {/* 左侧三槽位：武器、头部、下装 */}
         <div className="equipment-slot-col equipment-slot-col--left">
           {LEFT_SLOTS.map(config => {
             const data = slotEquippedMap.get(config.slot)
@@ -342,7 +350,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
           </div>
         </div>
 
-        {/* 右侧三槽位：武器、饰品、鞋靴 */}
+        {/* 右侧三槽位：副手、衣服、饰品 */}
         <div className="equipment-slot-col equipment-slot-col--right">
           {RIGHT_SLOTS.map(config => {
             const data = slotEquippedMap.get(config.slot)
