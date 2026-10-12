@@ -48,7 +48,7 @@
 | `PlayerActionQueueComponent` | `EcsActionState` 队列 | 调度数据 | ActionQueue |
 | `PlayerLoadoutComponent` | 装备/法宝/技能装配 | 被公式读 | Loadout |
 | `PassiveBuffsComponent` | **纯修饰 buff 合并容器**（StatRatios/攻速/减伤等） | 被公式读 | Buffs |
-| **Reactive Buff 组件族** | 每种触发型 buff 一个组件类：`OnHitHealBuffComponent`/`ThornsBuffComponent`/`OnKillBuffComponent`…字段=触发参数 | **主动反应** | Buffs（`ActiveBuff` 扩展） |
+| **Reactive Buff 组件族** | 每种触发型 buff 一个组件类：`OnHitLeechComponent`/`ManaLeechComponent`/`ThornsComponent`/`ThreatOnTakenComponent`…参数实时读 Stats.Effects | **主动反应** | Buffs（`ActiveBuff` 扩展） |
 | `PlayerInventoryComponent` | 资产条目 | 数据 | 钱包 |
 | `PlayerEconomyComponent` | 市场关联 | 数据 | — |
 | `PlayerSettingsComponent` | 设置/LoopEnabled/AutoTravelEnabled | 数据 | Settings |
@@ -73,14 +73,14 @@
 | 200 | `ActionQueueSystem` | 队首准入：地点白名单、材料前置、Blocked 轮转/出队 |
 | 300 | `GatheringActionSystem` | 采集实现本体：时长公式、逐秒产出、轮结算 |
 | 310 | `CraftingActionSystem` | 制造实现本体 |
-| 320 | `TimedActionSystem` | 其余计时行动实现本体（修炼乘区等） |
+| 320 | `ActionBoundarySystem` | 其余计时行动实现本体（修炼乘区等） |
 | 330 | `TravelActionSystem` | 旅行实现本体 |
-| 400 | `TimedYieldSystem` | 计时轮结算：入账、材料扣除、repeats、出队 |
-| 550 | `CombatPrepSystem` | 搜寻/复活阶段推进与遭遇附着 |
-| 600 | `CombatAdvanceSystem` | `AdvanceTo` 整段窗口推进（含段内触发器派发） |
+| 400 | `TimedActionYieldSystem` | 计时轮结算：入账、材料扣除、repeats、出队 |
+| 550 | `CombatActionBoundarySystem` | 搜寻/复活阶段推进与遭遇附着 |
+| 600 | `CombatEventAdvanceSystem` | `AdvanceTo` 整段窗口推进（含段内触发器派发） |
 | 610 | `CombatTargetSystem` | 主目标实体索引 |
-| 650 | `CombatLogSystem` | `LastEvents`→`CombatLogComponent` |
-| 700 | `CombatYieldSystem` | 战斗段结算：预算折算、死亡/掉落/胜负、终局释放实体 |
+| 650 | `CombatEventSystem` | `LastEvents`→`CombatLogComponent` |
+| 700 | `CombatActionYieldSystem` | 战斗段结算：预算折算、死亡/掉落/胜负、终局释放实体 |
 | 800 | `PlayerClockCommitSystem` | 窗口末提交：游标/版本/脏标记/资源回复落账 |
 
 ### Trigger 域（不占 Update 序，`RunSystem<T>(entity)` 点名）
@@ -96,6 +96,8 @@ IOnDeathTrigger  OnDeathReviveSystem …
 ```
 
 内核机制现成：`YuoWorld.RunSystem<T>(entity)`（`YuoCore.Ecs/YuoWorld/RunSystem.cs`）——稠密 tagId 直查 + `system.m_Run(entity)` 同步执行，一次普通方法调用，无 tick 延迟。**此域 System 不进入 Update 序列，不参与每拍扫描。**
+
+负载信箱：`CombatTriggerInboxComponent` 是实体派发期间向触发器 System 传参的唯一通道——`CombatTriggerSurface.Attach` 挂接战斗单位时常驻该组件；派发前 `EcsCombatTriggerSink` 写入 `inbox.Trigger = trigger`，`RunSystem` 同步执行后立即清回 null，非派发期间恒为 null。实体缺失或信箱缺失属不变量违例，快速失败。
 
 ## 4. 战斗内核：批量调度器 + 段内触发器
 
@@ -131,7 +133,7 @@ AdvanceTo(state, windowTarget):
 - 新增既有事件下的效果只需新增处理器类；新增事件种类仍需定义事件接口、参数记录和 `CombatTriggerKind` 派发槽位。当前仓库没有 AOT/裁剪发布约束；未来启用时必须为扫描类型保留元数据，或将注册表替换为源生成实现。
 - 双路径同效果落地固定为四件套：内联 `CombatTriggerHandler`（`CombatTriggerOrder`）+ 薄 `YuoSystem`（`SystemOrder` 同一先后关系）+ 能力标记组件（`CombatTriggerSurface.Sync` 按 `Stats.Effects`/`Stats.Traits` 挂摘）+ `CombatTriggerMath` 共享本体。
 - 特质载体：`CombatantStats.Traits`（`trait.*` ID 集合，面板字段，快照重建不带快照负担）。条件触发型特质按 ID 判定（如 `trait.bukandaowo` → `CombatEncounterState.Create` 开战授予 `buff.yinshen`）；数值型特质经 `CombatTraitRules` 折算进 `Stats.Effects` 点数通道（如 `trait.liweifanfou` → `ThreatOnTakenPoints = 100`）。
-- 随机通道分配（目标抽取族）：0~15 核心结算保留、3 玩家目标、16 单体兜底、17 AoE 多目标、**18 敌方盟友目标（出手）、19 敌方盟友目标（决策）**、64+ 触发器专属。敌方出手与决策在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取——单存活成员 `SelectTarget` 提前返回不掷点，单盟友行为与固定目标逐位等价。
+- 随机通道分配（目标抽取族）：0~15 核心结算保留、3 玩家目标、16 单体兜底、17 AoE 多目标、**18 敌方盟友目标（出手）、19 敌方盟友目标（决策）**、**20+chainIndex 连锁打击目标**（`chainOnKillCount` 击杀连锁的逐次追加抽选，命中未死即终止）、64+ 触发器专属。敌方出手与决策在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取——单存活成员 `SelectTarget` 提前返回不掷点，单盟友行为与固定目标逐位等价。
 
 桥接（Domain 不碰实体的解法）：战斗调度器整体迁入 `src/Ecs/Combat/`，操作的就是组件化状态，`RunSystem` 直接调用无分层冲突；`CombatantState` 增加运行时字段 `EntityId`（`AttachCombat` 时设置，不序列化）。
 
@@ -160,7 +162,7 @@ AdvanceTo(state, windowTarget):
 
 - 8 个 `PlayerSectionKind` 落库格式主体不动；`ExportSnapshot`/`SectionCodec` 契约不变。
 - 组件↔分段映射层扩展：新组件映射进既有分段（`PlayerResourcesComponent`→Combat；reactive buff→Buffs）。
-- `ActiveBuff` 记录扩展触发器字段（`TriggerKind`/`Params`）——**挂钩点**：首个"buff 定义携带触发参数"的特性落地时同步扩展，届时 Buffs 分段格式升版并同步 `PostgresSchema` 与 DataTool 校验；当前 reactive 参数经 `CombatantStats.Effects` 链路承载（装备 specialMechanics/怪物配表），无独立 wire 需求。
+- `ActiveBuff` 记录扩展触发器字段（`TriggerKind`/`Params`）——**挂钩点**：首个"buff 定义携带触发参数"的特性落地时同步扩展，届时 Buffs 分段格式升版并同步 `PostgresSchema` 与 DataTool 校验；当前 reactive 参数经 `CombatantStats.Effects` 链路承载（装备 flatStats 点数键/怪物配表），无独立 wire 需求。
 
 ## 7. 确定性与并发守则
 

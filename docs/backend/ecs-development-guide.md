@@ -130,6 +130,7 @@ ResolveAttack 落账
 - **新增触发器 checklist**：`CombatTriggerKind` 枚举 → `PendingCombatTrigger` 生产点（引擎结算点）→ `IOnXxxTrigger` tag + tag 映射（`TagTypeOf`）→ reactive 组件 + `YuoSystem<CombatantComponent, Marker>, IOnXxxTrigger` + `SystemOrder`（对齐内联手工序）→ `CombatTriggerMath` 数学 + `InlineCombatTriggerSink.Dispatch` 同序分支 → `CombatTriggerSurface.Sync` 挂摘条件 → parity/金色测试双路径验证。
 - **RNG 与顺序**：触发器随机数走 `context.NextRoll()`（通道 64+，与核心结算 0~15 隔离）；消费顺序 = 入队顺序 + `SystemOrder`，无字典序。
 - **负载传递**：`CombatTriggerInboxComponent.Trigger` 是派发期间唯一通道，派发后清 null；触发器不得改变边界时刻表（只可改数值与队列内容）。
+- **`CombatEvent` 字段语义**：主事件/施放事件携带 `AttackerManapointsAfter`/`TargetManapointsAfter`——`Settle` 在触发器结算完成后回填双方灵力真值（治疗施放事件由结算点直接写入）；衍生事件（反伤/气血汲取）该两字段为 null，按序并入主事件之后，衍生伤害不回流再触发。`Healing` 仅治疗施放事件与气血汲取衍生事件非零；衍生事件 `AbilityId` 继承触发技能（气血汲取）或为空（反伤）——这一不对称为现状口径，如需统一另行裁决。
 
 ## 5.6 结算统计（同步 tag）
 

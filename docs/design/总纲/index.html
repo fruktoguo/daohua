@@ -1495,63 +1495,91 @@ $$\mathbf{最终面板属性} = \mathbf{(基础数值池 (BaseFlat) + 六维固�
 # 第四篇 装备标准化预算与锻造升阶体系
 
 ## 4.1 装备两段式数据模型与部位预算权重
-装备采用**两段式显式配置**（基础 14 属性百分比增幅 + 额外固定值与特殊机制）：
+装备采用**两段式显式配置**（`baseStatRatios` 基础属性百分比增幅 + `flatStats` 固定值）：
+- 百分比点数类属性（技能增幅、物理伤害增幅、治疗提升、威胁、冷却缩减等 `*Points` 键）**一律放入 `flatStats`**，与固定值同受强化缩放；装备数据模型不再使用 `specialMechanics` 特效块。
+- **白板预算口径**（沿用数值设计规范的量化体系）：基础属性每 1 点 = 1 点预算，百分比每 1% = 1 点，生命/灵力回复每 1 点 = 4 点；`*Points` 增伤、威胁、治疗、冷却等特殊点数**不计入白板预算**，属人工平衡，参考同阶同类装备取值。
 - **全套 6 槽位 6.0x 乘区严格守恒**：
   $$\text{全套总预算} = B_T \times 6.0 \times Q_{\text{mult}}$$
 
 | 装备槽位 | 部位定位 | 部位权重乘区 | T1 白板预算 ($B_1=28$) | T2 白板预算 ($B_2=40$) | 核心主属性倾斜 |
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | **武器 (Weapon)** | 核心输出 | **1.4×** | **40 点** | **56 点** | 物理/术法攻击、命中、破招 (剑/刀/杖/琴等) |
-| **衣服 (Body/Armor)**| 核心生存 | **1.4×** | **40 点** | **56 点** | 生命值、物理护甲、法术抗性、化解 |
-| **头盔 (Head)** | 防护与灵能 | **0.8×** | **22 点** | **32 点** | 生命上限、灵力上限、护甲/法抗、命中 |
-| **下装 (Legs)** | 均衡防御 | **0.8×** | **22 点** | **32 点** | 护甲/法抗、生命/灵力上限 |
-| **鞋履 (Boots)** | 闪避机动 | **0.8×** | **22 点** | **32 点** | 闪避等级、生命/灵力上限 |
+| **衣服 (Body/Armor)** | 核心生存 | **1.4×** | **40 点** | **56 点** | 生命值、物理护甲、法术抗性、对应输出增幅 |
+| **头盔 (Head)** | 防护与灵能 | **0.8×** | **22 点** | **32 点** | 生命/灵力上限、护甲/法抗、命中、对应输出增幅 |
+| **下装 (Legs)** | 均衡防御 | **0.8×** | **22 点** | **32 点** | 护甲/法抗、生命/灵力上限、对应输出增幅 |
+| **副手 (Off-Hand)** | 四路线任选 | **0.8×** | **22 点** | **32 点** | 物理输出 / 法术输出 / 生存 / 冷却与治疗 |
 | **饰品 (Accessory)** | 特殊与回复 | **0.8×** | **22 点** | **32 点** | 攻击增幅、暴击、生命/灵力自动回复 |
 
 ## 4.2 强化成长模型 (+20 满级)
 $$\text{强化总倍率} = 1.05^{\text{强化等级}} \quad (\text{每级指数提升 } \times 1.05)$$
-强化为指数成长：白板基础属性（两段区间）每级乘 1.05，强化至 +20 满级时总属性约为白板的 **2.653×（+165%）**。
+强化为指数成长：白板基础属性（`baseStatRatios` 与 `flatStats` 全部键，含点数键）每级乘 1.05，强化至 +20 满级时总属性约为白板的 **2.653×（+165%）**。
 
-## 4.3 T1~T2 制式装备清单与锻造升阶配方 (28 件 4 套)
+## 4.3 防具双防配比与轻微输出倾斜
+- **物理套**（头/衣/裤）：主护甲取原预算 80%，剩余 20% 转为法术抗性；每件附带 **+2% 物理伤害增幅**（`physicalDamageBonusPoints: 2`）。
+- **法术套**（头/衣/裤）：主法抗取原预算 80%，剩余 20% 转为物理护甲；每件附带 **+2% 技能增幅**（`skillBonusPoints: 2`）。
+- 拆分后防御总值守恒：比例值按 0.02 粒度取整（如 0.10→0.08+0.02、0.28→0.22+0.06），固定值主防就近取整、副防补齐（10→8+2、14→11+3、8→6+2、6→5+1）。
+- 附带的 +2% 增幅属特殊点数，不计入白板预算，因此每件防具的白板预算与原设计逐件相等。
+
+## 4.4 副手四路线定义
+副手替代原鞋履槽位（`slot: "off-hand"`），每阶四件任选其一，四路线的白板构成与特殊点数如下：
+
+| 路线 | 白板构成（计入预算） | 特殊点数（人工平衡，不计预算） | 定位 |
+| :--- | :--- | :--- | :--- |
+| **物理输出** | 物攻 % + 物攻 + 命中 | 物理伤害增幅 `physicalDamageBonusPoints` | 物理输出补强 |
+| **法术输出** | 法攻 % + 法攻 + 命中 | 技能增幅 `skillBonusPoints` | 术法输出补强 |
+| **生存** | 护甲 % + 法抗 % + 生命上限 | — | 双防与血量 |
+| **冷却与治疗** | 生命回复 + 灵力回复 + 灵力上限 | 冷却缩减 `cooldownReductionPoints` + 治疗提升 `healingBonusPoints` | 节奏与续航 |
+
+## 4.5 T1~T2 制式装备清单与锻造升阶配方 (32 件 4 套 + 副手)
 > **锻造消耗统一度量规则**：
 > - **T1 装备**：加工主料（武器/衣服各 **7 个**，其余各 **5 个**）+ **1 种怪物材料 × 1**。
 > - **T2 装备**：**2 件对应 T1 装备** + 加工主料（武器/衣服各 **7 个**，其余各 **5 个**）+ **1 种怪物材料 × 1**。
+>
+> 每套的六个槽位（武器、衣服、头、下装、副手、饰品）各取一件即为全套，括号内为单件白板预算。
 
 ### 1. T1 物理【江湖百炼套】（Q1 凡品 · 全套预算 168）
 - **青锋剑** (`equipment.qingfeng-sword`): 百炼铁×7 + 兽骨×1 | 物攻 +20%, 物攻+10, 命中+10 (40点)
-- **劈山刀** (`equipment.pishan-blade`): 百炼铁×7 + 兽骨×1 | 物攻 +10%, 护甲 +14%, 物攻+8, 护甲+8, +200% 威胁 (40点)
-- **束发巾** (`equipment.shufa-scarf`): 百炼铁×5 + 兽皮×1 | 护甲 +10%, 生命+6, 命中+6 (22点)
-- **百衲甲** (`equipment.baina-armor`): 百炼铁×7 + 兽皮×1 | 护甲 +20%, 生命+10, 护甲+10 (40点)
-- **扎口裤** (`equipment.zhakou-pants`): 百炼铁×5 + 兽皮×1 | 护甲 +10%, 护甲+6, 生命+6 (22点)
-- **行山靴** (`equipment.xingshan-boots`): 百炼铁×5 + 兽皮×1 | 闪避 +10%, 闪避+6, 生命+6 (22点)
+- **劈山刀** (`equipment.pishan-blade`): 百炼铁×7 + 兽骨×1 | 物攻 +10%, 护甲 +14%, 物攻+8, 护甲+8 | 威胁 +200 (40点)
+- **束发巾** (`equipment.shufa-scarf`): 百炼铁×5 + 兽皮×1 | 护甲 +8%, 法抗 +2%, 生命+6, 命中+6 | 物伤 +2% (22点)
+- **百衲甲** (`equipment.baina-armor`): 百炼铁×7 + 兽皮×1 | 护甲 +16%, 法抗 +4%, 生命+10, 护甲+8, 法抗+2 | 物伤 +2% (40点)
+- **扎口裤** (`equipment.zhakou-pants`): 百炼铁×5 + 兽皮×1 | 护甲 +8%, 法抗 +2%, 护甲+5, 法抗+1, 生命+6 | 物伤 +2% (22点)
 - **兽牙坠** (`equipment.shouya-pendant`): 百炼铁×5 + 兽骨×1 | 物攻 +10%, 暴击+4, 回血+2 (22点)
 
-### 3. T1 术法【云游修道套】（Q1 凡品 · 全套预算 168 / 琴套 158）
-- **九节杖** (`equipment.jiujie-staff`): 桃木晶×7 + 破碎灵核×1 | 法攻 +20%, 法攻+10, 命中+10, 技能增幅 +5 (40点)
-- **素心琴** (`equipment.suxin-zither`): 桃木晶×7 + 破碎灵核×1 | 法攻 +14%, 法攻+8, 回灵+2, +50% 治疗提升, 技能增幅 +5 (30点)
-- **混元巾** (`equipment.hunyuan-scarf`): 桃木晶×5 + 破碎灵核×1 | 法抗 +10%, 灵力+6, 命中+6 (22点)
-- **素麻袍** (`equipment.suma-robe`): 桃木晶×7 + 兽皮×1 | 法抗 +20%, 灵力+10, 法抗+10 (40点)
-- **行气裤** (`equipment.xingqi-pants`): 桃木晶×5 + 兽皮×1 | 法抗 +10%, 法抗+6, 灵力+6 (22点)
-- **十方鞋** (`equipment.shifang-shoes`): 桃木晶×5 + 兽皮×1 | 闪避 +10%, 闪避+6, 灵力+6 (22点)
+### 2. T1 术法【云游修道套】（Q1 凡品 · 全套预算 168 / 琴套 158）
+- **九节杖** (`equipment.jiujie-staff`): 桃木晶×7 + 破碎灵核×1 | 法攻 +20%, 法攻+10, 命中+10 | 技能增幅 +5 (40点)
+- **素心琴** (`equipment.suxin-zither`): 桃木晶×7 + 破碎灵核×1 | 法攻 +14%, 法攻+8, 回灵+2 | 治疗提升 +50%, 技能增幅 +5 (30点)
+- **混元巾** (`equipment.hunyuan-scarf`): 桃木晶×5 + 破碎灵核×1 | 法抗 +8%, 护甲 +2%, 灵力+6, 命中+6 | 技能增幅 +2 (22点)
+- **素麻袍** (`equipment.suma-robe`): 桃木晶×7 + 兽皮×1 | 法抗 +16%, 护甲 +4%, 灵力+10, 法抗+8, 护甲+2 | 技能增幅 +2 (40点)
+- **行气裤** (`equipment.xingqi-pants`): 桃木晶×5 + 兽皮×1 | 法抗 +8%, 护甲 +2%, 法抗+5, 护甲+1, 灵力+6 | 技能增幅 +2 (22点)
 - **桃木符** (`equipment.taomu-talisman`): 桃木晶×5 + 破碎灵核×1 | 法攻 +10%, 法抗+4, 回灵+2 (22点)
+
+### 3. T1 副手（四路线，任选其一入套）
+- **凡铁镖** (`equipment.fan-tie-dart`): 百炼铁×5 + 兽骨×1 | 物攻 +10%, 物攻+6, 命中+6 | 物伤 +4% (22点，物理输出)
+- **青木珠** (`equipment.qingmu-bead`): 桃木晶×5 + 破碎灵核×1 | 法攻 +10%, 法攻+6, 命中+6 | 技能增幅 +4 (22点，法术输出)
+- **铁皮盾** (`equipment.tiepi-guard`): 百炼铁×5 + 兽皮×1 | 护甲 +6%, 法抗 +6%, 生命+10 (22点，生存)
+- **甘露瓶** (`equipment.ganlu-flask`): 桃木晶×5 + 破碎灵核×1 | 生命回复+2, 灵力回复+1, 灵力+10 | 冷却 +3, 治疗提升 +5 (22点，冷却与治疗)
 
 ### 4. T2 物理【破罡战将套】（Q2 黄品 · 全套预算 240）
 - **破罡剑** (`equipment.pogang-sword`): 青锋剑×2 + 赤铜精×7 + 兽牙×1 | 物攻 +28%, 物攻+14, 命中+14 (56点)
-- **斩煞刀** (`equipment.zhansha-blade`): 劈山刀×2 + 赤铜精×7 + 兽牙×1 | 物攻 +14%, 护甲 +20%, 物攻+11, 护甲+11, +300% 威胁 (56点)
-- **赤金盔** (`equipment.chijin-helmet`): 束发巾×2 + 赤铜精×5 + 兽牙×1 | 护甲 +16%, 生命+8, 命中+8 (32点)
-- **鱼鳞甲** (`equipment.yulin-armor`): 百衲甲×2 + 赤铜精×7 + 兽牙×1 | 护甲 +28%, 生命+14, 护甲+14 (56点)
-- **踏阵胫** (`equipment.tazhen-greaves`): 扎口裤×2 + 赤铜精×5 + 兽牙×1 | 护甲 +16%, 护甲+8, 生命+8 (32点)
-- **踏山靴** (`equipment.tashan-boots`): 行山靴×2 + 赤铜精×5 + 兽牙×1 | 闪避 +16%, 闪避+8, 生命+8 (32点)
+- **斩煞刀** (`equipment.zhansha-blade`): 劈山刀×2 + 赤铜精×7 + 兽牙×1 | 物攻 +14%, 护甲 +20%, 物攻+11, 护甲+11 | 威胁 +300 (56点)
+- **赤金盔** (`equipment.chijin-helmet`): 束发巾×2 + 赤铜精×5 + 兽牙×1 | 护甲 +12%, 法抗 +4%, 生命+8, 命中+8 | 物伤 +2% (32点)
+- **鱼鳞甲** (`equipment.yulin-armor`): 百衲甲×2 + 赤铜精×7 + 兽牙×1 | 护甲 +22%, 法抗 +6%, 生命+14, 护甲+11, 法抗+3 | 物伤 +2% (56点)
+- **踏阵胫** (`equipment.tazhen-greaves`): 扎口裤×2 + 赤铜精×5 + 兽牙×1 | 护甲 +12%, 法抗 +4%, 护甲+6, 法抗+2, 生命+8 | 物伤 +2% (32点)
 - **赤纹戒** (`equipment.chiwen-ring`): 兽牙坠×2 + 赤铜精×5 + 兽牙×1 | 物攻 +16%, 暴击+4, 回血+3 (32点)
 
 ### 5. T2 术法【辟尘出尘套】（Q2 黄品 · 全套预算 240 / 琴套 226）
-- **朝元杖** (`equipment.chaoyuan-staff`): 九节杖×2 + 灵松晶×7 + 残魄灵符×1 | 法攻 +28%, 法攻+14, 命中+14, 技能增幅 +15 (56点)
-- **松风琴** (`equipment.songfeng-zither`): 素心琴×2 + 灵松晶×7 + 残魄灵符×1 | 法攻 +18%, 法攻+12, 回灵+3, +50% 治疗提升, 技能增幅 +15 (42点)
-- **子午冠** (`equipment.ziwu-crown`): 混元巾×2 + 灵松晶×5 + 残魄灵符×1 | 法抗 +16%, 灵力+8, 命中+8 (32点)
-- **辟尘衫** (`equipment.pichen-shirt`): 素麻袍×2 + 灵松晶×7 + 火羽×1 | 法抗 +28%, 灵力+14, 法抗+14 (56点)
-- **流云裳** (`equipment.liuyun-skirt`): 行气裤×2 + 灵松晶×5 + 火羽×1 | 法抗 +16%, 法抗+8, 灵力+8 (32点)
-- **避尘履** (`equipment.bichen-shoes`): 十方鞋×2 + 灵松晶×5 + 火羽×1 | 闪避 +16%, 闪避+8, 灵力+8 (32点)
+- **朝元杖** (`equipment.chaoyuan-staff`): 九节杖×2 + 灵松晶×7 + 残魄灵符×1 | 法攻 +28%, 法攻+14, 命中+14 | 技能增幅 +15 (56点)
+- **松风琴** (`equipment.songfeng-zither`): 素心琴×2 + 灵松晶×7 + 残魄灵符×1 | 法攻 +18%, 法攻+12, 回灵+3 | 治疗提升 +50%, 技能增幅 +15 (42点)
+- **子午冠** (`equipment.ziwu-crown`): 混元巾×2 + 灵松晶×5 + 残魄灵符×1 | 法抗 +12%, 护甲 +4%, 灵力+8, 命中+8 | 技能增幅 +2 (32点)
+- **辟尘衫** (`equipment.pichen-shirt`): 素麻袍×2 + 灵松晶×7 + 火羽×1 | 法抗 +22%, 护甲 +6%, 灵力+14, 法抗+11, 护甲+3 | 技能增幅 +2 (56点)
+- **流云裳** (`equipment.liuyun-skirt`): 行气裤×2 + 灵松晶×5 + 火羽×1 | 法抗 +12%, 护甲 +4%, 法抗+6, 护甲+2, 灵力+8 | 技能增幅 +2 (32点)
 - **聚灵佩** (`equipment.juling-pendant`): 桃木符×2 + 灵松晶×5 + 残魄灵符×1 | 法攻 +16%, 法抗+4, 回灵+3 (32点)
+
+### 6. T2 副手（四路线，任选其一入套）
+- **玄铁镖** (`equipment.xuantie-dart`): 凡铁镖×2 + 赤铜精×5 + 兽牙×1 | 物攻 +14%, 物攻+8, 命中+10 | 物伤 +6% (32点，物理输出)
+- **曜灵珠** (`equipment.yaoling-bead`): 青木珠×2 + 灵松晶×5 + 残魄灵符×1 | 法攻 +14%, 法攻+8, 命中+10 | 技能增幅 +6 (32点，法术输出)
+- **玄甲盾** (`equipment.xuanjia-guard`): 铁皮盾×2 + 赤铜精×5 + 兽牙×1 | 护甲 +8%, 法抗 +8%, 生命+16 (32点，生存)
+- **回春铃** (`equipment.huichun-bell`): 甘露瓶×2 + 灵松晶×5 + 火羽×1 | 生命回复+3, 灵力回复+1, 灵力+16 | 冷却 +5, 治疗提升 +6 (32点，冷却与治疗)
 
 ---
 
@@ -1607,7 +1635,7 @@ $$\text{强化总倍率} = 1.05^{\text{强化等级}} \quad (\text{每级指数�
 - **六维入账公式**：`share_i = experience × mult_i × eff`（每个归属维度各得全额乘以自身乘率）；非守恒——六维总效率 = `eff × Σmult/6`，允许偏离 100%（总量是内功强度的定价旋钮：偏科越狠/总量越高，代价越硬）。
 - `rootExpEfficiencyPerLevel`：参悟等级每级提升六维总效率，`eff = 1 + perLevel × (参悟Lv − 1)`；参悟等级与术法同口径由功法经验立方曲线导出，内功不施放、参悟经验唯一来源为秘籍/残卷研读（§5.2）。
 - `cultivationExpBonusPoints`：修为类收益增减点（1 点 = 1%），作为独立乘区乘在增幅后收益量 `amp` 上，对全部修为类收益路径生效（击杀/行动收益/冥想，见 [第七篇](./07-战斗数值与内视规约.md) §7.11.1）；负值为「弃道从武」型内功的代价。
-- `passive`：常驻面板效果块，复用装备 `specialMechanics` 同族点数字段汇入 `PlayerAttributeResolver`；首批仅配小数值。
+- `passive`：常驻面板效果块，复用装备 `flatStats` 同族点数字段汇入 `PlayerAttributeResolver`；首批仅配小数值。
 - `rootAttribute`：保留为主修维度标识（UI 归属展示/设计语义），不再承担分配计算——分配唯一由 `rootExpMultipliers` 决定。
 - 未装备内功时六维全归属、各得全额（每维 `experience`，总量 6×）；神通/外功声明 `rootAttribute` 不参与分配。
 
@@ -2092,14 +2120,16 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 
 - **命中判定与伤害结算**：判定前/落账前的结算链仍在引擎本体内按固定次序执行；
 - **落账后衍生结算**（触发器域，`CombatTriggerMath`）：
-  - **气血汲取**（Order 100，`OnHitLeechSystem`）：命中后按 `实伤 × HpDrainRatio` 回复攻击方气血，产出治疗衍生事件；
-  - **灵力汲取**（Order 110，`ManaLeechSystem`）：按 `实伤 × MpDrainRatio` 从目标灵力池偷取，目标扣全额、攻击方只装得下的部分；
-  - **伤害反弹**（Order 200，`ThornsSystem`）：受击方把 `实伤 × DamageReflectRatio` 弹回攻击方，计入受击方威胁值；
-  - **受击涨威胁**（Order 300，`ThreatOnTakenSystem`）：受击方按 `原始伤害（减免前面板威力）× ThreatOnTakenRatio` 增加自身威胁；仅命中生效，未命中不算「受到伤害」。
+  - **气血汲取**（Order 100，`OnHitLeechSystem`）：命中后按 `实伤 × HpDrainPoints/100` 回复攻击方气血，产出治疗衍生事件；
+  - **灵力汲取**（Order 110，`ManaLeechSystem`）：按 `实伤 × MpDrainPoints/100` 从目标灵力池偷取，目标扣全额、攻击方只装得下的部分；不产生衍生事件；
+  - **伤害反弹**（Order 200，`ThornsSystem`）：受击方把 `实伤 × DamageReflectPoints/100` 弹回攻击方，计入受击方威胁值，产出伤害衍生事件；
+  - **受击涨威胁**（Order 300，`ThreatOnTakenSystem`）：受击方按 `原始伤害（减免前面板威力）× ThreatOnTakenPoints/100` 增加自身威胁；仅命中生效，未命中不算「受到伤害」。
 
-效果强度统一打包在 `CombatantStats.Effects`（`CombatEffectProfile`）：玩家侧由装备 `specialMechanics.hpDrainRatio` / `mpDrainRatio` / `damageReflectRatio` 经属性解析汇入，怪物侧由配表同名字段直接声明；reactive 标记组件（`OnHitLeech`/`ManaLeech`/`Thorns`）由 `CombatTriggerSurface` 按 Effects 管理挂摘，参数永无双写。
+效果强度统一打包在 `CombatantStats.Effects`（`CombatEffectProfile`）：玩家侧由装备 `flatStats.hpDrainPoints` / `mpDrainPoints` / `damageReflectPoints` / `healingBonusPoints` / `threatOnTakenPoints` 经属性解析汇入，怪物侧由配表同名字段直接声明；reactive 标记组件（`OnHitLeech`/`ManaLeech`/`Thorns`/`ThreatOnTaken`）由 `CombatTriggerSurface` 按 Effects 管理挂摘，参数永无双写。
 
-**确定性约束**：触发器禁止另起随机源与墙钟读取，随机判定走 `CombatHitContext.NextRoll()` 独立通道（0~15 号通道为核心结算保留，触发器通道自 64 起）；触发器衍生伤害**直接落账、不回流管线**，杜绝递归触发；`UpdateOutcome` 永远在触发器结算之后运行，命中回血可救活自己。
+**确定性约束**：触发器禁止另起随机源与墙钟读取，随机判定走 `CombatHitContext.NextRoll()` 独立通道（0~15 号通道为核心结算保留，连锁打击通道自 20 起按 `20+chainIndex` 分配，触发器通道自 64 起）；触发器衍生伤害**直接落账、不回流管线**，杜绝递归触发；`UpdateOutcome` 永远在触发器结算之后运行，命中回血可救活自己。
+
+**事件流口径**：主事件/施放事件在结算完成时刻携带双方灵力真值（`AttackerManapointsAfter`/`TargetManapointsAfter`），衍生事件该两字段为 `null` 并按序并入主事件之后；衍生事件 `AbilityId` 现状口径为「气血汲取继承触发技能、反伤为空」。消耗品打击（雷击符 `ResolveStrikeDamage`）不汇流 `ResolveAttack`、不产出 `CombatEvent` 与触发器——目标反伤不反弹、攻击方汲取不生效、受击涨威胁不累积，属既定行为边界。
 
 ### 7.7.5 百分比属性双曲线规约与修饰属性清单
 
@@ -2131,7 +2161,7 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 | 气血汲取 | Linear 非负钳制 | 0 | 命中实伤 × 比例回复攻击方气血 |
 | 灵力汲取 | Linear 非负钳制 | 0 | 命中实伤 × 比例从目标灵力池偷取 |
 
-**特殊属性获取口径（玩家 vs 怪物）**：特殊属性对玩家是**获取型属性**——只能经装备 `specialMechanics`、内功、特质、Buff、建筑等明确手段获得，境界不产出、不保送；玩家面板中的此类点数全部可溯源到具体来源。怪物侧则把等级成长折算为「基准点数」注入同一通道，作为同构建模底座：配表等级换算的同额点数在 `GameDataCatalog` 解析时并入怪物 `modifiers`，与玩家走同一结算链（折算公式与逐阶等效值见 §11.1.4.3/§11.2.3.2）。
+**特殊属性获取口径（玩家 vs 怪物）**：特殊属性对玩家是**获取型属性**——只能经装备 `flatStats` 点数键、内功、特质、Buff、建筑等明确手段获得，境界不产出、不保送；玩家面板中的此类点数全部可溯源到具体来源。怪物侧则把等级成长折算为「基准点数」注入同一通道，作为同构建模底座：配表等级换算的同额点数在 `GameDataCatalog` 解析时并入怪物 `modifiers`，与玩家走同一结算链（折算公式与逐阶等效值见 §11.1.4.3/§11.2.3.2）。
 
 **怪物基准点数公式**（$x^2$ 为 §11 二次进度 $(Level-1)/126$ 的平方，$Tier$ 为 §3 等阶锚点计数）：
 
@@ -2302,7 +2332,7 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 2. **躺尸窗口（时钟照走）**：战斗时钟照常推进。怪物因失去目标不再出手，但其技能冷却（绝对时间戳）自然流逝、面板回血与 Buff 周期回复按 5 秒结算网格照常、Buff 到期正常剥落；玩家气血锁 0，灵力回复照常（§7.9.3）。
 3. **起身结算**：读条满（按战斗时钟计 `playerRespawnMilliseconds`）玩家原地起身，**仅恢复满生命值**；灵力、技能冷却、自动消耗品冷却不做任何额外重置——躺尸期间自然转好的即为已转好，自然回复的灵力即为已获得。起身瞬间双方重新蓄势出手。
 4. **躺尸期间敌方全灭**：玩家阵亡前施加的持续伤害/反伤在躺尸窗口把怪物跳死全灭 → 照常判 `PlayerWon` 结算掉落与轮次，玩家起身（满血）后进入下一波搜寻。
-5. **计数口径**：每次阵亡计一次败走（`totalDefeats`）与死亡（`deaths`）并发 `combat.lost` 事件；起身发 `combat.respawned`。
+5. **计数口径**：每次阵亡计一次败走（`totalDefeats`）与死亡（`deaths`）并发 `combat.lost` 事件；起身发 `combat.respawned`。`combat.lost` 严格绑定真阵亡：一次死亡只计一次。波次开打时仍处倒地/气血衰竭状态（单人无法迎战、组队倒地随队）发 `combat.downed`，属状态提示事件，不计败走与死亡——退出战斗即原地复活至 1 点气血，倒地续战只发生在同一行动内的新波次开打时。
 6. **无兜底**：实力不足时「阵亡→复活→再阵亡」可无限循环，直到玩家手动取消行动脱战（按脱战复苏 1 HP 处理）；怪物在躺尸期间持续回血，连败成本自负。
 
 #### 复活结算总表
@@ -2434,7 +2464,7 @@ $$Experience \mathrel{+}= \text{credited};\quad Foundation \mathrel{+}= amp - \t
 ### 7.12.1 首批特质
 
 - **看不到我（`trait.bukandaowo`）**：开战授予 `buff.yinshen`（持续 10 秒，`ThreatPoints = -100`）——`EffectiveThreat` 乘区归零，敌方针对此单位的威胁权重恒为 0。授予点只在 `CombatEncounterState.Create`（首次开战）；快照恢复由 Buffs 还原不重复授予，玩家复活不视为「开战」不补授。注意 §7.8.2 全零退化规则：若敌方全体候选目标威胁均为 0，退化为等概率抽取——「威胁为 0」是权重归零而非绝对不可选中。
-- **力微饭否（`trait.liweifanfou`）**：折算 `ThreatOnTakenPoints = 100`——受到伤害时按攻击方面板原始伤害（减免链前）等额累积自身威胁（§7.8.1 受击累积通道），变相嘲讽。该点数通道对装备 `specialMechanics` 与怪物配表同构开放，不绑定特质 ID。
+- **力微饭否（`trait.liweifanfou`）**：折算 `ThreatOnTakenPoints = 100`——受到伤害时按攻击方面板原始伤害（减免链前）等额累积自身威胁（§7.8.1 受击累积通道），变相嘲讽。该点数通道对装备 `flatStats` 与怪物配表同构开放，不绑定特质 ID。
 
 <!-- FILE:08-大世界地图与质量预算遇怪系统.md -->
 # 第八篇 大世界地图与质量预算遇怪系统
@@ -3340,6 +3370,34 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 
 前端 `gameLogService` 按 `channel` 过滤，系统/战斗两个 Tab 各自独立渲染；综合不消费日志（只消费系统频道）。
 
+服务端日志事件码一览（`SimulationEvent.Code` 实际产出全集，`channel` 列即 `LogChannels.FromEventCode` 分流结果）：
+
+| 事件码 | 频道 | 语义 |
+| --- | --- | --- |
+| `combat.search.started` | `combat` | 讨伐搜寻读条开始（含参与会话跟随搜寻） |
+| `combat.started` | `combat` | 遭遇妖兽：波次入场开战 |
+| `combat.skill` | `combat` | 技能施放行：同一次施放的多目标命中合并为一条，逐目标子句 `\n` 分隔 |
+| `combat.won` | `combat` | 讨伐成功：波次清空 |
+| `combat.lost` | `combat` | 阵亡：仅真阵亡（实际击倒计败走与死亡；含队友阵亡通知） |
+| `combat.downed` | `combat` | 波次开打时仍倒地/气血衰竭：单人无法迎战（行动阻塞），组队倒地随队迎战（不计阵亡） |
+| `combat.respawned` | `combat` | 原地起身：气血回满（含队友起身通知） |
+| `duel.charge` | `system` | 心血来潮：斗法遭遇感应 +1 |
+| `duel.won` / `duel.lost` / `duel.draw` | `system` | 斗法推演胜/负/平结算 |
+| `duel.staged.settled` | `system` | 斗法暂存物品入账 |
+| `action.completed` | `system` | 行动完成/单轮结算（结构化模板带行动引用与物品明细） |
+| `action.blocked` | `system` | 行动前置条件断绝转阻塞停泊 |
+| `action.auto-travel` | `system` | 当前位置无法执行，自动插队前往可执行节点 |
+| `action.invalid-dropped` | `system` | 时长配置无效的失效行动自动移出队列 |
+| `action.participation.ended` | `system` | 行动参与会话已结束 |
+| `auto-use.activated` | `system` | 自动消耗品生效（含伤害型与增益型） |
+| `auto-use.depleted` | `system` | 持续用品持续时间耗尽 |
+| `enhance.succeeded` / `enhance.failed` | `system` | 强化成功提升 / 失败回落 |
+| `world.arrived` | `system` | 抵达目的节点 |
+| `offline.capped` | `system` | 离线补算达到 48 小时上限（仅跨越边界的请求发一次） |
+| `tutorial.grant` / `tutorial.completed` | `system` | 新手引导赠送入账 / 引导完成终奖（结构化物品明细） |
+
+注：斗法遭遇撮合通知、邀请里程碑入账、引导跳过补发三条为宿主直发 `LogEventDto`（`system`），不走 `SimulationEvent`。
+
 ---
 
 ## 14.3 聊天频道模型
@@ -3519,7 +3577,7 @@ TASK-20260927-04 的 300 人离线上线性能收敛实验在 C 中增加宿主/
 
 #### 逐阶段计时契约（2026-09-26）
 
-本实验同时保留请求 RTT、进程窗口指标和服务端阶段直方图。阶段名必须是有限、稳定的代码常量，标签仅允许 `stage` 与 `scenario`（`gathering`、`crafting`、`combat`、`other`、`idle`、`all`）；不得加入玩家、实体、节点、配方或 System 实例 ID。`scenario` 取一次玩家推进开始时的队首行动，之后队列轮转不改写本次请求归属；无可确定的请求归属才用 `all`。在线和 replay 必须按相同埋点与窗口差分方法导出。
+本实验同时保留请求 RTT、进程窗口指标和服务端阶段直方图。阶段名必须是有限、稳定的代码常量，标签仅允许 `stage` 与 `scenario`（`gathering`、`crafting`、`combat`、`other`、`idle`、`all`）；不得加入玩家、实体、节点、配方或 System 实例 ID。`scenario` 取一次玩家推进开始时的队首行动，之后队列轮转不改写本次请求归属；无可确定的请求归属才用 `all`。`lifecycle.*` 实体生命周期阶段的实体种类维度走阶段名后缀（`lifecycle.entity_create.<kind>`/`lifecycle.entity_destroy.<kind>`，`kind ∈ player/map_node/monster/encounter/ally`），不占 `scenario` 标签。在线和 replay 必须按相同埋点与窗口差分方法导出。
 
 | 共享阶段名 | 唯一实测边界 | OOP 与 ECS 对比口径 |
 | --- | --- | --- |
@@ -3541,6 +3599,10 @@ TASK-20260927-04 的 300 人离线上线性能收敛实验在 C 中增加宿主/
 ECS 对每个实际游戏 `YuoSystem.Run` 的**活动玩家/遭遇业务调用**记录 `ecs.system.run.<SystemClass>`。先通过 `ActivePlayerId`/准备态门控，再开始计时；非活动实体的空返回不逐次写 Meter，以免全实体遍历在千人负载下制造海量观测样本并扭曲性能。覆盖 `ActionClockSystem`、`ActionQueueSystem`、`GatheringActionSystem`、`CraftingActionSystem`、`ActionBoundarySystem`、`TravelActionSystem`、`TimedActionYieldSystem`、`CombatActionBoundarySystem`、`CombatActionYieldSystem`、`PlayerClockCommitSystem`、`CombatEventAdvanceSystem`、`CombatTargetSystem` 和 `CombatEventSystem`。按类名聚合活动调用，不记录实体 ID；即使活动实体在业务条件判断后不推进，也记录一次调度成本。`ecs.system_tick` 保留每次 Fiber/World Tick 的完整调度、查询、遍历和系统调用开销，包含非活动实体的门控成本。`ecs.system.run.*` 不包含 YuoCore 在调用 `Run` 前的查询/迭代及非活动实体的门控成本；不能把 `ecs.system_tick - Σ ecs.system.run.*` 直接归因于扫描，因为嵌套、非业务 System、异步调度与观测本身也在其中。
 
 ECS 所有权另列 `queue.owner_wait`（进入分片 gate 前）、`ecs.owner_hold`（取得 gate 到释放，含备份、模拟、失败恢复）和 `ecs.mailbox.post`（每次宿主向 Fiber 提交消息并等待完成）。`ecs.system_tick` 已覆盖 `TickAsync`，不再为同一调用重复命名 `ecs.fiber.tick`。这几个阶段彼此嵌套或相邻，owner 等待的并发累计值不能并入请求墙钟。混合场景中，资源阶段与 System 阶段均归属正在推进的目标玩家请求；当一次 Tick 实际处理多个玩家时标为 `batch`，不把批次样本分摊到单人场景。若无法确定目标玩家，统一标 `all` 并在报告说明，禁止根据被遍历的非活动实体行动类型改写归属。
+
+补充登记的 ECS 阶段：`queue.actor_wait`（`EcsPlayerRuntimeAdapter` 玩家级 `SemaphoreSlim` 命令 gate 等待，先于分片 owner gate）；`ecs.bulk_advance`（分片批量推进快速路径：无战斗计时行动合并自然窗口直推，嵌套于 `ecs.owner_hold` 内）；`ecs.mailbox.callback`（Fiber 邮箱回调体内计时，嵌套于 `ecs.mailbox.post` 内）；行动管线内部阶段 `ecs.stage.clock`/`ecs.stage.queue`（资源窗口开闭与队首准入两阶段）与 `ecs.stage.combat_encounter`/`ecs.stage.combat_yield`（`EcsActionPipeline` 战斗段推进与收尾两阶段）。
+
+实体生命周期阶段：`lifecycle.entity_create.<kind>`（实体创建计时，`kind ∈ player/map_node/monster/encounter/ally`，实体种类并入阶段名而非 `scenario` 标签）、`lifecycle.entity_destroy.<kind>`（实体销毁计时，当前产出 `player`/`encounter` 两种）、`lifecycle.player_load`/`lifecycle.player_loaded`/`lifecycle.player_unloaded`（玩家装载耗时与装载/卸载完成埋点）。`lifecycle.entity_created.<kind>`/`lifecycle.entity_destroyed.<kind>` 是实体生灭完成时刻的事件计数（`daohua.runtime.events`），不是耗时阶段，不进阶段直方图。
 
 #### YuoCore 内核深度埋点（2026-09-27）
 
@@ -3616,7 +3678,7 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 # 第十七篇 行动统计系统
 
 > 状态：已随 TASK-20260919-01 落地。本文是行动统计（战报泛化）的唯一权威设计真源。
-> 领域实现：`src/Domain/Player/PlayerDuel.cs`（`PlayerBattleReport` / `PlayerDuelState`）与 `src/Domain/Player/ActionReportBook.cs`（记账原语），结算调用点在 `src/Ecs/Engine/SimulationEngine.cs`。
+> 领域实现：`src/Domain/Player/PlayerDuel.cs`（`PlayerBattleReport` / `PlayerDuelState`）与 `src/Domain/Player/ActionReportBook.cs`（记账原语）；记账入口分布于 `ActionExecutionRules.Timed`/`Resources`/`Travel`、`CombatActionRules` 与 `PlayerAggregate.*`，`src/Ecs/Engine/SimulationEngine.cs` 仅为兼容门面。
 > 前端：`frontend/src/components/StatsPanel.tsx`（原 `BattleReportPanel` 重构），组件登记见 `common-components.md` §24。
 
 ## 17.1 定位
@@ -3636,7 +3698,7 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 - 交易（坊市）不计入任何账本。
 - 记账枢纽 `PlayerAggregate.RecordStats(actionInstanceId, atUnixSeconds, apply)`：同一条 `apply` 依次作用于 ①实例账本（存在才记，不隐式建账）②离线账本（仅 `Presence==Offline` 时）③每日账本（先按 UTC+8 日界 rollover 再入账），统一 `MarkDirty(Duel)`。
 - 建账：`EnsureActionReport` 在实例通过全部前置校验、开始推进时 get-or-create；`Blocked` 行动不建账。
-- 归档：`ArchiveReportForAction` 挂接在 `RemoveAction`、travel 去重 `RemoveAt`、`CompleteOrRequeueHeadAction` 三处出口；空账本丢弃，非空插入 `Reports` 头部并裁剪至 `MaxBattleReports`（10 条）。
+- 归档：`ArchiveReportForAction` 统一经队列变更管线 `ArchiveIds` 名单消费（`Remove`/`Clear`/`EnqueuePriority` 同类去重/`FinishRound` 离队），覆盖面含 `Clear` 整队清空；空账本丢弃，非空插入 `Reports` 头部并裁剪至 `MaxBattleReports`（10 条）。
 
 ## 17.3 账本字段
 
@@ -3651,13 +3713,16 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 | `CombatExperience`（`combatExperience`） | 战斗经验入账量：修为类收益按增幅前基础量等额记账，不受任何加成增幅 |
 | `RootExp`（`rootExp`） | 六维经验收益（体魄/经脉/力道/根骨/身法/神识） |
 | `AbilityExp`（`abilityExp`） | 功法参悟经验收益，按功法 ID 聚合；战斗/斗法中每次成功施放 +1 |
-| `LevelUps`（`levelUps`） | 等级提升：`Kind ∈ realm/root/ability`，含 `FromLevel`/`ToLevel` |
+| `TechniqueExp`（`techniqueExp`） | 技艺修行经验收益，按技艺 ID 聚合（per-technique；条目为 `TechniqueId`/`Experience`，wire 键 `techniqueId`/`experience`），经 `PlayerStatsDelta.TechniqueId`/`TechniqueExperience` 记账 |
+| `LevelUps`（`levelUps`） | 等级提升：`Kind ∈ realm/root/ability/technique`（technique 级 `TargetId` 为技艺 ID），含 `FromLevel`/`ToLevel` |
 
 - **物品**：`Items`（获得，含暂存区/缴获）、`ItemsLost`（失去：行动输入材料、自动消耗品扣件、斗法暂存被缴）。
 - **行动信息**：`Cycles`（完成轮次）、`Encounters`（战斗遭遇场次）、`NormalKills`/`EliteKills`/`BossKills`（分级击杀）、`Deaths`（讨伐失败与斗法败北）、`DuelWins`/`DuelLosses`（斗法胜负）、`DayIndex`（仅每日账本）。
 - 记账按**实际入账量**：`experience` 记瓶颈截断与底蕴兑换放大后的真实增量；`foundation` 记底蕴池净变动（满层沉淀为正、兑换消耗为负）；`combatExperience` 恒按增幅前基础量等额记账。
 
-## 17.4 记账点（SimulationEngine）
+## 17.4 记账点
+
+记账入口分布于 `ActionExecutionRules.Timed`/`Resources`/`Travel`、`CombatActionRules` 与 `PlayerAggregate.*`；`SimulationEngine` 仅为兼容门面，不走生产规则编排。
 
 | 位置 | 记账 |
 | :--- | :--- |
@@ -3672,6 +3737,7 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 | 自动消耗品扣件 | `ItemsLost+1` |
 | travel 抵达 | `Cycles+1` 后实例出队归档 |
 | `GrantAbilityExperience` | `AbilityExp` + ability 级 `LevelUp` |
+| Timed 行动 `GrantTechniqueExperience` | 技艺经验按当轮实际入账量记 `TechniqueExp`（per-technique；普通计时行动按当轮基础耗时、强化按当次实际基础耗时）；跨越技艺等级段产 `kind=technique` `LevelUp`（`TargetId` 为技艺 ID） |
 | `Breakthrough` | realm 级 `LevelUp` |
 
 ## 17.5 协议与前端
@@ -3753,7 +3819,7 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 | `PlayerActionQueueComponent` | `EcsActionState` 队列 | 调度数据 | ActionQueue |
 | `PlayerLoadoutComponent` | 装备/法宝/技能装配 | 被公式读 | Loadout |
 | `PassiveBuffsComponent` | **纯修饰 buff 合并容器**（StatRatios/攻速/减伤等） | 被公式读 | Buffs |
-| **Reactive Buff 组件族** | 每种触发型 buff 一个组件类：`OnHitHealBuffComponent`/`ThornsBuffComponent`/`OnKillBuffComponent`…字段=触发参数 | **主动反应** | Buffs（`ActiveBuff` 扩展） |
+| **Reactive Buff 组件族** | 每种触发型 buff 一个组件类：`OnHitLeechComponent`/`ManaLeechComponent`/`ThornsComponent`/`ThreatOnTakenComponent`…参数实时读 Stats.Effects | **主动反应** | Buffs（`ActiveBuff` 扩展） |
 | `PlayerInventoryComponent` | 资产条目 | 数据 | 钱包 |
 | `PlayerEconomyComponent` | 市场关联 | 数据 | — |
 | `PlayerSettingsComponent` | 设置/LoopEnabled/AutoTravelEnabled | 数据 | Settings |
@@ -3778,14 +3844,14 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 | 200 | `ActionQueueSystem` | 队首准入：地点白名单、材料前置、Blocked 轮转/出队 |
 | 300 | `GatheringActionSystem` | 采集实现本体：时长公式、逐秒产出、轮结算 |
 | 310 | `CraftingActionSystem` | 制造实现本体 |
-| 320 | `TimedActionSystem` | 其余计时行动实现本体（修炼乘区等） |
+| 320 | `ActionBoundarySystem` | 其余计时行动实现本体（修炼乘区等） |
 | 330 | `TravelActionSystem` | 旅行实现本体 |
-| 400 | `TimedYieldSystem` | 计时轮结算：入账、材料扣除、repeats、出队 |
-| 550 | `CombatPrepSystem` | 搜寻/复活阶段推进与遭遇附着 |
-| 600 | `CombatAdvanceSystem` | `AdvanceTo` 整段窗口推进（含段内触发器派发） |
+| 400 | `TimedActionYieldSystem` | 计时轮结算：入账、材料扣除、repeats、出队 |
+| 550 | `CombatActionBoundarySystem` | 搜寻/复活阶段推进与遭遇附着 |
+| 600 | `CombatEventAdvanceSystem` | `AdvanceTo` 整段窗口推进（含段内触发器派发） |
 | 610 | `CombatTargetSystem` | 主目标实体索引 |
-| 650 | `CombatLogSystem` | `LastEvents`→`CombatLogComponent` |
-| 700 | `CombatYieldSystem` | 战斗段结算：预算折算、死亡/掉落/胜负、终局释放实体 |
+| 650 | `CombatEventSystem` | `LastEvents`→`CombatLogComponent` |
+| 700 | `CombatActionYieldSystem` | 战斗段结算：预算折算、死亡/掉落/胜负、终局释放实体 |
 | 800 | `PlayerClockCommitSystem` | 窗口末提交：游标/版本/脏标记/资源回复落账 |
 
 ### Trigger 域（不占 Update 序，`RunSystem<T>(entity)` 点名）
@@ -3801,6 +3867,8 @@ IOnDeathTrigger  OnDeathReviveSystem …
 ```
 
 内核机制现成：`YuoWorld.RunSystem<T>(entity)`（`YuoCore.Ecs/YuoWorld/RunSystem.cs`）——稠密 tagId 直查 + `system.m_Run(entity)` 同步执行，一次普通方法调用，无 tick 延迟。**此域 System 不进入 Update 序列，不参与每拍扫描。**
+
+负载信箱：`CombatTriggerInboxComponent` 是实体派发期间向触发器 System 传参的唯一通道——`CombatTriggerSurface.Attach` 挂接战斗单位时常驻该组件；派发前 `EcsCombatTriggerSink` 写入 `inbox.Trigger = trigger`，`RunSystem` 同步执行后立即清回 null，非派发期间恒为 null。实体缺失或信箱缺失属不变量违例，快速失败。
 
 ## 4. 战斗内核：批量调度器 + 段内触发器
 
@@ -3836,7 +3904,7 @@ AdvanceTo(state, windowTarget):
 - 新增既有事件下的效果只需新增处理器类；新增事件种类仍需定义事件接口、参数记录和 `CombatTriggerKind` 派发槽位。当前仓库没有 AOT/裁剪发布约束；未来启用时必须为扫描类型保留元数据，或将注册表替换为源生成实现。
 - 双路径同效果落地固定为四件套：内联 `CombatTriggerHandler`（`CombatTriggerOrder`）+ 薄 `YuoSystem`（`SystemOrder` 同一先后关系）+ 能力标记组件（`CombatTriggerSurface.Sync` 按 `Stats.Effects`/`Stats.Traits` 挂摘）+ `CombatTriggerMath` 共享本体。
 - 特质载体：`CombatantStats.Traits`（`trait.*` ID 集合，面板字段，快照重建不带快照负担）。条件触发型特质按 ID 判定（如 `trait.bukandaowo` → `CombatEncounterState.Create` 开战授予 `buff.yinshen`）；数值型特质经 `CombatTraitRules` 折算进 `Stats.Effects` 点数通道（如 `trait.liweifanfou` → `ThreatOnTakenPoints = 100`）。
-- 随机通道分配（目标抽取族）：0~15 核心结算保留、3 玩家目标、16 单体兜底、17 AoE 多目标、**18 敌方盟友目标（出手）、19 敌方盟友目标（决策）**、64+ 触发器专属。敌方出手与决策在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取——单存活成员 `SelectTarget` 提前返回不掷点，单盟友行为与固定目标逐位等价。
+- 随机通道分配（目标抽取族）：0~15 核心结算保留、3 玩家目标、16 单体兜底、17 AoE 多目标、**18 敌方盟友目标（出手）、19 敌方盟友目标（决策）**、**20+chainIndex 连锁打击目标**（`chainOnKillCount` 击杀连锁的逐次追加抽选，命中未死即终止）、64+ 触发器专属。敌方出手与决策在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取——单存活成员 `SelectTarget` 提前返回不掷点，单盟友行为与固定目标逐位等价。
 
 桥接（Domain 不碰实体的解法）：战斗调度器整体迁入 `src/Ecs/Combat/`，操作的就是组件化状态，`RunSystem` 直接调用无分层冲突；`CombatantState` 增加运行时字段 `EntityId`（`AttachCombat` 时设置，不序列化）。
 
@@ -3865,7 +3933,7 @@ AdvanceTo(state, windowTarget):
 
 - 8 个 `PlayerSectionKind` 落库格式主体不动；`ExportSnapshot`/`SectionCodec` 契约不变。
 - 组件↔分段映射层扩展：新组件映射进既有分段（`PlayerResourcesComponent`→Combat；reactive buff→Buffs）。
-- `ActiveBuff` 记录扩展触发器字段（`TriggerKind`/`Params`）——**挂钩点**：首个"buff 定义携带触发参数"的特性落地时同步扩展，届时 Buffs 分段格式升版并同步 `PostgresSchema` 与 DataTool 校验；当前 reactive 参数经 `CombatantStats.Effects` 链路承载（装备 specialMechanics/怪物配表），无独立 wire 需求。
+- `ActiveBuff` 记录扩展触发器字段（`TriggerKind`/`Params`）——**挂钩点**：首个"buff 定义携带触发参数"的特性落地时同步扩展，届时 Buffs 分段格式升版并同步 `PostgresSchema` 与 DataTool 校验；当前 reactive 参数经 `CombatantStats.Effects` 链路承载（装备 flatStats 点数键/怪物配表），无独立 wire 需求。
 
 ## 7. 确定性与并发守则
 
@@ -4193,7 +4261,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 ### 20.4.1 物品与等级模型
 
 - 强化等级存于**资产变体**：`AssetKey(itemId, "+N")` 为独立余额行；已装备槽位仍记录 `PlayerEquipmentSlot.EnhancementLevel`，装备校验按变体键核对余额。
-- 每级强化使装备 `flatStats`/`baseStatRatios` ×1.05（指数成长，+20 满级约 ×2.653），`specialMechanics` 不缩放。
+- 每级强化使装备 `flatStats`/`baseStatRatios` ×1.05（指数成长，+20 满级约 ×2.653）；增幅类 `*Points` 键同样经 `flatStats` 承载并随强化缩放。
 - 强化行动 `enhance.equipment`（`ActionKind.Enhancement`，技艺=强化）：按目标物品与当前等级动态结算，不走静态 inputs/yields。
 
 ### 20.4.2 单次强化结算
@@ -4223,7 +4291,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 - 七技艺各配一件可装备工具，以**装备目录条目**落地（`equipment.` 前缀、进 `RawEquipments`），不参与物品目录登记。
 - 装备槽位：`slot = "tool-<techniqueId>"`（`tool-alchemy`/`tool-forging`/`tool-talisman`/`tool-enhancement`/`tool-formation`/`tool-gathering`/`tool-mining`），七个专属槽位随装备槽位唯一互斥校验天然互斥，同技艺至多一件。
 - 加成声明：`techniqueBonus = { technique, speedRatio }` 绑定技艺与速度加成数值；`speedRatio` 配表化为后续高品阶工具留空间，本批（tier 1）恒为 `0.10`。
-- 工具不配置 `flatStats`/`baseStatRatios`/`specialMechanics`，对战斗属性零贡献；命名遵循「本名不拼品阶前缀」，高阶工具以新 id 承载。
+- 工具不配置 `flatStats`/`baseStatRatios`，对战斗属性零贡献；命名遵循「本名不拼品阶前缀」，高阶工具以新 id 承载。
 - 首批工具：药锄（采集）、探矿罗盘（挖掘）、灵火鼎（炼丹）、锻灵锤（炼器）、朱砂符笔（符箓）、布阵旗（阵法）、淬灵砧（强化）。
 
 ### 20.7.2 速度加成结算
@@ -4467,7 +4535,10 @@ ALTER TABLE social.chat_messages ADD party_ref uuid REFERENCES social.parties(pa
 ### 21.13.1 组织条件与参与会话
 
 - 队伍持有 `openSlots`（2~5，默认 5）；成员数等于开启槽位、全员准备、全员位于目标节点才开战。档案目标优先，未指定时取队长驻留节点。
-- 开打冻结真实行动 ID、参与者顺序、各成员属性/功法槽/装备/气血灵力/跨战技能状态/持续消耗品 Buff、遭遇、公共种子与寻敌速度；会话内不接受实时装配面板变化，即时消耗品不自动触发。阵法类持续消耗品（`subCategory=formation`）的定格 Buff 全队生效——注入全部成员而非仅携带者（§7.9.5 作用范围条目）。已装载成员经其所有权通道定格最新内存态；未装载成员直接解码持久化真源（与装载对账同一事务快照口径），不触发实体装载与离线补算；若其收件箱仍压着未消费会话结算，定格前先在临时聚合上按装载对账同口径重放结算投影——冻结消费后的有效面板（散场复活回血等随之生效，不能从旧状态开下一场），收件箱本身不消费，挂机收益仍在其上线补算时生效。
+- 开打冻结真实行动 ID、参与者顺序、各成员属性/功法槽/装备/气血灵力/跨战技能状态/持续消耗品 Buff、遭遇、公共种子与寻敌速度；会话内不接受实时装配面板变化。阵法类持续消耗品（`subCategory=formation`）的定格 Buff 全队生效——注入全部成员而非仅携带者（§7.9.5 作用范围条目）。已装载成员经其所有权通道定格最新内存态；未装载成员直接解码持久化真源（与装载对账同一事务快照口径），不触发实体装载与离线补算；若其收件箱仍压着未消费会话结算，定格前先在临时聚合上按装载对账同口径重放结算投影——冻结消费后的有效面板（散场复活回血等随之生效，不能从旧状态开下一场），收件箱本身不消费，挂机收益仍在其上线补算时生效。
+- **消耗品托管（escrow）**：开打定格把成员「启用且适用于战斗栏域的消耗品槽」配置冻结进规格，社交层按成员钱包余额折算托管配额——即时/持续消耗品按可用余额全量托管，durable 持续品锁 1 件；配额整池回填首个同物品槽行（引擎按共享池消耗，其余同物品槽行保留冷却钟）。托管借记打包为单笔经济事务，**并入会话创建事务**——托管扣款、会话行与初始检查点同一 PostgreSQL 事务原子提交；余额不足即整体回滚，重读余额收紧配额后重试，不存在「扣了托管但会话未建」的孤儿窗口，也不需要补偿退款路径。托管量一旦入规格即从可用余额消失，战斗期间成员不能再卖出或使用它——副本与真身不存在分叉，无需运行时同步。
+- **会话台账与判定**：托管台账（每成员每槽剩余配额、冷却钟、持续到期墙钟）随检查点持久化，是共享剧本消耗品的唯一公共输入。即时消耗品仅于战斗相位按会话 5 秒窗口判定：触发器对 canonical 战内单位求值，恢复量/战内 Buff/雷击伤害直写该成员战斗单位，实耗扣台账并随个人结算投 `auto-use.activated` 事件与 `LostItem` 记账——成员钱包在托管借记后不再随每次使用变动。持续消耗品耗竭/冷却按会话墙钟折算（波间搜寻同样计时），波次入场时耗竭且冷却走完即消耗 1 件托管再充能，阵法类依旧全队注入。durable 托管件不消耗，其 Buff 由定格 `ExternalBuffs` 注入。
+- **散场退回**：会话收尾（含配表指纹失配安全收尾）把每槽未耗尽托管余量作为末批结算资产差量退回成员钱包；成员个人槽位冷却钟与充能态不被会话推进，散场后单人战斗照常自动使用。
 - 队伍斗法开关（`pvpEnabled`，§7.10.4）随会话创建冻结进参与规格；存续期间档案值与冻结值漂移即散场重建，与目标漂移同口径。勾选斗法的会话整队作为一个匹配单位进入斗法撮合，斗法战斗由会话权威相位回放共享剧本。
 - 成员原队首挂起，参与行动作为引用锚点插队；结束后按权威时刻恢复原队首。无限重复不因波次完成自动出队。
 - 参与引用不占个人行动容量：最多保留 256 项个人行动和 1 个参与引用。迁地命令插队前先按当前权威时刻散场并消费末批，不能把参与引用挂在赶路之后。
@@ -4511,7 +4582,7 @@ ALTER TABLE social.chat_messages ADD party_ref uuid REFERENCES social.parties(pa
 - 重启恢复最新会话检查点，不再无条件散场；游戏配表指纹不一致等无法安全续算的明确边界必须保留证据并按最后确定时刻收尾，禁止静默重算/重复发奖。
 - 恢复推进先核对持久化成员关系、就绪、槽位与目标驻留条件；发现已失效但缺少确定散场时刻时，保留原因和版本证据，按最后已提交检查点收尾，不补算不确定区间。
 - 组织恢复的位置校验从同一事务快照读取最新 `world` 分段（durable 队列叠加已落库段），迁地 `edgeId` 视为不驻留；不使用可能滞后的 `player_projection` 判定会话成立。开场冻结完成后先强制提交已装载成员脏分段，再创建会话检查点；未装载成员以同一事务快照口径的持久化真源定格，无脏分段可提交。
-- 确定未提交的会话推进恢复检查点；提交结局未知须通过原版本/幂等标识核验，不能继续覆盖不确定终态。成员消费复用既有经济事务确认与隔离语义。
+- 确定未提交的会话推进恢复检查点；提交结局未知须通过原版本/幂等标识核验，不能继续覆盖不确定终态。成员消费复用既有经济事务确认与隔离语义：账本事务类型 `participation.settlement`，幂等键 `participation:{sessionId}:{playerId}:{sequence}`（sequence 为会话结算序号），事务 ID 取 SHA-256(幂等键) 前 16 位，随 `ParticipationInboxReceipt` 与成员分段在同一事务内原子提交。
 - 单个会话的检查点冲突、未知提交或个人消费失败只隔离其自身，健康会话与其他玩家仍完成当批推进；批次最后报告故障，不能在玩家推进开始前冻结全服。
 - 本地库版本同步升级，迁移只放 `migrations/`；新库由权威 DDL 建表。旧模型切换使用该目录内的离线一次性工具解压并移除成员旧参与行动、保留已结算收益及终态血蓝，再由 SQL 收尾旧会话和推进标签；自动 SQL 链遇到未转码载荷必须中止，禁止假升级或清库，不新增运行时兼容路径。
 - 离线转码按运行时相同边界验证实际载荷大小、解压长度与 SHA-256；`stored_bytes` 为统计元数据，转码按实际新载荷长度重算。长度统计漂移不触发清库，原始长度或校验和不一致必须中止。

@@ -96,7 +96,7 @@
 | 命令 | 职责 |
 | --- | --- |
 | `action.enqueue` / `action.remove` | 行动入队（RepeatCount 1..1,000,000 或 -1 无限）/移除 |
-| `queue.configure` / `queue.move` | 循环与自动移动开关（写 Settings）/队列排序 |
+| `queue.configure` / `queue.move` / `queue.clear` | 循环与自动移动开关（写 Settings）/队列排序/清空行动队列（队首斗法按弃战路由后整队出队） |
 | `queue.auto_use.configure` | 自动使用槽配置（4 类 × 3 槽展示口径） |
 | `loadout.replace` | 装备/功法/消耗品装配变更 |
 | `ability.learn` | 功法秘籍/残卷研读（`item.tome.*`/`item.fragment.*`，`quantity` 支持批量逐本结算，幂等键必需） |
