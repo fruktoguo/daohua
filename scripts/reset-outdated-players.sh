@@ -205,3 +205,6 @@ COMMIT;
 SQL
 
 printf '==> [存档处置] 已重置 %s 名玩家的游戏域数据（账号与角色名保留，下次连接自动重建角色）。\n' "$STALE_COUNT"
+
+# 若重置或清理影响了市场系统单，自动补种系统货架保证本地流动性
+scripts/seed-market-system-listings.sh --if-missing || true

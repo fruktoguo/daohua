@@ -30,13 +30,14 @@ SEED_PARTITION_ID="${MARKET_PARTITION_ID:-0}"
 SYSTEM_ACCOUNT_ID="${SYSTEM_ACCOUNT_ID:-f0000000-0000-4000-8000-000000000001}"
 SYSTEM_PLAYER_ID="${SYSTEM_PLAYER_ID:-f0000000-0000-4000-8000-000000000002}"
 DRY_RUN=0
+IF_MISSING=0
 
 usage() {
   cat <<'EOF'
-用法: scripts/seed-market-system-listings.sh [--dry-run]
+用法: scripts/seed-market-system-listings.sh [--dry-run] [--if-missing]
 
-  --dry-run   只打印将要执行的 SQL，不改动数据库。
-
+  --dry-run     只打印将要执行的 SQL，不改动数据库。
+  --if-missing  仅当本地库缺失活跃系统卖单时补种；若已有活跃卖单或表未初始化则静默跳过（供启动链自愈使用）。
 环境变量（默认值对齐本地 compose.yaml）:
   DB_CONTAINER         本地数据库容器名，默认 daohua-local-db
   DB_USER / DB_NAME    数据库角色与库名，默认 daohua / daohua
@@ -57,6 +58,7 @@ EOF
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
+    --if-missing) IF_MISSING=1 ;;
     -h|--help) usage; exit 0 ;;
     *) printf '未知参数: %s\n\n' "$arg" >&2; usage >&2; exit 2 ;;
   esac
@@ -90,10 +92,22 @@ if ! psql_scalar 'SELECT 1;' >/dev/null 2>&1; then
 fi
 
 if [[ "$(psql_scalar "SELECT to_regclass('market.orders') IS NOT NULL;")" != "t" ]]; then
+  if [[ "$IF_MISSING" == "1" ]]; then
+    # 启动自愈场景下若表尚未初始化，静默跳过（等服务端由 PostgresSchema.Sql 直建）
+    exit 0
+  fi
   printf '错误: 本地库尚未初始化（无 market.orders）。请先启动一次服务端，由 PostgresSchema.Sql 直建 schema。\n' >&2
   exit 1
 fi
 
+if [[ "$IF_MISSING" == "1" ]]; then
+  ACTIVE_SEEDS="$(psql_scalar "SELECT count(*) FROM market.orders WHERE idempotency_key LIKE 'system-seed:%' AND status = 'active';")"
+  if [[ "${ACTIVE_SEEDS:-0}" != "0" ]]; then
+    # 已有活跃系统卖单，无需重新补种
+    exit 0
+  fi
+  printf '==> [坊市种子] 检测到本地库无活跃系统卖单，开始自动补种系统货架...\n'
+fi
 SQL_FILE="$(mktemp "${TMPDIR:-/tmp}/daohua-market-seed.XXXXXX.sql")"
 trap 'rm -f "$SQL_FILE"' EXIT
 

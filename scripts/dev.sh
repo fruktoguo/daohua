@@ -208,6 +208,12 @@ if ! scripts/reset-outdated-players.sh; then
   exit 1
 fi
 
+write_state "检查坊市种子"
+
+# 4.6 坊市系统货架种子自愈：本地开发环境下若缺失活跃系统卖单，自动补种
+#     （全量物品半价 + 装备 +0/+10/+20 各 1 亿份），确保本地测试盘口始终有基础流动性。
+scripts/seed-market-system-listings.sh --if-missing || true
+
 # TUI 判定延到全部前置自检之后：存档处置的 RESET 确认需要独占 /dev/tty 行缓冲交互，
 # TUI 的 raw 模式会抢占输入并让提示永远答不完。
 if [[ -t 0 && -t 1 && "${DAOHUA_TUI:-1}" != "0" ]]; then
