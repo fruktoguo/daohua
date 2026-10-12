@@ -411,7 +411,6 @@ export class GameClient {
         socket.close(1000, '客户端已停止')
         return
       }
-      this.reconnectDelay = 500
       // WebSocket transport open 仅代表 TCP 已建立；在合法 HelloAck 前仍保持 connecting。
       useGameStore.getState().setConnection('connecting')
       this.startHeartbeat(socket, sourceGeneration, sourcePlayerId)
@@ -550,6 +549,7 @@ export class GameClient {
           const snapshot = await decodePlayerSnapshotDto(dto, envelope.payload, this.account, this.sequenceId)
           if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
           useGameStore.getState().applySnapshot(snapshot)
+          this.reconnectDelay = 500
           appliedBusinessPayload = true
           break
         }
