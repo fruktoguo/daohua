@@ -171,7 +171,7 @@ public sealed class DuelSimulationTests
         var settled = SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(1600), catalog, duel: new DuelAdvanceOptions(true));
         Assert.Empty(player.Duel.StagedItems);
         Assert.Contains(settled.AssetDeltas, delta => delta.Asset.ItemId.Value == "item.loot" && delta.QuantityDelta == 1);
-        Assert.Contains(settled.Events, entry => entry.Code == "duel.staged-settled");
+        Assert.Contains(settled.Events, entry => entry.Code == "duel.staged.settled");
     }
 
     /// <summary>暂存区档位桶化：同物品同桶合并为一条，跨桶另起批次；结算时刻取桶尾 + 入账延迟。</summary>

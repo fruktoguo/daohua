@@ -396,7 +396,7 @@ public static partial class SimulationEngine
                     wallet.Apply(settledDelta);
                     deltas[settledDelta.Asset] = deltas.GetValueOrDefault(settledDelta.Asset) + settledDelta.QuantityDelta;
                     var settledItemId = new ItemId(settledItem.ItemId);
-                    events.Add(new SimulationEvent(now.AddSeconds(step), "duel.staged-settled",
+                    events.Add(new SimulationEvent(now.AddSeconds(step), "duel.staged.settled",
                         $"暂存物品入账：{gameData.Items.GetValueOrDefault(settledItemId)?.Name ?? settledItem.ItemId} ×{settledItem.Quantity:0.##}。", null,
                         new Dictionary<ItemId, double> { [settledItemId] = settledItem.Quantity }));
                 }

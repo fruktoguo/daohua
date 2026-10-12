@@ -2,7 +2,7 @@ namespace Server.Clean;
 
 /// <summary>
 /// 默认的集成事件下游：把 outbox 事件归档进 identity.audit_events。
-/// 安全/业务审计事件（auth.*、player.*、market.*）统一在此落库，
+/// 安全/业务审计事件（auth.*）统一在此落库，
 /// 返回 true 表示已投递，由 OutboxWorker 标记 delivered。
 /// </summary>
 public sealed class AuditIntegrationEventDispatcher(
@@ -19,9 +19,9 @@ public sealed class AuditIntegrationEventDispatcher(
     public async ValueTask<bool> DispatchAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
         var eventType = message.EventType;
-        var known = eventType.StartsWith("auth.", StringComparison.Ordinal)
-            || eventType.StartsWith("player.", StringComparison.Ordinal)
-            || eventType.StartsWith("market.", StringComparison.Ordinal);
+        // 审计通道只认领 auth.*：outbox 当前唯一生产者是账号仓储（auth.account.*），
+        // player.* 与 market.* 无生产者，不为假想事件预留归档分支。
+        var known = eventType.StartsWith("auth.", StringComparison.Ordinal);
         if (!known)
         {
             // 未归档类型不属于审计通道，保持 pending 等待未来下游接管。

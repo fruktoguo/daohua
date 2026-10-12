@@ -179,7 +179,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 | 表 | 关键字段 | 约束与用途 |
 | --- | --- | --- |
 | platform.section_flush_queue | player_id, section_kind, state_version, payload, codec, attempts, next_attempt_at, lease_until, updated_at | 主键 (player_id, section_kind)；UPSERT 覆盖旧待写值，绝不积累高频历史。 |
-| platform.integration_outbox | outbox_id, aggregate_type, aggregate_id, event_type, payload, occurred_at, attempts, visible_at, lease_until, lease_token, delivered_at, last_error | 只承载需要可靠投递的外部副作用（当前由注册、市场成交等业务事务同库追加生产）；`OutboxWorker` 按租约批量领取、投递成功标记 `delivered_at`、失败退回并按 `visible_at` 重试。 |
+| platform.integration_outbox | outbox_id, aggregate_type, aggregate_id, event_type, payload, occurred_at, attempts, visible_at, lease_until, lease_token, delivered_at, last_error | 只承载需要可靠投递的外部副作用；当前实际产出仅 `auth.account.registered`/`login`/`logout`/`password_changed` 四个认证事件，经 `OutboxWorker`→`AuditIntegrationEventDispatcher` 归档进 `identity.audit_events`。市场成交不追加 outbox，走 `economy.*` 账本事务；`player.*`/`market.*` 审计通道待商业合规需求落地时再引入。`OutboxWorker` 按租约批量领取、投递成功标记 `delivered_at`、失败退回并按 `visible_at` 重试。 |
 | platform.command_receipts | player_id, request_id, command, payload_hash, result_payload, state_version, created_at, expires_at | 持久化命令幂等回执：`(player_id, request_id)` 唯一，重放相同请求直接返回已存结果；由独立的 `CommandReceiptCleanupWorker` 按 `expires_at` 清理，不归 retention worker。 |
 | platform.compute_jobs | job_id, player_id, target_time, status, input_payload, output_payload, lease_until, lease_token, next_attempt_at, last_error, attempts, updated_at | 冷挂机任务状态；status 取 pending/leased/succeeded/dead；同一玩家最多一个未完结任务由部分唯一索引 ux_compute_jobs_open 保证；成功任务短留，dead 任务保留诊断窗口，终态行由 retention worker 按 status+updated_at 清理。 |
 
@@ -298,7 +298,11 @@ identity:<account>:<operation-id>
 economy:<player-id>:<client-command-id>
 market:<player-id>:<order-command-id>
 integration:<aggregate-id>:<event-id>
+simulation.compute:{jobId}
+participation:{sessionId}:{playerId}:{sequence}
 ~~~
+
+`simulation.compute:{jobId}` 绑定冷挂机结算提交（资产增量入账幂等，重派重放不重复记账）。`participation:{sessionId}:{playerId}:{sequence}` 是行动参与会话分段结算（`participation.settlement`）的幂等键：事务 ID 取 `SHA256(key)` 前 16 字节作 `Guid`，随 `ParticipationInboxReceipt` 收件箱回执与玩家分段在同一事务原子提交。
 
 幂等记录只保留到业务结果可安全查询的期限；不把每个普通读取请求写入数据库。
 

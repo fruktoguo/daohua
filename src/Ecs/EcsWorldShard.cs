@@ -179,7 +179,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         return ExecuteOwned(() =>
         {
             if (_players.ContainsKey(state.PlayerId.Value)) throw new InvalidOperationException($"ECS player already exists: {state.PlayerId}");
-            using var creationMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create", "player");
+            using var creationMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.player");
             var entity = new YuoEntity(World, IDGenerate.GetID($"player:{state.PlayerId.Value:N}"));
             RuntimeInstrumentation.Count("lifecycle.entity_created.player");
             entity.EntityName = $"player:{state.PlayerId}";
@@ -324,7 +324,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             if (!_players.TryRemove(playerId, out var entityId)) return false;
             _simulationEvents.Remove(playerId);
             _simulationResults.Remove(playerId);
-            using var removalMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_destroy", "player");
+            using var removalMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_destroy.player");
             RuntimeInstrumentation.Count("lifecycle.entity_destroyed.player");
             DestroyPlayerEncounters(entityId);
             if (World.GetEntity(entityId) is { } playerEntity)
@@ -471,7 +471,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
 
     private void DestroyPlayerEncounters(long playerEntityId)
     {
-        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_destroy", "encounter");
+        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_destroy.encounter");
         foreach (var encounterId in _encounters
                      .Where(pair => pair.Value == playerEntityId)
                      .Select(pair => pair.Key)
@@ -742,7 +742,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
 
     private long CreateMapNodeCore(WorldNode node)
     {
-        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create", "map_node");
+        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.map_node");
         ArgumentNullException.ThrowIfNull(node);
         if (_nodes.TryGetValue(node.Id, out var existing)) return existing;
         var entity = new YuoEntity(World, IDGenerate.GetID(node.Id));
@@ -784,7 +784,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
 
     private long CreateMonsterCore(string monsterDefinitionId, long? parentNodeEntityId)
     {
-        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create", "monster");
+        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.monster");
         if (!GameData.CombatMonsters.TryGetValue(monsterDefinitionId, out var definition)) throw new DomainException(DomainErrorCode.NotFound, $"怪物 {monsterDefinitionId} 不存在。");
         var entity = new YuoEntity(World);
         RuntimeInstrumentation.Count("lifecycle.entity_created.monster");
@@ -809,7 +809,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
 
     private long CreateEncounterCore(Guid playerId, string encounterId, long seed)
     {
-        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create", "encounter");
+        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.encounter");
         var player = GetPlayer(playerId);
         if (!GameData.CombatEncounters.TryGetValue(encounterId, out var definition)) throw new DomainException(DomainErrorCode.NotFound, $"遭遇 {encounterId} 不存在。");
         var playerCombat = player.GetOrAddComponent<PlayerCombatComponent>();
@@ -925,7 +925,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     /// <summary>把共享领域入场原语生成的战斗单位状态挂载到真实 ECS 实体。</summary>
     private long CreateEncounterFromStateCore(Guid playerId, CombatEncounterState state, DateTimeOffset startedAt)
     {
-        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create", "encounter");
+        using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.encounter");
         var player = GetPlayer(playerId);
         var encounterEntity = new YuoEntity(World);
         RuntimeInstrumentation.Count("lifecycle.entity_created.encounter");

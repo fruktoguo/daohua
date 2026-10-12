@@ -296,7 +296,9 @@ public static class BenchWorkload
         long? LoginIntegerDelta(string name) => BenchMeasurements.Delta(BenchMeasurements.Integer(before, name), BenchMeasurements.Integer(afterLogin, name));
         double? Sum(string prefix)
         {
-            var selected = core.Where(pair => pair.Key == prefix || pair.Key.StartsWith(prefix + "|", StringComparison.Ordinal)).ToArray();
+            // 阶段名点分子级（如 lifecycle.entity_create.player）并入前缀汇总，与 stage|scenario 原匹配同口径。
+            var selected = core.Where(pair => pair.Key == prefix || pair.Key.StartsWith(prefix + "|", StringComparison.Ordinal)
+                || pair.Key.StartsWith(prefix + ".", StringComparison.Ordinal)).ToArray();
             return selected.Length == 0 ? null : selected.Sum(pair => pair.Value.TotalMs);
         }
         double? LoginSum(string prefix)

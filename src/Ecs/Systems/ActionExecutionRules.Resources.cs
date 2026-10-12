@@ -119,7 +119,7 @@ internal static partial class ActionExecutionRules
             var delta = new AssetDelta(player.PlayerId, new AssetKey(itemId), item.Quantity, "simulation");
             wallet.Apply(delta);
             request.AddAsset(delta);
-            request.AddEvent(new SimulationEvent(at, "duel.staged-settled",
+            request.AddEvent(new SimulationEvent(at, "duel.staged.settled",
                 $"暂存物品入账：{gameData.Items.GetValueOrDefault(itemId)?.Name ?? item.ItemId} ×{item.Quantity:0.##}。", null,
                 new Dictionary<ItemId, double> { [itemId] = item.Quantity }));
         }
@@ -310,8 +310,9 @@ internal static partial class ActionExecutionRules
         LiveCombatBattle? live = null)
     {
         if (player.Actions.Count == 0 || player.Resources.Hitpoints <= 0) return [];
-        // 参与会话期间不激活即时消耗品：其他成员的钱包/槽位不可见，共享剧本只消费开打定格画面
-        // （否则本机雷击符/药品在别的成员模拟里不存在 → 战斗状态分歧）。
+        // 参与会话期间不激活即时消耗品：共享剧本的全部输入必须来自开打定格 spec
+        // （含检查点恢复与计算节点重放验算）；成员钱包/槽位不在定格公共输入内，
+        // 实时扣件会使同一剧本的推演输入不可复现 → 状态分歧。
         if (player.Actions[0].Participation is not null) return [];
         // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与栏域匹配的固定税。
         var slots = player.Settings.AutoUseSlots;

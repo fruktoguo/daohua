@@ -63,11 +63,25 @@ public static class BenchStageReports
         new("ecs.system.run.CombatEventAdvanceSystem", "ecs", true),
         new("ecs.system.run.CombatTargetSystem", "ecs", true),
         new("ecs.system.run.CombatEventSystem", "ecs", true),
+        new("ecs.bulk_advance", "ecs", true),
+        new("ecs.mailbox.callback", "ecs", true),
+        new("ecs.stage.clock", "ecs", true),
+        new("ecs.stage.queue", "ecs", true),
+        new("ecs.stage.combat_encounter", "ecs", true),
+        new("ecs.stage.combat_yield", "ecs", true),
         new("queue.actor_wait", "queue", true),
         new("queue.owner_wait", "queue", true),
         new("snapshot.export", "snapshot", true),
         new("lifecycle.player_load", "lifecycle", true),
-        new("lifecycle.entity_create", "lifecycle", true)
+        new("lifecycle.player_loaded", "lifecycle", true),
+        new("lifecycle.player_unloaded", "lifecycle", true),
+        new("lifecycle.entity_create.player", "lifecycle", true),
+        new("lifecycle.entity_create.map_node", "lifecycle", true),
+        new("lifecycle.entity_create.monster", "lifecycle", true),
+        new("lifecycle.entity_create.ally", "lifecycle", true),
+        new("lifecycle.entity_create.encounter", "lifecycle", true),
+        new("lifecycle.entity_destroy.player", "lifecycle", true),
+        new("lifecycle.entity_destroy.encounter", "lifecycle", true)
     ];
 
     public static IReadOnlyList<BenchStageMeasurement> Rows(BenchReport report)
