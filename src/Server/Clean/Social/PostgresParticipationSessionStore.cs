@@ -129,12 +129,16 @@ public sealed class PostgresParticipationSessionStore(NpgsqlDataSource dataSourc
     }
 
     /// <inheritdoc />
-    public async ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(ActionParticipationSessionRecord session, CancellationToken cancellationToken = default)
+    public async ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(ActionParticipationSessionRecord session,
+        EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default)
     {
         ValidateSession(session);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await FenceSpecMembersAsync(connection, transaction, session.SpecJson, cancellationToken);
+        // 托管实扣并入会话事务：余额不足或幂等冲突即整体回滚，会话行同样不落盘。
+        if (escrow is not null)
+            await PostgresEconomyRepository.CommitCoreAsync(connection, transaction, escrow, cancellationToken);
         await using var command = new NpgsqlCommand($"""
             INSERT INTO social.party_sessions
                 (session_id, party_id, spec, started_at, runtime_state, state_version, last_simulated_at, ended_at, end_reason)

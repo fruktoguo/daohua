@@ -124,6 +124,28 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
+    /// 倒地状态遭遇新波次（入场定格气血为 0）：发 combat.downed 而非 combat.lost——
+    /// 「气血衰竭无法迎战」只是受阻语义，不构成真阵亡，不计败走/死亡；
+    /// 同轮濒死复苏归一 1 HP 后按准入重跑续战。
+    /// </summary>
+    [Fact]
+    public void DownedEntryEmitsDownedEventWithoutCountingDefeat()
+    {
+        var catalog = CreateCatalog(enemyHitpoints: 1_000, enemyAttackPower: 0);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+        // 倒地驻留：濒死复苏前的 hp=0 入场（插队顶替/持久化残留均可到达）。
+        player.Resources.Hitpoints = 0;
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog);
+
+        Assert.Contains(result.Events, entry => entry.Code == "combat.downed");
+        Assert.DoesNotContain(result.Events, entry => entry.Code == "combat.lost");
+        Assert.Equal(0, player.Progression.TotalDefeats);
+        Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
+    }
+
+    /// <summary>
     /// 同波全体敌人同场交战，清空整波才结算一次完成并推进到下一波。
     /// </summary>
     [Fact]

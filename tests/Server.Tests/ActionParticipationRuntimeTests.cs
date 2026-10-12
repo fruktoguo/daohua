@@ -417,7 +417,8 @@ public sealed class ActionParticipationRuntimeTests
         public ValueTask<string?> GetInvalidationReasonAsync(string sessionId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(InvalidationReason);
 
-        public ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(ActionParticipationSessionRecord session, CancellationToken cancellationToken = default) =>
+        public ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(ActionParticipationSessionRecord session,
+            EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_sessions.GetOrAdd(session.SessionId, session));
 
         public async ValueTask<bool> CommitAdvanceAsync(string sessionId, long expectedVersion, string stateJson,

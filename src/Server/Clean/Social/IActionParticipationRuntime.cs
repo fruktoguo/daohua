@@ -12,8 +12,12 @@ public interface IActionParticipationRuntime
     /// <summary>已发现的活跃或待消费成员提示；首次装载仍须查询持久化真源。</summary>
     bool RequiresReconciliation(Guid playerId);
 
-    /// <summary>交付冻结开场输入并持久化初始权威检查点；重复交付不覆盖已有推进。</summary>
-    ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 交付冻结开场输入并持久化初始权威检查点；重复交付不覆盖已有推进。
+    /// <paramref name="escrow"/> 非空时把开打消耗品托管实扣并入同一会话事务原子提交。
+    /// </summary>
+    ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec,
+        EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default);
 
     /// <summary>只推进至少一名成员在线的活跃会话；全员离线时不执行战斗推演。</summary>
     ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default);

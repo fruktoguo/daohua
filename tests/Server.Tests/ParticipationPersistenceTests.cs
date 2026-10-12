@@ -79,6 +79,65 @@ public sealed class ParticipationPersistenceTests
             await jobs.EnqueueAsync(fixture.Players[0], target.AddSeconds(1), new byte[] { 2 }));
     }
 
+    /// <summary>开打托管实扣与会话行、初始检查点同一事务提交：余额不足即整体回滚不留孤儿扣件，
+    /// 同一幂等键的重复交付重放不重复扣件且不回写既有推进。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task EscrowDebitAndSessionCheckpointCommitOrRollBackTogether()
+    {
+        await using var fixture = await Fixture.CreateAsync(1);
+        var player = fixture.Players[0];
+        await fixture.ScalarAsync("""
+            INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at)
+            VALUES ($1,'item.test-escrow','',5,1,now())
+            """, player);
+        // 每队伍唯一活跃会话位由夹具会话占着：先收尾空出活跃位，再验证新会话的托管原子提交。
+        Assert.True(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 0, "{\"ended\":true}",
+            fixture.StartedAt, [], fixture.StartedAt, "test-end"));
+        var specJson = JsonSerializer.Serialize(new { encounterId = "encounter.test", nodeId = "node.test",
+            members = fixture.Players.Select(p => new { playerId = p.ToString("D") }) });
+        var sessionId = $"action:{Guid.NewGuid():N}";
+        var brokeId = $"action:{Guid.NewGuid():N}";
+        try
+        {
+            var record = new ActionParticipationSessionRecord(sessionId, fixture.PartyId, specJson,
+                "{\"wave\":0}", 0, fixture.StartedAt);
+            var transactionId = Guid.NewGuid();
+            var escrow = new EconomyTransactionRequest(transactionId, $"party.escrow:{sessionId}",
+                "participation.escrow", player, [new(player, "item.test-escrow", "", -5)]);
+            var stored = await fixture.Store.CreateOrInitializeAsync(record, escrow);
+            Assert.Equal(sessionId, stored.SessionId);
+            Assert.Equal(0d, await fixture.ScalarAsync(
+                "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-escrow'", player));
+            Assert.Equal(1L, await fixture.ScalarAsync(
+                "SELECT count(*) FROM social.party_sessions WHERE session_id=$1", sessionId));
+            Assert.Equal(transactionId, await fixture.ScalarAsync(
+                "SELECT transaction_id FROM economy.transactions WHERE transaction_id=$1", transactionId));
+
+            var again = await fixture.Store.CreateOrInitializeAsync(record with { StateJson = "{\"wave\":7}", Version = 7 }, escrow);
+            Assert.Equal(stored.Version, again.Version);
+            Assert.Equal(0d, await fixture.ScalarAsync(
+                "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-escrow'", player));
+
+            var brokeEscrow = new EconomyTransactionRequest(Guid.NewGuid(), $"party.escrow:{brokeId}",
+                "participation.escrow", player, [new(player, "item.test-escrow", "", -1)]);
+            await Assert.ThrowsAsync<EconomyInsufficientBalanceException>(async () =>
+                await fixture.Store.CreateOrInitializeAsync(
+                    new(brokeId, fixture.PartyId, specJson, "{\"wave\":0}", 0, fixture.StartedAt), brokeEscrow));
+            Assert.Equal(0L, await fixture.ScalarAsync(
+                "SELECT count(*) FROM social.party_sessions WHERE session_id=$1", brokeId));
+            Assert.Equal(0L, await fixture.ScalarAsync(
+                "SELECT count(*) FROM economy.transactions WHERE idempotency_key=$1", $"party.escrow:{brokeId}"));
+            Assert.Equal(0d, await fixture.ScalarAsync(
+                "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-escrow'", player));
+        }
+        finally
+        {
+            await fixture.ScalarAsync("DELETE FROM social.party_sessions WHERE session_id = $1", sessionId);
+            await fixture.ScalarAsync("DELETE FROM social.party_sessions WHERE session_id = $1", brokeId);
+        }
+    }
+
     /// <summary>成员失败结算不留下余额、分段或消费回执；精确重放不重复发放，不同幂等键不能二次消费。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]

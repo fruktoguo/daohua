@@ -852,7 +852,7 @@ internal static class CombatActionRules
         {
             action.Status = ActionQueueStatus.Blocked;
             action.Expedition = completedSearch;
-            AddCombatEventAt(ref events, entryAt, "combat.lost", $"气血衰竭，无法迎战：{waveNames}。", definition.Id);
+            AddCombatEventAt(ref events, entryAt, "combat.downed", $"气血衰竭，无法迎战：{waveNames}。", definition.Id);
             if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !AllActionsBlocked(player.Actions))
                 player.RotateActionToTail(action.Id);
             return new CombatEntryPreparation(null, completedSearch,
@@ -864,7 +864,7 @@ internal static class CombatActionRules
             // 原地复活遭遇进入复活读条，否则等波次清空满状态起身；会话行动不可阻塞/轮转离队首。
             if (respawnSeconds > 0)
                 battle.Player.RespawnAtSeconds = battle.ElapsedSeconds + respawnSeconds;
-            AddCombatEventAt(ref events, entryAt, "combat.lost",
+            AddCombatEventAt(ref events, entryAt, "combat.downed",
                 $"你以倒地状态随队迎战：{waveNames}。", definition.Id);
         }
 

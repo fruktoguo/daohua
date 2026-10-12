@@ -165,7 +165,7 @@ public sealed class CombatRelocationTests
         // 推进：搜寻完成后入场判定 hp=0 → 受阻写「无法迎战」——但同轮推进内立即
         // 濒死复苏归一 1 HP 并恢复准入，重新入场开打（不停泊、无需再手动干预）。
         var blocked = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), gameData);
-        Assert.Contains(blocked.Events, e => e.Code == "combat.lost");
+        Assert.Contains(blocked.Events, e => e.Code == "combat.downed");
         Assert.NotEqual(ActionQueueStatus.Blocked, player.Actions[0].Status);
         Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
     }

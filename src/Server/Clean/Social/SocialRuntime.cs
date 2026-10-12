@@ -48,6 +48,8 @@ public sealed class SocialRuntime
     private readonly IActionParticipationRuntime? _participation;
     /// <summary>玩家持久化分段仓储：未装载成员的冻结面板直接从持久化真源解码，不触发装载与冷补算。</summary>
     private readonly IPlayerStateRepository? _sections;
+    /// <summary>资产余额只读边界：定格时刻可托管库存的权威来源（托管实扣随会话事务原子提交）。</summary>
+    private readonly IAssetBalanceRepository? _assetBalances;
     /// <summary>组队讨伐的每队伍裁决门：开打/散场仲裁串行化，跨实例竞态由 DB 唯一索引收敛。</summary>
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _partyGates = new();
     /// <summary>实例级通知并发门：跨并发存在感触发共享 4 个实际通知槽位。</summary>
@@ -86,7 +88,8 @@ public sealed class SocialRuntime
         IPlayerRuntime? players = null,
         IPlayerSimulationClock? simulationClock = null,
         IActionParticipationRuntime? participation = null,
-        IPlayerStateRepository? sections = null)
+        IPlayerStateRepository? sections = null,
+        IAssetBalanceRepository? assetBalances = null)
     {
         _repository = repository;
         _presence = presence;
@@ -98,6 +101,7 @@ public sealed class SocialRuntime
         _clock = simulationClock ?? PlayerSimulationClock.FromEnvironment();
         _participation = participation;
         _sections = sections;
+        _assetBalances = assetBalances;
         _nodeIds = catalog.WorldGraph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
         _presence.PresenceChanged += OnPresenceChangedAsync;
         _presence.NodeChanged += OnNodeChangedAsync;
@@ -1046,9 +1050,19 @@ public sealed class SocialRuntime
             _logger.LogError("组队讨伐开战放弃：会话规格不合法（队伍 {PartyId}，会话 {SessionId}）。", party.PartyId, sessionId);
             return;
         }
-        // 冻结规格与权威初态同事务占活跃位；成员入队失败不影响检查点恢复。
-        await (_participation ?? throw new InvalidOperationException("未装配行动参与权威宿主。"))
-            .CreateAsync(party.PartyId, spec, cancellationToken);
+        // 托管实扣与会话占位同一事务原子提交（§21.13.1）：余额不足说明定格读数被并行扣件，
+        // 重读余额折算新配额后重试；仍持续不足则由异常上抛放弃本局，不产生半个会话或孤儿扣件。
+        var participation = _participation ?? throw new InvalidOperationException("未装配行动参与权威宿主。");
+        for (var attempt = 0; ; attempt++)
+        {
+            var (filled, escrow) = await PlanConsumableEscrowAsync(spec, party, cancellationToken);
+            try
+            {
+                await participation.CreateAsync(party.PartyId, filled, escrow, cancellationToken);
+                break;
+            }
+            catch (EconomyInsufficientBalanceException) when (attempt < 2) { }
+        }
 
         var undelivered = 0;
         foreach (var member in party.Members)
@@ -1098,6 +1112,74 @@ public sealed class SocialRuntime
         await ReconcileResidentMembersAsync(cancellationToken);
         await NotifyAsync([.. session.MemberIds]);
         _logger.LogInformation("组队讨伐会话 {SessionId} 散场：{Reason}。", session.SessionId, reason);
+    }
+
+    /// <summary>一次托管计划的物品行（成员维度汇总后随经济事务结果载荷持久化留证）。</summary>
+    private sealed record EscrowEntry(string ItemId, double Quantity);
+
+    /// <summary>
+    /// 开打定格的消耗品托管计划：按冻结槽位读成员钱包余额折算托管配额——durable 锁 1 件、其余全量余额；
+    /// 配额回填 spec 首个同物品槽行（引擎台账按共享池消耗），实扣差量打包为单笔经济事务，
+    /// 由会话创建路径并入同一数据库事务原子提交——本方法只计算计划，不单独提交，
+    /// 保证「扣了托管」与「会话占位」同生同灭，无孤儿扣件窗口。
+    /// </summary>
+    private async ValueTask<(ActionParticipationSpec Spec, EconomyTransactionRequest? Escrow)>
+        PlanConsumableEscrowAsync(ActionParticipationSpec spec, PartyRecord party, CancellationToken cancellationToken)
+    {
+        if (_assetBalances is null)
+            return (spec, null);
+        var deltas = new List<AssetDelta>();
+        var fills = new Dictionary<Guid, List<EscrowEntry>>();
+        for (var i = 0; i < spec.Members.Count; i++)
+        {
+            var slots = spec.Members[i].ConsumableSlots;
+            if (slots is not { Count: > 0 }) continue;
+            var memberId = Guid.Parse(spec.Members[i].PlayerId);
+            // 需要托管的物品按槽序去重：durable 需求 1 件，其余托管全量可用余额。
+            var demands = new List<(string ItemId, bool Durable)>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var slot in slots)
+                if (seen.Add(slot.ItemId)
+                    && _gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item)
+                    && item.Consumable is { } consumable)
+                    demands.Add((slot.ItemId, consumable.Durable));
+            if (demands.Count == 0) continue;
+            var balances = await _assetBalances.LoadBalancesAsync(memberId, cancellationToken);
+            var pool = new Dictionary<string, double>(StringComparer.Ordinal);
+            foreach (var row in balances)
+                if (row.Variant.Length == 0) pool[row.AssetId] = row.Quantity;
+            var entries = new List<EscrowEntry>();
+            foreach (var (itemId, durable) in demands)
+            {
+                var balance = pool.GetValueOrDefault(itemId);
+                var quantity = durable ? Math.Min(balance, 1) : balance;
+                if (quantity >= 1)
+                {
+                    entries.Add(new(itemId, quantity));
+                    deltas.Add(new(memberId, itemId, string.Empty, -quantity));
+                }
+            }
+            if (entries.Count > 0) fills[memberId] = entries;
+        }
+        if (deltas.Count == 0) return (spec, null);
+        // 配额回填：同物品整池挂在首个槽行，其余同物品槽行保持 0（引擎按共享池消耗）。
+        var members = spec.Members.Select(member =>
+        {
+            var memberId = Guid.Parse(member.PlayerId);
+            if (!fills.TryGetValue(memberId, out var entries) || member.ConsumableSlots is not { } slots)
+                return member;
+            var unassigned = entries.ToDictionary(entry => entry.ItemId, entry => entry.Quantity,
+                StringComparer.Ordinal);
+            return member with
+            {
+                ConsumableSlots = slots.Select(slot => unassigned.Remove(slot.ItemId, out var quantity)
+                    ? slot with { EscrowQuantity = quantity } : slot).ToArray()
+            };
+        }).ToArray();
+        var request = new EconomyTransactionRequest(Guid.NewGuid(), $"party.escrow:{spec.SessionId}",
+            "participation.escrow", party.LeaderId, deltas,
+            ResultPayload: JsonSerializer.SerializeToUtf8Bytes(fills, PersistenceJson.Options));
+        return (spec with { Members = members }, request);
     }
 
     /// <summary>

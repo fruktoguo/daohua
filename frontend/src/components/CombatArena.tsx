@@ -1669,6 +1669,10 @@ export const CombatArena = memo(function CombatArena({
       }]
     }
     const wave = expedition?.enemies ?? []
+    // 敌人行动条只在己方全灭倒地窗口隐藏：引擎此时全场冻结、敌方无目标不出手。
+    // 仅自己倒地而仍有队友存活时战斗照常推进，敌人行动必须继续可见（组队讨伐口径）。
+    const allAlliesDowned = (expedition?.playerHitpoints ?? 1) <= 0
+      && !(expedition?.allies?.some(ally => ally.hitpoints > 0) ?? false)
     return wave.map((entry, index) => {
       const name = entry.name || entry.enemyId
       return {
@@ -1681,7 +1685,7 @@ export const CombatArena = memo(function CombatArena({
         mp: entry.manapoints,
         maxMp: Math.max(1, entry.maxManapoints ?? entry.attributes?.maxManapoints ?? entry.manapoints),
         threat: entry.threat,
-        action: entry.hitpoints > 0 && expedition?.phase === 'combat' && expedition.playerRespawnAtSeconds == null
+        action: entry.hitpoints > 0 && expedition?.phase === 'combat' && !allAlliesDowned
           ? enemyActionState(entry, battleElapsed, serverNow, abilities)
           : null,
         visual: entry.visual ?? null,

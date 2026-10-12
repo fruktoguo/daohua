@@ -46,7 +46,38 @@ public sealed record ActionParticipationSessionDocument(
     IReadOnlyList<double> MemberRegenCarrySeconds,
     double CompletedRepeats,
     IReadOnlyList<CombatUnitStatDocument> CombatStats,
-    double? EndsAtUnixSeconds = null);
+    double? EndsAtUnixSeconds = null,
+    IReadOnlyList<SessionConsumableSlot>? ConsumableLedger = null);
+
+/// <summary>
+/// 会话消耗品托管台账行：随检查点持久化，按成员槽位记录剩余托管配额与时钟（墙钟口径）。
+/// 剩余配额只减不增；散场把未耗尽配额作为资产差量退回成员钱包。
+/// </summary>
+/// <param name="MemberIndex">成员下标（与 <see cref="ActionParticipationSpec.Members"/> 同序）。</param>
+/// <param name="ItemId">托管物品 ID。</param>
+/// <param name="Group">槽位组（general/potion）。</param>
+/// <param name="SlotIndex">组内槽位下标。</param>
+/// <param name="RemainingQuantity">托管剩余数量；durable 恒为锁定的 1 件，不消耗。</param>
+/// <param name="CooldownUntilUnixSeconds">冷却钟（Unix 秒）：即时消耗品触发冷却、持续槽耗竭后冷却共用。</param>
+/// <param name="SustainedExpiresAtUnixSeconds">持续消耗品生效到期墙钟（Unix 秒）；0 表示未生效。</param>
+public sealed record SessionConsumableSlot(
+    int MemberIndex,
+    string ItemId,
+    string Group,
+    int SlotIndex,
+    double RemainingQuantity,
+    double CooldownUntilUnixSeconds = 0,
+    double SustainedExpiresAtUnixSeconds = 0)
+{
+    /// <summary>持久化不变量。</summary>
+    public bool IsValid => MemberIndex >= 0
+        && !string.IsNullOrWhiteSpace(ItemId) && ItemId.Length <= 128
+        && (Group == AutoUseSlotState.SlotGroupGeneral || Group == AutoUseSlotState.SlotGroupPotion)
+        && SlotIndex >= 0
+        && double.IsFinite(RemainingQuantity) && RemainingQuantity >= 0
+        && double.IsFinite(CooldownUntilUnixSeconds) && CooldownUntilUnixSeconds >= 0
+        && double.IsFinite(SustainedExpiresAtUnixSeconds) && SustainedExpiresAtUnixSeconds >= 0;
+}
 
 /// <summary>配表指纹不一致时的安全收尾结果：不读取新配表、不产生收益，只关闭旧检查点。</summary>
 public sealed record ActionParticipationSessionFinalization(

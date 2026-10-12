@@ -291,6 +291,237 @@ public sealed class ActionParticipationSessionTests
         }
     }
 
+    /// <summary>开打定格的托管槽在会话窗口判定：触发器读 canonical/冻结求值单位，
+    /// 同物品多槽共享池扣件，实耗记「失去」账本并产自动使用事件，非战斗相位 Buff 折算跨波携带。</summary>
+    [Fact]
+    public void InstantConsumableConsumesSharedEscrowPoolAndCarriesBuff()
+    {
+        var (catalog, _, original) = CreateParty();
+        var slots = new[]
+        {
+            new ActionConsumableSlot("item.zhixue-powder", "combat", AutoUseSlotState.SlotGroupPotion, 0, 2),
+            new ActionConsumableSlot("item.zhixue-powder", "combat", AutoUseSlotState.SlotGroupPotion, 1, 1)
+        };
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                InitialHitpoints = index == 0 ? member.Stats.MaxHitpoints * 0.4 : member.Stats.MaxHitpoints,
+                ConsumableSlots = index == 0 ? slots : null
+            }).ToArray()
+        };
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var projected = session.AdvanceTo(Baseline.AddSeconds(10));
+        var document = session.Export();
+        // 同物品多槽独立冷却、共享池扣件（与单人两槽共用钱包同口径）：两槽各发一次共耗 2 件，
+        // 池按最早非空行顺序扣减：2+1 → 0+1。
+        var ledger = document.ConsumableLedger!.Where(row => row.ItemId == "item.zhixue-powder").ToArray();
+        Assert.Equal(0, ledger[0].RemainingQuantity);
+        Assert.Equal(1, ledger[1].RemainingQuantity);
+        var activated = projected[0].Events.Where(entry => entry.Code == "auto-use.activated").ToArray();
+        Assert.Equal(2, activated.Length);
+        Assert.Equal(2, projected[0].Stats.Where(entry => entry.Delta.LostItem == new ItemId("item.zhixue-powder"))
+            .Sum(entry => entry.Delta.LostQuantity));
+        Assert.Contains(projected[0].Stats, entry => entry.Delta.LostItem == new ItemId("item.zhixue-powder")
+            && entry.Delta.LostQuantity == 1);
+        Assert.Contains(projected[0].Buffs.Buffs, buff => buff.BuffId == "buff.zhixue");
+        for (var i = 1; i < spec.Members.Count; i++)
+            Assert.DoesNotContain(projected[i].Events, entry => entry.Code.StartsWith("auto-use", StringComparison.Ordinal));
+    }
+
+    /// <summary>托管冷却钟走会话墙钟：触发成立且池有货才消费，池空后不再产出扣件。</summary>
+    [Fact]
+    public void EscrowCooldownTicksOnSessionClockUntilPoolEmpty()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                // 零灵力回复冻结面板 + 入场零灵力：顺气丸触发（≤50%）在判定窗恒成立。
+                Stats = index == 0 ? member.Stats with { MpRegen = 0 } : member.Stats,
+                InitialManapoints = index == 0 ? 0 : member.InitialManapoints,
+                ConsumableSlots = index == 0
+                    ? [new ActionConsumableSlot("item.shunqi-pill", "combat", AutoUseSlotState.SlotGroupPotion, 0, 2)]
+                    : null
+            }).ToArray()
+        };
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var first = session.AdvanceTo(Baseline.AddSeconds(10));
+        var document = session.Export();
+        var row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.shunqi-pill");
+        Assert.Equal(1, row.RemainingQuantity);
+        Assert.Equal(60, row.CooldownUntilUnixSeconds - Baseline.ToUnixTimeMilliseconds() / 1000d, 1);
+        Assert.Single(first[0].Events, entry => entry.Code == "auto-use.activated");
+
+        // 冷却结束且池有货：窗口判定再次消费；此后池空，触发成立也不再产出。
+        var second = session.AdvanceTo(Baseline.AddSeconds(70));
+        document = session.Export();
+        row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.shunqi-pill");
+        Assert.Equal(0, row.RemainingQuantity);
+        Assert.Equal(120, row.CooldownUntilUnixSeconds - Baseline.ToUnixTimeMilliseconds() / 1000d, 1);
+        Assert.Single(second[0].Events, entry => entry.Code == "auto-use.activated");
+        var quiet = session.AdvanceTo(Baseline.AddSeconds(200));
+        Assert.DoesNotContain(quiet[0].Events, entry => entry.Code.StartsWith("auto-use", StringComparison.Ordinal));
+    }
+
+    /// <summary>持续消耗品：入场充能注入全队阵法 Buff、按墙钟耗竭转冷却、池有货时再充能。
+    /// 全体成员零攻击定格使首波永不结束，相位全程 Combat，耗竭/再充能时点完全确定。</summary>
+    [Fact]
+    public void SustainedConsumableChargesAtEntryDepletesOnWallClockAndRecharges()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                Stats = member.Stats with { AttackPower = 0, MaxHitpoints = 1_000_000, HpRegen = 100 },
+                InitialHitpoints = 1_000_000,
+                ConsumableSlots = index == 0
+                    ? [new ActionConsumableSlot("item.juling-formation-disk", "combat",
+                        AutoUseSlotState.SlotGroupGeneral, 0, 2)]
+                    : null
+            }).ToArray()
+        };
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var search = catalog.CombatEncounters[spec.EncounterId].SearchSeconds;
+        var entryUnix = Baseline.ToUnixTimeMilliseconds() / 1000d + search;
+        var entered = session.AdvanceTo(Baseline.AddSeconds(search + 5));
+        var document = session.Export();
+        var row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.juling-formation-disk");
+        Assert.Equal(1, row.RemainingQuantity);
+        Assert.True(Math.Abs(row.SustainedExpiresAtUnixSeconds - (entryUnix + 300)) < 0.01);
+        // 阵法类（formation）持续 Buff 注入己方全部在场单位而非仅使用者。
+        Assert.Contains(document.Expedition!.PlayerState!.Buffs!, buff => buff.BuffId == "formation.juling");
+        Assert.All(document.Expedition.Allies!, ally =>
+            Assert.Contains(ally.State.Buffs!, buff => buff.BuffId == "formation.juling"));
+        Assert.Single(entered[0].Events, entry => entry.Code == "auto-use.activated");
+
+        // 墙钟耗竭：到期即转冷却，事件随成员结算下发。
+        var depleted = session.AdvanceTo(Baseline.AddSeconds(search + 305));
+        document = session.Export();
+        row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.juling-formation-disk");
+        Assert.Equal(0, row.SustainedExpiresAtUnixSeconds);
+        Assert.True(Math.Abs(row.CooldownUntilUnixSeconds - (entryUnix + 600)) < 0.01);
+        Assert.Contains(depleted[0].Events, entry => entry.Code == "auto-use.depleted");
+
+        // 冷却结束的下一个窗口边界仍在战斗中：立即再充能，最后 1 件被消耗。
+        var recharged = session.AdvanceTo(Baseline.AddSeconds(search + 605));
+        document = session.Export();
+        row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.juling-formation-disk");
+        Assert.Equal(0, row.RemainingQuantity);
+        Assert.True(Math.Abs(row.SustainedExpiresAtUnixSeconds - (entryUnix + 900)) < 0.01);
+        Assert.Contains(recharged[0].Events, entry => entry.Code == "auto-use.activated"
+            && entry.Message.Contains("聚灵阵盘"));
+    }
+
+    /// <summary>托管台账随检查点持久化：拆分推进与连续推进逐位一致（含台账/结算/事件）。</summary>
+    [Fact]
+    public void ConsumableLedgerRestoresFromCheckpointAndSplitAdvanceMatchesContinuous()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                InitialHitpoints = index == 0 ? member.Stats.MaxHitpoints * 0.4 : member.Stats.MaxHitpoints,
+                ConsumableSlots = index switch
+                {
+                    0 => [new ActionConsumableSlot("item.zhixue-powder", "combat",
+                        AutoUseSlotState.SlotGroupPotion, 0, 5)],
+                    1 => [new ActionConsumableSlot("item.juling-formation-disk", "combat",
+                        AutoUseSlotState.SlotGroupGeneral, 0, 1)],
+                    _ => null
+                }
+            }).ToArray()
+        };
+        var continuous = ActionParticipationSessionEngine.Create(spec, catalog);
+        continuous.AdvanceTo(Baseline.AddSeconds(61));
+        var json = JsonSerializer.Serialize(continuous.Export(), PersistenceJson.Options);
+        var restored = ActionParticipationSessionEngine.Restore(
+            JsonSerializer.Deserialize<ActionParticipationSessionDocument>(json, PersistenceJson.Options)!, catalog);
+        var expected = continuous.AdvanceTo(Baseline.AddSeconds(123));
+        var actual = restored.AdvanceTo(Baseline.AddSeconds(123));
+        for (var i = 0; i < spec.Members.Count; i++)
+            Assert.Equal(JsonSerializer.Serialize(expected[i], PersistenceJson.Options),
+                JsonSerializer.Serialize(actual[i], PersistenceJson.Options));
+        Assert.Equal(JsonSerializer.Serialize(continuous.Export().ConsumableLedger, PersistenceJson.Options),
+            JsonSerializer.Serialize(restored.Export().ConsumableLedger, PersistenceJson.Options));
+    }
+
+    /// <summary>散场把未耗托管余量作为末批资产差量退回；台账随终局清空。</summary>
+    [Fact]
+    public void EndSessionRefundsUnconsumedEscrow()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                InitialHitpoints = index == 0 ? member.Stats.MaxHitpoints * 0.4 : member.Stats.MaxHitpoints,
+                ConsumableSlots = index == 0
+                    ? [new ActionConsumableSlot("item.zhixue-powder", "combat",
+                        AutoUseSlotState.SlotGroupPotion, 0, 3)]
+                    : null
+            }).ToArray()
+        };
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        session.AdvanceTo(Baseline.AddSeconds(10));
+        var ended = session.EndAt(Baseline.AddSeconds(10));
+        var refund = Assert.Single(ended[0].AssetDeltas,
+            delta => delta.Asset.ItemId == new ItemId("item.zhixue-powder"));
+        Assert.Equal(2d, refund.QuantityDelta);
+        Assert.DoesNotContain(ended[1].AssetDeltas, delta => delta.QuantityDelta > 0);
+        Assert.All(session.Export().ConsumableLedger!, row => Assert.Equal(0, row.RemainingQuantity));
+    }
+
+    /// <summary>配表漂移收尾同样退回托管余量：台账剩余按成员聚合为末批差量。</summary>
+    [Fact]
+    public void IncompatibleCheckpointFinalizationRefundsEscrow()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                ConsumableSlots = index == 0
+                    ? [new ActionConsumableSlot("item.zhixue-powder", "combat",
+                        AutoUseSlotState.SlotGroupPotion, 0, 3)]
+                    : null
+            }).ToArray()
+        };
+        var document = ActionParticipationSessionEngine.Create(spec, catalog).Export();
+        var final = ActionParticipationSessionEngine.FinalizeIncompatibleCheckpoint(
+            document with { GameDataFingerprint = "old-fingerprint" });
+        var refund = Assert.Single(final.Settlements[0].AssetDeltas,
+            delta => delta.Asset.ItemId == new ItemId("item.zhixue-powder"));
+        Assert.Equal(3d, refund.QuantityDelta);
+    }
+
+    /// <summary>倒地成员不消耗托管：尸体不吃药，余量留待复活或散场退回。</summary>
+    [Fact]
+    public void DownedMemberDoesNotConsumeEscrow()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                InitialHitpoints = index == 0 ? 0 : member.Stats.MaxHitpoints,
+                ConsumableSlots = index == 0
+                    ? [new ActionConsumableSlot("item.zhixue-powder", "combat",
+                        AutoUseSlotState.SlotGroupPotion, 0, 3)]
+                    : null
+            }).ToArray()
+        };
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var projected = session.AdvanceTo(Baseline.AddSeconds(10));
+        var document = session.Export();
+        Assert.Equal(3, Assert.Single(document.ConsumableLedger!,
+            row => row.ItemId == "item.zhixue-powder").RemainingQuantity);
+        Assert.DoesNotContain(projected[0].Events, entry => entry.Code.StartsWith("auto-use", StringComparison.Ordinal));
+    }
+
     /// <summary>配表删行动后终局仍能补投、落账和释放引用，不恢复旧行动执行器。</summary>
     [Fact]
     public void RetiredActionTerminalSettlementCanRestoreMissingReferenceAndArchive()

@@ -30,7 +30,8 @@ public sealed class ActionParticipationRuntime(
         ? new DateTimeOffset(ticks, TimeSpan.Zero) : null;
 
     /// <inheritdoc />
-    public async ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec, CancellationToken cancellationToken = default)
+    public async ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec,
+        EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default)
     {
         using var gate = await AcquireGateAsync(spec.SessionId, cancellationToken);
         try
@@ -44,7 +45,7 @@ public sealed class ActionParticipationRuntime(
             ActionParticipationSessionRecord stored;
             try
             {
-                stored = await store.CreateOrInitializeAsync(candidate, cancellationToken);
+                stored = await store.CreateOrInitializeAsync(candidate, escrow, cancellationToken);
             }
             catch (ParticipationSessionCommitOutcomeUnknownException exception)
             {

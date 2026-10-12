@@ -24,6 +24,9 @@ namespace Domain.Player;
 /// <param name="Equipment">开打定格的已穿戴装备清单（物品 ID + 强化等级）；仅用于详情弹窗
 /// 装配展示，不参与共享剧本结算——与冻结面板同源采集，定格口径与其他成员可见信息一致。</param>
 /// <param name="RegenCarrySeconds">开场自然回复周期的个人进度余数。</param>
+/// <param name="ConsumableSlots">开打定格的战斗消耗品托管槽配置：启用且适用于战斗栏域的
+/// 消耗品槽（即时/持续/durable）连同实扣托管配额；会话台账以此为初值，是共享剧本
+/// 消耗品的唯一公共输入。</param>
 public sealed partial record ActionParticipantSnapshot(
     string PlayerId,
     string DisplayName,
@@ -39,7 +42,8 @@ public sealed partial record ActionParticipantSnapshot(
     PlayerCombatBuffState? CombatBuffs = null,
     IReadOnlyList<ActionSustainedBuff>? SustainedBuffs = null,
     IReadOnlyList<PlayerEquipmentSlot>? Equipment = null,
-    double RegenCarrySeconds = 0)
+    double RegenCarrySeconds = 0,
+    IReadOnlyList<ActionConsumableSlot>? ConsumableSlots = null)
 {
     /// <summary>成员快照持久化不变量校验。</summary>
     public bool IsValid => Guid.TryParse(PlayerId, out var id) && id != Guid.Empty
@@ -59,7 +63,10 @@ public sealed partial record ActionParticipantSnapshot(
         && (SustainedBuffs is null || SustainedBuffs.All(buff => buff is not null && buff.IsValid))
         && (Equipment is null || (Equipment.Count <= 24 && Equipment.All(item => item is not null
             && !string.IsNullOrWhiteSpace(item.ItemId) && item.ItemId.Length <= 128
-            && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)));
+            && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)))
+        && (ConsumableSlots is null || (ConsumableSlots.Count <= AutoUseSlotState.CombatSlotCount
+            && ConsumableSlots.All(slot => slot is not null && slot.IsValid)
+            && ConsumableSlots.Select(slot => (slot.Group, slot.SlotIndex)).Distinct().Count() == ConsumableSlots.Count));
 }
 
 /// <summary>开打定格的持续消耗品 Buff：成员快照内以剩余时长承载，入场时 ExpiresAt = 战斗时钟 + 定格剩余。</summary>
@@ -91,6 +98,36 @@ public sealed record ActionSustainedBuff(
         && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
         && double.IsFinite(ThreatPoints) && double.IsFinite(HpRegenPostRatio)
         && double.IsFinite(MpRegenPostRatio) && double.IsFinite(DamageBonusPoints);
+}
+
+/// <summary>
+/// 开打定格的消耗品托管槽位：槽位配置与实扣托管配额一并进入会话公共输入；
+/// 会话台账以配额为初值按剧本消耗，成员钱包在定格时刻已扣走对应数量。
+/// </summary>
+/// <param name="ItemId">托管物品 ID。</param>
+/// <param name="ActionType">栏域标识（<see cref="Domain.GameData.AutoUseBar"/>，战斗消耗品恒为 combat）。</param>
+/// <param name="Group">槽位组（general/potion）。</param>
+/// <param name="SlotIndex">组内槽位下标。</param>
+/// <param name="EscrowQuantity">开打实扣的托管数量；durable 恒为 1（仅锁定不消耗）。</param>
+/// <param name="CooldownUntilUnixSeconds">冻结的冷却钟（Unix 秒）；即时消耗品会话内判定沿用，持续槽用于入场再充能资格。</param>
+/// <param name="SustainedRemainingSeconds">定格时刻持续槽已充能剩余秒数（墙钟口径）；0 表示未生效，由会话台账在入场时决定是否充能。</param>
+public sealed record ActionConsumableSlot(
+    string ItemId,
+    string ActionType,
+    string Group,
+    int SlotIndex,
+    double EscrowQuantity,
+    double CooldownUntilUnixSeconds = 0,
+    double SustainedRemainingSeconds = 0)
+{
+    /// <summary>持久化不变量。</summary>
+    public bool IsValid => !string.IsNullOrWhiteSpace(ItemId) && ItemId.Length <= 128
+        && !string.IsNullOrWhiteSpace(ActionType) && ActionType.Length <= 32
+        && (Group == AutoUseSlotState.SlotGroupGeneral || Group == AutoUseSlotState.SlotGroupPotion)
+        && SlotIndex >= 0
+        && double.IsFinite(EscrowQuantity) && EscrowQuantity >= 0
+        && double.IsFinite(CooldownUntilUnixSeconds) && CooldownUntilUnixSeconds >= 0
+        && double.IsFinite(SustainedRemainingSeconds) && SustainedRemainingSeconds >= 0;
 }
 
 /// <summary>

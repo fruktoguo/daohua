@@ -1050,7 +1050,8 @@ public sealed class EcsAdapterBoundaryTests
         public DateTimeOffset? NextAdvanceBoundaryUtc => null;
         public bool RequiresReconciliation(Guid playerId) => true;
         public ValueTask CreateAsync(Guid partyId, ActionParticipationSpec sessionSpec,
-            CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+            EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default)
+            => ValueTask.CompletedTask;
         public ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
             => ValueTask.CompletedTask;
         public ValueTask<IReadOnlyList<Guid>> AdvanceOfflineDueAsync(DateTimeOffset now, TimeSpan batchInterval,
@@ -1088,7 +1089,8 @@ public sealed class EcsAdapterBoundaryTests
             IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(
-            ActionParticipationSessionRecord session, CancellationToken cancellationToken = default)
+            ActionParticipationSessionRecord session, EconomyTransactionRequest? escrow = null,
+            CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public ValueTask<bool> CommitAdvanceAsync(string sessionId, long expectedVersion, string stateJson,
             DateTimeOffset lastSimulatedAt, IReadOnlyList<ParticipationInboxItem> inbox,

@@ -218,7 +218,8 @@ public sealed partial class PlayerAggregate
             Combat.Buffs,
             CaptureSustainedBuffs(Settings.AutoUseSlots, gameData),
             Loadout.Equipment.ToArray(),
-            Resources.RegenCarrySeconds);
+            Resources.RegenCarrySeconds,
+            CaptureConsumableSlots(Settings.AutoUseSlots, gameData));
     }
 
     /// <summary>
@@ -261,6 +262,32 @@ public sealed partial class PlayerAggregate
         }
         return list;
     }
+
+    /// <summary>
+    /// 开打定格的消耗品托管槽采集：启用且适用于战斗栏域的消耗品槽（即时/持续/durable），
+    /// 与 Ecs 侧单人判定同条件（栏域匹配 + UsableInBars）；配额由社交层按钱包实扣后回填，
+    /// 本方法只冻结槽位配置与时钟——持续槽记录已充能剩余，即时/durable 只冻结冷却钟。
+    /// </summary>
+    internal static List<ActionConsumableSlot>? CaptureConsumableSlots(IReadOnlyList<AutoUseSlotState> slots, GameDataCatalog gameData)
+    {
+        List<ActionConsumableSlot>? list = null;
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            if (!slot.Enabled || slot.ItemId is null
+                || slot.Group is not (AutoUseSlotState.SlotGroupGeneral or AutoUseSlotState.SlotGroupPotion)
+                || slot.ActionType != Domain.GameData.AutoUseBar.Combat) continue;
+            var itemId = new ItemId(slot.ItemId);
+            if (!gameData.Items.TryGetValue(itemId, out var item)
+                || item.Consumable is not { } consumable
+                || !consumable.UsableInBars.Contains(Domain.GameData.AutoUseBar.Combat)) continue;
+            var isSustained = consumable is { IsContinuous: true, DurationSeconds: > 0, Durable: false };
+            (list ??= []).Add(new ActionConsumableSlot(slot.ItemId, slot.ActionType, slot.Group, slot.SlotIndex,
+                0, slot.CooldownUntilUnixSeconds,
+                isSustained ? slot.RemainingDurationSeconds : 0));
+        }
+        return list;
+    }
 }
 
 public sealed partial record ActionParticipantSnapshot
@@ -291,6 +318,7 @@ public sealed partial record ActionParticipantSnapshot
             state.Combat.Buffs,
             PlayerAggregate.CaptureSustainedBuffs(state.Settings.AutoUseSlots ?? [], catalog),
             loadout.Equipment,
-            state.Combat.RegenCarrySeconds);
+            state.Combat.RegenCarrySeconds,
+            PlayerAggregate.CaptureConsumableSlots(state.Settings.AutoUseSlots ?? [], catalog));
     }
 }

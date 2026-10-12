@@ -57,8 +57,13 @@ public interface IParticipationSessionStore
     ValueTask<DateTimeOffset?> GetOfflineExpiryAsync(string sessionId, TimeSpan offlineLimit,
         IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default);
 
-    /// <summary>首次交付开场运行态；已初始化时返回存储权威检查点，不覆盖其推进进度。</summary>
-    ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(ActionParticipationSessionRecord session, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 首次交付开场运行态；已初始化时返回存储权威检查点，不覆盖其推进进度。
+    /// <paramref name="escrow"/> 非空时把开打消耗品托管实扣并入同一事务：会话行、检查点与
+    /// 资产扣件同生同灭，不存在「托管已扣但会话未建」的孤儿窗口。
+    /// </summary>
+    ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(ActionParticipationSessionRecord session,
+        EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default);
 
     /// <summary>按检查点版本原子保存推进与全部成员结算；版本不匹配或已散场时返回 false。</summary>
     ValueTask<bool> CommitAdvanceAsync(string sessionId, long expectedVersion, string stateJson,

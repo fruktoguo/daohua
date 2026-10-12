@@ -554,10 +554,11 @@ public sealed class ParticipationAdapterIntegrationTests
         public string? SessionId { get; private set; }
         public DateTimeOffset? NextAdvanceBoundaryUtc => fixture.Runtime.NextAdvanceBoundaryUtc;
         public bool RequiresReconciliation(Guid playerId) => fixture.Runtime.RequiresReconciliation(playerId);
-        public async ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec, CancellationToken cancellationToken = default)
+        public async ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec,
+            EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default)
         {
             SessionId = spec.SessionId;
-            await fixture.Runtime.CreateAsync(partyId, spec, cancellationToken);
+            await fixture.Runtime.CreateAsync(partyId, spec, escrow, cancellationToken);
             await fixture.Social.TrySetPartyMemberReadyAsync(fixture.Players[1], false, cancellationToken);
             await fixture.Runtime.AdvanceOnlineAsync(fixture.Clock.UtcNow, cancellationToken);
         }
