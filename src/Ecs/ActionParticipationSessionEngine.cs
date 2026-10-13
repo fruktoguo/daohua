@@ -106,6 +106,20 @@ public sealed class ActionParticipationSessionEngine
                         slot.SustainedRemainingSeconds > 0
                             ? spec.StartedAtUnixSeconds + slot.SustainedRemainingSeconds : 0));
         _consumables = ledger?.ToArray();
+        // 开打托管一次性入账通知：成员钱包全额实扣后日志需可核对「物品去了哪」——
+        // 托管期间不可售用，散场末批退回余量。
+        if (ledger is { } rows)
+            for (var i = 0; i < spec.Members.Count; i++)
+            {
+                var held = rows.Where(row => row.MemberIndex == i && row.RemainingQuantity > 0)
+                    .GroupBy(row => row.ItemId)
+                    .Select(group => (_catalog.Items.TryGetValue(new ItemId(group.Key), out var heldItem)
+                            ? heldItem.Name : group.Key, group.Sum(row => row.RemainingQuantity)))
+                    .ToArray();
+                if (held.Length > 0)
+                    _collectors[i].Events.Add(new(_advancedAt, "auto-use.escrowed",
+                        $"组队托管锁定：{string.Join("、", held.Select(entry => $"{entry.Item1} ×{entry.Item2:0.##}"))}；战斗期间不可售用，散场退回余量。", _spec.ActionId));
+            }
         EvaluateConsumables(_advancedAt);
         SynchronizeViews();
     }
@@ -614,13 +628,15 @@ public sealed class ActionParticipationSessionEngine
         }
     }
 
-    /// <summary>托管实耗登记：记「失去」物品账本与自动使用事件（台账数量-1 由调用点落账）。
+    /// <summary>托管实耗登记：记「失去」物品账本与自动使用事件（台账数量-1 由调用点落账），
+    /// 事件附带共享池余量——背包已被开打实扣清零，余量是玩家核对「为何还在使用」的唯一可见凭据。
     /// 结算载荷走收件箱 JSON——ItemDeltas 的 ItemId 字典键不在持久化词表，机器可读扣件由 LostItem 账本承载。</summary>
     private void SpendConsumable(int memberIndex, ItemDefinition item, DateTimeOffset at, double now, string message)
     {
         var member = _members[memberIndex];
         member.RecordStats(member.Actions[0].Id, now, new PlayerStatsDelta { LostItem = item.Id, LostQuantity = 1 });
-        _collectors[memberIndex].Events.Add(new SimulationEvent(at, "auto-use.activated", message, _spec.ActionId));
+        _collectors[memberIndex].Events.Add(new SimulationEvent(at, "auto-use.activated",
+            $"{message}（托管余 {ItemEscrowRemaining(memberIndex, item.Id.Value):0.##}）", _spec.ActionId));
     }
 
     /// <summary>非战斗相位求值单位：冻结面板 + 成员资源池当前值；外部 Buff 层数取定格视图。</summary>

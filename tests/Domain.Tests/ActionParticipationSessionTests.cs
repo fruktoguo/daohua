@@ -318,8 +318,13 @@ public sealed class ActionParticipationSessionTests
         var ledger = document.ConsumableLedger!.Where(row => row.ItemId == "item.zhixue-powder").ToArray();
         Assert.Equal(0, ledger[0].RemainingQuantity);
         Assert.Equal(1, ledger[1].RemainingQuantity);
+        // 开打托管清单随首批结算下发：钱包全额实扣后日志可核对物品去向与散场退回口径。
+        Assert.Single(projected[0].Events, entry => entry.Code == "auto-use.escrowed"
+            && entry.Message.Contains("止血散 ×3"));
         var activated = projected[0].Events.Where(entry => entry.Code == "auto-use.activated").ToArray();
         Assert.Equal(2, activated.Length);
+        Assert.Contains(activated, entry => entry.Message.Contains("托管余 2"));
+        Assert.Contains(activated, entry => entry.Message.Contains("托管余 1"));
         Assert.Equal(2, projected[0].Stats.Where(entry => entry.Delta.LostItem == new ItemId("item.zhixue-powder"))
             .Sum(entry => entry.Delta.LostQuantity));
         Assert.Contains(projected[0].Stats, entry => entry.Delta.LostItem == new ItemId("item.zhixue-powder")
@@ -519,7 +524,8 @@ public sealed class ActionParticipationSessionTests
         var document = session.Export();
         Assert.Equal(3, Assert.Single(document.ConsumableLedger!,
             row => row.ItemId == "item.zhixue-powder").RemainingQuantity);
-        Assert.DoesNotContain(projected[0].Events, entry => entry.Code.StartsWith("auto-use", StringComparison.Ordinal));
+        // 托管清单通知仍会下发（物品确已锁定），但倒地不产生任何消费/耗竭事件。
+        Assert.DoesNotContain(projected[0].Events, entry => entry.Code is "auto-use.activated" or "auto-use.depleted");
     }
 
     /// <summary>配表删行动后终局仍能补投、落账和释放引用，不恢复旧行动执行器。</summary>
