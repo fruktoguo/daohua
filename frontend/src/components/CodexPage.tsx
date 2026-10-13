@@ -801,8 +801,11 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
       >
         <div className="codex-card-avatar-box">
           <CharacterAvatar
+            actorId={monster.enemyId}
             fallback={monster.name.slice(0, 1)}
             isFlipped
+            name={monster.name}
+            role="enemy"
             visual={monster.visual}
           />
           {!isDefeated && (
