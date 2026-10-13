@@ -1,0 +1,295 @@
+/**
+ * 万象图鉴样式表 (Codex)
+ * 遵循道化太初暗墨修仙风格：黑底金边、翡翠绿、灵气青与朱红点缀
+ */
+
+.codex-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px;
+  gap: 14px;
+}
+
+.codex-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 14px 16px 8px 16px;
+}
+
+.codex-hero-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.codex-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.codex-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--gold-bright);
+  letter-spacing: 0.05em;
+}
+
+.codex-progress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(201, 180, 109, 0.1);
+  border: 1px solid var(--gold-dim);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  color: var(--gold);
+}
+
+.codex-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.15);
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.codex-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.codex-tab-btn:hover {
+  color: var(--text);
+  background: rgba(201, 180, 109, 0.06);
+}
+
+.codex-tab-btn.active {
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.14);
+  border-color: var(--gold-dim);
+  font-weight: 500;
+}
+
+.codex-tab-count {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.codex-sub-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+  overflow-x: auto;
+}
+
+.codex-sub-tab-btn {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(201, 180, 109, 0.15);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.codex-sub-tab-btn:hover {
+  color: var(--text);
+  border-color: var(--gold-dim);
+}
+
+.codex-sub-tab-btn.active {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: rgba(201, 180, 109, 0.12);
+}
+
+.codex-content {
+  flex: 1;
+}
+
+.codex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 12px;
+  padding: 4px 0 24px 0;
+}
+
+.codex-grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.codex-entry-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.codex-entry-wrapper--locked {
+  filter: grayscale(0.85) brightness(0.65);
+  opacity: 0.72;
+  transition: filter 0.2s, opacity 0.2s;
+}
+
+.codex-entry-wrapper--locked:hover {
+  filter: grayscale(0.5) brightness(0.8);
+  opacity: 0.9;
+}
+
+.codex-lock-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  background: rgba(10, 10, 10, 0.85);
+  border: 1px solid var(--gold-dim);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold-dim);
+  font-size: 10px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.codex-wide-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.codex-wide-card:hover {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.codex-wide-card--locked {
+  filter: grayscale(0.85) brightness(0.65);
+  opacity: 0.72;
+}
+
+.codex-wide-card--locked:hover {
+  filter: grayscale(0.5) brightness(0.8);
+  opacity: 0.9;
+}
+
+.codex-card-avatar-box {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--gold-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.codex-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.codex-card-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.codex-card-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-card-level {
+  font-size: 0.72rem;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.codex-card-sub {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-unlock-condition-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.codex-unlock-condition-pill--unlocked {
+  background: rgba(114, 169, 140, 0.15);
+  color: var(--jade);
+  border: 1px solid rgba(114, 169, 140, 0.3);
+}
+
+.codex-unlock-condition-pill--locked {
+  background: rgba(200, 82, 63, 0.12);
+  color: #d87060;
+  border: 1px solid rgba(200, 82, 63, 0.25);
+}
+
+.codex-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}

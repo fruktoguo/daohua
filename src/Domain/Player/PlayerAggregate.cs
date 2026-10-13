@@ -39,6 +39,8 @@ public sealed class PlayerProgression
     internal long RealmLevelVersion { get; private set; }
     /// <summary>已解锁特质 ID 集合（trait.*，总纲 §7.12）：常驻特殊效果的获得标记；写入递增版本号供属性缓存失效检测。</summary>
     public VersionedList<string> TraitIds { get; } = new();
+    /// <summary>已击败妖兽 ID 集合（enemy.*，总纲 §23）：万象图鉴妖兽志解锁记录；写入递增版本号。</summary>
+    public VersionedList<string> DefeatedMonsterIds { get; } = new();
     /// <summary>当前层修为（突破计量条，expToNext 封顶，突破清零）</summary>
     public double Experience { get; set; }
     /// <summary>底蕴：修为满层溢出沉淀池；未满层时按 1:1 兑换放大修为获取（单笔 ≤3× 增幅量），突破不清空。</summary>
@@ -105,13 +107,16 @@ public sealed class PlayerProgression
     }
 
     /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
-    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion)
+    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion)
     {
         _realmLevel = state.RealmLevel;
         RealmLevelVersion = realmLevelVersion;
         TraitIds.Clear();
         if (state.TraitIds is { Count: > 0 } traits) TraitIds.AddRange(traits);
         TraitIds.RestoreVersion(traitIdsVersion);
+        DefeatedMonsterIds.Clear();
+        if (state.DefeatedMonsterIds is { Count: > 0 } defeated) DefeatedMonsterIds.AddRange(defeated);
+        DefeatedMonsterIds.RestoreVersion(defeatedMonsterIdsVersion);
         Experience = state.Experience;
         Foundation = state.Foundation;
         CombatExperience = state.CombatExperience;

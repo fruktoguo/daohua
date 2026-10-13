@@ -141,7 +141,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   }, [inventory])
 
   // 建造候选：节点可建列表（buildableList/buildableTemplate 下发）∩ 建筑目录，
-  // 排除已存在同类；未达境界的保留灰显。null = 该节点不可建造（隐藏加号卡）。
+  // 排除已存在同类与未解锁图鉴的建筑（未达所需境界不出现在候选列表中）。null = 该节点不可建造（隐藏加号卡）。
   const buildCandidates = useMemo(() => {
     if (buildableIds === null) return []
     const realmLevel = stats.realmLevel ?? 1
@@ -153,8 +153,9 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
         && !occupied.has(definition.buildingId)
         && (definition.availableNodeIds == null
           || definition.availableNodeIds.length === 0
-          || (world.nodeId !== null && definition.availableNodeIds.includes(world.nodeId))))
-      .map(definition => ({ definition, locked: realmLevel < definition.requiredRealmLevel }))
+          || (world.nodeId !== null && definition.availableNodeIds.includes(world.nodeId)))
+        && realmLevel >= definition.requiredRealmLevel)
+      .map(definition => ({ definition, locked: false }))
   }, [buildableIds, nodeBuildings, buildingCatalog, stats.realmLevel, world.nodeId])
 
   const detailBuilding = nodeBuildings.find(building => building.entityId === detailBuildingId) ?? null

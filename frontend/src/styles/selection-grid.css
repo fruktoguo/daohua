@@ -6,7 +6,8 @@
 .inventory-grid,
 .candidate-picker-grid,
 .market-browse-grid,
-.abilities-learned-grid {
+  .abilities-learned-grid,
+  .codex-tile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, var(--item-slot-size));
   gap: 6px;
@@ -37,7 +38,8 @@
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell
+  .combat-ability-slot-shell,
+  .codex-tile-anchor
 ) {
   --item-frame-rgb: 201, 180, 109;
   position: relative;

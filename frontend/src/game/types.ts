@@ -1097,6 +1097,8 @@ export interface Stats {
   ageSeconds?: number
   /** 寿元上限（年） */
   lifespanYears?: number
+  /** 已击败妖兽 ID 集合（万象图鉴妖兽志解锁） */
+  defeatedMonsterIds?: string[]
 }
 
 /**

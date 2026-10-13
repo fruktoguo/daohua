@@ -487,6 +487,10 @@ internal static class CombatActionRules
                 case CombatMonsterRank.Boss: player.Progression.BossKills += 1; break;
                 default: player.Progression.NormalKills += 1; break;
             }
+            if (!player.Progression.DefeatedMonsterIds.Contains(enemy.EnemyId))
+            {
+                player.Progression.DefeatedMonsterIds.Add(enemy.EnemyId);
+            }
         }
         // 波次清空计一次完成轮次，并按怪物分级累计击杀数。
         double normalKills = 0, eliteKills = 0, bossKills = 0;

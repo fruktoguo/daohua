@@ -319,13 +319,13 @@
 ## 24. 行动统计/记录面板与账本分区 (Stats Panel / Records Panel & Report Blocks)
 
 - **适用场景**：
-  - **三个入口三块面板**：`StatsPanel`（详情页右上角「统计」）只显示本次行动——当前行动账本 + 斗法暂存区；`CombatStatsPanel`（详情页头部「战斗统计」独立按钮与弹窗）展示当前行动的单位级战斗统计——「我方/敌方」阵营页签 ×「输出/承伤/减免/治疗」指标页签，条形图把当前侧全部单位按所选指标总值降序做横向对比（条宽按该组合最大值归一化），伤害系三项物理红·术法蓝分段、治疗按自动回复翠·其他治疗紫分段并配同色图例；`RecordsPanel`（左侧栏「记录」按钮，设置上方）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。战斗统计仅进行中账本携带 combatants，归档即弃。
+  - **三个入口三块面板**：`StatsPanel`（详情页右上角「统计」）只显示本次行动——当前行动账本 + 斗法暂存区；`CombatStatsPanel`（详情页头部「战斗统计」独立按钮与弹窗）展示当前行动的单位级战斗统计——「我方/敌方」阵营页签 ×「输出/承伤/减免/治疗」指标页签，条形图把当前侧全部单位按所选指标总值降序做横向对比（条宽按该组合最大值归一化），伤害系三项物理红·术法蓝分段、治疗按自动回复翠·其他治疗紫分段并配同色图例；`RecordsPanel`（主区顶级页签 `'records'`：左侧栏底部「记录」按钮切换进入，移动端由详情页头部 `.records-open-mobile` 入口兜底）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。战斗统计仅进行中账本携带 combatants，归档即弃。
   - **行动收益账本统一渲染**：共用组件收拢在 `reportSections.tsx`——`ReportBlock` 分区容器按固定顺序排三个 memo 小节且**不渲染节标题**：`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）→ `ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemReference` 复合胶囊横排，与斗法暂存区同款）→ `ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）。
   - **空账本抑制**：`reportHasContent` 判定全零账本不渲染分区；`endedAtUnixSeconds` 决定时长口径（进行中=估算服务端当前时刻−开始，归档=结束−开始）。
   - **localStorage 历史缓存**：`battleReportStore` 读取时对旧缓存条目补齐账本新增字段默认值，防渲染崩溃。
 - **组件源码**：[`frontend/src/components/StatsPanel.tsx`](../../frontend/src/components/StatsPanel.tsx)、[`frontend/src/components/CombatStatsPanel.tsx`](../../frontend/src/components/CombatStatsPanel.tsx)、[`frontend/src/components/RecordsPanel.tsx`](../../frontend/src/components/RecordsPanel.tsx)、[`frontend/src/components/reportSections.tsx`](../../frontend/src/components/reportSections.tsx)
 - **缓存层**：[`frontend/src/game/battleReportStore.ts`](../../frontend/src/game/battleReportStore.ts)
-- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.battle-report-`、`.combat-stats-`)；侧栏底部工具区 `.sidebar-footer` 在 `frontend/src/styles.css`
+- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.battle-report-`、`.combat-stats-`、`.records-page`)；侧栏底部工具区 `.sidebar-footer` 在 `frontend/src/styles.css`
 
 ---
 
@@ -430,3 +430,14 @@
 - **设置入口**：[`frontend/src/components/SettingsPage.tsx`](../../frontend/src/components/SettingsPage.tsx)（沿用 `settings-group` 与 `presence-options`）。
 - **首屏恢复 / 状态**：[`frontend/public/theme.js`](../../frontend/public/theme.js)、[`frontend/src/game/themeStore.ts`](../../frontend/src/game/themeStore.ts)。
 - **统一配色样式**：[`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)。
+
+---
+
+## 32. 万象图鉴与百科展示模板 (Codex Page · Compendium Layout)
+
+- **适用场景**：
+  - **万象图鉴主页面**（四大分类：制造配方、建筑图谱、功法神通、大世界妖兽）：整合全景收集度进度胶囊、多级选项卡切换、未解锁条目的暗墨置灰与锁头遮罩。
+  - **悬浮卡片解锁条件**：统一条目 Hover 悬浮卡（`FloatingPopover` + `FloatingInfoCard`），在卡内显著位置挂载 `.codex-unlock-condition-pill`，统一注明对应解锁方式（境界等级、秘籍研读、妖兽讨伐降服）。
+- **组件源码**：[`frontend/src/components/CodexPage.tsx`](../../frontend/src/components/CodexPage.tsx)
+- **样式文件**：[`frontend/src/styles/codex.css`](../../frontend/src/styles/codex.css)
+- **设计真源**：[`docs/design/总纲/23-万象图鉴与解锁机制.md`](../design/总纲/23-万象图鉴与解锁机制.md)

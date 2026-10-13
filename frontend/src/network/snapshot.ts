@@ -824,6 +824,9 @@ function mapStats(value: unknown): Stats {
     cultivationSeconds: numberValue(row.cultivationSeconds),
     ageSeconds: numberValue(row.ageSeconds),
     lifespanYears: numberValue(row.lifespanYears),
+    defeatedMonsterIds: Array.isArray(row.defeatedMonsterIds)
+      ? row.defeatedMonsterIds.filter((id): id is string => typeof id === 'string')
+      : [],
   }
 }
 

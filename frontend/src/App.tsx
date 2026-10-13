@@ -48,6 +48,7 @@ const InsightPage = lazy(() => import('./components/InsightPage').then(module =>
 const MarketPage = lazy(() => import('./components/MarketPage').then(module => ({ default: module.MarketPage })))
 const SocialPage = lazy(() => import('./components/SocialPage').then(module => ({ default: module.SocialPage })))
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.SettingsPage })))
+const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
 
@@ -62,7 +63,7 @@ function PanelLoading({ label }: { label: string }): React.JSX.Element {
 /** 全局共享的空冷却表（冻结对象）：避免每次渲染创建新引用触发下游 memo 失效 */
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
-type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel'
+type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel' | 'codex'
 
 /**
  * 矢量图标组件（按名称渲染内联 SVG）
@@ -116,6 +117,8 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
       return <svg {...common}><path d="M5.5 12.5a6.5 6.5 0 0 1 11.5-4.2" /><path d="M17.5 3.5v4h-4" /><path d="M18.5 11.5a6.5 6.5 0 0 1-11.5 4.2" /><path d="M6.5 20.5v-4h4" /></svg>
     case 'travel':
       return <svg {...common}><circle cx="5" cy="18.5" r="1.8" /><path d="M7.8 18.5h4.7a4 4 0 0 0 4-4v-2a3 3 0 0 1 3-3" /><path d="m16.5 6.5 3 3-3 3" /></svg>
+    case 'codex':
+      return <svg {...common}><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" /><path d="M6 6h10" /><path d="M6 10h10" /><path d="M6 14h6" /></svg>
   }
 })
 
@@ -751,7 +754,6 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const setCraftingMode = useUiStore(state => state.setCraftingMode)
   const craftingNavExpanded = useUiStore(state => state.craftingNavExpanded)
   const setCraftingNavExpanded = useUiStore(state => state.setCraftingNavExpanded)
-  const [recordsOpen, setRecordsOpen] = useState(false)
 
   // 技艺子菜单等级与经验进度：技艺经验随 combat 快照下发，等级按修为曲线导出（0 级起步）；
   // 满级（expToNext=0）时进度条恒显满格，悬浮气泡经验行改显「已臻化境」。
@@ -914,11 +916,21 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
             <span className="nav-label">{t('app.nav.social')}</span>
           </span>
         </button>
+        <button
+          className={`nav-item${activeTab === 'codex' ? ' active' : ''}`}
+          onClick={() => setActiveTab('codex')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="codex" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.codex')}</span>
+          </span>
+        </button>
       </nav>
       <div className="sidebar-footer">
         <button
-          className="nav-item"
-          onClick={() => setRecordsOpen(true)}
+          className={`nav-item${activeTab === 'records' ? ' active' : ''}`}
+          onClick={() => setActiveTab('records')}
           type="button"
         >
           <span className="nav-glyph" aria-hidden="true"><Icon name="log" /></span>
@@ -937,15 +949,6 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
       </div>
-      <Modal
-        className="battle-report-modal"
-        labelledBy="records-panel-title"
-        onClose={() => setRecordsOpen(false)}
-        open={recordsOpen}
-        size="medium"
-      >
-        <RecordsPanel />
-      </Modal>
     </aside>
   )
 })
@@ -1013,6 +1016,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   const actions = useGameStore(state => state.actions)
   const equipment = useGameStore(state => state.equipment)
   const worldNodeId = useGameStore(state => state.world.nodeId)
+  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
 
   const craftingMode = useUiStore(state => state.craftingMode)
   const alchemySubTab = useUiStore(state => state.alchemySubTab)
@@ -1114,20 +1118,25 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       }
     }
 
-    // 预计算所有候选行动的真实等级，将 O(N log N) 冗余解析降为 O(N) 线性预查
-    const actionLevelMap = new Map<string, number>()
+    // 预计算候选行动真实等级，同时按图鉴解锁规则过滤：未解锁配方（等级 > 当前境界等级）在制造面板彻底隐藏
+    const actionLevelMap: Record<string, number> = {}
+    const unlockedList: ActionDefinition[] = []
     for (const action of list) {
-      actionLevelMap.set(action.id, resolveActionLevel(action, itemCatalog, equipmentCatalog, encounters))
+      const level = resolveActionLevel(action, itemCatalog, equipmentCatalog, encounters)
+      if (level <= realmLevel) {
+        actionLevelMap[action.id] = level
+        unlockedList.push(action)
+      }
     }
 
     // 严格按真实等级升序排序（低等级在前，高等级在后），等级相同时按 ID 稳定排列
-    return [...list].sort((a, b) => {
-      const levelA = actionLevelMap.get(a.id) ?? 1
-      const levelB = actionLevelMap.get(b.id) ?? 1
+    return unlockedList.sort((a, b) => {
+      const levelA = actionLevelMap[a.id] ?? 1
+      const levelB = actionLevelMap[b.id] ?? 1
       if (levelA !== levelB) return levelA - levelB
       return a.id.localeCompare(b.id)
     })
-  }, [availableActions, craftingMode, alchemySubTab, forgingSubTab, equipmentSlotMap, itemCatalog, equipmentCatalog, encounters])
+  }, [availableActions, craftingMode, alchemySubTab, forgingSubTab, equipmentSlotMap, itemCatalog, equipmentCatalog, encounters, realmLevel])
 
   return (
     <section className="panel skill-page crafting-page" hidden={hidden}>
@@ -2002,14 +2011,13 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
   const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
   // 只延迟首次查看：后续切回其它页签不卸载战场，保留详情、动画与观察目标生命周期。
   if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
+  const setActiveTab = useUiStore(state => state.setActiveTab)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
-  const [recordsOpen, setRecordsOpen] = useState(false)
   const closeModal = useCallback(() => setSelectedAction(null), [])
   const closeReport = useCallback(() => setReportOpen(false), [])
   const closeStats = useCallback(() => setStatsOpen(false), [])
-  const closeRecords = useCallback(() => setRecordsOpen(false), [])
 
   return (
     <section className="panel expedition-page" data-tour="combat-detail" hidden={hidden}>
@@ -2032,7 +2040,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
         {/* 侧边栏在移动端整体隐藏，详情页补充「记录」入口保证竖屏可达 */}
         <button
           className="ghost-button records-open-mobile"
-          onClick={() => setRecordsOpen(true)}
+          onClick={() => setActiveTab('records')}
           type="button"
         >
           {t('app.nav.records')}
@@ -2068,15 +2076,6 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
       >
         <StatsPanel />
       </Modal>
-      <Modal
-        className="battle-report-modal"
-        labelledBy="records-panel-title-mobile"
-        onClose={closeRecords}
-        open={recordsOpen}
-        size="medium"
-      >
-        <RecordsPanel titleId="records-panel-title-mobile" />
-      </Modal>
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
@@ -2085,7 +2084,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
 
 
 /** 移动端底部导航栏页签配置（顺序即展示顺序，labelKey/icon 均与 TabId 同名） */
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
+const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },
   { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
@@ -2093,11 +2092,11 @@ const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 
   { tab: 'map', labelKey: 'map', icon: 'map' },
   { tab: 'combat', labelKey: 'combat', icon: 'combat' },
   { tab: 'social', labelKey: 'social', icon: 'social' },
+  { tab: 'codex', labelKey: 'codex', icon: 'codex' },
   { tab: 'inventory', labelKey: 'inventory', icon: 'inventory' },
   { tab: 'log', labelKey: 'log', icon: 'log' },
   { tab: 'settings', labelKey: 'settings', icon: 'settings' },
 ]
-
 /**
  * 移动端底部快捷导航栏
  */
@@ -2265,8 +2264,12 @@ export default function App(): React.JSX.Element {
               {activeTab === 'social' && <SocialPage />}
             </Suspense>
             <Suspense fallback={null}>
+              {activeTab === 'codex' && <CodexPage />}
+            </Suspense>
+            <Suspense fallback={null}>
               {activeTab === 'settings' && <SettingsPage />}
             </Suspense>
+            {activeTab === 'records' && <RecordsPanel />}
             {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
             {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" />}
           </main>

@@ -12,9 +12,15 @@ import { create } from 'zustand'
  * - 'social': 同道（队伍组队、匹配与组队大厅）
  * - 'inventory': 储物袋（背包）
  * - 'log': 传音道历（日志）
+ * - 'records': 记录（离线挂机 / 今日统计 / 近期战报历史）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'
+export type TabId = 'insight' | 'market' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'records' | 'settings'
+
+/** 图鉴顶级分类：制造 vs 建筑 vs 技能 vs 怪物 */
+export type CodexCategory = 'crafting' | 'building' | 'ability' | 'monster'
+/** 图鉴制造子分类：炼丹 vs 炼器 vs 阵法 vs 符箓 */
+export type CodexCraftingSubTab = 'alchemy' | 'forging' | 'formation' | 'talisman'
 
 /** 同道页子选项卡：队伍 / 邀请（后续同道玩法沿用同一结构扩展） */
 export type SocialSubTab = 'party' | 'invite'
@@ -72,6 +78,14 @@ interface UiStore {
   partySubTab: PartySubTab
   /** 切换队伍页内部页签 */
   setPartySubTab: (tab: PartySubTab) => void
+  /** 图鉴顶级当前分类 */
+  codexCategory: CodexCategory
+  /** 切换图鉴分类 */
+  setCodexCategory: (category: CodexCategory) => void
+  /** 图鉴制造子分类 */
+  codexCraftingSubTab: CodexCraftingSubTab
+  /** 切换图鉴制造子分类 */
+  setCodexCraftingSubTab: (subTab: CodexCraftingSubTab) => void
 }
 
 /**
@@ -112,4 +126,8 @@ export const useUiStore = create<UiStore>(set => ({
   setSocialSubTab: socialSubTab => set({ socialSubTab }),
   partySubTab: 'lobby',
   setPartySubTab: partySubTab => set({ partySubTab }),
+  codexCategory: 'crafting',
+  setCodexCategory: codexCategory => set({ codexCategory }),
+  codexCraftingSubTab: 'alchemy',
+  setCodexCraftingSubTab: codexCraftingSubTab => set({ codexCraftingSubTab }),
 }))
