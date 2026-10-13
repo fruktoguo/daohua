@@ -1,7 +1,7 @@
 ---
 name: prod-release
 description: >-
-  正式服发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），覆盖发布前门禁与备份、镜像构建推送、主服受控更新、odin 节点重发布、双层烟测、存档版本漂移的手动修复与回滚路径。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
+  正式服发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），覆盖发布前门禁与备份、生产库版本对账与迁移链前置规划、镜像构建推送、主服受控更新、odin 节点重发布、双层烟测、存档版本漂移的手动修复与回滚路径。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
 ---
 
 # 正式服发布（yuohira 主服 + odin 计算节点）
@@ -9,7 +9,7 @@ description: >-
 一次发布必须**成对更新**两端：yuohira 主服（Docker 不可变镜像）与 odin 计算节点（本地交叉发布 linux-arm64）。两端代码必须来自**同一 Git commit**——配表内嵌于 Domain.dll，节点与主服配表指纹不一致时主服会以 `GAME_DATA_FINGERPRINT_MISMATCH` 拒绝拨入。
 
 ```text
-前置门禁 → 构建推送镜像 → 发布前备份 → 主服更新 → odin 节点更新 → 双端验证 → （存档问题手动修复）→ 收尾登记
+前置门禁 → 构建推送镜像 → 发布前备份 → （生产库版本对账与迁移）→ 主服更新 → odin 节点更新 → 双端验证 → （存档问题手动修复）→ 收尾登记
 ```
 
 ## 阶段 0：前置门禁（全部通过才可继续）
@@ -17,13 +17,17 @@ description: >-
 1. `git status --short` 必须干净——`docker-build-prod.sh` 拒绝 dirty worktree；用户有未提交改动时先停下询问，禁止擅自提交或丢弃。
 2. `git submodule status` 确认 YuoCore 无缺失、无漂移（`+`/`-` 前缀都算漂移）。
 3. `scripts/verify.sh` 全绿（Release 构建、Domain/Ecs/Server 三套测试、DataTool 校验、Compose 配置、前端构建）。
-4. 容量相关变更（存储结构、快照、队列、市场）追加跑 `scripts/capacity-target.sh`。
+4. **容量门禁按需，不默认跑**：仅当变更触及存储结构/队列/市场结构（建表改表、分区、索引策略、队列模型）才追加 `scripts/capacity-target.sh`；纯存档标签推进、可缺省解码字段、配表数值类变更**不算**容量相关变更，一律只跑 `verify.sh` 最小门禁，不为「保险」扩大门禁面。
 5. 确认远端可达：`ssh -o BatchMode=yes yuohira true` 与 `ssh -o BatchMode=yes odin true`。
 6. **odin 网络预检**：odin 经 Clash Meta TUN 上网，出站节点挂掉会导致节点拨不进主服（2026-10-13 事故）。发布前先验证：
    ```bash
    ssh odin 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https://daohua.yuohira.com/healthz'
    ```
    非 200 时先修 odin 网络（换 Clash 节点/加直连规则），否则发布后节点无法拨入。
+7. **Windows 本地环境预检**（门禁必踩坑）：
+   - Docker Desktop 未启动时先启动并等 `docker info` 就绪（镜像构建、compose 校验依赖 daemon）。
+   - `psql` 通常不在 PATH：`export PATH="/c/Program Files/PostgreSQL/16/bin:$PATH"`，否则 verify.sh 供给不了 `daohua_market_test` 集成测试库，Server.Tests 整批判「需要专用 PostgreSQL 库」失败。
+   - Vite dev server 运行中会锁 `esbuild.exe`，verify.sh 的 `npm ci` 报 EPERM unlink：跑门禁前先停 dev server（发布后可重启）。
 
 ## 阶段 1：构建与推送镜像
 
@@ -45,17 +49,35 @@ ssh yuohira 'sudo /opt/daohua/backup.sh && sudo /opt/daohua/verify-backup.sh'
 - 备份落在 `/opt/daohua/backups/`（小时/日/周分层轮转），`verify-backup.sh` 会做 `pg_restore --list` 完整性校验。
 - 本次发布若涉及 `PostgresSchema.Version` 升级（存档格式/表结构变更），备份是唯一后悔药——**备份失败就中止发布**。
 
+## 阶段 2.5：生产库版本对账（涉及 PostgresSchema.Version 升级时必做）
+
+发布前**先只读核对**生产库版本，不要等部署失败再被动修（2026-10-13 教训：生产库曾落后 11 版，先部署只会让新镜像 fail-fast、被 `ccr-auto-update.sh` 自动回滚并拉黑 digest，反复空转）：
+
+```bash
+ssh yuohira 'sudo docker exec daohua-db sh -c '"'"'psql -U "$POSTGRES_USER" -d daohua -tA -c "SELECT max(version) FROM platform.schema_version"'"'"''
+```
+
+- 库版本 == 代码 `PostgresSchema.Version`：正常继续阶段 3。
+- 库版本落后：**先规划迁移链再部署**，顺序固定为「备份 → 停全部写者 → 迁移 → 部署」，迁移方案必须先向用户说明并获得明确许可（生产数据操作）。
+- 迁移链要点：
+  - 按文件名 `vX_to_vY` 从库当前版本链式执行，不按文件序号猜；先通读每个落后脚本，标记需要特殊处理的步骤（离线载荷转换、锁表、停服前提）。
+  - 迁移前停掉**全部写者**：`daohua-app` 与 `daohua-persistence-worker`（worker 是 compose `profiles: ["worker"]`，**不在 ccr-auto-update 成对更新范围**，迁移与后续每次升级都要单独 `docker compose --profile worker up -d persistence-worker` 或显式停用）；确认 `game.player_runtime_leases` 无活跃租约后再动手。
+  - `0024_v23_to_v24` 类离线载荷转换须在能跑 Node 22 的环境执行 `node migrations/0024_v23_to_v24.mjs`（远端系统 node 可能过旧无 `JSON.rawJSON`，可临时下载 portable node 到 /tmp 使用，不污染系统）。
+  - 迁移新建的表（如 `social.party_session_inbox`、`market.settlement_cursors`）默认只有属主权限，**必须补 GRANT** 给 `DB_APP_USER`/`DB_WORKER_USER` 对应角色（口径参照 `deploy/postgres-local-roles.sql`），否则运行时报 42501。
+  - 迁移完成后旧镜像因版本门禁**永远起不来**：镜像回滚失效，后悔药只剩数据回滚（PITR/备份恢复）——这就是备份必须先行的原因。
+
 ## 阶段 3：yuohira 主服更新
 
 ```bash
-SMOKE_ACCOUNT='<烟测账号>' SMOKE_PASSWORD='<烟测口令>' \
+# 默认自动注册随机烟测账号（SMOKE_REGISTER=1：登录失败即注册），无需向用户索要凭证：
+SMOKE_ACCOUNT="smoke-$(date +%m%d)-$(openssl rand -hex 3)" SMOKE_PASSWORD="$(openssl rand -hex 12)" SMOKE_REGISTER=1 \
 scripts/deploy-prod.sh \
   --image ccr.ccs.tencentyun.com/yuohira/daohua@sha256:<digest> \
   --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute@sha256:<digest>
 ```
 
 - 脚本内置：远端环境校验 → CCR 拉取验证 → 资产安装 → 成对容器更新 → 回环 `/readyz` → 服务器回环全量烟测 → 公网 HTTPS/WebSocket 烟测（断言 `/readyz` 被 Caddy 拦截）。
-- 没有烟测凭证时用 `--skip-smoke`，但**必须在阶段 5 手动补验**。
+- 用户明确要求用既有账号烟测时才传入其凭证；确实拿不到凭证才 `--skip-smoke`，但**必须在阶段 5 手动补验**。
 - 生产环境变量占位值校验失败（`daohua.env` 仍是 change-me 类）会拒绝部署——这是门禁不是故障。
 
 ## 阶段 4：odin 计算节点更新
@@ -107,9 +129,9 @@ ssh odin 'grep -a "ComputeNode.Upstream" ~/daohua_compute.log | tail -5'
 3. odin：`readyz` 正常且 `completedJobs` 开始增长（有 pending 补算任务时）。
 4. 前端连生产站做一次真实登录冒烟（人工或烟测账号）。
 
-## 阶段 6：存档问题手动修复（发布后）
+## 阶段 6：存档问题手动修复（发布后兜底）
 
-生产库**没有自动迁移**：主服启动门禁 `PostgresSchema.VerifyAsync` 校验 `platform.schema_version` 最新版本 == 代码常量，不符即 fail-fast 拒绝启动；玩家存档行 `schema_version` 落后同理。修复一律手动，且**先备份、后动手，重大操作必须获得用户明确许可**。
+生产库**没有自动迁移**：主服启动门禁 `PostgresSchema.VerifyAsync` 校验 `platform.schema_version` 最新版本 == 代码常量，不符即 fail-fast 拒绝启动；玩家存档行 `schema_version` 落后同理。库级版本对账已在阶段 2.5 前置完成，本阶段只兜底发布后新暴露的存档行漂移。修复一律手动，且**先备份、后动手，重大操作必须获得用户明确许可**。
 
 ### 症状 A：主服起不来，日志报 schema 版本不匹配
 
