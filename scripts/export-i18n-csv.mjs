@@ -8,7 +8,7 @@
 // ==============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,7 +43,7 @@ export function toCsv(record) {
 }
 
 async function loadTsModule(entryPath) {
-  const esbuild = await import(path.join(frontendDir, 'node_modules', 'esbuild', 'lib', 'main.js'));
+  const esbuild = await import(pathToFileURL(path.join(frontendDir, 'node_modules', 'esbuild', 'lib', 'main.js')).href);
   const buildResult = await esbuild.build({
     entryPoints: [entryPath],
     bundle: true,
