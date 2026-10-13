@@ -17,15 +17,6 @@
         "encounterIds": [
           "encounter.rift-edge"
         ],
-        "buildings": [
-          {
-            "id": "building.astral-monolith",
-            "name": "断裂界碑",
-            "kind": "building",
-            "description": "古修立下的界域警示石碑，已被紫雷劈裂。",
-            "effect": "界域边界"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -83,15 +74,6 @@
         "encounterIds": [
           "encounter.blood-rite"
         ],
-        "buildings": [
-          {
-            "id": "building.blood-altar",
-            "name": "白骨血坛",
-            "kind": "building",
-            "description": "用修士头骨垒砌的邪法祭台。",
-            "effect": "邪修巢穴"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -107,15 +89,6 @@
         "encounterIds": [
           "encounter.bone-pit"
         ],
-        "buildings": [
-          {
-            "id": "building.bone-mound",
-            "name": "乱刃骨堆",
-            "kind": "building",
-            "description": "无数锈蚀断刃插在骨堆之上。",
-            "effect": "尸煞巢穴"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -130,15 +103,6 @@
         ],
         "encounterIds": [
           "encounter.twilight-valley"
-        ],
-        "buildings": [
-          {
-            "id": "building.star-core",
-            "name": "陨星核心",
-            "kind": "building",
-            "description": "散发灼热星芒的天外奇石，异兽盘踞其上。",
-            "effect": "关底领主巢穴"
-          }
         ],
         "buildableTemplate": "all"
       }

@@ -456,10 +456,56 @@ public sealed class NodeBuildingRegistry(
                 if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];
                 list.Add(state);
             }
+            await SeedPrebuiltBuildingsAsync(cancellationToken);
             PublishAll();
             _loaded = true;
         }
         finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// 节点自带建筑播种：地图节点 prebuiltBuildings 声明的竣工建筑在首次装载时落座。
+    /// InsertIfAbsent 幂等——同 (节点, 建筑) 已存在行时采纳活行现状（含玩家升级结果），
+    /// 播种只负责「缺则补座」，跨实例并发由表唯一约束收敛。
+    /// </summary>
+    private async ValueTask SeedPrebuiltBuildingsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var map in gameData.Maps)
+        {
+            if (map.ValueKind != JsonValueKind.Object
+                || !map.TryGetProperty("nodes", out var nodesElement)
+                || nodesElement.ValueKind != JsonValueKind.Array)
+                continue;
+            foreach (var node in nodesElement.EnumerateArray())
+            {
+                var nodeId = node.TryGetProperty("id", out var idProperty) ? idProperty.GetString() : null;
+                if (string.IsNullOrWhiteSpace(nodeId)) continue;
+                var seeds = NodeBuildingRules.ResolvePrebuiltBuildings(node);
+                if (seeds.Count == 0) continue;
+                if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];
+                foreach (var seed in seeds)
+                {
+                    if (!gameData.Buildings.ContainsKey(seed.BuildingId))
+                    {
+                        logger.LogWarning("节点自带建筑配表缺失 node={NodeId} building={BuildingId}，跳过播种。", nodeId, seed.BuildingId);
+                        continue;
+                    }
+                    if (list.Any(entry => string.Equals(entry.BuildingId, seed.BuildingId, StringComparison.Ordinal))) continue;
+                    var seeded = new NodeBuildingState(seed.BuildingId, seed.Level, 0, 0,
+                        new Dictionary<string, double>(StringComparer.Ordinal));
+                    if (await repository.InsertIfAbsentAsync(nodeId, seeded, cancellationToken))
+                    {
+                        list.Add(seeded);
+                        logger.LogInformation("节点自带建筑落座 node={NodeId} building={BuildingId} level={Level}",
+                            nodeId, seed.BuildingId, seed.Level);
+                    }
+                    else if (await repository.TryLoadAsync(nodeId, seed.BuildingId, cancellationToken) is { } live)
+                    {
+                        list.Add(live);
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>

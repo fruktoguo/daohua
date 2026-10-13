@@ -28,23 +28,10 @@
         "encounterIds": [
           "encounter.qi-beast"
         ],
-        "buildings": [
-          {
-            "id": "building.old-well",
-            "name": "村中古井",
-            "kind": "building",
-            "description": "水质甘冽的青石老井，井旁常有村民汲水闲谈。",
-            "effect": "故事起点"
-          },
-          {
-            "id": "building.locust-tree",
-            "name": "百年古槐",
-            "kind": "building",
-            "description": "枝繁叶茂的古槐树，遮蔽半个村口。",
-            "effect": "遮阳纳凉"
-          }
-        ],
-        "buildableTemplate": "all"
+        "buildableTemplate": "all",
+        "prebuiltBuildings": [
+          { "buildingId": "building.demon-seal-array", "level": 30 }
+        ]
       },
       {
         "id": "node.shuyu-brook",
@@ -126,15 +113,6 @@
             "effect": "坊市挂单中介"
           }
         ],
-        "buildings": [
-          {
-            "id": "building.tea-shed",
-            "name": "望云茶棚",
-            "kind": "building",
-            "description": "沿山道搭建的常驻交易茶棚。",
-            "effect": "灵市集散地"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -148,15 +126,6 @@
         ],
         "encounterIds": [
           "encounter.twilight-pass"
-        ],
-        "buildings": [
-          {
-            "id": "building.qingyun-arch",
-            "name": "白玉山门牌坊",
-            "kind": "building",
-            "description": "没入云雾中的高耸白玉牌坊，刻有青云道纹。",
-            "effect": "山门历练试炼场"
-          }
         ],
         "buildableTemplate": "all"
       },
@@ -182,22 +151,6 @@
         ],
         "encounterIds": [
           "encounter.twilight-pass"
-        ],
-        "buildings": [
-          {
-            "id": "building.peak-cottage",
-            "name": "绝顶道庐",
-            "kind": "building",
-            "description": "依悬崖古松而建的简朴茅庐，俯瞰茫茫云海与人间烟火。",
-            "effect": "吐纳修炼效果提升 25%"
-          },
-          {
-            "id": "building.zither-terrace",
-            "name": "抚琴石台",
-            "kind": "building",
-            "description": "崖边突出的平整青石，常有清风抚松。",
-            "effect": "静心悟道"
-          }
         ],
         "buildableTemplate": "all"
       }

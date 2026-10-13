@@ -65,5 +65,6 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0029_v28_to_v29.sql` | `social.parties` 增 `pvp_enabled` 队伍斗法开关（§7.10.4），schema_version 写入 29 |
 | `0030_v29_to_v30.sql` | 推进战内 Buff 跨波携带态 `combatBuffs`、组队讨伐参与载荷与阵法全队标记存档标签至 30（可缺省解码，表结构未变） |
 | `0031_v30_to_v31.sql` | `game.player_projection` 增 `offline_since` 离线锚点投影列（存量离线行按提交头补锚），settings 分段增 `offlineSinceAt`（可缺省解码），schema_version 写入 31 |
+| `0032_v31_to_v32.sql` | world 分段建筑效果增 `monsterWeakenRatio`（封魔阵怪物削弱，可缺省解码）、组队会话规格增 `MonsterWeakenRatio`，表结构未变，schema_version 写入 32 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

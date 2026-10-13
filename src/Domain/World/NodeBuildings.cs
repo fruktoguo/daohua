@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Combat;
 using Domain.GameData;
 
 namespace Domain.World;
@@ -6,7 +7,7 @@ namespace Domain.World;
 /// <summary>
 /// 建筑效果集合：建筑配表中的「每级基准效果」，以及节点上全部已建成建筑按等级线性叠加后的汇总。
 /// 产出/收益类为比率（0.05 = +5%），速度类为加速比率（除以 1+ratio 缩短行动耗时），
-/// 战斗类为每 5 秒气血回复固定值与减伤比率。
+/// 战斗类为每 5 秒气血回复固定值、减伤比率与怪物削弱比率（×(1−ratio) 折减怪物气血上限与双攻双防）。
 /// </summary>
 public sealed record BuildingEffectSet(
     double ExplorationSpeedRatio = 0,
@@ -15,7 +16,8 @@ public sealed record BuildingEffectSet(
     double AlchemyOutputRatio = 0,
     double CultivationOutputRatio = 0,
     double CombatHitpointRegen = 0,
-    double CombatDamageReductionRatio = 0)
+    double CombatDamageReductionRatio = 0,
+    double MonsterWeakenRatio = 0)
 {
     /// <summary>全零效果单例。</summary>
     public static readonly BuildingEffectSet Empty = new();
@@ -28,7 +30,8 @@ public sealed record BuildingEffectSet(
         AlchemyOutputRatio * factor,
         CultivationOutputRatio * factor,
         CombatHitpointRegen * factor,
-        CombatDamageReductionRatio * factor);
+        CombatDamageReductionRatio * factor,
+        MonsterWeakenRatio * factor);
 
     /// <summary>逐项相加（多建筑汇总）。</summary>
     public BuildingEffectSet Add(BuildingEffectSet other) => new(
@@ -38,7 +41,8 @@ public sealed record BuildingEffectSet(
         AlchemyOutputRatio + other.AlchemyOutputRatio,
         CultivationOutputRatio + other.CultivationOutputRatio,
         CombatHitpointRegen + other.CombatHitpointRegen,
-        CombatDamageReductionRatio + other.CombatDamageReductionRatio);
+        CombatDamageReductionRatio + other.CombatDamageReductionRatio,
+        MonsterWeakenRatio + other.MonsterWeakenRatio);
 
     /// <summary>行动类别对应的建造加速比率；未覆盖类别返回 0。</summary>
     public double SpeedRatioFor(ActionKind kind) => kind switch
@@ -67,6 +71,9 @@ public sealed record BuildingMaterial(string ItemId, double Quantity);
 /// Capacity 为当前有效等级承载上限，Efficiency 为拥挤衰减后有效系数（超载时 &lt; 1）。
 /// </summary>
 public sealed record NodeBuildingUsage(string BuildingId, double ActiveUsers, int Capacity, double Efficiency);
+
+/// <summary>节点自带建筑种子项（地图 JSON prebuiltBuildings）：节点初始即以竣工 Level 存在的公共建筑。</summary>
+public sealed record NodeBuildingSeed(string BuildingId, int Level);
 
 /// <summary>
 /// 某世界节点上一座公共建筑的持久化状态。
@@ -134,7 +141,8 @@ public static class NodeBuildingRules
         if (modifiers.ExplorationSpeedRatio != 0 || modifiers.ExplorationOutputRatio != 0) kinds.Add(ActionKind.Exploration);
         if (modifiers.AlchemySpeedRatio != 0 || modifiers.AlchemyOutputRatio != 0) kinds.Add(ActionKind.Alchemy);
         if (modifiers.CultivationOutputRatio != 0) kinds.Add(ActionKind.Cultivation);
-        if (modifiers.CombatHitpointRegen != 0 || modifiers.CombatDamageReductionRatio != 0) kinds.Add(ActionKind.Combat);
+        if (modifiers.CombatHitpointRegen != 0 || modifiers.CombatDamageReductionRatio != 0
+            || modifiers.MonsterWeakenRatio != 0) kinds.Add(ActionKind.Combat);
         return kinds.ToArray();
     }
 
@@ -144,6 +152,29 @@ public static class NodeBuildingRules
         double users = 0;
         foreach (var kind in ServedKinds(modifiers)) users += countsByKind.GetValueOrDefault(kind);
         return users;
+    }
+
+    /// <summary>怪物削弱比率封顶：削减合计超过 90% 时按 90% 结算（面板合法性下限，MaxHitpoints 不归零）。</summary>
+    public const double MaxMonsterWeakenRatio = 0.9;
+
+    /// <summary>
+    /// 按节点建筑削弱比率折减怪物面板：气血上限与双攻双防按 ×(1−ratio) 线性折减（灵力上限不受影响）。
+    /// 波次入场、快照恢复、钉死入战、生态刷怪与组队会话的怪物模板生成点统一走此收口；
+    /// 比率 ≤0 时原位透传不分配新对象。
+    /// </summary>
+    public static CombatantStats WeakenMonsterStats(CombatantStats stats, double weakenRatio)
+    {
+        var clamped = Math.Clamp(weakenRatio, 0, MaxMonsterWeakenRatio);
+        if (clamped <= 0) return stats;
+        var factor = 1 - clamped;
+        return stats with
+        {
+            MaxHitpoints = stats.MaxHitpoints * factor,
+            AttackPower = stats.AttackPower * factor,
+            SpellAttack = stats.SpellAttack * factor,
+            Defense = stats.Defense * factor,
+            MagicResistance = stats.MagicResistance * factor
+        };
     }
 
     /// <summary>目标等级建造所需秒数；N≥1，线性 +20%/级。</summary>
@@ -263,5 +294,27 @@ public static class NodeBuildingRules
             return ids;
         }
         return null;
+    }
+
+    /// <summary>
+    /// 解析节点自带建筑清单（prebuiltBuildings：[{buildingId, level}]）：节点初始即存在的竣工建筑；
+    /// level 必须为正整数，非法项跳过（结构校验由 DataTool 门禁承担）。
+    /// </summary>
+    public static IReadOnlyList<NodeBuildingSeed> ResolvePrebuiltBuildings(JsonElement node)
+    {
+        if (node.ValueKind != JsonValueKind.Object
+            || !node.TryGetProperty("prebuiltBuildings", out var list)
+            || list.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<NodeBuildingSeed>();
+        foreach (var entry in list.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object) continue;
+            var id = entry.TryGetProperty("buildingId", out var idProperty) ? idProperty.GetString() : null;
+            var level = entry.TryGetProperty("level", out var levelProperty) && levelProperty.TryGetInt32(out var parsed) ? parsed : 0;
+            if (string.IsNullOrWhiteSpace(id) || level < 1) continue;
+            result.Add(new(id.Trim(), level));
+        }
+        return result;
     }
 }

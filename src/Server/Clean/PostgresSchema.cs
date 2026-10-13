@@ -45,7 +45,9 @@ public static class PostgresSchema
     /// 与持续消耗品 Buff 全队标记（阵法）——可缺省解码，存档标签推进，表结构未变。
     /// v31：settings 分段新增 offlineSinceAt 离线锚点，player_projection 增 offline_since 投影列——
     /// 离线生命周期判定（逐出/会话离线截止）改读该列，在线时恒为 NULL。
-    public const int Version = 31;
+    /// v32：world 分段建筑效果新增 monsterWeakenRatio（封魔阵怪物削弱，可缺省解码）——
+    /// 存档标签推进，表结构未变。
+    public const int Version = 32;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """

@@ -13,6 +13,7 @@ namespace Server.Tests;
 /// 到期完工在锁内惰性结算并落库的行为均逐位对齐原实现。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class NodeBuildingRegistryTests
 {
     private static async Task<NodeBuildingContributionTransaction> SeedContributorAsync(NpgsqlDataSource source, double quantity)
@@ -451,5 +452,63 @@ public sealed class NodeBuildingRegistryTests
 
         var effects = await registry.EffectsForAsync(nodeId, now, CancellationToken.None);
         Assert.Equal(0.05, effects.CultivationOutputRatio, 6);
+    }
+
+    /// <summary>测试配表：测试小屋 + 声明自带建筑的测试地图节点（节点 ID 由调用方注入以保证库内唯一）。</summary>
+    private static GameDataCatalog CatalogWithPrebuiltBuilding(string nodeId) => GameDataCatalog.Parse(
+    [
+        System.Text.Encoding.UTF8.GetBytes("""
+            [{"id":"building.test-hut","name":"测试小屋","group":"production","requiredRealmLevel":1,
+              "materials":[{"itemId":"item.test-wood","quantity":5}],
+              "modifiers":{"cultivationOutputRatio":0.05}}]
+            """),
+        System.Text.Encoding.UTF8.GetBytes($$"""
+            [{"id":"map.test","name":"测试图","nodes":[{"id":"{{nodeId}}","name":"测试村","x":1,"y":1,
+               "prebuiltBuildings":[{"buildingId":"building.test-hut","level":30}]}]}]
+            """)
+    ]);
+
+    /// <summary>
+    /// 节点自带建筑播种：首次装载即落座竣工态（Level=30、无工程）并参与效果聚合；
+    /// 播种幂等——重复实例/外部已建行不重复落座，已有升级结果不被种子等级覆盖。
+    /// </summary>
+    [Fact]
+    public async Task RegistrySeedsPrebuiltBuildingsIdempotently()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("节点自带建筑播种集成测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var repository = new PostgresNodeBuildingRepository(source);
+        var nodeId = $"node.test-prebuilt-{Guid.NewGuid():N}";
+        var catalog = CatalogWithPrebuiltBuilding(nodeId);
+        var now = DateTimeOffset.UtcNow;
+
+        var registry = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance);
+        var snapshot = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
+        var built = Assert.Single(snapshot.Buildings);
+        Assert.Equal("building.test-hut", built.BuildingId);
+        Assert.Equal(30, built.Level);
+        Assert.Equal(0, built.TargetLevel);
+        // 竣工态立刻参与效果聚合：0.05 × 30 = 1.5。
+        var effects = await registry.EffectsForAsync(nodeId, now, CancellationToken.None);
+        Assert.Equal(1.5, effects.CultivationOutputRatio, 6);
+
+        // 幂等：第二个注册表实例同库装载不重复建行。
+        var second = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance);
+        Assert.Single((await second.BuildingsForAsync(nodeId, now, CancellationToken.None)).Buildings);
+        await using (var connection = await source.OpenConnectionAsync())
+        {
+            await using var count = new NpgsqlCommand(
+                "SELECT count(*) FROM game.node_buildings WHERE node_id = $1", connection);
+            count.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+            Assert.Equal(1L, (long)(await count.ExecuteScalarAsync())!);
+        }
+
+        // 已存在行现状权威：玩家已发起升级（TargetLevel=31），第三次装载采纳活行而非回落种子。
+        Assert.True((await registry.StartUpgradeAsync(nodeId, "building.test-hut", now, CancellationToken.None)).Success);
+        var third = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance);
+        var adopted = Assert.Single((await third.BuildingsForAsync(nodeId, now, CancellationToken.None)).Buildings);
+        Assert.Equal(30, adopted.Level);
+        Assert.Equal(31, adopted.TargetLevel);
     }
 }

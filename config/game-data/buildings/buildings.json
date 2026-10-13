@@ -64,6 +64,22 @@
     ]
   },
   {
+    "id": "building.demon-seal-array",
+    "name": "封魔阵",
+    "kind": "building",
+    "group": "combat",
+    "description": "以煞骨为桩、妖核为眼布下的镇魔阵纹，阵成之处魔气受缚，群妖气血神通皆被压制。",
+    "effect": "削弱此地怪物的气血上限与双攻双防（每级 -1%，至多 -90%）",
+    "requiredRealmLevel": 19,
+    "modifiers": {
+      "monsterWeakenRatio": 0.01
+    },
+    "materials": [
+      { "itemId": "item.sha-bone", "quantity": 100 },
+      { "itemId": "item.demon-core", "quantity": 1 }
+    ]
+  },
+  {
     "id": "building.guard-shrine",
     "name": "护阵石龛",
     "kind": "building",

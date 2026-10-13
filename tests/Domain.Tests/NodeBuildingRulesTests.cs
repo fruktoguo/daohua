@@ -131,6 +131,33 @@ public sealed class NodeBuildingRulesTests
                 ExplorationSpeedRatio: 0.1, AlchemyOutputRatio: 0.1, CultivationOutputRatio: 0.2)));
         Assert.Equal([ActionKind.Combat],
             NodeBuildingRules.ServedKinds(new BuildingEffectSet(CombatHitpointRegen: 5)));
+        // 封魔阵类怪物削弱同样映射为战斗服务类别（参与拥挤计数与衰减）。
+        Assert.Equal([ActionKind.Combat],
+            NodeBuildingRules.ServedKinds(new BuildingEffectSet(MonsterWeakenRatio: 0.01)));
+    }
+
+    [Fact]
+    public void WeakenMonsterStatsScalesLinearlyAndCapsAtNinetyPercent()
+    {
+        var stats = CombatantStats.Create(1000, 100, 50, 2) with
+        {
+            SpellAttack = 80, MagicResistance = 30, MaxManapoints = 200
+        };
+        // 零削弱原位透传，不分配新对象。
+        Assert.Same(stats, NodeBuildingRules.WeakenMonsterStats(stats, 0));
+        var weakened = NodeBuildingRules.WeakenMonsterStats(stats, 0.2);
+        Assert.Equal(800, weakened.MaxHitpoints, 6);
+        Assert.Equal(80, weakened.AttackPower, 6);
+        Assert.Equal(64, weakened.SpellAttack, 6);
+        Assert.Equal(40, weakened.Defense, 6);
+        Assert.Equal(24, weakened.MagicResistance, 6);
+        // 灵力上限与攻击间隔等非削弱字段不受影响。
+        Assert.Equal(200, weakened.MaxManapoints, 6);
+        Assert.Equal(2, weakened.AttackIntervalSeconds, 6);
+        // 合计比率封顶 90%：超出按 90% 结算，气血上限不归零。
+        var capped = NodeBuildingRules.WeakenMonsterStats(stats, 1.5);
+        Assert.Equal(100, capped.MaxHitpoints, 6);
+        Assert.Equal(10, capped.AttackPower, 6);
     }
 
     [Fact]
@@ -189,6 +216,25 @@ public sealed class NodeBuildingRulesTests
 
         var emptyNode = JsonDocument.Parse("""{"name":"x"}""").RootElement;
         Assert.Null(NodeBuildingRules.ResolveBuildableIds(emptyNode, definitions));
+    }
+
+    [Fact]
+    public void ResolvePrebuiltBuildingsParsesSeedsAndSkipsInvalid()
+    {
+        var node = JsonDocument.Parse("""
+            {"id":"node.x","prebuiltBuildings":[
+                {"buildingId":"building.demon-seal-array","level":30},
+                {"buildingId":"  ","level":5},
+                {"buildingId":"building.b","level":0},
+                {"buildingId":"building.c"},
+                "not-an-object"
+            ]}
+            """).RootElement;
+        var seed = Assert.Single(NodeBuildingRules.ResolvePrebuiltBuildings(node));
+        Assert.Equal("building.demon-seal-array", seed.BuildingId);
+        Assert.Equal(30, seed.Level);
+        // 未配置 prebuiltBuildings 返回空列表。
+        Assert.Empty(NodeBuildingRules.ResolvePrebuiltBuildings(JsonDocument.Parse("""{"id":"node.y"}""").RootElement));
     }
 
     [Fact]
