@@ -283,6 +283,50 @@
   color: #d87060;
   border: 1px solid rgba(200, 82, 63, 0.25);
 }
+.codex-hover-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(201, 180, 109, 0.12);
+}
+
+.codex-hover-title {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--gold);
+}
+
+.codex-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.codex-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: rgba(201, 180, 109, 0.08);
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.codex-stat-line {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.codex-effect-text {
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.45;
+}
 
 .codex-empty {
   display: flex;

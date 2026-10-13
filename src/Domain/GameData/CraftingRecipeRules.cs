@@ -33,20 +33,19 @@ public static class CraftingRecipeRules
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(catalog);
 
-        var maxTier = 1;
-
-        // 1. 检查产出物品/装备的 Tier
+        // 1. 优先按产出物（Yields）的 Tier 裁决（与前端 resolveActionLevel 一致）
         if (action.Yields is { Count: > 0 })
         {
             foreach (var yield in action.Yields)
             {
                 if (yield.Kind != ActionYieldKind.Item || yield.Item is null) continue;
                 var tier = ResolveItemOrEquipmentTier(yield.Item.Value.Value, catalog);
-                if (tier > maxTier) maxTier = tier;
+                if (tier > 0) return ConvertTierToLevel(tier);
             }
         }
 
-        // 2. 检查输入材料的 Tier
+        // 2. 缺省时回退按输入材料的最大 Tier 裁决
+        var maxTier = 1;
         if (action.Inputs is { Count: > 0 })
         {
             foreach (var (itemId, _) in action.Inputs)

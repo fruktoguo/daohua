@@ -1,5 +1,7 @@
 import React, { memo, useMemo } from 'react'
 
+import { calculateRealmInfo } from '../game/combatConstants'
+import { describeAbility } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
   findItemInCatalog,
@@ -24,6 +26,7 @@ import { useUiStore } from '../uiStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { ItemTile } from './ItemDisplay'
+import { ValueText } from './ValueText'
 
 /** 制造分类映射定义 */
 const CRAFTING_SUB_TABS: ReadonlyArray<{ id: CodexCraftingSubTab; labelKey: string }> = [
@@ -32,6 +35,20 @@ const CRAFTING_SUB_TABS: ReadonlyArray<{ id: CodexCraftingSubTab; labelKey: stri
   { id: 'formation', labelKey: 'craftingFormation' },
   { id: 'talisman', labelKey: 'craftingTalisman' },
 ]
+
+/**
+ * 格式化角色境界解锁文案：
+ * - 1 级及以下：默认解锁
+ * - 18 级特例：境界达到 lv18[叩天门] 解锁
+ * - 其余等级：境界达到 lv{level}[{realmName}] 解锁
+ */
+function formatRealmUnlockCondition(level: number): string {
+  if (level <= 1) return '默认解锁'
+  if (level === 18) return '境界达到 lv18[叩天门] 解锁'
+  const info = calculateRealmInfo(0, level)
+  const name = level <= 18 ? info.minorName : `${info.stageName}${info.minorName}`
+  return `境界达到 lv${level}[${name}] 解锁`
+}
 
 /**
  * 万象图鉴页面组件
@@ -56,6 +73,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const items = useGameStore(state => state.items)
   const equipment = useGameStore(state => state.equipment)
   const learnedAbilityIds = useGameStore(state => state.combat?.learnedAbilityIds ?? [])
+
   // 1. 制造配方分类池
   const craftingPool = useMemo(() => {
     const pool = actions.filter(a =>
@@ -103,6 +121,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const sortedAbilities = useMemo(() => {
     return [...abilities].sort((a, b) => ((a.tier ?? 1) - (b.tier ?? 1)) || a.abilityId.localeCompare(b.abilityId))
   }, [abilities])
+
   // 4. 从遭遇战全量聚合去重的大世界怪物列表
   const allMonsters = useMemo(() => {
     const map = new Map<string, CombatantDefinition>()
@@ -245,6 +264,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
             {sortedBuildings.map(building => (
               <CodexBuildingEntry
                 building={building}
+                items={items}
                 key={building.buildingId}
                 realmLevel={realmLevel}
               />
@@ -275,6 +295,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
             {allMonsters.map(monster => (
               <CodexMonsterEntry
                 isDefeated={defeatedSet.has(monster.enemyId)}
+                items={items}
                 key={monster.enemyId}
                 monster={monster}
               />
@@ -320,9 +341,73 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
     t
   )
 
-  const inputsDesc = Object.entries(action.inputs ?? {})
-    .map(([id, qty]) => `${findItemInCatalog(items, id)?.name ?? id} ×${qty}`)
-    .join('、')
+  // 材料清单
+  const inputEntries = Object.entries(action.inputs ?? {})
+
+  // 装备基础属性条目
+  const eqStatLines: string[] = []
+  if (outputEqDef) {
+    if (outputEqDef.baseStatRatios) {
+      const ratioLabels: Record<string, string> = {
+        physicalAttack: '物理攻击',
+        spellAttack: '术法攻击',
+        physicalArmor: '护甲',
+        spellResistance: '抗性',
+      }
+      for (const [key, val] of Object.entries(outputEqDef.baseStatRatios)) {
+        if (typeof val === 'number' && val !== 0) {
+          eqStatLines.push(`${ratioLabels[key] ?? key} +${Math.round(val * 100)}%`)
+        }
+      }
+    }
+    if (outputEqDef.flatStats) {
+      const flatLabels: Record<string, string> = {
+        hitpointRegen: '气血自然回复',
+        manapointRegen: '灵气自然回复',
+        critical: '暴击点数',
+        accuracy: '命中点数',
+        evasion: '闪避点数',
+        parryResolve: '化解点数',
+      }
+      for (const [key, val] of Object.entries(outputEqDef.flatStats)) {
+        if (typeof val === 'number' && val !== 0) {
+          eqStatLines.push(`${flatLabels[key] ?? key} +${val}`)
+        }
+      }
+    }
+    if (outputEqDef.techniqueBonus) {
+      eqStatLines.push(`技艺速度 +${Math.round(outputEqDef.techniqueBonus.speedRatio * 100)}%`)
+    }
+  }
+
+  // 消耗品/丹药具体属性条目
+  const itemStatLines: string[] = []
+  if (outputItemDef) {
+    if (outputItemDef.hitpointRestore && outputItemDef.hitpointRestore > 0) {
+      itemStatLines.push(`恢复气血 +${outputItemDef.hitpointRestore}`)
+    }
+    if (outputItemDef.manapointRestore && outputItemDef.manapointRestore > 0) {
+      itemStatLines.push(`恢复灵力 +${outputItemDef.manapointRestore}`)
+    }
+    if (outputItemDef.cultivationMultiplier && outputItemDef.cultivationMultiplier > 1) {
+      itemStatLines.push(`吐纳灵气收益 +${Math.round((outputItemDef.cultivationMultiplier - 1) * 100)}%`)
+    }
+    if (outputItemDef.alchemyMultiplier && outputItemDef.alchemyMultiplier > 1) {
+      itemStatLines.push(`炼丹产出收益 +${Math.round((outputItemDef.alchemyMultiplier - 1) * 100)}%`)
+    }
+    if (outputItemDef.gatheringMultiplier && outputItemDef.gatheringMultiplier > 1) {
+      itemStatLines.push(`历练采集收益 +${Math.round((outputItemDef.gatheringMultiplier - 1) * 100)}%`)
+    }
+    if (outputItemDef.durationSeconds && outputItemDef.durationSeconds > 0) {
+      itemStatLines.push(`持续 ${outputItemDef.durationSeconds} 秒`)
+    }
+    if (outputItemDef.cooldownSeconds && outputItemDef.cooldownSeconds > 0) {
+      itemStatLines.push(`冷却 ${outputItemDef.cooldownSeconds} 秒`)
+    }
+    for (const b of outputItemDef.buffEffects ?? []) {
+      itemStatLines.push(`附带状态：${b.name}`)
+    }
+  }
 
   const hoverContent = (
     <FloatingInfoCard
@@ -330,19 +415,58 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
       badgeTone={isUnlocked ? 'jade' : 'muted'}
       description={
         <div>
-          {inputsDesc && (
-            <div style={{ marginBottom: 4 }}>
-              <strong>{t('app.codex.requiresInputs')}：</strong>
-              <span>{inputsDesc}</span>
+          {/* 所需材料 */}
+          <div className="codex-hover-section">
+            <span className="codex-hover-title">{t('app.codex.requiresInputs')}：</span>
+            <div className="codex-chips-wrap">
+              {inputEntries.map(([id, qty]) => {
+                const def = findItemInCatalog(items, id)
+                return (
+                  <span className="codex-chip" key={id}>
+                    {def?.name ?? id} ×{qty}
+                  </span>
+                )
+              })}
             </div>
-          )}
-          {action.description && <div>{action.description}</div>}
+          </div>
+
+          {/* 制造产出与成品属性 */}
+          <div className="codex-hover-section">
+            <span className="codex-hover-title">
+              {t('app.codex.yieldsOutputs')}：{outputItemDef?.name ?? outputItemId}
+            </span>
+            {outputEqDef && eqStatLines.length > 0 && (
+              <div className="codex-chips-wrap" style={{ marginTop: 2 }}>
+                {eqStatLines.map((line, idx) => (
+                  <span className="codex-chip" key={idx} style={{ color: 'var(--gold)' }}>
+                    {line}
+                  </span>
+                ))}
+              </div>
+            )}
+            {outputItemDef && itemStatLines.length > 0 && (
+              <div className="codex-chips-wrap" style={{ marginTop: 2 }}>
+                {itemStatLines.map((line, idx) => (
+                  <span className="codex-chip" key={idx} style={{ color: 'var(--qi)' }}>
+                    {line}
+                  </span>
+                ))}
+              </div>
+            )}
+            {outputItemDef?.description && (
+              <div className="codex-stat-line" style={{ marginTop: 4 }}>
+                {outputItemDef.description}
+              </div>
+            )}
+          </div>
+
+          {/* 解锁条件 */}
           <div
             className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
               isUnlocked ? 'unlocked' : 'locked'
             }`}
           >
-            {t('app.codex.conditionLevel', { level: requiredLevel })}
+            {formatRealmUnlockCondition(requiredLevel)}
           </div>
         </div>
       }
@@ -381,9 +505,11 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
  */
 const CodexBuildingEntry = memo(function CodexBuildingEntry({
   building,
+  items,
   realmLevel,
 }: {
   building: BuildingDefinition
+  items: readonly ItemDefinition[]
   realmLevel: number
 }): React.JSX.Element {
   const t = useT()
@@ -396,9 +522,17 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
         ? '战斗'
         : '其他'
 
-  const materialsDesc = (building.materials ?? [])
-    .map(m => `${m.itemId} ×${m.quantity}`)
-    .join('、')
+  // 具体建筑效果拆解
+  const modifierLines: string[] = []
+  if (building.modifiers) {
+    const m = building.modifiers
+    if (m.explorationOutputRatio) modifierLines.push(`历练采集收益 +${Math.round(m.explorationOutputRatio * 100)}%`)
+    if (m.alchemyOutputRatio) modifierLines.push(`炼丹产出收益 +${Math.round(m.alchemyOutputRatio * 100)}%`)
+    if (m.cultivationOutputRatio) modifierLines.push(`吐纳修炼收益 +${Math.round(m.cultivationOutputRatio * 100)}%`)
+    if (m.alchemySpeedRatio) modifierLines.push(`炼制行动速度 +${Math.round(m.alchemySpeedRatio * 100)}%`)
+    if (m.combatDamageReductionRatio) modifierLines.push(`战斗伤害减免 +${Math.round(m.combatDamageReductionRatio * 100)}%`)
+    if (m.combatHitpointRegen) modifierLines.push(`战斗气血回复 +${m.combatHitpointRegen}/秒`)
+  }
 
   const hoverContent = (
     <FloatingInfoCard
@@ -407,22 +541,44 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
       description={
         <div>
           <div style={{ marginBottom: 4 }}>{building.description}</div>
-          <div style={{ marginBottom: 4 }}>
-            <strong>{t('app.codex.buildingEffect')}：</strong>
-            <span>{building.effect}</span>
+
+          {/* 建筑基础与具体效果 */}
+          <div className="codex-hover-section">
+            <span className="codex-hover-title">{t('app.codex.buildingEffect')}：</span>
+            <div className="codex-effect-text">{building.effect}</div>
+            {modifierLines.length > 0 && (
+              <div className="codex-chips-wrap" style={{ marginTop: 2 }}>
+                {modifierLines.map((line, idx) => (
+                  <span className="codex-chip" key={idx} style={{ color: 'var(--jade)' }}>
+                    {line}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-          {materialsDesc && (
-            <div style={{ marginBottom: 4 }}>
-              <strong>{t('app.codex.buildingMaterials')}：</strong>
-              <span>{materialsDesc}</span>
+
+          {/* 建造材料（中文物品名） */}
+          <div className="codex-hover-section">
+            <span className="codex-hover-title">{t('app.codex.buildingMaterials')}：</span>
+            <div className="codex-chips-wrap">
+              {(building.materials ?? []).map(m => {
+                const def = findItemInCatalog(items, m.itemId)
+                return (
+                  <span className="codex-chip" key={m.itemId}>
+                    {def?.name ?? m.itemId} ×{m.quantity}
+                  </span>
+                )
+              })}
             </div>
-          )}
+          </div>
+
+          {/* 解锁条件 */}
           <div
             className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
               isUnlocked ? 'unlocked' : 'locked'
             }`}
           >
-            {t('app.codex.conditionBuildingLevel', { level: building.requiredRealmLevel })}
+            {formatRealmUnlockCondition(building.requiredRealmLevel)}
           </div>
         </div>
       }
@@ -470,24 +626,62 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
 }): React.JSX.Element {
   const t = useT()
 
+  // 1 级招式具体加成与伤害数值
+  const abilityInfo = describeAbility(ability, 1)
+
   const hoverContent = (
     <FloatingInfoCard
       badge={isLearned ? t('app.codex.learned') : t('app.codex.unlearned')}
       badgeTone={isLearned ? 'qi' : 'muted'}
       description={
         <div>
-          {ability.description && <div style={{ marginBottom: 4 }}>{ability.description}</div>}
-          <div style={{ fontSize: '0.8rem', opacity: 0.85, marginBottom: 4 }}>
-            {t('app.codex.cooldown')}：{(ability.cooldownMilliseconds ?? 0) / 1000}s
-            {ability.castMilliseconds ? ` · ${t('app.codex.castTime')}：${ability.castMilliseconds / 1000}s` : ''}
-            {ability.manaCost ? ` · ${t('app.codex.manaCost')}：${ability.manaCost}` : ''}
+          {/* 功法真实伤害构成与具体加成叙述 */}
+          {abilityInfo.description && (
+            <div className="codex-effect-text" style={{ marginBottom: 6 }}>
+              <ValueText text={abilityInfo.description} />
+            </div>
+          )}
+          {abilityInfo.lines && abilityInfo.lines.length > 0 && (
+            <div className="codex-chips-wrap" style={{ marginBottom: 6 }}>
+              {abilityInfo.lines.map((line, idx) => (
+                <span className="codex-chip" key={idx}>
+                  <ValueText text={line} />
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* 技能风味描述 */}
+          {ability.description && (
+            <div className="codex-stat-line" style={{ marginBottom: 4 }}>
+              {ability.description}
+            </div>
+          )}
+
+          {/* 施法消耗与冷却参数 */}
+          <div className="codex-chips-wrap" style={{ marginTop: 4, marginBottom: 4 }}>
+            <span className="codex-chip">
+              {t('app.codex.cooldown')}：{(ability.cooldownMilliseconds ?? 0) / 1000}s
+            </span>
+            {ability.castMilliseconds ? (
+              <span className="codex-chip">
+                {t('app.codex.castTime')}：{ability.castMilliseconds / 1000}s
+              </span>
+            ) : null}
+            {ability.manaCost ? (
+              <span className="codex-chip">
+                {t('app.codex.manaCost')}：{ability.manaCost}
+              </span>
+            ) : null}
           </div>
+
+          {/* 解锁条件：学习后解锁 */}
           <div
             className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
               isLearned ? 'unlocked' : 'locked'
             }`}
           >
-            {t('app.codex.conditionAbilityLearn')}
+            学习后解锁
           </div>
         </div>
       }
@@ -526,9 +720,11 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
  */
 const CodexMonsterEntry = memo(function CodexMonsterEntry({
   monster,
+  items,
   isDefeated,
 }: {
   monster: CombatantDefinition
+  items: readonly ItemDefinition[]
   isDefeated: boolean
 }): React.JSX.Element {
   const t = useT()
@@ -541,7 +737,7 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
         : '妖兽'
 
   const dropsDesc = (monster.drops ?? [])
-    .map(d => `${d.itemId} (${Math.round(d.dropChance * 100)}%)`)
+    .map(d => `${findItemInCatalog(items, d.itemId)?.name ?? d.itemId} (${Math.round(d.dropChance * 100)}%)`)
     .join('、')
 
   const hoverContent = (
@@ -552,12 +748,23 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
         <div>
           {isDefeated ? (
             <>
-              <div style={{ fontSize: '0.82rem', marginBottom: 4 }}>
-                气血：{monster.attributes?.maxHitpoints ?? 0} · 攻击：{monster.attributes?.physicalAttack || monster.attributes?.spellAttack || 0}
+              <div className="codex-chips-wrap" style={{ marginBottom: 4 }}>
+                <span className="codex-chip">
+                  气血：{monster.attributes?.maxHitpoints ?? 0}
+                </span>
+                <span className="codex-chip">
+                  攻击：{monster.attributes?.physicalAttack || monster.attributes?.spellAttack || 0}
+                </span>
+                <span className="codex-chip">
+                  护甲：{monster.attributes?.armor ?? 0}
+                </span>
+                <span className="codex-chip">
+                  抗性：{monster.attributes?.magicResistance ?? 0}
+                </span>
               </div>
               {dropsDesc && (
-                <div style={{ fontSize: '0.8rem', opacity: 0.85, marginBottom: 4 }}>
-                  掉落：{dropsDesc}
+                <div className="codex-stat-line" style={{ marginTop: 4, marginBottom: 4 }}>
+                  <strong>掉落物：</strong>{dropsDesc}
                 </div>
               )}
             </>
@@ -569,7 +776,7 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
               isDefeated ? 'unlocked' : 'locked'
             }`}
           >
-            {t('app.codex.conditionMonsterDefeat')}
+            在野外讨伐并击败该妖兽
           </div>
         </div>
       }

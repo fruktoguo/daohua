@@ -243,7 +243,7 @@
     "description": "朱笔走雷纹，祭出召天霆。\n朱砂勾勒雷纹的青色灵符，符面电光游走不散，祭出即唤木行天雷直击敌首。",
     "kind": "consumable",
     "category": "consumable",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 65,
     "consumable": {
       "usableInActionTypes": [
@@ -267,7 +267,7 @@
     "description": "阵盘方寸聚灵潮。\n灵松晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入全队人体内。",
     "kind": "consumable",
     "category": "consumable",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 150,
     "consumable": {
       "usableInActionTypes": [

@@ -49,6 +49,18 @@ public sealed class CraftingRecipeRulesTests
             var level = CraftingRecipeRules.ResolveRequiredRealmLevel(t1Forge, catalog);
             Assert.Equal(1, level);
         }
+
+        // 雷击符与聚灵阵盘当前设定为 1 级解锁
+        if (catalog.Actions.TryGet(new ActionId("talisman.draw-leiji"), out var talisman))
+        {
+            var level = CraftingRecipeRules.ResolveRequiredRealmLevel(talisman, catalog);
+            Assert.Equal(1, level);
+        }
+        if (catalog.Actions.TryGet(new ActionId("formation.deploy-juling"), out var formation))
+        {
+            var level = CraftingRecipeRules.ResolveRequiredRealmLevel(formation, catalog);
+            Assert.Equal(1, level);
+        }
     }
 
     [Fact]
