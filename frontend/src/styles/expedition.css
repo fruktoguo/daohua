@@ -3157,6 +3157,14 @@
   font-size: 12px;
 }
 
+/* 记录页：主区内嵌页签外壳，账本分区沿用 battle-report-* 内容样式，滚动走 .main-content 外层 */
+.records-page {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  font-size: 12px;
+}
+
 .battle-report-title {
   color: var(--gold-bright);
   font-size: 12px;

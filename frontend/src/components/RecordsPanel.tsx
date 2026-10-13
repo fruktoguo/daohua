@@ -12,7 +12,7 @@ const HISTORY_LIMIT = 10
 const SINGLETON_REPORT_IDS: ReadonlySet<string> = new Set(['offline', 'daily'])
 
 /**
- * 行动记录面板 (RecordsPanel)：由左侧栏「记录」按钮打开。
+ * 行动记录页面 (RecordsPanel)：主区顶级页签（'records'），由左侧栏「记录」按钮切换进入。
  *
  * 展示内容：
  * 1. 离线挂机：duel.offlineReport 单例账本（reportId 固定 "offline"，全零账本不渲染）；
@@ -20,7 +20,7 @@ const SINGLETON_REPORT_IDS: ReadonlySet<string> = new Set(['offline', 'daily'])
  * 3. 近期战报历史（服务端 reports 合并 localStorage 本地缓存，按 reportId 去重、倒序取 10 条）；
  * 4. 皆无内容时显示空态。
  */
-export const RecordsPanel = memo(function RecordsPanel({ titleId = 'records-panel-title' }: { titleId?: string }): React.JSX.Element {
+export const RecordsPanel = memo(function RecordsPanel(): React.JSX.Element {
   const t = useT()
   const playerId = useGameStore(state => state.playerId)
   const duel = useGameStore(state => state.duel)
@@ -31,7 +31,7 @@ export const RecordsPanel = memo(function RecordsPanel({ titleId = 'records-pane
   const offline = duel.offlineReport && reportHasContent(duel.offlineReport) ? duel.offlineReport : null
   const daily = duel.dailyReport && reportHasContent(duel.dailyReport) ? duel.dailyReport : null
 
-  // 每日账本进行中时长需要每秒刷新；面板关闭时组件随 Modal 一起卸载，定时器自动清理。
+  // 每日账本进行中时长需要每秒刷新；切离记录页时组件随页签一起卸载，定时器自动清理。
   const needsTick = Boolean(daily)
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -58,9 +58,9 @@ export const RecordsPanel = memo(function RecordsPanel({ titleId = 'records-pane
   const isEmpty = !offline && !daily && history.length === 0
 
   return (
-    <section aria-label={t('app.nav.records')} className="battle-report-panel">
-      <header className="battle-report-header">
-        <span className="battle-report-title" id={titleId}>{t('app.nav.records')}</span>
+    <section aria-label={t('app.nav.records')} className="panel records-page">
+      <header className="panel-header">
+        <h2>{t('app.nav.records')}</h2>
       </header>
       {isEmpty ? (
         <p className="battle-report-empty">{t('combat.report.empty')}</p>
