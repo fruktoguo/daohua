@@ -303,6 +303,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
           <div className="codex-grid codex-grid--wide">
             {allMonsters.map(monster => (
               <CodexMonsterEntry
+                abilities={abilities}
                 isDefeated={defeatedSet.has(monster.enemyId)}
                 items={items}
                 key={monster.enemyId}
@@ -695,10 +696,12 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
 const CodexMonsterEntry = memo(function CodexMonsterEntry({
   monster,
   items,
+  abilities,
   isDefeated,
 }: {
   monster: CombatantDefinition
   items: readonly ItemDefinition[]
+  abilities: readonly CombatAbilityDefinition[]
   isDefeated: boolean
 }): React.JSX.Element {
   const t = useT()
@@ -710,6 +713,14 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
         ? '精英'
         : '妖兽'
 
+  const skillNames = (monster.skills ?? [])
+    .map(s => {
+      if (!s.abilityId) return null
+      const a = abilities.find(ab => ab.abilityId === s.abilityId)
+      return a ? `${a.name}${s.level && s.level > 1 ? ` Lv.${s.level}` : ''}` : s.abilityId
+    })
+    .filter(Boolean) as string[]
+
   const dropsDesc = (monster.drops ?? [])
     .map(d => `${findItemInCatalog(items, d.itemId)?.name ?? d.itemId} (${Math.round(d.dropChance * 100)}%)`)
     .join('、')
@@ -720,31 +731,53 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
       badgeTone={isDefeated ? 'danger' : 'muted'}
       description={
         <div>
-          {isDefeated ? (
-            <>
-              <div className="codex-chips-wrap" style={{ marginBottom: 4 }}>
-                <span className="codex-chip">
-                  气血：{monster.attributes?.maxHitpoints ?? 0}
-                </span>
-                <span className="codex-chip">
-                  攻击：{monster.attributes?.physicalAttack || monster.attributes?.spellAttack || 0}
-                </span>
-                <span className="codex-chip">
-                  护甲：{monster.attributes?.armor ?? 0}
-                </span>
-                <span className="codex-chip">
-                  抗性：{monster.attributes?.magicResistance ?? 0}
-                </span>
-              </div>
-              {dropsDesc && (
-                <div className="codex-stat-line" style={{ marginTop: 4, marginBottom: 4 }}>
-                  <strong>掉落物：</strong>{dropsDesc}
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={{ marginBottom: 4 }}>{t('app.codex.unknownMonsterDesc')}</div>
+          {/* 属性胶囊 */}
+          <div className="codex-chips-wrap" style={{ marginBottom: 6 }}>
+            <span className="codex-chip">
+              气血：{formatNumber(monster.attributes?.maxHitpoints ?? 0)}
+            </span>
+            <span className="codex-chip">
+              攻击：{formatNumber(monster.attributes?.physicalAttack || monster.attributes?.spellAttack || 0)}
+            </span>
+            <span className="codex-chip">
+              护甲：{formatNumber(monster.attributes?.armor ?? 0)}
+            </span>
+            <span className="codex-chip">
+              抗性：{formatNumber(monster.attributes?.magicResistance ?? 0)}
+            </span>
+            {monster.attributes?.critical ? (
+              <span className="codex-chip">
+                暴击：{formatNumber(monster.attributes.critical)}
+              </span>
+            ) : null}
+            {monster.attributes?.evasion ? (
+              <span className="codex-chip">
+                闪避：{formatNumber(monster.attributes.evasion)}
+              </span>
+            ) : null}
+            {monster.attributes?.accuracy ? (
+              <span className="codex-chip">
+                命中：{formatNumber(monster.attributes.accuracy)}
+              </span>
+            ) : null}
+          </div>
+
+          {/* 掌握技能 */}
+          {skillNames.length > 0 && (
+            <div className="codex-stat-line" style={{ marginTop: 4, marginBottom: 4 }}>
+              <strong>掌握战技：</strong>
+              {skillNames.join('、')}
+            </div>
           )}
+
+          {/* 掉落物 */}
+          {dropsDesc && (
+            <div className="codex-stat-line" style={{ marginTop: 4, marginBottom: 4 }}>
+              <strong>掉落物：</strong>{dropsDesc}
+            </div>
+          )}
+
+          {/* 解锁条件 */}
           <div
             className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
               isDefeated ? 'unlocked' : 'locked'
@@ -754,8 +787,8 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
           </div>
         </div>
       }
-      subtitle={isDefeated ? `Lv.${monster.level ?? 1} · ${rankLabel}` : '？？？'}
-      title={isDefeated ? monster.name : t('app.codex.unknownMonster')}
+      subtitle={`Lv.${monster.level ?? 1} · ${rankLabel}`}
+      title={monster.name}
     />
   )
 
@@ -767,15 +800,11 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
         }`}
       >
         <div className="codex-card-avatar-box">
-          {isDefeated ? (
-            <CharacterAvatar
-              fallback={monster.name.slice(0, 1)}
-              isFlipped
-              visual={monster.visual}
-            />
-          ) : (
-            <span style={{ fontSize: 20, filter: 'blur(1px)' }}>❓</span>
-          )}
+          <CharacterAvatar
+            fallback={monster.name.slice(0, 1)}
+            isFlipped
+            visual={monster.visual}
+          />
           {!isDefeated && (
             <span className="codex-lock-badge" title={t('app.codex.undefeated')}>
               🔒
@@ -784,16 +813,10 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
         </div>
         <div className="codex-card-info">
           <div className="codex-card-name-row">
-            <span className="codex-card-name">
-              {isDefeated ? monster.name : t('app.codex.unknownMonster')}
-            </span>
-            <span className="codex-card-level">
-              {isDefeated ? `Lv.${monster.level ?? 1}` : 'Lv.???'}
-            </span>
+            <span className="codex-card-name">{monster.name}</span>
+            <span className="codex-card-level">Lv.{monster.level ?? 1}</span>
           </div>
-          <span className="codex-card-sub">
-            {isDefeated ? rankLabel : '？？？'}
-          </span>
+          <span className="codex-card-sub">{rankLabel}</span>
         </div>
       </div>
     </FloatingPopover>
