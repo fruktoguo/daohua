@@ -1,10 +1,11 @@
 import React, { memo, useCallback, useMemo } from 'react'
 
 import { calculateRealmInfo } from '../game/combatConstants'
-import { describeAbility, formatNumber } from '../game/format'
+import { describeAbility, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
   convertTierToLevel,
+  findAbilityInCatalog,
   findItemInCatalog,
   resolveActionLevel,
   resolveItemCategoryLabel,
@@ -31,10 +32,12 @@ import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './Floating
 import {
   describeEquipmentEffects,
   describeItemEffects,
+  ItemDropReference,
   ItemTile,
   rarityToTone,
   resolveItemTooltipAsideCards,
 } from './ItemDisplay'
+import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
 
 /** 制造分类映射定义 */
@@ -695,7 +698,6 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
  */
 const CodexMonsterEntry = memo(function CodexMonsterEntry({
   monster,
-  items,
   abilities,
   isDefeated,
 }: {
@@ -705,89 +707,76 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
   isDefeated: boolean
 }): React.JSX.Element {
   const t = useT()
+  const monsterAttributes = monster.attributes
+  const realm = calculateRealmInfo(0, monster.level ?? 1)
 
-  const rankLabel =
-    monster.rank === 'boss'
-      ? '妖王'
-      : monster.rank === 'elite'
-        ? '精英'
-        : '妖兽'
+  const isBoss = monster.rank === 'boss'
+  const isElite = monster.rank === 'elite'
+  const rankLabel = isBoss
+    ? t('combat.nearby.rankBoss')
+    : isElite
+      ? t('combat.nearby.rankElite')
+      : t('combat.nearby.rankMonster')
+  const badgeTone: FloatingTone = isBoss ? 'danger' : isElite ? 'purple' : 'gold'
 
-  const skillNames = (monster.skills ?? [])
-    .map(s => {
-      if (!s.abilityId) return null
-      const a = abilities.find(ab => ab.abilityId === s.abilityId)
-      return a ? `${a.name}${s.level && s.level > 1 ? ` Lv.${s.level}` : ''}` : s.abilityId
-    })
-    .filter(Boolean) as string[]
+  const drops = monster.drops ?? []
+  const rewardParts = [
+    monster.experience > 0 ? `${t('combat.report.experience')} +${formatInteger(monster.experience)}` : null,
+  ].filter((part): part is string => part !== null)
 
-  const dropsDesc = (monster.drops ?? [])
-    .map(d => `${findItemInCatalog(items, d.itemId)?.name ?? d.itemId} (${Math.round(d.dropChance * 100)}%)`)
-    .join('、')
+  const abilityNames = (monster.skills ?? [])
+    .map(slot => slot.abilityId)
+    .filter((id): id is string => id !== null && id.length > 0)
+    .map(id => findAbilityInCatalog(abilities, id)?.name ?? id)
+    .filter(name => name.length > 0)
 
   const hoverContent = (
     <FloatingInfoCard
-      badge={isDefeated ? t('app.codex.defeated') : t('app.codex.undefeated')}
-      badgeTone={isDefeated ? 'danger' : 'muted'}
-      description={
-        <div>
-          {/* 属性胶囊 */}
-          <div className="codex-chips-wrap" style={{ marginBottom: 6 }}>
-            <span className="codex-chip">
-              气血：{formatNumber(monster.attributes?.maxHitpoints ?? 0)}
-            </span>
-            <span className="codex-chip">
-              攻击：{formatNumber(monster.attributes?.physicalAttack || monster.attributes?.spellAttack || 0)}
-            </span>
-            <span className="codex-chip">
-              护甲：{formatNumber(monster.attributes?.armor ?? 0)}
-            </span>
-            <span className="codex-chip">
-              抗性：{formatNumber(monster.attributes?.magicResistance ?? 0)}
-            </span>
-            {monster.attributes?.critical ? (
-              <span className="codex-chip">
-                暴击：{formatNumber(monster.attributes.critical)}
-              </span>
-            ) : null}
-            {monster.attributes?.evasion ? (
-              <span className="codex-chip">
-                闪避：{formatNumber(monster.attributes.evasion)}
-              </span>
-            ) : null}
-            {monster.attributes?.accuracy ? (
-              <span className="codex-chip">
-                命中：{formatNumber(monster.attributes.accuracy)}
-              </span>
-            ) : null}
-          </div>
-
-          {/* 掌握技能 */}
-          {skillNames.length > 0 && (
-            <div className="codex-stat-line" style={{ marginTop: 4, marginBottom: 4 }}>
-              <strong>掌握战技：</strong>
-              {skillNames.join('、')}
-            </div>
-          )}
-
-          {/* 掉落物 */}
-          {dropsDesc && (
-            <div className="codex-stat-line" style={{ marginTop: 4, marginBottom: 4 }}>
-              <strong>掉落物：</strong>{dropsDesc}
-            </div>
-          )}
-
-          {/* 解锁条件 */}
-          <div
-            className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
-              isDefeated ? 'unlocked' : 'locked'
-            }`}
-          >
-            在野外讨伐并击败该妖兽
-          </div>
+      badge={rankLabel}
+      badgeTone={badgeTone}
+      footer={
+        <div
+          className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
+            isDefeated ? 'unlocked' : 'locked'
+          }`}
+          style={{ marginTop: 0 }}
+        >
+          {isDefeated ? t('app.codex.defeated') : '在野外讨伐并击败该妖兽'}
         </div>
       }
-      subtitle={`Lv.${monster.level ?? 1} · ${rankLabel}`}
+      lines={[
+        ...(rewardParts.length > 0
+          ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`]
+          : []),
+        ...(abilityNames.length > 0
+          ? [`${t('combat.ecology.abilities')}：${abilityNames.join('、')}`]
+          : []),
+        ...(drops.length > 0
+          ? [
+              <span key="drops">
+                {t('combat.map.monsterDrops')}：
+                <span className="world-monster-drops-row">
+                  {drops.map(drop => (
+                    <ItemDropReference drop={drop} key={drop.itemId} />
+                  ))}
+                </span>
+              </span>,
+            ]
+          : []),
+      ]}
+      stats={[
+        { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={monsterAttributes.maxHitpoints} /> },
+        { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip value={monsterAttributes.maxManapoints} /> },
+        { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip value={monsterAttributes.physicalAttack} /> },
+        { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip value={monsterAttributes.spellAttack} /> },
+        { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip value={monsterAttributes.armor} /> },
+        { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip value={monsterAttributes.magicResistance} /> },
+      ]}
+      subtitle={t('combat.map.monsterSubtitle', {
+        realm: realm.minorName,
+        level: monster.level ?? 1,
+        tier: monster.tier ?? 1,
+      })}
       title={monster.name}
     />
   )
