@@ -37,7 +37,7 @@ if (-not (Test-Path "frontend/node_modules")) {
 }
 
 # 1. 检查数据库 (PostgreSQL: 5432)
-Write-Host "[1/4] 检查本地 PostgreSQL 数据库 (5432)..." -ForegroundColor Yellow
+Write-Host "[1/5] 检查本地 PostgreSQL 数据库 (5432)..." -ForegroundColor Yellow
 $dbPortReady = $false
 try {
     $tcp = New-Object System.Net.Sockets.TcpClient
