@@ -222,12 +222,22 @@
   50% { opacity: 1; }
 }
 
+/* 手机端：卡片瘦身——小屏留给气泡的空间有限，压缩内边距/字号/间距、
+   隐藏阶段奖励预览（次要信息），降低高度上限，尽量不遮住高亮目标 */
 @media (max-width: 720px) {
   .tutorial-card {
-    left: 12px !important;
-    right: 12px;
+    left: 10px !important;
+    right: 10px;
     width: auto !important;
-    max-height: 42dvh;
+    max-height: 34dvh;
     overflow-y: auto;
+    padding: 10px 14px 9px;
+    gap: 5px;
   }
+  .tutorial-kicker { font-size: 10px; letter-spacing: 0.08em; }
+  .tutorial-title { font-size: 14px; }
+  .tutorial-body { font-size: 12px; line-height: 1.55; }
+  .tutorial-stage-rewards { display: none; }
+  .tutorial-progress { height: 2px; }
+  .tutorial-btn { padding: 5px 12px; }
 }

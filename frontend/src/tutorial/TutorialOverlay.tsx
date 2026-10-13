@@ -22,6 +22,8 @@ const CARD_H = 200
 const LOCATE_INTERVAL_MS = 200
 /** 气泡与目标的间距。 */
 const CARD_GAP = 14
+/** 镂空丢失宽限：目标短暂缺失/被遮（滚动擦边、弹窗进出、地图自动适配动画）期间保留上帧镂空不塌陷，超时才收拢全遮罩。 */
+const HOLE_GRACE_MS = 700
 
 interface HoleRect { top: number; left: number; width: number; height: number }
 type OverlayPhase = 'guiding' | 'finished' | 'hidden'
@@ -73,44 +75,48 @@ function dismissForeignModals(target: HTMLElement | null): void {
   }
 }
 
-/** 按剩余空间依次尝试气泡方位，全部放不下时居中兜底。卡片尺寸用实测值：奖励区/逃生按钮等会让实际高度偏离估算。 */
-function resolvePlacement(hole: HoleRect | null, preferred: TutorialUiStep['placement'], vw: number, vh: number, cardW: number, cardH: number): Placement {
-  if (!hole) return 'center'
-  const order: Placement[] = preferred && preferred !== 'auto' ? [preferred, 'bottom', 'top', 'right', 'left'] : ['bottom', 'top', 'right', 'left']
-  for (const placement of order) {
-    const fits =
-      (placement === 'bottom' && hole.top + hole.height + CARD_GAP + cardH <= vh) ||
-      (placement === 'top' && hole.top - CARD_GAP - cardH >= 0) ||
-      (placement === 'right' && hole.left + hole.width + CARD_GAP + cardW <= vw) ||
-      (placement === 'left' && hole.left - CARD_GAP - cardW >= 0)
-    if (fits) return placement
-  }
-  return 'center'
-}
-
-/** 由方位计算气泡卡坐标并钳制进视口；钳制后仍可能与镂空重叠，此时再避让到不重叠的一侧。 */
-function resolveCardPosition(hole: HoleRect | null, placement: Placement, vw: number, vh: number, cardW: number, cardH: number): { top: number; left: number } {
-  let top = (vh - cardH) / 2
-  let left = (vw - cardW) / 2
+/** 计算气泡卡在指定方位下的矩形：先按方位摆到镂空边，再钳进可视区（band 为可视带在布局视口中的偏移）。 */
+function cardRectFor(hole: HoleRect | null, placement: Placement, vw: number, vh: number, cardW: number, cardH: number, bandTop = 0, bandLeft = 0): HoleRect {
+  const bottom = bandTop + vh
+  const right = bandLeft + vw
+  let top = bandTop + (vh - cardH) / 2
+  let left = bandLeft + (vw - cardW) / 2
   if (hole && placement !== 'center') {
     if (placement === 'bottom') { top = hole.top + hole.height + CARD_GAP; left = hole.left + hole.width / 2 - cardW / 2 }
     else if (placement === 'top') { top = hole.top - CARD_GAP - cardH; left = hole.left + hole.width / 2 - cardW / 2 }
     else if (placement === 'right') { left = hole.left + hole.width + CARD_GAP; top = hole.top + hole.height / 2 - cardH / 2 }
     else { left = hole.left - CARD_GAP - cardW; top = hole.top + hole.height / 2 - cardH / 2 }
   }
-  top = Math.max(12, Math.min(top, vh - cardH - 12))
-  left = Math.max(12, Math.min(left, vw - cardW - 12))
-  if (hole) {
-    const overlapsVertically = top < hole.top + hole.height && top + cardH > hole.top
-    if (overlapsVertically && (placement === 'bottom' || placement === 'top')) {
-      const belowTop = hole.top + hole.height + CARD_GAP
-      const aboveTop = hole.top - CARD_GAP - cardH
-      top = placement === 'bottom'
-        ? (belowTop + cardH <= vh - 12 ? belowTop : Math.max(12, aboveTop))
-        : (aboveTop >= 12 ? aboveTop : Math.min(belowTop, vh - cardH - 12))
-    }
+  top = Math.max(bandTop + 12, Math.min(top, bottom - cardH - 12))
+  left = Math.max(bandLeft + 12, Math.min(left, right - cardW - 12))
+  return { top, left, width: cardW, height: cardH }
+}
+
+/** 两矩形交集面积（不相交为 0）。 */
+function overlapArea(a: HoleRect, b: HoleRect): number {
+  const w = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left)
+  const h = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top)
+  return w > 0 && h > 0 ? w * h : 0
+}
+
+/** 重叠最小化选位：按偏好序返回首个零遮挡方位；窄屏全遮挡时取与镂空交集最小者，尽力不压住高亮框。 */
+function resolvePlacement(hole: HoleRect | null, preferred: TutorialUiStep['placement'], vw: number, vh: number, cardW: number, cardH: number, bandTop = 0, bandLeft = 0): Placement {
+  if (!hole) return 'center'
+  const order: Placement[] = preferred && preferred !== 'auto' ? [preferred, 'bottom', 'top', 'right', 'left'] : ['bottom', 'top', 'right', 'left']
+  let best: Placement = 'center'
+  let bestOverlap = Infinity
+  for (const placement of order) {
+    const overlap = overlapArea(cardRectFor(hole, placement, vw, vh, cardW, cardH, bandTop, bandLeft), hole)
+    if (overlap === 0) return placement
+    if (overlap < bestOverlap) { best = placement; bestOverlap = overlap }
   }
-  return { top, left }
+  return best
+}
+
+/** 由方位计算气泡卡坐标（钳制已含在 cardRectFor 内；选位已按重叠最小化完成，此处无需再避让）。 */
+function resolveCardPosition(hole: HoleRect | null, placement: Placement, vw: number, vh: number, cardW: number, cardH: number, bandTop = 0, bandLeft = 0): { top: number; left: number } {
+  const rect = cardRectFor(hole, placement, vw, vh, cardW, cardH, bandTop, bandLeft)
+  return { top: rect.top, left: rect.left }
 }
 
 /**
@@ -140,6 +146,37 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
   /** 气泡卡实测尺寸：奖励区/逃生提示等使实际高度偏离估算，定位与避让必须用实测值。 */
   const cardRef = useRef<HTMLDivElement>(null)
   const [cardSize, setCardSize] = useState({ w: CARD_W, h: CARD_H })
+  /** 镂空区暂不可交互（目标被裁剪/遮挡或刚丢失）：其上盖透明拦截层吃掉触摸，防误点挡板；指针同时收起。 */
+  const [holeBlocked, setHoleBlocked] = useState(false)
+  /** 可视视口：移动端地址栏/底部工具栏显隐、键盘开合、横竖屏都会改变它；只读渲染期的 innerWidth/innerHeight 会让遮罩与气泡卡滞留旧几何。 */
+  const [viewport, setViewport] = useState(() => ({
+    w: window.innerWidth,
+    h: window.visualViewport?.height ?? window.innerHeight,
+    top: window.visualViewport?.offsetTop ?? 0,
+    left: window.visualViewport?.offsetLeft ?? 0,
+  }))
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    const update = () => setViewport(prev => {
+      const next = {
+        w: vv?.width ?? window.innerWidth,
+        h: vv?.height ?? window.innerHeight,
+        top: vv?.offsetTop ?? 0,
+        left: vv?.offsetLeft ?? 0,
+      }
+      return prev.w === next.w && prev.h === next.h && prev.top === next.top && prev.left === next.left ? prev : next
+    })
+    update()
+    window.addEventListener('resize', update)
+    vv?.addEventListener('resize', update)
+    vv?.addEventListener('scroll', update)
+    return () => {
+      window.removeEventListener('resize', update)
+      vv?.removeEventListener('resize', update)
+      vv?.removeEventListener('scroll', update)
+    }
+  }, [])
 
   useLayoutEffect(() => {
     const el = cardRef.current
@@ -217,9 +254,15 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
 
   // 预备动作 + 目标定位轮询 + 游离弹窗治理：元素变化时先滚动进视野，再按帧更新高亮矩形；
   // 无目标步骤同样持续轮询——残留的确认弹窗在遮罩下点不到，必须由治理收拢。
+  // 移动端稳态约束：
+  // - scrolledFor 不随 miss/blocked 复位——同一元素每子步至多滚一次，遮挡/丢失恢复后不再
+  //   重新 scrollIntoView，避免与玩家触摸滚动往复互抢（滚动擦边曾是「上下闪」主因）；
+  // - 目标被遮/丢失时镂空经 HOLE_GRACE_MS 宽限后才塌陷为全遮罩，期间镂空区盖透明拦截层
+  //   （blocked 时仍跟随元素实时位置），消除镂空⇄全遮罩高频翻转引起的整屏闪烁。
   useEffect(() => {
-    if (phase !== 'guiding' || !uiStep) { setHole(null); return }
+    if (phase !== 'guiding' || !uiStep) { setHole(null); setHoleBlocked(false); return }
     setLocateMisses(0)
+    setHoleBlocked(false)
     for (const prepare of uiStep.prepare ?? []) runPrepare(prepare)
     // 队列暂停时行动与赶路均不推进：等待步将永远等不到服务端里程碑，
     // 且暂停开关在遮罩下玩家不可操作，由引导代发恢复命令解除死等。
@@ -229,12 +272,22 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
     const selector = uiStep.selector ?? uiStep.focusSelector
     /** 展示性聚焦（等待步）：只定位出 hole 供观看，不做可点性检测——该区域本就不可交互。 */
     const focusOnly = uiStep.selector === undefined && uiStep.focusSelector !== undefined
-    let lastElement: HTMLElement | null = null
+    let scrolledFor: HTMLElement | null = null
+    let lostAt = 0
+    /** 按元素可视 rect 更新镂空（换算到布局视口坐标）；1px 死区过滤亚像素重排。 */
+    const trackHole = (rect: DOMRect) => {
+      const vv = window.visualViewport
+      const offTop = vv && vv.scale === 1 ? vv.offsetTop : 0
+      const offLeft = vv && vv.scale === 1 ? vv.offsetLeft : 0
+      const next: HoleRect = { top: rect.top + offTop - TARGET_PADDING, left: rect.left + offLeft - TARGET_PADDING, width: rect.width + TARGET_PADDING * 2, height: rect.height + TARGET_PADDING * 2 }
+      setHole(prev => (prev && Math.abs(prev.top - next.top) < 1 && Math.abs(prev.left - next.left) < 1 && Math.abs(prev.width - next.width) < 1 && Math.abs(prev.height - next.height) < 1) ? prev : next)
+    }
     const locate = () => {
       const element = selector ? findVisibleTarget(selector) : null
       if (!element) {
-        lastElement = null
-        setHole(null)
+        lostAt ||= Date.now()
+        setHoleBlocked(true)
+        if (Date.now() - lostAt > HOLE_GRACE_MS) setHole(null)
         if (uiStep.modalBound) {
           if (document.querySelector('.modal-backdrop')) {
             // 目标弹窗已开但按钮尚未完成布局：按定位失败计数等待，绝不可误关该弹窗
@@ -257,20 +310,30 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
       }
       dismissForeignModals(element)
       const rect = element.getBoundingClientRect()
+      if (element !== scrolledFor) { element.scrollIntoView({ block: 'nearest', inline: 'nearest' }); scrolledFor = element }
       if (!focusOnly) {
         // disabled 目标点了无反应、遮挡目标空洞点击落在挡板上：均按定位失败计数，
         // 让逃生「下一步」如期出现；遮挡源在下一 tick 通常已被上一步治理收拢。
         const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
-        // 引导层自身元素（气泡卡/箭头）不算遮挡源：极端小屏卡片可能压到目标中心，
+        // 引导层自身元素（气泡卡/箭头/拦截层）不算遮挡源：极端小屏卡片可能压到目标中心，
         // 命中它们不代表目标被业务元素挡住。
         const occluded = hit !== null && hit !== element && !element.contains(hit) && hit.closest('.tutorial-layer') === null
         const blocked = element.matches(':disabled, [aria-disabled="true"]') || occluded
-        if (blocked) { lastElement = null; setHole(null); setLocateMisses(misses => misses + 1); return }
+        if (blocked) {
+          // 遮挡态不再立刻撤掉镂空：元素仍在（多半只是被滚动裁边/短暂盖住），
+          // 镂空继续跟住其位置并加拦截层，仅持续超过宽限才退回全遮罩。
+          lostAt ||= Date.now()
+          setHoleBlocked(true)
+          setLocateMisses(misses => misses + 1)
+          if (Date.now() - lostAt > HOLE_GRACE_MS) setHole(null)
+          else trackHole(rect)
+          return
+        }
       }
+      lostAt = 0
+      setHoleBlocked(false)
       setLocateMisses(0)
-      if (element !== lastElement) { element.scrollIntoView({ block: 'nearest', inline: 'nearest' }); lastElement = element }
-      const next: HoleRect = { top: rect.top - TARGET_PADDING, left: rect.left - TARGET_PADDING, width: rect.width + TARGET_PADDING * 2, height: rect.height + TARGET_PADDING * 2 }
-      setHole(prev => (prev && Math.abs(prev.top - next.top) < 1 && Math.abs(prev.left - next.left) < 1 && Math.abs(prev.width - next.width) < 1 && Math.abs(prev.height - next.height) < 1) ? prev : next)
+      trackHole(rect)
     }
     locate()
     const timer = window.setInterval(locate, LOCATE_INTERVAL_MS)
@@ -309,15 +372,19 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
 
   if (!hasSnapshot || phase === 'hidden') return null
 
-  const vw = window.innerWidth
-  const vh = window.innerHeight
+  const vw = viewport.w
+  const vh = viewport.h
+  /** 遮罩覆盖范围取布局视口与可视带并集：捏合缩放（vv.scale>1）时可视带小于布局视口，
+      仅用 vv 尺寸会在固定定位的布局视口内露出未遮蔽边缘。 */
+  const maskW = Math.max(window.innerWidth, vw)
+  const maskH = Math.max(window.innerHeight, vh)
   const isFinished = phase === 'finished'
   /** 跳过确认态：全遮罩 + 居中确认卡，当前高亮暂时收拢。 */
   const showFullMask = confirmingSkip || !hole || isFinished
-  /** 展示性聚焦步（等待中）：镂空区盖透明拦截层，详情可看不可点。 */
+  /** 展示性聚焦步（等待中）或目标暂不可交互：镂空区盖透明拦截层，详情可看不可点。 */
   const isFocusStep = uiStep !== null && uiStep.selector === undefined && uiStep.focusSelector !== undefined
-  const placement = (isFinished || confirmingSkip) ? 'center' as Placement : resolvePlacement(hole, uiStep?.placement, vw, vh, cardSize.w, cardSize.h)
-  const cardPos = resolveCardPosition(showFullMask ? null : hole, placement, vw, vh, cardSize.w, cardSize.h)
+  const placement = (isFinished || confirmingSkip) ? 'center' as Placement : resolvePlacement(hole, uiStep?.placement, vw, vh, cardSize.w, cardSize.h, viewport.top, viewport.left)
+  const cardPos = resolveCardPosition(showFullMask ? null : hole, placement, vw, vh, cardSize.w, cardSize.h, viewport.top, viewport.left)
   const progress = milestone ? (milestone.step + 1) / TUTORIAL_MILESTONE_COUNT : 1
 
   // portal 至 document.body：与业务 .modal-backdrop（z70）同处根堆叠上下文，
@@ -327,14 +394,14 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
     <div aria-modal="false" className="tutorial-layer" role="dialog">
       {!showFullMask && hole ? (
         <>
-          <div className="tutorial-mask" style={{ top: 0, left: 0, width: vw, height: Math.max(0, hole.top) }} />
+          <div className="tutorial-mask" style={{ top: 0, left: 0, width: maskW, height: Math.max(0, hole.top) }} />
           <div className="tutorial-mask" style={{ top: hole.top, left: 0, width: Math.max(0, hole.left), height: hole.height }} />
-          <div className="tutorial-mask" style={{ top: hole.top, left: hole.left + hole.width, width: Math.max(0, vw - hole.left - hole.width), height: hole.height }} />
-          <div className="tutorial-mask" style={{ top: hole.top + hole.height, left: 0, width: vw, height: Math.max(0, vh - hole.top - hole.height) }} />
+          <div className="tutorial-mask" style={{ top: hole.top, left: hole.left + hole.width, width: Math.max(0, maskW - hole.left - hole.width), height: hole.height }} />
+          <div className="tutorial-mask" style={{ top: hole.top + hole.height, left: 0, width: maskW, height: Math.max(0, maskH - hole.top - hole.height) }} />
           <div className={isFocusStep ? 'tutorial-highlight tutorial-highlight--focus' : 'tutorial-highlight'} style={hole} />
-          {/* 展示聚焦的透明拦截层：镂空区可见但点击不穿透——等待期玩家只能看进度 */}
-          {isFocusStep && <div className="tutorial-focus-blocker" style={hole} />}
-          {uiStep?.advance === 'target' && (
+          {/* 透明拦截层：镂空区可见但点击不穿透——等待期只能看进度；目标被遮/丢失宽限期内同样拦截，防点穿到遮挡物 */}
+          {(isFocusStep || holeBlocked) && <div className="tutorial-focus-blocker" style={hole} />}
+          {uiStep?.advance === 'target' && !holeBlocked && (
             <div className="tutorial-pointer" style={{ top: hole.top, left: hole.left + hole.width / 2 }} />
           )}
         </>
