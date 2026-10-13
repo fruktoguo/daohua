@@ -575,7 +575,7 @@ public static class PostgresSchema
     );
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
-        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now())
+        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

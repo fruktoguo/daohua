@@ -140,6 +140,11 @@ public sealed class EnhancementContractTests
     public void PostgresSchemaVersion_AlignedWithSectionCodec()
         => Assert.Equal(SectionCodec.CurrentSchemaVersion, PostgresSchema.Version);
 
+    /// <summary>空库权威 DDL 的版本种子必须包含当前版本，防止升版本时漏改 schema_version 种子导致新库 bootstrap 校验失败。</summary>
+    [Fact]
+    public void PostgresSchemaSql_SeedsCurrentVersion()
+        => Assert.Contains($"({PostgresSchema.Version}, now())", PostgresSchema.Sql);
+
     /// <summary>
     /// 按配置相对路径过滤 Domain 程序集内嵌的游戏数据并走正式解析链构建目录：
     /// 既使用真实配置覆盖 config→Parse 链路，又与同批在途的其他配置文件解耦。
