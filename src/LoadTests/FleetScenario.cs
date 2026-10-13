@@ -5,7 +5,7 @@ namespace DaoHua.LoadTests;
 
 /// <summary>
 /// 持续仿真压测场景（fleet）：批量真实注册账号，逐角色建立 WebSocket 长连接，
-/// 驱动「跳引导 → 采集材料 → 锻造演武装 → 装配 → 角色分工常驻行为」的完整业务闭环。
+/// 驱动「跳引导 → 采集/狩猎备料 → 锻造一阶铁甲套 → 装配 → 角色分工常驻行为」的完整业务闭环。
 /// 分工：采集 / 制造 / 单人战斗（半数开启斗法）/ 组队讨伐（5 人满槽就绪自动开战循环）/ 巡游。
 /// 运行期间后台监控协程周期采集 ops 健康端点与数据库计数，异常打印 [anomaly] 行供外层处置。
 /// --duration-seconds 传 0 表示常驻运行直到进程被取消。
@@ -21,23 +21,30 @@ public static class FleetScenario
     private const string PeachForest = "node.peach-forest";    // 桃木 + 落霞岭遭遇池
     private const string RockBeach = "node.rock-beach";        // 玄铁 + 落霞岭遭遇池
 
-    // 演武套装（config/game-data/equipment/trials.json）与对应锻造行动的材料消耗
-    private static readonly (string Equipment, string Forge, string Material, double MaterialCost)[] TrialSet =
+    // 一阶真实套装六件（GearSet[0]=武器、[1..4]=铁甲四件、[5]=桃木符）：
+    // 普攻全流派统一走物攻、压测角色无技能槽，只取物理件；兽骨仅精英 50%/Boss 掉落，
+    // 全链避开兽骨件（副手选铁皮盾、饰品选桃木符——碎灵核为木灵 100% 掉落、兽皮为野兔 100% 掉落）。
+    private static readonly (string Equipment, string Forge)[] GearSet =
     [
-        ("equipment.trial-blade", "forge.trial-blade", "item.peach-wood", 2),
-        ("equipment.trial-helm", "forge.trial-helm", "item.ningxue-grass", 2),
-        ("equipment.trial-armor", "forge.trial-armor", "item.ningxue-grass", 3),
-        ("equipment.trial-legs", "forge.trial-legs", "item.ningxue-grass", 2),
-        ("equipment.trial-dart", "forge.trial-dart", "item.morning-dew", 2),
-        ("equipment.trial-charm", "forge.trial-charm", "item.morning-dew", 2),
+        ("equipment.qingfeng-sword", "forge.qingfeng-sword"),   // 武器：跳引导补发百炼铁×7+兽骨×1 恰一轮
+        ("equipment.shufa-scarf", "forge.shufa-scarf"),         // 头：百炼铁×5+兽皮×1
+        ("equipment.baina-armor", "forge.baina-armor"),         // 衣：百炼铁×7+兽皮×1
+        ("equipment.zhakou-pants", "forge.zhakou-pants"),       // 裤：百炼铁×5+兽皮×1
+        ("equipment.tiepi-guard", "forge.tiepi-guard"),         // 副手：百炼铁×5+兽皮×1
+        ("equipment.taomu-talisman", "forge.taomu-talisman"),   // 饰：桃木晶×5+碎灵核×1
     ];
 
-    // 材料缺口：跳引导补发 凝血草×3，套装还需 草≥7 / 晨露≥4 / 桃木≥2（重入安全：存量够则跳过该段）。
+    // 材料账：玄铁×66→百炼铁×22、桃木×15→桃木晶×5；兽皮×4、碎灵核×1 走真实狩猎掉落。
     private static readonly (string Node, string Action, int Repeats, string Material, double Needed)[] BootstrapGather =
     [
-        (HerbValley, "explore.gather-ningxue-grass", 2, "item.ningxue-grass", 7),
-        (Brook, "explore.collect-morning-dew", 4, "item.morning-dew", 4),
-        (PeachForest, "explore.chop-peach-wood", 2, "item.peach-wood", 2),
+        (PeachForest, "explore.chop-peach-wood", 15, "item.peach-wood", 15),
+        (RockBeach, "explore.mine-dark-iron", 66, "item.dark-iron", 66),
+    ];
+
+    private static readonly (string Action, string Output, double Needed)[] BootstrapRefine =
+    [
+        ("craft.refine-peach-wood-crystal", "item.peach-wood-crystal", 5),
+        ("craft.refine-iron", "item.refined-iron", 22),
     ];
 
     private enum FleetRole { Gatherer, Crafter, SoloCombat, PartyMember, Roamer }
@@ -841,7 +848,7 @@ public static class FleetScenario
             Stats.Anomaly($"错误帧 {_account}: {text[..Math.Min(240, text.Length)]}");
         }
 
-        // ---------- Bootstrap：跳引导 → 定点采集 → 锻造 → 装配 ----------
+        // ---------- Bootstrap：跳引导 → 狩猎/采集备料 → 精炼 → 锻造 → 装配 ----------
 
         private async Task<bool> BootstrapAsync(CancellationToken cancellationToken)
         {
@@ -852,47 +859,129 @@ public static class FleetScenario
             }
 
             // 行动队列默认 loopEnabled：完成的行动会轮转回队尾，永远不会排空。
-            // 因此采集/锻造一律按材料余额等待，达到目标后 queue.clear 清掉残留轮转行动。
+            // 因此采集/精炼/狩猎一律按资产余额等待，达到目标后 queue.clear 清掉残留轮转行动。
+
+            // ① 引导剑：跳引导补发百炼铁×7+兽骨×1 恰为青锋剑一轮材料，先持剑再谈狩猎。
+            if (!await EnsureForgedAsync("forge.qingfeng-sword", "equipment.qingfeng-sword", cancellationToken)) return false;
+            if (!await EquipOwnedAsync(cancellationToken)) return false;
+
+            // 缺口判定：终件已齐视作上游完成，重入直接跳过对应段（GearSet[0]=剑、[1..4]=铁甲四件、[5]=桃木符）。
+            var talismanMissing = Asset("equipment.taomu-talisman") < 1;
+            var ironGearMissing = GearSet.Skip(1).Take(4).Any(item => Asset(item.Equipment) < 1);
+            var needCore = talismanMissing && Asset("item.broken-spirit-core") < 1;
+            var needCrystal = talismanMissing && Asset("item.peach-wood-crystal") < 5;
+            var needIron = ironGearMissing && Asset("item.refined-iron") < 22;
+            var needHide = ironGearMissing && Asset("item.beast-hide") < 4;
+
+            // ② 碎灵核：木灵 100% 掉落（溪谷池，Lv1+剑即引导设计的对战基线）。
+            if (needCore && !await HuntUntilAsync(Village, "item.broken-spirit-core", 1, TimeSpan.FromMinutes(8), cancellationToken)) return false;
+
+            // ③ 原材采集：桃木→桃木晶、玄铁→百炼铁。
             foreach (var (node, action, repeats, material, needed) in BootstrapGather)
             {
-                if (Asset(material) >= needed) continue;
-                if (!await TravelAndSettleAsync(node, cancellationToken)) return false;
-                await ClearQueueAsync(cancellationToken);
-                var enqueue = await SendCommandAsync("action.enqueue", requestId => new
-                {
-                    requestId, actionId = action, repeatCount = repeats,
-                }, cancellationToken);
-                if (!enqueue.Ok) { Stats.Anomaly($"采集入队失败 {_account} {action}: {enqueue.Code} {enqueue.Message}"); return false; }
-                if (!await WaitAssetAsync(material, needed, TimeSpan.FromSeconds(repeats * 12 + 45), cancellationToken)) return false;
-                await ClearQueueAsync(cancellationToken);
+                var downstreamMet = material == "item.peach-wood" ? !needCrystal : !needIron;
+                if (downstreamMet || Asset(material) >= needed) continue;
+                if (!await GatherUntilAsync(node, action, repeats, material, needed, cancellationToken)) return false;
             }
 
-            var pendingForges = TrialSet.Where(item => Asset(item.Equipment) < 1).ToArray();
-            if (pendingForges.Length > 0)
+            // ④ 精炼就地执行（无节点限制）。
+            foreach (var (action, output, needed) in BootstrapRefine)
             {
-                await ClearQueueAsync(cancellationToken);
-                foreach (var (_, forge, material, cost) in pendingForges)
-                {
-                    if (Asset(material) < cost) { Stats.Anomaly($"材料不足 {_account}: {material}={Asset(material)} 需 {cost}"); return false; }
-                    var enqueue = await SendCommandAsync("action.enqueue", requestId => new
-                    {
-                        requestId, actionId = forge, repeatCount = 1,
-                    }, cancellationToken);
-                    if (!enqueue.Ok) { Stats.Anomaly($"锻造入队失败 {_account} {forge}: {enqueue.Code} {enqueue.Message}"); return false; }
-                }
-                if (!await WaitAssetsAsync(pendingForges.Select(item => item.Equipment), TimeSpan.FromSeconds(160), cancellationToken)) return false;
-                await ClearQueueAsync(cancellationToken);
+                var downstreamMet = output == "item.peach-wood-crystal" ? !needCrystal : !needIron;
+                if (downstreamMet || Asset(output) >= needed) continue;
+                if (!await RefineUntilAsync(action, output, needed, cancellationToken)) return false;
             }
-            foreach (var (equipment, _, _, _) in TrialSet)
-                if (Asset(equipment) < 1) { Stats.Anomaly($"锻造产出缺失 {_account}: {equipment}"); return false; }
 
+            // ⑤ 桃木符并补装：刷兽皮前尽量满配。
+            if (talismanMissing && !await EnsureForgedAsync("forge.taomu-talisman", "equipment.taomu-talisman", cancellationToken)) return false;
+            if (!await EquipOwnedAsync(cancellationToken)) return false;
+
+            // ⑥ 兽皮×4：魔化野兔 100% 掉落（日落岭池）；精英熊波致阵亡由复活相位续跑，
+            // 等待超时返回 false 后整体幂等重入续刷，不视作硬失败。
+            if (needHide && !await HuntUntilAsync(RockBeach, "item.beast-hide", 4, TimeSpan.FromMinutes(20), cancellationToken)) return false;
+
+            // ⑦ 锻齐剩余件并全装校验。
+            foreach (var (equipment, forge) in GearSet)
+                if (Asset(equipment) < 1 && !await EnsureForgedAsync(forge, equipment, cancellationToken)) return false;
+            foreach (var (equipment, _) in GearSet)
+                if (Asset(equipment) < 1) { Stats.Anomaly($"锻造产出缺失 {_account}: {equipment}"); return false; }
+            if (!await EquipOwnedAsync(cancellationToken)) return false;
+            Interlocked.Increment(ref Stats.Equipped);
+            return true;
+        }
+
+        /// <summary>单轮锻造并等待产出到手；入队被拒或产出超时返回 false（上游备料不足的征兆）。</summary>
+        private async Task<bool> EnsureForgedAsync(string forgeAction, string output, CancellationToken cancellationToken)
+        {
+            if (Asset(output) >= 1) return true;
+            await ClearQueueAsync(cancellationToken);
+            var enqueue = await SendCommandAsync("action.enqueue", requestId => new
+            {
+                requestId, actionId = forgeAction, repeatCount = 1,
+            }, cancellationToken);
+            if (!enqueue.Ok) { Stats.Anomaly($"锻造入队失败 {_account} {forgeAction}: {enqueue.Code} {enqueue.Message}"); return false; }
+            if (!await WaitAssetAsync(output, 1, TimeSpan.FromSeconds(90), cancellationToken)) return false;
+            await ClearQueueAsync(cancellationToken);
+            return true;
+        }
+
+        /// <summary>定点采集至目标量：赶路落地后按轮数入队，按资产余额等待，达标清队。</summary>
+        private async Task<bool> GatherUntilAsync(string node, string action, int repeats, string material, double needed, CancellationToken cancellationToken)
+        {
+            if (!await TravelAndSettleAsync(node, cancellationToken)) return false;
+            await ClearQueueAsync(cancellationToken);
+            var enqueue = await SendCommandAsync("action.enqueue", requestId => new
+            {
+                requestId, actionId = action, repeatCount = repeats,
+            }, cancellationToken);
+            if (!enqueue.Ok) { Stats.Anomaly($"采集入队失败 {_account} {action}: {enqueue.Code} {enqueue.Message}"); return false; }
+            if (!await WaitAssetAsync(material, needed, TimeSpan.FromSeconds(repeats * 12 + 60), cancellationToken)) return false;
+            await ClearQueueAsync(cancellationToken);
+            return true;
+        }
+
+        /// <summary>就地精炼至目标量：按缺口轮数入队，按制品余额等待，达标清队。</summary>
+        private async Task<bool> RefineUntilAsync(string action, string output, double needed, CancellationToken cancellationToken)
+        {
+            await ClearQueueAsync(cancellationToken);
+            var repeats = (int)Math.Ceiling(needed - Asset(output));
+            var enqueue = await SendCommandAsync("action.enqueue", requestId => new
+            {
+                requestId, actionId = action, repeatCount = repeats,
+            }, cancellationToken);
+            if (!enqueue.Ok) { Stats.Anomaly($"精炼入队失败 {_account} {action}: {enqueue.Code} {enqueue.Message}"); return false; }
+            if (!await WaitAssetAsync(output, needed, TimeSpan.FromSeconds(repeats * 15 + 60), cancellationToken)) return false;
+            await ClearQueueAsync(cancellationToken);
+            return true;
+        }
+
+        /// <summary>驻点狩猎至掉落达标：∞ 讨伐入队按资产等待；阵亡由远征复活相位自动续跑，不额外处置。</summary>
+        private async Task<bool> HuntUntilAsync(string node, string drop, double needed, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            if (Asset(drop) >= needed) return true;
+            if (!await TravelAndSettleAsync(node, cancellationToken)) return false;
+            await ClearQueueAsync(cancellationToken);
+            var enqueue = await SendCommandAsync("action.enqueue", requestId => new
+            {
+                requestId, actionId = "combat.hunt-qi-beast", repeatCount = -1,
+            }, cancellationToken);
+            if (!enqueue.Ok) { Stats.Anomaly($"狩猎入队失败 {_account}: {enqueue.Code} {enqueue.Message}"); return false; }
+            if (!await WaitAssetAsync(drop, needed, timeout, cancellationToken)) return false;
+            await ClearQueueAsync(cancellationToken);
+            return true;
+        }
+
+        /// <summary>把当前持有的套装件整套装上（loadout.replace 为全量替换语义，部分件即部分装）。</summary>
+        private async Task<bool> EquipOwnedAsync(CancellationToken cancellationToken)
+        {
+            var owned = GearSet.Where(item => Asset(item.Equipment) >= 1).ToArray();
+            if (owned.Length == 0) return true;
             var loadout = await SendCommandAsync("loadout.replace", _ => new
             {
-                equipment = TrialSet.Select(item => new { itemId = item.Equipment, enhancementLevel = 0 }).ToArray(),
+                equipment = owned.Select(item => new { itemId = item.Equipment, enhancementLevel = 0 }).ToArray(),
                 abilitySlots = Array.Empty<object>(),
             }, cancellationToken);
             if (!loadout.Ok) { Stats.Anomaly($"装配失败 {_account}: {loadout.Code} {loadout.Message}"); return false; }
-            Interlocked.Increment(ref Stats.Equipped);
             return true;
         }
 
@@ -929,19 +1018,6 @@ public static class FleetScenario
                 await Task.Delay(1500, cancellationToken);
             }
             if (IsOnline) Stats.Anomaly($"资产等待超时 {_account}: {assetId}={Asset(assetId)} 需 {needed}");
-            return false;
-        }
-
-        /// <summary>等待一组资产全部至少 1 件。</summary>
-        private async Task<bool> WaitAssetsAsync(IEnumerable<string> assetIds, TimeSpan timeout, CancellationToken cancellationToken)
-        {
-            var deadline = DateTimeOffset.UtcNow + timeout;
-            while (DateTimeOffset.UtcNow < deadline && !cancellationToken.IsCancellationRequested && !_stop && IsOnline)
-            {
-                if (assetIds.All(assetId => Asset(assetId) >= 1)) return true;
-                await Task.Delay(1500, cancellationToken);
-            }
-            if (IsOnline) Stats.Anomaly($"锻造产出等待超时 {_account}");
             return false;
         }
 
@@ -1183,7 +1259,7 @@ public static class FleetScenario
                 0 => (HerbValley, new[] { ("explore.gather-ningxue-grass", 6), ("alchemy.refine-qi-pill", 2) }),
                 1 => (RockBeach, new[] { ("explore.mine-dark-iron", 9), ("craft.refine-iron", 3) }),
                 2 => (PeachForest, new[] { ("explore.chop-peach-wood", 9), ("craft.refine-peach-wood-crystal", 3) }),
-                _ => (Brook, new[] { ("explore.collect-morning-dew", 8), ("forge.trial-dart", 2) }),
+                _ => (Village, new[] { ("explore.gather-ningxue-grass", 6), ("alchemy.refine-qi-pill", 2) }),
             };
             if (!await TravelAndSettleAsync(node, cancellationToken)) return;
             foreach (var (action, repeats) in loop)
@@ -1227,7 +1303,7 @@ public static class FleetScenario
                 if (!_partyCreated)
                 {
                     var created = await SendSocialAsync(SocialActions.PartyCreate, party: new PartyProfileDto(
-                        $"演武队{_partySlot}", PartyActivityKinds.Combat, _partyNode, 0, false, null));
+                        $"讨伐队{_partySlot}", PartyActivityKinds.Combat, _partyNode, 0, false, null));
                     if (created is not null) _partyCreated = true;
                 }
                 else
