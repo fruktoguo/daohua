@@ -76,7 +76,7 @@ function fallbackMetadata(itemId: string): ItemMetadata {
   }
 }
 
-function rarityToTone(rarity: ItemRarity): FloatingTone {
+export function rarityToTone(rarity: ItemRarity): FloatingTone {
   switch (rarity) {
     case 'emperor':
     case 'saint':
@@ -198,7 +198,7 @@ function ItemTooltipCardContent({
  * 合并丹药/增益 Buff 副卡、装备特殊机制副卡、功法秘籍/残卷参悟副卡与调用方附加卡片；
  * 若物品自身 Buff 链路已产出参悟副卡（aside-manual-*），不再重复追加秘籍解析结果。
  */
-function resolveItemTooltipAsideCards(
+export function resolveItemTooltipAsideCards(
   itemId: string,
   metadataOverride?: ItemMetadata,
   itemDefOverride?: ItemDefinition,
@@ -321,7 +321,7 @@ function signedPercent(value: number): string {
  * 提取丹药/消耗品的直接主干效果（留在主卡片）
  * 包含即时回血、即时回蓝、冷却时长、使用条件等
  */
-function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
+export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
   if (!definition) return []
   const t = getT()
   const lines: ReactNode[] = []
@@ -801,7 +801,7 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
 /**
  * 提取装备的主干攻防数值、百分比点数与强化加成（同属主卡片，统一按强化倍率结算）
  */
-function describeEquipmentEffects(
+export function describeEquipmentEffects(
   equipment?: CombatEquipmentDefinition,
   enhancementLevel = 0
 ): ReactNode[] {

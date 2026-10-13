@@ -1,16 +1,19 @@
-import React, { memo, useMemo } from 'react'
+import React, { memo, useCallback, useMemo } from 'react'
 
 import { calculateRealmInfo } from '../game/combatConstants'
-import { describeAbility } from '../game/format'
+import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
+  convertTierToLevel,
   findItemInCatalog,
   resolveActionLevel,
-  resolveActionRarity,
   resolveItemCategoryLabel,
   resolveItemGrade,
+  resolveItemMetadata,
   resolveItemSubCategory,
+  type ItemMetadata,
 } from '../game/ids'
+import { resolveItemIconUrl } from '../game/itemIcons'
 import type {
   ActionDefinition,
   BuildingDefinition,
@@ -24,8 +27,14 @@ import { useT } from '../i18n'
 import type { CodexCraftingSubTab } from '../uiStore'
 import { useUiStore } from '../uiStore'
 import { CharacterAvatar } from './CharacterAvatar'
-import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
-import { ItemTile } from './ItemDisplay'
+import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
+import {
+  describeEquipmentEffects,
+  describeItemEffects,
+  ItemTile,
+  rarityToTone,
+  resolveItemTooltipAsideCards,
+} from './ItemDisplay'
 import { ValueText } from './ValueText'
 
 /** 制造分类映射定义 */
@@ -312,6 +321,10 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
 /**
  * 制造配方条目渲染
+ * 悬浮卡复用标准物品卡片格式（如 Image #2），包含：
+ * 1. 顶部：制作技艺、耗时、所需材料（中文名+数量）与解锁条件
+ * 2. 主体：完整成品属性（品类、等阶、攻防数值比率与固定属性，复用 describeEquipmentEffects / describeItemEffects）
+ * 3. 附属卡片：若物品具有特殊机制/Buff/战技参悟，自动并排挂载 asideCards
  */
 const CodexCraftingEntry = memo(function CodexCraftingEntry({
   action,
@@ -336,159 +349,147 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
   const outputItemDef = findItemInCatalog(items, outputItemId)
   const outputEqDef = equipment.find(e => e.equipmentId === outputItemId)
 
-  const categoryLabel = resolveItemCategoryLabel(
-    resolveItemSubCategory(outputItemId, outputItemDef, outputEqDef),
+  const baseMetadata = resolveItemMetadata(outputItemId) ?? {
+    label: outputItemDef?.name ?? outputEqDef?.name ?? action.name,
+    glyph: '·',
+    tone: 'gold',
+    category: resolveItemCategoryLabel(undefined, t),
+    rarity: 'mundane',
+    rarityLabel: t('game.grade.mundane'),
+    description: '',
+    source: '',
+    usage: '',
+  }
+
+  const subCategoryLabel = resolveItemCategoryLabel(
+    resolveItemSubCategory(outputItemId, outputItemDef, outputEqDef, baseMetadata.category),
     t
   )
 
-  // 材料清单
+  const rawMetadata = outputItemDef
+    ? {
+        ...baseMetadata,
+        label: outputItemDef.name || baseMetadata.label,
+        category: subCategoryLabel,
+        level: outputItemDef.tier ?? baseMetadata.level,
+        description: outputItemDef.description || baseMetadata.description,
+      }
+    : outputEqDef
+    ? {
+        ...baseMetadata,
+        label: outputEqDef.name || baseMetadata.label,
+        category: subCategoryLabel,
+        level: outputEqDef.tier ?? baseMetadata.level,
+        description: outputEqDef.description || baseMetadata.description,
+      }
+    : baseMetadata
+
+  const tier = rawMetadata.level ?? (outputEqDef?.tier || outputItemDef?.tier || 1)
+  const grade = resolveItemGrade(tier)
+  const levelNumber = convertTierToLevel(tier)
+
+  const metadata: ItemMetadata = {
+    ...rawMetadata,
+    rarity: grade.rarity,
+    rarityLabel: grade.label,
+    level: levelNumber,
+  }
+
+  // 产出物品的真实主干攻防数值与加成行（复用 ItemDisplay 的核心效果解算）
+  const effectLines = [
+    ...describeItemEffects(outputItemDef),
+    ...describeEquipmentEffects(outputEqDef, 0),
+  ]
+
+  // 统计网格（品类、等阶）
+  const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = [
+    { label: t('market.tooltip.category'), value: metadata.category, tone: 'muted' },
+  ]
+  if (metadata.level !== undefined) {
+    stats.push({ label: t('market.tooltip.level'), value: `Lv. ${formatNumber(metadata.level)}`, tone: 'gold' })
+  }
+
+  const tone = rarityToTone(metadata.rarity)
+
+  // 制作所需技艺、耗时、材料
   const inputEntries = Object.entries(action.inputs ?? {})
-
-  // 装备基础属性条目
-  const eqStatLines: string[] = []
-  if (outputEqDef) {
-    if (outputEqDef.baseStatRatios) {
-      const ratioLabels: Record<string, string> = {
-        physicalAttack: '物理攻击',
-        spellAttack: '术法攻击',
-        physicalArmor: '护甲',
-        spellResistance: '抗性',
-      }
-      for (const [key, val] of Object.entries(outputEqDef.baseStatRatios)) {
-        if (typeof val === 'number' && val !== 0) {
-          eqStatLines.push(`${ratioLabels[key] ?? key} +${Math.round(val * 100)}%`)
-        }
-      }
-    }
-    if (outputEqDef.flatStats) {
-      const flatLabels: Record<string, string> = {
-        hitpointRegen: '气血自然回复',
-        manapointRegen: '灵气自然回复',
-        critical: '暴击点数',
-        accuracy: '命中点数',
-        evasion: '闪避点数',
-        parryResolve: '化解点数',
-      }
-      for (const [key, val] of Object.entries(outputEqDef.flatStats)) {
-        if (typeof val === 'number' && val !== 0) {
-          eqStatLines.push(`${flatLabels[key] ?? key} +${val}`)
-        }
-      }
-    }
-    if (outputEqDef.techniqueBonus) {
-      eqStatLines.push(`技艺速度 +${Math.round(outputEqDef.techniqueBonus.speedRatio * 100)}%`)
-    }
-  }
-
-  // 消耗品/丹药具体属性条目
-  const itemStatLines: string[] = []
-  if (outputItemDef) {
-    if (outputItemDef.hitpointRestore && outputItemDef.hitpointRestore > 0) {
-      itemStatLines.push(`恢复气血 +${outputItemDef.hitpointRestore}`)
-    }
-    if (outputItemDef.manapointRestore && outputItemDef.manapointRestore > 0) {
-      itemStatLines.push(`恢复灵力 +${outputItemDef.manapointRestore}`)
-    }
-    if (outputItemDef.cultivationMultiplier && outputItemDef.cultivationMultiplier > 1) {
-      itemStatLines.push(`吐纳灵气收益 +${Math.round((outputItemDef.cultivationMultiplier - 1) * 100)}%`)
-    }
-    if (outputItemDef.alchemyMultiplier && outputItemDef.alchemyMultiplier > 1) {
-      itemStatLines.push(`炼丹产出收益 +${Math.round((outputItemDef.alchemyMultiplier - 1) * 100)}%`)
-    }
-    if (outputItemDef.gatheringMultiplier && outputItemDef.gatheringMultiplier > 1) {
-      itemStatLines.push(`历练采集收益 +${Math.round((outputItemDef.gatheringMultiplier - 1) * 100)}%`)
-    }
-    if (outputItemDef.durationSeconds && outputItemDef.durationSeconds > 0) {
-      itemStatLines.push(`持续 ${outputItemDef.durationSeconds} 秒`)
-    }
-    if (outputItemDef.cooldownSeconds && outputItemDef.cooldownSeconds > 0) {
-      itemStatLines.push(`冷却 ${outputItemDef.cooldownSeconds} 秒`)
-    }
-    for (const b of outputItemDef.buffEffects ?? []) {
-      itemStatLines.push(`附带状态：${b.name}`)
-    }
-  }
+  const techniqueName = t(`app.crafting.${action.technique ?? 'forging'}`)
 
   const hoverContent = (
     <FloatingInfoCard
-      badge={isUnlocked ? t('app.codex.unlocked') : t('app.codex.locked')}
-      badgeTone={isUnlocked ? 'jade' : 'muted'}
+      badge={metadata.rarityLabel}
+      badgeTone={tone}
       description={
         <div>
-          {/* 所需材料 */}
-          <div className="codex-hover-section">
-            <span className="codex-hover-title">{t('app.codex.requiresInputs')}：</span>
-            <div className="codex-chips-wrap">
-              {inputEntries.map(([id, qty]) => {
-                const def = findItemInCatalog(items, id)
-                return (
-                  <span className="codex-chip" key={id}>
-                    {def?.name ?? id} ×{qty}
-                  </span>
-                )
-              })}
+          {/* 前面：制作所需技艺等级、耗时与解锁条件 */}
+          <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 4 }}>
+              <span className="codex-hover-title" style={{ color: 'var(--gold)' }}>
+                {techniqueName} · 耗时 {action.durationSeconds}s
+              </span>
+              <span
+                className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
+                  isUnlocked ? 'unlocked' : 'locked'
+                }`}
+                style={{ marginTop: 0 }}
+              >
+                {formatRealmUnlockCondition(requiredLevel)}
+              </span>
             </div>
-          </div>
-
-          {/* 制造产出与成品属性 */}
-          <div className="codex-hover-section">
-            <span className="codex-hover-title">
-              {t('app.codex.yieldsOutputs')}：{outputItemDef?.name ?? outputItemId}
-            </span>
-            {outputEqDef && eqStatLines.length > 0 && (
-              <div className="codex-chips-wrap" style={{ marginTop: 2 }}>
-                {eqStatLines.map((line, idx) => (
-                  <span className="codex-chip" key={idx} style={{ color: 'var(--gold)' }}>
-                    {line}
-                  </span>
-                ))}
-              </div>
-            )}
-            {outputItemDef && itemStatLines.length > 0 && (
-              <div className="codex-chips-wrap" style={{ marginTop: 2 }}>
-                {itemStatLines.map((line, idx) => (
-                  <span className="codex-chip" key={idx} style={{ color: 'var(--qi)' }}>
-                    {line}
-                  </span>
-                ))}
-              </div>
-            )}
-            {outputItemDef?.description && (
-              <div className="codex-stat-line" style={{ marginTop: 4 }}>
-                {outputItemDef.description}
+            {inputEntries.length > 0 && (
+              <div>
+                <span className="codex-stat-line" style={{ display: 'block', marginBottom: 3 }}>
+                  {t('app.codex.requiresInputs')}：
+                </span>
+                <div className="codex-chips-wrap">
+                  {inputEntries.map(([id, qty]) => {
+                    const def = findItemInCatalog(items, id)
+                    return (
+                      <span className="codex-chip" key={id}>
+                        {def?.name ?? id} ×{qty}
+                      </span>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
 
-          {/* 解锁条件 */}
-          <div
-            className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
-              isUnlocked ? 'unlocked' : 'locked'
-            }`}
-          >
-            {formatRealmUnlockCondition(requiredLevel)}
-          </div>
+          {/* 后面：物品背景故事描述 */}
+          {metadata.description && (
+            <div style={{ paddingTop: 6, borderTop: '1px solid rgba(201, 180, 109, 0.15)', color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.5 }}>
+              {metadata.description}
+            </div>
+          )}
         </div>
       }
-      subtitle={`${action.name} · 耗时 ${action.durationSeconds}s`}
-      title={action.name}
+      lines={effectLines}
+      stats={stats}
+      title={metadata.label}
+      titleIcon={resolveItemIconUrl(outputItemId)}
     />
   )
 
+  // 附属 Aside 卡片：特殊机制、Buff 增益等自动并排在右侧挂载
+  const renderAsideCards = useCallback(
+    () => resolveItemTooltipAsideCards(outputItemId, metadata, outputItemDef, outputEqDef),
+    [outputItemId, metadata, outputItemDef, outputEqDef]
+  )
+
   return (
-    <FloatingPopover content={hoverContent} placement="top" size="medium">
+    <FloatingPopover asideCards={renderAsideCards} content={hoverContent} placement="top" size="medium">
       <div
         className={`codex-entry-wrapper codex-tile-anchor${
           isUnlocked ? '' : ' codex-entry-wrapper--locked'
         }`}
       >
         <ItemTile
-          category={categoryLabel}
+          category={metadata.category}
           className="inventory-cell"
           itemId={outputItemId}
-          level={requiredLevel}
-          name={action.name}
-          rarity={resolveActionRarity(action, items, equipment, encounters)}
+          level={metadata.level}
+          name={metadata.label}
+          rarity={metadata.rarity}
         />
         {!isUnlocked && (
           <span className="codex-lock-badge" title={t('app.codex.locked')}>
@@ -540,25 +541,14 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
       badgeTone={isUnlocked ? 'jade' : 'muted'}
       description={
         <div>
-          <div style={{ marginBottom: 4 }}>{building.description}</div>
-
-          {/* 建筑基础与具体效果 */}
-          <div className="codex-hover-section">
-            <span className="codex-hover-title">{t('app.codex.buildingEffect')}：</span>
-            <div className="codex-effect-text">{building.effect}</div>
-            {modifierLines.length > 0 && (
-              <div className="codex-chips-wrap" style={{ marginTop: 2 }}>
-                {modifierLines.map((line, idx) => (
-                  <span className="codex-chip" key={idx} style={{ color: 'var(--jade)' }}>
-                    {line}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          {building.description && (
+            <div style={{ marginBottom: 6, color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.5 }}>
+              {building.description}
+            </div>
+          )}
 
           {/* 建造材料（中文物品名） */}
-          <div className="codex-hover-section">
+          <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 4, borderTop: 'none', marginBottom: 6 }}>
             <span className="codex-hover-title">{t('app.codex.buildingMaterials')}：</span>
             <div className="codex-chips-wrap">
               {(building.materials ?? []).map(m => {
@@ -582,6 +572,11 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
           </div>
         </div>
       }
+      lines={modifierLines.length > 0 ? modifierLines : [building.effect]}
+      stats={[
+        { label: '建筑类型', value: groupLabel, tone: 'muted' },
+        { label: '建筑等阶', value: `Lv. ${building.requiredRealmLevel}`, tone: 'gold' },
+      ]}
       subtitle={`公共设施 · ${groupLabel}`}
       title={building.name}
     />
@@ -616,6 +611,7 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
 
 /**
  * 功法神通条目渲染
+ * 复用 describeAbility 招式解算器与 EffectTooltip 卡片标准
  */
 const CodexAbilityEntry = memo(function CodexAbilityEntry({
   ability,
@@ -631,49 +627,23 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
 
   const hoverContent = (
     <FloatingInfoCard
-      badge={isLearned ? t('app.codex.learned') : t('app.codex.unlearned')}
-      badgeTone={isLearned ? 'qi' : 'muted'}
+      badge={abilityInfo.badge}
+      badgeTone="qi"
       description={
         <div>
           {/* 功法真实伤害构成与具体加成叙述 */}
           {abilityInfo.description && (
             <div className="codex-effect-text" style={{ marginBottom: 6 }}>
-              <ValueText text={abilityInfo.description} />
-            </div>
-          )}
-          {abilityInfo.lines && abilityInfo.lines.length > 0 && (
-            <div className="codex-chips-wrap" style={{ marginBottom: 6 }}>
-              {abilityInfo.lines.map((line, idx) => (
-                <span className="codex-chip" key={idx}>
-                  <ValueText text={line} />
-                </span>
-              ))}
+              <ValueText className="effect-value-capsule" text={abilityInfo.description} />
             </div>
           )}
 
           {/* 技能风味描述 */}
-          {ability.description && (
-            <div className="codex-stat-line" style={{ marginBottom: 4 }}>
+          {ability.description && ability.description !== abilityInfo.description && (
+            <div className="codex-stat-line" style={{ marginBottom: 6 }}>
               {ability.description}
             </div>
           )}
-
-          {/* 施法消耗与冷却参数 */}
-          <div className="codex-chips-wrap" style={{ marginTop: 4, marginBottom: 4 }}>
-            <span className="codex-chip">
-              {t('app.codex.cooldown')}：{(ability.cooldownMilliseconds ?? 0) / 1000}s
-            </span>
-            {ability.castMilliseconds ? (
-              <span className="codex-chip">
-                {t('app.codex.castTime')}：{ability.castMilliseconds / 1000}s
-              </span>
-            ) : null}
-            {ability.manaCost ? (
-              <span className="codex-chip">
-                {t('app.codex.manaCost')}：{ability.manaCost}
-              </span>
-            ) : null}
-          </div>
 
           {/* 解锁条件：学习后解锁 */}
           <div
@@ -685,10 +655,14 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
           </div>
         </div>
       }
-      subtitle={`等阶 ${ability.tier} 阶 · ${ability.category === 'spell' ? '术法' : '物理'}`}
+      lines={abilityInfo.lines.map(line => (
+        <ValueText className="effect-value-capsule" key={line} text={line} />
+      ))}
       title={ability.name}
     />
   )
+
+  const grade = resolveItemGrade(ability.tier ?? 1)
 
   return (
     <FloatingPopover content={hoverContent} placement="top" size="medium">
@@ -703,7 +677,7 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
           itemId={ability.abilityId}
           level={ability.tier ?? 1}
           name={ability.name}
-          rarity={resolveItemGrade(ability.tier ?? 1).rarity}
+          rarity={grade.rarity}
         />
         {!isLearned && (
           <span className="codex-lock-badge" title={t('app.codex.unlearned')}>
