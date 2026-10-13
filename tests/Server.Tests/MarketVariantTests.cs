@@ -114,9 +114,12 @@ public sealed class MarketVariantTests
     {
         var assembly = typeof(GameDataCatalog).Assembly;
         var documents = assembly.GetManifestResourceNames()
-            .Where(name => relativePaths.Any(path =>
-                name.EndsWith(path, StringComparison.OrdinalIgnoreCase)
-                || name.EndsWith(path.Replace('/', '.'), StringComparison.OrdinalIgnoreCase)))
+            .Select(name => name.Replace('\\', '/'))
+            .Zip(assembly.GetManifestResourceNames())
+            .Where(pair => relativePaths.Any(path =>
+                pair.First.EndsWith(path, StringComparison.OrdinalIgnoreCase)
+                || pair.First.EndsWith(path.Replace('/', '.'), StringComparison.OrdinalIgnoreCase)))
+            .Select(pair => pair.Second)
             .Select(name =>
             {
                 using var stream = assembly.GetManifestResourceStream(name)!;

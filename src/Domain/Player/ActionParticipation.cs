@@ -159,12 +159,19 @@ public sealed record ActionParticipationSpec(
     /// </summary>
     public bool PvpEnabled { get; init; }
 
+    /// <summary>
+    /// 目标节点封魔阵类怪物削弱比率（开打定格冻结）：会话内怪物模板生成按 ×(1−ratio) 折减
+    /// 气血上限与双攻双防，各成员推演逐位一致；缺省解码为 0（无削弱）。
+    /// </summary>
+    public double MonsterWeakenRatio { get; init; }
+
     /// <summary>会话规格持久化不变量。</summary>
     public bool IsValid => ActionId.IsValid
         && !string.IsNullOrWhiteSpace(SessionId) && SessionId.Length <= 64
         && !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
         && !string.IsNullOrWhiteSpace(NodeId) && NodeId.Length <= 128
         && double.IsFinite(SearchSpeedPoints) && SearchSpeedPoints >= 0
+        && double.IsFinite(MonsterWeakenRatio) && MonsterWeakenRatio >= 0
         && double.IsFinite(StartedAtUnixSeconds) && StartedAtUnixSeconds >= 0
         && Members is { Count: >= 1 and <= 5 } && Members.All(member => member is not null && member.IsValid)
         && Members.Select(member => Guid.Parse(member.PlayerId)).Distinct().Count() == Members.Count;

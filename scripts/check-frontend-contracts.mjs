@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { createServer } from '../frontend/node_modules/vite/dist/node/index.js'
 
 // 使用 Vite 的真实模块转换路径，覆盖 import.meta.glob 和浏览器快照解码。
 globalThis.window = { localStorage: { getItem: () => null }, location: { origin: 'http://localhost' } }
 globalThis.document = { documentElement: { lang: '' } }
-const server = await createServer({ root: new URL('../frontend', import.meta.url).pathname, server: { middlewareMode: true } })
+const server = await createServer({ root: fileURLToPath(new URL('../frontend', import.meta.url)), server: { middlewareMode: true } })
 try {
   const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } = await server.ssrLoadModule('/src/network/snapshot.ts')
   const { encodeJsonEnvelope, WireMessageType, createRequestId } = await server.ssrLoadModule('/src/network/protocol.ts')
@@ -44,7 +45,7 @@ try {
   }
   // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 31, sectionVersion: 1,
+    section: 'world', schemaVersion: 32, sectionVersion: 1,
     data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }

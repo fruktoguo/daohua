@@ -233,7 +233,7 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>推进已由时钟裁剪的本轮片段，按原整秒序列写入进度与连续收益。</summary>
-    public static void AdvanceTimedAction(IPlayerActionContext player, IPlayerActionState action,
+    public static void AdvanceTimedAction(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, double multiplier, GameDataCatalog? gameData,
         double stepSeconds, DateTimeOffset at)
     {
@@ -284,7 +284,7 @@ internal static partial class ActionExecutionRules
     /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致；
     /// 灵力与气血按聚合内已刷新的属性上限逐秒截断。
     /// </summary>
-    internal static void ApplyContinuousReward(IPlayerActionContext player, ActionDefinition definition, long wholeSeconds,
+    internal static void ApplyContinuousReward(IPlayerResourceContext player, ActionDefinition definition, long wholeSeconds,
         double multiplier, GameDataCatalog? gameData, Guid actionInstanceId, double atUnixSeconds)
     {
         if (wholeSeconds <= 0) return;
@@ -299,6 +299,7 @@ internal static partial class ActionExecutionRules
         var experienceCredited = 0d;
         var foundationDelta = 0d;
         var combatExperienceGained = 0d;
+        var rootExpGains = new Dictionary<CoreAspectKind, double>();
         foreach (var yield in definition.Yields)
         {
             if (yield.Period != ActionYieldPeriod.PerSecond) continue;
@@ -334,8 +335,17 @@ internal static partial class ActionExecutionRules
                         player.Resources.Hitpoints = Math.Min(player.Resources.MaxHitpoints, player.Resources.Hitpoints + rate);
                     combatTouched = true;
                     break;
+                case ActionYieldKind.RootExp:
+                    // 六维经验为定额口径：不吃持续消耗品/灵脉/建筑产出倍率（总纲 §20.1.4），
+                    // 逐整秒聚合保证大跨度离线快进与逐秒在线推进的浮点累加序列一致。
+                    if (yield.Aspect is { } aspect)
+                        for (var i = 0; i < wholeSeconds; i++)
+                            rootExpGains[aspect] = rootExpGains.GetValueOrDefault(aspect) + yield.Amount;
+                    break;
             }
         }
+        foreach (var (aspect, rootExp) in rootExpGains)
+            GrantRootExperience(player, aspect, rootExp, gameData, actionInstanceId, atUnixSeconds);
         if (combatTouched) player.MarkDirty(PlayerSectionKind.Combat);
         if (progressionTouched) player.MarkDirty(PlayerSectionKind.Progression);
         if (experienceCredited != 0 || foundationDelta != 0 || combatExperienceGained != 0)
@@ -450,6 +460,11 @@ internal static partial class ActionExecutionRules
         if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))
             GrantTechniqueExperience(player, action.Id, technique, definition.DurationSeconds, gameData,
                 target.ToUnixTimeMilliseconds() / 1000d);
+        // 六维经验按配表定向定额入账（总纲 §20.1.4）：不吃 autoUseMultiplier 收益倍率。
+        foreach (var yield in definition.Yields)
+            if (yield is { Kind: ActionYieldKind.RootExp, Period: ActionYieldPeriod.PerRepeat, Aspect: { } aspect })
+                GrantRootExperience(player, aspect, yield.Amount, gameData, action.Id,
+                    target.ToUnixTimeMilliseconds() / 1000d);
         if (manaGain != 0)
             player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + manaGain);
         if (hitpointGain != 0)
@@ -645,6 +660,32 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>
+    /// 六维经验单维定额入账（总纲 §20.1.4）：累加经验、经点成本表判定等级跃迁（kind "root"）、
+    /// 记 RootExp 账本并标脏 Loadout。击杀全归属入账与行动 rootexp 收益共用本口径；
+    /// amount 为最终定额，调用方负责折算，本处不再乘任何收益倍率。
+    /// </summary>
+    internal static void GrantRootExperience(IPlayerResourceContext player, CoreAspectKind aspect,
+        double amount, GameDataCatalog? gameData, Guid actionInstanceId, double atUnixSeconds)
+    {
+        if (amount <= 0) return;
+        if (!double.IsFinite(amount))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "六维经验收益超出数值范围。");
+        var core = player.Loadout.CoreAttributes;
+        var expBefore = core.ExpFor(aspect);
+        var levelBefore = RootAttributeCurve.LevelFor(expBefore, gameData?.RealmProgression);
+        var levelAfter = RootAttributeCurve.LevelFor(expBefore + amount, gameData?.RealmProgression);
+        player.Loadout.CoreAttributes = core.WithAddedExp(aspect, amount);
+        player.RecordStats(actionInstanceId, atUnixSeconds, new PlayerStatsDelta
+        {
+            RootAspect = aspect,
+            RootExperience = amount,
+            LevelUp = levelAfter > levelBefore
+                ? new PlayerReportLevelUp("root", aspect.ToString().ToLowerInvariant(), levelBefore, levelAfter) : null
+        });
+        player.MarkDirty(PlayerSectionKind.Loadout);
+    }
+
+    /// <summary>
     /// 授予技艺累计经验并按境界修为曲线折算等级跃迁（kind "technique"）；
     /// 与 <see cref="PlayerAggregate.GrantTechniqueExperience"/> 同一入账口径，面向行动逐轮结算。
     /// </summary>
@@ -743,6 +784,13 @@ internal static partial class ActionExecutionRules
         // 强化技艺经验按当次实际基础耗时（5+t）入账。
         GrantTechniqueExperience(player, action.Id, TechniqueCatalog.Enhancement,
             EnhancementRules.DurationSeconds(prep.TargetLevel), gameData, atUnix);
+        // 强化六维·神识按目标装备等阶换算等级与当次基础耗时动态折算（总纲 §20.1.4）：定额不吃倍率。
+        if (gameData?.RealmProgression is { } progression)
+            GrantRootExperience(player, CoreAspectKind.Consciousness,
+                Math.Round(progression.MonsterKillExperience(
+                    CraftingRecipeRules.ResolveItemLevel(prep.ItemId.Value, gameData), CombatMonsterRank.Minion)
+                    * EnhancementRules.DurationSeconds(prep.TargetLevel) / 10d),
+                gameData, action.Id, atUnix);
         player.RecordStats(action.Id, atUnix, new PlayerStatsDelta
         {
             Cycles = 1,

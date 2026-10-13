@@ -10,6 +10,16 @@ import { getT } from '../i18n'
 /** 非物品、非增益的资源类收益类别（修为/灵力/气血） */
 export type ResourceYieldKind = 'mana' | 'hitpoints' | 'experience'
 
+/** 六维归属键 → 展示词条（复用 combat.attr.*，键为服务端 CoreAspectKind 小写名） */
+export const ROOT_ASPECT_LABEL_KEYS: Readonly<Record<string, string>> = {
+  stamina: 'combat.attr.stamina',
+  meridians: 'combat.attr.meridian',
+  attack: 'combat.attr.attack',
+  bone: 'combat.attr.defense',
+  agility: 'combat.attr.movement',
+  consciousness: 'combat.attr.divineSense',
+}
+
 /** 单条生效加成的展示明细 */
 export interface ActiveBonusDetail {
   /** 加成源名称（如 '引气丹' / '青岚山谷' / '吐纳增益'） */
@@ -62,6 +72,11 @@ export interface ActionYieldPreview {
     name: string
     durationSeconds: number
     stacks: number
+  }>
+  /** 六维经验收益预览（配表定额，不吃产出倍率；按秒速率折算为整轮量） */
+  rootExpYields: Array<{
+    aspect: string
+    amount: number
   }>
   /** 生效加成明细列表 */
   bonuses: ActiveBonusDetail[]
@@ -311,6 +326,7 @@ export function calculateActionYieldPreview({
   const effectiveRoundSeconds = Math.max(0, Math.ceil(actualDurationSeconds - 1e-9))
   const itemAmountMap = new Map<string, number>()
   const resourceBaseMap = new Map<ResourceYieldKind, number>()
+  const rootExpMap = new Map<string, number>()
   const buffYields: ActionYieldPreview['buffYields'] = []
   for (const yieldEntry of action.yields ?? []) {
     switch (yieldEntry.kind) {
@@ -334,6 +350,13 @@ export function calculateActionYieldPreview({
           durationSeconds: yieldEntry.durationSeconds ?? 0,
           stacks: yieldEntry.amount,
         })
+        break
+      }
+      case 'rootexp': {
+        // 六维经验定额展示：不吃 totalMultiplier（总纲 §20.1.4），按秒速率按整轮耗时折算并入。
+        if (!yieldEntry.aspect) break
+        const perRound = yieldEntry.per === 'second' ? yieldEntry.amount * effectiveRoundSeconds : yieldEntry.amount
+        rootExpMap.set(yieldEntry.aspect, (rootExpMap.get(yieldEntry.aspect) ?? 0) + perRound)
         break
       }
     }
@@ -367,6 +390,7 @@ export function calculateActionYieldPreview({
     itemOutputs,
     resourceYields,
     buffYields,
+    rootExpYields: Array.from(rootExpMap.entries()).map(([aspect, amount]) => ({ aspect, amount })),
     bonuses,
     baseDurationSeconds,
     actualDurationSeconds,

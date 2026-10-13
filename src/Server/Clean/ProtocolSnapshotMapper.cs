@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Domain.Player;
 using Domain.GameData;
 using Domain.Combat;
+using Domain.World;
 using Protocol;
 
 namespace Server.Clean;
@@ -295,7 +296,7 @@ public static class ProtocolSnapshotMapper
         PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedUnit, onAttributesProjected,
             gameData is not null && state.Actions.Any(action => action.Expedition is not null)
                 ? PlayerAttributeResolver.Resolve(state, gameData).ThreatBonusPoints : 0,
-            state.Combat.Buffs),
+            state.Combat.Buffs, state.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio),
         // 斗法分段白名单：ActiveReports（在队行动实例账本）不面向客户端，协议只下发
         // 当前账本/归档/离线/每日四类已消费通道。
         PlayerSectionKind.Duel => new
@@ -462,7 +463,8 @@ public static class ProtocolSnapshotMapper
     /// <param name="onAttributesProjected">属性面板实际写入本次载荷时的出站记账回调；供会话解除一次性交付武装。</param>
     /// <param name="playerThreatBonusPoints">本机面板威胁增幅点数：有效威胁投影口径与目标判定同式（总纲 §7.8.1）。</param>
     /// <param name="playerCarriedBuffs">本机战内 Buff 跨波携带态：非战斗相位下用于 Buff 图标续显。</param>
-    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null)
+    /// <param name="monsterWeakenRatio">本机当前节点建筑削弱比（封魔阵类）：敌怪展示面板与实战结算同一口径。</param>
+    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0)
     {
         if (actions is null || actions.Count == 0) return [];
         var result = new object[actions.Count];
@@ -501,7 +503,7 @@ public static class ProtocolSnapshotMapper
                 remainingRepeats = action.RemainingRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs),
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio),
                 // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
                 participation = action.Participation is { } participationBinding ? new
                 {
@@ -549,8 +551,10 @@ public static class ProtocolSnapshotMapper
     /// 会话观察目标（UnitInspect）命中该侧下标时才携带 attributes，未点开的单位不占快照带宽。
     /// 威胁字段统一投影有效威胁值（基础实际值×(1+增幅点数/100)），与目标判定口径一致。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null)
+    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0)
     {
+        // 敌怪展示面板削弱口径：会话取开打定格冻结值，单人取本机当前节点建筑投影。
+        var effectiveMonsterWeaken = spec?.MonsterWeakenRatio ?? monsterWeakenRatio;
         var inspectedEnemyIndex = inspectedUnit is { Side: "enemy", Index: >= 0 } enemyTarget ? enemyTarget.Index.Value : (int?)null;
         var inspectedAllyIndex = inspectedUnit is { Side: "ally", Index: >= 0 } allyTarget ? allyTarget.Index.Value : (int?)null;
         return new
@@ -579,7 +583,7 @@ public static class ProtocolSnapshotMapper
             playerBuffs = expedition.Phase == CombatExpeditionPhase.Combat
                 ? ToCombatBuffsDto(expedition.PlayerState?.Buffs)
                 : ToCombatBuffsDto(playerCarriedBuffs, expedition.BattleElapsedSeconds),
-            enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected)).ToArray(),
+            enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken)).ToArray(),
             duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
             // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
             selfIndex = spec is null ? (int?)null : expedition.SelfIndex,
@@ -692,10 +696,12 @@ public static class ProtocolSnapshotMapper
         }
     }
 
-    private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData, bool includeAttributes, Action? onAttributesProjected = null)
+    private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData, bool includeAttributes, Action? onAttributesProjected = null, double monsterWeakenRatio = 0)
     {
         var definition = gameData is null ? null : gameData.CombatMonsters.GetValueOrDefault(enemy.EnemyId);
         var found = definition is not null;
+        // 封魔阵类节点削弱随展示口径同步折减：血条分母与按需属性面板与实战结算一致。
+        var stats = found ? NodeBuildingRules.WeakenMonsterStats(definition!.Stats, monsterWeakenRatio) : null;
         JsonElement? visual = null;
         if (gameData is not null
             && gameData.Monsters.TryGetValue(enemy.EnemyId, out var raw)
@@ -703,8 +709,8 @@ public static class ProtocolSnapshotMapper
             && raw.TryGetProperty("visual", out var visualElement)
             && visualElement.ValueKind == JsonValueKind.Object)
             visual = visualElement.Clone();
-        var attributes = found && includeAttributes
-            ? ToAttributesDto(definition!.Stats, CombatantState.SumBuffThreatPoints(enemy.State.Buffs))
+        var attributes = stats is not null && includeAttributes
+            ? ToAttributesDto(stats, CombatantState.SumBuffThreatPoints(enemy.State.Buffs))
             : null;
         if (attributes is not null) onAttributesProjected?.Invoke();
         return new
@@ -727,8 +733,8 @@ public static class ProtocolSnapshotMapper
             enemy.PendingAbilityId, enemy.PendingActionDurationSeconds,
             buffs = ToCombatBuffsDto(enemy.State.Buffs),
             // 血蓝条分母常驻：血/蓝当前值没有上限无法渲染进度条，两个标量属实时字段。
-            maxHitpoints = found ? definition!.Stats.MaxHitpoints : (double?)null,
-            maxManapoints = found ? definition!.Stats.MaxManapoints : (double?)null,
+            maxHitpoints = stats?.MaxHitpoints,
+            maxManapoints = stats?.MaxManapoints,
             attributes
         };
     }

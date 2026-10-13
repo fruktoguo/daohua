@@ -310,9 +310,10 @@ public sealed class SnapshotDeltaPushTests
         var touched = Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(advancePush!.TouchedSections);
         Assert.Contains(PlayerSectionKind.ActionQueue, touched);
         Assert.Contains(PlayerSectionKind.Progression, touched);
-        // 修炼推进不触及的分段不得出现在差集（Duel 账本/世界/装配/设置随收益入账与否由引擎标脏决定）。
+        // 修炼推进不触及的分段不得出现在差集（Duel 账本/世界/设置随收益入账与否由引擎标脏决定；
+        // 引气入体含六维经验收益，入账六维时 Loadout 装配分段随经验写库标脏）。
         Assert.DoesNotContain(PlayerSectionKind.World, touched);
-        Assert.DoesNotContain(PlayerSectionKind.Loadout, touched);
+        Assert.Contains(PlayerSectionKind.Loadout, touched);
         Assert.DoesNotContain(PlayerSectionKind.Settings, touched);
     }
 

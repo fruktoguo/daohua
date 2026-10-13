@@ -15,6 +15,12 @@
         "per": "repeat",
         "id": "item.refined-iron",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -34,6 +40,12 @@
         "per": "repeat",
         "id": "item.peach-wood-crystal",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -54,6 +66,12 @@
         "per": "repeat",
         "id": "item.herb-essence",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -73,6 +91,12 @@
         "per": "repeat",
         "id": "item.refined-copper",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 200,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -92,6 +116,12 @@
         "per": "repeat",
         "id": "item.spirit-pine-crystal",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 200,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -112,6 +142,12 @@
         "per": "repeat",
         "id": "item.banling-essence",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 200,
+        "aspect": "consciousness"
       }
     ]
   }

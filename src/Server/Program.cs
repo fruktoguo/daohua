@@ -303,6 +303,7 @@ if (processRole == ServerProcessRole.Api)
                     kind = entry.Kind.ToString().ToLowerInvariant(),
                     per = entry.Period == ActionYieldPeriod.PerRepeat ? "repeat" : "second",
                     amount = entry.Amount,
+                    aspect = entry.Aspect?.ToString().ToLowerInvariant(),
                     id = entry.Item?.Value ?? entry.Buff?.BuffId,
                     name = entry.Buff?.Name,
                     durationSeconds = entry.Buff?.DurationSeconds,

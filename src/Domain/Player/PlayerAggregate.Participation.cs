@@ -64,8 +64,8 @@ public sealed partial class PlayerAggregate
             }
             if (delta.RootAspect is { } aspect)
             {
-                var before = ParticipationRootExperience(Loadout.CoreAttributes, aspect);
-                Loadout.CoreAttributes = AddParticipationRootExperience(Loadout.CoreAttributes, aspect, delta.RootExperience);
+                var before = Loadout.CoreAttributes.ExpFor(aspect);
+                Loadout.CoreAttributes = Loadout.CoreAttributes.WithAddedExp(aspect, delta.RootExperience);
                 var fromLevel = RootAttributeCurve.LevelFor(before, catalog.RealmProgression);
                 var toLevel = RootAttributeCurve.LevelFor(before + delta.RootExperience, catalog.RealmProgression);
                 delta = delta with { LevelUp = toLevel > fromLevel
@@ -117,27 +117,6 @@ public sealed partial class PlayerAggregate
             completed, completed, settlement.AssetDeltas, settlement.Events, StateVersion, true,
             settlement.DroppedEventCount);
     }
-
-    private static double ParticipationRootExperience(PlayerCoreAttributes core, CoreAspectKind aspect) => aspect switch
-    {
-        CoreAspectKind.Stamina => core.StaminaExp,
-        CoreAspectKind.Meridians => core.MeridiansExp,
-        CoreAspectKind.Attack => core.AttackExp,
-        CoreAspectKind.Bone => core.BoneExp,
-        CoreAspectKind.Agility => core.AgilityExp,
-        _ => core.ConsciousnessExp
-    };
-
-    private static PlayerCoreAttributes AddParticipationRootExperience(PlayerCoreAttributes core,
-        CoreAspectKind aspect, double amount) => aspect switch
-    {
-        CoreAspectKind.Stamina => core with { StaminaExp = core.StaminaExp + amount },
-        CoreAspectKind.Meridians => core with { MeridiansExp = core.MeridiansExp + amount },
-        CoreAspectKind.Attack => core with { AttackExp = core.AttackExp + amount },
-        CoreAspectKind.Bone => core with { BoneExp = core.BoneExp + amount },
-        CoreAspectKind.Agility => core with { AgilityExp = core.AgilityExp + amount },
-        _ => core with { ConsciousnessExp = core.ConsciousnessExp + amount }
-    };
 
     /// <summary>
     /// 开始行动参与：参与行动高优插队队首（挂起原队首行动，散场后恢复）。

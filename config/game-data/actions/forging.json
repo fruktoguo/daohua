@@ -16,6 +16,12 @@
         "per": "repeat",
         "id": "equipment.qingfeng-sword",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -36,6 +42,12 @@
         "per": "repeat",
         "id": "equipment.pishan-blade",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -56,6 +68,12 @@
         "per": "repeat",
         "id": "equipment.shufa-scarf",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -76,6 +94,12 @@
         "per": "repeat",
         "id": "equipment.baina-armor",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -96,6 +120,12 @@
         "per": "repeat",
         "id": "equipment.zhakou-pants",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -116,6 +146,12 @@
         "per": "repeat",
         "id": "equipment.fan-tie-dart",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -136,6 +172,12 @@
         "per": "repeat",
         "id": "equipment.tiepi-guard",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -156,6 +198,12 @@
         "per": "repeat",
         "id": "equipment.shouya-pendant",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -176,6 +224,12 @@
         "per": "repeat",
         "id": "equipment.jiujie-staff",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -196,6 +250,12 @@
         "per": "repeat",
         "id": "equipment.suxin-zither",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -216,6 +276,12 @@
         "per": "repeat",
         "id": "equipment.hunyuan-scarf",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -236,6 +302,12 @@
         "per": "repeat",
         "id": "equipment.suma-robe",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -256,6 +328,12 @@
         "per": "repeat",
         "id": "equipment.xingqi-pants",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -276,6 +354,12 @@
         "per": "repeat",
         "id": "equipment.qingmu-bead",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -296,6 +380,12 @@
         "per": "repeat",
         "id": "equipment.ganlu-flask",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -316,6 +406,12 @@
         "per": "repeat",
         "id": "equipment.taomu-talisman",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -337,6 +433,12 @@
         "per": "repeat",
         "id": "equipment.pogang-sword",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 334,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -358,6 +460,12 @@
         "per": "repeat",
         "id": "equipment.zhansha-blade",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 334,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -379,6 +487,12 @@
         "per": "repeat",
         "id": "equipment.chijin-helmet",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -400,6 +514,12 @@
         "per": "repeat",
         "id": "equipment.yulin-armor",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 334,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -421,6 +541,12 @@
         "per": "repeat",
         "id": "equipment.tazhen-greaves",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -442,6 +568,12 @@
         "per": "repeat",
         "id": "equipment.xuantie-dart",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -463,6 +595,12 @@
         "per": "repeat",
         "id": "equipment.xuanjia-guard",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -484,6 +622,12 @@
         "per": "repeat",
         "id": "equipment.chiwen-ring",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -505,6 +649,12 @@
         "per": "repeat",
         "id": "equipment.chaoyuan-staff",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 334,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -526,6 +676,12 @@
         "per": "repeat",
         "id": "equipment.songfeng-zither",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 334,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -547,6 +703,12 @@
         "per": "repeat",
         "id": "equipment.ziwu-crown",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -568,6 +730,12 @@
         "per": "repeat",
         "id": "equipment.pichen-shirt",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 334,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -589,6 +757,12 @@
         "per": "repeat",
         "id": "equipment.liuyun-skirt",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -610,6 +784,12 @@
         "per": "repeat",
         "id": "equipment.yaoling-bead",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -631,6 +811,12 @@
         "per": "repeat",
         "id": "equipment.huichun-bell",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -652,6 +838,12 @@
         "per": "repeat",
         "id": "equipment.juling-pendant",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -672,6 +864,12 @@
         "per": "repeat",
         "id": "equipment.tool-herb-hoe",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -692,6 +890,12 @@
         "per": "repeat",
         "id": "equipment.tool-prospect-compass",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -712,6 +916,12 @@
         "per": "repeat",
         "id": "equipment.tool-flame-ding",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -732,6 +942,12 @@
         "per": "repeat",
         "id": "equipment.tool-forge-hammer",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -752,6 +968,12 @@
         "per": "repeat",
         "id": "equipment.tool-talisman-brush",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -772,6 +994,12 @@
         "per": "repeat",
         "id": "equipment.tool-formation-flag",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 15,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -792,6 +1020,12 @@
         "per": "repeat",
         "id": "equipment.tool-quench-anvil",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 20,
+        "aspect": "consciousness"
       }
     ]
   }

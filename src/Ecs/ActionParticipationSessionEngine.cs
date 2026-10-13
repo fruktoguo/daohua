@@ -67,6 +67,11 @@ public sealed class ActionParticipationSessionEngine
                 _advancedAt, catalog.Fingerprint);
             member.Progression.RealmLevel = frozen.RealmLevel;
             member.World.NodeId = spec.NodeId;
+            // 封魔阵类怪物削弱经 spec 冻结注入会话成员建筑投影：后续波次入场/恢复/求值
+            // 统一经 EffectiveNodeBuildingEffects 读取，各成员推演逐位一致。
+            member.World.NodeBuildingEffects =
+                new Domain.World.BuildingEffectSet(MonsterWeakenRatio: spec.MonsterWeakenRatio);
+            member.World.NodeBuildingNodeId = spec.NodeId;
             member.Resources.MaxHitpoints = frozen.Stats.MaxHitpoints;
             member.Resources.MaxManapoints = frozen.Stats.MaxManapoints;
             member.Resources.Hitpoints = frozen.InitialHitpoints;

@@ -16,6 +16,12 @@
         "per": "repeat",
         "id": "item.ningxue-grass",
         "amount": 3
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 8,
+        "aspect": "agility"
       }
     ]
   },
@@ -35,6 +41,12 @@
         "per": "repeat",
         "id": "item.peach-wood",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 6,
+        "aspect": "agility"
       }
     ]
   },
@@ -54,6 +66,18 @@
         "per": "repeat",
         "id": "item.dark-iron",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 3,
+        "aspect": "attack"
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 3,
+        "aspect": "stamina"
       }
     ]
   },
@@ -73,6 +97,12 @@
         "per": "repeat",
         "id": "item.morning-dew",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 6,
+        "aspect": "agility"
       }
     ]
   },
@@ -92,6 +122,12 @@
         "per": "repeat",
         "id": "item.banling-flower",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 107,
+        "aspect": "agility"
       }
     ]
   },
@@ -111,6 +147,12 @@
         "per": "repeat",
         "id": "item.yinlingsong-wood",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 107,
+        "aspect": "agility"
       }
     ]
   },
@@ -130,6 +172,18 @@
         "per": "repeat",
         "id": "item.crimson-copper",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 54,
+        "aspect": "attack"
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 53,
+        "aspect": "stamina"
       }
     ]
   }

@@ -17,6 +17,12 @@
         "per": "repeat",
         "id": "item.juling-formation-disk",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 30,
+        "aspect": "consciousness"
       }
     ]
   }

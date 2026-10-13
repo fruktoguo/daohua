@@ -472,12 +472,14 @@ internal static partial class ActionExecutionRules
         caster.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
         allies = [caster];
         enemies = [];
+        // 求值单位与战内口径一致：封魔阵类建筑削弱按当前节点投影同步折减怪物面板。
+        var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
         if (player.Actions[0].Expedition is { Phase: CombatExpeditionPhase.Combat, Enemies: { Count: > 0 } waveEnemies })
             for (var i = 0; i < waveEnemies.Count; i++)
             {
                 var enemy = waveEnemies[i];
                 if (!catalog.CombatMonsters.TryGetValue(enemy.EnemyId, out var monster)) continue;
-                var unit = new CombatantState($"enemy:{i}", monster.Stats)
+                var unit = new CombatantState($"enemy:{i}", NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken))
                 {
                     Hitpoints = enemy.State.Hitpoints,
                     Manapoints = enemy.State.Manapoints,

@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Domain.Player;
 using Domain.World;
 
 namespace Domain.GameData;
@@ -138,7 +139,9 @@ public enum ActionYieldKind : byte
     /// <summary>物品：按 Item 进入资产流水</summary>
     Item = 3,
     /// <summary>Buff：按 Buff 授权规格写入 Buffs.Active</summary>
-    Buff = 4
+    Buff = 4,
+    /// <summary>六维经验：按 Aspect 定向定额入账 Loadout.CoreAttributes，不吃收益倍率</summary>
+    RootExp = 5
 }
 
 /// <summary>行动收益结算频率。</summary>
@@ -165,14 +168,16 @@ public sealed record ActionBuffGrant(
 
 /// <summary>
 /// 单条行动收益声明：Kind 决定入账通道，Period 决定按秒或按轮结算。
-/// Item 类别必须携带合法 ItemId；Buff 类别必须携带完整授权规格，Amount 表示叠加层数。
+/// Item 类别必须携带合法 ItemId；Buff 类别必须携带完整授权规格，Amount 表示叠加层数；
+/// RootExp 类别必须携带 Aspect 归属维度，Amount 为定向定额六维经验（总纲 §20.1.4）。
 /// </summary>
 public sealed record ActionYield(
     ActionYieldKind Kind,
     ActionYieldPeriod Period,
     double Amount,
     ItemId? Item = null,
-    ActionBuffGrant? Buff = null);
+    ActionBuffGrant? Buff = null,
+    CoreAspectKind? Aspect = null);
 
 /// <summary>
 /// 即时打击类消耗品的打击规格（雷击符）：扣除自身灵力后对当前主要敌人造成一次无命中/暴击掷点的技能伤害。
@@ -307,17 +312,24 @@ public sealed class ActionCatalog
         new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(),
         [
             new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10.0),
-            new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 10.0)
+            new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 10.0),
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Meridians),
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Bone)
         ]),
         new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
         [
-            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, new ItemId("item.ningxue-grass"))
+            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, new ItemId("item.ningxue-grass")),
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 8.0, Aspect: CoreAspectKind.Agility)
         ]),
         new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 },
         [
-            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, new ItemId("item.qi-gathering-pill"))
+            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, new ItemId("item.qi-gathering-pill")),
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 12.0, Aspect: CoreAspectKind.Consciousness)
         ], Technique: "alchemy"),
-        new(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1, new Dictionary<ItemId, double>(), [], null, true, ActionExecutionKind.Travel)
+        new(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1, new Dictionary<ItemId, double>(),
+        [
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerSecond, 1.0, Aspect: CoreAspectKind.Agility)
+        ], null, true, ActionExecutionKind.Travel)
     ]);
 
     private static void Validate(ActionDefinition definition)
@@ -363,7 +375,10 @@ public sealed class ActionCatalog
                         && double.IsFinite(grant.AttackSpeedPoints) && double.IsFinite(grant.DamageAbsorptionPoints)
                     ? $"buff:{grant.BuffId}"
                     : throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的 Buff 收益必须按轮结算并携带完整授权规格。"),
-                _ => yield.Item is null && yield.Buff is null
+                ActionYieldKind.RootExp => yield.Aspect is { } aspect && yield.Item is null && yield.Buff is null
+                    ? $"rootexp:{aspect}:{yield.Period}"
+                    : throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的六维收益必须携带归属维度且不得携带实体标识。"),
+                _ => yield.Item is null && yield.Buff is null && yield.Aspect is null
                     ? $"resource:{yield.Kind}:{yield.Period}"
                     : throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的资源收益不得携带实体标识。")
             };
@@ -662,7 +677,8 @@ public sealed class GameDataCatalog
             JsonRead.Number(block, "alchemyOutputRatio"),
             JsonRead.Number(block, "cultivationOutputRatio"),
             JsonRead.Number(block, "combatHitpointRegen"),
-            JsonRead.Number(block, "combatDamageReductionRatio"));
+            JsonRead.Number(block, "combatDamageReductionRatio"),
+            JsonRead.Number(block, "monsterWeakenRatio"));
     }
 
     /// <summary>解析建筑一级基础材料清单（materials 数组，缺省为空）。</summary>
@@ -759,6 +775,7 @@ public sealed class GameDataCatalog
                 "experience" => ActionYieldKind.Experience,
                 "item" => ActionYieldKind.Item,
                 "buff" => ActionYieldKind.Buff,
+                "rootexp" => ActionYieldKind.RootExp,
                 _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益类型无效：{kindText ?? "缺失"}。")
             };
             var perText = element.TryGetProperty("per", out var perProperty) ? perProperty.GetString() : null;
@@ -794,6 +811,22 @@ public sealed class GameDataCatalog
                     buffId ?? string.Empty, buffName ?? string.Empty, durationSeconds,
                     ReadModifier("hpRegen"), ReadModifier("mpRegen"),
                     ReadModifier("attackSpeedPoints"), ReadModifier("damageAbsorptionPoints"), statRatios)));
+                continue;
+            }
+            if (kind == ActionYieldKind.RootExp)
+            {
+                var aspectText = element.TryGetProperty("aspect", out var aspectProperty) ? aspectProperty.GetString() : null;
+                var aspect = aspectText?.ToLowerInvariant() switch
+                {
+                    "stamina" => CoreAspectKind.Stamina,
+                    "meridians" => CoreAspectKind.Meridians,
+                    "attack" => CoreAspectKind.Attack,
+                    "bone" => CoreAspectKind.Bone,
+                    "agility" => CoreAspectKind.Agility,
+                    "consciousness" => CoreAspectKind.Consciousness,
+                    _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的六维收益归属维度无效：{aspectText ?? "缺失"}。")
+                };
+                yields.Add(new(kind, period, amount, null, null, aspect));
                 continue;
             }
             yields.Add(new(kind, period, amount));

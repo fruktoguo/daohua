@@ -15,6 +15,18 @@
         "kind": "mana",
         "per": "repeat",
         "amount": 10
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 5,
+        "aspect": "meridians"
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 5,
+        "aspect": "bone"
       }
     ]
   }

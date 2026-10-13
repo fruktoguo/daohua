@@ -17,6 +17,12 @@
         "per": "repeat",
         "id": "item.leiji-talisman",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 20,
+        "aspect": "consciousness"
       }
     ]
   }

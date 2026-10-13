@@ -32,7 +32,7 @@ import { useGameStore } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
-import { calculateActionYieldPreview, isActionAvailableAtNode } from './game/actionCalculations'
+import { calculateActionYieldPreview, isActionAvailableAtNode, ROOT_ASPECT_LABEL_KEYS } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, AutoUseBarType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
 import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
@@ -1502,6 +1502,14 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                   <span className="action-stat-pill-label">{t('app.action.yieldKind.buff')}</span>
                   <strong className="action-stat-pill-value">
                     {t('app.action.yieldBuff', { name: buff.name, stacks: buff.stacks, duration: buff.durationSeconds })}
+                  </strong>
+                </span>
+              ))}
+              {yieldPreview.rootExpYields.map(entry => (
+                <span className="action-stat-pill action-stat-pill--rootexp" key={entry.aspect}>
+                  <span className="action-stat-pill-label">{t(ROOT_ASPECT_LABEL_KEYS[entry.aspect] ?? 'app.action.yieldKind.rootexp')}</span>
+                  <strong className="action-stat-pill-value">
+                    <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.amount} />
                   </strong>
                 </span>
               ))}

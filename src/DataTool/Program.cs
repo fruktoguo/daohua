@@ -162,6 +162,16 @@ static void ValidateReferences(string directory)
                 if (buildableTemplate.Length > 0)
                     Require(buildableTemplate is "all" or "production" or "combat" or "other",
                         $"{Rel(directory, file)} 节点 {nodeId} 的 buildableTemplate={buildableTemplate} 不是合法模板。");
+                // 节点自带建筑：prebuiltBuildings 声明引用必须存在且等级为正整数。
+                foreach (var seed in Elements(Property(node, "prebuiltBuildings")))
+                {
+                    var seedId = Text(seed, "buildingId");
+                    Require(buildingIds.Contains(seedId),
+                        $"{Rel(directory, file)} 节点 {nodeId} 自带建筑引用了不存在的建筑 {seedId}。");
+                    var seedLevel = Property(seed, "level");
+                    Require(seedLevel.ValueKind == JsonValueKind.Number && seedLevel.TryGetInt32(out var level) && level >= 1,
+                        $"{Rel(directory, file)} 节点 {nodeId} 自带建筑 {seedId} 的 level 必须是 ≥1 的整数。");
+                }
             }
             foreach (var edge in Elements(Property(map, "edges")))
                 mapEdges.Add((Text(edge, "fromNodeId"), Text(edge, "toNodeId"), Rel(directory, file)));

@@ -232,7 +232,8 @@ public static class StaticGameCatalogMapper
                 alchemyOutputRatio = definition.Modifiers.AlchemyOutputRatio,
                 cultivationOutputRatio = definition.Modifiers.CultivationOutputRatio,
                 combatHitpointRegen = definition.Modifiers.CombatHitpointRegen,
-                combatDamageReductionRatio = definition.Modifiers.CombatDamageReductionRatio
+                combatDamageReductionRatio = definition.Modifiers.CombatDamageReductionRatio,
+                monsterWeakenRatio = definition.Modifiers.MonsterWeakenRatio
             },
             materials = (definition.Materials ?? [])
                 .OrderBy(material => material.ItemId, StringComparer.Ordinal)

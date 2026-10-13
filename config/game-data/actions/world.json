@@ -6,6 +6,14 @@
     "type": "exploration",
     "durationSeconds": 1,
     "executionKind": "travel",
-    "hiddenFromCatalog": true
+    "hiddenFromCatalog": true,
+    "yields": [
+      {
+        "kind": "rootexp",
+        "per": "second",
+        "amount": 1,
+        "aspect": "agility"
+      }
+    ]
   }
 ]

@@ -58,6 +58,16 @@ public static class CraftingRecipeRules
         return ConvertTierToLevel(maxTier);
     }
 
+    /// <summary>
+    /// 单个物品/装备 ID 的等阶代表等级（tier → 境界等级换算，未命中按 T1）。
+    /// 强化等动态裁决以目标装备本值作为「行动等级」基准（总纲 §20.1.4）。
+    /// </summary>
+    public static int ResolveItemLevel(string id, GameDataCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        return ConvertTierToLevel(ResolveItemOrEquipmentTier(id, catalog));
+    }
+
     private static int ResolveItemOrEquipmentTier(string id, GameDataCatalog catalog)
     {
         if (string.IsNullOrWhiteSpace(id)) return 1;

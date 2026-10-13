@@ -794,7 +794,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         identity.MonsterDefinitionId = definition.Id; identity.DisplayName = definition.Name;
         entity.AddComponent<CombatantComponent>();
         var combatant = entity.GetComponent<CombatantComponent>()!;
-        combatant.State = new CombatantState($"enemy:{entity.ID}", definition.Stats, definition.Skills); combatant.IsPlayer = false;
+        // 生态刷怪按节点实体侧建筑投影削弱（封魔阵类效果对同节点全体生效，不依赖单个玩家投影）。
+        var stats = parentNodeEntityId is { } nodeParent
+            && World.GetEntity(nodeParent)?.GetComponent<NodeBuildingComponent>() is { } nodeBuilding
+            ? NodeBuildingRules.WeakenMonsterStats(definition.Stats, nodeBuilding.Effects.MonsterWeakenRatio)
+            : definition.Stats;
+        combatant.State = new CombatantState($"enemy:{entity.ID}", stats, definition.Skills); combatant.IsPlayer = false;
         entity.AddComponent<SkillStateComponent>();
         entity.AddComponent<BuffComponent>();
         entity.AddComponent<DropProfileComponent>().Drops = definition.DropTable;
@@ -826,7 +831,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 .ToArray();
         var enemyDefinitions = EncounterWaveSelector.Select(definition, GameData.CombatMonsters, seed, 1).ToArray();
         if (enemyDefinitions.Length == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇没有可用怪物。");
-        var enemyTemplates = enemyDefinitions.Select(m => new CombatantTemplate(m.Stats, m.Skills)).ToArray();
+        // 钉死入战同样吃节点封魔阵类削弱：取玩家当前驻留节点的建筑投影。
+        var weaken = player.GetComponent<PlayerWorldComponent>()?.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio ?? 0;
+        var enemyTemplates = enemyDefinitions.Select(m =>
+            new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(m.Stats, weaken), m.Skills)).ToArray();
         var state = Systems.CombatEventAdvanceSystem.Start(encounterId, seed, new CombatantTemplate(playerStats, playerSkills), enemyTemplates, definition.PlayerRespawnSeconds);
         var battleStartUnix = player.GetComponent<PlayerActionQueueComponent>()?.LastAdvancedAt.ToUnixTimeSeconds() ?? StartAt.ToUnixTimeSeconds();
         foreach (var active in player.GetComponent<PlayerBuffComponent>()?.Active ?? [])

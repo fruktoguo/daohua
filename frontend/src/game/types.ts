@@ -213,7 +213,10 @@ export type CombatAbilityTargetType =
 /**
  * 行动收益类别：灵力/战斗蓝 (mana)、气血 (hitpoints)、修为 (experience)、物品产出 (item)、增益状态 (buff)
  */
-export type ActionYieldKind = 'mana' | 'hitpoints' | 'experience' | 'item' | 'buff'
+export type ActionYieldKind = 'mana' | 'hitpoints' | 'experience' | 'item' | 'buff' | 'rootexp'
+
+/** 六维归属键（与服务端 CoreAspectKind 小写名一致） */
+export type RootAspectKey = 'stamina' | 'meridians' | 'attack' | 'bone' | 'agility' | 'consciousness'
 
 /**
  * 收益结算周期：持续速率 (second) / 单轮完成结算 (repeat)
@@ -239,6 +242,8 @@ export interface ActionYield {
   durationSeconds?: number | null
   /** Buff 修饰器（仅 buff 有值；与 BuffModifiers 同一形状） */
   modifiers?: BuffModifiers | null
+  /** 六维归属维度（仅 rootexp 有值；定额收益不吃产出倍率） */
+  aspect?: RootAspectKey | null
 }
 
 /**
@@ -1425,6 +1430,8 @@ export interface BuildingModifiers {
   combatHitpointRegen: number
   /** 战斗额外减伤比率 */
   combatDamageReductionRatio: number
+  /** 怪物削弱比率：每级折减此地怪物气血上限与双攻双防（有效属性 = 基准 ×(1−ratio)，封顶 90%） */
+  monsterWeakenRatio: number
 }
 
 /**

@@ -50,6 +50,8 @@ public sealed class SocialRuntime
     private readonly IPlayerStateRepository? _sections;
     /// <summary>资产余额只读边界：定格时刻可托管库存的权威来源（托管实扣随会话事务原子提交）。</summary>
     private readonly IAssetBalanceRepository? _assetBalances;
+    /// <summary>节点公共建筑注册表：开打定格时读取目标节点封魔阵类怪物削弱比并冻结进会话规格。</summary>
+    private readonly NodeBuildingRegistry? _nodeBuildings;
     /// <summary>组队讨伐的每队伍裁决门：开打/散场仲裁串行化，跨实例竞态由 DB 唯一索引收敛。</summary>
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _partyGates = new();
     /// <summary>实例级通知并发门：跨并发存在感触发共享 4 个实际通知槽位。</summary>
@@ -78,6 +80,7 @@ public sealed class SocialRuntime
     /// <param name="players">玩家运行时适配器（组队讨伐开打/散场经单写者边界改成员行动）；为 null 时仲裁退化不动作。</param>
     /// <param name="simulationClock">模拟时钟；缺省按环境装配（与玩家运行时同口径）。</param>
     /// <param name="sections">玩家持久化分段仓储（离线成员冻结面板数据源）；为 null 时未装载成员无法定格。</param>
+    /// <param name="nodeBuildings">节点公共建筑注册表（目标节点怪物削弱比数据源）；为 null 时会话恒无削弱。</param>
     public SocialRuntime(
         ISocialRepository repository,
         OnlinePresenceRegistry presence,
@@ -89,7 +92,8 @@ public sealed class SocialRuntime
         IPlayerSimulationClock? simulationClock = null,
         IActionParticipationRuntime? participation = null,
         IPlayerStateRepository? sections = null,
-        IAssetBalanceRepository? assetBalances = null)
+        IAssetBalanceRepository? assetBalances = null,
+        NodeBuildingRegistry? nodeBuildings = null)
     {
         _repository = repository;
         _presence = presence;
@@ -102,6 +106,7 @@ public sealed class SocialRuntime
         _participation = participation;
         _sections = sections;
         _assetBalances = assetBalances;
+        _nodeBuildings = nodeBuildings;
         _nodeIds = catalog.WorldGraph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
         _presence.PresenceChanged += OnPresenceChangedAsync;
         _presence.NodeChanged += OnNodeChangedAsync;
@@ -1036,6 +1041,9 @@ public sealed class SocialRuntime
 
         // 冻结采集完成后再定统一开场边界，避免成员装载时钟晚于会话开始。
         startedAt = _clock.UtcNow;
+        // 封魔阵类节点削弱随开打定格冻结进会话规格（总纲 §9.4）：各成员共享同一公共输入。
+        var monsterWeakenRatio = _nodeBuildings is null ? 0
+            : (await _nodeBuildings.EffectsForAsync(targetNode, startedAt, cancellationToken)).MonsterWeakenRatio;
         var spec = new ActionParticipationSpec(
             sessionId, encounterId, targetNode, seed,
             snapshots.Max(member => member!.SearchSpeedPoints),
@@ -1043,7 +1051,8 @@ public sealed class SocialRuntime
             [.. snapshots.Select(member => member!)])
         {
             ActionId = action.Id,
-            PvpEnabled = party.Profile.PvpEnabled
+            PvpEnabled = party.Profile.PvpEnabled,
+            MonsterWeakenRatio = monsterWeakenRatio
         };
         if (!spec.IsValid)
         {

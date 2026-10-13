@@ -65,6 +65,28 @@ public sealed record PlayerCoreAttributes(
         RootAttributeCurve.LevelFor(BoneExp, catalog),
         RootAttributeCurve.LevelFor(AgilityExp, catalog),
         RootAttributeCurve.LevelFor(ConsciousnessExp, catalog));
+
+    /// <summary>按维度读取累计经验（升级判定用）。</summary>
+    public double ExpFor(CoreAspectKind aspect) => aspect switch
+    {
+        CoreAspectKind.Stamina => StaminaExp,
+        CoreAspectKind.Meridians => MeridiansExp,
+        CoreAspectKind.Attack => AttackExp,
+        CoreAspectKind.Bone => BoneExp,
+        CoreAspectKind.Agility => AgilityExp,
+        _ => ConsciousnessExp
+    };
+
+    /// <summary>返回指定维度累加 amount 后的新记录（值语义不可变更新）。</summary>
+    public PlayerCoreAttributes WithAddedExp(CoreAspectKind aspect, double amount) => aspect switch
+    {
+        CoreAspectKind.Stamina => this with { StaminaExp = StaminaExp + amount },
+        CoreAspectKind.Meridians => this with { MeridiansExp = MeridiansExp + amount },
+        CoreAspectKind.Attack => this with { AttackExp = AttackExp + amount },
+        CoreAspectKind.Bone => this with { BoneExp = BoneExp + amount },
+        CoreAspectKind.Agility => this with { AgilityExp = AgilityExp + amount },
+        _ => this with { ConsciousnessExp = ConsciousnessExp + amount }
+    };
 }
 
 /// <summary>技能经验→等级曲线：独立立方曲线 floor(cbrt(exp/100))+1，保持 1 基（习得即 1 级），技能书/残卷按点数注入经验。</summary>

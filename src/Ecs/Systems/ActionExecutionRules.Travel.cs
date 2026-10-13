@@ -108,7 +108,7 @@ internal static partial class ActionExecutionRules
         if (travel.TotalDurationSeconds <= 0 || travel.Segments.Count == 0)
         {
             FinishTravel(player, action, definition, travel, from, target, ref remainingSeconds,
-                ref events, ref completedActions, ref completedRepeats, worldGraph);
+                ref events, ref completedActions, ref completedRepeats, gameData, worldGraph);
             return;
         }
 
@@ -117,7 +117,7 @@ internal static partial class ActionExecutionRules
         if (step <= 0)
         {
             FinishTravel(player, action, definition, travel, from, target, ref remainingSeconds,
-                ref events, ref completedActions, ref completedRepeats, worldGraph);
+                ref events, ref completedActions, ref completedRepeats, gameData, worldGraph);
             return;
         }
 
@@ -178,7 +178,7 @@ internal static partial class ActionExecutionRules
         else
         {
             FinishTravel(player, action, definition, travel, from, target, ref remainingSeconds,
-                ref events, ref completedActions, ref completedRepeats, worldGraph);
+                ref events, ref completedActions, ref completedRepeats, gameData, worldGraph);
         }
     }
 
@@ -193,6 +193,7 @@ internal static partial class ActionExecutionRules
         ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats,
+        GameDataCatalog? gameData,
         WorldGraph? worldGraph)
     {
         player.World.NodeId = travel.TargetNodeId;
@@ -211,6 +212,11 @@ internal static partial class ActionExecutionRules
         var arrivalUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         // 抵达终点计一次完成轮次，随后实例出队归档账本。
         player.RecordStats(action.Id, arrivalUnix, new PlayerStatsDelta { Cycles = 1 });
+        // 赶路六维经验按实际行进总秒数一次性取整入账（总纲 §20.1.4）：定额不吃收益倍率。
+        foreach (var yield in definition.Yields)
+            if (yield is { Kind: ActionYieldKind.RootExp, Period: ActionYieldPeriod.PerSecond, Aspect: { } aspect })
+                GrantRootExperience(player, aspect, Math.Round(yield.Amount * travel.TotalDurationSeconds),
+                    gameData, action.Id, arrivalUnix);
         player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: arrivalUnix);
         if (player.Actions.Count > 0 && player.Actions[0].Status == ActionQueueStatus.Pending)
         {

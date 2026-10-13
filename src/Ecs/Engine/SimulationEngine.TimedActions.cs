@@ -103,7 +103,7 @@ public static partial class SimulationEngine
         => DaoHua.Ecs.Systems.ActionExecutionRules.PrepareTimedActionCore(player, action, definition, isActionStart, gameData, assets, at, ref deltas, ref events);
 
     /// <summary>推进已由时钟裁剪的本轮片段，按原整秒序列写入进度与连续收益。</summary>
-    public static void AdvanceTimedAction(IPlayerActionContext player, IPlayerActionState action,
+    public static void AdvanceTimedAction(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, double multiplier, GameDataCatalog? gameData,
         double stepSeconds, DateTimeOffset at)
         => DaoHua.Ecs.Systems.ActionExecutionRules.AdvanceTimedAction(player, action, definition, multiplier, gameData, stepSeconds, at);

@@ -75,11 +75,12 @@ flowchart TD
 ]
 ```
 
-- `kind`：`qi`（修为）｜`mana`（灵力，入账 `Combat.Manapoints`）｜`hitpoints`（气血）｜`experience`（历练经验）｜`item`（物品）｜`buff`（增益授权）。
+- `kind`：`qi`（修为）｜`mana`（灵力，入账 `Combat.Manapoints`）｜`hitpoints`（气血）｜`experience`（历练经验）｜`item`（物品）｜`buff`（增益授权）｜`rootexp`（六维经验，须携 `aspect`）。
 - `per`：`second`（按推进整秒逐秒结算，离线与在线位级一致）｜`repeat`（单轮完成时结算）。`item` 与 `buff` 仅允许 `repeat`。
 - `amount`：正有限数；`buff` 的 `amount` 表示叠加层数。
 - `item` 需携带合法 `id`；`buff` 需携带 `id`、`name`、`durationSeconds`（>0）与可选 `modifiers`（`hpRegen`/`mpRegen`/`attackSpeedRatio`/`damageAbsorptionRatio`）。资源类收益禁止携带实体标识字段。
-- 灵力与气血收益按当前属性上限截断；持续消耗品倍率作用于数值型收益，Buff 授权不受影响。
+- `rootexp` 需携带 `aspect`（六维标识 `stamina`/`meridians`/`attack`/`bone`/`agility`/`consciousness`），按维定向定额入账，配值公式与倍率口径见总纲 §20.1.4；装备强化不走静态 yields，每轮动态结算神识（§20.4.2）；`world.travel` 以 `per: second` 声明身法收益、抵达按实际行进秒取整入账。
+- 灵力与气血收益按当前属性上限截断；持续消耗品倍率作用于数值型收益，Buff 授权不受影响，rootexp 恒为定额不吃任何收益倍率。
 - 输入材料仍由 `inputs` 声明，在单轮完成时扣除。
 
 ---

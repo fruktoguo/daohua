@@ -15,6 +15,12 @@
         "per": "repeat",
         "id": "item.qi-gathering-pill",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 12,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -35,6 +41,12 @@
         "per": "repeat",
         "id": "item.zhixue-powder",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -55,6 +67,12 @@
         "per": "repeat",
         "id": "item.shunqi-pill",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 10,
+        "aspect": "consciousness"
       }
     ]
   },
@@ -75,6 +93,12 @@
         "per": "repeat",
         "id": "item.tongmai-pill",
         "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "amount": 267,
+        "aspect": "consciousness"
       }
     ]
   }

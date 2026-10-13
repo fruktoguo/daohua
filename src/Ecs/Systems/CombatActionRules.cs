@@ -552,10 +552,12 @@ internal static class CombatActionRules
     {
         var expedition = action.Expedition!;
         var waveEnemies = expedition.Enemies!;
+        // 快照恢复按恢复时点的建筑投影重解析削弱（与玩家面板「随输入漂移、越界钳制」口径一致）。
+        var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
         var templates = waveEnemies.Select(enemy =>
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
-            return new CombatantTemplate(monster.Stats, monster.Skills);
+            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills);
         }).ToArray();
         var selfSnapshot = expedition.PlayerState ?? new CombatantSnapshot(
             expedition.PlayerHitpoints, expedition.PlayerManapoints,
@@ -744,7 +746,10 @@ internal static class CombatActionRules
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻尚未完成，不能进入战斗。");
         var wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters,
             completedSearch.Seed, completedSearch.WaveNumber);
-        var enemyTemplates = wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray();
+        // 节点封魔阵类削弱：怪物模板按当前节点建筑投影折减气血上限与双攻双防（单人取本机投影，会话取经 spec 冻结注入）。
+        var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
+        var enemyTemplates = wave.Select(monster =>
+            new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills)).ToArray();
         var respawnSeconds = InBattleRespawnSeconds(encounter);
         var spec = action.Participation?.Spec;
         CombatEncounterState battle;
@@ -1238,44 +1243,9 @@ internal static class CombatActionRules
         if (!anyInternal || targets.Count == 0)
             targets.UnionWith(Enum.GetValues<CoreAspectKind>());
         // 六维全额口径：每个归属维度各得 amount，总量 = amount × 归属维度数（总纲 §7.10.3）。
-        var share = amount;
-        var core = player.Loadout.CoreAttributes;
         foreach (var attribute in targets)
-        {
-            var expBefore = RootExpOf(core, attribute);
-            var levelBefore = RootAttributeCurve.LevelFor(expBefore, gameData.RealmProgression);
-            var levelAfter = RootAttributeCurve.LevelFor(expBefore + share, gameData.RealmProgression);
-            core = attribute switch
-            {
-                CoreAspectKind.Stamina => core with { StaminaExp = core.StaminaExp + share },
-                CoreAspectKind.Meridians => core with { MeridiansExp = core.MeridiansExp + share },
-                CoreAspectKind.Attack => core with { AttackExp = core.AttackExp + share },
-                CoreAspectKind.Bone => core with { BoneExp = core.BoneExp + share },
-                CoreAspectKind.Agility => core with { AgilityExp = core.AgilityExp + share },
-                _ => core with { ConsciousnessExp = core.ConsciousnessExp + share }
-            };
-            var aspect = attribute;
-            player.RecordStats(actionInstanceId, atUnixSeconds, new PlayerStatsDelta
-            {
-                RootAspect = aspect,
-                RootExperience = share,
-                LevelUp = levelAfter > levelBefore
-                    ? new PlayerReportLevelUp("root", aspect.ToString().ToLowerInvariant(), levelBefore, levelAfter) : null
-            });
-        }
-        player.Loadout.CoreAttributes = core;
+            ActionExecutionRules.GrantRootExperience(player, attribute, amount, gameData, actionInstanceId, atUnixSeconds);
     }
-
-    /// <summary>按根骨维度读取累计经验（六维升级判定用）。</summary>
-    private static double RootExpOf(PlayerCoreAttributes core, CoreAspectKind attribute) => attribute switch
-    {
-        CoreAspectKind.Stamina => core.StaminaExp,
-        CoreAspectKind.Meridians => core.MeridiansExp,
-        CoreAspectKind.Attack => core.AttackExp,
-        CoreAspectKind.Bone => core.BoneExp,
-        CoreAspectKind.Agility => core.AgilityExp,
-        _ => core.ConsciousnessExp
-    };
 
     private static bool TryParseCoreAspect(string abilityId, GameDataCatalog catalog, out CoreAspectKind attribute)
     {
