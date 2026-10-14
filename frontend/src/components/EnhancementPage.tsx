@@ -13,7 +13,8 @@ import {
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
-import { useT } from '../i18n'
+import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition } from '../game/types'
+import { useT, type TFunction } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { ChoiceMenu } from './CatalogPicker'
 import { ActionDetailItem, ItemReference } from './ItemDisplay'
@@ -27,11 +28,11 @@ import { QuantitySelector } from './QuantitySelector'
  * tool-* 技艺工具槽位装备不可强化（服务端 EnhancementRules 同步拦截），不进候选。
  */
 function collectEquipmentCandidates(
-  inventory: ReturnType<typeof useGameStore.getState>['inventory'],
-  combatEquipment: readonly { itemId: string; enhancementLevel: number }[] | undefined,
-  equipmentCatalog: ReturnType<typeof useGameStore.getState>['equipment'],
-  itemCatalog: ReturnType<typeof useGameStore.getState>['items'],
-  t: ReturnType<typeof useT>,
+  inventory: readonly InventoryItem[],
+  combatEquipment: readonly EquippedItem[] | undefined,
+  equipmentCatalog: readonly CombatEquipmentDefinition[],
+  itemCatalog: readonly ItemDefinition[],
+  t: TFunction,
 ): ItemPickerEntry[] {
   const equippedCounts = new Map<string, number>()
   for (const eq of combatEquipment ?? []) {
