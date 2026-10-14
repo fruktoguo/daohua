@@ -1898,13 +1898,13 @@ public sealed class AutoUseSlot
 - 无论是逐秒推进还是离线快进补算，物品消耗总数与最终获得的修为/灵力完全等价，保证绝对确定性。
 
 ## 6.7 基础原料、加工材料与丹药配置 (T1~T2 全量)
-- **原料库 (19种)**：凝血草、桃木、乌铁、兽皮、兽骨、晨露、破碎灵核、妖丹、煞齿（T1 9种）；伴灵花、引灵松、赤铜、兽牙、火羽、残魄灵符、残刃、煞骨、妖核、陨星破片（T2 10种）。
+- **原料库 (19种)**：凝气草、桃木、乌铁、兽皮、兽骨、晨露、破碎灵核、妖丹、煞齿（T1 9种）；伴灵花、引灵松、赤铜、兽牙、火羽、残魄灵符、残刃、煞骨、妖核、陨星破片（T2 10种）。
 - **加工主料 (6种)**：
-  - **百炼铁** (乌铁×3 $\to$ T1 物理主料)、**桃木晶** (桃木×3 $\to$ T1 术法主料)、**草木精华** (凝血草×2 + 晨露×1 $\to$ T1 丹药基底)；
+  - **百炼铁** (乌铁×3 $\to$ T1 物理主料)、**桃木晶** (桃木×3 $\to$ T1 术法主料)、**草木精华** (凝气草×2 + 晨露×1 $\to$ T1 丹药基底)；
   - **赤铜精** (赤铜×3 $\to$ T2 物理主料)、**灵松晶** (引灵松×3 $\to$ T2 术法主料)、**伴灵精华** (伴灵花×2 + 晨露×1 $\to$ T2 丹药基底)。
 - **丹药库 (4种)**：
-  - **引气丹** (`item.qi-gathering-pill`): 凝血草×3 | 持续 300s | **+30% 修炼收益**（引气入体 10 Exp $\to$ 13 Exp，10 MP $\to$ 13 MP）
-  - **止血散** (`item.zhixue-powder`): 草木精华×1 + 凝血草×1 | Buff 持续 30s / CD 60s | 生命回复 +12 + 5% 伤害吸收（减伤）
+  - **引气丹** (`item.qi-gathering-pill`): 凝气草×3 | 持续 300s | **+30% 修炼收益**（引气入体 10 Exp $\to$ 13 Exp，10 MP $\to$ 13 MP）
+  - **止血散** (`item.zhixue-powder`): 草木精华×1 + 凝气草×1 | Buff 持续 30s / CD 60s | 生命回复 +12 + 5% 伤害吸收（减伤）
   - **顺气丸** (`item.shunqi-pill`): 草木精华×1 + 伴灵花×1 | Buff 持续 30s / CD 60s | 灵力回复 +8 + 5% 行动速度（攻速）
   - **通脉丹** (`item.tongmai-pill`): 伴灵精华×2 + 妖核(Boss)×1 | 持续 300s | **+50% 修炼收益**
 
@@ -2794,7 +2794,7 @@ flowchart TD
 | `group` | 分组：`production`（生产）/ `combat`（战斗）/ `other`（其他），供节点模板与候选弹窗分组 |
 | `requiredRealmLevel` | 建造解锁所需境界等级 |
 | `availableNodeIds` | 可选：限定可建节点；缺省表示不限定（仍受节点可建列表约束） |
-| `modifiers` | **每级基准效果**（见 §9.4），Lv N 生效 = 基准 × N |
+| `baseModifiers` / `growthModifiers` | **1 级基准效果与每级增幅效果**（见 §9.4），Lv N 生效 = $(Base + Growth \times (N - 1)) \times Efficiency$；兼容旧字段 `modifiers`（等价于 Base=Growth） |
 | `materials` | 一级基础材料清单（`itemId` + `quantity`），第 N 级需求 = 基础 × `1.1^(N-1)` |
 
 节点可建列表（地图 JSON 节点字段，二选一，均不写 = 该节点不可建）：
@@ -2822,50 +2822,71 @@ flowchart TD
 
 ## 9.4 效果模型与数值
 
-`modifiers` 七项效果：
+建筑加成支持「1 级基准 + 每级增幅」的分级配置模型：配表中配置 `baseModifiers`（1 级初始基准）与 `growthModifiers`（每升 1 级的线性增量）。
+当建筑有效等级为 $L$（$L \ge 1$）时，实际生效修饰项为：
+$$Effect(L) = \big( Base + Growth \times (L - 1) \big) \times Efficiency$$
+（缺省配置时，若仅提供 `modifiers`，则等价于 $Base = Growth = modifiers$）。
+
+修饰项字段与作用通道：
 
 | 字段 | 语义 | 接线点 |
 | :--- | :--- | :--- |
-| `explorationSpeedRatio` | 采集行动加速比率（耗时 ÷ `1+ratio`） | `SimulationEngine` 行动耗时 |
-| `explorationOutputRatio` | 采集行动收益增幅 | 行动收益乘区 |
-| `alchemySpeedRatio` | 炼丹行动加速比率 | 行动耗时 |
-| `alchemyOutputRatio` | 炼丹行动收益增幅 | 行动收益乘区 |
+| `gatheringSpeedRatio` | 采集行动加速比率（涵盖采药与砍伐） | `TimedActionDuration` 行动耗时 |
+| `miningSpeedRatio` | 采矿挖掘行动加速比率 | `TimedActionDuration` 行动耗时 |
+| `alchemySpeedRatio` | 炼丹行动加速比率 | `TimedActionDuration` 行动耗时 |
+| `forgingSpeedRatio` | 炼器行动加速比率 | `TimedActionDuration` 行动耗时 |
+| `talismanSpeedRatio` | 符箓绘制行动加速比率 | `TimedActionDuration` 行动耗时 |
+| `formationSpeedRatio` | 阵盘研制行动加速比率 | `TimedActionDuration` 行动耗时 |
+| `enhancementSpeedRatio` | 装备强化行动加速比率 | `TimedActionDuration` 行动耗时 |
 | `cultivationOutputRatio` | 吐纳修炼收益增幅 | 行动收益乘区 |
 | `combatHitpointRegen` | 战斗内每 5 秒气血回复固定值 | `PlayerAttributeResolver` 回血乘区 |
+| `combatManapointRegen` | 战斗内每 5 秒灵力回复固定值 | `PlayerAttributeResolver` 回蓝乘区 |
 | `combatDamageReductionRatio` | 战斗减伤比率 | `PlayerAttributeResolver` 减伤乘区 |
-| `monsterWeakenRatio` | 怪物削弱比率：此地怪物气血上限与双攻双防按 `×(1−ratio)` 线性折减（不含灵力上限） | `NodeBuildingRules.WeakenMonsterStats`：怪物面板生成点统一收口 |
+| `monsterWeakenRatio` | 怪物削弱比率：此地怪物面板按双曲阻尼衰减 | `NodeBuildingRules.WeakenMonsterStats`：怪物面板生成收口 |
 
-- 效果随等级线性成长：`effect(N) = 基准 × N`；多建筑按项相加汇总。
 - 收益增幅与消耗品/灵脉倍率**同乘区叠加**（`× (1 + ratio)`）；速度类为耗时 `÷ (1 + ratio)`。
-- `monsterWeakenRatio` 施加于怪物入场面板：波次入场、快照恢复、钉死入战、生态刷怪与组队会话的怪物模板生成点统一折减 `MaxHitpoints`/`AttackPower`/`SpellAttack`/`Defense`/`MagicResistance`；合计比率封顶 `0.9`（面板合法性下限，L≥90 恒为 −90%）。快照恢复按恢复时点投影重解析（与玩家面板「随输入漂移、越界钳制」口径一致）；组队会话由开打定格把削弱比冻结进 `ActionParticipationSpec.MonsterWeakenRatio`，各成员推演逐位一致。怪物生态/图鉴面板展示基准面板，战内敌人投影展示削弱后实际值。
-- 强度预算口径：产出/收益类按「1% = 1 点」预算，回血按「1 点回复 = 4 点预算」换算，行动加速/减伤属特殊属性人工参考同等阶范围。
+- **封魔阵双曲阻尼削弱模型（无上限）**：
+  为避免百分比削弱将怪物属性降为 0 或负数，`monsterWeakenRatio` 采用渐进阻尼折减公式：
+  $$\text{折减系数} = \frac{1}{1 + \text{monsterWeakenRatio}}$$
+  $$\text{实际属性} = \frac{\text{原始属性}}{1 + \text{monsterWeakenRatio}}$$
+  （例：削弱 50% 折减为 $100 / 1.5 \approx 66.7$；削弱 100% 折减为 $100 / 2 = 50$；削弱 900% 折减为 $100 / 10 = 10$）。
+  该模型在任意比率下均保持单调平滑且恒大于 0，**天然不设硬上限**。波次入场、快照恢复、钉死入战、生态刷怪与组队会话的怪物模板生成点统一走此收口。
 
 ### 9.4.2 拥挤衰减模型（承载人数与超载线性衰减）
 
 建筑服务有承载人数上限：超过上限后效果对所有人等比衰减，鼓励分流建造与多节点布局。
 
 - **承载上限**：`capacity(L) = 100 + 10 × (L - 1)`（一级 100 人，每级 +10% 基数线性；L2=110、L11=200、L51=600）。
-- **使用人数**：在**当前节点**拥有 `Running` 状态、且行动类别属于该建筑**服务类别**的玩家数（在线/离线挂机一视同仁）。服务类别由建筑 `modifiers` 非零项映射：`exploration*`→Exploration、`alchemy*`→Alchemy、`cultivationOutputRatio`→Cultivation、`combat*`→Combat；多类别建筑人数为各类别之和（队列串行，同一玩家不会重复计）。Blocked/排队中/赶路中不计。
+- **使用人数**：在**当前节点**拥有 `Running` 状态、且行动类别属于该建筑**服务类别**的玩家数（在线/离线挂机一视同仁）。服务类别由建筑生效修饰项映射至对应 `ActionKind` 及具体技艺 `Technique`；多类别建筑人数为各类别之和（队列串行，同一玩家不会重复计）。Blocked/排队中/赶路中不计。
 - **衰减公式**：`efficiency(L, n) = 1`（n ≤ capacity）；超载时 `1 − min(0.5, (n − capacity) × 0.001)`——每超 1 人 -0.1%（即每 100 人 -10%），减幅**封顶 50%**（n ≥ capacity + 500 时效果恒为 50%，永不归零）；L1 满 1000 人恰为 -50%。
-- **衰减施加粒度**：整座建筑的全部修饰项统一乘 `efficiency`（即 `基准 × L × efficiency`），非逐项独立衰减。
-- **计数来源（读模型，无新增写路径）**：`game.player_action_queue`（flush 队列与 ComputeNode 回写两条写路径均事务性全量重建）JOIN `game.player_projection.current_node_id`，按 `(node_id, action_id) → ActionKind` 聚合；`presence='suspended'` 不计。计数为**秒级最终一致**的软指标（脏段去抖 + 读模型刷新，滞后 ≤~30s），不参与资产结算、不需要事务级精确。
+- **衰减施加粒度**：整座建筑的全部修饰项统一乘 `efficiency`，非逐项独立衰减。
+- **计数来源（读模型，无新增写路径）**：`game.player_action_queue`（flush 队列与 ComputeNode 回写两条写路径均事务性全量重建）JOIN `game.player_projection.current_node_id`，按 `(node_id, action_id) → ActionKind/Technique` 聚合；`presence='suspended'` 不计。计数为**秒级最终一致**的软指标（脏段去抖 + 读模型刷新，滞后 ≤~30s），不参与资产结算、不需要事务级精确。
 - **投影一致性**：衰减后效果与使用数随既有节点建筑投影一并发入玩家 `World` 分段并持久化；离线/冷挂机补算沿用最近已知投影（含当时衰减口径），模拟确定性不受跨玩家耦合影响。
 
-### 9.4.1 当前配表数值（T1~T2 初版）
+### 9.4.1 当前配表数值（11 座建筑体系）
 
-| 建筑 | 分组 | 解锁境界 | 每级效果 | 一级材料 |
-| :--- | :--- | ---: | :--- | :--- |
-| 采葛营帐 | production | 1 | 采集收益 +5% | 桃木×20、兽皮×10 |
-| 携行丹灶 | production | 1 | 炼丹收益 +5% | 玄铁×15、桃木×10 |
-| 聚灵蒲团 | production | 1 | 修炼收益 +5% | 凝血草×15、晨露×10 |
-| 淬火铁砧 | production | 19 | 炼丹加速 +5% | 玄铁×40、兽骨×20 |
-| 封魔阵 | combat | 19 | 此地怪物气血上限/双攻/双防 −1% | 煞骨×100、妖核×1 |
+#### 1. 修真营造（8 种）
 
-> 出生节点 `node.yunxi-village`（云溪村）经 `prebuiltBuildings` 自带一座竣工 30 级封魔阵——村口古阵叙事地标，此地怪物常驻 −30% 面板，新手期狩猎强度收敛。
-| 护阵石龛 | combat | 31 | 战斗减伤 +3% | 赤铜×20、聚魂符×10 |
-| 养脉泉眼 | combat | 43 | 战斗每 5 秒回血 +2 | 伴灵花×10、引灵松晶×5 |
+| 建筑 | 标识 ID | 分组 | 境界门槛 | 初始效果 (Lv.1) | 每级增幅 (Lv≥2) | 1 级基础材料 |
+| :--- | :--- | :--- | ---: | :--- | :--- | :--- |
+| **蒲团** | `building.meditation-circle` | production | 1 | 吐纳收益 +12% | +2%/级 | 凝气草×15、晨露×10 |
+| **灵材坊** | `building.gathering-tent` | production | 1 | 采集速度 +12% | +2%/级 | 桃木×20、兽皮×10 |
+| **采石坊** | `building.mining-workshop` | production | 1 | 挖掘速度 +12% | +2%/级 | 碎岩×20、粗铁×10 |
+| **丹房** | `building.alchemy-hearth` | production | 1 | 炼丹速度 +12% | +2%/级 | 玄铁×15、桃木×10 |
+| **炼器室** | `building.forge-anvil` | production | 19 | 炼器速度 +12% | +2%/级 | 玄铁×40、兽骨×20 |
+| **制符室** | `building.talisman-chamber` | production | 19 | 制符速度 +12% | +2%/级 | 残魄灵符×20、松晶×10 |
+| **衍阵台** | `building.formation-platform` | production | 19 | 阵法速度 +12% | +2%/级 | 灵松晶×15、破碎灵核×10 |
+| **淬灵室** | `building.enhancement-chamber` | production | 19 | 强化速度 +12% | +2%/级 | 赤铜×20、玄铁×20 |
 
-> 上述数值为初版占位，后续按 `data-designer` 强度预算方法细调；调整只改配表，不改规则。
+#### 2. 三方战阵（3 种）
+
+| 建筑 | 标识 ID | 分组 | 境界门槛 | 初始效果 (Lv.1) | 每级增幅 (Lv≥2) | 1 级基础材料 |
+| :--- | :--- | :--- | ---: | :--- | :--- | :--- |
+| **封魔阵** | `building.demon-seal-array` | combat | 19 | 怪物削弱 −6% | +1%/级 (无上限) | 煞骨×100、妖核×1 |
+| **回春阵** | `building.rejuvenation-array` | combat | 19 | 战斗回血 +2.4/5s | +0.4/5s/级 | 伴灵花×10、引灵松晶×5 |
+| **回元阵** | `building.mana-regen-array` | combat | 19 | 战斗回蓝 +2.4/5s | +0.4/5s/级 | 晨露×20、玄玉石×5 |
+
+> 出生节点 `node.yunxi-village`（云溪村）经 `prebuiltBuildings` 自带一座竣工 30 级封魔阵——村口古阵叙事地标，此地削弱比为 $6\% + 1\% \times 29 = 35\%$，怪物面板折减为 $1 / 1.35 \approx 74.07\%$。
 
 ## 9.5 交互与协议
 
@@ -4671,7 +4692,7 @@ ALTER TABLE social.chat_messages ADD party_ref uuid REFERENCES social.parties(pa
 
 | 值 | 里程碑 | 推进条件（服务端） | 推进时入账 |
 | --- | --- | --- | --- |
-| 0 | 采集 | `explore.gather-ningxue-grass` 完成一轮（出生点云溪村就地可采） | 凝血草 ×3（炼丹材料） |
+| 0 | 采集 | `explore.gather-ningxue-grass` 完成一轮（出生点云溪村就地可采） | 凝气草 ×3（炼丹材料） |
 | 1 | 炼丹 | `alchemy.refine-qi-pill` 完成一轮 | 百炼铁 ×7 + 兽骨 ×1（炼器材料） |
 | 2 | 炼器 | `forge.qingfeng-sword` 完成一轮 | — |
 | 3 | 前往云巅草庐 | 旅行到达 `node.cloud-peak`（或激活本步时已驻留该节点） | — |
