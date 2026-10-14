@@ -449,10 +449,15 @@ internal static partial class ActionExecutionRules
             ItemGains = itemRewards,
             ItemLosses = definition.Inputs
         });
-        // 技艺经验按当轮基础耗时入账（总纲 §20.1.2）：等级跃迁写入同一份 LevelUp 账本。
+        // 技艺经验按当轮基准经验入账（总纲 §20.1.2 / §20.1.4）：等级跃迁写入同一份 LevelUp 账本。
         if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))
-            GrantTechniqueExperience(player, action.Id, technique, definition.DurationSeconds, gameData,
+        {
+            var actionLevel = definition.Level ?? 1;
+            var baseExp = actionLevel <= 1 ? 10.0 : (gameData?.RealmProgression?.BaseExperienceForLevel(actionLevel) ?? 10.0);
+            var techExp = Math.Max(1.0, Math.Round(baseExp * (definition.DurationSeconds / 10.0)));
+            GrantTechniqueExperience(player, action.Id, technique, techExp, gameData,
                 target.ToUnixTimeMilliseconds() / 1000d);
+        }
         // 六维经验按配表定向定额入账（总纲 §20.1.4）：不吃 autoUseMultiplier 收益倍率。
         foreach (var yield in definition.Yields)
             if (yield is { Kind: ActionYieldKind.RootExp, Period: ActionYieldPeriod.PerRepeat, Aspect: { } aspect })
@@ -764,9 +769,13 @@ internal static partial class ActionExecutionRules
         }
         AddDelta(deltas, fromKey, -1d);
         AddDelta(deltas, toKey, 1d);
-        // 强化技艺经验按当次实际基础耗时（5+t）入账。
+        // 强化技艺经验按目标装备等级基准与当次实际基础耗时（5+t）入账（总纲 §20.1.2 / §20.1.4）。
+        var itemLevel = gameData is null ? 1 : CraftingRecipeRules.ResolveItemLevel(prep.ItemId.Value, gameData);
+        var duration = EnhancementRules.DurationSeconds(prep.TargetLevel);
+        var enhancementBaseExp = itemLevel <= 1 ? 10.0 : (gameData?.RealmProgression?.BaseExperienceForLevel(itemLevel) ?? 10.0);
+        var enhancementTechExp = Math.Max(1.0, Math.Round(enhancementBaseExp * (duration / 10.0)));
         GrantTechniqueExperience(player, action.Id, TechniqueCatalog.Enhancement,
-            EnhancementRules.DurationSeconds(prep.TargetLevel), gameData, atUnix);
+            enhancementTechExp, gameData, atUnix);
         // 强化六维·神识按目标装备等阶换算等级与当次基础耗时动态折算（总纲 §20.1.4）：定额不吃倍率。
         if (gameData?.RealmProgression is { } progression)
             GrantRootExperience(player, CoreAspectKind.Consciousness,

@@ -293,6 +293,7 @@ if (processRole == ServerProcessRole.Api)
                 type = action.Kind.ToString().ToLowerInvariant(),
                 technique = action.Technique,
                 durationSeconds = action.DurationSeconds,
+                level = action.Level,
                 executionKind = action.ExecutionKind switch
                 {
                     ActionExecutionKind.CombatEncounter => "combat-encounter",

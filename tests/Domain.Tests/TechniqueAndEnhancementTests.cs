@@ -95,6 +95,42 @@ public sealed class TechniqueAndEnhancementTests
             player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering], curve));
     }
 
+    /// <summary>
+    /// 高等阶非战斗行动（如 18 级 T2 挖矿赤铜矿）按等级基准经验获得技艺经验（107 点而非 1 级 8 点），
+    /// 1 级行动（如乌铁矿 6 秒）保持 6 点。
+    /// </summary>
+    [Fact]
+    public void HighLevelActionGrantsScaledTechniqueExperience()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var crimsonCopper = catalog.Actions.Get(new ActionId("explore.mine-crimson-copper"));
+        Assert.Equal(18, crimsonCopper.Level);
+
+        var player = CreatePlayer("矿工-赤铜");
+        player.World.NodeId = "node.fluorite-abyss";
+        player.Enqueue(new ActionIntent(crimsonCopper.Id, 1), Baseline, catalog.Actions);
+        var wallet = CreateWallet(player);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(crimsonCopper.DurationSeconds), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        // 18 级 8 秒行动单轮基准经验为 round(133.417 × 0.8) = 107
+        Assert.Equal(107, player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+        Assert.Contains(player.Duel.CurrentReport?.TechniqueExp ?? [],
+            entry => entry.TechniqueId == TechniqueCatalog.Mining && entry.Experience == 107);
+
+        // 对比 1 级行动：挖掘乌铁矿（6 秒）获得 6 点技艺经验
+        var darkIron = catalog.Actions.Get(new ActionId("explore.mine-dark-iron"));
+        Assert.Equal(1, darkIron.Level);
+        var player1 = CreatePlayer("矿工-乌铁");
+        player1.World.NodeId = "node.rock-beach";
+        player1.Enqueue(new ActionIntent(darkIron.Id, 1), Baseline, catalog.Actions);
+        var wallet1 = CreateWallet(player1);
+        var result1 = SimulationEngine.AdvanceTo(player1, Baseline.AddSeconds(darkIron.DurationSeconds), catalog, wallet1);
+        result1.AssetDeltas.ToList().ForEach(wallet1.Apply);
+        Assert.Equal(6, player1.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+    }
+
     /// <summary>强化公式族：变体解析、成本、成功率查表/指数/clamp 与技艺修正全部对齐规约。</summary>
     [Fact]
     public void EnhancementRulesMatchSpecification()

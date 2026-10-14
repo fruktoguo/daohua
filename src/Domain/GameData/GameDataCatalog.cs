@@ -1308,32 +1308,35 @@ public sealed class GameDataCatalog
         var resolved = new List<ActionDefinition>(actions.All.Count);
         foreach (var action in actions.All)
         {
-            var needsResolution = action.Yields.Any(y => y.Ratio is not null);
-            if (!needsResolution)
-            {
-                resolved.Add(action);
-                continue;
-            }
             var actionLevel = action.Level ?? CraftingRecipeRules.ResolveRequiredRealmLevel(action, rawItems, rawEquipments);
             var baseExp = realmProgression?.BaseExperienceForLevel(actionLevel) ?? 10.0;
             var repeatBaseExp = baseExp * (action.DurationSeconds / 10.0);
             var secondBaseExp = baseExp / 10.0;
 
-            var updatedYields = new List<ActionYield>(action.Yields.Count);
-            foreach (var yield in action.Yields)
+            var needsResolution = action.Yields.Any(y => y.Ratio is not null);
+            List<ActionYield>? updatedYields = null;
+            if (needsResolution)
             {
-                if (yield.Ratio is { } ratio)
+                updatedYields = new List<ActionYield>(action.Yields.Count);
+                foreach (var yield in action.Yields)
                 {
-                    var baseAmount = yield.Period == ActionYieldPeriod.PerSecond ? secondBaseExp : repeatBaseExp;
-                    var computedAmount = Math.Max(1.0, Math.Round(baseAmount * ratio));
-                    updatedYields.Add(yield with { Amount = computedAmount });
-                }
-                else
-                {
-                    updatedYields.Add(yield);
+                    if (yield.Ratio is { } ratio)
+                    {
+                        var baseAmount = yield.Period == ActionYieldPeriod.PerSecond ? secondBaseExp : repeatBaseExp;
+                        var computedAmount = Math.Max(1.0, Math.Round(baseAmount * ratio));
+                        updatedYields.Add(yield with { Amount = computedAmount });
+                    }
+                    else
+                    {
+                        updatedYields.Add(yield);
+                    }
                 }
             }
-            resolved.Add(action with { Yields = updatedYields });
+            resolved.Add(action with
+            {
+                Level = actionLevel,
+                Yields = updatedYields ?? action.Yields
+            });
         }
         return new ActionCatalog(resolved);
     }

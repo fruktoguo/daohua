@@ -694,6 +694,18 @@ export function calculateTechniqueProgress(totalExperience = 0): {
 }
 
 /**
+ * 境界等级标准基准经验（总纲 §7.10.3 / §20.1.4）：
+ * 等级 <= 1 为 10 点，等级 18 为 133.417 点。
+ * 作为 10 秒行动 100% 经验产出的统一数值基准。
+ */
+export function calculateBaseExperienceForLevel(level: number): number {
+  if (level <= 1) return 10.0
+  const capLevel = Math.max(1, Math.min(level, REALM_LEVEL_EXP_TO_NEXT.length - 1))
+  const expCap = REALM_LEVEL_EXP_TO_NEXT[capLevel - 1]
+  return (expCap / 1000) * Math.pow(0.9, Math.max(1, level) - 1)
+}
+
+/**
  * 装备强化规则常量（与服务端结算口径对齐，前端仅作预览镜像；权威结算以服务端为准）。
  */
 

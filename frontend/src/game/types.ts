@@ -265,6 +265,8 @@ export interface ActionDefinition {
   technique?: TechniqueId | string | null
   /** 单轮执行耗时（秒） */
   durationSeconds: number
+  /** 境界等级需求 / 基准等级（T1为1，T2为18等） */
+  level?: number
   /** 特殊执行类型（如 'combat-encounter'） */
   executionKind?: ActionExecutionKind
   /** 是否仅供服务端/队列内部使用，不在玩家行动目录中展示 */

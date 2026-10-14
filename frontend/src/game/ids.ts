@@ -455,6 +455,7 @@ export function resolveActionLevel(
   equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
   encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
 ): number {
+  if (typeof action.level === 'number' && action.level > 0) return action.level
   const eqMap = equipment ? getEquipmentMap(equipment) : null
   const itMap = items ? getItemMap(items) : null
   const encMap = encounters ? getEncounterMap(encounters) : null

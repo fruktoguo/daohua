@@ -25,7 +25,7 @@ import { TaijiToggle } from './components/TaijiToggle'
 import { TutorialOverlay } from './tutorial/TutorialOverlay'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
-import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
+import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
@@ -1468,7 +1468,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const techniqueId = typeof action.technique === 'string' && (TECHNIQUE_IDS as readonly string[]).includes(action.technique)
     ? action.technique
     : null
-  const techniqueExp = techniqueId ? action.durationSeconds : 0
+  const techniqueExp = techniqueId
+    ? Math.max(1, Math.round(calculateBaseExperienceForLevel(actionLevel) * ((action.durationSeconds || 10) / 10.0)))
+    : 0
   const hasInsights = expYields.length > 0 || yieldPreview.rootExpYields.length > 0 || techniqueExp > 0
   // 斗法冷却倒计时：以「服务端时刻 + 本地流逝」估算服务端当前时刻，仅冷却生效期间每秒重渲染。
   const estimatedServerNow = serverTime + Math.max(0, performance.now() - lastSyncPerformanceTime) / 1000
