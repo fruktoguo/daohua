@@ -288,8 +288,15 @@ export class GameClient {
     }
   }
 
-  /** 发送新的通用命令信封；命令名和载荷由 wire.v1 直接定义。 */
-  sendCommand<T extends object>(command: string, payload: T): boolean {
+  /**
+   * 发送新的通用命令信封；命令名和载荷由 wire.v1 直接定义。
+   * @param command 领域命令名（如 action.enqueue、loadout.replace 等）
+   * @param payload 命令载荷
+   * @param expectedStateVersion 期望状态版本；缺省为 0 表示不做乐观并发校验（契约定义）。
+   *   常规业务操作单写者隔离与内部不变量由服务端保证，不与后台持续模拟推进的 StateVersion 竞争，
+   *   避免频繁误报「玩家状态版本已变化」。
+   */
+  sendCommand<T extends object>(command: string, payload: T, expectedStateVersion = 0): boolean {
     if (!command || command.length > 96) {
       useGameStore.getState().setNotice(getT()('common.net.invalidCommand'))
       return false
@@ -301,7 +308,6 @@ export class GameClient {
     }
     const requestId = createRequestId()
     const commandPayload = { ...payload, requestId }
-    const expectedStateVersion = useGameStore.getState().version
     try {
       socket.send(encodeJsonEnvelope(WireMessageType.Command, requestId, this.nextOutboundSequence(), {
         requestId,

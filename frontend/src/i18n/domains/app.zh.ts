@@ -140,6 +140,7 @@ export const appZh = {
       presenceOnline: '在线',
       presenceIdle: '离线挂机',
       presenceOffline: '完全离线',
+      latency: '{ms}ms',
       totalSpirit: '总修为',
       ascendedComplete: '飞升圆满 (100%)',
       themeToLight: '转为浅色',
