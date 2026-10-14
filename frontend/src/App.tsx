@@ -376,6 +376,7 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
 const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = false, onStop }: { entry: QueueEntry; departing?: boolean; onStop?: () => void }): React.JSX.Element {
   const t = useT()
   const world = useGameStore(state => state.world)
+  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
   const maps = useGameStore(state => state.maps)
   const queuePaused = useGameStore(state => state.queue.paused)
   const isCombatExpedition = entry.type === 'combat'
@@ -1345,6 +1346,8 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
     [action, itemCatalog, equipmentCatalog, encounters]
   )
 
+  const isLocked = level > realmLevel
+
   const rarity = useMemo(
     () => resolveActionRarity(action, itemCatalog, equipmentCatalog, encounters),
     [action, itemCatalog, equipmentCatalog, encounters]
@@ -1362,13 +1365,14 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   const cardButton = (
     <button
       aria-haspopup="dialog"
-      className={`action-card${isCrafting ? ' action-card--crafting' : ''}`}
+      className={`action-card${isCrafting ? ' action-card--crafting' : ''}${isLocked ? ' action-card--locked' : ''}`}
       data-action-id={action.id}
       data-rarity={rarity}
       onClick={() => onOpen(action)}
       type="button"
     >
       <span className="item-corner item-corner--top-right">
+        {isLocked && <span className="action-card-lock-icon" aria-hidden="true">🔒</span>}
         Lv. <UnitNumber disableTooltip value={level} />
       </span>
       <strong className="action-card-name">{displayName}</strong>
@@ -1404,6 +1408,8 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const combat = useGameStore(state => state.combat)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const queueLength = useGameStore(state => state.queue.entries.length)
+  const encounters = useGameStore(state => state.encounters)
+  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
   const duel = useGameStore(state => state.duel)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
@@ -1413,6 +1419,12 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const [repeats, setRepeats] = useState(isManufacture ? 1 : -1)
   const [pvpEnabled, setPvpEnabled] = useState(false)
   const [, setClockTick] = useState(0)
+
+  const actionLevel = useMemo(
+    () => resolveActionLevel(action, items, equipmentCatalog, encounters),
+    [action, items, equipmentCatalog, encounters]
+  )
+  const isLocked = actionLevel > realmLevel
 
   const yieldPreview = useMemo(() => calculateActionYieldPreview({
     action,
@@ -1646,8 +1658,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
       </div>
 
       <button
-        className="action-modal-submit"
+        className={`action-modal-submit${isLocked ? ' is-locked' : ''}`}
         data-tour="action-submit"
+        disabled={isLocked}
         onClick={() => {
           if (gameClient.sendCommand('action.enqueue', {
             actionId: action.id,
@@ -1661,7 +1674,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           }
         }}
         type="button"
-      >{startsImmediately ? t('app.action.startCombatNow') : t('app.action.enqueueAction', { n: queueLength + 1 })}</button>
+      >{isLocked ? t('app.action.levelRequired', { level: actionLevel }) : startsImmediately ? t('app.action.startCombatNow') : t('app.action.enqueueAction', { n: queueLength + 1 })}</button>
     </Modal>
   )
 })
@@ -1900,6 +1913,9 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
   const actions = useGameStore(state => state.actions)
   const worldNodeId = useGameStore(state => state.world.nodeId)
   const world = useGameStore(state => state.world)
+  const itemCatalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
+  const encounters = useGameStore(state => state.encounters)
   const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
 
@@ -1934,16 +1950,21 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
       const list = byTechnique.get(id)
       if (!list || list.length === 0) continue
       const level = calculateTechniqueProgress(techniqueExperiences?.[id] ?? 0).level
+      const sortedList = [...list].sort((a, b) => {
+        const diff = resolveActionLevel(a, itemCatalog, equipmentCatalog, encounters) - resolveActionLevel(b, itemCatalog, equipmentCatalog, encounters)
+        if (diff !== 0) return diff
+        return a.id.localeCompare(b.id)
+      })
       result.push({
         key: `technique:${id}`,
         label: t('app.combatPanel.techniqueGroup', { name: t(`insight.technique.${id}`), level }),
-        actions: list,
+        actions: sortedList,
       })
     }
     if (others.length > 0) result.push({ key: 'other', label: t('app.combatPanel.otherActions'), actions: others })
     if (hunts.length > 0) result.push({ key: 'combat', label: t('app.combatPanel.huntActions'), actions: hunts })
     return result
-  }, [techniqueExperiences, t, visibleActions])
+  }, [techniqueExperiences, t, visibleActions, itemCatalog, equipmentCatalog, encounters])
 
   const closeModal = useCallback(() => setSelectedAction(null), [])
 

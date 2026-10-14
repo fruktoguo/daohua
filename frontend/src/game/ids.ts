@@ -640,9 +640,16 @@ export function resolveItemGrade(tier = 1): ItemGrade {
 /**
  * 将指定品质档应用到物品元数据上
  */
-export function withItemGrade(metadata: ItemMetadata, tier = metadata.level ?? 1): ItemMetadata {
-  const grade = resolveItemGrade(tier)
-  return { ...metadata, rarity: grade.rarity, rarityLabel: grade.label, level: tier }
+export function withItemGrade(metadata: ItemMetadata, tier = metadata.tier ?? (metadata.level && metadata.level <= 8 ? metadata.level : 1)): ItemMetadata {
+  const normalizedTier = tier > 8 ? 1 : Math.max(1, Math.floor(tier))
+  const grade = resolveItemGrade(normalizedTier)
+  return {
+    ...metadata,
+    rarity: grade.rarity,
+    rarityLabel: grade.label,
+    tier: normalizedTier,
+    level: convertTierToLevel(normalizedTier),
+  }
 }
 
 /**
@@ -661,7 +668,9 @@ export interface ItemMetadata {
   rarity: ItemRarity
   /** 品质中文/多语言标签（如 "黄品", "通宝"） */
   rarityLabel: string
-  /** 物品等阶 */
+  /** 物品等阶 (1~8) */
+  tier?: number
+  /** 物品境界等级 (1, 18, 30...) */
   level?: number
   /** 详细描述 */
   description: string
@@ -867,7 +876,8 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
       category: resolveItemCategoryLabel(core.subCategory, t),
       rarity: core.rarity,
       rarityLabel: t(`game.rarityLabel.${core.rarityLabelOverride ?? core.rarity}`),
-      level: core.level,
+      tier: core.level ?? 1,
+      level: convertTierToLevel(core.level ?? 1),
       description: t(`game.item.${itemId}.description`),
     }
   }
@@ -880,6 +890,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
       category: resolveItemCategoryLabel('equipment', t),
       rarity: 'mundane',
       rarityLabel: t('game.rarityLabel.mundane'),
+      tier: 1,
       level: 1,
       description: '',
     }

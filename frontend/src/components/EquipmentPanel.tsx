@@ -109,7 +109,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
         source: '',
         usage: '',
       },
-      equipmentDef.tier ?? meta?.level ?? 1,
+      equipmentDef.tier ?? meta?.tier ?? 1,
     )
 
     const displayName = equippedItem.enhancementLevel > 0

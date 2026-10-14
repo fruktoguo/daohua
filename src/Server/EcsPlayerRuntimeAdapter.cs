@@ -392,13 +392,17 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，无法参与斗法撮合。", before);
                         if (gameData.Actions.TryGet(intent.ActionId, out var actionDefinition))
                         {
-                            // 制造类配方（炼丹/炼器/阵法/符箓）须满足图鉴对应 T 级境界解锁等级要求
-                            if (actionDefinition.Kind == ActionKind.Alchemy
-                                || actionDefinition.Technique is "alchemy" or "forging" or "talisman" or "formation")
+                            // 行动/配方须满足对应 T 级境界解锁等级要求（如 T2 需 18 级）
+                            var requiredLevel = CraftingRecipeRules.ResolveRequiredRealmLevel(actionDefinition, gameData);
+                            if (requiredLevel > 1 && before.State.Progression.RealmLevel < requiredLevel)
                             {
-                                var requiredLevel = CraftingRecipeRules.ResolveRequiredRealmLevel(actionDefinition, gameData);
-                                if (before.State.Progression.RealmLevel < requiredLevel)
-                                    return new PlayerCommandResult(false, "RECIPE_LOCKED", $"尚未解锁该制造图鉴（需境界达到 {requiredLevel} 级）。", before);
+                                var isRecipe = actionDefinition.Kind == ActionKind.Alchemy
+                                    || actionDefinition.Technique is "alchemy" or "forging" or "talisman" or "formation";
+                                var errorCode = isRecipe ? "RECIPE_LOCKED" : "ACTION_LOCKED";
+                                var errorMessage = isRecipe
+                                    ? $"尚未解锁该制造图鉴（需境界达到 {requiredLevel} 级）。"
+                                    : $"尚未达到该行动所需境界（需境界达到 {requiredLevel} 级）。";
+                                return new PlayerCommandResult(false, errorCode, errorMessage, before);
                             }
                             // 强化行动必须指定目标装备；缺 targetItemId 载荷无效，不入队。
                             if (actionDefinition.Kind == ActionKind.Enhancement && string.IsNullOrWhiteSpace(request.TargetItemId))

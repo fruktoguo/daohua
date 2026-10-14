@@ -81,6 +81,42 @@ public sealed class EnhancementContractTests
         Assert.Equal(3d, queued.Intent.Parameters?["targetLevel"]);
     }
 
+    [Fact]
+    public async Task ActionEnqueue_RequiredRealmLevel_RejectsUnderleveledActions()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), new EmptyAssets(), new NoopEconomy(),
+            LoadCatalogFiles("items/materials.json", "actions/gathering.json", "actions/crafting.json"));
+        await runtime.LoadAsync(playerId);
+
+        // 1 级玩家入队 18 级挖掘行动（开采赤铜矿，产物赤铜 T2 -> 18 级）应被拒绝（ACTION_LOCKED）
+        var rejectedRequestId = Guid.NewGuid();
+        var rejected = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                rejectedRequestId.ToString("D"), "explore.mine-crimson-copper", 1), ProtocolJson.Options),
+            0, rejectedRequestId);
+        Assert.False(rejected.Success);
+        Assert.Equal("ACTION_LOCKED", rejected.Code);
+
+        // 1 级玩家入队 18 级制造行动（赤铜精，产物赤铜精 T2 -> 18 级）应被拒绝（RECIPE_LOCKED）
+        var rejectedCraftRequestId = Guid.NewGuid();
+        var rejectedCraft = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                rejectedCraftRequestId.ToString("D"), "craft.refine-copper", 1), ProtocolJson.Options),
+            0, rejectedCraftRequestId);
+        Assert.False(rejectedCraft.Success);
+        Assert.Equal("RECIPE_LOCKED", rejectedCraft.Code);
+
+        // 1 级玩家入队 1 级制造行动（百炼铁，产物百炼铁 T1 -> 1 级）应允许入队
+        var acceptedRequestId = Guid.NewGuid();
+        var accepted = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                acceptedRequestId.ToString("D"), "craft.refine-iron", 1), ProtocolJson.Options),
+            0, acceptedRequestId);
+        Assert.True(accepted.Success, $"{accepted.Code}: {accepted.Message}");
+    }
+
     /// <summary>
     /// 装备持有校验按资产变体键结算：钱包只持 +2 变体时，装配基础形态与 +3 均拒绝，
     /// 装配 +2 成功并写入槽位等级；小数等级同样拒绝。

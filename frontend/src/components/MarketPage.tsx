@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
+import { convertTierToLevel, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
 import { getT, useT, type TFunction } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketMetrics, MarketOrder, MarketVariantSummary } from '../game/types'
@@ -43,7 +43,8 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
-      level: tier,
+      tier,
+      level: convertTierToLevel(tier),
       description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
     }
   }
@@ -66,7 +67,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   return withItemGrade({
     ...registered,
     category: subCategoryLabel,
-  }, item.tier > 0 ? item.tier : registered.level ?? 1)
+  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
 }
 
 /** 装备标的判定：与 MarketBrowseGrid.isEquipment / getMetadata 装备分支同一口径 */

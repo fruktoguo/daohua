@@ -241,6 +241,7 @@ export const appZh = {
       repeatsAria: '行动次数',
       startCombatNow: '立即开始历练',
       enqueueAction: '添加到队列 #{n}',
+      levelRequired: '需境界达到 Lv.{level}',
       autoUseTrayAria: '{name}物品配置',
       autoUseLabel: '物品使用',
       locationActionEmpty: '当前位置没有开放此类行动，请先在历练地图中移动。',

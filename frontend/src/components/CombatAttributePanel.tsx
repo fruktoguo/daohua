@@ -355,7 +355,7 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
                   source: '',
                   usage: '',
                 },
-                equipmentDef?.tier ?? meta?.level ?? 1,
+                equipmentDef?.tier ?? meta?.tier ?? 1,
               )
               const enhancementLevel = Math.max(0, Math.floor(item.enhancementLevel))
               const baseName = equipmentDef?.name ?? itemDef?.name ?? item.itemId

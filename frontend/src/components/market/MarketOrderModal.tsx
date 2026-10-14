@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { convertTierToLevel, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { getT, useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
@@ -43,14 +43,15 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
-      level: tier,
+      tier,
+      level: convertTierToLevel(tier),
       description: t('market.itemFallback.description'),
     }
   }
   return withItemGrade({
     ...registered,
     category: subCategoryLabel,
-  }, item.tier > 0 ? item.tier : registered.level ?? 1)
+  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
 }
 
 /** 挂单交易模态弹窗 Props */

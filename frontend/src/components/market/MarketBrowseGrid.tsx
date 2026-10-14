@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../../game/format'
-import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { convertTierToLevel, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import { useMarketStore, type MarketPrimaryCategory } from '../../game/marketStore'
@@ -37,14 +37,15 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
-      level: tier,
+      tier,
+      level: convertTierToLevel(tier),
       description: t('market.itemFallback.description'),
     }
   }
   return withItemGrade({
     ...registered,
     category: subCategoryLabel,
-  }, item.tier > 0 ? item.tier : registered.level ?? 1)
+  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
 }
 
 /** 一级主 Tab 分类类型 */

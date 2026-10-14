@@ -61,6 +61,20 @@ public sealed class CraftingRecipeRulesTests
             var level = CraftingRecipeRules.ResolveRequiredRealmLevel(formation, catalog);
             Assert.Equal(1, level);
         }
+
+        // T1 挖掘乌铁矿产出 item.dark-iron (Tier 1)，所需境界等级应为 1
+        if (catalog.Actions.TryGet(new ActionId("explore.mine-dark-iron"), out var t1Mine))
+        {
+            var level = CraftingRecipeRules.ResolveRequiredRealmLevel(t1Mine, catalog);
+            Assert.Equal(1, level);
+        }
+
+        // T2 开采赤铜矿产出 item.crimson-copper (Tier 2)，所需境界等级应为 18
+        if (catalog.Actions.TryGet(new ActionId("explore.mine-crimson-copper"), out var t2Mine))
+        {
+            var level = CraftingRecipeRules.ResolveRequiredRealmLevel(t2Mine, catalog);
+            Assert.Equal(18, level);
+        }
     }
 
     [Fact]

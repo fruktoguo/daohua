@@ -57,7 +57,7 @@ const PlayerCardEquipmentTile = memo(function PlayerCardEquipmentTile({ itemId, 
       source: '',
       usage: '',
     },
-    equipmentDef?.tier ?? meta?.level ?? 1,
+    equipmentDef?.tier ?? meta?.tier ?? 1,
   )
   const displayName = enhancementLevel > 0
     ? `${equipmentDef?.name ?? definition?.name ?? metadata.label} +${Math.floor(enhancementLevel)}`

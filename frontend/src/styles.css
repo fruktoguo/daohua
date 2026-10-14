@@ -2985,6 +2985,15 @@ input[type="checkbox"] {
   min-height: 44px;
   padding: 7px 32px 7px 10px;
 }
+.action-card--locked {
+  opacity: 0.65;
+  filter: grayscale(0.35);
+}
+
+.action-card-lock-icon {
+  margin-right: 2px;
+  font-size: 8.5px;
+}
 
 .action-card[data-rarity="mundane"] {
   --item-accent: rgb(139, 143, 149);
@@ -3637,6 +3646,13 @@ input[type="checkbox"] {
 .action-modal-submit:hover:not(:disabled) {
   color: #070604;
   background: var(--gold-bright);
+}
+.action-modal-submit:disabled,
+.action-modal-submit.is-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+  box-shadow: none;
 }
 
 .presence-options {

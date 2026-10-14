@@ -82,13 +82,13 @@ function fallbackMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
 function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
   const registered = resolveItemMetadata(item.itemId)
   if (!registered) return fallbackMetadata(item, t)
+  const tier = item.tier > 0 ? item.tier : registered.tier ?? 1
   return withItemGrade({
     ...registered,
     label: item.name || registered.label,
     category: resolveItemCategoryLabel(item.category || registered.category, t),
-    level: item.tier > 0 ? item.tier : registered.level,
     description: item.description || registered.description,
-  }, item.tier > 0 ? item.tier : registered.level ?? 1)
+  }, tier)
 }
 
 /**
