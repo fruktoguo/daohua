@@ -182,8 +182,9 @@ public static class PlayerAttributeResolver
         AddPoint("threatOnTakenPoints", threatOnTaken);
         foreach (var id in equipment)
         {
+            // 配表历史删项或未知装备优雅跳过，不提供加成但拒绝阻断玩家加载与模拟
             if (!catalog.RawEquipments.TryGetValue(id.Value, out var item))
-                throw new DomainException(DomainErrorCode.NotFound, $"装备 {id} 不存在。");
+                continue;
             var enhancement = loadout.Equipment.FirstOrDefault(slot => slot.ItemId == id.Value)?.EnhancementLevel ?? 0;
             // 强化总倍率 = 1.05^等级（总纲 §4.2 指数成长，+20 ≈ 2.653×）
             var enhancementScale = Math.Pow(1.05, enhancement);
