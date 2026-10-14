@@ -10,6 +10,12 @@ import { Modal } from './Modal'
 import { UnitNumber } from './UnitNumber'
 import { formatInteger } from '../game/format'
 import { gameClient } from '../network/gameClient'
+import { ItemReference } from './ItemDisplay'
+import {
+  getBuildingBonusItems,
+  getBuildingUpgradeComparison,
+  getBuildingSummaryBonusText,
+} from '../game/buildingCalculations'
 
 // 地点/NPC/建筑/怪物名称来自服务端数据，面板框架文本走 i18n。
 
@@ -299,43 +305,51 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   </div>
                 </article>
               ))}
-              {nodeBuildings.map(building => (
-                <button
-                  className="nearby-card is-building is-player-building"
-                  key={building.entityId}
-                  onClick={() => setDetailBuildingId(building.entityId)}
-                  type="button"
-                >
-                  <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
-                  <div>
-                    <div className="nearby-monster-title">
-                      <strong>{building.name}</strong>
-                      <span className="nearby-level-badge">
-                        {building.level > 0
-                          ? t('combat.nearby.buildingLevelValue', { level: building.level })
-                          : t('combat.nearby.buildingConstructing')}
-                      </span>
-                    </div>
-                    <small>{building.effect}</small>
-                    <small className="building-usage">
-                      {t('combat.nearby.buildingUsage', { users: formatInteger(building.activeUsers), capacity: formatInteger(building.capacity) })}
-                      {building.efficiency < 1 && (
-                        <span className="building-usage-overload">
-                          {t('combat.nearby.buildingOverloaded', {
-                            overPercent: Math.round((building.activeUsers / Math.max(1, building.capacity) - 1) * 100),
-                            effectPercent: Math.round((1 - building.efficiency) * 100),
-                          })}
+              {nodeBuildings.map(building => {
+                const definition = buildingCatalog.find(d => d.buildingId === building.entityId)
+                const bonusSummary = getBuildingSummaryBonusText(definition, building.level, (key, def) => t(key) || def)
+                const isOverloaded = building.activeUsers > building.capacity || building.efficiency < 1
+                return (
+                  <button
+                    className="nearby-card is-building is-player-building"
+                    key={building.entityId}
+                    onClick={() => setDetailBuildingId(building.entityId)}
+                    type="button"
+                  >
+                    <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
+                    <div>
+                      <div className="nearby-monster-title">
+                        <strong>{building.name}</strong>
+                        <span className="nearby-level-badge">
+                          {building.level > 0
+                            ? t('combat.nearby.buildingLevelValue', { level: building.level })
+                            : t('combat.nearby.buildingConstructing')}
+                        </span>
+                      </div>
+                      {bonusSummary ? (
+                        <div className="building-card-bonus">
+                          <span className="building-card-bonus-tag">{bonusSummary}</span>
+                        </div>
+                      ) : (
+                        <small>{building.effect}</small>
+                      )}
+                      <small className="building-usage">
+                        <span>{t('combat.nearby.buildingUsage', { users: formatInteger(building.activeUsers), capacity: formatInteger(building.capacity) })}</span>
+                        <span className={isOverloaded ? 'building-usage-overload' : 'building-usage-idle'}>
+                          {isOverloaded
+                            ? t('combat.nearby.buildingEfficiencyReduced', { percent: Math.round(building.efficiency * 100) })
+                            : t('combat.nearby.buildingEfficiencyFull')}
+                        </span>
+                      </small>
+                      {building.targetLevel > 0 && (
+                        <span className="building-card-progress">
+                          <ProgressBar value={building.buildProgress} />
                         </span>
                       )}
-                    </small>
-                    {building.targetLevel > 0 && (
-                      <span className="building-card-progress">
-                        <ProgressBar value={building.buildProgress} />
-                      </span>
-                    )}
-                  </div>
-                </button>
-              ))}
+                    </div>
+                  </button>
+                )
+              })}
               {!onEdge && buildableIds !== null && buildableIds.length > 0 && (
                 <button
                   aria-label={t('combat.nearby.buildAdd')}
@@ -400,87 +414,182 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
         </Modal>
       )}
 
-      {detailBuilding && (
-        <Modal
-          className="building-detail-modal"
-          labelledBy="building-detail-title"
-          onClose={() => setDetailBuildingId(null)}
-          open
-          size="medium"
-        >
-          <header className="build-picker-header">
-            <h2 id="building-detail-title">
-              {detailBuilding.name}
-              <span className="nearby-level-badge">
-                {detailBuilding.level > 0
-                  ? t('combat.nearby.buildingLevelValue', { level: detailBuilding.level })
-                  : t('combat.nearby.buildingConstructing')}
-              </span>
-            </h2>
-          </header>
-          <div className="building-detail-body">
-            <p>{detailBuilding.description}</p>
-            <small>{detailBuilding.level > 0 ? detailBuilding.effect : t('combat.nearby.buildingEffectNone')}</small>
+      {detailBuilding && (() => {
+        const definition = buildingCatalog.find(d => d.buildingId === detailBuilding.entityId)
+        const isUpgrading = detailBuilding.targetLevel > 0
+        const targetLevel = isUpgrading ? detailBuilding.targetLevel : detailBuilding.level + 1
+        const bonusItems = getBuildingBonusItems(definition, detailBuilding.level, (key, def) => t(key) || def)
+        const comparisonRows = getBuildingUpgradeComparison(definition, detailBuilding.level, targetLevel, (key, def) => t(key) || def)
+        const isOverloaded = detailBuilding.activeUsers > detailBuilding.capacity || detailBuilding.efficiency < 1
+        const efficiencyPercent = Math.round(detailBuilding.efficiency * 100)
+        const overUsers = Math.max(0, Math.round(detailBuilding.activeUsers - detailBuilding.capacity))
 
-            <section className="building-usage-detail">
-              <span>
-                {t('combat.nearby.buildingUsage', { users: formatInteger(detailBuilding.activeUsers), capacity: formatInteger(detailBuilding.capacity) })}
-              </span>
-              {detailBuilding.efficiency < 1 ? (
-                <span className="building-usage-overload">
-                  {t('combat.nearby.buildingOverloaded', {
-                    overPercent: Math.round((detailBuilding.activeUsers / Math.max(1, detailBuilding.capacity) - 1) * 100),
-                    effectPercent: Math.round((1 - detailBuilding.efficiency) * 100),
-                  })}
-                </span>
-              ) : (
-                <span className="building-usage-idle">{t('combat.nearby.buildingUsageIdle')}</span>
-              )}
-            </section>
-
-            {detailBuilding.targetLevel > 0 && (
-              <section className="building-detail-progress">
-                <h4>
+        return (
+          <Modal
+            className="building-detail-modal"
+            labelledBy="building-detail-title"
+            onClose={() => setDetailBuildingId(null)}
+            open
+            size="medium"
+          >
+            <header className="build-picker-header">
+              <h2 id="building-detail-title">
+                {detailBuilding.name}
+                <span className="nearby-level-badge">
                   {detailBuilding.level > 0
-                    ? t('combat.nearby.buildingUpgrading', { level: detailBuilding.targetLevel })
+                    ? t('combat.nearby.buildingLevelValue', { level: detailBuilding.level })
                     : t('combat.nearby.buildingConstructing')}
-                </h4>
-                <div className="building-progress-row">
-                  <span>{t('combat.nearby.buildingMaterialProgress', { percent: Math.round(detailBuilding.materialProgress * 100) })}</span>
-                  <ProgressBar value={detailBuilding.materialProgress} />
-                </div>
-                <div className="building-progress-row">
-                  <span>{t('combat.nearby.buildingTimeProgress', { percent: Math.round(detailBuilding.timeProgress * 100) })}</span>
-                  <ProgressBar value={detailBuilding.timeProgress} />
-                </div>
-                {detailBuilding.materials.length > 0 && (
-                  <ul className="building-materials">
-                    {detailBuilding.materials.map(material => (
-                      <li key={material.itemId}>
-                        <span>{resolveItemMetadata(material.itemId)?.label ?? material.itemId}</span>
-                        <span>{formatInteger(material.contributed)} / {formatInteger(material.required)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <button
-                  className="building-action-btn"
-                  onClick={() => openContribute(detailBuilding.entityId)}
-                  type="button"
-                >{t('combat.nearby.buildingContribute')}</button>
-              </section>
-            )}
+                </span>
+              </h2>
+            </header>
 
-            {detailBuilding.level > 0 && detailBuilding.targetLevel <= 0 && (
-              <button
-                className="building-action-btn"
-                onClick={() => gameClient.sendCommand('building.upgrade', { buildingId: detailBuilding.entityId })}
-                type="button"
-              >{t('combat.nearby.buildingUpgrade')}</button>
-            )}
-          </div>
-        </Modal>
-      )}
+            <div className="building-detail-body">
+              {/* 一、信息 */}
+              <section className="building-section-card">
+                <h4 className="building-section-title">{t('combat.nearby.buildingSectionInfo')}</h4>
+                <p className="building-desc">{detailBuilding.description}</p>
+                <div className="building-bonuses-current">
+                  <span className="building-bonus-title">{t('combat.nearby.buildingCurrentBonus')}：</span>
+                  {bonusItems.length > 0 && detailBuilding.level > 0 ? (
+                    <div className="building-bonus-tags">
+                      {bonusItems.map(item => (
+                        <span className={`building-bonus-pill pill-tone--${item.tone}`} key={item.key}>
+                          <span className="capsule-label">{item.label}</span>
+                          <span className="underlined-value">{item.valueText}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <small className="building-bonus-empty">{t('combat.nearby.buildingBonusNone')}</small>
+                  )}
+                </div>
+              </section>
+
+              {/* 二、升级 */}
+              <section className="building-section-card">
+                <div className="building-section-header-row">
+                  <h4 className="building-section-title">{t('combat.nearby.buildingSectionUpgrade')}</h4>
+                  {isUpgrading && (
+                    <span className="building-tag-upgrading">
+                      {detailBuilding.level > 0
+                        ? t('combat.nearby.buildingUpgrading', { level: detailBuilding.targetLevel })
+                        : t('combat.nearby.buildingConstructing')}
+                    </span>
+                  )}
+                </div>
+
+                <div className="building-upgrade-box">
+                  <div className="breakthrough-modal-realm building-upgrade-level-jump">
+                    <span>{detailBuilding.level > 0 ? `Lv.${detailBuilding.level}` : t('combat.nearby.buildingConstructing')}</span>
+                    <span aria-hidden="true" className="breakthrough-modal-realm-arrow">→</span>
+                    <strong>Lv.{targetLevel}</strong>
+                  </div>
+
+                  {comparisonRows.length > 0 ? (
+                    <ul className="breakthrough-modal-attrs building-upgrade-attrs">
+                      {comparisonRows.map(row => (
+                        <li className={`breakthrough-modal-row pill-tone--${row.tone}`} key={row.key}>
+                          <span className="breakthrough-modal-row-label">{row.label}</span>
+                          <span className="breakthrough-modal-row-before">{row.before}</span>
+                          <span aria-hidden="true" className="breakthrough-modal-row-arrow underlined-value">→</span>
+                          <span className="breakthrough-modal-row-after underlined-value">{row.after}</span>
+                          <span className="breakthrough-modal-row-gain underlined-value">+{row.delta}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="breakthrough-modal-empty">{t('combat.nearby.buildingEffectNone')}</p>
+                  )}
+                </div>
+
+                {isUpgrading ? (
+                  <div className="building-construction-panel">
+                    <div className="building-progress-row">
+                      <span>{t('combat.nearby.buildingMaterialProgress', { percent: Math.round(detailBuilding.materialProgress * 100) })}</span>
+                      <ProgressBar value={detailBuilding.materialProgress} />
+                    </div>
+                    <div className="building-progress-row">
+                      <span>{t('combat.nearby.buildingTimeProgress', { percent: Math.round(detailBuilding.timeProgress * 100) })}</span>
+                      <ProgressBar value={detailBuilding.timeProgress} />
+                    </div>
+                    {detailBuilding.materials.length > 0 && (
+                      <ul className="building-materials">
+                        {detailBuilding.materials.map(material => (
+                          <li key={material.itemId}>
+                            <ItemReference
+                              amount={material.required}
+                              itemId={material.itemId}
+                              valueContent={
+                                <span className="underlined-value">
+                                  {formatInteger(material.contributed)} / {formatInteger(material.required)}
+                                </span>
+                              }
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <button
+                      className="building-action-btn"
+                      onClick={() => openContribute(detailBuilding.entityId)}
+                      type="button"
+                    >
+                      {t('combat.nearby.buildingContribute')}
+                    </button>
+                  </div>
+                ) : (
+                  detailBuilding.level > 0 && (
+                    <div className="building-upgrade-action-row">
+                      <button
+                        className="building-action-btn"
+                        onClick={() => gameClient.sendCommand('building.upgrade', { buildingId: detailBuilding.entityId })}
+                        type="button"
+                      >
+                        {t('combat.nearby.buildingUpgrade')}
+                      </button>
+                    </div>
+                  )
+                )}
+              </section>
+
+              {/* 三、负载 */}
+              <section className="building-section-card">
+                <h4 className="building-section-title">{t('combat.nearby.buildingSectionLoad')}</h4>
+                <div className="building-load-grid">
+                  <div className="building-load-item">
+                    <span className="building-load-item-label">{t('combat.nearby.buildingCapacityDesc')}</span>
+                    <span className="building-load-item-value">
+                      <strong>{formatInteger(detailBuilding.activeUsers)}</strong>
+                      <span className="building-load-sep">/</span>
+                      <span>{formatInteger(detailBuilding.capacity)} 人</span>
+                    </span>
+                  </div>
+                  <div className="building-load-item">
+                    <span className="building-load-item-label">{t('combat.nearby.buildingEfficiencyLabel')}</span>
+                    <span className={`building-load-item-value ${isOverloaded ? 'is-overload' : 'is-normal'}`}>
+                      <strong>{isOverloaded ? t('combat.nearby.buildingEfficiencyReduced', { percent: efficiencyPercent }) : t('combat.nearby.buildingEfficiencyFull')}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className={`building-load-status-bar ${isOverloaded ? 'is-overload' : 'is-normal'}`}>
+                  {isOverloaded ? (
+                    <p>
+                      {t('combat.nearby.buildingEfficiencyReducedDesc', {
+                        overUsers: formatInteger(overUsers),
+                        percent: efficiencyPercent,
+                      })}
+                    </p>
+                  ) : (
+                    <p>{t('combat.nearby.buildingEfficiencyNormalDesc')}</p>
+                  )}
+                </div>
+                <small className="building-load-hint">{t('combat.nearby.buildingLoadHint')}</small>
+              </section>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {contributeBuilding && (
         <Modal
@@ -505,7 +614,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                 const draft = contributeDraft[entry.itemId] ?? 0
                 return (
                   <li key={entry.itemId}>
-                    <span>{resolveItemMetadata(entry.itemId)?.label ?? entry.itemId}</span>
+                    <ItemReference itemId={entry.itemId} />
                     <small>
                       {t('combat.nearby.contributeOwned', { amount: formatInteger(owned) })}
                       {' · '}

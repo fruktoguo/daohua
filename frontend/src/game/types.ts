@@ -1432,21 +1432,35 @@ export interface NearbyMonsterDefinition {
  */
 export interface BuildingModifiers {
   /** 历练采集行动加速比率 */
-  explorationSpeedRatio: number
+  explorationSpeedRatio?: number
   /** 历练采集行动收益比率 */
-  explorationOutputRatio: number
-  /** 炼丹炼器行动加速比率 */
-  alchemySpeedRatio: number
-  /** 炼丹炼器行动收益比率 */
-  alchemyOutputRatio: number
+  explorationOutputRatio?: number
+  /** 炼丹行动加速比率 */
+  alchemySpeedRatio?: number
+  /** 炼丹行动收益比率 */
+  alchemyOutputRatio?: number
   /** 吐纳修炼收益比率 */
-  cultivationOutputRatio: number
+  cultivationOutputRatio?: number
   /** 战斗气血自然回复（每 5 秒固定值） */
-  combatHitpointRegen: number
+  combatHitpointRegen?: number
+  /** 战斗灵力自然回复（每 5 秒固定值） */
+  combatManapointRegen?: number
   /** 战斗额外减伤比率 */
-  combatDamageReductionRatio: number
-  /** 怪物削弱比率：每级折减此地怪物气血上限与双攻双防（有效属性 = 基准 ×(1−ratio)，封顶 90%） */
-  monsterWeakenRatio: number
+  combatDamageReductionRatio?: number
+  /** 怪物削弱比率：双曲阻尼折减此地怪物气血上限与双攻双防（折减系数 = 1 / (1 + ratio)，无上限） */
+  monsterWeakenRatio?: number
+  /** 采集采伐行动加速比率 */
+  gatheringSpeedRatio?: number
+  /** 采矿挖掘行动加速比率 */
+  miningSpeedRatio?: number
+  /** 炼器精炼行动加速比率 */
+  forgingSpeedRatio?: number
+  /** 符箓绘制行动加速比率 */
+  talismanSpeedRatio?: number
+  /** 阵盘研制行动加速比率 */
+  formationSpeedRatio?: number
+  /** 装备强化行动加速比率 */
+  enhancementSpeedRatio?: number
 }
 
 /**
@@ -1477,7 +1491,11 @@ export interface BuildingDefinition {
   availableNodeIds?: string[] | null
   /** 建筑分组（production/combat/other） */
   group: string
-  /** 每级基准效果 */
+  /** 1 级初始基准效果 */
+  baseModifiers?: BuildingModifiers
+  /** 每升 1 级的线性增幅效果 */
+  growthModifiers?: BuildingModifiers
+  /** 基准效果（兼容旧字段） */
   modifiers?: BuildingModifiers
   /** 一级基础材料清单 */
   materials?: BuildingMaterial[]
