@@ -21,21 +21,21 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   // 修炼
   {
     id: 'cultivation.draw-qi', type: 'cultivation', durationSeconds: 10, yields: [
-      { kind: 'experience', per: 'repeat', amount: 10 },
+      { kind: 'experience', per: 'repeat', amount: 10, percentage: 100 },
       { kind: 'mana', per: 'repeat', amount: 10 },
-      { kind: 'rootexp', per: 'repeat', amount: 5, aspect: 'meridians' },
-      { kind: 'rootexp', per: 'repeat', amount: 5, aspect: 'bone' },
+      { kind: 'rootexp', per: 'repeat', amount: 5, percentage: 50, aspect: 'meridians' },
+      { kind: 'rootexp', per: 'repeat', amount: 5, percentage: 50, aspect: 'bone' },
     ],
   },
 
   // 采集
   { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.ningxue-grass', amount: 3 }, { kind: 'rootexp', per: 'repeat', amount: 8, aspect: 'agility' }] },
   { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
-  { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.dark-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 3, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 3, aspect: 'stamina' }] },
+  { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.dark-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'stamina' }] },
   { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.morning-dew', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
   { id: 'explore.gather-banling-flower', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-flower', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
   { id: 'explore.chop-yinlingsong', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.yinlingsong-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
-  { id: 'explore.mine-crimson-copper', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.crimson-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 54, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 53, aspect: 'stamina' }] },
+  { id: 'explore.mine-crimson-copper', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.crimson-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 54, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 53, percentage: 50, aspect: 'stamina' }] },
 
   // 赶路
   { id: 'world.travel', type: 'exploration', durationSeconds: 1, executionKind: 'travel', hiddenFromCatalog: true, yields: [{ kind: 'rootexp', per: 'second', amount: 1, aspect: 'agility' }] },

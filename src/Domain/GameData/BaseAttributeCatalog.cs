@@ -178,15 +178,26 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
         => points < 0 || points >= RootPointCap ? 0 : RootPointTable.PointCost[points + 1];
 
     /// <summary>
-    /// 怪物击杀修为奖励派生（总纲 §7.10.3）：expToNext[level] / 1000 × 0.9^(level-1) × 层次倍率
+    /// 境界等级标准基准经验（总纲 §7.10.3 / §20.1.4）：
+    /// expToNext[level] / 1000 × 0.9^(level-1)。
+    /// 等级 1 时为 10 点，等级 18 时为 133.417 点。
+    /// 作为怪物普通击杀经验（1×）及 10 秒行动 100% 经验产出的统一数值基准。
+    /// </summary>
+    public double BaseExperienceForLevel(int level)
+    {
+        var capLevel = Math.Clamp(level, 1, Math.Max(1, ExpToNext.Count - 1));
+        return ExpCapFor(capLevel) / 1000d * Math.Pow(0.9, Math.Max(1, level) - 1);
+    }
+
+    /// <summary>
+    /// 怪物击杀修为奖励派生（总纲 §7.10.3）：复用等级基准经验 × 层次倍率
     /// （小怪 1×/精英 3×/妖王 10×）。份额以 Lv1 = 1/1000 为基准每级指数衰减 10% 渐近 0；
     /// 等级超出配表上界时按末档非零修为条派生。配表 experience 显式声明时覆盖本值。
     /// </summary>
     public double MonsterKillExperience(int level, CombatMonsterRank rank)
     {
-        var capLevel = Math.Clamp(level, 1, Math.Max(1, ExpToNext.Count - 1));
         var multiplier = rank switch { CombatMonsterRank.Elite => 3d, CombatMonsterRank.Boss => 10d, _ => 1d };
-        return ExpCapFor(capLevel) / 1000d * Math.Pow(0.9, Math.Max(1, level) - 1) * multiplier;
+        return BaseExperienceForLevel(level) * multiplier;
     }
 
     /// <summary>等阶对应寿元上限（年）；越界取末档。</summary>

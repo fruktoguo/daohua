@@ -121,7 +121,8 @@ public sealed record ActionDefinition(
     ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
     string? CombatEncounterId = null,
     string? Technique = null,
-    IReadOnlySet<string>? ExcludedNodeIds = null)
+    IReadOnlySet<string>? ExcludedNodeIds = null,
+    int? Level = null)
 {
 }
 
@@ -177,7 +178,8 @@ public sealed record ActionYield(
     double Amount,
     ItemId? Item = null,
     ActionBuffGrant? Buff = null,
-    CoreAspectKind? Aspect = null);
+    CoreAspectKind? Aspect = null,
+    double? Ratio = null);
 
 /// <summary>
 /// 即时打击类消耗品的打击规格（雷击符）：扣除自身灵力后对当前主要敌人造成一次无命中/暴击掷点的技能伤害。
@@ -311,24 +313,24 @@ public sealed class ActionCatalog
     [
         new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(),
         [
-            new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10.0),
+            new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10.0, Ratio: 1.0),
             new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 10.0),
-            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Meridians),
-            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Bone)
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Meridians, Ratio: 0.5),
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Bone, Ratio: 0.5)
         ]),
         new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
         [
             new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, new ItemId("item.ningxue-grass")),
-            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 8.0, Aspect: CoreAspectKind.Agility)
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 8.0, Aspect: CoreAspectKind.Agility, Ratio: 1.0)
         ]),
         new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 },
         [
             new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, new ItemId("item.qi-gathering-pill")),
-            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 12.0, Aspect: CoreAspectKind.Consciousness)
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 12.0, Aspect: CoreAspectKind.Consciousness, Ratio: 1.0)
         ], Technique: "alchemy"),
         new(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1, new Dictionary<ItemId, double>(),
         [
-            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerSecond, 1.0, Aspect: CoreAspectKind.Agility)
+            new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerSecond, 1.0, Aspect: CoreAspectKind.Agility, Ratio: 1.0)
         ], null, true, ActionExecutionKind.Travel)
     ]);
 
@@ -358,9 +360,20 @@ public sealed class ActionCatalog
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var yield in yields)
         {
-            if (!Enum.IsDefined(yield.Kind) || !Enum.IsDefined(yield.Period)
-                || !double.IsFinite(yield.Amount) || yield.Amount <= 0)
-                throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益数值无效。");
+            if (!Enum.IsDefined(yield.Kind) || !Enum.IsDefined(yield.Period))
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益类型或周期无效。");
+            if (yield.Ratio is { } r)
+            {
+                if (!double.IsFinite(r) || r <= 0)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益百分比必须为正有限数。");
+                if (!double.IsFinite(yield.Amount) || yield.Amount < 0)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益数值无效。");
+            }
+            else
+            {
+                if (!double.IsFinite(yield.Amount) || yield.Amount <= 0)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益数值无效。");
+            }
             var key = yield.Kind switch
             {
                 ActionYieldKind.Item => yield.Item is { IsValid: true } item && yield.Buff is null
@@ -455,7 +468,7 @@ public sealed class GameDataCatalog
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
         ContentVersion = contentVersion;
         Fingerprint = fingerprint;
-        Actions = actions ?? throw new ArgumentNullException(nameof(actions));
+        // Actions 延迟至 RawItems、RawEquipments 与 RealmProgression 准备就绪后解析推导
         Items = NormalizeItems(items);
         Maps = maps?.Select(value => value.Clone()).ToArray() ?? [];
         Encounters = encounters?.Select(value => value.Clone()).ToArray() ?? [];
@@ -486,6 +499,7 @@ public sealed class GameDataCatalog
         ExpectedAttributes = expectedAttributes;
         RealmProgression = realmProgression;
         Buildings = NormalizeBuildings(buildings);
+        Actions = ResolveActionCatalog(actions ?? throw new ArgumentNullException(nameof(actions)), RawItems, RawEquipments, realmProgression);
         foreach (var action in Actions.All)
         {
             if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
@@ -751,7 +765,10 @@ public sealed class GameDataCatalog
             && techniqueProperty.ValueKind == JsonValueKind.String
             ? techniqueProperty.GetString()
             : null;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId, technique, excludedNodes);
+        var level = entry.TryGetProperty("level", out var levelProp) && levelProp.TryGetInt32(out var lvl) && lvl > 0
+            ? lvl
+            : (int?)null;
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId, technique, excludedNodes, level);
     }
 
     /// <summary>
@@ -785,7 +802,15 @@ public sealed class GameDataCatalog
                 "repeat" => ActionYieldPeriod.PerRepeat,
                 _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益结算频率无效：{perText ?? "缺失"}。")
             };
-            var amount = JsonRead.Number(element, "amount");
+            double? ratio = null;
+            if (element.TryGetProperty("percentage", out var percentageProperty) && percentageProperty.TryGetDouble(out var pct))
+                ratio = pct / 100.0;
+            else if (element.TryGetProperty("percent", out var percentProperty) && percentProperty.TryGetDouble(out var p))
+                ratio = p / 100.0;
+            else if (element.TryGetProperty("ratio", out var ratioProperty) && ratioProperty.TryGetDouble(out var r))
+                ratio = r;
+
+            var amount = element.TryGetProperty("amount", out _) ? JsonRead.Number(element, "amount") : 0.0;
             if (kind == ActionYieldKind.Item)
             {
                 var itemId = element.TryGetProperty("id", out var itemIdProperty) ? itemIdProperty.GetString() : null;
@@ -826,10 +851,10 @@ public sealed class GameDataCatalog
                     "consciousness" => CoreAspectKind.Consciousness,
                     _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的六维收益归属维度无效：{aspectText ?? "缺失"}。")
                 };
-                yields.Add(new(kind, period, amount, null, null, aspect));
+                yields.Add(new(kind, period, amount, null, null, aspect, ratio));
                 continue;
             }
-            yields.Add(new(kind, period, amount));
+            yields.Add(new(kind, period, amount, null, null, null, ratio));
         }
         return yields;
     }
@@ -1222,5 +1247,48 @@ public sealed class GameDataCatalog
         }
 
         return graph;
+    }
+
+    /// <summary>
+    /// 装配期解析行动目录：依据通用基准经验公式将声明了百分比（Ratio）的收益推导为确定性点数（Amount）。
+    /// 单轮 100% 基准经验 = BaseExperienceForLevel(行动等级) × 基础时长秒 / 10。
+    /// </summary>
+    private static ActionCatalog ResolveActionCatalog(
+        ActionCatalog actions,
+        IReadOnlyDictionary<string, JsonElement> rawItems,
+        IReadOnlyDictionary<string, JsonElement> rawEquipments,
+        RealmProgressionCatalog? realmProgression)
+    {
+        var resolved = new List<ActionDefinition>(actions.All.Count);
+        foreach (var action in actions.All)
+        {
+            var needsResolution = action.Yields.Any(y => y.Ratio is not null);
+            if (!needsResolution)
+            {
+                resolved.Add(action);
+                continue;
+            }
+            var actionLevel = action.Level ?? CraftingRecipeRules.ResolveRequiredRealmLevel(action, rawItems, rawEquipments);
+            var baseExp = realmProgression?.BaseExperienceForLevel(actionLevel) ?? 10.0;
+            var repeatBaseExp = baseExp * (action.DurationSeconds / 10.0);
+            var secondBaseExp = baseExp / 10.0;
+
+            var updatedYields = new List<ActionYield>(action.Yields.Count);
+            foreach (var yield in action.Yields)
+            {
+                if (yield.Ratio is { } ratio)
+                {
+                    var baseAmount = yield.Period == ActionYieldPeriod.PerSecond ? secondBaseExp : repeatBaseExp;
+                    var computedAmount = Math.Max(1.0, Math.Round(baseAmount * ratio));
+                    updatedYields.Add(yield with { Amount = computedAmount });
+                }
+                else
+                {
+                    updatedYields.Add(yield);
+                }
+            }
+            resolved.Add(action with { Yields = updatedYields });
+        }
+        return new ActionCatalog(resolved);
     }
 }

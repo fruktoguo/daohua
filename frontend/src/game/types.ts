@@ -234,7 +234,10 @@ export interface ActionYield {
   per: ActionYieldPeriod
   /** 收益数量（item 为物品件数，buff 为叠加层数，其余为点数/速率） */
   amount: number
-  /** 物品 ID 或 BuffId（仅 item/buff 有值） */
+  /** 收益比率（1.0 代表 100%，0.5 代表 50%） */
+  ratio?: number | null
+  /** 收益百分比（100 代表 100%，50 代表 50%） */
+  percentage?: number | null
   id?: string | null
   /** Buff 显示名称（仅 buff 有值） */
   name?: string | null

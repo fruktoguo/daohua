@@ -11,7 +11,7 @@
       {
         "kind": "rootexp",
         "per": "second",
-        "amount": 1,
+        "percentage": 100,
         "aspect": "agility"
       }
     ]

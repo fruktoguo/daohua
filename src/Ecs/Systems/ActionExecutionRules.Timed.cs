@@ -780,8 +780,8 @@ internal static partial class ActionExecutionRules
         // 强化六维·神识按目标装备等阶换算等级与当次基础耗时动态折算（总纲 §20.1.4）：定额不吃倍率。
         if (gameData?.RealmProgression is { } progression)
             GrantRootExperience(player, CoreAspectKind.Consciousness,
-                Math.Round(progression.MonsterKillExperience(
-                    CraftingRecipeRules.ResolveItemLevel(prep.ItemId.Value, gameData), CombatMonsterRank.Minion)
+                Math.Round(progression.BaseExperienceForLevel(
+                    CraftingRecipeRules.ResolveItemLevel(prep.ItemId.Value, gameData))
                     * EnhancementRules.DurationSeconds(prep.TargetLevel) / 10d),
                 gameData, action.Id, atUnix);
         player.RecordStats(action.Id, atUnix, new PlayerStatsDelta

@@ -186,4 +186,45 @@ public sealed class RootExpYieldTests
         Assert.Equal(5, player.Loadout.CoreAttributes.MeridiansExp);
         Assert.Equal(5, player.Loadout.CoreAttributes.BoneExp);
     }
+
+    /// <summary>百分比基准推导：支持百分比配置且总和超过 100%（如 100% 修为 + 50% 经脉 + 50% 根骨）。</summary>
+    [Fact]
+    public void PercentageYieldResolution_SupportsExceedingHundredPercent()
+    {
+        var action = new ActionDefinition(new ActionId("test.cultivate-percent"), "百分比引气",
+            ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(),
+            [
+                new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 0, Ratio: 1.0),
+                new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 0, Aspect: CoreAspectKind.Meridians, Ratio: 0.5),
+                new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 0, Aspect: CoreAspectKind.Bone, Ratio: 0.5),
+            ], Level: 1);
+
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([action]),
+            realmProgression: new RealmProgressionCatalog([10_000, 20_000, 30_000], [80]));
+
+        var resolved = catalog.Actions.Get(action.Id);
+        var expYield = Assert.Single(resolved.Yields, y => y.Kind == ActionYieldKind.Experience);
+        Assert.Equal(10, expYield.Amount);
+        Assert.Equal(1.0, expYield.Ratio);
+
+        var meridians = Assert.Single(resolved.Yields, y => y.Kind == ActionYieldKind.RootExp && y.Aspect == CoreAspectKind.Meridians);
+        Assert.Equal(5, meridians.Amount);
+        Assert.Equal(0.5, meridians.Ratio);
+
+        var bone = Assert.Single(resolved.Yields, y => y.Kind == ActionYieldKind.RootExp && y.Aspect == CoreAspectKind.Bone);
+        Assert.Equal(5, bone.Amount);
+        Assert.Equal(0.5, bone.Ratio);
+    }
+
+    /// <summary>境界等级标准基准经验曲线单测（总纲 §7.10.3 / §20.1.4）。</summary>
+    [Fact]
+    public void BaseExperienceForLevel_FollowsStandardCurve()
+    {
+        var realm = new RealmProgressionCatalog([10_000, 20_000, 30_000, 0], [80]);
+        Assert.Equal(10.0, realm.BaseExperienceForLevel(1), 6);
+        Assert.Equal(18.0, realm.BaseExperienceForLevel(2), 6);
+        // 怪物击杀经验复用等级基准经验与 rank 乘率
+        Assert.Equal(realm.BaseExperienceForLevel(3) * 3, realm.MonsterKillExperience(3, CombatMonsterRank.Elite), 6);
+        Assert.Equal(realm.BaseExperienceForLevel(3) * 10, realm.MonsterKillExperience(3, CombatMonsterRank.Boss), 6);
+    }
 }

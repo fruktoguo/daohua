@@ -32,6 +32,18 @@ public static class CraftingRecipeRules
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(catalog);
+        return ResolveRequiredRealmLevel(action, catalog.RawItems, catalog.RawEquipments);
+    }
+
+    /// <summary>
+    /// 解析制造行动所需解锁境界等级。
+    /// 依据产出物（Yields）与消耗材料（Inputs）中包含物品/装备的最大 Tier 裁决。
+    /// </summary>
+    public static int ResolveRequiredRealmLevel(ActionDefinition action,
+        IReadOnlyDictionary<string, JsonElement>? rawItems,
+        IReadOnlyDictionary<string, JsonElement>? rawEquipments)
+    {
+        ArgumentNullException.ThrowIfNull(action);
 
         // 1. 优先按产出物（Yields）的 Tier 裁决（与前端 resolveActionLevel 一致）
         if (action.Yields is { Count: > 0 })
@@ -39,7 +51,7 @@ public static class CraftingRecipeRules
             foreach (var yield in action.Yields)
             {
                 if (yield.Kind != ActionYieldKind.Item || yield.Item is null) continue;
-                var tier = ResolveItemOrEquipmentTier(yield.Item.Value.Value, catalog);
+                var tier = ResolveItemOrEquipmentTier(yield.Item.Value.Value, rawItems, rawEquipments);
                 if (tier > 0) return ConvertTierToLevel(tier);
             }
         }
@@ -50,7 +62,7 @@ public static class CraftingRecipeRules
         {
             foreach (var (itemId, _) in action.Inputs)
             {
-                var tier = ResolveItemOrEquipmentTier(itemId.Value, catalog);
+                var tier = ResolveItemOrEquipmentTier(itemId.Value, rawItems, rawEquipments);
                 if (tier > maxTier) maxTier = tier;
             }
         }
@@ -65,14 +77,29 @@ public static class CraftingRecipeRules
     public static int ResolveItemLevel(string id, GameDataCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
-        return ConvertTierToLevel(ResolveItemOrEquipmentTier(id, catalog));
+        return ResolveItemLevel(id, catalog.RawItems, catalog.RawEquipments);
     }
 
-    private static int ResolveItemOrEquipmentTier(string id, GameDataCatalog catalog)
+    /// <summary>单个物品/装备 ID 的等阶代表等级（tier → 境界等级换算，未命中按 T1）。</summary>
+    public static int ResolveItemLevel(string id,
+        IReadOnlyDictionary<string, JsonElement>? rawItems,
+        IReadOnlyDictionary<string, JsonElement>? rawEquipments)
+        => ConvertTierToLevel(ResolveItemOrEquipmentTier(id, rawItems, rawEquipments));
+
+    public static int ResolveItemOrEquipmentTier(string id, GameDataCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        return ResolveItemOrEquipmentTier(id, catalog.RawItems, catalog.RawEquipments);
+    }
+
+    public static int ResolveItemOrEquipmentTier(string id,
+        IReadOnlyDictionary<string, JsonElement>? rawItems,
+        IReadOnlyDictionary<string, JsonElement>? rawEquipments)
     {
         if (string.IsNullOrWhiteSpace(id)) return 1;
 
-        if (catalog.RawEquipments.TryGetValue(id, out var eqElement)
+        if (rawEquipments is not null
+            && rawEquipments.TryGetValue(id, out var eqElement)
             && eqElement.TryGetProperty("tier", out var eqTier)
             && eqTier.TryGetInt32(out var eqTierVal)
             && eqTierVal > 0)
@@ -80,7 +107,8 @@ public static class CraftingRecipeRules
             return eqTierVal;
         }
 
-        if (catalog.RawItems.TryGetValue(id, out var itemElement)
+        if (rawItems is not null
+            && rawItems.TryGetValue(id, out var itemElement)
             && itemElement.TryGetProperty("tier", out var itemTier)
             && itemTier.TryGetInt32(out var itemTierVal)
             && itemTierVal > 0)

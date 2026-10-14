@@ -9,7 +9,7 @@
       {
         "kind": "experience",
         "per": "repeat",
-        "amount": 10
+        "percentage": 100
       },
       {
         "kind": "mana",
@@ -19,13 +19,13 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 5,
+        "percentage": 50,
         "aspect": "meridians"
       },
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 5,
+        "percentage": 50,
         "aspect": "bone"
       }
     ]

@@ -21,7 +21,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 30,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]

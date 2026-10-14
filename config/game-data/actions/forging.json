@@ -20,7 +20,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -46,7 +46,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -72,7 +72,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -98,7 +98,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -124,7 +124,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -150,7 +150,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -176,7 +176,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -202,7 +202,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -228,7 +228,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -254,7 +254,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -280,7 +280,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -306,7 +306,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -332,7 +332,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -358,7 +358,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -384,7 +384,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -410,7 +410,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -437,7 +437,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 334,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -464,7 +464,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 334,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -491,7 +491,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -518,7 +518,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 334,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -545,7 +545,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -572,7 +572,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -599,7 +599,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -626,7 +626,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -653,7 +653,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 334,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -680,7 +680,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 334,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -707,7 +707,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -734,7 +734,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 334,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -761,7 +761,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -788,7 +788,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -815,7 +815,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -842,7 +842,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 267,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -868,7 +868,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -894,7 +894,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -920,7 +920,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -946,7 +946,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -972,7 +972,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -998,7 +998,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 15,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -1024,7 +1024,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 20,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]

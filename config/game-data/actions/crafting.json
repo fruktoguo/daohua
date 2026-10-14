@@ -19,7 +19,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -44,7 +44,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -70,7 +70,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 10,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -95,7 +95,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 200,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -120,7 +120,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 200,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]
@@ -146,7 +146,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 200,
+        "percentage": 100,
         "aspect": "consciousness"
       }
     ]

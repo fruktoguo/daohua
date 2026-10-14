@@ -20,7 +20,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 8,
+        "percentage": 100,
         "aspect": "agility"
       }
     ]
@@ -45,7 +45,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 6,
+        "percentage": 100,
         "aspect": "agility"
       }
     ]
@@ -70,13 +70,13 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 3,
+        "percentage": 50,
         "aspect": "attack"
       },
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 3,
+        "percentage": 50,
         "aspect": "stamina"
       }
     ]
@@ -101,7 +101,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 6,
+        "percentage": 100,
         "aspect": "agility"
       }
     ]
@@ -126,7 +126,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 107,
+        "percentage": 100,
         "aspect": "agility"
       }
     ]
@@ -151,7 +151,7 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 107,
+        "percentage": 100,
         "aspect": "agility"
       }
     ]
@@ -176,13 +176,13 @@
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 54,
+        "percentage": 50,
         "aspect": "attack"
       },
       {
         "kind": "rootexp",
         "per": "repeat",
-        "amount": 53,
+        "percentage": 50,
         "aspect": "stamina"
       }
     ]

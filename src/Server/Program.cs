@@ -307,6 +307,8 @@ if (processRole == ServerProcessRole.Api)
                     kind = entry.Kind.ToString().ToLowerInvariant(),
                     per = entry.Period == ActionYieldPeriod.PerRepeat ? "repeat" : "second",
                     amount = entry.Amount,
+                    ratio = entry.Ratio,
+                    percentage = entry.Ratio is not null ? entry.Ratio.Value * 100 : (double?)null,
                     aspect = entry.Aspect?.ToString().ToLowerInvariant(),
                     id = entry.Item?.Value ?? entry.Buff?.BuffId,
                     name = entry.Buff?.Name,
