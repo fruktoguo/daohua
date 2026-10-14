@@ -4,7 +4,9 @@
 .DESCRIPTION
     对齐 scripts/dev.sh 流程：
     1. 检查 YuoCore submodule 与前端依赖
-    2. 检查并拉起本地数据库 (PostgreSQL 5432)，执行 migrations/ 兼容性迁移链
+    2. 检查并拉起本地数据库 (PostgreSQL 5432)，经 Git Bash 委托
+       scripts/reset-outdated-players.sh 处置存档/schema 漂移（空库直接放行，
+       由服务端 PostgresSchema.Sql 直建）
     3. 清理残留孤儿进程（5128 / 15172 端口）
     4. 启动后端热重启守护 scripts/dev-hot.mjs：
        监听 src/、config/game-data/、vendor/YuoCore 变更，静默 60s 防抖后
@@ -19,6 +21,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# PS 7.4+ 默认为 $true，会把原生命令的非零退出变成终止错误，绕过下方对
+# $LASTEXITCODE 的显式检查；本脚本统一自行判定原生命令结果。
+$PSNativeCommandUseErrorActionPreference = $false
 $rootDir = (Get-Item $PSScriptRoot).Parent.FullName
 Set-Location $rootDir
 
@@ -77,36 +82,52 @@ try {
 if ($dbPortReady) {
     Write-Host "  -> 数据库连接已就绪 (127.0.0.1:5432)。" -ForegroundColor Green
 
-    # 自动执行 migrations/ 兼容性迁移链（对齐 dev.sh）
+    # 存档/schema 漂移处置（对齐 dev.sh → reset-outdated-players.sh）：
+    # 空库（无 platform.schema_version）直接放行，服务端启动时由 PostgresSchema.Sql
+    # 直建当前版本；已初始化库交给 migrations/ 兼容性迁移链 + 不可迁移存档的
+    # 控制台 RESET 交互确认，迁移失败或操作者拒绝一律中止启动。
     $env:PGPASSWORD = "daohua-local-dev"
     $psql = "C:\Program Files\PostgreSQL\16\bin\psql.exe"
+    if (-not (Test-Path $psql)) {
+        $psqlCmd = Get-Command psql -ErrorAction SilentlyContinue
+        if ($psqlCmd) { $psql = $psqlCmd.Source }
+    }
+    $dbInitialized = $true
     if (Test-Path $psql) {
-        $curVerStr = & $psql -U daohua -h 127.0.0.1 -d daohua -t -A -c "SELECT CASE WHEN to_regclass('platform.schema_version') IS NULL THEN 0 ELSE COALESCE((SELECT max(version) FROM platform.schema_version), 0) END;" 2>$null
-        $curVer = 0
-        [int]::TryParse($curVerStr, [ref]$curVer) | Out-Null
-        
-        $reqVer = 0
-        if (Test-Path "src/Server/Clean/PostgresSchema.cs") {
-            $match = Select-String -Path "src/Server/Clean/PostgresSchema.cs" -Pattern 'Version\s*=\s*(\d+)' | Select-Object -First 1
-            if ($match -and $match.Matches.Groups.Count -gt 1) {
-                [int]::TryParse($match.Matches.Groups[1].Value, [ref]$reqVer) | Out-Null
+        # 让处置脚本内 command -v psql 命中本机 PostgreSQL（其优先探测 docker
+        # 容器 daohua-local-db，未运行时回退到 PATH 上的 psql）
+        $env:PATH = "$(Split-Path $psql);$env:PATH"
+        $hasVersionTable = & $psql -U daohua -h 127.0.0.1 -d daohua -t -A -v ON_ERROR_STOP=1 -c "SELECT to_regclass('platform.schema_version') IS NOT NULL;" 2>$null
+        $dbInitialized = ("$hasVersionTable".Trim() -eq 't')
+    }
+    if (-not $dbInitialized) {
+        Write-Host "  -> 本地库尚未初始化（无 platform.schema_version），跳过迁移：服务端启动时由 PostgresSchema.Sql 直建当前 schema。" -ForegroundColor Gray
+    } else {
+        # 已初始化（或本机无 psql 无法判定）时走完整处置链；优先 Git for Windows
+        # 自带 bash，排除 PATH 上指向 WSL 的 System32\bash.exe
+        $bashExe = $null
+        foreach ($candidate in @("$env:ProgramFiles\Git\bin\bash.exe", "${env:ProgramFiles(x86)}\Git\bin\bash.exe")) {
+            if (Test-Path $candidate) { $bashExe = $candidate; break }
+        }
+        if (-not $bashExe) {
+            $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+            if ($gitCmd) {
+                $candidate = Join-Path (Split-Path (Split-Path $gitCmd.Source)) "bin\bash.exe"
+                if (Test-Path $candidate) { $bashExe = $candidate }
             }
         }
-
-        if ($reqVer -gt $curVer) {
-            Write-Host "  -> 检测到本地 schema v$curVer 落后于代码要求 v$reqVer，自动执行 migrations/ 迁移..." -ForegroundColor Yellow
-            Get-ChildItem -Path "migrations" -Filter "*_v*_to_v*.sql" -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object {
-                if ($_.Name -match '_v(\d+)_to_v(\d+)\.sql') {
-                    $fromVer = [int]$Matches[1]
-                    $toVer = [int]$Matches[2]
-                    if ($fromVer -ge $curVer -and $toVer -le $reqVer) {
-                        Write-Host "     应用迁移: $($_.Name)" -ForegroundColor Gray
-                        & $psql -U daohua -h 127.0.0.1 -d daohua -f $_.FullName | Out-Null
-                        $curVer = $toVer
-                    }
-                }
-            }
-            Write-Host "  -> 迁移完成，当前 schema 已对齐至 v$curVer。" -ForegroundColor Green
+        if (-not $bashExe) {
+            $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+            if ($bashCmd -and $bashCmd.Source -notmatch 'System32\\bash\.exe$') { $bashExe = $bashCmd.Source }
+        }
+        if (-not $bashExe) {
+            Write-Host "  -> 错误: 本地库已初始化但未找到 Git Bash，无法执行存档漂移处置链；请安装 Git for Windows 或改用 scripts/dev.sh 启动。" -ForegroundColor Red
+            exit 1
+        }
+        & $bashExe "scripts/reset-outdated-players.sh"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  -> 错误: 存档版本漂移未处置（迁移失败或已取消重置），启动中止。" -ForegroundColor Red
+            exit 1
         }
     }
 } else {
@@ -156,19 +177,45 @@ if (-not $backendReady) {
 }
 
 # 5. 启动前端（对齐 dev.sh：固定 127.0.0.1:15172 且不自动开浏览器）
+#    Start-Process 必须显式指向 npm.cmd：裸 "npm" 会按文件关联解析到 npm.ps1，
+#    被记事本等编辑器打开而不是执行，导致前端永远起不来且监控循环空转。
 Write-Host "[5/5] 启动前端开发服务器 (http://127.0.0.1:15172)..." -ForegroundColor Yellow
-$frontendProcess = Start-Process npm -ArgumentList "--prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open" -WorkingDirectory $rootDir -PassThru
+$npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+if (-not $npmCmd) {
+    Write-Host "  -> 错误: PATH 中未找到 npm.cmd，请确认 Node.js 已安装。" -ForegroundColor Red
+    exit 1
+}
+$frontendProcess = Start-Process $npmCmd -ArgumentList "--prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open" -WorkingDirectory $rootDir -PassThru
 
-Write-Host ""
-Write-Host "--------------------------------------------------" -ForegroundColor Green
-Write-Host " 服务已在后台拉起：" -ForegroundColor Green
-Write-Host "   前端地址: http://127.0.0.1:15172" -ForegroundColor Cyan
-Write-Host "   后端 API: http://127.0.0.1:5128" -ForegroundColor Cyan
-Write-Host "   健康检查: http://127.0.0.1:5128/healthz" -ForegroundColor Cyan
-Write-Host "   热更新:   C# 源码/配表变更静默 60s 后重建重启（编译失败保持旧进程）" -ForegroundColor Cyan
-Write-Host "--------------------------------------------------" -ForegroundColor Green
-Write-Host " 按 Ctrl+C 停止前后端服务..." -ForegroundColor Gray
-Write-Host ""
+# 等待 vite 就绪（最长 30s）；进程提前退出立即报错，超时仅告警（冷启动依赖打包可能较慢）
+$frontendReady = $false
+for ($i = 0; $i -lt 60 -and -not $frontendProcess.HasExited; $i++) {
+    try {
+        $resp = Invoke-WebRequest -Uri "http://127.0.0.1:15172" -UseBasicParsing -TimeoutSec 2
+        if ($resp.StatusCode -eq 200) { $frontendReady = $true; break }
+    } catch { }
+    Start-Sleep -Milliseconds 500
+}
+if ($frontendProcess.HasExited) {
+    Write-Host "  -> 错误: 前端进程已提前退出，请查看 npm.cmd 窗口日志。" -ForegroundColor Red
+} elseif ($frontendReady) {
+    Write-Host "  -> 前端已就绪。" -ForegroundColor Green
+} else {
+    Write-Warning "  -> 前端未能在 30s 内就绪，请查看 npm.cmd 窗口日志。"
+}
+
+if (-not $frontendProcess.HasExited) {
+    Write-Host ""
+    Write-Host "--------------------------------------------------" -ForegroundColor Green
+    Write-Host " 服务已在后台拉起：" -ForegroundColor Green
+    Write-Host "   前端地址: http://127.0.0.1:15172" -ForegroundColor Cyan
+    Write-Host "   后端 API: http://127.0.0.1:5128" -ForegroundColor Cyan
+    Write-Host "   健康检查: http://127.0.0.1:5128/healthz" -ForegroundColor Cyan
+    Write-Host "   热更新:   C# 源码/配表变更静默 60s 后重建重启（编译失败保持旧进程）" -ForegroundColor Cyan
+    Write-Host "--------------------------------------------------" -ForegroundColor Green
+    Write-Host " 按 Ctrl+C 停止前后端服务..." -ForegroundColor Gray
+    Write-Host ""
+}
 
 # 6. 守护并捕获退出：taskkill /T 级联终止整棵进程树
 #    （dev-hot 守护 → dotnet run → Server.exe；npm → vite），再按名扫尾 Server 实体进程。
