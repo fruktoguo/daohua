@@ -3176,12 +3176,19 @@
   font-size: 12px;
 }
 
-/* 记录页：主区内嵌页签外壳，账本分区沿用 battle-report-* 内容样式，滚动走 .main-content 外层 */
+/* 记录页：主区内嵌页签外壳，头部固定，内容区自滚动保持 .panel 内边框完整 */
 .records-page {
   display: flex;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   font-size: 12px;
+}
+
+.records-page .panel-header {
+  flex-shrink: 0;
 }
 
 .battle-report-title {
@@ -3198,8 +3205,12 @@
 
 .battle-report-body {
   display: grid;
+  min-height: 0;
+  flex: 1;
   gap: 10px;
   min-width: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 /* 账本分区容器（当前行动 / 离线挂机 / 今日统计共用） */
