@@ -74,7 +74,7 @@ const TRAILING_AMOUNT_PATTERN = /^\s*[×x*]\s*(\d+)/
 
 /**
  * 战报与传音日志模板分词解析器。
- * 将服务端下发的语义模板字符串（如 `获得 {{item:ningxue-grass|凝血草|3}}`）
+ * 将服务端下发的语义模板字符串（如 `获得 {{item:ningxue-grass|凝气草|3}}`）
  * 解析为富文本分词列表（LogSegment），供 UI 渲染带交互悬浮卡片的道具标签或地点链接。
  */
 export function parseLogTemplate(template: string): readonly LogSegment[] {

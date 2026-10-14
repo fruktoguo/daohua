@@ -205,9 +205,11 @@ export const appZh = {
     },
     // 行动与技能页面
     action: {
-      needs: '需要',
+      needs: '消耗',
       none: '无',
       outputs: '产出',
+      insights: '感悟',
+      techniqueExpSuffix: '技艺经验',
       combatDrops: '按战斗掉落表结算',
       yieldKind: {
         mana: '灵力',
@@ -225,10 +227,10 @@ export const appZh = {
       bonusWorldDesc: '当前地点灵气浓郁度提供 {percent} 修炼加成',
       bonusBuildingSource: '公共建筑',
       bonusBuildingDesc: '当前地点公共建筑提供 {percent} 产出加成',
-      bonusBuildingSpeedTag: '耗时 -{percent}%',
-      bonusBuildingSpeedDesc: '当前地点公共建筑使行动耗时缩短 {percent}%',
-      bonusTechniqueSpeedDesc: '{name}技艺 Lv.{level} 使行动耗时缩短 {percent}%',
-      bonusToolSpeedDesc: '{name} 使行动耗时缩短 {percent}%',
+      bonusBuildingSpeedTag: '速度 +{percent}%',
+      bonusBuildingSpeedDesc: '当前地点公共建筑使行动速度增加 {percent}%',
+      bonusTechniqueSpeedDesc: '{name}技艺 Lv.{level} 使行动速度增加 {percent}%',
+      bonusToolSpeedDesc: '{name} 使行动速度增加 {percent}%',
       bonusBuffDesc: '状态增益【{name}】提供 {percent}% 效果',
       bonusFoundationSource: '境界圆满',
       bonusFoundationTag: '底蕴转化',
@@ -558,9 +560,9 @@ export const appZh = {
         wait: { title: '回村途中', body: '抵达云溪村后引导自动继续。' },
       },
       gather: {
-        tap: { title: '找到采集行动', body: '云溪村盛产凝血草。\n点击高亮的「采集凝血草」行动卡。' },
+        tap: { title: '找到采集行动', body: '云溪村盛产凝气草。\n点击高亮的「采集凝气草」行动卡。' },
         enqueue: { title: '加入行动队列', body: '设置好轮次后，点击「入队」开始采集。\n行动会自动逐轮推进。' },
-        wait: { title: '采集进行中', body: '凝血草采集需要一些时间，完成后会自动进入下一环。' },
+        wait: { title: '采集进行中', body: '凝气草采集需要一些时间，完成后会自动进入下一环。' },
       },
       alchemy: {
         intro: { title: '获得炼丹材料', body: '方才的收获之外，师门又赠你一批炼丹材料。\n接下来开炉炼制一枚「引气丹」。' },

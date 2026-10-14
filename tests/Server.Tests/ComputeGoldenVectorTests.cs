@@ -47,7 +47,7 @@ public sealed class ComputeGoldenVectorTests
             player.SetPresence(PresenceState.Offline, Baseline);
             player.Enqueue(new ActionIntent(new ActionId("alchemy.refine-qi-pill"), 3), Baseline, Catalog.Actions);
         });
-        // 钱包快照：3 轮炼制共需凝血草×9。
+        // 钱包快照：3 轮炼制共需凝气草×9。
         var balances = new ComputeAssetBalance[] { new("item.ningxue-grass", "", 9, 1) };
         var target = Baseline.AddSeconds(40);
 

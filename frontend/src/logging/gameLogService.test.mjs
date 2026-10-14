@@ -141,7 +141,7 @@ test('gameLogService: 200 条相同日志合并后严格只占 1 条历史记录
     repeated.push({
       sequence: i,
       timestampUnixMilliseconds: 2000 + i * 10,
-      template: '获得 {{item:ningxue-grass|凝血草|1}}',
+      template: '获得 {{item:ningxue-grass|凝气草|1}}',
     })
   }
   gameLogService.ingestBatch(playerId, repeated)

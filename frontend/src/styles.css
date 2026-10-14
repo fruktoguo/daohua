@@ -3357,6 +3357,18 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
+.action-stat-pill--technique {
+  background: rgba(251, 146, 60, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.25);
+  color: var(--text);
+}
+
+.action-stat-pill--technique strong {
+  color: #fb923c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .action-stat-pill-label {
   color: var(--text-dim);
   font-size: 11px;

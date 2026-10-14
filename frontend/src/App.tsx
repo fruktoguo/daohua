@@ -1452,7 +1452,6 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const totalPercent = Math.round((totalMultiplier - 1.0) * 100)
   const hasRateBonus = multiplierBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
   const isPending = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.isPendingBreakthrough)
-  const hasBonuses = hasRateBonus || speedBonuses.length > 0 || isPending
 
   const inputs = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
   const titleId = `action-modal-title-${action.id}`
@@ -1460,8 +1459,17 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   // 行动名/描述按当前驻留地点本地化（「讨伐 青云仙山」→「讨伐 漱玉溪」）
   const displayName = localizeActionDisplayText(action.name, world, maps)
   const displayDescription = action.description ? localizeActionDisplayText(action.description, world, maps) : action.description
-  const hasYields = (action.yields?.length ?? 0) > 0
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
+  // 非战斗行动五段式归类：灵力入产出、修为与六维及生活技艺经验入感悟
+  const spiritYields = yieldPreview.resourceYields.filter(entry => entry.kind === 'mana')
+  const expYields = yieldPreview.resourceYields.filter(entry => entry.kind === 'experience')
+  const otherResourceYields = yieldPreview.resourceYields.filter(entry => entry.kind !== 'mana' && entry.kind !== 'experience')
+  const hasOutputs = yieldPreview.itemOutputs.length > 0 || spiritYields.length > 0 || otherResourceYields.length > 0 || yieldPreview.buffYields.length > 0
+  const techniqueId = typeof action.technique === 'string' && (TECHNIQUE_IDS as readonly string[]).includes(action.technique)
+    ? action.technique
+    : null
+  const techniqueExp = techniqueId ? action.durationSeconds : 0
+  const hasInsights = expYields.length > 0 || yieldPreview.rootExpYields.length > 0 || techniqueExp > 0
   // 斗法冷却倒计时：以「服务端时刻 + 本地流逝」估算服务端当前时刻，仅冷却生效期间每秒重渲染。
   const estimatedServerNow = serverTime + Math.max(0, performance.now() - lastSyncPerformanceTime) / 1000
   const duelCooldownRemaining = Math.max(0, duel.cooldownUntilUnixSeconds - estimatedServerNow)
@@ -1492,116 +1500,165 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
             />
           ))}</dd>
         </div>
-        {(hasYields || startsImmediately) && (
-          <div>
-            <dt>{t('app.action.outputs')}</dt>
-            <dd>
-              {yieldPreview.resourceYields.map(entry => (
-                <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={entry.kind}>
-                  <span className="action-stat-pill-label">{t(`app.action.yieldKind.${entry.kind}`)}</span>
-                  <strong className="action-stat-pill-value">
-                    <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.finalAmount} />
-                  </strong>
-                </span>
-              ))}
-              {yieldPreview.itemOutputs.map(output => (
-                <ActionDetailItem
-                  amount={output.finalAmount}
-                  itemId={output.itemId}
-                  key={output.itemId}
-                />
-              ))}
-              {yieldPreview.buffYields.map(buff => (
-                <span className="action-stat-pill action-stat-pill--buff" key={buff.buffId}>
-                  <span className="action-stat-pill-label">{t('app.action.yieldKind.buff')}</span>
-                  <strong className="action-stat-pill-value">
-                    {t('app.action.yieldBuff', { name: buff.name, stacks: buff.stacks, duration: buff.durationSeconds })}
-                  </strong>
-                </span>
-              ))}
-              {yieldPreview.rootExpYields.map(entry => (
-                <span className="action-stat-pill action-stat-pill--rootexp" key={entry.aspect}>
-                  <span className="action-stat-pill-label">{t(ROOT_ASPECT_LABEL_KEYS[entry.aspect] ?? 'app.action.yieldKind.rootexp')}</span>
-                  <strong className="action-stat-pill-value">
-                    <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.amount} />
-                  </strong>
-                </span>
-              ))}
-              {!hasYields && startsImmediately && (
-                <span className="action-detail-empty">{t('app.action.combatDrops')}</span>
-              )}
-            </dd>
-          </div>
-        )}
 
-        {hasBonuses && (
-          <div>
-            <dt>{t('app.action.totalBonus')}</dt>
-            <dd className="action-bonuses-container">
-              {hasRateBonus && (
-                <FloatingTooltip
-                  placement="top"
-                  tone="gold"
-                  title={
-                    <div className="action-bonus-tooltip-content">
-                      <div className="action-bonus-tooltip-title">{t('app.action.bonusBreakdownTitle')}</div>
-                      <div className="action-bonus-tooltip-list">
-                        {multiplierBonuses.map((bonus, idx) => (
-                          <div className="action-bonus-tooltip-row" key={idx}>
-                            <span className="action-bonus-tooltip-name">{bonus.sourceName}</span>
-                            <strong className="action-bonus-tooltip-tag">{bonus.tag}</strong>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  }
-                >
-                  <span className="action-bonus-pill action-bonus-pill--total">
-                    <span className="action-bonus-pill-source">{t('app.action.totalBonus')}</span>
-                    <strong className="action-bonus-pill-tag">
-                      {totalPercent >= 0 ? `+${totalPercent}%` : `${totalPercent}%`}
+        {startsImmediately ? (
+          <>
+            <div>
+              <dt>{t('app.action.outputs')}</dt>
+              <dd>
+                <span className="action-detail-empty">{t('app.action.combatDrops')}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>{t('app.action.duration')}</dt>
+              <dd><span className="action-detail-value">{t('app.action.combatUnlimited')}</span></dd>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <dt>{t('app.action.outputs')}</dt>
+              <dd>
+                {!hasOutputs && <span className="action-detail-empty">{t('app.action.none')}</span>}
+                {spiritYields.map(entry => (
+                  <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={entry.kind}>
+                    <span className="action-stat-pill-label">{t(`app.action.yieldKind.${entry.kind}`)}</span>
+                    <strong className="action-stat-pill-value">
+                      <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.finalAmount} />
                     </strong>
                   </span>
-                </FloatingTooltip>
-              )}
-
-              {speedBonuses.map((bonus, idx) => (
-                <FloatingTooltip
-                  key={`speed-${idx}`}
-                  placement="top"
-                  title={bonus.description}
-                  tone="gold"
-                >
-                  <span className="action-bonus-pill action-bonus-pill--world">
-                    <span className="action-bonus-pill-source">{bonus.sourceName}</span>
-                    <strong className="action-bonus-pill-tag">{bonus.tag}</strong>
+                ))}
+                {yieldPreview.itemOutputs.map(output => (
+                  <ActionDetailItem
+                    amount={output.finalAmount}
+                    itemId={output.itemId}
+                    key={output.itemId}
+                  />
+                ))}
+                {otherResourceYields.map(entry => (
+                  <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={entry.kind}>
+                    <span className="action-stat-pill-label">{t(`app.action.yieldKind.${entry.kind}`)}</span>
+                    <strong className="action-stat-pill-value">
+                      <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.finalAmount} />
+                    </strong>
                   </span>
-                </FloatingTooltip>
-              ))}
-
-              {isPending && (
-                <FloatingTooltip
-                  placement="top"
-                  tone="gold"
-                  title={t('app.action.pendingBreakthroughDesc')}
-                >
-                  <span className="action-bonus-pill action-bonus-pill--pending">
-                    <span className="action-bonus-pill-source">{t('app.action.pendingBreakthroughTag')}</span>
+                ))}
+                {yieldPreview.buffYields.map(buff => (
+                  <span className="action-stat-pill action-stat-pill--buff" key={buff.buffId}>
+                    <span className="action-stat-pill-label">{t('app.action.yieldKind.buff')}</span>
+                    <strong className="action-stat-pill-value">
+                      {t('app.action.yieldBuff', { name: buff.name, stacks: buff.stacks, duration: buff.durationSeconds })}
+                    </strong>
                   </span>
-                </FloatingTooltip>
-              )}
-            </dd>
-          </div>
+                ))}
+                {hasRateBonus && (
+                  <FloatingTooltip
+                    placement="top"
+                    tone="gold"
+                    title={
+                      <div className="action-bonus-tooltip-content">
+                        <div className="action-bonus-tooltip-title">{t('app.action.bonusBreakdownTitle')}</div>
+                        <div className="action-bonus-tooltip-list">
+                          {multiplierBonuses.map((bonus, idx) => (
+                            <div className="action-bonus-tooltip-row" key={idx}>
+                              <span className="action-bonus-tooltip-name">{bonus.sourceName}</span>
+                              <strong className="action-bonus-tooltip-tag">{bonus.tag}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    }
+                  >
+                    <span className="action-bonus-pill action-bonus-pill--total">
+                      <span className="action-bonus-pill-source">{t('app.action.totalBonus')}</span>
+                      <strong className="action-bonus-pill-tag">
+                        {totalPercent >= 0 ? `+${totalPercent}%` : `${totalPercent}%`}
+                      </strong>
+                    </span>
+                  </FloatingTooltip>
+                )}
+              </dd>
+            </div>
+
+            <div>
+              <dt>{t('app.action.insights')}</dt>
+              <dd>
+                {!hasInsights && !isPending && <span className="action-detail-empty">{t('app.action.none')}</span>}
+                {expYields.map(entry => (
+                  <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={entry.kind}>
+                    <span className="action-stat-pill-label">{t(`app.action.yieldKind.${entry.kind}`)}</span>
+                    <strong className="action-stat-pill-value">
+                      <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.finalAmount} />
+                    </strong>
+                  </span>
+                ))}
+                {yieldPreview.rootExpYields.map(entry => (
+                  <span className="action-stat-pill action-stat-pill--rootexp" key={entry.aspect}>
+                    <span className="action-stat-pill-label">{t(ROOT_ASPECT_LABEL_KEYS[entry.aspect] ?? 'app.action.yieldKind.rootexp')}</span>
+                    <strong className="action-stat-pill-value">
+                      <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.amount} />
+                    </strong>
+                  </span>
+                ))}
+                {techniqueId && techniqueExp > 0 && (
+                  <span className="action-stat-pill action-stat-pill--technique" key={`tech-${techniqueId}`}>
+                    <span className="action-stat-pill-label">{t(`insight.technique.${techniqueId}`)}{t('app.action.techniqueExpSuffix')}</span>
+                    <strong className="action-stat-pill-value">
+                      <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={techniqueExp} />
+                    </strong>
+                  </span>
+                )}
+                {isPending && (
+                  <FloatingTooltip
+                    placement="top"
+                    tone="gold"
+                    title={t('app.action.pendingBreakthroughDesc')}
+                  >
+                    <span className="action-bonus-pill action-bonus-pill--pending">
+                      <span className="action-bonus-pill-source">{t('app.action.pendingBreakthroughTag')}</span>
+                    </span>
+                  </FloatingTooltip>
+                )}
+              </dd>
+            </div>
+
+            <div>
+              <dt>{t('app.action.duration')}</dt>
+              <dd style={{ alignItems: 'center' }}>
+                <span className="action-detail-value">
+                  {t('app.action.durationPerRound', { seconds: Math.max(1, Math.ceil(yieldPreview.actualDurationSeconds - 1e-9)) })}
+                </span>
+                {speedBonuses.map((bonus, idx) => (
+                  <FloatingTooltip
+                    key={`speed-${idx}`}
+                    placement="top"
+                    title={bonus.description}
+                    tone="gold"
+                  >
+                    <span className="action-bonus-pill action-bonus-pill--world">
+                      <span className="action-bonus-pill-source">{bonus.sourceName}</span>
+                      <strong className="action-bonus-pill-tag">{bonus.tag}</strong>
+                    </span>
+                  </FloatingTooltip>
+                ))}
+              </dd>
+            </div>
+
+            <div>
+              <dt>{t('app.action.repeats')}</dt>
+              <dd>
+                <QuantitySelector
+                  allowInfinity
+                  ariaLabel={t('app.action.repeatsAria')}
+                  max={1000}
+                  onChange={setRepeats}
+                  presets={[1, 10, 100]}
+                  value={repeats}
+                />
+              </dd>
+            </div>
+          </>
         )}
-
-        <div>
-          <dt>{t('app.action.duration')}</dt>
-          <dd><span className="action-detail-value">
-            {startsImmediately
-              ? t('app.action.combatUnlimited')
-              : t('app.action.durationPerRound', { seconds: Math.max(1, Math.ceil(yieldPreview.actualDurationSeconds - 1e-9)) })}
-          </span></dd>
-        </div>
       </dl>
 
       {startsImmediately && <CombatEcologyPanel action={action} />}
@@ -1647,17 +1704,19 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
         </section>
       )}
 
-      <div className="repeat-row">
-        <span>{t('app.action.repeats')}</span>
-        <QuantitySelector
-          allowInfinity
-          ariaLabel={t('app.action.repeatsAria')}
-          max={1000}
-          onChange={setRepeats}
-          presets={[1, 10, 100]}
-          value={repeats}
-        />
-      </div>
+      {startsImmediately && (
+        <div className="repeat-row">
+          <span>{t('app.action.repeats')}</span>
+          <QuantitySelector
+            allowInfinity
+            ariaLabel={t('app.action.repeatsAria')}
+            max={1000}
+            onChange={setRepeats}
+            presets={[1, 10, 100]}
+            value={repeats}
+          />
+        </div>
+      )}
 
       <button
         className={`action-modal-submit${isLocked ? ' is-locked' : ''}`}

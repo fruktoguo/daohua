@@ -236,17 +236,17 @@ export function calculateActionYieldPreview({
     const levelRatio = TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel
     techniqueSpeedRatio += levelRatio
     if (techniqueLevel > 0) {
-      // 耗时缩短率 = ratio / (1 + ratio)，与每轮实际耗时口径一致
-      const shortenPercent = Math.round((levelRatio / (1 + levelRatio)) * 100)
+      // 行动速度提升比率
+      const speedPercent = Math.round(levelRatio * 100)
       const techniqueName = t(`insight.technique.${techniqueId}`)
       bonuses.push({
         sourceName: techniqueName,
-        tag: t('app.action.bonusBuildingSpeedTag', { percent: shortenPercent }),
+        tag: t('app.action.bonusBuildingSpeedTag', { percent: speedPercent }),
         type: 'speed',
         description: t('app.action.bonusTechniqueSpeedDesc', {
           name: techniqueName,
           level: techniqueLevel,
-          percent: shortenPercent,
+          percent: speedPercent,
         }),
       })
     }
@@ -258,14 +258,14 @@ export function calculateActionYieldPreview({
       if (!Number.isFinite(bonus.speedRatio) || bonus.speedRatio <= 0) continue
       techniqueSpeedRatio += bonus.speedRatio
       const toolName = eqDef.name ?? equipped.itemId
-      const shortenPercent = Math.round((bonus.speedRatio / (1 + bonus.speedRatio)) * 100)
+      const speedPercent = Math.round(bonus.speedRatio * 100)
       bonuses.push({
         sourceName: toolName,
-        tag: t('app.action.bonusBuildingSpeedTag', { percent: shortenPercent }),
+        tag: t('app.action.bonusBuildingSpeedTag', { percent: speedPercent }),
         type: 'speed',
         description: t('app.action.bonusToolSpeedDesc', {
           name: toolName,
-          percent: shortenPercent,
+          percent: speedPercent,
         }),
       })
     }
@@ -286,13 +286,12 @@ export function calculateActionYieldPreview({
     })
   }
   if (buildingSpeedRatio > 0) {
-    // 耗时缩短率 = ratio / (1 + ratio)，与每轮实际耗时口径一致
-    const shortenPercent = Math.round((buildingSpeedRatio / (1 + buildingSpeedRatio)) * 100)
+    const speedPercent = Math.round(buildingSpeedRatio * 100)
     bonuses.push({
       sourceName: t('app.action.bonusBuildingSource'),
-      tag: t('app.action.bonusBuildingSpeedTag', { percent: shortenPercent }),
+      tag: t('app.action.bonusBuildingSpeedTag', { percent: speedPercent }),
       type: 'speed',
-      description: t('app.action.bonusBuildingSpeedDesc', { percent: shortenPercent }),
+      description: t('app.action.bonusBuildingSpeedDesc', { percent: speedPercent }),
     })
   }
 

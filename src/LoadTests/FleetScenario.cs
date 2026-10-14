@@ -15,9 +15,9 @@ public static class FleetScenario
     private const string SessionCookieName = "daohua_session";
 
     // 青云仙山节点（配表真源：config/game-data/maps + actions 的 availableNodeIds 白名单）
-    private const string Village = "node.yunxi-village";       // 凝血草 + 木灵遭遇池
+    private const string Village = "node.yunxi-village";       // 凝气草 + 木灵遭遇池
     private const string Brook = "node.shuyu-brook";           // 晨露 + 木灵池
-    private const string HerbValley = "node.herb-valley";      // 凝血草 + 木灵池
+    private const string HerbValley = "node.herb-valley";      // 凝气草 + 木灵池
     private const string PeachForest = "node.peach-forest";    // 桃木 + 落霞岭遭遇池
     private const string RockBeach = "node.rock-beach";        // 玄铁 + 落霞岭遭遇池
 

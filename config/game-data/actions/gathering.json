@@ -1,8 +1,8 @@
 [
   {
     "id": "explore.gather-ningxue-grass",
-    "name": "采摘 凝血草",
-    "description": "在幽深背阴的百草谷采摘暗红的凡品凝血草。",
+    "name": "采摘 凝气草",
+    "description": "在幽深背阴的百草谷采摘暗红的凡品凝气草。",
     "type": "exploration",
     "technique": "gathering",
     "durationSeconds": 8,

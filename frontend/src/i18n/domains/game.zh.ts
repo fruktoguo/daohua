@@ -84,7 +84,7 @@ export const gameZh = {
       'cultivation.draw-qi': { name: '引气入体', description: '吐纳周天，凝聚一缕灵气，增长修为与灵力。' },
 
       // 采集
-      'explore.gather-ningxue-grass': { name: '采摘 凝血草', description: '在幽深背阴的百草谷采摘暗红的凡品凝血草。' },
+      'explore.gather-ningxue-grass': { name: '采摘 凝气草', description: '在幽深背阴的百草谷采摘暗红的凡品凝气草。' },
       'explore.chop-peach-wood': { name: '采伐 桃木', description: '在落霞阳坡采伐带有微弱纯阳灵气的坚韧古桃木。' },
       'explore.mine-dark-iron': { name: '挖掘 乌铁矿', description: '在清石水滩露天砂石层中开采沉重致密的乌铁原矿。' },
       'explore.collect-morning-dew': { name: '收集 晨露', description: '破晓时分在漱玉溪边草木叶尖汲取纯净无根晨露。' },
@@ -96,15 +96,15 @@ export const gameZh = {
       'world.travel': { name: '赶路', description: '沿已规划的山道前往目标地点。' },
 
       // 炼丹
-      'alchemy.refine-qi-pill': { name: '引气丹', description: '以凝血草与清澈晨露炼制而成的基础引气灵丹，可略微加快吐纳效率。' },
-      'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝血草炼制而成的凡品止血散剂，可迅速闭合寻常外伤创口。' },
+      'alchemy.refine-qi-pill': { name: '引气丹', description: '以凝气草与清澈晨露炼制而成的基础引气灵丹，可略微加快吐纳效率。' },
+      'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝气草炼制而成的凡品止血散剂，可迅速闭合寻常外伤创口。' },
       'alchemy.refine-shunqi-pill': { name: '顺气丸', description: '以草木精华与伴灵花炼制的调息灵丸，可抚平体内翻涌气血，加速灵力恢复。' },
       'alchemy.refine-tongmai-pill': { name: '通脉丹', description: '以伴灵精华与妖核淬炼而成的通脉灵丹，药力直透经络百骸，大益周天行气。' },
 
       // 精炼加工
       'craft.refine-iron': { name: '百炼铁', description: '千锤百炼去除凡火杂质，精炼高纯乌铁。' },
       'craft.refine-peach-wood-crystal': { name: '桃木晶', description: '萃取百年桃木纯阳精华凝聚为晶。' },
-      'craft.extract-herb-essence': { name: '草木精华', description: '融合凝血草与清晨甘露萃取的草木生机精华。' },
+      'craft.extract-herb-essence': { name: '草木精华', description: '融合凝气草与清晨甘露萃取的草木生机精华。' },
       'craft.refine-copper': { name: '赤铜精', description: '地火精炼赤铜矿石，去除顽石杂质。' },
       'craft.refine-spirit-pine-crystal': { name: '灵松晶', description: '淬炼引灵松木凝结的青翠树芯灵晶。' },
       'craft.extract-banling-essence': { name: '伴灵精华', description: '萃取伴灵花幽蓝灵机与清晨甘露融炼的纯净灵液。' },
@@ -164,7 +164,7 @@ export const gameZh = {
       'combat.sweep-twilight-valley': { name: '讨伐 星陨异境', description: '深入星陨异境搜寻妖兽踪迹——界隙狼群、焦林火鸦、血池邪修、荒坑尸煞，各险地盘踞不同妖物。' },
     },
     item: {
-      'item.ningxue-grass': { label: '凝血草', description: '幽谷凝血，叶脉含朱。\n生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。' },
+      'item.ningxue-grass': { label: '凝气草', description: '幽谷凝气，叶脉含朱。\n生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。' },
       'item.peach-wood': { label: '桃木', description: '向阳生古木，纯阳辟百邪。\n向阳坡地采伐的百年老木，木质坚致密实，隐泛淡淡纯阳辟邪之意。' },
       'item.dark-iron': { label: '乌铁', description: '乌金沉矿色如墨。\n深山老矿采掘出的未淬原铁，色沉如墨，质地沉重坚硬。' },
       'item.beast-hide': { label: '兽皮', description: '异兽遗革，坚韧如甲。\n凡间野兽异变后留下的粗糙兽皮，皮质坚韧厚密。' },

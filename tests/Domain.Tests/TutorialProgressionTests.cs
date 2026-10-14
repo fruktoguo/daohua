@@ -47,7 +47,7 @@ public sealed class TutorialProgressionTests
             new TravelActionState(targetNodeId, plan.TotalTravelSeconds, plan.EdgeIds, plan.Segments));
     }
 
-    /// <summary>采集完成一轮推进到炼丹步，赠送凝血草与采集产出同通道入账。</summary>
+    /// <summary>采集完成一轮推进到炼丹步，赠送凝气草与采集产出同通道入账。</summary>
     [Fact]
     public void GatherRoundGrantsAlchemyMaterialsAndAdvances()
     {

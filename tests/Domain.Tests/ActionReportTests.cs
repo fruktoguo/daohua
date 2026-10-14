@@ -19,7 +19,7 @@ public sealed class ActionReportTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("甲");
-        // alchemy.refine-qi-pill：12 秒/轮，输入凝血草×3，产出引气丹×1。
+        // alchemy.refine-qi-pill：12 秒/轮，输入凝气草×3，产出引气丹×1。
         var wallet = CreateWallet(player, (new ItemId("item.ningxue-grass"), 6d));
         var action = player.Enqueue(new ActionIntent(new ActionId("alchemy.refine-qi-pill"), 2), Baseline, catalog.Actions);
 

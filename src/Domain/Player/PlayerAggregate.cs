@@ -338,7 +338,7 @@ public sealed class PlayerSettingsState
 /// </summary>
 public static class TutorialSteps
 {
-    /// <summary>采集凝血草一轮</summary>
+    /// <summary>采集凝气草一轮</summary>
     public const int Gather = 0;
     /// <summary>炼制引气丹一轮</summary>
     public const int Alchemy = 1;
