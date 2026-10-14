@@ -873,6 +873,18 @@ export interface CombatAttributes {
   earthDamageReductionPoints: number
   /** 总减伤/免伤点数（NonLinear，末位收口） */
   damageAbsorptionPoints: number
+  /** 固定伤害提升（不吃抗性与增幅） */
+  fixedDamageBonus: number
+  /** 固定伤害减免（最低截断为 0） */
+  fixedDamageReduction: number
+  /** 固定物理伤害提升 */
+  fixedPhysicalDamageBonus: number
+  /** 固定物理伤害减免 */
+  fixedPhysicalDamageReduction: number
+  /** 固定法术伤害提升 */
+  fixedSpellDamageBonus: number
+  /** 固定法术伤害减免 */
+  fixedSpellDamageReduction: number
   /** 攻击速度点数（NonLinear：仅缩短普攻读条） */
   attackSpeedPoints: number
   /** 行动速度点数（NonLinear：缩短全部读条） */

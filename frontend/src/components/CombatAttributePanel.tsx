@@ -92,6 +92,16 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
   // 增减伤对：[增伤 Linear 点数, 减伤 NonLinear 点数] → "+x% / y%"。
   const boostReduceText = (bonus: number, reduction: number) =>
     `${linearText(bonus)} / ${nonLinearText(reduction)}`
+  // 固定伤害增减对：[固定增伤, 固定减伤] → "+x / y"。
+  const fixedBoostReduceText = (bonus: number, reduction: number) => {
+    const b = Math.round(bonus)
+    const r = Math.round(reduction)
+    const bonusPrefix = b >= 0 ? '+' : ''
+    return `${bonusPrefix}${formatNumber(b)} / ${formatNumber(r)}`
+  }
+  const fixedBoostReducePill = (key: string, bonus: number, reduction: number, tone: PillTone) =>
+    pill(key, fixedBoostReduceText(bonus, reduction), tone,
+      !atDefault(bonus) || !atDefault(reduction))
 
   // 默认值隐藏判定：点数类修饰与基础数值默认 0；增减伤对两侧皆默认才隐藏。
   const atDefault = (points: number) => Math.abs(points) < DEFAULT_EPSILON
@@ -147,6 +157,9 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
     [boostReducePill('totalBoostReduce', attributes.totalDamageBonusPoints, attributes.damageAbsorptionPoints, 'emerald'),
       boostReducePill('physBoostReduce', attributes.physicalDamageBonusPoints, attributes.physicalDamageReductionPoints, 'crimson'),
       boostReducePill('spellBoostReduce', attributes.spellDamageBonusPoints, attributes.spellDamageReductionPoints, 'indigo')],
+    [fixedBoostReducePill('fixedTotalBoostReduce', attributes.fixedDamageBonus, attributes.fixedDamageReduction, 'emerald'),
+      fixedBoostReducePill('fixedPhysBoostReduce', attributes.fixedPhysicalDamageBonus, attributes.fixedPhysicalDamageReduction, 'crimson'),
+      fixedBoostReducePill('fixedSpellBoostReduce', attributes.fixedSpellDamageBonus, attributes.fixedSpellDamageReduction, 'indigo')],
     [boostReducePill('metalBoostReduce', attributes.metalDamageBonusPoints, attributes.metalDamageReductionPoints, 'gold'),
       boostReducePill('woodBoostReduce', attributes.woodDamageBonusPoints, attributes.woodDamageReductionPoints, 'emerald'),
       boostReducePill('waterBoostReduce', attributes.waterDamageBonusPoints, attributes.waterDamageReductionPoints, 'cyan'),

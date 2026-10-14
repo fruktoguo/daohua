@@ -113,6 +113,20 @@ public sealed record CombatantStats(
     /// <summary>总减伤/免伤点数（NonLinear：末位收口，负点反向增伤）。</summary>
     public double DamageAbsorptionPoints { get; init; }
 
+    // ── 固定伤害增减点数（总纲第七篇 §7.7.1 第六层：末位固定点数直加直减）──
+    /// <summary>固定伤害提升（末位通用固定增伤，不吃抗性与增幅）。</summary>
+    public double FixedDamageBonus { get; init; }
+    /// <summary>固定伤害减免（末位通用固定减伤，最低截断为 0）。</summary>
+    public double FixedDamageReduction { get; init; }
+    /// <summary>固定物理伤害提升（末位物理固定增伤）。</summary>
+    public double FixedPhysicalDamageBonus { get; init; }
+    /// <summary>固定物理伤害减免（末位物理固定减伤）。</summary>
+    public double FixedPhysicalDamageReduction { get; init; }
+    /// <summary>固定法术伤害提升（末位术法固定增伤）。</summary>
+    public double FixedSpellDamageBonus { get; init; }
+    /// <summary>固定法术伤害减免（末位术法固定减伤）。</summary>
+    public double FixedSpellDamageReduction { get; init; }
+
     // ── 特殊属性点数（总纲第七篇 §7.7.5 特殊属性清单）──
     /// <summary>攻击速度点数（NonLinear：仅缩短普攻读条时间）。</summary>
     public double AttackSpeedPoints { get; init; }
@@ -150,6 +164,9 @@ public sealed record CombatantStats(
             FireDamageBonusPoints, EarthDamageBonusPoints,
             MetalDamageReductionPoints, WoodDamageReductionPoints, WaterDamageReductionPoints,
             FireDamageReductionPoints, EarthDamageReductionPoints,
+            FixedDamageBonus, FixedDamageReduction,
+            FixedPhysicalDamageBonus, FixedPhysicalDamageReduction,
+            FixedSpellDamageBonus, FixedSpellDamageReduction,
             AttackSpeedPoints, ActionSpeedPoints, CooldownReductionPoints];
         if (nonnegative.Any(value => !double.IsFinite(value) || value < 0)
             || finite.Any(value => !double.IsFinite(value))

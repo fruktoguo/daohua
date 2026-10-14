@@ -330,6 +330,9 @@ function mapCombatAttributes(value: unknown, name: string): CombatAttributes {
     'metalDamageReductionPoints', 'woodDamageReductionPoints', 'waterDamageReductionPoints',
     'fireDamageReductionPoints', 'earthDamageReductionPoints',
     'damageAbsorptionPoints',
+    'fixedDamageBonus', 'fixedDamageReduction',
+    'fixedPhysicalDamageBonus', 'fixedPhysicalDamageReduction',
+    'fixedSpellDamageBonus', 'fixedSpellDamageReduction',
     'attackSpeedPoints', 'actionSpeedPoints', 'cooldownReductionPoints', 'threatBonusPoints',
     'hpDrainPoints', 'mpDrainPoints', 'damageReflectPoints', 'healingBonusPoints',
   ] as const

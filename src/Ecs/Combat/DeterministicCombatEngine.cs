@@ -272,6 +272,15 @@ public static class DeterministicCombatEngine
         damage *= PercentValue.Multiplier(
             defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffAbsorptionPoints,
             PercentCurveMode.NonLinear);
+        // 第六层：固定伤害增减修正（总纲 §7.7.1：命中时末位固定点数直加直减，不吃抗性与百分比，最低截断为 0）。
+        if (hit)
+        {
+            var fixedBonus = attack.FixedDamageBonus
+                + (attack.DamageKind == CombatDamageKind.Physical ? attack.FixedPhysicalDamageBonus : attack.FixedSpellDamageBonus);
+            var fixedReduction = defense.FixedDamageReduction
+                + (attack.DamageKind == CombatDamageKind.Physical ? defense.FixedPhysicalDamageReduction : defense.FixedSpellDamageReduction);
+            damage = Math.Max(0, damage + fixedBonus - fixedReduction);
+        }
         context.Hit = hit;
         context.Critical = critical;
         context.Broken = broken;
@@ -325,7 +334,12 @@ public static class DeterministicCombatEngine
         damage *= PercentValue.Multiplier(
             defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffAbsorptionPoints,
             PercentCurveMode.NonLinear);
-        return Math.Max(0, damage);
+        // 第六层：固定伤害增减修正（总纲 §7.7.1）。
+        var fixedBonus = attack.FixedDamageBonus
+            + (attack.DamageKind == CombatDamageKind.Physical ? attack.FixedPhysicalDamageBonus : attack.FixedSpellDamageBonus);
+        var fixedReduction = defense.FixedDamageReduction
+            + (attack.DamageKind == CombatDamageKind.Physical ? defense.FixedPhysicalDamageReduction : defense.FixedSpellDamageReduction);
+        return Math.Max(0, damage + fixedBonus - fixedReduction);
     }
 
     /// <summary>

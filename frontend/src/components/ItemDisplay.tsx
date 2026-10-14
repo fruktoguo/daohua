@@ -792,6 +792,12 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
   damageAbsorption: 'emerald',
   damageAbsorptionRatio: 'emerald',
   damageReduction: 'emerald',
+  fixedDamageBonus: 'emerald',
+  fixedDamageReduction: 'emerald',
+  fixedPhysicalDamageBonus: 'crimson',
+  fixedPhysicalDamageReduction: 'crimson',
+  fixedSpellDamageBonus: 'indigo',
+  fixedSpellDamageReduction: 'indigo',
 
   // 灵力类 (灵气青)
   maxManapoints: 'cyan',
@@ -896,6 +902,12 @@ export function describeEquipmentEffects(
     mpRegen: 'market.stat.manapointRegen',
     criticalChance: 'market.stat.critChance',
     tenacity: 'market.stat.resilience',
+    fixedDamageBonus: 'market.stat.fixedDamageBonus',
+    fixedDamageReduction: 'market.stat.fixedDamageReduction',
+    fixedPhysicalDamageBonus: 'market.stat.fixedPhysicalDamageBonus',
+    fixedPhysicalDamageReduction: 'market.stat.fixedPhysicalDamageReduction',
+    fixedSpellDamageBonus: 'market.stat.fixedSpellDamageBonus',
+    fixedSpellDamageReduction: 'market.stat.fixedSpellDamageReduction',
   }
 
   // 装备数值唯一真源为配表原始数值块（baseStatRatios/flatStats），协议不再下发派生 stats 幻影块。

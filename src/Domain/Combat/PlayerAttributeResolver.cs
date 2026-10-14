@@ -53,6 +53,20 @@ public sealed record PlayerAttributes(
     /// <summary>土系减伤点数。</summary>
     public double EarthDamageReductionPoints { get; init; }
 
+    // ── 固定伤害增减点数（总纲第七篇 §7.7.1 第六层：末位直加直减）──
+    /// <summary>固定伤害提升。</summary>
+    public double FixedDamageBonus { get; init; }
+    /// <summary>固定伤害减免。</summary>
+    public double FixedDamageReduction { get; init; }
+    /// <summary>固定物理伤害提升。</summary>
+    public double FixedPhysicalDamageBonus { get; init; }
+    /// <summary>固定物理伤害减免。</summary>
+    public double FixedPhysicalDamageReduction { get; init; }
+    /// <summary>固定法术伤害提升。</summary>
+    public double FixedSpellDamageBonus { get; init; }
+    /// <summary>固定法术伤害减免。</summary>
+    public double FixedSpellDamageReduction { get; init; }
+
     // ── 特殊属性点数 ──
     /// <summary>攻击速度点数（NonLinear：仅缩短普攻读条）。</summary>
     public double AttackSpeedPoints { get; init; }
@@ -104,6 +118,12 @@ public sealed record PlayerAttributes(
             WaterDamageReductionPoints = WaterDamageReductionPoints,
             FireDamageReductionPoints = FireDamageReductionPoints,
             EarthDamageReductionPoints = EarthDamageReductionPoints,
+            FixedDamageBonus = FixedDamageBonus,
+            FixedDamageReduction = FixedDamageReduction,
+            FixedPhysicalDamageBonus = FixedPhysicalDamageBonus,
+            FixedPhysicalDamageReduction = FixedPhysicalDamageReduction,
+            FixedSpellDamageBonus = FixedSpellDamageBonus,
+            FixedSpellDamageReduction = FixedSpellDamageReduction,
             AttackSpeedPoints = AttackSpeedPoints,
             ActionSpeedPoints = ActionSpeedPoints,
             CooldownReductionPoints = CooldownReductionPoints,
@@ -291,6 +311,12 @@ public static class PlayerAttributeResolver
             WaterDamageReductionPoints = P("waterDamageReductionPoints"),
             FireDamageReductionPoints = P("fireDamageReductionPoints"),
             EarthDamageReductionPoints = P("earthDamageReductionPoints"),
+            FixedDamageBonus = flat.GetValueOrDefault("fixedDamageBonus") + P("fixedDamageBonus"),
+            FixedDamageReduction = flat.GetValueOrDefault("fixedDamageReduction") + P("fixedDamageReduction"),
+            FixedPhysicalDamageBonus = flat.GetValueOrDefault("fixedPhysicalDamageBonus") + P("fixedPhysicalDamageBonus"),
+            FixedPhysicalDamageReduction = flat.GetValueOrDefault("fixedPhysicalDamageReduction") + P("fixedPhysicalDamageReduction"),
+            FixedSpellDamageBonus = flat.GetValueOrDefault("fixedSpellDamageBonus") + P("fixedSpellDamageBonus"),
+            FixedSpellDamageReduction = flat.GetValueOrDefault("fixedSpellDamageReduction") + P("fixedSpellDamageReduction"),
             AttackSpeedPoints = P("attackSpeedPoints"),
             ActionSpeedPoints = P("actionSpeedPoints"),
             CooldownReductionPoints = P("cooldownReductionPoints"),
