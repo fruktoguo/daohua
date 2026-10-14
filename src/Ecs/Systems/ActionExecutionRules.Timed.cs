@@ -295,10 +295,9 @@ internal static partial class ActionExecutionRules
         var combatTouched = false;
         var progressionTouched = false;
         // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，
-        // 底蕴记净变动（满层沉淀为正、兑换消耗为负），战斗经验按增幅前基础量等额记账。
+        // 底蕴记净变动（满层沉淀为正、兑换消耗为负）。
         var experienceCredited = 0d;
         var foundationDelta = 0d;
-        var combatExperienceGained = 0d;
         var rootExpGains = new Dictionary<CoreAspectKind, double>();
         foreach (var yield in definition.Yields)
         {
@@ -311,15 +310,13 @@ internal static partial class ActionExecutionRules
             {
                 case ActionYieldKind.Experience:
                     // 修为类收益逐秒走统一结算：瓶颈截断 + 底蕴 1:1 兑换放大（单笔 ≤3×rate）+
-                    // 未入账增幅沉淀为底蕴 + 战斗经验按每秒基础量入账；满级（cap≤0）全额沉淀。
+                    // 未入账增幅沉淀为底蕴；满级（cap≤0）全额沉淀。打坐修行等非战斗行动不增加战斗经验。
                     if (!double.IsFinite(player.Progression.Experience + 3 * total)
-                        || !double.IsFinite(player.Progression.Foundation + total)
-                        || !double.IsFinite(player.Progression.CombatExperience + yield.Amount * seconds))
+                        || !double.IsFinite(player.Progression.Foundation + total))
                         throw new DomainException(DomainErrorCode.InvariantViolation, "经验收益超出数值范围。");
                     for (var i = 0; i < wholeSeconds; i++)
-                        experienceCredited += player.Progression.CreditExperience(yield.Amount, rate, expCap);
+                        experienceCredited += player.Progression.CreditExperience(rate, expCap);
                     foundationDelta += total - experienceCredited;
-                    combatExperienceGained += yield.Amount * seconds;
                     progressionTouched = true;
                     break;
                 case ActionYieldKind.Mana:
@@ -348,13 +345,12 @@ internal static partial class ActionExecutionRules
             GrantRootExperience(player, aspect, rootExp, gameData, actionInstanceId, atUnixSeconds);
         if (combatTouched) player.MarkDirty(PlayerSectionKind.Combat);
         if (progressionTouched) player.MarkDirty(PlayerSectionKind.Progression);
-        if (experienceCredited != 0 || foundationDelta != 0 || combatExperienceGained != 0)
+        if (experienceCredited != 0 || foundationDelta != 0)
             player.RecordStats(actionInstanceId, atUnixSeconds,
                 new PlayerStatsDelta
                 {
                     Experience = experienceCredited,
-                    Foundation = foundationDelta,
-                    CombatExperience = combatExperienceGained
+                    Foundation = foundationDelta
                 });
         if (!double.IsFinite(player.Progression.Experience) || !double.IsFinite(player.Progression.Foundation)
             || !double.IsFinite(player.Progression.CombatExperience))
@@ -387,25 +383,24 @@ internal static partial class ActionExecutionRules
             return;
         }
         // 先汇总数值型收益并完成有限性校验，再统一落账，沿用“先校验后变更”语义。
-        // experienceBase 记增幅前基础量（战斗经验记账源），experienceGain 记增幅后总量（底蕴结算输入）。
-        double experienceGain = 0, manaGain = 0, hitpointGain = 0, experienceBase = 0;
+        // experienceGain 记增幅后总量（底蕴结算输入）。
+        double experienceGain = 0, manaGain = 0, hitpointGain = 0;
         foreach (var yield in definition.Yields)
         {
             if (yield.Period != ActionYieldPeriod.PerRepeat) continue;
             var amount = yield.Amount * autoUseMultiplier;
             switch (yield.Kind)
             {
-                case ActionYieldKind.Experience: experienceBase += yield.Amount; experienceGain += amount; break;
+                case ActionYieldKind.Experience: experienceGain += amount; break;
                 case ActionYieldKind.Mana: manaGain += amount; break;
                 case ActionYieldKind.Hitpoints: hitpointGain += amount; break;
             }
         }
         // 本层修为上限：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
         var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
-        if (!double.IsFinite(experienceGain) || !double.IsFinite(experienceBase) || !double.IsFinite(manaGain) || !double.IsFinite(hitpointGain)
+        if (!double.IsFinite(experienceGain) || !double.IsFinite(manaGain) || !double.IsFinite(hitpointGain)
             || !double.IsFinite(player.Progression.Experience + 3 * experienceGain)
-            || !double.IsFinite(player.Progression.Foundation + experienceGain)
-            || !double.IsFinite(player.Progression.CombatExperience + experienceBase))
+            || !double.IsFinite(player.Progression.Foundation + experienceGain))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
         action.ProgressSeconds = 0;
         PlayerActionQueueRules.RecordCompletedRound(action);
@@ -443,15 +438,13 @@ internal static partial class ActionExecutionRules
         }
         CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
         // 修为类收益统一结算（总纲 §7.11.1）：瓶颈截断 + 底蕴 1:1 兑换放大（≤3×amp）+
-        // 增幅溢量沉淀为底蕴 + 战斗经验按增幅前基础量入账；满级（cap≤0）全额沉淀。
-        var experienceDelta = player.Progression.CreditExperience(experienceBase, experienceGain, expCap);
-        // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，底蕴记净变动，
-        // 战斗经验按基础量记账；物品产出计获得、输入材料计失去。
+        // 增幅溢量沉淀为底蕴；满级（cap≤0）全额沉淀。非战斗行动不增加战斗经验。
+        var experienceDelta = player.Progression.CreditExperience(experienceGain, expCap);
+        // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，底蕴记净变动；物品产出计获得、输入材料计失去。
         player.RecordStats(action.Id, target.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
         {
             Experience = experienceDelta,
             Foundation = experienceGain - experienceDelta,
-            CombatExperience = experienceBase,
             Cycles = 1,
             ItemGains = itemRewards,
             ItemLosses = definition.Inputs

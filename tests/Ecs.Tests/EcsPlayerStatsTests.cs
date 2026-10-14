@@ -54,7 +54,7 @@ public sealed class EcsPlayerStatsTests
         var report = Assert.Single(actual.Duel.ActiveReports!, entry => entry.ReportId == action.Id.ToString("N"));
         Assert.Equal(12, report.Experience);
         Assert.Equal(28, report.Foundation);
-        Assert.Equal(40, report.CombatExperience);
+        Assert.Equal(0, report.CombatExperience);
         Assert.Equal(4, report.Cycles);
         Assert.Equal(4, Assert.Single(report.Items).Quantity);
         Assert.Equal(4, Assert.Single(report.ItemsLost!).Quantity);

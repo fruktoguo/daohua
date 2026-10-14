@@ -134,7 +134,7 @@ public enum ActionYieldKind : byte
     Mana = 0,
     /// <summary>气血：累加 Resources.Hitpoints 并按上限截断</summary>
     Hitpoints = 1,
-    /// <summary>修为：经 CreditExperience 入账 Progression.Experience/Foundation/CombatExperience</summary>
+    /// <summary>修为：经 CreditExperience 入账 Progression.Experience/Foundation（非战斗行动不增加战斗经验）</summary>
     Experience = 2,
     /// <summary>物品：按 Item 进入资产流水</summary>
     Item = 3,

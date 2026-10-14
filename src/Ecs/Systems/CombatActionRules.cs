@@ -1146,7 +1146,7 @@ internal static class CombatActionRules
                 ? monster.Experience
                 : monster.Experience / spec.Members.Count * (1 - spec.LevelMalusFor(selfIndex));
             var expCap = gameData.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
-            var creditedExp = player.Progression.CreditExperience(experience, experience, expCap);
+            var creditedExp = player.Progression.CreditExperience(experience, expCap, combatExperience: experience);
             player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta
             {
                 Experience = creditedExp,

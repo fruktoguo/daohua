@@ -82,24 +82,26 @@ public sealed class PlayerProgression
             Math.Min(amplifiedAmount + foundation, Math.Max(0, cap - experience)));
 
     /// <summary>
-    /// 修为类收益统一结算（总纲 §7.11.1，连续收益/单轮奖励/击杀奖励与冥想路径共用单点）：
-    /// Experience += credited；Foundation += amp - credited（净变动，可为负）；CombatExperience += base。
+    /// 修为类收益统一结算（总纲 §7.11.1）：
+    /// Experience += credited；Foundation += amp - credited（净变动，可为负）；
+    /// 仅战斗讨伐/击杀传入 combatExperience（打坐修炼等日常修行恒为 0）；
+    /// LifetimeExperience += amplifiedAmount。
     /// 返回实际计入本层修为的量，供战报账本按真实入账口径记录。
     /// </summary>
-    /// <param name="baseAmount">增幅前基础量；等额累积进战斗经验，不受加成与瓶颈影响。</param>
     /// <param name="amplifiedAmount">玩家增幅倍率作用后的收益量。</param>
     /// <param name="cap">本层修为上限；无境界进度配置时传 <see cref="double.PositiveInfinity"/>。</param>
+    /// <param name="combatExperience">战斗经验入账量；非战斗场景（如打坐修行）恒为 0，不受加成与瓶颈影响。</param>
     /// <returns>实际计入本层修为的量（≥0）。</returns>
-    public double CreditExperience(double baseAmount, double amplifiedAmount, double cap)
+    public double CreditExperience(double amplifiedAmount, double cap, double combatExperience = 0)
     {
-        if (!double.IsFinite(baseAmount) || baseAmount < 0
-            || !double.IsFinite(amplifiedAmount) || amplifiedAmount < 0
+        if (!double.IsFinite(amplifiedAmount) || amplifiedAmount < 0
+            || !double.IsFinite(combatExperience) || combatExperience < 0
             || double.IsNaN(cap) || cap < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "修为收益入账参数无效。");
         var credited = ComputeExperienceCredit(amplifiedAmount, cap, Experience, Foundation);
         Experience += credited;
         Foundation += amplifiedAmount - credited;
-        CombatExperience += baseAmount;
+        CombatExperience += combatExperience;
         LifetimeExperience += amplifiedAmount;
         if (!double.IsFinite(Experience) || !double.IsFinite(Foundation) || !double.IsFinite(CombatExperience) || !double.IsFinite(LifetimeExperience))
             throw new DomainException(DomainErrorCode.InvariantViolation, "修为收益入账结果无效。");

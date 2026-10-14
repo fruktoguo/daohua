@@ -55,13 +55,13 @@ public sealed class ProgressionPoolTests
 
     // ── CreditExperience 状态迁移 ──
 
-    /// <summary>底蕴兑换放大：修为 +3×、底蕴 −2×、战斗经验按基础量、累计修为记增幅量。</summary>
+    /// <summary>底蕴兑换放大：修为 +3×、底蕴 −2×、战斗传入战斗经验入账、累计修为记增幅量。</summary>
     [Fact]
     public void CreditExperience_FullBoostLedger()
     {
         var p = CreatePlayer();
         p.Progression.Foundation = 100;
-        var credited = p.Progression.CreditExperience(4, 8, 100);
+        var credited = p.Progression.CreditExperience(8, 100, combatExperience: 4);
         Assert.Equal(24, credited);          // 3×8 截断于 8+100 与容量之内
         Assert.Equal(24, p.Progression.Experience);
         Assert.Equal(84, p.Progression.Foundation);    // 100 − (24−8)
@@ -69,13 +69,25 @@ public sealed class ProgressionPoolTests
         Assert.Equal(8, p.Progression.LifetimeExperience);
     }
 
-    /// <summary>满层沉淀：修为不动、增幅量全额入底蕴、战斗经验照记基础量。</summary>
+    /// <summary>打坐修炼等日常修行只增加修为/底蕴/累计修为，不增加战斗经验（缺省为 0）。</summary>
+    [Fact]
+    public void CreditExperience_DefaultCombatExperienceIsZero()
+    {
+        var p = CreatePlayer();
+        var credited = p.Progression.CreditExperience(10, 100);
+        Assert.Equal(10, credited);
+        Assert.Equal(10, p.Progression.Experience);
+        Assert.Equal(0, p.Progression.CombatExperience);
+        Assert.Equal(10, p.Progression.LifetimeExperience);
+    }
+
+    /// <summary>满层沉淀：修为不动、增幅量全额入底蕴、战斗传入经验照记。</summary>
     [Fact]
     public void CreditExperience_AtCapAllToFoundation()
     {
         var p = CreatePlayer();
         p.Progression.Experience = 50;
-        var credited = p.Progression.CreditExperience(6, 6, 50);
+        var credited = p.Progression.CreditExperience(6, 50, combatExperience: 6);
         Assert.Equal(0, credited);
         Assert.Equal(50, p.Progression.Experience);
         Assert.Equal(6, p.Progression.Foundation);
@@ -88,14 +100,15 @@ public sealed class ProgressionPoolTests
     public void CreditExperience_RejectsInvalidInputs()
     {
         var p = CreatePlayer();
-        Assert.Throws<DomainException>(() => p.Progression.CreditExperience(-1, 1, 10));
-        Assert.Throws<DomainException>(() => p.Progression.CreditExperience(1, double.NaN, 10));
-        Assert.Throws<DomainException>(() => p.Progression.CreditExperience(1, 1, -5));
+        Assert.Throws<DomainException>(() => p.Progression.CreditExperience(-1, 10));
+        Assert.Throws<DomainException>(() => p.Progression.CreditExperience(double.NaN, 10));
+        Assert.Throws<DomainException>(() => p.Progression.CreditExperience(1, -5));
+        Assert.Throws<DomainException>(() => p.Progression.CreditExperience(1, 10, -1));
     }
 
     // ── 模拟管线集成 ──
 
-    /// <summary>连续修为收益：逐秒统一结算，满层后全额转底蕴且战斗经验按基础量入账。</summary>
+    /// <summary>连续修为收益：逐秒统一结算，满层后全额转底蕴；非战斗行动不增加战斗经验。</summary>
     [Fact]
     public void ContinuousYield_OverflowSettlesIntoFoundation()
     {
@@ -110,11 +123,30 @@ public sealed class ProgressionPoolTests
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), gameData);
 
-        // 10 秒 × 2/秒 = 20 增幅量：先填满 10 修为，余 10 沉淀为底蕴；战斗经验记基础量 20。
+        // 10 秒 × 2/秒 = 20 增幅量：先填满 10 修为，余 10 沉淀为底蕴；打坐修炼不增加战斗经验（仍为 0）。
         Assert.Equal(10, player.Progression.Experience);
         Assert.Equal(10, player.Progression.Foundation);
-        Assert.Equal(20, player.Progression.CombatExperience);
+        Assert.Equal(0, player.Progression.CombatExperience);
         Assert.Equal(20, player.Progression.LifetimeExperience);
+    }
+
+    /// <summary>引气入体打坐修炼结算：产出修为与灵力，但绝对不增加战斗经验。</summary>
+    [Fact]
+    public void CultivationDrawQi_DoesNotIncreaseCombatExperience()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer();
+        var action = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 1), Baseline, catalog.Actions);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog);
+
+        Assert.Equal(10, player.Progression.Experience);
+        Assert.Equal(0, player.Progression.CombatExperience);
+        Assert.Equal(10, player.Progression.LifetimeExperience);
+        var report = player.Duel.ReportFor(action.Id);
+        Assert.NotNull(report);
+        Assert.Equal(10, report.Experience);
+        Assert.Equal(0, report.CombatExperience);
     }
 
     /// <summary>突破后底蕴留存并自动兑换：沉淀池在下一层按 ≤3× 加速消耗。</summary>

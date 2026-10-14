@@ -1220,7 +1220,7 @@
 - **成长四池（`PlayerProgression` / `PlayerLoadout` 字段清单）**：
   - **修为（`Progression.Experience`）**：当前层突破计量条，即顶部进度条；以配表 `expToNext[realmLevel]` 封顶，突破时清零；
   - **底蕴（`Progression.Foundation`）**：修为满层后继续获得的修为 100% 沉淀为底蕴；修为未满层时每 1 点底蕴兑换 1 点额外修为（单笔最高 3 倍，底蕴耗尽即止），突破不清空；
-  - **战斗经验（`Progression.CombatExperience`）**：每次修为类收益按增幅前基础量等额入账、不受任何加成；参与命中/闪避对抗修正（口径见 [第七篇 §7.7.6](./07-战斗数值与内视规约.md)），突破不清空；
+  - **战斗经验（`Progression.CombatExperience`）**：战斗击杀与讨伐收益按基础量入账，打坐修炼等非战斗修行不增加战斗经验、不受任何加成；参与命中/闪避对抗修正（口径见 [第七篇 §7.7.6](./07-战斗数值与内视规约.md)），突破不清空；
   - **六维经验（`Loadout.CoreAttributes`）**：体魄/经脉/力道/根骨/身法/神识各自经验（`StaminaExp` 等六字段），等级由 `RootAttributeCurve` 经 `RealmProgressionCatalog` 派生的 381 点成本表导出（曲线口径见 [第三篇 §3.2.2](./03-修仙境界与四乘区数值底座.md)）。
 - **总修为（`Progression.LifetimeExperience`）**：历史修为类收益总量（增幅后口径，含满层转底蕴部分），单调递增永不清零；为前端「总修为」悬浮条数据源。
 - **突破瓶颈状态（IsPendingBreakthrough）**：当修为达到当前境界上限（`expToNext`）时触发，修为停止增长、溢出沉淀为底蕴，必须完成突破心魔、渡劫或服用破境丹药方可晋升下一小境界。
@@ -1859,7 +1859,7 @@ public sealed class AutoUseSlot
 | **动作 ID** | `cultivation.draw-qi` | `cultivation.draw-qi` | 保持稳定强类型 ID |
 | **动作名称** | 引气入体 | 引气入体 | 炼气期核心基础吐纳 |
 | **基础耗时** | 10 秒 | **10 秒** (`10.0`s) | 确定性动作周期 |
-| **基础产出** | 10 灵气 (`resource.qi: 10`) | **10 修为** + **10 灵力** | 由行动 `yields` 声明：`experience` 每轮 10、`mana` 每轮 10，单轮完成时一次性入账；修为收益统一经 `CreditExperience` 入账（瓶颈截断/底蕴兑换/战斗经验记账） |
+| **基础产出** | 10 灵气 (`resource.qi: 10`) | **10 修为** + **10 灵力** | 由行动 `yields` 声明：`experience` 每轮 10、`mana` 每轮 10，单轮完成时一次性入账；修为收益统一经 `CreditExperience` 入账（瓶颈截断/底蕴兑换，打坐修炼等非战斗行动不增加战斗经验） |
 | **执行类型** | `timed` | `timed` | 定时循环动作 |
 
 ### 6.4.2 引气丹道具 (`item.qi-gathering-pill`)
@@ -2412,18 +2412,18 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 | **修为** | `PlayerProgression.Experience` | 当前层突破计量条（顶部进度条），`expToNext[realmLevel]` 封顶 | **清零** |
 | **六维经验** | `PlayerLoadout.CoreAttributes`（`StaminaExp` 等六字段） | 六根各自经验，等级由 `RootAttributeCurve` 经 `RealmProgressionCatalog` 派生的 381 点成本表导出（§3.2.2） | 不清空 |
 | **底蕴** | `PlayerProgression.Foundation` | 修为满层溢出沉淀池；未满层时按 1:1 兑换放大修为获取 | **不清空** |
-| **战斗经验** | `PlayerProgression.CombatExperience` | 修为类收益按增幅前基础量等额入账，喂给 §7.7.6 对抗修正 | **不清空** |
+| **战斗经验** | `PlayerProgression.CombatExperience` | 战斗类收益按基础量入账（打坐修炼等非战斗修行不增加），喂给 §7.7.6 对抗修正 | **不清空** |
 
 另有累计口径一条：`LifetimeExperience`（历史修为类收益总量，增幅后口径、含满层转底蕴部分，单调递增永不清零），为前端「总修为」悬浮条数据源。
 
-**修为类收益统一结算公式**（`PlayerProgression.CreditExperience`，连续收益 / 单轮奖励 / 击杀奖励与领域冥想路径共用单点）：记该笔收益增幅后量 `amp`、增幅前基础量 `base`、本层上限 `cap`：
+**修为类收益统一结算公式**（`PlayerProgression.CreditExperience`，连续收益 / 单轮奖励 / 击杀奖励与领域冥想路径共用单点）：记该笔收益增幅后量 `amp`、本层上限 `cap`、战斗实战经验量 `combatExperience`（非战斗场景如打坐修炼恒为 0）：
 
 $$\text{credited} = \min\!\left(3 \cdot amp,\ amp + Foundation,\ \max(0,\ cap - Experience)\right)$$
-$$Experience \mathrel{+}= \text{credited};\quad Foundation \mathrel{+}= amp - \text{credited};\quad CombatExperience \mathrel{+}= base$$
+$$Experience \mathrel{+}= \text{credited};\quad Foundation \mathrel{+}= amp - \text{credited};\quad CombatExperience \mathrel{+}= combatExperience$$
 
 - 满层时 `credited = 0` → 该笔收益 100% 沉淀为底蕴；
 - 未满层时每 1 点底蕴兑换 1 点额外修为，单笔放大最高 3 倍（底蕴耗尽即止）；
-- `Foundation` 记**净变动**（可为负：兑换消耗时底蕴减少）；`CombatExperience` 恒按 `base` 入账，满层溢出转底蕴的部分同样计入；
+- `Foundation` 记**净变动**（可为负：兑换消耗时底蕴减少）；`CombatExperience` 仅在战斗击杀与讨伐等战斗场景入账，打坐修炼等日常修行恒为 0，不随非战斗修为获取增加；
 - 修为类收益指入账 `Experience` 池的全部收益（`experience` 类 yields、怪物击杀 `experience`、冥想修为等）；六维经验与物品不经过本结算。
 - 六维经验共设两条入账渠道：击杀收益的全归属全额口径（§7.10.3，含内功乘率重分配）与非战斗行动的 `rootexp` 类 yields 定向定额口径（[第二十篇 §20.1.4](./20-技艺体系与符箓阵法强化规约.md)，配表定额、不吃收益倍率、不经内功重分配）。
 
@@ -2445,7 +2445,7 @@ $$Experience \mathrel{+}= \text{credited};\quad Foundation \mathrel{+}= amp - \t
 ### 7.11.3 前端词条定稿文案
 
 - 「底蕴」tooltip（`insight.foundation.daoFoundationTooltip` 权威口径）：**修为圆满（触及本层瓶颈未突破）后继续获得的修为 100% 沉淀为底蕴；修为未满时每 1 点底蕴兑换 1 点额外修为，单笔最高放大至 3 倍。突破不清空。**
-- 「战斗经验」tooltip（`insight.foundation.combatExpTooltip` 权威口径）：**每次获得修为时按增幅前基础量等额累积的实战经验，不受任何加成；与敌方战斗经验的比值在命中/闪避对抗末尾修正双方等效（上限 ×2 / 下限 ×0.5，见 §7.7.6）。**（旧文案「诛灭敌方按对手修为获益/按等级差指数」等历史机制描述作废。）
+- 「战斗经验」tooltip（`insight.foundation.combatExpTooltip` 权威口径）：**击杀与讨伐战斗中按基础量同步积累实战经验，打坐修炼等日常修行不增加，不受任何加成；与敌方战斗经验的比值在命中/闪避对抗末尾修正双方等效（上限 ×2 / 下限 ×0.5，见 §7.7.6）。**（旧文案「诛灭敌方按对手修为获益/按等级差指数」等历史机制描述作废。）
 - 确定性约束：底蕴结算与经验对抗均为纯函数确定性结算——不读墙钟、不占随机通道；离线补算与在线逐秒推进位级一致。
 
 ---
@@ -3726,7 +3726,7 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 | :--- | :--- |
 | `Experience`（`experience`） | 修为（突破计量条）实际入账增量：瓶颈截断与底蕴兑换放大后的真实入账 |
 | `Foundation`（`foundation`） | 底蕴净变动：满层溢出沉淀为正、兑换放大消耗为负（可为负值） |
-| `CombatExperience`（`combatExperience`） | 战斗经验入账量：修为类收益按增幅前基础量等额记账，不受任何加成增幅 |
+| `CombatExperience`（`combatExperience`） | 战斗经验入账量：战斗击杀与讨伐收益按基础量记账，打坐修炼等非战斗行动不增加 |
 | `RootExp`（`rootExp`） | 六维经验收益（体魄/经脉/力道/根骨/身法/神识） |
 | `AbilityExp`（`abilityExp`） | 功法参悟经验收益，按功法 ID 聚合；战斗/斗法中每次成功施放 +1 |
 | `TechniqueExp`（`techniqueExp`） | 技艺修行经验收益，按技艺 ID 聚合（per-technique；条目为 `TechniqueId`/`Experience`，wire 键 `techniqueId`/`experience`），经 `PlayerStatsDelta.TechniqueId`/`TechniqueExperience` 记账 |
@@ -3734,7 +3734,7 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 
 - **物品**：`Items`（获得，含暂存区/缴获）、`ItemsLost`（失去：行动输入材料、自动消耗品扣件、斗法暂存被缴）。
 - **行动信息**：`Cycles`（完成轮次）、`Encounters`（战斗遭遇场次）、`NormalKills`/`EliteKills`/`BossKills`（分级击杀）、`Deaths`（讨伐失败与斗法败北）、`DuelWins`/`DuelLosses`（斗法胜负）、`DayIndex`（仅每日账本）。
-- 记账按**实际入账量**：`experience` 记瓶颈截断与底蕴兑换放大后的真实增量；`foundation` 记底蕴池净变动（满层沉淀为正、兑换消耗为负）；`combatExperience` 恒按增幅前基础量等额记账。
+- 记账按**实际入账量**：`experience` 记瓶颈截断与底蕴兑换放大后的真实增量；`foundation` 记底蕴池净变动（满层沉淀为正、兑换消耗为负）；`combatExperience` 仅战斗场景按基础量等额记账（非战斗行动恒为 0）。
 
 ## 17.4 记账点
 
@@ -4090,7 +4090,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | :--- | :--- | :--- |
 | 修为 | `Experience` | 顶部进度条，本层突破计量条，满层截断、突破清零 |
 | 底蕴 | `Foundation`（新） | 修为满层后沉淀；未满层消耗它放大修为获取至最多 3 倍；突破不清空 |
-| 战斗经验 | `CombatExperience`（新） | 修为收益按增幅前基础量等额入账；命中/闪避对抗素材（§7.7.6） |
+| 战斗经验 | `CombatExperience`（新） | 战斗击杀与讨伐收益按基础量入账（打坐修炼不增加）；命中/闪避对抗素材（§7.7.6） |
 | 总修为 | `LifetimeExperience`（新） | 历史修为收益累计，永不归零，悬浮条用它 |
 | 六维经验 | `StaminaExp`/`MeridiansExp`/`AttackExp`/`BoneExp`/`AgilityExp`/`ConsciousnessExp` | 体魄/经脉/力道/根骨/身法/神识，等级由 `RealmProgressionCatalog` 派生的 381 点成本表导出（一级境界≈3 点，§3.2.2），初始 0 级 |
 | 功法经验 | `AbilityExperiences` | 按功法 ID 聚合，导出演练等级 |
@@ -4100,7 +4100,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | 境界阶段 | `RealmInfo.PhaseName`/`RankChar`（前端 `game.realm.phase*`） | 徽章单字：凡俗段 武/玄/天，修真段 初/中/后/极 |
 | 等阶（T级） | `Tier` | T1~T12 数值/内容轴（装备套/技能/丹药/怪物分档），`BaseAttributeCatalog.TierAt` 锚点推导；半步X/叩仙门计入下一等阶 |
 | 本层修为上限 | `RealmProgressionCatalog.ExpToNext` / `ExpCapFor` | Lv.127 返回 0 |
-| 修为结算单点 | `CreditExperience(base, amp, cap)`（新） | `credited=min(3·amp, amp+Foundation, cap−Experience)`，三条收益路径共用 |
+| 修为结算单点 | `CreditExperience(amp, cap, combatExp)`（新） | `credited=min(3·amp, amp+Foundation, cap−Experience)`，打坐等非战斗场景 combatExp 为 0 |
 | 寿元 / 道龄 | `AgeSeconds` / `LifespanYearsFor(tier)` | 道龄累积；寿元按等阶配表 |
 | 品质（八品） | `quality`/`rarity`（前端 `game.grade.*`） | Q1凡品/Q2黄品/Q3玄品/Q4地品/Q5天品/Q6灵品/Q7圣品/Q8帝品 |
 | 修行期（四期） | —（文档分组） | 前期凡俗(T1~T2)/中期气基丹(T3~T5)/后期婴神虚体(T6~T9)/大后期仙道真源(T10~T12) |

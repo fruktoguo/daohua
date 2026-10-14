@@ -59,7 +59,7 @@ public sealed partial class PlayerAggregate
             {
                 var amount = delta.CombatExperience;
                 var cap = catalog.RealmProgression?.ExpCapFor(Progression.RealmLevel) ?? double.PositiveInfinity;
-                var credited = Progression.CreditExperience(amount, amount, cap);
+                var credited = Progression.CreditExperience(amount, cap, combatExperience: amount);
                 delta = delta with { Experience = credited, Foundation = amount - credited };
             }
             if (delta.RootAspect is { } aspect)
