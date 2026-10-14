@@ -252,10 +252,11 @@ public static class PlayerAttributeResolver
         var buffRatios = new Dictionary<string, double>(StringComparer.Ordinal);
         double hpRegenFlat = 0, mpRegenFlat = 0;
         double hpRegenPost = 0, mpRegenPost = 0;
-        // 节点公共建筑效果：气血自然回复固定值与额外减伤并入同名乘区（比率键 ×100 折点）。
+        // 节点公共建筑效果：气血与灵力自然回复固定值与额外减伤并入同名乘区（比率键 ×100 折点）。
         if (nodeBuildingEffects is not null)
         {
             hpRegenFlat += nodeBuildingEffects.CombatHitpointRegen;
+            mpRegenFlat += nodeBuildingEffects.CombatManapointRegen;
             AddPoint("damageAbsorptionPoints", nodeBuildingEffects.CombatDamageReductionRatio * 100);
         }
         foreach (var buff in buffs)

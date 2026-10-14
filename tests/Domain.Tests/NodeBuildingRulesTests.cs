@@ -137,7 +137,7 @@ public sealed class NodeBuildingRulesTests
     }
 
     [Fact]
-    public void WeakenMonsterStatsScalesLinearlyAndCapsAtNinetyPercent()
+    public void WeakenMonsterStatsAppliesHyperbolicDampingWithoutHardCap()
     {
         var stats = CombatantStats.Create(1000, 100, 50, 2) with
         {
@@ -145,19 +145,48 @@ public sealed class NodeBuildingRulesTests
         };
         // 零削弱原位透传，不分配新对象。
         Assert.Same(stats, NodeBuildingRules.WeakenMonsterStats(stats, 0));
-        var weakened = NodeBuildingRules.WeakenMonsterStats(stats, 0.2);
-        Assert.Equal(800, weakened.MaxHitpoints, 6);
-        Assert.Equal(80, weakened.AttackPower, 6);
-        Assert.Equal(64, weakened.SpellAttack, 6);
-        Assert.Equal(40, weakened.Defense, 6);
-        Assert.Equal(24, weakened.MagicResistance, 6);
+
+        // 削弱 50%（0.5）：1000 / (1 + 0.5) = 666.666667（相当于 100 变成 66.67）
+        var halfWeakened = NodeBuildingRules.WeakenMonsterStats(stats, 0.5);
+        Assert.Equal(666.666667, halfWeakened.MaxHitpoints, 5);
+        Assert.Equal(66.666667, halfWeakened.AttackPower, 5);
+        Assert.Equal(53.333333, halfWeakened.SpellAttack, 5);
+        Assert.Equal(33.333333, halfWeakened.Defense, 5);
+        Assert.Equal(20.0, halfWeakened.MagicResistance, 5);
+
+        // 削弱 100%（1.0）：1000 / (1 + 1.0) = 500（相当于 100 变成 50）
+        var fullWeakened = NodeBuildingRules.WeakenMonsterStats(stats, 1.0);
+        Assert.Equal(500, fullWeakened.MaxHitpoints, 6);
+        Assert.Equal(50, fullWeakened.AttackPower, 6);
+
+        // 削弱 900%（9.0）：1000 / (1 + 9.0) = 100（相当于 100 变成 10）
+        var extremeWeakened = NodeBuildingRules.WeakenMonsterStats(stats, 9.0);
+        Assert.Equal(100, extremeWeakened.MaxHitpoints, 6);
+        Assert.Equal(10, extremeWeakened.AttackPower, 6);
+
         // 灵力上限与攻击间隔等非削弱字段不受影响。
-        Assert.Equal(200, weakened.MaxManapoints, 6);
-        Assert.Equal(2, weakened.AttackIntervalSeconds, 6);
-        // 合计比率封顶 90%：超出按 90% 结算，气血上限不归零。
-        var capped = NodeBuildingRules.WeakenMonsterStats(stats, 1.5);
-        Assert.Equal(100, capped.MaxHitpoints, 6);
-        Assert.Equal(10, capped.AttackPower, 6);
+        Assert.Equal(200, halfWeakened.MaxManapoints, 6);
+        Assert.Equal(2, halfWeakened.AttackIntervalSeconds, 6);
+    }
+
+    [Fact]
+    public void BuildingDefinitionEffectAtLevelSupportsBaseAndGrowth()
+    {
+        var def = new BuildingDefinition(
+            "building.test", "测试建筑", "描述", "效果", 1)
+        {
+            BaseModifiers = new BuildingEffectSet(GatheringSpeedRatio: 0.12),
+            GrowthModifiers = new BuildingEffectSet(GatheringSpeedRatio: 0.02)
+        };
+
+        // Lv.0 未建成为 0
+        Assert.Equal(0, def.EffectAtLevel(0).GatheringSpeedRatio);
+        // Lv.1 为初始基准 12%
+        Assert.Equal(0.12, def.EffectAtLevel(1).GatheringSpeedRatio, 6);
+        // Lv.2 为 12% + 2% = 14%
+        Assert.Equal(0.14, def.EffectAtLevel(2).GatheringSpeedRatio, 6);
+        // Lv.10 为 12% + 2% * 9 = 30%
+        Assert.Equal(0.30, def.EffectAtLevel(10).GatheringSpeedRatio, 6);
     }
 
     [Fact]

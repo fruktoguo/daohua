@@ -17,12 +17,19 @@ public sealed record BuildingEffectSet(
     double CultivationOutputRatio = 0,
     double CombatHitpointRegen = 0,
     double CombatDamageReductionRatio = 0,
-    double MonsterWeakenRatio = 0)
+    double MonsterWeakenRatio = 0,
+    double GatheringSpeedRatio = 0,
+    double MiningSpeedRatio = 0,
+    double ForgingSpeedRatio = 0,
+    double TalismanSpeedRatio = 0,
+    double FormationSpeedRatio = 0,
+    double EnhancementSpeedRatio = 0,
+    double CombatManapointRegen = 0)
 {
     /// <summary>全零效果单例。</summary>
     public static readonly BuildingEffectSet Empty = new();
 
-    /// <summary>逐项按倍率缩放（建筑 Lv N 效果 = 每级基准 × N）。</summary>
+    /// <summary>逐项按倍率缩放（支持拥挤效率与等级缩放）。</summary>
     public BuildingEffectSet Scale(double factor) => new(
         ExplorationSpeedRatio * factor,
         ExplorationOutputRatio * factor,
@@ -31,7 +38,14 @@ public sealed record BuildingEffectSet(
         CultivationOutputRatio * factor,
         CombatHitpointRegen * factor,
         CombatDamageReductionRatio * factor,
-        MonsterWeakenRatio * factor);
+        MonsterWeakenRatio * factor,
+        GatheringSpeedRatio * factor,
+        MiningSpeedRatio * factor,
+        ForgingSpeedRatio * factor,
+        TalismanSpeedRatio * factor,
+        FormationSpeedRatio * factor,
+        EnhancementSpeedRatio * factor,
+        CombatManapointRegen * factor);
 
     /// <summary>逐项相加（多建筑汇总）。</summary>
     public BuildingEffectSet Add(BuildingEffectSet other) => new(
@@ -42,15 +56,42 @@ public sealed record BuildingEffectSet(
         CultivationOutputRatio + other.CultivationOutputRatio,
         CombatHitpointRegen + other.CombatHitpointRegen,
         CombatDamageReductionRatio + other.CombatDamageReductionRatio,
-        MonsterWeakenRatio + other.MonsterWeakenRatio);
+        MonsterWeakenRatio + other.MonsterWeakenRatio,
+        GatheringSpeedRatio + other.GatheringSpeedRatio,
+        MiningSpeedRatio + other.MiningSpeedRatio,
+        ForgingSpeedRatio + other.ForgingSpeedRatio,
+        TalismanSpeedRatio + other.TalismanSpeedRatio,
+        FormationSpeedRatio + other.FormationSpeedRatio,
+        EnhancementSpeedRatio + other.EnhancementSpeedRatio,
+        CombatManapointRegen + other.CombatManapointRegen);
 
-    /// <summary>行动类别对应的建造加速比率；未覆盖类别返回 0。</summary>
-    public double SpeedRatioFor(ActionKind kind) => kind switch
+    /// <summary>行动类别与技艺对应的建造加速比率；未覆盖类别返回 0。</summary>
+    public double SpeedRatioFor(ActionKind kind, string? technique = null)
     {
-        ActionKind.Exploration => ExplorationSpeedRatio,
-        ActionKind.Alchemy => AlchemySpeedRatio,
-        _ => 0
-    };
+        if (technique is not null)
+        {
+            var techRatio = technique switch
+            {
+                "gathering" => GatheringSpeedRatio > 0 ? GatheringSpeedRatio : ExplorationSpeedRatio,
+                "mining" => MiningSpeedRatio,
+                "alchemy" => AlchemySpeedRatio,
+                "forging" => ForgingSpeedRatio,
+                "talisman" => TalismanSpeedRatio,
+                "formation" => FormationSpeedRatio,
+                "enhancement" => EnhancementSpeedRatio,
+                _ => 0
+            };
+            if (techRatio > 0) return techRatio;
+        }
+
+        return kind switch
+        {
+            ActionKind.Exploration => GatheringSpeedRatio > 0 ? GatheringSpeedRatio : ExplorationSpeedRatio,
+            ActionKind.Alchemy => AlchemySpeedRatio,
+            ActionKind.Enhancement => EnhancementSpeedRatio,
+            _ => 0
+        };
+    }
 
     /// <summary>行动类别对应的收益增幅比率；未覆盖类别返回 0。</summary>
     public double OutputRatioFor(ActionKind kind) => kind switch
@@ -132,17 +173,23 @@ public static class NodeBuildingRules
     }
 
     /// <summary>
-    /// 建筑修饰集服务的行动类别集合：按非零修饰项映射（exploration*→Exploration、alchemy*→Alchemy、
-    /// cultivationOutputRatio→Cultivation、combat*→Combat）；空集表示该建筑不提供增益型服务。
+    /// 建筑修饰集服务的行动类别集合：按非零修饰项映射；空集表示该建筑不提供增益型服务。
     /// </summary>
     public static ActionKind[] ServedKinds(BuildingEffectSet modifiers)
     {
-        var kinds = new List<ActionKind>(2);
-        if (modifiers.ExplorationSpeedRatio != 0 || modifiers.ExplorationOutputRatio != 0) kinds.Add(ActionKind.Exploration);
-        if (modifiers.AlchemySpeedRatio != 0 || modifiers.AlchemyOutputRatio != 0) kinds.Add(ActionKind.Alchemy);
+        var kinds = new List<ActionKind>(3);
+        if (modifiers.ExplorationSpeedRatio != 0 || modifiers.ExplorationOutputRatio != 0
+            || modifiers.GatheringSpeedRatio != 0 || modifiers.MiningSpeedRatio != 0)
+            kinds.Add(ActionKind.Exploration);
+        if (modifiers.AlchemySpeedRatio != 0 || modifiers.AlchemyOutputRatio != 0
+            || modifiers.ForgingSpeedRatio != 0 || modifiers.TalismanSpeedRatio != 0
+            || modifiers.FormationSpeedRatio != 0)
+            kinds.Add(ActionKind.Alchemy);
         if (modifiers.CultivationOutputRatio != 0) kinds.Add(ActionKind.Cultivation);
-        if (modifiers.CombatHitpointRegen != 0 || modifiers.CombatDamageReductionRatio != 0
-            || modifiers.MonsterWeakenRatio != 0) kinds.Add(ActionKind.Combat);
+        if (modifiers.EnhancementSpeedRatio != 0) kinds.Add(ActionKind.Enhancement);
+        if (modifiers.CombatHitpointRegen != 0 || modifiers.CombatManapointRegen != 0
+            || modifiers.CombatDamageReductionRatio != 0 || modifiers.MonsterWeakenRatio != 0)
+            kinds.Add(ActionKind.Combat);
         return kinds.ToArray();
     }
 
@@ -154,19 +201,18 @@ public static class NodeBuildingRules
         return users;
     }
 
-    /// <summary>怪物削弱比率封顶：削减合计超过 90% 时按 90% 结算（面板合法性下限，MaxHitpoints 不归零）。</summary>
+    /// <summary>历史封顶参数保留（兼容既有只读引用，实际削弱已升级为双曲阻尼模型无硬上限）。</summary>
     public const double MaxMonsterWeakenRatio = 0.9;
 
     /// <summary>
-    /// 按节点建筑削弱比率折减怪物面板：气血上限与双攻双防按 ×(1−ratio) 线性折减（灵力上限不受影响）。
+    /// 按节点建筑削弱比率折减怪物面板：气血上限与双攻双防按双曲阻尼 1/(1+ratio) 衰减（灵力上限不受影响）。
     /// 波次入场、快照恢复、钉死入战、生态刷怪与组队会话的怪物模板生成点统一走此收口；
-    /// 比率 ≤0 时原位透传不分配新对象。
+    /// 比率 ≤0 时原位透传不分配新对象；数学上渐近趋向于 0 但恒大于 0，无硬上限。
     /// </summary>
     public static CombatantStats WeakenMonsterStats(CombatantStats stats, double weakenRatio)
     {
-        var clamped = Math.Clamp(weakenRatio, 0, MaxMonsterWeakenRatio);
-        if (clamped <= 0) return stats;
-        var factor = 1 - clamped;
+        if (weakenRatio <= 0) return stats;
+        var factor = 1.0 / (1.0 + Math.Max(0, weakenRatio));
         return stats with
         {
             MaxHitpoints = stats.MaxHitpoints * factor,
@@ -260,8 +306,9 @@ public static class NodeBuildingRules
             var level = EffectiveLevel(state, definition, nowUnixSeconds);
             if (level <= 0) continue;
             var efficiency = countsByKind is null ? 1
-                : CrowdEfficiency(level, ActiveUsers(definition.Modifiers, countsByKind));
-            total = total.Add(definition.Modifiers.Scale(level * efficiency));
+                : CrowdEfficiency(level, ActiveUsers(definition.BaseModifiers, countsByKind));
+            var levelEffect = definition.EffectAtLevel(level);
+            total = total.Add(levelEffect.Scale(efficiency));
         }
         return total;
     }

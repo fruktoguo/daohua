@@ -240,8 +240,31 @@ public sealed record BuildingDefinition(
     string Group = World.NodeBuildingRules.GroupOther,
     IReadOnlyList<Domain.World.BuildingMaterial>? Materials = null)
 {
-    /// <summary>每级基准效果；Lv N 生效 = 基准 × N。</summary>
-    public Domain.World.BuildingEffectSet Modifiers { get; init; } = Domain.World.BuildingEffectSet.Empty;
+    /// <summary>1 级初始基准效果。</summary>
+    public Domain.World.BuildingEffectSet BaseModifiers { get; init; } = Domain.World.BuildingEffectSet.Empty;
+
+    /// <summary>每升 1 级的线性增幅效果。</summary>
+    public Domain.World.BuildingEffectSet GrowthModifiers { get; init; } = Domain.World.BuildingEffectSet.Empty;
+
+    /// <summary>基准修饰项兼容访问器（等于 1 级效果）。</summary>
+    public Domain.World.BuildingEffectSet Modifiers
+    {
+        get => BaseModifiers;
+        init
+        {
+            BaseModifiers = value;
+            if (GrowthModifiers == Domain.World.BuildingEffectSet.Empty)
+                GrowthModifiers = value;
+        }
+    }
+
+    /// <summary>计算指定已建成等级（level >= 1）下的实际未折减效果；level <= 0 返回 Empty。</summary>
+    public Domain.World.BuildingEffectSet EffectAtLevel(int level)
+    {
+        if (level <= 0) return Domain.World.BuildingEffectSet.Empty;
+        if (level == 1) return BaseModifiers;
+        return BaseModifiers.Add(GrowthModifiers.Scale(level - 1));
+    }
 }
 
 /// <summary>
@@ -318,7 +341,7 @@ public sealed class ActionCatalog
             new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Meridians, Ratio: 0.5),
             new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 5.0, Aspect: CoreAspectKind.Bone, Ratio: 0.5)
         ]),
-        new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
+        new(new ActionId("explore.gather-ningxue-grass"), "采摘凝气草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
         [
             new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, new ItemId("item.ningxue-grass")),
             new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 8.0, Aspect: CoreAspectKind.Agility, Ratio: 1.0)
@@ -671,28 +694,45 @@ public sealed class GameDataCatalog
         var nodes = entry.TryGetProperty("availableNodeIds", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array
             ? new HashSet<string>(nodeArray.EnumerateArray().Select(value => value.GetString() ?? string.Empty).Where(value => value.Length > 0), StringComparer.Ordinal)
             : null;
-        var modifiers = ParseBuildingModifiers(entry);
+        var baseModifiers = ParseBuildingModifiers(entry, "baseModifiers");
+        var growthModifiers = ParseBuildingModifiers(entry, "growthModifiers");
+        if (baseModifiers == World.BuildingEffectSet.Empty && entry.TryGetProperty("modifiers", out _))
+        {
+            baseModifiers = ParseBuildingModifiers(entry, "modifiers");
+        }
+        if (growthModifiers == World.BuildingEffectSet.Empty)
+        {
+            growthModifiers = baseModifiers;
+        }
         var materials = ParseBuildingMaterials(entry);
         return new BuildingDefinition(id, name, description, effect, requiredRealmLevel, nodes, group, materials)
         {
-            Modifiers = modifiers
+            BaseModifiers = baseModifiers,
+            GrowthModifiers = growthModifiers
         };
     }
 
-    /// <summary>解析建筑每级基准效果块（modifiers 对象，缺省全零）。</summary>
-    private static World.BuildingEffectSet ParseBuildingModifiers(JsonElement entry)
+    /// <summary>解析建筑效果块（缺省全零）。</summary>
+    private static World.BuildingEffectSet ParseBuildingModifiers(JsonElement entry, string propertyName = "modifiers")
     {
-        if (!entry.TryGetProperty("modifiers", out var block) || block.ValueKind != JsonValueKind.Object)
+        if (!entry.TryGetProperty(propertyName, out var block) || block.ValueKind != JsonValueKind.Object)
             return World.BuildingEffectSet.Empty;
         return new World.BuildingEffectSet(
-            JsonRead.Number(block, "explorationSpeedRatio"),
-            JsonRead.Number(block, "explorationOutputRatio"),
-            JsonRead.Number(block, "alchemySpeedRatio"),
-            JsonRead.Number(block, "alchemyOutputRatio"),
-            JsonRead.Number(block, "cultivationOutputRatio"),
-            JsonRead.Number(block, "combatHitpointRegen"),
-            JsonRead.Number(block, "combatDamageReductionRatio"),
-            JsonRead.Number(block, "monsterWeakenRatio"));
+            ExplorationSpeedRatio: JsonRead.Number(block, "explorationSpeedRatio"),
+            ExplorationOutputRatio: JsonRead.Number(block, "explorationOutputRatio"),
+            AlchemySpeedRatio: JsonRead.Number(block, "alchemySpeedRatio"),
+            AlchemyOutputRatio: JsonRead.Number(block, "alchemyOutputRatio"),
+            CultivationOutputRatio: JsonRead.Number(block, "cultivationOutputRatio"),
+            CombatHitpointRegen: JsonRead.Number(block, "combatHitpointRegen"),
+            CombatDamageReductionRatio: JsonRead.Number(block, "combatDamageReductionRatio"),
+            MonsterWeakenRatio: JsonRead.Number(block, "monsterWeakenRatio"),
+            GatheringSpeedRatio: JsonRead.Number(block, "gatheringSpeedRatio"),
+            MiningSpeedRatio: JsonRead.Number(block, "miningSpeedRatio"),
+            ForgingSpeedRatio: JsonRead.Number(block, "forgingSpeedRatio"),
+            TalismanSpeedRatio: JsonRead.Number(block, "talismanSpeedRatio"),
+            FormationSpeedRatio: JsonRead.Number(block, "formationSpeedRatio"),
+            EnhancementSpeedRatio: JsonRead.Number(block, "enhancementSpeedRatio"),
+            CombatManapointRegen: JsonRead.Number(block, "combatManapointRegen"));
     }
 
     /// <summary>解析建筑一级基础材料清单（materials 数组，缺省为空）。</summary>

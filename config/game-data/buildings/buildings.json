@@ -1,46 +1,20 @@
 [
   {
-    "id": "building.gathering-tent",
-    "name": "采葛营帐",
-    "kind": "building",
-    "group": "production",
-    "description": "修士亲手搭建的简易营帐，晾晒绳与药篓一应俱全，长驻一地可从容采集四方灵植。",
-    "effect": "提升此地历练采集行动的收益",
-    "requiredRealmLevel": 1,
-    "modifiers": {
-      "explorationOutputRatio": 0.05
-    },
-    "materials": [
-      { "itemId": "item.peach-wood", "quantity": 20 },
-      { "itemId": "item.beast-hide", "quantity": 10 }
-    ]
-  },
-  {
-    "id": "building.alchemy-hearth",
-    "name": "携行丹灶",
-    "kind": "building",
-    "group": "production",
-    "description": "以凡铜铸就的便携丹灶，炉火温吞却胜在随取随用，足以就地开炉炼药。",
-    "effect": "提升此地炼丹行动的收益",
-    "requiredRealmLevel": 1,
-    "modifiers": {
-      "alchemyOutputRatio": 0.05
-    },
-    "materials": [
-      { "itemId": "item.dark-iron", "quantity": 15 },
-      { "itemId": "item.peach-wood", "quantity": 10 }
-    ]
-  },
-  {
     "id": "building.meditation-circle",
-    "name": "聚灵蒲团",
+    "name": "蒲团",
     "kind": "building",
     "group": "production",
-    "description": "以灵草茎秆编织的打坐蒲团，四周以卵石布下简易聚灵阵纹。",
+    "description": "以灵草茎秆编织的打坐蒲团，四周布下简易聚灵阵纹，盘坐其上可安心纳气。",
     "effect": "提升此地吐纳修炼的灵气收益",
     "requiredRealmLevel": 1,
+    "baseModifiers": {
+      "cultivationOutputRatio": 0.12
+    },
+    "growthModifiers": {
+      "cultivationOutputRatio": 0.02
+    },
     "modifiers": {
-      "cultivationOutputRatio": 0.05
+      "cultivationOutputRatio": 0.12
     },
     "materials": [
       { "itemId": "item.ningxue-grass", "quantity": 15 },
@@ -48,15 +22,87 @@
     ]
   },
   {
-    "id": "building.forge-anvil",
-    "name": "淬火铁砧",
+    "id": "building.gathering-tent",
+    "name": "灵材坊",
     "kind": "building",
     "group": "production",
-    "description": "沉入地脉的玄铁砧台，旁置淬火寒潭，可供修士就地锻打精炼法器。",
-    "effect": "提升此地炼丹炼器行动的速度",
-    "requiredRealmLevel": 19,
+    "description": "修士伐木采药的驻地工坊，晾晒架与置木棚一应俱全，便利四方采伐采集。",
+    "effect": "提升此地采集采伐行动的速度",
+    "requiredRealmLevel": 1,
+    "baseModifiers": {
+      "gatheringSpeedRatio": 0.12
+    },
+    "growthModifiers": {
+      "gatheringSpeedRatio": 0.02
+    },
     "modifiers": {
-      "alchemySpeedRatio": 0.05
+      "gatheringSpeedRatio": 0.12
+    },
+    "materials": [
+      { "itemId": "item.peach-wood", "quantity": 20 },
+      { "itemId": "item.beast-hide", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.mining-workshop",
+    "name": "采石坊",
+    "kind": "building",
+    "group": "production",
+    "description": "开采地脉矿石与灵晶的原矿工棚，配备坚固石磨与风箱，便利金石挖掘。",
+    "effect": "提升此地采矿挖掘行动的速度",
+    "requiredRealmLevel": 1,
+    "baseModifiers": {
+      "miningSpeedRatio": 0.12
+    },
+    "growthModifiers": {
+      "miningSpeedRatio": 0.02
+    },
+    "modifiers": {
+      "miningSpeedRatio": 0.12
+    },
+    "materials": [
+      { "itemId": "item.dark-iron", "quantity": 20 },
+      { "itemId": "item.beast-bone", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.alchemy-hearth",
+    "name": "丹房",
+    "kind": "building",
+    "group": "production",
+    "description": "接引地脉之火铸就的炼丹暖阁，药香弥漫，炉火温平，便于就地开炉炼药。",
+    "effect": "提升此地炼丹行动的速度",
+    "requiredRealmLevel": 1,
+    "baseModifiers": {
+      "alchemySpeedRatio": 0.12
+    },
+    "growthModifiers": {
+      "alchemySpeedRatio": 0.02
+    },
+    "modifiers": {
+      "alchemySpeedRatio": 0.12
+    },
+    "materials": [
+      { "itemId": "item.dark-iron", "quantity": 15 },
+      { "itemId": "item.peach-wood", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.forge-anvil",
+    "name": "炼器室",
+    "kind": "building",
+    "group": "production",
+    "description": "深嵌地脉的玄铁锻打密室，火膛赤红，冷潭如镜，可供修士熔炼锻打法宝。",
+    "effect": "提升此地炼器行动的速度",
+    "requiredRealmLevel": 19,
+    "baseModifiers": {
+      "forgingSpeedRatio": 0.12
+    },
+    "growthModifiers": {
+      "forgingSpeedRatio": 0.02
+    },
+    "modifiers": {
+      "forgingSpeedRatio": 0.12
     },
     "materials": [
       { "itemId": "item.dark-iron", "quantity": 40 },
@@ -64,15 +110,87 @@
     ]
   },
   {
+    "id": "building.talisman-chamber",
+    "name": "制符室",
+    "kind": "building",
+    "group": "production",
+    "description": "辟邪沉香木筑就的静心书斋，案头朱砂与狼毫清灵温润，专供修士静心落笔绘制灵符。",
+    "effect": "提升此地符箓绘制行动的速度",
+    "requiredRealmLevel": 19,
+    "baseModifiers": {
+      "talismanSpeedRatio": 0.12
+    },
+    "growthModifiers": {
+      "talismanSpeedRatio": 0.02
+    },
+    "modifiers": {
+      "talismanSpeedRatio": 0.12
+    },
+    "materials": [
+      { "itemId": "item.soul-talisman", "quantity": 20 },
+      { "itemId": "item.peach-wood", "quantity": 20 }
+    ]
+  },
+  {
+    "id": "building.formation-platform",
+    "name": "衍阵台",
+    "kind": "building",
+    "group": "production",
+    "description": "刻满周天星宿与八卦流转的青石高台，修士登台可演算阵纹灵轨，炼制玄妙阵盘。",
+    "effect": "提升此地阵盘研制行动的速度",
+    "requiredRealmLevel": 19,
+    "baseModifiers": {
+      "formationSpeedRatio": 0.12
+    },
+    "growthModifiers": {
+      "formationSpeedRatio": 0.02
+    },
+    "modifiers": {
+      "formationSpeedRatio": 0.12
+    },
+    "materials": [
+      { "itemId": "item.spirit-pine-crystal", "quantity": 15 },
+      { "itemId": "item.broken-spirit-core", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.enhancement-chamber",
+    "name": "淬灵室",
+    "kind": "building",
+    "group": "production",
+    "description": "引赤铜玄火构筑的淬灵地穴，灵气凝重炽热，专用于熔灌灵材为法宝开光强化。",
+    "effect": "提升此地装备强化行动的速度",
+    "requiredRealmLevel": 19,
+    "baseModifiers": {
+      "enhancementSpeedRatio": 0.12
+    },
+    "growthModifiers": {
+      "enhancementSpeedRatio": 0.02
+    },
+    "modifiers": {
+      "enhancementSpeedRatio": 0.12
+    },
+    "materials": [
+      { "itemId": "item.crimson-copper", "quantity": 20 },
+      { "itemId": "item.dark-iron", "quantity": 20 }
+    ]
+  },
+  {
     "id": "building.demon-seal-array",
     "name": "封魔阵",
     "kind": "building",
     "group": "combat",
-    "description": "以煞骨为桩、妖核为眼布下的镇魔阵纹，阵成之处魔气受缚，群妖气血神通皆被压制。",
-    "effect": "削弱此地怪物的气血上限与双攻双防（每级 -1%，至多 -90%）",
+    "description": "以煞骨为桩、妖核为眼布下的镇魔大阵，阵成之处魔气受缚，群妖气血神通皆被阻尼压制。",
+    "effect": "按双曲阻尼削弱此地怪物的属性",
     "requiredRealmLevel": 19,
-    "modifiers": {
+    "baseModifiers": {
+      "monsterWeakenRatio": 0.06
+    },
+    "growthModifiers": {
       "monsterWeakenRatio": 0.01
+    },
+    "modifiers": {
+      "monsterWeakenRatio": 0.06
     },
     "materials": [
       { "itemId": "item.sha-bone", "quantity": 100 },
@@ -80,35 +198,47 @@
     ]
   },
   {
-    "id": "building.guard-shrine",
-    "name": "护阵石龛",
+    "id": "building.rejuvenation-array",
+    "name": "回春阵",
     "kind": "building",
     "group": "combat",
-    "description": "嵌入山岩的小型阵龛，龛内供奉的阵旗可自行结成薄薄一层护体光罩。",
-    "effect": "在此地战斗时提供额外减伤",
-    "requiredRealmLevel": 31,
-    "modifiers": {
-      "combatDamageReductionRatio": 0.03
-    },
-    "materials": [
-      { "itemId": "item.crimson-copper", "quantity": 20 },
-      { "itemId": "item.soul-talisman", "quantity": 10 }
-    ]
-  },
-  {
-    "id": "building.spring-marrow",
-    "name": "养脉泉眼",
-    "kind": "building",
-    "group": "combat",
-    "description": "以灵玉圈出的小小泉眼，泉水中丝丝地脉精气可温养修士经脉。",
+    "description": "以青木灵力勾勒的生息大阵，阵光所及草木逢春，在阵中交锋可源源温养肉身气血。",
     "effect": "在此地战斗时提升气血自然回复",
-    "requiredRealmLevel": 43,
+    "requiredRealmLevel": 19,
+    "baseModifiers": {
+      "combatHitpointRegen": 2.4
+    },
+    "growthModifiers": {
+      "combatHitpointRegen": 0.4
+    },
     "modifiers": {
-      "combatHitpointRegen": 2
+      "combatHitpointRegen": 2.4
     },
     "materials": [
       { "itemId": "item.banling-flower", "quantity": 10 },
       { "itemId": "item.spirit-pine-crystal", "quantity": 5 }
+    ]
+  },
+  {
+    "id": "building.mana-regen-array",
+    "name": "回元阵",
+    "kind": "building",
+    "group": "combat",
+    "description": "接引天地清气凝聚而成的纳灵大阵，阵内灵气氤氲，在此地交锋可迅速纳气回元。",
+    "effect": "在此地战斗时提升灵力自然回复",
+    "requiredRealmLevel": 19,
+    "baseModifiers": {
+      "combatManapointRegen": 2.4
+    },
+    "growthModifiers": {
+      "combatManapointRegen": 0.4
+    },
+    "modifiers": {
+      "combatManapointRegen": 2.4
+    },
+    "materials": [
+      { "itemId": "item.morning-dew", "quantity": 20 },
+      { "itemId": "item.broken-spirit-core", "quantity": 10 }
     ]
   }
 ]

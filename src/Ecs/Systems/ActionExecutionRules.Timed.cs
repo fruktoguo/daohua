@@ -196,7 +196,7 @@ internal static partial class ActionExecutionRules
                 ? EnhancementRules.DurationSeconds(current + 1)
                 : 0;
         }
-        var buildingSpeed = player.World.EffectiveNodeBuildingEffects.SpeedRatioFor(definition.Kind);
+        var buildingSpeed = player.World.EffectiveNodeBuildingEffects.SpeedRatioFor(definition.Kind, definition.Technique);
         if (buildingSpeed > 0) duration /= 1 + buildingSpeed;
         if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))
         {
@@ -764,16 +764,6 @@ internal static partial class ActionExecutionRules
         }
         AddDelta(deltas, fromKey, -1d);
         AddDelta(deltas, toKey, 1d);
-        // 已装备槽位同步强化等级：与资产变体键口径一致（0 级回到基础键）。
-        var slotChanged = false;
-        for (var i = 0; i < player.Loadout.Equipment.Count; i++)
-        {
-            var slot = player.Loadout.Equipment[i];
-            if (!string.Equals(slot.ItemId, prep.ItemId.Value, StringComparison.Ordinal)
-                || slot.EnhancementLevel == resultLevel) continue;
-            player.Loadout.Equipment[i] = slot with { EnhancementLevel = resultLevel };
-            slotChanged = true;
-        }
         // 强化技艺经验按当次实际基础耗时（5+t）入账。
         GrantTechniqueExperience(player, action.Id, TechniqueCatalog.Enhancement,
             EnhancementRules.DurationSeconds(prep.TargetLevel), gameData, atUnix);
@@ -792,7 +782,6 @@ internal static partial class ActionExecutionRules
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
-        if (slotChanged) player.MarkDirty(PlayerSectionKind.Loadout);
         events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(target,
             outcome == EnhancementRules.Outcome.Success ? "enhance.succeeded" : "enhance.failed",
