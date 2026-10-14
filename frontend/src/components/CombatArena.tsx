@@ -16,6 +16,7 @@ import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
+import { CombatStatsPanel } from './CombatStatsPanel'
 import { ConfirmDialog } from './ConfirmDialog'
 import { describeBuffEffectLines } from './ItemDisplay'
 import { useCombatVfx } from '../vfx/useCombatVfx'
@@ -1554,6 +1555,9 @@ export const CombatArena = memo(function CombatArena({
   const [pendingStopEntryId, setPendingStopEntryId] = useState<string | null>(null)
   // 组队讨伐终止确认：参与行动不可 action.remove，「终止」语义=取消参战（party.unready 散场）
   const [pendingQuitSession, setPendingQuitSession] = useState(false)
+  // 战斗统计弹窗：入口仅战斗相位可见（悬浮于战场左上角），面板数据源为当前队首行动账本
+  const [statsOpen, setStatsOpen] = useState(false)
+  const closeStats = useCallback(() => setStatsOpen(false), [])
   const unreadyParty = useSocialStore(state => state.unreadyParty)
   // 单位属性缓存：敌方/镜像属性为定义级静态值、盟友属性为开打冻结面板，服务端仅在 UnitInspect 登记后一次性交付；
   // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名} / ally:{playerId}。
@@ -1586,6 +1590,10 @@ export const CombatArena = memo(function CombatArena({
   const isTravel = current !== null && (current.executionKind === 'travel' || current.actionId === 'world.travel')
   const isLifeAction = current !== null && !isCombat && !isTravel
   const expedition = isCombat ? current.expedition : null
+  // 统计入口随战斗行动存亡：行动出队/切换为非战斗行动时自动收起已开弹窗
+  useEffect(() => {
+    if (!isCombat) setStatsOpen(false)
+  }, [isCombat])
   // 一次性交付落账：wire 携带属性时按身份写入缓存，后续快照不再携带也能稳定显示。
   useEffect(() => {
     const cache = inspectedAttributesCacheRef.current
@@ -1924,6 +1932,16 @@ export const CombatArena = memo(function CombatArena({
     <div className="combat-arena-shell" ref={arenaShellRef}>
       {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
+      {/* 战斗统计入口：仅战斗相位显示，浮于详情左上角不占布局 */}
+      {isCombat && (
+        <button
+          className="ghost-button combat-stats-open"
+          onClick={() => setStatsOpen(true)}
+          type="button"
+        >
+          {t('combat.stats.title')}
+        </button>
+      )}
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
             组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}
@@ -2140,6 +2158,15 @@ export const CombatArena = memo(function CombatArena({
         open={pendingQuitSession}
         title={t('social.confirm.quitSessionTitle')}
       />
+      <Modal
+        className="battle-report-modal"
+        labelledBy="combat-stats-panel-title"
+        onClose={closeStats}
+        open={statsOpen}
+        size="medium"
+      >
+        <CombatStatsPanel />
+      </Modal>
       <CharacterAttributeModal
         actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
         attributes={inspectedAttributes}

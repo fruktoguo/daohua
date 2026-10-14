@@ -648,6 +648,25 @@
   box-shadow: 0 0 8px rgba(201, 180, 109, 0.3);
 }
 
+/* 玩家公共建筑胶囊：与配表陈设（金）区分，玉色描边 */
+.world-building-pill.is-player {
+  border-color: rgba(134, 239, 172, 0.35);
+  background: rgba(134, 239, 172, 0.08);
+  color: #86efac;
+}
+
+.world-building-pill.is-player:hover {
+  border-color: #86efac;
+  background: rgba(134, 239, 172, 0.16);
+  box-shadow: 0 0 8px rgba(134, 239, 172, 0.3);
+}
+
+:root[data-theme="light"] .world-building-pill.is-player {
+  border-color: rgba(23, 96, 67, 0.4);
+  background: rgba(23, 96, 67, 0.08);
+  color: var(--jade);
+}
+
 .world-building-popover {
   display: flex;
   flex-direction: column;
@@ -4107,6 +4126,17 @@
 
 /* 战报入口按钮：详情页头部右上角 */
 .battle-report-open {
+  padding: 4px 14px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+/* 战斗统计入口：仅战斗相位渲染，悬浮于战场详情左上角，不占布局（z9 高于 vfx 覆盖层 z8） */
+.combat-stats-open {
+  position: absolute;
+  z-index: 9;
+  top: 10px;
+  left: 12px;
   padding: 4px 14px;
   font-size: 12px;
   letter-spacing: 1px;

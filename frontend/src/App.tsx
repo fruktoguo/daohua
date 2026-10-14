@@ -3,7 +3,6 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo,
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
-import { CombatStatsPanel } from './components/CombatStatsPanel'
 import { RecordsPanel } from './components/RecordsPanel'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
@@ -376,7 +375,6 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
 const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = false, onStop }: { entry: QueueEntry; departing?: boolean; onStop?: () => void }): React.JSX.Element {
   const t = useT()
   const world = useGameStore(state => state.world)
-  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
   const maps = useGameStore(state => state.maps)
   const queuePaused = useGameStore(state => state.queue.paused)
   const isCombatExpedition = entry.type === 'combat'
@@ -671,6 +669,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   const lifetimeExperience = useGameStore(state => state.stats.lifetimeExperience)
   const realmLevel = useGameStore(state => state.stats.realmLevel)
   const connection = useGameStore(state => state.connection)
+  const latencyMs = useGameStore(state => state.latencyMs)
   const presence = useGameStore(state => state.presenceMode)
   const setActiveTab = useUiStore(state => state.setActiveTab)
   const realmProgress = useMemo(() => calculateRealmProgress(experience ?? 0, realmLevel), [realmLevel, experience])
@@ -687,6 +686,9 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
     : presence === 'idle-offline'
       ? t('app.topbar.presenceIdle')
       : t('app.topbar.presenceOffline')
+  const connectionTip = latencyMs === null || connection !== 'online'
+    ? `${connectionText} · ${presenceText}`
+    : `${connectionText} · ${presenceText} · ${t('app.topbar.latency', { ms: latencyMs })}`
 
   const progressDisplay = formatProgressText(realmProgress.currentLayerExp, realmProgress.expToNext, {
     completedText: t('app.topbar.ascendedComplete'),
@@ -707,8 +709,8 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
           <div className="player-line">
             <strong className="player-name">{name}</strong>
             <RealmBadge realmInfo={realmInfo} />
-            <FloatingTooltip placement="bottom" title={`${connectionText} · ${presenceText}`} tone={connection === 'online' ? 'jade' : 'danger'}>
-              <span className={`connection-dot connection-dot--${connection}`} />
+            <FloatingTooltip placement="bottom" title={connectionTip} tone={connection === 'online' ? 'jade' : 'danger'}>
+              <span className={`connection-dot connection-dot--${connection}`} onMouseEnter={() => gameClient.pingNow()} />
             </FloatingTooltip>
           </div>
           <FloatingTooltip
@@ -1335,6 +1337,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   const itemCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const encounters = useGameStore(state => state.encounters)
+  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
 
@@ -1347,7 +1350,6 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   )
 
   const isLocked = level > realmLevel
-
   const rarity = useMemo(
     () => resolveActionRarity(action, itemCatalog, equipmentCatalog, encounters),
     [action, itemCatalog, equipmentCatalog, encounters]
@@ -1912,10 +1914,10 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
   const t = useT()
   const actions = useGameStore(state => state.actions)
   const worldNodeId = useGameStore(state => state.world.nodeId)
-  const world = useGameStore(state => state.world)
   const itemCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const encounters = useGameStore(state => state.encounters)
+  const world = useGameStore(state => state.world)
   const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
 
@@ -2043,22 +2045,13 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
   const setActiveTab = useUiStore(state => state.setActiveTab)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
-  const [statsOpen, setStatsOpen] = useState(false)
   const closeModal = useCallback(() => setSelectedAction(null), [])
   const closeReport = useCallback(() => setReportOpen(false), [])
-  const closeStats = useCallback(() => setStatsOpen(false), [])
 
   return (
     <section className="panel expedition-page" data-tour="combat-detail" hidden={hidden}>
       <header className="panel-header">
         <h2>{t('app.nav.combat')}</h2>
-        <button
-          className="ghost-button combat-stats-open"
-          onClick={() => setStatsOpen(true)}
-          type="button"
-        >
-          {t('combat.stats.title')}
-        </button>
         <button
           className="ghost-button battle-report-open"
           onClick={() => setReportOpen(true)}
@@ -2087,15 +2080,6 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
           </div>
         </div>
       </div>
-      <Modal
-        className="battle-report-modal"
-        labelledBy="combat-stats-panel-title"
-        onClose={closeStats}
-        open={statsOpen}
-        size="medium"
-      >
-        <CombatStatsPanel />
-      </Modal>
       <Modal
         className="battle-report-modal"
         labelledBy="battle-report-panel-title"
