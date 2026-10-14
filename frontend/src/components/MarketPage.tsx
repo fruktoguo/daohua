@@ -2,9 +2,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { convertTierToLevel, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
 import { getT, useT, type TFunction } from '../i18n'
 import { useGameStore } from '../game/gameStore'
-import type { MarketBook, MarketMetrics, MarketOrder, MarketVariantSummary } from '../game/types'
+import type { MarketBook, MarketOrder, MarketVariantSummary } from '../game/types'
 import { useMarketStore, type MarketTab } from '../game/marketStore'
-import { fetchMarketBook, fetchMarketMetrics, fetchMarketOrders, fetchMarketVariants } from '../network/apiClient'
+import { fetchMarketBook, fetchMarketOrders, fetchMarketVariants } from '../network/apiClient'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { MarketBookPanel } from './market/MarketBookPanel'
 import { MarketBrowseGrid } from './market/MarketBrowseGrid'
@@ -17,8 +17,6 @@ import { MarketOwnOrders } from './market/MarketOwnOrders'
 const REFRESH_INTERVAL_MS = 3_000
 /** 个人订单刷新间隔（5秒） */
 const ORDERS_REFRESH_INTERVAL_MS = 5_000
-/** 市场宏观指标刷新间隔（10秒） */
-const METRICS_REFRESH_INTERVAL_MS = 10_000
 /** 盘口深度展示档位数 */
 const BOOK_DEPTH = 20
 /** 变体摘要空集共享引用：未选中/未对账时保持 props 引用稳定，避免 picker 行无谓重渲染 */
@@ -43,8 +41,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
-      tier,
-      level: convertTierToLevel(tier),
+      level: tier,
       description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
     }
   }
@@ -60,7 +57,8 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
-      level: tier,
+      tier,
+      level: convertTierToLevel(tier),
       description: t('market.itemFallback.description'),
     }
   }
@@ -216,7 +214,6 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const [book, setBook] = useState<MarketBook | null>(null)
   // 变体摘要轮询结果连同所属 itemId 一起缓存：渲染期按选中标的对账，杜绝切换标的后旧行闪现。
   const [variantBook, setVariantBook] = useState<{ itemId: string; rows: MarketVariantSummary[] } | null>(null)
-  const [metrics, setMetrics] = useState<MarketMetrics | null>(null)
   const [orders, setOrders] = useState<MarketOrder[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -251,7 +248,6 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
     let pendingForceRefresh = false
     let controller: AbortController | null = null
     let timer: number | null = null
-    let lastMetricsAt = 0
     let lastOrdersAt = 0
 
     const isAbortError = (reason: unknown): boolean =>
@@ -266,9 +262,6 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
       inFlight = true
       controller = new AbortController()
       const now = Date.now()
-      const shouldRefreshMetrics = force
-        || lastMetricsAt === 0
-        || now - lastMetricsAt >= METRICS_REFRESH_INTERVAL_MS
       const shouldRefreshOrders = force
         || lastOrdersAt === 0
         || now - lastOrdersAt >= ORDERS_REFRESH_INTERVAL_MS
@@ -277,16 +270,13 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
       const shouldRefreshVariants = selectedItemId !== null && inPickerView
 
       try {
-        const [bookResult, variantsResult, metricsResult, ordersResult] = await Promise.allSettled([
+        const [bookResult, variantsResult, ordersResult] = await Promise.allSettled([
           shouldRefreshBook && selectedItemId
             ? fetchMarketBook(selectedItemId, effectiveLevel, BOOK_DEPTH, controller.signal)
             : Promise.resolve<MarketBook | null>(null),
           shouldRefreshVariants && selectedItemId
             ? fetchMarketVariants(selectedItemId, controller.signal)
             : Promise.resolve<MarketVariantSummary[] | null>(null),
-          shouldRefreshMetrics
-            ? fetchMarketMetrics(controller.signal)
-            : Promise.resolve<MarketMetrics | null>(null),
           shouldRefreshOrders
             ? fetchMarketOrders(playerId, controller.signal)
             : Promise.resolve<MarketOrder[] | null>(null),
@@ -304,12 +294,6 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
             setVariantBook({ itemId: selectedItemId, rows: variantsResult.value })
           }
         } else if (!isAbortError(variantsResult.reason)) {
-          hasFailure = true
-        }
-        if (metricsResult.status === 'fulfilled' && metricsResult.value !== null) {
-          setMetrics(metricsResult.value)
-          lastMetricsAt = now
-        } else if (metricsResult.status === 'rejected' && !isAbortError(metricsResult.reason)) {
           hasFailure = true
         }
         if (ordersResult.status === 'fulfilled' && ordersResult.value !== null) {
@@ -483,7 +467,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
         )}
 
         {activeTab === 'orders' && (
-          <MarketOwnOrders metrics={metrics} onChanged={refresh} orders={orders} />
+          <MarketOwnOrders onChanged={refresh} orders={orders} />
         )}
       </div>
 
