@@ -274,6 +274,40 @@ public sealed class AccountRiskBoundaryTests
         Assert.Equal(1L, await key.ExecuteScalarAsync());
     }
 
+    /// <summary>反向代理场景下，清空 KnownNetworks/KnownProxies 的 ForwardedHeadersMiddleware 能够正确将 Docker 网桥网关后的真实客户端 IP 还原并采集为准确网段。</summary>
+    [Fact]
+    public async Task ForwardedHeadersExtractsRealClientIpThroughBridgeGateway()
+    {
+        var options = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+        {
+            ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+        };
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+
+        var middleware = new Microsoft.AspNetCore.HttpOverrides.ForwardedHeadersMiddleware(
+            _ => Task.CompletedTask,
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            Microsoft.Extensions.Options.Options.Create(options));
+
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("172.19.0.1"); // Docker 网桥网关
+        context.Request.Headers["X-Forwarded-For"] = "203.0.113.195";
+        context.Request.Headers["X-Forwarded-Proto"] = "https";
+
+        await middleware.Invoke(context);
+
+        Assert.Equal(IPAddress.Parse("203.0.113.195"), context.Connection.RemoteIpAddress);
+        Assert.Equal("https", context.Request.Scheme);
+
+        var dataProtection = new EphemeralDataProtectionProvider();
+        var collector = new AccountRiskRequestContext(dataProtection);
+        var signals = collector.Collect(context, new AccountRiskClientSignals(null, Guid.NewGuid().ToString("D"), null, null), persistCookie: false);
+
+        Assert.Equal("203.0.113.195", signals.IpAddress);
+        Assert.Equal("203.0.113.0/24", signals.NetworkHash);
+    }
+
     private static string UniqueAccount() => $"boundary_{Guid.NewGuid():N}"[..28];
     private static string HashPrefix(IReadOnlyList<AccountRiskSignalHash> hashes, string kind) =>
         Assert.Single(hashes, item => item.Kind == kind).Hash[..12];

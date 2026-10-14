@@ -79,7 +79,11 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownProxies.Add(IPAddress.Loopback);
+    // 生产环境中容器经宿主机 Caddy 反代接入（端口仅绑 127.0.0.1 回环），
+    // 容器网络收到的 TCP 源地址为 Docker 虚拟网桥网关（如 172.16.0.0/12），
+    // 必须清空默认的 KnownIPNetworks/KnownProxies 以信任反向代理注入的 X-Forwarded-* 标头。
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
 });
 
 var options = ServerOptions.From(builder.Configuration) with { ProcessRole = processRole };
