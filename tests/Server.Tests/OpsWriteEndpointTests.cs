@@ -186,14 +186,19 @@ public sealed class OpsWriteEndpointTests
         Assert.Equal(0, economy.CommitCalls);
     }
 
-    /// <summary>可挂售物品目录：全部为非货币、有回收价的物品，并下发品类列表。</summary>
+    /// <summary>只读端点同样强制校验密码；携带正确密码时返回可挂售物品目录。</summary>
     [Fact]
-    public async Task MarketCatalog_ReturnsRecyclableItems()
+    public async Task MarketCatalog_RequiresTokenAndReturnsRecyclableItems()
     {
         await using var app = await StartHostAsync();
         using var http = new HttpClient();
 
-        var response = await http.GetAsync($"{BaseAddress(app)}/ops/api/market/catalog");
+        var unauthorized = await http.GetAsync($"{BaseAddress(app)}/ops/api/market/catalog");
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseAddress(app)}/ops/api/market/catalog");
+        request.Headers.Add(OpsPanel.TokenHeader, OpsToken);
+        var response = await http.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         var items = payload.GetProperty("items");

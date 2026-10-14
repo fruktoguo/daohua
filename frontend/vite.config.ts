@@ -45,9 +45,9 @@ export default defineConfig({
     },
     proxy: {
       '/api': 'http://127.0.0.1:5128',
-      // 运维面板数据端点并入主端口；面板页面本身（/ops）由本 dev server 的 SPA 兜底提供，
-      // 因此这里只代理 /ops/api 前缀，避免把页面请求也转给后端。
-      '/ops/api': 'http://127.0.0.1:5128',
+      // 运维面板数据端点并入主端口；面板页面本身（/ops 或 /ops-<hex>）由本 dev server 的 SPA 兜底提供，
+      // 因此这里只代理 /ops(-*)?/api 前缀，避免把页面请求也转给后端。
+      '^/ops(-[a-zA-Z0-9_-]+)?/api': 'http://127.0.0.1:5128',
       '/ws': {
         target: 'ws://127.0.0.1:5128',
         ws: true,

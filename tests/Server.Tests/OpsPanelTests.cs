@@ -42,14 +42,46 @@ public sealed class OpsPanelTests
         Assert.Equal("local-token", options.Token);
     }
 
-    /// <summary>未配置令牌时进程内生成一次性令牌，且不随 ToString 泄露。</summary>
+    /// <summary>未配置路径与密码时进程内生成随机路径（`/ops-&lt;16位hex&gt;`）与一次性密码，且密码不随 ToString 泄露。</summary>
     [Fact]
-    public void Enabled_WithoutToken_GeneratesOneTimeToken()
+    public void Enabled_WithoutPathAndToken_GeneratesRandomPathAndToken()
     {
         var options = Options(("Ops:Enabled", "true"));
         Assert.True(options.Enabled);
+        Assert.StartsWith("/ops-", options.Path, StringComparison.Ordinal);
+        Assert.Equal(21, options.Path.Length);
         Assert.Equal(32, options.Token.Length);
         Assert.DoesNotContain(options.Token, options.ToString());
+    }
+
+    /// <summary>启用时非法路径前缀快速失败。</summary>
+    [Fact]
+    public void Enabled_InvalidPath_Throws()
+    {
+        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), ("Ops:Path", "/admin") };
+        Assert.Throws<InvalidOperationException>(() => Options([.. entries]));
+    }
+
+    /// <summary>路径白名单判定：生产环境仅放行当前激活随机路径，本地开发额外放行 `/ops` 别名，其余 `/ops*` 一律拦截。</summary>
+    [Fact]
+    public void BlockedOpsPath_AllowsOnlyActivePathAndDevAlias()
+    {
+        var active = new OpsOptions(true, "/ops-a1b2c3d4e5f60718", 500, "secret");
+
+        Assert.False(OpsPanel.IsBlockedOpsPath("/", active, isDevelopment: false));
+        Assert.False(OpsPanel.IsBlockedOpsPath("/api/v1/meta", active, isDevelopment: false));
+        Assert.False(OpsPanel.IsBlockedOpsPath("/ops-a1b2c3d4e5f60718", active, isDevelopment: false));
+        Assert.False(OpsPanel.IsBlockedOpsPath("/ops-a1b2c3d4e5f60718/api/overview", active, isDevelopment: false));
+
+        Assert.True(OpsPanel.IsBlockedOpsPath("/ops", active, isDevelopment: false));
+        Assert.True(OpsPanel.IsBlockedOpsPath("/ops/api/overview", active, isDevelopment: false));
+        Assert.True(OpsPanel.IsBlockedOpsPath("/ops-other", active, isDevelopment: false));
+
+        Assert.False(OpsPanel.IsBlockedOpsPath("/ops", active, isDevelopment: true));
+        Assert.False(OpsPanel.IsBlockedOpsPath("/ops/api/overview", active, isDevelopment: true));
+        Assert.True(OpsPanel.IsBlockedOpsPath("/ops-other", active, isDevelopment: true));
+
+        Assert.True(OpsPanel.IsBlockedOpsPath("/ops-a1b2c3d4e5f60718", OpsOptions.Disabled, isDevelopment: false));
     }
 
     /// <summary>启用时越界容量快速失败。</summary>

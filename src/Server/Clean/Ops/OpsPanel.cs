@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Routing;
 using Protocol;
 using Server.Clean.AccountAbuse;
 
@@ -27,23 +28,23 @@ public sealed record OpsAccountRiskPolicyRequest(bool Enabled, bool RequireDevic
     int MaxAccountsPerDevice, int RiskThreshold, string HighRiskAction, IReadOnlyList<AccountRiskModulePolicy> Modules);
 
 /// <summary>
-/// 本地运维面板（Development-only）。
-/// 面板并入主 API 端口，页面由前端 React 应用承载；本类只提供 `/ops/api/*` 数据端点。
-/// 只读视图依赖环境装配判定；写操作要求一次性令牌（`X-Ops-Token`），并记录审计日志。
+/// 运维监控面板。
+/// 面板并入主 API 端口，页面由前端 React 应用承载；本类提供 `{Ops:Path}/api/*` 数据端点（Development 环境额外兼容 `/ops/api/*`）。
+/// 所有只读视图与写操作统一强制校验密码（`X-Ops-Token`），写操作额外记录审计日志。
 /// </summary>
 public static class OpsPanel
 {
     /// <summary>运维踢出会话使用的自定义关闭码（私有段，避开防多开 4005-4008 与慢消费者 4009）。</summary>
     public const int KickCloseCode = 4010;
 
-    /// <summary>写操作令牌请求头名。</summary>
+    /// <summary>运维密码请求头名。</summary>
     public const string TokenHeader = "X-Ops-Token";
 
     /// <summary>运维写操作审计日志类别。</summary>
     public const string AuditCategory = "Ops.Audit";
 
     /// <summary>
-    /// 映射面板只读视图与令牌保护的写操作端点。
+    /// 映射面板只读视图与写操作端点，并为全部端点挂载 `X-Ops-Token` 密码校验过滤器。
     /// </summary>
     /// <param name="app">应用构建器。</param>
     /// <param name="options">面板配置。</param>
@@ -53,7 +54,43 @@ public static class OpsPanel
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(options);
-        var group = app.MapGroup(options.Path);
+        MapOpsGroup(app.MapGroup(options.Path), app, options, releaseVersion, startedAt);
+        // 本地开发兼容：若随机或自定义路径非 /ops，额外挂载 /ops 别名供 dev.sh 与 dev-tui 使用。
+        if (app.Environment.IsDevelopment() && !string.Equals(options.Path, "/ops", StringComparison.OrdinalIgnoreCase))
+            MapOpsGroup(app.MapGroup("/ops"), app, options, releaseVersion, startedAt);
+    }
+
+    /// <summary>
+    /// 判断请求路径是否属于未激活的 `/ops` 或 `/ops-*` 前缀（需在 SPA 回退前拦截返回 404）。
+    /// </summary>
+    public static bool IsBlockedOpsPath(PathString requestPath, OpsOptions options, bool isDevelopment)
+    {
+        var raw = requestPath.Value;
+        if (string.IsNullOrEmpty(raw) || !raw.StartsWith("/ops", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (raw.Length > 4 && raw[4] is not ('/' or '-'))
+            return false;
+        if (!options.Enabled)
+            return true;
+        if (MatchesBasePath(raw, options.Path))
+            return false;
+        if (isDevelopment && MatchesBasePath(raw, "/ops"))
+            return false;
+        return true;
+    }
+
+    private static bool MatchesBasePath(string requestPath, string basePath) =>
+        requestPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase)
+        && (requestPath.Length == basePath.Length || requestPath[basePath.Length] == '/');
+
+    private static void MapOpsGroup(RouteGroupBuilder group, WebApplication app, OpsOptions options, string releaseVersion, DateTimeOffset startedAt)
+    {
+        group.AddEndpointFilter(async (invocationContext, next) =>
+        {
+            if (RejectUnauthorized(invocationContext.HttpContext, options) is { } rejected)
+                return rejected;
+            return await next(invocationContext);
+        });
 
         group.MapGet("/api/account-abuse", async (PostgresAccountRiskRepository risk, CancellationToken ct) =>
             Results.Ok(await risk.GetOpsOverviewAsync(ct)));
@@ -480,6 +517,7 @@ public static class OpsPanel
 
         // 市场快捷操作：系统身份批量挂售/收购与撤单（端点实现在 OpsMarketActions）。
         group.MapOpsMarketActions();
+        group.MapFallback("/api/{**path}", () => Results.NotFound(new { code = "NOT_FOUND", message = "运维接口不存在。" }));
     }
 
     /// <summary>会话只读视图：玩家 ID、准入设备指纹与是否已在关闭流程。</summary>
@@ -490,13 +528,11 @@ public static class OpsPanel
     }
 
     /// <summary>
-    /// 校验写操作来源与令牌：要求回环/私网来源（纵深防御）且令牌匹配。
-    /// 不通过时返回拒绝结果，通过时返回 null。
+    /// 校验运维请求密码（`X-Ops-Token`）：读写全量接口通用，恒定时间比对。
+    /// 不通过时返回 401 拒绝结果，通过时返回 null。
     /// </summary>
-    internal static IResult? RejectWriteRequest(HttpContext context, OpsOptions options)
+    internal static IResult? RejectUnauthorized(HttpContext context, OpsOptions options)
     {
-        if (!OpsNetwork.IsPrivateOrLoopback(context.Connection.RemoteIpAddress))
-            return Results.Json(new { code = "OPS_SOURCE_REJECTED", message = "运维写操作仅允许本机或私有网段来源。" }, statusCode: StatusCodes.Status403Forbidden);
         var provided = context.Request.Headers[TokenHeader].ToString();
         var expected = options.Token;
         var matches = provided.Length > 0
@@ -504,8 +540,12 @@ public static class OpsPanel
             && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(expected));
         return matches
             ? null
-            : Results.Json(new { code = "OPS_TOKEN_INVALID", message = "运维令牌缺失或无效。" }, statusCode: StatusCodes.Status401Unauthorized);
+            : Results.Json(new { code = "OPS_TOKEN_INVALID", message = "运维密码缺失或无效。" }, statusCode: StatusCodes.Status401Unauthorized);
     }
+
+    /// <summary>校验写操作密码（兼容写端点显式调用）。</summary>
+    internal static IResult? RejectWriteRequest(HttpContext context, OpsOptions options) =>
+        RejectUnauthorized(context, options);
 
     /// <summary>记录运维写操作审计（含来源地址，绝不记录令牌）。</summary>
     internal static void Audit(ILoggerFactory loggerFactory, HttpContext context, string action, Guid? target) =>

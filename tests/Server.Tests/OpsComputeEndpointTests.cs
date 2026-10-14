@@ -64,7 +64,7 @@ public sealed class OpsComputeEndpointTests
         metrics.RecordBatchWritten(node, 8, 4096);
         metrics.RecordBatchCompleted(node, 8, 32_000, TimeSpan.FromMilliseconds(120), 5_000);
 
-        using var http = new HttpClient();
+        using var http = CreateAuthorizedClient();
         var response = await http.GetAsync($"{BaseAddress(app)}/ops/api/compute");
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.IsSuccessStatusCode, body);
@@ -109,7 +109,7 @@ public sealed class OpsComputeEndpointTests
     public async Task ComputeApiReportsDisabledWhenNotConfigured()
     {
         await using var app = await StartHostAsync(computeEnabled: false);
-        using var http = new HttpClient();
+        using var http = CreateAuthorizedClient();
         using var document = JsonDocument.Parse(
             await http.GetByteArrayAsync($"{BaseAddress(app)}/ops/api/compute"));
 
@@ -159,6 +159,13 @@ public sealed class OpsComputeEndpointTests
             "test-version", DateTimeOffset.UtcNow);
         await app.StartAsync();
         return app;
+    }
+
+    private static HttpClient CreateAuthorizedClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Add(OpsPanel.TokenHeader, "test-ops-token");
+        return client;
     }
 
     private static string BaseAddress(WebApplication app) =>

@@ -148,7 +148,7 @@ sudo /opt/daohua/pitr-restore.sh \
 ## 健康与安全边界
 
 - `/healthz` 只反映进程存活；`/readyz` 反映 PostgreSQL、schema 和市场分片租约是否可用，不泄漏连接串、token、堆栈或玩家数据。
-- `/api/debug/*`、`/api/metrics` 由生产 Caddy 拦截；内部指标走受控链路。
+- `/api/debug/*`、`/api/metrics` 与裸 `/ops`、`/ops/*` 由生产 Caddy 拦截；后台监控面板通过动态随机路径 `/ops-<16位hex>`（未配置 `OPS_PATH` 时每次进程启动自动生成并输出至容器日志）与全量 `X-Ops-Token` 密码门禁（可通过 `OPS_TOKEN` 配置，未配置时启动随机生成）对外提供监控与运维服务，服务端对任何未命中当前激活随机路径的 `/ops*` 请求直接返回 404。
 - CORS 只允许配置的完整来源；正式前端与 API 同源，不使用任意来源加凭据。
 - ComputeNode 仅内部网络可达，令牌通过环境变量注入；节点镜像不包含 PostgreSQL 凭据。
 - 当前主实例具备单写者玩家运行时和市场分片租约边界，但不宣称跨进程玩家无停机迁移；扩容前必须增加玩家分片路由和连接排空方案。计算链路侧已具备优雅排空（compute-link.v1.3 `drain`/`draining` 帧）：主服停机给在飞批次 12 秒收尾窗口并通知节点换上游，节点停机先上报停派再排空在飞——滚动升级/CCR 自动更新不再丢弃正在计算的批次。多主服就绪缺口与分期见 `docs/distributed-readiness.md`。

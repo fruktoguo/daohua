@@ -104,6 +104,9 @@ services:
       Market__PartitionId: "0"
       ComputeNode__Enabled: "true"
       ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
+      Ops__Enabled: "${OPS_ENABLED:-true}"
+      Ops__Path: "${OPS_PATH:-}"
+      Ops__Token: "${OPS_TOKEN:-}"
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

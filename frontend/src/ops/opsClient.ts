@@ -1,17 +1,24 @@
 import type { OpsAccountAbuseOverview, OpsAccountAbusePolicy } from './opsTypes'
 
 /**
- * 运维面板 API 客户端（Development-only）。
+ * 运维监控面板 API 客户端。
  *
- * 只读视图走同源 `/ops/api/*`；写操作额外要求一次性令牌，令牌保存在 sessionStorage，
- * 由面板顶部输入框写入，绝不写入 localStorage（关闭标签页即失效）。
+ * 自动从当前 URL 提取面板随机路径前缀（`/ops-<hex>` 或本地 `/ops`）；
+ * 所有只读视图与写操作请求统一携带 `X-Ops-Token` 密码请求头，密码保存在 sessionStorage，
+ * 关闭标签页即失效，绝不写入 localStorage。
  */
 
-/** 令牌在 sessionStorage 中的键名。 */
+/** 密码在 sessionStorage 中的键名。 */
 const TOKEN_STORAGE_KEY = 'daohua.ops.token'
 
-/** 面板 API 前缀（与 Ops:Path 对齐）。 */
-const API_BASE = '/ops/api'
+/** 认证失效事件名（任一接口返回 401 时触发，通知外壳退回密码登录页）。 */
+export const OPS_UNAUTHORIZED_EVENT = 'daohua:ops-unauthorized'
+
+/** 解析当前激活的运维面板路径前缀（如 `/ops-a1b2c3d4e5f60718` 或 `/ops`）。 */
+export function getOpsBasePath(): string {
+  const match = window.location.pathname.match(/^(\/ops(?:-[a-zA-Z0-9_-]+)?)(?:\/|$)/)
+  return match ? match[1] : '/ops'
+}
 
 /** 面板 API 调用失败。 */
 export class OpsApiError extends Error {
@@ -25,7 +32,7 @@ export class OpsApiError extends Error {
   }
 }
 
-/** 读取当前会话中的运维令牌。 */
+/** 读取当前会话中的运维密码。 */
 export function getOpsToken(): string {
   try {
     return window.sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? ''
@@ -34,26 +41,35 @@ export function getOpsToken(): string {
   }
 }
 
-/** 写入运维令牌（空串表示清除）。 */
+/** 写入运维密码（空串表示清除）。 */
 export function setOpsToken(token: string): void {
   try {
     if (token) window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token)
     else window.sessionStorage.removeItem(TOKEN_STORAGE_KEY)
   } catch {
-    // 隐私模式下 sessionStorage 不可写：面板仍可只读使用，写操作会因缺少令牌被拒。
+    // 隐私模式下 sessionStorage 不可写
   }
 }
 
-/** 读取只读视图数据。 */
+/** 读取只读视图数据（携带访问密码）。 */
 export async function opsGet<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(API_BASE + path, { headers: { Accept: 'application/json' }, signal })
-  if (!response.ok) throw new OpsApiError(await readMessage(response), response.status)
+  const response = await fetch(`${getOpsBasePath()}/api${path}`, {
+    headers: {
+      Accept: 'application/json',
+      'X-Ops-Token': getOpsToken(),
+    },
+    signal,
+  })
+  if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event(OPS_UNAUTHORIZED_EVENT))
+    throw new OpsApiError(await readMessage(response), response.status)
+  }
   return (await response.json()) as T
 }
 
-/** 执行运维写操作（携带一次性令牌）。 */
+/** 执行运维写操作（携带访问密码）。 */
 export async function opsPost<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(API_BASE + path, {
+  const response = await fetch(`${getOpsBasePath()}/api${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -62,7 +78,10 @@ export async function opsPost<T>(path: string, body: unknown): Promise<T> {
     },
     body: JSON.stringify(body),
   })
-  if (!response.ok) throw new OpsApiError(await readMessage(response), response.status)
+  if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event(OPS_UNAUTHORIZED_EVENT))
+    throw new OpsApiError(await readMessage(response), response.status)
+  }
   return (await response.json()) as T
 }
 

@@ -148,10 +148,10 @@ if (-not $backendReady) {
     Write-Host "  -> 服务端已就绪。" -ForegroundColor Green
     # 运维面板数据端点探测：缺失仅告警不阻断（对齐 dev.sh）
     try {
-        Invoke-WebRequest -Uri "http://127.0.0.1:5128/ops/api/overview" -UseBasicParsing -TimeoutSec 2 | Out-Null
+        Invoke-WebRequest -Uri "http://127.0.0.1:5128/ops/api/overview" -Headers @{ "X-Ops-Token" = "daohua-local-ops" } -UseBasicParsing -TimeoutSec 2 | Out-Null
         Write-Host "  -> 运维面板数据端点已就绪 (/ops/api/overview)。" -ForegroundColor Green
     } catch {
-        Write-Warning "  -> 运维面板数据端点 (/ops/api/overview) 未就绪，面板可能不可用（请检查 Ops:Enabled 与 Development 环境）。"
+        Write-Warning "  -> 运维面板数据端点 (/ops/api/overview) 未就绪，面板可能不可用（请检查 Ops:Enabled 与 Ops:Token）。"
     }
 }
 

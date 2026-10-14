@@ -1,5 +1,12 @@
-import { useState } from 'react'
-import { getOpsToken, opsGet, setOpsToken } from './opsClient'
+import { useEffect, useState, type FormEvent } from 'react'
+import {
+  OPS_UNAUTHORIZED_EVENT,
+  OpsApiError,
+  getOpsBasePath,
+  getOpsToken,
+  opsGet,
+  setOpsToken,
+} from './opsClient'
 import type { OpsOverview } from './opsTypes'
 import { OpsPill, formatDuration, formatNumber, useOpsData } from './opsUi'
 import { OpsActionsView } from './views/ActionsView'
@@ -41,14 +48,130 @@ const NAV_GROUPS: Array<{ group: string; items: Array<{ id: OpsViewId; label: st
 const AUTO_REFRESH_MS = 3000
 
 /**
- * 本地运维面板外壳（Development-only）。
+ * 运维监控面板外壳。
  *
- * 复用游戏全局样式与公共弹窗组件；文案直接使用中文（面板不面向玩家，不参与多语言发布）。
+ * 未通过密码验证前仅渲染独立密码登录门禁页，不发起后台轮询；
+ * 验证通过后挂载完整监控与运维视图。
  */
 export function OpsApp(): React.JSX.Element {
+  const basePath = getOpsBasePath()
+  const [authenticated, setAuthenticated] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [verifying, setVerifying] = useState(() => getOpsToken().length > 0)
+  const [authError, setAuthError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleUnauthorized = (): void => {
+      setOpsToken('')
+      setAuthenticated(false)
+      setAuthError('密码已失效或未授权，请重新输入。')
+    }
+    window.addEventListener(OPS_UNAUTHORIZED_EVENT, handleUnauthorized)
+    return () => window.removeEventListener(OPS_UNAUTHORIZED_EVENT, handleUnauthorized)
+  }, [])
+
+  useEffect(() => {
+    const saved = getOpsToken()
+    if (!saved) return
+    const controller = new AbortController()
+    setVerifying(true)
+    opsGet<OpsOverview>('/overview', controller.signal)
+      .then(() => {
+        if (!controller.signal.aborted) {
+          setAuthenticated(true)
+          setAuthError(null)
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setOpsToken('')
+        setAuthenticated(false)
+        if (error instanceof OpsApiError && error.status === 404) {
+          setAuthError('当前后台随机路径无效或未启用。')
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setVerifying(false)
+      })
+    return () => controller.abort()
+  }, [])
+
+  const handleLogin = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault()
+    const trimmed = passwordInput.trim()
+    if (!trimmed) {
+      setAuthError('请输入后台访问密码。')
+      return
+    }
+    setVerifying(true)
+    setAuthError(null)
+    setOpsToken(trimmed)
+    try {
+      await opsGet<OpsOverview>('/overview')
+      setPasswordInput('')
+      setAuthenticated(true)
+    } catch (error) {
+      setOpsToken('')
+      setAuthenticated(false)
+      if (error instanceof OpsApiError && error.status === 401) {
+        setAuthError('密码错误，请重新输入。')
+      } else if (error instanceof OpsApiError && error.status === 404) {
+        setAuthError('当前后台随机路径无效或未启用。')
+      } else {
+        setAuthError(error instanceof Error ? error.message : '验证失败，请稍后重试。')
+      }
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  const handleLock = (): void => {
+    setOpsToken('')
+    setAuthenticated(false)
+    setPasswordInput('')
+    setAuthError(null)
+  }
+
+  if (!authenticated) {
+    return (
+      <div className="ops-root">
+        <div className="ops-login-wrap">
+          <form className="ops-login-card" onSubmit={event => void handleLogin(event)}>
+            <div className="ops-login-head">
+              <h1>道化太初 · 运维监控后台</h1>
+              <OpsPill tone="gold">{basePath}</OpsPill>
+            </div>
+            <p className="ops-login-desc">请输入后台访问密码以查看实时监控与执行运维操作。</p>
+            <label className="ops-login-field">
+              <span>访问密码</span>
+              <input
+                type="password"
+                value={passwordInput}
+                placeholder="请输入运维密码"
+                autoFocus
+                disabled={verifying}
+                onChange={event => setPasswordInput(event.target.value)}
+              />
+            </label>
+            {authError && <div className="ops-error-text">{authError}</div>}
+            <div className="ops-login-actions">
+              <button type="submit" disabled={verifying}>
+                {verifying ? '验证中…' : '进入后台'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  return <OpsDashboard basePath={basePath} onLock={handleLock} />
+}
+
+/** 已通过密码验证后的监控主界面。 */
+function OpsDashboard({ basePath, onLock }: { basePath: string; onLock: () => void }): React.JSX.Element {
   const [view, setView] = useState<OpsViewId>('overview')
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const [token, setToken] = useState(getOpsToken())
   const intervalMs = autoRefresh ? AUTO_REFRESH_MS : 0
 
   const { data: overview } = useOpsData<OpsOverview>(signal => opsGet('/overview', signal), [], intervalMs)
@@ -57,8 +180,8 @@ export function OpsApp(): React.JSX.Element {
     <div className="ops-root">
       <header className="ops-topbar">
         <div className="ops-brand">
-          <h1>道化太初 · 本地运维面板</h1>
-          <span className="ops-brand-sub">仅本地开发使用：生产环境不装配面板，部署层已拦截 /ops</span>
+          <h1>道化太初 · 运维监控后台</h1>
+          <span className="ops-brand-sub">入口 {basePath} · 读写全量密码保护</span>
         </div>
         <div className="ops-status">
           {overview ? (
@@ -75,23 +198,12 @@ export function OpsApp(): React.JSX.Element {
           )}
         </div>
         <div className="ops-controls">
-          <label className="ops-token">
-            令牌
-            <input
-              type="password"
-              value={token}
-              placeholder="写操作令牌"
-              onChange={event => {
-                setToken(event.target.value)
-                setOpsToken(event.target.value)
-              }}
-            />
-          </label>
           <label className="ops-auto">
             <input type="checkbox" checked={autoRefresh} onChange={event => setAutoRefresh(event.target.checked)} />
             自动刷新
           </label>
-          {token ? <OpsPill tone="jade">令牌已设置</OpsPill> : <OpsPill tone="warn">未设置令牌</OpsPill>}
+          <OpsPill tone="jade">已验证</OpsPill>
+          <button type="button" onClick={onLock}>退出锁定</button>
         </div>
       </header>
 

@@ -1,57 +1,64 @@
-# 本地运维面板设计真源（Development-only）
+# 运维监控面板设计真源
 
 > 本文档是运维面板的唯一设计真源。任何实现与本文档冲突时，先修订本文档对齐设计意图，再改代码。
 > 面板历史形态（独立端口 + 嵌入 HTML 单页）已退役，见文末「退役项」。
 
 ## 1. 定位与边界
 
-- 面板是**本地开发运维工具**，只在 `Development` 环境存在；生产环境不装配任何面板路由与中间件。
+- 面板是**服务端内置的运维监控与管理后台**，同时支持本地开发与正式生产环境（当 `Ops:Enabled=true` 且进程角色为 `Api` 时装配）。
 - 面板不是游戏功能的一部分，不进入玩家协议（`src/Protocol`）与领域模型（`src/Domain`）。
-- 面板可以执行**运维写操作**（踢下线、强制存档、卸载玩家、计算节点排空），因此必须满足第 3 节的安全模型。
+- 面板提供实时监控指标、日志、数据查询与受控运维写操作（踢下线、强制存档、卸载玩家、计算节点排空、系统身份市场挂单/撤单、账号检测策略调整），必须满足第 3 节的「随机路径 + 读写全量密码门禁」安全模型。
 - 面板 UI 文案直接使用中文，不走前端 i18n 词典（面板不面向玩家，不参与多语言发布）。
 
 ## 2. 拓扑与访问路径
 
-面板并入主 API 端口，不再独立监听：
+面板并入主 API 端口，通过动态随机路径（或显式配置路径）与密码保护对外提供服务：
 
 | 项 | 值 |
 | --- | --- |
-| 页面路径 | `/ops`（前端 React 路由，`Development` 构建期门控） |
-| API 前缀 | `/ops/api/*`（由主 API 进程在 5128 提供） |
-| 装配条件 | `builder.Environment.IsDevelopment()` 且 `Ops:Enabled` |
-| 局域网访问 | 沿用主端口绑定；本地默认 `127.0.0.1` 回环，容器/显式 `ASPNETCORE_URLS` 时随主端口暴露 |
+| 页面路径 | `/ops-<16位随机hex>`（未配置 `Ops:Path` 时每次进程启动动态随机生成）；`Development` 环境额外兼容 `/ops` 别名以支持 `dev.sh` / `dev-tui.mjs` |
+| API 前缀 | `{Ops:Path}/api/*`（由主 API 进程提供；`Development` 环境若主路径非 `/ops` 则同步映射 `/ops/api/*`） |
+| 装配条件 | `processRole == ServerProcessRole.Api` 且 `Ops:Enabled` |
+| 路径规范 | 必须为 `/ops` 或 `/ops-<字母数字_-组合>`（正则 `^/ops(-[a-zA-Z0-9_-]{1,120})?$`） |
 
 访问链路：
 
 ```text
-浏览器 → http://127.0.0.1:15172/ops        （Vite 提供页面，仅 Development）
-              └─ /ops/api/* 经 Vite 代理 → http://127.0.0.1:5128/ops/api/*
-生产      → Caddy @private 已拦截 /ops 与 /ops/*，返回 404（纵深防御）
+本地开发 → http://127.0.0.1:15172/ops（或随机路径 /ops-<hex>）
+              └─ /ops(-*)?/api/* 经 Vite 代理 → http://127.0.0.1:5128
+正式生产 → https://daohua.yuohira.com/ops-<hex>
+              └─ Caddy 反代 → http://127.0.0.1:15128/ops-<hex>
 ```
 
-**生产不可达的双重保障**：
+**路径隔离与防探测保障**：
 
-1. 服务端：非 `Development` 不装配 `/ops` 路由与令牌中间件。
-2. 前端：`import.meta.env.DEV` 门控路由注册，生产构建产物中**不含**面板入口，避免 SPA 兜底把面板页面吐出来。
-3. 部署：Caddy `@private path ... /ops /ops/*` 拦截。
+1. 部署层：生产 Caddy `@private` 继续拦截裸 `/ops` 与 `/ops/*` 返回 404，而 `/ops-<hex>` 随机路径经反代进入后端。
+2. 服务端门禁：服务端对所有 `/ops`、`/ops/...` 与 `/ops-*` 前缀请求执行路径白名单匹配——凡未命中当前进程激活的 Ops 路径，一律直接返回 HTTP 404（禁止落入 SPA `MapFallbackToFile("index.html")` 吐出页面外壳）。
+3. 前端懒加载：`main.tsx` 匹配 `^/ops(-[a-zA-Z0-9_-]+)?(/|$)` 时动态 `import('./ops/OpsApp')`，面板代码独立分包，普通玩家访问主页不下载任何运维面板产物。
 
 ## 3. 安全模型
 
-### 3.1 只读视图
+### 3.1 读写全量密码验证（`X-Ops-Token`）
 
-只读视图不要求令牌：`Development` 装配判定 + 生产三重拦截已构成边界。
+- 面板**所有只读视图（`GET`）与写操作（`POST`）接口**均强制校验请求头 `X-Ops-Token`。
+- 服务端使用 `CryptographicOperations.FixedTimeEquals` 恒定时间比对 `X-Ops-Token` 与 `OpsOptions.Token`；缺失或不匹配一律返回 `401 Unauthorized`（`OPS_TOKEN_INVALID`），且**绝不透露**期望密码。
+- 移除原仅限回环/私有网段 IP 的来源限制，允许管理员在正式服公网 HTTPS 下凭随机路径与密码完成监控查看和运维操作。
+- 配置项 `Ops:Token`（可通过环境变量 `Ops__Token` / `OPS_TOKEN` 注入）：
+  - 已配置：直接使用（本地开发默认值写在 `appsettings.Development.json` 为 `daohua-local-ops`；生产可在 `/opt/daohua/daohua.env` 设置 `OPS_TOKEN`）。
+  - 未配置：进程启动时生成 16 字节（32 位 hex）加密随机密码，并在启动日志以 `Warning` 打印一次。
+- 配置项 `Ops:Path`（可通过环境变量 `Ops__Path` / `OPS_PATH` 注入）：
+  - 未配置：进程启动时自动生成 `/ops-<16位hex>` 随机路径。
+  - 每次启动启用面板时，服务端以 `Warning` 日志输出当前激活的访问路径。
 
-### 3.2 写操作：来源校验 + 一次性令牌
+### 3.2 前端独立密码登录门禁
 
-- 写操作要求**回环或私有网段来源**（`OpsNetwork.IsPrivateOrLoopback`），公网来源直接 `403`。这是面板并入主端口后的纵深防御。
-- 配置项 `Ops:Token`：
-  - 已配置：直接使用（本地开发默认值写在 `appsettings.Development.json`，零摩擦）。
-  - 未配置：进程启动时生成随机令牌，并在启动日志以 `Warning` 打印一次（仅 `Development`）。
-- 写请求必须携带请求头 `X-Ops-Token`；缺失或不匹配返回 `401`，且**不透露**期望值。- 前端把令牌存在 `sessionStorage`，页面顶部提供令牌输入入口；写操作全部经二次确认弹窗。
+- 访问面板随机链接时，若 `sessionStorage` 中无密码或密码未通过服务端验证，`OpsApp` 只渲染居中的**密码登录门禁视图**，不发起任何后台监控轮询请求。
+- 用户输入密码提交后，前端请求 `{basePath}/api/overview` 验证密码有效性：验证通过后保存至 `sessionStorage`（关闭标签页即失效，绝不写 `localStorage`）并进入监控主界面；若运行期间任一接口返回 `401`，自动清除失效密码并退回密码登录门禁视图。
+- 顶部状态条提供「退出锁定」按钮，点击即清空 `sessionStorage` 密码并立即回到登录门禁页。
 
 ### 3.3 写操作二次确认
 
-所有写操作在前端必须经过 `ConfirmDialog` 二次确认，并在确认文案中写明作用对象与不可逆性。高危操作（卸载玩家）使用危险样式。
+所有写操作在前端必须经过 `ConfirmDialog` 二次确认，并在确认文案中写明作用对象与不可逆性。高危操作（卸载玩家）使用危险样式。写操作执行后由服务端记录 `Ops.Audit` 审计日志（含来源地址与操作目标，绝不记录密码明文）。
 
 ## 4. 服务端 API
 
@@ -114,13 +121,14 @@
 
 ### 5.1 承载方式
 
-- `frontend/src/main.tsx` 按 `location.pathname` 分流：`/ops` 前缀渲染 `OpsApp`，其余渲染游戏 `App`。
-- 面板入口组件 `frontend/src/ops/OpsApp.tsx`，仅在 `import.meta.env.DEV` 下可被解析到（生产构建不注册）。
-- 数据访问复用 `network/apiClient.ts` 的 `requestJson` 口径，不另起一套请求栈。
+- `frontend/src/main.tsx` 按 `location.pathname` 分流：匹配 `^/ops(-[a-zA-Z0-9_-]+)?(/|$)` 前缀时动态 `import('./ops/OpsApp')` 渲染运维面板，其余渲染游戏 `App`。
+- `opsClient.ts` 自动从当前 URL 提取面板基础路径（`/ops` 或 `/ops-<随机后缀>`），所有只读与写操作请求统一访问 `{basePath}/api/*` 并携带 `X-Ops-Token` 请求头。
+- 未认证状态先渲染独立密码登录门禁页，验证通过后才挂载监控视图与定时轮询。
 
 ### 5.2 信息架构（重设计）
 
-- **顶部状态条**：服务名、环境、版本、运行时长、会话/玩家计数、令牌状态、自动刷新开关。
+- **密码登录门禁页**：标题、当前随机入口路径标识、密码输入框、错误提示与进入按钮。
+- **顶部状态条**：服务名、环境、版本、运行时长、会话/玩家计数、自动刷新开关、已验证状态胶囊与退出锁定按钮。
 - **左侧竖排分类导航**（对齐游戏内面板导航观感）：
 
 | 分组 | 视图 |

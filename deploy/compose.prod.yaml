@@ -111,6 +111,9 @@ services:
       Market__PartitionId: "${MARKET_PARTITION_ID:-0}"
       ComputeNode__Enabled: "${COMPUTE_NODE_ENABLED:-true}"
       ComputeNode__Token: ${COMPUTE_TOKEN:?需要设置 COMPUTE_TOKEN}
+      Ops__Enabled: "${OPS_ENABLED:-true}"
+      Ops__Path: "${OPS_PATH:-}"
+      Ops__Token: "${OPS_TOKEN:-}"
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

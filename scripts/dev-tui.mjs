@@ -510,7 +510,7 @@ async function apiGet(apiPath, params) {
   try {
     response = await fetch(`${apiBase}${apiPath}${query}`, {
       signal: AbortSignal.timeout(6_000),
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(opsToken ? { "X-Ops-Token": opsToken } : {}) },
     });
   } catch {
     throw new ApiError(0, null, "后端不可达（服务未就绪或已停止）");

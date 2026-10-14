@@ -256,10 +256,10 @@ do_startup() {
 
   # 6.5 运维面板就绪探测：面板并入主端口（页面由前端承载，数据端点在后端）。
   #     这里只做告警不阻断启动——面板缺失不影响游戏联调，但静默缺失会误导排查。
-  if curl -s -f http://127.0.0.1:5128/ops/api/overview >/dev/null 2>&1; then
+  if curl -s -f -H "X-Ops-Token: ${DAOHUA_OPS_TOKEN:-daohua-local-ops}" http://127.0.0.1:5128/ops/api/overview >/dev/null 2>&1; then
     printf '==> 运维面板数据端点已就绪 (/ops/api/overview)。\n'
   else
-    printf '警告: 运维面板数据端点 (/ops/api/overview) 未就绪，面板可能不可用（请检查 Ops:Enabled 与 Development 环境）。\n' >&2
+    printf '警告: 运维面板数据端点 (/ops/api/overview) 未就绪，面板可能不可用（请检查 Ops:Enabled 与 Ops:Token）。\n' >&2
   fi
 
   # 7. 启动前端（不打开浏览器）

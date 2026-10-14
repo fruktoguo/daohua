@@ -408,15 +408,15 @@
 
 ---
 
-## 30. 本地运维面板外壳与展示原语（Ops Panel · Development-only）
+## 30. 运维监控面板外壳与展示原语（Ops Panel）
 
 - **适用场景**：
-  - **本地开发运维面板页面**（路由 `/ops`，仅开发构建注册；生产产物不含该入口）：`OpsApp` 提供「顶部状态条 + 左侧竖排分组导航 + 内容区」外壳，视图涵盖概览 / 健康 / 调度 / 计算 / 日志 / 玩家 / 会话 / 存储 / 盘口 / 挂单 / 成交 / 市场指标 / 配置 / 运维操作。
+  - **运维监控后台页面**（路由 `/ops` 或动态随机路径 `/ops-<hex>`，按需懒加载分包）：`OpsApp` 提供「独立密码登录门禁页 + 顶部状态条 + 左侧竖排分组导航 + 内容区」外壳，视图涵盖概览 / 健康 / 调度 / 计算 / 日志 / 玩家 / 会话 / 存储 / 账号检测 / 盘口 / 挂单 / 成交 / 市场指标 / 系统下单 / 配置 / 运维操作。
   - **通用运维展示原语**（`opsUi.tsx`，任何后台或诊断页可直接复用）：
     - `OpsCard` 卡片容器（标题 + 右上角附加区）、`OpsStatGrid` + `OpsStat` 指标卡网格、`OpsTable` 通用数据表格（`OpsColumn<T>` 定义列，`numeric` 列右对齐等宽数字）、`OpsKeyValues` 键值清单、`OpsPill` 语义胶囊（`OpsTone` 七色）、`OpsAsyncView` 加载/失败/内容三态。
     - `useOpsData(load, deps, intervalMs)` 数据 Hook：首次加载 + 可选轮询 + 手动重试；每次加载新建 AbortController 并在卸载或重载时中止上一次请求，避免旧响应覆盖新数据。
     - 格式化辅助：`formatBytes` / `formatDuration` / `formatNumber` / `formatTime` / `formatMillis`；枚举中文化 `levelLabel` / `presenceLabel` / `healthLabel` 与色调 `levelTone` / `healthTone`。
-  - **面板数据客户端**（`opsClient.ts`）：`opsGet` 只读、`opsPost` 写操作（自动附带 `X-Ops-Token`；令牌存 sessionStorage，由状态条输入）。
+  - **面板数据客户端**（`opsClient.ts`）：自动解析当前路由前缀（`/ops` 或 `/ops-<hex>`），`opsGet` 只读与 `opsPost` 写操作统一附带 `X-Ops-Token` 密码头（密码存 `sessionStorage`，通过登录门禁页校验后写入，支持一键退出锁定）。
 - **复用约定**：颜色与控件外观全部取自 `frontend/src/styles.css` 游戏主题变量；面板只补充结构样式 `ops.css`（`.ops-*` 前缀），不新造配色体系。写操作统一经 `ConfirmDialog` 二次确认。
 - **组件源码**：[`frontend/src/ops/`](../../frontend/src/ops/)（`OpsApp.tsx` 外壳 · `opsUi.tsx` 原语 · `opsClient.ts` 客户端 · `views/` 视图分组）
 - **样式文件**：[`frontend/src/ops/ops.css`](../../frontend/src/ops/ops.css) (搜索 `.ops-root`, `.ops-topbar`, `.ops-nav`, `.ops-card`, `.ops-stat`, `.ops-table`)

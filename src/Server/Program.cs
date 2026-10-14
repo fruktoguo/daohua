@@ -21,8 +21,8 @@ var builder = WebApplication.CreateBuilder(args);
 var processRole = ResolveProcessRole(args);
 var startedAt = DateTimeOffset.UtcNow;
 var opsOptions = OpsOptions.From(builder.Configuration);
-// 运维面板严格限定 Development + API 角色：生产环境即便配置误开也不装配。
-var opsPanelEnabled = opsOptions.Enabled && processRole == ServerProcessRole.Api && builder.Environment.IsDevelopment();
+// 运维面板在 API 角色且 Ops:Enabled 时装配（支持本地开发与正式生产环境）。
+var opsPanelEnabled = opsOptions.Enabled && processRole == ServerProcessRole.Api;
 OpsLogBuffer? opsLogBuffer = null;
 if (opsPanelEnabled)
 {
@@ -145,7 +145,7 @@ if (processRole == ServerProcessRole.Api)
     if (opsLogBuffer is not null) builder.Services.AddSingleton(opsLogBuffer);
     if (opsPanelEnabled)
     {
-        // 面板写操作令牌与存储侧只读查询：仅在 Development 且面板启用时装配。
+        // 面板配置与存储侧只读查询：在 API 角色且面板启用时装配。
         builder.Services.AddSingleton(opsOptions);
         builder.Services.AddSingleton<Server.Clean.Ops.OpsStorageInsights>();
     }
@@ -606,11 +606,24 @@ if (processRole == ServerProcessRole.Api)
     app.Map("/ws", WebSocketEndpoint.HandleAsync);
     // 计算节点反向拨入链路：节点主动 WebSocket 注册，主服经连接下发冷挂机批次。
     app.Map(Server.Clean.ComputeLinkContract.Path, Server.Clean.ComputeLinkEndpoint.HandleAsync);
-    if (opsPanelEnabled) app.MapOpsPanel(opsOptions, releaseVersion, startedAt);
-    // 令牌未配置时本进程随机生成，必须在控制台可见一次，否则写操作无法使用；
-    // 已配置（appsettings.Development.json 默认值）时不再回显，避免口令反复进入日志。
-    if (opsPanelEnabled && string.IsNullOrWhiteSpace(builder.Configuration["Ops:Token"]))
-        app.Logger.LogWarning("运维面板写操作令牌（本进程随机生成）：{Token}", opsOptions.Token);
+    if (opsPanelEnabled)
+    {
+        app.MapOpsPanel(opsOptions, releaseVersion, startedAt);
+        app.Logger.LogWarning("运维面板已启用，访问路径：{Path}", opsOptions.Path);
+        // 密码未配置时本进程随机生成，必须在控制台可见一次；已显式配置时不再回显明文。
+        if (string.IsNullOrWhiteSpace(builder.Configuration["Ops:Token"]))
+            app.Logger.LogWarning("运维面板访问密码（本进程随机生成）：{Token}", opsOptions.Token);
+    }
+    // 拦截所有未命中当前激活 Ops 路径的 /ops 与 /ops-* 请求，防止落入 SPA fallback 暴露后台入口。
+    app.Use(async (context, next) =>
+    {
+        if (OpsPanel.IsBlockedOpsPath(context.Request.Path, opsOptions, app.Environment.IsDevelopment()))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+        await next();
+    });
     app.MapFallback("/api/{**path}", () => Results.NotFound(Problem(404, "NOT_FOUND", "接口不存在。")));
     if (hasWebRoot) app.MapFallbackToFile("index.html");
 }

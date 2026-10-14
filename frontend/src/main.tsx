@@ -19,11 +19,11 @@ if (!container) throw new Error('找不到应用挂载点。')
 const root = createRoot(container)
 
 /**
- * 运维面板仅在开发构建下注册。
- * `import.meta.env.DEV` 在构建时被静态替换为 false，整个分支连同动态 import 一起被摇树，
- * 面板入口不会进入生产产物——避免生产环境 SPA 兜底把面板页面吐给线上访问者。
+ * 运维监控面板路由匹配：支持动态随机路径 `/ops-<hex>` 与本地开发 `/ops`。
+ * 面板通过动态 `import('./ops/OpsApp')` 独立分包，普通玩家访问主页不加载面板代码；
+ * 服务端对未命中当前激活随机路径的所有 `/ops*` 请求直接返回 404。
  */
-const isOpsRoute = import.meta.env.DEV && /^\/ops(\/|$)/.test(window.location.pathname)
+const isOpsRoute = /^\/ops(-[a-zA-Z0-9_-]+)?(\/|$)/.test(window.location.pathname)
 
 async function mount(): Promise<void> {
   if (isOpsRoute) {
