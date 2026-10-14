@@ -14,8 +14,8 @@ import net from 'node:net'
 import tls from 'node:tls'
 import process from 'node:process'
 
-const smokeDeviceId = 'c83595a1-f72a-4720-8dda-9f9c321adbc5'
-const smokeDeviceConfig = crypto.createHash('sha256').update('daohua-smoke-device-v1').digest('hex')
+const smokeDeviceId = process.env.SMOKE_DEVICE_ID || crypto.randomUUID()
+const smokeDeviceConfig = process.env.SMOKE_DEVICE_CONFIG || crypto.createHash('sha256').update(`daohua-smoke-${smokeDeviceId}`).digest('hex')
 const riskSignals = { deviceId: smokeDeviceId, deviceConfigHash: smokeDeviceConfig, browserFingerprint: smokeDeviceConfig }
 
 const baseUrl = new URL(process.argv[2] || 'http://127.0.0.1:5128')
