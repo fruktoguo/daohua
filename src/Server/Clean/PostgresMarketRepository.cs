@@ -129,6 +129,42 @@ public sealed class PostgresMarketRepository(
         return orders;
     }
 
+    /// <summary>
+    /// 读取行情统计表；assetId 为空时返回全部品种行。当日/当周成交量按存储键惰性掩零——
+    /// 行内 day_key/week_key 落后当前周期时直接投影为 0，无需为跨日/跨周单独发起写事务。
+    /// </summary>
+    /// <param name="assetId">可选标的过滤；null/空串返回全表。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public async ValueTask<IReadOnlyList<MarketItemStatsSnapshot>> LoadItemStatsAsync(
+        string? assetId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var (dayKey, weekKey) = MarketStatsKeys(DateTimeOffset.UtcNow);
+        var rows = new List<MarketItemStatsSnapshot>();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT asset_id, variant, best_ask_price, ask_quantity, best_bid_price, bid_quantity,
+                   CASE WHEN day_key = $1 THEN day_volume ELSE 0 END,
+                   CASE WHEN week_key = $2 THEN week_volume ELSE 0 END
+            FROM market.item_stats
+            WHERE ($3::varchar IS NULL OR asset_id = $3)
+            ORDER BY asset_id, variant
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = dayKey });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = weekKey });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Varchar, Value = string.IsNullOrWhiteSpace(assetId) ? DBNull.Value : assetId });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MarketItemStatsSnapshot(
+                reader.GetString(0), reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetDouble(2), reader.GetDouble(3),
+                reader.IsDBNull(4) ? null : reader.GetDouble(4), reader.GetDouble(5),
+                reader.GetDouble(6), reader.GetDouble(7)));
+        }
+        return rows;
+    }
+
     /// <summary>加载本分片指定品种的活动订单，按 sequence 排序。</summary>
     public async ValueTask<IReadOnlyList<StoredMarketOrder>> LoadActiveOrdersAsync(
         MarketInstrument instrument,
@@ -322,6 +358,15 @@ public sealed class PostgresMarketRepository(
                     tradeIds.Add(fill.TradeId);
                 }
 
+                // 行情统计与订单事实同事务提交：先按日/周键惰性累加成交量，再整簿重算盘口价量。
+                var (dayKey, weekKey) = MarketStatsKeys(now);
+                if (fills.Count > 0)
+                {
+                    await BumpItemStatsVolumeAsync(connection, transaction,
+                        order.AssetId, order.Variant, fills.Sum(fill => fill.Quantity), dayKey, weekKey, cancellationToken);
+                }
+                await RefreshItemStatsBookAsync(connection, transaction, order.AssetId, order.Variant, dayKey, weekKey, cancellationToken);
+
                 await transaction.CommitAsync(cancellationToken);
                 logger.LogDebug("市场挂单提交 orderId={OrderId} fills={FillCount}", order.OrderId, fills.Count);
                 return new MarketCommitResult(order.OrderId, true, false, tradeIds);
@@ -336,6 +381,97 @@ public sealed class PostgresMarketRepository(
             partitionGate.Release();
         }
     }
+
+    /// <summary>
+    /// 整簿重算单品种盘口统计列：对本分片活动订单按 (partition_id, asset_id, variant, status)
+    /// 索引覆盖扫描聚合卖一/买一价与剩余总量；upsert 只覆盖盘口列，日/周成交量由
+    /// <see cref="BumpItemStatsVolumeAsync"/> 独立累加保留。无活动订单时聚合仍产出
+    /// NULL/0 单行，使已清空品种价格按空盘口回落。
+    /// </summary>
+    private async Task RefreshItemStatsBookAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string assetId,
+        string variant,
+        DateOnly dayKey,
+        DateOnly weekKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO market.item_stats
+                (asset_id, variant, best_ask_price, ask_quantity, best_bid_price, bid_quantity,
+                 day_volume, day_key, week_volume, week_key, updated_at)
+            SELECT $1, $2,
+                   MIN(price) FILTER (WHERE side = 'sell'),
+                   COALESCE(SUM(quantity - filled_quantity) FILTER (WHERE side = 'sell'), 0),
+                   MAX(price) FILTER (WHERE side = 'buy'),
+                   COALESCE(SUM(quantity - filled_quantity) FILTER (WHERE side = 'buy'), 0),
+                   0, $3, 0, $4, now()
+            FROM market.orders
+            WHERE partition_id = $5 AND asset_id = $1 AND variant = $2
+              AND status IN ('active', 'partially_filled')
+            ON CONFLICT (asset_id, variant) DO UPDATE SET
+                best_ask_price = EXCLUDED.best_ask_price,
+                ask_quantity = EXCLUDED.ask_quantity,
+                best_bid_price = EXCLUDED.best_bid_price,
+                bid_quantity = EXCLUDED.bid_quantity,
+                updated_at = EXCLUDED.updated_at
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = assetId });
+        command.Parameters.Add(new NpgsqlParameter { Value = variant });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = dayKey });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = weekKey });
+        command.Parameters.Add(new NpgsqlParameter { Value = options.MarketPartitionId });
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 成交量惰性累加：行不存在时以本周期键建仓；已存在时 day_key/week_key 匹配才累加，
+    /// 跨日/跨周首笔成交以新周期重置——写侧即完成换日归位，读侧另有键掩零兜底。
+    /// </summary>
+    private static async Task BumpItemStatsVolumeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string assetId,
+        string variant,
+        double quantity,
+        DateOnly dayKey,
+        DateOnly weekKey,
+        CancellationToken cancellationToken)
+    {
+        if (!double.IsFinite(quantity) || quantity <= 0) return;
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO market.item_stats
+                (asset_id, variant, best_ask_price, ask_quantity, best_bid_price, bid_quantity,
+                 day_volume, day_key, week_volume, week_key, updated_at)
+            VALUES ($1, $2, NULL, 0, NULL, 0, $3, $4, $3, $5, now())
+            ON CONFLICT (asset_id, variant) DO UPDATE SET
+                day_volume = CASE WHEN market.item_stats.day_key = $4
+                                  THEN market.item_stats.day_volume + $3 ELSE $3 END,
+                day_key = $4,
+                week_volume = CASE WHEN market.item_stats.week_key = $5
+                                   THEN market.item_stats.week_volume + $3 ELSE $3 END,
+                week_key = $5,
+                updated_at = now()
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = assetId });
+        command.Parameters.Add(new NpgsqlParameter { Value = variant });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = quantity });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = dayKey });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = weekKey });
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>行情日/周键：UTC 自然日与 ISO 周一为界的当周首日（date_trunc('week') 同日历）。</summary>
+    private static (DateOnly DayKey, DateOnly WeekKey) MarketStatsKeys(DateTimeOffset now)
+    {
+        var day = DateOnly.FromDateTime(now.UtcDateTime);
+        var week = day.AddDays(-(((int)day.DayOfWeek + 6) % 7));
+        return (day, week);
+    }
+
+    /// <summary>关单事务结局：Success 为 false 时调用方整笔回滚；AssetId 非空表示本事务真实关单、需联动刷新行情统计。</summary>
+    private sealed record CloseOrderOutcome(bool Success, string? AssetId, string? Variant);
 
     /// <summary>主动撤单并退还冻结资产；幂等键必须绑定玩家与订单，防止跨玩家重放。</summary>
     public ValueTask<bool> CancelAsync(
@@ -383,16 +519,23 @@ public sealed class PostgresMarketRepository(
                 await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
                 await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
                 await EnsureLeaseAsync(connection, transaction, options.MarketPartitionId, fenceToken, cancellationToken);
+                var touchedInstruments = new HashSet<(string AssetId, string Variant)>();
                 foreach (var target in orders)
                 {
                     var canonicalIdempotencyKey = $"market-expire:{target.OwnerPlayerId:D}:{target.OrderId:D}";
-                    if (!await CloseOrderCoreAsync(connection, transaction, target.OrderId, target.OwnerPlayerId,
-                            canonicalIdempotencyKey, cutoff, cancellationToken))
+                    var outcome = await CloseOrderCoreAsync(connection, transaction, target.OrderId, target.OwnerPlayerId,
+                        canonicalIdempotencyKey, cutoff, cancellationToken);
+                    if (!outcome.Success)
                     {
                         await transaction.RollbackAsync(cancellationToken);
                         return false;
                     }
+                    if (outcome.AssetId is not null) touchedInstruments.Add((outcome.AssetId, outcome.Variant!));
                 }
+                // 合批内同品种只整簿重算一次：按 (asset_id, variant) 去重后逐品种刷新行情统计。
+                var (dayKey, weekKey) = MarketStatsKeys(cutoff);
+                foreach (var (assetId, variant) in touchedInstruments)
+                    await RefreshItemStatsBookAsync(connection, transaction, assetId, variant, dayKey, weekKey, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return true;
             }
@@ -428,10 +571,16 @@ public sealed class PostgresMarketRepository(
                 await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
                 await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
                 await EnsureLeaseAsync(connection, transaction, partitionId, fenceToken, cancellationToken);
-                if (!await CloseOrderCoreAsync(connection, transaction, orderId, ownerPlayerId, canonicalIdempotencyKey, expirationCutoff, cancellationToken))
+                var outcome = await CloseOrderCoreAsync(connection, transaction, orderId, ownerPlayerId, canonicalIdempotencyKey, expirationCutoff, cancellationToken);
+                if (!outcome.Success)
                 {
                     await transaction.RollbackAsync(cancellationToken);
                     return false;
+                }
+                if (outcome.AssetId is not null)
+                {
+                    var (dayKey, weekKey) = MarketStatsKeys(DateTimeOffset.UtcNow);
+                    await RefreshItemStatsBookAsync(connection, transaction, outcome.AssetId, outcome.Variant!, dayKey, weekKey, cancellationToken);
                 }
                 await transaction.CommitAsync(cancellationToken);
                 return true;
@@ -450,9 +599,10 @@ public sealed class PostgresMarketRepository(
     /// <summary>
     /// 关单事务体（撤单/到期共用）：在已持有 Serializable 事务与租约校验的连接上，
     /// 完成幂等短路、订单行锁校验、冻结退款、流水追加与状态更新。
-    /// 返回 false 表示订单不可关闭（不存在/属主不符/非活动/未到期），由调用方决定回滚。
+    /// Success=false 表示订单不可关闭（不存在/属主不符/非活动/未到期），由调用方决定回滚；
+    /// Success=true 且 AssetId 非空表示本事务真实关单，调用方须在提交前联动刷新行情统计。
     /// </summary>
-    private async Task<bool> CloseOrderCoreAsync(
+    private async Task<CloseOrderOutcome> CloseOrderCoreAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid orderId,
@@ -462,7 +612,7 @@ public sealed class PostgresMarketRepository(
         CancellationToken cancellationToken)
     {
         if (await HasEconomyTransactionAsync(connection, transaction, canonicalIdempotencyKey, ownerPlayerId, cancellationToken))
-            return true;
+            return new CloseOrderOutcome(true, null, null);
         await using var order = new NpgsqlCommand("""
             SELECT owner_player_id, side, asset_id, variant, status, expires_at
             FROM market.orders WHERE order_id = $1 AND partition_id = $2 FOR UPDATE
@@ -490,10 +640,10 @@ public sealed class PostgresMarketRepository(
             }
         }
         if (!orderFound)
-            return false;
+            return new CloseOrderOutcome(false, null, null);
         if (orderOwnerId != ownerPlayerId || status is not ("active" or "partially_filled")
             || (expirationCutoff.HasValue && expiresAt > expirationCutoff.Value))
-            return false;
+            return new CloseOrderOutcome(false, null, null);
 
         // 以冻结表中的真实余量退款；买单可能以更低的 maker 价成交，不能用限价反推。
         var releaseAsset = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? CoinsAsset : assetId;
@@ -523,7 +673,7 @@ public sealed class PostgresMarketRepository(
             reservation.Parameters.Add(new NpgsqlParameter { Value = orderId });
             await reservation.ExecuteNonQueryAsync(cancellationToken);
         }
-        return true;
+        return new CloseOrderOutcome(true, assetId, variant);
     }
 
     private static async Task EnsureLeaseAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int partitionId, long fenceToken, CancellationToken cancellationToken)

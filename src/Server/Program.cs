@@ -347,6 +347,32 @@ if (processRole == ServerProcessRole.Api)
         return Results.Ok(StaticGameCatalogMapper.Buildings(gameData));
     });
 
+    // 全图节点公共建筑索引：地图地点详情合并展示玩家建筑；
+    // 数据来自注册表读路径（含惰性完工结算），不落任何玩家分段。
+    app.MapGet("/api/v1/world/node-buildings", async (NodeBuildingRegistry nodeBuildings, GameDataCatalog gameData, CancellationToken ct) =>
+    {
+        var now = DateTimeOffset.UtcNow;
+        var index = await nodeBuildings.AllBuildingsAsync(now, ct);
+        var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
+        var result = new Dictionary<string, object[]>(StringComparer.Ordinal);
+        foreach (var (nodeId, snapshot) in index)
+        {
+            var entries = snapshot.Buildings
+                .Select(state => gameData.Buildings.TryGetValue(state.BuildingId, out var definition)
+                    ? new
+                    {
+                        buildingId = state.BuildingId,
+                        level = Domain.World.NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds),
+                        targetLevel = state.TargetLevel
+                    }
+                    : null)
+                .Where(entry => entry is not null)
+                .ToArray();
+            if (entries.Length > 0) result[nodeId] = entries!;
+        }
+        return Results.Ok(result);
+    }).RequireAuthorization();
+
     var auth = app.MapGroup("/api/v1/auth");
     auth.MapGet("/client-policy", async (PostgresAccountRiskRepository risk, HttpContext context, CancellationToken ct) =>
     {
@@ -543,6 +569,14 @@ if (processRole == ServerProcessRole.Api)
         {
             return Results.Conflict(Problem(409, "MARKET_NOT_READY", exception.Message));
         }
+    });
+    market.MapGet("/stats", async (string? assetId, PostgresMarketRepository marketStore, CancellationToken ct) =>
+    {
+        // 行情统计直读 market.item_stats 小表：悬浮行情卡轮询走全表（数百行内），单品种传 assetId 过滤。
+        if (assetId is not null && (assetId.Length == 0 || assetId.Length > 128))
+            return Results.BadRequest(Problem(400, "INVALID_INSTRUMENT", "市场品种无效。"));
+        var rows = await marketStore.LoadItemStatsAsync(assetId, ct);
+        return Results.Ok(rows.Select(MarketDtoMapper.ToStats).ToArray());
     });
     market.MapGet("/metrics", (ClaimsPrincipal user, MarketRuntime marketRuntime) =>
     {

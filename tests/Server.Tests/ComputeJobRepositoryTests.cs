@@ -290,7 +290,7 @@ public sealed class ComputeJobRepositoryTests
             "INSERT INTO social.party_session_inbox(session_id,player_id,sequence,payload,created_at) VALUES ($1,$2,1,'{}'::jsonb,$3)",
             sessionId, hasInbox, now.AddMinutes(-5));
 
-        var candidates = await jobs.ScanColdPlayersAsync(batchInterval, 64);
+        var candidates = await jobs.ScanColdPlayersAsync(batchInterval, 2048);
         var picked = candidates.Select(candidate => candidate.PlayerId).ToHashSet();
         Assert.Contains(eligible, picked);
         Assert.Contains(terminal, picked);

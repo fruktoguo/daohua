@@ -163,6 +163,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 | market.orders | order_id, partition_id, owner_player_id, side, asset_id, variant, price, quantity, filled_quantity, status, version, sequence, expires_at | 活跃订单规范化存储；盘口索引为 (partition_id, asset_id, variant, status, side, price, sequence)，另有活动订单到期索引；不保存整本订单簿 Blob。 |
 | market.partition_leases | partition_id, owner_instance_id, fence_token, expires_at, renewed_at | 每个市场分片单写者租约；每次写入校验 fence token，旧实例即使网络恢复也不能继续写。 |
 | market.trades | trade_id, partition_id, buy_order_id, sell_order_id, buyer_id, seller_id, asset_id, price, quantity, seller_tax, traded_at | 追加不可变流水；当前热表是普通表，按月分区属于归档表方案，不能把热表描述为已分区。 |
+| market.item_stats | asset_id, variant, best_ask_price, ask_quantity, best_bid_price, bid_quantity, day_volume, day_key, week_volume, week_key, updated_at | 主键 (asset_id, variant)；每品种行情统计表，随挂单/撤单/到期/成交事务同事务维护；读侧按 day_key/week_key 惰性掩零（过期投影为 0），写侧遇新周期重置累加，供悬浮行情卡等场景小表直读（数百行规模），避免高频全量扫描订单/流水。 |
 
 盘口内存投影可以在启动时从 market.orders 重建；投影损坏或清空不影响资产真相。只有订单冻结、成交、退款和手续费等事务成功后，内存盘口才推进对应版本。
 

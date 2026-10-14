@@ -3,7 +3,7 @@ import '../network/gameClient'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
 import { mergeBattleReportHistory } from './battleReportStore'
 import { useUiStore } from '../uiStore'
-import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
+import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketItemStats, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
 /**
  * 前端与服务端的网络连接生命周期状态：
@@ -83,8 +83,12 @@ interface GameStore {
   maps: readonly WorldMapDefinition[]
   /** 全量玩家可建造建筑目录 */
   buildings: readonly BuildingDefinition[]
+  /** 坊市全品种行情统计缓存（键 `itemId|强化等级`，由 gameClient 周期轮询维护；悬浮行情卡数据源） */
+  marketStats: Readonly<Record<string, MarketItemStats>>
   /** 当前网络连接状态 */
   connection: ConnectionState
+  /** 最近一次 Ping/Pong 测得的往返延迟（毫秒）；null 表示尚无测量结果 */
+  latencyMs: number | null
   /** 终态断连原因的 i18n 词条 key（顶号/会话失效等；null 表示无特定原因，恢复在线时自动清除） */
   disconnectReason: string | null
   /** 顶部全局提示消息（为 null 时隐藏） */
@@ -93,6 +97,8 @@ interface GameStore {
   noticeSeq: number
   /** 设置网络连接状态 */
   setConnection: (connection: ConnectionState) => void
+  /** 写回往返延迟测量值 */
+  setLatencyMs: (latencyMs: number | null) => void
   /** 设置终态断连原因词条 key */
   setDisconnectReason: (key: string | null) => void
   /** 设置顶部全局提示消息 */
@@ -111,6 +117,8 @@ interface GameStore {
   setMaps: (maps: readonly WorldMapDefinition[]) => void
   /** 更新可建造建筑目录 */
   setBuildings: (buildings: readonly BuildingDefinition[]) => void
+  /** 更新坊市行情统计缓存（整表替换，键 `itemId|强化等级`） */
+  setMarketStats: (stats: Readonly<Record<string, MarketItemStats>>) => void
   /** 应用服务端全量快照 (Snapshot) */
   applySnapshot: (snapshot: PlayerSnapshot) => void
   /** 应用服务端增量补丁 (Delta Patch)；allowSameVersion 仅供命令回执：钱包类命令不推版本但携带资产差额 */
@@ -303,11 +311,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   equipment: [],
   maps: [],
   buildings: [],
+  marketStats: {},
   connection: 'connecting',
+  latencyMs: null,
   disconnectReason: null,
   notice: null,
   noticeSeq: 0,
   setConnection: (connection) => set(state => ({ connection, disconnectReason: connection === 'online' ? null : state.disconnectReason })),
+  setLatencyMs: (latencyMs) => set({ latencyMs }),
   setDisconnectReason: (key) => set({ disconnectReason: key }),
   setNotice: (notice) => set(state => ({ notice, noticeSeq: notice === null ? state.noticeSeq : state.noticeSeq + 1 })),
   setActions: (actions) => {
@@ -343,6 +354,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setEquipment: (equipment) => set({ equipment }),
   setMaps: (maps) => set({ maps }),
   setBuildings: (buildings) => set({ buildings }),
+  setMarketStats: (marketStats) => set({ marketStats }),
   applySnapshot: (snapshot) => {
     const state = get()
     // 全量快照也可能因命令回执/重连竞态晚到；禁止旧版本回写覆盖当前权威状态。
@@ -469,6 +481,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     version: 0,
     hasReceivedSnapshot: false,
     connection: 'offline',
+    latencyMs: null,
     disconnectReason: null,
     notice: null,
     queue: initial.queue,
@@ -480,6 +493,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     combatAttributes: initial.combatAttributes,
     world: initial.world!,
     duel: initial.duel,
+    marketStats: {},
   }),
 }))
 

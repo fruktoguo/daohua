@@ -1521,6 +1521,19 @@ export interface NodeBuilding {
 }
 
 /**
+ * 全图节点公共建筑索引条目（`GET /api/v1/world/node-buildings` 下发的摘要形态；
+ * 名称/描述/效果文案不在载荷内，由建筑目录 `state.buildings` 按 buildingId 解析）
+ */
+export interface MapNodeBuilding {
+  /** 建筑配置 ID */
+  buildingId: string
+  /** 已建成有效等级（0 = 尚未建成） */
+  level: number
+  /** 进行中工程目标等级（0 = 空闲） */
+  targetLevel: number
+}
+
+/**
  * 大地图节点定义
  */
 export interface WorldNodeDefinition {
@@ -1785,28 +1798,6 @@ export interface MarketVariantSummary {
 }
 
 /**
- * 市场交易整体指标度量数据
- */
-export interface MarketMetrics {
-  /** 市场账本分区（分片）数量 */
-  shardCount: number
-  /** 当前活跃挂单总数 */
-  activeOrderCount: number
-  /** 累计挂单笔数 */
-  placementCount: number
-  /** 累计撮合成交笔数 */
-  matchCount: number
-  /** 累计撤单笔数 */
-  cancelCount: number
-  /** 累计被驳回笔数 */
-  rejectedCount: number
-  /** 累计成交物品数量 */
-  tradedQuantity: number
-  /** 累计成交总额（灵石） */
-  tradedGrossAmount: number
-}
-
-/**
  * 玩家个人市场挂单信息
  */
 export interface MarketOrder {
@@ -1834,4 +1825,29 @@ export interface MarketOrder {
   createdAt: string
   /** 过期时间 ISO 字符串；无期限订单为 null */
   expiresAt: string | null
+}
+
+/**
+ * 坊市单品种行情统计（物品悬浮「市场价格」副卡数据源）
+ *
+ * 对应 GET /api/v1/market/stats 单条记录：服务端 `market.item_stats` 表
+ * 随挂单/撤单/到期/成交事务同事务维护；wire variant="+N"/null 已归一为强化等级数字。
+ */
+export interface MarketItemStats {
+  /** 物品配置 ID */
+  itemId: string
+  /** 强化等级（0 = 基础无强化变体簿） */
+  enhancementLevel: number
+  /** 当前最低挂售价；无活动卖单为 null */
+  bestAskPrice: number | null
+  /** 当前活动卖单剩余总量 */
+  askQuantity: number
+  /** 当前最高收购价；无活动买单为 null */
+  bestBidPrice: number | null
+  /** 当前活动买单剩余总量 */
+  bidQuantity: number
+  /** 当日（UTC 自然日）成交数量 */
+  dayVolume: number
+  /** 当周（UTC 周一为界）成交数量 */
+  weekVolume: number
 }

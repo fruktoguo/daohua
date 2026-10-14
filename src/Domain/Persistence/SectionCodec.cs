@@ -59,9 +59,10 @@ public static class SectionCodec
     /// player_projection 表新增 offline_since 投影列。
     /// v32：world 分段建筑效果 BuildingEffectSet 新增 monsterWeakenRatio（封魔阵怪物削弱，
     /// 可缺省解码为 0）；组队会话规格新增 MonsterWeakenRatio 冻结字段（可缺省解码），表结构未变。
+    /// v33：新增 market.item_stats 每品种行情统计表，存档载荷未变，标签随库版本同步推进。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 32;
+    public const int CurrentSchemaVersion = 33;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>

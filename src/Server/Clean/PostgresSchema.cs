@@ -47,7 +47,9 @@ public static class PostgresSchema
     /// 离线生命周期判定（逐出/会话离线截止）改读该列，在线时恒为 NULL。
     /// v32：world 分段建筑效果新增 monsterWeakenRatio（封魔阵怪物削弱，可缺省解码）——
     /// 存档标签推进，表结构未变。
-    public const int Version = 32;
+    /// v33：新增 market.item_stats 每品种行情统计（卖一/买一价量与当日/当周成交量）——
+    /// 由挂单/撤单/到期/成交事务同事务维护，供悬浮行情卡小表直读；存档载荷未变。
+    public const int Version = 33;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -338,6 +340,21 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_market_trades_buyer ON market.trades(buyer_id, traded_at);
     CREATE INDEX IF NOT EXISTS ix_market_trades_seller ON market.trades(seller_id, traded_at);
 
+    CREATE TABLE IF NOT EXISTS market.item_stats (
+        asset_id varchar(128) NOT NULL,
+        variant varchar(128) NOT NULL DEFAULT '',
+        best_ask_price double precision NULL CHECK (best_ask_price IS NULL OR (best_ask_price > 0 AND best_ask_price = best_ask_price AND best_ask_price < 'Infinity'::double precision)),
+        ask_quantity double precision NOT NULL DEFAULT 0 CHECK (ask_quantity >= 0 AND ask_quantity = ask_quantity AND ask_quantity < 'Infinity'::double precision),
+        best_bid_price double precision NULL CHECK (best_bid_price IS NULL OR (best_bid_price > 0 AND best_bid_price = best_bid_price AND best_bid_price < 'Infinity'::double precision)),
+        bid_quantity double precision NOT NULL DEFAULT 0 CHECK (bid_quantity >= 0 AND bid_quantity = bid_quantity AND bid_quantity < 'Infinity'::double precision),
+        day_volume double precision NOT NULL DEFAULT 0 CHECK (day_volume >= 0 AND day_volume = day_volume AND day_volume < 'Infinity'::double precision),
+        day_key date NOT NULL,
+        week_volume double precision NOT NULL DEFAULT 0 CHECK (week_volume >= 0 AND week_volume = week_volume AND week_volume < 'Infinity'::double precision),
+        week_key date NOT NULL,
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (asset_id, variant)
+    );
+
     CREATE TABLE IF NOT EXISTS market.settlement_cursors (
         player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
         pending_count integer NOT NULL DEFAULT 0 CHECK (pending_count >= 0),
@@ -575,7 +592,7 @@ public static class PostgresSchema
     );
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
-        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now())
+        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

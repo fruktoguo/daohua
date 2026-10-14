@@ -110,8 +110,6 @@ export const marketZh = {
     expiresOn: '{date} 到期',
     noExpiry: '长期有效',
     cancelOrder: '撤销订单',
-    metricsTraded: '累计成交 {count}',
-    metricsMatches: '撮合 {count}',
     sellerTaxNote: '2% 卖方税',
     selector: {
       infinityAria: '无限次数',
@@ -204,6 +202,15 @@ export const marketZh = {
       cultivationSpeed: '修炼效率 {value}',
       gatheringOutput: '采集产出 {value}',
       alchemyOutput: '炼丹产出 {value}',
+    },
+    // 物品悬浮「市场价格」行情副卡：价格缺位时一律展示占位符 none。
+    price: {
+      title: '市场价格',
+      mark: '坊市',
+      none: '-',
+      askLine: '最低在售价 {price} · 总在售 {count}',
+      bidLine: '最高收购价 {price} · 总收购 {count}',
+      volumeLine: '今日成交 {day} · 本周成交 {week}',
     },
     effect: {
       restoreHp: '即时恢复气血',

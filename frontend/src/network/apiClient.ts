@@ -1,5 +1,5 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
-import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, MarketVariantSummary, WorldMapDefinition } from '../game/types'
+import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -53,6 +53,14 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   ])
   registerBaseAttributeAnchors(baseAttributes)
   return { actions, maps, encounters, items, equipment, abilities, buildings }
+}
+
+/**
+ * 拉取全图节点公共建筑索引（nodeId → 建筑摘要），供大地图地点详情合并展示玩家建筑。
+ * 动态共享数据、非配表目录，故不走 catalog 指纹缓存通道。
+ */
+export async function fetchNodeBuildingIndex(signal?: AbortSignal): Promise<Record<string, MapNodeBuilding[]>> {
+  return requestJson<Record<string, MapNodeBuilding[]>>('/api/v1/world/node-buildings', { signal })
 }
 
 function parseNumericVariant(value: string | null, fallback: number): number {
@@ -204,30 +212,43 @@ export async function fetchMarketVariants(itemId: string, signal?: AbortSignal):
   }))
 }
 
-interface MarketMetricsDto {
-  partitionCount: number
-  activeOrderCount: number
-  placementCount: number
-  matchCount: number
-  cancelCount: number
-  rejectedCount: number
-  tradedQuantity: number
-  tradedGrossAmount: number
+interface MarketItemStatsDto {
+  assetId: string
+  variant: string | null
+  bestAskPrice: number | null
+  askQuantity: number
+  bestBidPrice: number | null
+  bidQuantity: number
+  dayVolume: number
+  weekVolume: number
 }
 
-/** 拉取坊市全局撮合统计指标（partitionCount 映射为 shardCount） */
-export async function fetchMarketMetrics(signal?: AbortSignal): Promise<MarketMetrics> {
-  const dto = await requestJson<MarketMetricsDto>('/api/v1/market/metrics', { signal })
-  return {
-    shardCount: dto.partitionCount,
-    activeOrderCount: dto.activeOrderCount,
-    placementCount: dto.placementCount,
-    matchCount: dto.matchCount,
-    cancelCount: dto.cancelCount,
-    rejectedCount: dto.rejectedCount,
-    tradedQuantity: dto.tradedQuantity,
-    tradedGrossAmount: dto.tradedGrossAmount,
+/** 行情统计缓存键：`itemId|强化等级`，与服务端 (asset_id, variant) 变体簿一一对应（基础簿=0）。 */
+export function marketStatsKey(itemId: string, enhancementLevel: number): string {
+  return `${itemId}|${enhancementLevel}`
+}
+
+/**
+ * 拉取全部品种行情统计（服务端 market.item_stats 小表全量读）。
+ * 按 `itemId|level` 键入缓存，悬浮「市场价格」副卡渲染时 O(1) 查表、不再产生逐项请求。
+ */
+export async function fetchMarketStats(signal?: AbortSignal): Promise<Record<string, MarketItemStats>> {
+  const rows = await requestJson<MarketItemStatsDto[]>('/api/v1/market/stats', { signal })
+  const map: Record<string, MarketItemStats> = {}
+  for (const row of rows) {
+    const enhancementLevel = parseNumericVariant(row.variant, 0)
+    map[marketStatsKey(row.assetId, enhancementLevel)] = {
+      itemId: row.assetId,
+      enhancementLevel,
+      bestAskPrice: row.bestAskPrice,
+      askQuantity: row.askQuantity,
+      bestBidPrice: row.bestBidPrice,
+      bidQuantity: row.bidQuantity,
+      dayVolume: row.dayVolume,
+      weekVolume: row.weekVolume,
+    }
   }
+  return map
 }
 
 /** wire 下发的挂单状态枚举（snake_case，经 mapMarketOrderStatus 归一化为前端 kebab-case） */

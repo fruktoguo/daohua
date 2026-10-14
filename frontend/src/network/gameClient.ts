@@ -32,7 +32,7 @@ import {
   WireMessageType,
 } from './protocol'
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
-import { getCatalogFingerprint } from './apiClient'
+import { fetchMarketStats, getCatalogFingerprint } from './apiClient'
 import { getSessionAccount } from './sessionState'
 import { collectAccountSignals } from '../antiMulti/accountSignals'
 import {
@@ -92,13 +92,25 @@ export class GameClient {
   private lastInspectTarget: { side: 'enemy' | 'ally'; index: number } | null = null
   /** 待处理请求计时器；连接关闭后保留元数据，避免把可能已执行的命令静默判定为失败。 */
   private readonly pendingRequests = new Map<string, number>()
+  /** 在途 Ping 的发送时间（requestId -> Date.now()），Pong 回包时计算 RTT。 */
+  private readonly pendingPings = new Map<string, number>()
+  /** 手动测速的最小间隔，避免悬停抖动刷 Ping。 */
+  private lastManualPingAt = 0
   private readonly awaitingReconnectRequests = new Set<string>()
+  /** 坊市行情统计轮询计时器：仅在会话在线期间运行，连接断开即停。 */
+  private marketStatsTimer: number | undefined
+  /** 行情统计在途请求标记：上一轮未返回时跳过一次 tick，避免慢网叠加并发请求。 */
+  private marketStatsInFlight = false
   /**
    * 入站帧串行链：delta 的 section checksum 解码是真异步（crypto.subtle），
    * 并发处理会让多帧共享同一旧基线互相覆盖应用结果；串行后应用顺序恒等于通道到达序。
    */
   private messageChain: Promise<void> = Promise.resolve()
   private static readonly REQUEST_TIMEOUT_MS = 15_000
+  /** 坊市行情统计轮询间隔（15 秒）：悬浮行情卡为低频只读面，不需要盘口级实时性。 */
+  private static readonly MARKET_STATS_REFRESH_INTERVAL_MS = 15_000
+  /** 行情轮询的页面可见性监听句柄：随 start/stop 成对挂载卸载。 */
+  private marketStatsVisibilityHandler: (() => void) | undefined
 
   /** 当前登录的角色 ID */
   playerId = getSessionAccount()?.playerId ?? ''
@@ -118,18 +130,75 @@ export class GameClient {
     this.stopHeartbeat()
     this.heartbeatTimer = window.setInterval(() => {
       if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId) || sourceSocket.readyState !== WebSocket.OPEN) return
-      try {
-        sourceSocket.send(encodeJsonEnvelope(WireMessageType.Ping, createRequestId(), this.nextOutboundSequence(), { clientTime: Date.now() }))
-      } catch {
-        // 发送失败由 WebSocket close 事件统一处理。
-      }
+      this.sendPing(sourceSocket)
     }, 25_000)
+  }
+
+  /** 发送一次 Ping 并登记发送时间；Pong 回包时按 requestId 计算 RTT 写入 latencyMs。 */
+  private sendPing(sourceSocket: WebSocket): void {
+    const requestId = createRequestId()
+    this.pendingPings.set(requestId, Date.now())
+    try {
+      sourceSocket.send(encodeJsonEnvelope(WireMessageType.Ping, requestId, this.nextOutboundSequence(), { clientTime: Date.now() }))
+    } catch {
+      this.pendingPings.delete(requestId)
+      // 发送失败由 WebSocket close 事件统一处理。
+    }
+  }
+
+  /** 立即发送一次 Ping 测往返延迟（悬停连接灯触发）；仅连接已打开时生效，1 秒内重复调用去重。 */
+  pingNow(): void {
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    const now = Date.now()
+    if (now - this.lastManualPingAt < 1000) return
+    this.lastManualPingAt = now
+    this.sendPing(socket)
   }
 
   private stopHeartbeat(): void {
     if (this.heartbeatTimer !== undefined) {
       window.clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = undefined
+    }
+  }
+
+  /**
+   * 坊市行情统计后台轮询：HelloAck 会话就绪后启动，每 15 秒全量拉取 market.item_stats
+   * 小表投影写入 gameStore.marketStats，供物品悬浮「市场价格」副卡零请求渲染；
+   * 页面转后台时跳过 tick（与坊市页轮询同一节能口径），回前台时立即补一轮。
+   */
+  private startMarketStatsSync(): void {
+    this.stopMarketStatsSync()
+    const tick = async () => {
+      if (this.disposed || this.marketStatsInFlight || document.visibilityState !== 'visible') return
+      this.marketStatsInFlight = true
+      try {
+        const stats = await fetchMarketStats()
+        if (!this.disposed) useGameStore.getState().setMarketStats(stats)
+      } catch {
+        // 行情为只读背景数据：单轮失败静默等待下一周期，不产生用户态噪音。
+      } finally {
+        this.marketStatsInFlight = false
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick()
+    }
+    this.marketStatsVisibilityHandler = onVisible
+    document.addEventListener('visibilitychange', onVisible)
+    void tick()
+    this.marketStatsTimer = window.setInterval(() => void tick(), GameClient.MARKET_STATS_REFRESH_INTERVAL_MS)
+  }
+
+  private stopMarketStatsSync(): void {
+    if (this.marketStatsTimer !== undefined) {
+      window.clearInterval(this.marketStatsTimer)
+      this.marketStatsTimer = undefined
+    }
+    if (this.marketStatsVisibilityHandler !== undefined) {
+      document.removeEventListener('visibilitychange', this.marketStatsVisibilityHandler)
+      this.marketStatsVisibilityHandler = undefined
     }
   }
 
@@ -197,6 +266,7 @@ export class GameClient {
     this.disposed = true
     this.clearReconnectTimer()
     this.stopHeartbeat()
+    this.stopMarketStatsSync()
     this.clearPendingRequests()
     this.awaitingReconnectRequests.clear()
     chatService.reset()
@@ -387,6 +457,8 @@ export class GameClient {
     if (this.disposed || !session || session.playerId !== this.playerId || session.account !== this.account || (session.sequenceId ?? 0) !== this.sequenceId) return
     this.sessionGeneration += 1
     this.stopHeartbeat()
+    this.stopMarketStatsSync()
+    this.pendingPings.clear()
     this.messageChain = Promise.resolve()
     this.outboundSequence = 0
     this.lastServerSequence = 0
@@ -432,6 +504,7 @@ export class GameClient {
       // 旧连接关闭不能停止新连接心跳，也不能改变新会话状态。
       if (!this.isCurrentSession(socket, sourceGeneration, sourcePlayerId)) return
       this.stopHeartbeat()
+      this.stopMarketStatsSync()
       this.socket = null
       this.markPendingRequestsAwaitingReconnect()
       // 连接中断时在途角色信息卡请求必然失效：直接收起弹窗，避免加载态永久悬挂。
@@ -536,6 +609,7 @@ export class GameClient {
           }
           applyAntiMultiOpenConfig(hello.antiMultiOpen)
           useGameStore.getState().setConnection('online')
+          this.startMarketStatsSync()
           // 重连后重放观察目标：服务端会话级浏览态随旧连接销毁，不补发则详情属性面板停在空态；
           // 先清账再登记绕开相同目标去重，保证新会话重新武装一次性交付。
           const inspectReplay = this.lastInspectTarget
@@ -669,7 +743,14 @@ export class GameClient {
           appliedBusinessPayload = true
           break
         }
-        case WireMessageType.Pong:
+        case WireMessageType.Pong: {
+          const sentAt = this.pendingPings.get(envelope.requestId)
+          if (sentAt !== undefined) {
+            this.pendingPings.delete(envelope.requestId)
+            useGameStore.getState().setLatencyMs(Math.max(0, Date.now() - sentAt))
+          }
+          return
+        }
         case WireMessageType.AssetView:
         case WireMessageType.MarketBook:
         case WireMessageType.MarketOrder:

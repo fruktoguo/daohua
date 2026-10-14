@@ -17,6 +17,7 @@
   - **通用独立数量副气泡联动**：传入 `quantity={amount}` 属性，自动在主卡片旁附加独立的数量副气泡（标题为「数量」，内容为中文四位分段「具体数值」）。
   - **通用 Buff / Debuff / 特殊机制附属副气泡窗口 (Aside Cards)**：支持将丹药持续 Buff、修炼/技艺效率加成、装备特殊机制/词缀以及角色身上生效的 Buff/Debuff 自动解析为独立的副气泡卡片窗口，并排挂载联动展示（`resolveItemAsideCards`, `resolveEquipmentAsideCards`, `createBuffAsideCard`）。
   - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。功法悬浮详情统一结构：主描述 = 配表 `description` 招式描述 + 效果句（目标/伤害构成/五行伤害类别，如「对单个目标造成 60%术法攻击 +10.5 木属性术法伤害」，构成单元经 `[[ ]]` 标记由 `ValueText` 渲染为整组胶囊），词条行 = 等级、冷却、吟唱、灵力消耗与次级效果，不输出默认触发条件文本。
+  - **可交易物品与装备「市场价格」坊市行情副气泡联动**：针对所有可交易标的（`item.isTradable` 物品或装备类标的），自动通过 `resolveMarketStatsAsideCard` 命中 `gameStore.marketStats` 缓存（按 `itemId|强化等级` 索引），渲染「市场价格」副卡（金色调 `gold`、右上角标「坊市」），展示最低在售价与总在售数量、最高收购价与总收购数量（无盘口一侧显 `-`）、今日与当周成交量。数据源由 `gameClient` 在线期间以 15s 周期后台静默拉取 `GET /api/v1/market/stats`（小表全量读），悬浮渲染零即时网络开销，页面切后台跳过 tick。
   - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`，命令式切换不经过 React 渲染）与视口渲染裁剪（`content-visibility: auto`）。非交互 hover 气泡（tooltip 语义）在**包含锚点的滚动容器**滚动时立即收起（等同原生 `title`）；与锚点无关的面板自滚（如底部日志 append 后自动滚底、侧栏滚动）不会触碰已打开的气泡。click/interactive 浮层滚动跟随则走 rAF 节流重定位，彻底消除滚动期间的逐事件 `getBoundingClientRect` 测量、整卡重渲染、`backdrop-filter` 重绘与高频 Hover 风暴。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
   - **右下角全局浮动气泡（自动 2.6s 消失）**：命令回执 `message` 是唯一服务端下发管道——成功文案按命令差异化（`EcsPlayerRuntimeAdapter.SuccessNotice`），高频或界面已自证的命令回空串静默；发送即知结果的操作（坊市挂单/撤单）在调用点就地 `setNotice` 即时提示。同文案重复提示经 `noticeSeq` 重置计时并重播入场动画 -> `Notice`（App.tsx）+ `.notice`（styles.css）
@@ -319,7 +320,7 @@
 ## 24. 行动统计/记录面板与账本分区 (Stats Panel / Records Panel & Report Blocks)
 
 - **适用场景**：
-  - **三个入口三块面板**：`StatsPanel`（详情页右上角「统计」）只显示本次行动——当前行动账本 + 斗法暂存区；`CombatStatsPanel`（详情页头部「战斗统计」独立按钮与弹窗）展示当前行动的单位级战斗统计——「我方/敌方」阵营页签 ×「输出/承伤/减免/治疗」指标页签，条形图把当前侧全部单位按所选指标总值降序做横向对比（条宽按该组合最大值归一化），伤害系三项物理红·术法蓝分段、治疗按自动回复翠·其他治疗紫分段并配同色图例；`RecordsPanel`（主区顶级页签 `'records'`：左侧栏底部「记录」按钮切换进入，移动端由详情页头部 `.records-open-mobile` 入口兜底）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。战斗统计仅进行中账本携带 combatants，归档即弃。
+  - **三个入口三块面板**：`StatsPanel`（详情页右上角「统计」）只显示本次行动——当前行动账本 + 斗法暂存区；`CombatStatsPanel`（战场详情左上角浮层「战斗统计」入口，仅队首为战斗行动时显示，按钮与弹窗均收拢在 `CombatArena` 内）展示当前行动的单位级战斗统计——「我方/敌方」阵营页签 ×「输出/承伤/减免/治疗」指标页签，条形图把当前侧全部单位按所选指标总值降序做横向对比（条宽按该组合最大值归一化），伤害系三项物理红·术法蓝分段、治疗按自动回复翠·其他治疗紫分段并配同色图例；`RecordsPanel`（主区顶级页签 `'records'`：左侧栏底部「记录」按钮切换进入，移动端由详情页头部 `.records-open-mobile` 入口兜底）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。战斗统计仅进行中账本携带 combatants，归档即弃。
   - **行动收益账本统一渲染**：共用组件收拢在 `reportSections.tsx`——`ReportBlock` 分区容器按固定顺序排三个 memo 小节且**不渲染节标题**：`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）→ `ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemReference` 复合胶囊横排，与斗法暂存区同款）→ `ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）。
   - **空账本抑制**：`reportHasContent` 判定全零账本不渲染分区；`endedAtUnixSeconds` 决定时长口径（进行中=估算服务端当前时刻−开始，归档=结束−开始）。
   - **localStorage 历史缓存**：`battleReportStore` 读取时对旧缓存条目补齐账本新增字段默认值，防渲染崩溃。

@@ -44,4 +44,18 @@ public static class MarketDtoMapper
     /// </summary>
     /// <param name="result">撤单结算结果。</param>
     public static MarketOrderDto ToCancellation(CancellationResult result) => ToOrder(result.Order);
+
+    /// <summary>
+    /// 把行情统计行投影为协议 DTO：基础变体空串归一为 null。
+    /// </summary>
+    /// <param name="stats">品种行情统计快照。</param>
+    public static MarketItemStatsDto ToStats(MarketItemStatsSnapshot stats) => new(
+        stats.AssetId,
+        string.IsNullOrEmpty(stats.Variant) ? null : stats.Variant,
+        stats.BestAskPrice,
+        stats.AskQuantity,
+        stats.BestBidPrice,
+        stats.BidQuantity,
+        stats.DayVolume,
+        stats.WeekVolume);
 }

@@ -4,6 +4,7 @@ import { useGameStore } from '../game/gameStore'
 import { convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
+import { marketStatsKey } from '../network/apiClient'
 import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition, MonsterDropDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
@@ -134,7 +135,8 @@ function ItemTooltipCardContent({
         ...baseMetadata,
         label: itemDef.name || baseMetadata.label,
         category: subCategoryLabel,
-        level: itemDef.tier ?? baseMetadata.level,
+        tier: itemDef.tier ?? baseMetadata.tier,
+        level: itemDef.tier ? convertTierToLevel(itemDef.tier) : baseMetadata.level,
         description: itemDef.description || baseMetadata.description,
       }
     : eqDef
@@ -142,18 +144,21 @@ function ItemTooltipCardContent({
         ...baseMetadata,
         label: eqDef.name || baseMetadata.label,
         category: subCategoryLabel,
-        level: eqDef.tier ?? baseMetadata.level,
+        tier: eqDef.tier ?? baseMetadata.tier,
+        level: eqDef.tier ? convertTierToLevel(eqDef.tier) : baseMetadata.level,
       }
     : baseMetadata
 
-  const tier = rawMetadata.level ?? (eqDef?.tier || itemDef?.tier || 1)
-  const grade = resolveItemGrade(tier)
-  const levelNumber = convertTierToLevel(tier)
+  const tier = rawMetadata.tier ?? (eqDef?.tier || itemDef?.tier || (rawMetadata.level && rawMetadata.level <= 8 ? rawMetadata.level : 1))
+  const normalizedTier = tier > 8 ? 1 : Math.max(1, Math.floor(tier))
+  const grade = resolveItemGrade(normalizedTier)
+  const levelNumber = convertTierToLevel(normalizedTier)
 
   const metadata: ItemMetadata = {
     ...rawMetadata,
     rarity: grade.rarity,
     rarityLabel: grade.label,
+    tier: normalizedTier,
     level: levelNumber,
   }
 
@@ -197,12 +202,14 @@ function ItemTooltipCardContent({
  * 副卡片聚合解析（惰性求值）：经 FloatingPopover 的 asideCards 函数形式传入，仅在浮层实际展开时执行。
  * 合并丹药/增益 Buff 副卡、装备特殊机制副卡、功法秘籍/残卷参悟副卡与调用方附加卡片；
  * 若物品自身 Buff 链路已产出参悟副卡（aside-manual-*），不再重复追加秘籍解析结果。
+ * 可交易标的额外追加「市场价格」行情副卡：按强化等级命中对应 "+N" 变体簿统计。
  */
 export function resolveItemTooltipAsideCards(
   itemId: string,
   metadataOverride?: ItemMetadata,
   itemDefOverride?: ItemDefinition,
   eqDefOverride?: CombatEquipmentDefinition,
+  enhancementLevel = 0,
   extraAsideCards?: readonly FloatingAsideCard[]
 ): FloatingAsideCard[] {
   const store = useGameStore.getState()
@@ -236,6 +243,10 @@ export function resolveItemTooltipAsideCards(
     if (manualAside) {
       list.push(manualAside)
     }
+  }
+  const marketAside = resolveMarketStatsAsideCard(itemId, enhancementLevel, itemDef, eqDef, rawMetadata.label)
+  if (marketAside) {
+    list.push(marketAside)
   }
   if (extraAsideCards && extraAsideCards.length > 0) {
     list.push(...extraAsideCards)
@@ -287,9 +298,10 @@ export function ItemTooltipTarget({
         metadataOverride,
         itemDefOverride,
         eqDefOverride,
+        enhancementLevel,
         extraAsideCards
       ),
-    [itemId, metadataOverride, itemDefOverride, eqDefOverride, extraAsideCards]
+    [itemId, metadataOverride, itemDefOverride, eqDefOverride, enhancementLevel, extraAsideCards]
   )
 
   return (
@@ -553,6 +565,42 @@ export function describeBuffEffectLines(buff: {
   }
 
   return lines
+}
+
+/**
+ * 坊市「市场价格」副卡（惰性求值）：按 (itemId, 强化等级) 命中 gameStore.marketStats
+ * 中服务端持续维护的品种行情，展示卖一价/在售量、买一价/收购量与当日/当周成交量；
+ * 仅可交易标的产出卡片（item.isTradable 或装备变体簿），无盘口一侧价格显示 "-"。
+ */
+function resolveMarketStatsAsideCard(
+  itemId: string,
+  enhancementLevel: number,
+  itemDef: ItemDefinition | undefined,
+  eqDef: CombatEquipmentDefinition | undefined,
+  itemName: string,
+): FloatingAsideCard | null {
+  // 可交易口径与坊市浏览网格一致：配表 isTradable 物品或装备类标的（全部装备可挂单）。
+  const tradable = itemDef?.isTradable === true
+    || eqDef !== undefined
+    || itemId.startsWith('equipment.')
+  if (!tradable) return null
+  const t = getT()
+  const stats = useGameStore.getState().marketStats[marketStatsKey(itemId, enhancementLevel)]
+  const dash = t('market.price.none')
+  const askPrice = stats?.bestAskPrice != null ? formatNumber(stats.bestAskPrice) : dash
+  const bidPrice = stats?.bestBidPrice != null ? formatNumber(stats.bestBidPrice) : dash
+  return {
+    id: `aside-market-${itemId}-${enhancementLevel}`,
+    mark: t('market.price.mark'),
+    title: t('market.price.title'),
+    subtitle: enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName,
+    tone: 'gold',
+    lines: [
+      t('market.price.askLine', { price: askPrice, count: formatNumber(stats?.askQuantity ?? 0) }),
+      t('market.price.bidLine', { price: bidPrice, count: formatNumber(stats?.bidQuantity ?? 0) }),
+      t('market.price.volumeLine', { day: formatNumber(stats?.dayVolume ?? 0), week: formatNumber(stats?.weekVolume ?? 0) }),
+    ],
+  }
 }
 
 /**
@@ -1021,7 +1069,7 @@ export function ItemCard({ item, definition, equipmentDefinition }: { item: Inve
   const meta = resolveItemMetadata(item.itemId)
   const metadata = withItemGrade(
     meta ?? fallbackMetadata(item.itemId),
-    item.tier ?? meta?.level ?? 1,
+    item.tier ?? meta?.tier ?? 1,
   )
   // 强化变体行（AssetKey "+N"）：名称附强化等级、悬浮卡片按该等级缩放属性预览。
   const enhancementLevel = parseEnhancementVariant(item.variant)

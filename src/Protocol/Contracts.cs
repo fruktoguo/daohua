@@ -611,6 +611,25 @@ public sealed record MarketLevelDto(double Price, double Quantity, int OrderCoun
 /// <param name="BestBid">当前最高收购价（买一档）；无买单为 null</param>
 public sealed record MarketVariantSummaryDto(string AssetId, string? Variant, double? BestAsk, double? BestBid);
 
+/// <summary>坊市单品种行情统计 DTO（GET /api/v1/market/stats 返回项；悬浮行情卡数据源）</summary>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体；null 表示基础（无强化）簿</param>
+/// <param name="BestAskPrice">当前最低挂售价；无活动卖单为 null</param>
+/// <param name="AskQuantity">当前活动卖单剩余总量</param>
+/// <param name="BestBidPrice">当前最高收购价；无活动买单为 null</param>
+/// <param name="BidQuantity">当前活动买单剩余总量</param>
+/// <param name="DayVolume">当日（UTC 自然日）成交数量</param>
+/// <param name="WeekVolume">当周（UTC 周一为界）成交数量</param>
+public sealed record MarketItemStatsDto(
+    string AssetId,
+    string? Variant,
+    double? BestAskPrice,
+    double AskQuantity,
+    double? BestBidPrice,
+    double BidQuantity,
+    double DayVolume,
+    double WeekVolume);
+
 /// <summary>调度冷挂机计算节点进行确定性离线补算请求 DTO</summary>
 /// <param name="JobId">任务唯一标识</param>
 /// <param name="PlayerId">玩家唯一标识</param>

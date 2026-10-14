@@ -19,9 +19,10 @@ dotnet --version
 node --version
 npm --version
 
-printf '%s\n' '==> 安装前端锁定依赖'
-npm --prefix frontend ci --include=dev --ignore-scripts --no-audit --no-fund
-
+if [[ "${SKIP_NPM_CI:-0}" != "1" ]]; then
+  printf '%s\n' '==> 安装前端锁定依赖'
+  npm --prefix frontend ci --include=dev --ignore-scripts --no-audit --no-fund
+fi
 printf '%s\n' '==> Release 构建'
 dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
 

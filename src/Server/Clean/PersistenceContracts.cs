@@ -285,6 +285,25 @@ public sealed record MarketCommitResult(Guid OrderId, bool Applied, bool Already
 /// <param name="AlreadyClaimed">为 true 表示同 RequestId 已确认过，本次为幂等重放。</param>
 public sealed record SettlementClaimResult(Guid PlayerId, Guid RequestId, int SettledTradeCount, DateTimeOffset ClaimedAt, bool AlreadyClaimed);
 
+/// <summary>market.item_stats 单行读模型：单品种行情聚合（卖一/买一价量与当日/当周成交量）。</summary>
+/// <param name="AssetId">标的资产标识。</param>
+/// <param name="Variant">标的变体（空串为基础簿）。</param>
+/// <param name="BestAskPrice">当前最低挂售价；该侧无活动挂单为 null。</param>
+/// <param name="AskQuantity">当前活动卖单剩余总量。</param>
+/// <param name="BestBidPrice">当前最高收购价；该侧无活动挂单为 null。</param>
+/// <param name="BidQuantity">当前活动买单剩余总量。</param>
+/// <param name="DayVolume">当日（UTC 自然日）成交数量；读取时已按 day_key 惰性掩零。</param>
+/// <param name="WeekVolume">当周（UTC ISO 周一为界）成交数量；读取时已按 week_key 惰性掩零。</param>
+public sealed record MarketItemStatsSnapshot(
+    string AssetId,
+    string Variant,
+    double? BestAskPrice,
+    double AskQuantity,
+    double? BestBidPrice,
+    double BidQuantity,
+    double DayVolume,
+    double WeekVolume);
+
 /// <summary>市场账本事务边界：挂单、撤单在 Serializable 事务 + 分片租约 fence 校验下提交。</summary>
 public interface IMarketTransactionStore
 {
