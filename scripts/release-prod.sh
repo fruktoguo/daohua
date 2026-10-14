@@ -211,9 +211,16 @@ fi
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 2/4] 解析不可变 sha256 镜像引用...\n'
 
-APP_DIGEST="$(grep -oE 'yuohira/daohua:sha-[^[:space:]]+: digest: sha256:[a-f0-9]{64}' "$STREAM_A_LOG" | awk '{print $NF}' | tail -n 1 || true)"
-COMPUTE_DIGEST="$(grep -oE 'yuohira/daohua-compute:sha-[^[:space:]]+: digest: sha256:[a-f0-9]{64}' "$STREAM_A_LOG" | awk '{print $NF}' | tail -n 1 || true)"
+APP_DIGEST="$(awk '/推送镜像:.*\/daohua:sha-/ { found=1; next } found && /digest: sha256:[a-f0-9]{64}/ { for(i=1;i<=NF;i++) if($i ~ /^sha256:[a-f0-9]{64}$/) { print $i; exit } }' "$STREAM_A_LOG")"
+COMPUTE_DIGEST="$(awk '/推送镜像:.*\/daohua-compute:sha-/ { found=1; next } found && /digest: sha256:[a-f0-9]{64}/ { for(i=1;i<=NF;i++) if($i ~ /^sha256:[a-f0-9]{64}$/) { print $i; exit } }' "$STREAM_A_LOG")"
 
+if [[ -z "$APP_DIGEST" || -z "$COMPUTE_DIGEST" ]]; then
+  DIGESTS=($(grep -oE 'sha-[^[:space:]]+: digest: sha256:[a-f0-9]{64}' "$STREAM_A_LOG" | awk '{print $NF}'))
+  if [[ "${#DIGESTS[@]}" -ge 2 ]]; then
+    APP_DIGEST="${DIGESTS[0]}"
+    COMPUTE_DIGEST="${DIGESTS[1]}"
+  fi
+fi
 if [[ -z "$APP_DIGEST" || -z "$COMPUTE_DIGEST" ]]; then
   printf '错误: 无法从构建日志中提取完整的 sha256 digest。日志末尾:\n' >&2
   tail -n 25 "$STREAM_A_LOG" >&2
