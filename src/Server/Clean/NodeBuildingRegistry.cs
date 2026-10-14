@@ -530,6 +530,23 @@ public sealed class NodeBuildingRegistry(
         finally { _gate.Release(); }
     }
 
+    /// <summary>
+    /// 全图建筑索引：遍历已发布快照的全部节点逐节点走 <see cref="BuildingsForAsync"/>
+    /// （含惰性完工结算），返回 nodeId → 建筑快照字典；供地图浏览等跨节点只读展示使用。
+    /// </summary>
+    public async ValueTask<IReadOnlyDictionary<string, NodeBuildingSnapshot>> AllBuildingsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken);
+        var published = Volatile.Read(ref _snapshot);
+        var result = new Dictionary<string, NodeBuildingSnapshot>(published.Count, StringComparer.Ordinal);
+        foreach (var nodeId in published.Keys.OrderBy(key => key, StringComparer.Ordinal))
+        {
+            var snapshot = await BuildingsForAsync(nodeId, now, cancellationToken);
+            if (snapshot.Buildings.Count > 0) result[nodeId] = snapshot;
+        }
+        return result;
+    }
+
     /// <summary>汇总指定节点已建成建筑效果（含拥挤衰减）；无建筑返回空效果集。</summary>
     public async ValueTask<BuildingEffectSet> EffectsForAsync(string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
     {

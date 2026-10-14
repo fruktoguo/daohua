@@ -2875,6 +2875,7 @@ flowchart TD
 - 候选弹窗按 `group` 分组列出全部可建建筑；未解锁灰显并标注所需境界。
 - 命令：`building.build` / `building.upgrade` / `building.contribute`；目录端点 `/api/v1/catalog/buildings`。
 - 快照 `world` 段透传 `buildableBuildingIds`（可建列表，null=不可建）与 `nodeBuildings`（等级/双进度/材料明细 + `activeUsers`/`capacity`/`efficiency` 拥挤三元组）。
+- 大地图地点详情「地标与设施」同时展示配表陈设与玩家公共建筑：全图建筑索引经只读端点 `GET /api/v1/world/node-buildings` 下发（`nodeId → {buildingId, level, targetLevel}[]`，沿用注册表读路径惰性完工口径），前端面板挂载与本节点建筑变化时拉取，名称/描述/效果文案由建筑目录解析；等级、在建（建造中/升级中目标等级）随胶囊展示。
 
 ## 9.6 不变量
 
@@ -3685,7 +3686,7 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 
 服务端权威执行设备注册与账号关联限制：默认稳定设备安装标识只能注册一个账号，同一设备主体最多关联两个账号。浏览器无法证明自然人身份；设备配置、IP、网段与指纹只参与综合风险判断，不能独立证明同一人。注册、登录与 Hello 均执行检测，拒绝登录不得签发会话或成功事件。
 
-检测项必须独立动态启停，策略、稳定 HMAC 密钥、关联与审计落 PostgreSQL；软风险支持放行、复核与拒绝，配置相同或共享 IP 不单独硬封。前端只采集摘要，生产构建混淆提高分析成本，密钥与裁决不进入前端。Development 运维面板提供“账号检测”页与令牌保护的策略写入，生产沿用关闭 Ops 路由的边界。具体模块、事务和在线所有权见 [`anti-multi-open.md`](../../backend/anti-multi-open.md)。
+检测项必须独立动态启停，策略、稳定 HMAC 密钥、关联与审计落 PostgreSQL；软风险支持放行、复核与拒绝，配置相同或共享 IP 不单独硬封。前端只采集摘要，生产构建混淆提高分析成本，密钥与裁决不进入前端。运维面板提供“账号检测”页与密码保护的策略写入，生产环境通过动态随机路径（`/ops-<hex>`）与全量 `X-Ops-Token` 密码门禁访问，裸 `/ops` 路径及非激活 `/ops-*` 路径仍返回 404。具体模块、事务和在线所有权见 [`anti-multi-open.md`](../../backend/anti-multi-open.md)。
 
 ---
 

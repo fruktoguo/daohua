@@ -3,8 +3,9 @@ import { useGameStore } from '../game/gameStore'
 import { findItemInCatalog } from '../game/ids'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { formatInteger } from '../game/format'
-import type { CombatantDefinition, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
+import type { CombatantDefinition, MapNodeBuilding, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
+import { fetchNodeBuildingIndex } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
 import { ItemDropReference } from './ItemDisplay'
@@ -450,6 +451,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const world = useGameStore(state => state.world)
   const actions = useGameStore(state => state.actions)
   const items = useGameStore(state => state.items)
+  const buildingCatalog = useGameStore(state => state.buildings)
   const queue = useGameStore(state => state.queue.entries)
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
@@ -861,6 +863,28 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     return selectedNode?.buildings ?? []
   }, [selectedNode])
 
+  // 3b. 全图玩家公共建筑索引：挂载时拉取一次，此后随本节点建筑投影变化刷新；
+  // 失败静默——玩家建筑胶囊是增强展示，索引缺失不影响地图主体功能。
+  const [buildingIndex, setBuildingIndex] = useState<Record<string, MapNodeBuilding[]>>({})
+  useEffect(() => {
+    let cancelled = false
+    void fetchNodeBuildingIndex()
+      .then(index => { if (!cancelled) setBuildingIndex(index) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [world.nodeBuildings])
+
+  // 选中节点的玩家公共建筑：当前节点优先用快照实时投影（含刚发起的建造/升级），
+  // 其余节点用全图索引摘要。
+  const nodePlayerBuildings = useMemo<MapNodeBuilding[]>(() => {
+    if (!selectedNode) return []
+    if (selectedNode.nodeId === world.nodeId) {
+      return (world.nodeBuildings ?? [])
+        .map(building => ({ buildingId: building.entityId, level: building.level, targetLevel: building.targetLevel }))
+    }
+    return buildingIndex[selectedNode.nodeId] ?? []
+  }, [selectedNode, world.nodeId, world.nodeBuildings, buildingIndex])
+
   // 4. 计算当前位置到选中地点的最短路径规划（合并世界图，跨区域可达）
   const plannedTravel = useMemo(() => {
     if (worldIndex.nodes.length === 0 || !selectedNodeId) return null
@@ -1130,8 +1154,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                 </div>
               )}
 
-              {/* 3. 地点（地标设施）：仅在有建筑设施时展示，仅展示名称，Hover 弹窗浮现描述与效果 */}
-              {nodeBuildings.length > 0 && (
+              {/* 3. 地点（地标设施）：配表陈设 + 玩家公共建筑合并展示，仅展示名称，Hover 弹窗浮现描述与效果 */}
+              {(nodeBuildings.length > 0 || nodePlayerBuildings.length > 0) && (
                 <div className="world-eco-block">
                   <div className="world-eco-title">
                     <span className="eco-label-name">{t('combat.map.buildingsHeading')}</span>
@@ -1155,6 +1179,33 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                         </span>
                       </FloatingTooltip>
                     ))}
+                    {nodePlayerBuildings.map(pb => {
+                      const definition = buildingCatalog.find(entry => entry.buildingId === pb.buildingId)
+                      const name = definition?.name ?? pb.buildingId
+                      const statusText = pb.level > 0
+                        ? (pb.targetLevel > pb.level
+                          ? t('combat.nearby.buildingUpgrading', { level: pb.targetLevel })
+                          : t('combat.nearby.buildingLevelValue', { level: pb.level }))
+                        : t('combat.nearby.buildingConstructing')
+                      return (
+                        <FloatingTooltip
+                          key={`player-${pb.buildingId}`}
+                          placement="top"
+                          title={
+                            <div className="world-building-popover">
+                              <strong className="text-gold">{name} · {statusText}</strong>
+                              {definition?.description && <p>{definition.description}</p>}
+                              {definition?.effect && <small className="text-jade">{definition.effect}</small>}
+                            </div>
+                          }
+                          tone="gold"
+                        >
+                          <span className="world-building-pill is-player">
+                            {name} · {statusText}
+                          </span>
+                        </FloatingTooltip>
+                      )
+                    })}
                   </div>
                 </div>
               )}
