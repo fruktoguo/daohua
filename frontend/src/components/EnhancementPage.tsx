@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { getItemAmount } from '../game/actionCalculations'
 import {
   ENHANCE_ACTION_ID,
@@ -21,9 +21,9 @@ import { ItemGridPicker, ItemUseSlot, itemPickerEntryKey, type ItemPickerEntry }
 import { QuantitySelector } from './QuantitySelector'
 
 /**
- * 装备强化候选条目：以装备基础 itemId 归并——同物不同 +N 资产变体行与已装备
- * 槽位按服务端权威口径取「最高强化等级行」作为目标物展示（协议 targetItemId
- * 只携带基础 ID，服务端按目标物自行裁定当前等级）。
+ * 装备强化候选条目：仅取背包内未穿戴的装备——按 (itemId, 强化等级) 扣除已穿戴件数，
+ * 剩余数量 > 0 的有效变体行才进入候选。装备中、挂售中均不可选。
+ * 以装备基础 itemId 归并，取背包内未穿戴件的最高强化等级作为当前展示。
  * tool-* 技艺工具槽位装备不可强化（服务端 EnhancementRules 同步拦截），不进候选。
  */
 function collectEquipmentCandidates(
@@ -33,25 +33,25 @@ function collectEquipmentCandidates(
   itemCatalog: ReturnType<typeof useGameStore.getState>['items'],
   t: ReturnType<typeof useT>,
 ): ItemPickerEntry[] {
+  const equippedCounts = new Map<string, number>()
+  for (const eq of combatEquipment ?? []) {
+    const key = `${eq.itemId}#${Math.floor(eq.enhancementLevel)}`
+    equippedCounts.set(key, (equippedCounts.get(key) ?? 0) + 1)
+  }
+
   const rows = new Map<string, { maxLevel: number; total: number }>()
   for (const inv of inventory) {
     const eqDef = findEquipmentInCatalog(equipmentCatalog, inv.itemId)
     if (!eqDef || eqDef.slot?.startsWith('tool-')) continue
     const level = parseEnhancementVariant(inv.variant)
+    const worn = equippedCounts.get(`${inv.itemId}#${level}`) ?? 0
+    const available = inv.amount - worn
+    if (available <= 0) continue
+
     const row = rows.get(inv.itemId) ?? { maxLevel: 0, total: 0 }
     row.maxLevel = Math.max(row.maxLevel, level)
-    row.total += Math.max(0, inv.amount)
+    row.total += available
     rows.set(inv.itemId, row)
-  }
-  for (const eq of combatEquipment ?? []) {
-    // 已装备的工具槽位同样拦截：工具不进入强化目标归并
-    const eqDef = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
-    if (eqDef?.slot?.startsWith('tool-')) continue
-    const row = rows.get(eq.itemId) ?? { maxLevel: 0, total: 0 }
-    row.maxLevel = Math.max(row.maxLevel, Math.floor(eq.enhancementLevel))
-    // 已装备行未必以钱包变体行存在，兜底计 1 保证目标可选。
-    row.total = Math.max(row.total, 1)
-    rows.set(eq.itemId, row)
   }
   const candidates: ItemPickerEntry[] = []
   for (const [itemId, row] of rows) {
@@ -129,7 +129,20 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   useEffect(() => {
     setProtectionItemId(protectionOptions[0] ?? null)
   }, [protectionOptions])
-  const protectionOwned = protectionItemId ? getItemAmount(inventory, protectionItemId) : 0
+  // 保护材料仅限背包内未装备件（若为装备则扣除已装备在身上的 0 级件）
+  const getAvailableProtectionAmount = useCallback((id: string) => {
+    const rawAmount = getItemAmount(inventory, id)
+    const eqDef = findEquipmentInCatalog(equipmentCatalog, id)
+    if (!eqDef) return rawAmount
+    let wornZeroCount = 0
+    for (const eq of combat?.equipment ?? []) {
+      if (eq.itemId === id && Math.floor(eq.enhancementLevel) === 0) {
+        wornZeroCount++
+      }
+    }
+    return Math.max(0, rawAmount - wornZeroCount)
+  }, [combat?.equipment, equipmentCatalog, inventory])
+  const protectionOwned = protectionItemId ? getAvailableProtectionAmount(protectionItemId) : 0
   // 保护材料即目标装备且当前为 +0 时，本体与代护件共用同一资产键，需持有 ≥2。
   const protectionRequired = protectionItemId !== null && protectionItemId === selected?.itemId && currentLevel === 0 ? 2 : 1
   const protectionActive = useProtection && protectionItemId !== null && protectionOwned >= protectionRequired
@@ -221,10 +234,10 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
               label={t('app.enhancement.protectionMaterialAria')}
               onSelect={setProtectionItemId}
               options={protectionOptions.map(id => ({
-                disabled: getItemAmount(inventory, id) < 1,
+                disabled: getAvailableProtectionAmount(id) < 1,
                 id,
                 label: protectionName(id),
-                subtitle: t('app.enhancement.protectionOwned', { n: getItemAmount(inventory, id) }),
+                subtitle: t('app.enhancement.protectionOwned', { n: getAvailableProtectionAmount(id) }),
               }))}
               value={protectionItemId ?? ''}
             />

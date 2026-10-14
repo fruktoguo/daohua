@@ -72,20 +72,32 @@ public static class EnhancementRules
         => level <= 0 ? new AssetKey(itemId) : new AssetKey(itemId, "+" + level.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>
-    /// 目标装备当前强化等级：已装备槽位记录为权威（与余额键一致由宿主保证），
-    /// 其次扫描有效余额视图中的 +N 变体取最高级；未持有目标装备返回 -1。
+    /// 目标装备当前强化等级：仅取背包内（有效余额扣除已穿戴件数后的未装备持存）的 +N 变体最高级；
+    /// 装备中、挂售中均不可作为强化目标；背包内无未装备可用件时返回 -1。
     /// </summary>
     public static int CurrentLevel(PlayerLoadoutState loadout, ItemId itemId,
         IReadOnlyDictionary<AssetKey, double> holdings)
     {
         var level = -1;
+        Span<int> wornCounts = stackalloc int[MaxLevel + 1];
+        wornCounts.Clear();
         for (var i = 0; i < loadout.Equipment.Count; i++)
-            if (string.Equals(loadout.Equipment[i].ItemId, itemId.Value, StringComparison.Ordinal)
-                && loadout.Equipment[i].EnhancementLevel > level)
-                level = (int)loadout.Equipment[i].EnhancementLevel;
+        {
+            var slot = loadout.Equipment[i];
+            if (string.Equals(slot.ItemId, itemId.Value, StringComparison.Ordinal))
+            {
+                var lvl = (int)Math.Floor(slot.EnhancementLevel);
+                if (lvl >= 0 && lvl <= MaxLevel)
+                    wornCounts[lvl]++;
+            }
+        }
+
         foreach (var (asset, quantity) in holdings)
         {
             if (asset.ItemId != itemId || quantity < 1 || ParseLevel(asset.Variant) is not { } parsed) continue;
+            if (parsed < 0 || parsed > MaxLevel) continue;
+            var available = quantity - wornCounts[parsed];
+            if (available < 1) continue;
             if (parsed > level) level = parsed;
         }
         return level;
@@ -177,7 +189,7 @@ public static class EnhancementRules
         var current = CurrentLevel(loadout, itemId, holdings);
         if (current < 0 || current >= MaxLevel)
         {
-            reason = current < 0 ? "未持有目标装备，强化受阻。" : "装备已达强化上限。";
+            reason = current < 0 ? "未持有可用目标装备，强化受阻。" : "装备已达强化上限。";
             return null;
         }
         // 意图目标等级：缺省按上限处理；当前等级已达标时行动提前完成出队。
@@ -199,10 +211,20 @@ public static class EnhancementRules
         if (protectionItemId is { } protectionId)
         {
             var protectionKey = new AssetKey(protectionId);
+            // 保护材料仅限背包内未装备件（扣除身上穿戴的 0 级件）
+            var wornProtection = 0;
+            for (var i = 0; i < loadout.Equipment.Count; i++)
+            {
+                var slot = loadout.Equipment[i];
+                if (string.Equals(slot.ItemId, protectionId.Value, StringComparison.Ordinal)
+                    && (int)Math.Floor(slot.EnhancementLevel) == 0)
+                    wornProtection++;
+            }
+            var availableProtection = holdings.GetValueOrDefault(protectionKey) - wornProtection;
             // 保护材料恒为无强化基础件；当保护材料即目标装备且当前等级为 0 时，
             // 本体与代护件共用同一资产键，需 ≥2（1 本体 + 1 代护）。
             var required = protectionKey == new AssetKey(itemId) && current == 0 ? 2 : 1;
-            if (holdings.GetValueOrDefault(protectionKey) < required)
+            if (availableProtection < required)
             {
                 reason = "强化保护材料不足，行动受阻。";
                 return null;

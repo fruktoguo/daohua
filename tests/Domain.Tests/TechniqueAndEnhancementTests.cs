@@ -137,22 +137,32 @@ public sealed class TechniqueAndEnhancementTests
         _ = EnhancementRules.Roll(instanceB, 0, prep); // 不同实例走同通道独立判定，不共享随机游标。
     }
 
-    /// <summary>强化当前等级：装备槽位记录与钱包 +N 变体余额取最高者；未持有返回 -1。</summary>
+    /// <summary>强化当前等级：仅读取背包内未穿戴件（扣除已装备数量后持有 ≥1）的最高变体；已穿戴件不进入判定，无可用件返回 -1。</summary>
     [Fact]
-    public void EnhancementCurrentLevelReadsSlotsAndVariantBalances()
+    public void EnhancementCurrentLevelOnlyReadsAvailableInventoryExcludingEquipped()
     {
         var loadout = new PlayerLoadoutState();
         var sword = new ItemId("equipment.test-sword");
         Assert.Equal(-1, EnhancementRules.CurrentLevel(loadout, sword, new Dictionary<AssetKey, double>()));
+
+        // 背包持有 +3 且未穿戴：当前等级为 3
         var holdings = new Dictionary<AssetKey, double> { [new AssetKey(sword, "+3")] = 1 };
         Assert.Equal(3, EnhancementRules.CurrentLevel(loadout, sword, holdings));
-        loadout.Equipment.Add(new PlayerEquipmentSlot(sword.Value, 5));
-        Assert.Equal(5, EnhancementRules.CurrentLevel(loadout, sword, holdings));
-        loadout.Equipment[0] = new PlayerEquipmentSlot(sword.Value, 2);
-        // 槽位与余额共存时取最大（两者本应一致，异常数据下取更保守的高水位）。
-        Assert.Equal(3, EnhancementRules.CurrentLevel(loadout, sword, holdings));
-    }
 
+        // 穿戴了这件 +3（holdings=1, equipped=1）：背包内可用为 0，不可强化，返回 -1
+        loadout.Equipment.Add(new PlayerEquipmentSlot(sword.Value, 3));
+        Assert.Equal(-1, EnhancementRules.CurrentLevel(loadout, sword, holdings));
+
+        // 持有 2 件 +3，穿戴 1 件：背包内仍有 1 件未穿戴的 +3，返回 3
+        holdings[new AssetKey(sword, "+3")] = 2;
+        Assert.Equal(3, EnhancementRules.CurrentLevel(loadout, sword, holdings));
+
+        // 穿戴了 +5（holdings 没有 +5 只有 +2）：已穿戴的不作为强化目标，只看背包内的 +2，返回 2
+        loadout.Equipment[0] = new PlayerEquipmentSlot(sword.Value, 5);
+        holdings.Clear();
+        holdings[new AssetKey(sword, "+2")] = 1;
+        Assert.Equal(2, EnhancementRules.CurrentLevel(loadout, sword, holdings));
+    }
     /// <summary>
     /// 强化端到端：单轮结算冻结成本、转移 +N 变体并授予技艺经验；
     /// 材料守恒与事件语义在成功/失败任一分支下都成立。
@@ -208,6 +218,47 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Contains(result.Events, entry => entry.Code == "action.blocked");
         Assert.Empty(result.AssetDeltas);
         Assert.Empty(player.Loadout.TechniqueExperiences);
+    }
+    /// <summary>装备中不可被强化，且强化背包内装备不会同步或修改已装备槽位的强化等级。</summary>
+    [Fact]
+    public void EnhancementDoesNotAffectOrTargetEquippedItems()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var enhance = new ActionDefinition(new ActionId("enhance.equipment"), "装备强化",
+            ActionKind.Enhancement, 0, new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Enhancement);
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑"}""")
+        };
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([enhance]),
+            rawEquipments: rawEquipments,
+            realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
+        var player = CreatePlayer("穿戴者");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+
+        // 场景 1：身上穿戴了 1 件 +0 测试剑，钱包总共只有 1 件 +0 测试剑（未穿戴数量为 0）
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(sword.Value, 0));
+        var wallet = CreateWallet(player,
+            (new AssetKey(sword), 1), (new AssetKey(stone), 500));
+        player.Enqueue(new ActionIntent(enhance.Id, -1, TargetItemId: sword.Value), Baseline, catalog.Actions);
+
+        // 背包内无可用件，行动直接阻塞
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        Assert.Equal(ActionQueueStatus.Blocked, player.Actions[0].Status);
+        Assert.Contains(result.Events, entry => entry.Code == "action.blocked");
+        Assert.Equal(0, player.Loadout.Equipment[0].EnhancementLevel);
+
+        // 场景 2：背包额外有 1 件未穿戴的 +0 测试剑（钱包总共 2 件，穿戴 1 件，背包可用 1 件）
+        wallet.Credit(new AssetKey(sword), 1, "test");
+        player.Actions[0].Status = ActionQueueStatus.Running;
+        player.Loadout.Equipment[0] = new PlayerEquipmentSlot(sword.Value, 3); // 身上穿戴 +3 测试剑
+
+        // 推进一轮强化：针对背包内的 +0 测试剑推进（目标等级 1）
+        result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(16.2), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        // 身上穿戴的 +3 测试剑绝对不受影响，依然为 3
+        Assert.Equal(3, player.Loadout.Equipment[0].EnhancementLevel);
     }
 
     /// <summary>
