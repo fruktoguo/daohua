@@ -27,6 +27,8 @@ description: >-
 阶段 5：双端指纹/接入验证 + 提取 Ops 后台路径 → 收尾登记
 ```
 
+> **官方一键总控入口**：仓库根目录下的 `scripts/release-prod.sh` 已将上述流水线（三路并发打包推送/备份/交叉编译 → 自动解析 sha256 digest → 自动主服部署与双层烟测 → odin 热重启 → 结果验证）全自动化闭环，日常发布可直接执行 `bash scripts/release-prod.sh`（支持 `--skip-odin`、`--skip-backup`、`--skip-smoke` 等选项）。
+
 ---
 
 ## 阶段 0：单回合并发预检与最小门禁

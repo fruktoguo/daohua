@@ -144,6 +144,7 @@ docker compose -f deploy/compose.prod.yaml down
 | `optimize-svg.mjs` | SVG 美术资源优化 |
 | `docker-build-prod.sh` | 生产镜像多阶段构建与 CCR 推送（`--push`/`--push-existing`） |
 | `deploy-prod.sh` | 生产服务器受控更新（`--image <不可变镜像>`） |
+| `release-prod.sh` | 正式服一键全自动打包与发布：前置门禁自检、三路并发（CCR 镜像构建推送 + 远端数据备份 + odin 掌机 arm64 交叉编译预传）、自动提取不可变 sha256 镜像并触发部署与双层烟测 |
 | `install-ccr-auth.sh` | 服务器 CCR 登录态安装（`docker login --password-stdin`） |
 | `init-local-db-roles.sh` | 本地 PostgreSQL 角色初始化（对齐 `deploy/postgres-local-roles.sql`） |
 | `migrate-local-db.sh` | 本地库兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 落后脚本；`--dry-run` 空跑）。由 `reset-outdated-players.sh`/`dev.sh` 启动链自动调用，也可人工执行；运行时与门禁均不引用 |
