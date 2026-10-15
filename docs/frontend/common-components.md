@@ -19,7 +19,7 @@
   - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。功法悬浮详情统一结构：主描述 = 配表 `description` 招式描述 + 效果句（目标/伤害构成/五行伤害类别，如「对单个目标造成 60%术法攻击 +10.5 木属性术法伤害」，构成单元经 `[[ ]]` 标记由 `ValueText` 渲染为整组胶囊），词条行 = 等级、冷却、吟唱、灵力消耗与次级效果，不输出默认触发条件文本。
   - **可交易物品与装备「市场价格」坊市行情副气泡联动**：针对所有可交易标的（`item.isTradable` 物品或装备类标的），自动通过 `resolveMarketStatsAsideCard` 命中 `gameStore.marketStats` 缓存（按 `itemId|强化等级` 索引），渲染「市场价格」副卡（金色调 `gold`、右上角标「坊市」），展示最低在售价与总在售数量、最高收购价与总收购数量（无盘口一侧显 `-`）、今日与当周成交量。数据源由 `gameClient` 在线期间以 15s 周期后台静默拉取 `GET /api/v1/market/stats`（小表全量读），悬浮渲染零即时网络开销，页面切后台跳过 tick。
   - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`，命令式切换不经过 React 渲染）与视口渲染裁剪（`content-visibility: auto`）。非交互 hover 气泡（tooltip 语义）在**包含锚点的滚动容器**滚动时立即收起（等同原生 `title`）；与锚点无关的面板自滚（如底部日志 append 后自动滚底、侧栏滚动）不会触碰已打开的气泡。click/interactive 浮层滚动跟随则走 rAF 节流重定位，彻底消除滚动期间的逐事件 `getBoundingClientRect` 测量、整卡重渲染、`backdrop-filter` 重绘与高频 Hover 风暴。
-  - **生态生灵悬浮详情统一收拢**：大地图地点生灵（`MapMonsterPill`）、附近面板生灵（`NearbyPanel.MonsterCard`）与讨伐生态面板（`CombatEcologyPanel.EcologyMonsterTile`）共享最高规格统一浮层——生命层次品质徽记（普通金/精英紫/领主危红）、境界等阶副标、出没周期、击杀修为收益、掉落物图元复合胶囊（`ItemDropReference`，含概率与掉落区间且支持二次悬停查物品）、六维基础战斗属性网格（气血/灵力/双攻/双防），彻底消除多处面板同怪不同展的体验断层。
+  - **生态生灵悬浮详情统一收拢 (`MonsterTooltipTarget` / `MonsterInfoCard`)**：大地图地点生灵（`MapMonsterPill`）、附近面板生灵（`NearbyPanel.MonsterCard`）、讨伐生态面板（`CombatEcologyPanel.EcologyMonsterTile`）、万象图鉴妖兽收录（`CodexPage.CodexMonsterEntry`）与日志敌怪引用（`LogFeed.EnemyReference`）全面统一收拢走 `frontend/src/components/MonsterDisplay.tsx`。共享最高规格统一浮层——生命层次品质徽记（普通金/精英紫/领主危红）、境界等阶副标、修仙伤害流派与五行属性描述、出没周期、击杀修为收益、施展功法名录、掉落物图元复合胶囊（`ItemDropReference`，含概率与掉落区间且支持二次悬停查物品）、六维基础战斗属性网格（气血/灵力/双攻/双防）与攻击间隔；彻底消灭生态面板双层 Popover 的体验割裂与多处面板同怪不同展的断层。
   - **角色名片弹窗全局收拢 (`PlayerCardModal`)**：同道队伍成员与地图人物附近修士点击事件统一唤起 `PlayerCardModal`，服务端按需投影白名单（形象、道号、境界牌匾、身家、六维根骨等级与进度、战斗六维基础属性、生活技艺等级以及全身装配），弹窗于顶层唯一挂载。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
   - **右下角全局浮动气泡（自动 2.6s 消失）**：命令回执 `message` 是唯一服务端下发管道——成功文案按命令差异化（`EcsPlayerRuntimeAdapter.SuccessNotice`），高频或界面已自证的命令回空串静默；发送即知结果的操作（坊市挂单/撤单）在调用点就地 `setNotice` 即时提示。同文案重复提示经 `noticeSeq` 重置计时并重播入场动画 -> `Notice`（App.tsx）+ `.notice`（styles.css）
@@ -444,3 +444,20 @@
 - **组件源码**：[`frontend/src/components/CodexPage.tsx`](../../frontend/src/components/CodexPage.tsx)
 - **样式文件**：[`frontend/src/styles/codex.css`](../../frontend/src/styles/codex.css)
 - **设计真源**：[`docs/design/总纲/23-万象图鉴与解锁机制.md`](../design/总纲/23-万象图鉴与解锁机制.md)
+
+---
+
+## 33. 节点公共建筑卡片与工程角标模板 (Node Building Card)
+
+- **适用场景**：
+  - **地图附近面板公共建筑卡片**（`NearbyPanel.tsx`）：
+    - **右上角工程状态角标**（`.building-corner-badge`）：针对处于施工期的公共建筑，右上角挂载专属状态徽标，解决列表层级状态不明显问题。
+      - 建造中（`level === 0 && targetLevel > 0`）：`.is-constructing` 琥珀金色调微光胶囊（`#fbbf24`），文字为「建造中」；
+      - 升级中（`level > 0 && targetLevel > 0`）：`.is-upgrading` 灵气紫色调微光胶囊（`#c084fc`），文字为「升级中」。
+    - **加成状态视觉分层**：
+      - 已建成建筑（`level > 0`）：金色高亮 `.building-card-bonus-tag` 呈现当前实际生效加成；
+      - 未建成/建造中建筑（`level === 0`）：使用 `.building-card-bonus-tag.is-pending` 次级文本色，文案前缀统一规范为「建成生效: ...」，杜绝未建成时显示金色数值误导玩家以为加成已提前生效的视觉冲突。
+    - **工程进度与材料投入引导**：在建建筑卡片展示 `材料 X% · 工期 Y%`，材料未满时右侧显示 `.building-card-progress-hint`（「待投材料」），直接引导玩家交互。
+- **组件源码**：[`frontend/src/components/NearbyPanel.tsx`](../../frontend/src/components/NearbyPanel.tsx)
+- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.building-corner-badge`, `.building-card-bonus-tag.is-pending`, `.building-card-progress-wrapper`)
+- **设计真源**：[`docs/design/总纲/09-节点公共建筑系统.md`](../design/总纲/09-节点公共建筑系统.md)

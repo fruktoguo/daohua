@@ -1,15 +1,16 @@
 import { memo, useLayoutEffect, useRef, type RefObject } from 'react'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findEncounterInCatalog } from '../game/ids'
+import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog } from '../game/ids'
 import { useT } from '../i18n'
 import type { ChatMessage } from '../logging/chatService'
 import { gameClient } from '../network/gameClient'
 import type { PartyLinkDto } from '../network/protocol'
 import type { GameLogEntry, LogSegment } from '../logging/gameLogService'
 import { splitLogSegmentsByLines } from '../logging/gameLogService'
-import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
+import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
 import { ItemReference } from './ItemDisplay'
+import { MonsterTooltipTarget } from './MonsterDisplay'
 import { ValueText } from './ValueText'
 
 /** 格式化日志时间戳为月-日 时:分:秒 */
@@ -79,41 +80,21 @@ const EnemyReference = memo(function EnemyReference({
   label: string
 }): React.JSX.Element {
   const t = useT()
-  const encounter = useGameStore((state) => findEncounterInCatalog(state.encounters, enemyId))
-  const enemy = encounter?.enemy
+  const encounters = useGameStore(state => state.encounters)
+  const maps = useGameStore(state => state.maps)
 
-  if (encounter || enemy) {
-    const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = []
-    if (enemy?.category) {
-      stats.push({ label: t('combat.log.statCategory'), value: t(`combat.encounter.damageCategory.${enemy.category}`), tone: 'gold' })
-    }
-    if (enemy?.element && enemy.element !== 'none') {
-      stats.push({ label: t('combat.log.statElement'), value: t(`combat.encounter.element.${enemy.element}`), tone: 'purple' })
-    }
-    if (enemy?.attributes.maxHitpoints) stats.push({ label: t('combat.log.statHp'), value: formatNumber(enemy.attributes.maxHitpoints), tone: 'danger' })
-    if (enemy?.attributes.maxManapoints) stats.push({ label: t('combat.log.statMp'), value: formatNumber(enemy.attributes.maxManapoints), tone: 'qi' })
+  const encounter = findEncounterInCatalog(encounters, enemyId)
+  const combatant = encounter?.enemy ?? findCombatantInCatalog(encounters, maps, enemyId)
 
+  if (combatant) {
     return (
-      <FloatingPopover
-        closeDelay={120}
-        content={
-          <FloatingInfoCard
-            badge={kind === 'encounter' ? t('combat.log.badgeEncounter') : t('combat.log.badgeEnemy')}
-            badgeTone="gold"
-            description={encounter ? t('combat.log.descEncounter') : t('combat.log.descEnemy')}
-            stats={stats.length > 0 ? stats : undefined}
-            title={label || enemy?.name || encounter?.name || enemyId}
-          />
-        }
-        gap={8}
-        interactive={false}
-        openDelay={60}
+      <MonsterTooltipTarget
+        className={`log-reference log-reference--${kind}`}
+        monster={combatant}
         placement="bottom"
-        trigger="hover"
-        triggerClassName={`log-reference log-reference--${kind}`}
       >
         {label}
-      </FloatingPopover>
+      </MonsterTooltipTarget>
     )
   }
 

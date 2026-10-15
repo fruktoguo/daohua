@@ -5,13 +5,12 @@ import { useT } from '../i18n'
 import type { BuildingDefinition, NearbyMonsterDefinition } from '../game/types'
 import { resolveItemMetadata } from '../game/ids'
 import { CharacterAvatar } from './CharacterAvatar'
-import { FloatingPopover, FloatingInfoCard } from './FloatingPopover'
 import { Modal } from './Modal'
-import { UnitNumber } from './UnitNumber'
 import { formatInteger, formatNumber } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { gameClient } from '../network/gameClient'
-import { ItemDropReference, ItemReference } from './ItemDisplay'
+import { ItemReference } from './ItemDisplay'
+import { MonsterTooltipTarget } from './MonsterDisplay'
 import { RealmBadge } from './RealmBadge'
 import {
   getBuildingBonusItems,
@@ -54,89 +53,20 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
   isBoss?: boolean
 }): React.JSX.Element {
   const t = useT()
-  const maps = useGameStore(state => state.maps)
-  const world = useGameStore(state => state.world)
 
   const isActualBoss = isBoss || monster.rank === 'boss'
   const isActualElite = isElite || monster.rank === 'elite'
   const mark = isActualBoss ? t('combat.nearby.markBoss') : isActualElite ? t('combat.nearby.markElite') : (monster.visualSource || t('combat.nearby.markMonster'))
   const cardClassName = `nearby-card ${isActualBoss ? 'is-boss' : isActualElite ? 'is-elite' : 'is-monster'}`
-  const rankLabel = monster.rank === 'boss' ? t('combat.nearby.rankBoss') : monster.rank === 'elite' ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
-  const rankDesc = monster.rank === 'boss' ? t('combat.nearby.rankDescBoss') : monster.rank === 'elite' ? t('combat.nearby.rankDescElite') : t('combat.nearby.rankDescMonster')
   const summaryType = isActualBoss ? t('combat.nearby.titleBoss') : isActualElite ? t('combat.nearby.titleElite') : t('combat.nearby.titleMonster')
-  const realm = calculateRealmInfo(0, monster.level)
-
-  // 尝试在静态目录当前节点查找匹配的完整 CombatantDefinition（具有灵力、法攻、抗性与击杀经验等详尽数据）
-  const staticMonster = useMemo(() => {
-    if (world.nodeId === null) return null
-    const node = maps.find(m => m.mapId === world.mapId)?.nodes.find(n => n.nodeId === world.nodeId)
-    if (!node) return null
-    return (node.monsters ?? [])
-      .concat(node.eliteEnemies ?? [])
-      .concat(node.bossEnemies ?? [])
-      .find(m => m.enemyId === monster.monsterId) ?? null
-  }, [maps, world.mapId, world.nodeId, monster.monsterId])
-
-  const drops = staticMonster?.drops ?? monster.drops ?? []
-  const experience = staticMonster?.experience ?? 0
-  const rewardParts = [
-    experience > 0 ? `${t('combat.report.experience')} +${formatInteger(experience)}` : null,
-  ].filter((part): part is string => part !== null)
-
-  const attrs = staticMonster?.attributes ?? {
-    maxHitpoints: monster.maxHitpoints,
-    maxManapoints: 0,
-    physicalAttack: monster.physicalAttack,
-    spellAttack: 0,
-    armor: monster.armor,
-    magicResistance: 0,
-  }
-
-  const details = [
-    { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={attrs.maxHitpoints} /> },
-    ...(attrs.maxManapoints > 0 ? [{ label: t('insight.combat.mp'), value: <UnitNumber disableTooltip value={attrs.maxManapoints} /> }] : []),
-    { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip value={attrs.physicalAttack} /> },
-    ...(attrs.spellAttack > 0 ? [{ label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip value={attrs.spellAttack} /> }] : []),
-    { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip value={attrs.armor} /> },
-    ...(attrs.magicResistance > 0 ? [{ label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip value={attrs.magicResistance} /> }] : []),
-  ]
-
-  const lines = [
-    ...(intervalHint ? [`${t('combat.nearby.statInterval')}：${intervalHint}`] : []),
-    ...(rewardParts.length > 0 ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`] : []),
-    ...(drops.length > 0
-      ? [
-          <span key="drops">
-            {t('combat.map.monsterDrops')}：
-            <span className="world-monster-drops-row">
-              {drops.map(drop => (
-                <ItemDropReference drop={drop} key={drop.itemId} />
-              ))}
-            </span>
-          </span>,
-        ]
-      : []),
-  ]
 
   return (
-    <FloatingPopover
-      trigger="hover"
+    <MonsterTooltipTarget
+      intervalHint={intervalHint}
+      isBoss={isActualBoss}
+      isElite={isActualElite}
+      monster={monster}
       placement="top"
-      content={
-        <FloatingInfoCard
-          title={monster.name}
-          badge={rankLabel}
-          badgeTone={isActualBoss ? 'danger' : isActualElite ? 'purple' : 'gold'}
-          subtitle={t('combat.map.monsterSubtitle', {
-            realm: realm.minorName,
-            level: monster.level,
-            tier: monster.tier,
-          })}
-          description={t('combat.nearby.monsterDescription', { rankDesc })}
-          lines={lines}
-          stats={details}
-        />
-      }
     >
       <article className={cardClassName}>
         <span className="nearby-mark">
@@ -158,7 +88,7 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
           {intervalHint && <small className="nearby-interval-hint">{intervalHint}</small>}
         </div>
       </article>
-    </FloatingPopover>
+    </MonsterTooltipTarget>
   )
 })
 
@@ -410,6 +340,8 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                 const definition = buildingCatalog.find(d => d.buildingId === building.entityId)
                 const bonusSummary = getBuildingSummaryBonusText(definition, building.level, (key, def) => t(key) || def)
                 const isOverloaded = building.activeUsers > building.capacity || building.efficiency < 1
+                const isConstructing = building.level === 0 && building.targetLevel > 0
+                const isUpgrading = building.level > 0 && building.targetLevel > 0
                 return (
                   <button
                     className="nearby-card is-building is-player-building"
@@ -417,19 +349,33 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                     onClick={() => setDetailBuildingId(building.entityId)}
                     type="button"
                   >
+                    {isConstructing && (
+                      <span className="building-corner-badge is-constructing">
+                        {t('combat.nearby.buildingConstructing')}
+                      </span>
+                    )}
+                    {isUpgrading && (
+                      <span className="building-corner-badge is-upgrading">
+                        {t('combat.nearby.buildingUpgradingShort')}
+                      </span>
+                    )}
                     <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
                     <div>
                       <div className="nearby-monster-title">
                         <strong>{building.name}</strong>
-                        <span className="nearby-level-badge">
-                          {building.level > 0
-                            ? t('combat.nearby.buildingLevelValue', { level: building.level })
-                            : t('combat.nearby.buildingConstructing')}
-                        </span>
+                        {building.level > 0 && (
+                          <span className="nearby-level-badge">
+                            {isUpgrading
+                              ? `${t('combat.nearby.buildingLevelValue', { level: building.level })} → Lv.${building.targetLevel}`
+                              : t('combat.nearby.buildingLevelValue', { level: building.level })}
+                          </span>
+                        )}
                       </div>
                       {bonusSummary ? (
                         <div className="building-card-bonus">
-                          <span className="building-card-bonus-tag">{bonusSummary}</span>
+                          <span className={`building-card-bonus-tag ${building.level <= 0 ? 'is-pending' : ''}`}>
+                            {bonusSummary}
+                          </span>
                         </div>
                       ) : (
                         <small>{building.effect}</small>
@@ -443,9 +389,24 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                         </span>
                       </small>
                       {building.targetLevel > 0 && (
-                        <span className="building-card-progress">
-                          <ProgressBar value={building.buildProgress} />
-                        </span>
+                        <div className="building-card-progress-wrapper">
+                          <div className="building-card-progress-info">
+                            <span>
+                              {t('combat.nearby.buildingProgressSummary', {
+                                material: Math.round(building.materialProgress * 100),
+                                time: Math.round(building.timeProgress * 100),
+                              })}
+                            </span>
+                            {building.materialProgress < 1 && (
+                              <span className="building-card-progress-hint">
+                                {t('combat.nearby.buildingNeedMaterials')}
+                              </span>
+                            )}
+                          </div>
+                          <span className="building-card-progress">
+                            <ProgressBar value={building.buildProgress} />
+                          </span>
+                        </div>
                       )}
                     </div>
                   </button>

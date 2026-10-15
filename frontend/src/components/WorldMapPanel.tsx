@@ -1,17 +1,14 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { findItemInCatalog } from '../game/ids'
-import { calculateRealmInfo } from '../game/combatConstants'
-import { formatInteger } from '../game/format'
 import type { CombatantDefinition, MapNodeBuilding, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { fetchNodeBuildingIndex } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
-import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
-import { ItemDropReference } from './ItemDisplay'
+import { FloatingTooltip } from './FloatingPopover'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Modal } from './Modal'
-import { UnitNumber } from './UnitNumber'
+import { MonsterTooltipTarget } from './MonsterDisplay'
 import { useUiStore } from '../uiStore'
 
 
@@ -373,57 +370,14 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
   isBoss?: boolean
 }): React.JSX.Element {
   const t = useT()
-  const monsterAttributes = monster.attributes
-  const realm = calculateRealmInfo(0, monster.level ?? 1)
-  const rankLabel = isBoss
-    ? t('combat.nearby.rankBoss')
-    : isElite ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
-  const drops = monster.drops ?? []
-  const rewardParts = [
-    monster.experience > 0 ? `${t('combat.report.experience')} +${formatInteger(monster.experience)}` : null,
-  ].filter((part): part is string => part !== null)
 
   return (
-    <FloatingPopover
-      content={
-        <FloatingInfoCard
-          badge={rankLabel}
-          badgeTone={isBoss ? 'danger' : isElite ? 'purple' : 'gold'}
-          lines={[
-            ...(rewardParts.length > 0
-              ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`]
-              : []),
-            ...(drops.length > 0
-              ? [
-                  <span key="drops">
-                    {t('combat.map.monsterDrops')}：
-                    <span className="world-monster-drops-row">
-                      {drops.map(drop => (
-                        <ItemDropReference drop={drop} key={drop.itemId} />
-                      ))}
-                    </span>
-                  </span>,
-                ]
-              : []),
-          ]}
-          stats={[
-            { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={monsterAttributes.maxHitpoints} /> },
-            { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip value={monsterAttributes.maxManapoints} /> },
-            { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip value={monsterAttributes.physicalAttack} /> },
-            { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip value={monsterAttributes.spellAttack} /> },
-            { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip value={monsterAttributes.armor} /> },
-            { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip value={monsterAttributes.magicResistance} /> },
-          ]}
-          subtitle={t('combat.map.monsterSubtitle', {
-            realm: realm.minorName,
-            level: monster.level ?? 1,
-            tier: monster.tier ?? 1,
-          })}
-          title={monster.name}
-        />
-      }
+    <MonsterTooltipTarget
+      displayContents
+      isBoss={isBoss}
+      isElite={isElite}
+      monster={monster}
       placement="top"
-      trigger="hover"
     >
       <span className={`world-monster-pill${isElite ? ' is-elite' : ''}${isBoss ? ' is-boss' : ''}`}>
         {(isElite || isBoss) && (
@@ -433,7 +387,7 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
         )}
         {monster.name}
       </span>
-    </FloatingPopover>
+    </MonsterTooltipTarget>
   )
 })
 
