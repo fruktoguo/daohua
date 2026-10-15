@@ -298,6 +298,8 @@ export const marketZh = {
       totalDamageBonus: '总增伤',
       basicAttackBonus: '普攻增幅',
       skillBonus: '技能增幅',
+      threatBonus: '威胁增幅',
+      healingBonus: '治疗增幅',
       physicalDamageReduction: '物理减伤',
       fixedDamageBonus: '固定伤害提升',
       fixedDamageReduction: '固定伤害减免',

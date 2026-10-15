@@ -778,11 +778,16 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
   hpDrainRatio: 'crimson',
   threatRatio: 'crimson',
   threatBonus: 'crimson',
+  threatBonusPoints: 'crimson',
+  basicAttackBonus: 'crimson',
+  basicAttackBonusPoints: 'crimson',
 
   // 术法攻击类 (靛紫)
   spellAttack: 'indigo',
   spellAtk: 'indigo',
 
+  skillBonus: 'indigo',
+  skillBonusPoints: 'indigo',
   // 生命类 (翡翠绿)
   maxHitpoints: 'emerald',
   hp: 'emerald',
@@ -822,6 +827,8 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
   magicRes: 'violet',
   magicPen: 'violet',
 
+  healingBonus: 'violet',
+  healingBonusPoints: 'violet',
   // 命中 (天蓝)
   accuracy: 'sky',
   hit: 'sky',
@@ -943,7 +950,7 @@ export function describeEquipmentEffects(
           <PillBonusLabel
             key={`point-${key}`}
             label={isTemplate ? t(point.label, { n: effective }) : t(point.label)}
-            tone={STAT_TONE_MAP[key] ?? 'default'}
+            tone={STAT_TONE_MAP[key] ?? STAT_TONE_MAP[key.replace(/Points$/, '')] ?? 'default'}
             value={isTemplate ? '' : `${effective >= 0 ? '+' : ''}${effective}%`}
           />
         )
@@ -988,11 +995,11 @@ const POINT_STAT_LABELS: Record<string, { label: string; curve: 'linear' | 'nonl
   actionSpeedPoints: { label: 'market.stat.actionSpeed', curve: 'rate' },
   cooldownReductionPoints: { label: 'market.stat.cooldownReduction', curve: 'rate' },
   criticalDamageBonusPoints: { label: 'market.stat.criticalDamage', curve: 'linear' },
-  threatBonusPoints: { label: 'market.effect.threatBonus', curve: 'linear' },
+  threatBonusPoints: { label: 'market.stat.threatBonus', curve: 'linear' },
   hpDrainPoints: { label: 'market.stat.hpDrain', curve: 'linear' },
   mpDrainPoints: { label: 'market.stat.mpDrain', curve: 'linear' },
   damageReflectPoints: { label: 'market.stat.damageReflect', curve: 'linear' },
-  healingBonusPoints: { label: 'market.effect.healingBonus', curve: 'linear' },
+  healingBonusPoints: { label: 'market.stat.healingBonus', curve: 'linear' },
 }
 
 /**
