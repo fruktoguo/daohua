@@ -56,8 +56,8 @@ export const CharacterAvatar = memo(function CharacterAvatar({
       list.push(visual.poster)
     }
 
-    // 根据 actorId 自动检索 webp / png / svg (player 角色若未指定专属图片，优先降级至 VectorCharacter 多样化法相)
-    const resolvedId = actorId && actorId !== 'player' ? actorId : (role === 'enemy' ? 'enemy' : null)
+    // 根据 actorId 自动检索 webp / png / svg
+    const resolvedId = actorId ?? (role === 'player' ? 'player' : null)
     if (resolvedId) {
       const autoUrls = getAvatarCandidateUrls(resolvedId)
       for (const u of autoUrls) {

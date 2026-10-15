@@ -1977,17 +1977,18 @@ input[type="checkbox"] {
   background: rgba(201, 180, 109, 0.08);
   font-size: 12px;
 }
-/* ===== 附近面板修士卡片专有布局 ===== */
+/* ===== 附近面板修士卡片专有布局（上 80% / 下 20%，上部左 40% 形象 / 右 60% 信息） ===== */
 .nearby-card.is-player {
   position: relative;
   overflow: hidden;
-  grid-template-columns: 60px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  min-height: 74px;
-  padding: 8px 12px;
+  display: flex !important;
+  flex-direction: column;
+  padding: 8px 10px;
   border: 1px solid rgba(114, 169, 140, 0.45);
   background: rgba(114, 169, 140, 0.04);
+  min-height: 120px;
+  box-sizing: border-box;
+  gap: 6px;
   transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -2030,62 +2031,90 @@ input[type="checkbox"] {
   letter-spacing: 1px;
 }
 
-.nearby-player-avatar {
+/* 上部占 80%：左 40% 形象，右 60% 名字与身家 */
+.nearby-player-top {
   display: flex;
-  width: 60px;
-  height: 60px;
+  flex: 4 1 0%;
+  width: 100%;
   align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(114, 169, 140, 0.5);
-  border-radius: 4px;
-  background: rgba(14, 21, 18, 0.6);
-  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-  flex-shrink: 0;
+  min-height: 72px;
+  gap: 8px;
+  box-sizing: border-box;
 }
 
-.nearby-player-avatar .character-avatar,
-.nearby-player-avatar .character-avatar-vector-wrap,
-.nearby-player-avatar .character-avatar-text,
-.nearby-player-avatar img {
-  width: 56px;
-  height: 56px;
+/* 上左：40% 形象 */
+.nearby-player-avatar-cell {
+  flex: 0 0 40%;
+  width: 40%;
+  height: 100%;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(114, 169, 140, 0.35);
+  border-radius: 4px;
+  background: rgba(14, 21, 18, 0.65);
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.nearby-player-avatar-cell .character-avatar,
+.nearby-player-avatar-cell img {
+  width: 100%;
+  height: 100%;
+  max-width: 66px;
+  max-height: 66px;
   object-fit: contain;
 }
 
-.nearby-player-body {
+/* 上右：60% 区域，名字横向居中，中间身家 */
+.nearby-player-info-cell {
+  flex: 0 0 calc(60% - 8px);
+  width: calc(60% - 8px);
   display: flex;
-  min-width: 0;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
-}
-
-.nearby-player-header-row {
-  display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  text-align: center;
+  gap: 4px;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
-.nearby-player-name {
+.nearby-player-info-cell .nearby-player-name {
   color: var(--text-bright, #fff);
   font-size: 14px;
   font-weight: var(--font-weight-bold, 600);
   letter-spacing: 0.5px;
+  text-align: center;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.nearby-player-bottom-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.nearby-player-valuation {
+.nearby-player-info-cell .nearby-player-valuation {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 下部占 20%：放三段式牌匾，横向居中 */
+.nearby-player-bottom {
+  display: flex;
+  flex: 1 1 0%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(114, 169, 140, 0.25);
+  box-sizing: border-box;
+}
+
+.nearby-player-bottom .insight-realm-master-frame {
+  margin: 0 auto;
 }
 
 .nearby-player-actions {

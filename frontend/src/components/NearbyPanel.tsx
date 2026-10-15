@@ -331,19 +331,21 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   <div className="nearby-card-self-ribbon" aria-label={t('combat.nearby.isSelf')}>
                     <span>{t('combat.nearby.isSelf')}</span>
                   </div>
-                  <span className="nearby-player-avatar">
-                    <CharacterAvatar actorId={playerId} name={name} role="player" />
-                  </span>
-                  <div className="nearby-player-body">
-                    <div className="nearby-player-header-row">
+                  {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
+                  <div className="nearby-player-top">
+                    <div className="nearby-player-avatar-cell">
+                      <CharacterAvatar name={name} role="player" />
+                    </div>
+                    <div className="nearby-player-info-cell">
                       <strong className="nearby-player-name">{name}</strong>
-                      <RealmBadge realmInfo={selfRealmInfo} />
-                    </div>
-                    <div className="nearby-player-bottom-row">
-                      <span className="nearby-player-valuation">
+                      <div className="nearby-player-valuation">
                         {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(myValuation ?? 0))}</span>
-                      </span>
+                      </div>
                     </div>
+                  </div>
+                  {/* 下部 20%：三段式牌匾 */}
+                  <div className="nearby-player-bottom">
+                    <RealmBadge realmInfo={selfRealmInfo} />
                   </div>
                 </article>
                 {otherPlayers.map(player => {
@@ -355,19 +357,17 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       onClick={() => gameClient.requestPlayerCard(player.playerId)}
                       title={t('social.card.viewDetail')}
                     >
-                      <span className="nearby-player-avatar">
-                        <CharacterAvatar actorId={player.playerId} name={player.displayName} role="player" />
-                      </span>
-                      <div className="nearby-player-body">
-                        <div className="nearby-player-header-row">
-                          <strong className="nearby-player-name">{player.displayName}</strong>
-                          <RealmBadge realmInfo={playerRealmInfo} />
+                      {/* 上部 80%：左 40% 形象，右 60% 名字与身家及操作 */}
+                      <div className="nearby-player-top">
+                        <div className="nearby-player-avatar-cell">
+                          <CharacterAvatar name={player.displayName} role="player" />
                         </div>
-                        <div className="nearby-player-bottom-row">
-                          <span className="nearby-player-valuation">
+                        <div className="nearby-player-info-cell">
+                          <strong className="nearby-player-name">{player.displayName}</strong>
+                          <div className="nearby-player-valuation">
                             {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(player.valuation ?? 0))}</span>
-                          </span>
-                          <span className="nearby-player-actions" onClick={e => e.stopPropagation()}>
+                          </div>
+                          <div className="nearby-player-actions" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={() => gameClient.sendSocialAction('friend.request', player.playerId)}
                               type="button"
@@ -376,8 +376,12 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                               onClick={() => gameClient.sendSocialAction('party.invite', player.playerId)}
                               type="button"
                             >{t('combat.chat.partyInvite')}</button>
-                          </span>
+                          </div>
                         </div>
+                      </div>
+                      {/* 下部 20%：三段式牌匾 */}
+                      <div className="nearby-player-bottom">
+                        <RealmBadge realmInfo={playerRealmInfo} />
                       </div>
                     </article>
                   )
