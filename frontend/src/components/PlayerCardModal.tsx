@@ -11,7 +11,7 @@ import { ItemReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
-import { UnitNumber } from './UnitNumber'
+import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
 
 /** 战斗消耗品每组栏位数（与服务端 AutoUseBar.DefaultSlotCount 一致：药品 3 + 通用 3） */
 const CONSUMABLE_GROUP_SLOTS = 3
@@ -108,16 +108,25 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
 
   // 装备按槽位语义分两组：tool-* 为技艺工具槽位（服务端同槽唯一），其余归战斗装备；
   // 配表缺失的条目按战斗装备兜底展示，不静默丢数据。
-  const { combatEquipment, toolEquipment } = useMemo(() => {
+  const combatEquipment = useMemo(() => {
     const combat: NonNullable<PlayerCardDto['equipment']> = []
-    const tools: NonNullable<PlayerCardDto['equipment']> = []
     for (const entry of card.equipment ?? []) {
       const def = findEquipmentInCatalog(equipmentCatalog, entry.itemId)
-      if (def?.slot.startsWith('tool-')) tools.push(entry)
-      else combat.push(entry)
+      if (!def?.slot.startsWith('tool-')) combat.push(entry)
     }
-    return { combatEquipment: combat, toolEquipment: tools }
+    return combat
   }, [card.equipment, equipmentCatalog])
+  const loadoutView = useMemo<UnitLoadoutView>(() => ({
+    skills: (card.abilitySlots ?? []).map((slot, index) => ({
+      slotIndex: index,
+      abilityId: slot.abilityId,
+      level: slot.level,
+    })),
+    equipment: (card.equipment ?? []).map(entry => ({
+      itemId: entry.itemId,
+      enhancementLevel: entry.enhancementLevel,
+    })),
+  }), [card.abilitySlots, card.equipment])
 
   const potionSlots = (card.autoUseSlots ?? []).filter(slot => slot.group === 'potion')
   const generalSlots = (card.autoUseSlots ?? []).filter(slot => slot.group !== 'potion')
@@ -191,19 +200,11 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
         </div>
       </section>
 
-      {card.attributes && (
-        <section className="player-card-section">
-          <h4 className="player-card-section-title">{t('social.card.combatAttributes')}</h4>
-          <div className="player-card-dims player-card-grid-2">
-            <PillStatLabel label={t('insight.combat.hp')} tone="emerald" tooltip={t('insight.combat.hpTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.maxHitpoints} />} />
-            <PillStatLabel label={t('insight.combat.mp')} tone="cyan" tooltip={t('insight.combat.mpTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.maxManapoints} />} />
-            <PillStatLabel label={t('insight.combat.physAtk')} tone="crimson" tooltip={t('insight.combat.physAtkTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.physicalAttack} />} />
-            <PillStatLabel label={t('insight.combat.spellAtk')} tone="purple" tooltip={t('insight.combat.spellAtkTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.spellAttack} />} />
-            <PillStatLabel label={t('insight.combat.armor')} tone="bronze" tooltip={t('insight.combat.armorTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.armor} />} />
-            <PillStatLabel label={t('insight.combat.magicRes')} tone="slate" tooltip={t('insight.combat.magicResTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.magicResistance} />} />
-          </div>
+      {card.attributes ? (
+        <section className="player-card-section player-card-combat-panel-wrap">
+          <CombatAttributePanel attributes={card.attributes} loadout={loadoutView} />
         </section>
-      )}
+      ) : null}
 
       {card.techniqueLevels && Object.keys(card.techniqueLevels).length > 0 && (
         <section className="player-card-section">
@@ -226,51 +227,41 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
         </section>
       )}
 
-      <section className="player-card-section">
-        <h4 className="player-card-section-title">{t('social.card.combatEquipment')}</h4>
-        {combatEquipment.length === 0 ? (
-          <p className="player-card-empty">{t('social.card.noEquipment')}</p>
-        ) : (
-          <div className="player-card-items">
-            {combatEquipment.map(entry => (
-              <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="player-card-section">
-        <h4 className="player-card-section-title">{t('social.card.toolEquipment')}</h4>
-        {toolEquipment.length === 0 ? (
-          <p className="player-card-empty">{t('social.card.noEquipment')}</p>
-        ) : (
-          <div className="player-card-items">
-            {toolEquipment.map(entry => (
-              <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="player-card-section">
-        <h4 className="player-card-section-title">{t('social.card.abilities')}</h4>
-        {(card.abilitySlots ?? []).length === 0 ? (
-          <p className="player-card-empty">{t('social.card.noAbility')}</p>
-        ) : (
-          <ul className="player-card-abilities">
-            {(card.abilitySlots ?? []).map((slot, index) => (
-              <li className="player-card-ability" key={slot.abilityId ?? `empty-${index}`}>
-                <span className="player-card-ability-name">
-                  {slot.abilityId === null
-                    ? t('social.card.slotEmpty')
-                    : findAbilityInCatalog(abilities, slot.abilityId)?.name ?? slot.abilityId}
-                </span>
-                <span className="player-card-ability-level">{t('social.card.abilityLevel', { level: Math.floor(slot.level) })}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {!card.attributes && (
+        <>
+          <section className="player-card-section">
+            <h4 className="player-card-section-title">{t('social.card.combatEquipment')}</h4>
+            {combatEquipment.length === 0 ? (
+              <p className="player-card-empty">{t('social.card.noEquipment')}</p>
+            ) : (
+              <div className="player-card-items">
+                {combatEquipment.map(entry => (
+                  <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="player-card-section">
+            <h4 className="player-card-section-title">{t('social.card.abilities')}</h4>
+            {(card.abilitySlots ?? []).length === 0 ? (
+              <p className="player-card-empty">{t('social.card.noAbility')}</p>
+            ) : (
+              <ul className="player-card-abilities">
+                {(card.abilitySlots ?? []).map((slot, index) => (
+                  <li className="player-card-ability" key={slot.abilityId ?? `empty-${index}`}>
+                    <span className="player-card-ability-name">
+                      {slot.abilityId === null
+                        ? t('social.card.slotEmpty')
+                        : findAbilityInCatalog(abilities, slot.abilityId)?.name ?? slot.abilityId}
+                    </span>
+                    <span className="player-card-ability-level">{t('social.card.abilityLevel', { level: Math.floor(slot.level) })}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
 
       <section className="player-card-section">
         <h4 className="player-card-section-title">{t('social.card.consumables')}</h4>

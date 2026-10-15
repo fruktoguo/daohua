@@ -178,6 +178,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const inventory = useGameStore(state => state.inventory)
   const nearbyPlayers = useSocialStore(state => state.nearbyPlayers)
   const myValuation = useSocialStore(state => state.myValuation)
+  const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const [buildPickerOpen, setBuildPickerOpen] = useState(false)
   const [detailBuildingId, setDetailBuildingId] = useState<string | null>(null)
   const [contributeBuildingId, setContributeBuildingId] = useState<string | null>(null)
@@ -325,7 +326,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
               <div className="nearby-grid">
                 <article
                   className="nearby-card is-player is-interactive"
-                  onClick={() => gameClient.requestPlayerCard(playerId)}
+                  onClick={() => playerId && requestPlayerCard(playerId)}
                   title={t('social.card.viewDetail')}
                 >
                   <div className="nearby-card-self-ribbon" aria-label={t('combat.nearby.isSelf')}>
@@ -354,7 +355,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                     <article
                       className="nearby-card is-player is-interactive"
                       key={player.playerId}
-                      onClick={() => gameClient.requestPlayerCard(player.playerId)}
+                      onClick={() => requestPlayerCard(player.playerId)}
                       title={t('social.card.viewDetail')}
                     >
                       {/* 上部 80%：左 40% 形象，右 60% 名字与身家及操作 */}
