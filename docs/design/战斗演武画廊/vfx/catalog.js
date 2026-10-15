@@ -62,9 +62,9 @@
     },
     {
       id: 'ability.lightning-attraction', name: '雷光引', discipline: 'spell', category: 'spell',
-      element: 'wood', tier: 2, castMilliseconds: 2000, cooldownMilliseconds: 28000,
-      manaCost: 20, damageRatio: 0.5, flatDamage: 10, targetType: 'allEnemies',
-      description: '引动九天雷光轰击敌阵', icon: 'ability.lightning-attraction',
+      element: 'wood', tier: 2, castMilliseconds: 500, cooldownMilliseconds: 28000,
+      manaCost: 20, damageRatio: 1.5, flatDamage: 10,
+      description: '引动九天雷光轰击目标', icon: 'ability.lightning-attraction',
     },
     {
       id: 'ability.pozhen-melody', name: '破阵子', discipline: 'internal', category: 'spell',

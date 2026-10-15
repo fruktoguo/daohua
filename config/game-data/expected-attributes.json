@@ -348,11 +348,11 @@
             "slot": 2,
             "abilityId": "ability.lightning-attraction",
             "name": "雷光引",
-            "baseDamageRatioPct": 50.0,
+            "baseDamageRatioPct": 150.0,
             "flatDamage": 10,
             "baseCooldownSeconds": 28.0,
-            "baseCastSeconds": 2.0,
-            "targetType": "allEnemies",
+            "baseCastSeconds": 0.5,
+            "maxTargets": 1,
             "cost": 20
           },
           {

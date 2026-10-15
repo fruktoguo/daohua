@@ -86,9 +86,8 @@
     "category": "spell",
     "element": "wood",
     "cooldownMilliseconds": 28000,
-    "castMilliseconds": 2000,
-    "targetType": "allEnemies",
-    "damageRatio": 0.5,
+    "castMilliseconds": 500,
+    "damageRatio": 1.5,
     "flatDamage": 10,
     "defaultTriggers": [
       {

@@ -362,6 +362,38 @@ public sealed class CombatSkillTests
         Assert.False((PlayerCombatSkillState.Empty with { CastCount = 2 }).IsEmpty);
     }
 
+    /// <summary>
+    /// 雷光引：单体伤害、0.5s 吟唱与 150% 伤害倍率确定性回归。
+    /// </summary>
+    [Fact]
+    public void LightningAttraction_DealsSingleTargetDamageWithHalfSecondCast()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var ability = catalog.Abilities["ability.lightning-attraction"];
+        Assert.Equal(500, ability.GetProperty("castMilliseconds").GetInt32());
+        Assert.Equal(1.5, ability.GetProperty("damageRatio").GetDouble());
+        Assert.False(ability.TryGetProperty("targetType", out var targetType) && targetType.GetString() == "allEnemies");
+
+        var stats = CombatantStats.Create(1000, 100, 0, 100) with
+        {
+            MaxManapoints = 1000,
+            SpellAttack = 200,
+            AttackIntervalSeconds = 100
+        };
+        var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
+        // 敌方两名目标，验证雷光引为单体攻击，只命中一个目标
+        var enemy1 = CombatantStats.Create(100_000, 0, 0, 100);
+        var enemy2 = CombatantStats.Create(100_000, 0, 0, 100);
+        var encounter = DeterministicCombatEngine.Start("lightning", 42, playerTemplate, [new CombatantTemplate(enemy1), new CombatantTemplate(enemy2)]);
+
+        // 推进到 0.6s（0.5s 吟唱完成时命中）
+        var result = DeterministicCombatEngine.AdvanceTo(encounter, 0.6);
+        var hits = result.Events.Where(e => e.AbilityId == "ability.lightning-attraction" && e.Damage > 0).ToList();
+        Assert.Single(hits);
+        Assert.Equal(0.5, hits[0].AtSeconds, 6);
+        Assert.Equal(CombatDamageKind.Spell, hits[0].DamageKind);
+    }
+
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "技能", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
