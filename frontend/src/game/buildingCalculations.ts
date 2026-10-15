@@ -310,7 +310,7 @@ export function getBuildingSummaryBonusText(
   if (bonuses.length === 0) return ''
   const joined = bonuses.join(' · ')
   if (effectiveLevel <= 0) {
-    return `待建: ${joined}`
+    return `建成生效: ${joined}`
   }
   return joined
 }

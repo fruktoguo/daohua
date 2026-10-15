@@ -119,5 +119,5 @@ test('buildingCalculations：列表摘要卡片直显文本', () => {
   }
 
   assert.equal(getBuildingSummaryBonusText(definition, 2), '采集采伐速度 +14%')
-  assert.equal(getBuildingSummaryBonusText(definition, 0), '待建: 采集采伐速度 +12%')
+  assert.equal(getBuildingSummaryBonusText(definition, 0), '建成生效: 采集采伐速度 +12%')
 })
