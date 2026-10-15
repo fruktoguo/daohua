@@ -16,7 +16,7 @@
     "id": "encounter.herb-valley",
     "name": "百草青野",
     "minBudget": 10,
-    "maxBudget": 15,
+    "maxBudget": 25,
     "randomSpawns": [
       {
         "enemyId": "enemy.demonized-rabbit",

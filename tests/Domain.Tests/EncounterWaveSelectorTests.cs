@@ -60,24 +60,30 @@ public sealed class EncounterWaveSelectorTests
     }
 
     [Fact]
-    public void EarlyGameEncounters_HerbValleyAndCloudGate_SpawnExactlyOneTargetMinion()
+    public void EarlyGameEncounters_HerbValleyAndCloudGate_MatchSpecifiedBudgetAndLevels()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
 
-        // 1. 百草谷（node.herb-valley）：单独放兔子，任何种子均严格刷出 1 只魔化野兔
+        // 1. 百草谷（node.herb-valley）：单独放野兔，预算 10~25，出 1~2 只魔化野兔（小概率 2 只）
         Assert.True(catalog.WorldGraph.TryGetNode("node.herb-valley", out var herbNode));
         var herbEncounterId = Assert.Single(herbNode.EncounterIds);
         Assert.Equal("encounter.herb-valley", herbEncounterId);
         var herbEncounter = catalog.CombatEncounters[herbEncounterId];
         Assert.Empty(herbEncounter.EliteEnemyIds);
         Assert.Empty(herbEncounter.BossEnemyIds);
+        Assert.Equal(10, herbEncounter.MinBudget);
+        Assert.Equal(25, herbEncounter.MaxBudget);
 
+        var rabbitCountDistribution = new HashSet<int>();
         for (long seed = 1; seed <= 50; seed++)
         {
             var wave = EncounterWaveSelector.Select(herbEncounter, catalog.CombatMonsters, seed, 1);
-            var singleMonster = Assert.Single(wave);
-            Assert.Equal("enemy.demonized-rabbit", singleMonster.Id);
+            Assert.InRange(wave.Count, 1, 2);
+            Assert.All(wave, monster => Assert.Equal("enemy.demonized-rabbit", monster.Id));
+            rabbitCountDistribution.Add(wave.Count);
         }
+        Assert.Contains(1, rabbitCountDistribution);
+        Assert.Contains(2, rabbitCountDistribution);
 
         // 2. 青云山门（node.cloud-gate）：单独放火灵，威胁度保证严格只出 1 只火灵，无精英首领
         Assert.True(catalog.WorldGraph.TryGetNode("node.cloud-gate", out var gateNode));
@@ -96,5 +102,8 @@ public sealed class EncounterWaveSelectorTests
                 Assert.Equal("enemy.fire-spirit", singleMonster.Id);
             }
         }
+
+        // 3. 铁甲熊（enemy.armored-bear）：等级下调为 5
+        Assert.Equal(5, catalog.CombatMonsters["enemy.armored-bear"].Level);
     }
 }
