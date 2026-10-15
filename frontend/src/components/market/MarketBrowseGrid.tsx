@@ -66,7 +66,7 @@ const PRIMARY_TABS: ReadonlyArray<TabConfig<PrimaryCategory>> = [
 ]
 
 type MaterialSubCategory = 'all' | 'mineral' | 'herb' | 'other'
-type EquipmentSubCategory = 'all' | 'weapon' | 'offHand' | 'head' | 'armor' | 'legs' | 'trinket'
+type EquipmentSubCategory = 'all' | 'weapon' | 'offHand' | 'head' | 'armor' | 'legs' | 'trinket' | 'tool'
 type ConsumableSubCategory = 'all' | 'pill' | 'supply'
 type ManualSubCategory = 'all' | 'tome' | 'fragment'
 
@@ -85,6 +85,7 @@ const EQUIPMENT_SUB_TABS: ReadonlyArray<TabConfig<EquipmentSubCategory>> = [
   { id: 'armor', labelKey: 'market.browse.sub.armor', fallback: '衣服' },
   { id: 'legs', labelKey: 'market.browse.sub.legs', fallback: '下装' },
   { id: 'trinket', labelKey: 'market.browse.sub.trinket', fallback: '饰品' },
+  { id: 'tool', labelKey: 'market.browse.sub.tool', fallback: '工具' },
 ]
 
 const CONSUMABLE_SUB_TABS: ReadonlyArray<TabConfig<ConsumableSubCategory>> = [
@@ -157,6 +158,7 @@ function matchesCategory(
       if (sub === 'armor') return subKey === 'armor'
       if (sub === 'legs') return subKey === 'legs'
       if (sub === 'trinket') return Boolean(TRINKET_SLOTS[subKey])
+      if (sub === 'tool') return subKey.startsWith('tool-')
       return true
     }
 

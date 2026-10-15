@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { useGameStore } from '../game/gameStore'
-import { INVENTORY_GROUP_ORDER, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
+import { INVENTORY_GROUP_ORDER, getEquipmentMap, getItemMap, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
 import type { InventoryItem } from '../game/types'
 import { useUiStore, type RightColumnTab } from '../uiStore'
 import { useT } from '../i18n'
@@ -38,11 +38,30 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
       if (bucket) bucket.push(item)
       else buckets.set(key, [item])
     }
+    const itemMap = getItemMap(items)
+    const eqMap = getEquipmentMap(equipment)
+    const resolveItemTier = (inv: InventoryItem): number => {
+      const eqDef = eqMap.get(inv.itemId)
+      if (eqDef?.tier != null) return eqDef.tier
+      const itemDef = itemMap.get(inv.itemId)
+      if (itemDef?.tier != null) return itemDef.tier
+      return inv.tier ?? 1
+    }
+
     return INVENTORY_GROUP_ORDER
-      .map(key => ({ key, list: buckets.get(key) ?? [] }))
+      .map(key => {
+        const list = buckets.get(key) ?? []
+        list.sort((left, right) => {
+          const tierDiff = resolveItemTier(right) - resolveItemTier(left)
+          if (tierDiff !== 0) return tierDiff
+          const enhanceDiff = parseEnhancementVariant(right.variant) - parseEnhancementVariant(left.variant)
+          if (enhanceDiff !== 0) return enhanceDiff
+          return left.name.localeCompare(right.name, 'zh-CN') || left.itemId.localeCompare(right.itemId)
+        })
+        return { key, list }
+      })
       .filter(group => group.list.length > 0)
   }, [inventory, items, equipment, equippedList])
-
   return (
     <div className={`inventory-view-panel ${className}`.trim()}>
       {groups.map(group => (

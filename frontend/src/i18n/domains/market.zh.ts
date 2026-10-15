@@ -175,6 +175,7 @@ export const marketZh = {
         armor: '衣服',
         legs: '下装',
         trinket: '饰品',
+        tool: '工具',
         allConsumable: '全部消耗品',
         pill: '丹药',
         supply: '补给耗材',
