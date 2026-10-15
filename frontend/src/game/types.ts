@@ -81,8 +81,11 @@ export type ItemKind = 'material' | 'consumable' | 'currency' | 'resource' | 'eq
 export type ItemCategoryKey =
   | 'general'
   | 'material'
-  | 'herb'
+  | 'spiritMaterial'
   | 'mineral'
+  | 'exoticMaterial'
+  | 'refinedMaterial'
+  | 'herb'
   | 'pill'
   | 'food'
   | 'drink'
@@ -93,7 +96,6 @@ export type ItemCategoryKey =
   | 'chest'
   | 'currency'
   | 'resource'
-
 /**
  * 装备穿戴槽位：主手武器 (weapon)、双手武器 (two-hand)、副手 (off-hand，盾牌/暗器/法珠/丹瓶)、
  * 头部 (head)、护甲/上衣 (armor)、腿部/下装 (legs)、
@@ -1277,6 +1279,10 @@ export interface CombatEncounterDefinition {
   maxSpawnCount: number
   /** 单场刷怪强度预算上限 */
   maxTotalStrength: number
+  /** 精英波次敌人列表 */
+  eliteEnemies?: CombatantDefinition[]
+  /** 每多少波普通战斗后进入一次精英波 */
+  battlesPerElite?: number
   /** Boss 波次敌人列表 */
   bossEnemies: CombatantDefinition[]
   /** 每多少波普通战斗后进入一次 Boss 波 */

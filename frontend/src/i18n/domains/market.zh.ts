@@ -165,8 +165,11 @@ export const marketZh = {
       sub: {
         all: '全部',
         allMaterial: '全部材料',
+        spiritMaterial: '灵材',
         mineral: '矿石',
-        herb: '药材',
+        exoticMaterial: '异材',
+        refinedMaterial: '精材',
+        herb: '灵材',
         otherMaterial: '通用材料',
         allEquipment: '全部装备',
         weapon: '武器',

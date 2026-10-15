@@ -25,16 +25,17 @@ const PRIMARY_TABS: ReadonlyArray<TabConfig<PrimaryCategory>> = [
   { id: 'manual', labelKey: 'market.browse.cat.manual', fallback: '功法' },
 ]
 
-type MaterialSubCategory = 'all' | 'mineral' | 'herb' | 'other'
+type MaterialSubCategory = 'all' | 'spiritMaterial' | 'mineral' | 'exoticMaterial' | 'refinedMaterial'
 type EquipmentSubCategory = 'all' | 'weapon' | 'offHand' | 'head' | 'armor' | 'legs' | 'trinket' | 'tool'
 type ConsumableSubCategory = 'all' | 'pill' | 'supply'
 type ManualSubCategory = 'all' | 'tome' | 'fragment'
 
 const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
   { id: 'all', labelKey: 'market.browse.sub.allMaterial', fallback: '全部材料' },
+  { id: 'spiritMaterial', labelKey: 'market.browse.sub.spiritMaterial', fallback: '灵材' },
   { id: 'mineral', labelKey: 'market.browse.sub.mineral', fallback: '矿石' },
-  { id: 'herb', labelKey: 'market.browse.sub.herb', fallback: '药材' },
-  { id: 'other', labelKey: 'market.browse.sub.otherMaterial', fallback: '通用材料' },
+  { id: 'exoticMaterial', labelKey: 'market.browse.sub.exoticMaterial', fallback: '异材' },
+  { id: 'refinedMaterial', labelKey: 'market.browse.sub.refinedMaterial', fallback: '精材' },
 ]
 
 const EQUIPMENT_SUB_TABS: ReadonlyArray<TabConfig<EquipmentSubCategory>> = [
@@ -103,9 +104,10 @@ function matchesCategory(
     case 'material': {
       if (!isMaterial(item)) return false
       if (sub === 'all') return true
+      if (sub === 'spiritMaterial') return subKey === 'spiritMaterial' || subKey === 'herb'
       if (sub === 'mineral') return subKey === 'mineral'
-      if (sub === 'herb') return subKey === 'herb'
-      if (sub === 'other') return subKey !== 'mineral' && subKey !== 'herb'
+      if (sub === 'exoticMaterial') return subKey === 'exoticMaterial'
+      if (sub === 'refinedMaterial') return subKey === 'refinedMaterial'
       return true
     }
 

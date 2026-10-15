@@ -62,9 +62,11 @@ function getSubCategoryOrder(primaryKey: string, subKey: string): number {
       return 8
     }
     case 'material': {
-      if (subKey === 'mineral') return 1
-      if (subKey === 'herb') return 2
-      return 3
+      if (subKey === 'spiritMaterial' || subKey === 'herb') return 1
+      if (subKey === 'mineral') return 2
+      if (subKey === 'exoticMaterial') return 3
+      if (subKey === 'refinedMaterial') return 4
+      return 5
     }
     case 'consumable':
       return subKey === 'pill' ? 1 : 2

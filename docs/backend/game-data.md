@@ -6,7 +6,7 @@
 
 - **`expected-attributes.json`**：**全 12 等阶（T1~T12）数值底座、标准期望面板、特殊属性与战斗模拟产出基准**。
 - `manifest.json`：结构版本和内容版本。
-- `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。物品分类为两级模型：必填 `category` 是一级主类型（`material`/`consumable`/`manual`/`currency`/`equipment` 等），可选 `subCategory` 是二级细分品类（`herb`/`mineral`/`pill`/`alchemySupply`/`explorationSupply`/`manualTome`/`manualFragment` 等）；目录 DTO 原样下发两个字段，前端品类丝带与坊市二级筛选统一按 `subCategory`（缺省回落主类型，见 `ItemDefinition.DisplaySubCategory`）展示，药品栏门控按细分键 `pill` 判定。自动消耗品的 `consumable.usableInActionTypes` 声明可装配的**物品栏域**（`exploration` 历练栏/`alchemy`/`forging`/`talisman`/`formation`/`enhancement` 制造技艺栏/`combat` 战斗栏，详见总纲 §6.2.3），值域独立于行动 `type`。
+- `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。物品分类为两级模型：必填 `category` 是一级主类型（`material`/`consumable`/`manual`/`currency`/`equipment` 等），可选 `subCategory` 是二级细分品类（材料类四细分：`spiritMaterial` 灵材/`mineral` 矿石/`exoticMaterial` 异材/`refinedMaterial` 精材；消耗品细分：`pill`/`talisman`/`formation`/`alchemySupply`/`explorationSupply`；功法细分：`manualTome`/`manualFragment` 等）；目录 DTO 原样下发两个字段，前端品类丝带与坊市二级筛选统一按 `subCategory`（缺省回落主类型，见 `ItemDefinition.DisplaySubCategory`）展示，药品栏门控按细分键 `pill` 判定。自动消耗品的 `consumable.usableInActionTypes` 声明可装配的**物品栏域**（`exploration` 历练栏/`alchemy`/`forging`/`talisman`/`formation`/`enhancement` 制造技艺栏/`combat` 战斗栏，详见总纲 §6.2.3），值域独立于行动 `type`。
 - `equipment/`：武器、防具与饰品（`weapons.json`, `armors.json`, `accessories.json`）。
 - `abilities/`：物理武技与术法神通（`physical_abilities.json`, `spell_abilities.json`）。
 - `monsters/`：各等阶妖兽、精英与妖王（`tier1_minions.json`, `tier1_elites_bosses.json`, `tier2_minions.json`, `tier2_elites_bosses.json`）。
