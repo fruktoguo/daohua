@@ -60,8 +60,8 @@ public sealed class TutorialProgressionTests
         var result = Advance(player, Baseline.AddSeconds(20), catalog, wallet);
 
         Assert.Equal(TutorialSteps.Alchemy, player.Settings.TutorialStep);
-        // 采集产出 3 + 引导赠送 3（引气丹单轮输入）。
-        Assert.Equal(6, wallet.Get(NingxueGrass));
+        // 采集产出 1 + 引导赠送 3（引气丹单轮输入）。
+        Assert.Equal(4, wallet.Get(NingxueGrass));
         Assert.Contains(result.Events, e => e.Code == "tutorial.grant");
     }
 
@@ -175,7 +175,7 @@ public sealed class TutorialProgressionTests
 
         Assert.Equal(TutorialSteps.Done, player.Settings.TutorialStep);
         // 采集产出照常入账，引导赠送不再发放。
-        Assert.Equal(3, wallet.Get(NingxueGrass));
+        Assert.Equal(1, wallet.Get(NingxueGrass));
         Assert.DoesNotContain(result.Events, e => e.Code == "tutorial.grant");
     }
 
@@ -206,11 +206,11 @@ public sealed class TutorialProgressionTests
         player.SetLoopEnabled(false);
         var wallet = CreateWallet(player);
 
-        // 环1 采集：产出 3 + 引导赠送 3（引气丹单轮输入）→ Alchemy
+        // 环1 采集：产出 1 + 引导赠送 3（引气丹单轮输入）→ Alchemy
         player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), 1), Baseline, catalog.Actions);
         var r1 = Advance(player, Baseline.AddSeconds(20), catalog, wallet);
         Assert.Equal(TutorialSteps.Alchemy, player.Settings.TutorialStep);
-        Assert.Equal(6, wallet.Get(NingxueGrass));
+        Assert.Equal(4, wallet.Get(NingxueGrass));
         Assert.Contains(r1.Events, e => e.Code == "tutorial.grant");
 
         // 环2 炼丹：消耗赠送材料，完成后赠炼器材料 → Forge
@@ -322,18 +322,18 @@ public sealed class TutorialProgressionTests
         Advance(player, Baseline.AddSeconds(20), catalog, wallet);
         Assert.Equal(TutorialSteps.Alchemy, player.Settings.TutorialStep);
         Assert.Equal(TutorialSteps.Alchemy, player.Settings.TutorialRewardsStep);
-        Assert.Equal(6, wallet.Get(NingxueGrass));
+        Assert.Equal(4, wallet.Get(NingxueGrass));
 
         // 重学：步骤归零、游标不动。
         player.RestartTutorial();
         Assert.Equal(TutorialSteps.Gather, player.Settings.TutorialStep);
         Assert.Equal(TutorialSteps.Alchemy, player.Settings.TutorialRewardsStep);
 
-        // 重走采集环：推进照常，但赠送不再发（只入账行动产出 3）。
+        // 重走采集环：推进照常，但赠送不再发（只入账行动产出 1）。
         player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), 1), player.LastSimulatedAt, catalog.Actions);
         var result = Advance(player, player.LastSimulatedAt.AddSeconds(20), catalog, wallet);
         Assert.Equal(TutorialSteps.Alchemy, player.Settings.TutorialStep);
-        Assert.Equal(9, wallet.Get(NingxueGrass));
+        Assert.Equal(5, wallet.Get(NingxueGrass));
         Assert.DoesNotContain(result.Events, e => e.Code == "tutorial.grant");
     }
 

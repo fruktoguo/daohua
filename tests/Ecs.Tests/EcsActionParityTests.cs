@@ -42,8 +42,8 @@ public sealed class EcsActionParityTests
         Assert.Equal(actionId, action.Intent.ActionId);
         Assert.Equal(-1, action.RemainingRepeats);
         Assert.Equal(1, action.ProgressSeconds, 12);
-        // 6 = 两轮采集产出（seed 玩家引导已终态，无首轮赠送）。
-        Assert.Equal(6, actual.Assets[new AssetKey(new ItemId("item.ningxue-grass"))], 12);
+        // 2 = 两轮采集产出（seed 玩家引导已终态，无首轮赠送）。
+        Assert.Equal(2, actual.Assets[new AssetKey(new ItemId("item.ningxue-grass"))], 12);
     }
 
     [Fact]

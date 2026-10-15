@@ -343,7 +343,7 @@ public sealed class ActionCatalog
         ]),
         new(new ActionId("explore.gather-ningxue-grass"), "采摘凝气草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
         [
-            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, new ItemId("item.ningxue-grass")),
+            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, new ItemId("item.ningxue-grass")),
             new ActionYield(ActionYieldKind.RootExp, ActionYieldPeriod.PerRepeat, 8.0, Aspect: CoreAspectKind.Agility, Ratio: 1.0)
         ]),
         new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 },

@@ -131,7 +131,7 @@
   },
   {
     "id": "forge.fan-tie-dart",
-    "name": "凡铁镖",
+    "name": "兽骨匕",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -157,7 +157,7 @@
   },
   {
     "id": "forge.tiepi-guard",
-    "name": "铁皮盾",
+    "name": "精铁盾",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -339,7 +339,7 @@
   },
   {
     "id": "forge.qingmu-bead",
-    "name": "青木珠",
+    "name": "桃灵珠",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -552,7 +552,7 @@
   },
   {
     "id": "forge.xuantie-dart",
-    "name": "玄铁镖",
+    "name": "赤牙匕",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -579,7 +579,7 @@
   },
   {
     "id": "forge.xuanjia-guard",
-    "name": "玄甲盾",
+    "name": "赤铜盾",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
@@ -849,14 +849,14 @@
   },
   {
     "id": "forge.tool-herb-hoe",
-    "name": "药锄",
+    "name": "桃木铲",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
-      "item.refined-iron": 3,
-      "item.peach-wood": 2
+      "item.refined-iron": 1,
+      "item.peach-wood": 4
     },
     "yields": [
       {
@@ -875,13 +875,13 @@
   },
   {
     "id": "forge.tool-prospect-compass",
-    "name": "探矿罗盘",
+    "name": "精铁镐",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
-      "item.refined-copper": 3,
+      "item.refined-iron": 2,
       "item.broken-spirit-core": 1
     },
     "yields": [
@@ -901,14 +901,14 @@
   },
   {
     "id": "forge.tool-flame-ding",
-    "name": "灵火鼎",
+    "name": "灵火炉",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
-      "item.refined-iron": 5,
-      "item.fire-feather": 1
+      "item.refined-iron": 2,
+      "item.broken-spirit-core": 1
     },
     "yields": [
       {
@@ -927,13 +927,13 @@
   },
   {
     "id": "forge.tool-forge-hammer",
-    "name": "锻灵锤",
+    "name": "百炼铁钳",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
-      "item.refined-iron": 5,
+      "item.refined-iron": 2,
       "item.beast-bone": 1
     },
     "yields": [
@@ -953,14 +953,14 @@
   },
   {
     "id": "forge.tool-talisman-brush",
-    "name": "朱砂符笔",
+    "name": "桃木笔",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
-      "item.peach-wood": 3,
-      "item.soul-talisman": 1
+      "item.peach-wood": 5,
+      "item.beast-hide": 1
     },
     "yields": [
       {
@@ -979,14 +979,14 @@
   },
   {
     "id": "forge.tool-formation-flag",
-    "name": "布阵旗",
+    "name": "桃晶旗",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
-      "item.peach-wood": 3,
-      "item.spirit-pine-crystal": 1
+      "item.peach-wood": 4,
+      "item.peach-wood-crystal": 1
     },
     "yields": [
       {
@@ -1005,13 +1005,13 @@
   },
   {
     "id": "forge.tool-quench-anvil",
-    "name": "淬灵砧",
+    "name": "淬灵锤",
     "description": "",
     "type": "alchemy",
     "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
-      "item.refined-iron": 7,
+      "item.refined-iron": 2,
       "item.broken-spirit-core": 1
     },
     "yields": [

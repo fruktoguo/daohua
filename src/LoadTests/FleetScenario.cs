@@ -23,7 +23,7 @@ public static class FleetScenario
 
     // 一阶真实套装六件（GearSet[0]=武器、[1..4]=铁甲四件、[5]=桃木符）：
     // 普攻全流派统一走物攻、压测角色无技能槽，只取物理件；兽骨仅精英 50%/Boss 掉落，
-    // 全链避开兽骨件（副手选铁皮盾、饰品选桃木符——碎灵核为木灵 100% 掉落、兽皮为野兔 100% 掉落）。
+    // 全链避开兽骨件（副手选精铁盾、饰品选桃木符——碎灵核为木灵 100% 掉落、兽皮为野兔 100% 掉落）。
     private static readonly (string Equipment, string Forge)[] GearSet =
     [
         ("equipment.qingfeng-sword", "forge.qingfeng-sword"),   // 武器：跳引导补发百炼铁×7+兽骨×1 恰一轮

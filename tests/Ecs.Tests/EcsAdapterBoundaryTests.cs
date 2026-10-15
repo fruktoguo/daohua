@@ -491,8 +491,8 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Contains(actual.Receipts!, receipt => receipt.Command == "simulation.advance");
         Assert.NotNull(result!.Simulation);
         var balance = result.Snapshot.Assets.Single(row => row.AssetId == "item.ningxue-grass");
-        // 15 = 初始 3 + 四轮产出 12（fixture 玩家引导已终态，无首轮赠送）。
-        Assert.Equal(15, balance.Quantity);
+        // 7 = 初始 3 + 四轮产出 4（fixture 玩家引导已终态，无首轮赠送）。
+        Assert.Equal(7, balance.Quantity);
         Assert.Equal(5, balance.Version);
         await adapter.RemoveAsync(fixture.PlayerId, true, null);
         var reloaded = await adapter.LoadAsync(fixture.PlayerId);

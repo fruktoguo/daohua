@@ -555,8 +555,8 @@ public sealed class TechniqueAndEnhancementTests
         var catalog = CreateMinimalCatalog(actions: new ActionCatalog([mining, alchemy]),
             rawEquipments: new Dictionary<string, JsonElement>
             {
-                [compass.Value] = Json("""{"id":"equipment.tool-prospect-compass","name":"探矿罗盘","slot":"tool-mining","tier":1,"techniqueBonus":{"technique":"mining","speedRatio":0.1}}"""),
-                [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"药锄","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
+                [compass.Value] = Json("""{"id":"equipment.tool-prospect-compass","name":"赤铜镐","slot":"tool-mining","tier":1,"techniqueBonus":{"technique":"mining","speedRatio":0.1}}"""),
+                [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"桃木铲","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
             },
             realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
         var player = CreatePlayer("矿工");
@@ -574,7 +574,7 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(10 / 1.2, SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
 
         // 不匹配技艺的行动（alchemy）不受 mining 工具加成；
-        // 绑定其他技艺的工具（药锄→gathering）也不计入 mining 除数。
+        // 绑定其他技艺的工具（桃木铲→gathering）也不计入 mining 除数。
         var alchemyAction = player.Enqueue(new ActionIntent(alchemy.Id, -1), Baseline, catalog.Actions);
         Assert.Equal(10, SimulationEngine.TimedActionDuration(player, alchemyAction, alchemy, catalog, wallet, null));
         player.Loadout.Equipment.Add(new PlayerEquipmentSlot(hoe.Value, 0));
@@ -593,7 +593,7 @@ public sealed class TechniqueAndEnhancementTests
         var hoe = new ItemId("equipment.tool-herb-hoe");
         var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
         {
-            [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"药锄","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
+            [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"桃木铲","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
         });
         var intent = new ActionIntent(new ActionId("enhance.equipment"), -1, TargetItemId: hoe.Value);
         var holdings = new Dictionary<AssetKey, double>

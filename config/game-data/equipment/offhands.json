@@ -1,8 +1,8 @@
 [
   {
     "id": "equipment.fan-tie-dart",
-    "name": "凡铁镖",
-    "description": "袖中藏锋，脱手取命。\n百炼铁打制的三棱飞镖，镖身短小精悍，出手快疾。",
+    "name": "兽骨匕",
+    "description": "袖底藏锋，反握出奇。\n百炼铁包兽骨打制的贴身轻匕，短小精悍，反握藏锋。",
     "slot": "off-hand",
     "baseStatRatios": {
       "physicalAttack": 0.1
@@ -15,8 +15,8 @@
   },
   {
     "id": "equipment.qingmu-bead",
-    "name": "青木珠",
-    "description": "青木含灵，珠转法生。\n老桃木芯磨成的法珠，握于掌心可助法诀流转。",
+    "name": "桃灵珠",
+    "description": "桃木凝华，珠转法生。\n老桃木灵芯磨成的法珠，握于掌心可助法诀流转。",
     "slot": "off-hand",
     "baseStatRatios": {
       "spellAttack": 0.1
@@ -29,8 +29,8 @@
   },
   {
     "id": "equipment.tiepi-guard",
-    "name": "铁皮盾",
-    "description": "方寸铁皮，亦可挡锋。\n铆接铁皮的蒙皮小盾，轻便顺手，护住身前要害。",
+    "name": "精铁盾",
+    "description": "方寸精铁，亦可挡锋。\n百炼精铁与厚皮蒙合的轻盾，轻便顺手，护住身前要害。",
     "slot": "off-hand",
     "baseStatRatios": {
       "physicalArmor": 0.06,
@@ -55,8 +55,8 @@
   },
   {
     "id": "equipment.xuantie-dart",
-    "name": "玄铁镖",
-    "description": "玄铁淬芒，一掷破军。\n赤铜精淬炼的重棱飞镖，脱手呼啸，破空穿甲。",
+    "name": "赤牙匕",
+    "description": "赤铜淬芒，嵌齿破罡。\n融入赤铜精与兽牙锻造的破罡短刃，寒芒夺魄，破空穿甲。",
     "slot": "off-hand",
     "tier": 2,
     "quality": 2,
@@ -87,8 +87,8 @@
   },
   {
     "id": "equipment.xuanjia-guard",
-    "name": "玄甲盾",
-    "description": "玄甲覆面，不动如山。\n赤铜甲片拼合的护手战盾，盾面厚重，可挡刀剑术法。",
+    "name": "赤铜盾",
+    "description": "赤铜覆面，不动如山。\n赤铜厚甲拼合的护手重盾，盾面沉厚，可挡刀剑术法。",
     "slot": "off-hand",
     "tier": 2,
     "quality": 2,

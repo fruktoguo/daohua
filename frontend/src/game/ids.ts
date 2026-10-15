@@ -29,7 +29,7 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   },
 
   // 采集
-  { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.ningxue-grass', amount: 3 }, { kind: 'rootexp', per: 'repeat', amount: 8, aspect: 'agility' }] },
+  { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.ningxue-grass', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 8, aspect: 'agility' }] },
   { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
   { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.dark-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'stamina' }] },
   { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.morning-dew', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
@@ -95,13 +95,13 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'forge.juling-pendant', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.taomu-talisman': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.juling-pendant', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
 
   // 技艺工具锻造（炼器技艺，产出 tool-* 专属槽位装备）
-  { id: 'forge.tool-herb-hoe', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.refined-iron': 3, 'item.peach-wood': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-herb-hoe', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
-  { id: 'forge.tool-prospect-compass', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-copper': 3, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-prospect-compass', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
-  { id: 'forge.tool-flame-ding', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 5, 'item.fire-feather': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-flame-ding', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
-  { id: 'forge.tool-forge-hammer', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-forge-hammer', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
-  { id: 'forge.tool-talisman-brush', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.peach-wood': 3, 'item.soul-talisman': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-talisman-brush', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
-  { id: 'forge.tool-formation-flag', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.peach-wood': 3, 'item.spirit-pine-crystal': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-formation-flag', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
-  { id: 'forge.tool-quench-anvil', type: 'alchemy', technique: 'forging', durationSeconds: 20, inputs: { 'item.refined-iron': 7, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-quench-anvil', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 20, aspect: 'consciousness' }] },
+  { id: 'forge.tool-herb-hoe', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.refined-iron': 1, 'item.peach-wood': 4 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-herb-hoe', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.tool-prospect-compass', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 2, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-prospect-compass', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-flame-ding', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 2, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-flame-ding', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-forge-hammer', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 2, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-forge-hammer', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-talisman-brush', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.peach-wood': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-talisman-brush', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.tool-formation-flag', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.peach-wood': 4, 'item.peach-wood-crystal': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-formation-flag', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-quench-anvil', type: 'alchemy', technique: 'forging', durationSeconds: 20, inputs: { 'item.refined-iron': 2, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-quench-anvil', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 20, aspect: 'consciousness' }] },
 ]
 
 /** 静态兜底行动的 ID 索引（服务端目录未到达前供 resolveActionDefinition 查询） */
@@ -853,13 +853,13 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
   'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
   // 七技艺工具（tool-<techniqueId> 专属槽位；品类经 tool- 归一显示「技艺工具」）
-  'equipment.tool-herb-hoe': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-prospect-compass': { glyph: '🧭', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-herb-hoe': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-prospect-compass': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
   'equipment.tool-flame-ding': { glyph: '🔥', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-forge-hammer': { glyph: '🔨', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-forge-hammer': { glyph: '🗜️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
   'equipment.tool-talisman-brush': { glyph: '🖌️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
   'equipment.tool-formation-flag': { glyph: '🚩', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-quench-anvil': { glyph: '⚒️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-quench-anvil': { glyph: '🔨', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
 }
 
 /**
@@ -1093,7 +1093,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
   },
   'equipment.fan-tie-dart': {
     equipmentId: 'equipment.fan-tie-dart',
-    name: '凡铁镖',
+    name: '兽骨匕',
     slot: 'off-hand',
     tier: 1,
     baseStatRatios: { physicalAttack: 0.1 },
@@ -1101,7 +1101,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
   },
   'equipment.qingmu-bead': {
     equipmentId: 'equipment.qingmu-bead',
-    name: '青木珠',
+    name: '桃灵珠',
     slot: 'off-hand',
     tier: 1,
     baseStatRatios: { spellAttack: 0.1 },
@@ -1109,7 +1109,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
   },
   'equipment.tiepi-guard': {
     equipmentId: 'equipment.tiepi-guard',
-    name: '铁皮盾',
+    name: '精铁盾',
     slot: 'off-hand',
     tier: 1,
     baseStatRatios: { physicalArmor: 0.06, spellResistance: 0.06 },
@@ -1156,7 +1156,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
   },
   'equipment.xuantie-dart': {
     equipmentId: 'equipment.xuantie-dart',
-    name: '玄铁镖',
+    name: '赤牙匕',
     slot: 'off-hand',
     tier: 2,
     baseStatRatios: { physicalAttack: 0.14 },
@@ -1172,7 +1172,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
   },
   'equipment.xuanjia-guard': {
     equipmentId: 'equipment.xuanjia-guard',
-    name: '玄甲盾',
+    name: '赤铜盾',
     slot: 'off-hand',
     tier: 2,
     baseStatRatios: { physicalArmor: 0.08, spellResistance: 0.08 },

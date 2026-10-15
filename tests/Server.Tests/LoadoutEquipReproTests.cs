@@ -42,7 +42,7 @@ public sealed class LoadoutEquipReproTests
         Assert.True(attackAfter > attackBefore, $"装备后物攻 {attackAfter} 未高于装备前 {attackBefore}");
     }
 
-    /// <summary>技艺工具槽（tool-*）与战斗槽互不冲突：武器与药锄可同时装配。</summary>
+    /// <summary>技艺工具槽（tool-*）与战斗槽互不冲突：武器与桃木铲可同时装配。</summary>
     [Fact]
     public async Task LoadoutReplace_ToolSlotCoexistsWithWeapon()
     {
