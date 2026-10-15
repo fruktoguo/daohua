@@ -12,6 +12,7 @@ import { formatInteger, formatNumber } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { gameClient } from '../network/gameClient'
 import { ItemDropReference, ItemReference } from './ItemDisplay'
+import { RealmBadge } from './RealmBadge'
 import {
   getBuildingBonusItems,
   getBuildingUpgradeComparison,
@@ -171,6 +172,8 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const name = useGameStore(state => state.name)
   const world = useGameStore(state => state.world)
   const stats = useGameStore(state => state.stats)
+  const experience = useGameStore(state => state.stats.experience)
+  const selfRealmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, stats.realmLevel ?? 1), [experience, stats.realmLevel])
   const buildingCatalog = useGameStore(state => state.buildings)
   const inventory = useGameStore(state => state.inventory)
   const nearbyPlayers = useSocialStore(state => state.nearbyPlayers)
@@ -325,55 +328,60 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   onClick={() => gameClient.requestPlayerCard(playerId)}
                   title={t('social.card.viewDetail')}
                 >
-                  <span className="nearby-mark">
-                    <CharacterAvatar name={name} role="player" />
+                  <div className="nearby-card-self-ribbon" aria-label={t('combat.nearby.isSelf')}>
+                    <span>{t('combat.nearby.isSelf')}</span>
+                  </div>
+                  <span className="nearby-player-avatar">
+                    <CharacterAvatar actorId={playerId} name={name} role="player" />
                   </span>
-                  <div>
-                    <div className="nearby-player-name-row">
-                      <strong>{name}</strong>
-                      <span className="nearby-level-badge">{calculateRealmInfo(0, stats.realmLevel ?? 1).minorName}</span>
-                      <small className="nearby-player-self-tag">{t('combat.nearby.you', { id: playerId.slice(0, 8) })}</small>
+                  <div className="nearby-player-body">
+                    <div className="nearby-player-header-row">
+                      <strong className="nearby-player-name">{name}</strong>
+                      <RealmBadge realmInfo={selfRealmInfo} />
                     </div>
-                    <div className="nearby-player-sub-row">
+                    <div className="nearby-player-bottom-row">
                       <span className="nearby-player-valuation">
                         {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(myValuation ?? 0))}</span>
                       </span>
                     </div>
                   </div>
                 </article>
-                {otherPlayers.map(player => (
-                  <article
-                    className="nearby-card is-player is-interactive"
-                    key={player.playerId}
-                    onClick={() => gameClient.requestPlayerCard(player.playerId)}
-                    title={t('social.card.viewDetail')}
-                  >
-                    <span className="nearby-mark">
-                      <CharacterAvatar name={player.displayName} role="player" />
-                    </span>
-                    <div>
-                      <div className="nearby-player-name-row">
-                        <strong>{player.displayName}</strong>
-                        <span className="nearby-level-badge">{calculateRealmInfo(0, player.realmLevel ?? 1).minorName}</span>
+                {otherPlayers.map(player => {
+                  const playerRealmInfo = calculateRealmInfo(0, player.realmLevel ?? 1)
+                  return (
+                    <article
+                      className="nearby-card is-player is-interactive"
+                      key={player.playerId}
+                      onClick={() => gameClient.requestPlayerCard(player.playerId)}
+                      title={t('social.card.viewDetail')}
+                    >
+                      <span className="nearby-player-avatar">
+                        <CharacterAvatar actorId={player.playerId} name={player.displayName} role="player" />
+                      </span>
+                      <div className="nearby-player-body">
+                        <div className="nearby-player-header-row">
+                          <strong className="nearby-player-name">{player.displayName}</strong>
+                          <RealmBadge realmInfo={playerRealmInfo} />
+                        </div>
+                        <div className="nearby-player-bottom-row">
+                          <span className="nearby-player-valuation">
+                            {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(player.valuation ?? 0))}</span>
+                          </span>
+                          <span className="nearby-player-actions" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => gameClient.sendSocialAction('friend.request', player.playerId)}
+                              type="button"
+                            >{t('combat.chat.addFriendAction')}</button>
+                            <button
+                              onClick={() => gameClient.sendSocialAction('party.invite', player.playerId)}
+                              type="button"
+                            >{t('combat.chat.partyInvite')}</button>
+                          </span>
+                        </div>
                       </div>
-                      <div className="nearby-player-sub-row">
-                        <span className="nearby-player-valuation">
-                          {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(player.valuation ?? 0))}</span>
-                        </span>
-                        <span className="nearby-player-actions" onClick={e => e.stopPropagation()}>
-                          <button
-                            onClick={() => gameClient.sendSocialAction('friend.request', player.playerId)}
-                            type="button"
-                          >{t('combat.chat.addFriendAction')}</button>
-                          <button
-                            onClick={() => gameClient.sendSocialAction('party.invite', player.playerId)}
-                            type="button"
-                          >{t('combat.chat.partyInvite')}</button>
-                        </span>
-                      </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  )
+                })}
                 {otherPlayers.length === 0 && <p className="nearby-empty">{t('combat.nearby.noPlayers')}</p>}
               </div>
             </section>

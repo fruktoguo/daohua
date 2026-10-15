@@ -172,6 +172,7 @@ export const combatZh = {
       playersHeading: '附近玩家',
       markPlayer: '修',
       you: '{id} · 自己',
+      isSelf: '自己',
       noPlayers: '当前分片暂无其他可见玩家',
       buildAdd: '在此地建造建筑',
       buildPickerTitle: '可建造建筑',

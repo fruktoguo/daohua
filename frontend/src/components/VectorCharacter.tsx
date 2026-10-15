@@ -20,9 +20,31 @@ export type CharacterKind =
  * 根据角色身份 (role)、实体标识符 (id) 与名称 (name) 智能解析匹配的矢量人物立绘形态
  */
 export function resolveCharacterKind(role: 'player' | 'enemy', id?: string | null, name?: string | null): CharacterKind {
-  if (role === 'player') return 'player'
   const normalizedId = (id ?? '').toLowerCase()
   const normalizedName = (name ?? '').toLowerCase()
+
+  if (role === 'player') {
+    // 优先根据道号特征匹配修仙法相
+    if (normalizedName.includes('宗师') || normalizedName.includes('老祖') || normalizedName.includes('天尊') || normalizedName.includes('皇') || normalizedName.includes('主') || normalizedName.includes('尊')) {
+      return 'twilight-valley-master'
+    }
+    if (normalizedName.includes('魔') || normalizedName.includes('煞') || normalizedName.includes('邪') || normalizedName.includes('夜') || normalizedName.includes('刺')) {
+      return 'twilight-blood-cultivator'
+    }
+    if (normalizedName.includes('妖') || normalizedName.includes('狼') || normalizedName.includes('兽') || normalizedName.includes('灵') || normalizedName.includes('狐')) {
+      return 'twilight-moon-demon'
+    }
+    if (normalizedName.includes('仙') || normalizedName.includes('道') || normalizedName.includes('羽') || normalizedName.includes('玄') || normalizedName.includes('君')) {
+      return 'default-ally'
+    }
+    // 哈希轮转丰富形象
+    let hash = 0
+    for (let i = 0; i < normalizedName.length; i++) {
+      hash = ((hash << 5) - hash + normalizedName.charCodeAt(i)) | 0
+    }
+    const pool: CharacterKind[] = ['player', 'default-ally', 'twilight-valley-master', 'twilight-moon-demon']
+    return pool[Math.abs(hash) % pool.length]
+  }
 
   if (normalizedId.includes('valley-master') || normalizedName.includes('谷主') || normalizedId.includes('falling-star-beast') || normalizedName.includes('异兽')) {
     return 'twilight-valley-master'
