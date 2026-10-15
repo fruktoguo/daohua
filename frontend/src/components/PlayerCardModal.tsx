@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { calculateRealmInfo, getRootCumulativeExpForLevel } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
@@ -11,7 +11,7 @@ import { ItemReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
-import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
+import { CombatAttributePanel } from './CombatAttributePanel'
 
 /** 战斗消耗品每组栏位数（与服务端 AutoUseBar.DefaultSlotCount 一致：药品 3 + 通用 3） */
 const CONSUMABLE_GROUP_SLOTS = 3
@@ -101,32 +101,22 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
   const t = useT()
   const abilities = useGameStore(state => state.abilities)
   const equipmentCatalog = useGameStore(state => state.equipment)
+  const [activeTab, setActiveTab] = useState<'base' | 'special' | 'loadout' | 'dimensions' | 'techniques'>('base')
   const myPlayerId = useGameStore(state => state.playerId)
   const isSelf = myPlayerId !== null && myPlayerId === card.playerId
 
   const realmInfo = useMemo(() => calculateRealmInfo(card.experience, card.realmLevel), [card.experience, card.realmLevel])
 
-  // 装备按槽位语义分两组：tool-* 为技艺工具槽位（服务端同槽唯一），其余归战斗装备；
-  // 配表缺失的条目按战斗装备兜底展示，不静默丢数据。
-  const combatEquipment = useMemo(() => {
+  const { combatEquipment, toolEquipment } = useMemo(() => {
     const combat: NonNullable<PlayerCardDto['equipment']> = []
+    const tools: NonNullable<PlayerCardDto['equipment']> = []
     for (const entry of card.equipment ?? []) {
       const def = findEquipmentInCatalog(equipmentCatalog, entry.itemId)
-      if (!def?.slot.startsWith('tool-')) combat.push(entry)
+      if (def?.slot.startsWith('tool-')) tools.push(entry)
+      else combat.push(entry)
     }
-    return combat
+    return { combatEquipment: combat, toolEquipment: tools }
   }, [card.equipment, equipmentCatalog])
-  const loadoutView = useMemo<UnitLoadoutView>(() => ({
-    skills: (card.abilitySlots ?? []).map((slot, index) => ({
-      slotIndex: index,
-      abilityId: slot.abilityId,
-      level: slot.level,
-    })),
-    equipment: (card.equipment ?? []).map(entry => ({
-      itemId: entry.itemId,
-      enhancementLevel: entry.enhancementLevel,
-    })),
-  }), [card.abilitySlots, card.equipment])
 
   const potionSlots = (card.autoUseSlots ?? []).filter(slot => slot.group === 'potion')
   const generalSlots = (card.autoUseSlots ?? []).filter(slot => slot.group !== 'potion')
@@ -181,66 +171,63 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
         </div>
       </div>
 
-      <section className="player-card-section">
-        <h4 className="player-card-section-title">{t('social.card.sixDimensions')}</h4>
-        <div className="player-card-dims">
-          {DIMENSION_DEFS.map(dim => {
-            const level = Math.floor(Math.max(0, card.coreAttributes?.[dim.levelKey] ?? 0))
-            return (
-              <PillStatLabel
-                key={dim.id}
-                label={t(`insight.root.${dim.id}.name`)}
-                progress={dimensionProgress(level, card.coreAttributes?.[dim.expKey] ?? 0)}
-                tone={dim.tone}
-                tooltip={t(`insight.root.${dim.id}.desc`)}
-                value={level}
-              />
-            )
-          })}
-        </div>
-      </section>
+      {/* 5 大分组 Tab 切换 */}
+      <div className="insight-sub-tabs" role="tablist">
+        <button
+          className={`insight-sub-tab-btn ${activeTab === 'base' ? 'active' : ''}`}
+          onClick={() => setActiveTab('base')}
+          type="button"
+        >
+          {t('insight.combat.groupBase')}
+        </button>
+        <button
+          className={`insight-sub-tab-btn ${activeTab === 'special' ? 'active' : ''}`}
+          onClick={() => setActiveTab('special')}
+          type="button"
+        >
+          {t('insight.combat.groupSpecial')}
+        </button>
+        <button
+          className={`insight-sub-tab-btn ${activeTab === 'loadout' ? 'active' : ''}`}
+          onClick={() => setActiveTab('loadout')}
+          type="button"
+        >
+          {t('insight.combat.groupLoadout')}
+        </button>
+        <button
+          className={`insight-sub-tab-btn ${activeTab === 'dimensions' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dimensions')}
+          type="button"
+        >
+          {t('social.card.sixDimensions')}
+        </button>
+        <button
+          className={`insight-sub-tab-btn ${activeTab === 'techniques' ? 'active' : ''}`}
+          onClick={() => setActiveTab('techniques')}
+          type="button"
+        >
+          {t('social.card.techniqueLevels')}
+        </button>
+      </div>
 
-      {card.attributes ? (
+      {/* 基础战斗属性与特殊博弈属性 Tab */}
+      {(activeTab === 'base' || activeTab === 'special') && (
         <section className="player-card-section player-card-combat-panel-wrap">
-          <CombatAttributePanel attributes={card.attributes} loadout={loadoutView} />
-        </section>
-      ) : null}
-
-      {card.techniqueLevels && Object.keys(card.techniqueLevels).length > 0 && (
-        <section className="player-card-section">
-          <h4 className="player-card-section-title">{t('social.card.techniqueLevels')}</h4>
-          <div className="player-card-dims player-card-grid-2">
-            {TECHNIQUE_DEFS.map(tech => {
-              const level = Math.floor(card.techniqueLevels?.[tech.id] ?? 0)
-              return (
-                <PillStatLabel
-                  key={tech.id}
-                  label={t(`insight.technique.${tech.id}`)}
-                  tone={tech.tone}
-                  tooltip={t(`insight.technique.${tech.id}Tooltip`)}
-                  tooltipTone="gold"
-                  value={t('insight.technique.levelLabel', { level })}
-                />
-              )
-            })}
-          </div>
+          {card.attributes ? (
+            <CombatAttributePanel
+              activeGroup={activeTab}
+              attributes={card.attributes}
+              hideTabs
+            />
+          ) : (
+            <p className="nearby-empty">{t('insight.combat.attributesLoading')}</p>
+          )}
         </section>
       )}
 
-      {!card.attributes && (
-        <>
-          <section className="player-card-section">
-            <h4 className="player-card-section-title">{t('social.card.combatEquipment')}</h4>
-            {combatEquipment.length === 0 ? (
-              <p className="player-card-empty">{t('social.card.noEquipment')}</p>
-            ) : (
-              <div className="player-card-items">
-                {combatEquipment.map(entry => (
-                  <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
-                ))}
-              </div>
-            )}
-          </section>
+      {/* 装配 Tab：功法技能 -> 装备 -> 战斗消耗品（置于装备下方） */}
+      {activeTab === 'loadout' && (
+        <div className="player-card-tab-content">
           <section className="player-card-section">
             <h4 className="player-card-section-title">{t('social.card.abilities')}</h4>
             {(card.abilitySlots ?? []).length === 0 ? (
@@ -260,40 +247,107 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
               </ul>
             )}
           </section>
-        </>
+
+          <section className="player-card-section">
+            <h4 className="player-card-section-title">{t('social.card.combatEquipment')}</h4>
+            {combatEquipment.length === 0 ? (
+              <p className="player-card-empty">{t('social.card.noEquipment')}</p>
+            ) : (
+              <div className="player-card-items">
+                {combatEquipment.map(entry => (
+                  <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {toolEquipment.length > 0 && (
+            <section className="player-card-section">
+              <h4 className="player-card-section-title">{t('social.card.toolEquipment')}</h4>
+              <div className="player-card-items">
+                {toolEquipment.map(entry => (
+                  <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* 战斗消耗品：置于装备下方 */}
+          <section className="player-card-section">
+            <h4 className="player-card-section-title">{t('social.card.consumables')}</h4>
+            {([
+              { id: 'potion', label: t('social.card.potionGroup'), slots: potionSlots },
+              { id: 'general', label: t('social.card.generalGroup'), slots: generalSlots },
+            ]).map(group => (
+              <div className="player-card-consumable-group" key={group.id}>
+                <h5 className="player-card-consumable-label">{group.label}</h5>
+                <div className="player-card-consumable-slots">
+                  {Array.from({ length: CONSUMABLE_GROUP_SLOTS }, (_, index) => {
+                    const slot = group.slots.find(entry => entry.slotIndex === index)
+                    if (!slot?.itemId) {
+                      return <span className="player-card-slot-empty" key={index}>{t('social.card.slotEmpty')}</span>
+                    }
+                    return (
+                      <ItemReference
+                        itemId={slot.itemId}
+                        key={index}
+                        valueContent={(
+                          <span className="underlined-value">
+                            × {formatNumber(Math.floor(slot.quantity))}
+                            {!slot.enabled && <em className="player-card-slot-off">{t('social.card.slotDisabled')}</em>}
+                          </span>
+                        )}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </section>
+        </div>
       )}
 
-      <section className="player-card-section">
-        <h4 className="player-card-section-title">{t('social.card.consumables')}</h4>
-        {([
-          { id: 'potion', label: t('social.card.potionGroup'), slots: potionSlots },
-          { id: 'general', label: t('social.card.generalGroup'), slots: generalSlots },
-        ]).map(group => (
-          <div className="player-card-consumable-group" key={group.id}>
-            <h5 className="player-card-consumable-label">{group.label}</h5>
-            <div className="player-card-consumable-slots">
-              {Array.from({ length: CONSUMABLE_GROUP_SLOTS }, (_, index) => {
-                const slot = group.slots.find(entry => entry.slotIndex === index)
-                if (!slot?.itemId) {
-                  return <span className="player-card-slot-empty" key={index}>{t('social.card.slotEmpty')}</span>
-                }
-                return (
-                  <ItemReference
-                    itemId={slot.itemId}
-                    key={index}
-                    valueContent={(
-                      <span className="underlined-value">
-                        × {formatNumber(Math.floor(slot.quantity))}
-                        {!slot.enabled && <em className="player-card-slot-off">{t('social.card.slotDisabled')}</em>}
-                      </span>
-                    )}
-                  />
-                )
-              })}
-            </div>
+      {/* 六维 Tab */}
+      {activeTab === 'dimensions' && (
+        <section className="player-card-section">
+          <div className="player-card-dims">
+            {DIMENSION_DEFS.map(dim => {
+              const level = Math.floor(Math.max(0, card.coreAttributes?.[dim.levelKey] ?? 0))
+              return (
+                <PillStatLabel
+                  key={dim.id}
+                  label={t(`insight.root.${dim.id}.name`)}
+                  progress={dimensionProgress(level, card.coreAttributes?.[dim.expKey] ?? 0)}
+                  tone={dim.tone}
+                  tooltip={t(`insight.root.${dim.id}.desc`)}
+                  value={level}
+                />
+              )
+            })}
           </div>
-        ))}
-      </section>
+        </section>
+      )}
+
+      {/* 生活技艺 Tab */}
+      {activeTab === 'techniques' && (
+        <section className="player-card-section">
+          <div className="player-card-dims player-card-grid-2">
+            {TECHNIQUE_DEFS.map(tech => {
+              const level = Math.floor(card.techniqueLevels?.[tech.id] ?? 0)
+              return (
+                <PillStatLabel
+                  key={tech.id}
+                  label={t(`insight.technique.${tech.id}`)}
+                  tone={tech.tone}
+                  tooltip={t(`insight.technique.${tech.id}Tooltip`)}
+                  tooltipTone="gold"
+                  value={t('insight.technique.levelLabel', { level })}
+                />
+              )
+            })}
+          </div>
+        </section>
+      )}
     </div>
   )
 })

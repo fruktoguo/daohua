@@ -71,6 +71,9 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
   buffs = [],
   drops,
   loadout,
+  activeGroup: controlledActiveGroup,
+  onGroupChange,
+  hideTabs = false,
 }: {
   /** 服务端权威战斗属性终值（玩家 combat.attributes / 敌怪 attributes / 斗法镜像 opponentAttributes 同一形状） */
   attributes: CombatAttributes
@@ -79,10 +82,17 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
   drops?: readonly MonsterDropDefinition[]
   /** 单位装配（功法槽 + 已穿戴装备）；null/undefined = 不渲染装配 Tab */
   loadout?: UnitLoadoutView | null
+  activeGroup?: CombatAttributeGroupTab
+  onGroupChange?: (group: CombatAttributeGroupTab) => void
+  hideTabs?: boolean
 }): React.JSX.Element {
   const t = useT()
-  const [activeGroup, setActiveGroup] = useState<CombatAttributeGroupTab>('base')
-
+  const [internalGroup, setInternalGroup] = useState<CombatAttributeGroupTab>('base')
+  const activeGroup = controlledActiveGroup ?? internalGroup
+  const setActiveGroup = (group: CombatAttributeGroupTab) => {
+    setInternalGroup(group)
+    onGroupChange?.(group)
+  }
   // 点数制属性按双曲线渲染有效百分比：增伤类 Linear（+x 点 = +x%），减伤/速率类 NonLinear。
   const linearText = (points: number) => PercentValue.linear(points).format()
   const nonLinearText = (points: number) => PercentValue.nonLinear(points).format()
@@ -189,6 +199,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
   return (
     <div className="combat-attribute-panel">
       {/* 属性分组 Tab 切换（复用内视根基/坊市同款二级导航样式） */}
+      {!hideTabs && (
       <div className="insight-sub-tabs" role="tablist">
         <button
           className={`insight-sub-tab-btn ${activeGroup === 'base' ? 'active' : ''}`}
@@ -223,7 +234,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
           </button>
         )}
       </div>
-
+      )}
       {activeGroup === 'base' && (
         <div className="insight-base-layout">
           {renderRows(baseRows, 'insight-base-row')}
