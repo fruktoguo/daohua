@@ -723,6 +723,9 @@ export const ENHANCE_HIGH_TIER_BASE = 0.3
 export const ENHANCE_HIGH_TIER_DECAY = 0.95
 /** 单轮强化基础耗时 = ENHANCE_DURATION_BASE + targetLevel */
 export const ENHANCE_DURATION_BASE = 5
+/** 强化起护等级最低阈值：最低从 +2 开始保护 */
+export const ENHANCE_MIN_PROTECT_LEVEL = 2
+
 
 /** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：base clamp [0.01,0.5]，技艺修正后 clamp [0,0.99]） */
 export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number): number {
@@ -745,6 +748,24 @@ export function enhanceSpiritStoneCost(targetLevel: number): number {
 export function enhanceBaseDurationSeconds(targetLevel: number): number {
   return ENHANCE_DURATION_BASE + Math.max(1, Math.floor(targetLevel))
 }
+/**
+ * 装备强化单轮感悟结算（与服务端 CompleteEnhancementRepeat 镜像）：
+ * - 强化技艺经验：Math.Max(1, Math.Round(BaseExperienceForLevel(itemLevel) * (duration / 10)))
+ * - 六维·神识经验：Math.Round(BaseExperienceForLevel(itemLevel) * (duration / 10))
+ */
+export function calculateEnhancementYields(itemLevel: number, targetLevel: number): {
+  baseExp: number
+  duration: number
+  techniqueExp: number
+  consciousnessExp: number
+} {
+  const baseExp = calculateBaseExperienceForLevel(itemLevel)
+  const duration = enhanceBaseDurationSeconds(targetLevel)
+  const techniqueExp = Math.max(1, Math.round(baseExp * (duration / 10.0)))
+  const consciousnessExp = Math.round(baseExp * (duration / 10.0))
+  return { baseExp, duration, techniqueExp, consciousnessExp }
+}
+
 
 /**
  * 境界展示信息结构体（用于 UI 渲染境界文本、颜色与徽章字形）

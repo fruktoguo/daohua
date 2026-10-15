@@ -5,7 +5,8 @@ import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
-import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import { ACTION_TAB_META, convertTierToLevel, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import { calculateEnhancementYields, ENHANCE_ACTION_ID, SPIRIT_STONE_ITEM_ID } from '../game/combatConstants'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
 import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatAbilitySlot, CombatActionState, CombatAttributes, CombatBuffEntry, EquippedItem, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
@@ -913,10 +914,12 @@ function ArenaLifeGoalCard({
   const actionId = queueEntry?.actionId ?? actionDef?.id ?? ''
   // forge.* 与 craft.* 精炼归炼器，alchemy.* 与 craft.extract-* 提炼归炼丹：两者同为 alchemy 大类，按 id 前缀区分
   const isForging = actionId.startsWith('forge.') || (actionId.startsWith('craft.') && !actionId.startsWith('craft.extract-'))
+  const isEnhancement = queueEntry?.type === 'enhancement' || actionDef?.type === 'enhancement' || actionId === ENHANCE_ACTION_ID
   const title = queueEntry?.type === 'cultivation' ? t('combat.life.tagCultivation')
     : isForging ? t('combat.life.tagForging')
     : queueEntry?.type === 'alchemy' ? t('combat.life.tagAlchemy')
     : queueEntry?.type === 'exploration' ? t('combat.life.tagExploration')
+    : isEnhancement ? t('insight.technique.enhancement')
     : t('combat.life.tagDefault')
   const actionName = resolveQueueEntryDisplayName(queueEntry, actionDef?.name, world, maps) || actionDef?.name || t('combat.life.fallbackActionName')
   const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
@@ -936,7 +939,50 @@ function ArenaLifeGoalCard({
 
   // 产出展示行：首项为主产物（驱动大图标/目标产物/计划总量），其余进「其余产出」清单
   const outputs: LifeYieldRow[] = []
-  if (yieldPreview) {
+  if (isEnhancement) {
+    const targetItemId = queueEntry?.targetItemId
+    const targetLevel = queueEntry?.targetLevel ?? 1
+    const currentTracked = queueEntry?.enhancementCurrentLevel ?? null
+    const targetEq = targetItemId ? findEquipmentInCatalog(equipmentCatalog, targetItemId) : null
+    const targetItem = targetItemId ? findItemInCatalog(itemCatalog, targetItemId) : null
+    const baseName = targetEq?.name || targetItem?.name || targetItemId || t('app.nav.craftingModes.enhancement')
+    const displayName = currentTracked !== null && currentTracked > 0
+      ? `${baseName} +${currentTracked} → +${targetLevel}`
+      : `${baseName} +${targetLevel}`
+    const meta = targetItemId ? resolveItemMetadata(targetItemId) : null
+
+    outputs.push({
+      key: 'enhancement:target',
+      name: displayName,
+      glyph: meta?.glyph ?? '⚔️',
+      tone: meta?.tone ?? 'gold',
+      perRound: 1,
+      total: isInfinite ? null : 1,
+      unit: t('combat.life.unitItem'),
+    })
+
+    const eqTier = targetEq?.tier ?? 1
+    const itemLvl = convertTierToLevel(eqTier)
+    const yields = calculateEnhancementYields(itemLvl, targetLevel)
+    outputs.push({
+      key: 'rootexp:consciousness',
+      name: t('combat.attr.consciousness'),
+      glyph: '☯',
+      tone: 'crimson',
+      perRound: yields.consciousnessExp,
+      total: isInfinite ? null : yields.consciousnessExp * repeats,
+      unit: t('combat.life.unitPoint'),
+    })
+    outputs.push({
+      key: 'technique:enhancement',
+      name: t('insight.technique.enhancement'),
+      glyph: '🔨',
+      tone: 'gold',
+      perRound: yields.techniqueExp,
+      total: isInfinite ? null : yields.techniqueExp * repeats,
+      unit: t('combat.life.unitPoint'),
+    })
+  } else if (yieldPreview) {
     for (const output of yieldPreview.itemOutputs) {
       const meta = resolveItemMetadata(output.itemId)
       const definition = findItemInCatalog(itemCatalog, output.itemId)
@@ -979,7 +1025,12 @@ function ArenaLifeGoalCard({
   const isPendingBreakthrough = yieldPreview?.cultivation?.isPendingBreakthrough === true
 
   // 所需原料分析
-  const inputs = actionDef?.inputs || {}
+  const inputs: Record<string, number> = isEnhancement
+    ? {
+        [SPIRIT_STONE_ITEM_ID]: Math.max(1, queueEntry?.targetLevel ?? 1) * 10,
+        ...(queueEntry?.auxItemId ? { [queueEntry.auxItemId]: 1 } : {}),
+      }
+    : (actionDef?.inputs || {})
   const inputEntries = Object.entries(inputs)
 
   // 进度条 DOM 引用与全局帧级统一同步

@@ -110,7 +110,8 @@ public sealed record QueuedActionState(
     double CompletedRepeats,
     CombatExpeditionState? Expedition = null,
     TravelActionState? Travel = null,
-    ActionParticipationBinding? Participation = null);
+    ActionParticipationBinding? Participation = null,
+    int? EnhancementCurrentLevel = null);
 
 /// <summary>玩家聚合的快照导出与恢复分部。</summary>
 public sealed partial class PlayerAggregate
@@ -170,7 +171,7 @@ public sealed partial class PlayerAggregate
         for (var i = 0; i < _actions.Count; i++)
         {
             var action = _actions[i];
-            actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel, action.Participation);
+            actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel, action.Participation, action.EnhancementCurrentLevel);
         }
         return actions;
     }
@@ -509,7 +510,8 @@ public sealed partial class PlayerAggregate
                 CompletedRepeats = actionState.CompletedRepeats,
                 Expedition = actionState.Expedition,
                 Travel = actionState.Travel,
-                Participation = actionState.Participation
+                Participation = actionState.Participation,
+                EnhancementCurrentLevel = actionState.EnhancementCurrentLevel
             };
             aggregate._actions.Add(action);
         }
@@ -873,7 +875,8 @@ public sealed partial class PlayerAggregate
                         CompletedRepeats = actionState.CompletedRepeats,
                         Expedition = actionState.Expedition,
                         Travel = actionState.Travel,
-                        Participation = actionState.Participation
+                        Participation = actionState.Participation,
+                        EnhancementCurrentLevel = actionState.EnhancementCurrentLevel
                     });
                 }
                 break;

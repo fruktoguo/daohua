@@ -27,7 +27,7 @@ import { TutorialOverlay } from './tutorial/TutorialOverlay'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
-import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
+import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
@@ -141,8 +141,15 @@ function resolveQueueEntryName(
   const localized = world && maps ? localizeActionDisplayText(name, world, maps) : name
   // 目标型行动（装备强化）：名称后缀拼接目标装备名与目标强化等级
   if (entry.targetItemId) {
-    const targetName = useGameStore.getState().items.find(item => item.itemId === entry.targetItemId)?.name ?? entry.targetItemId
-    const levelSuffix = entry.targetLevel != null && entry.targetLevel > 0 ? ` +${Math.floor(entry.targetLevel)}` : ''
+    const state = useGameStore.getState()
+    const targetName = findEquipmentInCatalog(state.equipment, entry.targetItemId)?.name
+      ?? findItemInCatalog(state.items, entry.targetItemId)?.name
+      ?? entry.targetItemId
+    const currentPart = entry.enhancementCurrentLevel != null && entry.enhancementCurrentLevel > 0
+      ? ` +${Math.floor(entry.enhancementCurrentLevel)}`
+      : ''
+    const targetPart = entry.targetLevel != null && entry.targetLevel > 0 ? ` → +${Math.floor(entry.targetLevel)}` : ''
+    const levelSuffix = currentPart ? `${currentPart}${targetPart}` : (targetPart ? ` ${targetPart.trim()}` : '')
     return `${localized} · ${targetName}${levelSuffix}`
   }
   return localized

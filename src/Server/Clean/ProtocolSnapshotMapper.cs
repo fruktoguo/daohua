@@ -515,6 +515,7 @@ public static class ProtocolSnapshotMapper
                 // 强化队列显示：目标/辅助物品在 intent 之外再平铺一行字段，前端队列行免回读嵌套对象。
                 targetItemId = action.Intent.TargetItemId,
                 auxItemId = action.Intent.AuxItemId,
+                enhancementCurrentLevel = action.EnhancementCurrentLevel,
                 status = (byte)action.Status,
                 progressSeconds = action.ProgressSeconds,
                 durationSeconds,

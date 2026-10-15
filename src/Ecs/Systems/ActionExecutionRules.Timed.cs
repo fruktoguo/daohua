@@ -91,8 +91,9 @@ internal static partial class ActionExecutionRules
             var techniqueLevel = TechniqueCatalog.LevelFor(
                 player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
                 gameData?.RealmProgression);
-            if (EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
-                    out var check, out var reason) is null)
+            var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
+                    out var check, out var reason, action.EnhancementCurrentLevel);
+            if (prep is null)
             {
                 if (check == EnhancementRules.Check.TargetReached)
                 {
@@ -106,6 +107,10 @@ internal static partial class ActionExecutionRules
                 availableHere = true;
                 hasInputs = false;
                 blockedReason = reason;
+            }
+            else
+            {
+                action.EnhancementCurrentLevel = prep.CurrentLevel;
             }
         }
         if (!availableHere || !hasInputs)
@@ -703,7 +708,7 @@ internal static partial class ActionExecutionRules
             gameData?.RealmProgression);
         var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
         var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
-            out var check, out var reason);
+            out var check, out var reason, action.EnhancementCurrentLevel);
         if (prep is null)
         {
             // 轮间状态漂移（材料被消耗/装备被移除/目标已达成）：按开轮准入同语义回退为阻塞或提前完成，
@@ -723,6 +728,7 @@ internal static partial class ActionExecutionRules
         }
         var outcome = EnhancementRules.Roll(action.Id, action.CompletedRepeats, prep);
         var resultLevel = EnhancementRules.ResultLevel(prep, outcome);
+        action.EnhancementCurrentLevel = resultLevel;
         var fromKey = EnhancementRules.KeyFor(prep.ItemId, prep.CurrentLevel);
         var toKey = EnhancementRules.KeyFor(prep.ItemId, resultLevel);
         action.ProgressSeconds = 0;
@@ -773,6 +779,18 @@ internal static partial class ActionExecutionRules
                 ? $"强化成功：{prep.ItemId} 提升至 +{resultLevel}。"
                 : $"强化失败：{prep.ItemId} 回落至 +{resultLevel}。",
             definition.Id));
+        var targetCap = EnhancementRules.MaxLevel;
+        if (action.Intent.Parameters is not null
+            && action.Intent.Parameters.TryGetValue(EnhancementRules.TargetLevelParameter, out var targetParam)
+            && double.IsFinite(targetParam) && targetParam > 0)
+            targetCap = Math.Min(EnhancementRules.MaxLevel, (int)Math.Floor(targetParam));
+        if (resultLevel >= targetCap)
+        {
+            events ??= new SimulationEventTail();
+            events.Add(new SimulationEvent(target, "action.completed", definition.Name, definition.Id));
+            player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: atUnix);
+            return;
+        }
         player.FinishActionRound(action.Id, definition.ExecutionKind != ActionExecutionKind.Travel, atUnix);
     }
 }

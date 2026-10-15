@@ -22,6 +22,8 @@ public static class EnhancementRules
     public const string TargetLevelParameter = "targetLevel";
     /// <summary>起始强化等级意图参数键：多变体共存时指定强化的起始等级。</summary>
     public const string InitialLevelParameter = "initialLevel";
+    /// <summary>起护等级意图参数键：当前等级达到该阈值时才开始消耗材料进行保级，最低为 2。</summary>
+    public const string ProtectFromLevelParameter = "protectLevel";
 
     /// <summary>强化判定独立通道：与战斗命中/暴击/掉落通道完全隔离，不扰战斗随机流。</summary>
     private const ulong RollChannel = 0xE0A1;
@@ -159,7 +161,7 @@ public static class EnhancementRules
     /// <param name="reason">非 Ready 时的事件文案。</param>
     public static Preparation? Resolve(PlayerLoadoutState loadout, ActionIntent intent,
         IReadOnlyDictionary<AssetKey, double> holdings, GameDataCatalog? gameData,
-        double techniqueLevel, out Check check, out string reason)
+        double techniqueLevel, out Check check, out string reason, int? currentTrackedLevel = null)
     {
         check = Check.Blocked;
         reason = "强化材料不足，行动受阻。";
@@ -211,35 +213,75 @@ public static class EnhancementRules
             && double.IsFinite(targetParameter) && targetParameter > 0)
             targetCap = Math.Min(MaxLevel, (int)Math.Floor(targetParameter));
 
-        int? preferredLevel = null;
-        if (intent.Parameters is not null
-            && intent.Parameters.TryGetValue(InitialLevelParameter, out var initialParameter)
-            && double.IsFinite(initialParameter) && initialParameter >= 0)
-            preferredLevel = (int)Math.Floor(initialParameter);
-
-        var current = CurrentLevel(loadout, itemId, holdings, targetCap, preferredLevel);
-        if (current < 0)
+        int current;
+        if (currentTrackedLevel is { } tracked)
         {
-            var maxHeld = CurrentLevel(loadout, itemId, holdings, MaxLevel + 1, null);
-            if (maxHeld >= targetCap)
+            if (tracked >= targetCap)
             {
                 check = Check.TargetReached;
                 reason = string.Empty;
                 return null;
             }
-            if (maxHeld >= MaxLevel)
+            if (tracked >= MaxLevel)
             {
                 reason = "装备已达强化上限。";
                 return null;
             }
-            reason = "未持有可用目标装备，强化受阻。";
-            return null;
+            var heldKey = KeyFor(itemId, tracked);
+            var wornCount = 0;
+            for (var i = 0; i < loadout.Equipment.Count; i++)
+            {
+                var slot = loadout.Equipment[i];
+                if (string.Equals(slot.ItemId, itemId.Value, StringComparison.Ordinal)
+                    && (int)Math.Floor(slot.EnhancementLevel) == tracked)
+                    wornCount++;
+            }
+            if (holdings.GetValueOrDefault(heldKey) - wornCount < 1)
+            {
+                reason = "未持有可用目标装备，强化受阻。";
+                return null;
+            }
+            current = tracked;
+        }
+        else
+        {
+            int? preferredLevel = null;
+            if (intent.Parameters is not null
+                && intent.Parameters.TryGetValue(InitialLevelParameter, out var initialParameter)
+                && double.IsFinite(initialParameter) && initialParameter >= 0)
+                preferredLevel = (int)Math.Floor(initialParameter);
+
+            current = CurrentLevel(loadout, itemId, holdings, targetCap, preferredLevel);
+            if (current < 0)
+            {
+                var maxHeld = CurrentLevel(loadout, itemId, holdings, MaxLevel + 1, null);
+                if (maxHeld >= targetCap)
+                {
+                    check = Check.TargetReached;
+                    reason = string.Empty;
+                    return null;
+                }
+                if (maxHeld >= MaxLevel)
+                {
+                    reason = "装备已达强化上限。";
+                    return null;
+                }
+                reason = "未持有可用目标装备，强化受阻。";
+                return null;
+            }
         }
         var target = current + 1;
         var spiritStoneCost = SpiritStoneCostFor(target);
         if (holdings.GetValueOrDefault(new AssetKey(new ItemId(SpiritStoneItemId))) < spiritStoneCost)
             return null;
-        if (protectionItemId is { } protectionId)
+        var protectLevel = 0;
+        if (intent.Parameters is not null
+            && intent.Parameters.TryGetValue(ProtectFromLevelParameter, out var protectParameter)
+            && double.IsFinite(protectParameter))
+            protectLevel = Math.Max(2, (int)Math.Floor(protectParameter));
+
+        ItemId? effectiveProtectionItemId = null;
+        if (protectionItemId is { } protectionId && current >= protectLevel)
         {
             var protectionKey = new AssetKey(protectionId);
             // 保护材料仅限背包内未装备件（扣除身上穿戴的 0 级件）
@@ -260,11 +302,12 @@ public static class EnhancementRules
                 reason = "强化保护材料不足，行动受阻。";
                 return null;
             }
+            effectiveProtectionItemId = protectionId;
         }
         check = Check.Ready;
         reason = string.Empty;
         return new Preparation(itemId, current, target, spiritStoneCost,
-            protectionItemId, SuccessRate(target, techniqueLevel));
+            effectiveProtectionItemId, SuccessRate(target, techniqueLevel));
     }
 
     /// <summary>

@@ -222,7 +222,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     CompletedRepeats = action.CompletedRepeats,
                     Expedition = action.Expedition,
                     Travel = action.Travel,
-                    Participation = action.Participation
+                    Participation = action.Participation,
+                    EnhancementCurrentLevel = action.EnhancementCurrentLevel
                 });
             }
             entity.AddComponent<PlayerActionQueueMutationComponent>().Sink
@@ -1041,7 +1042,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 CompletedRepeats = action.CompletedRepeats,
                 Expedition = action.Expedition,
                 Travel = action.Travel,
-                Participation = action.Participation
+                Participation = action.Participation,
+                EnhancementCurrentLevel = action.EnhancementCurrentLevel
             });
         }
         var inventory = entity.GetOrAddComponent<PlayerInventoryComponent>();
@@ -1064,7 +1066,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var settings = entity.GetComponent<PlayerSettingsComponent>()!;
         var duel = entity.GetComponent<PlayerDuelComponent>()!;
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
-        var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel, a.Participation)).ToArray();
+        var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel, a.Participation, a.EnhancementCurrentLevel)).ToArray();
         var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.OfflineSinceAt, identity.StateVersion, identity.GameDataFingerprint,
             new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience, progression.Progression.TraitIds.Count > 0 ? progression.Progression.TraitIds.ToArray() : null, progression.Progression.DefeatedMonsterIds.Count > 0 ? progression.Progression.DefeatedMonsterIds.ToArray() : null),
             new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId, world.World.NodeBuildingUsages),

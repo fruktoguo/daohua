@@ -762,6 +762,9 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       : (typeof object(intent.parameters).targetLevel === 'number' && Number.isFinite(object(intent.parameters).targetLevel)
           ? object(intent.parameters).targetLevel as number
           : null)
+    const enhancementCurrentLevel = typeof row.enhancementCurrentLevel === 'number' && Number.isFinite(row.enhancementCurrentLevel)
+      ? row.enhancementCurrentLevel
+      : null
     // 行动参与会话标记：携带 sessionId 与权威散场时刻；非参与行动为 null。
     const participationRow = row.participation
     const participation = participationRow === null || participationRow === undefined
@@ -794,6 +797,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       targetItemId,
       auxItemId,
       targetLevel,
+      enhancementCurrentLevel,
       participation,
     }
     return entry

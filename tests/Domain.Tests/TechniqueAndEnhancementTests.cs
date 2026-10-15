@@ -429,6 +429,129 @@ public sealed class TechniqueAndEnhancementTests
             }, catalog, 0, out check, out _));
         Assert.Equal(EnhancementRules.Check.Blocked, check);
     }
+    /// <summary>
+    /// 起护等级判定：当前等级未达起护线时即使意图携带保护材料也不消耗且失败归零；
+    /// 达到起护线后才检查并消耗保护材料，失败保级；起护等级在参数中最低 clamp 为 2。
+    /// </summary>
+    [Fact]
+    public void EnhancementProtectFromLevelControlsMaterialConsumptionAndOutcome()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var guardOre = new ItemId("item.guard-ore");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑","enhanceProtectionItems":["item.guard-ore"]}""")
+        });
+        var loadout = new PlayerLoadoutState();
+
+        // 意图设定：从 +3 开始保护（protectLevel=3）
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), -1,
+            TargetItemId: sword.Value, AuxItemId: guardOre.Value,
+            Parameters: new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 5,
+                [EnhancementRules.ProtectFromLevelParameter] = 3
+            });
+
+        // 场景 1：当前装备为 +1（未达起护等级 3）
+        // 即使没有保护材料（guardOre 数量为 0），准入依然通过，Preparation.ProtectionItemId 恒为 null
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(sword, "+1")] = 1,
+            [new AssetKey(stone)] = 500
+        };
+        var prep = EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out var check, out _, currentTrackedLevel: 1);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Null(prep!.ProtectionItemId); // 未达线，不启用保护
+
+        // 场景 2：当前装备达到 +3（已达起护等级 3）
+        // 缺乏保护材料时受阻 Blocked
+        holdings.Clear();
+        holdings[new AssetKey(sword, "+3")] = 1;
+        holdings[new AssetKey(stone)] = 500;
+        Assert.Null(EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out check, out _, currentTrackedLevel: 3));
+        Assert.Equal(EnhancementRules.Check.Blocked, check);
+
+        // 补充保护材料后通过，Preparation.ProtectionItemId 激活
+        holdings[new AssetKey(guardOre)] = 2;
+        prep = EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out check, out _, currentTrackedLevel: 3);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(guardOre, prep!.ProtectionItemId);
+
+        // 场景 3：参数传入 protectLevel=1 时，服务端强制钳制为最低 2
+        var intentLow = intent with
+        {
+            Parameters = new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 5,
+                [EnhancementRules.ProtectFromLevelParameter] = 1 // 试图设定为 1
+            }
+        };
+        holdings.Clear();
+        holdings[new AssetKey(sword, "+1")] = 1;
+        holdings[new AssetKey(stone)] = 500;
+        // +1 件未达最低阈值 2，因此仍不消耗保护
+        prep = EnhancementRules.Resolve(loadout, intentLow, holdings, catalog, 0, out check, out _, currentTrackedLevel: 1);
+        Assert.NotNull(prep);
+        Assert.Null(prep!.ProtectionItemId);
+    }
+
+    /// <summary>
+    /// 多件同名装备连续冲阶（单品锁定验证）：玩家背包持有多件同名基础装备（5 件 +0 铁剑），
+    /// 设定强化目标为 +3，执行多轮强化；系统必须锁定同一件装备持续强化，绝对不得轮番把多件装备都冲到 +1；
+    /// 目标达成后行动出队，背包中其余 4 件 +0 原封不动。
+    /// </summary>
+    [Fact]
+    public void EnhancementLocksOntoSingleItemWithoutCyclingThroughBagDuplicates()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var enhance = new ActionDefinition(new ActionId("enhance.equipment"), "装备强化",
+            ActionKind.Enhancement, 0, new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Enhancement);
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑","tier":1}""")
+        };
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([enhance]),
+            rawEquipments: rawEquipments,
+            realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
+        var player = CreatePlayer("专一强化者");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+
+        // 背包持有 5 件 +0 测试剑与充裕灵石
+        var wallet = CreateWallet(player,
+            (new AssetKey(sword), 5), (new AssetKey(stone), 5000));
+
+        // 目标为 +3，无限循环直到目标达成自动出队
+        player.Enqueue(new ActionIntent(enhance.Id, -1,
+            TargetItemId: sword.Value,
+            Parameters: new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 3,
+                [EnhancementRules.InitialLevelParameter] = 0
+            }), Baseline, catalog.Actions);
+
+        // 模拟推进多轮（由于判定概率，推进足够长的时间直到达到 +3 出队或完成）
+        var now = Baseline;
+        for (var step = 0; step < 50; step++)
+        {
+            if (player.Actions.Count == 0) break;
+            now = now.AddSeconds(10);
+            var result = SimulationEngine.AdvanceTo(player, now, catalog, wallet);
+            result.AssetDeltas.ToList().ForEach(wallet.Apply);
+        }
+
+        // 核心不变量断言：
+        // 1. 其余 4 件 +0 测试剑绝对原封不动！绝不能发生“多件都被强化成 +1”的缺陷！
+        // 2. 目标件已达到 +3，行动圆满完成出队（队列已无行动）
+        Assert.Empty(player.Actions);
+        Assert.Equal(4, wallet.Get(new AssetKey(sword)));
+        Assert.Equal(1, wallet.Get(new AssetKey(sword, "+3")));
+        Assert.Equal(0, wallet.Get(new AssetKey(sword, "+1")));
+        Assert.Equal(0, wallet.Get(new AssetKey(sword, "+2")));
+    }
 
     /// <summary>
     /// 聚灵阵盘为普通持续消耗品：入场自动消耗 1 件充入 300s（战斗时钟扣减），

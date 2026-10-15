@@ -73,9 +73,10 @@ public static class TimedActionDurationRules
                     && double.IsFinite(initialParam) && initialParam >= 0)
                     preferredLevel = (int)Math.Floor(initialParam);
             }
-            var current = action.Intent.TargetItemId is { } targetText
-                ? EnhancementRules.CurrentLevel(player.Loadout, new ItemId(targetText), holdings, targetCap, preferredLevel)
-                : -1;
+            var current = action.EnhancementCurrentLevel
+                ?? (action.Intent.TargetItemId is { } targetText
+                    ? EnhancementRules.CurrentLevel(player.Loadout, new ItemId(targetText), holdings, targetCap, preferredLevel)
+                    : -1);
             targetLevel = current >= 0 ? current + 1 : null;
         }
 
@@ -100,10 +101,10 @@ public static class TimedActionDurationRules
         int? targetLevel = null;
         if (definition.Kind == ActionKind.Enhancement)
         {
-            var targetId = action.Intent.TargetItemId;
-            var current = targetId is not null && state.Loadout.Equipment is { } slots
-                ? (int)(slots.FirstOrDefault(s => string.Equals(s.ItemId, targetId, StringComparison.Ordinal))?.EnhancementLevel ?? 0)
-                : 0;
+            var current = action.EnhancementCurrentLevel
+                ?? (action.Intent.Parameters is not null && action.Intent.Parameters.TryGetValue(EnhancementRules.InitialLevelParameter, out var initialParam) && double.IsFinite(initialParam)
+                    ? (int)Math.Floor(initialParam)
+                    : 0);
             targetLevel = current + 1;
         }
 

@@ -107,6 +107,9 @@ export const appZh = {
       protectionMaterial: '选择保护材料',
       protectionMaterialAria: '强化保护材料',
       protectionOwned: '持有 {n}',
+      protectLevel: '起护等级',
+      protectLevelDesc: '当前等级达到该值时才消耗保护材料（最低 +2）',
+      protectLevelAria: '强化保护起始等级',
       repeats: '重复次数',
       repeatsAria: '强化重复次数',
       submit: '加入强化队列',
@@ -383,6 +386,7 @@ export const appZh = {
     // 角色立绘形象
     avatar: {
       defaultName: '女剑修',
+      maleName: '男剑修',
     },
     // 设置页面
     settings: {

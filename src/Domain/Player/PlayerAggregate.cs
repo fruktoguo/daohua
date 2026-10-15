@@ -453,6 +453,8 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
     public TravelActionState? Travel { get; internal set; }
     /// <summary>行动参与绑定：共享剧本规格与权威散场时刻。</summary>
     public ActionParticipationBinding? Participation { get; internal set; }
+    /// <summary>强化行动当前强化的物品变体等级（单件锁定追踪）</summary>
+    public int? EnhancementCurrentLevel { get; internal set; }
 
     TravelActionState? Domain.Simulation.IPlayerActionState.Travel { get => Travel; set => Travel = value; }
     CombatExpeditionState? Domain.Simulation.IPlayerActionState.Expedition { get => Expedition; set => Expedition = value; }
@@ -461,6 +463,7 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
     double Domain.Simulation.IPlayerActionState.ProgressSeconds { get => ProgressSeconds; set => ProgressSeconds = value; }
     double Domain.Simulation.IPlayerActionState.RemainingRepeats { get => RemainingRepeats; set => RemainingRepeats = value; }
     double Domain.Simulation.IPlayerActionState.CompletedRepeats { get => CompletedRepeats; set => CompletedRepeats = value; }
+    int? Domain.Simulation.IPlayerActionState.EnhancementCurrentLevel { get => EnhancementCurrentLevel; set => EnhancementCurrentLevel = value; }
 
     /// <summary>深拷贝当前行动状态副本</summary>
     public QueuedAction Clone() => new(Id, Intent, EnqueuedAt)
@@ -471,7 +474,8 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
         CompletedRepeats = CompletedRepeats,
         Expedition = Expedition,
         Travel = Travel,
-        Participation = Participation
+        Participation = Participation,
+        EnhancementCurrentLevel = EnhancementCurrentLevel,
     };
 }
 

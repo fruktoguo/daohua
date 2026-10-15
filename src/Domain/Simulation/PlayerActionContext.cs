@@ -19,6 +19,8 @@ public interface IPlayerActionState
     CombatExpeditionState? Expedition { get; set; }
     /// <summary>移动行动当前路径与路段行进状态；普通行动为 null。</summary>
     TravelActionState? Travel { get; set; }
+    /// <summary>强化行动当前强化的物品变体等级（单件锁定追踪，防止多件同名装备被轮番强化）；非强化行动为 null。</summary>
+    int? EnhancementCurrentLevel { get; set; }
     /// <summary>行动参与绑定（会话引用、消费游标与权威散场时刻）；非参与行动为 null。</summary>
     Domain.Player.ActionParticipationBinding? Participation => null;
 }
