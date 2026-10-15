@@ -130,6 +130,84 @@
     ]
   },
   {
+    "id": "forge.jinfeng-scarf",
+    "name": "劲风巾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.jinfeng-scarf",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.qingpi-armor",
+    "name": "轻皮甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.qingpi-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.jixing-pants",
+    "name": "疾行裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.jixing-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
     "id": "forge.fan-tie-dart",
     "name": "兽骨匕",
     "description": "",
@@ -560,7 +638,7 @@
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
-      "equipment.shufa-scarf": 2
+      "equipment.jinfeng-scarf": 2
     },
     "yields": [
       {
@@ -587,7 +665,7 @@
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1,
-      "equipment.baina-armor": 2
+      "equipment.qingpi-armor": 2
     },
     "yields": [
       {
@@ -614,7 +692,7 @@
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
-      "equipment.zhakou-pants": 2
+      "equipment.jixing-pants": 2
     },
     "yields": [
       {

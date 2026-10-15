@@ -202,4 +202,59 @@ public sealed class CombatAttributePointsTests
         Assert.True(redArmyResolved.MagicResistance > windResolved.MagicResistance);
         Assert.True(redArmyResolved.MaxHitpoints > windResolved.MaxHitpoints);
     }
+
+    /// <summary>
+    /// T1 物理防御【江湖百炼套】与物理输出【疾风短打套】穿戴验证：
+    /// 百炼套：物理减伤 +6% (各 2%)，威胁增幅 +35% (衣服 15%、头腿各 10%)，无物理增伤；
+    /// 疾风套：物理增伤 +6% (各 2%)，物攻/命中/暴击提升，无物理减伤与威胁增幅。
+    /// </summary>
+    [Fact]
+    public void T1PhysicalArmorSuitesEquippedAttributesTest()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "T1装备测试", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+
+        // 1. 穿戴 T1 江湖百炼生存套（束发巾、百衲甲、扎口裤）
+        var bailianSlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.shufa-scarf", 0),
+            new PlayerEquipmentSlot("equipment.baina-armor", 0),
+            new PlayerEquipmentSlot("equipment.zhakou-pants", 0),
+        };
+        player.ReplaceCombatSlots([], bailianSlots);
+        var bailianResolved = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 物理减伤 = 2 + 2 + 2 = 6%
+        Assert.Equal(6, bailianResolved.PhysicalDamageReductionPoints);
+        // 威胁增幅 = 10 + 15 + 10 = 35%
+        Assert.Equal(35, bailianResolved.ThreatBonusPoints);
+        // 无物理增伤
+        Assert.Equal(0, bailianResolved.PhysicalDamageBonusPoints);
+
+        // 2. 穿戴 T1 疾风短打输出套（劲风巾、轻皮甲、疾行裤）
+        var jifengSlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.jinfeng-scarf", 0),
+            new PlayerEquipmentSlot("equipment.qingpi-armor", 0),
+            new PlayerEquipmentSlot("equipment.jixing-pants", 0),
+        };
+        player.ReplaceCombatSlots([], jifengSlots);
+        var jifengResolved = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 物理增伤 = 2 + 2 + 2 = 6%
+        Assert.Equal(6, jifengResolved.PhysicalDamageBonusPoints);
+        // 无物理减伤
+        Assert.Equal(0, jifengResolved.PhysicalDamageReductionPoints);
+        // 无威胁增幅
+        Assert.Equal(0, jifengResolved.ThreatBonusPoints);
+
+        // 物理输出套攻击与暴击显著高于生存套
+        Assert.True(jifengResolved.PhysicalAttack > bailianResolved.PhysicalAttack);
+        Assert.True(jifengResolved.Critical > bailianResolved.Critical);
+        Assert.True(jifengResolved.Accuracy > bailianResolved.Accuracy);
+        // 生存套双防与生命显著高于输出套
+        Assert.True(bailianResolved.Armor > jifengResolved.Armor);
+        Assert.True(bailianResolved.MagicResistance > jifengResolved.MagicResistance);
+        Assert.True(bailianResolved.MaxHitpoints > jifengResolved.MaxHitpoints);
+    }
 }
