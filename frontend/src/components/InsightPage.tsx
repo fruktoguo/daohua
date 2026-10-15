@@ -88,7 +88,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         bonuses: [
           { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel * 12)}`, tone: 'emerald' as PillTone },
           { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel)}`, tone: 'bronze' as PillTone },
-          { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel)}`, tone: 'emerald' as PillTone },
+          { value: `${Math.floor(staminaLevel)}% +${Number((staminaLevel * 0.5).toFixed(1))}`, tone: 'emerald' as PillTone },
         ],
       },
       {
@@ -99,7 +99,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         bonuses: [
           { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel * 7)}`, tone: 'cyan' as PillTone },
           { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel)}`, tone: 'violet' as PillTone },
-          { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel)}`, tone: 'cyan' as PillTone },
+          { value: `${Math.floor(meridiansLevel)}% +${Number((meridiansLevel * 0.5).toFixed(1))}`, tone: 'cyan' as PillTone },
         ],
       },
       {

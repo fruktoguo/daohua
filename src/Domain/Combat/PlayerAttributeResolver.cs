@@ -222,13 +222,15 @@ public static class PlayerAttributeResolver
         var core = loadout.CoreAttributes;
         var root = core.Levels(catalog.RealmProgression);
         // 六维每点同时提供固定值与百分比（总纲 §3.2.2/§7.5）：固定值并入基础池，百分比为独立乘区；
-        // 体魄/根骨每点 +12 生命、经脉/根骨每点 +7 灵力，其余映射属性每点 +1（神识术攻 +2）。
+        // 体魄/根骨每点 +12 生命、经脉/根骨每点 +7 灵力、神识术攻 +2、体魄回血与经脉回蓝每点 +0.5，其余映射属性每点 +1。
         double RootFlat(string key) => key switch
         {
             "maxHitpoints" => (root.Stamina + root.Bone) * 12,
             "maxManapoints" => (root.Meridians + root.Bone) * 7,
-            "physicalArmor" or "hitpointRegen" => root.Stamina,
-            "spellResistance" or "manapointRegen" => root.Meridians,
+            "physicalArmor" => root.Stamina,
+            "hitpointRegen" => root.Stamina * 0.5,
+            "spellResistance" => root.Meridians,
+            "manapointRegen" => root.Meridians * 0.5,
             "physicalAttack" or "criticalChance" or "break" => root.Attack,
             "evasion" or "criticalAvoidance" => root.Agility,
             "parry" => root.Bone + root.Agility,

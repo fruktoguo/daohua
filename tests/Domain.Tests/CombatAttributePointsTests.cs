@@ -281,4 +281,46 @@ public sealed class CombatAttributePointsTests
         Assert.True(bailianResolved.MagicResistance > jifengResolved.MagicResistance);
         Assert.True(bailianResolved.MaxHitpoints > jifengResolved.MaxHitpoints);
     }
+
+    /// <summary>
+    /// 六维根基换算规约测试（总纲 §3.2.2/§7.5）：
+    /// 体魄提供每点 +0.5 固定值和 +1% 生命回复；经脉提供每点 +0.5 固定值和 +1% 灵力回复。
+    /// </summary>
+    [Fact]
+    public void StaminaAndMeridiansRegenScalingTest()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "六维回复测试", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+
+        // 0 级六维基准
+        var baseline = PlayerAttributeResolver.Resolve(player, catalog);
+        var baseHpRegen = catalog.BaseAttributes!.At(1).HpRegen;
+        var baseMpRegen = catalog.BaseAttributes!.At(1).MpRegen;
+        Assert.Equal(baseHpRegen, baseline.HpRegen);
+        Assert.Equal(baseMpRegen, baseline.MpRegen);
+
+        // 设定体魄与经脉等级为 10 级
+        const int targetLevel = 10;
+        var expFor10 = RootAttributeCurve.ExpForLevel(targetLevel, catalog.RealmProgression);
+        var doc = player.ExportState();
+        player.RestoreFrom(doc with
+        {
+            Loadout = doc.Loadout with
+            {
+                CoreAttributes = new PlayerCoreAttributes(StaminaExp: expFor10, MeridiansExp: expFor10)
+            }
+        });
+
+        var resolved = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 体魄加成：每点提供 +0.5 固定值和 +1% 百分比
+        // 期望：(baseHpRegen + targetLevel * 0.5) * (1 + targetLevel * 0.01)
+        var expectedHpRegen = (baseHpRegen + targetLevel * 0.5) * (1 + targetLevel * 0.01);
+        Assert.Equal(expectedHpRegen, resolved.HpRegen, 6);
+
+        // 经脉加成：每点提供 +0.5 固定值和 +1% 百分比
+        // 期望：(baseMpRegen + targetLevel * 0.5) * (1 + targetLevel * 0.01)
+        var expectedMpRegen = (baseMpRegen + targetLevel * 0.5) * (1 + targetLevel * 0.01);
+        Assert.Equal(expectedMpRegen, resolved.MpRegen, 6);
+    }
 }

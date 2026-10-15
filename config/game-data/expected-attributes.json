@@ -209,7 +209,7 @@
   ],
   "fourMultiplierFormula": "FinalStat = (BaseFlat + RootFlat) * (1 + Root%) * (1 + Equip%) * (1 + Buff%)",
   "rules": {
-    "rootScalingFormula": "RootFlat = ExpectPoints(Level) × 每点固定值（生命+12/灵力+7/术攻+2/其余+1），Root% = ExpectPoints(Level)%——每点六维同时提供固定值与百分比加成（体魄:生命+12且+1%/护甲+1且+1%/回血+1且+1%，经脉:灵力+7且+1%/法抗+1且+1%/回蓝+1且+1%，根骨:生命+12且+1%/灵力+7且+1%/化解+1且+1%，力道:物攻+1且+1%/暴击+1且+1%/破招+1且+1%，神识:术攻+2且+2%/命中+1且+1%，身法:闪避+1且+1%/免爆+1且+1%/化解+1且+1%）",
+    "rootScalingFormula": "RootFlat = ExpectPoints(Level) × 每点固定值（生命+12/灵力+7/术攻+2/其余+1），Root% = ExpectPoints(Level)%——每点六维同时提供固定值与百分比加成（体魄:生命+12且+1%/护甲+1且+1%/回血+0.5且+1%，经脉:灵力+7且+1%/法抗+1且+1%/回蓝+0.5且+1%，根骨:生命+12且+1%/灵力+7且+1%/化解+1且+1%，力道:物攻+1且+1%/暴击+1且+1%/破招+1且+1%，神识:术攻+2且+2%/命中+1且+1%，身法:闪避+1且+1%/免爆+1且+1%/化解+1且+1%）",
     "singleBuffSingleStatFormula": "EquipPieceBase / 4 (精确整数百分比)",
     "singleBuffAllStatsFormula": "EquipPieceBase / 48",
     "expectedBuffCountFormula": "round(Tier * 1.1^Tier)",

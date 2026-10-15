@@ -30,7 +30,7 @@ export const insightZh = {
       stamina: {
         name: '体魄',
         pinyin: 'tǐ pò',
-        desc: '肉身如炉，百炼成钢。\n每点提升 1% +12 生命上限、1% +1 护甲、1% +1 生命回复。',
+        desc: '肉身如炉，百炼成钢。\n每点提升 1% +12 生命上限、1% +1 护甲、1% +0.5 生命回复。',
         benefit1: '生命上限',
         benefit2: '护甲',
         benefit3: '生命回复',
@@ -38,7 +38,7 @@ export const insightZh = {
       meridians: {
         name: '经脉',
         pinyin: 'jīng mài',
-        desc: '百脉俱通，灵气自生。\n每点提升 1% +7 灵力上限、1% +1 法抗、1% +1 灵力回复。',
+        desc: '百脉俱通，灵气自生。\n每点提升 1% +7 灵力上限、1% +1 法抗、1% +0.5 灵力回复。',
         benefit1: '灵力上限',
         benefit2: '法抗',
         benefit3: '灵力回复',
