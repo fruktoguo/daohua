@@ -37,7 +37,8 @@
       "spellResistance": 0.06
     },
     "flatStats": {
-      "maxHitpoints": 10
+      "maxHitpoints": 10,
+      "physicalDamageReductionPoints": 4
     }
   },
   {
@@ -97,7 +98,8 @@
       "spellResistance": 0.08
     },
     "flatStats": {
-      "maxHitpoints": 16
+      "maxHitpoints": 16,
+      "physicalDamageReductionPoints": 6
     }
   },
   {

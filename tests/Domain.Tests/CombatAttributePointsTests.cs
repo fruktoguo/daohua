@@ -175,6 +175,18 @@ public sealed class CombatAttributePointsTests
         Assert.Equal(50, redArmyResolved.ThreatBonusPoints);
         // 无物理增伤
         Assert.Equal(0, redArmyResolved.PhysicalDamageBonusPoints);
+        // 1b. 搭配副手赤铜盾：物理减伤由 6% 提升至 12% (6% + 6%)
+        var redArmyWithShieldSlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.chijin-helmet", 0),
+            new PlayerEquipmentSlot("equipment.yulin-armor", 0),
+            new PlayerEquipmentSlot("equipment.tazhen-greaves", 0),
+            new PlayerEquipmentSlot("equipment.xuanjia-guard", 0),
+        };
+        player.ReplaceCombatSlots([], redArmyWithShieldSlots);
+        var redArmyWithShieldResolved = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(12, redArmyWithShieldResolved.PhysicalDamageReductionPoints);
+
 
         // 2. 穿戴破罡裂风输出套（斩风巾、裂罡甲、踏风裤）
         var windSlots = new[]
@@ -230,6 +242,18 @@ public sealed class CombatAttributePointsTests
         Assert.Equal(35, bailianResolved.ThreatBonusPoints);
         // 无物理增伤
         Assert.Equal(0, bailianResolved.PhysicalDamageBonusPoints);
+        // 1b. 搭配副手精铁盾：物理减伤由 6% 提升至 10% (6% + 4%)
+        var bailianWithShieldSlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.shufa-scarf", 0),
+            new PlayerEquipmentSlot("equipment.baina-armor", 0),
+            new PlayerEquipmentSlot("equipment.zhakou-pants", 0),
+            new PlayerEquipmentSlot("equipment.tiepi-guard", 0),
+        };
+        player.ReplaceCombatSlots([], bailianWithShieldSlots);
+        var bailianWithShieldResolved = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(10, bailianWithShieldResolved.PhysicalDamageReductionPoints);
+
 
         // 2. 穿戴 T1 疾风短打输出套（劲风巾、轻皮甲、疾行裤）
         var jifengSlots = new[]

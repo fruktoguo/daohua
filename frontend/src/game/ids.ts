@@ -1149,7 +1149,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'off-hand',
     tier: 1,
     baseStatRatios: { physicalArmor: 0.06, spellResistance: 0.06 },
-    flatStats: { maxHitpoints: 10 },
+    flatStats: { maxHitpoints: 10, physicalDamageReductionPoints: 4 },
   },
   'equipment.ganlu-flask': {
     equipmentId: 'equipment.ganlu-flask',
@@ -1212,7 +1212,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'off-hand',
     tier: 2,
     baseStatRatios: { physicalArmor: 0.08, spellResistance: 0.08 },
-    flatStats: { maxHitpoints: 16 },
+    flatStats: { maxHitpoints: 16, physicalDamageReductionPoints: 6 },
   },
   'equipment.huichun-bell': {
     equipmentId: 'equipment.huichun-bell',
