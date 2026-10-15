@@ -1,13 +1,13 @@
 :root {
   color: #e9e3d2;
-  background: #070604;
+  background: #151412;
   font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, SimSun, serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   font-weight: var(--font-weight-regular);
-  --bg: #070604;
-  --bg-raised: #0e0c07;
-  --panel: #0e0c07;
+  --bg: #151412;
+  --bg-raised: #1d1c19;
+  --panel: #1b1a17;
   --gold: #c9b46d;
   --gold-bright: #e8d69a;
   --gold-dim: #6e6038;
@@ -45,8 +45,8 @@ body {
   overflow: hidden;
   color: var(--text);
   background:
-    radial-gradient(1200px 700px at 50% -10%, #14110a 0%, transparent 60%),
-    radial-gradient(900px 600px at 50% 115%, #100d07 0%, transparent 55%),
+    radial-gradient(1200px 700px at 50% -10%, #201e18 0%, transparent 60%),
+    radial-gradient(900px 600px at 50% 115%, #1c1a14 0%, transparent 55%),
     var(--bg);
   font-size: 14px;
   line-height: 1.5;
@@ -1095,13 +1095,25 @@ input[type="checkbox"] {
 }
 
 .queue-combat-vital > strong {
-  font-weight: var(--font-weight-regular);
+  color: #f5f0e6;
+  font-weight: 500;
+  letter-spacing: 0.2px;
   white-space: nowrap;
+  text-shadow:
+    1px 0 0 rgba(0, 0, 0, 0.85),
+    -1px 0 0 rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(0, 0, 0, 0.85),
+    0 -1px 0 rgba(0, 0, 0, 0.85),
+    1px 1px 0 rgba(0, 0, 0, 0.85),
+    -1px 1px 0 rgba(0, 0, 0, 0.85),
+    1px -1px 0 rgba(0, 0, 0, 0.85),
+    -1px -1px 0 rgba(0, 0, 0, 0.85),
+    0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
-/* 条内前缀标签（己/敌）沿用旧独立标签的暗色弱化口径 */
+/* 条内前缀标签（己/敌）：微透玉白弱化，不受主题反转污染，在深暗轨与亮色填充上均保持清晰可辨 */
 .queue-combat-vital > strong > span:first-child {
-  color: var(--text-dim);
+  color: rgba(245, 240, 230, 0.75);
 }
 
 .badge {
@@ -3212,11 +3224,9 @@ input[type="checkbox"] {
   padding: 1px 5px;
   font-size: 9px;
   line-height: 1.2;
-  border-color: color-mix(in srgb, var(--item-accent, var(--gold-dim)) 66%, transparent);
-  color: var(--item-accent, var(--gold-bright));
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.6),
-    0 0 5px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 30%, transparent);
+  border-color: rgba(0, 0, 0, 0.55);
+  color: #c5bfb0;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -5195,13 +5205,11 @@ input[type="checkbox"] {
   max-width: 64%;
   overflow: hidden;
   padding: 2px 9px;
-  border: 1px solid color-mix(in srgb, var(--item-accent, var(--gold-dim)) 66%, transparent);
+  border: 1px solid rgba(0, 0, 0, 0.55);
   border-radius: 999px;
-  color: var(--text-dim);
-  background: rgba(7, 8, 6, 0.94);
-  box-shadow:
-    0 3px 9px rgba(0, 0, 0, 0.62),
-    0 0 7px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 30%, transparent);
+  color: #c5bfb0;
+  background: rgba(22, 21, 18, 0.88);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   line-height: 1.35;
@@ -5210,7 +5218,7 @@ input[type="checkbox"] {
 }
 
 .item-corner--top-right { top: -9px; right: -5px; }
-.item-corner--bottom-right { right: -5px; bottom: -9px; color: var(--text); font-family: Arial, sans-serif; }
+.item-corner--bottom-right { right: -5px; bottom: -9px; color: #c8c3b7; font-family: Arial, sans-serif; }
 
 /* 强化等级徽标：左下角 "+N" 胶囊，收进瓦片内部（左侧无外延避免出格），金色高亮与数量区分 */
 .item-corner--bottom-left {

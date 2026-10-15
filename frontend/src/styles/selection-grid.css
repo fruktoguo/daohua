@@ -166,10 +166,10 @@
   border-color: var(--item-accent);
   background:
     linear-gradient(135deg, var(--item-surface), transparent 52%),
-    linear-gradient(0deg, rgba(0, 0, 0, 0.5), rgba(15, 13, 9, 0.82));
+    linear-gradient(0deg, rgba(28, 27, 24, 0.88), rgba(36, 35, 32, 0.94));
   box-shadow:
     inset 2px 0 0 color-mix(in srgb, var(--item-accent) 56%, transparent),
-    inset 0 0 18px rgba(0, 0, 0, 0.36);
+    inset 0 0 14px rgba(0, 0, 0, 0.22);
   transform: none;
   /* 密集网格 hover 高亮不走 transition：实测本路径任意 transition（含 transform）都会逐帧主线程重绘
      （79 格悬停扫过 ~19fps，全禁后 61fps 满帧）。hover 态瞬时切换；动效由 ::before/::after 边缘光的
@@ -177,16 +177,16 @@
 }
 
 .item-tile[data-rarity="mundane"] {
-  --item-accent: rgb(194, 207, 220);
-  --item-glow: rgba(194, 207, 220, 0.42);
-  --item-surface: rgba(194, 207, 220, 0.2);
-  border-width: 1.5px;
+  --item-accent: rgb(170, 178, 188);
+  --item-glow: rgba(170, 178, 188, 0.15);
+  --item-surface: rgba(170, 178, 188, 0.08);
+  border-color: rgba(215, 222, 230, 0.28);
 }
 
 .item-tile[data-rarity="yellow"] {
-  --item-accent: rgb(69, 179, 107);
-  --item-glow: rgba(69, 179, 107, 0.3);
-  --item-surface: rgba(69, 179, 107, 0.17);
+  --item-accent: #2b6e46;
+  --item-glow: rgba(43, 110, 70, 0.22);
+  --item-surface: rgba(43, 110, 70, 0.14);
 }
 
 .item-tile[data-rarity="mystic"] {
@@ -225,7 +225,7 @@
   --item-surface: rgba(236, 86, 72, 0.22);
   background:
     linear-gradient(115deg, rgba(236, 86, 72, 0.24), rgba(229, 151, 43, 0.2) 18%, rgba(227, 204, 63, 0.17) 34%, rgba(69, 179, 107, 0.19) 50%, rgba(37, 184, 216, 0.2) 66%, rgba(123, 97, 209, 0.22) 82%, rgba(210, 79, 183, 0.24)),
-    linear-gradient(0deg, rgba(0, 0, 0, 0.5), rgba(15, 13, 9, 0.82));
+    linear-gradient(0deg, rgba(28, 27, 24, 0.88), rgba(36, 35, 32, 0.94));
   box-shadow:
     inset 2px 0 0 rgba(236, 86, 72, 0.92),
     inset 0 0 0 2px rgba(236, 86, 72, 0.18),
