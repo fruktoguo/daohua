@@ -8908,6 +8908,20 @@ input[type="checkbox"] {
   font-size: 10px;
   font-style: normal;
 }
+.player-card-slot-disabled-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(220, 38, 38, 0.88);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  z-index: 2;
+  pointer-events: none;
+}
 
 /* 传音消息内嵌的队伍链接卡 */
 .party-link-card {

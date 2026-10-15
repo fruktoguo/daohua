@@ -1,13 +1,15 @@
 import { memo, useMemo, useState } from 'react'
 import { calculateRealmInfo, getRootCumulativeExpForLevel } from '../game/combatConstants'
-import { formatNumber } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
+import { resolveItemIconUrl } from '../game/itemIcons'
+import { ConditionedTile } from './ConditionedTile'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../game/ids'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
-import type { PlayerCardDto } from '../network/protocol'
+import type { PlayerCardAutoUseSlotDto, PlayerCardDto } from '../network/protocol'
 import { CharacterAvatar } from './CharacterAvatar'
-import { ItemReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
+import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
@@ -95,11 +97,107 @@ const PlayerCardEquipmentTile = memo(function PlayerCardEquipmentTile({ itemId, 
     </ItemTooltipTarget>
   )
 })
+/** 技能条目只读瓦片：标准 ConditionedTile + ItemTile 格子。 */
+const PlayerCardAbilityTile = memo(function PlayerCardAbilityTile({ abilityId, level }: {
+  abilityId: string | null
+  level: number
+}): React.JSX.Element {
+  const t = useT()
+  const abilities = useGameStore(state => state.abilities)
+  if (!abilityId) {
+    return (
+      <span className="item-use-slot-shell item-use-slot-shell--empty">
+        <span className="item-use-slot item-use-slot--empty">
+          <span>{t('social.card.slotEmpty')}</span>
+        </span>
+      </span>
+    )
+  }
+  const ability = findAbilityInCatalog(abilities, abilityId)
+  const iconUrl = resolveItemIconUrl(abilityId)
+  const lv = Math.max(1, Math.floor(level))
+  const ribbonLabel = ability?.element && ability.element !== 'none'
+    ? t(`combat.encounter.element.${ability.element}`)
+    : formatAbilityCategory(ability?.category)
+
+  return (
+    <ConditionedTile
+      className="abilities-learned-cell"
+      content={ability ? describeAbility(ability, lv) : null}
+      triggerClassName="item-grid-picker-tooltip"
+    >
+      <span
+        className="item-tile combat-ability-cell"
+        data-rarity={ability?.discipline === 'internal' ? 'emperor' : 'mystic'}
+      >
+        <span aria-hidden="true" className="item-type-ribbon"><span>{ribbonLabel}</span></span>
+        <span className="item-corner item-corner--top-right">Lv. {lv}</span>
+        {iconUrl
+          ? <img alt={ability?.name ?? abilityId} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+          : <strong className="item-tile-name">{ability?.name ?? abilityId}</strong>}
+        <span aria-hidden="true" className="item-tile-glow" />
+      </span>
+    </ConditionedTile>
+  )
+})
+
+/** 战斗消耗品条目只读瓦片：标准 ItemTile 格子 + ItemTooltipTarget 悬浮详情。 */
+const PlayerCardConsumableTile = memo(function PlayerCardConsumableTile({ slot }: {
+  slot?: PlayerCardAutoUseSlotDto
+}): React.JSX.Element {
+  const t = useT()
+  const itemCatalog = useGameStore(state => state.items)
+  if (!slot?.itemId) {
+    return (
+      <span className="item-use-slot-shell item-use-slot-shell--empty">
+        <span className="item-use-slot item-use-slot--empty">
+          <span>{t('social.card.slotEmpty')}</span>
+        </span>
+      </span>
+    )
+  }
+  const itemDef = findItemInCatalog(itemCatalog, slot.itemId)
+  const meta = resolveItemMetadata(slot.itemId)
+  const metadata = withItemGrade(
+    meta ?? {
+      label: itemDef?.name ?? slot.itemId,
+      glyph: '🧪',
+      tone: 'emerald',
+      category: resolveItemCategoryLabel(itemDef?.category ?? 'consumable', t),
+      rarity: 'mundane',
+      rarityLabel: '',
+      description: itemDef?.description ?? '',
+      source: '',
+      usage: '',
+    },
+    itemDef?.tier ?? meta?.tier ?? 1,
+  )
+
+  return (
+    <ItemTooltipTarget
+      amount={slot.quantity}
+      definition={itemDef}
+      itemId={slot.itemId}
+      metadata={metadata}
+    >
+      <span className="item-use-slot-shell" data-rarity={metadata.rarity}>
+        <ItemTile
+          amount={slot.quantity}
+          category={metadata.category}
+          className="item-use-slot-cell"
+          itemId={slot.itemId}
+          name={itemDef?.name ?? metadata.label}
+          rarity={metadata.rarity}
+        />
+        {!slot.enabled && <span className="player-card-slot-disabled-badge">{t('social.card.slotDisabled')}</span>}
+      </span>
+    </ItemTooltipTarget>
+  )
+})
 
 /** 角色信息卡正文：身份头 + 修为/身家 + 六维 + 装备/功法/战斗物品分组展示。 */
 const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCardDto }): React.JSX.Element {
   const t = useT()
-  const abilities = useGameStore(state => state.abilities)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const [activeTab, setActiveTab] = useState<'base' | 'special' | 'loadout' | 'dimensions' | 'techniques'>('base')
   const myPlayerId = useGameStore(state => state.playerId)
@@ -233,18 +331,15 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
             {(card.abilitySlots ?? []).length === 0 ? (
               <p className="player-card-empty">{t('social.card.noAbility')}</p>
             ) : (
-              <ul className="player-card-abilities">
+              <div className="abilities-learned-grid">
                 {(card.abilitySlots ?? []).map((slot, index) => (
-                  <li className="player-card-ability" key={slot.abilityId ?? `empty-${index}`}>
-                    <span className="player-card-ability-name">
-                      {slot.abilityId === null
-                        ? t('social.card.slotEmpty')
-                        : findAbilityInCatalog(abilities, slot.abilityId)?.name ?? slot.abilityId}
-                    </span>
-                    <span className="player-card-ability-level">{t('social.card.abilityLevel', { level: Math.floor(slot.level) })}</span>
-                  </li>
+                  <PlayerCardAbilityTile
+                    abilityId={slot.abilityId}
+                    key={slot.abilityId ?? `empty-${index}`}
+                    level={slot.level}
+                  />
                 ))}
-              </ul>
+              </div>
             )}
           </section>
 
@@ -253,7 +348,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
             {combatEquipment.length === 0 ? (
               <p className="player-card-empty">{t('social.card.noEquipment')}</p>
             ) : (
-              <div className="player-card-items">
+              <div className="abilities-learned-grid">
                 {combatEquipment.map(entry => (
                   <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
                 ))}
@@ -264,7 +359,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
           {toolEquipment.length > 0 && (
             <section className="player-card-section">
               <h4 className="player-card-section-title">{t('social.card.toolEquipment')}</h4>
-              <div className="player-card-items">
+              <div className="abilities-learned-grid">
                 {toolEquipment.map(entry => (
                   <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
                 ))}
@@ -281,24 +376,10 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
             ]).map(group => (
               <div className="player-card-consumable-group" key={group.id}>
                 <h5 className="player-card-consumable-label">{group.label}</h5>
-                <div className="player-card-consumable-slots">
+                <div className="abilities-learned-grid">
                   {Array.from({ length: CONSUMABLE_GROUP_SLOTS }, (_, index) => {
                     const slot = group.slots.find(entry => entry.slotIndex === index)
-                    if (!slot?.itemId) {
-                      return <span className="player-card-slot-empty" key={index}>{t('social.card.slotEmpty')}</span>
-                    }
-                    return (
-                      <ItemReference
-                        itemId={slot.itemId}
-                        key={index}
-                        valueContent={(
-                          <span className="underlined-value">
-                            × {formatNumber(Math.floor(slot.quantity))}
-                            {!slot.enabled && <em className="player-card-slot-off">{t('social.card.slotDisabled')}</em>}
-                          </span>
-                        )}
-                      />
-                    )
+                    return <PlayerCardConsumableTile key={index} slot={slot} />
                   })}
                 </div>
               </div>
