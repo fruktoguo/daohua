@@ -20,6 +20,8 @@ public static class EnhancementRules
     public const string SpiritStoneItemId = "currency.spirit-stone";
     /// <summary>目标等级意图参数键：当前强化等级达到该值后行动提前完成出队。</summary>
     public const string TargetLevelParameter = "targetLevel";
+    /// <summary>起始强化等级意图参数键：多变体共存时指定强化的起始等级。</summary>
+    public const string InitialLevelParameter = "initialLevel";
 
     /// <summary>强化判定独立通道：与战斗命中/暴击/掉落通道完全隔离，不扰战斗随机流。</summary>
     private const ulong RollChannel = 0xE0A1;
@@ -72,11 +74,19 @@ public static class EnhancementRules
         => level <= 0 ? new AssetKey(itemId) : new AssetKey(itemId, "+" + level.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>
-    /// 目标装备当前强化等级：仅取背包内（有效余额扣除已穿戴件数后的未装备持存）的 +N 变体最高级；
-    /// 装备中、挂售中均不可作为强化目标；背包内无未装备可用件时返回 -1。
+    /// 目标装备当前强化等级（兼容无上限入参重载）：默认 targetCap=MaxLevel 且无首选等级。
     /// </summary>
     public static int CurrentLevel(PlayerLoadoutState loadout, ItemId itemId,
         IReadOnlyDictionary<AssetKey, double> holdings)
+        => CurrentLevel(loadout, itemId, holdings, MaxLevel, null);
+
+    /// <summary>
+    /// 目标装备当前强化等级：仅取背包内未穿戴且尚未达到目标等级 targetCap 的可用件；
+    /// 若指定了 preferredLevel 且持存可用，优先使用 preferredLevel；
+    /// 装备中、挂售中均不可作为强化目标；背包内无可用件时返回 -1。
+    /// </summary>
+    public static int CurrentLevel(PlayerLoadoutState loadout, ItemId itemId,
+        IReadOnlyDictionary<AssetKey, double> holdings, int targetCap, int? preferredLevel = null)
     {
         var level = -1;
         Span<int> wornCounts = stackalloc int[MaxLevel + 1];
@@ -92,10 +102,18 @@ public static class EnhancementRules
             }
         }
 
+        if (preferredLevel is { } pref && pref >= 0 && pref < targetCap && pref <= MaxLevel)
+        {
+            var prefKey = KeyFor(itemId, pref);
+            var prefAvailable = holdings.GetValueOrDefault(prefKey) - wornCounts[pref];
+            if (prefAvailable >= 1)
+                return pref;
+        }
+
         foreach (var (asset, quantity) in holdings)
         {
             if (asset.ItemId != itemId || quantity < 1 || ParseLevel(asset.Variant) is not { } parsed) continue;
-            if (parsed < 0 || parsed > MaxLevel) continue;
+            if (parsed < 0 || parsed >= targetCap || parsed > MaxLevel) continue;
             var available = quantity - wornCounts[parsed];
             if (available < 1) continue;
             if (parsed > level) level = parsed;
@@ -186,22 +204,35 @@ public static class EnhancementRules
             }
             protectionItemId = auxId;
         }
-        var current = CurrentLevel(loadout, itemId, holdings);
-        if (current < 0 || current >= MaxLevel)
-        {
-            reason = current < 0 ? "未持有可用目标装备，强化受阻。" : "装备已达强化上限。";
-            return null;
-        }
         // 意图目标等级：缺省按上限处理；当前等级已达标时行动提前完成出队。
         var targetCap = MaxLevel;
         if (intent.Parameters is not null
             && intent.Parameters.TryGetValue(TargetLevelParameter, out var targetParameter)
             && double.IsFinite(targetParameter) && targetParameter > 0)
             targetCap = Math.Min(MaxLevel, (int)Math.Floor(targetParameter));
-        if (current >= targetCap)
+
+        int? preferredLevel = null;
+        if (intent.Parameters is not null
+            && intent.Parameters.TryGetValue(InitialLevelParameter, out var initialParameter)
+            && double.IsFinite(initialParameter) && initialParameter >= 0)
+            preferredLevel = (int)Math.Floor(initialParameter);
+
+        var current = CurrentLevel(loadout, itemId, holdings, targetCap, preferredLevel);
+        if (current < 0)
         {
-            check = Check.TargetReached;
-            reason = string.Empty;
+            var maxHeld = CurrentLevel(loadout, itemId, holdings, MaxLevel + 1, null);
+            if (maxHeld >= targetCap)
+            {
+                check = Check.TargetReached;
+                reason = string.Empty;
+                return null;
+            }
+            if (maxHeld >= MaxLevel)
+            {
+                reason = "装备已达强化上限。";
+                return null;
+            }
+            reason = "未持有可用目标装备，强化受阻。";
             return null;
         }
         var target = current + 1;

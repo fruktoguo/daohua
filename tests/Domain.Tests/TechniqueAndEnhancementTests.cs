@@ -199,6 +199,52 @@ public sealed class TechniqueAndEnhancementTests
         holdings[new AssetKey(sword, "+2")] = 1;
         Assert.Equal(2, EnhancementRules.CurrentLevel(loadout, sword, holdings));
     }
+
+    [Fact]
+    public void EnhancementRulesDistinguishMultipleVariantsWhenCoexisting()
+    {
+        var loadout = new PlayerLoadoutState();
+        var sword = new ItemId("equipment.test-sword");
+        // 背包同时持有一把 +20 和一把 +0（无变体）
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(sword, "+20")] = 1,
+            [new AssetKey(sword)] = 1,
+        };
+
+        // 当 targetCap=20 时，+20 已达标被排除，未达标的 +0 被正确选出作为强化目标
+        Assert.Equal(0, EnhancementRules.CurrentLevel(loadout, sword, holdings, targetCap: 20));
+        // 指定 preferredLevel=0，精准选中 +0
+        Assert.Equal(0, EnhancementRules.CurrentLevel(loadout, sword, holdings, targetCap: 20, preferredLevel: 0));
+
+        // 若 targetCap=10，+20 同样被排除，返回 0
+        Assert.Equal(0, EnhancementRules.CurrentLevel(loadout, sword, holdings, targetCap: 10));
+
+        // 若持存中只有 +20，targetCap=20 时无未达标件，返回 -1
+        var only20 = new Dictionary<AssetKey, double> { [new AssetKey(sword, "+20")] = 1 };
+        Assert.Equal(-1, EnhancementRules.CurrentLevel(loadout, sword, only20, targetCap: 20));
+
+        // 测试 Resolve 链路：同时持有 +20 与 +0 时，意图指明 targetLevel=20，能正常开跑且当前等级为 0
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑","flatStats":{"physicalAttack":10}}""")
+        };
+        var catalog = CreateMinimalCatalog(rawEquipments: rawEquipments);
+        holdings[new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId))] = 1000;
+
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), 1,
+            Parameters: new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 20,
+                [EnhancementRules.InitialLevelParameter] = 0,
+            }) with { TargetItemId = sword.Value };
+
+        var prep = EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out var check, out var reason);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(0, prep.CurrentLevel);
+        Assert.Equal(1, prep.TargetLevel);
+    }
     /// <summary>
     /// 强化端到端：单轮结算冻结成本、转移 +N 变体并授予技艺经验；
     /// 材料守恒与事件语义在成功/失败任一分支下都成立。

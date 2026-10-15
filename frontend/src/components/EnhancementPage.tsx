@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getItemAmount } from '../game/actionCalculations'
 import {
   ENHANCE_ACTION_ID,
@@ -23,9 +23,8 @@ import { QuantitySelector } from './QuantitySelector'
 
 /**
  * 装备强化候选条目：仅取背包内未穿戴的装备——按 (itemId, 强化等级) 扣除已穿戴件数，
- * 剩余数量 > 0 的有效变体行才进入候选。装备中、挂售中均不可选。
- * 以装备基础 itemId 归并，取背包内未穿戴件的最高强化等级作为当前展示。
- * tool-* 技艺工具槽位装备不可强化（服务端 EnhancementRules 同步拦截），不进候选。
+ * 剩余数量 > 0 的有效变体行分别作为独立候选条目进入选择器（避免不同强化等级被误聚合成单项）。
+ * 装备中、挂售中均不可选。tool-* 技艺工具槽位装备不可强化，不进候选。
  */
 function collectEquipmentCandidates(
   inventory: readonly InventoryItem[],
@@ -40,40 +39,49 @@ function collectEquipmentCandidates(
     equippedCounts.set(key, (equippedCounts.get(key) ?? 0) + 1)
   }
 
-  const rows = new Map<string, { maxLevel: number; total: number }>()
+  const heldCounts = new Map<string, { itemId: string; level: number; amount: number }>()
   for (const inv of inventory) {
     const eqDef = findEquipmentInCatalog(equipmentCatalog, inv.itemId)
     if (!eqDef || eqDef.slot?.startsWith('tool-')) continue
     const level = parseEnhancementVariant(inv.variant)
-    const worn = equippedCounts.get(`${inv.itemId}#${level}`) ?? 0
-    const available = inv.amount - worn
+    const key = `${inv.itemId}#${level}`
+    const existing = heldCounts.get(key)
+    if (existing) {
+      existing.amount += inv.amount
+    } else {
+      heldCounts.set(key, { itemId: inv.itemId, level, amount: inv.amount })
+    }
+  }
+
+  const candidates: ItemPickerEntry[] = []
+  for (const [key, held] of heldCounts) {
+    const worn = equippedCounts.get(key) ?? 0
+    const available = held.amount - worn
     if (available <= 0) continue
 
-    const row = rows.get(inv.itemId) ?? { maxLevel: 0, total: 0 }
-    row.maxLevel = Math.max(row.maxLevel, level)
-    row.total += available
-    rows.set(inv.itemId, row)
-  }
-  const candidates: ItemPickerEntry[] = []
-  for (const [itemId, row] of rows) {
-    const eqDef = findEquipmentInCatalog(equipmentCatalog, itemId)
+    const eqDef = findEquipmentInCatalog(equipmentCatalog, held.itemId)
     if (!eqDef) continue
-    const itemDef = findItemInCatalog(itemCatalog, itemId)
+    const itemDef = findItemInCatalog(itemCatalog, held.itemId)
     const baseName = itemDef?.name ?? eqDef.name
     candidates.push({
-      itemId,
-      name: row.maxLevel > 0 ? `${baseName} +${row.maxLevel}` : baseName,
-      amount: row.total,
+      itemId: held.itemId,
+      name: held.level > 0 ? `${baseName} +${held.level}` : baseName,
+      amount: available,
       tier: itemDef?.tier ?? eqDef.tier,
-      category: resolveItemCategoryLabel(resolveItemSubCategory(itemId, itemDef, eqDef), t),
+      category: resolveItemCategoryLabel(resolveItemSubCategory(held.itemId, itemDef, eqDef), t),
       description: itemDef?.description ?? eqDef.description ?? '',
       definition: itemDef,
       equipmentDefinition: eqDef,
-      variant: row.maxLevel > 0 ? `+${row.maxLevel}` : null,
-      enhancementLevel: row.maxLevel,
+      variant: held.level > 0 ? `+${held.level}` : null,
+      enhancementLevel: held.level,
     })
   }
-  candidates.sort((a, b) => (b.tier - a.tier) || a.name.localeCompare(b.name))
+  candidates.sort((a, b) =>
+    (b.tier - a.tier) ||
+    a.itemId.localeCompare(b.itemId) ||
+    ((a.enhancementLevel ?? 0) - (b.enhancementLevel ?? 0)) ||
+    a.name.localeCompare(b.name)
+  )
   return candidates
 }
 
@@ -108,10 +116,25 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const nextLevel = Math.min(ENHANCE_MAX_LEVEL, currentLevel + 1)
   const maxedOut = selected !== null && currentLevel >= ENHANCE_MAX_LEVEL
 
-  // 目标资产行消失（强化中被消耗/卸下）时清除选择；目标等级随当前等级钳制。
+  // 追踪上一次选中的目标，支持强化升降级导致变体 key 变化时平滑迁移到新变体
+  const lastSelectedRef = useRef<{ itemId: string; level: number } | null>(null)
   useEffect(() => {
-    if (selectedKey && !selected) setSelectedKey(null)
-  }, [selected, selectedKey])
+    if (selected) {
+      lastSelectedRef.current = { itemId: selected.itemId, level: currentLevel }
+    } else if (selectedKey) {
+      if (lastSelectedRef.current) {
+        const sameItemCandidates = candidates.filter(c => c.itemId === lastSelectedRef.current!.itemId)
+        if (sameItemCandidates.length > 0) {
+          // 优先寻找大于或等于上一等级的最接近变体，其次取首个可用变体
+          const nextCandidate = sameItemCandidates.find(c => (c.enhancementLevel ?? 0) >= lastSelectedRef.current!.level)
+            ?? sameItemCandidates[0]
+          setSelectedKey(itemPickerEntryKey(nextCandidate.itemId, nextCandidate.variant))
+          return
+        }
+      }
+      setSelectedKey(null)
+    }
+  }, [candidates, currentLevel, selected, selectedKey])
   useEffect(() => {
     // 目标等级始终钳制在 [下一轮目标, 上限] 区间（换目标或当前等级变化时收敛）。
     setTargetLevel(prev => Math.min(ENHANCE_MAX_LEVEL, Math.max(nextLevel, prev)))
@@ -177,14 +200,17 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
 
   const submit = () => {
     if (!selected || maxedOut) return
-    // 强化行动入队：targetItemId 仅携带装备基础 ID，当前等级由服务端按
-    // 目标物权威裁定；勾选保护材料有效时经 auxItemId 下发，目标等级走 parameters。
+    // 强化行动入队：targetItemId 携带装备基础 ID，parameters 附带目标等级与起始等级；
+    // 勾选保护材料有效时经 auxItemId 下发。
     gameClient.sendCommand('action.enqueue', {
       actionId: ENHANCE_ACTION_ID,
       repeatCount: repeats,
       targetItemId: selected.itemId,
       ...(protectionActive && protectionItemId ? { auxItemId: protectionItemId } : {}),
-      parameters: { targetLevel },
+      parameters: {
+        targetLevel,
+        initialLevel: currentLevel,
+      },
     })
   }
 

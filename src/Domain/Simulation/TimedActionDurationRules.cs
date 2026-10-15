@@ -62,8 +62,19 @@ public static class TimedActionDurationRules
         if (definition.Kind == ActionKind.Enhancement)
         {
             var holdings = EnhancementEffectiveBalances(assets, deltas);
+            var targetCap = EnhancementRules.MaxLevel;
+            int? preferredLevel = null;
+            if (action.Intent.Parameters is not null)
+            {
+                if (action.Intent.Parameters.TryGetValue(EnhancementRules.TargetLevelParameter, out var targetParam)
+                    && double.IsFinite(targetParam) && targetParam > 0)
+                    targetCap = Math.Min(EnhancementRules.MaxLevel, (int)Math.Floor(targetParam));
+                if (action.Intent.Parameters.TryGetValue(EnhancementRules.InitialLevelParameter, out var initialParam)
+                    && double.IsFinite(initialParam) && initialParam >= 0)
+                    preferredLevel = (int)Math.Floor(initialParam);
+            }
             var current = action.Intent.TargetItemId is { } targetText
-                ? EnhancementRules.CurrentLevel(player.Loadout, new ItemId(targetText), holdings)
+                ? EnhancementRules.CurrentLevel(player.Loadout, new ItemId(targetText), holdings, targetCap, preferredLevel)
                 : -1;
             targetLevel = current >= 0 ? current + 1 : null;
         }
