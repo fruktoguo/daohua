@@ -1036,4 +1036,102 @@ export function calculateBaseAttributes(experience = 0, explicitRealmLevel?: num
   }
 }
 
+/**
+ * 特质品质元数据
+ */
+export interface TraitMeta {
+  id: string
+  name: string
+  quality: number // 1~5 (凡黄玄地天)
+  cost: number
+  description: string
+}
 
+/**
+ * 前端特质定义字典（与服务端 CombatTraitRules 保持一致）
+ */
+export const TRAIT_DEFINITIONS: Readonly<Record<string, TraitMeta>> = Object.freeze({
+  // Q1 凡品 (白) · 消耗 2 点
+  'trait.tianshengmanli': { id: 'trait.tianshengmanli', name: '天生蛮力', quality: 1, cost: 2, description: '物理攻击提升 10%' },
+  'trait.qiganchongying': { id: 'trait.qiganchongying', name: '气感充盈', quality: 1, cost: 2, description: '术法攻击提升 10%' },
+  'trait.jinqiangguijan': { id: 'trait.jinqiangguijan', name: '筋强骨健', quality: 1, cost: 2, description: '最大生命提升 12%' },
+  'trait.jingluoweitong': { id: 'trait.jingluoweitong', name: '经络微通', quality: 1, cost: 2, description: '最大灵力提升 15%' },
+  'trait.tiepihoujian': { id: 'trait.tiepihoujian', name: '铁皮厚茧', quality: 1, cost: 2, description: '物理护甲提升 12%' },
+  'trait.bihankangre': { id: 'trait.bihankangre', name: '避寒抗热', quality: 1, cost: 2, description: '法术抗性提升 12%' },
+  'trait.qinglingxiaobu': { id: 'trait.qinglingxiaobu', name: '轻灵小步', quality: 1, cost: 2, description: '闪避与命中各提升 8%' },
+
+  // Q2 黄品 (绿) · 消耗 5 点
+  'trait.tianshengjiangu': { id: 'trait.tianshengjiangu', name: '天生剑骨', quality: 2, cost: 5, description: '物理攻击提升 20%、暴击提升 10%' },
+  'trait.xuanyinlingqiao': { id: 'trait.xuanyinlingqiao', name: '玄阴灵窍', quality: 2, cost: 5, description: '术法攻击提升 20%、最大灵力提升 15%' },
+  'trait.tongjiaotiezhu': { id: 'trait.tongjiaotiezhu', name: '铜浇铁铸', quality: 2, cost: 5, description: '最大生命与物理护甲各提升 20%' },
+  'trait.daoxinanhe': { id: 'trait.daoxinanhe', name: '道心安和', quality: 2, cost: 5, description: '法术抗性提升 20%、免爆提升 15%' },
+  'trait.fengxingbu': { id: 'trait.fengxingbu', name: '风行步', quality: 2, cost: 5, description: '闪避提升 18%、拆招提升 15%' },
+  'trait.ningshenfayan': { id: 'trait.ningshenfayan', name: '凝神法眼', quality: 2, cost: 5, description: '命中提升 18%、破招提升 15%' },
+  'trait.tunamianchang': { id: 'trait.tunamianchang', name: '吐纳绵长', quality: 2, cost: 5, description: '生命与灵力自动回复各提升 30%' },
+
+  // Q3 玄品 (蓝) · 消耗 10 点
+  'trait.chunyangzhenmai': { id: 'trait.chunyangzhenmai', name: '纯阳真脉', quality: 3, cost: 10, description: '物理攻击提升 35%、破招提升 20%' },
+  'trait.taiyinfahun': { id: 'trait.taiyinfahun', name: '太阴法魂', quality: 3, cost: 10, description: '术法攻击提升 35%、暴击提升 15%' },
+  'trait.panshijingang': { id: 'trait.panshijingang', name: '磐石金刚', quality: 3, cost: 10, description: '最大生命与物理护甲各提升 30%、法抗提升 25%' },
+  'trait.taxuewuying': { id: 'trait.taxuewuying', name: '踏雪无影', quality: 3, cost: 10, description: '闪避提升 30%、拆招提升 20%、命中提升 15%' },
+  'trait.shengjiyongdong': { id: 'trait.shengjiyongdong', name: '生机涌动', quality: 3, cost: 10, description: '最大生命提升 25%、生命与灵力自动回复各提升 50%' },
+
+  // Q4 地品 (紫) · 消耗 15 点
+  'trait.houtukunyushen': { id: 'trait.houtukunyushen', name: '厚土坤舆身', quality: 4, cost: 15, description: '双抗各提升 45%、最大生命提升 35%、全伤害降低 15%' },
+  'trait.lieyangkuangzhangu': { id: 'trait.lieyangkuangzhangu', name: '烈阳狂战骨', quality: 4, cost: 15, description: '物理攻击提升 45%、暴击与破招各提升 20%、最大生命降低 15%' },
+  'trait.minghaishihunti': { id: 'trait.minghaishihunti', name: '冥海噬魂体', quality: 4, cost: 15, description: '术法攻击提升 45%、最大灵力提升 35%、暴击提升 15%、护甲降低 20%' },
+  'trait.kurongchangqingjue': { id: 'trait.kurongchangqingjue', name: '枯荣长青诀', quality: 4, cost: 15, description: '生命与灵力自动回复各提升 60%、最大生命提升 25%、全伤害降低 20%' },
+
+  // Q5 天品 (金) · 消耗 20 点
+  'trait.yaodutongyuan': { id: 'trait.yaodutongyuan', name: '药毒同源', quality: 5, cost: 20, description: '生命与灵力自动回复各提升 100%、最大生命提升 40%、全伤害降低 35%' },
+  'trait.wanjianguiyi': { id: 'trait.wanjianguiyi', name: '万剑归一', quality: 5, cost: 20, description: '物理攻击提升 65%、暴击提升 30%、破招提升 25%、最大生命降低 30%、受到全伤害增加 25%' },
+  'trait.jiuyoushiling': { id: 'trait.jiuyoushiling', name: '九幽噬灵', quality: 5, cost: 20, description: '术法攻击提升 65%、最大灵力提升 50%、暴击提升 20%、护甲降低 35%、闪避降低 30%' },
+  'trait.budongmingwang': { id: 'trait.budongmingwang', name: '不动明王', quality: 5, cost: 20, description: '双抗各提升 80%、最大生命提升 50%、全伤害降低 45%' },
+  'trait.tianshekuanggu': { id: 'trait.tianshekuanggu', name: '天煞狂骨', quality: 5, cost: 20, description: '双攻各提升 50%、暴击提升 40%、生命自动回复降低 60%、免爆降低 35%' },
+
+  // 机制特质
+  'trait.bukandaowo': { id: 'trait.bukandaowo', name: '看不到我', quality: 2, cost: 5, description: '开战获得隐身 buff，威胁权重归零持续 10 秒' },
+  'trait.liweifanfou': { id: 'trait.liweifanfou', name: '力微饭否', quality: 2, cost: 5, description: '受伤害时按减免前原始威力等额累积自身威胁' },
+})
+
+/**
+ * 根据角色境界等级计算当前特质点数容量上限（总纲 §7.12.1）：
+ * 初始底座 5 点 + 每小境界 1 点 + 每境界阶段额外 1 点 + 每大境界额外 1 点。
+ */
+export function calculateTraitCapacity(realmLevel = 1): number {
+  if (realmLevel < 1) return 0
+  let pts = 5
+  pts += realmLevel - 1
+
+  // 凡俗期阶段晋级：武(1~6), 玄(7~12), 天(13~18)
+  if (realmLevel >= 7) pts++
+  if (realmLevel >= 13) pts++
+
+  // 修真期阶段晋级：Lv 19 起，每 12 级一个大境界（初/中/后/极）
+  if (realmLevel >= 19) {
+    const cultLevel = realmLevel - 18
+    const majorIndex = Math.floor((cultLevel - 1) / 12)
+    const layerInMajor = Math.floor(((cultLevel - 1) % 12) + 1)
+
+    // 过去已完整渡过的大境界阶段（每个大境界 4 阶段）
+    pts += majorIndex * 4
+
+    // 当前大境界阶段
+    if (layerInMajor >= 1) pts++
+    if (layerInMajor >= 4) pts++
+    if (layerInMajor >= 7) pts++
+    if (layerInMajor >= 10) pts++
+
+    // 飞升（Lv 127）额外阶段
+    if (realmLevel >= 127) pts++
+  }
+
+  // 大境界突破奖励（凡俗→练气、练气→筑基……）
+  if (realmLevel >= 19) {
+    const majorBreaks = Math.floor((realmLevel - 19) / 12) + 1
+    pts += majorBreaks
+    if (realmLevel >= 127) pts++
+  }
+
+  return pts
+}

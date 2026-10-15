@@ -108,6 +108,31 @@ public sealed class PlayerProgression
         return credited;
     }
 
+    /// <summary>
+    /// 设置已激活特质集合（总纲 §7.12）：严格校验消耗点数不超过当前境界特质容量。
+    /// </summary>
+    public void SetTraits(IEnumerable<string>? traitIds)
+    {
+        if (traitIds is null)
+        {
+            TraitIds.Clear();
+            return;
+        }
+        var list = traitIds.Distinct(StringComparer.Ordinal).ToList();
+        foreach (var id in list)
+        {
+            if (string.IsNullOrWhiteSpace(id) || id.Length > 128)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "特质 ID 无效。");
+        }
+        var totalCost = Domain.Combat.CombatTraitRules.TotalCost(list);
+        var capacity = Domain.Combat.CombatTraitRules.CalculateCapacity(RealmLevel);
+        if (totalCost > capacity)
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"特质点数超出上限：当前境界容量 {capacity} 点，所选特质需 {totalCost} 点。");
+
+        TraitIds.Clear();
+        TraitIds.AddRange(list);
+    }
+
     /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
     internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion)
     {
@@ -599,7 +624,8 @@ public sealed partial class PlayerAggregate
         + Buffs.Active.Version
         + Loadout.EquippedItemIds.Version
         + Loadout.Equipment.Version
-        + Loadout.CoreAttributesVersion;
+        + Loadout.CoreAttributesVersion
+        + Progression.TraitIds.Version;
 
     /// <summary>尝试命中属性解析缓存：同配表实例且属性输入修订号未变时复用上轮结果。</summary>
     internal bool TryGetCachedAttributes(GameDataCatalog catalog, out PlayerAttributes attributes)

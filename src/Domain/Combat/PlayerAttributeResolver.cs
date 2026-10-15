@@ -195,11 +195,12 @@ public static class PlayerAttributeResolver
         var a = catalog.BaseAttributes.At(level);
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
+        var traitRatios = new Dictionary<string, double>(StringComparer.Ordinal);
         // 点数通道汇总：装备 flatStats 中 *Points 键（随强化缩放，总纲 §4）+ Buff/特质点数通道（100 点 = 100%）。
         var points = new Dictionary<string, double>(StringComparer.Ordinal);
         double P(string key) => points.GetValueOrDefault(key);
         void AddPoint(string key, double value) { if (value != 0) points[key] = P(key) + value; }
-        AddPoint("threatOnTakenPoints", threatOnTaken);
+        CombatTraitRules.AccumulateModifiers(traits, traitRatios, points);
         foreach (var id in equipment)
         {
             // 配表历史删项或未知装备优雅跳过，不提供加成但拒绝阻断玩家加载与模拟
@@ -273,11 +274,12 @@ public static class PlayerAttributeResolver
                 foreach (var pair in buff.StatRatios)
                     buffRatios[pair.Key] = buffRatios.GetValueOrDefault(pair.Key) + pair.Value * buff.Stacks;
         }
-        // 属性管线：(基础锚点+六维固定值) ×(1+六维%) +装备固定值 → ×(1+装备%) → ×(1+Buff%)，负向按比例软着陆。
+        // 属性管线：(基础锚点+六维固定值) ×(1+六维%) +装备固定值 → ×(1+装备%) → ×(1+Buff%) → ×(1+特质%)，负向按比例软着陆。
         double Stat(string key, double value) =>
             ((value + RootFlat(key)) * (1 + RootRatio(key)) + flat.GetValueOrDefault(key))
             * SoftRatio(ratios.GetValueOrDefault(key))
-            * SoftRatio(buffRatios.GetValueOrDefault(key));
+            * SoftRatio(buffRatios.GetValueOrDefault(key))
+            * SoftRatio(traitRatios.GetValueOrDefault(key));
         // 回复收口公式（总纲 §20.3）：(面板回复 + Σ固定加成) × (1 + Σ后段比率)。
         double hpRegen = (Stat("hitpointRegen", a.HpRegen) + hpRegenFlat) * (1 + hpRegenPost);
         double mpRegen = (Stat("manapointRegen", a.MpRegen) + mpRegenFlat) * (1 + mpRegenPost);
