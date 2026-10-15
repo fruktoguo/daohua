@@ -184,32 +184,7 @@ internal static partial class ActionExecutionRules
     public static double TimedActionDuration(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData,
         AssetWallet? assets, IReadOnlyDictionary<AssetKey, double>? deltas)
-    {
-        var duration = definition.DurationSeconds;
-        if (definition.Kind == ActionKind.Enhancement)
-        {
-            var current = action.Intent.TargetItemId is { } targetText
-                ? EnhancementRules.CurrentLevel(player.Loadout, new Domain.Common.ItemId(targetText),
-                    EnhancementRulesEffectiveBalances(assets, deltas))
-                : -1;
-            duration = current >= 0 && current < EnhancementRules.MaxLevel
-                ? EnhancementRules.DurationSeconds(current + 1)
-                : 0;
-        }
-        var buildingSpeed = player.World.EffectiveNodeBuildingEffects.SpeedRatioFor(definition.Kind, definition.Technique);
-        if (buildingSpeed > 0) duration /= 1 + buildingSpeed;
-        if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))
-        {
-            var level = TechniqueCatalog.LevelFor(
-                player.Loadout.TechniqueExperiences.TryGetValue(technique, out var exp) ? exp : 0,
-                gameData?.RealmProgression);
-            // 技艺等级加成与已装备工具加成并入同一除数；level≤0 时 SpeedBonusRatio 为 0，
-            // 无加成时除数为 1 语义不变。
-            duration /= 1 + TechniqueCatalog.SpeedBonusRatio(level)
-                + TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, technique, gameData);
-        }
-        return duration;
-    }
+        => Domain.Simulation.TimedActionDurationRules.Calculate(player, action, definition, gameData, assets, deltas);
 
     /// <summary>本轮开始前补充持续用品并解析收益倍率；调用方已完成地点和材料准入。</summary>
     public static double PrepareTimedAction(IPlayerActionContext player, IPlayerActionState action,

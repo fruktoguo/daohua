@@ -1655,6 +1655,26 @@ export interface NodeBuildingEffectSet {
   alchemyOutputRatio: number
   /** 吐纳修炼产出增幅比率 */
   cultivationOutputRatio: number
+  /** 采集采伐耗时加速比率 */
+  gatheringSpeedRatio?: number
+  /** 采矿挖掘耗时加速比率 */
+  miningSpeedRatio?: number
+  /** 炼器精炼耗时加速比率 */
+  forgingSpeedRatio?: number
+  /** 符箓绘制耗时加速比率 */
+  talismanSpeedRatio?: number
+  /** 阵盘研制耗时加速比率 */
+  formationSpeedRatio?: number
+  /** 装备强化耗时加速比率 */
+  enhancementSpeedRatio?: number
+  /** 战斗气血回复 */
+  combatHitpointRegen?: number
+  /** 战斗灵力回复 */
+  combatManapointRegen?: number
+  /** 战斗伤害减免 */
+  combatDamageReductionRatio?: number
+  /** 怪物削弱比率 */
+  monsterWeakenRatio?: number
 }
 
 /**

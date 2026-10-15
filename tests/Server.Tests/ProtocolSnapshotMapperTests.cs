@@ -208,6 +208,39 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal("收集 晨露", item.GetProperty("actionName").GetString());
         Assert.Equal("exploration", item.GetProperty("actionType").GetString());
     }
+
+    /// <summary>行动队列下发的 durationSeconds 必须反映技艺、工具与建筑加速后的实际单轮耗时，不得退化为配表原耗时。</summary>
+    [Fact]
+    public void ToSnapshot_ActionQueueSection_ProjectsAcceleratedDurationSeconds()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId), "加速测试", DateTimeOffset.UtcNow, "fp");
+        var actionId = "explore.gather-ningxue-grass";
+        var state = aggregate.ExportState() with
+        {
+            Actions =
+            [
+                new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId(actionId)), DateTimeOffset.UtcNow, ActionQueueStatus.Running, 0, -1, 0)
+            ],
+            Loadout = aggregate.ExportState().Loadout with
+            {
+                TechniqueExperiences = new Dictionary<string, double> { ["gathering"] = 22000 },
+                Equipment = [new PlayerEquipmentSlot("equipment.tool-herb-hoe", 0)]
+            }
+        };
+        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 1, aggregate.LastSimulatedAt, state, 0, []);
+        var snapshot = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData);
+
+        var actionSection = Assert.Single(snapshot.Sections, s => s.Section == PlayerSectionKinds.ActionQueue);
+        var item = actionSection.Data[0];
+
+        var expectedDuration = 8.0 / 1.20;
+        var actualDuration = item.GetProperty("durationSeconds").GetDouble();
+        Assert.Equal(expectedDuration, actualDuration, 5);
+        Assert.True(actualDuration < 8.0, "下发的耗时应为加速后的耗时，而非原配表基础耗时。");
+    }
 }
 
 public sealed class ProtocolAttributesPointsTests

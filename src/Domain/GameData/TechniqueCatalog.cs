@@ -51,11 +51,11 @@ public static class TechniqueCatalog
     /// <param name="loadout">玩家装配分段（装备槽来源）。</param>
     /// <param name="techniqueId">行动关联的技艺标识。</param>
     /// <param name="catalog">配表（装备 techniqueBonus 来源）；为 null 时按无加成计。</param>
-    public static double EquippedToolSpeedRatio(PlayerLoadoutState loadout, string techniqueId, GameDataCatalog? catalog)
+    public static double EquippedToolSpeedRatio(IReadOnlyList<PlayerEquipmentSlot>? equipmentSlots, string techniqueId, GameDataCatalog? catalog)
     {
-        if (catalog is null || string.IsNullOrEmpty(techniqueId)) return 0;
+        if (catalog is null || string.IsNullOrEmpty(techniqueId) || equipmentSlots is null) return 0;
         var ratio = 0d;
-        foreach (var slot in loadout.Equipment)
+        foreach (var slot in equipmentSlots)
         {
             if (!catalog.RawEquipments.TryGetValue(slot.ItemId, out var equipment)
                 || !equipment.TryGetProperty("techniqueBonus", out var bonus)
@@ -71,6 +71,14 @@ public static class TechniqueCatalog
         }
         return ratio;
     }
+
+    /// <summary>
+    /// 已装备技艺工具对指定技艺的行动速度加成合计：遍历装配槽位，
+    /// 装备配表 techniqueBonus.technique 命中时累加其 speedRatio；
+    /// 与技艺等级加成同点加算（duration /= 1 + 0.05×L + Σ工具加成）。
+    /// </summary>
+    public static double EquippedToolSpeedRatio(PlayerLoadoutState loadout, string techniqueId, GameDataCatalog? catalog)
+        => EquippedToolSpeedRatio(loadout.Equipment, techniqueId, catalog);
 
     /// <summary>
     /// 累计经验换算技艺等级（0 级起）：逐段消费 ExpToNext[L]，不足一段停在当前级；

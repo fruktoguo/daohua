@@ -90,6 +90,7 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const items = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const combat = useGameStore(state => state.combat)
+  const world = useGameStore(state => state.world)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [targetLevel, setTargetLevel] = useState(1)
   const [useProtection, setUseProtection] = useState(false)
@@ -167,10 +168,12 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const preview = useMemo(() => {
     const successRate = enhanceSuccessRate(nextLevel, techniqueLevel)
     const spiritCost = enhanceSpiritStoneCost(nextLevel)
+    const buildingSpeed = world?.buildingEffects?.enhancementSpeedRatio ?? 0
     const baseDuration = enhanceBaseDurationSeconds(nextLevel)
-    const actualDuration = baseDuration / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel + toolSpeedRatio)
+    const durationAfterBuilding = buildingSpeed > 0 ? baseDuration / (1 + buildingSpeed) : baseDuration
+    const actualDuration = durationAfterBuilding / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel + toolSpeedRatio)
     return { successRate, spiritCost, baseDuration, actualDuration }
-  }, [nextLevel, techniqueLevel, toolSpeedRatio])
+  }, [nextLevel, techniqueLevel, toolSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
 
   const submit = () => {
     if (!selected || maxedOut) return

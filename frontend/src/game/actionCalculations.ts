@@ -135,6 +135,57 @@ export function isActionAvailableAtNode(
 }
 
 /**
+ * 按行动类别与技艺获取对应建筑加速比率（与服务端 NodeBuildings.SpeedRatioFor 同口径）
+ */
+export function resolveBuildingSpeedRatio(
+  effects: NodeBuildingEffectSet | undefined | null,
+  actionType: string,
+  technique?: string | null,
+): number {
+  if (!effects) return 0
+  if (technique) {
+    let techRatio = 0
+    switch (technique) {
+      case 'gathering':
+        techRatio = (effects.gatheringSpeedRatio ?? 0) > 0 ? (effects.gatheringSpeedRatio ?? 0) : (effects.explorationSpeedRatio ?? 0)
+        break
+      case 'mining':
+        techRatio = effects.miningSpeedRatio ?? 0
+        break
+      case 'alchemy':
+        techRatio = effects.alchemySpeedRatio ?? 0
+        break
+      case 'forging':
+        techRatio = effects.forgingSpeedRatio ?? 0
+        break
+      case 'talisman':
+        techRatio = effects.talismanSpeedRatio ?? 0
+        break
+      case 'formation':
+        techRatio = effects.formationSpeedRatio ?? 0
+        break
+      case 'enhancement':
+        techRatio = effects.enhancementSpeedRatio ?? 0
+        break
+      default:
+        techRatio = 0
+        break
+    }
+    if (techRatio > 0) return techRatio
+  }
+  switch (actionType) {
+    case 'exploration':
+      return (effects.gatheringSpeedRatio ?? 0) > 0 ? (effects.gatheringSpeedRatio ?? 0) : (effects.explorationSpeedRatio ?? 0)
+    case 'alchemy':
+      return effects.alchemySpeedRatio ?? 0
+    case 'enhancement':
+      return effects.enhancementSpeedRatio ?? 0
+    default:
+      return 0
+  }
+}
+
+/**
  * 实时解算指定行动在当前状态下的实际产出与全部生效加成
  */
 export function calculateActionYieldPreview({
@@ -221,10 +272,7 @@ export function calculateActionYieldPreview({
     : actionType === 'exploration' ? (effects?.explorationOutputRatio ?? 0)
     : actionType === 'alchemy' ? (effects?.alchemyOutputRatio ?? 0)
     : 0
-  const buildingSpeedRatio =
-    actionType === 'exploration' ? (effects?.explorationSpeedRatio ?? 0)
-    : actionType === 'alchemy' ? (effects?.alchemySpeedRatio ?? 0)
-    : 0
+  const buildingSpeedRatio = resolveBuildingSpeedRatio(effects, actionType, typeof action.technique === 'string' ? action.technique : null)
 
   // 技艺耗时加成（与服务端 TimedActionDuration / TechniqueCatalog 同口径）：
   // 行动 technique 命中七种已知技艺时，技艺等级加成（每级 +5%）与已装备工具

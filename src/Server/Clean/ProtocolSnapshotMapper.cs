@@ -3,8 +3,8 @@ using Domain.Player;
 using Domain.GameData;
 using Domain.Combat;
 using Domain.World;
+using Domain.Simulation;
 using Protocol;
-
 namespace Server.Clean;
 
 /// <summary>
@@ -296,8 +296,8 @@ public static class ProtocolSnapshotMapper
         PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData, inspectedUnit, onAttributesProjected,
             gameData is not null && state.Actions.Any(action => action.Expedition is not null)
                 ? PlayerAttributeResolver.Resolve(state, gameData).ThreatBonusPoints : 0,
-            state.Combat.Buffs, state.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio),
-        // 斗法分段白名单：ActiveReports（在队行动实例账本）不面向客户端，协议只下发
+            state.Combat.Buffs, state.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio,
+            state),
         // 当前账本/归档/离线/每日四类已消费通道。
         PlayerSectionKind.Duel => new
         {
@@ -470,7 +470,8 @@ public static class ProtocolSnapshotMapper
     /// <param name="playerThreatBonusPoints">本机面板威胁增幅点数：有效威胁投影口径与目标判定同式（总纲 §7.8.1）。</param>
     /// <param name="playerCarriedBuffs">本机战内 Buff 跨波携带态：非战斗相位下用于 Buff 图标续显。</param>
     /// <param name="monsterWeakenRatio">本机当前节点建筑削弱比（封魔阵类）：敌怪展示面板与实战结算同一口径。</param>
-    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0)
+    /// <param name="state">聚合状态快照（用于精确解析技艺/建筑/工具加速后的单轮耗时）。</param>
+    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit = null, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0, PlayerAggregateState? state = null)
     {
         if (actions is null || actions.Count == 0) return [];
         var result = new object[actions.Count];
@@ -486,9 +487,20 @@ public static class ProtocolSnapshotMapper
                 ActionExecutionKind.Travel => "travel",
                 _ => "timed"
             };
-            var durationSeconds = action.Travel is not null
-                ? action.Travel.TotalDurationSeconds
-                : (def?.DurationSeconds ?? 0);
+            double durationSeconds;
+            if (action.Travel is not null)
+            {
+                durationSeconds = action.Travel.TotalDurationSeconds;
+            }
+            else if (def is not null && executionKind == "timed" && state is not null)
+            {
+                var timed = TimedActionDurationRules.Calculate(state, action, def, gameData);
+                durationSeconds = timed > 0 ? timed : def.DurationSeconds;
+            }
+            else
+            {
+                durationSeconds = def?.DurationSeconds ?? 0;
+            }
             var actionName = def?.Name ?? (action.Travel is not null ? "赶路" : null);
             var actionType = (def?.Kind ?? (action.Travel is not null ? ActionKind.Travel : ActionKind.Cultivation)).ToString().ToLowerInvariant();
 

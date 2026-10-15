@@ -1055,6 +1055,16 @@ function mapWorldBuildingEffects(value: unknown): WorldState['buildingEffects'] 
     alchemySpeedRatio: numberValue(row.alchemySpeedRatio, 0),
     alchemyOutputRatio: numberValue(row.alchemyOutputRatio, 0),
     cultivationOutputRatio: numberValue(row.cultivationOutputRatio, 0),
+    gatheringSpeedRatio: numberValue(row.gatheringSpeedRatio, 0),
+    miningSpeedRatio: numberValue(row.miningSpeedRatio, 0),
+    forgingSpeedRatio: numberValue(row.forgingSpeedRatio, 0),
+    talismanSpeedRatio: numberValue(row.talismanSpeedRatio, 0),
+    formationSpeedRatio: numberValue(row.formationSpeedRatio, 0),
+    enhancementSpeedRatio: numberValue(row.enhancementSpeedRatio, 0),
+    combatHitpointRegen: numberValue(row.combatHitpointRegen, 0),
+    combatManapointRegen: numberValue(row.combatManapointRegen, 0),
+    combatDamageReductionRatio: numberValue(row.combatDamageReductionRatio, 0),
+    monsterWeakenRatio: numberValue(row.monsterWeakenRatio, 0),
   }
 }
 
