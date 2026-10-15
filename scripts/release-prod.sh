@@ -169,7 +169,11 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
     printf '[流 C] 本地交叉编译 ComputeNode (linux-arm64) 并预传至 odin...\n'
     ODIN_PUBLISH_DIR="$RELEASE_TMP/daohua-compute-odin"
     rm -rf "$ODIN_PUBLISH_DIR"
-    dotnet publish "$ROOT_DIR/src/ComputeNode" -c Release -r linux-arm64 --self-contained -o "$ODIN_PUBLISH_DIR" --nologo > "$STREAM_C_LOG" 2>&1
+    ODIN_OUT="$ODIN_PUBLISH_DIR"
+    if command -v cygpath >/dev/null 2>&1; then
+      ODIN_OUT="$(cygpath -w "$ODIN_PUBLISH_DIR")"
+    fi
+    dotnet publish "$ROOT_DIR/src/ComputeNode" -c Release -r linux-arm64 --self-contained -o "$ODIN_OUT" --nologo > "$STREAM_C_LOG" 2>&1
     ssh -o BatchMode=yes "$ODIN_HOST" 'rm -rf /root/daohua-compute.new && mkdir -p /root/daohua-compute.new' >> "$STREAM_C_LOG" 2>&1
     scp -q -r "$ODIN_PUBLISH_DIR"/* "$ODIN_HOST:/root/daohua-compute.new/" >> "$STREAM_C_LOG" 2>&1
     echo "STREAM_C_EXIT:0" >> "$STATUS_FILE"
@@ -267,7 +271,7 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
     [[ -d /root/daohua-compute ]] && mv /root/daohua-compute /root/daohua-compute.old
     mv /root/daohua-compute.new /root/daohua-compute
     chmod +x /root/daohua-compute/DaoHua.ComputeNode
-    pkill -x DaoHua.ComputeN || true
+    pkill -x DaoHua.ComputeNode 2>/dev/null || pkill -x DaoHua.ComputeN 2>/dev/null || true
   '
 fi
 
@@ -278,8 +282,14 @@ printf '\n==> [阶段 4/4] 双端状态核验与日志汇总...\n'
 
 # 1. 核对 odin 状态
 if [[ "$SKIP_ODIN" != "1" ]]; then
-  sleep 2
-  ODIN_STATUS="$(ssh -o BatchMode=yes "$ODIN_HOST" 'curl -s http://127.0.0.1:8090/healthz' 2>/dev/null || printf '{"status":"offline"}')"
+  ODIN_STATUS='{"status":"offline"}'
+  for _ in {1..15}; do
+    ODIN_STATUS="$(ssh -o BatchMode=yes "$ODIN_HOST" 'curl -s -m 2 http://127.0.0.1:8090/healthz' 2>/dev/null || printf '{"status":"offline"}')"
+    if [[ "$ODIN_STATUS" == *'"status":"healthy"'* || "$ODIN_STATUS" == *'"healthy"'* ]]; then
+      break
+    fi
+    sleep 1
+  done
   printf '  - odin 节点状态: %s\n' "$ODIN_STATUS"
 fi
 
