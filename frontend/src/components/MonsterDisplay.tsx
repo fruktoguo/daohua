@@ -1,6 +1,6 @@
 import { memo, useMemo, type ReactNode } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
-import { formatInteger, formatNumber } from '../game/format'
+import { formatInteger } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findCombatantInCatalog } from '../game/ids'
 import type { CombatantDefinition, MonsterDropDefinition, NearbyMonsterDefinition } from '../game/types'
@@ -237,7 +237,7 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
       : []),
   ]
 
-  // 6. 战斗属性网格：标准六维 + 攻击间隔
+  // 6. 战斗属性网格：标准六维战斗属性（气血/灵力/物攻/术攻/护甲/抗性）
   const attrs = resolved.attributes
   const stats = [
     { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={attrs.maxHitpoints} /> },
@@ -246,9 +246,6 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
     { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip value={attrs.spellAttack} /> },
     { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip value={attrs.armor} /> },
     { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip value={attrs.magicResistance} /> },
-    ...(attrs.attackIntervalMilliseconds && attrs.attackIntervalMilliseconds > 0
-      ? [{ label: t('combat.encounter.statInterval'), value: `${formatNumber(attrs.attackIntervalMilliseconds / 1000)}s` }]
-      : []),
   ]
 
   return (
