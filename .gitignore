@@ -42,3 +42,8 @@ temp/
 # 本地 Agent 记忆与工作区（含内部运维笔记，不入库）
 .workbuddy/
 .playwright-cli/
+
+# Python 缓存与临时调试库
+__pycache__/
+*.pyc
+history_tmp.db

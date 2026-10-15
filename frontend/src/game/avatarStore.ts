@@ -17,7 +17,7 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   // 玩家
   player: { src: '/avatars/player.svg', format: 'svg' },
   'player-female': { src: '/avatars/player.svg', format: 'svg' },
-  'player-male': { src: '/avatars/player.svg', format: 'svg' },
+  'player-male': { src: '/avatars/player-male.svg', format: 'svg' },
 
   // T1 怪物 (练气期)
   'demonized-rabbit': { src: '/avatars/demonized-rabbit.webp', format: 'webp' },
@@ -90,17 +90,22 @@ export interface AvatarOption {
   /** 形象标识 */
   id: PlayerAvatarId
   /** 名称 i18n 键 */
-  nameKey: 'app.avatar.defaultName'
+  nameKey: 'app.avatar.defaultName' | 'app.avatar.maleName'
   /** 立绘资源地址 */
   src: string
 }
 
-/** 玩家可选形象清单（当前仅默认形象「女剑修」，扩展时追加条目与 nameKey 联合类型即可） */
+/** 玩家可选形象清单（默认女剑修、可选男剑修） */
 export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   {
     id: 'default',
     nameKey: 'app.avatar.defaultName',
     src: DEFAULT_PLAYER_AVATAR_SRC,
+  },
+  {
+    id: 'male',
+    nameKey: 'app.avatar.maleName',
+    src: '/avatars/player-male.svg',
   },
 ]
 

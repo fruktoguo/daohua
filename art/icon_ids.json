@@ -78,5 +78,32 @@
     "清平乐": "ability.qingping-melody",
     "雷光引": "ability.lightning-attraction",
     "破阵子": "ability.pozhen-melody"
+  },
+  "仙侠法宝副手与生活道具图标集": {
+    "兽骨匕": "equipment.fan-tie-dart",
+    "桃灵珠": "equipment.qingmu-bead",
+    "甘露瓶": "equipment.ganlu-flask",
+    "精铁盾": "equipment.tiepi-guard",
+    "赤牙匕": "equipment.xuantie-dart",
+    "曜灵珠": "equipment.yaoling-bead",
+    "赤铜盾": "equipment.xuanjia-guard",
+    "回春铃": "equipment.huichun-bell",
+    "劲风巾": "equipment.jinfeng-scarf",
+    "轻皮甲": "equipment.qingpi-armor",
+    "疾行裤": "equipment.jixing-pants",
+    "斩风巾": "equipment.zhanfeng-scarf",
+    "裂罡甲": "equipment.liegang-armor",
+    "踏风裤": "equipment.tafeng-pants",
+    "桃木铲": "equipment.tool-herb-hoe",
+    "精铁镐": "equipment.tool-prospect-compass",
+    "灵火炉": "equipment.tool-flame-ding",
+    "百炼铁钳": "equipment.tool-forge-hammer",
+    "桃木笔": "equipment.tool-talisman-brush",
+    "桃晶旗": "equipment.tool-formation-flag",
+    "淬灵锤": "equipment.tool-quench-anvil",
+    "雷击符": "item.leiji-talisman",
+    "聚灵阵盘": "item.juling-formation-disk",
+    "功德": "item.gongde",
+    "功德·绑定": "item.gongde-bound"
   }
 }
