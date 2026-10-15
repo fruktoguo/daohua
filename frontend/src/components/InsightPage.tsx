@@ -86,9 +86,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: staminaLevel,
         progress: getProgress(staminaLevel, loadout?.staminaExp),
         bonuses: [
-          { value: `+${Math.floor(staminaLevel * 12)} +${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
-          { value: `+${Math.floor(staminaLevel)} +${Math.floor(staminaLevel)}%`, tone: 'bronze' as PillTone },
-          { value: `+${Math.floor(staminaLevel)} +${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
+          { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel * 12)}`, tone: 'emerald' as PillTone },
+          { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel)}`, tone: 'bronze' as PillTone },
+          { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel)}`, tone: 'emerald' as PillTone },
         ],
       },
       {
@@ -97,9 +97,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: meridiansLevel,
         progress: getProgress(meridiansLevel, loadout?.meridiansExp),
         bonuses: [
-          { value: `+${Math.floor(meridiansLevel * 7)} +${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
-          { value: `+${Math.floor(meridiansLevel)} +${Math.floor(meridiansLevel)}%`, tone: 'violet' as PillTone },
-          { value: `+${Math.floor(meridiansLevel)} +${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
+          { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel * 7)}`, tone: 'cyan' as PillTone },
+          { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel)}`, tone: 'violet' as PillTone },
+          { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel)}`, tone: 'cyan' as PillTone },
         ],
       },
       {
@@ -108,9 +108,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: boneLevel,
         progress: getProgress(boneLevel, loadout?.boneExp),
         bonuses: [
-          { value: `+${Math.floor(boneLevel * 12)} +${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
-          { value: `+${Math.floor(boneLevel * 7)} +${Math.floor(boneLevel)}%`, tone: 'silver' as PillTone },
-          { value: `+${Math.floor(boneLevel)} +${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
+          { value: `${Math.floor(boneLevel)}% +${Math.floor(boneLevel * 12)}`, tone: 'amber' as PillTone },
+          { value: `${Math.floor(boneLevel)}% +${Math.floor(boneLevel * 7)}`, tone: 'silver' as PillTone },
+          { value: `${Math.floor(boneLevel)}% +${Math.floor(boneLevel)}`, tone: 'amber' as PillTone },
         ],
       },
       {
@@ -119,9 +119,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: strengthLevel,
         progress: getProgress(strengthLevel, loadout?.attackExp),
         bonuses: [
-          { value: `+${Math.floor(strengthLevel)} +${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
-          { value: `+${Math.floor(strengthLevel)} +${Math.floor(strengthLevel)}%`, tone: 'slate' as PillTone },
-          { value: `+${Math.floor(strengthLevel)} +${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
+          { value: `${Math.floor(strengthLevel)}% +${Math.floor(strengthLevel)}`, tone: 'crimson' as PillTone },
+          { value: `${Math.floor(strengthLevel)}% +${Math.floor(strengthLevel)}`, tone: 'slate' as PillTone },
+          { value: `${Math.floor(strengthLevel)}% +${Math.floor(strengthLevel)}`, tone: 'crimson' as PillTone },
         ],
       },
       {
@@ -130,8 +130,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: consciousnessLevel,
         progress: getProgress(consciousnessLevel, loadout?.consciousnessExp),
         bonuses: [
-          { value: `+${Math.floor(consciousnessLevel * 2)} +${Math.floor(consciousnessLevel * 2)}%`, tone: 'purple' as PillTone },
-          { value: `+${Math.floor(consciousnessLevel)} +${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
+          { value: `${Math.floor(consciousnessLevel * 2)}% +${Math.floor(consciousnessLevel * 2)}`, tone: 'purple' as PillTone },
+          { value: `${Math.floor(consciousnessLevel)}% +${Math.floor(consciousnessLevel)}`, tone: 'sky' as PillTone },
         ],
       },
       {
@@ -140,9 +140,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: agilityLevel,
         progress: getProgress(agilityLevel, loadout?.agilityExp),
         bonuses: [
-          { value: `+${Math.floor(agilityLevel)} +${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
-          { value: `+${Math.floor(agilityLevel)} +${Math.floor(agilityLevel)}%`, tone: 'muted' as PillTone },
-          { value: `+${Math.floor(agilityLevel)} +${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
+          { value: `${Math.floor(agilityLevel)}% +${Math.floor(agilityLevel)}`, tone: 'teal' as PillTone },
+          { value: `${Math.floor(agilityLevel)}% +${Math.floor(agilityLevel)}`, tone: 'muted' as PillTone },
+          { value: `${Math.floor(agilityLevel)}% +${Math.floor(agilityLevel)}`, tone: 'teal' as PillTone },
         ],
       },
     ]

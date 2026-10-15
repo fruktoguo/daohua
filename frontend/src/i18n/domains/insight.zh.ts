@@ -30,7 +30,7 @@ export const insightZh = {
       stamina: {
         name: '体魄',
         pinyin: 'tǐ pò',
-        desc: '肉身如炉，百炼成钢。\n每点提升 12 点 +1% 生命上限、1 点 +1% 护甲、1 点 +1% 生命回复。',
+        desc: '肉身如炉，百炼成钢。\n每点提升 1% +12 生命上限、1% +1 护甲、1% +1 生命回复。',
         benefit1: '生命上限',
         benefit2: '护甲',
         benefit3: '生命回复',
@@ -38,7 +38,7 @@ export const insightZh = {
       meridians: {
         name: '经脉',
         pinyin: 'jīng mài',
-        desc: '百脉俱通，灵气自生。\n每点提升 7 点 +1% 灵力上限、1 点 +1% 法抗、1 点 +1% 灵力回复。',
+        desc: '百脉俱通，灵气自生。\n每点提升 1% +7 灵力上限、1% +1 法抗、1% +1 灵力回复。',
         benefit1: '灵力上限',
         benefit2: '法抗',
         benefit3: '灵力回复',
@@ -46,7 +46,7 @@ export const insightZh = {
       bone: {
         name: '根骨',
         pinyin: 'gēn gǔ',
-        desc: '仙骨天成，根深蒂固。\n每点提升 12 点 +1% 生命上限、7 点 +1% 灵力上限、1 点 +1% 化解。',
+        desc: '仙骨天成，根深蒂固。\n每点提升 1% +12 生命上限、1% +7 灵力上限、1% +1 化解。',
         benefit1: '生命上限',
         benefit2: '灵力上限',
         benefit3: '化解',
@@ -54,7 +54,7 @@ export const insightZh = {
       strength: {
         name: '力道',
         pinyin: 'lì dào',
-        desc: '力可拔山，势能断岳。\n每点提升 1 点 +1% 物理攻击、1 点 +1% 暴击、1 点 +1% 破招。',
+        desc: '力可拔山，势能断岳。\n每点提升 1% +1 物理攻击、1% +1 暴击、1% +1 破招。',
         benefit1: '物理攻击',
         benefit2: '暴击',
         benefit3: '破招',
@@ -62,14 +62,14 @@ export const insightZh = {
       consciousness: {
         name: '神识',
         pinyin: 'shén shí',
-        desc: '神念如炬，洞照幽冥。\n每点提升 2 点 +2% 术法攻击、1 点 +1% 命中。',
+        desc: '神念如炬，洞照幽冥。\n每点提升 2% +2 术法攻击、1% +1 命中。',
         benefit1: '术法攻击',
         benefit2: '命中',
       },
       agility: {
         name: '身法',
         pinyin: 'shēn fǎ',
-        desc: '身似惊鸿，步若凌波。\n每点提升 1 点 +1% 闪避、1 点 +1% 免爆、1 点 +1% 化解。',
+        desc: '身似惊鸿，步若凌波。\n每点提升 1% +1 闪避、1% +1 免爆、1% +1 化解。',
         benefit1: '闪避',
         benefit2: '免爆',
         benefit3: '化解',
