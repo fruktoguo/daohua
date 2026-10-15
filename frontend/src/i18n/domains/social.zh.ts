@@ -130,6 +130,8 @@ export const socialZh = {
       combatExp: '战斗经验',
       valuation: '身家',
       sixDimensions: '六维',
+      combatAttributes: '战斗属性',
+      techniqueLevels: '技艺等级',
       combatEquipment: '战斗装备',
       toolEquipment: '技艺装备',
       noEquipment: '未装备',
@@ -141,6 +143,7 @@ export const socialZh = {
       generalGroup: '通用消耗品',
       slotEmpty: '未配置',
       slotDisabled: '停用',
+      viewDetail: '查看角色详情',
     },
     // 同图共战（组队讨伐）：成员准备状态、开启槽位与活跃会话（§21.13）
     ready: {

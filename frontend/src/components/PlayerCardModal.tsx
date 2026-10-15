@@ -11,6 +11,7 @@ import { ItemReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
+import { UnitNumber } from './UnitNumber'
 
 /** 战斗消耗品每组栏位数（与服务端 AutoUseBar.DefaultSlotCount 一致：药品 3 + 通用 3） */
 const CONSUMABLE_GROUP_SLOTS = 3
@@ -23,6 +24,17 @@ const DIMENSION_DEFS: ReadonlyArray<{ id: string; tone: PillTone; levelKey: 'sta
   { id: 'strength', tone: 'crimson', levelKey: 'attackLevel', expKey: 'attackExp' },
   { id: 'consciousness', tone: 'purple', levelKey: 'consciousnessLevel', expKey: 'consciousnessExp' },
   { id: 'agility', tone: 'teal', levelKey: 'agilityLevel', expKey: 'agilityExp' },
+]
+
+/** 技艺条目：i18n 键 id 与胶囊色调 */
+const TECHNIQUE_DEFS: ReadonlyArray<{ id: string; tone: PillTone }> = [
+  { id: 'alchemy', tone: 'emerald' },
+  { id: 'forging', tone: 'crimson' },
+  { id: 'talisman', tone: 'amber' },
+  { id: 'enhancement', tone: 'gold' },
+  { id: 'formation', tone: 'purple' },
+  { id: 'gathering', tone: 'teal' },
+  { id: 'mining', tone: 'bronze' },
 ]
 
 /** 六维经验进度（与内视页同一口径：当前级内经验/本级所需经验）。 */
@@ -162,6 +174,41 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
           })}
         </div>
       </section>
+
+      {card.attributes && (
+        <section className="player-card-section">
+          <h4 className="player-card-section-title">{t('social.card.combatAttributes')}</h4>
+          <div className="player-card-dims player-card-grid-2">
+            <PillStatLabel label={t('insight.combat.hp')} tone="emerald" tooltip={t('insight.combat.hpTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.maxHitpoints} />} />
+            <PillStatLabel label={t('insight.combat.mp')} tone="cyan" tooltip={t('insight.combat.mpTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.maxManapoints} />} />
+            <PillStatLabel label={t('insight.combat.physAtk')} tone="crimson" tooltip={t('insight.combat.physAtkTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.physicalAttack} />} />
+            <PillStatLabel label={t('insight.combat.spellAtk')} tone="purple" tooltip={t('insight.combat.spellAtkTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.spellAttack} />} />
+            <PillStatLabel label={t('insight.combat.armor')} tone="bronze" tooltip={t('insight.combat.armorTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.armor} />} />
+            <PillStatLabel label={t('insight.combat.magicRes')} tone="slate" tooltip={t('insight.combat.magicResTooltip')} tooltipTone="gold" value={<UnitNumber disableTooltip value={card.attributes.magicResistance} />} />
+          </div>
+        </section>
+      )}
+
+      {card.techniqueLevels && Object.keys(card.techniqueLevels).length > 0 && (
+        <section className="player-card-section">
+          <h4 className="player-card-section-title">{t('social.card.techniqueLevels')}</h4>
+          <div className="player-card-dims player-card-grid-2">
+            {TECHNIQUE_DEFS.map(tech => {
+              const level = Math.floor(card.techniqueLevels?.[tech.id] ?? 0)
+              return (
+                <PillStatLabel
+                  key={tech.id}
+                  label={t(`insight.technique.${tech.id}`)}
+                  tone={tech.tone}
+                  tooltip={t(`insight.technique.${tech.id}Tooltip`)}
+                  tooltipTone="gold"
+                  value={t('insight.technique.levelLabel', { level })}
+                />
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="player-card-section">
         <h4 className="player-card-section-title">{t('social.card.combatEquipment')}</h4>

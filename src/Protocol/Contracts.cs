@@ -955,7 +955,9 @@ public sealed record PartyDto(
 /// <summary>同节点在线修士条目。</summary>
 /// <param name="PlayerId">修士玩家 ID</param>
 /// <param name="DisplayName">修士道号</param>
-public sealed record NearbyPlayerDto(string PlayerId, string DisplayName);
+/// <param name="RealmLevel">境界等级</param>
+/// <param name="Valuation">身家估值</param>
+public sealed record NearbyPlayerDto(string PlayerId, string DisplayName, int RealmLevel = 1, double Valuation = 0);
 
 /// <summary>待处理的队伍邀请条目。</summary>
 /// <param name="PartyId">邀请方队伍标识</param>
@@ -1112,6 +1114,8 @@ public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, dou
 /// <param name="AbilityExperiences">功法经验表（abilityId → 累计经验）</param>
 /// <param name="Equipment">已穿戴装备（战斗装备与技艺工具合并清单）</param>
 /// <param name="AutoUseSlots">战斗栏域消耗品配置（丹药栏 + 通用栏）</param>
+/// <param name="Attributes">战斗六维基础属性</param>
+/// <param name="TechniqueLevels">生活技艺等级表</param>
 public sealed record PlayerCardDto(
     string RequestId,
     string PlayerId,
@@ -1129,4 +1133,6 @@ public sealed record PlayerCardDto(
     IReadOnlyList<string>? LearnedAbilityIds = null,
     IReadOnlyDictionary<string, double>? AbilityExperiences = null,
     IReadOnlyList<PlayerCardEquipmentDto>? Equipment = null,
-    IReadOnlyList<PlayerCardAutoUseSlotDto>? AutoUseSlots = null);
+    IReadOnlyList<PlayerCardAutoUseSlotDto>? AutoUseSlots = null,
+    object? Attributes = null,
+    IReadOnlyDictionary<string, int>? TechniqueLevels = null);

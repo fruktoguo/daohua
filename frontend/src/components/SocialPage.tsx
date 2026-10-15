@@ -12,7 +12,6 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FloatingPopover, type FloatingPlacement } from './FloatingPopover'
 import { Modal } from './Modal'
-import { PlayerCardModal } from './PlayerCardModal'
 
 /** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
@@ -709,7 +708,6 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
 
       {editing && <LeaderProfileModal onClose={() => setEditing(false)} />}
 
-      <PlayerCardModal />
 
       <ConfirmDialog
         description={(isLeader ? t('social.confirm.leaveLeaderDesc') : t('social.confirm.leaveDesc')) + sessionSuffix}

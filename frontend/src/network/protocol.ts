@@ -1,3 +1,5 @@
+import type { CombatAttributes } from '../game/types'
+
 /**
  * 道化太初客户端二进制信封协议（DHW1 = DaoHua Wire v1）。
  *
@@ -556,6 +558,8 @@ export interface PartyDto {
 export interface NearbyPlayerDto {
   playerId: string
   displayName: string
+  realmLevel?: number
+  valuation?: number
 }
 
 /** 待处理的队伍邀请条目 */
@@ -739,6 +743,10 @@ export interface PlayerCardDto {
   abilityExperiences?: Record<string, number> | null
   /** 战斗栏域消耗品配置（丹药栏 + 通用栏） */
   autoUseSlots?: PlayerCardAutoUseSlotDto[] | null
+  /** 战斗六维/核心属性 */
+  attributes?: CombatAttributes | null
+  /** 生活技艺等级表（techniqueId → level） */
+  techniqueLevels?: Record<string, number> | null
 }
 
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1

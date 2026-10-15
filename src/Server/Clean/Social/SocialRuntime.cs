@@ -179,13 +179,22 @@ public sealed class SocialRuntime
             invitation is null
                 ? null
                 : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName, invitation.PartyName),
-            _presence.SnapshotAtNode(_presence.GetNodeId(playerId)),
+            await BuildNearbyPlayersAsync(playerId, cancellationToken),
             snapshot.Seeker is null
                 ? null
                 : new PartySeekerDto(
                     snapshot.Seeker.ActivityKind, snapshot.Seeker.NodeId, snapshot.Seeker.MinValuation,
                     snapshot.Seeker.CreatedAt.ToUnixTimeMilliseconds()));
     }
+    private async ValueTask<IReadOnlyList<NearbyPlayerDto>> BuildNearbyPlayersAsync(Guid playerId, CancellationToken cancellationToken)
+    {
+        var nearby = _presence.SnapshotAtNode(_presence.GetNodeId(playerId));
+        if (nearby.Count == 0) return nearby;
+        var nearbyGuids = nearby.Select(p => Guid.Parse(p.PlayerId)).ToArray();
+        var nearbyValuations = await _valuation.ComputeDisplayAsync(nearbyGuids, cancellationToken);
+        return [.. nearby.Select(p => p with { Valuation = nearbyValuations.GetValueOrDefault(Guid.Parse(p.PlayerId), p.Valuation) })];
+    }
+
 
     /// <summary>
     /// 构建组队大厅视图：公开队伍与匹配中散人，按筛选条件过滤。
@@ -272,15 +281,24 @@ public sealed class SocialRuntime
     {
         var targetId = Guid.Parse(request.PlayerId!);
 
-        // 同队授权：目标非本人时必须与请求者同队。
+        // 授权判定：本人、同队成员或同地点附近修士（同节点在线）
         if (targetId != playerId)
         {
+            var isSameParty = false;
             var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
-            var party = partyId is { } id ? await _repository.GetPartyAsync(id, cancellationToken) : null;
-            if (party is null || !party.Members.Any(member => member.PlayerId == targetId))
+            if (partyId is { } id)
+            {
+                var party = await _repository.GetPartyAsync(id, cancellationToken);
+                isSameParty = party is not null && party.Members.Any(member => member.PlayerId == targetId);
+            }
+
+            var viewerNode = _presence.GetNodeId(playerId);
+            var targetNode = _presence.GetNodeId(targetId);
+            var isNearby = viewerNode is not null && targetNode is not null && viewerNode == targetNode;
+
+            if (!isSameParty && !isNearby)
                 return new PlayerCardDto(request.RequestId, targetId.ToString("D"), Error: "forbidden");
         }
-
         var identity = await _repository.GetPlayerIdentityAsync(targetId, cancellationToken);
         if (identity is null)
             return new PlayerCardDto(request.RequestId, targetId.ToString("D"), Error: "not-found");
@@ -306,6 +324,14 @@ public sealed class SocialRuntime
             .Select(slot => new PlayerCardAutoUseSlotDto(slot.SlotIndex, slot.ItemId, slot.Quantity, slot.Enabled, slot.Group))
             .ToArray();
 
+        var playerAttributes = PlayerAttributeResolver.Resolve(state, _gameData);
+        var attributes = ProtocolSnapshotMapper.ToAttributesDto(playerAttributes);
+        var techniqueLevels = TechniqueCatalog.All.ToDictionary(
+            tech => tech,
+            tech => (int)TechniqueCatalog.LevelFor(
+                state.Loadout.TechniqueExperiences is { } techExps && techExps.TryGetValue(tech, out var exp) ? exp : 0,
+                _gameData.RealmProgression),
+            StringComparer.Ordinal);
         return new PlayerCardDto(
             request.RequestId,
             targetId.ToString("D"),
@@ -327,7 +353,9 @@ public sealed class SocialRuntime
             LearnedAbilityIds: [.. state.LearnedAbilities.Select(ability => ability.Value)],
             AbilityExperiences: state.Loadout.AbilityExperiences,
             Equipment: [.. state.Loadout.Equipment.Select(item => new PlayerCardEquipmentDto(item.ItemId, item.EnhancementLevel))],
-            AutoUseSlots: combatSlots);
+            AutoUseSlots: combatSlots,
+            Attributes: attributes,
+            TechniqueLevels: techniqueLevels);
     }
 
     /// <summary>执行一条社交指令。</summary>

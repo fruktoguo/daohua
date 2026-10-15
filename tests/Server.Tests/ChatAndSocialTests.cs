@@ -622,6 +622,32 @@ public sealed class ChatAndSocialTests
         Assert.Equal("forbidden", card.Error);
     }
 
+    /// <summary>同节点附近修士（非同队）可查角色卡：展示六维、战斗属性与生活技艺等级。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PlayerCard_NearbyPlayer_AllowedAndReturnsAttributesAndTechniques()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (viewer, _) = await SeedPlayerAsync(source, "同地观者");
+        var (target, targetName) = await SeedPlayerAsync(source, "附近道友");
+        var presence = new OnlinePresenceRegistry();
+        // 两人登记在同一个世界节点（云溪村 node.yunxi-village）
+        await presence.RegisterAsync(viewer, "同地观者", "node.yunxi-village");
+        await presence.RegisterAsync(target, targetName, "node.yunxi-village");
+        var social = CreateSocialRuntime(source, repository, presence);
+
+        var card = await social.BuildPlayerCardAsync(viewer,
+            new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+
+        Assert.Null(card.Error);
+        Assert.Equal(targetName, card.DisplayName);
+        Assert.NotNull(card.Attributes);
+        Assert.NotNull(card.TechniqueLevels);
+        Assert.Contains("alchemy", card.TechniqueLevels!.Keys);
+        Assert.Contains("forging", card.TechniqueLevels!.Keys);
+    }
+
     /// <summary>不公开队伍不进大厅；持有 partyId 的链接点击仍可加入，身家门槛照旧裁决。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]

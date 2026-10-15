@@ -26,8 +26,10 @@ public static class TechniqueCatalog
     /// <summary>挖矿技艺。</summary>
     public const string Mining = "mining";
 
-    private static readonly HashSet<string> KnownSet = new(StringComparer.Ordinal)
-        { Alchemy, Forging, Talisman, Enhancement, Formation, Gathering, Mining };
+    /// <summary>全部已知技艺标识列表。</summary>
+    public static readonly string[] All = [Alchemy, Forging, Talisman, Enhancement, Formation, Gathering, Mining];
+
+    private static readonly HashSet<string> KnownSet = new(All, StringComparer.Ordinal);
 
     /// <summary>校验标识是否为七种技艺之一。</summary>
     public static bool IsKnown(string? techniqueId) => techniqueId is not null && KnownSet.Contains(techniqueId);

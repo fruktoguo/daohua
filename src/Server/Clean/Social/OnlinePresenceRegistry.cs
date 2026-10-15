@@ -26,21 +26,21 @@ public sealed class OnlinePresenceRegistry
     /// </summary>
     public event Func<Guid, ValueTask>? NodeChanged;
 
-    private readonly record struct Entry(string DisplayName, string? NodeId);
+    private readonly record struct Entry(string DisplayName, string? NodeId, int RealmLevel, double Valuation);
 
     /// <summary>登记或刷新在线玩家；节点变化时返回受影响的玩家集合。</summary>
     /// <param name="playerId">玩家 ID。</param>
     /// <param name="displayName">玩家道号。</param>
     /// <param name="nodeId">当前地图节点 ID；行进在边上时为 null。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    public ValueTask RegisterAsync(Guid playerId, string displayName, string? nodeId, CancellationToken cancellationToken = default)
+    public ValueTask RegisterAsync(Guid playerId, string displayName, string? nodeId, int realmLevel = 1, double valuation = 0, CancellationToken cancellationToken = default)
     {
         List<Guid> affected;
         bool nodeChanged;
         lock (_gate)
         {
             _entries.TryGetValue(playerId, out var previous);
-            _entries[playerId] = new Entry(displayName, nodeId);
+            _entries[playerId] = new Entry(displayName, nodeId, realmLevel, valuation);
             nodeChanged = previous.NodeId != nodeId;
             if (nodeChanged)
             {
@@ -117,7 +117,8 @@ public sealed class OnlinePresenceRegistry
             foreach (var playerId in members)
             {
                 // 索引与主表同锁维护，命中集合中的玩家必定仍登记在 _entries。
-                result.Add(new NearbyPlayerDto(playerId.ToString("D"), _entries[playerId].DisplayName));
+                var entry = _entries[playerId];
+                result.Add(new NearbyPlayerDto(playerId.ToString("D"), entry.DisplayName, entry.RealmLevel, entry.Valuation));
             }
         }
         // 排序移出锁外：避免长时占锁阻塞上下线与换节点。

@@ -8605,6 +8605,12 @@ input[type="checkbox"] {
   gap: 6px;
 }
 
+.player-card-dims.player-card-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 6px 12px;
+}
+
 .player-card-items {
   display: flex;
   flex-wrap: wrap;

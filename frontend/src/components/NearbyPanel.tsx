@@ -8,9 +8,10 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingPopover, FloatingInfoCard } from './FloatingPopover'
 import { Modal } from './Modal'
 import { UnitNumber } from './UnitNumber'
-import { formatInteger } from '../game/format'
+import { formatInteger, formatNumber } from '../game/format'
+import { calculateRealmInfo } from '../game/combatConstants'
 import { gameClient } from '../network/gameClient'
-import { ItemReference } from './ItemDisplay'
+import { ItemDropReference, ItemReference } from './ItemDisplay'
 import {
   getBuildingBonusItems,
   getBuildingUpgradeComparison,
@@ -52,6 +53,9 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
   isBoss?: boolean
 }): React.JSX.Element {
   const t = useT()
+  const maps = useGameStore(state => state.maps)
+  const world = useGameStore(state => state.world)
+
   const isActualBoss = isBoss || monster.rank === 'boss'
   const isActualElite = isElite || monster.rank === 'elite'
   const mark = isActualBoss ? t('combat.nearby.markBoss') : isActualElite ? t('combat.nearby.markElite') : (monster.visualSource || t('combat.nearby.markMonster'))
@@ -59,17 +63,59 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
   const rankLabel = monster.rank === 'boss' ? t('combat.nearby.rankBoss') : monster.rank === 'elite' ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
   const rankDesc = monster.rank === 'boss' ? t('combat.nearby.rankDescBoss') : monster.rank === 'elite' ? t('combat.nearby.rankDescElite') : t('combat.nearby.rankDescMonster')
   const summaryType = isActualBoss ? t('combat.nearby.titleBoss') : isActualElite ? t('combat.nearby.titleElite') : t('combat.nearby.titleMonster')
+  const realm = calculateRealmInfo(0, monster.level)
+
+  // 尝试在静态目录当前节点查找匹配的完整 CombatantDefinition（具有灵力、法攻、抗性与击杀经验等详尽数据）
+  const staticMonster = useMemo(() => {
+    if (world.nodeId === null) return null
+    const node = maps.find(m => m.mapId === world.mapId)?.nodes.find(n => n.nodeId === world.nodeId)
+    if (!node) return null
+    return (node.monsters ?? [])
+      .concat(node.eliteEnemies ?? [])
+      .concat(node.bossEnemies ?? [])
+      .find(m => m.enemyId === monster.monsterId) ?? null
+  }, [maps, world.mapId, world.nodeId, monster.monsterId])
+
+  const drops = staticMonster?.drops ?? monster.drops ?? []
+  const experience = staticMonster?.experience ?? 0
+  const rewardParts = [
+    experience > 0 ? `${t('combat.report.experience')} +${formatInteger(experience)}` : null,
+  ].filter((part): part is string => part !== null)
+
+  const attrs = staticMonster?.attributes ?? {
+    maxHitpoints: monster.maxHitpoints,
+    maxManapoints: 0,
+    physicalAttack: monster.physicalAttack,
+    spellAttack: 0,
+    armor: monster.armor,
+    magicResistance: 0,
+  }
+
   const details = [
-    { label: t('combat.nearby.statLevel'), value: `Lv.${monster.level}` },
-    { label: t('combat.nearby.statRank'), value: rankLabel },
-    { label: t('combat.nearby.statMaxHp'), value: <UnitNumber disableTooltip value={monster.maxHitpoints} /> },
-    { label: t('combat.nearby.statMaxDamage'), value: <UnitNumber disableTooltip value={monster.physicalAttack} /> },
-    { label: t('combat.nearby.statArmor'), value: <UnitNumber disableTooltip value={monster.armor} /> },
+    { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={attrs.maxHitpoints} /> },
+    ...(attrs.maxManapoints > 0 ? [{ label: t('insight.combat.mp'), value: <UnitNumber disableTooltip value={attrs.maxManapoints} /> }] : []),
+    { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip value={attrs.physicalAttack} /> },
+    ...(attrs.spellAttack > 0 ? [{ label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip value={attrs.spellAttack} /> }] : []),
+    { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip value={attrs.armor} /> },
+    ...(attrs.magicResistance > 0 ? [{ label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip value={attrs.magicResistance} /> }] : []),
   ]
 
-  if (intervalHint) {
-    details.unshift({ label: t('combat.nearby.statInterval'), value: intervalHint })
-  }
+  const lines = [
+    ...(intervalHint ? [`${t('combat.nearby.statInterval')}：${intervalHint}`] : []),
+    ...(rewardParts.length > 0 ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`] : []),
+    ...(drops.length > 0
+      ? [
+          <span key="drops">
+            {t('combat.map.monsterDrops')}：
+            <span className="world-monster-drops-row">
+              {drops.map(drop => (
+                <ItemDropReference drop={drop} key={drop.itemId} />
+              ))}
+            </span>
+          </span>,
+        ]
+      : []),
+  ]
 
   return (
     <FloatingPopover
@@ -79,9 +125,14 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
         <FloatingInfoCard
           title={monster.name}
           badge={rankLabel}
-          badgeTone={monster.rank === 'boss' ? 'danger' : monster.rank === 'elite' ? 'purple' : 'gold'}
-          subtitle={t('combat.nearby.monsterSubtitle', { level: monster.level, tier: monster.tier })}
+          badgeTone={isActualBoss ? 'danger' : isActualElite ? 'purple' : 'gold'}
+          subtitle={t('combat.map.monsterSubtitle', {
+            realm: realm.minorName,
+            level: monster.level,
+            tier: monster.tier,
+          })}
           description={t('combat.nearby.monsterDescription', { rankDesc })}
+          lines={lines}
           stats={details}
         />
       }
@@ -123,6 +174,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const buildingCatalog = useGameStore(state => state.buildings)
   const inventory = useGameStore(state => state.inventory)
   const nearbyPlayers = useSocialStore(state => state.nearbyPlayers)
+  const myValuation = useSocialStore(state => state.myValuation)
   const [buildPickerOpen, setBuildPickerOpen] = useState(false)
   const [detailBuildingId, setDetailBuildingId] = useState<string | null>(null)
   const [contributeBuildingId, setContributeBuildingId] = useState<string | null>(null)
@@ -268,28 +320,57 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
             <section className="nearby-section">
               <h4>{t('combat.nearby.playersHeading')}</h4>
               <div className="nearby-grid">
-                <article className="nearby-card is-player">
-                  <span className="nearby-mark">{t('combat.nearby.markPlayer')}</span>
+                <article
+                  className="nearby-card is-player is-interactive"
+                  onClick={() => gameClient.requestPlayerCard(playerId)}
+                  title={t('social.card.viewDetail')}
+                >
+                  <span className="nearby-mark">
+                    <CharacterAvatar name={name} role="player" />
+                  </span>
                   <div>
-                    <strong>{name}</strong>
-                    <small>{t('combat.nearby.you', { id: playerId.slice(0, 8) })}</small>
+                    <div className="nearby-player-name-row">
+                      <strong>{name}</strong>
+                      <span className="nearby-level-badge">{calculateRealmInfo(0, stats.realmLevel ?? 1).minorName}</span>
+                      <small className="nearby-player-self-tag">{t('combat.nearby.you', { id: playerId.slice(0, 8) })}</small>
+                    </div>
+                    <div className="nearby-player-sub-row">
+                      <span className="nearby-player-valuation">
+                        {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(myValuation ?? 0))}</span>
+                      </span>
+                    </div>
                   </div>
                 </article>
                 {otherPlayers.map(player => (
-                  <article className="nearby-card is-player" key={player.playerId}>
-                    <span className="nearby-mark">{t('combat.nearby.markPlayer')}</span>
+                  <article
+                    className="nearby-card is-player is-interactive"
+                    key={player.playerId}
+                    onClick={() => gameClient.requestPlayerCard(player.playerId)}
+                    title={t('social.card.viewDetail')}
+                  >
+                    <span className="nearby-mark">
+                      <CharacterAvatar name={player.displayName} role="player" />
+                    </span>
                     <div>
-                      <strong>{player.displayName}</strong>
-                      <span className="nearby-player-actions">
-                        <button
-                          onClick={() => gameClient.sendSocialAction('friend.request', player.playerId)}
-                          type="button"
-                        >{t('combat.chat.addFriendAction')}</button>
-                        <button
-                          onClick={() => gameClient.sendSocialAction('party.invite', player.playerId)}
-                          type="button"
-                        >{t('combat.chat.partyInvite')}</button>
-                      </span>
+                      <div className="nearby-player-name-row">
+                        <strong>{player.displayName}</strong>
+                        <span className="nearby-level-badge">{calculateRealmInfo(0, player.realmLevel ?? 1).minorName}</span>
+                      </div>
+                      <div className="nearby-player-sub-row">
+                        <span className="nearby-player-valuation">
+                          {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(player.valuation ?? 0))}</span>
+                        </span>
+                        <span className="nearby-player-actions" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={() => gameClient.sendSocialAction('friend.request', player.playerId)}
+                            type="button"
+                          >{t('combat.chat.addFriendAction')}</button>
+                          <button
+                            onClick={() => gameClient.sendSocialAction('party.invite', player.playerId)}
+                            type="button"
+                          >{t('combat.chat.partyInvite')}</button>
+                        </span>
+                      </div>
                     </div>
                   </article>
                 ))}
