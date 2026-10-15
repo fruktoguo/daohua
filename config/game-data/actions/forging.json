@@ -551,6 +551,87 @@
     ]
   },
   {
+    "id": "forge.zhanfeng-scarf",
+    "name": "斩风巾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.shufa-scarf": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.zhanfeng-scarf",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.liegang-armor",
+    "name": "裂罡甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 25,
+    "inputs": {
+      "item.refined-copper": 7,
+      "item.beast-fang": 1,
+      "equipment.baina-armor": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.liegang-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tafeng-pants",
+    "name": "踏风裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.zhakou-pants": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tafeng-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
     "id": "forge.xuantie-dart",
     "name": "赤牙匕",
     "description": "",

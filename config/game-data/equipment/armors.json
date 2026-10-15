@@ -106,8 +106,10 @@
     },
     "flatStats": {
       "maxHitpoints": 8,
-      "accuracy": 8,
-      "physicalDamageBonusPoints": 2
+      "physicalArmor": 6,
+      "spellResistance": 2,
+      "physicalDamageReductionPoints": 2,
+      "threatBonusPoints": 15
     }
   },
   {
@@ -125,7 +127,8 @@
       "maxHitpoints": 14,
       "physicalArmor": 11,
       "spellResistance": 3,
-      "physicalDamageBonusPoints": 2
+      "physicalDamageReductionPoints": 2,
+      "threatBonusPoints": 20
     }
   },
   {
@@ -143,6 +146,64 @@
       "physicalArmor": 6,
       "spellResistance": 2,
       "maxHitpoints": 8,
+      "physicalDamageReductionPoints": 2,
+      "threatBonusPoints": 15
+    }
+  },
+  {
+    "id": "equipment.zhanfeng-scarf",
+    "name": "斩风巾",
+    "description": "截风断水，目若朗星。\n以韧丝铜线混织的武修束发巾，紧致束发，目力明澈。",
+    "slot": "head",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.12,
+      "physicalArmor": 0.04
+    },
+    "flatStats": {
+      "physicalAttack": 6,
+      "accuracy": 4,
+      "criticalChance": 2,
+      "maxHitpoints": 4,
+      "physicalDamageBonusPoints": 2
+    }
+  },
+  {
+    "id": "equipment.liegang-armor",
+    "name": "裂罡甲",
+    "description": "破罡裂甲，身轻如燕。\n细密锁环与兽皮交错编缀的轻便战甲，兼顾躯体护卫与拳脚发力。",
+    "slot": "armor",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.2,
+      "physicalArmor": 0.08
+    },
+    "flatStats": {
+      "physicalAttack": 12,
+      "accuracy": 6,
+      "criticalChance": 4,
+      "maxHitpoints": 6,
+      "physicalDamageBonusPoints": 2
+    }
+  },
+  {
+    "id": "equipment.tafeng-pants",
+    "name": "踏风裤",
+    "description": "踏风逐月，步步生杀。\n紧致利落的武行短裤，步法灵动，发力无滞。",
+    "slot": "legs",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.12,
+      "physicalArmor": 0.04
+    },
+    "flatStats": {
+      "physicalAttack": 6,
+      "accuracy": 4,
+      "criticalChance": 2,
+      "maxHitpoints": 4,
       "physicalDamageBonusPoints": 2
     }
   },

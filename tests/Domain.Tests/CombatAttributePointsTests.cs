@@ -147,4 +147,59 @@ public sealed class CombatAttributePointsTests
         Assert.Equal(50, resolved.AttackSpeedPoints);
         Assert.Equal(30, resolved.DamageAbsorptionPoints);
     }
+
+    /// <summary>
+    /// 赤军重装生存套与破罡裂风输出套穿戴验证：
+    /// 赤军套：物理减伤 +6% (各 2%)，威胁增幅 +50% (衣服 20%、头腿各 15%)，无物理增伤；
+    /// 裂风套：物理增伤 +6% (各 2%)，物攻/命中/暴击提升，无物理减伤与威胁增幅。
+    /// </summary>
+    [Fact]
+    public void RedArmyAndWindSetEquippedAttributesTest()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "装备测试", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+
+        // 1. 穿戴赤军重装生存套（赤金盔、鱼鳞甲、踏阵胫）
+        var redArmySlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.chijin-helmet", 0),
+            new PlayerEquipmentSlot("equipment.yulin-armor", 0),
+            new PlayerEquipmentSlot("equipment.tazhen-greaves", 0),
+        };
+        player.ReplaceCombatSlots([], redArmySlots);
+        var redArmyResolved = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 物理减伤 = 2 + 2 + 2 = 6%
+        Assert.Equal(6, redArmyResolved.PhysicalDamageReductionPoints);
+        // 威胁增幅 = 15 + 20 + 15 = 50%
+        Assert.Equal(50, redArmyResolved.ThreatBonusPoints);
+        // 无物理增伤
+        Assert.Equal(0, redArmyResolved.PhysicalDamageBonusPoints);
+
+        // 2. 穿戴破罡裂风输出套（斩风巾、裂罡甲、踏风裤）
+        var windSlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.zhanfeng-scarf", 0),
+            new PlayerEquipmentSlot("equipment.liegang-armor", 0),
+            new PlayerEquipmentSlot("equipment.tafeng-pants", 0),
+        };
+        player.ReplaceCombatSlots([], windSlots);
+        var windResolved = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 物理增伤 = 2 + 2 + 2 = 6%
+        Assert.Equal(6, windResolved.PhysicalDamageBonusPoints);
+        // 无物理减伤
+        Assert.Equal(0, windResolved.PhysicalDamageReductionPoints);
+        // 无威胁增幅
+        Assert.Equal(0, windResolved.ThreatBonusPoints);
+
+        // 物理输出套攻击与暴击显著高于生存套
+        Assert.True(windResolved.PhysicalAttack > redArmyResolved.PhysicalAttack);
+        Assert.True(windResolved.Critical > redArmyResolved.Critical);
+        Assert.True(windResolved.Accuracy > redArmyResolved.Accuracy);
+        // 生存套双防与生命显著高于输出套
+        Assert.True(redArmyResolved.Armor > windResolved.Armor);
+        Assert.True(redArmyResolved.MagicResistance > windResolved.MagicResistance);
+        Assert.True(redArmyResolved.MaxHitpoints > windResolved.MaxHitpoints);
+    }
 }
