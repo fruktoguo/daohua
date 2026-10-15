@@ -52,12 +52,13 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
   isBoss?: boolean
 }): React.JSX.Element {
   const t = useT()
-  const mark = isBoss ? t('combat.nearby.markBoss') : isElite ? t('combat.nearby.markElite') : (monster.visualSource || t('combat.nearby.markMonster'))
-  const cardClassName = `nearby-card ${isBoss ? 'is-boss' : isElite ? 'is-elite' : 'is-monster'}`
+  const isActualBoss = isBoss || monster.rank === 'boss'
+  const isActualElite = isElite || monster.rank === 'elite'
+  const mark = isActualBoss ? t('combat.nearby.markBoss') : isActualElite ? t('combat.nearby.markElite') : (monster.visualSource || t('combat.nearby.markMonster'))
+  const cardClassName = `nearby-card ${isActualBoss ? 'is-boss' : isActualElite ? 'is-elite' : 'is-monster'}`
   const rankLabel = monster.rank === 'boss' ? t('combat.nearby.rankBoss') : monster.rank === 'elite' ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
   const rankDesc = monster.rank === 'boss' ? t('combat.nearby.rankDescBoss') : monster.rank === 'elite' ? t('combat.nearby.rankDescElite') : t('combat.nearby.rankDescMonster')
-  const summaryType = isBoss ? t('combat.nearby.titleBoss') : isElite ? t('combat.nearby.titleElite') : t('combat.nearby.titleMonster')
-
+  const summaryType = isActualBoss ? t('combat.nearby.titleBoss') : isActualElite ? t('combat.nearby.titleElite') : t('combat.nearby.titleMonster')
   const details = [
     { label: t('combat.nearby.statLevel'), value: `Lv.${monster.level}` },
     { label: t('combat.nearby.statRank'), value: rankLabel },
@@ -131,6 +132,12 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const monsters = world.monsters ?? []
   const eliteEnemies = world.eliteEnemies ?? []
   const bossEnemies = world.bossEnemies ?? []
+  const eliteIds = useMemo(() => new Set(eliteEnemies.map(monster => monster.monsterId)), [eliteEnemies])
+  const bossIds = useMemo(() => new Set(bossEnemies.map(monster => monster.monsterId)), [bossEnemies])
+  const displayMonsters = useMemo(
+    () => monsters.filter(monster => !eliteIds.has(monster.monsterId) && !bossIds.has(monster.monsterId) && monster.rank !== 'elite' && monster.rank !== 'boss'),
+    [monsters, eliteIds, bossIds],
+  )
   const hasMonsters = monsters.length > 0 || eliteEnemies.length > 0 || bossEnemies.length > 0
   const hasBudget = (world.maxBudget ?? 0) > 0
   const onEdge = world.edgeId !== null
@@ -215,7 +222,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
         {tab === 'monsters' && (
           <section className="nearby-section">
             <div className="nearby-grid">
-              {monsters.map(monster => (
+              {displayMonsters.map(monster => (
                 <MonsterCard key={monster.monsterId} monster={monster} />
               ))}
               {eliteEnemies.map(monster => (
@@ -223,7 +230,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   key={`elite-${monster.monsterId}`}
                   monster={monster}
                   isElite
-                  intervalHint={t('combat.nearby.eliteIntervalHint', { count: world.eliteInterval ?? 5 })}
+                  intervalHint={t('combat.nearby.eliteIntervalHint', { count: (world.eliteInterval && world.eliteInterval > 0) ? world.eliteInterval : 5 })}
                 />
               ))}
               {bossEnemies.map(monster => (
@@ -231,7 +238,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   key={`boss-${monster.monsterId}`}
                   monster={monster}
                   isBoss
-                  intervalHint={t('combat.nearby.bossIntervalHint', { count: world.bossInterval ?? 20 })}
+                  intervalHint={t('combat.nearby.bossIntervalHint', { count: (world.bossInterval && world.bossInterval > 0) ? world.bossInterval : 20 })}
                 />
               ))}
               {!hasMonsters && <p className="nearby-empty">{t('combat.nearby.noMonsters')}</p>}

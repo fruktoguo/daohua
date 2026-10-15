@@ -193,17 +193,20 @@ export const CombatEcologyPanel = memo(function CombatEcologyPanel({
   // 节点生态优先；无生态（行进中/未配遭遇）回退行动钉死遭遇，与服务端无节点遭遇时的回退口径一致
   const entries = useMemo<EcologyMonsterEntry[]>(() => {
     if (node && hasEcology) {
+      const eliteIds = new Set((node.eliteEnemies ?? []).map(enemy => enemy.enemyId))
+      const bossIds = new Set((node.bossEnemies ?? []).map(enemy => enemy.enemyId))
+      const normalMonsters = (node.monsters ?? []).filter(enemy => !eliteIds.has(enemy.enemyId) && !bossIds.has(enemy.enemyId))
       return [
-        ...(node.monsters ?? []).map(enemy => ({ enemy, rank: 'normal' as const })),
+        ...normalMonsters.map(enemy => ({ enemy, rank: 'normal' as const })),
         ...(node.eliteEnemies ?? []).map(enemy => ({
           enemy,
           rank: 'elite' as const,
-          intervalHint: t('combat.nearby.eliteIntervalHint', { count: world.eliteInterval ?? 5 }),
+          intervalHint: t('combat.nearby.eliteIntervalHint', { count: (world.eliteInterval && world.eliteInterval > 0) ? world.eliteInterval : 5 }),
         })),
         ...(node.bossEnemies ?? []).map(enemy => ({
           enemy,
           rank: 'boss' as const,
-          intervalHint: t('combat.nearby.bossIntervalHint', { count: world.bossInterval ?? 20 }),
+          intervalHint: t('combat.nearby.bossIntervalHint', { count: (world.bossInterval && world.bossInterval > 0) ? world.bossInterval : 20 }),
         })),
       ]
     }
@@ -220,7 +223,7 @@ export const CombatEcologyPanel = memo(function CombatEcologyPanel({
         list.push({
           enemy,
           rank: 'boss',
-          intervalHint: t('combat.nearby.bossIntervalHint', { count: encounter.battlesPerBoss }),
+          intervalHint: t('combat.nearby.bossIntervalHint', { count: (encounter.battlesPerBoss && encounter.battlesPerBoss > 0) ? encounter.battlesPerBoss : 20 }),
         })
       }
     }

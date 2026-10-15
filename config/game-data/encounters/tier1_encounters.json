@@ -22,17 +22,13 @@
         "enemyId": "enemy.demonized-rabbit",
         "weight": 3,
         "strength": 15
-      },
-      {
-        "enemyId": "enemy.armored-bear",
-        "weight": 1,
-        "strength": 45
       }
     ],
     "maxTotalStrength": 65,
     "eliteEnemyIds": [
       "enemy.armored-bear"
-    ]
+    ],
+    "battlesPerElite": 5
   },
   {
     "id": "encounter.twilight-pass",
@@ -44,17 +40,13 @@
         "enemyId": "enemy.fire-spirit",
         "weight": 2,
         "strength": 15
-      },
-      {
-        "enemyId": "enemy.demon-ape",
-        "weight": 1,
-        "strength": 35
       }
     ],
     "maxTotalStrength": 80,
     "eliteEnemyIds": [
       "enemy.demon-ape"
     ],
+    "battlesPerElite": 5,
     "bossEnemyIds": [
       "enemy.chang-tiger"
     ],

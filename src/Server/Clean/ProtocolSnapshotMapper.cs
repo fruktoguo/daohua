@@ -881,25 +881,47 @@ public static class ProtocolSnapshotMapper
                         .Select(id => catalog.Encounters.FirstOrDefault(e => e.ValueKind == JsonValueKind.Object && ReadString(e, "id") == id))
                         .Where(e => e.ValueKind == JsonValueKind.Object)
                         .ToArray();
-                    var normalIds = new List<string>();
-                    var eliteIds = new List<string>();
-                    var bossIds = new List<string>();
+                    var rawNormalIds = new List<string>();
+                    var rawEliteIds = new List<string>();
+                    var rawBossIds = new List<string>();
                     foreach (var e in nodeEncounters)
                     {
-                        normalIds.AddRange(ReadArray(e, "randomSpawns").Select(s => ReadString(s, "enemyId")));
-                        normalIds.AddRange(ReadStringArray(e, "normalEnemyIds"));
-                        eliteIds.AddRange(ReadStringArray(e, "eliteEnemyIds"));
-                        bossIds.AddRange(ReadStringArray(e, "bossEnemyIds"));
+                        rawNormalIds.AddRange(ReadArray(e, "randomSpawns").Select(s => ReadString(s, "enemyId")));
+                        rawNormalIds.AddRange(ReadStringArray(e, "normalEnemyIds"));
+                        rawEliteIds.AddRange(ReadStringArray(e, "eliteEnemyIds"));
+                        rawBossIds.AddRange(ReadStringArray(e, "bossEnemyIds"));
                     }
+
+                    // 生灵排他分流：Boss 优先，其次精英，普通生灵严格排除精英/首领怪，避免同怪跨类别重复展示
+                    var bossIds = rawBossIds.Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal).ToArray();
+                    var eliteIds = rawEliteIds.Where(id => !string.IsNullOrEmpty(id) && !bossIds.Contains(id, StringComparer.Ordinal))
+                        .Distinct(StringComparer.Ordinal).ToArray();
+                    var normalIds = rawNormalIds.Where(id => !string.IsNullOrEmpty(id)
+                        && !bossIds.Contains(id, StringComparer.Ordinal)
+                        && !eliteIds.Contains(id, StringComparer.Ordinal)
+                        && (!catalog.Monsters.TryGetValue(id, out var m)
+                            || (!string.Equals(ReadString(m, "rank", "normal"), "boss", StringComparison.OrdinalIgnoreCase)
+                                && !string.Equals(ReadString(m, "rank", "normal"), "elite", StringComparison.OrdinalIgnoreCase))))
+                        .Distinct(StringComparer.Ordinal).ToArray();
+
                     // 与原实现同构：空序列经 DefaultIfEmpty().Min/Max 得到 0，投影原样保留该边界值。
                     var minBudget = nodeEncounters.Select(e => ReadDouble(e, "minBudget", double.NaN))
                         .Where(double.IsFinite).DefaultIfEmpty().Min();
                     var maxBudget = nodeEncounters.Select(e => ReadDouble(e, "maxBudget", double.NaN))
                         .Where(double.IsFinite).DefaultIfEmpty().Max();
-                    var eliteInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerElite", ReadDouble(e, "eliteInterval", double.NaN)))
-                        .Where(double.IsFinite).DefaultIfEmpty().Min();
-                    var bossInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerBoss", ReadDouble(e, "bossInterval", double.NaN)))
-                        .Where(double.IsFinite).DefaultIfEmpty().Min();
+
+                    // 精英/Boss 周期：未指定时回退领域默认值（精英 5 场，Boss 20 场），杜绝 0 场出没
+                    var eliteIntervals = nodeEncounters
+                        .Select(e => ReadDouble(e, "battlesPerElite", ReadDouble(e, "eliteInterval", double.NaN)))
+                        .Where(v => double.IsFinite(v) && v > 0)
+                        .ToArray();
+                    var eliteInterval = eliteIntervals.Length > 0 ? eliteIntervals.Min() : 5.0;
+
+                    var bossIntervals = nodeEncounters
+                        .Select(e => ReadDouble(e, "battlesPerBoss", ReadDouble(e, "bossInterval", double.NaN)))
+                        .Where(v => double.IsFinite(v) && v > 0)
+                        .ToArray();
+                    var bossInterval = bossIntervals.Length > 0 ? bossIntervals.Min() : 20.0;
 
                     byNodeId[nodeId] = new WorldNodeStaticProjection
                     {
@@ -924,9 +946,9 @@ public static class ProtocolSnapshotMapper
                         MaxBudget = maxBudget,
                         EliteInterval = eliteInterval,
                         BossInterval = bossInterval,
-                        Monsters = normalIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!,
-                        EliteEnemies = eliteIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!,
-                        BossEnemies = bossIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!
+                        Monsters = normalIds.Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!,
+                        EliteEnemies = eliteIds.Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!,
+                        BossEnemies = bossIds.Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!
                     };
                 }
             }
@@ -996,8 +1018,8 @@ public static class ProtocolSnapshotMapper
                     .ToArray(),
             minBudget = projection?.MinBudget ?? 0.0,
             maxBudget = projection?.MaxBudget ?? 0.0,
-            eliteInterval = projection?.EliteInterval ?? 0.0,
-            bossInterval = projection?.BossInterval ?? 0.0,
+            eliteInterval = projection is not null && projection.EliteInterval > 0 ? projection.EliteInterval : 5.0,
+            bossInterval = projection is not null && projection.BossInterval > 0 ? projection.BossInterval : 20.0,
             monsters = projection?.Monsters ?? [],
             eliteEnemies = projection?.EliteEnemies ?? [],
             bossEnemies = projection?.BossEnemies ?? []

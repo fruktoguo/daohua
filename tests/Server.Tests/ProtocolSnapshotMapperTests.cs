@@ -241,6 +241,55 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(expectedDuration, actualDuration, 5);
         Assert.True(actualDuration < 8.0, "下发的耗时应为加速后的耗时，而非原配表基础耗时。");
     }
+
+    /// <summary>
+    /// 世界节点生态生灵互斥投影门禁：普通/精英/首领怪严格互斥，不得跨池重复展示；
+    /// 精英/Boss 刷新间隔缺省安全回退（默认 5 和 20 场），绝不下发 0 场出没。
+    /// </summary>
+    [Fact]
+    public void ToWorldSection_MonstersAreMutuallyExclusive_AndIntervalsDoNotZeroOut()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var aggregate = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()),
+            "生态测试", DateTimeOffset.UtcNow, gameData.Fingerprint);
+
+        // 设置玩家驻留在青云山门（node.cloud-gate）
+        aggregate.World.NodeId = "node.cloud-gate";
+        aggregate.World.EdgeId = null;
+
+        var runtime = new PlayerRuntimeSnapshot(aggregate.PlayerId.Value, aggregate.AccountId.Value.ToString("D"),
+            aggregate.DisplayName, 1, aggregate.LastSimulatedAt, aggregate.ExportState(), 0, []);
+        var snapshot = ProtocolSnapshotMapper.ToSnapshot(runtime, gameData.Fingerprint, gameData);
+
+        var worldSection = Assert.Single(snapshot.Sections, s => s.Section == PlayerSectionKinds.World);
+        var data = worldSection.Data;
+
+        var eliteInterval = data.GetProperty("eliteInterval").GetDouble();
+        var bossInterval = data.GetProperty("bossInterval").GetDouble();
+        Assert.True(eliteInterval > 0, "精英出没周期必须大于 0，不可下发 0 场");
+        Assert.True(bossInterval > 0, "首领出没周期必须大于 0，不可下发 0 场");
+        Assert.Equal(5.0, eliteInterval);
+        Assert.Equal(20.0, bossInterval);
+
+        var normalMonsters = data.GetProperty("monsters").EnumerateArray()
+            .Select(m => m.GetProperty("monsterId").GetString()!).ToList();
+        var eliteEnemies = data.GetProperty("eliteEnemies").EnumerateArray()
+            .Select(m => m.GetProperty("monsterId").GetString()!).ToList();
+        var bossEnemies = data.GetProperty("bossEnemies").EnumerateArray()
+            .Select(m => m.GetProperty("monsterId").GetString()!).ToList();
+
+        // 验证三类生灵严格互斥，青云山门包含火灵（普通）、魔猿（精英）、伥虎（首领）
+        Assert.Contains("enemy.fire-spirit", normalMonsters);
+        Assert.Contains("enemy.demon-ape", eliteEnemies);
+        Assert.Contains("enemy.chang-tiger", bossEnemies);
+
+        // 魔猿不得同时出现在普通怪列表中
+        Assert.DoesNotContain("enemy.demon-ape", normalMonsters);
+        // 普通怪中不可包含任何精英或首领
+        Assert.Empty(normalMonsters.Intersect(eliteEnemies));
+        Assert.Empty(normalMonsters.Intersect(bossEnemies));
+        Assert.Empty(eliteEnemies.Intersect(bossEnemies));
+    }
 }
 
 public sealed class ProtocolAttributesPointsTests
