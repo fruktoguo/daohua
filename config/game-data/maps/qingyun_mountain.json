@@ -127,15 +127,6 @@
         "encounterIds": [
           "encounter.twilight-pass"
         ],
-        "buildings": [
-          {
-            "id": "building.peak-cottage",
-            "name": "绝顶道庐",
-            "kind": "building",
-            "description": "依悬崖古松而建的简朴茅庐，俯瞰茫茫云海与人间烟火。",
-            "effect": "吐纳修炼效果提升 25%"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -151,6 +142,15 @@
             "kind": "npc",
             "description": "闲坐崖边抚琴观云的老道，俯瞰人间万家灯火，少与来客攀谈。",
             "effect": "静观云海"
+          }
+        ],
+        "buildings": [
+          {
+            "id": "building.peak-cottage",
+            "name": "绝顶道庐",
+            "kind": "building",
+            "description": "依悬崖古松而建的简朴茅庐，俯瞰茫茫云海与人间烟火。",
+            "effect": "吐纳修炼效果提升 25%"
           }
         ],
         "cultivationMultiplier": 1.25,
