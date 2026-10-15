@@ -1,58 +1,18 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { convertTierToLevel, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
-import { getT, useT, type TFunction } from '../../i18n'
+import { parseEnhancementVariant } from '../../game/ids'
+import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
 import { ItemTile } from '../ItemDisplay'
 import { Modal } from '../Modal'
-import type { MarketInstrument } from './MarketOrderForm'
-import { getMarketPriceIncrement, normalizeMarketPrice } from './MarketOrderForm'
+import { getMarketPriceIncrement, normalizeMarketPrice, resolveMarketInstrumentMetadata, type MarketInstrument } from './MarketOrderForm'
 
 /** 挂单单价上限：防止 ×2 步进无限放大导致总价显示失真（服务端仅要求有限正数）。 */
 const MARKET_ORDER_MAX_PRICE = 999_999_999
 
-// 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
-function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
-  const subCategoryLabel = resolveItemCategoryLabel(
-    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)
-  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
-    const tier = Math.max(1, item.tier)
-    const grade = resolveItemGrade(tier)
-    return {
-      label: item.name,
-      glyph: '⚔️',
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: grade.rarity,
-      rarityLabel: grade.label,
-      level: tier,
-      description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
-    }
-  }
-  const registered = resolveItemMetadata(item.itemId)
-  if (!registered) {
-    const tier = Math.max(1, item.tier)
-    const grade = resolveItemGrade(tier)
-    return {
-      label: item.name,
-      glyph: item.name.slice(0, 1),
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: grade.rarity,
-      rarityLabel: grade.label,
-      tier,
-      level: convertTierToLevel(tier),
-      description: t('market.itemFallback.description'),
-    }
-  }
-  return withItemGrade({
-    ...registered,
-    category: subCategoryLabel,
-  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
-}
 
 /** 挂单交易模态弹窗 Props */
 interface MarketOrderModalProps {
@@ -207,7 +167,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
   if (!open || !instrument) return null
 
-  const metadata = getMetadata(instrument, t)
+  const metadata = resolveMarketInstrumentMetadata(instrument, t)
   const titleId = `market-order-modal-title-${instrument.itemId}`
   // 标题与物品卡名称口径与背包变体行一致：强化变体展示 "名称 +N"。
   const displayName = enhancementLevel > 0 ? `${instrument.name} +${enhancementLevel}` : instrument.name

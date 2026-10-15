@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { convertTierToLevel, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
-import { getT, useT, type TFunction } from '../i18n'
+import { parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory, type ItemMetadata } from '../game/ids'
+import { getT, useT } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketOrder, MarketVariantSummary } from '../game/types'
 import { useMarketStore, type MarketTab } from '../game/marketStore'
@@ -9,7 +9,7 @@ import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { MarketBookPanel } from './market/MarketBookPanel'
 import { MarketBrowseGrid } from './market/MarketBrowseGrid'
 import { MarketEnhancementPicker } from './market/MarketEnhancementPicker'
-import type { MarketInstrument } from './market/MarketOrderForm'
+import { resolveMarketInstrumentMetadata, type MarketInstrument } from './market/MarketOrderForm'
 import { MarketOrderModal } from './market/MarketOrderModal'
 import { MarketOwnOrders } from './market/MarketOwnOrders'
 
@@ -27,46 +27,6 @@ const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
   { id: 'orders' },
 ]
 
-// 未注册物品与装备的坊市兜底元数据
-function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
-  const subCategoryLabel = resolveItemCategoryLabel(
-    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)
-  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
-    const tier = Math.max(1, item.tier)
-    const grade = resolveItemGrade(tier)
-    return {
-      label: item.name,
-      glyph: '⚔️',
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: grade.rarity,
-      rarityLabel: grade.label,
-      level: tier,
-      description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
-    }
-  }
-
-  const registered = resolveItemMetadata(item.itemId)
-  if (!registered) {
-    const tier = Math.max(1, item.tier)
-    const grade = resolveItemGrade(tier)
-    return {
-      label: item.name,
-      glyph: item.name.slice(0, 1),
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: grade.rarity,
-      rarityLabel: grade.label,
-      tier,
-      level: convertTierToLevel(tier),
-      description: t('market.itemFallback.description'),
-    }
-  }
-  return withItemGrade({
-    ...registered,
-    category: subCategoryLabel,
-  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
-}
 
 /** 装备标的判定：与 MarketBrowseGrid.isEquipment / getMetadata 装备分支同一口径 */
 function isEquipmentInstrument(item: MarketInstrument): boolean {
@@ -441,7 +401,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
     for (const entry of inventory) if (entry.itemId === selected.itemId) total += entry.amount
     return total
   }, [inventory, selected])
-  const selectedMetadata = useMemo(() => (selected ? getMetadata(selected, t) : null), [selected, t])
+  const selectedMetadata = useMemo(() => (selected ? resolveMarketInstrumentMetadata(selected, t) : null), [selected, t])
   // 轮询返回的盘口只对「当前选中标的 + 当前等级」生效，切换等级时旧簿不落屏（先显占位档）。
   const activeBook = book !== null && book.itemId === selectedItemId && book.enhancementLevel === effectiveLevel ? book : null
   const activeVariants = variantBook !== null && variantBook.itemId === selectedItemId ? variantBook.rows : EMPTY_VARIANTS

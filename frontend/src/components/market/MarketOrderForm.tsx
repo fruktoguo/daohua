@@ -2,31 +2,13 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
 import { getT, useT } from '../../i18n'
+import { resolveMarketInstrumentMetadata, type MarketInstrument } from '../../game/marketStore'
+
+export { type MarketInstrument, resolveMarketInstrumentMetadata }
 import { useGameStore } from '../../game/gameStore'
-import type { CombatEquipmentDefinition, ItemDefinition, MarketBook } from '../../game/types'
+import type { MarketBook } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
 
-/**
- * 坊市交易标的元数据定义
- */
-export interface MarketInstrument {
-  /** 物品唯一 ID */
-  itemId: string
-  /** 物品名称 */
-  name: string
-  /** 物品品类 */
-  category: string
-  /** 子品类 (可选，如装备 slot 或材料细分类别) */
-  subCategory?: string
-  /** 物品等阶 */
-  tier: number
-  /** 系统商店回收底价 (Vendor Price) */
-  sellPrice: number
-  /** 服务端原始物品定义 (道具/材料) */
-  definition?: ItemDefinition
-  /** 服务端原始装备定义 (装备) */
-  equipmentDefinition?: CombatEquipmentDefinition
-}
 
 /**
  * 根据价格区间动态计算坊市最小变动价格步长 (Tick Size)

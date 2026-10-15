@@ -1,6 +1,6 @@
 import { type MouseEvent, type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../game/format'
-import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
 import { useT, type TFunction } from '../i18n'
 import type { CombatEquipmentDefinition, ItemDefinition, QueueEntry } from '../game/types'
@@ -66,17 +66,15 @@ interface ItemGridPickerProps {
 // 未注册物品的兜底元数据：名称/品类/描述保留服务端数据。
 function fallbackMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
   const tier = Math.max(1, item.tier)
-  const grade = resolveItemGrade(tier)
-  return {
+  return withItemGrade({
     label: item.name,
     glyph: item.name.slice(0, 1),
     tone: 'gold',
     category: resolveItemCategoryLabel(item.category, t),
-    rarity: grade.rarity,
-    rarityLabel: grade.label,
-    level: tier,
+    rarity: 'mundane',
+    rarityLabel: '',
     description: item.description,
-  }
+  }, tier)
 }
 
 function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {

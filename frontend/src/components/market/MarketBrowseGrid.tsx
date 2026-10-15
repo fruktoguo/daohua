@@ -1,52 +1,12 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../../game/format'
-import { convertTierToLevel, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
-import { useT, type TFunction } from '../../i18n'
+import { resolveItemCategoryLabel, resolveItemSubCategory } from '../../game/ids'
+import { useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import { useMarketStore, type MarketPrimaryCategory } from '../../game/marketStore'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
-import type { MarketInstrument } from './MarketOrderForm'
+import { resolveMarketInstrumentMetadata, type MarketInstrument } from './MarketOrderForm'
 
-// 未注册物品与装备的坊市兜底元数据
-function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
-  const subCategoryLabel = resolveItemCategoryLabel(
-    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)
-  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
-    const tier = Math.max(1, item.tier)
-    const grade = resolveItemGrade(tier)
-    return {
-      label: item.name,
-      glyph: '⚔️',
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: grade.rarity,
-      rarityLabel: grade.label,
-      level: tier,
-      description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
-    }
-  }
-
-  const registered = resolveItemMetadata(item.itemId)
-  if (!registered) {
-    const tier = Math.max(1, item.tier)
-    const grade = resolveItemGrade(tier)
-    return {
-      label: item.name,
-      glyph: item.name.slice(0, 1),
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: grade.rarity,
-      rarityLabel: grade.label,
-      tier,
-      level: convertTierToLevel(tier),
-      description: t('market.itemFallback.description'),
-    }
-  }
-  return withItemGrade({
-    ...registered,
-    category: subCategoryLabel,
-  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
-}
 
 /** 一级主 Tab 分类类型 */
 type PrimaryCategory = MarketPrimaryCategory
@@ -198,7 +158,7 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
   openDelay = 150,
 }: MarketBrowseCardItemProps): React.JSX.Element {
   const t = useT()
-  const metadata = useMemo(() => getMetadata(item, t), [item, t])
+  const metadata = useMemo(() => resolveMarketInstrumentMetadata(item, t), [item, t])
 
   const handleClick = useCallback(() => {
     onSelect(item.itemId)

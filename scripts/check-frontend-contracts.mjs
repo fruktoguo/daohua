@@ -118,7 +118,24 @@ try {
   const pool = calculateBaseAttributes(0, 2)
   assert.equal(pool.baseHpRegen, 7.75)
   assert.equal(pool.baseMpRegen, 0.125)
-  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数。')
+  const { resolveMarketInstrumentMetadata } = await server.ssrLoadModule('/src/game/marketStore.ts')
+  const { resolveItemMetadata: resolveItemMeta, withItemGrade: withGrade } = await server.ssrLoadModule('/src/game/ids.ts')
+  const t2Weapon = {
+    itemId: 'equipment.pishan-blade',
+    name: '披山刀',
+    category: 'equipment',
+    subCategory: 'weapon',
+    tier: 2,
+    sellPrice: 50,
+    equipmentDefinition: { equipmentId: 'equipment.pishan-blade', name: '披山刀', slot: 'weapon', tier: 2 },
+  }
+  const marketMeta = resolveMarketInstrumentMetadata(t2Weapon)
+  assert.equal(marketMeta.tier, 2, '坊市标的 tier 必须保留原始等阶')
+  assert.equal(marketMeta.level, 18, '坊市标的 level 必须换算为修士等级 Lv.18，不得错误显示为 T 级')
+  assert.equal(marketMeta.rarity, 'yellow', 'T2 标的稀有度必须为黄品 (yellow)')
+  const bagMeta = withGrade(resolveItemMeta(t2Weapon.itemId) ?? { label: t2Weapon.name, glyph: '·', tone: 'gold', category: 'weapon', rarity: 'mundane', rarityLabel: '', description: '' }, 2)
+  assert.equal(marketMeta.level, bagMeta.level, '坊市标的等级必须与背包等级完全对齐')
+  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐。')
 } finally {
   await server.close()
 }

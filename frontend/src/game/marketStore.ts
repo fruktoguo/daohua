@@ -1,10 +1,84 @@
 import { create } from 'zustand'
+import { resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from './ids'
+import { getT, type TFunction } from '../i18n'
+import type { CombatEquipmentDefinition, ItemDefinition } from './types'
 
 /** 坊市一级主分类 */
 export type MarketPrimaryCategory = 'all' | 'material' | 'equipment' | 'consumable' | 'manual'
 
 /** 坊市顶层 Tab */
 export type MarketTab = 'browse' | 'orders'
+
+/**
+ * 坊市交易标的元数据定义
+ */
+export interface MarketInstrument {
+  /** 物品唯一 ID */
+  itemId: string
+  /** 物品名称 */
+  name: string
+  /** 物品品类 */
+  category: string
+  /** 子品类 (可选，如装备 slot 或材料细分类别) */
+  subCategory?: string
+  /** 物品等阶 */
+  tier: number
+  /** 系统商店回收底价 (Vendor Price) */
+  sellPrice: number
+  /** 服务端原始物品定义 (道具/材料) */
+  definition?: ItemDefinition
+  /** 服务端原始装备定义 (装备) */
+  equipmentDefinition?: CombatEquipmentDefinition
+}
+
+/**
+ * 解析坊市交易标的对应的物品元数据 (ItemMetadata)
+ *
+ * 统一收拢品类细分、等阶归一化 (withItemGrade) 与等级换算 (convertTierToLevel)，
+ * 避免各处分散兜底导致等阶/等级口径不一致（如误把 tier 当成 level 显示）。
+ */
+export function resolveMarketInstrumentMetadata(item: MarketInstrument, t?: TFunction): ItemMetadata {
+  const translator = t ?? getT()
+  const subCategoryLabel = resolveItemCategoryLabel(
+    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category),
+    translator,
+  )
+  const tier = Math.max(1, item.tier)
+
+  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
+    return withItemGrade({
+      label: item.name,
+      glyph: '⚔️',
+      tone: 'gold',
+      category: subCategoryLabel,
+      rarity: 'mundane',
+      rarityLabel: '',
+      description: item.equipmentDefinition?.description || (item.equipmentDefinition ? '' : translator('market.itemFallback.description')),
+      source: '',
+      usage: '',
+    }, tier)
+  }
+
+  const registered = resolveItemMetadata(item.itemId)
+  if (!registered) {
+    return withItemGrade({
+      label: item.name,
+      glyph: item.name.slice(0, 1),
+      tone: 'gold',
+      category: subCategoryLabel,
+      rarity: 'mundane',
+      rarityLabel: '',
+      description: item.definition?.description || translator('market.itemFallback.description'),
+      source: '',
+      usage: '',
+    }, tier)
+  }
+
+  return withItemGrade({
+    ...registered,
+    category: subCategoryLabel,
+  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
+}
 
 /** 坊市 UI 状态接口 */
 export interface MarketUiState {
