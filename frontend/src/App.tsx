@@ -1604,7 +1604,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                 ))}
                 {techniqueId && techniqueExp > 0 && (
                   <span className="action-stat-pill action-stat-pill--technique" key={`tech-${techniqueId}`}>
-                    <span className="action-stat-pill-label">{t(`insight.technique.${techniqueId}`)}{t('app.action.techniqueExpSuffix')}</span>
+                    <span className="action-stat-pill-label">{t(`insight.technique.${techniqueId}`)}</span>
                     <strong className="action-stat-pill-value">
                       <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={techniqueExp} />
                     </strong>

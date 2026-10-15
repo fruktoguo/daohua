@@ -209,7 +209,6 @@ export const appZh = {
       none: '无',
       outputs: '产出',
       insights: '感悟',
-      techniqueExpSuffix: '技艺经验',
       combatDrops: '按战斗掉落表结算',
       yieldKind: {
         mana: '灵力',
