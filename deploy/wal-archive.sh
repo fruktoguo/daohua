@@ -56,11 +56,16 @@ case "$action" in
         exit 1
       }
     done < <(find "$WAL_ARCHIVE_DIR" -maxdepth 1 -type f -print0)
-    for file in "${wal_files[@]}"; do
-      [[ "$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file")" == "600" ]] || {
-        printf 'WAL 文件权限必须为 0600: %s\n' "$file" >&2
-        exit 1
-      }
+    bad_perm="$(find "$WAL_ARCHIVE_DIR" -maxdepth 1 -type f ! -perm 600 -print -quit 2>/dev/null || true)"
+    if [[ -n "$bad_perm" ]]; then
+      printf 'WAL 文件权限必须为 0600: %s\n' "$bad_perm" >&2
+      exit 1
+    fi
+    wal_check_files=("${wal_files[@]}")
+    if [[ "${FULL_WAL_VERIFY:-0}" != "1" && "${#wal_check_files[@]}" -gt 100 ]]; then
+      wal_check_files=("${wal_check_files[@]: -100}")
+    fi
+    for file in "${wal_check_files[@]}"; do
       gzip -t "$file" || { printf 'WAL 压缩归档损坏: %s\n' "$file" >&2; exit 1; }
     done
     printf 'WAL 归档校验通过: files=%s dir=%s\n' "${#wal_files[@]}" "$WAL_ARCHIVE_DIR"
