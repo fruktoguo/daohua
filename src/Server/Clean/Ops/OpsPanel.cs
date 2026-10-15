@@ -155,34 +155,53 @@ public static class OpsPanel
             });
         });
 
-        group.MapGet("/api/players", async (IPlayerRuntime players, CancellationToken cancellationToken) =>
+        group.MapGet("/api/players", async (IPlayerRuntime players, IServiceProvider services, CancellationToken cancellationToken) =>
         {
             var snapshots = await players.GetLoadedSnapshotsAsync(cancellationToken);
-            return Results.Ok(snapshots.Select(snapshot => new
+            var insights = services.GetService<OpsStorageInsights>();
+            var identities = insights is null
+                ? new Dictionary<Guid, OpsPlayerIdentity>()
+                : await insights.GetPlayerIdentitiesAsync(snapshots.Select(snapshot => snapshot.PlayerId).ToArray(), cancellationToken);
+
+            return Results.Ok(snapshots.Select(snapshot =>
             {
-                playerId = snapshot.PlayerId,
-                accountId = snapshot.AccountId,
-                displayName = snapshot.DisplayName,
-                stateVersion = snapshot.StateVersion,
-                presence = snapshot.State.Presence.ToString().ToLowerInvariant(),
-                lastSimulatedAt = snapshot.LastSimulatedAt,
-                actionCount = snapshot.QueuedActionCount,
-                assetCount = snapshot.Assets.Count
+                identities.TryGetValue(snapshot.PlayerId, out var identity);
+                return new
+                {
+                    playerId = snapshot.PlayerId,
+                    accountId = snapshot.AccountId,
+                    account = identity?.LoginName ?? string.Empty,
+                    sequenceId = identity?.PlayerSeq ?? 0L,
+                    displayName = snapshot.DisplayName,
+                    stateVersion = snapshot.StateVersion,
+                    presence = snapshot.State.Presence.ToString().ToLowerInvariant(),
+                    lastSimulatedAt = snapshot.LastSimulatedAt,
+                    actionCount = snapshot.QueuedActionCount,
+                    assetCount = snapshot.Assets.Count
+                };
             }));
         });
 
         // 玩家详情只覆盖「已加载」玩家：运维面板不得因查看详情而触发状态加载（那会把冷玩家拉进内存并占租约）。
-        group.MapGet("/api/players/{playerId:guid}", async (Guid playerId, IPlayerRuntime players, CancellationToken cancellationToken) =>
+        group.MapGet("/api/players/{playerId:guid}", async (Guid playerId, IPlayerRuntime players, IServiceProvider services, CancellationToken cancellationToken) =>
         {
             var snapshots = await players.GetLoadedSnapshotsAsync(cancellationToken);
             var snapshot = snapshots.FirstOrDefault(item => item.PlayerId == playerId);
             if (snapshot is null) return Results.Json(new { code = "PLAYER_NOT_LOADED", message = "该玩家当前未加载到运行时。" }, statusCode: StatusCodes.Status404NotFound);
+
+            var insights = services.GetService<OpsStorageInsights>();
+            var identities = insights is null
+                ? new Dictionary<Guid, OpsPlayerIdentity>()
+                : await insights.GetPlayerIdentitiesAsync([playerId], cancellationToken);
+            identities.TryGetValue(playerId, out var identity);
 
             var state = snapshot.State;
             return Results.Ok(new
             {
                 playerId = snapshot.PlayerId,
                 accountId = snapshot.AccountId,
+                account = identity?.LoginName ?? string.Empty,
+                sequenceId = identity?.PlayerSeq ?? 0L,
                 displayName = snapshot.DisplayName,
                 stateVersion = snapshot.StateVersion,
                 presence = state.Presence.ToString().ToLowerInvariant(),

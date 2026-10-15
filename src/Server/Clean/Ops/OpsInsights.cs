@@ -12,6 +12,11 @@ public sealed record OpsSchemaVersionBucket(int SchemaVersion, long SectionCount
 /// <param name="TotalBytes">含索引与 TOAST 的总占用字节。</param>
 public sealed record OpsTableSize(string Table, long TotalBytes);
 
+/// <summary>玩家认证与身份只读信息（供运维诊断展示）。</summary>
+/// <param name="LoginName">玩家注册登录名（login_normalized）。</param>
+/// <param name="PlayerSeq">角色自增编号（player_seq）。</param>
+public sealed record OpsPlayerIdentity(string LoginName, long PlayerSeq);
+
 /// <summary>市场成交流水行（只读诊断视图）。</summary>
 /// <param name="TradeId">成交唯一标识。</param>
 /// <param name="AssetId">品种资产 ID。</param>
@@ -118,6 +123,35 @@ public sealed class OpsStorageInsights(NpgsqlDataSource dataSource)
         }
         return rows;
     }
+    /// <summary>批量查询已加载玩家的登录名与角色自增序号；无连接或异常时静默返回空集合，不阻塞运维主流程。</summary>
+    public async ValueTask<IReadOnlyDictionary<Guid, OpsPlayerIdentity>> GetPlayerIdentitiesAsync(
+        IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default)
+    {
+        if (playerIds.Count == 0) return new Dictionary<Guid, OpsPlayerIdentity>();
+        try
+        {
+            var map = new Dictionary<Guid, OpsPlayerIdentity>(playerIds.Count);
+            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand("""
+                SELECT p.player_id, a.login_normalized, p.player_seq
+                FROM identity.players p
+                JOIN identity.accounts a ON p.account_id = a.account_id
+                WHERE p.player_id = ANY($1)
+                """, connection);
+            command.Parameters.Add(new NpgsqlParameter { Value = playerIds.ToArray() });
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                map[reader.GetGuid(0)] = new OpsPlayerIdentity(reader.GetString(1), reader.GetInt64(2));
+            }
+            return map;
+        }
+        catch
+        {
+            return new Dictionary<Guid, OpsPlayerIdentity>();
+        }
+    }
+
 
     private static async ValueTask<OpsStorageSnapshot> ReadCountersAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {

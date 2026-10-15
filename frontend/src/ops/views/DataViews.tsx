@@ -33,9 +33,13 @@ export function OpsPlayersView({ intervalMs }: { intervalMs: number }): React.JS
             rowKey={player => player.playerId}
             empty="当前没有已加载玩家。"
             columns={[
-              { header: '玩家 ID', cell: player => player.playerId },
-              { header: '账号', cell: player => player.accountId },
+              {
+                header: '序号',
+                numeric: true,
+                cell: player => (player.sequenceId ? `#${player.sequenceId}` : '-'),
+              },
               { header: '道号', cell: player => player.displayName },
+              { header: '登录账号', cell: player => player.account || '-' },
               {
                 header: '在线状态',
                 cell: player => <OpsPill tone={player.presence === 'online' ? 'jade' : 'muted'}>{presenceLabel(player.presence)}</OpsPill>,
@@ -44,6 +48,10 @@ export function OpsPlayersView({ intervalMs }: { intervalMs: number }): React.JS
               { header: '上次模拟', cell: player => formatTime(player.lastSimulatedAt) },
               { header: '队列动作', numeric: true, cell: player => formatNumber(player.actionCount) },
               { header: '资产条目', numeric: true, cell: player => formatNumber(player.assetCount) },
+              {
+                header: '玩家 ID',
+                cell: player => <span title={player.playerId} style={{ fontFamily: 'monospace' }}>{player.playerId.slice(0, 8)}…</span>,
+              },
               { header: '操作', cell: player => <button type="button" onClick={() => setSelected(player.playerId)}>详情</button> },
             ]}
           />
@@ -71,10 +79,12 @@ function OpsPlayerDetailModal({ playerId, onClose }: { playerId: string; onClose
             <>
               <OpsKeyValues
                 items={[
-                  ['玩家 ID', data.playerId],
-                  ['账号', data.accountId],
+                  ['角色编号', data.sequenceId ? `#${data.sequenceId}` : '-'],
                   ['道号', data.displayName],
+                  ['登录账号', data.account || '-'],
                   ['在线状态', presenceLabel(data.presence)],
+                  ['玩家 ID', data.playerId],
+                  ['账号 ID', data.accountId],
                   ['状态版本', formatNumber(data.stateVersion)],
                   ['创建时刻', formatTime(data.createdAt)],
                   ['上次模拟', formatTime(data.lastSimulatedAt)],

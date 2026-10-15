@@ -211,6 +211,24 @@ public sealed class OpsWriteEndpointTests
         Assert.True(payload.GetProperty("categories").GetArrayLength() > 0);
     }
 
+    /// <summary>已加载玩家列表端点要求密码认证，返回 200 并支持无数据空列表形态。</summary>
+    [Fact]
+    public async Task PlayersEndpoint_RequiresTokenAndReturnsOk()
+    {
+        await using var app = await StartHostAsync();
+        using var http = new HttpClient();
+
+        var unauthorized = await http.GetAsync($"{BaseAddress(app)}/ops/api/players");
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseAddress(app)}/ops/api/players");
+        request.Headers.Add(OpsPanel.TokenHeader, OpsToken);
+        var response = await http.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var list = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(JsonValueKind.Array, list.ValueKind);
+    }
+
     private static HttpRequestMessage Authorized(HttpMethod method, string url, object body)
     {
         var request = new HttpRequestMessage(method, url) { Content = JsonContent.Create(body) };

@@ -60,6 +60,10 @@ export interface OpsHealth {
 export interface OpsPlayerSummary {
   playerId: string
   accountId: string
+  /** 真实登录账号名（login_normalized） */
+  account?: string
+  /** 角色自增编号（player_seq） */
+  sequenceId?: number
   displayName: string
   stateVersion: number
   presence: string
@@ -72,6 +76,10 @@ export interface OpsPlayerSummary {
 export interface OpsPlayerDetail {
   playerId: string
   accountId: string
+  /** 真实登录账号名（login_normalized） */
+  account?: string
+  /** 角色自增编号（player_seq） */
+  sequenceId?: number
   displayName: string
   stateVersion: number
   presence: string

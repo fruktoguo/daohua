@@ -571,9 +571,12 @@ async function resolvePlayerId(token) {
   const needle = String(token).toLowerCase();
   const exact = players.filter((p) => String(p.playerId).toLowerCase() === needle);
   const prefix = players.filter((p) => String(p.playerId).toLowerCase().startsWith(needle));
-  const byName = players.filter((p) => String(p.displayName).includes(token));
-  const matched = exact[0] ?? prefix[0] ?? byName[0];
-  if (matched) return { player: matched, candidates: prefix.length + byName.length };
+  const byName = players.filter((p) => String(p.displayName).toLowerCase().includes(needle));
+  const byAccount = players.filter((p) => p.account && String(p.account).toLowerCase().includes(needle));
+  const bySeq = players.filter((p) => p.sequenceId && String(p.sequenceId) === needle.replace(/^#/, ''));
+  const matched = exact[0] ?? prefix[0] ?? byName[0] ?? byAccount[0] ?? bySeq[0];
+  const candidates = prefix.length + byName.length + byAccount.length + bySeq.length;
+  if (matched) return { player: matched, candidates };
   return { player: null, candidates: 0 };
 }
 
@@ -622,26 +625,37 @@ const commands = {
       const players = await apiGet("/players");
       if (players.length === 0) return ["当前没有已加载玩家。"];
       return table(
-        ["玩家ID", "道号", "状态", "动作", "资产", "上次模拟"],
-        players.map((p) => [shortId(p.playerId), p.displayName, p.presence, p.actionCount, p.assetCount, formatIso(p.lastSimulatedAt)]),
+        ["序号", "道号", "登录账号", "状态", "动作", "资产", "上次模拟", "玩家ID"],
+        players.map((p) => [
+          p.sequenceId ? `#${p.sequenceId}` : "-",
+          p.displayName,
+          p.account || "-",
+          p.presence,
+          p.actionCount,
+          p.assetCount,
+          formatIso(p.lastSimulatedAt),
+          shortId(p.playerId),
+        ]),
       );
     },
   },
   player: {
-    usage: "player <玩家ID前缀|道号>", desc: "玩家详情",
+    usage: "player <玩家ID前缀|道号|登录名|#序号>", desc: "玩家详情",
     run: async (a) => {
-      if (!a[0]) throw new ApiError(0, null, "用法：player <玩家ID前缀|道号>");
+      if (!a[0]) throw new ApiError(0, null, "用法：player <玩家ID前缀|道号|登录名|#序号>");
       const { player, candidates } = await resolvePlayerId(a[0]);
       if (!player) throw new ApiError(0, null, `未找到玩家「${a[0]}」（仅匹配已加载玩家）`);
       const d = await apiGet(`/players/${player.playerId}`);
+      const seqLabel = d.sequenceId ? `#${d.sequenceId} ` : "";
+      const accLabel = d.account ? ` · 登录名 ${d.account}` : "";
       const lines = [
-        `${d.displayName} (${d.playerId}) · ${d.presence} · stateVersion ${d.stateVersion} · 账号 ${shortId(d.accountId)}`,
+        `${seqLabel}${d.displayName} (${shortId(d.playerId)})${accLabel} · ${d.presence} · stateVersion ${d.stateVersion} · 账号ID ${shortId(d.accountId)}`,
         `境界 Lv${d.progression.realmLevel} · 经验 ${formatNum(d.progression.experience)} · 修炼 ${formatDurationSec(d.progression.cultivationSeconds)} · 击杀 普${d.progression.normalKills}/精${d.progression.eliteKills}/王${d.progression.bossKills} · 败北 ${d.progression.totalDefeats}`,
         `气血 ${formatNum(d.combat.hitpoints)}/${formatNum(d.combat.maxHitpoints)} · 灵力 ${formatNum(d.combat.manapoints)}/${formatNum(d.combat.maxManapoints)} · 攻 ${formatNum(d.combat.attackPower)} · 防 ${formatNum(d.combat.defense)}`,
         `位置 ${d.world.nodeId} (${d.world.x},${d.world.y})${d.world.edgeId ? ` · 边上 ${d.world.edgeId} ${formatNum(d.world.edgeProgress * 100)}%` : ""}`,
         `队列 ${d.counts.actions} · 资产 ${d.counts.assets} · Buff ${d.counts.buffs} · 功法 ${d.counts.learnedAbilities} · 装备 ${d.counts.equippedInstances}`,
       ];
-      if (candidates > 1) lines.push(`（按前缀/道号匹配到 ${candidates} 名已加载玩家，已取首个）`);
+      if (candidates > 1) lines.push(`（按前缀/道号/账号匹配到 ${candidates} 名已加载玩家，已取首个）`);
       const logs = d.recentLogs?.slice(-8) ?? [];
       if (logs.length > 0) {
         lines.push("最近日志：");

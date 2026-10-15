@@ -82,6 +82,25 @@ public sealed class AccountAuthTests
         await source.DisposeAsync();
     }
 
+    /// <summary>运维只读查询能正确关联玩家的真实登录名与角色自增序号。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task OpsStorageInsights_GetPlayerIdentities_RetrievesLoginAndSeq()
+    {
+        var (source, repository) = await OpenRepositoryAsync();
+        var account = UniqueAccount();
+        var registered = await repository.RegisterAsync(account, "test-pass-1", null, null, new AccountRiskSignals(DeviceId: account));
+        Assert.True(registered.Success);
+
+        var insights = new Server.Clean.Ops.OpsStorageInsights(source);
+        var identities = await insights.GetPlayerIdentitiesAsync([registered.PlayerId!.Value]);
+
+        Assert.True(identities.TryGetValue(registered.PlayerId.Value, out var info));
+        Assert.Equal(account, info.LoginName);
+        Assert.True(info.PlayerSeq > 0);
+        await source.DisposeAsync();
+    }
+
     private static string UniqueAccount() => $"pwtest_{Guid.NewGuid():N}"[..16];
 
     private static async Task<(NpgsqlDataSource Source, PostgresAccountRepository Repository)> OpenRepositoryAsync()
