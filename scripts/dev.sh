@@ -128,9 +128,15 @@ if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   git submodule update --init --recursive
 fi
 
-# 2. 检查前端依赖
+# 2. 检查前端依赖（含 esbuild 原生二进制跨平台适配验证）
+NEED_NPM_INSTALL=0
 if [[ ! -d frontend/node_modules ]]; then
-  printf '==> 安装前端依赖...\n'
+  NEED_NPM_INSTALL=1
+elif ! node scripts/export-i18n-csv.mjs >/dev/null 2>&1; then
+  NEED_NPM_INSTALL=1
+fi
+if [[ "$NEED_NPM_INSTALL" -eq 1 ]]; then
+  printf '==> 安装/修复前端原生依赖 (npm install)...\n'
   npm --prefix frontend install
 fi
 

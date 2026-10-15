@@ -31,14 +31,31 @@ Write-Host "==================================================" -ForegroundColor
 Write-Host "         道化太初 Windows 开发环境启动" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
-# 0. 依赖自检（对齐 dev.sh：YuoCore submodule + 前端 node_modules）
+# 0. 依赖自检（对齐 dev.sh：YuoCore submodule + 前端 node_modules 与原生依赖）
 if (-not (Test-Path "vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj")) {
     Write-Host "[0/5] 初始化 YuoCore submodule..." -ForegroundColor Yellow
     git submodule update --init --recursive
 }
-if (-not (Test-Path "frontend/node_modules")) {
-    Write-Host "[0/5] 安装前端依赖..." -ForegroundColor Yellow
-    npm --prefix frontend install
+$npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+if (-not $npmCmd) {
+    Write-Host "  -> 错误: PATH 中未找到 npm.cmd，请确认 Node.js 已安装。" -ForegroundColor Red
+    exit 1
+}
+$needNpmInstall = -not (Test-Path "frontend/node_modules")
+if (-not $needNpmInstall) {
+    # 验证 esbuild 原生二进制是否适配当前平台（避免跨 WSL/Linux/Windows 切换时 @esbuild 原生二进制错配）
+    try {
+        $null = node scripts/export-i18n-csv.mjs 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $needNpmInstall = $true
+        }
+    } catch {
+        $needNpmInstall = $true
+    }
+}
+if ($needNpmInstall) {
+    Write-Host "[0/5] 安装/修复前端原生依赖 (npm install)..." -ForegroundColor Yellow
+    & $npmCmd --prefix frontend install
 }
 
 # 1. 检查数据库 (PostgreSQL: 5432)
@@ -104,9 +121,15 @@ if ($dbPortReady) {
         Write-Host "  -> 本地库尚未初始化（无 platform.schema_version），跳过迁移：服务端启动时由 PostgresSchema.Sql 直建当前 schema。" -ForegroundColor Gray
     } else {
         # 已初始化（或本机无 psql 无法判定）时走完整处置链；优先 Git for Windows
-        # 自带 bash，排除 PATH 上指向 WSL 的 System32\bash.exe
+        # 自带 bash，排除 PATH 上指向 WSL 的 System32\bash.exe 及 WindowsApps\bash.exe
         $bashExe = $null
-        foreach ($candidate in @("$env:ProgramFiles\Git\bin\bash.exe", "${env:ProgramFiles(x86)}\Git\bin\bash.exe")) {
+        $gitCandidates = @(
+            "$env:ProgramFiles\Git\bin\bash.exe",
+            "${env:ProgramFiles(x86)}\Git\bin\bash.exe",
+            "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe",
+            "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
+        )
+        foreach ($candidate in $gitCandidates) {
             if (Test-Path $candidate) { $bashExe = $candidate; break }
         }
         if (-not $bashExe) {
@@ -118,7 +141,9 @@ if ($dbPortReady) {
         }
         if (-not $bashExe) {
             $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
-            if ($bashCmd -and $bashCmd.Source -notmatch 'System32\\bash\.exe$') { $bashExe = $bashCmd.Source }
+            if ($bashCmd -and $bashCmd.Source -notmatch 'System32\\bash\.exe$' -and $bashCmd.Source -notmatch 'WindowsApps\\bash\.exe$') {
+                $bashExe = $bashCmd.Source
+            }
         }
         if (-not $bashExe) {
             Write-Host "  -> 错误: 本地库已初始化但未找到 Git Bash，无法执行存档漂移处置链；请安装 Git for Windows 或改用 scripts/dev.sh 启动。" -ForegroundColor Red
@@ -180,11 +205,6 @@ if (-not $backendReady) {
 #    Start-Process 必须显式指向 npm.cmd：裸 "npm" 会按文件关联解析到 npm.ps1，
 #    被记事本等编辑器打开而不是执行，导致前端永远起不来且监控循环空转。
 Write-Host "[5/5] 启动前端开发服务器 (http://127.0.0.1:15172)..." -ForegroundColor Yellow
-$npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
-if (-not $npmCmd) {
-    Write-Host "  -> 错误: PATH 中未找到 npm.cmd，请确认 Node.js 已安装。" -ForegroundColor Red
-    exit 1
-}
 $frontendProcess = Start-Process $npmCmd -ArgumentList "--prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open" -WorkingDirectory $rootDir -PassThru
 
 # 等待 vite 就绪（最长 30s）；进程提前退出立即报错，超时仅告警（冷启动依赖打包可能较慢）
@@ -197,7 +217,10 @@ for ($i = 0; $i -lt 60 -and -not $frontendProcess.HasExited; $i++) {
     Start-Sleep -Milliseconds 500
 }
 if ($frontendProcess.HasExited) {
-    Write-Host "  -> 错误: 前端进程已提前退出，请查看 npm.cmd 窗口日志。" -ForegroundColor Red
+    Write-Host "  -> 错误: 前端进程已提前退出 (ExitCode: $($frontendProcess.ExitCode))。" -ForegroundColor Red
+    Write-Host "  -> 正在诊断前端退出原因..." -ForegroundColor Yellow
+    $diagOutput = & $npmCmd --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open 2>&1
+    Write-Host ($diagOutput -join "`n") -ForegroundColor Red
 } elseif ($frontendReady) {
     Write-Host "  -> 前端已就绪。" -ForegroundColor Green
 } else {
