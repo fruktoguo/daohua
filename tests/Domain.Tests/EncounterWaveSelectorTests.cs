@@ -58,4 +58,43 @@ public sealed class EncounterWaveSelectorTests
         var fallback = EncounterWaveSelector.Select(tight, monsters, 7, 1);
         Assert.Equal("n", Assert.Single(fallback).Id);
     }
+
+    [Fact]
+    public void EarlyGameEncounters_HerbValleyAndCloudGate_SpawnExactlyOneTargetMinion()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        // 1. 百草谷（node.herb-valley）：单独放兔子，任何种子均严格刷出 1 只魔化野兔
+        Assert.True(catalog.WorldGraph.TryGetNode("node.herb-valley", out var herbNode));
+        var herbEncounterId = Assert.Single(herbNode.EncounterIds);
+        Assert.Equal("encounter.herb-valley", herbEncounterId);
+        var herbEncounter = catalog.CombatEncounters[herbEncounterId];
+        Assert.Empty(herbEncounter.EliteEnemyIds);
+        Assert.Empty(herbEncounter.BossEnemyIds);
+
+        for (long seed = 1; seed <= 50; seed++)
+        {
+            var wave = EncounterWaveSelector.Select(herbEncounter, catalog.CombatMonsters, seed, 1);
+            var singleMonster = Assert.Single(wave);
+            Assert.Equal("enemy.demonized-rabbit", singleMonster.Id);
+        }
+
+        // 2. 青云山门（node.cloud-gate）：单独放火灵，威胁度保证严格只出 1 只火灵，无精英首领
+        Assert.True(catalog.WorldGraph.TryGetNode("node.cloud-gate", out var gateNode));
+        var gateEncounterId = Assert.Single(gateNode.EncounterIds);
+        Assert.Equal("encounter.twilight-pass", gateEncounterId);
+        var gateEncounter = catalog.CombatEncounters[gateEncounterId];
+        Assert.Empty(gateEncounter.EliteEnemyIds);
+        Assert.Empty(gateEncounter.BossEnemyIds);
+
+        for (long seed = 1; seed <= 50; seed++)
+        {
+            for (int waveNumber = 1; waveNumber <= 25; waveNumber++)
+            {
+                var wave = EncounterWaveSelector.Select(gateEncounter, catalog.CombatMonsters, seed, waveNumber);
+                var singleMonster = Assert.Single(wave);
+                Assert.Equal("enemy.fire-spirit", singleMonster.Id);
+            }
+        }
+    }
 }

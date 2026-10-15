@@ -13,6 +13,19 @@
     ]
   },
   {
+    "id": "encounter.herb-valley",
+    "name": "百草青野",
+    "minBudget": 10,
+    "maxBudget": 15,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.demonized-rabbit",
+        "weight": 1,
+        "strength": 10
+      }
+    ]
+  },
+  {
     "id": "encounter.sunset-ridge",
     "name": "桃林坡石",
     "minBudget": 20,
@@ -33,6 +46,19 @@
   {
     "id": "encounter.twilight-pass",
     "name": "山门试炼",
+    "minBudget": 18,
+    "maxBudget": 20,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.fire-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.cloud-peak",
+    "name": "云巅试炼",
     "minBudget": 35,
     "maxBudget": 80,
     "randomSpawns": [

@@ -63,10 +63,11 @@
         "x": 10,
         "y": 45,
         "availableActionIds": [
-          "explore.gather-ningxue-grass"
+          "explore.gather-ningxue-grass",
+          "combat.hunt-qi-beast"
         ],
         "encounterIds": [
-          "encounter.qi-beast"
+          "encounter.herb-valley"
         ],
         "buildableTemplate": "all"
       },
@@ -127,7 +128,10 @@
         "encounterIds": [
           "encounter.twilight-pass"
         ],
-        "buildableTemplate": "all"
+        "buildableTemplate": "all",
+        "prebuiltBuildings": [
+          { "buildingId": "building.demon-seal-array", "level": 20 }
+        ]
       },
       {
         "id": "node.cloud-peak",
@@ -159,7 +163,7 @@
           "combat.hunt-qi-beast"
         ],
         "encounterIds": [
-          "encounter.twilight-pass"
+          "encounter.cloud-peak"
         ],
         "buildableTemplate": "all"
       }

@@ -253,8 +253,8 @@ public sealed class ProtocolSnapshotMapperTests
         var aggregate = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()),
             "生态测试", DateTimeOffset.UtcNow, gameData.Fingerprint);
 
-        // 设置玩家驻留在青云山门（node.cloud-gate）
-        aggregate.World.NodeId = "node.cloud-gate";
+        // 设置玩家驻留在云巅草庐（node.cloud-peak，承载包含普通、精英、首领的绝顶生态）
+        aggregate.World.NodeId = "node.cloud-peak";
         aggregate.World.EdgeId = null;
 
         var runtime = new PlayerRuntimeSnapshot(aggregate.PlayerId.Value, aggregate.AccountId.Value.ToString("D"),
