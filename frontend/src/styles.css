@@ -3147,15 +3147,15 @@ input[type="checkbox"] {
 }
 
 .action-card[data-rarity="mundane"] {
-  --item-accent: rgb(139, 143, 149);
-  --item-glow: rgba(139, 143, 149, 0.26);
-  --item-surface: rgba(139, 143, 149, 0.14);
+  --item-accent: rgb(170, 178, 188);
+  --item-glow: rgba(170, 178, 188, 0.2);
+  --item-surface: rgba(170, 178, 188, 0.1);
 }
 
 .action-card[data-rarity="yellow"] {
-  --item-accent: rgb(69, 179, 107);
-  --item-glow: rgba(69, 179, 107, 0.3);
-  --item-surface: rgba(69, 179, 107, 0.17);
+  --item-accent: rgb(58, 156, 96);
+  --item-glow: rgba(58, 156, 96, 0.28);
+  --item-surface: rgba(58, 156, 96, 0.14);
 }
 
 .action-card[data-rarity="mystic"] {

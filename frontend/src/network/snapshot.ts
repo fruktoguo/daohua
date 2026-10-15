@@ -1284,7 +1284,7 @@ function mapAsset(asset: AssetBalanceDto): InventoryItem {
     amount: asset.quantity,
     tone: metadata?.tone ?? 'gray',
     glyph: metadata?.glyph ?? '◈',
-    tier: metadata?.level ?? 1,
+    tier: metadata?.tier ?? 1,
     description: metadata?.description,
     isTradable: true,
   }

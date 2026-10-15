@@ -184,9 +184,9 @@
 }
 
 .item-tile[data-rarity="yellow"] {
-  --item-accent: #2b6e46;
-  --item-glow: rgba(43, 110, 70, 0.22);
-  --item-surface: rgba(43, 110, 70, 0.14);
+  --item-accent: rgb(58, 156, 96);
+  --item-glow: rgba(58, 156, 96, 0.28);
+  --item-surface: rgba(58, 156, 96, 0.14);
 }
 
 .item-tile[data-rarity="mystic"] {

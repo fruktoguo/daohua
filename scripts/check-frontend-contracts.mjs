@@ -135,6 +135,9 @@ try {
   assert.equal(marketMeta.rarity, 'yellow', 'T2 标的稀有度必须为黄品 (yellow)')
   const bagMeta = withGrade(resolveItemMeta(t2Weapon.itemId) ?? { label: t2Weapon.name, glyph: '·', tone: 'gold', category: 'weapon', rarity: 'mundane', rarityLabel: '', description: '' }, 2)
   assert.equal(marketMeta.level, bagMeta.level, '坊市标的等级必须与背包等级完全对齐')
+  const level18Meta = withGrade(resolveItemMeta(t2Weapon.itemId), 18)
+  assert.equal(level18Meta.level, 18, 'withItemGrade 传入 level 18 时必须能反推等阶并保留 Lv.18')
+  assert.equal(level18Meta.rarity, 'yellow', 'withItemGrade 传入 level 18 时稀有度必须为 yellow')
   console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐。')
 } finally {
   await server.close()

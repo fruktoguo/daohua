@@ -216,6 +216,15 @@ export function convertTierToLevel(tier = 1): number {
   return 18 + (t - 2) * 12
 }
 
+/**
+ * 将修士/物品等级 (Level) 逆向反推为等阶 (Tier, 1~8)
+ * 1 级 -> 等阶 1, 18 级 -> 等阶 2, 30 级 -> 等阶 3, 每 12 级升一阶
+ */
+export function convertLevelToTier(level = 1): number {
+  if (level <= 1) return 1
+  return Math.max(1, Math.min(8, Math.floor((level - 18) / 12) + 2))
+}
+
 let cachedItemsRef: ReadonlyArray<{ itemId: string }> | null = null
 let cachedItemMap: Map<string, { itemId: string }> = new Map()
 
@@ -651,7 +660,8 @@ export function resolveItemGrade(tier = 1): ItemGrade {
  * 将指定品质档应用到物品元数据上
  */
 export function withItemGrade(metadata: ItemMetadata, tier = metadata.tier ?? (metadata.level && metadata.level <= 8 ? metadata.level : 1)): ItemMetadata {
-  const normalizedTier = tier > 8 ? 1 : Math.max(1, Math.floor(tier))
+  const rawTier = tier ?? metadata.tier ?? 1
+  const normalizedTier = rawTier > 8 ? convertLevelToTier(rawTier) : Math.max(1, Math.floor(rawTier))
   const grade = resolveItemGrade(normalizedTier)
   return {
     ...metadata,
