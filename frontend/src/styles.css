@@ -8639,59 +8639,141 @@ input[type="checkbox"] {
   color: var(--danger);
 }
 
-.player-card-header {
+/* ===== 角色名片弹窗头部卡片（上 80% / 下 20%，左 40% 形象 / 右 60% 名字与身家） ===== */
+.player-card-hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  padding: 12px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+  min-height: 160px;
+  gap: 10px;
 }
 
-.player-card-avatar {
-  flex-shrink: 0;
+/* 右上角斜角标：标识本人 */
+.player-card-self-ribbon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.player-card-self-ribbon > span {
+  position: absolute;
+  top: 8px;
+  right: -14px;
+  width: 58px;
+  padding: 1px 0;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, var(--jade, #10b981), #059669);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--font-weight-bold, 700);
+  line-height: 1.3;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  letter-spacing: 1px;
+}
+
+/* 上部占 80% */
+.player-card-hero-top {
   display: flex;
-  width: 96px;
-  height: 96px;
+  flex: 4 1 0%;
+  width: 100%;
+  align-items: center;
+  min-height: 100px;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+/* 上左占 40%：角色形象 */
+.player-card-hero-avatar {
+  flex: 0 0 40%;
+  width: 40%;
+  height: 100%;
+  min-height: 100px;
+  display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--gold-faint);
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.player-card-avatar .character-avatar,
-.player-card-avatar .character-avatar-vector-wrap,
-.player-card-avatar .character-avatar-text {
-  width: 88px;
-  height: 88px;
-}
-
-.player-card-identity {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.player-card-name-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.player-card-name {
-  margin: 0;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  box-sizing: border-box;
+  border-radius: 4px;
+}
+
+.player-card-hero-avatar .character-avatar,
+.player-card-hero-avatar img {
+  width: 100%;
+  height: 100%;
+  max-width: 92px;
+  max-height: 92px;
+  object-fit: contain;
+}
+
+/* 上右占 60%：名字横向居中，中间身家 */
+.player-card-hero-info {
+  flex: 0 0 calc(60% - 12px);
+  width: calc(60% - 12px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.player-card-hero-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  text-align: center;
+}
+
+.player-card-hero-name-row .player-card-name {
+  margin: 0;
   color: var(--gold-bright);
   font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: var(--font-weight-bold, 700);
+  text-align: center;
 }
 
-.player-card-seq {
-  color: var(--text-dim);
-  font-size: 11px;
+.player-card-hero-valuation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13px;
+  text-align: center;
 }
 
+/* 下部占 20%：三段式牌匾横向居中 */
+.player-card-hero-bottom {
+  display: flex;
+  flex: 1 1 0%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(201, 180, 109, 0.25);
+  box-sizing: border-box;
+}
+
+.player-card-hero-bottom .insight-realm-master-frame {
+  margin: 0 auto;
+}
 .player-card-stats {
   display: flex;
   flex-wrap: wrap;

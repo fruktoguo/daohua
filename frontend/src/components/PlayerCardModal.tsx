@@ -101,6 +101,8 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
   const t = useT()
   const abilities = useGameStore(state => state.abilities)
   const equipmentCatalog = useGameStore(state => state.equipment)
+  const myPlayerId = useGameStore(state => state.playerId)
+  const isSelf = myPlayerId !== null && myPlayerId === card.playerId
 
   const realmInfo = useMemo(() => calculateRealmInfo(card.experience, card.realmLevel), [card.experience, card.realmLevel])
 
@@ -122,18 +124,32 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
 
   return (
     <div className="player-card">
-      <header className="player-card-header">
-        <div className="player-card-avatar">
-          <CharacterAvatar name={card.displayName ?? ''} role="player" />
-        </div>
-        <div className="player-card-identity">
-          <div className="player-card-name-row">
-            <h3 className="player-card-name" id="player-card-title">{card.displayName ?? '—'}</h3>
-            <span className={`chat-presence chat-presence--${card.online ? 'online' : 'offline'}`}>
-              {card.online ? t('social.online') : t('social.offline')}
-            </span>
+      <header className="player-card-hero">
+        {isSelf && (
+          <div className="player-card-self-ribbon" aria-label={t('combat.nearby.isSelf')}>
+            <span>{t('combat.nearby.isSelf')}</span>
           </div>
-          <span className="player-card-seq">{t('social.card.seq', { seq: card.playerSeq })}</span>
+        )}
+        {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
+        <div className="player-card-hero-top">
+          <div className="player-card-hero-avatar">
+            <CharacterAvatar name={card.displayName ?? ''} role="player" />
+          </div>
+          <div className="player-card-hero-info">
+            <div className="player-card-hero-name-row">
+              <h3 className="player-card-name" id="player-card-title">{card.displayName ?? '—'}</h3>
+              <span className={`chat-presence chat-presence--${card.online ? 'online' : 'offline'}`}>
+                {card.online ? t('social.online') : t('social.offline')}
+              </span>
+            </div>
+            <div className="player-card-hero-valuation">
+              <span className="player-card-stat-label">{t('social.card.valuation')}：</span>
+              <strong className="player-card-stat-value tone-gold">{formatNumber(Math.floor(card.valuation))}</strong>
+            </div>
+          </div>
+        </div>
+        {/* 下部 20%：三段式牌匾 */}
+        <div className="player-card-hero-bottom">
           <RealmBadge realmInfo={realmInfo} />
         </div>
       </header>
