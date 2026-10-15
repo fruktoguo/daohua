@@ -620,6 +620,22 @@
   gap: 6px;
   margin-top: 4px;
 }
+/* 怪物悬浮详情卡：施展功法一排技能格子 */
+.world-monster-abilities-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.world-monster-abilities-row {
+  --item-tile-size: 46px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 
 /* 掉落胶囊尾部概率小字 */
 .world-monster-drop-chance {

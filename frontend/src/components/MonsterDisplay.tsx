@@ -1,10 +1,12 @@
 import { memo, useMemo, type ReactNode } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
-import { formatInteger } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatInteger } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findCombatantInCatalog } from '../game/ids'
+import { resolveItemIconUrl } from '../game/itemIcons'
 import type { CombatantDefinition, MonsterDropDefinition, NearbyMonsterDefinition } from '../game/types'
 import { useT, type TFunction } from '../i18n'
+import { ConditionedTile } from './ConditionedTile'
 import { FloatingInfoCard, FloatingPopover, type FloatingPlacement, type FloatingTone } from './FloatingPopover'
 import { ItemDropReference } from './ItemDisplay'
 import { UnitNumber } from './UnitNumber'
@@ -66,6 +68,44 @@ export interface MonsterDisplayTargetProps {
  * 具备生命层次品质徽记、境界等阶副标、修仙流派属性标签、出没周期、击杀修为收益、
  * 施展功法名录、复合掉落物胶囊（ItemDropReference）以及标准战斗属性网格。
  */
+/** 妖兽施展功法瓦片：与玩家技能格子同构（元素/类别丝带 + Lv等级角标 + 图标/名称 + 参悟详情卡） */
+const MonsterAbilityTile = memo(function MonsterAbilityTile({
+  abilityId,
+  level,
+}: {
+  abilityId: string
+  level?: number
+}): React.JSX.Element {
+  const t = useT()
+  const abilities = useGameStore(state => state.abilities)
+  const ability = findAbilityInCatalog(abilities, abilityId)
+  const iconUrl = resolveItemIconUrl(abilityId)
+  const lv = Math.max(1, Math.floor(level ?? 1))
+  const ribbonLabel = ability?.element && ability.element !== 'none'
+    ? t(`combat.encounter.element.${ability.element}`)
+    : formatAbilityCategory(ability?.category)
+
+  return (
+    <ConditionedTile
+      className="abilities-learned-cell"
+      content={ability ? describeAbility(ability, lv) : null}
+      triggerClassName="item-grid-picker-tooltip"
+    >
+      <span
+        className="item-tile combat-ability-cell"
+        data-rarity={ability?.discipline === 'internal' ? 'emperor' : 'mystic'}
+      >
+        <span aria-hidden="true" className="item-type-ribbon"><span>{ribbonLabel}</span></span>
+        <span className="item-corner item-corner--top-right">Lv. {lv}</span>
+        {iconUrl
+          ? <img alt={ability?.name ?? abilityId} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+          : <strong className="item-tile-name">{ability?.name ?? abilityId}</strong>}
+        <span aria-hidden="true" className="item-tile-glow" />
+      </span>
+    </ConditionedTile>
+  )
+})
+
 export const MonsterInfoCard = memo(function MonsterInfoCard({
   monster,
   intervalHint,
@@ -77,7 +117,6 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
   const t = useT()
   const encounters = useGameStore(state => state.encounters)
   const maps = useGameStore(state => state.maps)
-  const abilities = useGameStore(state => state.abilities)
 
   // 1. 规整化数据源：支持直接传 CombatantDefinition、NearbyMonsterDefinition 或 enemyId 字符串
   const resolved = useMemo<{
@@ -89,7 +128,7 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
     category?: string | null
     element?: string | null
     experience: number
-    skills: readonly { abilityId?: string | null }[]
+    skills: readonly { abilityId?: string | null; level?: number }[]
     drops: readonly MonsterDropDefinition[]
     attributes: {
       maxHitpoints: number
@@ -109,7 +148,7 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
     let category: string | null = null
     let element: string | null = null
     let experience = 0
-    let skills: readonly { abilityId?: string | null }[] = []
+    let skills: readonly { abilityId?: string | null; level?: number }[] = []
     let drops: readonly MonsterDropDefinition[] = []
     let staticDef: CombatantDefinition | undefined
 
@@ -213,16 +252,28 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
     resolved.experience > 0 ? `${t('combat.report.experience')} +${formatInteger(resolved.experience)}` : null,
   ].filter((part): part is string => part !== null)
 
-  const abilityNames = resolved.skills
-    .map(slot => slot.abilityId)
-    .filter((id): id is string => Boolean(id))
-    .map(id => findAbilityInCatalog(abilities, id)?.name ?? id)
-    .filter(name => name.length > 0)
+  const activeSkills = resolved.skills
+    .filter((slot): slot is { abilityId: string; level?: number } => Boolean(slot.abilityId))
 
   const lines = [
     ...(intervalHint ? [`${t('combat.nearby.statInterval')}：${intervalHint}`] : []),
     ...(rewardParts.length > 0 ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`] : []),
-    ...(abilityNames.length > 0 ? [`${t('combat.ecology.abilities')}：${abilityNames.join('、')}`] : []),
+    ...(activeSkills.length > 0
+      ? [
+          <span className="world-monster-abilities-block" key="abilities">
+            {t('combat.ecology.abilities')}：
+            <span className="world-monster-abilities-row">
+              {activeSkills.map((slot, index) => (
+                <MonsterAbilityTile
+                  abilityId={slot.abilityId}
+                  key={`${slot.abilityId}-${index}`}
+                  level={slot.level}
+                />
+              ))}
+            </span>
+          </span>,
+        ]
+      : []),
     ...(resolved.drops.length > 0
       ? [
           <span key="drops">
