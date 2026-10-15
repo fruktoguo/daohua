@@ -349,7 +349,7 @@
             "abilityId": "ability.lightning-attraction",
             "name": "雷光引",
             "baseDamageRatioPct": 150.0,
-            "flatDamage": 10,
+            "flatDamage": 30,
             "baseCooldownSeconds": 28.0,
             "baseCastSeconds": 0.5,
             "maxTargets": 1,

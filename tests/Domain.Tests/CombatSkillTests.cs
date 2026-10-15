@@ -372,6 +372,7 @@ public sealed class CombatSkillTests
         var ability = catalog.Abilities["ability.lightning-attraction"];
         Assert.Equal(500, ability.GetProperty("castMilliseconds").GetInt32());
         Assert.Equal(1.5, ability.GetProperty("damageRatio").GetDouble());
+        Assert.Equal(30, ability.GetProperty("flatDamage").GetInt32());
         Assert.False(ability.TryGetProperty("targetType", out var targetType) && targetType.GetString() == "allEnemies");
 
         var stats = CombatantStats.Create(1000, 100, 0, 100) with

@@ -1,6 +1,6 @@
 /* ability.lightning-attraction · 雷光引 —— 引动九天雷光轰击目标
  * 镜像 config/game-data/abilities/spell_abilities.json：
- *   单体 / 吟唱 500ms / 1.5×AP+10 / 冷却 28s / 灵力 20 / 五行·木
+ *   单体 / 吟唱 500ms / 1.5×AP+30 / 冷却 28s / 灵力 20 / 五行·木
  * 演出（全粒子）：目标头顶暗紫雷云（雾团聚合）→ 天雷光柱（密集光点+电花）贯顶 → 落点火花喷泉 */
 (window.DaohuaVFXModules = window.DaohuaVFXModules || []).push(function (VFX) {
   'use strict';

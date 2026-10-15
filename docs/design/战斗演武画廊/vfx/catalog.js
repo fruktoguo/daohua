@@ -63,7 +63,7 @@
     {
       id: 'ability.lightning-attraction', name: '雷光引', discipline: 'spell', category: 'spell',
       element: 'wood', tier: 2, castMilliseconds: 500, cooldownMilliseconds: 28000,
-      manaCost: 20, damageRatio: 1.5, flatDamage: 10,
+      manaCost: 20, damageRatio: 1.5, flatDamage: 30,
       description: '引动九天雷光轰击目标', icon: 'ability.lightning-attraction',
     },
     {

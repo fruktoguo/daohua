@@ -88,7 +88,7 @@
     "cooldownMilliseconds": 28000,
     "castMilliseconds": 500,
     "damageRatio": 1.5,
-    "flatDamage": 10,
+    "flatDamage": 30,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",

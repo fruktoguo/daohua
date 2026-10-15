@@ -1620,7 +1620,7 @@ $$\text{强化总倍率} = 1.05^{\text{强化等级}} \quad (\text{每级指数�
 | **掌心雷** | `ability.palm-lightning` | **T1 凡胎** | 五行 (`fiveElements`) | 火 (`fire`) | **0.0s (0CD)** | 2.0s | 4.0 MP | 单体敌方 | 造成 **`60% AP + 10`** 火系术法填充伤害 |
 | **轰炎** | `ability.blazing-blast` | **T1 凡胎** | 五行 (`fiveElements`) | 火 (`fire`) | 24.0s | 3.0s | 10.0 MP | 全体敌方 | 造成 **`100% AP + 20`** 火系术法群攻伤害 |
 | **清平乐** | `ability.qingping-melody` | **T2 叩仙门** | 五行 (`fiveElements`) | 木 (`wood`) | 30.0s | 0.5s | 10.0 MP | 最低血量友方 | 恢复 **`60% AP + 20`** 生命值 (自身/队友) |
-| **雷光引** | `ability.lightning-attraction`| **T2 叩仙门** | 五行 (`fiveElements`) | 木 (`wood`) | 28.0s | 0.5s | 20.0 MP | 单体敌方 | 造成 **`150% AP + 10`** 木系术法单体伤害 |
+| **雷光引** | `ability.lightning-attraction`| **T2 叩仙门** | 五行 (`fiveElements`) | 木 (`wood`) | 28.0s | 0.5s | 20.0 MP | 单体敌方 | 造成 **`150% AP + 30`** 木系术法单体伤害 |
 | **破阵子** | `ability.pozhen-melody` | **T2 叩仙门** | 符箓 (`talisman`) | 无 (`none`) | 60.0s | 5.0s | 50.0 MP | 全体友方 | 蓄力施展全队战阵增益：全体存活友方伤害提升 **40%**（总增伤乘区），持续 **10.0s** |
 
 > **战内 Buff 生命周期**：技能授予的战内 Buff 默认**跨波存续**——波次清空按战斗时钟剩余秒数折算携带、下一波重注入，整场战斗行动结束时统一移除（详见 [第七篇](./07-战斗数值与内视规约.md) §7.9.5）。`buff.resetOnWave: true` 为特例开关：标记的 Buff 波次清空即消散、不进入携带；缺省 `false`。
@@ -3270,7 +3270,7 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 | 流派分类 | 配点模型 | 真实配表技能 | 常态普攻 |
 | :--- | :--- | :--- | :--- |
 | **物理系 (Physical)** | `1 AD : 1 暴击 : 1 破招` | 重斩 `ability.heavy-slash`（`180%` AD + 20，CD 18s，动作 1s）、连环 `ability.chain-strike`（`100%` AD + 15，CD 16s，动作 1s）、贯星 `ability.star-piercer`（`300%` AD + 50，CD 36s，动作 2s）、重云 `ability.heavy-clouds`（`120%` AD + 40，全体敌方，CD 24s，动作 2s）、嘲讽 `ability.taunt`（威胁爆发，CD 55s） | 统一普攻（1.0s 基准 ×(1-ATR)×(1-攻速)，满成长 `0.250s` / `200%` AD 物理） |
-| **法术系 (Magic)** | AP 仅供技能结算 | 掌心雷 `ability.palm-lightning`（`60%` AP + 10，**0CD 填充技**，吟唱 `2.00s→1.00s` 只吃 ATR，蓝量充足时顶替普攻）、轰炎 `ability.blazing-blast`（`100%` AP + 20，全体敌方，CD 24s，吟唱 3s）、雷光引 `ability.lightning-attraction`（`150%` AP + 10，单体敌方，CD 28s，吟唱 0.5s）、清平乐 / 破阵子（治疗与全队增益） | 统一普攻（与物理系完全相同；蓝量充足时被掌心雷完全顶替） |
+| **法术系 (Magic)** | AP 仅供技能结算 | 掌心雷 `ability.palm-lightning`（`60%` AP + 10，**0CD 填充技**，吟唱 `2.00s→1.00s` 只吃 ATR，蓝量充足时顶替普攻）、轰炎 `ability.blazing-blast`（`100%` AP + 20，全体敌方，CD 24s，吟唱 3s）、雷光引 `ability.lightning-attraction`（`150%` AP + 30，单体敌方，CD 28s，吟唱 0.5s）、清平乐 / 破阵子（治疗与全队增益） | 统一普攻（与物理系完全相同；蓝量充足时被掌心雷完全顶替） |
 
 #### 11.2.4.2 全 12 等阶双流派单发技能期望伤害与 CD/动作 循环详表（基准负载假设 · 推演样例）
 
