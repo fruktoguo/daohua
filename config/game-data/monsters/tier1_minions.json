@@ -20,6 +20,18 @@
         "dropChance": 1.0,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.feiyan-gong",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.feiyan-gong",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
@@ -59,6 +71,18 @@
       },
       {
         "itemId": "item.fragment.palm-lightning",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tuna-gong",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tuna-gong",
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
@@ -111,6 +135,18 @@
       },
       {
         "itemId": "item.fragment.blazing-blast",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.qingxin-jue",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.qingxin-jue",
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1

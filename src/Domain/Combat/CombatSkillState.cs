@@ -42,6 +42,8 @@ public sealed record SkillSlot(JsonElement Ability, double Level = 1, IReadOnlyL
         foreach (var slot in slots)
         {
             if (slot.AbilityId is null || !abilities.TryGetValue(slot.AbilityId, out var ability)) continue;
+            // 内功心法为常驻被动心法，不进入战斗施放序列（总纲 §5.3.1）。
+            if (JsonRead.Text(ability, "discipline") == "internal") continue;
             var triggers = abilityTriggers is not null
                 && abilityTriggers.TryGetValue(slot.AbilityId, out var custom)
                 && custom.Length > 0

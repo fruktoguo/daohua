@@ -29,6 +29,35 @@ public static class SkillTriggerEvaluator
     /// <param name="ability">功法配表 JSON；非法时抛出 InvalidArgument。</param>
     public static void ValidateAbility(JsonElement ability)
     {
+        // discipline 划分内功心法（internal）与神通术法（spell）；缺省视为术法。
+        var discipline = JsonRead.Text(ability, "discipline") ?? "spell";
+        if (discipline is not ("internal" or "spell"))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "功法类别（discipline）必须为 internal 或 spell。");
+
+        if (discipline == "internal")
+        {
+            // 内功心法为常驻心法基座（总纲 §5.3）：不参与施放管线，不配置施放/CD/蓝耗/触发器。
+            if (ability.TryGetProperty("rootExpEfficiencyPerLevel", out var effProp)
+                && (!effProp.TryGetDouble(out var eff) || eff < 0))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "内功参悟效率必须为非负数。");
+            if (ability.TryGetProperty("rootExpMultipliers", out var multsProp))
+            {
+                if (multsProp.ValueKind != JsonValueKind.Object)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, "内功六维乘率必须为对象。");
+                foreach (var prop in multsProp.EnumerateObject())
+                {
+                    if (!Enum.TryParse<CoreAspectKind>(prop.Name, true, out _))
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"内功六维乘率维度无效: {prop.Name}");
+                    if (!prop.Value.TryGetDouble(out var mult) || mult < 0)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"内功维度 {prop.Name} 乘率必须为非负数。");
+                }
+            }
+            if (ability.TryGetProperty("cultivationExpBonusPoints", out var cultProp)
+                && (!cultProp.TryGetDouble(out var cultBonus) || !double.IsFinite(cultBonus)))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "内功修为增减点必须为有限数值。");
+            return;
+        }
+
         var healing = JsonRead.Text(ability, "effectType") == "heal";
         var ratio = JsonRead.Number(ability, healing ? "healingRatio" : "damageRatio");
         var flat = JsonRead.Number(ability, healing ? "flatHealing" : "flatDamage");
@@ -47,9 +76,6 @@ public static class SkillTriggerEvaluator
         if (JsonRead.Text(ability, "category") is not ("physical" or "spell")
             || !Enum.TryParse<CombatElement>(JsonRead.Text(ability, "element") ?? "none", true, out _))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能伤害类别或五行属性无效。");
-        // discipline 划分内功心法（internal）与神通术法（spell）；缺省视为术法。
-        if (JsonRead.Text(ability, "discipline") is not (null or "internal" or "spell"))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "功法类别（discipline）必须为 internal 或 spell。");
         if (healing ? target is not (null or "self" or "lowestHitpointsAlly" or "allAllies")
             : target is not (null or "targetEnemy" or "allEnemies" or "self" or "allAllies" or "lowestHitpointsAlly"))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能目标没有可执行效果。");

@@ -1145,15 +1145,20 @@ internal static class CombatActionRules
             var experience = spec is null
                 ? monster.Experience
                 : monster.Experience / spec.Members.Count * (1 - spec.LevelMalusFor(selfIndex));
+            var rawExp = experience;
+            var cultivationBonus = ResolveInternalCultivationBonus(player, gameData);
+            var cultivationExp = cultivationBonus != 0
+                ? Math.Max(0, experience * (1 + cultivationBonus / 100d))
+                : experience;
             var expCap = gameData.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
-            var creditedExp = player.Progression.CreditExperience(experience, expCap, combatExperience: experience);
+            var creditedExp = player.Progression.CreditExperience(cultivationExp, expCap, combatExperience: experience);
             player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta
             {
                 Experience = creditedExp,
-                Foundation = experience - creditedExp,
+                Foundation = cultivationExp - creditedExp,
                 CombatExperience = experience
             });
-            DistributeRootExp(player, experience, gameData, actionInstanceId, killAtUnixSeconds);
+            DistributeRootExp(player, rawExp, gameData, actionInstanceId, killAtUnixSeconds);
         }
         var dropBonus = pvpEnabled ? PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear)
             : spec is not null ? 1 + spec.TotalDropBonusPoints / 100d
@@ -1217,45 +1222,89 @@ internal static class CombatActionRules
     }
 
     /// <summary>
-    /// 六维经验分配：每个归属维度各得全额 amount（总量 = amount × 归属维度数，无内功恒为 6×）；
-    /// 仅已装备内功（discipline=internal）按其 rootAttribute 归属集合调整归属范围，
-    /// 未装备内功时任何神通/外功都不改变全维归属。内功未声明归属视为全修（仍覆盖全部六维）。
+    /// 六维经验分配（总纲 §5.3.1 / §7.10.3）：
+    /// 未装备内功时六维全归属、各得全额 amount（总量 = amount × 6）；
+    /// 装备内功时按 rootExpMultipliers 乘率表与参悟效率 eff 逐维分配：share_i = amount × mult_i × eff。
+    /// 未列出的维度缺省 1.0，配置 0 则该维停长（献祭代价）。
     /// </summary>
     private static void DistributeRootExp(IPlayerResourceContext player, double amount, GameDataCatalog gameData,
         Guid actionInstanceId, double atUnixSeconds)
     {
-        var targets = new HashSet<CoreAspectKind>();
-        var anyInternal = false;
-        foreach (var slot in player.Loadout.AbilitySlots)
+        JsonElement? internalAbility = null;
+        double level = 1;
+        if (player.Loadout.AbilitySlots.Count > 0 && player.Loadout.AbilitySlots[0].AbilityId is { } internalId
+            && gameData.Abilities.TryGetValue(internalId, out var ability)
+            && DeterministicCombatEngine.AbilityText(ability, "discipline") == "internal")
         {
-            if (slot.AbilityId is null) continue;
-            if (!gameData.Abilities.TryGetValue(slot.AbilityId, out var ability)
-                || DeterministicCombatEngine.AbilityText(ability, "discipline") != "internal") continue;
-            anyInternal = true;
-            if (TryParseCoreAspect(slot.AbilityId, gameData, out var attribute))
-                targets.Add(attribute);
-            else
-            {
-                // 内功未声明归属维度视为全修：覆盖全部六维。
-                targets.UnionWith(Enum.GetValues<CoreAspectKind>());
-            }
+            internalAbility = ability;
+            level = player.Loadout.AbilityExperiences.TryGetValue(new AbilityId(internalId), out var exp)
+                ? AbilityExpCurve.LevelFor(exp) : 1;
         }
-        if (!anyInternal || targets.Count == 0)
+
+        if (internalAbility is null)
+        {
+            // 未装备内功：六维全归属各得全额 amount（总量 6×）。
+            foreach (var unequippedAspect in Enum.GetValues<CoreAspectKind>())
+                ActionExecutionRules.GrantRootExperience(player, unequippedAspect, amount, gameData, actionInstanceId, atUnixSeconds);
+            return;
+        }
+
+        var effPerLevel = JsonRead.Number(internalAbility.Value, "rootExpEfficiencyPerLevel");
+        if (effPerLevel <= 0) effPerLevel = 0.02; // 默认 +2.0%/级
+        var eff = Math.Max(0, 1.0 + effPerLevel * (Math.Max(1, level) - 1));
+
+        if (internalAbility.Value.TryGetProperty("rootExpMultipliers", out var multsObj) && multsObj.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var aspect in Enum.GetValues<CoreAspectKind>())
+            {
+                var aspectKey = aspect switch
+                {
+                    CoreAspectKind.Stamina => "stamina",
+                    CoreAspectKind.Meridians => "meridians",
+                    CoreAspectKind.Attack => "attack",
+                    CoreAspectKind.Bone => "bone",
+                    CoreAspectKind.Agility => "agility",
+                    CoreAspectKind.Consciousness => "consciousness",
+                    _ => aspect.ToString().ToLowerInvariant()
+                };
+                var mult = multsObj.TryGetProperty(aspectKey, out var mProp) && mProp.TryGetDouble(out var mVal)
+                    ? mVal
+                    : 1.0;
+                var share = amount * mult * eff;
+                if (share > 0)
+                    ActionExecutionRules.GrantRootExperience(player, aspect, share, gameData, actionInstanceId, atUnixSeconds);
+            }
+            return;
+        }
+
+        // 兼容仅配置单 rootAttribute 的旧心法
+        var targets = new HashSet<CoreAspectKind>();
+        if (TryParseCoreAspect(internalAbility.Value, out var attribute))
+            targets.Add(attribute);
+        else
             targets.UnionWith(Enum.GetValues<CoreAspectKind>());
-        // 六维全额口径：每个归属维度各得 amount，总量 = amount × 归属维度数（总纲 §7.10.3）。
-        foreach (var attribute in targets)
-            ActionExecutionRules.GrantRootExperience(player, attribute, amount, gameData, actionInstanceId, atUnixSeconds);
+
+        foreach (var aspect in targets)
+            ActionExecutionRules.GrantRootExperience(player, aspect, amount * eff, gameData, actionInstanceId, atUnixSeconds);
     }
 
-    private static bool TryParseCoreAspect(string abilityId, GameDataCatalog catalog, out CoreAspectKind attribute)
+    private static bool TryParseCoreAspect(JsonElement ability, out CoreAspectKind attribute)
     {
         attribute = default;
-        if (!catalog.Abilities.TryGetValue(abilityId, out var ability)
-            || !ability.TryGetProperty("rootAttribute", out var property) || property.ValueKind != JsonValueKind.String)
+        if (!ability.TryGetProperty("rootAttribute", out var property) || property.ValueKind != JsonValueKind.String)
             return false;
         return Enum.TryParse(property.GetString(), true, out attribute) && Enum.IsDefined(attribute);
     }
 
+    private static double ResolveInternalCultivationBonus(IPlayerResourceContext player, GameDataCatalog gameData)
+    {
+        if (player.Loadout.AbilitySlots.Count == 0) return 0;
+        var slot = player.Loadout.AbilitySlots[0];
+        if (slot.AbilityId is null) return 0;
+        if (!gameData.Abilities.TryGetValue(slot.AbilityId, out var ability)
+            || DeterministicCombatEngine.AbilityText(ability, "discipline") != "internal") return 0;
+        return JsonRead.Number(ability, "cultivationExpBonusPoints");
+    }
     /// <summary>功法显示名：配表缺失或无名时回退 ID 本体，保证日志引用标签不为空。</summary>
     private static string AbilityName(GameDataCatalog gameData, string abilityId)
         => gameData.Abilities.TryGetValue(abilityId, out var ability)

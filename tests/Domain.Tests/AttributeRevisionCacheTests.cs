@@ -197,6 +197,7 @@ public sealed class AttributeRevisionCacheTests
     {
         var catalog = CreateCatalog();
         var player = CreatePlayer(catalog);
+        player.LearnAbility(new AbilityId("ability.baseline")); // 首次习得初始化 4 槽位
         var cached = AssertConsistentResolve(player, catalog);
 
         player.Resources.Hitpoints = 42;              // 面板当前值是 Apply 写回目标，不是解析输入
@@ -205,7 +206,7 @@ public sealed class AttributeRevisionCacheTests
         player.Progression.Experience = 456;
         player.World.X = 5;                        // 坐标不参与解析
         player.Duel.EncounterCharges = 3;          // 斗法标量不参与解析
-        player.LearnAbility(TestAbility);          // 功法槽与已习得列表不参与解析
+        player.LearnAbility(TestAbility);          // 仅习得新功法（未装配）不改变属性与槽位版本
         player.GrantAbilityExperience(TestAbility, 10); // 技能经验不参与解析
         player.StageItem(TestItem, 2, Baseline.ToUnixTimeMilliseconds() / 1000d); // 暂存区+账本记账
         player.ConfigureAutoUse("combat", 0, TestItem.Value, 1, true);

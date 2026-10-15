@@ -45,6 +45,18 @@
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.manniu-jin",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.manniu-jin",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [
@@ -109,6 +121,18 @@
       },
       {
         "itemId": "item.fragment.taunt",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tiebu-shan",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tiebu-shan",
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
@@ -190,6 +214,42 @@
       {
         "itemId": "item.fragment.chain-strike",
         "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tiebu-shan",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tiebu-shan",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.manniu-jin",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.manniu-jin",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tuna-gong",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tuna-gong",
+        "dropChance": 0.05,
         "minQuantity": 1,
         "maxQuantity": 1
       }

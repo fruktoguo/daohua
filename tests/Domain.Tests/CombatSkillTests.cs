@@ -395,6 +395,53 @@ public sealed class CombatSkillTests
         Assert.Equal(CombatDamageKind.Spell, hits[0].DamageKind);
     }
 
+    [Fact]
+    public void InternalAbilitiesAreLoadedAndBypassedInCombatSkills()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        string[] internalIds =
+        [
+            "ability.tuna-gong",
+            "ability.manniu-jin",
+            "ability.tiebu-shan",
+            "ability.feiyan-gong",
+            "ability.qingxin-jue",
+            "ability.fenxue-gong",
+            "ability.xiaozhoutian-gong",
+            "ability.cunshen-jue",
+            "ability.lianjing-huaqi-jue"
+        ];
+        foreach (var id in internalIds)
+        {
+            Assert.True(catalog.Abilities.TryGetValue(id, out var ability), $"缺少内功心法: {id}");
+            Assert.Equal("internal", ability.GetProperty("discipline").GetString());
+            var slots = SkillSlot.FromAbilitySlots([new PlayerAbilitySlot(id, 1)], catalog.Abilities);
+            Assert.Empty(slots);
+        }
+    }
+
+    [Fact]
+    public void InternalAbilityPassivesApplyToPlayerAttributes()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        player.LearnAbility(new AbilityId("ability.tiebu-shan"));
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.tiebu-shan", 1);
+        player.Touch(PlayerSectionKind.Loadout);
+
+        var attrs = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(2, attrs.PhysicalDamageReductionPoints);
+
+        // 切换为蛮牛劲
+        player.LearnAbility(new AbilityId("ability.manniu-jin"));
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.manniu-jin", 1);
+        player.Touch(PlayerSectionKind.Loadout);
+
+        var attrs2 = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(0, attrs2.PhysicalDamageReductionPoints);
+        Assert.Equal(2, attrs2.PhysicalDamageBonusPoints);
+    }
+
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "技能", DateTimeOffset.UnixEpoch, catalog.Fingerprint);

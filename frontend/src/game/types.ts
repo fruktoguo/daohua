@@ -1207,6 +1207,14 @@ export interface CombatAbilityDefinition {
   chainOnKillCount?: number
   /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */
   hitCount?: number
+  /** 六维经验分配乘率（仅内功心法有效） */
+  rootExpMultipliers?: Partial<Record<string, number>>
+  /** 参悟等级每级提升六维经验总效率（缺省 0.02） */
+  rootExpEfficiencyPerLevel?: number
+  /** 修为类收益增减点数（百分比点数，如 +20 或 -10） */
+  cultivationExpBonusPoints?: number
+  /** 常驻被动面板效果（复用装备 flatStats 同族点数字段） */
+  passive?: Record<string, number>
 }
 
 /**

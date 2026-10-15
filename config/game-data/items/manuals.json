@@ -188,5 +188,175 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.tuna-gong",
+    "name": "《吐纳功秘籍》",
+    "description": "一呼一吸，气行周身。\n记录道家入门呼吸吐纳法门的旧绢册页，可调和经脉、固本培元。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.tuna-gong",
+    "name": "《吐纳功·残卷》",
+    "description": "一呼一吸，气行周身。\n记录道家入门呼吸吐纳法门的旧绢册页，可调和经脉、固本培元。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.manniu-jin",
+    "name": "《蛮牛劲秘籍》",
+    "description": "力蛮如牛，不尚机巧。\n粗粝兽皮缝制的刚猛力修图谱，专修纯粹肉身蛮力。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.manniu-jin",
+    "name": "《蛮牛劲·残卷》",
+    "description": "力蛮如牛，不尚机巧。\n粗粝兽皮缝制的刚猛力修图谱，专修纯粹肉身蛮力。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.tiebu-shan",
+    "name": "《铁布衫秘籍》",
+    "description": "筋骨如铁，刀枪不入。\n铁线编织的硬气功册页，记录淬炼体魄与骨骼的横练之法。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.tiebu-shan",
+    "name": "《铁布衫·残卷》",
+    "description": "筋骨如铁，刀枪不入。\n铁线编织的硬气功册页，记录淬炼体魄与骨骼的横练之法。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.feiyan-gong",
+    "name": "《飞燕功秘籍》",
+    "description": "身轻如燕，踏雪无痕。\n羽绢抄录的轻身行气图，研读可御气轻身、踏草如飞。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.feiyan-gong",
+    "name": "《飞燕功·残卷》",
+    "description": "身轻如燕，踏雪无痕。\n羽绢抄录的轻身行气图，研读可御气轻身、踏草如飞。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.qingxin-jue",
+    "name": "《清心诀秘籍》",
+    "description": "清心寡欲，灵台空明。\n素白锦缎绣制的道家静坐口诀，澄净心神杂念，专蓄术法灵光。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.qingxin-jue",
+    "name": "《清心诀·残卷》",
+    "description": "清心寡欲，灵台空明。\n素白锦缎绣制的道家静坐口诀，澄净心神杂念，专蓄术法灵光。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.fenxue-gong",
+    "name": "《焚血功秘籍》",
+    "description": "燃血为薪，力可崩山。\n隐带血腥煞气的魔门残卷，以肉身本源气血为薪柴换取绝强狂力。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.fenxue-gong",
+    "name": "《焚血功·残卷》",
+    "description": "燃血为薪，力可崩山。\n隐带血腥煞气的魔门残卷，以肉身本源气血为薪柴换取绝强狂力。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.xiaozhoutian-gong",
+    "name": "《小周天功秘籍》",
+    "description": "气行任督，周天不息。\n玄门正宗护体真经，灵息搬运、周天循环，坚不可摧。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.xiaozhoutian-gong",
+    "name": "《小周天功·残卷》",
+    "description": "气行任督，周天不息。\n玄门正宗护体真经，灵息搬运、周天循环，坚不可摧。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.cunshen-jue",
+    "name": "《存神诀秘籍》",
+    "description": "存神内视，万虑皆空。\n紫玉简雕刻的上乘内视真经，凝练识海神识，洞察万物生克。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.cunshen-jue",
+    "name": "《存神诀·残卷》",
+    "description": "存神内视，万虑皆空。\n紫玉简雕刻的上乘内视真经，凝练识海神识，洞察万物生克。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.lianjing-huaqi-jue",
+    "name": "《炼精化气诀秘籍》",
+    "description": "炼精化气，舍形求真。\n泛黄道书上记载的夺造化速成秘术，尽舍肉身形魄以速成无上金丹。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.lianjing-huaqi-jue",
+    "name": "《炼精化气诀·残卷》",
+    "description": "炼精化气，舍形求真。\n泛黄道书上记载的夺造化速成秘术，尽舍肉身形魄以速成无上金丹。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
   }
 ]

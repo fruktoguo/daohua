@@ -37,6 +37,18 @@
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.fenxue-gong",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.fenxue-gong",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [
@@ -99,6 +111,18 @@
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.cunshen-jue",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.cunshen-jue",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [
@@ -149,6 +173,17 @@
       },
       {
         "itemId": "item.fragment.pozhen-melody",
+        "dropChance": 0.02,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.lianjing-huaqi-jue",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.lianjing-huaqi-jue",
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1

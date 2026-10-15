@@ -625,7 +625,8 @@ public sealed partial class PlayerAggregate
         + Loadout.EquippedItemIds.Version
         + Loadout.Equipment.Version
         + Loadout.CoreAttributesVersion
-        + Progression.TraitIds.Version;
+        + Progression.TraitIds.Version
+        + Loadout.AbilitySlots.Version;
 
     /// <summary>尝试命中属性解析缓存：同配表实例且属性输入修订号未变时复用上轮结果。</summary>
     internal bool TryGetCachedAttributes(GameDataCatalog catalog, out PlayerAttributes attributes)

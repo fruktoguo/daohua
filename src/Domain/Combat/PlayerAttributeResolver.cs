@@ -178,7 +178,7 @@ public static class PlayerAttributeResolver
         PlayerBuffState buffs, PlayerLoadoutState loadout)
         => progression.RealmLevelVersion + world.AttributeInputVersion + buffs.Active.Version
             + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion
-            + progression.TraitIds.Version;
+            + progression.TraitIds.Version + loadout.AbilitySlots.Version;
 
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
         PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null,
@@ -219,6 +219,22 @@ public static class PlayerAttributeResolver
                     target[stat.Name] = target.GetValueOrDefault(stat.Name) + number * enhancementScale;
                 }
             Add(item, "baseStatRatios", ratios, enhancementScale);
+        }
+        // 内功常驻面板被动（总纲 §5.3.1）：装配在 0 号内功位的心法 passive 点数与固定值生效。
+        if (loadout.AbilitySlots is { Count: > 0 }
+            && loadout.AbilitySlots[0].AbilityId is { } internalId
+            && catalog.Abilities.TryGetValue(internalId, out var internalAbility)
+            && JsonRead.Text(internalAbility, "discipline") == "internal"
+            && internalAbility.TryGetProperty("passive", out var passiveProps)
+            && passiveProps.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var stat in passiveProps.EnumerateObject())
+            {
+                var number = stat.Value.GetDouble();
+                if (!double.IsFinite(number)) continue;
+                var target = stat.Name.EndsWith("Points", StringComparison.Ordinal) ? points : flat;
+                target[stat.Name] = target.GetValueOrDefault(stat.Name) + number;
+            }
         }
         var core = loadout.CoreAttributes;
         var root = core.Levels(catalog.RealmProgression);

@@ -43,6 +43,59 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const t = getT()
   const normalizedLevel = Math.max(1, level)
   const levelOffset = normalizedLevel - 1
+  if (ability.discipline === 'internal') {
+    const effGrowth = levelOffset * (ability.rootExpEfficiencyPerLevel ?? 0.02)
+    const effPercent = (effGrowth * 100).toFixed(1)
+    const lines = [
+      t('game.abilityDesc.level', { n: normalizedLevel }),
+      `参悟效率加成 +${effPercent}%`,
+    ]
+    if (ability.cultivationExpBonusPoints) {
+      lines.push(`修为获取 ${ability.cultivationExpBonusPoints > 0 ? '+' : ''}${ability.cultivationExpBonusPoints}%`)
+    }
+    if (ability.passive) {
+      const statLabels: Record<string, string> = {
+        physicalDamageBonusPoints: '物理增伤',
+        spellDamageBonusPoints: '术法增伤',
+        physicalDamageReductionPoints: '物理减伤',
+        spellDamageReductionPoints: '术法减伤',
+        actionSpeedPoints: '行动加速',
+      }
+      for (const [stat, val] of Object.entries(ability.passive)) {
+        const label = statLabels[stat] ?? stat
+        lines.push(`${label} +${val}%`)
+      }
+    }
+    const clauses: string[] = []
+    if (ability.rootExpMultipliers) {
+      const aspects: Record<string, string> = {
+        stamina: '体魄',
+        meridians: '经脉',
+        attack: '力道',
+        bone: '根骨',
+        agility: '身法',
+        consciousness: '神识',
+      }
+      const parts: string[] = []
+      for (const [key, mult] of Object.entries(ability.rootExpMultipliers)) {
+        if (mult !== undefined && mult !== 1.0) {
+          parts.push(`${aspects[key] ?? key} ×${mult}`)
+        }
+      }
+      if (parts.length > 0) {
+        clauses.push(`六维分配（${parts.join('、')}，其余 ×1.0）`)
+      }
+    }
+    const desc = ability.description ?? ''
+    const fullDesc = clauses.length > 0 ? (desc ? `${desc}\n${clauses.join('；')}。` : `${clauses.join('；')}。`) : desc
+    return {
+      title: ability.name,
+      badge: '内功心法',
+      description: fullDesc,
+      lines,
+    }
+  }
+
   // 等级成长与服务端 CastSkill 同式：全部数值项每级 +2.0% 线性成长。
   const levelGrowth = 1 + levelOffset * 0.02
   const damageRatio = (ability.damageRatio ?? 0) * levelGrowth
