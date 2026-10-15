@@ -519,4 +519,59 @@ public sealed class ProtocolAttributesPointsTests
         var combat = snapshot.Sections.Single(section => section.Section == "combat");
         Assert.Equal(800, combat.Data.GetProperty("attributes").GetProperty("threatBonusPoints").GetDouble());
     }
+
+    /// <summary>
+    /// 静态遭遇目录投影门禁：必须完整序列化 eliteEnemies 与 battlesPerElite，
+    /// 且遭遇全量投影去重后覆盖游戏内全部 12 种大世界妖兽（含 4 只精英与 2 只首领）。
+    /// </summary>
+    [Fact]
+    public void StaticGameCatalogMapper_Encounters_ProjectsEliteEnemiesAndCoversAllMonsters()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var encounters = StaticGameCatalogMapper.Encounters(gameData);
+        Assert.NotEmpty(encounters);
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(encounters, ProtocolJson.Options));
+        var root = doc.RootElement;
+        var allFoundIds = new HashSet<string>(StringComparer.Ordinal);
+        var eliteCount = 0;
+
+        foreach (var enc in root.EnumerateArray())
+        {
+            Assert.True(enc.TryGetProperty("encounterId", out var encId));
+            Assert.True(enc.TryGetProperty("eliteEnemies", out var eliteArray));
+            Assert.True(enc.TryGetProperty("battlesPerElite", out _));
+            Assert.True(enc.TryGetProperty("bossEnemies", out var bossArray));
+            Assert.True(enc.TryGetProperty("randomSpawns", out var spawnsArray));
+
+            foreach (var spawn in spawnsArray.EnumerateArray())
+            {
+                var enemy = spawn.GetProperty("enemy");
+                allFoundIds.Add(enemy.GetProperty("enemyId").GetString()!);
+            }
+            foreach (var elite in eliteArray.EnumerateArray())
+            {
+                eliteCount++;
+                var id = elite.GetProperty("enemyId").GetString()!;
+                allFoundIds.Add(id);
+                Assert.Equal("elite", elite.GetProperty("rank").GetString());
+            }
+            foreach (var boss in bossArray.EnumerateArray())
+            {
+                var id = boss.GetProperty("enemyId").GetString()!;
+                allFoundIds.Add(id);
+                Assert.Equal("boss", boss.GetProperty("rank").GetString());
+            }
+        }
+
+        Assert.True(eliteCount > 0, "遭遇中必须包含精英怪投影。");
+        string[] expectedElites = ["enemy.armored-bear", "enemy.demon-ape", "enemy.blade-corpse", "enemy.fallen-devil-priest"];
+        string[] expectedBosses = ["enemy.chang-tiger", "enemy.falling-star-beast"];
+        string[] expectedMinions = ["enemy.wood-spirit", "enemy.demonized-rabbit", "enemy.fire-spirit", "enemy.rift-wolf", "enemy.star-flame-crow", "enemy.plunder-cultivator"];
+
+        foreach (var id in expectedElites) Assert.Contains(id, allFoundIds);
+        foreach (var id in expectedBosses) Assert.Contains(id, allFoundIds);
+        foreach (var id in expectedMinions) Assert.Contains(id, allFoundIds);
+        Assert.Equal(12, allFoundIds.Count);
+    }
 }

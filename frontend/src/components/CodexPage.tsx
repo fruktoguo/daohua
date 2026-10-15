@@ -82,47 +82,88 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const buildings = useGameStore(state => state.buildings)
   const abilities = useGameStore(state => state.abilities)
   const encounters = useGameStore(state => state.encounters)
+  const maps = useGameStore(state => state.maps)
   const items = useGameStore(state => state.items)
   const equipment = useGameStore(state => state.equipment)
   const learnedAbilityIds = useGameStore(state => state.combat?.learnedAbilityIds ?? [])
 
-  // 1. 制造配方分类池
-  const craftingPool = useMemo(() => {
-    const pool = actions.filter(a =>
-      a.type === 'alchemy' || a.id.startsWith('craft.') || a.id.startsWith('forge.') || a.id.startsWith('alchemy.')
+  // 1. 制造配方分类池：全量技艺配方池（包含炼丹、炼器、阵法、符箓）
+  const allCraftingActions = useMemo(() => {
+    return actions.filter(a =>
+      a.type === 'alchemy' ||
+      a.technique === 'alchemy' ||
+      a.technique === 'forging' ||
+      a.technique === 'formation' ||
+      a.technique === 'talisman' ||
+      a.id.startsWith('craft.') ||
+      a.id.startsWith('forge.') ||
+      a.id.startsWith('alchemy.') ||
+      a.id.startsWith('formation.') ||
+      a.id.startsWith('talisman.')
     )
-    if (codexCraftingSubTab === 'alchemy') {
-      return pool.filter(a =>
-        a.technique === 'alchemy' ||
-        a.id.startsWith('alchemy.') ||
-        a.id.startsWith('craft.extract-')
-      )
-    }
-    if (codexCraftingSubTab === 'forging') {
-      return pool.filter(a =>
-        a.technique === 'forging' ||
-        a.id.startsWith('forge.') ||
-        a.id.startsWith('craft.refine-')
-      )
-    }
-    if (codexCraftingSubTab === 'formation') {
-      return pool.filter(a => a.technique === 'formation')
-    }
-    if (codexCraftingSubTab === 'talisman') {
-      return pool.filter(a => a.technique === 'talisman')
-    }
-    return pool
-  }, [actions, codexCraftingSubTab])
+  }, [actions])
 
-  // 制造配方按所需境界排序
+  // 子分类判定函数
+  const isSubTabAction = useCallback((action: ActionDefinition, subTab: CodexCraftingSubTab): boolean => {
+    if (subTab === 'alchemy') {
+      return (
+        action.technique === 'alchemy' ||
+        action.id.startsWith('alchemy.') ||
+        action.id.startsWith('craft.extract-')
+      )
+    }
+    if (subTab === 'forging') {
+      return (
+        action.technique === 'forging' ||
+        action.id.startsWith('forge.') ||
+        action.id.startsWith('craft.refine-')
+      )
+    }
+    if (subTab === 'formation') {
+      return action.technique === 'formation' || action.id.startsWith('formation.')
+    }
+    if (subTab === 'talisman') {
+      return action.technique === 'talisman' || action.id.startsWith('talisman.')
+    }
+    return false
+  }, [])
+
+  // 当前选中子分类的配方池
+  const currentSubTabActions = useMemo(() => {
+    return allCraftingActions.filter(a => isSubTabAction(a, codexCraftingSubTab))
+  }, [allCraftingActions, isSubTabAction, codexCraftingSubTab])
+
+  // 制造配方按所需境界排序（当前展示列表）
   const sortedCraftingActions = useMemo(() => {
-    return [...craftingPool].sort((a, b) => {
+    return [...currentSubTabActions].sort((a, b) => {
       const levelA = resolveActionLevel(a, items, equipment, encounters)
       const levelB = resolveActionLevel(b, items, equipment, encounters)
       if (levelA !== levelB) return levelA - levelB
       return a.id.localeCompare(b.id)
     })
-  }, [craftingPool, items, equipment, encounters])
+  }, [currentSubTabActions, items, equipment, encounters])
+
+  // 各子 Tab 独立的解锁与总数统计
+  const subTabProgress = useMemo(() => {
+    const map: Record<CodexCraftingSubTab, { unlocked: number; total: number }> = {
+      alchemy: { unlocked: 0, total: 0 },
+      forging: { unlocked: 0, total: 0 },
+      formation: { unlocked: 0, total: 0 },
+      talisman: { unlocked: 0, total: 0 },
+    }
+    for (const action of allCraftingActions) {
+      const isUnlocked = resolveActionLevel(action, items, equipment, encounters) <= realmLevel
+      for (const tab of CRAFTING_SUB_TABS) {
+        if (isSubTabAction(action, tab.id)) {
+          map[tab.id].total += 1
+          if (isUnlocked) {
+            map[tab.id].unlocked += 1
+          }
+        }
+      }
+    }
+    return map
+  }, [allCraftingActions, isSubTabAction, items, equipment, encounters, realmLevel])
 
   // 2. 建筑图谱按 requiredRealmLevel 排序
   const sortedBuildings = useMemo(() => {
@@ -134,56 +175,65 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     return [...abilities].sort((a, b) => ((a.tier ?? 1) - (b.tier ?? 1)) || a.abilityId.localeCompare(b.abilityId))
   }, [abilities])
 
-  // 4. 从遭遇战全量聚合去重的大世界怪物列表
+  // 4. 从遭遇战与地图节点生态全量聚合去重大世界怪物列表
   const allMonsters = useMemo(() => {
     const map = new Map<string, CombatantDefinition>()
+    const addMonster = (enemy?: CombatantDefinition | null) => {
+      if (enemy?.enemyId && !map.has(enemy.enemyId)) {
+        map.set(enemy.enemyId, enemy)
+      }
+    }
     for (const enc of encounters) {
-      if (enc.enemy?.enemyId) map.set(enc.enemy.enemyId, enc.enemy)
+      addMonster(enc.enemy)
       for (const spawn of enc.randomSpawns ?? []) {
-        if (spawn.enemy?.enemyId) map.set(spawn.enemy.enemyId, spawn.enemy)
+        addMonster(spawn.enemy)
+      }
+      for (const elite of enc.eliteEnemies ?? []) {
+        addMonster(elite)
       }
       for (const boss of enc.bossEnemies ?? []) {
-        if (boss?.enemyId) map.set(boss.enemyId, boss)
+        addMonster(boss)
+      }
+    }
+    for (const mapDef of maps) {
+      for (const node of mapDef.nodes ?? []) {
+        for (const m of node.monsters ?? []) addMonster(m)
+        for (const e of node.eliteEnemies ?? []) addMonster(e)
+        for (const b of node.bossEnemies ?? []) addMonster(b)
       }
     }
     return Array.from(map.values()).sort((a, b) => (a.level ?? 1) - (b.level ?? 1))
-  }, [encounters])
+  }, [encounters, maps])
 
   // 进度计数
   const defeatedSet = useMemo(() => new Set(stats.defeatedMonsterIds ?? []), [stats.defeatedMonsterIds])
   const learnedSet = useMemo(() => new Set(learnedAbilityIds), [learnedAbilityIds])
 
-  const craftingUnlockedCount = useMemo(() => {
-    return sortedCraftingActions.filter(a => resolveActionLevel(a, items, equipment, encounters) <= realmLevel).length
-  }, [sortedCraftingActions, items, equipment, encounters, realmLevel])
+  // 技艺总解锁数与总配方数（全量技艺，不随子 Tab 改变）
+  const totalCraftingUnlockedCount = useMemo(() => {
+    return allCraftingActions.filter(a => resolveActionLevel(a, items, equipment, encounters) <= realmLevel).length
+  }, [allCraftingActions, items, equipment, encounters, realmLevel])
+  const totalCraftingCount = allCraftingActions.length
 
   const buildingUnlockedCount = useMemo(() => {
     return sortedBuildings.filter(b => b.requiredRealmLevel <= realmLevel).length
   }, [sortedBuildings, realmLevel])
+  const totalBuildingCount = sortedBuildings.length
 
   const abilityLearnedCount = useMemo(() => {
     return sortedAbilities.filter(a => learnedSet.has(a.abilityId)).length
   }, [sortedAbilities, learnedSet])
+  const totalAbilityCount = sortedAbilities.length
 
   const monsterDefeatedCount = useMemo(() => {
     return allMonsters.filter(m => defeatedSet.has(m.enemyId)).length
   }, [allMonsters, defeatedSet])
+  const totalMonsterCount = allMonsters.length
 
-  // 当前分类总数与已解锁数
-  const [currentUnlocked, currentTotal] = useMemo(() => {
-    switch (codexCategory) {
-      case 'crafting':
-        return [craftingUnlockedCount, sortedCraftingActions.length]
-      case 'building':
-        return [buildingUnlockedCount, sortedBuildings.length]
-      case 'ability':
-        return [abilityLearnedCount, sortedAbilities.length]
-      case 'monster':
-        return [monsterDefeatedCount, allMonsters.length]
-    }
-  }, [codexCategory, craftingUnlockedCount, sortedCraftingActions.length, buildingUnlockedCount, sortedBuildings.length, abilityLearnedCount, sortedAbilities.length, monsterDefeatedCount, allMonsters.length])
-
-  const currentPercent = currentTotal > 0 ? Math.round((currentUnlocked / currentTotal) * 100) : 0
+  // 万象图鉴全景总进度
+  const grandUnlocked = totalCraftingUnlockedCount + buildingUnlockedCount + abilityLearnedCount + monsterDefeatedCount
+  const grandTotal = totalCraftingCount + totalBuildingCount + totalAbilityCount + totalMonsterCount
+  const grandPercent = grandTotal > 0 ? Math.round((grandUnlocked / grandTotal) * 100) : 0
 
   return (
     <div className="codex-page panel">
@@ -193,7 +243,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
           <div className="codex-title-group">
             <h2 className="codex-title">{t('app.codex.title')}</h2>
             <span className="codex-progress-badge">
-              {t('app.codex.totalProgress')}：{currentUnlocked} / {currentTotal} ({currentPercent}%)
+              {t('app.codex.totalProgress')}：{grandUnlocked} / {grandTotal} ({grandPercent}%)
             </span>
           </div>
         </div>
@@ -206,7 +256,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
             type="button"
           >
             <span>{t('app.codex.tabCrafting')}</span>
-            <span className="codex-tab-count">{craftingUnlockedCount}/{sortedCraftingActions.length}</span>
+            <span className="codex-tab-count">{totalCraftingUnlockedCount}/{totalCraftingCount}</span>
           </button>
           <button
             className={`codex-tab-btn${codexCategory === 'building' ? ' active' : ''}`}
@@ -214,7 +264,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
             type="button"
           >
             <span>{t('app.codex.tabBuilding')}</span>
-            <span className="codex-tab-count">{buildingUnlockedCount}/{sortedBuildings.length}</span>
+            <span className="codex-tab-count">{buildingUnlockedCount}/{totalBuildingCount}</span>
           </button>
           <button
             className={`codex-tab-btn${codexCategory === 'ability' ? ' active' : ''}`}
@@ -222,7 +272,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
             type="button"
           >
             <span>{t('app.codex.tabAbility')}</span>
-            <span className="codex-tab-count">{abilityLearnedCount}/{sortedAbilities.length}</span>
+            <span className="codex-tab-count">{abilityLearnedCount}/{totalAbilityCount}</span>
           </button>
           <button
             className={`codex-tab-btn${codexCategory === 'monster' ? ' active' : ''}`}
@@ -230,23 +280,27 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
             type="button"
           >
             <span>{t('app.codex.tabMonster')}</span>
-            <span className="codex-tab-count">{monsterDefeatedCount}/{allMonsters.length}</span>
+            <span className="codex-tab-count">{monsterDefeatedCount}/{totalMonsterCount}</span>
           </button>
         </nav>
 
         {/* 制造分类下的二级子切换（炼丹、炼器、阵法、符箓） */}
         {codexCategory === 'crafting' && (
           <div className="codex-sub-tabs" role="tablist">
-            {CRAFTING_SUB_TABS.map(tab => (
-              <button
-                className={`codex-sub-tab-btn${codexCraftingSubTab === tab.id ? ' active' : ''}`}
-                key={tab.id}
-                onClick={() => setCodexCraftingSubTab(tab.id)}
-                type="button"
-              >
-                {t(`app.codex.${tab.labelKey}`)}
-              </button>
-            ))}
+            {CRAFTING_SUB_TABS.map(tab => {
+              const prog = subTabProgress[tab.id]
+              return (
+                <button
+                  className={`codex-sub-tab-btn${codexCraftingSubTab === tab.id ? ' active' : ''}`}
+                  key={tab.id}
+                  onClick={() => setCodexCraftingSubTab(tab.id)}
+                  type="button"
+                >
+                  <span>{t(`app.codex.${tab.labelKey}`)}</span>
+                  <span className="codex-sub-tab-count">{prog.unlocked}/{prog.total}</span>
+                </button>
+              )
+            })}
           </div>
         )}
       </header>
