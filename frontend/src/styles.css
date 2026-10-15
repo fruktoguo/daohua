@@ -3742,6 +3742,20 @@ input[type="checkbox"] {
   margin-top: 0;
 }
 
+.enhancement-active-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid rgba(220, 160, 40, 0.35);
+  background: rgba(220, 160, 40, 0.12);
+  color: var(--gold-bright);
+}
+
 /* 斗法勾选块：仅 combat-encounter 行动弹窗展示 */
 .duel-option {
   display: grid;
@@ -3814,6 +3828,18 @@ input[type="checkbox"] {
   cursor: not-allowed;
   filter: grayscale(0.5);
   box-shadow: none;
+}
+
+.action-modal-submit--danger {
+  border-color: rgba(220, 70, 70, 0.45);
+  color: #ffb4b4;
+  background: rgba(180, 40, 40, 0.3);
+}
+
+.action-modal-submit--danger:hover:not(:disabled) {
+  border-color: rgba(230, 80, 80, 0.75);
+  color: #fff;
+  background: rgba(200, 45, 45, 0.5);
 }
 
 .presence-options {

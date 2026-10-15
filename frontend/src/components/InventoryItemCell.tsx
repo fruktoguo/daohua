@@ -1,7 +1,7 @@
 import { memo, useId, useState } from 'react'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant } from '../game/ids'
+import { collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant } from '../game/ids'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { useMarketStore } from '../game/marketStore'
 import { useT } from '../i18n'
@@ -124,28 +124,23 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const t = useT()
   const definition = useGameStore(state => findItemInCatalog(state.items, item.itemId))
   const equipmentDef = useGameStore(state => findEquipmentInCatalog(state.equipment, item.itemId))
-  // 已装配计数按 (itemId, 强化等级) 精确匹配：背包中同物不同 +N 变体行互不串位。
+  // 已装配与强化锁定计数按 (itemId, 强化等级) 精确匹配：背包中同物不同 +N 变体行互不串位。
   const enhancementLevel = parseEnhancementVariant(item.variant)
-  const equippedCount = useGameStore(
-    state => (state.combat?.equipment ?? []).reduce(
-      (count, entry) => entry.itemId === item.itemId && Math.floor(entry.enhancementLevel) === enhancementLevel
-        ? count + 1
-        : count,
-      0
-    )
+  const occupiedCount = useGameStore(
+    state => collectOccupiedEquipmentCounts(state.combat?.equipment, state.queue?.entries).get(`${item.itemId}#${enhancementLevel}`) ?? 0
   )
-  // 钱包持存含已装备件数：背包可支配数量需扣除同级已装备件；全数穿戴时视为已装备（背包层已过滤不渲染）。
-  const equipped = equippedCount >= item.amount
-  const bagItem = equippedCount > 0 ? { ...item, amount: item.amount - equippedCount } : item
+  // 钱包持存含已装备/锁定件数：背包可支配数量需扣除同级已占用件；全数占用时不可直接使用/回收。
+  const occupied = occupiedCount >= item.amount
+  const bagItem = occupiedCount > 0 ? { ...item, amount: Math.max(0, item.amount - occupiedCount) } : item
   const [dialog, setDialog] = useState<ItemQuantityDialogMode | null>(null)
 
   const isManual = item.itemId.startsWith('item.tome.') || item.itemId.startsWith('item.fragment.')
-  const usable = !equipped && (isManual || equipmentDef !== undefined)
+  const usable = !occupied && (isManual || equipmentDef !== undefined)
   const tradable = equipmentDef !== undefined || definition?.isTradable === true
   // 强化变体行暂不可回收/丢弃：item.sell/item.discard 协议目前只结算基础变体行，
   // 放行会错扣同物基础资产；待服务端命令支持 variant 参数后放开。
   const isVariantRow = Boolean(item.variant)
-  const recyclable = !equipped
+  const recyclable = !occupied
     && !isVariantRow
     && definition !== undefined
     && definition.sellPrice > 0
@@ -203,8 +198,8 @@ export const InventoryItemCell = memo(function InventoryItemCell({
       )}
       {(usable || tradable || recyclable) && <FloatingMenuDivider />}
       <FloatingMenuItem
-        disabled={equipped || isVariantRow}
-        hint={equipped ? t('app.inventoryPanel.equippedHint') : isVariantRow ? t('app.inventoryPanel.variantDisposeHint') : undefined}
+        disabled={occupied || isVariantRow}
+        hint={occupied ? t('app.inventoryPanel.equippedHint') : isVariantRow ? t('app.inventoryPanel.variantDisposeHint') : undefined}
         label={t('app.inventoryPanel.discard')}
         onClick={() => setDialog('discard')}
         tone="danger"

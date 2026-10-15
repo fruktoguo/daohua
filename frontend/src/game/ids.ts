@@ -1,6 +1,6 @@
 import { getT, type TFunction } from '../i18n'
 import { calculateAbilityLevelAndProgress } from './combatConstants'
-import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, WorldMapDefinition, WorldState } from './types'
+import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, ItemDefinition, QueueEntry, WorldMapDefinition, WorldState } from './types'
 
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
@@ -763,6 +763,33 @@ export function parseEnhancementVariant(variant?: string | null): number {
   const normalized = variant.startsWith('+') ? variant.slice(1) : variant
   const parsed = Number(normalized)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+}
+
+/**
+ * 汇总当前所有被占用的装备实例数量（已穿戴 + 正在进行强化锁定的装备）：
+ * 复合键为 `${itemId}#${enhancementLevel}`。
+ * 背包陈列、挑选器与槽位装配中，可支配数量 = 钱包持存 - 该占用计数。
+ */
+export function collectOccupiedEquipmentCounts(
+  combatEquipment?: readonly EquippedItem[],
+  queueEntries?: readonly QueueEntry[],
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const eq of combatEquipment ?? []) {
+    const key = `${eq.itemId}#${Math.floor(eq.enhancementLevel)}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  for (const qEntry of queueEntries ?? []) {
+    if ((qEntry.type === 'enhancement' || qEntry.actionId === 'enhance.equipment') && qEntry.targetItemId) {
+      const level = Math.floor(
+        qEntry.enhancementCurrentLevel
+          ?? (typeof qEntry.parameters?.initialLevel === 'number' ? qEntry.parameters.initialLevel : 0)
+      )
+      const key = `${qEntry.targetItemId}#${level}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+  }
+  return counts
 }
 
 /**

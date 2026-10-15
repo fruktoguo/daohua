@@ -14,8 +14,8 @@ import {
 } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
-import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition } from '../game/types'
+import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
+import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, QueueEntry } from '../game/types'
 import { useT, type TFunction } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { ChoiceMenu } from './CatalogPicker'
@@ -32,16 +32,12 @@ import { UnitNumber } from './UnitNumber'
 function collectEquipmentCandidates(
   inventory: readonly InventoryItem[],
   combatEquipment: readonly EquippedItem[] | undefined,
+  queueEntries: readonly QueueEntry[] | undefined,
   equipmentCatalog: readonly CombatEquipmentDefinition[],
   itemCatalog: readonly ItemDefinition[],
   t: TFunction,
 ): ItemPickerEntry[] {
-  const equippedCounts = new Map<string, number>()
-  for (const eq of combatEquipment ?? []) {
-    const key = `${eq.itemId}#${Math.floor(eq.enhancementLevel)}`
-    equippedCounts.set(key, (equippedCounts.get(key) ?? 0) + 1)
-  }
-
+  const occupiedCounts = collectOccupiedEquipmentCounts(combatEquipment, queueEntries)
   const heldCounts = new Map<string, { itemId: string; level: number; amount: number }>()
   for (const inv of inventory) {
     const eqDef = findEquipmentInCatalog(equipmentCatalog, inv.itemId)
@@ -58,8 +54,8 @@ function collectEquipmentCandidates(
 
   const candidates: ItemPickerEntry[] = []
   for (const [key, held] of heldCounts) {
-    const worn = equippedCounts.get(key) ?? 0
-    const available = held.amount - worn
+    const occupied = occupiedCounts.get(key) ?? 0
+    const available = held.amount - occupied
     if (available <= 0) continue
 
     const eqDef = findEquipmentInCatalog(equipmentCatalog, held.itemId)
@@ -102,52 +98,100 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const equipmentCatalog = useGameStore(state => state.equipment)
   const combat = useGameStore(state => state.combat)
   const world = useGameStore(state => state.world)
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [targetLevel, setTargetLevel] = useState(1)
-  const [protectLevel, setProtectLevel] = useState(ENHANCE_MIN_PROTECT_LEVEL)
-  const [useProtection, setUseProtection] = useState(false)
-  const [protectionItemId, setProtectionItemId] = useState<string | null>(null)
-  const [repeats, setRepeats] = useState(-1)
+  const queueEntries = useGameStore(state => state.queue?.entries)
+
+  // 正在执行或排队中的强化行动（从权威队列获取）
+  const activeEnhanceEntry = useMemo(
+    () => queueEntries?.find(e => e.actionId === ENHANCE_ACTION_ID || e.type === 'enhancement') ?? null,
+    [queueEntries]
+  )
+  const isEnhancing = activeEnhanceEntry !== null
+
+  // 若当前正在强化，将正在强化中的装备构造成选中条目（即使已从背包扣除）
+  const activeTargetItem = useMemo<ItemPickerEntry | null>(() => {
+    if (!activeEnhanceEntry?.targetItemId) return null
+    const targetId = activeEnhanceEntry.targetItemId
+    const targetEq = findEquipmentInCatalog(equipmentCatalog, targetId)
+    const targetItem = findItemInCatalog(items, targetId)
+    const level = Math.floor(
+      activeEnhanceEntry.enhancementCurrentLevel
+        ?? (typeof activeEnhanceEntry.parameters?.initialLevel === 'number'
+            ? activeEnhanceEntry.parameters.initialLevel
+            : 0)
+    )
+    const variant = level > 0 ? `+${level}` : null
+    const baseName = targetEq?.name ?? targetItem?.name ?? targetId
+    return {
+      itemId: targetId,
+      name: level > 0 ? `${baseName} +${level}` : baseName,
+      amount: 1,
+      tier: targetEq?.tier ?? targetItem?.tier ?? 1,
+      category: resolveItemCategoryLabel(resolveItemSubCategory(targetId, targetItem, targetEq), t),
+      description: targetItem?.description ?? targetEq?.description ?? '',
+      definition: targetItem,
+      equipmentDefinition: targetEq,
+      variant,
+      enhancementLevel: level,
+    }
+  }, [activeEnhanceEntry, equipmentCatalog, items, t])
+
+  const [userSelectedKey, setUserSelectedKey] = useState<string | null>(null)
+  const [userTargetLevel, setUserTargetLevel] = useState(1)
+  const [userProtectLevel, setUserProtectLevel] = useState(ENHANCE_MIN_PROTECT_LEVEL)
+  const [userUseProtection, setUserUseProtection] = useState(false)
+  const [userProtectionItemId, setUserProtectionItemId] = useState<string | null>(null)
+  const [userRepeats, setUserRepeats] = useState(-1)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
 
   const candidates = useMemo(
-    () => collectEquipmentCandidates(inventory, combat?.equipment, equipmentCatalog, items, t),
-    [combat?.equipment, equipmentCatalog, inventory, items, t],
+    () => collectEquipmentCandidates(inventory, combat?.equipment, queueEntries, equipmentCatalog, items, t),
+    [combat?.equipment, equipmentCatalog, inventory, items, queueEntries, t],
   )
-  const selected = candidates.find(c => itemPickerEntryKey(c.itemId, c.variant) === selectedKey) ?? null
+  const userSelected = candidates.find(c => itemPickerEntryKey(c.itemId, c.variant) === userSelectedKey) ?? null
+  const selected = isEnhancing ? activeTargetItem : userSelected
 
   const currentLevel = Math.floor(selected?.enhancementLevel ?? 0)
   const nextLevel = Math.min(ENHANCE_MAX_LEVEL, currentLevel + 1)
   const maxedOut = selected !== null && currentLevel >= ENHANCE_MAX_LEVEL
 
+  // 强化进行中时所有设定直读权威任务信息，切换回该界面时完整重现；未强化时读取玩家本地选择状态
+  const targetLevel = isEnhancing ? Math.floor(activeEnhanceEntry?.targetLevel ?? nextLevel) : userTargetLevel
+  const useProtection = isEnhancing ? Boolean(activeEnhanceEntry?.auxItemId) : userUseProtection
+  const protectionItemId = isEnhancing ? (activeEnhanceEntry?.auxItemId ?? null) : userProtectionItemId
+  const protectLevel = isEnhancing
+    ? Math.floor(activeEnhanceEntry?.parameters?.protectLevel ?? ENHANCE_MIN_PROTECT_LEVEL)
+    : userProtectLevel
+  const repeats = isEnhancing ? (activeEnhanceEntry?.remainingRepeats ?? -1) : userRepeats
+
   // 追踪上一次选中的目标，支持强化升降级导致变体 key 变化时平滑迁移到新变体
   const lastSelectedRef = useRef<{ itemId: string; level: number } | null>(null)
   useEffect(() => {
-    if (selected) {
-      lastSelectedRef.current = { itemId: selected.itemId, level: currentLevel }
-    } else if (selectedKey) {
+    if (isEnhancing) return
+    if (userSelected) {
+      lastSelectedRef.current = { itemId: userSelected.itemId, level: currentLevel }
+    } else if (userSelectedKey) {
       if (lastSelectedRef.current) {
         const sameItemCandidates = candidates.filter(c => c.itemId === lastSelectedRef.current!.itemId)
         if (sameItemCandidates.length > 0) {
-          // 优先寻找大于或等于上一等级的最接近变体，其次取首个可用变体
           const nextCandidate = sameItemCandidates.find(c => (c.enhancementLevel ?? 0) >= lastSelectedRef.current!.level)
             ?? sameItemCandidates[0]
-          setSelectedKey(itemPickerEntryKey(nextCandidate.itemId, nextCandidate.variant))
+          setUserSelectedKey(itemPickerEntryKey(nextCandidate.itemId, nextCandidate.variant))
           return
         }
       }
-      setSelectedKey(null)
+      setUserSelectedKey(null)
     }
-  }, [candidates, currentLevel, selected, selectedKey])
-  useEffect(() => {
-    // 目标等级始终钳制在 [下一轮目标, 上限] 区间（换目标或当前等级变化时收敛）。
-    setTargetLevel(prev => Math.min(ENHANCE_MAX_LEVEL, Math.max(nextLevel, prev)))
-  }, [nextLevel, selectedKey])
-  useEffect(() => {
-    setProtectLevel(prev => Math.min(Math.max(ENHANCE_MIN_PROTECT_LEVEL, prev), Math.max(ENHANCE_MIN_PROTECT_LEVEL, targetLevel)))
-  }, [targetLevel])
+  }, [candidates, currentLevel, isEnhancing, userSelected, userSelectedKey])
 
+  useEffect(() => {
+    if (isEnhancing) return
+    setUserTargetLevel(prev => Math.min(ENHANCE_MAX_LEVEL, Math.max(nextLevel, prev)))
+  }, [isEnhancing, nextLevel, userSelectedKey])
 
+  useEffect(() => {
+    if (isEnhancing) return
+    setUserProtectLevel(prev => Math.min(Math.max(ENHANCE_MIN_PROTECT_LEVEL, prev), Math.max(ENHANCE_MIN_PROTECT_LEVEL, userTargetLevel)))
+  }, [isEnhancing, userTargetLevel])
   const techniqueProgress = calculateTechniqueProgress(combat?.techniqueExperiences?.enhancement ?? 0)
   const techniqueLevel = techniqueProgress.level
 
@@ -160,8 +204,9 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
     return configured && configured.length > 0 ? configured : (selected ? [selected.itemId] : [])
   }, [selected])
   useEffect(() => {
-    setProtectionItemId(protectionOptions[0] ?? null)
-  }, [protectionOptions])
+    if (isEnhancing) return
+    setUserProtectionItemId(protectionOptions[0] ?? null)
+  }, [isEnhancing, protectionOptions])
   // 保护材料仅限背包内未装备件（若为装备则扣除已装备在身上的 0 级件）
   const getAvailableProtectionAmount = useCallback((id: string) => {
     const rawAmount = getItemAmount(inventory, id)
@@ -229,26 +274,40 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
       },
     })
   }
+  const stopEnhancement = useCallback(() => {
+    if (!activeEnhanceEntry) return
+    gameClient.sendCommand('action.remove', { actionInstanceId: activeEnhanceEntry.entryId })
+  }, [activeEnhanceEntry])
+
 
   const baseName = selected?.equipmentDefinition?.name ?? selected?.name ?? ''
 
   return (
     <div className="enhancement-layout">
       <div className="settings-group">
-        <h3 className="settings-group-title">{t('app.enhancement.targetSlot')}</h3>
+        <h3 className="settings-group-title">
+          <span>{t('app.enhancement.targetSlot')}</span>
+          {isEnhancing && (
+            <span className="enhancement-active-badge">
+              {t('app.enhancement.enhancing')}
+            </span>
+          )}
+        </h3>
         <ItemUseSlot
           item={selected}
-          onClick={event => setPickerAnchor(prev => (prev ? null : event.currentTarget))}
+          onClick={event => {
+            if (!isEnhancing) setPickerAnchor(prev => (prev ? null : event.currentTarget))
+          }}
         />
         <div className="setting-row">
           <span className="setting-label">{t('app.enhancement.targetLevel')}</span>
           <QuantitySelector
             ariaLabel={t('app.enhancement.targetLevelAria')}
-            disabled={!selected || maxedOut}
+            disabled={isEnhancing || !selected || maxedOut}
             max={ENHANCE_MAX_LEVEL}
             maxShortcut
             min={nextLevel}
-            onChange={setTargetLevel}
+            onChange={setUserTargetLevel}
             value={targetLevel}
           />
         </div>
@@ -264,8 +323,8 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
           <label className="enhancement-charm-toggle">
             <input
               checked={useProtection}
-              disabled={!selected || protectionOptions.length === 0 || protectionOwned < 1}
-              onChange={event => setUseProtection(event.target.checked)}
+              disabled={isEnhancing || !selected || protectionOptions.length === 0 || protectionOwned < 1}
+              onChange={event => setUserUseProtection(event.target.checked)}
               type="checkbox"
             />
             {protectionItemId !== null && (
@@ -281,10 +340,10 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
             </span>
             <QuantitySelector
               ariaLabel={t('app.enhancement.protectLevelAria')}
-              disabled={!selected || maxedOut}
+              disabled={isEnhancing || !useProtection || targetLevel <= ENHANCE_MIN_PROTECT_LEVEL}
               max={Math.max(ENHANCE_MIN_PROTECT_LEVEL, targetLevel)}
               min={ENHANCE_MIN_PROTECT_LEVEL}
-              onChange={setProtectLevel}
+              onChange={setUserProtectLevel}
               value={protectLevel}
             />
           </div>
@@ -294,9 +353,11 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
             <span className="setting-label">{t('app.enhancement.protectionMaterial')}</span>
             <ChoiceMenu
               label={t('app.enhancement.protectionMaterialAria')}
-              onSelect={setProtectionItemId}
+              onSelect={id => {
+                if (!isEnhancing) setUserProtectionItemId(id)
+              }}
               options={protectionOptions.map(id => ({
-                disabled: getAvailableProtectionAmount(id) < 1,
+                disabled: isEnhancing || getAvailableProtectionAmount(id) < 1,
                 id,
                 label: protectionName(id),
                 subtitle: t('app.enhancement.protectionOwned', { n: getAvailableProtectionAmount(id) }),
@@ -310,18 +371,31 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
           <QuantitySelector
             allowInfinity
             ariaLabel={t('app.enhancement.repeatsAria')}
+            disabled={isEnhancing || !selected || maxedOut}
             max={1000}
-            onChange={setRepeats}
+            onChange={setUserRepeats}
             presets={[1, 10, 100]}
             value={repeats}
           />
         </div>
-        <button
-          className="action-modal-submit"
-          disabled={!selected || maxedOut}
-          onClick={submit}
-          type="button"
-        >{maxedOut ? t('app.enhancement.successRateMaxed', { max: ENHANCE_MAX_LEVEL }) : t('app.enhancement.submit')}</button>
+        {isEnhancing ? (
+          <button
+            className="action-modal-submit action-modal-submit--danger"
+            onClick={stopEnhancement}
+            type="button"
+          >
+            {t('app.enhancement.stop')}
+          </button>
+        ) : (
+          <button
+            className="action-modal-submit"
+            disabled={!selected || maxedOut}
+            onClick={submit}
+            type="button"
+          >
+            {maxedOut ? t('app.enhancement.successRateMaxed', { max: ENHANCE_MAX_LEVEL }) : t('app.enhancement.submit')}
+          </button>
+        )}
       </div>
 
       <div className="settings-group">
@@ -397,12 +471,12 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
         items={candidates}
         onClose={() => setPickerAnchor(null)}
         onSelect={(itemId, entry) => {
-          setSelectedKey(itemId === null ? null : itemPickerEntryKey(itemId, entry?.variant))
+          setUserSelectedKey(itemId === null ? null : itemPickerEntryKey(itemId, entry?.variant))
           setPickerAnchor(null)
         }}
         open={pickerAnchor !== null}
         title={t('app.enhancement.targetPickerTitle')}
-        value={selectedKey}
+        value={userSelectedKey}
       />
     </div>
   )

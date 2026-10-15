@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
-import { findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
+import { collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
 import { useT } from '../i18n'
 import type { CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../game/types'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -178,6 +178,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
+  const queueEntries = useGameStore(state => state.queue?.entries)
 
   const [activePickingSlot, setActivePickingSlot] = useState<{ config: SlotConfig; anchor: HTMLElement } | null>(null)
 
@@ -214,7 +215,8 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     if (!activePickingSlot) return []
     const targetSlot = activePickingSlot.config.slot
 
-    // 1. 过滤背包中符合该槽位的可用装备（tool-* 工具槽按协议槽位精确比对）
+    // 1. 过滤背包中符合该槽位的可用装备（扣除已穿戴与强化锁定，tool-* 工具槽按协议槽位精确比对）
+    const occupiedCounts = collectOccupiedEquipmentCounts(combat?.equipment, queueEntries)
     const matchingInventoryItems: ItemPickerEntry[] = []
     for (const inv of inventory) {
       if (inv.amount <= 0) continue
@@ -223,10 +225,14 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
 
       const itemDef = findItemInCatalog(itemCatalog, inv.itemId)
       const invEnhancementLevel = parseEnhancementVariant(inv.variant)
+      const occupied = occupiedCounts.get(`${inv.itemId}#${invEnhancementLevel}`) ?? 0
+      const availableAmount = inv.amount - occupied
+      if (availableAmount <= 0) continue
+
       matchingInventoryItems.push({
         itemId: inv.itemId,
         name: invEnhancementLevel > 0 ? `${inv.name} +${invEnhancementLevel}` : inv.name,
-        amount: inv.amount,
+        amount: availableAmount,
         tier: inv.tier ?? eqDef.tier,
         category: resolveItemCategoryLabel(resolveItemSubCategory(inv.itemId, itemDef, eqDef, inv.subCategory), t),
         description: itemDef?.description ?? eqDef.description ?? '',
@@ -265,7 +271,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     }
 
     return matchingInventoryItems
-  }, [activePickingSlot, inventory, equipmentCatalog, itemCatalog, slotEquippedMap, t])
+  }, [activePickingSlot, inventory, equipmentCatalog, itemCatalog, slotEquippedMap, t, combat?.equipment, queueEntries])
 
   // 处理装备选择 / 卸下（entry 携带变体：穿戴 +N 行时以对应强化等级写入槽位）
   const handleSelectEquipment = (selectedItemId: string | null, entry?: ItemPickerEntry | null) => {

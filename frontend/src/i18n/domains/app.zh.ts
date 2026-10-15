@@ -113,6 +113,8 @@ export const appZh = {
       repeats: '重复次数',
       repeatsAria: '强化重复次数',
       submit: '加入强化队列',
+      stop: '中止强化',
+      enhancing: '强化进行中',
       previewTitle: '强化预览',
       previewEmpty: '请先选择要强化的装备。',
       currentLabel: '当前等级',

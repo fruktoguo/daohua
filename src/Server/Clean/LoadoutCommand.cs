@@ -47,9 +47,12 @@ public static class LoadoutCommand
             var heldKey = enhancement > 0
                 ? new AssetKey(new ItemId(id), FormattableString.Invariant($"+{enhancement:0}"))
                 : new AssetKey(new ItemId(id));
+            var lockedInEnhance = player.Actions.Count(a => a.Intent.ActionId.Value == "enhance.equipment"
+                && string.Equals(a.Intent.TargetItemId, id, StringComparison.Ordinal)
+                && (a.EnhancementCurrentLevel ?? (a.Intent.Parameters is not null && a.Intent.Parameters.TryGetValue("initialLevel", out var initLvl) ? (int)Math.Floor(initLvl) : 0)) == (int)enhancement);
             if (!catalog.RawEquipments.TryGetValue(id, out var definition)
-                || wallet.Get(heldKey) < 1)
-                throw new DomainException(DomainErrorCode.InvalidArgument, "装备不存在或未持有。");
+                || wallet.Get(heldKey) - lockedInEnhance < 1)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "装备不存在、未持有或正处于强化锁定中。");
             var slot = definition.GetProperty("slot").GetString()!;
             // 双手武器独占武器与副手两个槽位，与任一单手槽共存即冲突。
             if (!slots.Add(slot) || (slots.Contains("two-hand") && (slots.Contains("weapon") || slots.Contains("off-hand"))))

@@ -327,6 +327,8 @@ export interface QueueEntry {
   targetLevel?: number | null
   /** 强化行动当前强化的物品变体等级（单品锁定追踪） */
   enhancementCurrentLevel?: number | null
+  /** 行动意图的动态参数字典（如 targetLevel、protectLevel、initialLevel） */
+  parameters?: Record<string, number> | null
   /** 行动参与会话标记：组织适配器创建，行动执行与表现不识别组织类型。 */
   participation?: { sessionId: string; endsAtUnixSeconds?: number | null } | null
 }

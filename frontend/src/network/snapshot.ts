@@ -765,6 +765,14 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     const enhancementCurrentLevel = typeof row.enhancementCurrentLevel === 'number' && Number.isFinite(row.enhancementCurrentLevel)
       ? row.enhancementCurrentLevel
       : null
+    const rawParameters = object(intent.parameters)
+    const parameters: Record<string, number> | null = Object.keys(rawParameters).length > 0
+      ? Object.fromEntries(
+          Object.entries(rawParameters)
+            .filter(([, v]) => typeof v === 'number' && Number.isFinite(v))
+            .map(([k, v]) => [k, v as number])
+        )
+      : null
     // 行动参与会话标记：携带 sessionId 与权威散场时刻；非参与行动为 null。
     const participationRow = row.participation
     const participation = participationRow === null || participationRow === undefined
@@ -799,6 +807,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       targetLevel,
       enhancementCurrentLevel,
       participation,
+      parameters,
     }
     return entry
   })
