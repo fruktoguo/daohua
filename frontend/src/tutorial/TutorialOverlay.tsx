@@ -251,6 +251,15 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
       return alreadyQueued && steps ? steps.length - 1 : 1
     })
   }, [milestone, atHome, steps])
+  // 同步新手引导要求大地图聚焦的目标地点（供 WorldMapPanel 触发平移运镜）
+  useEffect(() => {
+    const focusNodeId = phase === 'guiding' ? (uiStep?.mapFocusNodeId ?? null) : null
+    useUiStore.getState().setTutorialMapFocusNodeId(focusNodeId)
+    return () => {
+      useUiStore.getState().setTutorialMapFocusNodeId(null)
+    }
+  }, [phase, uiStep?.mapFocusNodeId])
+
 
   // 预备动作 + 目标定位轮询 + 游离弹窗治理：元素变化时先滚动进视野，再按帧更新高亮矩形；
   // 无目标步骤同样持续轮询——残留的确认弹窗在遮罩下点不到，必须由治理收拢。

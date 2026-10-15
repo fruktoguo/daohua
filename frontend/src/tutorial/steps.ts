@@ -37,6 +37,12 @@ export interface TutorialUiStep {
    */
   readonly modalBound?: boolean
   readonly prepare?: readonly TutorialPrepare[]
+  /**
+   * 引导地图聚焦的目标地点节点 ID。
+   * 当步骤引导点击大地图上的目标节点时配置：
+   * 打开地图后镜头先居中玩家当前所在地点，短暂停留后平滑平移至该目标节点居中。
+   */
+  readonly mapFocusNodeId?: string
 }
 
 export interface TutorialMilestone {
@@ -88,7 +94,7 @@ const PREP_COMBAT: readonly TutorialPrepare[] = [{ type: 'tab', tab: 'combat' }]
 /** 「先回云溪村」前置引导链：打开地图 → 点云溪村节点 → 规划路线 → 启程 → 等待到达。 */
 const AWAY_PREFIX_HOME: readonly TutorialUiStep[] = [
   { selector: NAV_MAP, titleKey: 'app.tutorial.returnHome.map.title', bodyKey: 'app.tutorial.returnHome.map.body', advance: 'target' },
-  { selector: VILLAGE_NODE, titleKey: 'app.tutorial.returnHome.node.title', bodyKey: 'app.tutorial.returnHome.node.body', advance: 'target', prepare: PREP_MAP },
+  { selector: VILLAGE_NODE, titleKey: 'app.tutorial.returnHome.node.title', bodyKey: 'app.tutorial.returnHome.node.body', advance: 'target', prepare: PREP_MAP, mapFocusNodeId: HOME_NODE_ID },
   { selector: TRAVEL_PLAN, titleKey: 'app.tutorial.returnHome.plan.title', bodyKey: 'app.tutorial.returnHome.plan.body', advance: 'target', prepare: PREP_MAP },
   { selector: TRAVEL_CONFIRM, modalBound: true, titleKey: 'app.tutorial.returnHome.confirm.title', bodyKey: 'app.tutorial.returnHome.confirm.body', advance: 'target' },
   { titleKey: 'app.tutorial.returnHome.wait.title', bodyKey: 'app.tutorial.returnHome.wait.body', advance: 'arrive', prepare: PREP_MAP, focusSelector: WORLD_MAP, arriveNodeId: HOME_NODE_ID },
@@ -140,7 +146,7 @@ export const TUTORIAL_MILESTONES: readonly TutorialMilestone[] = [
     kickerKey: 'app.tutorial.kicker.travelPeak',
     travelToNodeId: 'node.cloud-peak',
     steps: [
-      { selector: PEAK_NODE, titleKey: 'app.tutorial.travelPeak.tap.title', bodyKey: 'app.tutorial.travelPeak.tap.body', advance: 'target', prepare: PREP_MAP },
+      { selector: PEAK_NODE, titleKey: 'app.tutorial.travelPeak.tap.title', bodyKey: 'app.tutorial.travelPeak.tap.body', advance: 'target', prepare: PREP_MAP, mapFocusNodeId: 'node.cloud-peak' },
       { selector: TRAVEL_PLAN, titleKey: 'app.tutorial.travelPeak.plan.title', bodyKey: 'app.tutorial.travelPeak.plan.body', advance: 'target', prepare: PREP_MAP },
       { selector: TRAVEL_CONFIRM, modalBound: true, titleKey: 'app.tutorial.travelPeak.confirm.title', bodyKey: 'app.tutorial.travelPeak.confirm.body', advance: 'target' },
       { titleKey: 'app.tutorial.travelPeak.wait.title', bodyKey: 'app.tutorial.travelPeak.wait.body', advance: 'server', prepare: PREP_MAP, focusSelector: WORLD_MAP },
@@ -162,7 +168,7 @@ export const TUTORIAL_MILESTONES: readonly TutorialMilestone[] = [
     kickerKey: 'app.tutorial.kicker.travelVillage',
     travelToNodeId: 'node.yunxi-village',
     steps: [
-      { selector: VILLAGE_NODE, titleKey: 'app.tutorial.travelVillage.tap.title', bodyKey: 'app.tutorial.travelVillage.tap.body', advance: 'target', prepare: PREP_MAP },
+      { selector: VILLAGE_NODE, titleKey: 'app.tutorial.travelVillage.tap.title', bodyKey: 'app.tutorial.travelVillage.tap.body', advance: 'target', prepare: PREP_MAP, mapFocusNodeId: HOME_NODE_ID },
       { selector: TRAVEL_PLAN, titleKey: 'app.tutorial.travelVillage.plan.title', bodyKey: 'app.tutorial.travelVillage.plan.body', advance: 'target', prepare: PREP_MAP },
       { selector: TRAVEL_CONFIRM, modalBound: true, titleKey: 'app.tutorial.travelVillage.confirm.title', bodyKey: 'app.tutorial.travelVillage.confirm.body', advance: 'target' },
       { titleKey: 'app.tutorial.travelVillage.wait.title', bodyKey: 'app.tutorial.travelVillage.wait.body', advance: 'server', prepare: PREP_MAP, focusSelector: WORLD_MAP },

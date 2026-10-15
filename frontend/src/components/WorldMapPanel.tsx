@@ -12,6 +12,8 @@ import { ItemDropReference } from './ItemDisplay'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Modal } from './Modal'
 import { UnitNumber } from './UnitNumber'
+import { useUiStore } from '../uiStore'
+
 
 /** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
@@ -583,6 +585,18 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   useEffect(() => {
     panRef.current = pan
   }, [pan])
+  // 新手引导地图目标地点聚焦运镜动画状态
+  const tutorialMapFocusNodeId = useUiStore(state => state.tutorialMapFocusNodeId)
+  const panAnimFrameRef = useRef<number | null>(null)
+  const animatedFocusNodeIdRef = useRef<string | null>(null)
+
+  // 终止当前正在执行的运镜平移动画
+  const cancelPanAnim = useCallback(() => {
+    if (panAnimFrameRef.current !== null) {
+      cancelAnimationFrame(panAnimFrameRef.current)
+      panAnimFrameRef.current = null
+    }
+  }, [])
   const dragStartRef = useRef<{
     clientX: number
     clientY: number
@@ -598,6 +612,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     const stage = stageRef.current
     if (!stage) return
     const onWheel = (event: WheelEvent): void => {
+      cancelPanAnim()
       event.preventDefault()
       const rect = stage.getBoundingClientRect()
       const mouseX = event.clientX - rect.left
@@ -623,6 +638,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
   // 居中聚焦到玩家当前所在位置（在节点驻留时居中地点，在移动时居中路径当前动态坐标）
   const centerOnPlayer = useCallback((targetZoom?: number) => {
+    cancelPanAnim()
     const stage = stageRef.current
     if (!stage) return
     const stageW = stage.clientWidth
@@ -645,6 +661,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   // 避免驻留关口或跨界途中按双区并集缩放把整图压得过小。
   const edgeNearFromSide = world.edgeProgress < 0.5
   const fitToAnchorRegion = useCallback(() => {
+    cancelPanAnim()
     const stage = stageRef.current
     if (!stage || worldIndex.nodes.length === 0) return
     const stageW = stage.clientWidth
@@ -739,6 +756,109 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       resizeObserver.disconnect()
     }
   }, [visibleKey, fitToAnchorRegion])
+  // 新手引导点击目标地点时的运镜动画：
+  // 打开地图后先让当前地点居中（停留约 360ms 锚定位置），再平滑平移至目标地点居中，
+  // 确保在任何屏幕尺寸与显示比例下，目标节点均稳稳落于视口正中心，百分之百可点击。
+  useEffect(() => {
+    if (hidden || !tutorialMapFocusNodeId) {
+      animatedFocusNodeIdRef.current = null
+      cancelPanAnim()
+      return
+    }
+
+    if (animatedFocusNodeIdRef.current === tutorialMapFocusNodeId) return
+
+    const stage = stageRef.current
+    if (!stage) return
+
+    const targetNode = worldIndex.nodes.find(n => n.nodeId === tutorialMapFocusNodeId)
+    if (!targetNode) return
+
+    let cancelled = false
+    let waitRaf: number | null = null
+
+    const startFocusAnimation = (): boolean => {
+      if (cancelled) return true
+      const stageW = stage.clientWidth
+      const stageH = stage.clientHeight
+      if (!stageW || !stageH) return false
+
+      animatedFocusNodeIdRef.current = tutorialMapFocusNodeId
+      // 标记区域视口已适配，防止后续 ResizeObserver/tryFit 重复覆盖居中视角
+      fittedKeyRef.current = visibleKey
+
+      const currentZoom = zoomRef.current
+      const fromPos = playerPosRef.current
+
+      // 起点：当前地点居中；终点：目标地点居中
+      const startPan = {
+        x: Math.round(stageW / 2 - (fromPos.x / 100) * stageW * currentZoom),
+        y: Math.round(stageH / 2 - (fromPos.y / 100) * stageH * currentZoom),
+      }
+      const targetPan = {
+        x: Math.round(stageW / 2 - (targetNode.x / 100) * stageW * currentZoom),
+        y: Math.round(stageH / 2 - (targetNode.y / 100) * stageH * currentZoom),
+      }
+
+      // 阶段 1：先让当前地点居中
+      setPan(startPan)
+
+      const dist = Math.hypot(targetPan.x - startPan.x, targetPan.y - startPan.y)
+      if (dist < 4) {
+        // 当前地点与目标地点一致或极近，无需平移动画，直接定格
+        setPan(targetPan)
+        return true
+      }
+
+      const HOLD_DELAY_MS = 360
+      const PAN_DURATION_MS = 880
+      const startTime = performance.now()
+
+      cancelPanAnim()
+
+      const tick = (now: number) => {
+        if (cancelled) return
+        const elapsed = now - startTime
+        if (elapsed < HOLD_DELAY_MS) {
+          // 短暂停留：保持当前地点居中，让玩家建立空间认知
+          panAnimFrameRef.current = requestAnimationFrame(tick)
+          return
+        }
+
+        const progress = Math.min(1, (elapsed - HOLD_DELAY_MS) / PAN_DURATION_MS)
+        const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2
+        const nextX = Math.round(startPan.x + (targetPan.x - startPan.x) * ease)
+        const nextY = Math.round(startPan.y + (targetPan.y - startPan.y) * ease)
+
+        setPan({ x: nextX, y: nextY })
+
+        if (progress < 1) {
+          panAnimFrameRef.current = requestAnimationFrame(tick)
+        } else {
+          panAnimFrameRef.current = null
+        }
+      }
+
+      panAnimFrameRef.current = requestAnimationFrame(tick)
+      return true
+    }
+
+    if (!startFocusAnimation()) {
+      // 视口尺寸尚未就绪（如页面刚由 hidden 切为可见），等待首帧布局就绪
+      const pollLayout = () => {
+        if (!startFocusAnimation()) {
+          waitRaf = requestAnimationFrame(pollLayout)
+        }
+      }
+      waitRaf = requestAnimationFrame(pollLayout)
+    }
+
+    return () => {
+      cancelled = true
+      if (waitRaf !== null) cancelAnimationFrame(waitRaf)
+      cancelPanAnim()
+    }
+  }, [hidden, tutorialMapFocusNodeId, worldIndex.nodes, visibleKey, cancelPanAnim])
 
   // 选中节点离开可见区域（区域切换）时回退到当前驻留节点或首个可见节点
   useEffect(() => {
@@ -757,6 +877,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   // 拖拽漫游事件监听：仅在位移超过 4px 时激活拖拽捕获，防止截断节点点击
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
+    cancelPanAnim()
     const target = e.target as HTMLElement
     if (target.closest('.world-map-toolbar')) return
 

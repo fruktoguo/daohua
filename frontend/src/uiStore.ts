@@ -86,6 +86,10 @@ interface UiStore {
   codexCraftingSubTab: CodexCraftingSubTab
   /** 切换图鉴制造子分类 */
   setCodexCraftingSubTab: (subTab: CodexCraftingSubTab) => void
+  /** 新手引导当前要求地图聚焦的目标节点 ID（由 TutorialOverlay 下发，WorldMapPanel 响应） */
+  tutorialMapFocusNodeId: string | null
+  /** 设置新手引导地图聚焦的目标节点 ID */
+  setTutorialMapFocusNodeId: (nodeId: string | null) => void
 }
 
 /**
@@ -130,4 +134,6 @@ export const useUiStore = create<UiStore>(set => ({
   setCodexCategory: codexCategory => set({ codexCategory }),
   codexCraftingSubTab: 'alchemy',
   setCodexCraftingSubTab: codexCraftingSubTab => set({ codexCraftingSubTab }),
+  tutorialMapFocusNodeId: null,
+  setTutorialMapFocusNodeId: tutorialMapFocusNodeId => set({ tutorialMapFocusNodeId }),
 }))
