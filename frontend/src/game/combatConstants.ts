@@ -736,7 +736,7 @@ export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number):
     : ENHANCE_HIGH_TIER_BASE
   const clampedBase = Math.max(0.01, Math.min(0.5, base))
   const L = Math.max(0, techniqueLevel)
-  const rate = L >= t ? clampedBase + 0.01 * L : clampedBase * Math.pow(0.9, t - L)
+  const rate = L >= t ? clampedBase * (1 + 0.01 * L) : clampedBase * Math.pow(0.9, t - L)
   return Math.max(0, Math.min(0.99, rate))
 }
 

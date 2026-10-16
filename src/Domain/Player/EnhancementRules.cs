@@ -142,12 +142,12 @@ public static class EnhancementRules
         return Math.Clamp(rate, 0.01, 0.5);
     }
 
-    /// <summary>技艺修正后成功率：L≥t 加性 +0.01×L，L&lt;t 乘性 ×0.9^(t-L)，终值 clamp [0, 0.99]。</summary>
+    /// <summary>技艺修正后成功率：L≥t 线性乘算 ×(1+0.01×L)，L&lt;t 乘性衰减 ×0.9^(t-L)，终值 clamp [0, 0.99]。</summary>
     public static double SuccessRate(int targetLevel, double techniqueLevel)
     {
         var rate = BaseSuccessRate(targetLevel);
         rate = techniqueLevel >= targetLevel
-            ? rate + 0.01 * techniqueLevel
+            ? rate * (1.0 + 0.01 * techniqueLevel)
             : rate * Math.Pow(0.9, targetLevel - techniqueLevel);
         return Math.Clamp(rate, 0, 0.99);
     }

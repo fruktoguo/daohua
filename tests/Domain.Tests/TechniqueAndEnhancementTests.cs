@@ -154,10 +154,10 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(11), 12);
         // t=11..20 基础成功率统一为 30%（0.30）。
         Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(20), 12);
-        // 技艺修正：L≥t 加性 +0.01×L；L<t 乘性 ×0.9^(t-L)；终值 clamp [0, 0.99]。
+        // 技艺修正：L≥t 线性乘算 ×(1+0.01×L)；L<t 乘性衰减 ×0.9^(t-L)；终值 clamp [0, 0.99]。
         Assert.Equal(0.99, EnhancementRules.SuccessRate(1, 127), 12);
         Assert.Equal(0.5 * Math.Pow(0.9, 1), EnhancementRules.SuccessRate(1, 0), 12);
-        Assert.Equal(0.4 + 0.01 * 5, EnhancementRules.SuccessRate(5, 5), 12);
+        Assert.Equal(0.4 * (1.0 + 0.01 * 5), EnhancementRules.SuccessRate(5, 5), 12);
 
         // 判定种子取行动实例 Id 前 8 字节、通道独立：同实例同轮必得同结果，异实例结果流独立。
         var prep = new EnhancementRules.Preparation(sword, 0, 1, 10, null, 0.5);
