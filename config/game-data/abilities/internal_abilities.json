@@ -33,8 +33,9 @@
       "consciousness": 0.5,
       "agility": 0.5
     },
+    "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageBonusPoints": 2
+      "physicalDamageBonusPoints": 10
     }
   },
   {
@@ -54,8 +55,9 @@
       "attack": 0.4,
       "consciousness": 0.4
     },
+    "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageReductionPoints": 2
+      "physicalDamageReductionPoints": 10
     }
   },
   {
@@ -74,8 +76,9 @@
       "stamina": 0.5,
       "attack": 0.5
     },
+    "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "actionSpeedPoints": 2
+      "actionSpeedPoints": 10
     }
   },
   {
@@ -94,8 +97,9 @@
       "stamina": 0.5,
       "attack": 0.5
     },
+    "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 10
     }
   },
   {
@@ -115,8 +119,9 @@
       "stamina": 0.0,
       "consciousness": 0.5
     },
+    "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageBonusPoints": 3
+      "physicalDamageBonusPoints": 15
     }
   },
   {
@@ -137,9 +142,10 @@
       "agility": 0.75,
       "consciousness": 0.75
     },
+    "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageReductionPoints": 2,
-      "spellDamageReductionPoints": 2
+      "physicalDamageReductionPoints": 10,
+      "spellDamageReductionPoints": 10
     }
   },
   {
@@ -159,8 +165,9 @@
       "attack": 0.5,
       "agility": 0.4
     },
+    "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "spellDamageBonusPoints": 3
+      "spellDamageBonusPoints": 15
     }
   },
   {

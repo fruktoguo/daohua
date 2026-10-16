@@ -55,6 +55,19 @@ public static class SkillTriggerEvaluator
             if (ability.TryGetProperty("cultivationExpBonusPoints", out var cultProp)
                 && (!cultProp.TryGetDouble(out var cultBonus) || !double.IsFinite(cultBonus)))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "内功修为增减点必须为有限数值。");
+            if (ability.TryGetProperty("passiveEfficiencyPerLevel", out var passEffProp)
+                && (!passEffProp.TryGetDouble(out var passEff) || passEff < 0 || !double.IsFinite(passEff)))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "内功被动面板成长效率必须为非负有限数。");
+            if (ability.TryGetProperty("passive", out var passiveProp))
+            {
+                if (passiveProp.ValueKind != JsonValueKind.Object)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, "内功常驻被动必须为对象。");
+                foreach (var prop in passiveProp.EnumerateObject())
+                {
+                    if (!prop.Value.TryGetDouble(out var val) || !double.IsFinite(val))
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"内功常驻属性 {prop.Name} 必须为有限数值。");
+                }
+            }
             return;
         }
 

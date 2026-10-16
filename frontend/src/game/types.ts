@@ -524,6 +524,8 @@ export interface CombatRecentEvent {
   parried?: boolean
   /** 施放技能 ID（普攻为 null） */
   abilityId?: string | null
+  /** 结算后的受击方剩余气血 */
+  targetHp?: number
 }
 
 /**
@@ -1253,6 +1255,8 @@ export interface CombatAbilityDefinition {
   cultivationExpBonusPoints?: number
   /** 常驻被动面板效果（复用装备 flatStats 同族点数字段） */
   passive?: Record<string, number>
+  /** 参悟等级每级提升常驻被动面板效率（缺省 0.05） */
+  passiveEfficiencyPerLevel?: number
 }
 
 /**

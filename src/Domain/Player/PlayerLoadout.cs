@@ -260,6 +260,15 @@ public sealed partial class PlayerAggregate
         Loadout.AbilityExperiences[abilityId] = nextExp;
         var levelBefore = AbilityExpCurve.LevelFor(previousExp);
         var levelAfter = AbilityExpCurve.LevelFor(nextExp);
+        if (levelAfter > levelBefore)
+        {
+            for (var i = 0; i < Loadout.AbilitySlots.Count; i++)
+            {
+                var slot = Loadout.AbilitySlots[i];
+                if (slot.AbilityId == abilityId.Value && slot.Level < levelAfter)
+                    Loadout.AbilitySlots[i] = new PlayerAbilitySlot(slot.AbilityId, levelAfter);
+            }
+        }
         // 功法经验与参悟升级计入行动统计账本（ability 级 LevelUp，TargetId 为功法 ID）。
         var headId = _actions.Count > 0 ? _actions[0].Id : (Guid?)null;
         var abilityIdValue = abilityId.Value;

@@ -76,6 +76,8 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     }
 
     if (ability.passive) {
+      const passiveEffPerLevel = ability.passiveEfficiencyPerLevel ?? 0.05
+      const passiveScale = Math.max(0, 1.0 + passiveEffPerLevel * levelOffset)
       const statConfigs: Record<string, { label: string; tone: string }> = {
         physicalDamageBonusPoints: { label: '物理增伤', tone: 'crimson' },
         spellDamageBonusPoints: { label: '术法增伤', tone: 'indigo' },
@@ -88,14 +90,15 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
         healingBonusPoints: { label: '治疗增幅', tone: 'violet' },
         damageAbsorptionPoints: { label: '伤害减免', tone: 'emerald' },
       }
-      for (const [stat, val] of Object.entries(ability.passive)) {
-        if (typeof val === 'number' && val !== 0) {
+      for (const [stat, baseVal] of Object.entries(ability.passive)) {
+        if (typeof baseVal === 'number' && baseVal !== 0) {
+          const scaledVal = Math.round(baseVal * passiveScale * 100) / 100
           const cfg = statConfigs[stat] ?? { label: stat, tone: 'default' }
           bonuses.push({
             key: stat,
             label: cfg.label,
             tone: cfg.tone,
-            value: `${val > 0 ? '+' : ''}${val}%`,
+            value: `${scaledVal > 0 ? '+' : ''}${scaledVal}%`,
           })
         }
       }

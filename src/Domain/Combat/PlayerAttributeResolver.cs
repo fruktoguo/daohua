@@ -220,7 +220,8 @@ public static class PlayerAttributeResolver
                 }
             Add(item, "baseStatRatios", ratios, enhancementScale);
         }
-        // 内功常驻面板被动（总纲 §5.3.1）：装配在 0 号内功位的心法 passive 点数与固定值生效。
+        // 内功常驻面板被动（总纲 §5.3.1）：装配在 0 号内功位的心法 passive 点数与固定值生效，
+        // 随参悟等级线性成长：每级 +5%（缩放倍率 = 1.0 + passiveEfficiencyPerLevel * (level - 1)）。
         if (loadout.AbilitySlots is { Count: > 0 }
             && loadout.AbilitySlots[0].AbilityId is { } internalId
             && catalog.Abilities.TryGetValue(internalId, out var internalAbility)
@@ -228,12 +229,25 @@ public static class PlayerAttributeResolver
             && internalAbility.TryGetProperty("passive", out var passiveProps)
             && passiveProps.ValueKind == JsonValueKind.Object)
         {
+            var internalLevel = Math.Max(1, loadout.AbilitySlots[0].Level);
+            if (loadout.AbilityExperiences is not null
+                && loadout.AbilityExperiences.TryGetValue(internalId, out var exp)
+                && exp > 0)
+            {
+                var expLevel = AbilityExpCurve.LevelFor(exp);
+                if (expLevel > internalLevel) internalLevel = expLevel;
+            }
+            var effPerLevel = JsonRead.Number(internalAbility, "passiveEfficiencyPerLevel");
+            if (effPerLevel <= 0) effPerLevel = 0.05; // 默认 +5.0%/级
+            var passiveScale = Math.Max(0, 1.0 + effPerLevel * (internalLevel - 1));
+
             foreach (var stat in passiveProps.EnumerateObject())
             {
                 var number = stat.Value.GetDouble();
                 if (!double.IsFinite(number)) continue;
+                var scaledNumber = number * passiveScale;
                 var target = stat.Name.EndsWith("Points", StringComparison.Ordinal) ? points : flat;
-                target[stat.Name] = target.GetValueOrDefault(stat.Name) + number;
+                target[stat.Name] = target.GetValueOrDefault(stat.Name) + scaledNumber;
             }
         }
         var core = loadout.CoreAttributes;

@@ -430,17 +430,34 @@ public sealed class CombatSkillTests
         player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.tiebu-shan", 1);
         player.Touch(PlayerSectionKind.Loadout);
 
+        // 1 级基础效果提升 5 倍：铁布衫由 2% 提升至 10%
         var attrs = PlayerAttributeResolver.Resolve(player, catalog);
-        Assert.Equal(2, attrs.PhysicalDamageReductionPoints);
+        Assert.Equal(10, attrs.PhysicalDamageReductionPoints);
 
-        // 切换为蛮牛劲
+        // 切换为蛮牛劲 1 级：蛮牛劲由 2% 提升至 10%
         player.LearnAbility(new AbilityId("ability.manniu-jin"));
         player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.manniu-jin", 1);
         player.Touch(PlayerSectionKind.Loadout);
 
         var attrs2 = PlayerAttributeResolver.Resolve(player, catalog);
         Assert.Equal(0, attrs2.PhysicalDamageReductionPoints);
-        Assert.Equal(2, attrs2.PhysicalDamageBonusPoints);
+        Assert.Equal(10, attrs2.PhysicalDamageBonusPoints);
+
+        // 参悟升级至 3 级（每级 +5%）：倍率 1 + 0.05 * 2 = 1.10，10 * 1.10 = 11 点
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.manniu-jin", 3);
+        player.Touch(PlayerSectionKind.Loadout);
+        var attrsLevel3 = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(11, attrsLevel3.PhysicalDamageBonusPoints);
+
+        // 验证研读经验升级联动：由 1 级注入经验升至 2 级（AbilityExpCurve 2级需 80 经验）
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.manniu-jin", 1);
+        player.Touch(PlayerSectionKind.Loadout);
+        Assert.Equal(10, PlayerAttributeResolver.Resolve(player, catalog).PhysicalDamageBonusPoints);
+        player.GrantAbilityExperience(new AbilityId("ability.manniu-jin"), 100);
+        Assert.Equal(2, player.Loadout.AbilitySlots[0].Level);
+        // 2 级：10 * (1 + 0.05 * 1) = 10.5 点
+        var attrsExpLevel2 = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(10.5, attrsExpLevel2.PhysicalDamageBonusPoints);
     }
 
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
