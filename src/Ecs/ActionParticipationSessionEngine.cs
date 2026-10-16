@@ -353,7 +353,8 @@ public sealed class ActionParticipationSessionEngine
                 member.Combat.Buffs,
                 expedition, action.ProgressSeconds, action.CompletedRepeats, collector.Stats.ToArray(),
                 collector.Assets.Select(pair => new AssetDelta(member.PlayerId, pair.Key, pair.Value, "simulation")).ToArray(),
-                collector.Events.View.ToArray(), ProjectStats(canonicalStats, i), collector.Events.Dropped, _endsAt);
+                collector.Events.View.ToArray(), ProjectStats(canonicalStats, i), collector.Events.Dropped, _endsAt,
+                collector.StagedItems.Count > 0 ? collector.StagedItems.ToArray() : null);
             collector.Reset();
         }
         return results;
@@ -948,6 +949,7 @@ public sealed class ActionParticipationSessionEngine
     {
         public readonly List<ActionParticipationTimedStats> Stats = [];
         public readonly Dictionary<AssetKey, double> Assets = [];
+        public readonly List<DuelStagedItem> StagedItems = [];
         public SimulationEngine.SimulationEventTail Events = new();
 
         public void Record(IPlayerResourceContext player, Guid? actionInstanceId, double atUnixSeconds,
@@ -962,6 +964,7 @@ public sealed class ActionParticipationSessionEngine
         {
             Events.Fold(mutation.DroppedEventCount);
             foreach (var entry in mutation.Events) Events.Add(entry);
+            if (mutation.StagedItems is { Count: > 0 } staged) StagedItems.AddRange(staged);
             if (!includeAssets) return;
             foreach (var delta in mutation.ToAssetDeltas(playerId, sortByItem: false))
                 Assets[delta.Asset] = Assets.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
@@ -971,6 +974,7 @@ public sealed class ActionParticipationSessionEngine
         {
             Stats.Clear();
             Assets.Clear();
+            StagedItems.Clear();
             Events = new();
         }
     }

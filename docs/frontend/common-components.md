@@ -46,6 +46,7 @@
 - **适用场景**：
   - 角色/敌方境界标准牌匾展示（包含大境界牌匾框、境界阶段棱形徽章框【武/玄/天/初/中/后/极】、小境界灵气胶囊框，自带 Hover 弹出大境界与属性详情浮层） -> `RealmBadge`
 - **组件源码**：[`frontend/src/components/RealmBadge.tsx`](../../frontend/src/components/RealmBadge.tsx)
+  - **队伍角色卡惩罚角标 (`.party-malus-badge`)**：同道队伍成员卡片（`party-slot-card`）右上角展示触发队伍等级惩罚（MWI Level Malus）的醒目危红标签（如 `罚 -90%`），集成 `FloatingTooltip`（`tone="danger"`）展示具体说明；有队长踢人按钮时自动向左避让 24px。
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-realm-*`)
 
 ---

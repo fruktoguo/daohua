@@ -10,7 +10,7 @@ import { PartyActivityKind, type PartyActivityKind as PartyActivityKindType, typ
 import { useUiStore, type SocialSubTab } from '../uiStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
-import { FloatingPopover, type FloatingPlacement } from './FloatingPopover'
+import { FloatingPopover, FloatingTooltip, type FloatingPlacement } from './FloatingPopover'
 import { Modal } from './Modal'
 
 /** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
@@ -659,6 +659,17 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                     {member.online ? t('social.online') : t('social.offline')}
                   </span>
                 </div>
+                {member.levelMalus !== undefined && member.levelMalus > 0 && (
+                  <FloatingTooltip
+                    placement="top"
+                    title={t('social.members.malusTooltip', { percent: Math.round(member.levelMalus * 100) })}
+                    tone="danger"
+                  >
+                    <span className="party-malus-badge" onClick={event => event.stopPropagation()}>
+                      {t('social.members.malusBadge', { percent: Math.round(member.levelMalus * 100) })}
+                    </span>
+                  </FloatingTooltip>
+                )}
                 {isLeader && member.playerId !== myPlayerId && (
                   <button
                     aria-label={t('social.action.kick')}

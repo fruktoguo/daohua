@@ -144,9 +144,53 @@ public sealed class SocialRuntime
 
         // 队伍成员身家走展示缓存口径（≤30s），推送风暴下摊薄估值开销。
         IReadOnlyDictionary<Guid, double> valuations = new Dictionary<Guid, double>();
+        var levelMap = new Dictionary<Guid, int>();
+        var malusMap = new Dictionary<Guid, double>();
         if (party is { Members.Count: > 0 })
+        {
             valuations = await _valuation.ComputeDisplayAsync(
                 [.. party.Members.Select(member => member.PlayerId)], cancellationToken);
+            if (snapshot.PartySession is { } activeSession)
+            {
+                try
+                {
+                    var spec = JsonSerializer.Deserialize<ActionParticipationSpec>(activeSession.SpecJson, PersistenceJson.Options);
+                    if (spec is not null)
+                    {
+                        for (var i = 0; i < spec.Members.Count; i++)
+                        {
+                            if (Guid.TryParse(spec.Members[i].PlayerId, out var mid))
+                            {
+                                levelMap[mid] = spec.Members[i].RealmLevel;
+                                malusMap[mid] = spec.LevelMalusFor(i);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // 容错降级
+                }
+            }
+
+            var highestLevel = levelMap.Values.Count > 0 ? levelMap.Values.Max() : 1;
+            foreach (var member in party.Members)
+            {
+                if (!levelMap.ContainsKey(member.PlayerId))
+                {
+                    var lvl = _players?.TryGetLoaded(member.PlayerId)?.State.Progression.RealmLevel ?? 1;
+                    levelMap[member.PlayerId] = lvl;
+                    highestLevel = Math.Max(highestLevel, lvl);
+                }
+            }
+            foreach (var member in party.Members)
+            {
+                if (!malusMap.ContainsKey(member.PlayerId))
+                {
+                    malusMap[member.PlayerId] = ActionParticipationSpec.CalculateLevelMalus(levelMap[member.PlayerId], highestLevel);
+                }
+            }
+        }
         var leaderName = party?.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName;
 
         return new SocialStateDto(
@@ -169,7 +213,9 @@ public sealed class SocialRuntime
                         member.PlayerId.ToString("D"), member.DisplayName,
                         _presence.IsOnline(member.PlayerId),
                         valuations.TryGetValue(member.PlayerId, out var value) ? value : 0,
-                        member.Ready))],
+                        member.Ready,
+                        levelMap.GetValueOrDefault(member.PlayerId, 1),
+                        malusMap.GetValueOrDefault(member.PlayerId, 0)))],
                     party.OpenSlots,
                     snapshot.PartySession is { } session
                         ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,

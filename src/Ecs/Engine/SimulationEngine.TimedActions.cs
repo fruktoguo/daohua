@@ -16,6 +16,7 @@ public sealed class ActionMutationBatch
     internal SimulationEngine.SimulationEventTail? EventTail;
     internal double ActionCount;
     internal double RepeatCount;
+    internal List<DuelStagedItem>? StagedItems;
 
     /// <summary>窗口内资产增量（AssetKey → 净变化量）；未产生增量时为空字典。</summary>
     public IReadOnlyDictionary<AssetKey, double> ItemDeltas => Deltas is { } deltas ? deltas : EmptyDeltas;

@@ -912,7 +912,9 @@ public sealed record FriendRequestDto(string RequestId, string PlayerId, string 
 /// <param name="Online">是否在线</param>
 /// <param name="Valuation">成员身家（服务端估值口径，非战斗属性）</param>
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
-public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready);
+/// <param name="RealmLevel">成员境界等级</param>
+/// <param name="LevelMalus">成员受到的队伍等级惩罚比率（0~0.9）</param>
+public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0);
 
 /// <summary>组队讨伐活跃会话（总纲 §21.13：会话持有唯一权威战斗状态，成员读取个人结算投影）。</summary>
 /// <param name="SessionId">会话唯一标识</param>

@@ -515,6 +515,10 @@ export interface PartyMemberDto {
   valuation: number
   /** 共战准备状态（§21.13：成员自开关，队长不能代备） */
   ready: boolean
+  /** 成员境界等级 */
+  realmLevel?: number
+  /** 成员受到的队伍等级惩罚比率（0~0.9） */
+  levelMalus?: number
 }
 
 /** 行动参与所属组织的活跃会话视图：开战裁决产生，成员变动即散场。 */

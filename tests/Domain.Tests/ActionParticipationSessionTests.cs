@@ -548,6 +548,62 @@ public sealed class ActionParticipationSessionTests
         Assert.Equal(terminal.Settlements[0].Manapoints, restored.Resources.Manapoints);
     }
 
+    [Fact]
+    public void PartyPvpEnablesIntentAndDeliversStagedItemsToMembers()
+    {
+        var (catalog, members, baseSpec) = CreateParty();
+        var spec = baseSpec with { PvpEnabled = true };
+        foreach (var member in members)
+        {
+            member.RemoveAction(member.Actions[0].Id);
+            member.StartActionParticipation(spec, Baseline, catalog.Actions);
+            Assert.True(member.Actions[0].Intent.PvpEnabled);
+        }
+
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var projected = session.AdvanceTo(Baseline.AddMinutes(2));
+        Assert.True(session.CombatAdvanceCount > 0);
+
+        var totalStagedInSettlements = projected.Sum(p => p.StagedItems?.Sum(item => item.Quantity) ?? 0);
+        Assert.True(totalStagedInSettlements > 0);
+        foreach (var p in projected)
+        {
+            // 斗法开启时，普通掉落不直接进 AssetDeltas，而是进 StagedItems
+            Assert.DoesNotContain(p.AssetDeltas, delta => delta.Asset.ItemId == new ItemId("item.beast-hide"));
+        }
+
+        for (var i = 0; i < members.Length; i++)
+        {
+            members[i].ApplyActionParticipationSettlement(projected[i], catalog);
+        }
+
+        var totalStagedInMembers = members.Sum(m => m.Duel.StagedItems.Sum(item => item.Quantity));
+        Assert.Equal(totalStagedInSettlements, totalStagedInMembers);
+    }
+
+    [Fact]
+    public void LevelMalusThresholdExemptsEarlyGameAndCapsSmoothly()
+    {
+        // 1. 前期队伍：最高10级，小号5级（相差5级 <= 12级，完全免罚）
+        Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(5, 10));
+        Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(1, 10));
+        Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(1, 12));
+
+        // 2. 刚好差 12 级以内的边界免罚
+        Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(8, 20));
+
+        // 3. 超出 12 级且超出 20% 时触发平滑惩罚
+        // 最高 25 级，小号 5 级：gap = 20, exemptGap = max(5 * 0.2, 12) = 12. excess = 8, malus = 3 * (8 / 5) = 4.8 -> 封顶 0.9
+        Assert.Equal(0.9d, ActionParticipationSpec.CalculateLevelMalus(5, 25));
+
+        // 最高 100 级，75 级（未受 12 级保底主导，受 20% 主导）：
+        // gap = 25, exemptGap = max(75 * 0.2, 12) = 15. excess = 10, malus = 3 * (10 / 75) = 0.4
+        Assert.Equal(0.4d, ActionParticipationSpec.CalculateLevelMalus(75, 100), 5);
+
+        // 最高 100 级，85 级（差 15 级 <= 17 级）：免罚为 0
+        Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(85, 100));
+    }
+
     private static (GameDataCatalog Catalog, PlayerAggregate[] Members, ActionParticipationSpec Spec) CreateParty(
         bool withAbilities = false)
     {

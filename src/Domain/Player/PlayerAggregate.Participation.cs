@@ -108,6 +108,14 @@ public sealed partial class PlayerAggregate
         book.Clear();
         foreach (var row in settlement.CombatStats) book.Import(row);
         ActionReportBook.FlushCombatStats(this, action.Id);
+        if (settlement.StagedItems is { Count: > 0 } stagedItems)
+        {
+            foreach (var item in stagedItems)
+            {
+                ActionReportBook.StageCombatItem(this, new ItemId(item.ItemId), item.Quantity,
+                    item.AcquiredAtUnixSeconds, catalog.Duel.StagedBucketSeconds);
+            }
+        }
         MarkDirty(PlayerSectionKind.Progression);
         MarkDirty(PlayerSectionKind.Loadout);
         MarkDirty(PlayerSectionKind.Combat);
@@ -142,7 +150,7 @@ public sealed partial class PlayerAggregate
                 return _actions[0];
             return null;
         }
-        var intent = new ActionIntent(spec.ActionId, -1, spec.NodeId, PvpEnabled: false);
+        var intent = new ActionIntent(spec.ActionId, -1, spec.NodeId, PvpEnabled: spec.PvpEnabled);
         return EnqueuePriority(intent, at, catalog,
             participation: new ActionParticipationBinding(spec, endsAtUnixSeconds)) as QueuedAction;
     }

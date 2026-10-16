@@ -28,7 +28,8 @@ public sealed record ActionParticipationMemberSettlement(
     IReadOnlyList<SimulationEvent> Events,
     IReadOnlyList<CombatUnitStatDocument>? CombatStats,
     long DroppedEventCount = 0,
-    double? EndsAtUnixSeconds = null);
+    double? EndsAtUnixSeconds = null,
+    IReadOnlyList<DuelStagedItem>? StagedItems = null);
 
 /// <summary>
 /// 队伍会话的恢复检查点：冻结输入与唯一远征态共同恢复战斗，成员不持有可执行副本。

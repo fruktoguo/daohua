@@ -257,7 +257,7 @@ internal static class CombatActionRules
     {
         CompleteCombatAdvanceCore(player, action, definition, encounter, gameData, battle, result,
             from, target, ref remainingSeconds, ref mutations.Deltas, ref mutations.EventTail,
-            ref mutations.ActionCount, ref mutations.RepeatCount, assetBalances);
+            ref mutations.ActionCount, ref mutations.RepeatCount, assetBalances, ref mutations.StagedItems);
         return remainingSeconds;
     }
 
@@ -266,6 +266,19 @@ internal static class CombatActionRules
         CombatEncounterState battleState, CombatAdvanceResult combatResult, DateTimeOffset from, DateTimeOffset target,
         ref double remainingSeconds, ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events,
         ref double completedActions, ref double completedRepeats, AssetWallet? assetBalances = null)
+    {
+        List<DuelStagedItem>? stagedItems = null;
+        CompleteCombatAdvanceCore(player, action, definition, encounter, gameData, battleState, combatResult,
+            from, target, ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats,
+            assetBalances, ref stagedItems);
+    }
+
+    internal static void CompleteCombatAdvanceCore(IPlayerResourceContext player, IPlayerActionState action,
+        ActionDefinition definition, CombatEncounterDefinition encounter, GameDataCatalog gameData,
+        CombatEncounterState battleState, CombatAdvanceResult combatResult, DateTimeOffset from, DateTimeOffset target,
+        ref double remainingSeconds, ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events,
+        ref double completedActions, ref double completedRepeats, AssetWallet? assetBalances,
+        ref List<DuelStagedItem>? stagedItems)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.yield");
         var expedition = action.Expedition!;
@@ -480,7 +493,7 @@ internal static class CombatActionRules
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
             ApplyCombatRewards(player, monster, killSeed, pvpEnabled, killAtUnix, gameData, action.Id, ref deltas,
-                spec, expedition.SelfIndex);
+                ref stagedItems, spec, expedition.SelfIndex);
             killSeed = DeterministicSequence.NextSeed(killSeed);
             switch (monster.Rank)
             {
@@ -1134,6 +1147,7 @@ internal static class CombatActionRules
         GameDataCatalog gameData,
         Guid actionInstanceId,
         ref Dictionary<AssetKey, double>? deltas,
+        ref List<DuelStagedItem>? stagedItems,
         ActionParticipationSpec? spec = null,
         int selfIndex = 0)
     {
@@ -1162,9 +1176,10 @@ internal static class CombatActionRules
             });
             DistributeRootExp(player, rawExp, gameData, actionInstanceId, killAtUnixSeconds);
         }
-        var dropBonus = pvpEnabled ? PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear)
-            : spec is not null ? 1 + spec.TotalDropBonusPoints / 100d
-            : 1;
+        var baseDropBonus = spec is not null ? 1 + spec.TotalDropBonusPoints / 100d : 1;
+        var dropBonus = pvpEnabled
+            ? baseDropBonus * PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear)
+            : baseDropBonus;
         foreach (var drop in monster.DropTable)
         {
             if (!drop.ItemId.IsValid || drop.MinQuantity <= 0 || drop.MaxQuantity < drop.MinQuantity || drop.DropChance <= 0) continue;
@@ -1177,19 +1192,22 @@ internal static class CombatActionRules
             // 数量为闭区间 [min, max] 整数均匀抽样：跨度 +1 保证最大数量可达。
             var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity + 1) * quantityRoll);
             quantity = Math.Clamp(quantity, drop.MinQuantity, drop.MaxQuantity);
+            // 组队掉落归属：按各成员 (1+增幅)×(1-惩罚) 加权抽样，全零退化均等；
+            // 归属掷点走独立盐位侧流——全体成员的模拟掷出同一归属，各自账本只记自己的件。
+            if (spec is not null
+                && RollDropAssignment(spec, seed ^ DropAssignmentChannelSalt) != selfIndex)
+                continue;
+
             if (pvpEnabled)
             {
                 // 斗法期间掉落进入暂存区：入账延迟与归属由暂存结算/斗法结算决定；StageItem 内部同步记账。
                 ActionReportBook.StageCombatItem(player, drop.ItemId, quantity, killAtUnixSeconds,
                     gameData.Duel.StagedBucketSeconds);
+                var bucketedAt = Math.Ceiling(killAtUnixSeconds / gameData.Duel.StagedBucketSeconds) * gameData.Duel.StagedBucketSeconds;
+                (stagedItems ??= []).Add(new DuelStagedItem(drop.ItemId.Value, quantity, bucketedAt));
             }
             else
             {
-                // 组队掉落归属：按各成员 (1+增幅)×(1-惩罚) 加权抽样，全零退化均等；
-                // 归属掷点走独立盐位侧流——全体成员的模拟掷出同一归属，各自账本只记自己的件。
-                if (spec is not null
-                    && RollDropAssignment(spec, seed ^ DropAssignmentChannelSalt) != selfIndex)
-                    continue;
                 AddDelta(deltas ??= new Dictionary<AssetKey, double>(), drop.ItemId, quantity);
                 player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = drop.ItemId, GainedQuantity = quantity });
             }
@@ -1329,7 +1347,7 @@ internal static class CombatActionRules
         }
         if (damage > 0)
         {
-            var prefix = broken ? "破招 " : parried ? "拆招 " : "";
+            var prefix = broken && critical ? "破招暴击 " : broken ? "破招 " : parried ? "化解 " : "";
             var suffix = critical ? " 点暴击伤害" : " 点伤害";
             clauses.Add($"{prefix}对{targetLabel}造成 {damage:0.##}{suffix}");
         }

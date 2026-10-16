@@ -8599,6 +8599,28 @@ input[type="checkbox"] {
   color: var(--danger);
 }
 
+/* 成员卡右上角等级惩罚角标（低于队内最高触发，MWI Level Malus）。 */
+.party-malus-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ff7875;
+  background: rgba(255, 77, 79, 0.16);
+  border: 1px solid rgba(255, 77, 79, 0.45);
+  border-radius: 4px;
+  line-height: 14px;
+  z-index: 2;
+  cursor: help;
+  user-select: none;
+}
+
+.party-slot-card:has(.party-slot-kick) .party-malus-badge {
+  right: 24px;
+}
+
 .party-slot.is-self .party-slot-card {
   border-color: var(--gold-dim);
   background: rgba(201, 180, 109, 0.06);

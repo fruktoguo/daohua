@@ -117,6 +117,8 @@ export const socialZh = {
       leader: '队长',
       inviteFriend: '邀请好友：',
       emptySlot: '空槽位',
+      malusBadge: '罚 -{percent}%',
+      malusTooltip: '境界过低触发队伍等级惩罚：击杀经验与掉落权重降低 {percent}%',
     },
     // 队伍成员角色信息卡（§21.14）：点击成员卡按需查询服务端白名单投影
     card: {

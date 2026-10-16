@@ -186,17 +186,27 @@ public sealed record ActionParticipationSpec(
     }
 
     /// <summary>
-    /// 等级惩罚比率（MWI Level Malus）：成员境界低于队内最高 20% 以内不受罚，
+    /// 等级惩罚比率（MWI Level Malus）：成员境界低于队内最高 20%（level × 0.2）或低于 12 级（取更高/更宽容者）以内不受罚；
+    /// 超出免罚门槛后每超 1% 罚 3%，封顶 90%。返回 [0, 0.9]。
+    /// </summary>
+    public static double CalculateLevelMalus(int memberLevel, int highestLevel)
+    {
+        if (highestLevel <= 0 || memberLevel <= 0) return 0;
+        var gap = highestLevel - memberLevel;
+        var exemptGap = Math.Max(memberLevel * 0.2, 12.0);
+        if (gap <= exemptGap) return 0;
+        return Math.Min(0.9, 3 * ((gap - exemptGap) / memberLevel));
+    }
+
+    /// <summary>
+    /// 等级惩罚比率（MWI Level Malus）：成员境界低于队内最高 20% 或低于 12 级（取更高/更宽容者）以内不受罚，
     /// 超出后每超 1% 罚 3%，封顶 90%。返回 [0, 0.9]。
     /// </summary>
     public double LevelMalusFor(int memberIndex)
     {
         var highest = 0;
         for (var i = 0; i < Members.Count; i++) highest = Math.Max(highest, Members[i].RealmLevel);
-        var level = Members[memberIndex].RealmLevel;
-        if (highest <= 0 || level <= 0) return 0;
-        var ratio = (double)highest / level;
-        return Math.Min(0.9, Math.Max(0, 3 * (ratio - 1.2)));
+        return CalculateLevelMalus(Members[memberIndex].RealmLevel, highest);
     }
 
     /// <summary>全队掉落增幅点数合计（共享掉率乘区：1 + Σ点数/100）。</summary>
