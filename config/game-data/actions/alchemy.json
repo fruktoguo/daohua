@@ -59,7 +59,7 @@
     "durationSeconds": 10,
     "inputs": {
       "item.herb-essence": 1,
-      "item.banling-flower": 1
+      "item.morning-dew": 1
     },
     "yields": [
       {

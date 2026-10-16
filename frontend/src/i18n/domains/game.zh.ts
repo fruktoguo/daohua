@@ -102,7 +102,7 @@ export const gameZh = {
       // 炼丹
       'alchemy.refine-qi-pill': { name: '引气丹', description: '以凝气草与清澈晨露炼制而成的基础引气灵丹，可略微加快吐纳效率。' },
       'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝气草炼制而成的凡品止血散剂，可迅速闭合寻常外伤创口。' },
-      'alchemy.refine-shunqi-pill': { name: '顺气丸', description: '以草木精华与伴灵花炼制的调息灵丸，可抚平体内翻涌气血，加速灵力恢复。' },
+      'alchemy.refine-shunqi-pill': { name: '顺气丸', description: '以草木精华与晨露炼制的调息灵丸，可抚平体内翻涌气血，加速灵力恢复。' },
       'alchemy.refine-tongmai-pill': { name: '通脉丹', description: '以伴灵精华与妖核淬炼而成的通脉灵丹，药力直透经络百骸，大益周天行气。' },
 
       // 精炼加工
