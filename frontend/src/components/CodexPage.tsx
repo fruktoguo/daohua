@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useMemo } from 'react'
 
+import { isMaterialSubTabItem, isMaterialUnlocked } from '../game/codexCalculations'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
@@ -24,7 +25,7 @@ import type {
   ItemDefinition,
 } from '../game/types'
 import { useT } from '../i18n'
-import type { CodexCraftingSubTab } from '../uiStore'
+import type { CodexCraftingSubTab, CodexMaterialSubTab } from '../uiStore'
 import { useUiStore } from '../uiStore'
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
@@ -39,6 +40,13 @@ import {
   resolveItemTooltipAsideCards,
 } from './ItemDisplay'
 import { ValueText } from './ValueText'
+
+/** 材料分类映射定义 */
+const MATERIAL_SUB_TABS: ReadonlyArray<{ id: CodexMaterialSubTab; labelKey: string }> = [
+  { id: 'herb', labelKey: 'materialHerb' },
+  { id: 'mineral', labelKey: 'materialMineral' },
+  { id: 'exotic', labelKey: 'materialExotic' },
+]
 
 /** 制造分类映射定义 */
 const CRAFTING_SUB_TABS: ReadonlyArray<{ id: CodexCraftingSubTab; labelKey: string }> = [
@@ -72,6 +80,8 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
   const codexCategory = useUiStore(state => state.codexCategory)
   const setCodexCategory = useUiStore(state => state.setCodexCategory)
+  const codexMaterialSubTab = useUiStore(state => state.codexMaterialSubTab)
+  const setCodexMaterialSubTab = useUiStore(state => state.setCodexMaterialSubTab)
   const codexCraftingSubTab = useUiStore(state => state.codexCraftingSubTab)
   const setCodexCraftingSubTab = useUiStore(state => state.setCodexCraftingSubTab)
 
@@ -85,7 +95,57 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const maps = useGameStore(state => state.maps)
   const items = useGameStore(state => state.items)
   const equipment = useGameStore(state => state.equipment)
+  const inventory = useGameStore(state => state.inventory)
   const learnedAbilityIds = useGameStore(state => state.combat?.learnedAbilityIds ?? [])
+
+  // 0. 天地材料分类池：全量材料池（药材、矿石、异材）
+  const allMaterials = useMemo(() => {
+    return items.filter(it => it.category === 'material')
+  }, [items])
+
+  const isItemUnlocked = useCallback(
+    (item: ItemDefinition): boolean => isMaterialUnlocked(item, realmLevel, inventory),
+    [realmLevel, inventory]
+  )
+
+  const currentSubTabMaterials = useMemo(() => {
+    return allMaterials.filter(it => isMaterialSubTabItem(it, codexMaterialSubTab))
+  }, [allMaterials, codexMaterialSubTab])
+
+
+  const sortedMaterials = useMemo(() => {
+    return [...currentSubTabMaterials].sort((a, b) => {
+      const levelA = convertTierToLevel(a.tier ?? 1)
+      const levelB = convertTierToLevel(b.tier ?? 1)
+      if (levelA !== levelB) return levelA - levelB
+      return a.itemId.localeCompare(b.itemId)
+    })
+  }, [currentSubTabMaterials])
+
+  const materialSubTabProgress = useMemo(() => {
+    const map: Record<CodexMaterialSubTab, { unlocked: number; total: number }> = {
+      herb: { unlocked: 0, total: 0 },
+      mineral: { unlocked: 0, total: 0 },
+      exotic: { unlocked: 0, total: 0 },
+    }
+    for (const item of allMaterials) {
+      const isUnlocked = isItemUnlocked(item)
+      for (const tab of MATERIAL_SUB_TABS) {
+        if (isMaterialSubTabItem(item, tab.id)) {
+          map[tab.id].total += 1
+          if (isUnlocked) {
+            map[tab.id].unlocked += 1
+          }
+        }
+      }
+    }
+    return map
+  }, [allMaterials, isItemUnlocked])
+
+  const totalMaterialUnlockedCount = useMemo(() => {
+    return allMaterials.filter(isItemUnlocked).length
+  }, [allMaterials, isItemUnlocked])
+  const totalMaterialCount = allMaterials.length
 
   // 1. 制造配方分类池：全量技艺配方池（包含炼丹、炼器、阵法、符箓）
   const allCraftingActions = useMemo(() => {
@@ -231,8 +291,8 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const totalMonsterCount = allMonsters.length
 
   // 万象图鉴全景总进度
-  const grandUnlocked = totalCraftingUnlockedCount + buildingUnlockedCount + abilityLearnedCount + monsterDefeatedCount
-  const grandTotal = totalCraftingCount + totalBuildingCount + totalAbilityCount + totalMonsterCount
+  const grandUnlocked = totalMaterialUnlockedCount + totalCraftingUnlockedCount + buildingUnlockedCount + abilityLearnedCount + monsterDefeatedCount
+  const grandTotal = totalMaterialCount + totalCraftingCount + totalBuildingCount + totalAbilityCount + totalMonsterCount
   const grandPercent = grandTotal > 0 ? Math.round((grandUnlocked / grandTotal) * 100) : 0
 
   return (
@@ -248,8 +308,16 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
           </div>
         </div>
 
-        {/* 四大主分类切换 */}
+        {/* 五大主分类切换：材料居首 */}
         <nav className="codex-tabs" role="tablist">
+          <button
+            className={`codex-tab-btn${codexCategory === 'material' ? ' active' : ''}`}
+            onClick={() => setCodexCategory('material')}
+            type="button"
+          >
+            <span>{t('app.codex.tabMaterial')}</span>
+            <span className="codex-tab-count">{totalMaterialUnlockedCount}/{totalMaterialCount}</span>
+          </button>
           <button
             className={`codex-tab-btn${codexCategory === 'crafting' ? ' active' : ''}`}
             onClick={() => setCodexCategory('crafting')}
@@ -284,6 +352,26 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
           </button>
         </nav>
 
+        {/* 材料分类下的二级子切换（药材、矿石、异材） */}
+        {codexCategory === 'material' && (
+          <div className="codex-sub-tabs" role="tablist">
+            {MATERIAL_SUB_TABS.map(tab => {
+              const prog = materialSubTabProgress[tab.id]
+              return (
+                <button
+                  className={`codex-sub-tab-btn${codexMaterialSubTab === tab.id ? ' active' : ''}`}
+                  key={tab.id}
+                  onClick={() => setCodexMaterialSubTab(tab.id)}
+                  type="button"
+                >
+                  <span>{t(`app.codex.${tab.labelKey}`)}</span>
+                  <span className="codex-sub-tab-count">{prog.unlocked}/{prog.total}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* 制造分类下的二级子切换（炼丹、炼器、阵法、符箓） */}
         {codexCategory === 'crafting' && (
           <div className="codex-sub-tabs" role="tablist">
@@ -307,6 +395,20 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
       {/* 主体图鉴内容 */}
       <main className="codex-content">
+        {codexCategory === 'material' && (
+          <div className="codex-grid codex-tile-grid">
+            {sortedMaterials.map(item => (
+              <CodexMaterialEntry
+                isUnlocked={isItemUnlocked(item)}
+                item={item}
+                key={item.itemId}
+              />
+            ))}
+            {sortedMaterials.length === 0 && (
+              <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
+            )}
+          </div>
+        )}
         {codexCategory === 'crafting' && (
           <div className="codex-grid codex-tile-grid">
             {sortedCraftingActions.map(action => (
@@ -376,6 +478,129 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     </div>
   )
 })
+/**
+ * 材料条目渲染
+ * 悬浮卡复用标准物品卡片格式，包含：
+ * 1. 顶部：等阶、品类（药材/矿石/异材）、售价与收录/解锁条件
+ * 2. 主体：材料风味背景描述
+ * 3. 附属卡片：市场行情 asideCards
+ */
+const CodexMaterialEntry = memo(function CodexMaterialEntry({
+  item,
+  isUnlocked,
+}: {
+  item: ItemDefinition
+  isUnlocked: boolean
+}): React.JSX.Element {
+  const t = useT()
+  const tier = item.tier ?? 1
+  const grade = resolveItemGrade(tier)
+  const levelNumber = convertTierToLevel(tier)
+
+  const baseMetadata = resolveItemMetadata(item.itemId) ?? {
+    label: item.name,
+    glyph: '·',
+    tone: 'gold',
+    category: resolveItemCategoryLabel('material', t),
+    rarity: 'mundane',
+    rarityLabel: t('game.grade.mundane'),
+    description: '',
+    source: '',
+    usage: '',
+  }
+
+  const subCategoryLabel = resolveItemCategoryLabel(
+    resolveItemSubCategory(item.itemId, item, undefined, baseMetadata.category),
+    t
+  )
+
+  const metadata: ItemMetadata = {
+    ...baseMetadata,
+    label: item.name || baseMetadata.label,
+    category: subCategoryLabel,
+    rarity: grade.rarity,
+    rarityLabel: grade.label,
+    level: levelNumber,
+    description: item.description || baseMetadata.description,
+  }
+
+  const tone = rarityToTone(metadata.rarity)
+
+  const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = [
+    { label: t('market.tooltip.category'), value: metadata.category, tone: 'muted' },
+    { label: t('market.tooltip.level'), value: `Lv. ${formatNumber(levelNumber)}`, tone: 'gold' },
+  ]
+  if (item.sellPrice !== undefined) {
+    stats.push({ label: t('market.tooltip.price'), value: `${formatNumber(item.sellPrice)} 灵石`, tone: 'jade' })
+  }
+
+  const hoverContent = (
+    <FloatingInfoCard
+      badge={metadata.rarityLabel}
+      badgeTone={tone}
+      description={
+        <div>
+          {/* 解锁/收录状态胶囊 */}
+          <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <span className="codex-hover-title" style={{ color: 'var(--gold)' }}>
+                {metadata.category}
+              </span>
+              <span
+                className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
+                  isUnlocked ? 'unlocked' : 'locked'
+                }`}
+                style={{ marginTop: 0 }}
+              >
+                {isUnlocked ? t('app.codex.collected') : formatRealmUnlockCondition(levelNumber)}
+              </span>
+            </div>
+          </div>
+
+          {/* 物品背景故事描述 */}
+          {metadata.description && (
+            <div style={{ paddingTop: 6, borderTop: '1px solid rgba(201, 180, 109, 0.15)', color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+              {metadata.description}
+            </div>
+          )}
+        </div>
+      }
+      stats={stats}
+      title={metadata.label}
+      titleIcon={resolveItemIconUrl(item.itemId)}
+    />
+  )
+
+  const renderAsideCards = useCallback(
+    () => resolveItemTooltipAsideCards(item.itemId, metadata, item),
+    [item, metadata]
+  )
+
+  return (
+    <FloatingPopover asideCards={renderAsideCards} content={hoverContent} placement="top" size="medium">
+      <div
+        className={`codex-entry-wrapper codex-tile-anchor${
+          isUnlocked ? '' : ' codex-entry-wrapper--locked'
+        }`}
+      >
+        <ItemTile
+          category={metadata.category}
+          className="inventory-cell"
+          itemId={item.itemId}
+          level={metadata.level}
+          name={metadata.label}
+          rarity={metadata.rarity}
+        />
+        {!isUnlocked && (
+          <span className="codex-lock-badge" title={t('app.codex.locked')}>
+            🔒
+          </span>
+        )}
+      </div>
+    </FloatingPopover>
+  )
+})
+
 
 /**
  * 制造配方条目渲染

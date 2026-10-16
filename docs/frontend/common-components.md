@@ -17,6 +17,7 @@
   - **通用独立数量副气泡联动**：传入 `quantity={amount}` 属性，自动在主卡片旁附加独立的数量副气泡（标题为「数量」，内容为中文四位分段「具体数值」）。
   - **通用 Buff / Debuff / 特殊机制附属副气泡窗口 (Aside Cards)**：支持将丹药持续 Buff、修炼/技艺效率加成、装备特殊机制/词缀以及角色身上生效的 Buff/Debuff 自动解析为独立的副气泡卡片窗口，并排挂载联动展示（`resolveItemAsideCards`, `resolveEquipmentAsideCards`, `createBuffAsideCard`）。
   - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。功法悬浮详情统一结构：主描述 = 配表 `description` 招式描述 + 效果句（目标/伤害构成/五行伤害类别，如「对单个目标造成 60%术法攻击 +10.5 木属性术法伤害」，构成单元经 `[[ ]]` 标记由 `ValueText` 渲染为整组胶囊），词条行 = 等级、冷却、吟唱、灵力消耗与次级效果，不输出默认触发条件文本。
+  - **内功心法六维资质雷达图统一收拢 (`RootAspectRadarChart`)**：内功心法的六维（体魄/经脉/力道/根骨/身法/神识）资质加成与经验重分配彻底告别生硬文本，统一收拢为纯 SVG 矢量雷达图（`RootAspectRadarChart`），展示金虚线 100% 基准环、灵光青动态多边形、中心点与环周百分比数值（随心法等级动态放大，超常特化青蓝高亮、削减暗淡、绝弃危红），并在气泡、Aside 副卡与图鉴中无缝挂载。
   - **可交易物品与装备「市场价格」坊市行情副气泡联动**：针对所有可交易标的（`item.isTradable` 物品或装备类标的），自动通过 `resolveMarketStatsAsideCard` 命中 `gameStore.marketStats` 缓存（按 `itemId|强化等级` 索引），渲染「市场价格」副卡（金色调 `gold`、右上角标「坊市」），展示最低在售价与总在售数量、最高收购价与总收购数量（无盘口一侧显 `-`）、今日与当周成交量。数据源由 `gameClient` 在线期间以 15s 周期后台静默拉取 `GET /api/v1/market/stats`（小表全量读），悬浮渲染零即时网络开销，页面切后台跳过 tick。
   - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`，命令式切换不经过 React 渲染）与视口渲染裁剪（`content-visibility: auto`）。非交互 hover 气泡（tooltip 语义）在**包含锚点的滚动容器**滚动时立即收起（等同原生 `title`）；与锚点无关的面板自滚（如底部日志 append 后自动滚底、侧栏滚动）不会触碰已打开的气泡。click/interactive 浮层滚动跟随则走 rAF 节流重定位，彻底消除滚动期间的逐事件 `getBoundingClientRect` 测量、整卡重渲染、`backdrop-filter` 重绘与高频 Hover 风暴。
   - **生态生灵悬浮详情统一收拢 (`MonsterTooltipTarget` / `MonsterInfoCard`)**：大地图地点生灵（`MapMonsterPill`）、附近面板生灵（`NearbyPanel.MonsterCard`）、讨伐生态面板（`CombatEcologyPanel.EcologyMonsterTile`）、万象图鉴妖兽收录（`CodexPage.CodexMonsterEntry`）与日志敌怪引用（`LogFeed.EnemyReference`）全面统一收拢走 `frontend/src/components/MonsterDisplay.tsx`。共享最高规格统一浮层——生命层次品质徽记（普通金/精英紫/领主危红）、境界等阶副标、修仙伤害流派与五行属性描述、出没周期、击杀修为收益、施展功法瓦片行（`MonsterAbilityTile`，与玩家技能格子同构，具备元素/类别丝带、Lv 等级角标、WebP 图标/名称与独立参悟详情浮层）、掉落物图元复合胶囊（`ItemDropReference`，含概率与掉落区间且支持二次悬停查物品）、六维基础战斗属性网格（气血/灵力/双攻/双防，已剔除多余攻击间隔）；彻底消灭生态面板双层 Popover 的体验割裂与多处面板同怪不同展的断层。
@@ -63,7 +64,8 @@
 - **适用场景**：
   - 面板主分类下的二级切换栏（如内视根基下的「六维」与「基础」切换，采用紧凑暗墨胶囊按键与金色微光高亮）。
   - **坊市多级分类子导航 (`MarketBrowseGrid`)**：在一级主 Tab（全部/材料/装备/消耗品/功法，与物品配表 `category` 主类型一一对应）下方，复用 `.insight-sub-tabs` 与 `.insight-sub-tab-btn` 展示对应二级子分类（材料细分矿石/药材/通用材料；装备细分武器/防具/饰品；消耗品细分丹药/补给耗材；功法细分秘籍全本/招式残卷），二级匹配统一走 `resolveItemSubCategory` 的配表 `subCategory` 键。
-- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`
+  - **万象图鉴多级分类导航 (`CodexPage`)**：在一级主分类（材料/技艺/建造/功法/妖兽）中材料居首；材料分类下复用 `.codex-sub-tabs` 与 `.codex-sub-tab-btn` 展示二级子分类（药材/矿石/异材），技艺分类下展示（炼丹/炼器/阵法/符箓），子类划分统一走 `isMaterialSubTabItem` 纯函数。
+- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`, `.codex-sub-tabs`, `.codex-sub-tab-btn`
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-sub-tabs`)
 
 ---

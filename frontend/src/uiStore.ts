@@ -17,8 +17,10 @@ import { create } from 'zustand'
  */
 export type TabId = 'insight' | 'market' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'records' | 'settings'
 
-/** 图鉴顶级分类：制造 vs 建筑 vs 技能 vs 怪物 */
-export type CodexCategory = 'crafting' | 'building' | 'ability' | 'monster'
+/** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 */
+export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster'
+/** 图鉴材料子分类：药材 vs 矿石 vs 异材 */
+export type CodexMaterialSubTab = 'herb' | 'mineral' | 'exotic'
 /** 图鉴制造子分类：炼丹 vs 炼器 vs 阵法 vs 符箓 */
 export type CodexCraftingSubTab = 'alchemy' | 'forging' | 'formation' | 'talisman'
 
@@ -86,6 +88,10 @@ interface UiStore {
   codexCraftingSubTab: CodexCraftingSubTab
   /** 切换图鉴制造子分类 */
   setCodexCraftingSubTab: (subTab: CodexCraftingSubTab) => void
+  /** 图鉴材料子分类 */
+  codexMaterialSubTab: CodexMaterialSubTab
+  /** 切换图鉴材料子分类 */
+  setCodexMaterialSubTab: (subTab: CodexMaterialSubTab) => void
   /** 新手引导当前要求地图聚焦的目标节点 ID（由 TutorialOverlay 下发，WorldMapPanel 响应） */
   tutorialMapFocusNodeId: string | null
   /** 设置新手引导地图聚焦的目标节点 ID */
@@ -130,8 +136,10 @@ export const useUiStore = create<UiStore>(set => ({
   setSocialSubTab: socialSubTab => set({ socialSubTab }),
   partySubTab: 'lobby',
   setPartySubTab: partySubTab => set({ partySubTab }),
-  codexCategory: 'crafting',
+  codexCategory: 'material',
   setCodexCategory: codexCategory => set({ codexCategory }),
+  codexMaterialSubTab: 'herb',
+  setCodexMaterialSubTab: codexMaterialSubTab => set({ codexMaterialSubTab }),
   codexCraftingSubTab: 'alchemy',
   setCodexCraftingSubTab: codexCraftingSubTab => set({ codexCraftingSubTab }),
   tutorialMapFocusNodeId: null,
