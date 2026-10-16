@@ -6556,6 +6556,20 @@ input[type="checkbox"] {
   line-height: 1;
 }
 
+/* 带经验条的复合标签默认撑满内容宽度，数值下划线统一最小宽度居中，经验文本靠右对齐 */
+.compound-stat-label.has-progress .compound-stat-main {
+  width: 100%;
+}
+
+.compound-stat-label.has-progress .compound-exp-text {
+  margin-left: auto;
+}
+
+.compound-stat-label.has-progress .underlined-value {
+  min-width: 22px;
+  justify-content: center;
+}
+
 /* 复合属性加成 Label (去掉外边框) */
 .compound-bonus-label {
   display: inline-flex;
@@ -6804,6 +6818,18 @@ input[type="checkbox"] {
   gap: 8px;
   flex-wrap: wrap;
   padding: 2px 0;
+}
+
+/* 六维根基与技艺主卡片统一固定宽度，彻底避免因经验数字长度不同导致卡片锯齿错位 */
+.insight-root-row .compound-stat-label {
+  width: 184px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.player-card-dims .compound-stat-label {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .insight-root-bonuses {
