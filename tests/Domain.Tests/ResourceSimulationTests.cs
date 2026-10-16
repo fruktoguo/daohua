@@ -79,4 +79,26 @@ public sealed class ResourceSimulationTests
         Assert.Empty(player.Actions);
         Assert.Contains(result.Events, e => e.Code == "action.blocked");
     }
+
+    /// <summary>
+    /// 验证配置了 AmountMin 与 AmountMax 的行动每次产出在指定闭区间内。
+    /// </summary>
+    [Fact]
+    public void ItemYieldWithAmountRangeProducesWithinBounds()
+    {
+        var spiritStone = new ItemId("currency.spirit-stone");
+        var mineAction = new ActionId("explore.mine-spirit-stone");
+        var actions = new ActionCatalog([
+            new(mineAction, "开采 灵石矿脉", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 25, spiritStone, AmountMin: 10, AmountMax: 40)])
+        ]);
+        var catalog = new GameDataCatalog("test", "test", actions);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "矿工", Baseline, "test");
+        player.Enqueue(new(mineAction, 1), Baseline, actions);
+        var wallet = new AssetWallet(player.PlayerId);
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(8), catalog, wallet);
+        foreach (var delta in result.AssetDeltas) wallet.Apply(delta);
+        var stones = wallet.Get(new AssetKey(spiritStone));
+        Assert.InRange(stones, 10, 40);
+    }
 }

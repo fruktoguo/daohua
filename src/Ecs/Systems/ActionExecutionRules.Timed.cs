@@ -362,13 +362,44 @@ internal static partial class ActionExecutionRules
                 ref deltas, ref events, ref completedActions, ref completedRepeats);
             return;
         }
+        // 引气入体灵石注灵加速（总纲 §6.4.3）：仅放大修为与灵力基础值并支持后续乘区重算；
+        // 余额充足扣减灵石并享受倍率，余额不足平滑降级为 1.0 倍标准结算且不中断队列。
+        var cultivationBaseMultiplier = 1.0;
+        var spiritStoneDeduction = 0;
+        if (definition.Id.Value == "cultivation.draw-qi"
+            && action.Intent.Parameters is not null
+            && action.Intent.Parameters.TryGetValue("spiritStone", out var reqStone)
+            && reqStone > 0)
+        {
+            var tierCost = reqStone >= 100 ? 100 : (reqStone >= 10 ? 10 : (reqStone >= 1 ? 1 : 0));
+            var tierMultiplier = tierCost switch
+            {
+                100 => 4.0, // +300%
+                10 => 2.0,  // +100%
+                1 => 1.2,   // +20%
+                _ => 1.0
+            };
+            if (tierCost > 0)
+            {
+                var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
+                var currentBalance = holdings.GetValueOrDefault(new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)));
+                if (currentBalance >= tierCost)
+                {
+                    cultivationBaseMultiplier = tierMultiplier;
+                    spiritStoneDeduction = tierCost;
+                }
+            }
+        }
         // 先汇总数值型收益并完成有限性校验，再统一落账，沿用“先校验后变更”语义。
         // experienceGain 记增幅后总量（底蕴结算输入）。
         double experienceGain = 0, manaGain = 0, hitpointGain = 0;
         foreach (var yield in definition.Yields)
         {
             if (yield.Period != ActionYieldPeriod.PerRepeat) continue;
-            var amount = yield.Amount * autoUseMultiplier;
+            var baseYield = (yield.Kind is ActionYieldKind.Experience or ActionYieldKind.Mana)
+                ? yield.Amount * cultivationBaseMultiplier
+                : yield.Amount;
+            var amount = baseYield * autoUseMultiplier;
             switch (yield.Kind)
             {
                 case ActionYieldKind.Experience: experienceGain += amount; break;
@@ -395,7 +426,10 @@ internal static partial class ActionExecutionRules
             {
                 case ActionYieldKind.Item:
                     deltas ??= new Dictionary<AssetKey, double>();
-                    var scaled = ScaleOutput(yield.Amount, autoUseMultiplier);
+                    var baseAmount = yield.AmountMin.HasValue && yield.AmountMax.HasValue && yield.AmountMax.Value >= yield.AmountMin.Value
+                        ? Random.Shared.Next((int)Math.Floor(yield.AmountMin.Value), (int)Math.Floor(yield.AmountMax.Value) + 1)
+                        : yield.Amount;
+                    var scaled = ScaleOutput(baseAmount, autoUseMultiplier);
                     AddDelta(deltas, new AssetKey(yield.Item!.Value), scaled);
                     (itemRewards ??= new Dictionary<ItemId, double>())[yield.Item.Value] =
                         itemRewards.GetValueOrDefault(yield.Item.Value) + scaled;
@@ -416,18 +450,30 @@ internal static partial class ActionExecutionRules
             deltas ??= new Dictionary<AssetKey, double>();
             AddDelta(deltas, new AssetKey(item), -quantity);
         }
+        if (spiritStoneDeduction > 0)
+        {
+            deltas ??= new Dictionary<AssetKey, double>();
+            AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), -spiritStoneDeduction);
+        }
         CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
         // 修为类收益统一结算（总纲 §7.11.1）：瓶颈截断 + 底蕴 1:1 兑换放大（≤3×amp）+
         // 增幅溢量沉淀为底蕴；满级（cap≤0）全额沉淀。非战斗行动不增加战斗经验。
         var experienceDelta = player.Progression.CreditExperience(experienceGain, expCap);
-        // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，底蕴记净变动；物品产出计获得、输入材料计失去。
+        // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，底蕴记净变动；物品产出计获得、输入材料与灵石消耗计失去。
+        Dictionary<ItemId, double>? finalItemLosses = definition.Inputs.Count > 0 ? new(definition.Inputs) : null;
+        if (spiritStoneDeduction > 0)
+        {
+            finalItemLosses ??= new Dictionary<ItemId, double>();
+            var stoneId = new ItemId(EnhancementRules.SpiritStoneItemId);
+            finalItemLosses[stoneId] = finalItemLosses.GetValueOrDefault(stoneId) + spiritStoneDeduction;
+        }
         player.RecordStats(action.Id, target.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
         {
             Experience = experienceDelta,
             Foundation = experienceGain - experienceDelta,
             Cycles = 1,
             ItemGains = itemRewards,
-            ItemLosses = definition.Inputs
+            ItemLosses = finalItemLosses
         });
         // 技艺经验按当轮基准经验入账（总纲 §20.1.2 / §20.1.4）：等级跃迁写入同一份 LevelUp 账本。
         if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))

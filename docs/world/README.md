@@ -91,14 +91,14 @@
 | 地图 | ID | 配置文件 | 节点数 |
 | --- | --- | --- | --- |
 | 青云仙山 | `map.qingyun-mountains` | `config/game-data/maps/qingyun_mountain.json` | 8（云溪村/漱玉溪/百草谷/落霞桃林/清石水滩/望云茶肆/青云山门/云巅草庐） |
-| 星陨异境 | `map.starfall-domain` | `config/game-data/maps/xingyun_realm.json` | 7（裂天界隙/腐生古冢/畸木焦林/荧石铜渊/冥煞血池/白骨荒坑/坠星天坑） |
+| 星陨异境 | `map.starfall-domain` | `config/game-data/maps/xingyun_realm.json` | 8（裂天界隙/腐生古冢/畸木焦林/荧石铜渊/冥煞血池/白骨荒坑/坠星天坑/玄元门遗址） |
 
-### 6.2 怪物（12 种）
+### 6.2 怪物（13 种）
 
 | 等阶 | 妖兽 | 精英/妖王 |
 | --- | --- | --- |
 | T1 凡胎 | 魔化野兔、木灵、火灵 | 魔猿、铁甲熊、伥虎（妖王） |
-| T2 叩仙门 | 裂齿妖狼、星屑火鸦、掠灵邪修 | 残刃尸煞（精英）、坠魔祭司（精英）、坠星兽（妖王） |
+| T2 叩仙门 | 裂齿妖狼、星屑火鸦、掠灵邪修 | 残刃尸煞（精英）、坠魔祭司（精英）、坠星兽（妖王）、玄元残魄（首领） |
 
 > 权威定义见 `config/game-data/monsters/tier{1,2}_{minions,elites_bosses}.json`。
 

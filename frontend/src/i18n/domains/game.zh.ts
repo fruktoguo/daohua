@@ -94,6 +94,7 @@ export const gameZh = {
       'explore.gather-banling-flower': { name: '采摘 伴灵花', description: '在腐生古冢死气聚集处采摘吸纳死气伴生的伴灵异花。' },
       'explore.chop-yinlingsong': { name: '采伐 引灵松', description: '在畸木焦林采伐吸收星火异气的坚韧引灵松。' },
       'explore.mine-crimson-copper': { name: '开采 赤铜矿', description: '在荧石铜渊地底深处开采滚烫温热的赤铜矿石。' },
+      'explore.mine-spirit-stone': { name: '开采 灵石矿脉', description: '在玄元门遗址深处的灵石矿脉中开采天然灵石。' },
 
       // 赶路
       'world.travel': { name: '赶路', description: '沿已规划的山道前往目标地点。' },

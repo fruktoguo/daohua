@@ -161,5 +161,27 @@
       "enemy.falling-star-beast"
     ],
     "battlesPerBoss": 20
+  },
+  {
+    "id": "encounter.xuanyuan-ruins",
+    "name": "玄元门遗址",
+    "minBudget": 40,
+    "maxBudget": 180,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.plunder-cultivator",
+        "weight": 1,
+        "strength": 40
+      }
+    ],
+    "maxTotalStrength": 180,
+    "eliteEnemyIds": [
+      "enemy.fallen-devil-priest"
+    ],
+    "battlesPerElite": 4,
+    "bossEnemyIds": [
+      "enemy.xuanyuan-remnant"
+    ],
+    "battlesPerBoss": 12
   }
 ]

@@ -599,6 +599,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var worldGraph = gameData.WorldGraph;
                         if (!worldGraph.ContainsNode(targetNodeId))
                             return new PlayerCommandResult(false, "NODE_NOT_FOUND", $"目标世界节点不存在：{targetNodeId}。", before);
+                        if (worldGraph.TryGetNode(targetNodeId, out var targetNodeObj) && targetNodeObj.Hidden && targetNodeObj.RequiredConsciousness > 0)
+                        {
+                            var levels = before.State.Loadout.CoreAttributes.Levels(gameData.RealmProgression);
+                            if (levels.Consciousness <= targetNodeObj.RequiredConsciousness)
+                            {
+                                return new PlayerCommandResult(false, "CONSCIOUSNESS_TOO_LOW",
+                                    $"神识不足，无法感应并前往该地点（需神识大于 {targetNodeObj.RequiredConsciousness:0} 点）。", before);
+                            }
+                        }
                         var travelNow = _simulationClock.UtcNow;
                         if ((!string.Equals(before.State.World.NodeId, targetNodeId, StringComparison.Ordinal)
                                 || before.State.World.EdgeId is not null)

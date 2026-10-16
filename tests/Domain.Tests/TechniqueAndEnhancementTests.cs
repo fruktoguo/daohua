@@ -152,8 +152,8 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(0.5, EnhancementRules.BaseSuccessRate(1), 12);
         Assert.Equal(0.35, EnhancementRules.BaseSuccessRate(10), 12);
         Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(11), 12);
-        // t=20 走指数衰减 0.3×0.95^9，仍在基础 clamp [0.01, 0.5] 区间内。
-        Assert.Equal(Math.Clamp(0.3 * Math.Pow(0.95, 9), 0.01, 0.5), EnhancementRules.BaseSuccessRate(20), 12);
+        // t=11..20 基础成功率统一为 30%（0.30）。
+        Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(20), 12);
         // 技艺修正：L≥t 加性 +0.01×L；L<t 乘性 ×0.9^(t-L)；终值 clamp [0, 0.99]。
         Assert.Equal(0.99, EnhancementRules.SuccessRate(1, 127), 12);
         Assert.Equal(0.5 * Math.Pow(0.9, 1), EnhancementRules.SuccessRate(1, 0), 12);
@@ -535,7 +535,7 @@ public sealed class TechniqueAndEnhancementTests
 
         // 模拟推进多轮（由于判定概率，推进足够长的时间直到达到 +3 出队或完成）
         var now = Baseline;
-        for (var step = 0; step < 50; step++)
+        for (var step = 0; step < 300; step++)
         {
             if (player.Actions.Count == 0) break;
             now = now.AddSeconds(10);

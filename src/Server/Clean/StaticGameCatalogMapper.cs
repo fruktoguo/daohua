@@ -305,6 +305,10 @@ public static class StaticGameCatalogMapper
             x = ReadDouble(node, "x"),
             y = ReadDouble(node, "y"),
             cultivationMultiplier = ReadDouble(node, "cultivationMultiplier", 1),
+            hidden = node.TryGetProperty("hidden", out var hp) && hp.ValueKind == JsonValueKind.True,
+            requirements = node.TryGetProperty("requirements", out var req) && req.ValueKind == JsonValueKind.Object
+                ? req.Clone()
+                : (object?)null,
             availableActionIds = ReadStringArray(node, "availableActionIds"),
             encounterIds,
             npcs = ReadEntities(node, "npcs"),

@@ -186,5 +186,38 @@
         "aspect": "stamina"
       }
     ]
+  },
+  {
+    "id": "explore.mine-spirit-stone",
+    "name": "开采 灵石矿脉",
+    "description": "在玄元门遗址深处的灵石矿脉中采集天然灵石。",
+    "type": "exploration",
+    "technique": "mining",
+    "durationSeconds": 8,
+    "availableNodeIds": [
+      "node.xuanyuan-ruins"
+    ],
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "currency.spirit-stone",
+        "amount": 25,
+        "amountMin": 10,
+        "amountMax": 40
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 50,
+        "aspect": "attack"
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 50,
+        "aspect": "stamina"
+      }
+    ]
   }
 ]

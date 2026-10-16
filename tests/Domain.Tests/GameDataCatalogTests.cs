@@ -134,11 +134,45 @@ public sealed class GameDataCatalogTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var realm = catalog.RealmProgression!;
-        Assert.Equal(12, catalog.CombatMonsters.Count);
+        Assert.Equal(13, catalog.CombatMonsters.Count);
         foreach (var (_, monster) in catalog.CombatMonsters)
             Assert.Equal(realm.MonsterKillExperience(monster.Level, monster.Rank), monster.Experience);
         Assert.Equal(10, catalog.CombatMonsters["enemy.demonized-rabbit"].Experience, 6);
         Assert.Equal(realm.ExpCapFor(12) / 1000d * Math.Pow(0.9, 11) * 10,
             catalog.CombatMonsters["enemy.chang-tiger"].Experience, 6);
+    }
+
+    /// <summary>
+    /// 验证玄元门遗址隐藏节点、灵石矿脉行动与玄元残魄 BOSS 正确解析且属性对齐。
+    /// </summary>
+    [Fact]
+    public void XuanyuanRemnantBossAndRuinsNodeParsedCorrectly()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        Assert.True(catalog.WorldGraph.TryGetNode("node.xuanyuan-ruins", out var ruinsNode));
+        Assert.True(ruinsNode.Hidden);
+        Assert.Equal(30, ruinsNode.RequiredConsciousness);
+
+        var mineAction = catalog.Actions.Get(new ActionId("explore.mine-spirit-stone"));
+        Assert.NotNull(mineAction);
+        var spiritStoneYield = Assert.Single(mineAction.Yields, y => y.Kind == ActionYieldKind.Item);
+        Assert.Equal("currency.spirit-stone", spiritStoneYield.Item?.Value);
+        Assert.Equal(10, spiritStoneYield.AmountMin);
+        Assert.Equal(40, spiritStoneYield.AmountMax);
+
+        Assert.True(catalog.CombatMonsters.TryGetValue("enemy.xuanyuan-remnant", out var boss));
+        Assert.Equal(18, boss.Level);
+        Assert.Equal(CombatMonsterRank.Boss, boss.Rank);
+        Assert.Equal(4, boss.Skills.Count);
+        Assert.Equal("ability.blazing-blast", boss.Skills[0].Ability.GetProperty("id").GetString());
+        Assert.Equal("ability.lightning-attraction", boss.Skills[1].Ability.GetProperty("id").GetString());
+        Assert.Equal("ability.qingping-melody", boss.Skills[2].Ability.GetProperty("id").GetString());
+        Assert.Equal("ability.palm-lightning", boss.Skills[3].Ability.GetProperty("id").GetString());
+
+        Assert.Contains(boss.DropTable, d => d.ItemId.Value == "currency.spirit-stone");
+        Assert.Contains(boss.DropTable, d => d.ItemId.Value == "item.tome.xuanyuan-yiqi-gong");
+        Assert.Contains(boss.DropTable, d => d.ItemId.Value == "item.fragment.xuanyuan-yiqi-gong");
+        Assert.Contains(boss.DropTable, d => d.ItemId.Value == "item.tome.blazing-blast");
+        Assert.Contains(boss.DropTable, d => d.ItemId.Value == "item.tome.palm-lightning");
     }
 }

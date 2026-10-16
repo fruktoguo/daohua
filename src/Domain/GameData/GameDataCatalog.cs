@@ -179,7 +179,9 @@ public sealed record ActionYield(
     ItemId? Item = null,
     ActionBuffGrant? Buff = null,
     CoreAspectKind? Aspect = null,
-    double? Ratio = null);
+    double? Ratio = null,
+    double? AmountMin = null,
+    double? AmountMax = null);
 
 /// <summary>
 /// 即时打击类消耗品的打击规格（雷击符）：扣除自身灵力后对当前主要敌人造成一次无命中/暴击掷点的技能伤害。
@@ -854,7 +856,9 @@ public sealed class GameDataCatalog
             if (kind == ActionYieldKind.Item)
             {
                 var itemId = element.TryGetProperty("id", out var itemIdProperty) ? itemIdProperty.GetString() : null;
-                yields.Add(new(kind, period, amount, new ItemId(itemId ?? string.Empty)));
+                var amountMin = element.TryGetProperty("amountMin", out var minProp) && minProp.TryGetDouble(out var minVal) ? (double?)minVal : null;
+                var amountMax = element.TryGetProperty("amountMax", out var maxProp) && maxProp.TryGetDouble(out var maxVal) ? (double?)maxVal : null;
+                yields.Add(new(kind, period, amount, new ItemId(itemId ?? string.Empty), AmountMin: amountMin, AmountMax: amountMax));
                 continue;
             }
             if (kind == ActionYieldKind.Buff)
@@ -1252,7 +1256,14 @@ public sealed class GameDataCatalog
                                 .Select(e => e!.Trim())
                                 .ToArray()
                             : [];
-                        graph.AddNode(WorldNode.Create(id, name, x, y, encounterIds));
+                        var hidden = n.TryGetProperty("hidden", out var hiddenProp) && hiddenProp.ValueKind == JsonValueKind.True;
+                        var requiredConsciousness = 0.0;
+                        if (n.TryGetProperty("requirements", out var reqProp) && reqProp.ValueKind == JsonValueKind.Object
+                            && reqProp.TryGetProperty("consciousness", out var conProp) && conProp.TryGetDouble(out var conVal))
+                        {
+                            requiredConsciousness = conVal;
+                        }
+                        graph.AddNode(WorldNode.Create(id, name, x, y, encounterIds, hidden, requiredConsciousness));
                     }
                 }
             }

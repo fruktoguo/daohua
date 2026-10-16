@@ -409,6 +409,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const items = useGameStore(state => state.items)
   const buildingCatalog = useGameStore(state => state.buildings)
   const queue = useGameStore(state => state.queue.entries)
+  const consciousness = useGameStore(state => state.combat?.consciousnessLevel ?? 0)
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
   const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
@@ -432,9 +433,28 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     }
     return { nodeOwner, nodes, edges }
   }, [maps])
+
+  // 隐藏节点感知判定：未标 hidden 为常规节点恒可见；标有 hidden 的节点需玩家神识严格大于要求点数（或玩家肉身正处于该节点）才显现
+  const isNodeRevealed = useCallback((node: WorldNodeDefinition) => {
+    if (node.hidden && node.requirements?.consciousness !== undefined) {
+      if (consciousness <= (node.requirements.consciousness as number) && world.nodeId !== node.nodeId) {
+        return false
+      }
+    }
+    return true
+  }, [consciousness, world.nodeId])
+
+  const revealedNodeIdSet = useMemo(
+    () => new Set(worldIndex.nodes.filter(isNodeRevealed).map(n => n.nodeId)),
+    [worldIndex.nodes, isNodeRevealed],
+  )
+
   const worldGraphView = useMemo<WorldGraphView>(
-    () => ({ nodes: worldIndex.nodes, edges: worldIndex.edges }),
-    [worldIndex],
+    () => ({
+      nodes: worldIndex.nodes.filter(isNodeRevealed),
+      edges: worldIndex.edges.filter(e => revealedNodeIdSet.has(e.fromNodeId) && revealedNodeIdSet.has(e.toNodeId)),
+    }),
+    [worldIndex, isNodeRevealed, revealedNodeIdSet],
   )
 
   // 世界坐标包围盒：画布按世界尺寸铺放（1 世界单位 = 1% 视口宽/高）。
@@ -442,11 +462,12 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     let maxX = 100
     let maxY = 100
     for (const node of worldIndex.nodes) {
+      if (!isNodeRevealed(node)) continue
       if (node.x > maxX) maxX = node.x
       if (node.y > maxY) maxY = node.y
     }
     return { width: maxX + 12, height: maxY + 8 }
-  }, [worldIndex])
+  }, [worldIndex, isNodeRevealed])
   const nx = useCallback((x: number) => `${(x / worldBounds.width) * 100}%`, [worldBounds])
   const ny = useCallback((y: number) => `${(y / worldBounds.height) * 100}%`, [worldBounds])
 
@@ -512,14 +533,17 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   }, [worldIndex])
 
   const visibleNodes = useMemo(
-    () => worldIndex.nodes.filter(n => visibleMapIds.has(worldIndex.nodeOwner.get(n.nodeId)!)),
-    [worldIndex, visibleMapIds],
+    () => worldIndex.nodes.filter(n =>
+      visibleMapIds.has(worldIndex.nodeOwner.get(n.nodeId)!) && isNodeRevealed(n)
+    ),
+    [worldIndex, visibleMapIds, isNodeRevealed],
   )
+  const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map(n => n.nodeId)), [visibleNodes])
   const visibleEdges = useMemo(
     () => worldIndex.edges.filter(e =>
-      visibleMapIds.has(worldIndex.nodeOwner.get(e.fromNodeId) ?? '')
-      && visibleMapIds.has(worldIndex.nodeOwner.get(e.toNodeId) ?? '')),
-    [worldIndex, visibleMapIds],
+      visibleNodeIdSet.has(e.fromNodeId) && visibleNodeIdSet.has(e.toNodeId)
+    ),
+    [worldIndex, visibleNodeIdSet],
   )
 
   const { playerPosRef, markerRef } = usePlayerDisplayPosition(worldGraphView, world, activeTravel, worldBounds, hidden)

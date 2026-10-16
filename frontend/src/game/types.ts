@@ -1640,7 +1640,13 @@ export interface WorldNodeDefinition {
   y: number
   /** 该节点的修炼收益倍率（灵脉加成） */
   cultivationMultiplier: number
-  /** 该节点可执行的行动 ID 列表 */
+  /** 是否为隐藏节点（未达到检定条件时不显示） */
+  hidden?: boolean
+  /** 检定条件（如神识点数等） */
+  requirements?: {
+    consciousness?: number
+    [key: string]: unknown
+  } | null
   availableActionIds: string[]
   /** 该节点可进入的遭遇战 ID 列表 */
   encounterIds: string[]

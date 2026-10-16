@@ -105,6 +105,26 @@
           "encounter.twilight-valley"
         ],
         "buildableTemplate": "all"
+      },
+      {
+        "id": "node.xuanyuan-ruins",
+        "name": "玄元门遗址",
+        "description": "星陨焦土深处被血煞阵法遮掩的上古道门废墟，残存灵脉与煞气交织，隐有玄门一气回荡。",
+        "x": 195,
+        "y": 38,
+        "cultivationMultiplier": 1.0,
+        "hidden": true,
+        "requirements": {
+          "consciousness": 30
+        },
+        "availableActionIds": [
+          "explore.mine-spirit-stone",
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.xuanyuan-ruins"
+        ],
+        "buildableTemplate": "all"
       }
     ],
     "edges": [
@@ -167,6 +187,12 @@
         "fromNodeId": "node.bone-pit",
         "toNodeId": "node.meteor-crater",
         "durationSeconds": 16
+      },
+      {
+        "id": "edge.blood-xuanyuan",
+        "fromNodeId": "node.blood-pool",
+        "toNodeId": "node.xuanyuan-ruins",
+        "durationSeconds": 15
       }
     ]
   }

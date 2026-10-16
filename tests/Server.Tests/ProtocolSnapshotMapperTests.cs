@@ -566,12 +566,12 @@ public sealed class ProtocolAttributesPointsTests
 
         Assert.True(eliteCount > 0, "遭遇中必须包含精英怪投影。");
         string[] expectedElites = ["enemy.armored-bear", "enemy.demon-ape", "enemy.blade-corpse", "enemy.fallen-devil-priest"];
-        string[] expectedBosses = ["enemy.chang-tiger", "enemy.falling-star-beast"];
+        string[] expectedBosses = ["enemy.chang-tiger", "enemy.falling-star-beast", "enemy.xuanyuan-remnant"];
         string[] expectedMinions = ["enemy.wood-spirit", "enemy.demonized-rabbit", "enemy.fire-spirit", "enemy.rift-wolf", "enemy.star-flame-crow", "enemy.plunder-cultivator"];
 
         foreach (var id in expectedElites) Assert.Contains(id, allFoundIds);
         foreach (var id in expectedBosses) Assert.Contains(id, allFoundIds);
         foreach (var id in expectedMinions) Assert.Contains(id, allFoundIds);
-        Assert.Equal(12, allFoundIds.Count);
+        Assert.Equal(13, allFoundIds.Count);
     }
 }
