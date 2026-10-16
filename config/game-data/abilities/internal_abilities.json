@@ -29,8 +29,9 @@
     "rootAttribute": "attack",
     "rootExpEfficiencyPerLevel": 0.02,
     "rootExpMultipliers": {
-      "attack": 2.5,
-      "consciousness": 0.3
+      "attack": 2.0,
+      "consciousness": 0.5,
+      "agility": 0.5
     },
     "passive": {
       "physicalDamageBonusPoints": 2
@@ -70,8 +71,8 @@
     "rootExpEfficiencyPerLevel": 0.02,
     "rootExpMultipliers": {
       "agility": 2.0,
-      "stamina": 0.6,
-      "attack": 0.6
+      "stamina": 0.5,
+      "attack": 0.5
     },
     "passive": {
       "actionSpeedPoints": 2
@@ -90,8 +91,8 @@
     "rootExpEfficiencyPerLevel": 0.02,
     "rootExpMultipliers": {
       "consciousness": 2.0,
-      "stamina": 0.6,
-      "attack": 0.6
+      "stamina": 0.5,
+      "attack": 0.5
     },
     "passive": {
       "spellDamageBonusPoints": 2
@@ -110,7 +111,7 @@
     "rootExpEfficiencyPerLevel": 0.03,
     "cultivationExpBonusPoints": -10,
     "rootExpMultipliers": {
-      "attack": 4.0,
+      "attack": 3.5,
       "stamina": 0.0,
       "consciousness": 0.5
     },
@@ -130,7 +131,11 @@
     "rootAttribute": "bone",
     "rootExpEfficiencyPerLevel": 0.03,
     "rootExpMultipliers": {
-      "bone": 3.0
+      "bone": 3.0,
+      "stamina": 0.75,
+      "attack": 0.75,
+      "agility": 0.75,
+      "consciousness": 0.75
     },
     "passive": {
       "physicalDamageReductionPoints": 2,
@@ -149,10 +154,10 @@
     "rootAttribute": "consciousness",
     "rootExpEfficiencyPerLevel": 0.03,
     "rootExpMultipliers": {
-      "consciousness": 4.0,
-      "agility": 0.4,
+      "consciousness": 3.5,
       "stamina": 0.6,
-      "attack": 0.4
+      "attack": 0.5,
+      "agility": 0.4
     },
     "passive": {
       "spellDamageBonusPoints": 3
