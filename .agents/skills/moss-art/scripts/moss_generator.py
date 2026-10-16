@@ -272,6 +272,72 @@ PRESET_BATCHES = {
             "bbox": [-450, -420, 450, 420],
             "caption": "Centered character: [玄元残魄 - Xuanyuan Sect Remnant Soul]. A powerful ancient Taoist sect master's ethereal ghostly apparition phantom, floating in mid-air, translucent azure spiritual ghost robes torn at edges, stern ethereal spectral bearded face with glowing eyes, floating ancient cracked bronze talisman sword by his side, surrounded by gentle dark cyan spiritual ectoplasm flame mist, dark ink outline, majestic and tragic Daoist boss aura."
         }
+    ],
+    # 真实古风线装秘籍书本批次 A (前 5 门心法线装书)
+    "tomes_group_a": [
+        {
+            "id": "item.tome.tuna-gong",
+            "name": "《吐纳功秘籍》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《吐纳功秘籍》 - Tuna Breathing Tome]. An antique Chinese thread-bound martial arts book with serene cyan-blue silk cover, white label strip on cover, white binding stitches along spine, thick paper pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.manniu-jin",
+            "name": "《蛮牛劲秘籍》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《蛮牛劲秘籍》 - Raging Bull Force Tome]. An antique Chinese thread-bound martial arts book with rugged dark brown beast-hide leather cover, stamped with a bronze bull emblem, coarse binding cord, thick pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.tiebu-shan",
+            "name": "《铁布衫秘籍》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《铁布衫秘籍》 - Iron Shirt Tome]. A heavy martial arts book bound with dull iron-gray fabric, reinforced iron rivets along spine, defensive metallic hue, thick pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.feiyan-gong",
+            "name": "《飞燕功秘籍》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《飞燕功秘籍》 - Flying Swallow Grace Tome]. An elegant Chinese thread-bound martial arts book with pale emerald green satin cover, golden silk binding threads, graceful and light, thick pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.qingxin-jue",
+            "name": "《清心诀秘籍》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《清心诀秘籍》 - Clear Heart Art Tome]. A pure Daoist thread-bound scripture book with icy pale-blue cover, clean white silk binding stitches, calm and pristine aesthetic, thick pages, dark ink outline."
+        }
+    ],
+    # 真实古风线装秘籍书本批次 B (后 5 门进阶心法线装书)
+    "tomes_group_b": [
+        {
+            "id": "item.tome.fenxue-gong",
+            "name": "《焚血功秘籍》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《焚血功秘籍》 - Blood Burning Tome]. An ancient sinister martial arts manual bound in dark crimson demon-beast leather, charred edges, dark red stitched spine, thick aged paper pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.xiaozhoutian-gong",
+            "name": "《小周天功秘籍》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《小周天功秘籍》 - Microcosmic Orbit Tome]. An orthodox Daoist scripture book bound in golden-yellow imperial brocade silk, embroidered with delicate gold threads, radiant and sacred, thick paper pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.cunshen-jue",
+            "name": "《存神诀秘籍》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《存神诀秘籍》 - Soul Enshrining Tome]. A profound spiritual martial arts book with deep violet-purple silk cover, silver binding threads, mystical Daoist aura, thick paper pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.lianjing-huaqi-jue",
+            "name": "《炼精化气诀秘籍》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《炼精化气诀秘籍》 - Essence Transmutation Tome]. An antique alchemical thread-bound book with pale celadon jade green fabric cover, refined Daoist cloud patterns, thick paper pages, dark ink outline."
+        },
+        {
+            "id": "item.tome.xuanyuan-yiqi-gong",
+            "name": "《玄元一气功秘籍》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《玄元一气功秘籍》 - Primordial Origin Qi Tome]. A grand supreme orthodox Daoist sect master manual, deep slate black and profound gold cover, cosmic taiji crest, gold silk binding stitches, thick paper pages, dark ink outline."
+        }
     ]
 }
 
@@ -446,7 +512,13 @@ def main():
         return 0
         
     items = PRESET_BATCHES[args.batch]
-    prompt_str = build_layout_prompt(items)
+    if "tome" in args.batch:
+        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual tome book sprite sheet, clean bold shapes, traditional thread-bound Chinese ancient book aesthetic, distinct book spine and white binding threads, visible paper page thickness, 3/4 angled perspective, clean bold silhouette, restrained details, bold brushwork, flat clean colors with subtle shading, distinct dark ink outline, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+    elif "fragment" in args.batch:
+        summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+    else:
+        summary_cap = None
+    prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
     
     print(f"\n=== MOSS-Image 任务组装: 批次 [{args.batch}] (包含 {len(items)} 个道具) ===")
     print(prompt_str)
