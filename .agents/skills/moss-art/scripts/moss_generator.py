@@ -279,31 +279,31 @@ PRESET_BATCHES = {
             "id": "item.tome.tuna-gong",
             "name": "《吐纳功秘籍》",
             "bbox": [-400, -440, -120, -180],
-            "caption": "Top-left item: [《吐纳功秘籍》 - Tuna Breathing Tome]. An antique Chinese thread-bound martial arts book with serene cyan-blue silk cover, white label strip on cover, white binding stitches along spine, thick paper pages, dark ink outline."
+            "caption": "Top-left item: [《吐纳功秘籍》 - Tuna Breathing Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark indigo blue cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle swirling breath vortex emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.manniu-jin",
             "name": "《蛮牛劲秘籍》",
             "bbox": [-400, -130, -120, 130],
-            "caption": "Top-center item: [《蛮牛劲秘籍》 - Raging Bull Force Tome]. An antique Chinese thread-bound martial arts book with rugged dark brown beast-hide leather cover, stamped with a bronze bull emblem, coarse binding cord, thick pages, dark ink outline."
+            "caption": "Top-center item: [《蛮牛劲秘籍》 - Raging Bull Force Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark brown leather cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle ferocious bull head horns emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.tiebu-shan",
             "name": "《铁布衫秘籍》",
             "bbox": [-400, 180, -120, 440],
-            "caption": "Top-right item: [《铁布衫秘籍》 - Iron Shirt Tome]. A heavy martial arts book bound with dull iron-gray fabric, reinforced iron rivets along spine, defensive metallic hue, thick pages, dark ink outline."
+            "caption": "Top-right item: [《铁布衫秘籍》 - Iron Shirt Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark iron-gray fabric cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle ancient iron bell shield armor emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.feiyan-gong",
             "name": "《飞燕功秘籍》",
             "bbox": [120, -440, 400, -180],
-            "caption": "Bottom-left item: [《飞燕功秘籍》 - Flying Swallow Grace Tome]. An elegant Chinese thread-bound martial arts book with pale emerald green satin cover, golden silk binding threads, graceful and light, thick pages, dark ink outline."
+            "caption": "Bottom-left item: [《飞燕功秘籍》 - Flying Swallow Tome Book]. A stylized Chinese thread-bound ancient martial arts book, deep emerald green cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle soaring flying swallow bird emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.qingxin-jue",
             "name": "《清心诀秘籍》",
             "bbox": [120, -130, 400, 130],
-            "caption": "Bottom-center item: [《清心诀秘籍》 - Clear Heart Art Tome]. A pure Daoist thread-bound scripture book with icy pale-blue cover, clean white silk binding stitches, calm and pristine aesthetic, thick pages, dark ink outline."
+            "caption": "Bottom-center item: [《清心诀秘籍》 - Clear Heart Tome Book]. A stylized Chinese thread-bound ancient martial arts book, pale icy-blue cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle serene water lotus flower emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         }
     ],
     # 真实古风线装秘籍书本批次 B (后 5 门进阶心法线装书)
@@ -312,31 +312,97 @@ PRESET_BATCHES = {
             "id": "item.tome.fenxue-gong",
             "name": "《焚血功秘籍》",
             "bbox": [-400, -440, -120, -180],
-            "caption": "Top-left item: [《焚血功秘籍》 - Blood Burning Tome]. An ancient sinister martial arts manual bound in dark crimson demon-beast leather, charred edges, dark red stitched spine, thick aged paper pages, dark ink outline."
+            "caption": "Top-left item: [《焚血功秘籍》 - Blood Burning Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark crimson red cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle demonic flame heart emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.xiaozhoutian-gong",
             "name": "《小周天功秘籍》",
             "bbox": [-400, -130, -120, 130],
-            "caption": "Top-center item: [《小周天功秘籍》 - Microcosmic Orbit Tome]. An orthodox Daoist scripture book bound in golden-yellow imperial brocade silk, embroidered with delicate gold threads, radiant and sacred, thick paper pages, dark ink outline."
+            "caption": "Top-center item: [《小周天功秘籍》 - Microcosmic Orbit Tome Book]. A stylized Chinese thread-bound ancient martial arts book, bright golden-yellow cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle golden meridian orbit circle emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.cunshen-jue",
             "name": "《存神诀秘籍》",
             "bbox": [-400, 180, -120, 440],
-            "caption": "Top-right item: [《存神诀秘籍》 - Soul Enshrining Tome]. A profound spiritual martial arts book with deep violet-purple silk cover, silver binding threads, mystical Daoist aura, thick paper pages, dark ink outline."
+            "caption": "Top-right item: [《存神诀秘籍》 - Soul Enshrining Tome Book]. A stylized Chinese thread-bound ancient martial arts book, deep violet-purple cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle mystical third eye emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.lianjing-huaqi-jue",
             "name": "《炼精化气诀秘籍》",
             "bbox": [120, -440, 400, -180],
-            "caption": "Bottom-left item: [《炼精化气诀秘籍》 - Essence Transmutation Tome]. An antique alchemical thread-bound book with pale celadon jade green fabric cover, refined Daoist cloud patterns, thick paper pages, dark ink outline."
+            "caption": "Bottom-left item: [《炼精化气诀秘籍》 - Essence Transmutation Tome Book]. A stylized Chinese thread-bound ancient martial arts book, celadon jade-green cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle three-legged alchemy cauldron tripod emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
         },
         {
             "id": "item.tome.xuanyuan-yiqi-gong",
             "name": "《玄元一气功秘籍》",
             "bbox": [120, -130, 400, 130],
-            "caption": "Bottom-center item: [《玄元一气功秘籍》 - Primordial Origin Qi Tome]. A grand supreme orthodox Daoist sect master manual, deep slate black and profound gold cover, cosmic taiji crest, gold silk binding stitches, thick paper pages, dark ink outline."
+            "caption": "Bottom-center item: [《玄元一气功秘籍》 - Primordial Origin Qi Tome Book]. A stylized Chinese thread-bound ancient martial arts book, deep slate-black cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle primordial taiji crest emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 真实古风心法残卷批次 A (前 5 门心法泛黄古绢残卷)
+    "fragments_group_a": [
+        {
+            "id": "item.fragment.tuna-gong",
+            "name": "《吐纳功·残卷》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《吐纳功·残卷》 - Tuna Breathing Scroll Fragment]. A weathered torn fragment of antique Daoist parchment paper, jagged rough edges, a simple white doodle swirling breath vortex emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.manniu-jin",
+            "name": "《蛮牛劲·残卷》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《蛮牛劲·残卷》 - Raging Bull Force Scroll Fragment]. A weathered torn fragment of antique coarse beast-hide parchment, jagged rough edges, a simple white doodle ferocious bull head horns emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.tiebu-shan",
+            "name": "《铁布衫·残卷》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《铁布衫·残卷》 - Iron Shirt Scroll Fragment]. A weathered torn fragment of antique dark-gray iron-fiber parchment, jagged rough edges, a simple white doodle ancient iron bell shield armor emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.feiyan-gong",
+            "name": "《飞燕功·残卷》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《飞燕功·残卷》 - Flying Swallow Scroll Fragment]. A weathered torn fragment of antique emerald-tinted silk parchment, jagged rough edges, a simple white doodle soaring flying swallow bird emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.qingxin-jue",
+            "name": "《清心诀·残卷》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《清心诀·残卷》 - Clear Heart Scroll Fragment]. A weathered torn fragment of antique pale icy-tinted parchment paper, jagged rough edges, a simple white doodle serene water lotus flower emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 真实古风心法残卷批次 B (后 5 门进阶心法泛黄古卷残卷)
+    "fragments_group_b": [
+        {
+            "id": "item.fragment.fenxue-gong",
+            "name": "《焚血功·残卷》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《焚血功·残卷》 - Blood Burning Scroll Fragment]. A weathered charred fragment of dark crimson demon parchment paper, burnt rough edges, a simple white doodle demonic flame heart emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.xiaozhoutian-gong",
+            "name": "《小周天功·残卷》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《小周天功·残卷》 - Microcosmic Orbit Scroll Fragment]. A weathered torn fragment of golden-yellow sacred silk parchment, jagged rough edges, a simple white doodle golden meridian orbit circle emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.cunshen-jue",
+            "name": "《存神诀·残卷》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《存神诀·残卷》 - Soul Enshrining Scroll Fragment]. A weathered torn fragment of deep-purple mystical Daoist parchment, jagged rough edges, a simple white doodle mystical third eye emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.lianjing-huaqi-jue",
+            "name": "《炼精化气诀·残卷》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《炼精化气诀·残卷》 - Essence Transmutation Scroll Fragment]. A weathered torn fragment of jade-tinted alchemical scripture parchment, jagged rough edges, a simple white doodle three-legged cauldron tripod emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.xuanyuan-yiqi-gong",
+            "name": "《玄元一气功·残卷》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《玄元一气功·残卷》 - Primordial Origin Qi Scroll Fragment]. A weathered torn fragment of ancient primordial slate-black Daoist scripture parchment, jagged rough edges, a simple white doodle primordial taiji crest emblem drawn in the center, bold dark ink outline, clean 2D game icon."
         }
     ]
 }
@@ -513,7 +579,7 @@ def main():
         
     items = PRESET_BATCHES[args.batch]
     if "tome" in args.batch:
-        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual tome book sprite sheet, clean bold shapes, traditional thread-bound Chinese ancient book aesthetic, distinct book spine and white binding threads, visible paper page thickness, 3/4 angled perspective, clean bold silhouette, restrained details, bold brushwork, flat clean colors with subtle shading, distinct dark ink outline, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual thread-bound book sprite sheet, clean bold cartoon shapes, traditional Chinese thread-bound ancient book with colored cover and white binding stitches on left spine, a vertical paper label strip on top-left of cover, thick book pages visible at bottom and right edge, minimal simple white doodle emblem drawn on the front cover, bold dark ink outline, flat clean colors with subtle shading, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     elif "fragment" in args.batch:
         summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     else:
