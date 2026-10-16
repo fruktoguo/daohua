@@ -1619,11 +1619,16 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var simulation = ecs.DrainSimulationResult(playerId);
         if (simulation is not null && (after.LastSimulatedAt != before.LastSimulatedAt
             || after.StateVersion != before.StateVersion || simulation.AssetDeltas.Count > 0))
-        {
-            // 时钟也是补算进度真源；即便本轮零收益，也必须和终态一起 durable，不能在重启后重复推进。
-            var transaction = SimulationEconomyTransaction.Create(playerId, simulation, simulationTransactionIdentity);
-            await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore, transaction, receipt, cancellationToken).ConfigureAwait(false);
-        }
+            if (simulation.AssetDeltas.Count > 0)
+            {
+                var transaction = SimulationEconomyTransaction.Create(playerId, simulation, simulationTransactionIdentity);
+                await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore, transaction, receipt, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                // 纯时钟与状态推进（零资产变动）：直接分段与回执队列落盘，严禁向不可变资产流水表（economy.transactions）写入空流水。
+                await CommitPlayerSectionsAsync(playerId, before, dirtySectionsBefore, receipt, cancellationToken).ConfigureAwait(false);
+            }
         else
         {
             if (receipt is not null) _pendingReceipts[playerId].Add(receipt);
@@ -1634,6 +1639,42 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var logs = events.Count == 0 ? null : SimulationLogMapper.ToLogEvents(events, gameData,
             _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity)), LogBufferCapacity);
         return new(logs, simulation);
+    }
+
+    /// <summary>纯时钟/分段推进提交点：直接走分段与回执持久化队列，避免向不可变资产表（economy.transactions）写入空流水。</summary>
+    private async ValueTask CommitPlayerSectionsAsync(Guid playerId,
+        PlayerRuntimeSnapshot before, IEnumerable<PlayerSectionKind> dirtySectionsBefore,
+        CommandReceipt? receipt, CancellationToken cancellationToken)
+    {
+        var dirtyBefore = dirtySectionsBefore.ToArray();
+        var dirty = ecs.GetDirtySections(playerId).ToHashSet();
+        var after = ToSnapshot(ecs.ExportSnapshot(playerId));
+        if (after.LastSimulatedAt != before.LastSimulatedAt)
+        {
+            if (after.StateVersion == before.StateVersion)
+            {
+                ecs.MarkExternalStateChanged(playerId);
+                after = ToSnapshot(ecs.ExportSnapshot(playerId));
+            }
+            dirty.Add(PlayerSectionKind.Progression);
+        }
+        var writes = SectionCodec.EncodeAggregate(after.State, dirty, DateTimeOffset.UtcNow);
+        var receipts = _pendingReceipts[playerId].ToList();
+        if (receipt is not null) receipts.Add(receipt);
+        try
+        {
+            await sections.EnqueueSectionsAsync(writes, receipts.ToArray(), cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            RestoreUncommittedPlayer(playerId, before, dirtyBefore);
+            throw;
+        }
+        var writtenKinds = writes.Select(write => SectionCodec.FromStorageKind(write.SectionKind)).ToArray();
+        ecs.AcknowledgeDirtySections(playerId, writtenKinds);
+        foreach (var kind in writtenKinds) _dirtyAt[playerId].Remove(kind);
+        _pendingReceipts[playerId].Clear();
+        _loaded[playerId] = after;
     }
 
     /// <summary>学习、引导和模拟共用的提交点：请求前快照/脏集仅用于已知未提交的恢复，提交后才确认脏段。</summary>

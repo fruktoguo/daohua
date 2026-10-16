@@ -81,12 +81,24 @@ public sealed class PostgresRetentionRepository(
             ORDER BY inbox.consumed_at
             LIMIT $2
             """, "DELETE FROM social.party_session_inbox inbox USING ({0}) doomed WHERE inbox.session_id = doomed.session_id AND inbox.player_id = doomed.player_id AND inbox.sequence = doomed.sequence", now, cancellationToken);
+        // 回收无明细且无未消费收件箱引用的纯时钟/空流水，避免空事务在小硬盘上无界累积。
+        var deletedEmptyTransactions = await DeleteBatchAsync(connection, transaction, """
+            SELECT t.transaction_id
+            FROM economy.transactions t
+            WHERE t.created_at < $1
+              AND t.transaction_type IN ('simulation.reward', 'participation.settlement')
+              AND NOT EXISTS (SELECT 1 FROM economy.transaction_lines l WHERE l.transaction_id = t.transaction_id)
+              AND NOT EXISTS (SELECT 1 FROM social.party_session_inbox i WHERE i.consumed_transaction_id = t.transaction_id)
+            ORDER BY t.created_at
+            LIMIT $2
+            """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
+            now - TimeSpan.FromHours(1), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
         await transaction.CommitAsync(cancellationToken);
 
-        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes);
+        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions);
         if (result.Total > 0)
-            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes}",
-                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes);
+            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} emptyTransactions={EmptyTransactions}",
+                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes, result.EmptyTransactions);
         return result;
     }
 
@@ -126,10 +138,11 @@ public sealed record RetentionResult(
     int DataProtectionKeys,
     int SettlementClaims,
     int AccountRiskEvents,
-    int ParticipationInboxes = 0)
+    int ParticipationInboxes = 0,
+    int EmptyTransactions = 0)
 {
     /// <summary>本轮删除总行数。</summary>
-    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes;
+    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes + EmptyTransactions;
 }
 
 /// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后每小时一批。</summary>

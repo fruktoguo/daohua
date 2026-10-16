@@ -95,7 +95,7 @@ services:
       Storage__DeliveredOutboxRetentionDays: "7"
       Storage__SessionRetentionDays: "7"
       Storage__AuditRetentionDays: "30"
-      Storage__ComputeJobRetentionDays: "7"
+      Storage__ComputeJobRetentionDays: "2"
       Storage__DataProtectionKeyRetentionDays: "180"
       Server__MaxWebSocketMessageBytes: "1048576"
       Server__WebSocketOutboundCapacity: "256"

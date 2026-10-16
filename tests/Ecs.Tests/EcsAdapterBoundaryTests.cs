@@ -207,12 +207,8 @@ public sealed class EcsAdapterBoundaryTests
         await adapter.FlushAsync(fixture.PlayerId, true);
         await AdvanceAsync(fixture, Epoch.AddSeconds(10), batch);
         await AdvanceAsync(fixture, Epoch.AddSeconds(20), batch);
-        Assert.Equal(2, fixture.Economy.Requests.Count);
-        Assert.All(fixture.Economy.Requests, request =>
-        {
-            Assert.Empty(request.Deltas);
-            Assert.Contains(request.Sections!, section => section.SectionKind == PlayerSectionKinds.Progression);
-        });
+        // 零资产变动时钟推进直接走分段落盘，不向经济事务提交请求
+        Assert.Empty(fixture.Economy.Requests);
         var persisted = SectionCodec.DecodeAggregate((await fixture.Sections.LoadAsync(fixture.PlayerId))!);
         Assert.Equal(Epoch.AddSeconds(20), persisted.LastSimulatedAt);
         Assert.Empty(fixture.Ecs.GetDirtySections(fixture.PlayerId));
@@ -674,7 +670,7 @@ public sealed class EcsAdapterBoundaryTests
         await adapter.LoadAsync(fixture.PlayerId);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        fixture.Sections.BeforeEnqueueAsync = async () =>
+        fixture.Sections.BeforeEnqueueAsync = async _ =>
         {
             entered.SetResult();
             await release.Task;
@@ -706,10 +702,10 @@ public sealed class EcsAdapterBoundaryTests
         fixture.Sections.Register(ToBundle(newPlayer.ExportState()));
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        fixture.Economy.BeforeCommitAsync = async request =>
+        fixture.Sections.BeforeEnqueueAsync = async writes =>
         {
-            if (request.ActorId != newId) return;
-            entered.SetResult();
+            if (!writes.Any(w => w.PlayerId == newId)) return;
+            entered.TrySetResult();
             await release.Task;
         };
         var loading = adapter.LoadAsync(newId).AsTask();
@@ -725,7 +721,7 @@ public sealed class EcsAdapterBoundaryTests
         {
             release.SetResult();
             await loading.WaitAsync(TimeSpan.FromSeconds(5));
-            fixture.Economy.BeforeCommitAsync = null;
+            fixture.Sections.BeforeEnqueueAsync = null;
         }
         Assert.Equal(Epoch.AddSeconds(37), adapter.TryGetLoaded(newId)!.LastSimulatedAt);
     }
@@ -933,7 +929,7 @@ public sealed class EcsAdapterBoundaryTests
         private readonly Dictionary<Guid, PlayerStateBundle> _bundles = new() { [initial.Identity.PlayerId] = initial };
         public bool FailNextLoad { get; set; }
         public bool FailNextEnqueue { get; set; }
-        public Func<ValueTask>? BeforeEnqueueAsync { get; set; }
+        public Func<IReadOnlyCollection<SectionWrite>, ValueTask>? BeforeEnqueueAsync { get; set; }
         public int EnqueueCount { get; private set; }
         public IReadOnlyCollection<SectionWrite> LastWrites { get; private set; } = [];
         public List<CommandReceipt> Receipts { get; } = [];
@@ -946,7 +942,7 @@ public sealed class EcsAdapterBoundaryTests
         }
         public async ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default)
         {
-            if (BeforeEnqueueAsync is { } beforeEnqueue) await beforeEnqueue();
+            if (BeforeEnqueueAsync is { } beforeEnqueue) await beforeEnqueue(sections);
             lock (_sync)
             {
                 if (FailNextEnqueue) { FailNextEnqueue = false; throw new IOException("注入分段队列写入失败。"); }

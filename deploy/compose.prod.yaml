@@ -100,7 +100,7 @@ services:
       Storage__SessionRetentionDays: "7"
       # 审计记录由 market-ledger-archive.sh 按月归档；此值仅作为最终兜底保留期限。
       Storage__AuditRetentionDays: "3650"
-      Storage__ComputeJobRetentionDays: "7"
+      Storage__ComputeJobRetentionDays: "2"
       Storage__DataProtectionKeyRetentionDays: "180"
       Server__MaxWebSocketMessageBytes: "1048576"
       Server__WebSocketOutboundCapacity: "256"
