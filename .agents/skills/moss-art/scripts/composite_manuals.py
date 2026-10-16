@@ -85,27 +85,28 @@ def synthesize_all():
         emblem_crop = emblem_raw.crop(ebbox) if ebbox else emblem_raw
         
         cw, ch = emblem_crop.size
-        scale_tome = 44.0 / max(cw, ch)
+        scale_tome = 58.0 / max(cw, ch)
         nw, nh = max(1, int(cw * scale_tome)), max(1, int(ch * scale_tome))
         emblem_tome = emblem_crop.resize((nw, nh), Image.Resampling.LANCZOS)
         
-        # 映射至象牙米白手绘色
+        # 彻底二值化为 100% 纯白色，绝无渐变
         earr = np.array(emblem_tome)
-        gray = earr[:, :, :3].astype(float).mean(axis=-1, keepdims=True) / 255.0
-        earr[:, :, :3] = np.clip(gray * np.array([242.0, 228.0, 195.0]) * 1.05, 0, 255).astype(np.uint8)
+        alpha_mask = earr[:, :, 3] > 60
+        earr[:, :, :3] = 255
+        earr[:, :, 3] = np.where(alpha_mask, 255, 0).astype(np.uint8)
         emblem_styled = Image.fromarray(earr)
         
-        # 微弱墨色发光
-        eshadow = emblem_styled.filter(ImageFilter.GaussianBlur(1.0))
-        esarr = np.array(eshadow)
-        esarr[:, :, :3] = 20
-        esarr[:, :, 3] = (esarr[:, :, 3].astype(float) * 0.8).astype(np.uint8)
-        
+        # 生成清晰的 1-2px 深墨描边，确保纯白符号在任何封皮上锐利无比
         pos_x = 72 - nw // 2
         pos_y = 60 - nh // 2
+        
+        from scipy.ndimage import binary_dilation
+        stroke_mask = binary_dilation(alpha_mask, iterations=2) & (~alpha_mask)
+        esarr = np.zeros_like(earr)
+        esarr[stroke_mask] = [20, 20, 20, 240]
+        
         book_img.paste(Image.fromarray(esarr), (pos_x, pos_y), Image.fromarray(esarr))
         book_img.paste(emblem_styled, (pos_x, pos_y), emblem_styled)
-        
         tome_64 = book_img.resize((64, 64), Image.Resampling.LANCZOS)
         out_tome = os.path.join(OUTPUT_DIR, f"item.tome.{slug}.webp")
         tome_64.save(out_tome, format="WEBP", lossless=True)
@@ -118,24 +119,25 @@ def synthesize_all():
         frag_arr[is_frag_body, 2] = np.clip(tb * lum_f[is_frag_body] * 0.95, 0, 255).astype(np.uint8)
         frag_img = Image.fromarray(frag_arr)
         
-        scale_frag = 40.0 / max(cw, ch)
+        scale_frag = 50.0 / max(cw, ch)
         nfw, nfh = max(1, int(cw * scale_frag)), max(1, int(ch * scale_frag))
         emblem_frag = emblem_crop.resize((nfw, nfh), Image.Resampling.LANCZOS)
-        efarr = np.array(emblem_frag)
-        gray_f = efarr[:, :, :3].astype(float).mean(axis=-1, keepdims=True) / 255.0
-        efarr[:, :, :3] = np.clip(gray_f * np.array([242.0, 228.0, 195.0]) * 1.05, 0, 255).astype(np.uint8)
-        emblem_f_styled = Image.fromarray(efarr)
         
-        efshadow = emblem_f_styled.filter(ImageFilter.GaussianBlur(1.0))
-        efsarr = np.array(efshadow)
-        efsarr[:, :, :3] = 20
-        efsarr[:, :, 3] = (efsarr[:, :, 3].astype(float) * 0.8).astype(np.uint8)
+        efarr = np.array(emblem_frag)
+        alpha_f_mask = efarr[:, :, 3] > 60
+        efarr[:, :, :3] = 255
+        efarr[:, :, 3] = np.where(alpha_f_mask, 255, 0).astype(np.uint8)
+        emblem_f_styled = Image.fromarray(efarr)
         
         fpos_x = 52 - nfw // 2
         fpos_y = 62 - nfh // 2
+        
+        stroke_f_mask = binary_dilation(alpha_f_mask, iterations=2) & (~alpha_f_mask)
+        efsarr = np.zeros_like(efarr)
+        efsarr[stroke_f_mask] = [20, 20, 20, 240]
+        
         frag_img.paste(Image.fromarray(efsarr), (fpos_x, fpos_y), Image.fromarray(efsarr))
         frag_img.paste(emblem_f_styled, (fpos_x, fpos_y), emblem_f_styled)
-        
         frag_64 = frag_img.resize((64, 64), Image.Resampling.LANCZOS)
         out_frag = os.path.join(OUTPUT_DIR, f"item.fragment.{slug}.webp")
         frag_64.save(out_frag, format="WEBP", lossless=True)

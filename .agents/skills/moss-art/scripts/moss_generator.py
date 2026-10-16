@@ -411,64 +411,64 @@ PRESET_BATCHES = {
             "id": "emblem.tuna-gong",
             "name": "吐纳功图腾",
             "bbox": [-400, -440, -120, -180],
-            "caption": "Top-left item: [吐纳功图腾 - Tuna Breathing Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a swirling breath qi vortex with two yin-yang curved mist arcs and tiny wind trails, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Top-left item: [吐纳功图腾 - Tuna Breathing Logo]. A bold solid pure white minimalist vector silhouette logo of a taiji breath vortex with swirling thick mist curves, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.manniu-jin",
             "name": "蛮牛劲图腾",
             "bbox": [-400, -130, -120, 130],
-            "caption": "Top-center item: [蛮牛劲图腾 - Raging Bull Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a ferocious raging bull head with thick curved horns and shockwave arcs, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Top-center item: [蛮牛劲图腾 - Raging Bull Logo]. A bold solid pure white minimalist vector silhouette logo of a ferocious raging bull head with massive thick horns, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.tiebu-shan",
             "name": "铁布衫图腾",
             "bbox": [-400, 180, -120, 440],
-            "caption": "Top-right item: [铁布衫图腾 - Iron Shirt Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of an ancient defensive iron bell and shield cuirass armor silhouette, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Top-right item: [铁布衫图腾 - Iron Shirt Logo]. A bold solid pure white minimalist vector silhouette logo of an ancient heavy defensive iron bell and shield cuirass, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.feiyan-gong",
             "name": "飞燕功图腾",
             "bbox": [120, -440, 400, -180],
-            "caption": "Bottom-left item: [飞燕功图腾 - Flying Swallow Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a soaring flying swallow bird with split tail and swift wind blade streaks, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Bottom-left item: [飞燕功图腾 - Flying Swallow Logo]. A bold solid pure white minimalist vector silhouette logo of a soaring flying swallow bird with split tail and broad wings, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.qingxin-jue",
             "name": "清心诀图腾",
             "bbox": [120, -130, 400, 130],
-            "caption": "Bottom-center item: [清心诀图腾 - Clear Heart Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a serene three-petaled water lotus flower with a single crystal dewdrop above, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Bottom-center item: [清心诀图腾 - Clear Heart Logo]. A bold solid pure white minimalist vector silhouette logo of a serene water lotus flower with a crystal teardrop, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         }
     ],
-    # 纯手绘象牙白简笔画图腾组 B (后 5 门心法图腾，供线装书与残卷合成)
+    # 纯白二值矢量Logo图腾组 B (后 5 门心法图腾，供线装书与残卷合成)
     "emblems_group_b": [
         {
             "id": "emblem.fenxue-gong",
             "name": "焚血功图腾",
             "bbox": [-400, -440, -120, -180],
-            "caption": "Top-left item: [焚血功图腾 - Blood Burning Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a blazing demonic heart with three jagged flame tendrils surging upward, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Top-left item: [焚血功图腾 - Blood Burning Logo]. A bold solid pure white minimalist vector silhouette logo of a blazing flame heart with sharp fire tendrils, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.xiaozhoutian-gong",
             "name": "小周天功图腾",
             "bbox": [-400, -130, -120, 130],
-            "caption": "Top-center item: [小周天功图腾 - Microcosmic Orbit Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a sacred microcosmic meridian circle with 4 cardinal acupoint dots and an S-shaped flow, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Top-center item: [小周天功图腾 - Microcosmic Orbit Logo]. A bold solid pure white minimalist vector silhouette logo of a sacred microcosmic circular orbit with cardinal dots, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.cunshen-jue",
             "name": "存神诀图腾",
             "bbox": [-400, 180, -120, 440],
-            "caption": "Top-right item: [存神诀图腾 - Soul Enshrining Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a mystical horizontal third eye of divine consciousness with radiating light rays, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Top-right item: [存神诀图腾 - Soul Enshrining Logo]. A bold solid pure white minimalist vector silhouette logo of a mystical third eye of divine consciousness, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.lianjing-huaqi-jue",
             "name": "炼精化气诀图腾",
             "bbox": [120, -440, 400, -180],
-            "caption": "Bottom-left item: [炼精化气诀图腾 - Essence Transmutation Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of an ancient three-legged bronze alchemy cauldron tripod with two swirling rising vapors, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Bottom-left item: [炼精化气诀图腾 - Essence Transmutation Logo]. A bold solid pure white minimalist vector silhouette logo of an ancient three-legged cauldron tripod with rising steam, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         },
         {
             "id": "emblem.xuanyuan-yiqi-gong",
             "name": "玄元一气功图腾",
             "bbox": [120, -130, 400, 130],
-            "caption": "Bottom-center item: [玄元一气功图腾 - Primordial Origin Qi Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a grand primordial cosmic taiji vortex with celestial cloud rings, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+            "caption": "Bottom-center item: [玄元一气功图腾 - Primordial Origin Qi Logo]. A bold solid pure white minimalist vector silhouette logo of a primordial cosmic taiji symbol surrounded by cloud rings, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         }
     ]
 }
@@ -602,11 +602,12 @@ def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size
         )
         crop = im.crop(safe_box)
         
-        # 自动去白底
+        # 自动去底 (普通彩色道具去白底；纯白矢量图腾绝不去白底，背景已被 RMBG 抠为透明)
         arr = np.array(crop)
         r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
-        is_bg = (r > 235) & (g > 235) & (b > 235)
-        arr[:, :, 3] = np.where(is_bg, 0, a)
+        if "emblem" not in it.get("id", ""):
+            is_bg = (r > 235) & (g > 235) & (b > 235)
+            arr[:, :, 3] = np.where(is_bg, 0, a)
         clean_crop = Image.fromarray(arr)
         
         # 提取真实内容 BBox
@@ -649,7 +650,7 @@ def main():
     elif "fragment" in args.batch:
         summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     elif "emblem" in args.batch:
-        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill doodle emblem sprite sheet, clean bold hand-drawn cartoon shapes, minimal simple ivory cream white chalk doodle icon with distinct dark ink outline, floating on solid pure white background, generous empty white spacing between items, strictly no overflow, clean 2D game icon."
+        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     else:
         summary_cap = None
     prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
