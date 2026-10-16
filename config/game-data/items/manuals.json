@@ -362,7 +362,7 @@
   {
     "id": "item.tome.xuanyuan-yiqi-gong",
     "name": "《玄元一气功秘籍》",
-    "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，六维齐修，无偏无颇。",
+    "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",
     "kind": "consumable",
     "category": "manual",
     "tier": 3,
@@ -372,7 +372,7 @@
   {
     "id": "item.fragment.xuanyuan-yiqi-gong",
     "name": "《玄元一气功·残卷》",
-    "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，六维齐修，无偏无颇。",
+    "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",
     "kind": "consumable",
     "category": "manual",
     "tier": 3,
