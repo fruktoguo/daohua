@@ -26,8 +26,8 @@
       {
         "itemId": "item.beast-fang",
         "dropChance": 1.0,
-        "minQuantity": 1,
-        "maxQuantity": 1
+        "minQuantity": 5,
+        "maxQuantity": 5
       },
       {
         "itemId": "item.broken-blade",
@@ -37,7 +37,7 @@
       },
       {
         "itemId": "item.tome.heavy-clouds",
-        "dropChance": 0.001,
+        "dropChance": 0.005,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -48,7 +48,7 @@
       },
       {
         "itemId": "item.tome.fenxue-gong",
-        "dropChance": 0.001,
+        "dropChance": 0.005,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -60,7 +60,7 @@
       },
       {
         "itemId": "item.tome.xiaozhoutian-gong",
-        "dropChance": 0.001,
+        "dropChance": 0.005,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -116,8 +116,8 @@
       {
         "itemId": "item.soul-talisman",
         "dropChance": 1.0,
-        "minQuantity": 1,
-        "maxQuantity": 1
+        "minQuantity": 5,
+        "maxQuantity": 5
       },
       {
         "itemId": "item.sha-bone",
@@ -127,7 +127,7 @@
       },
       {
         "itemId": "item.tome.qingping-melody",
-        "dropChance": 0.001,
+        "dropChance": 0.005,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -138,7 +138,7 @@
       },
       {
         "itemId": "item.tome.xiaozhoutian-gong",
-        "dropChance": 0.001,
+        "dropChance": 0.005,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -150,7 +150,7 @@
       },
       {
         "itemId": "item.tome.lianjing-huaqi-jue",
-        "dropChance": 0.001,
+        "dropChance": 0.005,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -206,14 +206,14 @@
       {
         "itemId": "item.beast-fang",
         "dropChance": 1.0,
-        "minQuantity": 2,
-        "maxQuantity": 2
+        "minQuantity": 10,
+        "maxQuantity": 10
       },
       {
         "itemId": "item.fire-feather",
         "dropChance": 1.0,
-        "minQuantity": 2,
-        "maxQuantity": 2
+        "minQuantity": 10,
+        "maxQuantity": 10
       },
       {
         "itemId": "item.demon-core",
@@ -229,7 +229,7 @@
       },
       {
         "itemId": "item.tome.star-piercer",
-        "dropChance": 0.001,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -241,7 +241,7 @@
       },
       {
         "itemId": "item.tome.heavy-clouds",
-        "dropChance": 0.001,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -252,7 +252,7 @@
       },
       {
         "itemId": "item.tome.fenxue-gong",
-        "dropChance": 0.001,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -264,7 +264,7 @@
       },
       {
         "itemId": "item.tome.xiaozhoutian-gong",
-        "dropChance": 0.001,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -276,7 +276,7 @@
       },
       {
         "itemId": "item.tome.cunshen-jue",
-        "dropChance": 0.001,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -288,7 +288,7 @@
       },
       {
         "itemId": "item.tome.lianjing-huaqi-jue",
-        "dropChance": 0.001,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },
