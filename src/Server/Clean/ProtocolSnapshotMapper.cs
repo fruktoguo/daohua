@@ -615,7 +615,8 @@ public static class ProtocolSnapshotMapper
                 critical = e.Critical,
                 broken = e.Break,
                 parried = e.Parried,
-                abilityId = e.AbilityId
+                abilityId = e.AbilityId,
+                targetHp = e.TargetHitpointsAfter
             }).ToArray(),
             // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
             selfIndex = spec is null ? (int?)null : expedition.SelfIndex,

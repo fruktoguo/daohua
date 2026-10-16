@@ -182,7 +182,7 @@ public static class CombatTraitRules
             Description: "心静神凝不为外物所动，法术抗性提升 20%、免爆提升 15%。"));
         Add(new("trait.fengxingbu", "风行步", 2, 5,
             StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["evasion"] = 0.18, ["parry"] = 0.15 },
-            Description: "身如游风捉摸不定，闪避提升 18%、拆招提升 15%。"));
+            Description: "身如游风捉摸不定，闪避提升 18%、化解提升 15%。"));
         Add(new("trait.ningshenfayan", "凝神法眼", 2, 5,
             StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["accuracy"] = 0.18, ["break"] = 0.15 },
             Description: "明察秋毫洞悉敌破绽，命中提升 18%、破招提升 15%。"));
@@ -202,7 +202,7 @@ public static class CombatTraitRules
             Description: "如金刚巨岩矗立，最大生命提升 30%、物理护甲提升 30%、法术抗性提升 25%。"));
         Add(new("trait.taxuewuying", "踏雪无影", 3, 10,
             StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["evasion"] = 0.30, ["parry"] = 0.20, ["accuracy"] = 0.15 },
-            Description: "踏雪无痕来去无影，闪避提升 30%、拆招提升 20%、命中提升 15%。"));
+            Description: "踏雪无痕来去无影，闪避提升 30%、化解提升 20%、命中提升 15%。"));
         Add(new("trait.shengjiyongdong", "生机涌动", 3, 10,
             StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.25, ["hitpointRegen"] = 0.50, ["manapointRegen"] = 0.50 },
             Description: "体内生机旺盛如泉涌，最大生命提升 25%、生命与灵力自动回复各提升 50%。"));

@@ -20,6 +20,7 @@ import type {
   CombatAttributes,
   CombatBuffEntry,
   CombatLoadout,
+  CombatRecentEvent,
   CombatResourceState,
   CombatTrigger,
   DuelState,
@@ -522,6 +523,25 @@ function mapCombatBuffs(value: unknown, label: string): CombatBuffEntry[] | null
   })
 }
 
+function mapCombatRecentEvents(value: unknown): CombatRecentEvent[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  return value.map(raw => {
+    const item = object(raw)
+    return {
+      at: numberValue(item.at, 0),
+      attackerId: stringValue(item.attackerId),
+      targetId: stringValue(item.targetId),
+      damage: numberValue(item.damage, 0),
+      hit: booleanValue(item.hit, true),
+      critical: item.critical ? Boolean(item.critical) : undefined,
+      broken: item.broken ? Boolean(item.broken) : undefined,
+      parried: item.parried ? Boolean(item.parried) : undefined,
+      abilityId: item.abilityId ? stringValue(item.abilityId) : null,
+      targetHp: typeof item.targetHp === 'number' && Number.isFinite(item.targetHp) ? item.targetHp : undefined,
+    }
+  })
+}
+
 function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const row = object(value)
   if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的战斗远征载荷无效。`)
@@ -655,6 +675,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     duel: mapExpeditionDuel(row.duel, actionId),
     allies,
     selfIndex,
+    recentEvents: mapCombatRecentEvents(row.recentEvents),
   }
 }
 

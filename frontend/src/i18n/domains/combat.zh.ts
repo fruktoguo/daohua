@@ -33,8 +33,9 @@ export const combatZh = {
       stopConfirmBtn: '终止',
       dodge: '闪避',
       break: '破招',
-      parry: '拆招',
+      parry: '化解',
       crit: '暴击',
+      breakCrit: '破招·暴击',
     },
     // 生活行动总目标卡（产出全部由行动配表 yields 驱动，无编造兜底文案）
     life: {
