@@ -142,7 +142,11 @@ if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
       printf 'SMOKE_REGISTER=1\n' >> "$SMOKE_ENV_FILE"
     fi
   fi
-  scp -q "$SMOKE_ENV_FILE" "${REMOTE_HOST}:${REMOTE_TMP}/smoke.env"
+  SMOKE_ENV_FILE_UPLOAD="$SMOKE_ENV_FILE"
+  if command -v cygpath >/dev/null 2>&1; then
+    SMOKE_ENV_FILE_UPLOAD="$(cygpath -m "$SMOKE_ENV_FILE")"
+  fi
+  scp -q "$SMOKE_ENV_FILE_UPLOAD" "${REMOTE_HOST}:${REMOTE_TMP}/smoke.env"
 fi
 
 

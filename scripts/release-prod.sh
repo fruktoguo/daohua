@@ -175,7 +175,7 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
     fi
     dotnet publish "$ROOT_DIR/src/ComputeNode" -c Release -r linux-arm64 --self-contained -o "$ODIN_OUT" --nologo > "$STREAM_C_LOG" 2>&1
     ssh -o BatchMode=yes "$ODIN_HOST" 'rm -rf /root/daohua-compute.new && mkdir -p /root/daohua-compute.new' >> "$STREAM_C_LOG" 2>&1
-    scp -q -r "$ODIN_PUBLISH_DIR"/* "$ODIN_HOST:/root/daohua-compute.new/" >> "$STREAM_C_LOG" 2>&1
+    (cd "$ODIN_PUBLISH_DIR" && scp -q -r ./* "$ODIN_HOST:/root/daohua-compute.new/") >> "$STREAM_C_LOG" 2>&1
     echo "STREAM_C_EXIT:0" >> "$STATUS_FILE"
   ) &
   PID_STREAM_C=$!
