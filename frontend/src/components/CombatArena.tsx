@@ -115,21 +115,27 @@ function measureArenaAim(fromEl: Element | null, toEl: Element | null): { slope:
   return { slope: Math.tan(angle), angleDeg: angle * 180 / Math.PI }
 }
 
+/** 普攻动作前摇/命中时刻（毫秒）：对应 @keyframes arena-attack-lunge 43% 突进峰值 */
+const COMBAT_ATTACK_HIT_DELAY_MS = 200
+
+/** 技能法术蓄力/爆发命中时刻（毫秒）：对应 @keyframes arena-cast-pulse 爆发峰值 */
+const COMBAT_CAST_HIT_DELAY_MS = 280
+
 /**
- * 校验战斗事件的目标 ID 是否匹配当前角色卡片
+ * 校验战斗事件的实体 ID（攻击者或受击目标）是否匹配当前卡片
  */
-function isTargetForActor(targetId: string, actorKey: string): boolean {
+function isActorMatchingId(entityId: string, actorKey: string): boolean {
   if (actorKey === 'player') {
-    return targetId === 'player' || targetId === 'ally:0'
+    return entityId === 'player' || entityId === 'ally:0'
   }
   if (actorKey.startsWith('ally:')) {
-    return targetId === actorKey
+    return entityId === actorKey
   }
   if (actorKey.startsWith('enemy:')) {
-    if (targetId.startsWith('enemy:')) {
-      const parts = targetId.split(':')
+    if (entityId.startsWith('enemy:')) {
+      const parts = entityId.split(':')
       const targetIndex = parts[1]
-      return actorKey.startsWith(`enemy:${targetIndex}:`) || actorKey === targetId || (actorKey.startsWith('enemy:duel:') && targetIndex === '0')
+      return actorKey.startsWith(`enemy:${targetIndex}:`) || actorKey === entityId || (actorKey.startsWith('enemy:duel:') && targetIndex === '0')
     }
     return false
   }
@@ -141,7 +147,7 @@ function isTargetForActor(targetId: string, actorKey: string): boolean {
  *
  * 渲染角色气血 (HP) 与灵力 (MP) 仪表盘。
  * 当数值或事件发生变化时：
- * 1. 产生向上飘散的增减跳字或特殊对抗浮动动画（破招 / 拆招 / 闪避 / 暴击）；
+ * 1. 消费精确的战斗对抗事件流，与攻击方出招动作形成毫秒级击中帧 (Hit-Frame) 锁步：在刀刃/法术触及目标的瞬间卡点爆开飘字、切片与受击反馈；
  * 2. 受到大额伤害时（>= 最大值 2%），在受损区间生成带物理位移与旋转的血条碎裂切片特效 (Shards)；
  * 3. 血量文字数值独立于切片之上渲染，杜绝层级遮挡与跳变；
  * 4. 具有自动清理定时器以防内存泄漏。
@@ -167,13 +173,15 @@ function ArenaResource({
   const t = useT()
   const normalizedMax = Math.max(1, max)
   const normalizedValue = Math.max(0, Math.min(normalizedMax, value))
+  const [displayValue, setDisplayValue] = useState(normalizedValue)
   const previousRef = useRef({ actorKey, max: normalizedMax, value: normalizedValue })
   const nextEffectId = useRef(1)
   const timers = useRef(new Set<number>())
   const [effects, setEffects] = useState<ResourceEffect[]>([])
   const handledEventsRef = useRef(new Set<string>())
+  const lastEventHitTime = useRef(0)
 
-  // 1. 消费精确的战斗对抗事件流（闪避、破招、拆招、暴击浮字）
+  // 1. 消费精确的战斗对抗事件流（闪避、破招、拆招、暴击浮字与血条切片，在击中帧卡点爆发）
   useEffect(() => {
     if (tone !== 'hp' || !recentEvents || recentEvents.length === 0) return
     const handled = handledEventsRef.current
@@ -187,74 +195,93 @@ function ArenaResource({
         if (oldest) handled.delete(oldest)
       }
 
-      if (!isTargetForActor(event.targetId, actorKey)) continue
+      if (!isActorMatchingId(event.targetId, actorKey)) continue
 
+      const hitDelay = event.abilityId ? COMBAT_CAST_HIT_DELAY_MS : COMBAT_ATTACK_HIT_DELAY_MS
       const id = nextEffectId.current++
-      if (!event.hit) {
-        // 闪避（可同时附带拆招化解标记）
-        const effect: ResourceEffect = {
-          id,
-          text: t('combat.arena.dodge'),
-          badge: event.parried ? 'parry' : undefined,
-          badgeLabel: event.parried ? t('combat.arena.parry') : undefined,
-          kind: 'dodge',
-          left: 0.35,
-          width: 0.3,
-          lane: ((id % 3) - 1) * 8,
-        }
-        setEffects(current => [...current.slice(-5), effect])
-        const timer = window.setTimeout(() => {
-          setEffects(current => current.filter(item => item.id !== effect.id))
-          timers.current.delete(timer)
-        }, 1_100)
-        timers.current.add(timer)
-      } else if (event.broken || event.parried || event.critical) {
-        // 破招 / 拆招 / 暴击附带掉血数字
-        const badgeKind: 'break' | 'parry' | 'crit' = event.broken
-          ? 'break'
-          : event.parried
-          ? 'parry'
-          : 'crit'
-        const badgeLabel = badgeKind === 'break'
-          ? t('combat.arena.break')
-          : badgeKind === 'parry'
-          ? t('combat.arena.parry')
-          : t('combat.arena.crit')
+      lastEventHitTime.current = Date.now() + hitDelay
 
-        const damageDelta = event.damage > 0 ? -event.damage : (normalizedValue - previousRef.current.value)
-        if (damageDelta < 0) {
+      const triggerTimer = window.setTimeout(() => {
+        timers.current.delete(triggerTimer)
+
+        if (!event.hit) {
+          // 闪避（可同时附带拆招化解标记）
           const effect: ResourceEffect = {
             id,
-            delta: damageDelta,
-            badge: badgeKind,
-            badgeLabel,
-            kind: badgeKind,
-            left: Math.min(previousRef.current.value, normalizedValue) / normalizedMax,
-            width: Math.max(resourceShardMinimumRatio, Math.abs(damageDelta) / normalizedMax),
+            text: t('combat.arena.dodge'),
+            badge: event.parried ? 'parry' : undefined,
+            badgeLabel: event.parried ? t('combat.arena.parry') : undefined,
+            kind: 'dodge',
+            left: 0.35,
+            width: 0.3,
             lane: ((id % 3) - 1) * 8,
           }
           setEffects(current => [...current.slice(-5), effect])
-          const timer = window.setTimeout(() => {
+          const cleanupTimer = window.setTimeout(() => {
             setEffects(current => current.filter(item => item.id !== effect.id))
-            timers.current.delete(timer)
+            timers.current.delete(cleanupTimer)
           }, 1_100)
-          timers.current.add(timer)
+          timers.current.add(cleanupTimer)
+        } else if (event.broken || event.parried || event.critical || event.damage > 0) {
+          // 命中伤害：在击中瞬间同步扣除血条并爆出数字与切片
+          setDisplayValue(normalizedValue)
+          const badgeKind: 'break' | 'parry' | 'crit' | undefined = event.broken
+            ? 'break'
+            : event.parried
+            ? 'parry'
+            : event.critical
+            ? 'crit'
+            : undefined
+          const badgeLabel = badgeKind === 'break'
+            ? t('combat.arena.break')
+            : badgeKind === 'parry'
+            ? t('combat.arena.parry')
+            : badgeKind === 'crit'
+            ? t('combat.arena.crit')
+            : undefined
+
+          const damageDelta = event.damage > 0 ? -event.damage : (normalizedValue - previousRef.current.value)
+          if (damageDelta < 0) {
+            const effect: ResourceEffect = {
+              id,
+              delta: damageDelta,
+              badge: badgeKind,
+              badgeLabel,
+              kind: badgeKind ?? 'damage',
+              left: Math.min(previousRef.current.value, normalizedValue) / normalizedMax,
+              width: Math.max(resourceShardMinimumRatio, Math.abs(damageDelta) / normalizedMax),
+              lane: ((id % 3) - 1) * 8,
+            }
+            setEffects(current => [...current.slice(-5), effect])
+            const cleanupTimer = window.setTimeout(() => {
+              setEffects(current => current.filter(item => item.id !== effect.id))
+              timers.current.delete(cleanupTimer)
+            }, 1_100)
+            timers.current.add(cleanupTimer)
+          }
         }
-      }
+      }, hitDelay)
+      timers.current.add(triggerTimer)
     }
   }, [actorKey, normalizedMax, normalizedValue, recentEvents, t, tone])
 
-  // 2. 数值变动保底（普通掉血/回血/回蓝，或无显式对抗事件的 DoT 等）
+  // 2. 数值变动保底（气血回升、法力变化、切换目标或无显式事件的持续扣血）
   useLayoutEffect(() => {
     const previous = previousRef.current
     if (previous.actorKey !== actorKey || previous.max !== normalizedMax) {
       previousRef.current = { actorKey, max: normalizedMax, value: normalizedValue }
+      setDisplayValue(normalizedValue)
       setEffects([])
       return
     }
     if (previous.value === normalizedValue) return
 
     const delta = normalizedValue - previous.value
+    // 若为法力变化、回血、或无待定击中帧事件的扣血（DoT），立即更新 displayValue
+    if (tone === 'mp' || delta > 0 || Date.now() - lastEventHitTime.current > 400) {
+      setDisplayValue(normalizedValue)
+    }
+
     const id = nextEffectId.current++
     const effect: ResourceEffect = {
       id,
@@ -265,7 +292,7 @@ function ArenaResource({
     }
     previousRef.current = { actorKey, max: normalizedMax, value: normalizedValue }
     setEffects(current => {
-      const hasRecentSpecial = current.some(e => e.delta === delta && (e.kind === 'break' || e.kind === 'parry' || e.kind === 'crit'))
+      const hasRecentSpecial = current.some(e => e.delta === delta && (e.kind === 'break' || e.kind === 'parry' || e.kind === 'crit' || e.kind === 'damage'))
       if (hasRecentSpecial) return current
       return [...current.slice(-5), effect]
     })
@@ -274,7 +301,7 @@ function ArenaResource({
       timers.current.delete(timer)
     }, 1_100)
     timers.current.add(timer)
-  }, [actorKey, normalizedMax, normalizedValue])
+  }, [actorKey, normalizedMax, normalizedValue, tone])
 
   useEffect(() => () => {
     timers.current.forEach(timer => window.clearTimeout(timer))
@@ -285,7 +312,7 @@ function ArenaResource({
     <div className={`arena-resource arena-resource--${tone}`}>
       <div className="arena-resource-meter">
         <div className="arena-resource-track">
-          <i style={{ transform: `scaleX(${normalizedValue / normalizedMax})` }} />
+          <i style={{ transform: `scaleX(${displayValue / normalizedMax})` }} />
         </div>
         <span className="arena-resource-shards" aria-hidden="true">
           {effects
@@ -315,7 +342,7 @@ function ArenaResource({
             })}
         </span>
         <span className="arena-resource-badge">
-          <UnitNumber disableTooltip value={normalizedValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
+          <UnitNumber disableTooltip value={displayValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
         </span>
         <span className="arena-resource-floats" aria-live="polite">
           {effects.map(effect => {
@@ -347,7 +374,6 @@ function ArenaResource({
     </div>
   )
 }
-
 /**
  * 平滑行动条填充组件 (SmoothActionFill)
  *
@@ -873,27 +899,75 @@ function ArenaActor({
   const [impact, setImpact] = useState<ActorImpact | null>(null)
   const [dodging, setDodging] = useState(false)
   const clearDodgeTimer = useRef<number | null>(null)
-  const handledDodgeEventsRef = useRef(new Set<string>())
+  const handledCombatEventsRef = useRef(new Set<string>())
+  const lastEventImpactTime = useRef(0)
+  const actorTimers = useRef(new Set<number>())
 
+  const triggerActionMotion = useCallback((kind: ActorMotionKind) => {
+    const aim = kind === 'attack'
+      ? measureArenaAim(articleRef.current, findOpposingActor())
+      : { slope: 0, angleDeg: 0 }
+    const nextMotion = { id: nextMotionId.current++, kind, aimY: aim.slope * 16, aimAngleDeg: aim.angleDeg }
+    setActionMotion(nextMotion)
+    if (clearActionMotionTimer.current !== null) window.clearTimeout(clearActionMotionTimer.current)
+    clearActionMotionTimer.current = window.setTimeout(() => setActionMotion(null), actorMotionDurationMilliseconds[kind])
+  }, [findOpposingActor])
+
+  // 1. 消费事件流：攻击方 0ms 立即起手出招，受击方精确在击中帧 (Hit-Frame) 卡点触发受击/闪避
   useEffect(() => {
     if (!recentEvents || recentEvents.length === 0) return
-    const handled = handledDodgeEventsRef.current
+    const handled = handledCombatEventsRef.current
+
     for (const event of recentEvents) {
-      if (event.hit) continue
-      const sig = `${event.at}:${event.attackerId}:${event.targetId}:dodge`
+      const sig = `${event.at}:${event.attackerId}:${event.targetId}:${event.hit}:${event.damage}:${event.broken}:${event.parried}:${event.critical}`
       if (handled.has(sig)) continue
       handled.add(sig)
-      if (handled.size > 50) {
+      if (handled.size > 80) {
         const oldest = handled.values().next().value
         if (oldest) handled.delete(oldest)
       }
-      if (isTargetForActor(event.targetId, actorKey)) {
-        setDodging(true)
-        if (clearDodgeTimer.current !== null) window.clearTimeout(clearDodgeTimer.current)
-        clearDodgeTimer.current = window.setTimeout(() => setDodging(false), 450)
+
+      // (1) 若当前单位为攻击方：在 0ms 立即起手出招（挥砍突进或聚气施法）
+      if (isActorMatchingId(event.attackerId, actorKey)) {
+        triggerActionMotion(event.abilityId ? 'cast' : 'attack')
+      }
+
+      // (2) 若当前单位为受击方：在击中帧时刻 (hitDelay) 精确卡点触发受击受挫或闪避身法
+      if (isActorMatchingId(event.targetId, actorKey)) {
+        const hitDelay = event.abilityId ? COMBAT_CAST_HIT_DELAY_MS : COMBAT_ATTACK_HIT_DELAY_MS
+        if (!event.hit) {
+          // 闪避身法：在刀刃砍到面前的瞬间侧身避开
+          const timer = window.setTimeout(() => {
+            actorTimers.current.delete(timer)
+            setDodging(true)
+            if (clearDodgeTimer.current !== null) window.clearTimeout(clearDodgeTimer.current)
+            clearDodgeTimer.current = window.setTimeout(() => setDodging(false), 450)
+          }, hitDelay)
+          actorTimers.current.add(timer)
+        } else if (event.damage > 0) {
+          // 受击受挫：在刀刃砍到或法术爆发的瞬间闪红受挫
+          lastEventImpactTime.current = Date.now() + hitDelay
+          const timer = window.setTimeout(() => {
+            actorTimers.current.delete(timer)
+            const strength = Math.max(0.25, Math.min(1, event.damage / Math.max(1, maxHp)))
+            const aim = measureArenaAim(findOpposingActor(), articleRef.current)
+            const nextImpact = {
+              id: nextMotionId.current++,
+              variant: actorImpactVariants[nextImpactSequence.current++ % actorImpactVariants.length],
+              distance: 3 + strength * 6,
+              opacity: 0.75 + strength * 0.25,
+              hitY: aim.slope * 7,
+              impactAngleDeg: aim.angleDeg,
+            }
+            setImpact(nextImpact)
+            if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
+            clearImpactTimer.current = window.setTimeout(() => setImpact(null), 560)
+          }, hitDelay)
+          actorTimers.current.add(timer)
+        }
       }
     }
-  }, [recentEvents, actorKey])
+  }, [recentEvents, actorKey, maxHp, findOpposingActor, triggerActionMotion])
 
   useLayoutEffect(() => {
     const previous = previousHitpoints.current
@@ -906,9 +980,9 @@ function ArenaActor({
       return
     }
 
-    if (hp < previous.hp) {
+    // 保底：若非近期显式攻击事件引起的掉血（如灼烧 DoT），且距离上次事件受击超 400ms，立即触发受击
+    if (hp < previous.hp && Date.now() - lastEventImpactTime.current > 400) {
       const strength = Math.max(0.25, Math.min(1, (previous.hp - hp) / Math.max(1, maxHp)))
-      // 竖屏纵列：按攻击来向（对方首位存活单位 → 自身）量取方位，退散与刀光沿同一斜率走
       const aim = measureArenaAim(findOpposingActor(), articleRef.current)
       const nextImpact = {
         id: nextMotionId.current++,
@@ -925,6 +999,7 @@ function ArenaActor({
     previousHitpoints.current = { actorKey, hp }
   }, [actorKey, hp, maxHp, findOpposingActor])
 
+  // 行动倒计时保底（主要用于非战斗读条或无显式事件产出的持续动作）
   useEffect(() => {
     const kind = resolveActorMotionKind(action)
     const deadline = action?.completesAtUnixMilliseconds
@@ -946,24 +1021,19 @@ function ArenaActor({
     }
 
     const play = () => {
-      // 竖屏纵列：量取自身到对方首位存活单位的方位，突进与弹道特效随之向目标上下偏转
-      const aim = kind === 'attack'
-        ? measureArenaAim(articleRef.current, findOpposingActor())
-        : { slope: 0, angleDeg: 0 }
-      const nextMotion = { id: nextMotionId.current++, kind, aimY: aim.slope * 16, aimAngleDeg: aim.angleDeg }
-      setActionMotion(nextMotion)
-      if (clearActionMotionTimer.current !== null) window.clearTimeout(clearActionMotionTimer.current)
-      clearActionMotionTimer.current = window.setTimeout(() => setActionMotion(null), duration)
+      triggerActionMotion(kind)
     }
     const timer = window.setTimeout(play, Math.max(0, delay))
     scheduledAction.current = { signature, deadline, kind, timer }
-  }, [action?.completesAtUnixMilliseconds, action?.kind, actorKey, hp, visible, findOpposingActor])
+  }, [action?.completesAtUnixMilliseconds, action?.kind, actorKey, hp, visible, triggerActionMotion])
 
   useEffect(() => () => {
     if (scheduledAction.current !== null) window.clearTimeout(scheduledAction.current.timer)
     if (clearActionMotionTimer.current !== null) window.clearTimeout(clearActionMotionTimer.current)
     if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
     if (clearDodgeTimer.current !== null) window.clearTimeout(clearDodgeTimer.current)
+    actorTimers.current.forEach(timer => window.clearTimeout(timer))
+    actorTimers.current.clear()
   }, [])
 
   const interactive = onInspect !== undefined
