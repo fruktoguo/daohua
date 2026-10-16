@@ -728,12 +728,12 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
         }`}
       >
         <ItemTile
-          category={ability.category === 'spell' ? '术法' : '武技'}
+          category={ability.discipline === 'internal' ? '内功' : (ability.category === 'spell' ? '术法' : '武技')}
           className="inventory-cell"
           itemId={ability.abilityId}
           level={ability.tier ?? 1}
           name={ability.name}
-          rarity={grade.rarity}
+          rarity={ability.discipline === 'internal' ? 'emperor' : grade.rarity}
         />
         {!isLearned && (
           <span className="codex-lock-badge" title={t('app.codex.unlearned')}>

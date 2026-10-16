@@ -64,14 +64,21 @@ export interface ItemTileProps {
 /** 未在注册表登记的物品的最小兜底元数据（凡品/金字兜底，品类走默认标签） */
 function fallbackMetadata(itemId: string): ItemMetadata {
   const t = getT()
+  const def = useGameStore.getState().items.find(i => i.itemId === itemId)
+  const isTome = itemId.startsWith('item.tome.')
+  const isFragment = itemId.startsWith('item.fragment.')
+  const tier = def?.tier ?? 1
+  const grade = resolveItemGrade(tier)
   return {
-    label: itemId,
-    glyph: '·',
-    tone: 'gold',
-    category: resolveItemCategoryLabel(undefined, t),
-    rarity: 'mundane',
-    rarityLabel: t('game.grade.mundane'),
-    description: '',
+    label: def?.name || itemId,
+    glyph: isTome ? '📘' : isFragment ? '📜' : '·',
+    tone: tier >= 2 ? 'green' : 'gold',
+    category: resolveItemCategoryLabel(def?.subCategory ?? (isTome ? 'manualTome' : isFragment ? 'manualFragment' : undefined), t),
+    rarity: grade.rarity,
+    rarityLabel: grade.label,
+    tier,
+    level: convertTierToLevel(tier),
+    description: def?.description ?? '',
     source: '',
     usage: '',
   }
@@ -425,7 +432,10 @@ function describeManualEffects(
   if (!isTome && !isFragment) return []
   const t = getT()
   const slug = itemId.slice(isTome ? 'item.tome.'.length : 'item.fragment.'.length)
-  const abilityName = findAbilityInCatalog(abilities, `ability.${slug}`)?.name ?? slug
+  const allAbilities = abilities.length > 0 ? abilities : useGameStore.getState().abilities
+  const itemDef = useGameStore.getState().items.find(i => i.itemId === itemId)
+  const fallbackName = itemDef?.name ? itemDef.name.replace(/^《|秘籍》|·残卷》|》$/g, '') : slug
+  const abilityName = findAbilityInCatalog(allAbilities, `ability.${slug}`)?.name ?? fallbackName
   const bookTitle = `《${abilityName}》`
   if (isTome) {
     return [
@@ -1092,7 +1102,8 @@ export function ItemCard({ item, definition, equipmentDefinition }: { item: Inve
   )
   // 强化变体行（AssetKey "+N"）：名称附强化等级、悬浮卡片按该等级缩放属性预览。
   const enhancementLevel = parseEnhancementVariant(item.variant)
-  const displayName = enhancementLevel > 0 ? `${item.name} +${enhancementLevel}` : item.name
+  const rawName = (meta?.label ?? definition?.name) || item.name
+  const displayName = enhancementLevel > 0 ? `${rawName} +${enhancementLevel}` : rawName
   return (
     <ItemTooltipTarget
       amount={item.amount}
@@ -1202,7 +1213,7 @@ export function ItemReference({
   useT()
   const metadata = resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const definition = useGameStore((state) => findItemInCatalog(state.items, itemId))
-  const displayLabel = label ?? metadata.label
+  const displayLabel = label ?? definition?.name ?? metadata.label
   const tone = rarityToTone(metadata.rarity)
 
   if (amount !== undefined || valueContent !== undefined) {
