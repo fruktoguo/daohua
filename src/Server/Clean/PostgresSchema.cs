@@ -535,6 +535,8 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_party_session_inbox_pending
         ON social.party_session_inbox(player_id, created_at, session_id, sequence) WHERE consumed_at IS NULL;
+    CREATE INDEX IF NOT EXISTS ix_party_session_inbox_consumed_tx
+        ON social.party_session_inbox(consumed_transaction_id) WHERE (consumed_transaction_id IS NOT NULL);
 
     -- 待处理的队伍邀请：每名玩家最多一条（被邀请人作主键），接受/拒绝/过期后清除。
     CREATE TABLE IF NOT EXISTS social.party_invitations (
