@@ -17,6 +17,20 @@ public sealed class QueueLoopTests
 
     private static PlayerAggregate CreatePlayer(string name) =>
         PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
+    /// <summary>
+    /// 新建角色默认关闭 LoopEnabled 与 AutoTravelEnabled（防止误导新手玩家）。
+    /// </summary>
+    [Fact]
+    public void NewlyCreatedPlayer_HasLoopAndAutoTravelDisabledByDefault()
+    {
+        var player = CreatePlayer("萌新");
+        Assert.False(player.Settings.LoopEnabled);
+        Assert.False(player.Settings.AutoTravelEnabled);
+
+        var doc = player.ExportState().Settings;
+        Assert.False(doc.LoopEnabled);
+        Assert.False(doc.AutoTravelEnabled);
+    }
 
     /// <summary>
     /// LoopEnabled 下单任务次数耗尽后自动重置续跑，绝不出队（循环队列核心不变量）。
@@ -28,8 +42,8 @@ public sealed class QueueLoopTests
         // 每轮完成后重置次数并继续下一轮，绝不出队。
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("甲");
+        player.SetLoopEnabled(true);
         Assert.True(player.Settings.LoopEnabled);
-
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, catalog.Actions);
 
         // 推进 25 秒：前 20 秒完成 2 轮（第 1 轮 10s，第 2 轮 10s），触发循环重置为 2 次，随后第 3 轮推进 5 秒
@@ -61,8 +75,8 @@ public sealed class QueueLoopTests
         var catalog = new GameDataCatalog("test", "test", actions, new Dictionary<ItemId, ItemDefinition>());
 
         var player = CreatePlayer("乙");
+        player.SetLoopEnabled(true);
         Assert.True(player.Settings.LoopEnabled);
-
         player.Enqueue(new ActionIntent(new ActionId("test.gather"), 1), Baseline, actions);
         player.Enqueue(new ActionIntent(new ActionId("test.draw-qi"), 1), Baseline, actions);
 
@@ -101,7 +115,6 @@ public sealed class QueueLoopTests
         // 当 player.SetLoopEnabled(false) 时，任务次数耗尽后直接从队列移除，队列最终变空
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("丙");
-        player.SetLoopEnabled(false);
         Assert.False(player.Settings.LoopEnabled);
 
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, catalog.Actions);
@@ -139,6 +152,7 @@ public sealed class QueueLoopTests
 
         var player = CreatePlayer("行者");
         player.TravelTo("n1");
+        player.SetLoopEnabled(true);
         Assert.True(player.Settings.LoopEnabled);
 
         var plan = graph.Plan("n1", "n2");
@@ -183,6 +197,7 @@ public sealed class QueueLoopTests
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { ["enemy.boss"] = monster });
 
         var player = CreatePlayer("丁");
+        player.SetLoopEnabled(true);
         Assert.True(player.Settings.LoopEnabled);
 
         player.Enqueue(new ActionIntent(combatActionId, 1), Baseline, actions);

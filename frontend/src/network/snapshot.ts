@@ -813,7 +813,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
   })
   return {
     entries,
-    loopEnabled: settingsValue ? booleanValue(settingsValue.loopEnabled, true) : (base?.loopEnabled ?? true),
+    loopEnabled: settingsValue ? booleanValue(settingsValue.loopEnabled, false) : (base?.loopEnabled ?? false),
     autoTravelEnabled: settingsValue ? booleanValue(settingsValue.autoTravelEnabled, false) : (base?.autoTravelEnabled ?? false),
     paused: settingsValue ? booleanValue(settingsValue.queuePaused, false) : (base?.paused ?? false),
     autoUseSlots: settingsValue ? mapAutoUseSlots(settingsValue.autoUseSlots) : (base?.autoUseSlots ?? defaultAutoUseSlots()),
@@ -1446,7 +1446,7 @@ export async function decodePlayerSnapshotDeltaDto(
   const settings = settingsEnvelope ? requiredObject(settingsEnvelope.settings, 'settings.settings') : undefined
   if (settingsEnvelope && settings) {
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
-    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: booleanValue(settings.queuePaused, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, false), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: booleanValue(settings.queuePaused, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
     patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)
     patch.tutorialStep = numberValue(settings.tutorialStep, 0)
   }

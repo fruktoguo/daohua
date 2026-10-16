@@ -38,12 +38,22 @@ internal static partial class ActionExecutionRules
         }
         if (TryStartActionCore(player, action, definition, gameData, assets, at, deltas, ref events))
             return true;
+        if (player.Actions.Count <= 1) return false;
         if (!player.Settings.LoopEnabled)
         {
-            player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
-            return true;
+            if (action.RemainingRepeats != -1)
+            {
+                for (var i = 1; i < player.Actions.Count; i++)
+                {
+                    if (player.Actions[i].Status != ActionQueueStatus.Blocked)
+                    {
+                        player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
-        if (player.Actions.Count <= 1) return false;
         for (var i = 0; i < player.Actions.Count; i++)
             if (player.Actions[i].Status != ActionQueueStatus.Blocked)
             {
@@ -52,7 +62,6 @@ internal static partial class ActionExecutionRules
             }
         return false;
     }
-
     /// <summary>按窗口工作钱包与尚未提交的材料增量检查地点和库存，再建账并激活队首。</summary>
     public static bool TryStartAction(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,

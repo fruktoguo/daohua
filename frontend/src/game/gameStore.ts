@@ -151,7 +151,7 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
     serverTimeUnixMilliseconds: nowUnixSeconds * 1000,
     presenceMode: 'online',
     queue: {
-      loopEnabled: true,
+      loopEnabled: false,
       autoTravelEnabled: false,
       paused: false,
       autoUseSlots: {

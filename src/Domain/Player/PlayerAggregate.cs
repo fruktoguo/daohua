@@ -340,8 +340,8 @@ public sealed class PlayerSettingsState
     public string Locale { get; set; } = "zh-CN";
     /// <summary>是否开启系统通知与推送</summary>
     public bool NotificationsEnabled { get; set; } = true;
-    /// <summary>行动队列执行完毕后是否整体循环轮循</summary>
-    public bool LoopEnabled { get; set; } = true;
+    /// <summary>行动队列执行完毕后是否整体循环轮循（新建角色默认关闭，避免误导新手）</summary>
+    public bool LoopEnabled { get; set; }
     /// <summary>开轮地点不符时是否自动插队赶路至入队锚点再执行（false 时走 Blocked 跳过语义）</summary>
     public bool AutoTravelEnabled { get; set; }
     /// <summary>队列停泊开关：暂停时行动队列整体冻结不消费墙钟，队列结构与进度保留，恢复后继续</summary>

@@ -157,7 +157,7 @@ public sealed class DuelSimulationTests
     {
         var catalog = CreateCatalog(duel: new DuelSettings(StagedSettleSeconds: 1200), dropChance: 1);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "fp");
-
+        player.SetLoopEnabled(true);
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), 1, PvpEnabled: true), Baseline, catalog.Actions);
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3.5), catalog, duel: new DuelAdvanceOptions(true));
 

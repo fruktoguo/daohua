@@ -89,7 +89,7 @@ public sealed record PlayerCombatStateDocument(
 public sealed record PlayerSettingsStateDocument(
     string Locale,
     bool NotificationsEnabled,
-    bool LoopEnabled = true,
+    bool LoopEnabled = false,
     bool AutoTravelEnabled = false,
     IReadOnlyList<AutoUseSlotState>? AutoUseSlots = null,
     double RenameCooldownUntilUnixSeconds = 0,

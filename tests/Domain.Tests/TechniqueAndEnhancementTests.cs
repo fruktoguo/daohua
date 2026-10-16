@@ -116,7 +116,8 @@ public sealed class TechniqueAndEnhancementTests
 
         // 18 级 8 秒行动单轮基准经验为 round(133.417 × 0.8) = 107
         Assert.Equal(107, player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
-        Assert.Contains(player.Duel.CurrentReport?.TechniqueExp ?? [],
+        var report = player.Duel.CurrentReport ?? player.Duel.Reports.FirstOrDefault();
+        Assert.Contains(report?.TechniqueExp ?? [],
             entry => entry.TechniqueId == TechniqueCatalog.Mining && entry.Experience == 107);
 
         // 对比 1 级行动：挖掘乌铁矿（6 秒）获得 6 点技艺经验

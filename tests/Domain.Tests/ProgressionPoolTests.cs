@@ -143,7 +143,7 @@ public sealed class ProgressionPoolTests
         Assert.Equal(10, player.Progression.Experience);
         Assert.Equal(0, player.Progression.CombatExperience);
         Assert.Equal(10, player.Progression.LifetimeExperience);
-        var report = player.Duel.ReportFor(action.Id);
+        var report = player.Duel.ReportFor(action.Id) ?? player.Duel.Reports.FirstOrDefault(r => r.ActionId == "cultivation.draw-qi");
         Assert.NotNull(report);
         Assert.Equal(10, report.Experience);
         Assert.Equal(0, report.CombatExperience);

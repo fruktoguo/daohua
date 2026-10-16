@@ -83,13 +83,13 @@ public sealed class EcsActionQueueMutationTests
         var catalog = GameDataCatalog.LoadEmbedded();
         var seed = CreatePlayer(catalog).ExportState();
         var expected = PlayerAggregate.Restore(seed);
-        expected.SetLoopEnabled(false);
+        expected.SetLoopEnabled(true);
         expected.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), From, catalog.Actions);
         using var runtime = new EcsGameRuntime(catalog, From);
         var id = runtime.CreatePlayer(seed);
         var touched = runtime.MutatePlayer(id, aggregate =>
         {
-            aggregate.SetLoopEnabled(false);
+            aggregate.SetLoopEnabled(true);
             aggregate.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), From, catalog.Actions);
         });
         Assert.Contains(PlayerSectionKind.Settings, touched);

@@ -25,7 +25,7 @@ public sealed class ActionReportTests
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(24), catalog, wallet);
 
-        var report = player.Duel.ReportFor(action.Id);
+        var report = player.Duel.ReportFor(action.Id) ?? player.Duel.Reports.FirstOrDefault(r => r.ActionId == "alchemy.refine-qi-pill");
         Assert.NotNull(report);
         Assert.Equal(2, report.Cycles);
         Assert.Contains(report.Items, item => item.ItemId == "item.qi-gathering-pill" && item.Quantity == 2);

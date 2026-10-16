@@ -266,7 +266,7 @@ public sealed class SimulationEngineTests
         var player = CreatePlayer("空挂");
         var wallet = CreateWallet(player, (qiPill, 1d));
         player.ConfigureAutoUse("exploration", 0, qiPill.Value, 1, true);
-        player.Enqueue(new ActionIntent(new ActionId("test.gather")), Baseline, actions);
+        player.Enqueue(new ActionIntent(new ActionId("test.gather"), 2), Baseline, actions);
 
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), catalog, wallet);
         var deltas = result.AssetDeltas.ToDictionary(delta => delta.Asset.ItemId, delta => delta.QuantityDelta);
@@ -297,7 +297,7 @@ public sealed class SimulationEngineTests
         var player = CreatePlayer("吐纳");
         var wallet = CreateWallet(player, (qiPill, 1d));
         player.ConfigureAutoUse("exploration", 0, qiPill.Value, 1, true);
-        player.Enqueue(new ActionIntent(new ActionId("test.cultivate")), Baseline, actions);
+        player.Enqueue(new ActionIntent(new ActionId("test.cultivate"), 2), Baseline, actions);
 
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), catalog, wallet);
 

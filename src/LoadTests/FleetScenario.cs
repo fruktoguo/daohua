@@ -858,8 +858,7 @@ public static class FleetScenario
                 if (!skip.Ok) Stats.Anomaly($"tutorial.skip 失败 {_account}: {skip.Code} {skip.Message}");
             }
 
-            // 行动队列默认 loopEnabled：完成的行动会轮转回队尾，永远不会排空。
-            // 因此采集/精炼/狩猎一律按资产余额等待，达到目标后 queue.clear 清掉残留轮转行动。
+            // 行动队列默认关闭 loopEnabled；采集/精炼/狩猎按资产余额等待，达到目标后 queue.clear 清掉残留行动。
 
             // ① 引导剑：跳引导补发百炼铁×7+兽骨×1 恰为青锋剑一轮材料，先持剑再谈狩猎。
             if (!await EnsureForgedAsync("forge.qingfeng-sword", "equipment.qingfeng-sword", cancellationToken)) return false;
