@@ -242,6 +242,15 @@
   margin-bottom: 2px;
 }
 
+.daohua-floating-aside-lines:has(.compound-bonus-label) {
+  padding-left: 0;
+}
+
+.daohua-floating-aside-lines li:has(.compound-bonus-label) {
+  list-style: none;
+  margin-bottom: 2px;
+}
+
 /* 附属气泡色调 */
 .daohua-floating-aside-card--gold {
   border-color: rgba(201, 180, 109, 0.4);
@@ -649,4 +658,20 @@
     width: min(300px, calc(100vw - 16px));
     max-width: calc(100vw - 16px);
   }
+}
+
+/* 11. 心法六维雷达图容器 */
+.root-aspect-radar-shell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 6px 0 2px;
+  width: 100%;
+}
+
+.root-aspect-radar-svg {
+  width: 100%;
+  max-width: 230px;
+  height: auto;
+  display: block;
 }

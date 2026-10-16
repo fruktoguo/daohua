@@ -12,6 +12,8 @@ import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPo
 import { ItemReference } from './ItemDisplay'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { ValueText } from './ValueText'
+import { PillBonusLabel, type PillTone } from './PillLabel'
+import { RootAspectRadarChart } from './RootAspectRadarChart'
 
 /** 格式化日志时间戳为月-日 时:分:秒 */
 export function formatLogTime(timestampMs: number): string {
@@ -46,10 +48,32 @@ const AbilityReference = memo(function AbilityReference({ abilityId, label }: { 
         <FloatingInfoCard
           badge={tooltip.badge}
           badgeTone="qi"
-          description={<ValueText className="effect-value-capsule" text={tooltip.description} />}
-          lines={tooltip.lines?.map((line) => (
-            <ValueText className="effect-value-capsule" key={line} text={line} />
-          ))}
+          description={
+            <div>
+              {tooltip.description && (
+                <ValueText className="effect-value-capsule" text={tooltip.description} />
+              )}
+              {tooltip.radarMultipliers && (
+                <RootAspectRadarChart
+                  efficiency={tooltip.radarEfficiency}
+                  multipliers={tooltip.radarMultipliers}
+                />
+              )}
+            </div>
+          }
+          lines={[
+            ...(tooltip.lines?.map((line) => (
+              <ValueText className="effect-value-capsule" key={line} text={line} />
+            )) ?? []),
+            ...(tooltip.bonuses?.map((bonus) => (
+              <PillBonusLabel
+                key={bonus.key}
+                label={bonus.label}
+                tone={bonus.tone as PillTone}
+                value={bonus.value}
+              />
+            )) ?? []),
+          ]}
           title={tooltip.title}
         />
       }

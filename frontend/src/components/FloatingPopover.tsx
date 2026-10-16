@@ -58,7 +58,7 @@ export interface FloatingAsideCard {
   title: string
   subtitle?: string
   tone?: FloatingTone
-  lines?: readonly string[]
+  lines?: readonly (string | ReactNode)[]
   content?: ReactNode
   /** 是否以单行模式展示 (左侧标题，右侧具体数值) */
   isSingleRow?: boolean

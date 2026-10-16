@@ -2,17 +2,32 @@ import type { CombatAbilityDefinition, CombatTrigger } from './types'
 import { getT, useI18nStore } from '../i18n'
 
 /**
+ * 功法加成属性条目结构（对齐装备复合加成展示风格）
+ */
+export interface AbilityBonusStat {
+  key: string
+  label: string
+  tone: string
+  value: string
+}
+
+/**
  * 技能效果浮动提示内容结构
  */
 export interface EffectTooltipContent {
   /** 提示标题（如技能名称） */
   title: string
-  /** 徽章标签（如 流派 · 伤害类型） */
   badge?: string
-  /** 简短效果概述 */
+  /** 技能详细描述（包含招式意境与效果叙述主句） */
   description: string
   /** 详细属性条目列表（每行一个描述） */
   lines: readonly string[]
+  /** 复合加成属性条目（走装备 PillBonusLabel 同款展示风格） */
+  bonuses?: readonly AbilityBonusStat[]
+  /** 六维雷达图乘率字典（内功心法专用） */
+  radarMultipliers?: Partial<Record<string, number>>
+  /** 六维雷达图当前等级效率乘率（内功心法专用） */
+  radarEfficiency?: number
 }
 
 /**
@@ -44,55 +59,60 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const normalizedLevel = Math.max(1, level)
   const levelOffset = normalizedLevel - 1
   if (ability.discipline === 'internal') {
-    const effGrowth = levelOffset * (ability.rootExpEfficiencyPerLevel ?? 0.02)
-    const effPercent = (effGrowth * 100).toFixed(1)
     const lines = [
       t('game.abilityDesc.level', { n: normalizedLevel }),
-      `参悟效率加成 +${effPercent}%`,
     ]
+
+    const bonuses: AbilityBonusStat[] = []
+
     if (ability.cultivationExpBonusPoints) {
-      lines.push(`修为获取 ${ability.cultivationExpBonusPoints > 0 ? '+' : ''}${ability.cultivationExpBonusPoints}%`)
+      const val = ability.cultivationExpBonusPoints
+      bonuses.push({
+        key: 'cultivationExpBonusPoints',
+        label: '修为获取',
+        tone: val >= 0 ? 'gold' : 'amber',
+        value: `${val > 0 ? '+' : ''}${val}%`,
+      })
     }
+
     if (ability.passive) {
-      const statLabels: Record<string, string> = {
-        physicalDamageBonusPoints: '物理增伤',
-        spellDamageBonusPoints: '术法增伤',
-        physicalDamageReductionPoints: '物理减伤',
-        spellDamageReductionPoints: '术法减伤',
-        actionSpeedPoints: '行动加速',
+      const statConfigs: Record<string, { label: string; tone: string }> = {
+        physicalDamageBonusPoints: { label: '物理增伤', tone: 'crimson' },
+        spellDamageBonusPoints: { label: '术法增伤', tone: 'indigo' },
+        physicalDamageReductionPoints: { label: '物理减伤', tone: 'emerald' },
+        spellDamageReductionPoints: { label: '术法减伤', tone: 'violet' },
+        actionSpeedPoints: { label: '行动加速', tone: 'teal' },
+        attackSpeedPoints: { label: '攻击攻速', tone: 'teal' },
+        criticalDamageBonusPoints: { label: '暴击伤害', tone: 'gold' },
+        threatBonusPoints: { label: '威胁增幅', tone: 'crimson' },
+        healingBonusPoints: { label: '治疗增幅', tone: 'violet' },
+        damageAbsorptionPoints: { label: '伤害减免', tone: 'emerald' },
       }
       for (const [stat, val] of Object.entries(ability.passive)) {
-        const label = statLabels[stat] ?? stat
-        lines.push(`${label} +${val}%`)
-      }
-    }
-    const clauses: string[] = []
-    if (ability.rootExpMultipliers) {
-      const aspects: Record<string, string> = {
-        stamina: '体魄',
-        meridians: '经脉',
-        attack: '力道',
-        bone: '根骨',
-        agility: '身法',
-        consciousness: '神识',
-      }
-      const parts: string[] = []
-      for (const [key, mult] of Object.entries(ability.rootExpMultipliers)) {
-        if (mult !== undefined && mult !== 1.0) {
-          parts.push(`${aspects[key] ?? key} ×${mult}`)
+        if (typeof val === 'number' && val !== 0) {
+          const cfg = statConfigs[stat] ?? { label: stat, tone: 'default' }
+          bonuses.push({
+            key: stat,
+            label: cfg.label,
+            tone: cfg.tone,
+            value: `${val > 0 ? '+' : ''}${val}%`,
+          })
         }
       }
-      if (parts.length > 0) {
-        clauses.push(`六维分配（${parts.join('、')}，其余 ×1.0）`)
-      }
     }
-    const desc = ability.description ?? ''
-    const fullDesc = clauses.length > 0 ? (desc ? `${desc}\n${clauses.join('；')}。` : `${clauses.join('；')}。`) : desc
+
+    // 六维属性随等级线性放大（eff = 1.0 + effPerLevel * levelOffset），数据载入 radarMultipliers 供雷达图组件渲染
+    const effPerLevel = ability.rootExpEfficiencyPerLevel ?? 0.02
+    const eff = Math.max(0, 1.0 + effPerLevel * levelOffset)
+
     return {
       title: ability.name,
       badge: '内功心法',
-      description: fullDesc,
+      description: ability.description ?? '',
       lines,
+      bonuses,
+      radarMultipliers: ability.rootExpMultipliers,
+      radarEfficiency: eff,
     }
   }
 

@@ -26,6 +26,8 @@ import type {
 import { useT } from '../i18n'
 import type { CodexCraftingSubTab } from '../uiStore'
 import { useUiStore } from '../uiStore'
+import { PillBonusLabel, type PillTone } from './PillLabel'
+import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { MonsterTooltipTarget } from './MonsterDisplay'
@@ -701,6 +703,14 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
             </div>
           )}
 
+          {/* 六维经验获取雷达图（内功心法） */}
+          {abilityInfo.radarMultipliers && (
+            <RootAspectRadarChart
+              efficiency={abilityInfo.radarEfficiency}
+              multipliers={abilityInfo.radarMultipliers}
+            />
+          )}
+
           {/* 解锁条件：学习后解锁 */}
           <div
             className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
@@ -711,9 +721,19 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
           </div>
         </div>
       }
-      lines={abilityInfo.lines.map(line => (
-        <ValueText className="effect-value-capsule" key={line} text={line} />
-      ))}
+      lines={[
+        ...abilityInfo.lines.map(line => (
+          <ValueText className="effect-value-capsule" key={line} text={line} />
+        )),
+        ...(abilityInfo.bonuses?.map((bonus) => (
+          <PillBonusLabel
+            key={bonus.key}
+            label={bonus.label}
+            tone={bonus.tone as PillTone}
+            value={bonus.value}
+          />
+        )) ?? []),
+      ]}
       title={ability.name}
     />
   )

@@ -10,6 +10,7 @@ import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type Floatin
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
+import { RootAspectRadarChart } from './RootAspectRadarChart'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -748,7 +749,19 @@ export function resolveManualAsideCard(
   const categoryLabel = formatAbilityCategory(ability.category, ability.element)
   const subtitle = styleLabel ? `${styleLabel} · ${categoryLabel}` : categoryLabel
 
-  const lines = [...abilityInfo.lines]
+  const bonusElements = abilityInfo.bonuses?.map((bonus) => (
+    <PillBonusLabel
+      key={bonus.key}
+      label={bonus.label}
+      tone={bonus.tone as PillTone}
+      value={bonus.value}
+    />
+  )) ?? []
+
+  const lines = [
+    ...abilityInfo.lines,
+    ...bonusElements,
+  ]
 
   return {
     id: `aside-manual-${ability.abilityId}`,
@@ -757,7 +770,19 @@ export function resolveManualAsideCard(
     subtitle,
     tone: 'qi',
     lines,
-    content: <ValueText className="effect-value-capsule" text={abilityInfo.description} />,
+    content: (
+      <div>
+        {abilityInfo.description && (
+          <ValueText className="effect-value-capsule" text={abilityInfo.description} />
+        )}
+        {abilityInfo.radarMultipliers && (
+          <RootAspectRadarChart
+            efficiency={abilityInfo.radarEfficiency}
+            multipliers={abilityInfo.radarMultipliers}
+          />
+        )}
+      </div>
+    ),
   }
 }
 

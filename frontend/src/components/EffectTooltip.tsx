@@ -1,7 +1,9 @@
 import { type ReactNode } from 'react'
 import { FloatingInfoCard, FloatingPopover, type FloatingPlacement } from './FloatingPopover'
+import { PillBonusLabel, type PillTone } from './PillLabel'
+import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
-
+import type { AbilityBonusStat } from '../game/format'
 /**
  * 功法/词条/效果悬浮气泡内容结构
  */
@@ -14,6 +16,12 @@ export interface EffectTooltipContent {
   description: string
   /** 效果详细词条行列表 */
   lines: readonly string[]
+  /** 复合加成属性条目（走装备 PillBonusLabel 同款展示风格） */
+  bonuses?: readonly AbilityBonusStat[]
+  /** 六维雷达图乘率字典（内功心法专用） */
+  radarMultipliers?: Partial<Record<string, number>>
+  /** 六维雷达图当前等级效率乘率（内功心法专用） */
+  radarEfficiency?: number
 }
 
 /**
@@ -51,10 +59,32 @@ export function EffectTooltipTarget({
         <FloatingInfoCard
           badge={content.badge}
           badgeTone="qi"
-          description={<ValueText className="effect-value-capsule" text={content.description} />}
-          lines={content.lines.map((line) => (
-            <ValueText className="effect-value-capsule" key={line} text={line} />
-          ))}
+          description={
+            <div>
+              {content.description && (
+                <ValueText className="effect-value-capsule" text={content.description} />
+              )}
+              {content.radarMultipliers && (
+                <RootAspectRadarChart
+                  efficiency={content.radarEfficiency}
+                  multipliers={content.radarMultipliers}
+                />
+              )}
+            </div>
+          }
+          lines={[
+            ...content.lines.map((line) => (
+              <ValueText className="effect-value-capsule" key={line} text={line} />
+            )),
+            ...(content.bonuses?.map((bonus) => (
+              <PillBonusLabel
+                key={bonus.key}
+                label={bonus.label}
+                tone={bonus.tone as PillTone}
+                value={bonus.value}
+              />
+            )) ?? []),
+          ]}
           title={content.title}
         />
       }
