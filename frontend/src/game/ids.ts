@@ -882,6 +882,8 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.cunshen-jue': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
   'item.tome.lianjing-huaqi-jue': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
   'item.fragment.lianjing-huaqi-jue': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.xuanyuan-yiqi-gong': { glyph: '📘', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualTome' },
+  'item.fragment.xuanyuan-yiqi-gong': { glyph: '📜', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualFragment' },
   'item.gathering-incense': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
   'item.alchemy-flame': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
   'equipment.qingfeng-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },

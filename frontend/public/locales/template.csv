@@ -1382,6 +1382,9 @@ game.item.item.fragment.tuna-gong.label,"《吐纳功·残卷》",""
 game.item.item.fragment.xiaozhoutian-gong.description,"气行任督，周天不息。
 金丝装订的正统道门心法，翻开隐有纯和清正的灵息周流。",""
 game.item.item.fragment.xiaozhoutian-gong.label,"《小周天功·残卷》",""
+game.item.item.fragment.xuanyuan-yiqi-gong.description,"玄元一气，六合归真。
+玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",""
+game.item.item.fragment.xuanyuan-yiqi-gong.label,"《玄元一气功·残卷》",""
 game.item.item.gathering-incense.description,"青烟袅袅起，引路觅灵踪。
 以幽谷异草凝制的线香，点燃后青烟袅袅，香气沉静。",""
 game.item.item.gathering-incense.label,"寻灵香",""
@@ -1494,6 +1497,9 @@ game.item.item.tome.tuna-gong.label,"《吐纳功秘籍》",""
 game.item.item.tome.xiaozhoutian-gong.description,"气行任督，周天不息。
 金丝装订的正统道门心法，翻开隐有纯和清正的灵息周流。",""
 game.item.item.tome.xiaozhoutian-gong.label,"《小周天功秘籍》",""
+game.item.item.tome.xuanyuan-yiqi-gong.description,"玄元一气，六合归真。
+玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",""
+game.item.item.tome.xuanyuan-yiqi-gong.label,"《玄元一气功秘籍》",""
 game.item.item.tongmai-pill.description,"紫纹锁丹，药透经络。
 丹面铭刻着细密紫纹的凝气灵丹，丹晕如雾缭绕。",""
 game.item.item.tongmai-pill.label,"通脉丹",""

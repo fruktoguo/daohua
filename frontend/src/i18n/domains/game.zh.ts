@@ -246,6 +246,8 @@ export const gameZh = {
       'item.fragment.cunshen-jue': { label: '《存神诀·残卷》', description: '存神内视，万虑皆空。\n绘有周身神煞穴位图的上乘神识真解，图文玄奥幽微。' },
       'item.tome.lianjing-huaqi-jue': { label: '《炼精化气诀秘籍》', description: '炼精化气，舍形求真。\n青玉简策编缀的古修遗典，记录舍弃肉身沉疴、精纯反哺修为之秘。' },
       'item.fragment.lianjing-huaqi-jue': { label: '《炼精化气诀·残卷》', description: '炼精化气，舍形求真。\n青玉简策编缀的古修遗典，记录舍弃肉身沉疴、精纯反哺修为之秘。' },
+      'item.tome.xuanyuan-yiqi-gong': { label: '《玄元一气功秘籍》', description: '玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。' },
+      'item.fragment.xuanyuan-yiqi-gong': { label: '《玄元一气功·残卷》', description: '玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。' },
       'item.gathering-incense': { label: '寻灵香', description: '青烟袅袅起，引路觅灵踪。\n以幽谷异草凝制的线香，点燃后青烟袅袅，香气沉静。' },
       'item.alchemy-flame': { label: '地火引', description: '地火苗藏玉管中。\n封存在温玉小管中的一缕地脉火苗，静默跳动，热力含而不发。' },
       'equipment.qingfeng-sword': { label: '青锋剑', description: '青锋映水，寒光澄秋。\n青钢淬火锻造的三尺长剑，剑身青光如秋水澄澈。' },
