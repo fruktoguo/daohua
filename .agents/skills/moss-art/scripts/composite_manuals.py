@@ -33,6 +33,9 @@ INTERNAL_CONFIGS = [
     ("xuanyuan-yiqi-gong", "《玄元一气功秘籍》", (32, 36, 42), -7)
 ]
 
+# 原版同款带棕带黄的宣纸象牙古色 (暖黄米棕 #edd8b5: RGB 237, 216, 181)
+IVORY_BUFF = np.array([237, 216, 181], dtype=np.uint8)
+
 def synthesize_all():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
@@ -89,11 +92,10 @@ def synthesize_all():
         # 彻底去除所有黑色/暗色像素 (亮度<90或透明的全部变为0透明，绝不留任何黑边或黑底)
         lum_e = (earr[:, :, 0].astype(int) + earr[:, :, 1].astype(int) + earr[:, :, 2].astype(int)) // 3
         is_white = (earr[:, :, 3] > 40) & (lum_e >= 90)
-        
         clean_arr = np.zeros_like(earr)
-        clean_arr[is_white] = [255, 255, 255, 255] # 100% 绝对纯白
+        clean_arr[is_white, :3] = IVORY_BUFF
+        clean_arr[is_white, 3] = 255
         clean_emblem = Image.fromarray(clean_arr)
-        
         # 覆写保存母版，使 art/emblems/ 里的原版也完全纯净
         clean_emblem.save(emblem_path, format="WEBP", lossless=True)
         
@@ -112,7 +114,8 @@ def synthesize_all():
         # 旋转插值保护：确保边缘只有纯白和完全透明，绝无任何黑边/灰边
         rarr = np.array(emblem_rotated)
         rmask = rarr[:, :, 3] > 60
-        rarr[rmask] = [255, 255, 255, 255]
+        rarr[rmask, :3] = IVORY_BUFF
+        rarr[rmask, 3] = 255
         rarr[~rmask] = [0, 0, 0, 0]
         emblem_final = Image.fromarray(rarr)
         
@@ -142,7 +145,8 @@ def synthesize_all():
         frag_rotated = emblem_frag.rotate(int(tilt_angle * 0.75), resample=Image.Resampling.BICUBIC, expand=True)
         frarr = np.array(frag_rotated)
         frmask = frarr[:, :, 3] > 60
-        frarr[frmask] = [255, 255, 255, 255]
+        frarr[frmask, :3] = IVORY_BUFF
+        frarr[frmask, 3] = 255
         frarr[~frmask] = [0, 0, 0, 0]
         emblem_f_final = Image.fromarray(frarr)
         
