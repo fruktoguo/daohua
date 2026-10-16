@@ -2,14 +2,13 @@
   {
     "id": "talisman.draw-leiji",
     "name": "雷击符",
-    "description": "以残魄灵符为纸、桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。",
+    "description": "以桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。",
     "type": "alchemy",
     "technique": "talisman",
     "executionKind": "timed",
     "durationSeconds": 20,
     "inputs": {
-      "item.soul-talisman": 2,
-      "item.peach-wood-crystal": 1
+      "item.peach-wood-crystal": 3
     },
     "yields": [
       {

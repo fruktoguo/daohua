@@ -1081,9 +1081,9 @@ game.action.forge.zhansha-blade.description,"融入赤铜精与兽牙重铸劈�
 game.action.forge.zhansha-blade.name,"斩煞刀",""
 game.action.forge.ziwu-crown.description,"以灵松晶与残魄灵符重铸混元巾炼制的玉质道冠。",""
 game.action.forge.ziwu-crown.name,"子午冠",""
-game.action.formation.deploy-juling.description,"以灵松晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。",""
+game.action.formation.deploy-juling.description,"以桃木晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。",""
 game.action.formation.deploy-juling.name,"聚灵阵盘",""
-game.action.talisman.draw-leiji.description,"以残魄灵符为纸、桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。",""
+game.action.talisman.draw-leiji.description,"以桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。",""
 game.action.talisman.draw-leiji.name,"雷击符",""
 game.action.world.travel.description,"沿已规划的山道前往目标地点。",""
 game.action.world.travel.name,"赶路",""
@@ -1385,7 +1385,7 @@ game.item.item.herb-essence.description,"百草凝露，生机内蕴。
 萃取百草朝露精粹而成的碧绿药露，香气清纯，生机内蕴。",""
 game.item.item.herb-essence.label,"草木精华",""
 game.item.item.juling-formation-disk.description,"阵盘方寸聚灵潮。
-灵松晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入主人体内。",""
+桃木晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入主人体内。",""
 game.item.item.juling-formation-disk.label,"聚灵阵盘",""
 game.item.item.leiji-talisman.description,"朱笔走雷纹，祭出召天霆。
 朱砂勾勒雷纹的青色灵符，符面电光游走不散，祭出即唤木行天雷直击敌首。",""

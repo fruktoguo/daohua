@@ -165,8 +165,8 @@ export const gameZh = {
       'forge.tool-quench-anvil': { name: '淬灵锤', description: '以百炼铁与碎灵核合铸的强化重锤，落锤器物灵光内蕴。' },
 
       // 符箓·阵法·强化
-      'talisman.draw-leiji': { name: '雷击符', description: '以残魄灵符为纸、桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。' },
-      'formation.deploy-juling': { name: '聚灵阵盘', description: '以灵松晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。' },
+      'talisman.draw-leiji': { name: '雷击符', description: '以桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。' },
+      'formation.deploy-juling': { name: '聚灵阵盘', description: '以桃木晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。' },
       'enhance.equipment': { name: '装备强化', description: '以灵石为媒淬炼装备本体逐级铭纹，成败之间砥砺器物威能。' },
 
       // 讨伐战斗
@@ -190,7 +190,7 @@ export const gameZh = {
       'item.fire-feather': { label: '火羽', description: '灵禽遗赤羽，星火缀翎梢。\n灵禽异鸟身上的赤红翎羽，羽丝流转着点点火光星芒。' },
       'item.soul-talisman': { label: '残魄灵符', description: '朱砂斑驳符灵在。\n残破泛黄的古旧符纸，朱砂符印斑驳，仍隐有灵力回荡。' },
       'item.leiji-talisman': { label: '雷击符', description: '朱笔走雷纹，祭出召天霆。\n朱砂勾勒雷纹的青色灵符，符面电光游走不散，祭出即唤木行天雷直击敌首。' },
-      'item.juling-formation-disk': { label: '聚灵阵盘', description: '阵盘方寸聚灵潮。\n灵松晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入主人体内。' },
+      'item.juling-formation-disk': { label: '聚灵阵盘', description: '阵盘方寸聚灵潮。\n桃木晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入主人体内。' },
       'item.broken-blade': { label: '残刃', description: '断刃埋沙，杀气未销。\n战场遗迹中出土的古战断刃，虽缺锋芒，却自有一股肃杀戾气。' },
       'item.sha-bone': { label: '煞骨', description: '魔煞侵苍骨，触手生冰寒。\n历经魔煞侵蚀的苍黑异骨，触之刺骨冰寒。' },
       'item.demon-core': { label: '妖核', description: '心脉结晶蕴狂澜。\n异种古兽心脉凝成的晶核，内里流转着狂暴深邃的星陨灵息。' },
