@@ -82,7 +82,9 @@ public sealed record DuelScriptEvent(
     string? AbilityId = null,
     double Healing = 0,
     double AttackerManapointsAfter = 0,
-    double TargetManapointsAfter = 0);
+    double TargetManapointsAfter = 0,
+    bool Break = false,
+    bool Parried = false);
 
 /// <summary>
 /// 斗法完整结算剧本：撮合时一次性推演完毕，双方各自回放同一份确定性结果。

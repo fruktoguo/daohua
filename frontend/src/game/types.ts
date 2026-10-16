@@ -305,6 +305,8 @@ export interface QueueEntry {
   durationSeconds: number
   /** 剩余循环次数（-1 表示无限循环，0 表示当前轮结束后出队） */
   remainingRepeats: number
+  /** 已完成轮次数（服务端权威累计值，用于识别无限循环或单项循环跨轮重置） */
+  completedRepeats?: number
   /** 执行类型 */
   executionKind?: ActionExecutionKind
   /** 关联的战斗遭遇 ID */
@@ -501,6 +503,30 @@ export interface ExpeditionAlly {
 }
 
 /**
+ * 遭遇战单次打击/受创事件（伤害/闪避/破招/拆招/暴击），用于战场浮字与动作反馈
+ */
+export interface CombatRecentEvent {
+  /** 战斗时钟时刻（秒） */
+  at: number
+  /** 出手方 ID (player / enemy:0 / ally:1) */
+  attackerId: string
+  /** 受击方 ID */
+  targetId: string
+  /** 实收伤害 */
+  damage: number
+  /** 是否命中（false 为闪避） */
+  hit: boolean
+  /** 是否暴击 */
+  critical?: boolean
+  /** 是否破招 */
+  broken?: boolean
+  /** 是否拆招 */
+  parried?: boolean
+  /** 施放技能 ID（普攻为 null） */
+  abilityId?: string | null
+}
+
+/**
  * 远征探索与战斗实时进度结构
  */
 export interface ExpeditionProgress {
@@ -546,6 +572,8 @@ export interface ExpeditionProgress {
   allies?: ExpeditionAlly[] | null
   /** 本机成员在 allies 中的下标 */
   selfIndex?: number | null
+  /** 最近步进产生的基础战斗事件流（普攻/技能命中/闪避/破招/拆招/暴击） */
+  recentEvents?: CombatRecentEvent[] | null
 }
 
 /**
@@ -740,6 +768,16 @@ export interface ExpeditionDuelEvent {
   attackerManapointsAfter: number
   /** 受击方结算后剩余灵力 */
   targetManapointsAfter: number
+  /** 本次攻击是否命中（false 为闪避） */
+  hit?: boolean
+  /** 结算伤害 */
+  damage?: number
+  /** 是否暴击 */
+  critical?: boolean
+  /** 是否破招 */
+  broken?: boolean
+  /** 是否拆招 */
+  parried?: boolean
 }
 
 /**
@@ -1807,6 +1845,7 @@ export interface PlayerPatch {
   serverTimeUnixMilliseconds?: number | null
   presenceMode?: PresenceMode
   queue?: QueueState
+  queueEntriesUpdated?: boolean
   inventory?: InventoryItem[]
   buffs?: Buff[]
   stats?: Stats

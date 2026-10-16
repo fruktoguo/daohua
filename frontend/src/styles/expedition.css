@@ -2121,6 +2121,7 @@
 
 .arena-resource-track {
   position: relative;
+  z-index: 1;
   display: flex;
   width: 100%;
   height: 6px;
@@ -2133,7 +2134,6 @@
   box-shadow: none;
   overflow: visible;
 }
-
 .arena-resource-track>i {
   position: absolute;
   inset: 0;
@@ -2152,8 +2152,8 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%) skewX(20deg);
-  z-index: 3;
+  transform: translate(-50%, -50%);
+  z-index: 4;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2180,7 +2180,7 @@
 
 .arena-resource-shards {
   position: absolute;
-  z-index: 3;
+  z-index: 2;
   inset: 0;
   overflow: visible;
   pointer-events: none;
@@ -2220,7 +2220,7 @@
 
 .arena-resource-floats {
   position: absolute;
-  z-index: 4;
+  z-index: 5;
   inset: 0;
   overflow: visible;
   pointer-events: none;
@@ -2416,6 +2416,103 @@
 
 .arena-resource--mp .arena-resource-floats em.is-positive {
   color: #38bdf8;
+}
+
+.arena-resource-floats em.is-dodge {
+  color: #2dd4bf;
+  font-family: -apple-system, "SF Pro Rounded", "PingFang SC", "Microsoft YaHei", sans-serif;
+  letter-spacing: 1px;
+  text-shadow:
+    0 0 8px rgba(45, 212, 191, 0.85),
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+
+.arena-resource-floats em.is-break {
+  color: #fb923c;
+  text-shadow:
+    0 0 8px rgba(251, 146, 60, 0.85),
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+
+.arena-resource-floats em.is-parry {
+  color: #93c5fd;
+  text-shadow:
+    0 0 8px rgba(147, 197, 253, 0.85),
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+
+.arena-resource-floats em.is-crit {
+  color: #fbbf24;
+  font-size: 17px;
+  text-shadow:
+    0 0 10px rgba(251, 191, 36, 0.9),
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+
+.arena-float-badge {
+  display: inline-block;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 10.5px;
+  font-weight: 800;
+  font-style: normal;
+  padding: 0 4px;
+  margin-right: 3px;
+  border-radius: 2px;
+  vertical-align: 1px;
+  line-height: 1.15;
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.arena-float-badge--break {
+  background: rgba(234, 88, 12, 0.9);
+  color: #fff;
+  border: 1px solid #fb923c;
+}
+
+.arena-float-badge--parry {
+  background: rgba(30, 64, 175, 0.9);
+  color: #e0f2fe;
+  border: 1px solid #60a5fa;
+}
+
+.arena-float-badge--crit {
+  background: rgba(180, 83, 9, 0.9);
+  color: #fef08a;
+  border: 1px solid #fde047;
+}
+
+@keyframes arena-actor-dodge {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(14px, 0, 0) skewX(8deg);
+    filter: drop-shadow(0 0 8px rgba(45, 212, 191, 0.8));
+  }
+  60% {
+    transform: translate3d(-3px, 0, 0) skewX(-2deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.arena-actor.is-dodging .arena-avatar-stage {
+  animation: arena-actor-dodge 0.45s cubic-bezier(0.18, 0.82, 0.25, 1);
 }
 
 /* 翘起后很快开始渐隐,避免碎片拖尾过久 */

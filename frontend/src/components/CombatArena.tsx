@@ -9,7 +9,7 @@ import { ACTION_TAB_META, convertTierToLevel, findAbilityInCatalog, findCombatan
 import { calculateEnhancementYields, ENHANCE_ACTION_ID, SPIRIT_STONE_ITEM_ID } from '../game/combatConstants'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatAbilitySlot, CombatActionState, CombatAttributes, CombatBuffEntry, EquippedItem, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatAbilitySlot, CombatActionState, CombatAttributes, CombatBuffEntry, CombatRecentEvent, EquippedItem, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -36,11 +36,17 @@ function resolveQueueEntryDisplayName(
   return world && maps ? localizeActionDisplayText(name, world, maps) : name
 }
 
-/** 资源条数值变动特效记录（跳字与血条破裂碎片） */
+/** 资源条数值变动特效记录（跳字、特殊博弈标签与血条破裂碎片） */
 interface ResourceEffect {
   id: number
-  /** 本次数值增量（负值为受损） */
-  delta: number
+  /** 本次数值增量（负值为受损，闪避时为 undefined） */
+  delta?: number
+  /** 纯文本（如“闪避”） */
+  text?: string
+  /** 特殊标签胶囊（破招 / 拆招 / 暴击） */
+  badge?: 'break' | 'parry' | 'crit'
+  badgeLabel?: string
+  kind?: 'damage' | 'heal' | 'dodge' | 'break' | 'parry' | 'crit'
   /** 受损区间起点（占最大值比例 0~1），碎片/跳字按它定位 */
   left: number
   /** 受损区间宽度（占最大值比例 0~1） */
@@ -110,19 +116,42 @@ function measureArenaAim(fromEl: Element | null, toEl: Element | null): { slope:
 }
 
 /**
+ * 校验战斗事件的目标 ID 是否匹配当前角色卡片
+ */
+function isTargetForActor(targetId: string, actorKey: string): boolean {
+  if (actorKey === 'player') {
+    return targetId === 'player' || targetId === 'ally:0'
+  }
+  if (actorKey.startsWith('ally:')) {
+    return targetId === actorKey
+  }
+  if (actorKey.startsWith('enemy:')) {
+    if (targetId.startsWith('enemy:')) {
+      const parts = targetId.split(':')
+      const targetIndex = parts[1]
+      return actorKey.startsWith(`enemy:${targetIndex}:`) || actorKey === targetId || (actorKey.startsWith('enemy:duel:') && targetIndex === '0')
+    }
+    return false
+  }
+  return false
+}
+
+/**
  * 战场生命/真元资源条组件 (ArenaResource)
  *
  * 渲染角色气血 (HP) 与灵力 (MP) 仪表盘。
- * 当数值发生变化时：
- * 1. 产生向上飘散的增减跳字浮动动画 (+/- delta)；
+ * 当数值或事件发生变化时：
+ * 1. 产生向上飘散的增减跳字或特殊对抗浮动动画（破招 / 拆招 / 闪避 / 暴击）；
  * 2. 受到大额伤害时（>= 最大值 2%），在受损区间生成带物理位移与旋转的血条碎裂切片特效 (Shards)；
- * 3. 具有自动清理定时器以防内存泄漏。
+ * 3. 血量文字数值独立于切片之上渲染，杜绝层级遮挡与跳变；
+ * 4. 具有自动清理定时器以防内存泄漏。
  */
 function ArenaResource({
   actorKey,
   value,
   max,
   tone,
+  recentEvents,
 }: {
   /** 实体唯一标识符（切换目标时重置特效） */
   actorKey: string
@@ -132,14 +161,90 @@ function ArenaResource({
   max: number
   /** 色调类型：hp 气血红 / mp 灵力蓝 */
   tone: 'hp' | 'mp'
+  /** 最近产生的战斗对抗事件（普攻/技能命中/闪避/破招/拆招/暴击） */
+  recentEvents?: readonly CombatRecentEvent[] | null
 }): React.JSX.Element {
+  const t = useT()
   const normalizedMax = Math.max(1, max)
   const normalizedValue = Math.max(0, Math.min(normalizedMax, value))
   const previousRef = useRef({ actorKey, max: normalizedMax, value: normalizedValue })
   const nextEffectId = useRef(1)
   const timers = useRef(new Set<number>())
   const [effects, setEffects] = useState<ResourceEffect[]>([])
+  const handledEventsRef = useRef(new Set<string>())
 
+  // 1. 消费精确的战斗对抗事件流（闪避、破招、拆招、暴击浮字）
+  useEffect(() => {
+    if (tone !== 'hp' || !recentEvents || recentEvents.length === 0) return
+    const handled = handledEventsRef.current
+
+    for (const event of recentEvents) {
+      const sig = `${event.at}:${event.attackerId}:${event.targetId}:${event.hit}:${event.damage}:${event.broken}:${event.parried}:${event.critical}`
+      if (handled.has(sig)) continue
+      handled.add(sig)
+      if (handled.size > 80) {
+        const oldest = handled.values().next().value
+        if (oldest) handled.delete(oldest)
+      }
+
+      if (!isTargetForActor(event.targetId, actorKey)) continue
+
+      const id = nextEffectId.current++
+      if (!event.hit) {
+        // 闪避（可同时附带拆招化解标记）
+        const effect: ResourceEffect = {
+          id,
+          text: t('combat.arena.dodge'),
+          badge: event.parried ? 'parry' : undefined,
+          badgeLabel: event.parried ? t('combat.arena.parry') : undefined,
+          kind: 'dodge',
+          left: 0.35,
+          width: 0.3,
+          lane: ((id % 3) - 1) * 8,
+        }
+        setEffects(current => [...current.slice(-5), effect])
+        const timer = window.setTimeout(() => {
+          setEffects(current => current.filter(item => item.id !== effect.id))
+          timers.current.delete(timer)
+        }, 1_100)
+        timers.current.add(timer)
+      } else if (event.broken || event.parried || event.critical) {
+        // 破招 / 拆招 / 暴击附带掉血数字
+        const badgeKind: 'break' | 'parry' | 'crit' = event.broken
+          ? 'break'
+          : event.parried
+          ? 'parry'
+          : 'crit'
+        const badgeLabel = badgeKind === 'break'
+          ? t('combat.arena.break')
+          : badgeKind === 'parry'
+          ? t('combat.arena.parry')
+          : t('combat.arena.crit')
+
+        const damageDelta = event.damage > 0 ? -event.damage : (normalizedValue - previousRef.current.value)
+        if (damageDelta < 0) {
+          const effect: ResourceEffect = {
+            id,
+            delta: damageDelta,
+            badge: badgeKind,
+            badgeLabel,
+            kind: badgeKind,
+            left: Math.min(previousRef.current.value, normalizedValue) / normalizedMax,
+            width: Math.max(resourceShardMinimumRatio, Math.abs(damageDelta) / normalizedMax),
+            lane: ((id % 3) - 1) * 8,
+          }
+          setEffects(current => [...current.slice(-5), effect])
+          const timer = window.setTimeout(() => {
+            setEffects(current => current.filter(item => item.id !== effect.id))
+            timers.current.delete(timer)
+          }, 1_100)
+          timers.current.add(timer)
+        }
+      }
+    }
+  }, [actorKey, normalizedMax, normalizedValue, recentEvents, t, tone])
+
+  // 2. 数值变动保底（普通掉血/回血/回蓝，或无显式对抗事件的 DoT 等）
   useLayoutEffect(() => {
     const previous = previousRef.current
     if (previous.actorKey !== actorKey || previous.max !== normalizedMax) {
@@ -159,7 +264,11 @@ function ArenaResource({
       lane: ((id % 3) - 1) * 8,
     }
     previousRef.current = { actorKey, max: normalizedMax, value: normalizedValue }
-    setEffects(current => [...current.slice(-5), effect])
+    setEffects(current => {
+      const hasRecentSpecial = current.some(e => e.delta === delta && (e.kind === 'break' || e.kind === 'parry' || e.kind === 'crit'))
+      if (hasRecentSpecial) return current
+      return [...current.slice(-5), effect]
+    })
     const timer = window.setTimeout(() => {
       setEffects(current => current.filter(item => item.id !== effect.id))
       timers.current.delete(timer)
@@ -177,13 +286,10 @@ function ArenaResource({
       <div className="arena-resource-meter">
         <div className="arena-resource-track">
           <i style={{ transform: `scaleX(${normalizedValue / normalizedMax})` }} />
-          <span className="arena-resource-badge">
-            <UnitNumber disableTooltip value={normalizedValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
-          </span>
         </div>
         <span className="arena-resource-shards" aria-hidden="true">
           {effects
-            .filter(effect => effect.delta < 0 && effect.width >= resourceShardMinimumRatio)
+            .filter(effect => (effect.delta ?? 0) < 0 && effect.width >= resourceShardMinimumRatio)
             .map(effect => {
               const scale = 1 + Math.min(0.5, effect.width * 1.6)
               const travel = (tone === 'hp' ? -52 : 52) * scale
@@ -208,19 +314,34 @@ function ArenaResource({
               )
             })}
         </span>
+        <span className="arena-resource-badge">
+          <UnitNumber disableTooltip value={normalizedValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
+        </span>
         <span className="arena-resource-floats" aria-live="polite">
-          {effects.map(effect => (
-            <em
-              className={effect.delta > 0 ? 'is-positive' : 'is-negative'}
-              key={effect.id}
-              style={{
-                '--float-drift': `${effect.lane}px`,
-                left: `${Math.max(0.08, Math.min(0.92, effect.left + effect.width / 2)) * 100}%`,
-              } as CSSProperties}
-            >
-              {effect.delta > 0 ? '+' : ''}{formatInteger(effect.delta)}
-            </em>
-          ))}
+          {effects.map(effect => {
+            const emClass = effect.kind
+              ? `is-${effect.kind}`
+              : (effect.delta ?? 0) > 0
+              ? 'is-positive'
+              : 'is-negative'
+            return (
+              <em
+                className={emClass}
+                key={effect.id}
+                style={{
+                  '--float-drift': `${effect.lane}px`,
+                  left: `${Math.max(0.08, Math.min(0.92, effect.left + effect.width / 2)) * 100}%`,
+                } as CSSProperties}
+              >
+                {effect.badge && (
+                  <span className={`arena-float-badge arena-float-badge--${effect.badge}`}>
+                    {effect.badgeLabel}
+                  </span>
+                )}
+                {effect.text ?? ((effect.delta ?? 0) > 0 ? `+${formatInteger(effect.delta!)}` : formatInteger(effect.delta!))}
+              </em>
+            )
+          })}
         </span>
       </div>
     </div>
@@ -271,11 +392,11 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
     const anchor = anchorRef.current
     if (anchor?.signature === signature) {
       const expected = Math.min(anchor.duration, anchor.elapsed + now - anchor.startedAt)
-      // elapsed 明显回退说明同一行动进入了新一轮出手，必须重建动画；
-      // 否则在 ±250ms 估算误差内沿用旧动画，避免每次快照同步都重启 WAAPI 造成进度条抖动。
-      const startedNewCycle = elapsed + 50 < anchor.lastObservedElapsed
+      // elapsed 明显回退（相对于上次观测值或当前动画预期位置）说明同一行动进入了新一轮出手，必须重建动画；
+      // 否则在 ±450ms 估算误差内沿用运行中的旧动画，避免快照同步重启 WAAPI 造成进度条抖动。
+      const startedNewCycle = elapsed + 50 < anchor.lastObservedElapsed || expected - elapsed > 350
       anchor.lastObservedElapsed = elapsed
-      if (!startedNewCycle && Math.abs(elapsed - expected) <= 250) return
+      if (!startedNewCycle && animationRef.current?.playState === 'running' && Math.abs(elapsed - expected) <= 450) return
     }
 
     animationRef.current?.cancel()
@@ -541,7 +662,8 @@ function ArenaPhaseFill({
 }): React.JSX.Element {
   const fillRef = useRef<HTMLElement>(null)
   const animationRef = useRef<Animation | null>(null)
-  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
+  const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
+  const paused = useGameStore(state => state.queue.paused)
   const anchorRef = useRef<{
     signature: string
     elapsed: number
@@ -554,19 +676,25 @@ function ArenaPhaseFill({
     if (!fill) return
     const duration = Math.max(1, expedition.durationSeconds * 1000)
     const baseElapsedMs = Math.max(0, (expedition.elapsedSeconds ?? (expedition.progress * expedition.durationSeconds)) * 1000)
-    const elapsedSinceSync = Math.max(0, performance.now() - lastSyncPerformanceTime)
+    const elapsedSinceSync = paused ? 0 : Math.max(0, performance.now() - lastQueueSyncPerformanceTime)
     const elapsed = Math.max(0, Math.min(duration, baseElapsedMs + elapsedSinceSync))
+    const transformProperty = orientation === 'vertical' ? 'scaleY' : 'scaleX'
+    if (paused) {
+      animationRef.current?.cancel()
+      anchorRef.current = null
+      fill.style.transform = `${transformProperty}(${elapsed / duration})`
+      return
+    }
     const signature = `${expedition.phase}|${expedition.waveNumber ?? 0}|${duration}`
     const now = performance.now()
     const anchor = anchorRef.current
-    if (anchor?.signature === signature) {
+    if (anchor?.signature === signature && animationRef.current?.playState === 'running') {
       const expected = Math.min(anchor.duration, anchor.elapsed + now - anchor.startedAt)
-      if (Math.abs(elapsed - expected) <= 300) return
+      if (Math.abs(elapsed - expected) <= 500) return
     }
 
     animationRef.current?.cancel()
     const fraction = elapsed / duration
-    const transformProperty = orientation === 'vertical' ? 'scaleY' : 'scaleX'
     fill.style.transform = `${transformProperty}(${fraction})`
     anchorRef.current = { signature, elapsed, duration, startedAt: now }
     const remaining = duration - elapsed
@@ -575,7 +703,7 @@ function ArenaPhaseFill({
       [{ transform: `${transformProperty}(${fraction})` }, { transform: `${transformProperty}(1)` }],
       { duration: remaining, easing: 'linear', fill: 'forwards' },
     )
-  }, [expedition.waveNumber, expedition.durationSeconds, expedition.elapsedSeconds, expedition.phase, expedition.progress, lastSyncPerformanceTime, orientation])
+  }, [expedition.waveNumber, expedition.durationSeconds, expedition.elapsedSeconds, expedition.phase, expedition.progress, lastQueueSyncPerformanceTime, orientation, paused])
 
   useEffect(() => () => animationRef.current?.cancel(), [])
 
@@ -587,6 +715,9 @@ function ArenaPhaseFill({
  */
 function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): React.JSX.Element {
   const t = useT()
+  const timeRef = useRef<HTMLSpanElement>(null)
+  const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
+  const paused = useGameStore(state => state.queue.paused)
   const isInitialSearch = expedition.phase === 'initial-search'
 
   const title = expedition.phase === 'respawn' ? t('combat.arena.phaseDeath') : isInitialSearch
@@ -594,7 +725,22 @@ function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): Re
     : t('combat.arena.phaseHunt')
 
   const sigil = isInitialSearch ? t('combat.arena.sigilSearch') : t('combat.arena.sigilHunt')
-  const remaining = Math.max(0, expedition.durationSeconds - expedition.elapsedSeconds)
+  const baseRemaining = Math.max(0, expedition.durationSeconds - expedition.elapsedSeconds)
+
+  useEffect(() => {
+    const el = timeRef.current
+    if (!el) return undefined
+    const render = () => {
+      const elapsedSec = paused ? 0 : Math.max(0, (performance.now() - lastQueueSyncPerformanceTime) / 1000)
+      const rem = Math.max(0, baseRemaining - elapsedSec)
+      const text = `${rem.toFixed(1)}s`
+      if (el.textContent !== text) el.textContent = text
+    }
+    render()
+    if (paused) return undefined
+    const id = window.setInterval(render, 100)
+    return () => window.clearInterval(id)
+  }, [baseRemaining, lastQueueSyncPerformanceTime, paused])
 
   return (
     <div className={`arena-search-state arena-search-state--${expedition.phase}`} role="status" aria-label={title}>
@@ -603,7 +749,7 @@ function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): Re
       <div className="arena-search-progress-vertical">
         <ArenaPhaseFill expedition={expedition} orientation="vertical" />
       </div>
-      <span className="arena-search-time-vertical">{remaining.toFixed(1)}s</span>
+      <span ref={timeRef} className="arena-search-time-vertical">{baseRemaining.toFixed(1)}s</span>
     </div>
   )
 }
@@ -676,6 +822,7 @@ function ArenaActor({
   visual,
   visible = true,
   compact = false,
+  recentEvents,
 }: {
   /** 实体唯一键：切换目标/波次时重置跳字与受击特效状态 */
   actorKey: string
@@ -699,6 +846,7 @@ function ArenaActor({
   /** 非激活态（搜寻阶段敌方未入场）时置灰休眠且不可聚焦 */
   visible?: boolean
   compact?: boolean
+  recentEvents?: readonly CombatRecentEvent[] | null
 }): React.JSX.Element {
   const t = useT()
   const articleRef = useRef<HTMLElement | null>(null)
@@ -723,6 +871,29 @@ function ArenaActor({
   const clearImpactTimer = useRef<number | null>(null)
   const [actionMotion, setActionMotion] = useState<ActorMotion | null>(null)
   const [impact, setImpact] = useState<ActorImpact | null>(null)
+  const [dodging, setDodging] = useState(false)
+  const clearDodgeTimer = useRef<number | null>(null)
+  const handledDodgeEventsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    if (!recentEvents || recentEvents.length === 0) return
+    const handled = handledDodgeEventsRef.current
+    for (const event of recentEvents) {
+      if (event.hit) continue
+      const sig = `${event.at}:${event.attackerId}:${event.targetId}:dodge`
+      if (handled.has(sig)) continue
+      handled.add(sig)
+      if (handled.size > 50) {
+        const oldest = handled.values().next().value
+        if (oldest) handled.delete(oldest)
+      }
+      if (isTargetForActor(event.targetId, actorKey)) {
+        setDodging(true)
+        if (clearDodgeTimer.current !== null) window.clearTimeout(clearDodgeTimer.current)
+        clearDodgeTimer.current = window.setTimeout(() => setDodging(false), 450)
+      }
+    }
+  }, [recentEvents, actorKey])
 
   useLayoutEffect(() => {
     const previous = previousHitpoints.current
@@ -792,13 +963,14 @@ function ArenaActor({
     if (scheduledAction.current !== null) window.clearTimeout(scheduledAction.current.timer)
     if (clearActionMotionTimer.current !== null) window.clearTimeout(clearActionMotionTimer.current)
     if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
+    if (clearDodgeTimer.current !== null) window.clearTimeout(clearDodgeTimer.current)
   }, [])
 
   const interactive = onInspect !== undefined
   return (
     <article
       aria-label={t('combat.arena.inspectAria', { name: name || t('combat.arena.defaultActorName') })}
-      className={`arena-actor arena-actor--${role}${compact ? ' arena-actor--compact' : ''}${visible ? '' : ' is-dormant'}${hp <= 0 ? ' is-dead' : ''}${actionMotion ? ` is-action-${actionMotion.kind}` : ''}${impact ? ' is-hit' : ''}`}
+      className={`arena-actor arena-actor--${role}${compact ? ' arena-actor--compact' : ''}${visible ? '' : ' is-dormant'}${hp <= 0 ? ' is-dead' : ''}${actionMotion ? ` is-action-${actionMotion.kind}` : ''}${impact ? ' is-hit' : ''}${dodging ? ' is-dodging' : ''}`}
       ref={articleRef}
       style={{
         '--arena-aim-angle': `${actionMotion?.aimAngleDeg ?? 0}deg`,
@@ -819,7 +991,7 @@ function ArenaActor({
       <header className="arena-overhead">
         <strong>{name || '\u00a0'}</strong>
         <div className="arena-vitals">
-          <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} />
+          <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} recentEvents={recentEvents} />
           <ArenaResource actorKey={actorKey} max={maxMp} tone="mp" value={mp} />
           {threat != null && (
             <span aria-label={t('combat.arena.threatAria', { n: formatInteger(threat) })} className="arena-threat">
@@ -1595,6 +1767,7 @@ export const CombatArena = memo(function CombatArena({
   const maps = useGameStore(state => state.maps)
   const encounters = useGameStore(state => state.encounters)
   const queue = useGameStore(state => state.queue.entries)
+  const queuePaused = useGameStore(state => state.queue.paused)
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
   // 否则角色行动条与右侧行动卡片会因「非队列补丁」（入灵气、掉落等）产生 0~1 秒的显示差。
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
@@ -1866,6 +2039,7 @@ export const CombatArena = memo(function CombatArena({
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (isCombat) {
+      if (queuePaused) return null
       const battleElapsed = expedition?.battleElapsedSeconds ?? 0
       const serverNow = estimateServerNowUnixMilliseconds()
       const attackInterval = combatAttributes?.attackIntervalMilliseconds ?? 0
@@ -1905,23 +2079,23 @@ export const CombatArena = memo(function CombatArena({
       return null
     }
     if ((isLifeAction || isTravel) && current) {
+      if (current.status !== 'running' || queuePaused) return null
       const durSec = (isTravel && current.expedition?.durationSeconds) ? current.expedition.durationSeconds : current.durationSeconds
       const durMs = Math.max(1, durSec * 1000)
       const baseElSec = (isTravel && current.expedition?.elapsedSeconds !== undefined) ? current.expedition.elapsedSeconds : current.progressSeconds
       const baseElMs = Math.max(0, baseElSec * 1000)
-      const isRunning = current.status === 'running'
-      const elapsedSinceSync = isRunning ? Math.max(0, performance.now() - lastQueueSyncPerformanceTime) : 0
+      const elapsedSinceSync = Math.max(0, performance.now() - lastQueueSyncPerformanceTime)
       const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
       return {
         kind: 'cast',
         name: resolveQueueEntryDisplayName(current, current.actionName, world, maps),
         durationMilliseconds: durMs,
         elapsedMilliseconds: currentElMs,
-        completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - currentElMs),
+        completesAtUnixMilliseconds: null,
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities, world, maps, t])
+  }, [current, expedition, isCombat, isLifeAction, isTravel, queuePaused, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities, world, maps, t])
 
   // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时取用属性；
   // 角色/敌怪/斗法镜像/盟友全部渲染服务端下发的 CombatAttributes 终值，无任何本地估算。
@@ -1978,6 +2152,28 @@ export const CombatArena = memo(function CombatArena({
 
   // 待终止目标仅在仍为队首时有效；自然完成或被队列他处移除后，确认弹窗自动收起
   const stopTarget = current && current.entryId === pendingStopEntryId ? current : null
+  const recentCombatEvents = useMemo<readonly CombatRecentEvent[]>(() => {
+    if (expedition?.phase === 'duel' && expedition.duel) {
+      const duel = expedition.duel
+      const battleElapsed = expedition.battleElapsedSeconds ?? 0
+      const isInitiator = duel.isInitiator
+      return (duel.events ?? [])
+        .filter(e => e.atSeconds <= battleElapsed && e.atSeconds > battleElapsed - 2)
+        .map(e => ({
+          at: e.atSeconds,
+          attackerId: e.attackerIsInitiator === isInitiator ? 'player' : 'enemy:0',
+          targetId: (e.targetIsInitiator === isInitiator) ? 'player' : 'enemy:0',
+          damage: e.damage ?? 0,
+          hit: e.hit !== false,
+          critical: e.critical,
+          broken: e.broken,
+          parried: e.parried,
+          abilityId: e.abilityId,
+        }))
+    }
+    return expedition?.recentEvents ?? []
+  }, [expedition?.phase, expedition?.recentEvents, expedition?.duel, expedition?.battleElapsedSeconds])
+
 
   return (
     <div className="combat-arena-shell" ref={arenaShellRef}>
@@ -2021,6 +2217,7 @@ export const CombatArena = memo(function CombatArena({
                           seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
                           threat={playerThreat}
                           visual={playerVisual}
+                          recentEvents={recentCombatEvents}
                         />
                       </div>
                     )
@@ -2045,6 +2242,7 @@ export const CombatArena = memo(function CombatArena({
                         role="player"
                         seal={ally.seal}
                         threat={ally.threat}
+                        recentEvents={recentCombatEvents}
                       />
                     </div>
                   )
@@ -2073,6 +2271,7 @@ export const CombatArena = memo(function CombatArena({
                     seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
                     threat={playerThreat}
                     visual={playerVisual}
+                    recentEvents={recentCombatEvents}
                   />
                 </div>
                 {/* 预留空槽维持九宫格与前中后排比例 */}
@@ -2125,6 +2324,7 @@ export const CombatArena = memo(function CombatArena({
                       seal={entry.seal}
                       threat={entry.threat}
                       visual={entry.visual}
+                      recentEvents={recentCombatEvents}
                     />
                   </div>
                 ))}

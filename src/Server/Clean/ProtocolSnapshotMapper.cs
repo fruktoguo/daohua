@@ -520,6 +520,7 @@ public static class ProtocolSnapshotMapper
                 progressSeconds = action.ProgressSeconds,
                 durationSeconds,
                 remainingRepeats = action.RemainingRepeats,
+                completedRepeats = action.CompletedRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
                 expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio),
@@ -604,6 +605,18 @@ public static class ProtocolSnapshotMapper
                 : ToCombatBuffsDto(playerCarriedBuffs, expedition.BattleElapsedSeconds),
             enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken)).ToArray(),
             duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
+            recentEvents = expedition.RecentEvents is null || expedition.RecentEvents.Count == 0 ? null : expedition.RecentEvents.Select(e => new
+            {
+                at = e.AtSeconds,
+                attackerId = e.AttackerId,
+                targetId = e.TargetId,
+                damage = e.Damage,
+                hit = e.Hit,
+                critical = e.Critical,
+                broken = e.Break,
+                parried = e.Parried,
+                abilityId = e.AbilityId
+            }).ToArray(),
             // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
             selfIndex = spec is null ? (int?)null : expedition.SelfIndex,
             allies = spec is null ? null : ToExpeditionAlliesDto(expedition, spec, inspectedAllyIndex, onAttributesProjected, playerCarriedBuffs)
@@ -820,6 +833,8 @@ public static class ProtocolSnapshotMapper
                 duelEvent.Damage,
                 duelEvent.Hit,
                 duelEvent.Critical,
+                broken = duelEvent.Break,
+                parried = duelEvent.Parried,
                 duelEvent.TargetHitpointsAfter,
                 duelEvent.AbilityId,
                 duelEvent.Healing,

@@ -313,7 +313,8 @@ internal static class CombatActionRules
             PlayerRespawnAtSeconds = double.IsFinite(battleState.PlayerRespawnAtSeconds)
                 ? battleState.PlayerRespawnAtSeconds : null,
             PhaseElapsedSeconds = Math.Min(expedition.PhaseDurationSeconds, expedition.PhaseElapsedSeconds + consumed),
-            Outcome = combatResult.Outcome
+            Outcome = combatResult.Outcome,
+            RecentEvents = combatResult.Events.Count == 0 ? null : combatResult.Events
         };
         action.Expedition = updatedBattle;
         action.ProgressSeconds = updatedBattle.PhaseElapsedSeconds;
@@ -430,7 +431,7 @@ internal static class CombatActionRules
             for (var i = eventIndex; i < castEnd; i++)
             {
                 var frame = combatResult.Events[i];
-                AppendCastClause(clauses, LabelOf(frame.TargetId), frame.Hit, frame.Damage, frame.Healing);
+                AppendCastClause(clauses, LabelOf(frame.TargetId), frame.Hit, frame.Damage, frame.Healing, frame.Critical, frame.Break, frame.Parried);
             }
             var builder = BeginCastMessage(LabelOf(combatEvent.AttackerId), abilityId, gameData);
             AppendCastClauses(builder, clauses);
@@ -968,7 +969,7 @@ internal static class CombatActionRules
             for (var j = i; j < castEnd; j++)
             {
                 var member = playback.Events[j];
-                AppendCastClause(clauses, DuelLabel(member.TargetIsInitiator), member.Hit, member.Damage, member.Healing);
+                AppendCastClause(clauses, DuelLabel(member.TargetIsInitiator), member.Hit, member.Damage, member.Healing, member.Critical, member.Break, member.Parried);
             }
             var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData);
             AppendCastClauses(builder, clauses);
@@ -1097,6 +1098,7 @@ internal static class CombatActionRules
         PlayerAttackCount = battle.Player.AttackCount,
         PlayerThreat = battle.Player.Threat,
         Outcome = battle.Outcome,
+        RecentEvents = template.RecentEvents,
         // 倒地窗口的复活截止点随相位持久化；存活或战斗终局时回到 null。
         PlayerRespawnAtSeconds = double.IsFinite(battle.PlayerRespawnAtSeconds) ? battle.PlayerRespawnAtSeconds : null,
         // 玩家单位的完整战斗快照（吟唱槽位/逐槽冷却/施放计数/战内 Buff）随相位持久化，恢复后序列不漂移。
@@ -1317,15 +1319,20 @@ internal static class CombatActionRules
             .Append(AbilityName(gameData, abilityId)).Append("}}");
 
     /// <summary>施放合并行的单帧子句收集：未命中 / 伤害 / 治疗按帧序入列；零效果帧（纯增益起手）不产生子句。</summary>
-    private static void AppendCastClause(List<string> clauses, string targetLabel, bool hit, double damage, double healing)
+    private static void AppendCastClause(List<string> clauses, string targetLabel, bool hit, double damage, double healing,
+        bool critical = false, bool broken = false, bool parried = false)
     {
         if (!hit)
         {
-            clauses.Add($"对{targetLabel}未命中");
+            clauses.Add($"被{targetLabel}闪避");
             return;
         }
         if (damage > 0)
-            clauses.Add($"对{targetLabel}造成 {damage:0.##} 点伤害");
+        {
+            var prefix = broken ? "破招 " : parried ? "拆招 " : "";
+            var suffix = critical ? " 点暴击伤害" : " 点伤害";
+            clauses.Add($"{prefix}对{targetLabel}造成 {damage:0.##}{suffix}");
+        }
         if (healing > 0)
             clauses.Add($"为{targetLabel}回复 {healing:0.##} 点气血");
     }

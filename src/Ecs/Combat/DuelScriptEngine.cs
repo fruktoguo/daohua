@@ -62,7 +62,9 @@ public static class DuelScriptEngine
                 combatEvent.AbilityId,
                 combatEvent.Healing,
                 attackerIsInitiator ? initiatorMp : defenderMp,
-                targetIsInitiator ? initiatorMp : defenderMp));
+                targetIsInitiator ? initiatorMp : defenderMp,
+                combatEvent.Break,
+                combatEvent.Parried));
         }
         return new DuelScript(outcome, Math.Max(encounter.ElapsedSeconds, 1e-9), events,
             initiator.StagedItems, defender.StagedItems, initiatorStats, defenderStats);

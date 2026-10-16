@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Domain.Combat;
 
@@ -846,7 +847,68 @@ public sealed record CombatExpeditionState(
     /// 成员顺序按 MemberIndex 对应参与规格 Members 序列，本机成员仍由 PlayerState/Player* 镜像承载。
     /// </summary>
     public IReadOnlyList<ExpeditionAllyState>? Allies { get; init; }
+    /// <summary>
+    /// 最近一次推进产生的基础战斗事件流（命中/闪避/破招/拆招/暴击），用于快照下发前端战场浮字与打击反馈。
+    /// 仅作为快照下发的瞬时表现通道，不参与存档持久化与确定性状态比较。
+    /// </summary>
+    [property: JsonIgnore]
+    public IReadOnlyList<CombatEvent>? RecentEvents { get; init; }
 
+    public bool Equals(CombatExpeditionState? other)
+    {
+        if (ReferenceEquals(this, other)) return true;
+        if (other is null) return false;
+        return EncounterId == other.EncounterId
+            && Phase == other.Phase
+            && PhaseElapsedSeconds.Equals(other.PhaseElapsedSeconds)
+            && PhaseDurationSeconds.Equals(other.PhaseDurationSeconds)
+            && Seed == other.Seed
+            && BattleElapsedSeconds.Equals(other.BattleElapsedSeconds)
+            && PlayerHitpoints.Equals(other.PlayerHitpoints)
+            && PlayerManapoints.Equals(other.PlayerManapoints)
+            && PlayerNextAttackAtSeconds.Equals(other.PlayerNextAttackAtSeconds)
+            && PlayerAttackCount.Equals(other.PlayerAttackCount)
+            && PlayerThreat.Equals(other.PlayerThreat)
+            && Outcome == other.Outcome
+            && WaveNumber == other.WaveNumber
+            && EqualityComparer<IReadOnlyList<ExpeditionEnemyState>>.Default.Equals(Enemies, other.Enemies)
+            && EqualityComparer<DuelPlaybackState>.Default.Equals(Duel, other.Duel)
+            && DuelSeekFailed == other.DuelSeekFailed
+            && EqualityComparer<CombatantSnapshot>.Default.Equals(PlayerState, other.PlayerState)
+            && Nullable.Equals(PlayerRespawnAtSeconds, other.PlayerRespawnAtSeconds)
+            && IsPinned == other.IsPinned
+            && OriginNodeId == other.OriginNodeId
+            && SelfIndex == other.SelfIndex
+            && EqualityComparer<IReadOnlyList<ExpeditionAllyState>>.Default.Equals(Allies, other.Allies);
+    }
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(EncounterId);
+        hash.Add(Phase);
+        hash.Add(PhaseElapsedSeconds);
+        hash.Add(PhaseDurationSeconds);
+        hash.Add(Seed);
+        hash.Add(BattleElapsedSeconds);
+        hash.Add(PlayerHitpoints);
+        hash.Add(PlayerManapoints);
+        hash.Add(PlayerNextAttackAtSeconds);
+        hash.Add(PlayerAttackCount);
+        hash.Add(PlayerThreat);
+        hash.Add(Outcome);
+        hash.Add(WaveNumber);
+        hash.Add(Enemies);
+        hash.Add(Duel);
+        hash.Add(DuelSeekFailed);
+        hash.Add(PlayerState);
+        hash.Add(PlayerRespawnAtSeconds);
+        hash.Add(IsPinned);
+        hash.Add(OriginNodeId);
+        hash.Add(SelfIndex);
+        hash.Add(Allies);
+        return hash.ToHashCode();
+    }
     /// <summary>校验远征状态是否满足持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
         && Enum.IsDefined(Phase)
