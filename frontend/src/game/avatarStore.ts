@@ -34,6 +34,7 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   'blade-corpse': { src: '/avatars/blade-corpse.webp', format: 'webp' },
   'fallen-devil-priest': { src: '/avatars/fallen-devil-priest.webp', format: 'webp' },
   'falling-star-beast': { src: '/avatars/falling-star-beast.webp', format: 'webp' },
+  'xuanyuan-remnant': { src: '/avatars/xuanyuan-remnant.webp', format: 'webp' },
 }
 
 /**
