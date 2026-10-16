@@ -30,7 +30,9 @@
         ],
         "buildableTemplate": "all",
         "prebuiltBuildings": [
-          { "buildingId": "building.demon-seal-array", "level": 30 }
+          { "buildingId": "building.demon-seal-array", "level": 30 },
+          { "buildingId": "building.rejuvenation-array", "level": 40 },
+          { "buildingId": "building.mana-regen-array", "level": 40 }
         ]
       },
       {
