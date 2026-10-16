@@ -404,6 +404,72 @@ PRESET_BATCHES = {
             "bbox": [120, -130, 400, 130],
             "caption": "Bottom-center item: [《玄元一气功·残卷》 - Primordial Origin Qi Scroll Fragment]. A weathered torn fragment of ancient primordial slate-black Daoist scripture parchment, jagged rough edges, a simple white doodle primordial taiji crest emblem drawn in the center, bold dark ink outline, clean 2D game icon."
         }
+    ],
+    # 纯手绘象牙白简笔画图腾组 A (前 5 门心法图腾，供线装书与残卷合成)
+    "emblems_group_a": [
+        {
+            "id": "emblem.tuna-gong",
+            "name": "吐纳功图腾",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [吐纳功图腾 - Tuna Breathing Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a swirling breath qi vortex with two yin-yang curved mist arcs and tiny wind trails, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.manniu-jin",
+            "name": "蛮牛劲图腾",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [蛮牛劲图腾 - Raging Bull Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a ferocious raging bull head with thick curved horns and shockwave arcs, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.tiebu-shan",
+            "name": "铁布衫图腾",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [铁布衫图腾 - Iron Shirt Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of an ancient defensive iron bell and shield cuirass armor silhouette, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.feiyan-gong",
+            "name": "飞燕功图腾",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [飞燕功图腾 - Flying Swallow Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a soaring flying swallow bird with split tail and swift wind blade streaks, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.qingxin-jue",
+            "name": "清心诀图腾",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [清心诀图腾 - Clear Heart Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a serene three-petaled water lotus flower with a single crystal dewdrop above, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        }
+    ],
+    # 纯手绘象牙白简笔画图腾组 B (后 5 门心法图腾，供线装书与残卷合成)
+    "emblems_group_b": [
+        {
+            "id": "emblem.fenxue-gong",
+            "name": "焚血功图腾",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [焚血功图腾 - Blood Burning Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a blazing demonic heart with three jagged flame tendrils surging upward, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.xiaozhoutian-gong",
+            "name": "小周天功图腾",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [小周天功图腾 - Microcosmic Orbit Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a sacred microcosmic meridian circle with 4 cardinal acupoint dots and an S-shaped flow, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.cunshen-jue",
+            "name": "存神诀图腾",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [存神诀图腾 - Soul Enshrining Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a mystical horizontal third eye of divine consciousness with radiating light rays, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.lianjing-huaqi-jue",
+            "name": "炼精化气诀图腾",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [炼精化气诀图腾 - Essence Transmutation Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of an ancient three-legged bronze alchemy cauldron tripod with two swirling rising vapors, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        },
+        {
+            "id": "emblem.xuanyuan-yiqi-gong",
+            "name": "玄元一气功图腾",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [玄元一气功图腾 - Primordial Origin Qi Doodle Emblem]. A minimalist hand-drawn Xianxia doodle emblem of a grand primordial cosmic taiji vortex with celestial cloud rings, ivory cream colored with dark ink outline, clean simple 2D game icon doodle."
+        }
     ]
 }
 
@@ -582,6 +648,8 @@ def main():
         summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual thread-bound book sprite sheet, clean bold cartoon shapes, traditional Chinese thread-bound ancient book with colored cover and white binding stitches on left spine, a vertical paper label strip on top-left of cover, thick book pages visible at bottom and right edge, minimal simple white doodle emblem drawn on the front cover, bold dark ink outline, flat clean colors with subtle shading, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     elif "fragment" in args.batch:
         summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+    elif "emblem" in args.batch:
+        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill doodle emblem sprite sheet, clean bold hand-drawn cartoon shapes, minimal simple ivory cream white chalk doodle icon with distinct dark ink outline, floating on solid pure white background, generous empty white spacing between items, strictly no overflow, clean 2D game icon."
     else:
         summary_cap = None
     prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
@@ -609,6 +677,10 @@ def main():
         out_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
         t_size, in_size = 256, 230
         print(f"开始自动切片、去底与 256px WebP 怪物立绘下采样: {latest_img} -> {out_dir}")
+    elif "emblem" in args.batch:
+        out_dir = os.path.join(REPO_ROOT, "art", "emblems")
+        t_size, in_size = 128, 110
+        print(f"开始自动切片、去底与 128px WebP 高精图腾母版下采样: {latest_img} -> {out_dir}")
     else:
         out_dir = OUTPUT_DIR
         t_size, in_size = 64, 54
