@@ -3,6 +3,7 @@ import { useSocialStore } from '../game/socialStore'
 import { getT } from '../i18n'
 import { chatService } from '../logging/chatService'
 import { gameLogService } from '../logging/gameLogService'
+import { notifyIncomingChatMessage, notifyIncomingLogEvents, useLogUnreadStore } from '../logging/logUnreadStore'
 import { clearStoredAccount } from './account'
 import {
   createRequestId,
@@ -244,6 +245,7 @@ export class GameClient {
     this.account = accountInfo.account
     this.sequenceId = accountInfo.sequenceId ?? 0
     chatService.activate(this.playerId)
+    useLogUnreadStore.getState().resetAll()
     this.disposed = false
     this.catalogRefreshPending = false
     this.reconnectDelay = 500
@@ -270,6 +272,7 @@ export class GameClient {
     this.clearPendingRequests()
     this.awaitingReconnectRequests.clear()
     chatService.reset()
+    useLogUnreadStore.getState().resetAll()
     useSocialStore.getState().reset()
     const socket = this.socket
     this.socket = null
@@ -703,7 +706,10 @@ export class GameClient {
         case WireMessageType.LogBatch: {
           const batch = decodeJsonPayload<LogBatchDto>(envelope)
           if (!batch || !Array.isArray(batch.events)) throw new Error('日志批次载荷无效。')
-          if (batch.events.length > 0) gameLogService.ingestBatch(this.playerId, batch.events)
+          if (batch.events.length > 0) {
+            gameLogService.ingestBatch(this.playerId, batch.events)
+            notifyIncomingLogEvents(batch.events)
+          }
           appliedBusinessPayload = true
           break
         }
@@ -711,6 +717,7 @@ export class GameClient {
           const message = decodeJsonPayload<ChatMessageDto>(envelope)
           if (!message || typeof message.messageId !== 'string' || !message.messageId) throw new Error('传音消息载荷无效。')
           chatService.appendMessage(message)
+          notifyIncomingChatMessage(message, this.playerId)
           appliedBusinessPayload = true
           break
         }

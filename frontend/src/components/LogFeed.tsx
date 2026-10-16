@@ -113,9 +113,9 @@ const EnemyReference = memo(function EnemyReference({
   if (combatant) {
     return (
       <MonsterTooltipTarget
-        className={`log-reference log-reference--${kind}`}
         monster={combatant}
         placement="bottom"
+        triggerClassName={`log-reference log-reference--${kind}`}
       >
         {label}
       </MonsterTooltipTarget>
@@ -151,6 +151,16 @@ const LogContent = memo(function LogContent({ segment }: { segment: LogSegment }
   }
   if (segment.kind === 'enemy' || segment.kind === 'encounter') {
     return <EnemyReference enemyId={segment.id} kind={segment.kind} label={segment.label} />
+  }
+  if (segment.kind === 'mechanic') {
+    return (
+      <span
+        className={`log-reference log-reference--mechanic log-reference--mechanic-${segment.id}`}
+        data-mechanic={segment.id}
+      >
+        {segment.label}
+      </span>
+    )
   }
   return (
     <span className={`log-reference log-reference--${segment.kind}`} title={`${segment.kind}: ${segment.id}`}>

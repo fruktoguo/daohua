@@ -208,15 +208,16 @@
 ## 14. 日志实体引用、复合物品胶囊与重复项乘数胶囊 (Log Entity Reference & Repeat Capsule)
 
 - **适用场景**：
-  - **事件日志与战报中的实体胶囊引用**（包含功法技能 `ability`、妖兽敌人 `enemy` / `encounter`、角色 `character`、机制 `mechanic`、地点 `location`、行动 `action`，自带专属修仙微光色彩与悬浮信息浮层）。
+  - **事件日志与战报中的实体胶囊引用**（包含功法技能 `ability`、妖兽敌人 `enemy` / `encounter`、角色 `character`、机制 `mechanic`、地点 `location`、行动 `action`，自带专属修仙微光色彩与悬浮信息浮层；机制胶囊支持 `break` 破招橙、`crit` 暴击金、`dodge` 闪避水绿、`parry` 化解冰蓝等修仙专属色调；行内全部胶囊统一垂直居中对齐）。
   - **复合物品胶囊**（将物品名称与数量如 `灵石 × 41` 组合为一整个不可分割的紧凑修仙药丸胶囊，包含物品品质色调、微光背景与下划线数量，支持悬浮弹出物品属性卡片） -> `ItemReference`, `.item-reference-compound`。
   - **完全相同日志连续折叠与乘数胶囊**（挂机采集、连续战斗等产生的完全相同模板日志在尾部自动合并显示微光乘数胶囊形如 `× 3`，更新为最新触发时刻并保留历史缓冲容量） -> `.log-repeat-capsule`, `collapseLogEntries`。
+  - **底部传音与日志未读数字角标**（世界、附近、系统、好友、队伍、宗门与综合频道新消息未读提醒红点角标，上限 99+，点击切换后自动清零；战斗频道高频推进严格排除） -> `useLogUnreadStore`, `.log-tab-badge`。
 - **组件源码**：
   - [`frontend/src/components/ItemDisplay.tsx`](../../frontend/src/components/ItemDisplay.tsx)
   - [`frontend/src/components/GameLogPanel.tsx`](../../frontend/src/components/GameLogPanel.tsx)
   - [`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-reference`, `.item-reference-compound`, `.log-repeat-capsule`)
-
+  - [`frontend/src/logging/logUnreadStore.ts`](../../frontend/src/logging/logUnreadStore.ts)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-reference`, `.item-reference-compound`, `.log-repeat-capsule`, `.log-tab-badge`)
 ---
 
 ## 15. 改名/改密弹窗、登录界面与独立连接状态屏幕 (Modal Form, Login & Connection Screens)
@@ -265,7 +266,7 @@
   - **右侧多 Tab 顶层容器**（聚合储物袋、装备、功法三大核心面板，支持平滑切换） -> `RightSidebar`
   - **储物袋分段陈列**：`InventoryPanel` 按「重要/消耗品/装备法宝/功法/材料」五组小标题分段展示物品网格（非 Tab），分组判定统一走 `resolveInventoryGroup`（物品目录 kind/category + 装备目录命中，itemId 前缀兜底），空组不渲染。
   - **储物袋物品交互单元**（背包格子完整交互收拢：悬停保留 `ItemTooltipTarget` 详情卡片；左键弹出 `FloatingPopover` 操作菜单——秘籍/残卷「参悟」(`ability.learn` 数量弹窗批量研读)、装备「装备」(`loadout.replace` 槽位互斥剔除)、可交易物品「交易」跳转坊市标的详情、`sellPrice > 0` 物品「出售」(`item.sell`)、任意物品「丢弃」(`item.discard`)；右键触发使用——秘籍/残卷进批量研读弹窗、装备直接穿戴；使用/丢弃/出售经统一 `Modal` + `QuantitySelector` 数量确认弹窗执行；已装备物品禁用丢弃/出售） -> `InventoryItemCell`
-  - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级徽标；已习得功法按内功心法/神通术法两组方块瓦片网格分列（`item-tile` 方形瓦片：左上元素丝带、右上 Lv 参悟等级、右下装配槽位角标）；槽位与功法 `discipline` 双向互斥——内功位只收 internal、术法位只收 spell；装配等级恒等于已参悟等级（由 `abilityExperiences` 立方曲线导出）；重复装配按「移动」处理——`assignAbilityToSlot` 把功法从原槽位移至新槽位（触发条件按功法 ID 跟随，见 §22 末尾）；所有 `loadout.replace` 发送点统一经 `sendLoadoutReplace` 归一化） -> `AbilitiesPanel`
+  - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与触发器/等级徽标，冷却倒计时仅限战斗详情行动槽展示；已习得功法按内功心法/神通术法两组方块瓦片网格分列（`item-tile` 方形瓦片：左上元素丝带、右上 Lv 参悟等级、右下装配槽位角标）；槽位与功法 `discipline` 双向互斥——内功位只收 internal、术法位只收 spell；装配等级恒等于已参悟等级（由 `abilityExperiences` 立方曲线导出）；重复装配按「移动」处理——`assignAbilityToSlot` 把功法从原槽位移至新槽位（触发条件按功法 ID 跟随，见 §22 末尾）；所有 `loadout.replace` 发送点统一经 `sendLoadoutReplace` 归一化） -> `AbilitiesPanel`
 - **组件源码**：
   - [`frontend/src/components/RightSidebar.tsx`](../../frontend/src/components/RightSidebar.tsx)
   - [`frontend/src/components/InventoryItemCell.tsx`](../../frontend/src/components/InventoryItemCell.tsx)
@@ -303,7 +304,7 @@
 - **适用场景**：
   - 功法自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
   - **触发条件跟随功法 ID 而非槽位**：`combat.abilityTriggers`（`abilityId → CombatTrigger[]` 映射）是玩家侧唯一的条件存储——卸下再装配、跨槽位移动同一功法时条件保留；已学功法目录瓦片与装配槽位均可打开同一功法维度的编辑器，编辑器标题用功法名。槽位字段 `CombatAbilitySlot` 不再携带 `triggers`。
-  - **条件入口框外浮现交互（ConditionedTile）**：「瓦片 + 悬浮卡 + 框外条件按钮」三件套由 [`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx) 统一封装——条件按钮（`item-slot-inline-action--condition`）默认隐藏，容器 `.conditioned-tile` hover/focus-within 时经 keyframe 动画（opacity + translateY，合成器线程零重绘）从瓦片**画框之外**浮现，鼠标移到按钮上点击打开条件编辑器。按钮默认悬于瓦片上缘外侧（`bottom: 100%` 零间隙贴合保持 hover 连续）；`FloatingPopover` 的 `onPlacementChange` 回调回传悬浮卡实际落位，悬浮卡翻转到瓦片上方时按钮自动切到下缘外侧（`.is-below`）避让。按钮位于悬浮卡触发域之外，悬停按钮不再弹卡，点开编辑器也不会出现 tooltip 叠 modal（FloatingPopover z-index 10000 > Modal 70）。
+  - **条件入口框外浮现交互（ConditionedTile）**：「瓦片 + 悬浮卡 + 框外条件按钮」三件套由 [`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx) 统一封装——条件按钮（`item-slot-inline-action--condition`）默认隐藏，容器 `.conditioned-tile` hover/focus-within 时经 keyframe 动画（opacity + translateY，合成器线程零重绘）从瓦片**画框之外**浮现，鼠标移到按钮上点击打开条件编辑器。按钮默认悬于瓦片上缘外侧（`bottom: 100%` 零间隙贴合保持 hover 连续）；`FloatingPopover` 的 `onPlacementChange` 回调回传悬浮卡实际落位，悬浮卡翻转到瓦片上方时按钮自动切到下缘外侧（`.is-below`）避让，并支持 `defaultSide="bottom"` 适配底部托盘防翻转跳动。按钮位于悬浮卡触发域之外，悬停按钮不再弹卡，点开编辑器也不会出现 tooltip 叠 modal（FloatingPopover z-index 10000 > Modal 70）。
   - **编辑态抗快照刷新**：编辑器打开期间外部 `combat` 快照刷新（战斗进行中/结束）不会重置未保存的编辑内容——`initialTriggers` 经 ref 中转，仅在弹窗打开瞬间同步一次。
 - **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)、[`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.combat-trigger-card`, `.combat-trigger-fields`)、条件按钮框外浮现样式在 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.item-slot-inline-action--condition`、`.conditioned-tile`)

@@ -1342,17 +1342,22 @@ internal static class CombatActionRules
     {
         if (!hit)
         {
-            clauses.Add($"被{targetLabel}闪避");
+            clauses.Add($"被{targetLabel} {{mechanic:dodge|闪避}}");
             return;
         }
         if (damage > 0)
         {
-            var prefix = broken && critical ? "破招暴击 " : broken ? "破招 " : parried ? "化解 " : "";
-            var suffix = critical ? " 点暴击伤害" : " 点伤害";
-            clauses.Add($"{prefix}对{targetLabel}造成 {damage:0.##}{suffix}");
+            var mechanics = new StringBuilder();
+            if (broken) mechanics.Append(" {{mechanic:break|破招}}");
+            if (parried) mechanics.Append(" {{mechanic:parry|化解}}");
+            if (critical) mechanics.Append(" {{mechanic:crit|暴击}}");
+            clauses.Add($"对{targetLabel}造成 {damage:0.##} 点伤害{mechanics}");
         }
         if (healing > 0)
-            clauses.Add($"为{targetLabel}回复 {healing:0.##} 点气血");
+        {
+            var critSuffix = critical ? " {{mechanic:crit|暴击}}" : "";
+            clauses.Add($"为{targetLabel}回复 {healing:0.##} 点气血{critSuffix}");
+        }
     }
 
     /// <summary>拼装施放子句：单子句沿用行内「，」；多子句以 \n 作分隔符逐条开行，

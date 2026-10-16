@@ -1,6 +1,7 @@
-import { memo, useMemo, useState, useSyncExternalStore } from 'react'
+import { memo, useMemo, useSyncExternalStore } from 'react'
 import { useT } from '../i18n'
 import { filterLogEntries, gameLogService, type LogChannel } from '../logging/gameLogService'
+import { useLogUnreadStore, type LogGroupId } from '../logging/logUnreadStore'
 import { AggregatePanel, ChatChannelPanel, FriendChannelPanel, PartyChannelPanel } from './ChatPanel'
 import { FeedList, toLogFeedItems, useStickyScroll } from './LogFeed'
 
@@ -8,8 +9,6 @@ import { FeedList, toLogFeedItems, useStickyScroll } from './LogFeed'
  * 日志面板分组标识。
  * 综合 = 系统日志 + 好友私聊 + 队伍群聊；世界/附近/好友/宗门/队伍为传音频道；系统/战斗为服务端日志分组。
  */
-type LogGroupId = 'all' | 'world' | 'nearby' | 'system' | 'combat' | 'friend' | 'sect' | 'party'
-
 /** 分组顺序固定，与设计真源 docs/design/总纲/14-传音频道与日志分组.md 一致 */
 const LOG_GROUPS: readonly { id: LogGroupId; labelKey: string }[] = [
   { id: 'all', labelKey: 'combat.chat.tabAll' },
@@ -50,21 +49,34 @@ const LogGroupPanel = memo(function LogGroupPanel({ channel }: { channel: LogCha
  */
 export function GameLogPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const t = useT()
-  const [group, setGroup] = useState<LogGroupId>('all')
+  const group = useLogUnreadStore(state => state.activeGroup)
+  const setActiveGroup = useLogUnreadStore(state => state.setActiveGroup)
+  const unreadCounts = useLogUnreadStore(state => state.unreadCounts)
 
   return (
     <section className={`panel log-panel ${className}`.trim()}>
       <div className="log-tabs" role="tablist" aria-label={t('combat.log.messagesAria')}>
-        {LOG_GROUPS.map(entry => (
-          <button
-            aria-selected={group === entry.id}
-            className={group === entry.id ? 'active' : ''}
-            key={entry.id}
-            onClick={() => setGroup(entry.id)}
-            role="tab"
-            type="button"
-          >{t(entry.labelKey)}</button>
-        ))}
+        {LOG_GROUPS.map(entry => {
+          const isActive = group === entry.id
+          const unread = entry.id === 'combat' ? 0 : (unreadCounts[entry.id] ?? 0)
+          return (
+            <button
+              aria-selected={isActive}
+              className={`log-tab-btn ${isActive ? 'active' : ''}`}
+              key={entry.id}
+              onClick={() => setActiveGroup(entry.id)}
+              role="tab"
+              type="button"
+            >
+              <span>{t(entry.labelKey)}</span>
+              {!isActive && unread > 0 && (
+                <span className="log-tab-badge" title={`${unread}`}>
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
       {group === 'all' && <AggregatePanel />}
       {group === 'world' && <ChatChannelPanel channel="world" />}

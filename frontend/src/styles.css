@@ -1535,6 +1535,40 @@ input[type="checkbox"] {
   background: transparent;
 }
 
+.log-tab-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.log-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  padding: 0 3.5px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff;
+  background: var(--danger, #ef4444);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.45);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: log-badge-pop 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes log-badge-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 .log-tabs button.active {
   color: var(--gold-bright);
   background: rgba(201, 180, 109, 0.08);
@@ -1611,13 +1645,19 @@ input[type="checkbox"] {
 .log-reference {
   display: inline-flex;
   min-height: 18px;
+  height: 18px;
+  box-sizing: border-box;
   padding: 0 6px;
+  margin: 0 2px;
   align-items: center;
+  justify-content: center;
   border: 1px solid rgba(201, 180, 109, 0.35);
   color: var(--gold-bright);
   background: rgba(201, 180, 109, 0.08);
-  line-height: 1.25;
-  vertical-align: baseline;
+  line-height: 1;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
   border-radius: 999px;
   cursor: default;
   transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -1675,6 +1715,54 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
+.log-reference--mechanic-break,
+.log-reference--mechanic[data-mechanic="break"] {
+  border-color: rgba(249, 115, 22, 0.6);
+  color: #fb923c;
+  background: rgba(249, 115, 22, 0.15);
+}
+.log-reference--mechanic-break:hover,
+.log-reference--mechanic[data-mechanic="break"]:hover {
+  border-color: rgba(249, 115, 22, 0.85);
+  background: rgba(249, 115, 22, 0.25);
+}
+
+.log-reference--mechanic-crit,
+.log-reference--mechanic[data-mechanic="crit"] {
+  border-color: rgba(234, 179, 8, 0.65);
+  color: #facc15;
+  background: rgba(234, 179, 8, 0.16);
+}
+.log-reference--mechanic-crit:hover,
+.log-reference--mechanic[data-mechanic="crit"]:hover {
+  border-color: rgba(234, 179, 8, 0.9);
+  background: rgba(234, 179, 8, 0.28);
+}
+
+.log-reference--mechanic-dodge,
+.log-reference--mechanic[data-mechanic="dodge"] {
+  border-color: rgba(45, 212, 191, 0.6);
+  color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.15);
+}
+.log-reference--mechanic-dodge:hover,
+.log-reference--mechanic[data-mechanic="dodge"]:hover {
+  border-color: rgba(45, 212, 191, 0.85);
+  background: rgba(45, 212, 191, 0.25);
+}
+
+.log-reference--mechanic-parry,
+.log-reference--mechanic[data-mechanic="parry"] {
+  border-color: rgba(148, 163, 184, 0.6);
+  color: #93c5fd;
+  background: rgba(148, 163, 184, 0.15);
+}
+.log-reference--mechanic-parry:hover,
+.log-reference--mechanic[data-mechanic="parry"]:hover {
+  border-color: rgba(148, 163, 184, 0.85);
+  background: rgba(148, 163, 184, 0.25);
+}
+
 .log-reference--action {
   border-color: rgba(201, 180, 109, 0.48);
   color: #fce79a;
@@ -1721,12 +1809,14 @@ input[type="checkbox"] {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  vertical-align: baseline;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
   padding: 0 5px 0 0;
   border-radius: 9999px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  line-height: 1.25;
+  line-height: 1;
   cursor: default;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -1759,10 +1849,13 @@ input[type="checkbox"] {
 
 .value-capsule {
   display: inline-flex;
-  min-height: 17px;
+  min-height: 18px;
+  height: 18px;
+  box-sizing: border-box;
   margin: 0 2px;
   padding: 0 6px;
   align-items: center;
+  justify-content: center;
   border: 1px solid rgba(201, 180, 109, 0.3);
   border-radius: 999px;
   color: #d9c985;
@@ -1771,9 +1864,11 @@ input[type="checkbox"] {
   font-size: 0.92em;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  line-height: 1.25;
+  line-height: 1;
   white-space: nowrap;
-  vertical-align: baseline;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
 }
 
 .value-capsule--damage,
