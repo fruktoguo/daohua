@@ -470,6 +470,75 @@ PRESET_BATCHES = {
             "bbox": [120, -130, 400, 130],
             "caption": "Bottom-center item: [玄元一气功图腾 - Primordial Origin Qi Logo]. A bold solid pure white minimalist vector silhouette logo of a primordial cosmic taiji symbol surrounded by cloud rings, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         }
+    ],
+    # 纯黑底纯白二值矢量Logo (2x2 田字格，4个道具，界限分明负空间切割，零渐变)
+    "logos_4_batch_1": [
+        {
+            "id": "emblem.tuna-gong",
+            "name": "吐纳功图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [吐纳功图腾 - Tuna Breath Taiji Logo]. A bold minimalist vector silhouette logo of a taiji breath vortex, two distinct swirling curved white fish separated by a crisp black S-curve gap, two solid circular dots in negative space, clean distinct shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.manniu-jin",
+            "name": "蛮牛劲图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [蛮牛劲图腾 - Raging Bull Stencil Logo]. A bold minimalist vector silhouette logo of a raging bull head, stencil cut graphic symbol, sharp thick horns separated from skull with distinct negative black lines, stylized triangular head with hollow black eye slits and ring, clean distinct white segments, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.tiebu-shan",
+            "name": "铁布衫图腾",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [铁布衫图腾 - Iron Shirt Bell Shield Logo]. A bold minimalist vector silhouette logo of an ancient temple bell shield, distinct white armor plate outlines separated by crisp black groove lines, solid pure white on solid pure black, strictly no gradients, high contrast stencil cut."
+        },
+        {
+            "id": "emblem.feiyan-gong",
+            "name": "飞燕功图腾",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [飞燕功图腾 - Flying Swallow Stencil Logo]. A bold minimalist vector silhouette logo of a soaring swallow bird in flight, distinct angular wings separated by crisp negative black feather slots, split scissor tail, clean solid pure white on solid pure black, strictly no gradients, high contrast."
+        }
+    ],
+    # 批次 2：清心诀、焚血功、小周天功、存神诀
+    "logos_4_batch_2": [
+        {
+            "id": "emblem.qingxin-jue",
+            "name": "清心诀图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [清心诀图腾 - Clear Heart Lotus Logo]. A bold minimalist vector silhouette logo of a serene water lotus flower with a crystal dewdrop above, petals separated by crisp negative black space cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.fenxue-gong",
+            "name": "焚血功图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [焚血功图腾 - Blood Burning Flame Heart Logo]. A bold minimalist vector silhouette logo of a blazing flame heart with three sharp fire tendrils, flame layers separated by crisp negative black cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.xiaozhoutian-gong",
+            "name": "小周天功图腾",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [小周天功图腾 - Microcosmic Orbit Stencil Logo]. A bold minimalist vector silhouette logo of a sacred microcosmic circular meridian ring with four cardinal acupoint dots and an internal S-flow, ring separated by crisp negative black gaps, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.cunshen-jue",
+            "name": "存神诀图腾",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [存神诀图腾 - Soul Enshrining Eye Logo]. A bold minimalist vector silhouette logo of an ancient divine consciousness eye with a central circular pupil and radiating stylized rays, eyelid separated from pupil by crisp negative black space, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        }
+    ],
+    # 批次 3：炼精化气诀、玄元一气功 (2个道具放在上排)
+    "logos_4_batch_3": [
+        {
+            "id": "emblem.lianjing-huaqi-jue",
+            "name": "炼精化气诀图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [炼精化气诀图腾 - Essence Transmutation Tripod Logo]. A bold minimalist vector silhouette logo of an ancient three-legged bronze alchemy cauldron tripod with two swirling steam ribbons above, tripod legs and handles separated by crisp negative black cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.xuanyuan-yiqi-gong",
+            "name": "玄元一气功图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [玄元一气功图腾 - Primordial Origin Qi Grand Logo]. A bold minimalist vector silhouette logo of a grand primordial cosmic taiji emblem surrounded by two celestial cloud rings, taiji fish and cloud rings separated by crisp negative black cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        }
     ]
 }
 
@@ -602,10 +671,16 @@ def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size
         )
         crop = im.crop(safe_box)
         
-        # 自动去底 (普通彩色道具去白底；纯白矢量图腾绝不去白底，背景已被 RMBG 抠为透明)
+        # 自动去底与二值化
         arr = np.array(crop)
         r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
-        if "emblem" not in it.get("id", ""):
+        if "emblem" in it.get("id", ""):
+            # 纯黑底纯白二值矢量图腾：严格二值化 (Hard Binary Threshold)，零渐变，纯白+纯黑/透明
+            lum = (r.astype(int) + g.astype(int) + b.astype(int)) // 3
+            is_white = (lum > 100) & (a > 50)
+            arr[is_white] = [255, 255, 255, 255]
+            arr[~is_white] = [0, 0, 0, 0]
+        else:
             is_bg = (r > 235) & (g > 235) & (b > 235)
             arr[:, :, 3] = np.where(is_bg, 0, a)
         clean_crop = Image.fromarray(arr)
@@ -649,6 +724,8 @@ def main():
         summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual thread-bound book sprite sheet, clean bold cartoon shapes, traditional Chinese thread-bound ancient book with colored cover and white binding stitches on left spine, a vertical paper label strip on top-left of cover, thick book pages visible at bottom and right edge, minimal simple white doodle emblem drawn on the front cover, bold dark ink outline, flat clean colors with subtle shading, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     elif "fragment" in args.batch:
         summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+    elif "logos_" in args.batch:
+        summary_cap = "a 2x2 grid sprite sheet of 4 minimalist bold vector logo icons, stencil cut silhouette graphic symbol marks, strictly solid pure white icons on solid pure black background, high contrast binary black and white, zero gradients, zero shading, zero colors, crisp clean stencil cut lines and distinct negative space contours, sharp graphic edges, flat 2D vector clip-art."
     elif "emblem" in args.batch:
         summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     else:
@@ -678,7 +755,7 @@ def main():
         out_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
         t_size, in_size = 256, 230
         print(f"开始自动切片、去底与 256px WebP 怪物立绘下采样: {latest_img} -> {out_dir}")
-    elif "emblem" in args.batch:
+    elif "emblem" in args.batch or "logos_" in args.batch:
         out_dir = os.path.join(REPO_ROOT, "art", "emblems")
         t_size, in_size = 128, 110
         print(f"开始自动切片、去底与 128px WebP 高精图腾母版下采样: {latest_img} -> {out_dir}")
