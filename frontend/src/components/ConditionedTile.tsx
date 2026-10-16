@@ -18,6 +18,7 @@ export function ConditionedTile({
   className = '',
   condition,
   content,
+  defaultSide = 'top',
   extras,
   triggerClassName = '',
   triggerTabIndex,
@@ -41,6 +42,8 @@ export function ConditionedTile({
   } | null
   /** 悬浮卡内容（null 时 tooltip 关闭，仅渲染瓦片与按钮） */
   content?: EffectTooltipContent | null
+  /** 初始条件按钮方位，默认 'top'；已知悬浮卡恒落在上方时可传 'bottom' 避免翻转跳动 */
+  defaultSide?: 'top' | 'bottom'
   /** 容器级附加元素（Lv 徽标等，置于悬浮卡触发域之外） */
   extras?: ReactNode
   /** 悬浮卡触发层样式类名（如 combat-ability-slot-shell / item-grid-picker-tooltip） */
@@ -49,7 +52,7 @@ export function ConditionedTile({
   triggerTabIndex?: number
 }): React.JSX.Element {
   // 条件按钮方位：悬浮卡落在上方（翻转结果）时按钮走下方外侧，其余方位恒走上方外侧。
-  const [side, setSide] = useState<'top' | 'bottom'>('top')
+  const [side, setSide] = useState<'top' | 'bottom'>(defaultSide)
   const handlePlacementChange = useCallback((placement: FloatingPlacement) => {
     const next = placement.startsWith('top') ? 'bottom' : 'top'
     setSide(previous => (previous === next ? previous : next))

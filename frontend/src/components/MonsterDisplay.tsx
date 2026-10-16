@@ -318,10 +318,12 @@ export interface MonsterTooltipTargetProps extends MonsterDisplayTargetProps {
   children: ReactNode
   /** 浮层弹出方向，默认 top */
   placement?: FloatingPlacement
-  /** 是否允许鼠标移入浮层（默认 false，纯 tooltip 体验） */
+  /** 是否允许鼠标移入浮层（默认 true，方便二次 hover 内部功法与掉落物详情） */
   interactive?: boolean
-  /** 外部样式名 */
+  /** 浮层卡片额外 CSS 类名 */
   className?: string
+  /** 触发器包裹层额外 CSS 类名 */
+  triggerClassName?: string
   /** 是否使用 CSS display: contents 消除额外外层容器布局影响 */
   displayContents?: boolean
 }
@@ -334,19 +336,22 @@ export interface MonsterTooltipTargetProps extends MonsterDisplayTargetProps {
 export const MonsterTooltipTarget = memo(function MonsterTooltipTarget({
   children,
   placement = 'top',
-  interactive = false,
+  interactive = true,
   className,
+  triggerClassName,
   displayContents = false,
   ...cardProps
 }: MonsterTooltipTargetProps): React.JSX.Element {
   return (
     <FloatingPopover
       className={className}
+      closeDelay={180}
       content={<MonsterInfoCard {...cardProps} />}
       displayContents={displayContents}
       interactive={interactive}
       placement={placement}
       trigger="hover"
+      triggerClassName={triggerClassName}
     >
       {children}
     </FloatingPopover>

@@ -10,37 +10,6 @@ import { AbilityGridPicker } from './AbilityGridPicker'
 import { CombatTriggerEditor } from './CombatTriggerEditor'
 import { ConditionedTile } from './ConditionedTile'
 
-// 共享的冻结空表：combatResources 未下发冷却数据时给选择器返回同一引用，避免每次取新对象触发重渲染。
-const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
-
-/**
- * 技能与物品槽位冷却扇形遮罩覆盖层
- */
-const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
-  remainingMilliseconds,
-  totalMilliseconds,
-}: {
-  remainingMilliseconds: number
-  totalMilliseconds: number
-}): React.JSX.Element | null {
-  if (remainingMilliseconds <= 0 || totalMilliseconds <= 0) return null
-  const ratio = Math.max(0, Math.min(1, remainingMilliseconds / totalMilliseconds))
-  const remainingSeconds = (remainingMilliseconds / 1000).toFixed(1)
-
-  // 必须透传 --cooldown-ratio：遮罩的扇形完全由该变量驱动，其缺省值为 1，
-  // 漏传会让整块瓦片被暗区盖满，冷却期间技能图标与名称完全不可读。
-  // 原先写入的 --duration-sweep 在任何样式表中都没有消费者（已删除）。
-  return (
-    <span
-      aria-hidden="true"
-      className="item-slot-duration-overlay"
-      style={{ '--cooldown-ratio': ratio } as React.CSSProperties}
-    >
-      <span className="item-slot-duration-text">{remainingSeconds}s</span>
-    </span>
-  )
-})
-
 /**
  * 功法神通管理面板 (AbilitiesPanel)
  *
@@ -53,9 +22,6 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const t = useT()
   const combat = useGameStore(state => state.combat)
   const abilities = useGameStore(state => state.abilities)
-  const abilityCooldowns = useGameStore(
-    state => state.combatResources?.abilityCooldownMilliseconds,
-  ) ?? EMPTY_ABILITY_COOLDOWNS
 
   const [activePicker, setActivePicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
   // 触发条件按功法 ID 编辑（跟随功法而非槽位），编辑器打开的是功法维度的条件配置。
@@ -122,7 +88,6 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const renderSlot = (slot: typeof combat.abilitySlots[0], index: number) => {
     const isInternal = index === 0
     const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
-    const remainingCooldown = ability ? (abilityCooldowns[ability.abilityId] ?? 0) : 0
     const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
 
     const slotTypeTag = isInternal
@@ -168,12 +133,6 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
             <span className="item-corner item-corner--bottom-right">
               {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}
             </span>
-            {remainingCooldown > 0 && (
-              <AbilityCooldownOverlay
-                remainingMilliseconds={remainingCooldown}
-                totalMilliseconds={ability.cooldownMilliseconds ?? 0}
-              />
-            )}
             <span aria-hidden="true" className="item-tile-glow" />
           </span>
         ) : (

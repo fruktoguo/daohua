@@ -1973,6 +1973,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                     title: t('app.combatPanel.editTriggersTitle'),
                   } : null}
                   content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
+                  defaultSide="bottom"
                   extras={ability && (
                     /* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */
                     <span className="combat-ability-level-control">
