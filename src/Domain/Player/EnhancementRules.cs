@@ -28,8 +28,12 @@ public static class EnhancementRules
     /// <summary>强化判定独立通道：与战斗命中/暴击/掉落通道完全隔离，不扰战斗随机流。</summary>
     private const ulong RollChannel = 0xE0A1;
 
-    // 目标等级 1..10 的基础成功率查表；11+ 走 0.3×0.95^(t-11) 指数衰减。
-    private static readonly double[] SuccessTable = [0.5, 0.45, 0.45, 0.4, 0.4, 0.4, 0.35, 0.35, 0.35, 0.35];
+    // 目标等级 1..20 的基础成功率查表：+1 为 50%，+2..+3 为 45%，+4..+6 为 40%，+7..+10 为 35%，+11..+20 统一为 30%。
+    private static readonly double[] SuccessTable =
+    [
+        0.50, 0.45, 0.45, 0.40, 0.40, 0.40, 0.35, 0.35, 0.35, 0.35,
+        0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30
+    ];
 
     /// <summary>强化单轮结算判定结果。</summary>
     public enum Outcome : byte
@@ -129,12 +133,12 @@ public static class EnhancementRules
     /// <summary>当次强化灵石消耗：t × 10。</summary>
     public static double SpiritStoneCostFor(int targetLevel) => targetLevel * 10d;
 
-    /// <summary>基础成功率：t≤10 查表，t≥11 按 0.3×0.95^(t-11)，结果 clamp [0.01, 0.5]。</summary>
+    /// <summary>基础成功率：t≤20 查表，超出兜底 0.30，结果 clamp [0.01, 0.5]。</summary>
     public static double BaseSuccessRate(int targetLevel)
     {
-        var rate = targetLevel <= SuccessTable.Length
+        var rate = targetLevel >= 1 && targetLevel <= SuccessTable.Length
             ? SuccessTable[targetLevel - 1]
-            : 0.3 * Math.Pow(0.95, targetLevel - 11);
+            : 0.30;
         return Math.Clamp(rate, 0.01, 0.5);
     }
 

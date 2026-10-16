@@ -715,12 +715,13 @@ export const ENHANCE_ACTION_ID = 'enhance.equipment'
 export const SPIRIT_STONE_ITEM_ID = 'currency.spirit-stone'
 /** 强化等级上限 +N */
 export const ENHANCE_MAX_LEVEL = 20
-/** 目标等级 t≤10 的基础成功率表（下标 = t-1） */
-export const ENHANCE_BASE_SUCCESS_RATES = [0.5, 0.45, 0.45, 0.4, 0.4, 0.4, 0.35, 0.35, 0.35, 0.35] as const
-/** 目标等级 t≥11 的基础成功率衰减：0.3 × 0.95^(t-11) */
+/** 目标等级 t≤20 的基础成功率表（下标 = t-1）：+1 为 50%，+2..+3 为 45%，+4..+6 为 40%，+7..+10 为 35%，+11..+20 统一为 30% */
+export const ENHANCE_BASE_SUCCESS_RATES = [
+  0.5, 0.45, 0.45, 0.4, 0.4, 0.4, 0.35, 0.35, 0.35, 0.35,
+  0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3,
+] as const
+/** 目标等级 t≥11 的基础成功率基数（固定 0.3） */
 export const ENHANCE_HIGH_TIER_BASE = 0.3
-/** 高阶衰减底数：目标等级 t≥11 时成功率按 ENHANCE_HIGH_TIER_BASE × 0.95^(t-11) 计算 */
-export const ENHANCE_HIGH_TIER_DECAY = 0.95
 /** 单轮强化基础耗时 = ENHANCE_DURATION_BASE + targetLevel */
 export const ENHANCE_DURATION_BASE = 5
 /** 强化起护等级最低阈值：最低从 +2 开始保护 */
@@ -730,9 +731,9 @@ export const ENHANCE_MIN_PROTECT_LEVEL = 2
 /** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：base clamp [0.01,0.5]，技艺修正后 clamp [0,0.99]） */
 export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number): number {
   const t = Math.max(1, Math.floor(targetLevel))
-  const base = t <= 10
+  const base = t <= ENHANCE_BASE_SUCCESS_RATES.length
     ? ENHANCE_BASE_SUCCESS_RATES[t - 1]
-    : ENHANCE_HIGH_TIER_BASE * Math.pow(ENHANCE_HIGH_TIER_DECAY, t - 11)
+    : ENHANCE_HIGH_TIER_BASE
   const clampedBase = Math.max(0.01, Math.min(0.5, base))
   const L = Math.max(0, techniqueLevel)
   const rate = L >= t ? clampedBase + 0.01 * L : clampedBase * Math.pow(0.9, t - L)
