@@ -416,6 +416,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 return new PlayerCommandResult(false, "WRONG_LOCATION", "当前位置不允许执行该行动。", before);
                         }
                         var now = _simulationClock.UtcNow;
+                        if (before.State.Actions.Count > 0 && now > before.State.LastSimulatedAt)
+                            await ecs.RunPlayerOnceAsync(playerId, now, cancellationToken).ConfigureAwait(false);
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Enqueue(intent, now, gameData.Actions));
                         break;
                     }
@@ -450,6 +452,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             || (hasPaused && paused.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                             || (!hasLoop && !hasAutoTravel && !hasPaused))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "队列设置无效。", before);
+                        if (hasPaused && paused.GetBoolean() != before.State.Settings.QueuePaused
+                            && _simulationClock.UtcNow > before.State.LastSimulatedAt)
+                            await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
                             if (hasLoop) aggregate.SetLoopEnabled(loopEnabled.GetBoolean());
@@ -1081,11 +1086,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             var walletsSynced = new HashSet<Guid>();
             foreach (var playerId in ids)
                 if (await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false)) walletsSynced.Add(playerId);
+            var buildingsChanged = new HashSet<Guid>();
             foreach (var playerId in ids)
             {
                 // 目标取样早于等待 gate；新命令已推进到更晚时刻时不能用过期时间更新建筑投影。
-                if (target > _loaded[playerId].LastSimulatedAt)
-                    await RefreshNodeBuildingsAsync(playerId, _loaded[playerId].State.World, target, cancellationToken).ConfigureAwait(false);
+                if (target > _loaded[playerId].LastSimulatedAt
+                    && await RefreshNodeBuildingsAsync(playerId, _loaded[playerId].State.World, target, cancellationToken).ConfigureAwait(false))
+                    buildingsChanged.Add(playerId);
                 TrackDirty(playerId);
             }
             var failedMembers = new HashSet<Guid>();
@@ -1103,9 +1110,22 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             dirtyBefore = ids.ToDictionary(id => id, ecs.GetDirtySections);
             foreach (var playerId in walletsSynced.Except(failedMembers)) ecs.MarkExternalStateChanged(playerId);
             // World 可能已有本批取样后刚创建、仍在装载中的实体；全世界 Tick 会越过其玩家 gate。
+            // 正在读条的活跃玩家若无外部钱包/建筑投影变更且尚未到达下一个可见事件边界，跳过半途切片，避免每秒推送与整秒截断引发前端进度条抖动。
             foreach (var playerId in ids)
-                if (target > before[playerId].LastSimulatedAt)
-                    await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+            {
+                if (target <= before[playerId].LastSimulatedAt) continue;
+                var head = before[playerId].State.Actions.FirstOrDefault();
+                if (head is not null
+                    && !before[playerId].State.Settings.QueuePaused
+                    && head.Status == ActionQueueStatus.Running
+                    && head.Expedition?.Phase != CombatExpeditionPhase.DuelPending
+                    && !walletsSynced.Contains(playerId)
+                    && !buildingsChanged.Contains(playerId)
+                    && ecs.NextAdvanceBoundary(playerId) is { } nextBoundary
+                    && target < nextBoundary)
+                    continue;
+                await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+            }
             // 斗法撮合（总纲 §7.10.1）：推进完成后的同一 gate 窗口内配对等待者，
             // 预约/镜像/挂载全部落在本轮提交窗口，快照推送复用下方既有提交流程。
             MatchDuelsOwned(target, ids, notifications);
@@ -1559,21 +1579,18 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _ => string.Empty,
     };
 
-    private async ValueTask RefreshNodeBuildingsAsync(Guid playerId, PlayerWorldStateDocument world,
+    private async ValueTask<bool> RefreshNodeBuildingsAsync(Guid playerId, PlayerWorldStateDocument world,
         DateTimeOffset now, CancellationToken cancellationToken)
     {
-        if (nodeBuildings is null) return;
+        if (nodeBuildings is null) return false;
         if (!string.IsNullOrWhiteSpace(world.EdgeId) || string.IsNullOrWhiteSpace(world.NodeId))
-        {
-            ecs.ApplyNodeBuildingProjection(playerId, new(0, [], BuildingEffectSet.Empty, null, []), now);
-            return;
-        }
+            return ecs.ApplyNodeBuildingProjection(playerId, new(0, [], BuildingEffectSet.Empty, null, []), now);
         var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
         var view = await nodeBuildings.BuildingsForAsync(world.NodeId, now, cancellationToken).ConfigureAwait(false);
         var counts = await nodeBuildings.UsageForAsync(world.NodeId, now, cancellationToken).ConfigureAwait(false);
         var effects = NodeBuildingRules.AggregateEffects(view.Buildings, gameData.Buildings, nowUnixSeconds, counts);
         var usages = nodeBuildings.UsagesFor(view.Buildings, counts, nowUnixSeconds);
-        ecs.ApplyNodeBuildingProjection(playerId, new(view.Version, view.Buildings, effects, world.NodeId, usages), now);
+        return ecs.ApplyNodeBuildingProjection(playerId, new(view.Version, view.Buildings, effects, world.NodeId, usages), now);
     }
 
     private sealed record CommitOutcome(IReadOnlyList<LogEventDto>? Logs, SimulationResult? Simulation);

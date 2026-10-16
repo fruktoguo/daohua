@@ -107,4 +107,45 @@ public sealed class SimulationScheduleTests
         // 匹配等待由运行时撮合处理，不排模拟边界（宿主按 1 秒兜底节拍扫描）。
         Assert.Null(SimulationSchedule.NextVisibleBoundaryUtc(restored, catalog));
     }
+
+    [Fact]
+    public void PendingHeadActionSchedulesImmediateBoundaryEvenWhenQueuePaused()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = NewPlayer(catalog);
+        var exported = player.ExportState();
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("cultivation.draw-qi"), 1),
+            Baseline, ActionQueueStatus.Pending, 0, 1, 0, null);
+        var restored = PlayerAggregate.Restore(exported with
+        {
+            Actions = [action],
+            Settings = exported.Settings with { QueuePaused = true }
+        });
+
+        Assert.Equal(Baseline, SimulationSchedule.NextVisibleBoundaryUtc(restored, catalog));
+    }
+
+    [Fact]
+    public void TimedActionBoundaryAccountsForCarrySeconds()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = NewPlayer(catalog);
+        var exported = player.ExportState();
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("cultivation.draw-qi"), -1),
+            Baseline, ActionQueueStatus.Running, 0, -1, 0, null);
+        var restored = PlayerAggregate.Restore(exported with
+        {
+            Actions = [action],
+            Progression = exported.Progression with { SimulationCarrySeconds = 0.4 }
+        });
+
+        var duration = catalog.Actions.Get(new ActionId("cultivation.draw-qi")).DurationSeconds;
+        var boundary = SimulationSchedule.NextVisibleBoundaryUtc(restored, catalog);
+        Assert.NotNull(boundary);
+        Assert.Equal(duration - 0.4, (boundary!.Value - Baseline).TotalSeconds, 6);
+    }
 }

@@ -711,6 +711,58 @@ public sealed class SnapshotDeltaPushTests
         Assert.Empty(Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(push.TouchedSections));
     }
 
+    /// <summary>
+    /// 活跃计时行动在单轮完成边界到来前不半途切片推送；到达完成边界时一次性结算并在 action_queue 中下发递增后的 completedRepeats。
+    /// </summary>
+    [Fact]
+    public async Task AdvancePush_RunningTimedAction_SkipsMidActionTickAndPushesAtCompletionWithCompletedRepeats()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = GameDataCatalog.BuiltIn;
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), new EmptyAssets(), new NoopEconomy(), catalog);
+        var pushed = new List<PlayerRuntimeSnapshot>();
+        runtime.SnapshotUpdated += snapshot =>
+        {
+            lock (pushed) pushed.Add(snapshot);
+            return ValueTask.CompletedTask;
+        };
+
+        await runtime.LoadAsync(playerId);
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(requestId.ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options);
+        var enqueued = await runtime.ExecuteAsync(playerId, "action.enqueue", payload, 0, requestId);
+        Assert.True(enqueued.Success);
+        // 首拍将 Pending 队首激活为 Running
+        var startAt = enqueued.Snapshot.LastSimulatedAt;
+        await runtime.AdvanceAllAsync(startAt.AddMilliseconds(10));
+        var activated = await runtime.LoadAsync(playerId);
+        Assert.Equal(ActionQueueStatus.Running, activated.State.Actions[0].Status);
+        var runningFrom = activated.LastSimulatedAt;
+        var duration = catalog.Actions.Get(new ActionId("cultivation.draw-qi")).DurationSeconds;
+        pushed.Clear();
+
+        // 半途节拍（1s < duration）：跳过切片，不触发中途推送
+        await runtime.AdvanceAllAsync(runningFrom.AddSeconds(1));
+        Assert.Empty(pushed);
+
+        // 到达单轮完成时刻：一次性结算完成 1 轮并推送，completedRepeats == 1
+        await runtime.AdvanceAllAsync(runningFrom.AddSeconds(duration));
+        var completedPush = Assert.Single(pushed);
+        Assert.Equal(1, completedPush.State.Actions[0].CompletedRepeats);
+        Assert.Equal(0, completedPush.State.Actions[0].ProgressSeconds);
+
+        var baselineDto = ProtocolSnapshotMapper.ToSnapshot(activated, "fp", catalog);
+        var delta = ProtocolSnapshotMapper.BuildDelta(
+            completedPush, "fp", catalog, completedPush.TouchedSections,
+            ChecksumsOf(baselineDto.Sections), baselineDto.Assets,
+            out _, out _);
+        var queueSection = Assert.Single(delta.ChangedSections, s => s.Section == PlayerSectionKinds.ActionQueue);
+        var entryElement = queueSection.Data[0];
+        Assert.Equal(1, entryElement.GetProperty("completedRepeats").GetDouble());
+    }
+
     /// <summary>单玩家假仓库。</summary>
     private sealed class FakeRepository(Guid playerId) : IPlayerStateRepository
     {

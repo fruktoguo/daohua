@@ -412,8 +412,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (patch.version < state.version || (patch.version === state.version && options?.allowSameVersion !== true)) return
     // 每次应用含 duel 分段的增量后，将战报合并写入本地历史缓存（reportId 去重、倒序截断 50 条）。
     if (patch.duel) mergeBattleReportHistory(patch.playerId, patch.duel)
-    // action_queue 分段为唯一行动队列通道（全量分段替换），不存在独立的高频进度通道。
-    const hasQueueUpdate = Boolean(patch.queue)
+    // action_queue 分段为唯一行动队列通道（全量分段替换），仅当队列分段或暂停状态实际变更时刷新队列同步时间锚点。
+    const hasQueueUpdate = patch.queueEntriesUpdated ?? Boolean(patch.queue)
     const now = performance.now()
     const queue = patch.queue ? normalizeQueue(patch.queue) : state.queue
     set({

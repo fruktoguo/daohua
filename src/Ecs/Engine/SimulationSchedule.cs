@@ -39,7 +39,11 @@ public static class SimulationSchedule
         }
 
         var action = player.Actions.Count > 0 ? player.Actions[0] : null;
-        // 队列暂停时行动侧边界全部冻结；Buff/技能/自动使用等墙钟边界照常参与调度。
+        // 队首尚处 Pending（如刚入队到空队列或暂停队列）时须立即唤醒一拍将其激活为 Running。
+        if (action is not null && action.Participation is null && action.Status == ActionQueueStatus.Pending)
+            Consider(0);
+
+        // 队列暂停时行动侧推进边界全部冻结；Buff/技能/自动使用等墙钟边界照常参与调度。
         if (action is not null && action.Participation is null
             && action.Status != ActionQueueStatus.Blocked && !player.Settings.QueuePaused)
         {
@@ -80,6 +84,17 @@ public static class SimulationSchedule
                             foreach (var enemy in expedition.Enemies)
                                 if (enemy.State.Hitpoints > 0)
                                     nextAttack = Math.Min(nextAttack, enemy.State.NextAttackAtSeconds);
+                        if (expedition.Allies is not null)
+                            foreach (var ally in expedition.Allies)
+                            {
+                                if (ally.State.RespawnAtSeconds is { } allyRespawn)
+                                    Consider(Math.Max(0, allyRespawn - expedition.BattleElapsedSeconds));
+                                else if (ally.State.Hitpoints > 0)
+                                    nextAttack = Math.Min(nextAttack, ally.State.NextAttackAtSeconds);
+                                var allySkillBoundary = ally.CombatSkills?.NextBoundarySeconds;
+                                if (allySkillBoundary is { } boundary && double.IsFinite(boundary))
+                                    Consider(Math.Max(0, boundary));
+                            }
                         if (double.IsFinite(nextAttack))
                             Consider(Math.Max(0, nextAttack - expedition.BattleElapsedSeconds));
                         // 战斗内技能边界（吟唱/冷却按战斗时钟扣减）。
@@ -100,8 +115,26 @@ public static class SimulationSchedule
             }
             else
             {
-                var duration = gameData.Actions.Get(action.Intent.ActionId).DurationSeconds;
-                if (duration > 0) Consider(Math.Max(0, duration - action.ProgressSeconds));
+                var definition = gameData.Actions.Get(action.Intent.ActionId);
+                if (definition.ExecutionKind is ActionExecutionKind.CombatEncounter or ActionExecutionKind.Travel)
+                {
+                    // 刚入队尚未初始化 Expedition/Travel 子状态时立即唤醒完成首帧建档。
+                    Consider(0);
+                }
+                else
+                {
+                    var duration = TimedActionDurationRules.Calculate(player, action, definition, gameData, assets: null);
+                    if (duration > 0)
+                    {
+                        var neededWhole = Math.Ceiling(Math.Max(0, duration - action.ProgressSeconds) - 1e-9);
+                        Consider(Math.Max(0, neededWhole - player.Progression.SimulationCarrySeconds));
+                    }
+                    else
+                    {
+                        // 强化背包物品首次未锁定 EnhancementCurrentLevel 时需立即唤醒完成准入锁定。
+                        Consider(0);
+                    }
+                }
             }
         }
 
@@ -115,6 +148,10 @@ public static class SimulationSchedule
         // 成员展示态不参与个人战斗调度；仅权威散场截止点需要唤醒个人队列收尾。
         if (action?.Participation is { } participation && double.IsFinite(participation.EndsAtUnixSeconds))
             Consider(Math.Max(0, participation.EndsAtUnixSeconds - fromUnix));
+
+        // 战外暂存区物品到期自动结算为墙钟可见事件。
+        if (player.Duel.ActiveDuelId is null && player.Duel.StagedItems.Count > 0)
+            ConsiderUnix(player.Duel.StagedItems[0].AcquiredAtUnixSeconds + gameData.Duel.StagedSettleSeconds);
 
         // Buff 到期与自动使用冷却到点均为墙钟事件且影响界面展示。
         foreach (var buff in player.Buffs.Active)

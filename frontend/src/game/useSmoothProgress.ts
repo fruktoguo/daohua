@@ -74,23 +74,39 @@ export function useSmoothProgressRef({
   textFormatRef.current = textFormat
   metaFormatRef.current = metaFormat
 
-  // 跨重建状态：条目/轮次识别 + 当前显示位置模型
+  // 跨重建状态：条目/轮次识别 + 当前显示位置模型 + 合成器动画句柄
+  const animRef = useRef<Animation | null>(null)
+  const loopAnimRef = useRef<Animation | null>(null)
   const stateRef = useRef<{
     entryId: string
     remainingRepeats: number
+    completedRepeats: number
     lastBaseProgress: number
     model: ProgressModel
   }>({
     entryId: '',
     remainingRepeats: 0,
+    completedRepeats: 0,
     lastBaseProgress: 0,
     model: { t0: 0, s0: 0, rate: 1, dur: 1, loop: false, stopped: true },
   })
 
+  useEffect(() => () => {
+    animRef.current?.cancel()
+    loopAnimRef.current?.cancel()
+  }, [])
+
   useEffect(() => {
-    if (!entry) return
+    if (!entry) {
+      animRef.current?.cancel()
+      loopAnimRef.current?.cancel()
+      animRef.current = null
+      loopAnimRef.current = null
+      return undefined
+    }
     const duration = Math.max(1, entry.durationSeconds)
     const baseProgress = entry.progressSeconds
+    const completedRepeats = entry.completedRepeats ?? 0
     const isInfinite = entry.remainingRepeats < 0
     const isRunning = entry.status === 'running' && !paused
     const now = performance.now()
@@ -108,6 +124,7 @@ export function useSmoothProgressRef({
     let displayed = modelSec(now)
     const isNewEntry = entry.entryId !== stateRef.current.entryId
     const isNewRound = !isNewEntry && (
+      completedRepeats !== stateRef.current.completedRepeats ||
       entry.remainingRepeats !== stateRef.current.remainingRepeats ||
       baseProgress < stateRef.current.lastBaseProgress - 0.5
     )
@@ -116,6 +133,7 @@ export function useSmoothProgressRef({
     }
     stateRef.current.entryId = entry.entryId
     stateRef.current.remainingRepeats = entry.remainingRepeats
+    stateRef.current.completedRepeats = completedRepeats
     stateRef.current.lastBaseProgress = baseProgress
 
     // 2. 服务端权威目标秒数
@@ -129,31 +147,9 @@ export function useSmoothProgressRef({
       targetSec = Math.min(duration, Math.max(0, baseProgress + elapsed))
     }
 
-    // 3. 动画起点：无限模式跨边界回绕归零；目标滞后于显示位置时保持单调不后退；
-    //    正向大步（>0.3s）从当前显示位置起追（时长压缩承载加速），小步直接吸附目标值。
-    let fromSec: number
-    if (!isRunning) {
-      fromSec = targetSec
-    } else {
-      if (isInfinite && displayed > duration * 0.8 && targetSec < duration * 0.2) {
-        displayed = 0
-      }
-      if (targetSec < displayed) {
-        fromSec = Math.min(duration, displayed)
-      } else {
-        fromSec = targetSec - displayed > 0.3 ? displayed : targetSec
-      }
-    }
-
-    // 4. 段时长：默认恰好命中服务端预期完成时刻；追赶速率封顶 2.2x（此时可能晚于预期，下一次同步自愈）。
-    const segMs = isRunning
-      ? Math.max(30, (duration - targetSec) * 1000, ((duration - fromSec) / 2.2) * 1000)
-      : 0
-    const segRate = isRunning && segMs > 0 ? (duration - fromSec) / (segMs / 1000) : 0
-
     const ratioOf = (sec: number) => (duration > 0 ? Math.min(1, Math.max(0, sec / duration)) : 0)
 
-    // 5. 文本渲染：内容比对后写 DOM，避免无效 textContent 触发逐帧重排
+    // 3. 文本渲染：内容比对后写 DOM，避免无效 textContent 触发逐帧重排
     const lastWritten = { text: '', percent: '', meta: '' }
     const renderTexts = (sec: number) => {
       const ratio = ratioOf(sec)
@@ -187,37 +183,83 @@ export function useSmoothProgressRef({
 
     // 暂停/非 running：静态帧 + 单次文本，无周期任务
     if (!isRunning) {
-      stateRef.current.model = { t0: now, s0: fromSec, rate: 0, dur: duration, loop: false, stopped: true }
-      if (fill) fill.style.transform = `scaleX(${ratioOf(fromSec)})`
-      renderTexts(fromSec)
+      animRef.current?.cancel()
+      loopAnimRef.current?.cancel()
+      animRef.current = null
+      loopAnimRef.current = null
+      stateRef.current.model = { t0: now, s0: targetSec, rate: 0, dur: duration, loop: false, stopped: true }
+      if (fill) fill.style.transform = `scaleX(${ratioOf(targetSec)})`
+      renderTexts(targetSec)
       return undefined
     }
 
-    // 6. 启动合成器动画；无限循环在首段收尾后切换为整圈无限动画
-    let anim: Animation | undefined
-    let loopAnim: Animation | undefined
+    // 4. 同条目同轮次内若合成器动画仍在运行且与权威目标偏差在 0.8s 内，保持当前动画不断帧（消除中途同步闪烁）
+    const activeAnimRunning =
+      animRef.current?.playState === 'running' || loopAnimRef.current?.playState === 'running'
+    if (
+      !isNewEntry &&
+      !isNewRound &&
+      activeAnimRunning &&
+      stateRef.current.model.dur === duration &&
+      Math.abs(targetSec - displayed) <= 0.8
+    ) {
+      renderTexts(modelSec(performance.now()))
+      const interval = window.setInterval(() => {
+        renderTexts(modelSec(performance.now()))
+      }, 100)
+      return () => {
+        window.clearInterval(interval)
+      }
+    }
+
+    // 5. 动画起点：无限模式跨边界回绕归零；目标滞后于显示位置时保持单调不后退；
+    //    正向大步（>0.3s）从当前显示位置起追（时长压缩承载加速），小步直接吸附目标值。
+    let fromSec: number
+    if (isInfinite && displayed > duration * 0.8 && targetSec < duration * 0.2) {
+      displayed = 0
+    }
+    if (!isNewEntry && !isNewRound && targetSec < displayed) {
+      fromSec = Math.min(duration, displayed)
+    } else if (!isNewEntry && !isNewRound && targetSec - displayed > 0.3) {
+      fromSec = displayed
+    } else {
+      fromSec = targetSec
+    }
+
+    // 6. 段时长：默认恰好命中服务端预期完成时刻；追赶速率封顶 2.2x（此时可能晚于预期，下一次同步自愈）。
+    const segMs = Math.max(30, (duration - targetSec) * 1000, ((duration - fromSec) / 2.2) * 1000)
+    const segRate = segMs > 0 ? (duration - fromSec) / (segMs / 1000) : 0
+
+    // 7. 启动合成器动画；无限循环在首段收尾后切换为整圈无限动画
+    animRef.current?.cancel()
+    loopAnimRef.current?.cancel()
+    animRef.current = null
+    loopAnimRef.current = null
     stateRef.current.model = { t0: now, s0: fromSec, rate: segRate, dur: duration, loop: false, stopped: false }
     if (fill) {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         fill.style.transform = `scaleX(${ratioOf(fromSec)})`
       } else {
-        anim = fill.animate(
+        const anim = fill.animate(
           [{ transform: `scaleX(${ratioOf(fromSec)})` }, { transform: 'scaleX(1)' }],
           { duration: segMs, easing: 'linear', fill: 'forwards' },
         )
+        animRef.current = anim
         if (isInfinite) {
           anim.onfinish = () => {
-            loopAnim = fill.animate(
+            if (animRef.current !== anim) return
+            const loopAnim = fill.animate(
               [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
               { duration: duration * 1000, easing: 'linear', iterations: Infinity },
             )
+            loopAnimRef.current = loopAnim
             stateRef.current.model = { t0: performance.now(), s0: 0, rate: 1, dur: duration, loop: true, stopped: false }
           }
         }
       }
     }
 
-    // 7. 低频文本驱动：0.1s 显示精度对应 100ms 唤醒，未变化不落 DOM
+    // 8. 低频文本驱动：0.1s 显示精度对应 100ms 唤醒，未变化不落 DOM
     renderTexts(modelSec(performance.now()))
     const interval = window.setInterval(() => {
       renderTexts(modelSec(performance.now()))
@@ -225,8 +267,6 @@ export function useSmoothProgressRef({
 
     return () => {
       window.clearInterval(interval)
-      anim?.cancel()
-      loopAnim?.cancel()
     }
   }, [
     entry?.entryId,
@@ -234,6 +274,7 @@ export function useSmoothProgressRef({
     entry?.durationSeconds,
     entry?.progressSeconds,
     entry?.remainingRepeats,
+    entry?.completedRepeats,
     lastQueueSyncPerformanceTime,
     paused,
     fillRef,
