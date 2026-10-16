@@ -409,7 +409,8 @@ public sealed class CombatSkillTests
             "ability.fenxue-gong",
             "ability.xiaozhoutian-gong",
             "ability.cunshen-jue",
-            "ability.lianjing-huaqi-jue"
+            "ability.lianjing-huaqi-jue",
+            "ability.xuanyuan-yiqi-gong"
         ];
         foreach (var id in internalIds)
         {

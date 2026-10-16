@@ -183,5 +183,26 @@
       "agility": 0.7,
       "consciousness": 0.7
     }
+  },
+  {
+    "id": "ability.xuanyuan-yiqi-gong",
+    "name": "玄元一气功",
+    "description": "玄元一气，六合归真。玄门上乘筑基心法，采天地纯粹玄元之气，六维齐修，无偏无颇。",
+    "discipline": "internal",
+    "style": "five-elements",
+    "tier": 3,
+    "quality": 3,
+    "category": "spell",
+    "element": "none",
+    "rootAttribute": "meridians",
+    "rootExpEfficiencyPerLevel": 0.04,
+    "rootExpMultipliers": {
+      "stamina": 2.0,
+      "meridians": 2.0,
+      "attack": 2.0,
+      "bone": 2.0,
+      "agility": 2.0,
+      "consciousness": 2.0
+    }
   }
 ]
