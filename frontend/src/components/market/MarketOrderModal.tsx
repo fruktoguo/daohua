@@ -60,11 +60,12 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
-  // 已穿戴装备仍计钱包同变体行持存（selectedAmount 会包含它），卖出方向按「同标的 + 同强化等级」拦截：
-  // 钱包按 (itemId, "+N") 行冻结，挂着 +3 的已装备件不挡基础件/其他等级的出售。
-  const isInstrumentEquipped = useGameStore(
-    state => state.combat?.equipment?.some(
-      entry => entry.itemId === instrument?.itemId && Math.floor(entry.enhancementLevel) === enhancementLevel) ?? false
+  // 已穿戴装备仍计钱包同变体行持存（selectedAmount 会包含它），卖出方向按「同标的 + 同强化等级」扣除穿戴件：
+  // 仅在全部持存均处于穿戴状态时才阻断；若有未穿戴的同级多余件，允许正常挂单出售。
+  const equippedCount = useGameStore(
+    state => state.combat?.equipment?.filter(
+      entry => entry.itemId === instrument?.itemId && Math.floor(entry.enhancementLevel) === enhancementLevel
+    ).length ?? 0
   )
 
   const vendorPrice = Math.max(2, instrument?.sellPrice ?? 2)
@@ -83,10 +84,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const bestAsk = book?.asks[0]?.price
   const bestBid = book?.bids[0]?.price
   // 可卖量按 (itemId, "+N") 变体行计数：挂单冻结同一资产键，不同强化等级余额互不相混；
-  // 灵石等非变体资产仍归一在空 variant 基础行。
+  // 扣除当前已穿戴件后为真正可支配挂售件数；灵石等非变体资产仍归一在空 variant 基础行。
   const selectedAmount = instrument
     ? (inventory.find(item => item.itemId === instrument.itemId && parseEnhancementVariant(item.variant) === enhancementLevel)?.amount ?? 0)
     : 0
+  const availableAmount = Math.max(0, selectedAmount - equippedCount)
   const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
 
   /** 步进调价：−/+ 按当前价位 tick 步长走一档，÷2/×2 折半翻倍后归一化到价格网格。 */
@@ -113,11 +115,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
   const quantityLimit = useMemo(() => {
     if (side === 'sell') {
-      return Math.max(1, selectedAmount)
+      return Math.max(1, availableAmount > 0 ? availableAmount : selectedAmount)
     }
     const maxAffordable = Math.floor(spiritAmount / Math.max(1, price))
     return Math.max(1, maxAffordable)
-  }, [price, selectedAmount, side, spiritAmount])
+  }, [price, availableAmount, selectedAmount, side, spiritAmount])
 
   const totalPrice = price * quantity
   const tax = Math.ceil(totalPrice * 0.02)
@@ -132,16 +134,19 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       return
     }
 
-    if (side === 'sell' && isInstrumentEquipped) {
-      setNotice(getT()('app.inventoryPanel.equippedHint'))
+    if (side === 'sell' && availableAmount <= 0) {
+      if (equippedCount > 0) {
+        setNotice(getT()('app.inventoryPanel.equippedHint'))
+      } else {
+        setNotice(getT()('market.error.sellExceedsBagStock'))
+      }
       return
     }
 
-    if (side === 'sell' && quantity > selectedAmount) {
+    if (side === 'sell' && quantity > availableAmount) {
       setNotice(getT()('market.error.sellExceedsBagStock'))
       return
     }
-
     if (side === 'buy' && price * quantity > spiritAmount) {
       setNotice(getT()('market.error.insufficientSpirit'))
       return
@@ -163,7 +168,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       onClose()
       window.setTimeout(onPlaced, 120)
     }
-  }, [enhancementLevel, instrument, isInstrumentEquipped, onClose, onPlaced, price, quantity, selectedAmount, setNotice, side, spiritAmount, vendorPrice])
+  }, [availableAmount, enhancementLevel, equippedCount, instrument, onClose, onPlaced, price, quantity, setNotice, side, spiritAmount, vendorPrice])
 
   if (!open || !instrument) return null
 
@@ -291,7 +296,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           <div className="market-order-modal-field-header">
             <label>{t('market.quantity')}</label>
             <span className="market-order-max-hint">
-              {side === 'sell' ? t('market.maxSellable', { count: formatNumber(selectedAmount) }) : t('market.maxBuyable', { count: formatNumber(quantityLimit) })}
+              {side === 'sell' ? t('market.maxSellable', { count: formatNumber(availableAmount) }) : t('market.maxBuyable', { count: formatNumber(quantityLimit) })}
             </span>
           </div>
           <QuantitySelector
@@ -347,7 +352,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             className={`market-order-btn-submit market-order-btn-submit--${side}`}
             disabled={
               connection !== 'online' ||
-              (side === 'sell' && (isInstrumentEquipped || selectedAmount === 0 || quantity > selectedAmount)) ||
+              (side === 'sell' && (availableAmount <= 0 || quantity > availableAmount)) ||
               (side === 'buy' && (spiritAmount < totalPrice || totalPrice <= 0))
             }
             type="submit"

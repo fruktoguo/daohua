@@ -84,6 +84,44 @@ public sealed class MarketVariantTests
         }
     }
 
+    /// <summary>持有 2 件且已装备 1 件时，卖出 1 件不被 ITEM_EQUIPPED 拦截，放行进入市场层。</summary>
+    [Fact]
+    public async Task MarketPlace_AllowsSellingSurplusEquippedLevel()
+    {
+        var playerId = Guid.NewGuid();
+        var assets = new VariantAssets(playerId, ("equipment.qingfeng-sword", "+2", 2d));
+        var catalog = LoadCatalogFiles("equipment/weapons.json");
+        await using var runtime = Create(catalog, playerId, assets);
+        await runtime.LoadAsync(playerId);
+
+        var equip = await runtime.ExecuteAsync(playerId, "loadout.replace",
+            JsonSerializer.SerializeToElement(new
+            {
+                equipment = new[] { new { itemId = "equipment.qingfeng-sword", enhancementLevel = 2d } },
+                abilitySlots = Array.Empty<object>()
+            }, ProtocolJson.Options), 0, Guid.NewGuid());
+        Assert.True(equip.Success, $"{equip.Code}: {equip.Message}");
+
+        // 持有 2 件、穿戴 1 件，卖出 1 件：未超出未装备可用量，放行进入市场层抛出未就绪异常
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await runtime.ExecuteAsync(playerId, "market.place",
+                PlacePayload("equipment.qingfeng-sword", "sell", "+2"), 0, Guid.NewGuid()));
+
+        // 若卖出 2 件，超出可用量（2 - 1 = 1 < 2），被 ITEM_EQUIPPED 拦截
+        var exceed = await runtime.ExecuteAsync(playerId, "market.place",
+            JsonSerializer.SerializeToElement(new
+            {
+                orderId = Guid.NewGuid().ToString("D"),
+                itemId = "equipment.qingfeng-sword",
+                side = "sell",
+                variant = "+2",
+                price = 10d,
+                quantity = 2d
+            }, ProtocolJson.Options), 0, Guid.NewGuid());
+        Assert.False(exceed.Success);
+        Assert.Equal("ITEM_EQUIPPED", exceed.Code);
+    }
+
     /// <summary>装配带未启动市场运行时的适配器：未就绪状态由 PlaceAsync 的 EnsureReady 暴露，不触库。</summary>
     private static EcsPlayerRuntimeAdapter Create(GameDataCatalog catalog, Guid playerId, IAssetBalanceRepository? assets = null)
     {
@@ -153,12 +191,15 @@ public sealed class MarketVariantTests
             ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>([]);
     }
 
-    /// <summary>持有指定资产变体行的钱包假实现；每条 (assetId, variant) 一行余额 1。</summary>
-    private sealed class VariantAssets(Guid playerId, params (string AssetId, string Variant)[] rows) : IAssetBalanceRepository
+    /// <summary>持有指定资产变体行的钱包假实现；支持指定数量（未指定默认 1）。</summary>
+    private sealed class VariantAssets(Guid playerId, params (string AssetId, string Variant, double Quantity)[] rows) : IAssetBalanceRepository
     {
+        public VariantAssets(Guid playerId, params (string AssetId, string Variant)[] simpleRows)
+            : this(playerId, simpleRows.Select(r => (r.AssetId, r.Variant, 1d)).ToArray()) { }
+
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(
-                rows.Select(row => new AssetBalanceRecord(playerId, row.AssetId, row.Variant, 1, 0)).ToArray());
+                rows.Select(row => new AssetBalanceRecord(playerId, row.AssetId, row.Variant, row.Quantity, 0)).ToArray());
     }
 
     private sealed class NoopEconomy : IEconomyTransactionStore

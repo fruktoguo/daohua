@@ -771,9 +771,17 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "INVALID_VARIANT", "订单变体无效。", before);
                         variant = EnhancementRules.KeyFor(new ItemId(assetId), variantLevel).Variant;
                         // 与 item.discard/item.sell 同一防线但收窄到同级匹配：钱包按变体行冻结，
-                        // 仅同 itemId 且同强化等级的已装备件拦截出售，其他等级变体挂单互不挤占。
-                        if (side == MarketSide.Sell && before.State.Loadout.Equipment.Any(slot => slot.ItemId == assetId && (int)slot.EnhancementLevel == variantLevel))
-                            return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法挂单出售，请先卸下。", before);
+                        // 扣除同 itemId 且同强化等级的已装备件后为可用余额，仅在可支配量不足时拦截，多余备件放行。
+                        if (side == MarketSide.Sell)
+                        {
+                            var equippedCount = before.State.Loadout.Equipment.Count(slot => slot.ItemId == assetId && (int)Math.Floor(slot.EnhancementLevel) == variantLevel);
+                            if (equippedCount > 0)
+                            {
+                                var totalHeld = wallet.Get(new AssetKey(new ItemId(assetId), variant));
+                                if (totalHeld - equippedCount < quantity)
+                                    return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法挂单出售，请先卸下。", before);
+                            }
+                        }
                         // 绑定物品（isTradable=false，如功德·绑定）不得进入坊市挂单。
                         if (gameData.Items.TryGetValue(new ItemId(assetId), out var instrumentItem) && !instrumentItem.IsTradable)
                             return new PlayerCommandResult(false, "ITEM_NOT_TRADABLE", "绑定物品无法交易。", before);

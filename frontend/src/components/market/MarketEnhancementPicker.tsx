@@ -167,14 +167,37 @@ export const MarketEnhancementPicker = memo(function MarketEnhancementPicker({
     return map
   }, [inventory, instrument.itemId])
 
-  // 只保留买或卖任一侧有挂单价格的等级并按等级升序；接口空集退化为 +0 占位行。
+  // 展示等级集合：市场上已有挂单的等级 + 玩家持有的强化等级 + 基础 0 级（常驻展示）。
+  // 即使某等级全服尚无任何挂单，只要玩家持有该变体，也必须展示行并提供出售入口。
   const rows = useMemo<MarketEnhancementRowData[]>(() => {
-    const active = variants
-      .filter(variant => variant.bestAsk !== null || variant.bestBid !== null)
-      .map(variant => ({ level: variant.enhancementLevel, bestAsk: variant.bestAsk, bestBid: variant.bestBid }))
-      .sort((left, right) => left.level - right.level)
-    return active.length > 0 ? active : [{ level: 0, bestAsk: null, bestBid: null }]
-  }, [variants])
+    const activeByLevel = new Map<number, { bestAsk: number | null; bestBid: number | null }>()
+    for (const v of variants) {
+      if (v.bestAsk !== null || v.bestBid !== null) {
+        activeByLevel.set(v.enhancementLevel, { bestAsk: v.bestAsk, bestBid: v.bestBid })
+      }
+    }
+
+    const allLevels = new Set<number>([0])
+    for (const level of activeByLevel.keys()) {
+      allLevels.add(level)
+    }
+    for (const [level, count] of heldByLevel.entries()) {
+      if (count > 0) {
+        allLevels.add(level)
+      }
+    }
+
+    return Array.from(allLevels)
+      .sort((a, b) => a - b)
+      .map(level => {
+        const active = activeByLevel.get(level)
+        return {
+          level,
+          bestAsk: active?.bestAsk ?? null,
+          bestBid: active?.bestBid ?? null,
+        }
+      })
+  }, [variants, heldByLevel])
 
   return (
     <div
