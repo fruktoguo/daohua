@@ -236,6 +236,8 @@ export const appZh = {
       bonusTechniqueSpeedDesc: '{name}技艺 Lv.{level} 使行动速度增加 {percent}%',
       bonusToolSpeedDesc: '{name} 使行动速度增加 {percent}%',
       bonusBuffDesc: '状态增益【{name}】提供 {percent}% 效果',
+      bonusSpiritStoneSource: '灵石注灵',
+      bonusSpiritStoneDesc: '每轮消耗 {cost} 灵石，修为与灵力基础产出提升 {percent}',
       bonusFoundationSource: '境界圆满',
       bonusFoundationTag: '底蕴转化',
       bonusFoundationDesc: '当前境界待突破，修炼所得修为将 100% 转化为道基底蕴',
@@ -251,6 +253,12 @@ export const appZh = {
       levelRequired: '需境界达到 Lv.{level}',
       autoUseTrayAria: '{name}物品配置',
       autoUseLabel: '物品使用',
+      spiritStoneInject: '灵石注灵',
+      spiritStoneTierNone: '不消耗',
+      spiritStoneTier1: '1 灵石 (+20%)',
+      spiritStoneTier10: '10 灵石 (+100%)',
+      spiritStoneTier100: '100 灵石 (+300%)',
+      spiritStoneBadge: '💎 {count}/轮',
       locationActionEmpty: '当前位置没有开放此类行动，请先在历练地图中移动。',
       // 斗法（PVP）勾选块
       duel: {

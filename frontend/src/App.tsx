@@ -415,6 +415,11 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
           )}
           {queuePaused && <span className="badge">{t('app.queue.paused')}</span>}
           {entry.pvpEnabled && <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>}
+          {Boolean(entry.parameters?.spiritStone && entry.parameters.spiritStone > 0) && (
+            <span className="badge badge-spirit-stone">
+              {t('app.action.spiritStoneBadge', { count: entry.parameters!.spiritStone })}
+            </span>
+          )}
         </div>
         {isCombatExpedition
           ? <CombatActionProgress entry={entry} />
@@ -580,6 +585,11 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 {hasActionParticipation(entry) && (
                   <span className="badge badge-party">
                     {partyMemberCount > 0 ? t('social.session.badgeCount', { count: partyMemberCount }) : t('social.session.badge')}
+                  </span>
+                )}
+                {Boolean(entry.parameters?.spiritStone && entry.parameters.spiritStone > 0) && (
+                  <span className="badge badge-spirit-stone">
+                    {t('app.action.spiritStoneBadge', { count: entry.parameters!.spiritStone })}
                   </span>
                 )}
                 <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
@@ -1426,7 +1436,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   // 制造类行动（炼丹/炼器/精炼/强化）默认单轮：材料逐轮消耗结算，无限默认会烧穿背包；
   // 其余行动（探索/修炼/战斗/赶路）维持无限循环口径不变。
   const isManufacture = action.type === 'alchemy' || action.type === 'enhancement'
+  const isDrawQi = action.id === 'cultivation.draw-qi'
   const [repeats, setRepeats] = useState(isManufacture ? 1 : -1)
+  const [spiritStoneTier, setSpiritStoneTier] = useState<number>(0)
   const [pvpEnabled, setPvpEnabled] = useState(false)
   const [, setClockTick] = useState(0)
 
@@ -1445,7 +1457,8 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     stats,
     combat,
     equipmentCatalog,
-  }), [action, inventory, items, autoUseSlots, world, stats, combat, equipmentCatalog])
+    parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
+  }), [action, inventory, items, autoUseSlots, world, stats, combat, equipmentCatalog, spiritStoneTier])
 
   // 耗时加速类加成不乘产出倍率：拆出单独徽标常显，不并入「总加成」构成明细
   const multiplierBonuses = useMemo(
@@ -1653,6 +1666,30 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                 ))}
               </dd>
             </div>
+            {isDrawQi && (
+              <div>
+                <dt>{t('app.action.spiritStoneInject')}</dt>
+                <dd>
+                  <div className="spirit-stone-tier-group" role="radiogroup" aria-label={t('app.action.spiritStoneInject')}>
+                    {[
+                      { value: 0, label: t('app.action.spiritStoneTierNone') },
+                      { value: 1, label: t('app.action.spiritStoneTier1') },
+                      { value: 10, label: t('app.action.spiritStoneTier10') },
+                      { value: 100, label: t('app.action.spiritStoneTier100') },
+                    ].map(tier => (
+                      <button
+                        key={tier.value}
+                        type="button"
+                        className={`spirit-stone-tier-btn${spiritStoneTier === tier.value ? ' is-active' : ''}`}
+                        onClick={() => setSpiritStoneTier(tier.value)}
+                      >
+                        {tier.label}
+                      </button>
+                    ))}
+                  </div>
+                </dd>
+              </div>
+            )}
 
             <div>
               <dt>{t('app.action.repeats')}</dt>
@@ -1737,6 +1774,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
             actionId: action.id,
             repeatCount: repeats,
             pvpEnabled,
+            parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
           })) {
             onClose()
             if (action.type === 'combat' || startsImmediately) {

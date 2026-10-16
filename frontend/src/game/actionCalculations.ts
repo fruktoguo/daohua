@@ -27,7 +27,7 @@ export interface ActiveBonusDetail {
   /** 加成标签（如 '+30%' / '+20%' / '3倍加速'） */
   tag: string
   /** 加成类别 */
-  type: 'pill' | 'world' | 'building' | 'buff' | 'foundation' | 'speed'
+  type: 'pill' | 'world' | 'building' | 'buff' | 'foundation' | 'speed' | 'spiritStone'
   /** 数值乘率（如 1.3） */
   multiplier?: number
   /** 说明描述 */
@@ -98,6 +98,8 @@ interface CalculateActionParams {
     buildingEffects?: NodeBuildingEffectSet
   }
   stats?: Stats
+  /** 动态行动参数（如灵石注灵档位 spiritStone: 1/10/100 等） */
+  parameters?: Record<string, number>
   /** 装配快照：技艺经验表与已装备列表（技艺等级/技艺工具耗时加成来源） */
   combat?: {
     equipment?: readonly { itemId: string }[]
@@ -195,6 +197,7 @@ export function calculateActionYieldPreview({
   autoUseSlots,
   world,
   stats,
+  parameters,
   combat,
   equipmentCatalog,
 }: CalculateActionParams): ActionYieldPreview {
@@ -367,6 +370,24 @@ export function calculateActionYieldPreview({
 
     cultivationDetail = { isPendingBreakthrough }
   }
+  // 引气入体灵石注灵加速（总纲 §6.4.3）：仅放大修为与灵力基础值，重算后续乘区；六维经验定额不受影响
+  const spiritStoneCost = (action.id === 'cultivation.draw-qi' && parameters?.spiritStone)
+    ? parameters.spiritStone
+    : 0
+  const spiritStoneMultiplier = spiritStoneCost >= 100
+    ? 4.0
+    : (spiritStoneCost >= 10 ? 2.0 : (spiritStoneCost >= 1 ? 1.2 : 1.0))
+  if (spiritStoneMultiplier > 1.0) {
+    const stonePercent = Math.round((spiritStoneMultiplier - 1.0) * 100)
+    bonuses.push({
+      sourceName: t('app.action.bonusSpiritStoneSource'),
+      tag: `+${stonePercent}%`,
+      type: 'spiritStone',
+      multiplier: spiritStoneMultiplier,
+      description: t('app.action.bonusSpiritStoneDesc', { cost: spiritStoneCost, percent: `+${stonePercent}%` }),
+    })
+  }
+
 
   // 5. 收益解算：物品按 id 聚合，资源类收益按 kind 折算合并为单轮总量（产出只展示每轮口径），增益收益原样透传。
   //    按秒收益整轮总量 = 速率 × 实际耗时整秒数（服务端进度按整秒量化推进，时长浮点贴整取上界）。
@@ -383,8 +404,13 @@ export function calculateActionYieldPreview({
         break
       }
       case 'mana':
-      case 'hitpoints':
       case 'experience': {
+        const rawPerRound = yieldEntry.per === 'second' ? yieldEntry.amount * effectiveRoundSeconds : yieldEntry.amount
+        const basePerRound = rawPerRound * spiritStoneMultiplier
+        resourceBaseMap.set(yieldEntry.kind, (resourceBaseMap.get(yieldEntry.kind) ?? 0) + basePerRound)
+        break
+      }
+      case 'hitpoints': {
         const perRound = yieldEntry.per === 'second' ? yieldEntry.amount * effectiveRoundSeconds : yieldEntry.amount
         resourceBaseMap.set(yieldEntry.kind, (resourceBaseMap.get(yieldEntry.kind) ?? 0) + perRound)
         break

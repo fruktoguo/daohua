@@ -577,4 +577,56 @@ public sealed class SimulationEngineTests
         Assert.Throws<DomainException>(() => GameDataCatalog.Parse(
             ["[{\"id\":\"test.x\",\"durationSeconds\":1,\"yields\":[{\"kind\":\"qi\",\"per\":\"hour\",\"amount\":1}]}]"u8.ToArray()]));
     }
+
+    [Fact]
+    public void DrawQi_WithSpiritStoneInjection_BoostsExperienceAndMana_AndDeductsSpiritStones()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var stoneId = new ItemId("currency.spirit-stone");
+
+        // 1. 灵石充足时：选择 10 灵石档位，翻倍（+100%），修为与灵力基数翻倍，六维定额不翻倍
+        var player = CreatePlayer("灵石充裕");
+        player.Resources.Manapoints = 0;
+        var wallet = CreateWallet(player, (stoneId, 50d));
+        var intent = new ActionIntent(new ActionId("cultivation.draw-qi"), 1,
+            Parameters: new Dictionary<string, double> { ["spiritStone"] = 10 });
+        player.Enqueue(intent, Baseline, catalog.Actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        foreach (var delta in result.AssetDeltas) wallet.Apply(delta);
+
+        Assert.Equal(40d, wallet.Get(new AssetKey(stoneId))); // 扣减 10 灵石
+        Assert.Equal(20d, player.Progression.Experience);     // 基准 10 翻倍至 20
+        Assert.Equal(22d, player.Resources.Manapoints);       // 灵力基准 20 + 10秒自然回复 2
+        Assert.Equal(5d, player.Loadout.CoreAttributes.MeridiansExp); // 经脉保持定额 5
+        Assert.Equal(5d, player.Loadout.CoreAttributes.BoneExp);      // 根骨保持定额 5
+
+        // 2. 灵石不足时：平滑降级为 1.0 倍标准结算，不扣灵石，不中断队列
+        var poorPlayer = CreatePlayer("灵石不足");
+        poorPlayer.Resources.Manapoints = 0;
+        var poorWallet = CreateWallet(poorPlayer, (stoneId, 5d)); // 只有 5 灵石，不足 10 档
+        poorPlayer.Enqueue(intent, Baseline, catalog.Actions);
+
+        var poorResult = SimulationEngine.AdvanceTo(poorPlayer, Baseline.AddSeconds(10), catalog, poorWallet);
+        foreach (var delta in poorResult.AssetDeltas) poorWallet.Apply(delta);
+
+        Assert.Equal(5d, poorWallet.Get(new AssetKey(stoneId))); // 不扣灵石
+        Assert.Equal(10d, poorPlayer.Progression.Experience);    // 标准 10
+        Assert.Equal(12d, poorPlayer.Resources.Manapoints);      // 标准 10 + 10秒自然回复 2
+
+        // 3. 复合乘区：灵石 10 档基础翻倍 + 引气丹 1.3 倍 = 20 * 1.3 = 26
+        var comboPlayer = CreatePlayer("丹药复合");
+        comboPlayer.Resources.Manapoints = 0;
+        var pillId = new ItemId("item.qi-gathering-pill");
+        var comboWallet = CreateWallet(comboPlayer, (stoneId, 50d), (pillId, 1d));
+        comboPlayer.ConfigureAutoUse("exploration", 0, pillId.Value, 1, true);
+        comboPlayer.Enqueue(intent, Baseline, catalog.Actions);
+
+        var comboResult = SimulationEngine.AdvanceTo(comboPlayer, Baseline.AddSeconds(10), catalog, comboWallet);
+        foreach (var delta in comboResult.AssetDeltas) comboWallet.Apply(delta);
+
+        Assert.Equal(40d, comboWallet.Get(new AssetKey(stoneId))); // 扣减 10 灵石
+        Assert.Equal(26d, comboPlayer.Progression.Experience);     // (10 * 2.0) * 1.3 = 26
+        Assert.Equal(28d, comboPlayer.Resources.Manapoints);       // (10 * 2.0) * 1.3 = 26 + 10秒自然回复 2
+    }
 }

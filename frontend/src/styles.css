@@ -1146,6 +1146,48 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+/* 引气入体灵石注灵徽标 */
+.badge-spirit-stone {
+  border-color: rgba(212, 163, 89, 0.55);
+  color: #dfb36e;
+  background: rgba(212, 163, 89, 0.14);
+  white-space: nowrap;
+}
+
+/* 引气入体灵石注灵选项胶囊组 */
+.spirit-stone-tier-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.spirit-stone-tier-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-dim, #a6a6a6);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.spirit-stone-tier-btn:hover {
+  border-color: var(--gold-bright, #d4a359);
+  color: var(--text-normal, #f0f0f0);
+}
+
+.spirit-stone-tier-btn.is-active {
+  background: var(--gold-bright, #d4a359);
+  border-color: var(--gold-bright, #d4a359);
+  color: #0c0a06;
+  font-weight: 600;
+}
+
 .queue-backdrop {
   position: fixed;
   inset: 0;
