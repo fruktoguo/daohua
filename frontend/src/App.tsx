@@ -1474,7 +1474,13 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const hasRateBonus = multiplierBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
   const isPending = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.isPendingBreakthrough)
 
-  const inputs = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
+  const inputs = useMemo(() => {
+    const list = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
+    if (isDrawQi && spiritStoneTier > 0) {
+      list.push({ itemId: 'currency.spirit-stone', amount: spiritStoneTier })
+    }
+    return list
+  }, [action.inputs, isDrawQi, spiritStoneTier])
   const titleId = `action-modal-title-${action.id}`
   const startsImmediately = action.executionKind === 'combat-encounter'
   // 行动名/描述按当前驻留地点本地化（「讨伐 青云仙山」→「讨伐 漱玉溪」）
