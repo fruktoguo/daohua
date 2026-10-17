@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 
 ARG NODE_IMAGE=node:22-alpine
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0-alpine
