@@ -5,6 +5,11 @@ import { getT, useT } from '../../i18n'
 import { resolveMarketInstrumentMetadata, type MarketInstrument } from '../../game/marketStore'
 
 export { type MarketInstrument, resolveMarketInstrumentMetadata }
+
+/** 装备标的判定：标的包含 equipmentDefinition、属于 equipment 品类或以 equipment. 开头 */
+export function isEquipmentInstrument(item: MarketInstrument): boolean {
+  return Boolean(item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.'))
+}
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
 import { gameClient } from '../../network/gameClient'

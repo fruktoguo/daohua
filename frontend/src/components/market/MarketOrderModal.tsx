@@ -1,14 +1,15 @@
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
 import { parseEnhancementVariant } from '../../game/ids'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
+import { fetchMarketBook } from '../../network/apiClient'
 import { gameClient } from '../../network/gameClient'
 import { ItemTile } from '../ItemDisplay'
 import { Modal } from '../Modal'
-import { getMarketPriceIncrement, normalizeMarketPrice, resolveMarketInstrumentMetadata, type MarketInstrument } from './MarketOrderForm'
+import { getMarketPriceIncrement, isEquipmentInstrument, normalizeMarketPrice, resolveMarketInstrumentMetadata, type MarketInstrument } from './MarketOrderForm'
 
 /** 挂单单价上限：防止 ×2 步进无限放大导致总价显示失真（服务端仅要求有限正数）。 */
 const MARKET_ORDER_MAX_PRICE = 999_999_999
@@ -60,13 +61,52 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
-  // 已穿戴装备仍计钱包同变体行持存（selectedAmount 会包含它），卖出方向按「同标的 + 同强化等级」扣除穿戴件：
-  // 仅在全部持存均处于穿戴状态时才阻断；若有未穿戴的同级多余件，允许正常挂单出售。
+  const isEquipment = instrument !== null && isEquipmentInstrument(instrument)
+  const [level, setLevel] = useState<number>(enhancementLevel)
+  const initialLevelRef = useRef(enhancementLevel)
+
+  // 当外部传入的 enhancementLevel 或弹窗重新展开时同步状态
+  useEffect(() => {
+    if (open) {
+      setLevel(enhancementLevel)
+      initialLevelRef.current = enhancementLevel
+    }
+  }, [enhancementLevel, open])
+
+  // 标的当前盘口深度状态（支持在弹窗内切换强化等级后拉取新等级盘口）
+  const [activeBook, setActiveBook] = useState<MarketBook | null>(() => {
+    return book && book.enhancementLevel === enhancementLevel ? book : null
+  })
+
+  // 标的各强化等级背包持存列表（用于在表单头提供一键点选芯片）
+  const heldLevels = useMemo(() => {
+    if (!instrument || !isEquipment) return []
+    const counts = new Map<number, number>()
+    for (const item of inventory) {
+      if (item.itemId !== instrument.itemId) continue
+      const lvl = parseEnhancementVariant(item.variant)
+      counts.set(lvl, (counts.get(lvl) ?? 0) + item.amount)
+    }
+    return Array.from(counts.entries())
+      .map(([lvl, amount]) => ({ level: lvl, amount }))
+      .sort((a, b) => a.level - b.level)
+  }, [inventory, instrument, isEquipment])
+
+  // 选定强化等级下的背包持存（数量随选中的强化等级动态读取）
+  const selectedAmount = instrument
+    ? (inventory.find(item => item.itemId === instrument.itemId && parseEnhancementVariant(item.variant) === level)?.amount ?? 0)
+    : 0
+
+  // 选定强化等级下的已穿戴件数（用于可卖量扣除）
   const equippedCount = useGameStore(
     state => state.combat?.equipment?.filter(
-      entry => entry.itemId === instrument?.itemId && Math.floor(entry.enhancementLevel) === enhancementLevel
+      entry => entry.itemId === instrument?.itemId && Math.floor(entry.enhancementLevel) === level
     ).length ?? 0
   )
+
+  // 选定强化等级下真正可支配售卖的件数
+  const availableAmount = Math.max(0, selectedAmount - equippedCount)
+  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
 
   const vendorPrice = Math.max(2, instrument?.sellPrice ?? 2)
   const minimumPrice = useMemo(() => normalizeMarketPrice(vendorPrice, vendorPrice, true), [vendorPrice])
@@ -81,16 +121,36 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   })
   const [quantity, setQuantity] = useState(1)
 
-  const bestAsk = book?.asks[0]?.price
-  const bestBid = book?.bids[0]?.price
-  // 可卖量按 (itemId, "+N") 变体行计数：挂单冻结同一资产键，不同强化等级余额互不相混；
-  // 扣除当前已穿戴件后为真正可支配挂售件数；灵石等非变体资产仍归一在空 variant 基础行。
-  const selectedAmount = instrument
-    ? (inventory.find(item => item.itemId === instrument.itemId && parseEnhancementVariant(item.variant) === enhancementLevel)?.amount ?? 0)
-    : 0
-  const availableAmount = Math.max(0, selectedAmount - equippedCount)
-  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
+  // 切换强化等级时：异步拉取该等级盘口，若修士主动变更了等级则同步调整默认填价
+  useEffect(() => {
+    if (!open || !instrument || !isEquipment) return
+    if (book && book.enhancementLevel === level) {
+      setActiveBook(book)
+      return
+    }
+    let cancelled = false
+    fetchMarketBook(instrument.itemId, level).then(b => {
+      if (cancelled || !b) return
+      setActiveBook(b)
+      if (level !== initialLevelRef.current) {
+        const bookDefault = side === 'sell'
+          ? (b.asks[0]?.price ?? minimumPrice)
+          : (b.bids[0]?.price ?? minimumPrice)
+        setPrice(Math.max(minimumPrice, normalizeMarketPrice(bookDefault, vendorPrice, side === 'buy')))
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [book, instrument, isEquipment, level, minimumPrice, open, side, vendorPrice])
 
+  // 选中的强化等级切换导致可用量变动时，卖出方向自动将挂售数量钳位在可用范围内
+  useEffect(() => {
+    if (side === 'sell') {
+      setQuantity(prev => Math.max(1, availableAmount > 0 ? Math.min(prev, availableAmount) : 1))
+    }
+  }, [level, availableAmount, side])
+
+  const bestAsk = activeBook?.asks[0]?.price
+  const bestBid = activeBook?.bids[0]?.price
   /** 步进调价：−/+ 按当前价位 tick 步长走一档，÷2/×2 折半翻倍后归一化到价格网格。 */
   const adjustPrice = useCallback((action: 'half' | 'decrease' | 'increase' | 'double') => {
     setPrice(current => {
@@ -160,7 +220,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       price,
       quantity,
       // 与服务端变体口径一致："+N" 落强化等级簿，null 落基础簿（仅装备允许带强化变体）。
-      variant: enhancementLevel > 0 ? `+${enhancementLevel}` : null,
+      variant: (isEquipment && level > 0) ? `+${level}` : null,
     })
 
     if (success) {
@@ -168,14 +228,14 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       onClose()
       window.setTimeout(onPlaced, 120)
     }
-  }, [availableAmount, enhancementLevel, equippedCount, instrument, onClose, onPlaced, price, quantity, setNotice, side, spiritAmount, vendorPrice])
+  }, [availableAmount, equippedCount, instrument, isEquipment, level, onClose, onPlaced, price, quantity, setNotice, side, spiritAmount, vendorPrice])
 
   if (!open || !instrument) return null
 
   const metadata = resolveMarketInstrumentMetadata(instrument, t)
   const titleId = `market-order-modal-title-${instrument.itemId}`
   // 标题与物品卡名称口径与背包变体行一致：强化变体展示 "名称 +N"。
-  const displayName = enhancementLevel > 0 ? `${instrument.name} +${enhancementLevel}` : instrument.name
+  const displayName = (isEquipment && level > 0) ? `${instrument.name} +${level}` : instrument.name
 
   return (
     <Modal
@@ -201,7 +261,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           amount={selectedAmount}
           category={metadata.category}
           className="inventory-cell"
-          enhancementLevel={enhancementLevel}
+          enhancementLevel={isEquipment ? level : 0}
           itemId={instrument.itemId}
           level={metadata.level}
           name={displayName}
@@ -220,6 +280,38 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       </div>
 
       <form className="market-order-modal-form" onSubmit={submitOrder}>
+        {isEquipment && (
+          <div className="market-order-modal-field">
+            <div className="market-order-modal-field-header">
+              <label>{t('market.enhancementLevel')}</label>
+              {heldLevels.length > 0 && (
+                <div className="market-order-quick-prices" role="group" aria-label={t('market.enhancementLevelAria')}>
+                  {heldLevels.map(h => (
+                    <button
+                      className={`market-quick-btn ${level === h.level ? 'active' : ''}`}
+                      key={h.level}
+                      onClick={() => setLevel(h.level)}
+                      type="button"
+                    >
+                      {h.level > 0 ? `+${h.level}` : t('market.enhance.noEnhancement')} ({h.amount})
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <QuantitySelector
+              ariaLabel={t('market.enhancementLevelAria')}
+              compact={false}
+              disabled={connection !== 'online'}
+              leadingPresets={[0]}
+              max={20}
+              min={0}
+              onChange={setLevel}
+              presets={[1, 5, 10, 15, 20]}
+              value={level}
+            />
+          </div>
+        )}
         <div className="market-order-modal-field">
           <div className="market-order-modal-field-header">
             <label>{t('market.unitPriceSpirit')}</label>

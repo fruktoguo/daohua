@@ -53,6 +53,8 @@ export const marketZh = {
     quantity: '数量',
     orderQuantityAria: '市场订单数量',
     quantityAria: '订单数量',
+    enhancementLevel: '强化等级',
+    enhancementLevelAria: '装备强化等级',
     stockHint: '库存 {count}',
     spiritHint: '灵石 {amount}',
     quickPricesAria: '盘口价格快捷设置',

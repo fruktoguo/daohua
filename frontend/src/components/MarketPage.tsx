@@ -9,7 +9,7 @@ import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { MarketBookPanel } from './market/MarketBookPanel'
 import { MarketBrowseGrid } from './market/MarketBrowseGrid'
 import { MarketEnhancementPicker } from './market/MarketEnhancementPicker'
-import { resolveMarketInstrumentMetadata, type MarketInstrument } from './market/MarketOrderForm'
+import { isEquipmentInstrument, resolveMarketInstrumentMetadata, type MarketInstrument } from './market/MarketOrderForm'
 import { MarketOrderModal } from './market/MarketOrderModal'
 import { MarketOwnOrders } from './market/MarketOwnOrders'
 
@@ -28,10 +28,6 @@ const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
 ]
 
 
-/** 装备标的判定：与 MarketBrowseGrid.isEquipment / getMetadata 装备分支同一口径 */
-function isEquipmentInstrument(item: MarketInstrument): boolean {
-  return !!item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')
-}
 
 /** 坊市标的一级品类排序权重：材料 -> 装备 -> 消耗品 -> 功法 */
 const PRIMARY_CATEGORY_ORDER: Record<string, number> = {

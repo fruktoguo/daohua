@@ -4676,6 +4676,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .market-quick-btn {
@@ -4690,6 +4691,12 @@ input[type="checkbox"] {
 .market-quick-btn:hover {
   color: var(--gold-bright);
   border-color: var(--gold-dim);
+}
+
+.market-quick-btn.active {
+  border-color: var(--gold-bright);
+  color: #0a0805;
+  background: var(--gold-bright);
 }
 
 .market-quick-btn--bid {
