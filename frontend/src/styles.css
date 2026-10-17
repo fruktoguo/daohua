@@ -6743,6 +6743,19 @@ input[type="checkbox"] {
   justify-content: center;
   flex-shrink: 0;
 }
+.pill-tone--emerald .compound-icon { color: #34d399; }
+.pill-tone--cyan .compound-icon { color: #38bdf8; }
+.pill-tone--violet .compound-icon { color: #c084fc; }
+.pill-tone--amber .compound-icon { color: #fb923c; }
+.pill-tone--indigo .compound-icon { color: #818cf8; }
+.pill-tone--teal .compound-icon { color: #2dd4bf; }
+.pill-tone--gold .compound-icon { color: #fde047; }
+.pill-tone--crimson .compound-icon { color: #f87171; }
+.pill-tone--silver .compound-icon { color: #cbd5e1; }
+.pill-tone--slate .compound-icon { color: #a1a1aa; }
+.pill-tone--sky .compound-icon { color: #67e8f9; }
+.pill-tone--bronze .compound-icon { color: #fbbf24; }
+.pill-tone--jade .compound-icon { color: #6ee7b7; }
 
 /* 2. 标题胶囊 (微胶囊包裹) */
 .capsule-label {

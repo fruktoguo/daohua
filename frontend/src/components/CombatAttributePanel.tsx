@@ -24,6 +24,7 @@ import { useT } from '../i18n'
 import { ConditionedTile } from './ConditionedTile'
 import { createAbilityProgressAsideCard } from './EffectTooltip'
 import { describeBuffEffectLines, ItemDropReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
+import { StatGlyph } from './StatGlyph'
 
 /** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊与增减伤属性 | 功法与装备装配 | 掉落明细（仅敌怪详情） */
 type CombatAttributeGroupTab = 'base' | 'special' | 'loadout' | 'drops'
@@ -177,10 +178,17 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
       boostReducePill('fireBoostReduce', attributes.fireDamageBonusPoints, attributes.fireDamageReductionPoints, 'amber'),
       boostReducePill('earthBoostReduce', attributes.earthDamageBonusPoints, attributes.earthDamageReductionPoints, 'bronze')],
   ]
+  const ATTR_GLYPH_MAP: Record<string, string> = {
+    hp: 'hp',
+    mp: 'mp',
+    physAtk: 'phys-atk',
+    spellAtk: 'spell-atk',
+  }
 
   const renderPill = (p: AttrPill) => (
     <PillStatLabel
       key={p.key}
+      icon={ATTR_GLYPH_MAP[p.key] ? <StatGlyph glyph={ATTR_GLYPH_MAP[p.key]} size={13} /> : undefined}
       label={t(`insight.combat.${p.key}`)}
       value={p.value}
       tone={p.tone}

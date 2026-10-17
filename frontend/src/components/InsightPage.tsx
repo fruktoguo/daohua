@@ -19,6 +19,7 @@ import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
 import { CombatAttributePanel } from './CombatAttributePanel'
 import { BreakthroughConfirmModal } from './BreakthroughConfirmModal'
+import { StatGlyph } from './StatGlyph'
 
 /** 内视五大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'technique' | 'biography'
@@ -366,12 +367,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {/* 第 1 排：血蓝与自然回复 */}
                 <div className="insight-base-row">
                   <PillStatLabel
+                    icon={<StatGlyph glyph="hp" size={13} />}
                     label={t('insight.base.maxHp')}
                     value={Math.floor(basePool.baseHp)}
                     tone="emerald"
                     tooltip={t('insight.combat.hpTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="mp" size={13} />}
                     label={t('insight.base.maxMp')}
                     value={Math.floor(basePool.baseMp)}
                     tone="cyan"
@@ -394,12 +397,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {/* 第 2 排：AD / AP / 物理护甲 / 术法抗性 */}
                 <div className="insight-base-row">
                   <PillStatLabel
+                    icon={<StatGlyph glyph="phys-atk" size={13} />}
                     label={t('insight.base.physAtk')}
                     value={Math.floor(basePool.baseAd)}
                     tone="crimson"
                     tooltip={t('insight.base.physAtkTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="spell-atk" size={13} />}
                     label={t('insight.base.spellAtk')}
                     value={Math.floor(basePool.baseAp)}
                     tone="indigo"
