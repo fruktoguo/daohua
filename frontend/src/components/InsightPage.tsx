@@ -342,6 +342,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {dimensions.map(dim => (
                   <div className="insight-root-row" key={dim.id}>
                     <PillStatLabel
+                      icon={<StatGlyph glyph={dim.id === 'strength' ? 'attack' : dim.id} size={13} />}
                       label={t(`insight.root.${dim.id}.name`)}
                       value={dim.level}
                       tone={dim.tone}
@@ -381,12 +382,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                     tooltip={t('insight.combat.mpTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="hp-regen" size={13} />}
                     label={t('insight.base.hpRegen')}
                     value={Math.floor(basePool.baseHpRegen)}
                     tone="emerald"
                     tooltip={t('insight.combat.hpRegenTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="mp-regen" size={13} />}
                     label={t('insight.base.mpRegen')}
                     value={Math.floor(basePool.baseMpRegen)}
                     tone="cyan"
@@ -411,12 +414,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                     tooltip={t('insight.base.spellAtkTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="armor" size={13} />}
                     label={t('insight.base.armor')}
                     value={Math.floor(basePool.baseArmor)}
                     tone="bronze"
                     tooltip={t('insight.base.armorTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="magic-res" size={13} />}
                     label={t('insight.base.magicRes')}
                     value={Math.floor(basePool.baseMagicRes)}
                     tone="violet"
@@ -427,36 +432,42 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {/* 第 3 排：命中闪避 暴击免暴 破招化解 */}
                 <div className="insight-base-row">
                   <PillStatLabel
+                    icon={<StatGlyph glyph="accuracy" size={13} />}
                     label={t('insight.base.accuracy')}
                     value={Math.floor(basePool.baseAccuracy)}
                     tone="sky"
                     tooltip={t('insight.base.accuracyTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="evasion" size={13} />}
                     label={t('insight.base.evasion')}
                     value={Math.floor(basePool.baseEvasion)}
                     tone="teal"
                     tooltip={t('insight.base.evasionTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="crit" size={13} />}
                     label={t('insight.base.crit')}
                     value={Math.floor(basePool.baseCrit)}
                     tone="gold"
                     tooltip={t('insight.base.critTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="crit-avoid" size={13} />}
                     label={t('insight.base.critAvoid')}
                     value={Math.floor(basePool.baseCritAvoid)}
                     tone="slate"
                     tooltip={t('insight.base.critAvoidTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="parry-break" size={13} />}
                     label={t('insight.base.parryBreak')}
                     value={Math.floor(basePool.baseBreak)}
                     tone="amber"
                     tooltip={t('insight.base.parryBreakTooltip')}
                   />
                   <PillStatLabel
+                    icon={<StatGlyph glyph="parry-resolve" size={13} />}
                     label={t('insight.base.parryResolve')}
                     value={Math.floor(basePool.baseParry)}
                     tone="silver"
@@ -476,6 +487,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-foundation-pills">
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
+                  icon={<StatGlyph glyph="foundation" size={13} />}
                   label={t('insight.foundation.reserve')}
                   value={stats.foundation === undefined ? t('common.emptyData') : Math.floor(stats.foundation)}
                   tone="gold"
@@ -486,6 +498,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
 
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
+                  icon={<StatGlyph glyph="combat-exp" size={13} />}
                   label={t('insight.foundation.combatExp')}
                   value={stats.combatExperience === undefined ? t('common.emptyData') : Math.floor(stats.combatExperience)}
                   tone="qi"
@@ -521,6 +534,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               {techniques.map(tech => (
                 <div className="insight-root-row" key={tech.id}>
                   <PillStatLabel
+                    icon={<StatGlyph glyph={tech.id} size={13} />}
                     label={t(`insight.technique.${tech.id}`)}
                     progress={tech.progress}
                     tone={tech.tone}
