@@ -28,6 +28,7 @@ import { TaijiToggle } from './components/TaijiToggle'
 import { TutorialOverlay } from './tutorial/TutorialOverlay'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
+import { StatGlyph } from './components/StatGlyph'
 import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
@@ -934,7 +935,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
                       type="button"
                     >
                       <span className="nav-sub-main">
-                        <span className="nav-sub-glyph" aria-hidden="true"><Icon name={mode.icon} /></span>
+                        <span className="nav-sub-glyph" aria-hidden="true"><StatGlyph glyph={mode.id} tone={mode.tone} size={16} /></span>
                         <span className="nav-sub-label">{t(`app.crafting.${mode.id}`)}</span>
                         <span className={`nav-sub-level underlined-value pill-tone--${mode.tone}`}>{state.level}</span>
                       </span>
@@ -1059,7 +1060,7 @@ const CraftingModeTabs = memo(function CraftingModeTabs(): React.JSX.Element {
             role="tab"
             type="button"
           >
-            <span className="crafting-mode-tab-glyph" aria-hidden="true"><Icon name={mode.icon} /></span>
+            <span className="crafting-mode-tab-glyph" aria-hidden="true"><StatGlyph glyph={mode.id} tone={mode.tone} size={16} /></span>
             {/* 等级数字经 pill-tone 容器对子级 underlined-value 分色，与侧边栏技艺色一致 */}
             <span className={`crafting-mode-tab-text pill-tone--${mode.tone}`}>
               {t(`app.crafting.${mode.id}`)}

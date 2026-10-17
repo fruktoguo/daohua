@@ -94,6 +94,19 @@ BATCHES = {
         ("lifespan", "寿元", "A solid pure white ancient peach or burning incense vessel hourglass silhouette icon, lifespan longevity symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients."),
         ("speed", "移动速度", "A solid pure white flying sword riding cloud wind streak silhouette icon, travel movement speed symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients.")
     ]
+    ,
+    "b14_bio_monsters": [
+        ("bio-monsters", "斩妖总计", "A solid pure white monster beast skull with a vertical sword piercing through silhouette icon, total monster kills symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients."),
+        ("bio-normal", "寻常妖兽", "A solid pure white beast claw paw mark with three sharp talons silhouette icon, normal monster beast kills symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients."),
+        ("bio-elite", "精英妖兽", "A solid pure white horned beast head with a radiant glowing crown halo silhouette icon, elite champion monster symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients."),
+        ("bio-boss", "首领妖王", "A solid pure white fierce demonic beast sovereign head with huge imposing curved horns and third eye silhouette icon, boss demon king lord symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients.")
+    ],
+    "b15_bio_pvp_life": [
+        ("bio-pvp-win", "击破同道", "A solid pure white crossed dual swords cutting through a battlefield pennant flag silhouette icon, PvP victory rival defeated symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients."),
+        ("bio-pvp-loss", "重伤败走", "A solid pure white snapped broken sword blade snapped into two pieces silhouette icon, PvP defeat retreat symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients."),
+        ("bio-cultivation", "闭关修炼", "A solid pure white meditating Daoist monk sitting cross-legged in lotus posture on a prayer mat silhouette icon, seclusion cultivation meditating symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients."),
+        ("bio-lifespan", "寿元岁数", "A solid pure white celestial longevity peach fruit with gentle leaf silhouette icon, lifespan longevity years symbol, clean flat silhouette, floating in center of black quadrant, strictly pure white on solid pure black, zero gradients.")
+    ]
 }
 
 def get_latest_workflow():

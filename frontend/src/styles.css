@@ -6805,7 +6805,9 @@ input[type="checkbox"] {
 
 /* 1. 图标裸显 (无胶囊) */
 .compound-icon {
-  font-size: 13.5px;
+  width: 17px;
+  height: 17px;
+  font-size: 16px;
   line-height: 1;
   display: inline-flex;
   align-items: center;

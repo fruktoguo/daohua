@@ -220,7 +220,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
   const renderPill = (p: AttrPill) => (
     <PillStatLabel
       key={p.key}
-      icon={ATTR_GLYPH_MAP[p.key] ? <StatGlyph glyph={ATTR_GLYPH_MAP[p.key]} size={13} /> : undefined}
+      icon={ATTR_GLYPH_MAP[p.key] ? <StatGlyph glyph={ATTR_GLYPH_MAP[p.key]} size={16.5} /> : undefined}
       label={t(`insight.combat.${p.key}`)}
       value={p.value}
       tone={p.tone}

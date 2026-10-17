@@ -30,7 +30,7 @@ export const StatGlyph = memo(function StatGlyph({
   glyph,
   tone,
   className = '',
-  size = 14,
+  size = 16.5,
 }: {
   glyph: string
   tone?: PillTone

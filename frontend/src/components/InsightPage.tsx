@@ -342,7 +342,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {dimensions.map(dim => (
                   <div className="insight-root-row" key={dim.id}>
                     <PillStatLabel
-                      icon={<StatGlyph glyph={dim.id === 'strength' ? 'attack' : dim.id} size={13} />}
+                      icon={<StatGlyph glyph={dim.id === 'strength' ? 'attack' : dim.id} />}
                       label={t(`insight.root.${dim.id}.name`)}
                       value={dim.level}
                       tone={dim.tone}
@@ -368,28 +368,28 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {/* 第 1 排：血蓝与自然回复 */}
                 <div className="insight-base-row">
                   <PillStatLabel
-                    icon={<StatGlyph glyph="hp" size={13} />}
+                    icon={<StatGlyph glyph="hp" />}
                     label={t('insight.base.maxHp')}
                     value={Math.floor(basePool.baseHp)}
                     tone="emerald"
                     tooltip={t('insight.combat.hpTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="mp" size={13} />}
+                    icon={<StatGlyph glyph="mp" />}
                     label={t('insight.base.maxMp')}
                     value={Math.floor(basePool.baseMp)}
                     tone="cyan"
                     tooltip={t('insight.combat.mpTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="hp-regen" size={13} />}
+                    icon={<StatGlyph glyph="hp-regen" />}
                     label={t('insight.base.hpRegen')}
                     value={Math.floor(basePool.baseHpRegen)}
                     tone="emerald"
                     tooltip={t('insight.combat.hpRegenTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="mp-regen" size={13} />}
+                    icon={<StatGlyph glyph="mp-regen" />}
                     label={t('insight.base.mpRegen')}
                     value={Math.floor(basePool.baseMpRegen)}
                     tone="cyan"
@@ -400,28 +400,28 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {/* 第 2 排：AD / AP / 物理护甲 / 术法抗性 */}
                 <div className="insight-base-row">
                   <PillStatLabel
-                    icon={<StatGlyph glyph="phys-atk" size={13} />}
+                    icon={<StatGlyph glyph="phys-atk" />}
                     label={t('insight.base.physAtk')}
                     value={Math.floor(basePool.baseAd)}
                     tone="crimson"
                     tooltip={t('insight.base.physAtkTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="spell-atk" size={13} />}
+                    icon={<StatGlyph glyph="spell-atk" />}
                     label={t('insight.base.spellAtk')}
                     value={Math.floor(basePool.baseAp)}
                     tone="indigo"
                     tooltip={t('insight.base.spellAtkTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="armor" size={13} />}
+                    icon={<StatGlyph glyph="armor" />}
                     label={t('insight.base.armor')}
                     value={Math.floor(basePool.baseArmor)}
                     tone="bronze"
                     tooltip={t('insight.base.armorTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="magic-res" size={13} />}
+                    icon={<StatGlyph glyph="magic-res" />}
                     label={t('insight.base.magicRes')}
                     value={Math.floor(basePool.baseMagicRes)}
                     tone="violet"
@@ -432,42 +432,42 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {/* 第 3 排：命中闪避 暴击免暴 破招化解 */}
                 <div className="insight-base-row">
                   <PillStatLabel
-                    icon={<StatGlyph glyph="accuracy" size={13} />}
+                    icon={<StatGlyph glyph="accuracy" />}
                     label={t('insight.base.accuracy')}
                     value={Math.floor(basePool.baseAccuracy)}
                     tone="sky"
                     tooltip={t('insight.base.accuracyTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="evasion" size={13} />}
+                    icon={<StatGlyph glyph="evasion" />}
                     label={t('insight.base.evasion')}
                     value={Math.floor(basePool.baseEvasion)}
                     tone="teal"
                     tooltip={t('insight.base.evasionTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="crit" size={13} />}
+                    icon={<StatGlyph glyph="crit" />}
                     label={t('insight.base.crit')}
                     value={Math.floor(basePool.baseCrit)}
                     tone="gold"
                     tooltip={t('insight.base.critTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="crit-avoid" size={13} />}
+                    icon={<StatGlyph glyph="crit-avoid" />}
                     label={t('insight.base.critAvoid')}
                     value={Math.floor(basePool.baseCritAvoid)}
                     tone="slate"
                     tooltip={t('insight.base.critAvoidTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="parry-break" size={13} />}
+                    icon={<StatGlyph glyph="parry-break" />}
                     label={t('insight.base.parryBreak')}
                     value={Math.floor(basePool.baseBreak)}
                     tone="amber"
                     tooltip={t('insight.base.parryBreakTooltip')}
                   />
                   <PillStatLabel
-                    icon={<StatGlyph glyph="parry-resolve" size={13} />}
+                    icon={<StatGlyph glyph="parry-resolve" />}
                     label={t('insight.base.parryResolve')}
                     value={Math.floor(basePool.baseParry)}
                     tone="silver"
@@ -487,7 +487,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-foundation-pills">
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
-                  icon={<StatGlyph glyph="foundation" size={13} />}
+                  icon={<StatGlyph glyph="foundation" />}
                   label={t('insight.foundation.reserve')}
                   value={stats.foundation === undefined ? t('common.emptyData') : Math.floor(stats.foundation)}
                   tone="gold"
@@ -498,7 +498,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
 
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
-                  icon={<StatGlyph glyph="combat-exp" size={13} />}
+                  icon={<StatGlyph glyph="combat-exp" />}
                   label={t('insight.foundation.combatExp')}
                   value={stats.combatExperience === undefined ? t('common.emptyData') : Math.floor(stats.combatExperience)}
                   tone="qi"
@@ -534,7 +534,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               {techniques.map(tech => (
                 <div className="insight-root-row" key={tech.id}>
                   <PillStatLabel
-                    icon={<StatGlyph glyph={tech.id} size={13} />}
+                    icon={<StatGlyph glyph={tech.id} />}
                     label={t(`insight.technique.${tech.id}`)}
                     progress={tech.progress}
                     tone={tech.tone}
@@ -565,26 +565,26 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupAdventure')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.totalMonsters')} value={stats.combatEnemiesDefeated === undefined ? t('common.emptyData') : biographyData.totalMonsters} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
-                <PillStatLabel label={t('insight.bio.normalKills')} value={stats.normalKills === undefined ? t('common.emptyData') : Math.floor(stats.normalKills)} tone="bronze" tooltip={t('insight.bio.normalKillsTooltip')} />
-                <PillStatLabel label={t('insight.bio.eliteKills')} value={stats.eliteKills === undefined ? t('common.emptyData') : Math.floor(stats.eliteKills)} tone="gold" tooltip={t('insight.bio.eliteKillsTooltip')} />
-                <PillStatLabel label={t('insight.bio.bossKills')} value={stats.bossKills === undefined ? t('common.emptyData') : Math.floor(stats.bossKills)} tone="crimson" tooltip={t('insight.bio.bossKillsTooltip')} />
+                <PillStatLabel icon={<StatGlyph glyph="bio-monsters" />} label={t('insight.bio.totalMonsters')} value={stats.combatEnemiesDefeated === undefined ? t('common.emptyData') : biographyData.totalMonsters} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
+                <PillStatLabel icon={<StatGlyph glyph="bio-normal" />} label={t('insight.bio.normalKills')} value={stats.normalKills === undefined ? t('common.emptyData') : Math.floor(stats.normalKills)} tone="bronze" tooltip={t('insight.bio.normalKillsTooltip')} />
+                <PillStatLabel icon={<StatGlyph glyph="bio-elite" />} label={t('insight.bio.eliteKills')} value={stats.eliteKills === undefined ? t('common.emptyData') : Math.floor(stats.eliteKills)} tone="gold" tooltip={t('insight.bio.eliteKillsTooltip')} />
+                <PillStatLabel icon={<StatGlyph glyph="bio-boss" />} label={t('insight.bio.bossKills')} value={stats.bossKills === undefined ? t('common.emptyData') : Math.floor(stats.bossKills)} tone="crimson" tooltip={t('insight.bio.bossKillsTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupRivalry')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.playersDefeated')} value={duel === undefined ? t('common.emptyData') : biographyData.playersDefeated} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
-                <PillStatLabel label={t('insight.bio.totalDefeats')} value={stats.combatLosses === undefined ? t('common.emptyData') : biographyData.totalDefeats} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
+                <PillStatLabel icon={<StatGlyph glyph="bio-pvp-win" />} label={t('insight.bio.playersDefeated')} value={duel === undefined ? t('common.emptyData') : biographyData.playersDefeated} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
+                <PillStatLabel icon={<StatGlyph glyph="bio-pvp-loss" />} label={t('insight.bio.totalDefeats')} value={stats.combatLosses === undefined ? t('common.emptyData') : biographyData.totalDefeats} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupCultivation')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.cultivation')} value={stats.cultivationSeconds === undefined ? t('common.emptyData') : t('insight.bio.cultivationValue', { hours: formatNumber(biographyData.cultivationHours) })} tone="gold" />
-                <PillStatLabel label={t('insight.bio.lifespan')} value={stats.ageSeconds === undefined || stats.lifespanYears === undefined ? t('common.emptyData') : t('insight.bio.lifespanValue', { age: formatNumber(Math.floor(stats.ageSeconds / 31536000)), lifespan: formatNumber(Math.floor(stats.lifespanYears)) })} tone="emerald" tooltip={t('insight.bio.lifespanTooltip')} />
+                <PillStatLabel icon={<StatGlyph glyph="bio-cultivation" />} label={t('insight.bio.cultivation')} value={stats.cultivationSeconds === undefined ? t('common.emptyData') : t('insight.bio.cultivationValue', { hours: formatNumber(biographyData.cultivationHours) })} tone="gold" />
+                <PillStatLabel icon={<StatGlyph glyph="bio-lifespan" />} label={t('insight.bio.lifespan')} value={stats.ageSeconds === undefined || stats.lifespanYears === undefined ? t('common.emptyData') : t('insight.bio.lifespanValue', { age: formatNumber(Math.floor(stats.ageSeconds / 31536000)), lifespan: formatNumber(Math.floor(stats.lifespanYears)) })} tone="emerald" tooltip={t('insight.bio.lifespanTooltip')} />
               </div>
             </div>
           </div>
