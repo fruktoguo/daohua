@@ -222,3 +222,14 @@ sudo /opt/daohua/pitr-restore.sh \
 
 4. **双层完整性校验**：
    每次拉取后，本地脚本自动扫描提取 `*.sha256` 独立比对，确保传输 100% 完整无损。
+
+5. **方式二：ComputeNode 原生内置备份归档（推荐，免脚本零运维）**：
+   计算节点已原生内置 `BackupArchiveWorker` 后台托管服务。任何新计算节点（无论 Windows、Linux、macOS 还是 Android PRoot）无需编写任何脚本或配置 crontab/systemd，只需在启动时配置本地存储路径即可自动启用：
+   - **环境变量配置**：
+     ```bash
+     export DAOHUA_BACKUP_STORAGE_DIR=/data/daohua-backups
+     ```
+   - **自适应行为**：
+     - 自动复用上游 `DAOHUA_COMPUTE_UPSTREAM_URLS` 推导主服 443 HTTPS 安全凭据通道（`https://.../internal/backups/`）；
+     - 每小时静默流式下载增量备份，自动执行 SHA-256 全量对账；
+     - 状态在 `/healthz` 端点自动暴露（`backupArchive.verifiedCount`、`backupArchive.lastSyncCompletedAt` 等）。
