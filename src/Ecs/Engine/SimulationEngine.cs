@@ -498,6 +498,8 @@ public static partial class SimulationEngine
             // 恢复成功即转 Running 由正常分派接管；仍受阻才出队/轮转/停泊。
             if (action.Status == ActionQueueStatus.Blocked)
             {
+                if (blockedActions.Contains(action.Id)) break;
+                blockedActions.Add(action.Id);
                 var blockedActionId = action.Intent.ActionId;
                 if (lastDefinition is null || lastActionId != blockedActionId)
                 {
@@ -528,6 +530,7 @@ public static partial class SimulationEngine
             var currentAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
             if (!TryStartActionCore(player, action, definition, gameData, assetBalances, currentAt, deltas, ref events))
                 continue;
+            blockedActions.Clear();
             var isActionStart = action.ProgressSeconds <= SecondQuantizationEpsilon;
             if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
             {

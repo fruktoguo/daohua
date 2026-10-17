@@ -88,6 +88,7 @@ internal static partial class ActionExecutionRules
     {
         using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.queue");
         if (IsComplete(e) || !e.WindowOpen || e.PreparedAction is not null || e.Waiting) return;
+        var blockedActions = new HashSet<Guid>();
         // 暂停不能绕过已到期参与会话；具体到期判断在队首循环内先于暂停执行。
         while (e.RemainingSeconds > 1e-9 && e.Player.Actions.Count > 0)
         {
@@ -121,6 +122,12 @@ internal static partial class ActionExecutionRules
             // 恢复转 Running 由后续分派接管；仍受阻才出队/轮转/停泊。
             if (action.Status == ActionQueueStatus.Blocked)
             {
+                if (blockedActions.Contains(action.Id))
+                {
+                    e.Waiting = true;
+                    return;
+                }
+                blockedActions.Add(action.Id);
                 if (!AdvanceBlockedAction(e.Player, action, definition, e.Catalog,
                         e.WorkingWallet, e.Cursor, e.Core))
                 {

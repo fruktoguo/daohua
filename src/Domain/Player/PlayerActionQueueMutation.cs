@@ -383,7 +383,7 @@ public static class PlayerActionQueueRules
     {
         var action = work.Action!;
         work.Actions.RemoveAt(work.Index);
-        if (action.Status == ActionQueueStatus.Running) action.Status = ActionQueueStatus.Pending;
+        if (action.Status != ActionQueueStatus.Pending) action.Status = ActionQueueStatus.Pending;
         work.Actions.Add(action);
     }
 

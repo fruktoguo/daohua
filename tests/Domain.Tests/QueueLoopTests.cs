@@ -226,4 +226,133 @@ public sealed class QueueLoopTests
         Assert.Equal(1, combat.RemainingRepeats);
         Assert.Equal(0, player.Progression.CompletedActions);
     }
+
+    /// <summary>
+    /// 未开启循环时，制造行动耗尽材料后直接出队（直接消失），后续行动升为队首继续推进（即使该制造设为无限重复 -1）。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_RemovesBlockedCraftingAction_WhenLoopDisabled_EvenWithInfiniteRepeats()
+    {
+        var woodId = new ItemId("item.peach-wood");
+        var crystalId = new ItemId("item.peach-wood-crystal");
+        var craftId = new ActionId("craft.refine-peach-wood-crystal");
+        var qiId = new ActionId("cultivation.draw-qi");
+        var actions = new ActionCatalog([
+            new ActionDefinition(craftId, "制作桃木晶", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [woodId] = 3 },
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, crystalId)]),
+            new ActionDefinition(qiId, "吐纳", ActionKind.Cultivation, 5,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
+        ]);
+        var catalog = new GameDataCatalog("test-craft", "test-craft", actions);
+
+        var player = CreatePlayer("哇哇乱杀");
+        Assert.False(player.Settings.LoopEnabled);
+
+        // 排队：制作桃木晶（-1 无限重复）+ 吐纳（1 次）
+        player.Enqueue(new ActionIntent(craftId, -1), Baseline, actions);
+        player.Enqueue(new ActionIntent(qiId, 1), Baseline, actions);
+
+        // 初始钱包只有 3 个桃木（恰好只够做 1 轮）
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Credit(new AssetKey(woodId), 3, "init");
+
+        // 推进 10 秒：第 1 轮桃木晶完成，消耗 3 桃木，获得 1 桃木晶
+        var r1 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        foreach (var d in r1.AssetDeltas) wallet.Apply(d);
+        Assert.Equal(0, wallet.Get(new AssetKey(woodId)));
+        Assert.Equal(1, wallet.Get(new AssetKey(crystalId)));
+
+        // 再推进 2 秒（累计 12 秒）：第 2 轮因桃木不足受阻；未开启循环，桃木晶直接终止出队，吐纳升为队首 Running 并推进 2 秒
+        var r2 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(12), catalog, wallet);
+        foreach (var d in r2.AssetDeltas) wallet.Apply(d);
+
+        Assert.Single(player.Actions);
+        Assert.Equal(qiId, player.Actions[0].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Running, player.Actions[0].Status);
+        Assert.Equal(2.0, player.Actions[0].ProgressSeconds);
+        Assert.Equal(2.0, player.Progression.Experience);
+    }
+
+    /// <summary>
+    /// 开启循环时，制造行动耗尽材料后自动变到队尾，后续行动升为队首继续推进，且队尾项状态重置为 Pending。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_RotatesBlockedCraftingActionToTail_WhenLoopEnabled_EvenWithInfiniteRepeats()
+    {
+        var woodId = new ItemId("item.peach-wood");
+        var crystalId = new ItemId("item.peach-wood-crystal");
+        var craftId = new ActionId("craft.refine-peach-wood-crystal");
+        var qiId = new ActionId("cultivation.draw-qi");
+        var actions = new ActionCatalog([
+            new ActionDefinition(craftId, "制作桃木晶", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [woodId] = 3 },
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, crystalId)]),
+            new ActionDefinition(qiId, "吐纳", ActionKind.Cultivation, 5,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
+        ]);
+        var catalog = new GameDataCatalog("test-craft-loop", "test-craft-loop", actions);
+
+        var player = CreatePlayer("循环挂机者");
+        player.SetLoopEnabled(true);
+        Assert.True(player.Settings.LoopEnabled);
+
+        player.Enqueue(new ActionIntent(craftId, -1), Baseline, actions);
+        player.Enqueue(new ActionIntent(qiId, 1), Baseline, actions);
+
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Credit(new AssetKey(woodId), 3, "init");
+
+        // 推进 10 秒：第 1 轮桃木晶完成
+        var r1 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        foreach (var d in r1.AssetDeltas) wallet.Apply(d);
+
+        // 再推进 2 秒（累计 12 秒）：第 2 轮因桃木不足受阻；开启循环，桃木晶变到队尾，吐纳升为队首 Running
+        var r2 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(12), catalog, wallet);
+        foreach (var d in r2.AssetDeltas) wallet.Apply(d);
+
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(qiId, player.Actions[0].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Running, player.Actions[0].Status);
+        Assert.Equal(2.0, player.Actions[0].ProgressSeconds);
+
+        // 桃木晶已被变到队尾，且状态已重置为 Pending 等待调度
+        Assert.Equal(craftId, player.Actions[1].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Pending, player.Actions[1].Status);
+    }
+
+    /// <summary>
+    /// 开启循环时，若队列中全部行动均因材料不足受阻，单轮转满一圈后安全熔断进入安全空转期，绝不触发无限死循环。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_EntersSafeIdling_WhenAllActionsBlocked_InLoopMode()
+    {
+        var woodId = new ItemId("item.peach-wood");
+        var ironId = new ItemId("item.dark-iron");
+        var craftWood = new ActionId("craft.refine-peach-wood-crystal");
+        var craftIron = new ActionId("craft.refine-iron");
+        var actions = new ActionCatalog([
+            new ActionDefinition(craftWood, "制作桃木晶", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [woodId] = 3 }, []),
+            new ActionDefinition(craftIron, "制作百炼铁", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [ironId] = 3 }, [])
+        ]);
+        var catalog = new GameDataCatalog("test-all-blocked", "test-all-blocked", actions);
+
+        var player = CreatePlayer("双空手");
+        player.SetLoopEnabled(true);
+
+        player.Enqueue(new ActionIntent(craftWood, 1), Baseline, actions);
+        player.Enqueue(new ActionIntent(craftIron, 1), Baseline, actions);
+
+        var wallet = new AssetWallet(player.PlayerId); // 两个材料全无
+
+        // 推进 5 秒：安全熔断，不抛 MaxTransitionsPerAdvance 异常
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet);
+
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(ActionQueueStatus.Blocked, player.Actions[0].Status);
+    }
 }

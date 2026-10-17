@@ -41,26 +41,11 @@ internal static partial class ActionExecutionRules
         if (player.Actions.Count <= 1) return false;
         if (!player.Settings.LoopEnabled)
         {
-            if (action.RemainingRepeats != -1)
-            {
-                for (var i = 1; i < player.Actions.Count; i++)
-                {
-                    if (player.Actions[i].Status != ActionQueueStatus.Blocked)
-                    {
-                        player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
-                        return true;
-                    }
-                }
-            }
-            return false;
+            player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
+            return true;
         }
-        for (var i = 0; i < player.Actions.Count; i++)
-            if (player.Actions[i].Status != ActionQueueStatus.Blocked)
-            {
-                player.RotateActionToTail(action.Id);
-                return true;
-            }
-        return false;
+        player.RotateActionToTail(action.Id);
+        return true;
     }
     /// <summary>按窗口工作钱包与尚未提交的材料增量检查地点和库存，再建账并激活队首。</summary>
     public static bool TryStartAction(IPlayerResourceContext player, IPlayerActionState action,
