@@ -13,6 +13,7 @@
   --gold-dim: #6e6038;
   --gold-faint: rgba(201, 180, 109, 0.16);
   --text: #e9e3d2;
+  --text-bright: #ffffff;
   --text-dim: rgba(233, 227, 210, 0.56);
   --scrollbar-thumb: rgba(201, 180, 109, 0.3);
   --scrollbar-thumb-hover: rgba(201, 180, 109, 0.5);
@@ -2232,7 +2233,7 @@ input[type="checkbox"] {
 }
 
 .nearby-player-info-cell .nearby-player-name {
-  color: var(--text-bright, #fff);
+  color: var(--text-bright, var(--text));
   font-size: 14px;
   font-weight: var(--font-weight-bold, 600);
   letter-spacing: 0.5px;
@@ -6575,11 +6576,10 @@ input[type="checkbox"] {
   transition: width 0.3s ease;
 }
 
-.tone-green { color: #34d399 !important; }
-.tone-blue { color: #38bdf8 !important; }
-.tone-gold { color: #fbbf24 !important; }
-.tone-red { color: #f87171 !important; }
-
+.tone-green { color: #34d399; }
+.tone-blue { color: #38bdf8; }
+.tone-gold { color: #fbbf24; }
+.tone-red { color: #f87171; }
 .insight-tabs {
   display: flex;
   gap: 4px;
@@ -8850,6 +8850,24 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.player-card-modal .modal-close {
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  width: 28px;
+  height: 28px;
+  font-size: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  transition: all 0.15s ease;
+}
+
+.player-card-modal .modal-close:hover {
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--gold-bright);
 }
 
 .player-card-loading,

@@ -22,6 +22,7 @@
   --seal-faint: rgba(178, 51, 39, 0.09);
   --seal-border: rgba(178, 51, 39, 0.38);
   --text: #2b2417;
+  --text-bright: #1c150b;
   --text-dim: #584d3a;
   --jade: #176043;
   --qi: #165c76;
@@ -315,7 +316,7 @@
 :root[data-theme="light"] .action-stat-pill--experience strong,
 :root[data-theme="light"] .action-bonus-pill--buff,
 :root[data-theme="light"] .action-bonus-pill--pending,
-:root[data-theme="light"] .tone-gold,
+  /* tone-gold 单独提炼为深金褐色，保证浅色底对比度 */
 :root[data-theme="light"] .pill-tone--gold .underlined-value,
 :root[data-theme="light"] .pill-tone--bronze .underlined-value,
 :root[data-theme="light"] .insight-breakthrough-btn,
@@ -326,6 +327,10 @@
   color: var(--gold);
 }
 
+
+:root[data-theme="light"] .tone-gold {
+  color: var(--gold-bright);
+}
 :root[data-theme="light"] .item-reference-compound,
 :root[data-theme="light"] .contribute-list input[type="number"],
 :root[data-theme="light"] .daohua-floating-card-stats {
@@ -725,6 +730,154 @@
 :root[data-theme="light"] .arena-idle-sigil { opacity: 0.9; }
 :root[data-theme="light"] .item-use-slot-shell.is-depleted .item-corner--bottom-right { color: var(--on-accent); background: var(--danger); }
 
+
+/* ===== 浅色主题：角色卡片、附近玩家与队伍展示（消除深灰底色，提升宣纸古风对比度） ===== */
+
+/* 附近玩家卡片：淡玉宣纸底色与高对比边界 */
+:root[data-theme="light"] .nearby-card.is-player {
+  border-color: rgba(23, 96, 67, 0.38);
+  background: rgba(var(--surface-rgb), 0.88);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+:root[data-theme="light"] .nearby-card.is-player.is-interactive:hover {
+  border-color: var(--jade);
+  background: rgba(var(--surface-rgb), 0.98);
+  box-shadow: 0 2px 10px rgba(23, 96, 67, 0.18);
+}
+
+/* 附近玩家头像展示台：温润浅玉色微光取代死黑底座 */
+:root[data-theme="light"] .nearby-player-avatar-cell {
+  border-color: rgba(23, 96, 67, 0.35);
+  background: radial-gradient(circle at 50% 50%, rgba(23, 96, 67, 0.08) 0%, rgba(var(--surface-rgb), 0.95) 85%);
+  box-shadow: inset 0 0 8px rgba(71, 49, 18, 0.08);
+}
+
+/* 附近玩家名字与身家：深浓墨色与金明高对比度 */
+:root[data-theme="light"] .nearby-player-info-cell .nearby-player-name {
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .nearby-player-info-cell .nearby-player-valuation {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .nearby-player-valuation .tone-gold {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .nearby-player-bottom {
+  border-top-color: rgba(23, 96, 67, 0.22);
+}
+
+
+:root[data-theme="light"] .player-card-modal .modal-close {
+  background: rgba(var(--surface-rgb), 0.75);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.15);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .player-card-modal .modal-close:hover {
+  background: rgba(var(--surface-rgb), 0.95);
+  color: var(--danger);
+}
+/* 角色名片弹窗头部卡片：宣纸画卷渐变取代沉闷灰块 */
+:root[data-theme="light"] .player-card-hero {
+  border-color: var(--gold-faint);
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.96) 0%, rgba(var(--shade-rgb), 0.38) 100%);
+  box-shadow: inset 0 0 16px rgba(71, 49, 18, 0.05), 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+/* 角色名片头像展示台：浅金微光展示台 */
+:root[data-theme="light"] .player-card-hero-avatar {
+  border-color: var(--gold-faint);
+  background: radial-gradient(circle at 50% 50%, rgba(201, 180, 109, 0.14) 0%, rgba(var(--surface-rgb), 0.95) 80%);
+  box-shadow: inset 0 0 10px rgba(71, 49, 18, 0.1);
+}
+
+:root[data-theme="light"] .player-card-name {
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .player-card-hero-valuation {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .player-card-hero-valuation .tone-gold {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .player-card-hero-bottom {
+  border-top-color: var(--gold-faint);
+}
+
+/* 角色名片属性统计条：明亮纸白底色与加深对比度 */
+:root[data-theme="light"] .player-card-stats {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.72);
+  box-shadow: inset 0 0 12px rgba(71, 49, 18, 0.04);
+}
+
+:root[data-theme="light"] .player-card-stat-label {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .player-card-stat-value {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .player-card-stat-value.tone-gold {
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .player-card-section-title {
+  color: var(--gold);
+  border-bottom-color: var(--gold-faint);
+}
+
+:root[data-theme="light"] .player-card-consumable-label {
+  color: var(--text-dim);
+}
+
+/* 队伍成员卡片（同道面板）：去除透明黑灰底色 */
+:root[data-theme="light"] .party-slot-card {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.85);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+:root[data-theme="light"] .party-slot.is-self .party-slot-card {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.12);
+}
+
+:root[data-theme="light"] .party-slot-empty {
+  border-color: var(--gold-faint);
+  color: var(--text-dim);
+  background: rgba(var(--surface-rgb), 0.4);
+}
+
+/* 浅色模式下属性胶囊外边框加深对比（原深色透明边框在纸白底上偏淡） */
+:root[data-theme="light"] .pill-tone--emerald { border-color: rgba(23, 96, 67, 0.45); }
+:root[data-theme="light"] .pill-tone--jade { border-color: rgba(23, 96, 67, 0.45); }
+:root[data-theme="light"] .pill-tone--cyan { border-color: rgba(22, 92, 118, 0.45); }
+:root[data-theme="light"] .pill-tone--qi { border-color: rgba(22, 92, 118, 0.45); }
+:root[data-theme="light"] .pill-tone--crimson { border-color: rgba(178, 51, 39, 0.45); }
+:root[data-theme="light"] .pill-tone--bronze { border-color: rgba(143, 114, 67, 0.5); }
+:root[data-theme="light"] .pill-tone--gold { border-color: rgba(125, 82, 26, 0.45); }
+:root[data-theme="light"] .pill-tone--silver { border-color: rgba(76, 88, 104, 0.45); }
+:root[data-theme="light"] .pill-tone--purple { border-color: rgba(105, 64, 140, 0.45); }
+:root[data-theme="light"] .pill-tone--amber { border-color: rgba(138, 69, 20, 0.45); }
+:root[data-theme="light"] .pill-tone--slate { border-color: rgba(88, 77, 58, 0.45); }
+
+/* 子选项卡（未选中态在浅色底上轮廓清晰） */
+:root[data-theme="light"] .insight-sub-tab-btn:not(.active) {
+  border-color: var(--gold-dim);
+  color: var(--text-dim);
+}
 /* 窄屏设置分类条横向排列，激活红线由左侧竖条切换为底部横条。 */
 @media (max-width: 960px) {
   :root[data-theme="light"] .settings-nav-item.active {
