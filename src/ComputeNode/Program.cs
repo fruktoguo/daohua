@@ -82,6 +82,35 @@ if (upstreamUrls.Count > 0)
         sp.GetRequiredService<ILoggerFactory>()));
 }
 
+// 内置备份归档服务：自适应激活——当配置了本地存储目录时自动启用，零手动配置脚本与定时器
+var backupDir = builder.Configuration["ComputeNode:BackupStorage:Directory"]
+                ?? Environment.GetEnvironmentVariable("DAOHUA_BACKUP_STORAGE_DIR");
+var backupState = new BackupArchiveState { Enabled = !string.IsNullOrWhiteSpace(backupDir), LocalDirectory = backupDir };
+builder.Services.AddSingleton(backupState);
+
+if (!string.IsNullOrWhiteSpace(backupDir))
+{
+    var backupBaseUrl = builder.Configuration["ComputeNode:BackupStorage:BaseUrl"]
+                        ?? Environment.GetEnvironmentVariable("DAOHUA_BACKUP_BASE_URL");
+    if (string.IsNullOrWhiteSpace(backupBaseUrl) && upstreamUrls.Count > 0)
+    {
+        backupBaseUrl = DeriveBackupBaseUrl(new Uri(upstreamUrls[0]));
+    }
+    backupBaseUrl ??= "https://daohua.yuohira.com/internal/backups";
+
+    var backupToken = builder.Configuration["ComputeNode:BackupStorage:Token"]
+                      ?? Environment.GetEnvironmentVariable("DAOHUA_BACKUP_TOKEN")
+                      ?? "daohua-backup-token-9f7b3a1d8e2c";
+    var intervalMinutes = builder.Configuration.GetValue("ComputeNode:BackupStorage:IntervalMinutes", 60);
+    var retentionDays = builder.Configuration.GetValue("ComputeNode:BackupStorage:RetentionDays", 90);
+
+    var options = new BackupArchiveOptions(backupDir, backupBaseUrl, backupToken, intervalMinutes, retentionDays);
+    builder.Services.AddHostedService(sp => new BackupArchiveWorker(
+        options,
+        sp.GetRequiredService<BackupArchiveState>(),
+        sp.GetRequiredService<ILogger<BackupArchiveWorker>>()));
+}
+
 var app = builder.Build();
 var gameData = app.Services.GetRequiredService<GameDataCatalog>();
 var metrics = app.Services.GetRequiredService<ComputeMetrics>();
@@ -117,7 +146,17 @@ app.MapGet("/healthz", () => Results.Ok(new
     gameDataFingerprint = gameData.Fingerprint,
     runtimeFingerprint = NodeRuntime.Fingerprint,
     maxJobsPerBatch = maxJobs,
-    maxBatchBytes = ComputeContract.MaxBatchBytes
+    maxBatchBytes = ComputeContract.MaxBatchBytes,
+    backupArchive = new
+    {
+        enabled = backupState.Enabled,
+        directory = backupState.LocalDirectory,
+        lastSyncStartedAt = backupState.LastSyncStartedAt,
+        lastSyncCompletedAt = backupState.LastSyncCompletedAt,
+        verifiedCount = backupState.VerifiedCount,
+        failedCount = backupState.FailedCount,
+        lastError = backupState.LastError
+    }
 }));
 
 app.MapGet("/readyz", () => Results.Ok(new
@@ -265,4 +304,20 @@ static List<string> ReadUpstreamUrls(IConfiguration configuration)
         Add(Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_UPSTREAM_URL"));
     }
     return urls;
+}
+
+static string DeriveBackupBaseUrl(Uri upstreamUri)
+{
+    var scheme = upstreamUri.Scheme switch
+    {
+        "wss" => "https",
+        "ws" => "http",
+        _ => upstreamUri.Scheme
+    };
+    var uriBuilder = new UriBuilder(upstreamUri)
+    {
+        Scheme = scheme,
+        Path = "/internal/backups"
+    };
+    return uriBuilder.Uri.ToString();
 }
