@@ -307,7 +307,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
               max={20}
               min={0}
               onChange={setLevel}
-              presets={[1, 5, 10, 15, 20]}
+              presets={[5, 7, 10, 12]}
               value={level}
             />
           </div>
