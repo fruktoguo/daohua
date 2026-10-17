@@ -9,7 +9,9 @@ import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
 import { ConditionedTile } from './components/ConditionedTile'
 import { EnhancementPage } from './components/EnhancementPage'
-import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components/FloatingPopover'
+import { createProgressAsideCard, FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './components/FloatingPopover'
+import { createAbilityProgressAsideCard } from './components/EffectTooltip'
+import { ValueText } from './components/ValueText'
 import { GameLogPanel } from './components/GameLogPanel'
 import { ActionDetailItem, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
@@ -764,6 +766,16 @@ const CRAFTING_NAV_MODES: ReadonlyArray<{ id: CraftingMode; icon: IconName; tone
   { id: 'enhancement', icon: 'enhancement', tone: 'gold' },
 ]
 
+const CRAFTING_FLOATING_TONE_MAP: Record<string, FloatingTone> = {
+  emerald: 'jade',
+  crimson: 'danger',
+  amber: 'gold',
+  violet: 'purple',
+  gold: 'gold',
+  jade: 'jade',
+  qi: 'qi',
+}
+
 /**
  * 桌面端主侧边导航栏组件
  */
@@ -869,19 +881,50 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
             <div className="nav-sub-menu">
               {CRAFTING_NAV_MODES.map(mode => {
                 const state = techniqueStates[mode.id]
-                // 悬浮气泡：技艺名 · 等级 / 本级经验进度（满级显「已臻化境」）/ 行动速度加成
-                const tooltipText = [
-                  `${t(`app.crafting.${mode.id}`)} · ${t('app.crafting.navTooltipLevel', { level: state.level })}`,
-                  state.maxed
-                    ? t('app.crafting.navTooltipMaxed')
-                    : t('app.crafting.navTooltipExp', {
-                        current: formatNumber(state.current),
-                        max: formatNumber(state.max),
-                      }),
-                  t('app.crafting.navTooltipSpeed', { value: formatNumber(state.speedPercent, { maxDecimals: 0 }) }),
-                ].join('\n')
+                const floatingTone = CRAFTING_FLOATING_TONE_MAP[mode.tone] ?? 'gold'
+                const techniqueAsideCards = [
+                  createProgressAsideCard({
+                    id: `technique-progress-${mode.id}`,
+                    mark: t('common.progressMark.technique'),
+                    title: t('common.upgradeProgress'),
+                    level: state.level,
+                    currentExp: state.current,
+                    maxExp: state.max,
+                    maxed: state.maxed,
+                    maxedLabel: t('app.crafting.navTooltipMaxed'),
+                    tone: floatingTone,
+                  }),
+                ]
+                const mainContent = (
+                  <FloatingInfoCard
+                    badge={t('app.crafting.navTooltipLevel', { level: state.level })}
+                    badgeTone={floatingTone}
+                    description={t(`insight.technique.${mode.id}Tooltip`)}
+                    lines={[
+                      <ValueText
+                        key="speed"
+                        text={t('app.crafting.navTooltipSpeed', {
+                          value: formatNumber(state.speedPercent, { maxDecimals: 0 }),
+                        })}
+                      />,
+                    ]}
+                    title={t(`app.crafting.${mode.id}`)}
+                  />
+                )
                 return (
-                  <FloatingTooltip displayContents key={mode.id} placement="right" title={tooltipText} tone="gold">
+                  <FloatingPopover
+                    asideCards={techniqueAsideCards}
+                    closeDelay={120}
+                    content={mainContent}
+                    displayContents
+                    gap={8}
+                    interactive={false}
+                    key={mode.id}
+                    openDelay={60}
+                    placement="right"
+                    size="small"
+                    trigger="hover"
+                  >
                     <button
                       className={`nav-sub-item${activeTab === 'crafting' && craftingMode === mode.id ? ' active' : ''}`}
                       onClick={() => {
@@ -899,7 +942,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
                         <i className="compound-stat-progress-fill" style={{ width: `${state.ratio}%` }} />
                       </span>
                     </button>
-                  </FloatingTooltip>
+                  </FloatingPopover>
                 )
               })}
             </div>
@@ -1962,9 +2005,12 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                 </button>
               )
               const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
+              const abilityExp = ability ? (combat.abilityExperiences?.[ability.abilityId] ?? 0) : 0
+              const slotAsideCards = ability ? [createAbilityProgressAsideCard(ability.abilityId, abilityExp)] : undefined
               return (
                 <ConditionedTile
                   as="div"
+                  asideCards={slotAsideCards}
                   className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`}
                   condition={ability ? {
                     ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),

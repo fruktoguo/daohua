@@ -3,8 +3,9 @@ import { describeAbility, formatAbilityCategory } from '../game/format'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { useT } from '../i18n'
 import type { CombatAbilityDefinition } from '../game/types'
+import { useGameStore } from '../game/gameStore'
 import { CandidatePicker, type CandidateOption } from './CandidatePicker'
-import { EffectTooltipTarget } from './EffectTooltip'
+import { createAbilityProgressAsideCard, EffectTooltipTarget } from './EffectTooltip'
 
 /** AbilityGridPicker 功法待选列表 Props */
 export interface AbilityGridPickerProps {
@@ -50,6 +51,7 @@ export function AbilityGridPicker({
   levelFor,
 }: AbilityGridPickerProps): React.JSX.Element {
   const t = useT()
+  const abilityExperiences = useGameStore(state => state.combat?.abilityExperiences)
 
   const isInternalSlot = slotIndex === 0
   // 槽位类别互斥：内功位（index 0）只列内功心法，术法位只列神通术法；
@@ -67,6 +69,8 @@ export function AbilityGridPicker({
 
   const options = useMemo<readonly CandidateOption[]>(() => slotAbilities.map(ability => {
     const learnedLevel = levelFor?.(ability.abilityId) ?? 1
+    const abilityExp = abilityExperiences?.[ability.abilityId] ?? 0
+    const asideCards = [createAbilityProgressAsideCard(ability.abilityId, abilityExp)]
     const iconUrl = resolveItemIconUrl(ability.abilityId)
     return {
       key: ability.abilityId,
@@ -90,16 +94,17 @@ export function AbilityGridPicker({
       ariaLabel: ability.name,
       searchText: `${ability.name} ${ability.category} ${ability.element ?? ''} ${formatAbilityCategory(ability.category, ability.element)}`,
       wrapCell: cell => (
-        <EffectTooltipTarget
-          className="item-grid-picker-tooltip"
-          content={describeAbility(ability, learnedLevel)}
+         <EffectTooltipTarget
+          asideCards={asideCards}
+           className="item-grid-picker-tooltip"
+           content={describeAbility(ability, learnedLevel)}
           tabIndex={-1}
         >
           {cell}
         </EffectTooltipTarget>
       ),
     }
-  }), [levelFor, rarity, ribbonLabel, slotAbilities, t])
+  }), [abilityExperiences, levelFor, rarity, ribbonLabel, slotAbilities, t])
 
   return (
     <CandidatePicker

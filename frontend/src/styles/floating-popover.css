@@ -251,6 +251,54 @@
   margin-bottom: 2px;
 }
 
+/* 通用升级进度副气泡 */
+.daohua-floating-aside-card[data-aside-id*="progress"] .daohua-floating-aside-lines {
+  padding-left: 0;
+}
+
+.daohua-floating-aside-card[data-aside-id*="progress"] .daohua-floating-aside-lines li {
+  list-style: none;
+  font-size: 11px;
+  color: var(--text-dim, rgba(233, 227, 210, 0.75));
+}
+
+.daohua-floating-aside-progress {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  margin-top: 6px;
+  background: rgba(8, 10, 14, 0.75);
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.daohua-floating-aside-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+/* 进度条发光前缘光斑 */
+.daohua-floating-aside-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 3px;
+  background: #ffffff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+  border-radius: 1px;
+}
+
+.daohua-floating-aside-progress-fill[style*="width: 0%"]::after,
+.daohua-floating-aside-progress-fill[style*="width: 0.0%"]::after {
+  display: none;
+}
+
 /* 附属气泡色调 */
 .daohua-floating-aside-card--gold {
   border-color: rgba(201, 180, 109, 0.4);

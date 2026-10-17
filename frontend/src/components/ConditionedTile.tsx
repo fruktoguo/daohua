@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react'
 import { EffectTooltipTarget, type EffectTooltipContent } from './EffectTooltip'
-import type { FloatingPlacement } from './FloatingPopover'
+import type { FloatingAsideCard, FloatingPlacement } from './FloatingPopover'
 
 /**
  * 「瓦片 + 悬浮卡 + 框外条件按钮」组合容器 (ConditionedTile)
@@ -22,6 +22,7 @@ export function ConditionedTile({
   extras,
   triggerClassName = '',
   triggerTabIndex,
+  asideCards,
 }: {
   /** 容器元素类型，默认 span（块级卡片容器传 'div'） */
   as?: 'span' | 'div'
@@ -50,6 +51,8 @@ export function ConditionedTile({
   triggerClassName?: string
   /** 悬浮卡触发层的 tabIndex（瓦片本体已是可聚焦 button 时传 -1 避免多占一站） */
   triggerTabIndex?: number
+  /** 附属气泡列表（如升级进度） */
+  asideCards?: readonly FloatingAsideCard[] | (() => readonly FloatingAsideCard[])
 }): React.JSX.Element {
   // 条件按钮方位：悬浮卡落在上方（翻转结果）时按钮走下方外侧，其余方位恒走上方外侧。
   const [side, setSide] = useState<'top' | 'bottom'>(defaultSide)
@@ -61,6 +64,7 @@ export function ConditionedTile({
   return (
     <Tag className={`conditioned-tile ${className}`.trim()}>
       <EffectTooltipTarget
+        asideCards={asideCards}
         className={triggerClassName}
         content={content}
         onPlacementChange={handlePlacementChange}

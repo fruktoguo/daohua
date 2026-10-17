@@ -1,5 +1,14 @@
 import { type ReactNode } from 'react'
-import { FloatingInfoCard, FloatingPopover, type FloatingPlacement } from './FloatingPopover'
+import { calculateAbilityLevelAndProgress } from '../game/combatConstants'
+import { getT } from '../i18n'
+import {
+  createProgressAsideCard,
+  FloatingInfoCard,
+  FloatingPopover,
+  type FloatingAsideCard,
+  type FloatingPlacement,
+  type FloatingTone,
+} from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
@@ -25,6 +34,28 @@ export interface EffectTooltipContent {
 }
 
 /**
+ * 根据技能 ID 和累计经验构造技能升级进度副卡片 (FloatingAsideCard)
+ */
+export function createAbilityProgressAsideCard(
+  abilityId: string,
+  totalExp: number,
+  tone: FloatingTone = 'qi'
+): FloatingAsideCard {
+  const t = getT()
+  const progress = calculateAbilityLevelAndProgress(totalExp)
+  const displayLevel = Math.max(1, progress.level)
+  return createProgressAsideCard({
+    id: `ability-progress-${abilityId}`,
+    mark: t('common.progressMark.ability'),
+    title: t('common.upgradeProgress'),
+    level: displayLevel,
+    currentExp: progress.currentProgress,
+    maxExp: progress.levelRequirement,
+    tone,
+  })
+}
+
+/**
  * 效果悬浮气泡触发包裹组件 (EffectTooltipTarget)
  *
  * 将子元素包裹在 Hover 触发器中，鼠标悬停展示修仙风 FloatingInfoCard 提示卡片。
@@ -36,6 +67,7 @@ export function EffectTooltipTarget({
   content,
   tabIndex = 0,
   onPlacementChange,
+  asideCards,
 }: {
   /** 被包裹的触发子节点 */
   children: ReactNode
@@ -47,6 +79,8 @@ export function EffectTooltipTarget({
   tabIndex?: number
   /** 悬浮卡实际落位变化回调（含视口翻转结果），供宿主避让附件元素 */
   onPlacementChange?: (placement: FloatingPlacement) => void
+  /** 附属气泡列表（如技能升级进度） */
+  asideCards?: readonly FloatingAsideCard[] | (() => readonly FloatingAsideCard[])
 }): React.JSX.Element {
   if (!content) {
     return <span className={className} tabIndex={tabIndex}>{children}</span>
@@ -54,6 +88,7 @@ export function EffectTooltipTarget({
 
   return (
     <FloatingPopover
+      asideCards={asideCards}
       closeDelay={120}
       content={
         <FloatingInfoCard

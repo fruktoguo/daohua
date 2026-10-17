@@ -14,7 +14,7 @@ import React, {
 } from 'react'
 import { createPortal } from 'react-dom'
 
-import { formatChineseSplitNumber } from '../game/format'
+import { formatChineseSplitNumber, formatNumber } from '../game/format'
 import { getT } from '../i18n'
 
 /**
@@ -80,6 +80,83 @@ function createQuantityAsideCard(
     tone: 'gold',
     isSingleRow: true,
     lines: [formatChineseSplitNumber(quantity)],
+  }
+}
+
+/**
+ * 通用升级进度副气泡构建参数
+ */
+export interface ProgressAsideCardOptions {
+  id?: string
+  mark?: string
+  title?: string
+  level?: number
+  currentExp: number
+  maxExp: number
+  maxed?: boolean
+  maxedLabel?: string
+  tone?: FloatingTone
+  subLabel?: string
+}
+
+/**
+ * 通用升级进度独立副气泡构建工具
+ * 标题：升级进度（或自定义）
+ * 徽记：参悟 / 技艺 等
+ * 副标题：Lv.X (xx.x%) 或 已臻化境
+ * 内容：当前进度数值与修仙渐变色进度条
+ */
+export function createProgressAsideCard(options: ProgressAsideCardOptions): FloatingAsideCard {
+  const t = getT()
+  const {
+    id = 'progress-aside-card',
+    mark,
+    title = t('common.upgradeProgress'),
+    level,
+    currentExp,
+    maxExp,
+    maxed = false,
+    maxedLabel = t('common.maxLevelReached'),
+    tone = 'gold',
+    subLabel,
+  } = options
+
+  const ratio = maxed
+    ? 100
+    : maxExp > 0
+      ? Math.min(100, Math.max(0, (currentExp / maxExp) * 100))
+      : 100
+
+  const subtitle = subLabel ?? (maxed
+    ? maxedLabel
+    : level !== undefined
+      ? `Lv.${level} (${ratio.toFixed(1)}%)`
+      : `${ratio.toFixed(1)}%`)
+
+  const lines = maxed
+    ? [maxedLabel]
+    : [
+        t('common.currentProgress', {
+          current: formatNumber(Math.floor(currentExp)),
+          max: formatNumber(Math.floor(maxExp)),
+        }),
+      ]
+
+  return {
+    id,
+    mark,
+    title,
+    subtitle,
+    tone,
+    lines,
+    content: (
+      <div className="daohua-floating-aside-progress" aria-hidden="true">
+        <div
+          className={`daohua-floating-aside-progress-fill compound-stat-progress-fill pill-tone--${tone}`}
+          style={{ width: `${ratio}%` }}
+        />
+      </div>
+    ),
   }
 }
 

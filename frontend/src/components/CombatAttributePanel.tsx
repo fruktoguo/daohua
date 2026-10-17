@@ -22,6 +22,7 @@ import type {
 } from '../game/types'
 import { useT } from '../i18n'
 import { ConditionedTile } from './ConditionedTile'
+import { createAbilityProgressAsideCard } from './EffectTooltip'
 import { describeBuffEffectLines, ItemDropReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
 
 /** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊与增减伤属性 | 功法与装备装配 | 掉落明细（仅敌怪详情） */
@@ -86,8 +87,8 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
   onGroupChange?: (group: CombatAttributeGroupTab) => void
   hideTabs?: boolean
 }): React.JSX.Element {
-  const t = useT()
-  const [internalGroup, setInternalGroup] = useState<CombatAttributeGroupTab>('base')
+   const t = useT()
+   const [internalGroup, setInternalGroup] = useState<CombatAttributeGroupTab>('base')
   const activeGroup = controlledActiveGroup ?? internalGroup
   const setActiveGroup = (group: CombatAttributeGroupTab) => {
     setInternalGroup(group)
@@ -309,8 +310,8 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
   const t = useT()
   const abilities = useGameStore(state => state.abilities)
   const equipmentCatalog = useGameStore(state => state.equipment)
-  const itemCatalog = useGameStore(state => state.items)
-
+   const itemCatalog = useGameStore(state => state.items)
+  const abilityExperiences = useGameStore(state => state.combat?.abilityExperiences)
   const skills = (loadout.skills ?? []).filter(
     (slot): slot is CombatAbilitySlot & { abilityId: string } => slot.abilityId !== null && slot.abilityId.length > 0,
   )
@@ -334,8 +335,13 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
               const ribbonLabel = ability?.element && ability.element !== 'none'
                 ? t(`combat.encounter.element.${ability.element}`)
                 : formatAbilityCategory(ability?.category)
+              const abilityExp = slot.abilityId ? abilityExperiences?.[slot.abilityId] : undefined
+              const asideCards = abilityExp !== undefined && slot.abilityId
+                ? [createAbilityProgressAsideCard(slot.abilityId, abilityExp)]
+                : undefined
               return (
                 <ConditionedTile
+                  asideCards={asideCards}
                   className="abilities-learned-cell"
                   content={ability ? describeAbility(ability, level) : null}
                   key={slot.abilityId}

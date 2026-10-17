@@ -5,6 +5,7 @@ import { describeAbility, formatAbilityCategory } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { useT } from '../i18n'
+import { createAbilityProgressAsideCard } from './EffectTooltip'
 import type { CombatTrigger } from '../game/types'
 import { AbilityGridPicker } from './AbilityGridPicker'
 import { CombatTriggerEditor } from './CombatTriggerEditor'
@@ -145,9 +146,12 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     // 鼠标落在徽标/按钮上时不再弹出悬浮卡，点开条件编辑器也不会出现 tooltip 叠 modal。
     // 条件跟随功法：按 abilityId 读写 combat.abilityTriggers，卸下再装配条件保留。
     const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
+    const abilityExp = ability ? (combat.abilityExperiences?.[ability.abilityId] ?? 0) : 0
+    const slotAsideCards = ability ? [createAbilityProgressAsideCard(ability.abilityId, abilityExp)] : undefined
     return (
       <ConditionedTile
         as="div"
+        asideCards={slotAsideCards}
         className={`abilities-slot-card${isInternal ? ' is-internal' : ''}${activePicker?.index === index ? ' is-picking' : ''}`}
         condition={ability ? {
           ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
@@ -235,13 +239,16 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                   const equippedIndex = getEquippedSlotIndex(ability.abilityId)
                   const learnedLevel = abilityLevelFor(ability.abilityId)
                   const iconUrl = resolveItemIconUrl(ability.abilityId)
+                  const triggerCount = combat.abilityTriggers?.[ability.abilityId]?.length ?? 0
                   const ribbonLabel = ability.element && ability.element !== 'none'
                     ? t(`combat.encounter.element.${ability.element}`)
                     : formatAbilityCategory(ability.category)
-                  const triggerCount = combat.abilityTriggers?.[ability.abilityId]?.length ?? 0
+                  const abilityExp = combat.abilityExperiences?.[ability.abilityId] ?? 0
+                  const cellAsideCards = [createAbilityProgressAsideCard(ability.abilityId, abilityExp)]
 
                   return (
                     <ConditionedTile
+                      asideCards={cellAsideCards}
                       className="abilities-learned-cell"
                       condition={{
                         ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),

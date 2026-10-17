@@ -13,6 +13,13 @@ export const commonZh = {
     repeatsCount: '{n}次',
     quantity: '数量',
     progressComplete: '已圆满 (100%)',
+    upgradeProgress: '升级进度',
+    currentProgress: '当前进度：{current} / {max}',
+    maxLevelReached: '已达最高等级',
+    progressMark: {
+      ability: '参悟',
+      technique: '技艺',
+    },
     net: {
       queueOffline: '连接尚未建立，操作将在重连后可用。',
       invalidCommand: '操作格式无效。',
