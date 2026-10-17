@@ -539,6 +539,87 @@ PRESET_BATCHES = {
             "bbox": [-420, 80, -80, 420],
             "caption": "Top-right item: [玄元一气功图腾 - Primordial Origin Qi Grand Logo]. A bold minimalist vector silhouette logo of a grand primordial cosmic taiji emblem surrounded by two celestial cloud rings, taiji fish and cloud rings separated by crisp negative black cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
         }
+    ],
+    # 建筑批次 A (基础生产 4 建筑：蒲团、灵材坊、采石坊、丹房)
+    "buildings_group_a": [
+        {
+            "id": "building.meditation-circle",
+            "name": "蒲团",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [蒲团 - Meditation Circle]. A stylized Chinese Xianxia woven spiritual grass meditation cushion mat, circular woven straw cushion surrounded by gentle swirling white qi mist vapors and faint glowing taiji rings, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.gathering-tent",
+            "name": "灵材坊",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [灵材坊 - Gathering Workshop]. A stylized Chinese Xianxia herbal gathering workshop shelter, rustic bamboo and wood hut with open drying racks holding colorful dried medicinal herbs and bundled spirit wood logs, hanging gourds, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.mining-workshop",
+            "name": "采石坊",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [采石坊 - Mining Workshop]. A stylized Chinese Xianxia stone masonry mining workshop shed, built of heavy gray stone blocks, piled with uncut glowing crystal ore boulders, heavy iron pickaxe and rock sieve, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.alchemy-hearth",
+            "name": "丹房",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [丹房 - Alchemy Chamber]. A stylized Chinese Xianxia alchemy pavilion room, traditional tiled eaves, housing a large glowing three-legged bronze pill cauldron furnace with rising white pill steam and red spirit coals, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 建筑批次 B (高阶生产 4 建筑：炼器室、制符室、衍阵台、淬灵室)
+    "buildings_group_b": [
+        {
+            "id": "building.forge-anvil",
+            "name": "炼器室",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [炼器室 - Forging Chamber]. A stylized Chinese Xianxia blacksmith forge workshop, heavy dark iron anvil on wood stump, blazing earth-fire melting furnace with glowing molten steel, large heavy iron forging hammer, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.talisman-chamber",
+            "name": "制符室",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [制符室 - Talisman Chamber]. A stylized Chinese Xianxia Daoist talisman crafting studio, fine mahogany writing desk with cinnabar ink stone, wolf-hair brush, floating glowing yellow paper talismans inscribed with red runes, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.formation-platform",
+            "name": "衍阵台",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [衍阵台 - Formation Platform]. A stylized Chinese Xianxia circular stone array deduction altar, octagonal bagua stone platform with five colorful array banners planted at edges, floating glowing bronze compass in center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.enhancement-chamber",
+            "name": "淬灵室",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [淬灵室 - Enhancement Chamber]. A stylized Chinese Xianxia mystical weapon quenching chamber, bubbling spirit water basin pool, glowing elemental runes on stone pedestals, floating enchanted sword receiving spiritual flames, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 建筑批次 C (战斗防护 3 阵法 + 地标 1 道庐：封魔阵、回春阵、回元阵、绝顶道庐)
+    "buildings_group_c": [
+        {
+            "id": "building.demon-seal-array",
+            "name": "封魔阵",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [封魔阵 - Demon Sealing Array]. A stylized Chinese Xianxia demon suppressing array altar, four tall ancient weathered stone pillar pillars wrapped with heavy iron chains, glowing red and golden demonic containment runes on the stone ground, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.rejuvenation-array",
+            "name": "回春阵",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [回春阵 - Rejuvenation Array]. A stylized Chinese Xianxia healing life rejuvenation circle altar, ring of polished green jade stones, blooming spiritual vines and emerald leaves, radiant soothing green vitality glow, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.mana-regen-array",
+            "name": "回元阵",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [回元阵 - Mana Gathering Array]. A stylized Chinese Xianxia mana gathering circle altar, ring of deep sapphire crystal shards, swirling cosmic blue starlight vortex converging toward center, vibrant azure spiritual light, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.peak-cottage",
+            "name": "绝顶道庐",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [绝顶道庐 - Mountain Peak Thatched Cottage]. A stylized Chinese Xianxia rustic hermit thatched cottage perched on a dramatic mountain cliff ledge next to a gnarled ancient pine tree, surrounded by swirling sea of clouds, peaceful Daoist retreat, bold dark ink outline, clean 2D game icon."
+        }
     ]
 }
 
@@ -726,6 +807,8 @@ def main():
         summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     elif "logos_" in args.batch:
         summary_cap = "a 2x2 grid sprite sheet of 4 minimalist bold vector logo icons, stencil cut silhouette graphic symbol marks, strictly solid pure white icons on solid pure black background, high contrast binary black and white, zero gradients, zero shading, zero colors, crisp clean stencil cut lines and distinct negative space contours, sharp graphic edges, flat 2D vector clip-art."
+    elif "buildings_" in args.batch:
+        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts architecture building facility icon sprite sheet, clean bold cartoon shapes, traditional Chinese Daoist pavilion workshop shrine building, solid vibrant ink colors with subtle shading, distinct dark ink outline, floating on solid pure white background, generous empty white spacing between items, strictly no overflow, clean 2D game icon."
     elif "emblem" in args.batch:
         summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
     else:
@@ -759,6 +842,15 @@ def main():
         out_dir = os.path.join(REPO_ROOT, "art", "emblems")
         t_size, in_size = 128, 110
         print(f"开始自动切片、去底与 128px WebP 高精图腾母版下采样: {latest_img} -> {out_dir}")
+    elif "buildings_" in args.batch:
+        # 建筑批次：同时生成 128px 高精母版与 64px 前端图标
+        art_buildings_dir = os.path.join(REPO_ROOT, "art", "buildings")
+        frontend_buildings_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "buildings")
+        print(f"开始自动切片、去底与 128px WebP 高精建筑母版导出: {latest_img} -> {art_buildings_dir}")
+        process_and_slice(latest_img, items, output_dir=art_buildings_dir, target_size=128, inner_size=112)
+        out_dir = frontend_buildings_dir
+        t_size, in_size = 64, 56
+        print(f"开始自动切片、去底与 64px WebP 游戏建筑瓦片导出: {latest_img} -> {out_dir}")
     else:
         out_dir = OUTPUT_DIR
         t_size, in_size = 64, 54

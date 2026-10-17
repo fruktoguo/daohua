@@ -17,6 +17,7 @@ import {
   getBuildingUpgradeComparison,
   getBuildingSummaryBonusText,
 } from '../game/buildingCalculations'
+import { resolveBuildingIconUrl } from '../game/buildingIcons'
 
 // 地点/NPC/建筑/怪物名称来自服务端数据，面板框架文本走 i18n。
 
@@ -328,7 +329,18 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
             <div className="nearby-grid">
               {world.buildings.map(entity => (
                 <article className="nearby-card is-building" key={entity.entityId}>
-                  <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
+                  <span className="nearby-mark">
+                    {resolveBuildingIconUrl(entity.entityId) ? (
+                      <img
+                        alt={entity.name}
+                        className="nearby-building-thumb"
+                        loading="lazy"
+                        src={resolveBuildingIconUrl(entity.entityId)}
+                      />
+                    ) : (
+                      t('combat.nearby.markBuilding')
+                    )}
+                  </span>
                   <div>
                     <strong>{entity.name}</strong>
                     <p>{entity.description}</p>
@@ -359,7 +371,18 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                         {t('combat.nearby.buildingUpgradingShort')}
                       </span>
                     )}
-                    <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
+                    <span className="nearby-mark">
+                      {resolveBuildingIconUrl(building.entityId) ? (
+                        <img
+                          alt={building.name}
+                          className="nearby-building-thumb"
+                          loading="lazy"
+                          src={resolveBuildingIconUrl(building.entityId)}
+                        />
+                      ) : (
+                        t('combat.nearby.markBuilding')
+                      )}
+                    </span>
                     <div>
                       <div className="nearby-monster-title">
                         <strong>{building.name}</strong>
@@ -454,7 +477,18 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       onClick={() => handleBuild(definition)}
                       type="button"
                     >
-                      <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
+                      <span className="nearby-mark">
+                        {resolveBuildingIconUrl(definition.buildingId) ? (
+                          <img
+                            alt={definition.name}
+                            className="nearby-building-thumb"
+                            loading="lazy"
+                            src={resolveBuildingIconUrl(definition.buildingId)}
+                          />
+                        ) : (
+                          t('combat.nearby.markBuilding')
+                        )}
+                      </span>
                       <div>
                         <strong>{definition.name}</strong>
                         <p>{definition.description}</p>
@@ -495,8 +529,16 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
             size="medium"
           >
             <header className="build-picker-header">
-              <h2 id="building-detail-title">
-                {detailBuilding.name}
+              <h2 id="building-detail-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {resolveBuildingIconUrl(detailBuilding.entityId) && (
+                  <img
+                    alt={detailBuilding.name}
+                    className="nearby-building-thumb"
+                    src={resolveBuildingIconUrl(detailBuilding.entityId)}
+                    style={{ width: 28, height: 28, objectFit: 'contain' }}
+                  />
+                )}
+                <span>{detailBuilding.name}</span>
                 <span className="nearby-level-badge">
                   {detailBuilding.level > 0
                     ? t('combat.nearby.buildingLevelValue', { level: detailBuilding.level })

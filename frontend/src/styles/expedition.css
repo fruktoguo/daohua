@@ -1023,6 +1023,21 @@
   font-size: 18px;
 }
 
+.nearby-card.is-building .nearby-mark {
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  overflow: hidden;
+  padding: 2px;
+}
+
+.nearby-building-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+}
+
 .nearby-card strong {
   color: var(--text);
   font-weight: var(--font-weight-medium);

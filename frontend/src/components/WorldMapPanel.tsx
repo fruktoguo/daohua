@@ -10,6 +10,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { Modal } from './Modal'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { useUiStore } from '../uiStore'
+import { resolveBuildingIconUrl } from '../game/buildingIcons'
 
 
 /** 计算地图两节点之间的欧氏几何连线距离 */
@@ -1266,15 +1267,31 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                         placement="top"
                         title={
                           <div className="world-building-popover">
-                            <strong className="text-gold">{b.name}</strong>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {resolveBuildingIconUrl(b.entityId) && (
+                                <img
+                                  alt=""
+                                  src={resolveBuildingIconUrl(b.entityId)}
+                                  style={{ width: 18, height: 18, objectFit: 'contain' }}
+                                />
+                              )}
+                              <strong className="text-gold">{b.name}</strong>
+                            </div>
                             {b.description && <p>{b.description}</p>}
                             {b.effect && <small className="text-jade">{b.effect}</small>}
                           </div>
                         }
                         tone="gold"
                       >
-                        <span className="world-building-pill">
-                          {b.name}
+                        <span className="world-building-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {resolveBuildingIconUrl(b.entityId) && (
+                            <img
+                              alt=""
+                              src={resolveBuildingIconUrl(b.entityId)}
+                              style={{ width: 14, height: 14, objectFit: 'contain' }}
+                            />
+                          )}
+                          <span>{b.name}</span>
                         </span>
                       </FloatingTooltip>
                     ))}
@@ -1292,15 +1309,31 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                           placement="top"
                           title={
                             <div className="world-building-popover">
-                              <strong className="text-gold">{name} · {statusText}</strong>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {resolveBuildingIconUrl(pb.buildingId) && (
+                                  <img
+                                    alt=""
+                                    src={resolveBuildingIconUrl(pb.buildingId)}
+                                    style={{ width: 18, height: 18, objectFit: 'contain' }}
+                                  />
+                                )}
+                                <strong className="text-gold">{name} · {statusText}</strong>
+                              </div>
                               {definition?.description && <p>{definition.description}</p>}
                               {definition?.effect && <small className="text-jade">{definition.effect}</small>}
                             </div>
                           }
                           tone="gold"
                         >
-                          <span className="world-building-pill is-player">
-                            {name} · {statusText}
+                          <span className="world-building-pill is-player" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            {resolveBuildingIconUrl(pb.buildingId) && (
+                              <img
+                                alt=""
+                                src={resolveBuildingIconUrl(pb.buildingId)}
+                                style={{ width: 14, height: 14, objectFit: 'contain' }}
+                              />
+                            )}
+                            <span>{name} · {statusText}</span>
                           </span>
                         </FloatingTooltip>
                       )

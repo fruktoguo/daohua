@@ -24,6 +24,7 @@ import type {
   CombatEquipmentDefinition,
   ItemDefinition,
 } from '../game/types'
+import { resolveBuildingIconUrl } from '../game/buildingIcons'
 import { useT } from '../i18n'
 import type { CodexCraftingSubTab, CodexMaterialSubTab } from '../uiStore'
 import { useUiStore } from '../uiStore'
@@ -862,6 +863,7 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
       ]}
       subtitle={`公共设施 · ${groupLabel}`}
       title={building.name}
+      titleIcon={resolveBuildingIconUrl(building.buildingId)}
     />
   )
 
@@ -873,7 +875,16 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
         }`}
       >
         <div className="codex-card-avatar-box">
-          <span style={{ fontSize: 20 }}>🏛️</span>
+          {resolveBuildingIconUrl(building.buildingId) ? (
+            <img
+              alt={building.name}
+              className="codex-card-avatar-img"
+              loading="lazy"
+              src={resolveBuildingIconUrl(building.buildingId)}
+            />
+          ) : (
+            <span style={{ fontSize: 20 }}>🏛️</span>
+          )}
           {!isUnlocked && (
             <span className="codex-lock-badge" title={t('app.codex.locked')}>
               🔒
