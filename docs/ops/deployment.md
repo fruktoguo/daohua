@@ -196,3 +196,29 @@ sudo /opt/daohua/pitr-restore.sh \
 - 队伍解散不会删除会话或未消费结算；离线成员下次装载先消费，再恢复个人行动。个人 ComputeNode 冷挂机扫描排除活跃会话成员与未消费收件箱。
 - 本地 v23→v24 必须先停止全部服务，确认 `game.player_runtime_leases` 无有效租约，再人工执行 `node migrations/0024_v23_to_v24.mjs`；工具通过 `docker exec psql` 在单事务内校验并转换 `game.player_state_sections` 与 `platform.section_flush_queue` 的 Brotli/raw checksum，移除旧 participation 行动、按 Remove 规则激活原队列下一首，并把最后已结算远征血蓝折回 combat（倒地固定 1 血、不回蓝）。它随后 CAS 校验版本/checksum 后执行同一 `0024_v23_to_v24.sql`；失败自动回滚，不会清除角色、队伍、资产或经验。默认容器/用户/库为 `daohua-local-db`/`daohua`/`daohua`，可用 `DB_CONTAINER`、`DB_USER`、`DB_NAME` 覆盖。该 `.mjs` 仅供一次性离线手工运行，不参与启动链、编译或镜像；SQL 单独遇到旧 v23 `action_queue` 会拒绝并提示此路径。
 - 检查点提交无法确认时保留会话与版本证据并拒绝继续写；成员资产提交无法确认沿用玩家 fence，不能靠重启或删除收件箱消除错误。
+
+## 本地计算节点异地灾备与存储瘦身
+
+云服务器硬件规格为 2C4G/40G，主服磁盘空间受限；而本地计算节点（内网服务器/个人主机）具有大容量磁盘，通过「本地主动拉取 (Pull over SSH/rsync) + 主服热备缩容」实现自动异地灾备：
+
+1. **网络与安全原则**：
+   - **出站拉取，零穿透依赖**：本地计算节点位于内网 NAT 后，无需公网 IP 或反向穿透，主动通过 SSH 访问主服 `/opt/daohua/backups/`；
+   - **零信任内网**：云端主服不存放任何连入本地内网的凭证，彻底杜绝逆向渗透风险；
+   - **不侵入游戏计算链路**：大文件备份通过独立 rsync 传输，不走 `compute-link` WebSocket，避免游戏批次阻塞与主服内存抖动。
+
+2. **计算节点一键部署**：
+   在计算节点上执行一键安装脚本：
+   ```bash
+   sudo bash deploy/install-backup-sync.sh --remote-host yuohira --local-dir /data/daohua-backups --now
+   ```
+   脚本自动配置 `/etc/daohua-backup-sync.env`、安装 `/opt/daohua/backup-pull-sync.sh` 并激活 systemd timer（每小时第 15 分钟自动拉取，主服整点 :00 生成备份，错峰对账）。
+
+3. **主服存储瘦身配置**：
+   主服 `/opt/daohua/daohua.env` 支持环境变量控制留存：
+   - `BACKUP_HOURLY_KEEP=6`：主服仅保留最近 6 小时热备；
+   - `BACKUP_DAILY_KEEP=3`：主服仅保留最近 3 天天级快照；
+   - `BASE_BACKUP_RETENTION_COUNT=1`：主服仅保留最新 1 份物理全备；
+   - 超出部分由主服自动老化修剪，本地计算节点不带 `--delete` 增量留存，充当无限期全量历史灾备池。
+
+4. **双层完整性校验**：
+   每次拉取后，本地脚本自动扫描提取 `*.sha256` 独立比对，确保传输 100% 完整无损。

@@ -1,0 +1,12 @@
+[Unit]
+Description=DaoHua Local Backup Pull and Verification Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/daohua-backup-sync.env
+ExecStart=/opt/daohua/backup-pull-sync.sh
+StandardOutput=journal
+StandardError=journal

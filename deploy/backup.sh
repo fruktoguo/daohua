@@ -24,6 +24,9 @@ DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
 BACKUP_DIR="${BACKUP_DIR:-${DEPLOY_DIR}/backups}"
+BACKUP_HOURLY_KEEP="${BACKUP_HOURLY_KEEP:-24}"
+BACKUP_DAILY_KEEP="${BACKUP_DAILY_KEEP:-7}"
+BACKUP_WEEKLY_KEEP="${BACKUP_WEEKLY_KEEP:-4}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
 LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
 
@@ -73,7 +76,7 @@ fi
 
 mv "$partial" "$hour_archive"
 compose exec -T db pg_restore --list <"$hour_archive" >/dev/null
-sha256sum "$hour_archive" >"$sha_file"
+(cd "$(dirname "$hour_archive")" && sha256sum "$(basename "$hour_archive")" >"$sha_file")
 
 utc_hour="$(date -u +'%H')"
 utc_day="$(date -u +'%u')"
@@ -97,9 +100,9 @@ prune_backups() {
   done
 }
 
-prune_backups "${BACKUP_DIR}/hourly" 24
-prune_backups "${BACKUP_DIR}/daily" 7
-prune_backups "${BACKUP_DIR}/weekly" 4
+prune_backups "${BACKUP_DIR}/hourly" "$BACKUP_HOURLY_KEEP"
+prune_backups "${BACKUP_DIR}/daily" "$BACKUP_DAILY_KEEP"
+prune_backups "${BACKUP_DIR}/weekly" "$BACKUP_WEEKLY_KEEP"
 
 printf '数据库备份完成: %s\n' "$hour_archive"
 printf '校验文件: %s\n' "$sha_file"

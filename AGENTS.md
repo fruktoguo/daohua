@@ -149,6 +149,8 @@ docker compose -f deploy/compose.prod.yaml down
 | `init-local-db-roles.sh` | 本地 PostgreSQL 角色初始化（对齐 `deploy/postgres-local-roles.sql`） |
 | `migrate-local-db.sh` | 本地库兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 落后脚本；`--dry-run` 空跑）。由 `reset-outdated-players.sh`/`dev.sh` 启动链自动调用，也可人工执行；运行时与门禁均不引用 |
 | `reset-outdated-players.sh` | 本地库版本漂移处置：存档行或 `platform.schema_version` 落后时优先执行 `migrations/` 迁移链（经 `migrate-local-db.sh`）；迁移后仍有不可迁移存档漂移时须控制台交互确认（输入 RESET）才重置玩家游戏域数据（保留账号/角色名），拒绝或无 TTY 则中止启动；`dev.sh` 启动时自动调用，仅作用于本地回环库，`--dry-run` 只检测 |
+| `backup-pull-sync.sh` | 计算节点端定时拉取云端主服 PostgreSQL 备份、本地长期归档与 SHA-256 完整性对账脚本（位于 `deploy/`） |
+| `install-backup-sync.sh` | 计算节点端一键安装并启用 systemd 备份拉取定时器脚本（位于 `deploy/`） |
 
 ## 6. 实现规则
 
@@ -270,9 +272,8 @@ scripts/docker-build-prod.sh --push
 ## 14. 数据、备份与安全
 
 - 生产数据操作前先确认精确卷名、容器状态、PostgreSQL 健康和备份路径。
-- 自动备份使用远端 `/opt/daohua/backup.sh`：每小时生成 PostgreSQL custom dump 压缩归档，小时保留 24 份、每日 00:00 保留 7 份、每周一 00:00 保留 4 份，并生成 SHA-256 校验文件。
 - 删除、恢复、覆盖生产数据必须获得用户单独明确许可；恢复前应先新建当前状态备份并验证目标归档。
-- 只有实际操作远程/生产数据时，数据库 migration、存档变更、密钥轮换和批量玩家数据修复才必须先提供备份、可恢复性和回滚方案；这是运维安全边界，不要求本地代码实现历史兼容。当前本地开发可以直接替换 schema、快照和存档格式。
+- 自动备份使用远端 `/opt/daohua/backup.sh`：每小时生成 PostgreSQL custom dump 压缩归档与 SHA-256 校验文件；支持环境变量控制留存，主服配合本地计算节点异地备份拉取（`deploy/backup-pull-sync.sh`）收窄热备窗口（hourly 保留 6 份、daily 保留 3 份、base 保留 1 份），由本地计算节点承担全量长期灾备存储与 SHA-256 自动对账。
 - 不读取或输出无关 secret；不得提交 `.env`、token、cookie、私钥、连接串或 Docker auth。
 - 外部输入必须校验；错误响应不得包含堆栈、路径、凭据或内部存储内容。
 
