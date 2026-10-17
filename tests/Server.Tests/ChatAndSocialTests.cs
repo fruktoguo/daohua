@@ -306,6 +306,45 @@ public sealed class ChatAndSocialTests
         Assert.Null(inParty.PartyInvitation);
     }
 
+    /// <summary>
+    /// 修士更新形象：同节点 NearbyPlayerDto 的 Avatar 发生变更，且触发存在感变化通知。
+    /// </summary>
+    [Fact]
+    public async Task OnlinePresence_UpdateAvatar_ReflectsInNearbyAndNotifies()
+    {
+        var presence = new OnlinePresenceRegistry();
+        var alice = Guid.NewGuid();
+        var bob = Guid.NewGuid();
+        var nodeId = "node.yunxi-village";
+
+        var affectedList = new List<IReadOnlyList<Guid>>();
+        presence.PresenceChanged += affected =>
+        {
+            affectedList.Add(affected);
+            return ValueTask.CompletedTask;
+        };
+
+        await presence.RegisterAsync(alice, "Alice", nodeId, avatar: "player");
+        await presence.RegisterAsync(bob, "Bob", nodeId, avatar: "player");
+
+        var initialNearby = presence.SnapshotAtNode(nodeId);
+        Assert.Equal(2, initialNearby.Count);
+        Assert.All(initialNearby, p => Assert.Equal("player", p.Avatar));
+
+        affectedList.Clear();
+        await presence.UpdateAvatarAsync(alice, "player-male");
+
+        var updatedNearby = presence.SnapshotAtNode(nodeId);
+        var aliceNearby = Assert.Single(updatedNearby, p => p.PlayerId == alice.ToString("D"));
+        var bobNearby = Assert.Single(updatedNearby, p => p.PlayerId == bob.ToString("D"));
+        Assert.Equal("player-male", aliceNearby.Avatar);
+        Assert.Equal("player", bobNearby.Avatar);
+
+        Assert.Single(affectedList);
+        Assert.Contains(alice, affectedList[0]);
+        Assert.Contains(bob, affectedList[0]);
+    }
+
     /// <summary>好友申请经接受后双向成立，解除后双向失效。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]

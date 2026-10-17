@@ -206,7 +206,8 @@ public sealed partial class PlayerAggregate
             CaptureSustainedBuffs(Settings.AutoUseSlots, gameData),
             Loadout.Equipment.ToArray(),
             Resources.RegenCarrySeconds,
-            CaptureConsumableSlots(Settings.AutoUseSlots, gameData));
+            CaptureConsumableSlots(Settings.AutoUseSlots, gameData),
+            Avatar: Settings.Avatar);
     }
 
     /// <summary>
@@ -306,6 +307,7 @@ public sealed partial record ActionParticipantSnapshot
             PlayerAggregate.CaptureSustainedBuffs(state.Settings.AutoUseSlots ?? [], catalog),
             loadout.Equipment,
             state.Combat.RegenCarrySeconds,
-            PlayerAggregate.CaptureConsumableSlots(state.Settings.AutoUseSlots ?? [], catalog));
+            PlayerAggregate.CaptureConsumableSlots(state.Settings.AutoUseSlots ?? [], catalog),
+            Avatar: state.Settings.Avatar);
     }
 }

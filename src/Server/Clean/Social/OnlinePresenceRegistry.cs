@@ -26,21 +26,21 @@ public sealed class OnlinePresenceRegistry
     /// </summary>
     public event Func<Guid, ValueTask>? NodeChanged;
 
-    private readonly record struct Entry(string DisplayName, string? NodeId, int RealmLevel, double Valuation);
+    private readonly record struct Entry(string DisplayName, string? NodeId, int RealmLevel, double Valuation, string Avatar);
 
     /// <summary>登记或刷新在线玩家；节点变化时返回受影响的玩家集合。</summary>
     /// <param name="playerId">玩家 ID。</param>
     /// <param name="displayName">玩家道号。</param>
     /// <param name="nodeId">当前地图节点 ID；行进在边上时为 null。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    public ValueTask RegisterAsync(Guid playerId, string displayName, string? nodeId, int realmLevel = 1, double valuation = 0, CancellationToken cancellationToken = default)
+    public ValueTask RegisterAsync(Guid playerId, string displayName, string? nodeId, int realmLevel = 1, double valuation = 0, string avatar = "player", CancellationToken cancellationToken = default)
     {
         List<Guid> affected;
         bool nodeChanged;
         lock (_gate)
         {
             _entries.TryGetValue(playerId, out var previous);
-            _entries[playerId] = new Entry(displayName, nodeId, realmLevel, valuation);
+            _entries[playerId] = new Entry(displayName, nodeId, realmLevel, valuation, string.IsNullOrWhiteSpace(avatar) ? "player" : avatar);
             nodeChanged = previous.NodeId != nodeId;
             if (nodeChanged)
             {
@@ -69,6 +69,24 @@ public sealed class OnlinePresenceRegistry
             affected = CollectAffected(previous.NodeId, nodeId);
         }
         return PublishAsync(affected, playerId);
+    }
+
+    /// <summary>更新玩家形象并通知同节点修士刷新社交状态；未在线为空操作。</summary>
+    /// <param name="playerId">玩家 ID。</param>
+    /// <param name="avatar">新的形象标识。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    public ValueTask UpdateAvatarAsync(Guid playerId, string avatar, CancellationToken cancellationToken = default)
+    {
+        List<Guid> affected;
+        lock (_gate)
+        {
+            if (!_entries.TryGetValue(playerId, out var previous)) return ValueTask.CompletedTask;
+            var normalized = string.IsNullOrWhiteSpace(avatar) ? "player" : avatar;
+            if (previous.Avatar == normalized) return ValueTask.CompletedTask;
+            _entries[playerId] = previous with { Avatar = normalized };
+            affected = CollectAffected(previous.NodeId, previous.NodeId);
+        }
+        return PublishAsync(affected);
     }
 
     /// <summary>移除在线登记（会话关闭）。</summary>
@@ -118,7 +136,7 @@ public sealed class OnlinePresenceRegistry
             {
                 // 索引与主表同锁维护，命中集合中的玩家必定仍登记在 _entries。
                 var entry = _entries[playerId];
-                result.Add(new NearbyPlayerDto(playerId.ToString("D"), entry.DisplayName, entry.RealmLevel, entry.Valuation));
+                result.Add(new NearbyPlayerDto(playerId.ToString("D"), entry.DisplayName, entry.RealmLevel, entry.Valuation, entry.Avatar));
             }
         }
         // 排序移出锁外：避免长时占锁阻塞上下线与换节点。
@@ -132,6 +150,14 @@ public sealed class OnlinePresenceRegistry
     public string? GetNodeId(Guid playerId)
     {
         lock (_gate) return _entries.TryGetValue(playerId, out var entry) ? entry.NodeId : null;
+    }
+
+    /// <summary>读取玩家当前形象；未在线返回默认 player。</summary>
+    /// <param name="playerId">玩家 ID。</param>
+    /// <returns>形象标识。</returns>
+    public string GetAvatar(Guid playerId)
+    {
+        lock (_gate) return _entries.TryGetValue(playerId, out var entry) ? entry.Avatar : "player";
     }
 
     /// <summary>把玩家挂到节点索引上（nodeId 为空时不索引）。</summary>

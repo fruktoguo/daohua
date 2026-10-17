@@ -304,7 +304,10 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                       role="radio"
                       aria-checked={isSelected}
                       className={`avatar-tile${isSelected ? ' active' : ''}`}
-                      onClick={() => setAvatarId(opt.id)}
+                      onClick={() => {
+                        setAvatarId(opt.id)
+                        gameClient.sendCommand('player.set_avatar', { avatar: opt.id === 'male' ? 'player-male' : 'player' })
+                      }}
                     >
                       <img className="avatar-tile-icon" alt="" draggable={false} src={opt.src} />
                       <span className="avatar-tile-name">{t(opt.nameKey)}</span>

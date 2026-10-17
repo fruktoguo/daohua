@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, 
 import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
+import { useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { ACTION_TAB_META, convertTierToLevel, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
@@ -1692,6 +1693,7 @@ interface AllyDisplayState {
   playerId: string
   actorKey: string
   name: string
+  avatar?: string
   seal: string
   hp: number
   maxHp: number
@@ -1908,6 +1910,8 @@ export const CombatArena = memo(function CombatArena({
   const combatResources = useGameStore(state => state.combatResources)
   const combatAttributes = useGameStore(state => state.combatAttributes)
   const abilities = useGameStore(state => state.abilities)
+  const avatarId = useAvatarStore(state => state.avatarId)
+  const selfActorId = avatarId === 'male' ? 'player-male' : 'player'
   const buffs = useGameStore(state => state.buffs)
   const actions = useGameStore(state => state.actions)
   const world = useGameStore(state => state.world)
@@ -2034,7 +2038,7 @@ export const CombatArena = memo(function CombatArena({
       const mp = Math.max(0, Math.min(maxMp, expedition.duel?.opponentManapoints ?? maxMp))
       return [{
         actorKey: `enemy:duel:${expedition.duel?.opponentName ?? 'opponent'}`,
-        enemyId: null,
+        enemyId: expedition.duel?.opponentAvatar || 'player',
         name,
         seal: name.slice(0, 1),
         hp,
@@ -2094,8 +2098,9 @@ export const CombatArena = memo(function CombatArena({
       .map(ally => ({
         memberIndex: ally.memberIndex,
         playerId: ally.playerId,
-        actorKey: `ally:${ally.memberIndex}:${ally.displayName}`,
         name: ally.displayName,
+        avatar: ally.avatar ?? 'player',
+        actorKey: `ally:${ally.memberIndex}:${ally.displayName}`,
         seal: ally.displayName.slice(0, 1) || '?',
         hp: ally.hitpoints,
         maxHp: Math.max(1, ally.maxHitpoints ?? ally.hitpoints),
@@ -2349,8 +2354,7 @@ export const CombatArena = memo(function CombatArena({
                     return (
                       <div className={`arena-slot arena-slot--occupied arena-slot--slot-${slot}${ally.hp <= 0 ? ' arena-slot--slain' : ''}`} key={ally.actorKey}>
                         <ArenaActor
-                          action={playerAction}
-                          actorId="player"
+                          actorId={selfActorId}
                           actorKey="player"
                           buffs={playerDisplayBuffs}
                           compact
@@ -2377,6 +2381,7 @@ export const CombatArena = memo(function CombatArena({
                     >
                       <ArenaActor
                         action={ally.action}
+                        actorId={ally.avatar || 'player'}
                         actorKey={ally.actorKey}
                         compact
                         hp={ally.hp}
@@ -2404,10 +2409,8 @@ export const CombatArena = memo(function CombatArena({
                 <div className="arena-slot arena-slot--occupied arena-slot--slot-1" key="ally-slot-1">
                   <ArenaActor
                     action={playerAction}
-                    actorId="player"
+                    actorId={selfActorId}
                     actorKey="player"
-                    buffs={playerDisplayBuffs}
-                    compact
                     hp={playerHp}
                     maxHp={playerMaxHp}
                     maxMp={playerMaxMp}
@@ -2566,7 +2569,13 @@ export const CombatArena = memo(function CombatArena({
         <CombatStatsPanel />
       </Modal>
       <CharacterAttributeModal
-        actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
+        actorId={
+          inspectedEnemy
+            ? (inspectedEnemy.enemyId ?? activeEncounterId)
+            : inspectedAlly
+              ? (inspectedAlly.isSelf ? selfActorId : inspectedAlly.avatar)
+              : selfActorId
+        }
         attributes={inspectedAttributes}
         buffs={inspectedActor === 'player' || inspectedAlly?.isSelf
           ? playerDisplayBuffs

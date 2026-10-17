@@ -41,7 +41,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     Server.Clean.Social.IInvitationRepository? invitations = null,
     Server.Clean.Social.ISocialRepository? socialRepository = null,
     IActionParticipationRuntime? participationRuntime = null,
-    IParticipationSessionStore? participationSessions = null) : IPlayerRuntime
+    IParticipationSessionStore? participationSessions = null,
+    Server.Clean.Social.OnlinePresenceRegistry? presence = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, PlayerRuntimeSnapshot> _loaded = new();
     // 钱包以存储余额为权威：ECS 库存组件由它同步重建，市场等外部入账经失效标记触发重读。
@@ -885,6 +886,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Rename(newName, renameNow));
                         break;
                     }
+                    case "player.set_avatar":
+                    {
+                        var avatar = payload.TryGetProperty("avatar", out var avatarElement) ? avatarElement.GetString() : null;
+                        var normalized = PlayerAggregate.NormalizeAvatar(avatar);
+                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetAvatar(normalized));
+                        if (presence is not null)
+                            await presence.UpdateAvatarAsync(playerId, normalized, cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
                     case "simulation.advance":
                     {
                         var now = _simulationClock.UtcNow;
@@ -1600,6 +1610,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "item.discard" => "物品已丢弃。",
         "item.sell" => "物品已售出。",
         "player.rename" => "道号已更新。",
+        "player.set_avatar" => "本命形象已更新。",
         _ => string.Empty,
     };
 
@@ -1846,7 +1857,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "action.enqueue" or "action.remove" or
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
         "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
-        "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "market.claim" or
+        "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "market.claim" or
         "item.discard" or "item.sell" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
 
     private void RestoreUncommittedPlayer(Guid playerId, PlayerRuntimeSnapshot before,

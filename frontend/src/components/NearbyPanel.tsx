@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from 'react'
+import { useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
@@ -107,6 +108,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const selfRealmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, stats.realmLevel ?? 1), [experience, stats.realmLevel])
   const buildingCatalog = useGameStore(state => state.buildings)
   const inventory = useGameStore(state => state.inventory)
+  const avatarId = useAvatarStore(state => state.avatarId)
   const nearbyPlayers = useSocialStore(state => state.nearbyPlayers)
   const myValuation = useSocialStore(state => state.myValuation)
   const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
@@ -266,7 +268,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
                   <div className="nearby-player-top">
                     <div className="nearby-player-avatar-cell">
-                      <CharacterAvatar name={name} role="player" />
+                      <CharacterAvatar actorId={avatarId === 'male' ? 'player-male' : 'player'} name={name} role="player" />
                     </div>
                     <div className="nearby-player-info-cell">
                       <strong className="nearby-player-name">{name}</strong>
@@ -292,7 +294,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       {/* 上部 80%：左 40% 形象，右 60% 名字与身家及操作 */}
                       <div className="nearby-player-top">
                         <div className="nearby-player-avatar-cell">
-                          <CharacterAvatar name={player.displayName} role="player" />
+                          <CharacterAvatar actorId={player.avatar || 'player'} name={player.displayName} role="player" />
                         </div>
                         <div className="nearby-player-info-cell">
                           <strong className="nearby-player-name">{player.displayName}</strong>

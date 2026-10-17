@@ -215,7 +215,8 @@ public sealed class SocialRuntime
                         valuations.TryGetValue(member.PlayerId, out var value) ? value : 0,
                         member.Ready,
                         levelMap.GetValueOrDefault(member.PlayerId, 1),
-                        malusMap.GetValueOrDefault(member.PlayerId, 0)))],
+                        malusMap.GetValueOrDefault(member.PlayerId, 0),
+                        _presence.GetAvatar(member.PlayerId)))],
                     party.OpenSlots,
                     snapshot.PartySession is { } session
                         ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,
@@ -382,6 +383,7 @@ public sealed class SocialRuntime
             request.RequestId,
             targetId.ToString("D"),
             DisplayName: identity.DisplayName,
+            Avatar: state.Settings.Avatar,
             PlayerSeq: identity.PlayerSeq,
             Online: _presence.IsOnline(targetId),
             RealmLevel: state.Progression.RealmLevel,

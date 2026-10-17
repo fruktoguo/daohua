@@ -914,7 +914,7 @@ public sealed record FriendRequestDto(string RequestId, string PlayerId, string 
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
 /// <param name="RealmLevel">成员境界等级</param>
 /// <param name="LevelMalus">成员受到的队伍等级惩罚比率（0~0.9）</param>
-public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0);
+public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0, string Avatar = "player");
 
 /// <summary>组队讨伐活跃会话（总纲 §21.13：会话持有唯一权威战斗状态，成员读取个人结算投影）。</summary>
 /// <param name="SessionId">会话唯一标识</param>
@@ -959,7 +959,7 @@ public sealed record PartyDto(
 /// <param name="DisplayName">修士道号</param>
 /// <param name="RealmLevel">境界等级</param>
 /// <param name="Valuation">身家估值</param>
-public sealed record NearbyPlayerDto(string PlayerId, string DisplayName, int RealmLevel = 1, double Valuation = 0);
+public sealed record NearbyPlayerDto(string PlayerId, string DisplayName, int RealmLevel = 1, double Valuation = 0, string Avatar = "player");
 
 /// <summary>待处理的队伍邀请条目。</summary>
 /// <param name="PartyId">邀请方队伍标识</param>
@@ -1123,6 +1123,7 @@ public sealed record PlayerCardDto(
     string PlayerId,
     string? Error = null,
     string? DisplayName = null,
+    string Avatar = "player",
     long PlayerSeq = 0,
     bool Online = false,
     int RealmLevel = 0,

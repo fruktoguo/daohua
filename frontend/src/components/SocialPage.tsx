@@ -683,7 +683,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                   >×</button>
                 )}
                 <div className="party-slot-avatar" aria-hidden="true">
-                  <CharacterAvatar name={member.displayName} role="player" />
+                  <CharacterAvatar actorId={member.avatar || 'player'} name={member.displayName} role="player" />
                 </div>
                 <div className="party-slot-meta">
                   <span className="party-member-valuation">{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>

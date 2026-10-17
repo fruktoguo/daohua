@@ -7,6 +7,7 @@
  * 2. 严格核对 Snapshot 头校验和（Head Checksum），防止数据篡改或网络坏帧；
  * 3. 将扁平的分段载荷（Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue）及资产钱包投影为前端响应式 PlayerSnapshot 与 PlayerPatch。
  */
+import { getPlayerAvatarSrc, type PlayerAvatarId, useAvatarStore } from '../game/avatarStore'
 import { calculateRealmProgress } from '../game/combatConstants'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
 import type {
@@ -455,6 +456,7 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
       }
     })
   return {
+    opponentAvatar: optionalString(row.opponentAvatar, `行动 ${actionId} 的 duel.opponentAvatar`) ?? 'player',
     opponentName: stringValue(row.opponentName),
     isInitiator: booleanValue(row.viewerIsInitiator),
     outcome,
@@ -622,6 +624,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
           memberIndex: finiteInteger(ally.memberIndex, `${label}.memberIndex`),
           playerId: stringValue(ally.playerId),
           displayName: stringValue(ally.displayName),
+          avatar: optionalString(ally.avatar, `${label}.avatar`) ?? 'player',
           hitpoints: finiteNumber(ally.hitpoints, `${label}.hitpoints`),
           manapoints: finiteNumber(ally.manapoints, `${label}.manapoints`),
           maxHitpoints: ally.maxHitpoints === null || ally.maxHitpoints === undefined
@@ -1354,7 +1357,11 @@ function seconds(iso: string): number {
   return parsed / 1000
 }
 
-function visualFor(name: string): CharacterVisual {
+function visualFor(name: string, avatarId?: string): CharacterVisual {
+  if (avatarId) {
+    const src = getPlayerAvatarSrc(avatarId)
+    return { renderer: 'image', source: src, poster: src }
+  }
   return { renderer: 'text', source: name.slice(0, 1) || '修' }
 }
 
@@ -1419,7 +1426,7 @@ export async function decodePlayerSnapshotDto(
     combat: loadout,
     combatResources: combat.resources,
     combatAttributes: combat.attributes,
-    visual: visualFor(name),
+    visual: visualFor(name, optionalString(settings.avatar, 'settings.avatar') ?? undefined),
     world,
     duel,
     // 待突破 = 境界经验已填满当前层所需（容差 0.0001 吸收浮点误差）且确有修为存量
@@ -1468,6 +1475,11 @@ export async function decodePlayerSnapshotDeltaDto(
   if (settingsEnvelope && settings) {
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
     patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, false), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: booleanValue(settings.queuePaused, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    const avatar = optionalString(settings.avatar, 'settings.avatar')
+    if (avatar) {
+      useAvatarStore.getState().setAvatarId(avatar as PlayerAvatarId)
+      patch.visual = visualFor(dto.displayName ?? current.name ?? '', avatar)
+    }
     patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)
     patch.tutorialStep = numberValue(settings.tutorialStep, 0)
   }

@@ -472,6 +472,7 @@ export interface ExpeditionAlly {
   playerId: string
   /** 成员道号 */
   displayName: string
+  avatar?: string
   /** 当前气血 */
   hitpoints: number
   /** 当前灵力 */
@@ -788,6 +789,7 @@ export interface ExpeditionDuelEvent {
 export interface ExpeditionDuel {
   /** 对手队伍道号 */
   opponentName: string
+  opponentAvatar?: string
   /** 本方是否为斗法发起方 */
   isInitiator: boolean
   /** 斗法结果枚举：0 未决 / 1 胜 / 2 负 / 3 平 */

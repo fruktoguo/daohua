@@ -230,7 +230,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
         {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
         <div className="player-card-hero-top">
           <div className="player-card-hero-avatar">
-            <CharacterAvatar name={card.displayName ?? ''} role="player" />
+            <CharacterAvatar actorId={card.avatar || 'player'} name={card.displayName ?? ''} role="player" />
           </div>
           <div className="player-card-hero-info">
             <div className="player-card-hero-name-row">

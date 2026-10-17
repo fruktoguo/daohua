@@ -97,7 +97,9 @@ public sealed record PlayerSettingsStateDocument(
     /// <summary>新手引导里程碑下标（0~6 进行中，7 完成/跳过终态；缺省解码为 0）</summary>
     int TutorialStep = 0,
     /// <summary>新手引导奖励游标（已发放至第几里程碑；缺省解码为 0，重学不重复发已领奖励）</summary>
-    int TutorialRewardsStep = 0);
+    int TutorialRewardsStep = 0,
+    /// <summary>本命形象外观标识（默认 player，可选 player-male）</summary>
+    string Avatar = "player");
 
 /// <summary>行动项状态快照 DTO，记录进度与剩余轮次</summary>
 public sealed record QueuedActionState(
@@ -268,6 +270,7 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.RenameCooldownUntilUnixSeconds == Settings.RenameCooldownUntilUnixSeconds
             && _cachedSettingsDoc.TutorialStep == Settings.TutorialStep
             && _cachedSettingsDoc.TutorialRewardsStep == Settings.TutorialRewardsStep
+            && _cachedSettingsDoc.Avatar == Settings.Avatar
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
         {
             return _cachedSettingsDoc;
@@ -281,7 +284,8 @@ public sealed partial class PlayerAggregate
             Settings.RenameCooldownUntilUnixSeconds,
             Settings.QueuePaused,
             Settings.TutorialStep,
-            Settings.TutorialRewardsStep);
+            Settings.TutorialRewardsStep,
+            Settings.Avatar);
     }
 
     private AutoUseSlotState[] GetCachedAutoUseSlots()
@@ -779,7 +783,7 @@ public sealed partial class PlayerAggregate
         PlayerSectionKind.Settings => new SettingsCheckpoint(
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
                 Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds,
-                Settings.QueuePaused, Settings.TutorialStep, Settings.TutorialRewardsStep)),
+                Settings.QueuePaused, Settings.TutorialStep, Settings.TutorialRewardsStep, Settings.Avatar)),
         PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
         PlayerSectionKind.Duel => new DuelCheckpoint(
             ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),

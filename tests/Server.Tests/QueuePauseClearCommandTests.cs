@@ -47,6 +47,26 @@ public sealed class QueuePauseClearCommandTests
     }
 
     /// <summary>
+    /// player.set_avatar 指令更新玩家形象标识并标脏 Settings 分段。
+    /// </summary>
+    [Fact]
+    public async Task PlayerSetAvatar_AppliesAndUpdatesAvatar()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), new EmptyAssets(), new NoopEconomy(), GameDataCatalog.BuiltIn);
+        await runtime.LoadAsync(playerId);
+
+        var applied = await runtime.ExecuteAsync(playerId, "player.set_avatar",
+            JsonSerializer.SerializeToElement(new { avatar = "male" }), 0, Guid.NewGuid());
+        Assert.Equal("OK", applied.Code);
+        Assert.Equal("本命形象已更新。", applied.Message);
+        Assert.Equal("player-male", applied.Snapshot.State.Settings.Avatar);
+        var touched = Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(applied.Snapshot.TouchedSections);
+        Assert.Contains(PlayerSectionKind.Settings, touched);
+    }
+
+    /// <summary>
     /// queue.clear 空队列直接拒绝：code QUEUE_EMPTY、消息「队列已为空。」，不产生任何变更。
     /// </summary>
     [Fact]

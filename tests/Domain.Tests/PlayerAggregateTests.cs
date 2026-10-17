@@ -1,3 +1,5 @@
+using Domain.Persistence;
+
 namespace Domain.Tests;
 
 /// <summary>
@@ -334,4 +336,54 @@ public sealed class PlayerAggregateTests
         Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
     }
 
+
+    /// <summary>
+    /// 切换本命形象：字段规整化存储，并正确标脏 Settings 分段。
+    /// </summary>
+    [Fact]
+    public void SetAvatar_UpdatesSettingsAndMarksSettingsDirty()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "道玄", Baseline, "catalog-a");
+        Assert.Equal("player", player.Settings.Avatar);
+
+        player.ConsumeDirtySections();
+        player.SetAvatar("male");
+        Assert.Equal("player-male", player.Settings.Avatar);
+        Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
+
+        // 重复设置同形象不重复标脏
+        player.ConsumeDirtySections();
+        player.SetAvatar("player-male");
+        Assert.DoesNotContain(PlayerSectionKind.Settings, player.DirtySections);
+
+        // 切换回默认
+        player.SetAvatar("default");
+        Assert.Equal("player", player.Settings.Avatar);
+        Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
+    }
+
+    /// <summary>
+    /// 存档编解码：形象标识完整往返，且旧存档无 avatar 字段时安全回退默认 player。
+    /// </summary>
+    [Fact]
+    public void SectionCodec_AvatarRoundTrip_PreservesValueAndDefaults()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "青玄", Baseline, "catalog-a");
+        player.SetAvatar("male");
+
+        var state = player.ExportState();
+        var writes = SectionCodec.EncodeAggregateFull(state, Baseline);
+        var sections = writes.ToDictionary(
+            w => w.SectionKind,
+            w => new StoredSection(w.PlayerId, w.SectionKind, w.StateVersion, w.SchemaVersion, w.Codec, w.Payload.ToArray(), w.RawBytes, w.Checksum, w.UpdatedAt),
+            StringComparer.Ordinal);
+        var bundle = new PlayerStateBundle(
+            new PlayerIdentity(state.PlayerId.Value, state.AccountId.Value, state.DisplayName, state.CreatedAt),
+            new PlayerStateHead(state.PlayerId.Value, state.StateVersion, SectionCodec.CurrentSchemaVersion, state.LastSimulatedAt, state.GameDataFingerprint, SectionCodec.ComputeHeadChecksum(sections.Values), Baseline),
+            sections,
+            []);
+
+        var decoded = SectionCodec.DecodeAggregate(bundle);
+        Assert.Equal("player-male", decoded.Settings.Avatar);
+    }
 }

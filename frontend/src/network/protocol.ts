@@ -511,6 +511,7 @@ export interface PartyMemberDto {
   playerId: string
   displayName: string
   online: boolean
+  avatar?: string
   /** 成员身家（服务端估值口径，非战斗属性） */
   valuation: number
   /** 共战准备状态（§21.13：成员自开关，队长不能代备） */
@@ -564,6 +565,7 @@ export interface NearbyPlayerDto {
   displayName: string
   realmLevel?: number
   valuation?: number
+  avatar?: string
 }
 
 /** 待处理的队伍邀请条目 */
@@ -721,6 +723,8 @@ export interface PlayerCardDto {
   error?: string | null
   /** 道号 */
   displayName?: string | null
+  /** 形象标识 */
+  avatar?: string
   /** 角色序号（注册顺序） */
   playerSeq: number
   /** 当前是否在线 */

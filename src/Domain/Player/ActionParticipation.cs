@@ -43,7 +43,8 @@ public sealed partial record ActionParticipantSnapshot(
     IReadOnlyList<ActionSustainedBuff>? SustainedBuffs = null,
     IReadOnlyList<PlayerEquipmentSlot>? Equipment = null,
     double RegenCarrySeconds = 0,
-    IReadOnlyList<ActionConsumableSlot>? ConsumableSlots = null)
+    IReadOnlyList<ActionConsumableSlot>? ConsumableSlots = null,
+    string Avatar = "player")
 {
     /// <summary>成员快照持久化不变量校验。</summary>
     public bool IsValid => Guid.TryParse(PlayerId, out var id) && id != Guid.Empty

@@ -18,6 +18,9 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   player: { src: '/avatars/player.svg', format: 'svg' },
   'player-female': { src: '/avatars/player.svg', format: 'svg' },
   'player-male': { src: '/avatars/player-male.svg', format: 'svg' },
+  default: { src: '/avatars/player.svg', format: 'svg' },
+  female: { src: '/avatars/player.svg', format: 'svg' },
+  male: { src: '/avatars/player-male.svg', format: 'svg' },
 
   // T1 怪物 (练气期)
   'demonized-rabbit': { src: '/avatars/demonized-rabbit.webp', format: 'webp' },
@@ -84,7 +87,17 @@ export function getAvatarCandidateUrls(rawId?: string | null): readonly string[]
 /**
  * 玩家主角形象标识
  */
-export type PlayerAvatarId = 'default' | 'female' | 'male' | 'player'
+export type PlayerAvatarId = 'default' | 'female' | 'male' | 'player' | 'player-male'
+
+/**
+ * 规整化玩家形象标识（统一映射到 default / male）
+ */
+export function normalizePlayerAvatarId(id?: string | null): 'default' | 'male' {
+  if (!id) return 'default'
+  const clean = id.trim().toLowerCase()
+  if (clean === 'male' || clean === 'player-male') return 'male'
+  return 'default'
+}
 
 /** 可选形象条目（名称走 i18n 键，卡片只呈现图标与名称） */
 export interface AvatarOption {
@@ -124,10 +137,10 @@ interface AvatarStore {
 const AVATAR_STORAGE_KEY = 'daohua.avatar.v1'
 
 /** 从 localStorage 读取上次选择的形象；存储不可用或值非法时回退默认。 */
-function readStoredAvatarId(): PlayerAvatarId {
+function readStoredAvatarId(): 'default' | 'male' {
   try {
     const stored = window.localStorage.getItem(AVATAR_STORAGE_KEY)
-    if (stored && AVATAR_OPTIONS.some(option => option.id === stored)) return stored as PlayerAvatarId
+    if (stored) return normalizePlayerAvatarId(stored)
   } catch {
     // 隐私模式等 localStorage 不可用场景：静默回退默认形象。
   }
@@ -140,9 +153,10 @@ function readStoredAvatarId(): PlayerAvatarId {
 export const useAvatarStore = create<AvatarStore>((set, get) => ({
   avatarId: readStoredAvatarId(),
   setAvatarId: (avatarId: PlayerAvatarId) => {
-    set({ avatarId })
+    const normalized = normalizePlayerAvatarId(avatarId)
+    set({ avatarId: normalized })
     try {
-      window.localStorage.setItem(AVATAR_STORAGE_KEY, avatarId)
+      window.localStorage.setItem(AVATAR_STORAGE_KEY, normalized)
     } catch {
       // 持久化失败仅影响下次启动的默认选择，不阻断当前会话。
     }
@@ -154,6 +168,6 @@ export const useAvatarStore = create<AvatarStore>((set, get) => ({
  * 获取指定或当前形象资源地址
  */
 export function getPlayerAvatarSrc(avatarId?: PlayerAvatarId | string | null): string {
-  const id = (avatarId ?? useAvatarStore.getState().avatarId) as PlayerAvatarId
+  const id = normalizePlayerAvatarId(avatarId ?? useAvatarStore.getState().avatarId)
   return AVATAR_OPTIONS.find(option => option.id === id)?.src ?? DEFAULT_PLAYER_AVATAR_SRC
 }

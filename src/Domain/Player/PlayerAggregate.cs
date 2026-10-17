@@ -352,9 +352,11 @@ public sealed class PlayerSettingsState
     public double RenameCooldownUntilUnixSeconds { get; set; }
     /// <summary>新手引导里程碑下标（见 <see cref="TutorialSteps"/>；服务端权威推进，达到终态后不再回退）</summary>
     public int TutorialStep { get; set; }
-    /// <summary>新手引导奖励游标（已发放至第几里程碑）：推进仅当 nextStep &gt; 游标才入账，
+    /// <summary>新手引导奖励游标（已发放至第几里程碑）：推进仅当 nextStep > 游标才入账，
     /// 跳过时补发游标+1..Done 的剩余奖励；重学（restart）只重置 TutorialStep、游标不动。</summary>
     public int TutorialRewardsStep { get; set; }
+    /// <summary>本命形象外观标识（默认 player，可选 player-male）。</summary>
+    public string Avatar { get; set; } = "player";
 }
 
 /// <summary>
@@ -782,6 +784,26 @@ public sealed partial class PlayerAggregate
         DisplayName = normalized;
         Settings.RenameCooldownUntilUnixSeconds = now.Add(RenameCooldown).ToUnixTimeSeconds();
         Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 更改本命形象外观标识。
+    /// </summary>
+    public void SetAvatar(string? avatar)
+    {
+        var normalized = NormalizeAvatar(avatar);
+        if (string.Equals(Settings.Avatar, normalized, StringComparison.Ordinal)) return;
+        Settings.Avatar = normalized;
+        Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>规整化本命形象外观标识。</summary>
+    public static string NormalizeAvatar(string? avatar)
+    {
+        if (string.IsNullOrWhiteSpace(avatar)) return "player";
+        var trimmed = avatar.Trim().ToLowerInvariant();
+        if (trimmed is "male" or "player-male") return "player-male";
+        return "player";
     }
 
     /// <summary>

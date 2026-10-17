@@ -631,7 +631,7 @@ public sealed partial class PlayerAggregate
         // 斗法镜像与玩家/怪物共用同一套通用技能槽：触发条件与装配口径完全一致（按功法 ID 挂接）。
         var skills = SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities, Loadout.AbilityTriggers);
         return new DuelCombatant(PlayerId, DisplayName, DuelPower(gameData), stats, skills,
-            Duel.StagedItems.ToArray(), Loadout.Equipment.ToArray());
+            Duel.StagedItems.ToArray(), Loadout.Equipment.ToArray(), Avatar: Settings.Avatar);
     }
 
     /// <summary>斗法调参当前生效值；由模拟推进在配表上下文中刷新。</summary>

@@ -140,7 +140,8 @@ public sealed record DuelPlaybackState(
     bool Forfeited = false,
     IReadOnlyList<CombatUnitStatDocument>? ViewerStats = null,
     IReadOnlyList<PlayerAbilitySlot>? OpponentSkills = null,
-    IReadOnlyList<PlayerEquipmentSlot>? OpponentEquipment = null)
+    IReadOnlyList<PlayerEquipmentSlot>? OpponentEquipment = null,
+    string OpponentAvatar = "player")
 {
     /// <summary>校验回放状态不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(DuelId) && DuelId.Length <= 64
@@ -201,7 +202,8 @@ public sealed record DuelPlaybackState(
             OpponentSkills: opponent.Skills
                 .Select(slot => new PlayerAbilitySlot(JsonRead.Text(slot.Ability, "id"), slot.Level))
                 .ToArray(),
-            OpponentEquipment: opponent.Equipment);
+            OpponentEquipment: opponent.Equipment,
+            OpponentAvatar: opponent.Avatar);
     }
 }
 
@@ -213,5 +215,5 @@ public sealed record DuelCombatant(
     CombatantStats Stats,
     IReadOnlyList<SkillSlot> Skills,
     IReadOnlyList<DuelStagedItem> StagedItems,
-    IReadOnlyList<PlayerEquipmentSlot> Equipment);
-
+    IReadOnlyList<PlayerEquipmentSlot> Equipment,
+    string Avatar = "player");

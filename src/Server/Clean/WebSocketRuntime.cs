@@ -613,7 +613,7 @@ public static class WebSocketEndpoint
                         // 迁地途中（EdgeId 非空）按「不在节点」登记，与 UpdateNodeAsync 口径一致。
                         var presenceTask = presence.RegisterAsync(session.PlayerId, displayName,
                             initial.State.World.EdgeId is null ? initial.State.World.NodeId : null,
-                            initial.State.Progression.RealmLevel, 0, cancellationToken);
+                            initial.State.Progression.RealmLevel, 0, initial.State.Settings.Avatar, cancellationToken);
                         var initialSnapshot = await snapshotTask;
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
                         // 握手快照必达：属性面板实际写入即解除一次性交付武装。
