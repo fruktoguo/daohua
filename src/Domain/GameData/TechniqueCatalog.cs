@@ -46,7 +46,7 @@ public static class TechniqueCatalog
 
     /// <summary>
     /// 已装备技艺工具对指定技艺的行动速度加成合计：遍历装配槽位，
-    /// 装备配表 techniqueBonus.technique 命中时累加其 speedRatio；
+    /// 装备配表 techniqueBonus.technique 命中时累加其 speedRatio × 1.05^强化等级；
     /// 与技艺等级加成同点加算（duration /= 1 + 0.05×L + Σ工具加成）。
     /// 配表缺失、字段非法或 technique 不匹配一律忽略。
     /// </summary>
@@ -69,7 +69,11 @@ public static class TechniqueCatalog
             if (bonus.TryGetProperty("speedRatio", out var speedRatio)
                 && speedRatio.TryGetDouble(out var value)
                 && double.IsFinite(value) && value > 0)
-                ratio += value;
+            {
+                var level = Math.Max(0, (int)Math.Floor(slot.EnhancementLevel));
+                var scale = Math.Pow(1.05, level);
+                ratio += value * scale;
+            }
         }
         return ratio;
     }

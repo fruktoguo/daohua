@@ -1003,6 +1003,23 @@ export function describeEquipmentEffects(
       )
     }
   }
+  if (equipment.techniqueBonus) {
+    const { technique, speedRatio } = equipment.techniqueBonus
+    if (speedRatio > 0) {
+      const scaled = speedRatio * enhanceScale
+      const percent = +(scaled * 100).toFixed(1)
+      const labelKey = TOOL_SPEED_LABEL_KEYS[technique]
+      const label = labelKey ? t(labelKey) : t('insight.panel.actionSpeed')
+      lines.push(
+        <PillBonusLabel
+          key={`tool-speed-${technique}`}
+          label={label}
+          tone="emerald"
+          value={`+${percent}%`}
+        />
+      )
+    }
+  }
   return lines
 }
 
@@ -1035,6 +1052,17 @@ const POINT_STAT_LABELS: Record<string, { label: string; curve: 'linear' | 'nonl
   mpDrainPoints: { label: 'market.stat.mpDrain', curve: 'linear' },
   damageReflectPoints: { label: 'market.stat.damageReflect', curve: 'linear' },
   healingBonusPoints: { label: 'market.stat.healingBonus', curve: 'linear' },
+}
+
+/** 技艺工具技艺标识 → 速度加成词条键 */
+const TOOL_SPEED_LABEL_KEYS: Record<string, string> = {
+  gathering: 'combat.nearby.attrGatheringSpeed',
+  mining: 'combat.nearby.attrMiningSpeed',
+  alchemy: 'combat.nearby.attrAlchemySpeed',
+  forging: 'combat.nearby.attrForgingSpeed',
+  talisman: 'combat.nearby.attrTalismanSpeed',
+  formation: 'combat.nearby.attrFormationSpeed',
+  enhancement: 'combat.nearby.attrEnhancementSpeed',
 }
 
 /**

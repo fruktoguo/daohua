@@ -27,7 +27,7 @@ import { UnitNumber } from './UnitNumber'
 /**
  * 装备强化候选条目：仅取背包内未穿戴的装备——按 (itemId, 强化等级) 扣除已穿戴件数，
  * 剩余数量 > 0 的有效变体行分别作为独立候选条目进入选择器（避免不同强化等级被误聚合成单项）。
- * 装备中、挂售中均不可选。tool-* 技艺工具槽位装备不可强化，不进候选。
+ * 装备中、挂售中均不可选。包括 tool-* 技艺工具在内的全身装备均可强化。
  */
 function collectEquipmentCandidates(
   inventory: readonly InventoryItem[],
@@ -41,7 +41,7 @@ function collectEquipmentCandidates(
   const heldCounts = new Map<string, { itemId: string; level: number; amount: number }>()
   for (const inv of inventory) {
     const eqDef = findEquipmentInCatalog(equipmentCatalog, inv.itemId)
-    if (!eqDef || eqDef.slot?.startsWith('tool-')) continue
+    if (!eqDef) continue
     const level = parseEnhancementVariant(inv.variant)
     const key = `${inv.itemId}#${level}`
     const existing = heldCounts.get(key)
@@ -235,7 +235,8 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
     for (const eq of combat?.equipment ?? []) {
       const bonus = findEquipmentInCatalog(equipmentCatalog, eq.itemId)?.techniqueBonus
       if (bonus && bonus.technique === 'enhancement' && Number.isFinite(bonus.speedRatio) && bonus.speedRatio > 0) {
-        ratio += bonus.speedRatio
+        const level = eq.enhancementLevel ?? 0
+        ratio += bonus.speedRatio * Math.pow(1.05, level)
       }
     }
     return ratio

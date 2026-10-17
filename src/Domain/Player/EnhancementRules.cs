@@ -180,14 +180,6 @@ public static class EnhancementRules
             reason = "强化目标装备无效。";
             return null;
         }
-        // 技艺工具（tool- 前缀专属槽）只提供行动速度加成，强化零收益纯烧灵石，直接拦截。
-        if (equipment.TryGetProperty("slot", out var slotElement)
-            && slotElement.ValueKind == System.Text.Json.JsonValueKind.String
-            && TechniqueCatalog.IsToolSlot(slotElement.GetString()))
-        {
-            reason = "技艺工具无法强化。";
-            return null;
-        }
         // 保护材料裁决：装备配表 enhanceProtectionItems 非空时取其列表内任一材料；
         // 未配置时允许以同装备无强化基础件（AssetKey 裸变体）代护。
         ItemId? protectionItemId = null;

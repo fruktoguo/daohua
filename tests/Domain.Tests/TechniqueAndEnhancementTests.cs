@@ -756,9 +756,9 @@ public sealed class TechniqueAndEnhancementTests
         Assert.False(TechniqueCatalog.IsToolSlot(null));
     }
 
-    /// <summary>技艺工具不可强化：tool- 槽位装备在强化准入直接 Blocked 并给出专属文案。</summary>
+    /// <summary>技艺工具可强化：tool- 槽位装备在强化准入通过并可正常提升强化等级。</summary>
     [Fact]
-    public void TechniqueToolIsRejectedByEnhancement()
+    public void TechniqueToolCanBeEnhanced()
     {
         var hoe = new ItemId("equipment.tool-herb-hoe");
         var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
@@ -773,9 +773,33 @@ public sealed class TechniqueAndEnhancementTests
         };
         var prep = EnhancementRules.Resolve(new PlayerLoadoutState(), intent, holdings, catalog, 0,
             out var check, out var reason);
-        Assert.Null(prep);
-        Assert.Equal(EnhancementRules.Check.Blocked, check);
-        Assert.Equal("技艺工具无法强化。", reason);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(10, prep.SpiritStoneCost);
+        Assert.Equal(1, prep.TargetLevel);
+    }
+
+    /// <summary>技艺工具强化等级缩放：+N 工具的速度加成按 1.05^N 缩放生效。</summary>
+    [Fact]
+    public void EquippedToolEnhancementScalesSpeedRatio()
+    {
+        var compass = new ItemId("equipment.tool-prospect-compass");
+        var mining = new ActionDefinition(new ActionId("mine.test"), "挖矿测试", ActionKind.Exploration, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Mining);
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([mining]),
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                [compass.Value] = Json("""{"id":"equipment.tool-prospect-compass","name":"赤铜镐","slot":"tool-mining","tier":1,"techniqueBonus":{"technique":"mining","speedRatio":0.1}}""")
+            });
+        var player = CreatePlayer("矿工");
+        var wallet = CreateWallet(player);
+        // +2 等级赤铜镐：速度加成 = 0.1 × 1.05^2 = 0.11025
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(compass.Value, 2));
+        var miningAction = player.Enqueue(new ActionIntent(mining.Id, -1), Baseline, catalog.Actions);
+
+        var expectedRatio = 0.1 * Math.Pow(1.05, 2);
+        Assert.Equal(expectedRatio, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, catalog), 12);
+        Assert.Equal(10 / (1 + expectedRatio), SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
     }
 
     private static GameDataCatalog CreateMinimalCatalog(

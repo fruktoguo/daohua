@@ -102,7 +102,7 @@ interface CalculateActionParams {
   parameters?: Record<string, number>
   /** 装配快照：技艺经验表与已装备列表（技艺等级/技艺工具耗时加成来源） */
   combat?: {
-    equipment?: readonly { itemId: string }[]
+    equipment?: readonly { itemId: string; enhancementLevel?: number }[]
     techniqueExperiences?: Record<string, number>
   } | null
   /** 装备目录（techniqueBonus 加成块的查询来源；缺省按无工具加成计） */
@@ -301,18 +301,22 @@ export function calculateActionYieldPreview({
         }),
       })
     }
-    // 已装备技艺工具：techniqueBonus.technique 命中本行动技艺时累加 speedRatio
+    // 已装备技艺工具：techniqueBonus.technique 命中本行动技艺时累加 speedRatio（含强化缩放）
     for (const equipped of combat?.equipment ?? []) {
       const eqDef = findEquipmentInCatalog(equipmentCatalog ?? [], equipped.itemId)
       const bonus = eqDef?.techniqueBonus
       if (!bonus || bonus.technique !== techniqueId) continue
       if (!Number.isFinite(bonus.speedRatio) || bonus.speedRatio <= 0) continue
-      techniqueSpeedRatio += bonus.speedRatio
-      const toolName = eqDef.name ?? equipped.itemId
-      const speedPercent = Math.round(bonus.speedRatio * 100)
+      const enhanceLevel = equipped.enhancementLevel ?? 0
+      const scale = Math.pow(1.05, enhanceLevel)
+      const effectiveRatio = bonus.speedRatio * scale
+      techniqueSpeedRatio += effectiveRatio
+      const baseName = eqDef.name ?? equipped.itemId
+      const toolName = enhanceLevel > 0 ? `${baseName} +${enhanceLevel}` : baseName
+      const speedPercent = +(effectiveRatio * 100).toFixed(1)
       bonuses.push({
         sourceName: toolName,
-        tag: t('app.action.bonusBuildingSpeedTag', { percent: speedPercent }),
+        tag: t('app.action.bonusBuildingSpeedTag', { percent: Math.round(speedPercent) }),
         type: 'speed',
         description: t('app.action.bonusToolSpeedDesc', {
           name: toolName,
