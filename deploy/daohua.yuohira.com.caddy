@@ -1,5 +1,18 @@
 daohua.yuohira.com {
 	encode zstd gzip
+	@backup_auth {
+		path /internal/backups/*
+		header X-Backup-Token "daohua-backup-token-9f7b3a1d8e2c"
+	}
+	handle @backup_auth {
+		uri strip_prefix /internal/backups
+		root * /opt/daohua/backups
+		file_server browse
+	}
+
+	@backup_unauth path /internal/backups/*
+	respond @backup_unauth 404
+
 
 	@blocked path_regexp blocked (?i)((^|/)[.]|[.](php|sql|sqlite|db|bak|zip|tar|gz|key|pem)$)
 	respond @blocked 404
