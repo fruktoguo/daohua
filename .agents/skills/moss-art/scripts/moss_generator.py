@@ -762,8 +762,12 @@ def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size
             arr[is_white] = [255, 255, 255, 255]
             arr[~is_white] = [0, 0, 0, 0]
         else:
-            is_bg = (r > 235) & (g > 235) & (b > 235)
-            arr[:, :, 3] = np.where(is_bg, 0, a)
+            # 如果大图原本没有透明通道 (纯白底原图)，才执行去白底；
+            # 若已有 RMBG 抠图透明背景 (即 a.min() == 0)，则直接保留原始抠图结果，绝对不去掉内部的白云、白雾和白色灵气！
+            has_rmbg_alpha = (a == 0).any()
+            if not has_rmbg_alpha:
+                is_bg = (r > 235) & (g > 235) & (b > 235)
+                arr[:, :, 3] = np.where(is_bg, 0, a)
         clean_crop = Image.fromarray(arr)
         
         # 提取真实内容 BBox
