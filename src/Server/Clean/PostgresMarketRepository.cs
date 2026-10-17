@@ -1187,7 +1187,7 @@ public sealed class PostgresMarketRepository(
         if (order.OrderId == Guid.Empty || order.OwnerPlayerId == Guid.Empty) throw new ArgumentException("订单标识无效。", nameof(order));
         if (order.PartitionId < 0 || string.IsNullOrWhiteSpace(order.AssetId) || order.AssetId.Length > 128) throw new ArgumentException("订单品种无效。", nameof(order));
         if (!order.Side.Equals("buy", StringComparison.OrdinalIgnoreCase) && !order.Side.Equals("sell", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("订单方向无效。", nameof(order));
-        if (order.Variant is null || order.Variant.Length > 128 || order.Price <= 0 || order.Quantity <= 0 || double.IsNaN(order.Price) || double.IsInfinity(order.Price) || double.IsNaN(order.Quantity) || double.IsInfinity(order.Quantity)) throw new ArgumentException("订单数值无效。", nameof(order));
+        if (order.Variant is null || order.Variant.Length > 128 || order.Price <= 0 || order.Quantity <= 0 || double.IsNaN(order.Price) || double.IsInfinity(order.Price) || double.IsNaN(order.Quantity) || double.IsInfinity(order.Quantity) || order.Price != Math.Floor(order.Price) || order.Quantity != Math.Floor(order.Quantity)) throw new ArgumentException("订单数值无效。", nameof(order));
         if (string.IsNullOrWhiteSpace(order.IdempotencyKey) || order.IdempotencyKey.Length > 200) throw new ArgumentException("订单幂等键无效。", nameof(order));
     }
 

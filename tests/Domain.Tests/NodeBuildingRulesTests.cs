@@ -39,6 +39,17 @@ public sealed class NodeBuildingRulesTests
     }
 
     [Fact]
+    public void RequiredMaterialsFloorsAndClampsToOne()
+    {
+        var definition = Definition([new BuildingMaterial("item.ningxue-grass", 15), new BuildingMaterial("item.tiny", 0.8)]);
+        // 15 * 1.1 = 16.5 -> floor = 16
+        var level2 = NodeBuildingRules.RequiredMaterials(definition, 2);
+        Assert.Equal(16, level2["item.ningxue-grass"]);
+        // 0.8 -> floor = 0 -> 保底 1
+        Assert.Equal(1, level2["item.tiny"]);
+    }
+
+    [Fact]
     public void MaterialFractionCapsEachItemAtRequired()
     {
         var definition = Definition();

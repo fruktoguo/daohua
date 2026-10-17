@@ -111,7 +111,8 @@ public sealed class OrderBook
         // 起始水位必须在任何校验/写入前捕获：调用方收到异常后按日志回滚时恒为安全无操作。
         journal?.Capture(_version, _sequence);
         if (request.OrderId.IsEmpty || request.OwnerId.IsEmpty || !request.IdempotencyKey.IsValid ||
-            !double.IsFinite(request.Price) || request.Price <= 0 || !double.IsFinite(request.Quantity) || request.Quantity <= 0)
+            !double.IsFinite(request.Price) || request.Price <= 0 ||
+            !double.IsFinite(request.Quantity) || request.Quantity <= 0 || request.Quantity != Math.Floor(request.Quantity))
             throw new DomainException(DomainErrorCode.InvalidArgument, "订单参数无效。");
         if (!Enum.IsDefined(request.Side))
             throw new DomainException(DomainErrorCode.InvalidArgument, "订单方向无效。");

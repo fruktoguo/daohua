@@ -713,9 +713,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         {
                             foreach (var entry in materialsElement.EnumerateObject())
                             {
-                                if (entry.Value.ValueKind == JsonValueKind.Number && entry.Value.TryGetDouble(out var quantity)
-                                    && double.IsFinite(quantity) && quantity > 0)
-                                    requested[entry.Name] = quantity;
+                                if (entry.Value.ValueKind == JsonValueKind.Number && entry.Value.TryGetDouble(out var rawQuantity)
+                                    && double.IsFinite(rawQuantity))
+                                {
+                                    var quantity = Math.Floor(rawQuantity);
+                                    if (quantity > 0)
+                                        requested[entry.Name] = quantity;
+                                }
                             }
                         }
                         if (requested.Count == 0)
@@ -761,8 +765,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var variant = payload.TryGetProperty("variant", out var variantElement) && variantElement.ValueKind != JsonValueKind.Null ? variantElement.GetString() ?? string.Empty : string.Empty;
                         var price = payload.TryGetProperty("price", out var priceElement) && priceElement.TryGetDouble(out var parsedPrice) ? parsedPrice : double.NaN;
                         var quantity = payload.TryGetProperty("quantity", out var quantityElement) && quantityElement.TryGetDouble(out var parsedQuantity) ? parsedQuantity : double.NaN;
-                        if (string.IsNullOrWhiteSpace(assetId) || !Enum.TryParse<MarketSide>(sideText, true, out var side))
-                            return new PlayerCommandResult(false, "INVALID_ORDER", "订单品种或方向无效。", before);
+                        if (string.IsNullOrWhiteSpace(assetId) || !Enum.TryParse<MarketSide>(sideText, true, out var side)
+                            || !double.IsFinite(price) || price <= 0 || price != Math.Floor(price)
+                            || !double.IsFinite(quantity) || quantity <= 0 || quantity != Math.Floor(quantity))
+                            return new PlayerCommandResult(false, "INVALID_ORDER", "订单品种、方向、价格或数量无效。", before);
                         // 强化变体校验："+N" 独立盘口仅限装备且等级不超上限；
                         // "+0"/空白归一为基础簿，"+03" 等非规范写法归一为 "+N"，避免同一簿被异形键拆串。
                         if (EnhancementRules.ParseLevel(variant) is not { } variantLevel
@@ -825,7 +831,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var disposeQuantity = payload.TryGetProperty("quantity", out var disposeQuantityElement)
                             && disposeQuantityElement.TryGetDouble(out var parsedDisposeQuantity)
                             ? parsedDisposeQuantity : double.NaN;
-                        if (string.IsNullOrWhiteSpace(disposeItemId) || !double.IsFinite(disposeQuantity) || disposeQuantity <= 0)
+                        if (string.IsNullOrWhiteSpace(disposeItemId) || !double.IsFinite(disposeQuantity) || disposeQuantity <= 0
+                            || disposeQuantity != Math.Floor(disposeQuantity))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "物品或数量无效。", before);
                         var hasItemDefinition = gameData.Items.TryGetValue(new ItemId(disposeItemId), out var disposeDefinition);
                         if (!hasItemDefinition && !gameData.RawEquipments.ContainsKey(disposeItemId))

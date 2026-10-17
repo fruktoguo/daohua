@@ -599,6 +599,9 @@ if (processRole == ServerProcessRole.Api)
             return Results.BadRequest(Problem(400, "INVALID_REQUEST_ID", "请求 ID 无效。"));
         if (!Enum.TryParse<MarketSide>(request.Side, true, out var side))
             return Results.BadRequest(Problem(400, "INVALID_SIDE", "订单方向无效。"));
+        if (!double.IsFinite(request.Price) || request.Price <= 0 || request.Price != Math.Floor(request.Price)
+            || !double.IsFinite(request.Quantity) || request.Quantity <= 0 || request.Quantity != Math.Floor(request.Quantity))
+            return Results.BadRequest(Problem(400, "INVALID_ORDER", "订单价格与数量必须为正整数。"));
         var instrument = new MarketInstrument(new ItemId(request.AssetId), request.Variant ?? string.Empty);
         try
         {

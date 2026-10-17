@@ -90,4 +90,14 @@ public sealed class MarketTests
         restored.Restore([placed.IncomingOrder], version: placed.IncomingOrder.Sequence);
         Assert.Equal(placed.IncomingOrder.Sequence, restored.Version);
     }
+
+    [Fact]
+    public void PlaceRejectsDecimalQuantity()
+    {
+        var instrument = new MarketInstrument(new ItemId("item.ningxue-grass"));
+        var book = new OrderBook(instrument);
+        var error = Assert.Throws<DomainException>(() =>
+            book.Place(new PlaceOrderRequest(OrderId.New(), PlayerId.New(), instrument, MarketSide.Sell, 5, 1.5, DateTimeOffset.UtcNow, new IdempotencyKey("sell-decimal"))));
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
 }

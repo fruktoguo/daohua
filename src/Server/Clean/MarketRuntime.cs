@@ -372,7 +372,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                     fill.Instrument.Variant,
                     fill.Price,
                     fill.Quantity,
-                    fill.Price * fill.Quantity * 0.02d,
+                    Math.Ceiling(fill.Price * fill.Quantity * 0.02d),
                     fill.TradedAt)).ToArray();
                 var committed = await _store.CommitPlacementAsync(input, fills, _fenceToken, cancellationToken);
                 if (!committed.Applied)

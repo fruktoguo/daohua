@@ -227,14 +227,14 @@ public static class NodeBuildingRules
     public static double RequiredBuildSeconds(int targetLevel)
         => BaseBuildSeconds * (1 + TimeGrowthPerLevel * Math.Max(0, targetLevel - 1));
 
-    /// <summary>目标等级所需材料清单：基础数量 × 1.1^(N-1)。</summary>
+    /// <summary>目标等级所需材料清单：基础数量 × 1.1^(N-1)，向下取整且保底为 1。</summary>
     public static IReadOnlyDictionary<string, double> RequiredMaterials(BuildingDefinition definition, int targetLevel)
     {
         var scale = Math.Pow(1 + MaterialGrowthPerLevel, Math.Max(0, targetLevel - 1));
         var result = new Dictionary<string, double>(StringComparer.Ordinal);
         if (definition.Materials is null) return result;
         foreach (var material in definition.Materials)
-            result[material.ItemId] = material.Quantity * scale;
+            result[material.ItemId] = Math.Max(1.0, Math.Floor(material.Quantity * scale));
         return result;
     }
 

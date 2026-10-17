@@ -179,11 +179,12 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
         if (row.TargetLevel <= 0) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Idle, row);
         var required = NodeBuildingRules.RequiredMaterials(definition, row.TargetLevel);
         var appliedMaterials = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var (itemId, quantity) in requested.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        foreach (var (itemId, rawQuantity) in requested.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
+            var quantity = Math.Floor(rawQuantity);
             if (!required.TryGetValue(itemId, out var need) || !double.IsFinite(quantity) || quantity <= 0) continue;
-            var remaining = need - row.ContributedMaterials.GetValueOrDefault(itemId);
-            var accepted = Math.Min(remaining, quantity);
+            var remaining = Math.Max(0.0, need - row.ContributedMaterials.GetValueOrDefault(itemId));
+            var accepted = Math.Floor(Math.Min(remaining, quantity));
             if (accepted > 0) appliedMaterials[itemId] = accepted;
         }
         if (appliedMaterials.Count == 0)

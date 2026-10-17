@@ -670,8 +670,8 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
             <p className="contribute-hint">{t('combat.nearby.contributeHint')}</p>
             <ul className="building-materials contribute-list">
               {contributeEntries.map(entry => {
-                const remaining = entry.required - entry.contributed
-                const owned = inventoryAmounts.get(entry.itemId) ?? 0
+                const remaining = Math.max(0, Math.floor(entry.required - entry.contributed))
+                const owned = Math.floor(inventoryAmounts.get(entry.itemId) ?? 0)
                 const max = Math.min(remaining, owned)
                 const draft = contributeDraft[entry.itemId] ?? 0
                 return (
@@ -687,12 +687,14 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       max={max}
                       min={0}
                       onChange={event => {
-                        const parsed = Number(event.target.value)
+                        const raw = Number(event.target.value)
+                        const parsed = Number.isFinite(raw) ? Math.floor(raw) : 0
                         setContributeDraft(previous => ({
                           ...previous,
-                          [entry.itemId]: Number.isFinite(parsed) ? Math.max(0, Math.min(max, parsed)) : 0,
+                          [entry.itemId]: Math.max(0, Math.min(max, parsed)),
                         }))
                       }}
+                      step={1}
                       type="number"
                       value={draft}
                     />
