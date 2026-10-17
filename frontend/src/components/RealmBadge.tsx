@@ -27,6 +27,7 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
   const lv = Math.floor(realmInfo.totalLevel)
   return (
     <FloatingPopover
+      interactive={false}
       placement="bottom"
       content={
         <FloatingInfoCard

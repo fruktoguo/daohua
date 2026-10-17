@@ -577,7 +577,7 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
   )
 
   return (
-    <FloatingPopover asideCards={renderAsideCards} content={hoverContent} placement="top" size="medium">
+    <FloatingPopover asideCards={renderAsideCards} content={hoverContent} interactive={false} placement="top" size="medium">
       <div
         className={`codex-entry-wrapper codex-tile-anchor${
           isUnlocked ? '' : ' codex-entry-wrapper--locked'
@@ -760,7 +760,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
   )
 
   return (
-    <FloatingPopover asideCards={renderAsideCards} content={hoverContent} placement="top" size="medium">
+    <FloatingPopover asideCards={renderAsideCards} content={hoverContent} interactive={false} placement="top" size="medium">
       <div
         className={`codex-entry-wrapper codex-tile-anchor${
           isUnlocked ? '' : ' codex-entry-wrapper--locked'
@@ -866,7 +866,7 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
   )
 
   return (
-    <FloatingPopover content={hoverContent} placement="top" size="medium">
+    <FloatingPopover content={hoverContent} interactive={false} placement="top" size="medium">
       <div
         className={`codex-wide-card${
           isUnlocked ? '' : ' codex-wide-card--locked'
@@ -966,7 +966,7 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
   const grade = resolveItemGrade(ability.tier ?? 1)
 
   return (
-    <FloatingPopover content={hoverContent} placement="top" size="medium">
+    <FloatingPopover content={hoverContent} interactive={false} placement="top" size="medium">
       <div
         className={`codex-entry-wrapper codex-tile-anchor${
           isLearned ? '' : ' codex-entry-wrapper--locked'

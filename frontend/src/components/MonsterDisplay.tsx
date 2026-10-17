@@ -4,7 +4,7 @@ import { describeAbility, formatAbilityCategory, formatInteger } from '../game/f
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findCombatantInCatalog } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
-import type { CombatantDefinition, MonsterDropDefinition, NearbyMonsterDefinition } from '../game/types'
+import type { CombatantDefinition, CombatEncounterDefinition, MonsterDropDefinition, NearbyMonsterDefinition, WorldMapDefinition } from '../game/types'
 import { useT, type TFunction } from '../i18n'
 import { ConditionedTile } from './ConditionedTile'
 import { FloatingInfoCard, FloatingPopover, type FloatingPlacement, type FloatingTone } from './FloatingPopover'
@@ -106,6 +106,131 @@ const MonsterAbilityTile = memo(function MonsterAbilityTile({
   )
 })
 
+export interface ResolvedMonsterDetails {
+  enemyId: string
+  name: string
+  level: number
+  tier: number
+  rawRank?: string | null
+  category?: string | null
+  element?: string | null
+  experience: number
+  skills: readonly { abilityId?: string | null; level?: number }[]
+  drops: readonly MonsterDropDefinition[]
+  attributes: {
+    maxHitpoints: number
+    maxManapoints: number
+    physicalAttack: number
+    spellAttack: number
+    armor: number
+    magicResistance: number
+    attackIntervalMilliseconds?: number
+  }
+}
+
+/**
+ * 规整化数据源：支持直接传 CombatantDefinition、NearbyMonsterDefinition 或 enemyId 字符串
+ */
+export function resolveMonsterDetails(
+  monster: CombatantDefinition | NearbyMonsterDefinition | string,
+  encounters?: readonly CombatEncounterDefinition[],
+  maps?: readonly WorldMapDefinition[],
+): ResolvedMonsterDetails {
+  let enemyId = ''
+  let name = ''
+  let level = 1
+  let tier = 1
+  let rawRank: string | null = null
+  let category: string | null = null
+  let element: string | null = null
+  let experience = 0
+  let skills: readonly { abilityId?: string | null; level?: number }[] = []
+  let drops: readonly MonsterDropDefinition[] = []
+  let staticDef: CombatantDefinition | undefined
+
+  if (typeof monster === 'string') {
+    enemyId = monster
+    staticDef = encounters && maps ? findCombatantInCatalog(encounters, maps, enemyId) : undefined
+  } else if ('enemyId' in monster) {
+    enemyId = monster.enemyId
+    staticDef = monster
+  } else {
+    enemyId = monster.monsterId
+    name = monster.name
+    level = monster.level
+    tier = monster.tier
+    rawRank = monster.rank
+    drops = monster.drops ?? []
+    staticDef = encounters && maps ? findCombatantInCatalog(encounters, maps, enemyId) : undefined
+  }
+
+  if (staticDef) {
+    name = staticDef.name || name || enemyId
+    level = staticDef.level ?? level
+    tier = staticDef.tier ?? tier
+    rawRank = staticDef.rank ?? rawRank
+    category = staticDef.category
+    element = staticDef.element
+    experience = staticDef.experience ?? experience
+    skills = staticDef.skills ?? skills
+    drops = staticDef.drops && staticDef.drops.length > 0 ? staticDef.drops : drops
+    const attrs = staticDef.attributes
+    return {
+      enemyId,
+      name,
+      level,
+      tier,
+      rawRank,
+      category,
+      element,
+      experience,
+      skills,
+      drops,
+      attributes: {
+        maxHitpoints: attrs.maxHitpoints ?? 1,
+        maxManapoints: attrs.maxManapoints ?? 0,
+        physicalAttack: attrs.physicalAttack ?? 0,
+        spellAttack: attrs.spellAttack ?? 0,
+        armor: attrs.armor ?? 0,
+        magicResistance: attrs.magicResistance ?? 0,
+        attackIntervalMilliseconds: attrs.attackIntervalMilliseconds,
+      },
+    }
+  }
+
+  // 兜底退化：仅持有 NearbyMonsterDefinition 扁平数值时的保底
+  const nearby = typeof monster === 'object' && !('enemyId' in monster) ? monster : null
+  return {
+    enemyId,
+    name: name || enemyId,
+    level,
+    tier,
+    rawRank,
+    category,
+    element,
+    experience,
+    skills,
+    drops,
+    attributes: {
+      maxHitpoints: nearby?.maxHitpoints ?? 1,
+      maxManapoints: 0,
+      physicalAttack: nearby?.physicalAttack ?? 0,
+      spellAttack: 0,
+      armor: nearby?.armor ?? 0,
+      magicResistance: 0,
+    },
+  }
+}
+
+/**
+ * 判断怪物是否具备二级 Hover 元素（包含有效技能瓦片或掉落物图元胶囊）
+ */
+export function hasMonsterSecondaryHover(details: ResolvedMonsterDetails): boolean {
+  const hasSkills = details.skills.some(slot => Boolean(slot.abilityId))
+  const hasDrops = details.drops.length > 0
+  return hasSkills || hasDrops
+}
+
 export const MonsterInfoCard = memo(function MonsterInfoCard({
   monster,
   intervalHint,
@@ -118,113 +243,10 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
   const encounters = useGameStore(state => state.encounters)
   const maps = useGameStore(state => state.maps)
 
-  // 1. 规整化数据源：支持直接传 CombatantDefinition、NearbyMonsterDefinition 或 enemyId 字符串
-  const resolved = useMemo<{
-    enemyId: string
-    name: string
-    level: number
-    tier: number
-    rawRank?: string | null
-    category?: string | null
-    element?: string | null
-    experience: number
-    skills: readonly { abilityId?: string | null; level?: number }[]
-    drops: readonly MonsterDropDefinition[]
-    attributes: {
-      maxHitpoints: number
-      maxManapoints: number
-      physicalAttack: number
-      spellAttack: number
-      armor: number
-      magicResistance: number
-      attackIntervalMilliseconds?: number
-    }
-  }>(() => {
-    let enemyId = ''
-    let name = ''
-    let level = 1
-    let tier = 1
-    let rawRank: string | null = null
-    let category: string | null = null
-    let element: string | null = null
-    let experience = 0
-    let skills: readonly { abilityId?: string | null; level?: number }[] = []
-    let drops: readonly MonsterDropDefinition[] = []
-    let staticDef: CombatantDefinition | undefined
-
-    if (typeof monster === 'string') {
-      enemyId = monster
-      staticDef = findCombatantInCatalog(encounters, maps, enemyId)
-    } else if ('enemyId' in monster) {
-      enemyId = monster.enemyId
-      staticDef = monster
-    } else {
-      enemyId = monster.monsterId
-      name = monster.name
-      level = monster.level
-      tier = monster.tier
-      rawRank = monster.rank
-      drops = monster.drops ?? []
-      staticDef = findCombatantInCatalog(encounters, maps, enemyId)
-    }
-
-    if (staticDef) {
-      name = staticDef.name || name || enemyId
-      level = staticDef.level ?? level
-      tier = staticDef.tier ?? tier
-      rawRank = staticDef.rank ?? rawRank
-      category = staticDef.category
-      element = staticDef.element
-      experience = staticDef.experience ?? experience
-      skills = staticDef.skills ?? skills
-      drops = staticDef.drops && staticDef.drops.length > 0 ? staticDef.drops : drops
-      const attrs = staticDef.attributes
-      return {
-        enemyId,
-        name,
-        level,
-        tier,
-        rawRank,
-        category,
-        element,
-        experience,
-        skills,
-        drops,
-        attributes: {
-          maxHitpoints: attrs.maxHitpoints ?? 1,
-          maxManapoints: attrs.maxManapoints ?? 0,
-          physicalAttack: attrs.physicalAttack ?? 0,
-          spellAttack: attrs.spellAttack ?? 0,
-          armor: attrs.armor ?? 0,
-          magicResistance: attrs.magicResistance ?? 0,
-          attackIntervalMilliseconds: attrs.attackIntervalMilliseconds,
-        },
-      }
-    }
-
-    // 兜底退化：仅持有 NearbyMonsterDefinition 扁平数值时的保底
-    const nearby = typeof monster === 'object' && !('enemyId' in monster) ? monster : null
-    return {
-      enemyId,
-      name: name || enemyId,
-      level,
-      tier,
-      rawRank,
-      category,
-      element,
-      experience,
-      skills,
-      drops,
-      attributes: {
-        maxHitpoints: nearby?.maxHitpoints ?? 1,
-        maxManapoints: 0,
-        physicalAttack: nearby?.physicalAttack ?? 0,
-        spellAttack: 0,
-        armor: nearby?.armor ?? 0,
-        magicResistance: 0,
-      },
-    }
-  }, [monster, encounters, maps])
+  const resolved = useMemo(
+    () => resolveMonsterDetails(monster, encounters, maps),
+    [monster, encounters, maps]
+  )
 
   // 2. 生命层次徽记与色调
   const { rank, badgeTone } = resolveMonsterRank(resolved.rawRank, isElite, isBoss)
@@ -318,7 +340,7 @@ export interface MonsterTooltipTargetProps extends MonsterDisplayTargetProps {
   children: ReactNode
   /** 浮层弹出方向，默认 top */
   placement?: FloatingPlacement
-  /** 是否允许鼠标移入浮层（默认 true，方便二次 hover 内部功法与掉落物详情） */
+  /** 是否允许鼠标移入浮层（缺省按卡片是否具备技能/掉落物二级悬停项自动决定：有则可移入，无则移开即消） */
   interactive?: boolean
   /** 浮层卡片额外 CSS 类名 */
   className?: string
@@ -336,19 +358,28 @@ export interface MonsterTooltipTargetProps extends MonsterDisplayTargetProps {
 export const MonsterTooltipTarget = memo(function MonsterTooltipTarget({
   children,
   placement = 'top',
-  interactive = true,
+  interactive,
   className,
   triggerClassName,
   displayContents = false,
   ...cardProps
 }: MonsterTooltipTargetProps): React.JSX.Element {
+  const encounters = useGameStore(state => state.encounters)
+  const maps = useGameStore(state => state.maps)
+
+  const hasSecondary = useMemo(() => {
+    if (interactive !== undefined) return interactive
+    const details = resolveMonsterDetails(cardProps.monster, encounters, maps)
+    return hasMonsterSecondaryHover(details)
+  }, [interactive, cardProps.monster, encounters, maps])
+
   return (
     <FloatingPopover
       className={className}
-      closeDelay={180}
+      closeDelay={hasSecondary ? 180 : 80}
       content={<MonsterInfoCard {...cardProps} />}
       displayContents={displayContents}
-      interactive={interactive}
+      interactive={hasSecondary}
       placement={placement}
       trigger="hover"
       triggerClassName={triggerClassName}
