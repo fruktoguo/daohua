@@ -11,6 +11,7 @@ import { PillBonusLabel, type PillTone } from './PillLabel'
 import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
+import { StatGlyph, resolveStatGlyph } from './StatGlyph'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -961,9 +962,11 @@ export function describeEquipmentEffects(
       if (val !== 0) {
         const label = ratioLabelKeys[key] ? t(ratioLabelKeys[key]) : key
         const tone = STAT_TONE_MAP[key] ?? 'default'
+        const glyph = resolveStatGlyph(key)
         lines.push(
           <PillBonusLabel
             key={`ratio-${key}`}
+            icon={glyph ? <StatGlyph glyph={glyph} size={14.5} /> : undefined}
             label={label}
             tone={tone}
             value={signedPercent(val * enhanceScale)}
@@ -981,9 +984,11 @@ export function describeEquipmentEffects(
         const scaled = val * enhanceScale
         const effective = +(point.curve === 'nonlinear' ? scaled / (100 + Math.abs(scaled)) * 100 : scaled).toFixed(1)
         const isTemplate = point.label.startsWith('market.effect.')
+        const glyph = resolveStatGlyph(key)
         lines.push(
           <PillBonusLabel
             key={`point-${key}`}
+            icon={glyph ? <StatGlyph glyph={glyph} size={14.5} /> : undefined}
             label={isTemplate ? t(point.label, { n: effective }) : t(point.label)}
             tone={STAT_TONE_MAP[key] ?? STAT_TONE_MAP[key.replace(/Points$/, '')] ?? 'default'}
             value={isTemplate ? '' : `${effective >= 0 ? '+' : ''}${effective}%`}
@@ -993,9 +998,11 @@ export function describeEquipmentEffects(
       }
       const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
       const tone = STAT_TONE_MAP[key] ?? 'default'
+      const glyph = resolveStatGlyph(key)
       lines.push(
         <PillBonusLabel
           key={`flat-${key}`}
+          icon={glyph ? <StatGlyph glyph={glyph} size={14.5} /> : undefined}
           label={label}
           tone={tone}
           value={`+${formatInteger(val * enhanceScale)}`}
@@ -1013,6 +1020,7 @@ export function describeEquipmentEffects(
       lines.push(
         <PillBonusLabel
           key={`tool-speed-${technique}`}
+          icon={<StatGlyph glyph={technique} size={14.5} />}
           label={label}
           tone="emerald"
           value={`+${percent}%`}

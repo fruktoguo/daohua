@@ -1,3 +1,6 @@
+import React from 'react'
+import { StatGlyph, resolveStatGlyph } from './StatGlyph'
+
 /** 匹配包含修仙单位与符号的数值模式正则 */
 const NUMBER_PATTERN = /([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:万|亿|兆|%|秒|层|点)?)/g
 /** 整组胶囊标记：[[文本]] 内的内容渲染为一个完整胶囊（如「60%术法攻击」） */
@@ -32,11 +35,15 @@ function valueTone(text: string, token: string, index: number): string {
 export function ValueText({ className = '', text }: { className?: string; text: string }): React.JSX.Element {
   const segments: React.ReactNode[] = []
 
-  const capsule = (token: string, index: number, key: string) => (
-    <span className={`value-capsule value-capsule--${valueTone(text, token, index)} ${className}`.trim()} key={key}>
-      {token}
-    </span>
-  )
+  const capsule = (token: string, index: number, key: string) => {
+    const glyph = resolveStatGlyph(token)
+    return (
+      <span className={`value-capsule value-capsule--${valueTone(text, token, index)} ${className}`.trim()} key={key}>
+        {glyph && <StatGlyph glyph={glyph} size={12} className="value-capsule-glyph" />}
+        {token}
+      </span>
+    )
+  }
 
   const pushNumbers = (chunk: string, offset: number, keyPrefix: string) => {
     let inner = 0

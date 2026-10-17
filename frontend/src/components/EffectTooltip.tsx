@@ -12,6 +12,7 @@ import {
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
+import { StatGlyph, resolveStatGlyph } from './StatGlyph'
 import type { AbilityBonusStat } from '../game/format'
 /**
  * 功法/词条/效果悬浮气泡内容结构
@@ -108,17 +109,31 @@ export function EffectTooltipTarget({
             </div>
           }
           lines={[
-            ...content.lines.map((line) => (
-              <ValueText className="effect-value-capsule" key={line} text={line} />
-            )),
-            ...(content.bonuses?.map((bonus) => (
-              <PillBonusLabel
-                key={bonus.key}
-                label={bonus.label}
-                tone={bonus.tone as PillTone}
-                value={bonus.value}
-              />
-            )) ?? []),
+            ...content.lines.map((line) => {
+              let glyphName: string | null = null
+              if (line.includes('冷却')) glyphName = 'cooldown-reduction'
+              else if (line.includes('吟唱') || line.includes('施法')) glyphName = 'action-speed'
+              else if (line.includes('消耗') || line.includes('灵力')) glyphName = 'mp'
+              else if (line.includes('等级')) glyphName = 'realm'
+              return (
+                <span key={line} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {glyphName && <StatGlyph glyph={glyphName} size={14} />}
+                  <ValueText className="effect-value-capsule" text={line} />
+                </span>
+              )
+            }),
+            ...(content.bonuses?.map((bonus) => {
+              const glyph = resolveStatGlyph(bonus.key) || resolveStatGlyph(bonus.label)
+              return (
+                <PillBonusLabel
+                  key={bonus.key}
+                  icon={glyph ? <StatGlyph glyph={glyph} size={14.5} /> : undefined}
+                  label={bonus.label}
+                  tone={bonus.tone as PillTone}
+                  value={bonus.value}
+                />
+              )
+            }) ?? []),
           ]}
           title={content.title}
         />

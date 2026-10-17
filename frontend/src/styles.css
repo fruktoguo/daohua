@@ -1871,6 +1871,10 @@ input[type="checkbox"] {
   position: relative;
   top: -1px;
 }
+.value-capsule-glyph {
+  margin-right: 3px;
+  vertical-align: middle;
+}
 
 .value-capsule--damage,
 .value-capsule--negative {
