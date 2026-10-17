@@ -5,7 +5,7 @@
     "description": "丹光淡青，引气归真。\n通体泛着淡青色光泽的初阶灵丹，散发着淡淡的草木清香。",
     "kind": "consumable",
     "category": "consumable",
-    "sellPrice": 35,
+    "sellPrice": 30,
     "consumable": {
       "usableInActionTypes": [
         "exploration"
@@ -22,7 +22,7 @@
     "description": "草木凝朱粉，敷之血自宁。\n由草木研磨而成的暗红药粉，药性辛温，微带草木清气。",
     "kind": "consumable",
     "category": "consumable",
-    "sellPrice": 25,
+    "sellPrice": 82,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -54,7 +54,7 @@
     "description": "丸转清凉顺气脉。\n圆润微润的暗黄药丸，气味清凉醒脑。",
     "kind": "consumable",
     "category": "consumable",
-    "sellPrice": 25,
+    "sellPrice": 88,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -87,7 +87,7 @@
     "kind": "consumable",
     "category": "consumable",
     "tier": 2,
-    "sellPrice": 200,
+    "sellPrice": 40304,
     "consumable": {
       "usableInActionTypes": [
         "exploration"

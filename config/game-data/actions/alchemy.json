@@ -82,7 +82,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "alchemy",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.banling-essence": 2,
       "item.demon-core": 1

@@ -31,7 +31,7 @@
       },
       {
         "itemId": "item.broken-blade",
-        "dropChance": 0.1,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -121,7 +121,7 @@
       },
       {
         "itemId": "item.sha-bone",
-        "dropChance": 0.1,
+        "dropChance": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
       },

@@ -112,7 +112,7 @@
     "description": "在腐生古冢死气聚集处采摘吸纳死气伴生的伴灵异花。",
     "type": "exploration",
     "technique": "gathering",
-    "durationSeconds": 8,
+    "durationSeconds": 10,
     "availableNodeIds": [
       "node.carrion-tomb"
     ],

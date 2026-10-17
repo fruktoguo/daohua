@@ -499,7 +499,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 25,
+    "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1,
@@ -526,7 +526,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 25,
+    "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1,
@@ -553,7 +553,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
@@ -580,7 +580,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 25,
+    "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1,
@@ -607,7 +607,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
@@ -634,7 +634,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
@@ -661,7 +661,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 25,
+    "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1,
@@ -688,7 +688,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
@@ -715,7 +715,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
@@ -742,7 +742,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
@@ -769,7 +769,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1,
@@ -796,7 +796,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 25,
+    "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 7,
       "item.soul-talisman": 1,
@@ -823,7 +823,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 25,
+    "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 7,
       "item.soul-talisman": 1,
@@ -850,7 +850,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.soul-talisman": 1,
@@ -877,7 +877,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 25,
+    "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 7,
       "item.fire-feather": 1,
@@ -904,7 +904,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.fire-feather": 1,
@@ -931,7 +931,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.soul-talisman": 1,
@@ -958,7 +958,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.fire-feather": 1,
@@ -985,7 +985,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 20,
+    "durationSeconds": 13,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.soul-talisman": 1,

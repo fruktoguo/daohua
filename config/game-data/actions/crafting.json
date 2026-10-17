@@ -81,7 +81,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 15,
+    "durationSeconds": 13,
     "inputs": {
       "item.crimson-copper": 3
     },
@@ -106,7 +106,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
-    "durationSeconds": 15,
+    "durationSeconds": 13,
     "inputs": {
       "item.yinlingsong-wood": 3
     },
@@ -131,7 +131,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "alchemy",
-    "durationSeconds": 15,
+    "durationSeconds": 13,
     "inputs": {
       "item.banling-flower": 2,
       "item.morning-dew": 1

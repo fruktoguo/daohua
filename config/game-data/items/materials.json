@@ -68,7 +68,7 @@
     "description": "凶兽凝丹魄，煞纹隐血光。\n深山凶兽体内凝结而成的浑浊兽丹，表面隐现血色煞纹。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 50,
+    "sellPrice": 8000,
     "subCategory": "exoticMaterial"
   },
   {
@@ -77,7 +77,7 @@
     "description": "森白利齿浸血腥。\n凶兽口中浸透血气的森白尖齿，锋刃如匕，透着阵阵森冷凶煞。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 50,
+    "sellPrice": 2000,
     "subCategory": "exoticMaterial"
   },
   {
@@ -147,7 +147,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 60,
+    "sellPrice": 2000,
     "subCategory": "exoticMaterial"
   },
   {
@@ -157,7 +157,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 60,
+    "sellPrice": 2000,
     "subCategory": "exoticMaterial"
   },
   {
@@ -167,7 +167,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 150,
+    "sellPrice": 20000,
     "subCategory": "exoticMaterial"
   },
   {
@@ -177,7 +177,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 150,
+    "sellPrice": 10000,
     "subCategory": "exoticMaterial"
   },
   {
@@ -186,7 +186,7 @@
     "description": "凡火千锤炼，精铁去浊尘。\n经凡火千锤百炼去除凡浊的原铁精料，铁质匀密坚固。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 18,
+    "sellPrice": 30,
     "subCategory": "refinedMaterial"
   },
   {
@@ -195,7 +195,7 @@
     "description": "桃木凝晶琥珀光。\n自百年老桃木中淬炼凝结的琥珀状灵晶，木香淡雅，通体晶莹。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 18,
+    "sellPrice": 30,
     "subCategory": "refinedMaterial"
   },
   {
@@ -204,7 +204,7 @@
     "description": "百草凝露，生机内蕴。\n萃取百草朝露精粹而成的碧绿药露，香气清纯，生机内蕴。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 20,
+    "sellPrice": 36,
     "subCategory": "refinedMaterial"
   },
   {
@@ -214,7 +214,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 50,
+    "sellPrice": 90,
     "subCategory": "refinedMaterial"
   },
   {
@@ -224,7 +224,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 50,
+    "sellPrice": 90,
     "subCategory": "refinedMaterial"
   },
   {
@@ -234,7 +234,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 55,
+    "sellPrice": 76,
     "subCategory": "refinedMaterial"
   },
   {
@@ -244,7 +244,7 @@
     "kind": "consumable",
     "category": "consumable",
     "tier": 1,
-    "sellPrice": 65,
+    "sellPrice": 180,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -268,7 +268,7 @@
     "kind": "consumable",
     "category": "consumable",
     "tier": 1,
-    "sellPrice": 150,
+    "sellPrice": 504,
     "consumable": {
       "usableInActionTypes": [
         "combat"
