@@ -108,11 +108,20 @@
   box-shadow: none;
 }
 
-:root[data-theme="light"] :is(.log-tabs button.active, .market-tabs button.active, .market-category-chips button.active, .crafting-sub-tab-btn.active, .insight-sub-tab-btn.active, .combat-zone-tabs button.active, .presence-options button.active, .auth-tab-btn.active) {
+:root[data-theme="light"] :is(.log-tabs button.active, .market-tabs button.active, .market-category-chips button.active, .crafting-sub-tab-btn.active, .insight-sub-tab-btn.active, .market-toggle-btn.active, .combat-zone-tabs button.active, .presence-options button.active, .auth-tab-btn.active) {
   border-color: var(--seal);
   color: var(--seal);
   background: var(--seal-faint);
   box-shadow: none;
+}
+
+:root[data-theme="light"] .market-toggle-group {
+  background: rgba(var(--surface-rgb), 0.35);
+  border-color: var(--gold-dim);
+}
+
+:root[data-theme="light"] .market-toggle-btn:not(.active) {
+  color: var(--text-dim);
 }
 
 :root[data-theme="light"] .insight-tab-btn.active {

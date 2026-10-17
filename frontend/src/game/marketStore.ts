@@ -9,6 +9,15 @@ export type MarketPrimaryCategory = 'all' | 'material' | 'equipment' | 'consumab
 /** 坊市顶层 Tab */
 export type MarketTab = 'browse' | 'orders'
 
+/** 功法门类过滤：术法 (spell) | 内功 (internal) */
+export type ManualDisciplineFilter = 'spell' | 'internal'
+
+/** 功法伤害大类过滤：物理 (physical) | 法术 (spell) */
+export type ManualCategoryFilter = 'physical' | 'spell'
+
+/** 功法载体形式过滤：全本 (tome) | 残卷 (fragment) */
+export type ManualFormFilter = 'tome' | 'fragment'
+
 /**
  * 坊市交易标的元数据定义
  */
@@ -94,6 +103,15 @@ export interface MarketUiState {
   selectedItemId: string | null
   /** 坊市顶层当前激活的 Tab ('browse' | 'orders') */
   activeTab: MarketTab
+  /** 功法门类过滤（术法 'spell' | 内功 'internal'） */
+  manualDiscipline: ManualDisciplineFilter
+  /** 功法伤害大类过滤（物理 'physical' | 法术 'spell'） */
+  manualCategory: ManualCategoryFilter
+  /** 功法载体形式过滤（全本 'tome' | 残卷 'fragment'） */
+  manualForm: ManualFormFilter
+  /** 功法是否处于「全部」放行态（为 true 时三组 Toggle 置灰且展示全量功法） */
+  manualFilterAll: boolean
+
 
   /** 设置一级主分类并重置子分类与滚动位置 */
   setPrimaryTab: (tab: MarketPrimaryCategory) => void
@@ -107,6 +125,16 @@ export interface MarketUiState {
   setSelectedItemId: (id: string | null) => void
   /** 设置坊市顶层 Tab */
   setActiveTab: (tab: MarketTab) => void
+  /** 设置功法门类并重置滚动位置 */
+  setManualDiscipline: (discipline: ManualDisciplineFilter) => void
+  /** 设置功法伤害大类并重置滚动位置 */
+  setManualCategory: (category: ManualCategoryFilter) => void
+  /** 设置功法载体形式并重置滚动位置 */
+  setManualForm: (form: ManualFormFilter) => void
+  /** 设置功法「全部」开关状态并重置滚动位置 */
+  setManualFilterAll: (all: boolean) => void
+  /** 切换功法「全部」开关状态并重置滚动位置 */
+  toggleManualFilterAll: () => void
   /** 重置全部过滤项至默认状态 */
   resetFilters: () => void
 }
@@ -125,6 +153,11 @@ export const useMarketStore = create<MarketUiState>((set) => ({
   scrollTop: 0,
   selectedItemId: null,
   activeTab: 'browse',
+  manualDiscipline: 'spell',
+  manualCategory: 'physical',
+  manualForm: 'tome',
+  manualFilterAll: true,
+
 
   setPrimaryTab: (primaryTab) => set({ primaryTab, subCategory: 'all', scrollTop: 0 }),
   setSubCategory: (subCategory) => set({ subCategory, scrollTop: 0 }),
@@ -132,5 +165,19 @@ export const useMarketStore = create<MarketUiState>((set) => ({
   setScrollTop: (scrollTop) => set({ scrollTop }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setActiveTab: (activeTab) => set({ activeTab }),
-  resetFilters: () => set({ primaryTab: 'all', subCategory: 'all', query: '', scrollTop: 0 }),
+  setManualDiscipline: (manualDiscipline) => set({ manualDiscipline, scrollTop: 0 }),
+  setManualCategory: (manualCategory) => set({ manualCategory, scrollTop: 0 }),
+  setManualForm: (manualForm) => set({ manualForm, scrollTop: 0 }),
+  setManualFilterAll: (manualFilterAll) => set({ manualFilterAll, scrollTop: 0 }),
+  toggleManualFilterAll: () => set((state) => ({ manualFilterAll: !state.manualFilterAll, scrollTop: 0 })),
+  resetFilters: () => set({
+    primaryTab: 'all',
+    subCategory: 'all',
+    query: '',
+    scrollTop: 0,
+    manualDiscipline: 'spell',
+    manualCategory: 'physical',
+    manualForm: 'tome',
+    manualFilterAll: true,
+  }),
 }))

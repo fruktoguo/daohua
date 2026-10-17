@@ -4144,6 +4144,75 @@ input[type="checkbox"] {
   padding-bottom: 6px;
 }
 
+/* 坊市功法多维筛选栏与左右二选一双态切换组 (Market Manual Filters & Segmented Toggles) */
+.market-manual-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(201, 180, 109, 0.15);
+}
+
+.market-manual-all-btn {
+  flex-shrink: 0;
+}
+
+.market-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(201, 180, 109, 0.22);
+  border-radius: 4px;
+  padding: 2px;
+  transition: opacity 0.2s ease, filter 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.market-toggle-group.is-disabled {
+  opacity: 0.42;
+  filter: grayscale(0.6);
+  border-color: rgba(201, 180, 109, 0.12);
+}
+
+.market-toggle-group.is-disabled:hover {
+  opacity: 0.68;
+  filter: grayscale(0.3);
+  border-color: rgba(201, 180, 109, 0.25);
+}
+
+.market-toggle-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.market-toggle-btn:hover:not(.active) {
+  color: var(--text);
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.market-toggle-btn.active {
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.18);
+  font-weight: 600;
+  box-shadow: 0 0 6px rgba(201, 180, 109, 0.15);
+}
+
+.market-toggle-group.is-disabled .market-toggle-btn.active {
+  box-shadow: none;
+}
+
 .market-browse-grid {
   display: grid;
   flex: 1;

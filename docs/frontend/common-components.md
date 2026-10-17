@@ -65,9 +65,9 @@
 
 - **适用场景**：
   - 面板主分类下的二级切换栏（如内视根基下的「六维」与「基础」切换，采用紧凑暗墨胶囊按键与金色微光高亮）。
-  - **坊市多级分类子导航 (`MarketBrowseGrid`)**：在一级主 Tab（全部/材料/装备/消耗品/功法，与物品配表 `category` 主类型一一对应）下方，复用 `.insight-sub-tabs` 与 `.insight-sub-tab-btn` 展示对应二级子分类（材料细分矿石/药材/通用材料；装备细分武器/防具/饰品；消耗品细分丹药/补给耗材；功法细分秘籍全本/招式残卷），二级匹配统一走 `resolveItemSubCategory` 的配表 `subCategory` 键。
+  - **坊市多级分类子导航与功法多维切换 (`MarketBrowseGrid`)**：在一级主 Tab（全部/材料/装备/消耗品/功法）下方，材料/装备/消耗品复用 `.insight-sub-tabs` 与 `.insight-sub-tab-btn` 展示二级子分类；功法主分类下采用专用的多维筛选器（`.market-manual-filters`），包含最左侧「全部」开关与三组左右二选一切换 Toggle（`.market-toggle-group` / `MarketSegmentedToggle`：术法/内功、物理/法术、全本/残卷）。当「全部」勾选激活时三组 Toggle 整体置灰但不改变已有勾选状态，取消勾选时三组 Toggle 恢复可用并执行 AND 复合精准过滤；在置灰态点击任意 Toggle 选项可自动解除「全部」激活状态并无缝应用该项筛选。
   - **万象图鉴多级分类导航 (`CodexPage`)**：在一级主分类（材料/技艺/建造/功法/妖兽）中材料居首；材料分类下复用 `.codex-sub-tabs` 与 `.codex-sub-tab-btn` 展示二级子分类（药材/矿石/异材），技艺分类下展示（炼丹/炼器/阵法/符箓），子类划分统一走 `isMaterialSubTabItem` 纯函数。
-- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`, `.codex-sub-tabs`, `.codex-sub-tab-btn`
+- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`, `.market-manual-filters`, `.market-toggle-group`, `.market-toggle-btn`, `.codex-sub-tabs`, `.codex-sub-tab-btn`
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-sub-tabs`)
 
 ---
