@@ -318,6 +318,28 @@ export function findAbilityInCatalog<T extends { abilityId: string }>(abilities:
 }
 
 /**
+ * 资源标识 → 展示名字统一口径（物品 / 装备 / 静态词条三级回退）。
+ *
+ * 行动消耗与产出、图鉴配方、掉落明细等场合的标识既可能是 `item.*` 也可能是
+ * `equipment.*`（如锻造升级链把成品装备作为输入）。只查物品目录会让装备条目
+ * 直接落到原始标识上，界面因此显示 `equipment.xxx`。统一走本函数后：
+ * 物品目录命中 → 装备目录命中 → 静态元数据词条 → 原标识兜底。
+ */
+export function resolveAssetLabel(
+  id: string,
+  items: readonly { itemId: string; name?: string | null }[] = [],
+  equipment: readonly { equipmentId: string; name?: string | null }[] = [],
+): string {
+  const item = findItemInCatalog(items, id)
+  if (item?.name) return item.name
+  const eq = findEquipmentInCatalog(equipment, id)
+  if (eq?.name) return eq.name
+  const meta = resolveItemMetadata(id)
+  if (meta?.label && !meta.label.startsWith('game.') && meta.label !== id) return meta.label
+  return id
+}
+
+/**
  * 储物袋展示分组键：重要（货币与特殊物品）、消耗品、装备法宝、功法、材料
  */
 export type InventoryGroupKey = 'important' | 'consumable' | 'equipment' | 'manual' | 'material'
@@ -1056,8 +1078,10 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
   }
 
   if (itemId.startsWith('equipment.')) {
+    // 元数据表未登记的装备：优先取静态兜底装备定义的中文名，避免直接回显 equipment.* 标识。
+    const fallbackName = EQUIPMENT_MAP[itemId]?.name
     return {
-      label: itemId,
+      label: fallbackName || itemId,
       glyph: '⚔️',
       tone: 'gray',
       category: resolveItemCategoryLabel('equipment', t),

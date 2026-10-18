@@ -261,7 +261,7 @@ export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   },
 ]
 
-/** 默认初始已解锁形象（仅限女剑修与男剑修） */
+/** 默认初始已解锁形象（仅限默认剑修两款：青萍 / 霜刃） */
 export const DEFAULT_UNLOCKED_AVATARS: readonly PlayerAvatarId[] = ['default', 'male']
 
 /** 玩家道貌形象选择状态 */
