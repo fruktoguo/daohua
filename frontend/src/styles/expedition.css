@@ -2504,19 +2504,26 @@
 }
 
 .arena-float-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 10px;
   font-weight: 800;
   font-style: normal;
-  padding: 0 4px;
-  margin-right: 3px;
-  border-radius: 2px;
+  padding: 1.5px 3.5px;
+  margin-right: 4px;
+  border-radius: 3px;
   vertical-align: 2px;
-  line-height: 1.15;
+  line-height: 1;
   text-shadow: none;
   -webkit-text-stroke: 0;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.arena-float-badge .stat-glyph {
+  vertical-align: 0 !important;
 }
 
 .arena-float-badge--break {
