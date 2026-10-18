@@ -424,13 +424,15 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />
     )
   }
-  if (definition.isContinuous && definition.durationSeconds && definition.durationSeconds > 0) {
+  // 持续时长（如丹药、消耗品）：规范展示在物品自身主卡片中
+  if (definition.durationSeconds && definition.durationSeconds > 0) {
     lines.push(
       <PillBonusLabel
         key="item-duration"
-        label={t('market.effect.recoveryDuration')}
-        tone="teal"
-        value={`${formatNumber(definition.durationSeconds)}s`}
+        icon={<StatGlyph glyph="cooldown-reduction" size={14.5} />}
+        label={t('market.aside.badgeDuration')}
+        tone="slate"
+        value={`${formatNumber(definition.durationSeconds)}秒`}
       />
     )
   }
@@ -975,14 +977,6 @@ export function resolveItemAsideCards(
         value: `+${Math.round((definition.cultivationMultiplier - 1) * 100)}%`,
       },
     ]
-    if (definition.durationSeconds && definition.durationSeconds > 0) {
-      items.push({
-        glyph: 'cooldown-reduction',
-        label: t('market.aside.badgeDuration'),
-        tone: 'slate',
-        value: `${formatNumber(definition.durationSeconds)}秒`,
-      })
-    }
     cards.push(
       createBonusAsideCard({
         id: `aside-cultivation-${definition.itemId}`,
@@ -1004,14 +998,6 @@ export function resolveItemAsideCards(
         value: `+${Math.round((definition.gatheringMultiplier - 1) * 100)}%`,
       },
     ]
-    if (definition.durationSeconds && definition.durationSeconds > 0) {
-      items.push({
-        glyph: 'cooldown-reduction',
-        label: t('market.aside.badgeDuration'),
-        tone: 'slate',
-        value: `${formatNumber(definition.durationSeconds)}秒`,
-      })
-    }
     cards.push(
       createBonusAsideCard({
         id: `aside-gathering-${definition.itemId}`,
@@ -1033,14 +1019,6 @@ export function resolveItemAsideCards(
         value: `+${Math.round((definition.alchemyMultiplier - 1) * 100)}%`,
       },
     ]
-    if (definition.durationSeconds && definition.durationSeconds > 0) {
-      items.push({
-        glyph: 'cooldown-reduction',
-        label: t('market.aside.badgeDuration'),
-        tone: 'slate',
-        value: `${formatNumber(definition.durationSeconds)}秒`,
-      })
-    }
     cards.push(
       createBonusAsideCard({
         id: `aside-alchemy-${definition.itemId}`,
@@ -1055,14 +1033,6 @@ export function resolveItemAsideCards(
   // 4. 战斗丹药附带的 Buff 效果 (如止血散、顺气丸)
   for (const buff of definition.buffEffects ?? []) {
     const items = extractBuffBonusItems(buff)
-    if (buff.durationSeconds > 0) {
-      items.push({
-        glyph: 'cooldown-reduction',
-        label: t('market.aside.badgeDuration'),
-        tone: 'slate',
-        value: `${formatNumber(buff.durationSeconds)}秒`,
-      })
-    }
     cards.push(
       createBonusAsideCard({
         id: `aside-buff-${buff.name}`,
