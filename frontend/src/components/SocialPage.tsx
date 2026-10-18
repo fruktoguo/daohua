@@ -554,6 +554,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const t = useT()
   const party = useSocialStore(state => state.party)
   const myPlayerId = useGameStore(state => state.playerId)
+  const nodeDuelCombatTeamCount = useGameStore(state => state.nodeDuelCombatTeamCount)
   const friends = useSocialStore(state => state.friends)
   const readyParty = useSocialStore(state => state.readyParty)
   const unreadyParty = useSocialStore(state => state.unreadyParty)
@@ -566,7 +567,6 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const [kickTarget, setKickTarget] = useState<{ playerId: string; name: string } | null>(null)
   if (!party) return null
 
-  const nodeDuelCombatTeamCount = useGameStore(state => state.nodeDuelCombatTeamCount)
   const isLeader = party.leaderId === myPlayerId
   const memberIds = new Set(party.members.map(member => member.playerId))
   const invitableFriends = friends.filter(friend => !memberIds.has(friend.playerId))

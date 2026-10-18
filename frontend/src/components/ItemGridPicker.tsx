@@ -305,6 +305,12 @@ export function ItemUseSlot({
   onCondition?: () => void
 }): React.JSX.Element {
   const t = useT()
+  const [side, setSide] = useState<'top' | 'bottom'>('top')
+  const handlePlacementChange = useCallback((placement: FloatingPlacement) => {
+    const next = placement.startsWith('top') ? 'bottom' : 'top'
+    setSide(prev => (prev === next ? prev : next))
+  }, [])
+
   if (!item) {
     return (
       <button aria-label={t('common.selectItem')} className="item-use-slot item-use-slot--empty" onClick={onClick} type="button">
@@ -319,11 +325,6 @@ export function ItemUseSlot({
     ? totalDurationSeconds
     : (item.definition?.durationSeconds ?? 0)
   const isContinuousActive = remainingDurationSeconds > 0
-  const [side, setSide] = useState<'top' | 'bottom'>('top')
-  const handlePlacementChange = useCallback((placement: FloatingPlacement) => {
-    const next = placement.startsWith('top') ? 'bottom' : 'top'
-    setSide(prev => (prev === next ? prev : next))
-  }, [])
 
   return (
     <ItemTooltipTarget

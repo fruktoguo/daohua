@@ -28,6 +28,20 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   // 触发条件按功法 ID 编辑（跟随功法而非槽位），编辑器打开的是功法维度的条件配置。
   const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
 
+  const learnedAbilityIds = useMemo(() => new Set(combat?.learnedAbilityIds ?? []), [combat?.learnedAbilityIds])
+  // 获得已学功法定义列表，并按 discipline 分为内功心法与神通术法两组（缺省按术法归组）
+  const learnedAbilities = useMemo(() => {
+    return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
+  }, [abilities, learnedAbilityIds])
+  const learnedInternal = useMemo(
+    () => learnedAbilities.filter(ability => ability.discipline === 'internal'),
+    [learnedAbilities],
+  )
+  const learnedSpells = useMemo(
+    () => learnedAbilities.filter(ability => ability.discipline !== 'internal'),
+    [learnedAbilities],
+  )
+
   if (!combat) return <div className="abilities-panel-empty">{t('common.emptyData')}</div>
 
   // 装配变更统一经 sendLoadoutReplace 发送：内部完成槽位类别互斥与等级归一化。
@@ -46,23 +60,8 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     })
   }
 
-  const learnedAbilityIds = useMemo(() => new Set(combat.learnedAbilityIds ?? []), [combat.learnedAbilityIds])
   // 已习得技能的参悟等级由技能经验经立方曲线导出，与服务端 AbilityExpCurve 同式。
   const abilityLevelFor = (abilityId: string) => learnedAbilityLevel(combat.abilityExperiences, abilityId)
-
-  // 获得已学功法定义列表，并按 discipline 分为内功心法与神通术法两组（缺省按术法归组）
-  const learnedAbilities = useMemo(() => {
-    return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
-  }, [abilities, learnedAbilityIds])
-  const learnedInternal = useMemo(
-    () => learnedAbilities.filter(ability => ability.discipline === 'internal'),
-    [learnedAbilities],
-  )
-  const learnedSpells = useMemo(
-    () => learnedAbilities.filter(ability => ability.discipline !== 'internal'),
-    [learnedAbilities],
-  )
-
   // 检查某个功法当前装备在哪个槽位
   const getEquippedSlotIndex = (abilityId: string): number | null => {
     const idx = combat.abilitySlots.findIndex(slot => slot.abilityId === abilityId)

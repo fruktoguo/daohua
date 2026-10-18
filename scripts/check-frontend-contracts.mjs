@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from '../frontend/node_modules/vite/dist/node/index.js'
 
@@ -197,8 +200,108 @@ try {
   }
   const hpSummary = describeCombatTrigger(hpTrigger)
   assert.equal(hpSummary, '当 自身 的 生命百分比 小于等于 50% 时', '生命百分比条件必须以自然语言呈现')
+  // 静态代码门禁：扫描 frontend/src 下全部 TSX/TS 组件与自定义 Hook，
+  // 严禁在条件返回（early return）之后调用 Hook，严格遵循 React Rules of Hooks。
+  const require = createRequire(import.meta.url)
+  const tsPath = fileURLToPath(new URL('../frontend/node_modules/typescript/lib/typescript.js', import.meta.url))
+  const ts = require(tsPath)
 
-  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、版本感知防环与触发条件自然语言格式化通过。')
+  function findTsxFiles(dir) {
+    const results = []
+    for (const file of readdirSync(dir)) {
+      const full = path.join(dir, file)
+      const stat = statSync(full)
+      if (stat.isDirectory()) {
+        results.push(...findTsxFiles(full))
+      } else if (file.endsWith('.tsx') || file.endsWith('.ts')) {
+        results.push(full)
+      }
+    }
+    return results
+  }
+
+  const frontendSrcDir = fileURLToPath(new URL('../frontend/src', import.meta.url))
+  const hookViolations = []
+  for (const file of findTsxFiles(frontendSrcDir)) {
+    const content = readFileSync(file, 'utf8')
+    const sf = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
+
+    function inspectNode(node) {
+      if (
+        ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isArrowFunction(node)
+      ) {
+        if (node.body && ts.isBlock(node.body)) {
+          let returnSeen = false
+          let returnLine = 0
+          for (const stmt of node.body.statements) {
+            let hasHook = false
+            let hookName = ''
+            let hookLine = 0
+
+            function findHook(n) {
+              if (
+                n !== stmt &&
+                (ts.isFunctionDeclaration(n) ||
+                  ts.isFunctionExpression(n) ||
+                  ts.isArrowFunction(n))
+              ) {
+                return
+              }
+              if (ts.isCallExpression(n)) {
+                let name = ''
+                if (ts.isIdentifier(n.expression)) {
+                  name = n.expression.text
+                } else if (ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.name)) {
+                  name = n.expression.name.text
+                }
+                if (/^use[A-Z]/.test(name)) {
+                  hasHook = true
+                  hookName = name
+                  hookLine = sf.getLineAndCharacterOfPosition(n.getStart()).line + 1
+                }
+              }
+              ts.forEachChild(n, findHook)
+            }
+            findHook(stmt)
+
+            if (returnSeen && hasHook) {
+              hookViolations.push(`${path.relative(frontendSrcDir, file)}:${hookLine} 调用 Hook '${hookName}' 发生在第 ${returnLine} 行条件返回之后，违反 React Rules of Hooks`)
+            }
+
+            function findReturn(n) {
+              if (
+                n !== stmt &&
+                (ts.isFunctionDeclaration(n) ||
+                  ts.isFunctionExpression(n) ||
+                  ts.isArrowFunction(n))
+              ) {
+                return
+              }
+              if (ts.isReturnStatement(n)) {
+                returnSeen = true
+                returnLine = sf.getLineAndCharacterOfPosition(n.getStart()).line + 1
+              }
+              ts.forEachChild(n, findReturn)
+            }
+            findReturn(stmt)
+          }
+        }
+      }
+      ts.forEachChild(node, inspectNode)
+    }
+
+    inspectNode(sf)
+  }
+
+  assert.equal(
+    hookViolations.length,
+    0,
+    `发现 React Rules of Hooks 违规（条件返回后调用 Hook）：\n${hookViolations.join('\n')}`
+  )
+
+  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、版本感知防环、触发条件自然语言格式化与 React Hooks 规则门禁通过。')
 } finally {
   await server.close()
 }
