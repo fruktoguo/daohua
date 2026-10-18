@@ -37,6 +37,11 @@ export type FloatingPlacement =
   | 'auto'
 
 /**
+ * 悬浮间距配置：支持单一数值，或针对上下左右各方向的独立间隙
+ */
+export type FloatingGap = number | { top?: number; bottom?: number; left?: number; right?: number }
+
+/**
  * 气泡与菜单的修仙视觉色调
  */
 export type FloatingTone = 'gold' | 'jade' | 'qi' | 'danger' | 'purple' | 'muted' | 'emerald' | 'cyan' | 'crimson' | 'slate' | 'amber'
@@ -217,6 +222,98 @@ export function createDescriptionAsideCard(options: DescriptionAsideCardOptions)
 }
 
 /**
+ * 估算附属副卡片在当前修仙视觉规约下的排版高度与列偏好
+ */
+function estimateAsideCardMetrics(card: FloatingAsideCard): { height: number; preferLeft: boolean } {
+  // 1. 数量单行副卡片：标的本体直接数量属性，高度极低（约 38px），天然偏好吸附主卡下方
+  if (card.isSingleRow || card.id === 'quantity-aside-card') {
+    return { height: 38, preferLeft: true }
+  }
+
+  // 2. 坊市市场行情：标的交易属性，高度相对紧凑且结构规整（约 150-170px），天然契合左列主卡片下方
+  if (card.id?.startsWith('aside-market-')) {
+    return { height: 160, preferLeft: true }
+  }
+
+  // 3. 功法战技参悟 / 雷达图等重型技能面板：高度通常在 300-360px，强烈偏好右列
+  if (card.id?.startsWith('aside-manual-') || card.content) {
+    return { height: 340, preferLeft: false }
+  }
+
+  // 4. 升级进度卡（含进度条）
+  if (card.id?.includes('progress')) {
+    return { height: 110, preferLeft: false }
+  }
+
+  // 5. 描述说明卡（如六维资质倾向说明）
+  if (card.id?.includes('description')) {
+    return { height: 120, preferLeft: false }
+  }
+
+  // 6. 普通加成/词缀副卡片按 lines 行数估算：head (约 34px) + lines * 24px + padding (16px)
+  const linesCount = card.lines?.length ?? 0
+  const estimated = 50 + linesCount * 24
+  return { height: estimated, preferLeft: false }
+}
+
+/**
+ * 附属卡片双列高度均衡与多模块堆叠分发算法
+ *
+ * 当副卡片 >= 2 张时，将副卡片均衡分配到左列（主卡下方）与右列，
+ * 避免右侧单列无节制下垂（突破屏幕底部安全边界），充分利用主卡片下方的闲置空间。
+ */
+export function balanceAsideColumns(
+  asideCards: readonly FloatingAsideCard[],
+  size: FloatingSize = 'medium',
+  maxColumnHeight = 650
+): { leftAsides: FloatingAsideCard[]; rightAsides: FloatingAsideCard[] } {
+  if (asideCards.length <= 1) {
+    return { leftAsides: [], rightAsides: [...asideCards] }
+  }
+
+  const baseMainHeight =
+    size === 'small' ? 220 : size === 'large' ? 380 : size === 'auto' ? 240 : 300
+
+  const leftAsides: FloatingAsideCard[] = []
+  const rightAsides: FloatingAsideCard[] = []
+
+  let leftH = baseMainHeight
+  let rightH = 0
+
+  for (const card of asideCards) {
+    const { height, preferLeft } = estimateAsideCardMetrics(card)
+
+    // 若具备明确偏好左列（如数量、坊市价格），且加入后左列未超过安全高度上限，或当前左列比右列低
+    if (preferLeft) {
+      if (leftH + height <= maxColumnHeight || leftH < rightH) {
+        leftAsides.push(card)
+        leftH += height + 8
+        continue
+      }
+    }
+
+    // 常规卡片：若左列比右列矮，且放入左列不会突破安全高度，贪心放入左列填补空隙
+    if (leftH + height <= maxColumnHeight && leftH < rightH) {
+      leftAsides.push(card)
+      leftH += height + 8
+    } else {
+      rightAsides.push(card)
+      rightH += height + 8
+    }
+  }
+
+  // 兜底保护：若所有副卡都被塞入了左列导致右列为空，但副卡有 >= 2 张，将最后一张移至右列保持双列对称感
+  if (rightAsides.length === 0 && leftAsides.length >= 2) {
+    const moved = leftAsides.pop()
+    if (moved) {
+      rightAsides.push(moved)
+    }
+  }
+
+  return { leftAsides, rightAsides }
+}
+
+/**
  * 检查当前是否偏好触屏/点击交互（移动端或无 hover 能力的设备）
  */
 function isTouchPointerDevice(): boolean {
@@ -244,11 +341,14 @@ function computeSafeFloatingPosition(
   floatingSize: { width: number; height: number },
   placement: FloatingPlacement = 'bottom',
   options: {
-    gap?: number
+    gap?: FloatingGap
     padding?: number
   } = {}
 ): PositionResult {
   const { gap = 8, padding = 10 } = options
+  const gapObj = typeof gap === 'number'
+    ? { top: gap, bottom: gap, left: gap, right: gap }
+    : { top: 8, bottom: 8, left: 8, right: 8, ...gap }
 
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1920
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 1080
@@ -263,7 +363,7 @@ function computeSafeFloatingPosition(
   if (placement === 'auto') {
     const spaceBelow = viewportHeight - anchorRect.bottom
     const spaceAbove = anchorRect.top
-    primary = spaceBelow >= floatingH + gap || spaceBelow >= spaceAbove ? 'bottom' : 'top'
+    primary = spaceBelow >= floatingH + gapObj.bottom || spaceBelow >= spaceAbove ? 'bottom' : 'top'
   } else {
     const parts = placement.split('-')
     primary = parts[0] as 'top' | 'bottom' | 'left' | 'right'
@@ -276,13 +376,13 @@ function computeSafeFloatingPosition(
   if (primary === 'bottom') {
     const spaceBelow = viewportHeight - anchorRect.bottom
     const spaceAbove = anchorRect.top
-    if (spaceBelow < floatingH + gap && spaceAbove > spaceBelow) {
+    if (spaceBelow < floatingH + gapObj.bottom && spaceAbove > spaceBelow) {
       primary = 'top'
     }
   } else if (primary === 'top') {
     const spaceAbove = anchorRect.top
     const spaceBelow = viewportHeight - anchorRect.bottom
-    if (spaceAbove < floatingH + gap && spaceBelow > spaceAbove) {
+    if (spaceAbove < floatingH + gapObj.top && spaceBelow > spaceAbove) {
       primary = 'bottom'
     }
   }
@@ -291,13 +391,13 @@ function computeSafeFloatingPosition(
   if (primary === 'right') {
     const spaceRight = viewportWidth - anchorRect.right
     const spaceLeft = anchorRect.left
-    if (spaceRight < floatingW + gap && spaceLeft > spaceRight) {
+    if (spaceRight < floatingW + gapObj.right && spaceLeft > spaceRight) {
       primary = 'left'
     }
   } else if (primary === 'left') {
     const spaceLeft = anchorRect.left
     const spaceRight = viewportWidth - anchorRect.right
-    if (spaceLeft < floatingW + gap && spaceRight > spaceLeft) {
+    if (spaceLeft < floatingW + gapObj.left && spaceRight > spaceLeft) {
       primary = 'right'
     }
   }
@@ -307,7 +407,8 @@ function computeSafeFloatingPosition(
 
   // 4. 根据决定的主方向和对齐方式计算初始坐标
   if (primary === 'top' || primary === 'bottom') {
-    rawTop = primary === 'top' ? anchorRect.top - floatingH - gap : anchorRect.bottom + gap
+    const currentGap = primary === 'top' ? gapObj.top : gapObj.bottom
+    rawTop = primary === 'top' ? anchorRect.top - floatingH - currentGap : anchorRect.bottom + currentGap
 
     if (align === 'start') {
       rawLeft = anchorRect.left
@@ -317,7 +418,8 @@ function computeSafeFloatingPosition(
       rawLeft = anchorRect.left + (anchorRect.width - floatingW) / 2
     }
   } else {
-    rawLeft = primary === 'left' ? anchorRect.left - floatingW - gap : anchorRect.right + gap
+    const currentGap = primary === 'left' ? gapObj.left : gapObj.right
+    rawLeft = primary === 'left' ? anchorRect.left - floatingW - currentGap : anchorRect.right + currentGap
 
     if (align === 'start') {
       rawTop = anchorRect.top
@@ -392,8 +494,8 @@ export interface FloatingPopoverProps {
   size?: FloatingSize
   /** 自定义精确宽度 (支持 number 如 320，或 string 如 '340px') */
   width?: number | string
-  /** 悬浮窗与触发器间隙，默认 8px */
-  gap?: number
+  /** 悬浮窗与触发器间隙，支持单一数值或按方位配置 { top, bottom, left, right }，默认 8px */
+  gap?: FloatingGap
   /** 视口内安全边距，默认 10px */
   padding?: number
   /** hover 展开延时 (ms)，默认 80ms */
@@ -875,6 +977,9 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       }
       const hasAside = mergedAsideCards.length > 0
 
+      // 双列高度均衡分发计算：当附属卡片 >= 2 时自动将适合的副卡均衡分发至左列主卡下方
+      const { leftAsides, rightAsides } = balanceAsideColumns(mergedAsideCards, size)
+
       const renderedContentNode =
         typeof content === 'function' ? content({ close: () => setOpen(false) }) : content
 
@@ -882,6 +987,54 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       if (width !== undefined) {
         customCardStyle.width = typeof width === 'number' ? `${width}px` : width
       }
+
+      const renderAsideCardNode = (aside: FloatingAsideCard, key: string, inMainColumn = false) => (
+        <div
+          className={`daohua-floating-card daohua-floating-aside-card daohua-floating-aside-card--${
+            aside.tone ?? 'gold'
+          }${inMainColumn ? ' daohua-floating-aside-card--in-main' : ''}`}
+          data-aside-id={aside.id}
+          key={key}
+        >
+          <span className="daohua-floating-corner daohua-floating-corner--tl" />
+          <span className="daohua-floating-corner daohua-floating-corner--tr" />
+          <span className="daohua-floating-corner daohua-floating-corner--bl" />
+          <span className="daohua-floating-corner daohua-floating-corner--br" />
+
+          {aside.isSingleRow ? (
+            <div className="daohua-floating-aside-single-row">
+              <strong className="daohua-floating-aside-title">{aside.title}</strong>
+              <span className="daohua-floating-aside-val">
+                {aside.lines?.[0] ?? aside.subtitle ?? ''}
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="daohua-floating-aside-head">
+                {aside.mark && (
+                  <span className="daohua-floating-aside-mark">{aside.mark}</span>
+                )}
+                <strong className="daohua-floating-aside-title">{aside.title}</strong>
+                {aside.subtitle && (
+                  <span className="daohua-floating-aside-sub">{aside.subtitle}</span>
+                )}
+              </div>
+
+              {aside.lines && aside.lines.length > 0 && (
+                <ul className="daohua-floating-aside-lines">
+                  {aside.lines.map((line, lineIdx) => (
+                    <li key={lineIdx}>{line}</li>
+                  ))}
+                </ul>
+              )}
+
+              {aside.content && (
+                <div className="daohua-floating-aside-custom">{aside.content}</div>
+              )}
+            </>
+          )}
+        </div>
+      )
 
       floatingElement = createPortal(
         <FloatingContext.Provider value={{ close: () => setOpen(false) }}>
@@ -903,75 +1056,41 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
               ...style,
             }}
           >
-            {/* 主气泡面板 */}
+            {/* 主列：承载主气泡面板，并在副卡较多时吸附承载左列副卡片 */}
             <div
-              className={`daohua-floating-card daohua-floating-card--main daohua-floating-card--${size} ${className}`.trim()}
-              role="tooltip"
-              style={customCardStyle}
+              className={`daohua-floating-column daohua-floating-column--main${
+                hasAside ? ' daohua-floating-column--with-aside' : ''
+              }`}
             >
-              {/* 四角修仙古典折角装饰 */}
-              <span className="daohua-floating-corner daohua-floating-corner--tl" />
-              <span className="daohua-floating-corner daohua-floating-corner--tr" />
-              <span className="daohua-floating-corner daohua-floating-corner--bl" />
-              <span className="daohua-floating-corner daohua-floating-corner--br" />
+              <div
+                className={`daohua-floating-card daohua-floating-card--main daohua-floating-card--${size} ${className}`.trim()}
+                role="tooltip"
+                style={customCardStyle}
+              >
+                {/* 四角修仙古典折角装饰 */}
+                <span className="daohua-floating-corner daohua-floating-corner--tl" />
+                <span className="daohua-floating-corner daohua-floating-corner--tr" />
+                <span className="daohua-floating-corner daohua-floating-corner--bl" />
+                <span className="daohua-floating-corner daohua-floating-corner--br" />
 
-              {/* 顶部金华流光线 */}
-              <div className="daohua-floating-shimmer-bar" />
+                {/* 顶部金华流光线 */}
+                <div className="daohua-floating-shimmer-bar" />
 
-              {/* 卡片主体内容 */}
-              <div className="daohua-floating-body">{renderedContentNode}</div>
+                {/* 卡片主体内容 */}
+                <div className="daohua-floating-body">{renderedContentNode}</div>
+              </div>
+
+              {leftAsides.map((aside, idx) =>
+                renderAsideCardNode(aside, aside.id ?? `left-aside-${idx}`, true)
+              )}
             </div>
 
-            {/* 附属卡片气泡群（支持多气泡联动组合） */}
-            {hasAside && (
-              <div className="daohua-floating-aside-group">
-                {mergedAsideCards.map((aside, idx) => (
-                  <div
-                    className={`daohua-floating-card daohua-floating-aside-card daohua-floating-aside-card--${
-                      aside.tone ?? 'gold'
-                    }`}
-                    data-aside-id={aside.id}
-                    key={aside.id ?? `${aside.title}-${idx}`}
-                  >
-                    <span className="daohua-floating-corner daohua-floating-corner--tl" />
-                    <span className="daohua-floating-corner daohua-floating-corner--tr" />
-                    <span className="daohua-floating-corner daohua-floating-corner--bl" />
-                    <span className="daohua-floating-corner daohua-floating-corner--br" />
-
-                    {aside.isSingleRow ? (
-                      <div className="daohua-floating-aside-single-row">
-                        <strong className="daohua-floating-aside-title">{aside.title}</strong>
-                        <span className="daohua-floating-aside-val">
-                          {aside.lines?.[0] ?? aside.subtitle ?? ''}
-                        </span>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="daohua-floating-aside-head">
-                          {aside.mark && (
-                            <span className="daohua-floating-aside-mark">{aside.mark}</span>
-                          )}
-                          <strong className="daohua-floating-aside-title">{aside.title}</strong>
-                          {aside.subtitle && (
-                            <span className="daohua-floating-aside-sub">{aside.subtitle}</span>
-                          )}
-                        </div>
-
-                        {aside.lines && aside.lines.length > 0 && (
-                          <ul className="daohua-floating-aside-lines">
-                            {aside.lines.map((line, lineIdx) => (
-                              <li key={lineIdx}>{line}</li>
-                            ))}
-                          </ul>
-                        )}
-
-                        {aside.content && (
-                          <div className="daohua-floating-aside-custom">{aside.content}</div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
+            {/* 副列：承载右侧其余附属卡片 */}
+            {rightAsides.length > 0 && (
+              <div className="daohua-floating-column daohua-floating-column--aside daohua-floating-aside-group">
+                {rightAsides.map((aside, idx) =>
+                  renderAsideCardNode(aside, aside.id ?? `right-aside-${idx}`, false)
+                )}
               </div>
             )}
           </div>

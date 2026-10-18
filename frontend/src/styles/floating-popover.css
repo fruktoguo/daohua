@@ -31,6 +31,24 @@
   animation: daohua-floating-enter 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* 2.1 悬浮图层双列网格列容器 (Dual-Column Aside Grid) */
+.daohua-floating-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.daohua-floating-column--main {
+  flex: 0 0 auto;
+}
+
+.daohua-floating-column--aside {
+  flex: 0 0 auto;
+  width: min(220px, calc(100vw - 24px));
+}
+
 /* 交互型浮层 (支持点击内部菜单/按钮) */
 .daohua-floating-layer--interactive {
   pointer-events: auto;
@@ -198,6 +216,30 @@
   width: 100%;
   padding: 8px 10px;
   font-size: 12px;
+}
+
+/* 吸附于左列主卡下方的副卡片：宽度严格撑满主卡，与主卡下边缘完美对齐 */
+.daohua-floating-aside-card--in-main {
+  width: 100% !important;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.daohua-floating-aside-card--in-main[data-aside-id="quantity-aside-card"] {
+  min-width: unset;
+  width: 100% !important;
+  max-width: 100%;
+}
+
+.daohua-floating-aside-card--in-main[data-aside-id*="aside-market-"] {
+  min-width: unset;
+  width: 100% !important;
+}
+
+.daohua-floating-aside-card--in-main[data-aside-id*="description"] {
+  min-width: unset;
+  width: 100% !important;
+  max-width: 100%;
 }
 
 .daohua-floating-aside-head {
@@ -1113,6 +1155,11 @@
     max-width: calc(100vw - 16px);
   }
 
+  .daohua-floating-column {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
   .daohua-floating-aside-group {
     width: 100%;
     max-width: 100%;
@@ -1121,6 +1168,11 @@
   .daohua-floating-card {
     width: min(300px, calc(100vw - 16px));
     max-width: calc(100vw - 16px);
+  }
+
+  .daohua-floating-aside-card {
+    width: 100% !important;
+    max-width: 100% !important;
   }
 }
 
