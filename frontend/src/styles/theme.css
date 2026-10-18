@@ -887,6 +887,47 @@
   border-color: var(--gold-dim);
   color: var(--text-dim);
 }
+
+/* 浅色模式下市场行情副气泡各胶囊与数值高对比呈现 */
+:root[data-theme="light"] .daohua-market-aside-badge--ask {
+  color: #a8502f;
+  background: rgba(168, 80, 47, 0.12);
+  border-color: rgba(168, 80, 47, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-price--ask {
+  color: #a8502f;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-badge--bid {
+  color: #277850;
+  background: rgba(39, 120, 80, 0.12);
+  border-color: rgba(39, 120, 80, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-price--bid {
+  color: #277850;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-badge--recycle {
+  color: #8c6b12;
+  background: rgba(140, 107, 18, 0.12);
+  border-color: rgba(140, 107, 18, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-price--recycle {
+  color: #8c6b12;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-badge--volume {
+  color: #2e747c;
+  background: rgba(46, 116, 124, 0.12);
+  border-color: rgba(46, 116, 124, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-volume-val {
+  color: #2e747c;
+}
 /* 窄屏设置分类条横向排列，激活红线由左侧竖条切换为底部横条。 */
 @media (max-width: 960px) {
   :root[data-theme="light"] .settings-nav-item.active {

@@ -598,20 +598,112 @@ function resolveMarketStatsAsideCard(
   if (!tradable) return null
   const t = getT()
   const stats = useGameStore.getState().marketStats[marketStatsKey(itemId, enhancementLevel)]
-  const dash = t('market.price.none')
-  const askPrice = stats?.bestAskPrice != null ? formatNumber(stats.bestAskPrice) : dash
-  const bidPrice = stats?.bestBidPrice != null ? formatNumber(stats.bestBidPrice) : dash
+  const vendorPrice = itemDef?.sellPrice && itemDef.sellPrice > 0 ? itemDef.sellPrice : null
+  const spiritUnit = t('market.spiritUnit')
+
+  const askPrice = stats?.bestAskPrice ?? null
+  const bidPrice = stats?.bestBidPrice ?? null
+  const askQty = stats?.askQuantity ?? 0
+  const bidQty = stats?.bidQuantity ?? 0
+  const dayVol = stats?.dayVolume ?? 0
+  const weekVol = stats?.weekVolume ?? 0
+
   return {
     id: `aside-market-${itemId}-${enhancementLevel}`,
     mark: t('market.price.mark'),
     title: t('market.price.title'),
     subtitle: enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName,
     tone: 'gold',
-    lines: [
-      t('market.price.askLine', { price: askPrice, count: formatNumber(stats?.askQuantity ?? 0) }),
-      t('market.price.bidLine', { price: bidPrice, count: formatNumber(stats?.bidQuantity ?? 0) }),
-      t('market.price.volumeLine', { day: formatNumber(stats?.dayVolume ?? 0), week: formatNumber(stats?.weekVolume ?? 0) }),
-    ],
+    content: (
+      <div className="daohua-market-aside-body">
+        {/* 最低在售 */}
+        <div className="daohua-market-aside-row">
+          <span className="daohua-market-aside-badge daohua-market-aside-badge--ask">
+            {t('market.price.askBadge')}
+          </span>
+          {askPrice !== null ? (
+            <span className="daohua-market-aside-price-wrap">
+              <span className="daohua-market-aside-price daohua-market-aside-price--ask">
+                {formatNumber(askPrice)}
+              </span>
+              <span className="daohua-market-aside-unit">{spiritUnit}</span>
+            </span>
+          ) : (
+            <span className="daohua-market-aside-empty">{t('market.price.none')}</span>
+          )}
+          <span className="daohua-market-aside-sub">
+            {t('market.price.askStock', { count: formatNumber(askQty) })}
+          </span>
+        </div>
+
+        {/* 最高求购 */}
+        <div className="daohua-market-aside-row">
+          <span className="daohua-market-aside-badge daohua-market-aside-badge--bid">
+            {t('market.price.bidBadge')}
+          </span>
+          {bidPrice !== null ? (
+            <span className="daohua-market-aside-price-wrap">
+              <span className="daohua-market-aside-price daohua-market-aside-price--bid">
+                {formatNumber(bidPrice)}
+              </span>
+              <span className="daohua-market-aside-unit">{spiritUnit}</span>
+            </span>
+          ) : (
+            <span className="daohua-market-aside-empty">{t('market.price.none')}</span>
+          )}
+          <span className="daohua-market-aside-sub">
+            {t('market.price.bidDemand', { count: formatNumber(bidQty) })}
+          </span>
+        </div>
+
+        {/* 系统回收价格 */}
+        <div className="daohua-market-aside-row">
+          <span className="daohua-market-aside-badge daohua-market-aside-badge--recycle">
+            {t('market.price.recycleBadge')}
+          </span>
+          {vendorPrice !== null ? (
+            <>
+              <span className="daohua-market-aside-price-wrap">
+                <span className="daohua-market-aside-price daohua-market-aside-price--recycle">
+                  {formatNumber(vendorPrice)}
+                </span>
+                <span className="daohua-market-aside-unit">{spiritUnit}</span>
+              </span>
+              <span className="daohua-market-aside-sub daohua-market-aside-sub--hint">
+                {t('market.price.recycleGuaranteed')}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="daohua-market-aside-empty daohua-market-aside-empty--muted">
+                {t('market.price.notRecyclable')}
+              </span>
+              <span className="daohua-market-aside-sub daohua-market-aside-sub--hint">
+                {t('market.price.noVendorPrice')}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* 分隔线与成交统计 */}
+        <div className="daohua-market-aside-divider" />
+        <div className="daohua-market-aside-row daohua-market-aside-row--volume">
+          <span className="daohua-market-aside-badge daohua-market-aside-badge--volume">
+            {t('market.price.volumeBadge')}
+          </span>
+          <div className="daohua-market-aside-volume-items">
+            <span className="daohua-market-aside-volume-chip">
+              <span className="daohua-market-aside-volume-label">{t('market.price.dayVolume')}</span>
+              <span className="daohua-market-aside-volume-val">{formatNumber(dayVol)}</span>
+            </span>
+            <span className="daohua-market-aside-volume-chip">
+              <span className="daohua-market-aside-volume-label">{t('market.price.weekVolume')}</span>
+              <span className="daohua-market-aside-volume-val">{formatNumber(weekVol)}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    ),
   }
 }
 

@@ -378,6 +378,168 @@
   max-width: min(320px, calc(100vw - 24px));
   padding: 6px 10px;
 }
+/* 坊市市场价格副气泡 (Market Stats Aside Card) */
+.daohua-floating-aside-card[data-aside-id*="aside-market-"] {
+  min-width: 228px;
+}
+
+.daohua-market-aside-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.daohua-market-aside-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* 语义微光胶囊标签 */
+.daohua-market-aside-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5px 5.5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+}
+
+/* 卖盘（在售）：暖赭赤橙色调 */
+.daohua-market-aside-badge--ask {
+  color: #dda184;
+  background: rgba(221, 161, 132, 0.14);
+  border-color: rgba(221, 161, 132, 0.38);
+  box-shadow: 0 0 6px rgba(221, 161, 132, 0.15);
+}
+
+/* 买盘（求购）：碧青翡翠色调 */
+.daohua-market-aside-badge--bid {
+  color: #8fc3a6;
+  background: rgba(143, 195, 166, 0.14);
+  border-color: rgba(143, 195, 166, 0.38);
+  box-shadow: 0 0 6px rgba(143, 195, 166, 0.15);
+}
+
+/* 系统回收：道金琥珀色调 */
+.daohua-market-aside-badge--recycle {
+  color: #e8d69a;
+  background: rgba(201, 180, 109, 0.14);
+  border-color: rgba(201, 180, 109, 0.38);
+  box-shadow: 0 0 6px rgba(201, 180, 109, 0.18);
+}
+
+/* 流通成交量：灵气青色调 */
+.daohua-market-aside-badge--volume {
+  color: #8ebfc3;
+  background: rgba(117, 169, 173, 0.14);
+  border-color: rgba(117, 169, 173, 0.38);
+  box-shadow: 0 0 6px rgba(117, 169, 173, 0.15);
+}
+
+/* 价格数值展示区 */
+.daohua-market-aside-price-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.daohua-market-aside-price {
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.daohua-market-aside-price--ask {
+  color: #f6bfa8;
+  text-shadow: 0 0 6px rgba(221, 161, 132, 0.3);
+}
+
+.daohua-market-aside-price--bid {
+  color: #aae0c2;
+  text-shadow: 0 0 6px rgba(143, 195, 166, 0.3);
+}
+
+.daohua-market-aside-price--recycle {
+  color: #ffe6a3;
+  text-shadow: 0 0 6px rgba(232, 214, 154, 0.3);
+}
+
+.daohua-market-aside-unit {
+  font-size: 10px;
+  color: var(--text-dim, rgba(233, 227, 210, 0.65));
+  font-weight: normal;
+  margin-left: 1px;
+}
+
+/* 缺省横杠或不可回收文本 */
+.daohua-market-aside-empty {
+  font-size: 11px;
+  color: var(--text-dim, rgba(233, 227, 210, 0.45));
+  font-style: normal;
+}
+
+.daohua-market-aside-empty--muted {
+  color: var(--text-dim, rgba(233, 227, 210, 0.5));
+  font-size: 10.5px;
+}
+
+/* 右侧数量/说明副文本 */
+.daohua-market-aside-sub {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-dim, rgba(233, 227, 210, 0.6));
+  white-space: nowrap;
+}
+
+.daohua-market-aside-sub--hint {
+  font-size: 10px;
+  color: var(--text-dim, rgba(233, 227, 210, 0.5));
+}
+
+/* 分隔虚线 */
+.daohua-market-aside-divider {
+  width: 100%;
+  height: 1px;
+  border-top: 1px dashed rgba(201, 180, 109, 0.18);
+  margin: 3px 0 1px 0;
+}
+
+/* 成交量聚合条目 */
+.daohua-market-aside-volume-items {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.daohua-market-aside-volume-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 10.5px;
+}
+
+.daohua-market-aside-volume-label {
+  color: var(--text-dim, rgba(233, 227, 210, 0.55));
+}
+
+.daohua-market-aside-volume-val {
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  font-weight: 600;
+  color: #cde6e8;
+  font-variant-numeric: tabular-nums;
+}
 
 
 /* 7. 标准轻量 Tooltip */
