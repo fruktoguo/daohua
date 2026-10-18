@@ -313,7 +313,21 @@ export function formatProgressText(
 
 // 触发条件枚举 -> 展示文案统一走 i18n；组合语序由模板键承载（中英语序不同）。
 /**
- * 战斗触发条件转展示文案（如「自身生命值 <= 30%」）
+ * 解析触发条件关联的 Buff / 状态名称
+ */
+export function resolveTriggerBuffName(buffId: string | null | undefined): string {
+  const t = getT()
+  if (!buffId) return t('combat.trigger.unspecifiedBuff') || '指定状态'
+  const stripped = buffId.startsWith('buff.') ? buffId.slice(5) : buffId
+  const direct = t(`combat.trigger.buff.${stripped}`)
+  if (direct && !direct.startsWith('combat.trigger.buff.')) return direct
+  const full = t(`combat.trigger.buff.${buffId}`)
+  if (full && !full.startsWith('combat.trigger.buff.')) return full
+  return buffId
+}
+
+/**
+ * 战斗触发条件转展示文案（如「当自身生命百分比不高于 50% 时」、「当目标凝神茶状态层数大于 0 时」）
  * @param trigger 触发条件对象
  */
 export function describeCombatTrigger(trigger: CombatTrigger): string {
@@ -321,6 +335,19 @@ export function describeCombatTrigger(trigger: CombatTrigger): string {
   const dependency = t(`game.trigger.dependency.${trigger.dependency}`)
   const condition = t(`game.trigger.condition.${trigger.condition}`)
   const comparator = t(`game.trigger.comparator.${trigger.comparator}`)
+
+  // 状态层数（Buff Stacks）条件：显式注入具体状态名称与层数判断
+  if (trigger.condition === 'buff-stacks') {
+    const buff = resolveTriggerBuffName(trigger.buffId)
+    return t('game.trigger.template.buffStack', {
+      dependency,
+      buff,
+      comparator,
+      value: formatNumber(trigger.value),
+      unit: '',
+    })
+  }
+
   if (trigger.comparator === 'is-active' || trigger.comparator === 'is-inactive') {
     return t('game.trigger.template.status', { dependency, condition, comparator })
   }

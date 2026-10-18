@@ -172,7 +172,33 @@ try {
   triggerVersionReload('v1.0.1', '超限重试')
   assert.equal(reloadCount, 2, '熔断后绝对不可再次调用 reload 造成死循环')
   _resetVersionStateForTest()
-  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、版本感知与防环熔断通过。')
+
+  // 触发条件格式化断言：状态层数必须正确注入具体状态名称，且句式为自然语言“当...时”
+  const { describeCombatTrigger, resolveTriggerBuffName } = await server.ssrLoadModule('/src/game/format.ts')
+  assert.equal(resolveTriggerBuffName('buff.spirit-tea'), '凝神茶', 'Buff ID 必须解析为凝神茶')
+  assert.equal(resolveTriggerBuffName('buff.qi-gathering'), '引气', 'Buff ID 必须解析为引气')
+  assert.equal(resolveTriggerBuffName('buff.zhixue'), '止血散', 'Buff ID 必须解析为止血散')
+
+  const buffTrigger = {
+    dependency: 'target-enemy',
+    condition: 'buff-stacks',
+    buffId: 'buff.spirit-tea',
+    comparator: 'greater-than',
+    value: 0,
+  }
+  const buffSummary = describeCombatTrigger(buffTrigger)
+  assert.equal(buffSummary, '当 目标 的 凝神茶 状态层数 大于 0 时', '状态层数条件必须包含具体Buff名称并以自然语言呈现')
+
+  const hpTrigger = {
+    dependency: 'self',
+    condition: 'current-hp-percentage',
+    comparator: 'less-than-equal',
+    value: 50,
+  }
+  const hpSummary = describeCombatTrigger(hpTrigger)
+  assert.equal(hpSummary, '当 自身 的 生命百分比 小于等于 50% 时', '生命百分比条件必须以自然语言呈现')
+
+  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、版本感知防环与触发条件自然语言格式化通过。')
 } finally {
   await server.close()
 }

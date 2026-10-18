@@ -205,20 +205,23 @@ export function CombatTriggerEditor({
     if (open) setTriggers(cloneTriggers(initialTriggersRef.current))
   }, [open])
 
-  const isStatusCondition = (condition: string) => condition.endsWith('-status')
   const isPercentage = (condition: string) => condition.includes('percentage')
 
-  // 条件切换时重置比较符与数值，避免残留“已生效 + 数值 1”这类非法组合。
+  // 条件切换时重置比较符与数值，状态层数默认判断为“大于 0”
   const updateTrigger = (index: number, patch: Partial<CombatTrigger>) => {
     setTriggers(current => current.map((trigger, triggerIndex) => {
       if (triggerIndex !== index) return trigger
       const next = { ...trigger, ...patch }
       if (patch.condition !== undefined && patch.condition !== trigger.condition) {
-        next.comparator = isStatusCondition(next.condition)
-          ? 'is-active'
-          : 'greater-than-equal'
-        next.value = 0
-        if (next.condition !== 'buff-stacks') next.buffId = null
+        if (patch.condition === 'buff-stacks') {
+          next.comparator = 'greater-than'
+          next.value = 0
+          if (!next.buffId) next.buffId = 'buff.qi-gathering'
+        } else {
+          next.comparator = isPercentage(next.condition) ? 'less-than-equal' : 'greater-than-equal'
+          next.value = isPercentage(next.condition) ? 50 : 0
+          next.buffId = null
+        }
       }
       return next
     }))
@@ -253,8 +256,6 @@ export function CombatTriggerEditor({
             <p className="combat-trigger-empty">{t('game.trigger.editor.empty')}</p>
           )}
           {triggers.map((trigger, index) => {
-            const isStatus = isStatusCondition(trigger.condition)
-            const numeric = !isStatus
             const percentage = isPercentage(trigger.condition)
             const isBuff = trigger.condition === 'buff-stacks'
             const unit = percentage ? '%' : isBuff ? t('combat.trigger.buffStackUnit') : t('combat.trigger.pointUnit')
@@ -276,7 +277,7 @@ export function CombatTriggerEditor({
                   >×</button>
                 </header>
 
-                <div className={`combat-trigger-fields${isBuff ? ' has-buff' : ''}${isStatus ? ' is-status' : ''}`}>
+                <div className={`combat-trigger-fields${isBuff ? ' has-buff' : ''}`}>
                   <TriggerSelectField
                     className="combat-trigger-field--dep"
                     label={t('combat.trigger.dependencyLabel')}
@@ -306,9 +307,6 @@ export function CombatTriggerEditor({
                       { id: 'current-mana', label: t('game.trigger.condition.current-mana') },
                       { id: 'missing-mana', label: t('game.trigger.condition.missing-mana') },
                       { id: 'buff-stacks', label: t('game.trigger.condition.buff-stacks'), subtitle: t('combat.trigger.subtitle.buffStacks') },
-                      { id: 'stun-status', label: t('game.trigger.condition.stun-status') },
-                      { id: 'blind-status', label: t('game.trigger.condition.blind-status') },
-                      { id: 'silence-status', label: t('game.trigger.condition.silence-status') },
                     ]}
                     value={trigger.condition}
                   />
@@ -319,12 +317,14 @@ export function CombatTriggerEditor({
                       label={t('combat.trigger.buffLabel')}
                       onSelect={value => updateTrigger(index, { buffId: value || null })}
                       options={[
-                        { id: '', label: t('combat.trigger.selectBuff') },
-                        { id: 'buff.qi-gathering', label: t('combat.trigger.buff.qi-gathering') },
-                        { id: 'buff.spirit-tea', label: t('combat.trigger.buff.spirit-tea') },
-                        { id: 'buff.fire-talisman', label: t('combat.trigger.buff.fire-talisman') },
+                        { id: 'buff.qi-gathering', label: t('combat.trigger.buff.qi-gathering'), subtitle: '运转灵气法门，增幅法攻与回复' },
+                        { id: 'buff.spirit-tea', label: t('combat.trigger.buff.spirit-tea'), subtitle: '神识清明宁静，提升心法感知' },
+                        { id: 'buff.fire-talisman', label: t('combat.trigger.buff.fire-talisman'), subtitle: '烈火真气加持，强化火行攻势' },
+                        { id: 'buff.zhixue', label: t('combat.trigger.buff.zhixue'), subtitle: '止血散回春，持续回复气血' },
+                        { id: 'buff.shunqi', label: t('combat.trigger.buff.shunqi'), subtitle: '顺气丸凝神，平顺经脉灵力' },
+                        { id: 'buff.yinshen', label: t('combat.trigger.buff.yinshen'), subtitle: '隐身匿迹，隐蔽自身威胁' },
                       ]}
-                      value={trigger.buffId ?? ''}
+                      value={trigger.buffId ?? 'buff.qi-gathering'}
                     />
                   )}
 
@@ -332,33 +332,35 @@ export function CombatTriggerEditor({
                     className="combat-trigger-field--comp"
                     label={t('combat.trigger.comparatorLabel')}
                     onSelect={value => updateTrigger(index, { comparator: value as CombatTriggerComparator })}
-                    options={(numeric
+                    options={(isBuff
                       ? [
+                          { id: 'greater-than', label: t('game.trigger.comparator.greater-than') },
+                          { id: 'equal', label: t('game.trigger.comparator.equal') },
+                          { id: 'greater-than-equal', label: t('game.trigger.comparator.greater-than-equal') },
+                          { id: 'less-than-equal', label: t('game.trigger.comparator.less-than-equal') },
+                          { id: 'less-than', label: t('game.trigger.comparator.less-than') },
+                        ]
+                      : [
                           { id: 'less-than-equal', label: t('game.trigger.comparator.less-than-equal') },
                           { id: 'less-than', label: t('game.trigger.comparator.less-than') },
                           { id: 'greater-than-equal', label: t('game.trigger.comparator.greater-than-equal') },
                           { id: 'greater-than', label: t('game.trigger.comparator.greater-than') },
-                        ]
-                      : [
-                          { id: 'is-active', label: t('game.trigger.comparator.is-active') },
-                          { id: 'is-inactive', label: t('game.trigger.comparator.is-inactive') },
+                          { id: 'equal', label: t('game.trigger.comparator.equal') },
                         ]
                     )}
                     value={trigger.comparator}
                   />
 
-                  {numeric && (
-                    <TriggerValueField
-                      className="combat-trigger-field--val"
-                      label={percentage ? t('combat.trigger.thresholdPercent') : t('combat.trigger.threshold')}
-                      value={trigger.value}
-                      unit={unit}
-                      min={0}
-                      max={percentage ? 100 : undefined}
-                      step={percentage ? 0.5 : 1}
-                      onChange={value => updateTrigger(index, { value })}
-                    />
-                  )}
+                  <TriggerValueField
+                    className="combat-trigger-field--val"
+                    label={percentage ? t('combat.trigger.thresholdPercent') : t('combat.trigger.threshold')}
+                    value={trigger.value}
+                    unit={unit}
+                    min={0}
+                    max={percentage ? 100 : undefined}
+                    step={percentage ? 0.5 : 1}
+                    onChange={value => updateTrigger(index, { value })}
+                  />
                 </div>
               </section>
             )
