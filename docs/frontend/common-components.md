@@ -213,7 +213,7 @@
   - **事件日志与战报中的实体胶囊引用**（包含功法技能 `ability`、妖兽敌人 `enemy` / `encounter`、角色 `character`、机制 `mechanic`、地点 `location`、行动 `action`，自带专属修仙微光色彩与悬浮信息浮层；机制胶囊支持 `break` 破招橙、`crit` 暴击金、`dodge` 闪避水绿、`parry` 化解冰蓝等修仙专属色调；行内全部胶囊统一垂直居中对齐）。
   - **复合物品胶囊**（将物品名称与数量如 `灵石 × 41` 组合为一整个不可分割的紧凑修仙药丸胶囊，包含物品品质色调、微光背景与下划线数量，支持悬浮弹出物品属性卡片） -> `ItemReference`, `.item-reference-compound`。
   - **完全相同日志连续折叠与乘数胶囊**（挂机采集、连续战斗等产生的完全相同模板日志在尾部自动合并显示微光乘数胶囊形如 `× 3`，更新为最新触发时刻并保留历史缓冲容量） -> `.log-repeat-capsule`, `collapseLogEntries`。
-  - **底部传音与日志未读数字角标**（世界、附近、系统、好友、队伍、宗门与综合频道新消息未读提醒红点角标，上限 99+，点击切换后自动清零；战斗频道高频推进严格排除） -> `useLogUnreadStore`, `.log-tab-badge`。
+  - **底部传音与日志未读数字角标**（世界、附近、系统、好友、队伍、宗门与综合频道新消息未读提醒红点角标，上限 99+，点击切换后自动清零；战斗频道高频推进严格排除；**角标脱离常规文档流绝对定位**于 Tab 右上角 `position: absolute; top: -3px; right: -2px`，配合 `.log-tabs .log-tab-btn` 基准宽度 `min-width: 54px` 与文字居中，角标进出零撑宽、零推挤、零抖动） -> `useLogUnreadStore`, `.log-tab-badge`, `.log-tab-btn`。
 - **组件源码**：
   - [`frontend/src/components/ItemDisplay.tsx`](../../frontend/src/components/ItemDisplay.tsx)
   - [`frontend/src/components/GameLogPanel.tsx`](../../frontend/src/components/GameLogPanel.tsx)

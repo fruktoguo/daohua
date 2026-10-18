@@ -1614,12 +1614,14 @@ input[type="checkbox"] {
   flex-shrink: 0;
   gap: 6px;
   margin-bottom: 6px;
+  padding-top: 4px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--gold-faint);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .log-tabs button {
-  padding: 2px 8px;
   border: 0;
   color: var(--text-dim);
   background: transparent;
@@ -1629,20 +1631,43 @@ input[type="checkbox"] {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  min-width: 54px;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
   cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.log-tab-btn:hover:not(.active) {
+  color: var(--text);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.log-tab-label {
+  display: inline-block;
+  text-align: center;
 }
 
 .log-tab-badge {
+  position: absolute;
+  top: -3px;
+  right: -2px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 14px;
-  height: 14px;
+  min-width: 15px;
+  height: 15px;
   box-sizing: border-box;
-  padding: 0 3.5px;
+  padding: 0 4px;
   border-radius: 999px;
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 700;
   line-height: 1;
   color: #ffffff;
@@ -1651,6 +1676,7 @@ input[type="checkbox"] {
   font-family: Consolas, "SFMono-Regular", monospace;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+  z-index: 2;
   animation: log-badge-pop 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -1662,6 +1688,7 @@ input[type="checkbox"] {
 .log-tabs button.active {
   color: var(--gold-bright);
   background: rgba(201, 180, 109, 0.08);
+  border-color: rgba(201, 180, 109, 0.2);
 }
 
 .log-tabs .log-latest-button {

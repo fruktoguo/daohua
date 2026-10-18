@@ -68,7 +68,7 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
               role="tab"
               type="button"
             >
-              <span>{t(entry.labelKey)}</span>
+              <span className="log-tab-label">{t(entry.labelKey)}</span>
               {!isActive && unread > 0 && (
                 <span className="log-tab-badge" title={`${unread}`}>
                   {unread > 99 ? '99+' : unread}
