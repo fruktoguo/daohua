@@ -714,7 +714,13 @@ public sealed partial class PlayerAggregate
                         unit.DamageTakenPhysical, unit.DamageTakenSpell,
                         unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
                         unit.HealingRegen, unit.HealingOther }
-                        .All(value => double.IsFinite(value) && value >= 0))));
+                        .All(value => double.IsFinite(value) && value >= 0)))
+            && (report.DuelItemsGained is null || (report.DuelItemsGained.Count <= 512
+                && report.DuelItemsGained.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)
+                    && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0)))
+            && (report.DuelItemsLost is null || (report.DuelItemsLost.Count <= 512
+                && report.DuelItemsLost.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)
+                    && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0))));
 
     private static bool IsValidDuelDocument(PlayerDuelStateDocument document)
         => double.IsFinite(document.EncounterCharges) && document.EncounterCharges >= 0

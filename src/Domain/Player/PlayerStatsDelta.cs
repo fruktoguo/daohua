@@ -58,6 +58,8 @@ public readonly struct PlayerStatsDelta
     public IReadOnlyDictionary<ItemId, double>? ItemLosses { get; init; }
     /// <summary>斗法暂存区损失明细（押存物品按批次入对手账）。</summary>
     public IReadOnlyList<DuelStagedItem>? StagedItemLosses { get; init; }
+    /// <summary>斗法缴获物品明细（对手暂存区物品）。</summary>
+    public IReadOnlyList<DuelStagedItem>? DuelItemGains { get; init; }
 
     /// <summary>账本字段的纯增量累加；日期、归属与导出脏标由账本所有者处理。</summary>
     public void ApplyTo(PlayerBattleReport report)
@@ -85,7 +87,23 @@ public readonly struct PlayerStatsDelta
         if (ItemLosses is { } losses)
             foreach (var (item, quantity) in losses) report.AddItemLost(item, quantity);
         if (StagedItemLosses is { } stagedLosses)
-            foreach (var item in stagedLosses) report.AddItemLost(new ItemId(item.ItemId), item.Quantity);
+        {
+            foreach (var item in stagedLosses)
+            {
+                var itemId = new ItemId(item.ItemId);
+                report.AddItemLost(itemId, item.Quantity);
+                report.AddDuelItemLost(itemId, item.Quantity);
+            }
+        }
+        if (DuelItemGains is { } duelGains)
+        {
+            foreach (var item in duelGains)
+            {
+                var itemId = new ItemId(item.ItemId);
+                report.AddItem(itemId, item.Quantity);
+                report.AddDuelItemGained(itemId, item.Quantity);
+            }
+        }
     }
 }
 

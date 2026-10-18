@@ -122,6 +122,8 @@ public sealed class DuelSimulationTests
         Assert.Null(initiator.Duel.ActiveDuelId);
         Assert.Empty(initiator.Duel.StagedItems);
         Assert.Equal(1, initiator.Duel.CurrentReport?.DuelLosses);
+        Assert.Contains(initiator.Duel.CurrentReport!.DuelItemsLost, item => item.ItemId == "item.loot" && item.Quantity == 2);
+        Assert.Empty(initiator.Duel.CurrentReport!.DuelItemsGained);
         Assert.True(initiator.Duel.CooldownUntilUnixSeconds > 0);
 
         // 对手弃战判胜必须推进版本：RouteDuelForfeitAsync 主动推送的同版本快照会被客户端版本门禁丢弃。
@@ -131,9 +133,36 @@ public sealed class DuelSimulationTests
         var peerResult = SimulationEngine.AdvanceTo(defender, defender.LastSimulatedAt.AddSeconds(1), catalog, duel: new DuelAdvanceOptions(true));
         Assert.Contains(peerResult.AssetDeltas, delta => delta.Asset.ItemId.Value == "item.loot" && delta.QuantityDelta == 2);
         Assert.Equal(1, defender.Duel.CurrentReport?.DuelWins);
+        Assert.Contains(defender.Duel.CurrentReport!.DuelItemsGained, item => item.ItemId == "item.loot" && item.Quantity == 2);
+        Assert.Empty(defender.Duel.CurrentReport!.DuelItemsLost);
         Assert.Contains(peerResult.Events, entry => entry.Code == "duel.won");
     }
 
+    /// <summary>斗法缴获与损失细分明细正确导出与恢复。</summary>
+    [Fact]
+    public void DuelItemsGainedAndLost_RoundtripDocument()
+    {
+        var catalog = CreateCatalog();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "测试", Baseline, "fp");
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        var headId = player.Actions[0].Id;
+        var report = player.Duel.GetOrCreateReport(headId, "combat.test", "历练", 100);
+        report.AddDuelItemGained(new ItemId("item.trophy"), 5);
+        report.AddDuelItemLost(new ItemId("item.loot"), 3);
+
+        var doc = PlayerDuelStateCodec.Export(player.Duel, headId);
+        Assert.NotNull(doc.CurrentReport);
+        Assert.Contains(doc.CurrentReport!.DuelItemsGained!, item => item.ItemId == "item.trophy" && item.Quantity == 5);
+        Assert.Contains(doc.CurrentReport!.DuelItemsLost!, item => item.ItemId == "item.loot" && item.Quantity == 3);
+
+        var newDuel = new PlayerDuelState();
+        newDuel.BindQueue(player.Actions);
+        PlayerDuelStateCodec.Restore(newDuel, doc);
+        var restoredReport = newDuel.CurrentReport;
+        Assert.NotNull(restoredReport);
+        Assert.Contains(restoredReport!.DuelItemsGained, item => item.ItemId == "item.trophy" && item.Quantity == 5);
+        Assert.Contains(restoredReport!.DuelItemsLost, item => item.ItemId == "item.loot" && item.Quantity == 3);
+    }
     /// <summary>失败冷却期内不再判定遭遇计数、也不进入匹配等待。</summary>
     [Fact]
     public void DefeatCooldownBlocksFurtherDuelSeek()

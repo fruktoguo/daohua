@@ -1016,9 +1016,12 @@ internal static class CombatActionRules
                 {
                     var spoilsId = new ItemId(spoils.ItemId);
                     AddDelta(deltas ??= new Dictionary<AssetKey, double>(), spoilsId, spoils.Quantity);
-                    player.RecordStats(action.Id, nowUnix, new PlayerStatsDelta { GainedItem = spoilsId, GainedQuantity = spoils.Quantity });
                 }
-                player.RecordStats(action.Id, nowUnix, new PlayerStatsDelta { DuelWins = 1 });
+                player.RecordStats(action.Id, nowUnix, new PlayerStatsDelta
+                {
+                    DuelWins = 1,
+                    DuelItemGains = playback.OpponentStagedSnapshot
+                });
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.won",
                     playback.Forfeited
                         ? $"斗法获胜：{playback.OpponentName} 弃战离去，其暂存物品尽数落袋。"
@@ -1072,6 +1075,15 @@ internal static class CombatActionRules
         player.Loadout.AbilityExperiences[abilityId] = nextExp;
         var levelBefore = AbilityExpCurve.LevelFor(previousExp);
         var levelAfter = AbilityExpCurve.LevelFor(nextExp);
+        if (levelAfter > levelBefore)
+        {
+            for (var i = 0; i < player.Loadout.AbilitySlots.Count; i++)
+            {
+                var slot = player.Loadout.AbilitySlots[i];
+                if (slot.AbilityId == abilityIdValue && slot.Level < levelAfter)
+                    player.Loadout.AbilitySlots[i] = new PlayerAbilitySlot(slot.AbilityId, levelAfter);
+            }
+        }
         player.RecordStats(actionId, atUnixSeconds, new PlayerStatsDelta
         {
             AbilityId = abilityIdValue,

@@ -11,7 +11,7 @@ import { ReportBlock } from './reportSections'
  * 仅展示本次行动相关内容：
  * 1. 当前行动：队首行动账本（duel.currentReport），头行为行动名 + 「进行中」徽标，
  *    含「获取经验 / 物品得失 / 行动信息」三小节；
- * 2. 斗法暂存区（队首行动勾选斗法且有暂存物品时展示；按物品聚合总量胶囊行）；
+ * 2. 斗法展示区（含斗法暂存区及斗法获得/损失细分明细；按物品聚合总量胶囊行）；
  * 3. 皆无内容时显示「暂无统计」空态。
  * 离线挂机 / 今日统计 / 历史战报由左侧「记录」按钮的 RecordsPanel 承载。
  */
@@ -34,7 +34,10 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   const showStaged = pvpArmed && stagedTotals.size > 0
 
   const current = duel.currentReport
-
+  const duelGained = current?.duelItemsGained ?? []
+  const duelLost = current?.duelItemsLost ?? []
+  const showDuelResults = duelGained.length > 0 || duelLost.length > 0
+  const hasDuelSection = showStaged || showDuelResults
   // 「进行中」时长需要每秒刷新：仅当前账本存在时启用 tick，
   // 面板关闭时组件随 Modal 一起卸载，定时器自动清理。
   const needsTick = Boolean(current)
@@ -48,7 +51,7 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   // 以「快照服务端时刻 + 距上次同步的本地流逝」估算当前服务端时间：倒计时以服务端时钟为准，避免本地时钟偏差。
   const estimatedServerNow = serverTime + Math.max(0, performance.now() - lastSyncPerformanceTime) / 1000
 
-  const isEmpty = !current && !showStaged
+  const isEmpty = !current && !hasDuelSection
 
   return (
     <section aria-label={t('combat.report.title')} className="battle-report-panel">
@@ -72,14 +75,44 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
                   || current.actionName || current.actionId || t('combat.report.currentSection'), world, maps)}
             />
           )}
-          {showStaged && (
+          {hasDuelSection && (
             <div className="battle-report-staged">
-              <span className="battle-report-staged-title">{t('combat.report.stagedTitle')}</span>
-              <div className="battle-report-staged-list">
-                {[...stagedTotals].map(([itemId, quantity]) => (
-                  <ItemReference amount={quantity} itemId={itemId} key={itemId} />
-                ))}
-              </div>
+              {showStaged && (
+                <div className="battle-report-staged-group">
+                  <span className="battle-report-staged-title">{t('combat.report.stagedTitle')}</span>
+                  <div className="battle-report-staged-list">
+                    {[...stagedTotals].map(([itemId, quantity]) => (
+                      <ItemReference amount={quantity} itemId={itemId} key={itemId} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {showDuelResults && (
+                <div className="battle-report-staged-group">
+                  <div className="battle-report-item-columns">
+                    {duelGained.length > 0 && (
+                      <div className="battle-report-item-column">
+                        <span className="battle-report-staged-title">{t('combat.report.duelItemsGained')}</span>
+                        <div className="battle-report-items">
+                          {duelGained.map(item => (
+                            <ItemReference amount={item.quantity} itemId={item.itemId} key={item.itemId} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {duelLost.length > 0 && (
+                      <div className="battle-report-item-column">
+                        <span className="battle-report-staged-title">{t('combat.report.duelItemsLost')}</span>
+                        <div className="battle-report-items">
+                          {duelLost.map(item => (
+                            <ItemReference amount={item.quantity} itemId={item.itemId} key={item.itemId} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

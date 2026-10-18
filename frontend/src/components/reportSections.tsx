@@ -34,6 +34,7 @@ export function reportHasContent(report: BattleReport): boolean {
   if (ROOT_EXP_ROWS.some(row => report.rootExp[row.key] !== 0)) return true
   if (report.abilityExp.length > 0 || report.techniqueExp.length > 0 || report.levelUps.length > 0) return true
   if (report.items.length > 0 || report.itemsLost.length > 0) return true
+  if ((report.duelItemsGained?.length ?? 0) > 0 || (report.duelItemsLost?.length ?? 0) > 0) return true
   if (report.cycles > 0 || report.encounters > 0 || report.deaths > 0) return true
   if (report.normalKills > 0 || report.eliteKills > 0 || report.bossKills > 0) return true
   return report.duelWins > 0 || report.duelLosses > 0

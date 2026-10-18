@@ -71,6 +71,28 @@ public static class CraftingRecipeRules
     }
 
     /// <summary>
+    /// 判断行动/配方是否已解锁：
+    /// 1. 所需等级 requiredLevel <= 1 默认解锁；
+    /// 2. 玩家角色境界达到 requiredLevel；
+    /// 3. 若行动关联技艺（technique），且对应技艺等级达到 requiredLevel。
+    /// 境界与技艺等级为「或」关系（满足任一即放行）。
+    /// </summary>
+    public static bool IsActionUnlocked(
+        ActionDefinition action,
+        int realmLevel,
+        double techniqueLevel,
+        GameDataCatalog catalog,
+        out int requiredLevel)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ArgumentNullException.ThrowIfNull(catalog);
+        requiredLevel = ResolveRequiredRealmLevel(action, catalog);
+        if (requiredLevel <= 1) return true;
+        if (realmLevel >= requiredLevel) return true;
+        if (!string.IsNullOrEmpty(action.Technique) && techniqueLevel >= requiredLevel) return true;
+        return false;
+    }
+    /// <summary>
     /// 单个物品/装备 ID 的等阶代表等级（tier → 境界等级换算，未命中按 T1）。
     /// 强化等动态裁决以目标装备本值作为「行动等级」基准（总纲 §20.1.4）。
     /// </summary>

@@ -731,6 +731,10 @@ export interface BattleReport {
   duelLosses: number
   /** 行动内战斗单位统计（仅进行中行动账本下发；归档账本为空列表） */
   combatants: BattleReportCombatant[]
+  /** 斗法缴获物品收益列表 */
+  duelItemsGained: BattleReportItem[]
+  /** 斗法损失物品明细列表 */
+  duelItemsLost: BattleReportItem[]
 }
 
 /**

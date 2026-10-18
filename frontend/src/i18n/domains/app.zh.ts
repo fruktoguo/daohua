@@ -261,6 +261,7 @@ export const appZh = {
       startCombatNow: '立即开始历练',
       enqueueAction: '添加到队列 #{n}',
       levelRequired: '需境界达到 Lv.{level}',
+      levelOrTechniqueRequired: '需境界达到 Lv.{level} 或 {technique}达到 Lv.{level}',
       autoUseTrayAria: '{name}物品配置',
       autoUseLabel: '物品使用',
       spiritStoneInject: '灵石注灵',

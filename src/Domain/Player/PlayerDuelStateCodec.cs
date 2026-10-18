@@ -62,7 +62,9 @@ public static class PlayerDuelStateCodec
                 unit.DamageDealtPhysical, unit.DamageDealtSpell,
                 unit.DamageTakenPhysical, unit.DamageTakenSpell,
                 unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
-                unit.HealingRegen, unit.HealingOther)).ToArray());
+                unit.HealingRegen, unit.HealingOther)).ToArray(),
+        report.DuelItemsGained.Count == 0 ? null : report.DuelItemsGained.ToArray(),
+        report.DuelItemsLost.Count == 0 ? null : report.DuelItemsLost.ToArray());
 
     /// <summary>逐账本导出：未脏账本复用已登记文档；记账路径仅令被写账本重建。</summary>
     private static PlayerBattleReportDocument ExportReportCached(PlayerBattleReport report)
@@ -109,6 +111,8 @@ public static class PlayerDuelStateCodec
         report.AbilityExp.AddRange(document.AbilityExp ?? []);
         report.TechniqueExp.AddRange(document.TechniqueExp ?? []);
         report.LevelUps.AddRange(document.LevelUps ?? []);
+        if (document.DuelItemsGained is { } duelGained) report.DuelItemsGained.AddRange(duelGained);
+        if (document.DuelItemsLost is { } duelLost) report.DuelItemsLost.AddRange(duelLost);
         if (document.Combatants is { } combatants)
             foreach (var unit in combatants) report.CombatStats.Import(unit);
         report.CombatStats.ClearDirty();

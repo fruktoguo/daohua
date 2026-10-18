@@ -78,6 +78,45 @@ public sealed class CraftingRecipeRulesTests
     }
 
     [Fact]
+    public void DualUnlockRule_RealmOrTechnique_UnlocksAction()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        // T1 行动默认解锁（无需境界也无需技艺）
+        if (catalog.Actions.TryGet(new ActionId("alchemy.refine-qi-pill"), out var t1Alchemy))
+        {
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(t1Alchemy, 1, 0, catalog, out var req));
+            Assert.Equal(1, req);
+        }
+
+        // T2 炼丹行动通脉丹（需 18 级）
+        if (catalog.Actions.TryGet(new ActionId("alchemy.refine-tongmai-pill"), out var t2Alchemy))
+        {
+            // 境界 1 级、技艺 0 级 -> 锁定
+            Assert.False(CraftingRecipeRules.IsActionUnlocked(t2Alchemy, 1, 0, catalog, out var req));
+            Assert.Equal(18, req);
+
+            // 境界 18 级、技艺 0 级 -> 境界解锁
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(t2Alchemy, 18, 0, catalog, out _));
+
+            // 境界 1 级、技艺 18 级 -> 技艺解锁
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(t2Alchemy, 1, 18, catalog, out _));
+
+            // 境界 17 级、技艺 17 级 -> 锁定
+            Assert.False(CraftingRecipeRules.IsActionUnlocked(t2Alchemy, 17, 17, catalog, out _));
+        }
+
+        // T2 采矿行动赤铜矿（需 18 级）
+        if (catalog.Actions.TryGet(new ActionId("explore.mine-crimson-copper"), out var t2Mine))
+        {
+            Assert.False(CraftingRecipeRules.IsActionUnlocked(t2Mine, 1, 0, catalog, out var req));
+            Assert.Equal(18, req);
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(t2Mine, 18, 0, catalog, out _));
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(t2Mine, 1, 18, catalog, out _));
+        }
+    }
+
+    [Fact]
     public void DefeatedMonsterIdsAreRecordedAndPersisted()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "测试道友", Baseline, "catalog-a");

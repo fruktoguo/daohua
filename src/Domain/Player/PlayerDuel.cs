@@ -113,6 +113,10 @@ public sealed class PlayerBattleReport
     public List<PlayerReportItem> Items { get; } = [];
     /// <summary>物品失去（行动输入消耗、自动消耗品、斗法暂存被缴）</summary>
     public List<PlayerReportItem> ItemsLost { get; } = [];
+    /// <summary>斗法缴获物品明细（对手暂存区物品）</summary>
+    public List<PlayerReportItem> DuelItemsGained { get; } = [];
+    /// <summary>斗法损失物品明细（本方被缴暂存区物品）</summary>
+    public List<PlayerReportItem> DuelItemsLost { get; } = [];
     /// <summary>已完成行动轮次</summary>
     public double Cycles { get; set; }
     /// <summary>战斗遭遇场次</summary>
@@ -143,6 +147,7 @@ public sealed class PlayerBattleReport
         || RootExp.Total > 0
         || AbilityExp.Count > 0 || TechniqueExp.Count > 0 || LevelUps.Count > 0
         || Items.Count > 0 || ItemsLost.Count > 0
+        || DuelItemsGained.Count > 0 || DuelItemsLost.Count > 0
         || Cycles > 0 || Encounters > 0
         || NormalKills > 0 || EliteKills > 0 || BossKills > 0 || Deaths > 0
         || DuelWins > 0 || DuelLosses > 0;
@@ -180,6 +185,22 @@ public sealed class PlayerBattleReport
         else ItemsLost.Add(new(itemId.Value, quantity));
     }
 
+    /// <summary>合并记录一件斗法缴获物品。</summary>
+    public void AddDuelItemGained(ItemId itemId, double quantity)
+    {
+        var index = DuelItemsGained.FindIndex(entry => entry.ItemId == itemId.Value);
+        if (index >= 0) DuelItemsGained[index] = DuelItemsGained[index] with { Quantity = DuelItemsGained[index].Quantity + quantity };
+        else DuelItemsGained.Add(new(itemId.Value, quantity));
+    }
+
+    /// <summary>合并记录一件斗法损失物品。</summary>
+    public void AddDuelItemLost(ItemId itemId, double quantity)
+    {
+        var index = DuelItemsLost.FindIndex(entry => entry.ItemId == itemId.Value);
+        if (index >= 0) DuelItemsLost[index] = DuelItemsLost[index] with { Quantity = DuelItemsLost[index].Quantity + quantity };
+        else DuelItemsLost.Add(new(itemId.Value, quantity));
+    }
+
     /// <summary>合并记录功法参悟经验。</summary>
     public void AddAbilityExp(string abilityId, double experience)
     {
@@ -208,6 +229,8 @@ public sealed class PlayerBattleReport
         LevelUps.Clear();
         Items.Clear();
         ItemsLost.Clear();
+        DuelItemsGained.Clear();
+        DuelItemsLost.Clear();
         Cycles = 0;
         Encounters = 0;
         NormalKills = 0;
@@ -394,7 +417,11 @@ public sealed record PlayerBattleReportDocument(
     double Foundation = 0,
     double CombatExperience = 0,
     /// <summary>行动内战斗单位统计（仅行动实例账本承载；归档战报恒为 null）。</summary>
-    IReadOnlyList<CombatUnitStatDocument>? Combatants = null);
+    IReadOnlyList<CombatUnitStatDocument>? Combatants = null,
+    /// <summary>斗法缴获物品明细。</summary>
+    IReadOnlyList<PlayerReportItem>? DuelItemsGained = null,
+    /// <summary>斗法损失物品明细。</summary>
+    IReadOnlyList<PlayerReportItem>? DuelItemsLost = null);
 
 /// <summary>六维经验文档形态。</summary>
 public sealed record PlayerRootExpDocument(

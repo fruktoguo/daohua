@@ -4003,6 +4003,16 @@
   gap: 6px;
 }
 
+.battle-report-staged-group {
+  display: grid;
+  gap: 6px;
+}
+
+.battle-report-staged-group + .battle-report-staged-group {
+  padding-top: 6px;
+  border-top: 1px dashed rgba(148, 103, 189, 0.25);
+}
+
 .battle-report-history {
   display: grid;
   gap: 6px;

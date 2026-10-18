@@ -128,13 +128,14 @@ public sealed class EnhancementContractTests
         var playerId = Guid.NewGuid();
         var repo = new FakeRepository(playerId, p =>
         {
-            p.Loadout.TechniqueExperiences["forging"] = 500_000;
-            p.Loadout.TechniqueExperiences["mining"] = 500_000;
+            p.World.NodeId = "node.fluorite-abyss";
+            p.Loadout.TechniqueExperiences["forging"] = 5_000_000;
+            p.Loadout.TechniqueExperiences["mining"] = 5_000_000;
         });
 
         await using var runtime = EcsRuntimeFactory.Create(
             repo, new EmptyAssets(), new NoopEconomy(),
-            LoadCatalogFiles("items/materials.json", "actions/gathering.json", "actions/crafting.json"));
+            LoadCatalogFiles("expected-attributes.json", "items/materials.json", "actions/gathering.json", "actions/crafting.json"));
         await runtime.LoadAsync(playerId);
 
         // 境界仅 1 级，但采矿技艺达标，开采赤铜矿（explore.mine-crimson-copper，18 级）允许入队
