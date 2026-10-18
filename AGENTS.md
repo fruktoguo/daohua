@@ -24,7 +24,7 @@
 - `tests/Domain.Tests`：领域和协议回归门禁。
 - `tests/Server.Tests`：服务端装配、持久化与跨边界协议回归门禁。
 - `tools/`：本地开发辅助工具（`config-editor` 独立 Vite 应用、`combat-simulator.html`），不进入生产镜像。
-- `art/`：美术与图像资源源文件及图标清单。
+- `art/`：美术与图像设计源文件、分层稿件与高分辨率母模资产库；被 `.dockerignore` 全局忽略，不进入生产镜像与构建上下文。所有 AI 原图、源 PNG、分层稿必须归档于此；生产前端 `frontend/public/` 与 `frontend/src/assets/` 只接收经过优化提取的单一最优运行时格式（折面角色仅保留 `.svg`，怪物仅保留透明 `.webp`，道具图标仅保留 64px `.webp`），严禁未压缩的原始 PNG 源码直入前端制造生产死重。
 - `deploy/`：生产部署资产（`compose.prod.yaml`、systemd 单元、备份/归档/回滚脚本、Caddy 站点配置、PG 角色 SQL）。
 - `vendor/YuoCore`：固定版本的 Git submodule（上游的 `ecs-optimized` 分支），生产运行时内核。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。**在 submodule 内工作时，必须遵循其仓库内 `AGENTS.md` → `docs/ai-development-guide.md` → `docs/yuocore-ecs-kernel-rules.md` 的规范链**（ECS 内核的稠密索引纪律、生命周期语义红线、观测零成本与消融归因门禁以该链为准）；submodule 内的提交在其自身分支完成且不推送，本仓库只更新 submodule 指针与 `scripts/bench-service.sh` 的 `CORE_SHA` 钉。
 - `data`：运行数据，不进入镜像，不提交 Git，不随代码发布覆盖。
@@ -140,6 +140,8 @@ docker compose -f deploy/compose.prod.yaml down
 | `capacity-target.sh` | 真实 PostgreSQL/WAL/latest-only Worker 容量门禁（容量相关变更与发布前运行，不在 `verify.sh` 合并必跑内） |
 | `smoke-production.mjs` | 生产/容器烟测：健康、就绪、同源静态入口与 WebSocket 首帧 |
 | `check-frontend-contracts.mjs` | 前后端协议/契约一致性检查（被 `tests/Server.Tests` 调用） |
+| `check-i18n-keys.mjs` | 前端 i18n 词条覆盖门禁：源码字面量键 + 配表驱动动态键族（物品/装备/行动/流派/目标/技艺/槽位/状态）全量比对中文词典，缺失即失败（`verify.sh` 必跑） |
+| `check-log-markup.mjs` | 日志富文本标记转义门禁：扫描 C# 插值字符串里「少转义一层」的 `{{kind:id\|label}}`（会退化成单花括号导致前端原样显示），`verify.sh` 必跑 |
 | `export-i18n-csv.mjs` | 导出前端 i18n 词条模板 CSV |
 | `optimize-svg.mjs` | SVG 美术资源优化 |
 | `docker-build-prod.sh` | 生产镜像多阶段构建与 CCR 推送（`--push`/`--push-existing`） |

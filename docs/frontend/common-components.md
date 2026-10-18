@@ -11,6 +11,7 @@
 
 - **适用场景**：
   - 极简单行/短文文字悬浮提示，移走即消，点击穿透底层（0 阻碍） -> `FloatingTooltip`
+  - **行内机制名词悬停说明 (Term Hint)**：面板设置行内只保留名词本体（`setting-label` + 虚线下划线 + `cursor: help`），完整机制长句收进悬停 `FloatingInfoCard`（`FloatingPopover` + `interactive=false`，`size="small"`）；用于消灭「说明文本在窄栏折行、把双栏整体撑高导致对侧内容被裁切」的版面问题。首发落地于强化页「保护材料」「起护等级」（`EnhancementPage.TermHint`，`.enhancement-term`）。
   - 标准法宝、装备、物品、功法、属性说明卡片（含品质色、境界徽章、属性键值网格、词条、副卡片组合） -> `FloatingInfoCard` / `FloatingPopover`
   - **装备/道具属性加成修仙色系统一收拢**：装备与道具悬浮卡片中的属性加成条目统一收拢为 `PillBonusLabel`，通过 `STAT_TONE_MAP` 字典与内视属性面板（`InsightPage`）中的修仙色彩（`PillTone`）完全对齐（赤红物攻、靛紫法攻、翡翠绿气血、灵气青灵力、青铜护甲、紫罗兰抗性、天蓝命中、水绿闪避、道金暴击、玄岩灰免暴韧性、琥珀橙破招、银白化解等），避免原先因 `+` 加号统归为粉红色产生的歧义与误导。
   - **攻击间隔规则收拢**：修仙规则中装备不具备“攻击间隔”属性，服务端配表映射与前端悬浮展示已彻底移除。
@@ -143,7 +144,7 @@
 ## 8. 数量步进与快捷选择器 (Quantity Selector)
 
 - **适用场景**：
-  - 市场交易、批量制造、行囊使用、派遣探索次数的选择（包含数字输入框、输入框左侧 `leadingPresets` 档位钮、右侧快捷预设数量按钮 `presets`、右侧「最大」钮 `maxShortcut`（点击填入 `max`）、可选无限 `∞` 按钮） -> `QuantitySelector`
+  - 市场交易、批量制造、行囊使用、派遣探索次数的选择（包含数字输入框、输入框左侧 `leadingPresets` 档位钮、右侧快捷预设数量按钮 `presets`、右侧「最大」钮 `maxShortcut`（点击填入 `max`；需要「输入硬上限」与「一键填满值」分离时用 `maxShortcutValue` 覆盖，如坊市求购「最大」= 当前价位可成交卖盘量而非余额可买量）、可选无限 `∞` 按钮） -> `QuantitySelector`
 - **组件源码**：[`frontend/src/components/QuantitySelector.tsx`](../../frontend/src/components/QuantitySelector.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.quantity-selector`)
 
@@ -195,6 +196,11 @@
   - **全自动生成翻译模板**：前端执行 `npm run dev` 或 `npm run build` 时，全自动从中文 TS 源生成最新 [`frontend/public/locales/template.csv`](../../frontend/public/locales/template.csv)（`key,zh_source,translation`），供外部/社区翻译对照。
   - **外语 CSV 动态扩展**：支持直接在 [`frontend/public/locales/`](../../frontend/public/locales/) 放入第三方 CSV 语言包（如 `ja-JP.csv`），构建时自动注册并显示到设置页，前端按需异步拉取并缓存；新增文件后需重新构建。空翻译或加载中回退至中文树状词典。
 - **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端下发的游戏内容（物品名、行动名、日志模板等协议数据）不走前端 i18n
+- **实体标识 → 展示名（禁止裸显 ID）**：
+  - 物品与装备混用的场合（行动消耗/产出、图鉴配方、掉落明细）统一走 [`resolveAssetLabel(id, items, equipment)`](../../frontend/src/game/ids.ts)：物品目录 → 装备目录 → 静态元数据词条 → 原标识，三级回退。只查 `findItemInCatalog` 会让 `equipment.*` 条目直接露出原始 ID（锻造升级链把成品装备当作输入）。
+  - 单实体卡片/悬浮卡走 `resolveItemMetadata(itemId)`（含 `game.item.<id>.label/description`）。
+  - 动态键族的枚举值必须与配表取值同形：`game.abilityStyle.<style>`（含 `mind`）、`game.abilityTarget.<kebab>`、`app.crafting.<technique>`（含 `gathering`/`mining`）、`game.category.<slot|tool>`、`combat.trigger.buff.<buffId>`（含 `formation.*` 非 `buff.` 前缀状态）。新增枚举值必须同步补词条。
+  - 门禁：`node scripts/check-i18n-keys.mjs`（`scripts/verify.sh` 必跑）。源码字面量键与配表驱动键族任一缺失即失败，避免界面回退成 `game.item.xxx.label` 这类词条键或实体 ID。
 
 ---
 
