@@ -936,13 +936,17 @@
   gap: 6px;
 }
 
+.candidate-picker-card {
+  min-width: min(320px, calc(100vw - 24px));
+}
+
 .candidate-picker-header {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 2px;
+  gap: 12px;
+  padding-bottom: 4px;
 }
 
 .candidate-picker-header-main {
@@ -972,42 +976,50 @@
   font-size: 11px;
 }
 
-/* 展开选择弹窗时顶部旁边展示的大号触发条件按钮（放大一倍，高度 32px/触屏 36px） */
+/* 展开选择弹窗时顶部旁边展示的触发条件按钮（宽度翻倍至 min-width 150px，高度提升50%至 48px/触屏 54px） */
 .candidate-picker-condition-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 4px 14px;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  min-width: 150px;
+  padding: 6px 24px;
   border: 1px solid color-mix(in srgb, var(--gold-dim) 80%, transparent);
   border-radius: 999px;
   color: var(--gold-light, #e8d08c);
   background: linear-gradient(180deg, rgba(32, 28, 18, 0.96) 0%, rgba(14, 15, 12, 0.96) 100%);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 6px rgba(201, 180, 109, 0.15);
-  font-size: 13px;
-  font-weight: 500;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.7), 0 0 8px rgba(201, 180, 109, 0.2);
+  font-size: 15px;
+  font-weight: 600;
   line-height: 1.25;
   letter-spacing: 0.5px;
   white-space: nowrap;
   user-select: none;
   cursor: pointer;
   flex-shrink: 0;
+  transition: border-color 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 
 .candidate-picker-condition-btn:hover:not(:disabled) {
   border-color: var(--gold-bright);
   color: var(--gold-bright);
-  filter: brightness(1.15) drop-shadow(0 0 6px rgba(201, 180, 109, 0.35));
+  filter: brightness(1.18) drop-shadow(0 0 8px rgba(201, 180, 109, 0.45));
+  transform: translateY(-1px);
+}
+
+.candidate-picker-condition-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .candidate-picker-condition-btn.has-triggers {
   border-color: color-mix(in srgb, var(--gold-bright) 90%, transparent);
   color: var(--gold-bright);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(201, 180, 109, 0.4);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.75), 0 0 10px rgba(201, 180, 109, 0.45);
 }
 
 .candidate-picker-condition-icon {
-  font-size: 14px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -1017,9 +1029,10 @@
 
 @media (hover: none), (pointer: coarse) {
   .candidate-picker-condition-btn {
-    min-height: 36px;
-    padding: 6px 16px;
-    font-size: 13px;
+    min-height: 54px;
+    min-width: 160px;
+    padding: 8px 28px;
+    font-size: 16px;
   }
 }
 .candidate-picker-grid {
