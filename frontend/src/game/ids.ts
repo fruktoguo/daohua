@@ -807,6 +807,64 @@ export function calculateEquipmentSellPrice(baseSellPrice: number, enhancementLe
   return Math.round(baseSellPrice * (1 + entry.beta) + entry.fee)
 }
 
+/** 45 件装备白板商店基础回收售价字典（V0 = 锻造原材料成本 * 2.0，总纲 §4.6.1 双倍增值铁律） */
+export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
+  'equipment.shouya-pendant': 312,
+  'equipment.taomu-talisman': 324,
+  'equipment.chiwen-ring': 1560,
+  'equipment.juling-pendant': 1588,
+  'equipment.shufa-scarf': 312,
+  'equipment.baina-armor': 432,
+  'equipment.zhakou-pants': 312,
+  'equipment.jinfeng-scarf': 312,
+  'equipment.qingpi-armor': 432,
+  'equipment.jixing-pants': 312,
+  'equipment.hunyuan-scarf': 324,
+  'equipment.suma-robe': 432,
+  'equipment.xingqi-pants': 312,
+  'equipment.chijin-helmet': 1560,
+  'equipment.yulin-armor': 2160,
+  'equipment.tazhen-greaves': 1560,
+  'equipment.zhanfeng-scarf': 1560,
+  'equipment.liegang-armor': 2160,
+  'equipment.tafeng-pants': 1560,
+  'equipment.ziwu-crown': 1588,
+  'equipment.pichen-shirt': 2160,
+  'equipment.liuyun-skirt': 1560,
+  'equipment.fan-tie-dart': 312,
+  'equipment.qingmu-bead': 324,
+  'equipment.tiepi-guard': 312,
+  'equipment.ganlu-flask': 324,
+  'equipment.xuantie-dart': 1560,
+  'equipment.yaoling-bead': 1588,
+  'equipment.xuanjia-guard': 1560,
+  'equipment.huichun-bell': 1584,
+  'equipment.tool-herb-hoe': 100,
+  'equipment.tool-prospect-compass': 144,
+  'equipment.tool-flame-ding': 144,
+  'equipment.tool-forge-hammer': 132,
+  'equipment.tool-talisman-brush': 62,
+  'equipment.tool-formation-flag': 100,
+  'equipment.tool-quench-anvil': 144,
+  'equipment.qingfeng-sword': 432,
+  'equipment.pishan-blade': 432,
+  'equipment.jiujie-staff': 444,
+  'equipment.suxin-zither': 444,
+  'equipment.pogang-sword': 2160,
+  'equipment.zhansha-blade': 2160,
+  'equipment.chaoyuan-staff': 2188,
+  'equipment.songfeng-zither': 2188,
+}
+
+/**
+ * 获取指定装备的基础回收售价（V0）：
+ * 优先取配表定义下发的 sellPrice，若未下发则回落静态字典。
+ */
+export function resolveEquipmentBaseSellPrice(equipmentId: string, eqDef?: CombatEquipmentDefinition): number {
+  if (eqDef?.sellPrice && eqDef.sellPrice > 0) return eqDef.sellPrice
+  return EQUIPMENT_BASE_SELL_PRICES[equipmentId] ?? 0
+}
+
 /**
  * 汇总当前所有被占用的装备实例数量（已穿戴 + 正在进行强化锁定的装备）：
  * 复合键为 `${itemId}#${enhancementLevel}`。
@@ -1430,7 +1488,7 @@ export function resolveDefaultEquipmentDefinition(equipmentId: string): CombatEq
     name: def.name ?? equipmentId,
     slot: def.slot ?? 'weapon',
     tier: def.tier ?? 1,
-    sellPrice: def.sellPrice ?? 0,
+    sellPrice: def.sellPrice ?? EQUIPMENT_BASE_SELL_PRICES[equipmentId] ?? 0,
     enhancementBonus: def.enhancementBonus,
     baseStatRatios: def.baseStatRatios,
     flatStats: def.flatStats,

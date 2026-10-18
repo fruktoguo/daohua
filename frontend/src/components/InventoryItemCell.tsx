@@ -1,7 +1,7 @@
 import { memo, useId, useState } from 'react'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { calculateEquipmentSellPrice, collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant } from '../game/ids'
+import { calculateEquipmentSellPrice, collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../game/ids'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { useMarketStore } from '../game/marketStore'
 import { useT } from '../i18n'
@@ -142,8 +142,10 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const usable = !occupied && (isManual || equipmentDef !== undefined)
   const tradable = equipmentDef !== undefined || definition?.isTradable === true
   // 回收单价：装备按当前强化等级查表折算，普通物品直接取配表 sellPrice
-  const unitPrice = equipmentDef && (equipmentDef.sellPrice ?? 0) > 0
-    ? calculateEquipmentSellPrice(equipmentDef.sellPrice!, enhancementLevel)
+  const isEquipment = equipmentDef !== undefined || item.itemId.startsWith('equipment.')
+  const eqBasePrice = isEquipment ? resolveEquipmentBaseSellPrice(item.itemId, equipmentDef) : 0
+  const unitPrice = eqBasePrice > 0
+    ? calculateEquipmentSellPrice(eqBasePrice, enhancementLevel)
     : (definition?.sellPrice ?? 0)
   const recyclable = !occupied
     && unitPrice > 0
