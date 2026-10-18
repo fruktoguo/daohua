@@ -49,7 +49,9 @@ public static class PostgresSchema
     /// 存档标签推进，表结构未变。
     /// v33：新增 market.item_stats 每品种行情统计（卖一/买一价量与当日/当周成交量）——
     /// 由挂单/撤单/到期/成交事务同事务维护，供悬浮行情卡小表直读；存档载荷未变。
-    public const int Version = 33;
+    /// v34：settings 分段新增 unlockedAvatars 已解锁形象集合（可缺省解码为 ["player", "player-male"]）——
+    /// 存档标签推进，表结构未变。
+    public const int Version = 34;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -594,7 +596,7 @@ public static class PostgresSchema
     );
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
-        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now())
+        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

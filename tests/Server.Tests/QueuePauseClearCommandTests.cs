@@ -50,13 +50,14 @@ public sealed class QueuePauseClearCommandTests
     /// player.set_avatar 指令更新玩家形象标识并标脏 Settings 分段。
     /// </summary>
     [Fact]
-    public async Task PlayerSetAvatar_AppliesAndUpdatesAvatar()
+    public async Task PlayerSetAvatar_DefaultMaleAllowed_LockedAvatarRejected()
     {
         var playerId = Guid.NewGuid();
         await using var runtime = EcsRuntimeFactory.Create(
             new FakeRepository(playerId), new EmptyAssets(), new NoopEconomy(), GameDataCatalog.BuiltIn);
         await runtime.LoadAsync(playerId);
 
+        // 默认男剑修：已解锁，允许直接设置
         var applied = await runtime.ExecuteAsync(playerId, "player.set_avatar",
             JsonSerializer.SerializeToElement(new { avatar = "male" }), 0, Guid.NewGuid());
         Assert.Equal("OK", applied.Code);
@@ -64,11 +65,68 @@ public sealed class QueuePauseClearCommandTests
         var touched = Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(applied.Snapshot.TouchedSections);
         Assert.Contains(PlayerSectionKind.Settings, touched);
 
-        var gothic = await runtime.ExecuteAsync(playerId, "player.set_avatar",
+        // 未解锁形象（如 gothic-lolita）：直接切换被拒绝
+        var locked = await runtime.ExecuteAsync(playerId, "player.set_avatar",
             JsonSerializer.SerializeToElement(new { avatar = "gothic-lolita" }), 0, Guid.NewGuid());
-        Assert.Equal("OK", gothic.Code);
-        Assert.Equal("gothic-lolita", gothic.Snapshot.State.Settings.Avatar);
-        Assert.Contains(PlayerSectionKind.Settings, touched);
+        Assert.False(locked.Success);
+        Assert.Equal("AVATAR_LOCKED", locked.Code);
+        Assert.Equal("player-male", locked.Snapshot.State.Settings.Avatar);
+    }
+
+    /// <summary>
+    /// 功德不足时调用 player.unlock_avatar 失败返回 INSUFFICIENT_MERIT。
+    /// </summary>
+    [Fact]
+    public async Task PlayerUnlockAvatar_InsufficientMerit_Fails()
+    {
+        var playerId = Guid.NewGuid();
+        var assets = new MeritTestAssetStore(playerId, boundMerit: 1000, normalMerit: 2000);
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), assets, assets, GameDataCatalog.BuiltIn);
+        await runtime.LoadAsync(playerId);
+
+        var res = await runtime.ExecuteAsync(playerId, "player.unlock_avatar",
+            JsonSerializer.SerializeToElement(new { avatar = "gothic-lolita" }), 0, Guid.NewGuid());
+        Assert.False(res.Success);
+        Assert.Equal("INSUFFICIENT_MERIT", res.Code);
+        Assert.Equal("player", res.Snapshot.State.Settings.Avatar);
+        Assert.False(res.Snapshot.State.Settings.IsAvatarUnlocked("gothic-lolita"));
+    }
+
+    /// <summary>
+    /// 功德充足时调用 player.unlock_avatar：优先扣除绑定功德，不够由非绑定功德补齐，解锁并佩戴形象。
+    /// </summary>
+    [Fact]
+    public async Task PlayerUnlockAvatar_DeductsBoundMeritFirst_AndUnlocksAvatar()
+    {
+        var playerId = Guid.NewGuid();
+        // 绑定功德 3000 + 流通功德 4000 = 7000，扣除 5000（3000 绑定 + 2000 流通）
+        var assets = new MeritTestAssetStore(playerId, boundMerit: 3000, normalMerit: 4000);
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), assets, assets, GameDataCatalog.BuiltIn);
+        await runtime.LoadAsync(playerId);
+
+        var res = await runtime.ExecuteAsync(playerId, "player.unlock_avatar",
+            JsonSerializer.SerializeToElement(new { avatar = "gothic-lolita" }), 0, Guid.NewGuid());
+        Assert.True(res.Success);
+        Assert.Equal("OK", res.Code);
+        Assert.Equal("gothic-lolita", res.Snapshot.State.Settings.Avatar);
+        Assert.True(res.Snapshot.State.Settings.IsAvatarUnlocked("gothic-lolita"));
+
+        // 扣除后余额：绑定功德 0，流通功德 2000
+        Assert.Equal(0, assets.GetBalance("item.gongde-bound"));
+        Assert.Equal(2000, assets.GetBalance("item.gongde"));
+
+        // 解锁后，自由切回女剑修与切回哥特萝莉均成功
+        var switchDefault = await runtime.ExecuteAsync(playerId, "player.set_avatar",
+            JsonSerializer.SerializeToElement(new { avatar = "default" }), 0, Guid.NewGuid());
+        Assert.True(switchDefault.Success);
+        Assert.Equal("player", switchDefault.Snapshot.State.Settings.Avatar);
+
+        var switchBack = await runtime.ExecuteAsync(playerId, "player.set_avatar",
+            JsonSerializer.SerializeToElement(new { avatar = "gothic-lolita" }), 0, Guid.NewGuid());
+        Assert.True(switchBack.Success);
+        Assert.Equal("gothic-lolita", switchBack.Snapshot.State.Settings.Avatar);
     }
 
     /// <summary>
@@ -145,5 +203,35 @@ public sealed class QueuePauseClearCommandTests
     {
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload));
+    }
+    private sealed class MeritTestAssetStore : IAssetBalanceRepository, IEconomyTransactionStore
+    {
+        private readonly Guid _playerId;
+        private readonly Dictionary<string, double> _balances = new(StringComparer.Ordinal);
+
+        public MeritTestAssetStore(Guid playerId, double boundMerit, double normalMerit)
+        {
+            _playerId = playerId;
+            _balances["item.gongde-bound"] = boundMerit;
+            _balances["item.gongde"] = normalMerit;
+        }
+
+        public double GetBalance(string assetId) => _balances.GetValueOrDefault(assetId, 0d);
+
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default)
+        {
+            var list = _balances.Select(kv => new AssetBalanceRecord(playerId, kv.Key, string.Empty, kv.Value, 1)).ToList();
+            return ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(list);
+        }
+
+        public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        {
+            foreach (var delta in request.Deltas)
+            {
+                var current = _balances.GetValueOrDefault(delta.AssetId, 0d);
+                _balances[delta.AssetId] = current + delta.Delta;
+            }
+            return ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload));
+        }
     }
 }

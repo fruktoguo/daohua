@@ -47,7 +47,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 33
+const SNAPSHOT_SCHEMA_VERSION = 34
 
 type JsonObject = Record<string, unknown>
 
@@ -1426,7 +1426,14 @@ export async function decodePlayerSnapshotDto(
     combat: loadout,
     combatResources: combat.resources,
     combatAttributes: combat.attributes,
-    visual: visualFor(name, optionalString(settings.avatar, 'settings.avatar') ?? undefined),
+    visual: visualFor(name, (() => {
+      if (Array.isArray(settings.unlockedAvatars)) {
+        useAvatarStore.getState().setUnlockedAvatars(settings.unlockedAvatars.filter((x): x is string => typeof x === 'string'))
+      }
+      const av = optionalString(settings.avatar, 'settings.avatar') ?? undefined
+      if (av) useAvatarStore.getState().setAvatarId(av as PlayerAvatarId)
+      return av
+    })()),
     world,
     duel,
     // 待突破 = 境界经验已填满当前层所需（容差 0.0001 吸收浮点误差）且确有修为存量
@@ -1475,6 +1482,9 @@ export async function decodePlayerSnapshotDeltaDto(
   if (settingsEnvelope && settings) {
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
     patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, false), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: booleanValue(settings.queuePaused, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    if (Array.isArray(settings.unlockedAvatars)) {
+      useAvatarStore.getState().setUnlockedAvatars(settings.unlockedAvatars.filter((x): x is string => typeof x === 'string'))
+    }
     const avatar = optionalString(settings.avatar, 'settings.avatar')
     if (avatar) {
       useAvatarStore.getState().setAvatarId(avatar as PlayerAvatarId)

@@ -355,8 +355,28 @@ public sealed class PlayerSettingsState
     /// <summary>新手引导奖励游标（已发放至第几里程碑）：推进仅当 nextStep > 游标才入账，
     /// 跳过时补发游标+1..Done 的剩余奖励；重学（restart）只重置 TutorialStep、游标不动。</summary>
     public int TutorialRewardsStep { get; set; }
+    /// <summary>默认女剑修形象标识。</summary>
+    public const string DefaultFemaleAvatar = "player";
+    /// <summary>默认男剑修形象标识。</summary>
+    public const string DefaultMaleAvatar = "player-male";
     /// <summary>本命形象外观标识（默认 player，可选 player-male）。</summary>
-    public string Avatar { get; set; } = "player";
+    public string Avatar { get; set; } = DefaultFemaleAvatar;
+    /// <summary>已解锁的形象标识集合（默认仅开放女剑修与男剑修）。</summary>
+    public HashSet<string> UnlockedAvatars { get; } = [DefaultFemaleAvatar, DefaultMaleAvatar];
+
+    /// <summary>检查形象是否已解锁（女剑修与男剑修恒为已解锁）。</summary>
+    public bool IsAvatarUnlocked(string? avatar)
+    {
+        var normalized = PlayerAggregate.NormalizeAvatar(avatar);
+        return normalized is DefaultFemaleAvatar or DefaultMaleAvatar || UnlockedAvatars.Contains(normalized);
+    }
+
+    /// <summary>解锁指定形象标识。</summary>
+    public bool UnlockAvatar(string? avatar)
+    {
+        var normalized = PlayerAggregate.NormalizeAvatar(avatar);
+        return UnlockedAvatars.Add(normalized);
+    }
 }
 
 /// <summary>
@@ -792,9 +812,25 @@ public sealed partial class PlayerAggregate
     public void SetAvatar(string? avatar)
     {
         var normalized = NormalizeAvatar(avatar);
+        if (!Settings.IsAvatarUnlocked(normalized))
+            throw new DomainException(DomainErrorCode.InvalidTransition, "形象尚未解锁，无法佩戴。");
         if (string.Equals(Settings.Avatar, normalized, StringComparison.Ordinal)) return;
         Settings.Avatar = normalized;
         Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 解锁指定形象并标记偏好设置分段为脏。
+    /// </summary>
+    public bool UnlockAvatar(string? avatar)
+    {
+        var normalized = NormalizeAvatar(avatar);
+        if (Settings.UnlockAvatar(normalized))
+        {
+            Touch(PlayerSectionKind.Settings);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>规整化本命形象外观标识。</summary>

@@ -5,7 +5,7 @@ import { ChangePasswordModal } from './ChangePasswordModal'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { LOCALES, useI18nStore, useT } from '../i18n'
-import { AVATAR_OPTIONS, getPlayerAvatarSrc, normalizePlayerAvatarId, useAvatarStore } from '../game/avatarStore'
+import { AVATAR_OPTIONS, getPlayerAvatarSrc, normalizePlayerAvatarId, useAvatarStore, type AvatarOption } from '../game/avatarStore'
 import { useThemeStore } from '../game/themeStore'
 import { TUTORIAL_DONE } from '../tutorial/steps'
 
@@ -117,7 +117,13 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const avatarId = useAvatarStore(state => state.avatarId)
   const setAvatarId = useAvatarStore(state => state.setAvatarId)
   const avatarSrc = getPlayerAvatarSrc(avatarId)
+  const isUnlocked = useAvatarStore(state => state.isUnlocked)
+  const inventory = useGameStore(state => state.inventory)
+  const [pendingUnlockAvatar, setPendingUnlockAvatar] = useState<AvatarOption | null>(null)
 
+  const boundMerit = inventory.find(item => item.itemId === 'item.gongde-bound')?.amount ?? 0
+  const normalMerit = inventory.find(item => item.itemId === 'item.gongde')?.amount ?? 0
+  const totalMerit = boundMerit + normalMerit
   const [remainingCooldown, setRemainingCooldown] = useState(renameCooldownSeconds)
 
   useEffect(() => {
@@ -297,20 +303,31 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
               <div className="avatar-selection-grid" role="radiogroup" aria-label={t('app.settings.avatarHeading')}>
                 {AVATAR_OPTIONS.map(opt => {
                   const isSelected = normalizePlayerAvatarId(avatarId) === opt.id
+                  const unlocked = isUnlocked(opt.id)
                   return (
                     <button
                       key={opt.id}
                       type="button"
                       role="radio"
                       aria-checked={isSelected}
-                      className={`avatar-tile${isSelected ? ' active' : ''}`}
+                      className={`avatar-tile${isSelected ? ' active' : ''}${!unlocked ? ' is-locked' : ''}`}
                       onClick={() => {
-                        setAvatarId(opt.id)
-                        gameClient.sendCommand('player.set_avatar', { avatar: opt.id })
+                        if (unlocked) {
+                          setAvatarId(opt.id)
+                          gameClient.sendCommand('player.set_avatar', { avatar: opt.id })
+                        } else {
+                          setPendingUnlockAvatar(opt)
+                        }
                       }}
                     >
                       <img className="avatar-tile-icon" alt="" draggable={false} src={opt.src} />
                       <span className="avatar-tile-name">{t(opt.nameKey)}</span>
+                      {!unlocked && (
+                        <span className="avatar-tile-lock-badge" title={t('app.settings.unlockAvatarCostBadge', { cost: 5000 })}>
+                          <span className="avatar-tile-lock-icon">🔒</span>
+                          <span className="avatar-tile-lock-cost">5000</span>
+                        </span>
+                      )}
                     </button>
                   )
                 })}
@@ -353,6 +370,31 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
           gameClient.sendCommand('tutorial.restart', {})
         }}
         onClose={() => setRestartConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={pendingUnlockAvatar !== null}
+        title={t('app.settings.unlockAvatarTitle')}
+        description={
+          totalMerit >= 5000
+            ? t('app.settings.unlockAvatarConfirmDesc', {
+                name: pendingUnlockAvatar ? t(pendingUnlockAvatar.nameKey) : '',
+                bound: Math.min(boundMerit, 5000),
+                normal: Math.max(0, 5000 - boundMerit),
+              })
+            : t('app.settings.unlockAvatarInsufficientDesc', {
+                name: pendingUnlockAvatar ? t(pendingUnlockAvatar.nameKey) : '',
+                current: totalMerit,
+              })
+        }
+        confirmLabel={totalMerit >= 5000 ? t('app.settings.unlockAvatarConfirmBtn') : undefined}
+        cancelLabel={totalMerit >= 5000 ? t('common.cancel') : t('common.close')}
+        onConfirm={() => {
+          if (pendingUnlockAvatar && totalMerit >= 5000) {
+            gameClient.sendCommand('player.unlock_avatar', { avatar: pendingUnlockAvatar.id })
+            setPendingUnlockAvatar(null)
+          }
+        }}
+        onClose={() => setPendingUnlockAvatar(null)}
       />
     </section>
   )

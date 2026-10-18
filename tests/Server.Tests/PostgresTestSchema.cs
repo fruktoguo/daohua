@@ -43,6 +43,13 @@ internal static class PostgresTestSchema
                 {
                     await using var ddl = new NpgsqlCommand(PostgresSchema.Sql, connection) { CommandTimeout = 60 };
                     await ddl.ExecuteNonQueryAsync();
+                    await using var updateVersions = new NpgsqlCommand($"""
+                        UPDATE game.player_state_heads SET schema_version = {PostgresSchema.Version} WHERE schema_version <> {PostgresSchema.Version};
+                        UPDATE game.player_state_sections SET schema_version = {PostgresSchema.Version} WHERE schema_version <> {PostgresSchema.Version};
+                        UPDATE platform.section_flush_queue SET schema_version = {PostgresSchema.Version} WHERE schema_version <> {PostgresSchema.Version};
+                        INSERT INTO platform.schema_version(version, applied_at) VALUES ({PostgresSchema.Version}, now()) ON CONFLICT (version) DO NOTHING;
+                        """, connection) { CommandTimeout = 60 };
+                    await updateVersions.ExecuteNonQueryAsync();
                     return;
                 }
                 catch (PostgresException exception) when (attempt < 5 && exception.SqlState is "23505" or "40P01" or "40001")

@@ -99,7 +99,50 @@ public sealed record PlayerSettingsStateDocument(
     /// <summary>新手引导奖励游标（已发放至第几里程碑；缺省解码为 0，重学不重复发已领奖励）</summary>
     int TutorialRewardsStep = 0,
     /// <summary>本命形象外观标识（默认 player，可选 player-male）</summary>
-    string Avatar = "player");
+    string Avatar = "player",
+    /// <summary>已解锁形象标识集合（默认包含女剑修与男剑修）</summary>
+    IReadOnlyList<string>? UnlockedAvatars = null)
+{
+    /// <summary>检查形象是否已解锁（女剑修与男剑修恒为已解锁）。</summary>
+    public bool IsAvatarUnlocked(string? avatar)
+    {
+        var normalized = PlayerAggregate.NormalizeAvatar(avatar);
+        return normalized is PlayerSettingsState.DefaultFemaleAvatar or PlayerSettingsState.DefaultMaleAvatar
+            || (UnlockedAvatars is not null && UnlockedAvatars.Contains(normalized));
+    }
+
+    public bool Equals(PlayerSettingsStateDocument? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Locale == other.Locale
+            && NotificationsEnabled == other.NotificationsEnabled
+            && LoopEnabled == other.LoopEnabled
+            && AutoTravelEnabled == other.AutoTravelEnabled
+            && RenameCooldownUntilUnixSeconds.Equals(other.RenameCooldownUntilUnixSeconds)
+            && QueuePaused == other.QueuePaused
+            && TutorialStep == other.TutorialStep
+            && TutorialRewardsStep == other.TutorialRewardsStep
+            && Avatar == other.Avatar
+            && ((AutoUseSlots == null && other.AutoUseSlots == null) || (AutoUseSlots != null && other.AutoUseSlots != null && AutoUseSlots.SequenceEqual(other.AutoUseSlots)))
+            && ((UnlockedAvatars == null && other.UnlockedAvatars == null) || (UnlockedAvatars != null && other.UnlockedAvatars != null && UnlockedAvatars.SequenceEqual(other.UnlockedAvatars)));
+    }
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Locale);
+        hash.Add(NotificationsEnabled);
+        hash.Add(LoopEnabled);
+        hash.Add(AutoTravelEnabled);
+        hash.Add(RenameCooldownUntilUnixSeconds);
+        hash.Add(QueuePaused);
+        hash.Add(TutorialStep);
+        hash.Add(TutorialRewardsStep);
+        hash.Add(Avatar);
+        return hash.ToHashCode();
+    }
+}
 
 /// <summary>行动项状态快照 DTO，记录进度与剩余轮次</summary>
 public sealed record QueuedActionState(
@@ -271,6 +314,8 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.TutorialStep == Settings.TutorialStep
             && _cachedSettingsDoc.TutorialRewardsStep == Settings.TutorialRewardsStep
             && _cachedSettingsDoc.Avatar == Settings.Avatar
+            && _cachedSettingsDoc.UnlockedAvatars != null
+            && _cachedSettingsDoc.UnlockedAvatars.Count == Settings.UnlockedAvatars.Count
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
         {
             return _cachedSettingsDoc;
@@ -285,7 +330,8 @@ public sealed partial class PlayerAggregate
             Settings.QueuePaused,
             Settings.TutorialStep,
             Settings.TutorialRewardsStep,
-            Settings.Avatar);
+            Settings.Avatar,
+            Settings.UnlockedAvatars.ToArray());
     }
 
     private AutoUseSlotState[] GetCachedAutoUseSlots()
@@ -461,7 +507,18 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
         aggregate.Settings.TutorialStep = state.Settings.TutorialStep;
         aggregate.Settings.TutorialRewardsStep = state.Settings.TutorialRewardsStep;
-        aggregate.Settings.Avatar = PlayerAggregate.NormalizeAvatar(state.Settings.Avatar);
+        aggregate.Settings.UnlockedAvatars.Clear();
+        aggregate.Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultFemaleAvatar);
+        aggregate.Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultMaleAvatar);
+        if (state.Settings.UnlockedAvatars is not null)
+        {
+            foreach (var a in state.Settings.UnlockedAvatars)
+                aggregate.Settings.UnlockAvatar(a);
+        }
+        var rawAvatar = PlayerAggregate.NormalizeAvatar(state.Settings.Avatar);
+        aggregate.Settings.Avatar = aggregate.Settings.IsAvatarUnlocked(rawAvatar)
+            ? rawAvatar
+            : PlayerSettingsState.DefaultFemaleAvatar;
         // 物品栏域词表是领域不变量：未知栏域、越界索引或非法分组的槽位在恢复边界丢弃
         // （词表演进后的失效词项属于非法枚举值过滤，不为旧词保留任何匹配路径）。
         foreach (var slot in state.Settings.AutoUseSlots ?? [])
@@ -785,7 +842,8 @@ public sealed partial class PlayerAggregate
         PlayerSectionKind.Settings => new SettingsCheckpoint(
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
                 Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds,
-                Settings.QueuePaused, Settings.TutorialStep, Settings.TutorialRewardsStep, Settings.Avatar)),
+                Settings.QueuePaused, Settings.TutorialStep, Settings.TutorialRewardsStep, Settings.Avatar,
+                Settings.UnlockedAvatars.ToArray())),
         PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
         PlayerSectionKind.Duel => new DuelCheckpoint(
             ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),
@@ -863,6 +921,15 @@ public sealed partial class PlayerAggregate
                 Settings.RenameCooldownUntilUnixSeconds = data.State.RenameCooldownUntilUnixSeconds;
                 Settings.TutorialStep = data.State.TutorialStep;
         Settings.TutorialRewardsStep = data.State.TutorialRewardsStep;
+                Settings.Avatar = data.State.Avatar;
+                Settings.UnlockedAvatars.Clear();
+                Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultFemaleAvatar);
+                Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultMaleAvatar);
+                if (data.State.UnlockedAvatars is not null)
+                {
+                    foreach (var a in data.State.UnlockedAvatars)
+                        Settings.UnlockAvatar(a);
+                }
                 Settings.AutoUseSlots.Clear();
                 Settings.AutoUseSlots.AddRange(data.State.AutoUseSlots ?? []);
                 break;

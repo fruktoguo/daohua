@@ -60,9 +60,10 @@ public static class SectionCodec
     /// v32：world 分段建筑效果 BuildingEffectSet 新增 monsterWeakenRatio（封魔阵怪物削弱，
     /// 可缺省解码为 0）；组队会话规格新增 MonsterWeakenRatio 冻结字段（可缺省解码），表结构未变。
     /// v33：新增 market.item_stats 每品种行情统计表，存档载荷未变，标签随库版本同步推进。
+    /// v34：settings 分段载荷新增 unlockedAvatars 已解锁形象集合（可缺省解码为 ["player", "player-male"]）；
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 33;
+    public const int CurrentSchemaVersion = 34;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -212,7 +213,7 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar]),
                 DomainSectionKind.ActionQueue => state.Actions,
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -240,7 +241,7 @@ public static class SectionCodec
             (PlayerSectionKinds.Combat, state.Combat),
             (PlayerSectionKinds.Buffs, state.Buffs),
             (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
-            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar)),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar])),
             (PlayerSectionKinds.ActionQueue, state.Actions),
             (PlayerSectionKinds.Duel, state.Duel)
         };
@@ -307,10 +308,9 @@ public static class SectionCodec
             new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoTravelEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds, settings.QueuePaused, settings.TutorialStep,
                 // v14 载荷无奖励游标：按 tutorialStep 回填「必然已领过」的最高赠送步下限，
                 // 防止升级后重学/推进重复领取阶段赠送（v15 起载荷自带游标，max 不生效）。
-                Math.Max(settings.TutorialRewardsStep, ImplyTutorialRewardsStep(settings.TutorialStep)))
-            {
-                Avatar = string.IsNullOrWhiteSpace(settings.Avatar) ? "player" : PlayerAggregate.NormalizeAvatar(settings.Avatar)
-            },
+                Math.Max(settings.TutorialRewardsStep, ImplyTutorialRewardsStep(settings.TutorialStep)),
+                ResolveAvatar(settings.Avatar, settings.UnlockedAvatars),
+                ResolveUnlockedAvatars(settings.UnlockedAvatars)),
             actions,
             loadout.State,
             duel,
@@ -328,6 +328,28 @@ public static class SectionCodec
         >= TutorialSteps.Alchemy => TutorialSteps.Alchemy,
         _ => 0
     };
+    private static string[] ResolveUnlockedAvatars(IReadOnlyList<string>? raw)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal)
+        {
+            PlayerSettingsState.DefaultFemaleAvatar,
+            PlayerSettingsState.DefaultMaleAvatar
+        };
+        if (raw is not null)
+        {
+            foreach (var a in raw)
+                set.Add(PlayerAggregate.NormalizeAvatar(a));
+        }
+        return set.ToArray();
+    }
+
+    private static string ResolveAvatar(string? avatar, IReadOnlyList<string>? unlocked)
+    {
+        var norm = string.IsNullOrWhiteSpace(avatar) ? PlayerSettingsState.DefaultFemaleAvatar : PlayerAggregate.NormalizeAvatar(avatar);
+        var set = ResolveUnlockedAvatars(unlocked);
+        return set.Contains(norm) ? norm : PlayerSettingsState.DefaultFemaleAvatar;
+    }
+
 
     /// <summary>领域分段枚举到持久化键的单向映射。</summary>
     public static string ToStorageKind(DomainSectionKind section) => section switch
@@ -413,5 +435,7 @@ public static class SectionCodec
         /// <summary>离线锚点；v31 前载荷缺省解码为 null。</summary>
         DateTimeOffset? OfflineSinceAt,
         /// <summary>本命形象外观标识；缺省解码为 player。</summary>
-        string Avatar = "player");
+        string Avatar = "player",
+        /// <summary>已解锁形象标识集合；v33 前载荷缺省解码为 null。</summary>
+        IReadOnlyList<string>? UnlockedAvatars = null);
 }

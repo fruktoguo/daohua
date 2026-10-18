@@ -890,7 +890,68 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     {
                         var avatar = payload.TryGetProperty("avatar", out var avatarElement) ? avatarElement.GetString() : null;
                         var normalized = PlayerAggregate.NormalizeAvatar(avatar);
+                        if (!before.State.Settings.IsAvatarUnlocked(normalized))
+                            return new PlayerCommandResult(false, "AVATAR_LOCKED", "该形象尚未解锁。", before);
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetAvatar(normalized));
+                        if (presence is not null)
+                            await presence.UpdateAvatarAsync(playerId, normalized, cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
+                    case "player.unlock_avatar":
+                    {
+                        var avatar = payload.TryGetProperty("avatar", out var avatarElement) ? avatarElement.GetString() : null;
+                        var normalized = PlayerAggregate.NormalizeAvatar(avatar);
+                        if (before.State.Settings.IsAvatarUnlocked(normalized))
+                        {
+                            touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetAvatar(normalized));
+                            if (presence is not null)
+                                await presence.UpdateAvatarAsync(playerId, normalized, cancellationToken).ConfigureAwait(false);
+                            break;
+                        }
+
+                        const double unlockCost = 5000d;
+                        const string boundMeritItemId = "item.gongde-bound";
+                        const string normalMeritItemId = "item.gongde";
+
+                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        var boundBalance = wallet.Get(new AssetKey(new ItemId(boundMeritItemId)));
+                        var normalBalance = wallet.Get(new AssetKey(new ItemId(normalMeritItemId)));
+                        var totalMerit = boundBalance + normalBalance;
+
+                        if (totalMerit + 1e-9 < unlockCost)
+                            return new PlayerCommandResult(false, "INSUFFICIENT_MERIT", "功德不足，解锁形象需消耗 5000 功德。", before);
+
+                        var deductBound = Math.Min(boundBalance, unlockCost);
+                        var deductNormal = unlockCost - deductBound;
+
+                        var deltas = new List<Server.Clean.AssetDelta>(2);
+                        if (deductBound > 0)
+                            deltas.Add(new(playerId, boundMeritItemId, string.Empty, -deductBound));
+                        if (deductNormal > 0)
+                            deltas.Add(new(playerId, normalMeritItemId, string.Empty, -deductNormal));
+
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            aggregate.UnlockAvatar(normalized);
+                            aggregate.SetAvatar(normalized);
+                        });
+
+                        var mutated = ToSnapshot(ecs.ExportSnapshot(playerId));
+                        var unlockReceipt = CreateReceipt(playerId, requestId, command, payloadHash, mutated.StateVersion);
+                        await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore,
+                            new EconomyTransactionRequest(
+                                requestId,
+                                $"avatar-unlock:{playerId:D}:{requestId:D}",
+                                command,
+                                playerId,
+                                deltas,
+                                DateTimeOffset.UtcNow,
+                                JsonSerializer.SerializeToUtf8Bytes(new { avatar = normalized, cost = unlockCost, deductBound, deductNormal }),
+                                Receipts: [unlockReceipt]),
+                            unlockReceipt,
+                            cancellationToken).ConfigureAwait(false);
+                        receiptAlreadyCommitted = true;
+
                         if (presence is not null)
                             await presence.UpdateAvatarAsync(playerId, normalized, cancellationToken).ConfigureAwait(false);
                         break;
@@ -1611,6 +1672,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "item.sell" => "物品已售出。",
         "player.rename" => "道号已更新。",
         "player.set_avatar" => "本命形象已更新。",
+        "player.unlock_avatar" => "本命形象已解锁并更新。",
         _ => string.Empty,
     };
 
@@ -1857,7 +1919,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "action.enqueue" or "action.remove" or
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
         "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
-        "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "market.claim" or
+        "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "player.unlock_avatar" or "market.claim" or
         "item.discard" or "item.sell" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
 
     private void RestoreUncommittedPlayer(Guid playerId, PlayerRuntimeSnapshot before,

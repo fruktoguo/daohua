@@ -261,12 +261,21 @@ export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   },
 ]
 
+/** 默认初始已解锁形象（仅限女剑修与男剑修） */
+export const DEFAULT_UNLOCKED_AVATARS: readonly PlayerAvatarId[] = ['default', 'male']
+
 /** 玩家道貌形象选择状态 */
 interface AvatarStore {
   /** 当前选中的形象标识 */
   avatarId: PlayerAvatarId
+  /** 已解锁的形象标识清单 */
+  unlockedAvatars: readonly PlayerAvatarId[]
   /** 切换形象并持久化到 localStorage */
   setAvatarId: (avatarId: PlayerAvatarId) => void
+  /** 同步服务端已解锁形象列表 */
+  setUnlockedAvatars: (avatars: readonly string[]) => void
+  /** 查询指定形象是否已解锁 */
+  isUnlocked: (avatarId?: PlayerAvatarId | string | null) => boolean
   /** 读取当前形象资源地址 */
   getAvatarSrc: () => string
 }
@@ -290,6 +299,7 @@ function readStoredAvatarId(): PlayerAvatarId {
  */
 export const useAvatarStore = create<AvatarStore>((set, get) => ({
   avatarId: readStoredAvatarId(),
+  unlockedAvatars: DEFAULT_UNLOCKED_AVATARS,
   setAvatarId: (avatarId: PlayerAvatarId) => {
     const normalized = normalizePlayerAvatarId(avatarId)
     set({ avatarId: normalized })
@@ -298,6 +308,29 @@ export const useAvatarStore = create<AvatarStore>((set, get) => ({
     } catch {
       // 持久化失败仅影响下次启动的默认选择，不阻断当前会话。
     }
+  },
+  setUnlockedAvatars: (avatars: readonly string[]) => {
+    const setKeys = new Set<PlayerAvatarId>(DEFAULT_UNLOCKED_AVATARS)
+    for (const raw of avatars) {
+      setKeys.add(normalizePlayerAvatarId(raw))
+    }
+    const unlocked = Array.from(setKeys)
+    const current = get().avatarId
+    if (!setKeys.has(current)) {
+      set({ unlockedAvatars: unlocked, avatarId: 'default' })
+      try {
+        window.localStorage.setItem(AVATAR_STORAGE_KEY, 'default')
+      } catch {
+        // ignore
+      }
+    } else {
+      set({ unlockedAvatars: unlocked })
+    }
+  },
+  isUnlocked: (avatarId?: PlayerAvatarId | string | null) => {
+    const norm = normalizePlayerAvatarId(avatarId)
+    if (norm === 'default' || norm === 'male') return true
+    return get().unlockedAvatars.includes(norm)
   },
   getAvatarSrc: () => getPlayerAvatarSrc(get().avatarId),
 }))
