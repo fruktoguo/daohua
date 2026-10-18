@@ -8,6 +8,7 @@ import { requestJson } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
 import { PartyActivityKind, type PartyActivityKind as PartyActivityKindType, type PartyMemberDto, type PartyProfileDto } from '../network/protocol'
 import { useUiStore, type SocialSubTab } from '../uiStore'
+import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FloatingPopover, FloatingTooltip, type FloatingPlacement } from './FloatingPopover'
@@ -683,7 +684,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                   >×</button>
                 )}
                 <div className="party-slot-avatar" aria-hidden="true">
-                  <CharacterAvatar actorId={member.avatar || 'player'} name={member.displayName} role="player" />
+                  <CharacterAvatar actorId={resolvePlayerActorId(member.avatar)} name={member.displayName} role="player" />
                 </div>
                 <div className="party-slot-meta">
                   <span className="party-member-valuation">{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>

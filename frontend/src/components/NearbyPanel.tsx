@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react'
-import { useAvatarStore } from '../game/avatarStore'
+import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
@@ -268,7 +268,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
                   <div className="nearby-player-top">
                     <div className="nearby-player-avatar-cell">
-                      <CharacterAvatar actorId={avatarId === 'male' ? 'player-male' : 'player'} name={name} role="player" />
+                      <CharacterAvatar actorId={resolvePlayerActorId(avatarId)} name={name} role="player" />
                     </div>
                     <div className="nearby-player-info-cell">
                       <strong className="nearby-player-name">{name}</strong>
@@ -294,7 +294,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       {/* 上部 80%：左 40% 形象，右 60% 名字与身家及操作 */}
                       <div className="nearby-player-top">
                         <div className="nearby-player-avatar-cell">
-                          <CharacterAvatar actorId={player.avatar || 'player'} name={player.displayName} role="player" />
+                          <CharacterAvatar actorId={resolvePlayerActorId(player.avatar)} name={player.displayName} role="player" />
                         </div>
                         <div className="nearby-player-info-cell">
                           <strong className="nearby-player-name">{player.displayName}</strong>

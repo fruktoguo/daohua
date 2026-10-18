@@ -802,7 +802,10 @@ public sealed partial class PlayerAggregate
     {
         if (string.IsNullOrWhiteSpace(avatar)) return "player";
         var trimmed = avatar.Trim().ToLowerInvariant();
-        if (trimmed is "male" or "player-male") return "player-male";
+        if (trimmed is "default" or "female" or "player-female") return "player";
+        if (trimmed is "male") return "player-male";
+        if (trimmed.Length <= 64 && trimmed.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
+            return trimmed;
         return "player";
     }
 

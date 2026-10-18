@@ -3,7 +3,7 @@ import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, 
 import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
-import { useAvatarStore } from '../game/avatarStore'
+import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { ACTION_TAB_META, convertTierToLevel, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
@@ -22,6 +22,7 @@ import { CombatStatsPanel } from './CombatStatsPanel'
 import { ConfirmDialog } from './ConfirmDialog'
 import { describeBuffEffectLines } from './ItemDisplay'
 import { useCombatVfx } from '../vfx/useCombatVfx'
+import { StatGlyph } from './StatGlyph'
 
 /** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名；传入 world+maps 时按当前驻留地点本地化 */
 function resolveQueueEntryDisplayName(
@@ -42,7 +43,7 @@ interface ResourceEffect {
   id: number
   /** 本次数值增量（负值为受损，闪避时为 undefined） */
   delta?: number
-  /** 纯文本（如“闪避”或带感叹号的暴击数字） */
+  /** 纯文本（如“闪避”或格式化伤害数字） */
   text?: string
   /** 特殊标签胶囊（破招 / 化解 / 暴击 / 破招·暴击） */
   badge?: 'break' | 'parry' | 'crit' | 'break-crit'
@@ -166,6 +167,25 @@ function isActorMatchingId(entityId: string, actorKey: string): boolean {
  * 3. 血量文字数值独立于切片之上渲染，杜绝层级遮挡与跳变；
  * 4. 具有自动清理定时器以防内存泄漏。
  */
+/** 渲染战斗浮字胶囊内的极简二值属性小图标 */
+function renderFloatBadgeIcon(badge: 'break' | 'parry' | 'crit' | 'break-crit'): React.ReactNode {
+  switch (badge) {
+    case 'crit':
+      return <StatGlyph glyph="crit" size={13.5} />
+    case 'break':
+      return <StatGlyph glyph="parry-break" size={13.5} />
+    case 'parry':
+      return <StatGlyph glyph="parry-resolve" size={13.5} />
+    case 'break-crit':
+      return (
+        <>
+          <StatGlyph glyph="parry-break" size={13.5} />
+          <StatGlyph glyph="crit" size={13.5} />
+        </>
+      )
+  }
+}
+
 function ArenaResource({
   actorKey,
   value,
@@ -280,11 +300,7 @@ function ArenaResource({
           const damageDelta = event.damage > 0 ? -event.damage : (normalizedValue - previousRef.current.value)
           if (damageDelta < 0) {
             const formattedDamage = formatInteger(damageDelta)
-            const text = isBreakCrit
-              ? `${formattedDamage}!!`
-              : isCrit
-              ? `${formattedDamage}!`
-              : formattedDamage
+            const text = formattedDamage
 
             const sliceEndHp = event.targetHp !== undefined
               ? event.targetHp
@@ -421,8 +437,12 @@ function ArenaResource({
                 } as CSSProperties}
               >
                 {effect.badge && (
-                  <span className={`arena-float-badge arena-float-badge--${effect.badge}`}>
-                    {effect.badgeLabel}
+                  <span
+                    className={`arena-float-badge arena-float-badge--${effect.badge}`}
+                    aria-label={effect.badgeLabel}
+                    title={effect.badgeLabel}
+                  >
+                    {renderFloatBadgeIcon(effect.badge)}
                   </span>
                 )}
                 <span className="arena-float-text">
@@ -1911,7 +1931,7 @@ export const CombatArena = memo(function CombatArena({
   const combatAttributes = useGameStore(state => state.combatAttributes)
   const abilities = useGameStore(state => state.abilities)
   const avatarId = useAvatarStore(state => state.avatarId)
-  const selfActorId = avatarId === 'male' ? 'player-male' : 'player'
+  const selfActorId = resolvePlayerActorId(avatarId)
   const buffs = useGameStore(state => state.buffs)
   const actions = useGameStore(state => state.actions)
   const world = useGameStore(state => state.world)
@@ -2038,7 +2058,7 @@ export const CombatArena = memo(function CombatArena({
       const mp = Math.max(0, Math.min(maxMp, expedition.duel?.opponentManapoints ?? maxMp))
       return [{
         actorKey: `enemy:duel:${expedition.duel?.opponentName ?? 'opponent'}`,
-        enemyId: expedition.duel?.opponentAvatar || 'player',
+        enemyId: resolvePlayerActorId(expedition.duel?.opponentAvatar),
         name,
         seal: name.slice(0, 1),
         hp,
@@ -2381,7 +2401,7 @@ export const CombatArena = memo(function CombatArena({
                     >
                       <ArenaActor
                         action={ally.action}
-                        actorId={ally.avatar || 'player'}
+                        actorId={resolvePlayerActorId(ally.avatar)}
                         actorKey={ally.actorKey}
                         compact
                         hp={ally.hp}
@@ -2573,7 +2593,7 @@ export const CombatArena = memo(function CombatArena({
           inspectedEnemy
             ? (inspectedEnemy.enemyId ?? activeEncounterId)
             : inspectedAlly
-              ? (inspectedAlly.isSelf ? selfActorId : inspectedAlly.avatar)
+              ? (inspectedAlly.isSelf ? selfActorId : resolvePlayerActorId(inspectedAlly.avatar))
               : selfActorId
         }
         attributes={inspectedAttributes}

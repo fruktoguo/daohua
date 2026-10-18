@@ -461,6 +461,7 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
         aggregate.Settings.TutorialStep = state.Settings.TutorialStep;
         aggregate.Settings.TutorialRewardsStep = state.Settings.TutorialRewardsStep;
+        aggregate.Settings.Avatar = PlayerAggregate.NormalizeAvatar(state.Settings.Avatar);
         // 物品栏域词表是领域不变量：未知栏域、越界索引或非法分组的槽位在恢复边界丢弃
         // （词表演进后的失效词项属于非法枚举值过滤，不为旧词保留任何匹配路径）。
         foreach (var slot in state.Settings.AutoUseSlots ?? [])
@@ -590,6 +591,7 @@ public sealed partial class PlayerAggregate
         Settings.RenameCooldownUntilUnixSeconds = restored.Settings.RenameCooldownUntilUnixSeconds;
         Settings.TutorialStep = restored.Settings.TutorialStep;
         Settings.TutorialRewardsStep = restored.Settings.TutorialRewardsStep;
+        Settings.Avatar = restored.Settings.Avatar;
         Settings.AutoUseSlots.Clear();
         Settings.AutoUseSlots.AddRange(restored.Settings.AutoUseSlots);
         _actions.Clear();

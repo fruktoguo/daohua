@@ -18,10 +18,17 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   player: { src: '/avatars/player.svg', format: 'svg' },
   'player-female': { src: '/avatars/player.svg', format: 'svg' },
   'player-male': { src: '/avatars/player-male.svg', format: 'svg' },
+  'avatar-gothic-lolita': { src: '/avatars/avatar-gothic-lolita.svg', format: 'svg' },
+  'avatar-katana-jk': { src: '/avatars/avatar-katana-jk.svg', format: 'svg' },
+  'avatar-mecha-petite': { src: '/avatars/avatar-mecha-petite.svg', format: 'svg' },
+  'avatar-hoodie-jk': { src: '/avatars/avatar-hoodie-jk.svg', format: 'svg' },
+  'gothic-lolita': { src: '/avatars/avatar-gothic-lolita.svg', format: 'svg' },
+  'katana-jk': { src: '/avatars/avatar-katana-jk.svg', format: 'svg' },
+  'mecha-petite': { src: '/avatars/avatar-mecha-petite.svg', format: 'svg' },
+  'hoodie-jk': { src: '/avatars/avatar-hoodie-jk.svg', format: 'svg' },
   default: { src: '/avatars/player.svg', format: 'svg' },
   female: { src: '/avatars/player.svg', format: 'svg' },
   male: { src: '/avatars/player-male.svg', format: 'svg' },
-
   // T1 怪物 (练气期)
   'demonized-rabbit': { src: '/avatars/demonized-rabbit.webp', format: 'webp' },
   'wood-spirit': { src: '/avatars/wood-spirit.webp', format: 'webp' },
@@ -87,15 +94,28 @@ export function getAvatarCandidateUrls(rawId?: string | null): readonly string[]
 /**
  * 玩家主角形象标识
  */
-export type PlayerAvatarId = 'default' | 'female' | 'male' | 'player' | 'player-male'
+export type PlayerAvatarId =
+  | 'default'
+  | 'female'
+  | 'male'
+  | 'player'
+  | 'player-male'
+  | 'gothic-lolita'
+  | 'katana-jk'
+  | 'mecha-petite'
+  | 'hoodie-jk'
 
 /**
- * 规整化玩家形象标识（统一映射到 default / male）
+ * 规整化玩家形象标识（统一映射到已注册选项）
  */
-export function normalizePlayerAvatarId(id?: string | null): 'default' | 'male' {
+export function normalizePlayerAvatarId(id?: string | null): PlayerAvatarId {
   if (!id) return 'default'
   const clean = id.trim().toLowerCase()
   if (clean === 'male' || clean === 'player-male') return 'male'
+  if (clean === 'gothic-lolita' || clean === 'avatar-gothic-lolita') return 'gothic-lolita'
+  if (clean === 'katana-jk' || clean === 'avatar-katana-jk') return 'katana-jk'
+  if (clean === 'mecha-petite' || clean === 'avatar-mecha-petite') return 'mecha-petite'
+  if (clean === 'hoodie-jk' || clean === 'avatar-hoodie-jk') return 'hoodie-jk'
   return 'default'
 }
 
@@ -104,12 +124,18 @@ export interface AvatarOption {
   /** 形象标识 */
   id: PlayerAvatarId
   /** 名称 i18n 键 */
-  nameKey: 'app.avatar.defaultName' | 'app.avatar.maleName'
+  nameKey:
+    | 'app.avatar.defaultName'
+    | 'app.avatar.maleName'
+    | 'app.avatar.gothicLolitaName'
+    | 'app.avatar.katanaJkName'
+    | 'app.avatar.mechaPetiteName'
+    | 'app.avatar.hoodieJkName'
   /** 立绘资源地址 */
   src: string
 }
 
-/** 玩家可选形象清单（默认女剑修、可选男剑修） */
+/** 玩家可选形象清单（女剑修、男剑修、哥特萝莉、武士刀JK、重装萌妹、潮酷卫衣） */
 export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   {
     id: 'default',
@@ -120,6 +146,26 @@ export const AVATAR_OPTIONS: readonly AvatarOption[] = [
     id: 'male',
     nameKey: 'app.avatar.maleName',
     src: '/avatars/player-male.svg',
+  },
+  {
+    id: 'gothic-lolita',
+    nameKey: 'app.avatar.gothicLolitaName',
+    src: '/avatars/avatar-gothic-lolita.svg',
+  },
+  {
+    id: 'katana-jk',
+    nameKey: 'app.avatar.katanaJkName',
+    src: '/avatars/avatar-katana-jk.svg',
+  },
+  {
+    id: 'mecha-petite',
+    nameKey: 'app.avatar.mechaPetiteName',
+    src: '/avatars/avatar-mecha-petite.svg',
+  },
+  {
+    id: 'hoodie-jk',
+    nameKey: 'app.avatar.hoodieJkName',
+    src: '/avatars/avatar-hoodie-jk.svg',
   },
 ]
 
@@ -137,7 +183,7 @@ interface AvatarStore {
 const AVATAR_STORAGE_KEY = 'daohua.avatar.v1'
 
 /** 从 localStorage 读取上次选择的形象；存储不可用或值非法时回退默认。 */
-function readStoredAvatarId(): 'default' | 'male' {
+function readStoredAvatarId(): PlayerAvatarId {
   try {
     const stored = window.localStorage.getItem(AVATAR_STORAGE_KEY)
     if (stored) return normalizePlayerAvatarId(stored)
@@ -170,4 +216,14 @@ export const useAvatarStore = create<AvatarStore>((set, get) => ({
 export function getPlayerAvatarSrc(avatarId?: PlayerAvatarId | string | null): string {
   const id = normalizePlayerAvatarId(avatarId ?? useAvatarStore.getState().avatarId)
   return AVATAR_OPTIONS.find(option => option.id === id)?.src ?? DEFAULT_PLAYER_AVATAR_SRC
+}
+
+/**
+ * 将形象标识符转换为立绘组件可加载的实体 ID
+ */
+export function resolvePlayerActorId(avatarId?: PlayerAvatarId | string | null): string {
+  const norm = normalizePlayerAvatarId(avatarId ?? useAvatarStore.getState().avatarId)
+  if (norm === 'default') return 'player'
+  if (norm === 'male') return 'player-male'
+  return norm
 }

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react'
-import { useAvatarStore } from '../game/avatarStore'
+import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
@@ -343,7 +343,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
           <div className="equipment-avatar-phantom-halo" aria-hidden="true" />
           <div className="equipment-avatar-phantom-stage">
             <CharacterAvatar
-              actorId={avatarId === 'male' ? 'player-male' : 'player'}
+              actorId={resolvePlayerActorId(avatarId)}
               name={playerName}
               role="player"
               visual={visual}

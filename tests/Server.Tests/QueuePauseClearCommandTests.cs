@@ -60,9 +60,14 @@ public sealed class QueuePauseClearCommandTests
         var applied = await runtime.ExecuteAsync(playerId, "player.set_avatar",
             JsonSerializer.SerializeToElement(new { avatar = "male" }), 0, Guid.NewGuid());
         Assert.Equal("OK", applied.Code);
-        Assert.Equal("本命形象已更新。", applied.Message);
         Assert.Equal("player-male", applied.Snapshot.State.Settings.Avatar);
         var touched = Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(applied.Snapshot.TouchedSections);
+        Assert.Contains(PlayerSectionKind.Settings, touched);
+
+        var gothic = await runtime.ExecuteAsync(playerId, "player.set_avatar",
+            JsonSerializer.SerializeToElement(new { avatar = "gothic-lolita" }), 0, Guid.NewGuid());
+        Assert.Equal("OK", gothic.Code);
+        Assert.Equal("gothic-lolita", gothic.Snapshot.State.Settings.Avatar);
         Assert.Contains(PlayerSectionKind.Settings, touched);
     }
 

@@ -5,7 +5,7 @@ import { ChangePasswordModal } from './ChangePasswordModal'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { LOCALES, useI18nStore, useT } from '../i18n'
-import { AVATAR_OPTIONS, getPlayerAvatarSrc, useAvatarStore } from '../game/avatarStore'
+import { AVATAR_OPTIONS, getPlayerAvatarSrc, normalizePlayerAvatarId, useAvatarStore } from '../game/avatarStore'
 import { useThemeStore } from '../game/themeStore'
 import { TUTORIAL_DONE } from '../tutorial/steps'
 
@@ -296,7 +296,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
               <h3 className="settings-group-title">{t('app.settings.avatarHeading')}</h3>
               <div className="avatar-selection-grid" role="radiogroup" aria-label={t('app.settings.avatarHeading')}>
                 {AVATAR_OPTIONS.map(opt => {
-                  const isSelected = avatarId === opt.id
+                  const isSelected = normalizePlayerAvatarId(avatarId) === opt.id
                   return (
                     <button
                       key={opt.id}
@@ -306,7 +306,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                       className={`avatar-tile${isSelected ? ' active' : ''}`}
                       onClick={() => {
                         setAvatarId(opt.id)
-                        gameClient.sendCommand('player.set_avatar', { avatar: opt.id === 'male' ? 'player-male' : 'player' })
+                        gameClient.sendCommand('player.set_avatar', { avatar: opt.id })
                       }}
                     >
                       <img className="avatar-tile-icon" alt="" draggable={false} src={opt.src} />

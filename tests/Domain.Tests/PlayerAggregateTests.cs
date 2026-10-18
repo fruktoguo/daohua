@@ -355,11 +355,23 @@ public sealed class PlayerAggregateTests
         player.ConsumeDirtySections();
         player.SetAvatar("player-male");
         Assert.DoesNotContain(PlayerSectionKind.Settings, player.DirtySections);
-
         // 切换回默认
         player.SetAvatar("default");
         Assert.Equal("player", player.Settings.Avatar);
         Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
+
+        // 支持各种合法形象标识
+        player.SetAvatar("gothic-lolita");
+        Assert.Equal("gothic-lolita", player.Settings.Avatar);
+
+        // 状态恢复往返不丢失形象
+        var exported = player.ExportState();
+        var restored = PlayerAggregate.Restore(exported);
+        Assert.Equal("gothic-lolita", restored.Settings.Avatar);
+
+        var fresh = PlayerAggregate.Create(player.PlayerId, player.AccountId, player.DisplayName, player.CreatedAt, "catalog-a");
+        fresh.RestoreFrom(exported);
+        Assert.Equal("gothic-lolita", fresh.Settings.Avatar);
     }
 
     /// <summary>

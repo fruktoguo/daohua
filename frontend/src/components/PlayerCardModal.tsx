@@ -8,6 +8,7 @@ import { findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, resolv
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
 import type { PlayerCardAutoUseSlotDto, PlayerCardDto } from '../network/protocol'
+import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
@@ -230,7 +231,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
         {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
         <div className="player-card-hero-top">
           <div className="player-card-hero-avatar">
-            <CharacterAvatar actorId={card.avatar || 'player'} name={card.displayName ?? ''} role="player" />
+            <CharacterAvatar actorId={resolvePlayerActorId(card.avatar)} name={card.displayName ?? ''} role="player" />
           </div>
           <div className="player-card-hero-info">
             <div className="player-card-hero-name-row">
