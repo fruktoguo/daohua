@@ -107,3 +107,8 @@ python .agents/skills/moss-art/scripts/moss_generator.py --batch offhands_b --st
 3. 自动剔除纯白底，提取透明主体；
 4. 按 **54px 边界等比居中** 缩放至 **64×64 RGBA WebP**（约 3~4 KB/张）；
 5. 以真实游戏资产 ID（如 `equipment.xuantie-dart.webp`）直接落盘到游戏目录，瞬间在前端生效。
+
+
+### 资产分流与工程红线：
+- **母模与全拼图存档**：ComfyUI 产出的 1024×1024 完整原图（Sprite Sheet）与高分辨率原件切片，统一归档入 `art/` 目录（如 `art/items/`、`art/avatars/`、`art/buildings/`），留作设计源素材，不进入生产构建上下文；
+- **前端生产运行时发布**：前端目录（`frontend/src/assets/items/`、`frontend/public/`）只承接压缩优化后的 64×64 RGBA WebP（图标道具）或透明 WebP（怪物立绘），严禁将大体积 PNG 源图直接塞入前端。

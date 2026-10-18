@@ -22,6 +22,26 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   'avatar-katana-jk': { src: '/avatars/avatar-katana-jk.svg', format: 'svg' },
   'avatar-mecha-petite': { src: '/avatars/avatar-mecha-petite.svg', format: 'svg' },
   'avatar-hoodie-jk': { src: '/avatars/avatar-hoodie-jk.svg', format: 'svg' },
+  'avatar-magic-male': { src: '/avatars/avatar-magic-male.svg', format: 'svg' },
+  'avatar-magic-female': { src: '/avatars/avatar-magic-female.svg', format: 'svg' },
+  'avatar-fire-male': { src: '/avatars/avatar-fire-male.svg', format: 'svg' },
+  'avatar-fire-female': { src: '/avatars/avatar-fire-female.svg', format: 'svg' },
+  'avatar-body-male': { src: '/avatars/avatar-body-male.svg', format: 'svg' },
+  'avatar-body-female': { src: '/avatars/avatar-body-female.svg', format: 'svg' },
+  'avatar-wood-male': { src: '/avatars/avatar-wood-male.svg', format: 'svg' },
+  'avatar-wood-female': { src: '/avatars/avatar-wood-female.svg', format: 'svg' },
+  'avatar-star-male': { src: '/avatars/avatar-star-male.svg', format: 'svg' },
+  'avatar-star-female': { src: '/avatars/avatar-star-female.svg', format: 'svg' },
+  'magic-male': { src: '/avatars/avatar-magic-male.svg', format: 'svg' },
+  'magic-female': { src: '/avatars/avatar-magic-female.svg', format: 'svg' },
+  'fire-male': { src: '/avatars/avatar-fire-male.svg', format: 'svg' },
+  'fire-female': { src: '/avatars/avatar-fire-female.svg', format: 'svg' },
+  'body-male': { src: '/avatars/avatar-body-male.svg', format: 'svg' },
+  'body-female': { src: '/avatars/avatar-body-female.svg', format: 'svg' },
+  'wood-male': { src: '/avatars/avatar-wood-male.svg', format: 'svg' },
+  'wood-female': { src: '/avatars/avatar-wood-female.svg', format: 'svg' },
+  'star-male': { src: '/avatars/avatar-star-male.svg', format: 'svg' },
+  'star-female': { src: '/avatars/avatar-star-female.svg', format: 'svg' },
   'gothic-lolita': { src: '/avatars/avatar-gothic-lolita.svg', format: 'svg' },
   'katana-jk': { src: '/avatars/avatar-katana-jk.svg', format: 'svg' },
   'mecha-petite': { src: '/avatars/avatar-mecha-petite.svg', format: 'svg' },
@@ -60,9 +80,8 @@ export function normalizeAvatarId(id?: string | null): string {
 
 /** 候选 URL 列表进程内缓存：候选集在会话内不变，避免每次渲染重建数组 */
 const AVATAR_URL_CACHE = new Map<string, readonly string[]>()
-
 /**
- * 根据 ID 智能生成多格式回退候选 URL 列表 (优先 WebP -> PNG -> SVG)
+ * 根据 ID 智能生成回退候选 URL 列表（已注册项直接精准返回单一路径，未注册项尝试 svg 与 webp）
  */
 export function getAvatarCandidateUrls(rawId?: string | null): readonly string[] {
   const id = normalizeAvatarId(rawId)
@@ -72,21 +91,14 @@ export function getAvatarCandidateUrls(rawId?: string | null): readonly string[]
   if (cached) return cached
 
   const registered = REGISTERED_AVATAR_MAP[id]
-  const candidates: string[] = []
-
   if (registered) {
-    candidates.push(registered.src)
+    const direct: readonly string[] = [registered.src]
+    AVATAR_URL_CACHE.set(id, direct)
+    return direct
   }
 
-  // 补齐其余可能存在的扩展名候选 (自动适应 webp/png/svg)
-  const extensions: AvatarImageFormat[] = ['webp', 'png', 'svg']
-  for (const ext of extensions) {
-    const url = `/avatars/${id}.${ext}`
-    if (!candidates.includes(url)) {
-      candidates.push(url)
-    }
-  }
-
+  // 未注册未知 ID：优先尝试 svg（矢量角色）再尝试 webp（位图怪物）
+  const candidates: readonly string[] = [`/avatars/${id}.svg`, `/avatars/${id}.webp`]
   AVATAR_URL_CACHE.set(id, candidates)
   return candidates
 }
@@ -104,6 +116,16 @@ export type PlayerAvatarId =
   | 'katana-jk'
   | 'mecha-petite'
   | 'hoodie-jk'
+  | 'magic-male'
+  | 'magic-female'
+  | 'fire-male'
+  | 'fire-female'
+  | 'body-male'
+  | 'body-female'
+  | 'wood-male'
+  | 'wood-female'
+  | 'star-male'
+  | 'star-female'
 
 /**
  * 规整化玩家形象标识（统一映射到已注册选项）
@@ -116,6 +138,16 @@ export function normalizePlayerAvatarId(id?: string | null): PlayerAvatarId {
   if (clean === 'katana-jk' || clean === 'avatar-katana-jk') return 'katana-jk'
   if (clean === 'mecha-petite' || clean === 'avatar-mecha-petite') return 'mecha-petite'
   if (clean === 'hoodie-jk' || clean === 'avatar-hoodie-jk') return 'hoodie-jk'
+  if (clean === 'magic-male' || clean === 'avatar-magic-male') return 'magic-male'
+  if (clean === 'magic-female' || clean === 'avatar-magic-female') return 'magic-female'
+  if (clean === 'fire-male' || clean === 'avatar-fire-male') return 'fire-male'
+  if (clean === 'fire-female' || clean === 'avatar-fire-female') return 'fire-female'
+  if (clean === 'body-male' || clean === 'avatar-body-male') return 'body-male'
+  if (clean === 'body-female' || clean === 'avatar-body-female') return 'body-female'
+  if (clean === 'wood-male' || clean === 'avatar-wood-male') return 'wood-male'
+  if (clean === 'wood-female' || clean === 'avatar-wood-female') return 'wood-female'
+  if (clean === 'star-male' || clean === 'avatar-star-male') return 'star-male'
+  if (clean === 'star-female' || clean === 'avatar-star-female') return 'star-female'
   return 'default'
 }
 
@@ -131,11 +163,21 @@ export interface AvatarOption {
     | 'app.avatar.katanaJkName'
     | 'app.avatar.mechaPetiteName'
     | 'app.avatar.hoodieJkName'
+    | 'app.avatar.magicMaleName'
+    | 'app.avatar.magicFemaleName'
+    | 'app.avatar.fireMaleName'
+    | 'app.avatar.fireFemaleName'
+    | 'app.avatar.bodyMaleName'
+    | 'app.avatar.bodyFemaleName'
+    | 'app.avatar.woodMaleName'
+    | 'app.avatar.woodFemaleName'
+    | 'app.avatar.starMaleName'
+    | 'app.avatar.starFemaleName'
   /** 立绘资源地址 */
   src: string
 }
 
-/** 玩家可选形象清单（女剑修、男剑修、哥特萝莉、武士刀JK、重装萌妹、潮酷卫衣） */
+/** 玩家可选形象清单（涵盖传统剑修、二次元潮酷与十方仙道全流派男女立绘） */
 export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   {
     id: 'default',
@@ -146,6 +188,56 @@ export const AVATAR_OPTIONS: readonly AvatarOption[] = [
     id: 'male',
     nameKey: 'app.avatar.maleName',
     src: '/avatars/player-male.svg',
+  },
+  {
+    id: 'magic-male',
+    nameKey: 'app.avatar.magicMaleName',
+    src: '/avatars/avatar-magic-male.svg',
+  },
+  {
+    id: 'magic-female',
+    nameKey: 'app.avatar.magicFemaleName',
+    src: '/avatars/avatar-magic-female.svg',
+  },
+  {
+    id: 'fire-male',
+    nameKey: 'app.avatar.fireMaleName',
+    src: '/avatars/avatar-fire-male.svg',
+  },
+  {
+    id: 'fire-female',
+    nameKey: 'app.avatar.fireFemaleName',
+    src: '/avatars/avatar-fire-female.svg',
+  },
+  {
+    id: 'body-male',
+    nameKey: 'app.avatar.bodyMaleName',
+    src: '/avatars/avatar-body-male.svg',
+  },
+  {
+    id: 'body-female',
+    nameKey: 'app.avatar.bodyFemaleName',
+    src: '/avatars/avatar-body-female.svg',
+  },
+  {
+    id: 'wood-male',
+    nameKey: 'app.avatar.woodMaleName',
+    src: '/avatars/avatar-wood-male.svg',
+  },
+  {
+    id: 'wood-female',
+    nameKey: 'app.avatar.woodFemaleName',
+    src: '/avatars/avatar-wood-female.svg',
+  },
+  {
+    id: 'star-male',
+    nameKey: 'app.avatar.starMaleName',
+    src: '/avatars/avatar-star-male.svg',
+  },
+  {
+    id: 'star-female',
+    nameKey: 'app.avatar.starFemaleName',
+    src: '/avatars/avatar-star-female.svg',
   },
   {
     id: 'gothic-lolita',
