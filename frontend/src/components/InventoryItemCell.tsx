@@ -1,7 +1,7 @@
 import { memo, useId, useState } from 'react'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant } from '../game/ids'
+import { calculateEquipmentSellPrice, collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant } from '../game/ids'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { useMarketStore } from '../game/marketStore'
 import { useT } from '../i18n'
@@ -57,7 +57,11 @@ function ItemQuantityDialog({
 
   const confirm = () => {
     if (isUse) gameClient.sendCommand('ability.learn', { itemId: item.itemId, quantity })
-    else gameClient.sendCommand(isDiscard ? 'item.discard' : 'item.sell', { itemId: item.itemId, quantity })
+    else gameClient.sendCommand(isDiscard ? 'item.discard' : 'item.sell', {
+      itemId: item.itemId,
+      variant: item.variant ?? '',
+      quantity,
+    })
     onClose()
   }
 
@@ -137,13 +141,12 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const isManual = item.itemId.startsWith('item.tome.') || item.itemId.startsWith('item.fragment.')
   const usable = !occupied && (isManual || equipmentDef !== undefined)
   const tradable = equipmentDef !== undefined || definition?.isTradable === true
-  // 强化变体行暂不可回收/丢弃：item.sell/item.discard 协议目前只结算基础变体行，
-  // 放行会错扣同物基础资产；待服务端命令支持 variant 参数后放开。
-  const isVariantRow = Boolean(item.variant)
+  // 回收单价：装备按当前强化等级查表折算，普通物品直接取配表 sellPrice
+  const unitPrice = equipmentDef && (equipmentDef.sellPrice ?? 0) > 0
+    ? calculateEquipmentSellPrice(equipmentDef.sellPrice!, enhancementLevel)
+    : (definition?.sellPrice ?? 0)
   const recyclable = !occupied
-    && !isVariantRow
-    && definition !== undefined
-    && definition.sellPrice > 0
+    && unitPrice > 0
     && !item.itemId.startsWith('currency.')
 
   /** 使用：秘籍/残卷进批量研读弹窗（ability.learn 携带 quantity）；装备立即穿戴（loadout.replace 剔除冲突槽位后推入） */
@@ -189,17 +192,17 @@ export const InventoryItemCell = memo(function InventoryItemCell({
       {tradable && (
         <FloatingMenuItem label={t('app.inventoryPanel.trade')} onClick={trade} />
       )}
-      {recyclable && definition && (
+      {recyclable && (
         <FloatingMenuItem
-          hint={t('app.inventoryPanel.recycleHint', { price: formatNumber(definition.sellPrice) })}
+          hint={t('app.inventoryPanel.recycleHint', { price: formatNumber(unitPrice) })}
           label={t('app.inventoryPanel.recycle')}
           onClick={() => setDialog('recycle')}
         />
       )}
       {(usable || tradable || recyclable) && <FloatingMenuDivider />}
       <FloatingMenuItem
-        disabled={occupied || isVariantRow}
-        hint={occupied ? t('app.inventoryPanel.equippedHint') : isVariantRow ? t('app.inventoryPanel.variantDisposeHint') : undefined}
+        disabled={occupied}
+        hint={occupied ? t('app.inventoryPanel.equippedHint') : undefined}
         label={t('app.inventoryPanel.discard')}
         onClick={() => setDialog('discard')}
         tone="danger"
@@ -226,7 +229,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
           item={bagItem}
           mode={dialog}
           onClose={() => setDialog(null)}
-          unitPrice={definition?.sellPrice ?? 0}
+          unitPrice={unitPrice}
         />
       )}
     </>

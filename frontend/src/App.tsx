@@ -1103,7 +1103,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   const equipment = useGameStore(state => state.equipment)
   const worldNodeId = useGameStore(state => state.world.nodeId)
   const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
-
+  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
   const craftingMode = useUiStore(state => state.craftingMode)
   const alchemySubTab = useUiStore(state => state.alchemySubTab)
   const setAlchemySubTab = useUiStore(state => state.setAlchemySubTab)
@@ -1204,17 +1204,19 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       }
     }
 
-    // 预计算候选行动真实等级，同时按图鉴解锁规则过滤：未解锁配方（等级 > 当前境界等级）在制造面板彻底隐藏
+    // 预计算候选行动真实等级，同时按图鉴解锁规则过滤：未解锁配方（等级 > 当前境界等级 且 等级 > 对应技艺等级）在制造面板彻底隐藏
     const actionLevelMap: Record<string, number> = {}
     const unlockedList: ActionDefinition[] = []
     for (const action of list) {
       const level = resolveActionLevel(action, itemCatalog, equipmentCatalog, encounters)
-      if (level <= realmLevel) {
+      const techLevel = action.technique
+        ? calculateTechniqueProgress(techniqueExperiences?.[action.technique] ?? 0).level
+        : 0
+      if (level <= 1 || level <= realmLevel || (action.technique && level <= techLevel)) {
         actionLevelMap[action.id] = level
         unlockedList.push(action)
       }
     }
-
     // 严格按真实等级升序排序（低等级在前，高等级在后），等级相同时按 ID 稳定排列
     return unlockedList.sort((a, b) => {
       const levelA = actionLevelMap[a.id] ?? 1
@@ -1222,7 +1224,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       if (levelA !== levelB) return levelA - levelB
       return a.id.localeCompare(b.id)
     })
-  }, [availableActions, craftingMode, alchemySubTab, forgingSubTab, equipmentSlotMap, itemCatalog, equipmentCatalog, encounters, realmLevel])
+  }, [availableActions, craftingMode, alchemySubTab, forgingSubTab, equipmentSlotMap, itemCatalog, equipmentCatalog, encounters, realmLevel, techniqueExperiences])
 
   return (
     <section className="panel skill-page crafting-page" hidden={hidden}>
@@ -1460,6 +1462,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   const equipmentCatalog = useGameStore(state => state.equipment)
   const encounters = useGameStore(state => state.encounters)
   const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
+  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
 
@@ -1471,7 +1474,13 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
     [action, itemCatalog, equipmentCatalog, encounters]
   )
 
-  const isLocked = level > realmLevel
+  const techLevel = useMemo(() => {
+    if (!action.technique) return 0
+    return calculateTechniqueProgress(techniqueExperiences?.[action.technique] ?? 0).level
+  }, [action.technique, techniqueExperiences])
+
+  const isUnlocked = level <= 1 || level <= realmLevel || (action.technique ? level <= techLevel : false);
+  const isLocked = !isUnlocked;
   const rarity = useMemo(
     () => resolveActionRarity(action, itemCatalog, equipmentCatalog, encounters),
     [action, itemCatalog, equipmentCatalog, encounters]
@@ -1551,8 +1560,13 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     () => resolveActionLevel(action, items, equipmentCatalog, encounters),
     [action, items, equipmentCatalog, encounters]
   )
-  const isLocked = actionLevel > realmLevel
+  const techLevel = useMemo(() => {
+    if (!action.technique) return 0
+    return calculateTechniqueProgress(combat?.techniqueExperiences?.[action.technique] ?? 0).level
+  }, [action.technique, combat?.techniqueExperiences])
 
+  const isUnlocked = actionLevel <= 1 || actionLevel <= realmLevel || (action.technique ? actionLevel <= techLevel : false)
+  const isLocked = !isUnlocked
   const yieldPreview = useMemo(() => calculateActionYieldPreview({
     action,
     inventory,
@@ -1902,7 +1916,16 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           }
         }}
         type="button"
-      >{isLocked ? t('app.action.levelRequired', { level: actionLevel }) : startsImmediately ? t('app.action.startCombatNow') : t('app.action.enqueueAction', { n: queueLength + 1 })}</button>
+      >{isLocked
+        ? (action.technique
+            ? t('app.action.levelOrTechniqueRequired', {
+                level: actionLevel,
+                technique: t(`insight.technique.${action.technique}`),
+              })
+            : t('app.action.levelRequired', { level: actionLevel }))
+        : startsImmediately
+        ? t('app.action.startCombatNow')
+        : t('app.action.enqueueAction', { n: queueLength + 1 })}</button>
     </Modal>
   )
 })

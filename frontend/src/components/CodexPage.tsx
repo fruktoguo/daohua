@@ -1,7 +1,13 @@
 import React, { memo, useCallback, useMemo } from 'react'
 
-import { isMaterialSubTabItem, isMaterialUnlocked } from '../game/codexCalculations'
-import { calculateRealmInfo } from '../game/combatConstants'
+import {
+  formatDualUnlockCondition,
+  formatRealmUnlockCondition,
+  isMaterialSubTabItem,
+  isMaterialUnlocked,
+  resolveMaterialTechnique,
+} from '../game/codexCalculations'
+import { calculateTechniqueProgress, TECHNIQUE_IDS } from '../game/combatConstants'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
@@ -57,19 +63,7 @@ const CRAFTING_SUB_TABS: ReadonlyArray<{ id: CodexCraftingSubTab; labelKey: stri
   { id: 'talisman', labelKey: 'craftingTalisman' },
 ]
 
-/**
- * 格式化角色境界解锁文案：
- * - 1 级及以下：默认解锁
- * - 18 级特例：境界达到 lv18[叩天门] 解锁
- * - 其余等级：境界达到 lv{level}[{realmName}] 解锁
- */
-function formatRealmUnlockCondition(level: number): string {
-  if (level <= 1) return '默认解锁'
-  if (level === 18) return '境界达到 lv18[叩天门] 解锁'
-  const info = calculateRealmInfo(0, level)
-  const name = level <= 18 ? info.minorName : `${info.stageName}${info.minorName}`
-  return `境界达到 lv${level}[${name}] 解锁`
-}
+
 
 /**
  * 万象图鉴页面组件
@@ -98,6 +92,16 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const equipment = useGameStore(state => state.equipment)
   const inventory = useGameStore(state => state.inventory)
   const learnedAbilityIds = useGameStore(state => state.combat?.learnedAbilityIds ?? [])
+  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
+
+  // 计算玩家当前各生活技艺等级
+  const techniqueLevels = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const id of TECHNIQUE_IDS) {
+      map[id] = calculateTechniqueProgress(techniqueExperiences?.[id] ?? 0).level
+    }
+    return map
+  }, [techniqueExperiences])
 
   // 0. 天地材料分类池：全量材料池（药材、矿石、异材）
   const allMaterials = useMemo(() => {
@@ -105,8 +109,8 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   }, [items])
 
   const isItemUnlocked = useCallback(
-    (item: ItemDefinition): boolean => isMaterialUnlocked(item, realmLevel, inventory),
-    [realmLevel, inventory]
+    (item: ItemDefinition): boolean => isMaterialUnlocked(item, realmLevel, inventory, techniqueLevels),
+    [realmLevel, inventory, techniqueLevels]
   )
 
   const currentSubTabMaterials = useMemo(() => {
@@ -194,6 +198,19 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     return allCraftingActions.filter(a => isSubTabAction(a, codexCraftingSubTab))
   }, [allCraftingActions, isSubTabAction, codexCraftingSubTab])
 
+  // 制造配方是否解锁：境界达到或对应制造技艺等级达到（双重「或」判定）
+  const isActionUnlocked = useCallback(
+    (action: ActionDefinition): boolean => {
+      const requiredLevel = resolveActionLevel(action, items, equipment, encounters)
+      if (requiredLevel <= 1) return true
+      if (realmLevel >= requiredLevel) return true
+      const tech = action.technique
+      if (tech && (techniqueLevels[tech] ?? 0) >= requiredLevel) return true
+      return false
+    },
+    [items, equipment, encounters, realmLevel, techniqueLevels]
+  )
+
   // 制造配方按所需境界排序（当前展示列表）
   const sortedCraftingActions = useMemo(() => {
     return [...currentSubTabActions].sort((a, b) => {
@@ -213,7 +230,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
       talisman: { unlocked: 0, total: 0 },
     }
     for (const action of allCraftingActions) {
-      const isUnlocked = resolveActionLevel(action, items, equipment, encounters) <= realmLevel
+      const isUnlocked = isActionUnlocked(action)
       for (const tab of CRAFTING_SUB_TABS) {
         if (isSubTabAction(action, tab.id)) {
           map[tab.id].total += 1
@@ -224,8 +241,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
       }
     }
     return map
-  }, [allCraftingActions, isSubTabAction, items, equipment, encounters, realmLevel])
-
+  }, [allCraftingActions, isSubTabAction, isActionUnlocked])
   // 2. 建筑图谱按 requiredRealmLevel 排序
   const sortedBuildings = useMemo(() => {
     return [...buildings].sort((a, b) => a.requiredRealmLevel - b.requiredRealmLevel)
@@ -272,8 +288,8 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
   // 技艺总解锁数与总配方数（全量技艺，不随子 Tab 改变）
   const totalCraftingUnlockedCount = useMemo(() => {
-    return allCraftingActions.filter(a => resolveActionLevel(a, items, equipment, encounters) <= realmLevel).length
-  }, [allCraftingActions, items, equipment, encounters, realmLevel])
+    return allCraftingActions.filter(isActionUnlocked).length
+  }, [allCraftingActions, isActionUnlocked])
   const totalCraftingCount = allCraftingActions.length
 
   const buildingUnlockedCount = useMemo(() => {
@@ -420,6 +436,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
                 items={items}
                 key={action.id}
                 realmLevel={realmLevel}
+                techniqueLevel={action.technique ? (techniqueLevels[action.technique] ?? 0) : 0}
               />
             ))}
             {sortedCraftingActions.length === 0 && (
@@ -553,11 +570,16 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
                 }`}
                 style={{ marginTop: 0 }}
               >
-                {isUnlocked ? t('app.codex.collected') : formatRealmUnlockCondition(levelNumber)}
+                {isUnlocked
+                  ? t('app.codex.collected')
+                  : (() => {
+                      const tech = resolveMaterialTechnique(item)
+                      const techName = tech ? t(`insight.technique.${tech}`) : null
+                      return formatDualUnlockCondition(levelNumber, techName)
+                    })()}
               </span>
             </div>
           </div>
-
           {/* 物品背景故事描述 */}
           {metadata.description && (
             <div style={{ paddingTop: 6, borderTop: '1px solid rgba(201, 180, 109, 0.15)', color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
@@ -616,17 +638,18 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
   items,
   equipment,
   encounters,
+  techniqueLevel = 0,
 }: {
   action: ActionDefinition
   realmLevel: number
   items: readonly ItemDefinition[]
   equipment: readonly CombatEquipmentDefinition[]
   encounters: readonly CombatEncounterDefinition[]
+  techniqueLevel?: number
 }): React.JSX.Element {
   const t = useT()
   const requiredLevel = resolveActionLevel(action, items, equipment, encounters)
-  const isUnlocked = realmLevel >= requiredLevel
-
+  const isUnlocked = requiredLevel <= 1 || realmLevel >= requiredLevel || techniqueLevel >= requiredLevel
   // 首选产出物品
   const outputYield = action.yields?.find(y => y.kind === 'item' && y.id)
   const outputItemId = outputYield?.id ?? action.id
@@ -716,7 +739,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
                 }`}
                 style={{ marginTop: 0 }}
               >
-                {formatRealmUnlockCondition(requiredLevel)}
+                {formatDualUnlockCondition(requiredLevel, action.technique ? techniqueName : null)}
               </span>
             </div>
             {inputEntries.length > 0 && (

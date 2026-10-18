@@ -424,16 +424,33 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，无法参与斗法撮合。", before);
                         if (gameData.Actions.TryGet(intent.ActionId, out var actionDefinition))
                         {
-                            // 行动/配方须满足对应 T 级境界解锁等级要求（如 T2 需 18 级）
-                            var requiredLevel = CraftingRecipeRules.ResolveRequiredRealmLevel(actionDefinition, gameData);
-                            if (requiredLevel > 1 && before.State.Progression.RealmLevel < requiredLevel)
+                            // 行动/配方须满足对应 T 级解锁等级要求（如 T2 需 18 级；境界与技艺等级二者满足其一即放行）
+                            var techniqueId = actionDefinition.Technique;
+                            var techniqueLevel = !string.IsNullOrEmpty(techniqueId)
+                                && before.State.Loadout is { TechniqueExperiences: { } techExperiences }
+                                && techExperiences.TryGetValue(techniqueId, out var exp)
+                                    ? TechniqueCatalog.LevelFor(exp, gameData.RealmProgression)
+                                    : 0;
+                            var currentRealmLevel = before.State.Progression?.RealmLevel ?? 1;
+                            if (!CraftingRecipeRules.IsActionUnlocked(actionDefinition, currentRealmLevel, techniqueLevel, gameData, out var requiredLevel))
                             {
                                 var isRecipe = actionDefinition.Kind == ActionKind.Alchemy
                                     || actionDefinition.Technique is "alchemy" or "forging" or "talisman" or "formation";
                                 var errorCode = isRecipe ? "RECIPE_LOCKED" : "ACTION_LOCKED";
+                                var techniqueName = techniqueId switch
+                                {
+                                    "alchemy" => "炼丹",
+                                    "forging" => "炼器",
+                                    "talisman" => "符箓",
+                                    "formation" => "阵法",
+                                    "gathering" => "采集",
+                                    "mining" => "采矿",
+                                    _ => null
+                                };
+                                var techHint = techniqueName is not null ? $"或{techniqueName}达到 {requiredLevel} 级" : string.Empty;
                                 var errorMessage = isRecipe
-                                    ? $"尚未解锁该制造图鉴（需境界达到 {requiredLevel} 级）。"
-                                    : $"尚未达到该行动所需境界（需境界达到 {requiredLevel} 级）。";
+                                    ? $"尚未解锁该制造图鉴（需境界达到 {requiredLevel} 级{techHint}）。"
+                                    : $"尚未达到该行动所需等级（需境界达到 {requiredLevel} 级{techHint}）。";
                                 return new PlayerCommandResult(false, errorCode, errorMessage, before);
                             }
                             // 强化行动必须指定目标装备；缺 targetItemId 载荷无效，不入队。
@@ -863,29 +880,78 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var disposeQuantity = payload.TryGetProperty("quantity", out var disposeQuantityElement)
                             && disposeQuantityElement.TryGetDouble(out var parsedDisposeQuantity)
                             ? parsedDisposeQuantity : double.NaN;
+                        var variant = payload.TryGetProperty("variant", out var variantElement)
+                            && variantElement.ValueKind == JsonValueKind.String
+                            ? variantElement.GetString() : string.Empty;
                         if (string.IsNullOrWhiteSpace(disposeItemId) || !double.IsFinite(disposeQuantity) || disposeQuantity <= 0
                             || disposeQuantity != Math.Floor(disposeQuantity))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "物品或数量无效。", before);
                         var hasItemDefinition = gameData.Items.TryGetValue(new ItemId(disposeItemId), out var disposeDefinition);
-                        if (!hasItemDefinition && !gameData.RawEquipments.ContainsKey(disposeItemId))
+                        var isEquipment = gameData.RawEquipments.ContainsKey(disposeItemId);
+                        if (!hasItemDefinition && !isEquipment)
                             return new PlayerCommandResult(false, "ITEM_NOT_FOUND", "物品不存在。", before);
-                        if (before.State.Loadout.Equipment.Any(slot => slot.ItemId == disposeItemId))
-                            return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法处置，请先卸下。", before);
+
+                        // 强化变体校验与归一化：装备按 "+N" 解析，普通物品不允许非空变体
+                        var variantLevel = 0;
+                        if (isEquipment)
+                        {
+                            if (EnhancementRules.ParseLevel(variant) is not { } parsedLevel
+                                || parsedLevel > EnhancementRules.MaxLevel)
+                                return new PlayerCommandResult(false, "INVALID_VARIANT", "装备变体无效。", before);
+                            variantLevel = parsedLevel;
+                            variant = EnhancementRules.KeyFor(new ItemId(disposeItemId), variantLevel).Variant;
+                        }
+                        else
+                        {
+                            if (!string.IsNullOrEmpty(variant))
+                                return new PlayerCommandResult(false, "INVALID_VARIANT", "该物品不支持变体处置。", before);
+                            variant = string.Empty;
+                        }
+
+                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        var assetKey = new AssetKey(new ItemId(disposeItemId), variant);
+                        var totalHeld = wallet.Get(assetKey);
+
+                        // 已穿戴件数防护：收窄至同级已穿戴占用，放行多余未穿戴备件
+                        if (isEquipment)
+                        {
+                            var equippedCount = before.State.Loadout.Equipment.Count(slot =>
+                                string.Equals(slot.ItemId, disposeItemId, StringComparison.Ordinal)
+                                && (int)Math.Floor(slot.EnhancementLevel) == variantLevel);
+                            if (equippedCount > 0 && totalHeld - equippedCount < disposeQuantity)
+                                return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法处置，请先卸下。", before);
+                        }
+
+                        if (totalHeld + 1e-9 < disposeQuantity)
+                            return new PlayerCommandResult(false, "INSUFFICIENT_ITEM", "物品数量不足。", before);
+
                         var spiritCredit = 0d;
                         if (command == "item.sell")
                         {
-                            if (!hasItemDefinition || disposeDefinition!.SellPrice <= 0
-                                || disposeItemId.StartsWith("currency.", StringComparison.Ordinal))
-                                return new PlayerCommandResult(false, "ITEM_NOT_SELLABLE", "该物品不支持系统回收。", before);
-                            spiritCredit = disposeDefinition.SellPrice * disposeQuantity;
+                            if (disposeItemId.StartsWith("currency.", StringComparison.Ordinal))
+                                return new PlayerCommandResult(false, "ITEM_NOT_SELLABLE", "货币不支持系统回收。", before);
+
+                            double unitSellPrice;
+                            if (isEquipment)
+                            {
+                                var baseSellPrice = EnhancementRules.ComputeEquipmentBaseSellPrice(gameData, disposeItemId);
+                                if (baseSellPrice is not { } basePrice || basePrice <= 0)
+                                    return new PlayerCommandResult(false, "ITEM_NOT_SELLABLE", "该装备不支持系统回收。", before);
+                                unitSellPrice = EnhancementRules.CalculateEquipmentSellPrice(basePrice, variantLevel);
+                            }
+                            else
+                            {
+                                if (!hasItemDefinition || disposeDefinition!.SellPrice <= 0)
+                                    return new PlayerCommandResult(false, "ITEM_NOT_SELLABLE", "该物品不支持系统回收。", before);
+                                unitSellPrice = disposeDefinition.SellPrice;
+                            }
+                            spiritCredit = unitSellPrice * disposeQuantity;
                         }
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
-                        if (wallet.Get(new AssetKey(new ItemId(disposeItemId))) + 1e-9 < disposeQuantity)
-                            return new PlayerCommandResult(false, "INSUFFICIENT_ITEM", "物品数量不足。", before);
+
                         var disposeNow = DateTimeOffset.UtcNow;
                         var disposeDeltas = new List<Server.Clean.AssetDelta>
                         {
-                            new(playerId, disposeItemId, string.Empty, -disposeQuantity)
+                            new(playerId, disposeItemId, variant, -disposeQuantity)
                         };
                         if (spiritCredit > 0)
                             disposeDeltas.Add(new(playerId, "currency.spirit-stone", string.Empty, spiritCredit));
@@ -896,7 +962,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             playerId,
                             disposeDeltas,
                             disposeNow,
-                            JsonSerializer.SerializeToUtf8Bytes(new { itemId = disposeItemId, quantity = disposeQuantity }),
+                            JsonSerializer.SerializeToUtf8Bytes(new { itemId = disposeItemId, variant, quantity = disposeQuantity }),
                             Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion)]),
                             cancellationToken).ConfigureAwait(false);
                         if (!disposeResult.Applied)

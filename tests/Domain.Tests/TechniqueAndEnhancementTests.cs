@@ -802,6 +802,51 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(10 / (1 + expectedRatio), SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
     }
 
+    /// <summary>装备强化商店回收折旧遵循总纲 §4.6.2 闭式常数公式，白板绝对保底且随等级递增。</summary>
+    [Fact]
+    public void EquipmentSellPriceDepreciationFollowsClosedFormula()
+    {
+        const double v0 = 312.0; // 青锋剑白板基础售价
+        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 0));
+        Assert.Equal(478.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 1));
+        Assert.Equal(691.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 2));
+        Assert.Equal(1495.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 5));
+        Assert.Equal(3449.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 10));
+        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 20));
+
+        // 越界截断保护
+        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, -1));
+        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 99));
+        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(0, 5));
+        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(-10, 5));
+    }
+
+    /// <summary>白板装备基础售价计算等于锻造原材料成本的 2.0 倍（制造翻倍铁律）。</summary>
+    [Fact]
+    public void ComputeEquipmentBaseSellPrice_ComputesDoubledMaterialCost()
+    {
+        var darkIron = new ItemDefinition(new ItemId("item.dark-iron"), "乌铁", "", true, 5);
+        var beastBone = new ItemDefinition(new ItemId("item.beast-bone"), "兽骨", "", true, 6);
+        var swordAction = new ActionDefinition(
+            new ActionId("forge.test-sword"),
+            "锻造测试剑",
+            ActionKind.Alchemy,
+            10,
+            new Dictionary<ItemId, double> { [darkIron.Id] = 10, [beastBone.Id] = 2 }, // 成本: 10*5 + 2*6 = 62
+            [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, Item: new ItemId("equipment.test-sword"))]);
+        var catalog = new GameDataCatalog("test", "fp", new ActionCatalog([swordAction]),
+            items: new Dictionary<ItemId, ItemDefinition> { [darkIron.Id] = darkIron, [beastBone.Id] = beastBone },
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                ["equipment.test-sword"] = Json("""{"id":"equipment.test-sword","name":"测试剑","slot":"weapon"}""")
+            });
+
+        var cost = EnhancementRules.ComputeEquipmentMaterialCost(catalog, "equipment.test-sword");
+        Assert.Equal(62.0, cost);
+        var v0 = EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, "equipment.test-sword");
+        Assert.Equal(124.0, v0);
+    }
+
     private static GameDataCatalog CreateMinimalCatalog(
         ActionCatalog? actions = null,
         Dictionary<string, JsonElement>? rawEquipments = null,

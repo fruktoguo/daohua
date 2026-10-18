@@ -1,7 +1,7 @@
 import { memo, type ReactNode, useCallback } from 'react'
 import { describeAbility, formatAbilityCategory, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { calculateEquipmentSellPrice, convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import { marketStatsKey } from '../network/apiClient'
@@ -855,7 +855,11 @@ function resolveMarketStatsAsideCard(
   if (!tradable) return null
   const t = getT()
   const stats = useGameStore.getState().marketStats[marketStatsKey(itemId, enhancementLevel)]
-  const vendorPrice = itemDef?.sellPrice && itemDef.sellPrice > 0 ? itemDef.sellPrice : null
+  const vendorPrice = itemDef?.sellPrice && itemDef.sellPrice > 0
+    ? itemDef.sellPrice
+    : eqDef?.sellPrice && eqDef.sellPrice > 0
+      ? calculateEquipmentSellPrice(eqDef.sellPrice, enhancementLevel)
+      : null
   const spiritUnit = t('market.spiritUnit')
 
   const askPrice = stats?.bestAskPrice ?? null

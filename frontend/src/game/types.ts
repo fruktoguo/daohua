@@ -1371,6 +1371,8 @@ export interface CombatEquipmentDefinition {
   slot: EquipmentSlot
   /** 等阶 */
   tier: number
+  /** 白板商店回收售价（灵石，V0） */
+  sellPrice?: number
   /** 每级强化附加的属性增益（配表原始字典） */
   enhancementBonus?: Record<string, number>
   /** 配表原始比例段（服务端透传，供详情面板展示） */

@@ -214,7 +214,7 @@ public static class OpsMarketActions
         var materialCosts = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var (id, equipment) in gameData.RawEquipments)
         {
-            if (ComputeEquipmentMaterialCost(gameData, id, materialCosts, 0) is not { } cost) continue;
+            if (EnhancementRules.ComputeEquipmentMaterialCost(gameData, id, materialCosts, 0) is not { } cost) continue;
             var name = equipment.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() ?? id : id;
             var slot = equipment.TryGetProperty("slot", out var slotProperty) ? slotProperty.GetString() ?? "equipment" : "equipment";
             targets.Add(new OpsMarketTarget(id, name, "equipment", slot, cost));
@@ -222,41 +222,6 @@ public static class OpsMarketActions
         return targets.OrderBy(target => target.AssetId, StringComparer.Ordinal).ToArray();
     }
 
-    /// <summary>
-    /// 装备材料成本价：定位 yields 产出该装备的锻造行动，inputs 中 item.* 按回收价×数量求和、
-    /// equipment.* 投入递归展开（T2 配方含 T1 装备投入）；递归深度上限对齐种子脚本口径。
-    /// </summary>
-    private static double? ComputeEquipmentMaterialCost(GameDataCatalog gameData, string equipmentId,
-        Dictionary<string, double> cache, int depth)
-    {
-        const int MaxRecipeDepth = 4;
-        if (depth > MaxRecipeDepth)
-            throw new DomainException(DomainErrorCode.InvariantViolation, $"装备配方递归超过深度上限（疑似配表成环）：{equipmentId}。");
-        if (cache.TryGetValue(equipmentId, out var cached)) return cached;
-        var recipe = gameData.Actions.All.FirstOrDefault(action =>
-            action.Yields.Any(yield => yield.Item is { } product && product.Value == equipmentId));
-        if (recipe is null) return null;
-        double cost = 0;
-        foreach (var (input, quantity) in recipe.Inputs)
-        {
-            if (input.Value.StartsWith("equipment.", StringComparison.Ordinal))
-            {
-                if (ComputeEquipmentMaterialCost(gameData, input.Value, cache, depth + 1) is not { } nested) return null;
-                cost += nested * quantity;
-            }
-            else if (gameData.Items.TryGetValue(input, out var material) && material.SellPrice > 0)
-            {
-                cost += material.SellPrice * quantity;
-            }
-            else
-            {
-                // 配方材料不在物品目录或无回收价 → 该装备无法定价。
-                return null;
-            }
-        }
-        cache[equipmentId] = cost;
-        return cost;
-    }
 
     /// <summary>按范围解析目标品种；解析失败返回 null 并给出错误信息。</summary>
     private static IReadOnlyList<OpsMarketTarget>? ResolveTargets(GameDataCatalog gameData, OpsSystemOrderRequest request, out string? error)

@@ -339,4 +339,95 @@ public static class EnhancementRules
         Outcome.FailProtected => Math.Max(0, prep.TargetLevel - 1),
         _ => 0
     };
+
+    /// <summary>
+    /// 装备强化各等级受保折旧常数表（总纲 §4.6.2，alpha = 0.50）：
+    /// Beta: 累计期望保护消耗底模数加成系数；
+    /// Fee: 累计期望手续费残值返还（灵石）。
+    /// </summary>
+    private static readonly (double Beta, double Fee)[] EnhancementDepreciationTable =
+    [
+        (0.000, 0),     // +0
+        (0.500, 10),    // +1
+        (1.111, 32),    // +2
+        (1.722, 66),    // +3
+        (2.472, 116),   // +4
+        (3.222, 178),   // +5
+        (3.972, 253),   // +6
+        (4.901, 353),   // +7
+        (5.829, 467),   // +8
+        (6.758, 596),   // +9
+        (7.687, 739),   // +10
+        (8.853, 922),   // +11
+        (10.020, 1122), // +12
+        (11.187, 1339), // +13
+        (12.353, 1572), // +14
+        (13.520, 1822), // +15
+        (14.687, 2089), // +16
+        (15.853, 2372), // +17
+        (17.020, 2672), // +18
+        (18.187, 2989), // +19
+        (19.353, 3322), // +20
+    ];
+
+    /// <summary>
+    /// 计算指定强化等级的装备商店回收单价（总纲 §4.6.2 50% 额外造价折旧闭式查表）：
+    /// SellPrice(+N) = round(V0 * (1 + beta_N) + F_N)；
+    /// N=0 时恒等于 V0；N 越界按 [0, MaxLevel] 截断。
+    /// </summary>
+    public static double CalculateEquipmentSellPrice(double baseSellPrice, int enhancementLevel)
+    {
+        if (baseSellPrice <= 0 || !double.IsFinite(baseSellPrice)) return 0;
+        var level = Math.Clamp(enhancementLevel, 0, MaxLevel);
+        var (beta, fee) = EnhancementDepreciationTable[level];
+        return Math.Round(baseSellPrice * (1.0 + beta) + fee);
+    }
+
+    /// <summary>
+    /// 装备锻造材料成本价：定位 yields 产出该装备的锻造行动，inputs 中 item.* 按回收价×数量求和、
+    /// equipment.* 投入递归展开（T2 配方含 T1 装备投入）；配表成环安全保护上限为 4 层。
+    /// </summary>
+    public static double? ComputeEquipmentMaterialCost(GameDataCatalog gameData, string equipmentId,
+        Dictionary<string, double>? cache = null, int depth = 0)
+    {
+        const int MaxRecipeDepth = 4;
+        if (depth > MaxRecipeDepth)
+            throw new DomainException(DomainErrorCode.InvariantViolation, $"装备配方递归超过深度上限（疑似配表成环）：{equipmentId}。");
+        if (cache is not null && cache.TryGetValue(equipmentId, out var cached))
+            return cached;
+        var recipe = gameData.Actions.All.FirstOrDefault(action =>
+            action.Yields.Any(yield => yield.Item is { } product && string.Equals(product.Value, equipmentId, StringComparison.Ordinal)));
+        if (recipe is null) return null;
+        double cost = 0;
+        foreach (var (input, quantity) in recipe.Inputs)
+        {
+            if (input.Value.StartsWith("equipment.", StringComparison.Ordinal))
+            {
+                if (ComputeEquipmentMaterialCost(gameData, input.Value, cache, depth + 1) is not { } nested) return null;
+                cost += nested * quantity;
+            }
+            else if (gameData.Items.TryGetValue(input, out var material) && material.SellPrice > 0)
+            {
+                cost += material.SellPrice * quantity;
+            }
+            else
+            {
+                return null;
+            }
+        }
+        if (cache is not null) cache[equipmentId] = cost;
+        return cost;
+    }
+
+    /// <summary>
+    /// 装备白板商店基础回收售价 V0（总纲 §4.6.1 制造翻倍铁律：原料总成本 * 2.0）。
+    /// 若配方不存在或材料无回收价，返回 null。
+    /// </summary>
+    public static double? ComputeEquipmentBaseSellPrice(GameDataCatalog gameData, string equipmentId,
+        Dictionary<string, double>? costCache = null)
+    {
+        if (ComputeEquipmentMaterialCost(gameData, equipmentId, costCache, 0) is { } cost)
+            return cost * 2.0;
+        return null;
+    }
 }

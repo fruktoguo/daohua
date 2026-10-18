@@ -766,6 +766,48 @@ export function parseEnhancementVariant(variant?: string | null): number {
 }
 
 /**
+ * 装备强化各等级受保折旧常数表（总纲 §4.6.2，alpha = 0.50）：
+ * beta: 累计期望保护消耗底模数加成系数；
+ * fee: 累计期望手续费残值返还（灵石）。
+ */
+const ENHANCEMENT_DEPRECIATION_TABLE: readonly { beta: number; fee: number }[] = [
+  { beta: 0.000, fee: 0 },     // +0
+  { beta: 0.500, fee: 10 },    // +1
+  { beta: 1.111, fee: 32 },    // +2
+  { beta: 1.722, fee: 66 },    // +3
+  { beta: 2.472, fee: 116 },   // +4
+  { beta: 3.222, fee: 178 },   // +5
+  { beta: 3.972, fee: 253 },   // +6
+  { beta: 4.901, fee: 353 },   // +7
+  { beta: 5.829, fee: 467 },   // +8
+  { beta: 6.758, fee: 596 },   // +9
+  { beta: 7.687, fee: 739 },   // +10
+  { beta: 8.853, fee: 922 },   // +11
+  { beta: 10.020, fee: 1122 }, // +12
+  { beta: 11.187, fee: 1339 }, // +13
+  { beta: 12.353, fee: 1572 }, // +14
+  { beta: 13.520, fee: 1822 }, // +15
+  { beta: 14.687, fee: 2089 }, // +16
+  { beta: 15.853, fee: 2372 }, // +17
+  { beta: 17.020, fee: 2672 }, // +18
+  { beta: 18.187, fee: 2989 }, // +19
+  { beta: 19.353, fee: 3322 }, // +20
+]
+
+/**
+ * 计算指定强化等级的装备商店回收单价（总纲 §4.6.2 50% 额外造价折旧闭式查表）：
+ * SellPrice(+N) = round(V0 * (1 + beta_N) + F_N)；
+ * N=0 时恒等于 V0；N 越界按 [0, 20] 截断。
+ */
+export function calculateEquipmentSellPrice(baseSellPrice: number, enhancementLevel: number): number {
+  if (baseSellPrice <= 0 || !Number.isFinite(baseSellPrice)) return 0
+  const level = Math.max(0, Math.min(20, Math.floor(enhancementLevel)))
+  const entry = ENHANCEMENT_DEPRECIATION_TABLE[level]
+  if (!entry) return Math.round(baseSellPrice)
+  return Math.round(baseSellPrice * (1 + entry.beta) + entry.fee)
+}
+
+/**
  * 汇总当前所有被占用的装备实例数量（已穿戴 + 正在进行强化锁定的装备）：
  * 复合键为 `${itemId}#${enhancementLevel}`。
  * 背包陈列、挑选器与槽位装配中，可支配数量 = 钱包持存 - 该占用计数。
@@ -1388,6 +1430,7 @@ export function resolveDefaultEquipmentDefinition(equipmentId: string): CombatEq
     name: def.name ?? equipmentId,
     slot: def.slot ?? 'weapon',
     tier: def.tier ?? 1,
+    sellPrice: def.sellPrice ?? 0,
     enhancementBonus: def.enhancementBonus,
     baseStatRatios: def.baseStatRatios,
     flatStats: def.flatStats,

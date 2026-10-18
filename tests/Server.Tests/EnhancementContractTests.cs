@@ -118,6 +118,42 @@ public sealed class EnhancementContractTests
     }
 
     /// <summary>
+    /// 验证境界或技艺双重「或」解锁：
+    /// 当玩家角色境界为 1 级，但对应技艺（如采矿 mining、锻造 forging）等级达到 18 级时，
+    /// 对应 T2 行动入队直接放行。
+    /// </summary>
+    [Fact]
+    public async Task ActionEnqueue_DualUnlock_PermitsWhenTechniqueLevelSatisfied()
+    {
+        var playerId = Guid.NewGuid();
+        var repo = new FakeRepository(playerId, p =>
+        {
+            p.Loadout.TechniqueExperiences["forging"] = 500_000;
+            p.Loadout.TechniqueExperiences["mining"] = 500_000;
+        });
+
+        await using var runtime = EcsRuntimeFactory.Create(
+            repo, new EmptyAssets(), new NoopEconomy(),
+            LoadCatalogFiles("items/materials.json", "actions/gathering.json", "actions/crafting.json"));
+        await runtime.LoadAsync(playerId);
+
+        // 境界仅 1 级，但采矿技艺达标，开采赤铜矿（explore.mine-crimson-copper，18 级）允许入队
+        var mineRequestId = Guid.NewGuid();
+        var mineResult = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                mineRequestId.ToString("D"), "explore.mine-crimson-copper", 1), ProtocolJson.Options),
+            0, mineRequestId);
+        Assert.True(mineResult.Success, $"{mineResult.Code}: {mineResult.Message}");
+
+        // 境界仅 1 级，但锻造技艺达标，赤铜精制造（craft.refine-copper，18 级）允许入队
+        var craftRequestId = Guid.NewGuid();
+        var craftResult = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                craftRequestId.ToString("D"), "craft.refine-copper", 1), ProtocolJson.Options),
+            0, craftRequestId);
+        Assert.True(craftResult.Success, $"{craftResult.Code}: {craftResult.Message}");
+    }
+    /// <summary>
     /// 装备持有校验按资产变体键结算：钱包只持 +2 变体时，装配基础形态与 +3 均拒绝，
     /// 装配 +2 成功并写入槽位等级；小数等级同样拒绝。
     /// </summary>
@@ -181,6 +217,100 @@ public sealed class EnhancementContractTests
     public void PostgresSchemaSql_SeedsCurrentVersion()
         => Assert.Contains($"({PostgresSchema.Version}, now())", PostgresSchema.Sql);
 
+    /// <summary>强化装备 item.sell 正确按 +N 受保折旧单价结算，精确扣除变体行并贷记对应灵石。</summary>
+    [Fact]
+    public async Task ItemSell_EnhancedEquipment_CalculatesDepreciatedPriceAndDeductsVariantRow()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        // 玩家持有 1 件 +5 青锋剑
+        var assets = new CustomQuantityAssets(playerId, ("equipment.qingfeng-sword", "+5", 1));
+        await using var runtime = EcsRuntimeFactory.Create(new FakeRepository(playerId), assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.qingfeng-sword",
+            variant = "+5",
+            quantity = 1
+        });
+
+        var result = await runtime.ExecuteAsync(playerId, "item.sell", payload, 0, requestId);
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+
+        Assert.NotNull(economy.LastRequest);
+        // 扣减 +5 变体行
+        var itemDelta = Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "equipment.qingfeng-sword");
+        Assert.Equal("+5", itemDelta.Variant);
+        Assert.Equal(-1.0, itemDelta.Delta);
+
+        // 贷记灵石：青锋剑 V0 = 432 (成本 7*30 + 1*6 = 216)，+5 单价 = round(432 * 4.222 + 178) = 2002
+        var spiritDelta = Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "currency.spirit-stone");
+        Assert.Equal(string.Empty, spiritDelta.Variant);
+        Assert.Equal(2002.0, spiritDelta.Delta);
+    }
+
+    /// <summary>装备 item.sell 穿戴拦截收窄至同级占用：无多余备件拒绝，有多余备件放行。</summary>
+    [Fact]
+    public async Task ItemSell_EquippedEquipment_BlocksWhenNoSpare()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        // 玩家持有 1 件白板青锋剑
+        var assets = new CustomQuantityAssets(playerId, ("equipment.qingfeng-sword", string.Empty, 1));
+        var repo = new FakeRepository(playerId);
+        await using var runtime = EcsRuntimeFactory.Create(repo, assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        // 玩家穿戴了这件白板青锋剑
+        await runtime.MutateOwnedAsync(playerId, aggregate =>
+        {
+            aggregate.Loadout.Equipment.Add(new PlayerEquipmentSlot("equipment.qingfeng-sword", 0));
+        });
+
+        // 尝试卖出：仅持有 1 件且已穿戴 → 拦截
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.qingfeng-sword",
+            variant = string.Empty,
+            quantity = 1
+        });
+        var result = await runtime.ExecuteAsync(playerId, "item.sell", payload, 0, Guid.NewGuid());
+        Assert.False(result.Success);
+        Assert.Equal("ITEM_EQUIPPED", result.Code);
+    }
+
+    /// <summary>强化装备 item.discard 正确扣减对应变体行且不入账灵石。</summary>
+    [Fact]
+    public async Task ItemDiscard_EnhancedEquipment_DeductsVariantRow()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        var assets = new CustomQuantityAssets(playerId, ("equipment.qingfeng-sword", "+3", 2));
+        await using var runtime = EcsRuntimeFactory.Create(new FakeRepository(playerId), assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.qingfeng-sword",
+            variant = "+3",
+            quantity = 1
+        });
+
+        var result = await runtime.ExecuteAsync(playerId, "item.discard", payload, 0, Guid.NewGuid());
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+
+        Assert.NotNull(economy.LastRequest);
+        var itemDelta = Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "equipment.qingfeng-sword");
+        Assert.Equal("+3", itemDelta.Variant);
+        Assert.Equal(-1.0, itemDelta.Delta);
+        Assert.DoesNotContain(economy.LastRequest.Deltas, d => d.AssetId == "currency.spirit-stone");
+    }
+
     /// <summary>
     /// 按配置相对路径过滤 Domain 程序集内嵌的游戏数据并走正式解析链构建目录：
     /// 既使用真实配置覆盖 config→Parse 链路，又与同批在途的其他配置文件解耦。
@@ -207,12 +337,23 @@ public sealed class EnhancementContractTests
         return GameDataCatalog.Parse(documents);
     }
 
-    private sealed class FakeRepository(Guid playerId) : IPlayerStateRepository
+    private sealed class FakeRepository : IPlayerStateRepository
     {
-        private readonly PlayerStateBundle _bundle = new(
-            new PlayerIdentity(playerId, Guid.NewGuid(), "强化契约", DateTimeOffset.UtcNow),
-            new StoredHead(playerId, 0, 1, DateTimeOffset.UtcNow, string.Empty, string.Empty, DateTimeOffset.UtcNow),
-            new Dictionary<string, StoredSection>(), []);
+        private readonly PlayerStateBundle _bundle;
+
+        public FakeRepository(Guid playerId, Action<PlayerAggregate>? configure = null)
+        {
+            var aggregate = PlayerAggregate.Create(new PlayerId(playerId), AccountId.New(), "强化契约", DateTimeOffset.UnixEpoch, "catalog-a");
+            configure?.Invoke(aggregate);
+            var state = aggregate.ExportState();
+            var writes = Domain.Persistence.SectionCodec.EncodeAggregateFull(state, DateTimeOffset.UtcNow);
+            var sections = writes.ToDictionary(
+                w => w.SectionKind,
+                w => new StoredSection(w.PlayerId, w.SectionKind, w.StateVersion, w.SchemaVersion, w.Codec, w.Payload.ToArray(), w.RawBytes, w.Checksum, w.UpdatedAt),
+                StringComparer.Ordinal);
+            var head = new StoredHead(playerId, state.StateVersion, Domain.Persistence.SectionCodec.CurrentSchemaVersion, DateTimeOffset.UtcNow, state.GameDataFingerprint, Domain.Persistence.SectionCodec.ComputeHeadChecksum(sections.Values), DateTimeOffset.UtcNow);
+            _bundle = new PlayerStateBundle(new PlayerIdentity(playerId, Guid.NewGuid(), "强化契约", DateTimeOffset.UtcNow), head, sections, []);
+        }
 
         public ValueTask<PlayerStateBundle?> LoadAsync(Guid id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<PlayerStateBundle?>(_bundle);
@@ -240,5 +381,23 @@ public sealed class EnhancementContractTests
     {
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload));
+    }
+
+    private sealed class RecordingEconomy : IEconomyTransactionStore
+    {
+        public EconomyTransactionRequest? LastRequest { get; private set; }
+
+        public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload));
+        }
+    }
+
+    private sealed class CustomQuantityAssets(Guid playerId, params (string AssetId, string Variant, double Quantity)[] rows) : IAssetBalanceRepository
+    {
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(
+                rows.Select(row => new AssetBalanceRecord(playerId, row.AssetId, row.Variant, row.Quantity, 0)).ToArray());
     }
 }

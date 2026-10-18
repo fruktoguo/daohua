@@ -102,16 +102,19 @@ public static class StaticGameCatalogMapper
     /// 下发，协议不再提供派生 stats 幻影块，前端也不得本地重建。
     /// </summary>
     /// <param name="catalog">当前激活配表。</param>
-    public static IReadOnlyList<object> Equipments(GameDataCatalog catalog) => catalog.RawEquipments.Values
-        .OrderBy(eq => ReadString(eq, "id"), StringComparer.Ordinal)
-        .Select(eq =>
-        {
-            var id = ReadString(eq, "id");
-            var name = ReadString(eq, "name", id);
-            var desc = ReadString(eq, "description");
-            var slot = ReadString(eq, "slot", "weapon");
-            var tier = ReadInt(eq, "tier", 1);
-
+    public static IReadOnlyList<object> Equipments(GameDataCatalog catalog)
+    {
+        var costCache = new Dictionary<string, double>(StringComparer.Ordinal);
+        return catalog.RawEquipments.Values
+            .OrderBy(eq => ReadString(eq, "id"), StringComparer.Ordinal)
+            .Select(eq =>
+            {
+                var id = ReadString(eq, "id");
+                var name = ReadString(eq, "name", id);
+                var desc = ReadString(eq, "description");
+                var slot = ReadString(eq, "slot", "weapon");
+                var tier = ReadInt(eq, "tier", 1);
+            var sellPrice = Domain.Player.EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, id, costCache) ?? 0;
             var baseStatRatios = eq.TryGetProperty("baseStatRatios", out var bsr) && bsr.ValueKind == JsonValueKind.Object
                 ? bsr.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
                 : new Dictionary<string, double>();
@@ -146,6 +149,7 @@ public static class StaticGameCatalogMapper
                 description = desc,
                 slot,
                 tier,
+                sellPrice,
                 baseStatRatios,
                 flatStats,
                 enhancementBonus,
@@ -153,6 +157,7 @@ public static class StaticGameCatalogMapper
                 techniqueBonus
             };
         }).ToArray();
+    }
 
     /// <summary>
     /// 地图静态目录投影：节点与边完整透传，节点附带的怪物列表经 encounter 引用解析归并。
