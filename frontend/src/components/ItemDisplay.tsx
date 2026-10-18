@@ -701,14 +701,14 @@ export function extractBuffBonusItems(buff: {
   const t = getT()
   const items: BonusAsideItem[] = []
 
-  // 1. 每 5 秒结算点回复
+  // 1. 点回复（统一显示 +多少，不带时间间隔后缀）
   if (buff.hpRegen && buff.hpRegen !== 0) {
     const isNeg = buff.hpRegen < 0
     items.push({
       glyph: 'hp-regen',
       label: t('market.effect.badgeHpRegen'),
       tone: isNeg ? 'crimson' : 'emerald',
-      value: `${buff.hpRegen > 0 ? '+' : ''}${formatNumber(buff.hpRegen)}/5s`,
+      value: `${buff.hpRegen > 0 ? '+' : ''}${formatNumber(buff.hpRegen)}`,
     })
   }
   if (buff.mpRegen && buff.mpRegen !== 0) {
@@ -717,7 +717,7 @@ export function extractBuffBonusItems(buff: {
       glyph: 'mp-regen',
       label: t('market.effect.badgeMpRegen'),
       tone: isNeg ? 'crimson' : 'cyan',
-      value: `${buff.mpRegen > 0 ? '+' : ''}${formatNumber(buff.mpRegen)}/5s`,
+      value: `${buff.mpRegen > 0 ? '+' : ''}${formatNumber(buff.mpRegen)}`,
     })
   }
 
@@ -787,7 +787,7 @@ export function extractBuffBonusItems(buff: {
       glyph: 'threat-bonus',
       label: t('market.effect.badgeThreatSec'),
       tone: 'amber',
-      value: `+${(buff.threatPerSecondMaxHpPoints / 100).toFixed(1)}%/s`,
+      value: `+${(buff.threatPerSecondMaxHpPoints / 100).toFixed(1)}%`,
     })
   }
 
