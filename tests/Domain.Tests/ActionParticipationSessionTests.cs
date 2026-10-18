@@ -42,6 +42,38 @@ public sealed class ActionParticipationSessionTests
         Assert.Equal(1, members[1].Actions[0].Participation!.AppliedSequence);
     }
 
+    /// <summary>
+    /// 即时消耗品（雷击符等）击杀敌方最后一只怪时：战局必须立即结算为 PlayerWon，
+    /// 后续按自然时钟恢复与成员视角投影不触发「持久化战斗结果与生命状态不一致」回归（线上会话卡死根因）。
+    /// </summary>
+    [Fact]
+    public void ConsumableStrikeKillingLastEnemyTransitionsToWonWithoutInconsistency()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                ConsumableSlots = index == 0
+                    ? [new ActionConsumableSlot("item.leiji-talisman", "combat",
+                        AutoUseSlotState.SlotGroupGeneral, 0, 5)]
+                    : null
+            }).ToArray()
+        };
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var initial = session.Export();
+        var search = initial.Expedition!.PhaseDurationSeconds;
+        // 推进到刚刚入场开战
+        session.AdvanceTo(Baseline.AddSeconds(search + 0.1));
+        var inCombat = session.Export();
+        Assert.Equal(CombatExpeditionPhase.Combat, inCombat.Expedition!.Phase);
+
+        // 再推进一段，覆盖雷击符激活与击杀边界
+        var advanced = session.AdvanceTo(Baseline.AddSeconds(search + 65));
+        var after = session.Export();
+        Assert.NotNull(after.Expedition);
+        Assert.NotEqual(CombatOutcome.EnemyWon, after.Expedition!.Outcome);
+    }
     [Fact]
     public void CheckpointRestoreContinuesWithoutReplayingRewardsAndAllViewsAgree()
     {

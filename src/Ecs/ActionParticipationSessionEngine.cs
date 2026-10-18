@@ -507,6 +507,8 @@ public sealed class ActionParticipationSessionEngine
             var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, target);
             caster.Manapoints = Math.Max(0, caster.Manapoints - manaCost);
             target.Hitpoints = Math.Max(0, target.Hitpoints - damage);
+            if (_battle is { } liveBattle && !liveBattle.Enemies.Any(static e => e.IsAlive))
+                liveBattle.Outcome = CombatOutcome.PlayerWon;
             if (target.DefinitionId is { } monsterId
                 && Canonical.Duel.ReportFor(Action.Id) is { } strikeReport)
             {

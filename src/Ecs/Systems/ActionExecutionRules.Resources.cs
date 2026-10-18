@@ -557,6 +557,8 @@ internal static partial class ActionExecutionRules
         {
             var unit = liveSession.Battle.Enemies[targetIndex];
             unit.Hitpoints = Math.Max(0, unit.Hitpoints - damage);
+            if (!liveSession.Battle.Enemies.Any(static e => e.IsAlive))
+                liveSession.Battle.Outcome = CombatOutcome.PlayerWon;
             return;
         }
         if (action.Expedition is not { Phase: CombatExpeditionPhase.Combat } snap

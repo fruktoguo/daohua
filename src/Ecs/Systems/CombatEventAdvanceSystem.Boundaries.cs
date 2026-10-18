@@ -108,6 +108,8 @@ public sealed partial class CombatEventAdvanceSystem
         var from = encounter.ElapsedSeconds;
         dispatcher ??= InlineCombatPhaseDispatcher.Instance;
         var context = new CombatPhaseContext { Encounter = encounter };
+        if (encounter.Outcome == CombatOutcome.Running)
+            dispatcher.Dispatch<ICombatOutcomePhase>(host, context);
         var eventCount = 0;
         while (encounter.Outcome == CombatOutcome.Running && encounter.ElapsedSeconds < targetSeconds - 1e-12)
         {
