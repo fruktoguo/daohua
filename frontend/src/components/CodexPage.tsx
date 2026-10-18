@@ -33,6 +33,7 @@ import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { MonsterTooltipTarget } from './MonsterDisplay'
+import { createInternalRootExpAsideCard } from './EffectTooltip'
 import {
   describeEquipmentEffects,
   describeItemEffects,
@@ -976,8 +977,18 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
 
   const grade = resolveItemGrade(ability.tier ?? 1)
 
+  const asideCards = ability.discipline === 'internal'
+    ? [createInternalRootExpAsideCard()]
+    : undefined
+
   return (
-    <FloatingPopover content={hoverContent} interactive={false} placement="top" size="medium">
+    <FloatingPopover
+      asideCards={asideCards}
+      content={hoverContent}
+      interactive={false}
+      placement="top"
+      size="medium"
+    >
       <div
         className={`codex-entry-wrapper codex-tile-anchor${
           isLearned ? '' : ' codex-entry-wrapper--locked'

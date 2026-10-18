@@ -12,6 +12,7 @@ export const commonZh = {
     selectItemSlot: '选择使用物品 · 槽 {n}',
     repeatsCount: '{n}次',
     quantity: '数量',
+    description: '说明',
     progressComplete: '已圆满 (100%)',
     upgradeProgress: '升级进度',
     currentProgress: '当前进度：{current} / {max}',

@@ -5,7 +5,7 @@ import { useT } from '../i18n'
 import type { CombatAbilityDefinition } from '../game/types'
 import { useGameStore } from '../game/gameStore'
 import { CandidatePicker, type CandidateOption } from './CandidatePicker'
-import { createAbilityProgressAsideCard, EffectTooltipTarget } from './EffectTooltip'
+import { EffectTooltipTarget, resolveAbilityAsideCards } from './EffectTooltip'
 
 /** AbilityGridPicker 功法待选列表 Props */
 export interface AbilityGridPickerProps {
@@ -29,6 +29,10 @@ export interface AbilityGridPickerProps {
   slotIndex?: number
   /** 已参悟等级查询（用于瓦片角标与悬浮详情展示；缺省按 1 级显示） */
   levelFor?: (abilityId: string) => number
+  /** 当前槽位功法触发条件编辑回调 */
+  onEditCondition?: () => void
+  /** 当前槽位功法已配置触发条件数量 */
+  triggerCount?: number
 }
 
 /**
@@ -49,6 +53,8 @@ export function AbilityGridPicker({
   allowEmpty = true,
   slotIndex,
   levelFor,
+  onEditCondition,
+  triggerCount,
 }: AbilityGridPickerProps): React.JSX.Element {
   const t = useT()
   const abilityExperiences = useGameStore(state => state.combat?.abilityExperiences)
@@ -67,10 +73,22 @@ export function AbilityGridPicker({
   // 品质色与功法面板槽位统一：内功槽 emperor 帝金、术法槽 mystic 玄紫。
   const rarity = isInternalSlot ? 'emperor' : 'mystic'
 
+  const conditionAction = useMemo(() => {
+    if (!onEditCondition) return null
+    const count = triggerCount ?? 0
+    return {
+      label: t('app.combatPanel.triggerConditionBtn', { count: count > 0 ? count : '' }),
+      onClick: onEditCondition,
+      hasTriggers: count > 0,
+      title: t('app.combatPanel.editTriggersTitle'),
+      ariaLabel: t('app.combatPanel.editTriggersTitle'),
+    }
+  }, [onEditCondition, triggerCount, t])
   const options = useMemo<readonly CandidateOption[]>(() => slotAbilities.map(ability => {
+
     const learnedLevel = levelFor?.(ability.abilityId) ?? 1
     const abilityExp = abilityExperiences?.[ability.abilityId] ?? 0
-    const asideCards = [createAbilityProgressAsideCard(ability.abilityId, abilityExp)]
+    const asideCards = resolveAbilityAsideCards(ability, abilityExp)
     const iconUrl = resolveItemIconUrl(ability.abilityId)
     return {
       key: ability.abilityId,
@@ -110,6 +128,7 @@ export function AbilityGridPicker({
     <CandidatePicker
       allowEmpty={allowEmpty}
       anchor={anchor}
+      conditionAction={conditionAction}
       onClose={onClose}
       onSelect={onSelect}
       open={open}

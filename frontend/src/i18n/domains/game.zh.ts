@@ -418,5 +418,10 @@ export const gameZh = {
       blind: '致盲 {chance}，持续 {duration} 秒',
       silence: '沉默 {chance}，持续 {duration} 秒',
     },
+    abilityAside: {
+      internalRootExpMark: '倾向',
+      internalRootExpTitle: '六维倾向说明',
+      internalRootExpDesc: '战斗中所获六维根基经验，将按照此心法标注的六维百分比进行增幅获取。',
+    },
   },
 }
