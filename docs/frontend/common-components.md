@@ -314,8 +314,9 @@
     - 仅战斗详情页面内的自动消耗品槽位（`AutoUseSlotGroup bar="combat"`：药品栏与通用栏）支持触发条件配置，支持 Hover 浮现及展开选药弹窗时顶部大按钮配置；
     - 探索、炼丹、炼器等非战斗行动窗口的持续增益物品及行囊背包物品属于挂机或存取流，一律不显示任何条件入口，纯净无冗余。
   - **已学功法目录瓦片点击直达**：在已学功法列表中，支持直接轻点任意已学功法瓦片直达该功法的触发条件编辑器，触屏与桌面体验完全闭环。
-  - **编辑态抗快照刷新**：编辑器打开期间外部 `combat` 快照刷新（战斗进行中/结束）不会重置未保存的编辑内容——`initialTriggers` 经 ref 中转，仅在弹窗打开瞬间同步一次。
-- **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)、[`frontend/src/components/CandidatePicker.tsx`](../../frontend/src/components/CandidatePicker.tsx)、[`frontend/src/components/AbilityGridPicker.tsx`](../../frontend/src/components/AbilityGridPicker.tsx)、[`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx)、[`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx)
+   - **编辑态抗快照刷新**：编辑器打开期间外部 `combat` 快照刷新（战斗进行中/结束）不会重置未保存的编辑内容——`initialTriggers` 经 ref 中转，仅在弹窗打开瞬间同步一次。
+  - **微标签紧凑单行规整排布架构**：彻底消灭原先占用近 200px 的超大正方形选择块与二级 Modal 全屏遮罩。重构为微标签字段结构（上方 9px 语义微标签，下方 12px 粗体值 + 翻转微光小箭头，统一高度 40px），通过 `FloatingPopover` 原位展开轻量修仙暗金下拉选项菜单（点选即生效并顺畅收起，零全屏遮罩打扰）；单条条件参数（观察对象、判断属性、比较方式、数值阈值、可选 Buff）在同一水平行内规整排布，单卡片纵向高度从 260px 压缩至约 74px~80px（高度缩减超 70%），4 条条件在弹窗内一屏尽览零滚动，并支持根据条件类型自适应呈现动态单位（%、层、点）与移动端自适应两列折行。
+ - **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)、[`frontend/src/components/CandidatePicker.tsx`](../../frontend/src/components/CandidatePicker.tsx)、[`frontend/src/components/AbilityGridPicker.tsx`](../../frontend/src/components/AbilityGridPicker.tsx)、[`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx)、[`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.combat-trigger-card`, `.combat-trigger-fields`)、待选弹窗大号条件按钮与瓦片框外互斥样式在 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.candidate-picker-condition-btn`、`.item-slot-inline-action--condition`)
 
 ---

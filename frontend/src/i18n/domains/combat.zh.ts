@@ -367,6 +367,9 @@ export const combatZh = {
       clearAll: '清空全部',
       andHint: '{count}/{max} · 全部条件同时满足才触发（且）',
       save: '保存条件',
+      ruleOverview: '规则总览',
+      buffStackUnit: '层',
+      pointUnit: '点',
       summarySeparator: '；',
       subtitle: {
         targetEnemy: '当前交战的敌方单位',
