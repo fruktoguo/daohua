@@ -306,15 +306,11 @@
 - **适用场景**：
   - 功法自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
   - **触发条件跟随功法 ID 而非槽位**：`combat.abilityTriggers`（`abilityId → CombatTrigger[]` 映射）是玩家侧唯一的条件存储——卸下再装配、跨槽位移动同一功法时条件保留；已学功法目录瓦片与装配槽位均可打开同一功法维度的编辑器，编辑器标题用功法名。槽位字段 `CombatAbilitySlot` 不再携带 `triggers`。
-  - **条件入口框外浮现交互与尺寸热区（ConditionedTile）**：「瓦片 + 悬浮卡 + 框外条件按钮」三件套由 [`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx) 统一封装——条件按钮（`item-slot-inline-action--condition`）采用修仙暗金高亮胶囊视觉（11px 字号、3px 9px 边距，触屏 4px 10px），并通过 `::before` 启用 `inset: -6px -8px` 的无缝外扩透明热区（面积达 34px × 60px），使鼠标从瓦片跨越至按钮时 100% 连续防滑脱；已配置条件时呈现 `has-triggers` 金色微光强调。
-  - **移动端与无 Hover 触屏唤出体系**：
-    - **已装配槽位常显**：在 `@media (hover: none), (pointer: coarse)` 下，槽位卡片（`.abilities-slot-card`, `.combat-slot-card`）上的条件按钮常态可见可点，直接点击上方条件胶囊打开编辑器，点击瓦片本体更换功法；
-    - **已学功法网格点击联动**：密集网格中轻触瓦片展开技能详情时，`is-tooltip-open` 激活态触发上方放大的「条件」按钮同步浮现并保持可点；
-    - **触屏长按极速直达**：触屏设备长按瓦片 420ms（移动 > 8px 判定为滑动取消）直接打开触发条件编辑器；
-    - **避让与抗遮挡**：按钮默认悬于瓦片上缘外侧（`bottom: 100%`），悬浮卡落在上方时自动切到下缘外侧（`.is-below`）避让，并支持 `defaultSide="bottom"`；按钮位于悬浮卡触发域之外，悬停按钮不弹卡，点开条件编辑器不出现 tooltip 叠 modal（FloatingPopover z-index 10000 > Modal 70）。
+  - **展开选择弹窗伴随大号条件按钮（CandidatePicker & AbilityGridPicker）**：彻底移除原先瓦片框外 hover 浮现的小条件按钮（消除鼠标滑脱及点击槽位后被待选弹窗遮挡的痛点）；改为在玩家点击槽位展开选择面板时，在弹窗顶部 Header 右侧直接呈现**放大一倍的「⚙ 触发条件」大号微光胶囊按钮**（高度 32px / 触屏 36px，字号 13px，暗金微光发光底，`has-triggers` 态金边微光高亮）。点击直接唤起 `CombatTriggerEditor` 并关闭选择面板，无论是 PC 鼠标还是手机触控都极大、极易点中且绝不遮挡。
+  - **已学功法目录瓦片点击直达**：在已学功法列表中，瓦片同样移除了 hover 浮出的悬浮小按钮，改为直接点击任意已学功法瓦片即可直达该功法的触发条件编辑器，触屏与桌面体验完全闭环。
   - **编辑态抗快照刷新**：编辑器打开期间外部 `combat` 快照刷新（战斗进行中/结束）不会重置未保存的编辑内容——`initialTriggers` 经 ref 中转，仅在弹窗打开瞬间同步一次。
-- **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)、[`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.combat-trigger-card`, `.combat-trigger-fields`)、条件按钮框外浮现样式在 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.item-slot-inline-action--condition`、`.conditioned-tile`)
+- **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)、[`frontend/src/components/CandidatePicker.tsx`](../../frontend/src/components/CandidatePicker.tsx)、[`frontend/src/components/AbilityGridPicker.tsx`](../../frontend/src/components/AbilityGridPicker.tsx)、[`frontend/src/components/ConditionedTile.tsx`](../../frontend/src/components/ConditionedTile.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.combat-trigger-card`, `.combat-trigger-fields`)、待选弹窗大号条件按钮样式在 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.candidate-picker-condition-btn`)
 
 ---
 

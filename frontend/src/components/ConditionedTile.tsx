@@ -1,23 +1,20 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { EffectTooltipTarget, type EffectTooltipContent } from './EffectTooltip'
-import type { FloatingAsideCard, FloatingPlacement } from './FloatingPopover'
+import type { FloatingAsideCard } from './FloatingPopover'
+
 /**
- * 「瓦片 + 悬浮卡 + 框外条件按钮」组合容器 (ConditionedTile)
+ * 「瓦片 + 悬浮卡 + 容器附加层」组合容器 (ConditionedTile)
  *
- * 统一物品/功法瓦片的条件入口交互：
- * 1. 条件按钮默认隐藏，容器 hover/focus-within 时从瓦片画框之外浮现（不占用瓦片内部角落）；
- * 2. 按钮方位与悬浮卡落位联动避让：悬浮卡默认落瓦片下方，按钮悬于上缘外侧；
- *    悬浮卡经视口翻转到上方时，按钮自动切到下缘外侧（is-below）；
- * 3. 按钮位于悬浮卡触发域之外——悬停按钮不再弹卡，点开条件编辑器也不会出现
- *    tooltip 叠加在 modal 之上的问题（FloatingPopover z-index 10000 > Modal 70）。
+ * 统一功法/物品瓦片与悬浮卡的层叠结构，
+ * 将角标、等级徽标等附加元素（extras）置于悬浮卡触发域之外，
+ * 避免误触或遮挡。
+ * （条件配置按钮已统一收拢至展开选择面板及已学功法瓦片直达，彻底消灭 Hover 浮动遮挡）
  */
 export function ConditionedTile({
   as: Tag = 'span',
   children,
   className = '',
-  condition,
   content,
-  defaultSide = 'top',
   extras,
   triggerClassName = '',
   triggerTabIndex,
@@ -29,23 +26,12 @@ export function ConditionedTile({
   children: ReactNode
   /** 容器样式类名（如 abilities-slot-card / combat-slot-card） */
   className?: string
-  /** 条件入口配置；null 时不渲染按钮 */
-  condition?: {
-    /** 按钮文案（如「条件」「条件×2」） */
-    label: ReactNode
-    /** 无障碍标签 */
-    ariaLabel: string
-    /** 悬停提示 */
-    title: string
-    /** 点击回调 */
-    onClick: () => void
-    /** 是否已配置有效触发条件（影响高亮边框和微光） */
-    hasTriggers?: boolean
-  } | null
-  /** 悬浮卡内容（null 时 tooltip 关闭，仅渲染瓦片与按钮） */
+  /** 悬浮卡内容（null 时 tooltip 关闭，仅渲染瓦片） */
   content?: EffectTooltipContent | null
-  /** 初始条件按钮方位，默认 'top'；已知悬浮卡恒落在上方时可传 'bottom' 避免翻转跳动 */
+  /** 初始条件按钮方位兼容字段（已弃用框外悬浮按钮） */
   defaultSide?: 'top' | 'bottom'
+  /** 历史兼容条件入口配置（已迁至展开选择面板，此处安全忽略） */
+  condition?: unknown
   /** 容器级附加元素（Lv 徽标等，置于悬浮卡触发域之外） */
   extras?: ReactNode
   /** 悬浮卡触发层样式类名（如 combat-ability-slot-shell / item-grid-picker-tooltip） */
@@ -55,87 +41,17 @@ export function ConditionedTile({
   /** 附属气泡列表（如升级进度） */
   asideCards?: readonly FloatingAsideCard[] | (() => readonly FloatingAsideCard[])
 }): React.JSX.Element {
-  // 条件按钮方位：悬浮卡落在上方（翻转结果）时按钮走下方外侧，其余方位恒走上方外侧。
-  const [side, setSide] = useState<'top' | 'bottom'>(defaultSide)
-  const [isTooltipOpen, setIsTooltipOpen] = useState(false)
-  const longPressTimerRef = useRef<number | null>(null)
-  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null)
-
-  const handlePlacementChange = useCallback((placement: FloatingPlacement) => {
-    const next = placement.startsWith('top') ? 'bottom' : 'top'
-    setSide(previous => (previous === next ? previous : next))
-  }, [])
-
-  // 触屏长按瓦片 420ms 快捷直达条件编辑器（移动 > 8px 判定为滑动取消）
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (!condition) return
-    const touch = e.touches[0]
-    if (!touch) return
-    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current)
-    }
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTimerRef.current = null
-      condition.onClick()
-    }, 420)
-  }, [condition])
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!touchStartPosRef.current || !longPressTimerRef.current) return
-    const touch = e.touches[0]
-    if (!touch) return
-    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x)
-    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y)
-    if (dx > 8 || dy > 8) {
-      window.clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-  }, [])
-
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-    touchStartPosRef.current = null
-  }, [])
-
-  const hasTriggers = condition?.hasTriggers ?? false
-
   return (
-    <Tag
-      className={`conditioned-tile${isTooltipOpen ? ' is-tooltip-open' : ''} ${className}`.trim()}
-      onTouchCancel={handleTouchEnd}
-      onTouchEnd={handleTouchEnd}
-      onTouchMove={handleTouchMove}
-      onTouchStart={handleTouchStart}
-    >
+    <Tag className={`conditioned-tile ${className}`.trim()}>
       <EffectTooltipTarget
         asideCards={asideCards}
         className={triggerClassName}
         content={content}
-        onOpenChange={setIsTooltipOpen}
-        onPlacementChange={handlePlacementChange}
         tabIndex={triggerTabIndex}
       >
         {children}
       </EffectTooltipTarget>
       {extras}
-      {condition && (
-        <button
-          aria-label={condition.ariaLabel}
-          className={`item-slot-inline-action item-slot-inline-action--condition${side === 'bottom' ? ' is-below' : ''}${hasTriggers ? ' has-triggers' : ''}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            condition.onClick()
-          }}
-          title={condition.title}
-          type="button"
-        >
-          {condition.label}
-        </button>
-      )}
     </Tag>
   )
 }

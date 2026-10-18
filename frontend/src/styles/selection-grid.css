@@ -539,115 +539,12 @@
   display: none;
 }
 
-/* 框外条件入口无缝外扩热区：上下左右外扩 6~8px 透明点击域，
-   使鼠标从瓦片跨向按钮时 100% 连续不断触，大幅降低点偏滑脱概率 */
-.item-slot-inline-action--condition::before {
-  display: block;
-  content: '';
-  position: absolute;
-  inset: -6px -8px;
-  border-radius: 999px;
-  background: transparent;
-  pointer-events: auto;
-}
-
-/* 已配置触发条件时（如「条件2」）：边框微光高亮与明度强调 */
-.item-slot-inline-action--condition.has-triggers {
-  border-color: color-mix(in srgb, var(--gold-bright) 80%, transparent);
-  color: var(--gold-bright);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 0 6px rgba(201, 180, 109, 0.32);
-}
-
-.item-slot-inline-action--condition {
-  /* 框外条件入口：默认悬于瓦片上缘外侧居中（bottom:100% 零间隙贴合瓦片边缘，
-     鼠标上移进入按钮时 hover 链不断）；悬浮卡经视口翻转到瓦片上方时由组件加
-     is-below 切到下缘外侧避让。只用 opacity + pointer-events 隐藏而不用
-     visibility/display，保留键盘 Tab 聚焦可达性。 */
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  transform-origin: bottom center;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.item-slot-inline-action--condition.is-below {
-  bottom: auto;
-  top: 100%;
-  transform-origin: top center;
-}
-
-/* 已学功法目录瓦片的条件容器：ConditionedTile 作为 grid cell 包裹瓦片，
+/* 已学功法目录瓦片的容器：ConditionedTile 作为 grid cell 包裹瓦片，
    提供相对定位基准并令瓦片居中 */
 .abilities-learned-cell {
   position: relative;
   display: grid;
   place-items: center;
-}
-
-/* 浮现触发域统一为 ConditionedTile 容器（conditioned-tile）；ItemUseSlot 的
-   item-use-slot-tooltip 挂点保留给物品槽形态。条件按钮一律挂在悬浮卡触发域之外，
-   hover 期间容器提升层叠防止框外按钮被相邻瓦片遮挡。 */
-:is(
-  .conditioned-tile,
-  .item-use-slot-tooltip
-):is(:hover, :focus-visible, :focus-within, .is-active, .is-tooltip-open) {
-  z-index: 7;
-}
-
-:is(
-  .conditioned-tile,
-  .item-use-slot-tooltip
-):is(:hover, :focus-visible, :focus-within, .is-active, .is-tooltip-open) .item-slot-inline-action--condition {
-  pointer-events: auto;
-  /* keyframe 的 opacity/transform 走合成器线程（同丝带/角标缩放模式），密集瓦片 hover 不逐帧重绘 */
-  animation: item-condition-rise-in 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) both;
-}
-
-:is(
-  .conditioned-tile,
-  .item-use-slot-tooltip
-):is(:hover, :focus-visible, :focus-within, .is-active, .is-tooltip-open) .item-slot-inline-action--condition.is-below {
-  animation-name: item-condition-rise-in-below;
-}
-/* 上缘浮现：从略下方浮入；下缘浮现（is-below）：从略上方浮入 */
-@keyframes item-condition-rise-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-@keyframes item-condition-rise-in-below {
-  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-/* 鼠标落到浮现后的按钮上：提亮反馈（不再清 transform，translateX(-50%) 居中须保持） */
-:is(
-  .conditioned-tile,
-  .item-use-slot-tooltip
-):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition:hover:not(:disabled) {
-  filter: brightness(1.12) drop-shadow(0 0 4px rgba(201, 180, 109, 0.28));
-}
-
-/* 移动端与无 Hover 触屏适配：
-   1. 槽位卡片数量少且为战斗核心出战位，条件按钮常态浮显，无需等待 hover；
-   2. 移动端触控模式下按钮尺寸适度微调，确保足够点按舒适度。 */
-@media (hover: none), (pointer: coarse) {
-  .item-slot-inline-action--condition {
-    padding: 4px 10px;
-    font-size: 11px;
-  }
-
-  :is(.abilities-slot-card, .combat-slot-card) .item-slot-inline-action--condition {
-    opacity: 1;
-    pointer-events: auto;
-    animation: none;
-    transform: translateX(-50%);
-  }
-
-  :is(.abilities-slot-card, .combat-slot-card) {
-    z-index: 6;
-  }
 }
 
 /* 持续消耗品剩余时间旋转填充遮罩与倒计时数字。
@@ -956,20 +853,29 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+
+.candidate-picker-header-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
   gap: 8px;
+  flex: 1;
 }
 
 .candidate-picker-title {
   min-width: 0;
   overflow: hidden;
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .candidate-picker-search {
-  width: 132px;
+  width: 120px;
   min-height: 24px;
   padding: 2px 6px;
   border: 1px solid var(--gold-dim);
@@ -978,6 +884,56 @@
   font-size: 11px;
 }
 
+/* 展开选择弹窗时顶部旁边展示的大号触发条件按钮（放大一倍，高度 32px/触屏 36px） */
+.candidate-picker-condition-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid color-mix(in srgb, var(--gold-dim) 80%, transparent);
+  border-radius: 999px;
+  color: var(--gold-light, #e8d08c);
+  background: linear-gradient(180deg, rgba(32, 28, 18, 0.96) 0%, rgba(14, 15, 12, 0.96) 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 6px rgba(201, 180, 109, 0.15);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.candidate-picker-condition-btn:hover:not(:disabled) {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  filter: brightness(1.15) drop-shadow(0 0 6px rgba(201, 180, 109, 0.35));
+}
+
+.candidate-picker-condition-btn.has-triggers {
+  border-color: color-mix(in srgb, var(--gold-bright) 90%, transparent);
+  color: var(--gold-bright);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(201, 180, 109, 0.4);
+}
+
+.candidate-picker-condition-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.candidate-picker-condition-label {
+  font-family: inherit;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .candidate-picker-condition-btn {
+    min-height: 36px;
+    padding: 6px 16px;
+    font-size: 13px;
+  }
+}
 .candidate-picker-grid {
   /* 约 4 行半高度：露出第 5 行边缘提示可滚动 */
   max-height: 312px;

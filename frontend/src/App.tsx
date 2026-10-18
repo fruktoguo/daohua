@@ -1957,6 +1957,9 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const pickerValue = pickerTarget === null
     ? null
     : combat.abilitySlots[pickerTarget.index]?.abilityId ?? null
+  const currentPickerAbility = pickerValue !== null
+    ? findAbilityInCatalog(abilities, pickerValue)
+    : null
   const pickerTitle = pickerTarget === null
       ? ''
       : (pickerTarget.index === 0 ? t('app.combatPanel.chooseInternalTitle') : t('app.combatPanel.chooseSpellTitle', { slot: pickerTarget.index }))
@@ -2026,7 +2029,6 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   )}
                 </button>
               )
-              const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
               const abilityExp = ability ? (combat.abilityExperiences?.[ability.abilityId] ?? 0) : 0
               const slotAsideCards = ability ? resolveAbilityAsideCards(ability, abilityExp) : undefined
               return (
@@ -2034,13 +2036,6 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   as="div"
                   asideCards={slotAsideCards}
                   className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`}
-                  condition={ability ? {
-                    ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
-                    hasTriggers: triggerCount > 0,
-                    label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
-                    onClick: () => setEditingTriggerAbilityId(ability.abilityId),
-                    title: t('app.combatPanel.editTriggersTitle'),
-                  } : null}
                   content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
                   defaultSide="bottom"
                   extras={ability && (
@@ -2068,10 +2063,12 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
         anchor={pickerTarget?.anchor ?? null}
         levelFor={abilityLevelFor}
         onClose={() => setPickerTarget(null)}
+        onEditCondition={currentPickerAbility ? () => setEditingTriggerAbilityId(currentPickerAbility.abilityId) : undefined}
         onSelect={selectPickerValue}
         open={pickerTarget !== null}
         slotIndex={pickerTarget?.index}
         title={pickerTitle}
+        triggerCount={currentPickerAbility ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0) : 0}
         value={pickerValue}
       />
       {editingTriggerAbilityId !== null && (

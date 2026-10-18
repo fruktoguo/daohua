@@ -21,10 +21,26 @@ export interface CandidateOption {
   /** 无障碍标签 */
   ariaLabel?: string
 }
+/**
+ * 待选列表顶部伴随条件操作配置
+ */
+export interface CandidateConditionAction {
+  /** 按钮文案（如「条件」「条件2」） */
+  label: ReactNode
+  /** 点击回调 */
+  onClick: () => void
+  /** 是否已配置有效条件 */
+  hasTriggers?: boolean
+  /** 提示文案 */
+  title?: string
+  /** 无障碍说明 */
+  ariaLabel?: string
+  /** 是否禁用 */
+  disabled?: boolean
+}
 
 /** 候选数超过该阈值时待选列表才显示搜索框（默认 12，短列表保持纯净） */
 const DEFAULT_SEARCH_THRESHOLD = 12
-
 interface CandidatePickerProps {
   /** 待选列表展开状态 */
   open: boolean
@@ -46,8 +62,9 @@ interface CandidatePickerProps {
   searchThreshold?: number
   /** 浮层优选方向（默认 'top'：候选框浮于槽位上方，空间不足自动翻转） */
   placement?: FloatingPlacement
+  /** 待选列表顶部伴随的触发条件大按钮配置 */
+  conditionAction?: CandidateConditionAction | null
 }
-
 /**
  * 通用待选列表组件 (CandidatePicker)
  *
@@ -68,6 +85,7 @@ export function CandidatePicker({
   allowEmpty = true,
   searchThreshold = DEFAULT_SEARCH_THRESHOLD,
   placement = 'top',
+  conditionAction,
 }: CandidatePickerProps): React.JSX.Element | null {
   const t = useT()
   const [query, setQuery] = useState('')
@@ -99,18 +117,36 @@ export function CandidatePicker({
       content={(
         <div className="candidate-picker">
           <header className="candidate-picker-header">
-            <span className="candidate-picker-title">{title}</span>
-            {searchable && (
-              <input
-                aria-label={titleText ? t('market.picker.searchTitleTemplate', { title: titleText }) : undefined}
-                autoComplete="off"
-                autoFocus
-                className="candidate-picker-search"
-                onChange={event => setQuery(event.target.value)}
-                placeholder={t('market.browse.searchItems')}
-                type="search"
-                value={query}
-              />
+            <div className="candidate-picker-header-main">
+              <span className="candidate-picker-title">{title}</span>
+              {searchable && (
+                <input
+                  aria-label={titleText ? t('market.picker.searchTitleTemplate', { title: titleText }) : undefined}
+                  autoComplete="off"
+                  autoFocus
+                  className="candidate-picker-search"
+                  onChange={event => setQuery(event.target.value)}
+                  placeholder={t('market.browse.searchItems')}
+                  type="search"
+                  value={query}
+                />
+              )}
+            </div>
+            {conditionAction && (
+              <button
+                aria-label={conditionAction.ariaLabel}
+                className={`candidate-picker-condition-btn${conditionAction.hasTriggers ? ' has-triggers' : ''}`}
+                disabled={conditionAction.disabled}
+                onClick={() => {
+                  conditionAction.onClick()
+                  onClose()
+                }}
+                title={conditionAction.title}
+                type="button"
+              >
+                <span aria-hidden="true" className="candidate-picker-condition-icon">⚙</span>
+                <span className="candidate-picker-condition-label">{conditionAction.label}</span>
+              </button>
             )}
           </header>
           <div aria-label={titleText} className="candidate-picker-grid" role="listbox">

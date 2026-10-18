@@ -73,7 +73,9 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const currentPickerValue = activePickerSlotIndex !== null
     ? combat.abilitySlots[activePickerSlotIndex]?.abilityId ?? null
     : null
-
+  const currentPickerAbility = currentPickerValue !== null
+    ? abilities.find(entry => entry.abilityId === currentPickerValue) ?? null
+    : null
   const isPickingInternal = activePickerSlotIndex === 0
   const pickerTitle = activePickerSlotIndex !== null
     ? isPickingInternal
@@ -145,7 +147,6 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     // Lv 徽标与条件按钮都在悬浮卡触发域之外（ConditionedTile 统一收拢）：
     // 鼠标落在徽标/按钮上时不再弹出悬浮卡，点开条件编辑器也不会出现 tooltip 叠 modal。
     // 条件跟随功法：按 abilityId 读写 combat.abilityTriggers，卸下再装配条件保留。
-    const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
     const abilityExp = ability ? (combat.abilityExperiences?.[ability.abilityId] ?? 0) : 0
     const slotAsideCards = ability ? resolveAbilityAsideCards(ability, abilityExp) : undefined
     return (
@@ -153,13 +154,6 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         as="div"
         asideCards={slotAsideCards}
         className={`abilities-slot-card${isInternal ? ' is-internal' : ''}${activePicker?.index === index ? ' is-picking' : ''}`}
-        condition={ability ? {
-          ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
-          hasTriggers: triggerCount > 0,
-          label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
-          onClick: () => setEditingTriggerAbilityId(ability.abilityId),
-          title: t('app.combatPanel.editTriggersTitle'),
-        } : null}
         content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
         extras={ability && (
           <div className="combat-ability-slot-actions">
@@ -240,7 +234,6 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                   const equippedIndex = getEquippedSlotIndex(ability.abilityId)
                   const learnedLevel = abilityLevelFor(ability.abilityId)
                   const iconUrl = resolveItemIconUrl(ability.abilityId)
-                  const triggerCount = combat.abilityTriggers?.[ability.abilityId]?.length ?? 0
                   const ribbonLabel = ability.element && ability.element !== 'none'
                     ? t(`combat.encounter.element.${ability.element}`)
                     : formatAbilityCategory(ability.category)
@@ -250,21 +243,16 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                   return (
                     <ConditionedTile
                       asideCards={cellAsideCards}
-                      className="abilities-learned-cell"
-                      condition={{
-                        ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
-                        hasTriggers: triggerCount > 0,
-                        label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
-                        onClick: () => setEditingTriggerAbilityId(ability.abilityId),
-                        title: t('app.combatPanel.editTriggersTitle'),
-                      }}
                       content={describeAbility(ability, learnedLevel)}
                       key={ability.abilityId}
                       triggerClassName="item-grid-picker-tooltip"
                     >
-                      <span
+                      <button
                         className={`item-tile combat-ability-cell${equippedIndex !== null ? ' is-equipped' : ''}`}
                         data-rarity={group.key === 'internal' ? 'emperor' : 'mystic'}
+                        onClick={() => setEditingTriggerAbilityId(ability.abilityId)}
+                        title={t('app.combatPanel.editTriggersTitle')}
+                        type="button"
                       >
                         <span aria-hidden="true" className="item-type-ribbon">
                           <span>{ribbonLabel}</span>
@@ -283,7 +271,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                           </span>
                         )}
                         <span aria-hidden="true" className="item-tile-glow" />
-                      </span>
+                      </button>
                     </ConditionedTile>
                   )
                 })}
@@ -293,13 +281,14 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         )}
       </section>
 
-      {/* 功法待选列表（贴靠目标槽位浮出） */}
+      {/* 功法待选列表（贴靠目标槽位浮出，顶部旁边展示大号触发条件按钮） */}
       <AbilityGridPicker
         abilities={learnedAbilities}
         allowEmpty
         anchor={activePicker?.anchor ?? null}
         levelFor={abilityLevelFor}
         onClose={() => setActivePicker(null)}
+        onEditCondition={currentPickerAbility ? () => setEditingTriggerAbilityId(currentPickerAbility.abilityId) : undefined}
         onSelect={value => {
           if (activePicker !== null) {
             update({ abilitySlots: withAbility(activePicker.index, value) })
@@ -309,9 +298,9 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         open={activePicker !== null}
         slotIndex={activePicker?.index}
         title={pickerTitle}
+        triggerCount={currentPickerAbility ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0) : 0}
         value={currentPickerValue}
       />
-
       {/* 触发条件编辑器（功法维度：title 用功法名） */}
       {editingTriggerAbilityId !== null && (
         <CombatTriggerEditor
