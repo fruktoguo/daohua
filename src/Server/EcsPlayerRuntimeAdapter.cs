@@ -122,6 +122,37 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     /// <inheritdoc />
     public int LoadedCount => _loaded.Count;
     /// <inheritdoc />
+    public int CountNodeDuelCombatTeams(string? nodeId)
+    {
+        if (string.IsNullOrEmpty(nodeId)) return 0;
+        var count = 0;
+        var accountedSessions = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var snapshot in _loaded.Values)
+        {
+            var state = snapshot.State;
+            if (state.World.EdgeId is not null || state.World.NodeId != nodeId)
+                continue;
+            if (state.Actions.Count == 0)
+                continue;
+            var head = state.Actions[0];
+            if (head.Status != ActionQueueStatus.Running || !head.Intent.PvpEnabled)
+                continue;
+            if (head.Participation is { Reference.SessionId: { Length: > 0 } sessionId } participation)
+            {
+                if (participation.EndsAtUnixSeconds > snapshot.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d)
+                {
+                    if (accountedSessions.Add(sessionId))
+                        count++;
+                }
+            }
+            else if (head.Expedition is not null)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+    /// <inheritdoc />
     public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
     /// <inheritdoc />
     public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
@@ -1277,8 +1308,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     }
 
     /// <summary>
-    /// 斗法撮合（总纲 §7.10.1）：在已加载玩家中给处于匹配等待相位的寻求者配实力 ±PowerBandRatio
-    /// 带内的候选，双方先预约后冻结镜像、一次性推演确定性剧本并各自挂载回放；
+    /// 斗法撮合（总纲 §7.10.1）：在已加载玩家中给处于匹配等待相位的寻求者配同一有效地图节点（World.NodeId 相同且未赶路）
+    /// 且实力 ±PowerBandRatio 带内的候选，双方先预约后冻结镜像、一次性推演确定性剧本并各自挂载回放；
     /// 任一步失败全部回滚，无候选时退出等待静默转正常波次。仅在全体玩家 gate 持有的推进窗口内调用。
     /// </summary>
     private void MatchDuelsOwned(DateTimeOffset target, IReadOnlyList<Guid> ids, List<RuntimeNotification> notifications)
@@ -1286,13 +1317,19 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var nowUnix = target.ToUnixTimeMilliseconds() / 1000d;
         var band = gameData.Duel.PowerBandRatio;
         // 候选池先行快照：门禁内 MutatePlayer 的原子判据仍是最终裁决，池只承担初选与随机。
-        var candidates = new List<(Guid PlayerId, double Power)>();
+        // 严格同节点约束：排除移动中（EdgeId 非空）或节点未知的候选人。
+        var candidates = new List<(Guid PlayerId, double Power, string NodeId)>();
         foreach (var id in ids)
         {
-            (Guid PlayerId, double Power)? info = null;
+            (Guid PlayerId, double Power, string NodeId)? info = null;
             ecs.MutatePlayer(id, aggregate =>
             {
-                if (aggregate.CanJoinDuel(nowUnix)) info = (id, aggregate.DuelPower(gameData));
+                if (aggregate.CanJoinDuel(nowUnix)
+                    && aggregate.World.EdgeId is null
+                    && !string.IsNullOrEmpty(aggregate.World.NodeId))
+                {
+                    info = (id, aggregate.DuelPower(gameData), aggregate.World.NodeId);
+                }
             });
             if (info is { } entry) candidates.Add(entry);
         }
@@ -1300,14 +1337,23 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         foreach (var seekerId in ids)
         {
             double seekerPower = 0;
+            string? seekerNodeId = null;
             var pending = false;
             ecs.MutatePlayer(seekerId, aggregate =>
             {
-                if (aggregate.IsDuelPending) { pending = true; seekerPower = aggregate.DuelPower(gameData); }
+                if (aggregate.IsDuelPending
+                    && aggregate.World.EdgeId is null
+                    && !string.IsNullOrEmpty(aggregate.World.NodeId))
+                {
+                    pending = true;
+                    seekerPower = aggregate.DuelPower(gameData);
+                    seekerNodeId = aggregate.World.NodeId;
+                }
             });
-            if (!pending) continue;
+            if (!pending || seekerNodeId is null) continue;
             var pool = candidates
                 .Where(candidate => candidate.PlayerId != seekerId
+                    && candidate.NodeId == seekerNodeId
                     && candidate.Power >= seekerPower * (1 - band) && candidate.Power <= seekerPower * (1 + band))
                 .ToList();
             if (pool.Count == 0)
@@ -1320,7 +1366,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             DuelCombatant? initiatorMirror = null;
             ecs.MutatePlayer(seekerId, aggregate =>
             {
-                if (aggregate.TryReserveDuel(duelId, nowUnix)) initiatorMirror = aggregate.BuildDuelMirror(gameData);
+                if (aggregate.World.NodeId == seekerNodeId && aggregate.World.EdgeId is null && aggregate.TryReserveDuel(duelId, nowUnix))
+                    initiatorMirror = aggregate.BuildDuelMirror(gameData);
             });
             if (initiatorMirror is null)
             {
@@ -1330,7 +1377,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             DuelCombatant? defenderMirror = null;
             ecs.MutatePlayer(picked.PlayerId, aggregate =>
             {
-                if (aggregate.TryReserveDuel(duelId, nowUnix)) defenderMirror = aggregate.BuildDuelMirror(gameData);
+                if (aggregate.World.NodeId == seekerNodeId && aggregate.World.EdgeId is null && aggregate.TryReserveDuel(duelId, nowUnix))
+                    defenderMirror = aggregate.BuildDuelMirror(gameData);
             });
             if (defenderMirror is null)
             {

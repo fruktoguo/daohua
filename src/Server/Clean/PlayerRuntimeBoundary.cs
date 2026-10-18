@@ -75,6 +75,8 @@ public interface IPlayerRuntime : IAsyncDisposable
 {
     /// <summary>当前驻留内存的已加载玩家实体数。</summary>
     int LoadedCount { get; }
+    /// <summary>统计指定地图节点当前开启了斗法并且正在战斗的队伍总数（包含勾选斗法的单人战斗单位与组队讨伐会话，每队计 1）。</summary>
+    int CountNodeDuelCombatTeams(string? nodeId) => 0;
     /// <summary>玩家快照推进后向订阅者（WebSocket 推送）回调；始终在玩家写锁外触发。</summary>
     event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
     /// <summary>一批战报日志产生后向订阅者回调；同样在玩家写锁外触发。</summary>

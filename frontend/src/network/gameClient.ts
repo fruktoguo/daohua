@@ -618,7 +618,7 @@ export class GameClient {
             return
           }
           if (hello.presenceStats) {
-            useGameStore.getState().setPresenceStats(hello.presenceStats.onlineCount, hello.presenceStats.offlineIdleCount)
+            useGameStore.getState().setPresenceStats(hello.presenceStats.onlineCount, hello.presenceStats.offlineIdleCount, hello.presenceStats.nodeDuelCombatTeamCount)
           }
           applyAntiMultiOpenConfig(hello.antiMultiOpen)
           useGameStore.getState().setConnection('online')
@@ -768,7 +768,7 @@ export class GameClient {
           }
           const pong = decodeJsonPayload<PongResponse>(envelope)
           if (pong && typeof pong.onlineCount === 'number') {
-            useGameStore.getState().setPresenceStats(pong.onlineCount, pong.offlineIdleCount ?? 0)
+            useGameStore.getState().setPresenceStats(pong.onlineCount, pong.offlineIdleCount ?? 0, pong.nodeDuelCombatTeamCount)
           }
           return
         }

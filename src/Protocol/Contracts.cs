@@ -356,13 +356,15 @@ public sealed record AntiMultiOpenConfigDto(bool TabGuardEnabled);
 /// <summary>在线与挂机修士统计 DTO</summary>
 /// <param name="OnlineCount">当前在线挂机人数</param>
 /// <param name="OfflineIdleCount">当前48小时内离线挂机人数</param>
-public sealed record PresenceStatsDto(int OnlineCount, int OfflineIdleCount);
+/// <param name="NodeDuelCombatTeamCount">当前节点开启斗法并且正在战斗的队伍总数（缺省为 0）</param>
+public sealed record PresenceStatsDto(int OnlineCount, int OfflineIdleCount, int NodeDuelCombatTeamCount = 0);
 
 /// <summary>心跳应答 Pong 载荷</summary>
 /// <param name="ServerTime">服务端当前时间戳</param>
 /// <param name="OnlineCount">当前在线挂机人数</param>
 /// <param name="OfflineIdleCount">当前48小时内离线挂机人数</param>
-public sealed record PongResponse(DateTimeOffset ServerTime, int OnlineCount = 0, int OfflineIdleCount = 0);
+/// <param name="NodeDuelCombatTeamCount">当前节点开启斗法并且正在战斗的队伍总数（缺省为 0）</param>
+public sealed record PongResponse(DateTimeOffset ServerTime, int OnlineCount = 0, int OfflineIdleCount = 0, int NodeDuelCombatTeamCount = 0);
 
 /// <summary>握手问候应答载荷</summary>
 /// <param name="ServerVersion">服务端版本号</param>

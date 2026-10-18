@@ -566,6 +566,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const [kickTarget, setKickTarget] = useState<{ playerId: string; name: string } | null>(null)
   if (!party) return null
 
+  const nodeDuelCombatTeamCount = useGameStore(state => state.nodeDuelCombatTeamCount)
   const isLeader = party.leaderId === myPlayerId
   const memberIds = new Set(party.members.map(member => member.playerId))
   const invitableFriends = friends.filter(friend => !memberIds.has(friend.playerId))
@@ -606,6 +607,11 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                   type="checkbox"
                 />
                 <span>{t('social.pvp.label')}</span>
+                {nodeDuelCombatTeamCount !== null && (
+                  <span className="party-pvp-teams-badge">
+                    {t('app.action.duel.nodeTeams', { count: nodeDuelCombatTeamCount })}
+                  </span>
+                )}
               </label>
             )}
           </span>

@@ -647,7 +647,13 @@ public static class WebSocketEndpoint
                             continue;
                         }
                         var pongStats = await presenceStats.GetStatsAsync(cancellationToken);
-                        await QueueJsonAsync(session, WireMessageType.Pong, envelope.RequestId, new PongResponse(DateTimeOffset.UtcNow, pongStats.OnlineCount, pongStats.OfflineIdleCount), cancellationToken);
+                        var playerState = runtime.TryGetLoaded(session.PlayerId)?.State;
+                        var nodeDuelTeams = playerState?.World.EdgeId is null && !string.IsNullOrEmpty(playerState?.World.NodeId)
+                            ? runtime.CountNodeDuelCombatTeams(playerState.World.NodeId)
+                            : 0;
+                        await QueueJsonAsync(session, WireMessageType.Pong, envelope.RequestId,
+                            new PongResponse(DateTimeOffset.UtcNow, pongStats.OnlineCount, pongStats.OfflineIdleCount, nodeDuelTeams),
+                            cancellationToken);
                         break;
                     case WireMessageType.ActionIntent:
                         if (!handshaken)

@@ -127,6 +127,8 @@ export interface PresenceStatsDto {
   onlineCount: number
   /** 当前48小时内离线挂机人数 */
   offlineIdleCount: number
+  /** 当前节点开启斗法并且正在战斗的队伍总数 */
+  nodeDuelCombatTeamCount?: number
 }
 
 /** 心跳应答 Pong 载荷 */
@@ -137,6 +139,8 @@ export interface PongResponse {
   onlineCount?: number
   /** 当前48小时内离线挂机人数 */
   offlineIdleCount?: number
+  /** 当前节点开启斗法并且正在战斗的队伍总数 */
+  nodeDuelCombatTeamCount?: number
 }
 
 /** HelloAck 握手应答载荷 */

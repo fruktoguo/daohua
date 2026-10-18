@@ -93,6 +93,8 @@ interface GameStore {
   onlineCount: number | null
   /** 最近获知的48小时离线挂机人数（null 表示尚无统计数据） */
   offlineIdleCount: number | null
+  /** 最近获知的当前节点开启斗法并且正在战斗的队伍总数（null 表示尚无统计数据） */
+  nodeDuelCombatTeamCount: number | null
   /** 终态断连原因的 i18n 词条 key（顶号/会话失效等；null 表示无特定原因，恢复在线时自动清除） */
   disconnectReason: string | null
   /** 顶部全局提示消息（为 null 时隐藏） */
@@ -105,9 +107,8 @@ interface GameStore {
   setLatencyMs: (latencyMs: number | null) => void
   /** 设置终态断连原因词条 key */
   setDisconnectReason: (key: string | null) => void
-  /** 更新在线与离线挂机人数统计 */
-  setPresenceStats: (onlineCount: number, offlineIdleCount: number) => void
-  /** 设置顶部全局提示消息 */
+  /** 更新在线与离线挂机人数及当前节点斗法战斗队伍数统计 */
+  setPresenceStats: (onlineCount: number, offlineIdleCount: number, nodeDuelCombatTeamCount?: number) => void
   setNotice: (notice: string | null) => void
   /** 更新行动目录 */
   setActions: (actions: readonly ActionDefinition[]) => void
@@ -326,7 +327,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setConnection: (connection) => set(state => ({ connection, disconnectReason: connection === 'online' ? null : state.disconnectReason })),
   onlineCount: null,
   offlineIdleCount: null,
-  setPresenceStats: (onlineCount, offlineIdleCount) => set({ onlineCount, offlineIdleCount }),
+  nodeDuelCombatTeamCount: null,
+  setPresenceStats: (onlineCount, offlineIdleCount, nodeDuelCombatTeamCount) => set(state => ({ onlineCount, offlineIdleCount, nodeDuelCombatTeamCount: nodeDuelCombatTeamCount !== undefined ? nodeDuelCombatTeamCount : state.nodeDuelCombatTeamCount })),
   setLatencyMs: (latencyMs) => set({ latencyMs }),
   setDisconnectReason: (key) => set({ disconnectReason: key }),
   setNotice: (notice) => set(state => ({ notice, noticeSeq: notice === null ? state.noticeSeq : state.noticeSeq + 1 })),
@@ -495,7 +497,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     notice: null,
     onlineCount: null,
     offlineIdleCount: null,
-    queue: initial.queue,
+    nodeDuelCombatTeamCount: null,
     inventory: initial.inventory,
     buffs: initial.buffs,
     stats: initial.stats,

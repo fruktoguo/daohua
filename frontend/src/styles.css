@@ -4065,6 +4065,13 @@ input[type="checkbox"] {
 .duel-option-status .duel-cooldown {
   color: #e89a8c;
 }
+.duel-option-status .duel-node-teams {
+  color: #a78bfa;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 
 .action-modal-submit {
   width: 100%;
@@ -8683,6 +8690,17 @@ input[type="checkbox"] {
 .party-pvp-toggle input:disabled + span {
   opacity: 0.7;
 }
+.party-pvp-teams-badge {
+  color: #a78bfa;
+  font-size: 11px;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  font-variant-numeric: tabular-nums;
+}
+
 
 /* 档案信息行：只读摘要，「·」分隔目标/地点/公开性/身家门槛/人数。 */
 .party-meta {

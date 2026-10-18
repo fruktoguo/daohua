@@ -1535,6 +1535,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const encounters = useGameStore(state => state.encounters)
   const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
   const duel = useGameStore(state => state.duel)
+  const nodeDuelCombatTeamCount = useGameStore(state => state.nodeDuelCombatTeamCount)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
   // 制造类行动（炼丹/炼器/精炼/强化）默认单轮：材料逐轮消耗结算，无限默认会烧穿背包；
@@ -1587,6 +1588,11 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   }, [action.inputs, isDrawQi, spiritStoneTier])
   const titleId = `action-modal-title-${action.id}`
   const startsImmediately = action.executionKind === 'combat-encounter'
+  useEffect(() => {
+    if (startsImmediately) {
+      gameClient.pingNow()
+    }
+  }, [startsImmediately])
   // 行动名/描述按当前驻留地点本地化（「讨伐 青云仙山」→「讨伐 漱玉溪」）
   const displayName = localizeActionDisplayText(action.name, world, maps)
   const displayDescription = action.description ? localizeActionDisplayText(action.description, world, maps) : action.description
@@ -1856,6 +1862,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
             <span>{t('app.action.duel.charges', { n: duel.encounterCharges })}</span>
             {duelCooldownRemaining > 0 && (
               <span className="duel-cooldown">{t('app.action.duel.cooldown', { time: formatRemainingSeconds(duelCooldownRemaining) })}</span>
+            )}
+            {nodeDuelCombatTeamCount !== null && (
+              <span className="duel-node-teams">{t('app.action.duel.nodeTeams', { count: nodeDuelCombatTeamCount })}</span>
             )}
           </div>
         </section>
