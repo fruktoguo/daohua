@@ -2464,71 +2464,70 @@ export default function App(): React.JSX.Element {
     return () => controller.abort()
   }, [currentAccount, sessionChecked, catalogAttempt])
 
+  let content: React.JSX.Element
   if (tabBlocked) {
-    return <MultiTabBlockedPage />
-  }
-
-  if (!currentAccount) {
-    return <LoginPage />
-  }
-
-  if (catalogError) {
-    return <ConnectionErrorPage message={catalogError} onRetry={() => setCatalogAttempt(attempt => attempt + 1)} onLogout={logout} />
-  }
-
-  if (!catalogReady) return <ConnectingPage onCancel={logout} />
-
-  if (!hasReceivedSnapshot) {
+    content = <MultiTabBlockedPage />
+  } else if (!currentAccount) {
+    content = <LoginPage />
+  } else if (catalogError) {
+    content = <ConnectionErrorPage message={catalogError} onRetry={() => setCatalogAttempt(attempt => attempt + 1)} onLogout={logout} />
+  } else if (!catalogReady) {
+    content = <ConnectingPage onCancel={logout} />
+  } else if (!hasReceivedSnapshot) {
     if (connection === 'connecting' || connection === 'reconnecting' || connection === 'online') {
-      return <ConnectingPage onCancel={logout} />
+      content = <ConnectingPage onCancel={logout} />
+    } else {
+      content = <ConnectionErrorPage message={disconnectReason ? t(disconnectReason) : undefined} onRetry={() => gameClient.connect()} onLogout={logout} />
     }
-    return <ConnectionErrorPage message={disconnectReason ? t(disconnectReason) : undefined} onRetry={() => gameClient.connect()} onLogout={logout} />
-  }
-
-  // 已进入游戏后连接进入终态离线（被顶号/会话失效等，无自动重连）：全屏透出断连原因，替代 2.6 秒即逝的气泡。
-  if (connection === 'offline') {
-    return <ConnectionErrorPage message={disconnectReason ? t(disconnectReason) : undefined} onRetry={() => gameClient.connect()} onLogout={logout} />
+  } else if (connection === 'offline') {
+    content = <ConnectionErrorPage message={disconnectReason ? t(disconnectReason) : undefined} onRetry={() => gameClient.connect()} onLogout={logout} />
+  } else {
+    content = (
+      <div className="app">
+        <div className="motes" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>
+        <TopBar />
+        <div className="app-body">
+          <Sidebar />
+          <div className="center-column">
+            <main className="main-content">
+              <ExplorationPage hidden={activeTab !== 'exploration'} />
+              <CraftingPage hidden={activeTab !== 'crafting'} />
+              <MapPage hidden={activeTab !== 'map'} />
+              <CombatDetailsPage hidden={activeTab !== 'combat'} />
+              <Suspense fallback={null}>
+                {activeTab === 'insight' && <InsightPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'market' && <MarketPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'social' && <SocialPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'codex' && <CodexPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'settings' && <SettingsPage />}
+              </Suspense>
+              {activeTab === 'records' && <RecordsPanel />}
+              {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
+              {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" />}
+            </main>
+            <div className="desktop-log">{!mobileLayout && <GameLogPanel />}</div>
+          </div>
+          <aside className="right-column"><RightSidebar /></aside>
+        </div>
+        <BottomNav />
+        <TutorialOverlay />
+        <PlayerCardModal />
+      </div>
+    )
   }
 
   return (
-    <div className="app">
-      <div className="motes" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>
-      <TopBar />
-      <div className="app-body">
-        <Sidebar />
-        <div className="center-column">
-          <main className="main-content">
-            <ExplorationPage hidden={activeTab !== 'exploration'} />
-            <CraftingPage hidden={activeTab !== 'crafting'} />
-            <MapPage hidden={activeTab !== 'map'} />
-            <CombatDetailsPage hidden={activeTab !== 'combat'} />
-            <Suspense fallback={null}>
-              {activeTab === 'insight' && <InsightPage />}
-            </Suspense>
-            <Suspense fallback={null}>
-              {activeTab === 'market' && <MarketPage />}
-            </Suspense>
-            <Suspense fallback={null}>
-              {activeTab === 'social' && <SocialPage />}
-            </Suspense>
-            <Suspense fallback={null}>
-              {activeTab === 'codex' && <CodexPage />}
-            </Suspense>
-            <Suspense fallback={null}>
-              {activeTab === 'settings' && <SettingsPage />}
-            </Suspense>
-            {activeTab === 'records' && <RecordsPanel />}
-            {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
-            {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" />}
-          </main>
-          <div className="desktop-log">{!mobileLayout && <GameLogPanel />}</div>
-        </div>
-        <aside className="right-column"><RightSidebar /></aside>
-      </div>
-      <BottomNav />
+    <>
+      {content}
       <Notice />
-      <TutorialOverlay />
-      <PlayerCardModal />
-    </div>
+    </>
   )
 }

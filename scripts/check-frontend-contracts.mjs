@@ -5,8 +5,24 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from '../frontend/node_modules/vite/dist/node/index.js'
 
 // 使用 Vite 的真实模块转换路径，覆盖 import.meta.glob 和浏览器快照解码。
-globalThis.window = { localStorage: { getItem: () => null }, location: { origin: 'http://localhost' } }
-globalThis.document = { documentElement: { lang: '' } }
+const mockSessionStorage = new Map()
+let reloadCount = 0
+globalThis.window = {
+  localStorage: { getItem: () => null },
+  sessionStorage: {
+    getItem: (key) => mockSessionStorage.get(key) ?? null,
+    setItem: (key, val) => mockSessionStorage.set(key, String(val)),
+    removeItem: (key) => mockSessionStorage.delete(key),
+  },
+  location: { origin: 'http://localhost', reload: () => { reloadCount += 1 } },
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  dispatchEvent: () => true,
+  setTimeout: (fn) => fn(),
+  clearTimeout: () => {},
+}
+globalThis.sessionStorage = globalThis.window.sessionStorage
+globalThis.document = { documentElement: { lang: '' }, addEventListener: () => {}, removeEventListener: () => {} }
 const server = await createServer({ root: fileURLToPath(new URL('../frontend', import.meta.url)), server: { middlewareMode: true } })
 try {
   const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } = await server.ssrLoadModule('/src/network/snapshot.ts')
@@ -138,7 +154,25 @@ try {
   const level18Meta = withGrade(resolveItemMeta(t2Weapon.itemId), 18)
   assert.equal(level18Meta.level, 18, 'withItemGrade 传入 level 18 时必须能反推等阶并保留 Lv.18')
   assert.equal(level18Meta.rarity, 'yellow', 'withItemGrade 传入 level 18 时稀有度必须为 yellow')
-  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐。')
+  // 版本更新感知与防死循环熔断断言
+  const { notifyServerVersion, triggerVersionReload, isReloadCircuitBroken, _resetVersionStateForTest } = await server.ssrLoadModule('/src/network/versionManager.ts')
+  _resetVersionStateForTest()
+  notifyServerVersion('v1.0.0')
+  assert.equal(reloadCount, 0, '首次通知建立基线不应触发刷新')
+  notifyServerVersion('v1.0.0')
+  assert.equal(reloadCount, 0, '相同版本不应触发刷新')
+  notifyServerVersion('v1.0.1')
+  assert.equal(reloadCount, 1, '会话版本漂移应触发一次刷新')
+  // 测试熔断机制（模拟下一次载入后再次触发重试）
+  _resetVersionStateForTest()
+  triggerVersionReload('v1.0.1', '测试再次重试')
+  assert.equal(reloadCount, 2, '第二次重试仍放行')
+  assert.equal(isReloadCircuitBroken('v1.0.1'), true, '达到 2 次后必须标记为熔断状态')
+  _resetVersionStateForTest()
+  triggerVersionReload('v1.0.1', '超限重试')
+  assert.equal(reloadCount, 2, '熔断后绝对不可再次调用 reload 造成死循环')
+  _resetVersionStateForTest()
+  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、版本感知与防环熔断通过。')
 } finally {
   await server.close()
 }

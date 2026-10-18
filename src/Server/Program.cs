@@ -244,7 +244,18 @@ if (processRole == ServerProcessRole.Api)
     // 仅在静态站点根存在时装配静态文件与 SPA 回退，避免开发态刷出 WebRootPath 告警。
     var webRootPath = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
     var hasWebRoot = Directory.Exists(webRootPath);
-    if (hasWebRoot) app.UseStaticFiles();
+    var staticFileOptions = new StaticFileOptions
+    {
+        OnPrepareResponse = ctx =>
+        {
+            if (ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
+            {
+                ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+                ctx.Context.Response.Headers.Pragma = "no-cache";
+            }
+        }
+    };
+    if (hasWebRoot) app.UseStaticFiles(staticFileOptions);
     // 全局 WS 心跳口径：20s 主动 ping、60s 无回应判定半开断开。
     // 同时作用于 /ws 玩家连接与 /internal/compute-link 节点链路：
     // 60s 容忍窗足以覆盖弱网抖动，又能让 NAT 后半开的计算链路在分钟级内被回收。
@@ -267,6 +278,13 @@ if (processRole == ServerProcessRole.Api)
         gameDataVersion = gameData.ContentVersion,
         gameDataFingerprint = gameData.Fingerprint
     }));
+
+    app.MapGet("/api/v1/version", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        context.Response.Headers.CacheControl = "no-store, no-cache, max-age=0, must-revalidate";
+        context.Response.Headers.Pragma = "no-cache";
+        return Results.Ok(new ServerVersionDto(releaseVersion, gameData.Fingerprint, ProtocolConstants.CurrentVersion));
+    });
 
     var catalog = app.MapGroup("/api/v1/catalog");
     catalog.MapGet("/abilities", (HttpContext context, GameDataCatalog gameData) =>
@@ -670,7 +688,7 @@ if (processRole == ServerProcessRole.Api)
         await next();
     });
     app.MapFallback("/api/{**path}", () => Results.NotFound(Problem(404, "NOT_FOUND", "接口不存在。")));
-    if (hasWebRoot) app.MapFallbackToFile("index.html");
+    if (hasWebRoot) app.MapFallbackToFile("index.html", staticFileOptions);
 }
 
 app.Run();

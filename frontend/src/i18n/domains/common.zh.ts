@@ -32,6 +32,8 @@ export const commonZh = {
       deviceQuotaExceeded: '当前设备同时在线的账号数量已达上限。',
       deviceCheckFailed: '设备校验信息缺失，请刷新页面后重试。',
       parseUnstable: '协议数据持续异常，已重置连接以恢复同步。',
+      versionUpdating: '检测到仙途新版本，正在自动重载...',
+      versionCircuitBroken: '检测到仙途新版本，请按 Ctrl+F5 强制刷新浏览器缓存。',
     },
   },
 }

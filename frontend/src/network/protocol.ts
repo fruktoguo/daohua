@@ -158,6 +158,16 @@ export interface HelloResponse {
   /** 在线与离线挂机修士统计（缺省表示服务端未附带） */
   presenceStats?: PresenceStatsDto | null
 }
+/** 服务端应用版本信息 DTO */
+export interface ServerVersionDto {
+  /** 服务端构建或发布版本 */
+  version: string
+  /** 游戏数据指纹 */
+  gameDataFingerprint: string
+  /** 协议版本号 */
+  protocolVersion: number
+}
+
 
 /** 玩家快照头（持久化元数据摘要） */
 export interface PlayerHeadDto {

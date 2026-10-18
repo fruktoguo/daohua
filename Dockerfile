@@ -6,6 +6,8 @@ ARG DOTNET_RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 FROM ${NODE_IMAGE} AS frontend-build
 WORKDIR /src/frontend
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
+ARG BUILD_VERSION=dev
+ENV VITE_APP_VERSION=${BUILD_VERSION}
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --registry="${NPM_CONFIG_REGISTRY}" --ignore-scripts --no-audit --no-fund
 COPY frontend/ ./

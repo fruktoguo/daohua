@@ -43,6 +43,7 @@ import {
   isTabBlocked,
   registerBlockedTeardown,
 } from '../antiMulti'
+import { notifyServerVersion } from './versionManager'
 
 const APP_VERSION = String(import.meta.env.VITE_APP_VERSION ?? 'dev')
 
@@ -611,6 +612,7 @@ export class GameClient {
             || !Number.isSafeInteger(hello.serverSequence) || hello.serverSequence !== envelope.sequence || hello.serverSequence <= 0) {
             throw new Error('服务端 HelloAck 载荷无效。')
           }
+          notifyServerVersion(hello.serverVersion)
           if (expectedFingerprint && hello.gameDataFingerprint !== expectedFingerprint) {
             this.catalogRefreshPending = true
             sourceSocket.close(1000, '服务端配表指纹不匹配')

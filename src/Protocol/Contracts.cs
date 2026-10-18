@@ -374,6 +374,11 @@ public sealed record PongResponse(DateTimeOffset ServerTime, int OnlineCount = 0
 /// <param name="AntiMultiOpen">防多开功能开关，可选</param>
 /// <param name="PresenceStats">在线与离线挂机人数统计，可选</param>
 public sealed record HelloResponse(string ServerVersion, ushort ProtocolVersion, string GameDataFingerprint, long ServerSequence, AntiMultiOpenConfigDto? AntiMultiOpen = null, PresenceStatsDto? PresenceStats = null);
+/// <summary>服务端应用版本信息 DTO</summary>
+/// <param name="Version">服务端构建或发布版本</param>
+/// <param name="GameDataFingerprint">游戏数据指纹</param>
+/// <param name="ProtocolVersion">协议版本号</param>
+public sealed record ServerVersionDto(string Version, string GameDataFingerprint, ushort ProtocolVersion);
 /// <summary>玩家持久化头 DTO</summary>
 /// <param name="PlayerId">玩家唯一标识</param>
 /// <param name="StateVersion">状态版本号</param>
