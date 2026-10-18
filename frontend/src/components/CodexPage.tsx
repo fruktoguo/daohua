@@ -35,7 +35,6 @@ import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './Floating
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { createInternalRootExpAsideCard } from './EffectTooltip'
 import {
-  describeEquipmentEffects,
   describeItemEffects,
   ItemTile,
   rarityToTone,
@@ -680,10 +679,9 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
     level: levelNumber,
   }
 
-  // 产出物品的真实主干攻防数值与加成行（复用 ItemDisplay 的核心效果解算）
+  // 产出物品的直接效果行（装备属性数值解耦至 Aside 独立属性悬浮副卡并排展示）
   const effectLines = [
     ...describeItemEffects(outputItemDef),
-    ...describeEquipmentEffects(outputEqDef, 0),
   ]
 
   // 统计网格（品类、等阶）

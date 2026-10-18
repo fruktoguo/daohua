@@ -422,6 +422,8 @@ export const gameZh = {
       internalRootExpMark: '倾向',
       internalRootExpTitle: '六维倾向说明',
       internalRootExpDesc: '战斗中所获六维根基经验，将按照此心法标注的六维百分比进行增幅获取。',
+      internalBonusMark: '心法',
+      internalBonusTitle: '内功增益',
     },
   },
 }

@@ -11,6 +11,7 @@ import {
   type FloatingTone,
 } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
+import { createBonusAsideCard, type BonusAsideItem } from './ItemDisplay'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
@@ -74,7 +75,81 @@ export function createInternalRootExpAsideCard(tone: FloatingTone = 'qi'): Float
 }
 
 /**
- * 统一解析功法技能的附属卡片列表（升级进度 + 内功六维倾向说明）
+ * 提取内功心法的常驻面板被动加成与修为获取条目列表 (BonusAsideItem[])
+ */
+export function extractInternalAbilityBonusItems(
+  ability: CombatAbilityDefinition,
+  level = 1
+): BonusAsideItem[] {
+  if (ability.discipline !== 'internal') return []
+  const items: BonusAsideItem[] = []
+  const normalizedLevel = Math.max(1, level)
+  const levelOffset = normalizedLevel - 1
+
+  if (ability.cultivationExpBonusPoints) {
+    const val = ability.cultivationExpBonusPoints
+    items.push({
+      glyph: 'experience',
+      label: '修为获取',
+      tone: val >= 0 ? 'gold' : 'amber',
+      value: `${val > 0 ? '+' : ''}${val}%`,
+    })
+  }
+
+  if (ability.passive) {
+    const passiveEffPerLevel = ability.passiveEfficiencyPerLevel ?? 0.05
+    const passiveScale = Math.max(0, 1.0 + passiveEffPerLevel * levelOffset)
+    const statConfigs: Record<string, { label: string; tone: PillTone }> = {
+      physicalDamageBonusPoints: { label: '物理增伤', tone: 'crimson' },
+      spellDamageBonusPoints: { label: '术法增伤', tone: 'indigo' },
+      physicalDamageReductionPoints: { label: '物理减伤', tone: 'emerald' },
+      spellDamageReductionPoints: { label: '术法减伤', tone: 'violet' },
+      actionSpeedPoints: { label: '行动加速', tone: 'teal' },
+      attackSpeedPoints: { label: '攻击攻速', tone: 'teal' },
+      criticalDamageBonusPoints: { label: '暴击伤害', tone: 'gold' },
+      threatBonusPoints: { label: '威胁增幅', tone: 'crimson' },
+      healingBonusPoints: { label: '治疗增幅', tone: 'violet' },
+      damageAbsorptionPoints: { label: '伤害减免', tone: 'emerald' },
+    }
+    for (const [stat, baseVal] of Object.entries(ability.passive)) {
+      if (typeof baseVal === 'number' && baseVal !== 0) {
+        const scaledVal = Math.round(baseVal * passiveScale * 100) / 100
+        const cfg = statConfigs[stat] ?? { label: stat, tone: 'default' }
+        items.push({
+          glyph: resolveStatGlyph(stat) ?? resolveStatGlyph(cfg.label) ?? undefined,
+          label: cfg.label,
+          tone: cfg.tone,
+          value: `${scaledVal > 0 ? '+' : ''}${scaledVal}%`,
+        })
+      }
+    }
+  }
+
+  return items
+}
+
+/**
+ * 构造内功心法常驻面板被动加成与修为获取独立副卡片 (Bonus Aside Card)
+ */
+export function createInternalAbilityBonusAsideCard(
+  ability: CombatAbilityDefinition,
+  level = 1
+): FloatingAsideCard | null {
+  if (ability.discipline !== 'internal') return null
+  const items = extractInternalAbilityBonusItems(ability, level)
+  if (items.length === 0) return null
+  const t = getT()
+  return createBonusAsideCard({
+    id: `aside-internal-bonus-${ability.abilityId}`,
+    mark: t('game.abilityAside.internalBonusMark'),
+    title: t('game.abilityAside.internalBonusTitle'),
+    tone: 'qi',
+    items,
+  })
+}
+
+/**
+ * 统一解析功法技能的附属卡片列表（升级进度 + 内功增益 + 内功六维倾向说明）
  */
 export function resolveAbilityAsideCards(
   ability: CombatAbilityDefinition | null | undefined,
@@ -83,15 +158,19 @@ export function resolveAbilityAsideCards(
 ): FloatingAsideCard[] {
   if (!ability) return []
   const list: FloatingAsideCard[] = []
+  const level = totalExp !== undefined ? calculateAbilityLevelAndProgress(totalExp).level : 1
   if (totalExp !== undefined) {
     list.push(createAbilityProgressAsideCard(ability.abilityId, totalExp, tone))
   }
   if (ability.discipline === 'internal') {
+    const bonusCard = createInternalAbilityBonusAsideCard(ability, level)
+    if (bonusCard) {
+      list.push(bonusCard)
+    }
     list.push(createInternalRootExpAsideCard(tone))
   }
   return list
 }
-
 /**
  * 效果悬浮气泡触发包裹组件 (EffectTooltipTarget)
  *
@@ -161,7 +240,7 @@ export function EffectTooltipTarget({
                 </span>
               )
             }),
-            ...(content.bonuses?.map((bonus) => {
+            ...(!asideCards ? (content.bonuses?.map((bonus) => {
               const glyph = resolveStatGlyph(bonus.key) || resolveStatGlyph(bonus.label)
               return (
                 <PillBonusLabel
@@ -172,7 +251,7 @@ export function EffectTooltipTarget({
                   value={bonus.value}
                 />
               )
-            }) ?? []),
+            }) ?? []) : []),
           ]}
           title={content.title}
         />

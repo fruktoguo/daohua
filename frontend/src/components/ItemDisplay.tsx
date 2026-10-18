@@ -12,7 +12,7 @@ import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
-import { createInternalRootExpAsideCard } from './EffectTooltip'
+import { createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -172,10 +172,9 @@ function ItemTooltipCardContent({
     level: levelNumber,
   }
 
-  // 主卡片只展示直接基础效果与攻防数值，Buff 与特殊机制解耦至 Aside 附属卡片群
+  // 主卡片只展示直接基础效果与秘籍修习说明，装备攻防数值与加成全面解耦至独立 Aside 悬浮副窗
   const effectLines = [
     ...describeItemEffects(itemDef),
-    ...describeEquipmentEffects(eqDef, enhancementLevel),
     ...describeManualEffects(itemId, abilityCatalog),
   ]
 
@@ -246,8 +245,20 @@ export function resolveItemTooltipAsideCards(
     : baseMetadata
 
   const list: FloatingAsideCard[] = []
+
+  // 1. 装备专属属性加成独立副气泡：将主卡片下方的攻防与百分比加成抽离为独立 Aside Card 并排呈现
+  if (eqDef) {
+    const eqAside = createEquipmentBonusAsideCard(eqDef, enhancementLevel, rawMetadata.label)
+    if (eqAside) {
+      list.push(eqAside)
+    }
+  }
+
+  // 2. 丹药/持续消耗品效果独立副气泡
   const itemAsides = resolveItemAsideCards(itemDef, rawMetadata.label)
   list.push(...itemAsides)
+
+  // 3. 秘籍参悟与内功增益/倾向说明
   if (!itemAsides.some(c => c.id?.startsWith('aside-manual-'))) {
     const manualAside = resolveManualAsideCard(itemId, rawMetadata.category, abilitiesCatalog)
     if (manualAside) {
@@ -259,9 +270,15 @@ export function resolveItemTooltipAsideCards(
     const abilityId = manualCard.id.replace('aside-manual-', '')
     const matchedAbility = abilitiesCatalog.find(a => a.abilityId === abilityId)
     if (matchedAbility?.discipline === 'internal') {
+      const internalBonus = createInternalAbilityBonusAsideCard(matchedAbility, 1)
+      if (internalBonus) {
+        list.push(internalBonus)
+      }
       list.push(createInternalRootExpAsideCard())
     }
   }
+
+  // 4. 坊市行情副卡
   const marketAside = resolveMarketStatsAsideCard(itemId, enhancementLevel, itemDef, eqDef, rawMetadata.label)
   if (marketAside) {
     list.push(marketAside)
@@ -1449,13 +1466,17 @@ export function createEquipmentBonusAsideCard(
   equipment: CombatEquipmentDefinition,
   enhancementLevel = 0,
   title?: string
-): FloatingAsideCard {
-  const t = getT()
+): FloatingAsideCard | null {
   const items = extractEquipmentBonusItems(equipment, enhancementLevel)
+  if (items.length === 0) return null
+  const t = getT()
+  const formattedTitle = title
+    ? `${title}${enhancementLevel > 0 ? ` +${enhancementLevel}` : ''}`
+    : t('market.aside.equipmentStats')
   return createBonusAsideCard({
-    id: `aside-eq-bonus-${equipment.slot}`,
+    id: `aside-eq-bonus-${equipment.slot || 'equip'}`,
     mark: t('market.aside.equipmentBonus'),
-    title: title ?? t('market.aside.equipmentStats'),
+    title: formattedTitle,
     tone: 'gold',
     items,
   })

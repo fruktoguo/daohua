@@ -743,8 +743,8 @@
 .daohua-bonus-aside-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 3px;
+  gap: 7px;
+  margin-top: 4px;
   width: 100%;
 }
 
@@ -752,7 +752,7 @@
   display: flex;
   align-items: center;
   width: 100%;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.35;
   box-sizing: border-box;
 }
@@ -761,14 +761,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-right: 5px;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
   flex-shrink: 0;
 }
 
 .daohua-bonus-aside-list .compound-bonus-label .capsule-label {
-  font-size: 11px;
-  padding: 1.5px 6px;
-  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11.5px;
+  color: #f1f5f9;
   letter-spacing: 0.3px;
   margin-right: 8px;
   white-space: nowrap;
@@ -776,14 +784,16 @@
 
 .daohua-bonus-aside-list .compound-bonus-label .underlined-value {
   font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.3px;
   font-variant-numeric: tabular-nums;
   margin-left: auto;
   white-space: nowrap;
+  border-bottom: 2px solid currentColor;
+  padding: 0 1px 1.5px 1px;
+  line-height: 1.15;
 }
-
 
 
 /* 7. 标准轻量 Tooltip */
