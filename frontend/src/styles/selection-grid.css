@@ -522,7 +522,7 @@
   min-height: 0;
   padding: 3px 9px;
   border: 1px solid color-mix(in srgb, var(--gold-dim) 80%, transparent);
-  border-radius: 999px;
+  border-radius: 4px;
   color: var(--gold-light, #e8d08c);
   background: linear-gradient(180deg, rgba(24, 22, 16, 0.96) 0%, rgba(9, 10, 8, 0.96) 100%);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 4px rgba(201, 180, 109, 0.12);
@@ -538,42 +538,64 @@
 .item-slot-inline-action::after {
   display: none;
 }
-/* 框外条件入口无缝外扩热区：上下左右外扩 6~8px 透明点击域，
+/* 框外条件入口无缝外扩热区：上下左右外扩 8~12px 透明点击域，
    使鼠标从瓦片跨向按钮时 100% 连续不断触，大幅降低点偏滑脱概率 */
 .item-slot-inline-action--condition::before {
   display: block;
   content: '';
   position: absolute;
-  inset: -6px -8px;
-  border-radius: 999px;
+  inset: -8px -12px;
+  border-radius: 6px;
   background: transparent;
   pointer-events: auto;
 }
 
 /* 已配置触发条件时（如「条件2」）：边框微光高亮与明度强调 */
 .item-slot-inline-action--condition.has-triggers {
-  border-color: color-mix(in srgb, var(--gold-bright) 80%, transparent);
+  border-color: color-mix(in srgb, var(--gold-bright) 90%, transparent);
   color: var(--gold-bright);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 0 6px rgba(201, 180, 109, 0.32);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.75), 0 0 8px rgba(201, 180, 109, 0.38);
 }
 
 .item-slot-inline-action--condition {
-  /* 框外条件入口：默认悬于瓦片上缘外侧居中（bottom:100% 零间隙贴合瓦片边缘，
-     鼠标上移进入按钮时 hover 链不断）；悬浮卡经视口翻转到瓦片上方时由组件加
+  /* 框外 Hover 条件调节按钮：宽度翻倍（min-width: 80px，水平 padding 翻倍至 18px，居中对齐），
+     高度提升 50%（min-height: 30px，垂直 padding 5px，字号提升至 13px 粗体）；
+     默认悬于瓦片上缘外侧居中（bottom: 100%），悬浮卡经视口翻转到瓦片上方时由组件加
      is-below 切到下缘外侧避让。只用 opacity + pointer-events 隐藏而不用
      visibility/display，保留键盘 Tab 聚焦可达性。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  min-width: 80px;
+  padding: 5px 18px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
   transform-origin: bottom center;
   opacity: 0;
   pointer-events: none;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.7), 0 0 6px rgba(201, 180, 109, 0.2);
+  z-index: 10006 !important;
 }
 
 .item-slot-inline-action--condition.is-below {
   bottom: auto;
   top: 100%;
   transform-origin: top center;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .item-slot-inline-action--condition {
+    min-height: 34px;
+    min-width: 88px;
+    padding: 6px 20px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
 }
 
 /* 已学功法目录瓦片的条件容器：ConditionedTile 作为 grid cell 包裹瓦片，
@@ -589,9 +611,12 @@
    hover 期间容器提升层叠防止框外按钮被相邻瓦片遮挡。 */
 :is(
   .conditioned-tile,
-  .item-use-slot-tooltip
+  .item-use-slot-tooltip,
+  .auto-use-slot,
+  .combat-slot-card,
+  .abilities-slot-card
 ):is(:hover, :focus-visible, :focus-within) {
-  z-index: 7;
+  z-index: 10005 !important;
 }
 
 :is(
@@ -820,7 +845,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding-top: 0;
+  padding-top: 8px;
   flex-wrap: nowrap;
   min-width: max-content;
 }
@@ -831,7 +856,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding-top: 0;
+  padding-top: 8px;
   flex-wrap: nowrap;
   min-width: max-content;
 }
@@ -936,17 +961,13 @@
   gap: 6px;
 }
 
-.candidate-picker-card {
-  min-width: min(320px, calc(100vw - 24px));
-}
-
 .candidate-picker-header {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 4px;
+  gap: 10px;
+  padding-bottom: 2px;
 }
 
 .candidate-picker-header-main {
@@ -976,50 +997,42 @@
   font-size: 11px;
 }
 
-/* 展开选择弹窗时顶部旁边展示的触发条件按钮（宽度翻倍至 min-width 150px，高度提升50%至 48px/触屏 54px） */
+/* 展开选择弹窗时顶部旁边展示的大号触发条件按钮（高度 32px/触屏 36px） */
 .candidate-picker-condition-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 48px;
-  min-width: 150px;
-  padding: 6px 24px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 14px;
   border: 1px solid color-mix(in srgb, var(--gold-dim) 80%, transparent);
   border-radius: 999px;
   color: var(--gold-light, #e8d08c);
   background: linear-gradient(180deg, rgba(32, 28, 18, 0.96) 0%, rgba(14, 15, 12, 0.96) 100%);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.7), 0 0 8px rgba(201, 180, 109, 0.2);
-  font-size: 15px;
-  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 6px rgba(201, 180, 109, 0.15);
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1.25;
   letter-spacing: 0.5px;
   white-space: nowrap;
   user-select: none;
   cursor: pointer;
   flex-shrink: 0;
-  transition: border-color 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 
 .candidate-picker-condition-btn:hover:not(:disabled) {
   border-color: var(--gold-bright);
   color: var(--gold-bright);
-  filter: brightness(1.18) drop-shadow(0 0 8px rgba(201, 180, 109, 0.45));
-  transform: translateY(-1px);
-}
-
-.candidate-picker-condition-btn:active:not(:disabled) {
-  transform: translateY(0);
+  filter: brightness(1.15) drop-shadow(0 0 6px rgba(201, 180, 109, 0.35));
 }
 
 .candidate-picker-condition-btn.has-triggers {
   border-color: color-mix(in srgb, var(--gold-bright) 90%, transparent);
   color: var(--gold-bright);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.75), 0 0 10px rgba(201, 180, 109, 0.45);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(201, 180, 109, 0.4);
 }
 
 .candidate-picker-condition-icon {
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1;
 }
 
@@ -1029,10 +1042,9 @@
 
 @media (hover: none), (pointer: coarse) {
   .candidate-picker-condition-btn {
-    min-height: 54px;
-    min-width: 160px;
-    padding: 8px 28px;
-    font-size: 16px;
+    min-height: 36px;
+    padding: 6px 16px;
+    font-size: 13px;
   }
 }
 .candidate-picker-grid {

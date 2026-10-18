@@ -1,10 +1,11 @@
-import { type MouseEvent, type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useState, type MouseEvent, type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../game/format'
 import { resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
 import { useT, type TFunction } from '../i18n'
 import type { CombatEquipmentDefinition, ItemDefinition, QueueEntry } from '../game/types'
 import { CandidatePicker, type CandidateOption } from './CandidatePicker'
+import type { FloatingPlacement } from './FloatingPopover'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 
 /**
@@ -318,6 +319,11 @@ export function ItemUseSlot({
     ? totalDurationSeconds
     : (item.definition?.durationSeconds ?? 0)
   const isContinuousActive = remainingDurationSeconds > 0
+  const [side, setSide] = useState<'top' | 'bottom'>('top')
+  const handlePlacementChange = useCallback((placement: FloatingPlacement) => {
+    const next = placement.startsWith('top') ? 'bottom' : 'top'
+    setSide(prev => (prev === next ? prev : next))
+  }, [])
 
   return (
     <ItemTooltipTarget
@@ -328,6 +334,7 @@ export function ItemUseSlot({
       equipmentDefinition={item.equipmentDefinition}
       itemId={item.itemId}
       metadata={metadata}
+      onPlacementChange={handlePlacementChange}
       tabIndex={-1}
     >
       <span
@@ -363,7 +370,7 @@ export function ItemUseSlot({
         {onCondition && (
           <button
             aria-label={t('market.picker.editConditionsWithCount', { name: item.name, count: formatNumber(conditionCount) })}
-            className="item-slot-inline-action item-slot-inline-action--condition"
+            className={`item-slot-inline-action item-slot-inline-action--condition${side === 'bottom' ? ' is-below' : ''}`}
             onClick={onCondition}
             title={t('market.picker.editConditions')}
             type="button"

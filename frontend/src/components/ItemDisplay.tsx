@@ -6,7 +6,7 @@ import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import { marketStatsKey } from '../network/apiClient'
 import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition, MonsterDropDefinition } from '../game/types'
-import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
+import { type FloatingAsideCard, FloatingInfoCard, type FloatingPlacement, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
@@ -40,6 +40,8 @@ export interface ItemTooltipTargetProps {
   extraAsideCards?: readonly FloatingAsideCard[]
   /** 鼠标悬停展开延时 (ms)，默认 60ms */
   openDelay?: number
+  /** 悬浮卡实际落位变化回调（含视口翻转结果），供宿主避让附件元素 */
+  onPlacementChange?: (placement: FloatingPlacement) => void
 }
 
 /** 物品网格方块 Props */
@@ -311,6 +313,7 @@ export function ItemTooltipTarget({
   displayContents,
   extraAsideCards,
   openDelay = 60,
+  onPlacementChange,
 }: ItemTooltipTargetProps): React.JSX.Element {
   const renderContent = useCallback(
     () => (
@@ -347,6 +350,7 @@ export function ItemTooltipTarget({
       displayContents={displayContents}
       gap={8}
       interactive={false}
+      onPlacementChange={onPlacementChange}
       openDelay={openDelay}
       placement="bottom"
       quantity={amount}
