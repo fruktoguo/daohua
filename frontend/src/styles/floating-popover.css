@@ -495,16 +495,56 @@
 }
 
 /* 右侧数量/说明副文本 */
+/* 右侧盘口在售/求购数量聚合 */
+.daohua-market-aside-stock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.daohua-market-aside-stock-label {
+  font-size: 10.5px;
+  color: var(--text-dim, rgba(233, 227, 210, 0.5));
+}
+
+.daohua-market-aside-stock-val {
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+/* 在售数量：暖赭赤橙高亮 */
+.daohua-market-aside-stock-val--ask.is-active {
+  color: #f6bfa8;
+  text-shadow: 0 0 6px rgba(221, 161, 132, 0.35);
+}
+
+.daohua-market-aside-stock-val--ask.is-zero {
+  color: var(--text-dim, rgba(233, 227, 210, 0.4));
+  font-weight: normal;
+}
+
+/* 求购数量：碧青翡翠高亮 */
+.daohua-market-aside-stock-val--bid.is-active {
+  color: #aae0c2;
+  text-shadow: 0 0 6px rgba(143, 195, 166, 0.35);
+}
+
+.daohua-market-aside-stock-val--bid.is-zero {
+  color: var(--text-dim, rgba(233, 227, 210, 0.4));
+  font-weight: normal;
+}
+
+/* 右侧数量/说明通用副文本 */
 .daohua-market-aside-sub {
   margin-left: auto;
   font-size: 10.5px;
   color: var(--text-dim, rgba(233, 227, 210, 0.6));
   white-space: nowrap;
-}
-
-.daohua-market-aside-sub--hint {
-  font-size: 10px;
-  color: var(--text-dim, rgba(233, 227, 210, 0.5));
 }
 
 /* 分隔虚线 */

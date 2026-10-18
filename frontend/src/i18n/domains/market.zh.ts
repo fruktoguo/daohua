@@ -235,6 +235,8 @@ export const marketZh = {
       volumeBadge: '流通成交',
       askStock: '在售 {count}',
       bidDemand: '求购 {count}',
+      askStockLabel: '在售',
+      bidDemandLabel: '求购',
       recycleGuaranteed: '官价保底',
       notRecyclable: '不可回收',
       noVendorPrice: '无官价',

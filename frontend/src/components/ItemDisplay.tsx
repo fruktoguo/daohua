@@ -631,8 +631,11 @@ function resolveMarketStatsAsideCard(
           ) : (
             <span className="daohua-market-aside-empty">{t('market.price.none')}</span>
           )}
-          <span className="daohua-market-aside-sub">
-            {t('market.price.askStock', { count: formatNumber(askQty) })}
+          <span className="daohua-market-aside-stock">
+            <span className="daohua-market-aside-stock-label">{t('market.price.askStockLabel')}</span>
+            <span className={`daohua-market-aside-stock-val daohua-market-aside-stock-val--ask ${askQty > 0 ? 'is-active' : 'is-zero'}`}>
+              {formatNumber(askQty)}
+            </span>
           </span>
         </div>
 
@@ -651,8 +654,11 @@ function resolveMarketStatsAsideCard(
           ) : (
             <span className="daohua-market-aside-empty">{t('market.price.none')}</span>
           )}
-          <span className="daohua-market-aside-sub">
-            {t('market.price.bidDemand', { count: formatNumber(bidQty) })}
+          <span className="daohua-market-aside-stock">
+            <span className="daohua-market-aside-stock-label">{t('market.price.bidDemandLabel')}</span>
+            <span className={`daohua-market-aside-stock-val daohua-market-aside-stock-val--bid ${bidQty > 0 ? 'is-active' : 'is-zero'}`}>
+              {formatNumber(bidQty)}
+            </span>
           </span>
         </div>
 
@@ -662,26 +668,16 @@ function resolveMarketStatsAsideCard(
             {t('market.price.recycleBadge')}
           </span>
           {vendorPrice !== null ? (
-            <>
-              <span className="daohua-market-aside-price-wrap">
-                <span className="daohua-market-aside-price daohua-market-aside-price--recycle">
-                  {formatNumber(vendorPrice)}
-                </span>
-                <span className="daohua-market-aside-unit">{spiritUnit}</span>
+            <span className="daohua-market-aside-price-wrap">
+              <span className="daohua-market-aside-price daohua-market-aside-price--recycle">
+                {formatNumber(vendorPrice)}
               </span>
-              <span className="daohua-market-aside-sub daohua-market-aside-sub--hint">
-                {t('market.price.recycleGuaranteed')}
-              </span>
-            </>
+              <span className="daohua-market-aside-unit">{spiritUnit}</span>
+            </span>
           ) : (
-            <>
-              <span className="daohua-market-aside-empty daohua-market-aside-empty--muted">
-                {t('market.price.notRecyclable')}
-              </span>
-              <span className="daohua-market-aside-sub daohua-market-aside-sub--hint">
-                {t('market.price.noVendorPrice')}
-              </span>
-            </>
+            <span className="daohua-market-aside-empty daohua-market-aside-empty--muted">
+              {t('market.price.notRecyclable')}
+            </span>
           )}
         </div>
 
