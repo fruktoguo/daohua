@@ -59,8 +59,11 @@ interface ItemGridPickerProps {
   onClose: () => void
   /** 选中物品回调：回传物品 ID 与完整条目（含变体/强化等级），空选为 null */
   onSelect: (itemId: string | null, entry?: ItemPickerEntry | null) => void
-  /** 是否提供空选/卸下槽位按钮（默认 true） */
   allowEmpty?: boolean
+  /** 当前槽位物品触发条件编辑回调 */
+  onEditCondition?: () => void
+  /** 当前槽位物品已配置触发条件数量 */
+  triggerCount?: number
 }
 
 // 未注册物品的兜底元数据：名称/品类/描述保留服务端数据。
@@ -105,8 +108,22 @@ export function ItemGridPicker({
   onClose,
   onSelect,
   allowEmpty = true,
+  onEditCondition,
+  triggerCount,
 }: ItemGridPickerProps): React.JSX.Element {
   const t = useT()
+
+  const conditionAction = useMemo(() => {
+    if (!onEditCondition) return null
+    const count = triggerCount ?? 0
+    return {
+      label: t('app.combatPanel.triggerConditionBtn', { count: count > 0 ? count : '' }),
+      onClick: onEditCondition,
+      hasTriggers: count > 0,
+      title: t('market.picker.editConditions'),
+      ariaLabel: t('market.picker.editConditions'),
+    }
+  }, [onEditCondition, triggerCount, t])
   const options = useMemo<readonly CandidateOption[]>(() => items.map(item => {
     const metadata = getMetadata(item, t)
     const categoryLabel = resolveItemCategoryLabel(
@@ -158,6 +175,7 @@ export function ItemGridPicker({
       options={options}
       title={title}
       value={value}
+      conditionAction={conditionAction}
     />
   )
 }

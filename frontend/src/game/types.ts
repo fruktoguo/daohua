@@ -1025,6 +1025,8 @@ export interface ItemDefinition {
   durable?: boolean
   /** 即时打击规格（符箓类消耗品：祭出即耗灵力造成元素术法伤害，无吟唱/命中/暴击掷点） */
   strike?: ConsumableStrikeDefinition | null
+  /** 出厂默认战斗触发条件（如气血低于 50% 自动吃药） */
+  triggers?: CombatTrigger[] | null
 }
 
 /**

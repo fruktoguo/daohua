@@ -1315,7 +1315,20 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   )
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
+  const isCombat = bar === 'combat'
+  const combat = useGameStore(state => state.combat)
   const [picker, setPicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
+  const [editingTriggerItemId, setEditingTriggerItemId] = useState<string | null>(null)
+
+  const saveItemTriggers = useCallback((triggers: CombatTrigger[] | null) => {
+    if (!editingTriggerItemId) return
+    sendLoadoutReplace({
+      abilityTriggers: {
+        ...(combat?.abilityTriggers ?? {}),
+        [editingTriggerItemId]: triggers ?? [],
+      },
+    })
+  }, [editingTriggerItemId, combat?.abilityTriggers])
   const pickerItems = useMemo<ItemPickerEntry[]>(() => itemCatalog
       .filter(item => item.category === 'consumable' && item.usableBars.includes(bar) && itemAmount(inventory, item.itemId) > 0
         // 药品栏只放药品类即时消耗品；通用栏任意适用自动消耗品皆可（手动消耗品不入栏）。
@@ -1361,10 +1374,15 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
             definition: selectedDefinition,
           } : null
           const cooldownMs = consumableCooldowns?.[slotOffset + index] ?? 0
+          const itemTriggers = isCombat && slot.itemId
+            ? (combat?.abilityTriggers?.[slot.itemId] ?? selectedDefinition?.triggers ?? [])
+            : []
+          const conditionCount = itemTriggers.length
           return (
             <div className={`auto-use-slot${picker?.index === index ? ' is-picking' : ''}`} key={index}>
               <ItemUseSlot
                 activeEntry={activeEntry}
+                conditionCount={isCombat ? conditionCount : undefined}
                 cooldownOverlay={cooldownMs > 0 && selectedItem?.definition ? (
                   <AbilityCooldownOverlay
                     remainingMilliseconds={cooldownMs}
@@ -1372,6 +1390,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
                   />
                 ) : null}
                 item={selectedItem}
+                onCondition={isCombat && selectedItem ? () => setEditingTriggerItemId(selectedItem.itemId) : undefined}
                 remainingDurationSeconds={slot.remainingDurationSeconds}
                 totalDurationSeconds={selectedDefinition?.durationSeconds}
                 onClick={event => {
@@ -1384,18 +1403,38 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
           )
         })}
       </div>
-      <ItemGridPicker
-        anchor={picker?.anchor ?? null}
-        onClose={() => setPicker(null)}
-        onSelect={itemId => {
-          if (picker === null) return
-          updateSlot(picker.index, itemId)
-        }}
-        items={pickerItems}
-        open={picker !== null}
-        title={picker === null ? t('common.selectItem') : t('common.selectItemSlot', { n: picker.index + 1 })}
-        value={pickerSlot?.itemId ?? null}
-      />
+      {(() => {
+        const pickerItemTriggers = isCombat && pickerSlot?.itemId
+          ? (combat?.abilityTriggers?.[pickerSlot.itemId] ?? findItemInCatalog(itemCatalog, pickerSlot.itemId)?.triggers ?? [])
+          : []
+        return (
+          <ItemGridPicker
+            anchor={picker?.anchor ?? null}
+            onClose={() => setPicker(null)}
+            onEditCondition={isCombat && pickerSlot?.itemId ? () => setEditingTriggerItemId(pickerSlot.itemId) : undefined}
+            onSelect={itemId => {
+              if (picker === null) return
+              updateSlot(picker.index, itemId)
+            }}
+            items={pickerItems}
+            open={picker !== null}
+            title={picker === null ? t('common.selectItem') : t('common.selectItemSlot', { n: picker.index + 1 })}
+            triggerCount={isCombat && pickerSlot?.itemId ? pickerItemTriggers.length : undefined}
+            value={pickerSlot?.itemId ?? null}
+          />
+        )
+      })()}
+      {isCombat && editingTriggerItemId !== null && (
+        <CombatTriggerEditor
+          initialTriggers={combat?.abilityTriggers?.[editingTriggerItemId] ?? findItemInCatalog(itemCatalog, editingTriggerItemId)?.triggers ?? []}
+          onClose={() => setEditingTriggerItemId(null)}
+          onSave={saveItemTriggers}
+          open
+          title={t('app.combatPanel.triggerEditorTitle', {
+            name: findItemInCatalog(itemCatalog, editingTriggerItemId)?.name ?? editingTriggerItemId,
+          })}
+        />
+      )}
     </section>
   )
 })
@@ -2029,6 +2068,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   )}
                 </button>
               )
+              const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
               const abilityExp = ability ? (combat.abilityExperiences?.[ability.abilityId] ?? 0) : 0
               const slotAsideCards = ability ? resolveAbilityAsideCards(ability, abilityExp) : undefined
               return (
@@ -2036,8 +2076,14 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   as="div"
                   asideCards={slotAsideCards}
                   className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`}
+                  condition={ability ? {
+                    ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
+                    hasTriggers: triggerCount > 0,
+                    label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
+                    onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+                    title: t('app.combatPanel.editTriggersTitle'),
+                  } : null}
                   content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
-                  defaultSide="bottom"
                   extras={ability && (
                     /* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */
                     <span className="combat-ability-level-control">

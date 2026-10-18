@@ -147,6 +147,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     // Lv 徽标与条件按钮都在悬浮卡触发域之外（ConditionedTile 统一收拢）：
     // 鼠标落在徽标/按钮上时不再弹出悬浮卡，点开条件编辑器也不会出现 tooltip 叠 modal。
     // 条件跟随功法：按 abilityId 读写 combat.abilityTriggers，卸下再装配条件保留。
+    const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
     const abilityExp = ability ? (combat.abilityExperiences?.[ability.abilityId] ?? 0) : 0
     const slotAsideCards = ability ? resolveAbilityAsideCards(ability, abilityExp) : undefined
     return (
@@ -154,6 +155,13 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         as="div"
         asideCards={slotAsideCards}
         className={`abilities-slot-card${isInternal ? ' is-internal' : ''}${activePicker?.index === index ? ' is-picking' : ''}`}
+        condition={ability ? {
+          ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
+          hasTriggers: triggerCount > 0,
+          label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
+          onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+          title: t('app.combatPanel.editTriggersTitle'),
+        } : null}
         content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
         extras={ability && (
           <div className="combat-ability-slot-actions">
@@ -239,10 +247,17 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                     : formatAbilityCategory(ability.category)
                   const abilityExp = combat.abilityExperiences?.[ability.abilityId] ?? 0
                   const cellAsideCards = resolveAbilityAsideCards(ability, abilityExp)
-
+                  const triggerCount = combat.abilityTriggers?.[ability.abilityId]?.length ?? 0
                   return (
                     <ConditionedTile
                       asideCards={cellAsideCards}
+                      condition={{
+                        ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
+                        hasTriggers: triggerCount > 0,
+                        label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
+                        onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+                        title: t('app.combatPanel.editTriggersTitle'),
+                      }}
                       content={describeAbility(ability, learnedLevel)}
                       key={ability.abilityId}
                       triggerClassName="item-grid-picker-tooltip"
