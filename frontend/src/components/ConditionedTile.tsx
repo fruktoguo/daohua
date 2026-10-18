@@ -1,7 +1,6 @@
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { EffectTooltipTarget, type EffectTooltipContent } from './EffectTooltip'
 import type { FloatingAsideCard, FloatingPlacement } from './FloatingPopover'
-
 /**
  * 「瓦片 + 悬浮卡 + 框外条件按钮」组合容器 (ConditionedTile)
  *
@@ -40,6 +39,8 @@ export function ConditionedTile({
     title: string
     /** 点击回调 */
     onClick: () => void
+    /** 是否已配置有效触发条件（影响高亮边框和微光） */
+    hasTriggers?: boolean
   } | null
   /** 悬浮卡内容（null 时 tooltip 关闭，仅渲染瓦片与按钮） */
   content?: EffectTooltipContent | null
@@ -56,17 +57,65 @@ export function ConditionedTile({
 }): React.JSX.Element {
   // 条件按钮方位：悬浮卡落在上方（翻转结果）时按钮走下方外侧，其余方位恒走上方外侧。
   const [side, setSide] = useState<'top' | 'bottom'>(defaultSide)
+  const [isTooltipOpen, setIsTooltipOpen] = useState(false)
+  const longPressTimerRef = useRef<number | null>(null)
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null)
+
   const handlePlacementChange = useCallback((placement: FloatingPlacement) => {
     const next = placement.startsWith('top') ? 'bottom' : 'top'
     setSide(previous => (previous === next ? previous : next))
   }, [])
 
+  // 触屏长按瓦片 420ms 快捷直达条件编辑器（移动 > 8px 判定为滑动取消）
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!condition) return
+    const touch = e.touches[0]
+    if (!touch) return
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current)
+    }
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null
+      condition.onClick()
+    }, 420)
+  }, [condition])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartPosRef.current || !longPressTimerRef.current) return
+    const touch = e.touches[0]
+    if (!touch) return
+    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x)
+    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y)
+    if (dx > 8 || dy > 8) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    touchStartPosRef.current = null
+  }, [])
+
+  const hasTriggers = condition?.hasTriggers ?? false
+
   return (
-    <Tag className={`conditioned-tile ${className}`.trim()}>
+    <Tag
+      className={`conditioned-tile${isTooltipOpen ? ' is-tooltip-open' : ''} ${className}`.trim()}
+      onTouchCancel={handleTouchEnd}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      onTouchStart={handleTouchStart}
+    >
       <EffectTooltipTarget
         asideCards={asideCards}
         className={triggerClassName}
         content={content}
+        onOpenChange={setIsTooltipOpen}
         onPlacementChange={handlePlacementChange}
         tabIndex={triggerTabIndex}
       >
@@ -76,8 +125,11 @@ export function ConditionedTile({
       {condition && (
         <button
           aria-label={condition.ariaLabel}
-          className={`item-slot-inline-action item-slot-inline-action--condition${side === 'bottom' ? ' is-below' : ''}`}
-          onClick={condition.onClick}
+          className={`item-slot-inline-action item-slot-inline-action--condition${side === 'bottom' ? ' is-below' : ''}${hasTriggers ? ' has-triggers' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            condition.onClick()
+          }}
           title={condition.title}
           type="button"
         >

@@ -2,6 +2,7 @@ import { type ReactNode } from 'react'
 import { calculateAbilityLevelAndProgress } from '../game/combatConstants'
 import { getT } from '../i18n'
 import {
+  createDescriptionAsideCard,
   createProgressAsideCard,
   FloatingInfoCard,
   FloatingPopover,
@@ -14,6 +15,7 @@ import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
 import type { AbilityBonusStat } from '../game/format'
+import type { CombatAbilityDefinition } from '../game/types'
 /**
  * 功法/词条/效果悬浮气泡内容结构
  */
@@ -57,6 +59,40 @@ export function createAbilityProgressAsideCard(
 }
 
 /**
+ * 构造内功心法六维资质倾向说明独立副卡片 (Description Aside Card)
+ * 阐述战斗中获取的六维经验会按照内功的六维百分比去增幅。
+ */
+export function createInternalRootExpAsideCard(tone: FloatingTone = 'qi'): FloatingAsideCard {
+  const t = getT()
+  return createDescriptionAsideCard({
+    id: 'description-internal-root-exp',
+    mark: t('game.abilityAside.internalRootExpMark'),
+    title: t('game.abilityAside.internalRootExpTitle'),
+    tone,
+    description: t('game.abilityAside.internalRootExpDesc'),
+  })
+}
+
+/**
+ * 统一解析功法技能的附属卡片列表（升级进度 + 内功六维倾向说明）
+ */
+export function resolveAbilityAsideCards(
+  ability: CombatAbilityDefinition | null | undefined,
+  totalExp?: number,
+  tone: FloatingTone = 'qi'
+): FloatingAsideCard[] {
+  if (!ability) return []
+  const list: FloatingAsideCard[] = []
+  if (totalExp !== undefined) {
+    list.push(createAbilityProgressAsideCard(ability.abilityId, totalExp, tone))
+  }
+  if (ability.discipline === 'internal') {
+    list.push(createInternalRootExpAsideCard(tone))
+  }
+  return list
+}
+
+/**
  * 效果悬浮气泡触发包裹组件 (EffectTooltipTarget)
  *
  * 将子元素包裹在 Hover 触发器中，鼠标悬停展示修仙风 FloatingInfoCard 提示卡片。
@@ -68,6 +104,7 @@ export function EffectTooltipTarget({
   content,
   tabIndex = 0,
   onPlacementChange,
+  onOpenChange,
   asideCards,
 }: {
   /** 被包裹的触发子节点 */
@@ -80,6 +117,8 @@ export function EffectTooltipTarget({
   tabIndex?: number
   /** 悬浮卡实际落位变化回调（含视口翻转结果），供宿主避让附件元素 */
   onPlacementChange?: (placement: FloatingPlacement) => void
+  /** 悬浮卡展开/收起状态变化回调 */
+  onOpenChange?: (open: boolean) => void
   /** 附属气泡列表（如技能升级进度） */
   asideCards?: readonly FloatingAsideCard[] | (() => readonly FloatingAsideCard[])
 }): React.JSX.Element {
@@ -141,10 +180,10 @@ export function EffectTooltipTarget({
       gap={8}
       interactive={false}
       onPlacementChange={onPlacementChange}
+      onOpenChange={onOpenChange}
       openDelay={60}
       placement="bottom"
       tabIndex={tabIndex}
-      trigger="hover"
       triggerClassName={`effect-tooltip-target ${className}`.trim()}
     >
       {children}

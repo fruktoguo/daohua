@@ -10,7 +10,7 @@ import { CombatEcologyPanel } from './components/CombatEcologyPanel'
 import { ConditionedTile } from './components/ConditionedTile'
 import { EnhancementPage } from './components/EnhancementPage'
 import { createProgressAsideCard, FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './components/FloatingPopover'
-import { createAbilityProgressAsideCard } from './components/EffectTooltip'
+import { resolveAbilityAsideCards } from './components/EffectTooltip'
 import { ValueText } from './components/ValueText'
 import { GameLogPanel } from './components/GameLogPanel'
 import { ActionDetailItem, ItemTooltipTarget } from './components/ItemDisplay'
@@ -2028,7 +2028,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
               )
               const triggerCount = ability ? (combat.abilityTriggers?.[ability.abilityId]?.length ?? 0) : 0
               const abilityExp = ability ? (combat.abilityExperiences?.[ability.abilityId] ?? 0) : 0
-              const slotAsideCards = ability ? [createAbilityProgressAsideCard(ability.abilityId, abilityExp)] : undefined
+              const slotAsideCards = ability ? resolveAbilityAsideCards(ability, abilityExp) : undefined
               return (
                 <ConditionedTile
                   as="div"
@@ -2036,6 +2036,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`}
                   condition={ability ? {
                     ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
+                    hasTriggers: triggerCount > 0,
                     label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
                     onClick: () => setEditingTriggerAbilityId(ability.abilityId),
                     title: t('app.combatPanel.editTriggersTitle'),

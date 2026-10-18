@@ -16,6 +16,7 @@ import { createPortal } from 'react-dom'
 
 import { formatChineseSplitNumber, formatNumber } from '../game/format'
 import { getT } from '../i18n'
+import { ValueText } from './ValueText'
 
 /**
  * 悬浮位置偏好
@@ -38,7 +39,7 @@ export type FloatingPlacement =
 /**
  * 气泡与菜单的修仙视觉色调
  */
-export type FloatingTone = 'gold' | 'jade' | 'qi' | 'danger' | 'purple' | 'muted'
+export type FloatingTone = 'gold' | 'jade' | 'qi' | 'danger' | 'purple' | 'muted' | 'emerald' | 'cyan' | 'crimson' | 'slate' | 'amber'
 
 /**
  * 气泡标准预设尺寸
@@ -156,6 +157,61 @@ export function createProgressAsideCard(options: ProgressAsideCardOptions): Floa
           style={{ width: `${ratio}%` }}
         />
       </div>
+    ),
+  }
+}
+
+/**
+ * 通用描述/说明独立副气泡构建参数
+ */
+export interface DescriptionAsideCardOptions {
+  id?: string
+  mark?: string
+  title?: string
+  subtitle?: string
+  description?: ReactNode
+  lines?: readonly (string | ReactNode)[]
+  tone?: FloatingTone
+  content?: ReactNode
+}
+
+/**
+ * 通用描述/说明独立副气泡构建工具
+ * 适用场景：在已有主卡片旁并排挂载独立的说明信息窗，对特定机制、规则或资质倾向进行独立解读。
+ */
+export function createDescriptionAsideCard(options: DescriptionAsideCardOptions): FloatingAsideCard {
+  const t = getT()
+  const {
+    id = 'description-aside-card',
+    mark,
+    title = t('common.description'),
+    subtitle,
+    description,
+    lines,
+    tone = 'qi',
+    content,
+  } = options
+
+  return {
+    id,
+    mark,
+    title,
+    subtitle,
+    tone,
+    lines,
+    content: (
+      <>
+        {description && (
+          <div className="daohua-floating-aside-desc">
+            {typeof description === 'string' ? (
+              <ValueText text={description} />
+            ) : (
+              description
+            )}
+          </div>
+        )}
+        {content}
+      </>
     ),
   }
 }
