@@ -228,7 +228,10 @@ internal static class CombatActionRules
                             Phase = CombatExpeditionPhase.DuelPending,
                             PhaseElapsedSeconds = 0,
                             PhaseDurationSeconds = 0,
-                            DuelSeekFailed = false
+                            DuelSeekFailed = false,
+                            // 波间搜寻承载的上一波终局事件到此失效：斗法回放自带事件通道，
+                            // 残留事件只会在镜像对手身上重放幽灵跳字。
+                            RecentEvents = null
                         };
                         action.ProgressSeconds = 0;
                         return null;
@@ -467,25 +470,21 @@ internal static class CombatActionRules
                 from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
                 new PlayerStatsDelta { Deaths = 1 });
             // 组队散场保留全员倒地镜像供复活读条展示；读条完成时统一重置满状态。
+            // 致死一击事件随复活相位保留：倒地跳字/受击反馈与终局结算同属一次补算步进，
+            // 丢弃后客户端从 combat→respawn 的快照里永远看不到最后一击。
             action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, updatedBattle.Seed,
-                waveNumber: 1, allies: spec is not null ? CarryAllies(battleState, spec, reviveDowned: false) : null) with
-            { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
+                waveNumber: 1, allies: spec is not null ? CarryAllies(battleState) : null) with
+            {
+                Phase = CombatExpeditionPhase.Respawning,
+                PhaseDurationSeconds = encounter.PlayerRespawnSeconds,
+                RecentEvents = updatedBattle.RecentEvents
+            };
             action.ProgressSeconds = 0;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{WaveNames()}。", definition.Id);
             return;
         }
 
         // 波次清空才结算掉落与完成一次重复；逐只发放击杀奖励并计入生平斩妖。
-        // 参与会话：本机倒地被成员带赢时按原地复活口径满状态起身（复活读条同规：气血灵力全满、技能复位）。
-        if (spec is not null && !battleState.Player.IsAlive)
-        {
-            var member = spec.Members[expedition.SelfIndex];
-            player.Resources.Hitpoints = member.Stats.MaxHitpoints;
-            player.Resources.Manapoints = member.Stats.MaxManapoints;
-            player.Combat.Skills = PlayerCombatSkillState.Empty;
-            battleState.Player.Hitpoints = member.Stats.MaxHitpoints;
-            battleState.Player.Manapoints = member.Stats.MaxManapoints;
-        }
         var pvpEnabled = action.Intent.PvpEnabled;
         var killAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         var killSeed = updatedBattle.Seed;
@@ -545,9 +544,12 @@ internal static class CombatActionRules
         {
             if (player.Settings.LoopEnabled && !tutorialAdvanced)
             {
+                // 波次清空的致死一击事件随搜寻相位保留到客户端消费：击杀跳字与受击反馈
+                // 与终局结算同属一次补算步进，丢弃即永远看不到最后一击。
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1,
-                    allies: spec is not null ? CarryAllies(battleState, spec) : null);
+                    allies: spec is not null ? CarryAllies(battleState) : null) with
+                { RecentEvents = updatedBattle.RecentEvents };
                 player.FinishActionRound(action.Id, loopable: true, killAtUnix);
                 return;
             }
@@ -556,7 +558,8 @@ internal static class CombatActionRules
         }
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
             gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1,
-            allies: spec is not null ? CarryAllies(battleState, spec) : null);
+            allies: spec is not null ? CarryAllies(battleState) : null) with
+        { RecentEvents = updatedBattle.RecentEvents };
         action.ProgressSeconds = 0;
     }
 
@@ -906,7 +909,10 @@ internal static class CombatActionRules
             PhaseElapsedSeconds = 0,
             PhaseDurationSeconds = 0,
             Outcome = CombatOutcome.Running,
-            DuelSeekFailed = false
+            DuelSeekFailed = false,
+            // 波间搜寻保留的上一波终局事件到此失效：新一波敌人的单位序号从 0 重新编号，
+            // 残留事件会命中新目标重放幽灵跳字与受击，入场必须清空。
+            RecentEvents = null
         });
         action.ProgressSeconds = 0;
         action.Expedition = combatState;
@@ -1130,7 +1136,7 @@ internal static class CombatActionRules
         PlayerState = CombatEncounterState.Snapshot(battle.Player),
         // 行动参与会话：全部非本机盟友的完整战斗快照随相位持久化（崩溃恢复后序列不漂移）。
         SelfIndex = battle.SelfIndex,
-        Allies = battle.PlayerAllies.Count > 1 ? CarryAllies(battle, null, reviveDowned: false) : null,
+        Allies = battle.PlayerAllies.Count > 1 ? CarryAllies(battle) : null,
         Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
             enemy.DefinitionId ?? enemy.Id,
             CombatEncounterState.Snapshot(enemy),
@@ -1184,7 +1190,10 @@ internal static class CombatActionRules
             {
                 Experience = creditedExp,
                 Foundation = cultivationExp - creditedExp,
-                CombatExperience = experience
+                CombatExperience = experience,
+                // 会话容器会清零已结算的修为/底蕴，由成员消费时按自身瓶颈重算；
+                // 内功增幅份额随增量一并投递，否则组队会把 cultivationExpBonusPoints 抹掉。
+                CultivationExperience = cultivationExp
             });
             DistributeRootExp(player, rawExp, gameData, actionInstanceId, killAtUnixSeconds);
         }
@@ -1269,8 +1278,11 @@ internal static class CombatActionRules
             && DeterministicCombatEngine.AbilityText(ability, "discipline") == "internal")
         {
             internalAbility = ability;
-            level = player.Loadout.AbilityExperiences.TryGetValue(new AbilityId(internalId), out var exp)
-                ? AbilityExpCurve.LevelFor(exp) : 1;
+            // 参悟等级：会话容器按冻结快照重建 0 号内功位，只带槽位等级、不重放参悟经验账本，
+            // 因此取「槽位等级」与「经验派生等级」的高者（与 PlayerAttributeResolver 同口径）。
+            level = Math.Max(1, player.Loadout.AbilitySlots[0].Level);
+            if (player.Loadout.AbilityExperiences.TryGetValue(new AbilityId(internalId), out var exp) && exp > 0)
+                level = Math.Max(level, AbilityExpCurve.LevelFor(exp));
         }
 
         if (internalAbility is null)
@@ -1354,7 +1366,9 @@ internal static class CombatActionRules
     {
         if (!hit)
         {
-            clauses.Add($"被{targetLabel} {{mechanic:dodge|闪避}}");
+            // 插值字符串里 {{ / }} 是转义，会退化成单花括号并让前端富文本解析失效；
+            // 这里改用拼接，把双花括号原样写进日志模板（与 BeginCastMessage 同口径）。
+            clauses.Add("被" + targetLabel + " {{mechanic:dodge|闪避}}");
             return;
         }
         if (damage > 0)
@@ -1585,12 +1599,10 @@ internal static class CombatActionRules
     }
 
     /// <summary>
-    /// 波次清空时的盟友携带导出：存活成员带出完整战斗快照 + 跨战技能态（折算回冷却轴）；
-    /// 倒地成员按原地复活口径满状态起身（气血灵力全满、技能复位），与本机成员的复活同规。
-    /// reviveDowned=false 用于团灭拆场：保留倒地镜像供复活读条相位展示。
+    /// 跨相位盟友携带导出：无论存活还是倒地，均导出完整战斗快照；
+    /// 倒地成员保持气血为 0 与当前灵力，不跨波瞬间回满（总纲 §7.9.1/§7.9.4）。
     /// </summary>
-    private static IReadOnlyList<ExpeditionAllyState> CarryAllies(CombatEncounterState battle,
-        ActionParticipationSpec? spec, bool reviveDowned = true)
+    private static IReadOnlyList<ExpeditionAllyState> CarryAllies(CombatEncounterState battle)
     {
         var allies = battle.PlayerAllies;
         var list = new List<ExpeditionAllyState>(allies.Count - 1);
@@ -1598,16 +1610,6 @@ internal static class CombatActionRules
         {
             if (i == battle.SelfIndex) continue;
             var ally = allies[i];
-            if (!ally.IsAlive && reviveDowned && spec is not null)
-            {
-                var member = spec.Members[i];
-                list.Add(new ExpeditionAllyState(i,
-                    new CombatantSnapshot(member.Stats.MaxHitpoints, member.Stats.MaxManapoints, 0, 0, 0),
-                    CombatSkills: PlayerCombatSkillState.Empty,
-                    // 倒地复活只复位技能与气血灵力；战内 Buff 跨波存续口径下不清除。
-                    CombatBuffs: PlayerCombatBuffState.FromCombatant(ally, battle.ElapsedSeconds)));
-                continue;
-            }
             list.Add(new ExpeditionAllyState(i,
                 CombatEncounterState.Snapshot(ally),
                 PendingActionText(ally), PendingActionDurationOf(ally),

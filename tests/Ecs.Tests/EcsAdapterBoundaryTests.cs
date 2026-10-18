@@ -196,6 +196,32 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Contains(fixture.Sections.Receipts, receipt => receipt.RequestId == requestId && receipt.Command == command);
     }
 
+    [Fact]
+    public async Task TutorialRestartEnqueuesTravelToVillageWhenAway()
+    {
+        var fixture = CreateFixture();
+        await using var adapter = fixture.Adapter;
+        await adapter.LoadAsync(fixture.PlayerId);
+        // 模拟玩家身在异地（清石水滩）
+        fixture.Ecs.MutatePlayer(fixture.PlayerId, aggregate =>
+        {
+            aggregate.TravelTo("node.rock-beach", 35, 92);
+            aggregate.SkipTutorial();
+        });
+        Assert.Equal(TutorialSteps.Done, fixture.Ecs.ExportSnapshot(fixture.PlayerId).State.Settings.TutorialStep);
+
+        var payload = JsonSerializer.SerializeToElement(new { });
+        var result = await adapter.ExecuteAsync(fixture.PlayerId, "tutorial.restart", payload, 0, Guid.NewGuid());
+        Assert.True(result.Success);
+
+        var after = fixture.Ecs.ExportSnapshot(fixture.PlayerId).State;
+        Assert.Equal(TutorialSteps.Gather, after.Settings.TutorialStep);
+        // 断言已自动向队首插队了前往云溪村的移动行动
+        var travelAction = Assert.Single(after.Actions);
+        Assert.Equal("world.travel", travelAction.Intent.ActionId.Value);
+        Assert.Equal(DaoHua.Ecs.Systems.TutorialRules.VillageNodeId, travelAction.Travel?.TargetNodeId);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -340,6 +366,25 @@ public sealed class EcsAdapterBoundaryTests
         Assert.False(result.Success);
         Assert.Equal("INVALID_QUANTITY", result.Code);
         Assert.Empty(fixture.Economy.Requests);
+    }
+
+    [Fact]
+    public async Task AbilityLearnRejectsQuantityBeyondHeldManualsBeforeAnySettlement()
+    {
+        var fixture = CreateFixture(new AssetBalanceRecord(PlayerId: Guid.Empty, AssetId: "item.tome.heavy-slash", Variant: "", Quantity: 5, Version: 1));
+        await using var adapter = fixture.Adapter;
+        // 客户端可控数量：十亿本必须在持有量前置校验处直接拒绝，
+        // 绝不能进入按本数结算的路径（旧实现会在分片所有权门闩内逐本循环十亿次，冻结整服）。
+        var payload = JsonSerializer.SerializeToElement(
+            new { itemId = "item.tome.heavy-slash", quantity = 1_000_000_000d }, ProtocolJson.Options);
+
+        var result = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload, 0, Guid.NewGuid());
+
+        Assert.False(result.Success);
+        Assert.Equal("INSUFFICIENT_ITEM", result.Code);
+        Assert.Empty(fixture.Economy.Requests);
+        var snapshot = await adapter.LoadAsync(fixture.PlayerId);
+        Assert.Equal(5, snapshot.Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
     }
 
     [Theory]

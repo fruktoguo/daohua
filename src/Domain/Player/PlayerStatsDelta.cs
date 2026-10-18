@@ -14,6 +14,12 @@ public readonly struct PlayerStatsDelta
     public double Foundation { get; init; }
     /// <summary>战斗经验入账量（按增幅前基础量等额入账）。</summary>
     public double CombatExperience { get; init; }
+    /// <summary>
+    /// 内功修为增幅后的原始份额：只供会话投递在成员单写者内重算瓶颈与底蕴——
+    /// 容器清零已结算的 <see cref="Experience"/>/<see cref="Foundation"/>，消费端按本值入账；
+    /// 0 表示未提供（按 <see cref="CombatExperience"/> 计）。本字段不是已结算入账量，不进战报账本。
+    /// </summary>
+    public double CultivationExperience { get; init; }
     /// <summary>完成轮次数（计时轮/战斗波次/抵达终点均计 1）。</summary>
     public double Cycles { get; init; }
     /// <summary>战斗遭遇场次。</summary>

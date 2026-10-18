@@ -101,6 +101,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private readonly IPlayerSimulationClock _simulationClock = simulationClock ?? PlayerSimulationClock.FromEnvironment();
     private readonly ILogger<EcsPlayerRuntimeAdapter> _logger = logger;
     private const int LogBufferCapacity = 200;
+    /// <summary>
+    /// 单次批量研读的本数硬上限（同时受当前持有量约束）：仅作数域护栏，
+    /// 结算按总量一次完成，本数不再影响执行代价，此处不承担性能意义。
+    /// </summary>
+    private const double MaxLearnQuantity = 1e12;
     private bool _disposed;
 
     private sealed record RuntimeNotification(Guid PlayerId, IReadOnlyList<LogEventDto>? Logs,
@@ -595,11 +600,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var isFragment = itemId?.StartsWith("item.fragment.", StringComparison.Ordinal) == true;
                         if (itemId is null || (!isTome && !isFragment) || !gameData.RawItems.ContainsKey(itemId))
                             return new PlayerCommandResult(false, "INVALID_MANUAL", "请选择完整功法秘籍或残卷。", before);
-                        // 批量研读：quantity 缺省 1，与逐本点击严格等价（同一事务内逐本结算）。
+                        // 批量研读：quantity 缺省 1，语义与逐本点击等价（同一笔事务内按总量一次结算）。
                         var learnQuantity = payload.TryGetProperty("quantity", out var learnQuantityElement)
                             && learnQuantityElement.TryGetDouble(out var parsedLearnQuantity)
                             ? parsedLearnQuantity : 1d;
-                        if (!double.IsFinite(learnQuantity) || learnQuantity < 1 || learnQuantity != Math.Floor(learnQuantity))
+                        if (!double.IsFinite(learnQuantity) || learnQuantity < 1 || learnQuantity != Math.Floor(learnQuantity)
+                            || learnQuantity > MaxLearnQuantity)
                             return new PlayerCommandResult(false, "INVALID_QUANTITY", "研读数量无效。", before);
                         var prefix = isTome ? "item.tome." : "item.fragment.";
                         var abilityId = new AbilityId("ability." + itemId[prefix.Length..]);
@@ -609,13 +615,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (!isTome && !alreadyLearned)
                             return new PlayerCommandResult(false, "ABILITY_NOT_LEARNED", "必须先习得对应功法才能研读残卷。", before);
                         await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        // 重载后重建钱包视图：持有量校验必须读取刚同步的权威余额，不能用命令入口的旧快照。
+                        wallet = WalletOf(playerId);
+                        // 持有量前置校验：必须先于任何内存变更拒绝，否则会先跑完整批结算、再在事务提交时才发现余额不足。
+                        if (wallet.Get(new AssetKey(new ItemId(itemId))) + 1e-9 < learnQuantity)
+                            return new PlayerCommandResult(false, "INSUFFICIENT_ITEM", "秘籍或残卷数量不足。", before);
                         var experiencePerBook = isTome ? 10_000d : 500d;
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
                             if (!alreadyLearned) aggregate.LearnAbility(abilityId);
+                            // 与逐本等价的总量注入：等级只由累计经验派生，N 本一次结算与 N 次单本注入同值。
+                            // 执行代价恒为 O(1)——quantity 来自客户端，绝不能决定分片所有权门闩内的循环次数。
                             var experienceBooks = alreadyLearned ? learnQuantity : learnQuantity - 1;
-                            for (var i = 0; i < experienceBooks; i++)
-                                aggregate.GrantAbilityExperience(abilityId, experiencePerBook);
+                            if (experienceBooks > 0)
+                                aggregate.GrantAbilityExperienceTotal(abilityId, experienceBooks * experiencePerBook);
                         });
                         var mutated = ToSnapshot(ecs.ExportSnapshot(playerId));
                         var learnReceipt = CreateReceipt(playerId, requestId, command, payloadHash, mutated.StateVersion);
@@ -1101,7 +1114,51 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     case "tutorial.restart":
                     {
                         // 重新学习引导：里程碑重置为起点，奖励游标保持不动——重走不重复发已领奖励。
-                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.RestartTutorial());
+                        // 若玩家当前不在出生点【云溪村】，自动规划并插队一条前往云溪村的移动行动，待抵达后开始引导。
+                        var restartNow = _simulationClock.UtcNow;
+                        var homeNodeId = DaoHua.Ecs.Systems.TutorialRules.VillageNodeId;
+                        if ((!string.Equals(before.State.World.NodeId, homeNodeId, StringComparison.Ordinal)
+                                || before.State.World.EdgeId is not null)
+                            && before.State.Actions.FirstOrDefault()?.Participation is { } restartParticipation)
+                        {
+                            await (participationRuntime ?? throw new InvalidOperationException("未装配行动参与权威宿主。"))
+                                .EndAsync(restartParticipation.SessionId, restartNow, "member-node-changed", cancellationToken).ConfigureAwait(false);
+                            await ReconcileParticipationOwnedAsync(playerId, restartNow, notifications, cancellationToken,
+                                advanceSession: false).ConfigureAwait(false);
+                            before = ToSnapshot(ecs.ExportSnapshot(playerId));
+                            dirtySectionsBefore = ecs.GetDirtySections(playerId);
+                            wallet = WalletOf(playerId);
+                        }
+                        if (restartNow > before.State.LastSimulatedAt)
+                            await ecs.RunPlayerOnceAsync(playerId, restartNow, cancellationToken).ConfigureAwait(false);
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            aggregate.RestartTutorial();
+                            if (string.Equals(aggregate.World.NodeId, homeNodeId, StringComparison.Ordinal)
+                                && string.IsNullOrWhiteSpace(aggregate.World.EdgeId))
+                                return;
+
+                            for (var i = aggregate.Actions.Count - 1; i >= 0; i--)
+                            {
+                                if (aggregate.Actions[i].Intent.ActionId.Value == "world.travel")
+                                    aggregate.RemoveAction(aggregate.Actions[i].Id);
+                            }
+                            var worldGraph = gameData.WorldGraph;
+                            var plan = worldGraph.PlanFromPosition(aggregate.World.EdgeId,
+                                aggregate.World.EdgeProgress, aggregate.World.NodeId, homeNodeId);
+                            if (plan.Segments.Count == 0 && plan.TotalTravelSeconds <= 0)
+                            {
+                                if (worldGraph.TryGetNode(homeNodeId, out var targetNodeObj))
+                                    aggregate.TravelTo(homeNodeId, targetNodeObj.X, targetNodeObj.Y);
+                                return;
+                            }
+                            var travelState = new TravelActionState(homeNodeId, plan.TotalTravelSeconds,
+                                plan.EdgeIds, plan.Segments);
+                            forfeit = aggregate.ApplyDuelForfeit(restartNow, gameData.Duel);
+                            var enqueuedAt = aggregate.LastSimulatedAt > restartNow ? aggregate.LastSimulatedAt : restartNow;
+                            aggregate.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, homeNodeId),
+                                enqueuedAt, gameData.Actions, travelState);
+                        });
                         break;
                     }
                     default:

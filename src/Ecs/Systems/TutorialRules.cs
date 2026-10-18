@@ -21,7 +21,7 @@ internal static class TutorialRules
     private static readonly ActionId CultivateAction = new("cultivation.draw-qi");
     private static readonly ActionId CombatAction = new("combat.hunt-qi-beast");
     private const string PeakNodeId = "node.cloud-peak";
-    private const string VillageNodeId = "node.yunxi-village";
+    internal const string VillageNodeId = "node.yunxi-village";
 
     /// <summary>进入炼丹步时赠送的炼丹材料（引气丹单轮输入）。</summary>
     private static readonly (ItemId ItemId, double Quantity)[] AlchemyGrant =

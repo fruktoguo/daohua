@@ -57,10 +57,18 @@ public sealed partial class PlayerAggregate
             var delta = entry.Delta;
             if (delta.CombatExperience > 0)
             {
-                var amount = delta.CombatExperience;
+                // 战斗经验按增幅前基础量等额入账；修为按内功增幅后的冻结份额重算瓶颈与底蕴
+                // （容器只投递原始份额，个人瓶颈与底蕴兑换在成员单写者内结算）。
+                var combatExperience = delta.CombatExperience;
+                var amplified = delta.CultivationExperience > 0 ? delta.CultivationExperience : combatExperience;
                 var cap = catalog.RealmProgression?.ExpCapFor(Progression.RealmLevel) ?? double.PositiveInfinity;
-                var credited = Progression.CreditExperience(amount, cap, combatExperience: amount);
-                delta = delta with { Experience = credited, Foundation = amount - credited };
+                var credited = Progression.CreditExperience(amplified, cap, combatExperience: combatExperience);
+                delta = delta with
+                {
+                    Experience = credited,
+                    Foundation = amplified - credited,
+                    CultivationExperience = 0
+                };
             }
             if (delta.RootAspect is { } aspect)
             {
@@ -80,6 +88,15 @@ public sealed partial class PlayerAggregate
                 Loadout.AbilityExperiences[abilityId] = after;
                 var fromLevel = AbilityExpCurve.LevelFor(before);
                 var toLevel = AbilityExpCurve.LevelFor(after);
+                if (toLevel > fromLevel)
+                {
+                    for (var i = 0; i < Loadout.AbilitySlots.Count; i++)
+                    {
+                        var slot = Loadout.AbilitySlots[i];
+                        if (slot.AbilityId == abilityText && slot.Level < toLevel)
+                            Loadout.AbilitySlots[i] = new PlayerAbilitySlot(slot.AbilityId, toLevel);
+                    }
+                }
                 delta = delta with { LevelUp = toLevel > fromLevel
                     ? new PlayerReportLevelUp("ability", abilityText, fromLevel, toLevel) : null };
             }
@@ -207,7 +224,8 @@ public sealed partial class PlayerAggregate
             Loadout.Equipment.ToArray(),
             Resources.RegenCarrySeconds,
             CaptureConsumableSlots(Settings.AutoUseSlots, gameData),
-            Avatar: Settings.Avatar);
+            Avatar: Settings.Avatar,
+            InternalArt: CaptureInternalArt(Loadout, gameData));
     }
 
     /// <summary>
@@ -276,6 +294,35 @@ public sealed partial class PlayerAggregate
         }
         return list;
     }
+
+    /// <summary>
+    /// 开打定格 0 号内功位（在线聚合）：只有 <c>discipline=internal</c> 的装配算内功
+    /// （术法位不参与收益重分配）。等级与 <see cref="PlayerAttributeResolver"/> 同口径——
+    /// 槽位等级与经验派生等级取高者，保证会话内六维效率 eff 与单人结算逐位一致。
+    /// </summary>
+    internal static InternalArtSnapshot? CaptureInternalArt(PlayerLoadoutState loadout, GameDataCatalog gameData)
+        => CaptureInternalArtCore(loadout.AbilitySlots,
+            abilityId => loadout.AbilityExperiences.TryGetValue(new AbilityId(abilityId), out var experience)
+                ? experience : 0, gameData);
+
+    /// <summary>开打定格 0 号内功位（持久化投影）：与在线采集同构，经验按功法 ID 文本查表。</summary>
+    internal static InternalArtSnapshot? CaptureInternalArt(PlayerLoadoutDocument loadout, GameDataCatalog gameData)
+        => CaptureInternalArtCore(loadout.AbilitySlots,
+            abilityId => loadout.AbilityExperiences is { } experiences
+                && experiences.TryGetValue(abilityId, out var experience) ? experience : 0, gameData);
+
+    private static InternalArtSnapshot? CaptureInternalArtCore(IReadOnlyList<PlayerAbilitySlot> slots,
+        Func<string, double> experienceOf, GameDataCatalog gameData)
+    {
+        if (slots is not { Count: > 0 } || slots[0].AbilityId is not { } abilityId
+            || !gameData.Abilities.TryGetValue(abilityId, out var ability)
+            || JsonRead.Text(ability, "discipline") != "internal")
+            return null;
+        var level = Math.Max(1, slots[0].Level);
+        var experience = experienceOf(abilityId);
+        if (experience > 0) level = Math.Max(level, AbilityExpCurve.LevelFor(experience));
+        return new InternalArtSnapshot(abilityId, level);
+    }
 }
 
 public sealed partial record ActionParticipantSnapshot
@@ -308,6 +355,7 @@ public sealed partial record ActionParticipantSnapshot
             loadout.Equipment,
             state.Combat.RegenCarrySeconds,
             PlayerAggregate.CaptureConsumableSlots(state.Settings.AutoUseSlots ?? [], catalog),
-            Avatar: state.Settings.Avatar);
+            Avatar: state.Settings.Avatar,
+            InternalArt: PlayerAggregate.CaptureInternalArt(loadout, catalog));
     }
 }

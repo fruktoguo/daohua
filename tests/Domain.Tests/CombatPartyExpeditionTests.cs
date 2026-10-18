@@ -470,6 +470,85 @@ public sealed class CombatPartyExpeditionTests
         Assert.True(memberA.Resources.Hitpoints > 0);
     }
 
+    /// <summary>
+    /// 倒地盟友跨波存续门禁（总纲 §7.9.1/§7.9.4）：波次清空时倒地盟友不瞬间回满，
+    /// 以 0 气血（保留当前灵力）导出并随队进入新波次；新波次入场自动挂载复活倒计时，
+    /// 并在复活时钟到期后正式复活起身。
+    /// </summary>
+    [Fact]
+    public void DownedAllyPersistsIntoNextWaveWithoutInstantFullRevive()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var statsA = CombatantStats.Create(50_000, 10, 10, 1.0);
+        var statsB = CombatantStats.Create(5_000, 100, 10, 5.0) with { ThreatBonusPoints = 10_000 };
+        var allies = new[] { new CombatantTemplate(statsA), new CombatantTemplate(statsB) };
+        var killer = CombatantStats.Create(5, 50_000, 0, 0.5);
+
+        var encounterDef = catalog.CombatEncounters["encounter.qi-beast"] with { PlayerRespawnSeconds = 2 };
+        var respawnSeconds = encounterDef.PlayerRespawnSeconds;
+        var encounter = CombatEncounterState.CreateAllied("party.wave1", 101, allies, selfIndex: 0,
+            [new CombatantTemplate(killer)], respawnSeconds);
+        CombatActSystem.DecideInitialActions(encounter);
+
+        // t=0.5 敌方出手击倒 B；t=1.0 A 反手击杀敌怪清空波次
+        DeterministicCombatEngine.AdvanceTo(encounter, 1.5);
+        Assert.Equal(CombatOutcome.PlayerWon, encounter.Outcome);
+        Assert.True(encounter.PlayerAllies[0].IsAlive);
+        Assert.False(encounter.PlayerAllies[1].IsAlive);
+        Assert.Equal(0, encounter.PlayerAllies[1].Hitpoints);
+
+        // 构造参与规格与成员 A 的聚合
+        var memberA = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", baseline, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(memberA, catalog);
+        var snapshotA = new ActionParticipantSnapshot(
+            memberA.PlayerId.Value.ToString("D"), "甲", 1, 0, 0, statsA.MaxHitpoints, statsA.MaxManapoints, statsA, []);
+        var snapshotB = new ActionParticipantSnapshot(
+            Guid.NewGuid().ToString("D"), "乙", 1, 0, 0, statsB.MaxHitpoints, statsB.MaxManapoints, statsB, []);
+        var spec = new ActionParticipationSpec(
+            "session.carry", "encounter.qi-beast", "node.test", 101, 0,
+            baseline.ToUnixTimeMilliseconds() / 1000d, [snapshotA, snapshotB])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
+        Assert.NotNull(memberA.StartActionParticipation(spec, baseline, catalog.Actions));
+
+        // 波次清空导出：盟友镜像气血必须保持 0，严禁瞬间回满
+        var completedSearch = new CombatExpeditionState(
+            "encounter.qi-beast", CombatExpeditionPhase.Search, 10, 5, 101, 0,
+            memberA.Resources.Hitpoints, memberA.Resources.Manapoints, 0, 0,
+            CombatantState.BaseThreat, CombatOutcome.Running, 2)
+        {
+            SelfIndex = 0,
+            Allies = [
+                new ExpeditionAllyState(1, CombatEncounterState.Snapshot(encounter.PlayerAllies[1]),
+                    CombatSkills: PlayerCombatSkillState.FromCombatant(encounter.PlayerAllies[1], encounter.ElapsedSeconds),
+                    CombatBuffs: PlayerCombatBuffState.FromCombatant(encounter.PlayerAllies[1], encounter.ElapsedSeconds))
+            ]
+        };
+        Assert.Equal(0, completedSearch.Allies[0].State.Hitpoints);
+
+        // 搜寻完成，进入第 2 波战斗
+        var prep = CombatActionRules.PrepareCombatEntry(memberA, memberA.Actions[0],
+            catalog.Actions.Get(spec.ActionId), encounterDef, completedSearch, catalog, null, baseline.AddSeconds(10));
+        var battle2 = prep.Battle!;
+        Assert.NotNull(battle2);
+
+        // 验证：B 在第 2 波开场时依然倒地，气血为 0，且挂载了复活倒计时（非满状态入场）
+        Assert.True(battle2.PlayerAllies[0].IsAlive);
+        Assert.False(battle2.PlayerAllies[1].IsAlive);
+        Assert.Equal(0, battle2.PlayerAllies[1].Hitpoints);
+        Assert.True(double.IsFinite(battle2.PlayerAllies[1].RespawnAtSeconds));
+        Assert.Equal(respawnSeconds, battle2.PlayerAllies[1].RespawnAtSeconds, 6);
+
+        // 推进第 2 波战斗至越过复活时钟，产生复活标记并正式起身
+        var res2 = DeterministicCombatEngine.AdvanceTo(battle2, respawnSeconds + 0.1);
+        Assert.NotEmpty(res2.AllyRespawnMarks ?? []);
+        Assert.Contains(res2.AllyRespawnMarks!, mark => mark.MemberIndex == 1);
+        Assert.True(battle2.PlayerAllies[1].IsAlive);
+        Assert.Equal(statsB.MaxHitpoints, battle2.PlayerAllies[1].Hitpoints);
+    }
+
     /// <summary>单位 ID → 成员序归一：self 位 "player"、盟友 "ally:{i}"、敌人 "enemy:{i}" 映射为整数序，跨视角比对用。</summary>
     private static int MemberOrdinal(CombatEncounterState encounter, string id)
     {

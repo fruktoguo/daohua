@@ -110,6 +110,12 @@ else
   printf '%s\n' 'Docker 不可用，跳过 Compose 运行时检查。'
 fi
 
+printf '%s\n' '==> 前端 i18n 词条覆盖校验'
+node scripts/check-i18n-keys.mjs
+
+printf '%s\n' '==> 日志富文本标记转义校验'
+node scripts/check-log-markup.mjs
+
 printf '%s\n' '==> 前端类型检查与生产构建'
 npm --prefix frontend run build
 

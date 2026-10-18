@@ -85,6 +85,8 @@ public static class LoadoutCommand
                 if ((slotIndex == 0) != (discipline == "internal"))
                     throw new DomainException(DomainErrorCode.InvalidArgument,
                         slotIndex == 0 ? "内功位只能装配心法内功。" : "术法位只能装配神通术法。");
+                // 装配等级恒等于已参悟等级，自动对齐真实等级，防止旧客户端上报滞后。
+                level = learnedLevel;
             }
             abilities.Add(new(id, level));
             slotIndex++;

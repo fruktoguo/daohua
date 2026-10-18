@@ -934,7 +934,6 @@ public sealed partial class PlayerAggregate
     /// </summary>
     public void RestartTutorial()
     {
-        if (Settings.TutorialStep <= TutorialSteps.Gather) return;
         Settings.TutorialStep = TutorialSteps.Gather;
         Touch(PlayerSectionKind.Settings);
     }

@@ -80,6 +80,14 @@ public sealed class ActionParticipationSessionEngine
             member.Combat.Skills = frozen.CombatSkills ?? PlayerCombatSkillState.Empty;
             member.Combat.Buffs = frozen.CombatBuffs ?? PlayerCombatBuffState.Empty;
             member.Loadout.AbilitySlots.Clear();
+            // 内功心法不进施放序列（SkillSlot.FromAbilitySlots 会过滤），冻结技能槽里没有它；
+            // 但六维乘率重分配与修为增减点属于逐成员个人结算，必须按冻结输入把 0 号内功位放回去，
+            // 让会话与单人共用同一条收益分配代码路径（技能构建侧仍会按 discipline 过滤，战斗序列不受影响）。
+            if (frozen.InternalArt is { } internalArt)
+            {
+                member.Loadout.AbilitySlots.Add(new(internalArt.AbilityId, internalArt.Level));
+                member.Loadout.LearnedAbilities.Add(new AbilityId(internalArt.AbilityId));
+            }
             foreach (var skill in frozen.Skills)
             {
                 var abilityId = DeterministicCombatEngine.AbilityText(skill.Ability, "id");

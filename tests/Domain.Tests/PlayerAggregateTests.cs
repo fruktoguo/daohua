@@ -360,7 +360,8 @@ public sealed class PlayerAggregateTests
         Assert.Equal("player", player.Settings.Avatar);
         Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
 
-        // 支持各种合法形象标识
+        // 支持各种合法形象标识（需已解锁）
+        player.UnlockAvatar("gothic-lolita");
         player.SetAvatar("gothic-lolita");
         Assert.Equal("gothic-lolita", player.Settings.Avatar);
 

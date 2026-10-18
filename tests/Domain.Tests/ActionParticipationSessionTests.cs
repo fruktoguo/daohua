@@ -636,6 +636,94 @@ public sealed class ActionParticipationSessionTests
         Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(85, 100));
     }
 
+    /// <summary>
+    /// 组队六维经验按 0 号内功心法的乘率重分配（总纲 §5.3.1 / §7.10.3）：内功不进入施放序列，
+    /// 冻结技能槽里没有它，但快照必须单列冻结内功位——否则会话会走「未装内功」兜底把六维抹平成均分。
+    /// </summary>
+    [Fact]
+    public void PartyMembersApplyInternalArtRootExpMultipliers()
+    {
+        var (catalog, _, spec) = CreatePartyWithInternalArt("ability.manniu-jin");
+        var snapshot = spec.Members[0];
+        Assert.NotNull(snapshot.InternalArt);
+        Assert.Equal("ability.manniu-jin", snapshot.InternalArt!.AbilityId);
+        Assert.Equal(1, snapshot.InternalArt.Level);
+        // 内功不进施放序列：冻结技能槽仍为空，战斗只走普攻。
+        Assert.Empty(snapshot.Skills);
+
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var projected = session.AdvanceTo(Baseline.AddMinutes(3));
+        var root = projected[0].Stats
+            .Where(entry => entry.Delta.RootAspect is not null)
+            .GroupBy(entry => entry.Delta.RootAspect!.Value)
+            .ToDictionary(group => group.Key, group => group.Sum(entry => entry.Delta.RootExperience));
+
+        // 蛮牛劲：力道 ×2.0，神识/身法 ×0.5，未列维度缺省 ×1.0；参悟 1 级 eff = 1。
+        var baselineShare = root[CoreAspectKind.Stamina];
+        Assert.True(baselineShare > 0);
+        Assert.Equal(2 * baselineShare, root[CoreAspectKind.Attack], 6);
+        Assert.Equal(0.5 * baselineShare, root[CoreAspectKind.Consciousness], 6);
+        Assert.Equal(0.5 * baselineShare, root[CoreAspectKind.Agility], 6);
+        Assert.Equal(baselineShare, root[CoreAspectKind.Meridians], 6);
+        Assert.Equal(baselineShare, root[CoreAspectKind.Bone], 6);
+        // Σmult = 6 且 eff = 1：组队总量与单人同为 6× 原始份额。
+        var combatExperience = projected[0].Stats.Sum(entry => entry.Delta.CombatExperience);
+        Assert.Equal(6 * combatExperience, root.Values.Sum(), 6);
+    }
+
+    /// <summary>
+    /// 组队修为按内功 cultivationExpBonusPoints 增幅：容器清零已结算的修为/底蕴，
+    /// 增幅后的冻结份额必须随增量投递，成员消费时才能按个人瓶颈重算（炼精化气诀 +20%）。
+    /// </summary>
+    [Fact]
+    public void PartySettlementCarriesInternalCultivationBonus()
+    {
+        var (catalog, members, spec) = CreatePartyWithInternalArt("ability.lianjing-huaqi-jue");
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var projected = session.AdvanceTo(Baseline.AddMinutes(3));
+        var kills = projected[0].Stats.Where(entry => entry.Delta.CombatExperience > 0).ToArray();
+        Assert.NotEmpty(kills);
+        foreach (var kill in kills)
+            Assert.Equal(1.2 * kill.Delta.CombatExperience, kill.Delta.CultivationExperience, 6);
+
+        var before = members[0].Progression.LifetimeExperience;
+        members[0].ApplyActionParticipationSettlement(projected[0], catalog);
+        var awarded = kills.Sum(entry => entry.Delta.CultivationExperience);
+        Assert.Equal(before + awarded, members[0].Progression.LifetimeExperience, 6);
+        Assert.Equal(1.2 * kills.Sum(entry => entry.Delta.CombatExperience),
+            members[0].Progression.LifetimeExperience - before, 6);
+    }
+
+    private static (GameDataCatalog Catalog, PlayerAggregate[] Members, ActionParticipationSpec Spec) CreatePartyWithInternalArt(
+        string internalAbilityId)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var members = Enumerable.Range(0, 2).Select(index => PlayerAggregate.Create(PlayerId.New(),
+            AccountId.New(), $"内功弟子{index}", Baseline, catalog.Fingerprint)).ToArray();
+        foreach (var member in members)
+        {
+            PlayerAttributeResolver.Apply(member, catalog);
+            member.LearnAbility(new(internalAbilityId));
+            member.Loadout.AbilitySlots[0] = new PlayerAbilitySlot(internalAbilityId, 1);
+        }
+        var stats = CombatantStats.Create(50_000, 2_000, 500, 1) with
+            { HpRegen = 10, MpRegen = 50, MaxManapoints = 1_000 };
+        var frozen = members.Select(member =>
+        {
+            var snapshot = member.CaptureActionParticipantSnapshot(catalog);
+            return snapshot with
+            {
+                Stats = stats,
+                InitialHitpoints = stats.MaxHitpoints,
+                InitialManapoints = stats.MaxManapoints
+            };
+        }).ToArray();
+        var spec = new ActionParticipationSpec("session.internal-art", "encounter.qi-beast", "node.test", 97, 0,
+            Baseline.ToUnixTimeMilliseconds() / 1000d, frozen) { ActionId = new("combat.hunt-qi-beast") };
+        foreach (var member in members) member.StartActionParticipation(spec, Baseline, catalog.Actions);
+        return (catalog, members, spec);
+    }
+
     private static (GameDataCatalog Catalog, PlayerAggregate[] Members, ActionParticipationSpec Spec) CreateParty(
         bool withAbilities = false)
     {

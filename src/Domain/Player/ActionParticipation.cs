@@ -27,6 +27,8 @@ namespace Domain.Player;
 /// <param name="ConsumableSlots">开打定格的战斗消耗品托管槽配置：启用且适用于战斗栏域的
 /// 消耗品槽（即时/持续/durable）连同实扣托管配额；会话台账以此为初值，是共享剧本
 /// 消耗品的唯一公共输入。</param>
+/// <param name="InternalArt">开打定格的 0 号内功位心法：内功不进施放序列，冻结技能槽里没有它，
+/// 但六维乘率与修为增减点必须在会话内按成员逐人结算，故单列一份冻结输入。</param>
 public sealed partial record ActionParticipantSnapshot(
     string PlayerId,
     string DisplayName,
@@ -44,7 +46,8 @@ public sealed partial record ActionParticipantSnapshot(
     IReadOnlyList<PlayerEquipmentSlot>? Equipment = null,
     double RegenCarrySeconds = 0,
     IReadOnlyList<ActionConsumableSlot>? ConsumableSlots = null,
-    string Avatar = "player")
+    string Avatar = "player",
+    InternalArtSnapshot? InternalArt = null)
 {
     /// <summary>成员快照持久化不变量校验。</summary>
     public bool IsValid => Guid.TryParse(PlayerId, out var id) && id != Guid.Empty
@@ -67,7 +70,22 @@ public sealed partial record ActionParticipantSnapshot(
             && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)))
         && (ConsumableSlots is null || (ConsumableSlots.Count <= AutoUseSlotState.CombatSlotCount
             && ConsumableSlots.All(slot => slot is not null && slot.IsValid)
-            && ConsumableSlots.Select(slot => (slot.Group, slot.SlotIndex)).Distinct().Count() == ConsumableSlots.Count));
+            && ConsumableSlots.Select(slot => (slot.Group, slot.SlotIndex)).Distinct().Count() == ConsumableSlots.Count))
+        && (InternalArt is null || InternalArt.IsValid);
+}
+
+/// <summary>
+/// 开打定格的内功心法（0 号内功位）：只服务会话内的个人结算——六维经验按
+/// <c>rootExpMultipliers × 参悟效率</c> 重分配、修为收益乘 <c>cultivationExpBonusPoints</c>；
+/// 不参与共享战斗推演，也不进入成员技能槽。
+/// </summary>
+/// <param name="AbilityId">内功功法 ID（配表 <c>discipline=internal</c>）。</param>
+/// <param name="Level">开打定格的参悟等级，与面板解析同口径（槽位等级与经验派生等级取高者）。</param>
+public sealed record InternalArtSnapshot(string AbilityId, double Level)
+{
+    /// <summary>冻结输入不变量。</summary>
+    public bool IsValid => !string.IsNullOrWhiteSpace(AbilityId) && AbilityId.Length <= 128
+        && double.IsFinite(Level) && Level >= 1;
 }
 
 /// <summary>开打定格的持续消耗品 Buff：成员快照内以剩余时长承载，入场时 ExpiresAt = 战斗时钟 + 定格剩余。</summary>

@@ -460,6 +460,58 @@ public sealed class CombatSkillTests
         Assert.Equal(10.5, attrsExpLevel2.PhysicalDamageBonusPoints);
     }
 
+    [Fact]
+    public void BulkAbilityExperience_MatchesPerBookLoop_AndIgnoresQuantityMagnitude()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var abilityId = new AbilityId("ability.blazing-blast");
+        const double perBook = 500d;
+
+        // 逐本基线：200 次单本注入。
+        var perBookPlayer = CreatePlayer(catalog);
+        perBookPlayer.LearnAbility(abilityId);
+        for (var i = 0; i < 200; i++) perBookPlayer.GrantAbilityExperience(abilityId, perBook);
+
+        // 批量总量：一次注入 200 本合计，经验与等级必须与逐本一致。
+        var bulkPlayer = CreatePlayer(catalog);
+        bulkPlayer.LearnAbility(abilityId);
+        bulkPlayer.GrantAbilityExperienceTotal(abilityId, 200 * perBook);
+
+        Assert.Equal(perBookPlayer.Loadout.AbilityExperiences[abilityId],
+            bulkPlayer.Loadout.AbilityExperiences[abilityId], 6);
+        Assert.Equal(perBookPlayer.AbilityLevelFor(abilityId), bulkPlayer.AbilityLevelFor(abilityId));
+
+        // 十亿本（客户端可控数量）：一次结算即封顶，执行路径与数量无关。
+        var hugePlayer = CreatePlayer(catalog);
+        hugePlayer.LearnAbility(abilityId);
+        hugePlayer.GrantAbilityExperienceTotal(abilityId, 1_000_000_000d * 10_000d);
+        Assert.Equal(AbilityExpCurve.MaxLevel, hugePlayer.AbilityLevelFor(abilityId));
+    }
+
+    [Fact]
+    public void AbilitySlotLevel_RestoresAndSyncsWithExperience()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        var abilityId = new AbilityId("ability.blazing-blast");
+        player.LearnAbility(abilityId);
+
+        // 59018 经验经立方曲线换算应为 9 级（51200 <= exp < 72900）
+        Assert.Equal(9, AbilityExpCurve.LevelFor(59018));
+        Assert.Equal(9, AbilityExpCurve.LevelFor(55500));
+        Assert.Equal(8, AbilityExpCurve.LevelFor(39168));
+
+        // 模拟快照中 slot.Level 滞后记录为 8 级，Restore 后应自动对齐为已掌握的 9 级
+        var doc = new PlayerLoadoutDocument(
+            new PlayerCoreAttributes(),
+            [new PlayerAbilitySlot("ability.blazing-blast", 8)],
+            [],
+            new Dictionary<string, double> { ["ability.blazing-blast"] = 59018 });
+        player.Loadout.Restore(doc);
+
+        Assert.Equal(9, player.Loadout.AbilitySlots[0].Level);
+    }
+
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "技能", DateTimeOffset.UnixEpoch, catalog.Fingerprint);

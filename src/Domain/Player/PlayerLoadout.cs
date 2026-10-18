@@ -92,9 +92,18 @@ public sealed record PlayerCoreAttributes(
 /// <summary>技能经验→等级曲线：独立立方曲线 floor(cbrt(exp/100))+1，保持 1 基（习得即 1 级），技能书/残卷按点数注入经验。</summary>
 public static class AbilityExpCurve
 {
+    /// <summary>参悟等级上限。</summary>
+    public const double MaxLevel = 127;
+
+    /// <summary>
+    /// 累计经验上限（含批量研读的总量）：仅作数域防呆，避免非有限值或荒谬量级落盘；
+    /// 实际等级在此上限前早已封顶，不影响任何玩法数值。
+    /// </summary>
+    public const double MaxBulkExperience = 1e18;
+
     /// <summary>经验换算技能等级（1~127 级）。</summary>
     public static double LevelFor(double exp)
-        => !double.IsFinite(exp) || exp <= 0 ? 1 : Math.Min(127, Math.Floor(Math.Cbrt(exp / 100d)) + 1);
+        => !double.IsFinite(exp) || exp <= 0 ? 1 : Math.Min(MaxLevel, Math.Floor(Math.Cbrt(exp / 100d)) + 1);
 }
 
 /// <summary>功法/神通装配槽位：技能 ID（可空）与参悟等级；自定义触发条件按功法 ID 挂在 AbilityTriggers，不随槽位走。</summary>
@@ -198,6 +207,18 @@ public sealed partial class PlayerLoadoutState
             foreach (var pair in document.AbilityExperiences)
                 AbilityExperiences[new AbilityId(pair.Key)] = pair.Value;
         }
+        // 装配槽位等级与已参悟等级严格对齐（防止客户端同步滞后或旧快照不同步）。
+        for (var i = 0; i < AbilitySlots.Count; i++)
+        {
+            var slot = AbilitySlots[i];
+            if (slot.AbilityId is { } abilityIdText
+                && AbilityExperiences.TryGetValue(new AbilityId(abilityIdText), out var exp) && exp > 0)
+            {
+                var learnedLevel = AbilityExpCurve.LevelFor(exp);
+                if (slot.Level != learnedLevel)
+                    AbilitySlots[i] = new PlayerAbilitySlot(slot.AbilityId, learnedLevel);
+            }
+        }
         // 技艺经验只在文档显式携带时覆盖：槽位装配替换（ReplaceCombatSlots）构造的局部文档不抹除既有技艺累计。
         if (document.TechniqueExperiences is not null)
         {
@@ -246,17 +267,38 @@ public sealed partial class PlayerAggregate
     public double AbilityLevelFor(AbilityId abilityId)
         => Loadout.AbilityExperiences.TryGetValue(abilityId, out var exp) ? AbilityExpCurve.LevelFor(exp) : 1;
 
+    /// <summary>单次单本注入上限：一本秘籍/残卷的经验点数量级远低于此。</summary>
+    private const double MaxSingleGrantExperience = 1_000_000;
+
     /// <summary>
     /// 为已习得技能注入参悟经验；秘籍复读与残卷研读的点数由宿主按配表决定。
+    /// 适用于单本结算；批量研读必须走 <see cref="GrantAbilityExperienceTotal"/>，不得按本数循环调用。
     /// </summary>
     public void GrantAbilityExperience(AbilityId abilityId, double experience)
     {
+        if (!double.IsFinite(experience) || experience <= 0 || experience > MaxSingleGrantExperience)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能经验无效。");
+        GrantAbilityExperienceTotal(abilityId, experience);
+    }
+
+    /// <summary>
+    /// 批量研读的总量注入：与逐本调用等价，但全程只结算一次。
+    /// 等级只由累计经验经立方曲线派生，因此 `N × 单本经验` 与 N 次单本注入得到相同的经验总量与最终等级；
+    /// 唯一差异是日志账本由多条逐级跃迁折叠为一条 `起始等级 → 最终等级`。
+    /// 复杂度 O(1)：批量数量由客户端提供，绝不允许进入循环或决定迭代规模。
+    /// </summary>
+    /// <param name="abilityId">已习得功法 ID。</param>
+    /// <param name="totalExperience">本批合计经验点数（本数 × 单本经验）。</param>
+    public void GrantAbilityExperienceTotal(AbilityId abilityId, double totalExperience)
+    {
         if (!abilityId.IsValid || !Loadout.LearnedAbilities.Contains(abilityId))
             throw new DomainException(DomainErrorCode.InvalidArgument, "尚未习得该功法，无法参悟。");
-        if (!double.IsFinite(experience) || experience <= 0 || experience > 1_000_000)
+        if (!double.IsFinite(totalExperience) || totalExperience <= 0
+            || totalExperience > AbilityExpCurve.MaxBulkExperience)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能经验无效。");
         var previousExp = Loadout.AbilityExperiences.TryGetValue(abilityId, out var stored) ? stored : 0;
-        var nextExp = previousExp + experience;
+        var nextExp = previousExp + totalExperience;
+        if (!double.IsFinite(nextExp)) nextExp = AbilityExpCurve.MaxBulkExperience;
         Loadout.AbilityExperiences[abilityId] = nextExp;
         var levelBefore = AbilityExpCurve.LevelFor(previousExp);
         var levelAfter = AbilityExpCurve.LevelFor(nextExp);
@@ -275,7 +317,7 @@ public sealed partial class PlayerAggregate
         RecordStats(headId, LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
         {
             AbilityId = abilityIdValue,
-            AbilityExperience = experience,
+            AbilityExperience = totalExperience,
             LevelUp = levelAfter > levelBefore
                 ? new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter) : null
         });
