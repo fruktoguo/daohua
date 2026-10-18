@@ -179,11 +179,18 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         return ExecuteOwned(() =>
         {
             if (_players.ContainsKey(state.PlayerId.Value)) throw new InvalidOperationException($"ECS player already exists: {state.PlayerId}");
-            using var creationMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.player");
-            var entity = new YuoEntity(World, IDGenerate.GetID($"player:{state.PlayerId.Value:N}"));
-            RuntimeInstrumentation.Count("lifecycle.entity_created.player");
-            entity.EntityName = $"player:{state.PlayerId}";
             var aggregate = PlayerAggregate.Restore(state);
+            using var creationMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.player");
+            var entityId = IDGenerate.GetID($"player:{state.PlayerId.Value:N}");
+            if (World.GetEntity(entityId) is { } staleEntity)
+            {
+                YuoWorld.DestroyEntityForce(staleEntity);
+            }
+            var entity = new YuoEntity(World, entityId);
+            try
+            {
+                RuntimeInstrumentation.Count("lifecycle.entity_created.player");
+                entity.EntityName = $"player:{state.PlayerId}";
             var identity = entity.AddComponent<PlayerIdentityComponent>();
             identity.PlayerId = state.PlayerId.Value;
             identity.AccountId = state.AccountId.Value.ToString("N");
@@ -254,6 +261,13 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             }
             _players[state.PlayerId.Value] = entity.ID;
             SyncNodeMembership(entity);
+            }
+            catch
+            {
+                _players.TryRemove(state.PlayerId.Value, out _);
+                YuoWorld.DestroyEntityForce(entity);
+                throw;
+            }
             return state.PlayerId.Value;
         });
     }

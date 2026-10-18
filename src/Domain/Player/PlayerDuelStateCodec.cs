@@ -110,7 +110,8 @@ public static class PlayerDuelStateCodec
         report.ItemsLost.AddRange(document.ItemsLost ?? []);
         report.AbilityExp.AddRange(document.AbilityExp ?? []);
         report.TechniqueExp.AddRange(document.TechniqueExp ?? []);
-        report.LevelUps.AddRange(document.LevelUps ?? []);
+        if (document.LevelUps is { } levelUps)
+            foreach (var entry in levelUps) report.AddLevelUp(entry);
         if (document.DuelItemsGained is { } duelGained) report.DuelItemsGained.AddRange(duelGained);
         if (document.DuelItemsLost is { } duelLost) report.DuelItemsLost.AddRange(duelLost);
         if (document.Combatants is { } combatants)

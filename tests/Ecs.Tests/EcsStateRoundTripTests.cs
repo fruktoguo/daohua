@@ -102,6 +102,34 @@ public sealed class EcsStateRoundTripTests
         }
     }
 
+    [Fact]
+    public void CreatePlayer_WhenAggregateRestoreThrows_DoesNotLeakEntityAndRetrySucceeds()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(
+            new PlayerId(Guid.Parse("10000000-0000-4000-8000-000000000199")),
+            new AccountId(Guid.Parse("20000000-0000-4000-8000-000000000199")),
+            "清理测试", SeedTime, catalog.Fingerprint);
+        var validState = player.ExportState();
+        var invalidState = validState with
+        {
+            Progression = validState.Progression with { RealmLevel = 0 }
+        };
+
+        using var runtime = new EcsGameRuntime(catalog, SeedTime);
+        var ex = Assert.Throws<DomainException>(() => runtime.CreatePlayer(invalidState));
+        Assert.Contains("section", ex.Message);
+
+        // 确认没有残留游离实体泄露进 World
+        var entityId = YuoCore.Ecs.IDGenerate.GetID($"player:{validState.PlayerId.Value:N}");
+        Assert.Null(runtime.World.GetEntity(entityId));
+
+        // 重试使用合法状态创建应顺利成功，不得报实体ID重复
+        var createdId = runtime.CreatePlayer(validState);
+        Assert.Equal(validState.PlayerId.Value, createdId);
+        Assert.NotNull(runtime.World.GetEntity(entityId));
+    }
+
     private static void AssertJsonEqual<T>(T expected, T actual, string section)
     {
         var expectedJson = JsonSerializer.Serialize(expected);

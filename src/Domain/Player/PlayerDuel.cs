@@ -32,6 +32,33 @@ public sealed record PlayerReportTechniqueExp(string TechniqueId, double Experie
 /// </summary>
 public sealed record PlayerReportLevelUp(string Kind, string TargetId, double FromLevel, double ToLevel);
 
+/// <summary>战报等级提升容器：同一目标的多次升级自动合并为起止跨度（首段起点 → 末段终点）。</summary>
+public sealed class PlayerReportLevelUpList : List<PlayerReportLevelUp>
+{
+    public new void Add(PlayerReportLevelUp levelUp)
+    {
+        var index = FindIndex(entry => entry.Kind == levelUp.Kind && entry.TargetId == levelUp.TargetId);
+        if (index >= 0)
+        {
+            var existing = this[index];
+            this[index] = existing with
+            {
+                FromLevel = Math.Min(existing.FromLevel, levelUp.FromLevel),
+                ToLevel = Math.Max(existing.ToLevel, levelUp.ToLevel)
+            };
+        }
+        else
+        {
+            base.Add(levelUp);
+        }
+    }
+
+    public new void AddRange(IEnumerable<PlayerReportLevelUp> collection)
+    {
+        foreach (var item in collection) Add(item);
+    }
+}
+
 /// <summary>六维经验增量容器；战报与收益分配共用。</summary>
 public sealed class PlayerRootExpValues
 {
@@ -107,8 +134,8 @@ public sealed class PlayerBattleReport
     public List<PlayerReportAbilityExp> AbilityExp { get; } = [];
     /// <summary>技艺修行经验收益（按技艺 ID 聚合）</summary>
     public List<PlayerReportTechniqueExp> TechniqueExp { get; } = [];
-    /// <summary>等级提升记录（境界/六维/功法）</summary>
-    public List<PlayerReportLevelUp> LevelUps { get; } = [];
+    /// <summary>等级提升记录（境界/六维/功法/技艺，同一目标自动合并为整体跨度）</summary>
+    public PlayerReportLevelUpList LevelUps { get; } = [];
     /// <summary>物品收益（含暂存区与缴获）</summary>
     public List<PlayerReportItem> Items { get; } = [];
     /// <summary>物品失去（行动输入消耗、自动消耗品、斗法暂存被缴）</summary>
@@ -216,6 +243,9 @@ public sealed class PlayerBattleReport
         if (index >= 0) TechniqueExp[index] = TechniqueExp[index] with { Experience = TechniqueExp[index].Experience + experience };
         else TechniqueExp.Add(new(techniqueId, experience));
     }
+
+    /// <summary>合并记录等级提升（同一目标的多次升级合并为起止跨度）。</summary>
+    public void AddLevelUp(PlayerReportLevelUp levelUp) => LevelUps.Add(levelUp);
 
     /// <summary>清空全部累计字段（每日账本跨日 rollover 用）；ReportId/行动标识保留。</summary>
     public void ResetBucket(long dayIndex, double atUnixSeconds)

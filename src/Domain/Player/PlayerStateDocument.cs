@@ -693,7 +693,7 @@ public sealed partial class PlayerAggregate
                 && report.TechniqueExp.All(entry => entry is not null
                     && Domain.GameData.TechniqueCatalog.IsKnown(entry.TechniqueId)
                     && double.IsFinite(entry.Experience) && entry.Experience >= 0)))
-            && (report.LevelUps is null || (report.LevelUps.Count <= 512
+            && (report.LevelUps is null || (report.LevelUps.Count <= 4096
                 && report.LevelUps.All(entry => entry is not null
                     && entry.Kind is "realm" or "root" or "ability" or "technique"
                     && (entry.TargetId?.Length ?? 0) <= 128
