@@ -7,7 +7,7 @@ using Domain.Common;
 /// <summary>
 /// 制造配方 T 级换算与图鉴解锁等级规则。
 /// 对应总纲 §23 万象图鉴与解锁机制：
-/// T1 配方默认 1 级解锁；T2 配方需 18 级（凡俗 [天] 叩仙门）解锁；
+/// T1 配方默认 1 级解锁；T2 配方需 18 级（凡俗 [天] 叩天门）解锁；
 /// 等级公式与前端 convertTierToLevel 完全对齐：tier <= 1 ? 1 : 18 + (tier - 2) * 12。
 /// </summary>
 public static class CraftingRecipeRules

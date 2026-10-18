@@ -132,7 +132,7 @@ test('codexCalculations: 解锁规则验证（境界、技艺与背包三路联�
   assert.equal(isMaterialUnlocked(t2Herb, 1, [{ itemId: 'item.banling-flower', amount: 1 }]), true)
   assert.equal(isMaterialUnlocked(t2Exotic, 1, [{ itemId: 'item.beast-fang', amount: 1 }]), true)
 
-  // 18 级修士（叩仙门）：T2 全体系境界自动解锁，无需技艺或背包持有
+  // 18 级修士（叩天门）：T2 全体系境界自动解锁，无需技艺或背包持有
   assert.equal(isMaterialUnlocked(t2Herb, 18, []), true)
   assert.equal(isMaterialUnlocked(t2Mineral, 18, []), true)
   assert.equal(isMaterialUnlocked(t2Exotic, 18, []), true)

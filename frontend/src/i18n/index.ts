@@ -11,7 +11,9 @@ import { create } from 'zustand'
 import { zhCN, type Messages } from './locales/zh-CN'
 
 // 构建时只注册实际存在的语言包；模板本身不是可选语言。
-const localeFiles = import.meta.glob(['/public/locales/*.csv', '!/public/locales/template.csv'], { query: '?url', import: 'default' })
+const localeFiles = typeof (import.meta as any).glob === 'function'
+  ? (import.meta as any).glob(['/public/locales/*.csv', '!/public/locales/template.csv'], { query: '?url', import: 'default' })
+  : {}
 /** 全部可选语言标识（zh-CN 内置 + 构建期扫描到的 CSV 语言包文件名） */
 export const LOCALES: readonly string[] = ['zh-CN', ...Object.keys(localeFiles)
   .map(path => path.split('/').at(-1)!.slice(0, -4))
@@ -172,7 +174,9 @@ function detectLocale(): Locale {
 }
 
 function applyDocumentLocale(locale: Locale): void {
-  document.documentElement.lang = locale
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = locale
+  }
 }
 
 /** i18n 内核状态 */

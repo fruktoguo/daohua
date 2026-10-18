@@ -427,7 +427,7 @@ export const REALM_LEVEL_EXP_TO_NEXT: readonly number[] = [
   300000, // Lv.15 宗师
   400000, // Lv.16 大宗师
   500000, // Lv.17 临渊
-  800000, // Lv.18 叩仙门
+  800000, // Lv.18 叩天门
   1263000, // Lv.19 练气一层
   1516000, // Lv.20 练气二层
   1895000, // Lv.21 练气三层
@@ -800,6 +800,7 @@ export interface RealmInfo {
  */
 export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number): RealmInfo {
   const progress = calculateRealmProgress(experience, explicitRealmLevel)
+  const level = progress.level
   const totalLevel = progress.totalLevel
   const layerProgress = progress.progressPercentage
   // 境界名属展示文本，统一走 i18n；rankChar 为徽章单字字形，双语共用。
@@ -811,16 +812,16 @@ export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number):
   let rankChar = '武'
   let stageColor = '#9ca3af'
 
-  if (totalLevel <= 18.0) {
+  if (level <= 18) {
     stageName = t('game.realm.stageFallback')
-    const mortalIndex = Math.max(1, Math.min(18, Math.floor(totalLevel)))
+    const mortalIndex = Math.max(1, Math.min(18, level))
     minorName = t(`game.realm.mortal.${mortalIndex}`)
 
-    if (totalLevel <= 6.0) {
+    if (level <= 6) {
       phaseName = t('game.realm.phaseMortal1')
       rankChar = '武'
       stageColor = '#9ca3af'
-    } else if (totalLevel <= 12.0) {
+    } else if (level <= 12) {
       phaseName = t('game.realm.phaseMortal2')
       rankChar = '玄'
       stageColor = '#4ade80'
@@ -832,10 +833,9 @@ export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number):
   } else {
     // Lv.19 起为修真段：每 12 层为一个大境界，档内 1~9 层冠名「层」，
     // 第 10/11/12 层分别为巅峰、大圆满与下一境界的「半步」过渡档。
-    const cultivationLevel = totalLevel - 18.0
-    const majorIndex = Math.floor((cultivationLevel - 1.0) / 12.0) + 1.0
-    const layerInMajor = Math.floor(((cultivationLevel - 1.0) % 12.0) + 1.0)
-
+    const cultivationLevel = level - 18
+    const majorIndex = Math.floor((cultivationLevel - 1) / 12) + 1
+    const layerInMajor = ((cultivationLevel - 1) % 12) + 1
     const majorCount = 9
     const majorColors = ['var(--gold)', '#38bdf8', '#f59e0b', '#c084fc', '#e879f9', '#f43f5e', '#fb7185', '#fb923c', '#facc15']
 

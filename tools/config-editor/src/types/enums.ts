@@ -301,7 +301,7 @@ export const PARTY_WIPE_RULES: EnumOption[] = [
 /** 等阶选项（T1~T12）：数值以各等阶属性锚点小境界命名，与服务端 BaseAttributeCatalog.TierAt 及总纲 §10.2 对齐。 */
 export const TIER_OPTIONS: EnumOption<number>[] = [
   { value: 1, label: 'T1 · 凡俗 凡胎', en: 'Tier 1', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
-  { value: 2, label: 'T2 · 凡俗 叩仙门', en: 'Tier 2', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
+  { value: 2, label: 'T2 · 凡俗 叩天门', en: 'Tier 2', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
   { value: 3, label: 'T3 · 练气 半步筑基', en: 'Tier 3', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
   { value: 4, label: 'T4 · 筑基 半步金丹', en: 'Tier 4', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
   { value: 5, label: 'T5 · 金丹 半步元婴', en: 'Tier 5', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },

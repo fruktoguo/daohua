@@ -28,7 +28,7 @@ public sealed class CombatTraitTests
         Assert.Equal(17, CombatTraitRules.CalculateCapacity(12));
         // Lv13 跨入天阶段：17 + 1 + 1 = 19 点
         Assert.Equal(19, CombatTraitRules.CalculateCapacity(13));
-        // Lv18 叩仙门（凡俗圆满）：19 + 5 = 24 点
+        // Lv18 叩天门（凡俗圆满）：19 + 5 = 24 点
         Assert.Equal(24, CombatTraitRules.CalculateCapacity(18));
         // Lv19 破境入练气：24 + 1(升级) + 1(练气大境界) + 1(练气初期) = 27 点
         Assert.Equal(27, CombatTraitRules.CalculateCapacity(19));
