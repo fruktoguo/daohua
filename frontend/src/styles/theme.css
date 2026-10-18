@@ -928,6 +928,65 @@
 :root[data-theme="light"] .daohua-market-aside-volume-val {
   color: #2e747c;
 }
+
+/* 浅色模式下效果与 Buff 副气泡各胶囊与数值高对比呈现 */
+:root[data-theme="light"] .daohua-effect-aside-badge--qi {
+  color: #2e747c;
+  background: rgba(46, 116, 124, 0.12);
+  border-color: rgba(46, 116, 124, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--emerald,
+:root[data-theme="light"] .daohua-effect-aside-badge--jade {
+  color: #277850;
+  background: rgba(39, 120, 80, 0.12);
+  border-color: rgba(39, 120, 80, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--cyan {
+  color: #1e6c98;
+  background: rgba(30, 108, 152, 0.12);
+  border-color: rgba(30, 108, 152, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--gold {
+  color: #8c6b12;
+  background: rgba(140, 107, 18, 0.12);
+  border-color: rgba(140, 107, 18, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--crimson {
+  color: #b23a2a;
+  background: rgba(178, 58, 42, 0.12);
+  border-color: rgba(178, 58, 42, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--amber {
+  color: #a8502f;
+  background: rgba(168, 80, 47, 0.12);
+  border-color: rgba(168, 80, 47, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--purple {
+  color: #69408c;
+  background: rgba(105, 64, 140, 0.12);
+  border-color: rgba(105, 64, 140, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--danger {
+  color: #c8523f;
+  background: rgba(200, 82, 63, 0.14);
+  border-color: rgba(200, 82, 63, 0.4);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-val.is-positive {
+  color: #277850;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-val.is-negative {
+  color: #c8523f;
+  text-shadow: none;
+}
 /* 窄屏设置分类条横向排列，激活红线由左侧竖条切换为底部横条。 */
 @media (max-width: 960px) {
   :root[data-theme="light"] .settings-nav-item.active {

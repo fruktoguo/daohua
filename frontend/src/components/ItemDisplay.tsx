@@ -12,6 +12,7 @@ import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
+import { createInternalRootExpAsideCard } from './EffectTooltip'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -251,6 +252,14 @@ export function resolveItemTooltipAsideCards(
     const manualAside = resolveManualAsideCard(itemId, rawMetadata.category, abilitiesCatalog)
     if (manualAside) {
       list.push(manualAside)
+    }
+  }
+  const manualCard = list.find(c => c.id?.startsWith('aside-manual-'))
+  if (manualCard?.id) {
+    const abilityId = manualCard.id.replace('aside-manual-', '')
+    const matchedAbility = abilitiesCatalog.find(a => a.abilityId === abilityId)
+    if (matchedAbility?.discipline === 'internal') {
+      list.push(createInternalRootExpAsideCard())
     }
   }
   const marketAside = resolveMarketStatsAsideCard(itemId, enhancementLevel, itemDef, eqDef, rawMetadata.label)
@@ -580,6 +589,189 @@ export function describeBuffEffectLines(buff: {
 }
 
 /**
+ * 结构化效果条目模型（供副气泡与悬浮框微光胶囊化渲染）
+ */
+export interface StructuredEffectItem {
+  /** 胶囊徽章文本（如「气血回元」、「修炼增效」、「伤害吸收」等） */
+  badge: string
+  /** 徽章色调：与修仙色系对齐 */
+  tone?: FloatingTone
+  /** 高亮核心数值（如「+20%」、「+18」、「12.5%」等） */
+  value: string
+  /** 辅助单位或周期说明（如「/ 5秒」、「秒」等） */
+  unit?: string
+  /** 是否为负面/减损效果（危红色调） */
+  isNegative?: boolean
+}
+
+/**
+ * 将 Buff 实例或丹药 Buff 定义解析为结构化条目列表
+ */
+export function resolveStructuredBuffEffects(buff: {
+  buffId?: string | null
+  name?: string
+  description?: string
+  hpRegen?: number
+  mpRegen?: number
+  hpRegenPostRatio?: number
+  mpRegenPostRatio?: number
+  damageAbsorptionPoints?: number
+  attackSpeedPoints?: number
+  statRatios?: Record<string, number> | null
+  threatPoints?: number
+  damageBonusPoints?: number
+  threatPerSecondMaxHpPoints?: number
+}): StructuredEffectItem[] {
+  const t = getT()
+  const items: StructuredEffectItem[] = []
+
+  // 1. 每 5 秒结算点回复
+  if (buff.hpRegen && buff.hpRegen !== 0) {
+    const isNeg = buff.hpRegen < 0
+    items.push({
+      badge: t('market.effect.badgeHpRegen'),
+      tone: isNeg ? 'danger' : 'emerald',
+      value: `${buff.hpRegen > 0 ? '+' : ''}${formatNumber(buff.hpRegen)}`,
+      unit: t('market.effect.unitPerFiveSec'),
+      isNegative: isNeg,
+    })
+  }
+  if (buff.mpRegen && buff.mpRegen !== 0) {
+    const isNeg = buff.mpRegen < 0
+    items.push({
+      badge: t('market.effect.badgeMpRegen'),
+      tone: isNeg ? 'danger' : 'cyan',
+      value: `${buff.mpRegen > 0 ? '+' : ''}${formatNumber(buff.mpRegen)}`,
+      unit: t('market.effect.unitPerFiveSec'),
+      isNegative: isNeg,
+    })
+  }
+
+  // 1b. 回复后段乘区
+  if (buff.hpRegenPostRatio && buff.hpRegenPostRatio !== 0) {
+    const isNeg = buff.hpRegenPostRatio < 0
+    items.push({
+      badge: t('market.effect.badgeHpPostRatio'),
+      tone: isNeg ? 'danger' : 'emerald',
+      value: signedPercent(buff.hpRegenPostRatio),
+      isNegative: isNeg,
+    })
+  }
+  if (buff.mpRegenPostRatio && buff.mpRegenPostRatio !== 0) {
+    const isNeg = buff.mpRegenPostRatio < 0
+    items.push({
+      badge: t('market.effect.badgeMpPostRatio'),
+      tone: isNeg ? 'danger' : 'cyan',
+      value: signedPercent(buff.mpRegenPostRatio),
+      isNegative: isNeg,
+    })
+  }
+
+  // 2. 免伤与攻速点数
+  if (buff.damageAbsorptionPoints && buff.damageAbsorptionPoints !== 0) {
+    const points = buff.damageAbsorptionPoints
+    const isNeg = points < 0
+    items.push({
+      badge: t('market.effect.badgeDamageAbsorption'),
+      tone: isNeg ? 'danger' : 'jade',
+      value: `${points > 0 ? '+' : ''}${(points / (100 + points) * 100).toFixed(1)}%`,
+      isNegative: isNeg,
+    })
+  }
+  if (buff.attackSpeedPoints && buff.attackSpeedPoints !== 0) {
+    const isNeg = buff.attackSpeedPoints < 0
+    items.push({
+      badge: t('market.effect.badgeAttackSpeed'),
+      tone: isNeg ? 'danger' : 'purple',
+      value: signedPercent(buff.attackSpeedPoints / 100),
+      isNegative: isNeg,
+    })
+  }
+
+  // 2b. 战内点数修饰（增伤/威胁）
+  if (buff.damageBonusPoints && buff.damageBonusPoints !== 0) {
+    const isNeg = buff.damageBonusPoints < 0
+    items.push({
+      badge: t('market.effect.badgeDamageBonus'),
+      tone: isNeg ? 'danger' : 'crimson',
+      value: signedPercent(buff.damageBonusPoints / 100),
+      isNegative: isNeg,
+    })
+  }
+  if (buff.threatPoints && buff.threatPoints !== 0) {
+    const isNeg = buff.threatPoints < 0
+    items.push({
+      badge: t('market.effect.badgeThreat'),
+      tone: isNeg ? 'danger' : 'gold',
+      value: signedPercent(buff.threatPoints / 100),
+      isNegative: isNeg,
+    })
+  }
+  if (buff.threatPerSecondMaxHpPoints && buff.threatPerSecondMaxHpPoints !== 0) {
+    const isNeg = buff.threatPerSecondMaxHpPoints < 0
+    items.push({
+      badge: t('market.effect.badgeThreatSec'),
+      tone: isNeg ? 'danger' : 'gold',
+      value: signedPercent(buff.threatPerSecondMaxHpPoints / 100),
+      isNegative: isNeg,
+    })
+  }
+
+  // 3. 通用属性比率字典
+  if (buff.statRatios) {
+    for (const [modKey, modVal] of Object.entries(buff.statRatios)) {
+      if (modVal !== 0) {
+        const label = STAT_RATIO_LABEL_KEYS[modKey] ? t(STAT_RATIO_LABEL_KEYS[modKey]) : modKey
+        const isNeg = modVal < 0
+        items.push({
+          badge: label,
+          tone: isNeg ? 'danger' : (STAT_TONE_MAP[modKey] as FloatingTone) || 'gold',
+          value: signedPercent(modVal),
+          isNegative: isNeg,
+        })
+      }
+    }
+  }
+
+  // 4. 若无点数解析，回退到原有文本解析
+  if (items.length === 0) {
+    const rawLines = describeBuffEffectLines(buff)
+    for (const line of rawLines) {
+      items.push({
+        badge: t('market.effect.badgeGeneral'),
+        tone: 'gold',
+        value: line,
+      })
+    }
+  }
+
+  return items
+}
+
+/**
+ * 结构化效果副气泡主体渲染组件 (EffectAsideBody)
+ */
+export function EffectAsideBody({ items }: { items: readonly StructuredEffectItem[] }): React.JSX.Element {
+  return (
+    <div className="daohua-effect-aside-body">
+      {items.map((item, idx) => (
+        <div className="daohua-effect-aside-row" key={idx}>
+          <span className={`daohua-effect-aside-badge daohua-effect-aside-badge--${item.tone ?? 'gold'}`}>
+            {item.badge}
+          </span>
+          <span className="daohua-effect-aside-val-wrap">
+            <span className={`daohua-effect-aside-val ${item.isNegative ? 'is-negative' : 'is-positive'}`}>
+              {item.value}
+            </span>
+            {item.unit && <span className="daohua-effect-aside-unit">{item.unit}</span>}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
  * 坊市「市场价格」副卡（惰性求值）：按 (itemId, 强化等级) 命中 gameStore.marketStats
  * 中服务端持续维护的品种行情，展示卖一价/在售量、买一价/收购量与当日/当周成交量；
  * 仅可交易标的产出卡片（item.isTradable 或装备变体簿），无盘口一侧价格显示 "-"。
@@ -716,77 +908,99 @@ export function resolveItemAsideCards(
 
   // 1. 修炼丹药/持续消耗品效果 (如引气丹、通脉丹)
   if (definition.cultivationMultiplier && definition.cultivationMultiplier > 1) {
-    const lines: string[] = [
-      t('market.aside.cultivationSpeed', {
+    const items: StructuredEffectItem[] = [
+      {
+        badge: t('market.aside.badgeCultivation'),
+        tone: 'qi',
         value: `+${Math.round((definition.cultivationMultiplier - 1) * 100)}%`,
-      }),
+      },
     ]
     if (definition.durationSeconds && definition.durationSeconds > 0) {
-      lines.push(t('market.aside.duration', { seconds: formatNumber(definition.durationSeconds) }))
+      items.push({
+        badge: t('market.aside.badgeDuration'),
+        tone: 'slate',
+        value: `${formatNumber(definition.durationSeconds)}`,
+        unit: t('market.aside.unitSeconds'),
+      })
     }
     cards.push({
       id: `aside-cultivation-${definition.itemId}`,
       mark: t('market.aside.buff'),
       title: definition.name || fallbackName || t('market.aside.buff'),
       tone: 'qi',
-      lines,
+      content: <EffectAsideBody items={items} />,
     })
   }
 
   // 2. 采集产出加成 (如寻灵香)
   if (definition.gatheringMultiplier && definition.gatheringMultiplier > 1) {
-    const lines: string[] = [
-      t('market.aside.gatheringOutput', {
+    const items: StructuredEffectItem[] = [
+      {
+        badge: t('market.aside.badgeGathering'),
+        tone: 'jade',
         value: `+${Math.round((definition.gatheringMultiplier - 1) * 100)}%`,
-      }),
+      },
     ]
     if (definition.durationSeconds && definition.durationSeconds > 0) {
-      lines.push(t('market.aside.duration', { seconds: formatNumber(definition.durationSeconds) }))
+      items.push({
+        badge: t('market.aside.badgeDuration'),
+        tone: 'slate',
+        value: `${formatNumber(definition.durationSeconds)}`,
+        unit: t('market.aside.unitSeconds'),
+      })
     }
     cards.push({
       id: `aside-gathering-${definition.itemId}`,
       mark: t('market.aside.buff'),
       title: definition.name || fallbackName || t('market.aside.buff'),
       tone: 'jade',
-      lines,
+      content: <EffectAsideBody items={items} />,
     })
   }
 
   // 3. 炼丹产出加成 (如地火引)
   if (definition.alchemyMultiplier && definition.alchemyMultiplier > 1) {
-    const lines: string[] = [
-      t('market.aside.alchemyOutput', {
+    const items: StructuredEffectItem[] = [
+      {
+        badge: t('market.aside.badgeAlchemy'),
+        tone: 'gold',
         value: `+${Math.round((definition.alchemyMultiplier - 1) * 100)}%`,
-      }),
+      },
     ]
     if (definition.durationSeconds && definition.durationSeconds > 0) {
-      lines.push(t('market.aside.duration', { seconds: formatNumber(definition.durationSeconds) }))
+      items.push({
+        badge: t('market.aside.badgeDuration'),
+        tone: 'slate',
+        value: `${formatNumber(definition.durationSeconds)}`,
+        unit: t('market.aside.unitSeconds'),
+      })
     }
     cards.push({
       id: `aside-alchemy-${definition.itemId}`,
       mark: t('market.aside.buff'),
       title: definition.name || fallbackName || t('market.aside.buff'),
       tone: 'gold',
-      lines,
+      content: <EffectAsideBody items={items} />,
     })
   }
 
   // 4. 战斗丹药附带的 Buff 效果 (如止血散、顺气丸)
   for (const buff of definition.buffEffects ?? []) {
-    const buffLines = describeBuffEffectLines(buff)
-
-    const subParts: string[] = []
+    const items = resolveStructuredBuffEffects(buff)
     if (buff.durationSeconds > 0) {
-      subParts.push(t('market.aside.duration', { seconds: formatNumber(buff.durationSeconds) }))
+      items.push({
+        badge: t('market.aside.badgeDuration'),
+        tone: 'slate',
+        value: `${formatNumber(buff.durationSeconds)}`,
+        unit: t('market.aside.unitSeconds'),
+      })
     }
-
     cards.push({
       id: `aside-buff-${buff.name}`,
       mark: t('market.aside.buff'),
       title: buff.name,
-      subtitle: subParts.length > 0 ? subParts.join(' · ') : undefined,
       tone: 'gold',
-      lines: buffLines.length > 0 ? buffLines : [t('market.effect.ongoing')],
+      content: <EffectAsideBody items={items} />,
     })
   }
 
@@ -1170,7 +1384,7 @@ export function createBuffAsideCard(
   mark?: string
 ): FloatingAsideCard {
   const t = getT()
-  const lines = describeBuffEffectLines(buff)
+  const items = resolveStructuredBuffEffects(buff)
 
   const isDebuff =
     buff.attackSpeedPoints < 0 ||
@@ -1179,6 +1393,14 @@ export function createBuffAsideCard(
     buff.mpRegen < 0 ||
     Object.values(buff.statRatios ?? {}).some(value => value < 0)
 
+  if (buff.stacks > 1) {
+    items.unshift({
+      badge: t('market.aside.badgeStacks'),
+      tone: 'gold',
+      value: `×${formatNumber(buff.stacks)}`,
+    })
+  }
+
   const tone: FloatingTone = isDebuff ? 'danger' : 'gold'
   const resolvedMark = mark ?? (isDebuff ? t('market.aside.debuff') : t('market.aside.buff'))
 
@@ -1186,9 +1408,8 @@ export function createBuffAsideCard(
     id: `aside-active-buff-${buff.buffId}`,
     mark: resolvedMark,
     title: buff.name,
-    subtitle: buff.stacks > 1 ? t('market.aside.maxStacks', { stacks: formatNumber(buff.stacks) }) : undefined,
     tone,
-    lines: lines.length > 0 ? lines : [t('market.effect.ongoing')],
+    content: <EffectAsideBody items={items} />,
   }
 }
 

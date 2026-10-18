@@ -43,7 +43,20 @@ export function toCsv(record) {
 }
 
 async function loadTsModule(entryPath) {
-  const esbuild = await import(pathToFileURL(path.join(frontendDir, 'node_modules', 'esbuild', 'lib', 'main.js')).href);
+  let esbuild;
+  const candidates = [
+    pathToFileURL(path.join(frontendDir, 'node_modules', 'esbuild', 'lib', 'main.js')).href,
+    pathToFileURL(path.join(frontendDir, 'node_modules', 'vite', 'node_modules', 'esbuild', 'lib', 'main.js')).href,
+  ];
+  for (const url of candidates) {
+    try {
+      esbuild = await import(url);
+      if (esbuild?.build) break;
+    } catch {}
+  }
+  if (!esbuild?.build) {
+    esbuild = await import('esbuild');
+  }
   const buildResult = await esbuild.build({
     entryPoints: [entryPath],
     bundle: true,

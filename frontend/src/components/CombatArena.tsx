@@ -20,7 +20,7 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
 import { CombatStatsPanel } from './CombatStatsPanel'
 import { ConfirmDialog } from './ConfirmDialog'
-import { describeBuffEffectLines } from './ItemDisplay'
+import { EffectAsideBody, resolveStructuredBuffEffects } from './ItemDisplay'
 import { useCombatVfx } from '../vfx/useCombatVfx'
 import { StatGlyph } from './StatGlyph'
 
@@ -663,8 +663,7 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
 
   // 效果说明与单字图标：效果行统一由唯一 Buff 形状（hpRegen/mpRegen/attackSpeedPoints/
   // damageAbsorptionPoints/statRatios）解析；色调按结算语义粗分，字形取 Buff 名首字。
-  const effectLines = describeBuffEffectLines(buff)
-  const effectDesc = effectLines.length > 0 ? effectLines.join('；') : t('combat.arena.buffGeneric')
+  const structuredEffects = resolveStructuredBuffEffects(buff)
   const tone: 'qi' | 'jade' | 'purple' | 'danger' | 'gold' =
     buff.damageAbsorptionPoints > 0 ? 'jade' : (buff.hpRegen > 0 || buff.mpRegen > 0) ? 'qi' : 'gold'
   const glyph = buff.attackSpeedPoints > 0
@@ -712,7 +711,7 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
         <FloatingInfoCard
           badge={t('combat.arena.buffStacks', { n: formatNumber(buff.stacks) })}
           badgeTone={tone}
-          description={effectDesc}
+          description={structuredEffects.length > 0 ? <EffectAsideBody items={structuredEffects} /> : t('combat.arena.buffGeneric')}
           subtitle={permanent
             ? t('combat.arena.buffPermanent')
             : t('combat.arena.buffRemaining', { n: formatNumber(remaining) })}

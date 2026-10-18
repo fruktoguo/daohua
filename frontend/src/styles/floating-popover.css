@@ -378,6 +378,26 @@
   max-width: min(320px, calc(100vw - 24px));
   padding: 6px 10px;
 }
+/* 通用描述信息副气泡 (Description Aside Card) */
+.daohua-floating-aside-card[data-aside-id*="description"] {
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 24px));
+}
+
+.daohua-floating-aside-desc {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-sub, rgba(233, 227, 210, 0.85));
+  text-align: justify;
+  letter-spacing: 0.2px;
+}
+
+.daohua-floating-aside-desc .value-capsule {
+  margin: 0 2px;
+  vertical-align: baseline;
+}
+
 /* 坊市市场价格副气泡 (Market Stats Aside Card) */
 .daohua-floating-aside-card[data-aside-id*="aside-market-"] {
   min-width: 228px;
@@ -579,6 +599,145 @@
   font-weight: 600;
   color: #cde6e8;
   font-variant-numeric: tabular-nums;
+}
+
+/* 效果与 Buff 副气泡结构化条目样式体系 (Effect Aside) */
+.daohua-effect-aside-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.daohua-effect-aside-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* 语义微光胶囊标签 */
+.daohua-effect-aside-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5px 5.5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+}
+
+/* 灵气青色调 (气血/灵力回复、修炼增益等) */
+.daohua-effect-aside-badge--qi {
+  color: #8ebfc3;
+  background: rgba(117, 169, 173, 0.14);
+  border-color: rgba(117, 169, 173, 0.38);
+  box-shadow: 0 0 6px rgba(117, 169, 173, 0.15);
+}
+
+/* 翡翠绿色调 (气血、采集等) */
+.daohua-effect-aside-badge--emerald,
+.daohua-effect-aside-badge--jade {
+  color: #8fc3a6;
+  background: rgba(143, 195, 166, 0.14);
+  border-color: rgba(143, 195, 166, 0.38);
+  box-shadow: 0 0 6px rgba(143, 195, 166, 0.15);
+}
+
+/* 灵力青蓝色调 (真元滋养、法伤等) */
+.daohua-effect-aside-badge--cyan {
+  color: #88c8eb;
+  background: rgba(92, 153, 194, 0.14);
+  border-color: rgba(92, 153, 194, 0.38);
+  box-shadow: 0 0 6px rgba(92, 153, 194, 0.15);
+}
+
+/* 道金色调 (炼丹增益、通用增益、层数等) */
+.daohua-effect-aside-badge--gold {
+  color: #e8d69a;
+  background: rgba(201, 180, 109, 0.14);
+  border-color: rgba(201, 180, 109, 0.38);
+  box-shadow: 0 0 6px rgba(201, 180, 109, 0.18);
+}
+
+/* 烈火赤红色调 (伤害加成、攻击增幅等) */
+.daohua-effect-aside-badge--crimson {
+  color: #f69485;
+  background: rgba(213, 93, 78, 0.14);
+  border-color: rgba(213, 93, 78, 0.38);
+  box-shadow: 0 0 6px rgba(213, 93, 78, 0.15);
+}
+
+/* 琥珀金/橙色调 (仇恨等) */
+.daohua-effect-aside-badge--amber {
+  color: #f0be82;
+  background: rgba(221, 161, 132, 0.14);
+  border-color: rgba(221, 161, 132, 0.38);
+  box-shadow: 0 0 6px rgba(221, 161, 132, 0.15);
+}
+
+/* 靛紫/神念色调 (身法速度、特殊效果等) */
+.daohua-effect-aside-badge--purple {
+  color: #c49eff;
+  background: rgba(168, 120, 220, 0.14);
+  border-color: rgba(168, 120, 220, 0.38);
+  box-shadow: 0 0 6px rgba(168, 120, 220, 0.15);
+}
+
+/* 持续时长/次要说明 (石青微灰) */
+.daohua-effect-aside-badge--slate,
+.daohua-effect-aside-badge--muted {
+  color: var(--text-dim, rgba(233, 227, 210, 0.65));
+  background: rgba(233, 227, 210, 0.08);
+  border-color: rgba(233, 227, 210, 0.22);
+}
+
+/* 减益/负向效果 (危红) */
+.daohua-effect-aside-badge--danger {
+  color: #ff8878;
+  background: rgba(200, 82, 63, 0.18);
+  border-color: rgba(200, 82, 63, 0.45);
+  box-shadow: 0 0 6px rgba(200, 82, 63, 0.2);
+}
+
+/* 数值展示容器 */
+.daohua-effect-aside-val-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  margin-left: auto;
+}
+
+/* 核心高亮数值 */
+.daohua-effect-aside-val {
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+  color: #cde6e8;
+}
+
+.daohua-effect-aside-val.is-positive {
+  color: #8fc3a6;
+  text-shadow: 0 0 6px rgba(143, 195, 166, 0.25);
+}
+
+.daohua-effect-aside-val.is-negative {
+  color: #ff8878;
+  text-shadow: 0 0 6px rgba(200, 82, 63, 0.25);
+}
+
+/* 单位后缀 */
+.daohua-effect-aside-unit {
+  font-size: 10px;
+  color: var(--text-dim, rgba(233, 227, 210, 0.65));
+  font-weight: normal;
 }
 
 

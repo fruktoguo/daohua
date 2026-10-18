@@ -22,8 +22,9 @@ import type {
 } from '../game/types'
 import { useT } from '../i18n'
 import { ConditionedTile } from './ConditionedTile'
-import { createAbilityProgressAsideCard } from './EffectTooltip'
-import { describeBuffEffectLines, ItemDropReference, ItemTile, ItemTooltipTarget } from './ItemDisplay'
+import { resolveAbilityAsideCards } from './EffectTooltip'
+import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
+import { EffectAsideBody, ItemDropReference, ItemTile, ItemTooltipTarget, resolveStructuredBuffEffects } from './ItemDisplay'
 import { StatGlyph } from './StatGlyph'
 
 /** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊与增减伤属性 | 功法与装备装配 | 掉落明细（仅敌怪详情） */
@@ -317,15 +318,29 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
           <h4 className="insight-pill-group-title">{t('insight.combat.groupBuffs')}</h4>
           <div className="insight-pill-group-items">
             {buffs.map(buff => {
-              const effectLines = describeBuffEffectLines(buff)
+              const structuredEffects = resolveStructuredBuffEffects(buff)
               return (
-                <PillStatLabel
+                <FloatingPopover
+                  content={
+                    <FloatingInfoCard
+                      badge={buff.stacks > 1 ? `×${formatNumber(buff.stacks)}` : undefined}
+                      badgeTone="gold"
+                      description={structuredEffects.length > 0 ? <EffectAsideBody items={structuredEffects} /> : undefined}
+                      title={buff.name}
+                    />
+                  }
+                  interactive={false}
                   key={buff.buffId}
-                  label={buff.name}
-                  value={`×${formatNumber(buff.stacks)}`}
-                  tone="gold"
-                  tooltip={effectLines.length > 0 ? effectLines.join('；') : undefined}
-                />
+                  openDelay={60}
+                  placement="top"
+                  size="small"
+                >
+                  <PillStatLabel
+                    label={buff.name}
+                    tone="gold"
+                    value={`×${formatNumber(buff.stacks)}`}
+                  />
+                </FloatingPopover>
               )
             })}
           </div>
@@ -376,8 +391,8 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
                 ? t(`combat.encounter.element.${ability.element}`)
                 : formatAbilityCategory(ability?.category)
               const abilityExp = slot.abilityId ? abilityExperiences?.[slot.abilityId] : undefined
-              const asideCards = abilityExp !== undefined && slot.abilityId
-                ? [createAbilityProgressAsideCard(slot.abilityId, abilityExp)]
+              const asideCards = ability && abilityExp !== undefined
+                ? resolveAbilityAsideCards(ability, abilityExp)
                 : undefined
               return (
                 <ConditionedTile
