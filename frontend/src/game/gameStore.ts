@@ -89,6 +89,10 @@ interface GameStore {
   connection: ConnectionState
   /** 最近一次 Ping/Pong 测得的往返延迟（毫秒）；null 表示尚无测量结果 */
   latencyMs: number | null
+  /** 最近获知的在线挂机人数（null 表示尚无统计数据） */
+  onlineCount: number | null
+  /** 最近获知的48小时离线挂机人数（null 表示尚无统计数据） */
+  offlineIdleCount: number | null
   /** 终态断连原因的 i18n 词条 key（顶号/会话失效等；null 表示无特定原因，恢复在线时自动清除） */
   disconnectReason: string | null
   /** 顶部全局提示消息（为 null 时隐藏） */
@@ -101,6 +105,8 @@ interface GameStore {
   setLatencyMs: (latencyMs: number | null) => void
   /** 设置终态断连原因词条 key */
   setDisconnectReason: (key: string | null) => void
+  /** 更新在线与离线挂机人数统计 */
+  setPresenceStats: (onlineCount: number, offlineIdleCount: number) => void
   /** 设置顶部全局提示消息 */
   setNotice: (notice: string | null) => void
   /** 更新行动目录 */
@@ -318,6 +324,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   notice: null,
   noticeSeq: 0,
   setConnection: (connection) => set(state => ({ connection, disconnectReason: connection === 'online' ? null : state.disconnectReason })),
+  onlineCount: null,
+  offlineIdleCount: null,
+  setPresenceStats: (onlineCount, offlineIdleCount) => set({ onlineCount, offlineIdleCount }),
   setLatencyMs: (latencyMs) => set({ latencyMs }),
   setDisconnectReason: (key) => set({ disconnectReason: key }),
   setNotice: (notice) => set(state => ({ notice, noticeSeq: notice === null ? state.noticeSeq : state.noticeSeq + 1 })),
@@ -484,6 +493,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     latencyMs: null,
     disconnectReason: null,
     notice: null,
+    onlineCount: null,
+    offlineIdleCount: null,
     queue: initial.queue,
     inventory: initial.inventory,
     buffs: initial.buffs,

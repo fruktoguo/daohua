@@ -353,14 +353,25 @@ public sealed record HelloRequest(string ClientVersion, string? GameDataFingerpr
 /// <summary>防多开子系统下发给客户端的功能开关</summary>
 /// <param name="TabGuardEnabled">是否启用前端多标签页互斥守卫</param>
 public sealed record AntiMultiOpenConfigDto(bool TabGuardEnabled);
+/// <summary>在线与挂机修士统计 DTO</summary>
+/// <param name="OnlineCount">当前在线挂机人数</param>
+/// <param name="OfflineIdleCount">当前48小时内离线挂机人数</param>
+public sealed record PresenceStatsDto(int OnlineCount, int OfflineIdleCount);
+
+/// <summary>心跳应答 Pong 载荷</summary>
+/// <param name="ServerTime">服务端当前时间戳</param>
+/// <param name="OnlineCount">当前在线挂机人数</param>
+/// <param name="OfflineIdleCount">当前48小时内离线挂机人数</param>
+public sealed record PongResponse(DateTimeOffset ServerTime, int OnlineCount = 0, int OfflineIdleCount = 0);
+
 /// <summary>握手问候应答载荷</summary>
 /// <param name="ServerVersion">服务端版本号</param>
 /// <param name="ProtocolVersion">协议版本号</param>
 /// <param name="GameDataFingerprint">游戏数据指纹</param>
 /// <param name="ServerSequence">服务端当前序列号</param>
 /// <param name="AntiMultiOpen">防多开功能开关，可选</param>
-public sealed record HelloResponse(string ServerVersion, ushort ProtocolVersion, string GameDataFingerprint, long ServerSequence, AntiMultiOpenConfigDto? AntiMultiOpen = null);
-
+/// <param name="PresenceStats">在线与离线挂机人数统计，可选</param>
+public sealed record HelloResponse(string ServerVersion, ushort ProtocolVersion, string GameDataFingerprint, long ServerSequence, AntiMultiOpenConfigDto? AntiMultiOpen = null, PresenceStatsDto? PresenceStats = null);
 /// <summary>玩家持久化头 DTO</summary>
 /// <param name="PlayerId">玩家唯一标识</param>
 /// <param name="StateVersion">状态版本号</param>

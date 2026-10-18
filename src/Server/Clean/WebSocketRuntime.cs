@@ -311,6 +311,7 @@ public static class WebSocketEndpoint
         var social = context.RequestServices.GetRequiredService<Social.SocialRuntime>();
         var presence = context.RequestServices.GetRequiredService<Social.OnlinePresenceRegistry>();
         var grace = context.RequestServices.GetRequiredService<DisconnectGraceRegistry>();
+        var presenceStats = context.RequestServices.GetRequiredService<Social.IPlayerPresenceStatsService>();
         var simulationClock = context.RequestServices.GetRequiredService<IPlayerSimulationClock>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("WebSocketEndpoint");
         var accountRisk = context.RequestServices.GetRequiredService<AccountAbuse.PostgresAccountRiskRepository>();
@@ -359,7 +360,7 @@ public static class WebSocketEndpoint
             }
             var sendTask = SendLoopAsync(socket, session, ResyncDroppedDelta, token);
             var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions,
-                accountRisk, riskContext, context, accountId, grace);
+                accountRisk, riskContext, context, accountId, grace, presenceStats);
             await Task.WhenAny(sendTask, receiveTask);
             // 服务端主动终止路径（被顶替/准入拒绝）：先冲刷通知帧再发关闭帧。
             // 顺序硬约束：取消令牌会中止阻塞中的 ReceiveAsync 并把 socket 置为 Aborted，
@@ -474,7 +475,8 @@ public static class WebSocketEndpoint
         AccountAbuse.AccountRiskRequestContext riskContext,
         HttpContext context,
         Guid accountId,
-        DisconnectGraceRegistry grace)
+        DisconnectGraceRegistry grace,
+        Social.IPlayerPresenceStatsService presenceStats)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(options.MaxWebSocketMessageBytes, 64 * 1024));
         long lastInboundSequence = 0;
@@ -586,13 +588,15 @@ public static class WebSocketEndpoint
                             .FirstOrDefault()?.InformationalVersion ?? "unknown";
                         // HelloAck 序号内嵌载荷（客户端据此对齐下行序）：取号-编码在同一会话锁内完成，
                         // 与可能并发的快照推送保持「序号递增序 = 通道物理序」，随后锁外阻塞投递保证必达。
+                        var initialStats = await presenceStats.GetStatsAsync(cancellationToken);
                         byte[] helloAckPacket;
                         lock (session.OutboundSync)
                         {
                             var helloAckSequence = session.NextOutboundSequence();
                             helloAckPacket = EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
                                 new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence,
-                                    new AntiMultiOpenConfigDto(riskPolicy.Enabled && riskPolicy.Modules.Single(item => item.Id == "tabGuard").Enabled)));
+                                    new AntiMultiOpenConfigDto(riskPolicy.Enabled && riskPolicy.Modules.Single(item => item.Id == "tabGuard").Enabled),
+                                    initialStats));
                         }
                         await session.SendAsync(helloAckPacket, cancellationToken);
                         // 重连取消在途宽限：未触发的定时作废；收尾已在执行则等待完成，保证与装载串行（§14.3）。
@@ -642,7 +646,8 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
-                        await QueueJsonAsync(session, WireMessageType.Pong, envelope.RequestId, new { serverTime = DateTimeOffset.UtcNow }, cancellationToken);
+                        var pongStats = await presenceStats.GetStatsAsync(cancellationToken);
+                        await QueueJsonAsync(session, WireMessageType.Pong, envelope.RequestId, new PongResponse(DateTimeOffset.UtcNow, pongStats.OnlineCount, pongStats.OfflineIdleCount), cancellationToken);
                         break;
                     case WireMessageType.ActionIntent:
                         if (!handshaken)

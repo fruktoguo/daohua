@@ -121,6 +121,24 @@ export interface AntiMultiOpenConfigDto {
   tabGuardEnabled: boolean
 }
 
+/** 在线与挂机修士统计 DTO */
+export interface PresenceStatsDto {
+  /** 当前在线挂机人数 */
+  onlineCount: number
+  /** 当前48小时内离线挂机人数 */
+  offlineIdleCount: number
+}
+
+/** 心跳应答 Pong 载荷 */
+export interface PongResponse {
+  /** 服务端当前时间戳 */
+  serverTime?: string
+  /** 当前在线挂机人数 */
+  onlineCount?: number
+  /** 当前48小时内离线挂机人数 */
+  offlineIdleCount?: number
+}
+
 /** HelloAck 握手应答载荷 */
 export interface HelloResponse {
   /** 服务端构建版本标识 */
@@ -133,6 +151,8 @@ export interface HelloResponse {
   serverSequence: number
   /** 防多开开关下发（缺省表示服务端未配置） */
   antiMultiOpen?: AntiMultiOpenConfigDto | null
+  /** 在线与离线挂机修士统计（缺省表示服务端未附带） */
+  presenceStats?: PresenceStatsDto | null
 }
 
 /** 玩家快照头（持久化元数据摘要） */

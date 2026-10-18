@@ -120,6 +120,12 @@ public sealed class OnlinePresenceRegistry
         lock (_gate) return [.. _entries.Keys];
     }
 
+    /// <summary>当前在线修士人数。</summary>
+    public int OnlineCount
+    {
+        get { lock (_gate) return _entries.Count; }
+    }
+
     /// <summary>读取指定节点上的在线修士（含道号），按道号排序；nodeId 为空时返回空列表。</summary>
     /// <param name="nodeId">地图节点 ID。</param>
     /// <returns>同节点在线修士列表。</returns>

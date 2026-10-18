@@ -27,6 +27,7 @@ import {
   type PlayerCardRequestDto,
   type PlayerSnapshotDeltaDto,
   type PlayerSnapshotDto,
+  type PongResponse,
   type SocialAction,
   type SocialActionDto,
   type SocialStateDto,
@@ -616,10 +617,13 @@ export class GameClient {
             window.dispatchEvent(new Event(GAME_DATA_MISMATCH_EVENT))
             return
           }
+          if (hello.presenceStats) {
+            useGameStore.getState().setPresenceStats(hello.presenceStats.onlineCount, hello.presenceStats.offlineIdleCount)
+          }
           applyAntiMultiOpenConfig(hello.antiMultiOpen)
           useGameStore.getState().setConnection('online')
+          this.sendPing(sourceSocket)
           this.startMarketStatsSync()
-          // 重连后重放观察目标：服务端会话级浏览态随旧连接销毁，不补发则详情属性面板停在空态；
           // 先清账再登记绕开相同目标去重，保证新会话重新武装一次性交付。
           const inspectReplay = this.lastInspectTarget
           this.lastInspectTarget = null
@@ -761,6 +765,10 @@ export class GameClient {
           if (sentAt !== undefined) {
             this.pendingPings.delete(envelope.requestId)
             useGameStore.getState().setLatencyMs(Math.max(0, Date.now() - sentAt))
+          }
+          const pong = decodeJsonPayload<PongResponse>(envelope)
+          if (pong && typeof pong.onlineCount === 'number') {
+            useGameStore.getState().setPresenceStats(pong.onlineCount, pong.offlineIdleCount ?? 0)
           }
           return
         }

@@ -691,7 +691,8 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   const realmLevel = useGameStore(state => state.stats.realmLevel)
   const connection = useGameStore(state => state.connection)
   const latencyMs = useGameStore(state => state.latencyMs)
-  const presence = useGameStore(state => state.presenceMode)
+  const onlineCount = useGameStore(state => state.onlineCount)
+  const offlineIdleCount = useGameStore(state => state.offlineIdleCount)
   const setActiveTab = useUiStore(state => state.setActiveTab)
   const realmProgress = useMemo(() => calculateRealmProgress(experience ?? 0, realmLevel), [realmLevel, experience])
   const realmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, realmLevel), [realmLevel, experience])
@@ -702,15 +703,29 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
       : connection === 'reconnecting'
         ? t('app.topbar.reconnecting')
         : t('app.topbar.offline')
-  const presenceText = presence === 'online'
-    ? t('app.topbar.presenceOnline')
-    : presence === 'idle-offline'
-      ? t('app.topbar.presenceIdle')
-      : t('app.topbar.presenceOffline')
-  const connectionTip = latencyMs === null || connection !== 'online'
-    ? `${connectionText} · ${presenceText}`
-    : `${connectionText} · ${presenceText} · ${t('app.topbar.latency', { ms: latencyMs })}`
-
+  const latencyDisplay = connection !== 'online'
+    ? connectionText
+    : latencyMs !== null
+      ? t('app.topbar.latency', { ms: latencyMs })
+      : '-'
+  const hasStats = onlineCount !== null || offlineIdleCount !== null
+  const totalCount = (onlineCount ?? 0) + (offlineIdleCount ?? 0)
+  const connectionTooltip = (
+    <div className="connection-status-tooltip">
+      <div className="connection-status-tooltip-row">
+        <span className="connection-status-tooltip-label">{t('app.topbar.latencyLabel')}</span>
+        <strong className="connection-status-tooltip-value">{latencyDisplay}</strong>
+      </div>
+      <div className="connection-status-tooltip-row">
+        <span className="connection-status-tooltip-label">{t('app.topbar.onlineCountLabel')}</span>
+        <strong className="connection-status-tooltip-value">{onlineCount !== null ? onlineCount : '-'}</strong>
+      </div>
+      <div className="connection-status-tooltip-row">
+        <span className="connection-status-tooltip-label">{t('app.topbar.offlineIdleCountLabel')}</span>
+        <strong className="connection-status-tooltip-value">{offlineIdleCount !== null ? offlineIdleCount : '-'}</strong>
+      </div>
+    </div>
+  )
   const progressDisplay = formatProgressText(realmProgress.currentLayerExp, realmProgress.expToNext, {
     completedText: t('app.topbar.ascendedComplete'),
     percentDecimals: 0,
@@ -730,8 +745,14 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
           <div className="player-line">
             <strong className="player-name">{name}</strong>
             <RealmBadge realmInfo={realmInfo} />
-            <FloatingTooltip placement="bottom" title={connectionTip} tone={connection === 'online' ? 'jade' : 'danger'}>
-              <span className={`connection-dot connection-dot--${connection}`} onMouseEnter={() => gameClient.pingNow()} />
+            <FloatingTooltip placement="bottom" title={connectionTooltip} tone={connection === 'online' ? 'jade' : 'danger'}>
+              <span
+                className={`connection-pill connection-pill--${connection}`}
+                onMouseEnter={() => gameClient.pingNow()}
+              >
+                <span className="connection-pill-indicator" />
+                <span className="connection-pill-count">{hasStats ? totalCount : '-'}</span>
+              </span>
             </FloatingTooltip>
           </div>
           <FloatingTooltip

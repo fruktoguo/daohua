@@ -479,6 +479,95 @@ input[type="checkbox"] {
   background: var(--gold-bright);
 }
 
+.connection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  background: rgba(14, 26, 42, 0.45);
+  font-family: var(--font-number);
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.connection-pill:hover {
+  border-color: rgba(114, 169, 140, 0.45);
+  background: rgba(14, 26, 42, 0.7);
+}
+
+.connection-pill-indicator {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.connection-pill--online .connection-pill-indicator {
+  background: var(--jade);
+  box-shadow: 0 0 6px rgba(114, 169, 140, 0.85);
+}
+
+.connection-pill--online .connection-pill-count {
+  color: var(--jade);
+}
+
+.connection-pill--connecting .connection-pill-indicator,
+.connection-pill--reconnecting .connection-pill-indicator {
+  background: var(--gold-bright);
+  box-shadow: 0 0 6px rgba(201, 180, 109, 0.65);
+}
+
+.connection-pill--connecting .connection-pill-count,
+.connection-pill--reconnecting .connection-pill-count {
+  color: var(--gold-bright);
+}
+
+.connection-pill--offline .connection-pill-indicator {
+  background: var(--text-dim);
+}
+
+.connection-pill-count {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.connection-status-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 96px;
+  padding: 1px 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.connection-status-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.connection-status-tooltip-label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.connection-status-tooltip-value {
+  color: var(--text-bright);
+  font-family: var(--font-number);
+  font-weight: 600;
+  font-size: 11px;
+}
 .realm-progress {
   position: relative;
   width: 100%;

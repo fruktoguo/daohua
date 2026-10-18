@@ -143,6 +143,7 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.PartyValuationService>();
     builder.Services.AddSingleton<Server.Clean.Social.ChatRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Social.IPlayerPresenceStatsService, Server.Clean.Social.PlayerPresenceStatsService>();
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.DeviceQuotaRegistry>();
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.AntiMultiOpenAdmission>();
     builder.Services.AddDaohuaAuthentication();

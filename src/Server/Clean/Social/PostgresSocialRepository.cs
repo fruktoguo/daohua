@@ -887,6 +887,35 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         return evicted;
     }
 
+    /// <inheritdoc />
+    public async ValueTask<int> CountOfflineIdlePlayersAsync(DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var hasOnline = onlinePlayerIds.Count > 0;
+        var sql = hasOnline
+            ? """
+              SELECT count(*)
+              FROM game.player_projection
+              WHERE presence <> 'suspended'
+                AND offline_since IS NOT NULL
+                AND offline_since >= $1
+                AND NOT (player_id = ANY($2))
+              """
+            : """
+              SELECT count(*)
+              FROM game.player_projection
+              WHERE presence <> 'suspended'
+                AND offline_since IS NOT NULL
+                AND offline_since >= $1
+              """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = cutoff });
+        if (hasOnline)
+            command.Parameters.Add(new NpgsqlParameter { Value = onlinePlayerIds.ToArray() });
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is long count ? (int)count : Convert.ToInt32(result);
+    }
+
     /// <summary>
     /// 会话行 → 领域可读记录：spec jsonb 只解析浅层字段（encounterId/nodeId/members[].playerId），
     /// 成员冻结面板整体不还原——规格真源在行动队列绑定内，本表是裁决/对账镜像。

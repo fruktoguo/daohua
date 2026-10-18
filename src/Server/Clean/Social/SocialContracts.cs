@@ -328,6 +328,11 @@ public interface ISocialRepository
     /// 返回被逐出的成员列表供逐队仲裁（移交队长/空队解散/散场）。
     /// </summary>
     ValueTask<IReadOnlyList<PartyMemberEviction>> DeleteInactivePartyMembersAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 统计当前离线挂机修士人数（offline_since >= cutoff 且 presence &lt;&gt; 'suspended'），并排除已在线的玩家集合。
+    /// </summary>
+    ValueTask<int> CountOfflineIdlePlayersAsync(DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default);
 }
 
 /// <summary>传音消息持久化边界。</summary>

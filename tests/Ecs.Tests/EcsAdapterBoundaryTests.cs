@@ -1176,5 +1176,8 @@ public sealed class EcsAdapterBoundaryTests
             => throw new NotSupportedException();
         public ValueTask<IReadOnlyList<PartyMemberEviction>> DeleteInactivePartyMembersAsync(
             DateTimeOffset cutoff, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<int> CountOfflineIdlePlayersAsync(
+            DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(0);
     }
 }
