@@ -121,9 +121,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   })
   const [quantity, setQuantity] = useState(1)
 
-  // 切换强化等级时：异步拉取该等级盘口，若修士主动变更了等级则同步调整默认填价
+  // 盘口对账：强化等级切换或宿主尚未下发盘口时，异步拉取当前等级深度簿。
+  // 非装备标的也要自取一次——详情页轮询尚未落地时 activeBook 为空，买入侧「最大」
+  // 会拿不到卖档深度而退化为余额上限，重新出现「一键全额排队求购」。
   useEffect(() => {
-    if (!open || !instrument || !isEquipment) return
+    if (!open || !instrument) return
     if (book && book.enhancementLevel === level) {
       setActiveBook(book)
       return
@@ -140,7 +142,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       }
     }).catch(() => {})
     return () => { cancelled = true }
-  }, [book, instrument, isEquipment, level, minimumPrice, open, side, vendorPrice])
+  }, [book, instrument, level, minimumPrice, open, side, vendorPrice])
 
   // 选中的强化等级切换导致可用量变动时，卖出方向自动将挂售数量钳位在可用范围内
   useEffect(() => {
@@ -180,6 +182,33 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     const maxAffordable = Math.floor(spiritAmount / Math.max(1, price))
     return Math.max(1, maxAffordable)
   }, [price, availableAmount, selectedAmount, side, spiritAmount])
+
+  /**
+   * 本价位可立即成交的卖盘总量：限价买单只吃报价不高于自身的卖档。
+   * 盘口深度被截断时得到的只是下界，方向安全——宁可少算，绝不会多冻结灵石。
+   */
+  const fillableQuantity = useMemo(() => {
+    if (side !== 'buy') return 0
+    const asks = activeBook?.asks
+    if (!asks || asks.length === 0) return 0
+    let total = 0
+    for (const level of asks) {
+      if (level.price <= price) total += level.quantity
+    }
+    return Math.max(0, Math.floor(total))
+  }, [activeBook, price, side])
+
+  /**
+   * 「最大」快捷钮取值：买入侧收敛到本价位可成交卖盘量，避免一键把余额全额冻结成排队求购单。
+   * 该价位没有任何卖盘（报价低于卖一或盘口为空）时回退到余额可买量——此时整单排队本就是唯一结果。
+   */
+  const maxShortcutValue = side === 'buy'
+    ? Math.max(1, Math.min(quantityLimit, fillableQuantity > 0 ? fillableQuantity : quantityLimit))
+    : quantityLimit
+
+  /** 买入侧成交拆分：立即撮合量 / 留在求购列表排队的剩余量。 */
+  const immediateQuantity = side === 'buy' ? Math.min(quantity, fillableQuantity) : quantity
+  const restingQuantity = side === 'buy' ? Math.max(0, quantity - fillableQuantity) : 0
 
   const totalPrice = price * quantity
   const tax = Math.ceil(totalPrice * 0.02)
@@ -236,6 +265,15 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const titleId = `market-order-modal-title-${instrument.itemId}`
   // 标题与物品卡名称口径与背包变体行一致：强化变体展示 "名称 +N"。
   const displayName = (isEquipment && level > 0) ? `${instrument.name} +${level}` : instrument.name
+  // 数量行右侧提示：买入侧同时交代「本价位能成交多少」与「余额最多能买多少」，
+  // 盘口尚未同步时明确标注同步中，避免误报“暂无卖单”。
+  const quantityHint = side === 'sell'
+    ? t('market.maxSellable', { count: formatNumber(availableAmount) })
+    : activeBook === null
+      ? t('market.buyHintSyncing', { max: formatNumber(quantityLimit) })
+      : fillableQuantity > 0
+        ? t('market.buyHint', { fill: formatNumber(fillableQuantity), max: formatNumber(quantityLimit) })
+        : t('market.buyHintNoFill', { max: formatNumber(quantityLimit) })
 
   return (
     <Modal
@@ -387,9 +425,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
         <div className="market-order-modal-field">
           <div className="market-order-modal-field-header">
             <label>{t('market.quantity')}</label>
-            <span className="market-order-max-hint">
-              {side === 'sell' ? t('market.maxSellable', { count: formatNumber(availableAmount) }) : t('market.maxBuyable', { count: formatNumber(quantityLimit) })}
-            </span>
+            <span className="market-order-max-hint">{quantityHint}</span>
           </div>
           <QuantitySelector
             ariaLabel={t('market.quantityAria')}
@@ -397,6 +433,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             leadingPresets={[1]}
             max={Math.max(1, quantityLimit)}
             maxShortcut
+            maxShortcutValue={maxShortcutValue}
             onChange={setQuantity}
             value={Math.min(quantity, Math.max(1, quantityLimit))}
           />
@@ -405,6 +442,16 @@ export const MarketOrderModal = memo(function MarketOrderModal({
         <div className="market-order-summary-box">
           {side === 'buy' ? (
             <>
+              <div className="market-order-summary-row">
+                <span>{t('market.immediateFill')}</span>
+                <span className="market-immediate-text">{formatNumber(immediateQuantity)}</span>
+              </div>
+              {restingQuantity > 0 && (
+                <div className="market-order-summary-row">
+                  <span>{t('market.restingBid')}</span>
+                  <span className="market-resting-text">{formatNumber(restingQuantity)}</span>
+                </div>
+              )}
               <div className="market-order-summary-row">
                 <span>{t('market.totalPrice')}</span>
                 <strong>{formatNumber(totalPrice)} {t('market.spiritUnit')}</strong>
@@ -435,6 +482,10 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             </>
           )}
         </div>
+
+        {side === 'buy' && restingQuantity > 0 && (
+          <p className="market-order-rest-hint" role="note">{t('market.restingBidHint')}</p>
+        )}
 
         <div className="market-order-modal-actions">
           <button className="market-order-btn-cancel" onClick={onClose} type="button">

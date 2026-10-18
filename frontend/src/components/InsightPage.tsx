@@ -418,14 +418,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                     label={t('insight.base.armor')}
                     value={Math.floor(basePool.baseArmor)}
                     tone="bronze"
-                    tooltip={t('insight.base.armorTooltip')}
+                    tooltip={t('insight.combat.armorTooltip')}
                   />
                   <PillStatLabel
                     icon={<StatGlyph glyph="magic-res" />}
                     label={t('insight.base.magicRes')}
                     value={Math.floor(basePool.baseMagicRes)}
                     tone="violet"
-                    tooltip={t('insight.base.magicResTooltip')}
+                    tooltip={t('insight.combat.magicResTooltip')}
                   />
                 </div>
 

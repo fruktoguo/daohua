@@ -19,6 +19,7 @@ import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefini
 import { useT, type TFunction } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { ChoiceMenu } from './CatalogPicker'
+import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { ActionDetailItem, ItemReference } from './ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, itemPickerEntryKey, type ItemPickerEntry } from './ItemGridPicker'
 import { QuantitySelector } from './QuantitySelector'
@@ -82,6 +83,29 @@ function collectEquipmentCandidates(
     a.name.localeCompare(b.name)
   )
   return candidates
+}
+
+/**
+ * 强化方案术语悬停说明 (TermHint)
+ *
+ * 将「保护材料」「起护等级」等机制长句收进名词本体上的 Hover 机制卡：
+ * 行内只留名词（虚线下划线提示可查），避免说明文本在窄栏折行撑高左栏。
+ */
+function TermHint({ hint, term }: { hint: string; term: string }): React.JSX.Element {
+  return (
+    <FloatingPopover
+      closeDelay={80}
+      content={<FloatingInfoCard description={hint} title={term} />}
+      gap={6}
+      interactive={false}
+      openDelay={80}
+      placement="top"
+      size="small"
+      triggerClassName="enhancement-term-trigger"
+    >
+      <span className="setting-label enhancement-term">{term}</span>
+    </FloatingPopover>
+  )
 }
 
 /**
@@ -281,8 +305,6 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   }, [activeEnhanceEntry])
 
 
-  const baseName = selected?.equipmentDefinition?.name ?? selected?.name ?? ''
-
   return (
     <div className="enhancement-layout">
       <div className="settings-group">
@@ -294,33 +316,31 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
             </span>
           )}
         </h3>
-        <ItemUseSlot
-          item={selected}
-          onClick={event => {
-            if (!isEnhancing) setPickerAnchor(prev => (prev ? null : event.currentTarget))
-          }}
-        />
-        <div className="setting-row">
-          <span className="setting-label">{t('app.enhancement.targetLevel')}</span>
-          <QuantitySelector
-            ariaLabel={t('app.enhancement.targetLevelAria')}
-            disabled={isEnhancing || !selected || maxedOut}
-            max={ENHANCE_MAX_LEVEL}
-            maxShortcut
-            min={nextLevel}
-            onChange={setUserTargetLevel}
-            value={targetLevel}
+        <div className="enhancement-target">
+          <ItemUseSlot
+            item={selected}
+            onClick={event => {
+              if (!isEnhancing) setPickerAnchor(prev => (prev ? null : event.currentTarget))
+            }}
           />
+          <div className="enhancement-target-config">
+            <span className="setting-label">{t('app.enhancement.targetLevel')}</span>
+            <QuantitySelector
+              ariaLabel={t('app.enhancement.targetLevelAria')}
+              disabled={isEnhancing || !selected || maxedOut}
+              max={ENHANCE_MAX_LEVEL}
+              maxShortcut
+              min={nextLevel}
+              onChange={setUserTargetLevel}
+              value={targetLevel}
+            />
+          </div>
         </div>
         <div className="setting-row">
-          <span className="setting-text">
-            <span className="setting-label">{t('app.enhancement.protectionSlot')}</span>
-            <span className="setting-desc">
-              {protectionOptions.length > 0 && protectionOwned >= protectionRequired
-                ? t('app.enhancement.protectionUse')
-                : t('app.enhancement.protectionUnavailable')}
-            </span>
-          </span>
+          <TermHint
+            hint={t('app.enhancement.protectionHint')}
+            term={t('app.enhancement.protectionSlot')}
+          />
           <label className="enhancement-charm-toggle">
             <input
               checked={useProtection}
@@ -328,17 +348,19 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
               onChange={event => setUserUseProtection(event.target.checked)}
               type="checkbox"
             />
-            {protectionItemId !== null && (
-              <ItemReference amount={protectionOwned} itemId={protectionItemId} />
-            )}
+            {protectionItemId !== null
+              ? <ItemReference amount={protectionOwned} itemId={protectionItemId} />
+              : protectionOptions.length === 0 && (
+                <span className="enhancement-empty-note">{t('app.enhancement.protectionUnavailable')}</span>
+              )}
           </label>
         </div>
         {useProtection && (
           <div className="setting-row">
-            <span className="setting-text">
-              <span className="setting-label">{t('app.enhancement.protectLevel')}</span>
-              <span className="setting-desc">{t('app.enhancement.protectLevelDesc')}</span>
-            </span>
+            <TermHint
+              hint={t('app.enhancement.protectLevelHint')}
+              term={t('app.enhancement.protectLevel')}
+            />
             <QuantitySelector
               ariaLabel={t('app.enhancement.protectLevelAria')}
               disabled={isEnhancing || !useProtection || targetLevel <= ENHANCE_MIN_PROTECT_LEVEL}
@@ -367,8 +389,8 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
             />
           </div>
         )}
-        <div className="repeat-row">
-          <span>{t('app.enhancement.repeats')}</span>
+        <div className="setting-row">
+          <span className="setting-label">{t('app.enhancement.repeats')}</span>
           <QuantitySelector
             allowInfinity
             ariaLabel={t('app.enhancement.repeatsAria')}
@@ -406,12 +428,16 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
         ) : (
           <dl className="action-detail-list">
             <div>
-              <dt>{t('app.enhancement.currentLabel')}</dt>
-              <dd><strong>{`+${currentLevel}`}</strong></dd>
+              <dt>{t('app.enhancement.levelFlow')}</dt>
+              <dd className="enhancement-level-flow">
+                <strong>{`+${currentLevel}`}</strong>
+                <span aria-hidden="true" className="enhancement-level-arrow">→</span>
+                <strong className="enhancement-level-next">{`+${nextLevel}`}</strong>
+              </dd>
             </div>
             <div>
-              <dt>{t('app.enhancement.attemptLabel')}</dt>
-              <dd><strong>{`+${nextLevel}`}</strong></dd>
+              <dt>{t('app.enhancement.successRateLabel')}</dt>
+              <dd><strong className="enhancement-rate">{`${formatNumber(preview.successRate * 100, { maxDecimals: 1 })}%`}</strong></dd>
             </div>
             <div>
               <dt>{t('app.enhancement.costLabel')}</dt>
@@ -423,23 +449,19 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
               </dd>
             </div>
             <div>
-              <dt>{t('app.enhancement.successRateLabel')}</dt>
-              <dd><strong>{`${formatNumber(preview.successRate * 100, { maxDecimals: 1 })}%`}</strong></dd>
-            </div>
-            <div>
               <dt>{t('app.enhancement.outcomeLabel')}</dt>
               <dd className="enhancement-outcome">
-                <span>{t('app.enhancement.outcomeSuccess', { level: nextLevel, name: baseName })}</span>
+                <span>{t('app.enhancement.outcomeSuccess', { level: nextLevel })}</span>
                 <span>{isProtectedThisRound
-                  ? t('app.enhancement.outcomeFailProtected', { level: Math.max(0, nextLevel - 1), name: baseName })
-                  : t('app.enhancement.outcomeFailReset', { name: baseName })}</span>
+                  ? t('app.enhancement.outcomeFailProtected', { level: Math.max(0, nextLevel - 1) })
+                  : t('app.enhancement.outcomeFailReset')}</span>
               </dd>
             </div>
             <div>
               <dt>{t('app.action.insights')}</dt>
               <dd>
                 <span className="action-stat-pill action-stat-pill--rootexp">
-                  <span className="action-stat-pill-label">{t(ROOT_ASPECT_LABEL_KEYS.consciousness ?? 'combat.attr.consciousness')}</span>
+                  <span className="action-stat-pill-label">{t(ROOT_ASPECT_LABEL_KEYS.consciousness ?? 'combat.attr.divineSense')}</span>
                   <strong className="action-stat-pill-value">
                     <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={yields.consciousnessExp} />
                   </strong>
@@ -454,13 +476,15 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
             </div>
             <div>
               <dt>{t('app.enhancement.durationLabel')}</dt>
-              <dd><strong>{t('app.enhancement.durationSeconds', { seconds: formatNumber(preview.actualDuration, { maxDecimals: 1 }) })}</strong></dd>
-            </div>
-            <div>
-              <dt>{t('app.enhancement.techniqueLabel', { level: techniqueLevel })}</dt>
-              <dd><strong>{t('app.enhancement.techniqueBonus', {
-                value: formatNumber(techniqueLevel * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100, { maxDecimals: 0 }),
-              })}</strong></dd>
+              <dd className="enhancement-duration">
+                <strong>{t('app.enhancement.durationSeconds', { seconds: formatNumber(preview.actualDuration, { maxDecimals: 1 }) })}</strong>
+                {techniqueLevel > 0 && (
+                  <span className="enhancement-duration-note">{t('app.enhancement.techniqueInline', {
+                    level: techniqueLevel,
+                    value: formatNumber(techniqueLevel * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100, { maxDecimals: 0 }),
+                  })}</span>
+                )}
+              </dd>
             </div>
           </dl>
         )}

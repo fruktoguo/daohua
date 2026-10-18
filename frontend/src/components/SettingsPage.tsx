@@ -98,6 +98,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false)
+  const [skipConfirmOpen, setSkipConfirmOpen] = useState(false)
 
   const tutorialStep = useGameStore(state => state.tutorialStep)
 
@@ -283,6 +284,18 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                     : t('app.settings.tutorialStatusInProgress', { step: tutorialStep + 1 })}
                 </span>
               </div>
+              {tutorialStep < TUTORIAL_DONE && (
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.tutorial.skip')}</span>
+                  <button
+                    type="button"
+                    className="inline-modify-btn"
+                    onClick={() => setSkipConfirmOpen(true)}
+                  >
+                    {t('app.tutorial.skip')}
+                  </button>
+                </div>
+              )}
               <div className="setting-row">
                 <span className="setting-label">{t('app.settings.tutorialRestartLabel')}</span>
                 <button
@@ -370,6 +383,17 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
           gameClient.sendCommand('tutorial.restart', {})
         }}
         onClose={() => setRestartConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={skipConfirmOpen}
+        title={t('app.tutorial.skipConfirm.title')}
+        description={t('app.tutorial.skipConfirm.body')}
+        confirmLabel={t('app.tutorial.skipConfirm.confirm')}
+        onConfirm={() => {
+          setSkipConfirmOpen(false)
+          gameClient.sendCommand('tutorial.skip', {})
+        }}
+        onClose={() => setSkipConfirmOpen(false)}
       />
       <ConfirmDialog
         open={pendingUnlockAvatar !== null}

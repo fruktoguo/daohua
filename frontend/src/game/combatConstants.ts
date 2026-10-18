@@ -1,31 +1,18 @@
 /**
  * 道化太初 · 战斗核心常量与中文公式说明脚本
- * 集中管理抗性减伤系数、技能消耗倍率、对抗概率系数、六维根基增益等全局配置。
+ * 集中管理技能消耗倍率、对抗概率系数、六维根基增益等全局配置。
  */
-
-// =========================================================================
-// 1. 伤害与抗性减伤公式相关常量
-// =========================================================================
 
 import { getT } from '../i18n'
 
-/**
- * 抗性减伤系数 (常量配置，暂定为 5.0)
- * 
- * 【中文公式】：
- * 实际伤害 = 原始伤害 * (原始伤害 / (原始伤害 + 有效抗性 * 抗性减伤系数 + 基础常数))
- * 
- * 【设计说明】：
- * - 当有效抗性为 0 时，减伤比例为 0，造成 100% 原始伤害；
- * - 随着抗性提升，伤害呈双曲线平滑衰减，抗性越高边际减伤收益越平缓；
- * - 有效抗性 = 基础抗性 / (1 + 穿透比例)。
- */
-export const RESISTANCE_FACTOR = 5.0
+// =========================================================================
+// 1. 伤害与抗性减伤公式（权威实现在服务端，前端不重复实现）
+// =========================================================================
 
-/**
- * 减伤公式底数常数 (默认 1.0)，防止分母为零。
- */
-export const DAMAGE_BASE_FACTOR = 1.0
+// 抗性减伤由服务端 src/Ecs/Combat/DeterministicCombatEngine.cs 的 ResolveHit 结算：
+//   实际伤害 = 原始伤害² / (原始伤害 + 有效抗性 × K + 1)
+// K = 守方等阶（BaseAttributeCatalog.TierAt(level)，T1=1 … T12=12），不是固定常数 5。
+// 前端只渲染数值与公式说明（见 insight.combat.armorTooltip / magicResTooltip），不得再引入固定减伤系数。
 
 // =========================================================================
 // 2. 技能灵力消耗计算常量
@@ -264,7 +251,8 @@ export const BASELINE_COMBAT_ATTRIBUTES = {
 
 /**
  * 功法参悟累计经验到等级换算（经验累加不清空，与服务端 AbilityExpCurve 同式）。
- * 每级累计所需经验 = 100 * (level ^ 3)，0 级起算（0 经验即 0 级）。
+ * 保持 1 基（习得即 1 级，0 经验对应 1 级），升级经验曲线为 floor(cbrt(exp/100)) + 1。
+ * 每级累计所需经验 = 100 * ((level - 1) ^ 3)。
  * @param totalCumulativeExp 累计获得的总经验值
  * @returns 包含当前等级、本级当前进度经验、升至下一级所需经验的对象
  */
@@ -274,13 +262,10 @@ export function calculateAbilityLevelAndProgress(totalCumulativeExp: number): {
   levelRequirement: number
 } {
   const exp = Math.max(0.0, totalCumulativeExp)
-  let level = 0.0
-  while (getAbilityCumulativeExpForLevel(level + 1.0) <= exp) {
-    level += 1.0
-  }
+  const level = !Number.isFinite(exp) || exp <= 0.0 ? 1 : Math.min(127, Math.floor(Math.cbrt(exp / 100.0)) + 1)
 
   const currentLevelBaseExp = getAbilityCumulativeExpForLevel(level)
-  const nextLevelBaseExp = getAbilityCumulativeExpForLevel(level + 1.0)
+  const nextLevelBaseExp = getAbilityCumulativeExpForLevel(level + 1)
   const currentProgress = exp - currentLevelBaseExp
   const levelRequirement = nextLevelBaseExp - currentLevelBaseExp
 
@@ -292,13 +277,13 @@ export function calculateAbilityLevelAndProgress(totalCumulativeExp: number): {
 }
 
 /**
- * 功法参悟：升到指定等级所需的累计经验总和（立方曲线）
- * @param level 目标等级
+ * 功法参悟：升到指定等级所需的累计经验总和（立方曲线，1 级需 0 经验）
+ * @param level 目标等级 (>= 1)
  */
 export function getAbilityCumulativeExpForLevel(level: number): number {
-  return 100.0 * Math.pow(Math.max(0.0, level), 3.0)
+  if (level <= 1.0) return 0.0
+  return 100.0 * Math.pow(level - 1.0, 3.0)
 }
-
 // 单位生命层次显示名走 i18n（combat.nearby.rankMonster/rankElite/rankBoss），此处仅保留数值倍率。
 /**
  * 非玩家单位生命层次量化定义（普通、精英、首领对应的全属性与生命倍率）

@@ -373,6 +373,8 @@ export const gameZh = {
       talisman: '符箓',
       'five-elements': '五行',
       body: '体魄',
+      // 心法流派（清心诀、存神诀等内功）：配表 style=mind，服务端不做改名归一。
+      mind: '心法',
     },
     abilityTarget: {
       'all-enemies': '敌方全体',

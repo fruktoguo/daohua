@@ -14,6 +14,7 @@ import {
   convertTierToLevel,
   findItemInCatalog,
   resolveActionLevel,
+  resolveAssetLabel,
   resolveItemCategoryLabel,
   resolveItemGrade,
   resolveItemMetadata,
@@ -748,14 +749,11 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
                   {t('app.codex.requiresInputs')}：
                 </span>
                 <div className="codex-chips-wrap">
-                  {inputEntries.map(([id, qty]) => {
-                    const def = findItemInCatalog(items, id)
-                    return (
-                      <span className="codex-chip" key={id}>
-                        {def?.name ?? id} ×{qty}
-                      </span>
-                    )
-                  })}
+                  {inputEntries.map(([id, qty]) => (
+                    <span className="codex-chip" key={id}>
+                      {resolveAssetLabel(id, items, equipment)} ×{qty}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}

@@ -1284,7 +1284,7 @@ function ArenaLifeGoalCard({
     const currentTracked = queueEntry?.enhancementCurrentLevel ?? null
     const targetEq = targetItemId ? findEquipmentInCatalog(equipmentCatalog, targetItemId) : null
     const targetItem = targetItemId ? findItemInCatalog(itemCatalog, targetItemId) : null
-    const baseName = targetEq?.name || targetItem?.name || targetItemId || t('app.nav.craftingModes.enhancement')
+    const baseName = targetEq?.name || targetItem?.name || targetItemId || t('app.crafting.enhancement')
     const displayName = currentTracked !== null && currentTracked > 0
       ? `${baseName} +${currentTracked} → +${targetLevel}`
       : `${baseName} +${targetLevel}`
@@ -1305,7 +1305,7 @@ function ArenaLifeGoalCard({
     const yields = calculateEnhancementYields(itemLvl, targetLevel)
     outputs.push({
       key: 'rootexp:consciousness',
-      name: t('combat.attr.consciousness'),
+      name: t('combat.attr.divineSense'),
       glyph: '☯',
       tone: 'crimson',
       perRound: yields.consciousnessExp,
@@ -2195,7 +2195,19 @@ export const CombatArena = memo(function CombatArena({
     return () => window.clearTimeout(timer)
   }, [phase, corpseWave, corpseDissipating, expedition, lastQueueSyncPerformanceTime, vfxRuntimeRef])
 
-  const corpseEntries = phase === 'search' && corpseWave !== null ? corpseWave : EMPTY_DISPLAY_ENTRIES
+  // combat→search 过渡帧：服务端切搜寻相位时已清空 enemies[]，而 corpseWave 状态要等 effect
+  // 执行后才写入。若这一帧落到空阵型，敌方卡片会整棵卸载再重挂——击杀帧仍在途的跳字/受击
+  // 定时器随卸载被清掉（致死一击的伤害数字正是在这一帧丢的），故用缓存波次同步合成尸体阵容，
+  // 让同一实例跨越相位继续消费终局事件与血量差额。
+  const transitionCorpseEntries = useMemo<readonly EnemyDisplayState[]>(() => {
+    if (phase !== 'search' || corpseWave !== null) return EMPTY_DISPLAY_ENTRIES
+    const wave = combatWaveRef.current
+    if (wave === null || wave.entryId !== (current?.entryId ?? null) || wave.entries.length === 0) {
+      return EMPTY_DISPLAY_ENTRIES
+    }
+    return wave.entries.map(entry => ({ ...entry, hp: 0, mp: 0, action: null }))
+  }, [phase, corpseWave, current?.entryId])
+  const corpseEntries = phase === 'search' ? corpseWave ?? transitionCorpseEntries : EMPTY_DISPLAY_ENTRIES
   const displayEntries = enemyEntries.length > 0 ? enemyEntries : corpseEntries
   const corpseSlotsActive = enemyEntries.length === 0 && corpseEntries.length > 0
   const enemyVisible = isCombat && (phase === 'combat' || isDuelPhase || enemyEntries.some(entry => entry.hp > 0) || corpseEntries.length > 0)

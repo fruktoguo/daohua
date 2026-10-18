@@ -1099,7 +1099,9 @@ export function resolveManualAsideCard(
     ? t('market.aside.fragmentComprehension')
     : t('market.aside.tomeComprehension')
 
-  const styleLabel = ability.style ? t(`game.abilityStyle.${ability.style}`) : ''
+  // 流派词条未登记时（配表新增 style）直接省略前缀，避免把词条键裸显成标识。
+  const rawStyleLabel = ability.style ? t(`game.abilityStyle.${ability.style}`) : ''
+  const styleLabel = rawStyleLabel.startsWith('game.') ? '' : rawStyleLabel
   const categoryLabel = formatAbilityCategory(ability.category, ability.element)
   const subtitle = styleLabel ? `${styleLabel} · ${categoryLabel}` : categoryLabel
 
@@ -1403,7 +1405,7 @@ export function extractEquipmentBonusItems(
       const scaled = speedRatio * enhanceScale
       const percent = +(scaled * 100).toFixed(1)
       const labelKey = TOOL_SPEED_LABEL_KEYS[technique]
-      const label = labelKey ? t(labelKey) : t('insight.panel.actionSpeed')
+      const label = labelKey ? t(labelKey) : t('insight.combat.actionSpeed')
       const glyph = resolveStatGlyph(technique) ?? resolveStatGlyph('actionSpeed') ?? undefined
       items.push({
         glyph,

@@ -389,6 +389,8 @@ export const combatZh = {
         zhixue: '止血散',
         shunqi: '顺气丸',
         yinshen: '隐身',
+        // 阵法类状态以 formation.<id> 命名，非 buff. 前缀，需独立登记。
+        'formation.juling': '聚灵',
         'buff.spirit-tea': '凝神茶',
         'buff.fire-talisman': '赤焰符',
         'buff.qi-gathering': '引气',

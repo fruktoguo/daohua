@@ -19,8 +19,15 @@ interface QuantitySelectorProps {
   leadingPresets?: readonly number[]
   /** 快速预设按钮数值列表（如 [1, 10, 100]，渲染在输入框右侧） */
   presets?: readonly number[]
-  /** 是否在输入框右侧提供「最大」快捷钮（点击填入 max） */
+  /** 是否在输入框右侧提供「最大」快捷钮（点击填入 maxShortcutValue，未指定时等于 max） */
   maxShortcut?: boolean
+  /**
+   * 「最大」快捷钮实际填入的数值（缺省取 max）。
+   *
+   * 用于「输入硬上限」与「一键填满的合理值」不一致的场景：坊市求购侧输入上限是
+   * 灵石余额可买量，而点「最大」只应填当前价位可立即成交的卖盘总量。
+   */
+  maxShortcutValue?: number
   /** 是否提供无限循环 (∞, 对应 -1) 按钮 */
   allowInfinity?: boolean
   /** 是否禁用输入与按钮 */
@@ -48,6 +55,7 @@ export function QuantitySelector({
   leadingPresets = [],
   presets = [],
   maxShortcut = false,
+  maxShortcutValue,
   allowInfinity = false,
   disabled = false,
   compact = false,
@@ -76,6 +84,9 @@ export function QuantitySelector({
     if (nextValue >= min) setDraft(String(nextValue))
     onChange(nextValue)
   }, [min, onChange])
+
+  /** 「最大」钮取值：缺省与输入硬上限一致，显式传入时按其收敛（并保证不低于 min）。 */
+  const shortcutValue = Math.max(min, maxShortcutValue ?? max)
 
   return (
     <div className={`quantity-selector${compact ? ' quantity-selector--compact' : ''} ${className}`.trim()}>
@@ -124,10 +135,10 @@ export function QuantitySelector({
       {maxShortcut && (
         <button
           aria-label={t('market.selector.maxAria')}
-          aria-pressed={value === max}
-          className={value === max ? 'active' : ''}
+          aria-pressed={value === shortcutValue}
+          className={value === shortcutValue ? 'active' : ''}
           disabled={disabled}
-          onClick={() => choose(max)}
+          onClick={() => choose(shortcutValue)}
           title={t('market.selector.maxAria')}
           type="button"
         >{t('market.selector.max')}</button>

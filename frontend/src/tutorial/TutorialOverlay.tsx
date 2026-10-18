@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ItemReference } from '../components/ItemDisplay'
 import { useGameStore } from '../game/gameStore'
@@ -192,9 +192,13 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
    * 把「回村」引导插在欢迎卡之后；抵达后整条前缀自动摘除，回到正式步骤流。
    */
   const atHome = worldNodeId === HOME_NODE_ID
-  const steps = milestone
-    ? (milestone.awayPrefix && !atHome ? [milestone.steps[0], ...milestone.awayPrefix, ...milestone.steps.slice(1)] : milestone.steps)
-    : null
+  const steps = useMemo(() => {
+    if (!milestone) return null
+    if (milestone.awayPrefix && !atHome) {
+      return [milestone.steps[0], ...milestone.awayPrefix, ...milestone.steps.slice(1)]
+    }
+    return milestone.steps
+  }, [milestone, atHome])
   const uiStep = steps?.[Math.min(substep, steps.length - 1)] ?? null
 
   const advance = useCallback(() => setSubstep(index => index + 1), [])
@@ -215,12 +219,13 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
   // 误判为新开始），且每个里程碑只评估一次，避免快照重推覆盖用户当前子步骤。
   useEffect(() => {
     setHole(null)
-    setConfirmingSkip(false)
     // 重学复活：tutorial.restart 让服务端步骤倒退（唯一递减路径）——
     // 收起态回到 guiding 并清掉跳过标记；不能用「milestone 非空且 hidden」判断，
     // 因为确认跳过瞬间 milestone 仍在（patch 未回）会误复活。
+    const stepChanged = prevStepRef.current !== tutorialStep
     const restarted = prevStepRef.current >= 0 && tutorialStep < prevStepRef.current
     prevStepRef.current = tutorialStep
+    if (stepChanged) setConfirmingSkip(false)
     if (milestone) {
       activeRef.current = true
       if (restarted) skippedRef.current = false
@@ -228,15 +233,21 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
       if (resumedForRef.current === tutorialStep || !hasSnapshot) return
       resumedForRef.current = tutorialStep
       const queue = useGameStore.getState().queue.entries
+      const isTravelingHome = !atHome && milestone.awayPrefix !== undefined
+        && queue.some(e => e.actionId === 'world.travel' && e.travelDestinationNodeId === HOME_NODE_ID)
       const resumed =
         (milestone.actionId !== undefined && queue.some(e => e.actionId === milestone.actionId))
         || (milestone.travelToNodeId !== undefined && queue.some(e => e.actionId === 'world.travel' && e.travelDestinationNodeId === milestone.travelToNodeId))
-      setSubstep(resumed && steps ? steps.length - 1 : 0)
+      if (isTravelingHome && steps) {
+        setSubstep(milestone.awayPrefix!.length)
+      } else {
+        setSubstep(resumed && steps ? steps.length - 1 : 0)
+      }
     } else if (tutorialStep >= TUTORIAL_DONE && phase === 'guiding') {
       setPhase(activeRef.current && !skippedRef.current ? 'finished' : 'hidden')
       activeRef.current = false
     }
-  }, [milestone, tutorialStep, phase, steps, hasSnapshot])
+  }, [milestone, tutorialStep, phase, steps, hasSnapshot, atHome])
 
   // 抵达回村：玩家在前缀链推进途中自己先到了目标节点（或 arrive 步完成）时，
   // steps 数组从「带前缀」塌缩为正式步序——前缀段下标平移回正式步首步（下标1）。
