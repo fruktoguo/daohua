@@ -199,6 +199,29 @@ public sealed class SimulationLogMapperTests
         Assert.Equal(200, snapshot[10].Count);
     }
 
+    /// <summary>消耗品自动生效与到期耗尽事件不输出至战报日志，亦不进入缓冲区。</summary>
+    [Fact]
+    public void AutoUseEvents_AreSuppressedFromLogAndDoNotEnterBuffer()
+    {
+        var gameData = BuildCatalog();
+        var buffer = new PlayerLogBuffer(200);
+        var at = DateTimeOffset.UtcNow;
+        var events = new List<SimulationEvent>
+        {
+            new(at, "auto-use.activated", "自动使用 引气丹，可生效 300 秒。"),
+            new(at.AddSeconds(1), "action.completed", "引气入体", new ActionId("cultivation.draw-qi")),
+            new(at.AddSeconds(2), "auto-use.depleted", "引气丹 的持续时间已耗尽。"),
+            new(at.AddSeconds(3), "auto-use.escrowed", "组队托管锁定：止血散 ×3。"),
+        };
+
+        var mapped = SimulationLogMapper.ToLogEvents(events, gameData, buffer);
+
+        Assert.Single(mapped);
+        Assert.Equal("完成行动 {{action:cultivation.draw-qi|引气入体}}", mapped[0].Template);
+        Assert.Equal(LogChannels.System, mapped[0].Channel);
+        Assert.Single(buffer.SnapshotRecent());
+    }
+
     private static GameDataCatalog BuildCatalog()
     {
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal)

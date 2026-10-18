@@ -26,8 +26,10 @@ public static class SimulationLogMapper
         for (var i = startIndex; i < events.Count; i++)
         {
             var simulationEvent = events[i];
-            var template = ToTemplate(simulationEvent, gameData);
             var channel = LogChannels.FromEventCode(simulationEvent.Code);
+            if (channel is null) continue;
+
+            var template = ToTemplate(simulationEvent, gameData);
             var timestamp = simulationEvent.At.ToUnixTimeMilliseconds();
 
             if (result.Count > 0 && result[^1].Template == template && result[^1].Channel == channel)

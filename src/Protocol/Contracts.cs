@@ -700,16 +700,27 @@ public sealed record LogBatchDto(IReadOnlyList<LogEventDto> Events);
 /// <summary>日志分组频道标识常量（前端日志面板 Tab 分流口径）。</summary>
 public static class LogChannels
 {
-    /// <summary>系统分组：消耗品使用、行动完成、抵达、离线补算、斗法撮合与结算及各类系统通知。</summary>
+    /// <summary>系统分组：行动完成、抵达、离线补算、装备强化、斗法撮合与结算及各类低频系统通知。</summary>
     public const string System = "system";
     /// <summary>战斗分组：战斗过程事件（搜寻、遭遇、施放、攻击、胜负、复活）。</summary>
     public const string Combat = "combat";
 
-    /// <summary>按领域事件码解析所属日志分组：`combat.` 前缀归战斗，其余归系统。</summary>
+    /// <summary>
+    /// 按领域事件码解析所属日志分组：
+    /// 1. `combat.` 前缀归战斗（<see cref="Combat"/>）；
+    /// 2. `auto-use.` 前缀为高频消耗品自动化推进与耗尽事件，不输出至战报日志，返回 null；
+    /// 3. 其余低频关键领域事件（行动完成、抵达、强化、斗法等）归系统（<see cref="System"/>）。
+    /// </summary>
     /// <param name="eventCode">领域模拟事件码。</param>
-    /// <returns>日志分组频道标识。</returns>
-    public static string FromEventCode(string eventCode) =>
-        eventCode.StartsWith("combat.", StringComparison.Ordinal) ? Combat : System;
+    /// <returns>日志分组频道标识；不输出日志时返回 null。</returns>
+    public static string? FromEventCode(string eventCode)
+    {
+        if (eventCode.StartsWith("combat.", StringComparison.Ordinal))
+            return Combat;
+        if (eventCode.StartsWith("auto-use.", StringComparison.Ordinal))
+            return null;
+        return System;
+    }
 }
 
 /// <summary>传音频道标识常量（协议与前端共享口径）。</summary>

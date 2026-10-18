@@ -257,6 +257,8 @@ class GameLogService {
     let received = 0
 
     for (const entry of sortedAdditions) {
+      // 高频消耗品自动使用与到期耗尽不入日志展示
+      if (entry.template.startsWith('自动使用 ') || entry.template.endsWith('的持续时间已耗尽。')) continue
       if (this.seenIds.has(entry.id)) continue
       this.seenIds.add(entry.id)
       received += 1

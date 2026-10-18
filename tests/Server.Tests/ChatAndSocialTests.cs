@@ -21,7 +21,7 @@ namespace Server.Tests;
 [Collection("PostgresIntegration")]
 public sealed class ChatAndSocialTests
 {
-    /// <summary>日志分组按事件码前缀分类：combat.* 归战斗，其余（含 duel.*）归系统。</summary>
+    /// <summary>日志分组按事件码前缀分类：combat.* 归战斗，auto-use.* 排除不输出（null），其余归系统。</summary>
     [Theory]
     [InlineData("combat.started", LogChannels.Combat)]
     [InlineData("combat.attack", LogChannels.Combat)]
@@ -30,8 +30,9 @@ public sealed class ChatAndSocialTests
     [InlineData("action.completed", LogChannels.System)]
     [InlineData("world.arrived", LogChannels.System)]
     [InlineData("offline.capped", LogChannels.System)]
-    [InlineData("auto-use.activated", LogChannels.System)]
-    public void LogChannels_ClassifyByEventCodePrefix(string eventCode, string expected) =>
+    [InlineData("auto-use.activated", null)]
+    [InlineData("auto-use.depleted", null)]
+    public void LogChannels_ClassifyByEventCodePrefix(string eventCode, string? expected) =>
         Assert.Equal(expected, LogChannels.FromEventCode(eventCode));
 
     /// <summary>好友私聊作用域键与双方顺序无关，同一对好友始终落在同一作用域。</summary>

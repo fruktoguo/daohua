@@ -154,3 +154,18 @@ test('gameLogService: 200 条相同日志合并后严格只占 1 条历史记录
   assert.equal(snapshot.latest[10].latestTimestampMs, 2000 + 210 * 10)
 })
 
+test('gameLogService: 自动使用与持续时间耗尽等高频消耗品日志静默过滤不入库', () => {
+  const playerId = 'test-player-filter-' + Date.now()
+  gameLogService.activate(playerId)
+
+  gameLogService.ingestBatch(playerId, [
+    { sequence: 1, timestampUnixMilliseconds: 1000, template: '自动使用 引气丹，可生效 300 秒。', channel: 'system' },
+    { sequence: 2, timestampUnixMilliseconds: 1001, template: '完成行动 {{action:cultivation.draw-qi|引气入体}}', channel: 'system' },
+    { sequence: 3, timestampUnixMilliseconds: 1002, template: '引气丹 的持续时间已耗尽。', channel: 'system' },
+  ])
+
+  const snapshot = gameLogService.getSnapshot()
+  assert.equal(snapshot.latest.length, 1)
+  assert.equal(snapshot.latest[0].template, '完成行动 {{action:cultivation.draw-qi|引气入体}}')
+})
+
