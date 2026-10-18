@@ -24,7 +24,7 @@ import { useT } from '../i18n'
 import { ConditionedTile } from './ConditionedTile'
 import { resolveAbilityAsideCards } from './EffectTooltip'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
-import { EffectAsideBody, ItemDropReference, ItemTile, ItemTooltipTarget, resolveStructuredBuffEffects } from './ItemDisplay'
+import { BonusAsideList, ItemDropReference, ItemTile, ItemTooltipTarget, extractBuffBonusItems } from './ItemDisplay'
 import { StatGlyph } from './StatGlyph'
 
 /** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊与增减伤属性 | 功法与装备装配 | 掉落明细（仅敌怪详情） */
@@ -318,14 +318,14 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
           <h4 className="insight-pill-group-title">{t('insight.combat.groupBuffs')}</h4>
           <div className="insight-pill-group-items">
             {buffs.map(buff => {
-              const structuredEffects = resolveStructuredBuffEffects(buff)
+              const bonusItems = extractBuffBonusItems(buff)
               return (
                 <FloatingPopover
                   content={
                     <FloatingInfoCard
                       badge={buff.stacks > 1 ? `×${formatNumber(buff.stacks)}` : undefined}
                       badgeTone="gold"
-                      description={structuredEffects.length > 0 ? <EffectAsideBody items={structuredEffects} /> : undefined}
+                      description={bonusItems.length > 0 ? <BonusAsideList items={bonusItems} /> : undefined}
                       title={buff.name}
                     />
                   }

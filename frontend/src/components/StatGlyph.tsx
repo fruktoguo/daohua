@@ -205,8 +205,18 @@ const STAT_KEY_TO_GLYPH: Record<string, string> = {
   历练: 'combat-exp',
   寿元: 'bio-lifespan',
   修炼: 'bio-cultivation',
+  修炼效率: 'bio-cultivation',
+  修炼增效: 'bio-cultivation',
+  采集: 'alchemy',
+  采集产出: 'alchemy',
+  采集增效: 'alchemy',
+  炼丹: 'alchemy',
+  炼丹产出: 'alchemy',
+  炼丹增效: 'alchemy',
+  持续时间: 'cooldown-reduction',
+  药效时长: 'cooldown-reduction',
+  有效时长: 'cooldown-reduction',
 }
-
 /**
  * 智能根据属性标识或中文词条标签反查对应的图标 ID
  */

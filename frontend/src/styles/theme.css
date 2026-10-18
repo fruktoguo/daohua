@@ -489,6 +489,17 @@
 :root[data-theme="light"] .avatar-tile.active {
   background: radial-gradient(circle at 50% 30%, rgba(201, 180, 109, 0.15) 0%, rgba(var(--surface-rgb), 0.95) 100%);
 }
+:root[data-theme="light"] .avatar-tile.is-locked {
+  background: rgba(var(--surface-rgb), 0.5);
+  border-color: rgba(120, 100, 70, 0.2);
+}
+
+:root[data-theme="light"] .avatar-tile-lock-badge {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--gold-dim);
+  border-color: rgba(120, 100, 70, 0.35);
+}
+
 
 :root[data-theme="light"] .login-screen,
 :root[data-theme="light"] .status-screen {

@@ -226,6 +226,8 @@ export const marketZh = {
       badgeDuration: '持续时间',
       badgeStacks: '当前层数',
       unitSeconds: '秒',
+      equipmentBonus: '属性加成',
+      equipmentStats: '基础属性',
     },
     // 物品悬浮「市场价格」行情副卡：价格缺位时一律展示占位符 none。
     price: {

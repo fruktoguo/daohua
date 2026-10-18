@@ -589,25 +589,82 @@ export function describeBuffEffectLines(buff: {
 }
 
 /**
- * 结构化效果条目模型（供副气泡与悬浮框微光胶囊化渲染）
+ * 通用属性数值加成条目模型（对齐装备属性展示：[小图标] + [属性名胶囊] + [下划线加成数值]）
  */
-export interface StructuredEffectItem {
-  /** 胶囊徽章文本（如「气血回元」、「修炼增效」、「伤害吸收」等） */
-  badge: string
-  /** 徽章色调：与修仙色系对齐 */
-  tone?: FloatingTone
-  /** 高亮核心数值（如「+20%」、「+18」、「12.5%」等） */
-  value: string
-  /** 辅助单位或周期说明（如「/ 5秒」、「秒」等） */
-  unit?: string
-  /** 是否为负面/减损效果（危红色调） */
-  isNegative?: boolean
+export interface BonusAsideItem {
+  /** 属性小图标标识（如 'hp', 'phys-atk', 'crit', 'alchemy', 'bio-cultivation' 等），缺省时由 label 智能反查 */
+  glyph?: string
+  /** 自定义图标 ReactNode（优先于 glyph） */
+  icon?: ReactNode
+  /** 属性名称（如「物理攻击」、「气血回复」、「修炼效率」、「持续时间」等） */
+  label: string
+  /** 加成数值（如「+120」、「+20%」、「300秒」等，固定数值或百分比） */
+  value: string | number
+  /** 修仙色彩色调 */
+  tone?: PillTone
 }
 
 /**
- * 将 Buff 实例或丹药 Buff 定义解析为结构化条目列表
+ * 通用属性数值加成独立悬浮窗参数
  */
-export function resolveStructuredBuffEffects(buff: {
+export interface BonusAsideCardOptions {
+  id?: string
+  mark?: string
+  title: string
+  subtitle?: string
+  tone?: FloatingTone
+  items: readonly BonusAsideItem[]
+}
+
+/**
+ * 通用属性数值加成列表渲染组件
+ * 前面是图标（StatGlyph），后面是属性名（capsule-label），后面是加成值（underlined-value，固定数值或百分比）
+ */
+export const BonusAsideList = memo(function BonusAsideList({
+  items,
+  className = '',
+}: {
+  items: readonly BonusAsideItem[]
+  className?: string
+}): React.JSX.Element {
+  return (
+    <div className={`daohua-bonus-aside-list ${className}`.trim()}>
+      {items.map((item, idx) => {
+        const glyphName = item.glyph ?? resolveStatGlyph(item.label)
+        const iconNode = item.icon ?? (glyphName ? <StatGlyph glyph={glyphName} size={14.5} /> : undefined)
+        return (
+          <PillBonusLabel
+            key={idx}
+            icon={iconNode}
+            label={item.label}
+            tone={item.tone ?? 'default'}
+            value={item.value}
+          />
+        )
+      })}
+    </div>
+  )
+})
+
+/**
+ * 构造标准统一的属性数值加成独立悬浮窗 (Bonus Aside Card)
+ * 装备属性、药品效果、实时Buff 均共用此悬浮窗！
+ */
+export function createBonusAsideCard(options: BonusAsideCardOptions): FloatingAsideCard {
+  return {
+    id: options.id,
+    mark: options.mark,
+    title: options.title,
+    subtitle: options.subtitle,
+    tone: options.tone ?? 'gold',
+    content: <BonusAsideList items={options.items} />,
+  }
+}
+
+/**
+ * 将 Buff 实例或丹药 Buff 定义解析为标准属性数值加成条目列表 (BonusAsideItem[])
+ */
+export function extractBuffBonusItems(buff: {
   buffId?: string | null
   name?: string
   description?: string
@@ -621,29 +678,27 @@ export function resolveStructuredBuffEffects(buff: {
   threatPoints?: number
   damageBonusPoints?: number
   threatPerSecondMaxHpPoints?: number
-}): StructuredEffectItem[] {
+}): BonusAsideItem[] {
   const t = getT()
-  const items: StructuredEffectItem[] = []
+  const items: BonusAsideItem[] = []
 
   // 1. 每 5 秒结算点回复
   if (buff.hpRegen && buff.hpRegen !== 0) {
     const isNeg = buff.hpRegen < 0
     items.push({
-      badge: t('market.effect.badgeHpRegen'),
-      tone: isNeg ? 'danger' : 'emerald',
-      value: `${buff.hpRegen > 0 ? '+' : ''}${formatNumber(buff.hpRegen)}`,
-      unit: t('market.effect.unitPerFiveSec'),
-      isNegative: isNeg,
+      glyph: 'hp-regen',
+      label: t('market.effect.badgeHpRegen'),
+      tone: isNeg ? 'crimson' : 'emerald',
+      value: `${buff.hpRegen > 0 ? '+' : ''}${formatNumber(buff.hpRegen)}/5s`,
     })
   }
   if (buff.mpRegen && buff.mpRegen !== 0) {
     const isNeg = buff.mpRegen < 0
     items.push({
-      badge: t('market.effect.badgeMpRegen'),
-      tone: isNeg ? 'danger' : 'cyan',
-      value: `${buff.mpRegen > 0 ? '+' : ''}${formatNumber(buff.mpRegen)}`,
-      unit: t('market.effect.unitPerFiveSec'),
-      isNegative: isNeg,
+      glyph: 'mp-regen',
+      label: t('market.effect.badgeMpRegen'),
+      tone: isNeg ? 'crimson' : 'cyan',
+      value: `${buff.mpRegen > 0 ? '+' : ''}${formatNumber(buff.mpRegen)}/5s`,
     })
   }
 
@@ -651,19 +706,19 @@ export function resolveStructuredBuffEffects(buff: {
   if (buff.hpRegenPostRatio && buff.hpRegenPostRatio !== 0) {
     const isNeg = buff.hpRegenPostRatio < 0
     items.push({
-      badge: t('market.effect.badgeHpPostRatio'),
-      tone: isNeg ? 'danger' : 'emerald',
+      glyph: 'hp-regen',
+      label: t('market.effect.badgeHpPostRatio'),
+      tone: isNeg ? 'crimson' : 'emerald',
       value: signedPercent(buff.hpRegenPostRatio),
-      isNegative: isNeg,
     })
   }
   if (buff.mpRegenPostRatio && buff.mpRegenPostRatio !== 0) {
     const isNeg = buff.mpRegenPostRatio < 0
     items.push({
-      badge: t('market.effect.badgeMpPostRatio'),
-      tone: isNeg ? 'danger' : 'cyan',
+      glyph: 'mp-regen',
+      label: t('market.effect.badgeMpPostRatio'),
+      tone: isNeg ? 'crimson' : 'cyan',
       value: signedPercent(buff.mpRegenPostRatio),
-      isNegative: isNeg,
     })
   }
 
@@ -671,20 +726,21 @@ export function resolveStructuredBuffEffects(buff: {
   if (buff.damageAbsorptionPoints && buff.damageAbsorptionPoints !== 0) {
     const points = buff.damageAbsorptionPoints
     const isNeg = points < 0
+    const absPercent = Math.abs(+(points / (100 + Math.abs(points)) * 100).toFixed(1))
     items.push({
-      badge: t('market.effect.badgeDamageAbsorption'),
-      tone: isNeg ? 'danger' : 'jade',
-      value: `${points > 0 ? '+' : ''}${(points / (100 + points) * 100).toFixed(1)}%`,
-      isNegative: isNeg,
+      glyph: 'total-damage',
+      label: t('market.effect.badgeDamageAbsorption'),
+      tone: isNeg ? 'crimson' : 'jade',
+      value: `${points > 0 ? '+' : '-'}${absPercent}%`,
     })
   }
   if (buff.attackSpeedPoints && buff.attackSpeedPoints !== 0) {
     const isNeg = buff.attackSpeedPoints < 0
     items.push({
-      badge: t('market.effect.badgeAttackSpeed'),
-      tone: isNeg ? 'danger' : 'purple',
+      glyph: 'attack-speed',
+      label: t('market.effect.badgeAttackSpeed'),
+      tone: isNeg ? 'crimson' : 'purple',
       value: signedPercent(buff.attackSpeedPoints / 100),
-      isNegative: isNeg,
     })
   }
 
@@ -692,28 +748,27 @@ export function resolveStructuredBuffEffects(buff: {
   if (buff.damageBonusPoints && buff.damageBonusPoints !== 0) {
     const isNeg = buff.damageBonusPoints < 0
     items.push({
-      badge: t('market.effect.badgeDamageBonus'),
-      tone: isNeg ? 'danger' : 'crimson',
+      glyph: 'phys-damage',
+      label: t('market.effect.badgeDamageBonus'),
+      tone: isNeg ? 'crimson' : 'gold',
       value: signedPercent(buff.damageBonusPoints / 100),
-      isNegative: isNeg,
     })
   }
   if (buff.threatPoints && buff.threatPoints !== 0) {
     const isNeg = buff.threatPoints < 0
     items.push({
-      badge: t('market.effect.badgeThreat'),
-      tone: isNeg ? 'danger' : 'gold',
+      glyph: 'threat-bonus',
+      label: t('market.effect.badgeThreat'),
+      tone: isNeg ? 'crimson' : 'amber',
       value: signedPercent(buff.threatPoints / 100),
-      isNegative: isNeg,
     })
   }
   if (buff.threatPerSecondMaxHpPoints && buff.threatPerSecondMaxHpPoints !== 0) {
-    const isNeg = buff.threatPerSecondMaxHpPoints < 0
     items.push({
-      badge: t('market.effect.badgeThreatSec'),
-      tone: isNeg ? 'danger' : 'gold',
-      value: signedPercent(buff.threatPerSecondMaxHpPoints / 100),
-      isNegative: isNeg,
+      glyph: 'threat-bonus',
+      label: t('market.effect.badgeThreatSec'),
+      tone: 'amber',
+      value: `+${(buff.threatPerSecondMaxHpPoints / 100).toFixed(1)}%/s`,
     })
   }
 
@@ -721,13 +776,17 @@ export function resolveStructuredBuffEffects(buff: {
   if (buff.statRatios) {
     for (const [modKey, modVal] of Object.entries(buff.statRatios)) {
       if (modVal !== 0) {
-        const label = STAT_RATIO_LABEL_KEYS[modKey] ? t(STAT_RATIO_LABEL_KEYS[modKey]) : modKey
+        const statKey = modKey.replace(/Ratio$/, '')
+        const labelKey = STAT_RATIO_LABEL_KEYS[statKey] ?? STAT_RATIO_LABEL_KEYS[modKey]
+        const label = labelKey ? t(labelKey) : modKey
         const isNeg = modVal < 0
+        const glyph = resolveStatGlyph(statKey) ?? resolveStatGlyph(modKey) ?? 'foundation'
+        const defaultTone = (STAT_TONE_MAP[statKey] ?? STAT_TONE_MAP[modKey] ?? 'default') as PillTone
         items.push({
-          badge: label,
-          tone: isNeg ? 'danger' : (STAT_TONE_MAP[modKey] as FloatingTone) || 'gold',
+          glyph,
+          label,
+          tone: isNeg ? 'crimson' : defaultTone,
           value: signedPercent(modVal),
-          isNegative: isNeg,
         })
       }
     }
@@ -738,7 +797,8 @@ export function resolveStructuredBuffEffects(buff: {
     const rawLines = describeBuffEffectLines(buff)
     for (const line of rawLines) {
       items.push({
-        badge: t('market.effect.badgeGeneral'),
+        glyph: 'foundation',
+        label: t('market.effect.badgeGeneral'),
         tone: 'gold',
         value: line,
       })
@@ -748,28 +808,10 @@ export function resolveStructuredBuffEffects(buff: {
   return items
 }
 
-/**
- * 结构化效果副气泡主体渲染组件 (EffectAsideBody)
- */
-export function EffectAsideBody({ items }: { items: readonly StructuredEffectItem[] }): React.JSX.Element {
-  return (
-    <div className="daohua-effect-aside-body">
-      {items.map((item, idx) => (
-        <div className="daohua-effect-aside-row" key={idx}>
-          <span className={`daohua-effect-aside-badge daohua-effect-aside-badge--${item.tone ?? 'gold'}`}>
-            {item.badge}
-          </span>
-          <span className="daohua-effect-aside-val-wrap">
-            <span className={`daohua-effect-aside-val ${item.isNegative ? 'is-negative' : 'is-positive'}`}>
-              {item.value}
-            </span>
-            {item.unit && <span className="daohua-effect-aside-unit">{item.unit}</span>}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
+/** 向下兼容别名与转发 */
+export type StructuredEffectItem = BonusAsideItem
+export const resolveStructuredBuffEffects = extractBuffBonusItems
+export const EffectAsideBody = BonusAsideList
 
 /**
  * 坊市「市场价格」副卡（惰性求值）：按 (itemId, 强化等级) 命中 gameStore.marketStats
@@ -908,100 +950,111 @@ export function resolveItemAsideCards(
 
   // 1. 修炼丹药/持续消耗品效果 (如引气丹、通脉丹)
   if (definition.cultivationMultiplier && definition.cultivationMultiplier > 1) {
-    const items: StructuredEffectItem[] = [
+    const items: BonusAsideItem[] = [
       {
-        badge: t('market.aside.badgeCultivation'),
+        glyph: 'bio-cultivation',
+        label: t('market.aside.badgeCultivation'),
         tone: 'qi',
         value: `+${Math.round((definition.cultivationMultiplier - 1) * 100)}%`,
       },
     ]
     if (definition.durationSeconds && definition.durationSeconds > 0) {
       items.push({
-        badge: t('market.aside.badgeDuration'),
+        glyph: 'cooldown-reduction',
+        label: t('market.aside.badgeDuration'),
         tone: 'slate',
-        value: `${formatNumber(definition.durationSeconds)}`,
-        unit: t('market.aside.unitSeconds'),
+        value: `${formatNumber(definition.durationSeconds)}秒`,
       })
     }
-    cards.push({
-      id: `aside-cultivation-${definition.itemId}`,
-      mark: t('market.aside.buff'),
-      title: definition.name || fallbackName || t('market.aside.buff'),
-      tone: 'qi',
-      content: <EffectAsideBody items={items} />,
-    })
+    cards.push(
+      createBonusAsideCard({
+        id: `aside-cultivation-${definition.itemId}`,
+        mark: t('market.aside.buff'),
+        title: definition.name || fallbackName || t('market.aside.buff'),
+        tone: 'qi',
+        items,
+      })
+    )
   }
 
   // 2. 采集产出加成 (如寻灵香)
   if (definition.gatheringMultiplier && definition.gatheringMultiplier > 1) {
-    const items: StructuredEffectItem[] = [
+    const items: BonusAsideItem[] = [
       {
-        badge: t('market.aside.badgeGathering'),
+        glyph: 'alchemy',
+        label: t('market.aside.badgeGathering'),
         tone: 'jade',
         value: `+${Math.round((definition.gatheringMultiplier - 1) * 100)}%`,
       },
     ]
     if (definition.durationSeconds && definition.durationSeconds > 0) {
       items.push({
-        badge: t('market.aside.badgeDuration'),
+        glyph: 'cooldown-reduction',
+        label: t('market.aside.badgeDuration'),
         tone: 'slate',
-        value: `${formatNumber(definition.durationSeconds)}`,
-        unit: t('market.aside.unitSeconds'),
+        value: `${formatNumber(definition.durationSeconds)}秒`,
       })
     }
-    cards.push({
-      id: `aside-gathering-${definition.itemId}`,
-      mark: t('market.aside.buff'),
-      title: definition.name || fallbackName || t('market.aside.buff'),
-      tone: 'jade',
-      content: <EffectAsideBody items={items} />,
-    })
+    cards.push(
+      createBonusAsideCard({
+        id: `aside-gathering-${definition.itemId}`,
+        mark: t('market.aside.buff'),
+        title: definition.name || fallbackName || t('market.aside.buff'),
+        tone: 'jade',
+        items,
+      })
+    )
   }
 
   // 3. 炼丹产出加成 (如地火引)
   if (definition.alchemyMultiplier && definition.alchemyMultiplier > 1) {
-    const items: StructuredEffectItem[] = [
+    const items: BonusAsideItem[] = [
       {
-        badge: t('market.aside.badgeAlchemy'),
+        glyph: 'alchemy',
+        label: t('market.aside.badgeAlchemy'),
         tone: 'gold',
         value: `+${Math.round((definition.alchemyMultiplier - 1) * 100)}%`,
       },
     ]
     if (definition.durationSeconds && definition.durationSeconds > 0) {
       items.push({
-        badge: t('market.aside.badgeDuration'),
+        glyph: 'cooldown-reduction',
+        label: t('market.aside.badgeDuration'),
         tone: 'slate',
-        value: `${formatNumber(definition.durationSeconds)}`,
-        unit: t('market.aside.unitSeconds'),
+        value: `${formatNumber(definition.durationSeconds)}秒`,
       })
     }
-    cards.push({
-      id: `aside-alchemy-${definition.itemId}`,
-      mark: t('market.aside.buff'),
-      title: definition.name || fallbackName || t('market.aside.buff'),
-      tone: 'gold',
-      content: <EffectAsideBody items={items} />,
-    })
+    cards.push(
+      createBonusAsideCard({
+        id: `aside-alchemy-${definition.itemId}`,
+        mark: t('market.aside.buff'),
+        title: definition.name || fallbackName || t('market.aside.buff'),
+        tone: 'gold',
+        items,
+      })
+    )
   }
 
   // 4. 战斗丹药附带的 Buff 效果 (如止血散、顺气丸)
   for (const buff of definition.buffEffects ?? []) {
-    const items = resolveStructuredBuffEffects(buff)
+    const items = extractBuffBonusItems(buff)
     if (buff.durationSeconds > 0) {
       items.push({
-        badge: t('market.aside.badgeDuration'),
+        glyph: 'cooldown-reduction',
+        label: t('market.aside.badgeDuration'),
         tone: 'slate',
-        value: `${formatNumber(buff.durationSeconds)}`,
-        unit: t('market.aside.unitSeconds'),
+        value: `${formatNumber(buff.durationSeconds)}秒`,
       })
     }
-    cards.push({
-      id: `aside-buff-${buff.name}`,
-      mark: t('market.aside.buff'),
-      title: buff.name,
-      tone: 'gold',
-      content: <EffectAsideBody items={items} />,
-    })
+    cards.push(
+      createBonusAsideCard({
+        id: `aside-buff-${buff.name}`,
+        mark: t('market.aside.buff'),
+        title: buff.name,
+        tone: 'gold',
+        items,
+      })
+    )
   }
 
   // 5. 功法秘籍/残卷战技参悟
@@ -1197,142 +1250,6 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
   parryResolve: 'silver',
 }
 
-/**
- * 提取装备的主干攻防数值、百分比点数与强化加成（同属主卡片，统一按强化倍率结算）
- */
-export function describeEquipmentEffects(
-  equipment?: CombatEquipmentDefinition,
-  enhancementLevel = 0
-): ReactNode[] {
-  if (!equipment) return []
-  const t = getT()
-  const lines: ReactNode[] = []
-
-  // 属性 key -> i18n 词条键映射；未登记的新属性回退原始 wire key
-  const ratioLabelKeys: Record<string, string> = {
-    physicalAttack: 'market.stat.physicalAttack',
-    spellAttack: 'market.stat.spellAttack',
-    damage: 'market.stat.attackPower',
-    physicalArmor: 'market.stat.physicalArmor',
-    armor: 'market.stat.physicalArmor',
-    spellResistance: 'market.stat.spellResistance',
-    mr: 'market.stat.spellResistance',
-    accuracy: 'market.stat.accuracy',
-    hit: 'market.stat.accuracy',
-    evasion: 'market.stat.evasion',
-    eva: 'market.stat.evasion',
-    criticalChance: 'market.stat.critChance',
-    criticalDamage: 'market.stat.criticalDamage',
-    damageAbsorption: 'market.stat.damageReduction',
-    actionSpeed: 'market.stat.actionSpeed',
-    cooldownReduction: 'market.stat.cooldownReduction',
-  }
-
-  const flatLabelKeys: Record<string, string> = {
-    physicalAttack: 'market.stat.physicalAttack',
-    spellAttack: 'market.stat.spellAttack',
-    accuracy: 'market.stat.accuracy',
-    evasion: 'market.stat.evasion',
-    maxHitpoints: 'market.stat.maxHitpoints',
-    hp: 'market.stat.maxHitpoints',
-    maxManapoints: 'market.stat.maxManapoints',
-    mp: 'market.stat.maxManapoints',
-    physicalArmor: 'market.stat.physicalArmor',
-    armor: 'market.stat.physicalArmor',
-    spellResistance: 'market.stat.spellResistance',
-    mr: 'market.stat.spellResistance',
-    hitpointRegen: 'market.stat.hitpointRegen',
-    hpRegen: 'market.stat.hitpointRegen',
-    manapointRegen: 'market.stat.manapointRegen',
-    mpRegen: 'market.stat.manapointRegen',
-    criticalChance: 'market.stat.critChance',
-    tenacity: 'market.stat.resilience',
-    fixedDamageBonus: 'market.stat.fixedDamageBonus',
-    fixedDamageReduction: 'market.stat.fixedDamageReduction',
-    fixedPhysicalDamageBonus: 'market.stat.fixedPhysicalDamageBonus',
-    fixedPhysicalDamageReduction: 'market.stat.fixedPhysicalDamageReduction',
-    fixedSpellDamageBonus: 'market.stat.fixedSpellDamageBonus',
-    fixedSpellDamageReduction: 'market.stat.fixedSpellDamageReduction',
-  }
-
-  // 装备数值唯一真源为配表原始数值块（baseStatRatios/flatStats），协议不再下发派生 stats 幻影块。
-  // 强化结算口径与服务端 PlayerAttributeResolver 一致：两段基础属性同乘 1.05^强化等级（指数成长），
-  // 悬浮卡直接显示结算后真实值（战斗属性展示约定为下取整，不出现小数）。
-  const enhanceScale = Math.pow(1.05, enhancementLevel)
-  if (equipment.baseStatRatios) {
-    for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
-      if (val !== 0) {
-        const label = ratioLabelKeys[key] ? t(ratioLabelKeys[key]) : key
-        const tone = STAT_TONE_MAP[key] ?? 'default'
-        const glyph = resolveStatGlyph(key)
-        lines.push(
-          <PillBonusLabel
-            key={`ratio-${key}`}
-            icon={glyph ? <StatGlyph glyph={glyph} size={14.5} /> : undefined}
-            label={label}
-            tone={tone}
-            value={signedPercent(val * enhanceScale)}
-          />
-        )
-      }
-    }
-  }
-  if (equipment.flatStats) {
-    for (const [key, val] of Object.entries(equipment.flatStats)) {
-      if (val === 0) continue
-      const point = POINT_STAT_LABELS[key]
-      if (point) {
-        // 点数键（*Points）为百分比点数通道，与固定值同乘强化倍率（口径同服务端 PlayerAttributeResolver）。
-        const scaled = val * enhanceScale
-        const effective = +(point.curve === 'nonlinear' ? scaled / (100 + Math.abs(scaled)) * 100 : scaled).toFixed(1)
-        const isTemplate = point.label.startsWith('market.effect.')
-        const glyph = resolveStatGlyph(key)
-        lines.push(
-          <PillBonusLabel
-            key={`point-${key}`}
-            icon={glyph ? <StatGlyph glyph={glyph} size={14.5} /> : undefined}
-            label={isTemplate ? t(point.label, { n: effective }) : t(point.label)}
-            tone={STAT_TONE_MAP[key] ?? STAT_TONE_MAP[key.replace(/Points$/, '')] ?? 'default'}
-            value={isTemplate ? '' : `${effective >= 0 ? '+' : ''}${effective}%`}
-          />
-        )
-        continue
-      }
-      const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
-      const tone = STAT_TONE_MAP[key] ?? 'default'
-      const glyph = resolveStatGlyph(key)
-      lines.push(
-        <PillBonusLabel
-          key={`flat-${key}`}
-          icon={glyph ? <StatGlyph glyph={glyph} size={14.5} /> : undefined}
-          label={label}
-          tone={tone}
-          value={`+${formatInteger(val * enhanceScale)}`}
-        />
-      )
-    }
-  }
-  if (equipment.techniqueBonus) {
-    const { technique, speedRatio } = equipment.techniqueBonus
-    if (speedRatio > 0) {
-      const scaled = speedRatio * enhanceScale
-      const percent = +(scaled * 100).toFixed(1)
-      const labelKey = TOOL_SPEED_LABEL_KEYS[technique]
-      const label = labelKey ? t(labelKey) : t('insight.panel.actionSpeed')
-      lines.push(
-        <PillBonusLabel
-          key={`tool-speed-${technique}`}
-          icon={<StatGlyph glyph={technique} size={14.5} />}
-          label={label}
-          tone="emerald"
-          value={`+${percent}%`}
-        />
-      )
-    }
-  }
-  return lines
-}
-
 /** 点数键 → 词条标签与曲线口径（战斗设计 §7.5：增伤类 Linear / 减伤速率类 NonLinear / 速率类 rate） */
 const POINT_STAT_LABELS: Record<string, { label: string; curve: 'linear' | 'nonlinear' | 'rate' }> = {
   physicalDamageBonusPoints: { label: 'market.stat.physicalDamageBonus', curve: 'linear' },
@@ -1375,16 +1292,185 @@ const TOOL_SPEED_LABEL_KEYS: Record<string, string> = {
   enhancement: 'combat.nearby.attrEnhancementSpeed',
 }
 
+/** 装备属性比率 key -> i18n 词条键映射 */
+const EQUIPMENT_RATIO_LABEL_KEYS: Record<string, string> = {
+  physicalAttack: 'market.stat.physicalAttack',
+  spellAttack: 'market.stat.spellAttack',
+  damage: 'market.stat.attackPower',
+  physicalArmor: 'market.stat.physicalArmor',
+  armor: 'market.stat.physicalArmor',
+  spellResistance: 'market.stat.spellResistance',
+  mr: 'market.stat.spellResistance',
+  accuracy: 'market.stat.accuracy',
+  hit: 'market.stat.accuracy',
+  evasion: 'market.stat.evasion',
+  eva: 'market.stat.evasion',
+  criticalChance: 'market.stat.critChance',
+  criticalDamage: 'market.stat.criticalDamage',
+  damageAbsorption: 'market.stat.damageReduction',
+  actionSpeed: 'market.stat.actionSpeed',
+  cooldownReduction: 'market.stat.cooldownReduction',
+}
+
+/** 装备固定数值属性 key -> i18n 词条键映射 */
+const EQUIPMENT_FLAT_LABEL_KEYS: Record<string, string> = {
+  physicalAttack: 'market.stat.physicalAttack',
+  spellAttack: 'market.stat.spellAttack',
+  accuracy: 'market.stat.accuracy',
+  evasion: 'market.stat.evasion',
+  maxHitpoints: 'market.stat.maxHitpoints',
+  hp: 'market.stat.maxHitpoints',
+  maxManapoints: 'market.stat.maxManapoints',
+  mp: 'market.stat.maxManapoints',
+  physicalArmor: 'market.stat.physicalArmor',
+  armor: 'market.stat.physicalArmor',
+  spellResistance: 'market.stat.spellResistance',
+  mr: 'market.stat.spellResistance',
+  hitpointRegen: 'market.stat.hitpointRegen',
+  hpRegen: 'market.stat.hitpointRegen',
+  manapointRegen: 'market.stat.manapointRegen',
+  mpRegen: 'market.stat.manapointRegen',
+  criticalChance: 'market.stat.critChance',
+  tenacity: 'market.stat.resilience',
+  fixedDamageBonus: 'market.stat.fixedDamageBonus',
+  fixedDamageReduction: 'market.stat.fixedDamageReduction',
+  fixedPhysicalDamageBonus: 'market.stat.fixedPhysicalDamageBonus',
+  fixedPhysicalDamageReduction: 'market.stat.fixedPhysicalDamageReduction',
+  fixedSpellDamageBonus: 'market.stat.fixedSpellDamageBonus',
+  fixedSpellDamageReduction: 'market.stat.fixedSpellDamageReduction',
+}
+
+/**
+ * 提取装备的主干攻防数值、百分比点数与强化加成（供主卡片内联渲染与独立悬浮副窗共用）
+ */
+export function extractEquipmentBonusItems(
+  equipment?: CombatEquipmentDefinition,
+  enhancementLevel = 0
+): BonusAsideItem[] {
+  if (!equipment) return []
+  const t = getT()
+  const items: BonusAsideItem[] = []
+  const enhanceScale = Math.pow(1.05, enhancementLevel)
+
+  if (equipment.baseStatRatios) {
+    for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
+      if (val !== 0) {
+        const label = EQUIPMENT_RATIO_LABEL_KEYS[key] ? t(EQUIPMENT_RATIO_LABEL_KEYS[key]) : key
+        const tone = (STAT_TONE_MAP[key] ?? 'default') as PillTone
+        const glyph = resolveStatGlyph(key) ?? undefined
+        items.push({
+          glyph,
+          label,
+          tone,
+          value: signedPercent(val * enhanceScale),
+        })
+      }
+    }
+  }
+
+  if (equipment.flatStats) {
+    for (const [key, val] of Object.entries(equipment.flatStats)) {
+      if (val === 0) continue
+      const point = POINT_STAT_LABELS[key]
+      if (point) {
+        // 点数键（*Points）为百分比点数通道，与固定值同乘强化倍率（口径同服务端 PlayerAttributeResolver）。
+        const scaled = val * enhanceScale
+        const effective = +(point.curve === 'nonlinear' ? scaled / (100 + Math.abs(scaled)) * 100 : scaled).toFixed(1)
+        const isTemplate = point.label.startsWith('market.effect.')
+        const glyph = resolveStatGlyph(key) ?? undefined
+        const tone = (STAT_TONE_MAP[key] ?? STAT_TONE_MAP[key.replace(/Points$/, '')] ?? 'default') as PillTone
+        items.push({
+          glyph,
+          label: isTemplate ? t(point.label, { n: effective }) : t(point.label),
+          tone,
+          value: isTemplate ? '' : `${effective >= 0 ? '+' : ''}${effective}%`,
+        })
+        continue
+      }
+      const label = EQUIPMENT_FLAT_LABEL_KEYS[key] ? t(EQUIPMENT_FLAT_LABEL_KEYS[key]) : key
+      const tone = (STAT_TONE_MAP[key] ?? 'default') as PillTone
+      const glyph = resolveStatGlyph(key) ?? undefined
+      items.push({
+        glyph,
+        label,
+        tone,
+        value: `+${formatInteger(val * enhanceScale)}`,
+      })
+    }
+  }
+
+  if (equipment.techniqueBonus) {
+    const { technique, speedRatio } = equipment.techniqueBonus
+    if (speedRatio > 0) {
+      const scaled = speedRatio * enhanceScale
+      const percent = +(scaled * 100).toFixed(1)
+      const labelKey = TOOL_SPEED_LABEL_KEYS[technique]
+      const label = labelKey ? t(labelKey) : t('insight.panel.actionSpeed')
+      const glyph = resolveStatGlyph(technique) ?? resolveStatGlyph('actionSpeed') ?? undefined
+      items.push({
+        glyph,
+        label,
+        tone: 'emerald',
+        value: `+${percent}%`,
+      })
+    }
+  }
+
+  return items
+}
+
+/**
+ * 提取装备的主干攻防数值、百分比点数与强化加成（同属主卡片，统一按强化倍率结算）
+ */
+export function describeEquipmentEffects(
+  equipment?: CombatEquipmentDefinition,
+  enhancementLevel = 0
+): ReactNode[] {
+  const items = extractEquipmentBonusItems(equipment, enhancementLevel)
+  return items.map((item, idx) => {
+    const glyphName = item.glyph ?? resolveStatGlyph(item.label)
+    const iconNode = item.icon ?? (glyphName ? <StatGlyph glyph={glyphName} size={14.5} /> : undefined)
+    return (
+      <PillBonusLabel
+        key={idx}
+        icon={iconNode}
+        label={item.label}
+        tone={item.tone}
+        value={item.value}
+      />
+    )
+  })
+}
+
+/**
+ * 构造装备属性数值加成独立悬浮窗 (Equipment Bonus Aside Card)
+ */
+export function createEquipmentBonusAsideCard(
+  equipment: CombatEquipmentDefinition,
+  enhancementLevel = 0,
+  title?: string
+): FloatingAsideCard {
+  const t = getT()
+  const items = extractEquipmentBonusItems(equipment, enhancementLevel)
+  return createBonusAsideCard({
+    id: `aside-eq-bonus-${equipment.slot}`,
+    mark: t('market.aside.equipmentBonus'),
+    title: title ?? t('market.aside.equipmentStats'),
+    tone: 'gold',
+    items,
+  })
+}
+
 /**
  * 通用 Buff / Debuff 附属卡片构造工具
- * 能够将任意实时 Buff 实例转化为标准统一的 FloatingAsideCard
+ * 将任意实时 Buff 实例转化为统一标准的属性数值加成独立悬浮窗 (createBonusAsideCard)
  */
 export function createBuffAsideCard(
   buff: Buff,
   mark?: string
 ): FloatingAsideCard {
   const t = getT()
-  const items = resolveStructuredBuffEffects(buff)
+  const items = extractBuffBonusItems(buff)
 
   const isDebuff =
     buff.attackSpeedPoints < 0 ||
@@ -1395,7 +1481,8 @@ export function createBuffAsideCard(
 
   if (buff.stacks > 1) {
     items.unshift({
-      badge: t('market.aside.badgeStacks'),
+      glyph: 'realm',
+      label: t('market.aside.badgeStacks'),
       tone: 'gold',
       value: `×${formatNumber(buff.stacks)}`,
     })
@@ -1404,13 +1491,13 @@ export function createBuffAsideCard(
   const tone: FloatingTone = isDebuff ? 'danger' : 'gold'
   const resolvedMark = mark ?? (isDebuff ? t('market.aside.debuff') : t('market.aside.buff'))
 
-  return {
+  return createBonusAsideCard({
     id: `aside-active-buff-${buff.buffId}`,
     mark: resolvedMark,
     title: buff.name,
     tone,
-    content: <EffectAsideBody items={items} />,
-  }
+    items,
+  })
 }
 
 /**
