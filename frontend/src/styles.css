@@ -5437,6 +5437,9 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow: visible;
+  padding-top: 28px;
+  margin-top: -22px;
 }
 
 .abilities-group-slots--wrap {
@@ -5444,6 +5447,9 @@ input[type="checkbox"] {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  overflow: visible;
+  padding-top: 28px;
+  margin-top: -22px;
 }
 
 .abilities-slot-card {

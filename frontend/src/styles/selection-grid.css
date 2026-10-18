@@ -522,7 +522,7 @@
   min-height: 0;
   padding: 3px 9px;
   border: 1px solid color-mix(in srgb, var(--gold-dim) 80%, transparent);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--gold-light, #e8d08c);
   background: linear-gradient(180deg, rgba(24, 22, 16, 0.96) 0%, rgba(9, 10, 8, 0.96) 100%);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 4px rgba(201, 180, 109, 0.12);
@@ -544,8 +544,8 @@
   display: block;
   content: '';
   position: absolute;
-  inset: -8px -12px;
-  border-radius: 6px;
+  inset: -6px 0;
+  border-radius: 8px;
   background: transparent;
   pointer-events: auto;
 }
@@ -566,11 +566,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 30px;
-  min-width: 80px;
-  padding: 5px 18px;
-  border-radius: 4px;
-  font-size: 13px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 600;
   bottom: 100%;
   left: 50%;
@@ -590,21 +592,32 @@
 
 @media (hover: none), (pointer: coarse) {
   .item-slot-inline-action--condition {
-    min-height: 34px;
-    min-width: 88px;
-    padding: 6px 20px;
-    border-radius: 4px;
-    font-size: 13px;
+    min-height: 30px;
+    width: 100%;
+    max-width: 100%;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-size: 12px;
   }
 }
 
 /* 已学功法目录瓦片的条件容器：ConditionedTile 作为 grid cell 包裹瓦片，
    提供相对定位基准并令瓦片居中 */
-.abilities-learned-cell {
+.abilities-learned-cell,
+.conditioned-tile {
   position: relative;
   display: grid;
   place-items: center;
+  width: var(--item-slot-size, var(--item-tile-size, 64px));
+  height: var(--item-slot-size, var(--item-tile-size, 64px));
 }
+/* 为已学功法目录网格首排预留冲顶裕量，杜绝第一排 hover 浮现条件按钮时被截断 */
+.abilities-learned-grid {
+  overflow: visible;
+  padding-top: 28px;
+  margin-top: -22px;
+}
+
 
 /* 浮现触发域统一为 ConditionedTile 容器（conditioned-tile）；ItemUseSlot 的
    item-use-slot-tooltip 挂点保留给物品槽形态。条件按钮一律挂在悬浮卡触发域之外，
@@ -782,7 +795,7 @@
   gap: 5px;
   margin-top: auto;
   overflow-x: auto;
-  padding-top: 8px;
+  padding: 32px 0;
   border-top: 1px solid var(--gold-faint);
   flex-shrink: 0;
 }
@@ -825,6 +838,7 @@
   padding: 4px 6px;
   border: 1px solid var(--gold-faint);
   background: rgba(201, 180, 109, 0.025);
+  overflow: visible;
 }
 
 .slot-group-label {
@@ -845,9 +859,10 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding-top: 8px;
+  padding-top: 0;
   flex-wrap: nowrap;
   min-width: max-content;
+  overflow: visible;
 }
 
 .combat-slot-grid--abilities {

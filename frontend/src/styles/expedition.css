@@ -3665,8 +3665,8 @@
   overflow-x: auto;
   overflow-y: visible;
   overscroll-behavior-x: contain;
-  /* 预留上下外侧留白，使 ConditionedTile 悬浮浮现的条件按钮不被容器裁切截断 */
-  padding: 22px 0;
+  /* 预留充足上下外侧留白（34px），使 ConditionedTile 悬浮浮现的条件按钮（高 28px）在上下两侧均不被容器裁切截断 */
+  padding: 34px 0;
   scrollbar-width: thin;
 }
 
