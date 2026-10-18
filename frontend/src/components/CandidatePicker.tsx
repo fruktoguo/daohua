@@ -97,10 +97,15 @@ export function CandidatePicker({
   }, [open])
 
   const visibleOptions = useMemo(() => {
+    if (!open || anchor === null) return []
     if (!normalizedQuery) return options
     return options.filter(option =>
       (option.searchText ?? '').toLocaleLowerCase('zh-CN').includes(normalizedQuery))
-  }, [options, normalizedQuery])
+  }, [anchor, open, options, normalizedQuery])
+
+  if (!open || anchor === null) {
+    return null
+  }
 
   const emptyText = t('common.pickerEmpty')
   const titleText = typeof title === 'string' ? title : undefined
