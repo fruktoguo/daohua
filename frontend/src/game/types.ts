@@ -1175,6 +1175,22 @@ export interface Stats {
   lifespanYears?: number
   /** 已击败妖兽 ID 集合（万象图鉴妖兽志解锁） */
   defeatedMonsterIds?: string[]
+  /** 当前装配生效的特质 ID 列表（受境界容量上限约束） */
+  traitIds?: string[]
+  /** 已觉醒解锁的特质养成记录（含等级与经验） */
+  unlockedTraits?: TraitProgress[]
+}
+
+/**
+ * 特质养成进度
+ */
+export interface TraitProgress {
+  /** 特质唯一 ID (trait.*) */
+  id: string
+  /** 特质当前等级 (≥1) */
+  level: number
+  /** 特质当前累积经验 */
+  exp: number
 }
 
 /**

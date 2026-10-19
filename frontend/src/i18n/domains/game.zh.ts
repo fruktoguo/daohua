@@ -208,6 +208,7 @@ export const gameZh = {
       'currency.spirit-stone': { label: '灵石', description: '晶棱含光，灵韵内藏。\n蕴含纯净天地灵气的六角晶石，光华内敛。' },
       'item.gongde': { label: '功德', description: '行善积德所凝的功德金光，可予同道交换流转。' },
       'item.gongde-bound': { label: '功德·绑定', description: '邀友同道所得之功德，系于己身，不可易手。' },
+      'item.awakening-stone': { label: '觉醒石', description: '天地通玄，宿慧初开。\n蕴含先天气运的玄奥灵石。使用后可随机觉醒一项先天特质；若已拥有，则为该特质注入领悟经验，促其突破升阶。' },
       'item.tome.heavy-slash': { label: '《重斩秘籍》', description: '重剑无锋，大巧不工。\n古朴厚重的蓝皮线装册页，字迹苍劲凌厉，隐有破空刀意。' },
       'item.fragment.heavy-slash': { label: '《重斩·残卷》', description: '重剑无锋，大巧不工。\n古朴厚重的蓝皮线装册页，字迹苍劲凌厉，隐有破空刀意。' },
       'item.tome.chain-strike': { label: '《连环秘籍》', description: '剑势连绵，环环相扣。\n记录连绵发力法门的武道典籍，图谱招式如水银泻地。' },

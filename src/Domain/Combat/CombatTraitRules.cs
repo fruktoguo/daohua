@@ -13,6 +13,11 @@ public sealed record TraitDefinition(
     string Description = "");
 
 /// <summary>
+/// 玩家特质养成状态记录（总纲 §7.12.4）：记录特质当前等级与已累积经验。
+/// </summary>
+public sealed record TraitProgressState(string Id, int Level, int Exp);
+
+/// <summary>
 /// 特质规则单点表（总纲 §7.12）：特质 ID → 面板点数折算与开战 Buff 授予的集中映射。
 /// 配表化（traits 词表）属远期扩展；本期映射硬编码于此，玩家与怪物面板同构消费。
 /// </summary>
@@ -33,6 +38,37 @@ public static class CombatTraitRules
     /// 全特质静态注册表（Q1 凡品、Q2 黄品、Q3 玄品、Q4 地品、Q5 天品及机制特质）。
     /// </summary>
     public static readonly IReadOnlyDictionary<string, TraitDefinition> AllTraits = RegisterAllTraits();
+    /// <summary>全特质 ID 列表，供觉醒石抽取等概率选定。</summary>
+    public static readonly IReadOnlyList<string> AllTraitIds = AllTraits.Keys.ToArray();
+
+    /// <summary>特质升至下一级所需经验点数：Lv N -> N+1 需 N 点经验。</summary>
+    public static int ExpForNextLevel(int level) => Math.Max(1, level);
+
+    /// <summary>
+    /// 为特质增加经验并自动判定升级（等差经验阶梯，默认上限 20 级）。
+    /// </summary>
+    public static (int Level, int Exp, bool LeveledUp) AddExp(int currentLevel, int currentExp, int addExp = 1, int maxLevel = 20)
+    {
+        var level = Math.Max(1, currentLevel);
+        if (level >= maxLevel) return (maxLevel, 0, false);
+        var exp = Math.Max(0, currentExp) + addExp;
+        var leveledUp = false;
+        while (level < maxLevel && exp >= ExpForNextLevel(level))
+        {
+            exp -= ExpForNextLevel(level);
+            level++;
+            leveledUp = true;
+        }
+        if (level >= maxLevel) exp = 0;
+        return (level, exp, leveledUp);
+    }
+
+    /// <summary>从全量特质池中等概率随机抽取一项特质 ID。</summary>
+    public static string PickRandomTrait(Random random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        return AllTraitIds[random.Next(AllTraitIds.Count)];
+    }
 
     /// <summary>
     /// 计算指定境界等级的角色特质点数容量上限（总纲 §7.12.1）：
@@ -95,9 +131,15 @@ public static class CombatTraitRules
     }
 
     /// <summary>
-    /// 汇总结算特质属性百分比加成与点数通道加成。
+    /// 汇总结算特质属性百分比加成与点数通道加成（基础无等级口径，等效全特质 1 级）。
     /// </summary>
     public static void AccumulateModifiers(IReadOnlyList<string>? traitIds, Dictionary<string, double> statRatios, Dictionary<string, double> points)
+        => AccumulateModifiers(traitIds, null, statRatios, points);
+
+    /// <summary>
+    /// 汇总结算特质属性百分比加成与点数通道加成（支持特质等级每级 5% 线性成长，双刃剑惩罚锁定不变）。
+    /// </summary>
+    public static void AccumulateModifiers(IReadOnlyList<string>? traitIds, IReadOnlyDictionary<string, int>? traitLevels, Dictionary<string, double> statRatios, Dictionary<string, double> points)
     {
         if (traitIds is null || traitIds.Count == 0) return;
         for (var i = 0; i < traitIds.Count; i++)
@@ -105,31 +147,53 @@ public static class CombatTraitRules
             var id = traitIds[i];
             if (!AllTraits.TryGetValue(id, out var def)) continue;
 
+            var level = traitLevels is not null && traitLevels.TryGetValue(id, out var lv) ? Math.Max(1, lv) : 1;
+            var scale = 1.0 + 0.05 * (level - 1);
+
             if (def.StatRatios is not null)
             {
                 foreach (var (k, v) in def.StatRatios)
-                    statRatios[k] = statRatios.GetValueOrDefault(k) + v;
+                {
+                    // 正向属性每级成长 5%，负向副作用惩罚锁定不变
+                    var finalV = v > 0 ? v * scale : v;
+                    statRatios[k] = statRatios.GetValueOrDefault(k) + finalV;
+                }
             }
 
             if (def.Points is not null)
             {
                 foreach (var (k, v) in def.Points)
-                    points[k] = points.GetValueOrDefault(k) + v;
+                {
+                    // 力微饭否受击仇恨或正向点数提升 5%/级，负面惩罚锁定不变
+                    var finalV = string.Equals(k, "threatOnTakenPoints", StringComparison.Ordinal) || v > 0
+                        ? v * scale
+                        : v;
+                    points[k] = points.GetValueOrDefault(k) + finalV;
+                }
             }
         }
     }
 
     /// <summary>特质 → 受击涨威胁点数折算：由属性解析汇入 <see cref="CombatEffectProfile"/> 通道。</summary>
-    public static double ThreatOnTakenPoints(IReadOnlyList<string>? traits)
-        => ContainsTrait(traits, ThreatOnTakenTraitId) ? ThreatOnTakenTraitPoints : 0;
+    public static double ThreatOnTakenPoints(IReadOnlyList<string>? traits, IReadOnlyDictionary<string, int>? traitLevels = null)
+    {
+        if (!ContainsTrait(traits, ThreatOnTakenTraitId)) return 0;
+        var level = traitLevels is not null && traitLevels.TryGetValue(ThreatOnTakenTraitId, out var lv) ? Math.Max(1, lv) : 1;
+        return ThreatOnTakenTraitPoints * (1.0 + 0.05 * (level - 1));
+    }
 
-    /// <summary>特质 → 开战 Buff 授予：遭遇创建时对每个单位按其面板 Traits 生效。</summary>
-    public static void ApplyBattleStartTraits(CombatantState unit)
+    /// <summary>特质 → 开战 Buff 授予：遭遇创建时对每个单位按其面板 Traits 生效（隐身时长支持等级成长）。</summary>
+    public static void ApplyBattleStartTraits(CombatantState unit, IReadOnlyDictionary<string, int>? traitLevels = null)
     {
         if (ContainsTrait(unit.Stats.Traits, UnseenTraitId))
-            unit.Buffs.Add(new CombatBuffState(UnseenBuffId, UnseenBuffDurationSeconds, ThreatPoints: -100, Name: "隐身",
+        {
+            var level = traitLevels is not null && traitLevels.TryGetValue(UnseenTraitId, out var lv) ? Math.Max(1, lv) : 1;
+            var duration = UnseenBuffDurationSeconds * (1.0 + 0.05 * (level - 1));
+            unit.Buffs.Add(new CombatBuffState(UnseenBuffId, duration, ThreatPoints: -100, Name: "隐身",
                 ResetOnWave: true));
+        }
     }
+
 
     public static bool ContainsTrait(IReadOnlyList<string>? traits, string traitId)
     {

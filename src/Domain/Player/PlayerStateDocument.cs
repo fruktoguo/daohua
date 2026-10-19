@@ -45,7 +45,8 @@ public sealed record PlayerProgressionState(
     double CombatExperience = 0,
     double LifetimeExperience = 0,
     IReadOnlyList<string>? TraitIds = null,
-    IReadOnlyList<string>? DefeatedMonsterIds = null);
+    IReadOnlyList<string>? DefeatedMonsterIds = null,
+    IReadOnlyList<Domain.Combat.TraitProgressState>? UnlockedTraits = null);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -195,7 +196,8 @@ public sealed partial class PlayerAggregate
                 Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds,
                 Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
                 Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null,
-                Progression.DefeatedMonsterIds.Count > 0 ? Progression.DefeatedMonsterIds.ToArray() : null),
+                Progression.DefeatedMonsterIds.Count > 0 ? Progression.DefeatedMonsterIds.ToArray() : null,
+                Progression.UnlockedTraits.Count > 0 ? Progression.UnlockedTraits.Values.ToArray() : null),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs },
             GetCachedBuffs(),
@@ -442,6 +444,15 @@ public sealed partial class PlayerAggregate
                 throw new DomainException(DomainErrorCode.InvalidArgument, "玩家特质记录无效。");
             aggregate.Progression.TraitIds.AddRange(traitIds);
         }
+        if (state.Progression.UnlockedTraits is { Count: > 0 } unlockedTraits)
+        {
+            foreach (var t in unlockedTraits)
+            {
+                if (t is null || string.IsNullOrWhiteSpace(t.Id) || t.Id.Length > 128)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, "玩家特质记录无效。");
+                aggregate.Progression.UnlockedTraits[t.Id] = t;
+            }
+        }
         if (state.Progression.DefeatedMonsterIds is { Count: > 0 } defeatedMonsterIds)
         {
             if (defeatedMonsterIds.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128))
@@ -616,6 +627,11 @@ public sealed partial class PlayerAggregate
         if (restored.Progression.TraitIds.Count > 0) Progression.TraitIds.AddRange(restored.Progression.TraitIds);
         Progression.DefeatedMonsterIds.Clear();
         if (restored.Progression.DefeatedMonsterIds.Count > 0) Progression.DefeatedMonsterIds.AddRange(restored.Progression.DefeatedMonsterIds);
+        Progression.UnlockedTraits.Clear();
+        if (restored.Progression.UnlockedTraits is { Count: > 0 } unlocked)
+        {
+            foreach (var (_, t) in unlocked) Progression.UnlockedTraits[t.Id] = t;
+        }
         World.NodeId = restored.World.NodeId;
         World.EdgeId = restored.World.EdgeId;
         World.EdgeProgress = restored.World.EdgeProgress;
@@ -767,7 +783,7 @@ public sealed partial class PlayerAggregate
         long SectionVersion,
         Domain.Combat.DuelSettings DuelSettingsTuning);
 
-    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion, long TraitIdsVersion, long DefeatedMonsterIdsVersion);
+    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion, long TraitIdsVersion, long DefeatedMonsterIdsVersion, long UnlockedTraitsVersion);
     private sealed record WorldCheckpoint(PlayerWorldStateDocument State, long AttributeInputVersion);
     private sealed record CombatCheckpoint(PlayerCombatStateDocument State);
     private sealed record BuffsCheckpoint(ActiveBuff[] Items, long Version);
@@ -821,10 +837,12 @@ public sealed partial class PlayerAggregate
                 Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds,
                 Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
                 Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null,
-                Progression.DefeatedMonsterIds.Count > 0 ? Progression.DefeatedMonsterIds.ToArray() : null),
+                Progression.DefeatedMonsterIds.Count > 0 ? Progression.DefeatedMonsterIds.ToArray() : null,
+                Progression.UnlockedTraits.Count > 0 ? Progression.UnlockedTraits.Values.ToArray() : null),
             Progression.RealmLevelVersion,
             Progression.TraitIds.Version,
-            Progression.DefeatedMonsterIds.Version),
+            Progression.DefeatedMonsterIds.Version,
+            Progression.UnlockedTraits.Version),
         PlayerSectionKind.World => new WorldCheckpoint(
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress,
                 World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
@@ -869,7 +887,7 @@ public sealed partial class PlayerAggregate
             case PlayerSectionKind.Progression:
             {
                 var data = (ProgressionCheckpoint)checkpoint;
-                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion, data.TraitIdsVersion, data.DefeatedMonsterIdsVersion);
+                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion, data.TraitIdsVersion, data.DefeatedMonsterIdsVersion, data.UnlockedTraitsVersion);
                 break;
             }
             case PlayerSectionKind.World:

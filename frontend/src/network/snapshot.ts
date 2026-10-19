@@ -41,13 +41,14 @@ import type {
   QueueEntry,
   QueueState,
   Stats,
+  TraitProgress,
   TravelSegment,
   WorldState,
 } from '../game/types'
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 35
+const SNAPSHOT_SCHEMA_VERSION = 36
 
 type JsonObject = Record<string, unknown>
 
@@ -866,6 +867,21 @@ function mapStats(value: unknown): Stats {
     lifespanYears: numberValue(row.lifespanYears),
     defeatedMonsterIds: Array.isArray(row.defeatedMonsterIds)
       ? row.defeatedMonsterIds.filter((id): id is string => typeof id === 'string')
+      : [],
+    traitIds: Array.isArray(row.traitIds)
+      ? row.traitIds.filter((id): id is string => typeof id === 'string')
+      : [],
+    unlockedTraits: Array.isArray(row.unlockedTraits)
+      ? row.unlockedTraits
+          .map((item: unknown) => {
+            if (!item || typeof item !== 'object') return null
+            const rec = item as Record<string, unknown>
+            const id = typeof rec.id === 'string' ? rec.id : ''
+            const level = typeof rec.level === 'number' && rec.level >= 1 ? Math.floor(rec.level) : 1
+            const exp = typeof rec.exp === 'number' && rec.exp >= 0 ? Math.floor(rec.exp) : 0
+            return id ? { id, level, exp } : null
+          })
+          .filter((t): t is TraitProgress => t !== null)
       : [],
   }
 }

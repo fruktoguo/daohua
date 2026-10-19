@@ -271,6 +271,8 @@ public static class ProtocolSnapshotMapper
             state.Progression.CompletedActions, state.Progression.SimulationCarrySeconds,
             state.Progression.NormalKills, state.Progression.EliteKills, state.Progression.BossKills,
             state.Progression.TotalDefeats, state.Progression.CultivationSeconds, state.Progression.AgeSeconds,
+            traitIds = state.Progression.TraitIds ?? (IReadOnlyList<string>)[],
+            unlockedTraits = state.Progression.UnlockedTraits ?? (IReadOnlyList<Domain.Combat.TraitProgressState>)[],
             defeatedMonsterIds = state.Progression.DefeatedMonsterIds ?? (IReadOnlyList<string>)[],
             lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
                 ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))

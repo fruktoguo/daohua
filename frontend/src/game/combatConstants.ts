@@ -1121,3 +1121,42 @@ export function calculateTraitCapacity(realmLevel = 1): number {
 
   return pts
 }
+
+/** 特质升至下一级所需经验点数：Lv N -> N+1 需 N 点经验 */
+export function getExpForNextTraitLevel(level: number): number {
+  return Math.max(1, Math.floor(level))
+}
+
+/** 特质等级属性缩放倍率：每级提升 5% 线性成长 */
+export function getTraitLevelScale(level: number): number {
+  return 1.0 + 0.05 * Math.max(0, Math.floor(level) - 1)
+}
+
+/**
+ * 格式化特质当前等级的效果描述（动态计算 5% 缩放数值）
+ */
+export function formatTraitDescription(id: string, level = 1): string {
+  const meta = TRAIT_DEFINITIONS[id]
+  if (!meta) return ''
+  if (level <= 1) return meta.description
+  const scale = getTraitLevelScale(level)
+  // 对数值进行 5% 缩放替换（如 10% -> 10.5%，10 秒 -> 10.5 秒）
+  if (id === 'trait.bukandaowo') {
+    const dur = (10 * scale).toFixed(1).replace(/\.0$/, '')
+    return `开战获得隐身 buff，威胁权重归零持续 ${dur} 秒`
+  }
+  if (id === 'trait.liweifanfou') {
+    const pct = Math.round(100 * scale)
+    return `受伤害时按减免前原始威力的 ${pct}% 累积自身威胁`
+  }
+  // 普通数值特质：按正则将正向百分比提取并缩放
+  return meta.description.replace(/(\+)?(\d+(\.\d+)?)%/g, (match, prefix, numStr) => {
+    const val = Number.parseFloat(numStr)
+    if (Number.isNaN(val)) return match
+    // 双刃剑惩罚（降低 X%）不放大
+    const isPenalty = match.includes('-')
+    if (isPenalty) return match
+    const scaled = (val * scale).toFixed(1).replace(/\.0$/, '')
+    return `${prefix ?? ''}${scaled}%`
+  })
+}

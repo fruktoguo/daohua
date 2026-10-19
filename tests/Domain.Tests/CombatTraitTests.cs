@@ -177,4 +177,102 @@ public sealed class CombatTraitTests
         Assert.Equal(baseStats.MaxHitpoints * 1.35, statsEarth.MaxHitpoints, 3);
         Assert.Equal(-15, statsEarth.TotalDamageBonusPoints);
     }
+
+    [Fact]
+    public void TraitExpAndLevelScalingFollowStepRules()
+    {
+        // Lv1 -> 2 需 1 点经验
+        Assert.Equal(1, CombatTraitRules.ExpForNextLevel(1));
+        // Lv2 -> 3 需 2 点经验
+        Assert.Equal(2, CombatTraitRules.ExpForNextLevel(2));
+        // Lv3 -> 4 需 3 点经验
+        Assert.Equal(3, CombatTraitRules.ExpForNextLevel(3));
+
+        // 初始 Lv1 Exp0，+1 经验升到 Lv2 Exp0
+        var r1 = CombatTraitRules.AddExp(1, 0, 1);
+        Assert.Equal(2, r1.Level);
+        Assert.Equal(0, r1.Exp);
+        Assert.True(r1.LeveledUp);
+
+        // Lv2 Exp0，+1 经验升到 Lv2 Exp1（未升级）
+        var r2 = CombatTraitRules.AddExp(2, 0, 1);
+        Assert.Equal(2, r2.Level);
+        Assert.Equal(1, r2.Exp);
+        Assert.False(r2.LeveledUp);
+
+        // Lv2 Exp1，再 +1 经验升到 Lv3 Exp0
+        var r3 = CombatTraitRules.AddExp(2, 1, 1);
+        Assert.Equal(3, r3.Level);
+        Assert.Equal(0, r3.Exp);
+        Assert.True(r3.LeveledUp);
+    }
+
+    [Fact]
+    public void PlayerAwakenTraitAndLevelUpWorks()
+    {
+        var player = CreatePlayer(realmLevel: 18);
+        var rng = new Random(12345);
+
+        // 1. 初次觉醒
+        var res1 = player.Progression.AwakenTrait(rng, "trait.tianshengmanli");
+        Assert.True(res1.IsNew);
+        Assert.Equal(1, res1.Level);
+        Assert.Equal(0, res1.Exp);
+        Assert.False(res1.LeveledUp);
+        Assert.True(player.Progression.UnlockedTraits.ContainsKey("trait.tianshengmanli"));
+
+        // 2. 再次觉醒同一特质：注入 1 点经验，Lv1 -> Lv2 升级
+        var res2 = player.Progression.AwakenTrait(rng, "trait.tianshengmanli");
+        Assert.False(res2.IsNew);
+        Assert.Equal(2, res2.Level);
+        Assert.Equal(0, res2.Exp);
+        Assert.True(res2.LeveledUp);
+
+        // 3. 可以正常装配已解锁特质
+        player.Progression.SetTraits(["trait.tianshengmanli"]);
+        Assert.Contains("trait.tianshengmanli", player.Progression.TraitIds);
+
+        // 4. 尝试装配未解锁特质抛出异常
+        var ex = Assert.Throws<DomainException>(() =>
+            player.Progression.SetTraits(["trait.wanjianguiyi"]));
+        Assert.Equal(DomainErrorCode.InvalidArgument, ex.Code);
+    }
+
+    [Fact]
+    public void TraitLevel5PercentGrowthAmplifiesAttributesCorrectly()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var baseStats = PlayerAttributeResolver.Resolve(CreatePlayer(realmLevel: 18), catalog);
+
+        // 1. Lv1 天生蛮力：物攻 +10%
+        var p1 = CreatePlayer(realmLevel: 18);
+        p1.Progression.UnlockedTraits["trait.tianshengmanli"] = new Domain.Combat.TraitProgressState("trait.tianshengmanli", 1, 0);
+        p1.Progression.SetTraits(["trait.tianshengmanli"]);
+        var stats1 = PlayerAttributeResolver.Resolve(p1, catalog);
+        Assert.Equal(baseStats.PhysicalAttack * 1.10, stats1.PhysicalAttack, 3);
+
+        // 2. Lv2 天生蛮力（Scale = 1.05）：物攻 +10% * 1.05 = +10.5%
+        var p2 = CreatePlayer(realmLevel: 18);
+        p2.Progression.UnlockedTraits["trait.tianshengmanli"] = new Domain.Combat.TraitProgressState("trait.tianshengmanli", 2, 0);
+        p2.Progression.SetTraits(["trait.tianshengmanli"]);
+        var stats2 = PlayerAttributeResolver.Resolve(p2, catalog);
+        Assert.Equal(baseStats.PhysicalAttack * 1.105, stats2.PhysicalAttack, 3);
+
+        // 3. 双刃剑天品万剑归一（Lv2）：物攻放大 65% * 1.05 = 68.25%，负面惩罚锁定不变（受全伤 +25 点，最大生命 -30%）
+        var pWj = CreatePlayer(realmLevel: 18);
+        pWj.Progression.UnlockedTraits["trait.wanjianguiyi"] = new Domain.Combat.TraitProgressState("trait.wanjianguiyi", 2, 0);
+        pWj.Progression.SetTraits(["trait.wanjianguiyi"]);
+        var statsWj = PlayerAttributeResolver.Resolve(pWj, catalog);
+        Assert.Equal(baseStats.PhysicalAttack * 1.6825, statsWj.PhysicalAttack, 3);
+        Assert.Equal(-25, statsWj.PhysicalDamageReductionPoints);
+        Assert.Equal(-25, statsWj.SpellDamageReductionPoints);
+        Assert.Equal(baseStats.MaxHitpoints / 1.30, statsWj.MaxHitpoints, 3);
+
+        // 4. 机制特质力微饭否（Lv3）：受击嘲讽点数放大 100 * (1 + 0.05 * 2) = 110 点
+        var pLf = CreatePlayer(realmLevel: 18);
+        pLf.Progression.UnlockedTraits["trait.liweifanfou"] = new Domain.Combat.TraitProgressState("trait.liweifanfou", 3, 0);
+        pLf.Progression.SetTraits(["trait.liweifanfou"]);
+        var statsLf = PlayerAttributeResolver.Resolve(pLf, catalog);
+        Assert.Equal(110, statsLf.Effects.ThreatOnTakenPoints, 3);
+    }
 }

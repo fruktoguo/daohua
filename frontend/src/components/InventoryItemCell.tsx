@@ -56,12 +56,19 @@ function ItemQuantityDialog({
   const presets = [...new Set([1, 10, 100, max].filter(value => value >= 1 && value <= max))].sort((a, b) => a - b)
 
   const confirm = () => {
-    if (isUse) gameClient.sendCommand('ability.learn', { itemId: item.itemId, quantity })
-    else gameClient.sendCommand(isDiscard ? 'item.discard' : 'item.sell', {
-      itemId: item.itemId,
-      variant: item.variant ?? '',
-      quantity,
-    })
+    if (isUse) {
+      if (item.itemId === 'item.awakening-stone') {
+        gameClient.sendCommand('item.use', { itemId: item.itemId, quantity })
+      } else {
+        gameClient.sendCommand('ability.learn', { itemId: item.itemId, quantity })
+      }
+    } else {
+      gameClient.sendCommand(isDiscard ? 'item.discard' : 'item.sell', {
+        itemId: item.itemId,
+        variant: item.variant ?? '',
+        quantity,
+      })
+    }
     onClose()
   }
 
@@ -75,7 +82,9 @@ function ItemQuantityDialog({
         </h2>
         <p>
           {isUse
-            ? t(isTome ? 'app.inventoryPanel.useTomeDescription' : 'app.inventoryPanel.useFragmentDescription')
+            ? item.itemId === 'item.awakening-stone'
+              ? '使用觉醒石感悟天地机缘，随机觉醒先天特质，或为已觉醒特质注入突破经验。'
+              : t(isTome ? 'app.inventoryPanel.useTomeDescription' : 'app.inventoryPanel.useFragmentDescription')
             : isDiscard
               ? t('app.inventoryPanel.discardDescription')
               : t('app.inventoryPanel.recycleDescription', { price: formatNumber(unitPrice) })}
@@ -138,8 +147,9 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const bagItem = occupiedCount > 0 ? { ...item, amount: Math.max(0, item.amount - occupiedCount) } : item
   const [dialog, setDialog] = useState<ItemQuantityDialogMode | null>(null)
 
+  const isAwakeningStone = item.itemId === 'item.awakening-stone'
   const isManual = item.itemId.startsWith('item.tome.') || item.itemId.startsWith('item.fragment.')
-  const usable = !occupied && (isManual || equipmentDef !== undefined)
+  const usable = !occupied && (isManual || isAwakeningStone || equipmentDef !== undefined)
   const tradable = equipmentDef !== undefined || definition?.isTradable === true
   // 回收单价：装备按当前强化等级查表折算，普通物品直接取配表 sellPrice
   const isEquipment = equipmentDef !== undefined || item.itemId.startsWith('equipment.')
@@ -153,7 +163,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
 
   /** 使用：秘籍/残卷进批量研读弹窗（ability.learn 携带 quantity）；装备立即穿戴（loadout.replace 剔除冲突槽位后推入） */
   const use = () => {
-    if (isManual) {
+    if (isManual || isAwakeningStone) {
       setDialog('use')
       return
     }

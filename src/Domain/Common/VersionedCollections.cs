@@ -110,7 +110,13 @@ public sealed class VersionedList<T> : IList<T>, IReadOnlyList<T>
 public sealed class VersionedDictionary<TKey, TValue> : IDictionary<TKey, TValue>, IReadOnlyDictionary<TKey, TValue>
     where TKey : notnull
 {
-    private readonly Dictionary<TKey, TValue> _inner = new();
+    private readonly Dictionary<TKey, TValue> _inner;
+
+    public VersionedDictionary() : this(null) { }
+    public VersionedDictionary(IEqualityComparer<TKey>? comparer)
+    {
+        _inner = comparer is null ? new() : new(comparer);
+    }
 
     /// <summary>内容修订号：写入严格单调递增，只读不变。</summary>
     internal long Version { get; private set; }

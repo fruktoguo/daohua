@@ -144,7 +144,8 @@ public static class PlayerAttributeResolver
         => Resolve(state.Progression.RealmLevel, state.EquippedItemIds ?? [], state.Loadout, state.Buffs, state.Combat, catalog,
             string.Equals(state.World.NodeBuildingNodeId, state.World.NodeId, StringComparison.Ordinal)
                 ? state.World.NodeBuildingEffects
-                : null, state.Progression.TraitIds);
+                : null, state.Progression.TraitIds,
+            state.Progression.UnlockedTraits?.ToDictionary(t => t.Id, t => t.Level, StringComparer.Ordinal));
 
     /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。
     /// 带「属性输入修订号」缓存：同配表实例且全部输入源版本号未变时直接复用上轮结果；
@@ -160,7 +161,8 @@ public static class PlayerAttributeResolver
         var resolved = Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
             new(player.Resources.Hitpoints, player.Resources.MaxHitpoints, player.Resources.Manapoints,
                 player.Resources.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
-            player.World.EffectiveNodeBuildingEffects, player.Progression.TraitIds);
+            player.World.EffectiveNodeBuildingEffects, player.Progression.TraitIds,
+            player.Progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal));
         if (catalog.BaseAttributes is not null)
             player.StoreCachedAttributes(catalog, resolved);
         return resolved;
@@ -171,21 +173,22 @@ public static class PlayerAttributeResolver
         PlayerResourceState resources, PlayerCombatState combat, PlayerBuffState buffs, PlayerLoadoutState loadout, GameDataCatalog catalog)
         => Resolve(progression.RealmLevel, loadout.EquippedItemIds, loadout.Export(), buffs.Active,
             new(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints,
-                combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects, progression.TraitIds);
+                combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects, progression.TraitIds,
+            progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal));
 
     /// <summary>同一组直接分段的属性输入修订号，允许状态所有者复用已解析面板。</summary>
     public static long InputRevision(PlayerProgression progression, PlayerWorldState world,
         PlayerBuffState buffs, PlayerLoadoutState loadout)
         => progression.RealmLevelVersion + world.AttributeInputVersion + buffs.Active.Version
             + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion
-            + progression.TraitIds.Version + loadout.AbilitySlots.Version;
+            + progression.TraitIds.Version + progression.UnlockedTraits.Version + loadout.AbilitySlots.Version;
 
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
         PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null,
-        IReadOnlyList<string>? traitIds = null)
+        IReadOnlyList<string>? traitIds = null, IReadOnlyDictionary<string, int>? traitLevels = null)
     {
         var traits = traitIds is { Count: > 0 } ? traitIds.ToArray() : null;
-        var threatOnTaken = CombatTraitRules.ThreatOnTakenPoints(traits);
+        var threatOnTaken = CombatTraitRules.ThreatOnTakenPoints(traits, traitLevels);
         if (catalog.BaseAttributes is null)
             return new(combat.MaxHitpoints, combat.MaxManapoints, combat.AttackPower, 0, combat.Defense, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1)
             {
@@ -200,7 +203,7 @@ public static class PlayerAttributeResolver
         var points = new Dictionary<string, double>(StringComparer.Ordinal);
         double P(string key) => points.GetValueOrDefault(key);
         void AddPoint(string key, double value) { if (value != 0) points[key] = P(key) + value; }
-        CombatTraitRules.AccumulateModifiers(traits, traitRatios, points);
+        CombatTraitRules.AccumulateModifiers(traits, traitLevels, traitRatios, points);
         foreach (var id in equipment)
         {
             // 配表历史删项或未知装备优雅跳过，不提供加成但拒绝阻断玩家加载与模拟

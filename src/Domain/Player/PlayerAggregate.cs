@@ -39,6 +39,8 @@ public sealed class PlayerProgression
     internal long RealmLevelVersion { get; private set; }
     /// <summary>已解锁特质 ID 集合（trait.*，总纲 §7.12）：常驻特殊效果的获得标记；写入递增版本号供属性缓存失效检测。</summary>
     public VersionedList<string> TraitIds { get; } = new();
+    /// <summary>已解锁特质养成记录（trait.* -> 等级与经验，总纲 §7.12.4）：抽到特质即解锁，重复获赠经验升级；写入递增版本号。</summary>
+    public VersionedDictionary<string, Domain.Combat.TraitProgressState> UnlockedTraits { get; } = new(StringComparer.Ordinal);
     /// <summary>已击败妖兽 ID 集合（enemy.*，总纲 §23）：万象图鉴妖兽志解锁记录；写入递增版本号。</summary>
     public VersionedList<string> DefeatedMonsterIds { get; } = new();
     /// <summary>当前层修为（突破计量条，expToNext 封顶，突破清零）</summary>
@@ -123,6 +125,8 @@ public sealed class PlayerProgression
         {
             if (string.IsNullOrWhiteSpace(id) || id.Length > 128)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "特质 ID 无效。");
+            if (UnlockedTraits.Count > 0 && !UnlockedTraits.ContainsKey(id))
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"特质 {id} 尚未觉醒解锁。");
         }
         var totalCost = Domain.Combat.CombatTraitRules.TotalCost(list);
         var capacity = Domain.Combat.CombatTraitRules.CalculateCapacity(RealmLevel);
@@ -133,8 +137,31 @@ public sealed class PlayerProgression
         TraitIds.AddRange(list);
     }
 
+    /// <summary>
+    /// 使用觉醒石觉醒特质（总纲 §7.12.4）：抽取一项特质，未拥有初入 Lv 1，已拥有累积经验并判定升级。
+    /// </summary>
+    public (string TraitId, int Level, int Exp, bool LeveledUp, bool IsNew) AwakenTrait(Random random, string? targetTraitId = null)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        var traitId = targetTraitId ?? Domain.Combat.CombatTraitRules.PickRandomTrait(random);
+        if (!Domain.Combat.CombatTraitRules.AllTraits.ContainsKey(traitId))
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"未知特质 {traitId}。");
+
+        if (UnlockedTraits.TryGetValue(traitId, out var existing))
+        {
+            var (newLevel, newExp, leveledUp) = Domain.Combat.CombatTraitRules.AddExp(existing.Level, existing.Exp, 1);
+            UnlockedTraits[traitId] = new Domain.Combat.TraitProgressState(traitId, newLevel, newExp);
+            return (traitId, newLevel, newExp, leveledUp, IsNew: false);
+        }
+        else
+        {
+            UnlockedTraits[traitId] = new Domain.Combat.TraitProgressState(traitId, 1, 0);
+            return (traitId, 1, 0, LeveledUp: false, IsNew: true);
+        }
+    }
+
     /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
-    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion)
+    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion, long unlockedTraitsVersion)
     {
         _realmLevel = state.RealmLevel;
         RealmLevelVersion = realmLevelVersion;
@@ -144,6 +171,12 @@ public sealed class PlayerProgression
         DefeatedMonsterIds.Clear();
         if (state.DefeatedMonsterIds is { Count: > 0 } defeated) DefeatedMonsterIds.AddRange(defeated);
         DefeatedMonsterIds.RestoreVersion(defeatedMonsterIdsVersion);
+        UnlockedTraits.Clear();
+        if (state.UnlockedTraits is { Count: > 0 } unlocked)
+        {
+            foreach (var t in unlocked) UnlockedTraits[t.Id] = t;
+        }
+        UnlockedTraits.RestoreVersion(unlockedTraitsVersion);
         Experience = state.Experience;
         Foundation = state.Foundation;
         CombatExperience = state.CombatExperience;
@@ -648,6 +681,7 @@ public sealed partial class PlayerAggregate
         + Loadout.Equipment.Version
         + Loadout.CoreAttributesVersion
         + Progression.TraitIds.Version
+        + Progression.UnlockedTraits.Version
         + Loadout.AbilitySlots.Version;
 
     /// <summary>尝试命中属性解析缓存：同配表实例且属性输入修订号未变时复用上轮结果。</summary>

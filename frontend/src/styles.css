@@ -10065,3 +10065,345 @@ input[type="checkbox"] {
     padding: 0 4px;
   }
 }
+
+/* ========================================================================= */
+/* 内视特质面板与装配弹窗 (Traits Panel & TraitConfigModal)                  */
+/* ========================================================================= */
+
+.insight-panel--traits {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.insight-traits-dashboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  background: rgba(20, 17, 11, 0.7);
+  border: 1px solid rgba(201, 180, 109, 0.25);
+  border-radius: 6px;
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.4);
+}
+
+.insight-traits-capacity-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.insight-traits-capacity-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.insight-traits-capacity-title {
+  color: var(--text-dim);
+}
+
+.insight-traits-capacity-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.insight-traits-progress-bar {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(201, 180, 109, 0.2);
+}
+
+.insight-traits-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c9b46d 0%, #ecc94b 100%);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.insight-traits-modify-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.15);
+  border: 1px solid var(--gold-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.insight-traits-modify-btn:hover {
+  background: rgba(201, 180, 109, 0.28);
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 8px rgba(201, 180, 109, 0.2);
+}
+
+.trait-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.trait-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(14, 12, 8, 0.75);
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
+}
+
+.trait-card-item:hover:not(.is-disabled) {
+  background: rgba(22, 18, 12, 0.9);
+  box-shadow: 0 0 10px rgba(201, 180, 109, 0.25);
+  transform: translateY(-1px);
+}
+
+.trait-card-item.is-selected {
+  background: rgba(30, 24, 15, 0.95);
+  box-shadow: 0 0 12px rgba(236, 201, 75, 0.3), inset 0 0 8px rgba(201, 180, 109, 0.15);
+}
+
+.trait-card-item.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.trait-card-item.is-equipped-view {
+  cursor: default;
+}
+.trait-card-item.is-equipped-view:hover {
+  transform: none;
+}
+
+.trait-quality--q1 { border-color: rgba(160, 160, 160, 0.4); }
+.trait-quality--q2 { border-color: rgba(72, 187, 120, 0.5); }
+.trait-quality--q3 { border-color: rgba(66, 153, 225, 0.55); }
+.trait-quality--q4 { border-color: rgba(159, 122, 234, 0.6); }
+.trait-quality--q5 { border-color: rgba(236, 201, 75, 0.7); box-shadow: 0 0 10px rgba(236, 201, 75, 0.15); }
+
+.trait-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trait-card-name-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trait-quality-tag {
+  font-size: 10px;
+  padding: 1px 4px;
+  border: 1px solid;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.trait-card-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.trait-card-level {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.15);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.trait-card-cost {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.trait-card-desc {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.45;
+  margin: 0;
+  flex: 1;
+}
+
+.trait-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(201, 180, 109, 0.15);
+}
+
+.trait-card-exp {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.trait-card-exp-text {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.trait-card-exp-track {
+  height: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.trait-card-exp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4299e1, #48bb78);
+  border-radius: 2px;
+}
+
+.trait-card-checkbox {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.trait-card-checkbox.is-checked {
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.2);
+}
+
+/* 特质配置弹窗样式 */
+.trait-config-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 80vh;
+}
+
+.trait-config-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.2);
+}
+
+.trait-config-title {
+  margin: 0;
+  font-size: 17px;
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+.trait-capacity-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.trait-capacity-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.trait-capacity-label {
+  color: var(--text-dim);
+}
+
+.trait-capacity-remain {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--text-dim);
+}
+
+.trait-capacity-track {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(201, 180, 109, 0.2);
+}
+
+.trait-capacity-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c9b46d 0%, #ecc94b 100%);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.trait-config-body {
+  overflow-y: auto;
+  max-height: 55vh;
+  padding-right: 4px;
+}
+
+.trait-empty-tip {
+  text-align: center;
+  padding: 30px 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.trait-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(201, 180, 109, 0.2);
+}
+
+.trait-config-cancel {
+  padding: 6px 14px;
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid rgba(201, 180, 109, 0.3);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.trait-config-cancel:hover {
+  color: var(--text);
+  border-color: var(--gold-dim);
+}
+
+.trait-config-confirm {
+  padding: 6px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.35) 0%, rgba(201, 180, 109, 0.15) 100%);
+  border: 1px solid var(--gold);
+  color: var(--gold-bright);
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(201, 180, 109, 0.2);
+}
+
+.trait-config-confirm:hover {
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.5) 0%, rgba(201, 180, 109, 0.25) 100%);
+  box-shadow: 0 0 14px rgba(201, 180, 109, 0.35);
+}

@@ -310,5 +310,14 @@
     "category": "currency",
     "sellPrice": 0,
     "isTradable": false
+  },
+  {
+    "id": "item.awakening-stone",
+    "name": "觉醒石",
+    "description": "天地通玄，宿慧初开。\n蕴含先天气运的玄奥灵石。使用后可随机觉醒一项先天特质；若已拥有，则为该特质注入领悟经验，促其突破升阶。",
+    "kind": "material",
+    "category": "consumable",
+    "sellPrice": 100,
+    "subCategory": "stone"
   }
 ]

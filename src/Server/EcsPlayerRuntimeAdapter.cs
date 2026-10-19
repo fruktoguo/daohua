@@ -641,6 +641,58 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         receiptAlreadyCommitted = true;
                         break;
                     }
+                    case "trait.set":
+                    {
+                        var traitIds = new List<string>();
+                        if (payload.TryGetProperty("traitIds", out var traitIdsElem) && traitIdsElem.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var elem in traitIdsElem.EnumerateArray())
+                            {
+                                if (elem.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(elem.GetString()))
+                                    traitIds.Add(elem.GetString()!.Trim());
+                            }
+                        }
+                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Progression.SetTraits(traitIds));
+                        break;
+                    }
+                    case "item.use":
+                    {
+                        var useItemId = payload.TryGetProperty("itemId", out var useItemElem) && useItemElem.ValueKind == JsonValueKind.String
+                            ? useItemElem.GetString() : null;
+                        var useQuantity = payload.TryGetProperty("quantity", out var useQtyElem) && useQtyElem.TryGetInt32(out var parsedQty)
+                            ? parsedQty : 1;
+                        if (string.IsNullOrWhiteSpace(useItemId) || useQuantity <= 0)
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "物品或数量无效。", before);
+
+                        if (string.Equals(useItemId, "item.awakening-stone", StringComparison.Ordinal))
+                        {
+                            var stoneKey = new ItemId("item.awakening-stone");
+                            var ownedStones = wallet.Get(new AssetKey(stoneKey));
+                            if (ownedStones + 1e-9 < useQuantity)
+                                return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "觉醒石数量不足。", before);
+
+                            touched = ecs.MutatePlayer(playerId, aggregate =>
+                            {
+                                for (var i = 0; i < useQuantity; i++)
+                                {
+                                    aggregate.Progression.AwakenTrait(Random.Shared);
+                                }
+                            });
+
+                            var mutated = ToSnapshot(ecs.ExportSnapshot(playerId));
+                            var useReceipt = CreateReceipt(playerId, requestId, command, payloadHash, mutated.StateVersion);
+                            await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore,
+                                new EconomyTransactionRequest(
+                                    requestId, $"item-use:{playerId:D}:{requestId:D}", command, playerId,
+                                    [new Server.Clean.AssetDelta(playerId, stoneKey.Value, string.Empty, -useQuantity)], DateTimeOffset.UtcNow,
+                                    JsonSerializer.SerializeToUtf8Bytes(new { itemId = stoneKey.Value, quantity = useQuantity })),
+                                useReceipt, cancellationToken).ConfigureAwait(false);
+                            receiptAlreadyCommitted = true;
+                            break;
+                        }
+
+                        return new PlayerCommandResult(false, "UNSUPPORTED_ITEM", "该物品不可直接使用。", before);
+                    }
                     case "progression.breakthrough":
                     {
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Breakthrough(gameData.RealmProgression));
@@ -1844,6 +1896,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "player.rename" => "道号已更新。",
         "player.set_avatar" => "本命形象已更新。",
         "player.unlock_avatar" => "本命形象已解锁并更新。",
+        "trait.set" => "特质装配已保存。",
+        "item.use" => "觉醒石使用成功，特质已觉醒或提升！",
         _ => string.Empty,
     };
 
@@ -2091,7 +2145,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
         "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
         "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "player.unlock_avatar" or "market.claim" or
-        "item.discard" or "item.sell" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
+        "item.discard" or "item.sell" or "trait.set" or "item.use" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
 
     private void RestoreUncommittedPlayer(Guid playerId, PlayerRuntimeSnapshot before,
         IEnumerable<PlayerSectionKind> dirtySectionsBefore)
