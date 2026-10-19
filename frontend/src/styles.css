@@ -4588,7 +4588,7 @@ input[type="checkbox"] {
   padding-bottom: 6px;
 }
 
-/* 坊市功法多维筛选栏与左右二选一双态切换组 (Market Manual Filters & Segmented Toggles) */
+/* 坊市多维筛选栏与多选一 Toggle 组 (Market Filters & Option Toggles) */
 .market-manual-filters {
   display: flex;
   align-items: center;
@@ -4599,13 +4599,48 @@ input[type="checkbox"] {
   border-bottom: 1px dashed rgba(201, 180, 109, 0.15);
 }
 
-.market-manual-all-btn {
+.market-filter-label {
   flex-shrink: 0;
+  margin-left: 2px;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.market-grade-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.market-grade-select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid rgba(201, 180, 109, 0.22);
+  border-radius: 4px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.35);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.market-grade-select:hover {
+  border-color: rgba(201, 180, 109, 0.4);
+}
+
+.market-grade-select:focus-visible {
+  outline: 1px solid var(--gold-dim, rgba(201, 180, 109, 0.5));
+  outline-offset: 1px;
 }
 
 .market-toggle-group {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  max-width: 100%;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(201, 180, 109, 0.22);
   border-radius: 4px;

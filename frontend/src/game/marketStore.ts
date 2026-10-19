@@ -9,14 +9,27 @@ export type MarketPrimaryCategory = 'all' | 'material' | 'equipment' | 'consumab
 /** 坊市顶层 Tab */
 export type MarketTab = 'browse' | 'orders'
 
-/** 功法门类过滤：术法 (spell) | 内功 (internal) */
-export type ManualDisciplineFilter = 'spell' | 'internal'
+/** 功法门类过滤：任意 (any) | 术法 (spell) | 内功 (internal) */
+export type ManualDisciplineFilter = 'any' | 'spell' | 'internal'
 
-/** 功法伤害大类过滤：物理 (physical) | 法术 (spell) */
-export type ManualCategoryFilter = 'physical' | 'spell'
+/** 功法伤害大类过滤：任意 (any) | 物理 (physical) | 法术 (spell) */
+export type ManualCategoryFilter = 'any' | 'physical' | 'spell'
 
-/** 功法载体形式过滤：全本 (tome) | 残卷 (fragment) */
-export type ManualFormFilter = 'tome' | 'fragment'
+/** 功法载体形式过滤：任意 (any) | 全本 (tome) | 残卷 (fragment) */
+export type ManualFormFilter = 'any' | 'tome' | 'fragment'
+
+/** 装备战斗类型过滤：任意 (any) | 物理 (physical) | 法术 (spell) | 防御 (defense) */
+export type EquipmentKindFilter = 'any' | 'physical' | 'spell' | 'defense'
+
+/** 装备部位过滤：任意 (any) | 六部位 + 工具 (tool) */
+export type EquipmentSlotFilter =
+  | 'any' | 'weapon' | 'offHand' | 'head' | 'armor' | 'legs' | 'trinket' | 'tool'
+
+/** 消耗品分类过滤：任意 (any) | 战斗药品 | 战斗通用 | 技艺 */
+export type ConsumableKindFilter = 'any' | 'combatPotion' | 'combatGeneral' | 'technique'
+
+/** 材料稀有度过滤：任意 (any) | 普通 (common) | 稀有 (rare) */
+export type MaterialRarityFilter = 'any' | 'common' | 'rare'
 
 /**
  * 坊市交易标的元数据定义
@@ -103,14 +116,22 @@ export interface MarketUiState {
   selectedItemId: string | null
   /** 坊市顶层当前激活的 Tab ('browse' | 'orders') */
   activeTab: MarketTab
-  /** 功法门类过滤（术法 'spell' | 内功 'internal'） */
+  /** 功法门类过滤（任意 | 术法 | 内功） */
   manualDiscipline: ManualDisciplineFilter
-  /** 功法伤害大类过滤（物理 'physical' | 法术 'spell'） */
+  /** 功法伤害大类过滤（任意 | 物理 | 法术） */
   manualCategory: ManualCategoryFilter
-  /** 功法载体形式过滤（全本 'tome' | 残卷 'fragment'） */
+  /** 功法载体形式过滤（任意 | 全本 | 残卷） */
   manualForm: ManualFormFilter
-  /** 功法是否处于「全部」放行态（为 true 时三组 Toggle 置灰且展示全量功法） */
-  manualFilterAll: boolean
+  /** 装备战斗类型过滤（任意 | 物理 | 法术 | 防御） */
+  equipmentKind: EquipmentKindFilter
+  /** 装备部位过滤（任意 | 六部位 | 工具），选中工具时类型维度禁用并忽略 */
+  equipmentSlot: EquipmentSlotFilter
+  /** 消耗品分类过滤（任意 | 战斗药品 | 战斗通用 | 技艺） */
+  consumableKind: ConsumableKindFilter
+  /** 材料稀有度过滤（任意 | 普通 | 稀有） */
+  materialRarity: MaterialRarityFilter
+  /** 品阶过滤（0 表示任意，1~8 对应品质档） */
+  gradeFilter: number
 
 
   /** 设置一级主分类并重置子分类与滚动位置 */
@@ -131,10 +152,16 @@ export interface MarketUiState {
   setManualCategory: (category: ManualCategoryFilter) => void
   /** 设置功法载体形式并重置滚动位置 */
   setManualForm: (form: ManualFormFilter) => void
-  /** 设置功法「全部」开关状态并重置滚动位置 */
-  setManualFilterAll: (all: boolean) => void
-  /** 切换功法「全部」开关状态并重置滚动位置 */
-  toggleManualFilterAll: () => void
+  /** 设置装备战斗类型并重置滚动位置 */
+  setEquipmentKind: (kind: EquipmentKindFilter) => void
+  /** 设置装备部位并重置滚动位置 */
+  setEquipmentSlot: (slot: EquipmentSlotFilter) => void
+  /** 设置消耗品分类并重置滚动位置 */
+  setConsumableKind: (kind: ConsumableKindFilter) => void
+  /** 设置材料稀有度并重置滚动位置 */
+  setMaterialRarity: (rarity: MaterialRarityFilter) => void
+  /** 设置品阶过滤（0 为任意）并重置滚动位置 */
+  setGradeFilter: (grade: number) => void
   /** 重置全部过滤项至默认状态 */
   resetFilters: () => void
 }
@@ -153,10 +180,14 @@ export const useMarketStore = create<MarketUiState>((set) => ({
   scrollTop: 0,
   selectedItemId: null,
   activeTab: 'browse',
-  manualDiscipline: 'spell',
-  manualCategory: 'physical',
-  manualForm: 'tome',
-  manualFilterAll: true,
+  manualDiscipline: 'any',
+  manualCategory: 'any',
+  manualForm: 'any',
+  equipmentKind: 'any',
+  equipmentSlot: 'any',
+  consumableKind: 'any',
+  materialRarity: 'any',
+  gradeFilter: 0,
 
 
   setPrimaryTab: (primaryTab) => set({ primaryTab, subCategory: 'all', scrollTop: 0 }),
@@ -168,16 +199,23 @@ export const useMarketStore = create<MarketUiState>((set) => ({
   setManualDiscipline: (manualDiscipline) => set({ manualDiscipline, scrollTop: 0 }),
   setManualCategory: (manualCategory) => set({ manualCategory, scrollTop: 0 }),
   setManualForm: (manualForm) => set({ manualForm, scrollTop: 0 }),
-  setManualFilterAll: (manualFilterAll) => set({ manualFilterAll, scrollTop: 0 }),
-  toggleManualFilterAll: () => set((state) => ({ manualFilterAll: !state.manualFilterAll, scrollTop: 0 })),
+  setEquipmentKind: (equipmentKind) => set({ equipmentKind, scrollTop: 0 }),
+  setEquipmentSlot: (equipmentSlot) => set({ equipmentSlot, scrollTop: 0 }),
+  setConsumableKind: (consumableKind) => set({ consumableKind, scrollTop: 0 }),
+  setMaterialRarity: (materialRarity) => set({ materialRarity, scrollTop: 0 }),
+  setGradeFilter: (gradeFilter) => set({ gradeFilter, scrollTop: 0 }),
   resetFilters: () => set({
     primaryTab: 'all',
     subCategory: 'all',
     query: '',
     scrollTop: 0,
-    manualDiscipline: 'spell',
-    manualCategory: 'physical',
-    manualForm: 'tome',
-    manualFilterAll: true,
+    manualDiscipline: 'any',
+    manualCategory: 'any',
+    manualForm: 'any',
+    equipmentKind: 'any',
+    equipmentSlot: 'any',
+    consumableKind: 'any',
+    materialRarity: 'any',
+    gradeFilter: 0,
   }),
 }))

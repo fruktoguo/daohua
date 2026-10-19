@@ -1,17 +1,28 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../../game/format'
-import { findAbilityInCatalog, resolveItemCategoryLabel, resolveItemSubCategory } from '../../game/ids'
+import { resolveItemCategoryLabel, resolveItemSubCategory } from '../../game/ids'
 import { useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import {
   useMarketStore,
+  type ConsumableKindFilter,
+  type EquipmentKindFilter,
+  type EquipmentSlotFilter,
   type ManualCategoryFilter,
   type ManualDisciplineFilter,
   type ManualFormFilter,
   type MarketPrimaryCategory,
+  type MaterialRarityFilter,
 } from '../../game/marketStore'
-import type { CombatAbilityDefinition } from '../../game/types'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
+import {
+  isMaterial,
+  matchesConsumable,
+  matchesEquipment,
+  matchesGrade,
+  matchesManual,
+  matchesMaterialRarity,
+} from './marketFilters'
 import { resolveMarketInstrumentMetadata, type MarketInstrument } from './MarketOrderForm'
 
 
@@ -33,8 +44,6 @@ const PRIMARY_TABS: ReadonlyArray<TabConfig<PrimaryCategory>> = [
 ]
 
 type MaterialSubCategory = 'all' | 'spiritMaterial' | 'mineral' | 'exoticMaterial' | 'refinedMaterial'
-type EquipmentSubCategory = 'all' | 'weapon' | 'offHand' | 'head' | 'armor' | 'legs' | 'trinket' | 'tool'
-type ConsumableSubCategory = 'all' | 'pill' | 'supply'
 
 const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
   { id: 'all', labelKey: 'market.browse.sub.allMaterial', fallback: '全部材料' },
@@ -44,169 +53,43 @@ const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
   { id: 'refinedMaterial', labelKey: 'market.browse.sub.refinedMaterial', fallback: '精材' },
 ]
 
-const EQUIPMENT_SUB_TABS: ReadonlyArray<TabConfig<EquipmentSubCategory>> = [
-  { id: 'all', labelKey: 'market.browse.sub.allEquipment', fallback: '全部装备' },
-  { id: 'weapon', labelKey: 'market.browse.sub.weapon', fallback: '武器' },
-  { id: 'offHand', labelKey: 'market.browse.sub.offHand', fallback: '副手' },
-  { id: 'head', labelKey: 'market.browse.sub.head', fallback: '头部' },
-  { id: 'armor', labelKey: 'market.browse.sub.armor', fallback: '衣服' },
-  { id: 'legs', labelKey: 'market.browse.sub.legs', fallback: '下装' },
-  { id: 'trinket', labelKey: 'market.browse.sub.trinket', fallback: '饰品' },
-  { id: 'tool', labelKey: 'market.browse.sub.tool', fallback: '工具' },
-]
+/** 品阶下拉档位：与品质档 `ITEM_GRADE_ORDER`（1~8 阶）同域 */
+const GRADE_TIERS: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 7, 8]
 
-const CONSUMABLE_SUB_TABS: ReadonlyArray<TabConfig<ConsumableSubCategory>> = [
-  { id: 'all', labelKey: 'market.browse.sub.allConsumable', fallback: '全部消耗品' },
-  { id: 'pill', labelKey: 'market.browse.sub.pill', fallback: '丹药' },
-  { id: 'supply', labelKey: 'market.browse.sub.supply', fallback: '补给耗材' },
-]
-
-
-const WEAPON_SLOTS: Record<string, true> = { weapon: true, 'two-hand': true, mainHandImplement: true, twoHandImplement: true }
-const TRINKET_SLOTS: Record<string, true> = { trinket: true, ring: true, neck: true, talisman: true }
-// 补给类消耗品细分键（炼丹耗材/探索补给），坊市合并为「补给耗材」子 Tab
-const SUPPLY_SUB_CATEGORIES: Record<string, true> = { alchemySupply: true, explorationSupply: true }
-
-function isMaterial(item: MarketInstrument): boolean {
-  return item.category === 'material' || item.definition?.kind === 'material'
+/** 坊市筛选项（Toggle 组通用） */
+interface MarketFilterOption<T extends string> {
+  value: T
+  label: string
 }
 
-function isEquipment(item: MarketInstrument): boolean {
-  return (
-    item.category === 'equipment' ||
-    !!item.equipmentDefinition ||
-    item.itemId.startsWith('equipment.')
-  )
-}
-
-function isConsumable(item: MarketInstrument): boolean {
-  return item.category === 'consumable' || item.definition?.category === 'consumable'
-}
-
-function isManual(item: MarketInstrument): boolean {
-  return (
-    item.category === 'manual' ||
-    item.itemId.startsWith('item.tome.') ||
-    item.itemId.startsWith('item.fragment.')
-  )
-}
-
-function matchesCategory(
-  item: MarketInstrument,
-  primary: PrimaryCategory,
-  sub: string
-): boolean {
-  // 细分键与品类丝带同一解析口径：装备取槽位，其余取配表 subCategory，功法兜底 ID 前缀
+/** 材料子分类判定：与品类丝带同一 `resolveItemSubCategory` 口径 */
+function matchesMaterialSubCategory(item: MarketInstrument, sub: string): boolean {
+  if (sub === 'all') return true
   const subKey = resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory) ?? ''
-  switch (primary) {
-    case 'all':
-      return true
-
-    case 'material': {
-      if (!isMaterial(item)) return false
-      if (sub === 'all') return true
-      if (sub === 'spiritMaterial') return subKey === 'spiritMaterial' || subKey === 'herb'
-      if (sub === 'mineral') return subKey === 'mineral'
-      if (sub === 'exoticMaterial') return subKey === 'exoticMaterial'
-      if (sub === 'refinedMaterial') return subKey === 'refinedMaterial'
-      return true
-    }
-
-    case 'equipment': {
-      if (!isEquipment(item)) return false
-      if (sub === 'all') return true
-      if (sub === 'weapon') return Boolean(WEAPON_SLOTS[subKey] || subKey === 'weapon')
-      if (sub === 'offHand') return subKey === 'off-hand'
-      if (sub === 'head') return subKey === 'head'
-      if (sub === 'armor') return subKey === 'armor'
-      if (sub === 'legs') return subKey === 'legs'
-      if (sub === 'trinket') return Boolean(TRINKET_SLOTS[subKey])
-      if (sub === 'tool') return subKey.startsWith('tool-')
-      return true
-    }
-
-    case 'consumable': {
-      if (!isConsumable(item)) return false
-      if (sub === 'all') return true
-      if (sub === 'pill') return subKey === 'pill'
-      if (sub === 'supply') return Boolean(SUPPLY_SUB_CATEGORIES[subKey])
-      return true
-    }
-
-    case 'manual': {
-      if (!isManual(item)) return false
-      if (sub === 'all') return true
-      if (sub === 'tome') return subKey === 'manualTome'
-      if (sub === 'fragment') return subKey === 'manualFragment'
-      return true
-    }
-  }
-}
-
-function matchesManual(
-  item: MarketInstrument,
-  abilities: readonly CombatAbilityDefinition[],
-  filterAll: boolean,
-  discipline: ManualDisciplineFilter,
-  category: ManualCategoryFilter,
-  form: ManualFormFilter,
-): boolean {
-  if (!isManual(item)) return false
-  if (filterAll) return true
-
-  const isTome = item.itemId.startsWith('item.tome.')
-  const isFragment = item.itemId.startsWith('item.fragment.')
-  const itemForm: ManualFormFilter = isTome
-    ? 'tome'
-    : isFragment
-      ? 'fragment'
-      : (item.subCategory === 'manualTome' ? 'tome' : 'fragment')
-
-  if (itemForm !== form) return false
-
-  const slug = isTome
-    ? item.itemId.slice('item.tome.'.length)
-    : isFragment
-      ? item.itemId.slice('item.fragment.'.length)
-      : item.itemId.replace(/^item\.(tome|fragment)\./, '')
-  const abilityId = `ability.${slug}`
-  const ability = findAbilityInCatalog(abilities, abilityId)
-
-  const itemDiscipline: ManualDisciplineFilter = (ability?.discipline === 'internal') ? 'internal' : 'spell'
-  if (itemDiscipline !== discipline) return false
-
-  const itemCategory: ManualCategoryFilter = (ability?.category === 'physical') ? 'physical' : 'spell'
-  if (itemCategory !== category) return false
-
+  if (sub === 'spiritMaterial') return subKey === 'spiritMaterial' || subKey === 'herb'
+  if (sub === 'mineral') return subKey === 'mineral'
+  if (sub === 'exoticMaterial') return subKey === 'exoticMaterial'
+  if (sub === 'refinedMaterial') return subKey === 'refinedMaterial'
   return true
 }
 
-/** 左右二选一双态切换 Toggle 组件 Props */
-interface MarketSegmentedToggleProps<T extends string> {
-  ariaLabel?: string
+/** 通用多选一 Toggle 组 Props（首项约定为「任意」） */
+interface MarketOptionToggleProps<T extends string> {
+  ariaLabel: string
   disabled?: boolean
-  leftLabel: string
-  leftValue: T
   onChange: (value: T) => void
-  rightLabel: string
-  rightValue: T
+  options: ReadonlyArray<MarketFilterOption<T>>
   value: T
 }
 
-/** 左右二选一双态切换 Toggle 组件 */
-function MarketSegmentedToggle<T extends string>({
+/** 通用多选一 Toggle 组：任意 + 互斥选项，支持整体置灰 */
+function MarketOptionToggle<T extends string>({
   ariaLabel,
   disabled,
-  leftLabel,
-  leftValue,
   onChange,
-  rightLabel,
-  rightValue,
+  options,
   value,
-}: MarketSegmentedToggleProps<T>): React.JSX.Element {
-  const isLeft = value === leftValue
-  const isRight = value === rightValue
-
+}: MarketOptionToggleProps<T>): React.JSX.Element {
   return (
     <div
       aria-disabled={disabled}
@@ -214,22 +97,21 @@ function MarketSegmentedToggle<T extends string>({
       className={`market-toggle-group${disabled ? ' is-disabled' : ''}`}
       role="group"
     >
-      <button
-        aria-pressed={isLeft}
-        className={`market-toggle-btn${isLeft ? ' active' : ''}`}
-        onClick={() => onChange(leftValue)}
-        type="button"
-      >
-        {leftLabel}
-      </button>
-      <button
-        aria-pressed={isRight}
-        className={`market-toggle-btn${isRight ? ' active' : ''}`}
-        onClick={() => onChange(rightValue)}
-        type="button"
-      >
-        {rightLabel}
-      </button>
+      {options.map(option => (
+        <button
+          aria-pressed={value === option.value}
+          className={`market-toggle-btn${value === option.value ? ' active' : ''}`}
+          key={option.value}
+          onClick={() => {
+            if (disabled) return
+            onChange(option.value)
+          }}
+          tabIndex={disabled ? -1 : undefined}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -303,7 +185,10 @@ interface MarketBrowseGridProps {
 }
 
 /**
- * 坊市标的网格检索与多级分类浏览组件 (MarketBrowseGrid)
+ * 坊市标的网格检索与多维分类浏览组件 (MarketBrowseGrid)
+ *
+ * 筛选体系：每个维度统一为「任意 + 互斥选项」Toggle 组，任意即该维不过滤，多维 AND 联合；
+ * 品阶为跨品类全局维度（0 表示任意）。装备选中工具时类型维度置灰并忽略。
  */
 export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   instruments,
@@ -321,15 +206,22 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const query = useMarketStore(state => state.query)
   const setQuery = useMarketStore(state => state.setQuery)
   const abilities = useGameStore(state => state.abilities)
-  const manualFilterAll = useMarketStore(state => state.manualFilterAll)
   const manualDiscipline = useMarketStore(state => state.manualDiscipline)
   const manualCategory = useMarketStore(state => state.manualCategory)
   const manualForm = useMarketStore(state => state.manualForm)
-  const setManualFilterAll = useMarketStore(state => state.setManualFilterAll)
-  const toggleManualFilterAll = useMarketStore(state => state.toggleManualFilterAll)
+  const equipmentKind = useMarketStore(state => state.equipmentKind)
+  const equipmentSlot = useMarketStore(state => state.equipmentSlot)
+  const consumableKind = useMarketStore(state => state.consumableKind)
+  const materialRarity = useMarketStore(state => state.materialRarity)
+  const gradeFilter = useMarketStore(state => state.gradeFilter)
   const setManualDiscipline = useMarketStore(state => state.setManualDiscipline)
   const setManualCategory = useMarketStore(state => state.setManualCategory)
   const setManualForm = useMarketStore(state => state.setManualForm)
+  const setEquipmentKind = useMarketStore(state => state.setEquipmentKind)
+  const setEquipmentSlot = useMarketStore(state => state.setEquipmentSlot)
+  const setConsumableKind = useMarketStore(state => state.setConsumableKind)
+  const setMaterialRarity = useMarketStore(state => state.setMaterialRarity)
+  const setGradeFilter = useMarketStore(state => state.setGradeFilter)
 
   // 2. 滚动容器 Ref 与位置无损恢复控制。
   //    is-scrolling 用命令式 classList 切换、scrollTop 先落 ref 再防抖写回 store：
@@ -387,85 +279,111 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
     return amounts
   }, [inventory])
 
-  const handlePrimaryTabChange = (newPrimary: PrimaryCategory) => {
-    setPrimaryTab(newPrimary)
+  const resetScroll = useCallback(() => {
     if (gridRef.current) {
       gridRef.current.scrollTop = 0
     }
+  }, [])
+
+  const handlePrimaryTabChange = (newPrimary: PrimaryCategory) => {
+    setPrimaryTab(newPrimary)
+    resetScroll()
   }
 
   const handleSubCategoryChange = (newSub: string) => {
     setSubCategory(newSub)
-    if (gridRef.current) {
-      gridRef.current.scrollTop = 0
-    }
+    resetScroll()
   }
 
   const handleQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setQuery(event.target.value)
-    if (gridRef.current) {
-      gridRef.current.scrollTop = 0
-    }
+    resetScroll()
   }
 
-  const handleToggleManualAll = useCallback(() => {
-    toggleManualFilterAll()
-    if (gridRef.current) {
-      gridRef.current.scrollTop = 0
-    }
-  }, [toggleManualFilterAll])
+  const handleGradeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setGradeFilter(Number(event.target.value))
+    resetScroll()
+  }
 
-  const handleDisciplineChange = useCallback((newDiscipline: ManualDisciplineFilter) => {
-    if (useMarketStore.getState().manualFilterAll) {
-      setManualFilterAll(false)
-    }
-    setManualDiscipline(newDiscipline)
-    if (gridRef.current) {
-      gridRef.current.scrollTop = 0
-    }
-  }, [setManualDiscipline, setManualFilterAll])
+  // 4. 筛选选项常量：首项恒为「任意」，其余互斥
+  const materialRarityOptions = useMemo<ReadonlyArray<MarketFilterOption<MaterialRarityFilter>>>(() => [
+    { value: 'any', label: t('market.browse.filter.any') },
+    { value: 'common', label: t('market.browse.filter.rarity.common') },
+    { value: 'rare', label: t('market.browse.filter.rarity.rare') },
+  ], [t])
 
-  const handleCategoryChange = useCallback((newCategory: ManualCategoryFilter) => {
-    if (useMarketStore.getState().manualFilterAll) {
-      setManualFilterAll(false)
-    }
-    setManualCategory(newCategory)
-    if (gridRef.current) {
-      gridRef.current.scrollTop = 0
-    }
-  }, [setManualCategory, setManualFilterAll])
+  const equipmentKindOptions = useMemo<ReadonlyArray<MarketFilterOption<EquipmentKindFilter>>>(() => [
+    { value: 'any', label: t('market.browse.filter.any') },
+    { value: 'physical', label: t('market.browse.filter.kind.physical') },
+    { value: 'spell', label: t('market.browse.filter.kind.spell') },
+    { value: 'defense', label: t('market.browse.filter.kind.defense') },
+  ], [t])
 
-  const handleFormChange = useCallback((newForm: ManualFormFilter) => {
-    if (useMarketStore.getState().manualFilterAll) {
-      setManualFilterAll(false)
-    }
-    setManualForm(newForm)
-    if (gridRef.current) {
-      gridRef.current.scrollTop = 0
-    }
-  }, [setManualForm, setManualFilterAll])
+  const equipmentSlotOptions = useMemo<ReadonlyArray<MarketFilterOption<EquipmentSlotFilter>>>(() => [
+    { value: 'any', label: t('market.browse.filter.any') },
+    { value: 'weapon', label: t('market.browse.sub.weapon') },
+    { value: 'offHand', label: t('market.browse.sub.offHand') },
+    { value: 'head', label: t('market.browse.sub.head') },
+    { value: 'armor', label: t('market.browse.sub.armor') },
+    { value: 'legs', label: t('market.browse.sub.legs') },
+    { value: 'trinket', label: t('market.browse.sub.trinket') },
+    { value: 'tool', label: t('market.browse.sub.tool') },
+  ], [t])
 
-  const subTabs = useMemo(() => {
-    switch (primaryTab) {
-      case 'material':
-        return MATERIAL_SUB_TABS
-      case 'equipment':
-        return EQUIPMENT_SUB_TABS
-      case 'consumable':
-        return CONSUMABLE_SUB_TABS
-      default:
-        return []
-    }
-  }, [primaryTab])
+  const consumableKindOptions = useMemo<ReadonlyArray<MarketFilterOption<ConsumableKindFilter>>>(() => [
+    { value: 'any', label: t('market.browse.filter.any') },
+    { value: 'combatPotion', label: t('market.browse.filter.consumable.combatPotion') },
+    { value: 'combatGeneral', label: t('market.browse.filter.consumable.combatGeneral') },
+    { value: 'technique', label: t('market.browse.filter.consumable.technique') },
+  ], [t])
+
+  const disciplineOptions = useMemo<ReadonlyArray<MarketFilterOption<ManualDisciplineFilter>>>(() => [
+    { value: 'any', label: t('market.browse.filter.any') },
+    { value: 'spell', label: t('market.browse.manual.spell') },
+    { value: 'internal', label: t('market.browse.manual.internal') },
+  ], [t])
+
+  const manualCategoryOptions = useMemo<ReadonlyArray<MarketFilterOption<ManualCategoryFilter>>>(() => [
+    { value: 'any', label: t('market.browse.filter.any') },
+    { value: 'physical', label: t('market.browse.manual.physical') },
+    { value: 'spell', label: t('market.browse.manual.magic') },
+  ], [t])
+
+  const manualFormOptions = useMemo<ReadonlyArray<MarketFilterOption<ManualFormFilter>>>(() => [
+    { value: 'any', label: t('market.browse.filter.any') },
+    { value: 'tome', label: t('market.browse.manual.tome') },
+    { value: 'fragment', label: t('market.browse.manual.fragment') },
+  ], [t])
+
+  const gradeOptions = useMemo<ReadonlyArray<{ value: number; label: string }>>(() => [
+    { value: 0, label: t('market.browse.filter.any') },
+    ...GRADE_TIERS.map(tier => ({
+      value: tier,
+      label: t('market.browse.filter.gradeOption', { tier: formatNumber(tier) }),
+    })),
+  ], [t])
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
   const visibleItems = useMemo(() => instruments.filter(item => {
-    if (primaryTab === 'manual') {
-      if (!matchesManual(item, abilities, manualFilterAll, manualDiscipline, manualCategory, manualForm)) {
-        return false
-      }
-    } else {
-      if (!matchesCategory(item, primaryTab, subCategory)) return false
+    if (!matchesGrade(item, gradeFilter)) return false
+
+    switch (primaryTab) {
+      case 'material':
+        if (!isMaterial(item)) return false
+        if (!matchesMaterialSubCategory(item, subCategory)) return false
+        if (!matchesMaterialRarity(item, materialRarity)) return false
+        break
+      case 'equipment':
+        if (!matchesEquipment(item, equipmentKind, equipmentSlot)) return false
+        break
+      case 'consumable':
+        if (!matchesConsumable(item, consumableKind)) return false
+        break
+      case 'manual':
+        if (!matchesManual(item, abilities, manualDiscipline, manualCategory, manualForm)) return false
+        break
+      default:
+        break
     }
 
     if (!normalizedQuery) return true
@@ -481,7 +399,11 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
     normalizedQuery,
     t,
     abilities,
-    manualFilterAll,
+    gradeFilter,
+    materialRarity,
+    equipmentKind,
+    equipmentSlot,
+    consumableKind,
     manualDiscipline,
     manualCategory,
     manualForm,
@@ -514,53 +436,9 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
         />
       </div>
 
-      {primaryTab === 'manual' ? (
-        <div className="market-manual-filters" role="toolbar" aria-label={t('market.browse.filterSubCategoryAria')}>
-          <button
-            aria-pressed={manualFilterAll}
-            className={`insight-sub-tab-btn market-manual-all-btn${manualFilterAll ? ' active' : ''}`}
-            onClick={handleToggleManualAll}
-            type="button"
-          >
-            {t('market.browse.manual.all')}
-          </button>
-
-          <MarketSegmentedToggle
-            ariaLabel={t('market.browse.manual.disciplineAria')}
-            disabled={manualFilterAll}
-            leftLabel={t('market.browse.manual.spell')}
-            leftValue="spell"
-            onChange={handleDisciplineChange}
-            rightLabel={t('market.browse.manual.internal')}
-            rightValue="internal"
-            value={manualDiscipline}
-          />
-
-          <MarketSegmentedToggle
-            ariaLabel={t('market.browse.manual.categoryAria')}
-            disabled={manualFilterAll}
-            leftLabel={t('market.browse.manual.physical')}
-            leftValue="physical"
-            onChange={handleCategoryChange}
-            rightLabel={t('market.browse.manual.magic')}
-            rightValue="spell"
-            value={manualCategory}
-          />
-
-          <MarketSegmentedToggle
-            ariaLabel={t('market.browse.manual.formAria')}
-            disabled={manualFilterAll}
-            leftLabel={t('market.browse.manual.tome')}
-            leftValue="tome"
-            onChange={handleFormChange}
-            rightLabel={t('market.browse.manual.fragment')}
-            rightValue="fragment"
-            value={manualForm}
-          />
-        </div>
-      ) : subTabs.length > 0 ? (
+      {primaryTab === 'material' && (
         <div className="insight-sub-tabs market-sub-tabs" role="tablist" aria-label={t('market.browse.filterSubCategoryAria')}>
-          {subTabs.map(sub => (
+          {MATERIAL_SUB_TABS.map(sub => (
             <button
               aria-selected={subCategory === sub.id}
               className={`insight-sub-tab-btn${subCategory === sub.id ? ' active' : ''}`}
@@ -573,7 +451,116 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
             </button>
           ))}
         </div>
-      ) : null}
+      )}
+
+      <div className="market-manual-filters" role="toolbar" aria-label={t('market.browse.filterSubCategoryAria')}>
+        {primaryTab === 'material' && (
+          <>
+            <span className="market-filter-label">{t('market.browse.filter.rarityLabel')}</span>
+            <MarketOptionToggle
+              ariaLabel={t('market.browse.filter.rarityAria')}
+              onChange={next => {
+                setMaterialRarity(next)
+                resetScroll()
+              }}
+              options={materialRarityOptions}
+              value={materialRarity}
+            />
+          </>
+        )}
+
+        {primaryTab === 'equipment' && (
+          <>
+            <span className="market-filter-label">{t('market.browse.filter.kindLabel')}</span>
+            <MarketOptionToggle
+              ariaLabel={t('market.browse.filter.kindAria')}
+              disabled={equipmentSlot === 'tool'}
+              onChange={next => {
+                setEquipmentKind(next)
+                resetScroll()
+              }}
+              options={equipmentKindOptions}
+              value={equipmentKind}
+            />
+            <span className="market-filter-label">{t('market.browse.filter.slotLabel')}</span>
+            <MarketOptionToggle
+              ariaLabel={t('market.browse.filter.slotAria')}
+              onChange={next => {
+                setEquipmentSlot(next)
+                resetScroll()
+              }}
+              options={equipmentSlotOptions}
+              value={equipmentSlot}
+            />
+          </>
+        )}
+
+        {primaryTab === 'consumable' && (
+          <>
+            <span className="market-filter-label">{t('market.browse.filter.consumableLabel')}</span>
+            <MarketOptionToggle
+              ariaLabel={t('market.browse.filter.consumableAria')}
+              onChange={next => {
+                setConsumableKind(next)
+                resetScroll()
+              }}
+              options={consumableKindOptions}
+              value={consumableKind}
+            />
+          </>
+        )}
+
+        {primaryTab === 'manual' && (
+          <>
+            <span className="market-filter-label">{t('market.browse.filter.disciplineLabel')}</span>
+            <MarketOptionToggle
+              ariaLabel={t('market.browse.manual.disciplineAria')}
+              onChange={next => {
+                setManualDiscipline(next)
+                resetScroll()
+              }}
+              options={disciplineOptions}
+              value={manualDiscipline}
+            />
+            <span className="market-filter-label">{t('market.browse.filter.damageLabel')}</span>
+            <MarketOptionToggle
+              ariaLabel={t('market.browse.manual.categoryAria')}
+              onChange={next => {
+                setManualCategory(next)
+                resetScroll()
+              }}
+              options={manualCategoryOptions}
+              value={manualCategory}
+            />
+            <span className="market-filter-label">{t('market.browse.filter.formLabel')}</span>
+            <MarketOptionToggle
+              ariaLabel={t('market.browse.manual.formAria')}
+              onChange={next => {
+                setManualForm(next)
+                resetScroll()
+              }}
+              options={manualFormOptions}
+              value={manualForm}
+            />
+          </>
+        )}
+
+        <label className="market-grade-field">
+          <span className="market-filter-label">{t('market.browse.filter.gradeLabel')}</span>
+          <select
+            aria-label={t('market.browse.filter.gradeAria')}
+            className="market-grade-select"
+            onChange={handleGradeChange}
+            value={gradeFilter}
+          >
+            {gradeOptions.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        </div>
 
       <div
         aria-label={t('market.browse.gridAria')}
