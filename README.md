@@ -67,9 +67,9 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj
 ```
 
-默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v24**（`PostgresSchema.Version = 24`），启动时校验版本并拒绝旧 schema。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立 SQL 脚本（当前覆盖 v1→v24，详见 [`migrations/README.md`](migrations/README.md)）。其中 v20→v21 的参与载荷不能无损迁移，旧玩家行必须由 `reset-outdated-players.sh` 交互确认清零；任何版本链缺口或无法迁移的库均不得假装升级，应在确认数据无需保留后重建/清零。本目录可整体删除，全新初始化行为不变。
+默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v37**（`PostgresSchema.Version = 37`），启动时校验版本并拒绝旧 schema；玩家八分段载荷版本保持 **v36**。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立脚本（当前覆盖至 v37，详见 [`migrations/README.md`](migrations/README.md)）。v36→v37 涉及旧组队托管退款，必须停服、全库备份并等待有效租约过期后显式执行 `0037_v36_to_v37.sql`，本地开发启动链不会自动执行。其中 v20→v21 的参与载荷不能无损迁移，旧玩家行必须由 `reset-outdated-players.sh` 交互确认清零；任何版本链缺口或无法迁移的库均不得假装升级，应在确认数据无需保留后重建/清零。本目录可整体删除，全新初始化行为不变。
 
-同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回。schema 版本变化通常要求迁移或重新初始化；其中 v20→v21 的旧参与载荷不能无损迁移，必须按迁移说明由 `reset-outdated-players.sh` 交互确认清零。
+同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回。当前数据库为 v37、玩家 section 仍为 v36，两者不可混用标签。schema 版本变化通常要求迁移或重新初始化；其中 v20→v21 的旧参与载荷不能无损迁移，必须按迁移说明由 `reset-outdated-players.sh` 交互确认清零；v36→v37 可保留现有玩家，按离线迁移脚本结清旧组队托管。
 
 启动正式前端：
 
@@ -215,4 +215,4 @@ docker compose -f compose.yaml down
 
 本版本是内部开发阶段的唯一新基线。不会新增旧数据迁移器、双读双写、旧 DTO、legacy flag、旧字段回填、旧 API 别名或旧协议 fallback。需要改变 schema、快照或部署拓扑时，直接同步代码、测试、文档和全新本地数据库。
 
-组队讨伐由独立会话权威推进一次，成员只消费个人结算；任一成员在线实时推进、全员离线挂起并在回线时统一补算。会话检查点与结算收件箱落 PostgreSQL，重启从检查点恢复；队伍解散保留未消费结算。规则与验收见 [总纲 §21.13](docs/design/总纲/21-同道与组队系统.md#2113-同图共战行动参与讨伐)。
+组队讨伐由独立会话权威推进一次，成员只消费个人结算；任一成员在线实时推进，非耐久战斗消耗品按合法边界使用真实可用钱包，缺物不停战、购入后下一合法边界续用。全员离线后将相关可用库存划为不可售储备，按小时批算且本批新购入物品不倒灌已经推演的时间；成员重连或散场时退回未耗储备，并保留持续效果和冷却时钟。会话检查点与结算收件箱落 PostgreSQL，重启从检查点恢复；队伍解散保留未消费结算。规则与验收见 [总纲 §21.13](docs/design/总纲/21-同道与组队系统.md#2113-同图共战行动参与讨伐)。

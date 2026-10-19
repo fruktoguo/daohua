@@ -1,6 +1,6 @@
 # daohua 生产构建与部署
 
-本文描述当前生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v24。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
+本文描述当前生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前数据库 schema v37，玩家八分段载荷仍为 v36。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的独立迁移脚本（命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；v36→v37 涉及旧托管退款，须停服备份后显式执行，本地启动链拒绝自动应用。该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 
 ## 拓扑与边界
 
@@ -50,7 +50,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v24 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建；本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行 `migrations/` 中的独立 SQL。迁移不可用或失败时必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+API 默认监听 `127.0.0.1:5128`。启动时先完成数据库 schema v37 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建，玩家分段载荷标签保持 v36。本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行可自动应用的独立 SQL；v36→v37 被明确拦截，须停服、全库备份、等待有效租约过期后人工应用。迁移失败直接中止，不进入清零；迁移成功后仍有不可迁移的玩家载荷时，必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
 
 启动正式前端：
 
@@ -189,13 +189,14 @@ sudo /opt/daohua/pitr-restore.sh \
 
 数据库备份必须包括 `identity.account_risk_signals`、`identity.account_risk_events`、`platform.account_risk_policy`、`platform.account_risk_key` 与现有 Data Protection key。丢失 HMAC 密钥会破坏历史关联匹配；设备 Cookie 依赖 Data Protection key，二者不得独立清空。风险事件按独立 `Storage:AccountRiskEventRetentionDays`（默认 30 天、范围 1..365）小批量清理，每小时批次为普通清理批次的 16 倍且不超过 10000，稳定关联和风险密钥保留。API/worker 角色授权已同步 `deploy/postgres-local-roles.sql`。本任务未执行任何远端迁移或发布；生产升级 schema v10 须另行授权、先备份并显式应用独立迁移脚本。
 
-## 组队权威会话与恢复（schema v24）
+## 组队权威会话与恢复（当前数据库 schema v37）
 
 - `social.party_sessions` 同时保存冻结输入、权威战斗检查点、推进时刻与版本；`social.party_session_inbox` 保存各成员待消费结算。两者必须随全库备份/恢复，不可仅恢复玩家分段。
 - 检查点与成员结算一次事务交付；成员消费时，资产、分段与消费回执一次事务提交。重启恢复会话，不再无条件标记 `server.restart` 散场。
 - 队伍解散不会删除会话或未消费结算；离线成员下次装载先消费，再恢复个人行动。个人 ComputeNode 冷挂机扫描排除活跃会话成员与未消费收件箱。
 - 本地 v23→v24 必须先停止全部服务，确认 `game.player_runtime_leases` 无有效租约，再人工执行 `node migrations/0024_v23_to_v24.mjs`；工具通过 `docker exec psql` 在单事务内校验并转换 `game.player_state_sections` 与 `platform.section_flush_queue` 的 Brotli/raw checksum，移除旧 participation 行动、按 Remove 规则激活原队列下一首，并把最后已结算远征血蓝折回 combat（倒地固定 1 血、不回蓝）。它随后 CAS 校验版本/checksum 后执行同一 `0024_v23_to_v24.sql`；失败自动回滚，不会清除角色、队伍、资产或经验。默认容器/用户/库为 `daohua-local-db`/`daohua`/`daohua`，可用 `DB_CONTAINER`、`DB_USER`、`DB_NAME` 覆盖。该 `.mjs` 仅供一次性离线手工运行，不参与启动链、编译或镜像；SQL 单独遇到旧 v23 `action_queue` 会拒绝并提示此路径。
 - 检查点提交无法确认时保留会话与版本证据并拒绝继续写；成员资产提交无法确认沿用玩家 fence，不能靠重启或删除收件箱消除错误。
+- v36→v37 切换在线钱包/全员离线储备：停止 API、worker、计算节点并完成全库备份，等待玩家、市场和计算任务有效租约过期后，显式执行 `migrations/0037_v36_to_v37.sql`。脚本在同一事务内按最后已提交检查点结束旧活跃会话，把旧 `ConsumableLedger` 按成员/物品归并后的未耗余量（含 durable 旧锁定量）退回普通钱包，同步递增余额版本并写入不可变经济流水；已结束会话的待消费奖励与退款不重复发放。每名已绑定成员追加连续序号的终局 inbox，保留原奖励和消耗品时钟，正常装载时消费并退出旧参与绑定；无检查点的未初始化组织占位行仅标记结束。全部会话检查点转换为新格式，不在运行时保留旧托管兼容层。脚本只推进数据库内容版本至 37，玩家八分段载荷及其 schema 标签仍为 36；整笔失败回滚，v37 重执行不退款。恢复必须同时恢复资产余额、经济流水、会话与 inbox，禁止只回放玩家分段或只回滚脚本。脚本不进入启动链或镜像，实际生产执行仍须另行授权。
 
 ## 本地计算节点异地灾备与存储瘦身
 

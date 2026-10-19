@@ -12,7 +12,7 @@
 ## 本地库升级入口
 
 本地开发库升级请用 `scripts/migrate-local-db.sh`（本地启动链自动调用，也可人工显式执行；运行时与门禁都不引用它）：
-它读取 `platform.schema_version`，按序号链式执行本目录中落后的脚本，最后与 `PostgresSchema.Version` 对账。
+它读取 `platform.schema_version`，按序号链式执行本目录中可自动应用的脚本，最后与 `PostgresSchema.Version` 对账。`0037_v36_to_v37.sql` 涉及真实资产退款与会话散场，脚本会明确中止自动链；必须停止 API、worker、计算节点，备份全库并等待有效租约过期后，再以 `psql -v ON_ERROR_STOP=1 -f migrations/0037_v36_to_v37.sql` 显式执行。迁移失败中止启动，不自动清零。
 
 ```bash
 scripts/migrate-local-db.sh            # 就地升级本地库
@@ -23,6 +23,7 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 
 - 文件名：`NNNN_vX_to_vY.sql`，`NNNN` 为递增序号，`X`/`Y` 为 `platform.schema_version` 版本号（本地库内容版本，涵盖表结构与存档载荷标签）。
 - 存档版本联动：`SectionCodec.CurrentSchemaVersion` 升级时 `PostgresSchema.Version` 同步 +1，并在对应版本迁移文件里内嵌 `UPDATE game.player_state_heads / player_state_sections / platform.section_flush_queue SET schema_version` 标签推进。
+- 仅数据库对象或独立会话 JSON 变化时，数据库内容版本可以单独前进；v37 数据库配套的玩家八分段 `SectionCodec` 与存档标签仍为 v36，禁止用数据库版本给玩家分段重贴标签。
 - 存档标签迁移成立的前提：`schema_version` 不参与任何校验和计算，且 PersistenceJson 反序列化对新增字段的缺失属性按类型默认值处理；若新版本变更了既有字段语义或默认值不再是正确初值，该版本不写迁移，旧存档走 `reset-outdated-players.sh` 的交互确认清零。
 - 脚本必须自带事务边界（`BEGIN;`/`COMMIT;`），末尾将 `platform.schema_version` 写入目标版本。
 - 存量行回填必须给出确定值并满足目标版本的 CHECK/NOT NULL 约束。
@@ -66,5 +67,7 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0030_v29_to_v30.sql` | 推进战内 Buff 跨波携带态 `combatBuffs`、组队讨伐参与载荷与阵法全队标记存档标签至 30（可缺省解码，表结构未变） |
 | `0031_v30_to_v31.sql` | `game.player_projection` 增 `offline_since` 离线锚点投影列（存量离线行按提交头补锚），settings 分段增 `offlineSinceAt`（可缺省解码），schema_version 写入 31 |
 | `0032_v31_to_v32.sql` | world 分段建筑效果增 `monsterWeakenRatio`（封魔阵怪物削弱，可缺省解码）、组队会话规格增 `MonsterWeakenRatio`，表结构未变，schema_version 写入 32 |
+| `0037_v36_to_v37.sql` | 停服备份后显式执行；旧活跃全量托管会话按已提交检查点归并未耗余量退款并写经济流水，终局 inbox 保留奖励及槽时钟，未初始化行仅结束；会话 JSON 切换在线钱包/离线储备，数据库版本 37、玩家分段仍为 36；事务失败全回滚，重执行不重复退款 |
+| `0038_v37_to_v38.sql` | 新增 `economy.shop_daily_purchases` 系统商店每日限购认领行（与经济事务同事务累加），数据库版本 38、玩家分段与存档标签仍为 36；纯表结构新增，可自动链执行 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。
