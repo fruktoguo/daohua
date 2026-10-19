@@ -73,20 +73,6 @@ public sealed class ComputeResultCommitter(
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
-        // 先锁当前任务租约，防止验证/写回期间过期任务被重新领取；最终 Complete 仍必须成功。
-        await using (var lease = new NpgsqlCommand("""
-            SELECT job_id FROM platform.compute_jobs
-            WHERE job_id = $1 AND player_id = $2 AND lease_token = $3
-              AND status = 'leased' AND lease_until > now()
-            FOR UPDATE
-            """, connection, transaction))
-        {
-            lease.Parameters.Add(new NpgsqlParameter { Value = claim.JobId });
-            lease.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
-            lease.Parameters.Add(new NpgsqlParameter { Value = claim.LeaseToken });
-            if (await lease.ExecuteScalarAsync(cancellationToken) is not Guid)
-                throw new InvalidOperationException("冷挂机任务租约已失效，拒绝结果写回。");
-        }
         ComputeApplyOutcome applied;
         try
         {
@@ -142,26 +128,43 @@ public sealed class ComputeResultCommitter(
         ComputeVerificationResult trusted,
         CancellationToken cancellationToken)
     {
-        // 身份/投影行锁与会话名册、未消费收件箱 fence 同读一份 RR 快照，避免额外串行往返。
-        await using (var player = new NpgsqlCommand("""
-            SELECT i.player_id, i.account_id, i.display_name, i.created_at, p.presence,
-                   EXISTS (SELECT 1 FROM game.player_runtime_leases l
-                           WHERE l.player_id = i.player_id AND l.lease_until > now()),
-                   (EXISTS (
-                       SELECT 1 FROM social.party_sessions s
-                       WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
-                           'members', jsonb_build_array(jsonb_build_object('playerId', i.player_id::text))))
-                    OR EXISTS (
-                       SELECT 1 FROM social.party_session_inbox inbox
-                       WHERE inbox.player_id = i.player_id AND inbox.consumed_at IS NULL))
-            FROM identity.players i
-            JOIN game.player_projection p ON p.player_id = i.player_id
-            WHERE i.player_id = $1 AND i.status = 1
-            FOR UPDATE OF i, p
-            """, connection, transaction))
+        // 任务租约锁、身份/投影行锁与会话名册、未消费收件箱 fence 合并为单批次往返。
+        await using (var batch = new NpgsqlBatch(connection) { Transaction = transaction })
         {
+            var lease = new NpgsqlBatchCommand("""
+                SELECT job_id FROM platform.compute_jobs
+                WHERE job_id = $1 AND player_id = $2 AND lease_token = $3
+                  AND status = 'leased' AND lease_until > now()
+                FOR UPDATE
+                """);
+            lease.Parameters.Add(new NpgsqlParameter { Value = claim.JobId });
+            lease.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
+            lease.Parameters.Add(new NpgsqlParameter { Value = claim.LeaseToken });
+            batch.BatchCommands.Add(lease);
+
+            var player = new NpgsqlBatchCommand("""
+                SELECT i.player_id, i.account_id, i.display_name, i.created_at, p.presence,
+                       EXISTS (SELECT 1 FROM game.player_runtime_leases l
+                               WHERE l.player_id = i.player_id AND l.lease_until > now()),
+                       (EXISTS (
+                           SELECT 1 FROM social.party_sessions s
+                           WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
+                               'members', jsonb_build_array(jsonb_build_object('playerId', i.player_id::text))))
+                        OR EXISTS (
+                           SELECT 1 FROM social.party_session_inbox inbox
+                           WHERE inbox.player_id = i.player_id AND inbox.consumed_at IS NULL))
+                FROM identity.players i
+                JOIN game.player_projection p ON p.player_id = i.player_id
+                WHERE i.player_id = $1 AND i.status = 1
+                FOR UPDATE OF i, p
+                """);
             player.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
-            await using var reader = await player.ExecuteReaderAsync(cancellationToken);
+            batch.BatchCommands.Add(player);
+
+            await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken) || reader.GetGuid(0) != claim.JobId)
+                throw new InvalidOperationException("冷挂机任务租约已失效，拒绝结果写回。");
+            await reader.NextResultAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
                 throw new ComputeSourceDriftException("Compute 玩家源身份已不存在。");
             if (reader.GetGuid(0) != claim.PlayerId
@@ -175,8 +178,6 @@ public sealed class ComputeResultCommitter(
             if (reader.GetBoolean(6))
                 throw new ComputeSourceDriftException("玩家已由行动参与会话推进或仍有待消费结算。");
         }
-
-
         var bundle = await PostgresSectionRepository.LoadInTransactionAsync(
             connection, transaction, claim.PlayerId, cancellationToken, includeActionQueue: false)
             ?? throw new ComputeSourceDriftException("Compute 玩家完整源基线不存在。");

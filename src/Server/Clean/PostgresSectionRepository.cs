@@ -702,11 +702,6 @@ public sealed class PostgresSectionRepository(
     /// 在调用方事务内执行冷挂机结果落库：提交头行锁 + 版本 CAS + section 合批 upsert + 提交头更新。
     /// 供 <see cref="ComputeDispatcherWorker"/> 把「section 写回 + compute_jobs 完结」并入同一事务；
     /// 调用方负责提交或回滚，本方法只返回结局不触碰事务边界。
-    /// </summary>
-    /// <summary>
-    /// 在调用方事务内执行冷挂机结果落库：提交头行锁 + 版本 CAS + section 合批 upsert + 提交头更新。
-    /// 供 <see cref="ComputeDispatcherWorker"/> 把「section 写回 + compute_jobs 完结」并入同一事务；
-    /// 调用方负责提交或回滚，本方法只返回结局不触碰事务边界。
     /// compute.v2 口径允许两类空写：
     /// 1. <paramref name="targetStateVersion"/> 等于源版本（空推进，无 section 变更）——只前移提交头
     ///    的 last_simulated_at/指纹，防止无变化玩家在扫描窗口内被无限重派且每次重算整个欠债窗口；

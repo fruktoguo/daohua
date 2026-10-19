@@ -31,6 +31,12 @@ public static class WebSocketScenario
     private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(15);
     /// <summary>HTTP 注册请求超时。</summary>
     private static readonly TimeSpan RegisterTimeout = TimeSpan.FromSeconds(15);
+    /// <summary>
+    /// 业务命令回执预算：只有剩余窗口足够覆盖一次命令往返时才继续下发；
+    /// 否则末条命令必然跨过截止时间未被回执，把「已发命令未全部回执」误判成丢包。
+    /// 取值覆盖 500 连接实测命令 P99 往返（约 8s）并留余量。
+    /// </summary>
+    private static readonly TimeSpan CommandAckBudget = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// 执行 WebSocket 压测并输出结构化报告。
@@ -550,7 +556,7 @@ public static class WebSocketScenario
                                 businessCompleted = true;
                                 Interlocked.Increment(ref stats.BusinessConnections);
                             }
-                            if (deadline - DateTimeOffset.UtcNow > TimeSpan.FromSeconds(2))
+                            if (deadline - DateTimeOffset.UtcNow > CommandAckBudget)
                             {
                                 await Task.Delay(1_000, cancellationToken);
                                 await SendBusinessCommandAsync();

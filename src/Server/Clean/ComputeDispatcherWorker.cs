@@ -341,10 +341,10 @@ public sealed class ComputeDispatcherWorker(
             return;
         }
 
-        // 结果回写小并发（≤4）：不同玩家的提交头行锁天然不冲突；
+        // 结果回写按批并发（≤8，与单批任务数对齐）：不同玩家的提交头行锁天然不冲突；
         // 同一 job 的 section 落库与 compute_jobs 完结并入同一事务。
         await Parallel.ForEachAsync(fits,
-            new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
+            new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
             (entry, ct) => ApplyJobResultAsync(node, entry, results.GetValueOrDefault(entry.Claim.JobId), ct));
     }
 

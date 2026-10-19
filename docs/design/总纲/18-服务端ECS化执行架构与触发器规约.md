@@ -269,9 +269,10 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 ### 14.4 离线挂机批算
 
 - 冷扫描对象：投影离线、无存活运行时租约、无活跃会话绑定与待消费结算、且「距上次结算 ≥ 批算间隔（`OfflineIdle:BatchIntervalMinutes`，默认 60）」或「已到封顶边界仍有欠债」的玩家。批目标 = `min(当前, OfflineSinceAt + 48h)`；扫描与执行不受计算节点配置门控。
-- 主服本地执行器常驻消费同一 `compute_jobs` 队列（单路串行，与验证器共用一个独立 ECS 世界）；计算节点派发只领取 pending 超过 `ComputeNode:OverflowAfterSeconds`（默认 300）的积压任务，结果仍经 §11 全量独立重演。
+- 主服本地执行器常驻消费同一 `compute_jobs` 队列（单路串行，与验证器共用独立 ECS 世界条带）；计算节点派发只领取 pending 超过 `ComputeNode:OverflowAfterSeconds`（默认 300）的积压任务，结果仍经 §11 全量独立重演。重演器按玩家哈希分条带（条带数 = `ProcessorCount` 夹在 2..4），每条带各自持有独立 ECS 世界与内部门，使 2000 任务重演可在 2c 宿主上并行而不共享单门串行瓶颈；同一条带内仍严格串行，确定性不受影响。入队侧按 12 路并行装载冻结输入并合并「身份/头/分段/耐久队列/钱包」为单批次往返；派发侧与本地执行器在队空时同时等待容量信号、任务入队信号与轮询周期，新任务入队即唤醒而不是空转满一个周期。
 - 冷结果写回使用 `RepeatableRead` 固定快照，并以玩家身份/投影/提交头/钱包/任务租约行锁、identity MVCC fence 与 section/economy CAS 组成同事务 fence；session/runtime ownership 缺失谓词依赖共享身份行版本 fence，不依赖 SSI 谓词锁。活跃会话探测仍必须命中 `social.party_sessions` 活跃规格 partial GIN `jsonb_path_ops` 索引以避免全表扫描；section/flush_queue 页级交叉不作为逻辑冲突。仅此写回事务改用 RR，其他事务隔离不变；禁止删除或弱化任何 fence，亦禁止用全局串行门代替它们。
 - 回线抢占：玩家装载取得运行时租约后，在途任务写回因租约/版本漂移归档丢弃；装载路径即时补算到当前。
+- 容量纪律：服务端托管堆以 `System.GC.HeapCount=2` 对齐 2c 生产宿主（Server GC 默认每逻辑核一堆，在大核数开发机上成堆囤段是工作集虚胖主因），`ConserveMemory=7` 偏置勤收集；`ConserveMemory` 再调高会以更多 GC 停顿换取更小堆，实测把 500 连接 HelloAck P99 顶过 5s 预算，不得为此调高。压测侧「已发命令必须全部收到回执」的闭环断言只允许在剩余窗口覆盖一次命令往返预算（`CommandAckBudget`）时继续下发，否则末条命令必然跨过截止时间被误判为丢包。
 
 ### 14.5 彻底离线
 
