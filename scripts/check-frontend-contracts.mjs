@@ -99,6 +99,24 @@ try {
   assert.equal(patch.world.monsters[0].drops[0].maxQuantity, 3)
   assert.equal(patch.serverTimeUnixSeconds, Date.parse(delta.lastSimulatedAt) / 1000)
   await assert.rejects(decodePlayerSnapshotDeltaDto({ ...delta, lastSimulatedAt: undefined }, current, deltaBytes), /lastSimulatedAt/)
+
+  // action_queue 轮次累计：服务端逐行下发 completedRepeats（无限循环与单项循环跨轮重置的唯一判据），
+  // 解码必须透传，否则进度条按恒 0 比对、跨轮不回绕。
+  const queueRow = {
+    id: 'aaaaaaaa-0000-0000-0000-000000000001',
+    intent: { actionId: 'action.test', repeatCount: -1, targetNodeId: null, parameters: null, pvpEnabled: false },
+    actionName: '契约行动', actionType: 'cultivation', status: 1, progressSeconds: 3, durationSeconds: 10,
+    remainingRepeats: -1, completedRepeats: 4, executionKind: 'timed',
+  }
+  const queueSection = {
+    section: 'action_queue', schemaVersion: 36, sectionVersion: 1, data: [queueRow],
+    checksum: createHash('sha256').update(JSON.stringify([queueRow]), 'utf8').digest('hex'),
+    updatedAt: '2026-09-14T00:00:05Z',
+  }
+  const queueDelta = { playerId: current.playerId, stateVersion: 3, lastSimulatedAt: '2026-09-14T00:00:06Z', changedSections: [queueSection] }
+  const queuePatch = await decodePlayerSnapshotDeltaDto(queueDelta, current, Buffer.from(JSON.stringify(queueDelta)))
+  assert.equal(queuePatch.queue.entries[0].completedRepeats, 4)
+  assert.equal(queuePatch.queue.entries[0].remainingRepeats, -1)
   // 坏 checksum 必须在完整业务解码阶段失败，不能被合法 envelope 提前清零。
   const badChecksum = { ...delta, changedSections: [{ ...section, checksum: '0'.repeat(64) }] }
   await assert.rejects(decodePlayerSnapshotDeltaDto(badChecksum, current, Buffer.from(JSON.stringify(badChecksum))), /checksum|校验/i)

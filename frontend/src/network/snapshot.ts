@@ -820,6 +820,9 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       progressSeconds: numberValue(row.progressSeconds),
       durationSeconds,
       remainingRepeats: numberValue(row.remainingRepeats, numberValue(intent.repeatCount, 1)),
+      // 已完成轮数为服务端权威累计值：无限循环与单项循环跨轮重置的唯一判据，
+      // 缺失会让 useSmoothProgress 恒按 0 比对，跨轮进度条停在上一轮尾端不回绕。
+      completedRepeats: numberValue(row.completedRepeats),
       executionKind,
       combatEncounterId,
       travelDestinationNodeId,
