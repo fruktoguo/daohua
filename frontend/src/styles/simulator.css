@@ -878,3 +878,529 @@
 :root[data-theme="light"] .text-amber { color: #b45309; font-weight: 600; }
 :root[data-theme="light"] .text-crimson { color: #b91c1c; font-weight: 600; }
 :root[data-theme="light"] .text-gold { color: var(--gold); font-weight: 600; }
+/* 11. 模拟器结果分类导航（Sub-Pills） */
+.sim-nav-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+:root[data-theme="light"] .sim-nav-pills {
+  background: #fbf7ee;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-nav-pill {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-nav-pill:hover {
+  color: var(--text);
+  background: var(--gold-faint);
+}
+
+.sim-nav-pill.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  font-weight: 600;
+  box-shadow: 0 0 6px var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-nav-pill.is-active {
+  background: #f5eedc;
+  border-color: #8c5b1b;
+  color: #78480d;
+  box-shadow: 0 1px 3px rgba(71, 49, 18, 0.12);
+}
+
+.sim-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 12. 妖兽位阶标签 */
+.sim-rank-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.sim-rank-tag.rank-normal {
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--text-dim);
+}
+
+.sim-rank-tag.rank-elite {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+}
+
+:root[data-theme="light"] .sim-rank-tag.rank-elite {
+  background: rgba(109, 40, 217, 0.12);
+  color: #6d28d9;
+}
+
+.sim-rank-tag.rank-boss {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-rank-tag.rank-boss {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
+/* 13. 通用数据表格样式 */
+.sim-data-table-wrap {
+  overflow-x: auto;
+}
+
+.sim-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.sim-data-table th,
+.sim-data-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-data-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+  background: var(--bg-raised);
+  white-space: nowrap;
+}
+
+:root[data-theme="light"] .sim-data-table th {
+  background: rgba(125, 82, 26, 0.05);
+  color: #5d4017;
+}
+
+.sim-data-table tr:hover td {
+  background: var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-data-table tr:hover td {
+  background: rgba(125, 82, 26, 0.04);
+}
+
+.sim-header-with-badge {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sim-metric-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .sim-metric-pill {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.15);
+  color: #634316;
+}
+
+.sim-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sim-filter-label {
+  color: var(--text-dim);
+}
+
+.sim-filter-select {
+  padding: 2px 8px;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+}
+
+.sim-progress-bar.bar-damage {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.sim-progress-bar.bar-damage-taken {
+  background: linear-gradient(90deg, #8b5cf6, #ec4899);
+}
+
+/* 14. 两栏恢复明细表格 */
+.sim-two-column-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .sim-two-column-tables {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sim-column-table-box {
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--bg);
+}
+
+:root[data-theme="light"] .sim-column-table-box {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.15);
+}
+
+.sim-table-box-title {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+/* 15. 战利品掉落图文卡片 */
+.sim-items-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.sim-item-row-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  transition: border-color 0.15s ease;
+}
+
+:root[data-theme="light"] .sim-item-row-card {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-item-row-card:hover {
+  border-color: var(--gold-bright);
+}
+
+.sim-item-card-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sim-item-full-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sim-item-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.sim-stat-sub {
+  color: var(--text-dim);
+}
+
+.sim-stat-rate {
+  font-weight: 600;
+  font-family: monospace;
+}
+
+/* 16. 战斗事件流水日志查看器 */
+.sim-logs-container {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  min-height: 380px;
+}
+
+@media (max-width: 768px) {
+  .sim-logs-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sim-logs-sidebar {
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+:root[data-theme="light"] .sim-logs-sidebar {
+  background: #fbf7ee;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-logs-sidebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sim-log-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+:root[data-theme="light"] .sim-log-nav-item {
+  background: #fdfaf3;
+}
+
+.sim-log-nav-item:hover {
+  border-color: var(--gold-faint);
+}
+
+.sim-log-nav-item.is-active {
+  border-color: var(--gold-bright);
+  background: var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-log-nav-item.is-active {
+  background: #f2e9d5;
+  border-color: #8c5b1b;
+}
+
+.sim-log-outcome-indicator {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.sim-log-outcome-indicator.indicator-victory {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+:root[data-theme="light"] .sim-log-outcome-indicator.indicator-victory {
+  background: rgba(4, 120, 87, 0.15);
+  color: #047857;
+}
+
+.sim-log-outcome-indicator.indicator-defeat {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+:root[data-theme="light"] .sim-log-outcome-indicator.indicator-defeat {
+  background: rgba(185, 28, 28, 0.15);
+  color: #b91c1c;
+}
+
+.sim-log-nav-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.sim-log-nav-title {
+  font-weight: 500;
+}
+
+.sim-log-nav-time {
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+.sim-logs-content {
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 10px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+:root[data-theme="light"] .sim-logs-content {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-log-stream-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-log-stream-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.sim-log-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.sim-log-badge.badge-victory {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.sim-log-badge.badge-defeat {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.sim-log-stream-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.sim-log-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+:root[data-theme="light"] .sim-log-line {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.sim-log-time {
+  color: var(--text-dim);
+  font-weight: 600;
+  min-width: 38px;
+}
+
+.sim-log-text {
+  flex: 1;
+  word-break: break-all;
+}
+
+.sim-log-line.log-type-attack {
+  color: var(--text);
+}
+
+.sim-log-line.log-type-skill {
+  color: #38bdf8;
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-skill {
+  color: #0284c7;
+}
+
+.sim-log-line.log-type-heal {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.08);
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-heal {
+  color: #059669;
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.sim-log-line.log-type-defeat {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-defeat {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.sim-log-line.log-type-victory {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-victory {
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.08);
+}
+
+.sim-log-line.log-type-natural_regen {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* 颜色辅助类 */
+.text-main { color: var(--text); }
+.text-dim { color: var(--text-dim); }
+.text-indigo { color: #818cf8; }
+:root[data-theme="light"] .text-indigo { color: #4f46e5; font-weight: 600; }
+

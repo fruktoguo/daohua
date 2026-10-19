@@ -1,7 +1,257 @@
 import type { CombatAttributes, CombatTrigger } from '../types'
+import type { SimCombatLogEvent } from './simulatorTypes'
 import { deterministicRoll } from './deterministicRng'
 import { SimSkillTriggerEvaluator, type SimUnitView } from './skillTriggerEvaluator'
 import type { ManaDeficitTracker } from './manaDeficitTracker'
+
+/** 保证战斗属性无任何 undefined 或 NaN */
+export function ensureCombatAttributes(stats?: Partial<CombatAttributes> | null): CombatAttributes {
+  return {
+    maxHitpoints: Math.max(1, stats?.maxHitpoints ?? 100),
+    maxManapoints: Math.max(0, stats?.maxManapoints ?? 50),
+    physicalAttack: stats?.physicalAttack ?? 10,
+    spellAttack: stats?.spellAttack ?? 5,
+    armor: stats?.armor ?? 5,
+    magicResistance: stats?.magicResistance ?? 5,
+    accuracy: stats?.accuracy ?? 10,
+    evasion: stats?.evasion ?? 5,
+    critical: stats?.critical ?? 5,
+    criticalResistance: stats?.criticalResistance ?? 5,
+    criticalDamagePoints: stats?.criticalDamagePoints ?? 50,
+    breakPower: stats?.breakPower ?? 5,
+    parryResolve: stats?.parryResolve ?? 5,
+    hpRegenPerFiveSeconds: stats?.hpRegenPerFiveSeconds ?? 0,
+    mpRegenPerFiveSeconds: stats?.mpRegenPerFiveSeconds ?? 0,
+    attackIntervalMilliseconds: Math.max(100, stats?.attackIntervalMilliseconds || 1000),
+    physicalDamageBonusPoints: stats?.physicalDamageBonusPoints ?? 0,
+    spellDamageBonusPoints: stats?.spellDamageBonusPoints ?? 0,
+    metalDamageBonusPoints: stats?.metalDamageBonusPoints ?? 0,
+    woodDamageBonusPoints: stats?.woodDamageBonusPoints ?? 0,
+    waterDamageBonusPoints: stats?.waterDamageBonusPoints ?? 0,
+    fireDamageBonusPoints: stats?.fireDamageBonusPoints ?? 0,
+    earthDamageBonusPoints: stats?.earthDamageBonusPoints ?? 0,
+    totalDamageBonusPoints: stats?.totalDamageBonusPoints ?? 0,
+    basicAttackBonusPoints: stats?.basicAttackBonusPoints ?? 0,
+    skillBonusPoints: stats?.skillBonusPoints ?? 0,
+    physicalDamageReductionPoints: stats?.physicalDamageReductionPoints ?? 0,
+    spellDamageReductionPoints: stats?.spellDamageReductionPoints ?? 0,
+    metalDamageReductionPoints: stats?.metalDamageReductionPoints ?? 0,
+    woodDamageReductionPoints: stats?.woodDamageReductionPoints ?? 0,
+    waterDamageReductionPoints: stats?.waterDamageReductionPoints ?? 0,
+    fireDamageReductionPoints: stats?.fireDamageReductionPoints ?? 0,
+    earthDamageReductionPoints: stats?.earthDamageReductionPoints ?? 0,
+    damageAbsorptionPoints: stats?.damageAbsorptionPoints ?? 0,
+    fixedDamageBonus: stats?.fixedDamageBonus ?? 0,
+    fixedDamageReduction: stats?.fixedDamageReduction ?? 0,
+    fixedPhysicalDamageBonus: stats?.fixedPhysicalDamageBonus ?? 0,
+    fixedPhysicalDamageReduction: stats?.fixedPhysicalDamageReduction ?? 0,
+    fixedSpellDamageBonus: stats?.fixedSpellDamageBonus ?? 0,
+    fixedSpellDamageReduction: stats?.fixedSpellDamageReduction ?? 0,
+    attackSpeedPoints: stats?.attackSpeedPoints ?? 0,
+    actionSpeedPoints: stats?.actionSpeedPoints ?? 0,
+    cooldownReductionPoints: stats?.cooldownReductionPoints ?? 0,
+    threatBonusPoints: stats?.threatBonusPoints ?? 0,
+    hpDrainPoints: stats?.hpDrainPoints ?? 0,
+    mpDrainPoints: stats?.mpDrainPoints ?? 0,
+    damageReflectPoints: stats?.damageReflectPoints ?? 0,
+    healingBonusPoints: stats?.healingBonusPoints ?? 0,
+  }
+}
+
+/** 伤害结算单次命中结果详情 */
+export interface SimHitResult {
+  hit: boolean
+  damage: number
+  critical: boolean
+  broken: boolean
+  parried: boolean
+}
+
+/** 造成伤害统计条目 */
+export interface RawHitSourceStat {
+  sourceKey: string
+  sourceName: string
+  totalHits: number
+  successfulHits: number
+  criticalHits: number
+  totalDamage: number
+}
+
+/** 承受伤害统计条目 */
+export interface RawDamageTakenStat {
+  sourceKey: string
+  sourceName: string
+  attackerName: string
+  totalHits: number
+  evadedHits: number
+  parriedHits: number
+  totalDamage: number
+}
+
+/**
+ * 综合战斗数据采集器（收集总伤害、承伤、DPS、回复与击杀）
+ */
+export class CombatStatsCollector {
+  public damageSources = new Map<string, RawHitSourceStat>()
+  public targetDamage = new Map<string, {
+    targetId: string
+    targetName: string
+    totalDamage: number
+    sources: Map<string, RawHitSourceStat>
+  }>()
+
+  public damageTakenSources = new Map<string, RawDamageTakenStat>()
+  public attackerDamageTaken = new Map<string, {
+    attackerId: string
+    attackerName: string
+    totalDamage: number
+    sources: Map<string, RawDamageTakenStat>
+  }>()
+
+  public hpRegenNatural = 0
+  public hpRegenDrain = 0
+  public hpRegenSkill = new Map<string, { abilityId: string; name: string; amount: number }>()
+  public mpRegenNatural = 0
+  public mpRegenDrain = 0
+  public isManaExhausted = false
+
+  public skillManaSpent = new Map<string, { abilityId: string; name: string; totalSpent: number; casts: number }>()
+
+  public recordHit(attacker: SimCombatant, target: SimCombatant, skill: SimSkill | null, res: SimHitResult): void {
+    if (attacker.isAlly) {
+      const sourceKey = skill ? `skill:${skill.abilityId}` : 'basic-attack'
+      const sourceName = skill ? skill.name : '普通攻击'
+
+      let src = this.damageSources.get(sourceKey)
+      if (!src) {
+        src = { sourceKey, sourceName, totalHits: 0, successfulHits: 0, criticalHits: 0, totalDamage: 0 }
+        this.damageSources.set(sourceKey, src)
+      }
+      src.totalHits++
+      if (res.hit) {
+        src.successfulHits++
+        if (res.critical) src.criticalHits++
+        src.totalDamage += res.damage
+      }
+
+      const targetId = target.definitionId || target.id
+      let tgt = this.targetDamage.get(targetId)
+      if (!tgt) {
+        tgt = { targetId, targetName: target.name, totalDamage: 0, sources: new Map() }
+        this.targetDamage.set(targetId, tgt)
+      }
+      if (res.hit) {
+        tgt.totalDamage += res.damage
+      }
+      let tgtSrc = tgt.sources.get(sourceKey)
+      if (!tgtSrc) {
+        tgtSrc = { sourceKey, sourceName, totalHits: 0, successfulHits: 0, criticalHits: 0, totalDamage: 0 }
+        tgt.sources.set(sourceKey, tgtSrc)
+      }
+      tgtSrc.totalHits++
+      if (res.hit) {
+        tgtSrc.successfulHits++
+        if (res.critical) tgtSrc.criticalHits++
+        tgtSrc.totalDamage += res.damage
+      }
+    }
+
+    if (target.isAlly) {
+      const sourceKey = skill ? `skill:${skill.abilityId}` : 'basic-attack'
+      const sourceName = skill ? skill.name : '普通攻击'
+
+      let taken = this.damageTakenSources.get(sourceKey)
+      if (!taken) {
+        taken = { sourceKey, sourceName, attackerName: attacker.name, totalHits: 0, evadedHits: 0, parriedHits: 0, totalDamage: 0 }
+        this.damageTakenSources.set(sourceKey, taken)
+      }
+      taken.totalHits++
+      if (!res.hit) taken.evadedHits++
+      if (res.parried) taken.parriedHits++
+      if (res.hit) taken.totalDamage += res.damage
+
+      const attackerId = attacker.definitionId || attacker.id
+      let atk = this.attackerDamageTaken.get(attackerId)
+      if (!atk) {
+        atk = { attackerId, attackerName: attacker.name, totalDamage: 0, sources: new Map() }
+        this.attackerDamageTaken.set(attackerId, atk)
+      }
+      if (res.hit) atk.totalDamage += res.damage
+      let atkSrc = atk.sources.get(sourceKey)
+      if (!atkSrc) {
+        atkSrc = { sourceKey, sourceName, attackerName: attacker.name, totalHits: 0, evadedHits: 0, parriedHits: 0, totalDamage: 0 }
+        atk.sources.set(sourceKey, atkSrc)
+      }
+      atkSrc.totalHits++
+      if (!res.hit) atkSrc.evadedHits++
+      if (res.parried) atkSrc.parriedHits++
+      if (res.hit) atkSrc.totalDamage += res.damage
+    }
+  }
+
+  public recordDrain(unit: SimCombatant, hp: number, mp: number): void {
+    if (unit.isAlly) {
+      if (hp > 0) this.hpRegenDrain += hp
+      if (mp > 0) this.mpRegenDrain += mp
+    }
+  }
+
+  public recordReflect(target: SimCombatant, attacker: SimCombatant, reflectDamage: number): void {
+    if (target.isAlly) {
+      let src = this.damageSources.get('reflect')
+      if (!src) {
+        src = { sourceKey: 'reflect', sourceName: '伤害反弹', totalHits: 0, successfulHits: 0, criticalHits: 0, totalDamage: 0 }
+        this.damageSources.set('reflect', src)
+      }
+      src.totalHits++
+      src.successfulHits++
+      src.totalDamage += reflectDamage
+    }
+    if (attacker.isAlly) {
+      let taken = this.damageTakenSources.get('reflect')
+      if (!taken) {
+        taken = { sourceKey: 'reflect', sourceName: '反伤波及', attackerName: target.name, totalHits: 0, evadedHits: 0, parriedHits: 0, totalDamage: 0 }
+        this.damageTakenSources.set('reflect', taken)
+      }
+      taken.totalHits++
+      taken.totalDamage += reflectDamage
+    }
+  }
+
+  public recordHealing(_caster: SimCombatant, target: SimCombatant, skill: SimSkill, amount: number): void {
+    if (target.isAlly && amount > 0) {
+      let rec = this.hpRegenSkill.get(skill.abilityId)
+      if (!rec) {
+        rec = { abilityId: skill.abilityId, name: skill.name, amount: 0 }
+        this.hpRegenSkill.set(skill.abilityId, rec)
+      }
+      rec.amount += amount
+    }
+  }
+
+  public recordNaturalRegen(unit: SimCombatant, hp: number, mp: number): void {
+    if (unit.isAlly) {
+      if (hp > 0) this.hpRegenNatural += hp
+      if (mp > 0) this.mpRegenNatural += mp
+    }
+  }
+
+  public recordManaCast(unit: SimCombatant, skill: SimSkill, manaCost: number): void {
+    if (unit.isAlly && manaCost > 0) {
+      let item = this.skillManaSpent.get(skill.abilityId)
+      if (!item) {
+        item = { abilityId: skill.abilityId, name: skill.name, totalSpent: 0, casts: 0 }
+        this.skillManaSpent.set(skill.abilityId, item)
+      }
+      item.totalSpent += manaCost
+      item.casts++
+    }
+  }
+
+  public markManaExhausted(): void {
+    this.isManaExhausted = true
+  }
+}
 
 /** 百分比曲线倍率计算 */
 export function percentMultiplier(points: number, mode: 'linear' | 'non-linear'): number {
@@ -68,6 +318,7 @@ export class SimCombatant implements SimUnitView {
   public memberIndex: number
   public stats: CombatAttributes
   public skills: SimSkill[] = []
+  public definitionId: string
 
   public hitpoints: number
   public manapoints: number
@@ -91,18 +342,43 @@ export class SimCombatant implements SimUnitView {
     memberIndex: number,
     stats: CombatAttributes,
     skills: SimSkill[],
-    combatExperience = 0
+    combatExperience = 0,
+    definitionId?: string
   ) {
     this.id = id
     this.name = name
     this.isAlly = isAlly
     this.memberIndex = memberIndex
-    this.stats = stats
+    this.stats = ensureCombatAttributes(stats)
     this.skills = skills
-    this.hitpoints = Math.max(1, stats.maxHitpoints)
-    this.manapoints = Math.max(0, stats.maxManapoints)
+    this.hitpoints = Math.max(1, this.stats.maxHitpoints)
+    this.manapoints = Math.max(0, this.stats.maxManapoints)
     this.combatExperience = combatExperience
     this.skillCooldowns = new Array(skills.length).fill(0)
+    this.definitionId = definitionId || id
+  }
+
+  /**
+   * 新波次准备：复活或继承状态，重新初始化普攻读条
+   */
+  public prepareForWave(isRespawn: boolean): void {
+    if (isRespawn) {
+      this.hitpoints = this.maxHitpoints
+      this.manapoints = this.maxManapoints
+      this.isAlive = true
+      this.buffs = []
+      this.skillCooldowns = new Array(this.skills.length).fill(0)
+    } else {
+      this.buffs = this.buffs.filter(b => b.expiresAtSeconds > 0)
+    }
+    this.pendingSkillIndex = -1
+    const baseInterval = (this.stats.attackIntervalMilliseconds || 1000) / 1000
+    this.nextAttackAtSeconds = Math.max(
+      0.05,
+      baseInterval *
+        percentMultiplier(this.stats.attackSpeedPoints + this.buffAttackSpeedPoints, 'non-linear') *
+        percentMultiplier(this.stats.actionSpeedPoints, 'non-linear')
+    )
   }
 
   get maxHitpoints(): number {
@@ -153,6 +429,8 @@ export class SimCombatEncounter {
   public outcome: SimCombatOutcome = 'running'
   public playerRespawnSeconds: number
   public tracker: ManaDeficitTracker | null = null
+  public collector: CombatStatsCollector | null = null
+  public logEvents: SimCombatLogEvent[] | null = null
 
   private static readonly TICK_SECONDS = 5.0
 
@@ -161,17 +439,26 @@ export class SimCombatEncounter {
     allies: SimCombatant[],
     enemies: SimCombatant[],
     playerRespawnSeconds = 10,
-    tracker: ManaDeficitTracker | null = null
+    tracker: ManaDeficitTracker | null = null,
+    collector: CombatStatsCollector | null = null,
+    logEvents: SimCombatLogEvent[] | null = null
   ) {
     this.seed = seed
     this.allies = allies
     this.enemies = enemies
     this.playerRespawnSeconds = playerRespawnSeconds
     this.tracker = tracker
+    this.collector = collector
+    this.logEvents = logEvents
 
     this.decideInitialActions()
   }
 
+  private appendLog(event: SimCombatLogEvent): void {
+    if (this.logEvents) {
+      this.logEvents.push(event)
+    }
+  }
   /**
    * 开战决策首次出手动作
    */
@@ -179,7 +466,8 @@ export class SimCombatEncounter {
     // 敌方首次出手决策
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i]
-      if (enemy.isAlive && enemy.pendingSkillIndex < 0) {
+      if (enemy.isAlive) {
+        enemy.prepareForWave(false)
         const target = this.selectEnemyTarget(enemy, this.allies, 19n)
         this.decideNextAction(enemy, this.enemies, this.allies, target)
       }
@@ -188,7 +476,8 @@ export class SimCombatEncounter {
     // 盟友首次出手决策
     for (let i = 0; i < this.allies.length; i++) {
       const ally = this.allies[i]
-      if (ally.isAlive && ally.pendingSkillIndex < 0) {
+      if (ally.isAlive) {
+        ally.prepareForWave(false)
         const target = this.selectAllyTarget(ally, this.enemies, 3n)
         this.decideNextAction(ally, this.allies, this.enemies, target)
       }
@@ -276,7 +565,7 @@ export class SimCombatEncounter {
         if (slot.triggers && slot.triggers.length > 0) {
           if (!SimSkillTriggerEvaluator.matchesAll(slot.triggers, unit, target, allies, opponents)) {
             if (unit.isAlly && unit.memberIndex === 0 && this.tracker) {
-              this.tracker.cancelPendingDeficit(i, this.elapsedSeconds)
+              this.tracker.cancelPendingDeficit(slot.slotIndex, this.elapsedSeconds)
             }
             continue
           }
@@ -285,7 +574,7 @@ export class SimCombatEncounter {
         // 灵力判定与缺蓝追踪
         if (unit.manapoints < slot.manaCost) {
           if (unit.isAlly && unit.memberIndex === 0 && this.tracker) {
-            this.tracker.recordDeficit(i, this.elapsedSeconds)
+            this.tracker.recordDeficit(slot.slotIndex, this.elapsedSeconds)
           }
           continue
         }
@@ -293,9 +582,14 @@ export class SimCombatEncounter {
         // 灵力满足，扣减灵力进入施法
         unit.manapoints -= slot.manaCost
         if (unit.isAlly && unit.memberIndex === 0 && this.tracker) {
-          this.tracker.recordCast(i, this.elapsedSeconds, slot.manaCost)
+          this.tracker.recordCast(slot.slotIndex, this.elapsedSeconds, slot.manaCost)
         }
-
+        if (this.collector) {
+          this.collector.recordManaCast(unit, slot, slot.manaCost)
+          if (unit.manapoints <= 1e-6 && unit.isAlly && unit.memberIndex === 0) {
+            this.collector.markManaExhausted()
+          }
+        }
         const castSeconds = Math.max(
           1e-9,
           (slot.castMilliseconds / 1000) * percentMultiplier(unit.stats.actionSpeedPoints, 'non-linear')
@@ -431,9 +725,23 @@ export class SimCombatEncounter {
     if (!anyEnemyAlive) {
       this.outcome = 'victory'
       if (this.tracker) this.tracker.finalize(this.elapsedSeconds)
+      this.appendLog({
+        timestamp: this.elapsedSeconds,
+        actorName: '战报',
+        isAlly: true,
+        actionType: 'victory',
+        message: `[${this.elapsedSeconds.toFixed(1)}s] 战斗胜利！妖兽全灭。`,
+      })
     } else if (!anyAllyAlive) {
       this.outcome = 'defeat'
       if (this.tracker) this.tracker.finalize(this.elapsedSeconds)
+      this.appendLog({
+        timestamp: this.elapsedSeconds,
+        actorName: '战报',
+        isAlly: false,
+        actionType: 'defeat',
+        message: `[${this.elapsedSeconds.toFixed(1)}s] 全员力竭倒地，战斗失败！`,
+      })
     }
   }
 
@@ -482,19 +790,80 @@ export class SimCombatEncounter {
    */
   private resolveAttack(attacker: SimCombatant, target: SimCombatant, side: bigint): void {
     attacker.attackCount++
-    const damage = this.calculateDamage(attacker, target, null, side)
-    if (damage > 0) {
-      target.hitpoints = Math.max(0, target.hitpoints - damage)
-      if (target.hitpoints <= 0) target.isAlive = false
+    const res = this.calculateDamage(attacker, target, null, side)
+    if (this.collector) {
+      this.collector.recordHit(attacker, target, null, res)
+    }
 
-      // 汲取吸血/吸蓝
-      if (attacker.stats.hpDrainPoints > 0) {
-        const drainHp = damage * (attacker.stats.hpDrainPoints / 100)
-        attacker.hitpoints = Math.min(attacker.stats.maxHitpoints, attacker.hitpoints + drainHp)
-      }
-      if (attacker.stats.mpDrainPoints > 0) {
-        const drainMp = damage * (attacker.stats.mpDrainPoints / 100)
-        attacker.manapoints = Math.min(attacker.stats.maxManapoints, attacker.manapoints + drainMp)
+    if (!res.hit) {
+      this.appendLog({
+        timestamp: this.elapsedSeconds,
+        actorName: attacker.name,
+        isAlly: attacker.isAlly,
+        targetName: target.name,
+        actionType: 'attack',
+        isMiss: true,
+        message: `[${this.elapsedSeconds.toFixed(1)}s] ${attacker.name} 对 ${target.name} 发动普攻，被闪避！`,
+      })
+      return
+    }
+
+    const damage = res.damage
+    const critTag = res.critical ? ' (暴击)' : ''
+    const parryTag = res.parried ? ' (化解)' : ''
+    const breakTag = res.broken ? ' (破招)' : ''
+
+    target.hitpoints = Math.max(0, target.hitpoints - damage)
+    this.appendLog({
+      timestamp: this.elapsedSeconds,
+      actorName: attacker.name,
+      isAlly: attacker.isAlly,
+      targetName: target.name,
+      actionType: 'attack',
+      damage,
+      isCritical: res.critical,
+      isBreak: res.broken,
+      isParry: res.parried,
+      message: `[${this.elapsedSeconds.toFixed(1)}s] ${attacker.name} 对 ${target.name} 发动普攻，造成 ${damage.toFixed(0)} 点伤害${critTag}${parryTag}${breakTag} [${target.name}剩余气血 ${target.hitpoints.toFixed(0)}/${target.maxHitpoints.toFixed(0)}]`,
+    })
+
+    if (target.hitpoints <= 0) {
+      target.isAlive = false
+      this.appendLog({
+        timestamp: this.elapsedSeconds,
+        actorName: target.name,
+        isAlly: target.isAlly,
+        actionType: 'defeat',
+        message: `[${this.elapsedSeconds.toFixed(1)}s] ${target.name} 气血耗尽倒地！`,
+      })
+    }
+
+    // 汲取吸血/吸蓝
+    if (attacker.stats.hpDrainPoints > 0) {
+      const drainHp = damage * (attacker.stats.hpDrainPoints / 100)
+      attacker.hitpoints = Math.min(attacker.stats.maxHitpoints, attacker.hitpoints + drainHp)
+      if (this.collector) this.collector.recordDrain(attacker, drainHp, 0)
+    }
+    if (attacker.stats.mpDrainPoints > 0) {
+      const drainMp = damage * (attacker.stats.mpDrainPoints / 100)
+      attacker.manapoints = Math.min(attacker.stats.maxManapoints, attacker.manapoints + drainMp)
+      if (this.collector) this.collector.recordDrain(attacker, 0, drainMp)
+    }
+
+    // 伤害反弹
+    if (target.stats.damageReflectPoints > 0 && attacker.isAlive) {
+      const reflectDamage = damage * (target.stats.damageReflectPoints / 100)
+      attacker.hitpoints = Math.max(0, attacker.hitpoints - reflectDamage)
+      if (this.collector) this.collector.recordReflect(target, attacker, reflectDamage)
+      if (attacker.hitpoints <= 0) {
+        attacker.isAlive = false
+        this.appendLog({
+          timestamp: this.elapsedSeconds,
+          actorName: attacker.name,
+          isAlly: attacker.isAlly,
+          actionType: 'defeat',
+          message: `[${this.elapsedSeconds.toFixed(1)}s] ${attacker.name} 受到反伤致死倒地！`,
+        })
       }
     }
   }
@@ -520,7 +889,19 @@ export class SimCombatEncounter {
 
       for (const target of targets) {
         if (!target.isAlive) continue
+        const actualHeal = Math.min(target.stats.maxHitpoints - target.hitpoints, healAmount)
         target.hitpoints = Math.min(target.stats.maxHitpoints, target.hitpoints + healAmount)
+        if (this.collector) this.collector.recordHealing(caster, target, skill, actualHeal)
+        this.appendLog({
+          timestamp: this.elapsedSeconds,
+          actorName: caster.name,
+          isAlly: caster.isAlly,
+          targetName: target.name,
+          actionType: 'heal',
+          abilityName: skill.name,
+          healing: actualHeal,
+          message: `[${this.elapsedSeconds.toFixed(1)}s] ${caster.name} 施展【${skill.name}】为 ${target.name} 恢复 ${actualHeal.toFixed(0)} 点气血 [气血 ${target.hitpoints.toFixed(0)}/${target.maxHitpoints.toFixed(0)}]`,
+        })
       }
     } else {
       // 伤害技能
@@ -528,10 +909,52 @@ export class SimCombatEncounter {
       for (const target of targets) {
         if (!target.isAlive) continue
         caster.attackCount++
-        const damage = this.calculateDamage(caster, target, skill, side)
-        if (damage > 0) {
-          target.hitpoints = Math.max(0, target.hitpoints - damage)
-          if (target.hitpoints <= 0) target.isAlive = false
+        const res = this.calculateDamage(caster, target, skill, side)
+        if (this.collector) this.collector.recordHit(caster, target, skill, res)
+
+        if (!res.hit) {
+          this.appendLog({
+            timestamp: this.elapsedSeconds,
+            actorName: caster.name,
+            isAlly: caster.isAlly,
+            targetName: target.name,
+            actionType: 'skill',
+            abilityName: skill.name,
+            isMiss: true,
+            message: `[${this.elapsedSeconds.toFixed(1)}s] ${caster.name} 施展【${skill.name}】对 ${target.name}，被闪避！`,
+          })
+          continue
+        }
+
+        const damage = res.damage
+        const critTag = res.critical ? ' (暴击)' : ''
+        const parryTag = res.parried ? ' (化解)' : ''
+        const breakTag = res.broken ? ' (破招)' : ''
+
+        target.hitpoints = Math.max(0, target.hitpoints - damage)
+        this.appendLog({
+          timestamp: this.elapsedSeconds,
+          actorName: caster.name,
+          isAlly: caster.isAlly,
+          targetName: target.name,
+          actionType: 'skill',
+          abilityName: skill.name,
+          damage,
+          isCritical: res.critical,
+          isBreak: res.broken,
+          isParry: res.parried,
+          message: `[${this.elapsedSeconds.toFixed(1)}s] ${caster.name} 施展【${skill.name}】对 ${target.name}，造成 ${damage.toFixed(0)} 点${skill.element !== 'none' ? skill.element + '系' : ''}术法伤害${critTag}${parryTag}${breakTag} [${target.name}剩余气血 ${target.hitpoints.toFixed(0)}/${target.maxHitpoints.toFixed(0)}]`,
+        })
+
+        if (target.hitpoints <= 0) {
+          target.isAlive = false
+          this.appendLog({
+            timestamp: this.elapsedSeconds,
+            actorName: target.name,
+            isAlly: target.isAlly,
+            actionType: 'defeat',
+            message: `[${this.elapsedSeconds.toFixed(1)}s] ${target.name} 气血耗尽倒地！`,
+          })
         }
       }
     }
@@ -600,7 +1023,7 @@ export class SimCombatEncounter {
     defender: SimCombatant,
     skill: SimSkill | null,
     side: bigint
-  ): number {
+  ): SimHitResult {
     const count = attacker.attackCount
     const atkStats = attacker.stats
     const defStats = defender.stats
@@ -629,7 +1052,9 @@ export class SimCombatEncounter {
     }
 
     const hit = deterministicRoll(this.seed, side, count, 1n) >= evasion / (evasion + accuracy + 100)
-    if (!hit) return 0
+    if (!hit) {
+      return { hit: false, damage: 0, critical: false, broken, parried }
+    }
 
     // 暴击判定
     const critPoints = atkStats.critical * (broken ? 2 : 1)
@@ -652,7 +1077,9 @@ export class SimCombatEncounter {
       rawDamage *= percentMultiplier(atkStats.skillBonusPoints, 'linear')
     }
 
-    if (rawDamage <= 0) return 0
+    if (rawDamage <= 0) {
+      return { hit: true, damage: 0, critical, broken, parried }
+    }
 
     // 守方等阶 K (默认按 1 级 T1 换算，怪物取自身等级换算)
     const tier = Math.max(1, Math.floor((defStats.maxHitpoints > 200 ? 2 : 1)))
@@ -679,7 +1106,8 @@ export class SimCombatEncounter {
     const fixedReduction = isPhysical ? (defStats.fixedDamageReduction + defStats.fixedPhysicalDamageReduction)
       : (defStats.fixedDamageReduction + defStats.fixedSpellDamageReduction)
 
-    return Math.max(0, damage + fixedBonus - fixedReduction)
+    const finalDamage = Math.max(0, damage + fixedBonus - fixedReduction)
+    return { hit: true, damage: finalDamage, critical, broken, parried }
   }
 
   /**
@@ -710,10 +1138,27 @@ export class SimCombatEncounter {
       mp *= 1 + mpPost
 
       if (unit.isAlive && hp !== 0) {
+        const actualHp = Math.min(unit.stats.maxHitpoints - unit.hitpoints, hp)
         unit.hitpoints = Math.min(unit.stats.maxHitpoints, Math.max(0, unit.hitpoints + hp))
+        if (this.collector) this.collector.recordNaturalRegen(unit, actualHp, 0)
+        if (actualHp > 0) {
+          this.appendLog({
+            timestamp: atSeconds,
+            actorName: unit.name,
+            isAlly: unit.isAlly,
+            actionType: 'natural_regen',
+            healing: actualHp,
+            message: `[${atSeconds.toFixed(1)}s] 5秒自然回复：${unit.name} 恢复 ${actualHp.toFixed(0)} 点气血 [当前 ${unit.hitpoints.toFixed(0)}/${unit.maxHitpoints.toFixed(0)}]`,
+          })
+        }
       }
       if (mp !== 0) {
+        const actualMp = Math.min(unit.stats.maxManapoints - unit.manapoints, mp)
         unit.manapoints = Math.min(unit.stats.maxManapoints, Math.max(0, unit.manapoints + mp))
+        if (this.collector) this.collector.recordNaturalRegen(unit, 0, actualMp)
+      }
+      if (unit.manapoints <= 1e-6 && this.collector && unit.isAlly && unit.memberIndex === 0) {
+        this.collector.markManaExhausted()
       }
     }
 

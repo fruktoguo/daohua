@@ -18,8 +18,8 @@ interface SlotDeficitState {
  */
 export class ManaDeficitTracker {
   private readonly slots: SlotDeficitState[] = []
+  private readonly slotMap = new Map<number, SlotDeficitState>()
   private totalCombatActiveSeconds = 0
-
   // 灵力池追踪
   private manaTimeIntegral = 0
   private minMana = Number.POSITIVE_INFINITY
@@ -33,6 +33,7 @@ export class ManaDeficitTracker {
 
   constructor(
     abilitySlots: ReadonlyArray<{
+      slotIndex?: number
       abilityId: string
       name?: string
       manaCost: number
@@ -43,18 +44,21 @@ export class ManaDeficitTracker {
     this.maxMana = initialMana
 
     abilitySlots.forEach((slot, index) => {
-      this.slots.push({
-        slotIndex: index,
+      const slotIdx = typeof slot.slotIndex === 'number' ? slot.slotIndex : index
+      const item: SlotDeficitState = {
+        slotIndex: slotIdx,
         abilityId: slot.abilityId,
         abilityName: slot.name || slot.abilityId,
-        manaCost: slot.manaCost,
+        manaCost: slot.manaCost || 0,
         castCount: 0,
         totalManaSpent: 0,
         deficitCount: 0,
         totalDeficitSeconds: 0,
         isPendingDeficit: false,
         deficitStart: 0,
-      })
+      }
+      this.slots.push(item)
+      this.slotMap.set(slotIdx, item)
     })
   }
 
@@ -75,9 +79,8 @@ export class ManaDeficitTracker {
    * 标记技能在当前时间 t 因灵力不足被跳过/无法起手
    */
   public recordDeficit(slotIndex: number, currentElapsedSeconds: number): void {
-    const slot = this.slots[slotIndex]
-    if (!slot) return
-
+    const slot = this.slotMap.get(slotIndex)
+    if (!slot || slot.manaCost <= 0) return
     slot.deficitCount++
     if (!slot.isPendingDeficit) {
       slot.isPendingDeficit = true
@@ -94,9 +97,8 @@ export class ManaDeficitTracker {
    * 标记技能已成功扣除灵力进入施放或已不需要等待（结束该段卡蓝区间）
    */
   public recordCast(slotIndex: number, currentElapsedSeconds: number, manaCost: number): void {
-    const slot = this.slots[slotIndex]
+    const slot = this.slotMap.get(slotIndex)
     if (!slot) return
-
     slot.castCount++
     slot.totalManaSpent += manaCost
 
@@ -116,9 +118,8 @@ export class ManaDeficitTracker {
    * 当目标丢失或条件不再满足时，取消卡蓝等待状态
    */
   public cancelPendingDeficit(slotIndex: number, currentElapsedSeconds: number): void {
-    const slot = this.slots[slotIndex]
+    const slot = this.slotMap.get(slotIndex)
     if (!slot || !slot.isPendingDeficit) return
-
     const wait = Math.max(0, currentElapsedSeconds - slot.deficitStart)
     slot.totalDeficitSeconds += wait
     slot.isPendingDeficit = false

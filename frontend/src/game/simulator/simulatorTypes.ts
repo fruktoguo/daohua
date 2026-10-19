@@ -106,6 +106,139 @@ export interface SimulatorItemYield {
   quantity: number
   perHour: number
 }
+/**
+ * 妖兽击杀明细
+ */
+export interface MonsterKillStat {
+  enemyId: string
+  name: string
+  rank: 'normal' | 'elite' | 'boss'
+  count: number
+  perHour: number
+}
+
+/**
+ * 造成伤害来源明细条目
+ */
+export interface DamageSourceStat {
+  sourceKey: string
+  sourceName: string
+  totalHits: number
+  successfulHits: number
+  hitRate: number
+  criticalHits: number
+  criticalRate: number
+  totalDamage: number
+  dps: number
+  percentage: number
+}
+
+/**
+ * 对指定怪物的造成伤害细分
+ */
+export interface TargetDamageBreakdown {
+  targetId: string
+  targetName: string
+  totalDamage: number
+  percentage: number
+  dps: number
+  sources: DamageSourceStat[]
+}
+
+/**
+ * 承受伤害来源明细条目
+ */
+export interface DamageTakenSourceStat {
+  sourceKey: string
+  sourceName: string
+  attackerName: string
+  totalHits: number
+  evadedHits: number
+  parriedHits: number
+  totalDamage: number
+  dps: number
+  percentage: number
+}
+
+/**
+ * 承受指定怪物的伤害细分
+ */
+export interface AttackerDamageTakenBreakdown {
+  attackerId: string
+  attackerName: string
+  totalDamage: number
+  percentage: number
+  dps: number
+  sources: DamageTakenSourceStat[]
+}
+
+/**
+ * 回复来源条目（气血/灵力）
+ */
+export interface RegenSourceStat {
+  sourceKey: string
+  sourceName: string
+  totalAmount: number
+  ratePerSecond: number
+  percentage: number
+}
+
+/**
+ * 气血与灵力恢复总体指标
+ */
+export interface RecoveryStats {
+  hpRegenTotal: number
+  hpRegenPerSecond: number
+  hpSources: RegenSourceStat[]
+  mpRegenTotal: number
+  mpRegenPerSecond: number
+  mpSources: RegenSourceStat[]
+  isManaExhausted: boolean
+}
+
+/**
+ * 技能每小时法力消耗明细
+ */
+export interface SkillManaConsumptionStat {
+  abilityId: string
+  abilityName: string
+  totalManaSpent: number
+  manaPerHour: number
+  averagePerCast: number
+  castCount: number
+}
+
+/**
+ * 单条战斗详细事件日志
+ */
+export interface SimCombatLogEvent {
+  timestamp: number
+  actorName: string
+  isAlly: boolean
+  targetName?: string
+  actionType: 'attack' | 'skill' | 'heal' | 'buff' | 'natural_regen' | 'defeat' | 'victory' | 'respawn'
+  abilityName?: string
+  damage?: number
+  healing?: number
+  isCritical?: boolean
+  isBreak?: boolean
+  isParry?: boolean
+  isMiss?: boolean
+  message: string
+}
+
+/**
+ * 单场战斗完整回放记录（采样留存）
+ */
+export interface SimBattleLogRecord {
+  battleIndex: number
+  waveNumber: number
+  encounterName: string
+  outcome: 'victory' | 'defeat'
+  durationSeconds: number
+  events: SimCombatLogEvent[]
+}
+
 
 /**
  * 模拟器最终输出的综合分析报表
@@ -139,6 +272,36 @@ export interface SimulatorReport {
   totalKills: number
   /** 掉落物品清单汇总 */
   itemYields: SimulatorItemYield[]
+  /** 每小时战斗场次速率 */
+  encountersPerHour: number
+  /** 玩家死亡总次数 */
+  playerDeaths: number
+  /** 玩家每小时死亡率 */
+  playerDeathsPerHour: number
+  /** 各妖兽击杀明细清单 */
+  monsterKills: MonsterKillStat[]
+  /** 造成伤害深度剖析 */
+  damageStats: {
+    totalDamage: number
+    dps: number
+    overallHitRate: number
+    overallCriticalRate: number
+    sources: DamageSourceStat[]
+    targetBreakdown: TargetDamageBreakdown[]
+  }
+  /** 承受伤害深度剖析 */
+  damageTakenStats: {
+    totalDamageTaken: number
+    dps: number
+    overallEvasionRate: number
+    overallParryRate: number
+    sources: DamageTakenSourceStat[]
+    attackerBreakdown: AttackerDamageTakenBreakdown[]
+  }
+  /** 气血与灵力恢复指标（奶牛放置每秒恢复） */
+  recoveryStats: RecoveryStats
+  /** 技能每小时法力消耗统计 */
+  manaConsumptionStats: SkillManaConsumptionStat[]
   /** 累计获得修为总值 */
   totalExperience: number
   /** 每小时修为产出速率 */
@@ -149,4 +312,6 @@ export interface SimulatorReport {
   combatExperiencePerHour: number
   /** 灵力缺口深度分析报告 */
   manaDeficit: ManaDeficitReport
+  /** 最近战斗详细事件日志（供玩家回溯复盘死因与战局走势） */
+  recentBattleLogs: SimBattleLogRecord[]
 }

@@ -147,15 +147,15 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
           encounters,
           abilities,
           items,
+          maps,
         })
-
         setReport(simReport)
         setActiveTab('results')
       } finally {
         setIsSimulating(false)
       }
     }, 50)
-  }, [abilities, allies, durationSeconds, encounters, items, seed, selectedEncounterId, selectedNodeId, selectedNodeName])
+  }, [abilities, allies, durationSeconds, encounters, items, maps, seed, selectedEncounterId, selectedNodeId, selectedNodeName])
 
   if (!open) return null
 
