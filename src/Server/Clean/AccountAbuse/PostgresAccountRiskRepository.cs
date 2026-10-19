@@ -10,60 +10,81 @@ public sealed class PostgresAccountRiskRepository(
     AccountRiskHasher hasher)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly SemaphoreSlim _policyGate = new(1, 1);
+    private readonly object _policyStateGate = new();
+    private DateTimeOffset? _appliedPolicyAt;
     /// <summary>最近一次从数据库读取的策略快照。</summary>
     public AccountRiskPolicy CurrentPolicy => policyRegistry.Current;
 
-    /// <summary>读取数据库中的最新策略，使运维变更跨进程生效。</summary>
+    /// <summary>读取数据库中的最新策略，使运维变更跨进程生效；数据库读取并行，本地提交按更新时间线性化。</summary>
     public async ValueTask<AccountRiskPolicy> LoadPolicyAsync(CancellationToken cancellationToken = default)
     {
-        await _policyGate.WaitAsync(cancellationToken);
-        try
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("SELECT payload, updated_at FROM platform.account_risk_policy WHERE policy_id = 1", connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        AccountRiskPolicy policy;
+        DateTimeOffset? updatedAt;
+        if (!await reader.ReadAsync(cancellationToken))
         {
-            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var command = new NpgsqlCommand("SELECT payload FROM platform.account_risk_policy WHERE policy_id = 1", connection);
-            var raw = await command.ExecuteScalarAsync(cancellationToken) as string;
-            var policy = raw is null ? AccountRiskPolicy.Default : JsonSerializer.Deserialize<AccountRiskPolicy>(raw, JsonOptions)
+            policy = AccountRiskPolicy.Default;
+            updatedAt = null;
+        }
+        else
+        {
+            var raw = reader.GetString(0);
+            policy = JsonSerializer.Deserialize<AccountRiskPolicy>(raw, JsonOptions)
                 ?? throw new InvalidOperationException("账号检测策略载荷无效。");
             policy.Validate();
-            policyRegistry.Replace(policy);
-            return policy;
+            updatedAt = reader.GetFieldValue<DateTimeOffset>(1);
         }
-        finally
+
+        lock (_policyStateGate)
         {
-            _policyGate.Release();
+            // 读取可能在本进程 Replace 提交前开始，旧结果不得覆盖已应用的新策略。
+            if (!_appliedPolicyAt.HasValue || (updatedAt.HasValue && updatedAt.Value > _appliedPolicyAt.Value))
+            {
+                policyRegistry.Replace(policy);
+                _appliedPolicyAt = updatedAt;
+            }
         }
+        return policy;
     }
 
     /// <summary>原子保存策略并记录不含敏感值的管理审计。</summary>
     public async ValueTask ReplacePolicyAsync(AccountRiskPolicy policy, CancellationToken cancellationToken = default)
     {
         policy.Validate();
-        await _policyGate.WaitAsync(cancellationToken);
-        try
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO platform.account_risk_policy(policy_id, payload, updated_at)
+            VALUES (1, $1::jsonb, clock_timestamp()) ON CONFLICT (policy_id)
+            DO UPDATE SET payload = EXCLUDED.payload,
+                          updated_at = GREATEST(clock_timestamp(), platform.account_risk_policy.updated_at + interval '1 microsecond')
+            RETURNING updated_at
+            """, connection, transaction);
+        command.Parameters.AddWithValue(JsonSerializer.Serialize(policy, JsonOptions));
+        DateTimeOffset updatedAt;
+        await using (var updatedReader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-            await using var command = new NpgsqlCommand("""
-                INSERT INTO platform.account_risk_policy(policy_id, payload, updated_at)
-                VALUES (1, $1::jsonb, now()) ON CONFLICT (policy_id)
-                DO UPDATE SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at
-                """, connection, transaction);
-            command.Parameters.AddWithValue(JsonSerializer.Serialize(policy, JsonOptions));
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            await using var audit = new NpgsqlCommand("""
-                INSERT INTO identity.audit_events(event_id,event_type,payload,occurred_at)
-                VALUES ($1,'account-risk.policy.updated',$2::jsonb,now())
-                """, connection, transaction);
-            audit.Parameters.AddWithValue(Guid.NewGuid());
-            audit.Parameters.AddWithValue(JsonSerializer.Serialize(policy, JsonOptions));
-            await audit.ExecuteNonQueryAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            policyRegistry.Replace(policy);
+            if (!await updatedReader.ReadAsync(cancellationToken))
+                throw new InvalidOperationException("账号检测策略保存未返回更新时间。");
+            updatedAt = updatedReader.GetFieldValue<DateTimeOffset>(0);
         }
-        finally
+        await using var audit = new NpgsqlCommand("""
+            INSERT INTO identity.audit_events(event_id,event_type,payload,occurred_at)
+            VALUES ($1,'account-risk.policy.updated',$2::jsonb,now())
+            """, connection, transaction);
+        audit.Parameters.AddWithValue(Guid.NewGuid());
+        audit.Parameters.AddWithValue(JsonSerializer.Serialize(policy, JsonOptions));
+        await audit.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        lock (_policyStateGate)
         {
-            _policyGate.Release();
+            if (!_appliedPolicyAt.HasValue || updatedAt > _appliedPolicyAt.Value)
+            {
+                policyRegistry.Replace(policy);
+                _appliedPolicyAt = updatedAt;
+            }
         }
     }
 
@@ -165,11 +186,19 @@ public sealed class PostgresAccountRiskRepository(
         Guid accountId, IReadOnlyList<AccountRiskSignalHash> signals, AccountRiskPolicy policy, CancellationToken cancellationToken, bool registration = true)
     {
         if (!policy.Enabled || (registration && !policy.RegistrationEnabled)) return new(true, null, null, signals);
-        foreach (var signal in signals.OrderBy(item => item.Kind, StringComparer.Ordinal).ThenBy(item => item.Hash, StringComparer.Ordinal))
+        var orderedSignals = signals.OrderBy(item => item.Kind, StringComparer.Ordinal).ThenBy(item => item.Hash, StringComparer.Ordinal).ToArray();
+        if (orderedSignals.Length > 0)
         {
-            await using var command = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))", connection, transaction);
-            command.Parameters.AddWithValue($"{signal.Kind}:{signal.Hash}");
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await using var lockCommand = new NpgsqlCommand("""
+                SELECT pg_advisory_xact_lock(hashtextextended(value, 0))
+                FROM unnest($1::text[]) AS locks(value)
+                """, connection, transaction);
+            lockCommand.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text,
+                Value = orderedSignals.Select(item => $"{item.Kind}:{item.Hash}").ToArray()
+            });
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         var deviceSignals = signals.Where(item => item.Kind is AccountRiskSignalKind.DeviceConfig or AccountRiskSignalKind.DeviceId).ToArray();
         // 所有设备模块关闭时不会因为必填规则让运维无法主动停用检测。
@@ -178,19 +207,22 @@ public sealed class PostgresAccountRiskRepository(
         var hasRequiredDevice = deviceSignals.Any(item => item.Kind == (idEnabled ? AccountRiskSignalKind.DeviceId : AccountRiskSignalKind.DeviceConfig));
         if (policy.RequireDeviceSignal && (idEnabled || configEnabled) && !hasRequiredDevice)
             return Deny(AccountRiskErrorCodes.RiskSignalRequired, "设备校验失败，请刷新后重试。", signals, "设备信号缺失");
+        var counts = orderedSignals.Length == 0
+            ? new Dictionary<(string Kind, string Hash), int>()
+            : await CountAccountsAsync(connection, transaction, orderedSignals, accountId, cancellationToken);
         if (registration)
         {
             foreach (var signal in deviceSignals.Where(item => item.Kind == AccountRiskSignalKind.DeviceId))
-                if (await CountAccountsAsync(connection, transaction, signal, accountId, cancellationToken) >= policy.MaxAccountsPerDevice)
+                if (GetCount(counts, signal) >= policy.MaxAccountsPerDevice)
                     return Deny(AccountRiskErrorCodes.DeviceAlreadyRegistered, "该设备已达到可注册账号上限。", signals, "设备注册上限");
         }
         var person = signals.FirstOrDefault(item => item.Kind == AccountRiskSignalKind.Person);
-        if (person is not null && await CountAccountsAsync(connection, transaction, person, accountId, cancellationToken) >= policy.MaxAccountsPerPerson)
+        if (person is not null && GetCount(counts, person) >= policy.MaxAccountsPerPerson)
             return Deny(AccountRiskErrorCodes.PersonAccountLimit, "该设备关联的账号数量已达上限。", signals, "关联账号上限");
         if (!registration && policy.Modules.Single(item => item.Id == "accountAssociation").Enabled)
         {
             foreach (var device in deviceSignals.Where(item => item.Kind == AccountRiskSignalKind.DeviceId))
-                if (await CountAccountsAsync(connection, transaction, device, accountId, cancellationToken) >= policy.MaxAccountsPerPerson)
+                if (GetCount(counts, device) >= policy.MaxAccountsPerPerson)
                     return Deny(AccountRiskErrorCodes.PersonAccountLimit, "该设备关联的账号数量已达上限。", signals, "关联账号上限");
         }
         var score = 0;
@@ -199,7 +231,7 @@ public sealed class PostgresAccountRiskRepository(
         {
             var id = signal.Kind switch { AccountRiskSignalKind.DeviceConfig => "deviceConfigHash", AccountRiskSignalKind.Ip => "ipAddress", AccountRiskSignalKind.Network => "network", _ => "browserFingerprint" };
             var module = policy.Modules.Single(item => item.Id == id);
-            var count = await CountAccountsAsync(connection, transaction, signal, accountId, cancellationToken);
+            var count = GetCount(counts, signal);
             if (module.Enabled && count >= module.Threshold)
             {
                 score += module.Weight;
@@ -231,17 +263,32 @@ public sealed class PostgresAccountRiskRepository(
     internal static async ValueTask PersistSignalsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid accountId,
         IReadOnlyList<AccountRiskSignalHash> signals, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        foreach (var signal in signals)
+        if (signals.Count == 0) return;
+        await using var command = new NpgsqlCommand("""
+            WITH incoming AS (
+                SELECT input_row.signal_kind, input_row.signal_hash, count(*) AS hit_count
+                FROM unnest($3::text[], $4::text[]) AS input_row(signal_kind, signal_hash)
+                GROUP BY input_row.signal_kind, input_row.signal_hash
+            )
+            INSERT INTO identity.account_risk_signals(signal_id,account_id,signal_kind,signal_hash,first_seen_at,last_seen_at,hit_count)
+            SELECT gen_random_uuid(), $1, incoming.signal_kind, incoming.signal_hash, $2, $2, incoming.hit_count
+            FROM incoming
+            ON CONFLICT (account_id,signal_kind,signal_hash)
+            DO UPDATE SET last_seen_at=EXCLUDED.last_seen_at,hit_count=identity.account_risk_signals.hit_count+EXCLUDED.hit_count
+            """, connection, transaction);
+        command.Parameters.AddWithValue(accountId);
+        command.Parameters.AddWithValue(now);
+        command.Parameters.Add(new NpgsqlParameter
         {
-            await using var command = new NpgsqlCommand("""
-                INSERT INTO identity.account_risk_signals(signal_id,account_id,signal_kind,signal_hash,first_seen_at,last_seen_at,hit_count)
-                VALUES ($1,$2,$3,$4,$5,$5,1) ON CONFLICT (account_id,signal_kind,signal_hash)
-                DO UPDATE SET last_seen_at=EXCLUDED.last_seen_at,hit_count=identity.account_risk_signals.hit_count+1
-                """, connection, transaction);
-            command.Parameters.AddWithValue(Guid.NewGuid()); command.Parameters.AddWithValue(accountId);
-            command.Parameters.AddWithValue(signal.Kind); command.Parameters.AddWithValue(signal.Hash); command.Parameters.AddWithValue(now);
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text,
+            Value = signals.Select(item => item.Kind).ToArray()
+        });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text,
+            Value = signals.Select(item => item.Hash).ToArray()
+        });
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>写入脱敏判定事件；与额度锁持有同一个事务。</summary>
@@ -265,11 +312,39 @@ public sealed class PostgresAccountRiskRepository(
     private static AccountRiskDecision Deny(string code, string message, IReadOnlyList<AccountRiskSignalHash> signals, string reason) =>
         new(false,code,message,signals,100,"deny",[reason]);
     private static string? Prefix(IReadOnlyList<AccountRiskSignalHash> signals, string kind) => signals.FirstOrDefault(item => item.Kind == kind)?.Hash[..12];
-    private static async ValueTask<int> CountAccountsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
-        AccountRiskSignalHash signal, Guid accountId, CancellationToken cancellationToken)
+    private static int GetCount(IReadOnlyDictionary<(string Kind, string Hash), int> counts, AccountRiskSignalHash signal) =>
+        counts.TryGetValue((signal.Kind, signal.Hash), out var count) ? count : 0;
+
+    private static async ValueTask<Dictionary<(string Kind, string Hash), int>> CountAccountsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, IReadOnlyList<AccountRiskSignalHash> signals,
+        Guid accountId, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("SELECT count(DISTINCT account_id) FROM identity.account_risk_signals WHERE signal_kind=$1 AND signal_hash=$2 AND account_id<>$3",connection,transaction);
-        command.Parameters.AddWithValue(signal.Kind); command.Parameters.AddWithValue(signal.Hash); command.Parameters.AddWithValue(accountId);
-        return checked((int)Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)));
+        await using var command = new NpgsqlCommand("""
+            WITH requested(kind, hash) AS (
+                SELECT * FROM unnest($1::text[], $2::text[])
+            )
+            SELECT requested.kind, requested.hash,
+                   count(DISTINCT stored.account_id) FILTER (WHERE stored.account_id <> $3)
+            FROM requested
+            LEFT JOIN identity.account_risk_signals stored
+              ON stored.signal_kind = requested.kind AND stored.signal_hash = requested.hash
+            GROUP BY requested.kind, requested.hash
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text,
+            Value = signals.Select(item => item.Kind).ToArray()
+        });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text,
+            Value = signals.Select(item => item.Hash).ToArray()
+        });
+        command.Parameters.AddWithValue(accountId);
+        var counts = new Dictionary<(string Kind, string Hash), int>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            counts[(reader.GetString(0), reader.GetString(1))] = checked((int)reader.GetInt64(2));
+        return counts;
     }
 }
