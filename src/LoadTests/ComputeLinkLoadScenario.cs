@@ -333,10 +333,10 @@ internal static class ComputeLinkLoadScenario
         psi.Environment["ComputeNode__LeaseSeconds"] = "30";
         // 单批 8 任务：多节点均摊在飞批次，断线改派测量才杀得到持有在飞任务的节点。
         psi.Environment["ComputeNode__BatchSize"] = "8";
-        // 批算间隔 1 分钟 + 溢出阈值 0：本地执行器与节点共同承接，对齐生产形态。
+        // 生产离线批算按小时推进；180 秒容量波次只允许每个目标玩家产生一条任务，避免用一分钟间隔制造重复入队。
         psi.Environment["OfflineIdle__ScanIntervalSeconds"] = "10";
         psi.Environment["OfflineIdle__ScanBatchSize"] = "2000";
-        psi.Environment["OfflineIdle__BatchIntervalMinutes"] = "1";
+        psi.Environment["OfflineIdle__BatchIntervalMinutes"] = "60";
         psi.Environment["ComputeNode__OverflowAfterSeconds"] = "0";
         psi.Environment["Ops__Enabled"] = "true";
         psi.Environment["Logging__LogLevel__Default"] = "Information";

@@ -33,7 +33,7 @@ public sealed class LocalComputeExecutorWorker(
             try
             {
                 if (!await RunOnceAsync(stoppingToken))
-                    await Task.Delay(options.ComputePollInterval, stoppingToken);
+                    await Task.WhenAny(jobs.JobAvailableSignal, Task.Delay(options.ComputePollInterval, stoppingToken));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

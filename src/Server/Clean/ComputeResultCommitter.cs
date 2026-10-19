@@ -1,11 +1,11 @@
 namespace Server.Clean;
 
-/// <summary>
 /// 冷挂机任务结果的统一写回边界：节点候选结果经独立重演验证后的可信产物，
-/// 与主服本地执行器（§14.4）的自产可信结果走同一个 Serializable 事务——
+/// 与主服本地执行器（§14.4）的自产可信结果走同一个 RepeatableRead 事务——
 /// 租约校验、冻结源基线复核、冷玩家状态、钱包版本、section CAS、资产增量入账
 /// 与任务完结同生同灭。
-/// SSI/死锁只做有限次原地重放，不烧任务领取次数；最终仍交给可重试失败路径。
+/// 业务正确性由显式行锁、MVCC fence 与 CAS 保证；可重放的事务并发冲突/死锁
+/// 不烧任务领取次数，最终仍交给可重试失败路径。
 /// </summary>
 public sealed class ComputeResultCommitter(
     NpgsqlDataSource dataSource,
@@ -15,9 +15,9 @@ public sealed class ComputeResultCommitter(
     ServerOptions options,
     ILogger<ComputeResultCommitter> logger)
 {
-    // SSI/死锁只做有限次原地重放；最终仍交给既有可重试失败路径，不把其他持久化异常吞掉。
-    private const int MaxSerializableReplayAttempts = 8;
-    private readonly LogThrottle _serializationFailureLog = new(TimeSpan.FromMinutes(1));
+    // PostgreSQL 瞬态并发冲突/死锁只做有限次原地重放；不把其他持久化异常吞掉。
+    private const int MaxTransactionReplayAttempts = 8;
+    private readonly LogThrottle _transactionConflictLog = new(TimeSpan.FromMinutes(1));
 
     /// <summary>
     /// 提交一份可信推进结果：内部对串行化冲突原地重放（短退避），返回事务结局。
@@ -38,8 +38,8 @@ public sealed class ComputeResultCommitter(
         var now = DateTimeOffset.UtcNow;
         var writes = trusted.Writes.Select(write => write with { UpdatedAt = now }).ToArray();
 
-        // 结果回写走 Serializable：并发批次命中同一提交头/资产谓词范围会产 40001/40P01，
-        // 属可预期并发代价而非任务错误——事务原地重放（短退避），不烧任务领取次数。
+        // RR 固定快照配合显式 fence/CAS 维护逻辑一致性；事务级并发冲突仍原地重放（不烧领取次数）。
+        // section 与 flush_queue 页级读写相交不构成业务冲突，故不依赖 SSI predicate-lock。
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -49,11 +49,11 @@ public sealed class ComputeResultCommitter(
                     cancellationToken);
             }
             catch (PostgresException exception) when (IsSerializationConflict(exception)
-                && attempt < MaxSerializableReplayAttempts - 1)
+                && attempt < MaxTransactionReplayAttempts - 1)
             {
-                if (_serializationFailureLog.TryAcquire())
-                    logger.LogWarning("冷挂机结果落库串行化冲突，重放事务 job={JobId} attempt={Attempt}/{MaxAttempts} sqlstate={SqlState}",
-                        claim.JobId, attempt + 1, MaxSerializableReplayAttempts, exception.SqlState);
+                if (_transactionConflictLog.TryAcquire())
+                    logger.LogWarning("冷挂机结果落库瞬态并发冲突，重放事务 job={JobId} attempt={Attempt}/{MaxAttempts} sqlstate={SqlState}",
+                        claim.JobId, attempt + 1, MaxTransactionReplayAttempts, exception.SqlState);
                 var delayMilliseconds = Math.Min(1_000, 40 * (attempt + 1))
                     + Random.Shared.Next(0, 80);
                 await Task.Delay(TimeSpan.FromMilliseconds(delayMilliseconds), cancellationToken);
@@ -62,7 +62,7 @@ public sealed class ComputeResultCommitter(
     }
 
     /// <summary>
-    /// 单任务结果回写事务体：section CAS、资产增量入账与任务完结并入同一 Serializable 事务。
+    /// 单任务结果回写事务体：在 RepeatableRead 固定快照内将 section CAS、资产增量入账与任务完结并为一个原子提交。
     /// 事务内任何幂等冲突都以异常上交，由 <see cref="CommitAsync"/> 决定是否原地重放。
     /// </summary>
     private async Task<ComputeApplyOutcome> CommitResultInTransactionAsync(
@@ -72,7 +72,7 @@ public sealed class ComputeResultCommitter(
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         // 先锁当前任务租约，防止验证/写回期间过期任务被重新领取；最终 Complete 仍必须成功。
         await using (var lease = new NpgsqlCommand("""
             SELECT job_id FROM platform.compute_jobs
@@ -90,11 +90,11 @@ public sealed class ComputeResultCommitter(
         ComputeApplyOutcome applied;
         try
         {
-            await ValidateFrozenBaselineInTransactionAsync(connection, transaction, claim, request, trusted, cancellationToken);
+            var walletReadSet = await ValidateFrozenBaselineInTransactionAsync(connection, transaction, claim, request, trusted, cancellationToken);
             applied = await sections.ApplyComputeResultInTransactionAsync(
                 connection, transaction,
                 claim.PlayerId, trusted.SourceStateVersion, trusted.TargetStateVersion,
-                writes, trusted.LastSimulatedAt, gameData.Fingerprint, cancellationToken);
+                writes, trusted.LastSimulatedAt, gameData.Fingerprint, walletReadSet, cancellationToken);
         }
         catch (ComputeSourceDriftException)
         {
@@ -131,10 +131,10 @@ public sealed class ComputeResultCommitter(
     }
 
     /// <summary>
-    /// 在同一 Serializable 事务中重新核对任务冻结的完整源基线：身份/头/全集 section、离线状态、运行时所有权与钱包版本。
-    /// 合法源漂移通过专用异常丢弃结果并归档任务；载荷损坏仍按异常拒绝，不能混淆为诚实节点错误。
+    /// 在同一 RepeatableRead 快照中重新核对身份、头/校验和与完整 section，并返回经格式及键唯一性校验的钱包读集。
+    /// 下一阶段按原锁序锁定并比较全部余额行的数量与版本；合法源漂移通过专用结局丢弃结果并归档任务。
     /// </summary>
-    private static async ValueTask ValidateFrozenBaselineInTransactionAsync(
+    private static async ValueTask<IReadOnlyDictionary<(string AssetId, string Variant), ComputeAssetBalance>> ValidateFrozenBaselineInTransactionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ComputeJobClaim claim,
@@ -142,10 +142,18 @@ public sealed class ComputeResultCommitter(
         ComputeVerificationResult trusted,
         CancellationToken cancellationToken)
     {
+        // 身份/投影行锁与会话名册、未消费收件箱 fence 同读一份 RR 快照，避免额外串行往返。
         await using (var player = new NpgsqlCommand("""
             SELECT i.player_id, i.account_id, i.display_name, i.created_at, p.presence,
                    EXISTS (SELECT 1 FROM game.player_runtime_leases l
-                           WHERE l.player_id = i.player_id AND l.lease_until > now())
+                           WHERE l.player_id = i.player_id AND l.lease_until > now()),
+                   (EXISTS (
+                       SELECT 1 FROM social.party_sessions s
+                       WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
+                           'members', jsonb_build_array(jsonb_build_object('playerId', i.player_id::text))))
+                    OR EXISTS (
+                       SELECT 1 FROM social.party_session_inbox inbox
+                       WHERE inbox.player_id = i.player_id AND inbox.consumed_at IS NULL))
             FROM identity.players i
             JOIN game.player_projection p ON p.player_id = i.player_id
             WHERE i.player_id = $1 AND i.status = 1
@@ -164,26 +172,13 @@ public sealed class ComputeResultCommitter(
             if (!string.Equals(reader.GetString(4), "offline", StringComparison.OrdinalIgnoreCase)
                 || reader.GetBoolean(5))
                 throw new ComputeSourceDriftException("玩家已上线或被其他运行时实例持有。");
-        }
-        // 会话开战与结果回写共用成员身份 MVCC fence；锁后复核，避免个人冷算和同场会话各自推进。
-        await using (var participation = new NpgsqlCommand("""
-            SELECT EXISTS (
-                SELECT 1 FROM social.party_sessions s
-                WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(
-                    'members', jsonb_build_array(jsonb_build_object('playerId', $1::uuid::text))))
-                OR EXISTS (
-                    SELECT 1 FROM social.party_session_inbox i
-                    WHERE i.player_id = $1 AND i.consumed_at IS NULL)
-            """, connection, transaction))
-        {
-            participation.Parameters.AddWithValue(claim.PlayerId);
-            if (await participation.ExecuteScalarAsync(cancellationToken) is true)
+            if (reader.GetBoolean(6))
                 throw new ComputeSourceDriftException("玩家已由行动参与会话推进或仍有待消费结算。");
         }
 
 
         var bundle = await PostgresSectionRepository.LoadInTransactionAsync(
-            connection, transaction, claim.PlayerId, cancellationToken)
+            connection, transaction, claim.PlayerId, cancellationToken, includeActionQueue: false)
             ?? throw new ComputeSourceDriftException("Compute 玩家完整源基线不存在。");
         if (bundle.Head.StateVersion != trusted.SourceStateVersion
             || bundle.Head.StateVersion <= 0
@@ -225,34 +220,14 @@ public sealed class ComputeResultCommitter(
                 throw new ComputeSourceDriftException($"Compute 冻结 section {actual[i].Kind} 已漂移。");
         }
 
-        var seenBalances = new HashSet<(string AssetId, string Variant)>();
         var balances = request.AssetBalances ?? [];
+        var balancesByKey = new Dictionary<(string AssetId, string Variant), ComputeAssetBalance>(balances.Count);
         foreach (var balance in balances)
         {
-            if (!seenBalances.Add((balance.AssetId, balance.Variant)))
+            if (!balancesByKey.TryAdd((balance.AssetId, balance.Variant), balance))
                 throw new InvalidDataException("Compute 冻结钱包存在重复资产键。");
         }
-        await using var wallet = new NpgsqlCommand("""
-            SELECT asset_id, variant, quantity, version
-            FROM economy.player_asset_balances
-            WHERE player_id = $1 AND quantity > 0
-            ORDER BY asset_id, variant
-            FOR UPDATE
-            """, connection, transaction);
-        wallet.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
-        await using var walletReader = await wallet.ExecuteReaderAsync(cancellationToken);
-        var rows = new List<(string AssetId, string Variant, double Quantity, long Version)>();
-        while (await walletReader.ReadAsync(cancellationToken))
-            rows.Add((walletReader.GetString(0), walletReader.GetString(1), walletReader.GetDouble(2), walletReader.GetInt64(3)));
-        if (rows.Count != balances.Count)
-            throw new ComputeSourceDriftException("Compute 冻结钱包行集合已漂移。");
-        var balancesByKey = balances.ToDictionary(row => (row.AssetId, row.Variant));
-        foreach (var row in rows)
-        {
-            if (!balancesByKey.TryGetValue((row.AssetId, row.Variant), out var expectedBalance)
-                || row.Quantity != expectedBalance.Quantity || row.Version != expectedBalance.Version)
-                throw new ComputeSourceDriftException("Compute 冻结钱包数量或版本已漂移。");
-        }
+        return balancesByKey;
     }
 
     /// <summary>失败状态真实落库后记录终态证据；预期串行化重试与重复故障节流不得压掉判死事件。</summary>
@@ -272,7 +247,7 @@ public sealed class ComputeResultCommitter(
         logger.LogWarning("冷挂机任务判死 job={JobId} category={Category} attempts={Attempts} maxAttempts={MaxAttempts}",
             claim.JobId, category, claim.Attempts, options.ComputeMaxAttempts);
 
-    /// <summary>串行化冲突（SSI 40001）与死锁（40P01）判定：两类都是可原地重放的可恢复事务失败。</summary>
+    /// <summary>PostgreSQL 40001 与死锁 40P01 判定：两类都是可原地重放的事务并发失败。</summary>
     internal static bool IsSerializationConflict(PostgresException exception) =>
         exception.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected;
 

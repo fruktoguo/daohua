@@ -21,9 +21,8 @@ public sealed class ColdCatchUpWorker(
     /// <summary>冷挂机生产 leader 会话级咨询锁键：全集群固定，持有者才执行扫描与入队。</summary>
     private const long ProducerLockKey = 772_311;
     /// <summary>候选入队并行度：每候选一次 RepeatableRead 快照读加一次 upsert 往返，串行在数千
-    /// 候选量级成为补算吞吐短板；4 路足以抹平往返延迟，又不会挤占共享 PG 上在线事务与
-    /// 本地执行器/派发提交所需的连接与锁资源。</summary>
-    private const int EnqueueParallelism = 4;
+    /// 候选量级成为补算吞吐短板；8 路并行抹平往返延迟，充分利用连接池并缩短生产窗口。</summary>
+    private const int EnqueueParallelism = 8;
 
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
     private readonly LogThrottle _playerErrorLog = new(TimeSpan.FromMinutes(5));

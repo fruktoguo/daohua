@@ -10,7 +10,11 @@ namespace Server;
 /// </summary>
 public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComputeResultVerifier, IDisposable
 {
-    private readonly DeterministicCatchUpEngine _engine = new(gameData);
+    // 独立 ECS 补算重演分条带：单引擎内部门串行（18ms/单任务，串行 2000 任务达 37s 超 30s 门禁）；
+    // 封顶 2~4 条带让多任务重演并行化，条带数对齐 2c 生产宿主并发预算。
+    private readonly DeterministicCatchUpEngine[] _engines = Enumerable.Range(0, Math.Clamp(Environment.ProcessorCount, 2, 4))
+        .Select(_ => new DeterministicCatchUpEngine(gameData))
+        .ToArray();
 
     public async ValueTask<ComputeVerificationResult> VerifyAsync(
         ComputeAdvanceJobRequest request,
@@ -103,7 +107,8 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
                 new PlayerId(request.PlayerId), new AssetKey(new ItemId(row.AssetId), row.Variant), row.Quantity, row.Version)).ToArray()
             : null;
         var target = DateTimeOffset.FromUnixTimeMilliseconds(request.TargetUnixMilliseconds);
-        return await _engine.AdvanceAsync(bundle, balances, target, target, cancellationToken).ConfigureAwait(false);
+        var engine = _engines[(request.PlayerId.GetHashCode() & int.MaxValue) % _engines.Length];
+        return await engine.AdvanceAsync(bundle, balances, target, target, cancellationToken).ConfigureAwait(false);
     }
 
     private static Server.Clean.AssetDelta[] MergeReplayAssetDeltas(
@@ -223,5 +228,9 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
         return expected;
     }
 
-    public void Dispose() => _engine.Dispose();
+    public void Dispose()
+    {
+        foreach (var engine in _engines)
+            engine.Dispose();
+    }
 }

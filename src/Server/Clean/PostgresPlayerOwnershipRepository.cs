@@ -77,7 +77,7 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
 
     /// <summary>
     /// 所有权操作与 Compute 共用身份行 fence。等值 UPDATE 不改业务身份，却推进 MVCC 行版本：
-    /// Compute Serializable 快照在等待 Acquire/Renew 后必须产生冲突重演，不能读取旧的不存在租约谓词。
+    /// Compute 的 RepeatableRead 快照若在此更新前建立且等待该行，必须触发 40001 重演，不能读取旧的不存在租约谓词。
     /// </summary>
     internal static async ValueTask LockPlayerIdentityAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, Guid playerId, CancellationToken cancellationToken)

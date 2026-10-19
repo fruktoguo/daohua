@@ -91,7 +91,7 @@ public sealed class ComputeDispatcherWorker(
                         // 归还自身槽位会完成轮首捕获的信号：必须释放后重取一份新信号再等，
                         // 否则自唤醒让退避轮询退化为空转，把 ClaimDue 轮询打成满速自旋。
                         var idleSignal = registry.CapacitySignal;
-                        await Task.WhenAny(idleSignal, Task.Delay(options.ComputePollInterval, stoppingToken));
+                        await Task.WhenAny(idleSignal, jobs.JobAvailableSignal, Task.Delay(options.ComputePollInterval, stoppingToken));
                         continue;
                     }
                     // 槽位已占即派生独立批次任务，主循环不等响应直接继续取下一个节点；
@@ -349,7 +349,7 @@ public sealed class ComputeDispatcherWorker(
     }
 
     /// <summary>
-    /// 单个任务结果回写（compute.v3）：section CAS、资产增量入账与任务完结并入同一 Serializable 事务，
+    /// 单个任务结果回写（compute.v3）：RepeatableRead 固定快照内，section CAS、资产增量入账与任务完结并入同一事务，
     /// 三者同生同灭——结果因版本漂移被丢弃时其资产增量一并丢弃（增量按旧状态结算，不可入账新状态）。
     /// 空推进（目标版本等于源版本）是合法结果：只前移提交头模拟时钟，阻断无变化玩家的无限重派。
     /// 失败按该 job 自身 attempts 退避；节点产出污染不可重试，直接判 dead 保留证据。

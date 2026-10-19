@@ -65,10 +65,10 @@ public sealed class ComputeTransactionTests
         var logger = new TerminalLogger<ComputeResultCommitter>();
         var committer = fixture.CreateCommitter(logger);
         using var worker = fixture.CreateWorker(committer: committer);
-        // 复现容量场景：预期 SSI 重试与基础设施错误刚占满节流窗口，紧接着真实任务判死。
-        var serializationThrottle = (LogThrottle)typeof(ComputeResultCommitter)
-            .GetField("_serializationFailureLog", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(committer)!;
-        Assert.True(serializationThrottle.TryAcquire());
+        // 复现容量场景：预期事务并发冲突重放与基础设施错误刚占满节流窗口，紧接着真实任务判死。
+        var transactionConflictThrottle = (LogThrottle)typeof(ComputeResultCommitter)
+            .GetField("_transactionConflictLog", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(committer)!;
+        Assert.True(transactionConflictThrottle.TryAcquire());
         var workerThrottle = (LogThrottle)typeof(ComputeDispatcherWorker)
             .GetField("_failureLog", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(worker)!;
         Assert.True(workerThrottle.TryAcquire());
@@ -156,11 +156,11 @@ public sealed class ComputeTransactionTests
 
     [Fact]
     [Trait("Category", "PostgresIntegration")]
-    public async Task AcquireInvalidatesOlderSerializableSnapshot()
+    public async Task AcquireInvalidatesOlderRepeatableReadSnapshot()
     {
         await using var fixture = await Fixture.CreateAsync();
         await using var connection = await fixture.Source.OpenConnectionAsync();
-        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
         await using (var snapshot = new NpgsqlCommand("SELECT player_id FROM identity.players WHERE player_id = $1", connection, transaction))
         {
             snapshot.Parameters.AddWithValue(fixture.PlayerId);
@@ -177,6 +177,53 @@ public sealed class ComputeTransactionTests
         Assert.Equal(ComputeApplyOutcome.StaleVersion, await fixture.CommitAsync());
         await ownership.ReleaseAsync(fixture.PlayerId, owner);
     }
+
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ActivePartySessionMembershipDiscardsResult()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+
+        var spec = JsonSerializer.Serialize(new
+        {
+            members = new[] { new { playerId = fixture.PlayerId.ToString("D") } }
+        }, ServerJson.Options);
+        await fixture.SqlAsync("""
+            INSERT INTO social.party_sessions(session_id, party_id, spec, started_at)
+            VALUES ($1, $2, $3::jsonb, $4)
+            """, "compute-fence-" + Guid.NewGuid().ToString("N"), Guid.NewGuid(), spec, DateTimeOffset.UtcNow);
+
+        // 活跃会话名册命中仍必须原子丢弃冷结果，GIN 只缩窄读取范围，不改变零信任 fence 语义。
+        Assert.Equal(ComputeApplyOutcome.StaleVersion, await fixture.CommitAsync());
+        Assert.Equal(fixture.Request.SourceStateVersion,
+            await fixture.ScalarAsync("SELECT state_version FROM game.player_state_heads WHERE player_id = $1", fixture.PlayerId));
+        Assert.Equal(0L,
+            await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE transaction_id = $1", fixture.Claim.JobId));
+        Assert.Equal("succeeded",
+            await fixture.ScalarAsync("SELECT status FROM platform.compute_jobs WHERE job_id = $1", fixture.Claim.JobId));
+    }
+
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task MissingPartySessionMembershipDoesNotBlockColdResult()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var spec = JsonSerializer.Serialize(new
+        {
+            members = new[] { new { playerId = Guid.NewGuid().ToString("D") } }
+        }, ServerJson.Options);
+        await fixture.SqlAsync("""
+            INSERT INTO social.party_sessions(session_id, party_id, spec, started_at)
+            VALUES ($1, $2, $3::jsonb, $4)
+            """, "compute-other-member-" + Guid.NewGuid().ToString("N"), Guid.NewGuid(), spec, DateTimeOffset.UtcNow);
+
+        Assert.Equal(ComputeApplyOutcome.Applied, await fixture.CommitAsync());
+        Assert.Equal("succeeded",
+            await fixture.ScalarAsync("SELECT status FROM platform.compute_jobs WHERE job_id = $1", fixture.Claim.JobId));
+        Assert.Equal(1L,
+            await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE transaction_id = $1", fixture.Claim.JobId));
+    }
+
 
     private sealed class Fixture(NpgsqlDataSource source, PostgresSectionRepository sections,
         PostgresComputeJobRepository jobs, EcsComputeResultVerifier verifier, ComputeAdvanceJobRequest request,

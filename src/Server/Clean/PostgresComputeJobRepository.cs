@@ -66,6 +66,20 @@ public sealed record ComputeJobOutputSummary(
 /// </summary>
 public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
 {
+    private volatile TaskCompletionSource _jobAvailable = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>新任务入队信号：供派发器/本地执行器在无任务时免等待轮询间隔立即唤醒。</summary>
+    public Task JobAvailableSignal => _jobAvailable.Task;
+
+    private void NotifyJobAvailable()
+    {
+        var current = _jobAvailable;
+        if (!current.Task.IsCompleted)
+        {
+            current.TrySetResult();
+            _jobAvailable = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
     /// <summary>
     /// 由玩家与目标时刻派生确定性 job_id。
     /// 同一玩家同一目标时刻的重复入队在主键上自然去重；目标时刻变化后派生新 id，不与历史终态行冲突。
@@ -150,10 +164,10 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             if (await refresh.ExecuteNonQueryAsync(cancellationToken) > 0)
             {
                 await transaction.CommitAsync(cancellationToken);
+                NotifyJobAvailable();
                 return ComputeEnqueueResult.Refreshed;
             }
         }
-
         await using (var insert = new NpgsqlCommand("""
             INSERT INTO platform.compute_jobs
                 (job_id, player_id, target_time, status, input_payload, output_payload,
@@ -179,11 +193,14 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
                 return ComputeEnqueueResult.SkippedExisting;
             }
             await transaction.CommitAsync(cancellationToken);
-            // 命中部分唯一索引（该玩家已有 pending/leased 行）时 DO NOTHING 返回 0。
-            return inserted > 0 ? ComputeEnqueueResult.Inserted : ComputeEnqueueResult.SkippedExisting;
+            if (inserted > 0)
+            {
+                NotifyJobAvailable();
+                return ComputeEnqueueResult.Inserted;
+            }
+            return ComputeEnqueueResult.SkippedExisting;
         }
     }
-
     /// <summary>
     /// 原子领取到期任务：pending 行须到点且 pending 时长超过 minPendingAge（节点溢出阈值；
     /// 本地执行器传 TimeSpan.Zero 即领），过重试闸门；租约已过期的 leased 孤儿行不受影响。

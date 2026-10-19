@@ -24,40 +24,122 @@ public sealed class PostgresSectionRepository(
         return bundle;
     }
 
-    /// <summary>在调用方的一致事务快照中加载有效头、全集分段与耐久队列；不提交事务。</summary>
+    /// <summary>在调用方的一致事务快照中加载有效头、全集分段与耐久队列；可按调用方需要跳过派生的行动队列读取。</summary>
+    /// <param name="includeActionQueue">是否读取关系型行动队列并填充 Actions；冷提交只需持久化分段时可跳过。</param>
     internal static async ValueTask<PlayerStateBundle?> LoadInTransactionAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid playerId, CancellationToken cancellationToken)
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid playerId, CancellationToken cancellationToken,
+        bool includeActionQueue = true,
+        List<AssetBalanceRecord>? balances = null)
     {
-        PlayerIdentity? identity = null;
-        await using (var command = new NpgsqlCommand("""
+        // 必需数据与可选行动队列仍读取同一 RepeatableRead 快照；所需查询合并为一次批次往返。
+        await using var batch = new NpgsqlBatch(connection) { Transaction = transaction };
+        static NpgsqlBatchCommand ReadCommand(string sql, Guid id)
+        {
+            var command = new NpgsqlBatchCommand(sql);
+            command.Parameters.Add(new NpgsqlParameter { Value = id });
+            return command;
+        }
+
+        batch.BatchCommands.Add(ReadCommand("""
             SELECT player_id, account_id, display_name, created_at
             FROM identity.players WHERE player_id = $1 AND status = 1
-            """, connection, transaction))
-        {
-            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
-            {
-                identity = new PlayerIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3));
-            }
-        }
-        if (identity is null) return null;
-
-        PlayerStateHead? head = null;
-        await using (var command = new NpgsqlCommand("""
+            """, playerId));
+        batch.BatchCommands.Add(ReadCommand("""
             SELECT player_id, state_version, schema_version, last_simulated_at,
                    game_data_fingerprint, checksum, updated_at
             FROM game.player_state_heads
             WHERE player_id = $1
-            """, connection, transaction))
+            """, playerId));
+        batch.BatchCommands.Add(ReadCommand("""
+            SELECT player_id, section_kind, section_version, schema_version, codec,
+                   payload, raw_bytes, checksum, updated_at
+            FROM game.player_state_sections
+            WHERE player_id = $1
+            """, playerId));
+        batch.BatchCommands.Add(ReadCommand("""
+            SELECT queue_id, player_id, section_kind, state_version, schema_version, codec,
+                   payload, raw_bytes, checksum, attempts, next_attempt_at,
+                   updated_at, game_data_fingerprint, last_simulated_at, lease_token
+            FROM platform.section_flush_queue
+            WHERE player_id = $1
+            ORDER BY state_version, section_kind
+            """, playerId));
+        if (includeActionQueue)
         {
-            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            batch.BatchCommands.Add(ReadCommand("""
+                SELECT player_id, slot, action_id, action_payload, action_version, status,
+                       next_due_at, idempotency_key
+                FROM game.player_action_queue
+                WHERE player_id = $1 ORDER BY slot
+                """, playerId));
+        }
+        if (balances is not null)
+        {
+            batch.BatchCommands.Add(ReadCommand("""
+                SELECT player_id, asset_id, variant, quantity, version
+                FROM economy.player_asset_balances
+                WHERE player_id = $1 AND quantity > 0
+                ORDER BY asset_id, variant
+                """, playerId));
+        }
+
+        PlayerIdentity? identity = null;
+        PlayerStateHead? head = null;
+        var sections = new Dictionary<string, StoredSection>(StringComparer.Ordinal);
+        var pendingSections = new List<FlushQueueItem>();
+        var storedActions = new List<StoredAction>();
+        await using (var reader = await batch.ExecuteReaderAsync(cancellationToken))
+        {
+            if (await reader.ReadAsync(cancellationToken))
+                identity = new PlayerIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3));
+            if (identity is null) return null;
+
+            await reader.NextResultAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
                 head = new PlayerStateHead(
                     reader.GetGuid(0), reader.GetInt64(1), reader.GetInt32(2), reader.GetFieldValue<DateTimeOffset>(3),
                     reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6));
+            }
+
+            await reader.NextResultAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var section = new StoredSection(
+                    reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
+                    reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
+                sections.Add(section.SectionKind, section);
+            }
+
+            await reader.NextResultAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                pendingSections.Add(new FlushQueueItem(
+                    reader.GetInt64(0), reader.GetGuid(1), reader.GetString(2), reader.GetInt64(3), reader.GetInt32(4), reader.GetString(5),
+                    reader.GetFieldValue<byte[]>(6), reader.GetInt32(7), reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(11),
+                    reader.GetInt32(9), reader.GetFieldValue<DateTimeOffset>(10), reader.IsDBNull(14) ? Guid.Empty : reader.GetGuid(14),
+                    reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13)));
+            }
+
+            if (includeActionQueue)
+            {
+                await reader.NextResultAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    storedActions.Add(new StoredAction(
+                        reader.GetGuid(0), reader.GetInt16(1), reader.GetString(2), reader.GetFieldValue<byte[]>(3),
+                        reader.GetInt64(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
+                        reader.GetString(7)));
+                }
+            }
+            if (balances is not null)
+            {
+                await reader.NextResultAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    balances.Add(new AssetBalanceRecord(
+                        reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDouble(3), reader.GetInt64(4)));
+                }
             }
         }
 
@@ -67,28 +149,8 @@ public sealed class PostgresSectionRepository(
             head = new PlayerStateHead(playerId, 0, SectionCodec.CurrentSchemaVersion, identity.CreatedAt, string.Empty, string.Empty, identity.CreatedAt);
         }
 
-        var sections = new Dictionary<string, StoredSection>(StringComparer.Ordinal);
-        await using (var command = new NpgsqlCommand("""
-            SELECT player_id, section_kind, section_version, schema_version, codec,
-                   payload, raw_bytes, checksum, updated_at
-            FROM game.player_state_sections
-            WHERE player_id = $1
-            """, connection, transaction))
-        {
-            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var section = new StoredSection(
-                    reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
-                    reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
-                sections.Add(section.SectionKind, section);
-            }
-        }
-
         // section 进入 durable 刷盘收件箱后，worker 可能尚未完成落库。
         // 加载必须把队列中的更新叠加到 game 表，否则进程在这段窗口崩溃会回退到旧快照。
-        var pendingSections = await LoadPendingSectionsAsync(connection, transaction, playerId, cancellationToken);
         foreach (var pending in pendingSections)
         {
             if (!sections.TryGetValue(pending.SectionKind, out var persisted)
@@ -128,11 +190,12 @@ public sealed class PostgresSectionRepository(
         }
 
         var pendingAction = pendingSections.FirstOrDefault(item => item.SectionKind == PlayerSectionKinds.ActionQueue);
-        var actions = pendingAction is not null
+        var actions = includeActionQueue
+            && pendingAction is not null
             && sections.TryGetValue(PlayerSectionKinds.ActionQueue, out var effectiveAction)
             && effectiveAction.StateVersion == pendingAction.StateVersion
             ? DecodeQueuedActions(effectiveAction)
-            : await LoadStoredActionsAsync(connection, transaction, playerId, cancellationToken);
+            : storedActions;
 
         return new PlayerStateBundle(identity, head, sections, actions);
     }
@@ -145,24 +208,13 @@ public sealed class PostgresSectionRepository(
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
-        var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken);
+        var balances = new List<AssetBalanceRecord>();
+        var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken,
+            includeActionQueue: false, balances: balances);
         if (bundle is null)
         {
             await transaction.CommitAsync(cancellationToken);
             return null;
-        }
-        var balances = new List<AssetBalanceRecord>();
-        await using (var command = new NpgsqlCommand("""
-            SELECT player_id, asset_id, variant, quantity, version
-            FROM economy.player_asset_balances
-            WHERE player_id = $1 AND quantity > 0
-            ORDER BY asset_id, variant
-            """, connection, transaction))
-        {
-            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-                balances.Add(new AssetBalanceRecord(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDouble(3), reader.GetInt64(4)));
         }
         await transaction.CommitAsync(cancellationToken);
         return new ComputeFrozenInput(bundle, balances);
@@ -284,72 +336,6 @@ public sealed class PostgresSectionRepository(
         return result;
     }
 
-    private static async Task<List<StoredAction>> LoadStoredActionsAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid playerId,
-        CancellationToken cancellationToken)
-    {
-        var actions = new List<StoredAction>();
-        await using (var command = new NpgsqlCommand("""
-                SELECT player_id, slot, action_id, action_payload, action_version, status,
-                       next_due_at, idempotency_key
-                FROM game.player_action_queue
-                WHERE player_id = $1 ORDER BY slot
-                """, connection, transaction))
-        {
-            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                actions.Add(new StoredAction(
-                    reader.GetGuid(0), reader.GetInt16(1), reader.GetString(2), reader.GetFieldValue<byte[]>(3),
-                    reader.GetInt64(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-                    reader.GetString(7)));
-            }
-        }
-        return actions;
-    }
-
-    private static async Task<List<FlushQueueItem>> LoadPendingSectionsAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid playerId,
-        CancellationToken cancellationToken)
-    {
-        var result = new List<FlushQueueItem>();
-        await using var command = new NpgsqlCommand("""
-            SELECT queue_id, player_id, section_kind, state_version, schema_version, codec,
-                   payload, raw_bytes, checksum, attempts, next_attempt_at,
-                   updated_at, game_data_fingerprint, last_simulated_at, lease_token
-            FROM platform.section_flush_queue
-            WHERE player_id = $1
-            ORDER BY state_version, section_kind
-            """, connection, transaction);
-        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            result.Add(new FlushQueueItem(
-                reader.GetInt64(0),
-                reader.GetGuid(1),
-                reader.GetString(2),
-                reader.GetInt64(3),
-                reader.GetInt32(4),
-                reader.GetString(5),
-                reader.GetFieldValue<byte[]>(6),
-                reader.GetInt32(7),
-                reader.GetString(8),
-                reader.GetFieldValue<DateTimeOffset>(11),
-                reader.GetInt32(9),
-                reader.GetFieldValue<DateTimeOffset>(10),
-                reader.IsDBNull(14) ? Guid.Empty : reader.GetGuid(14),
-                reader.GetString(12),
-                reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13)));
-        }
-
-        return result;
-    }
 
     private static PlayerStateHead BuildEffectiveHead(
         PlayerIdentity identity,
@@ -699,7 +685,7 @@ public sealed class PostgresSectionRepository(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var outcome = await ApplyComputeResultInTransactionAsync(
             connection, transaction, playerId, sourceStateVersion, targetStateVersion,
-            writes, lastSimulatedAt, gameDataFingerprint, cancellationToken);
+            writes, lastSimulatedAt, gameDataFingerprint, null, cancellationToken);
         if (outcome == ComputeApplyOutcome.Applied)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -736,6 +722,7 @@ public sealed class PostgresSectionRepository(
         IReadOnlyList<SectionWrite> writes,
         DateTimeOffset lastSimulatedAt,
         string gameDataFingerprint,
+        IReadOnlyDictionary<(string AssetId, string Variant), ComputeAssetBalance>? walletReadSet,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(writes);
@@ -754,16 +741,55 @@ public sealed class PostgresSectionRepository(
 
         var now = DateTimeOffset.UtcNow;
         long headVersion;
-        await using (var headCommand = new NpgsqlCommand("""
-            SELECT state_version FROM game.player_state_heads WHERE player_id = $1 FOR UPDATE
-            """, connection, transaction))
+        long? lockedHeadVersion;
+        var walletReadSetMatches = true;
+        // 钱包行锁仍先于提交头锁；将两次串行读取合批，返回后才允许 section 写入。
+        await using (var readBatch = new NpgsqlBatch(connection) { Transaction = transaction })
         {
+            if (walletReadSet is not null)
+            {
+                var walletCommand = new NpgsqlBatchCommand("""
+                    SELECT asset_id, variant, quantity, version
+                    FROM economy.player_asset_balances
+                    WHERE player_id = $1 AND quantity > 0
+                    ORDER BY asset_id, variant
+                    FOR UPDATE
+                    """);
+                walletCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                readBatch.BatchCommands.Add(walletCommand);
+            }
+
+            var headCommand = new NpgsqlBatchCommand("""
+                SELECT state_version FROM game.player_state_heads WHERE player_id = $1 FOR UPDATE
+                """);
             headCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            var current = await headCommand.ExecuteScalarAsync(cancellationToken);
-            if (current is not long version)
-                return ComputeApplyOutcome.MissingPlayer;
-            headVersion = version;
+            readBatch.BatchCommands.Add(headCommand);
+
+            await using var reader = await readBatch.ExecuteReaderAsync(cancellationToken);
+            if (walletReadSet is not null)
+            {
+                var walletRowCount = 0;
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    walletRowCount++;
+                    if (!walletReadSet.TryGetValue((reader.GetString(0), reader.GetString(1)), out var expectedBalance)
+                        || reader.GetDouble(2) != expectedBalance.Quantity
+                        || reader.GetInt64(3) != expectedBalance.Version)
+                        walletReadSetMatches = false;
+                }
+                if (walletRowCount != walletReadSet.Count)
+                    walletReadSetMatches = false;
+                await reader.NextResultAsync(cancellationToken);
+            }
+            lockedHeadVersion = await reader.ReadAsync(cancellationToken)
+                ? reader.GetInt64(0)
+                : null;
         }
+        if (!walletReadSetMatches)
+            return ComputeApplyOutcome.StaleVersion;
+        if (lockedHeadVersion is not long version)
+            return ComputeApplyOutcome.MissingPlayer;
+        headVersion = version;
         if (headVersion != sourceStateVersion)
             return ComputeApplyOutcome.StaleVersion;
 
