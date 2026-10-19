@@ -16,6 +16,8 @@ internal static partial class ActionExecutionRules
 {
     private const double SecondQuantizationEpsilon = 1e-9;
     private const double MaxWholeSecondsPerApply = 1_000_000_000;
+    /// <summary>区间物品产出判定通道：与强化判定（0xE0A1）及战斗随机流完全隔离。</summary>
+    private const ulong YieldAmountRollChannel = 0x11A7;
 
     /// <summary>受阻队首先复核准入（含濒死复苏归一气血）；仍受阻才执行一次出队或轮转。
     /// true 表示本轮已处理（恢复/移除/轮转），false 表示条件未满足保持停泊。</summary>
@@ -420,8 +422,11 @@ internal static partial class ActionExecutionRules
             {
                 case ActionYieldKind.Item:
                     deltas ??= new Dictionary<AssetKey, double>();
+                    // 区间产出必须确定性可复现：种子取行动实例 Id 与物品标识，
+                    // 计数维度取已完成轮次——在线逐轮推进、离线快进与计算节点补算
+                    // 对同一实例同一轮次必得同一数量，结果与执行路径和时钟无关。
                     var baseAmount = yield.AmountMin.HasValue && yield.AmountMax.HasValue && yield.AmountMax.Value >= yield.AmountMin.Value
-                        ? Random.Shared.Next((int)Math.Floor(yield.AmountMin.Value), (int)Math.Floor(yield.AmountMax.Value) + 1)
+                        ? RollYieldAmount(action, yield.Item!.Value, yield.AmountMin.Value, yield.AmountMax.Value)
                         : yield.Amount;
                     var scaled = ScaleOutput(baseAmount, autoUseMultiplier);
                     AddDelta(deltas, new AssetKey(yield.Item!.Value), scaled);
@@ -711,6 +716,22 @@ internal static partial class ActionExecutionRules
                 ? new PlayerReportLevelUp("technique", techniqueId, levelBefore, levelAfter) : null
         });
         player.MarkDirty(PlayerSectionKind.Loadout);
+    }
+
+    /// <summary>
+    /// 区间物品产出的确定性取值：返回 [amountMin, amountMax] 内均匀分布的整数。
+    /// 种子由行动实例 Id 与物品标识共同决定，游标为已完成轮次，通道独立于强化判定与战斗随机流，
+    /// 因此同一实例同一轮次在在线推进、离线快进与计算节点补算三条路径上必得同一数量。
+    /// </summary>
+    private static int RollYieldAmount(IPlayerActionState action, ItemId itemId, double amountMin, double amountMax)
+    {
+        var min = (int)Math.Floor(amountMin);
+        var max = (int)Math.Floor(amountMax);
+        if (max <= min) return min;
+        var seed = BitConverter.ToInt64(action.Id.ToByteArray(), 0) ^ StringComparer.Ordinal.GetHashCode(itemId.Value);
+        var roll = DeterministicRoll.Next(seed, 0, action.CompletedRepeats, YieldAmountRollChannel);
+        var span = (max - min) + 1;
+        return min + (int)Math.Min(span - 1, Math.Floor(roll * span));
     }
 
     /// <summary>

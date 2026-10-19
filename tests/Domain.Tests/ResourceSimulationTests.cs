@@ -101,4 +101,55 @@ public sealed class ResourceSimulationTests
         var stones = wallet.Get(new AssetKey(spiritStone));
         Assert.InRange(stones, 10, 40);
     }
+
+    /// <summary>
+    /// 区间产出必须确定性：同一行动实例（固定实例 Id）同一轮次，无论一次快进还是逐轮推进，
+    /// 产出总量必须位级一致（在线推进 / 离线快进 / 计算节点补算三路径同源的红线回归）。
+    /// </summary>
+    [Fact]
+    public void ItemYieldWithAmountRangeIsDeterministicAcrossAdvanceGranularity()
+    {
+        var spiritStone = new ItemId("currency.spirit-stone");
+        var mineAction = new ActionId("explore.mine-spirit-stone");
+        var actions = new ActionCatalog([
+            new(mineAction, "开采 灵石矿脉", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 25, spiritStone, AmountMin: 10, AmountMax: 40)])
+        ]);
+        var catalog = new GameDataCatalog("test", "test", actions);
+
+        // 固定行动实例 Id：两条推进路径必须共享同一随机流坐标。
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "矿工", Baseline, "test");
+        var seeded = PlayerAggregate.Restore(player.ExportState());
+        seeded.Enqueue(new(mineAction, 20), Baseline, actions);
+        var template = seeded.ExportState();
+
+        double Run(bool stepwise)
+        {
+            var state = template with
+            {
+                Actions = [.. template.Actions.Select(action => action with { Id = Guid.Parse("11111111-1111-1111-1111-111111111111") })],
+            };
+            var target = PlayerAggregate.Restore(state);
+            var wallet = new AssetWallet(target.PlayerId);
+            if (stepwise)
+            {
+                for (var round = 1; round <= 20; round++)
+                {
+                    var step = SimulationEngine.AdvanceTo(target, Baseline.AddSeconds(8 * round), catalog, wallet);
+                    foreach (var delta in step.AssetDeltas) wallet.Apply(delta);
+                }
+            }
+            else
+            {
+                var whole = SimulationEngine.AdvanceTo(target, Baseline.AddSeconds(8 * 20), catalog, wallet);
+                foreach (var delta in whole.AssetDeltas) wallet.Apply(delta);
+            }
+            return wallet.Get(new AssetKey(spiritStone));
+        }
+
+        var singleJump = Run(false);
+        var stepwise = Run(true);
+        Assert.InRange(singleJump, 20 * 10, 20 * 40);
+        Assert.Equal(singleJump, stepwise);
+    }
 }
