@@ -13,6 +13,7 @@ import './styles/vfx.css'
 import './styles/theme.css'
 import './styles/tutorial.css'
 import './styles/codex.css'
+import './styles/simulator.css'
 import { installChunkLoadErrorWatcher, startVersionWatcher } from './network/versionManager'
 
 installChunkLoadErrorWatcher()

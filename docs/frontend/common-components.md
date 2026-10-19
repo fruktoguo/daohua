@@ -25,7 +25,7 @@
   - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`，命令式切换不经过 React 渲染）与视口渲染裁剪（`content-visibility: auto`）。非交互 hover 气泡（tooltip 语义）在**包含锚点的滚动容器**滚动时立即收起（等同原生 `title`）；与锚点无关的面板自滚（如底部日志 append 后自动滚底、侧栏滚动）不会触碰已打开的气泡。click/interactive 浮层滚动跟随则走 rAF 节流重定位，彻底消除滚动期间的逐事件 `getBoundingClientRect` 测量、整卡重渲染、`backdrop-filter` 重绘与高频 Hover 风暴。
   - **多副气泡双列高度均衡自动堆叠 (`balanceAsideColumns`)**：针对道具同时携带数量、战技参悟、内功增益、倾向说明、市场价格等多个副卡片时右侧单列极度垂地（超 780px+）且左侧主卡下方严重空洞的失衡痛点，`FloatingPopover` 实装双列均衡分发——当副卡 $\ge 2$ 时，单行数量卡与坊市价格行情卡语义吸附于左列主卡下方（宽度撐满 300px 舒展对齐），右列承载技能参悟与资质倾向等重型面板，多卡片按估算高度贪心分发，左右高度从 300px:780px 均衡压缩为 500px:550px，彻底消除长条拖尾与溢出风险；副卡 $\le 1$ 时保持经典左右单排；$\le 768\text{px}$ 自适应退化为单列垂直堆叠。
   - **生态生灵悬浮详情统一收拢 (`MonsterTooltipTarget` / `MonsterInfoCard`)**：大地图地点生灵（`MapMonsterPill`）、附近面板生灵（`NearbyPanel.MonsterCard`）、讨伐生态面板（`CombatEcologyPanel.EcologyMonsterTile`）、万象图鉴妖兽收录（`CodexPage.CodexMonsterEntry`）与日志敌怪引用（`LogFeed.EnemyReference`）全面统一收拢走 `frontend/src/components/MonsterDisplay.tsx`。共享最高规格统一浮层——生命层次品质徽记（普通金/精英紫/领主危红）、境界等阶副标、修仙伤害流派与五行属性描述、出没周期、击杀修为收益、施展功法瓦片行（`MonsterAbilityTile`，与玩家技能格子同构，具备元素/类别丝带、Lv 等级角标、WebP 图标/名称与独立参悟详情浮层）、掉落物图元复合胶囊（`ItemDropReference`，含概率与掉落区间且支持二次悬停查物品）、六维基础战斗属性网格（气血/灵力/双攻/双防，已剔除多余攻击间隔）；彻底消灭生态面板双层 Popover 的体验割裂与多处面板同怪不同展的断层。
-  - **角色名片弹窗全局收拢 (`PlayerCardModal`)**：同道队伍成员与地图人物附近修士点击事件统一唤起 `PlayerCardModal`，服务端按需投影白名单（形象、道号、境界牌匾、身家、六维根骨等级与进度、战斗六维基础属性、生活技艺等级以及全身装配），弹窗于顶层唯一挂载。
+  - **角色名片弹窗全局收拢 (`PlayerCardModal`)**：同道队伍成员与地图人物附近修士点击事件统一唤起 `PlayerCardModal`，服务端按需投影白名单（形象、道号、境界牌匾、身家、六维根骨等级与进度、战斗六维基础属性、生活技艺等级以及全身装配），弹窗于顶层唯一挂载。战斗消耗品复用 `ItemTile` / `ItemTooltipTarget` 显示普通钱包「可用」数量，离线储备另列并用 `FloatingTooltip` 说明不可售与退回时机，禁止两者相加。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
   - **右下角全局浮动气泡（自动 2.6s 消失）**：命令回执 `message` 是唯一服务端下发管道——成功文案按命令差异化（`EcsPlayerRuntimeAdapter.SuccessNotice`），高频或界面已自证的命令回空串静默；发送即知结果的操作（坊市挂单/撤单）在调用点就地 `setNotice` 即时提示。同文案重复提示经 `noticeSeq` 重置计时并重播入场动画 -> `Notice`（App.tsx）+ `.notice`（styles.css）
 - **组件源码**：[`frontend/src/components/FloatingPopover.tsx`](../../frontend/src/components/FloatingPopover.tsx)
@@ -481,3 +481,23 @@
 - **组件源码**：[`frontend/src/components/NearbyPanel.tsx`](../../frontend/src/components/NearbyPanel.tsx)
 - **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.building-corner-badge`, `.building-card-bonus-tag.is-pending`, `.building-card-progress-wrapper`)
 - **设计真源**：[`docs/design/总纲/09-节点公共建筑系统.md`](../design/总纲/09-节点公共建筑系统.md)
+
+---
+
+## 34. 本地离线确定性战斗模拟器 (Combat Simulator Modal)
+
+- **适用场景**：
+  - **战斗演武推演与数值验证**：在战斗视窗右上角提供「⚔️ 演武推演」常驻入口，弹窗唤起本地确定性战斗模拟器；
+  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人实时战斗属性与技能 triggers，或一键导入当前队伍中的队友；支持手动微调 40+ 项战斗终值属性与技能装配；
+  - **环境与时长设置**：支持从大地图所有节点中选择地点（自动关联怪群生态与遭遇池），支持快捷时长（10m~24h）与确定性种子（Seed）控制；
+  - **综合报表展示**：
+    - **战斗波次与胜率 KPI**：总遭遇场次、胜场、胜率、最高到达波次、妖怪击杀明细；
+    - **战斗收益转化**：战利品掉落清单瓦片（`ItemTile` + `ItemTooltipTarget`）、折算每小时获取速率（/hr）、总修为与每小时产出速率；
+    - **灵力缺口深度评估**：高亮呈现技能释放所需灵力不足的时间占比（%）、健康度等级（充沛/轻微/中度/严重）、各技能槽位卡蓝次数与等待时长、智能诊断优化建议。
+- **组件源码**：
+  - 主弹窗容器：[`frontend/src/components/simulator/CombatSimulatorModal.tsx`](../../frontend/src/components/simulator/CombatSimulatorModal.tsx)
+  - 阵容编辑：[`frontend/src/components/simulator/SimulatorPartyEditor.tsx`](../../frontend/src/components/simulator/SimulatorPartyEditor.tsx)
+  - 环境配置：[`frontend/src/components/simulator/SimulatorConfigPanel.tsx`](../../frontend/src/components/simulator/SimulatorConfigPanel.tsx)
+  - 报表展现：[`frontend/src/components/simulator/SimulatorResultsView.tsx`](../../frontend/src/components/simulator/SimulatorResultsView.tsx)
+- **仿真计算核心**：[`frontend/src/game/simulator/`](../../frontend/src/game/simulator/)
+- **样式文件**：[`frontend/src/styles/simulator.css`](../../frontend/src/styles/simulator.css)

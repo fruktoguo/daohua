@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,18 +45,12 @@ export function toCsv(record) {
 
 async function loadTsModule(entryPath) {
   let esbuild;
-  const candidates = [
-    pathToFileURL(path.join(frontendDir, 'node_modules', 'esbuild', 'lib', 'main.js')).href,
-    pathToFileURL(path.join(frontendDir, 'node_modules', 'vite', 'node_modules', 'esbuild', 'lib', 'main.js')).href,
-  ];
-  for (const url of candidates) {
-    try {
-      esbuild = await import(url);
-      if (esbuild?.build) break;
-    } catch {}
-  }
-  if (!esbuild?.build) {
-    esbuild = await import('esbuild');
+  try {
+    const requireFromFrontend = createRequire(path.join(frontendDir, 'package.json'));
+    esbuild = requireFromFrontend('esbuild');
+  } catch {
+    const fallbackRequire = createRequire(import.meta.url);
+    esbuild = fallbackRequire('esbuild');
   }
   const buildResult = await esbuild.build({
     entryPoints: [entryPath],
