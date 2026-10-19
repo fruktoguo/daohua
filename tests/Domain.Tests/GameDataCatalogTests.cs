@@ -97,11 +97,11 @@ public sealed class GameDataCatalogTests
         Assert.Equal(CombatMonsterRank.Boss, beast.Rank);
 
         var stats = beast.Stats;
-        Assert.Equal(41285.35, stats.MaxHitpoints, 2);
-        Assert.Equal(350.33, stats.AttackPower, 2);
-        Assert.Equal(544.63, stats.SpellAttack, 2);
-        Assert.Equal(320.86, stats.Defense, 2);
-        Assert.Equal(222.01, stats.MagicResistance, 2);
+        Assert.Equal(62884.22, stats.MaxHitpoints, 2);
+        Assert.Equal(371.94, stats.AttackPower, 2);
+        Assert.Equal(535.74, stats.SpellAttack, 2);
+        Assert.Equal(392.89, stats.Defense, 2);
+        Assert.Equal(258.15, stats.MagicResistance, 2);
     }
 
     /// <summary>

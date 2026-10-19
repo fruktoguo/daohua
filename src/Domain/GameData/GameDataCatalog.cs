@@ -602,10 +602,11 @@ public sealed class GameDataCatalog
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("baseAttributeAnchors", out var anchors))
             {
                 baseAttributes = BaseAttributeCatalog.Parse(anchors);
+                var rawBaseAttributes = BaseAttributeCatalog.ParseRaw(anchors);
                 // 同一文件的 levelExpected[].finalExpected = 逐级期望玩家面板（四乘区完全体），怪物同构建模底座；
                 // 按整级锚点建目录避免跨等阶线性插值把 T2 面板提前摊进 T1 中后段。
                 if (document.RootElement.TryGetProperty("levelExpected", out var levelExpected) && levelExpected.ValueKind == JsonValueKind.Array)
-                    expectedAttributes = BaseAttributeCatalog.ParseExpected(levelExpected);
+                    expectedAttributes = BaseAttributeCatalog.ParseExpected(levelExpected, baseAttributes, rawBaseAttributes);
             }
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("realmProgression", out var progression))
                 realmProgression = RealmProgressionCatalog.Parse(progression);
@@ -1033,8 +1034,10 @@ public sealed class GameDataCatalog
             // 普攻节奏全单位统一：基准 1.0s（或配表覆写基准）÷(1+攻速/100)÷(1+行动速度/100)，
             // 双除数由引擎在出手边界结算；技能吟唱另一条线：castMilliseconds ÷(1+行动速度/100)。
             interval = interval > 0 ? interval : 1;
-            var ad = anchor.Ad * attrMultiplier * Weight("ad");
-            var ap = anchor.Ap * attrMultiplier * Weight("ap");
+            // 怪物双攻按等级阶梯削减（总纲 §7.3.1 / §10.1.1）：1级削40%至24级削20%，后续恒定削20%
+            var attackMultiplier = level <= 1 ? 0.6 : (level >= 24 ? 0.8 : 0.6 + 0.2 * (level - 1.0) / 23.0);
+            var ad = anchor.Ad * attrMultiplier * Weight("ad") * attackMultiplier;
+            var ap = anchor.Ap * attrMultiplier * Weight("ap") * attackMultiplier;
             // 等阶边界由 12 阶锚点目录判定——levelExpected 是 127 个每级锚点，不能直接当等阶边界用。
             var tier = tierBoundaries.TierAt(level);
             var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
@@ -1086,7 +1089,7 @@ public sealed class GameDataCatalog
                 anchor.Armor * attrMultiplier * Weight("armor"),
                 interval,
                 anchor.Acc * attrMultiplier * Weight("hit"),
-                anchor.Eva * attrMultiplier * Weight("eva"),
+                anchor.Eva * attrMultiplier * Weight("eva") * 0.5,
                 CombatDamageKind.Physical) with
             {
                 SpellAttack = ap,
@@ -1094,7 +1097,7 @@ public sealed class GameDataCatalog
                 MagicResistance = anchor.Mr * attrMultiplier * Weight("mres"),
                 ResistanceScale = tier,
                 Critical = anchor.Crit * attrMultiplier * Weight("crit"),
-                CriticalResistance = anchor.Cavoid * attrMultiplier * Weight("cavoid"),
+                CriticalResistance = anchor.Cavoid * attrMultiplier * Weight("cavoid") * 0.5,
                 // 暴击伤害 = 基础 50 点 + 境界成长 + 配表加点，与玩家同池（倍率 = 1+点数/100）。
                 CriticalDamagePoints = CombatGrowthCurve.CriticalDamagePoints(level) + Modifier("criticalDamageBonusPoints"),
                 BreakPower = anchor.BreakPt * attrMultiplier * Weight("break"),

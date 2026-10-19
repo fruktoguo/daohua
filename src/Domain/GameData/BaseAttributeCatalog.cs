@@ -36,10 +36,115 @@ public sealed class BaseAttributeCatalog
     /// <summary>从 JSON 数组反序列化锚点目录。</summary>
     /// <param name="value">锚点 JSON 数组。</param>
     /// <returns>解析完成的锚点目录。</returns>
+    /// <summary>从 JSON 数组反序列化锚点目录，并程序化应用前三后二缩放规则。</summary>
+    /// <param name="value">锚点 JSON 数组。</param>
+    /// <returns>解析完成的锚点目录。</returns>
     public static BaseAttributeCatalog Parse(JsonElement value)
     {
-        return new BaseAttributeCatalog(value.Deserialize<BaseAttributeAnchor[]>(JsonOptions)
-            ?? throw new DomainException(DomainErrorCode.InvalidArgument, "基础属性配置无效。"));
+        var raw = value.Deserialize<BaseAttributeAnchor[]>(JsonOptions)
+            ?? throw new DomainException(DomainErrorCode.InvalidArgument, "基础属性配置无效。");
+        return new BaseAttributeCatalog(ScaleAnchors(raw));
+    }
+
+    /// <summary>仅反序列化原始配置锚点，不应用缩放（差量对账用）。</summary>
+    public static BaseAttributeCatalog ParseRaw(JsonElement value)
+    {
+        var raw = value.Deserialize<BaseAttributeAnchor[]>(JsonOptions)
+            ?? throw new DomainException(DomainErrorCode.InvalidArgument, "基础属性配置无效。");
+        return new BaseAttributeCatalog(raw);
+    }
+
+    /// <summary>
+    /// 程序化缩放锚点（总纲 §3.2.1）：
+    /// Lv.18 前增量 3.0 倍，Lv.18 后各等阶增量 2.0 倍累进放大，确保平滑单调且彻底消除倒挂。
+    /// 若锚点数不足 2 或不包含 Lv.18 节点（例如单元测试用例假数据），保持原样不变。
+    /// </summary>
+    internal static BaseAttributeAnchor[] ScaleAnchors(BaseAttributeAnchor[] raw)
+    {
+        if (raw.Length < 2 || raw[0].Level != 1) return raw;
+        var idx18 = -1;
+        for (var i = 0; i < raw.Length; i++)
+        {
+            if (raw[i].Level == 18) { idx18 = i; break; }
+        }
+        if (idx18 < 0) return raw;
+
+        var a1 = raw[0];
+        var a18 = raw[idx18];
+
+        var result = new BaseAttributeAnchor[raw.Length];
+        result[0] = a1;
+
+        static double Scale18(double v1, double v18) => v1 + 3.0 * (v18 - v1);
+        var scaled18 = new BaseAttributeAnchor(
+            18,
+            Scale18(a1.Hp, a18.Hp),
+            Scale18(a1.Mp, a18.Mp),
+            Scale18(a1.Ad, a18.Ad),
+            Scale18(a1.Ap, a18.Ap),
+            Scale18(a1.Armor, a18.Armor),
+            Scale18(a1.Mr, a18.Mr),
+            Scale18(a1.Acc, a18.Acc),
+            Scale18(a1.Eva, a18.Eva),
+            Scale18(a1.Crit, a18.Crit),
+            Scale18(a1.Cavoid, a18.Cavoid),
+            Scale18(a1.BreakPt, a18.BreakPt),
+            Scale18(a1.Parry, a18.Parry),
+            Scale18(a1.HpRegen, a18.HpRegen),
+            Scale18(a1.MpRegen, a18.MpRegen)
+        );
+
+        for (var i = 1; i < raw.Length; i++)
+        {
+            var cur = raw[i];
+            if (cur.Level == 18)
+            {
+                result[i] = scaled18;
+            }
+            else if (cur.Level < 18)
+            {
+                static double ScalePre18(double v1, double vi) => v1 + 3.0 * (vi - v1);
+                result[i] = new BaseAttributeAnchor(
+                    cur.Level,
+                    ScalePre18(a1.Hp, cur.Hp),
+                    ScalePre18(a1.Mp, cur.Mp),
+                    ScalePre18(a1.Ad, cur.Ad),
+                    ScalePre18(a1.Ap, cur.Ap),
+                    ScalePre18(a1.Armor, cur.Armor),
+                    ScalePre18(a1.Mr, cur.Mr),
+                    ScalePre18(a1.Acc, cur.Acc),
+                    ScalePre18(a1.Eva, cur.Eva),
+                    ScalePre18(a1.Crit, cur.Crit),
+                    ScalePre18(a1.Cavoid, cur.Cavoid),
+                    ScalePre18(a1.BreakPt, cur.BreakPt),
+                    ScalePre18(a1.Parry, cur.Parry),
+                    ScalePre18(a1.HpRegen, cur.HpRegen),
+                    ScalePre18(a1.MpRegen, cur.MpRegen)
+                );
+            }
+            else
+            {
+                static double ScalePost18(double vNew18, double vOld18, double vi) => vNew18 + 2.0 * (vi - vOld18);
+                result[i] = new BaseAttributeAnchor(
+                    cur.Level,
+                    ScalePost18(scaled18.Hp, a18.Hp, cur.Hp),
+                    ScalePost18(scaled18.Mp, a18.Mp, cur.Mp),
+                    ScalePost18(scaled18.Ad, a18.Ad, cur.Ad),
+                    ScalePost18(scaled18.Ap, a18.Ap, cur.Ap),
+                    ScalePost18(scaled18.Armor, a18.Armor, cur.Armor),
+                    ScalePost18(scaled18.Mr, a18.Mr, cur.Mr),
+                    ScalePost18(scaled18.Acc, a18.Acc, cur.Acc),
+                    ScalePost18(scaled18.Eva, a18.Eva, cur.Eva),
+                    ScalePost18(scaled18.Crit, a18.Crit, cur.Crit),
+                    ScalePost18(scaled18.Cavoid, a18.Cavoid, cur.Cavoid),
+                    ScalePost18(scaled18.BreakPt, a18.BreakPt, cur.BreakPt),
+                    ScalePost18(scaled18.Parry, a18.Parry, cur.Parry),
+                    ScalePost18(scaled18.HpRegen, a18.HpRegen, cur.HpRegen),
+                    ScalePost18(scaled18.MpRegen, a18.MpRegen, cur.MpRegen)
+                );
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -48,8 +153,10 @@ public sealed class BaseAttributeCatalog
     /// 期望面板不建模回复列，HpRegen/MpRegen 置 0（怪物面板不消费回复属性）。
     /// </summary>
     /// <param name="tiers">expected-attributes 中携带 level/finalExpected 的锚点数组 JSON（levelExpected 或 tiers 均可）。</param>
+    /// <param name="scaledBase">已应用前三后二缩放的境界基础属性目录（若提供，用于同步抬升同构期望底座）。</param>
+    /// <param name="rawBase">原始未缩放的境界基础属性目录。</param>
     /// <returns>按等阶锚点等级排列的期望属性目录。</returns>
-    public static BaseAttributeCatalog ParseExpected(JsonElement tiers)
+    public static BaseAttributeCatalog ParseExpected(JsonElement tiers, BaseAttributeCatalog? scaledBase = null, BaseAttributeCatalog? rawBase = null)
     {
         var anchors = new List<BaseAttributeAnchor>();
         foreach (var tier in tiers.EnumerateArray())
@@ -57,17 +164,39 @@ public sealed class BaseAttributeCatalog
             if (tier.ValueKind != JsonValueKind.Object
                 || !tier.TryGetProperty("finalExpected", out var expected) || expected.ValueKind != JsonValueKind.Object)
                 continue;
+            var level = JsonRead.Number(tier, "level", 0);
             double Field(string key) => JsonRead.Number(expected, key, 0);
+
+            double Diff(Func<BaseAttributeAnchor, double> getter, bool isAp = false)
+                => scaledBase is not null && rawBase is not null
+                    ? Math.Max(0, getter(scaledBase.At(level)) - getter(rawBase.At(level))) * CompoundMultiplier(level, isAp)
+                    : 0;
+
             anchors.Add(new BaseAttributeAnchor(
-                JsonRead.Number(tier, "level", 0),
-                Field("maxHitpoints"), Field("maxManapoints"),
-                Field("physicalAttack"), Field("magicAttack"),
-                Field("armor"), Field("magicResistance"),
-                Field("accuracyRating"), Field("evasionRating"),
-                Field("criticalRating"), Field("criticalAvoidance"),
-                Field("breakRating"), Field("parryRating"), 0, 0));
+                level,
+                Field("maxHitpoints") + Diff(a => a.Hp),
+                Field("maxManapoints") + Diff(a => a.Mp),
+                Field("physicalAttack") + Diff(a => a.Ad),
+                Field("magicAttack") + Diff(a => a.Ap, isAp: true),
+                Field("armor") + Diff(a => a.Armor),
+                Field("magicResistance") + Diff(a => a.Mr),
+                Field("accuracyRating") + Diff(a => a.Acc),
+                Field("evasionRating") + Diff(a => a.Eva),
+                Field("criticalRating") + Diff(a => a.Crit),
+                Field("criticalAvoidance") + Diff(a => a.Cavoid),
+                Field("breakRating") + Diff(a => a.BreakPt),
+                Field("parryRating") + Diff(a => a.Parry), 0, 0));
         }
         return new BaseAttributeCatalog(anchors);
+    }
+
+    private static double CompoundMultiplier(double level, bool isAp = false)
+    {
+        var pts = 3 * level;
+        var rootMult = 1.0 + pts * (isAp ? 0.02 : 0.01);
+        var equipMult = level < 18 ? 1.1158 : level < 30 ? 1.2042 : level < 42 ? 1.2814 : level < 54 ? 1.4654 : level < 66 ? 1.6516 : 1.8979;
+        var buffMult = level < 18 ? 1.0042 : level < 30 ? 1.0133 : level < 42 ? 1.0333 : level < 54 ? 1.075 : level < 66 ? 1.1333 : 1.2292;
+        return rootMult * equipMult * buffMult;
     }
 
     /// <summary>按等级在相邻锚点间线性插值；越界时钳制到端点锚点。</summary>
