@@ -30,6 +30,16 @@ public sealed partial class CombatEventAdvanceSystem
         return encounter;
     }
 
+    /// <summary>开启一场包含多友方盟友携带技能模板的遭遇战。</summary>
+    public static CombatEncounterState StartAllied(string encounterId, long seed,
+        IReadOnlyList<CombatantTemplate> allies, int selfIndex,
+        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
+    {
+        var encounter = CombatEncounterState.CreateAllied(encounterId, seed, allies, selfIndex, enemies, playerRespawnSeconds);
+        CombatActSystem.DecideInitialActions(encounter);
+        return encounter;
+    }
+
     /// <summary>
     /// 查询下一确定性战斗边界。返回值不会早于当前战斗时钟，也不会晚于 targetSeconds。
     /// ECS 宿主可用它把一帧拆成离散边界；现行 OOP 调用仍应使用 <see cref="AdvanceTo"/>。

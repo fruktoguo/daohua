@@ -31,6 +31,12 @@ public static class DeterministicCombatEngine
         IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
         => Systems.CombatEventAdvanceSystem.Start(encounterId, seed, player, enemies, playerRespawnSeconds);
 
+    /// <summary>无世界调用复用 ECS 遭遇创建与动作决策（包含多友方盟友）。</summary>
+    public static CombatEncounterState StartAllied(string encounterId, long seed,
+        IReadOnlyList<CombatantTemplate> allies, int selfIndex,
+        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
+        => Systems.CombatEventAdvanceSystem.StartAllied(encounterId, seed, allies, selfIndex, enemies, playerRespawnSeconds);
+
     /// <summary>无世界调用复用 ECS 自然边界查询。</summary>
     public static double NextBoundarySeconds(CombatEncounterState encounter, double targetSeconds)
         => Systems.CombatEventAdvanceSystem.NextBoundarySeconds(encounter, targetSeconds);

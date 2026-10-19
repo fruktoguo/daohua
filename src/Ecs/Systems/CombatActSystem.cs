@@ -173,10 +173,18 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             // 支援技：以自身/友方为目标的零伤害技能；战内 Buff 授予友方并按战斗时钟到期。
             if (ability.TryGetProperty("buff", out var buff) && buff.ValueKind == JsonValueKind.Object)
             {
-                var buffId = AbilityText(buff, "buffId") ?? $"ability-buff:{id}";
+                var baseBuffId = AbilityText(buff, "buffId") ?? $"ability-buff:{id}";
+                var policy = AbilityText(buff, "stackPolicy") ?? "capped";
+                var buffId = policy == "perCaster" ? $"{baseBuffId}:{caster.Id}" : baseBuffId;
+                // 施法者属性动态层数加成：基础 1 层，每 spellAttackStackInterval 点法攻额外提升 1 层（向下取整）。
+                var spellAttackInterval = AbilityNumber(buff, "spellAttackStackInterval");
+                var extraStacks = spellAttackInterval > 0
+                    ? Math.Floor(Math.Max(0, caster.Stats.SpellAttack) / spellAttackInterval)
+                    : 0.0;
+                var initialStacks = 1.0 + extraStacks;
                 // Buff 效果量随技能等级成长（全部数值项同式）；时长/叠层上限不成长。
                 var grant = new CombatBuffState(buffId,
-                    encounter.ElapsedSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), 1,
+                    encounter.ElapsedSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), initialStacks,
                     AbilityNumber(buff, "hpRegen") * levelGrowth, AbilityNumber(buff, "mpRegen") * levelGrowth,
                     AbilityNumber(buff, "attackSpeedPoints") * levelGrowth,
                     AbilityNumber(buff, "damageAbsorptionPoints") * levelGrowth,
@@ -185,19 +193,26 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                     AbilityNumber(buff, "mpRegenPostRatio") * levelGrowth,
                     AbilityNumber(buff, "damageBonusPoints") * levelGrowth,
                     AbilityNumber(buff, "threatPerSecondMaxHpPoints") * levelGrowth,
-                    AbilityText(buff, "name") ?? buffId,
+                    AbilityText(buff, "name") ?? baseBuffId,
                     ResetOnWave: buff.TryGetProperty("resetOnWave", out var resetFlag) && resetFlag.ValueKind == JsonValueKind.True);
                 // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
                 var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
                 void GrantBuff(CombatantState ally)
                 {
                     var index = ally.Buffs.FindIndex(current => current.BuffId == buffId);
-                    if (index < 0) ally.Buffs.Add(grant);
-                    else ally.Buffs[index] = ally.Buffs[index] with
+                    if (index < 0)
                     {
-                        ExpiresAtSeconds = grant.ExpiresAtSeconds,
-                        Stacks = Math.Min(stackCap, ally.Buffs[index].Stacks + 1)
-                    };
+                        ally.Buffs.Add(grant);
+                    }
+                    else
+                    {
+                        var nextStacks = policy switch
+                        {
+                            "maxKeep" => Math.Max(ally.Buffs[index].Stacks, initialStacks),
+                            _ => Math.Min(stackCap, ally.Buffs[index].Stacks + initialStacks)
+                        };
+                        ally.Buffs[index] = grant with { Stacks = nextStacks };
+                    }
                 }
                 // 目标范围与治疗效果同口径展开：lowestHitpointsAlly 取血量比例最低存活友方
                 // （原 OrderBy+Take(1) 稳定首元素语义），allAllies 顺序遍历存活友方，其余作用于自身。

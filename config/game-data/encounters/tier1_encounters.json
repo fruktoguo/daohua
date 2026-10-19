@@ -2,13 +2,18 @@
   {
     "id": "encounter.qi-beast",
     "name": "溪谷林间",
-    "minBudget": 10,
-    "maxBudget": 12,
+    "minBudget": 15,
+    "maxBudget": 32,
     "randomSpawns": [
       {
         "enemyId": "enemy.wood-spirit",
         "weight": 1,
         "strength": 15
+      },
+      {
+        "enemyId": "enemy.water-spirit",
+        "weight": 1,
+        "strength": 16
       }
     ]
   },

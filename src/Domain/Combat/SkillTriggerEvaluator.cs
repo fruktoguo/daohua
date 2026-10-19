@@ -101,6 +101,12 @@ public static class SkillTriggerEvaluator
             JsonRead.Number(buffElement, "threatPoints"); JsonRead.Number(buffElement, "maxStacks");
             JsonRead.Number(buffElement, "damageBonusPoints");
             JsonRead.Number(buffElement, "threatPerSecondMaxHpPoints");
+            var spellAttackInterval = JsonRead.Number(buffElement, "spellAttackStackInterval");
+            if (spellAttackInterval < 0)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 spellAttackStackInterval 不能为负数。");
+            var stackPolicy = JsonRead.Text(buffElement, "stackPolicy");
+            if (stackPolicy is not (null or "capped" or "perCaster" or "maxKeep"))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 stackPolicy 无效。");
             // resetOnWave 只接受布尔字面量：true = 该 Buff 不进入跨波携带（波次清空即消散）。
             if (buffElement.TryGetProperty("resetOnWave", out var resetFlag)
                 && resetFlag.ValueKind is not (JsonValueKind.True or JsonValueKind.False))

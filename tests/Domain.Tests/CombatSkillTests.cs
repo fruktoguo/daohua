@@ -512,6 +512,73 @@ public sealed class CombatSkillTests
         Assert.Equal(9, player.Loadout.AbilitySlots[0].Level);
     }
 
+    /// <summary>
+    /// 甘露技能实装与maxKeep叠层验证：
+    /// 1. 释放者法攻动态折算层数：每 10 点法攻额外 +1 层（向下取整）；
+    /// 2. 目标为最低血量存活友方；
+    /// 3. maxKeep 策略验证：先施加高层后再施加低层保持高层并刷新到期时间；低层被高层覆盖并刷新时间；
+    /// 4. 周期回复沿 5 秒网格按每层 5 点（等效 1 点/秒）准确落账；水灵怪物配置完备。
+    /// </summary>
+    [Fact]
+    public void GanluAbilityScalesWithSpellAttackAndFollowsMaxKeepStackingPolicy()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        Assert.True(catalog.CombatMonsters.TryGetValue("enemy.water-spirit", out var waterSpirit));
+        Assert.Equal(4, waterSpirit.Level);
+        Assert.Equal(CombatElement.Water, waterSpirit.Stats.Element);
+        var skill = Assert.Single(waterSpirit.Skills);
+        Assert.Equal("ability.ganlu", skill.Ability.GetProperty("id").GetString());
+        var ability = catalog.Abilities["ability.ganlu"];
+        SkillTriggerEvaluator.ValidateAbility(ability);
+
+        var stats1 = CombatantStats.Create(1000, 0, 0, 100) with { SpellAttack = 25, MaxManapoints = 1000 };
+        var stats2 = CombatantStats.Create(1000, 0, 0, 100) with { SpellAttack = 52, MaxManapoints = 1000 };
+        var targetStats = CombatantStats.Create(1000, 0, 0, 100) with { MaxManapoints = 1000 };
+        var enemy = new CombatantTemplate(CombatantStats.Create(100000, 0, 0, 100));
+
+        var t1 = new CombatantTemplate(stats1, [new SkillSlot(ability, 1)]);
+        var t2 = new CombatantTemplate(stats2, [new SkillSlot(ability, 1)]);
+        var targetTemplate = new CombatantTemplate(targetStats);
+
+        var encounter = CombatEncounterState.CreateAllied("ganlu-test", 42, [t1, t2, targetTemplate], 0, [enemy]);
+        encounter.PlayerAllies[1].Manapoints = 0; // t2 初始无蓝，不参与起手施法
+        encounter.PlayerAllies[2].Hitpoints = 200;
+        DaoHua.Ecs.Systems.CombatActSystem.DecideInitialActions(encounter);
+
+        // t1 吟唱 1.5s 完成，推进至 1.6s
+        DeterministicCombatEngine.AdvanceTo(encounter, 1.6);
+        var buff = Assert.Single(encounter.PlayerAllies[2].Buffs, b => b.BuffId == "buff.ganlu");
+        Assert.Equal(3, buff.Stacks);
+        Assert.Equal(11.5, buff.ExpiresAtSeconds, 3);
+        Assert.Equal(5.0, buff.HpRegen);
+
+        // 推进到 5.0s 触发第 1 次周期回复：3 层 * 5 点 = 15 HP，200 -> 215
+        DeterministicCombatEngine.AdvanceTo(encounter, 5.0 + 1e-9);
+        Assert.Equal(215, encounter.PlayerAllies[2].Hitpoints, 3);
+
+        // 验证 maxKeep 规则：
+        // 1. 低层(3)遇到高层(6)：给 t2 补蓝并触发出手，吟唱 1.5s 完成后升级为 6 层，持续时间刷新
+        var t2Caster = encounter.PlayerAllies[1];
+        t2Caster.Manapoints = 1000;
+        t2Caster.NextAttackAtSeconds = 6.0;
+        DeterministicCombatEngine.AdvanceTo(encounter, 7.6);
+        buff = Assert.Single(encounter.PlayerAllies[2].Buffs, b => b.BuffId == "buff.ganlu");
+        Assert.Equal(6, buff.Stacks);
+        var expiresAfterT2 = buff.ExpiresAtSeconds;
+        Assert.True(expiresAfterT2 > 11.5);
+
+        // 2. 高层(6)遇到低层(3)：让 t1（法攻25，只能施加3层）冷却完毕再次施法，层数保持 6 不变，持续时间继续刷新
+        var t1Caster = encounter.PlayerAllies[0];
+        t1Caster.Manapoints = 1000;
+        if (t1Caster.SkillCooldownUntil is { Length: > 0 } cds)
+            cds[0] = 0;
+        t1Caster.NextAttackAtSeconds = 14.0;
+        DeterministicCombatEngine.AdvanceTo(encounter, 15.6);
+        buff = Assert.Single(encounter.PlayerAllies[2].Buffs, b => b.BuffId == "buff.ganlu");
+        Assert.Equal(6, buff.Stacks);
+        Assert.True(buff.ExpiresAtSeconds > expiresAfterT2);
+    }
+
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "技能", DateTimeOffset.UnixEpoch, catalog.Fingerprint);

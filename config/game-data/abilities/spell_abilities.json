@@ -131,5 +131,38 @@
     "manaCost": 50.0,
     "rootAttribute": "consciousness",
     "discipline": "spell"
+  },
+  {
+    "id": "ability.ganlu",
+    "name": "甘露",
+    "description": "天降甘露，润物无声。",
+    "style": "fiveElements",
+    "tier": 1,
+    "category": "spell",
+    "element": "water",
+    "cooldownMilliseconds": 12000,
+    "castMilliseconds": 1500,
+    "targetType": "lowestHitpointsAlly",
+    "damageRatio": 0.0,
+    "buff": {
+      "buffId": "buff.ganlu",
+      "name": "甘露",
+      "durationSeconds": 10.0,
+      "hpRegen": 5.0,
+      "stackPolicy": "maxKeep",
+      "spellAttackStackInterval": 10.0
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "ally-lowest-hp",
+        "condition": "missing-hp",
+        "comparator": "greater-than-equal",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 6.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
   }
 ]

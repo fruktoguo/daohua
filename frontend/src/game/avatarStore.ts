@@ -52,6 +52,7 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   // T1 怪物 (练气期)
   'demonized-rabbit': { src: '/avatars/demonized-rabbit.webp', format: 'webp' },
   'wood-spirit': { src: '/avatars/wood-spirit.webp', format: 'webp' },
+  'water-spirit': { src: '/avatars/water-spirit.webp', format: 'webp' },
   'fire-spirit': { src: '/avatars/fire-spirit.webp', format: 'webp' },
   'demon-ape': { src: '/avatars/demon-ape.webp', format: 'webp' },
   'armored-bear': { src: '/avatars/armored-bear.webp', format: 'webp' },

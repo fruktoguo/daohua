@@ -162,5 +162,45 @@
     "modifiers": {
       "fireDamageReductionPoints": 13.0
     }
+  },
+  {
+    "id": "enemy.water-spirit",
+    "name": "水灵",
+    "visual": {
+      "renderer": "text",
+      "source": "水"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "water",
+    "level": 4,
+    "budgetCost": 16,
+    "weights": {
+      "hp": 0.6,
+      "mp": 0.25,
+      "ad": 0.35,
+      "ap": 0.45,
+      "armor": 0.75,
+      "hit": 1.0,
+      "eva": 1.0
+    },
+    "dropTable": [
+      {
+        "itemId": "item.broken-spirit-core",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.ganlu",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
+    ],
+    "modifiers": {
+      "waterDamageReductionPoints": 12.0
+    }
   }
 ]
