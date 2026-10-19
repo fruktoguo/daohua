@@ -9,6 +9,9 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Server.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />

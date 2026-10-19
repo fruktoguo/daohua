@@ -358,7 +358,7 @@ public static class WebSocketEndpoint
                 if (snapshot is not null && TryPushDelta(session, snapshot, gameData, null))
                     session.CompleteDeltaResync();
             }
-            var sendTask = SendLoopAsync(socket, session, ResyncDroppedDelta, token);
+            var sendTask = SendLoopAsync(socket, session, ResyncDroppedDelta, token, logger);
             var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions,
                 accountRisk, riskContext, context, accountId, grace, presenceStats);
             await Task.WhenAny(sendTask, receiveTask);
@@ -374,9 +374,18 @@ public static class WebSocketEndpoint
                 }
             }
             linked.Cancel();
-            try { await Task.WhenAll(sendTask, receiveTask); } catch (OperationCanceledException) { }
+            try { await Task.WhenAll(sendTask, receiveTask); }
+            catch (OperationCanceledException) { }
+            catch (WebSocketException ex)
+            {
+                logger.LogDebug(ex, "WebSocket disconnected playerId={PlayerId}", playerId);
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (WebSocketException ex) when (socket.State is WebSocketState.Aborted or WebSocketState.Closed)
+        {
+            logger.LogDebug(ex, "WebSocket disconnected playerId={PlayerId}", playerId);
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "WebSocket 会话异常 playerId={PlayerId}", playerId);
@@ -446,15 +455,23 @@ public static class WebSocketEndpoint
         }
     }
 
-    private static async Task SendLoopAsync(WebSocket socket, WebSocketSession session, Action deltaResync, CancellationToken cancellationToken)
+    internal static async Task SendLoopAsync(WebSocket socket, WebSocketSession session, Action deltaResync, CancellationToken cancellationToken, ILogger logger)
     {
-        await foreach (var packet in session.Outbound.ReadAllAsync(cancellationToken))
+        try
         {
-            await socket.SendAsync(packet, WebSocketMessageType.Binary, true, cancellationToken);
-            // 被丢增量在通道排空（Count==0）时补投：仍拥塞时重投必然再丢且白费全段编码，
-            // 排空瞬间即最早可送达时机；若竞态再满，重投失败由标记保留等下一次排空。
-            if (session.DeltaResyncPending && session.Outbound.Count == 0)
-                deltaResync();
+            await foreach (var packet in session.Outbound.ReadAllAsync(cancellationToken))
+            {
+                await socket.SendAsync(packet, WebSocketMessageType.Binary, true, cancellationToken);
+                // 被丢增量在通道排空（Count==0）时补投：仍拥塞时重投必然再丢且白费全段编码，
+                // 排空瞬间即最早可送达时机；若竞态再满，重投失败由标记保留等下一次排空。
+                if (session.DeltaResyncPending && session.Outbound.Count == 0)
+                    deltaResync();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (WebSocketException ex)
+        {
+            logger.LogDebug(ex, "WebSocket send disconnected playerId={PlayerId}", session.PlayerId);
         }
     }
 
