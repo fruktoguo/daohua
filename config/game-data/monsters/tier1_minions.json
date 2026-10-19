@@ -6,7 +6,7 @@
       "renderer": "text",
       "source": "兔"
     },
-    "budgetCost": 10,
+    "budgetCost": 15,
     "weights": {
       "hp": 0.6,
       "ad": 0.3,
@@ -110,7 +110,7 @@
     "category": "spell",
     "element": "fire",
     "level": 5,
-    "budgetCost": 18,
+    "budgetCost": 15,
     "weights": {
       "hp": 0.6,
       "mp": 0.3,
@@ -174,7 +174,7 @@
     "category": "spell",
     "element": "water",
     "level": 4,
-    "budgetCost": 16,
+    "budgetCost": 15,
     "weights": {
       "hp": 0.6,
       "mp": 0.25,

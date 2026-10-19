@@ -64,46 +64,84 @@ public sealed class EncounterWaveSelectorTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
 
-        // 1. 百草谷（node.herb-valley）：单独放野兔，预算 10~25，出 1~2 只魔化野兔（小概率 2 只）
+        // 1. 百草谷（node.herb-valley）：单独放野兔，预算 30~60，稳定出 2~4 只魔化野兔
         Assert.True(catalog.WorldGraph.TryGetNode("node.herb-valley", out var herbNode));
         var herbEncounterId = Assert.Single(herbNode.EncounterIds);
         Assert.Equal("encounter.herb-valley", herbEncounterId);
         var herbEncounter = catalog.CombatEncounters[herbEncounterId];
         Assert.Empty(herbEncounter.EliteEnemyIds);
         Assert.Empty(herbEncounter.BossEnemyIds);
-        Assert.Equal(10, herbEncounter.MinBudget);
-        Assert.Equal(25, herbEncounter.MaxBudget);
+        Assert.Equal(30, herbEncounter.MinBudget);
+        Assert.Equal(60, herbEncounter.MaxBudget);
 
-        var rabbitCountDistribution = new HashSet<int>();
         for (long seed = 1; seed <= 50; seed++)
         {
             var wave = EncounterWaveSelector.Select(herbEncounter, catalog.CombatMonsters, seed, 1);
-            Assert.InRange(wave.Count, 1, 2);
+            Assert.InRange(wave.Count, 2, 4);
             Assert.All(wave, monster => Assert.Equal("enemy.demonized-rabbit", monster.Id));
-            rabbitCountDistribution.Add(wave.Count);
         }
-        Assert.Contains(1, rabbitCountDistribution);
-        Assert.Contains(2, rabbitCountDistribution);
 
-        // 2. 青云山门（node.cloud-gate）：单独放火灵，威胁度保证严格只出 1 只火灵，无精英首领
+        // 2. 青云山门（node.cloud-gate）：单独放火灵，预算 30~60，稳定出 2~4 只火灵
         Assert.True(catalog.WorldGraph.TryGetNode("node.cloud-gate", out var gateNode));
         var gateEncounterId = Assert.Single(gateNode.EncounterIds);
         Assert.Equal("encounter.twilight-pass", gateEncounterId);
         var gateEncounter = catalog.CombatEncounters[gateEncounterId];
         Assert.Empty(gateEncounter.EliteEnemyIds);
         Assert.Empty(gateEncounter.BossEnemyIds);
+        Assert.Equal(30, gateEncounter.MinBudget);
+        Assert.Equal(60, gateEncounter.MaxBudget);
 
         for (long seed = 1; seed <= 50; seed++)
         {
-            for (int waveNumber = 1; waveNumber <= 25; waveNumber++)
-            {
-                var wave = EncounterWaveSelector.Select(gateEncounter, catalog.CombatMonsters, seed, waveNumber);
-                var singleMonster = Assert.Single(wave);
-                Assert.Equal("enemy.fire-spirit", singleMonster.Id);
-            }
+            var wave = EncounterWaveSelector.Select(gateEncounter, catalog.CombatMonsters, seed, 1);
+            Assert.InRange(wave.Count, 2, 4);
+            Assert.All(wave, monster => Assert.Equal("enemy.fire-spirit", monster.Id));
         }
 
-        // 3. 铁甲熊（enemy.armored-bear）：等级下调为 5
+        // 3. 漱玉溪（node.shuyu-brook）：单独放水灵，预算 30~60，稳定出 2~4 只水灵
+        Assert.True(catalog.WorldGraph.TryGetNode("node.shuyu-brook", out var shuyuNode));
+        var shuyuEncounter = catalog.CombatEncounters[Assert.Single(shuyuNode.EncounterIds)];
+        Assert.Equal(30, shuyuEncounter.MinBudget);
+        Assert.Equal(60, shuyuEncounter.MaxBudget);
+        for (long seed = 1; seed <= 50; seed++)
+        {
+            var wave = EncounterWaveSelector.Select(shuyuEncounter, catalog.CombatMonsters, seed, 1);
+            Assert.InRange(wave.Count, 2, 4);
+            Assert.All(wave, monster => Assert.Equal("enemy.water-spirit", monster.Id));
+        }
+
+        // 4. 望云茶肆（node.tea-house）：单独放木灵，预算 30~60，稳定出 2~4 只木灵
+        Assert.True(catalog.WorldGraph.TryGetNode("node.tea-house", out var teaNode));
+        var teaEncounter = catalog.CombatEncounters[Assert.Single(teaNode.EncounterIds)];
+        Assert.Equal(30, teaEncounter.MinBudget);
+        Assert.Equal(60, teaEncounter.MaxBudget);
+        for (long seed = 1; seed <= 50; seed++)
+        {
+            var wave = EncounterWaveSelector.Select(teaEncounter, catalog.CombatMonsters, seed, 1);
+            Assert.InRange(wave.Count, 2, 4);
+            Assert.All(wave, monster => Assert.Equal("enemy.wood-spirit", monster.Id));
+        }
+
+        // 5. 清石水滩（node.rock-beach）：放木灵、水灵、火灵三灵，预算 30~60，稳定出 2~4 只
+        Assert.True(catalog.WorldGraph.TryGetNode("node.rock-beach", out var rockNode));
+        var rockEncounter = catalog.CombatEncounters[Assert.Single(rockNode.EncounterIds)];
+        Assert.Equal(30, rockEncounter.MinBudget);
+        Assert.Equal(60, rockEncounter.MaxBudget);
+        var validIds = new HashSet<string> { "enemy.wood-spirit", "enemy.water-spirit", "enemy.fire-spirit" };
+        for (long seed = 1; seed <= 50; seed++)
+        {
+            var wave = EncounterWaveSelector.Select(rockEncounter, catalog.CombatMonsters, seed, 1);
+            Assert.InRange(wave.Count, 2, 4);
+            Assert.All(wave, monster => Assert.Contains(monster.Id, validIds));
+        }
+
+        // 6. 四种怪物点数消耗一致性验证（全部为 15 点）
+        Assert.Equal(15, catalog.CombatMonsters["enemy.demonized-rabbit"].BudgetCost);
+        Assert.Equal(15, catalog.CombatMonsters["enemy.wood-spirit"].BudgetCost);
+        Assert.Equal(15, catalog.CombatMonsters["enemy.water-spirit"].BudgetCost);
+        Assert.Equal(15, catalog.CombatMonsters["enemy.fire-spirit"].BudgetCost);
+
+        // 7. 铁甲熊（enemy.armored-bear）：等级下调为 5
         Assert.Equal(5, catalog.CombatMonsters["enemy.armored-bear"].Level);
     }
 }

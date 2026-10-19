@@ -2,8 +2,60 @@
   {
     "id": "encounter.qi-beast",
     "name": "溪谷林间",
-    "minBudget": 15,
-    "maxBudget": 32,
+    "minBudget": 10,
+    "maxBudget": 15,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.wood-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.herb-valley",
+    "name": "百草青野",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.demonized-rabbit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.shuyu-brook",
+    "name": "漱玉溪涧",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.water-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.tea-house",
+    "name": "望云后山",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.wood-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.rock-beach",
+    "name": "清石水滩",
+    "minBudget": 30,
+    "maxBudget": 60,
     "randomSpawns": [
       {
         "enemyId": "enemy.wood-spirit",
@@ -13,20 +65,12 @@
       {
         "enemyId": "enemy.water-spirit",
         "weight": 1,
-        "strength": 16
-      }
-    ]
-  },
-  {
-    "id": "encounter.herb-valley",
-    "name": "百草青野",
-    "minBudget": 10,
-    "maxBudget": 25,
-    "randomSpawns": [
+        "strength": 15
+      },
       {
-        "enemyId": "enemy.demonized-rabbit",
+        "enemyId": "enemy.fire-spirit",
         "weight": 1,
-        "strength": 10
+        "strength": 15
       }
     ]
   },
@@ -51,8 +95,8 @@
   {
     "id": "encounter.twilight-pass",
     "name": "山门试炼",
-    "minBudget": 18,
-    "maxBudget": 20,
+    "minBudget": 30,
+    "maxBudget": 60,
     "randomSpawns": [
       {
         "enemyId": "enemy.fire-spirit",
