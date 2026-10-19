@@ -618,6 +618,8 @@ public static class WebSocketEndpoint
                         await session.SendAsync(helloAckPacket, cancellationToken);
                         // 重连取消在途宽限：未触发的定时作废；收尾已在执行则等待完成，保证与装载串行（§14.3）。
                         await grace.CancelAsync(session.PlayerId, cancellationToken);
+                        await using (var connectionInventory = await social.PrepareConnectionAsync(session.PlayerId, cancellationToken))
+                        {
                         var initial = await runtime.AttachConnectionAsync(session.PlayerId, cancellationToken);
                         displayName = initial.DisplayName;
                         // 握手数据获取并行化：快照编码（CPU）、社交/聊天/存在感（独立 IO 与内存计算）互不依赖，
@@ -656,6 +658,7 @@ public static class WebSocketEndpoint
                         if (await nearbyChatTask is { } nearbyHistory)
                             await QueueJsonAsync(session, WireMessageType.ChatHistory, Guid.NewGuid(), nearbyHistory, cancellationToken);
                         handshaken = true;
+                        }
                         break;
                     case WireMessageType.Ping:
                         if (!handshaken)

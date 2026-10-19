@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using Domain.Common;
 using Domain.Market;
 using Domain.Player;
+using Server.Clean.Social;
 
 namespace Server.Clean;
 
@@ -26,6 +27,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private readonly PostgresMarketRepository _store;
     private readonly ServerOptions _options;
     private readonly ILogger<MarketRuntime> _logger;
+    private readonly IParticipationAssetBoundary? _participationAssets;
     private readonly ConcurrentDictionary<MarketInstrument, OrderBook> _books = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _booksGate = new();
@@ -49,11 +51,14 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     /// <param name="store">市场账本仓储：订单、成交与分片租约的 PostgreSQL 适配。</param>
     /// <param name="options">服务端配置选项（分片数与本进程分片 ID 由此读取）。</param>
     /// <param name="logger">日志记录器。</param>
-    public MarketRuntime(PostgresMarketRepository store, ServerOptions options, ILogger<MarketRuntime> logger)
+    /// <param name="participationAssets">资产提交前结清在线消耗品实耗的会话门；独立仓储测试可省略。</param>
+    public MarketRuntime(PostgresMarketRepository store, ServerOptions options, ILogger<MarketRuntime> logger,
+        IParticipationAssetBoundary? participationAssets = null)
     {
         _store = store;
         _options = options;
         _logger = logger;
+        _participationAssets = participationAssets;
     }
 
     /// <summary>
@@ -351,6 +356,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             {
                 PlacementResult result;
                 lock (_booksGate) result = book.Place(request, journal);
+                // 撮合后才知道全部 maker/taker；不持盘口读锁等待会话，失败由同一撤销日志恢复。
+                using var participationScope = _participationAssets is null ? null
+                    : await _participationAssets.AcquireAsync(CollectPlacementAssetKeys(request, result), cancellationToken);
                 var input = new MarketOrderInput(
                     request.OrderId.Value,
                     PartitionId,
@@ -481,6 +489,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             try
             {
                 lock (_booksGate) result = book.Cancel(orderId, ownerId, journal);
+                using var participationScope = _participationAssets is null ? null
+                    : await _participationAssets.AcquireAsync(
+                        [new ParticipationAssetKey(ownerId.Value, instrument.ItemId.Value, instrument.Variant)], cancellationToken);
                 if (!await _store.CancelAsync(orderId.Value, ownerId.Value, PartitionId, _fenceToken, idempotencyKey, cancellationToken))
                     throw new InvalidOperationException("市场撤单事务未提交。");
                 Interlocked.Increment(ref _cancelCount);
@@ -517,6 +528,21 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             throw;
         }
         finally { _gate.Release(); }
+    }
+
+    private static IReadOnlyList<ParticipationAssetKey> CollectPlacementAssetKeys(
+        PlaceOrderRequest request, PlacementResult result)
+    {
+        var keys = new List<ParticipationAssetKey>(1 + result.Fills.Count * 2)
+        {
+            new(request.OwnerId.Value, request.Instrument.ItemId.Value, request.Instrument.Variant)
+        };
+        foreach (var fill in result.Fills)
+        {
+            keys.Add(new ParticipationAssetKey(fill.BuyerId.Value, fill.Instrument.ItemId.Value, fill.Instrument.Variant));
+            keys.Add(new ParticipationAssetKey(fill.SellerId.Value, fill.Instrument.ItemId.Value, fill.Instrument.Variant));
+        }
+        return keys;
     }
 
     private static bool IsExpectedRequestFailure(Exception exception) => exception switch
@@ -584,6 +610,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     {
         List<OrderBook>? dueBooks = null;
         List<MarketExpiryOrder>? targets = null;
+        List<ParticipationAssetKey>? assetKeys = null;
         lock (_booksGate)
         {
             foreach (var book in _books.Values)
@@ -593,10 +620,17 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 (dueBooks ??= []).Add(book);
                 targets ??= new List<MarketExpiryOrder>(due.Count);
                 foreach (var order in due)
+                {
                     targets.Add(new MarketExpiryOrder(order.OrderId.Value, order.OwnerId.Value));
+                    if (_participationAssets is not null)
+                        (assetKeys ??= []).Add(new ParticipationAssetKey(order.OwnerId.Value,
+                            order.Instrument.ItemId.Value, order.Instrument.Variant));
+                }
             }
         }
         if (targets is null || dueBooks is null) return;
+        using var participationScope = _participationAssets is null ? null
+            : await _participationAssets.AcquireAsync(assetKeys!, cancellationToken);
         if (!await _store.ExpireBatchAsync(targets, _fenceToken, now, cancellationToken))
             throw new InvalidOperationException("市场到期退款事务未提交。");
         lock (_booksGate)

@@ -22,6 +22,13 @@ public sealed class ActionParticipationSessionEngine
     private readonly SettlementCollector[] _collectors;
     private CombatEncounterState? _battle;
     private SessionConsumableSlot[]? _consumables;
+    private readonly Dictionary<(int MemberIndex, AssetKey Asset), double> _workingWallet = [];
+    private readonly Dictionary<(int MemberIndex, AssetKey Asset), double> _offlineReserves = [];
+    private readonly Dictionary<(int MemberIndex, AssetKey Asset), double> _assetDeltas = [];
+    private ActionParticipationInventoryMode _inventoryMode;
+    private double _modeSince;
+    private double _nextConsumableEvaluation;
+    private double _offlineBatchBoundary;
     private DateTimeOffset _advancedAt;
     private long _sequence;
     private double? _endsAt;
@@ -39,14 +46,16 @@ public sealed class ActionParticipationSessionEngine
             if (_battle is not null)
             {
                 var next = CombatEventAdvanceSystem.NextBoundarySeconds(_battle, double.MaxValue);
-                return _advancedAt.AddSeconds(Math.Max(0, next - _battle.ElapsedSeconds));
+                return _advancedAt.AddSeconds(Math.Max(0, Math.Min(next - _battle.ElapsedSeconds,
+                    _nextConsumableEvaluation - ToUnix(_advancedAt))));
             }
             var expedition = Action.Expedition!;
             var phaseRemaining = Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
             var untilRegen = 5d;
             foreach (var member in _members) untilRegen = Math.Min(untilRegen, 5 - member.Resources.RegenCarrySeconds);
             var seconds = phaseRemaining > 1e-9 ? Math.Min(phaseRemaining, untilRegen) : untilRegen;
-            return _advancedAt.AddSeconds(Math.Max(0, seconds));
+            return _advancedAt.AddSeconds(Math.Max(0, Math.Min(seconds,
+                _nextConsumableEvaluation - ToUnix(_advancedAt))));
         }
     }
 
@@ -56,6 +65,9 @@ public sealed class ActionParticipationSessionEngine
         _spec = spec;
         _catalog = catalog;
         _advancedAt = FromUnix(spec.StartedAtUnixSeconds);
+        _modeSince = spec.StartedAtUnixSeconds;
+        _nextConsumableEvaluation = spec.StartedAtUnixSeconds + 5;
+        _offlineBatchBoundary = spec.StartedAtUnixSeconds;
         _members = new PlayerAggregate[spec.Members.Count];
         _collectors = new SettlementCollector[spec.Members.Count];
         for (var i = 0; i < _members.Length; i++)
@@ -107,39 +119,141 @@ public sealed class ActionParticipationSessionEngine
         CombatActionRules.InitializeCombatAction(Canonical, Action, catalog.Actions.Get(spec.ActionId), catalog,
             _advancedAt, initialization);
         foreach (var collector in _collectors) collector.Add(initialization, Canonical.PlayerId, includeAssets: false);
-        // 消耗品托管台账初始值 = 定格 spec：全部槽行载入（零配额槽同样保留冷却钟——
-        // 同物品共享池消费时，无配额槽行的冷却与触发判定仍要按槽推进）；
-        // 持续槽已充能剩余折算为墙钟到期时刻。
+        // 槽位只承载时钟，数量来自独立钱包或储备；同物品多槽不复制余额。
         List<SessionConsumableSlot>? ledger = null;
         for (var i = 0; i < spec.Members.Count; i++)
             if (spec.Members[i].ConsumableSlots is { Count: > 0 } slots)
                 foreach (var slot in slots)
                     (ledger ??= []).Add(new SessionConsumableSlot(i, slot.ItemId, slot.Group, slot.SlotIndex,
-                        slot.EscrowQuantity, slot.CooldownUntilUnixSeconds,
-                        slot.SustainedRemainingSeconds > 0
+                        slot.CooldownUntilUnixSeconds, slot.SustainedRemainingSeconds > 0
                             ? spec.StartedAtUnixSeconds + slot.SustainedRemainingSeconds : 0));
         _consumables = ledger?.ToArray();
-        // 开打托管一次性入账通知：成员钱包全额实扣后日志需可核对「物品去了哪」——
-        // 托管期间不可售用，散场末批退回余量。
-        if (ledger is { } rows)
-            for (var i = 0; i < spec.Members.Count; i++)
-            {
-                var held = rows.Where(row => row.MemberIndex == i && row.RemainingQuantity > 0)
-                    .GroupBy(row => row.ItemId)
-                    .Select(group => (_catalog.Items.TryGetValue(new ItemId(group.Key), out var heldItem)
-                            ? heldItem.Name : group.Key, group.Sum(row => row.RemainingQuantity)))
-                    .ToArray();
-                if (held.Length > 0)
-                    _collectors[i].Events.Add(new(_advancedAt, "auto-use.escrowed",
-                        $"组队托管锁定：{string.Join("、", held.Select(entry => $"{entry.Item1} ×{entry.Item2:0.##}"))}；战斗期间不可售用，散场退回余量。", _spec.ActionId));
-            }
-        EvaluateConsumables(_advancedAt);
         SynchronizeViews();
     }
 
-    /// <summary>以开打冻结输入创建会话，不推进战斗时钟。</summary>
-    public static ActionParticipationSessionEngine Create(ActionParticipationSpec spec, GameDataCatalog catalog)
-        => new(spec, catalog);
+    /// <summary>冻结配置并以显式钱包执行唯一一次开场判定；首批投影及资产差量必须随初始检查点提交。</summary>
+    public static ActionParticipationSessionEngine Create(ActionParticipationSpec spec, GameDataCatalog catalog,
+        IReadOnlyList<AssetBalance>? workingWallet = null)
+    {
+        var engine = new ActionParticipationSessionEngine(spec, catalog);
+        engine.SetWorkingWallet(workingWallet ?? []);
+        engine.EvaluateConsumables(engine._advancedAt);
+        engine.SynchronizeViews();
+        return engine;
+    }
+
+    /// <summary>替换本批真实可用钱包快照；只同步数据，不访问存储、不推进或触发消耗品。</summary>
+    public void SetWorkingWallet(IReadOnlyList<AssetBalance> balances)
+    {
+        _workingWallet.Clear();
+        foreach (var balance in balances)
+        {
+            var memberIndex = _spec.SelfIndexOf(balance.PlayerId);
+            if (memberIndex < 0 || !IsRelevantConsumable(memberIndex, balance.Asset.ItemId)) continue;
+            if (!double.IsFinite(balance.Quantity) || balance.Quantity < 0)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "会话工作钱包余额无效。");
+            _workingWallet.Add((memberIndex, balance.Asset), balance.Quantity);
+        }
+    }
+
+    /// <summary>取走本批真实资产净差量；宿主与检查点及 inbox 同事务提交，成员消费不再重复扣件。</summary>
+    public AssetDelta[] TakeAssetDeltas()
+    {
+        var result = _assetDeltas.Where(pair => Math.Abs(pair.Value) > 1e-12)
+            .OrderBy(pair => pair.Key.MemberIndex)
+            .ThenBy(pair => pair.Key.Asset.ItemId.Value, StringComparer.Ordinal)
+            .ThenBy(pair => pair.Key.Asset.Variant, StringComparer.Ordinal)
+            .Select(pair => new AssetDelta(_members[pair.Key.MemberIndex].PlayerId, pair.Key.Asset,
+                pair.Value, "simulation")).ToArray();
+        _assetDeltas.Clear();
+        return result;
+    }
+
+    /// <summary>在已推进时刻切为离线，将每个相关资产键不少于一件的全部可用量划入储备，不额外判定。</summary>
+    public void SwitchToOffline()
+    {
+        if (_inventoryMode == ActionParticipationInventoryMode.Offline) return;
+        EnsureActiveInventory();
+        _inventoryMode = ActionParticipationInventoryMode.Offline;
+        _modeSince = ToUnix(_advancedAt);
+        _offlineBatchBoundary = _modeSince;
+        ReplenishOfflineReserve();
+    }
+
+    /// <summary>在已推进时刻切为在线，只退未耗储备，已生效持续效果与冷却时钟保持不变。</summary>
+    public void SwitchToOnline()
+    {
+        if (_inventoryMode == ActionParticipationInventoryMode.Online) return;
+        EnsureActiveInventory();
+        RefundReserves();
+        _inventoryMode = ActionParticipationInventoryMode.Online;
+        _modeSince = ToUnix(_advancedAt);
+    }
+
+    /// <summary>离线批末仅划入普通钱包新增净量；本段掉落不参与已经完成的判定，只供下一段使用。</summary>
+    public void ReplenishOfflineReserve()
+    {
+        EnsureActiveInventory();
+        if (_inventoryMode != ActionParticipationInventoryMode.Offline)
+            throw new DomainException(DomainErrorCode.InvariantViolation, "只有离线会话可续入储备。");
+        foreach (var pair in _workingWallet)
+        {
+            if (pair.Value < 1) continue;
+            _offlineReserves[pair.Key] = _offlineReserves.GetValueOrDefault(pair.Key) + pair.Value;
+            _workingWallet[pair.Key] = 0;
+            AddAssetDelta(pair.Key, -pair.Value);
+        }
+        _offlineBatchBoundary = ToUnix(_advancedAt);
+    }
+
+    private void EnsureActiveInventory()
+    {
+        if (_endsAt is not null)
+            throw new DomainException(DomainErrorCode.InvariantViolation, "已散场会话不能切换库存来源。");
+    }
+
+    private void RefundReserves()
+    {
+        foreach (var pair in _offlineReserves)
+        {
+            if (pair.Value <= 0) continue;
+            _workingWallet[pair.Key] = _workingWallet.GetValueOrDefault(pair.Key) + pair.Value;
+            AddAssetDelta(pair.Key, pair.Value);
+        }
+        _offlineReserves.Clear();
+    }
+
+    private void AddAssetDelta((int MemberIndex, AssetKey Asset) key, double quantity)
+        => _assetDeltas[key] = _assetDeltas.GetValueOrDefault(key) + quantity;
+
+    private bool IsRelevantConsumable(int memberIndex, ItemId itemId)
+    {
+        if (!_catalog.Items.TryGetValue(itemId, out var item) || item.Category != ItemDefinition.CategoryConsumable
+            || item.Consumable is not { Durable: false } consumable
+            || !consumable.UsableInBars.Contains(AutoUseBar.Combat)) return false;
+        if (_consumables is null) return false;
+        foreach (var slot in _consumables)
+            if (slot.MemberIndex == memberIndex && slot.ItemId == itemId.Value) return true;
+        return false;
+    }
+
+    private void CollectMutation(ActionMutationBatch mutation, int memberIndex)
+    {
+        var collector = _collectors[memberIndex];
+        var playerId = _members[memberIndex].PlayerId;
+        collector.Add(mutation, playerId, includeAssets: false);
+        foreach (var delta in mutation.ToAssetDeltas(playerId, sortByItem: false))
+        {
+            if (IsRelevantConsumable(memberIndex, delta.Asset.ItemId))
+            {
+                // 已归属的相关奖励直接入普通钱包；离线判定只读储备，不能把新掉落回补到历史。
+                var key = (memberIndex, delta.Asset);
+                _workingWallet[key] = _workingWallet.GetValueOrDefault(key) + delta.QuantityDelta;
+                AddAssetDelta(key, delta.QuantityDelta);
+            }
+            else collector.Assets[delta.Asset] = collector.Assets.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
+        }
+    }
 
     /// <summary>从唯一检查点恢复；不重演已提交战斗，也不重复生成开场事件。</summary>
     public static ActionParticipationSessionEngine Restore(ActionParticipationSessionDocument document,
@@ -153,8 +267,15 @@ public sealed class ActionParticipationSessionEngine
             _advancedAt = FromUnix(document.AdvancedAtUnixSeconds),
             _sequence = document.Sequence,
             _endsAt = document.EndsAtUnixSeconds,
-            _consumables = document.ConsumableLedger?.ToArray()
+            _consumables = document.ConsumableLedger?.ToArray(),
+            _inventoryMode = document.InventoryMode,
+            _modeSince = document.ModeSinceUnixSeconds,
+            _nextConsumableEvaluation = document.NextConsumableEvaluationAtUnixSeconds,
+            _offlineBatchBoundary = document.OfflineBatchBoundaryUnixSeconds
         };
+        if (document.OfflineReserves is { } reserves)
+            foreach (var row in reserves)
+                engine._offlineReserves.Add((row.MemberIndex, new AssetKey(new ItemId(row.ItemId), row.Variant)), row.Quantity);
         engine.Action.CompletedRepeats = document.CompletedRepeats;
         engine.Action.Expedition = document.Expedition!;
         engine.Action.ProgressSeconds = document.Expedition!.Phase == CombatExpeditionPhase.Combat
@@ -170,8 +291,7 @@ public sealed class ActionParticipationSessionEngine
         if (document.EndsAtUnixSeconds is null && document.Expedition.Phase == CombatExpeditionPhase.Combat)
             engine._battle = CombatActionRules.RestoreCombatBattle(engine.Canonical, engine.Action,
                 catalog.CombatEncounters[document.Expedition.EncounterId], catalog);
-        if (document.Sequence > 0)
-            foreach (var collector in engine._collectors) collector.Reset();
+        foreach (var collector in engine._collectors) collector.Reset();
         engine.SynchronizeViews();
         return engine;
     }
@@ -197,7 +317,7 @@ public sealed class ActionParticipationSessionEngine
             }).ToArray()
         };
         var ended = document with { Sequence = checked(document.Sequence + 1), Expedition = expedition,
-            EndsAtUnixSeconds = document.AdvancedAtUnixSeconds };
+            EndsAtUnixSeconds = document.AdvancedAtUnixSeconds, OfflineReserves = [] };
         var at = FromUnix(document.AdvancedAtUnixSeconds);
         var settlements = new ActionParticipationMemberSettlement[document.Spec.Members.Count];
         for (var i = 0; i < settlements.Length; i++)
@@ -211,29 +331,18 @@ public sealed class ActionParticipationSessionEngine
                 new PlayerId(Guid.Parse(document.Spec.Members[i].PlayerId)), at, at,
                 view.PlayerHitpoints, view.PlayerManapoints, document.MemberRegenCarrySeconds[i], skills, buffs, view,
                 view.Phase == CombatExpeditionPhase.Combat ? 0 : view.PhaseElapsedSeconds,
-                document.CompletedRepeats, [], RefundConsumableEscrow(document, i), [],
-                ProjectStats(document.CombatStats, i),
-                EndsAtUnixSeconds: document.AdvancedAtUnixSeconds);
+                document.CompletedRepeats, [], [], [], ProjectStats(document.CombatStats, i),
+                EndsAtUnixSeconds: document.AdvancedAtUnixSeconds,
+                ConsumableSlots: document.ConsumableLedger?.Where(row => row.MemberIndex == i).ToArray());
         }
-        return new(ended, settlements);
+        return new(ended, settlements, RefundOfflineReserves(document));
     }
 
-    /// <summary>末批结算返还的未耗托管余量：台账剩余按成员聚合为正向资产差量。</summary>
-    private static AssetDelta[] RefundConsumableEscrow(ActionParticipationSessionDocument document, int memberIndex)
-    {
-        if (document.ConsumableLedger is not { } ledger) return [];
-        Dictionary<AssetKey, double>? refunds = null;
-        for (var i = 0; i < ledger.Count; i++)
-        {
-            var row = ledger[i];
-            if (row.MemberIndex != memberIndex || row.RemainingQuantity <= 0) continue;
-            var key = new AssetKey(new ItemId(row.ItemId));
-            (refunds ??= [])[key] = refunds.GetValueOrDefault(key) + row.RemainingQuantity;
-        }
-        return refunds?.Select(pair => new AssetDelta(
-            new PlayerId(Guid.Parse(document.Spec.Members[memberIndex].PlayerId)), pair.Key, pair.Value,
-            "simulation")).ToArray() ?? [];
-    }
+    /// <summary>不兼容收尾只退真实离线储备，在线普通钱包从未托管，不能凭槽时钟退款。</summary>
+    private static AssetDelta[] RefundOfflineReserves(ActionParticipationSessionDocument document)
+        => document.OfflineReserves?.Where(row => row.Quantity > 0).Select(row => new AssetDelta(
+            new PlayerId(Guid.Parse(document.Spec.Members[row.MemberIndex].PlayerId)),
+            new AssetKey(new ItemId(row.ItemId), row.Variant), row.Quantity, "simulation")).ToArray() ?? [];
 
     private static void ValidateCheckpoint(ActionParticipationSessionDocument document)
     {
@@ -245,6 +354,19 @@ public sealed class ActionParticipationSessionEngine
             || (document.ConsumableLedger is { } ledger && (ledger.Any(row =>
                     !row.IsValid || row.MemberIndex >= document.Spec.Members.Count)
                 || ledger.Select(row => (row.MemberIndex, row.Group, row.SlotIndex)).Distinct().Count() != ledger.Count))
+            || !Enum.IsDefined(document.InventoryMode)
+            || !double.IsFinite(document.ModeSinceUnixSeconds)
+            || document.ModeSinceUnixSeconds < document.Spec.StartedAtUnixSeconds
+            || document.ModeSinceUnixSeconds > document.AdvancedAtUnixSeconds
+            || !double.IsFinite(document.NextConsumableEvaluationAtUnixSeconds)
+            || document.NextConsumableEvaluationAtUnixSeconds <= document.AdvancedAtUnixSeconds
+            || !double.IsFinite(document.OfflineBatchBoundaryUnixSeconds)
+            || document.OfflineBatchBoundaryUnixSeconds < document.Spec.StartedAtUnixSeconds
+            || document.OfflineBatchBoundaryUnixSeconds > document.AdvancedAtUnixSeconds
+            || (document.OfflineReserves is { } reserves && (reserves.Any(row => !row.IsValid
+                    || row.MemberIndex >= document.Spec.Members.Count)
+                || reserves.Select(row => (row.MemberIndex, row.ItemId, row.Variant)).Distinct().Count() != reserves.Count
+                || (document.InventoryMode == ActionParticipationInventoryMode.Online && reserves.Any(row => row.Quantity > 0))))
             || document.MemberRegenCarrySeconds is null || document.MemberRegenCarrySeconds.Count != document.Spec.Members.Count
             || document.MemberRegenCarrySeconds.Any(value => !double.IsFinite(value) || value < 0 || value >= 5)
             || !double.IsFinite(document.CompletedRepeats) || document.CompletedRepeats < 0
@@ -270,7 +392,7 @@ public sealed class ActionParticipationSessionEngine
         target = FromUnix(ToUnix(target.ToUniversalTime()));
         if (target < _advancedAt || _endsAt is not null)
             throw new DomainException(DomainErrorCode.InvalidArgument, "会话目标时间倒退或已经结束。");
-        // 会话层按 5 秒窗口拆分，战斗边界消耗值必须与外层时间游标严格相等。
+        // 回复周期与自动使用周期独立持久化；外部请求拆分不得额外制造消耗品判定。
         var from = _advancedAt;
         var cappedTarget = target > from.Add(PlayerLifecycleRules.OfflineIdleLimit)
             ? from.Add(PlayerLifecycleRules.OfflineIdleLimit) : target;
@@ -279,6 +401,7 @@ public sealed class ActionParticipationSessionEngine
         {
             var untilRegen = 5d;
             foreach (var member in _members) untilRegen = Math.Min(untilRegen, 5 - member.Resources.RegenCarrySeconds);
+            untilRegen = Math.Min(untilRegen, _nextConsumableEvaluation - ToUnix(cursor));
             // DateTimeOffset 只有 100ns 精度；向最近 tick 贴齐，不能截断后残留一个永远到不了的回复边界。
             var ticks = Math.Min((cappedTarget - cursor).Ticks,
                 Math.Max(1L, checked((long)Math.Round(untilRegen * TimeSpan.TicksPerSecond))));
@@ -296,12 +419,17 @@ public sealed class ActionParticipationSessionEngine
             }
             cursor = windowEnd;
             _advancedAt = cursor;
-            // 消耗品托管按会话窗口判定（与单人 5 秒资源边界同格族）；战内判定用 canonical 单位。
-            EvaluateConsumables(cursor);
+            if (ToUnix(cursor) >= _nextConsumableEvaluation - 1e-9)
+            {
+                _nextConsumableEvaluation += 5;
+                EvaluateConsumables(cursor);
+            }
             FlushBattle();
             SynchronizeViews();
         }
         _advancedAt = target;
+        if (_inventoryMode == ActionParticipationInventoryMode.Offline) _offlineBatchBoundary = ToUnix(target);
+        while (_nextConsumableEvaluation <= ToUnix(target)) _nextConsumableEvaluation += 5;
         if (target > cappedTarget)
             foreach (var collector in _collectors)
                 collector.Events.Add(new(target, "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。"));
@@ -310,17 +438,7 @@ public sealed class ActionParticipationSessionEngine
         if (ending)
         {
             _endsAt = ToUnix(target);
-            // 散场把未耗尽的托管余量作为末批结算资产差量退回成员钱包（开打已实扣）。
-            if (_consumables is { } ledger)
-                for (var i = 0; i < ledger.Length; i++)
-                {
-                    var row = ledger[i];
-                    if (row.RemainingQuantity <= 0) continue;
-                    var key = new AssetKey(new ItemId(row.ItemId));
-                    var collector = _collectors[row.MemberIndex];
-                    collector.Assets[key] = collector.Assets.GetValueOrDefault(key) + row.RemainingQuantity;
-                    ledger[i] = row with { RemainingQuantity = 0 };
-                }
+            RefundReserves();
             foreach (var member in _members)
                 if (member.Resources.Hitpoints <= 0) member.Resources.Hitpoints = 1;
             if (_battle is not null)
@@ -362,7 +480,8 @@ public sealed class ActionParticipationSessionEngine
                 expedition, action.ProgressSeconds, action.CompletedRepeats, collector.Stats.ToArray(),
                 collector.Assets.Select(pair => new AssetDelta(member.PlayerId, pair.Key, pair.Value, "simulation")).ToArray(),
                 collector.Events.View.ToArray(), ProjectStats(canonicalStats, i), collector.Events.Dropped, _endsAt,
-                collector.StagedItems.Count > 0 ? collector.StagedItems.ToArray() : null);
+                collector.StagedItems.Count > 0 ? collector.StagedItems.ToArray() : null,
+                _consumables?.Where(row => row.MemberIndex == i).ToArray());
             collector.Reset();
         }
         return results;
@@ -381,7 +500,7 @@ public sealed class ActionParticipationSessionEngine
             _catalog.Actions.Get(_spec.ActionId), _catalog, null, from, target, remaining, mutation);
         for (var i = 0; i < _collectors.Length; i++)
         {
-            if (i == 0) _collectors[i].Add(mutation, _members[i].PlayerId);
+            if (i == 0) CollectMutation(mutation, i);
             else
             {
                 foreach (var entry in mutation.Events)
@@ -406,8 +525,9 @@ public sealed class ActionParticipationSessionEngine
             Canonical.Resources.Manapoints = enteredBattle.Player.Manapoints;
             Canonical.Combat.Skills = PlayerCombatSkillState.FromCombatant(enteredBattle.Player, enteredBattle.ElapsedSeconds);
             Canonical.Combat.Buffs = PlayerCombatBuffState.FromCombatant(enteredBattle.Player, enteredBattle.ElapsedSeconds);
-            // 波次入场判定托管消耗品（与单人入场充能同口径）：耗竭/冷却在台账上走墙钟。
+            // 入场是既有合法充能边界；恰逢周期边界时只判定一次。
             var entryAt = from.AddSeconds((target - from).TotalSeconds - step.RemainingSeconds);
+            if (ToUnix(entryAt) >= _nextConsumableEvaluation - 1e-9) _nextConsumableEvaluation += 5;
             EvaluateConsumables(entryAt);
             OverlaySessionSustained(ToUnix(entryAt));
         }
@@ -416,9 +536,8 @@ public sealed class ActionParticipationSessionEngine
     }
 
     /// <summary>
-    /// 消耗品托管判定：会话唯一副本按墙钟时钟逐槽推进（与单人 5 秒资源边界同格族）。
-    /// 战斗相位以 canonical 战内单位为施放方求值，非战斗相位以冻结面板 + 成员资源池装配求值单位；
-    /// 扣减的是开打定格托管配额而非成员钱包，实耗经「失去」账本与自动使用事件随结算下发。
+    /// 消耗品按独立模拟游标逐槽判定，战内用真实单位，战外用冻结面板与成员资源池。
+    /// 在线扣本批工作钱包并输出真实差量；离线仅扣检查点储备，缺货只跳过使用。
     /// </summary>
     private void EvaluateConsumables(DateTimeOffset at)
     {
@@ -429,6 +548,7 @@ public sealed class ActionParticipationSessionEngine
             var row = _consumables[s];
             var itemId = new ItemId(row.ItemId);
             if (!_catalog.Items.TryGetValue(itemId, out var item)
+                || item.Category != ItemDefinition.CategoryConsumable
                 || item.Consumable is not { } consumable || consumable.Durable
                 || !consumable.UsableInBars.Contains(AutoUseBar.Combat)) continue;
             if (consumable is { IsContinuous: true, DurationSeconds: > 0 })
@@ -437,7 +557,7 @@ public sealed class ActionParticipationSessionEngine
         }
     }
 
-    /// <summary>持续消耗品：无冷却，耗竭按墙钟记账；再充能只在战斗相位判定并就地注入 Buff，有托管余量即无缝再充能。</summary>
+    /// <summary>持续消耗品无冷却；已生效周期不受库存变化影响，合法边界有余额才再充能。</summary>
     private void EvaluateSustained(int index, SessionConsumableSlot row, ItemDefinition item,
         ConsumableDefinition consumable, DateTimeOffset at, double now)
     {
@@ -448,15 +568,14 @@ public sealed class ActionParticipationSessionEngine
                 $"{item.Name} 的持续时间已耗尽。", _spec.ActionId));
         }
         if (_battle is null || row.SustainedExpiresAtUnixSeconds > 0
-            || ItemEscrowRemaining(row.MemberIndex, row.ItemId) < 1) return;
+            || AvailableQuantity(row.MemberIndex, row.ItemId) < 1) return;
         var caster = _battle.PlayerAllies[row.MemberIndex];
         // 倒地成员不再充能新周期（与单人 Hitpoints<=0 跳过同口径）；已生效周期按墙钟照常耗竭。
         if (!caster.IsAlive) return;
         if (consumable.Triggers is { Count: > 0 } triggers
             && !SkillTriggerEvaluator.MatchesAll(triggers, caster, HighestThreatAlive(_battle.Enemies),
                 _battle.PlayerAllies, _battle.Enemies)) return;
-        // 托管余量按（成员, 物品）共享池扣件：同物品多槽与单人钱包共享同口径。
-        SpendEscrow(row.MemberIndex, row.ItemId);
+        SpendBalance(row.MemberIndex, row.ItemId);
         _consumables![index] = _consumables![index] with {
             SustainedExpiresAtUnixSeconds = now + consumable.DurationSeconds,
             CooldownUntilUnixSeconds = 0 };
@@ -465,12 +584,12 @@ public sealed class ActionParticipationSessionEngine
             $"自动使用 {item.Name}，可生效 {consumable.DurationSeconds:0.######} 秒。");
     }
 
-    /// <summary>即时消耗品：触发器求值后恢复/增益/打击就地落账；无存活目标或资源不足时不耗冷却与配额。</summary>
+    /// <summary>即时消耗品就地恢复、增益或打击；无有效目标或余额不足不占冷却。</summary>
     private void EvaluateInstant(int index, SessionConsumableSlot row, ItemDefinition item,
         ConsumableDefinition consumable, DateTimeOffset at, double now)
     {
         if (row.CooldownUntilUnixSeconds > now
-            || ItemEscrowRemaining(row.MemberIndex, row.ItemId) < 1) return;
+            || AvailableQuantity(row.MemberIndex, row.ItemId) < 1) return;
         if (!_catalog.RawItems.TryGetValue(item.Id.Value, out var rawItem)
             || !rawItem.TryGetProperty("consumable", out var raw)) return;
         var hp = Read(raw, "hitpointRestore");
@@ -482,7 +601,7 @@ public sealed class ActionParticipationSessionEngine
         // 施放方与敌方上下文：战斗相位取 canonical 单位；非战斗相位以冻结面板+成员资源装配（无敌方目标）。
         // 求值单位只是只读替身，不能进入回血/Buff/打击的写路径——那些只认战内真单位或成员资源池。
         CombatantState? caster = _battle?.PlayerAllies[memberIndex];
-        // 倒地单位不消耗托管（与单人 Hitpoints<=0 整段跳过同口径）：尸体不吃药、不打符。
+        // 倒地单位不吃药、不打符，现有持续周期仍按墙钟到期。
         if (caster is not null ? !caster.IsAlive : _members[memberIndex].Resources.Hitpoints <= 0) return;
         CombatantState? target = _battle is { } battle ? HighestThreatAlive(battle.Enemies) : null;
         if (consumable.Triggers is { Count: > 0 } triggers)
@@ -526,7 +645,7 @@ public sealed class ActionParticipationSessionEngine
                 book.RecordHit(attackerKey, $"monster:{monsterId}", CombatDamageKind.Spell,
                     damage, Math.Max(0, strikeStats.AttackPower - damage));
             }
-            SpendEscrow(memberIndex, row.ItemId);
+            SpendBalance(memberIndex, row.ItemId);
             _consumables![index] = _consumables![index] with { CooldownUntilUnixSeconds = now + cooldown };
             SpendConsumable(memberIndex, item, at, now, $"自动使用 {item.Name}，造成 {damage:0.##} 点伤害。");
             return;
@@ -573,31 +692,41 @@ public sealed class ActionParticipationSessionEngine
                     Read(buff, "damageAbsorptionPoints"), 0, Read(buff, "hpRegenPostRatio"),
                     Read(buff, "mpRegenPostRatio"), 0, 0, BuffName(buff, buffId)));
             }
-        SpendEscrow(memberIndex, row.ItemId);
+        SpendBalance(memberIndex, row.ItemId);
         _consumables![index] = _consumables![index] with { CooldownUntilUnixSeconds = now + cooldown };
         SpendConsumable(memberIndex, item, at, now, $"自动使用 {item.Name}。");
     }
 
-    /// <summary>（成员, 物品）托管池剩余合计：同物品多槽共享配额，与单人钱包口径一致。</summary>
-    private double ItemEscrowRemaining(int memberIndex, string itemId)
+    /// <summary>按成员、物品共享余额；变体按序消费，多个槽位不复制或透支同一余额。</summary>
+    private double AvailableQuantity(int memberIndex, string itemId)
     {
+        var balances = _inventoryMode == ActionParticipationInventoryMode.Online ? _workingWallet : _offlineReserves;
         var total = 0d;
-        for (var i = 0; i < _consumables!.Length; i++)
-            if (_consumables[i].MemberIndex == memberIndex && _consumables[i].ItemId == itemId)
-                total += _consumables[i].RemainingQuantity;
+        foreach (var pair in balances)
+            if (pair.Key.MemberIndex == memberIndex && pair.Key.Asset.ItemId.Value == itemId)
+                total += pair.Value;
         return total;
     }
 
-    /// <summary>共享池扣 1 件：从同物品最早非空台账行扣减（确定性落账序）。</summary>
-    private void SpendEscrow(int memberIndex, string itemId)
+    private void SpendBalance(int memberIndex, string itemId)
     {
-        for (var i = 0; i < _consumables!.Length; i++)
-            if (_consumables[i].MemberIndex == memberIndex && _consumables[i].ItemId == itemId
-                && _consumables[i].RemainingQuantity > 0)
-            {
-                _consumables[i] = _consumables[i] with { RemainingQuantity = _consumables[i].RemainingQuantity - 1 };
-                return;
-            }
+        var balances = _inventoryMode == ActionParticipationInventoryMode.Online ? _workingWallet : _offlineReserves;
+        var remaining = 1d;
+        while (remaining > 1e-9)
+        {
+            (int MemberIndex, AssetKey Asset)? selected = null;
+            foreach (var pair in balances)
+                if (pair.Key.MemberIndex == memberIndex && pair.Key.Asset.ItemId.Value == itemId && pair.Value > 0
+                    && (selected is null || StringComparer.Ordinal.Compare(pair.Key.Asset.Variant, selected.Value.Asset.Variant) < 0))
+                    selected = pair.Key;
+            if (selected is not { } key) break;
+            var spent = Math.Min(remaining, balances[key]);
+            balances[key] -= spent;
+            if (_inventoryMode == ActionParticipationInventoryMode.Online) AddAssetDelta(key, -spent);
+            remaining -= spent;
+            if (remaining <= 1e-9) return;
+        }
+        throw new DomainException(DomainErrorCode.InvariantViolation, "会话消耗品共享余额不足。");
     }
 
     /// <summary>
@@ -642,15 +771,12 @@ public sealed class ActionParticipationSessionEngine
         }
     }
 
-    /// <summary>托管实耗登记：记「失去」物品账本与自动使用事件（台账数量-1 由调用点落账），
-    /// 事件附带共享池余量——背包已被开打实扣清零，余量是玩家核对「为何还在使用」的唯一可见凭据。
-    /// 结算载荷走收件箱 JSON——ItemDeltas 的 ItemId 字典键不在持久化词表，机器可读扣件由 LostItem 账本承载。</summary>
+    /// <summary>实耗记入个人失去账本与自动使用事件；资产扣件已由会话输出，不再进入成员资产投影。</summary>
     private void SpendConsumable(int memberIndex, ItemDefinition item, DateTimeOffset at, double now, string message)
     {
         var member = _members[memberIndex];
         member.RecordStats(member.Actions[0].Id, now, new PlayerStatsDelta { LostItem = item.Id, LostQuantity = 1 });
-        _collectors[memberIndex].Events.Add(new SimulationEvent(at, "auto-use.activated",
-            $"{message}（托管余 {ItemEscrowRemaining(memberIndex, item.Id.Value):0.##}）", _spec.ActionId));
+        _collectors[memberIndex].Events.Add(new SimulationEvent(at, "auto-use.activated", message, _spec.ActionId));
     }
 
     /// <summary>非战斗相位求值单位：冻结面板 + 成员资源池当前值；外部 Buff 层数取定格视图。</summary>
@@ -777,12 +903,12 @@ public sealed class ActionParticipationSessionEngine
             var mutation = new ActionMutationBatch();
             CombatActionRules.CompleteCombatAdvance(member, action, definition, encounter, _catalog,
                 view, ProjectResult(result, i), from, target, remaining, mutation);
-            _collectors[i].Add(mutation, member.PlayerId);
+            CollectMutation(mutation, i);
         }
         var canonicalMutation = new ActionMutationBatch();
         var next = CombatActionRules.CompleteCombatAdvance(Canonical, Action, definition, encounter, _catalog,
             _battle, result, from, target, remaining, canonicalMutation);
-        _collectors[0].Add(canonicalMutation, Canonical.PlayerId);
+        CollectMutation(canonicalMutation, 0);
         foreach (var member in _members)
         {
             member.Resources.RegenCarrySeconds += remaining - next;
@@ -802,7 +928,13 @@ public sealed class ActionParticipationSessionEngine
         return new(_spec, _catalog.Fingerprint, ToUnix(_advancedAt), _sequence, Action.Expedition,
             Canonical.Combat.Skills, Canonical.Combat.Buffs,
             _members.Select(member => member.Resources.RegenCarrySeconds).ToArray(), Action.CompletedRepeats,
-            StatsDocuments(Canonical.Duel.ReportFor(Action.Id)!.CombatStats), _endsAt, _consumables);
+            StatsDocuments(Canonical.Duel.ReportFor(Action.Id)!.CombatStats), _endsAt, _consumables?.ToArray(),
+            _inventoryMode, _modeSince, _nextConsumableEvaluation, _offlineBatchBoundary,
+            _offlineReserves.Where(pair => pair.Value > 0).OrderBy(pair => pair.Key.MemberIndex)
+                .ThenBy(pair => pair.Key.Asset.ItemId.Value, StringComparer.Ordinal)
+                .ThenBy(pair => pair.Key.Asset.Variant, StringComparer.Ordinal)
+                .Select(pair => new SessionConsumableBalance(pair.Key.MemberIndex, pair.Key.Asset.ItemId.Value,
+                    pair.Key.Asset.Variant, pair.Value)).ToArray());
     }
 
     /// <summary>读取成员展示投影，不推进时钟或产生结算。</summary>
@@ -843,7 +975,12 @@ public sealed class ActionParticipationSessionEngine
 
     private void FlushBattle()
     {
-        if (_battle is not null) Action.Expedition = CombatActionRules.CaptureCombatState(_battle, Action.Expedition!);
+        if (_battle is null) return;
+        Action.Expedition = CombatActionRules.CaptureCombatState(_battle, Action.Expedition!);
+        Canonical.Resources.Hitpoints = _battle.Player.Hitpoints;
+        Canonical.Resources.Manapoints = _battle.Player.Manapoints;
+        Canonical.Combat.Skills = PlayerCombatSkillState.FromCombatant(_battle.Player, _battle.ElapsedSeconds);
+        Canonical.Combat.Buffs = PlayerCombatBuffState.FromCombatant(_battle.Player, _battle.ElapsedSeconds);
     }
 
     private void SynchronizeViews()

@@ -1090,8 +1090,20 @@ public sealed class EcsAdapterBoundaryTests
         private ActionParticipationSessionEngine? _engine;
         public DateTimeOffset? NextAdvanceBoundaryUtc => null;
         public bool RequiresReconciliation(Guid playerId) => true;
+        public event Action<Guid>? WalletChanged { add { } remove { } }
+        public ValueTask SynchronizePresenceAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default)
+            => ValueTask.CompletedTask;
+        public ValueTask<IAsyncDisposable> PrepareConnectionAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IAsyncDisposable>(new ConnectionLease());
+        public ValueTask<IReadOnlyList<ParticipationOfflineReserve>> LoadOfflineReservesAsync(Guid playerId,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyList<ParticipationOfflineReserve>>([]);
+        private sealed class ConnectionLease : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
         public ValueTask CreateAsync(Guid partyId, ActionParticipationSpec sessionSpec,
-            EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
             => ValueTask.CompletedTask;
         public ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
             => ValueTask.CompletedTask;
@@ -1129,13 +1141,20 @@ public sealed class EcsAdapterBoundaryTests
         public ValueTask<DateTimeOffset?> GetOfflineExpiryAsync(string sessionId, TimeSpan offlineLimit,
             IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadConsumableBalancesAsync(
+            IReadOnlyList<ParticipationAssetKey> keys, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadConsumableBalancesForItemsAsync(
+            IReadOnlyList<ParticipationAssetKey> keys, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public ValueTask<ActionParticipationSessionRecord> CreateOrInitializeAsync(
-            ActionParticipationSessionRecord session, EconomyTransactionRequest? escrow = null,
-            CancellationToken cancellationToken = default)
+            ActionParticipationSessionRecord session, ParticipationSessionEconomyCommit? economy = null,
+            IReadOnlyList<ParticipationInboxItem>? inbox = null, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public ValueTask<bool> CommitAdvanceAsync(string sessionId, long expectedVersion, string stateJson,
             DateTimeOffset lastSimulatedAt, IReadOnlyList<ParticipationInboxItem> inbox,
-            DateTimeOffset? endedAt = null, string? endReason = null, CancellationToken cancellationToken = default)
+            DateTimeOffset? endedAt = null, string? endReason = null,
+            ParticipationSessionEconomyCommit? economy = null, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public ValueTask<IReadOnlyList<ParticipationInboxItem>> LoadPendingAsync(Guid playerId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

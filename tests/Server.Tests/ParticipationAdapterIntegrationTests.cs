@@ -36,18 +36,18 @@ public sealed class ParticipationAdapterIntegrationTests
         fixture.Clock.AdvanceTo(fixture.StartedAt.AddSeconds(60));
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         var checkpoint = (await fixture.Store.LoadAsync(fixture.SessionId))!;
-        Assert.Equal(1, checkpoint.Version);
-        Assert.Equal(3L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(2, checkpoint.Version);
+        Assert.Equal(6L, await fixture.SettlementTransactionCountAsync());
         foreach (var player in fixture.Players)
         {
             Assert.Empty(await fixture.Store.LoadPendingAsync(player));
-            Assert.Equal(1, fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation!.AppliedSequence);
+            Assert.Equal(2, fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation!.AppliedSequence);
         }
         Assert.True(fixture.Players.Sum(player => fixture.Adapter.TryGetLoaded(player)!.State.Progression.CombatExperience) > 0);
         var afterFirst = fixture.Players.ToDictionary(player => player, fixture.RewardSnapshot);
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         Assert.Equal(checkpoint.Version, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
-        Assert.Equal(3L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(6L, await fixture.SettlementTransactionCountAsync());
         foreach (var player in fixture.Players) Assert.Equal(afterFirst[player], fixture.RewardSnapshot(player));
 
         var offline = fixture.Players[2];
@@ -59,19 +59,20 @@ public sealed class ParticipationAdapterIntegrationTests
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         Assert.Equal(2, (await fixture.Store.LoadPendingAsync(offline)).Count);
         var beforeReturn = (await fixture.Store.LoadAsync(fixture.SessionId))!;
-        var returned = await fixture.Adapter.LoadAsync(offline);
+        await using var connection = await fixture.Runtime.PrepareConnectionAsync(offline, fixture.Clock.UtcNow);
+        var returned = await fixture.Adapter.AttachConnectionAsync(offline);
         await fixture.Presence.RegisterAsync(offline, returned.State.DisplayName, returned.State.World.NodeId);
         Assert.Equal(beforeReturn.Version, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
-        Assert.Equal(3, returned.State.Actions[0].Participation!.AppliedSequence);
+        Assert.Equal(4, returned.State.Actions[0].Participation!.AppliedSequence);
         Assert.Empty(await fixture.Store.LoadPendingAsync(offline));
-        Assert.Equal(9L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(12L, await fixture.SettlementTransactionCountAsync());
         var waves = fixture.Players.Select(player => fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].CompletedRepeats).ToArray();
         Assert.All(waves, wave => Assert.Equal(waves[0], wave));
         var returnedRewards = fixture.RewardSnapshot(offline);
         await fixture.Adapter.LoadAsync(offline);
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         Assert.Equal(returnedRewards, fixture.RewardSnapshot(offline));
-        Assert.Equal(9L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(12L, await fixture.SettlementTransactionCountAsync());
 
         await fixture.Runtime.EndAsync(fixture.SessionId, fixture.Clock.UtcNow, "member-unready");
         var terminal = new Dictionary<Guid, ActionParticipationMemberSettlement>();
@@ -81,7 +82,7 @@ public sealed class ParticipationAdapterIntegrationTests
             terminal[player] = JsonSerializer.Deserialize<ActionParticipationMemberSettlement>(item.PayloadJson, PersistenceJson.Options)!;
         }
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
-        Assert.Equal(12L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(15L, await fixture.SettlementTransactionCountAsync());
         foreach (var player in fixture.Players)
         {
             var state = fixture.Adapter.TryGetLoaded(player)!.State;
@@ -95,7 +96,7 @@ public sealed class ParticipationAdapterIntegrationTests
             Assert.Empty(await fixture.Store.LoadPendingAsync(player));
         }
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
-        Assert.Equal(12L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(15L, await fixture.SettlementTransactionCountAsync());
     }
 
     /// <summary>赶路先领取会话终局，不能把参与引用挂在队尾并阻断后续操作。</summary>
@@ -138,9 +139,9 @@ public sealed class ParticipationAdapterIntegrationTests
             .AcquireAsync(player, Guid.NewGuid(), TimeSpan.FromSeconds(45)));
         await Assert.ThrowsAsync<PlayerOwnershipLostException>(async () =>
             await fixture.Adapter.MutateOwnedAsync(player, aggregate => aggregate.SetQueuePaused(true)));
-        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(3L, await fixture.SettlementTransactionCountAsync());
         Assert.Single(await fixture.Store.LoadPendingAsync(player));
-        Assert.Equal(0, fixture.Ecs.ExportSnapshot(player).State.Actions[0].Participation!.AppliedSequence);
+        Assert.Equal(1, fixture.Ecs.ExportSnapshot(player).State.Actions[0].Participation!.AppliedSequence);
     }
 
     /// <summary>会话回执不能跳过个人暂存物品到期；资产、回执与清空暂存必须同时落盘。</summary>
@@ -158,7 +159,7 @@ public sealed class ParticipationAdapterIntegrationTests
         var consumed = fixture.Adapter.TryGetLoaded(player)!;
         Assert.Empty(consumed.State.Duel.StagedItems);
         Assert.Equal(7, Assert.Single(consumed.Assets, asset => asset.AssetId == "item.refined-copper").Quantity);
-        Assert.Equal(1, consumed.State.Actions[0].Participation!.AppliedSequence);
+        Assert.Equal(2, consumed.State.Actions[0].Participation!.AppliedSequence);
         await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var restored = await fixture.Adapter.LoadAsync(player);
         Assert.Empty(restored.State.Duel.StagedItems);
@@ -181,10 +182,10 @@ public sealed class ParticipationAdapterIntegrationTests
             fixture.SessionId, fixture.Players[0], Guid.NewGuid().ToString("D"));
         var errors = await Assert.ThrowsAsync<AggregateException>(async () => await fixture.Adapter.AdvanceAllAsync(firstTarget));
         Assert.Contains(errors.InnerExceptions, error => error.Message.Contains(fixture.Players[0].ToString("D"), StringComparison.Ordinal));
-        Assert.Equal(2L, await fixture.SettlementTransactionCountAsync());
-        Assert.Equal(0, fixture.Adapter.TryGetLoaded(fixture.Players[0])!.State.Actions[0].Participation!.AppliedSequence);
+        Assert.Equal(5L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(1, fixture.Adapter.TryGetLoaded(fixture.Players[0])!.State.Actions[0].Participation!.AppliedSequence);
         foreach (var player in fixture.Players.Skip(1))
-            Assert.Equal(1, fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation!.AppliedSequence);
+            Assert.Equal(2, fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation!.AppliedSequence);
         var personalBefore = fixture.Adapter.TryGetLoaded(personalPlayer)!;
         Assert.Equal(firstTarget, personalBefore.LastSimulatedAt);
         Assert.Equal(6, personalBefore.State.Actions[0].CompletedRepeats);
@@ -196,16 +197,19 @@ public sealed class ParticipationAdapterIntegrationTests
         var personalAfter = fixture.Adapter.TryGetLoaded(personalPlayer)!;
         Assert.Equal(secondTarget, personalAfter.LastSimulatedAt);
         Assert.Equal(7, personalAfter.State.Actions[0].CompletedRepeats);
-        Assert.Equal(2L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(5L, await fixture.SettlementTransactionCountAsync());
     }
 
-    /// <summary>未收到开场引用的成员仍能消费已退休行动的终局，不因临时屏蔽散场丢失归档依据。</summary>
+    /// <summary>开场已消费但参与引用丢失时，退休行动的终局仍按收件箱序号续接并保留个人队列。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task RetiredSessionActionMissingBindingConsumesTerminalReceiptAndKeepsPersonalQueue()
     {
         await using var fixture = await Fixture.CreateAsync();
         var player = fixture.Players[0];
+        Assert.Equal(1, fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation!.AppliedSequence);
+        Assert.Empty(await fixture.Store.LoadPendingAsync(player));
+        Assert.Equal(3L, await fixture.SettlementTransactionCountAsync());
         await fixture.Adapter.MutateOwnedAsync(player, aggregate => aggregate.RemoveAction(aggregate.Actions[0].Id));
         await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var row = (await fixture.Store.LoadAsync(fixture.SessionId))!;
@@ -218,18 +222,19 @@ public sealed class ParticipationAdapterIntegrationTests
             JsonSerializer.Serialize(oldCheckpoint, PersistenceJson.Options));
         await fixture.Runtime.AdvanceOnlineAsync(fixture.StartedAt);
         Assert.Equal("game-data-changed", (await fixture.Store.LoadAsync(fixture.SessionId))!.EndReason);
+        Assert.Equal(document.Sequence + 1, Assert.Single(await fixture.Store.LoadPendingAsync(player)).Sequence);
         var restored = await fixture.Adapter.LoadAsync(player);
         Assert.Equal(fixture.PersonalActions[player], Assert.Single(restored.State.Actions).Id);
         Assert.Null(restored.State.Actions[0].Participation);
         Assert.Equal(document.Expedition!.PlayerHitpoints, restored.State.Combat.Hitpoints);
         Assert.Equal(document.Expedition.PlayerManapoints, restored.State.Combat.Manapoints);
         Assert.Empty(await fixture.Store.LoadPendingAsync(player));
-        Assert.Equal(1L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(4L, await fixture.SettlementTransactionCountAsync());
         await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var reloaded = await fixture.Adapter.LoadAsync(player);
         Assert.Equal(restored.State.Progression.CombatExperience, reloaded.State.Progression.CombatExperience);
         Assert.Equal(fixture.PersonalActions[player], Assert.Single(reloaded.State.Actions).Id);
-        Assert.Equal(1L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(4L, await fixture.SettlementTransactionCountAsync());
     }
 
     /// <summary>终局先被对账消费后，过时的开场投递不能重新插入永不结束的参与引用。</summary>
@@ -251,7 +256,7 @@ public sealed class ParticipationAdapterIntegrationTests
                 Assert.Equal(fixture.PersonalActions[player], Assert.Single(state.Actions).Id);
                 Assert.Empty(await fixture.Store.LoadPendingAsync(player));
             }
-            Assert.Equal(3L, await fixture.SettlementTransactionCountAsync());
+            Assert.Equal(6L, await fixture.SettlementTransactionCountAsync());
         }
         finally
         {
@@ -423,8 +428,8 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Equal(secondAnchor, await ReadOfflineSinceAsync(fixture, second));
     }
 
-    /// <summary>名册全员离线的会话按批算间隔推进到当前，推进后逐成员强拉消费结算再卸载（§14.6）；
-    /// 不足批算间隔不推进。</summary>
+    /// <summary>名册全员离线的会话每小时批算推进到当前，推进后逐成员强拉消费结算再卸载（§14.6）；
+    /// 不足一小时不推进。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task OfflineSessionAdvancesOnBatchIntervalAndMembersConsume()
@@ -433,17 +438,20 @@ public sealed class ParticipationAdapterIntegrationTests
         foreach (var player in fixture.Players)
         {
             await fixture.Presence.UnregisterAsync(player);
+            // 此时尚未装配 SocialRuntime 的在线态订阅，显式完成真实离线钱包切换。
+            await fixture.Runtime.SynchronizePresenceAsync(player, fixture.Clock.UtcNow);
             await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         }
         await fixture.Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
         var social = await fixture.CreateSocialRuntimeAsync();
-        // 会话检查点停在 startedAt：模拟时钟推进 30 分钟，40 分钟批算间隔不足期不推进。
+        // 会话检查点停在 startedAt：离线半小时不推进，满一小时才批算。
         fixture.Clock.AdvanceTo(fixture.StartedAt.AddMinutes(30));
         var before = (await fixture.Store.LoadAsync(fixture.SessionId))!.LastSimulatedAt;
-        await social.AdvanceOfflineSessionsAsync(TimeSpan.FromMinutes(40), CancellationToken.None);
+        await social.AdvanceOfflineSessionsAsync(TimeSpan.FromHours(1), CancellationToken.None);
         Assert.Equal(before, (await fixture.Store.LoadAsync(fixture.SessionId))!.LastSimulatedAt);
 
-        await social.AdvanceOfflineSessionsAsync(TimeSpan.FromMinutes(20), CancellationToken.None);
+        fixture.Clock.AdvanceTo(fixture.StartedAt.AddHours(1));
+        await social.AdvanceOfflineSessionsAsync(TimeSpan.FromHours(1), CancellationToken.None);
         var advanced = await fixture.Store.LoadAsync(fixture.SessionId);
         var expected = DateTimeOffset.FromUnixTimeMilliseconds(fixture.Clock.UtcNow.ToUnixTimeMilliseconds());
         Assert.Equal(expected, advanced!.LastSimulatedAt);
@@ -530,6 +538,7 @@ public sealed class ParticipationAdapterIntegrationTests
     private static async Task<DateTimeOffset> TakeOfflineAsync(Fixture fixture, Guid player, DateTimeOffset disconnectedAt)
     {
         var anchor = DateTimeOffset.FromUnixTimeMilliseconds(disconnectedAt.ToUnixTimeMilliseconds());
+        await using var connection = await fixture.Runtime.PrepareConnectionAsync(player, fixture.Clock.UtcNow);
         await fixture.Adapter.AttachConnectionAsync(player);
         await fixture.Presence.UnregisterAsync(player);
         await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: anchor);
@@ -554,11 +563,22 @@ public sealed class ParticipationAdapterIntegrationTests
         public string? SessionId { get; private set; }
         public DateTimeOffset? NextAdvanceBoundaryUtc => fixture.Runtime.NextAdvanceBoundaryUtc;
         public bool RequiresReconciliation(Guid playerId) => fixture.Runtime.RequiresReconciliation(playerId);
+        public event Action<Guid>? WalletChanged
+        {
+            add => fixture.Runtime.WalletChanged += value;
+            remove => fixture.Runtime.WalletChanged -= value;
+        }
+        public ValueTask SynchronizePresenceAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default) =>
+            fixture.Runtime.SynchronizePresenceAsync(playerId, at, cancellationToken);
+        public ValueTask<IAsyncDisposable> PrepareConnectionAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default) =>
+            fixture.Runtime.PrepareConnectionAsync(playerId, at, cancellationToken);
+        public ValueTask<IReadOnlyList<ParticipationOfflineReserve>> LoadOfflineReservesAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => fixture.Runtime.LoadOfflineReservesAsync(playerId, cancellationToken);
         public async ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec,
-            EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
             SessionId = spec.SessionId;
-            await fixture.Runtime.CreateAsync(partyId, spec, escrow, cancellationToken);
+            await fixture.Runtime.CreateAsync(partyId, spec, cancellationToken);
             await fixture.Social.TrySetPartyMemberReadyAsync(fixture.Players[1], false, cancellationToken);
             await fixture.Runtime.AdvanceOnlineAsync(fixture.Clock.UtcNow, cancellationToken);
         }
@@ -641,6 +661,9 @@ public sealed class ParticipationAdapterIntegrationTests
                 frozen.Max(member => member.SearchSpeedPoints), startedAt.ToUnixTimeMilliseconds() / 1000d, frozen)
             { ActionId = new("combat.hunt-qi-beast") };
             await fixture.Runtime.CreateAsync(fixture.PartyId, spec);
+            Assert.Equal(1, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
+            foreach (var player in players)
+                Assert.Equal(1, Assert.Single(await fixture.Store.LoadPendingAsync(player)).Sequence);
             foreach (var player in players)
                 await fixture.Adapter.MutateOwnedAsync(player, aggregate => aggregate.StartActionParticipation(spec, startedAt, fixture.Catalog.Actions));
             return fixture;
@@ -661,7 +684,8 @@ public sealed class ParticipationAdapterIntegrationTests
             PersonalActions[player] = personal.Id;
             await Sections.EnqueueSectionsAsync(SectionCodec.EncodeAggregateFull(aggregate.ExportState(), DateTimeOffset.UtcNow));
             await Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
-            await Adapter.LoadAsync(player);
+            await using var connection = await Runtime.PrepareConnectionAsync(player, Clock.UtcNow);
+            await Adapter.AttachConnectionAsync(player);
             await Presence.RegisterAsync(player, aggregate.DisplayName, aggregate.World.NodeId);
         }
 

@@ -29,7 +29,7 @@ globalThis.document = { documentElement: { lang: '' }, addEventListener: () => {
 const server = await createServer({ root: fileURLToPath(new URL('../frontend', import.meta.url)), server: { middlewareMode: true } })
 try {
   const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } = await server.ssrLoadModule('/src/network/snapshot.ts')
-  const { encodeJsonEnvelope, WireMessageType, createRequestId } = await server.ssrLoadModule('/src/network/protocol.ts')
+  const { encodeJsonEnvelope, decodeEnvelope, decodeJsonPayload, WireMessageType, createRequestId } = await server.ssrLoadModule('/src/network/protocol.ts')
   const { GameClient } = await server.ssrLoadModule('/src/network/gameClient.ts')
   const { setSessionAccount } = await server.ssrLoadModule('/src/network/sessionState.ts')
   if (process.argv[2]) {
@@ -41,6 +41,17 @@ try {
     assert.equal(decoded.combat.abilitySlots[0].abilityId, 'ability.heavy-slash')
     assert.ok(decoded.combatAttributes.hpRegenPerFiveSeconds > 0)
   }
+  // 角色卡沿用真实信封解析路径；普通钱包数量不可与不可售的离线储备相加。
+  const cardRequestId = createRequestId()
+  const playerCard = { requestId: cardRequestId, playerId: 'player.test', autoUseSlots: [
+    { slotIndex: 0, itemId: 'item.qi-gathering-pill', quantity: 3, enabled: true, group: 'potion', offlineReserveQuantity: 7 },
+  ] }
+  const cardEnvelope = decodeEnvelope(encodeJsonEnvelope(WireMessageType.PlayerCard, cardRequestId, 1, playerCard))
+  assert.equal(cardEnvelope.messageType, WireMessageType.PlayerCard)
+  const decodedCard = decodeJsonPayload(cardEnvelope)
+  assert.equal(decodedCard.autoUseSlots[0].quantity, 3)
+  assert.equal(decodedCard.autoUseSlots[0].offlineReserveQuantity, 7)
+  assert.deepEqual(decodedCard, playerCard)
   const { parseCsvToMap, LOCALES } = await server.ssrLoadModule('/src/i18n/index.ts')
   const { registerBaseAttributeAnchors, calculateBaseAttributes } = await server.ssrLoadModule('/src/game/combatConstants.ts')
   const payload = {

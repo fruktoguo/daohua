@@ -128,6 +128,13 @@ while :; do
   done
 
   [[ -z "$next_file" ]] && break
+  # v37 会触发资产退款与旧会话散场，不能由开发启动链隐式执行。
+  if [[ "$next_file" == "migrations/0037_v36_to_v37.sql" && "$DRY_RUN" != "1" ]]; then
+    printf 'v36 → v37 需要显式离线资产迁移；本地启动链不会自动执行。\n' >&2
+    printf '请停止 API/worker/计算节点、备份全库并等待租约过期，再人工执行 migrations/0037_v36_to_v37.sql。\n' >&2
+    exit 1
+  fi
+
 
   printf '==> 应用 %s（v%s → v%s）\n' "$(basename "$next_file")" "$current" "$next_version"
   if [[ "$DRY_RUN" == "1" ]]; then

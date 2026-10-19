@@ -1,5 +1,12 @@
+using System.Text.Json;
 using Domain.Common;
 using Domain.Market;
+using DaoHua.Ecs;
+using Domain.Combat;
+using Domain.GameData;
+using Domain.Persistence;
+using Domain.Player;
+using Server.Clean.Social;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -180,6 +187,200 @@ public sealed class MarketPersistenceTests
         Assert.Null(summaries[2].BestAskPrice);
         Assert.Equal(50, summaries[2].BestBidPrice);
         await runtime.StopAsync(default);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task OnlineLastConsumableIsSpentBeforeSellOrIndependentEconomyDebit(bool sell)
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true);
+        fixture.EnterCombat();
+        var order = fixture.Order(fixture.Player, MarketSide.Sell);
+        await Assert.ThrowsAsync<EconomyInsufficientBalanceException>(async () =>
+        {
+            if (sell) await fixture.Market.PlaceAsync(order);
+            else await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.debit:{Guid.NewGuid():N}",
+                "test.debit", fixture.Player.Value, [new(fixture.Player.Value, ConsumableMarketFixture.ItemId, "", -1)]));
+        });
+        Assert.Equal(0, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        Assert.Equal(fixture.Clock.UtcNow, (await fixture.CheckpointAsync()).LastSimulatedAt);
+        Assert.Null(await fixture.Repository.LoadOrderAsync(order.OrderId.Value));
+        Assert.Empty(fixture.Market.GetOrders(fixture.Player));
+        Assert.True(fixture.Market.IsReady);
+    }
+
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PassiveBuyerConsumesOldStockBeforeMatchedPurchaseCreditsNewStock()
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true);
+        await fixture.Market.PlaceAsync(fixture.Order(fixture.Player, MarketSide.Buy));
+        fixture.EnterCombat();
+        var result = await fixture.Market.PlaceAsync(fixture.Order(fixture.Other, MarketSide.Sell));
+        Assert.Single(result.Fills);
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        Assert.Equal(fixture.Clock.UtcNow, (await fixture.CheckpointAsync()).LastSimulatedAt);
+        Assert.Equal(0, await Balance(fixture.Source, fixture.Other.Value, ConsumableMarketFixture.ItemId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task CancellationAndStartupExpiryAdvanceBeforeRefundAndResumeAtNextBoundary(bool expire)
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true,
+            combatStats: CombatantStats.Create(50_000, 0, 1, 1));
+        var order = fixture.Order(fixture.Player, MarketSide.Sell);
+        await fixture.Market.PlaceAsync(order);
+        fixture.EnterCombat();
+        if (expire)
+        {
+            await fixture.Market.StopAsync(default);
+            await fixture.Market.DisposeAsync();
+            await Sql(fixture.Source, "UPDATE market.orders SET created_at=now()-interval '31 days', expires_at=now()-interval '1 day' WHERE order_id=$1", order.OrderId.Value);
+            fixture.Market = new MarketRuntime(fixture.Repository, fixture.Options,
+                NullLogger<MarketRuntime>.Instance, fixture.Participation);
+            await fixture.Market.StartAsync(default);
+        }
+        else
+            await fixture.Market.CancelAsync(order.OrderId, fixture.Player, order.Instrument,
+                $"market-cancel:{fixture.Player.Value:D}:{order.OrderId.Value:D}");
+        var checkpoint = await fixture.CheckpointAsync();
+        Assert.Equal(fixture.Clock.UtcNow, checkpoint.LastSimulatedAt);
+        var document = JsonSerializer.Deserialize<ActionParticipationSessionDocument>(checkpoint.StateJson,
+            PersistenceJson.Options)!;
+        Assert.Equal(CombatExpeditionPhase.Combat, document.Expedition!.Phase);
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        var nextEvaluation = DateTimeOffset.FromUnixTimeMilliseconds(
+            checked((long)Math.Round(document.NextConsumableEvaluationAtUnixSeconds * 1000d)));
+        Assert.True(nextEvaluation > fixture.Clock.UtcNow);
+        Assert.True(nextEvaluation <= fixture.Clock.UtcNow.AddSeconds(5));
+        fixture.Clock.AdvanceTo(nextEvaluation.AddMilliseconds(-1));
+        await fixture.Participation.AdvanceOnlineAsync(fixture.Clock.UtcNow);
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        fixture.Clock.AdvanceTo(nextEvaluation);
+        await fixture.Participation.AdvanceOnlineAsync(fixture.Clock.UtcNow);
+        Assert.Equal(0, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+    }
+
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task OfflineEconomyAndMarketMutationsDoNotAdvanceSession()
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(0, online: false);
+        var before = await fixture.CheckpointAsync();
+        fixture.EnterCombat();
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.credit:{Guid.NewGuid():N}", "test.credit",
+            fixture.Player.Value, [new(fixture.Player.Value, ConsumableMarketFixture.ItemId, "", 1)]));
+        var order = fixture.Order(fixture.Player, MarketSide.Sell);
+        await fixture.Market.PlaceAsync(order);
+        await fixture.Market.CancelAsync(order.OrderId, fixture.Player, order.Instrument,
+            $"market-cancel:{fixture.Player.Value:D}:{order.OrderId.Value:D}");
+        Assert.Equal(before, await fixture.CheckpointAsync());
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+    }
+
+    private sealed class ConsumableMarketFixture : IAsyncDisposable
+    {
+        public const string ItemId = "item.leiji-talisman";
+        public required NpgsqlDataSource Source { get; init; }
+        public required ServerOptions Options { get; init; }
+        public required PlayerId Player { get; init; }
+        public required PlayerId Other { get; init; }
+        public required Guid PartyId { get; init; }
+        public required ActionParticipationSpec Spec { get; init; }
+        public required TestClock Clock { get; init; }
+        public required ActionParticipationRuntime Participation { get; init; }
+        public required PostgresParticipationSessionStore Sessions { get; init; }
+        public required PostgresEconomyRepository Economy { get; init; }
+        public required PostgresMarketRepository Repository { get; init; }
+        public required MarketRuntime Market { get; set; }
+        public required double SearchSeconds { get; init; }
+
+        public void EnterCombat() => Clock.AdvanceTo(DateTimeOffset.FromUnixTimeMilliseconds(
+            (long)(Spec.StartedAtUnixSeconds * 1000)).AddSeconds(SearchSeconds + 0.1));
+
+        public PlaceOrderRequest Order(PlayerId owner, MarketSide side) => new(OrderId.New(), owner,
+            new MarketInstrument(new Domain.Common.ItemId(ItemId)), side, 100, 1, Clock.UtcNow,
+            new IdempotencyKey(Guid.NewGuid().ToString()));
+
+        public async Task<ActionParticipationSessionRecord> CheckpointAsync() => (await Sessions.LoadAsync(Spec.SessionId))!;
+
+        public static async Task<ConsumableMarketFixture> CreateAsync(double stock, bool online,
+            CombatantStats? combatStats = null)
+        {
+            var connectionString = PostgresTestSchema.RequireConnectionString("消耗品市场边界测试");
+            var source = NpgsqlDataSource.Create(connectionString);
+            await PostgresTestSchema.EnsureAsync(source);
+            var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["Storage:ConnectionString"] = connectionString }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+            var player = PlayerId.New();
+            var ally = PlayerId.New();
+            var other = PlayerId.New();
+            await Seed(source, player.Value, ItemId, stock);
+            await SeedVariant(source, player.Value, "currency.spirit-stone", "", 1000);
+            await Seed(source, ally.Value, "currency.spirit-stone", 1000);
+            await Seed(source, other.Value, ItemId, 1);
+            var startedAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            var social = new PostgresSocialRepository(source);
+            var partyId = await social.CreatePartyAsync(player.Value, PartyProfileRecord.Default, startedAt);
+            Assert.True(await social.TryUpdatePartyOpenSlotsAsync(partyId, 2, startedAt));
+            Assert.Equal(PartyJoinResult.Joined, await social.TryJoinPartyAsync(partyId, ally.Value, startedAt));
+            foreach (var member in new[] { player, ally })
+            {
+                Assert.True(await social.TrySetPartyMemberReadyAsync(member.Value, true));
+                await Sql(source, "INSERT INTO game.player_projection(player_id,current_node_id,last_active_at,updated_at) VALUES ($1,'node.test',$2,$2)", member.Value, startedAt);
+                var world = SectionCodec.Encode(member.Value, PlayerSectionKinds.World, 1,
+                    new PlayerWorldStateDocument("node.test", 0, 0, 0), startedAt);
+                await Sql(source, "INSERT INTO game.player_state_sections(player_id,section_kind,section_version,schema_version,codec,payload,raw_bytes,stored_bytes,checksum,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+                    member.Value, world.SectionKind, world.StateVersion, world.SchemaVersion, world.Codec,
+                    world.Payload.ToArray(), world.RawBytes, world.StoredBytes, world.Checksum, startedAt);
+            }
+            var catalog = GameDataCatalog.LoadEmbedded();
+            var stats = combatStats ?? CombatantStats.Create(50_000, 2_000, 1, 1);
+            var spec = new ActionParticipationSpec($"action:{Guid.NewGuid():N}", "encounter.qi-beast", "node.test", 97,
+                0, startedAt.ToUnixTimeMilliseconds() / 1000d,
+                new[] { player, ally }.Select((member, index) => new ActionParticipantSnapshot(member.Value.ToString("D"),
+                    $"成员{index}", 1, 0, 0, stats.MaxHitpoints, stats.MaxManapoints, stats, [],
+                    ConsumableSlots: index == 0 ? [new(ItemId, "combat", AutoUseSlotState.SlotGroupGeneral, 0)] : null)).ToArray())
+            { ActionId = new ActionId("combat.hunt-qi-beast") };
+            var presence = new OnlinePresenceRegistry();
+            if (online) await presence.RegisterAsync(player.Value, "成员0", spec.NodeId);
+            var clock = new TestClock(startedAt);
+            var sessions = new PostgresParticipationSessionStore(source);
+            var participation = new ActionParticipationRuntime(catalog, sessions, presence, clock, NullLogger<ActionParticipationRuntime>.Instance);
+            await participation.CreateAsync(partyId, spec);
+            var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+            var market = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance, participation);
+            await market.StartAsync(default);
+            return new ConsumableMarketFixture
+            {
+                Source = source, Options = options, Player = player, Other = other, PartyId = partyId, Spec = spec, Clock = clock,
+                Participation = participation, Sessions = sessions, Repository = repository, Market = market,
+                Economy = new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance, participation),
+                SearchSeconds = ActionParticipationSessionEngine.Create(spec, catalog).Export().Expedition!.PhaseDurationSeconds
+            };
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Market.StopAsync(default);
+            await Market.DisposeAsync();
+            await Sql(Source, "DELETE FROM social.party_session_inbox WHERE session_id=$1", Spec.SessionId);
+            await Sql(Source, "DELETE FROM social.party_sessions WHERE session_id=$1", Spec.SessionId);
+            await Sql(Source, "DELETE FROM social.parties WHERE party_id=$1", PartyId);
+            await Source.DisposeAsync();
+        }
+    }
+
+    private sealed class TestClock(DateTimeOffset start) : IPlayerSimulationClock
+    {
+        public DateTimeOffset UtcNow { get; private set; } = start;
+        public bool IsDeterministic => true;
+        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
     }
 
     /// <summary>造数：建账号、建玩家并预置一笔资产余额。</summary>

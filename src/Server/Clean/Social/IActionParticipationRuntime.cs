@@ -12,12 +12,21 @@ public interface IActionParticipationRuntime
     /// <summary>已发现的活跃或待消费成员提示；首次装载仍须查询持久化真源。</summary>
     bool RequiresReconciliation(Guid playerId);
 
-    /// <summary>
-    /// 交付冻结开场输入并持久化初始权威检查点；重复交付不覆盖已有推进。
-    /// <paramref name="escrow"/> 非空时把开打消耗品托管实扣并入同一会话事务原子提交。
-    /// </summary>
-    ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec,
-        EconomyTransactionRequest? escrow = null, CancellationToken cancellationToken = default);
+    /// <summary>会话资产已确定提交后的缓存失效提示；订阅者不得等待玩家写锁。</summary>
+    event Action<Guid>? WalletChanged;
+
+    /// <summary>存在感变更后按最新在线名册结清旧模式并切换库存来源。</summary>
+    ValueTask SynchronizePresenceAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default);
+
+    /// <summary>首次回线在加载快照前结清离线阶段并退回储备；租约覆盖存在感登记，失败释放时重新仲裁。</summary>
+    ValueTask<IAsyncDisposable> PrepareConnectionAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default);
+
+    /// <summary>读取唯一检查点中的成员离线储备，不改变批算时钟。</summary>
+    ValueTask<IReadOnlyList<ParticipationOfflineReserve>> LoadOfflineReservesAsync(Guid playerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>交付冻结槽位并把开场真实实耗、初始检查点与收件箱原子提交；重复交付不重演。</summary>
+    ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec, CancellationToken cancellationToken = default);
 
     /// <summary>只推进至少一名成员在线的活跃会话；全员离线时不执行战斗推演。</summary>
     ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default);
@@ -41,3 +50,6 @@ public interface IActionParticipationRuntime
     /// <summary>推进至散场边界，并将最终个人结算与散场检查点原子持久化。</summary>
     ValueTask EndAsync(string sessionId, DateTimeOffset at, string reason, CancellationToken cancellationToken = default);
 }
+
+/// <summary>角色观察卡使用的离线储备只读投影；不属于可售钱包。</summary>
+public sealed record ParticipationOfflineReserve(string ItemId, string Variant, double Quantity);

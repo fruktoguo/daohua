@@ -11,6 +11,7 @@ import type { PlayerCardAutoUseSlotDto, PlayerCardDto } from '../network/protoco
 import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
+import { FloatingTooltip } from './FloatingPopover'
 import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
@@ -142,7 +143,7 @@ const PlayerCardAbilityTile = memo(function PlayerCardAbilityTile({ abilityId, l
   )
 })
 
-/** 战斗消耗品条目只读瓦片：标准 ItemTile 格子 + ItemTooltipTarget 悬浮详情。 */
+/** 战斗消耗品只读瓦片；普通钱包和不可售离线储备分别展示，不合并数量。 */
 const PlayerCardConsumableTile = memo(function PlayerCardConsumableTile({ slot }: {
   slot?: PlayerCardAutoUseSlotDto
 }): React.JSX.Element {
@@ -175,24 +176,36 @@ const PlayerCardConsumableTile = memo(function PlayerCardConsumableTile({ slot }
   )
 
   return (
-    <ItemTooltipTarget
-      amount={slot.quantity}
-      definition={itemDef}
-      itemId={slot.itemId}
-      metadata={metadata}
-    >
-      <span className="item-use-slot-shell" data-rarity={metadata.rarity}>
-        <ItemTile
-          amount={slot.quantity}
-          category={metadata.category}
-          className="item-use-slot-cell"
-          itemId={slot.itemId}
-          name={itemDef?.name ?? metadata.label}
-          rarity={metadata.rarity}
-        />
-        {!slot.enabled && <span className="player-card-slot-disabled-badge">{t('social.card.slotDisabled')}</span>}
+    <span className="player-card-consumable-group">
+      <ItemTooltipTarget
+        amount={slot.quantity}
+        definition={itemDef}
+        itemId={slot.itemId}
+        metadata={metadata}
+      >
+        <span className="item-use-slot-shell" data-rarity={metadata.rarity}>
+          <ItemTile
+            amount={slot.quantity}
+            category={metadata.category}
+            className="item-use-slot-cell"
+            itemId={slot.itemId}
+            name={itemDef?.name ?? metadata.label}
+            rarity={metadata.rarity}
+          />
+          {!slot.enabled && <span className="player-card-slot-disabled-badge">{t('social.card.slotDisabled')}</span>}
+        </span>
+      </ItemTooltipTarget>
+      <span className="player-card-consumable-label">
+        {t('social.card.availableQuantity', { quantity: formatNumber(slot.quantity) })}
       </span>
-    </ItemTooltipTarget>
+      {slot.offlineReserveQuantity > 0 && (
+        <FloatingTooltip title={t('social.card.offlineReserveHint')}>
+          <span className="player-card-consumable-label">
+            {t('social.card.offlineReserveQuantity', { quantity: formatNumber(slot.offlineReserveQuantity) })}
+          </span>
+        </FloatingTooltip>
+      )}
+    </span>
   )
 })
 
@@ -377,7 +390,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
             ]).map(group => (
               <div className="player-card-consumable-group" key={group.id}>
                 <h5 className="player-card-consumable-label">{group.label}</h5>
-                <div className="abilities-learned-grid">
+                <div className="player-card-consumable-slots">
                   {Array.from({ length: CONSUMABLE_GROUP_SLOTS }, (_, index) => {
                     const slot = group.slots.find(entry => entry.slotIndex === index)
                     return <PlayerCardConsumableTile key={index} slot={slot} />

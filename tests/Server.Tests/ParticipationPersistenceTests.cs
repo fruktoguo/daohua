@@ -1,3 +1,8 @@
+using DaoHua.Ecs;
+using Domain.Combat;
+using Domain.Common;
+using Domain.GameData;
+using System.Text.Json.Nodes;
 using System.Text.Json;
 using Domain.Persistence;
 using Domain.Player;
@@ -79,19 +84,16 @@ public sealed class ParticipationPersistenceTests
             await jobs.EnqueueAsync(fixture.Players[0], target.AddSeconds(1), new byte[] { 2 }));
     }
 
-    /// <summary>开打托管实扣与会话行、初始检查点同一事务提交：余额不足即整体回滚不留孤儿扣件，
-    /// 同一幂等键的重复交付重放不重复扣件且不回写既有推进。</summary>
+    /// <summary>开场实耗、检查点与首次通知同生同灭；重复或未知提交后的恢复不再扣款或覆盖已存进度。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
-    public async Task EscrowDebitAndSessionCheckpointCommitOrRollBackTogether()
+    public async Task OpeningDebitCheckpointAndInitialInboxCommitOrRollBackTogether()
     {
         await using var fixture = await Fixture.CreateAsync(1);
         var player = fixture.Players[0];
-        await fixture.ScalarAsync("""
-            INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at)
-            VALUES ($1,'item.test-escrow','',5,1,now())
-            """, player);
-        // 每队伍唯一活跃会话位由夹具会话占着：先收尾空出活跃位，再验证新会话的托管原子提交。
+        const string assetId = "item.test-consumable";
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.seed:{Guid.NewGuid():N}", "test.seed", player,
+            [new(player, assetId, "", 5)]));
         Assert.True(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 0, "{\"ended\":true}",
             fixture.StartedAt, [], fixture.StartedAt, "test-end"));
         var specJson = JsonSerializer.Serialize(new { encounterId = "encounter.test", nodeId = "node.test",
@@ -101,41 +103,213 @@ public sealed class ParticipationPersistenceTests
         try
         {
             var record = new ActionParticipationSessionRecord(sessionId, fixture.PartyId, specJson,
-                "{\"wave\":0}", 0, fixture.StartedAt);
+                "{\"wave\":0}", 1, fixture.StartedAt);
+            var balances = await fixture.Store.LoadConsumableBalancesAsync([new(player, assetId, "")]);
             var transactionId = Guid.NewGuid();
-            var escrow = new EconomyTransactionRequest(transactionId, $"party.escrow:{sessionId}",
-                "participation.escrow", player, [new(player, "item.test-escrow", "", -5)]);
-            var stored = await fixture.Store.CreateOrInitializeAsync(record, escrow);
-            Assert.Equal(sessionId, stored.SessionId);
-            Assert.Equal(0d, await fixture.ScalarAsync(
-                "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-escrow'", player));
-            Assert.Equal(1L, await fixture.ScalarAsync(
-                "SELECT count(*) FROM social.party_sessions WHERE session_id=$1", sessionId));
+            var request = new EconomyTransactionRequest(transactionId, $"party.consumable:{sessionId}",
+                "participation.consumable", player, [new(player, assetId, "", -5)]);
+            var economy = new ParticipationSessionEconomyCommit(request, balances);
+            var initial = new ParticipationInboxItem(sessionId, player, 1, "{\"hp\":5}", fixture.StartedAt);
+            await Assert.ThrowsAsync<PostgresException>(async () => await fixture.Store.CreateOrInitializeAsync(
+                record, economy, [initial with { PlayerId = Guid.NewGuid() }]));
+            Assert.Null(await fixture.Store.LoadAsync(sessionId));
+            Assert.Equal(5d, (await fixture.Store.LoadConsumableBalancesAsync([new(player, assetId, "")]))[0].Quantity);
+            Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", transactionId));
+
+            var stored = await fixture.Store.CreateOrInitializeAsync(record, economy, [initial]);
+            Assert.Equal(1, stored.Version);
+            Assert.Equal(0d, (await fixture.Store.LoadConsumableBalancesAsync([new(player, assetId, "")]))[0].Quantity);
+            Assert.Equal(1, Assert.Single(await fixture.Store.LoadPendingAsync(player)).Sequence);
             Assert.Equal(transactionId, await fixture.ScalarAsync(
                 "SELECT transaction_id FROM economy.transactions WHERE transaction_id=$1", transactionId));
 
-            var again = await fixture.Store.CreateOrInitializeAsync(record with { StateJson = "{\"wave\":7}", Version = 7 }, escrow);
-            Assert.Equal(stored.Version, again.Version);
-            Assert.Equal(0d, await fixture.ScalarAsync(
-                "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-escrow'", player));
+            // 旧读集已失效，甚至经济幂等键也已换新；重复初始化仍必须只恢复首次权威结果。
+            var again = await fixture.Store.CreateOrInitializeAsync(record with { StateJson = "{\"wave\":7}", Version = 7 },
+                economy with { Transaction = request with { TransactionId = Guid.NewGuid(), IdempotencyKey = $"test.duplicate:{Guid.NewGuid():N}" } }, [initial]);
+            Assert.Equal(stored, again);
+            Assert.Single(await fixture.Store.LoadPendingAsync(player));
+            Assert.Equal(0d, (await fixture.Store.LoadConsumableBalancesAsync([new(player, assetId, "")]))[0].Quantity);
 
-            var brokeEscrow = new EconomyTransactionRequest(Guid.NewGuid(), $"party.escrow:{brokeId}",
-                "participation.escrow", player, [new(player, "item.test-escrow", "", -1)]);
+            Assert.True(await fixture.Store.CommitAdvanceAsync(sessionId, 1, "{\"ended\":true}",
+                fixture.StartedAt, [], fixture.StartedAt, "test-end"));
+            var brokeRequest = new EconomyTransactionRequest(Guid.NewGuid(), $"party.consumable:{brokeId}",
+                "participation.consumable", player, [new(player, assetId, "", -1)]);
+            var empty = await fixture.Store.LoadConsumableBalancesAsync([new(player, assetId, "")]);
             await Assert.ThrowsAsync<EconomyInsufficientBalanceException>(async () =>
                 await fixture.Store.CreateOrInitializeAsync(
-                    new(brokeId, fixture.PartyId, specJson, "{\"wave\":0}", 0, fixture.StartedAt), brokeEscrow));
+                    new(brokeId, fixture.PartyId, specJson, "{\"wave\":0}", 1, fixture.StartedAt),
+                    new(brokeRequest, empty), [initial with { SessionId = brokeId }]));
+            Assert.Null(await fixture.Store.LoadAsync(brokeId));
             Assert.Equal(0L, await fixture.ScalarAsync(
-                "SELECT count(*) FROM social.party_sessions WHERE session_id=$1", brokeId));
+                "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", brokeRequest.TransactionId));
             Assert.Equal(0L, await fixture.ScalarAsync(
-                "SELECT count(*) FROM economy.transactions WHERE idempotency_key=$1", $"party.escrow:{brokeId}"));
-            Assert.Equal(0d, await fixture.ScalarAsync(
-                "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-escrow'", player));
+                "SELECT count(*) FROM social.party_session_inbox WHERE session_id=$1", brokeId));
+
+            await Assert.ThrowsAsync<ParticipationSessionEconomyConflictException>(async () =>
+                await fixture.Store.CreateOrInitializeAsync(
+                    new(brokeId, fixture.PartyId, specJson, "{\"wave\":0}", 1, fixture.StartedAt),
+                    new(null, balances), [initial with { SessionId = brokeId }]));
+            Assert.Null(await fixture.Store.LoadAsync(brokeId));
         }
         finally
         {
+            await fixture.ScalarAsync("DELETE FROM social.party_session_inbox WHERE session_id = $1", sessionId);
             await fixture.ScalarAsync("DELETE FROM social.party_sessions WHERE session_id = $1", sessionId);
             await fixture.ScalarAsync("DELETE FROM social.party_sessions WHERE session_id = $1", brokeId);
         }
+    }
+
+    /// <summary>推进实耗与通知失败一起回滚，检查点重放或旧经济键复用都不能二次扣除。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task AdvanceDebitIsAtomicAndCheckpointReplayCannotDoubleSpend()
+    {
+        await using var fixture = await Fixture.CreateAsync(1);
+        var player = fixture.Players[0];
+        var key = new ParticipationAssetKey(player, "item.test-online", "quality:2");
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.seed:{Guid.NewGuid():N}", "test.seed", player,
+            [new(player, key.AssetId, key.Variant, 3)]));
+        var readSet = await fixture.Store.LoadConsumableBalancesAsync([key]);
+        var request = new EconomyTransactionRequest(Guid.NewGuid(), $"participation.consume:{fixture.SessionId}:1",
+            "participation.consumable", player, [new(player, key.AssetId, key.Variant, -1)]);
+        var economy = new ParticipationSessionEconomyCommit(request, readSet);
+        var at = fixture.StartedAt.AddSeconds(1);
+        var delivery = new ParticipationInboxItem(fixture.SessionId, player, 1, "{\"hp\":1}", at);
+        await Assert.ThrowsAsync<PostgresException>(async () => await fixture.Store.CommitAdvanceAsync(
+            fixture.SessionId, 0, "{\"wave\":1}", at, [delivery with { PlayerId = Guid.NewGuid() }], economy: economy));
+        Assert.Equal(0, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
+        Assert.Equal(readSet, await fixture.Store.LoadConsumableBalancesAsync([key]));
+        Assert.Empty(await fixture.Store.LoadPendingAsync(player));
+        Assert.Equal(0L, await fixture.ScalarAsync(
+            "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", request.TransactionId));
+
+        var insufficient = economy with { Transaction = request with { Deltas = [new(player, key.AssetId, key.Variant, -4)] } };
+        await Assert.ThrowsAsync<EconomyInsufficientBalanceException>(async () => await fixture.Store.CommitAdvanceAsync(
+            fixture.SessionId, 0, "{\"wave\":1}", at, [delivery], economy: insufficient));
+        Assert.Equal(0, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
+        Assert.Equal(readSet, await fixture.Store.LoadConsumableBalancesAsync([key]));
+
+        Assert.True(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 0, "{\"wave\":1}", at, [delivery], economy: economy));
+        Assert.False(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 0, "{\"wave\":9}", at, [delivery], economy: economy));
+        var current = await fixture.Store.LoadConsumableBalancesAsync([key]);
+        Assert.Equal(2d, Assert.Single(current).Quantity);
+        Assert.False(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 1, "{\"wave\":2}", at.AddSeconds(1), [],
+            economy: economy with { ReadSet = current }));
+        Assert.Equal(1, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
+        Assert.Equal(current, await fixture.Store.LoadConsumableBalancesAsync([key]));
+        Assert.Single(await fixture.Store.LoadPendingAsync(player));
+        Assert.Equal(1L, await fixture.ScalarAsync(
+            "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", request.TransactionId));
+    }
+
+    /// <summary>缺失键零余额也参与读集；读取后的并发首次入账使整批失效，不会推进缺货计算结果。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task MissingBalanceConcurrentCreditRejectsWholeAdvance()
+    {
+        await using var fixture = await Fixture.CreateAsync(1);
+        var player = fixture.Players[0];
+        var key = new ParticipationAssetKey(player, "item.test-concurrent", "");
+        var readSet = await fixture.Store.LoadConsumableBalancesAsync([key, key]);
+        Assert.Equal(new AssetBalanceRecord(player, key.AssetId, key.Variant, 0, 0), Assert.Single(readSet));
+        await using var connection = await fixture.Source.OpenConnectionAsync();
+        await using var credit = await connection.BeginTransactionAsync();
+        await using (var insert = new NpgsqlCommand("""
+            INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at)
+            VALUES ($1,$2,$3,1,1,now())
+            """, connection, credit))
+        {
+            insert.Parameters.AddWithValue(player);
+            insert.Parameters.AddWithValue(key.AssetId);
+            insert.Parameters.AddWithValue(key.Variant);
+            await insert.ExecuteNonQueryAsync();
+        }
+        var at = fixture.StartedAt.AddSeconds(1);
+        var advance = fixture.Store.CommitAdvanceAsync(fixture.SessionId, 0, "{\"missing\":true}", at,
+            [new(fixture.SessionId, player, 1, "{}", at)], economy: new(null, readSet)).AsTask();
+        await credit.CommitAsync();
+        Assert.False(await advance);
+        Assert.Equal(0, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
+        Assert.Empty(await fixture.Store.LoadPendingAsync(player));
+        Assert.Equal(1d, Assert.Single(await fixture.Store.LoadConsumableBalancesAsync([key])).Quantity);
+        Assert.Equal(0L, await fixture.ScalarAsync(
+            "SELECT count(*) FROM economy.transactions WHERE transaction_type='participation.consumable' AND actor_id=$1", player));
+    }
+
+    /// <summary>无货批次只建立零行锁证明、不制造经济流水；后续必须使用真实零行版本，余额相同也不能忽略版本冲突。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ReadOnlyMissingBalanceUsesPersistedVersionWithoutEmptyEconomyTransaction()
+    {
+        await using var fixture = await Fixture.CreateAsync(1);
+        var player = fixture.Players[0];
+        var key = new ParticipationAssetKey(player, "item.test-missing", "");
+        var unrelated = new ParticipationAssetKey(player, "item.test-unrelated", "");
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.seed:{Guid.NewGuid():N}", "test.seed", player,
+            [new(player, unrelated.AssetId, unrelated.Variant, 8)]));
+        var missing = await fixture.Store.LoadConsumableBalancesAsync([key]);
+        var at = fixture.StartedAt.AddSeconds(1);
+        Assert.True(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 0, "{\"wave\":1}", at, [],
+            economy: new(null, missing)));
+        var persisted = Assert.Single(await fixture.Store.LoadConsumableBalancesAsync([key]));
+        Assert.Equal(0d, persisted.Quantity);
+        Assert.Equal(1, persisted.Version);
+        Assert.False(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 1, "{\"wave\":2}", at.AddSeconds(1), [],
+            economy: new(null, missing)));
+        Assert.True(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 1, "{\"wave\":2}", at.AddSeconds(1), [],
+            economy: new(null, [persisted])));
+
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.credit:{Guid.NewGuid():N}", "test.credit", player,
+            [new(player, key.AssetId, key.Variant, 1)]));
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.debit:{Guid.NewGuid():N}", "test.debit", player,
+            [new(player, key.AssetId, key.Variant, -1)]));
+        Assert.False(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 2, "{\"wave\":3}", at.AddSeconds(2), [],
+            economy: new(null, [persisted])));
+        Assert.Equal(2, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
+        Assert.Equal(0d, Assert.Single(await fixture.Store.LoadConsumableBalancesAsync([key])).Quantity);
+        Assert.Equal(3, Assert.Single(await fixture.Store.LoadConsumableBalancesAsync([key])).Version);
+        Assert.Equal(8d, Assert.Single(await fixture.Store.LoadConsumableBalancesAsync([unrelated])).Quantity);
+        Assert.Equal(0L, await fixture.ScalarAsync(
+            "SELECT count(*) FROM economy.transactions WHERE transaction_type='participation.consumable' AND actor_id=$1", player));
+    }
+
+    /// <summary>物品级读取包含全部变体及真实零行，补足缺失默认键，且不会泄漏其他物品或成员的钱包。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ConsumableItemReadIncludesEveryVariantAndMissingDefaultOnlyForRequestedMembers()
+    {
+        await using var fixture = await Fixture.CreateAsync(2);
+        var player = fixture.Players[0];
+        var other = fixture.Players[1];
+        const string assetId = "item.test-variants";
+        const string missingId = "item.test-entirely-missing";
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.seed:{Guid.NewGuid():N}", "test.seed", player,
+        [
+            new(player, assetId, "quality:2", 3),
+            new(player, assetId, "quality:3", 1),
+            new(player, "item.test-unrelated", "", 7),
+            new(other, assetId, "quality:9", 8)
+        ]));
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.debit:{Guid.NewGuid():N}", "test.debit", player,
+            [new(player, assetId, "quality:3", -1)]));
+        var balances = await fixture.Store.LoadConsumableBalancesForItemsAsync(
+            [new(player, assetId, ""), new(player, assetId, "ignored"), new(player, missingId, "")]);
+        Assert.Equal(4, balances.Count);
+        Assert.Contains(new AssetBalanceRecord(player, assetId, "", 0, 0), balances);
+        Assert.Contains(new AssetBalanceRecord(player, assetId, "quality:2", 3, 1), balances);
+        Assert.Contains(new AssetBalanceRecord(player, assetId, "quality:3", 0, 2), balances);
+        Assert.Contains(new AssetBalanceRecord(player, missingId, "", 0, 0), balances);
+        Assert.DoesNotContain(balances, balance => balance.PlayerId == other || balance.AssetId == "item.test-unrelated");
+
+        Assert.True(await fixture.Store.CommitAdvanceAsync(fixture.SessionId, 0, "{\"wave\":1}",
+            fixture.StartedAt.AddSeconds(1), [], economy: new(null, balances)));
+        var persisted = await fixture.Store.LoadConsumableBalancesForItemsAsync([new(player, assetId, "quality:2")]);
+        Assert.Equal(3, persisted.Count);
+        Assert.Contains(new AssetBalanceRecord(player, assetId, "", 0, 1), persisted);
+        Assert.Contains(new AssetBalanceRecord(player, assetId, "quality:3", 0, 2), persisted);
+        Assert.Empty(await fixture.Store.LoadConsumableBalancesForItemsAsync([]));
+        Assert.Equal(new AssetBalanceRecord(player, assetId, "quality:2", 3, 1),
+            Assert.Single(await fixture.Store.LoadConsumableBalancesAsync([new(player, assetId, "quality:2")])));
     }
 
     /// <summary>成员失败结算不留下余额、分段或消费回执；精确重放不重复发放，不同幂等键不能二次消费。</summary>
@@ -319,6 +493,130 @@ public sealed class ParticipationPersistenceTests
         fence.Parameters.AddWithValue(fixture.Players[0]);
         var error = await Assert.ThrowsAsync<PostgresException>(async () => await fence.ExecuteNonQueryAsync());
         Assert.Equal(PostgresErrorCodes.SerializationFailure, error.SqlState);
+    }
+
+    /// <summary>旧托管按已提交余量退款一次；坏检查点整笔回滚，终局时钟和既有奖励不丢失。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task WalletMigrationRefundsOldActiveEscrowExactlyOnceAndPreservesPendingRewards()
+    {
+        await using var fixture = await Fixture.CreateAsync(2);
+        await using var connection = await fixture.Source.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        var at = fixture.StartedAt;
+        var seconds = at.ToUnixTimeMilliseconds() / 1000d;
+        var stats = CombatantStats.Create(100, 50, 10, 1);
+        var spec = new ActionParticipationSpec(fixture.SessionId, "encounter.qi-beast", "node.test", 97, 0, seconds,
+            fixture.Players.Select((player, index) => new ActionParticipantSnapshot(player.ToString("D"),
+                $"迁移成员{index}", 1, 0, 0, 100, 50, stats, [], CombatSkills: PlayerCombatSkillState.Empty)).ToArray())
+        { ActionId = new ActionId("combat.hunt-qi-beast") };
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var old = JsonNode.Parse(JsonSerializer.Serialize(ActionParticipationSessionEngine.Create(spec, catalog).Export(), PersistenceJson.Options))!.AsObject();
+        old["sequence"] = 1;
+        old["expedition"]!["playerHitpoints"] = 0;
+        foreach (var field in new[] { "inventoryMode", "modeSinceUnixSeconds", "nextConsumableEvaluationAtUnixSeconds", "offlineBatchBoundaryUnixSeconds", "offlineReserves" })
+            old.Remove(field);
+        var potion = "item.test-migration-potion";
+        var durable = "item.test-migration-durable";
+        old["spec"]!["members"]![0]!["consumableSlots"] = JsonSerializer.SerializeToNode(new[]
+        {
+            new { itemId = potion, actionType = "combat", group = "potion", slotIndex = 0, cooldownUntilUnixSeconds = seconds + 12, sustainedRemainingSeconds = 30d, escrowQuantity = 7d },
+            new { itemId = potion, actionType = "combat", group = "potion", slotIndex = 1, cooldownUntilUnixSeconds = seconds + 15, sustainedRemainingSeconds = 0d, escrowQuantity = 0d }
+        });
+        old["spec"]!["members"]![1]!["consumableSlots"] = JsonSerializer.SerializeToNode(new[]
+        {
+            new { itemId = durable, actionType = "combat", group = "general", slotIndex = 0, cooldownUntilUnixSeconds = 0d, sustainedRemainingSeconds = 0d, escrowQuantity = 1d }
+        });
+        old["consumableLedger"] = JsonSerializer.SerializeToNode(new[]
+        {
+            new { memberIndex = 0, itemId = potion, group = "potion", slotIndex = 0, remainingQuantity = 3d, cooldownUntilUnixSeconds = seconds + 12, sustainedExpiresAtUnixSeconds = seconds + 30 },
+            new { memberIndex = 0, itemId = potion, group = "potion", slotIndex = 1, remainingQuantity = 4d, cooldownUntilUnixSeconds = seconds + 15, sustainedExpiresAtUnixSeconds = 0d },
+            new { memberIndex = 1, itemId = durable, group = "general", slotIndex = 0, remainingQuantity = 1d, cooldownUntilUnixSeconds = 0d, sustainedExpiresAtUnixSeconds = 0d }
+        });
+        var endedId = fixture.SessionId + ":ended";
+        var invalidId = fixture.SessionId + ":invalid";
+        var ended = old.DeepClone();
+        ended["spec"]!["sessionId"] = endedId;
+        ended["endsAtUnixSeconds"] = seconds;
+        var invalid = old.DeepClone();
+        invalid["spec"]!["sessionId"] = invalidId;
+        invalid["consumableLedger"]![0]!["memberIndex"] = 99;
+
+        // 所有播种与降版本均位于最终回滚的事务内，不改共享集成库的其他会话证据。
+        await ExecuteAsync("UPDATE social.party_sessions SET spec=$1::jsonb,runtime_state=NULL,last_simulated_at=NULL,ended_at=coalesce(ended_at,started_at)", old["spec"]!.ToJsonString());
+        await ExecuteAsync("UPDATE game.player_runtime_leases SET lease_until=now()-interval '1 second'; UPDATE market.partition_leases SET expires_at=now()-interval '1 second'; UPDATE platform.compute_jobs SET lease_until=now()-interval '1 second' WHERE status='leased'; DELETE FROM platform.schema_version WHERE version>36");
+        await ExecuteAsync("UPDATE social.party_sessions SET spec=$2::jsonb,runtime_state=$3::jsonb,state_version=4,last_simulated_at=$4,ended_at=NULL,end_reason=NULL WHERE session_id=$1",
+            fixture.SessionId, old["spec"]!.ToJsonString(), old.ToJsonString(), at);
+        await ExecuteAsync("INSERT INTO social.party_sessions(session_id,party_id,spec,started_at,runtime_state,state_version,last_simulated_at,ended_at) VALUES($1,$2,$3::jsonb,$4,$5::jsonb,4,$4,$4)",
+            endedId, Guid.NewGuid(), ended["spec"]!.ToJsonString(), at, ended.ToJsonString());
+        await ExecuteAsync("INSERT INTO social.party_sessions(session_id,party_id,spec,started_at,runtime_state,state_version,last_simulated_at) VALUES($1,$2,$3::jsonb,$4,$5::jsonb,4,$4)",
+            invalidId, Guid.NewGuid(), invalid["spec"]!.ToJsonString(), at, invalid.ToJsonString());
+        await ExecuteAsync("INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES($1,$2,'',2,5,$3)", fixture.Players[0], potion, at);
+        const string pendingReward = "{\"assetDeltas\":[{\"quantity\":11}],\"legacyEscrowRefund\":5}";
+        foreach (var sessionId in new[] { fixture.SessionId, endedId })
+            await ExecuteAsync("INSERT INTO social.party_session_inbox(session_id,player_id,sequence,payload,created_at) VALUES($1,$2,1,$3::jsonb,$4)", sessionId, fixture.Players[0], pendingReward, at);
+        var oldInbox = (string)(await ScalarAsync("SELECT payload::text FROM social.party_session_inbox WHERE session_id=$1 AND player_id=$2 AND sequence=1", endedId, fixture.Players[0]))!;
+        var migration = ReadMigrationSql();
+        await transaction.SaveAsync("before_migration");
+        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(migration));
+        await transaction.RollbackAsync("before_migration");
+        Assert.Equal(2d, await ScalarAsync("SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id=$2", fixture.Players[0], potion));
+        Assert.Equal(36, await ScalarAsync("SELECT max(version) FROM platform.schema_version"));
+        Assert.Equal(0L, await ScalarAsync("SELECT count(*) FROM economy.transactions WHERE idempotency_key=$1", "migration.v37.refund:" + fixture.SessionId));
+        Assert.Equal(1L, await ScalarAsync("SELECT count(*) FROM social.party_session_inbox WHERE session_id=$1", fixture.SessionId));
+
+        await ExecuteAsync("UPDATE social.party_sessions SET runtime_state=NULL,last_simulated_at=NULL WHERE session_id=$1", invalidId);
+        await ExecuteAsync(migration);
+        await ExecuteAsync(migration);
+        Assert.Equal(37, await ScalarAsync("SELECT max(version) FROM platform.schema_version"));
+        Assert.Equal(9d, await ScalarAsync("SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id=$2", fixture.Players[0], potion));
+        Assert.Equal(6L, await ScalarAsync("SELECT version FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id=$2", fixture.Players[0], potion));
+        Assert.Equal(1d, await ScalarAsync("SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id=$2", fixture.Players[1], durable));
+        Assert.Equal(1L, await ScalarAsync("SELECT count(*) FROM economy.transactions WHERE idempotency_key=$1", "migration.v37.refund:" + fixture.SessionId));
+        Assert.Equal(2L, await ScalarAsync("SELECT count(*) FROM economy.transaction_lines l JOIN economy.transactions t USING(transaction_id) WHERE t.idempotency_key=$1", "migration.v37.refund:" + fixture.SessionId));
+        Assert.Equal(oldInbox, await ScalarAsync("SELECT (payload-'consumableSlots')::text FROM social.party_session_inbox WHERE session_id=$1 AND player_id=$2 AND sequence=1", endedId, fixture.Players[0]));
+        Assert.Equal(2, await ScalarAsync("SELECT jsonb_array_length(payload->'consumableSlots') FROM social.party_session_inbox WHERE session_id=$1 AND player_id=$2 AND sequence=1", endedId, fixture.Players[0]));
+        Assert.Equal(1L, await ScalarAsync("SELECT count(*) FROM social.party_session_inbox WHERE session_id=$1", endedId));
+        Assert.Equal(at.UtcDateTime, await ScalarAsync("SELECT ended_at FROM social.party_sessions WHERE session_id=$1", invalidId));
+        var checkpoint = JsonSerializer.Deserialize<ActionParticipationSessionDocument>((string)(await ScalarAsync("SELECT runtime_state::text FROM social.party_sessions WHERE session_id=$1", fixture.SessionId))!, PersistenceJson.Options)!;
+        Assert.Equal(2, checkpoint.Sequence);
+        Assert.Equal(seconds, checkpoint.EndsAtUnixSeconds);
+        Assert.Empty(checkpoint.OfflineReserves!);
+        Assert.Equal(3, checkpoint.ConsumableLedger!.Count);
+        Assert.Equal(seconds + 30, checkpoint.ConsumableLedger[0].SustainedExpiresAtUnixSeconds);
+        Assert.Equal(1, checkpoint.Expedition!.PlayerHitpoints);
+        var payload = JsonSerializer.Deserialize<ActionParticipationMemberSettlement>((string)(await ScalarAsync("SELECT payload::text FROM social.party_session_inbox WHERE session_id=$1 AND player_id=$2 AND sequence=2", fixture.SessionId, fixture.Players[0]))!, PersistenceJson.Options)!;
+        Assert.Equal(fixture.Players[0], payload.PlayerId.Value);
+        Assert.Equal(1, payload.Hitpoints);
+        Assert.Empty(payload.AssetDeltas);
+        Assert.Equal(2, payload.ConsumableSlots!.Count);
+        Assert.Equal(seconds + 12, payload.ConsumableSlots[0].CooldownUntilUnixSeconds);
+        Assert.Equal(seconds, payload.EndsAtUnixSeconds);
+        Assert.Equal(SectionCodec.CurrentSchemaVersion, await ScalarAsync("SELECT schema_version FROM game.player_state_sections WHERE player_id=$1 LIMIT 1", fixture.Players[0]));
+        await transaction.RollbackAsync();
+
+        async Task ExecuteAsync(string sql, params object[] values)
+        {
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            foreach (var value in values) command.Parameters.AddWithValue(value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        async Task<object?> ScalarAsync(string sql, params object[] values)
+        {
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            foreach (var value in values) command.Parameters.AddWithValue(value);
+            return await command.ExecuteScalarAsync();
+        }
+    }
+
+    private static string ReadMigrationSql()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "migrations", "0037_v36_to_v37.sql")))
+            directory = directory.Parent;
+        var path = Path.Combine((directory ?? throw new DirectoryNotFoundException("找不到会话钱包迁移脚本。")).FullName, "migrations", "0037_v36_to_v37.sql");
+        return File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\nBEGIN;\n", "\n", StringComparison.Ordinal).Replace("\nCOMMIT;", "\n", StringComparison.Ordinal);
     }
 
     private sealed class Fixture(NpgsqlDataSource source, Guid[] players, Guid partyId, string sessionId, DateTimeOffset startedAt) : IAsyncDisposable

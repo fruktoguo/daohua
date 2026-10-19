@@ -20,6 +20,9 @@ public sealed class OnlinePresenceRegistry
     /// <summary>存在感变化事件：参数为附近列表可能发生变化的玩家 ID 集合。</summary>
     public event Func<IReadOnlyList<Guid>, ValueTask>? PresenceChanged;
 
+    /// <summary>登记或移除在线成员后通知其本人，独立于附近列表，节点为空时同样触发。</summary>
+    public event Func<Guid, ValueTask>? OnlineChanged;
+
     /// <summary>
     /// 节点变化事件：仅携带移动者本人（Unregister 不触发——离线保留讨伐席位，
     /// 逐出由 48h 扫描负责；总纲 §21.13 全员在节点条件由社交层据此裁决）。
@@ -37,9 +40,10 @@ public sealed class OnlinePresenceRegistry
     {
         List<Guid> affected;
         bool nodeChanged;
+        bool newlyOnline;
         lock (_gate)
         {
-            _entries.TryGetValue(playerId, out var previous);
+            newlyOnline = !_entries.TryGetValue(playerId, out var previous);
             _entries[playerId] = new Entry(displayName, nodeId, realmLevel, valuation, string.IsNullOrWhiteSpace(avatar) ? "player" : avatar);
             nodeChanged = previous.NodeId != nodeId;
             if (nodeChanged)
@@ -49,7 +53,8 @@ public sealed class OnlinePresenceRegistry
             }
             affected = CollectAffected(previous.NodeId, nodeId);
         }
-        return PublishAsync(affected, nodeChanged ? playerId : null);
+        return newlyOnline ? PublishOnlineChangedAsync(playerId, affected, nodeChanged ? playerId : null)
+            : PublishAsync(affected, nodeChanged ? playerId : null);
     }
 
     /// <summary>更新玩家当前节点；未登记的玩家（已离线）为空操作。</summary>
@@ -102,7 +107,7 @@ public sealed class OnlinePresenceRegistry
             RemoveFromNodeIndex(previous.NodeId, playerId);
             affected = CollectAffected(previous.NodeId, null);
         }
-        return PublishAsync(affected);
+        return PublishOnlineChangedAsync(playerId, affected, null);
     }
 
     /// <summary>判断玩家当前是否在线。</summary>
@@ -193,6 +198,12 @@ public sealed class OnlinePresenceRegistry
         if (currentNode is not null && _nodeIndex.TryGetValue(currentNode, out var after))
             affected.UnionWith(after);
         return [.. affected];
+    }
+
+    private async ValueTask PublishOnlineChangedAsync(Guid playerId, List<Guid> affected, Guid? movedPlayer)
+    {
+        if (OnlineChanged is { } changed) await changed(playerId);
+        await PublishAsync(affected, movedPlayer);
     }
 
     private async ValueTask PublishAsync(List<Guid> affected, Guid? movedPlayer = null)

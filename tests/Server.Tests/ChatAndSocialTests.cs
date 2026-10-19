@@ -1,3 +1,4 @@
+using DaoHua.Ecs;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
@@ -543,6 +544,7 @@ public sealed class ChatAndSocialTests
         var sections = new PostgresSectionRepository(source, NullLogger<PostgresSectionRepository>.Instance);
         await sections.EnqueueSectionsAsync(SectionCodec.EncodeAggregateFull(seeded, now));
         await FlushSectionsAsync(sections, source, target);
+        await SqlAsync(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES($1,'item.qi-gathering-pill','',2,1,$2)", target, now);
 
         Assert.True((await social.ApplyAsync(viewer, new SocialActionDto(Guid.NewGuid().ToString("D"),
             SocialActions.PartyInvite, target.ToString("D")))).Success);
@@ -609,6 +611,58 @@ public sealed class ChatAndSocialTests
         Assert.Null(card.Error);
         Assert.Equal(30, card.RealmLevel);
         Assert.Equal(88, card.CombatExperience);
+    }
+
+    /// <summary>观察卡显示权威钱包和唯一会话离线储备，不能回读槽配置数量或把两份余额合并。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PlayerCard_SeparatesAvailableWalletFromOfflineSessionReserve()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (target, targetName) = await SeedPlayerAsync(source, "储备修士");
+        var (ally, allyName) = await SeedPlayerAsync(source, "储备同道");
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var now = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var state = PlayerAggregate.Create(new PlayerId(target), new AccountId(Guid.NewGuid()), targetName, now, catalog.Fingerprint).ExportState();
+        state = state with { Settings = state.Settings with { AutoUseSlots = [
+            new AutoUseSlotState(AutoUseBar.Combat, 0, "item.qi-gathering-pill", 99, true, Group: AutoUseSlotState.SlotGroupPotion)
+        ] } };
+        var allyState = PlayerAggregate.Create(new PlayerId(ally), new AccountId(Guid.NewGuid()), allyName, now, catalog.Fingerprint).ExportState();
+        var sessionId = $"action:{Guid.NewGuid():N}";
+        var spec = new ActionParticipationSpec(sessionId, "encounter.qi-beast", "node.test", 97, 0,
+            now.ToUnixTimeMilliseconds() / 1000d,
+            [ActionParticipantSnapshot.FromState(state, catalog), ActionParticipantSnapshot.FromState(allyState, catalog)])
+        { ActionId = new ActionId("combat.hunt-qi-beast") };
+        var checkpoint = ActionParticipationSessionEngine.Create(spec, catalog).Export() with
+        {
+            InventoryMode = ActionParticipationInventoryMode.Offline,
+            OfflineReserves = [new(0, "item.qi-gathering-pill", "", 7)]
+        };
+        await SqlAsync(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES($1,'item.qi-gathering-pill','',3,1,$2)", target, now);
+        await SqlAsync(source, "INSERT INTO social.party_sessions(session_id,party_id,spec,started_at,runtime_state,last_simulated_at) VALUES($1,$2,$3::jsonb,$4,$5::jsonb,$4)",
+            sessionId, Guid.NewGuid(), JsonSerializer.Serialize(spec, Domain.Persistence.PersistenceJson.Options), now,
+            JsonSerializer.Serialize(checkpoint, Domain.Persistence.PersistenceJson.Options));
+        try
+        {
+            var presence = new OnlinePresenceRegistry();
+            var participation = new global::Server.ActionParticipationRuntime(catalog, new PostgresParticipationSessionStore(source),
+                presence, PlayerSimulationClock.FromEnvironment(), NullLogger<global::Server.ActionParticipationRuntime>.Instance);
+            var snapshot = new PlayerRuntimeSnapshot(target, "acct.test", targetName, state.StateVersion, now, state, 0, []);
+            var social = CreateSocialRuntime(source, repository, presence,
+                new EmptyPlayerRuntime(new Dictionary<Guid, PlayerRuntimeSnapshot> { [target] = snapshot }), participation);
+            var card = await social.BuildPlayerCardAsync(target,
+                new PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+            Assert.Null(card.Error);
+            var slot = Assert.Single(card.AutoUseSlots!);
+            Assert.Equal(3, slot.Quantity);
+            Assert.Equal(7, slot.OfflineReserveQuantity);
+            Assert.Equal(3d, await ScalarAsync(source, "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.qi-gathering-pill'", target));
+        }
+        finally
+        {
+            await SqlAsync(source, "DELETE FROM social.party_sessions WHERE session_id=$1", sessionId);
+        }
     }
 
     /// <summary>授权边界：非本人且不同队一律 forbidden；请求者有队但目标不在队同样拒绝。</summary>
@@ -915,7 +969,7 @@ public sealed class ChatAndSocialTests
     /// players 缺省为永不装载替身（离线估值与角色卡只走持久化分段真源路径）。
     /// </summary>
     private static SocialRuntime CreateSocialRuntime(NpgsqlDataSource source, PostgresSocialRepository repository, OnlinePresenceRegistry presence,
-        IPlayerRuntime? players = null)
+        IPlayerRuntime? players = null, IActionParticipationRuntime? participation = null)
     {
         var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -931,7 +985,8 @@ public sealed class ChatAndSocialTests
         var valuation = new PartyValuationService(runtime, sections, market, catalog);
         var chat = new ChatRuntime(new PostgresChatRepository(source), repository, presence);
         return new SocialRuntime(repository, presence, valuation, chat, catalog, NullLogger<SocialRuntime>.Instance,
-            players: runtime, sections: sections);
+            players: runtime, sections: sections, participation: participation,
+            assetBalances: new PostgresAssetRepository(source));
     }
 
     /// <summary>估值/角色卡测试路径的运行时替身；loaded 表内玩家按已装载返回快照。</summary>

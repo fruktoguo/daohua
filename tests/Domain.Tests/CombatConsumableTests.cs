@@ -141,6 +141,39 @@ public sealed class CombatConsumableTests
     }
 
     /// <summary>
+    /// 战斗内即时药品的 Buff 必须同时注入战内单位（与组队会话 EvaluateInstant 同口径）：
+    /// 战内回复/免伤只读单位 Buff 列表，仅写战外 ActiveBuff 会被下一步战斗快照覆盖，
+    /// 表现为「药已扣件却不回血、角色身上也没有 Buff 图标」。
+    /// </summary>
+    [Fact]
+    public void InstantPillBuffEntersBattleUnitWhileCombatIsLive()
+    {
+        var catalog = CreateCatalog(enemyHitpoints: 100_000, enemyAttackPower: 0, searchSeconds: 1);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var wallet = CreateWallet(player, (RegenPillId, 1));
+        player.ConfigureAutoUse("combat", 0, RegenPillId.Value, 1, true, AutoUseSlotState.SlotGroupPotion);
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        // 推进到战斗相位：满血不满足触发条件（气血≤50%），药品保持未使用。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
+        Assert.Equal(1d, wallet.Get(new AssetKey(RegenPillId)));
+
+        // 战斗内压到 4% 气血：下一个资源边界自动使用，Buff 必须同时落到战内单位。
+        player.Resources.Hitpoints = 40;
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(11), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        Assert.Equal(0d, wallet.Get(new AssetKey(RegenPillId)));
+        Assert.Contains(player.Buffs.Active, entry => entry.BuffId == "buff.test-regen");
+        var expedition = player.Actions[0].Expedition!;
+        var battleBuff = Assert.Single(expedition.PlayerState!.Buffs!, entry => entry.BuffId == "buff.test-regen");
+        Assert.Equal(12, battleBuff.HpRegen);
+        Assert.True(battleBuff.ExpiresAtSeconds > expedition.BattleElapsedSeconds);
+    }
+
+    /// <summary>
     /// 战斗持续消耗品只在遭遇战中按战斗时钟扣减：入场补能、战中扣减、生效 Buff 注入。
     /// </summary>
     [Fact]

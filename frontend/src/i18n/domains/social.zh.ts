@@ -145,6 +145,9 @@ export const socialZh = {
       generalGroup: '通用消耗品',
       slotEmpty: '未配置',
       slotDisabled: '停用',
+      availableQuantity: '可用 {quantity}',
+      offlineReserveQuantity: '离线储备 {quantity}',
+      offlineReserveHint: '离线储备用于全队离线战斗，不可出售；成员上线或散场时退回未用余量。',
       viewDetail: '查看角色详情',
     },
     // 同图共战（组队讨伐）：成员准备状态、开启槽位与活跃会话（§21.13）

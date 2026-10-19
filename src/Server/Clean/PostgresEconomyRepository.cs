@@ -3,7 +3,8 @@ namespace Server.Clean;
 /// <summary>资产余额和不可变流水的单提交点。所有改变资产的调用必须经过此服务。</summary>
 public sealed class PostgresEconomyRepository(
     NpgsqlDataSource dataSource,
-    ILogger<PostgresEconomyRepository> logger) : IEconomyTransactionStore
+    ILogger<PostgresEconomyRepository> logger,
+    Social.IParticipationAssetBoundary? participationAssets = null) : IEconomyTransactionStore
 {
     private const int SerializableRetryAttempts = 6;
     private static readonly TimeSpan[] SerializableRetryBackoff =
@@ -48,6 +49,11 @@ public sealed class PostgresEconomyRepository(
     {
         // 缺省发生时间在重试前固定，保证同一事务重放时的审计时间不变。
         var stableRequest = request with { OccurredAt = request.OccurredAt ?? DateTimeOffset.UtcNow };
+        // 会话门必须先于玩家提交门；持有至事务结局已确认，避免在线实耗与外部扣款双花。
+        using var participationScope = participationAssets is not null && stableRequest.Deltas.Count > 0
+            ? await participationAssets.AcquireAsync(stableRequest.Deltas.Select(delta =>
+                new Social.ParticipationAssetKey(delta.PlayerId, delta.AssetId, delta.Variant)).ToArray(), cancellationToken)
+            : null;
         var gateStripes = CollectGateStripes(stableRequest);
         await PlayerCommitGates.AcquireAllAsync(gateStripes, cancellationToken);
         try
@@ -56,10 +62,7 @@ public sealed class PostgresEconomyRepository(
             {
                 try
                 {
-                    await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-                    await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-                    var result = await CommitCoreAsync(connection, transaction, stableRequest, cancellationToken);
-                    await CommitTransactionAsync(transaction, stableRequest.TransactionId, cancellationToken);
+                    var result = await CommitOnceAsync(stableRequest, cancellationToken);
                     logger.LogDebug("资产事务提交 transactionId={TransactionId} lines={Lines} attempt={Attempt}",
                         stableRequest.TransactionId, stableRequest.Deltas.Count, attempt);
                     return result;
@@ -77,12 +80,36 @@ public sealed class PostgresEconomyRepository(
                     var jitter = TimeSpan.FromMilliseconds(Random.Shared.Next(0, 25));
                     await Task.Delay(SerializableRetryBackoff[attempt - 1] + jitter, cancellationToken);
                 }
+                catch (EconomyCommitOutcomeUnknownException unknown)
+                {
+                    // 不释放会话门或玩家门就精确重放确认，不能让后续实耗跨入未知资产结局。
+                    try
+                    {
+                        using var confirmation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                        return await CommitOnceAsync(stableRequest, confirmation.Token);
+                    }
+                    catch (Exception confirmationError)
+                    {
+                        unknown.Data["ConfirmationError"] = confirmationError;
+                        throw unknown;
+                    }
+                }
             }
         }
         finally
         {
             PlayerCommitGates.ReleaseAll(gateStripes);
         }
+    }
+
+    private async ValueTask<EconomyTransactionResult> CommitOnceAsync(
+        EconomyTransactionRequest request, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var result = await CommitCoreAsync(connection, transaction, request, cancellationToken);
+        await CommitTransactionAsync(transaction, request.TransactionId, cancellationToken);
+        return result;
     }
 
     internal sealed record CommittedEconomyRecord(
@@ -211,6 +238,10 @@ public sealed class PostgresEconomyRepository(
         if (request.ParticipationReceipt is { } participationReceipt)
             await LockParticipationInboxAsync(connection, transaction, participationReceipt, cancellationToken);
 
+        // 商店配额先于余额行认领：超限直接抛错回滚，不会出现「扣了灵石才知限购已满」。
+        if (request.ShopPurchase is { } shopClaim)
+            await ClaimShopQuotaAsync(connection, transaction, shopClaim, occurredAt, cancellationToken);
+
         // 固定排序后逐行单语句 upsert：行锁按序获取，避免两个跨玩家交易以不同顺序锁余额而死锁。
         // 每行一次往返完成「存在则累加、不存在则插入」，RETURNING 顺路带回提交后余额与版本，
         // 供调用方直接同步内存钱包，替代旧的 FOR UPDATE 锁读 + upsert + 提交后整包重读。
@@ -268,6 +299,33 @@ public sealed class PostgresEconomyRepository(
                 throw new InvalidOperationException("组队会话结算收件箱消费确认失败，拒绝提交成员状态与资产。");
         }
         return new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, occurredAt, request.ResultPayload, committedBalances);
+    }
+
+    /// <summary>
+    /// 单语句认领系统商店当日配额：存在则累加、不存在则插入；累加后超过上限时
+    /// ON CONFLICT 的 WHERE 守卫令语句静默跳过（不返回行），随后抛限购异常回滚整个事务。
+    /// </summary>
+    private static async ValueTask ClaimShopQuotaAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        ShopPurchaseClaim claim, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO economy.shop_daily_purchases
+                (player_id, offer_id, day_index, quantity, updated_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (player_id, offer_id, day_index) DO UPDATE SET
+                quantity = economy.shop_daily_purchases.quantity + EXCLUDED.quantity,
+                updated_at = EXCLUDED.updated_at
+            WHERE economy.shop_daily_purchases.quantity + EXCLUDED.quantity <= $6
+            RETURNING quantity
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = claim.PlayerId });
+        command.Parameters.Add(new NpgsqlParameter { Value = claim.OfferId });
+        command.Parameters.Add(new NpgsqlParameter { Value = claim.DayIndex });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer, Value = claim.Quantity });
+        command.Parameters.Add(new NpgsqlParameter { Value = occurredAt });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer, Value = claim.DailyLimit });
+        if (await command.ExecuteScalarAsync(cancellationToken) is int) return;
+        throw new ShopDailyLimitExceededException(claim.OfferId, claim.DayIndex, claim.DailyLimit);
     }
 
     /// <summary>锁定待消费结算，阻止不同经济幂等键重复确认同一成员份额。</summary>
@@ -368,6 +426,13 @@ public sealed class PostgresEconomyRepository(
                 || request.Deltas.Any(delta => delta.PlayerId != receipt.PlayerId)
                 || (request.Sections?.Any(section => section.PlayerId != receipt.PlayerId) ?? false)))
             throw new ArgumentException("组队会话结算只能确认本人收件箱并写入本人状态与资产。", nameof(request));
+        if (request.ShopPurchase is { } shopPurchase
+            && (shopPurchase.PlayerId != request.ActorId
+                || string.IsNullOrWhiteSpace(shopPurchase.OfferId) || shopPurchase.OfferId.Length > 64
+                || shopPurchase.DayIndex < 0 || shopPurchase.Quantity < 1
+                || shopPurchase.DailyLimit < shopPurchase.Quantity
+                || request.Deltas.Any(delta => delta.PlayerId != shopPurchase.PlayerId)))
+            throw new ArgumentException("商店限购认领只能由本人发起，且必须与本人资产变更同事务。", nameof(request));
         if (request.ResultPayload.Length > 64 * 1024)
             throw new ArgumentException("资产事务结果载荷超过大小上限。", nameof(request));
         foreach (var delta in request.Deltas)
@@ -394,6 +459,10 @@ public sealed class PostgresEconomyRepository(
         if (request.ParticipationReceipt is { } participationReceipt)
             canonical.Append("participation|").Append(participationReceipt.SessionId).Append('|')
                 .Append(participationReceipt.PlayerId).Append('|').Append(participationReceipt.Sequence).Append('\n');
+        if (request.ShopPurchase is { } shopPurchase)
+            canonical.Append("shop|").Append(shopPurchase.PlayerId.ToString("D")).Append('|')
+                .Append(shopPurchase.OfferId).Append('|').Append(shopPurchase.DayIndex).Append('|')
+                .Append(shopPurchase.Quantity).Append('|').Append(shopPurchase.DailyLimit).Append('\n');
         foreach (var delta in deltas
                      .OrderBy(value => value.PlayerId)
                      .ThenBy(value => value.AssetId, StringComparer.Ordinal)
@@ -428,6 +497,23 @@ public sealed class EconomyInsufficientBalanceException(AssetDelta delta, double
 /// <param name="idempotencyKey">发生冲突的幂等键。</param>
 public sealed class EconomyIdempotencyConflictException(string idempotencyKey)
     : InvalidOperationException($"资产事务幂等键已绑定其他请求 idempotencyKey={idempotencyKey}");
+
+/// <summary>
+/// 系统商店每日限购配额不足时抛出；经济事务随即回滚，由命令层映射为限购提示。
+/// </summary>
+/// <param name="offerId">商品标识。</param>
+/// <param name="dayIndex">UTC+8 自然日序号。</param>
+/// <param name="dailyLimit">当日累计上限。</param>
+public sealed class ShopDailyLimitExceededException(string offerId, long dayIndex, int dailyLimit)
+    : InvalidOperationException($"商店商品 {offerId} 于自然日 {dayIndex} 已达每日限购上限 {dailyLimit} 件")
+{
+    /// <summary>触发限购的商品标识。</summary>
+    public string OfferId { get; } = offerId;
+    /// <summary>发生限购的自然日序号。</summary>
+    public long DayIndex { get; } = dayIndex;
+    /// <summary>该商品的当日累计上限。</summary>
+    public int DailyLimit { get; } = dailyLimit;
+}
 
 /// <summary>
 /// 跨仓储共享的按玩家提交闸：Serializable 写事务在进程内按玩家条带串行化，

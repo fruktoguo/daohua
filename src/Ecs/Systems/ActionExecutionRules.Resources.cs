@@ -435,6 +435,7 @@ internal static partial class ActionExecutionRules
             // 战斗中即时药品同样要把恢复量压回战内单位/文档镜像，否则下一战斗步以战内值覆盖战外资源池。
             SyncConsumableResourcesToBattle(player, player.Actions[0], live);
             if (buffs.ValueKind == JsonValueKind.Array)
+            {
                 foreach (var buff in buffs.EnumerateArray())
                 {
                     var buffId = buff.GetProperty("buffId").GetString()!;
@@ -444,6 +445,56 @@ internal static partial class ActionExecutionRules
                         Read(buff, "attackSpeedPoints"), Read(buff, "damageAbsorptionPoints"), null,
                         Read(buff, "hpRegenPostRatio"), Read(buff, "mpRegenPostRatio")));
                 }
+                // 战内同口径注入（与组队会话 EvaluateInstant 一致）：战内回复/免伤只读单位 Buff 列表，
+                // 仅写战外 ActiveBuff 会让药效在下一步战斗快照重建时丢失——表现为「药已扣件却不回血、
+                // 角色身上也没有 Buff 图标」。到期时刻按战斗时钟落账，文档镜像与存活会话同时写入：
+                // 会话复用时走内存单位，跨推进重建时走 PlayerState 快照。
+                if (player.Actions[0] is QueuedAction headQueued
+                    && headQueued.Expedition is { Phase: CombatExpeditionPhase.Combat } battleExpedition)
+                {
+                    var battleBuffs = new List<CombatBuffState>();
+                    foreach (var buff in buffs.EnumerateArray())
+                    {
+                        var duration = Read(buff, "durationSeconds");
+                        if (duration <= 0) continue;
+                        battleBuffs.Add(new CombatBuffState(buff.GetProperty("buffId").GetString()!,
+                            battleExpedition.BattleElapsedSeconds + duration, 1,
+                            Read(buff, "hpRegen"), Read(buff, "mpRegen"), Read(buff, "attackSpeedPoints"),
+                            Read(buff, "damageAbsorptionPoints"), 0, Read(buff, "hpRegenPostRatio"),
+                            Read(buff, "mpRegenPostRatio"), 0, 0, buff.GetProperty("name").GetString()!,
+                            ResetOnWave: true));
+                    }
+                    if (battleBuffs.Count > 0)
+                    {
+                        if (live is not null && live.TryReuse(headQueued, battleExpedition, out var liveEntry)
+                            && liveEntry is { } liveSession)
+                        {
+                            var liveUnit = liveSession.Battle.Player;
+                            foreach (var battleBuff in battleBuffs)
+                            {
+                                liveUnit.Buffs.RemoveAll(current => current.BuffId == battleBuff.BuffId);
+                                liveUnit.Buffs.Add(battleBuff with { ExpiresAtSeconds = liveSession.Battle.ElapsedSeconds
+                                    + (battleBuff.ExpiresAtSeconds - battleExpedition.BattleElapsedSeconds) });
+                            }
+                        }
+                        if (battleExpedition.PlayerState is { } playerState)
+                        {
+                            var merged = playerState.Buffs is { Count: > 0 } existing ? existing.ToList() : [];
+                            foreach (var battleBuff in battleBuffs)
+                            {
+                                merged.RemoveAll(current => current.BuffId == battleBuff.BuffId);
+                                merged.Add(battleBuff);
+                            }
+                            headQueued.Expedition = battleExpedition with
+                            {
+                                PlayerState = playerState with { Buffs = merged }
+                            };
+                            // 战内 Buff 快照随行动队列分段下发：不标脏会让前端等到下一步战斗推进才看到图标。
+                            player.MarkDirty(PlayerSectionKind.ActionQueue);
+                        }
+                    }
+                }
+            }
             player.Settings.AutoUseSlots[i] = slot with { CooldownUntilUnixSeconds = now + cooldown };
             player.MarkDirty(PlayerSectionKind.Settings);
             player.MarkDirty(PlayerSectionKind.Buffs);

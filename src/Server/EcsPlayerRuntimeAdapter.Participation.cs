@@ -56,8 +56,10 @@ public sealed partial class EcsPlayerRuntimeAdapter
                         {
                             if (aggregate.Actions.Any(action => action.Participation is not null))
                                 throw new DomainException(DomainErrorCode.InvariantViolation, "前一会话结算尚未收尾。");
+                            // 收件箱只返回未消费回执；引用被移除后，从首个未消费序号恢复游标。
                             aggregate.StartActionParticipation(spec, row.StartedAt, gameData.Actions,
-                                row.EndedAt?.ToUnixTimeMilliseconds() / 1000d ?? double.PositiveInfinity);
+                                row.EndedAt?.ToUnixTimeMilliseconds() / 1000d ?? double.PositiveInfinity,
+                                appliedSequence: item.Sequence - 1);
                         }
                         aggregate.Actions[0].Participation = aggregate.Actions[0].Participation! with
                         { Spec = spec, EndsAtUnixSeconds = double.PositiveInfinity };

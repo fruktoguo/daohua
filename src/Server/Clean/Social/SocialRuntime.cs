@@ -109,6 +109,7 @@ public sealed class SocialRuntime
         _nodeBuildings = nodeBuildings;
         _nodeIds = catalog.WorldGraph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
         _presence.PresenceChanged += OnPresenceChangedAsync;
+        _presence.OnlineChanged += OnOnlineChangedAsync;
         _presence.NodeChanged += OnNodeChangedAsync;
     }
 
@@ -366,9 +367,20 @@ public sealed class SocialRuntime
         var core = state.Loadout.CoreAttributes;
         var levels = core.Levels(_gameData.RealmProgression);
         var valuation = await _valuation.ComputeAsync(targetId, cancellationToken);
+        var availableBalances = _assetBalances is null
+            ? [] : await _assetBalances.LoadBalancesAsync(targetId, cancellationToken);
+        var offlineReserves = _participation is null
+            ? [] : await _participation.LoadOfflineReservesAsync(targetId, cancellationToken);
+        var availableByItem = availableBalances.GroupBy(balance => balance.AssetId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Sum(balance => balance.Quantity), StringComparer.Ordinal);
+        var reservesByItem = offlineReserves.GroupBy(reserve => reserve.ItemId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Sum(reserve => reserve.Quantity), StringComparer.Ordinal);
         var combatSlots = (state.Settings.AutoUseSlots ?? [])
             .Where(slot => slot.ActionType == AutoUseBar.Combat)
-            .Select(slot => new PlayerCardAutoUseSlotDto(slot.SlotIndex, slot.ItemId, slot.Quantity, slot.Enabled, slot.Group))
+            .Select(slot => new PlayerCardAutoUseSlotDto(slot.SlotIndex, slot.ItemId,
+                slot.ItemId is { } itemId ? availableByItem.GetValueOrDefault(itemId) : 0,
+                slot.Enabled, slot.Group,
+                slot.ItemId is { } reserveItemId ? reservesByItem.GetValueOrDefault(reserveItemId) : 0))
             .ToArray();
 
         var playerAttributes = PlayerAttributeResolver.Resolve(state, _gameData);
@@ -750,6 +762,14 @@ public sealed class SocialRuntime
     /// <param name="cancellationToken">取消标记。</param>
     public ValueTask PushAsync(Guid playerId, CancellationToken cancellationToken = default) =>
         NotifyAsync([playerId]);
+
+    /// <summary>首帧前结清离线储备，直到真实存在感登记后才释放短期在线标记。</summary>
+    public ValueTask<IAsyncDisposable> PrepareConnectionAsync(Guid playerId, CancellationToken cancellationToken = default) =>
+        (_participation ?? throw new InvalidOperationException("未装配行动参与权威宿主。"))
+            .PrepareConnectionAsync(playerId, _clock.UtcNow, cancellationToken);
+
+    private ValueTask OnOnlineChangedAsync(Guid playerId) => _participation is null
+        ? ValueTask.CompletedTask : _participation.SynchronizePresenceAsync(playerId, _clock.UtcNow, CancellationToken.None);
 
     private async ValueTask OnPresenceChangedAsync(IReadOnlyList<Guid> affected)
     {
@@ -1135,19 +1155,9 @@ public sealed class SocialRuntime
             _logger.LogError("组队讨伐开战放弃：会话规格不合法（队伍 {PartyId}，会话 {SessionId}）。", party.PartyId, sessionId);
             return;
         }
-        // 托管实扣与会话占位同一事务原子提交（§21.13.1）：余额不足说明定格读数被并行扣件，
-        // 重读余额折算新配额后重试；仍持续不足则由异常上抛放弃本局，不产生半个会话或孤儿扣件。
         var participation = _participation ?? throw new InvalidOperationException("未装配行动参与权威宿主。");
-        for (var attempt = 0; ; attempt++)
-        {
-            var (filled, escrow) = await PlanConsumableEscrowAsync(spec, party, cancellationToken);
-            try
-            {
-                await participation.CreateAsync(party.PartyId, filled, escrow, cancellationToken);
-                break;
-            }
-            catch (EconomyInsufficientBalanceException) when (attempt < 2) { }
-        }
+        // 开场实际扣件、初始检查点与成员收件箱由会话宿主同事务提交，个人状态不预扣库存。
+        await participation.CreateAsync(party.PartyId, spec, cancellationToken);
 
         var undelivered = 0;
         foreach (var member in party.Members)
@@ -1199,73 +1209,6 @@ public sealed class SocialRuntime
         _logger.LogInformation("组队讨伐会话 {SessionId} 散场：{Reason}。", session.SessionId, reason);
     }
 
-    /// <summary>一次托管计划的物品行（成员维度汇总后随经济事务结果载荷持久化留证）。</summary>
-    private sealed record EscrowEntry(string ItemId, double Quantity);
-
-    /// <summary>
-    /// 开打定格的消耗品托管计划：按冻结槽位读成员钱包余额折算托管配额——durable 锁 1 件、其余全量余额；
-    /// 配额回填 spec 首个同物品槽行（引擎台账按共享池消耗），实扣差量打包为单笔经济事务，
-    /// 由会话创建路径并入同一数据库事务原子提交——本方法只计算计划，不单独提交，
-    /// 保证「扣了托管」与「会话占位」同生同灭，无孤儿扣件窗口。
-    /// </summary>
-    private async ValueTask<(ActionParticipationSpec Spec, EconomyTransactionRequest? Escrow)>
-        PlanConsumableEscrowAsync(ActionParticipationSpec spec, PartyRecord party, CancellationToken cancellationToken)
-    {
-        if (_assetBalances is null)
-            return (spec, null);
-        var deltas = new List<AssetDelta>();
-        var fills = new Dictionary<Guid, List<EscrowEntry>>();
-        for (var i = 0; i < spec.Members.Count; i++)
-        {
-            var slots = spec.Members[i].ConsumableSlots;
-            if (slots is not { Count: > 0 }) continue;
-            var memberId = Guid.Parse(spec.Members[i].PlayerId);
-            // 需要托管的物品按槽序去重：durable 需求 1 件，其余托管全量可用余额。
-            var demands = new List<(string ItemId, bool Durable)>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var slot in slots)
-                if (seen.Add(slot.ItemId)
-                    && _gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item)
-                    && item.Consumable is { } consumable)
-                    demands.Add((slot.ItemId, consumable.Durable));
-            if (demands.Count == 0) continue;
-            var balances = await _assetBalances.LoadBalancesAsync(memberId, cancellationToken);
-            var pool = new Dictionary<string, double>(StringComparer.Ordinal);
-            foreach (var row in balances)
-                if (row.Variant.Length == 0) pool[row.AssetId] = row.Quantity;
-            var entries = new List<EscrowEntry>();
-            foreach (var (itemId, durable) in demands)
-            {
-                var balance = pool.GetValueOrDefault(itemId);
-                var quantity = durable ? Math.Min(balance, 1) : balance;
-                if (quantity >= 1)
-                {
-                    entries.Add(new(itemId, quantity));
-                    deltas.Add(new(memberId, itemId, string.Empty, -quantity));
-                }
-            }
-            if (entries.Count > 0) fills[memberId] = entries;
-        }
-        if (deltas.Count == 0) return (spec, null);
-        // 配额回填：同物品整池挂在首个槽行，其余同物品槽行保持 0（引擎按共享池消耗）。
-        var members = spec.Members.Select(member =>
-        {
-            var memberId = Guid.Parse(member.PlayerId);
-            if (!fills.TryGetValue(memberId, out var entries) || member.ConsumableSlots is not { } slots)
-                return member;
-            var unassigned = entries.ToDictionary(entry => entry.ItemId, entry => entry.Quantity,
-                StringComparer.Ordinal);
-            return member with
-            {
-                ConsumableSlots = slots.Select(slot => unassigned.Remove(slot.ItemId, out var quantity)
-                    ? slot with { EscrowQuantity = quantity } : slot).ToArray()
-            };
-        }).ToArray();
-        var request = new EconomyTransactionRequest(Guid.NewGuid(), $"party.escrow:{spec.SessionId}",
-            "participation.escrow", party.LeaderId, deltas,
-            ResultPayload: JsonSerializer.SerializeToUtf8Bytes(fills, PersistenceJson.Options));
-        return (spec with { Members = members }, request);
-    }
 
     /// <summary>
     /// 未装载成员的冻结面板采集：直接解码持久化真源（durable 队列叠加已落库段），
@@ -1321,7 +1264,8 @@ public sealed class SocialRuntime
                     if (aggregate.Actions.Any(action => action.Participation is not null))
                         throw new DomainException(DomainErrorCode.InvariantViolation, "前一会话结算尚未收尾。");
                     aggregate.StartActionParticipation(spec, row.StartedAt, _gameData.Actions,
-                        row.EndedAt?.ToUnixTimeMilliseconds() / 1000d ?? double.PositiveInfinity);
+                        row.EndedAt?.ToUnixTimeMilliseconds() / 1000d ?? double.PositiveInfinity,
+                        appliedSequence: item.Sequence - 1);
                 }
                 aggregate.ApplyActionParticipationSettlement(settlement, _gameData);
                 if (settlement.EndsAtUnixSeconds is { } endsAt)

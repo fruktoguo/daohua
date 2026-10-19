@@ -113,6 +113,29 @@ public sealed partial class PlayerAggregate
         Resources.RegenCarrySeconds = settlement.RegenCarrySeconds;
         Combat.Skills = settlement.Skills;
         Combat.Buffs = settlement.Buffs ?? PlayerCombatBuffState.Empty;
+        if (settlement.ConsumableSlots is { } consumableSlots)
+        {
+            // 成员可能已等待到投影之后的墙钟；延迟消费不能把已过期周期重新充回槽位。
+            var now = Math.Max(settlement.To.ToUnixTimeMilliseconds(), LastSimulatedAt.ToUnixTimeMilliseconds()) / 1000d;
+            var slotsChanged = false;
+            foreach (var clock in consumableSlots)
+            {
+                var index = Settings.AutoUseSlots.FindIndex(slot => slot.ActionType == AutoUseBar.Combat
+                    && slot.Group == clock.Group && slot.SlotIndex == clock.SlotIndex && slot.ItemId == clock.ItemId);
+                if (index < 0) continue;
+                var slot = Settings.AutoUseSlots[index];
+                var remaining = Math.Max(0, clock.SustainedExpiresAtUnixSeconds - now);
+                if (slot.CooldownUntilUnixSeconds == clock.CooldownUntilUnixSeconds
+                    && slot.RemainingDurationSeconds == remaining) continue;
+                Settings.AutoUseSlots[index] = slot with
+                {
+                    CooldownUntilUnixSeconds = clock.CooldownUntilUnixSeconds,
+                    RemainingDurationSeconds = remaining
+                };
+                slotsChanged = true;
+            }
+            if (slotsChanged) MarkDirty(PlayerSectionKind.Settings);
+        }
         action.Expedition = settlement.Expedition;
         action.ProgressSeconds = settlement.ProgressSeconds;
         action.CompletedRepeats = settlement.CompletedRepeats;
@@ -151,9 +174,10 @@ public sealed partial class PlayerAggregate
     /// <param name="at">开打墙钟。</param>
     /// <param name="catalog">行动配表。</param>
     /// <param name="endsAtUnixSeconds">终局补投时的确定散场时刻；活动开场为正无穷。</param>
+    /// <param name="appliedSequence">补投引用时已消费的个人结算序号；新开场为零。</param>
     /// <returns>队首参与行动实例；本成员不在名单中或已在其他会话时返回 null。</returns>
     public QueuedAction? StartActionParticipation(ActionParticipationSpec spec, DateTimeOffset at, ActionCatalog catalog,
-        double endsAtUnixSeconds = double.PositiveInfinity)
+        double endsAtUnixSeconds = double.PositiveInfinity, long appliedSequence = 0)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -169,7 +193,7 @@ public sealed partial class PlayerAggregate
         }
         var intent = new ActionIntent(spec.ActionId, -1, spec.NodeId, PvpEnabled: spec.PvpEnabled);
         return EnqueuePriority(intent, at, catalog,
-            participation: new ActionParticipationBinding(spec, endsAtUnixSeconds)) as QueuedAction;
+            participation: new ActionParticipationBinding(spec, endsAtUnixSeconds, appliedSequence)) as QueuedAction;
     }
 
     /// <summary>
@@ -229,9 +253,8 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 开打定格的持续消耗品 Buff 采集：与 Ecs 侧 InjectSustainedCombatBuffs 的同槽位判定/同字段读取逐位对齐
-    /// （通用栏 + combat 类型 + 持续非耐久消耗品 + 剩余时长大于 0）；会话期间槽位不补能不扣减，
-    /// 定格值是所有成员模拟的唯一公共输入。
+    /// 开打采集已生效的持续消耗品 Buff，入场由会话槽时钟覆盖，防止冻结效果重复生效。
+    /// general/potion 两组沿用同一非耐久战斗消耗品资格。
     /// </summary>
     internal static List<ActionSustainedBuff>? CaptureSustainedBuffs(IReadOnlyList<AutoUseSlotState> slots, GameDataCatalog gameData)
     {
@@ -239,11 +262,13 @@ public sealed partial class PlayerAggregate
         for (var i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
-            if (!slot.Enabled || slot.ItemId is null || slot.Group != AutoUseSlotState.SlotGroupGeneral
+            if (!slot.Enabled || slot.ItemId is null
+                || slot.Group is not (AutoUseSlotState.SlotGroupGeneral or AutoUseSlotState.SlotGroupPotion)
                 || slot.ActionType != Domain.GameData.AutoUseBar.Combat
                 || slot.RemainingDurationSeconds <= 0) continue;
             var itemId = new ItemId(slot.ItemId);
             if (!gameData.Items.TryGetValue(itemId, out var item)
+                || item.Category != ItemDefinition.CategoryConsumable
                 || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0, Durable: false }
                 || !item.Consumable.UsableInBars.Contains(Domain.GameData.AutoUseBar.Combat)
                 || !gameData.RawItems.TryGetValue(itemId.Value, out var rawItem)
@@ -270,9 +295,7 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 开打定格的消耗品托管槽采集：启用且适用于战斗栏域的消耗品槽（即时/持续/durable），
-    /// 与 Ecs 侧单人判定同条件（栏域匹配 + UsableInBars）；配额由社交层按钱包实扣后回填，
-    /// 本方法只冻结槽位配置与时钟——持续槽记录已充能剩余，即时/durable 只冻结冷却钟。
+    /// 冻结非耐久战斗消耗品的槽配置与时钟，不采集库存；数量由独立工作钱包或离线储备提供。
     /// </summary>
     internal static List<ActionConsumableSlot>? CaptureConsumableSlots(IReadOnlyList<AutoUseSlotState> slots, GameDataCatalog gameData)
     {
@@ -285,11 +308,12 @@ public sealed partial class PlayerAggregate
                 || slot.ActionType != Domain.GameData.AutoUseBar.Combat) continue;
             var itemId = new ItemId(slot.ItemId);
             if (!gameData.Items.TryGetValue(itemId, out var item)
-                || item.Consumable is not { } consumable
+                || item.Category != ItemDefinition.CategoryConsumable
+                || item.Consumable is not { Durable: false } consumable
                 || !consumable.UsableInBars.Contains(Domain.GameData.AutoUseBar.Combat)) continue;
             var isSustained = consumable is { IsContinuous: true, DurationSeconds: > 0, Durable: false };
             (list ??= []).Add(new ActionConsumableSlot(slot.ItemId, slot.ActionType, slot.Group, slot.SlotIndex,
-                0, slot.CooldownUntilUnixSeconds,
+                slot.CooldownUntilUnixSeconds,
                 isSustained ? slot.RemainingDurationSeconds : 0));
         }
         return list;

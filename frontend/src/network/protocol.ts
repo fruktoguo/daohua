@@ -724,7 +724,10 @@ export interface PlayerCardAutoUseSlotDto {
   slotIndex: number
   /** 配置物品 ID；null 为空槽 */
   itemId: string | null
+  /** 普通钱包可用数量，不含离线储备 */
   quantity: number
+  /** 唯一会话检查点中的离线储备余量，不可出售 */
+  offlineReserveQuantity: number
   enabled: boolean
   /** 栏位分组：potion（丹药栏）/general（通用栏） */
   group: string
