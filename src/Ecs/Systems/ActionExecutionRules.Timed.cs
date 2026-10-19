@@ -533,8 +533,6 @@ internal static partial class ActionExecutionRules
                 player.Settings.AutoUseSlots[i] = slot;
                 player.MarkDirty(PlayerSectionKind.Settings);
             }
-            // 持续消耗品冷却自耗竭时刻起算（CompleteSustainedAutoUse 写入）：冷却未走完不在行动起点补能。
-            if (slot.CooldownUntilUnixSeconds > at.ToUnixTimeMilliseconds() / 1000d) continue;
             if (isActionStart && slot.RemainingDurationSeconds <= 0)
             {
                 var available = assetBalances?.Get(new AssetKey(item.Id)) ?? 0d;
@@ -583,16 +581,6 @@ internal static partial class ActionExecutionRules
                 continue;
             var remaining = Math.Max(0d, slot.RemainingDurationSeconds - definition.DurationSeconds);
             var updated = slot with { RemainingDurationSeconds = remaining };
-            if (remaining <= 0 && consumable.CooldownSeconds > 0)
-            {
-                // 持续消耗品冷却自耗竭时刻起算：耗竭点在本回合内旧剩余秒数处。
-                var atUnix = at.ToUnixTimeMilliseconds() / 1000d;
-                updated = updated with
-                {
-                    CooldownUntilUnixSeconds = atUnix - (definition.DurationSeconds - slot.RemainingDurationSeconds)
-                        + consumable.CooldownSeconds
-                };
-            }
             player.Settings.AutoUseSlots[i] = updated;
             player.MarkDirty(PlayerSectionKind.Settings);
             if (remaining > 0) continue;

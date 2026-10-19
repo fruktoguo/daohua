@@ -437,19 +437,17 @@ public sealed class ActionParticipationSessionEngine
         }
     }
 
-    /// <summary>持续消耗品：耗竭按墙钟记账、冷却自耗竭时刻起算；再充能只在战斗相位判定并就地注入 Buff。</summary>
+    /// <summary>持续消耗品：无冷却，耗竭按墙钟记账；再充能只在战斗相位判定并就地注入 Buff，有托管余量即无缝再充能。</summary>
     private void EvaluateSustained(int index, SessionConsumableSlot row, ItemDefinition item,
         ConsumableDefinition consumable, DateTimeOffset at, double now)
     {
         if (row.SustainedExpiresAtUnixSeconds > 0 && row.SustainedExpiresAtUnixSeconds <= now)
         {
-            _consumables![index] = row = row with { SustainedExpiresAtUnixSeconds = 0,
-                CooldownUntilUnixSeconds = row.SustainedExpiresAtUnixSeconds + consumable.CooldownSeconds };
+            _consumables![index] = row = row with { SustainedExpiresAtUnixSeconds = 0, CooldownUntilUnixSeconds = 0 };
             _collectors[row.MemberIndex].Events.Add(new(at, "auto-use.depleted",
                 $"{item.Name} 的持续时间已耗尽。", _spec.ActionId));
         }
         if (_battle is null || row.SustainedExpiresAtUnixSeconds > 0
-            || row.CooldownUntilUnixSeconds > now
             || ItemEscrowRemaining(row.MemberIndex, row.ItemId) < 1) return;
         var caster = _battle.PlayerAllies[row.MemberIndex];
         // 倒地成员不再充能新周期（与单人 Hitpoints<=0 跳过同口径）；已生效周期按墙钟照常耗竭。

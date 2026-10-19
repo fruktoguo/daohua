@@ -434,22 +434,25 @@ public sealed class ActionParticipationSessionTests
             Assert.Contains(ally.State.Buffs!, buff => buff.BuffId == "formation.juling"));
         Assert.Single(entered[0].Events, entry => entry.Code == "auto-use.activated");
 
-        // 墙钟耗竭：到期即转冷却，事件随成员结算下发。
-        var depleted = session.AdvanceTo(Baseline.AddSeconds(search + 305));
-        document = session.Export();
-        row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.juling-formation-disk");
-        Assert.Equal(0, row.SustainedExpiresAtUnixSeconds);
-        Assert.True(Math.Abs(row.CooldownUntilUnixSeconds - (entryUnix + 600)) < 0.01);
-        Assert.Contains(depleted[0].Events, entry => entry.Code == "auto-use.depleted");
-
-        // 冷却结束的下一个窗口边界仍在战斗中：立即再充能，最后 1 件被消耗。
-        var recharged = session.AdvanceTo(Baseline.AddSeconds(search + 605));
+        // 墙钟耗竭无冷却：到期即投递耗尽事件，且托管尚有存量时立即无缝再充能下一个周期。
+        var depletedAndRecharged = session.AdvanceTo(Baseline.AddSeconds(search + 305));
         document = session.Export();
         row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.juling-formation-disk");
         Assert.Equal(0, row.RemainingQuantity);
-        Assert.True(Math.Abs(row.SustainedExpiresAtUnixSeconds - (entryUnix + 900)) < 0.01);
-        Assert.Contains(recharged[0].Events, entry => entry.Code == "auto-use.activated"
+        Assert.Equal(0, row.CooldownUntilUnixSeconds);
+        Assert.True(Math.Abs(row.SustainedExpiresAtUnixSeconds - (entryUnix + 600)) < 0.01);
+        Assert.Contains(depletedAndRecharged[0].Events, entry => entry.Code == "auto-use.depleted");
+        Assert.Contains(depletedAndRecharged[0].Events, entry => entry.Code == "auto-use.activated"
             && entry.Message.Contains("聚灵阵盘"));
+
+        // 第 2 件到期耗竭：托管已无存量，耗竭后停在 0，冷却恒为 0。
+        var fullyDepleted = session.AdvanceTo(Baseline.AddSeconds(search + 605));
+        document = session.Export();
+        row = Assert.Single(document.ConsumableLedger!, row => row.ItemId == "item.juling-formation-disk");
+        Assert.Equal(0, row.RemainingQuantity);
+        Assert.Equal(0, row.SustainedExpiresAtUnixSeconds);
+        Assert.Equal(0, row.CooldownUntilUnixSeconds);
+        Assert.Contains(fullyDepleted[0].Events, entry => entry.Code == "auto-use.depleted");
     }
 
     /// <summary>托管台账随检查点持久化：拆分推进与连续推进逐位一致（含台账/结算/事件）。</summary>

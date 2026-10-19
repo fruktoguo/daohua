@@ -275,7 +275,6 @@
       ],
       "isContinuous": true,
       "durationSeconds": 300,
-      "cooldownSeconds": 300,
       "buffs": [
         {
           "buffId": "formation.juling",

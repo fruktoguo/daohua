@@ -288,6 +288,9 @@ static void ValidateReferences(string directory)
             if (consumable.ValueKind == JsonValueKind.Object)
                 Require(StringArray(consumable, "usableInActionTypes").Any(),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 声明了 consumable 块但 usableInActionTypes 为空。");
+            if (Property(consumable, "isContinuous").ValueKind == JsonValueKind.True)
+                Require(Number(consumable, "cooldownSeconds", 0) <= 0,
+                    $"{Rel(directory, file)} 持续消耗品 {Text(item, "id")} 不得配置冷却时间（cooldownSeconds）。");
             foreach (var buff in Elements(Property(consumable, "buffs")))
                 foreach (var key in ObjectKeys(buff))
                     Require(consumableBuffKeys.Contains(key),

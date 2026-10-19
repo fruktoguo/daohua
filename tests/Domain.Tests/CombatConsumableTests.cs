@@ -28,11 +28,11 @@ public sealed class CombatConsumableTests
          "buffs":[{"buffId":"buff.test-guard","name":"护身","durationSeconds":60,"damageAbsorptionPoints":10}]}}
         """;
 
-    /// <summary>测试阵盘：战斗持续消耗品，2s 持续时长 + 40s 冷却（耗竭起算），携带回蓝 Buff。</summary>
+    /// <summary>测试阵盘：战斗持续消耗品，2s 持续时长、无冷却，携带回蓝 Buff。</summary>
     private static readonly ItemId DiskId = new("item.test-disk");
     private static readonly string DiskJson = """
         {"id":"item.test-disk","name":"测试阵盘","kind":"consumable","category":"formation",
-         "consumable":{"usableInActionTypes":["combat"],"durationSeconds":2,"cooldownSeconds":40,"isContinuous":true,
+         "consumable":{"usableInActionTypes":["combat"],"durationSeconds":2,"isContinuous":true,
          "buffs":[{"buffId":"formation.test","name":"聚灵测试","durationSeconds":2,"mpRegen":5,"mpRegenPostRatio":0.3}]}}
         """;
 
@@ -67,7 +67,7 @@ public sealed class CombatConsumableTests
                 "talisman"),
             [DiskId] = new(DiskId, "测试阵盘", "", true, 0,
                 new ConsumableDefinition(new HashSet<string> { "combat" },
-                    DurationSeconds: 2, IsContinuous: true, CooldownSeconds: 40),
+                    DurationSeconds: 2, IsContinuous: true),
                 "formation"),
             [RegenPillId] = new(RegenPillId, "测试回春散", "", true, 0,
                 new ConsumableDefinition(new HashSet<string> { "combat" },
@@ -207,25 +207,22 @@ public sealed class CombatConsumableTests
         player.ConfigureAutoUse("combat", 0, DiskId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
 
-        // T+15：入场扣第 1 件充入 2s，战斗时钟（含躺尸窗口）耗竭后写入冷却（耗竭时刻 +40s）。
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(15), catalog, wallet)
-            .AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Equal(1d, wallet.Get(new AssetKey(DiskId)));
-        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
-        var firstCooldown = player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds;
-        Assert.True(firstCooldown > 0);
-
-        // T+50：冷却已在战中走完并自动补能（无新入场可解释这次扣件）；
-        // 2s 生效窗内阵法 Buff 重新在场，玩家倒地投影同样可见。
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(50), catalog, wallet)
+        // T+8：入场扣第 1 件充入 2s（5s~7s 耗竭），无 CD 立即在战中续补第 2 件；
+        // 此时已扣除全部 2 件，第 2 件处于生效中（约剩 1s）。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(8), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(0d, wallet.Get(new AssetKey(DiskId)));
-        var secondSlot = player.Settings.AutoUseSlots[0];
+        Assert.InRange(player.Settings.AutoUseSlots[0].RemainingDurationSeconds, 0, 2);
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds);
         var buffs = player.Actions[0].Expedition?.PlayerState?.Buffs ?? [];
-        Assert.True(secondSlot.RemainingDurationSeconds > 0
-            || secondSlot.CooldownUntilUnixSeconds > firstCooldown
-            || buffs.Any(buff => buff.BuffId == "formation.test"),
-            "冷却走完未在战中续补：槽位未被重新充能且 Buff 未重新注入。");
+        Assert.Contains(buffs, buff => buff.BuffId == "formation.test");
+
+        // T+15：第 2 件也自然耗竭，钱包已空不再续补，冷却恒为 0。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(15), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(0d, wallet.Get(new AssetKey(DiskId)));
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds);
     }
 
     /// <summary>躺尸等待期间仍持续扣减：玩家阵亡等待复活时钟不冻结持续消耗。</summary>
@@ -254,41 +251,38 @@ public sealed class CombatConsumableTests
     }
 
     /// <summary>
-    /// 持续消耗品耗竭后进入冷却：阵盘 2s 时长耗竭写入 40s 冷却，
-    /// 冷却未走完时下一波入场不补能；冷却走完后入场重新扣件充能。
+    /// 持续消耗品无冷却：阵盘 2s 时长耗竭后冷却为 0，
+    /// 下一波入场只要有存量即可直接重新扣件充能，无需等待冷却。
     /// </summary>
     [Fact]
-    public void SustainedSlotCooldownsAfterDepletionBeforeNextRecharge()
+    public void SustainedSlotRechargesAcrossWavesWithoutCooldown()
     {
         // 妖兽 30 血、0 攻击：波次战斗稳定数秒内结束，玩家永不阵亡；
-        // 波间搜寻 30s 保证第二波入场落在冷却窗口内、第三波落在窗口外。
+        // 波间搜寻 5s + 复活 30s。
         var catalog = CreateCatalog(enemyHitpoints: 30, enemyAttackPower: 0, searchSeconds: 5, respawnSeconds: 30);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
-        var wallet = CreateWallet(player, (DiskId, 2));
+        var wallet = CreateWallet(player, (DiskId, 1));
         player.ConfigureAutoUse("combat", 0, DiskId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
 
-        // T+15：首波入场扣 1 件充入 2s，战斗时钟耗竭后写入冷却（耗竭时刻 +40s）。
+        // T+15：首波入场扣 1 件充入 2s，战斗时钟耗竭后冷却恒为 0。
         var first = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(15), catalog, wallet);
         first.AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Equal(1d, wallet.Get(new AssetKey(DiskId)));
+        Assert.Equal(0d, wallet.Get(new AssetKey(DiskId)));
         Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
-        var cooldownUntil = player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds;
-        Assert.InRange(cooldownUntil, Baseline.AddSeconds(45).ToUnixTimeSeconds(),
-            Baseline.AddSeconds(60).ToUnixTimeSeconds());
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds);
         Assert.Contains(first.Events, entry => entry.Code == "auto-use.depleted");
 
-        // T+45：第二波已入场，冷却未走完不补能——钱包不扣、时长仍为 0。
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(45), catalog, wallet)
-            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        // 波间补货 1 件。
+        wallet.Apply(new AssetDelta(player.PlayerId, new AssetKey(DiskId), 1, "test"));
         Assert.Equal(1d, wallet.Get(new AssetKey(DiskId)));
-        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
 
-        // T+100：第三波入场时冷却已走完，重新扣件充能。
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(100), catalog, wallet)
-            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        // T+45：第二波入场，无冷却阻断——立刻自动扣除新补的 1 件并充能。
+        var second = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(45), catalog, wallet);
+        second.AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(0d, wallet.Get(new AssetKey(DiskId)));
-        Assert.InRange(player.Settings.AutoUseSlots[0].RemainingDurationSeconds, 0, 2);
+        Assert.Contains(second.Events, entry => entry.Code == "auto-use.activated");
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds);
     }
 
     /// <summary>

@@ -1208,6 +1208,8 @@ public sealed class GameDataCatalog
                     // durable 持续消耗品持有即生效、无时长耗竭，不要求 durationSeconds；非 durable 持续品仍需正时长。
                     consumable.IsContinuous && !consumable.Durable && consumable.DurationSeconds <= 0 ||
                     consumable.Durable && !consumable.IsContinuous ||
+                    // 持续性消耗品不得配置冷却时间。
+                    consumable.IsContinuous && consumable.CooldownSeconds > 0 ||
                     !double.IsFinite(consumable.CultivationMultiplier) || consumable.CultivationMultiplier <= 0 ||
                     !double.IsFinite(consumable.GatheringMultiplier) || consumable.GatheringMultiplier <= 0 ||
                     !double.IsFinite(consumable.AlchemyMultiplier) || consumable.AlchemyMultiplier <= 0 ||

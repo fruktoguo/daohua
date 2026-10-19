@@ -564,12 +564,12 @@ public sealed class TechniqueAndEnhancementTests
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("阵修");
         var disk = new ItemId("item.juling-formation-disk");
-        // 配表判定：普通持续消耗品 300s 持续 + 300s 冷却，buff 双通道不变。
+        // 配表判定：普通持续消耗品 300s 持续且无冷却（0s CD），buff 双通道不变。
         var consumable = catalog.Items[disk].Consumable!;
         Assert.True(consumable.IsContinuous);
         Assert.False(consumable.Durable);
         Assert.Equal(300, consumable.DurationSeconds);
-        Assert.Equal(300, consumable.CooldownSeconds);
+        Assert.Equal(0, consumable.CooldownSeconds);
         var wallet = CreateWallet(player, (new AssetKey(disk), 2));
         player.ConfigureAutoUse("combat", 0, disk.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
         player.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), Baseline, catalog.Actions);
