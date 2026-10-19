@@ -3,7 +3,7 @@ import { useGameStore } from '../../game/gameStore'
 import { useSocialStore } from '../../game/socialStore'
 import { useT } from '../../i18n'
 import type { CombatAbilityDefinition, CombatAttributes } from '../../game/types'
-import type { SimulatorCombatantConfig } from '../../game/simulator/simulatorTypes'
+import { roundStat, sanitizeAttributes, type SimulatorCombatantConfig } from '../../game/simulator/simulatorTypes'
 import { StatGlyph } from '../StatGlyph'
 
 interface SimulatorPartyEditorProps {
@@ -84,7 +84,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
       ...currentAlly,
       name: myName || t('combat.simulator.selfName'),
       isSelf: true,
-      attributes: myAttributes ? { ...myAttributes } : { ...DEFAULT_ATTRIBUTES },
+      attributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
       abilitySlots: myCombat?.abilitySlots ? [...myCombat.abilitySlots] : [],
       abilityTriggers: myCombat?.abilityTriggers ? { ...myCombat.abilityTriggers } : {},
     }
@@ -101,7 +101,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
       id: memberId,
       name: memberName,
       isSelf: false,
-      attributes: myAttributes ? { ...myAttributes } : { ...DEFAULT_ATTRIBUTES },
+      attributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
       abilitySlots: myCombat?.abilitySlots ? [...myCombat.abilitySlots] : [],
     }
     const nextList = [...allies]
@@ -116,7 +116,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
       ...currentAlly,
       attributes: {
         ...currentAlly.attributes,
-        [key]: Math.max(0, val),
+        [key]: Math.max(0, roundStat(val)),
       },
     }
     const nextList = [...allies]
@@ -205,12 +205,12 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
           className="sim-btn sim-btn--primary"
           onClick={handleImportSelf}
         >
-          📥 {t('combat.simulator.importSelf')}
+          {t('combat.simulator.importSelf')}
         </button>
 
         {party && party.members && party.members.length > 0 && (
           <div className="sim-teammate-import-select">
-            <span className="sim-label">👥 {t('combat.simulator.importTeammate')}:</span>
+            <span className="sim-label">{t('combat.simulator.importTeammate')}:</span>
             <select
               className="sim-select"
               onChange={e => {
@@ -233,7 +233,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
       {/* 属性微调输入网格 */}
       <div className="sim-stats-grid-container">
         <div className="sim-stats-subheading">
-          <span>⚔️ {t('combat.simulator.combatStats')}</span>
+          <span>{t('combat.simulator.combatStats')}</span>
         </div>
         <div className="sim-stats-grid">
           <label className="sim-stat-field">

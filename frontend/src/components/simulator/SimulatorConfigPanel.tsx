@@ -68,7 +68,7 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
   return (
     <div className="sim-config-panel">
       <div className="sim-config-section">
-        <div className="sim-config-title">🗺️ {t('combat.simulator.selectMapTitle')}</div>
+        <div className="sim-config-title">{t('combat.simulator.selectMapTitle')}</div>
         <div className="sim-config-row">
           <label className="sim-config-field">
             <span className="sim-field-label">{t('combat.simulator.nodeLabel')}:</span>
@@ -109,7 +109,7 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
       </div>
 
       <div className="sim-config-section">
-        <div className="sim-config-title">⏱️ {t('combat.simulator.durationTitle')}</div>
+        <div className="sim-config-title">{t('combat.simulator.durationTitle')}</div>
         <div className="sim-duration-presets">
           {DURATION_PRESETS.map(preset => (
             <button
@@ -138,7 +138,7 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
       </div>
 
       <div className="sim-config-section">
-        <div className="sim-config-title">🎲 {t('combat.simulator.seedTitle')}</div>
+        <div className="sim-config-title">{t('combat.simulator.seedTitle')}</div>
         <div className="sim-config-row">
           <input
             type="text"
@@ -158,7 +158,7 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
             className="sim-btn sim-btn--secondary"
             onClick={() => onChangeSeed(BigInt(Math.floor(Math.random() * 1_000_000_000) + 1))}
           >
-            ↺ {t('combat.simulator.randomSeed')}
+            {t('combat.simulator.randomSeed')}
           </button>
         </div>
       </div>
@@ -170,7 +170,7 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
           disabled={isSimulating}
           onClick={onRunSimulation}
         >
-          {isSimulating ? `⏳ ${t('combat.simulator.running')}` : `⚔️ ${t('combat.simulator.startSimulation')}`}
+          {isSimulating ? t('combat.simulator.running') : t('combat.simulator.startSimulation')}
         </button>
       </div>
     </div>

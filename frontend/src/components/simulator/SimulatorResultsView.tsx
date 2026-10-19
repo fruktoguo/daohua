@@ -39,7 +39,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
       {/* 1. 战斗胜利波次与综合 KPI */}
       <section className="sim-card sim-card--overview">
         <div className="sim-card-header">
-          <span className="sim-card-title">🏆 {t('combat.simulator.overviewHeading')}</span>
+          <span className="sim-card-title">{t('combat.simulator.overviewHeading')}</span>
           <span className="sim-card-sub">{t('combat.simulator.simulatedSeconds', { s: report.totalSimulatedSeconds })}</span>
         </div>
 
@@ -66,7 +66,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
             <span className="sim-kpi-label">{t('combat.simulator.totalKills')}</span>
             <span className="sim-kpi-value">{report.totalKills}</span>
             <span className="sim-kpi-sub">
-              妖兽 {report.normalKills} · 精英 {report.eliteKills} · 妖王 {report.bossKills}
+              小妖 {report.normalKills} · 精英 {report.eliteKills} · 首领 {report.bossKills}
             </span>
           </div>
 
@@ -88,7 +88,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
       <section className="sim-card sim-card--mana">
         <div className="sim-card-header">
           <div className="sim-mana-header-left">
-            <span className="sim-card-title">💧 {t('combat.simulator.manaDeficitHeading')}</span>
+            <span className="sim-card-title">{t('combat.simulator.manaDeficitHeading')}</span>
             <span className={`sim-diagnosis-badge ${diagnosisToneClass}`}>
               {t(`combat.simulator.diag_${manaDeficit.diagnosis}`)}
             </span>
@@ -101,7 +101,6 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
           </div>
         </div>
 
-        <p className="sim-diagnosis-desc">{manaDeficit.diagnosisText}</p>
 
         {/* 灵力池极值 */}
         <div className="sim-mana-pool-summary">
@@ -165,7 +164,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
         {/* 智能调优建议 */}
         {manaDeficit.suggestions.length > 0 && (
           <div className="sim-suggestions-box">
-            <div className="sim-suggestions-title">💡 {t('combat.simulator.suggestionsTitle')}</div>
+            <div className="sim-suggestions-title">{t('combat.simulator.suggestionsTitle')}</div>
             <ul className="sim-suggestions-list">
               {manaDeficit.suggestions.map((suggestion, index) => (
                 <li key={index}>{suggestion}</li>
@@ -178,7 +177,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
       {/* 3. 战斗收益（经验与物品掉落） */}
       <section className="sim-card sim-card--yields">
         <div className="sim-card-header">
-          <span className="sim-card-title">🎁 {t('combat.simulator.yieldsHeading')}</span>
+          <span className="sim-card-title">{t('combat.simulator.yieldsHeading')}</span>
           <div className="sim-exp-rate-tag">
             <span>{t('combat.simulator.expPerHour')}:</span>
             <strong className="text-gold">+{report.experiencePerHour.toLocaleString()} /hr</strong>

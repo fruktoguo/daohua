@@ -1,5 +1,22 @@
 import type { CombatAbilitySlot, CombatAttributes, CombatTrigger } from '../types'
 
+/** 截断并保留最多 1 位小数，杜绝多余小数点 */
+export function roundStat(val: number): number {
+  if (!Number.isFinite(val)) return 0
+  return Math.round(val * 10) / 10
+}
+
+/** 规范化战斗属性，所有数值项最多保留 1 位小数 */
+export function sanitizeAttributes(attrs: CombatAttributes): CombatAttributes {
+  const result: Partial<CombatAttributes> = {}
+  for (const [key, val] of Object.entries(attrs)) {
+    if (typeof val === 'number') {
+      result[key as keyof CombatAttributes] = roundStat(val)
+    }
+  }
+  return result as CombatAttributes
+}
+
 /**
  * 参战角色配置（模拟器单体模型）
  */

@@ -54,6 +54,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage').then(module 
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
+const CombatSimulatorModal = lazy(() => import('./components/simulator/CombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
 
 /** 延迟模块的可见加载态；复用已有进度样式和页面名称，不吞掉模块加载异常。 */
 function PanelLoading({ label }: { label: string }): React.JSX.Element {
@@ -731,6 +732,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
     percentDecimals: 0,
   })
 
+  const setSimulatorOpen = useUiStore(state => state.setSimulatorOpen)
   return (
     <header className="topbar">
       <div
@@ -773,7 +775,17 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
         </div>
       </div>
       <QueueCenter />
-      <TaijiToggle />
+      <div className="topbar-right-actions">
+        <button
+          type="button"
+          className="topbar-simulator-btn"
+          onClick={() => setSimulatorOpen(true)}
+          title={t('combat.simulator.modalTitle')}
+        >
+          ⚔️ {t('combat.simulator.topbarBtn')}
+        </button>
+        <TaijiToggle />
+      </div>
     </header>
   )
 })
@@ -2428,6 +2440,8 @@ export default function App(): React.JSX.Element {
   const logout = useAccountStore(state => state.logout)
   const [catalogAttempt, setCatalogAttempt] = useState(0)
   const [catalogError, setCatalogError] = useState<string | null>(null)
+  const simulatorOpen = useUiStore(state => state.simulatorOpen)
+  const setSimulatorOpen = useUiStore(state => state.setSimulatorOpen)
   const [catalogReady, setCatalogReady] = useState(false)
 
   useEffect(() => {
@@ -2543,6 +2557,11 @@ export default function App(): React.JSX.Element {
         <BottomNav />
         <TutorialOverlay />
         <PlayerCardModal />
+        {simulatorOpen && (
+          <Suspense fallback={null}>
+            <CombatSimulatorModal open={simulatorOpen} onClose={() => setSimulatorOpen(false)} />
+          </Suspense>
+        )}
       </div>
     )
   }

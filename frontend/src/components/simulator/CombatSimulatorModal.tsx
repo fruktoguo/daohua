@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useState } from 'react'
 import { Modal } from '../Modal'
 import { useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
-import type { SimulatorCombatantConfig, SimulatorConfig, SimulatorReport } from '../../game/simulator/simulatorTypes'
+import { sanitizeAttributes, type SimulatorCombatantConfig, type SimulatorConfig, type SimulatorReport } from '../../game/simulator/simulatorTypes'
 import { ExpeditionSimulator } from '../../game/simulator/expeditionSimulator'
 import { SimulatorPartyEditor } from './SimulatorPartyEditor'
 import { SimulatorConfigPanel } from './SimulatorConfigPanel'
@@ -53,7 +53,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
         name: myName || t('combat.simulator.selfName'),
         isSelf: true,
         formationIndex: 1,
-        attributes: myAttributes ? { ...myAttributes } : {
+        attributes: myAttributes ? sanitizeAttributes(myAttributes) : {
           maxHitpoints: 300,
           maxManapoints: 100,
           physicalAttack: 30,
@@ -173,9 +173,6 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
           <h2 id="sim-modal-title" className="sim-title-text">
             {t('combat.simulator.modalTitle')}
           </h2>
-          <span className="sim-title-badge">
-            {t('combat.simulator.titleBadge')}
-          </span>
         </div>
 
         {/* 顶部标签切换（配置 vs 结果） */}
@@ -185,14 +182,14 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
             className={`sim-main-tab ${activeTab === 'config' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('config')}
           >
-            ⚙️ {t('combat.simulator.tabConfig')}
+            {t('combat.simulator.tabConfig')}
           </button>
           <button
             type="button"
             className={`sim-main-tab ${activeTab === 'results' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('results')}
           >
-            📊 {t('combat.simulator.tabResults')}
+            {t('combat.simulator.tabResults')}
             {report && <span className="sim-tab-dot" />}
           </button>
         </div>

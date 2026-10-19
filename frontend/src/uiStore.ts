@@ -96,6 +96,10 @@ interface UiStore {
   tutorialMapFocusNodeId: string | null
   /** 设置新手引导地图聚焦的目标节点 ID */
   setTutorialMapFocusNodeId: (nodeId: string | null) => void
+  /** 战斗模拟器弹窗开启状态 */
+  simulatorOpen: boolean
+  /** 切换/设置模拟器弹窗状态 */
+  setSimulatorOpen: (open: boolean) => void
 }
 
 /**
@@ -144,4 +148,6 @@ export const useUiStore = create<UiStore>(set => ({
   setCodexCraftingSubTab: codexCraftingSubTab => set({ codexCraftingSubTab }),
   tutorialMapFocusNodeId: null,
   setTutorialMapFocusNodeId: tutorialMapFocusNodeId => set({ tutorialMapFocusNodeId }),
+  simulatorOpen: false,
+  setSimulatorOpen: simulatorOpen => set({ simulatorOpen }),
 }))

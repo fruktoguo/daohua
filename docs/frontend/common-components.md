@@ -487,14 +487,13 @@
 ## 34. 本地离线确定性战斗模拟器 (Combat Simulator Modal)
 
 - **适用场景**：
-  - **战斗演武推演与数值验证**：在战斗视窗右上角提供「⚔️ 演武推演」常驻入口，弹窗唤起本地确定性战斗模拟器；
-  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人实时战斗属性与技能 triggers，或一键导入当前队伍中的队友；支持手动微调 40+ 项战斗终值属性与技能装配；
-  - **环境与时长设置**：支持从大地图所有节点中选择地点（自动关联怪群生态与遭遇池），支持快捷时长（10m~24h）与确定性种子（Seed）控制；
+  - **战斗推演与数值验证**：在顶部导航栏提供「⚔️ 模拟器」常驻入口，弹窗唤起本地确定性战斗模拟器；
+  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人战斗属性（数值自动保留 1 位小数）与技能装配，或一键导入当前队伍队友；支持微调属性与技能；
+  - **环境与时长设置**：支持大地图节点生态、快捷时长（10m~24h）与种子控制；
   - **综合报表展示**：
-    - **战斗波次与胜率 KPI**：总遭遇场次、胜场、胜率、最高到达波次、妖怪击杀明细；
-    - **战斗收益转化**：战利品掉落清单瓦片（`ItemTile` + `ItemTooltipTarget`）、折算每小时获取速率（/hr）、总修为与每小时产出速率；
-    - **灵力缺口深度评估**：高亮呈现技能释放所需灵力不足的时间占比（%）、健康度等级（充沛/轻微/中度/严重）、各技能槽位卡蓝次数与等待时长、智能诊断优化建议。
-- **组件源码**：
+    - **战斗波次与胜率**：总场次、胜场、胜率、最高到达波次、妖怪击杀统计；
+    - **收益转化**：战利品掉落明细（`ItemTile` + `ItemTooltipTarget`，展示总数与 `/hr` 速率）、每小时修为速率；
+    - **灵力状态评估**：缺蓝时间占比（%）、充足/轻度/中度/严重状态、技能卡蓝次数与等蓝耗时、调优建议。
   - 主弹窗容器：[`frontend/src/components/simulator/CombatSimulatorModal.tsx`](../../frontend/src/components/simulator/CombatSimulatorModal.tsx)
   - 阵容编辑：[`frontend/src/components/simulator/SimulatorPartyEditor.tsx`](../../frontend/src/components/simulator/SimulatorPartyEditor.tsx)
   - 环境配置：[`frontend/src/components/simulator/SimulatorConfigPanel.tsx`](../../frontend/src/components/simulator/SimulatorConfigPanel.tsx)

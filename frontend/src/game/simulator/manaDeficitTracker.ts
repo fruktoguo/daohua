@@ -176,27 +176,19 @@ export class ManaDeficitTracker {
 
     if (overallDeficitRatio < 0.02) {
       diagnosis = 'sufficient'
-      diagnosisText = '灵力极度充沛，技能循环顺畅无阻。'
-      suggestions.push('当前蓝量供应完全满足技能循环，可尝试提升攻速或配置更高威力的高耗蓝神通。')
     } else if (overallDeficitRatio < 0.15) {
       diagnosis = 'mild'
-      diagnosisText = '轻度灵力卡顿，在短时爆发期偶有等蓝现象。'
-      suggestions.push('偶有轻微卡蓝，可通过提升少许经脉根基或携带初级回元丹药彻底抹平。')
     } else if (overallDeficitRatio < 0.40) {
       diagnosis = 'moderate'
-      diagnosisText = '中度灵力缺口，技能因缺蓝频繁延后施放，输出受阻。'
-      suggestions.push('技能灵力消耗明显高于自然回复速率，建议检查高耗蓝技能的施法触发条件。')
     } else {
       diagnosis = 'severe'
-      diagnosisText = '严重灵力枯竭！大部分时间处于空蓝平砍，战力大幅折损。'
-      suggestions.push('蓝量循环严重瘫痪！必须配置高阶回灵内功、经脉加点或自动补充回蓝丹药。')
     }
 
     // 找出耗蓝最高和卡蓝最严重的技能
     const mostDeficitSkill = [...skillStats].sort((a, b) => b.totalDeficitSeconds - a.totalDeficitSeconds)[0]
-    if (mostDeficitSkill && mostDeficitSkill.totalDeficitSeconds > 5) {
+    if (mostDeficitSkill && mostDeficitSkill.totalDeficitSeconds > 3) {
       suggestions.push(
-        `【${mostDeficitSkill.abilityName}】累计卡蓝等待达 ${mostDeficitSkill.totalDeficitSeconds.toFixed(1)} 秒，建议放宽其触发条件（如限制目标生命或敌方数量）以避免滥用。`
+        `【${mostDeficitSkill.abilityName}】卡蓝等待 ${mostDeficitSkill.totalDeficitSeconds.toFixed(1)}s，建议提高释放阈值`
       )
     }
 
@@ -204,7 +196,7 @@ export class ManaDeficitTracker {
     const mostCostSkill = [...skillStats].sort((a, b) => b.totalManaSpent - a.totalManaSpent)[0]
     if (mostCostSkill && totalSpent > 0 && mostCostSkill.totalManaSpent / totalSpent > 0.5) {
       suggestions.push(
-        `【${mostCostSkill.abilityName}】消耗了全队 ${(mostCostSkill.totalManaSpent / totalSpent * 100).toFixed(0)}% 的灵力，是主要耗蓝源。`
+        `【${mostCostSkill.abilityName}】耗蓝占比 ${(mostCostSkill.totalManaSpent / totalSpent * 100).toFixed(0)}%`
       )
     }
 

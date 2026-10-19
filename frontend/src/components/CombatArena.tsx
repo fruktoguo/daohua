@@ -19,7 +19,6 @@ import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
 import { CombatStatsPanel } from './CombatStatsPanel'
-import { CombatSimulatorModal } from './simulator/CombatSimulatorModal'
 import { ConfirmDialog } from './ConfirmDialog'
 import { BonusAsideList, extractBuffBonusItems } from './ItemDisplay'
 import { useCombatVfx } from '../vfx/useCombatVfx'
@@ -1969,8 +1968,6 @@ export const CombatArena = memo(function CombatArena({
   const [statsOpen, setStatsOpen] = useState(false)
   const closeStats = useCallback(() => setStatsOpen(false), [])
   const unreadyParty = useSocialStore(state => state.unreadyParty)
-  // 战斗模拟推演弹窗
-  const [simulatorOpen, setSimulatorOpen] = useState(false)
   // 单位属性缓存：敌方/镜像属性为定义级静态值、盟友属性为开打冻结面板，服务端仅在 UnitInspect 登记后一次性交付；
   // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名} / ally:{playerId}。
   const inspectedAttributesCacheRef = useRef(new Map<string, CombatAttributes>())
@@ -2455,14 +2452,6 @@ export const CombatArena = memo(function CombatArena({
           {t('combat.stats.title')}
         </button>
       )}
-      {/* 离线战斗模拟推演入口：常驻挂载于战场右上角 */}
-      <button
-        className="ghost-button combat-simulator-open"
-        onClick={() => setSimulatorOpen(true)}
-        type="button"
-      >
-        {t('combat.simulator.openSimulator')}
-      </button>
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
             组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}
@@ -2690,10 +2679,6 @@ export const CombatArena = memo(function CombatArena({
       >
         <CombatStatsPanel />
       </Modal>
-      <CombatSimulatorModal
-        open={simulatorOpen}
-        onClose={() => setSimulatorOpen(false)}
-      />
       <CharacterAttributeModal
         actorId={inspectedSnapshot?.actorId}
         attributes={inspectedSnapshot?.attributes ?? null}
