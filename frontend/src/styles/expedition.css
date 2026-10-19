@@ -170,6 +170,9 @@
   left: 0;
   width: 100%;
   height: 100%;
+  /* 漫游视口变换以左上角为原点（与拖拽/缩放的像素换算口径一致），
+     由脚本命令式写入 transform，不经过 React 渲染。 */
+  transform-origin: 0 0;
   will-change: transform;
   pointer-events: auto;
 }

@@ -333,7 +333,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                 <article className="nearby-card is-building" key={entity.entityId}>
                   <span className="nearby-mark">
                     {resolveBuildingIconUrl(entity.entityId) ? (
-                      <img
+                      <img decoding="async"
                         alt={entity.name}
                         className="nearby-building-thumb"
                         loading="lazy"
@@ -375,7 +375,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                     )}
                     <span className="nearby-mark">
                       {resolveBuildingIconUrl(building.entityId) ? (
-                        <img
+                        <img decoding="async"
                           alt={building.name}
                           className="nearby-building-thumb"
                           loading="lazy"
@@ -484,7 +484,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                     >
                       <span className="nearby-mark">
                         {resolveBuildingIconUrl(definition.buildingId) ? (
-                          <img
+                          <img decoding="async"
                             alt={definition.name}
                             className="nearby-building-thumb"
                             loading="lazy"
@@ -536,7 +536,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
             <header className="build-picker-header">
               <h2 id="building-detail-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {resolveBuildingIconUrl(detailBuilding.entityId) && (
-                  <img
+                  <img decoding="async"
                     alt={detailBuilding.name}
                     className="nearby-building-thumb"
                     src={resolveBuildingIconUrl(detailBuilding.entityId)}

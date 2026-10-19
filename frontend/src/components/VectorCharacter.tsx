@@ -67,7 +67,7 @@ export const VectorCharacter = memo(function VectorCharacter({
 }: VectorCharacterProps): React.JSX.Element {
   if (kind === 'player' || kind === 'player-female' || kind === 'player-male') {
     return (
-      <img
+      <img decoding="async"
         alt=""
         className={`vector-character vector-character--${kind} vector-character--${role}${isDead ? ' is-dead' : ''} ${className}`}
         draggable={false}

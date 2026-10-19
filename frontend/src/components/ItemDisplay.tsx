@@ -1642,7 +1642,7 @@ export function ItemIcon({
 }): React.JSX.Element | null {
   const url = resolveItemIconUrl(itemId)
   if (!url) return null
-  return <img alt="" aria-hidden="true" className={className} draggable={false} src={url} />
+  return <img decoding="async" alt="" aria-hidden="true" className={className} draggable={false} src={url} />
 }
 
 /**

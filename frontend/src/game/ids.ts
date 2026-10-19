@@ -914,6 +914,30 @@ export function collectOccupiedEquipmentCounts(
   return counts
 }
 
+let occupiedEquipmentSourceRef: readonly EquippedItem[] | undefined
+let occupiedQueueSourceRef: readonly QueueEntry[] | undefined
+let occupiedCountsCache: Map<string, number> = new Map()
+
+/**
+ * 已穿戴/强化锁定占用计数的按引用缓存版本。
+ *
+ * 背包网格中每个格子都会读取本物品的占用件数，selector 在**每次状态通知**（每条服务端补丁）都会重跑：
+ * 若各自重建整表，成本随「背包格数 × 装备与队列长度」放大。这里按两个入参的引用身份缓存，
+ * 同一份状态只构建一次表，其余读取退化为 O(1) 查表。返回值只读，调用方不得修改。
+ */
+export function getOccupiedEquipmentCounts(
+  combatEquipment?: readonly EquippedItem[],
+  queueEntries?: readonly QueueEntry[],
+): Map<string, number> {
+  if (combatEquipment === occupiedEquipmentSourceRef && queueEntries === occupiedQueueSourceRef) {
+    return occupiedCountsCache
+  }
+  occupiedCountsCache = collectOccupiedEquipmentCounts(combatEquipment, queueEntries)
+  occupiedEquipmentSourceRef = combatEquipment
+  occupiedQueueSourceRef = queueEntries
+  return occupiedCountsCache
+}
+
 /**
  * 物品元数据纯数据核心
  */

@@ -896,7 +896,7 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
       >
         <div className="codex-card-avatar-box">
           {resolveBuildingIconUrl(building.buildingId) ? (
-            <img
+            <img decoding="async"
               alt={building.name}
               className="codex-card-avatar-img"
               loading="lazy"

@@ -88,7 +88,7 @@ export const CharacterAvatar = memo(function CharacterAvatar({
   // 1. 若仍有候选图片可用，尝试渲染 <img>
   if (currentSrc && !hasExhaustedCandidates) {
     return (
-      <img
+      <img decoding="async"
         alt={name ?? ''}
         className={combinedClass}
         draggable={false}

@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { useGameStore } from '../game/gameStore'
-import { INVENTORY_GROUP_ORDER, collectOccupiedEquipmentCounts, getEquipmentMap, getItemMap, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
+import { INVENTORY_GROUP_ORDER, getEquipmentMap, getItemMap, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
 import type { InventoryItem } from '../game/types'
 import { useUiStore, type RightColumnTab } from '../uiStore'
 import { useT } from '../i18n'
@@ -21,15 +21,12 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
   const equippedList = useGameStore(state => state.combat?.equipment)
   const queueEntries = useGameStore(state => state.queue?.entries)
 
-  const groups = useMemo(() => {
-    // 已穿戴与当前强化锁定的装备从背包中扣减：按 (itemId, 强化等级) 精确扣减占用件数，
-    // 背包只陈列「钱包持存 − 同级已占用」仍有剩余的变体行；同物不同 +N 行互不串位。
-    const occupiedCounts = collectOccupiedEquipmentCounts(equippedList, queueEntries)
+  // 阶段一（重）：按配表分组 + 排序。结果只取决于背包与配表，与「已穿戴/强化锁定」无关，
+  // 因此不再被高频的队列补丁牵着走——此前每次队列推进都要对整包做一遍 localeCompare 排序。
+  const sortedGroups = useMemo(() => {
     const buckets = new Map<InventoryGroupKey, InventoryItem[]>()
     for (const item of inventory) {
       if (item.amount <= 0) continue
-      const occupied = occupiedCounts.get(`${item.itemId}#${parseEnhancementVariant(item.variant)}`) ?? 0
-      if (item.amount - occupied <= 0) continue
       const key = resolveInventoryGroup(item.itemId, items, equipment)
       const bucket = buckets.get(key)
       if (bucket) bucket.push(item)
@@ -45,20 +42,34 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
       return inv.tier ?? 1
     }
 
-    return INVENTORY_GROUP_ORDER
-      .map(key => {
-        const list = buckets.get(key) ?? []
-        list.sort((left, right) => {
-          const tierDiff = resolveItemTier(right) - resolveItemTier(left)
-          if (tierDiff !== 0) return tierDiff
-          const enhanceDiff = parseEnhancementVariant(right.variant) - parseEnhancementVariant(left.variant)
-          if (enhanceDiff !== 0) return enhanceDiff
-          return left.name.localeCompare(right.name, 'zh-CN') || left.itemId.localeCompare(right.itemId)
-        })
-        return { key, list }
+    return INVENTORY_GROUP_ORDER.map(key => {
+      const list = buckets.get(key) ?? []
+      list.sort((left, right) => {
+        const tierDiff = resolveItemTier(right) - resolveItemTier(left)
+        if (tierDiff !== 0) return tierDiff
+        const enhanceDiff = parseEnhancementVariant(right.variant) - parseEnhancementVariant(left.variant)
+        if (enhanceDiff !== 0) return enhanceDiff
+        return left.name.localeCompare(right.name, 'zh-CN') || left.itemId.localeCompare(right.itemId)
       })
+      return { key, list }
+    })
+  }, [inventory, items, equipment])
+
+  // 阶段二（轻）：扣除已穿戴与当前强化锁定的占用件数。按 (itemId, 强化等级) 精确扣减，
+  // 同物不同 +N 行互不串位；全数占用的行与随之为空的组被丢弃。占用表按状态引用缓存，
+  // 队列补丁到这里只退化为一次 O(袋内条目) 过滤。
+  const groups = useMemo(() => {
+    const occupiedCounts = getOccupiedEquipmentCounts(equippedList, queueEntries)
+    if (occupiedCounts.size === 0) return sortedGroups.filter(group => group.list.length > 0)
+    return sortedGroups
+      .map(group => ({
+        key: group.key,
+        list: group.list.filter(item =>
+          item.amount - (occupiedCounts.get(`${item.itemId}#${parseEnhancementVariant(item.variant)}`) ?? 0) > 0
+        ),
+      }))
       .filter(group => group.list.length > 0)
-  }, [inventory, items, equipment, equippedList, queueEntries])
+  }, [sortedGroups, equippedList, queueEntries])
   return (
     <div className={`inventory-view-panel ${className}`.trim()}>
       {groups.map(group => (

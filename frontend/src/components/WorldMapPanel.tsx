@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { findItemInCatalog } from '../game/ids'
 import type { CombatantDefinition, MapNodeBuilding, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
@@ -551,19 +551,56 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
   // 视口拖拽漫游与缩放状态
   const stageRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [zoom, setZoom] = useState<number>(1)
   const [isDragging, setIsDragging] = useState<boolean>(false)
   const isDraggingRef = useRef<boolean>(false)
-  // zoom/pan 的 ref 镜像：供非 passive 原生 wheel 监听读取最新视口状态，避免把副作用塞进 setState updater。
+  // zoom/pan 的 ref 镜像：拖拽、滚轮与运镜都以它为准读写最新视口，
+  // 手势期间不再逐次 setState，避免每次 pointermove 把整张地图的 element 树 reconcile 一遍。
   const zoomRef = useRef(zoom)
   const panRef = useRef(pan)
-  useEffect(() => {
-    zoomRef.current = zoom
-  }, [zoom])
-  useEffect(() => {
+  const commitViewTimerRef = useRef<number | null>(null)
+
+  /** 直接把视口变换写到画布元素（唯一视觉出口），同步 ref；不触发 React 渲染。 */
+  const writeViewport = useCallback((nextPan: { x: number; y: number }, nextZoom: number) => {
+    panRef.current = nextPan
+    zoomRef.current = nextZoom
+    const canvas = canvasRef.current
+    if (canvas) canvas.style.transform = `translate(${nextPan.x}px, ${nextPan.y}px) scale(${nextZoom})`
+  }, [])
+
+  /** 手势收尾时把手势期间的视口终值回填到 state：按钮、适配与引导读取到的状态始终是最终值。 */
+  const commitViewport = useCallback(() => {
+    if (commitViewTimerRef.current !== null) {
+      window.clearTimeout(commitViewTimerRef.current)
+      commitViewTimerRef.current = null
+    }
+    setPan(current => (current.x === panRef.current.x && current.y === panRef.current.y ? current : panRef.current))
+    setZoom(current => (current === zoomRef.current ? current : zoomRef.current))
+  }, [])
+
+  /** 滚轮等连续手势：立即写画面，稍后静默提交状态（避免逐事件 setState）。 */
+  const scheduleViewportCommit = useCallback(() => {
+    if (commitViewTimerRef.current !== null) window.clearTimeout(commitViewTimerRef.current)
+    commitViewTimerRef.current = window.setTimeout(() => {
+      commitViewTimerRef.current = null
+      commitViewport()
+    }, 120)
+  }, [commitViewport])
+
+  useEffect(() => () => {
+    if (commitViewTimerRef.current !== null) window.clearTimeout(commitViewTimerRef.current)
+  }, [])
+
+  // 状态 → 画面：仅由 state 变更（按钮、视口适配、手势终值回填）施加一次变换。
+  // transform 不写进 JSX，React 不再拥有该属性，补丁重渲染也就不会把漫游中的视口拽回旧值。
+  useLayoutEffect(() => {
     panRef.current = pan
-  }, [pan])
+    zoomRef.current = zoom
+    const canvas = canvasRef.current
+    if (canvas) canvas.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
+  }, [pan, zoom])
   // 新手引导地图目标地点聚焦运镜动画状态
   const tutorialMapFocusNodeId = useUiStore(state => state.tutorialMapFocusNodeId)
   const panAnimFrameRef = useRef<number | null>(null)
@@ -605,15 +642,16 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       // 以鼠标位置为锚点缩放：先求指针下的世界坐标，再反推新的平移量。
       const worldX = (mouseX - panRef.current.x) / prevZoom
       const worldY = (mouseY - panRef.current.y) / prevZoom
-      setZoom(nextZoom)
-      setPan({
-        x: mouseX - worldX * nextZoom,
-        y: mouseY - worldY * nextZoom,
-      })
+      // 直接落画面：连续滚轮期间不做 React 渲染，静默 120ms 后再把终值回填 state。
+      writeViewport(
+        { x: mouseX - worldX * nextZoom, y: mouseY - worldY * nextZoom },
+        nextZoom,
+      )
+      scheduleViewportCommit()
     }
     stage.addEventListener('wheel', onWheel, { passive: false })
     return () => stage.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [cancelPanAnim, scheduleViewportCommit, writeViewport])
 
   // 居中聚焦到玩家当前所在位置（在节点驻留时居中地点，在移动时居中路径当前动态坐标）
   const centerOnPlayer = useCallback((targetZoom?: number) => {
@@ -624,7 +662,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     const stageH = stage.clientHeight
     if (!stageW || !stageH) return
 
-    const z = targetZoom ?? zoom
+    const z = targetZoom ?? zoomRef.current
     const pos = playerPosRef.current
     const playerPxX = (pos.x / 100) * stageW
     const playerPxY = (pos.y / 100) * stageH
@@ -633,7 +671,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       x: Math.round(stageW / 2 - playerPxX * z),
       y: Math.round(stageH / 2 - playerPxY * z),
     })
-  }, [zoom])
+  }, [cancelPanAnim])
   // 视口自动适配锚框：驻留节点 → 所在区域全部节点 ∪ 相邻节点（跨域关口含对侧节点）；
   // 行进在边上 → 就近端点所在区域 ∪ 两端点邻居；兜底 world.mapId 区域。
   // 邻接区域仍整体渲染、可漫游查看，但不整个纳入适配范围，
@@ -779,13 +817,14 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
         y: Math.round(stageH / 2 - (targetNode.y / 100) * stageH * currentZoom),
       }
 
-      // 阶段 1：先让当前地点居中
-      setPan(startPan)
+      // 阶段 1：先让当前地点居中（直接落画面，运镜期间不触发 React 渲染）
+      writeViewport(startPan, currentZoom)
 
       const dist = Math.hypot(targetPan.x - startPan.x, targetPan.y - startPan.y)
       if (dist < 4) {
         // 当前地点与目标地点一致或极近，无需平移动画，直接定格
-        setPan(targetPan)
+        writeViewport(targetPan, currentZoom)
+        commitViewport()
         return true
       }
 
@@ -809,12 +848,14 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
         const nextX = Math.round(startPan.x + (targetPan.x - startPan.x) * ease)
         const nextY = Math.round(startPan.y + (targetPan.y - startPan.y) * ease)
 
-        setPan({ x: nextX, y: nextY })
+        // 逐帧只写画布 transform（合成器直出），规避整图 element 树每帧 reconcile
+        writeViewport({ x: nextX, y: nextY }, currentZoom)
 
         if (progress < 1) {
           panAnimFrameRef.current = requestAnimationFrame(tick)
         } else {
           panAnimFrameRef.current = null
+          commitViewport()
         }
       }
 
@@ -837,7 +878,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       if (waitRaf !== null) cancelAnimationFrame(waitRaf)
       cancelPanAnim()
     }
-  }, [hidden, tutorialMapFocusNodeId, worldIndex.nodes, visibleKey, cancelPanAnim])
+  }, [hidden, tutorialMapFocusNodeId, worldIndex.nodes, visibleKey, cancelPanAnim, writeViewport, commitViewport])
 
   // 选中节点离开可见区域（区域切换）时回退到当前驻留节点或首个可见节点
   useEffect(() => {
@@ -869,13 +910,15 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     dragStartRef.current = {
       clientX: e.clientX,
       clientY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
+      panX: panRef.current.x,
+      panY: panRef.current.y,
       moved: false,
       targetNodeId,
     }
     isDraggingRef.current = false
-  }, [pan.x, pan.y])
+    // 收掉可能仍在等待的滚轮静默提交，避免拖拽过程中插进一次多余的状态回填。
+    commitViewport()
+  }, [cancelPanAnim, commitViewport])
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragStartRef.current) return
@@ -898,11 +941,13 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       }
     }
 
-    setPan({
+    // 拖拽期间只写画布 transform：整图上百个节点的 element 树不再随 pointermove reconcile，
+    // 手势终值由 handlePointerUp 一次性回填 state。
+    writeViewport({
       x: dragStartRef.current.panX + dx,
       y: dragStartRef.current.panY + dy,
-    })
-  }, [])
+    }, zoomRef.current)
+  }, [writeViewport])
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragStartRef.current) return
@@ -910,6 +955,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     dragStartRef.current = null
     isDraggingRef.current = false
     setIsDragging(false)
+    if (moved) commitViewport()
 
     try {
       stageRef.current?.releasePointerCapture(e.pointerId)
@@ -921,7 +967,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     if (!moved && targetNodeId) {
       setSelectedNodeId(targetNodeId)
     }
-  }, [])
+  }, [commitViewport])
 
   // 1. 提取该地点的产出资源（来自开放采集/生产行动 yields 中的物品收益）
   const nodeResources = useMemo(() => {
@@ -1021,7 +1067,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
         <div className="world-map-toolbar" role="toolbar">
           <button
             className="world-map-tool-btn"
-            onClick={() => centerOnPlayer(zoom)}
+            onClick={() => centerOnPlayer(zoomRef.current)}
             title={t('combat.map.centerPlayer')}
             type="button"
           >
@@ -1032,7 +1078,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             <button
               className="world-map-tool-btn icon-only"
               onClick={() => {
-                const nextZoom = Math.min(1.8, zoom + 0.15)
+                const nextZoom = Math.min(1.8, zoomRef.current + 0.15)
                 setZoom(nextZoom)
                 centerOnPlayer(nextZoom)
               }}
@@ -1042,7 +1088,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             <button
               className="world-map-tool-btn icon-only"
               onClick={() => {
-                const nextZoom = Math.max(0.3, zoom - 0.15)
+                const nextZoom = Math.max(0.3, zoomRef.current - 0.15)
                 setZoom(nextZoom)
                 centerOnPlayer(nextZoom)
               }}
@@ -1058,12 +1104,13 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
           </div>
         </div>
 
-        {/* 漫游画布视口：尺寸 = 世界坐标包围盒，区域按全局坐标落位 */}
+        {/* 漫游画布视口：尺寸 = 世界坐标包围盒，区域按全局坐标落位。
+            transform 由 writeViewport/useLayoutEffect 命令式写入，刻意不放进 JSX——
+            React 不拥有该属性，才能让拖拽/滚轮/运镜绕开整图重渲染。 */}
         <div
           className="world-map-canvas"
+          ref={canvasRef}
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: '0 0',
             width: `${worldBounds.width}%`,
             height: `${worldBounds.height}%`,
           }}
@@ -1269,7 +1316,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                           <div className="world-building-popover">
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               {resolveBuildingIconUrl(b.entityId) && (
-                                <img
+                                <img decoding="async"
                                   alt=""
                                   src={resolveBuildingIconUrl(b.entityId)}
                                   style={{ width: 18, height: 18, objectFit: 'contain' }}
@@ -1285,7 +1332,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                       >
                         <span className="world-building-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           {resolveBuildingIconUrl(b.entityId) && (
-                            <img
+                            <img decoding="async"
                               alt=""
                               src={resolveBuildingIconUrl(b.entityId)}
                               style={{ width: 14, height: 14, objectFit: 'contain' }}
@@ -1311,7 +1358,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                             <div className="world-building-popover">
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {resolveBuildingIconUrl(pb.buildingId) && (
-                                  <img
+                                  <img decoding="async"
                                     alt=""
                                     src={resolveBuildingIconUrl(pb.buildingId)}
                                     style={{ width: 18, height: 18, objectFit: 'contain' }}
@@ -1327,7 +1374,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                         >
                           <span className="world-building-pill is-player" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             {resolveBuildingIconUrl(pb.buildingId) && (
-                              <img
+                              <img decoding="async"
                                 alt=""
                                 src={resolveBuildingIconUrl(pb.buildingId)}
                                 style={{ width: 14, height: 14, objectFit: 'contain' }}

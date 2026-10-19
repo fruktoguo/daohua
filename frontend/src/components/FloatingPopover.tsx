@@ -1195,7 +1195,7 @@ export function FloatingInfoCard({
         <div className="daohua-floating-card-title-row">
           <span className="daohua-floating-card-title-group">
             {titleIcon && (
-              <img alt="" aria-hidden="true" className="daohua-floating-card-title-icon" draggable={false} src={titleIcon} />
+              <img decoding="async" alt="" aria-hidden="true" className="daohua-floating-card-title-icon" draggable={false} src={titleIcon} />
             )}
             <strong className="daohua-floating-card-title">{title}</strong>
           </span>

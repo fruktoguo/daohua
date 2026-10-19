@@ -172,7 +172,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                 <h3 className="settings-group-title">{t('app.settings.accountHeading')}</h3>
                 <div className="settings-profile">
                   <span className="settings-profile-avatar">
-                    <img alt="" draggable={false} src={avatarSrc} />
+                    <img decoding="async" alt="" draggable={false} src={avatarSrc} />
                   </span>
                   <div className="settings-profile-main">
                     <span className="settings-profile-name">
@@ -333,7 +333,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                         }
                       }}
                     >
-                      <img className="avatar-tile-icon" alt="" draggable={false} src={opt.src} />
+                      <img decoding="async" className="avatar-tile-icon" alt="" draggable={false} src={opt.src} />
                       <span className="avatar-tile-name">{t(opt.nameKey)}</span>
                       {!unlocked && (
                         <span className="avatar-tile-lock-badge" title={t('app.settings.unlockAvatarCostBadge', { cost: 5000 })}>

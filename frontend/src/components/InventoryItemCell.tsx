@@ -1,7 +1,7 @@
 import { memo, useId, useState } from 'react'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { calculateEquipmentSellPrice, collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../game/ids'
+import { calculateEquipmentSellPrice, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../game/ids'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { useMarketStore } from '../game/marketStore'
 import { useT } from '../i18n'
@@ -138,9 +138,10 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const definition = useGameStore(state => findItemInCatalog(state.items, item.itemId))
   const equipmentDef = useGameStore(state => findEquipmentInCatalog(state.equipment, item.itemId))
   // 已装配与强化锁定计数按 (itemId, 强化等级) 精确匹配：背包中同物不同 +N 变体行互不串位。
+  // 占用表按状态引用缓存，每格 selector 只做一次 O(1) 查表，避免每补丁为每格重建整表。
   const enhancementLevel = parseEnhancementVariant(item.variant)
   const occupiedCount = useGameStore(
-    state => collectOccupiedEquipmentCounts(state.combat?.equipment, state.queue?.entries).get(`${item.itemId}#${enhancementLevel}`) ?? 0
+    state => getOccupiedEquipmentCounts(state.combat?.equipment, state.queue?.entries).get(`${item.itemId}#${enhancementLevel}`) ?? 0
   )
   // 钱包持存含已装备/锁定件数：背包可支配数量需扣除同级已占用件；全数占用时不可直接使用/回收。
   const occupied = occupiedCount >= item.amount

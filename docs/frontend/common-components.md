@@ -68,9 +68,9 @@
 
 - **适用场景**：
   - 面板主分类下的二级切换栏（如内视根基下的「六维」与「基础」切换，采用紧凑暗墨胶囊按键与金色微光高亮）。
-  - **坊市多级分类子导航与功法多维切换 (`MarketBrowseGrid`)**：在一级主 Tab（全部/材料/装备/消耗品/功法）下方，材料/装备/消耗品复用 `.insight-sub-tabs` 与 `.insight-sub-tab-btn` 展示二级子分类；功法主分类下采用专用的多维筛选器（`.market-manual-filters`），包含最左侧「全部」开关与三组左右二选一切换 Toggle（`.market-toggle-group` / `MarketSegmentedToggle`：术法/内功、物理/法术、全本/残卷）。当「全部」勾选激活时三组 Toggle 整体置灰但不改变已有勾选状态，取消勾选时三组 Toggle 恢复可用并执行 AND 复合精准过滤；在置灰态点击任意 Toggle 选项可自动解除「全部」激活状态并无缝应用该项筛选。
+  - **坊市多级分类子导航与多维筛选体系 (`MarketBrowseGrid`)**：一级主 Tab 为（全部/材料/装备/消耗品/功法）。材料保留 `.insight-sub-tabs` 二级子分类（灵材/矿石/异材/精材），并叠加稀有度筛选。全部品类共用 `.market-manual-filters` 多维筛选栏：每个维度为「任意 + 互斥选项」单选 Toggle（`.market-toggle-group` / `MarketOptionToggle`，首项「任意」表示该维不过滤），维度间 AND 联合；品阶为跨品类全局原生下拉（`.market-grade-select`，`0` 表示任意，1~8 阶对应品质档）。装备维度为类型（物理/法术/防御）与部位（六部位 + 工具），选中「工具」时类型组自动置灰禁用并在过滤中忽略类型维度；消耗品维度为战斗药品/战斗通用/技艺；功法维度为门类（术法/内功）、伤害（物理/法术）、形式（全本/残卷）。所有筛选状态常驻 `useMarketStore`。
   - **万象图鉴多级分类导航 (`CodexPage`)**：在一级主分类（材料/技艺/建造/功法/妖兽）中材料居首；材料分类下复用 `.codex-sub-tabs` 与 `.codex-sub-tab-btn` 展示二级子分类（药材/矿石/异材），技艺分类下展示（炼丹/炼器/阵法/符箓），子类划分统一走 `isMaterialSubTabItem` 纯函数。
-- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`, `.market-manual-filters`, `.market-toggle-group`, `.market-toggle-btn`, `.codex-sub-tabs`, `.codex-sub-tab-btn`
+- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`, `.market-manual-filters`, `.market-filter-label`, `.market-grade-field`, `.market-grade-select`, `.market-toggle-group`, `.market-toggle-btn`, `.codex-sub-tabs`, `.codex-sub-tab-btn`
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-sub-tabs`)
 
 ---
@@ -397,6 +397,7 @@
   - **演出上下文 `VfxPlayContext`**：`{side, casterEl, targetEls, ability, castMs, after}` 由桥接层在出手时刻解析（目标按配表 `targetType` 从 `.arena-actor--player/enemy:not(.is-dead)` DOM 快照），技能模块只做纯粒子演出，不写结算。
   - **触发源**：玩家 `combatResources.castingAbilityId`（出现播 `feedback.castRing`、完成时刻播技能）；敌方 `ExpeditionEnemy.pendingAbilityId` + `nextAttackAtSeconds`；斗法 `duel.events[].abilityId + atSeconds`；普攻出手时刻播 `feedback.attack`；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
   - **结算边界**：伤害跳字/血条碎条/受击震颤/出手动作由服务端快照驱动的既有组件（`ArenaResource`/`ArenaActor`）承担，特效模块不触碰战斗状态。
+  - **批次时序与击中帧锁步**：服务端按资源自然窗口（默认 5 秒）批量结算，一次快照可能携带窗口内多次出手。`frontend/src/game/combatFeedback.ts` 以稳定事件键（不随数组下标漂移）去重，并把同一批新事件压缩到 520ms 预算内按出手先后重放、同刻多段连击按 110ms 错峰；`ArenaActor` 的出手/受击/闪避与 `ArenaResource` 的浮字、血条落地共用该时间轴——有事件承接的掉血一律等击中帧（普攻 200ms / 施法 280ms）与数字同时落地，只有 DoT/反伤等无事件掉血才即时保底；浮字上限 24 条，伤害数字至少保留 1 点量级。灵力条只对消耗产浮字、不产切片，单位阵亡后冻结演出，尸体阵容保留战斗末值（`mp` 不再清零）。
   - **普攻与受击变体**：常态攻击变化复用共享 `vfx/feedback.js`；气血下降的局部反馈复用 `ArenaActor` 与 `expedition.css` 的 `.arena-impact-fx`，画廊由 `vfx/core.js` 挂载相同样式。逐项查看使用画廊演武控制台。
   - **尸体消散**：波次清空转入搜寻相位后服务端即清空 `enemies[]`，`CombatArena` 缓存战斗相位末帧敌方阵容继续以尸体形态（`is-dead`、不可交互）展示至寻敌倒数 1 秒，到点调 `CombatVfxRuntime.playCorpseDissipate()` 对全部 `.arena-actor--enemy` 播残魂萤火（画廊 `core.js` `defeat()` 同参数），槽位 CSS 淡出（`arena-corpse-dissipate` + `--corpse-fade-ms`）同步收束至新一波入场。
 - **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` 引擎原语+DaohuaVFX 门面 · `useCombatVfx.ts` React 桥 · `index.ts` 加载器与目标解析）；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
@@ -500,3 +501,25 @@
   - 报表展现：[`frontend/src/components/simulator/SimulatorResultsView.tsx`](../../frontend/src/components/simulator/SimulatorResultsView.tsx)
 - **仿真计算核心**：[`frontend/src/game/simulator/`](../../frontend/src/game/simulator/)
 - **样式文件**：[`frontend/src/styles/simulator.css`](../../frontend/src/styles/simulator.css)
+
+---
+
+## 35. 前端渲染性能约定（高频路径必读）
+
+> 本节不是组件，而是**高频渲染路径的实现纪律**。凡是「每条服务端补丁都会跑」或「每个指针事件都会跑」的代码，必须满足以下四条，否则会与画面结果无关地空烧主线程。
+
+1. **手势/动画驱动的几何变换一律命令式写 DOM，不进 React state**
+   - 拖拽、滚轮缩放、运镜补间这类**每帧或每事件变化**的 `transform`，直接写 `element.style.transform`，只在**手势收尾**（`pointerup`、滚动静默 120ms、动画结束）把终值回填 `useState`。
+   - 该属性**必须从 JSX `style` 中移除**：一旦 React 仍拥有它，任何补丁重渲染都会把手势中的视口拽回旧值。
+   - 读取点（拖拽起点、缩放锚点、按钮）统一读 `ref`，不要读 state（手势期间 state 是旧值）。
+   - 范例：[`WorldMapPanel`](../../frontend/src/components/WorldMapPanel.tsx) 的 `writeViewport` / `commitViewport` / `scheduleViewportCommit`；进度类另见 `useSmoothProgress`（WAAPI 合成器动画）。
+
+2. **不进 React 的时钟：文本用 `textContent` + 内容比对**
+   - 0.1s 精度的倒计时用 100ms `setInterval` 直接写 `textContent`，值未变化不落 DOM（见 `useSmoothProgress`、`ActionCountdownBadge`、`AbilityCooldownOverlay`）。禁止用 `setState` 驱动整块面板每秒重渲染。
+
+3. **zustand selector 内禁止做 O(n) 建表**
+   - selector 在**每次状态通知**都会重跑，且被每个订阅组件各跑一次。需要 Map/聚合时，用 `game/ids.ts` 的**按引用缓存**范式（`getItemMap` / `getEquipmentMap` / `getOccupiedEquipmentCounts`）：入参引用不变即直接返回同一张表，未命中才重建。
+   - 同理，列表排序不要依赖高频切片：把 memo 拆成「重计算（配表 + 数据集）」与「轻过滤（占用/状态）」两阶段，见 [`RightSidebar`](../../frontend/src/components/RightSidebar.tsx) 的 `sortedGroups` / `groups`。
+
+4. **常驻面板惰性挂载，首次可见才构建**
+   - 非首屏页签的大体量面板（全图索引、观测器、测量）用 `hasBeenVisible` 范式延迟挂载，此后常驻不卸载（保留用户状态），范例见 `CombatDetailsPage`（战场）与 `MapPage`（大地图）。
