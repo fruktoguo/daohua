@@ -153,13 +153,18 @@ function stopServer(onStopped, reason) {
   };
 
   child.once("exit", done);
-  child.kill("SIGTERM");
-
-  setTimeout(() => {
-    if (finished) return;
-    log(`服务端未在 ${gracefulStopTimeoutMs}ms 内优雅退出，改为强制结束`);
-    child.kill("SIGKILL");
-  }, gracefulStopTimeoutMs).unref();
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).on("exit", () => {
+      spawn("taskkill", ["/IM", "Server.exe", "/F"], { stdio: "ignore" }).on("exit", done);
+    });
+  } else {
+    child.kill("SIGTERM");
+    setTimeout(() => {
+      if (finished) return;
+      log(`服务端未在 ${gracefulStopTimeoutMs}ms 内优雅退出，改为强制结束`);
+      child.kill("SIGKILL");
+    }, gracefulStopTimeoutMs).unref();
+  }
 }
 
 function startServer() {
@@ -181,11 +186,9 @@ function startServer() {
     const wasExpected = expectedExitPid !== null && expectedExitPid === (child.pid ?? null);
     if (expectedExitPid === (child.pid ?? null)) expectedExitPid = null;
     if (serverProcess === child) serverProcess = null;
-    if (shuttingDown || wasExpected) return;
+    if (shuttingDown || wasExpected || building) return;
     const delayMs = computeBackoffDelayMs();
     log(`服务端异常退出 (code=${code ?? "null"}, signal=${signal ?? "none"})，${delayMs}ms 后自动拉起`);
-    // 不能 unref：子进程退出后事件循环只剩本定时器与 unref 的轮询句柄，
-    // unref 会让守护进程在拉起前静默退出（已实证：意外崩溃后服务再未被拉起）。
     setTimeout(() => startServer(), delayMs);
   });
 }
@@ -194,21 +197,46 @@ function buildAndRestart(reason) {
   if (shuttingDown) return;
   building = true;
   log(`${reason}，开始重新构建...`);
-  const build = spawn("dotnet", ["build", project], {
-    cwd: rootDir,
-    env: { ...process.env },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
 
-  build.on("exit", (code) => {
-    building = false;
-    if (shuttingDown) return;
-    if (code !== 0) {
-      log(`构建失败 (code=${code})，保持旧进程继续运行，等待下一次源码变更`);
-      return;
-    }
-    stopServer(() => startServer(), reason);
-  });
+  const runBuild = () => {
+    const build = spawn("dotnet", ["build", project], {
+      cwd: rootDir,
+      env: { ...process.env },
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+
+    build.on("exit", (code) => {
+      building = false;
+      if (shuttingDown) return;
+      if (code !== 0) {
+        log(`构建失败 (code=${code})，拉起旧进程继续运行`);
+        startServer();
+        return;
+      }
+      log("构建成功，启动服务端进程...");
+      startServer();
+    });
+  };
+
+  if (process.platform === "win32" && serverProcess) {
+    stopServer(runBuild, reason);
+  } else {
+    const build = spawn("dotnet", ["build", project], {
+      cwd: rootDir,
+      env: { ...process.env },
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+
+    build.on("exit", (code) => {
+      building = false;
+      if (shuttingDown) return;
+      if (code !== 0) {
+        log(`构建失败 (code=${code})，保持旧进程继续运行，等待下一次源码变更`);
+        return;
+      }
+      stopServer(() => startServer(), reason);
+    });
+  }
 }
 
 function scheduleDebouncedRestart(reason) {
