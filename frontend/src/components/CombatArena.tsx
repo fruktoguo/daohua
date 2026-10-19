@@ -1681,6 +1681,21 @@ const ALLY_DEPTH_SLOTS: readonly number[] = [1, 4, 7, 2, 5, 8, 3, 6, 9]
 /** 尸体消散提前量：寻敌倒数最后一秒统一播消散动画，末帧与新一波入场对齐 */
 const CORPSE_DISSIPATE_LEAD_MS = 1000
 
+/** 参战单位属性弹窗静态快照（点击时固化一次，不随战斗持续推进或单位死亡改变） */
+interface InspectedCharacterSnapshot {
+  targetKey: string
+  actorId: string | null
+  name: string
+  role: 'player' | 'enemy'
+  title: string
+  visual: CharacterVisual | null
+  attributes: CombatAttributes | null
+  buffs: readonly Buff[]
+  loadout?: UnitLoadoutView | null
+  drops?: readonly MonsterDropDefinition[]
+  enemyId?: string | null
+}
+
 /** 展示态空表：尸体/实时波次均无时的稳定引用 */
 const EMPTY_DISPLAY_ENTRIES: EnemyDisplayState[] = []
 /** 盟友展示态空表：未组队讨伐时的稳定引用 */
@@ -1941,8 +1956,8 @@ export const CombatArena = memo(function CombatArena({
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
   // 否则角色行动条与右侧行动卡片会因「非队列补丁」（入灵气、掉落等）产生 0~1 秒的显示差。
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
-  // 详情弹窗目标：'player'、`enemy:{下标}`（同波多敌人逐只可查）或 `ally:{memberIndex}`（组队盟友）。
-  const [inspectedActor, setInspectedActor] = useState<string | null>(null)
+  // 详情弹窗静态快照：点击单位时获取一次，不随战斗持续推进或单位死亡改变。
+  const [inspectedSnapshot, setInspectedSnapshot] = useState<InspectedCharacterSnapshot | null>(null)
   // 玩家本地装配：详情弹窗「装配」Tab 的玩家数据源（功法槽 + 已穿戴装备，实时值）。
   const combatLoadout = useGameStore(state => state.combat)
   // 终止当前行动的二次确认目标（队首 entryId）；目标离开队首（自然完成/被移除）时自动失效收起弹窗
@@ -1967,12 +1982,6 @@ export const CombatArena = memo(function CombatArena({
   const [corpseDissipating, setCorpseDissipating] = useState(false)
   const t = useT()
 
-  // 观察目标同步（UnitInspect 火忘帧）：敌方/盟友属性面板为按需投影，点开详情才向服务端登记；
-  // 选玩家/关闭弹窗即清除，未点开的单位不占快照带宽；组件常驻战斗页，会话断开自然失效。
-  useEffect(() => {
-    const match = inspectedActor?.match(/^(enemy|ally):(\d+)$/)
-    gameClient.sendUnitInspect(match ? { side: match[1] as 'enemy' | 'ally', index: Number(match[2]) } : null)
-  }, [inspectedActor])
 
   // 战斗特效：overlay 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
   const arenaShellRef = useRef<HTMLDivElement | null>(null)
@@ -1989,27 +1998,59 @@ export const CombatArena = memo(function CombatArena({
     if (!isCombat) setStatsOpen(false)
   }, [isCombat])
   // 一次性交付落账：wire 携带属性时按身份写入缓存，后续快照不再携带也能稳定显示。
+  // 一次性交付落账：wire 携带属性时按身份写入缓存，并向正在浏览的对应快照安全补全权威数值。
   useEffect(() => {
     const cache = inspectedAttributesCacheRef.current
     const loadoutCache = inspectedLoadoutCacheRef.current
     for (const enemy of expedition?.enemies ?? []) {
-      if (enemy.attributes) cache.set(`enemy:${enemy.enemyId}`, enemy.attributes)
+      if (enemy.attributes) {
+        cache.set(`enemy:${enemy.enemyId}`, enemy.attributes)
+        setInspectedSnapshot(prev => {
+          if (prev && prev.role === 'enemy' && prev.enemyId === enemy.enemyId) {
+            const staticAttr = findCombatantInCatalog(encounters, maps, enemy.enemyId)?.attributes
+            if (!prev.attributes || prev.attributes === staticAttr) {
+              return { ...prev, attributes: enemy.attributes ?? null }
+            }
+          }
+          return prev
+        })
+      }
     }
     for (const ally of expedition?.allies ?? []) {
       if (ally.attributes) cache.set(`ally:${ally.playerId}`, ally.attributes)
-      // 功法槽/装备与属性同帧一次性交付；空数组同为合法交付（开打确无装配），均需落缓存。
       if (ally.skills || ally.equipment)
         loadoutCache.set(`ally:${ally.playerId}`, { skills: ally.skills, equipment: ally.equipment })
+      if (ally.attributes) {
+        setInspectedSnapshot(prev => {
+          if (prev && prev.role === 'player' && prev.targetKey.startsWith(`ally:${ally.memberIndex}:`)) {
+            return {
+              ...prev,
+              attributes: prev.attributes ?? ally.attributes ?? null,
+              loadout: (ally.skills || ally.equipment)
+                ? { skills: ally.skills ?? prev.loadout?.skills ?? [], equipment: ally.equipment ?? prev.loadout?.equipment ?? null }
+                : prev.loadout,
+            }
+          }
+          return prev
+        })
+      }
     }
-    if (expedition?.duel?.opponentAttributes && expedition.duel.opponentName)
+    if (expedition?.duel?.opponentAttributes && expedition.duel.opponentName) {
       cache.set(`duel:${expedition.duel.opponentName}`, expedition.duel.opponentAttributes)
+      setInspectedSnapshot(prev => {
+        if (prev && prev.role === 'enemy' && prev.enemyId === null && !prev.attributes) {
+          return { ...prev, attributes: expedition.duel?.opponentAttributes ?? null }
+        }
+        return prev
+      })
+    }
     if (expedition?.duel?.opponentName
       && (expedition.duel.opponentSkills || expedition.duel.opponentEquipment))
       loadoutCache.set(`duel:${expedition.duel.opponentName}`, {
         skills: expedition.duel.opponentSkills,
         equipment: expedition.duel.opponentEquipment,
       })
-  }, [expedition])
+  }, [expedition, encounters, maps])
   const activeAction = current ? actions.find(action => action.id === current.actionId) : null
   const activeEncounterId = expedition?.encounterId ?? activeAction?.combatEncounterId
 
@@ -2135,21 +2176,13 @@ export const CombatArena = memo(function CombatArena({
       }))
   }, [expedition?.allies, expedition?.selfIndex, expedition?.battleElapsedSeconds, expedition?.phase, expedition?.encounterId, expedition?.playerRespawnDurationSeconds, encounters, abilities, t])
 
-  const inspectedEnemyIndex = inspectedActor?.startsWith('enemy:')
-    ? Number(inspectedActor.slice(6))
-    : null
-  const inspectedEnemy = inspectedEnemyIndex !== null && Number.isInteger(inspectedEnemyIndex)
-    ? enemyEntries[inspectedEnemyIndex] ?? null
-    : null
-  const inspectedAllyIndex = inspectedActor?.startsWith('ally:')
-    ? Number(inspectedActor.slice(5))
-    : null
-  const inspectedAlly = inspectedAllyIndex !== null && Number.isInteger(inspectedAllyIndex)
-    ? allyEntries.find(ally => ally.memberIndex === inspectedAllyIndex) ?? null
-    : null
   // 尸体缓存生命周期：combat 相位逐帧刷新缓存；combat→search（服务端语义=波次清空，
   // 团灭走 respawn、斗法走 duel-pending/duel 均不经过此迁移）时固化为尸体阵容
   // （气血归零、行动条置空）；相位离开 search 或切换行动实例即丢弃。
+  // 尸体与团灭留存生命周期：combat 相位逐帧刷新缓存；
+  // combat→search（胜利，全灭）：固化为尸体阵容（气血归零、行动条置空）；
+  // combat→respawn（团灭/倒地）：保留击败己方的怪物阵容（行动条置空、保留存活外观），让玩家在复活倒数期间可查阅敌怪；
+  // 新一轮战斗（离开 search/respawn）或切换行动实例即丢弃。
   useEffect(() => {
     const entryId = current?.entryId ?? null
     const prevPhase = prevPhaseRef.current
@@ -2157,7 +2190,7 @@ export const CombatArena = memo(function CombatArena({
     if (phase === 'combat') {
       if (enemyEntries.length > 0 && entryId !== null)
         combatWaveRef.current = { entryId, entries: enemyEntries }
-      if (prevPhase === 'search') {
+      if (prevPhase === 'search' || prevPhase === 'respawn') {
         setCorpseWave(null)
         setCorpseDissipating(false)
       }
@@ -2168,6 +2201,17 @@ export const CombatArena = memo(function CombatArena({
         const wave = combatWaveRef.current
         setCorpseWave(wave !== null && wave.entryId === entryId && wave.entries.length > 0
           ? wave.entries.map(entry => ({ ...entry, hp: 0, mp: 0, action: null }))
+          : null)
+        setCorpseDissipating(false)
+      }
+      return
+    }
+    if (phase === 'respawn') {
+      if (prevPhase === 'combat') {
+        const wave = combatWaveRef.current
+        // 团灭/战败进入 respawn：保留击败己方的怪物阵容，行动条置空
+        setCorpseWave(wave !== null && wave.entryId === entryId && wave.entries.length > 0
+          ? wave.entries.map(entry => ({ ...entry, action: null }))
           : null)
         setCorpseDissipating(false)
       }
@@ -2200,16 +2244,21 @@ export const CombatArena = memo(function CombatArena({
   // 定时器随卸载被清掉（致死一击的伤害数字正是在这一帧丢的），故用缓存波次同步合成尸体阵容，
   // 让同一实例跨越相位继续消费终局事件与血量差额。
   const transitionCorpseEntries = useMemo<readonly EnemyDisplayState[]>(() => {
-    if (phase !== 'search' || corpseWave !== null) return EMPTY_DISPLAY_ENTRIES
+    if ((phase !== 'search' && phase !== 'respawn') || corpseWave !== null) return EMPTY_DISPLAY_ENTRIES
     const wave = combatWaveRef.current
     if (wave === null || wave.entryId !== (current?.entryId ?? null) || wave.entries.length === 0) {
       return EMPTY_DISPLAY_ENTRIES
     }
-    return wave.entries.map(entry => ({ ...entry, hp: 0, mp: 0, action: null }))
+    return wave.entries.map(entry => ({
+      ...entry,
+      hp: phase === 'search' ? 0 : entry.hp,
+      mp: phase === 'search' ? 0 : entry.mp,
+      action: null,
+    }))
   }, [phase, corpseWave, current?.entryId])
-  const corpseEntries = phase === 'search' ? corpseWave ?? transitionCorpseEntries : EMPTY_DISPLAY_ENTRIES
+  const corpseEntries = (phase === 'search' || phase === 'respawn') ? corpseWave ?? transitionCorpseEntries : EMPTY_DISPLAY_ENTRIES
   const displayEntries = enemyEntries.length > 0 ? enemyEntries : corpseEntries
-  const corpseSlotsActive = enemyEntries.length === 0 && corpseEntries.length > 0
+  const corpseSlotsActive = phase === 'search' && enemyEntries.length === 0 && corpseEntries.length > 0
   const enemyVisible = isCombat && (phase === 'combat' || isDuelPhase || enemyEntries.some(entry => entry.hp > 0) || corpseEntries.length > 0)
   // 空槽只补纵深占位之外的格子：敌怪按 ENEMY_DEPTH_SLOTS 摆位（2 个怪占 1/4 号槽），
   // 若按顺序编号补空会叠进实体槽位，透明空槽在 DOM 后层拦截点击，导致部分怪点不中。
@@ -2280,58 +2329,89 @@ export const CombatArena = memo(function CombatArena({
     return null
   }, [current, expedition, isCombat, isLifeAction, isTravel, queuePaused, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities, world, maps, t])
 
-  // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时取用属性；
-  // 角色/敌怪/斗法镜像/盟友全部渲染服务端下发的 CombatAttributes 终值，无任何本地估算。
-  // 敌方/盟友属性为一次性交付：wire 未携带时回退身份缓存（重复点开即显，命中缓存不触发加载态）。
-  const inspectedAttributes: CombatAttributes | null = inspectedActor === null
-    ? null
-    : inspectedEnemy
-      ? inspectedEnemy.attributes
-        ?? inspectedAttributesCacheRef.current.get(
-          inspectedEnemy.enemyId !== null
-            ? `enemy:${inspectedEnemy.enemyId}`
-            : `duel:${expedition?.duel?.opponentName ?? 'opponent'}`)
-        ?? null
-      : inspectedAlly
-        ? inspectedAlly.attributes
-          ?? inspectedAttributesCacheRef.current.get(`ally:${inspectedAlly.playerId}`)
-          ?? null
-        : combatAttributes ?? null
+  // 详情弹窗静态快照构建（点击时获取一次，不随战斗后续推进或单位死亡改变）
+  const handleInspectPlayer = useCallback(() => {
+    gameClient.sendUnitInspect(null)
+    setInspectedSnapshot({
+      targetKey: 'player',
+      actorId: selfActorId,
+      name: playerName,
+      role: 'player',
+      title: playerName,
+      visual: playerVisual ?? null,
+      attributes: combatAttributes ?? null,
+      buffs: [...playerDisplayBuffs],
+      loadout: {
+        skills: combatLoadout?.abilitySlots ?? [],
+        equipment: combatLoadout?.equipment ?? [],
+      },
+      drops: undefined,
+      enemyId: null,
+    })
+  }, [selfActorId, playerName, playerVisual, combatAttributes, playerDisplayBuffs, combatLoadout])
 
-  // 敌怪掉落明细：静态配表查询（与生态面板同根同源）；斗法镜像 enemyId=null 不解析。
-  const inspectedDrops = useMemo<readonly MonsterDropDefinition[] | undefined>(() => {
-    if (inspectedEnemy?.enemyId == null) return undefined
-    const combatant = findCombatantInCatalog(encounters, maps, inspectedEnemy.enemyId)
-    return combatant?.drops ?? []
-  }, [inspectedEnemy?.enemyId, encounters, maps])
+  const handleInspectAlly = useCallback((ally: AllyDisplayState) => {
+    gameClient.sendUnitInspect({ side: 'ally', index: ally.memberIndex })
+    const cachedAttr = inspectedAttributesCacheRef.current.get(`ally:${ally.playerId}`)
+    const cachedLoadout = inspectedLoadoutCacheRef.current.get(`ally:${ally.playerId}`)
+    setInspectedSnapshot({
+      targetKey: ally.actorKey,
+      actorId: ally.isSelf ? selfActorId : resolvePlayerActorId(ally.avatar),
+      name: ally.name,
+      role: 'player',
+      title: ally.name,
+      visual: null,
+      attributes: ally.attributes ?? cachedAttr ?? null,
+      buffs: [...(ally.buffs ?? [])],
+      loadout: {
+        skills: ally.skills ?? cachedLoadout?.skills ?? [],
+        equipment: ally.equipment ?? cachedLoadout?.equipment ?? null,
+      },
+      drops: undefined,
+      enemyId: null,
+    })
+  }, [selfActorId])
 
-  // 详情弹窗「装配」Tab 数据源（四类目标同构 UnitLoadoutView）：
-  // 玩家=本地 combat 装配实时值；敌怪=静态目录功法槽（无装备概念，equipment 缺省即不渲染分组）；
-  // 盟友/斗法镜像=UnitInspect 一次性交付，wire 未携带时回退身份缓存（与属性缓存同一口径）。
-  const inspectedLoadout = useMemo<UnitLoadoutView | null>(() => {
-    if (inspectedActor === null) return null
-    if (inspectedEnemy) {
-      if (inspectedEnemy.enemyId !== null) {
-        return { skills: findCombatantInCatalog(encounters, maps, inspectedEnemy.enemyId)?.skills ?? [] }
-      }
-      const cached = inspectedLoadoutCacheRef.current.get(`duel:${expedition?.duel?.opponentName ?? 'opponent'}`)
-      return {
-        skills: expedition?.duel?.opponentSkills ?? cached?.skills ?? [],
-        equipment: expedition?.duel?.opponentEquipment ?? cached?.equipment ?? null,
-      }
-    }
-    if (inspectedAlly) {
-      const cached = inspectedLoadoutCacheRef.current.get(`ally:${inspectedAlly.playerId}`)
-      return {
-        skills: inspectedAlly.skills ?? cached?.skills ?? [],
-        equipment: inspectedAlly.equipment ?? cached?.equipment ?? null,
+  const handleInspectEnemy = useCallback((entry: EnemyDisplayState, index: number) => {
+    gameClient.sendUnitInspect({ side: 'enemy', index })
+    const staticCombatant = entry.enemyId ? findCombatantInCatalog(encounters, maps, entry.enemyId) : undefined
+    const cachedAttr = inspectedAttributesCacheRef.current.get(
+      entry.enemyId !== null
+        ? `enemy:${entry.enemyId}`
+        : `duel:${expedition?.duel?.opponentName ?? 'opponent'}`
+    )
+    const initialAttributes = entry.attributes ?? cachedAttr ?? staticCombatant?.attributes ?? null
+    const drops = staticCombatant?.drops ?? []
+    let loadout: UnitLoadoutView | null = null
+    if (entry.enemyId !== null) {
+      loadout = { skills: staticCombatant?.skills ?? [] }
+    } else {
+      const cachedLoadout = inspectedLoadoutCacheRef.current.get(`duel:${expedition?.duel?.opponentName ?? 'opponent'}`)
+      loadout = {
+        skills: expedition?.duel?.opponentSkills ?? cachedLoadout?.skills ?? [],
+        equipment: expedition?.duel?.opponentEquipment ?? cachedLoadout?.equipment ?? null,
       }
     }
-    return {
-      skills: combatLoadout?.abilitySlots ?? [],
-      equipment: combatLoadout?.equipment ?? [],
-    }
-  }, [inspectedActor, inspectedEnemy, inspectedAlly, expedition?.duel, encounters, maps, combatLoadout])
+
+    setInspectedSnapshot({
+      targetKey: entry.actorKey,
+      actorId: entry.enemyId ?? activeEncounterId ?? null,
+      name: entry.name,
+      role: 'enemy',
+      title: entry.name,
+      visual: entry.visual ?? null,
+      attributes: initialAttributes,
+      buffs: [...(entry.buffs ?? [])],
+      loadout,
+      drops,
+      enemyId: entry.enemyId ?? null,
+    })
+  }, [encounters, maps, expedition?.duel, activeEncounterId])
+
+  const handleCloseInspect = useCallback(() => {
+    setInspectedSnapshot(null)
+    gameClient.sendUnitInspect(null)
+  }, [])
 
   // 待终止目标仅在仍为队首时有效；自然完成或被队列他处移除后，确认弹窗自动收起
   const stopTarget = current && current.entryId === pendingStopEntryId ? current : null
@@ -2394,7 +2474,7 @@ export const CombatArena = memo(function CombatArena({
                           maxMp={playerMaxMp}
                           mp={playerMp}
                           name={playerName}
-                          onInspect={() => setInspectedActor('player')}
+                          onInspect={handleInspectPlayer}
                           role="player"
                           seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
                           threat={playerThreat}
@@ -2421,7 +2501,7 @@ export const CombatArena = memo(function CombatArena({
                         mp={ally.mp}
                         name={ally.name}
                         buffs={ally.buffs}
-                        onInspect={() => setInspectedActor(`ally:${ally.memberIndex}`)}
+                        onInspect={() => handleInspectAlly(ally)}
                         role="player"
                         seal={ally.seal}
                         threat={ally.threat}
@@ -2447,7 +2527,7 @@ export const CombatArena = memo(function CombatArena({
                     maxMp={playerMaxMp}
                     mp={playerMp}
                     name={playerName}
-                    onInspect={() => setInspectedActor('player')}
+                    onInspect={handleInspectPlayer}
                     role="player"
                     seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
                     threat={playerThreat}
@@ -2500,7 +2580,7 @@ export const CombatArena = memo(function CombatArena({
                       maxMp={entry.maxMp}
                       mp={entry.mp}
                       name={entry.name}
-                      onInspect={corpseSlotsActive ? undefined : () => setInspectedActor(`enemy:${index}`)}
+                      onInspect={() => handleInspectEnemy(entry, index)}
                       role="enemy"
                       seal={entry.seal}
                       threat={entry.threat}
@@ -2600,25 +2680,17 @@ export const CombatArena = memo(function CombatArena({
         <CombatStatsPanel />
       </Modal>
       <CharacterAttributeModal
-        actorId={
-          inspectedEnemy
-            ? (inspectedEnemy.enemyId ?? activeEncounterId)
-            : inspectedAlly
-              ? (inspectedAlly.isSelf ? selfActorId : resolvePlayerActorId(inspectedAlly.avatar))
-              : selfActorId
-        }
-        attributes={inspectedAttributes}
-        buffs={inspectedActor === 'player' || inspectedAlly?.isSelf
-          ? playerDisplayBuffs
-          : inspectedEnemy?.buffs ?? inspectedAlly?.buffs ?? []}
-        loadout={inspectedLoadout}
-        drops={inspectedDrops}
-        name={inspectedEnemy?.name ?? inspectedAlly?.name ?? playerName}
-        onClose={() => setInspectedActor(null)}
-        open={inspectedActor !== null}
-        role={inspectedEnemy ? 'enemy' : 'player'}
-        title={inspectedEnemy?.name ?? inspectedAlly?.name ?? playerName}
-        visual={inspectedEnemy?.visual ?? null}
+        actorId={inspectedSnapshot?.actorId}
+        attributes={inspectedSnapshot?.attributes ?? null}
+        buffs={inspectedSnapshot?.buffs ?? []}
+        loadout={inspectedSnapshot?.loadout}
+        drops={inspectedSnapshot?.drops}
+        name={inspectedSnapshot?.name}
+        onClose={handleCloseInspect}
+        open={inspectedSnapshot !== null}
+        role={inspectedSnapshot?.role ?? 'player'}
+        title={inspectedSnapshot?.title ?? ''}
+        visual={inspectedSnapshot?.visual ?? null}
       />
     </div>
   )

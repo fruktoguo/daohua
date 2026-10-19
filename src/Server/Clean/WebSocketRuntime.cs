@@ -858,9 +858,16 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_INSPECT", "单位观察目标无效。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
-                        // 火忘帧无回执：登记武装一次性属性交付，由下一帧快照按命中下标投影一次后自动解除；
+                        // 火忘帧无回执：登记武装一次性属性交付，并立即尝试投递一帧带按需属性的增量快照；
+                        // 倒地停手或无战斗事件时立即交付，无需等待下一时钟边界；
                         // 帧被慢消费者丢弃则保留武装重投，客户端按 enemyId 缓存复用无需重复下发。
                         session.SetInspectedUnit(inspect.Side is null ? null : inspect);
+                        if (inspect.Side is not null)
+                        {
+                            var inspectSnapshot = runtime.TryGetLoaded(session.PlayerId);
+                            if (inspectSnapshot is not null && TryPushDelta(session, inspectSnapshot, gameData, null))
+                                session.CompleteDeltaResync();
+                        }
                         break;
                     default:
                         await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("UNSUPPORTED_MESSAGE", "不支持的消息类型。"), cancellationToken);
