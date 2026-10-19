@@ -120,6 +120,12 @@
   border-color: var(--gold-dim);
 }
 
+:root[data-theme="light"] .market-grade-select {
+  background: rgba(var(--surface-rgb), 0.55);
+  border-color: var(--gold-dim);
+  color: var(--text);
+}
+
 :root[data-theme="light"] .market-toggle-btn:not(.active) {
   color: var(--text-dim);
 }
@@ -998,6 +1004,294 @@
   color: #c8523f;
   text-shadow: none;
 }
+/* ==========================================================================
+   全界面浅色对比度与深色遗留面补齐
+   依据《总纲 13.1.1》：浅色普通文本对实际底色 ≥ 4.5:1，必要控件边界 ≥ 3:1，
+   深色主题的高亮文字不得直接复用到浅色底。以下规则只作用于浅色主题，
+   深色分支与既有纹饰、布局、动效保持不变。
+   ========================================================================== */
+
+/* 1. 语义文字变量：--text-muted / --text-normal / --text-sub 此前没有浅色定义，
+      调用点只能落到深色主题的浅色回退字面量（#f0f0f0、rgba(233,227,210,.85)），
+      在纸白底上接近隐形。此处补齐三档浅色语义字色。 */
+:root[data-theme="light"] {
+  --text-muted: var(--text-dim);
+  --text-normal: var(--text-bright);
+  --text-sub: var(--text-dim);
+}
+
+/* 2. 物品角标胶囊：底色已由浅色主题提亮为纸白，文字仍是深色主题的柔和浅灰，
+      实际对比度仅 1.67:1。改为浅色次要文字色（7.54:1）。 */
+:root[data-theme="light"] .item-corner,
+:root[data-theme="light"] .item-corner--bottom-right,
+:root[data-theme="light"] .action-card .item-corner {
+  color: var(--text-dim);
+}
+
+/* 3. 引气入体灵石档位按钮：底板与描边取自深色主题的白色微光，纸白底上边界不足 3:1；
+      悬停色又取未定义的 --text-normal（回退 #f0f0f0）等于隐形。补齐常态边界与悬停态。 */
+:root[data-theme="light"] .spirit-stone-tier-btn {
+  border-color: rgba(125, 82, 26, 0.35);
+  background: rgba(var(--surface-rgb), 0.6);
+}
+
+:root[data-theme="light"] .spirit-stone-tier-btn:hover {
+  border-color: var(--gold);
+  background: rgba(var(--surface-rgb), 0.9);
+  color: var(--text-bright);
+}
+
+/* 4. 坊市行情副气泡：在售/求购存量高亮沿用深色主题的浅赭 #f6bfa8、浅碧 #aae0c2
+      （1.49:1 / 1.36:1）。改用与同卡片徽章一致的深赭 #a8502f、深碧 #277850。 */
+:root[data-theme="light"] .daohua-market-aside-stock-val--ask.is-active {
+  color: #a8502f;
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .daohua-market-aside-stock-val--bid.is-active {
+  color: #277850;
+  text-shadow: none;
+}
+
+/* 5. 语义徽章：浅色底统一改用同色相深色，避免深色主题的高明度色直接铺在纸白上。 */
+:root[data-theme="light"] .badge-spirit-stone {
+  border-color: rgba(125, 82, 26, 0.45);
+  background: rgba(125, 82, 26, 0.1);
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .party-pvp-teams-badge {
+  border-color: rgba(105, 64, 140, 0.4);
+  background: rgba(105, 64, 140, 0.1);
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .party-malus-badge {
+  border-color: rgba(178, 51, 39, 0.4);
+  background: rgba(178, 51, 39, 0.12);
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .codex-unlock-condition-pill--locked {
+  border-color: rgba(178, 51, 39, 0.35);
+  background: rgba(178, 51, 39, 0.1);
+  color: #a12b20;
+}
+
+:root[data-theme="light"] .ops-tone--warn {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .sim-log-badge.badge-victory {
+  background: rgba(5, 150, 105, 0.14);
+  color: #036a4d;
+}
+
+:root[data-theme="light"] .sim-log-badge.badge-defeat {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+/* 6. 行动数值胶囊：根经验与技艺两档沿用深色主题的荧光绿/橙（1.67:1 / 1.96:1）。 */
+:root[data-theme="light"] .action-stat-pill--rootexp {
+  border-color: rgba(23, 96, 67, 0.35);
+}
+
+:root[data-theme="light"] .action-stat-pill--rootexp strong {
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .action-stat-pill--technique {
+  border-color: rgba(138, 69, 20, 0.35);
+}
+
+:root[data-theme="light"] .action-stat-pill--technique strong {
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .duel-option-status .duel-node-teams {
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .building-load-status-bar.is-overload {
+  border-color: rgba(178, 51, 39, 0.35);
+  background: rgba(178, 51, 39, 0.08);
+  color: var(--danger);
+}
+
+/* 7. 危险操作主按钮：深色主题的浅红字 #ffb4b4 压在半透明红底上，浅色底实测 1.06:1。
+      浅色改走印章红：常态淡红底 + 深红字，悬停反转为实心红底 + 米白字。 */
+:root[data-theme="light"] .action-modal-submit--danger {
+  border-color: rgba(178, 51, 39, 0.45);
+  background: rgba(178, 51, 39, 0.1);
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .action-modal-submit--danger:hover:not(:disabled) {
+  border-color: var(--seal-deep);
+  background: var(--seal);
+  color: var(--on-accent);
+}
+
+/* 8. 坊市逐档买卖按钮：深色主题的浅碧/浅赭字压在近乎透明的底上（1.83:1 / 2.03:1）。 */
+:root[data-theme="light"] .market-level-trade-btn {
+  background: rgba(var(--surface-rgb), 0.55);
+}
+
+:root[data-theme="light"] .market-level-trade-btn--bid {
+  border-color: rgba(23, 96, 67, 0.35);
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .market-level-trade-btn--ask {
+  border-color: rgba(138, 69, 20, 0.35);
+  color: var(--amber);
+}
+
+/* 9. 属性小图标：胶囊数值已按浅色主题加深，图标仍是荧光色系（1.6~2.1:1）。
+      与同胶囊 .underlined-value 的浅色语义色保持一致。 */
+:root[data-theme="light"] .pill-tone--emerald .compound-icon,
+:root[data-theme="light"] .pill-tone--jade .compound-icon {
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .pill-tone--cyan .compound-icon,
+:root[data-theme="light"] .pill-tone--sky .compound-icon,
+:root[data-theme="light"] .pill-tone--qi .compound-icon {
+  color: var(--qi);
+}
+
+:root[data-theme="light"] .pill-tone--violet .compound-icon,
+:root[data-theme="light"] .pill-tone--purple .compound-icon {
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .pill-tone--indigo .compound-icon {
+  color: #494d98;
+}
+
+:root[data-theme="light"] .pill-tone--teal .compound-icon {
+  color: #14625c;
+}
+
+:root[data-theme="light"] .pill-tone--gold .compound-icon,
+:root[data-theme="light"] .pill-tone--bronze .compound-icon {
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .pill-tone--amber .compound-icon {
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .pill-tone--crimson .compound-icon {
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .pill-tone--silver .compound-icon {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .pill-tone--slate .compound-icon {
+  color: var(--silver);
+}
+
+/* 10. 未做浅色适配的深色面：以下容器/胶囊在浅色主题仍保留深色半透明底，
+       与纸白面板形成突兀色块，且内部深墨文字落在深底上（最低 2.09:1）。
+       按既有浅色材质规范改为纸白半透明底 + 金褐描边。 */
+:root[data-theme="light"] .building-section-card {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.72);
+}
+
+:root[data-theme="light"] .building-load-item {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.55);
+}
+
+:root[data-theme="light"] .building-bonus-pill {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.8);
+}
+
+:root[data-theme="light"] .codex-tab-count,
+:root[data-theme="light"] .codex-sub-tab-count {
+  background: rgba(125, 82, 26, 0.12);
+}
+
+:root[data-theme="light"] .codex-card-avatar-box {
+  border-color: var(--gold-dim);
+  background: rgba(var(--surface-rgb), 0.88);
+}
+
+:root[data-theme="light"] .codex-lock-badge {
+  border-color: var(--gold-dim);
+  background: rgba(var(--surface-rgb), 0.95);
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .codex-sub-tab-btn:not(.active) {
+  border-color: var(--gold-dim);
+}
+
+:root[data-theme="light"] .trait-card-checkbox {
+  background: rgba(125, 82, 26, 0.1);
+}
+
+:root[data-theme="light"] .trait-card-checkbox.is-checked {
+  background: rgba(125, 82, 26, 0.18);
+}
+
+:root[data-theme="light"] .invite-code {
+  border-color: var(--gold-dim);
+  background: rgba(125, 82, 26, 0.06);
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .breakthrough-modal-row-gain.underlined-value {
+  border-color: rgba(125, 82, 26, 0.28);
+  background: rgba(125, 82, 26, 0.08);
+}
+
+:root[data-theme="light"] .item-reference-compound {
+  border-color: rgba(125, 82, 26, 0.35);
+}
+
+:root[data-theme="light"] .item-reference-compound:hover {
+  border-color: var(--gold-dim);
+}
+
+/* 竞技场生活卡数值芯片：深色主题的白色微光边在纸白卡面上不可见，补金褐边界。 */
+:root[data-theme="light"] .arena-life-input-chip {
+  border-color: rgba(143, 114, 67, 0.45);
+  background: rgba(var(--surface-rgb), 0.6);
+}
+
+/* 11. 进度条底槽：深色主题以 6%~70% 黑或 8% 白作槽底，浅色主题下前者是黑板、
+       后者在纸白上完全不可见。统一改用温润米褐槽底，与已修复的 .progress 一致。 */
+:root[data-theme="light"] :is(.insight-progress-bar,
+  .arena-resource-track,
+  .arena-action-track,
+  .arena-life-progress-bar,
+  .insight-traits-progress-bar,
+  .trait-card-exp-track,
+  .trait-capacity-track,
+  .building-progress-track,
+  .daohua-floating-aside-progress,
+  .arena-search-progress-vertical) {
+  border-color: rgba(143, 114, 67, 0.45);
+  background: linear-gradient(180deg, rgba(var(--shade-rgb), 0.55), rgba(var(--surface-rgb), 0.7));
+}
+
+:root[data-theme="light"] :is(.compound-stat-progress-track, .nav-sub-progress) {
+  background: rgba(125, 82, 26, 0.18);
+}
+
+/* 底槽提亮后，生活卡进度文字需由白字转深墨字，沿用顶部战斗血条的描边处理。 */
+:root[data-theme="light"] .arena-life-progress-text {
+  color: var(--text);
+}
+
 /* 窄屏设置分类条横向排列，激活红线由左侧竖条切换为底部横条。 */
 @media (max-width: 960px) {
   :root[data-theme="light"] .settings-nav-item.active {
