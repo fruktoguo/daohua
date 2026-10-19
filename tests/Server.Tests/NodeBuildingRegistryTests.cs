@@ -110,7 +110,7 @@ public sealed class NodeBuildingRegistryTests
         Assert.Equal(5d, contribute.AppliedMaterials!["item.test-wood"]);
 
         // 材料+时间双满：下一次读即触发惰性完工，版本再递增且数据库行落成 level=1。
-        var finalized = await registry.BuildingsForAsync(nodeId, now.AddSeconds(1), CancellationToken.None);
+        var finalized = await registry.BuildingsForAsync(nodeId, now.AddSeconds(700), CancellationToken.None);
         Assert.True(finalized.Version > underConstruction.Version);
         var built = Assert.Single(finalized.Buildings);
         Assert.Equal(1, built.Level);
@@ -128,7 +128,7 @@ public sealed class NodeBuildingRegistryTests
         Assert.Equal(0, reader.GetInt32(1));
 
         // 完工后再读：无到期工程，版本稳定不再漂移。
-        var after = await registry.BuildingsForAsync(nodeId, now.AddSeconds(2), CancellationToken.None);
+        var after = await registry.BuildingsForAsync(nodeId, now.AddSeconds(701), CancellationToken.None);
         Assert.Equal(finalized.Version, after.Version);
     }
 
@@ -243,6 +243,76 @@ public sealed class NodeBuildingRegistryTests
         // 缓存快照同步采纳活行：读路径看得到合并结果而非旧投影。
         var snapshot = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
         Assert.Equal(5d, Assert.Single(snapshot.Buildings).ContributedMaterials["item.test-wood"]);
+    }
+
+    /// <summary>
+    /// 材料停工防积蓄验证：
+    /// 当材料只有 40% 时（需 5 份，交了 2 份），总工期 600s 封顶于 240s；
+    /// 即使现实流逝 3600 秒（1小时），有效工时仍为 240s；
+    /// 此时再交付剩余 3 份材料（材料满 100%），工期基准被重锚定，当前有效工期依然是 240s（40%），
+    /// 绝不瞬间完工，必须再持续推进 360 秒才竣工。
+    /// </summary>
+    [Fact]
+    public async Task ContributeDoesNotAccumulateExcessElapsedDuringMaterialStall()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("节点建筑注册表集成测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var repository = new PostgresNodeBuildingRepository(source);
+        var catalog = CatalogWithTestBuilding();
+        var registry = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance);
+        var nodeId = $"node.test-{Guid.NewGuid():N}";
+        var t0 = DateTimeOffset.UtcNow;
+
+        var definition = catalog.Buildings["building.test-hut"];
+        // t0 开工（TargetLevel=1, 需求 5 份木头, 600 秒）
+        Assert.True((await registry.StartConstructionAsync(nodeId, definition, t0, CancellationToken.None)).Success);
+
+        // t0 提交 2 份材料（40%）
+        var contributor = await SeedContributorAsync(source, 5);
+        var c1 = await registry.ContributeAsync(nodeId, "building.test-hut",
+            new Dictionary<string, double> { ["item.test-wood"] = 2 }, contributor, CancellationToken.None);
+        Assert.True(c1.Success);
+
+        // 现实流逝 1 小时（3600 秒）
+        var t1 = t0.AddSeconds(3600);
+        var snapshotStalled = await registry.BuildingsForAsync(nodeId, t1, CancellationToken.None);
+        var stalled = Assert.Single(snapshotStalled.Buildings);
+        // 材料只有 40%，未完工，有效工时封顶 240 秒
+        Assert.Equal(0, stalled.Level);
+        Assert.Equal(1, stalled.TargetLevel);
+        Assert.Equal(240, NodeBuildingRules.EffectiveElapsedSeconds(stalled, definition, t1.ToUnixTimeMilliseconds() / 1000d));
+
+        // 在 t1 时刻提交剩余 3 份材料（材料满 100%）
+        var c2 = await registry.ContributeAsync(nodeId, "building.test-hut",
+            new Dictionary<string, double> { ["item.test-wood"] = 3 },
+            contributor with { RequestId = Guid.NewGuid(), IdempotencyKey = Guid.NewGuid().ToString("N"), OccurredAt = t1 },
+            CancellationToken.None);
+        Assert.True(c2.Success);
+
+        // 提交材料瞬间（t1）：验证工期没有瞬间完工，而是重锚定在 240 秒（40%）
+        var snapshotAfterContribute = await registry.BuildingsForAsync(nodeId, t1, CancellationToken.None);
+        var afterContribute = Assert.Single(snapshotAfterContribute.Buildings);
+        Assert.Equal(0, afterContribute.Level);
+        Assert.Equal(1, afterContribute.TargetLevel);
+        var t1Seconds = t1.ToUnixTimeMilliseconds() / 1000d;
+        Assert.Equal(240, NodeBuildingRules.EffectiveElapsedSeconds(afterContribute, definition, t1Seconds));
+        Assert.Equal(0.4, NodeBuildingRules.BuildProgress(afterContribute, definition, t1Seconds), 6);
+        Assert.False(NodeBuildingRules.IsComplete(afterContribute, definition, t1Seconds));
+
+        // 从 t1 再过 359 秒（累计有效工时 240 + 359 = 599 秒）：依然未完工
+        var t2 = t1.AddSeconds(359);
+        var snapshotT2 = await registry.BuildingsForAsync(nodeId, t2, CancellationToken.None);
+        var stateT2 = Assert.Single(snapshotT2.Buildings);
+        Assert.Equal(0, stateT2.Level);
+        Assert.False(NodeBuildingRules.IsComplete(stateT2, definition, t2.ToUnixTimeMilliseconds() / 1000d));
+
+        // 从 t1 再过 360 秒（累计有效工时 240 + 360 = 600 秒）：正好完工！
+        var t3 = t1.AddSeconds(360);
+        var snapshotT3 = await registry.BuildingsForAsync(nodeId, t3, CancellationToken.None);
+        var stateT3 = Assert.Single(snapshotT3.Buildings);
+        Assert.Equal(1, stateT3.Level);
+        Assert.Equal(0, stateT3.TargetLevel);
     }
 
     /// <summary>

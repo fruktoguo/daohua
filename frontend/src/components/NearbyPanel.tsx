@@ -7,7 +7,7 @@ import type { BuildingDefinition, NearbyMonsterDefinition } from '../game/types'
 import { resolveItemMetadata } from '../game/ids'
 import { CharacterAvatar } from './CharacterAvatar'
 import { Modal } from './Modal'
-import { formatInteger, formatNumber } from '../game/format'
+import { formatInteger, formatNumber, formatRemainingSeconds } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { gameClient } from '../network/gameClient'
 import { ItemReference } from './ItemDisplay'
@@ -420,6 +420,9 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                               {t('combat.nearby.buildingProgressSummary', {
                                 material: Math.round(building.materialProgress * 100),
                                 time: Math.round(building.timeProgress * 100),
+                                timeText: building.requiredSeconds > 0
+                                  ? ` (${formatRemainingSeconds(building.elapsedSeconds)}/${formatRemainingSeconds(building.requiredSeconds)})`
+                                  : '',
                               })}
                             </span>
                             {building.materialProgress < 1 && (
@@ -611,11 +614,20 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                 {isUpgrading ? (
                   <div className="building-construction-panel">
                     <div className="building-progress-row">
-                      <span>{t('combat.nearby.buildingMaterialProgress', { percent: Math.round(detailBuilding.materialProgress * 100) })}</span>
+                      <div className="building-progress-meta">
+                        <span>{t('combat.nearby.buildingMaterialProgress', { percent: Math.round(detailBuilding.materialProgress * 100) })}</span>
+                      </div>
                       <ProgressBar value={detailBuilding.materialProgress} />
                     </div>
                     <div className="building-progress-row">
-                      <span>{t('combat.nearby.buildingTimeProgress', { percent: Math.round(detailBuilding.timeProgress * 100) })}</span>
+                      <div className="building-progress-meta">
+                        <span>{t('combat.nearby.buildingTimeProgress', { percent: Math.round(detailBuilding.timeProgress * 100) })}</span>
+                        {detailBuilding.requiredSeconds > 0 && (
+                          <span className="underlined-value building-progress-time">
+                            {formatRemainingSeconds(detailBuilding.elapsedSeconds)} / {formatRemainingSeconds(detailBuilding.requiredSeconds)}
+                          </span>
+                        )}
+                      </div>
                       <ProgressBar value={detailBuilding.timeProgress} />
                     </div>
                     {detailBuilding.materials.length > 0 && (

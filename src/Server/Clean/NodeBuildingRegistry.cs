@@ -195,10 +195,17 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
         if (economy.AlreadyCommitted)
             return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, null, ReadAppliedMaterials(economy.ResultPayload), economy);
 
+        var nowUnixSeconds = context.OccurredAt.ToUnixTimeMilliseconds() / 1000.0;
+        // 提交新材料前按旧材料封顶结算有效已耗工时；材料停滞等待期间的无效墙钟时间不积蓄，重锚定基准起始时刻。
+        var effectiveElapsed = NodeBuildingRules.EffectiveElapsedSeconds(row, definition, nowUnixSeconds);
         var merged = new Dictionary<string, double>(row.ContributedMaterials, StringComparer.Ordinal);
         foreach (var (itemId, quantity) in appliedMaterials)
             merged[itemId] = merged.GetValueOrDefault(itemId) + quantity;
-        var updated = row with { ContributedMaterials = merged };
+        var updated = row with
+        {
+            StartedAtUnixSeconds = nowUnixSeconds - effectiveElapsed,
+            ContributedMaterials = merged
+        };
         await UpdateLockedRowAsync(connection, transaction, nodeId, updated, cancellationToken);
         await PostgresEconomyRepository.CommitTransactionAsync(transaction, context.RequestId, cancellationToken);
         return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, updated, appliedMaterials, economy);

@@ -77,6 +77,26 @@ public sealed class NodeBuildingRulesTests
     }
 
     [Fact]
+    public void EffectiveElapsedSecondsCapsAtMaterialFractionAndDoesNotAccumulate()
+    {
+        var definition = Definition(); // 一级工期 600 秒，总需求 100+50=150
+        // 半数材料（75/150 = 50%）：允许的最大工时为 300 秒
+        var halfMaterials = new NodeBuildingState("building.test", 0, 1, 0,
+            new Dictionary<string, double> { ["item.peach-wood"] = 50, ["item.beast-hide"] = 25 });
+
+        // 流逝 100 秒：未达上限，有效工时 100 秒
+        Assert.Equal(100, NodeBuildingRules.EffectiveElapsedSeconds(halfMaterials, definition, 100));
+        // 流逝 300 秒：刚好达上限 50%，有效工时 300 秒
+        Assert.Equal(300, NodeBuildingRules.EffectiveElapsedSeconds(halfMaterials, definition, 300));
+        // 流逝 3600 秒（1小时）：卡在材料上限，有效工时保持 300 秒，不积蓄多余流逝时间
+        Assert.Equal(300, NodeBuildingRules.EffectiveElapsedSeconds(halfMaterials, definition, 3600));
+
+        // 已竣工或无工程建筑返回 0
+        var completed = new NodeBuildingState("building.test", 1, 0, 0, new Dictionary<string, double>());
+        Assert.Equal(0, NodeBuildingRules.EffectiveElapsedSeconds(completed, definition, 1000));
+    }
+
+    [Fact]
     public void FinalizeIfCompletePromotesLevelAndClearsMaterials()
     {
         var definition = Definition();

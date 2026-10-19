@@ -192,7 +192,7 @@ export const combatZh = {
       buildingUpgrading: '升级中 → Lv.{level}',
       buildingConstructing: '建造中',
       buildingUpgradingShort: '升级中',
-      buildingProgressSummary: '材料 {material}% · 工期 {time}%',
+      buildingProgressSummary: '材料 {material}% · 工期 {time}%{timeText}',
       buildingNeedMaterials: '待投材料',
       buildingMaterialProgress: '材料 {percent}%',
       buildingTimeProgress: '工期 {percent}%',

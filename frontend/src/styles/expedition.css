@@ -1411,11 +1411,21 @@
 
 .building-progress-row {
   display: grid;
-  grid-template-columns: 76px 1fr;
+  gap: 4px;
+}
+
+.building-progress-meta {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 8px;
   color: var(--text-dim);
   font-size: 11px;
+}
+
+.building-progress-time {
+  font-size: 11px;
+  color: var(--text);
 }
 
 .building-materials {

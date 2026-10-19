@@ -1056,8 +1056,10 @@ public static class ProtocolSnapshotMapper
             ? Domain.World.NodeBuildingRules.RequiredMaterials(definition, state.TargetLevel)
             : new Dictionary<string, double>(StringComparer.Ordinal);
         var materialProgress = Domain.World.NodeBuildingRules.MaterialFraction(state, definition);
-        // 工期条显示有效工时：材料不足时工程停滞，已流逝的墙钟时间不计入进度，封顶于材料进度。
-        var timeProgress = Math.Min(Domain.World.NodeBuildingRules.TimeFraction(state, nowUnixSeconds), materialProgress);
+        var effectiveElapsedSeconds = Domain.World.NodeBuildingRules.EffectiveElapsedSeconds(state, definition, nowUnixSeconds);
+        var requiredSeconds = state.TargetLevel > 0 ? Domain.World.NodeBuildingRules.RequiredBuildSeconds(state.TargetLevel) : 0;
+        // 工期条显示有效工时比例：材料不足时工程停滞，封顶于材料进度。
+        var timeProgress = requiredSeconds > 0 ? Math.Clamp(effectiveElapsedSeconds / requiredSeconds, 0, 1) : 1d;
         var level = Domain.World.NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds);
         // 拥挤快照缺失（旧投影/未刷新）按零人数满效口径展示，不产生误导性超载提示。
         var usage = usageIndex?.GetValueOrDefault(state.BuildingId);
@@ -1077,8 +1079,8 @@ public static class ProtocolSnapshotMapper
             activeUsers = usage?.ActiveUsers ?? 0,
             capacity = usage?.Capacity ?? Domain.World.NodeBuildingRules.CrowdCapacity(level),
             efficiency = usage?.Efficiency ?? 1d,
-            requiredSeconds = state.TargetLevel > 0 ? Domain.World.NodeBuildingRules.RequiredBuildSeconds(state.TargetLevel) : 0,
-            elapsedSeconds = state.TargetLevel > 0 ? Math.Max(0, nowUnixSeconds - state.StartedAtUnixSeconds) : 0,
+            requiredSeconds,
+            elapsedSeconds = effectiveElapsedSeconds,
             materials = required
                 .OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair => (object)new

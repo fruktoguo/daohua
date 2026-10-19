@@ -253,6 +253,19 @@ public static class NodeBuildingRules
         return need <= 0 ? 1 : Math.Clamp(got / need, 0, 1);
     }
 
+    /// <summary>
+    /// 当前工程在材料封顶约束下的有效已耗工时（秒）。
+    /// 材料不足时工期不积蓄，已流逝时间封顶于当前材料比例对应的总秒数。
+    /// </summary>
+    public static double EffectiveElapsedSeconds(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds)
+    {
+        if (state.TargetLevel <= 0) return 0;
+        var requiredSeconds = RequiredBuildSeconds(state.TargetLevel);
+        var materialFraction = MaterialFraction(state, definition);
+        var rawElapsed = Math.Max(0.0, nowUnixSeconds - state.StartedAtUnixSeconds);
+        return Math.Min(rawElapsed, materialFraction * requiredSeconds);
+    }
+
     /// <summary>时间推进比例：已耗时 / 本级所需秒数。</summary>
     public static double TimeFraction(NodeBuildingState state, double nowUnixSeconds)
     {
