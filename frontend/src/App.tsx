@@ -49,6 +49,7 @@ import { useT, getT } from './i18n'
 // 非首屏页面按首次进入时拆包；页面组件仍只挂载于 activeTab，保持原有隐藏/卸载生命周期语义。
 const InsightPage = lazy(() => import('./components/InsightPage').then(module => ({ default: module.InsightPage })))
 const MarketPage = lazy(() => import('./components/MarketPage').then(module => ({ default: module.MarketPage })))
+const ShopPage = lazy(() => import('./components/ShopPage').then(module => ({ default: module.ShopPage })))
 const SocialPage = lazy(() => import('./components/SocialPage').then(module => ({ default: module.SocialPage })))
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.SettingsPage })))
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
@@ -67,7 +68,7 @@ function PanelLoading({ label }: { label: string }): React.JSX.Element {
 /** 全局共享的空冷却表（冻结对象）：避免每次渲染创建新引用触发下游 memo 失效 */
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
-type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel' | 'codex'
+type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'shop' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel' | 'codex'
 
 /**
  * 矢量图标组件（按名称渲染内联 SVG）
@@ -107,6 +108,8 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
       return <svg {...common}><path d="m5 4 15 15M19 4 4 19" /><path d="m7 7 3-3 3 3M17 17l-3 3-3-3" /></svg>
     case 'market':
       return <svg {...common}><path d="M4 8.5h16M6 8.5V20h12V8.5" /><path d="m5 4h14l1 4.5H4L5 4Z" /><path d="M9 12h6M9 15.5h6" /></svg>
+    case 'shop':
+      return <svg {...common}><path d="M4 9.5h16M5.5 9.5V20h13V9.5" /><path d="M3.8 9.5 5.6 4h12.8l1.8 5.5" /><path d="M3.8 9.5c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4" /><path d="M9.8 20v-4.5h4.4V20" /></svg>
     case 'social':
       return <svg {...common}><circle cx="8.5" cy="8" r="3.2" /><circle cx="16.5" cy="9.5" r="2.6" /><path d="M3.5 19.5c.6-3.4 2.6-5.4 5-5.4s4.4 2 5 5.4M13.5 19.5c.4-2.6 1.6-4.2 3.2-4.2 1.5 0 2.7 1.4 3.3 3.6" /></svg>
     case 'inventory':
@@ -858,6 +861,16 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           <span className="nav-glyph" aria-hidden="true"><Icon name="market" /></span>
           <span className="nav-text">
             <span className="nav-label">{t('app.nav.market')}</span>
+          </span>
+        </button>
+        <button
+          className={`nav-item${activeTab === 'shop' ? ' active' : ''}`}
+          onClick={() => setActiveTab('shop')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="shop" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.shop')}</span>
           </span>
         </button>
         <button
@@ -2268,6 +2281,10 @@ const MAP_TABS: ReadonlyArray<{ id: MapSubTab; labelKey: 'tabMap' | 'tabMonsters
 const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
   const [activeSubTab, setActiveSubTab] = useState<MapSubTab>('map')
+  // 地图本体首次可见才挂载：避免应用启动即构建全图索引、挂视口观测并在后台补丁中重渲染。
+  // 首次挂载后常驻不卸载，漫游视口、选中地点与运镜状态与改造前完全一致。
+  const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
+  if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
 
   return (
     <section className="panel expedition-page" hidden={hidden}>
@@ -2286,7 +2303,7 @@ const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JS
         </nav>
       </header>
       <div className="expedition-content">
-        {activeSubTab === 'map' && <WorldMapPanel hidden={hidden} />}
+        {hasBeenVisible && activeSubTab === 'map' && <WorldMapPanel hidden={hidden} />}
         {activeSubTab !== 'map' && <NearbyPanel tab={activeSubTab} />}
       </div>
     </section>
@@ -2356,9 +2373,10 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
 
 
 /** 移动端底部导航栏页签配置（顺序即展示顺序，labelKey/icon 均与 TabId 同名） */
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
+const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },
+  { tab: 'shop', labelKey: 'shop', icon: 'shop' },
   { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
   { tab: 'crafting', labelKey: 'crafting', icon: 'crafting' },
   { tab: 'map', labelKey: 'map', icon: 'map' },
@@ -2525,6 +2543,9 @@ export default function App(): React.JSX.Element {
               </Suspense>
               <Suspense fallback={null}>
                 {activeTab === 'market' && <MarketPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'shop' && <ShopPage />}
               </Suspense>
               <Suspense fallback={null}>
                 {activeTab === 'social' && <SocialPage />}

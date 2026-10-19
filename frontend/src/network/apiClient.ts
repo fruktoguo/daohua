@@ -1,5 +1,5 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
-import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, WorldMapDefinition } from '../game/types'
+import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -276,6 +276,21 @@ function mapMarketOrderStatus(status: MarketOrderStatusWire): MarketOrder['statu
     case 'filled': return 'filled'
     case 'cancelled': return 'cancelled'
     case 'expired': return 'expired'
+  }
+}
+
+/** 拉取系统商店货架状态（商品、官价与当日限购进度）；价格与限购由服务端裁决，客户端只读 */
+export async function fetchShopState(playerId: string, signal?: AbortSignal): Promise<ShopState> {
+  const state = await requestJson<ShopState>(`/api/v1/players/${encodeURIComponent(playerId)}/shop`, { signal })
+  return {
+    dayIndex: state.dayIndex,
+    offers: (state.offers ?? []).map(offer => ({
+      offerId: offer.offerId,
+      itemId: offer.itemId,
+      unitPrice: offer.unitPrice,
+      dailyLimit: offer.dailyLimit ?? null,
+      purchasedToday: offer.purchasedToday ?? 0,
+    })),
   }
 }
 

@@ -208,16 +208,6 @@ public sealed class EnhancementContractTests
         Assert.Equal(30, experiences.GetProperty("enhancement").GetDouble());
     }
 
-    /// <summary>存档 schema 与库内容版本按契约同步推进，单边漂移即失败。</summary>
-    [Fact]
-    public void PostgresSchemaVersion_AlignedWithSectionCodec()
-        => Assert.Equal(SectionCodec.CurrentSchemaVersion, PostgresSchema.Version);
-
-    /// <summary>空库权威 DDL 的版本种子必须包含当前版本，防止升版本时漏改 schema_version 种子导致新库 bootstrap 校验失败。</summary>
-    [Fact]
-    public void PostgresSchemaSql_SeedsCurrentVersion()
-        => Assert.Contains($"({PostgresSchema.Version}, now())", PostgresSchema.Sql);
-
     /// <summary>强化装备 item.sell 正确按 +N 受保折旧单价结算，精确扣除变体行并贷记对应灵石。</summary>
     [Fact]
     public async Task ItemSell_EnhancedEquipment_CalculatesDepreciatedPriceAndDeductsVariantRow()

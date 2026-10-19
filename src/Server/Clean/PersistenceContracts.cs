@@ -167,6 +167,14 @@ public sealed record AssetBalanceRecord(
     double Quantity,
     long Version);
 
+/// <summary>一次系统商店购买对每日限购配额的原子认领（与经济事务同事务生效）。</summary>
+/// <param name="PlayerId">购买者。</param>
+/// <param name="OfferId">商品标识。</param>
+/// <param name="DayIndex">UTC+8 自然日序号。</param>
+/// <param name="Quantity">本次购买件数。</param>
+/// <param name="DailyLimit">当日累计上限。</param>
+public sealed record ShopPurchaseClaim(Guid PlayerId, string OfferId, long DayIndex, int Quantity, int DailyLimit);
+
 /// <summary>一次资产事务的完整提交请求。</summary>
 /// <param name="TransactionId">事务唯一标识，同时作为流水行主键。</param>
 /// <param name="IdempotencyKey">幂等键；同键重复提交返回已存结果而不重复入账。</param>
@@ -178,6 +186,7 @@ public sealed record AssetBalanceRecord(
 /// <param name="Sections">随事务一并入队的玩家 section 写回。</param>
 /// <param name="Receipts">随事务一并写入的命令幂等回执。</param>
 /// <param name="ParticipationReceipt">随成员资产和分段一并确认的组队会话结算收件箱。</param>
+/// <param name="ShopPurchase">随事务原子认领的系统商店每日限购配额（可空）。</param>
 public sealed record EconomyTransactionRequest(
     Guid TransactionId,
     string IdempotencyKey,
@@ -188,7 +197,8 @@ public sealed record EconomyTransactionRequest(
     ReadOnlyMemory<byte> ResultPayload = default,
     IReadOnlyList<SectionWrite>? Sections = null,
     IReadOnlyList<CommandReceipt>? Receipts = null,
-    Social.ParticipationInboxReceipt? ParticipationReceipt = null);
+    Social.ParticipationInboxReceipt? ParticipationReceipt = null,
+    ShopPurchaseClaim? ShopPurchase = null);
 
 /// <summary>资产事务提交结局。</summary>
 /// <param name="TransactionId">实际落库的事务标识（幂等命中时为已存事务 ID）。</param>

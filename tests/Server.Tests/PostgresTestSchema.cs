@@ -1,3 +1,4 @@
+using Domain.Persistence;
 using Npgsql;
 using Server.Clean;
 using Xunit;
@@ -44,9 +45,9 @@ internal static class PostgresTestSchema
                     await using var ddl = new NpgsqlCommand(PostgresSchema.Sql, connection) { CommandTimeout = 60 };
                     await ddl.ExecuteNonQueryAsync();
                     await using var updateVersions = new NpgsqlCommand($"""
-                        UPDATE game.player_state_heads SET schema_version = {PostgresSchema.Version} WHERE schema_version <> {PostgresSchema.Version};
-                        UPDATE game.player_state_sections SET schema_version = {PostgresSchema.Version} WHERE schema_version <> {PostgresSchema.Version};
-                        UPDATE platform.section_flush_queue SET schema_version = {PostgresSchema.Version} WHERE schema_version <> {PostgresSchema.Version};
+                        UPDATE game.player_state_heads SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};
+                        UPDATE game.player_state_sections SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};
+                        UPDATE platform.section_flush_queue SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};
                         INSERT INTO platform.schema_version(version, applied_at) VALUES ({PostgresSchema.Version}, now()) ON CONFLICT (version) DO NOTHING;
                         """, connection) { CommandTimeout = 60 };
                     await updateVersions.ExecuteNonQueryAsync();

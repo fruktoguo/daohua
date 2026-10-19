@@ -1,0 +1,15 @@
+[
+  {
+    "id": "shop.awakening-stone.daily",
+    "itemId": "item.awakening-stone",
+    "unitPrice": 1000,
+    "dailyLimit": 1,
+    "sortOrder": 10
+  },
+  {
+    "id": "shop.awakening-stone.open",
+    "itemId": "item.awakening-stone",
+    "unitPrice": 2000,
+    "sortOrder": 20
+  }
+]

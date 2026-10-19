@@ -1999,3 +1999,25 @@ export interface MarketItemStats {
   /** 当周（UTC 周一为界）成交数量 */
   weekVolume: number
 }
+
+/** 系统商店货架条目（服务端 GET /api/v1/players/{playerId}/shop 下发） */
+export interface ShopOffer {
+  /** 商品标识（shop.* 前缀） */
+  offerId: string
+  /** 发放的物品配置 ID */
+  itemId: string
+  /** 单价（灵石） */
+  unitPrice: number
+  /** 每日限购件数；null 表示不限购 */
+  dailyLimit: number | null
+  /** 当日已购件数（不限购商品为参考值） */
+  purchasedToday: number
+}
+
+/** 系统商店货架状态：当日 UTC+8 自然日序号与全部商品的限购进度 */
+export interface ShopState {
+  /** UTC+8 自然日序号 */
+  dayIndex: number
+  /** 商品列表（服务端已按排序权重升序） */
+  offers: ShopOffer[]
+}

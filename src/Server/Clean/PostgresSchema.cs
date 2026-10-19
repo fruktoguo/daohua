@@ -55,7 +55,9 @@ public static class PostgresSchema
     /// 存档标签推进，表结构未变。
     /// v36：progression 分段载荷新增 unlockedTraits 特质等级经验养成集合（可缺省解码为 null/[]，表结构未变）——
     /// 存档标签推进，表结构未变。
-    public const int Version = 36;
+    /// v37：组队会话由全量托管切为在线钱包/离线储备；旧会话一次性退款并安全散场，玩家分段仍为 v36。
+    /// v38：新增 economy.shop_daily_purchases 系统商店每日限购认领行（与经济事务同事务累加）；存档载荷未变。
+    public const int Version = 38;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -296,6 +298,16 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_reservations_player ON economy.reservations(player_id, status);
 
+    -- 系统商店每日限购认领行：与经济事务同事务累加，守卫拒绝即视为超限并整体回滚。
+    CREATE TABLE IF NOT EXISTS economy.shop_daily_purchases (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        offer_id varchar(64) NOT NULL,
+        day_index bigint NOT NULL,
+        quantity integer NOT NULL CHECK (quantity >= 0),
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, offer_id, day_index)
+    );
+
     CREATE TABLE IF NOT EXISTS market.partition_leases (
         partition_id integer PRIMARY KEY CHECK (partition_id >= 0),
         owner_instance_id uuid NOT NULL,
@@ -526,6 +538,9 @@ public static class PostgresSchema
     );
     CREATE UNIQUE INDEX IF NOT EXISTS ux_party_sessions_active
         ON social.party_sessions(party_id) WHERE ended_at IS NULL;
+    -- 冷挂机在 RepeatableRead 下探测活跃会话；GIN 将成员 JSONB 探测保持为索引读，避免全表扫描造成容量退化。
+    CREATE INDEX IF NOT EXISTS ix_party_sessions_active_spec
+        ON social.party_sessions USING gin (spec jsonb_path_ops) WHERE ended_at IS NULL;
 
     -- 仅实际结算批次进入收件箱；成员在自身单写者上下文中与资产、分段一并确认。
     CREATE TABLE IF NOT EXISTS social.party_session_inbox (
@@ -600,7 +615,7 @@ public static class PostgresSchema
     );
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
-        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now())
+        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

@@ -469,6 +469,7 @@ public sealed class GameDataCatalog
     /// <param name="duel">斗法全局调参（可空，缺省用内建默认）。</param>
     /// <param name="realmProgression">境界修为上限与寿元配置（可空）。</param>
     /// <param name="buildings">公共建筑定义表（可空，空时无节点建筑可装配）。</param>
+    /// <param name="shopOffers">系统商店商品目录（可空，空时商店无货可售）。</param>
     public GameDataCatalog(
         string contentVersion,
         string fingerprint,
@@ -487,7 +488,8 @@ public sealed class GameDataCatalog
         IReadOnlyDictionary<string, JsonElement>? abilities = null,
         DuelSettings? duel = null,
         RealmProgressionCatalog? realmProgression = null,
-        IReadOnlyDictionary<string, BuildingDefinition>? buildings = null)
+        IReadOnlyDictionary<string, BuildingDefinition>? buildings = null,
+        ShopCatalog? shopOffers = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -524,6 +526,7 @@ public sealed class GameDataCatalog
         ExpectedAttributes = expectedAttributes;
         RealmProgression = realmProgression;
         Buildings = NormalizeBuildings(buildings);
+        ShopOffers = NormalizeShopOffers(shopOffers);
         Actions = ResolveActionCatalog(actions ?? throw new ArgumentNullException(nameof(actions)), RawItems, RawEquipments, realmProgression);
         foreach (var action in Actions.All)
         {
@@ -570,6 +573,8 @@ public sealed class GameDataCatalog
     public RealmProgressionCatalog? RealmProgression { get; }
     /// <summary>玩家可建造建筑定义，键为 building ID。</summary>
     public IReadOnlyDictionary<string, BuildingDefinition> Buildings { get; }
+    /// <summary>系统商店商品目录（官价直售；未配置 shop 配表时为空目录）。</summary>
+    public ShopCatalog ShopOffers { get; }
 
     /// <summary>内置单例兜底配表</summary>
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);
@@ -589,6 +594,7 @@ public sealed class GameDataCatalog
         var rawEquipments = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var abilities = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var buildings = new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal);
+        var shopOffers = new List<ShopOfferDefinition>();
         DuelSettings? duel = null;
         BaseAttributeCatalog? baseAttributes = null;
         BaseAttributeCatalog? expectedAttributes = null;
@@ -656,6 +662,13 @@ public sealed class GameDataCatalog
                 {
                     buildings.Add(id, ParseBuilding(entry, id));
                 }
+                else if (id.StartsWith(ShopOfferDefinition.IdPrefix, StringComparison.Ordinal))
+                {
+                    // 商品对物品的引用在循环结束后统一校验：配表文件顺序不保证 items 先于 shop。
+                    if (shopOffers.Any(existing => string.Equals(existing.Id, id, StringComparison.Ordinal)))
+                        throw new DomainException(DomainErrorCode.Duplicate, $"商店商品 ID 重复：{id}。");
+                    shopOffers.Add(ParseShopOffer(entry, id));
+                }
                 else if (entry.TryGetProperty("durationSeconds", out _))
                 {
                     actions.Add(ParseAction(entry, id));
@@ -663,7 +676,7 @@ public sealed class GameDataCatalog
             }
         }
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
-        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, expectedAttributes: expectedAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings);
+        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, expectedAttributes: expectedAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings, shopOffers: new ShopCatalog(shopOffers));
     }
 
     /// <summary>
@@ -684,6 +697,35 @@ public sealed class GameDataCatalog
                 return (ReadOnlyMemory<byte>)memory.ToArray();
             });
         return Parse(resources);
+    }
+
+    /// <summary>解析系统商店商品条目（shop.offers.json 单条）。</summary>
+    private static ShopOfferDefinition ParseShopOffer(JsonElement entry, string id)
+    {
+        var itemId = JsonRead.Text(entry, "itemId", string.Empty);
+        var unitPrice = JsonRead.Number(entry, "unitPrice");
+        int? dailyLimit = null;
+        if (entry.TryGetProperty("dailyLimit", out var limitProperty) && limitProperty.ValueKind != JsonValueKind.Null)
+        {
+            if (limitProperty.ValueKind != JsonValueKind.Number || !limitProperty.TryGetInt32(out var parsedLimit))
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"商店商品 {id} 的每日限购必须为正整数。");
+            dailyLimit = parsedLimit;
+        }
+        var sortOrder = entry.TryGetProperty("sortOrder", out var sortProperty) && sortProperty.TryGetInt32(out var parsedSort)
+            ? parsedSort : 0;
+        return new ShopOfferDefinition(id, itemId, unitPrice, dailyLimit, sortOrder);
+    }
+
+    /// <summary>商店目录归一：未配置时返回空目录；已配置时校验引用的物品是否存在。</summary>
+    private ShopCatalog NormalizeShopOffers(ShopCatalog? shopOffers)
+    {
+        if (shopOffers is null || shopOffers.Count == 0) return ShopCatalog.Empty;
+        foreach (var offer in shopOffers.All)
+        {
+            if (!Items.ContainsKey(new ItemId(offer.ItemId)))
+                throw new DomainException(DomainErrorCode.NotFound, $"商店商品 {offer.Id} 引用的物品不存在：{offer.ItemId}。");
+        }
+        return shopOffers;
     }
 
     /// <summary>从 JSON 对象提取并解析玩家可建造建筑定义（BuildingDefinition）</summary>

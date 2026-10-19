@@ -5,6 +5,7 @@ import { marketZh } from '../domains/market.zh'
 import { combatZh } from '../domains/combat.zh'
 import { gameZh } from '../domains/game.zh'
 import { socialZh } from '../domains/social.zh'
+import { shopZh } from '../domains/shop.zh'
 
 /**
  * 中文源词典：新增文案先登记到对应域的 .zh.ts，再同步到同名 .en.ts。
@@ -18,6 +19,7 @@ export const zhCN = {
   ...combatZh,
   ...gameZh,
   ...socialZh,
+  ...shopZh,
 }
 
 /** 词条树类型：TranslationKey 的推导源，新增词条经此获得编译期键校验 */

@@ -520,6 +520,19 @@ public sealed record CommandResultDto(
     string SnapshotForm,
     JsonElement? Snapshot = null);
 
+/// <summary>系统商店货架条目（GET /api/v1/players/{playerId}/shop 返回项）。</summary>
+/// <param name="OfferId">商品标识。</param>
+/// <param name="ItemId">发放的物品标识。</param>
+/// <param name="UnitPrice">单价（灵石）。</param>
+/// <param name="DailyLimit">每日限购件数；null 表示不限购。</param>
+/// <param name="PurchasedToday">当日已购件数（不限购商品按实际成交件数展示）。</param>
+public sealed record ShopOfferDto(string OfferId, string ItemId, double UnitPrice, int? DailyLimit, int PurchasedToday);
+
+/// <summary>系统商店货架状态：当日自然日序号与全部商品的限购进度。</summary>
+/// <param name="DayIndex">UTC+8 自然日序号。</param>
+/// <param name="Offers">商品与限购进度。</param>
+public sealed record ShopStateDto(long DayIndex, IReadOnlyList<ShopOfferDto> Offers);
+
 /// <summary>资产持有余额传输 DTO</summary>
 /// <param name="AssetId">资产配置 ID</param>
 /// <param name="Variant">资产变体，可选</param>
@@ -1119,10 +1132,11 @@ public sealed record PlayerCardEquipmentDto(string ItemId, double EnhancementLev
 /// <summary>角色信息卡战斗栏域消耗品槽位（settings.autoUseSlots 中 ActionType=combat 的子集）。</summary>
 /// <param name="SlotIndex">栏内槽位下标（0~2）</param>
 /// <param name="ItemId">配置物品 ID；null 为空槽</param>
-/// <param name="Quantity">单次使用数量</param>
+/// <param name="Quantity">普通钱包当前可用数量，不含离线储备</param>
 /// <param name="Enabled">是否启用自动使用</param>
 /// <param name="Group">栏位分组：<c>potion</c> 药品栏 / <c>general</c> 通用栏</param>
-public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, double Quantity, bool Enabled, string Group);
+/// <param name="OfflineReserveQuantity">唯一会话检查点中的离线储备余量，不可出售</param>
+public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, double Quantity, bool Enabled, string Group, double OfflineReserveQuantity);
 
 /// <summary>
 /// 角色信息卡应答（总纲 §21.14）。

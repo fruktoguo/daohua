@@ -9,13 +9,14 @@ import { create } from 'zustand'
  * - 'map': 地图（包含地图与附近子选项卡）
  * - 'combat': 详情（战斗对决现场与战备装配详情）
  * - 'market': 坊市交易行
+ * - 'shop': 系统商店（官价直售与每日限购）
  * - 'social': 同道（队伍组队、匹配与组队大厅）
  * - 'inventory': 储物袋（背包）
  * - 'log': 传音道历（日志）
  * - 'records': 记录（离线挂机 / 今日统计 / 近期战报历史）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'records' | 'settings'
+export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'records' | 'settings'
 
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster'

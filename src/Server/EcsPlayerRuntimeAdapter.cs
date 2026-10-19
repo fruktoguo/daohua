@@ -204,6 +204,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         try
         {
             var snapshot = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
+            if (_walletReloadRequired.ContainsKey(playerId))
+            {
+                await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
+                snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+                _loaded[playerId] = snapshot;
+            }
             if (snapshot.State.Presence != PresenceState.Online)
             {
                 ecs.SetPresence(playerId, PresenceState.Online, _simulationClock.UtcNow);
@@ -1035,6 +1041,68 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         await SyncWalletAfterCommitAsync(playerId, disposeResult, cancellationToken).ConfigureAwait(false);
                         break;
                     }
+                    case "shop.buy":
+                    {
+                        var shopOfferId = payload.TryGetProperty("offerId", out var offerElement) && offerElement.ValueKind == JsonValueKind.String
+                            ? offerElement.GetString() : null;
+                        var buyQuantity = payload.TryGetProperty("quantity", out var quantityElement) && quantityElement.TryGetInt32(out var parsedBuyQuantity)
+                            ? parsedBuyQuantity : 0;
+                        if (string.IsNullOrWhiteSpace(shopOfferId) || !ShopPurchaseRules.IsQuantityValid(buyQuantity))
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "商品或数量无效。", before);
+                        if (!gameData.ShopOffers.TryGet(shopOfferId, out var offer))
+                            return new PlayerCommandResult(false, "SHOP_OFFER_NOT_FOUND", "商品不存在或已下架。", before);
+                        // 限购商品一次买多件必然超配额：提前拒绝，避免走到事务内才靠守卫回滚。
+                        if (offer.DailyLimit is { } dailyLimit && buyQuantity > dailyLimit)
+                            return new PlayerCommandResult(false, "SHOP_LIMIT_REACHED", "该商品今日限购已达上限。", before);
+                        var totalPrice = offer.UnitPrice * buyQuantity;
+                        if (!double.IsFinite(totalPrice) || totalPrice <= 0)
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "商品价格无效。", before);
+
+                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        wallet = WalletOf(playerId);
+                        var spiritKey = new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId));
+                        if (wallet.Get(spiritKey) + 1e-9 < totalPrice)
+                            return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "灵石不足。", before);
+
+                        var shopNow = DateTimeOffset.UtcNow;
+                        // 扣灵石与发物同行落账；限购商品另带同事务配额认领，超限即整体回滚。
+                        var shopDeltas = new List<Server.Clean.AssetDelta>
+                        {
+                            new(playerId, EnhancementRules.SpiritStoneItemId, string.Empty, -totalPrice),
+                            new(playerId, offer.ItemId, string.Empty, buyQuantity)
+                        };
+                        var shopClaim = offer.DailyLimit is { } claimLimit
+                            ? new ShopPurchaseClaim(playerId, offer.Id, ShopDailyWindow.DayIndexOf(shopNow), buyQuantity, claimLimit)
+                            : null;
+                        EconomyTransactionResult shopResult;
+                        try
+                        {
+                            shopResult = await economy.CommitAsync(new EconomyTransactionRequest(
+                                requestId,
+                                $"shop.buy:{playerId:D}:{requestId:D}",
+                                command,
+                                playerId,
+                                shopDeltas,
+                                shopNow,
+                                JsonSerializer.SerializeToUtf8Bytes(new { offerId = offer.Id, itemId = offer.ItemId, unitPrice = offer.UnitPrice, quantity = buyQuantity }),
+                                Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion)],
+                                ShopPurchase: shopClaim),
+                                cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (ShopDailyLimitExceededException)
+                        {
+                            return new PlayerCommandResult(false, "SHOP_LIMIT_REACHED", "该商品今日限购已达上限。", before);
+                        }
+                        catch (EconomyInsufficientBalanceException)
+                        {
+                            return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "灵石不足。", before);
+                        }
+                        if (!shopResult.Applied)
+                            return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "购买事务未提交。", before);
+                        await SyncWalletAfterCommitAsync(playerId, shopResult, cancellationToken).ConfigureAwait(false);
+                        receiptAlreadyCommitted = true;
+                        break;
+                    }
                     case "player.rename":
                     {
                         var name = payload.TryGetProperty("displayName", out var nameElement) ? nameElement.GetString() : null;
@@ -1749,6 +1817,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     {
         if (_disposed) return;
         if (marketRuntime is not null) marketRuntime.WalletCredited -= NotifyMarketWalletCredited;
+        if (participationRuntime is not null) participationRuntime.WalletChanged -= NotifyMarketWalletCredited;
         foreach (var playerId in _loaded.Keys.ToArray())
         {
             try { await RemoveAsync(playerId, true, null, CancellationToken.None).ConfigureAwait(false); }
@@ -1898,6 +1967,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "player.unlock_avatar" => "本命形象已解锁并更新。",
         "trait.set" => "特质装配已保存。",
         "item.use" => "觉醒石使用成功，特质已觉醒或提升！",
+        "shop.buy" => "购买成功，货物已入储物袋。",
         _ => string.Empty,
     };
 
@@ -2070,12 +2140,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     /// <summary>从存储权威重读钱包并同步 ECS 库存组件；返回重读前后余额是否变化。</summary>
     private async ValueTask<bool> ReloadWalletAsync(Guid playerId, CancellationToken cancellationToken)
     {
-        var rows = await assets.LoadBalancesAsync(playerId, cancellationToken).ConfigureAwait(false);
-        var changed = WalletChanged(playerId, rows);
-        _wallets[playerId] = rows.ToDictionary(row => new AssetKey(new ItemId(row.AssetId), row.Variant));
-        SyncEcsWallet(playerId);
         _walletReloadRequired.TryRemove(playerId, out _);
-        return changed;
+        try
+        {
+            var rows = await assets.LoadBalancesAsync(playerId, cancellationToken).ConfigureAwait(false);
+            var changed = WalletChanged(playerId, rows);
+            _wallets[playerId] = rows.ToDictionary(row => new AssetKey(new ItemId(row.AssetId), row.Variant));
+            SyncEcsWallet(playerId);
+            return changed;
+        }
+        catch
+        {
+            _walletReloadRequired[playerId] = 0;
+            throw;
+        }
     }
 
     /// <summary>比较重读结果与缓存钱包：数量增减、条目新增/移除任一差异即视为变化（版本号不参与判定）。</summary>
@@ -2109,7 +2187,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         if (result.Balances is { } returned)
         {
             foreach (var balance in returned)
-                _wallets[playerId][new AssetKey(new ItemId(balance.AssetId), balance.Variant)] = balance;
+            {
+                var key = new AssetKey(new ItemId(balance.AssetId), balance.Variant);
+                if (!_wallets[playerId].TryGetValue(key, out var current) || current.Version <= balance.Version)
+                    _wallets[playerId][key] = balance;
+            }
             SyncEcsWallet(playerId);
             return;
         }

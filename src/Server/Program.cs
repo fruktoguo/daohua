@@ -8,6 +8,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Domain.Combat;
 using Domain.Common;
+using Domain.Economy;
 using Domain.GameData;
 using Domain.Market;
 using Protocol;
@@ -115,6 +116,7 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<IEconomyTransactionStore, PostgresEconomyRepository>();
     builder.Services.AddSingleton<IPlayerOwnershipStore, PostgresPlayerOwnershipRepository>();
     builder.Services.AddSingleton<PostgresMarketRepository>();
+    builder.Services.AddSingleton<ShopPurchaseRepository>();
     builder.Services.AddSingleton<IMarketTransactionStore>(sp => sp.GetRequiredService<PostgresMarketRepository>());
     builder.Services.AddSingleton<MarketRuntime>();
     builder.Services.AddSingleton<IPlayerSimulationClock>(_ => PlayerSimulationClock.FromEnvironment());
@@ -129,7 +131,9 @@ if (processRole == ServerProcessRole.Api)
         return new EcsGameRuntime(catalog, epoch, options.EcsShardCount, new DuelAdvanceOptions(MatchingEnabled: true));
     });
     builder.Services.AddSingleton<Server.Clean.Social.IParticipationSessionStore, Server.Clean.Social.PostgresParticipationSessionStore>();
-    builder.Services.AddSingleton<Server.Clean.Social.IActionParticipationRuntime, ActionParticipationRuntime>();
+    builder.Services.AddSingleton<ActionParticipationRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Social.IActionParticipationRuntime>(sp => sp.GetRequiredService<ActionParticipationRuntime>());
+    builder.Services.AddSingleton<Server.Clean.Social.IParticipationAssetBoundary>(sp => sp.GetRequiredService<ActionParticipationRuntime>());
     builder.Services.AddSingleton<EcsPlayerRuntimeAdapter>();
     builder.Services.AddSingleton<IPlayerRuntime>(sp => sp.GetRequiredService<EcsPlayerRuntimeAdapter>());
     builder.Services.AddSingleton<SessionRegistry>();
@@ -234,6 +238,8 @@ if (processRole == ServerProcessRole.Api)
     // 由下一次玩家门内推进经推送带给客户端（DisposeAsync 中解绑）。
     var marketRuntime = app.Services.GetRequiredService<MarketRuntime>();
     marketRuntime.WalletCredited += app.Services.GetRequiredService<EcsPlayerRuntimeAdapter>().NotifyMarketWalletCredited;
+    app.Services.GetRequiredService<Server.Clean.Social.IActionParticipationRuntime>().WalletChanged +=
+        app.Services.GetRequiredService<EcsPlayerRuntimeAdapter>().NotifyMarketWalletCredited;
     // 断线宽限到期卸载的玩家若仍在有人在线的会话名册中，重新常驻（总纲18 §14.6）；
     // 在装配处订阅避免 SocialRuntime 构造依赖环。
     var disconnectGrace = app.Services.GetRequiredService<Server.Clean.DisconnectGraceRegistry>();
@@ -541,6 +547,19 @@ if (processRole == ServerProcessRole.Api)
             ? Results.Ok(dto)
             : Results.Json(dto, statusCode: result.Code == "STATE_VERSION_CONFLICT" ? 409 : 400);
     }).RequireRateLimiting("command");
+    // 系统商店货架：官价直售与当日限购进度；价格与限购由服务端配表裁决，客户端只读展示。
+    players.MapGet("/{playerId:guid}/shop", async (Guid playerId, ClaimsPrincipal user, GameDataCatalog gameData,
+        ShopPurchaseRepository shopPurchases, CancellationToken ct) =>
+    {
+        if (!IsPlayer(user, playerId)) return Results.Forbid();
+        var dayIndex = ShopDailyWindow.CurrentDayIndex();
+        var purchased = await shopPurchases.LoadDailyAsync(playerId, dayIndex, ct);
+        var offers = gameData.ShopOffers.All
+            .Select(offer => new ShopOfferDto(offer.Id, offer.ItemId, offer.UnitPrice, offer.DailyLimit,
+                purchased.GetValueOrDefault(offer.Id)))
+            .ToArray();
+        return Results.Ok(new ShopStateDto(dayIndex, offers));
+    });
     players.MapGet("/{playerId:guid}/market/orders", (Guid playerId, ClaimsPrincipal user, MarketRuntime marketRuntime) =>
     {
         if (!IsPlayer(user, playerId)) return Results.Forbid();

@@ -9,6 +9,8 @@ export const appZh = {
       insightHint: '内视根基，探查六维',
       market: '坊市',
       marketHint: '坊市通商，交易灵材',
+      shop: '商店',
+      shopHint: '官价直售，灵石补给',
       exploration: '历练',
       explorationHint: '探索灵域，迎战妖兽',
       crafting: '技艺',
