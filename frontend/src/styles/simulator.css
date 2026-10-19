@@ -1,47 +1,22 @@
 /* 道化太初 · 战斗模拟器样式表（深度自适应深色与浅色修仙主题） */
 
-/* 1. 顶栏模拟器入口按钮 */
-.topbar-right-actions {
+/* 1. 战场顶部左侧操作区（统计与模拟器入口并排） */
+.combat-arena-top-actions {
+  position: absolute;
+  z-index: 9;
+  top: 10px;
+  left: 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.topbar-simulator-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
+.combat-arena-top-actions .combat-stats-open,
+.combat-arena-top-actions .combat-simulator-open {
+  position: static;
+  padding: 4px 14px;
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  background: var(--bg-raised);
-  border: 1px solid var(--gold-faint);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.topbar-simulator-btn:hover {
-  color: var(--gold-bright);
-  border-color: var(--gold);
-  background: var(--gold-faint);
-  box-shadow: 0 0 8px var(--gold-faint);
-}
-
-:root[data-theme="light"] .topbar-simulator-btn {
-  background: var(--panel);
-  border-color: rgba(125, 82, 26, 0.25);
-  color: var(--text);
-}
-
-:root[data-theme="light"] .topbar-simulator-btn:hover {
-  color: var(--gold-bright);
-  border-color: var(--gold);
-  background: rgba(125, 82, 26, 0.1);
-  box-shadow: 0 2px 6px rgba(71, 49, 18, 0.1);
+  letter-spacing: 1px;
 }
 
 /* 2. 模拟器弹窗基础外壳 */

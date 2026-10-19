@@ -732,7 +732,6 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
     percentDecimals: 0,
   })
 
-  const setSimulatorOpen = useUiStore(state => state.setSimulatorOpen)
   return (
     <header className="topbar">
       <div
@@ -775,17 +774,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
         </div>
       </div>
       <QueueCenter />
-      <div className="topbar-right-actions">
-        <button
-          type="button"
-          className="topbar-simulator-btn"
-          onClick={() => setSimulatorOpen(true)}
-          title={t('combat.simulator.modalTitle')}
-        >
-          ⚔️ {t('combat.simulator.topbarBtn')}
-        </button>
-        <TaijiToggle />
-      </div>
+      <TaijiToggle />
     </header>
   )
 })

@@ -23,6 +23,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { BonusAsideList, extractBuffBonusItems } from './ItemDisplay'
 import { useCombatVfx } from '../vfx/useCombatVfx'
 import { StatGlyph } from './StatGlyph'
+import { useUiStore } from '../uiStore'
 
 /** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名；传入 world+maps 时按当前驻留地点本地化 */
 function resolveQueueEntryDisplayName(
@@ -1968,6 +1969,7 @@ export const CombatArena = memo(function CombatArena({
   const [statsOpen, setStatsOpen] = useState(false)
   const closeStats = useCallback(() => setStatsOpen(false), [])
   const unreadyParty = useSocialStore(state => state.unreadyParty)
+  const setSimulatorOpen = useUiStore(state => state.setSimulatorOpen)
   // 单位属性缓存：敌方/镜像属性为定义级静态值、盟友属性为开打冻结面板，服务端仅在 UnitInspect 登记后一次性交付；
   // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名} / ally:{playerId}。
   const inspectedAttributesCacheRef = useRef(new Map<string, CombatAttributes>())
@@ -2443,15 +2445,25 @@ export const CombatArena = memo(function CombatArena({
       {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
       {/* 战斗统计入口：仅战斗相位显示，浮于详情左上角不占布局 */}
-      {isCombat && (
+      {/* 战场顶部操作区：统计与模拟器入口 */}
+      <div className="combat-arena-top-actions">
+        {isCombat && (
+          <button
+            className="ghost-button combat-stats-open"
+            onClick={() => setStatsOpen(true)}
+            type="button"
+          >
+            {t('combat.stats.title')}
+          </button>
+        )}
         <button
-          className="ghost-button combat-stats-open"
-          onClick={() => setStatsOpen(true)}
+          className="ghost-button combat-simulator-open"
+          onClick={() => setSimulatorOpen(true)}
           type="button"
         >
-          {t('combat.stats.title')}
+          {t('combat.simulator.topbarBtn')}
         </button>
-      )}
+      </div>
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
             组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}
