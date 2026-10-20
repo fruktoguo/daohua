@@ -728,6 +728,12 @@ export function extractBuffBonusItems(buff: {
   threatPoints?: number
   damageBonusPoints?: number
   threatPerSecondMaxHpPoints?: number
+  attackPower?: number
+  accuracy?: number
+  critical?: number
+  resistancePoints?: number
+  hpRegenPerSecond?: number
+  stacks?: number
 }): BonusAsideItem[] {
   const t = getT()
   const items: BonusAsideItem[] = []
@@ -840,6 +846,57 @@ export function extractBuffBonusItems(buff: {
         })
       }
     }
+  }
+
+  // 2c. 层数承载数值通道（攻击力/命中/暴击/双抗/每秒回血）：
+  // 每层基础量 × 层数折算为当前总加成，与结算口径一致——不展示单层值以免与实战不符。
+  const stacks = buff.stacks && buff.stacks > 0 ? buff.stacks : 1
+  if (buff.attackPower && buff.attackPower !== 0) {
+    const total = buff.attackPower * stacks
+    items.push({
+      glyph: 'phys-atk',
+      label: t('market.effect.badgeAttackPower'),
+      tone: total < 0 ? 'crimson' : 'gold',
+      value: `${total > 0 ? '+' : ''}${formatNumber(total)}`,
+    })
+  }
+  if (buff.accuracy && buff.accuracy !== 0) {
+    const total = buff.accuracy * stacks
+    items.push({
+      glyph: 'accuracy',
+      label: t('market.effect.badgeAccuracy'),
+      tone: total < 0 ? 'crimson' : 'jade',
+      value: `${total > 0 ? '+' : ''}${formatNumber(total)}`,
+    })
+  }
+  if (buff.critical && buff.critical !== 0) {
+    const total = buff.critical * stacks
+    items.push({
+      glyph: 'crit',
+      label: t('market.effect.badgeCritical'),
+      tone: total < 0 ? 'crimson' : 'gold',
+      value: `${total > 0 ? '+' : ''}${formatNumber(total)}`,
+    })
+  }
+  if (buff.resistancePoints && buff.resistancePoints !== 0) {
+    const points = buff.resistancePoints
+    // Linear 曲线换算：负值 100/(100+|点|)，正值 1+点/100，与伤害结算同式。
+    const ratio = points >= 0 ? points / 100 : -Math.abs(points) / (100 + Math.abs(points))
+    items.push({
+      glyph: 'foundation',
+      label: t('market.effect.badgeResistance'),
+      tone: points < 0 ? 'crimson' : 'jade',
+      value: signedPercent(ratio),
+    })
+  }
+  if (buff.hpRegenPerSecond && buff.hpRegenPerSecond !== 0) {
+    const total = buff.hpRegenPerSecond * stacks
+    items.push({
+      glyph: 'hp-regen',
+      label: t('market.effect.badgeHpRegenPerSecond'),
+      tone: total < 0 ? 'crimson' : 'emerald',
+      value: `${total > 0 ? '+' : ''}${formatNumber(total)}`,
+    })
   }
 
   // 4. 若无点数解析，回退到原有文本解析

@@ -1807,6 +1807,11 @@ function combatBuffToBuff(entry: CombatBuffEntry, battleElapsedSeconds: number, 
     threatPoints: entry.threatPoints,
     damageBonusPoints: entry.damageBonusPoints,
     threatPerSecondMaxHpPoints: entry.threatPerSecondMaxHpPoints,
+    attackPower: entry.attackPower,
+    accuracy: entry.accuracy,
+    critical: entry.critical,
+    resistancePoints: entry.resistancePoints,
+    hpRegenPerSecond: entry.hpRegenPerSecond,
   }
 }
 

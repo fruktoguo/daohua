@@ -1170,6 +1170,16 @@ export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen'
   damageBonusPoints?: number
   /** 每秒威胁成长点数（仅战内 Buff 投影携带） */
   threatPerSecondMaxHpPoints?: number
+  /** 每层物理攻击力加成（仅战内 Buff 投影携带） */
+  attackPower?: number
+  /** 每层命中点数加成（仅战内 Buff 投影携带） */
+  accuracy?: number
+  /** 每层暴击点数加成（仅战内 Buff 投影携带） */
+  critical?: number
+  /** 双抗点数（负值即破防，仅战内 Buff 投影携带） */
+  resistancePoints?: number
+  /** 每层每秒气血回复量（仅战内 Buff 投影携带） */
+  hpRegenPerSecond?: number
 }
 
 /**
