@@ -80,6 +80,7 @@ export type ItemKind = 'material' | 'consumable' | 'currency' | 'resource' | 'eq
  */
 export type ItemCategoryKey =
   | 'general'
+  | 'special'
   | 'material'
   | 'spiritMaterial'
   | 'mineral'
@@ -1191,6 +1192,22 @@ export interface TraitProgress {
   level: number
   /** 特质当前累积经验 */
   exp: number
+}
+
+/**
+ * 觉醒石抽卡单次结果
+ */
+export interface AwakenedTraitResult {
+  /** 特质 ID */
+  traitId: string
+  /** 觉醒/提升后等级 */
+  level: number
+  /** 当前经验 */
+  exp: number
+  /** 本次是否突破升级 */
+  leveledUp: boolean
+  /** 是否为首次觉醒解锁 */
+  isNew: boolean
 }
 
 /**

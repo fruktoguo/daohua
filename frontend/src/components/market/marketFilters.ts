@@ -24,7 +24,7 @@ const WEAPON_SLOTS: Record<string, true> = { weapon: true, 'two-hand': true, mai
 const TRINKET_SLOTS: Record<string, true> = { trinket: true, ring: true, neck: true, talisman: true }
 
 export function isMaterial(item: MarketInstrument): boolean {
-  // 品类以主分类为准：觉醒石等 `kind: material` 但主分类为 consumable 的功能道具不得跨入材料页
+  // 品类以主分类为准：觉醒石等主分类为 special 的功能道具不得跨入材料页
   return item.category === 'material'
 }
 

@@ -33,6 +33,7 @@ export const gameZh = {
     },
     category: {
       general: '普通',
+      special: '特殊',
       material: '材料',
       spiritMaterial: '灵材',
       mineral: '矿石',

@@ -359,13 +359,14 @@ export function resolveInventoryGroup(
 ): InventoryGroupKey {
   if (itemId.startsWith('equipment.') || findEquipmentInCatalog(equipment, itemId) !== undefined) return 'equipment'
   if (itemId.startsWith('item.tome.') || itemId.startsWith('item.fragment.')) return 'manual'
-  if (itemId.startsWith('currency.')) return 'important'
+  if (itemId.startsWith('currency.') || itemId === 'item.awakening-stone') return 'important'
   const definition = findItemInCatalog(items, itemId)
   if (!definition) return 'material'
   if (definition.category === 'manual') return 'manual'
   if (definition.kind === 'equipment' || definition.category === 'equipment') return 'equipment'
   if (definition.kind === 'currency' || definition.kind === 'resource'
-    || definition.category === 'currency' || definition.category === 'chest') return 'important'
+    || definition.category === 'currency' || definition.category === 'chest'
+    || definition.category === 'special' || definition.kind === 'special') return 'important'
   if (definition.kind === 'consumable') return 'consumable'
   return 'material'
 }
@@ -726,7 +727,7 @@ export interface ItemMetadata {
  * 物品分类多语言键枚举
  */
 export type ItemCategoryKey =
-  | 'general' | 'material' | 'spiritMaterial' | 'mineral' | 'exoticMaterial' | 'refinedMaterial'
+  | 'general' | 'special' | 'material' | 'spiritMaterial' | 'mineral' | 'exoticMaterial' | 'refinedMaterial'
   | 'herb' | 'pill' | 'food' | 'drink'
   | 'talisman' | 'formation' | 'manual' | 'manualTome' | 'equipment' | 'chest' | 'currency' | 'resource'
   | 'spiritFood' | 'spiritDrink' | 'loot' | 'rareLoot' | 'manualFragment' | 'tool'
@@ -990,6 +991,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'currency.spirit-stone': { glyph: '◈', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.gongde': { glyph: '功', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.gongde-bound': { glyph: '德', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
+  'item.awakening-stone': { glyph: '✦', tone: 'purple', rarity: 'heaven', level: 1, subCategory: 'special' },
   'item.tome.heavy-slash': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.heavy-slash': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.chain-strike': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },

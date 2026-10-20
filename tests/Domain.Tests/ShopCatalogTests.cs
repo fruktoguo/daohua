@@ -51,7 +51,7 @@ public sealed class ShopCatalogTests
     {
         var documents = new[]
         {
-            Json("[{\"id\":\"item.awakening-stone\",\"name\":\"觉醒石\",\"kind\":\"material\",\"category\":\"consumable\",\"sellPrice\":100}]"),
+            Json("[{\"id\":\"item.awakening-stone\",\"name\":\"觉醒石\",\"kind\":\"material\",\"category\":\"special\",\"sellPrice\":100}]"),
             Json("[{\"id\":\"shop.ghost\",\"itemId\":\"item.missing\",\"unitPrice\":100}]"),
         };
 
