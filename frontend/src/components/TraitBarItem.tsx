@@ -1,13 +1,13 @@
-import React, { memo } from 'react'
+import React, { memo, useMemo } from 'react'
 import {
   formatTraitDescription,
   getExpForNextTraitLevel,
   getTraitLevelScale,
   type TraitMeta,
 } from '../game/combatConstants'
-import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
+import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
+import { createBonusAsideCard, type BonusAsideItem } from './ItemDisplay'
 import { useT } from '../i18n'
-
 export interface TraitBarItemProps {
   /** 特质定义 */
   def: TraitMeta
@@ -44,6 +44,74 @@ const QUALITY_TONE_MAP: Record<number, FloatingTone> = {
   4: 'purple',
   5: 'gold',
 }
+/**
+ * 构造特质关联的独立 Buff / 状态附属悬浮卡片 (Aside Card)
+ * 只要特质带有 Buff（如看不到我关联隐身 Buff），Hover 时统一通过独立副窗口呈现，杜绝仅在自身描述中单薄交代的割裂表现。
+ */
+export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAsideCard[] {
+  const cards: FloatingAsideCard[] = []
+  const scale = getTraitLevelScale(level)
+
+  if (def.id === 'trait.bukandaowo') {
+    const duration = (10 * scale).toFixed(1).replace(/\.0$/, '')
+    const items: BonusAsideItem[] = [
+      {
+        glyph: 'cooldown-reduction',
+        label: '持续时间',
+        tone: 'slate',
+        value: `${duration}秒`,
+      },
+      {
+        glyph: 'threat-bonus',
+        label: '威胁增幅',
+        tone: 'crimson',
+        value: '-100%',
+      },
+    ]
+    cards.push(
+      createBonusAsideCard({
+        id: `aside-trait-buff-${def.id}`,
+        mark: '特质状态',
+        title: '状态·隐身',
+        tone: 'purple',
+        items,
+      })
+    )
+  } else if (def.buff) {
+    const buff = def.buff
+    const items: BonusAsideItem[] = []
+    if (typeof buff.durationSeconds === 'number' && buff.durationSeconds > 0) {
+      const duration = (buff.durationSeconds * scale).toFixed(1).replace(/\.0$/, '')
+      items.push({
+        glyph: 'cooldown-reduction',
+        label: '持续时间',
+        tone: 'slate',
+        value: `${duration}秒`,
+      })
+    }
+    if (typeof buff.threatPoints === 'number' && buff.threatPoints !== 0) {
+      items.push({
+        glyph: 'threat-bonus',
+        label: '威胁增幅',
+        tone: buff.threatPoints > 0 ? 'crimson' : 'teal',
+        value: `${buff.threatPoints > 0 ? '+' : ''}${buff.threatPoints}%`,
+      })
+    }
+    if (items.length > 0) {
+      cards.push(
+        createBonusAsideCard({
+          id: `aside-trait-buff-${def.id}`,
+          mark: '特质状态',
+          title: buff.name ? `状态·${buff.name}` : '特质状态',
+          tone: 'purple',
+          items,
+        })
+      )
+    }
+  }
+
+  return cards
+}
 
 /**
  * 特质长条展示单元 (TraitBarItem)
@@ -71,6 +139,7 @@ export const TraitBarItem = memo(function TraitBarItem({
   const reqExp = getExpForNextTraitLevel(level)
   const expProgress = Math.min(100, Math.max(0, (exp / reqExp) * 100))
   const desc = formatTraitDescription(def.id, level)
+  const asideCards = useMemo(() => resolveTraitAsideCards(def, level), [def, level])
 
   // 浮层内容构建
   const popoverContent = (
@@ -111,7 +180,7 @@ export const TraitBarItem = memo(function TraitBarItem({
   }
 
   return (
-    <FloatingPopover content={popoverContent} disabled={false} displayContents interactive size="small">
+    <FloatingPopover asideCards={asideCards.length > 0 ? asideCards : undefined} content={popoverContent} disabled={false} displayContents interactive size="small">
       <div
         className={`trait-bar-item trait-quality--q${quality} ${mode === 'awaken' ? 'is-awaken-mode' : ''} ${
           isEquipped ? 'is-equipped' : ''

@@ -39,9 +39,9 @@ import { PillBonusLabel, type PillTone } from './PillLabel'
 import { TraitBarItem } from './TraitBarItem'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { CharacterAvatar } from './CharacterAvatar'
-import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
+import { FloatingInfoCard, FloatingPopover, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
 import { MonsterTooltipTarget } from './MonsterDisplay'
-import { createInternalRootExpAsideCard } from './EffectTooltip'
+import { createAbilityBuffAsideCard, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
 import {
   describeItemEffects,
   ItemTile,
@@ -1102,9 +1102,21 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
 
   const grade = resolveItemGrade(ability.tier ?? 1)
 
-  const asideCards = ability.discipline === 'internal'
-    ? [createInternalRootExpAsideCard()]
-    : undefined
+  const asideCards = useMemo(() => {
+    const list: FloatingAsideCard[] = []
+    const buffCard = createAbilityBuffAsideCard(ability, 1)
+    if (buffCard) {
+      list.push(buffCard)
+    }
+    if (ability.discipline === 'internal') {
+      const internalBonus = createInternalAbilityBonusAsideCard(ability, 1)
+      if (internalBonus) {
+        list.push(internalBonus)
+      }
+      list.push(createInternalRootExpAsideCard())
+    }
+    return list.length > 0 ? list : undefined
+  }, [ability])
 
   return (
     <FloatingPopover

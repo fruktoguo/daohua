@@ -12,7 +12,7 @@ import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
-import { createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
+import { createAbilityBuffAsideCard, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -227,7 +227,7 @@ export function resolveItemTooltipAsideCards(
   const itemCatalog = store.items
   const equipmentCatalog = store.equipment
   const abilitiesCatalog = store.abilities
-
+  const t = getT()
   const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
   const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
 
@@ -254,6 +254,27 @@ export function resolveItemTooltipAsideCards(
     if (eqAside) {
       list.push(eqAside)
     }
+    // 1b. 装备若携带被动 Buff 或战内状态效果，展开独立的 Buff 副气泡窗口
+    const eqRecord = eqDef as unknown as Record<string, unknown>
+    const eqBuffs = Array.isArray(eqRecord.buffEffects)
+      ? (eqRecord.buffEffects as Buff[])
+      : eqRecord.buff && typeof eqRecord.buff === 'object'
+      ? [(eqRecord.buff as Buff)]
+      : undefined
+    if (eqBuffs && eqBuffs.length > 0) {
+      for (const buff of eqBuffs) {
+        const items = extractBuffBonusItems(buff)
+        list.push(
+          createBonusAsideCard({
+            id: `aside-eq-buff-${buff.name || buff.buffId}`,
+            mark: t('market.aside.buff'),
+            title: buff.name ? `${t('market.aside.buff')}·${buff.name}` : t('market.aside.buff'),
+            tone: 'gold',
+            items,
+          })
+        )
+      }
+    }
   }
 
   // 2. 丹药/持续消耗品效果独立副气泡
@@ -277,6 +298,12 @@ export function resolveItemTooltipAsideCards(
         list.push(internalBonus)
       }
       list.push(createInternalRootExpAsideCard())
+    }
+    if (matchedAbility) {
+      const abilityBuffAside = createAbilityBuffAsideCard(matchedAbility, 1)
+      if (abilityBuffAside) {
+        list.push(abilityBuffAside)
+      }
     }
   }
 
