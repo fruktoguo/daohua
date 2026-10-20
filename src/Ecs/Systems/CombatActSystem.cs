@@ -366,12 +366,13 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         }
         var spellAttackInterval = AbilityNumber(buff, "spellAttackStackInterval");
         if (spellAttackInterval > 0)
-            return 1.0 + Math.Floor(Math.Max(0, caster.EffectiveStats.SpellAttack) / spellAttackInterval);
+            return 1.0 + Math.Floor(Math.Max(0, caster.Stats.SpellAttack) / spellAttackInterval);
         var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
         if (resistancePerStack > 0)
         {
-            var casterStats = caster.EffectiveStats;
-            var resistance = casterStats.Defense + casterStats.MagicResistance;
+            // 层数锚定施法者「自身双抗总和」的原始面板语义，故读 Stats 而非 EffectiveStats：
+            // EffectiveStats 会把该技能自身的碎罡破防折叠进来，语义上不再等于「自身双抗」。
+            var resistance = caster.Stats.Defense + caster.Stats.MagicResistance;
             return Math.Floor(resistance * AbilityNumber(buff, "resistanceStackRatio") / resistancePerStack);
         }
         return 1.0;

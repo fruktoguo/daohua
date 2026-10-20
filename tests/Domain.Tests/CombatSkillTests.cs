@@ -343,6 +343,40 @@ public sealed class CombatSkillTests
     }
 
     /// <summary>
+    /// 已损气血派生的层数在跨波重注入时必须按入场血线重新对齐：
+    /// 携带态只定格授予瞬间的层数，波间回血后若直接沿用旧层数，罡锋会带着上一波的虚高层数进入下一波。
+    /// </summary>
+    [Fact]
+    public void DerivedStacksRealignOnCarryReinjection()
+    {
+        var stats = CombatantStats.Create(1000, 0, 0, 100);
+        var unit = new CombatantState("player", stats);
+        // 满血 1000，当前 500 → 已损 500 ÷ 每 5 点 1 层 = 100 层。
+        unit.Hitpoints = 500;
+        unit.Buffs.Add(new CombatBuffState("buff.gang-feng", 60, 100,
+            Accuracy: 1, Critical: 1, MissingHitpointsPerStack: 5, Name: "罡锋"));
+
+        var carried = PlayerCombatBuffState.FromCombatant(unit, elapsedSeconds: 0);
+        var entry = Assert.Single(carried.Buffs);
+        Assert.Equal(100, entry.Stacks);
+        Assert.Equal(5, entry.MissingHitpointsPerStack);
+
+        // 波间回血到 900（仅损 100 点 → 应为 20 层）：重注入必须重算，不得沿用 100 层。
+        var next = new CombatantState("player", stats);
+        next.Hitpoints = 900;
+        carried.ApplyTo(next, battleElapsedSeconds: 0);
+        var injected = Assert.Single(next.Buffs, buff => buff.BuffId == "buff.gang-feng");
+        Assert.Equal(20, injected.Stacks);
+        Assert.Equal(1 + 20, next.EffectiveStats.Accuracy, 6);
+
+        // 满血重注入 → 0 层且命中不再加成。
+        var full = new CombatantState("player", stats);
+        carried.ApplyTo(full, battleElapsedSeconds: 0);
+        Assert.Equal(0, Assert.Single(full.Buffs, buff => buff.BuffId == "buff.gang-feng").Stacks);
+        Assert.Equal(1, full.EffectiveStats.Accuracy, 6);
+    }
+
+    /// <summary>
     /// 语义空判定回归：JSON 往返/推进产生的空内容技能态必须 IsEmpty，
     /// 与 Empty 单例的记录相等性（列表引用比较）无关——封顶尾段与脱战判定依赖此语义。
     /// </summary>

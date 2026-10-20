@@ -325,6 +325,9 @@ public sealed record PlayerCombatBuffState(IReadOnlyList<CombatBuffCarry> Buffs)
                 ResistancePoints: carry.ResistancePoints, HpRegenPerSecond: carry.HpRegenPerSecond,
                 MissingHitpointsPerStack: carry.MissingHitpointsPerStack));
         }
+        // 携带态只定格了授予瞬间的层数；已损气血派生的 Buff 必须按入场时的实际血线重新对齐，
+        // 否则波间回复/受伤后重注入会沿用上一波旧层数（罡锋即此类）。
+        unit.SyncDerivedStacks();
     }
 
     /// <summary>波次清空（或战斗切片收尾）时把单位战内 Buff 折算回携带形态。</summary>
