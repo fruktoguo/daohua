@@ -459,6 +459,16 @@ export interface CombatBuffEntry {
   threatPerSecondMaxHpPoints?: number
   /** 气血回复后段比率 */
   hpRegenPostRatio?: number
+  /** 每层物理攻击力加成 */
+  attackPower?: number
+  /** 每层命中点数加成 */
+  accuracy?: number
+  /** 每层暴击点数加成 */
+  critical?: number
+  /** 双抗点数（负值即破防，Linear 曲线：-400 点 ≡ 双抗 ×0.2） */
+  resistancePoints?: number
+  /** 每层每秒气血回复量（独立于面板 5 秒自动回复通道） */
+  hpRegenPerSecond?: number
   /** 灵力回复后段比率 */
   mpRegenPostRatio?: number
 }
@@ -1279,6 +1289,48 @@ export interface CombatTrigger {
 }
 
 /**
+ * 技能授予的战内 Buff 规格：修饰字段为点数口径，层数由施法者属性或目标状态派生，
+ * 结算时统一按「每层基础量 × 层数」放大。
+ */
+export interface AbilityBuffSpec {
+  /** Buff 唯一 ID（buffId），用于战内层数与快照回查 */
+  buffId?: string
+  name?: string
+  durationSeconds?: number
+  damageAbsorptionPoints?: number
+  hpRegen?: number
+  mpRegen?: number
+  hpRegenPostRatio?: number
+  mpRegenPostRatio?: number
+  attackSpeedPoints?: number
+  threatPoints?: number
+  damageBonusPoints?: number
+  threatPerSecondMaxHpPoints?: number
+  /** 每层物理攻击力加成 */
+  attackPower?: number
+  /** 每层命中点数加成 */
+  accuracy?: number
+  /** 每层暴击点数加成 */
+  critical?: number
+  /** 双抗点数：负值即破防，Linear 曲线（-400 点 ≡ 双抗 ×0.2 即降低 80%） */
+  resistancePoints?: number
+  /** 每层每秒气血回复量（独立于面板 5 秒自动回复通道） */
+  hpRegenPerSecond?: number
+  /** 每损失 N 点气血获得 1 层（罡锋为 5） */
+  missingHitpointsPerStack?: number
+  /** 施法者每 N 点双抗折算 1 层（碎罡为 1） */
+  resistancePerStack?: number
+  /** 施法者双抗总和参与层数折算的比例（碎罡为 0.3） */
+  resistanceStackRatio?: number
+  /** 叠层策略：capped 封顶累加 / perCaster 按施法者隔离 / maxKeep 取最高层数 */
+  stackPolicy?: 'capped' | 'perCaster' | 'maxKeep'
+  /** 施法者每多少点法攻额外叠加 1 层（甘露为 10） */
+  spellAttackStackInterval?: number
+  /** 层数上限（缺省 1） */
+  maxStacks?: number
+}
+
+/**
  * 功法技能配置定义
  */
 export interface CombatAbilityDefinition {
@@ -1325,27 +1377,9 @@ export interface CombatAbilityDefinition {
   /** 根骨加成属性键（配表声明） */
   rootAttribute?: string
   /** 支援类：施放后施加的战内 Buff（破阵子等）；修饰字段为点数口径 */
-  buff?: {
-    /** Buff 唯一 ID（buffId），用于战内层数与快照回查 */
-    buffId?: string
-    name?: string
-    durationSeconds?: number
-    damageAbsorptionPoints?: number
-    hpRegen?: number
-    mpRegen?: number
-    hpRegenPostRatio?: number
-    mpRegenPostRatio?: number
-    attackSpeedPoints?: number
-    threatPoints?: number
-    damageBonusPoints?: number
-    threatPerSecondMaxHpPoints?: number
-    /** 叠层策略：capped 封顶累加 / perCaster 按施法者隔离 / maxKeep 取最高层数 */
-    stackPolicy?: 'capped' | 'perCaster' | 'maxKeep'
-    /** 施法者每多少点法攻额外叠加 1 层（甘露为 10） */
-    spellAttackStackInterval?: number
-    /** 层数上限（缺省 1） */
-    maxStacks?: number
-  } | null
+  buff?: AbilityBuffSpec | null
+  /** 支援类：一次施放授予的多个战内 Buff（碎罡同时授予碎罡与罡锋）；存在时优先于 buff */
+  buffs?: AbilityBuffSpec[] | null
   /** 击杀连锁次数：单体技能击杀目标后对另一存活敌方追加一次完整结算（贯星等），缺省 0 */
   chainOnKillCount?: number
   /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */

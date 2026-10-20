@@ -643,8 +643,17 @@ public sealed class GameDataCatalog
                 Add(JsonRead.Text(buff, "buffId"), JsonRead.Text(buff, "name"));
         }
         // 功法战内 Buff：显式 buffId 优先，缺省走引擎合成的 ability-buff:<abilityId>。
+        // buffs[] 多 Buff 形态逐条登记（如碎罡同时授予碎罡与罡锋）。
         foreach (var (abilityId, ability) in abilities)
         {
+            if (ability.TryGetProperty("buffs", out var buffArray) && buffArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in buffArray.EnumerateArray())
+                    if (entry.ValueKind == JsonValueKind.Object)
+                        Add(JsonRead.Text(entry, "buffId") ?? $"ability-buff:{abilityId}",
+                            JsonRead.Text(entry, "name") ?? JsonRead.Text(ability, "name"));
+                continue;
+            }
             if (!ability.TryGetProperty("buff", out var buff) || buff.ValueKind != JsonValueKind.Object) continue;
             Add(JsonRead.Text(buff, "buffId") ?? $"ability-buff:{abilityId}",
                 JsonRead.Text(buff, "name") ?? JsonRead.Text(ability, "name"));

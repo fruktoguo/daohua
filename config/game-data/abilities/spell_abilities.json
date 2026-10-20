@@ -148,7 +148,7 @@
       "buffId": "buff.ganlu",
       "name": "甘露",
       "durationSeconds": 10.0,
-      "hpRegen": 5.0,
+      "hpRegenPerSecond": 1.0,
       "stackPolicy": "maxKeep",
       "spellAttackStackInterval": 10.0
     },

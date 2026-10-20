@@ -257,7 +257,8 @@ public sealed partial class CombatEventAdvanceSystem
                 if (buffs[i].ExpiresAtSeconds < next) next = buffs[i].ExpiresAtSeconds;
                 if (buffs[i].HpRegen != 0 || buffs[i].MpRegen != 0
                     || buffs[i].HpRegenPostRatio != 0 || buffs[i].MpRegenPostRatio != 0) regenPending = true;
-                if (buffs[i].ThreatPerSecondMaxHpPoints != 0) threatTickPending = true;
+                if (buffs[i].ThreatPerSecondMaxHpPoints != 0
+                    || buffs[i].HpRegenPerSecond != 0) threatTickPending = true;
             }
         }
     }

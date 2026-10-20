@@ -562,11 +562,14 @@ public sealed class CombatSkillTests
         var buff = Assert.Single(encounter.PlayerAllies[2].Buffs, b => b.BuffId == "buff.ganlu");
         Assert.Equal(3, buff.Stacks);
         Assert.Equal(11.5, buff.ExpiresAtSeconds, 3);
-        Assert.Equal(5.0, buff.HpRegen);
+        // 每层每秒回复 1 点独立成通道，不再折算进面板 hpRegen。
+        Assert.Equal(1.0, buff.HpRegenPerSecond);
+        Assert.Equal(0.0, buff.HpRegen);
 
-        // 推进到 5.0s 触发第 1 次周期回复：3 层 * 5 点 = 15 HP，200 -> 215
+        // 推进到 5.0s：每秒网格在 2.0/3.0/4.0/5.0 各跳一次，4 跳 × 3 层 × 1 点 = 12 HP，200 -> 212。
+        // 旧实现把「每秒每层 1 血」折算成面板 5 秒回复 5 点，只会在 5.0s 单跳 15 点，与「每秒」语义不符。
         DeterministicCombatEngine.AdvanceTo(encounter, 5.0 + 1e-9);
-        Assert.Equal(215, encounter.PlayerAllies[2].Hitpoints, 3);
+        Assert.Equal(212, encounter.PlayerAllies[2].Hitpoints, 3);
 
         // 验证 maxKeep 规则：
         // 1. 低层(3)遇到高层(6)：给 t2 补蓝并触发出手，吟唱 1.5s 完成后升级为 6 层，持续时间刷新
@@ -611,6 +614,58 @@ public sealed class CombatSkillTests
 
         Assert.Equal(210, unit.Hitpoints, 6);
         Assert.DoesNotContain(unit.Buffs, b => b.BuffId == "buff.ganlu");
+    }
+
+    /// <summary>
+    /// 碎罡按层数承载数值：一次施放授予两个 Buff——碎罡层数由施法者双抗总和 ×30% 折算（每层 +1 攻击力，
+    /// 同时双抗 ×0.2 即降低 80%），罡锋层数由已损气血每 5 点 1 层（每层 +1 命中、+1 暴击）。
+    /// 验证层数派生、双抗破防生效与已损气血动态重算三条独立语义。
+    /// </summary>
+    [Fact]
+    public void SuiGangGrantsStackDrivenBuffsFromResistanceAndMissingHitpoints()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var ability = catalog.Abilities["ability.sui-gang"];
+        SkillTriggerEvaluator.ValidateAbility(ability);
+        Assert.True(ability.TryGetProperty("buffs", out var specs));
+        Assert.Equal(2, specs.GetArrayLength());
+
+        // 双抗总和 30+30 = 60，×30% = 18 层碎罡；攻击力 1/层 → 施放后攻击力 +18，双抗 ×0.2 即 30 → 6。
+        var stats = CombatantStats.Create(1000, 100, 30, 100) with { MagicResistance = 30, MaxManapoints = 1000 };
+        var template = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
+        var encounter = CombatEncounterState.Create("sui-gang-test", 7, template, [new CombatantTemplate(CombatantStats.Create(100000, 0, 0, 100))]);
+        var self = encounter.Player;
+        // 触发门槛为气血 ≤50%：压到 50% 让技能可用（同时给出已损气血用于罡锋层数）。
+        self.Hitpoints = 500;
+        DaoHua.Ecs.Systems.CombatActSystem.DecideInitialActions(encounter);
+        DeterministicCombatEngine.AdvanceTo(encounter, 3.1);
+
+        var suiGang = Assert.Single(self.Buffs, b => b.BuffId == "buff.sui-gang");
+        Assert.Equal(18, suiGang.Stacks);
+        Assert.Equal(1.0, suiGang.AttackPower);
+        Assert.Equal(-400.0, suiGang.ResistancePoints);
+
+        // 罡锋：已损 500 点 ÷ 每 5 点 1 层 = 100 层。
+        var gangFeng = Assert.Single(self.Buffs, b => b.BuffId == "buff.gang-feng");
+        Assert.Equal(100, gangFeng.Stacks);
+        Assert.Equal(1.0, gangFeng.Accuracy);
+        Assert.Equal(1.0, gangFeng.Critical);
+
+        // 折叠面板：攻击力 100 + 18×1 = 118；双抗 30×(1/(1+400/100)) = 6。
+        var effective = self.EffectiveStats;
+        Assert.Equal(118, effective.AttackPower, 6);
+        Assert.Equal(6, effective.Defense, 6);
+        Assert.Equal(6, effective.MagicResistance, 6);
+        // 基础命中 1 点 + 罡锋 100 层 = 101；基础暴击 0 点 + 100 层 = 100。
+        Assert.Equal(101, effective.Accuracy, 6);
+        Assert.Equal(100, effective.Critical, 6);
+
+        // 气血回升到满：罡锋按已损气血重算为 0 层（惰性存在，不下线）。
+        self.Hitpoints = 1000;
+        self.SyncDerivedStacks();
+        Assert.Equal(0, Assert.Single(self.Buffs, b => b.BuffId == "buff.gang-feng").Stacks);
+        // 罡锋归零后不再加命中，仅剩基础 1 点。
+        Assert.Equal(1, self.EffectiveStats.Accuracy, 6);
     }
 
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)

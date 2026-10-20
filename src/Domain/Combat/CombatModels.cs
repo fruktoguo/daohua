@@ -226,23 +226,36 @@ public sealed record CombatantStats(
 /// <param name="Name">Buff 显示名（授予时定格，仅展示用；缺省退回 BuffId）。</param>
 /// <param name="ResetOnWave">每波重置标记：true 的 Buff 不进入跨波携带（波次清空即消散）；
 /// 战外 Buff/消耗品槽/特质等由外部真源每波重注入者恒置 true，技能授予 Buff 默认 false 跨波存续。</param>
+/// <param name="AttackPower">每层物理攻击力加成（层数承载数值，结算时按层数线性累加）。</param>
+/// <param name="Accuracy">每层命中点数加成。</param>
+/// <param name="Critical">每层暴击点数加成。</param>
+/// <param name="ResistancePoints">双抗点数：同时作用于护甲与法术抗性，Linear 曲线（负点按 100/(100+|点|) 收口，
+/// 故 -400 点 ≡ 双抗 ×0.2 即「降低 80%」）。正值增幅、负值破防，逐层累加后统一乘算。</param>
+/// <param name="HpRegenPerSecond">每层每 1 秒结算点的气血回复量（独立于面板 5 秒自动回复通道）。</param>
+/// <param name="MissingHitpointsPerStack">每个该点数已损气血折算 1 层（&gt;0 时层数随当前气血动态重算）。</param>
 public sealed record CombatBuffState(
     string BuffId, double ExpiresAtSeconds, double Stacks = 1,
     double HpRegen = 0, double MpRegen = 0, double AttackSpeedPoints = 0,
     double DamageAbsorptionPoints = 0, double ThreatPoints = 0,
     double HpRegenPostRatio = 0, double MpRegenPostRatio = 0,
     double DamageBonusPoints = 0, double ThreatPerSecondMaxHpPoints = 0,
-    string Name = "", bool ResetOnWave = false)
+    string Name = "", bool ResetOnWave = false,
+    double AttackPower = 0, double Accuracy = 0, double Critical = 0,
+    double ResistancePoints = 0, double HpRegenPerSecond = 0,
+    double MissingHitpointsPerStack = 0)
 {
-    /// <summary>校验 Buff 字段满足持久化不变量。</summary>
+    /// <summary>校验 Buff 字段满足持久化不变量。层数允许为 0：层数由已损气血派生的 Buff 在满血时为 0 层（惰性存在）。</summary>
     internal bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
         && double.IsFinite(ExpiresAtSeconds) && ExpiresAtSeconds >= 0
-        && double.IsFinite(Stacks) && Stacks > 0
+        && double.IsFinite(Stacks) && Stacks >= 0
         && double.IsFinite(HpRegen) && double.IsFinite(MpRegen)
         && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
         && double.IsFinite(ThreatPoints) && double.IsFinite(ThreatPerSecondMaxHpPoints)
         && double.IsFinite(HpRegenPostRatio) && double.IsFinite(MpRegenPostRatio)
-        && double.IsFinite(DamageBonusPoints);
+        && double.IsFinite(DamageBonusPoints)
+        && double.IsFinite(AttackPower) && double.IsFinite(Accuracy) && double.IsFinite(Critical)
+        && double.IsFinite(ResistancePoints) && double.IsFinite(HpRegenPerSecond)
+        && double.IsFinite(MissingHitpointsPerStack);
 }
 
 /// <summary>战斗单位生成模板：静态属性 + 可选技能槽。</summary>
@@ -370,6 +383,75 @@ public sealed class CombatantState
         }
     }
 
+    /// <summary>战内 Buff 合计每层攻击力加成按层数累加。</summary>
+    internal double BuffAttackPower
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].AttackPower * Buffs[i].Stacks;
+            return total;
+        }
+    }
+
+    /// <summary>战内 Buff 合计每层命中点数按层数累加。</summary>
+    internal double BuffAccuracy
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].Accuracy * Buffs[i].Stacks;
+            return total;
+        }
+    }
+
+    /// <summary>战内 Buff 合计每层暴击点数按层数累加。</summary>
+    internal double BuffCritical
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].Critical * Buffs[i].Stacks;
+            return total;
+        }
+    }
+
+    /// <summary>
+    /// 战内 Buff 双抗乘区倍率：点数总和走 Linear 曲线（正值 1+x/100 增幅、负值 100/(100+|x|) 收口），
+    /// 故 -400 点 ≡ ×0.2 即「双抗降低 80%」，同乘区合并后一次性作用于护甲与法术抗性。
+    /// 该字段按 Buff 实例结算、不随层数累加——层数承载的是可叠加的数值型加成，比率型破防是状态本身。
+    /// </summary>
+    internal double BuffResistanceMultiplier
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].ResistancePoints;
+            return total == 0 ? 1 : PercentValue.Multiplier(total, PercentCurveMode.Linear);
+        }
+    }
+
+    /// <summary>
+    /// 折叠战内 Buff 后的实际参战面板：攻击力/命中/暴击按层数加成，双抗按 <see cref="BuffResistanceMultiplier"/> 缩放。
+    /// 伤害、命中与暴击判定一律读本面板，杜绝「Buff 已授予但结算仍读静态面板」的分叉。
+    /// </summary>
+    public CombatantStats EffectiveStats
+    {
+        get
+        {
+            if (Buffs.Count == 0) return Stats;
+            var resistance = BuffResistanceMultiplier;
+            return Stats with
+            {
+                AttackPower = Math.Max(0, Stats.AttackPower + BuffAttackPower),
+                Accuracy = Math.Max(0, Stats.Accuracy + BuffAccuracy),
+                Critical = Math.Max(0, Stats.Critical + BuffCritical),
+                Defense = Math.Max(0, Stats.Defense * resistance),
+                MagicResistance = Math.Max(0, Stats.MagicResistance * resistance)
+            };
+        }
+    }
+
     /// <summary>
     /// 换入重新结算的战斗属性面板：供进行中战斗在外层推进步间跨步复用时同步最新属性输入
     /// （战外 Buff 增减/到期、六维经验等），沿用恢复快照口径的越界校验——
@@ -398,6 +480,24 @@ public sealed class CombatantState
                 total += Buffs[i].Stacks;
         }
         return total + (ExternalBuffStacks?.Invoke(buffId) ?? 0);
+    }
+
+    /// <summary>
+    /// 重算由已损气血派生的 Buff 层数（<see cref="CombatBuffState.MissingHitpointsPerStack"/> &gt; 0 者）：
+    /// 层数 = ⌊已损气血 / 每层点数⌋，满血时为 0 层（Buff 惰性存在、不下线）。
+    /// 气血每次变动后调用，保证「每损失 N 点生命获得 1 层」与实际血线始终一致。
+    /// </summary>
+    internal void SyncDerivedStacks()
+    {
+        if (Buffs.Count == 0) return;
+        var missing = Math.Max(0, Stats.MaxHitpoints - Hitpoints);
+        for (var i = 0; i < Buffs.Count; i++)
+        {
+            var buff = Buffs[i];
+            if (buff.MissingHitpointsPerStack <= 0) continue;
+            var stacks = Math.Floor(missing / buff.MissingHitpointsPerStack);
+            if (buff.Stacks != stacks) Buffs[i] = buff with { Stacks = stacks };
+        }
     }
 }
 

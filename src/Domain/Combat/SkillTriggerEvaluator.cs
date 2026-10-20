@@ -85,9 +85,24 @@ public static class SkillTriggerEvaluator
         var cooldown = JsonRead.Number(ability, "cooldownMilliseconds");
         var target = JsonRead.Text(ability, "targetType");
         var supportive = target is "self" or "lowestHitpointsAlly" or "allAllies";
-        JsonElement buffElement = default;
-        var hasBuff = ability.ValueKind == JsonValueKind.Object
-            && ability.TryGetProperty("buff", out buffElement) && buffElement.ValueKind == JsonValueKind.Object;
+        // Buff 规格：buffs[] 多 Buff 优先，回落单 buff 对象。
+        var buffElements = new List<JsonElement>();
+        if (ability.ValueKind == JsonValueKind.Object
+            && ability.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in buffsArray.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, "技能 buffs 列表元素必须为对象。");
+                buffElements.Add(entry);
+            }
+        }
+        else if (ability.ValueKind == JsonValueKind.Object
+            && ability.TryGetProperty("buff", out var buffElement) && buffElement.ValueKind == JsonValueKind.Object)
+        {
+            buffElements.Add(buffElement);
+        }
+        var hasBuff = buffElements.Count > 0;
         var hasEffect = ratio + flat > 0 || healing
             || supportive && (JsonRead.Number(ability, "threatGain") > 0 || JsonRead.Number(ability, "threatPoints") > 0 || hasBuff);
         if (ratio < 0 || flat < 0 || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0
@@ -100,29 +115,45 @@ public static class SkillTriggerEvaluator
             : target is not (null or "targetEnemy" or "allEnemies" or "self" or "allAllies" or "lowestHitpointsAlly"))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能目标没有可执行效果。");
         // 战内 Buff 必须携带正持续时长与有限效果量，否则授予即过期或语义不清。
-        if (hasBuff)
-        {
-            var duration = JsonRead.Number(buffElement, "durationSeconds");
-            JsonRead.Number(buffElement, "hpRegen"); JsonRead.Number(buffElement, "mpRegen");
-            JsonRead.Number(buffElement, "attackSpeedPoints"); JsonRead.Number(buffElement, "damageAbsorptionPoints");
-            JsonRead.Number(buffElement, "threatPoints"); JsonRead.Number(buffElement, "maxStacks");
-            JsonRead.Number(buffElement, "damageBonusPoints");
-            JsonRead.Number(buffElement, "threatPerSecondMaxHpPoints");
-            var spellAttackInterval = JsonRead.Number(buffElement, "spellAttackStackInterval");
-            if (spellAttackInterval < 0)
-                throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 spellAttackStackInterval 不能为负数。");
-            var stackPolicy = JsonRead.Text(buffElement, "stackPolicy");
-            if (stackPolicy is not (null or "capped" or "perCaster" or "maxKeep"))
-                throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 stackPolicy 无效。");
-            // resetOnWave 只接受布尔字面量：true = 该 Buff 不进入跨波携带（波次清空即消散）。
-            if (buffElement.TryGetProperty("resetOnWave", out var resetFlag)
-                && resetFlag.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-                throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 resetOnWave 必须为布尔值。");
-            if (duration <= 0)
-                throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 必须配置正持续时长。");
-        }
+        foreach (var spec in buffElements) ValidateAbilityBuff(spec);
         if (ability.TryGetProperty("defaultTriggers", out var triggers) && triggers.ValueKind == JsonValueKind.Array)
             foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger);
+    }
+
+    /// <summary>
+    /// 校验单条技能 Buff 规格：时长、数值有限性与叠层/层数派生词表。
+    /// buffs[] 与单 buff 共用本校验，杜绝多 Buff 形态绕过既有约束。
+    /// </summary>
+    private static void ValidateAbilityBuff(JsonElement buffElement)
+    {
+        var duration = JsonRead.Number(buffElement, "durationSeconds");
+        JsonRead.Number(buffElement, "hpRegen"); JsonRead.Number(buffElement, "mpRegen");
+        JsonRead.Number(buffElement, "attackSpeedPoints"); JsonRead.Number(buffElement, "damageAbsorptionPoints");
+        JsonRead.Number(buffElement, "threatPoints"); JsonRead.Number(buffElement, "maxStacks");
+        JsonRead.Number(buffElement, "damageBonusPoints");
+        JsonRead.Number(buffElement, "threatPerSecondMaxHpPoints");
+        JsonRead.Number(buffElement, "attackPower"); JsonRead.Number(buffElement, "accuracy");
+        JsonRead.Number(buffElement, "critical"); JsonRead.Number(buffElement, "resistancePoints");
+        JsonRead.Number(buffElement, "hpRegenPerSecond");
+        var missingPerStack = JsonRead.Number(buffElement, "missingHitpointsPerStack");
+        if (missingPerStack < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 missingHitpointsPerStack 不能为负数。");
+        var resistancePerStack = JsonRead.Number(buffElement, "resistancePerStack");
+        if (resistancePerStack < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 resistancePerStack 不能为负数。");
+        var spellAttackInterval = JsonRead.Number(buffElement, "spellAttackStackInterval");
+        if (spellAttackInterval < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 spellAttackStackInterval 不能为负数。");
+        var stackPolicy = JsonRead.Text(buffElement, "stackPolicy");
+        if (stackPolicy is not (null or "capped" or "perCaster" or "maxKeep"))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 stackPolicy 无效。");
+        // resetOnWave 只接受布尔字面量：true = 该 Buff 不进入跨波携带（波次清空即消散）。
+        if (buffElement.TryGetProperty("resetOnWave", out var resetFlag)
+            && resetFlag.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 resetOnWave 必须为布尔值。");
+        // 层数由已损气血派生的 Buff 满血时为 0 层，属合法惰性态。
+        if (duration <= 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 必须配置正持续时长。");
     }
 
     /// <summary>单体对象依赖词表：自身 / 本轮锁定目标 / 友敌双方经成员选择解析出的单体。</summary>

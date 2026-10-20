@@ -154,38 +154,58 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const threatGain = (ability.threatGain ?? 0) * levelGrowth
   const threatPoints = (ability.threatPoints ?? 0) * levelGrowth
   const buff = ability.buff
-  // 战内 Buff 效果子句：回复/增伤/免伤/威胁增幅/每秒威胁逐条并列描述，全零回退通用增益文案。
-  const buffClause = () => {
-    const duration = buff?.durationSeconds ?? 0
-    const hpRegen = (buff?.hpRegen ?? 0) * levelGrowth
-    const mpRegen = (buff?.mpRegen ?? 0) * levelGrowth
-    const bonusPoints = (buff?.damageBonusPoints ?? 0) * levelGrowth
-    const absorbPoints = (buff?.damageAbsorptionPoints ?? 0) * levelGrowth
-    const buffThreatPoints = (buff?.threatPoints ?? 0) * levelGrowth
-    const threatPerSecond = (buff?.threatPerSecondMaxHpPoints ?? 0) * levelGrowth
+  // 战内 Buff 子句：buffs[] 逐个描述（碎罡同时授予碎罡与罡锋），回落单 buff。
+  // 回复/增伤/免伤/攻击/命中/暴击/双抗/威胁逐条并列，全零回退通用增益文案。
+  const buffClause = (spec: NonNullable<typeof ability.buff>) => {
+    const duration = spec.durationSeconds ?? 0
+    const hpRegen = (spec.hpRegen ?? 0) * levelGrowth
+    const hpRegenPerSecond = (spec.hpRegenPerSecond ?? 0) * levelGrowth
+    const mpRegen = (spec.mpRegen ?? 0) * levelGrowth
+    const bonusPoints = (spec.damageBonusPoints ?? 0) * levelGrowth
+    const absorbPoints = (spec.damageAbsorptionPoints ?? 0) * levelGrowth
+    const attackPower = (spec.attackPower ?? 0) * levelGrowth
+    const accuracy = (spec.accuracy ?? 0) * levelGrowth
+    const critical = (spec.critical ?? 0) * levelGrowth
+    const resistancePoints = spec.resistancePoints ?? 0
+    const buffThreatPoints = (spec.threatPoints ?? 0) * levelGrowth
+    const threatPerSecond = (spec.threatPerSecondMaxHpPoints ?? 0) * levelGrowth
     const effects: string[] = []
-    // 回复类按 5 秒结算点结算（服务端 CombatPhaseSystems.TickSeconds = 5），文案与结算口径一致。
+    // 面板自动回复沿 5 秒网格结算；每层每秒回复独立成句，避免与面板属性混淆。
     if (hpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegen', { target, n: formatNumber(hpRegen) }))
+    if (hpRegenPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegenPerSecond', { n: formatNumber(hpRegenPerSecond) }))
     if (mpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffMpRegen', { target, n: formatNumber(mpRegen) }))
     if (bonusPoints !== 0) effects.push(t('game.abilityDesc.effectBuffDamage', { target, n: abilityPercent(bonusPoints / 100) }))
     if (absorbPoints !== 0) effects.push(t('game.abilityDesc.effectBuffAbsorb', { target, n: abilityPercent(absorbPoints / (100 + absorbPoints)) }))
+    if (attackPower !== 0) effects.push(t('game.abilityDesc.effectBuffAttackPower', { n: formatNumber(attackPower) }))
+    if (accuracy !== 0) effects.push(t('game.abilityDesc.effectBuffAccuracy', { n: formatNumber(accuracy) }))
+    if (critical !== 0) effects.push(t('game.abilityDesc.effectBuffCritical', { n: formatNumber(critical) }))
+    if (resistancePoints !== 0) effects.push(t('game.abilityDesc.effectBuffResistance', { n: abilityPercent(Math.abs(resistancePoints) / (100 + Math.abs(resistancePoints))) }))
     if (buffThreatPoints !== 0) effects.push(t('game.abilityDesc.threatRatioClause', { n: abilityPercent(buffThreatPoints / 100) }))
     if (threatPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffThreatPerSecond', { n: abilityPercent(threatPerSecond / 100) }))
     let effect = effects.length > 0 ? effects.join('，') : t('game.abilityDesc.effectBuff', { target })
     if (duration > 0) {
       effect = `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
     }
-    // 叠层与动态层数：maxKeep 取最高层数、法攻每 N 点额外叠 1 层——与服务端 GrantBuff 同口径。
-    const stackPolicy = buff?.stackPolicy
-    if (stackPolicy === 'maxKeep') {
+    // 叠层与动态层数：maxKeep 取最高层数；层数来源逐条说明（法攻/双抗/已损气血）——与服务端授予同口径。
+    if (spec.stackPolicy === 'maxKeep') {
       effect = `${effect}，${t('game.abilityDesc.buffStackMaxKeep')}`
     }
-    const stackInterval = buff?.spellAttackStackInterval ?? 0
+    const stackInterval = spec.spellAttackStackInterval ?? 0
     if (stackInterval > 0) {
       effect = `${effect}，${t('game.abilityDesc.buffStackBySpellAttack', { n: formatNumber(stackInterval) })}`
     }
+    const resistancePerStack = spec.resistancePerStack ?? 0
+    if (resistancePerStack > 0) {
+      const ratio = (spec.resistanceStackRatio ?? 1) * 100
+      effect = `${effect}，${t('game.abilityDesc.buffStackByResistance', { ratio: formatNumber(ratio) })}`
+    }
+    const missingPerStack = spec.missingHitpointsPerStack ?? 0
+    if (missingPerStack > 0) {
+      effect = `${effect}，${t('game.abilityDesc.buffStackByMissingHp', { n: formatNumber(missingPerStack) })}`
+    }
     return effect
   }
+  const buffSpecs = ability.buffs && ability.buffs.length > 0 ? ability.buffs : buff ? [buff] : []
   const clauses: string[] = []
   if (healing) {
     clauses.push(t('game.abilityDesc.effectHeal', { target, expr: healExpr }))
@@ -202,10 +222,13 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
       clause = clause ? `${clause}，${ratio}` : ratio
     }
     // 嘲讽类技能即时威胁与限时 Buff 并存：Buff 子句并连，不被威胁主句吞掉。
-    if (buff) clause = clause ? `${clause}，${buffClause()}` : buffClause()
+    if (buffSpecs.length > 0) {
+      const buffs = buffSpecs.map(spec => buffClause(spec)).join('；')
+      clause = clause ? `${clause}，${buffs}` : buffs
+    }
     clauses.push(clause || t('game.abilityDesc.effectThreat'))
-  } else if (buff) {
-    clauses.push(buffClause())
+  } else if (buffSpecs.length > 0) {
+    clauses.push(buffSpecs.map(spec => buffClause(spec)).join('；'))
   } else {
     clauses.push(t('game.abilityDesc.effectBuff', { target }))
   }

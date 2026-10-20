@@ -218,29 +218,33 @@ public static class DeterministicCombatEngine
         var abilityId = context.AbilityId;
         var attack = context.AttackStats;
         var defense = target.Stats;
+        // 战内 Buff 折叠：攻方攻击力/命中/暴击与守方双抗按层数实时生效，判定与结算同读一份面板。
+        var attackEffective = context.Attacker.EffectiveStats;
+        var defenseEffective = target.EffectiveStats;
         var contestRoll = Roll(encounter.Seed, side, context.Count, 0);
-        var broken = attack.BreakPower > defense.ParryResolve
-            && contestRoll < attack.BreakPower / (attack.BreakPower + defense.ParryResolve + 100);
-        var parried = defense.ParryResolve > attack.BreakPower
-            && contestRoll < defense.ParryResolve / (defense.ParryResolve + attack.BreakPower + 100);
-        var accuracy = attack.Accuracy * (broken ? 2 : 1);
-        var evasion = defense.Evasion * (parried ? 2 : 1);
+        var broken = attackEffective.BreakPower > defenseEffective.ParryResolve
+            && contestRoll < attackEffective.BreakPower / (attackEffective.BreakPower + defenseEffective.ParryResolve + 100);
+        var parried = defenseEffective.ParryResolve > attackEffective.BreakPower
+            && contestRoll < defenseEffective.ParryResolve / (defenseEffective.ParryResolve + attackEffective.BreakPower + 100);
+        var accuracy = attackEffective.Accuracy * (broken ? 2 : 1);
+        var evasion = defenseEffective.Evasion * (parried ? 2 : 1);
         // 战斗经验对抗修正（总纲 §7.7.6）：作用于两侧等效输入，不占随机通道，不改暴击/破招判定与伤害链。
         (accuracy, evasion) = ApplyCombatExperienceContest(accuracy, evasion, attack.CombatExperience, defense.CombatExperience);
         var hit = Roll(encounter.Seed, side, context.Count, 1) >= evasion / (evasion + accuracy + 100);
-        var criticalPoints = attack.Critical * (broken ? 2 : 1);
+        var criticalPoints = attackEffective.Critical * (broken ? 2 : 1);
         var critical = hit && Roll(encounter.Seed, side, context.Count, 2)
-            < criticalPoints / (criticalPoints + defense.CriticalResistance + 100);
-        var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
+            < criticalPoints / (criticalPoints + defenseEffective.CriticalResistance + 100);
+        var resistance = attack.DamageKind == CombatDamageKind.Physical ? defenseEffective.Defense : defenseEffective.MagicResistance;
         resistance *= parried ? 2 : 1;
         // 原始威力口径（总纲 §7.7.1）：普攻 = AttackPower ×(1+普攻增幅点数/100)；
         // 技能命中的 AttackPower 已在出手构造时并入技能增幅与倍率，此处不再二次乘算。
+        // 技能命中沿用出手时构造的 AttackPower（已含倍率），仅叠加战内 Buff 的攻击力加成。
         var rawDamage = abilityId is null
-            ? attack.AttackPower * PercentValue.Multiplier(attack.BasicAttackBonusPoints, PercentCurveMode.Linear)
-            : attack.AttackPower;
+            ? attackEffective.AttackPower * PercentValue.Multiplier(attack.BasicAttackBonusPoints, PercentCurveMode.Linear)
+            : attack.AttackPower + context.Attacker.BuffAttackPower;
         context.RawDamage = rawDamage;
         // 第一层：大类抗性平方穿甲。等价于 RawDamage² / (RawDamage + RES × K + 1)，先除后乘避免平方中间值溢出。
-        var damage = hit ? rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1)) : 0;
+        var damage = hit ? rawDamage * (rawDamage / (rawDamage + resistance * defenseEffective.ResistanceScale + 1)) : 0;
         // 第二层：攻方分类增伤（Linear 点数逐项乘算）：大类增伤 × 五行增伤 × 总增伤。
         damage *= PercentValue.Multiplier(
             attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalDamageBonusPoints : attack.SpellDamageBonusPoints,
@@ -302,7 +306,7 @@ public static class DeterministicCombatEngine
     /// </summary>
     internal static double ResolveStrikeDamage(CombatantStats attack, CombatantState target)
     {
-        var defense = target.Stats;
+        var defense = target.EffectiveStats;
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
         var rawDamage = attack.AttackPower;
         // 第一层：大类抗性平方穿甲（与 ResolveHit 同式）。

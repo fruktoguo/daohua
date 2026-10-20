@@ -266,9 +266,16 @@ static void ValidateReferences(string directory)
     {
         using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
         foreach (var ability in Elements(doc.RootElement))
+        {
             foreach (var key in ObjectKeys(Property(ability, "buff")))
                 Require(abilityBuffKeys.Contains(key),
                     $"{Rel(directory, file)} 技能 {Text(ability, "id")} 的 buff.{key} 不在授权词汇表内。");
+            // 多 Buff 形态 buffs[]：逐条按同一词汇表校验。
+            foreach (var entry in Elements(Property(ability, "buffs")))
+                foreach (var key in ObjectKeys(entry))
+                    Require(abilityBuffKeys.Contains(key),
+                        $"{Rel(directory, file)} 技能 {Text(ability, "id")} 的 buffs[].{key} 不在授权词汇表内。");
+        }
     }
 
     foreach (var file in JsonFiles(directory, "items"))
@@ -425,13 +432,15 @@ static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
     "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints", "threatOnTakenPoints"
 };
 
-/// <summary>技能战内 Buff 授权键：读条/免伤/增伤/威胁点数与回复、时长、叠层上限。</summary>
+/// <summary>技能战内 Buff 授权键：读条/免伤/增伤/威胁点数与回复、时长、叠层上限与层数派生通道。</summary>
 static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
     "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "threatPoints", "maxStacks",
     "hpRegenPostRatio", "mpRegenPostRatio", "threatPerSecondMaxHpPoints", "resetOnWave",
-    "stackPolicy", "spellAttackStackInterval"
+    "stackPolicy", "spellAttackStackInterval",
+    "attackPower", "accuracy", "critical", "resistancePoints", "hpRegenPerSecond",
+    "missingHitpointsPerStack", "resistancePerStack", "resistanceStackRatio"
 };
 
 /// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典与回复后段乘区）。</summary>

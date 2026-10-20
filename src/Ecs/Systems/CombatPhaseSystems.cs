@@ -38,7 +38,7 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
     /// <summary>每秒威胁成长沿 1 秒网格落账（嘲讽类周期性仇恨累积）。</summary>
     internal const double ThreatTickSeconds = 1;
 
-    /// <summary>战内效果相位结算：先按各自网格结算周期效果（5s 回复 / 1s 每秒威胁），再剔除到期 Buff。</summary>
+    /// <summary>战内效果相位结算：先按各自网格结算周期效果（5s 面板回复 / 1s 每秒回血与威胁），再剔除到期 Buff。</summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
@@ -46,13 +46,13 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         // 顺序不可颠倒：到期时刻本身属于 Buff 生效区间（授予写入 ElapsedSeconds + duration）。
         // 若先剔除再结算，到期时刻恰好落在 5 秒网格上时该跳会被整段吞掉，10.0s「每秒每层 1 血」退化为 1 跳。
         var regenTick = Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) <= 1e-9;
-        var threatTick = Math.Abs(at / ThreatTickSeconds - Math.Round(at / ThreatTickSeconds)) <= 1e-9;
-        if (regenTick || threatTick)
+        var secondTick = Math.Abs(at / ThreatTickSeconds - Math.Round(at / ThreatTickSeconds)) <= 1e-9;
+        if (regenTick || secondTick)
         {
             var statsBook = encounter.StatsBook;
             // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
-            for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook, regenTick, threatTick);
-            for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook, regenTick, threatTick);
+            for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook, regenTick, secondTick);
+            for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook, regenTick, secondTick);
         }
         // 结算完毕后统一剔除到期 Buff：到期时刻所在边界已按完整效果结算，之后不再参与任何相位。
         for (var i = 0; i < encounter.PlayerAllies.Count; i++)
@@ -60,18 +60,32 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         for (var i = 0; i < encounter.Enemies.Count; i++)
             encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
 
-        static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, bool regenTick, bool threatTick)
+        static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, bool regenTick, bool secondTick)
         {
             var buffs = unit.Buffs;
             // 每秒威胁成长：单位最大气血 × Σ(点数×层数)/100 直接累进基础威胁（与 threatGain 同通道）；
             // 与灵力回复同口径——倒地单位照常累积，复活后仇恨不回退。负值配置按减仇恨递减、0 托底。
-            if (threatTick)
+            if (secondTick)
             {
                 var threatPoints = 0d;
+                var hpPerSecond = 0d;
                 for (var i = 0; i < buffs.Count; i++)
+                {
                     threatPoints += buffs[i].ThreatPerSecondMaxHpPoints * buffs[i].Stacks;
+                    hpPerSecond += buffs[i].HpRegenPerSecond * buffs[i].Stacks;
+                }
                 if (threatPoints != 0)
                     unit.Threat = Math.Max(0, unit.Threat + unit.Stats.MaxHitpoints * threatPoints / 100);
+                // 每秒回血独立于面板 5 秒自动回复通道：技能「每层每秒 N 血」沿 1 秒边界落账，
+                // 不改写单位面板 hpRegen，避免 Buff 到期后面板值残留或被后续授予覆盖。
+                if (hpPerSecond != 0 && unit.IsAlive)
+                {
+                    var hpBefore = unit.Hitpoints;
+                    unit.Hitpoints = Math.Clamp(unit.Hitpoints + hpPerSecond, 0, unit.Stats.MaxHitpoints);
+                    if (unit.Hitpoints > hpBefore)
+                        statsBook?.RecordHealing(unit, autoRegen: true, unit.Hitpoints - hpBefore);
+                    unit.SyncDerivedStacks();
+                }
             }
             if (!regenTick) return;
             // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次；
@@ -95,6 +109,7 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
                 // 周期回复计「自动回复」；负向回复（减益跳血）不归属任何单位，不入账。
                 if (unit.Hitpoints > hitpointsBefore)
                     statsBook?.RecordHealing(unit, autoRegen: true, unit.Hitpoints - hitpointsBefore);
+                unit.SyncDerivedStacks();
             }
             if (mp != 0) unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);
         }

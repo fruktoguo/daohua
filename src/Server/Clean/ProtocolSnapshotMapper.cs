@@ -786,7 +786,9 @@ public static class ProtocolSnapshotMapper
             expiresAtSeconds = buff.ExpiresAtSeconds,
             buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints,
             buff.ThreatPoints, buff.DamageBonusPoints, buff.ThreatPerSecondMaxHpPoints,
-            buff.HpRegenPostRatio, buff.MpRegenPostRatio
+            buff.HpRegenPostRatio, buff.MpRegenPostRatio,
+            buff.AttackPower, buff.Accuracy, buff.Critical, buff.ResistancePoints,
+            buff.HpRegenPerSecond
         }).ToArray();
     }
 
@@ -802,7 +804,9 @@ public static class ProtocolSnapshotMapper
                 ? battleElapsedSeconds + carry.RemainingSeconds : double.MaxValue,
             carry.HpRegen, carry.MpRegen, carry.AttackSpeedPoints, carry.DamageAbsorptionPoints,
             carry.ThreatPoints, carry.DamageBonusPoints, carry.ThreatPerSecondMaxHpPoints,
-            carry.HpRegenPostRatio, carry.MpRegenPostRatio
+            carry.HpRegenPostRatio, carry.MpRegenPostRatio,
+            carry.AttackPower, carry.Accuracy, carry.Critical, carry.ResistancePoints,
+            carry.HpRegenPerSecond
         }).ToArray();
     }
 

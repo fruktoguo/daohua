@@ -171,63 +171,26 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         if (targetType == "self" || !hasDamage && targetType is not ("targetEnemy" or "allEnemies"))
         {
             // 支援技：以自身/友方为目标的零伤害技能；战内 Buff 授予友方并按战斗时钟到期。
-            if (ability.TryGetProperty("buff", out var buff) && buff.ValueKind == JsonValueKind.Object)
+            // 配表支持 buffs[] 多 Buff（如碎罡同时授予碎罡与罡锋），单 Buff 的旧 buff 对象仍兼容解析。
+            var buffSpecs = AbilityBuffSpecs(ability);
+            if (buffSpecs.Count > 0)
             {
-                var baseBuffId = AbilityText(buff, "buffId") ?? $"ability-buff:{id}";
-                var policy = AbilityText(buff, "stackPolicy") ?? "capped";
-                var buffId = policy == "perCaster" ? $"{baseBuffId}:{caster.Id}" : baseBuffId;
-                // 施法者属性动态层数加成：基础 1 层，每 spellAttackStackInterval 点法攻额外提升 1 层（向下取整）。
-                var spellAttackInterval = AbilityNumber(buff, "spellAttackStackInterval");
-                var extraStacks = spellAttackInterval > 0
-                    ? Math.Floor(Math.Max(0, caster.Stats.SpellAttack) / spellAttackInterval)
-                    : 0.0;
-                var initialStacks = 1.0 + extraStacks;
-                // Buff 效果量随技能等级成长（全部数值项同式）；时长/叠层上限不成长。
-                var grant = new CombatBuffState(buffId,
-                    encounter.ElapsedSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), initialStacks,
-                    AbilityNumber(buff, "hpRegen") * levelGrowth, AbilityNumber(buff, "mpRegen") * levelGrowth,
-                    AbilityNumber(buff, "attackSpeedPoints") * levelGrowth,
-                    AbilityNumber(buff, "damageAbsorptionPoints") * levelGrowth,
-                    AbilityNumber(buff, "threatPoints") * levelGrowth,
-                    AbilityNumber(buff, "hpRegenPostRatio") * levelGrowth,
-                    AbilityNumber(buff, "mpRegenPostRatio") * levelGrowth,
-                    AbilityNumber(buff, "damageBonusPoints") * levelGrowth,
-                    AbilityNumber(buff, "threatPerSecondMaxHpPoints") * levelGrowth,
-                    AbilityText(buff, "name") ?? baseBuffId,
-                    ResetOnWave: buff.TryGetProperty("resetOnWave", out var resetFlag) && resetFlag.ValueKind == JsonValueKind.True);
-                // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
-                var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
-                void GrantBuff(CombatantState ally)
-                {
-                    var index = ally.Buffs.FindIndex(current => current.BuffId == buffId);
-                    if (index < 0)
-                    {
-                        ally.Buffs.Add(grant);
-                    }
-                    else
-                    {
-                        var nextStacks = policy switch
-                        {
-                            "maxKeep" => Math.Max(ally.Buffs[index].Stacks, initialStacks),
-                            _ => Math.Min(stackCap, ally.Buffs[index].Stacks + initialStacks)
-                        };
-                        ally.Buffs[index] = grant with { Stacks = nextStacks };
-                    }
-                }
                 // 目标范围与治疗效果同口径展开：lowestHitpointsAlly 取血量比例最低存活友方
                 // （原 OrderBy+Take(1) 稳定首元素语义），allAllies 顺序遍历存活友方，其余作用于自身。
                 if (targetType == "lowestHitpointsAlly")
                 {
-                    if (LowestHitpointsRatioAlly(allies) is { } weakest) GrantBuff(weakest);
+                    if (LowestHitpointsRatioAlly(allies) is { } weakest)
+                        foreach (var spec in buffSpecs) GrantBuff(spec, caster, weakest, encounter.ElapsedSeconds, levelGrowth, id);
                 }
                 else if (targetType == "allAllies")
                 {
                     for (var i = 0; i < allies.Count; i++)
-                        if (allies[i].IsAlive) GrantBuff(allies[i]);
+                        if (allies[i].IsAlive)
+                            foreach (var spec in buffSpecs) GrantBuff(spec, caster, allies[i], encounter.ElapsedSeconds, levelGrowth, id);
                 }
                 else
                 {
-                    GrantBuff(caster);
+                    foreach (var spec in buffSpecs) GrantBuff(spec, caster, caster, encounter.ElapsedSeconds, levelGrowth, id);
                 }
             }
             events ??= new List<CombatEvent>();
@@ -307,6 +270,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         encounter.StatsBook?.RecordHit(attacker, target, context.AttackStats.DamageKind,
             context.Damage, context.Hit ? Math.Max(0, context.RawDamage - context.Damage) : 0);
         target.Hitpoints = Math.Max(0, target.Hitpoints - context.Damage);
+        // 气血变动后重算「每损失 N 点生命获得 1 层」类 Buff 的层数。
+        target.SyncDerivedStacks();
         attacker.AttackCount += 1;
         attacker.Threat += context.Damage;
         events ??= new List<CombatEvent>();
@@ -319,10 +284,99 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     }
 
     /// <summary>
-    /// 命中落账后的触发器入队与固定点消费：攻击方/受击方各入队一条，按入队顺序立即消费，
-    /// 消费点与原 ApplyAftermath 同位——UpdateOutcome 永远在触发器结算之后运行。
-    /// 衍生事件与主事件灵力回填由派发方按序完成。
+    /// 解析技能授予的战内 Buff 规格列表：优先 <c>buffs[]</c> 多 Buff，回落单 <c>buff</c> 对象。
+    /// 单 Buff 回落使既有技能配表无需改动即可继续工作。
     /// </summary>
+    private static List<JsonElement> AbilityBuffSpecs(JsonElement ability)
+    {
+        if (ability.TryGetProperty("buffs", out var array) && array.ValueKind == JsonValueKind.Array)
+        {
+            var specs = new List<JsonElement>(array.GetArrayLength());
+            foreach (var entry in array.EnumerateArray())
+                if (entry.ValueKind == JsonValueKind.Object) specs.Add(entry);
+            return specs;
+        }
+        return ability.TryGetProperty("buff", out var single) && single.ValueKind == JsonValueKind.Object
+            ? [single]
+            : [];
+    }
+
+    /// <summary>
+    /// 授予单条 Buff 规格：层数由施法者属性（法攻每 N 点 1 层 / 双抗总和按比例）与目标状态
+    /// （每损失 N 点气血 1 层）派生。层数承载数值——Buff 只存每层基础量，结算时统一按层数线性放大。
+    /// </summary>
+    private static void GrantBuff(JsonElement buff, CombatantState caster, CombatantState target,
+        double grantedAtSeconds, double levelGrowth, string abilityId)
+    {
+        var baseBuffId = AbilityText(buff, "buffId") ?? $"ability-buff:{abilityId}";
+        var policy = AbilityText(buff, "stackPolicy") ?? "capped";
+        var buffId = policy == "perCaster" ? $"{baseBuffId}:{caster.Id}" : baseBuffId;
+        var initialStacks = InitialStacks(buff, caster, target);
+        // Buff 效果量随技能等级成长（全部数值项同式）；时长/叠层上限不成长。
+        var grant = new CombatBuffState(buffId,
+            grantedAtSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), initialStacks,
+            AbilityNumber(buff, "hpRegen") * levelGrowth, AbilityNumber(buff, "mpRegen") * levelGrowth,
+            AbilityNumber(buff, "attackSpeedPoints") * levelGrowth,
+            AbilityNumber(buff, "damageAbsorptionPoints") * levelGrowth,
+            AbilityNumber(buff, "threatPoints") * levelGrowth,
+            AbilityNumber(buff, "hpRegenPostRatio") * levelGrowth,
+            AbilityNumber(buff, "mpRegenPostRatio") * levelGrowth,
+            AbilityNumber(buff, "damageBonusPoints") * levelGrowth,
+            AbilityNumber(buff, "threatPerSecondMaxHpPoints") * levelGrowth,
+            AbilityText(buff, "name") ?? baseBuffId,
+            ResetOnWave: buff.TryGetProperty("resetOnWave", out var resetFlag) && resetFlag.ValueKind == JsonValueKind.True,
+            AttackPower: AbilityNumber(buff, "attackPower") * levelGrowth,
+            Accuracy: AbilityNumber(buff, "accuracy") * levelGrowth,
+            Critical: AbilityNumber(buff, "critical") * levelGrowth,
+            ResistancePoints: AbilityNumber(buff, "resistancePoints"),
+            HpRegenPerSecond: AbilityNumber(buff, "hpRegenPerSecond") * levelGrowth,
+            MissingHitpointsPerStack: AbilityNumber(buff, "missingHitpointsPerStack"));
+        // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
+        var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
+        var index = target.Buffs.FindIndex(current => current.BuffId == buffId);
+        if (index < 0)
+        {
+            target.Buffs.Add(grant);
+        }
+        else
+        {
+            var nextStacks = policy switch
+            {
+                "maxKeep" => Math.Max(target.Buffs[index].Stacks, initialStacks),
+                _ => Math.Min(stackCap, target.Buffs[index].Stacks + initialStacks)
+            };
+            target.Buffs[index] = grant with { Stacks = nextStacks };
+        }
+        // 层数由已损气血派生者，授予瞬间即按当前血线对齐（满血为 0 层）。
+        target.SyncDerivedStacks();
+    }
+
+    /// <summary>
+    /// 派生授予层数：基础 1 层；<c>missingHitpointsPerStack</c> &gt; 0 时层数完全由目标已损气血决定
+    /// （每 N 点已损 1 层，满血 0 层）；否则 <c>spellAttackStackInterval</c> 按法攻每 N 点 +1 层；
+    /// 否则 <c>resistancePerStack</c> 按施法者双抗总和比例折算层数。
+    /// </summary>
+    private static double InitialStacks(JsonElement buff, CombatantState caster, CombatantState target)
+    {
+        var missingPerStack = AbilityNumber(buff, "missingHitpointsPerStack");
+        if (missingPerStack > 0)
+        {
+            var missing = Math.Max(0, target.Stats.MaxHitpoints - target.Hitpoints);
+            return Math.Floor(missing / missingPerStack);
+        }
+        var spellAttackInterval = AbilityNumber(buff, "spellAttackStackInterval");
+        if (spellAttackInterval > 0)
+            return 1.0 + Math.Floor(Math.Max(0, caster.EffectiveStats.SpellAttack) / spellAttackInterval);
+        var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
+        if (resistancePerStack > 0)
+        {
+            var casterStats = caster.EffectiveStats;
+            var resistance = casterStats.Defense + casterStats.MagicResistance;
+            return Math.Floor(resistance * AbilityNumber(buff, "resistanceStackRatio") / resistancePerStack);
+        }
+        return 1.0;
+    }
+
     private static void EmitHitTriggers(CombatEncounterState encounter, CombatHitContext context,
         List<CombatEvent> events, int mainEventIndex)
     {

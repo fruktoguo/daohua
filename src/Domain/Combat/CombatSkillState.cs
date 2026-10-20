@@ -230,17 +230,26 @@ public sealed record CombatBuffCarry(
     double MpRegenPostRatio = 0,
     double DamageBonusPoints = 0,
     double ThreatPerSecondMaxHpPoints = 0,
-    string Name = "")
+    string Name = "",
+    double AttackPower = 0,
+    double Accuracy = 0,
+    double Critical = 0,
+    double ResistancePoints = 0,
+    double HpRegenPerSecond = 0,
+    double MissingHitpointsPerStack = 0)
 {
-    /// <summary>持久化不变量：剩余秒数必须为正有限值（含 MaxValue 永驻哨兵）。</summary>
+    /// <summary>持久化不变量：剩余秒数必须为正有限值（含 MaxValue 永驻哨兵）；层数允许为 0（已损气血派生的惰性态）。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
         && double.IsFinite(RemainingSeconds) && RemainingSeconds > 0
-        && double.IsFinite(Stacks) && Stacks > 0
+        && double.IsFinite(Stacks) && Stacks >= 0
         && double.IsFinite(HpRegen) && double.IsFinite(MpRegen)
         && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
         && double.IsFinite(ThreatPoints) && double.IsFinite(ThreatPerSecondMaxHpPoints)
         && double.IsFinite(HpRegenPostRatio) && double.IsFinite(MpRegenPostRatio)
         && double.IsFinite(DamageBonusPoints)
+        && double.IsFinite(AttackPower) && double.IsFinite(Accuracy) && double.IsFinite(Critical)
+        && double.IsFinite(ResistancePoints) && double.IsFinite(HpRegenPerSecond)
+        && double.IsFinite(MissingHitpointsPerStack)
         && Name is not null && Name.Length <= 64;
 }
 
@@ -311,7 +320,10 @@ public sealed record PlayerCombatBuffState(IReadOnlyList<CombatBuffCarry> Buffs)
                 carry.Stacks, carry.HpRegen, carry.MpRegen, carry.AttackSpeedPoints,
                 carry.DamageAbsorptionPoints, carry.ThreatPoints,
                 carry.HpRegenPostRatio, carry.MpRegenPostRatio,
-                carry.DamageBonusPoints, carry.ThreatPerSecondMaxHpPoints, carry.Name));
+                carry.DamageBonusPoints, carry.ThreatPerSecondMaxHpPoints, carry.Name,
+                AttackPower: carry.AttackPower, Accuracy: carry.Accuracy, Critical: carry.Critical,
+                ResistancePoints: carry.ResistancePoints, HpRegenPerSecond: carry.HpRegenPerSecond,
+                MissingHitpointsPerStack: carry.MissingHitpointsPerStack));
         }
     }
 
@@ -332,7 +344,9 @@ public sealed record PlayerCombatBuffState(IReadOnlyList<CombatBuffCarry> Buffs)
             carries.Add(new CombatBuffCarry(buff.BuffId, remaining, buff.Stacks,
                 buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints,
                 buff.ThreatPoints, buff.HpRegenPostRatio, buff.MpRegenPostRatio,
-                buff.DamageBonusPoints, buff.ThreatPerSecondMaxHpPoints, buff.Name));
+                buff.DamageBonusPoints, buff.ThreatPerSecondMaxHpPoints, buff.Name,
+                buff.AttackPower, buff.Accuracy, buff.Critical, buff.ResistancePoints,
+                buff.HpRegenPerSecond, buff.MissingHitpointsPerStack));
         }
         return new(carries ?? (IReadOnlyList<CombatBuffCarry>)[]);
     }
