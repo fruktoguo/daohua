@@ -21,7 +21,7 @@
       "spellAttack": 0.1
     },
     "flatStats": {
-      "spellResistance": 4,
+      "criticalChance": 4,
       "manapointRegen": 2
     }
   },
@@ -51,7 +51,7 @@
       "spellAttack": 0.16
     },
     "flatStats": {
-      "spellResistance": 4,
+      "criticalChance": 4,
       "manapointRegen": 3
     }
   }

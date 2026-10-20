@@ -78,7 +78,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "actionSpeedPoints": 10
+      "actionSpeedPoints": 5
     }
   },
   {

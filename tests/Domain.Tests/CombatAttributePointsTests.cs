@@ -213,6 +213,28 @@ public sealed class CombatAttributePointsTests
         Assert.True(redArmyResolved.Armor > windResolved.Armor);
         Assert.True(redArmyResolved.MagicResistance > windResolved.MagicResistance);
         Assert.True(redArmyResolved.MaxHitpoints > windResolved.MaxHitpoints);
+
+        // 3. 穿戴 T2 辟尘出尘术法输出套（子午冠、辟尘衫、流云裳）
+        var pichenSlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.ziwu-crown", 0),
+            new PlayerEquipmentSlot("equipment.pichen-shirt", 0),
+            new PlayerEquipmentSlot("equipment.liuyun-skirt", 0),
+        };
+        player.ReplaceCombatSlots([], pichenSlots);
+        var pichenResolved = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 术法增伤 = 2 + 2 + 2 = 6%
+        Assert.Equal(6, pichenResolved.SpellDamageBonusPoints);
+        // 术法输出套法攻、命中与暴击显著高于生存套
+        Assert.True(pichenResolved.SpellAttack > redArmyResolved.SpellAttack);
+        Assert.True(pichenResolved.Critical > redArmyResolved.Critical);
+        Assert.True(pichenResolved.Accuracy > redArmyResolved.Accuracy);
+        // 赤军物理坦克套护甲与生命显著高于术法输出套
+        Assert.True(redArmyResolved.Armor > pichenResolved.Armor);
+        Assert.True(redArmyResolved.MaxHitpoints > pichenResolved.MaxHitpoints);
+        // 术法输出套法抗显著高于物理输出套
+        Assert.True(pichenResolved.MagicResistance > windResolved.MagicResistance);
     }
 
     /// <summary>
@@ -280,6 +302,28 @@ public sealed class CombatAttributePointsTests
         Assert.True(bailianResolved.Armor > jifengResolved.Armor);
         Assert.True(bailianResolved.MagicResistance > jifengResolved.MagicResistance);
         Assert.True(bailianResolved.MaxHitpoints > jifengResolved.MaxHitpoints);
+
+        // 3. 穿戴 T1 云游修道术法输出套（混元巾、素麻袍、行气裤）
+        var yunyouSlots = new[]
+        {
+            new PlayerEquipmentSlot("equipment.hunyuan-scarf", 0),
+            new PlayerEquipmentSlot("equipment.suma-robe", 0),
+            new PlayerEquipmentSlot("equipment.xingqi-pants", 0),
+        };
+        player.ReplaceCombatSlots([], yunyouSlots);
+        var yunyouResolved = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 术法增伤 = 2 + 2 + 2 = 6%
+        Assert.Equal(6, yunyouResolved.SpellDamageBonusPoints);
+        // 术法输出套法攻、命中与暴击显著高于生存套
+        Assert.True(yunyouResolved.SpellAttack > bailianResolved.SpellAttack);
+        Assert.True(yunyouResolved.Critical > bailianResolved.Critical);
+        Assert.True(yunyouResolved.Accuracy > bailianResolved.Accuracy);
+        // 百炼物理生存套护甲与生命显著高于术法输出套
+        Assert.True(bailianResolved.Armor > yunyouResolved.Armor);
+        Assert.True(bailianResolved.MaxHitpoints > yunyouResolved.MaxHitpoints);
+        // 术法输出套法抗显著高于物理输出套
+        Assert.True(yunyouResolved.MagicResistance > jifengResolved.MagicResistance);
     }
 
     /// <summary>

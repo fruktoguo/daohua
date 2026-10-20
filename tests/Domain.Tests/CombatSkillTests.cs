@@ -458,6 +458,13 @@ public sealed class CombatSkillTests
         // 2 级：10 * (1 + 0.05 * 1) = 10.5 点
         var attrsExpLevel2 = PlayerAttributeResolver.Resolve(player, catalog);
         Assert.Equal(10.5, attrsExpLevel2.PhysicalDamageBonusPoints);
+
+        // 切换为飞燕功 1 级：行动速度数值减半后为 5%
+        player.LearnAbility(new AbilityId("ability.feiyan-gong"));
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.feiyan-gong", 1);
+        player.Touch(PlayerSectionKind.Loadout);
+        var feiyanAttrs = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(5, feiyanAttrs.ActionSpeedPoints);
     }
 
     [Fact]
