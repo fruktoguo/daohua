@@ -130,7 +130,7 @@ export function resolveEquipmentSlot(item: MarketInstrument): Exclude<EquipmentS
   return null
 }
 
-/** 装备过滤：部位与战斗类型 AND；工具无战斗类型，仅按部位过滤 */
+/** 装备过滤：部位与战斗类型 AND；工具无战斗类型，仅按部位过滤且不参与类型筛选 */
 export function matchesEquipment(
   item: MarketInstrument,
   kind: EquipmentKindFilter,
@@ -141,6 +141,8 @@ export function matchesEquipment(
   if (slot !== 'any' && itemSlot !== slot) return false
   if (slot === 'tool') return true
   if (kind === 'any') return true
+  // 工具对战斗属性零贡献，选中任一战斗类型时一律排除，避免归入防御的误导
+  if (itemSlot === 'tool') return false
   return resolveEquipmentKind(item) === kind
 }
 

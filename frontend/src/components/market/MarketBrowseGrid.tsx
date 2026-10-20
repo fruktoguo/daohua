@@ -560,7 +560,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
             ))}
           </select>
         </label>
-        </div>
+      </div>
 
       <div
         aria-label={t('market.browse.gridAria')}
