@@ -1218,6 +1218,12 @@ export interface CombatAbilitySlot {
   abilityId: string | null
   /** 功法演练等级 */
   level: number
+  /**
+   * 槽位触发条件：服务端按「槽位 triggers → triggerHpRatio 折叠 → 功法 defaultTriggers」解析后的最终条件。
+   * 怪物技能槽由服务端一并下发——离线推演必须复用同一份条件，否则会退化为功法默认条件而永不施放。
+   * 缺省（null/undefined）表示未下发，回退到功法 defaultTriggers。
+   */
+  triggers?: CombatTrigger[] | null
 }
 
 /**
@@ -1283,7 +1289,27 @@ export interface CombatAbilityDefinition {
   /** 根骨加成属性键（配表声明） */
   rootAttribute?: string
   /** 支援类：施放后施加的战内 Buff（破阵子等）；修饰字段为点数口径 */
-  buff?: { name?: string; durationSeconds?: number; damageAbsorptionPoints?: number; hpRegen?: number; mpRegen?: number; attackSpeedPoints?: number; threatPoints?: number; damageBonusPoints?: number; threatPerSecondMaxHpPoints?: number } | null
+  buff?: {
+    /** Buff 唯一 ID（buffId），用于战内层数与快照回查 */
+    buffId?: string
+    name?: string
+    durationSeconds?: number
+    damageAbsorptionPoints?: number
+    hpRegen?: number
+    mpRegen?: number
+    hpRegenPostRatio?: number
+    mpRegenPostRatio?: number
+    attackSpeedPoints?: number
+    threatPoints?: number
+    damageBonusPoints?: number
+    threatPerSecondMaxHpPoints?: number
+    /** 叠层策略：capped 封顶累加 / perCaster 按施法者隔离 / maxKeep 取最高层数 */
+    stackPolicy?: 'capped' | 'perCaster' | 'maxKeep'
+    /** 施法者每多少点法攻额外叠加 1 层（甘露为 10） */
+    spellAttackStackInterval?: number
+    /** 层数上限（缺省 1） */
+    maxStacks?: number
+  } | null
   /** 击杀连锁次数：单体技能击杀目标后对另一存活敌方追加一次完整结算（贯星等），缺省 0 */
   chainOnKillCount?: number
   /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */

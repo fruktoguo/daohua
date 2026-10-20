@@ -11,7 +11,7 @@ import {
   type FloatingTone,
 } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
-import { createBonusAsideCard, type BonusAsideItem } from './ItemDisplay'
+import { createBonusAsideCard, extractBuffBonusItems, type BonusAsideItem } from './ItemDisplay'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
@@ -149,7 +149,67 @@ export function createInternalAbilityBonusAsideCard(
 }
 
 /**
- * 统一解析功法技能的附属卡片列表（升级进度 + 内功增益 + 内功六维倾向说明）
+ * 提取功法战内 Buff 的效果条目列表 (BonusAsideItem[])
+ * 复用装备/药品同款「通用属性数值加成」解析口径，功法 Buff 与实时 Buff 展示完全一致。
+ */
+export function extractAbilityBuffBonusItems(
+  ability: CombatAbilityDefinition,
+  level = 1
+): BonusAsideItem[] {
+  const buff = ability.buff
+  if (!buff) return []
+  // Buff 效果量随功法等级成长（与服务端 CastSkill 同式：每级 +2% 线性成长）。
+  const levelGrowth = 1 + (Math.max(1, level) - 1) * 0.02
+  const scaled = {
+    ...buff,
+    hpRegen: buff.hpRegen !== undefined ? buff.hpRegen * levelGrowth : undefined,
+    mpRegen: buff.mpRegen !== undefined ? buff.mpRegen * levelGrowth : undefined,
+    hpRegenPostRatio: buff.hpRegenPostRatio !== undefined ? buff.hpRegenPostRatio * levelGrowth : undefined,
+    mpRegenPostRatio: buff.mpRegenPostRatio !== undefined ? buff.mpRegenPostRatio * levelGrowth : undefined,
+    damageAbsorptionPoints: buff.damageAbsorptionPoints !== undefined ? buff.damageAbsorptionPoints * levelGrowth : undefined,
+    attackSpeedPoints: buff.attackSpeedPoints !== undefined ? buff.attackSpeedPoints * levelGrowth : undefined,
+    threatPoints: buff.threatPoints !== undefined ? buff.threatPoints * levelGrowth : undefined,
+    damageBonusPoints: buff.damageBonusPoints !== undefined ? buff.damageBonusPoints * levelGrowth : undefined,
+    threatPerSecondMaxHpPoints: buff.threatPerSecondMaxHpPoints !== undefined ? buff.threatPerSecondMaxHpPoints * levelGrowth : undefined,
+  }
+  const items = extractBuffBonusItems(scaled)
+  // 持续时间与叠层规则同列展示：Buff 本身不携带时长，单独补一条持续时间条目。
+  const duration = buff.durationSeconds ?? 0
+  if (duration > 0) {
+    items.push({
+      glyph: 'cooldown-reduction',
+      label: getT()('game.abilityAside.buffDurationLabel'),
+      tone: 'slate',
+      value: `${duration}秒`,
+    })
+  }
+  return items
+}
+
+/**
+ * 构造功法战内 Buff 独立副卡片 (Bonus Aside Card)
+ * 与装备属性、药品效果、实时 Buff 共用同一套「通用属性数值加成独立悬浮窗」。
+ */
+export function createAbilityBuffAsideCard(
+  ability: CombatAbilityDefinition,
+  level = 1
+): FloatingAsideCard | null {
+  const buff = ability.buff
+  if (!buff) return null
+  const items = extractAbilityBuffBonusItems(ability, level)
+  if (items.length === 0) return null
+  const t = getT()
+  return createBonusAsideCard({
+    id: `aside-ability-buff-${ability.abilityId}`,
+    mark: t('game.abilityAside.buffMark'),
+    title: buff.name ? `${t('game.abilityAside.buffTitle')}·${buff.name}` : t('game.abilityAside.buffTitle'),
+    tone: 'emerald',
+    items,
+  })
+}
+
+/**
+ * 统一解析功法技能的附属卡片列表（升级进度 + 战内 Buff + 内功增益 + 内功六维倾向说明）
  */
 export function resolveAbilityAsideCards(
   ability: CombatAbilityDefinition | null | undefined,
@@ -161,6 +221,10 @@ export function resolveAbilityAsideCards(
   const level = totalExp !== undefined ? calculateAbilityLevelAndProgress(totalExp).level : 1
   if (totalExp !== undefined) {
     list.push(createAbilityProgressAsideCard(ability.abilityId, totalExp, tone))
+  }
+  const buffCard = createAbilityBuffAsideCard(ability, level)
+  if (buffCard) {
+    list.push(buffCard)
   }
   if (ability.discipline === 'internal') {
     const bonusCard = createInternalAbilityBonusAsideCard(ability, level)

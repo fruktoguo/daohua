@@ -1,4 +1,4 @@
-import type { CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketItemStats, WorldMapDefinition } from '../types.ts'
+import type { CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEncounterDefinition, CombatEquipmentDefinition, CombatTrigger, ItemDefinition, MarketItemStats, WorldMapDefinition } from '../types.ts'
 function resolveAssetLabel(id: string, items?: readonly ItemDefinition[] | null): string {
   if (Array.isArray(items)) {
     const found = items.find(i => i.itemId === id)
@@ -70,6 +70,27 @@ interface RawEnemySpec {
     maxQuantity?: number
   }>
   skills?: CombatAbilitySlot[]
+}
+
+/**
+ * 解析怪物技能槽的触发条件，与服务端口径同源。
+ *
+ * 服务端已按「槽位 triggers → triggerHpRatio 折叠 → 功法 defaultTriggers」解析出最终条件，
+ * 并随怪物技能槽一并下发；前端离线推演必须复用同一份条件。
+ * 若退回功法 defaultTriggers，甘露一类条件技在怪物视角下恒为假（友方最低血量缺失 ≥ 1，
+ * 而怪物施法时友方是敌方阵营），表现为水灵永不爆技能。
+ *
+ * @param slot 怪物技能槽（服务端下发的形状）
+ * @param ability 该槽位对应功法的配表定义（缺省时按空条件处理）
+ * @returns 槽位触发条件；空数组表示恒可用
+ */
+export function resolveMonsterSkillTriggers(
+  slot: CombatAbilitySlot,
+  ability?: CombatAbilityDefinition
+): readonly CombatTrigger[] {
+  // 注意不能用 `||` 兜底：服务端下发的空数组表示「恒可用」，必须原样保留。
+  if (slot.triggers !== undefined && slot.triggers !== null) return slot.triggers
+  return ability?.defaultTriggers ?? []
 }
 
 /**
@@ -884,7 +905,7 @@ export class ExpeditionSimulator {
             castMilliseconds: def?.castMilliseconds || 1000,
             cooldownMilliseconds: def?.cooldownMilliseconds || 0,
             manaCost: def?.manaCost || 0,
-            triggers: def?.defaultTriggers || [],
+            triggers: resolveMonsterSkillTriggers(sk, def),
           }
         })
 

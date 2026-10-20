@@ -190,6 +190,18 @@
         "dropChance": 1.0,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.ganlu",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.ganlu",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [

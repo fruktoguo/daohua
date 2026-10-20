@@ -154,14 +154,19 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const threatGain = (ability.threatGain ?? 0) * levelGrowth
   const threatPoints = (ability.threatPoints ?? 0) * levelGrowth
   const buff = ability.buff
-  // 战内 Buff 效果子句：增伤/免伤/威胁增幅/每秒威胁逐条并列描述，全零回退通用增益文案。
+  // 战内 Buff 效果子句：回复/增伤/免伤/威胁增幅/每秒威胁逐条并列描述，全零回退通用增益文案。
   const buffClause = () => {
     const duration = buff?.durationSeconds ?? 0
+    const hpRegen = (buff?.hpRegen ?? 0) * levelGrowth
+    const mpRegen = (buff?.mpRegen ?? 0) * levelGrowth
     const bonusPoints = (buff?.damageBonusPoints ?? 0) * levelGrowth
     const absorbPoints = (buff?.damageAbsorptionPoints ?? 0) * levelGrowth
     const buffThreatPoints = (buff?.threatPoints ?? 0) * levelGrowth
     const threatPerSecond = (buff?.threatPerSecondMaxHpPoints ?? 0) * levelGrowth
     const effects: string[] = []
+    // 回复类按 5 秒结算点结算（服务端 CombatPhaseSystems.TickSeconds = 5），文案与结算口径一致。
+    if (hpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegen', { target, n: formatNumber(hpRegen) }))
+    if (mpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffMpRegen', { target, n: formatNumber(mpRegen) }))
     if (bonusPoints !== 0) effects.push(t('game.abilityDesc.effectBuffDamage', { target, n: abilityPercent(bonusPoints / 100) }))
     if (absorbPoints !== 0) effects.push(t('game.abilityDesc.effectBuffAbsorb', { target, n: abilityPercent(absorbPoints / (100 + absorbPoints)) }))
     if (buffThreatPoints !== 0) effects.push(t('game.abilityDesc.threatRatioClause', { n: abilityPercent(buffThreatPoints / 100) }))
@@ -169,6 +174,15 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     let effect = effects.length > 0 ? effects.join('，') : t('game.abilityDesc.effectBuff', { target })
     if (duration > 0) {
       effect = `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
+    }
+    // 叠层与动态层数：maxKeep 取最高层数、法攻每 N 点额外叠 1 层——与服务端 GrantBuff 同口径。
+    const stackPolicy = buff?.stackPolicy
+    if (stackPolicy === 'maxKeep') {
+      effect = `${effect}，${t('game.abilityDesc.buffStackMaxKeep')}`
+    }
+    const stackInterval = buff?.spellAttackStackInterval ?? 0
+    if (stackInterval > 0) {
+      effect = `${effect}，${t('game.abilityDesc.buffStackBySpellAttack', { n: formatNumber(stackInterval) })}`
     }
     return effect
   }

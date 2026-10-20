@@ -438,6 +438,35 @@ PRESET_BATCHES = {
             "caption": "Bottom-center item: [清心诀图腾 - Clear Heart Logo]. A bold solid pure white minimalist vector silhouette logo of a serene water lotus flower with a crystal teardrop, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
         }
     ],
+    # 纯黑底纯白二值矢量Logo图腾组 C (甘露水灵辅助功法图腾，供线装书与残卷合成)
+    # 必须走 logos_ 版式：纯黑底 + 纯白形，二值化阈值才有对比度（白底白形会被抠图与阈值同时抹平）。
+    # 四个象限各出一版候选（同一母题不同造型），生成后择优取用为 emblem.ganlu。
+    "logos_ganlu": [
+        {
+            "id": "emblem.ganlu.a",
+            "name": "甘露图腾候选 A",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a single plump water droplet sitting upright inside an open three-petal lotus cradle, the droplet shape itself solid and opaque with no hollow interior, the lotus petals solid filled shapes, one single unified solid white emblem, no thin strokes, no outline-only line art, no hollow rings, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.ganlu.b",
+            "name": "甘露图腾候选 B",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a rounded teardrop dew drop resting on two symmetric thick crescent petals, both droplet and petals drawn as solid opaque filled shapes with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, no hollow rings, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.ganlu.c",
+            "name": "甘露图腾候选 C",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a bold water droplet shape cradled by an open lotus blossom of three thick solid petals, droplet and petals entirely solid opaque white with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.ganlu.d",
+            "name": "甘露图腾候选 D",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a large smooth teardrop above two wide upward crescent petal arcs, all shapes rendered as solid opaque white filled forms with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        }
+    ],
     # 纯白二值矢量Logo图腾组 B (后 5 门心法图腾，供线装书与残卷合成)
     "emblems_group_b": [
         {
@@ -741,22 +770,28 @@ def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size
         # bbox 格式: [y_min, x_min, y_max, x_max] (相对中心点)
         ymin, xmin, ymax, xmax = it["bbox"]
         box = (int(cx + xmin), int(cy + ymin), int(cx + xmax), int(cy + ymax))
-        # 外扩 12% 避免边缘轻微裁切，由于已有 RMBG 抠图透明背景，各道具天然独立
-        pad_x = int((box[2] - box[0]) * 0.12)
-        pad_y = int((box[3] - box[1]) * 0.12)
-        safe_box = (
-            max(0, box[0] - pad_x),
-            max(0, box[1] - pad_y),
-            min(w_full, box[2] + pad_x),
-            min(h_full, box[3] + pad_y)
-        )
+        is_emblem = "emblem" in it.get("id", "")
+        if is_emblem:
+            # 纯黑底纯白二值图腾批次取的是未经抠图的原图，各象限图形彼此独立且互不相连，
+            # 因此这里必须严格按 bbox 裁切、不得外扩，否则会把邻格候选一起框进来。
+            safe_box = (max(0, box[0]), max(0, box[1]), min(w_full, box[2]), min(h_full, box[3]))
+        else:
+            # 外扩 12% 避免边缘轻微裁切，由于已有 RMBG 抠图透明背景，各道具天然独立
+            pad_x = int((box[2] - box[0]) * 0.12)
+            pad_y = int((box[3] - box[1]) * 0.12)
+            safe_box = (
+                max(0, box[0] - pad_x),
+                max(0, box[1] - pad_y),
+                min(w_full, box[2] + pad_x),
+                min(h_full, box[3] + pad_y)
+            )
         crop = im.crop(safe_box)
         
         # 自动去底与二值化
         arr = np.array(crop)
         r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
-        if "emblem" in it.get("id", ""):
-            # 纯黑底纯白二值矢量图腾：严格二值化 (Hard Binary Threshold)，零渐变，纯白+纯黑/透明
+        if is_emblem:
+            # 纯黑底纯白二值矢量图腾：严格二值化 (Hard Binary Threshold)，零渐变，纯白+透明
             lum = (r.astype(int) + g.astype(int) + b.astype(int)) // 3
             is_white = (lum > 100) & (a > 50)
             arr[is_white] = [255, 255, 255, 255]
@@ -845,6 +880,16 @@ def main():
     elif "emblem" in args.batch or "logos_" in args.batch:
         out_dir = os.path.join(REPO_ROOT, "art", "emblems")
         t_size, in_size = 128, 110
+        # 纯黑底纯白形的二值图腾批次必须取未经抠图的原图（node 30 的 moss-image_*.png）：
+        # 工作流的 node 18 保存的是 RMBG 抠图产物，黑底会被当成背景抠掉、
+        # 白形随之退化成描边，二值化阈值便只剩轮廓线而非实心形。
+        raw_img = next(
+            (os.path.join(COMFY_OUTPUT_DIR, name) for name in images if name.startswith("moss-image_")),
+            None,
+        )
+        if raw_img and os.path.exists(raw_img):
+            latest_img = raw_img
+            print(f"图腾批次改用未抠图原图（纯黑底纯白形）: {latest_img}")
         print(f"开始自动切片、去底与 128px WebP 高精图腾母版下采样: {latest_img} -> {out_dir}")
     elif "buildings_" in args.batch:
         # 建筑批次：同时生成 128px 高精母版与 64px 前端图标

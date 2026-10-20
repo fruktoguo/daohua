@@ -574,4 +574,48 @@ public sealed class ProtocolAttributesPointsTests
         foreach (var id in expectedMinions) Assert.Contains(id, allFoundIds);
         Assert.Equal(14, allFoundIds.Count);
     }
+
+    /// <summary>
+    /// 怪物技能槽触发条件投影门禁：下发内容必须是领域层已解析的槽位条件
+    /// （槽位 triggers → triggerHpRatio 折叠 → 功法 defaultTriggers），
+    /// 而不是功法默认条件——前端离线推演按此条件装配怪物技能，
+    /// 若下发 defaultTriggers 则甘露等条件技在推演中永不施放（水灵不爆技能）。
+    /// </summary>
+    [Fact]
+    public void StaticGameCatalogMapper_MonsterSkills_ProjectResolvedSlotTriggers()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var encounters = StaticGameCatalogMapper.Encounters(gameData);
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(encounters, ProtocolJson.Options));
+        var waterSpiritSkills = default(JsonElement);
+        var found = false;
+        foreach (var enc in doc.RootElement.EnumerateArray())
+        {
+            foreach (var spawn in enc.GetProperty("randomSpawns").EnumerateArray())
+            {
+                var enemy = spawn.GetProperty("enemy");
+                if (enemy.GetProperty("enemyId").GetString() != "enemy.water-spirit") continue;
+                waterSpiritSkills = enemy.GetProperty("skills");
+                found = true;
+            }
+        }
+
+        Assert.True(found, "遭遇目录必须包含水灵投影。");
+        var skill = Assert.Single(waterSpiritSkills.EnumerateArray());
+        Assert.Equal("ability.ganlu", skill.GetProperty("abilityId").GetString());
+        Assert.True(skill.TryGetProperty("triggers", out var triggers), "怪物技能槽必须下发解析后的触发条件。");
+
+        // 水灵槽位配 triggerHpRatio=1.0，折叠为 self 气血百分比 ≤ 100（恒真）；下发的必须是它，
+        // 而不是甘露配表的 defaultTriggers（友方最低血量缺失 ≥ 1，怪物视角下恒假）。
+        var trigger = Assert.Single(triggers.EnumerateArray());
+        Assert.Equal("self", trigger.GetProperty("dependency").GetString());
+        Assert.Equal("current-hp-percentage", trigger.GetProperty("condition").GetString());
+        Assert.Equal("less-than-equal", trigger.GetProperty("comparator").GetString());
+        Assert.Equal(100, trigger.GetProperty("value").GetDouble(), 6);
+
+        // 甘露配表默认条件必须与下发内容不同——否则本次修复形同虚设。
+        var defaultTriggers = gameData.Abilities["ability.ganlu"].GetProperty("defaultTriggers");
+        Assert.Equal("ally-lowest-hp", defaultTriggers[0].GetProperty("dependency").GetString());
+    }
 }

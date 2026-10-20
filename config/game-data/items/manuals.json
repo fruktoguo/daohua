@@ -54,6 +54,24 @@
     "subCategory": "manualFragment"
   },
   {
+    "id": "item.tome.ganlu",
+    "name": "《甘露秘籍》",
+    "description": "天降甘露，润物无声。\n以清水写就的道门符诀典籍，纸页间隐有露珠滚动不落。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.ganlu",
+    "name": "《甘露·残卷》",
+    "description": "天降甘露，润物无声。\n以清水写就的道门符诀典籍，纸页间隐有露珠滚动不落。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
     "id": "item.tome.blazing-blast",
     "name": "《轰炎秘籍》",
     "description": "轰炎一怒焚千里。\n绘有炽烈火纹的朱红古卷，卷轴触手灼热。",

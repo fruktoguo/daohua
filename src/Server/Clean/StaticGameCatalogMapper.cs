@@ -372,12 +372,15 @@ public static class StaticGameCatalogMapper
             }).ToArray(),
             // 功法槽按 CombatAbilitySlot 形状投影（abilityId+level，等级取配表施放等级），
             // 详情弹窗「装配」Tab 与生态面板共用此来源。
+            // triggers 一并下发领域层已解析的槽位触发条件（槽位 triggers → triggerHpRatio 折叠 → defaultTriggers）：
+            // 前端离线推演必须复用服务端同一份触发条件，否则怪物技能槽会退化为功法默认触发条件而永不施放。
             skills = definition.Skills.Select(skill => new
             {
                 abilityId = skill.Ability.TryGetProperty("id", out var abilityIdElement)
                     ? abilityIdElement.GetString() ?? string.Empty
                     : string.Empty,
                 level = skill.Level,
+                triggers = skill.Triggers.Select(trigger => trigger.Clone()).ToArray(),
             }).Where(skill => skill.abilityId.Length > 0).ToArray()
         };
     }

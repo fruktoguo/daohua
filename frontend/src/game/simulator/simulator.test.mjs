@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { nextSeed, deterministicRoll, rollDropTable } from './deterministicRng.ts'
 import { SimSkillTriggerEvaluator } from './skillTriggerEvaluator.ts'
 import { ManaDeficitTracker } from './manaDeficitTracker.ts'
-import { ExpeditionSimulator } from './expeditionSimulator.ts'
+import { ExpeditionSimulator, resolveMonsterSkillTriggers } from './expeditionSimulator.ts'
 
 test('deterministicRng: 同种子同参数产出绝对一致', () => {
   const seed = 123456789n
@@ -367,4 +367,54 @@ test('expeditionSimulator: 装备强化属性加成与战斗消耗品生效验�
   assert.ok(pillYield, '必须统计到凝血丹掉落')
   assert.equal(pillYield?.unitPrice, 20, '市场参考价必须为 20')
   assert.ok(pillYield?.dailyRevenue > 0, '每日收益必须大于0')
+})
+
+test('resolveMonsterSkillTriggers: 怪物槽位触发条件优先于功法默认条件', () => {
+  // 水灵槽位：服务端把 triggerHpRatio=1.0 折叠为 self 气血百分比 ≤ 100（恒真）。
+  const slotTriggers = [
+    { dependency: 'self', condition: 'current-hp-percentage', comparator: 'less-than-equal', value: 100 },
+  ]
+  // 甘露配表默认条件：友方最低血量缺失 ≥ 1——怪物视角下恒假，会导致水灵永不施放。
+  const ability = {
+    abilityId: 'ability.ganlu',
+    defaultTriggers: [
+      { dependency: 'ally-lowest-hp', condition: 'missing-hp', comparator: 'greater-than-equal', value: 1 },
+    ],
+  }
+
+  // 服务端已下发槽位条件时必须原样采用，不得退回功法默认条件。
+  const resolved = resolveMonsterSkillTriggers(
+    { abilityId: 'ability.ganlu', level: 1, triggers: slotTriggers },
+    ability,
+  )
+  assert.equal(resolved.length, 1)
+  assert.equal(resolved[0].dependency, 'self')
+  assert.equal(resolved[0].condition, 'current-hp-percentage')
+
+  // 服务端下发空数组表示「恒可用」，必须原样保留（不能被默认条件覆盖）。
+  const always = resolveMonsterSkillTriggers({ abilityId: 'ability.ganlu', level: 1, triggers: [] }, ability)
+  assert.equal(always.length, 0, '下发的空条件表表示恒可用，不得回退功法默认条件')
+
+  // 未下发槽位条件时才回退功法默认条件（兼容旧快照）。
+  const fallback = resolveMonsterSkillTriggers({ abilityId: 'ability.ganlu', level: 1 }, ability)
+  assert.equal(fallback.length, 1)
+  assert.equal(fallback[0].dependency, 'ally-lowest-hp')
+
+  // 回归断言：按服务端口径（水灵气血百分比 ≤ 100）时水灵可施放；按功法默认条件时恒不可施放。
+  const waterSpirit = {
+    isAlive: true, hitpoints: 866, maxHitpoints: 866, manapoints: 44, maxManapoints: 44, buffs: [],
+  }
+  const player = {
+    isAlive: true, hitpoints: 500, maxHitpoints: 500, manapoints: 100, maxManapoints: 100, buffs: [],
+  }
+  assert.equal(
+    SimSkillTriggerEvaluator.matchesAll(resolved, waterSpirit, player, [waterSpirit], [player]),
+    true,
+    '水灵必须能按服务端槽位条件施放甘露',
+  )
+  assert.equal(
+    SimSkillTriggerEvaluator.matchesAll(fallback, waterSpirit, player, [waterSpirit], [player]),
+    false,
+    '功法默认条件在怪物视角下恒假，正是水灵不爆技能的根因',
+  )
 })
