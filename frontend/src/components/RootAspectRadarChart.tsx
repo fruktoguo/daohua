@@ -88,13 +88,14 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
       valText = `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`
     }
 
+    // 颜色交由主题变量决定：深色沿用灵光青系，浅色切换为同色相深色，避免浅底浅字。
     let valColor = 'var(--text, #e9e3d2)'
     if (pct >= 200) {
-      valColor = '#38bdf8' // 超常特化：灵光青
+      valColor = 'var(--radar-value-super)' // 超常特化：灵光青
     } else if (pct > 100) {
-      valColor = '#7dd3fc' // 强化成长：浅天蓝
+      valColor = 'var(--radar-value-growth)' // 强化成长：浅天蓝
     } else if (pct === 0) {
-      valColor = '#f87171' // 绝弃代价：危红
+      valColor = 'var(--radar-value-decay)' // 绝弃代价：危红
     } else if (pct < 100) {
       valColor = 'var(--text-dim, rgba(233, 227, 210, 0.48))' // 削减维度：暗淡
     }
@@ -132,22 +133,19 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
 
         {/* 背景蛛网层：50% 环、100% 基准环、400% 上限环 */}
         <polygon
-          fill="none"
           points={HALF_HEX_POINTS}
-          stroke="rgba(233, 227, 210, 0.08)"
+          style={{ fill: 'none', stroke: 'var(--radar-web-inner)' }}
           strokeWidth="0.8"
         />
         <polygon
-          fill="rgba(201, 180, 109, 0.02)"
           points={BASE_HEX_POINTS}
-          stroke="rgba(201, 180, 109, 0.38)"
+          style={{ fill: 'var(--radar-base-fill)', stroke: 'var(--radar-base-stroke)' }}
           strokeDasharray="2.5 2.5"
           strokeWidth="1"
         />
         <polygon
-          fill="none"
           points={MAX_HEX_POINTS}
-          stroke="rgba(233, 227, 210, 0.12)"
+          style={{ fill: 'none', stroke: 'var(--radar-web)' }}
           strokeWidth="0.8"
         />
 
@@ -158,7 +156,7 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
           return (
             <line
               key={idx}
-              stroke="rgba(233, 227, 210, 0.12)"
+              style={{ stroke: 'var(--radar-web)' }}
               strokeWidth="0.8"
               x1={CX}
               x2={ex}
@@ -170,7 +168,7 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
 
         {/* 100% 基准微标记 */}
         <text
-          fill="rgba(201, 180, 109, 0.42)"
+          style={{ fill: 'var(--radar-label)' }}
           fontSize="8"
           letterSpacing="0.5"
           textAnchor="middle"
@@ -186,7 +184,7 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
           points={dataPoints}
           style={{
             fill: `url(#${gradientId})`,
-            stroke: '#38bdf8',
+            stroke: 'var(--radar-shape)',
             strokeWidth: 1.6,
             strokeLinejoin: 'round',
           }}
@@ -197,10 +195,9 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
           <circle
             cx={s.vx}
             cy={s.vy}
-            fill="#e0f2fe"
             key={idx}
             r="2.2"
-            stroke="#0284c7"
+            style={{ fill: 'var(--radar-vertex-fill)', stroke: 'var(--radar-vertex-stroke)' }}
             strokeWidth="1"
           />
         ))}
@@ -219,15 +216,15 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
             y={s.ly}
           >
             <tspan
-              fill="var(--text-dim, rgba(233, 227, 210, 0.72))"
+              style={{ fill: 'var(--text-dim, rgba(233, 227, 210, 0.72))' }}
               x={s.lx}
             >
               {s.name}
             </tspan>
             <tspan
               dy="12"
-              fill={s.valColor}
               fontWeight={s.pct > 100 ? '600' : 'normal'}
+              style={{ fill: s.valColor }}
               x={s.lx}
             >
               {s.valText}

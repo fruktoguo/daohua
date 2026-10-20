@@ -1292,6 +1292,23 @@
   color: var(--text);
 }
 
+/* 12. 六维资质雷达图：蛛网、轴线、基准环与百分比数值原先为深色主题的浅色常量，
+       在纸白气泡内几乎不可见（网格 ≈1.03:1，100%~200% 数值 1.7:1）。
+       此处改写组件暴露的同名颜色令牌，保留图形结构与动效。 */
+:root[data-theme="light"] .root-aspect-radar-svg {
+  --radar-web: rgba(125, 82, 26, 0.22);
+  --radar-web-inner: rgba(125, 82, 26, 0.14);
+  --radar-base-fill: rgba(125, 82, 26, 0.04);
+  --radar-base-stroke: rgba(125, 82, 26, 0.5);
+  --radar-label: var(--gold);
+  --radar-shape: var(--qi);
+  --radar-vertex-fill: var(--panel);
+  --radar-vertex-stroke: var(--qi);
+  --radar-value-super: var(--qi);
+  --radar-value-growth: #1e6c98;
+  --radar-value-decay: var(--danger);
+}
+
 /* 窄屏设置分类条横向排列，激活红线由左侧竖条切换为底部横条。 */
 @media (max-width: 960px) {
   :root[data-theme="light"] .settings-nav-item.active {

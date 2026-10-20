@@ -1186,6 +1186,19 @@
 }
 
 .root-aspect-radar-svg {
+  /* 六维雷达图配色令牌：深色沿用灵光青系，浅色主题在同名变量上改写为同色相深色。
+     SVG 元素的 fill/stroke 直接引用这些变量，主题切换时无需重新渲染组件。 */
+  --radar-web: rgba(233, 227, 210, 0.12);
+  --radar-web-inner: rgba(233, 227, 210, 0.08);
+  --radar-base-fill: rgba(201, 180, 109, 0.02);
+  --radar-base-stroke: rgba(201, 180, 109, 0.38);
+  --radar-label: rgba(201, 180, 109, 0.42);
+  --radar-shape: #38bdf8;
+  --radar-vertex-fill: #e0f2fe;
+  --radar-vertex-stroke: #0284c7;
+  --radar-value-super: #38bdf8;
+  --radar-value-growth: #7dd3fc;
+  --radar-value-decay: #f87171;
   width: 100%;
   max-width: 230px;
   height: auto;
