@@ -3,11 +3,55 @@
 # daohua_market_test 集成测试库）、DataTool 校验、Compose 配置与前端构建。
 # 容量门禁不在合并必跑内：容量相关变更与发布前，在本地或受控测试库执行
 # scripts/capacity-target.sh（AGENTS.md §9）；本脚本不执行远程发布或生产恢复验证。
+#
+# 分级（默认全量，与合并/交付口径一致；分级只服务日常快速自检，不能替代交付前的全量门禁）:
+#   --fast       日常快速自检：跳过 Compose 校验与 PostgresIntegration 集成测试，其余全跑。
+#   --backend    只跑后端面：Release 构建、Domain/Ecs/Server 三套测试、DataTool 校验。
+#   --frontend   只跑前端面：依赖安装、i18n 词条、日志标记、类型检查与生产构建。
+#   -h, --help   打印本用法。
+#
+# 环境变量：
+#   SKIP_NPM_CI=1   跳过前端依赖安装（即使锁定文件已变化）
+#   VERIFY_DOCKER=1 追加生产镜像构建
 
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+
+usage() {
+  printf '用法: scripts/verify.sh [--fast | --backend | --frontend]\n\n'
+  printf '  （无参数）   全量门禁：后端 + 前端 + Compose + PostgresIntegration\n'
+  printf '  --fast       跳过 Compose 校验与 PostgresIntegration 集成测试\n'
+  printf '  --backend    仅后端：Release 构建、三套测试、DataTool 校验\n'
+  printf '  --frontend   仅前端：依赖安装、i18n、日志标记、类型检查与生产构建\n'
+  printf '\n环境变量: SKIP_NPM_CI=1 跳过前端依赖安装；VERIFY_DOCKER=1 追加生产镜像构建\n'
+}
+
+MODE="full"
+for arg in "$@"; do
+  case "$arg" in
+    --fast) MODE="fast" ;;
+    --backend) MODE="backend" ;;
+    --frontend) MODE="frontend" ;;
+    -h|--help) usage; exit 0 ;;
+    *)
+      printf '未知参数: %s\n\n' "$arg" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+RUN_BACKEND=1
+RUN_FRONTEND=1
+RUN_INTEGRATION=1
+RUN_COMPOSE=1
+case "$MODE" in
+  fast) RUN_INTEGRATION=0; RUN_COMPOSE=0 ;;
+  backend) RUN_FRONTEND=0; RUN_COMPOSE=0 ;;
+  frontend) RUN_BACKEND=0; RUN_INTEGRATION=0; RUN_COMPOSE=0 ;;
+esac
 
 if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   printf 'YuoCore submodule 未初始化，请执行 git submodule update --init --recursive。\n' >&2
@@ -19,109 +63,145 @@ dotnet --version
 node --version
 npm --version
 
-if [[ "${SKIP_NPM_CI:-0}" != "1" ]]; then
-  printf '%s\n' '==> 安装前端锁定依赖'
-  npm --prefix frontend ci --include=dev --ignore-scripts --no-audit --no-fund
-fi
-printf '%s\n' '==> Release 构建'
-dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
-
-if [[ -f tests/Domain.Tests/Domain.Tests.csproj ]]; then
-  printf '%s\n' '==> 领域测试'
-  dotnet test tests/Domain.Tests/Domain.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
-fi
-if [[ -f tests/Ecs.Tests/Ecs.Tests.csproj ]]; then
-  printf '%s\n' '==> ECS 运行时与适配边界测试'
-  dotnet test tests/Ecs.Tests/Ecs.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
-fi
-if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
-  # PostgresIntegration 集成测试需要专用库：本地 PG 可达时幂等创建 daohua_market_test
-  # 并导出 DAOHUA_MARKET_TEST_CONNECTION；未供给成功时相关测试失败并报明所需环境变量。
-  printf '%s\n' '==> 供给 PostgreSQL 集成测试库'
-  DB_HOST="${DB_HOST:-127.0.0.1}"
-  DB_PORT="${DB_PORT:-5432}"
-  DB_USER="${DB_USER:-daohua}"
-  DB_PASSWORD="${DB_PASSWORD:-daohua-local-dev}"
-  DB_CONTAINER="${DB_CONTAINER:-daohua-local-db}"
-  pg_admin() {
-    if command -v docker >/dev/null 2>&1 \
-        && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$DB_CONTAINER"; then
-      docker exec -i "$DB_CONTAINER" psql -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
-    elif command -v psql >/dev/null 2>&1; then
-      PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
-    else
-      return 127
-    fi
-  }
-
-  if ! (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
-    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-      docker compose -f compose.yaml up -d db
-      for _ in {1..60}; do
-        if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then break; fi
-        sleep 1
-      done
-    fi
+# 前端依赖只在 node_modules 缺失或锁定文件更新时重装：`npm ci` 整目录重装要付 7~40s，
+# 且会与运行中的 dev server 争抢同一份 esbuild/rollup 原生二进制。
+ensure_frontend_deps() {
+  if [[ "${SKIP_NPM_CI:-0}" == "1" ]]; then
+    printf '%s\n' '==> 跳过前端依赖安装 (SKIP_NPM_CI=1)'
+    return 0
   fi
-
-  if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null \
-      && [[ -z "${DAOHUA_MARKET_TEST_CONNECTION:-}" ]]; then
-    TEST_DB_NAME="${TEST_DB_NAME:-daohua_market_test}"
-    TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
-    if [[ "$TEST_DB_EXISTS" != "1" ]]; then
-      pg_admin -c "CREATE DATABASE ${TEST_DB_NAME};" >/dev/null 2>&1 || true
-      TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
-    fi
-    if [[ "$TEST_DB_EXISTS" == "1" ]]; then
-      export DAOHUA_MARKET_TEST_CONNECTION="Host=${DB_HOST};Port=${DB_PORT};Database=${TEST_DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD};Maximum Pool Size=16;Timeout=5;Command Timeout=30"
-      printf '已导出 DAOHUA_MARKET_TEST_CONNECTION（库 %s）。\n' "$TEST_DB_NAME"
-    else
-      printf '警告: 无法供给集成测试库 %s；PostgresIntegration 测试将失败。\n' "$TEST_DB_NAME" >&2
-      printf '      请手动创建该库，或预设 DAOHUA_MARKET_TEST_CONNECTION。\n' >&2
-    fi
-  elif (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
-    printf '检测到预设 DAOHUA_MARKET_TEST_CONNECTION，直接使用。\n'
+  local stamp="frontend/node_modules/.package-lock.json"
+  if [[ ! -d frontend/node_modules || ! -f "$stamp" ]]; then
+    printf '%s\n' '==> 安装前端锁定依赖（node_modules 缺失）'
+  elif [[ frontend/package-lock.json -nt "$stamp" ]]; then
+    printf '%s\n' '==> 安装前端锁定依赖（package-lock.json 已更新）'
   else
-    printf '警告: PostgreSQL 不可达且未设 DAOHUA_MARKET_TEST_CONNECTION；PostgresIntegration 测试将失败。\n' >&2
+    printf '%s\n' '==> 前端依赖已是最新，跳过安装'
+    return 0
+  fi
+  npm --prefix frontend ci --include=dev --ignore-scripts --no-audit --no-fund
+}
+
+if [[ "$RUN_BACKEND" -eq 1 ]]; then
+  printf '%s\n' '==> Release 构建'
+  dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
+
+  if [[ -f tests/Domain.Tests/Domain.Tests.csproj ]]; then
+    printf '%s\n' '==> 领域测试'
+    dotnet test tests/Domain.Tests/Domain.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+  fi
+  if [[ -f tests/Ecs.Tests/Ecs.Tests.csproj ]]; then
+    printf '%s\n' '==> ECS 运行时与适配边界测试'
+    dotnet test tests/Ecs.Tests/Ecs.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
   fi
 
-  printf '%s\n' '==> 服务端测试'
-  dotnet test tests/Server.Tests/Server.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+  if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
+    # PostgresIntegration 集成测试需要专用库：本地 PG 可达时幂等创建 daohua_market_test
+    # 并导出 DAOHUA_MARKET_TEST_CONNECTION；未供给成功时相关测试失败并报明所需环境变量。
+    DB_HOST="${DB_HOST:-127.0.0.1}"
+    DB_PORT="${DB_PORT:-5432}"
+    DB_USER="${DB_USER:-daohua}"
+    DB_PASSWORD="${DB_PASSWORD:-daohua-local-dev}"
+    DB_CONTAINER="${DB_CONTAINER:-daohua-local-db}"
+    pg_admin() {
+      if command -v docker >/dev/null 2>&1 \
+          && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$DB_CONTAINER"; then
+        docker exec -i "$DB_CONTAINER" psql -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
+      elif command -v psql >/dev/null 2>&1; then
+        PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
+      else
+        return 127
+      fi
+    }
+
+    if [[ "$RUN_INTEGRATION" -eq 1 ]]; then
+      printf '%s\n' '==> 供给 PostgreSQL 集成测试库'
+      if ! (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+          docker compose -f compose.yaml up -d db
+          for _ in {1..60}; do
+            if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then break; fi
+            sleep 1
+          done
+        fi
+      fi
+
+      if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null \
+          && [[ -z "${DAOHUA_MARKET_TEST_CONNECTION:-}" ]]; then
+        TEST_DB_NAME="${TEST_DB_NAME:-daohua_market_test}"
+        TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
+        if [[ "$TEST_DB_EXISTS" != "1" ]]; then
+          pg_admin -c "CREATE DATABASE ${TEST_DB_NAME};" >/dev/null 2>&1 || true
+          TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
+        fi
+        if [[ "$TEST_DB_EXISTS" == "1" ]]; then
+          export DAOHUA_MARKET_TEST_CONNECTION="Host=${DB_HOST};Port=${DB_PORT};Database=${TEST_DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD};Maximum Pool Size=16;Timeout=5;Command Timeout=30"
+          printf '已导出 DAOHUA_MARKET_TEST_CONNECTION（库 %s）。\n' "$TEST_DB_NAME"
+        else
+          printf '警告: 无法供给集成测试库 %s；PostgresIntegration 测试将失败。\n' "$TEST_DB_NAME" >&2
+          printf '      请手动创建该库，或预设 DAOHUA_MARKET_TEST_CONNECTION。\n' >&2
+        fi
+      elif (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+        printf '检测到预设 DAOHUA_MARKET_TEST_CONNECTION，直接使用。\n'
+      else
+        printf '警告: PostgreSQL 不可达且未设 DAOHUA_MARKET_TEST_CONNECTION；PostgresIntegration 测试将失败。\n' >&2
+      fi
+
+      printf '%s\n' '==> 服务端测试'
+      dotnet test tests/Server.Tests/Server.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+    else
+      # --fast：跳过需要真实数据库的 PostgresIntegration 门禁，只跑纯内存/契约用例。
+      printf '%s\n' '==> 服务端测试（跳过 PostgresIntegration）'
+      dotnet test tests/Server.Tests/Server.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo --filter "Category!=PostgresIntegration"
+    fi
+  fi
+
+  if [[ -f src/DataTool/DataTool.csproj ]]; then
+    printf '%s\n' '==> 游戏数据校验'
+    dotnet run --project src/DataTool/DataTool.csproj --configuration Release --no-build -- validate config/game-data --strict
+  fi
 fi
-if [[ -f src/DataTool/DataTool.csproj ]]; then
-  printf '%s\n' '==> 游戏数据校验'
-  dotnet run --project src/DataTool/DataTool.csproj --configuration Release --no-build -- validate config/game-data --strict
+
+if [[ "$RUN_FRONTEND" -eq 1 ]]; then
+  ensure_frontend_deps
+
+  printf '%s\n' '==> 前端 i18n 词条覆盖校验'
+  node scripts/check-i18n-keys.mjs
+
+  printf '%s\n' '==> 日志富文本标记转义校验'
+  node scripts/check-log-markup.mjs
+
+  printf '%s\n' '==> 前端类型检查与生产构建'
+  npm --prefix frontend run build
 fi
 
-printf '%s\n' '==> 校验 Compose 配置'
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  docker compose -f compose.yaml config >/dev/null
-  DB_BOOTSTRAP_USER=daohua_bootstrap \
-  DB_BOOTSTRAP_PASSWORD=verify-bootstrap-password \
-  DB_APP_USER=daohua_api_login \
-  DB_APP_PASSWORD=verify-app-password \
-  DB_WORKER_USER=daohua_worker_login \
-  DB_WORKER_PASSWORD=verify-worker-password \
-  APP_IMAGE=daohua:verify \
-  COMPUTE_IMAGE=daohua-compute:verify \
-  COMPUTE_TOKEN=verify-compute-token \
-    docker compose -f deploy/compose.prod.yaml config --quiet
-else
-  printf '%s\n' 'Docker 不可用，跳过 Compose 运行时检查。'
+if [[ "$RUN_COMPOSE" -eq 1 ]]; then
+  printf '%s\n' '==> 校验 Compose 配置'
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    docker compose -f compose.yaml config >/dev/null
+    DB_BOOTSTRAP_USER=daohua_bootstrap \
+    DB_BOOTSTRAP_PASSWORD=verify-bootstrap-password \
+    DB_APP_USER=daohua_api_login \
+    DB_APP_PASSWORD=verify-app-password \
+    DB_WORKER_USER=daohua_worker_login \
+    DB_WORKER_PASSWORD=verify-worker-password \
+    APP_IMAGE=daohua:verify \
+    COMPUTE_IMAGE=daohua-compute:verify \
+    COMPUTE_TOKEN=verify-compute-token \
+      docker compose -f deploy/compose.prod.yaml config --quiet
+  else
+    printf '%s\n' 'Docker 不可用，跳过 Compose 运行时检查。'
+  fi
 fi
-
-printf '%s\n' '==> 前端 i18n 词条覆盖校验'
-node scripts/check-i18n-keys.mjs
-
-printf '%s\n' '==> 日志富文本标记转义校验'
-node scripts/check-log-markup.mjs
-
-printf '%s\n' '==> 前端类型检查与生产构建'
-npm --prefix frontend run build
 
 if [[ "${VERIFY_DOCKER:-0}" == "1" ]]; then
   printf '%s\n' '==> 生产镜像构建（VERIFY_DOCKER=1）'
   scripts/docker-build-prod.sh --allow-dirty --no-pull --release-tag verify
 fi
 
-printf '%s\n' '全部验证完成。'
+case "$MODE" in
+  fast) printf '%s\n' '快速门禁完成（未覆盖：Compose 校验、PostgresIntegration 集成测试）。交付前请跑不带参数的 scripts/verify.sh。' ;;
+  backend) printf '%s\n' '后端门禁完成（未覆盖前端面）。' ;;
+  frontend) printf '%s\n' '前端门禁完成（未覆盖后端面）。' ;;
+  *) printf '%s\n' '全部验证完成。' ;;
+esac

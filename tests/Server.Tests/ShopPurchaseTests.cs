@@ -11,13 +11,13 @@ namespace Server.Tests;
 /// 幂等重放不重复占用配额、跨自然日重新放开。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class ShopPurchaseTests
 {
     private const string DailyOffer = "shop.awakening-stone.daily";
 
     /// <summary>首次购买在同事务写入余额、流水与限购认领行；二次购买被守卫拒绝且资产不变。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PurchaseClaimsQuotaAndRejectsSecondPurchaseSameDay()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -53,7 +53,6 @@ public sealed class ShopPurchaseTests
 
     /// <summary>同一幂等键重放返回历史结果，不重复扣款、不重复占用限购配额。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ReplayReturnsCommittedResultWithoutDoubleClaim()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -75,7 +74,6 @@ public sealed class ShopPurchaseTests
 
     /// <summary>跨自然日后配额重新放开；旧自然日的认领行保留作对账底账。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task NextDayAllowsPurchaseAgain()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -97,7 +95,6 @@ public sealed class ShopPurchaseTests
 
     /// <summary>不限购商品不带认领参数，既不写限购行也不受配额限制。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task UnlimitedOfferWritesNoQuotaRow()
     {
         var (source, repository, player) = await ArrangeAsync();

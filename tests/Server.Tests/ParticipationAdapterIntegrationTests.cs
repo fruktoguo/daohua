@@ -17,11 +17,11 @@ namespace Server.Tests;
 
 /// <summary>真实 PostgreSQL、会话宿主与跨分片成员适配器的完整结算装配链。</summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class ParticipationAdapterIntegrationTests
 {
     /// <summary>三人只推进一个会话；离线回线消费既有结算，散场恢复各自原行动且不重奖。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ThreeMembersAcrossShardsConsumeOneAuthorityAndResumePersonalQueues()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -101,7 +101,6 @@ public sealed class ParticipationAdapterIntegrationTests
 
     /// <summary>赶路先领取会话终局，不能把参与引用挂在队尾并阻断后续操作。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task TravelConsumesTerminalSessionBeforePriorityActionAndReachesDestination()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -127,7 +126,6 @@ public sealed class ParticipationAdapterIntegrationTests
 
     /// <summary>租约已被其他实例接管时，旧宿主不能领取收件箱或覆盖个人分段。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task LostOwnerCannotCommitPendingParticipationReceipt()
     {
         await using var fixture = await Fixture.CreateAsync(owned: true);
@@ -146,7 +144,6 @@ public sealed class ParticipationAdapterIntegrationTests
 
     /// <summary>会话回执不能跳过个人暂存物品到期；资产、回执与清空暂存必须同时落盘。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ParticipationReceiptSettlesPersonalStagedAssetsBeforeAdvancingClock()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -169,7 +166,6 @@ public sealed class ParticipationAdapterIntegrationTests
 
     /// <summary>一个成员收件失败或会话检查点损坏不能冻结其他成员及未参战玩家。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task BrokenMemberAndSessionStillAllowHealthyPlayersToAdvance()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -202,7 +198,6 @@ public sealed class ParticipationAdapterIntegrationTests
 
     /// <summary>开场已消费但参与引用丢失时，退休行动的终局仍按收件箱序号续接并保留个人队列。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task RetiredSessionActionMissingBindingConsumesTerminalReceiptAndKeepsPersonalQueue()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -239,7 +234,6 @@ public sealed class ParticipationAdapterIntegrationTests
 
     /// <summary>终局先被对账消费后，过时的开场投递不能重新插入永不结束的参与引用。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OpeningDeliveryDoesNotReinsertSessionEndedBeforeMemberMutation()
     {
         await using var fixture = await Fixture.CreateAsync(startSession: false);
@@ -268,7 +262,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>末位就绪的 party.ready 走完整仲裁链路：会话行与成员挂载在同指令内完成，
     /// 首个推进边界后成员远征投影即刻显示搜寻相位。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task LastReadyStartsSessionAndShowsSearchOnFirstAdvance()
     {
         await using var fixture = await Fixture.CreateAsync(startSession: false);
@@ -301,7 +294,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>未装载成员的开场冻结直接解码持久化真源（冻结采集不强拉装载）；
     /// 开打后名册有人在线，离线成员按 §14.6 对账为常驻实体并就地完成参与挂载。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task UnloadedMemberFreezesFromPersistedStateWithoutForceLoad()
     {
         await using var fixture = await Fixture.CreateAsync(startSession: false);
@@ -334,7 +326,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>离线成员散场时被强拉消费终局结算（总纲18 §14.6）：会话内倒地成员随散场复活回血定格为 1 点气血，
     /// 持久化状态即时恢复，下一场会话冻结面板直接读到消费后状态，不能从旧态开下一场（总纲 §21.13）。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task UnloadedMemberFreezesFromConsumedTerminalState()
     {
         await using var fixture = await Fixture.CreateAsync(startSession: false);
@@ -375,7 +366,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>任一成员取消准备触发散场时，就绪位跨会话常驻：仅取消者被清位，
     /// 其余名册成员保持 ready，条件再齐备可由下一次仲裁直接重开。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SessionDissolveKeepsReadyForOtherMembers()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -392,7 +382,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>名册有人在线的会话，离线成员常驻装载并实时消费结算（总纲18 §14.6）：
     /// 常驻不改变在线态与离线锚点；名册全员离线后对账卸载归还，锚点不回拨。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ResidentMembersStayLoadedWhileRosterHasOnlineMember()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -431,7 +420,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>名册全员离线的会话每小时批算推进到当前，推进后逐成员强拉消费结算再卸载（§14.6）；
     /// 不足一小时不推进。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OfflineSessionAdvancesOnBatchIntervalAndMembersConsume()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -466,7 +454,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>全员离线批算不得越过名册最早离线边界：某成员 offline_since+48h 已过期时，
     /// 会话收尾在该边界并以 member-offline-timeout 散场，成员结算即时消费（§14.6/§14.5）。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OfflineSessionEndsAtEarliestOfflineBoundary()
     {
         // 夹具时钟锚定 2 小时前：会话检查点合法停在 now-2h（名册全员离线后无人推进）。
@@ -495,7 +482,6 @@ public sealed class ParticipationAdapterIntegrationTests
     /// <summary>散场后未装载的离线成员同样强拉消费终局结算再卸载（§14.6）：
     /// 收件箱清空、持久化状态按终局规则恢复，倒地成员气血定格为 1。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task DissolveForceLoadsOfflineMembersToConsumeTerminal()
     {
         await using var fixture = await Fixture.CreateAsync(startSession: false);

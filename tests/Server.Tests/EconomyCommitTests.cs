@@ -10,6 +10,7 @@ namespace Server.Tests;
 /// ON CONFLICT 冲突路径、幂等去重/冲突语义与流水行合批写入的同库验证。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class EconomyCommitTests
 {
     /// <summary>零资产变化的模拟进度仍须与回执 durable，重放不重复写；坏回执不能留下孤立 section。</summary>
@@ -49,7 +50,6 @@ public sealed class EconomyCommitTests
 
     /// <summary>首次提交插入新余额行：RETURNING 回传提交后余额与版本，流水行按原始行序落库。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task FirstCommitInsertsBalancesAndReturnsThem()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -88,7 +88,6 @@ public sealed class EconomyCommitTests
 
     /// <summary>ON CONFLICT 既有行路径：数量累加、版本递增，RETURNING 回传合并后值。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ConflictPathAccumulatesQuantityAndBumpsVersion()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -110,7 +109,6 @@ public sealed class EconomyCommitTests
 
     /// <summary>幂等重放不重复入账：同请求二次提交返回历史结果且不带余额，余额与流水行数不变。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task IdempotentReplayDoesNotDoubleApply()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -137,7 +135,6 @@ public sealed class EconomyCommitTests
 
     /// <summary>同一幂等键绑定不同请求必须抛冲突，且不产生任何入账。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SameIdempotencyKeyWithDifferentRequestThrowsConflict()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -157,7 +154,6 @@ public sealed class EconomyCommitTests
 
     /// <summary>余额不足时抛 EconomyInsufficientBalanceException 且整笔回滚：余额、事务头与流水行均不留痕。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task InsufficientBalanceThrowsAndRollsBackAtomically()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -180,7 +176,6 @@ public sealed class EconomyCommitTests
 
     /// <summary>同一资产多行增量先合并再落库：余额只变更一次、流水保留原始行序与增量。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task DuplicateAssetDeltasMergeIntoSingleBalanceUpdate()
     {
         var (source, repository, player) = await ArrangeAsync();
@@ -207,7 +202,6 @@ public sealed class EconomyCommitTests
     /// 所有唯一幂等请求最终各入账一次，不能因重试重复写事务头或流水。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ConcurrentSerializableCommitsRetryAsWholeTransaction()
     {
         var (source, repository, player) = await ArrangeAsync();

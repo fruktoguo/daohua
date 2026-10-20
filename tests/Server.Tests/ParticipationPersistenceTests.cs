@@ -17,11 +17,11 @@ namespace Server.Tests;
 
 /// <summary>组队唯一权威检查点、成员收件箱及个人原子入账的真实 PostgreSQL 边界。</summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class ParticipationPersistenceTests
 {
     /// <summary>同次推进交付三份结算，任一投递失败全部回滚；重启与解散均保留检查点和待消费证据。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task AdvanceAndAllMemberInboxesCommitTogetherAndSurviveDisband()
     {
         await using var fixture = await Fixture.CreateAsync(3);
@@ -53,7 +53,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>既有 inbox 主键冲突不能留下推进了一半的检查点。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task DuplicateInboxSequenceRollsBackCheckpointAdvance()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -69,7 +68,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>会话活跃或仍有未消费个人份额时，冷挂机任务不得入队。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ColdJobAdmissionSkipsActiveSessionAndPendingSettlement()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -86,7 +84,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>开场实耗、检查点与首次通知同生同灭；重复或未知提交后的恢复不再扣款或覆盖已存进度。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OpeningDebitCheckpointAndInitialInboxCommitOrRollBackTogether()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -161,7 +158,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>推进实耗与通知失败一起回滚，检查点重放或旧经济键复用都不能二次扣除。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task AdvanceDebitIsAtomicAndCheckpointReplayCannotDoubleSpend()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -204,7 +200,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>缺失键零余额也参与读集；读取后的并发首次入账使整批失效，不会推进缺货计算结果。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task MissingBalanceConcurrentCreditRejectsWholeAdvance()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -238,7 +233,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>无货批次只建立零行锁证明、不制造经济流水；后续必须使用真实零行版本，余额相同也不能忽略版本冲突。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ReadOnlyMissingBalanceUsesPersistedVersionWithoutEmptyEconomyTransaction()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -275,7 +269,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>物品级读取包含全部变体及真实零行，补足缺失默认键，且不会泄漏其他物品或成员的钱包。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ConsumableItemReadIncludesEveryVariantAndMissingDefaultOnlyForRequestedMembers()
     {
         await using var fixture = await Fixture.CreateAsync(2);
@@ -314,7 +307,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>成员失败结算不留下余额、分段或消费回执；精确重放不重复发放，不同幂等键不能二次消费。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task MemberConsumptionRollsBackWithAssetsAndSectionsAndReplaysExactly()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -352,7 +344,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>零掉落的血蓝、经验结算仍保存成员状态并确认收件箱，不需要伪造资产变化。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ZeroAssetSettlementCommitsMemberSectionAndInboxReceipt()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -373,7 +364,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>回线补算截止于最早离线成员的逐出边界，当前在线成员不会误触发超时散场。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OfflineExpiryUsesFrozenRosterAndExcludesOnlineMembers()
     {
         await using var fixture = await Fixture.CreateAsync(3);
@@ -389,7 +379,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>开战前提真实落库；取消准备和同人数名册替换均由恢复查询识别，不依赖社交仲裁已运行。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PersistentOrganizationQueryDetectsUnreadyAndFrozenRosterDrift()
     {
         await using var fixture = await Fixture.CreateAsync(3);
@@ -414,7 +403,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>组织恢复读取 durable 世界分段而非滞后投影；迁地中的 edgeId 使驻留失效。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PersistentOrganizationQueryRequiresFrozenTargetSlotsAndMemberResidence()
     {
         await using var fixture = await Fixture.CreateAsync(3);
@@ -437,7 +425,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>下一检查点与低频终局清理只回收已消费载荷，未消费份额及经济审计事实始终保留。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ConsumedPayloadsAreReclaimedWithoutDeletingPendingSettlementsOrEconomyHistory()
     {
         await using var fixture = await Fixture.CreateAsync(2);
@@ -476,7 +463,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>会话提交推进身份 MVCC 版本，旧 Compute Serializable 快照不能越过会话归属。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SessionAdvanceInvalidatesComputeSnapshotBeforeIdentityFence()
     {
         await using var fixture = await Fixture.CreateAsync(1);
@@ -497,7 +483,6 @@ public sealed class ParticipationPersistenceTests
 
     /// <summary>旧托管按已提交余量退款一次；坏检查点整笔回滚，终局时钟和既有奖励不丢失。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task WalletMigrationRefundsOldActiveEscrowExactlyOnceAndPreservesPendingRewards()
     {
         await using var fixture = await Fixture.CreateAsync(2);

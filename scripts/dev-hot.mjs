@@ -5,8 +5,11 @@
  * 主要职责: 服务端本地开发环境增量监听与平滑热重启守护进程
  *
  * 核心机制与特性:
- *   1. 源码轮询监控: 递归扫描并监听 `src/`、`config/game-data/` 与 `vendor/YuoCore` 目录下源码与配置变更（.cs/.csproj/.json）；
- *   2. 防抖冷却机制: 每次文件变动刷新防抖计时器（默认静默 60s，可通过 SERVER_DEV_RESTART_DEBOUNCE_MS 调整，0 为立即触发）；
+ *   1. 源码轮询监控: 只扫描服务端工程的真实编译闭包——`src/Domain`、`src/Ecs`、`src/Protocol`、
+ *      `src/Server`（含 `Clean/`，实际由 Server.Clean 工程编译）、`config/game-data/` 与 `vendor/YuoCore`；
+ *      `src/Bench`、`src/ComputeNode`、`src/DataTool`、`src/LoadTests` 不参与 `src/Server/Server.csproj`
+ *      构建，改动它们不触发重启（避免无关改动打断调试会话）；
+ *   2. 防抖冷却机制: 每次文件变动刷新防抖计时器（默认静默 3s，可通过 SERVER_DEV_RESTART_DEBOUNCE_MS 调整，0 为立即触发）；
  *   3. 零中断构建保护: 防抖期满先在后台执行 dotnet build；若编译报错则保持旧服务端实例继续对外提供服务，避免调试中断；
  *   4. 优雅停止与生命周期: 编译成功后向旧服务发送 SIGTERM 触发存档持久化与市场写者租约释放，确认退出后再启动新实例；
  *   5. 崩溃自动拉起: 监听子进程生命周期，进程异常崩溃退出时采用退避策略（1s~5s）自动重启拉起；
@@ -14,7 +17,7 @@
  *
  * 环境变量支持:
  *   - SERVER_PROJECT: 服务端工程文件路径（默认 src/Server/Server.csproj）
- *   - SERVER_DEV_RESTART_DEBOUNCE_MS: 变更防抖毫秒数（默认 60000）
+ *   - SERVER_DEV_RESTART_DEBOUNCE_MS: 变更防抖毫秒数（默认 3000）
  *   - SERVER_DEV_STOP_TIMEOUT_MS: 优雅停止超时毫秒数（默认 30000；生产 stop_grace_period 为 90s，dev 取 1/3 折中——存档与释放市场写者租约通常远快于此，又避免卡死拖慢迭代）
  * ==============================================================================
  */
@@ -32,7 +35,7 @@ const project = process.env.SERVER_PROJECT
 
 const debounceMs = parseNonNegativeInteger(
   process.env.SERVER_DEV_RESTART_DEBOUNCE_MS,
-  60_000,
+  3_000,
 );
 const gracefulStopTimeoutMs = parseNonNegativeInteger(
   process.env.SERVER_DEV_STOP_TIMEOUT_MS,
@@ -103,10 +106,25 @@ function readdirWithTypes(dir) {
   return readdirSync(dir, { withFileTypes: true });
 }
 
+/**
+ * 监听根：只覆盖 `src/Server/Server.csproj` 的真实编译闭包（Domain/Ecs/Protocol/Server.Clean/Server）
+ * 加配表与内核。`src/Bench`、`src/ComputeNode`、`src/DataTool`、`src/LoadTests` 不在该闭包内，
+ * 改动它们不会改变服务端产物，因此不触发重建重启。
+ */
+const WATCH_ROOTS = [
+  "src/Domain",
+  "src/Ecs",
+  "src/Protocol",
+  "src/Server",
+  "src/Server.Clean",
+  "config/game-data",
+  "vendor/YuoCore",
+];
+
 /** 轮询快照对比：跨平台、无 inotify 句柄限制，天然合并短时间内的多次写入。 */
 function snapshotSourceFiles() {
   const map = new Map();
-  for (const dir of ["src", "config/game-data", "vendor/YuoCore"]) {
+  for (const dir of WATCH_ROOTS) {
     const base = path.join(rootDir, dir);
     if (!existsSync(base)) continue;
     for (const relative of listFilesRecursive(base)) {
@@ -198,45 +216,54 @@ function buildAndRestart(reason) {
   building = true;
   log(`${reason}，开始重新构建...`);
 
+  // Windows 上产物文件被运行中的实例占用，必须先停进程再构建；此时旧进程已不可用，
+  // 构建失败只能把上一次的可执行产物重新拉起。其他平台构建期旧进程照常服务。
+  let stoppedBeforeBuild = false;
+
+  const onBuildExit = (code) => {
+    building = false;
+    if (shuttingDown) return;
+    if (code !== 0) {
+      log(`构建失败 (code=${code})，${stoppedBeforeBuild ? "拉起上一次产物继续运行" : "保持旧进程继续运行"}`);
+      if (stoppedBeforeBuild) startServer();
+      drainQueuedRestart();
+      return;
+    }
+    if (stoppedBeforeBuild) {
+      // 进程已在构建前停掉，startServer 自身会输出启动日志，此处不再重复。
+      startServer();
+      drainQueuedRestart();
+      return;
+    }
+    log("构建成功，重启服务端进程...");
+    stopServer(() => {
+      startServer();
+      drainQueuedRestart();
+    }, reason);
+  };
+
   const runBuild = () => {
-    const build = spawn("dotnet", ["build", project], {
+    spawn("dotnet", ["build", project], {
       cwd: rootDir,
       env: { ...process.env },
       stdio: ["ignore", "inherit", "inherit"],
-    });
-
-    build.on("exit", (code) => {
-      building = false;
-      if (shuttingDown) return;
-      if (code !== 0) {
-        log(`构建失败 (code=${code})，拉起旧进程继续运行`);
-        startServer();
-        return;
-      }
-      log("构建成功，启动服务端进程...");
-      startServer();
-    });
+    }).on("exit", onBuildExit);
   };
 
   if (process.platform === "win32" && serverProcess) {
+    stoppedBeforeBuild = true;
     stopServer(runBuild, reason);
   } else {
-    const build = spawn("dotnet", ["build", project], {
-      cwd: rootDir,
-      env: { ...process.env },
-      stdio: ["ignore", "inherit", "inherit"],
-    });
-
-    build.on("exit", (code) => {
-      building = false;
-      if (shuttingDown) return;
-      if (code !== 0) {
-        log(`构建失败 (code=${code})，保持旧进程继续运行，等待下一次源码变更`);
-        return;
-      }
-      stopServer(() => startServer(), reason);
-    });
+    runBuild();
   }
+}
+
+/** 构建期间收到过变更时补跑一轮，避免“变更落在构建窗口里就永远不生效”。 */
+function drainQueuedRestart() {
+  if (!restartPending || shuttingDown) return;
+  restartPending = false;
+  if (building) return;
+  buildAndRestart("补跑构建期间的变更");
 }
 
 function scheduleDebouncedRestart(reason) {
@@ -305,12 +332,14 @@ function initialBuildAndStart() {
     if (shuttingDown) return;
     if (code !== 0) {
       log(`初次构建失败 (code=${code})，等待源码变更修复后重试`);
+      drainQueuedRestart();
       return;
     }
     startServer();
     if (process.stdout.isTTY) {
       log(`已就绪。防抖 ${debounceMs / 1_000}s，Ctrl+C 停止全部服务。`);
     }
+    drainQueuedRestart();
   });
 }
 

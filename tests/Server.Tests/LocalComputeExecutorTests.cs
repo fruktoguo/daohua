@@ -17,6 +17,7 @@ namespace Server.Tests;
 /// 批算目标判定（ComputeBatchTarget）与终末批（补到收益边界即停扫）。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class LocalComputeExecutorTests
 {
     private static readonly GameDataCatalog Catalog = GameDataCatalog.LoadEmbedded();
@@ -44,7 +45,6 @@ public sealed class LocalComputeExecutorTests
     /// <summary>本地执行闭环：离线玩家任务被领取、重演并同一事务写回——提交头推进到目标、
     /// 收益经经济事务入账、projection.last_active_at 不因冷挂机补算推进。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task LocalExecutorAppliesAdvanceThroughSharedCommitBoundary()
     {
         await using var fixture = await Fixture.CreateAsync(anchorAge: TimeSpan.FromHours(3), simLag: TimeSpan.FromHours(3));
@@ -76,7 +76,6 @@ public sealed class LocalComputeExecutorTests
     /// <summary>回线抢占：玩家持有存活运行时租约时，本地执行结果按 StaleVersion 归档丢弃，
     /// 提交头与钱包均不变。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task LocalExecutorDiscardsResultUnderLiveRuntimeLease()
     {
         await using var fixture = await Fixture.CreateAsync(anchorAge: TimeSpan.FromHours(3), simLag: TimeSpan.FromHours(3));
@@ -104,7 +103,6 @@ public sealed class LocalComputeExecutorTests
     /// <summary>终末批：锚点 now-50h、欠债到边界 now-2h 的玩家，扫描+入队得到 target = 锚点+48h，
     /// 执行后提交头 last_simulated_at 停在边界，此后扫描不再选中。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task TerminalBatchClampsToBoundaryAndStopsScanning()
     {
         await using var fixture = await Fixture.CreateAsync(anchorAge: TimeSpan.FromHours(50), simLag: TimeSpan.FromHours(3));

@@ -126,8 +126,13 @@ dotnet run --project src/DataTool/DataTool.csproj -c Release -- validate config/
 统一入口：
 
 ```bash
-scripts/verify.sh
+scripts/verify.sh              # 全量门禁（交付前必跑）
+scripts/verify.sh --fast       # 日常自检：跳过 Compose 与 PostgresIntegration（约 45s）
+scripts/verify.sh --backend    # 仅后端面
+scripts/verify.sh --frontend   # 仅前端面
 ```
+
+分级只服务日常迭代，不能替代交付前的全量门禁。
 
 容量场景：
 

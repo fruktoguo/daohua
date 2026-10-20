@@ -10,11 +10,11 @@ namespace Server.Tests;
 /// 同一经济事务中原子提交、幂等重放，任一侧失败整笔回滚。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class AbilityLearningPersistenceTests
 {
     /// <summary>扣款与习得分段同事务落库；重复提交幂等命中；分段外键失败时扣款与流水一并回滚。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ManualDebitAndLoadoutQueueCommitTogetherAndReplayOnce()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("学习集成测试");

@@ -18,12 +18,12 @@ namespace Server.Tests;
 
 /// <summary>可信重演之后的事务边界：合法源漂移、任务 fence、Complete 失败及 ownership MVCC fence。</summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class ComputeTransactionTests
 {
     private static readonly GameDataCatalog Catalog = GameDataCatalog.LoadEmbedded();
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task HonestResultCommitsSectionsRewardsAndTaskAtomically()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -37,7 +37,6 @@ public sealed class ComputeTransactionTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    [Trait("Category", "PostgresIntegration")]
     public async Task DuplicateOrExtraBatchResultsRejectWholeBatch(bool duplicate)
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -57,7 +56,6 @@ public sealed class ComputeTransactionTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task TerminalDiagnosticSurvivesConsumedRetryAndFailureThrottle()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -97,7 +95,6 @@ public sealed class ComputeTransactionTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task WalletVersionAndOnlineDriftDiscardHonestResults()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -114,7 +111,6 @@ public sealed class ComputeTransactionTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task LostLeaseRejectsAllWrites()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -125,7 +121,6 @@ public sealed class ComputeTransactionTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task CompleteReturningFalseRollsBackSectionsAndEconomy()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -155,7 +150,6 @@ public sealed class ComputeTransactionTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task AcquireInvalidatesOlderRepeatableReadSnapshot()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -179,7 +173,6 @@ public sealed class ComputeTransactionTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ActivePartySessionMembershipDiscardsResult()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -204,7 +197,6 @@ public sealed class ComputeTransactionTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task MissingPartySessionMembershipDoesNotBlockColdResult()
     {
         await using var fixture = await Fixture.CreateAsync();

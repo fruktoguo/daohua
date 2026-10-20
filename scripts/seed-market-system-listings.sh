@@ -86,12 +86,24 @@ psql_scalar() {
   fi
 }
 
-if ! psql_scalar 'SELECT 1;' >/dev/null 2>&1; then
+# 连通性 + 建表状态 + 活跃系统卖单数一次往返取回：启动链每次都要付 Docker exec 的
+# 进程与 IPC 开销（Windows 上单次 170~300ms），拆成多次独立探针会白等近一秒。
+# 输出口径：`<连通标记>|<表是否已建>|<活跃系统卖单数>`，连通失败时整条为空。
+PROBE="$(psql_scalar "SELECT '1|' || (to_regclass('market.orders') IS NOT NULL)::text || '|'
+  || CASE WHEN to_regclass('market.orders') IS NULL THEN '0'
+          ELSE (SELECT count(*)::text FROM market.orders WHERE idempotency_key LIKE 'system-seed:%' AND status = 'active')
+     END;" 2>/dev/null || true)"
+
+if [[ -z "$PROBE" ]]; then
   printf '错误: 无法连接本地 PostgreSQL（docker 容器 %s 与本机 psql 均不可用）。\n' "$DB_CONTAINER" >&2
   exit 1
 fi
 
-if [[ "$(psql_scalar "SELECT to_regclass('market.orders') IS NOT NULL;")" != "t" ]]; then
+ORDERS_READY="${PROBE#1|}"
+ORDERS_READY="${ORDERS_READY%%|*}"
+ACTIVE_SEEDS="${PROBE##*|}"
+
+if [[ "$ORDERS_READY" != "true" ]]; then
   if [[ "$IF_MISSING" == "1" ]]; then
     # 启动自愈场景下若表尚未初始化，静默跳过（等服务端由 PostgresSchema.Sql 直建）
     exit 0
@@ -100,12 +112,11 @@ if [[ "$(psql_scalar "SELECT to_regclass('market.orders') IS NOT NULL;")" != "t"
   exit 1
 fi
 
+if [[ "$IF_MISSING" == "1" && "${ACTIVE_SEEDS:-0}" != "0" ]]; then
+  # 已有活跃系统卖单，无需重新补种
+  exit 0
+fi
 if [[ "$IF_MISSING" == "1" ]]; then
-  ACTIVE_SEEDS="$(psql_scalar "SELECT count(*) FROM market.orders WHERE idempotency_key LIKE 'system-seed:%' AND status = 'active';")"
-  if [[ "${ACTIVE_SEEDS:-0}" != "0" ]]; then
-    # 已有活跃系统卖单，无需重新补种
-    exit 0
-  fi
   printf '==> [坊市种子] 检测到本地库无活跃系统卖单，开始自动补种系统货架...\n'
 fi
 SQL_FILE="$(mktemp "${TMPDIR:-/tmp}/daohua-market-seed.XXXXXX.sql")"

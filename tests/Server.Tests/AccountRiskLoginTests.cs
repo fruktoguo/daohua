@@ -8,11 +8,11 @@ namespace Server.Tests;
 
 /// <summary>登录签发事务边界：拒绝风险账号时只留下风险审计，不生成成功凭据或事件。</summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class AccountRiskLoginTests
 {
     /// <summary>第三个账号争用已有两个关联账号的设备时，登录拒绝不能先签发再吊销会话。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task DeniedLoginDoesNotIssueSessionOrSuccessOutbox()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("登录风控集成测试");

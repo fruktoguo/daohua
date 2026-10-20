@@ -20,6 +20,7 @@ namespace Server.Tests;
 /// 事务原子性、幂等重放与 Serializable 并发竞争的端到端回归。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class MarketPersistenceTests
 {
     /// <summary>
@@ -27,7 +28,6 @@ public sealed class MarketPersistenceTests
     /// 退款中途失败整笔回滚不丢单，并发 Expire 经 40001 重试后金额仍精确一致。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PartialTradeTaxAndExpirationAreDurableAtomicAndIdempotent()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("市场集成测试");
@@ -102,7 +102,6 @@ public sealed class MarketPersistenceTests
     /// 抢占方租约自然过期后，监管循环自动重获租约并重建盘口恢复写能力，无需进程重启。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task LeaseLossTriggersFailClosedThenAutoRecovery()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("市场租约重获测试");
@@ -146,7 +145,6 @@ public sealed class MarketPersistenceTests
     /// 全部成交后的空簿跳过，其他品种簿不混入；输出按基础簿居前、等级升序。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task VariantSummariesReturnOnlyBooksWithActiveOrders()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("市场变体摘要测试");
@@ -192,7 +190,6 @@ public sealed class MarketPersistenceTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OnlineLastConsumableIsSpentBeforeSellOrIndependentEconomyDebit(bool sell)
     {
         await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true);
@@ -212,7 +209,6 @@ public sealed class MarketPersistenceTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PassiveBuyerConsumesOldStockBeforeMatchedPurchaseCreditsNewStock()
     {
         await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true);
@@ -228,7 +224,6 @@ public sealed class MarketPersistenceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    [Trait("Category", "PostgresIntegration")]
     public async Task CancellationAndStartupExpiryAdvanceBeforeRefundAndResumeAtNextBoundary(bool expire)
     {
         await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true,
@@ -267,7 +262,6 @@ public sealed class MarketPersistenceTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OfflineEconomyAndMarketMutationsDoNotAdvanceSession()
     {
         await using var fixture = await ConsumableMarketFixture.CreateAsync(0, online: false);

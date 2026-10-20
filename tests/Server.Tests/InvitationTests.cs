@@ -13,11 +13,11 @@ namespace Server.Tests;
 /// 依赖 DAOHUA_MARKET_TEST_CONNECTION 指向的专用库。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class InvitationTests
 {
     /// <summary>有效邀请码注册：同一事务建立关系并向双方发注册奖励（被邀请者功德+灵石，邀请者功德）。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task RegisterWithValidInvitationCodeGrantsBothSides()
     {
         var (source, accounts, invitations, assets) = await OpenRepositoriesAsync();
@@ -49,7 +49,6 @@ public sealed class InvitationTests
 
     /// <summary>不存在的邀请码使注册整体失败（INVALID_INVITATION_CODE），账号不可登录。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task RegisterWithInvalidInvitationCodeFails()
     {
         var (source, accounts, _, _) = await OpenRepositoriesAsync();
@@ -65,7 +64,6 @@ public sealed class InvitationTests
 
     /// <summary>空白邀请码等价于未填写：注册照常，无邀请关系与奖励。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task RegisterWithBlankInvitationCodeBehavesLikeNoCode()
     {
         var (source, accounts, invitations, assets) = await OpenRepositoriesAsync();
@@ -86,7 +84,6 @@ public sealed class InvitationTests
     /// 重复按同等级结算不再入账，低等级不触发但境界进度照常推进。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task GrantMilestonesIsIdempotentAndThresholdBound()
     {
         var (source, accounts, invitations, assets) = await OpenRepositoriesAsync();
@@ -128,7 +125,6 @@ public sealed class InvitationTests
 
     /// <summary>跳级突破（直达筑基）：单次结算一次补齐练气+筑基两档奖励。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task GrantMilestonesSkipsQiWhenJumpingStraightToFoundation()
     {
         var (source, accounts, invitations, assets) = await OpenRepositoriesAsync();
@@ -148,7 +144,6 @@ public sealed class InvitationTests
 
     /// <summary>未受邀玩家调用里程碑结算为空操作。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task GrantMilestonesWithoutInvitationIsNoOp()
     {
         var (source, accounts, invitations, _) = await OpenRepositoriesAsync();

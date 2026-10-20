@@ -9,6 +9,7 @@ namespace Server.Tests;
 /// SKIP LOCKED 并发语义与冷挂机候选筛选。依赖 DAOHUA_MARKET_TEST_CONNECTION 指向的专用库。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class ComputeJobRepositoryTests
 {
     private const int MaxAttempts = 3;
@@ -26,7 +27,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>同一玩家的未完结任务去重：pending 行就地刷新而非重复入队。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task EnqueueDeduplicatesOpenJobPerPlayer()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -57,7 +57,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>领取只拿到期 pending 与过期租约；活跃租约内的任务不可被重取。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ClaimDueRespectsLeaseAndSchedule()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -87,7 +86,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>完成必须匹配租约令牌；错误令牌不得篡改他人任务。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task CompleteRequiresMatchingLeaseToken()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -110,7 +108,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>可重试失败退回 pending 并设重试闸门；不可重试与超上限进入 dead 终态。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task FailRetriesWithBackoffThenDead()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -157,7 +154,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>HTTP 层失败的整批释放：同令牌指定 jobIds 的 leased 行退回 pending，超上限进 dead。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ReleaseLeaseRequeuesWholeBatch()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -196,7 +192,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>SKIP LOCKED：被其他事务持有的行被跳过，未被锁的行仍可领取。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ClaimSkipsRowsLockedByAnotherTransaction()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -224,7 +219,6 @@ public sealed class ComputeJobRepositoryTests
     /// <summary>离线挂机批算扫描：投影离线 + 有离线锚点 + 提交头欠债在收益边界内 +
     /// 距上次结算满批算间隔（或已到边界终末批）+ 无未完结任务/存活租约/活跃会话/待消费收件箱。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ScanColdPlayersFiltersPresenceAnchorAndBatchInterval()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -302,7 +296,6 @@ public sealed class ComputeJobRepositoryTests
     /// <summary>领取的 pending 门槛：不满 minPendingAge 的新 pending 不领，老 pending 领，
     /// 过期租约孤儿行不受门槛影响；零门槛即领（本地执行器口径）。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ClaimDueHonorsMinPendingAge()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -333,7 +326,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>积压快照必须按状态聚合：pending/due/leased/终态计数与最老积压年龄。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task BacklogAggregatesByStatusAndDueGate()
     {
         var (source, jobs) = await OpenRepositoryAsync();
@@ -378,7 +370,6 @@ public sealed class ComputeJobRepositoryTests
 
     /// <summary>领取索引口径：pending 到期与 leased 孤儿回收各自由部分索引服务，旧组合索引不再存在。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ComputeJobsClaimIndexesArePartial()
     {
         var (source, _) = await OpenRepositoryAsync();

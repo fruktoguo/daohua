@@ -90,20 +90,31 @@ WHERE EXISTS (SELECT 1 FROM game.player_state_heads h WHERE h.player_id = p.play
 SQL
 }
 
-if ! STALE_COUNT="$(count_stale)"; then
+# 存档漂移数与 platform 版本一次往返取回：启动链每轮都要付 Docker exec 的进程与 IPC
+# 开销（Windows 上单次 170~300ms），且这两个查询在“库是干净的”这条最常见路径上必然都跑。
+# 输出口径：`<漂移玩家数>|<platform 当前版本>`；连接或查询失败时整条为空。
+PROBE_SQL="SELECT
+    (CASE WHEN to_regclass('game.player_state_heads') IS NULL THEN 0
+          ELSE (SELECT COUNT(DISTINCT player_id) FROM (${STALE_TABLES}) stale) END)::text
+    || '|' ||
+    (CASE WHEN to_regclass('platform.schema_version') IS NULL THEN 0
+          ELSE COALESCE((SELECT max(version) FROM platform.schema_version), 0) END)::text;"
+
+if ! PROBE="$(run_psql -tA -c "$PROBE_SQL")"; then
   printf '错误: 查询旧存档失败，拒绝跳过玩家数据处置。\n' >&2
   exit 1
 fi
-if [[ -z "${STALE_COUNT}" ]]; then
+if [[ -z "${PROBE}" ]]; then
   printf '错误: 查询旧存档返回空结果，拒绝继续。\n' >&2
   exit 1
 fi
-PLATFORM_REQUIRED="$(grep -oE 'Version = [0-9]+' src/Server/Clean/PostgresSchema.cs | head -n 1 | grep -oE '[0-9]+' || true)"
-if ! PLATFORM_CURRENT="$(run_psql -tA -c "SELECT CASE WHEN to_regclass('platform.schema_version') IS NULL THEN 0 ELSE COALESCE((SELECT max(version) FROM platform.schema_version), 0) END;")"; then
-  printf '错误: 查询 platform.schema_version 失败，中止处置。\n' >&2
+STALE_COUNT="${PROBE%%|*}"
+PLATFORM_CURRENT="${PROBE##*|}"
+if [[ ! "$STALE_COUNT" =~ ^[0-9]+$ || ! "$PLATFORM_CURRENT" =~ ^[0-9]+$ ]]; then
+  printf '错误: 存档探针返回了无法解析的结果（%s），拒绝继续。\n' "$PROBE" >&2
   exit 1
 fi
-[[ "${PLATFORM_CURRENT:-}" =~ ^[0-9]+$ ]] || PLATFORM_CURRENT=0
+PLATFORM_REQUIRED="$(grep -oE 'Version = [0-9]+' src/Server/Clean/PostgresSchema.cs | head -n 1 | grep -oE '[0-9]+' || true)"
 
 NEED_MIGRATE=0
 if [[ "$STALE_COUNT" != "0" ]]; then

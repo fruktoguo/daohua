@@ -230,10 +230,10 @@ fi
 # TTY 模式下整段在后台子 shell 中运行、输出全部进 main.log，由前台 TUI 实时呈现；
 # 非 TTY 模式直接内联执行、输出走终端。服务 PID 一律落 $LOG_DIR/*.pid 供清理使用。
 do_startup() {
-  # 5. 启动服务端（dev-hot.mjs 守护进程：源码变更进入 60s 防抖静默期，期间有新变更则刷新；
+  # 5. 启动服务端（dev-hot.mjs 守护进程：源码变更进入 3s 防抖静默期，期间有新变更则刷新；
   #    静默期满先 dotnet build，编译失败保持旧进程，成功才优雅重启并自动拉起异常退出）
   write_state "启动后端"
-  printf '==> 启动服务端 (http://127.0.0.1:5128, 源码变更静默 60s 后重建重启)...\n'
+  printf '==> 启动服务端 (http://127.0.0.1:5128, 源码变更静默 3s 后重建重启)...\n'
   if [[ "$TUI_ENABLED" -eq 1 ]]; then
     node scripts/dev-hot.mjs > "$LOG_DIR/backend.log" 2>&1 &
   else
@@ -324,7 +324,7 @@ do_startup() {
   write_state "运行中"
   printf '\n'
   printf '  道化太初 本地开发服务已启动\n'
-  printf '  热更新:      源码变更静默 60s 后重建重启（编译失败保持旧进程）\n'
+  printf '  热更新:      源码变更静默 3s 后重建重启（编译失败保持旧进程）\n'
   printf '  后端 API:    http://127.0.0.1:5128\n'
   printf '  WebSocket:  ws://127.0.0.1:5128/ws\n'
   printf '  运维面板:    http://127.0.0.1:15172/ops（数据端点经主端口 5128，写操作需面板令牌）\n'

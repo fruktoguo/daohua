@@ -13,10 +13,10 @@ namespace Server.Tests;
 /// 撤单清空回落以及跨日/跨周掩零与写侧换日归位的真实数据库回归。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class MarketItemStatsTests
 {
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlacementFillsAndCancellationMaintainItemStatsAccurately()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("坊市行情卡集成测试");
@@ -113,7 +113,6 @@ public sealed class MarketItemStatsTests
     }
 
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OutdatedDayAndWeekKeysAreLazilyMaskedAndResetOnNewFills()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("坊市行情卡集成测试");

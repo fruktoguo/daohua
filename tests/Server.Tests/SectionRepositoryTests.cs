@@ -17,6 +17,7 @@ namespace Server.Tests;
 /// 依赖 DAOHUA_MARKET_TEST_CONNECTION 指向的专用库。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class SectionRepositoryTests
 {
     /// <summary>
@@ -24,7 +25,6 @@ public sealed class SectionRepositoryTests
     /// 关系型行动队列按 action_queue 段载荷重建、队列行清空单语句完成，LoadAsync 可整包回读。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task FlushPendingAppliesBatchedSectionsAndRebuildsActionQueue()
     {
         var (source, repository) = await OpenRepositoryAsync();
@@ -61,7 +61,6 @@ public sealed class SectionRepositoryTests
     /// 携带未推进版本的 action_queue 段被 upsert 谓词跳过（RETURNING 不含），不得拿旧载荷重建队列。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ApplyComputeResultAppliesBatchedSectionsAtomically()
     {
         var (source, repository) = await OpenRepositoryAsync();
@@ -92,7 +91,6 @@ public sealed class SectionRepositoryTests
 
     /// <summary>版本漂移整体丢弃：提交头不在发起版本时不写任何 section；无头玩家返回 MissingPlayer。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ApplyComputeResultDropsStaleVersionAndMissingPlayer()
     {
         var (source, repository) = await OpenRepositoryAsync();
@@ -122,7 +120,6 @@ public sealed class SectionRepositoryTests
 
     /// <summary>同玩家同 kind 的重复结果必须拒绝，不能静默取第一份写入权威存档。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ApplyComputeResultRejectsDuplicateKinds()
     {
         var (source, repository) = await OpenRepositoryAsync();
@@ -152,7 +149,6 @@ public sealed class SectionRepositoryTests
     /// 同版本携带 section 属契约违反必须抛错。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ApplyComputeResultEmptyWritesAdvanceHeadOnly()
     {
         var (source, repository) = await OpenRepositoryAsync();
@@ -198,7 +194,6 @@ public sealed class SectionRepositoryTests
 
     /// <summary>真实下线必须递增提交版本；否则已落盘duel同版本拒写会丢失新离线会话起点。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task RuntimeUnloadPersistsOfflineReportAtNewSectionAndHeadVersion()
     {
         var (source, repository) = await OpenRepositoryAsync();
@@ -247,7 +242,6 @@ public sealed class SectionRepositoryTests
     /// AttachConnectionAsync 转在线并清空锚点；RemoveAsync(flush, offlineSince) 把断线时刻写回投影。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ConnectionLifecycleDrivesPresenceAndProjectionOfflineSince()
     {
         var (source, repository) = await OpenRepositoryAsync();

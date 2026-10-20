@@ -20,6 +20,7 @@ namespace Server.Tests;
 /// 集成用例共享同一张 social.chat_messages，因此保留策略用例使用唯一 nearby 作用域，避免与其他用例互相干扰。
 /// </summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class ChatAndSocialTests
 {
     /// <summary>日志分组按事件码前缀分类：combat.* 归战斗，auto-use.* 排除不输出（null），其余归系统。</summary>
@@ -223,7 +224,6 @@ public sealed class ChatAndSocialTests
     /// 历史回放始终只取最近 100 条并按时间正序。
     /// </summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ChatRepository_KeepsOnlyLatestHundredPerScope()
     {
         var (source, _) = await OpenAsync();
@@ -258,7 +258,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>社交状态构建一次往返取齐好友/双向申请/队伍/邀请，并按存在感投影在线标记与附近修士。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task BuildStateAsync_AssemblesAllSectionsInOneSnapshot()
     {
         var (source, repository) = await OpenAsync();
@@ -349,7 +348,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>好友申请经接受后双向成立，解除后双向失效。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task FriendRequest_AcceptThenRemove_MaintainsBidirectionalRelationship()
     {
         var (source, repository) = await OpenAsync();
@@ -388,7 +386,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>邀请即自建队伍并任队长；被邀请人接受后入队；队长离开时队长位移交剩余成员。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PartyInviteAcceptAndLeave_TransfersLeadership()
     {
         var (source, repository) = await OpenAsync();
@@ -435,7 +432,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>创建公开队伍后进入组队大厅：档案字段、成员预览与请求者身家齐备；非法档案被拒。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PartyCreate_PublicParty_AppearsInLobby()
     {
         var (source, repository) = await OpenAsync();
@@ -482,7 +478,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>角色信息卡（§21.14）：本人查询自身返回完整身份与默认聚合投影，无授权拦截。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlayerCard_Self_ReturnsIdentityAndDefaultProjection()
     {
         var (source, repository) = await OpenAsync();
@@ -506,7 +501,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>同队成员可查离线队友角色卡：从持久化分段真源投影境界/六维/装备/功法/战斗物品配置。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlayerCard_PartyMember_ProjectsOfflineSections()
     {
         var (source, repository) = await OpenAsync();
@@ -578,7 +572,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>已装载队友读运行时内存态而非持久化分段：装载口径优先。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlayerCard_LoadedMember_UsesRuntimeState()
     {
         var (source, repository) = await OpenAsync();
@@ -615,7 +608,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>观察卡显示权威钱包和唯一会话离线储备，不能回读槽配置数量或把两份余额合并。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlayerCard_SeparatesAvailableWalletFromOfflineSessionReserve()
     {
         var (source, repository) = await OpenAsync();
@@ -667,7 +659,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>授权边界：非本人且不同队一律 forbidden；请求者有队但目标不在队同样拒绝。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlayerCard_Stranger_ReturnsForbidden()
     {
         var (source, repository) = await OpenAsync();
@@ -702,7 +693,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>不存在的玩家身份（无队伍关系的陌生目标）按 forbidden 拦截，不暴露存在性差异。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlayerCard_NonExistentStranger_ReturnsForbidden()
     {
         var (source, repository) = await OpenAsync();
@@ -718,7 +708,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>同节点附近修士（非同队）可查角色卡：展示六维、战斗属性与生活技艺等级。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PlayerCard_NearbyPlayer_AllowedAndReturnsAttributesAndTechniques()
     {
         var (source, repository) = await OpenAsync();
@@ -744,7 +733,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>不公开队伍不进大厅；持有 partyId 的链接点击仍可加入，身家门槛照旧裁决。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PartyJoin_PrivatePartyViaId_NotInLobbyButJoinable()
     {
         var (source, repository) = await OpenAsync();
@@ -782,7 +770,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>匹配登记：命中公开队伍时自动并入并清除登记；未命中保持「匹配中」，撤下后从大厅散人列表消失。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PartyMatchSet_JoinsMatchingPartyOrStaysSeeking()
     {
         var (source, repository) = await OpenAsync();
@@ -828,7 +815,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>并发加入由行锁事务裁决：5 人满员上限不被并发击穿，超额者收到明确失败。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PartyJoin_ConcurrentJoins_RespectCapacity()
     {
         var (source, repository) = await OpenAsync();
@@ -854,7 +840,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>队长更新档案与移出成员；非队长操作被拒；解散后大厅与聊天链接一并失效。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task PartyManage_UpdateKickDisband_AndLinkExpiry()
     {
         var (source, repository) = await OpenAsync();
@@ -909,7 +894,6 @@ public sealed class ChatAndSocialTests
 
     /// <summary>好友频道私聊要求双方已是好友；世界/附近频道按作用域解析收件人；宗门与空正文被拒。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ChatRuntime_RejectsFriendChannelForNonFriendsAndKeepsWorldOpen()
     {
         var (source, repository) = await OpenAsync();

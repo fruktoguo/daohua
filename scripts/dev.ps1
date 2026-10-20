@@ -9,7 +9,8 @@
        由服务端 PostgresSchema.Sql 直建）
     3. 清理残留孤儿进程（5128 / 15172 端口）
     4. 启动后端热重启守护 scripts/dev-hot.mjs：
-       监听 src/、config/game-data/、vendor/YuoCore 变更，静默 60s 防抖后
+       只监听服务端编译闭包（src/Domain、src/Ecs、src/Protocol、src/Server、src/Server.Clean）
+       与 config/game-data/、vendor/YuoCore 变更，静默 3s 防抖后
        dotnet build，编译失败保持旧进程，成功才优雅热重启；崩溃自动拉起
     5. 等待后端 /healthz 就绪并探测运维面板端点
     6. 启动前端 Vite 开发服务器 (http://127.0.0.1:15172)
@@ -173,7 +174,7 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyCon
     }
 
 # 3. 启动后端热重启守护（对齐 dev.sh：node scripts/dev-hot.mjs 守护 dotnet run，
-#    源码变更静默 60s 后先 dotnet build，编译失败保持旧进程，成功才平滑热重启，
+#    源码变更静默 3s 后先 dotnet build，编译失败保持旧进程，成功才平滑热重启，
 #    崩溃自动拉起；独立窗口承载 [server dev] 守护日志）
 Write-Host "[3/5] 启动服务端热重启守护 (http://127.0.0.1:5128)..." -ForegroundColor Yellow
 $backendProcess = Start-Process node -ArgumentList "scripts/dev-hot.mjs" -WorkingDirectory $rootDir -PassThru
@@ -234,7 +235,7 @@ if (-not $frontendProcess.HasExited) {
     Write-Host "   前端地址: http://127.0.0.1:15172" -ForegroundColor Cyan
     Write-Host "   后端 API: http://127.0.0.1:5128" -ForegroundColor Cyan
     Write-Host "   健康检查: http://127.0.0.1:5128/healthz" -ForegroundColor Cyan
-    Write-Host "   热更新:   C# 源码/配表变更静默 60s 后重建重启（编译失败保持旧进程）" -ForegroundColor Cyan
+    Write-Host "   热更新:   C# 源码/配表变更静默 3s 后重建重启（编译失败保持旧进程）" -ForegroundColor Cyan
     Write-Host "--------------------------------------------------" -ForegroundColor Green
     Write-Host " 按 Ctrl+C 停止前后端服务..." -ForegroundColor Gray
     Write-Host ""

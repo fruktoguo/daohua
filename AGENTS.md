@@ -131,10 +131,10 @@ docker compose -f deploy/compose.prod.yaml down
 
 | 脚本 | 用途 |
 | --- | --- |
-| `verify.sh` | 合并必跑最小门禁：工具链、Release 构建、Domain/Ecs/Server 三套测试（自动供给 `daohua_market_test` 集成测试库）、DataTool 校验、Compose 配置、前端构建；容量门禁不在其中，见 `capacity-target.sh` |
+| `verify.sh` | 合并必跑最小门禁：工具链、Release 构建、Domain/Ecs/Server 三套测试（自动供给 `daohua_market_test` 集成测试库）、DataTool 校验、Compose 配置、前端构建；新增 `--fast`（跳过 Compose 与 PostgresIntegration，约 45s）/ `--backend` / `--frontend` 分级，供日常自检，交付前仍须跑无参数全量；容量门禁不在其中，见 `capacity-target.sh` |
 | `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite、Docker 化 Caddy 域名入口 `http://daohua.localhost`）；交互终端由 TUI 前台接管（启动流程在后台子 shell 完成），`q`/`Ctrl+C` 停止，`:` 进入指令模式（help 查看），非 TTY 使用普通日志流 |
 | `dev-tui.mjs` | `dev.sh` 的无依赖 TUI 运维控制台（前台直读终端输入、事件驱动 + 行级 diff 渲染）：日志滚动回看/来源与级别过滤/长行折行，`:` 指令模式直连 `/ops/api` 查询与写操作 |
-| `dev-hot.mjs` | C# 源码监听与后端平滑热重启（由 `dev.sh` 调用） |
+| `dev-hot.mjs` | C# 源码监听与后端平滑热重启（由 `dev.sh` 调用）：只监听 Server 真实编译闭包（`src/Domain`/`src/Ecs`/`src/Protocol`/`src/Server`/`src/Server.Clean` + `config/game-data` + `vendor/YuoCore`），默认静默 3s 防抖后重建重启，构建窗口内的变更会补跑 |
 | `dev-service.sh` | 本地容器化同构环境管理：`up`/`restart`/`down`/`status`/`logs`/`smoke` |
 | `config-editor.sh` | 启动 `tools/config-editor` 可视化配表编辑器（127.0.0.1:5199） |
 | `capacity-target.sh` | 真实 PostgreSQL/WAL/latest-only Worker 容量门禁（容量相关变更与发布前运行，不在 `verify.sh` 合并必跑内） |

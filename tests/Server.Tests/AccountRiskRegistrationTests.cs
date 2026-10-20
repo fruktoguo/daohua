@@ -11,11 +11,11 @@ namespace Server.Tests;
 
 /// <summary>注册风控的真实事务边界：配额、并发、动态开关与拒绝审计。</summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class AccountRiskRegistrationTests
 {
     /// <summary>已有注册关联的设备不能再次注册，拒绝不会写入第二份账号关联。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SameDeviceRejectsSecondRegistration()
     {
         await using var fixture = await OpenRepositoryAsync();
@@ -32,7 +32,6 @@ public sealed class AccountRiskRegistrationTests
 
     /// <summary>同一身份可关联两个不同设备的账号，第三次注册必须拒绝。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SamePersonRejectsThirdRegistration()
     {
         await using var fixture = await OpenRepositoryAsync();
@@ -54,7 +53,6 @@ public sealed class AccountRiskRegistrationTests
 
     /// <summary>两个请求同时争用尚无关联行的设备时，事务锁保证只有一份注册成功。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ConcurrentSameDeviceCreatesOnlyOneAccount()
     {
         await using var fixture = await OpenRepositoryAsync();
@@ -77,7 +75,6 @@ public sealed class AccountRiskRegistrationTests
 
     /// <summary>运行中关闭设备配置模块后，同配置不同设备的下一次注册立即放行。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task DisabledDeviceConfigModuleStopsApplyingItsQuota()
     {
         await using var fixture = await OpenRepositoryAsync();
@@ -103,7 +100,6 @@ public sealed class AccountRiskRegistrationTests
 
     /// <summary>缺少设备信号的拒绝也落库，防止无信号绕过尝试在运维审计中消失。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task MissingSignalsStillPersistDenyAudit()
     {
         await using var fixture = await OpenRepositoryAsync();
@@ -118,7 +114,6 @@ public sealed class AccountRiskRegistrationTests
 
     /// <summary>软关联命中复核阈值时仍允许注册，并准确保存复核分数和原因。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SoftIpRiskPersistsReviewScoreAndReasons()
     {
         await using var fixture = await OpenRepositoryAsync();

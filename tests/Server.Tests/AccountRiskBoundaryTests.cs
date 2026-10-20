@@ -13,13 +13,13 @@ namespace Server.Tests;
 
 /// <summary>账号检测跨边界回归：策略持久化、运维读模型、登录关联与生产摘要密钥。</summary>
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class AccountRiskBoundaryTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>保存的策略必须能被全新的仓储实例读回，并保留模块状态与数值。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SavedPolicyLoadsIntoNewRepository()
     {
         await using var fixture = await OpenFixtureAsync();
@@ -48,7 +48,6 @@ public sealed class AccountRiskBoundaryTests
 
     /// <summary>运维查询实际注册事件和关联，覆盖 JSON 反序列化、SQL 列与 reader 类型。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task OpsOverviewReadsActualEventsAndAssociations()
     {
         await using var fixture = await OpenFixtureAsync();
@@ -104,7 +103,6 @@ public sealed class AccountRiskBoundaryTests
 
     /// <summary>同一主体登录最多关联两个账号，已关联账号重复登录不消耗额外额度。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task LoginAssociationAllowsTwoAccountsAndDoesNotCountRepeats()
     {
         await using var fixture = await OpenFixtureAsync();
@@ -142,7 +140,6 @@ public sealed class AccountRiskBoundaryTests
 
     /// <summary>生产随机 HMAC 密钥写库后，新数据源与新实例仍产生相同摘要。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task ProductionHasherRetainsKeyAcrossNewDataSource()
     {
         await using var fixture = await OpenFixtureAsync();
@@ -210,7 +207,6 @@ public sealed class AccountRiskBoundaryTests
 
     /// <summary>配置相同的不同真机不会共用硬注册额度，缺信号拒绝也不污染共享 IP 注册速度。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task SameHardwareConfigurationIsSoftAndDeniedAttemptsDoNotBlockSharedIp()
     {
         await using var fixture = await OpenFixtureAsync();
@@ -243,7 +239,6 @@ public sealed class AccountRiskBoundaryTests
 
     /// <summary>高频风险事件按独立保留期清理，长期业务审计配置不会使其积累十年。</summary>
     [Fact]
-    [Trait("Category", "PostgresIntegration")]
     public async Task RiskRetentionIsIndependentAndKeepsStableKey()
     {
         await using var fixture = await OpenFixtureAsync();
