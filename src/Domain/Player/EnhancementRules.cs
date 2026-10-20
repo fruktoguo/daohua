@@ -22,7 +22,7 @@ public static class EnhancementRules
     public const string TargetLevelParameter = "targetLevel";
     /// <summary>起始强化等级意图参数键：多变体共存时指定强化的起始等级。</summary>
     public const string InitialLevelParameter = "initialLevel";
-    /// <summary>起护等级意图参数键：当前等级达到该阈值时才开始消耗材料进行保级，最低为 2。</summary>
+    /// <summary>起护等级意图参数键：当前等级达到该阈值时才开始消耗材料进行掉级保护（失败仅回落一级），最低为 2。</summary>
     public const string ProtectFromLevelParameter = "protectLevel";
 
     /// <summary>强化判定独立通道：与战斗命中/暴击/掉落通道完全隔离，不扰战斗随机流。</summary>
@@ -40,7 +40,7 @@ public static class EnhancementRules
     {
         /// <summary>强化成功：资产变体升至目标等级。</summary>
         Success = 0,
-        /// <summary>强化失败且携带保护材料：回落至 max(0, t-1)（即保持当前等级）。</summary>
+        /// <summary>强化失败且保护生效：较当前等级回落一级至 max(0, t-2)，下限 +0。</summary>
         FailProtected = 1,
         /// <summary>强化失败且无护符：强化等级归零回到基础键。</summary>
         FailReset = 2,
@@ -336,7 +336,7 @@ public static class EnhancementRules
     public static int ResultLevel(Preparation prep, Outcome outcome) => outcome switch
     {
         Outcome.Success => prep.TargetLevel,
-        Outcome.FailProtected => Math.Max(0, prep.TargetLevel - 1),
+        Outcome.FailProtected => Math.Max(0, prep.CurrentLevel - 1),
         _ => 0
     };
 

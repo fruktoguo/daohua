@@ -169,7 +169,8 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(0, EnhancementRules.ResultLevel(prep, EnhancementRules.Outcome.FailReset));
         Assert.Equal(0, EnhancementRules.ResultLevel(prep, EnhancementRules.Outcome.FailProtected));
         var prepProtected = prep with { ProtectionItemId = new ItemId("item.test-mat"), CurrentLevel = 4, TargetLevel = 5 };
-        Assert.Equal(4, EnhancementRules.ResultLevel(prepProtected, EnhancementRules.Outcome.FailProtected));
+        // 保护生效：较当前等级回落一级（+4 → +3），非保级。
+        Assert.Equal(3, EnhancementRules.ResultLevel(prepProtected, EnhancementRules.Outcome.FailProtected));
         Assert.Equal(EnhancementRules.Roll(instanceA, 3, prep), EnhancementRules.Roll(instanceA, 3, prep));
         _ = EnhancementRules.Roll(instanceB, 0, prep); // 不同实例走同通道独立判定，不共享随机游标。
     }
@@ -432,7 +433,8 @@ public sealed class TechniqueAndEnhancementTests
     }
     /// <summary>
     /// 起护等级判定：当前等级未达起护线时即使意图携带保护材料也不消耗且失败归零；
-    /// 达到起护线后才检查并消耗保护材料，失败保级；起护等级在参数中最低 clamp 为 2。
+    /// 达到起护线后才检查并消耗保护材料，失败较当前等级回落一级（保护生效掉一级）；
+    /// 起护等级在参数中最低 clamp 为 2。
     /// </summary>
     [Fact]
     public void EnhancementProtectFromLevelControlsMaterialConsumptionAndOutcome()

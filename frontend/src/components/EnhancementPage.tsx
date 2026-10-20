@@ -453,7 +453,7 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
               <dd className="enhancement-outcome">
                 <span>{t('app.enhancement.outcomeSuccess', { level: nextLevel })}</span>
                 <span>{isProtectedThisRound
-                  ? t('app.enhancement.outcomeFailProtected', { level: Math.max(0, nextLevel - 1) })
+                  ? t('app.enhancement.outcomeFailProtected', { level: Math.max(0, currentLevel - 1) })
                   : t('app.enhancement.outcomeFailReset')}</span>
               </dd>
             </div>
