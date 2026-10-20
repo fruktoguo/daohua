@@ -43,6 +43,7 @@ export const appZh = {
       tabBuilding: '建造',
       tabAbility: '功法',
       tabMonster: '妖兽',
+      tabTrait: '特质',
       materialHerb: '药材',
       materialMineral: '矿石',
       materialExotic: '异材',
@@ -50,6 +51,12 @@ export const appZh = {
       craftingForging: '炼器',
       craftingFormation: '阵法',
       craftingTalisman: '符箓',
+      traitAll: '全部',
+      traitQ1: '凡品',
+      traitQ2: '黄品',
+      traitQ3: '玄品',
+      traitQ4: '地品',
+      traitQ5: '天品',
       unlocked: '已领悟',
       locked: '未解锁',
       collected: '已收录',
@@ -337,6 +344,7 @@ export const appZh = {
     // 储物袋物品操作（左键悬浮菜单 / 右键直接使用 / 数量处置弹窗）
     inventoryPanel: {
       useLearn: '参悟',
+      useAwaken: '觉醒',
       useEquip: '装备',
       trade: '交易',
       recycle: '出售',
@@ -353,10 +361,14 @@ export const appZh = {
       recycleTotal: '合计可得 {total} 灵石',
       confirmRecycle: '确认出售',
       useTitle: '参悟 {name}',
+      useAwakenTitle: '觉醒 {name}',
       useQuantityAria: '研读数量',
+      useAwakenQuantityAria: '觉醒数量',
       useTomeDescription: '未习得时首本直接领悟功法，其余每本 +10000 功法经验；已习得则每本 +10000。',
       useFragmentDescription: '每本 +500 功法经验（须已习得对应功法）。',
+      useAwakenDescription: '使用觉醒石感悟天地机缘，随机觉醒先天特质，或为已觉醒特质注入突破经验。',
       confirmUse: '确认参悟',
+      confirmAwaken: '确认觉醒',
       // 储物袋分段小标题（同视图内分组陈列，非 Tab 切换）
       group: {
         important: '重要',

@@ -60,6 +60,37 @@ public sealed class ProtocolTests
         Assert.Equal(CommandResultSnapshotForms.Delta, parsedResult!.SnapshotForm);
     }
 
+    [Fact]
+    public void CommandResultWithDataRoundTripSucceeds()
+    {
+        var awakened = new AwakenedTraitResultDto("trait.tianshengmanli", 2, 1, true, false);
+        var dataObj = new { awakenedTraits = new[] { awakened } };
+        var dataElement = JsonSerializer.SerializeToElement(dataObj, ProtocolJson.Options);
+
+        var envelope = WireEnvelope.Json(
+            WireMessageType.CommandResult,
+            requestId: Guid.NewGuid(),
+            sequence: 10,
+            new CommandResultDto("req-2", true, "OK", "success", 9, CommandResultSnapshotForms.Snapshot, Data: dataElement));
+
+        var decoded = WireEnvelopeCodec.Decode(WireEnvelopeCodec.Encode(envelope));
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<CommandResultDto>(decoded, out var parsedResult));
+        Assert.NotNull(parsedResult);
+        Assert.True(parsedResult.Succeeded);
+        Assert.NotNull(parsedResult.Data);
+
+        var root = parsedResult.Data.Value;
+        Assert.True(root.TryGetProperty("awakenedTraits", out var listElement));
+        var list = listElement.Deserialize<List<AwakenedTraitResultDto>>(ProtocolJson.Options);
+        Assert.NotNull(list);
+        Assert.Single(list);
+        Assert.Equal("trait.tianshengmanli", list[0].TraitId);
+        Assert.Equal(2, list[0].Level);
+        Assert.Equal(1, list[0].Exp);
+        Assert.True(list[0].LeveledUp);
+        Assert.False(list[0].IsNew);
+    }
+
     /// <summary>
     /// 行动意图 Parameters 字典键必须保持 camelCase（前端契约），
     /// 序列化→反序列化→再序列化后报文逐字节一致。

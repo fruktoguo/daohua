@@ -941,10 +941,14 @@ public static class WebSocketEndpoint
                         previousSections, previousAssets,
                         out var nextSections, out var nextAssets,
                         pendingInspect, () => attributesProjected = true);
+                    var customDataElement = result.Data is not null
+                        ? (JsonElement?)JsonSerializer.SerializeToElement(result.Data, ProtocolJson.Options)
+                        : null;
                     var packet = EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(),
                         new CommandResultDto(requestId, result.Success, result.Code, result.Message,
                             result.Snapshot.StateVersion, CommandResultSnapshotForms.Delta,
-                            JsonSerializer.SerializeToElement(delta, ProtocolJson.Options)));
+                            JsonSerializer.SerializeToElement(delta, ProtocolJson.Options),
+                            Data: customDataElement));
                     enqueued = session.TrySend(packet);
                     if (enqueued) session.CommitPushBaseline(nextSections, nextAssets);
                     // 回执帧必达：入队失败由调用方锁外 SendAsync 阻塞投递，属性交付直接记账。
@@ -958,10 +962,14 @@ public static class WebSocketEndpoint
         var fullSnapshot = ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData,
             pendingInspectFull, () => attributesProjectedFull = true);
         if (attributesProjectedFull) session.MarkInspectedAttributesDelivered(pendingInspectFull);
+        var customDataElementFull = result.Data is not null
+            ? (JsonElement?)JsonSerializer.SerializeToElement(result.Data, ProtocolJson.Options)
+            : null;
         var full = new CommandResultDto(
             requestId, result.Success, result.Code, result.Message,
             result.Snapshot.StateVersion, CommandResultSnapshotForms.Snapshot,
-            JsonSerializer.SerializeToElement(fullSnapshot, ProtocolJson.Options));
+            JsonSerializer.SerializeToElement(fullSnapshot, ProtocolJson.Options),
+            Data: customDataElementFull);
         // 全量兜底回执同样取号-编码-入队在会话锁内完成，保持与并发推送的序号次序一致；
         // 满队列时 enqueued=false 由调用方锁外 SendAsync 阻塞投递。
         lock (session.OutboundSync)

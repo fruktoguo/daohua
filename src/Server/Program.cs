@@ -746,7 +746,8 @@ static CommandResultDto ToCommandResult(Guid requestId, PlayerCommandResult resu
         result.Message,
         result.Snapshot.StateVersion,
         CommandResultSnapshotForms.Snapshot,
-        JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
+        JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options),
+        Data: result.Data is not null ? JsonSerializer.SerializeToElement(result.Data, ProtocolJson.Options) : null);
 
 static void StampSessionCookie(HttpContext context, string token, TimeSpan lifetime)
 {

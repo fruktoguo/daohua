@@ -36,6 +36,8 @@ import {
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
 import { fetchMarketStats, getCatalogFingerprint } from './apiClient'
 import { getSessionAccount } from './sessionState'
+import { useUiStore } from '../uiStore'
+import type { AwakenedTraitResult } from '../game/types'
 import { collectAccountSignals } from '../antiMulti/accountSignals'
 import {
   ANTI_MULTI_CLOSE_NOTICE_KEYS,
@@ -677,8 +679,14 @@ export class GameClient {
             useGameStore.getState().applySnapshot(snapshot)
             appliedBusinessPayload = true
           }
-          if (result.message) useGameStore.getState().setNotice(result.message)
-          appliedBusinessPayload = true
+           if (result.message) useGameStore.getState().setNotice(result.message)
+          if (result.succeeded && result.data && typeof result.data === 'object') {
+            const custom = result.data as Record<string, unknown>
+            if (Array.isArray(custom.awakenedTraits) && custom.awakenedTraits.length > 0) {
+              useUiStore.getState().openAwakenResult(custom.awakenedTraits as AwakenedTraitResult[])
+            }
+          }
+           appliedBusinessPayload = true
           break
         }
         case WireMessageType.ActionResult: {

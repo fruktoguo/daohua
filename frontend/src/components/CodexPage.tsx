@@ -7,7 +7,7 @@ import {
   isMaterialUnlocked,
   resolveMaterialTechnique,
 } from '../game/codexCalculations'
-import { calculateTechniqueProgress, TECHNIQUE_IDS } from '../game/combatConstants'
+import { calculateTechniqueProgress, TECHNIQUE_IDS, TRAIT_DEFINITIONS } from '../game/combatConstants'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
@@ -33,9 +33,10 @@ import type {
 } from '../game/types'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
 import { useT } from '../i18n'
-import type { CodexCraftingSubTab, CodexMaterialSubTab } from '../uiStore'
+import type { CodexCraftingSubTab, CodexMaterialSubTab, CodexTraitSubTab } from '../uiStore'
 import { useUiStore } from '../uiStore'
 import { PillBonusLabel, type PillTone } from './PillLabel'
+import { TraitBarItem } from './TraitBarItem'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
@@ -64,6 +65,16 @@ const CRAFTING_SUB_TABS: ReadonlyArray<{ id: CodexCraftingSubTab; labelKey: stri
   { id: 'talisman', labelKey: 'craftingTalisman' },
 ]
 
+/** 特质分类映射定义 */
+const TRAIT_SUB_TABS: ReadonlyArray<{ id: CodexTraitSubTab; labelKey: string; quality?: number }> = [
+  { id: 'all', labelKey: 'traitAll' },
+  { id: 'q1', labelKey: 'traitQ1', quality: 1 },
+  { id: 'q2', labelKey: 'traitQ2', quality: 2 },
+  { id: 'q3', labelKey: 'traitQ3', quality: 3 },
+  { id: 'q4', labelKey: 'traitQ4', quality: 4 },
+  { id: 'q5', labelKey: 'traitQ5', quality: 5 },
+]
+
 
 
 /**
@@ -80,6 +91,8 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const setCodexMaterialSubTab = useUiStore(state => state.setCodexMaterialSubTab)
   const codexCraftingSubTab = useUiStore(state => state.codexCraftingSubTab)
   const setCodexCraftingSubTab = useUiStore(state => state.setCodexCraftingSubTab)
+  const codexTraitSubTab = useUiStore(state => state.codexTraitSubTab)
+  const setCodexTraitSubTab = useUiStore(state => state.setCodexTraitSubTab)
 
   const stats = useGameStore(state => state.stats)
   const realmLevel = stats.realmLevel ?? 1
@@ -307,11 +320,60 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     return allMonsters.filter(m => defeatedSet.has(m.enemyId)).length
   }, [allMonsters, defeatedSet])
   const totalMonsterCount = allMonsters.length
+ 
+  // 特质图鉴数据与解锁进度
+  const unlockedTraitsMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const ut of stats.unlockedTraits ?? []) {
+      map.set(ut.id, ut.level)
+    }
+    return map
+  }, [stats.unlockedTraits])
 
-  // 万象图鉴全景总进度
-  const grandUnlocked = totalMaterialUnlockedCount + totalCraftingUnlockedCount + buildingUnlockedCount + abilityLearnedCount + monsterDefeatedCount
-  const grandTotal = totalMaterialCount + totalCraftingCount + totalBuildingCount + totalAbilityCount + totalMonsterCount
-  const grandPercent = grandTotal > 0 ? Math.round((grandUnlocked / grandTotal) * 100) : 0
+  const allTraits = useMemo(() => {
+    return Object.values(TRAIT_DEFINITIONS).sort((a, b) => {
+      if (a.quality !== b.quality) return a.quality - b.quality
+      if (a.cost !== b.cost) return a.cost - b.cost
+      return a.id.localeCompare(b.id)
+    })
+  }, [])
+
+  const traitUnlockedCount = useMemo(() => {
+    return allTraits.filter(tr => unlockedTraitsMap.has(tr.id)).length
+  }, [allTraits, unlockedTraitsMap])
+  const totalTraitCount = allTraits.length
+
+  const traitSubTabProgress = useMemo(() => {
+    const map: Record<CodexTraitSubTab, { unlocked: number; total: number }> = {
+      all: { unlocked: traitUnlockedCount, total: totalTraitCount },
+      q1: { unlocked: 0, total: 0 },
+      q2: { unlocked: 0, total: 0 },
+      q3: { unlocked: 0, total: 0 },
+      q4: { unlocked: 0, total: 0 },
+      q5: { unlocked: 0, total: 0 },
+    }
+    for (const tr of allTraits) {
+      const isUnlocked = unlockedTraitsMap.has(tr.id)
+      const qKey = `q${tr.quality}` as CodexTraitSubTab
+      if (map[qKey]) {
+        map[qKey].total += 1
+        if (isUnlocked) map[qKey].unlocked += 1
+      }
+    }
+    return map
+  }, [allTraits, unlockedTraitsMap, traitUnlockedCount, totalTraitCount])
+
+  const sortedTraits = useMemo(() => {
+    if (codexTraitSubTab === 'all') return allTraits
+    const tab = TRAIT_SUB_TABS.find(t => t.id === codexTraitSubTab)
+    if (!tab?.quality) return allTraits
+    return allTraits.filter(t => t.quality === tab.quality)
+  }, [allTraits, codexTraitSubTab])
+
+   // 万象图鉴全景总进度
+  const grandUnlocked = totalMaterialUnlockedCount + totalCraftingUnlockedCount + buildingUnlockedCount + abilityLearnedCount + monsterDefeatedCount + traitUnlockedCount
+  const grandTotal = totalMaterialCount + totalCraftingCount + totalBuildingCount + totalAbilityCount + totalMonsterCount + totalTraitCount
+   const grandPercent = grandTotal > 0 ? Math.round((grandUnlocked / grandTotal) * 100) : 0
 
   return (
     <div className="codex-page panel">
@@ -368,6 +430,14 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
             <span>{t('app.codex.tabMonster')}</span>
             <span className="codex-tab-count">{monsterDefeatedCount}/{totalMonsterCount}</span>
           </button>
+          <button
+            className={`codex-tab-btn${codexCategory === 'trait' ? ' active' : ''}`}
+            onClick={() => setCodexCategory('trait')}
+            type="button"
+          >
+            <span>{t('app.codex.tabTrait')}</span>
+            <span className="codex-tab-count">{traitUnlockedCount}/{totalTraitCount}</span>
+          </button>
         </nav>
 
         {/* 材料分类下的二级子切换（药材、矿石、异材） */}
@@ -400,6 +470,26 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
                   className={`codex-sub-tab-btn${codexCraftingSubTab === tab.id ? ' active' : ''}`}
                   key={tab.id}
                   onClick={() => setCodexCraftingSubTab(tab.id)}
+                  type="button"
+                >
+                  <span>{t(`app.codex.${tab.labelKey}`)}</span>
+                  <span className="codex-sub-tab-count">{prog.unlocked}/{prog.total}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* 特质分类下的二级子切换（按品阶：全部、凡品、黄品、玄品、地品、天品） */}
+        {codexCategory === 'trait' && (
+          <div className="codex-sub-tabs" role="tablist">
+            {TRAIT_SUB_TABS.map(tab => {
+              const prog = traitSubTabProgress[tab.id]
+              return (
+                <button
+                  className={`codex-sub-tab-btn${codexTraitSubTab === tab.id ? ' active' : ''}`}
+                  key={tab.id}
+                  onClick={() => setCodexTraitSubTab(tab.id)}
                   type="button"
                 >
                   <span>{t(`app.codex.${tab.labelKey}`)}</span>
@@ -489,6 +579,22 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
               />
             ))}
             {allMonsters.length === 0 && (
+              <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
+            )}
+          </div>
+        )}
+
+        {codexCategory === 'trait' && (
+          <div className="codex-trait-list">
+            {sortedTraits.map(tr => (
+              <TraitBarItem
+                def={tr}
+                key={tr.id}
+                level={unlockedTraitsMap.get(tr.id) ?? 0}
+                mode="codex"
+              />
+            ))}
+            {sortedTraits.length === 0 && (
               <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
             )}
           </div>

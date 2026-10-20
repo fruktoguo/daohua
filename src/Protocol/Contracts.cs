@@ -518,7 +518,16 @@ public sealed record CommandResultDto(
     string Message,
     long StateVersion,
     string SnapshotForm,
-    JsonElement? Snapshot = null);
+    JsonElement? Snapshot = null,
+    JsonElement? Data = null);
+
+/// <summary>特质觉醒结果条目。</summary>
+/// <param name="TraitId">特质 ID</param>
+/// <param name="Level">觉醒/提升后的等级</param>
+/// <param name="Exp">当前剩余经验</param>
+/// <param name="LeveledUp">本次是否升级</param>
+/// <param name="IsNew">是否为首次觉醒解锁</param>
+public sealed record AwakenedTraitResultDto(string TraitId, int Level, int Exp, bool LeveledUp, bool IsNew);
 
 /// <summary>系统商店货架条目（GET /api/v1/players/{playerId}/shop 返回项）。</summary>
 /// <param name="OfferId">商品标识。</param>

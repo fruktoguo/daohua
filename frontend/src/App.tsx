@@ -1,6 +1,7 @@
 import { hasActionParticipation } from './game/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { PlayerCardModal } from './components/PlayerCardModal'
+import { AwakenResultModal } from './components/AwakenResultModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
@@ -2567,6 +2568,7 @@ export default function App(): React.JSX.Element {
         <BottomNav />
         <TutorialOverlay />
         <PlayerCardModal />
+        <AwakenResultModal />
         {simulatorOpen && (
           <Suspense fallback={null}>
             <CombatSimulatorModal open={simulatorOpen} onClose={() => setSimulatorOpen(false)} />

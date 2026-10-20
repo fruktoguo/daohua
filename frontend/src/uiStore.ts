@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { AwakenedTraitResult } from './game/types'
 
 /**
  * 客户端主界面顶级页签标识：
@@ -18,12 +19,14 @@ import { create } from 'zustand'
  */
 export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'records' | 'settings'
 
-/** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 */
-export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster'
+/** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
+export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
 /** 图鉴材料子分类：药材 vs 矿石 vs 异材 */
 export type CodexMaterialSubTab = 'herb' | 'mineral' | 'exotic'
 /** 图鉴制造子分类：炼丹 vs 炼器 vs 阵法 vs 符箓 */
 export type CodexCraftingSubTab = 'alchemy' | 'forging' | 'formation' | 'talisman'
+/** 图鉴特质子分类：全部 vs 各品阶 */
+export type CodexTraitSubTab = 'all' | 'q1' | 'q2' | 'q3' | 'q4' | 'q5'
 
 /** 同道页子选项卡：队伍 / 邀请（后续同道玩法沿用同一结构扩展） */
 export type SocialSubTab = 'party' | 'invite'
@@ -93,6 +96,16 @@ interface UiStore {
   codexMaterialSubTab: CodexMaterialSubTab
   /** 切换图鉴材料子分类 */
   setCodexMaterialSubTab: (subTab: CodexMaterialSubTab) => void
+  /** 图鉴特质子分类 */
+  codexTraitSubTab: CodexTraitSubTab
+  /** 切换图鉴特质子分类 */
+  setCodexTraitSubTab: (subTab: CodexTraitSubTab) => void
+  /** 觉醒石抽卡结果列表（非 null 时唤起抽取弹窗） */
+  awakenResults: AwakenedTraitResult[] | null
+  /** 打开觉醒结果弹窗 */
+  openAwakenResult: (results: AwakenedTraitResult[]) => void
+  /** 关闭觉醒结果弹窗 */
+  closeAwakenResult: () => void
   /** 新手引导当前要求地图聚焦的目标节点 ID（由 TutorialOverlay 下发，WorldMapPanel 响应） */
   tutorialMapFocusNodeId: string | null
   /** 设置新手引导地图聚焦的目标节点 ID */
@@ -147,6 +160,11 @@ export const useUiStore = create<UiStore>(set => ({
   setCodexMaterialSubTab: codexMaterialSubTab => set({ codexMaterialSubTab }),
   codexCraftingSubTab: 'alchemy',
   setCodexCraftingSubTab: codexCraftingSubTab => set({ codexCraftingSubTab }),
+  codexTraitSubTab: 'all',
+  setCodexTraitSubTab: codexTraitSubTab => set({ codexTraitSubTab }),
+  awakenResults: null,
+  openAwakenResult: awakenResults => set({ awakenResults }),
+  closeAwakenResult: () => set({ awakenResults: null }),
   tutorialMapFocusNodeId: null,
   setTutorialMapFocusNodeId: tutorialMapFocusNodeId => set({ tutorialMapFocusNodeId }),
   simulatorOpen: false,

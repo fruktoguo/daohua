@@ -138,4 +138,5 @@ public sealed record PlayerCommandResult(
     string Message,
     PlayerRuntimeSnapshot Snapshot,
     SimulationResult? Simulation = null,
-    IReadOnlyList<LogEventDto>? LogEvents = null);
+    IReadOnlyList<LogEventDto>? LogEvents = null,
+    object? Data = null);

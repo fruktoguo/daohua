@@ -10102,35 +10102,340 @@ input[type="checkbox"] {
 }
 
 /* ========================================================================= */
-/* 内视特质面板与装配弹窗 (Traits Panel & TraitConfigModal)                  */
+/* 特质长条通用样式 (TraitBarItem) 与内视、觉醒抽卡、万象图鉴                  */
+/* ========================================================================= */
+
+.trait-bar-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 14px;
+  background: rgba(16, 13, 9, 0.85);
+  border: 1px solid rgba(201, 180, 109, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.trait-bar-item:hover:not(.is-disabled) {
+  background: rgba(26, 21, 14, 0.95);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 0 8px rgba(201, 180, 109, 0.15);
+}
+
+.trait-bar-item.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.trait-bar-item.is-equipped {
+  background: rgba(28, 22, 13, 0.9);
+  box-shadow: inset 0 0 10px rgba(236, 201, 75, 0.12);
+}
+
+/* 品阶边框与高亮微光 */
+.trait-quality--q1 {
+  border-color: rgba(160, 160, 160, 0.35);
+}
+.trait-quality--q2 {
+  border-color: rgba(72, 187, 120, 0.45);
+  box-shadow: 0 0 6px rgba(72, 187, 120, 0.1);
+}
+.trait-quality--q3 {
+  border-color: rgba(66, 153, 225, 0.5);
+  box-shadow: 0 0 6px rgba(66, 153, 225, 0.12);
+}
+.trait-quality--q4 {
+  border-color: rgba(159, 122, 234, 0.55);
+  box-shadow: 0 0 8px rgba(159, 122, 234, 0.15);
+}
+.trait-quality--q5 {
+  border-color: rgba(236, 201, 75, 0.65);
+  box-shadow: 0 0 10px rgba(236, 201, 75, 0.2);
+}
+
+/* NEW 斜角标 */
+.trait-bar-ribbon-wrap {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.trait-bar-ribbon-badge {
+  position: absolute;
+  top: 7px;
+  right: -16px;
+  width: 58px;
+  transform: rotate(45deg);
+  text-align: center;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  line-height: 14px;
+  background: linear-gradient(135deg, #e53e3e 0%, #dd6b20 100%);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* 左侧主体内容 */
+.trait-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.trait-bar-quality-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.trait-quality--q1 .trait-bar-quality-tag { color: #a0a0a0; }
+.trait-quality--q2 .trait-bar-quality-tag { color: #48bb78; }
+.trait-quality--q3 .trait-bar-quality-tag { color: #4299e1; }
+.trait-quality--q4 .trait-bar-quality-tag { color: #9f7aea; }
+.trait-quality--q5 .trait-bar-quality-tag { color: #ecc94b; }
+
+.trait-bar-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trait-quality--q1 .trait-bar-name { color: #e2e8f0; }
+.trait-quality--q2 .trait-bar-name { color: #9ae6b4; }
+.trait-quality--q3 .trait-bar-name { color: #90cdf4; }
+.trait-quality--q4 .trait-bar-name { color: #d6bcfa; }
+.trait-quality--q5 .trait-bar-name { color: #f6e05e; }
+
+.trait-bar-cost {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* 右侧内容 */
+.trait-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.trait-bar-quantity {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.trait-bar-insight-right,
+.trait-bar-codex-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trait-bar-level {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.15);
+  border: 1px solid rgba(201, 180, 109, 0.25);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trait-bar-unlocked-state {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.trait-bar-action-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+
+.trait-bar-action-btn.is-equip {
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.18);
+  border: 1px solid var(--gold-dim);
+}
+.trait-bar-action-btn.is-equip:hover:not(:disabled) {
+  background: rgba(201, 180, 109, 0.35);
+  border-color: var(--gold-bright);
+}
+
+.trait-bar-action-btn.is-unequip {
+  color: #fc8181;
+  background: rgba(229, 62, 62, 0.15);
+  border: 1px solid rgba(229, 62, 62, 0.35);
+}
+.trait-bar-action-btn.is-unequip:hover:not(:disabled) {
+  background: rgba(229, 62, 62, 0.28);
+  border-color: #fc8181;
+}
+
+/* 底部细横条：升级进度 */
+.trait-bar-exp-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: help;
+}
+
+.trait-bar-exp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4299e1 0%, #ecc94b 100%);
+  transition: width 0.3s ease;
+}
+
+.trait-popover-scale-hint {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(201, 180, 109, 0.2);
+  font-size: 11px;
+  color: var(--gold-bright);
+}
+
+/* ========================================================================= */
+/* 觉醒抽卡展示弹窗 (AwakenResultModal)                                       */
+/* ========================================================================= */
+
+.awaken-result-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 460px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.awaken-result-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.2);
+}
+
+.awaken-result-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gold-bright);
+  letter-spacing: 1px;
+}
+
+.awaken-result-subtitle {
+  margin: 0;
+  font-size: 12px;
+}
+
+.awaken-result-body {
+  max-height: 54vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.awaken-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@keyframes awaken-pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.awaken-pop-in {
+  animation: awaken-pop-in 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+}
+
+.awaken-result-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(201, 180, 109, 0.2);
+}
+
+.awaken-confirm-btn {
+  min-width: 120px;
+  padding: 8px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+/* ========================================================================= */
+/* 内视特质面板 (Insight Traits Panel)                                       */
 /* ========================================================================= */
 
 .insight-panel--traits {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   height: 100%;
   overflow-y: auto;
   padding: 12px 14px;
+  box-sizing: border-box;
 }
 
-.insight-traits-dashboard {
+.insight-traits-capacity-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 14px;
   background: rgba(20, 17, 11, 0.7);
   border: 1px solid rgba(201, 180, 109, 0.25);
   border-radius: 6px;
   box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.4);
-}
-
-.insight-traits-capacity-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .insight-traits-capacity-info {
@@ -10149,6 +10454,12 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 
+.insight-traits-capacity-remain {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--text-dim);
+}
+
 .insight-traits-progress-bar {
   height: 6px;
   background: rgba(0, 0, 0, 0.45);
@@ -10161,284 +10472,55 @@ input[type="checkbox"] {
   height: 100%;
   background: linear-gradient(90deg, #c9b46d 0%, #ecc94b 100%);
   border-radius: 3px;
-  transition: width 0.2s ease;
+  transition: width 0.25s ease;
 }
 
-.insight-traits-modify-btn {
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--gold-bright);
-  background: rgba(201, 180, 109, 0.15);
-  border: 1px solid var(--gold-dim);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
+.insight-traits-progress-fill.is-overflow {
+  background: linear-gradient(90deg, #e53e3e 0%, #dd6b20 100%);
 }
 
-.insight-traits-modify-btn:hover {
-  background: rgba(201, 180, 109, 0.28);
-  border-color: var(--gold-bright);
-  box-shadow: 0 0 8px rgba(201, 180, 109, 0.2);
-}
-
-.trait-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 10px;
-}
-
-.trait-card-item {
+.insight-traits-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 12px;
-  background: rgba(14, 12, 8, 0.75);
-  border: 1px solid rgba(201, 180, 109, 0.2);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
 }
 
-.trait-card-item:hover:not(.is-disabled) {
-  background: rgba(22, 18, 12, 0.9);
-  box-shadow: 0 0 10px rgba(201, 180, 109, 0.25);
-  transform: translateY(-1px);
-}
-
-.trait-card-item.is-selected {
-  background: rgba(30, 24, 15, 0.95);
-  box-shadow: 0 0 12px rgba(236, 201, 75, 0.3), inset 0 0 8px rgba(201, 180, 109, 0.15);
-}
-
-.trait-card-item.is-disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.trait-card-item.is-equipped-view {
-  cursor: default;
-}
-.trait-card-item.is-equipped-view:hover {
-  transform: none;
-}
-
-.trait-quality--q1 { border-color: rgba(160, 160, 160, 0.4); }
-.trait-quality--q2 { border-color: rgba(72, 187, 120, 0.5); }
-.trait-quality--q3 { border-color: rgba(66, 153, 225, 0.55); }
-.trait-quality--q4 { border-color: rgba(159, 122, 234, 0.6); }
-.trait-quality--q5 { border-color: rgba(236, 201, 75, 0.7); box-shadow: 0 0 10px rgba(236, 201, 75, 0.15); }
-
-.trait-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.trait-card-name-group {
+.insight-traits-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold-bright);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.trait-quality-tag {
-  font-size: 10px;
-  padding: 1px 4px;
-  border: 1px solid;
-  border-radius: 3px;
-  font-weight: 600;
-}
-
-.trait-card-name {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.trait-card-level {
+.insight-traits-section-count {
   font-size: 11px;
-  font-weight: 700;
-  color: var(--gold-bright);
-  background: rgba(201, 180, 109, 0.15);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-
-.trait-card-cost {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.trait-card-desc {
-  font-size: 12px;
-  color: var(--text);
-  line-height: 1.45;
-  margin: 0;
-  flex: 1;
-}
-
-.trait-card-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 6px;
-  border-top: 1px dashed rgba(201, 180, 109, 0.15);
-}
-
-.trait-card-exp {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  flex: 1;
-}
-
-.trait-card-exp-text {
-  font-size: 10.5px;
-  color: var(--text-dim);
-}
-
-.trait-card-exp-track {
-  height: 4px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.trait-card-exp-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #4299e1, #48bb78);
-  border-radius: 2px;
-}
-
-.trait-card-checkbox {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  padding: 2px 6px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.trait-card-checkbox.is-checked {
-  color: var(--gold-bright);
-  background: rgba(201, 180, 109, 0.2);
-}
-
-/* 特质配置弹窗样式 */
-.trait-config-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-height: 80vh;
-}
-
-.trait-config-header {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(201, 180, 109, 0.2);
-}
-
-.trait-config-title {
-  margin: 0;
-  font-size: 17px;
-  color: var(--gold-bright);
-  font-weight: 700;
-}
-
-.trait-capacity-bar-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.trait-capacity-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
-}
-
-.trait-capacity-label {
-  color: var(--text-dim);
-}
-
-.trait-capacity-remain {
-  font-size: 12px;
   font-weight: normal;
   color: var(--text-dim);
 }
 
-.trait-capacity-track {
-  height: 6px;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 3px;
-  overflow: hidden;
-  border: 1px solid rgba(201, 180, 109, 0.2);
-}
-
-.trait-capacity-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #c9b46d 0%, #ecc94b 100%);
-  border-radius: 3px;
-  transition: width 0.2s ease;
-}
-
-.trait-config-body {
-  overflow-y: auto;
-  max-height: 55vh;
-  padding-right: 4px;
-}
-
-.trait-empty-tip {
-  text-align: center;
-  padding: 30px 10px;
-  color: var(--text-dim);
-  font-size: 13px;
-}
-
-.trait-config-actions {
+.insight-traits-bar-list {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(201, 180, 109, 0.2);
+  flex-direction: column;
+  gap: 8px;
 }
 
-.trait-config-cancel {
-  padding: 6px 14px;
-  font-size: 13px;
-  background: transparent;
-  border: 1px solid rgba(201, 180, 109, 0.3);
-  color: var(--text-dim);
-  border-radius: 4px;
-  cursor: pointer;
+.insight-traits-empty {
+  padding: 20px 10px;
+  background: rgba(14, 12, 8, 0.4);
+  border-radius: 6px;
+  border: 1px dashed rgba(201, 180, 109, 0.15);
 }
 
-.trait-config-cancel:hover {
-  color: var(--text);
-  border-color: var(--gold-dim);
-}
+/* ========================================================================= */
+/* 万象图鉴特质列表 (Codex Traits List)                                       */
+/* ========================================================================= */
 
-.trait-config-confirm {
-  padding: 6px 18px;
-  font-size: 13px;
-  font-weight: 600;
-  background: linear-gradient(135deg, rgba(201, 180, 109, 0.35) 0%, rgba(201, 180, 109, 0.15) 100%);
-  border: 1px solid var(--gold);
-  color: var(--gold-bright);
-  border-radius: 4px;
-  cursor: pointer;
-  box-shadow: 0 0 10px rgba(201, 180, 109, 0.2);
-}
-
-.trait-config-confirm:hover {
-  background: linear-gradient(135deg, rgba(201, 180, 109, 0.5) 0%, rgba(201, 180, 109, 0.25) 100%);
-  box-shadow: 0 0 14px rgba(201, 180, 109, 0.35);
+.codex-trait-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
 }

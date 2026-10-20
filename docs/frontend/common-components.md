@@ -504,8 +504,20 @@
 
 ---
 
-## 35. 前端渲染性能约定（高频路径必读）
+## 35. 特质长条展示与抽卡交互组件 (TraitBarItem & AwakenResultModal)
 
+- **适用场景**：
+  - **觉醒石抽取结果展示**（`mode="awaken"`：特质名称、抽中数量 `×N`、品阶边框色彩与微光、新觉醒 `NEW` 斜角标、每秒 5 个逐个弹现动效、Hover 查看完整效果浮层） -> `AwakenResultModal`, `TraitBarItem`
+  - **内视特质面板配置**（`mode="insight"`：名称、等级 `Lv.N`、底部升级经验细横条且 Hover 展示详细升级经验文本、面板内联直接点击装备/卸下无须二级弹窗） -> `InsightPage`, `TraitBarItem`
+  - **万象图鉴特质志**（`mode="codex"`：特质名称、按品阶子 Tab 过滤、点数消耗、当前领悟状态与等级） -> `CodexPage`, `TraitBarItem`
+- **组件源码**：
+  - [`frontend/src/components/TraitBarItem.tsx`](../../frontend/src/components/TraitBarItem.tsx)
+  - [`frontend/src/components/AwakenResultModal.tsx`](../../frontend/src/components/AwakenResultModal.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.trait-bar-item`, `.awaken-result-*`, `.insight-panel--traits`)
+
+---
+
+## 36. 前端渲染性能约定（高频路径必读）
 > 本节不是组件，而是**高频渲染路径的实现纪律**。凡是「每条服务端补丁都会跑」或「每个指针事件都会跑」的代码，必须满足以下四条，否则会与画面结果无关地空烧主线程。
 
 1. **手势/动画驱动的几何变换一律命令式写 DOM，不进 React state**

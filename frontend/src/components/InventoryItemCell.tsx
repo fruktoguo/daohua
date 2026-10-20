@@ -51,6 +51,7 @@ function ItemQuantityDialog({
   const isUse = mode === 'use'
   const isDiscard = mode === 'discard'
   const isTome = item.itemId.startsWith('item.tome.')
+  const isAwakeningStone = item.itemId === 'item.awakening-stone'
   const max = Math.max(1, Math.floor(item.amount))
   const [quantity, setQuantity] = useState(1)
   const presets = [...new Set([1, 10, 100, max].filter(value => value >= 1 && value <= max))].sort((a, b) => a - b)
@@ -75,22 +76,24 @@ function ItemQuantityDialog({
   return (
     <Modal labelledBy={titleId} onClose={onClose} open size="small">
       <div className="confirm-dialog">
-        <h2 id={titleId}>
-          {isUse
-            ? t('app.inventoryPanel.useTitle', { name: item.name })
-            : t(isDiscard ? 'app.inventoryPanel.discardTitle' : 'app.inventoryPanel.recycleTitle', { name: item.name })}
-        </h2>
-        <p>
-          {isUse
-            ? item.itemId === 'item.awakening-stone'
-              ? '使用觉醒石感悟天地机缘，随机觉醒先天特质，或为已觉醒特质注入突破经验。'
-              : t(isTome ? 'app.inventoryPanel.useTomeDescription' : 'app.inventoryPanel.useFragmentDescription')
-            : isDiscard
-              ? t('app.inventoryPanel.discardDescription')
-              : t('app.inventoryPanel.recycleDescription', { price: formatNumber(unitPrice) })}
-        </p>
-        <QuantitySelector
-          ariaLabel={t(isUse ? 'app.inventoryPanel.useQuantityAria' : 'app.inventoryPanel.quantityAria')}
+         <h2 id={titleId}>
+           {isUse
+            ? isAwakeningStone
+              ? t('app.inventoryPanel.useAwakenTitle', { name: item.name })
+              : t('app.inventoryPanel.useTitle', { name: item.name })
+             : t(isDiscard ? 'app.inventoryPanel.discardTitle' : 'app.inventoryPanel.recycleTitle', { name: item.name })}
+         </h2>
+         <p>
+           {isUse
+            ? isAwakeningStone
+              ? t('app.inventoryPanel.useAwakenDescription')
+               : t(isTome ? 'app.inventoryPanel.useTomeDescription' : 'app.inventoryPanel.useFragmentDescription')
+             : isDiscard
+               ? t('app.inventoryPanel.discardDescription')
+               : t('app.inventoryPanel.recycleDescription', { price: formatNumber(unitPrice) })}
+         </p>
+         <QuantitySelector
+          ariaLabel={t(isUse ? (isAwakeningStone ? 'app.inventoryPanel.useAwakenQuantityAria' : 'app.inventoryPanel.useQuantityAria') : 'app.inventoryPanel.quantityAria')}
           max={max}
           onChange={value => setQuantity(Math.max(1, Math.min(max, value)))}
           presets={presets}
@@ -108,7 +111,7 @@ function ItemQuantityDialog({
             onClick={confirm}
             type="button"
           >
-            {t(isUse ? 'app.inventoryPanel.confirmUse' : isDiscard ? 'app.inventoryPanel.confirmDiscard' : 'app.inventoryPanel.confirmRecycle')}
+            {t(isUse ? (isAwakeningStone ? 'app.inventoryPanel.confirmAwaken' : 'app.inventoryPanel.confirmUse') : isDiscard ? 'app.inventoryPanel.confirmDiscard' : 'app.inventoryPanel.confirmRecycle')}
           </button>
         </div>
       </div>
@@ -197,7 +200,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
     <FloatingMenuGroup title={enhancementLevel > 0 ? `${item.name} +${enhancementLevel}` : item.name}>
       {usable && (
         <FloatingMenuItem
-          label={equipmentDef ? t('app.inventoryPanel.useEquip') : t('app.inventoryPanel.useLearn')}
+          label={equipmentDef ? t('app.inventoryPanel.useEquip') : item.itemId === 'item.awakening-stone' ? t('app.inventoryPanel.useAwaken') : t('app.inventoryPanel.useLearn')}
           onClick={use}
           tone="jade"
         />

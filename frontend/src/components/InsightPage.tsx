@@ -14,7 +14,6 @@ import {
   calculateBaseAttributes,
   calculateTechniqueProgress,
   calculateTraitCapacity,
-  formatTraitDescription,
   TRAIT_DEFINITIONS,
 } from '../game/combatConstants'
 import { useGameStore } from '../game/gameStore'
@@ -23,7 +22,7 @@ import { useT } from '../i18n'
 import { CombatAttributePanel } from './CombatAttributePanel'
 import { BreakthroughConfirmModal } from './BreakthroughConfirmModal'
 import { StatGlyph } from './StatGlyph'
-import { TraitConfigModal } from './TraitConfigModal'
+import { TraitBarItem } from './TraitBarItem'
 
 /** 内视五大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'technique' | 'biography' | 'traits'
@@ -48,7 +47,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<InsightTab>('roots')
   const [rootsSubTab, setRootsSubTab] = useState<RootsSubTab>('sixDimensions')
   const [isBreakthroughModalOpen, setIsBreakthroughModalOpen] = useState(false)
-  const [isTraitModalOpen, setIsTraitModalOpen] = useState(false)
 
   const name = useGameStore(state => state.name)
   const stats = useGameStore(state => state.stats)
@@ -171,19 +169,53 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const traitCapacity = useMemo(() => calculateTraitCapacity(stats.realmLevel ?? 1), [stats.realmLevel])
   const equippedTraits = useMemo(() => {
     const ids = stats.traitIds ?? []
-    const levelMap = new Map((stats.unlockedTraits ?? []).map(t => [t.id, t.level]))
+    const progressMap = new Map((stats.unlockedTraits ?? []).map(t => [t.id, t]))
     return ids
       .map(id => {
         const def = TRAIT_DEFINITIONS[id]
-        const level = levelMap.get(id) ?? 1
-        return def ? { id, def, level } : null
+        const prog = progressMap.get(id)
+        const level = prog?.level ?? 1
+        const exp = prog?.exp ?? 0
+        return def ? { id, def, level, exp } : null
       })
-      .filter((t): t is { id: string; def: (typeof TRAIT_DEFINITIONS)[string]; level: number } => t !== null)
+      .filter((t): t is { id: string; def: (typeof TRAIT_DEFINITIONS)[string]; level: number; exp: number } => t !== null)
   }, [stats.traitIds, stats.unlockedTraits])
 
   const equippedTraitCost = useMemo(() => {
     return equippedTraits.reduce((sum, item) => sum + item.def.cost, 0)
   }, [equippedTraits])
+
+  const unlockedTraits = useMemo(() => {
+    const list = stats.unlockedTraits ?? []
+    return [...list]
+      .map(item => {
+        const def = TRAIT_DEFINITIONS[item.id]
+        return def ? { ...item, def } : null
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => {
+        if (b.def.quality !== a.def.quality) return b.def.quality - a.def.quality
+        if (b.level !== a.level) return b.level - a.level
+        return a.id.localeCompare(b.id)
+      })
+  }, [stats.unlockedTraits])
+
+  const equippedTraitIdSet = useMemo(() => new Set(stats.traitIds ?? []), [stats.traitIds])
+
+  const handleToggleTrait = (id: string, cost: number) => {
+    const currentIds = stats.traitIds ?? []
+    if (currentIds.includes(id)) {
+      const nextIds = currentIds.filter(item => item !== id)
+      gameClient.sendCommand('trait.set', { traitIds: nextIds })
+    } else {
+      if (equippedTraitCost + cost > traitCapacity) {
+        useGameStore.getState().setNotice(t('insight.traits.overCapacityTip'))
+        return
+      }
+      const nextIds = [...currentIds, id]
+      gameClient.sendCommand('trait.set', { traitIds: nextIds })
+    }
+  }
 
   // 七项生活技艺：等级/经验进度复用修为曲线（0 级起步），每级提供对应技艺行动 5% 速度加成
   const techniques = useMemo(() => {
@@ -625,58 +657,82 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         {/* ========================================================================= */}
         {activeTab === 'traits' && (
           <div className="insight-panel insight-panel--traits">
-            <div className="insight-traits-dashboard">
-              <div className="insight-traits-capacity-card">
-                <div className="insight-traits-capacity-info">
-                  <span className="insight-traits-capacity-title">{t('insight.traits.capacityLabel')}</span>
-                  <strong className="insight-traits-capacity-value tone-gold">
-                    {equippedTraitCost} / {traitCapacity} {t('insight.traits.pointUnit')}
-                  </strong>
-                </div>
-                <div className="insight-traits-progress-bar">
-                  <div
-                    className="insight-traits-progress-fill"
-                    style={{ width: `${Math.min(100, (equippedTraitCost / Math.max(1, traitCapacity)) * 100)}%` }}
-                  />
-                </div>
+            {/* 顶部特质容量横条 */}
+            <div className="insight-traits-capacity-card">
+              <div className="insight-traits-capacity-info">
+                <span className="insight-traits-capacity-title">{t('insight.traits.capacityLabel')}</span>
+                <strong className={equippedTraitCost > traitCapacity ? 'tone-danger' : 'tone-gold'}>
+                  {equippedTraitCost} / {traitCapacity} {t('insight.traits.pointUnit')}
+                  {traitCapacity >= equippedTraitCost && (
+                    <span className="insight-traits-capacity-remain">
+                      {' '}({t('insight.traits.remainLabel', { count: traitCapacity - equippedTraitCost })})
+                    </span>
+                  )}
+                </strong>
               </div>
-              <button
-                className="insight-traits-modify-btn"
-                onClick={() => setIsTraitModalOpen(true)}
-                type="button"
-              >
-                {t('insight.traits.modifyBtn')}
-              </button>
+              <div className="insight-traits-progress-bar">
+                <div
+                  className={`insight-traits-progress-fill ${equippedTraitCost > traitCapacity ? 'is-overflow' : ''}`}
+                  style={{ width: `${Math.min(100, (equippedTraitCost / Math.max(1, traitCapacity)) * 100)}%` }}
+                />
+              </div>
             </div>
 
-            <div className="insight-traits-list">
+            {/* 已装配特质列表 */}
+            <div className="insight-traits-section">
+              <h3 className="insight-traits-section-title">
+                {t('insight.traits.equippedListTitle')}
+                <span className="insight-traits-section-count">({equippedTraits.length})</span>
+              </h3>
               {equippedTraits.length === 0 ? (
-                <div className="nearby-empty">
+                <div className="nearby-empty insight-traits-empty">
                   <p>{t('insight.traits.noneEquippedTip')}</p>
                 </div>
               ) : (
-                <div className="trait-card-grid">
-                  {equippedTraits.map(item => {
-                    const desc = formatTraitDescription(item.id, item.level)
+                <div className="insight-traits-bar-list">
+                  {equippedTraits.map(item => (
+                    <TraitBarItem
+                      actionLabel={t('insight.traits.unequipBtn')}
+                      def={item.def}
+                      exp={item.exp}
+                      isEquipped
+                      key={item.id}
+                      level={item.level}
+                      mode="insight"
+                      onAction={() => handleToggleTrait(item.id, item.def.cost)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 已解锁特质列表 */}
+            <div className="insight-traits-section">
+              <h3 className="insight-traits-section-title">
+                {t('insight.traits.unlockedListTitle')}
+                <span className="insight-traits-section-count">({unlockedTraits.length})</span>
+              </h3>
+              {unlockedTraits.length === 0 ? (
+                <div className="nearby-empty insight-traits-empty">
+                  <p>{t('insight.traits.noneUnlockedTip')}</p>
+                </div>
+              ) : (
+                <div className="insight-traits-bar-list">
+                  {unlockedTraits.map(item => {
+                    const isEquipped = equippedTraitIdSet.has(item.id)
+                    const canEquip = isEquipped || equippedTraitCost + item.def.cost <= traitCapacity
                     return (
-                      <div
+                      <TraitBarItem
+                        actionLabel={isEquipped ? t('insight.traits.unequipBtn') : t('insight.traits.equipBtn')}
+                        def={item.def}
+                        disabled={!isEquipped && !canEquip}
+                        exp={item.exp}
+                        isEquipped={isEquipped}
                         key={item.id}
-                        className={`trait-card-item is-equipped-view trait-quality--q${item.def.quality}`}
-                      >
-                        <div className="trait-card-top">
-                          <div className="trait-card-name-group">
-                            <span className="trait-quality-tag">
-                              {t(`insight.traits.qualityQ${item.def.quality}`)}
-                            </span>
-                            <strong className="trait-card-name">{item.def.name}</strong>
-                            <span className="trait-card-level">Lv.{item.level}</span>
-                          </div>
-                          <span className="trait-card-cost">
-                            {item.def.cost} {t('insight.traits.pointUnit')}
-                          </span>
-                        </div>
-                        <p className="trait-card-desc">{desc}</p>
-                      </div>
+                        level={item.level}
+                        mode="insight"
+                        onAction={() => handleToggleTrait(item.id, item.def.cost)}
+                      />
                     )
                   })}
                 </div>
@@ -695,15 +751,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
           setIsBreakthroughModalOpen(false)
         }}
         onClose={() => setIsBreakthroughModalOpen(false)}
-      />
-
-      {/* 特质装配配置弹窗 */}
-      <TraitConfigModal
-        open={isTraitModalOpen}
-        onClose={() => setIsTraitModalOpen(false)}
-        realmLevel={stats.realmLevel ?? 1}
-        equippedTraitIds={stats.traitIds ?? []}
-        unlockedTraits={stats.unlockedTraits ?? []}
       />
     </section>
   )

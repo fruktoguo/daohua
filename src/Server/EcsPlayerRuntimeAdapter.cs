@@ -415,6 +415,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 (Guid DuelId, Guid PeerId)? forfeit = null;
                 IReadOnlyList<Server.Clean.Social.InvitationMilestoneGrant>? invitationGrants = null;
                 List<LogEventDto>? tutorialSkipLogs = null;
+                object? customData = null;
                 var receiptAlreadyCommitted = false;
                 var wallet = WalletOf(playerId);
                 switch (command)
@@ -677,13 +678,16 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             if (ownedStones + 1e-9 < useQuantity)
                                 return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "觉醒石数量不足。", before);
 
+                            var awakenedList = new List<AwakenedTraitResultDto>(useQuantity);
                             touched = ecs.MutatePlayer(playerId, aggregate =>
                             {
                                 for (var i = 0; i < useQuantity; i++)
                                 {
-                                    aggregate.Progression.AwakenTrait(Random.Shared);
+                                    var (traitId, level, exp, leveledUp, isNew) = aggregate.Progression.AwakenTrait(Random.Shared);
+                                    awakenedList.Add(new AwakenedTraitResultDto(traitId, level, exp, leveledUp, isNew));
                                 }
                             });
+                            customData = new { awakenedTraits = awakenedList };
 
                             var mutated = ToSnapshot(ecs.ExportSnapshot(playerId));
                             var useReceipt = CreateReceipt(playerId, requestId, command, payloadHash, mutated.StateVersion);
@@ -1333,7 +1337,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     }
                 if (forfeit is { } resolvedForfeit)
                     await RouteDuelForfeitAsync(resolvedForfeit, notifications, cancellationToken).ConfigureAwait(false);
-                return new PlayerCommandResult(true, "OK", SuccessNotice(command), after, outcome.Simulation, outcome.Logs);
+                return new PlayerCommandResult(true, "OK", SuccessNotice(command), after, outcome.Simulation, outcome.Logs, customData);
             }
             catch (DomainException exception)
             {

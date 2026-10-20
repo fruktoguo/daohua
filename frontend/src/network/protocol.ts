@@ -315,6 +315,8 @@ export interface CommandResultDto {
   snapshotForm: CommandResultSnapshotForm
   /** 快照载荷；具体 DTO 由 snapshotForm 判定，不再做模糊探测 */
   snapshot?: unknown | null
+  /** 业务附加数据，可选（如觉醒结果明细等） */
+  data?: unknown | null
 }
 
 /** Error 协议级错误帧载荷 */
