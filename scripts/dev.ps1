@@ -172,6 +172,20 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyCon
     ForEach-Object {
         try { Stop-Process -Id $_.ProcessId -Force; Write-Host "  -> 已清理旧 dev-hot 守护进程 (PID: $($_.ProcessId))" -ForegroundColor Gray } catch {}
     }
+foreach ($port in @(5128, 15172)) {
+    Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+        $procId = $_.OwningProcess
+        if ($procId -and $procId -ne 0) {
+            try {
+                $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
+                if ($p) {
+                    Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+                    Write-Host "  -> 已清理占用端口 $port 的残留进程 $($p.Name) (PID: $procId)" -ForegroundColor Gray
+                }
+            } catch {}
+        }
+    }
+}
 
 # 3. 启动后端热重启守护（对齐 dev.sh：node scripts/dev-hot.mjs 守护 dotnet run，
 #    源码变更静默 3s 后先 dotnet build，编译失败保持旧进程，成功才平滑热重启，
