@@ -528,6 +528,11 @@ public sealed class CombatSkillTests
         Assert.Equal(CombatElement.Water, waterSpirit.Stats.Element);
         var skill = Assert.Single(waterSpirit.Skills);
         Assert.Equal("ability.ganlu", skill.Ability.GetProperty("id").GetString());
+        // 掉落投放与技能槽解耦：水灵只投放《掌心雷》秘籍/残卷（对齐普通小怪 0.1%/2.0% 爆率），
+        // 但技能槽恒为甘露——投放绝不允许反向装配到怪物身上。
+        Assert.Contains(waterSpirit.DropTable, d => d.ItemId.Value == "item.tome.palm-lightning" && d.DropChance == 0.001);
+        Assert.Contains(waterSpirit.DropTable, d => d.ItemId.Value == "item.fragment.palm-lightning" && d.DropChance == 0.02);
+        Assert.DoesNotContain(waterSpirit.Skills, s => s.Ability.GetProperty("id").GetString() == "ability.palm-lightning");
         var ability = catalog.Abilities["ability.ganlu"];
         SkillTriggerEvaluator.ValidateAbility(ability);
 
