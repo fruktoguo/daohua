@@ -13,7 +13,7 @@
       "physicalArmor": 4,
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 10
+      "threatBonusPoints": 100
     }
   },
   {
@@ -47,7 +47,7 @@
       "spellResistance": 1,
       "maxHitpoints": 6,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 10
+      "threatBonusPoints": 100
     }
   },
   {
@@ -167,7 +167,7 @@
       "physicalArmor": 5,
       "spellResistance": 3,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 12
+      "threatBonusPoints": 120
     }
   },
   {
@@ -203,7 +203,7 @@
       "physicalArmor": 6,
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 12
+      "threatBonusPoints": 120
     }
   },
   {
@@ -330,7 +330,7 @@
       "physicalArmor": 6,
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 15
+      "threatBonusPoints": 150
     }
   },
   {
@@ -368,7 +368,7 @@
       "spellResistance": 2,
       "maxHitpoints": 8,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 15
+      "threatBonusPoints": 150
     }
   },
   {
