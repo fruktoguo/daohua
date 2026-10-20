@@ -815,7 +815,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const craftingNavExpanded = useUiStore(state => state.craftingNavExpanded)
   const setCraftingNavExpanded = useUiStore(state => state.setCraftingNavExpanded)
 
-  // 技艺子菜单等级与经验进度：技艺经验随 combat 快照下发，等级按修为曲线导出（0 级起步）；
+  // 技艺子菜单等级与经验进度：技艺经验随 combat 快照下发，等级按「修为曲线前 30 级线性削减」的技艺曲线导出（0 级起步）；
   // 满级（expToNext=0）时进度条恒显满格，悬浮气泡经验行改显「已臻化境」。
   const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
   const techniqueStates = useMemo(() => {

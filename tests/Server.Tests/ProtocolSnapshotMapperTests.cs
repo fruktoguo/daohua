@@ -236,7 +236,9 @@ public sealed class ProtocolSnapshotMapperTests
         var actionSection = Assert.Single(snapshot.Sections, s => s.Section == PlayerSectionKinds.ActionQueue);
         var item = actionSection.Data[0];
 
-        var expectedDuration = 8.0 / 1.20;
+        var techniqueLevel = TechniqueCatalog.LevelFor(22000, gameData.RealmProgression);
+        var expectedDuration = 8.0 / (1 + TechniqueCatalog.SpeedBonusRatio(techniqueLevel)
+            + TechniqueCatalog.EquippedToolSpeedRatio(state.Loadout.Equipment, "gathering", gameData));
         var actualDuration = item.GetProperty("durationSeconds").GetDouble();
         Assert.Equal(expectedDuration, actualDuration, 5);
         Assert.True(actualDuration < 8.0, "下发的耗时应为加速后的耗时，而非原配表基础耗时。");

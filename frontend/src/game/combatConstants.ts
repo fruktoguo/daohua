@@ -642,9 +642,9 @@ export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?:
 }
 
 /**
- * 生活技艺体系（七技）：技艺等级与修为共用同一经验曲线
- * （RealmProgressionCatalog.ExpToNext，0→1 级需 expToNext[0]），
- * 但技艺默认 0 级起步——等级 = 同一累计经验在修为曲线下导出的境界级 - 1。
+ * 生活技艺体系（七技）：技艺前 30 级所需经验在修为曲线基础上线性下调
+ * （升入 1 级削减 90% → 升入 30 级削减 0%，30 级以上与 RealmProgressionCatalog.ExpToNext 完全一致），
+ * 技艺默认 0 级起步，且削减只作用于技艺，修为曲线本身不变。
  */
 
 /** 技艺标识固定展示顺序：炼丹、炼器、符箓、强化、阵法、采集、挖掘 */
@@ -653,10 +653,31 @@ export const TECHNIQUE_IDS = ['alchemy', 'forging', 'talisman', 'enhancement', '
 /** 每级技艺提供的行动速度加成比率：actual = base / (1 + 0.05×level) */
 export const TECHNIQUE_SPEED_RATIO_PER_LEVEL = 0.05
 
+/** 技艺前期经验削减覆盖的目标等级数：1~30 级线性下调，30 级以上不削减 */
+export const TECHNIQUE_EARLY_DISCOUNT_LEVELS = 30
+
+/**
+ * 升入指定等级所需经验的削减比例（与服务端 TechniqueCatalog.EarlyDiscountRatio 同式）：
+ * 目标等级 1 → 90%，30 → 0%，中间 0.9 × (30 − L) / 29；超出 30 级或非法值返回 0。
+ */
+export function techniqueEarlyDiscountRatio(targetLevel: number): number {
+  if (!(targetLevel >= 1) || targetLevel > TECHNIQUE_EARLY_DISCOUNT_LEVELS) return 0
+  return (0.9 * (TECHNIQUE_EARLY_DISCOUNT_LEVELS - targetLevel)) / (TECHNIQUE_EARLY_DISCOUNT_LEVELS - 1)
+}
+
+/** 技艺升级所需经验查表（索引 = 当前等级；已按前期削减四舍五入取整，末位 0 表示封顶） */
+export const TECHNIQUE_EXP_TO_NEXT: readonly number[] = REALM_LEVEL_EXP_TO_NEXT.map((value, index) => {
+  const ratio = techniqueEarlyDiscountRatio(index + 1)
+  if (value <= 0 || ratio <= 0) return value
+  return Math.round(value * (1 - ratio))
+})
+
+/** 技艺等级上限（查表长度，末段为 0 即封顶） */
+export const MAX_TECHNIQUE_LEVEL = TECHNIQUE_EXP_TO_NEXT.length
+
 /**
  * 技艺等级与经验进度（累计经验 → 0 级起步的技艺等级 + 本级进度）。
- * 复用修为曲线同一张表：level = calculateRealmProgress(exp).level - 1，
- * 本级已耗/下一级需求与修为层级逐段一致。
+ * 逐段消费 TECHNIQUE_EXP_TO_NEXT，与服务端 TechniqueCatalog.LevelFor 同口径。
  */
 export function calculateTechniqueProgress(totalExperience = 0): {
   /** 技艺等级（0 起步） */
@@ -668,13 +689,22 @@ export function calculateTechniqueProgress(totalExperience = 0): {
   /** 本级进度百分比 (0 - 100) */
   progressPercentage: number
 } {
-  const progress = calculateRealmProgress(Math.max(0, totalExperience))
-  const level = Math.max(0, progress.level - 1)
+  const experience = Number.isFinite(totalExperience) ? Math.max(0, totalExperience) : 0
+  let level = 0
+  let remaining = experience
+  while (level < MAX_TECHNIQUE_LEVEL) {
+    const need = TECHNIQUE_EXP_TO_NEXT[level]
+    if (need <= 0 || remaining + 1e-9 < need) break
+    remaining -= need
+    level += 1
+  }
+  const expToNext = level < MAX_TECHNIQUE_LEVEL ? TECHNIQUE_EXP_TO_NEXT[level] : 0
+  const maxed = expToNext <= 0
   return {
     level,
-    currentLayerExp: progress.currentLayerExp,
-    expToNext: progress.expToNext,
-    progressPercentage: progress.progressPercentage,
+    currentLayerExp: maxed ? 0 : remaining,
+    expToNext,
+    progressPercentage: maxed ? 100 : Math.max(0, Math.min(100, (remaining / expToNext) * 100)),
   }
 }
 

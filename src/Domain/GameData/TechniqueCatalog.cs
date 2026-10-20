@@ -6,7 +6,9 @@ namespace Domain.GameData;
 /// <summary>
 /// 七技艺体系的固定标识与经验曲线原语。
 /// 技艺经验复用境界修为曲线（<see cref="RealmProgressionCatalog.ExpToNext"/>）累计经验逐段推进：
-/// 技艺从 0 级起算，L→L+1 消耗 ExpToNext[L]（0→1 级需 ExpToNext[0]）。
+/// 技艺从 0 级起算，L→L+1 消耗该段修为条（0→1 级需第 1 段），但前 30 级按
+/// 「目标等级 1 级削减 90% → 30 级削减 0%」线性下调所需经验（见 <see cref="EarlyDiscountRatio"/>），
+/// 30 级以上与境界曲线完全一致；削减只作用于技艺，修为曲线本身不变。
 /// 等级只提供速度加成（每级 5%：实际耗时 = 基础耗时 / (1 + 0.05×L)），不影响配方产出。
 /// </summary>
 public static class TechniqueCatalog
@@ -86,8 +88,34 @@ public static class TechniqueCatalog
     public static double EquippedToolSpeedRatio(PlayerLoadoutState loadout, string techniqueId, GameDataCatalog? catalog)
         => EquippedToolSpeedRatio(loadout.Equipment, techniqueId, catalog);
 
+    /// <summary>技艺前期经验削减覆盖的目标等级数：1~30 级按线性比例下调，30 级以上不削减。</summary>
+    public const int EarlyDiscountLevels = 30;
+
+    /// <summary>目标等级 1 级的削减比例（90%），其后逐级线性递减至 0%。</summary>
+    private const double EarlyDiscountMaxRatio = 0.90d;
+
     /// <summary>
-    /// 累计经验换算技艺等级（0 级起）：逐段消费 ExpToNext[L]，不足一段停在当前级；
+    /// 升入指定等级所需经验的削减比例：目标等级 1 → 90%，目标等级 30 → 0%，中间按
+    /// <c>0.9 × (30 − L) / 29</c> 线性插值；目标等级 &gt; 30 或非法值返回 0（不削减）。
+    /// 只用于技艺曲线，修为曲线（<see cref="RealmProgressionCatalog.ExpToNext"/>）保持原值。
+    /// </summary>
+    public static double EarlyDiscountRatio(double targetLevel)
+    {
+        if (!(targetLevel >= 1) || targetLevel > EarlyDiscountLevels) return 0;
+        return EarlyDiscountMaxRatio * (EarlyDiscountLevels - targetLevel) / (EarlyDiscountLevels - 1);
+    }
+
+    /// <summary>目标等级的单段所需经验：修为条按 <see cref="EarlyDiscountRatio"/> 削减后取整。</summary>
+    private static double SegmentExp(IReadOnlyList<double> segments, int index)
+    {
+        var baseExp = segments[index];
+        if (baseExp <= 0) return baseExp;
+        var ratio = EarlyDiscountRatio(index + 1);
+        return ratio <= 0 ? baseExp : Math.Round(baseExp * (1 - ratio), MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>
+    /// 累计经验换算技艺等级（0 级起）：逐段消费削减后的段值，不足一段停在当前级；
     /// 配表缺失或经验无效时按 0 级计（经验仍可累计，解锁曲线后自然升段）。
     /// </summary>
     public static double LevelFor(double cumulativeExp, RealmProgressionCatalog? catalog)
@@ -98,7 +126,7 @@ public static class TechniqueCatalog
         var segments = catalog.ExpToNext;
         while (level < segments.Count)
         {
-            var need = segments[(int)level];
+            var need = SegmentExp(segments, (int)level);
             if (need <= 0 || remaining + 1e-9 < need) break;
             remaining -= need;
             level += 1;
@@ -106,10 +134,10 @@ public static class TechniqueCatalog
         return level;
     }
 
-    /// <summary>L→L+1 所需经验；配表缺失或已封顶返回 0。</summary>
+    /// <summary>L→L+1 所需经验（已按前期削减）；配表缺失或已封顶返回 0。</summary>
     public static double ExpToNextFor(double level, RealmProgressionCatalog? catalog)
     {
         if (catalog is null || level < 0 || level >= catalog.ExpToNext.Count) return 0;
-        return catalog.ExpToNext[(int)level];
+        return SegmentExp(catalog.ExpToNext, (int)level);
     }
 }

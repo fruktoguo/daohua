@@ -697,7 +697,7 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>
-    /// 授予技艺累计经验并按境界修为曲线折算等级跃迁（kind "technique"）；
+    /// 授予技艺累计经验并按技艺曲线（修为曲线前 30 级线性削减）折算等级跃迁（kind "technique"）；
     /// 与 <see cref="PlayerAggregate.GrantTechniqueExperience"/> 同一入账口径，面向行动逐轮结算。
     /// </summary>
     internal static void GrantTechniqueExperience(IPlayerResourceContext player, Guid actionId,

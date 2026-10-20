@@ -77,10 +77,11 @@ public sealed class RootExpYieldTests
         var wallet = CreateWallet(player);
         var action = player.Enqueue(new ActionIntent(gather.Id, -1), Baseline, catalog.Actions);
 
-        // 技艺 2 级使耗时折减为 10/1.1：轮次更快完成，但每轮六维定额不变。
+        // 技艺等级按每级 5% 折减耗时：轮次更快完成，但每轮六维定额不变。
         player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering] = 300;
+        var techniqueLevel = TechniqueCatalog.LevelFor(300, curve);
         var effective = SimulationEngine.TimedActionDuration(player, action, gather, catalog, wallet, null);
-        Assert.Equal(10 / 1.1, effective, 12);
+        Assert.Equal(10 / (1 + TechniqueCatalog.SpeedBonusRatio(techniqueLevel)), effective, 12);
         // 进度按整秒量化：9.09s 轮长的小数尾段按自然边界多次贴整进位，凑满 10 个整秒才完成首轮。
         for (var i = 0; i < 40 && player.Actions[0].CompletedRepeats < 1; i++)
             SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(effective + i), catalog, wallet);

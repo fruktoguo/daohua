@@ -217,7 +217,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     }
   }
 
-  // 七项生活技艺：等级/经验进度复用修为曲线（0 级起步），每级提供对应技艺行动 5% 速度加成
+  // 七项生活技艺：等级/经验进度复用修为曲线前 30 级线性削减的技艺曲线（0 级起步），每级提供对应技艺行动 5% 速度加成
   const techniques = useMemo(() => {
     const experiences = loadout?.techniqueExperiences ?? {}
     const tones: Record<string, PillTone> = {

@@ -330,7 +330,24 @@ try {
     `发现 React Rules of Hooks 违规（条件返回后调用 Hook）：\n${hookViolations.join('\n')}`
   )
 
-  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、版本感知防环、触发条件自然语言格式化与 React Hooks 规则门禁通过。')
+  // 技艺经验曲线门禁：前 30 级按「升入 1 级 -90% → 升入 30 级 -0%」线性削减，30 级以上与修为曲线一致；
+  // 锚点取自总纲 §20.1.2.1 权威表，任一侧单独改动系数（服务端 TechniqueCatalog.EarlyDiscountRatio /
+  // 前端 techniqueEarlyDiscountRatio）都会在此暴露。
+  const { TECHNIQUE_EXP_TO_NEXT, calculateTechniqueProgress, techniqueEarlyDiscountRatio } = await server.ssrLoadModule('/src/game/combatConstants.ts')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[0], 1000, '技艺 0→1 级需求应为修为条 10000 削减 90% 后的 1000')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[1], 1572, '技艺 1→2 级需求应为 1572')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[17], 502069, '技艺 17→18 级需求应为 502069')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[28], 9179979, '技艺 28→29 级需求应为 9179979')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[29], 12631000, '技艺 29→30 级削减归零，需求须等于修为条')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[30], 15158000, '技艺 30 级以上不得削减，须与修为曲线一致')
+  assert.equal(techniqueEarlyDiscountRatio(1), 0.9, '升入 1 级削减比例应为 90%')
+  assert.equal(techniqueEarlyDiscountRatio(30), 0, '升入 30 级削减比例应为 0%')
+  assert.equal(techniqueEarlyDiscountRatio(31), 0, '30 级以上不应削减')
+  assert.deepEqual(calculateTechniqueProgress(1000), { level: 1, currentLayerExp: 0, expToNext: 1572, progressPercentage: 0 })
+  assert.equal(calculateTechniqueProgress(1604846).level, 18, '累计 1,604,846 经验应正好达到 18 级（总纲 §20.1.2.1）')
+  assert.equal(calculateTechniqueProgress(1604845).level, 17, '差 1 点不得提前升到 18 级')
+
+  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、技艺经验曲线、版本感知防环、触发条件自然语言格式化与 React Hooks 规则门禁通过。')
 } finally {
   await server.close()
 }

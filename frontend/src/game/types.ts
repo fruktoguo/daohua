@@ -1506,7 +1506,7 @@ export interface CombatLoadout {
   learnedAbilityIds?: string[]
   /** 功法经验表：abilityId -> 累计经验 */
   abilityExperiences?: Record<string, number>
-  /** 技艺经验表：TechniqueId -> 累计经验（等级由累计经验按修为曲线导出，默认 0 级） */
+  /** 技艺经验表：TechniqueId -> 累计经验（等级按修为曲线前 30 级线性削减后的技艺曲线导出，默认 0 级） */
   techniqueExperiences?: Record<string, number>
   /** 功法自动释放触发条件：abilityId -> 条件列表（跟随功法而非槽位，卸下再装不丢） */
   abilityTriggers?: Record<string, CombatTrigger[]>

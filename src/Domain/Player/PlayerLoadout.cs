@@ -147,7 +147,7 @@ public sealed partial class PlayerLoadoutState
     public VersionedList<PlayerEquipmentSlot> Equipment { get; } = new();
     /// <summary>已习得技能的累计经验，键为 ability ID；等级由 AbilityExpCurve 导出；写入递增版本号。</summary>
     public VersionedDictionary<AbilityId, double> AbilityExperiences { get; } = new();
-    /// <summary>七技艺的累计经验，键为 TechniqueId；等级经境界修为曲线逐段推进导出；写入递增版本号。</summary>
+    /// <summary>七技艺的累计经验，键为 TechniqueId；等级经技艺曲线（修为曲线前 30 级线性削减）逐段推进导出；写入递增版本号。</summary>
     public VersionedDictionary<string, double> TechniqueExperiences { get; } = new();
     /// <summary>功法自定义触发条件，键为 ability ID 字符串；跟随功法而非装配槽位，写入递增版本号。</summary>
     public VersionedDictionary<string, JsonElement[]> AbilityTriggers { get; } = new();
@@ -324,7 +324,7 @@ public sealed partial class PlayerAggregate
         Touch(PlayerSectionKind.Loadout);
     }
 
-    /// <summary>技艺当前等级：由累计经验经境界修为曲线逐段推进导出；未接触按 0 级计。</summary>
+    /// <summary>技艺当前等级：由累计经验经技艺曲线（修为曲线前 30 级线性削减）逐段推进导出；未接触按 0 级计。</summary>
     public double TechniqueLevelFor(string techniqueId, Domain.GameData.GameDataCatalog? gameData)
         => Domain.GameData.TechniqueCatalog.LevelFor(
             Loadout.TechniqueExperiences.TryGetValue(techniqueId, out var exp) ? exp : 0,

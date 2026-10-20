@@ -22,26 +22,59 @@ public sealed class TechniqueAndEnhancementTests
 
     private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
 
-    /// <summary>技艺经验复用境界曲线逐段推进：不足一段停在当前级，曲线封顶后不再升。</summary>
+    /// <summary>技艺经验逐段推进：不足一段停在当前级，曲线封顶后不再升。</summary>
     [Fact]
     public void TechniqueLevelAdvancesSegmentBySegment()
     {
         var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
+        // 削减后三段为 10 / 26 / 49：累计 10 升 1 级、36 升 2 级、85 升 3 级（封顶）。
         Assert.Equal(0, TechniqueCatalog.LevelFor(0, curve));
-        Assert.Equal(0, TechniqueCatalog.LevelFor(99.999, curve));
-        Assert.Equal(1, TechniqueCatalog.LevelFor(100, curve));
-        Assert.Equal(1, TechniqueCatalog.LevelFor(299, curve));
-        Assert.Equal(2, TechniqueCatalog.LevelFor(300, curve));
-        Assert.Equal(3, TechniqueCatalog.LevelFor(600, curve));
+        Assert.Equal(0, TechniqueCatalog.LevelFor(9.999, curve));
+        Assert.Equal(1, TechniqueCatalog.LevelFor(10, curve));
+        Assert.Equal(1, TechniqueCatalog.LevelFor(35.999, curve));
+        Assert.Equal(2, TechniqueCatalog.LevelFor(36, curve));
+        Assert.Equal(3, TechniqueCatalog.LevelFor(85, curve));
         // 曲线封顶后经验继续累计但等级不再推进；无效输入按 0 级计。
         Assert.Equal(3, TechniqueCatalog.LevelFor(9999, curve));
         Assert.Equal(0, TechniqueCatalog.LevelFor(-5, curve));
         Assert.Equal(0, TechniqueCatalog.LevelFor(double.NaN, curve));
-        Assert.Equal(0, TechniqueCatalog.LevelFor(100, null));
+        Assert.Equal(0, TechniqueCatalog.LevelFor(10, null));
         foreach (var id in new[] { "alchemy", "forging", "talisman", "enhancement", "formation", "gathering", "mining" })
             Assert.True(TechniqueCatalog.IsKnown(id));
         Assert.False(TechniqueCatalog.IsKnown("cooking"));
         Assert.False(TechniqueCatalog.IsKnown(null));
+    }
+
+    /// <summary>
+    /// 技艺前期削减：升入 1 级 -90%，逐级线性收敛至升入 30 级 -0%，
+    /// 30 级以后的段值与修为曲线完全一致（修为曲线本身不被削减）。
+    /// </summary>
+    [Fact]
+    public void TechniqueSegmentExpLinearlyDiscountsFirstThirtyLevels()
+    {
+        var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
+        // 0→1 级 -90%（100→10）、1→2 级 -86.9%（200→26）、2→3 级 -83.8%（300→49）。
+        Assert.Equal(10, TechniqueCatalog.ExpToNextFor(0, curve));
+        Assert.Equal(26, TechniqueCatalog.ExpToNextFor(1, curve));
+        Assert.Equal(49, TechniqueCatalog.ExpToNextFor(2, curve));
+        Assert.Equal(0, TechniqueCatalog.ExpToNextFor(3, curve));
+        Assert.Equal(0, TechniqueCatalog.ExpToNextFor(-1, curve));
+        Assert.Equal(0, TechniqueCatalog.ExpToNextFor(0, null));
+
+        Assert.Equal(0.90, TechniqueCatalog.EarlyDiscountRatio(1), 12);
+        Assert.Equal(0.45, TechniqueCatalog.EarlyDiscountRatio(15.5), 12);
+        Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(30), 12);
+        Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(31), 12);
+        Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(0), 12);
+        for (var level = 2; level <= 30; level++)
+            Assert.True(TechniqueCatalog.EarlyDiscountRatio(level) < TechniqueCatalog.EarlyDiscountRatio(level - 1));
+
+        // 31 段等值曲线：前 29 段被削减、第 30/31 段与修为曲线一致（30 级起削减归零）。
+        var longCurve = new RealmProgressionCatalog(Enumerable.Repeat(1000d, 31).ToArray(), [80]);
+        Assert.Equal(100, TechniqueCatalog.ExpToNextFor(0, longCurve));
+        Assert.Equal(1000, TechniqueCatalog.ExpToNextFor(29, longCurve));
+        Assert.Equal(1000, TechniqueCatalog.ExpToNextFor(30, longCurve));
+        Assert.Equal(1000, longCurve.ExpCapFor(31));
     }
 
     /// <summary>技艺等级按 5%/级折减计时行动耗时；未配置技艺字段的行动不受影响。</summary>
@@ -57,10 +90,12 @@ public sealed class TechniqueAndEnhancementTests
         var action = player.Enqueue(new ActionIntent(alchemy.Id, -1), Baseline, catalog.Actions);
         var wallet = CreateWallet(player);
 
-        // 0 级：无折减；技艺经验 300 → 2 级（100+200 逐段）→ 10 / (1 + 0.05×2)。
+        // 0 级：无折减；技艺经验 300 按削减后曲线推进到 3 级 → 10 / (1 + 0.05×3)。
         Assert.Equal(10, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null));
         player.Loadout.TechniqueExperiences[TechniqueCatalog.Alchemy] = 300;
-        Assert.Equal(10 / 1.1, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
+        var level = TechniqueCatalog.LevelFor(300, curve);
+        Assert.Equal(10 / (1 + TechniqueCatalog.SpeedBonusRatio(level)),
+            SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
         // 未配置技艺字段的行动不读技艺经验。
         var plainAction = player.Enqueue(new ActionIntent(plain.Id, -1), Baseline, catalog.Actions);
         Assert.Equal(10, SimulationEngine.TimedActionDuration(player, plainAction, plain, catalog, wallet, null));
@@ -89,8 +124,9 @@ public sealed class TechniqueAndEnhancementTests
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(10, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
-        // 技艺经验累计 10 未达首段（100），等级仍为 0；灌满后逐段升。
-        player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering] = 100;
+        // 技艺经验累计 10 恰好够 0→1 级（首段削减后 100→10）；不足时停在 0 级。
+        Assert.Equal(0, TechniqueCatalog.LevelFor(9.999, curve));
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering] = 10;
         Assert.Equal(1, TechniqueCatalog.LevelFor(
             player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering], curve));
     }
@@ -741,16 +777,19 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(0.1, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, catalog), 12);
         Assert.Equal(0, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, null));
 
-        // 技艺等级与工具加成同点加算：300 经验逐段至 2 级 → 10 / (1 + 0.1 + 0.1)。
+        // 技艺等级与工具加成同点加算：10 / (1 + 0.05×L + 0.1)。
         player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining] = 300;
-        Assert.Equal(10 / 1.2, SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+        var miningLevel = TechniqueCatalog.LevelFor(300, catalog.RealmProgression);
+        Assert.Equal(10 / (1 + 0.1 + TechniqueCatalog.SpeedBonusRatio(miningLevel)),
+            SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
 
         // 不匹配技艺的行动（alchemy）不受 mining 工具加成；
         // 绑定其他技艺的工具（桃木铲→gathering）也不计入 mining 除数。
         var alchemyAction = player.Enqueue(new ActionIntent(alchemy.Id, -1), Baseline, catalog.Actions);
         Assert.Equal(10, SimulationEngine.TimedActionDuration(player, alchemyAction, alchemy, catalog, wallet, null));
         player.Loadout.Equipment.Add(new PlayerEquipmentSlot(hoe.Value, 0));
-        Assert.Equal(10 / 1.2, SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+        Assert.Equal(10 / (1 + 0.1 + TechniqueCatalog.SpeedBonusRatio(miningLevel)),
+            SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
 
         // 工具槽位前缀判定。
         Assert.True(TechniqueCatalog.IsToolSlot("tool-mining"));
