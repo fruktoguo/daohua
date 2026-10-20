@@ -30,7 +30,7 @@
       "physicalArmor": 8,
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 15
+      "threatBonusPoints": 150
     }
   },
   {
@@ -185,7 +185,7 @@
       "physicalArmor": 9,
       "spellResistance": 3,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 18
+      "threatBonusPoints": 180
     }
   },
   {
@@ -349,7 +349,7 @@
       "physicalArmor": 11,
       "spellResistance": 3,
       "physicalDamageReductionPoints": 2,
-      "threatBonusPoints": 20
+      "threatBonusPoints": 200
     }
   },
   {

@@ -171,8 +171,8 @@ public sealed class CombatAttributePointsTests
 
         // 物理减伤 = 2 + 2 + 2 = 6%
         Assert.Equal(6, redArmyResolved.PhysicalDamageReductionPoints);
-        // 威胁增幅 = 15 + 20 + 15 = 50%
-        Assert.Equal(50, redArmyResolved.ThreatBonusPoints);
+        // 威胁增幅 = 15 + 200 + 15 = 230%
+        Assert.Equal(230, redArmyResolved.ThreatBonusPoints);
         // 无物理增伤
         Assert.Equal(0, redArmyResolved.PhysicalDamageBonusPoints);
         // 1b. 搭配副手赤铜盾：物理减伤由 6% 提升至 12% (6% + 6%)
@@ -260,8 +260,8 @@ public sealed class CombatAttributePointsTests
 
         // 物理减伤 = 2 + 2 + 2 = 6%
         Assert.Equal(6, bailianResolved.PhysicalDamageReductionPoints);
-        // 威胁增幅 = 10 + 15 + 10 = 35%
-        Assert.Equal(35, bailianResolved.ThreatBonusPoints);
+        // 威胁增幅 = 10 + 150 + 10 = 170%
+        Assert.Equal(170, bailianResolved.ThreatBonusPoints);
         // 无物理增伤
         Assert.Equal(0, bailianResolved.PhysicalDamageBonusPoints);
         // 1b. 搭配副手精铁盾：物理减伤由 6% 提升至 10% (6% + 4%)
