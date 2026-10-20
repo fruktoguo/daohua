@@ -10331,12 +10331,61 @@ input[type="checkbox"] {
   transition: width 0.3s ease;
 }
 
+.trait-popover-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .trait-popover-scale-hint {
-  margin-top: 6px;
+  margin-top: 4px;
   padding-top: 6px;
   border-top: 1px dashed rgba(201, 180, 109, 0.2);
   font-size: 11px;
   color: var(--gold-bright);
+}
+
+.trait-popover-action-btn {
+  width: 100%;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.5px;
+  box-sizing: border-box;
+}
+
+.trait-popover-action-btn.is-equip {
+  color: var(--gold-bright);
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.3) 0%, rgba(201, 180, 109, 0.15) 100%);
+  border: 1px solid var(--gold);
+  box-shadow: 0 0 8px rgba(201, 180, 109, 0.2);
+}
+.trait-popover-action-btn.is-equip:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.45) 0%, rgba(201, 180, 109, 0.25) 100%);
+  box-shadow: 0 0 12px rgba(201, 180, 109, 0.35);
+}
+
+.trait-popover-action-btn.is-unequip {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(229, 62, 62, 0.35) 0%, rgba(229, 62, 62, 0.18) 100%);
+  border: 1px solid rgba(229, 62, 62, 0.5);
+  box-shadow: 0 0 8px rgba(229, 62, 62, 0.15);
+}
+.trait-popover-action-btn.is-unequip:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(229, 62, 62, 0.5) 0%, rgba(229, 62, 62, 0.28) 100%);
+  box-shadow: 0 0 12px rgba(229, 62, 62, 0.25);
+}
+.trait-popover-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ========================================================================= */

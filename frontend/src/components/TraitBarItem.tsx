@@ -79,11 +79,26 @@ export const TraitBarItem = memo(function TraitBarItem({
       badgeTone={tone}
       description={desc}
       footer={
-        level > 1 ? (
-          <div className="trait-popover-scale-hint">
-            {t('insight.traits.levelGrowHint', { scale: ((getTraitLevelScale(level) - 1) * 100).toFixed(0) })}
-          </div>
-        ) : undefined
+        <div className="trait-popover-footer">
+          {level > 1 && (
+            <div className="trait-popover-scale-hint">
+              {t('insight.traits.levelGrowHint', { scale: ((getTraitLevelScale(level) - 1) * 100).toFixed(0) })}
+            </div>
+          )}
+          {actionLabel && (
+            <button
+              className={`trait-popover-action-btn ${isEquipped ? 'is-unequip' : 'is-equip'}`}
+              disabled={disabled}
+              onClick={e => {
+                e.stopPropagation()
+                onAction?.()
+              }}
+              type="button"
+            >
+              {actionLabel}
+            </button>
+          )}
+        </div>
       }
       subtitle={`${t('insight.traits.capacityLabel')}：${def.cost} ${t('insight.traits.pointUnit')}`}
       title={def.name}
@@ -95,24 +110,14 @@ export const TraitBarItem = memo(function TraitBarItem({
     onAction?.()
   }
 
-  const isClickable = !disabled && (onClick !== undefined || onAction !== undefined)
-
   return (
-    <FloatingPopover content={popoverContent} disabled={false} displayContents interactive={false} size="small">
+    <FloatingPopover content={popoverContent} disabled={false} displayContents interactive size="small">
       <div
         className={`trait-bar-item trait-quality--q${quality} ${mode === 'awaken' ? 'is-awaken-mode' : ''} ${
           isEquipped ? 'is-equipped' : ''
-        } ${isNew ? 'has-new-ribbon' : ''} ${disabled ? 'is-disabled' : ''} ${isClickable ? 'is-clickable' : ''} ${className}`.trim()}
-        onClick={disabled ? undefined : (onClick ?? onAction)}
-        onKeyDown={e => {
-          if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
-            e.preventDefault()
-            ;(onClick ?? onAction)?.()
-          }
-        }}
-        role={isClickable ? 'button' : undefined}
+        } ${isNew ? 'has-new-ribbon' : ''} ${disabled ? 'is-disabled' : ''} ${onClick ? 'is-clickable' : ''} ${className}`.trim()}
+        onClick={disabled ? undefined : onClick}
         style={style}
-        tabIndex={isClickable ? 0 : -1}
       >
         {/* NEW 斜角标 */}
         {isNew && (
