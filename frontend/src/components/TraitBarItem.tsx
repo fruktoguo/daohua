@@ -98,11 +98,11 @@ export const TraitBarItem = memo(function TraitBarItem({
   const isClickable = !disabled && (onClick !== undefined || onAction !== undefined)
 
   return (
-    <FloatingPopover content={popoverContent} disabled={false} interactive={false} size="small">
+    <FloatingPopover content={popoverContent} disabled={false} displayContents interactive={false} size="small">
       <div
         className={`trait-bar-item trait-quality--q${quality} ${mode === 'awaken' ? 'is-awaken-mode' : ''} ${
           isEquipped ? 'is-equipped' : ''
-        } ${disabled ? 'is-disabled' : ''} ${isClickable ? 'is-clickable' : ''} ${className}`.trim()}
+        } ${isNew ? 'has-new-ribbon' : ''} ${disabled ? 'is-disabled' : ''} ${isClickable ? 'is-clickable' : ''} ${className}`.trim()}
         onClick={disabled ? undefined : (onClick ?? onAction)}
         onKeyDown={e => {
           if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
@@ -121,49 +121,52 @@ export const TraitBarItem = memo(function TraitBarItem({
           </div>
         )}
 
-        {/* 左侧：品阶标签 + 名称 + 点数 */}
-        <div className="trait-bar-left">
-          <span className="trait-bar-quality-tag">{qualityName}</span>
-          <strong className="trait-bar-name">{def.name}</strong>
-          <span className="trait-bar-cost">{def.cost}点</span>
-        </div>
+        {/* 品阶标签 */}
+        <span className="trait-bar-quality-tag">{qualityName}</span>
 
-        {/* 右侧：按 mode 分流 */}
-        <div className="trait-bar-right">
-          {mode === 'awaken' && quantity !== undefined && (
-            <span className="trait-bar-quantity tone-gold">×{quantity}</span>
-          )}
+        {/* 特质名称 */}
+        <strong className="trait-bar-name">{def.name}</strong>
 
-          {mode === 'insight' && (
-            <div className="trait-bar-insight-right">
+        {/* 消耗点数（内视和图鉴中展示） */}
+        {mode !== 'awaken' && <span className="trait-bar-cost">{def.cost}点</span>}
+
+        {/* 抽取模式展示数量 */}
+        {mode === 'awaken' && quantity !== undefined && (
+          <span className="trait-bar-quantity tone-gold">×{quantity}</span>
+        )}
+
+        {/* 内视模式展示 Lv 与操作状态 */}
+        {mode === 'insight' && (
+          <div className="trait-bar-insight-right">
+            <span className="trait-bar-level">Lv.{level}</span>
+            {actionLabel && (
+              <button
+                className={`trait-bar-action-btn ${isEquipped ? 'is-unequip' : 'is-equip'}`}
+                disabled={disabled}
+                onClick={handleActionClick}
+                type="button"
+              >
+                {actionLabel}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 图鉴模式 */}
+        {mode === 'codex' && (
+          <div className="trait-bar-codex-right">
+            {level > 0 ? (
               <span className="trait-bar-level">Lv.{level}</span>
-              {actionLabel && (
-                <button
-                  className={`trait-bar-action-btn ${isEquipped ? 'is-unequip' : 'is-equip'}`}
-                  disabled={disabled}
-                  onClick={handleActionClick}
-                  type="button"
-                >
-                  {actionLabel}
-                </button>
-              )}
-            </div>
-          )}
-
-          {mode === 'codex' && (
-            <div className="trait-bar-codex-right">
-              {level > 0 ? (
-                <span className="trait-bar-level">Lv.{level}</span>
-              ) : (
-                <span className="trait-bar-unlocked-state text-dim">{t('insight.traits.unequipped')}</span>
-              )}
-            </div>
-          )}
-        </div>
+            ) : (
+              <span className="trait-bar-unlocked-state text-dim">{t('insight.traits.unequipped')}</span>
+            )}
+          </div>
+        )}
 
         {/* 底部细横条：升级进度（仅内视模式且非禁用时渲染） */}
         {mode === 'insight' && (
           <FloatingTooltip
+            displayContents
             title={`${t('insight.traits.expLabel')}：${exp} / ${reqExp} (${expProgress.toFixed(0)}%)`}
           >
             <div className="trait-bar-exp-track" aria-hidden="true">

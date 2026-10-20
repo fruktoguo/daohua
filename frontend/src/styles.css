@@ -10107,37 +10107,46 @@ input[type="checkbox"] {
 
 .trait-bar-item {
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-height: 42px;
-  padding: 8px 14px;
-  background: rgba(16, 13, 9, 0.85);
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 10px;
+  background: rgba(16, 13, 9, 0.88);
   border: 1px solid rgba(201, 180, 109, 0.25);
-  border-radius: 6px;
+  border-radius: 5px;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4);
   overflow: hidden;
   box-sizing: border-box;
+  white-space: nowrap;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.trait-bar-item.has-new-ribbon {
+  padding-right: 24px;
 }
 
 .trait-bar-item:hover:not(.is-disabled) {
-  background: rgba(26, 21, 14, 0.95);
+  background: rgba(28, 22, 14, 0.96);
   transform: translateY(-1px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 0 8px rgba(201, 180, 109, 0.15);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 0 8px rgba(201, 180, 109, 0.18);
 }
 
 .trait-bar-item.is-disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 
 .trait-bar-item.is-equipped {
-  background: rgba(28, 22, 13, 0.9);
-  box-shadow: inset 0 0 10px rgba(236, 201, 75, 0.12);
+  background: rgba(32, 25, 14, 0.92);
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 8px rgba(236, 201, 75, 0.2), inset 0 0 10px rgba(236, 201, 75, 0.15);
 }
 
 /* 品阶边框与高亮微光 */
@@ -10166,8 +10175,8 @@ input[type="checkbox"] {
   position: absolute;
   top: 0;
   right: 0;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   overflow: hidden;
   pointer-events: none;
   z-index: 2;
@@ -10175,18 +10184,18 @@ input[type="checkbox"] {
 
 .trait-bar-ribbon-badge {
   position: absolute;
-  top: 7px;
-  right: -16px;
-  width: 58px;
+  top: 5px;
+  right: -13px;
+  width: 48px;
   transform: rotate(45deg);
   text-align: center;
-  font-size: 8px;
+  font-size: 7.5px;
   font-weight: 800;
   letter-spacing: 0.5px;
-  line-height: 14px;
+  line-height: 12px;
   background: linear-gradient(135deg, #e53e3e 0%, #dd6b20 100%);
   color: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 /* 左侧主体内容 */
@@ -10215,12 +10224,10 @@ input[type="checkbox"] {
 .trait-quality--q5 .trait-bar-quality-tag { color: #ecc94b; }
 
 .trait-bar-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .trait-quality--q1 .trait-bar-name { color: #e2e8f0; }
@@ -10340,7 +10347,7 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 460px;
+  max-width: 520px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -10375,8 +10382,11 @@ input[type="checkbox"] {
 
 .awaken-result-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  padding: 4px 2px;
 }
 
 @keyframes awaken-pop-in {
@@ -10503,7 +10513,9 @@ input[type="checkbox"] {
 
 .insight-traits-bar-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
@@ -10520,7 +10532,9 @@ input[type="checkbox"] {
 
 .codex-trait-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   padding: 4px;
 }
