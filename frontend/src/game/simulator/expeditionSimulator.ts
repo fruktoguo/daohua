@@ -1,14 +1,42 @@
-import type { CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEncounterDefinition, ItemDefinition, WorldMapDefinition } from '../types'
-import { resolveAssetLabel } from '../ids'
-import { nextSeed, rollDropTable, rollMillionth } from './deterministicRng'
-import { ManaDeficitTracker } from './manaDeficitTracker'
+import type { CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketItemStats, WorldMapDefinition } from '../types.ts'
+function resolveAssetLabel(id: string, items?: readonly ItemDefinition[] | null): string {
+  if (Array.isArray(items)) {
+    const found = items.find(i => i.itemId === id)
+    if (found?.name) return found.name
+  }
+  return id
+}
+
+function resolveItemUnitPrice(
+  itemId: string,
+  enhancementLevel: number = 0,
+  items?: readonly ItemDefinition[] | null,
+  marketStats?: Record<string, MarketItemStats> | null
+): number {
+  if (marketStats) {
+    const key = `${itemId}|${enhancementLevel}`
+    const stats = marketStats[key]
+    if (stats?.referencePrice && stats.referencePrice > 0) return stats.referencePrice
+    if (enhancementLevel > 0) {
+      const baseStats = marketStats[`${itemId}|0`]
+      if (baseStats?.referencePrice && baseStats.referencePrice > 0) return baseStats.referencePrice
+    }
+  }
+  if (Array.isArray(items)) {
+    const item = items.find(i => i.itemId === itemId)
+    if (item?.sellPrice && item.sellPrice > 0) return item.sellPrice
+  }
+  return 0
+}
+import { nextSeed, rollDropTable, rollMillionth } from './deterministicRng.ts'
+import { ManaDeficitTracker } from './manaDeficitTracker.ts'
 import {
   SimCombatEncounter,
   SimCombatant,
   type SimSkill,
   CombatStatsCollector,
   ensureCombatAttributes,
-} from './combatSimulatorCore'
+} from './combatSimulatorCore.ts'
 import type {
   SimulatorConfig,
   SimulatorItemYield,
@@ -23,7 +51,7 @@ import type {
   SkillManaConsumptionStat,
   SimBattleLogRecord,
   SimCombatLogEvent,
-} from './simulatorTypes'
+} from './simulatorTypes.ts'
 
 interface RawEnemySpec {
   enemyId: string
@@ -58,6 +86,8 @@ export class ExpeditionSimulator {
       abilities: readonly CombatAbilityDefinition[]
       items: readonly ItemDefinition[]
       maps?: readonly WorldMapDefinition[]
+      equipment?: readonly CombatEquipmentDefinition[]
+      marketStats?: Record<string, MarketItemStats>
     }
   ): SimulatorReport {
     const totalTargetSeconds = Math.max(1, config.durationSeconds)
@@ -82,6 +112,16 @@ export class ExpeditionSimulator {
 
     let totalExperience = 0
     let totalCombatExperience = 0
+    let totalCultivationExperience = 0
+    let totalSixDimensionExperience = 0
+    const sixDimensionBreakdown: Record<string, number> = {
+      stamina: 0,
+      meridians: 0,
+      attack: 0,
+      bone: 0,
+      agility: 0,
+      consciousness: 0,
+    }
 
     let seed = config.seed || 123456789n
 
@@ -113,6 +153,30 @@ export class ExpeditionSimulator {
     // 构建盟友战斗单位模板列表
     const buildAllies = (): SimCombatant[] => {
       return config.allies.map((ally, index) => {
+        const baseAttrs: CombatAttributes = { ...ally.attributes }
+        if (ally.equipment && ally.equipment.length > 0 && catalog.equipment) {
+          for (const eq of ally.equipment) {
+            const eqDef = catalog.equipment.find(e => e.equipmentId === eq.itemId)
+            if (!eqDef) continue
+            const level = Math.max(0, Math.floor(eq.enhancementLevel || 0))
+            const scale = 1 + level * 0.1
+            if (eqDef.flatStats) {
+              for (const [k, v] of Object.entries(eqDef.flatStats)) {
+                if (typeof v === 'number' && Number.isFinite(v)) {
+                  baseAttrs[k as keyof CombatAttributes] = (baseAttrs[k as keyof CombatAttributes] || 0) + v * scale
+                }
+              }
+            }
+            if (eqDef.baseStatRatios) {
+              for (const [k, v] of Object.entries(eqDef.baseStatRatios)) {
+                if (typeof v === 'number' && Number.isFinite(v)) {
+                  baseAttrs[k as keyof CombatAttributes] = (baseAttrs[k as keyof CombatAttributes] || 0) + v * scale
+                }
+              }
+            }
+          }
+        }
+
         const skills: SimSkill[] = (ally.abilitySlots || [])
           .map((slot, slotIndex) => ({ slot, slotIndex }))
           .filter(({ slot, slotIndex }) => slotIndex > 0 && typeof slot.abilityId === 'string' && slot.abilityId.length > 0)
@@ -143,10 +207,11 @@ export class ExpeditionSimulator {
           ally.name,
           true,
           index,
-          { ...ally.attributes },
+          baseAttrs,
           skills,
           0,
-          ally.id
+          ally.id,
+          ally.consumables
         )
       })
     }
@@ -257,9 +322,39 @@ export class ExpeditionSimulator {
           }
 
           // 修为与战斗经验
-          const exp = (enemyDef.experience || 10) / Math.max(1, config.allies.length)
-          totalExperience += exp
-          totalCombatExperience += exp
+          // 修为与六维经验结算（对齐 CombatActionRules.cs:1185, 1270）
+          const rawExp = (enemyDef.experience || 10) / Math.max(1, config.allies.length)
+          totalCombatExperience += rawExp
+
+          const internalSlot = selfConfig?.abilitySlots?.[0]
+          const internalDef = internalSlot ? abilityMap.get(internalSlot.abilityId as string) : null
+          const isInternal = internalDef?.discipline === 'internal'
+          const attrs = selfConfig?.attributes
+          const candidateBonus = attrs && typeof attrs === 'object' && 'cultivationExpBonusPoints' in attrs
+            ? attrs.cultivationExpBonusPoints
+            : undefined
+          const cultivationBonus = typeof candidateBonus === 'number' ? candidateBonus : 0
+          const creditedCultivationExp = cultivationBonus !== 0 ? Math.max(0, rawExp * (1 + cultivationBonus / 100)) : rawExp
+          totalCultivationExperience += creditedCultivationExp
+          totalExperience += creditedCultivationExp
+
+          const ROOT_ASPECTS = ['stamina', 'meridians', 'attack', 'bone', 'agility', 'consciousness'] as const
+          let roundSixExp = 0
+          if (!isInternal || !internalDef?.rootExpMultipliers) {
+            roundSixExp = rawExp * 6
+            for (const aspect of ROOT_ASPECTS) {
+              sixDimensionBreakdown[aspect] = (sixDimensionBreakdown[aspect] || 0) + rawExp
+            }
+          } else {
+            const mults = internalDef.rootExpMultipliers as Record<string, number>
+            for (const aspect of ROOT_ASPECTS) {
+              const mult = typeof mults[aspect] === 'number' ? mults[aspect] : 1.0
+              const share = rawExp * mult
+              sixDimensionBreakdown[aspect] = (sixDimensionBreakdown[aspect] || 0) + share
+              roundSixExp += share
+            }
+          }
+          totalSixDimensionExperience += roundSixExp
 
           // 掉落抽取
           for (const drop of enemyDef.drops || []) {
@@ -309,16 +404,25 @@ export class ExpeditionSimulator {
     const activeSec = Math.max(1e-6, combatActiveSeconds)
 
     const itemYields: SimulatorItemYield[] = []
+    let dailyDropsRevenue = 0
     for (const [itemId, quantity] of itemDrops.entries()) {
       const name = resolveAssetLabel(itemId, catalog.items)
+      const perHour = Number((quantity / totalHours).toFixed(1))
+      const perDay = Math.floor(perHour * 24)
+      const unitPrice = resolveItemUnitPrice(itemId, 0, catalog.items, catalog.marketStats)
+      const dailyRevenue = Math.floor(perDay * unitPrice)
+      dailyDropsRevenue += dailyRevenue
       itemYields.push({
         itemId,
         name: name || itemId,
         quantity,
-        perHour: Number((quantity / totalHours).toFixed(1)),
+        perHour,
+        perDay,
+        unitPrice,
+        dailyRevenue,
       })
     }
-    itemYields.sort((a, b) => b.quantity - a.quantity)
+    itemYields.sort((a, b) => b.dailyRevenue - a.dailyRevenue || b.quantity - a.quantity)
 
     const monsterKills: MonsterKillStat[] = Array.from(monsterKillMap.values()).map(m => ({
       ...m,
@@ -501,6 +605,9 @@ export class ExpeditionSimulator {
     const playerDeathsPerHour = Number((playerDeaths / totalHours).toFixed(2))
 
     return {
+      nodeId: config.nodeId,
+      nodeName: config.nodeName,
+      mapName: config.mapName || '',
       totalSimulatedSeconds: currentElapsedSeconds,
       combatActiveSeconds,
       searchSeconds,
@@ -537,10 +644,16 @@ export class ExpeditionSimulator {
       recoveryStats,
       manaConsumptionStats,
       itemYields,
+      dailyDropsRevenue,
       totalExperience: Math.floor(totalExperience),
       experiencePerHour: Math.floor(totalExperience / totalHours),
+      dailyCultivationExp: Math.floor((totalCultivationExperience / totalHours) * 24),
       totalCombatExperience: Math.floor(totalCombatExperience),
       combatExperiencePerHour: Math.floor(totalCombatExperience / totalHours),
+      totalSixDimensionExperience: Math.floor(totalSixDimensionExperience),
+      sixDimensionExperiencePerHour: Math.floor(totalSixDimensionExperience / totalHours),
+      dailySixDimensionExp: Math.floor((totalSixDimensionExperience / totalHours) * 24),
+      sixDimensionBreakdown,
       manaDeficit: manaTracker.generateReport(),
       recentBattleLogs,
     }

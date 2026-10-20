@@ -44,6 +44,10 @@ internal static class PostgresTestSchema
                 {
                     await using var ddl = new NpgsqlCommand(PostgresSchema.Sql, connection) { CommandTimeout = 60 };
                     await ddl.ExecuteNonQueryAsync();
+                    await using var patch = new NpgsqlCommand("""
+                        ALTER TABLE IF EXISTS market.item_stats ADD COLUMN IF NOT EXISTS reference_price double precision;
+                        """, connection) { CommandTimeout = 60 };
+                    await patch.ExecuteNonQueryAsync();
                     await using var updateVersions = new NpgsqlCommand($"""
                         UPDATE game.player_state_heads SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};
                         UPDATE game.player_state_sections SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};

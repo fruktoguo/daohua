@@ -12,7 +12,7 @@ namespace Server.Clean.Social;
 /// 口径：
 ///   身家 = Σ 已穿戴装备单价（强化 +N 按 "itemId:+N" 变体独立计价）
 ///        + Σ 每门已参悟功法（参悟等级 × 对应秘籍单价）；
-///   单价 = 坊市当前最低挂售（卖一档）价 ?? 配表回收价 ItemDefinition.SellPrice ?? 0；
+///   单价 = 坊市市场参考价（最近 10 次成交单价的单值滑动平均，单笔多次购买算做一次） ?? 配表回收价 ItemDefinition.SellPrice ?? 0；
 ///   功法↔物品映射：ability.X → item.tome.X，配表无该秘籍时回落 item.fragment.X。
 /// 数据源：已装载玩家读运行时快照，离线玩家读 loadout 分段（含刷盘队列叠加）；
 /// 入队裁决与匹配自动并入使用实时值，列表展示允许 ≤30s 的估值缓存。
@@ -152,18 +152,23 @@ public sealed class PartyValuationService
         return double.IsFinite(total) ? total : 0;
     }
 
-    /// <summary>装备单价：配表已知装备才算价，市场卖一档优先；装备配表无回收价目，无卖单计 0。</summary>
+    /// <summary>装备单价：配表已知装备才算价，市场参考价优先；无参考价按配表回收价兜底，无回收价计 0。</summary>
     private double EquipmentUnitPrice(string itemIdText, string variant)
     {
         if (!_catalog.RawEquipments.ContainsKey(itemIdText)) return 0;
-        return _market.TryGetBestAskPrice(new MarketInstrument(new ItemId(itemIdText), variant)) ?? 0;
+        var instrument = new MarketInstrument(new ItemId(itemIdText), variant);
+        var refPrice = _market.TryGetReferencePrice(instrument);
+        if (refPrice is > 0) return refPrice.Value;
+        if (_catalog.Items.TryGetValue(new ItemId(itemIdText), out var itemDef))
+            return Math.Max(0, itemDef.SellPrice);
+        return 0;
     }
 
-    /// <summary>普通物品单价：配表未知返回 null（供秘籍→残卷回退判断），否则卖一档优先、回收价兜底。</summary>
+    /// <summary>普通物品单价：配表未知返回 null（供秘籍→残卷回退判断），否则参考价优先、回收价兜底。</summary>
     private double? ItemUnitPrice(string itemIdText)
     {
         var itemId = new ItemId(itemIdText);
         if (!_catalog.Items.TryGetValue(itemId, out var definition)) return null;
-        return _market.TryGetBestAskPrice(new MarketInstrument(itemId)) ?? Math.Max(0, definition.SellPrice);
+        return _market.TryGetReferencePrice(new MarketInstrument(itemId)) ?? Math.Max(0, definition.SellPrice);
     }
 }

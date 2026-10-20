@@ -1404,3 +1404,584 @@
 .text-indigo { color: #818cf8; }
 :root[data-theme="light"] .text-indigo { color: #4f46e5; font-weight: 600; }
 
+/* ==========================================================================
+   13. 模拟器深度重构增强样式（子 Tab、装备/消耗品/技能配置、多节点对比）
+   ========================================================================== */
+
+/* 参战者子 Tab (属性 / 技能 / 装备 / 消耗品) */
+.sim-sub-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.sim-sub-tab-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid var(--gold-faint);
+  background: var(--panel);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-sub-tab-btn.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+/* 属性模块化分类 */
+.sim-stats-category-block {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+:root[data-theme="light"] .sim-stats-category-block {
+  background: #fbf8f0;
+  border-color: rgba(125, 82, 26, 0.15);
+}
+
+.sim-stats-category-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--gold-faint);
+  padding-bottom: 4px;
+}
+
+/* 技能配置面板 */
+.sim-skills-editor-panel,
+.sim-equipment-editor-panel,
+.sim-consumables-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sim-skills-header-hint,
+.sim-equipment-header-hint,
+.sim-consumables-header-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  background: rgba(15, 23, 42, 0.35);
+  border-left: 3px solid var(--gold);
+  padding: 6px 10px;
+  border-radius: 0 4px 4px 0;
+}
+
+:root[data-theme="light"] .sim-skills-header-hint,
+:root[data-theme="light"] .sim-equipment-header-hint,
+:root[data-theme="light"] .sim-consumables-header-hint {
+  background: #fdfaf3;
+}
+
+.sim-skills-slot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-skill-slot-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  align-items: flex-start;
+}
+
+.sim-skill-slot-card.is-internal {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.sim-skill-slot-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+  white-space: nowrap;
+  padding-top: 5px;
+}
+
+.sim-skill-slot-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-skill-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sim-skill-select {
+  flex: 1;
+}
+
+.sim-skill-level-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-skill-level-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sim-skill-level-input {
+  width: 50px;
+  text-align: center;
+}
+
+.sim-skill-desc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.sim-skill-tag {
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  color: var(--text-dim);
+}
+
+.sim-skill-desc-text {
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+/* 装备配置网格 */
+.sim-equipment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.sim-equip-card {
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-equip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sim-equip-slot-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.sim-equip-remove-btn {
+  font-size: 11px;
+  color: #ef4444;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sim-equip-remove-btn:hover {
+  text-decoration: underline;
+}
+
+.sim-equip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-equip-enhance-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.sim-enhance-input {
+  width: 46px;
+  text-align: center;
+}
+
+.sim-enhance-badge {
+  font-weight: bold;
+  font-size: 11px;
+}
+
+.sim-equip-stats-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sim-equip-stat-pill {
+  font-size: 10px;
+  padding: 1px 4px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border-radius: 3px;
+}
+
+/* 消耗品配置网格 */
+.sim-consumables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.sim-consumable-card {
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-consumable-card.is-potion {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.sim-consumable-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sim-consumable-slot-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.sim-consumable-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.sim-consumable-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-consumable-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.sim-qty-input {
+  width: 60px;
+  text-align: center;
+}
+
+/* 地点多选与批量操作 */
+.sim-config-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.sim-selection-count-badge {
+  font-size: 11px;
+  color: var(--gold-bright);
+  background: var(--gold-faint);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.sim-node-batch-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sim-batch-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-batch-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.sim-batch-btn--clear {
+  color: #ef4444;
+}
+
+.sim-node-multiselect-container {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.sim-node-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+}
+
+.sim-node-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.sim-node-card:hover {
+  border-color: var(--gold);
+}
+
+.sim-node-card.is-selected {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  box-shadow: 0 0 6px rgba(212, 163, 89, 0.2);
+}
+
+.sim-node-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-node-checkbox {
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.sim-node-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.sim-node-card-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* 结果界面双组切换 */
+.sim-result-group-switcher {
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid var(--gold-faint);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+}
+
+.sim-group-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sim-group-tab.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  box-shadow: 0 2px 8px rgba(212, 163, 89, 0.2);
+}
+
+/* 冠军卡片排布 */
+.sim-champions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sim-champ-card {
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sim-champ-card.champ-revenue { border-color: rgba(245, 158, 11, 0.4); }
+.sim-champ-card.champ-exp { border-color: rgba(6, 182, 212, 0.4); }
+.sim-champ-card.champ-sixdim { border-color: rgba(16, 185, 129, 0.4); }
+.sim-champ-card.champ-safe { border-color: rgba(59, 130, 246, 0.4); }
+
+.sim-champ-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.sim-champ-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text-bright);
+}
+
+.sim-champ-val {
+  font-size: 15px;
+  font-weight: bold;
+  font-family: monospace;
+}
+
+.sim-champ-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* 对比表格高亮列 */
+.th-highlight-gold, .td-highlight-gold {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.th-highlight-cyan, .td-highlight-cyan {
+  background: rgba(6, 182, 212, 0.08);
+}
+
+.th-highlight-emerald, .td-highlight-emerald {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.sim-tag-champ {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+
+.champ-tag-rev {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.champ-tag-exp {
+  background: rgba(6, 182, 212, 0.2);
+  color: #06b6d4;
+}
+
+.sim-table-action-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  background: var(--gold-faint);
+  border: 1px solid var(--gold);
+  color: var(--gold-bright);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sim-table-action-btn:hover {
+  background: var(--gold);
+  color: #000;
+}
+
+/* 详细剖析节点切换器 */
+.sim-node-detail-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.sim-picker-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.sim-picker-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sim-picker-pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-picker-pill.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+.sim-pill-revenue {
+  font-size: 10px;
+  color: #f59e0b;
+  font-family: monospace;
+}
+
+.sim-yields-table td {
+  vertical-align: middle;
+}
+

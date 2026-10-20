@@ -660,6 +660,7 @@ public sealed record MarketVariantSummaryDto(string AssetId, string? Variant, do
 /// <param name="BidQuantity">当前活动买单剩余总量</param>
 /// <param name="DayVolume">当日（UTC 自然日）成交数量</param>
 /// <param name="WeekVolume">当周（UTC 周一为界）成交数量</param>
+/// <param name="ReferencePrice">市场参考价格（最近 10 次成交单价的单值滑动平均；无成交记录为 null）</param>
 public sealed record MarketItemStatsDto(
     string AssetId,
     string? Variant,
@@ -668,7 +669,8 @@ public sealed record MarketItemStatsDto(
     double? BestBidPrice,
     double BidQuantity,
     double DayVolume,
-    double WeekVolume);
+    double WeekVolume,
+    double? ReferencePrice = null);
 
 /// <summary>调度冷挂机计算节点进行确定性离线补算请求 DTO</summary>
 /// <param name="JobId">任务唯一标识</param>

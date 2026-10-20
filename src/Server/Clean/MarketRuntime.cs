@@ -29,6 +29,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private readonly ILogger<MarketRuntime> _logger;
     private readonly IParticipationAssetBoundary? _participationAssets;
     private readonly ConcurrentDictionary<MarketInstrument, OrderBook> _books = new();
+    private readonly ConcurrentDictionary<MarketInstrument, double> _referencePrices = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _booksGate = new();
     private readonly Guid _ownerInstanceId = Guid.NewGuid();
@@ -117,6 +118,19 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             _fenceToken = await ReadFenceTokenAsync(cancellationToken);
             var orders = await _store.LoadActiveOrdersAsync(cancellationToken);
             RestoreBooks(orders);
+            try
+            {
+                var stats = await _store.LoadItemStatsAsync(cancellationToken: cancellationToken);
+                foreach (var s in stats)
+                {
+                    if (s.ReferencePrice is { } refPrice && refPrice > 0)
+                        _referencePrices[new MarketInstrument(new ItemId(s.AssetId), s.Variant)] = refPrice;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "加载历史行情参考价失败，将按需建立");
+            }
             await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, cancellationToken);
             _ready = true;
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -200,6 +214,13 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         {
             return _books.TryGetValue(instrument, out var book) ? book.BestAskPrice : null;
         }
+    }
+
+    /// <summary>读取品种当前市场参考价格（最近 10 次成交 EMA 单值平均）；无成交价返回 null。</summary>
+    /// <param name="instrument">市场品种。</param>
+    public double? TryGetReferencePrice(MarketInstrument instrument)
+    {
+        return _referencePrices.TryGetValue(instrument, out var price) && price > 0 ? price : null;
     }
 
     /// <summary>
@@ -397,6 +418,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                     durableBook.Restore(durableDomain, durableDomain.Length == 0 ? 0 : durableDomain.Max(order => order.Sequence));
                     lock (_booksGate) book.Restore(durableBook.ExportActiveOrders(), durableBook.Version);
                     var durableIncoming = durableDomain.FirstOrDefault(order => order.OrderId == request.OrderId)
+                        ?? (await _store.LoadOrderAsync(request.OrderId.Value, cancellationToken) is { } filled
+                            ? ToDomainOrder(filled, request.Instrument)
+                            : null)
                         ?? throw new InvalidOperationException("市场幂等订单已提交但无法读取持久化结果。");
                     return new PlacementResult(durableIncoming, [], durableBook.Version);
                 }
@@ -407,6 +431,13 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                     // 成交统计为 double（无 Interlocked.Add 重载），此段在写门闩内串行，读侧用 Volatile.Read。
                     _tradedQuantity += fills.Sum(fill => fill.Quantity);
                     _tradedGrossAmount += fills.Sum(fill => fill.Quantity * fill.Price);
+                    foreach (var fill in result.Fills)
+                    {
+                        if (double.IsFinite(fill.Price) && fill.Price > 0)
+                        {
+                            _referencePrices.AddOrUpdate(request.Instrument, fill.Price, (_, old) => old * 0.9 + fill.Price * 0.1);
+                        }
+                    }
                     // 买卖双方钱包均已随成交事务入账：通知在线玩家运行时重读余额并推送差额。
                     NotifyWalletsCredited(result.Fills.SelectMany(fill => new[] { fill.BuyerId.Value, fill.SellerId.Value }));
                 }

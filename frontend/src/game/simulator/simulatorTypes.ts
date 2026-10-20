@@ -1,4 +1,4 @@
-import type { CombatAbilitySlot, CombatAttributes, CombatTrigger } from '../types'
+import type { AutoUseSlot, CombatAbilitySlot, CombatAttributes, CombatTrigger, EquippedItem } from '../types'
 
 /** 截断并保留最多 1 位小数，杜绝多余小数点 */
 export function roundStat(val: number): number {
@@ -30,6 +30,10 @@ export interface SimulatorCombatantConfig {
   abilityTriggers?: Record<string, CombatTrigger[]>
   /** 阵型站位 (0~8) */
   formationIndex: number
+  /** 已穿戴装备配置 (6部位装备实例) */
+  equipment?: EquippedItem[]
+  /** 战斗自动消耗品配置 (3药品 + 3通用) */
+  consumables?: AutoUseSlot[]
 }
 
 /**
@@ -40,6 +44,8 @@ export interface SimulatorConfig {
   nodeId: string
   /** 选定的大地图地点名称 */
   nodeName: string
+  /** 所属大地图区域名称 */
+  mapName?: string
   /** 锁定的战斗遭遇 ID（可选，若为空则按节点遭遇池与预算轮盘动态刷怪） */
   encounterId?: string | null
   /** 模拟推进总时长（秒） */
@@ -105,6 +111,12 @@ export interface SimulatorItemYield {
   name: string
   quantity: number
   perHour: number
+  /** 平均每日掉落数量 (24小时) */
+  perDay: number
+  /** 市场单价 (参考价优先，回收价兜底) */
+  unitPrice: number
+  /** 平均每日收益总额 (灵石) */
+  dailyRevenue: number
 }
 /**
  * 妖兽击杀明细
@@ -244,6 +256,12 @@ export interface SimBattleLogRecord {
  * 模拟器最终输出的综合分析报表
  */
 export interface SimulatorReport {
+  /** 选定的大地图地点 ID */
+  nodeId: string
+  /** 选定的大地图地点名称 */
+  nodeName: string
+  /** 所属大地图区域名称 */
+  mapName: string
   /** 模拟总耗时（秒） */
   totalSimulatedSeconds: number
   /** 战斗有效进行总时长（秒） */
@@ -272,6 +290,8 @@ export interface SimulatorReport {
   totalKills: number
   /** 掉落物品清单汇总 */
   itemYields: SimulatorItemYield[]
+  /** 平均每天掉落灵石总收益（按市场参考价格计算） */
+  dailyDropsRevenue: number
   /** 每小时战斗场次速率 */
   encountersPerHour: number
   /** 玩家死亡总次数 */
@@ -306,12 +326,60 @@ export interface SimulatorReport {
   totalExperience: number
   /** 每小时修为产出速率 */
   experiencePerHour: number
+  /** 平均每天获得的修为经验（24小时） */
+  dailyCultivationExp: number
   /** 累计获得战斗经验总值 */
   totalCombatExperience: number
   /** 每小时战斗经验产出速率 */
   combatExperiencePerHour: number
+  /** 累计获得六维根基经验总值 */
+  totalSixDimensionExperience: number
+  /** 每小时六维经验产出速率 */
+  sixDimensionExperiencePerHour: number
+  /** 平均每天获得的六维经验（24小时） */
+  dailySixDimensionExp: number
+  /** 六维经验分项累计明细 */
+  sixDimensionBreakdown: Record<string, number>
   /** 灵力缺口深度分析报告 */
   manaDeficit: ManaDeficitReport
   /** 最近战斗详细事件日志（供玩家回溯复盘死因与战局走势） */
   recentBattleLogs: SimBattleLogRecord[]
+}
+
+/**
+ * 多地图节点横向刷图对比摘要
+ */
+export interface SimulatorNodeComparisonItem {
+  nodeId: string
+  nodeName: string
+  mapName: string
+  /** 每小时遇敌频次 */
+  encountersPerHour: number
+  /** 胜率 (0~1) */
+  winRate: number
+  /** 平均每天收益（全部掉落按市场参考价折算灵石总值） */
+  dailyRevenue: number
+  /** 平均每天修为经验 */
+  dailyCultivationExp: number
+  /** 平均每天六维经验 */
+  dailySixDimensionExp: number
+  /** 每小时击杀妖兽数 */
+  killsPerHour: number
+  /** 玩家每小时死亡数 */
+  deathsPerHour: number
+  /** 最高通关波次 */
+  maxWave: number
+  /** 推荐标签（最高收益/极速升级/稳健挂机等） */
+  recommendTag?: string
+  /** 对应的完整单点报表 */
+  report: SimulatorReport
+}
+
+/**
+ * 多节点模拟复合报表
+ */
+export interface MultiNodeSimulatorReport {
+  comparison: SimulatorNodeComparisonItem[]
+  reports: Record<string, SimulatorReport>
+  selectedNodeId: string
 }

@@ -143,7 +143,7 @@ public sealed class PostgresMarketRepository(
         var rows = new List<MarketItemStatsSnapshot>();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT asset_id, variant, best_ask_price, ask_quantity, best_bid_price, bid_quantity,
+            SELECT asset_id, variant, reference_price, best_ask_price, ask_quantity, best_bid_price, bid_quantity,
                    CASE WHEN day_key = $1 THEN day_volume ELSE 0 END,
                    CASE WHEN week_key = $2 THEN week_volume ELSE 0 END
             FROM market.item_stats
@@ -158,9 +158,10 @@ public sealed class PostgresMarketRepository(
         {
             rows.Add(new MarketItemStatsSnapshot(
                 reader.GetString(0), reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetDouble(2), reader.GetDouble(3),
-                reader.IsDBNull(4) ? null : reader.GetDouble(4), reader.GetDouble(5),
-                reader.GetDouble(6), reader.GetDouble(7)));
+                reader.IsDBNull(2) ? null : reader.GetDouble(2),
+                reader.IsDBNull(3) ? null : reader.GetDouble(3), reader.GetDouble(4),
+                reader.IsDBNull(5) ? null : reader.GetDouble(5), reader.GetDouble(6),
+                reader.GetDouble(7), reader.GetDouble(8)));
         }
         return rows;
     }
@@ -362,8 +363,8 @@ public sealed class PostgresMarketRepository(
                 var (dayKey, weekKey) = MarketStatsKeys(now);
                 if (fills.Count > 0)
                 {
-                    await BumpItemStatsVolumeAsync(connection, transaction,
-                        order.AssetId, order.Variant, fills.Sum(fill => fill.Quantity), dayKey, weekKey, cancellationToken);
+                    await BumpItemStatsVolumeAndReferencePriceAsync(connection, transaction,
+                        order.AssetId, order.Variant, fills, dayKey, weekKey, cancellationToken);
                 }
                 await RefreshItemStatsBookAsync(connection, transaction, order.AssetId, order.Variant, dayKey, weekKey, cancellationToken);
 
@@ -460,6 +461,44 @@ public sealed class PostgresMarketRepository(
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = dayKey });
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Date, Value = weekKey });
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 成交量与滑动平均参考价更新：
+    /// 成交量按日/周键累加；参考价按最近 10 次成交单价的单值滑动平均（EMA，α = 0.1；单笔购买多个算作一次，以单价更新）。
+    /// </summary>
+    private static async Task BumpItemStatsVolumeAndReferencePriceAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string assetId,
+        string variant,
+        IReadOnlyList<MarketFillInput> fills,
+        DateOnly dayKey,
+        DateOnly weekKey,
+        CancellationToken cancellationToken)
+    {
+        if (fills.Count == 0) return;
+        var totalQuantity = fills.Sum(fill => fill.Quantity);
+        if (!double.IsFinite(totalQuantity) || totalQuantity <= 0) return;
+
+        await BumpItemStatsVolumeAsync(connection, transaction, assetId, variant, totalQuantity, dayKey, weekKey, cancellationToken);
+
+        foreach (var fill in fills)
+        {
+            if (!double.IsFinite(fill.Price) || fill.Price <= 0) continue;
+            await using var command = new NpgsqlCommand("""
+                UPDATE market.item_stats
+                SET reference_price = CASE
+                    WHEN reference_price IS NULL THEN $3
+                    ELSE reference_price * 0.9 + $3 * 0.1 END,
+                    updated_at = now()
+                WHERE asset_id = $1 AND variant = $2
+                """, connection, transaction);
+            command.Parameters.Add(new NpgsqlParameter { Value = assetId });
+            command.Parameters.Add(new NpgsqlParameter { Value = variant });
+            command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = fill.Price });
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     /// <summary>行情日/周键：UTC 自然日与 ISO 周一为界的当周首日（date_trunc('week') 同日历）。</summary>

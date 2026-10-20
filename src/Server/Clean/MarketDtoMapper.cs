@@ -57,5 +57,6 @@ public static class MarketDtoMapper
         stats.BestBidPrice,
         stats.BidQuantity,
         stats.DayVolume,
-        stats.WeekVolume);
+        stats.WeekVolume,
+        stats.ReferencePrice);
 }

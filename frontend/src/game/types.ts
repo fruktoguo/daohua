@@ -2003,6 +2003,8 @@ export interface MarketItemStats {
   itemId: string
   /** 强化等级（0 = 基础无强化变体簿） */
   enhancementLevel: number
+  /** 市场参考价格（最近 10 次成交单价滑动平均；无成交记录为 null） */
+  referencePrice?: number | null
   /** 当前最低挂售价；无活动卖单为 null */
   bestAskPrice: number | null
   /** 当前活动卖单剩余总量 */

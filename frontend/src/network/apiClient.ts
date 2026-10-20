@@ -215,6 +215,7 @@ export async function fetchMarketVariants(itemId: string, signal?: AbortSignal):
 interface MarketItemStatsDto {
   assetId: string
   variant: string | null
+  referencePrice?: number | null
   bestAskPrice: number | null
   askQuantity: number
   bestBidPrice: number | null
@@ -222,7 +223,6 @@ interface MarketItemStatsDto {
   dayVolume: number
   weekVolume: number
 }
-
 /** 行情统计缓存键：`itemId|强化等级`，与服务端 (asset_id, variant) 变体簿一一对应（基础簿=0）。 */
 export function marketStatsKey(itemId: string, enhancementLevel: number): string {
   return `${itemId}|${enhancementLevel}`
@@ -240,6 +240,7 @@ export async function fetchMarketStats(signal?: AbortSignal): Promise<Record<str
     map[marketStatsKey(row.assetId, enhancementLevel)] = {
       itemId: row.assetId,
       enhancementLevel,
+      referencePrice: row.referencePrice ?? null,
       bestAskPrice: row.bestAskPrice,
       askQuantity: row.askQuantity,
       bestBidPrice: row.bestBidPrice,

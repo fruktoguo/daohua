@@ -304,9 +304,11 @@ public sealed record SettlementClaimResult(Guid PlayerId, Guid RequestId, int Se
 /// <param name="BidQuantity">当前活动买单剩余总量。</param>
 /// <param name="DayVolume">当日（UTC 自然日）成交数量；读取时已按 day_key 惰性掩零。</param>
 /// <param name="WeekVolume">当周（UTC ISO 周一为界）成交数量；读取时已按 week_key 惰性掩零。</param>
+/// <param name="ReferencePrice">市场参考价格（最近 10 次成交单价的单值滑动平均；无成交记录为 null）。</param>
 public sealed record MarketItemStatsSnapshot(
     string AssetId,
     string Variant,
+    double? ReferencePrice,
     double? BestAskPrice,
     double AskQuantity,
     double? BestBidPrice,

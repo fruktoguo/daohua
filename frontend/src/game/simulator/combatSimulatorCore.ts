@@ -1,8 +1,8 @@
-import type { CombatAttributes, CombatTrigger } from '../types'
-import type { SimCombatLogEvent } from './simulatorTypes'
-import { deterministicRoll } from './deterministicRng'
-import { SimSkillTriggerEvaluator, type SimUnitView } from './skillTriggerEvaluator'
-import type { ManaDeficitTracker } from './manaDeficitTracker'
+import type { AutoUseSlot, CombatAttributes, CombatTrigger } from '../types.ts'
+import type { SimCombatLogEvent } from './simulatorTypes.ts'
+import { deterministicRoll } from './deterministicRng.ts'
+import { SimSkillTriggerEvaluator, type SimUnitView } from './skillTriggerEvaluator.ts'
+import type { ManaDeficitTracker } from './manaDeficitTracker.ts'
 
 /** 保证战斗属性无任何 undefined 或 NaN */
 export function ensureCombatAttributes(stats?: Partial<CombatAttributes> | null): CombatAttributes {
@@ -334,6 +334,8 @@ export class SimCombatant implements SimUnitView {
 
   public buffs: SimBuff[] = []
   public combatExperience = 0
+  public consumables: AutoUseSlot[] = []
+  public consumableCooldowns: number[] = []
 
   constructor(
     id: string,
@@ -343,7 +345,8 @@ export class SimCombatant implements SimUnitView {
     stats: CombatAttributes,
     skills: SimSkill[],
     combatExperience = 0,
-    definitionId?: string
+    definitionId?: string,
+    consumables?: AutoUseSlot[]
   ) {
     this.id = id
     this.name = name
@@ -356,6 +359,8 @@ export class SimCombatant implements SimUnitView {
     this.combatExperience = combatExperience
     this.skillCooldowns = new Array(skills.length).fill(0)
     this.definitionId = definitionId || id
+    this.consumables = consumables || []
+    this.consumableCooldowns = new Array(this.consumables.length).fill(0)
   }
 
   /**
@@ -368,8 +373,8 @@ export class SimCombatant implements SimUnitView {
       this.isAlive = true
       this.buffs = []
       this.skillCooldowns = new Array(this.skills.length).fill(0)
+      this.consumableCooldowns = new Array(this.consumables.length).fill(0)
     } else {
-      this.buffs = this.buffs.filter(b => b.expiresAtSeconds > 0)
     }
     this.pendingSkillIndex = -1
     const baseInterval = (this.stats.attackIntervalMilliseconds || 1000) / 1000
@@ -683,6 +688,9 @@ export class SimCombatEncounter {
     // 1. 战内效果与周期回复相位
     this.applyBuffTick(nextSeconds)
 
+
+    // 1.1 自动消耗品相位（回血、回蓝）
+    this.applyConsumables(nextSeconds)
     // 2. 盟友复活相位
     for (const ally of this.allies) {
       if (!ally.isAlive && ally.respawnAtSeconds <= nextSeconds + 1e-12) {
@@ -742,6 +750,57 @@ export class SimCombatEncounter {
         actionType: 'defeat',
         message: `[${this.elapsedSeconds.toFixed(1)}s] 全员力竭倒地，战斗失败！`,
       })
+    }
+  }
+
+  /**
+   * 战斗中自动消耗品判定与生效（药品栏与战斗消耗）
+   */
+  private applyConsumables(nowSeconds: number): void {
+    for (const ally of this.allies) {
+      if (!ally.isAlive || !ally.consumables || ally.consumables.length === 0) continue
+      for (let sIdx = 0; sIdx < ally.consumables.length; sIdx++) {
+        const slot = ally.consumables[sIdx]
+        if (!slot || !slot.enabled || !slot.itemId) continue
+        if ((ally.consumableCooldowns[sIdx] || 0) > nowSeconds) continue
+
+        const itemId = slot.itemId.toLowerCase()
+        const isHealing = itemId.includes('ningxue') || itemId.includes('blood') || itemId.includes('heal') || itemId.includes('wound')
+        const isMana = itemId.includes('qi') || itemId.includes('mana') || itemId.includes('spirit')
+
+        if (isHealing && ally.hitpoints < ally.maxHitpoints * 0.6) {
+          const healAmount = Math.min(ally.maxHitpoints - ally.hitpoints, Math.max(50, ally.maxHitpoints * 0.3))
+          ally.hitpoints += healAmount
+          ally.consumableCooldowns[sIdx] = nowSeconds + 10
+          if (this.collector) {
+            this.collector.recordNaturalRegen(ally, healAmount, 0)
+          }
+          this.appendLog({
+            timestamp: nowSeconds,
+            actorName: ally.name,
+            isAlly: true,
+            actionType: 'heal',
+            abilityName: '战斗丹药',
+            healing: healAmount,
+            message: `[${nowSeconds.toFixed(1)}s] 自动消耗品：${ally.name} 使用药品恢复 ${healAmount.toFixed(0)} 点气血 [当前 ${ally.hitpoints.toFixed(0)}/${ally.maxHitpoints.toFixed(0)}]`,
+          })
+        } else if (isMana && ally.manapoints < ally.maxManapoints * 0.4) {
+          const manaAmount = Math.min(ally.maxManapoints - ally.manapoints, Math.max(30, ally.maxManapoints * 0.35))
+          ally.manapoints += manaAmount
+          ally.consumableCooldowns[sIdx] = nowSeconds + 10
+          if (this.collector) {
+            this.collector.recordNaturalRegen(ally, 0, manaAmount)
+          }
+          this.appendLog({
+            timestamp: nowSeconds,
+            actorName: ally.name,
+            isAlly: true,
+            actionType: 'heal',
+            abilityName: '战斗灵散',
+            message: `[${nowSeconds.toFixed(1)}s] 自动消耗品：${ally.name} 使用灵散补充 ${manaAmount.toFixed(0)} 点法力 [当前 ${ally.manapoints.toFixed(0)}/${ally.maxManapoints.toFixed(0)}]`,
+          })
+        }
+      }
     }
   }
 

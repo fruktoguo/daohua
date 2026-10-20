@@ -214,4 +214,157 @@ test('expeditionSimulator: 1小时完整推演指标完整产出', () => {
   assert.ok(report.recentBattleLogs.length > 0, '最近战斗日志必须被留存')
   assert.equal(report.manaDeficit.skillStats[0].slotIndex, 1, '技能槽0内功必须被排除在主动卡蓝之外')
   assert.ok(report.manaDeficit.overallDeficitRatio >= 0 && report.manaDeficit.overallDeficitRatio <= 1, '缺蓝比例在 0~1 之间')
+  assert.ok(report.dailyCultivationExp > 0, '每日修为产出必须大于0')
+  assert.ok(report.dailySixDimensionExp > 0, '每日六维经验产出必须大于0')
+  assert.ok(report.dailyDropsRevenue >= 0, '每日掉落收益估值必须大于等于0')
+  assert.ok(typeof report.sixDimensionBreakdown.stamina === 'number', '六维分项统计必须存在')
+})
+
+test('expeditionSimulator: 装备强化属性加成与战斗消耗品生效验证', () => {
+  const allyWithGear = {
+    id: 'test-player-gear',
+    name: '全装修士',
+    isSelf: true,
+    formationIndex: 1,
+    attributes: {
+      maxHitpoints: 100,
+      maxManapoints: 50,
+      physicalAttack: 10,
+      spellAttack: 10,
+      armor: 5,
+      magicResistance: 5,
+      accuracy: 20,
+      evasion: 10,
+      critical: 10,
+      criticalResistance: 10,
+      criticalDamagePoints: 50,
+      breakPower: 10,
+      parryResolve: 10,
+      hpRegenPerFiveSeconds: 5,
+      mpRegenPerFiveSeconds: 3,
+      attackIntervalMilliseconds: 1000,
+      physicalDamageBonusPoints: 0,
+      spellDamageBonusPoints: 0,
+      metalDamageBonusPoints: 0,
+      woodDamageBonusPoints: 0,
+      waterDamageBonusPoints: 0,
+      fireDamageBonusPoints: 0,
+      earthDamageBonusPoints: 0,
+      totalDamageBonusPoints: 0,
+      basicAttackBonusPoints: 0,
+      skillBonusPoints: 0,
+      physicalDamageReductionPoints: 0,
+      spellDamageReductionPoints: 0,
+      metalDamageReductionPoints: 0,
+      woodDamageReductionPoints: 0,
+      waterDamageReductionPoints: 0,
+      fireDamageReductionPoints: 0,
+      earthDamageReductionPoints: 0,
+      damageAbsorptionPoints: 0,
+      fixedDamageBonus: 0,
+      fixedDamageReduction: 0,
+      fixedPhysicalDamageBonus: 0,
+      fixedPhysicalDamageReduction: 0,
+      fixedSpellDamageBonus: 0,
+      fixedSpellDamageReduction: 0,
+      attackSpeedPoints: 0,
+      actionSpeedPoints: 0,
+      cooldownReductionPoints: 0,
+      threatBonusPoints: 0,
+      hpDrainPoints: 0,
+      mpDrainPoints: 0,
+      damageReflectPoints: 0,
+      healingBonusPoints: 0,
+    },
+    abilitySlots: [
+      { slotIndex: 0, abilityId: 'internal-1', level: 1 },
+      { slotIndex: 1, abilityId: 'spell-fire', level: 1 },
+    ],
+    equipment: [
+      { itemId: 'equipment.sword-t1', enhancementLevel: 5 },
+    ],
+    consumables: [
+      { itemId: 'item.ningxue-pill', quantity: 10, enabled: true },
+    ],
+  }
+
+  const equipmentDef = {
+    equipmentId: 'equipment.sword-t1',
+    name: '测试玄剑',
+    slot: 'weapon',
+    tier: 1,
+    flatStats: { physicalAttack: 20 },
+  }
+
+  const pillItem = {
+    itemId: 'item.ningxue-pill',
+    name: '凝血丹',
+    sellPrice: 15,
+  }
+
+  const report = ExpeditionSimulator.runSimulation(
+    {
+      nodeId: 'test-node-gear',
+      nodeName: '测试地点',
+      durationSeconds: 600,
+      seed: 999888n,
+      allies: [allyWithGear],
+    },
+    {
+      encounters: [{
+        encounterId: 'test-enc',
+        name: '单兔遭遇',
+        minThreat: 10,
+        maxThreat: 20,
+        enemy: {
+          enemyId: 'rabbit',
+          name: '魔兔',
+          rank: 'normal',
+          experience: 15,
+          attributes: {
+            maxHitpoints: 50,
+            maxManapoints: 0,
+            physicalAttack: 5,
+            spellAttack: 0,
+            armor: 2,
+            magicResistance: 2,
+            accuracy: 10,
+            evasion: 5,
+            attackIntervalMilliseconds: 1500,
+          },
+          drops: [{ itemId: 'item.ningxue-pill', dropChance: 1.0, minQuantity: 1, maxQuantity: 2 }],
+        },
+      }],
+      abilities: [{
+        abilityId: 'spell-fire',
+        name: '火球术',
+        damageRatio: 2.0,
+        castMilliseconds: 1000,
+        cooldownMilliseconds: 4000,
+        manaCost: 10,
+      }],
+      items: [pillItem],
+      equipment: [equipmentDef],
+      marketStats: {
+        'item.ningxue-pill|0': {
+          itemId: 'item.ningxue-pill',
+          enhancementLevel: 0,
+          referencePrice: 20,
+          bestAskPrice: 22,
+          askQuantity: 50,
+          bestBidPrice: 18,
+          bidQuantity: 30,
+          dayVolume: 100,
+          weekVolume: 500,
+        },
+      },
+    }
+  )
+
+  assert.ok(report.totalEncounters > 0, '推演必须有遭遇产出')
+  assert.ok(report.dailyDropsRevenue > 0, '掉落收益必须按照参考价估值计算')
+  const pillYield = report.itemYields.find(i => i.itemId === 'item.ningxue-pill')
+  assert.ok(pillYield, '必须统计到凝血丹掉落')
+  assert.equal(pillYield?.unitPrice, 20, '市场参考价必须为 20')
+  assert.ok(pillYield?.dailyRevenue > 0, '每日收益必须大于0')
 })

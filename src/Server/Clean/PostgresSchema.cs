@@ -57,7 +57,8 @@ public static class PostgresSchema
     /// 存档标签推进，表结构未变。
     /// v37：组队会话由全量托管切为在线钱包/离线储备；旧会话一次性退款并安全散场，玩家分段仍为 v36。
     /// v38：新增 economy.shop_daily_purchases 系统商店每日限购认领行（与经济事务同事务累加）；存档载荷未变。
-    public const int Version = 38;
+    /// v39：market.item_stats 增 reference_price 参考价格字段（最近10次成交单价单值滑动平均EMA，单笔购买多次算一次；无成交价回落配表回收价）——存档载荷未变。
+    public const int Version = 39;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -361,6 +362,7 @@ public static class PostgresSchema
     CREATE TABLE IF NOT EXISTS market.item_stats (
         asset_id varchar(128) NOT NULL,
         variant varchar(128) NOT NULL DEFAULT '',
+        reference_price double precision NULL CHECK (reference_price IS NULL OR (reference_price > 0 AND reference_price = reference_price AND reference_price < 'Infinity'::double precision)),
         best_ask_price double precision NULL CHECK (best_ask_price IS NULL OR (best_ask_price > 0 AND best_ask_price = best_ask_price AND best_ask_price < 'Infinity'::double precision)),
         ask_quantity double precision NOT NULL DEFAULT 0 CHECK (ask_quantity >= 0 AND ask_quantity = ask_quantity AND ask_quantity < 'Infinity'::double precision),
         best_bid_price double precision NULL CHECK (best_bid_price IS NULL OR (best_bid_price > 0 AND best_bid_price = best_bid_price AND best_bid_price < 'Infinity'::double precision)),

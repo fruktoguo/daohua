@@ -1,6 +1,6 @@
 import { getT, type TFunction } from '../i18n'
 import { calculateAbilityLevelAndProgress } from './combatConstants'
-import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, ItemDefinition, QueueEntry, WorldMapDefinition, WorldState } from './types'
+import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
 
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
@@ -886,6 +886,52 @@ export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
 export function resolveEquipmentBaseSellPrice(equipmentId: string, eqDef?: CombatEquipmentDefinition): number {
   if (eqDef?.sellPrice && eqDef.sellPrice > 0) return eqDef.sellPrice
   return EQUIPMENT_BASE_SELL_PRICES[equipmentId] ?? 0
+}
+
+/**
+ * 获取物品的市场参考价格：
+ * 优先取坊市最近 10 次成交的滑动平均参考价（referencePrice，一次购买多个算一次）；
+ * 若无成交价记录，则按照系统回收价格（sellPrice）兜底；
+ * 若均无则返回 0。
+ */
+export function getItemReferencePrice(
+  itemId: string,
+  enhancementLevel: number = 0,
+  itemsCatalog?: readonly ItemDefinition[] | null,
+  marketStats?: Record<string, MarketItemStats> | null,
+): number {
+  if (marketStats) {
+    const key = `${itemId}|${enhancementLevel}`
+    const stats = marketStats[key]
+    if (stats?.referencePrice && stats.referencePrice > 0) {
+      return stats.referencePrice
+    }
+    if (enhancementLevel > 0) {
+      const baseStats = marketStats[`${itemId}|0`]
+      if (baseStats?.referencePrice && baseStats.referencePrice > 0) {
+        return baseStats.referencePrice
+      }
+    }
+  }
+
+  if (itemsCatalog) {
+    const def = itemsCatalog.find(i => i.itemId === itemId)
+    if (def?.sellPrice && def.sellPrice > 0) {
+      return def.sellPrice
+    }
+  }
+
+  const eqBase = resolveEquipmentBaseSellPrice(itemId)
+  if (eqBase > 0) {
+    return calculateEquipmentSellPrice(eqBase, enhancementLevel)
+  }
+
+  const defaultDef = resolveDefaultItemDefinition(itemId)
+  if (defaultDef?.sellPrice && defaultDef.sellPrice > 0) {
+    return defaultDef.sellPrice
+  }
+
+  return 0
 }
 
 /**
