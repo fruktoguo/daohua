@@ -1176,10 +1176,12 @@ export class SimCombatEncounter {
     const isRegenTick = Math.abs(atSeconds / SimCombatEncounter.TICK_SECONDS - Math.round(atSeconds / SimCombatEncounter.TICK_SECONDS)) <= 1e-9
 
     const tickUnit = (unit: SimCombatant): void => {
-      // 移除过期 Buff
-      unit.buffs = unit.buffs.filter(b => b.expiresAtSeconds > atSeconds + 1e-9)
-
-      if (!isRegenTick) return
+      // 先按 5 秒网格结算周期效果，再剔除到期 Buff——与服务端 CombatPhaseSystems.Apply 同序。
+      // 到期时刻本身属于 Buff 生效区间，先剔除会让到期点恰好落在网格上时整跳丢失。
+      if (!isRegenTick) {
+        unit.buffs = unit.buffs.filter(b => b.expiresAtSeconds > atSeconds + 1e-9)
+        return
+      }
 
       let hp = unit.stats.hpRegenPerFiveSeconds || 0
       let mp = unit.stats.mpRegenPerFiveSeconds || 0
@@ -1219,6 +1221,8 @@ export class SimCombatEncounter {
       if (unit.manapoints <= 1e-6 && this.collector && unit.isAlly && unit.memberIndex === 0) {
         this.collector.markManaExhausted()
       }
+      // 网格边界已按完整效果结算完毕，再剔除本边界到期 Buff。
+      unit.buffs = unit.buffs.filter(b => b.expiresAtSeconds > atSeconds + 1e-9)
     }
 
     this.allies.forEach(tickUnit)

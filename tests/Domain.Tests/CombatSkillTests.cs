@@ -584,6 +584,28 @@ public sealed class CombatSkillTests
         Assert.True(buff.ExpiresAtSeconds > expiresAfterT2);
     }
 
+    /// <summary>
+    /// 到期时刻与 5 秒回复网格重合时，最后一跳必须照常入账：
+    /// 到期时刻本身属于 Buff 生效区间（授予写入 ElapsedSeconds + duration），
+    /// 若先剔除到期 Buff 再结算网格，10 秒「每秒每层 1 血」会退化成只跳 1 次。
+    /// </summary>
+    [Fact]
+    public void BuffRegenTickOnExpiryBoundaryStillLands()
+    {
+        var enemy = new CombatantTemplate(CombatantStats.Create(100_000, 0, 0, 100));
+        var ally = new CombatantTemplate(CombatantStats.Create(1000, 0, 0, 100) with { MaxManapoints = 1000 });
+        var encounter = CombatEncounterState.CreateAllied("expiry-tick", 7, [ally], 0, [enemy]);
+        var unit = encounter.PlayerAllies[0];
+        unit.Hitpoints = 200;
+        // 单层甘露：每 5 秒跳 5 点；到期恰好压在 10.0s 网格边界上。
+        unit.Buffs.Add(new CombatBuffState("buff.ganlu", 10.0, 1, HpRegen: 5.0, Name: "甘露"));
+
+        DeterministicCombatEngine.AdvanceTo(encounter, 10.0);
+
+        Assert.Equal(210, unit.Hitpoints, 6);
+        Assert.DoesNotContain(unit.Buffs, b => b.BuffId == "buff.ganlu");
+    }
+
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "技能", DateTimeOffset.UnixEpoch, catalog.Fingerprint);

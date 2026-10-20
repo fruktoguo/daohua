@@ -38,22 +38,27 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
     /// <summary>每秒威胁成长沿 1 秒网格落账（嘲讽类周期性仇恨累积）。</summary>
     internal const double ThreatTickSeconds = 1;
 
-    /// <summary>战内效果相位结算：先剔除到期 Buff，再按各自网格结算周期效果（5s 回复 / 1s 每秒威胁）。</summary>
+    /// <summary>战内效果相位结算：先按各自网格结算周期效果（5s 回复 / 1s 每秒威胁），再剔除到期 Buff。</summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
         var at = context.EffectAt;
+        // 顺序不可颠倒：到期时刻本身属于 Buff 生效区间（授予写入 ElapsedSeconds + duration）。
+        // 若先剔除再结算，到期时刻恰好落在 5 秒网格上时该跳会被整段吞掉，10.0s「每秒每层 1 血」退化为 1 跳。
+        var regenTick = Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) <= 1e-9;
+        var threatTick = Math.Abs(at / ThreatTickSeconds - Math.Round(at / ThreatTickSeconds)) <= 1e-9;
+        if (regenTick || threatTick)
+        {
+            var statsBook = encounter.StatsBook;
+            // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
+            for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook, regenTick, threatTick);
+            for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook, regenTick, threatTick);
+        }
+        // 结算完毕后统一剔除到期 Buff：到期时刻所在边界已按完整效果结算，之后不再参与任何相位。
         for (var i = 0; i < encounter.PlayerAllies.Count; i++)
             encounter.PlayerAllies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         for (var i = 0; i < encounter.Enemies.Count; i++)
             encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
-        var regenTick = Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) <= 1e-9;
-        var threatTick = Math.Abs(at / ThreatTickSeconds - Math.Round(at / ThreatTickSeconds)) <= 1e-9;
-        if (!regenTick && !threatTick) return;
-        var statsBook = encounter.StatsBook;
-        // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
-        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook, regenTick, threatTick);
-        for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook, regenTick, threatTick);
 
         static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, bool regenTick, bool threatTick)
         {
