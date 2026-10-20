@@ -57,6 +57,67 @@
     }
   },
   {
+    "id": "equipment.xuantie-sword",
+    "name": "玄铁长剑",
+    "description": "古道寒铁铸，剑芒贯长虹。\n采古道沉铁反复锻打的精良长剑，剑体沉凝，锋锐逼人。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.24
+    },
+    "flatStats": {
+      "physicalAttack": 12,
+      "accuracy": 12
+    }
+  },
+  {
+    "id": "equipment.piyan-blade",
+    "name": "劈岩重刀",
+    "description": "刀重开绝壁，劈落碎层岩。\n百炼沉铁融合凶兽重骨打造的阔刃大刀，刀锋厚重，悍勇无匹。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.12,
+      "physicalArmor": 0.16
+    },
+    "flatStats": {
+      "physicalAttack": 10,
+      "physicalArmor": 10,
+      "threatBonusPoints": 250
+    }
+  },
+  {
+    "id": "equipment.kuteng-staff",
+    "name": "枯藤法杖",
+    "description": "悬崖生古藤，纳水引灵泉。\n取自落石险隘绝壁上的苍老灵藤，引动天地水汽，术法绵延。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.24
+    },
+    "flatStats": {
+      "spellAttack": 12,
+      "accuracy": 12,
+      "skillBonusPoints": 6
+    }
+  },
+  {
+    "id": "equipment.mingquan-zither",
+    "name": "鸣泉古琴",
+    "description": "水鸣涧壑底，清响洗凡尘。\n嵌有水灵原核的素雅古琴，抚弄间若涧泉鸣玉，舒经活络。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.16
+    },
+    "flatStats": {
+      "spellAttack": 10,
+      "manapointRegen": 2.5,
+      "healingBonusPoints": 60,
+      "skillBonusPoints": 6
+    }
+  },
+  {
     "id": "equipment.pogang-sword",
     "name": "破罡剑",
     "description": "剑芒吞赤铜，锋出破罡气。\n融入赤铜精淬炼的锋锐灵剑，剑芒吞吐，能破护体罡气。",

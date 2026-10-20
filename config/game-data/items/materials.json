@@ -320,4 +320,65 @@
     "sellPrice": 100,
     "subCategory": "special"
   }
+  ,
+  {
+    "id": "item.rough-wolf-hide",
+    "name": "粗韧狼皮",
+    "description": "古道妖狼身上剥取的坚韧外皮，毛刺如针，抗风挡煞。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 8,
+    "subCategory": "exoticMaterial"
+  },
+  {
+    "id": "item.water-spirit-core",
+    "name": "水灵原核",
+    "description": "玄潮灵体内凝聚的纯净水精灵核，触手温润冰凉，蕴含微弱潮汐灵力。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 15,
+    "subCategory": "exoticMaterial"
+  },
+  {
+    "id": "item.rock-fang",
+    "name": "坚岩獠齿",
+    "description": "铁甲岩獠口中突出的灰白獠牙，质如岩石，沉重尖锐。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 30,
+    "subCategory": "exoticMaterial"
+  },
+  {
+    "id": "item.thick-beast-hide",
+    "name": "重甲厚皮",
+    "description": "附着泥沙硬石的厚重兽皮，粗砺坚固，胜似凡铁皮革。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 30,
+    "subCategory": "exoticMaterial"
+  },
+  {
+    "id": "item.golden-ape-bone",
+    "name": "金背猿骨",
+    "description": "撼地金背猿身上的粗大金骨，隐隐透出金属光泽，密度惊人。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 200,
+    "subCategory": "exoticMaterial"
+  },
+  {
+    "id": "item.ape-heart",
+    "name": "暴猿煞心",
+    "description": "撼地巨猿狂暴之力的精粹煞心，握在掌中仍有雄浑沉重的搏动之感。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 1000,
+    "subCategory": "exoticMaterial"
+  }
 ]

@@ -134,4 +134,38 @@
     "rootAttribute": "agility",
     "discipline": "spell"
   }
+  ,
+  {
+    "id": "ability.sui-gang",
+    "name": "碎罡",
+    "description": "崩碎自身护体罡气，化坚甲为无边煞力，舍身狂暴，撼天裂地。",
+    "style": "blade",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 60000,
+    "castMilliseconds": 3000,
+    "targetType": "self",
+    "damageRatio": 0.0,
+    "flatDamage": 0,
+    "buff": {
+      "buffId": "buff.sui-gang",
+      "name": "碎罡",
+      "durationSeconds": 20.0,
+      "damageAbsorptionPoints": -400.0,
+      "damageBonusPoints": 80.0
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "self",
+        "condition": "current-hp-percentage",
+        "comparator": "less-than-equal",
+        "value": 50.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 0.0,
+    "rootAttribute": "stamina",
+    "discipline": "spell"
+  }
 ]

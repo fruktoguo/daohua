@@ -134,7 +134,7 @@ public sealed class GameDataCatalogTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var realm = catalog.RealmProgression!;
-        Assert.Equal(14, catalog.CombatMonsters.Count);
+        Assert.Equal(18, catalog.CombatMonsters.Count);
         foreach (var (_, monster) in catalog.CombatMonsters)
             Assert.Equal(realm.MonsterKillExperience(monster.Level, monster.Rank), monster.Experience);
         Assert.Equal(10, catalog.CombatMonsters["enemy.demonized-rabbit"].Experience, 6);

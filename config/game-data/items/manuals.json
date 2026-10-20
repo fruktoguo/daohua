@@ -397,4 +397,25 @@
     "sellPrice": 50,
     "subCategory": "manualFragment"
   }
+  ,
+  {
+    "id": "item.tome.tide",
+    "name": "《潮汐秘籍》",
+    "description": "潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀，引动潮汐怒涛，席卷全体敌阵。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.tide",
+    "name": "《潮汐·残卷》",
+    "description": "潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀残页，记录引动浪涛拍岸之法。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  }
 ]

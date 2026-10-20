@@ -2,7 +2,7 @@
   {
     "id": "map.starfall-domain",
     "name": "星陨异境",
-    "description": "天穹被天外陨星撕裂的狂暴异界。焦土散发着荧光煞气，草木扭曲变异，乃是叩开仙门、踏入真正修仙界的试炼凶地。",
+    "description": "天穹被天外陨星撕裂的狂暴异界（修仙三图）。焦土散发着荧光煞气，草木扭曲变异，乃是叩开仙门、踏入真正修仙界的试炼凶地。",
     "backgroundSeed": 91402,
     "nodes": [
       {
@@ -128,12 +128,6 @@
       }
     ],
     "edges": [
-      {
-        "id": "edge.gate-rift",
-        "fromNodeId": "node.cloud-gate",
-        "toNodeId": "node.astral-rift",
-        "durationSeconds": 60
-      },
       {
         "id": "edge.rift-tomb",
         "fromNodeId": "node.astral-rift",

@@ -165,4 +165,30 @@
     "rootAttribute": "meridians",
     "discipline": "spell"
   }
+  ,
+  {
+    "id": "ability.tide",
+    "name": "潮汐",
+    "description": "引动幽深潮汐暗涌，巨浪滔天，席卷全体敌阵。",
+    "style": "fiveElements",
+    "tier": 1,
+    "category": "spell",
+    "element": "water",
+    "castMilliseconds": 3000,
+    "targetType": "allEnemies",
+    "damageRatio": 0.6,
+    "flatDamage": 10,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than-equal",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 10.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
+  }
 ]

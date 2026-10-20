@@ -1,0 +1,89 @@
+[
+  {
+    "id": "encounter.trail-inn",
+    "name": "驿路狼影",
+    "minBudget": 40,
+    "maxBudget": 80,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.green-wolf",
+        "weight": 1,
+        "strength": 20
+      }
+    ],
+    "maxTotalStrength": 80
+  },
+  {
+    "id": "encounter.pine-plank",
+    "name": "苍松险栈",
+    "minBudget": 45,
+    "maxBudget": 90,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.green-wolf",
+        "weight": 2,
+        "strength": 20
+      },
+      {
+        "enemyId": "enemy.tide-spirit",
+        "weight": 1,
+        "strength": 25
+      }
+    ],
+    "maxTotalStrength": 90,
+    "eliteEnemyIds": [
+      "enemy.iron-boar"
+    ],
+    "battlesPerElite": 5
+  },
+  {
+    "id": "encounter.rocky-gorge",
+    "name": "落石水涧",
+    "minBudget": 50,
+    "maxBudget": 100,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.tide-spirit",
+        "weight": 2,
+        "strength": 25
+      },
+      {
+        "enemyId": "enemy.green-wolf",
+        "weight": 1,
+        "strength": 20
+      }
+    ],
+    "maxTotalStrength": 100,
+    "eliteEnemyIds": [
+      "enemy.iron-boar"
+    ],
+    "battlesPerElite": 4
+  },
+  {
+    "id": "encounter.boundary-pass",
+    "name": "断界雄关",
+    "minBudget": 50,
+    "maxBudget": 100,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.green-wolf",
+        "weight": 1,
+        "strength": 20
+      },
+      {
+        "enemyId": "enemy.tide-spirit",
+        "weight": 1,
+        "strength": 25
+      }
+    ],
+    "maxTotalStrength": 100,
+    "eliteEnemyIds": [
+      "enemy.iron-boar"
+    ],
+    "battlesPerElite": 5,
+    "bossEnemyIds": [
+      "enemy.golden-ape-boss"
+    ],
+    "battlesPerBoss": 15
+  }
+]

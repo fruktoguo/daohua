@@ -153,6 +153,168 @@
     }
   },
   {
+    "id": "equipment.xuantie-headband",
+    "name": "玄铁护额",
+    "description": "古铁铸额，坚若磐石。\n以厚重沉铁锻成的护额战带，稳固坚密，护持天灵。",
+    "slot": "head",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalArmor": 0.1,
+      "spellResistance": 0.02
+    },
+    "flatStats": {
+      "maxHitpoints": 7,
+      "physicalArmor": 5,
+      "spellResistance": 3,
+      "physicalDamageReductionPoints": 2,
+      "threatBonusPoints": 12
+    }
+  },
+  {
+    "id": "equipment.suozi-armor",
+    "name": "锁子重甲",
+    "description": "铁环交错，重甲如山。\n百炼铁环密密锁接而成的坚固连环甲，重岳沉凝，辟邪御力。",
+    "slot": "armor",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalArmor": 0.2,
+      "spellResistance": 0.04
+    },
+    "flatStats": {
+      "maxHitpoints": 12,
+      "physicalArmor": 9,
+      "spellResistance": 3,
+      "physicalDamageReductionPoints": 2,
+      "threatBonusPoints": 18
+    }
+  },
+  {
+    "id": "equipment.diejia-leggings",
+    "name": "叠甲胫",
+    "description": "叠甲护腿，下盘如岳。\n层层铁叶缝缀包裹的武行护腿，稳固下盘，步履沉实。",
+    "slot": "legs",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalArmor": 0.1,
+      "spellResistance": 0.02
+    },
+    "flatStats": {
+      "maxHitpoints": 7,
+      "physicalArmor": 6,
+      "spellResistance": 2,
+      "physicalDamageReductionPoints": 2,
+      "threatBonusPoints": 12
+    }
+  },
+  {
+    "id": "equipment.canglang-cap",
+    "name": "苍狼皮冠",
+    "description": "狼毫束顶，目光如电。\n以古道妖狼头领顶皮精制之武冠，狼毫直竖，野性森寒。",
+    "slot": "head",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.1
+    },
+    "flatStats": {
+      "physicalAttack": 6,
+      "accuracy": 4,
+      "criticalChance": 3,
+      "maxHitpoints": 2,
+      "physicalArmor": 2,
+      "physicalDamageBonusPoints": 2
+    }
+  },
+  {
+    "id": "equipment.canglang-vest",
+    "name": "苍狼轻裘",
+    "description": "整张狼革裁就，动如疾风。\n采整块粗韧妖狼外皮缝制的贴身皮甲，质轻且韧，拳脚迅疾。",
+    "slot": "armor",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.2
+    },
+    "flatStats": {
+      "physicalAttack": 11,
+      "accuracy": 6,
+      "criticalChance": 4,
+      "maxHitpoints": 3,
+      "physicalArmor": 4,
+      "physicalDamageBonusPoints": 2
+    }
+  },
+  {
+    "id": "equipment.canglang-pants",
+    "name": "苍狼皮裤",
+    "description": "狼皮紧裹，腾挪自如。\n鞣制狼皮制成的紧身行猎长裤，利于绝壁奔行与险道纵跃。",
+    "slot": "legs",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.1
+    },
+    "flatStats": {
+      "physicalAttack": 6,
+      "accuracy": 4,
+      "criticalChance": 3,
+      "maxHitpoints": 2,
+      "physicalArmor": 2,
+      "physicalDamageBonusPoints": 2
+    }
+  },
+  {
+    "id": "equipment.liuyun-ribbon",
+    "name": "流云法带",
+    "description": "流云挽发，灵台空明。\n以水丝灵线编织的束发法带，云纹飘逸，静心凝神。",
+    "slot": "head",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.1
+    },
+    "flatStats": {
+      "spellAttack": 6,
+      "accuracy": 4,
+      "criticalChance": 3,
+      "maxHitpoints": 2,
+      "spellResistance": 2,
+      "spellDamageBonusPoints": 2
+    }
+  },
+  {
+    "id": "equipment.bishui-robe",
+    "name": "碧水灵袍",
+    "description": "碧水盈盈，灵光内敛。\n浸润山涧水灵原核之气的丝织道袍，波光流转，御气行云。",
+    "slot": "armor",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.2
+    },
+    "flatStats": {
+      "spellAttack": 11,
+      "accuracy": 6,
+      "criticalChance": 4,
+      "maxHitpoints": 3,
+      "spellResistance": 4,
+      "spellDamageBonusPoints": 2
+    }
+  },
+  {
+    "id": "equipment.zhishui-pants",
+    "name": "织水法裤",
+    "description": "织水为锦，步踏清漪。\n细密水蚕灵丝织成的宽松道裤，通经活络，术法自然流淌。",
+    "slot": "legs",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.1
+    },
+    "flatStats": {
+      "spellAttack": 6,
+      "accuracy": 4,
+      "criticalChance": 3,
+      "maxHitpoints": 2,
+      "spellResistance": 2,
+      "spellDamageBonusPoints": 2
+    }
+  },
+  {
     "id": "equipment.chijin-helmet",
     "name": "赤金盔",
     "description": "赤金覆首威自生。\n赤金铜精打磨而成的全护铁盔，金光内敛，威风凛凛。",

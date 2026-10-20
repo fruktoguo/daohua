@@ -26,6 +26,34 @@
     }
   },
   {
+    "id": "equipment.canglang-ring",
+    "name": "苍狼煞牙戒",
+    "description": "狼牙嵌骨戒，煞气暗藏锋。\n采古道妖狼尖锐獠牙配沉铁打磨的扳指，触体微凉，暗蕴杀伐戾气。",
+    "slot": "trinket",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.12
+    },
+    "flatStats": {
+      "criticalChance": 5,
+      "hitpointRegen": 2.5
+    }
+  },
+  {
+    "id": "equipment.bibo-pendant",
+    "name": "碧波静心佩",
+    "description": "碧波凝翠佩，静心拂俗尘。\n采自落石险隘深涧的灵水玉佩，佩之如沐清泉，宁心静气，回气绵绵。",
+    "slot": "trinket",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.12
+    },
+    "flatStats": {
+      "criticalChance": 5,
+      "manapointRegen": 2.5
+    }
+  },
+  {
     "id": "equipment.chiwen-ring",
     "name": "赤纹戒",
     "description": "赤纹绕指龙吟细。\n赤红铜精打磨而成的指环，戒面铭刻着古朴赤龙纹样。",

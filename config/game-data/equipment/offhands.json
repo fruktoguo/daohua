@@ -55,6 +55,36 @@
     }
   },
   {
+    "id": "equipment.tiemu-shield",
+    "name": "铁木坚盾",
+    "description": "古铁裹坚木，沉雄不可破。\n采古松坚木为底、外包沉铁重甲的防御圆盾，沉雄如岳，卸力消劲。",
+    "slot": "off-hand",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalArmor": 0.07,
+      "spellResistance": 0.07
+    },
+    "flatStats": {
+      "maxHitpoints": 13,
+      "physicalDamageReductionPoints": 4
+    }
+  },
+  {
+    "id": "equipment.ningshui-charm",
+    "name": "凝水灵符",
+    "description": "水华凝玉符，灵波润术芒。\n以水灵原核雕琢的御水法符，佩于左臂，引动水脉灵韵增幅术法。",
+    "slot": "off-hand",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.12
+    },
+    "flatStats": {
+      "spellAttack": 8,
+      "accuracy": 7,
+      "skillBonusPoints": 4
+    }
+  },
+  {
     "id": "equipment.xuantie-dart",
     "name": "赤牙匕",
     "description": "赤铜淬芒，嵌齿破罡。\n融入赤铜精与兽牙锻造的破罡短刃，寒芒夺魄，破空穿甲。",

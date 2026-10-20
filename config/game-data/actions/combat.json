@@ -35,4 +35,20 @@
       "node.meteor-crater"
     ]
   }
+  ,
+  {
+    "id": "combat.hunt-trail-beast",
+    "name": "讨伐 青云古道",
+    "description": "在青云古道沿线搜寻凶兽踪迹——驿路苍狼、险栈暗涌、落石巨獠、古关暴猿，步步凶险。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.boundary-pass",
+    "availableNodeIds": [
+      "node.trail-inn",
+      "node.pine-plank",
+      "node.rocky-gorge",
+      "node.boundary-pass"
+    ]
+  }
 ]
