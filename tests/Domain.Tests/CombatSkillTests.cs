@@ -377,6 +377,39 @@ public sealed class CombatSkillTests
     }
 
     /// <summary>
+    /// 携带态存档往返必须保留全部层数通道：跨波携带态随 PlayerCombatStateDocument 落库，
+    /// 若 JSON 往返丢失 attackPower/accuracy/critical/resistancePoints/hpRegenPerSecond，
+    /// 重连与离线补算会拿到缺字段的 Buff（表现为 Buff 在位但数值全归零），且 IsValid 必须仍成立。
+    /// </summary>
+    [Fact]
+    public void CombatBuffCarryRoundtripPreservesAllStackChannels()
+    {
+        var unit = new CombatantState("player", CombatantStats.Create(1000, 0, 0, 100));
+        unit.Hitpoints = 500;
+        unit.Buffs.Add(new CombatBuffState("buff.gang-feng", 60, 100,
+            Accuracy: 1, Critical: 1, ResistancePoints: -400, HpRegenPerSecond: 2,
+            AttackPower: 3, MissingHitpointsPerStack: 5, Name: "罡锋"));
+        var carried = PlayerCombatBuffState.FromCombatant(unit, elapsedSeconds: 0);
+        var json = JsonSerializer.Serialize(carried);
+        // 通道必须真正写进载荷，而不是靠反序列化缺省值兜底（载荷字段名为 PersistenceJson 默认 PascalCase）。
+        Assert.Contains("\"AttackPower\":3", json);
+        Assert.Contains("\"Accuracy\":1", json);
+        Assert.Contains("\"Critical\":1", json);
+        Assert.Contains("\"ResistancePoints\":-400", json);
+        Assert.Contains("\"HpRegenPerSecond\":2", json);
+        Assert.Contains("\"MissingHitpointsPerStack\":5", json);
+        var back = JsonSerializer.Deserialize<PlayerCombatBuffState>(json)!;
+        var e = Assert.Single(back.Buffs);
+        Assert.True(e.IsValid, json);
+        Assert.Equal(3, e.AttackPower, 9);
+        Assert.Equal(1, e.Accuracy, 9);
+        Assert.Equal(1, e.Critical, 9);
+        Assert.Equal(-400, e.ResistancePoints, 9);
+        Assert.Equal(2, e.HpRegenPerSecond, 9);
+        Assert.Equal(5, e.MissingHitpointsPerStack, 9);
+    }
+
+    /// <summary>
     /// 语义空判定回归：JSON 往返/推进产生的空内容技能态必须 IsEmpty，
     /// 与 Empty 单例的记录相等性（列表引用比较）无关——封顶尾段与脱战判定依赖此语义。
     /// </summary>
