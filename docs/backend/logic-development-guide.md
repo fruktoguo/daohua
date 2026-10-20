@@ -46,18 +46,14 @@
 
 ## 二、 聚合分段职责规范
 
-`PlayerAggregate`（`src/Domain/Player/PlayerAggregate.cs`）按 `PlayerSectionKind` 八分段组织状态，**分段归属必须准确**：
+`PlayerAggregate` 按 `PlayerSectionKind` 八分段组织状态。**分段字段归属的权威清单在 [`domain-data-architecture.md` §2 第二层](./domain-data-architecture.md)**，本篇不复制字段表；
+落地时只需守住三条易错边界：
 
-1. **`Progression`（`PlayerProgression`）**：境界等级、当前修为、历史总修为。
-2. **`World`（`PlayerWorldState`）**：所在节点/边 ID、坐标、行进进度与探索随机数种子。
-3. **`Combat`（`PlayerCombatState`）**：当前生命/灵力、攻防面板、`RegenCarrySeconds` 回复余量、`PlayerCombatSkillState`（技能冷却与吟唱）。
-4. **`Buffs`（`PlayerBuffState`）**：当前生效 Buff 及到期边界。
-5. **`Loadout`（`PlayerLoadoutState`）**：已装备物品实例引用、已学功法槽、自动使用槽（`AutoUseSlotState`）。
-6. **`Settings`（`PlayerSettingsState`）**：低频偏好——**循环开关 `LoopEnabled` 与自动移动开关 `AutoTravelEnabled` 在 Settings，不在 ActionQueue**；语言、通知等。
-7. **`ActionQueue`（`QueuedAction` 列表）**：进行中与排队行动、进度、剩余重复次数、远征/移动子状态。
-8. **`Duel`（`PlayerDuelState`）**：斗法遭遇计数、冷却、暂存区与战报账本；记账点口径见 `docs/design/行动统计系统.md`。
+1. **`Settings` 与 `ActionQueue` 不混放**：`LoopEnabled`、`AutoTravelEnabled` 属 `Settings`（`PlayerSettingsState`），不属 `ActionQueue`；
+2. **资产不进聚合**：灵石、可堆叠物品余额与唯一装备实例由 `AssetWallet` + `economy.*` 关系表承载，聚合内不保留 Inventory/Stats 切片；
+3. **技能运行态归 `Combat`**：`PlayerCombatSkillState`（冷却与吟唱）随 `Combat` 分段，不独立成段。
 
-**资产边界**：灵石、可堆叠物品余额、唯一装备实例一律由 `AssetWallet` + `economy.*` 关系表承载，不得塞进聚合分段；聚合内不保留 Inventory/Stats 切片。
+新增或改动字段前先确认所属分段，再同步 `SectionCodec` 编解码与脏标记（见 §三）。
 
 ---
 
@@ -104,6 +100,7 @@
 | `world.travel` | 世界节点移动（自动先推进模拟再规划路径） |
 | `building.build` / `building.upgrade` / `building.contribute` | 节点公共建筑发起建造/发起升级/提交材料（注册表锁内校验钱包并原子扣减） |
 | `market.place` / `market.cancel` / `market.claim` | 挂单/撤单/结算领取 |
+| `shop.buy` | 系统商店购买（官价扣灵石并发物；限购商品的经济事务内原子认领当日配额，超限整体回滚） |
 | `player.rename` / `player.presence` | 改名/在线状态 |
 | `simulation.advance` | 内部推进命令（补算/心跳路径使用） |
 

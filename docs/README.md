@@ -33,7 +33,7 @@ docs/
 
 | 文档 | 定位 |
 | --- | --- |
-| [总纲/](design/总纲/) | **设计总纲 (Master GDD)**：全域最高权威设计规范，17 篇分卷（篇目目录见文件夹 `README.md`）——核心哲学、角色常驻实体、境界数值底座、装备/技能/消耗品、战斗数值与内视、大世界地图遇怪、节点建筑、怪物产出基准、数值量化模型、世界观剧情、UI 交互、传音日志、服务端架构、运维容量、行动统计；原各专题设计文档已全部收编为对应篇正文，`design/总纲.md` 为指引 stub。 |
+| [总纲/](design/总纲/) | **设计总纲 (Master GDD)**：全域最高权威设计规范，24 篇分卷（篇目目录见文件夹 `README.md`）——核心哲学、角色常驻实体、境界数值底座、装备/技能/消耗品、战斗数值与内视、大世界地图遇怪、节点建筑、怪物产出基准、数值量化模型、世界观剧情、UI 交互、传音日志、服务端架构、运维容量、行动统计；原各专题设计文档已全部收编为对应篇正文，`design/总纲.md` 为指引 stub。 |
 | [总纲/index.html](design/总纲/index.html) | **总纲·修仙沉浸查看器**：自动读取同文件夹全部篇目（`manifest.json` + `NN-*.md`）拼接渲染为整页，内置暗墨玄石古典美学、大纲导航、实时搜索、数学公式与篇目内页内跳转；HTTP 访问永远读最新，file:// 直开回退内嵌快照（`node scripts/sync-master-viewer.mjs` 同步）并可手动读取文件夹。 |
 | [战斗演武画廊/](design/战斗演武画廊/index.html) | **战斗演武画廊**：与正式界面同构的演武沙盘，直链 frontend 真实样式与资源；特效按真实技能 ID 拆分于 `vfx/abilities/`，结算走配表 `castMilliseconds`/`targetType`/`manaCost`，支持单技能点测、全量轮播、敌方演示与 `?selftest=1` 自检。 |
 
@@ -50,6 +50,8 @@ docs/
 | [game-data.md](backend/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |
 | [performance-baseline.md](backend/performance-baseline.md) | 性能基线现行入口：当前支持的重测场景与参数口径；2026-08-06 历史样本已归档至 `archive/perf-baseline-20260806.md`。 |
 | [anti-multi-open.md](backend/anti-multi-open.md) | 防多开模块设计规约：标签页互斥 / 单账号互踢 / 设备指纹配额三道独立开关防线、准入裁决顺序、顶替会话安全拆除链与协议关闭码约定。 |
+| [distributed-readiness.md](distributed-readiness.md) | **分布式演进就绪缺口审计**：单主服 → 多主服的失效点排序与修复路径，含优雅排空；任务派发链结论为近乎天然多写者安全，缺口集中在玩家连接层。**演进规划，非现行契约**。 |
+| [perf-arch-changelog.md](perf-arch-changelog.md) | 性能与分布式改造变更账本（TASK-20260924-08）：逐批记录改动动机、内容与验证方式，约束为「游戏内容完全不变」。 |
 
 ## frontend/ — 前端规范
 
@@ -57,12 +59,15 @@ docs/
 | --- | --- |
 | [common-components.md](frontend/common-components.md) | 前端公共组件与统一模板速查手册。**任何前端开发前必须先查阅**；收拢新的统一模板必须登记到该手册。 |
 | [floating-popover.md](frontend/floating-popover.md) | 悬浮提示、信息卡片与浮层菜单专项设计规范。 |
+| [manual-icon-pipeline.md](frontend/manual-icon-pipeline.md) | 古风线装秘籍与心法残卷图标制作流水线：为何拒绝「AI 直接画整本书」、分层制作与运行时落盘口径。 |
+| [theme-contrast-audit.md](frontend/theme-contrast-audit.md) | 前端双主题配色审查与浅色适配修复：按《总纲 13.1.1》对比度基线（正文 ≥4.5:1、控件边界 ≥3:1）与 WCAG 2.1 相对亮度公式实算，半透明底色先做 alpha 合成后判定。时点审查结论。 |
 
 ## ops/ — 部署与运维
 
 | 文档 | 定位 |
 | --- | --- |
 | [deployment.md](ops/deployment.md) | 生产构建与部署：目标架构、CCR 不可变标签、服务器自动更新、持久卷、备份与回滚。 |
+| [odin/README.md](ops/odin/README.md) | odin 安卓掌机辅助计算节点运维手册：设备档案、Termux + PRoot 环境特性、运维操作与故障排查，附守护脚本。 |
 
 ## future/ — 未来运营参考
 
