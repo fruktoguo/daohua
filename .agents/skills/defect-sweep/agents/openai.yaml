@@ -1,0 +1,6 @@
+interface:
+  display_name: "全仓缺陷巡检"
+  short_description: "按九个切片自动巡检并修复前后端潜在缺陷：协议契约、领域不变量、ECS 闸门、持久化、市场、前端网络与 UI、i18n 配表、部署只读核对"
+  default_prompt: "使用 $defect-sweep 巡检并修复潜在缺陷：每轮只做一个切片，先取证（read/grep/lsp）再分诊再最小修复，轮末跑对应门禁与 scripts/verify.sh，证据落盘到 docs/tasks 的 TASK 详情表格；报审级问题只汇总不擅改。"
+policy:
+  allow_implicit_invocation: true
