@@ -129,6 +129,35 @@ public sealed class QueuePauseClearCommandTests
         Assert.Equal("gothic-lolita", switchBack.Snapshot.State.Settings.Avatar);
     }
 
+    [Fact]
+    public async Task ShopBuy_DeductsBoundMeritFirst_AndGrantsItem()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = GameDataCatalog.LoadEmbedded();
+        // 绑定功德 60 + 流通功德 80 = 140，购买 100 功德的每日觉醒石（扣除 60 绑定 + 40 流通）
+        var assets = new MeritTestAssetStore(playerId, boundMerit: 60, normalMerit: 80);
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), assets, assets, catalog);
+        await runtime.LoadAsync(playerId);
+
+        var res = await runtime.ExecuteAsync(playerId, "shop.buy",
+            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.daily", quantity = 1 }), 0, Guid.NewGuid());
+        Assert.True(res.Success);
+        Assert.Equal("OK", res.Code);
+
+        // 扣除后余额：绑定功德 0，流通功德 40，获得觉醒石 1
+        Assert.Equal(0, assets.GetBalance("item.gongde-bound"));
+        Assert.Equal(40, assets.GetBalance("item.gongde"));
+        Assert.Equal(1, assets.GetBalance("item.awakening-stone"));
+
+        // 尝试再买 1000 功德的不限购觉醒石：功德不足（仅剩 40），应拒绝
+        var failRes = await runtime.ExecuteAsync(playerId, "shop.buy",
+            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.open", quantity = 1 }), 0, Guid.NewGuid());
+        Assert.False(failRes.Success);
+        Assert.Equal("INSUFFICIENT_RESOURCE", failRes.Code);
+        Assert.Equal("功德不足。", failRes.Message);
+    }
+
     /// <summary>
     /// queue.clear 空队列直接拒绝：code QUEUE_EMPTY、消息「队列已为空。」，不产生任何变更。
     /// </summary>

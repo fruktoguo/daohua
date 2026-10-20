@@ -1060,17 +1060,24 @@ public sealed partial class EcsPlayerRuntimeAdapter(
 
                         await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
                         wallet = WalletOf(playerId);
-                        var spiritKey = new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId));
-                        if (wallet.Get(spiritKey) + 1e-9 < totalPrice)
-                            return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "灵石不足。", before);
+                        const string boundMeritItemId = "item.gongde-bound";
+                        const string normalMeritItemId = "item.gongde";
+                        var boundBalance = wallet.Get(new AssetKey(new ItemId(boundMeritItemId)));
+                        var normalBalance = wallet.Get(new AssetKey(new ItemId(normalMeritItemId)));
+                        var totalMerit = boundBalance + normalBalance;
+                        if (totalMerit + 1e-9 < totalPrice)
+                            return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "功德不足。", before);
 
+                        var deductBound = Math.Min(boundBalance, totalPrice);
+                        var deductNormal = totalPrice - deductBound;
+                        // 扣功德（优先扣绑定功德）与发物同行落账；限购商品另带同事务配额认领，超限即整体回滚。
+                        var shopDeltas = new List<Server.Clean.AssetDelta>();
+                        if (deductBound > 0)
+                            shopDeltas.Add(new(playerId, boundMeritItemId, string.Empty, -deductBound));
+                        if (deductNormal > 0)
+                            shopDeltas.Add(new(playerId, normalMeritItemId, string.Empty, -deductNormal));
+                        shopDeltas.Add(new(playerId, offer.ItemId, string.Empty, buyQuantity));
                         var shopNow = DateTimeOffset.UtcNow;
-                        // 扣灵石与发物同行落账；限购商品另带同事务配额认领，超限即整体回滚。
-                        var shopDeltas = new List<Server.Clean.AssetDelta>
-                        {
-                            new(playerId, EnhancementRules.SpiritStoneItemId, string.Empty, -totalPrice),
-                            new(playerId, offer.ItemId, string.Empty, buyQuantity)
-                        };
                         var shopClaim = offer.DailyLimit is { } claimLimit
                             ? new ShopPurchaseClaim(playerId, offer.Id, ShopDailyWindow.DayIndexOf(shopNow), buyQuantity, claimLimit)
                             : null;
@@ -1095,7 +1102,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         catch (EconomyInsufficientBalanceException)
                         {
-                            return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "灵石不足。", before);
+                            return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "功德不足。", before);
                         }
                         if (!shopResult.Applied)
                             return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "购买事务未提交。", before);

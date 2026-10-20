@@ -864,16 +864,6 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
         <button
-          className={`nav-item${activeTab === 'shop' ? ' active' : ''}`}
-          onClick={() => setActiveTab('shop')}
-          type="button"
-        >
-          <span className="nav-glyph" aria-hidden="true"><Icon name="shop" /></span>
-          <span className="nav-text">
-            <span className="nav-label">{t('app.nav.shop')}</span>
-          </span>
-        </button>
-        <button
           className={`nav-item${activeTab === 'exploration' ? ' active' : ''}`}
           onClick={() => setActiveTab('exploration')}
           type="button"
@@ -1024,6 +1014,16 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           <span className="nav-glyph" aria-hidden="true"><Icon name="codex" /></span>
           <span className="nav-text">
             <span className="nav-label">{t('app.nav.codex')}</span>
+          </span>
+        </button>
+        <button
+          className={`nav-item${activeTab === 'shop' ? ' active' : ''}`}
+          onClick={() => setActiveTab('shop')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="shop" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.shop')}</span>
           </span>
         </button>
       </nav>
@@ -2376,13 +2376,13 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
 const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },
-  { tab: 'shop', labelKey: 'shop', icon: 'shop' },
   { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
   { tab: 'crafting', labelKey: 'crafting', icon: 'crafting' },
   { tab: 'map', labelKey: 'map', icon: 'map' },
   { tab: 'combat', labelKey: 'combat', icon: 'combat' },
   { tab: 'social', labelKey: 'social', icon: 'social' },
   { tab: 'codex', labelKey: 'codex', icon: 'codex' },
+  { tab: 'shop', labelKey: 'shop', icon: 'shop' },
   { tab: 'inventory', labelKey: 'inventory', icon: 'inventory' },
   { tab: 'log', labelKey: 'log', icon: 'log' },
   { tab: 'settings', labelKey: 'settings', icon: 'settings' },
@@ -2545,13 +2545,13 @@ export default function App(): React.JSX.Element {
                 {activeTab === 'market' && <MarketPage />}
               </Suspense>
               <Suspense fallback={null}>
-                {activeTab === 'shop' && <ShopPage />}
-              </Suspense>
-              <Suspense fallback={null}>
                 {activeTab === 'social' && <SocialPage />}
               </Suspense>
               <Suspense fallback={null}>
                 {activeTab === 'codex' && <CodexPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'shop' && <ShopPage />}
               </Suspense>
               <Suspense fallback={null}>
                 {activeTab === 'settings' && <SettingsPage />}

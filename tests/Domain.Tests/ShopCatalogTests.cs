@@ -7,7 +7,7 @@ namespace Domain.Tests;
 /// </summary>
 public sealed class ShopCatalogTests
 {
-    /// <summary>内置配表必须上架两档觉醒石：1,000 灵石每日限购 1 件、2,000 灵石不限购。</summary>
+    /// <summary>内置配表必须上架两档觉醒石：100 功德每日限购 1 件、1,000 功德不限购。</summary>
     [Fact]
     public void EmbeddedCatalogExposesAwakeningStoneOffers()
     {
@@ -17,14 +17,14 @@ public sealed class ShopCatalogTests
         var daily = catalog.ShopOffers.All[0];
         Assert.Equal("shop.awakening-stone.daily", daily.Id);
         Assert.Equal("item.awakening-stone", daily.ItemId);
-        Assert.Equal(1_000d, daily.UnitPrice);
+        Assert.Equal(100d, daily.UnitPrice);
         Assert.Equal(1, daily.DailyLimit);
         Assert.True(daily.IsDailyLimited);
 
         var open = catalog.ShopOffers.All[1];
         Assert.Equal("shop.awakening-stone.open", open.Id);
         Assert.Equal("item.awakening-stone", open.ItemId);
-        Assert.Equal(2_000d, open.UnitPrice);
+        Assert.Equal(1_000d, open.UnitPrice);
         Assert.Null(open.DailyLimit);
         Assert.False(open.IsDailyLimited);
     }
