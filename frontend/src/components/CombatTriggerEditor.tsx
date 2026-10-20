@@ -2,11 +2,12 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { FloatingPopover } from './FloatingPopover'
 import { Modal } from './Modal'
 import { describeCombatTrigger, formatNumber } from '../game/format'
-import type { CombatTrigger, CombatTriggerDependency, CombatTriggerCondition, CombatTriggerComparator } from '../game/types'
+import { useGameStore } from '../game/gameStore'
+import { DEFAULT_TRIGGER_SPEC, type CombatTrigger, type CombatTriggerDependency, type CombatTriggerCondition, type CombatTriggerComparator } from '../game/types'
 import { useT } from '../i18n'
 
-/** 每个槽位最多 4 条触发条件，与服务端 CombatLimits.TriggerCountPerSlot 保持一致。 */
-const MAX_TRIGGERS = 4
+/** 集合对象依赖：条件下拉切换为群体聚合词表，比较方式只保留数值比较。 */
+const SET_DEPENDENCIES: readonly CombatTriggerDependency[] = ['ally', 'enemy']
 
 /**
  * 触发条件下拉选项定义
@@ -182,7 +183,7 @@ function cloneTriggers(triggers: CombatTrigger[] | undefined): CombatTrigger[] {
  * 2. 触发条件 (condition)：当前/损失气血比例、当前/损失真元比例、固定数值阈值、Buff 层数以及眩晕/致盲/沉默等控制状态；
  * 3. 比较符智能切换：数值型条件采用 (<=, <, >=, >)；状态型条件自动切换为 (生效中 is-active / 未生效 is-inactive)；
  * 4. 自动重置安全机制：当条件类型切换时，重置比较符与阈值，清除非 Buff 条件的 buffId，防止非法组合提交；
- * 5. 条件数量上限：严格受限在 MAX_TRIGGERS (4条) 之内，条件之间为逻辑与 (AND) 关系；
+ * 5. 条件数量上限：由服务端 /api/v1/catalog/triggers 下发的 maxTriggersPerList 裁定（领域层单源），条件之间为逻辑与 (AND) 关系；
  * 6. 极致空间利用率：单条规则规整为 44px 高度单行，彻底消除 200px 巨型正方形与断层割裂。
  */
 export function CombatTriggerEditor({
@@ -195,6 +196,10 @@ export function CombatTriggerEditor({
   const t = useT()
   const titleId = useId()
   const [triggers, setTriggers] = useState<CombatTrigger[]>(() => cloneTriggers(initialTriggers))
+  // 条数上限与 Buff 词表均由服务端下发（领域层单源），前端不硬编码。
+  const triggerSpec = useGameStore(state => state.triggerSpec ?? DEFAULT_TRIGGER_SPEC)
+  const triggerBuffs = useGameStore(state => state.triggerBuffs)
+  const maxTriggers = triggerSpec.maxTriggersPerList
 
   // initialTriggers 经 ref 中转：战斗快照刷新会让外部 combat 对象（含 triggers 数组）整体换引用，
   // 若把 initialTriggers 放进依赖，弹窗打开期间每次快照下发都会把未保存的编辑内容重置回旧值。
@@ -206,17 +211,34 @@ export function CombatTriggerEditor({
   }, [open])
 
   const isPercentage = (condition: string) => condition.includes('percentage')
+  // Buff 词表首项作为新建 buff 条件的默认值：硬编码不存在的 Buff 会得到层数恒 0 的死条件。
+  const defaultBuffId = triggerBuffs[0]?.buffId ?? null
 
   // 条件切换时重置比较符与数值，状态层数默认判断为“大于 0”
   const updateTrigger = (index: number, patch: Partial<CombatTrigger>) => {
     setTriggers(current => current.map((trigger, triggerIndex) => {
       if (triggerIndex !== index) return trigger
       const next = { ...trigger, ...patch }
+      // 对象切换时条件与比较方式必须同步收敛：单体对象的数值条件对集合对象不成立，反之亦然。
+      if (patch.dependency !== undefined && patch.dependency !== trigger.dependency) {
+        if (SET_DEPENDENCIES.includes(patch.dependency)) {
+          next.condition = 'alive-count'
+          next.comparator = 'greater-than-equal'
+          next.value = 2
+          next.buffId = null
+        } else {
+          next.condition = 'current-hp-percentage'
+          next.comparator = 'less-than-equal'
+          next.value = 50
+          next.buffId = null
+        }
+        return next
+      }
       if (patch.condition !== undefined && patch.condition !== trigger.condition) {
         if (patch.condition === 'buff-stacks') {
           next.comparator = 'greater-than'
           next.value = 0
-          if (!next.buffId) next.buffId = 'buff.qi-gathering'
+          next.buffId = next.buffId ?? defaultBuffId
         } else {
           next.comparator = isPercentage(next.condition) ? 'less-than-equal' : 'greater-than-equal'
           next.value = isPercentage(next.condition) ? 50 : 0
@@ -239,7 +261,7 @@ export function CombatTriggerEditor({
           <div>
             <h2 id={titleId}>{title}</h2>
             <p className="combat-trigger-hint">
-              {t('game.trigger.editor.hint', { max: MAX_TRIGGERS })}
+              {t('game.trigger.editor.hint', { max: formatNumber(maxTriggers) })}
             </p>
           </div>
         </header>
@@ -289,6 +311,8 @@ export function CombatTriggerEditor({
                       { id: 'ally-highest-hp', label: t('game.trigger.dependency.ally-highest-hp'), subtitle: t('combat.trigger.subtitle.allyHighestHp') },
                       { id: 'enemy-lowest-hp', label: t('game.trigger.dependency.enemy-lowest-hp'), subtitle: t('combat.trigger.subtitle.enemyLowestHp') },
                       { id: 'enemy-highest-hp', label: t('game.trigger.dependency.enemy-highest-hp'), subtitle: t('combat.trigger.subtitle.enemyHighestHp') },
+                      { id: 'ally', label: t('game.trigger.dependency.ally'), subtitle: t('combat.trigger.subtitle.allySet') },
+                      { id: 'enemy', label: t('game.trigger.dependency.enemy'), subtitle: t('combat.trigger.subtitle.enemySet') },
                     ]}
                     value={trigger.dependency}
                   />
@@ -297,17 +321,23 @@ export function CombatTriggerEditor({
                     className="combat-trigger-field--cond"
                     label={t('combat.trigger.conditionLabel')}
                     onSelect={value => updateTrigger(index, { condition: value as CombatTriggerCondition })}
-                    options={[
-                      { id: 'current-hp-percentage', label: t('game.trigger.condition.current-hp-percentage') },
-                      { id: 'missing-hp-percentage', label: t('game.trigger.condition.missing-hp-percentage') },
-                      { id: 'current-mana-percentage', label: t('game.trigger.condition.current-mana-percentage') },
-                      { id: 'missing-mana-percentage', label: t('game.trigger.condition.missing-mana-percentage') },
-                      { id: 'current-hp', label: t('game.trigger.condition.current-hp') },
-                      { id: 'missing-hp', label: t('game.trigger.condition.missing-hp') },
-                      { id: 'current-mana', label: t('game.trigger.condition.current-mana') },
-                      { id: 'missing-mana', label: t('game.trigger.condition.missing-mana') },
-                      { id: 'buff-stacks', label: t('game.trigger.condition.buff-stacks'), subtitle: t('combat.trigger.subtitle.buffStacks') },
-                    ]}
+                    options={(SET_DEPENDENCIES.includes(trigger.dependency)
+                      ? [
+                          { id: 'alive-count', label: t('game.trigger.condition.alive-count'), subtitle: t('combat.trigger.subtitle.aliveCount') },
+                          { id: 'dead-count', label: t('game.trigger.condition.dead-count'), subtitle: t('combat.trigger.subtitle.deadCount') },
+                        ]
+                      : [
+                          { id: 'current-hp-percentage', label: t('game.trigger.condition.current-hp-percentage') },
+                          { id: 'missing-hp-percentage', label: t('game.trigger.condition.missing-hp-percentage') },
+                          { id: 'current-mana-percentage', label: t('game.trigger.condition.current-mana-percentage') },
+                          { id: 'missing-mana-percentage', label: t('game.trigger.condition.missing-mana-percentage') },
+                          { id: 'current-hp', label: t('game.trigger.condition.current-hp') },
+                          { id: 'missing-hp', label: t('game.trigger.condition.missing-hp') },
+                          { id: 'current-mana', label: t('game.trigger.condition.current-mana') },
+                          { id: 'missing-mana', label: t('game.trigger.condition.missing-mana') },
+                          { id: 'buff-stacks', label: t('game.trigger.condition.buff-stacks'), subtitle: t('combat.trigger.subtitle.buffStacks') },
+                        ]
+                    )}
                     value={trigger.condition}
                   />
 
@@ -316,15 +346,12 @@ export function CombatTriggerEditor({
                       className="combat-trigger-field--buff"
                       label={t('combat.trigger.buffLabel')}
                       onSelect={value => updateTrigger(index, { buffId: value || null })}
-                      options={[
-                        { id: 'buff.qi-gathering', label: t('combat.trigger.buff.qi-gathering'), subtitle: '运转灵气法门，增幅法攻与回复' },
-                        { id: 'buff.spirit-tea', label: t('combat.trigger.buff.spirit-tea'), subtitle: '神识清明宁静，提升心法感知' },
-                        { id: 'buff.fire-talisman', label: t('combat.trigger.buff.fire-talisman'), subtitle: '烈火真气加持，强化火行攻势' },
-                        { id: 'buff.zhixue', label: t('combat.trigger.buff.zhixue'), subtitle: '止血散回春，持续回复气血' },
-                        { id: 'buff.shunqi', label: t('combat.trigger.buff.shunqi'), subtitle: '顺气丸凝神，平顺经脉灵力' },
-                        { id: 'buff.yinshen', label: t('combat.trigger.buff.yinshen'), subtitle: '隐身匿迹，隐蔽自身威胁' },
-                      ]}
-                      value={trigger.buffId ?? 'buff.qi-gathering'}
+                      options={triggerBuffs.map(buff => ({
+                        id: buff.buffId,
+                        label: buff.name,
+                        subtitle: buff.buffId,
+                      }))}
+                      value={trigger.buffId ?? defaultBuffId ?? ''}
                     />
                   )}
 
@@ -369,7 +396,7 @@ export function CombatTriggerEditor({
 
         <footer className="combat-trigger-actions">
           <button
-            disabled={triggers.length >= MAX_TRIGGERS}
+            disabled={triggers.length >= maxTriggers}
             onClick={() => setTriggers(current => [
               ...current,
               {
@@ -385,7 +412,7 @@ export function CombatTriggerEditor({
             onClick={() => onSave(null)}
             type="button"
           >{t('combat.trigger.clearAll')}</button>
-          <span>{t('combat.trigger.andHint', { count: formatNumber(triggers.length), max: formatNumber(MAX_TRIGGERS) })}</span>
+          <span>{t('combat.trigger.andHint', { count: formatNumber(triggers.length), max: formatNumber(maxTriggers) })}</span>
           <button
             className="primary"
             onClick={() => {

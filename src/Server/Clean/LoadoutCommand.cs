@@ -92,6 +92,7 @@ public static class LoadoutCommand
             slotIndex++;
         }
         // 触发条件跟随功法而非槽位：按功法 ID 收成全量 map，键必须指向已习得功法（不要求当前装配）。
+        // 键存在即覆盖（空数组 = 玩家显式选择「无条件恒施放」），键缺失才回退配表 defaultTriggers。
         Dictionary<string, JsonElement[]>? abilityTriggers = null;
         if (payload.TryGetProperty("abilityTriggers", out var rawTriggers))
         {
@@ -102,20 +103,33 @@ public static class LoadoutCommand
             {
                 if (!player.Loadout.LearnedAbilities.Contains(new AbilityId(entry.Name)))
                     throw new DomainException(DomainErrorCode.InvalidArgument, "功法未习得，无法配置触发条件。");
-                var triggers = ReadTriggers(entry.Value);
-                if (triggers.Length > 0) abilityTriggers[entry.Name] = triggers;
+                abilityTriggers[entry.Name] = ReadTriggers(entry.Value, catalog);
             }
         }
-        player.ReplaceCombatSlots(abilities, equipment, abilityTriggers);
+        // 消耗品触发条件按物品 ID 挂接（与功法同构）：只有配表中存在且为 consumable 的物品可配置，
+        // 求值路径读到的仍然是同一份条件列表，只是来源从配表覆盖为玩家配置。
+        Dictionary<string, JsonElement[]>? consumableTriggers = null;
+        if (payload.TryGetProperty("consumableTriggers", out var rawConsumableTriggers))
+        {
+            if (rawConsumableTriggers.ValueKind != JsonValueKind.Object)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "消耗品触发条件载荷无效。");
+            consumableTriggers = new Dictionary<string, JsonElement[]>(StringComparer.Ordinal);
+            foreach (var entry in rawConsumableTriggers.EnumerateObject())
+            {
+                if (!catalog.Items.TryGetValue(new ItemId(entry.Name), out var item)
+                    || item.Category != ItemDefinition.CategoryConsumable)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, "物品不是可配置条件的消耗品。");
+                consumableTriggers[entry.Name] = ReadTriggers(entry.Value, catalog);
+            }
+        }
+        player.ReplaceCombatSlots(abilities, equipment, abilityTriggers, consumableTriggers);
     }
 
-    /// <summary>功法触发条件解析：字段词表校验复用领域层统一实现（SkillTriggerEvaluator）。</summary>
-    private static JsonElement[] ReadTriggers(JsonElement rules)
+    /// <summary>触发条件解析：字段词表与条数上限校验复用领域层统一实现（SkillTriggerEvaluator）。
+    /// Buff 词表取当前配表派生集合，引用不存在的 Buff 在命令期即拒绝。</summary>
+    private static JsonElement[] ReadTriggers(JsonElement rules, GameDataCatalog catalog)
     {
-        if (rules.ValueKind != JsonValueKind.Array || rules.GetArrayLength() > 4)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件最多四条。");
-        foreach (var rule in rules.EnumerateArray())
-            Domain.Combat.SkillTriggerEvaluator.ValidateTrigger(rule);
+        SkillTriggerEvaluator.ValidateTriggerList(rules, catalog.TriggerBuffIds);
         return rules.EnumerateArray().Select(rule => rule.Clone()).ToArray();
     }
 }

@@ -75,7 +75,7 @@ try {
   }
   // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 36, sectionVersion: 1,
+    section: 'world', schemaVersion: 37, sectionVersion: 1,
     data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
@@ -109,7 +109,7 @@ try {
     remainingRepeats: -1, completedRepeats: 4, executionKind: 'timed',
   }
   const queueSection = {
-    section: 'action_queue', schemaVersion: 36, sectionVersion: 1, data: [queueRow],
+    section: 'action_queue', schemaVersion: 37, sectionVersion: 1, data: [queueRow],
     checksum: createHash('sha256').update(JSON.stringify([queueRow]), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
@@ -229,6 +229,48 @@ try {
   }
   const hpSummary = describeCombatTrigger(hpTrigger)
   assert.equal(hpSummary, '当 自身 的 生命百分比 小于等于 50% 时', '生命百分比条件必须以自然语言呈现')
+
+  // 触发条件解码白名单门禁：服务端接受的词表项必须全部可解码，否则可配置即整帧抛错自锁断连。
+  // 覆盖 equal 比较、集合对象（ally/enemy）与群体聚合条件（alive-count/dead-count）。
+  const triggerLoadout = {
+    coreAttributes: {
+      staminaLevel: 1, meridiansLevel: 1, attackLevel: 1, boneLevel: 1, agilityLevel: 1, consciousnessLevel: 1,
+      staminaExp: 0, meridiansExp: 0, attackExp: 0, boneExp: 0, agilityExp: 0, consciousnessExp: 0,
+    },
+    abilitySlots: [], equipment: [], learnedAbilityIds: [],
+    abilityExperiences: {}, techniqueExperiences: {},
+    abilityTriggers: {
+      'ability.test': [{ dependency: 'self', condition: 'current-hp', comparator: 'equal', value: 100 }],
+    },
+    consumableTriggers: {
+      'item.zhixue-powder': [{ dependency: 'self', condition: 'current-hp-percentage', comparator: 'less-than-equal', value: 35 }],
+      'item.shunqi-pill': [],
+    },
+  }
+  const triggerSection = {
+    section: 'loadout', schemaVersion: 37, sectionVersion: 1, data: triggerLoadout,
+    checksum: createHash('sha256').update(JSON.stringify(triggerLoadout), 'utf8').digest('hex'),
+    updatedAt: '2026-09-14T00:00:07Z',
+  }
+  const triggerDelta = { playerId: current.playerId, stateVersion: 4, lastSimulatedAt: '2026-09-14T00:00:07Z', changedSections: [triggerSection] }
+  const triggerPatch = await decodePlayerSnapshotDeltaDto(triggerDelta, current, Buffer.from(JSON.stringify(triggerDelta)))
+  assert.equal(triggerPatch.combat.abilityTriggers['ability.test'][0].comparator, 'equal', 'equal 比较必须可解码')
+  assert.equal(triggerPatch.combat.consumableTriggers['item.zhixue-powder'][0].condition, 'current-hp-percentage', '消耗品条件必须走 consumableTriggers 通道解码')
+  // 空数组是「显式无条件」的载体，必须原样保留而不是被折叠成键缺失。
+  assert.deepEqual(triggerPatch.combat.consumableTriggers['item.shunqi-pill'], [], '空条件数组必须原样保留')
+  // 集合对象与群体聚合条件同样必须可解码（服务端求值器已支持，前端不得缺白名单）。
+  const setTrigger = { ...triggerLoadout, abilityTriggers: {
+    'ability.test': [{ dependency: 'enemy', condition: 'alive-count', comparator: 'greater-than-equal', value: 2 }],
+  } }
+  const setSection = {
+    section: 'loadout', schemaVersion: 37, sectionVersion: 1, data: setTrigger,
+    checksum: createHash('sha256').update(JSON.stringify(setTrigger), 'utf8').digest('hex'),
+    updatedAt: '2026-09-14T00:00:08Z',
+  }
+  const setDelta = { playerId: current.playerId, stateVersion: 5, lastSimulatedAt: '2026-09-14T00:00:08Z', changedSections: [setSection] }
+  const setPatch = await decodePlayerSnapshotDeltaDto(setDelta, current, Buffer.from(JSON.stringify(setDelta)))
+  assert.equal(setPatch.combat.abilityTriggers['ability.test'][0].dependency, 'enemy', '集合对象依赖必须可解码')
+  assert.equal(setPatch.combat.abilityTriggers['ability.test'][0].condition, 'alive-count', '群体聚合条件必须可解码')
   // 静态代码门禁：扫描 frontend/src 下全部 TSX/TS 组件与自定义 Hook，
   // 严禁在条件返回（early return）之后调用 Hook，严格遵循 React Rules of Hooks。
   const require = createRequire(import.meta.url)

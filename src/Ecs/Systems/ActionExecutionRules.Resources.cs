@@ -339,8 +339,10 @@ internal static partial class ActionExecutionRules
             if (item.Consumable is not { IsContinuous: false, Durable: false } definition
                 || !definition.UsableInBars.Contains(actionBarId)
                 || !catalog.RawItems[id.Value].TryGetProperty("consumable", out var raw)) continue;
-            // 消耗品使用条件与技能共用同一套触发判定模型；求值失败一律跳过本槽。
-            if (definition.Triggers is { Count: > 0 } triggers)
+            // 消耗品使用条件与技能共用同一套触发判定模型；玩家自定义条件按物品 ID 覆盖配表默认。
+            var triggers = Domain.Combat.ConsumableTriggerResolver.Resolve(id.Value, definition,
+                player.Loadout.ConsumableTriggers);
+            if (triggers.Count > 0)
             {
                 if (evalCaster is null)
                 {

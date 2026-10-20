@@ -48,7 +48,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 36
+const SNAPSHOT_SCHEMA_VERSION = 37
 
 type JsonObject = Record<string, unknown>
 
@@ -937,9 +937,9 @@ function mapTriggers(value: unknown): CombatTrigger[] {
   return value.map(item => {
     const row = requiredObject(item, 'trigger')
     return {
-      dependency: enumValue(row.dependency, ['self', 'target-enemy', 'ally-lowest-hp', 'ally-highest-hp', 'enemy-lowest-hp', 'enemy-highest-hp'], 'trigger.dependency'),
-      condition: enumValue(row.condition, ['current-hp', 'current-mana', 'missing-hp', 'missing-mana', 'current-hp-percentage', 'missing-hp-percentage', 'current-mana-percentage', 'missing-mana-percentage', 'buff-stacks', 'stun-status', 'blind-status', 'silence-status'], 'trigger.condition'),
-      comparator: enumValue(row.comparator, ['less-than-equal', 'greater-than-equal', 'is-active', 'is-inactive', 'less-than', 'greater-than'], 'trigger.comparator'),
+      dependency: enumValue(row.dependency, ['self', 'target-enemy', 'ally-lowest-hp', 'ally-highest-hp', 'enemy-lowest-hp', 'enemy-highest-hp', 'ally', 'enemy'], 'trigger.dependency'),
+      condition: enumValue(row.condition, ['current-hp', 'current-mana', 'missing-hp', 'missing-mana', 'current-hp-percentage', 'missing-hp-percentage', 'current-mana-percentage', 'missing-mana-percentage', 'buff-stacks', 'stun-status', 'blind-status', 'silence-status', 'alive-count', 'dead-count'], 'trigger.condition'),
+      comparator: enumValue(row.comparator, ['less-than-equal', 'greater-than-equal', 'is-active', 'is-inactive', 'less-than', 'greater-than', 'equal'], 'trigger.comparator'),
       value: finiteValue(row.value, 'trigger.value'),
       buffId: optionalString(row.buffId, 'trigger.buffId'),
     }
@@ -979,14 +979,16 @@ function mapLoadout(value: unknown): CombatLoadout {
     // 技艺经验表与功法经验表同构（缺省空对象，键值经同一数值校验）。
     techniqueExperiences: mapAbilityExperiences(row.techniqueExperiences),
     // 功法触发条件按功法 ID 挂接（跟随功法而非槽位）；缺省空对象。
-    abilityTriggers: mapAbilityTriggers(row.abilityTriggers),
+    abilityTriggers: mapAbilityTriggers(row.abilityTriggers, 'loadout.abilityTriggers'),
+    // 消耗品触发条件按物品 ID 挂接；缺省空对象。与功法同构：键存在即覆盖配表默认（空数组 = 恒可用）。
+    consumableTriggers: mapAbilityTriggers(row.consumableTriggers, 'loadout.consumableTriggers'),
   }
 }
 
-/** 功法触发条件 map 解码：abilityId -> CombatTrigger[]；缺省/空对象均返回 {}。 */
-function mapAbilityTriggers(value: unknown): Record<string, CombatTrigger[]> {
+/** 触发条件 map 解码：键（功法 ID 或物品 ID）-> CombatTrigger[]；缺省/空对象均返回 {}。 */
+function mapAbilityTriggers(value: unknown, name: string): Record<string, CombatTrigger[]> {
   if (value === undefined || value === null) return {}
-  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('loadout.abilityTriggers section 载荷必须是对象。')
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} section 载荷必须是对象。`)
   const result: Record<string, CombatTrigger[]> = {}
   for (const [key, triggers] of Object.entries(value as JsonObject)) result[key] = mapTriggers(triggers)
   return result

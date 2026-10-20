@@ -11,6 +11,13 @@ namespace Domain.Combat;
 /// </summary>
 public static class SkillTriggerEvaluator
 {
+    /// <summary>单条技能/消耗品的触发条件条数上限：服务端装载期、命令期与前端编辑器共用此单一常量。</summary>
+    public const int MaxTriggersPerList = 4;
+
+    /// <summary>数值等值比较容差：气血/灵力百分比由除法的浮点结果参与比较，
+    /// 精确 `==` 在连续量上永不成立，故 equal 一律按本容差判定。前端模拟器必须同值对齐。</summary>
+    public const double EqualTolerance = 1e-6;
+
     /// <summary>全部触发条件同时满足才返回 true；任一不满足即短路。空表视为恒可用。</summary>
     /// <param name="triggers">触发条件 JSON 列表。</param>
     /// <param name="caster">施放方战斗单位。</param>
@@ -142,7 +149,9 @@ public static class SkillTriggerEvaluator
     /// 数值条件只接受大小等于比对。技能与消耗品共用同一词表。
     /// </summary>
     /// <param name="trigger">触发条件 JSON；非法时抛出 InvalidArgument。</param>
-    public static void ValidateTrigger(JsonElement trigger)
+    /// <param name="knownBuffIds">可选 Buff 词表：非 null 时 buff-stacks 的 buffId 必须命中。
+    /// 装载期与命令期传当前配表派生集合；传 null 只校验 buffId 非空。</param>
+    public static void ValidateTrigger(JsonElement trigger, IReadOnlySet<string>? knownBuffIds = null)
     {
         var dependency = JsonRead.Text(trigger, "dependency");
         if (!IsUnitDependency(dependency) && !IsSetDependency(dependency))
@@ -159,9 +168,29 @@ public static class SkillTriggerEvaluator
             : comparator is "greater-than-equal" or "less-than-equal" or "greater-than" or "less-than" or "equal";
         if (!comparatorValid)
             throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件比对方式与类型不匹配。");
-        if (JsonRead.Number(trigger, "value") < 0
-            || (condition == "buff-stacks" && string.IsNullOrWhiteSpace(JsonRead.Text(trigger, "buffId"))))
+        if (JsonRead.Number(trigger, "value") < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件阈值无效。");
+        if (condition != "buff-stacks") return;
+        var buffId = JsonRead.Text(trigger, "buffId");
+        if (string.IsNullOrWhiteSpace(buffId))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "状态层数条件必须指定具体状态。");
+        // 配表中不存在的 Buff 层数恒为 0，条件永远不成立——属静默死配置，装载/命令期一律拒绝。
+        if (knownBuffIds is not null && !knownBuffIds.Contains(buffId))
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"触发条件引用了不存在的状态：{buffId}。");
+    }
+
+    /// <summary>校验触发条件列表：条数不超过 <see cref="MaxTriggersPerList"/>，逐条过 <see cref="ValidateTrigger"/>。
+    /// 空表合法（显式无条件语义）。</summary>
+    /// <param name="triggers">触发条件 JSON 数组。</param>
+    /// <param name="knownBuffIds">可选 Buff 词表，语义同 <see cref="ValidateTrigger"/>。</param>
+    public static void ValidateTriggerList(JsonElement triggers, IReadOnlySet<string>? knownBuffIds = null)
+    {
+        if (triggers.ValueKind != JsonValueKind.Array)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件必须是数组。");
+        if (triggers.GetArrayLength() > MaxTriggersPerList)
+            throw new DomainException(DomainErrorCode.InvalidArgument,
+                $"触发条件最多 {MaxTriggersPerList} 条。");
+        foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger, knownBuffIds);
     }
 
     private static bool Matches(JsonElement trigger, CombatantState caster,
@@ -203,7 +232,7 @@ public static class SkillTriggerEvaluator
             "less-than-equal" => value <= threshold,
             "greater-than" => value > threshold,
             "less-than" => value < threshold,
-            "equal" => value == threshold,
+            "equal" => Math.Abs(value - threshold) <= EqualTolerance,
             // 状态/层数类条件的活性比较：value 为层数计数（当前恒 ≥0）。
             "is-active" => value > 0,
             "is-inactive" => value <= 0,

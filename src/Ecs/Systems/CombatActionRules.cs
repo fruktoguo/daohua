@@ -1446,7 +1446,9 @@ internal static class CombatActionRules
             if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out var consumable)) continue;
             if (slot.RemainingDurationSeconds > 0) continue;
             // 持续消耗品的入场补能同样走共享触发判定：条件不满足本场不启用，不扣件。
-            if (consumable.Triggers is { Count: > 0 } triggers)
+            var triggerList = Domain.Combat.ConsumableTriggerResolver.Resolve(item.Id.Value, consumable,
+                player.Loadout.ConsumableTriggers);
+            if (triggerList.Count > 0)
             {
                 // 目标 = 存活敌中有效威胁最高者（MaxBy 语义：严格更大才替换，平局保留先见者）。
                 CombatantState? triggerTarget = null;
@@ -1455,7 +1457,7 @@ internal static class CombatActionRules
                     if (battleEnemies[i].IsAlive
                         && (triggerTarget is null || battleEnemies[i].EffectiveThreat > triggerTarget.EffectiveThreat))
                         triggerTarget = battleEnemies[i];
-                if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, battle.Player,
+                if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggerList, battle.Player,
                         triggerTarget, battle.PlayerAllies, battleEnemies)) continue;
             }
             var itemId = item.Id;

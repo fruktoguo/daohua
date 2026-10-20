@@ -535,6 +535,37 @@ public sealed class GameDataCatalog
                     || !CombatEncounters.ContainsKey(action.CombatEncounterId)))
                 throw new DomainException(DomainErrorCode.NotFound, $"行动 {action.Id} 关联的遭遇不存在。");
         }
+        TriggerBuffs = DeriveTriggerBuffs(RawItems, Abilities, Actions);
+        TriggerBuffIds = new HashSet<string>(TriggerBuffs.Keys, StringComparer.Ordinal);
+        ValidateTriggerVocabulary();
+    }
+
+    /// <summary>
+    /// 词表一致性门禁：结构校验在各自解析点完成，Buff 词表依赖全部配表派生结果，
+    /// 故统一在构造末尾复查——引用配表中不存在 Buff 的 buff-stacks 条件层数恒为 0，
+    /// 属静默死配置，加载期即拒绝而不是留给运行时表现为「技能永不触发」。
+    /// </summary>
+    private void ValidateTriggerVocabulary()
+    {
+        void Check(IReadOnlyList<JsonElement>? triggers, string owner)
+        {
+            if (triggers is not { Count: > 0 }) return;
+            try
+            {
+                foreach (var trigger in triggers) SkillTriggerEvaluator.ValidateTrigger(trigger, TriggerBuffIds);
+            }
+            catch (DomainException error)
+            {
+                throw new DomainException(error.Code, $"{owner} 触发条件无效：{error.Message}");
+            }
+        }
+        foreach (var item in Items.Values) Check(item.Consumable?.Triggers, $"物品 {item.Id}");
+        foreach (var (abilityId, ability) in Abilities)
+            if (ability.TryGetProperty("defaultTriggers", out var defaults) && defaults.ValueKind == JsonValueKind.Array)
+                Check(defaults.EnumerateArray().Select(trigger => trigger.Clone()).ToArray(), $"功法 {abilityId}");
+        foreach (var (enemyId, monster) in CombatMonsters)
+            foreach (var skill in monster.Skills)
+                Check(skill.Triggers, $"怪物 {enemyId}");
     }
 
     /// <summary>配表版本标签</summary>
@@ -575,6 +606,57 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<string, BuildingDefinition> Buildings { get; }
     /// <summary>系统商店商品目录（官价直售；未配置 shop 配表时为空目录）。</summary>
     public ShopCatalog ShopOffers { get; }
+
+    /// <summary>
+    /// 触发条件可引用的 Buff 标识 → 显示名派生表：从当前配表枚举实际可被授予的 Buff——
+    /// 消耗品 <c>consumable.buffs[].buffId</c>、功法 <c>buff.buffId</c>（缺省时引擎合成
+    /// <c>ability-buff:&lt;abilityId&gt;</c>）、行动产出 Buff <c>yields[].buff.buffId</c> 与特质注入 Buff。
+    /// 条件编辑器只能从这里取项，杜绝引用配表中不存在、层数恒为 0 的静默死配置。
+    /// </summary>
+    public IReadOnlyDictionary<string, string> TriggerBuffs { get; }
+
+    /// <summary>触发条件可引用 Buff 标识集合（<see cref="TriggerBuffs"/> 的键集）。</summary>
+    public IReadOnlySet<string> TriggerBuffIds { get; }
+
+    /// <summary>派生触发条件 Buff 词表；同名 Buff 以先出现的显示名为准。</summary>
+    private static Dictionary<string, string> DeriveTriggerBuffs(
+        IReadOnlyDictionary<string, JsonElement> rawItems,
+        IReadOnlyDictionary<string, JsonElement> abilities,
+        ActionCatalog actions)
+    {
+        var buffs = new Dictionary<string, string>(StringComparer.Ordinal);
+        void Add(string? buffId, string? name)
+        {
+            if (string.IsNullOrWhiteSpace(buffId)) return;
+            // 已存在时不覆盖：首个来源的显示名即权威（配表已声明的 name 优先于 id 兜底）。
+            buffs.TryAdd(buffId, string.IsNullOrWhiteSpace(name) ? buffId : name);
+        }
+
+        // 消耗品战内 Buff：与求值路径读取的同一来源（原始配表 consumable.buffs）。
+        foreach (var raw in rawItems.Values)
+        {
+            if (!raw.TryGetProperty("consumable", out var consumable)
+                || consumable.ValueKind != JsonValueKind.Object
+                || !consumable.TryGetProperty("buffs", out var buffsArray)
+                || buffsArray.ValueKind != JsonValueKind.Array) continue;
+            foreach (var buff in buffsArray.EnumerateArray())
+                Add(JsonRead.Text(buff, "buffId"), JsonRead.Text(buff, "name"));
+        }
+        // 功法战内 Buff：显式 buffId 优先，缺省走引擎合成的 ability-buff:<abilityId>。
+        foreach (var (abilityId, ability) in abilities)
+        {
+            if (!ability.TryGetProperty("buff", out var buff) || buff.ValueKind != JsonValueKind.Object) continue;
+            Add(JsonRead.Text(buff, "buffId") ?? $"ability-buff:{abilityId}",
+                JsonRead.Text(buff, "name") ?? JsonRead.Text(ability, "name"));
+        }
+        // 行动产出 Buff（打坐/历练授予的长效增益）。
+        foreach (var action in actions.All)
+            foreach (var yield in action.Yields)
+                if (yield.Buff is { } grant) Add(grant.BuffId, grant.Name);
+        // 特质注入的机制 Buff（如隐身）。
+        Add(Combat.CombatTraitRules.UnseenBuffId, "隐身");
+        return buffs;
+    }
 
     /// <summary>内置单例兜底配表</summary>
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);

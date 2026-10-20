@@ -316,6 +316,123 @@ public sealed class SkillTriggerEvaluatorTests
         var second = DeterministicCombatEngine.AdvanceTo(restored, 20).Events;
         Assert.Equal(expected, first.Concat(second));
     }
+
+    /// <summary>
+    /// equal 必须按浮点容差判定：气血百分比由除法得出（如 1/3 → 33.333…），
+    /// 精确 == 会让玩家填写的阈值永不成立。容差宽度取自领域层单一常量。
+    /// </summary>
+    [Fact]
+    public void EqualComparatorUsesFloatingTolerance()
+    {
+        // 1000/3000 → 33.333…%：阈值 33.333333 落在容差内应当成立。
+        var stats = CombatantStats.Create(3000, 0, 0, 1) with { MaxManapoints = 0 };
+        var unit = new CombatantState("player", stats);
+        unit.Hitpoints = 1000;
+        var peers = (IReadOnlyList<CombatantState>)[unit];
+
+        Assert.True(SkillTriggerEvaluator.MatchesAll(
+            [Trigger("self", "current-hp-percentage", "equal", 100d / 3d)], unit, null, peers, peers));
+        Assert.True(SkillTriggerEvaluator.MatchesAll(
+            [Trigger("self", "current-hp-percentage", "equal", 33.333333)], unit, null, peers, peers));
+        // 超出容差的阈值仍判定不成立。
+        Assert.False(SkillTriggerEvaluator.MatchesAll(
+            [Trigger("self", "current-hp-percentage", "equal", 33.4)], unit, null, peers, peers));
+        Assert.Equal(1e-6, SkillTriggerEvaluator.EqualTolerance);
+    }
+
+    /// <summary>
+    /// 条数上限为单源常量：超过 MaxTriggersPerList 的列表在装载/命令期被拒绝，空表合法。
+    /// </summary>
+    [Fact]
+    public void TriggerListRejectsExceedingCapAndAllowsEmpty()
+    {
+        var one = Trigger("self", "current-hp-percentage", "less-than-equal", 50);
+        var cap = SkillTriggerEvaluator.MaxTriggersPerList;
+        var exact = JsonDocument.Parse("[" + string.Join(",", Enumerable.Repeat(one.GetRawText(), cap)) + "]");
+        var over = JsonDocument.Parse("[" + string.Join(",", Enumerable.Repeat(one.GetRawText(), cap + 1)) + "]");
+        // 空数组 = 显式无条件，合法。
+        SkillTriggerEvaluator.ValidateTriggerList(JsonDocument.Parse("[]").RootElement);
+        SkillTriggerEvaluator.ValidateTriggerList(exact.RootElement);
+        Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTriggerList(over.RootElement));
+    }
+
+    /// <summary>
+    /// Buff 词表校验：传入词表时引用配表中不存在的 Buff 直接拒绝（此类条件层数恒为 0，
+    /// 属静默死配置）；不传词表时保持只校验非空。
+    /// </summary>
+    [Fact]
+    public void BuffStacksValidatesAgainstProvidedVocabulary()
+    {
+        var known = new HashSet<string>(StringComparer.Ordinal) { "buff.zhixue" };
+        SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("self", "buff-stacks", "greater-than-equal", 1, "buff.zhixue"), known);
+        Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("self", "buff-stacks", "greater-than-equal", 1, "buff.qi-gathering"), known));
+        // 未提供词表时不校验命中（保持既有调用点语义）。
+        SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("self", "buff-stacks", "greater-than-equal", 1, "buff.qi-gathering"));
+    }
+
+    /// <summary>
+    /// 条件列表三态语义：键存在即覆盖（空数组 = 玩家显式无条件，不回退配表默认），
+    /// 键缺失才回退 defaultTriggers。这是「清空全部条件」能被正确表达的前提。
+    /// </summary>
+    [Fact]
+    public void AbilitySlotTriggerOverrideDistinguishesMissingKeyFromEmptyArray()
+    {
+        var ability = JsonDocument.Parse(
+            "{\"id\":\"ability.test\",\"category\":\"physical\",\"element\":\"none\",\"castMilliseconds\":1000,"
+            + "\"cooldownMilliseconds\":0,\"damageRatio\":1,\"manaCost\":0,"
+            + "\"defaultTriggers\":[{\"dependency\":\"self\",\"condition\":\"current-hp-percentage\","
+            + "\"comparator\":\"less-than-equal\",\"value\":50}]}").RootElement.Clone();
+        var abilities = new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["ability.test"] = ability };
+        var slots = (IReadOnlyList<PlayerAbilitySlot>)[new("ability.test", 1)];
+
+        // 键缺失 → 回退配表出厂默认（1 条）。
+        var fallback = SkillSlot.FromAbilitySlots(slots, abilities);
+        Assert.Single(fallback);
+        Assert.Single(fallback[0].Triggers);
+
+        // 键存在且为空数组 → 显式无条件恒可用，绝不回退默认。
+        var explicitNone = SkillSlot.FromAbilitySlots(slots, abilities,
+            new Dictionary<string, JsonElement[]>(StringComparer.Ordinal) { ["ability.test"] = [] });
+        Assert.Single(explicitNone);
+        Assert.Empty(explicitNone[0].Triggers);
+
+        // 键存在且非空 → 玩家配置覆盖默认。
+        var custom = (JsonElement[])[Trigger("self", "current-mana-percentage", "less-than-equal", 20)];
+        var overridden = SkillSlot.FromAbilitySlots(slots, abilities,
+            new Dictionary<string, JsonElement[]>(StringComparer.Ordinal) { ["ability.test"] = custom });
+        Assert.Single(overridden[0].Triggers);
+        Assert.Equal("current-mana-percentage", JsonReadProbe.Text(overridden[0].Triggers[0], "condition"));
+    }
+
+    /// <summary>
+    /// 消耗品条件解析同构三态：玩家按物品 ID 的配置覆盖配表默认，空数组表示无条件恒可用。
+    /// </summary>
+    [Fact]
+    public void ConsumableTriggerResolverOverridesDefaultByItemId()
+    {
+        var factory = (JsonElement[])[Trigger("self", "current-hp-percentage", "less-than-equal", 30)];
+        var consumable = new ConsumableDefinition(new HashSet<string>(StringComparer.Ordinal) { "combat" },
+            CooldownSeconds: 10, Triggers: factory);
+
+        // 玩家未配置该物品 → 配表出厂默认。
+        Assert.Same(factory, ConsumableTriggerResolver.Resolve("item.pill", consumable, null));
+        Assert.Same(factory, ConsumableTriggerResolver.Resolve("item.pill", consumable,
+            new Dictionary<string, JsonElement[]>(StringComparer.Ordinal)));
+
+        // 键存在且为空数组 → 显式无条件恒可用。
+        Assert.Empty(ConsumableTriggerResolver.Resolve("item.pill", consumable,
+            new Dictionary<string, JsonElement[]>(StringComparer.Ordinal) { ["item.pill"] = [] }));
+
+        // 键存在且非空 → 玩家配置覆盖配表默认。
+        JsonElement[] custom = [Trigger("self", "current-mana-percentage", "greater-than-equal", 70)];
+        var resolved = ConsumableTriggerResolver.Resolve("item.pill", consumable,
+            new Dictionary<string, JsonElement[]>(StringComparer.Ordinal) { ["item.pill"] = custom });
+        Assert.Single(resolved);
+        Assert.Equal("current-mana-percentage", JsonReadProbe.Text(resolved[0], "condition"));
+    }
 }
 
 /// <summary>测试内 JSON 探针：仅用于断言配表折叠结果，与生产读取助手同口径。</summary>

@@ -3,7 +3,8 @@ import '../network/gameClient'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
 import { mergeBattleReportHistory } from './battleReportStore'
 import { useUiStore } from '../uiStore'
-import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketItemStats, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
+import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketItemStats, PlayerPatch, PlayerSnapshot, QueueState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from './types'
+import { DEFAULT_TRIGGER_SPEC } from './types'
 
 /**
  * 前端与服务端的网络连接生命周期状态：
@@ -83,6 +84,10 @@ interface GameStore {
   maps: readonly WorldMapDefinition[]
   /** 全量玩家可建造建筑目录 */
   buildings: readonly BuildingDefinition[]
+  /** 触发条件可引用的 Buff 词表（服务端配表派生；条件编辑器唯一数据源） */
+  triggerBuffs: readonly TriggerBuffOption[]
+  /** 触发条件判定规约常量（条数上限与等值容差，服务端单源） */
+  triggerSpec: TriggerSpec
   /** 坊市全品种行情统计缓存（键 `itemId|强化等级`，由 gameClient 周期轮询维护；悬浮行情卡数据源） */
   marketStats: Readonly<Record<string, MarketItemStats>>
   /** 当前网络连接状态 */
@@ -124,6 +129,10 @@ interface GameStore {
   setMaps: (maps: readonly WorldMapDefinition[]) => void
   /** 更新可建造建筑目录 */
   setBuildings: (buildings: readonly BuildingDefinition[]) => void
+  /** 更新触发条件 Buff 词表（配表派生） */
+  setTriggerBuffs: (buffs: readonly TriggerBuffOption[]) => void
+  /** 更新触发条件判定规约常量 */
+  setTriggerSpec: (spec: TriggerSpec) => void
   /** 更新坊市行情统计缓存（整表替换，键 `itemId|强化等级`） */
   setMarketStats: (stats: Readonly<Record<string, MarketItemStats>>) => void
   /** 应用服务端全量快照 (Snapshot) */
@@ -318,6 +327,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   equipment: [],
   maps: [],
   buildings: [],
+  triggerBuffs: [],
+  triggerSpec: DEFAULT_TRIGGER_SPEC,
   marketStats: {},
   connection: 'connecting',
   latencyMs: null,
@@ -365,6 +376,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setEquipment: (equipment) => set({ equipment }),
   setMaps: (maps) => set({ maps }),
   setBuildings: (buildings) => set({ buildings }),
+  setTriggerBuffs: (triggerBuffs) => set({ triggerBuffs }),
+  setTriggerSpec: (triggerSpec) => set({ triggerSpec }),
   setMarketStats: (marketStats) => set({ marketStats }),
   applySnapshot: (snapshot) => {
     const state = get()

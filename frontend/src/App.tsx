@@ -1339,13 +1339,15 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
 
   const saveItemTriggers = useCallback((triggers: CombatTrigger[] | null) => {
     if (!editingTriggerItemId) return
+    // 消耗品条件走 consumableTriggers 独立通道：键存在即覆盖配表默认，空数组 = 无条件恒可用。
+    // 不得写 abilityTriggers（键必须是已习得功法，服务端会拒绝消耗品 ID）。
     sendLoadoutReplace({
-      abilityTriggers: {
-        ...(combat?.abilityTriggers ?? {}),
+      consumableTriggers: {
+        ...(combat?.consumableTriggers ?? {}),
         [editingTriggerItemId]: triggers ?? [],
       },
     })
-  }, [editingTriggerItemId, combat?.abilityTriggers])
+  }, [editingTriggerItemId, combat?.consumableTriggers])
   const pickerItems = useMemo<ItemPickerEntry[]>(() => itemCatalog
       .filter(item => item.category === 'consumable' && item.usableBars.includes(bar) && itemAmount(inventory, item.itemId) > 0
         // 药品栏只放药品类即时消耗品；通用栏任意适用自动消耗品皆可（手动消耗品不入栏）。
@@ -1392,7 +1394,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
           } : null
           const cooldownMs = consumableCooldowns?.[slotOffset + index] ?? 0
           const itemTriggers = isCombat && slot.itemId
-            ? (combat?.abilityTriggers?.[slot.itemId] ?? selectedDefinition?.triggers ?? [])
+            ? (combat?.consumableTriggers?.[slot.itemId] ?? selectedDefinition?.triggers ?? [])
             : []
           const conditionCount = itemTriggers.length
           return (
@@ -1422,7 +1424,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       </div>
       {(() => {
         const pickerItemTriggers = isCombat && pickerSlot?.itemId
-          ? (combat?.abilityTriggers?.[pickerSlot.itemId] ?? findItemInCatalog(itemCatalog, pickerSlot.itemId)?.triggers ?? [])
+          ? (combat?.consumableTriggers?.[pickerSlot.itemId] ?? findItemInCatalog(itemCatalog, pickerSlot.itemId)?.triggers ?? [])
           : []
         return (
           <ItemGridPicker
@@ -1443,7 +1445,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       })()}
       {isCombat && editingTriggerItemId !== null && (
         <CombatTriggerEditor
-          initialTriggers={combat?.abilityTriggers?.[editingTriggerItemId] ?? findItemInCatalog(itemCatalog, editingTriggerItemId)?.triggers ?? []}
+          initialTriggers={combat?.consumableTriggers?.[editingTriggerItemId] ?? findItemInCatalog(itemCatalog, editingTriggerItemId)?.triggers ?? []}
           onClose={() => setEditingTriggerItemId(null)}
           onSave={saveItemTriggers}
           open
@@ -2487,6 +2489,9 @@ export default function App(): React.JSX.Element {
         useGameStore.getState().setEncounters(catalog.encounters)
         useGameStore.getState().setAbilities(catalog.abilities)
         useGameStore.getState().setBuildings(catalog.buildings)
+        // 触发条件编辑器的 Buff 词表与规约常量：服务端配表派生，前端不另写一份。
+        useGameStore.getState().setTriggerBuffs(catalog.buffs)
+        useGameStore.getState().setTriggerSpec(catalog.triggerSpec)
         if (catalog.items && catalog.items.length > 0) {
           useGameStore.getState().setItems(catalog.items)
         }

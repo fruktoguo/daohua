@@ -81,7 +81,8 @@ export class SimSkillTriggerEvaluator {
         return value <= 0
       default:
         if ((trigger.comparator as string) === 'equal') {
-          return Math.abs(value - threshold) < 1e-9
+          // 与服务端 SkillTriggerEvaluator.EqualTolerance 同值：浮点百分比无法精确相等。
+          return Math.abs(value - threshold) <= 1e-6
         }
         return false
     }

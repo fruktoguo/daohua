@@ -380,6 +380,10 @@ export const combatZh = {
         allyHighestHp: '友方队伍中生命值最高的成员',
         enemyLowestHp: '敌方队伍中生命值最低的单位',
         enemyHighestHp: '敌方队伍中生命值最高的单位',
+        allySet: '我方全体存活单位构成的集合',
+        enemySet: '敌方全体单位构成的集合',
+        aliveCount: '集合中的存活成员数量',
+        deadCount: '集合中已阵亡的成员数量',
         buffStacks: '指定状态/Buff的叠加层数',
       },
       buff: {

@@ -58,7 +58,9 @@ public static class PostgresSchema
     /// v37：组队会话由全量托管切为在线钱包/离线储备；旧会话一次性退款并安全散场，玩家分段仍为 v36。
     /// v38：新增 economy.shop_daily_purchases 系统商店每日限购认领行（与经济事务同事务累加）；存档载荷未变。
     /// v39：market.item_stats 增 reference_price 参考价格字段（最近10次成交单价单值滑动平均EMA，单笔购买多次算一次；无成交价回落配表回收价）——存档载荷未变。
-    public const int Version = 39;
+    /// v40：loadout 分段载荷新增 consumableTriggers 消耗品触发条件映射（可缺省解码为 null/[]，表结构未变）——
+    /// 存档标签推进至 v37，玩家八分段无表结构变化。
+    public const int Version = 40;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """

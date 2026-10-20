@@ -572,8 +572,11 @@ public sealed class ActionParticipationSessionEngine
         var caster = _battle.PlayerAllies[row.MemberIndex];
         // 倒地成员不再充能新周期（与单人 Hitpoints<=0 跳过同口径）；已生效周期按墙钟照常耗竭。
         if (!caster.IsAlive) return;
-        if (consumable.Triggers is { Count: > 0 } triggers
-            && !SkillTriggerEvaluator.MatchesAll(triggers, caster, HighestThreatAlive(_battle.Enemies),
+        // 小组会话同样按物品 ID 读取该成员的自定义条件（组队冻结槽只冻结槽配置与时钟，不冻结条件本体）。
+        var triggerList = ConsumableTriggerResolver.Resolve(item.Id.Value, consumable,
+            _members[row.MemberIndex].Loadout.ConsumableTriggers);
+        if (triggerList.Count > 0
+            && !SkillTriggerEvaluator.MatchesAll(triggerList, caster, HighestThreatAlive(_battle.Enemies),
                 _battle.PlayerAllies, _battle.Enemies)) return;
         SpendBalance(row.MemberIndex, row.ItemId);
         _consumables![index] = _consumables![index] with {
@@ -604,12 +607,14 @@ public sealed class ActionParticipationSessionEngine
         // 倒地单位不吃药、不打符，现有持续周期仍按墙钟到期。
         if (caster is not null ? !caster.IsAlive : _members[memberIndex].Resources.Hitpoints <= 0) return;
         CombatantState? target = _battle is { } battle ? HighestThreatAlive(battle.Enemies) : null;
-        if (consumable.Triggers is { Count: > 0 } triggers)
+        var triggerList = ConsumableTriggerResolver.Resolve(item.Id.Value, consumable,
+            _members[memberIndex].Loadout.ConsumableTriggers);
+        if (triggerList.Count > 0)
         {
             var evalCaster = caster ?? BuildSessionEvalCaster(memberIndex);
             var allies = _battle?.PlayerAllies ?? (IReadOnlyList<CombatantState>)[evalCaster];
             var enemies = _battle?.Enemies ?? (IReadOnlyList<CombatantState>)[];
-            if (!SkillTriggerEvaluator.MatchesAll(triggers, evalCaster, target, allies, enemies)) return;
+            if (!SkillTriggerEvaluator.MatchesAll(triggerList, evalCaster, target, allies, enemies)) return;
         }
         var cooldown = consumable.CooldownSeconds;
         if (cooldown <= 0)

@@ -169,6 +169,36 @@ export type CombatTriggerDependency =
   | 'ally-highest-hp'
   | 'enemy-lowest-hp'
   | 'enemy-highest-hp'
+  /** 集合对象：我方全体存活单位（配 alive-count / dead-count 群体聚合条件） */
+  | 'ally'
+  /** 集合对象：敌方全体单位（配 alive-count / dead-count 群体聚合条件） */
+  | 'enemy'
+
+/**
+ * 触发条件可引用的 Buff 词表项（服务端从当前配表派生；前端编辑器只从这里取项）
+ */
+export interface TriggerBuffOption {
+  /** Buff 标识（如 buff.zhixue / ability-buff:<abilityId>） */
+  buffId: string
+  /** 显示名（配表 name，缺省回落 buffId） */
+  name: string
+}
+
+/**
+ * 触发条件判定规约常量（服务端领域层单调源）
+ */
+export interface TriggerSpec {
+  /** 单条条件列表条数上限 */
+  maxTriggersPerList: number
+  /** 数值等值（equal）比较容差 */
+  equalTolerance: number
+}
+
+/**
+ * 触发条件规约兜底值：仅用于服务端 /api/v1/catalog/triggers 不可达时的启动期占位，
+ * 真实值以服务端下发为准（领域层 SkillTriggerEvaluator 为单源）。
+ */
+export const DEFAULT_TRIGGER_SPEC: TriggerSpec = { maxTriggersPerList: 4, equalTolerance: 1e-6 }
 
 /**
  * 战斗自动触发条件判定类型
@@ -186,6 +216,10 @@ export type CombatTriggerCondition =
   | 'stun-status'
   | 'blind-status'
   | 'silence-status'
+  /** 群体聚合：我方/敌方集合中存活成员数量（仅集合对象可用） */
+  | 'alive-count'
+  /** 群体聚合：我方/敌方集合中已阵亡成员数量（仅集合对象可用） */
+  | 'dead-count'
 
 /**
  * 战斗自动触发条件比较操作符
@@ -197,6 +231,8 @@ export type CombatTriggerComparator =
   | 'is-inactive'
   | 'less-than'
   | 'greater-than'
+  /** 浮点相等：按服务端 EqualTolerance 容差判定，不与精确 == 等价 */
+  | 'equal'
 
 /**
  * 功法技能效果类型
@@ -1510,6 +1546,8 @@ export interface CombatLoadout {
   techniqueExperiences?: Record<string, number>
   /** 功法自动释放触发条件：abilityId -> 条件列表（跟随功法而非槽位，卸下再装不丢） */
   abilityTriggers?: Record<string, CombatTrigger[]>
+  /** 消耗品自动使用触发条件：itemId -> 条件列表（键存在即覆盖配表默认；空数组 = 无条件恒可用） */
+  consumableTriggers?: Record<string, CombatTrigger[]>
 }
 
 /**

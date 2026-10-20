@@ -117,7 +117,8 @@ public sealed record PlayerLoadoutDocument(
     IReadOnlyList<PlayerEquipmentSlot> Equipment,
     IReadOnlyDictionary<string, double>? AbilityExperiences = null,
     IReadOnlyDictionary<string, double>? TechniqueExperiences = null,
-    IReadOnlyDictionary<string, JsonElement[]>? AbilityTriggers = null);
+    IReadOnlyDictionary<string, JsonElement[]>? AbilityTriggers = null,
+    IReadOnlyDictionary<string, JsonElement[]>? ConsumableTriggers = null);
 
 /// <summary>装配分段运行时状态（六维根骨、功法槽位、装备与技能经验）。</summary>
 public sealed partial class PlayerLoadoutState
@@ -151,11 +152,14 @@ public sealed partial class PlayerLoadoutState
     public VersionedDictionary<string, double> TechniqueExperiences { get; } = new();
     /// <summary>功法自定义触发条件，键为 ability ID 字符串；跟随功法而非装配槽位，写入递增版本号。</summary>
     public VersionedDictionary<string, JsonElement[]> AbilityTriggers { get; } = new();
+    /// <summary>消耗品自定义触发条件，键为物品 ID 字符串；覆盖配表 consumable.triggers 出厂默认，
+    /// 与功法触发条件同构（键存在即覆盖，空数组 = 显式无条件恒可用）。</summary>
+    public VersionedDictionary<string, JsonElement[]> ConsumableTriggers { get; } = new();
 
     /// <summary>装配文档导出修订号：槽位/装备/技能经验/技艺经验/触发条件/六维任一写入严格增大。</summary>
     internal long ExportRevision =>
         AbilitySlots.Version + Equipment.Version + AbilityExperiences.Version + TechniqueExperiences.Version
-        + AbilityTriggers.Version + CoreAttributesVersion;
+        + AbilityTriggers.Version + ConsumableTriggers.Version + CoreAttributesVersion;
 
     /// <summary>导出可持久化装配文档；触发条件 JSON 做防御性深拷贝。
     /// 修订号未变时直接复用上轮文档（位级一致），仅在装配变更时才重新克隆触发器与字典。</summary>
@@ -169,6 +173,8 @@ public sealed partial class PlayerLoadoutState
             AbilityExperiences.Count == 0 ? null : AbilityExperiences.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
             TechniqueExperiences.Count == 0 ? null : TechniqueExperiences.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
             AbilityTriggers.Count == 0 ? null : AbilityTriggers.ToDictionary(
+                pair => pair.Key, pair => pair.Value.Select(trigger => trigger.Clone()).ToArray(), StringComparer.Ordinal),
+            ConsumableTriggers.Count == 0 ? null : ConsumableTriggers.ToDictionary(
                 pair => pair.Key, pair => pair.Value.Select(trigger => trigger.Clone()).ToArray(), StringComparer.Ordinal));
         _exportedDocument = document;
         _exportedRevision = ExportRevision;
@@ -192,6 +198,8 @@ public sealed partial class PlayerLoadoutState
             || (document.TechniqueExperiences?.Any(pair => !Domain.GameData.TechniqueCatalog.IsKnown(pair.Key)
                 || !double.IsFinite(pair.Value) || pair.Value < 0) ?? false)
             || (document.AbilityTriggers?.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null
+                || pair.Value.Any(trigger => trigger.ValueKind != JsonValueKind.Object)) ?? false)
+            || (document.ConsumableTriggers?.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null
                 || pair.Value.Any(trigger => trigger.ValueKind != JsonValueKind.Object)) ?? false))
             throw new DomainException(DomainErrorCode.InvalidArgument, "装配快照无效。");
         CoreAttributes = core;
@@ -232,6 +240,12 @@ public sealed partial class PlayerLoadoutState
         {
             foreach (var pair in document.AbilityTriggers)
                 AbilityTriggers[pair.Key] = pair.Value.Select(trigger => trigger.Clone()).ToArray();
+        }
+        ConsumableTriggers.Clear();
+        if (document.ConsumableTriggers is not null)
+        {
+            foreach (var pair in document.ConsumableTriggers)
+                ConsumableTriggers[pair.Key] = pair.Value.Select(trigger => trigger.Clone()).ToArray();
         }
     }
 
@@ -365,10 +379,13 @@ public sealed partial class PlayerAggregate
     /// <param name="abilities">权威功法槽位列表（至多 4 槽）。</param>
     /// <param name="equipment">权威装备槽位列表。</param>
     /// <param name="abilityTriggers">功法触发条件全量 map（键为已习得功法 ID）；null 表示清空全部自定义条件。</param>
+    /// <param name="consumableTriggers">消耗品触发条件全量 map（键为配表消耗品 ID）；null 表示清空全部自定义条件、回退配表默认。</param>
     public void ReplaceCombatSlots(IReadOnlyList<PlayerAbilitySlot> abilities, IReadOnlyList<PlayerEquipmentSlot> equipment,
-        IReadOnlyDictionary<string, JsonElement[]>? abilityTriggers = null)
+        IReadOnlyDictionary<string, JsonElement[]>? abilityTriggers = null,
+        IReadOnlyDictionary<string, JsonElement[]>? consumableTriggers = null)
     {
-        Loadout.Restore(new(Loadout.CoreAttributes, abilities, equipment, AbilityTriggers: abilityTriggers));
+        Loadout.Restore(new(Loadout.CoreAttributes, abilities, equipment,
+            AbilityTriggers: abilityTriggers, ConsumableTriggers: consumableTriggers));
         Loadout.EquippedItemIds.Clear();
         Loadout.EquippedItemIds.AddRange(equipment.Select(item => new ItemId(item.ItemId)));
         Touch(PlayerSectionKind.Loadout);

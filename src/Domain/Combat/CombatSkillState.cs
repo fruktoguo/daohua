@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Common;
+using Domain.GameData;
 using Domain.Player;
 
 namespace Domain.Combat;
@@ -29,10 +30,11 @@ public sealed record SkillSlot(JsonElement Ability, double Level = 1, IReadOnlyL
             ? defaults.EnumerateArray().Select(trigger => trigger.Clone()).ToArray()
             : [];
 
-    /// <summary>由玩家装配槽位构建通用技能槽：触发条件缺省回退配表 defaultTriggers。</summary>
+    /// <summary>由玩家装配槽位构建通用技能槽：触发条件键缺失时回退配表 defaultTriggers。</summary>
     /// <param name="slots">玩家装配槽位列表（空槽跳过）。</param>
     /// <param name="abilities">全局功法配表。</param>
-    /// <param name="abilityTriggers">按功法 ID 挂接的自定义触发条件 map；键命中且非空时覆盖配表默认值。</param>
+    /// <param name="abilityTriggers">按功法 ID 挂接的自定义触发条件 map。
+    /// 键存在即覆盖（含空数组 = 玩家显式选择无条件恒施放）；键缺失才回退配表默认值。</param>
     /// <returns>按装配顺序排列的通用技能槽。</returns>
     internal static List<SkillSlot> FromAbilitySlots(IReadOnlyList<PlayerAbilitySlot> slots,
         IReadOnlyDictionary<string, JsonElement> abilities,
@@ -44,9 +46,7 @@ public sealed record SkillSlot(JsonElement Ability, double Level = 1, IReadOnlyL
             if (slot.AbilityId is null || !abilities.TryGetValue(slot.AbilityId, out var ability)) continue;
             // 内功心法为常驻被动心法，不进入战斗施放序列（总纲 §5.3.1）。
             if (JsonRead.Text(ability, "discipline") == "internal") continue;
-            var triggers = abilityTriggers is not null
-                && abilityTriggers.TryGetValue(slot.AbilityId, out var custom)
-                && custom.Length > 0
+            var triggers = abilityTriggers is not null && abilityTriggers.TryGetValue(slot.AbilityId, out var custom)
                 ? custom.Select(trigger => trigger.Clone()).ToArray()
                 : null;
             skills.Add(new SkillSlot(ability.Clone(), slot.Level, triggers));
@@ -55,7 +55,26 @@ public sealed record SkillSlot(JsonElement Ability, double Level = 1, IReadOnlyL
     }
 }
 
-/// <summary>单个技能的冷却条目：技能 ID 与剩余冷却秒数。</summary>
+/// <summary>
+/// 消耗品触发条件的唯一解析入口：玩家按物品 ID 的自定义配置覆盖配表出厂默认。
+/// 三态语义与功法一致——键存在即覆盖（空数组 = 玩家显式选择无条件恒可用），
+/// 键缺失才回退配表 <c>consumable.triggers</c>。所有消费点（单人即时/持续、组队会话）必须经此取条件，
+/// 禁止直接读 <c>ConsumableDefinition.Triggers</c>，否则玩家配置对不同消费路径表现不一致。
+/// </summary>
+public static class ConsumableTriggerResolver
+{
+    /// <summary>解析指定物品实际生效的触发条件列表；空表表示无条件恒可用。</summary>
+    /// <param name="itemId">物品 ID 字符串。</param>
+    /// <param name="consumable">配表消耗品定义（携带出厂默认条件）。</param>
+    /// <param name="playerTriggers">玩家自定义触发条件 map（键为物品 ID），可空。</param>
+    public static IReadOnlyList<JsonElement> Resolve(string itemId, ConsumableDefinition consumable,
+        IReadOnlyDictionary<string, JsonElement[]>? playerTriggers)
+    {
+        if (playerTriggers is not null && playerTriggers.TryGetValue(itemId, out var custom)) return custom;
+        return consumable.Triggers ?? [];
+    }
+}
+
 public sealed record CombatSkillCooldown(string AbilityId, double RemainingSeconds);
 
 /// <summary>

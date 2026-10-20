@@ -1,5 +1,5 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
-import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, WorldMapDefinition } from '../game/types'
+import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -40,8 +40,10 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   equipment: CombatEquipmentDefinition[]
   abilities: CombatAbilityDefinition[]
   buildings: BuildingDefinition[]
+  buffs: TriggerBuffOption[]
+  triggerSpec: TriggerSpec
 }> {
-  const [actions, maps, encounters, items, equipment, baseAttributes, abilities, buildings] = await Promise.all([
+  const [actions, maps, encounters, items, equipment, baseAttributes, abilities, buildings, buffs, triggerSpec] = await Promise.all([
     requestJson<ActionDefinition[]>('/api/v1/catalog/actions', { signal }),
     requestJson<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal }),
     requestJson<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal }),
@@ -50,9 +52,13 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
     requestJson<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', { signal }),
     requestJson<CombatAbilityDefinition[]>('/api/v1/catalog/abilities', { signal }),
     requestJson<BuildingDefinition[]>('/api/v1/catalog/buildings', { signal }),
+    // Buff 词表与触发条件规约常量：服务端单一权威，前端条件编辑器不得另写一份。
+    requestJson<TriggerBuffOption[]>('/api/v1/catalog/buffs', { signal }).catch(() => [] as TriggerBuffOption[]),
+    requestJson<TriggerSpec>('/api/v1/catalog/triggers', { signal })
+      .catch(() => ({ maxTriggersPerList: 4, equalTolerance: 1e-6 }) as TriggerSpec),
   ])
   registerBaseAttributeAnchors(baseAttributes)
-  return { actions, maps, encounters, items, equipment, abilities, buildings }
+  return { actions, maps, encounters, items, equipment, abilities, buildings, buffs, triggerSpec }
 }
 
 /**

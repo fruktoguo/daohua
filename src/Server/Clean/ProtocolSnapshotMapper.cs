@@ -337,6 +337,7 @@ public static class ProtocolSnapshotMapper
             abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>(),
             techniqueExperiences = state.Loadout.TechniqueExperiences ?? new Dictionary<string, double>(),
             abilityTriggers = state.Loadout.AbilityTriggers ?? new Dictionary<string, JsonElement[]>(),
+            consumableTriggers = state.Loadout.ConsumableTriggers ?? new Dictionary<string, JsonElement[]>(),
         };
     }
 

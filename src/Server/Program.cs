@@ -358,6 +358,26 @@ if (processRole == ServerProcessRole.Api)
         ApplyCatalogHeaders(context, gameData.Fingerprint);
         return Results.Ok(StaticGameCatalogMapper.Items(gameData));
     });
+    // 触发条件可引用的 Buff 词表：由配表派生（消耗品 buffs / 功法 buff / 行动产出 Buff / 特质注入），
+    // 前端条件编辑器只能从这里取项，杜绝引用配表中不存在的 Buff 造成层数恒 0 的死条件。
+    catalog.MapGet("/buffs", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        return Results.Ok(gameData.TriggerBuffs
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => new { buffId = pair.Key, name = pair.Value })
+            .ToArray());
+    });
+    // 触发条件判定规约常量：条数上限与等值容差由领域层单源给出，前端不得另写一份。
+    catalog.MapGet("/triggers", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        return Results.Ok(new
+        {
+            maxTriggersPerList = SkillTriggerEvaluator.MaxTriggersPerList,
+            equalTolerance = SkillTriggerEvaluator.EqualTolerance
+        });
+    });
     catalog.MapGet("/equipment", (HttpContext context, GameDataCatalog gameData) =>
     {
         ApplyCatalogHeaders(context, gameData.Fingerprint);
