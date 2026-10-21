@@ -24,8 +24,8 @@ const WEAPON_SLOTS: Record<string, true> = { weapon: true, 'two-hand': true, mai
 const TRINKET_SLOTS: Record<string, true> = { trinket: true, ring: true, neck: true, talisman: true }
 
 export function isMaterial(item: MarketInstrument): boolean {
-  // 品类以主分类为准：觉醒石等主分类为 special 的功能道具不得跨入材料页
-  return item.category === 'material'
+  // 材料类标的：包含常规材料（category: 'material'）及特殊奇石材料（如觉醒石 item.awakening-stone）
+  return item.category === 'material' || item.itemId === 'item.awakening-stone'
 }
 
 export function isEquipment(item: MarketInstrument): boolean {

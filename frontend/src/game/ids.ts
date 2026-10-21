@@ -1037,7 +1037,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'currency.spirit-stone': { glyph: '◈', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.gongde': { glyph: '功', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.gongde-bound': { glyph: '德', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
-  'item.awakening-stone': { glyph: '✦', tone: 'purple', rarity: 'heaven', level: 1, subCategory: 'special' },
+  'item.awakening-stone': { glyph: '✦', tone: 'gold', rarity: 'heaven', level: 54, subCategory: 'special' },
   'item.tome.heavy-slash': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.heavy-slash': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.chain-strike': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
@@ -1291,6 +1291,17 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     durationSeconds: 300,
     isContinuous: true,
     alchemyMultiplier: 1.25,
+  },
+  'item.awakening-stone': {
+    itemId: 'item.awakening-stone',
+    name: '觉醒石',
+    description: '天地通玄，宿慧初开。\n蕴含先天气运的玄奥灵石。使用后可随机觉醒一项先天特质；若已拥有，则为该特质注入领悟经验，促其突破升阶。',
+    kind: 'material',
+    category: 'special',
+    subCategory: 'special',
+    tier: 5,
+    sellPrice: 100,
+    isTradable: true,
   },
 }
 

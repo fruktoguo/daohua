@@ -122,6 +122,32 @@ public sealed class MarketVariantTests
         Assert.Equal("ITEM_EQUIPPED", exceed.Code);
     }
 
+    /// <summary>觉醒石为天品（Tier 5）且 IsTradable 为 true，允许通过 market.place 挂单买卖。</summary>
+    [Fact]
+    public async Task MarketPlace_AwakeningStone_AllowsSellAndBuy()
+    {
+        var playerId = Guid.NewGuid();
+        var assets = new VariantAssets(playerId, ("item.awakening-stone", string.Empty, 2d));
+        var catalog = LoadCatalogFiles("items/materials.json");
+        await using var runtime = Create(catalog, playerId, assets);
+        await runtime.LoadAsync(playerId);
+
+        Assert.True(catalog.Items.TryGetValue(new Domain.Common.ItemId("item.awakening-stone"), out var stone));
+        Assert.True(stone.IsTradable);
+        Assert.True(catalog.RawItems.TryGetValue("item.awakening-stone", out var rawStone));
+        Assert.Equal(5, rawStone.GetProperty("tier").GetInt32());
+
+        // 挂卖单：持有 2 颗卖 1 颗，通过命令层检验进入 PlaceAsync
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await runtime.ExecuteAsync(playerId, "market.place",
+                PlacePayload("item.awakening-stone", "sell", null), 0, Guid.NewGuid()));
+
+        // 挂买单：通过命令层检验进入 PlaceAsync
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await runtime.ExecuteAsync(playerId, "market.place",
+                PlacePayload("item.awakening-stone", "buy", null), 0, Guid.NewGuid()));
+    }
+
     /// <summary>装配带未启动市场运行时的适配器：未就绪状态由 PlaceAsync 的 EnsureReady 暴露，不触库。</summary>
     private static EcsPlayerRuntimeAdapter Create(GameDataCatalog catalog, Guid playerId, IAssetBalanceRepository? assets = null)
     {

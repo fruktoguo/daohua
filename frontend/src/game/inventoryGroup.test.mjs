@@ -41,11 +41,13 @@ test.after(() => {
   } catch {}
 })
 
-test('inventoryGroup: materials.json 中觉醒石配置为 category=special, subCategory=special', () => {
+test('inventoryGroup: materials.json 中觉醒石配置为 category=special, subCategory=special, tier=5, isTradable=true', () => {
   const awakeningStone = rawMaterials.find(it => it.id === 'item.awakening-stone')
   assert.ok(awakeningStone, '觉醒石必须存在于 materials.json')
   assert.equal(awakeningStone.category, 'special', '觉醒石 category 必须为 special')
   assert.equal(awakeningStone.subCategory, 'special', '觉醒石 subCategory 必须为 special')
+  assert.equal(awakeningStone.tier, 5, '觉醒石 tier 必须为 5 (天品)')
+  assert.equal(awakeningStone.isTradable, true, '觉醒石 isTradable 必须为 true (坊市可交易)')
 })
 
 test('inventoryGroup: 觉醒石必须归入 important (重要) 分组', () => {

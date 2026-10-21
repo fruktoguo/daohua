@@ -317,7 +317,9 @@
     "description": "天地通玄，宿慧初开。\n蕴含先天气运的玄奥灵石。使用后可随机觉醒一项先天特质；若已拥有，则为该特质注入领悟经验，促其突破升阶。",
     "kind": "material",
     "category": "special",
+    "tier": 5,
     "sellPrice": 100,
+    "isTradable": true,
     "subCategory": "special"
   }
   ,
