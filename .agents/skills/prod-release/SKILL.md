@@ -13,7 +13,7 @@ description: >-
 `.dockerignore` 已排除 `**/bin`、`**/obj`、`**/node_modules`，因此门禁通过后**阶段 1（镜像构建推送）、阶段 2（远端备份）、阶段 4 前半（odin 交叉编译与预上传）必须三路并发启动**，将总耗时压缩一半以上：
 
 ```text
-阶段 0：本机与远端单回合并发预检 → verify.sh 最小门禁
+阶段 0：本机与远端单回合并发预检 → verify.sh --full 全量门禁
   ↓（门禁全绿后三路并发）
   ├─ 流 A（阶段 1）：docker-build-prod.sh --push 构建并推送成对镜像
   ├─ 流 B（阶段 2）：yuohira 远端 backup.sh + verify-backup.sh（含迁移脚本预置）
@@ -66,20 +66,20 @@ ssh -o BatchMode=yes odin 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https:
      ```bash
      docker exec daohua-local-db psql -U daohua -d postgres -c "CREATE DATABASE daohua_market_test;" 2>/dev/null || true
      export DAOHUA_MARKET_TEST_CONNECTION="Host=127.0.0.1;Port=5432;Database=daohua_market_test;Username=daohua;Password=daohua-local-dev;Maximum Pool Size=16;Timeout=5;Command Timeout=30"
-     scripts/verify.sh
+     scripts/verify.sh --full
      ```
    - **Windows CCR 登录凭据**：Windows 上 `docker login` 会因 `credsStore: desktop` 或默认回退 `wincred`（`CredWriteW` 报 `Not enough memory resources`）失败。`~/.docker/config.json` 必须保持无 `credsStore` 字段、直接由 `.auths["ccr.ccs.tencentyun.com"].auth` 保存 Base64 凭据。若凭据缺失，让用户在 PowerShell 执行：
      ```powershell
      $p = Read-Host "CCR Password"
      $f = "$HOME\.docker\config.json"; $c = Get-Content $f -Raw | ConvertFrom-Json; $c.auths.'ccr.ccs.tencentyun.com'.auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("100031264062:$p")); [IO.File]::WriteAllText($f, ($c | ConvertTo-Json -Depth 5))
      ```
-5. **容量门禁按需，不默认跑**：仅当变更触及存储结构/队列/市场结构（建表改表、分区、索引策略、队列模型）才追加 `scripts/capacity-target.sh`；纯存档标签推进、可缺省字段、配表/功能更新一律只跑 `verify.sh` 最小门禁。
+5. **容量门禁按需，不默认跑**：仅当变更触及存储结构/队列/市场结构（建表改表、分区、索引策略、队列模型）才追加 `scripts/capacity-target.sh`；纯存档标签推进、可缺省字段、配表/功能更新一律只跑 `verify.sh --full` 门禁。
 
 ---
 
 ## 阶段 1 ∥ 阶段 2 ∥ 阶段 4a：三路并发构建、备份与预传
 
-`verify.sh` 全绿后，**在同一回合并发启动以下三个后台任务**：
+`verify.sh --full` 全绿后，**在同一回合并发启动以下三个后台任务**：
 
 ### 流 A（阶段 1）：构建并推送成对不可变镜像
 

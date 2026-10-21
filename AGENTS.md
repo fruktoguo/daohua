@@ -102,11 +102,13 @@ npm --prefix frontend run dev
 
 Vite 将 `/api` 和 `/ws` 代理到 `127.0.0.1:5128`。只有连接外部后端时才设置 `VITE_API_URL` 或 `VITE_WS_URL`。
 
-最小完整验证：
+最小完整验证（交付/合并前必跑全量）：
 
 ```bash
-scripts/verify.sh
+scripts/verify.sh --full
 ```
+
+无参数的 `scripts/verify.sh` 是日常快速口径（跳过 PostgresIntegration 与 Compose 校验），仅用于迭代自检。
 
 本地容器编排验证（根 `compose.yaml`，app 以 `Development` 运行，仅用于本地容器化行为排查）：
 
@@ -131,7 +133,7 @@ docker compose -f deploy/compose.prod.yaml down
 
 | 脚本 | 用途 |
 | --- | --- |
-| `verify.sh` | 合并必跑最小门禁：工具链、Release 构建、Domain/Ecs/Server 三套测试（自动供给 `daohua_market_test` 集成测试库）、DataTool 校验、Compose 配置、前端构建；新增 `--fast`（跳过 Compose 与 PostgresIntegration，约 45s）/ `--backend` / `--frontend` 分级，供日常自检，交付前仍须跑无参数全量；容量门禁不在其中，见 `capacity-target.sh` |
+| `verify.sh` | 合并必跑最小门禁：工具链、显式 restore + `--no-restore` Release 构建、Domain/Ecs/Server 三套测试（自动供给 `daohua_market_test` 集成测试库，并按 trx `executed` 实际数硬校验非空，防「零匹配静默全绿」）、DataTool 校验、前端 i18n/日志标记/`node --test` 单测/生产构建、Compose 配置；默认无参数即日常快速口径（跳过 Compose 与 PostgresIntegration）；`--full` 才是合并/交付全量，`--backend` / `--frontend` 可叠加 `--full`；容量门禁不在其中，见 `capacity-target.sh` |
 | `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite、Docker 化 Caddy 域名入口 `http://daohua.localhost`）；交互终端由 TUI 前台接管（启动流程在后台子 shell 完成），`q`/`Ctrl+C` 停止，`:` 进入指令模式（help 查看），非 TTY 使用普通日志流 |
 | `dev-tui.mjs` | `dev.sh` 的无依赖 TUI 运维控制台（前台直读终端输入、事件驱动 + 行级 diff 渲染）：日志滚动回看/来源与级别过滤/长行折行，`:` 指令模式直连 `/ops/api` 查询与写操作 |
 | `dev-hot.mjs` | C# 源码监听与后端平滑热重启（由 `dev.sh` 调用）：只监听 Server 真实编译闭包（`src/Domain`/`src/Ecs`/`src/Protocol`/`src/Server`/`src/Server.Clean` + `config/game-data` + `vendor/YuoCore`），默认静默 3s 防抖后重建重启，构建窗口内的变更会补跑 |
@@ -142,6 +144,7 @@ docker compose -f deploy/compose.prod.yaml down
 | `check-frontend-contracts.mjs` | 前后端协议/契约一致性检查（被 `tests/Server.Tests` 调用） |
 | `check-i18n-keys.mjs` | 前端 i18n 词条覆盖门禁：源码字面量键 + 配表驱动动态键族（物品/装备/行动/流派/目标/技艺/槽位/状态）全量比对中文词典，缺失即失败（`verify.sh` 必跑） |
 | `check-log-markup.mjs` | 日志富文本标记转义门禁：扫描 C# 插值字符串里「少转义一层」的 `{{kind:id\|label}}`（会退化成单花括号导致前端原样显示），`verify.sh` 必跑 |
+| `frontend/src/**/*.test.mjs` | 前端纯逻辑单测（`node:test`，`verify.sh` 必跑）：图鉴材料分类互斥完备、境界命名、建筑/图鉴/境界计算、战斗反馈、背包分组、聊天与日志未读、战斗模拟器确定性 |
 | `export-i18n-csv.mjs` | 导出前端 i18n 词条模板 CSV |
 | `optimize-svg.mjs` | SVG 美术资源优化 |
 | `docker-build-prod.sh` | 生产镜像多阶段构建与 CCR 推送（`--push`/`--push-existing`） |
@@ -211,7 +214,7 @@ docker compose -f deploy/compose.prod.yaml down
 - 领域或协议变更：运行对应 xUnit 测试，必要时补充确定性和边界测试。
 - 服务端装配变更：至少运行 Release build、领域测试、`/healthz`、`/readyz` 和 WebSocket 烟测。
 - 容量相关变更必须运行 `capacity-target` 门禁，覆盖 `5000` 账号存储估算、`500` 峰值命令包体和 `2000` 冷挂机一小时补算。
-- 前端变更：至少运行 `npm --prefix frontend run build`；交互变化还需浏览器验证。
+- 前端变更：至少运行 `npm --prefix frontend run build` 与 `node --test "frontend/src/**/*.test.mjs"`；交互变化还需浏览器验证。
 - Docker 变更：必须实际构建镜像，并以只读根文件系统、持久卷和非 root 用户启动验证。
 - 部署变更：必须分别验证 Git 状态、CCR 镜像摘要、远端运行镜像 ID、容器健康和公网入口。
 - 优先运行最小必要验证，不默认执行长时间全量压测。

@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# 合并必跑最小充分门禁：工具链、restore+Release 构建、Domain/Ecs/Server 三套测试（自动供给
+# 门禁入口：工具链、restore+Release 构建、Domain/Ecs/Server 三套测试（自动供给
 # daohua_market_test 集成测试库，并按 trx 实际执行数硬校验非空）、DataTool 校验、前端单测与
-# 构建、Compose 配置。
-# 容量门禁不在合并必跑内：容量相关变更与发布前，在本地或受控测试库执行
-# scripts/capacity-target.sh（AGENTS.md §9）；本脚本不执行远程发布或生产恢复验证。
+# 构建。
 #
-# 分级（默认全量，与合并/交付口径一致；分级只服务日常快速自检，不能替代交付前的全量门禁）:
-#   --fast       日常快速自检：跳过 Compose 校验与 PostgresIntegration 集成测试，其余全跑。
-#   --backend    只跑后端面：Release 构建、Domain/Ecs/Server 三套测试、DataTool 校验。
-#   --frontend   只跑前端面：依赖安装、i18n 词条、日志标记、前端单测、类型检查与生产构建。
+# 默认（无参数）= 日常快速门禁：跳过 Compose 校验与 PostgresIntegration 集成测试。
+# 交付/合并/发布前必须显式跑 --full。
+#
+# 模式：
+#   （无参数）   日常快速：后端三套测试（跳过 PG 集成）+ 前端 i18n/日志标记/单测/构建。
+#   --full       全量交付门禁：追加 PostgresIntegration 集成测试与 Compose 配置校验。
+#   --backend    只跑后端面（在该模式下叠加 --full 即含 PG 集成）。
+#   --frontend   只跑前端面：依赖安装、i18n 词条、日志标记、前端单测、契约、类型检查与构建。
 #   -h, --help   打印本用法。
 #
 # 环境变量：
 #   SKIP_NPM_CI=1          跳过前端依赖安装（即使锁定文件已变化）
-#   VERIFY_DOCKER=1        追加生产镜像构建
+#   VERIFY_DOCKER=1        追加生产镜像构建（需 --full）
 #   VERIFY_RESULTS_DIR     测试 trx 落盘目录（默认 artifacts/verify-results）
 
 set -Eeuo pipefail
@@ -22,20 +24,21 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 usage() {
-  printf '用法: scripts/verify.sh [--fast | --backend | --frontend]\n\n'
-  printf '  （无参数）   全量门禁：后端 + 前端 + Compose + PostgresIntegration\n'
-  printf '  --fast       跳过 Compose 校验与 PostgresIntegration 集成测试\n'
-  printf '  --backend    仅后端：Release 构建、三套测试、DataTool 校验\n'
-  printf '  --frontend   仅前端：依赖安装、i18n、日志标记、类型检查与生产构建\n'
+  printf '用法: scripts/verify.sh [--full | --backend | --frontend]\n\n'
+  printf '  （无参数）   日常快速门禁：跳过 Compose 校验与 PostgresIntegration 集成测试\n'
+  printf '  --full       全量交付门禁：含 PostgresIntegration 集成测试与 Compose 配置校验\n'
+  printf '  --backend    仅后端：Release 构建、三套测试、DataTool 校验（可叠加 --full）\n'
+  printf '  --frontend   仅前端：依赖安装、i18n、日志标记、单测、契约、类型检查与生产构建\n'
   printf '\n环境变量: SKIP_NPM_CI=1 跳过前端依赖安装；VERIFY_DOCKER=1 追加生产镜像构建\n'
 }
 
-MODE="full"
+FULL=0
+SCOPE="all"
 for arg in "$@"; do
   case "$arg" in
-    --fast) MODE="fast" ;;
-    --backend) MODE="backend" ;;
-    --frontend) MODE="frontend" ;;
+    --full) FULL=1 ;;
+    --backend) SCOPE="backend" ;;
+    --frontend) SCOPE="frontend" ;;
     -h|--help) usage; exit 0 ;;
     *)
       printf '未知参数: %s\n\n' "$arg" >&2
@@ -47,10 +50,9 @@ done
 
 RUN_BACKEND=1
 RUN_FRONTEND=1
-RUN_INTEGRATION=1
-RUN_COMPOSE=1
-case "$MODE" in
-  fast) RUN_INTEGRATION=0; RUN_COMPOSE=0 ;;
+RUN_INTEGRATION=$FULL
+RUN_COMPOSE=$FULL
+case "$SCOPE" in
   backend) RUN_FRONTEND=0; RUN_COMPOSE=0 ;;
   frontend) RUN_BACKEND=0; RUN_INTEGRATION=0; RUN_COMPOSE=0 ;;
 esac
@@ -237,13 +239,20 @@ if [[ "$RUN_COMPOSE" -eq 1 ]]; then
 fi
 
 if [[ "${VERIFY_DOCKER:-0}" == "1" ]]; then
-  printf '%s\n' '==> 生产镜像构建（VERIFY_DOCKER=1）'
-  scripts/docker-build-prod.sh --allow-dirty --no-pull --release-tag verify
+  if [[ "$FULL" -eq 1 ]]; then
+    printf '%s\n' '==> 生产镜像构建（VERIFY_DOCKER=1 + --full）'
+    scripts/docker-build-prod.sh --allow-dirty --no-pull --release-tag verify
+  else
+    printf '%s\n' 'VERIFY_DOCKER=1 需配合 --full 才执行镜像构建，已跳过。' >&2
+  fi
 fi
 
-case "$MODE" in
-  fast) printf '%s\n' '快速门禁完成（未覆盖：Compose 校验、PostgresIntegration 集成测试）。交付前请跑不带参数的 scripts/verify.sh。' ;;
-  backend) printf '%s\n' '后端门禁完成（未覆盖前端面）。' ;;
-  frontend) printf '%s\n' '前端门禁完成（未覆盖后端面）。' ;;
-  *) printf '%s\n' '全部验证完成。' ;;
-esac
+if [[ "$FULL" -eq 1 ]]; then
+  printf '%s\n' '全量门禁完成。'
+elif [[ "$SCOPE" == "backend" ]]; then
+  printf '%s\n' '后端门禁完成（快速口径：未覆盖前端面、Compose 与 PostgresIntegration）。交付前请跑 scripts/verify.sh --full。'
+elif [[ "$SCOPE" == "frontend" ]]; then
+  printf '%s\n' '前端门禁完成（未覆盖后端面）。交付前请跑 scripts/verify.sh --full。'
+else
+  printf '%s\n' '快速门禁完成（未覆盖：Compose 校验、PostgresIntegration 集成测试）。交付前请跑 scripts/verify.sh --full。'
+fi

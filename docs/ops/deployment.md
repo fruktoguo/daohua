@@ -1,6 +1,6 @@
 # daohua 生产构建与部署
 
-本文描述当前生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前数据库 schema v37，玩家八分段载荷仍为 v36。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的独立迁移脚本（命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；v36→v37 涉及旧托管退款，须停服备份后显式执行，本地启动链拒绝自动应用。该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
+本文描述当前生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前数据库 schema v40，玩家八分段载荷为 v37。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的独立迁移脚本（命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；v36→v37 涉及旧托管退款，须停服备份后显式执行，本地启动链拒绝自动应用。该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 
 ## 拓扑与边界
 
@@ -50,7 +50,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成数据库 schema v37 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建，玩家分段载荷标签保持 v36。本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行可自动应用的独立 SQL；v36→v37 被明确拦截，须停服、全库备份、等待有效租约过期后人工应用。迁移失败直接中止，不进入清零；迁移成功后仍有不可迁移的玩家载荷时，必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+API 默认监听 `127.0.0.1:5128`。启动时先完成数据库 schema v40 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建，玩家分段载荷标签为 v37。本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行可自动应用的独立 SQL；v36→v37 被明确拦截，须停服、全库备份、等待有效租约过期后人工应用。迁移失败直接中止，不进入清零；迁移成功后仍有不可迁移的玩家载荷时，必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
 
 启动正式前端：
 
@@ -60,11 +60,13 @@ npm --prefix frontend run dev
 
 Vite 固定监听 `127.0.0.1:15172`，将 `/api`、`/ws` 代理到 API。前端只在 localStorage 保存非敏感账号显示信息和 UI 偏好；快照、WebSocket 帧、日志和消息不落浏览器磁盘。
 
-最小门禁：
+全量交付门禁：
 
 ```bash
-scripts/verify.sh
+scripts/verify.sh --full
 ```
+
+无参数的 `scripts/verify.sh` 是日常快速口径，会跳过 PostgresIntegration 集成测试与 Compose 校验；**合并与发布前必须显式加 `--full`**。
 
 该入口包含 Release 构建、Domain/ECS/Server 三套测试、配表校验、Compose 配置校验与前端构建。Server 的 PostgreSQL 集成测试使用 `DAOHUA_MARKET_TEST_CONNECTION` 指向的独立测试库：verify.sh 在本地库可达时自动供给 `daohua_market_test` 并导出该变量，也可预设变量指向自己的专用库（须与日常开发库隔离）。容量门禁不在合并必跑内，容量相关变更与发布前执行 `scripts/capacity-target.sh`。
 
@@ -89,7 +91,7 @@ docker compose -f compose.yaml down
 生产镜像是多阶段 `linux/amd64` 构建，运行层只有 .NET 发布产物和前端 `dist`，固定 UID/GID `10001`、只读根文件系统、`/tmp` tmpfs，不包含源码、SDK、`node_modules`、`data` 或测试产物。
 
 ```bash
-scripts/verify.sh
+scripts/verify.sh --full
 scripts/docker-build-prod.sh --push
 ```
 
@@ -181,6 +183,14 @@ sudo /opt/daohua/pitr-restore.sh \
 
 技能目录 `GET /api/v1/catalog/abilities` 返回当前技能配表及前端协议字段；`manaCost` 已按战斗规约换算为实际灵力点数，前端直接显示，不再次乘倍率。默认触发条件与装配协议统一使用 kebab-case。目录包含设计配置，无伤害、治疗等已实现效果的技能不能装配；技能吟唱、冷却与施放计数属于战斗持久化状态。
 
+触发条件相关目录端点：
+
+- `GET /api/v1/catalog/buffs`：查询条件可引用的 Buff 词表（`[{ buffId, name }]`，按键排序）。由服务端从当前配表派生——消耗品 `consumable.buffs[].buffId`、功法 `buff.buffId`（缺省时引擎合成 `ability-buff:<abilityId>`）、行动产出 Buff 与特质注入 Buff。前端条件编辑器只能从这里取项；引用配表中不存在的 Buff 会在 `loadout.replace` 命令期被拒绝，因为该条件的层数恒为 0。
+- `GET /api/v1/catalog/triggers`：返回判定规约常量 `{ maxTriggersPerList, equalTolerance }`，与领域层 `SkillTriggerEvaluator.MaxTriggersPerList` / `EqualTolerance` 同源，前端不得另写一份。
+- `GET /api/v1/catalog/items`：消耗品条目额外下发 `triggers`（配表出厂默认条件），前端据此区分「未配置（键缺失，回退默认）」与「显式无条件（空数组）」两种状态。
+
+条件存储在 `loadout` 分段分两条互不通用的通道：功法条件 `abilityTriggers`（键为已习得功法 ID，写消耗品 ID 会被拒绝），消耗品条件 `consumableTriggers`（键为配表 `consumable` 物品 ID）。两条通道均为「键存在即覆盖」语义，空数组表示玩家显式选择无条件恒可用，命令层不得把空数组折叠为键缺失。存档标签 v37 新增 `consumableTriggers`，可缺省解码为 null。
+
 ## 账号检测与反小号（schema v10）
 
 账号检测策略由 `platform.account_risk_policy` 保存，不再读取 `AntiMultiOpen:*` 启动配置。注册、登录和 Hello 使用当前策略；`GET /api/v1/auth/client-policy` 仅返回标签互斥开关，前端每 30 秒更新。注册/登录请求新增 `riskSignals`（设备 ID、配置摘要、网络类型摘要、浏览器指纹），Hello 新增 `deviceId` 与 `deviceConfigHash`。
@@ -189,7 +199,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 数据库备份必须包括 `identity.account_risk_signals`、`identity.account_risk_events`、`platform.account_risk_policy`、`platform.account_risk_key` 与现有 Data Protection key。丢失 HMAC 密钥会破坏历史关联匹配；设备 Cookie 依赖 Data Protection key，二者不得独立清空。风险事件按独立 `Storage:AccountRiskEventRetentionDays`（默认 30 天、范围 1..365）小批量清理，每小时批次为普通清理批次的 16 倍且不超过 10000，稳定关联和风险密钥保留。API/worker 角色授权已同步 `deploy/postgres-local-roles.sql`。本任务未执行任何远端迁移或发布；生产升级 schema v10 须另行授权、先备份并显式应用独立迁移脚本。
 
-## 组队权威会话与恢复（当前数据库 schema v37）
+## 组队权威会话与恢复（当前数据库 schema v40）
 
 - `social.party_sessions` 同时保存冻结输入、权威战斗检查点、推进时刻与版本；`social.party_session_inbox` 保存各成员待消费结算。两者必须随全库备份/恢复，不可仅恢复玩家分段。
 - 检查点与成员结算一次事务交付；成员消费时，资产、分段与消费回执一次事务提交。重启恢复会话，不再无条件标记 `server.restart` 散场。
