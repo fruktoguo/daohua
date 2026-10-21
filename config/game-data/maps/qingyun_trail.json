@@ -10,7 +10,7 @@
         "name": "离山驿",
         "description": "青云古道山脚的行脚客栈与车马驿站，青石板路两侧旗幡招展，往来散修在此歇马饮茶、置办行装。",
         "x": 72,
-        "y": 32,
+        "y": 26,
         "availableActionIds": [
           "combat.hunt-trail-beast"
         ],
@@ -24,7 +24,7 @@
         "name": "古松栈道",
         "description": "依绝壁悬崖开凿的狭长木石栈道，外侧古松苍劲盘根，山风呼啸，常有敏捷妖狼自松林间出没伏击。",
         "x": 84,
-        "y": 34,
+        "y": 46,
         "availableActionIds": [
           "combat.hunt-trail-beast"
         ],
@@ -38,7 +38,7 @@
         "name": "落石险隘",
         "description": "两壁夹峙的一线天险峡，滚石嶙峋，山涧溪流在谷底激荡奔流，玄潮水灵与铁甲岩獠盘踞于水汽怪石之间。",
         "x": 96,
-        "y": 36,
+        "y": 26,
         "availableActionIds": [
           "combat.hunt-trail-beast"
         ],
@@ -51,8 +51,8 @@
         "id": "node.boundary-pass",
         "name": "断界古关",
         "description": "矗立在古道尽头的高大古关隘遗址，青黑巨石筑起的关楼半已塌毁，撼地金背猿霸踞关口，后方即是通往星陨异境的凶险裂隙。",
-        "x": 106,
-        "y": 38,
+        "x": 108,
+        "y": 46,
         "availableActionIds": [
           "combat.hunt-trail-beast"
         ],
