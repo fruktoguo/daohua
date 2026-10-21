@@ -955,6 +955,7 @@ function resolveMarketStatsAsideCard(
   const bidQty = stats?.bidQuantity ?? 0
   const dayVol = stats?.dayVolume ?? 0
   const weekVol = stats?.weekVolume ?? 0
+  const referencePrice = stats?.referencePrice != null && stats.referencePrice > 0 ? stats.referencePrice : null
 
   return {
     id: `aside-market-${itemId}-${enhancementLevel}`,
@@ -1043,6 +1044,18 @@ function resolveMarketStatsAsideCard(
             <span className="daohua-market-aside-volume-chip">
               <span className="daohua-market-aside-volume-label">{t('market.price.weekVolume')}</span>
               <span className="daohua-market-aside-volume-val">{formatNumber(weekVol)}</span>
+            </span>
+            <span className="daohua-market-aside-volume-chip">
+              <span className="daohua-market-aside-volume-label">{t('market.price.averagePrice')}</span>
+              {referencePrice !== null ? (
+                <span className="daohua-market-aside-volume-val daohua-market-aside-volume-val--price">
+                  {formatNumber(referencePrice)}
+                </span>
+              ) : (
+                <span className="daohua-market-aside-volume-val daohua-market-aside-volume-val--empty">
+                  {t('market.price.none')}
+                </span>
+              )}
             </span>
           </div>
         </div>

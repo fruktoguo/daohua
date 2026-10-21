@@ -499,7 +499,7 @@
   box-shadow: 0 0 6px rgba(201, 180, 109, 0.18);
 }
 
-/* 流通成交量：灵气青色调 */
+/* 成交统计：灵气青色调 */
 .daohua-market-aside-badge--volume {
   color: #8ebfc3;
   background: rgba(117, 169, 173, 0.14);
@@ -617,11 +617,15 @@
   margin: 3px 0 1px 0;
 }
 
-/* 成交量聚合条目 */
+/* 成交聚合条目：今日/本周成交量与均价；空间不足时右对齐换行，避免撑破副卡 */
 .daohua-market-aside-volume-items {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 3px 8px;
   margin-left: auto;
 }
 
@@ -641,6 +645,18 @@
   font-weight: 600;
   color: #cde6e8;
   font-variant-numeric: tabular-nums;
+}
+
+/* 成交均价：与价格行一致的道金高亮 */
+.daohua-market-aside-volume-val--price {
+  color: #ffe6a3;
+  text-shadow: 0 0 6px rgba(232, 214, 154, 0.3);
+}
+
+/* 无成交参考价：弱化占位，不与成交量混淆 */
+.daohua-market-aside-volume-val--empty {
+  color: var(--text-dim, rgba(233, 227, 210, 0.45));
+  font-weight: normal;
 }
 
 /* 效果与 Buff 副气泡结构化条目样式体系 (Effect Aside) */
