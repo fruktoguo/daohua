@@ -18,7 +18,8 @@ public sealed class MarketMatchingEquivalenceTests
         var book = new OrderBook(instrument);
         var naive = new NaiveOrderBook();
         var random = new Random(20260924);
-        var players = Enumerable.Range(0, 6).Select(_ => PlayerId.New()).ToArray();
+        // 属主池显著大于同簿可挂单上限（每标的每玩家至多一笔），保证挂单分支仍能持续推进撮合链。
+        var players = Enumerable.Range(0, 16).Select(_ => PlayerId.New()).ToArray();
         var open = new List<OrderId>();
         var baseTime = new DateTimeOffset(2026, 9, 24, 0, 0, 0, TimeSpan.Zero);
 
@@ -26,13 +27,15 @@ public sealed class MarketMatchingEquivalenceTests
         {
             var now = baseTime.AddMinutes(step);
             var roll = random.Next(100);
-            if (roll < 70 || open.Count == 0)
+            // 每标的单笔约束下，挂单必须挑本簿尚无活动单的属主；无空闲属主时退化为撤单/到期分支。
+            var freeOwners = players.Where(player => !naive.HasActiveOrder(player)).ToArray();
+            if (freeOwners.Length > 0 && (roll < 70 || open.Count == 0))
             {
                 // 挂单：价格集中在小数网格制造同价冲突，方向/数量/属主随机。
                 var side = random.Next(2) == 0 ? MarketSide.Buy : MarketSide.Sell;
                 var price = Math.Round(1 + random.NextDouble() * 20, 1);
                 var quantity = 1 + random.Next(5);
-                var owner = players[random.Next(players.Length)];
+                var owner = freeOwners[random.Next(freeOwners.Length)];
                 var request = new PlaceOrderRequest(OrderId.New(), owner, instrument, side, price, quantity, now, new IdempotencyKey($"k{step}"));
                 var expected = naive.Place(request);
                 var actual = book.Place(request);
@@ -159,8 +162,15 @@ public sealed class MarketMatchingEquivalenceTests
 
         public PlayerId OwnerOf(OrderId orderId) => _orders.First(order => order.OrderId == orderId).OwnerId;
 
+        /// <summary>该属主在本簿是否已有活动挂单（每标的单笔约束的判定口径）。</summary>
+        public bool HasActiveOrder(PlayerId ownerId) =>
+            _orders.Any(order => order.OwnerId == ownerId && IsActive(order));
+
         public PlacementResult Place(PlaceOrderRequest request)
         {
+            // 每标的单笔约束：同一属主在本簿已有活动单即拒绝（方向无关）。
+            if (HasActiveOrder(request.OwnerId))
+                throw new DomainException(DomainErrorCode.OwnerOrderExists, "该标的已有活动挂单。");
             var incoming = new MarketOrder(
                 request.OrderId, request.OwnerId, request.Instrument, request.Side,
                 request.Price, request.Quantity, request.Quantity, checked(++_sequence),

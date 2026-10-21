@@ -29,6 +29,7 @@ export const marketZh = {
       sellExceedsStock: '挂牌数量超过当前库存。',
       sellExceedsBagStock: '挂牌数量超过当前背包库存。',
       insufficientSpirit: '所需灵石超过当前持有量。',
+      ownerOrderExists: '该物品已有活动挂单，请先到「我的订单」撤销后再挂单。',
     },
     notice: {
       orderSubmitted: '订单已提交，等待撮合。',
@@ -83,6 +84,8 @@ export const marketZh = {
     immediateFill: '立即成交',
     restingBid: '挂单等待',
     restingBidHint: '未成交部分留在求购列表继续排队，撤单前对应灵石保持冻结。',
+    ownerOrderHint: '该物品已有{side}挂单（余量 {count}），需先撤销才能挂新的单。',
+    gotoMyOrders: '去我的订单撤销',
     totalPrice: '订单总价',
     spiritUnit: '灵石',
     debitLine: '交易扣款',
@@ -118,6 +121,7 @@ export const marketZh = {
     noExpiry: '长期有效',
     cancelOrder: '撤销订单',
     sellerTaxNote: '2% 卖方税',
+    singleOrderRule: '同一物品同时只能挂一笔单（可卖可买），换向或改价需先撤销原单。',
     selector: {
       infinityAria: '无限次数',
       infinity: '无限',

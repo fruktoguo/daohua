@@ -501,10 +501,12 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
           // 快捷填价档位必须与弹窗锁定等级同一本簿：picker 行直接开单时视图级 activeBook 可能对应别的等级。
           book={book !== null && book.itemId === selectedItemId && book.enhancementLevel === orderModal.level ? book : null}
           enhancementLevel={orderModal.level}
+          existingOrders={orders}
           initialPrice={orderModal.price}
           instrument={selected}
           onClose={closeOrderModal}
           onPlaced={refresh}
+          onShowOrders={() => { closeOrderModal(); setActiveTab('orders') }}
           open
           side={orderModal.side}
         />

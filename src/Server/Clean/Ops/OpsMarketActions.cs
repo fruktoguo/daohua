@@ -271,6 +271,7 @@ public static class OpsMarketActions
     /// 为单个品种注入资金并以系统身份下单：卖单注入品种份数、买单注入灵石金额，
     /// 随后 PlaceAsync 在同一持久化事务内完成冻结扣减、预留与撮合。
     /// 装备只挂基础变体（variant 恒为空串），+N 强化簿不在系统下单范围。
+    /// 每标的至多一笔活动挂单：下单前先撤销系统身份在同一标的的既有活动单，重复下单即为原位替换。
     /// </summary>
     private static async ValueTask<OpsItemOutcome> PlaceSystemOrderAsync(
         MarketRuntime market,
@@ -288,6 +289,9 @@ public static class OpsMarketActions
             var instrument = new MarketInstrument(new ItemId(target.AssetId), string.Empty);
             if (!market.Owns(instrument))
                 throw new InvalidOperationException("该品种不属于当前市场分片。");
+            if (market.GetActiveOrder(new PlayerId(SystemPlayerId), instrument) is { } existing)
+                await market.CancelAsync(existing.OrderId, new PlayerId(SystemPlayerId), instrument,
+                    $"market-cancel:{SystemPlayerId:D}:{existing.OrderId.Value:D}", cancellationToken);
             var orderId = DeterministicGuid(batchId, $"order|{sideText}|{target.AssetId}");
             // 先注入资金再下单：PlaceAsync 的持久化事务会冻结扣减，余额不足会快速失败。
             var funding = side == MarketSide.Buy

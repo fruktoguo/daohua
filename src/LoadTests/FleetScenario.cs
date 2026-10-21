@@ -388,7 +388,9 @@ public static class FleetScenario
         private DateTimeOffset _nextMarketAt = DateTimeOffset.MinValue;
         private DateTimeOffset _lastAmbientErrorAt = DateTimeOffset.MinValue;
         private int _marketCycle;
-        private readonly Queue<Guid> _myOrders = new();   // 自有挂单登记（容量封顶滚动撤销）
+        private readonly Queue<(string ItemId, Guid OrderId)> _myOrders = new();   // 自有挂单登记（容量封顶滚动撤销）
+        // 每标的至多一笔活动挂单（服务端 OwnerOrderExists 约束）：itemId → 当前活动单，重挂前必须先撤旧单。
+        private readonly Dictionary<string, Guid> _openOrders = new(StringComparer.Ordinal);
         private readonly HashSet<string> _unlearnableItems = new(StringComparer.Ordinal); // 研读被拒的物品（如未习得功法的残卷）
         private bool _potionConfigured;
         private bool _explorePillConfigured;
@@ -1128,11 +1130,11 @@ public static class FleetScenario
                 else AmbientNote($"市场领账失败 {_account}: {claim.Code}");
             }
 
+            // 滚动撤单：服务端限制每标的至多一笔活动挂单，挂单前对本标的先撤旧单（见 PlaceAsync 前的 CancelOpenAsync）。
             if (_myOrders.Count > 0 && (_myOrders.Count >= 10 || cycle % 7 == 6)
-                && _myOrders.TryDequeue(out var staleOrderId))
+                && _myOrders.TryDequeue(out var stale))
             {
-                var cancel = await SendCommandAsync("market.cancel", requestId => new { requestId, orderId = staleOrderId }, cancellationToken);
-                if (cancel.Ok) Interlocked.Increment(ref Stats.MarketCancelled);
+                await CancelOpenAsync(stale.ItemId, stale.OrderId, cancellationToken);
             }
 
             var sellPick = PickSellable(out var sellMaxQty);
@@ -1141,16 +1143,18 @@ public static class FleetScenario
 
             if (sellPick is not null && roll < 65)
             {
+                var itemId = sellPick.Value.ItemId;
                 var quantity = Random.Shared.Next(1, sellMaxQty + 1); // 交易量不固定：1..盈余上限
                 var price = Math.Max(1, Math.Round(sellPick.Value.BasePrice * (0.9 + Random.Shared.NextDouble() * 0.6)));
+                await CancelOpenAsync(itemId, null, cancellationToken);
                 var orderId = Guid.NewGuid();
                 var place = await SendCommandAsync("market.place", requestId => new
                 {
-                    requestId, orderId, itemId = sellPick.Value.ItemId, variant = "",
+                    requestId, orderId, itemId, variant = "",
                     side = "Sell", price, quantity,
                 }, cancellationToken);
-                if (place.Ok) { _myOrders.Enqueue(orderId); Interlocked.Increment(ref Stats.MarketPlaced); }
-                else { Interlocked.Increment(ref Stats.MarketFailed); AmbientNote($"卖单失败 {_account} {sellPick.Value.ItemId}: {place.Code} {place.Message}"); }
+                if (place.Ok) { TrackOrder(itemId, orderId); Interlocked.Increment(ref Stats.MarketPlaced); }
+                else { Interlocked.Increment(ref Stats.MarketFailed); AmbientNote($"卖单失败 {_account} {itemId}: {place.Code} {place.Message}"); }
             }
             else if (stones > 400 && roll >= 35)
             {
@@ -1159,15 +1163,37 @@ public static class FleetScenario
                 var price = Math.Max(1, Math.Round(PriceOf(wanted) * (1.1 + Random.Shared.NextDouble() * 0.9)));
                 // 买单冻结 price×quantity 灵石：客户端按真实余额预估，避免无效挂单噪音。
                 if (price * quantity >= stones - 100) return;
+                await CancelOpenAsync(wanted, null, cancellationToken);
                 var orderId = Guid.NewGuid();
                 var place = await SendCommandAsync("market.place", requestId => new
                 {
                     requestId, orderId, itemId = wanted, variant = "",
                     side = "Buy", price, quantity,
                 }, cancellationToken);
-                if (place.Ok) { _myOrders.Enqueue(orderId); Interlocked.Increment(ref Stats.MarketPlaced); }
+                if (place.Ok) { TrackOrder(wanted, orderId); Interlocked.Increment(ref Stats.MarketPlaced); }
                 else { Interlocked.Increment(ref Stats.MarketFailed); AmbientNote($"买单失败 {_account} {wanted}: {place.Code} {place.Message}"); }
             }
+        }
+
+        /// <summary>登记自有活动挂单（每标的唯一，滚动撤销队列按标的去重登记）。</summary>
+        private void TrackOrder(string itemId, Guid orderId)
+        {
+            if (_openOrders.TryAdd(itemId, orderId)) _myOrders.Enqueue((itemId, orderId));
+        }
+
+        /// <summary>
+        /// 撤销本角色在该标的的活动挂单：服务端要求「同一玩家同一标的至多一笔活动挂单」，
+        /// 换向或换价重挂前必须先撤旧单，否则 PlaceAsync 会以 OWNERORDEREXISTS 拒绝。
+        /// orderId 非空时按登记的期望值直接撤；空则按本角色在该标的的记忆单撤。
+        /// 撤单失败（如已成交/已到期）只从本地登记清除，不视作环境异常。
+        /// </summary>
+        private async ValueTask CancelOpenAsync(string itemId, Guid? orderId, CancellationToken cancellationToken)
+        {
+            var target = orderId ?? (_openOrders.TryGetValue(itemId, out var tracked) ? tracked : (Guid?)null);
+            if (target is not { } orderIdValue) return;
+            if (_openOrders.TryGetValue(itemId, out var known) && known == orderIdValue) _openOrders.Remove(itemId);
+            var cancel = await SendCommandAsync("market.cancel", requestId => new { requestId, orderId = orderIdValue }, cancellationToken);
+            if (cancel.Ok) Interlocked.Increment(ref Stats.MarketCancelled);
         }
 
         /// <summary>随机起点遍历目录挑出第一种有盈余的可交易品；残卷作为兜底（保留 10 张自用）。</summary>

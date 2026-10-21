@@ -71,6 +71,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
       </section>
       <footer className="market-footer">
         <span>{t('market.sellerTaxNote')}</span>
+        <span>{t('market.singleOrderRule')}</span>
       </footer>
     </div>
   )

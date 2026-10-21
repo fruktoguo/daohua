@@ -5406,6 +5406,29 @@ input[type="checkbox"] {
   line-height: 1.6;
 }
 
+/* 同一标的已有活动挂单：提示改用告警色并内嵌直达「我的订单」的撤销入口。 */
+.market-order-blocked-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--gold);
+}
+
+.market-order-blocked-link {
+  padding: 0;
+  font-size: 10px;
+  color: var(--gold-bright);
+  text-decoration: underline;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.market-order-blocked-link:hover {
+  color: var(--text-bright);
+}
+
 .market-tax-text {
   color: #e89a8c;
   font-variant-numeric: tabular-nums;

@@ -6,9 +6,10 @@ namespace Domain.Market;
 /// 1. 采用“价格优先、时间优先”（Price-Time Priority）严格确定性撮合；
 /// 2. 数据库 PostgreSQL 作为权威账本落盘，本类作为单 Fiber Actor 内部的快速撮合与盘口投影；
 /// 3. 禁止在领域层持有连接或直接扣减外部数据库。
-/// 结构说明：除 _orders 主字典外维护三个派生索引——
+/// 结构说明：除 _orders 主字典外维护四个派生索引——
 /// 卖档/买档（价格, Sequence）有序索引用于撮合候选只取交叉队首，
-/// 到期（ExpiresAt, Sequence）有序索引用于过期结算只处理到期队首；
+/// 到期（ExpiresAt, Sequence）有序索引用于过期结算只处理到期队首，
+/// 属主（PlayerId → 活动订单集合）索引用于「同一玩家同一标的至多一笔活动挂单」校验；
 /// 索引由 WriteOrder 统一维护，Restore/Undo 后整体重建，纯内存结构不引入外部依赖。
 /// </summary>
 public sealed class OrderBook
@@ -20,6 +21,8 @@ public sealed class OrderBook
     private readonly SortedDictionary<(double Price, long Sequence), OrderId> _bidIndex = new(BidPriceComparer.Instance);
     /// <summary>到期索引：ExpiresAt 升序、同刻 Sequence 升序，仅登记设定了到期时刻的活动订单。</summary>
     private readonly SortedDictionary<(DateTimeOffset ExpiresAt, long Sequence), OrderId> _expiryIndex = new();
+    /// <summary>属主索引：玩家 → 该玩家在本簿的活动订单，用于「每标的至多一笔活动挂单」校验。</summary>
+    private readonly Dictionary<PlayerId, HashSet<OrderId>> _ownerIndex = [];
     private long _sequence;
     private long _version;
 
@@ -118,6 +121,11 @@ public sealed class OrderBook
             throw new DomainException(DomainErrorCode.InvalidArgument, "订单方向无效。");
         if (request.Instrument != Instrument)
             throw new DomainException(DomainErrorCode.InvalidArgument, "订单品种与订单簿不一致。");
+        // 每标的单笔约束：同一玩家在本簿只允许一笔活动挂单，双向共存与同向多单都被拒绝。
+        // 撤单/成交/到期会把订单移出属主索引，因此撤销后可立即换向重挂。
+        if (ActiveOrderOf(request.OwnerId) is { } existing)
+            throw new DomainException(DomainErrorCode.OwnerOrderExists,
+                existing.Side == MarketSide.Sell ? "该标的已有在售挂单，请先撤销后再操作。" : "该标的已有求购挂单，请先撤销后再操作。");
 
         var incoming = new MarketOrder(
             request.OrderId,
@@ -307,15 +315,17 @@ public sealed class OrderBook
 
     /// <summary>
     /// 查询指定玩家名下的活动挂单列表（按创建时序逆序排列）。
+    /// 走属主索引直取，不对全簿扫描；历史库残留的同标的多笔活动单也一并如实返回。
     /// </summary>
     public IReadOnlyList<MarketOrder> OrdersByOwner(PlayerId ownerId, int limit = 100)
     {
         if (ownerId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "玩家标识不能为空。");
         if (limit is < 1 or > 1000) throw new DomainException(DomainErrorCode.InvalidArgument, "订单查询上限无效。");
-        var list = new List<MarketOrder>();
-        foreach (var order in _orders.Values)
+        if (!_ownerIndex.TryGetValue(ownerId, out var owned) || owned.Count == 0) return [];
+        var list = new List<MarketOrder>(owned.Count);
+        foreach (var orderId in owned)
         {
-            if (order.OwnerId == ownerId && IsActive(order))
+            if (_orders.TryGetValue(orderId, out var order) && IsActive(order))
             {
                 list.Add(order);
             }
@@ -397,6 +407,9 @@ public sealed class OrderBook
             _expiryIndex[(expiresAt, order.Sequence)] = order.OrderId;
         var book = order.Side == MarketSide.Sell ? _askIndex : _bidIndex;
         book[(order.Price, order.Sequence)] = order.OrderId;
+        if (!_ownerIndex.TryGetValue(order.OwnerId, out var owned))
+            _ownerIndex[order.OwnerId] = owned = [];
+        owned.Add(order.OrderId);
     }
 
     /// <summary>摘除订单在派生索引中的登记项；未登记的项按缺失处理（幂等）。</summary>
@@ -406,6 +419,8 @@ public sealed class OrderBook
             _expiryIndex.Remove((expiresAt, order.Sequence));
         var book = order.Side == MarketSide.Sell ? _askIndex : _bidIndex;
         book.Remove((order.Price, order.Sequence));
+        if (_ownerIndex.TryGetValue(order.OwnerId, out var owned) && owned.Remove(order.OrderId) && owned.Count == 0)
+            _ownerIndex.Remove(order.OwnerId);
     }
 
     /// <summary>按当前订单字典整体重建派生索引；用于 Restore/Undo 这类非增量路径。</summary>
@@ -414,7 +429,21 @@ public sealed class OrderBook
         _askIndex.Clear();
         _bidIndex.Clear();
         _expiryIndex.Clear();
+        _ownerIndex.Clear();
         foreach (var order in _orders.Values) AddIndexes(order);
+    }
+
+    /// <summary>
+    /// 取该玩家在本簿的活动挂单（每标的至多一笔，命中即唯一）；无活动单返回 null。
+    /// 与 <see cref="OrdersByOwner"/> 的区别：只查单簿、直接命中属主索引，不做跨簿聚合与排序。
+    /// </summary>
+    /// <param name="ownerId">订单属主玩家。</param>
+    public MarketOrder? ActiveOrderOf(PlayerId ownerId)
+    {
+        if (!_ownerIndex.TryGetValue(ownerId, out var owned) || owned.Count == 0) return null;
+        foreach (var orderId in owned)
+            if (_orders.TryGetValue(orderId, out var order) && IsActive(order)) return order;
+        return null;
     }
 
     /// <summary>判定订单是否属于有效挂牌中（未撤销未完成且剩余数量大于容差）</summary>

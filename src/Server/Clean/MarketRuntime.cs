@@ -297,6 +297,20 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>
+    /// 查询玩家在指定标的上的活动挂单（每标的至多一笔，命中即唯一）。
+    /// 只读内存盘口投影，不触库：活动单必然在投影内，重启由 <see cref="RestoreBooks"/> 全量重建。
+    /// </summary>
+    /// <param name="ownerId">订单属主玩家。</param>
+    /// <param name="instrument">市场品种。</param>
+    /// <returns>活动挂单；该玩家在此标的无活动单或分片未就绪时返回 null。</returns>
+    public MarketOrder? GetActiveOrder(PlayerId ownerId, MarketInstrument instrument)
+    {
+        if (!_ready || ownerId.IsEmpty || !Owns(instrument)) return null;
+        lock (_booksGate)
+            return _books.TryGetValue(instrument, out var book) ? book.ActiveOrderOf(ownerId) : null;
+    }
+
+    /// <summary>
     /// 领取市场结算产物（成交所得/撤单退款等已挂账资产）；requestId 兼作幂等键。
     /// 多分片部署尚无跨分片领取路由，PartitionCount > 1 时直接拒绝。
     /// </summary>

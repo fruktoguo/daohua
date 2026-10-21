@@ -21,7 +21,9 @@ public enum DomainErrorCode
     /// <summary>唯一性约束冲突（如重复添加相同标识）</summary>
     Duplicate,
     /// <summary>租约、订单或 Buff 已过期</summary>
-    Expired
+    Expired,
+    /// <summary>同一属主在同一交易标的已有活动挂单（每标的至多一笔，禁止双向共存）</summary>
+    OwnerOrderExists
 }
 
 /// <summary>

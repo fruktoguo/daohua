@@ -4,7 +4,7 @@ import { formatNumber } from '../../game/format'
 import { parseEnhancementVariant } from '../../game/ids'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
-import type { MarketBook } from '../../game/types'
+import type { MarketBook, MarketOrder } from '../../game/types'
 import { fetchMarketBook } from '../../network/apiClient'
 import { gameClient } from '../../network/gameClient'
 import { ItemTile } from '../ItemDisplay'
@@ -29,10 +29,17 @@ interface MarketOrderModalProps {
   initialPrice?: number
   /** 标的强化等级（0 = 基础变体；>0 对应 "+N" 变体盘口与钱包变体行） */
   enhancementLevel?: number
+  /**
+   * 该玩家当前全部活动挂单；弹窗内按「标的 + 当前强化等级」自行比对，任一命中即禁止再挂新单。
+   * 服务端「同一玩家同一标的至多一笔活动挂单」的权威裁决不变，此处只做提交前置拦截。
+   */
+  existingOrders?: readonly MarketOrder[]
   /** 关闭弹窗回调 */
   onClose: () => void
   /** 挂单成功后的刷新回调 */
   onPlaced: () => void
+  /** 跳转「我的订单」入口：已有活动挂单时引导玩家先撤销 */
+  onShowOrders?: () => void
 }
 
 /**
@@ -54,8 +61,10 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   book,
   initialPrice,
   enhancementLevel = 0,
+  existingOrders,
   onClose,
   onPlaced,
+  onShowOrders,
 }: MarketOrderModalProps): React.JSX.Element | null {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
@@ -107,6 +116,15 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   // 选定强化等级下真正可支配售卖的件数
   const availableAmount = Math.max(0, selectedAmount - equippedCount)
   const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
+
+  // 该标的（含当前强化等级）已有的活动挂单：命中即禁止再挂新单（买/卖双向都拦）。
+  // 与服务端「同一玩家同一标的至多一笔活动挂单」同口径：同 itemId 同 "+N" 变体视为同一标的。
+  const blockingOrder = useMemo(
+    () => (instrument === null
+      ? null
+      : (existingOrders ?? []).find(order => order.itemId === instrument.itemId && order.enhancementLevel === level) ?? null),
+    [existingOrders, instrument, level],
+  )
 
   const vendorPrice = Math.max(2, instrument?.sellPrice ?? 2)
   const minimumPrice = useMemo(() => normalizeMarketPrice(vendorPrice, vendorPrice, true), [vendorPrice])
@@ -218,6 +236,12 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     event.preventDefault()
     if (!instrument) return
 
+    // 同一标的至多一笔活动挂单：已有挂单时先引导去「我的订单」撤销，不再发送注定被拒的指令。
+    if (blockingOrder) {
+      setNotice(getT()('market.error.ownerOrderExists'))
+      return
+    }
+
     if (!Number.isSafeInteger(price) || price < vendorPrice || !Number.isSafeInteger(quantity) || quantity <= 0) {
       setNotice(getT()('market.error.invalidInput'))
       return
@@ -257,7 +281,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       onClose()
       window.setTimeout(onPlaced, 120)
     }
-  }, [availableAmount, equippedCount, instrument, isEquipment, level, onClose, onPlaced, price, quantity, setNotice, side, spiritAmount, vendorPrice])
+  }, [availableAmount, blockingOrder, equippedCount, instrument, isEquipment, level, onClose, onPlaced, price, quantity, setNotice, side, spiritAmount, vendorPrice])
 
   if (!open || !instrument) return null
 
@@ -483,7 +507,21 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           )}
         </div>
 
-        {side === 'buy' && restingQuantity > 0 && (
+        {blockingOrder !== null && (
+          <p className="market-order-rest-hint market-order-blocked-hint" role="alert">
+            {t('market.ownerOrderHint', {
+              side: blockingOrder.side === 'sell' ? t('market.side.sell') : t('market.side.buy'),
+              count: formatNumber(blockingOrder.remainingQuantity),
+            })}
+            {onShowOrders !== undefined && (
+              <button className="market-order-blocked-link" onClick={onShowOrders} type="button">
+                {t('market.gotoMyOrders')}
+              </button>
+            )}
+          </p>
+        )}
+
+        {side === 'buy' && restingQuantity > 0 && blockingOrder === null && (
           <p className="market-order-rest-hint" role="note">{t('market.restingBidHint')}</p>
         )}
 
@@ -495,6 +533,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             className={`market-order-btn-submit market-order-btn-submit--${side}`}
             disabled={
               connection !== 'online' ||
+              blockingOrder !== null ||
               (side === 'sell' && (availableAmount <= 0 || quantity > availableAmount)) ||
               (side === 'buy' && (spiritAmount < totalPrice || totalPrice <= 0))
             }

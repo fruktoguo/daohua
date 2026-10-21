@@ -110,6 +110,9 @@
 - 幂等口径：订单幂等键 `system-ops:{batchId}:{side}:{assetId}`（batchId 为每次请求服务端生成），
   撤单幂等键沿用仓储规范格式 `market-cancel:{系统玩家}:{orderId}`（`CloseOrderAsync` 强制校验）；
   逐品种结果如实回执，部分失败不回滚已成功项。
+- 原位替换：坊市「同一玩家同一标的至多一笔活动挂单」（见 `docs/backend/domain-data-architecture.md` §5.2），
+  系统身份同样受约束；每个品种下单前先 `MarketRuntime.GetActiveOrder(系统玩家, 标的)` 命中既有活动单即
+  `CancelAsync` 撤销，因此重复点「系统挂售/收购」得到的是原位替换而非叠加新单。
 - 默认值：物品价格默认回收价（`sellPrice`），装备默认锻造材料成本价（`actions/*.json` 中产出的配方
   inputs 按物品 `sellPrice`×数量求和、`equipment.*` 投入递归展开），数量默认 1 亿份；两者均可显式指定。
   装备只挂基础变体（variant 恒为空串），+N 强化簿不在系统下单范围。

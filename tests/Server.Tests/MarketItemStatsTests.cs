@@ -30,9 +30,13 @@ public sealed class MarketItemStatsTests
 
         var testAsset = $"item.stats-test-{Guid.NewGuid():N}";
         var seller = PlayerId.New();
+        var seller2 = PlayerId.New();
         var buyer = PlayerId.New();
+        var buyer2 = PlayerId.New();
         await Seed(source, seller.Value, testAsset, 100);
+        await Seed(source, seller2.Value, testAsset, 100);
         await Seed(source, buyer.Value, "currency.spirit-stone", 50_000);
+        await Seed(source, buyer2.Value, "currency.spirit-stone", 50_000);
 
         var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
         var instrument = new MarketInstrument(new ItemId(testAsset));
@@ -59,7 +63,8 @@ public sealed class MarketItemStatsTests
             Assert.Equal(0d, stats1.WeekVolume);
 
             // 2. 挂更优卖单（卖一更新为 90 元，总在售 15 件）+ 挂买单（买一：80 元，4 件）
-            var sellOrder2 = new PlaceOrderRequest(OrderId.New(), seller, instrument, MarketSide.Sell, 90, 5, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+            // 每标的每玩家至多一笔活动挂单，因此第二笔卖单与后续吃单买单分别由独立玩家发出。
+            var sellOrder2 = new PlaceOrderRequest(OrderId.New(), seller2, instrument, MarketSide.Sell, 90, 5, now, new IdempotencyKey(Guid.NewGuid().ToString()));
             var buyOrder1 = new PlaceOrderRequest(OrderId.New(), buyer, instrument, MarketSide.Buy, 80, 4, now, new IdempotencyKey(Guid.NewGuid().ToString()));
             await runtime.PlaceAsync(sellOrder2);
             await runtime.PlaceAsync(buyOrder1);
@@ -72,7 +77,7 @@ public sealed class MarketItemStatsTests
             Assert.Equal(4d, stats2.BidQuantity);
 
             // 3. 买单吃单 3 件（以 90 元成交 3 件，卖一档剩余 2 件）
-            var buyOrder2 = new PlaceOrderRequest(OrderId.New(), buyer, instrument, MarketSide.Buy, 90, 3, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+            var buyOrder2 = new PlaceOrderRequest(OrderId.New(), buyer2, instrument, MarketSide.Buy, 90, 3, now, new IdempotencyKey(Guid.NewGuid().ToString()));
             var matchResult = await runtime.PlaceAsync(buyOrder2);
             Assert.Single(matchResult.Fills);
             Assert.Equal(3d, matchResult.Fills[0].Quantity);
@@ -87,7 +92,7 @@ public sealed class MarketItemStatsTests
             Assert.Equal(3d, stats3.WeekVolume);
 
             // 4. 撤销 90 元卖单余量（2 件）：卖一价自动回落到 100 元，成交量不受撤单影响保留
-            await runtime.CancelAsync(sellOrder2.OrderId, seller, instrument, $"market-cancel:{seller.Value:D}:{sellOrder2.OrderId.Value:D}");
+            await runtime.CancelAsync(sellOrder2.OrderId, seller2, instrument, $"market-cancel:{seller2.Value:D}:{sellOrder2.OrderId.Value:D}");
             var statsList4 = await repository.LoadItemStatsAsync(testAsset);
             var stats4 = Assert.Single(statsList4);
             Assert.Equal(100d, stats4.BestAskPrice);

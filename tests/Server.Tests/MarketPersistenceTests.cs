@@ -187,6 +187,75 @@ public sealed class MarketPersistenceTests
         await runtime.StopAsync(default);
     }
 
+    /// <summary>
+    /// 每标的单笔约束端到端：同标的反向/同向第二笔被拒且不落库、不冻结资产；
+    /// 跨变体与跨标的互不影响；撤单后可换向重挂；重启重建属主索引后约束照旧生效。
+    /// </summary>
+    [Fact]
+    public async Task SingleActiveOrderPerInstrumentIsRejectedAndSurvivesRestart()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场单笔挂单约束测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = connectionString,
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var player = PlayerId.New();
+        var otherItem = $"item.single-order-other-{Guid.NewGuid():N}";
+        // Seed 建号并落一笔余额，其余资产行走 SeedVariant 追加（同一玩家只能建号一次）。
+        await Seed(source, player.Value, "item.single-order", 10);
+        await SeedVariant(source, player.Value, otherItem, "", 10);
+        await SeedVariant(source, player.Value, "item.single-order", "+3", 10);
+        await SeedVariant(source, player.Value, "currency.spirit-stone", "", 10_000);
+        var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+        var instrument = new MarketInstrument(new ItemId("item.single-order"));
+        var enhanced = new MarketInstrument(new ItemId("item.single-order"), "+3");
+        await using var runtime = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await runtime.StartAsync(default);
+
+        var now = DateTimeOffset.UtcNow;
+        var sell = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Sell, 100, 4, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await runtime.PlaceAsync(sell);
+        Assert.Equal(sell.OrderId, runtime.GetActiveOrder(player, instrument)?.OrderId);
+
+        // 同标的反向（买）与同向（卖）第二笔都被拒，且不产生任何订单/冻结副作用。
+        var opposite = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Buy, 100, 2, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        var sameSide = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Sell, 120, 2, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        foreach (var rejected in new[] { opposite, sameSide })
+        {
+            var error = await Assert.ThrowsAsync<DomainException>(async () => await runtime.PlaceAsync(rejected));
+            Assert.Equal(DomainErrorCode.OwnerOrderExists, error.Code);
+            Assert.Null(await repository.LoadOrderAsync(rejected.OrderId.Value));
+        }
+        Assert.Equal(6d, await Balance(source, player.Value, "item.single-order"));
+        Assert.Equal(10_000d, await Balance(source, player.Value, "currency.spirit-stone"));
+        Assert.Single(runtime.GetOrders(player));
+
+        // 跨变体与跨标的放行：各标的独立一笔。
+        var enhancedSell = new PlaceOrderRequest(OrderId.New(), player, enhanced, MarketSide.Sell, 900, 1, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        var otherSell = new PlaceOrderRequest(OrderId.New(), player, new MarketInstrument(new ItemId(otherItem)), MarketSide.Sell, 50, 2, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await runtime.PlaceAsync(enhancedSell);
+        await runtime.PlaceAsync(otherSell);
+
+        // 撤单后换向重挂：约束随活动单消失而解除。
+        await runtime.CancelAsync(sell.OrderId, player, instrument, $"market-cancel:{player.Value:D}:{sell.OrderId.Value:D}");
+        Assert.Null(runtime.GetActiveOrder(player, instrument));
+        var rebid = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Buy, 90, 1, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await runtime.PlaceAsync(rebid);
+        Assert.Equal(rebid.OrderId, runtime.GetActiveOrder(player, instrument)?.OrderId);
+
+        // 重启重建盘口后属主索引随之重建：同标的新增单依旧被拒。
+        await runtime.StopAsync(default);
+        await using var restored = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await restored.StartAsync(default);
+        Assert.Equal(rebid.OrderId, restored.GetActiveOrder(player, instrument)?.OrderId);
+        var afterRestart = await Assert.ThrowsAsync<DomainException>(async () => await restored.PlaceAsync(
+            new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Sell, 95, 1, now, new IdempotencyKey(Guid.NewGuid().ToString()))));
+        Assert.Equal(DomainErrorCode.OwnerOrderExists, afterRestart.Code);
+        await restored.StopAsync(default);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
