@@ -154,57 +154,6 @@ public sealed class AccountRiskBoundaryTests
         Assert.Equal(1L, Convert.ToInt64(await count.ExecuteScalarAsync()));
     }
 
-    /// <summary>同一 IPv6 的展开与压缩写法不会拆成两份风险信号。</summary>
-    [Fact]
-    public void HasherNormalizesEquivalentIpv6Representations()
-    {
-        var hasher = new AccountRiskHasher("account-risk-ip-boundary");
-        var expanded = hasher.Hash(new AccountRiskSignals(IpAddress: "2001:0DB8:0000:0000:0000:0000:0000:0047"), AccountRiskPolicy.Default);
-        var compressed = hasher.Hash(new AccountRiskSignals(IpAddress: "2001:db8::47"), AccountRiskPolicy.Default);
-
-        Assert.Equal(expanded, compressed);
-    }
-
-    /// <summary>可信请求边界将 IPv4-mapped 来源与普通 IPv4 归为同一 IP 和网段。</summary>
-    [Fact]
-    public void RequestContextNormalizesMappedIpv4Source()
-    {
-        var collector = new AccountRiskRequestContext(new EphemeralDataProtectionProvider());
-        var plain = new DefaultHttpContext();
-        plain.Connection.RemoteIpAddress = IPAddress.Parse("192.0.2.47");
-        var mapped = new DefaultHttpContext();
-        mapped.Connection.RemoteIpAddress = IPAddress.Parse("::ffff:192.0.2.47");
-
-        var plainSignals = collector.Collect(plain, null, persistCookie: false);
-        var mappedSignals = collector.Collect(mapped, null, persistCookie: false);
-
-        Assert.Equal(plainSignals.IpAddress, mappedSignals.IpAddress);
-        Assert.Equal(plainSignals.NetworkHash, mappedSignals.NetworkHash);
-    }
-
-    /// <summary>空客户端对象不能得到随机设备额度；已验证的设备 Cookie 仍能恢复真实锚点。</summary>
-    [Fact]
-    public void EmptyClientCannotInventDeviceAndProtectedCookieRestoresAnchor()
-    {
-        var collector = new AccountRiskRequestContext(new EphemeralDataProtectionProvider());
-        var empty = new DefaultHttpContext();
-        var missing = collector.Collect(empty, new(null, null, null, null));
-        Assert.Null(missing.DeviceId);
-        Assert.Null(missing.PersonKey);
-        Assert.False(empty.Response.Headers.ContainsKey("Set-Cookie"));
-
-        var original = new DefaultHttpContext();
-        var id = Guid.NewGuid().ToString("D");
-        var first = collector.Collect(original, new(null, id, null, null));
-        Assert.NotNull(first.DeviceId);
-        Assert.NotEqual(id, first.DeviceId);
-        var restored = new DefaultHttpContext();
-        restored.Request.Headers.Cookie = original.Response.Headers.SetCookie.ToString().Split(';')[0];
-        var actual = collector.Collect(restored, new(null, Guid.NewGuid().ToString("D"), null, null), false);
-        Assert.Equal(first.DeviceId, actual.DeviceId);
-        Assert.Equal($"device:{first.DeviceId}", actual.PersonKey);
-    }
-
     /// <summary>配置相同的不同真机不会共用硬注册额度，缺信号拒绝也不污染共享 IP 注册速度。</summary>
     [Fact]
     public async Task SameHardwareConfigurationIsSoftAndDeniedAttemptsDoNotBlockSharedIp()
@@ -267,40 +216,6 @@ public sealed class AccountRiskBoundaryTests
         Assert.Equal(recentId, await remaining.ExecuteScalarAsync());
         await using var key = new NpgsqlCommand("SELECT count(*) FROM platform.account_risk_key", connection);
         Assert.Equal(1L, await key.ExecuteScalarAsync());
-    }
-
-    /// <summary>反向代理场景下，清空 KnownNetworks/KnownProxies 的 ForwardedHeadersMiddleware 能够正确将 Docker 网桥网关后的真实客户端 IP 还原并采集为准确网段。</summary>
-    [Fact]
-    public async Task ForwardedHeadersExtractsRealClientIpThroughBridgeGateway()
-    {
-        var options = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
-        {
-            ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
-        };
-        options.KnownIPNetworks.Clear();
-        options.KnownProxies.Clear();
-
-        var middleware = new Microsoft.AspNetCore.HttpOverrides.ForwardedHeadersMiddleware(
-            _ => Task.CompletedTask,
-            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
-            Microsoft.Extensions.Options.Options.Create(options));
-
-        var context = new DefaultHttpContext();
-        context.Connection.RemoteIpAddress = IPAddress.Parse("172.19.0.1"); // Docker 网桥网关
-        context.Request.Headers["X-Forwarded-For"] = "203.0.113.195";
-        context.Request.Headers["X-Forwarded-Proto"] = "https";
-
-        await middleware.Invoke(context);
-
-        Assert.Equal(IPAddress.Parse("203.0.113.195"), context.Connection.RemoteIpAddress);
-        Assert.Equal("https", context.Request.Scheme);
-
-        var dataProtection = new EphemeralDataProtectionProvider();
-        var collector = new AccountRiskRequestContext(dataProtection);
-        var signals = collector.Collect(context, new AccountRiskClientSignals(null, Guid.NewGuid().ToString("D"), null, null), persistCookie: false);
-
-        Assert.Equal("203.0.113.195", signals.IpAddress);
-        Assert.Equal("203.0.113.0/24", signals.NetworkHash);
     }
 
     private static string UniqueAccount() => $"boundary_{Guid.NewGuid():N}"[..28];

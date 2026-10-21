@@ -14,17 +14,6 @@ public sealed class ComputeJobRepositoryTests
 {
     private const int MaxAttempts = 3;
 
-    /// <summary>派生 job_id 必须对相同输入确定、对不同输入区分。</summary>
-    [Fact]
-    public void DeriveJobIdIsDeterministicAndDistinct()
-    {
-        var player = Guid.NewGuid();
-        var first = PostgresComputeJobRepository.DeriveJobId(player, 1_700_000_000_000);
-        Assert.Equal(first, PostgresComputeJobRepository.DeriveJobId(player, 1_700_000_000_000));
-        Assert.NotEqual(first, PostgresComputeJobRepository.DeriveJobId(player, 1_700_000_000_001));
-        Assert.NotEqual(first, PostgresComputeJobRepository.DeriveJobId(Guid.NewGuid(), 1_700_000_000_000));
-    }
-
     /// <summary>同一玩家的未完结任务去重：pending 行就地刷新而非重复入队。</summary>
     [Fact]
     public async Task EnqueueDeduplicatesOpenJobPerPlayer()

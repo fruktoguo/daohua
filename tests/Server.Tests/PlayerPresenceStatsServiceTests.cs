@@ -4,7 +4,7 @@ using Server.Clean;
 using Server.Clean.Social;
 using Xunit;
 
-namespace Ecs.Tests;
+namespace Server.Tests;
 
 public sealed class PlayerPresenceStatsServiceTests
 {

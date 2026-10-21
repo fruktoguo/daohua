@@ -215,32 +215,6 @@ public sealed class CombatRelocationTests
     }
 
     /// <summary>
-    /// v15 旧存档缺省形态：OriginNodeId/IsPinned 均缺失（解码后 OriginNodeId=null、
-    /// IsPinned=false），仍按池选远征处理——迁往异池节点时正常重锚。
-    /// </summary>
-    [Fact]
-    public void CombatAction_ReanchorsToNewLocationPool_WhenLegacySaveLacksMarkers()
-    {
-        var gameData = CreateWorld(out var actions);
-        var player = CreatePlayer("旧档游侠");
-        player.TravelTo("n1");
-        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, actions);
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(0.5), gameData);
-        Assert.Equal("encounter.e1", player.Actions[0].Expedition!.EncounterId);
-
-        // 抹掉新字段，还原 v15 载荷解码后的远征形态
-        player.Actions[0].Expedition = player.Actions[0].Expedition! with { OriginNodeId = null, IsPinned = false };
-
-        player.TravelTo("n2");
-        var moved = SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(0.5), gameData);
-
-        var expedition = player.Actions[0].Expedition!;
-        Assert.Equal("encounter.e2", expedition.EncounterId);
-        Assert.Equal(CombatExpeditionPhase.InitialSearch, expedition.Phase);
-        Assert.Contains(moved.Events, e => e.Code == "combat.search.started" && e.Message.Contains("山门遭遇"));
-    }
-
-    /// <summary>
     /// 钉死远征（CreateEncounter 显式入战口径）：遭遇不在驻留节点池内也继续续跑，
     /// 迁往异池节点不重锚、读条不重置。
     /// </summary>

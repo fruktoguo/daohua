@@ -27,8 +27,9 @@ public sealed class NodeBuildingRulesTests
         Assert.Equal(6600, NodeBuildingRules.RequiredBuildSeconds(51), 6);
     }
 
+    /// <summary>材料需求按级膨胀（×1.1/级），且逐项向下取整并保底 1——保底缺失会让 0 需求材料永远无法开工。</summary>
     [Fact]
-    public void RequiredMaterialsScalesExponentially()
+    public void RequiredMaterialsScalesExponentiallyFloorsAndClampsToOne()
     {
         var definition = Definition();
         var level1 = NodeBuildingRules.RequiredMaterials(definition, 1);
@@ -36,33 +37,23 @@ public sealed class NodeBuildingRulesTests
         var level2 = NodeBuildingRules.RequiredMaterials(definition, 2);
         Assert.Equal(110, level2["item.peach-wood"], 6);
         Assert.Equal(55, level2["item.beast-hide"], 6);
-    }
 
-    [Fact]
-    public void RequiredMaterialsFloorsAndClampsToOne()
-    {
-        var definition = Definition([new BuildingMaterial("item.ningxue-grass", 15), new BuildingMaterial("item.tiny", 0.8)]);
-        // 15 * 1.1 = 16.5 -> floor = 16
-        var level2 = NodeBuildingRules.RequiredMaterials(definition, 2);
-        Assert.Equal(16, level2["item.ningxue-grass"]);
-        // 0.8 -> floor = 0 -> 保底 1
-        Assert.Equal(1, level2["item.tiny"]);
-    }
-
-    [Fact]
-    public void MaterialFractionCapsEachItemAtRequired()
-    {
-        var definition = Definition();
-        var state = new NodeBuildingState("building.test", 0, 1, 0,
-            new Dictionary<string, double> { ["item.peach-wood"] = 1000 });
-        // 桃木已超量仍按需求封顶：100/100 + 0/50 → 100/150。
-        Assert.Equal(100.0 / 150.0, NodeBuildingRules.MaterialFraction(state, definition), 6);
+        // 15 * 1.1 = 16.5 -> floor = 16；0.8 -> floor = 0 -> 保底 1
+        var floors = NodeBuildingRules.RequiredMaterials(
+            Definition([new BuildingMaterial("item.ningxue-grass", 15), new BuildingMaterial("item.tiny", 0.8)]), 2);
+        Assert.Equal(16, floors["item.ningxue-grass"]);
+        Assert.Equal(1, floors["item.tiny"]);
     }
 
     [Fact]
     public void BuildProgressIsMinOfMaterialAndTime()
     {
         var definition = Definition();
+        // 单项超量投入必须按需求封顶：100/100 + 0/50 → 100/150，不得把库存余额算成进度。
+        var overfilled = new NodeBuildingState("building.test", 0, 1, 0,
+            new Dictionary<string, double> { ["item.peach-wood"] = 1000 });
+        Assert.Equal(100.0 / 150.0, NodeBuildingRules.MaterialFraction(overfilled, definition), 6);
+
         var halfMaterials = new NodeBuildingState("building.test", 0, 1, 0,
             new Dictionary<string, double> { ["item.peach-wood"] = 50, ["item.beast-hide"] = 25 });
         Assert.Equal(0.5, NodeBuildingRules.MaterialFraction(halfMaterials, definition), 6);

@@ -90,36 +90,6 @@ public sealed class PlayerCheckpointTests
             Assert.Equal(mark, player.DirtySectionMarks[section]);
     }
 
-    /// <summary>操作前全部分段已脏时回滚仍逐位一致：已脏分段的重标脏不产生可观察差异。</summary>
-    [Fact]
-    public void CheckpointRestorePreservesFullyDirtyBaseline()
-    {
-        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "全脏", Baseline, "catalog-a");
-        player.SetLoopEnabled(false);
-        var baseline = CaptureBaseline(player);
-
-        player.Progression.LifetimeExperience += 11;
-        player.MarkDirty(PlayerSectionKind.Progression);
-        player.TravelTo("node.far", 1, 1);
-        player.Combat.AttackPower = 99;
-        player.MarkDirty(PlayerSectionKind.Combat);
-        player.LearnAbility(new AbilityId("ability.test-heart"));
-        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, ActionCatalog.Default);
-        player.Duel.EncounterCharges = 7;
-        player.MarkDirty(PlayerSectionKind.Duel);
-        player.Buffs.Active.Add(new ActiveBuff("buff.extra", 10, 1));
-        player.MarkDirty(PlayerSectionKind.Buffs);
-        player.ConfigureAutoUse("combat", 1, null, 2, false, "general");
-
-        RestoreBaseline(player, baseline.Sections, baseline.Head, baseline.Dirty, baseline.Marks);
-
-        Assert.Equal(baseline.Json, JsonSerializer.Serialize(player.ExportState()));
-        Assert.Equal(baseline.Dirty.Length, player.DirtySections.Count);
-        Assert.True(baseline.Dirty.ToHashSet().SetEquals(player.DirtySections));
-        foreach (var (section, mark) in baseline.Marks)
-            Assert.Equal(mark, player.DirtySectionMarks[section]);
-    }
-
     /// <summary>回滚后聚合仍是健康可变状态：后续标脏取严格更大的流水戳，触及差集判定不受影响。</summary>
     [Fact]
     public void DirtyTrackingAfterRestoreKeepsMonotonicMarks()

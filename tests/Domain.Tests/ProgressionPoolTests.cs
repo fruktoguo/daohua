@@ -23,35 +23,23 @@ public sealed class ProgressionPoolTests
 
     // ── ComputeExperienceCredit 纯函数分支 ──
 
-    /// <summary>层境未满且无底蕴：收益按增幅量全额入账，无放大。</summary>
-    [Fact]
-    public void Credit_NoFoundationBelowCap_AmplifiedOnly()
-        => Assert.Equal(10, PlayerProgression.ComputeExperienceCredit(10, 100, 30, 0));
-
-    /// <summary>底蕴充足：单笔放大至 3× 增幅量，兑换消耗 = 2× 增幅量。</summary>
-    [Fact]
-    public void Credit_AmpleFoundation_TripleGain()
-        => Assert.Equal(30, PlayerProgression.ComputeExperienceCredit(10, 100, 0, 1000));
-
-    /// <summary>底蕴不足时按余量部分放大：兑多少补多少，不透支。</summary>
-    [Fact]
-    public void Credit_PartialFoundation_LimitedBoost()
-        => Assert.Equal(15, PlayerProgression.ComputeExperienceCredit(10, 100, 0, 5));
-
-    /// <summary>距瓶颈容量不足时先填满：兑换放大与溢出一并截断在瓶颈内。</summary>
-    [Fact]
-    public void Credit_CapacityClamp_WinsOverBoost()
-        => Assert.Equal(8, PlayerProgression.ComputeExperienceCredit(10, 100, 92, 1000));
-
-    /// <summary>满层（已达上限）恒入账 0：增幅量全部转沉淀。</summary>
-    [Fact]
-    public void Credit_AtCap_Zero()
-        => Assert.Equal(0, PlayerProgression.ComputeExperienceCredit(10, 100, 100, 0));
-
-    /// <summary>满级无上限（cap≤0）恒入账 0。</summary>
-    [Fact]
-    public void Credit_MaxLevel_Zero()
-        => Assert.Equal(0, PlayerProgression.ComputeExperienceCredit(10, 0, 0, 50));
+    /// <summary>
+    /// ComputeExperienceCredit 六条分支：入账量由「剩余容量、底蕴余量、增幅量」三者取最小后
+    /// 再乘放大系数决定，任何一侧越界都会让玩家白拿或凭空扣底蕴。
+    /// </summary>
+    [Theory]
+    [InlineData("no-foundation", 10, 100, 30, 0, 10)]    // 无底蕴：只入增幅量，无放大
+    [InlineData("ample", 10, 100, 0, 1000, 30)]          // 底蕴充足：放大 3×
+    [InlineData("partial", 10, 100, 0, 5, 15)]           // 底蕴不足：兑多少补多少，不透支
+    [InlineData("capacity-clamp", 10, 100, 92, 1000, 8)] // 容量不足：放大与溢出一并截断
+    [InlineData("at-cap", 10, 100, 100, 0, 0)]           // 满层：全部转沉淀
+    [InlineData("max-level", 10, 0, 0, 50, 0)]           // 满级（cap≤0）：恒 0
+    public void ComputeExperienceCredit_ResolvesByMinimumOfCapacityFoundationAndAmplification(
+        string scenario, double gain, double cap, double current, double foundation, double expected)
+    {
+        var actual = PlayerProgression.ComputeExperienceCredit(gain, cap, current, foundation);
+        Assert.True(expected == actual, $"场景 {scenario} 期望 {expected}，实际 {actual}");
+    }
 
     // ── CreditExperience 状态迁移 ──
 
