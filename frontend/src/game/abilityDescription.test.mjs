@@ -166,3 +166,49 @@ test('describeAbility：破阵子与碎罡保持全队/自身目标说明', () =
   const suiGangResult = describeAbility(suiGang, 1)
   assert.ok(suiGangResult.description.includes('使自身伤害减免'))
 })
+
+test('describeAbility：碎罡层数随等级成长但每层数值固定', () => {
+  const suiGang = {
+    abilityId: 'ability.sui-gang',
+    name: '碎罡',
+    description: '崩碎自身护体罡气。',
+    targetType: 'self',
+    category: 'physical',
+    element: 'none',
+    buffs: [
+      {
+        name: '煞力',
+        durationSeconds: 20.0,
+        attackPower: 1.0,
+        resistancePerStack: 1.0,
+        resistanceStackRatio: 0.3,
+        stackPolicy: 'maxKeep',
+      },
+      {
+        name: '罡锋',
+        durationSeconds: 20.0,
+        accuracy: 1.0,
+        critical: 1.0,
+        missingHitpointsPerStack: 5.0,
+        stackPolicy: 'maxKeep',
+      },
+    ],
+  }
+  const result = describeAbility(suiGang, 2)
+  assert.ok(
+    result.description.includes('每层提升 1 点物理攻击力'),
+    `煞力每层物攻不应随等级放大，实际为: ${result.description}`
+  )
+  assert.ok(
+    result.description.includes('每层提升 1 点命中') && result.description.includes('每层提升 1 点暴击'),
+    `罡锋每层命中/暴击不应随等级放大，实际为: ${result.description}`
+  )
+  assert.ok(
+    result.description.includes('层数为 1 + 施法者双抗总和的 30%（向下取整）'),
+    `煞力应说明双抗百分比层数口径，实际为: ${result.description}`
+  )
+  assert.ok(
+    result.description.includes('每损失 5 点气血获得一层，层数随功法等级与技能增幅提升'),
+    `罡锋应说明已损气血层数口径，实际为: ${result.description}`
+  )
+})

@@ -311,13 +311,15 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var baseBuffId = AbilityText(buff, "buffId") ?? $"ability-buff:{abilityId}";
         var policy = AbilityText(buff, "stackPolicy") ?? "capped";
         var buffId = policy == "perCaster" ? $"{baseBuffId}:{caster.Id}" : baseBuffId;
+        var missingPerStack = AbilityNumber(buff, "missingHitpointsPerStack");
         var spellStackPercent = AbilityNumber(buff, "spellAttackStackPercent");
-        var initialStacks = InitialStacks(buff, caster, target, levelGrowth);
-        // 法攻百分比层数通道已把等级成长折入层数，效果量保持每层基础值，防止等级被二次放大；
-        // 其余层数来源仍按等级成长放大全部数值项。时长/叠层上限不成长。
-        var usesSpellPercentStacks = AbilityNumber(buff, "missingHitpointsPerStack") <= 0
-            && spellStackPercent > 0;
-        var effectGrowth = usesSpellPercentStacks ? 1.0 : levelGrowth;
+        var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
+        var hasStackDerivation = missingPerStack > 0 || spellStackPercent > 0 || resistancePerStack > 0;
+        // 层数派生通道把等级成长与技能增幅折入层数，效果量保持每层基础值，防止等级被二次放大；
+        // 无层数派生的 Buff 仍按等级成长放大全部数值项。时长/叠层上限不成长。
+        var growth = levelGrowth * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear);
+        var effectGrowth = hasStackDerivation ? 1.0 : levelGrowth;
+        var initialStacks = InitialStacks(buff, caster, target, growth);
         var grant = new CombatBuffState(buffId,
             grantedAtSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), initialStacks,
             AbilityNumber(buff, "hpRegen") * effectGrowth, AbilityNumber(buff, "mpRegen") * effectGrowth,
@@ -335,7 +337,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             Critical: AbilityNumber(buff, "critical") * effectGrowth,
             ResistancePoints: AbilityNumber(buff, "resistancePoints"),
             HpRegenPerSecond: AbilityNumber(buff, "hpRegenPerSecond") * effectGrowth,
-            MissingHitpointsPerStack: AbilityNumber(buff, "missingHitpointsPerStack"));
+            // 已损气血通道存储「折入成长后的等效每层阈值」，动态重算才能沿用同一成长口径。
+            MissingHitpointsPerStack: missingPerStack > 0 ? missingPerStack / growth : 0);
         // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
         var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
         var index = target.Buffs.FindIndex(current => current.BuffId == buffId);
@@ -357,27 +360,28 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     }
 
     /// <summary>
-    /// 派生授予层数：<c>missingHitpointsPerStack</c> &gt; 0 时层数完全由目标已损气血决定
-    /// （每 N 点已损 1 层，满血 0 层）；否则 <c>spellAttackStackPercent</c> 按「基础 1 层 +
-    /// 施法者术法攻击的百分比（含等级成长与技能增幅）向下取整」；否则 <c>resistancePerStack</c>
-    /// 按施法者双抗总和比例折算层数；均未配置时为基础 1 层。
+    /// 派生授予层数：<c>missingHitpointsPerStack</c> &gt; 0 时层数由目标已损气血与
+    /// <paramref name="growth"/> 折算（每 N 点已损 1 层，满血 0 层）；否则
+    /// <c>spellAttackStackPercent</c> 按「基础 1 层 + 施法者术法攻击百分比向下取整」；
+    /// 否则 <c>resistancePerStack</c> 按「基础 1 层 + 施法者双抗总和比例向下取整」；
+    /// 均未配置时为基础 1 层。
     /// </summary>
+    /// <param name="growth">等级成长 × 技能增幅；已损气血阈值与层数百分比共用同一成长乘区。</param>
     private static double InitialStacks(JsonElement buff, CombatantState caster, CombatantState target,
-        double levelGrowth)
+        double growth)
     {
         var missingPerStack = AbilityNumber(buff, "missingHitpointsPerStack");
         if (missingPerStack > 0)
         {
             var missing = Math.Max(0, target.Stats.MaxHitpoints - target.Hitpoints);
-            return Math.Floor(missing / missingPerStack);
+            return Math.Floor(missing * growth / missingPerStack + 1e-9);
         }
         var spellAttackPercent = AbilityNumber(buff, "spellAttackStackPercent");
         if (spellAttackPercent > 0)
         {
             // 基础 1 层 + 百分比额外层数；等级与技能增幅只提升百分比，不改变每层回血量。
             // epsilon 吸收二进制浮点在整数边界上的下偏。
-            var extraStacks = Math.Max(0, caster.Stats.SpellAttack) * spellAttackPercent * levelGrowth
-                * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear);
+            var extraStacks = Math.Max(0, caster.Stats.SpellAttack) * spellAttackPercent * growth;
             return 1 + Math.Floor(extraStacks + 1e-9);
         }
         var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
@@ -386,7 +390,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             // 层数锚定施法者「自身双抗总和」的原始面板语义，故读 Stats 而非 EffectiveStats：
             // EffectiveStats 会把该技能自身的碎罡破防折叠进来，语义上不再等于「自身双抗」。
             var resistance = caster.Stats.Defense + caster.Stats.MagicResistance;
-            return Math.Floor(resistance * AbilityNumber(buff, "resistanceStackRatio") / resistancePerStack);
+            var ratio = AbilityNumber(buff, "resistanceStackRatio");
+            return 1 + Math.Floor(resistance * ratio * growth / resistancePerStack + 1e-9);
         }
         return 1.0;
     }

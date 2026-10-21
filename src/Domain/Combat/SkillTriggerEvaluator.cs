@@ -141,6 +141,9 @@ public static class SkillTriggerEvaluator
         var resistancePerStack = JsonRead.Number(buffElement, "resistancePerStack");
         if (resistancePerStack < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 resistancePerStack 不能为负数。");
+        var resistanceStackRatio = JsonRead.Number(buffElement, "resistanceStackRatio");
+        if (resistanceStackRatio < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 resistanceStackRatio 不能为负数。");
         var spellAttackPercent = JsonRead.Number(buffElement, "spellAttackStackPercent");
         if (spellAttackPercent < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 spellAttackStackPercent 不能为负数。");

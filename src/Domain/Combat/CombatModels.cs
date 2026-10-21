@@ -495,7 +495,7 @@ public sealed class CombatantState
         {
             var buff = Buffs[i];
             if (buff.MissingHitpointsPerStack <= 0) continue;
-            var stacks = Math.Floor(missing / buff.MissingHitpointsPerStack);
+            var stacks = Math.Floor(missing / buff.MissingHitpointsPerStack + 1e-9);
             if (buff.Stacks != stacks) Buffs[i] = buff with { Stacks = stacks };
         }
     }

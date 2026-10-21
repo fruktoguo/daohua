@@ -157,18 +157,14 @@ export function extractSingleBuffSpecBonusItems(
   level = 1
 ): BonusAsideItem[] {
   // Buff 效果量随功法等级成长（与服务端 CastSkill 同式：每级 +2% 线性成长）。
-  // 法攻百分比层数通道的成长已折入层数，效果量保持每层基础值，不再二次放大。
+  // 有层数派生的 Buff 把成长折入层数，每层效果量保持配置基础值，不再二次放大。
   const levelGrowth = 1 + (Math.max(1, level) - 1) * 0.02
-  const hasSpellPercentStacks = Boolean(
-    buff.spellAttackStackPercent && buff.spellAttackStackPercent > 0
-      && (!buff.missingHitpointsPerStack || buff.missingHitpointsPerStack <= 0)
-  )
-  const effectGrowth = hasSpellPercentStacks ? 1 : levelGrowth
   const isStacked = Boolean(
     (buff.resistancePerStack && buff.resistancePerStack > 0) ||
     (buff.missingHitpointsPerStack && buff.missingHitpointsPerStack > 0) ||
-    hasSpellPercentStacks
+    (buff.spellAttackStackPercent && buff.spellAttackStackPercent > 0)
   )
+  const effectGrowth = isStacked ? 1 : levelGrowth
   const scaled = {
     ...buff,
     hpRegen: buff.hpRegen !== undefined ? buff.hpRegen * effectGrowth : undefined,

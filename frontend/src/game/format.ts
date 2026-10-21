@@ -157,17 +157,25 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const hitCount = ability.hitCount ?? 0
   const healing = ability.effectType === 'heal'
   // 支援类数值同样吃 levelGrowth：固定威胁与 Buff 点数项均按每级 +2% 放大；
-  // 唯一例外是法攻百分比层数通道——成长折入层数后，效果量保持每层基础值。
+  // 有层数派生的 Buff 例外——等级成长折入层数，每层效果量保持配置基础值。
   const threatGain = (ability.threatGain ?? 0) * levelGrowth
   const threatPoints = (ability.threatPoints ?? 0) * levelGrowth
   const buff = ability.buff
-  // 战内 Buff 子句：buffs[] 逐个描述（碎罡同时授予碎罡与罡锋），回落单 buff。
+  // 战内 Buff 子句：buffs[] 逐个描述（碎罡同时授予碎罡、煞力与罡锋），回落单 buff。
   // 回复/增伤/免伤/攻击/命中/暴击/双抗/威胁逐条并列，全零回退通用增益文案。
   const buffClause = (spec: NonNullable<typeof ability.buff>) => {
     const duration = spec.durationSeconds ?? 0
     const spellStackPercent = spec.spellAttackStackPercent ?? 0
-    const usesSpellPercentStacks = spellStackPercent > 0 && (spec.missingHitpointsPerStack ?? 0) <= 0
-    const effectGrowth = usesSpellPercentStacks ? 1 : levelGrowth
+    const resistancePerStack = spec.resistancePerStack ?? 0
+    const missingPerStack = spec.missingHitpointsPerStack ?? 0
+    // 层数来源优先级与服务端一致：已损气血 > 法攻百分比 > 双抗百分比。
+    const usesMissingStacks = missingPerStack > 0
+    const usesSpellPercentStacks = !usesMissingStacks && spellStackPercent > 0
+    const usesResistanceStacks = !usesMissingStacks && !usesSpellPercentStacks && resistancePerStack > 0
+    // 有层数派生的 Buff 把等级成长折入层数，每层效果量不再二次放大。
+    const effectGrowth = usesMissingStacks || usesSpellPercentStacks || usesResistanceStacks
+      ? 1
+      : levelGrowth
     const hpRegen = (spec.hpRegen ?? 0) * effectGrowth
     const hpRegenPerSecond = (spec.hpRegenPerSecond ?? 0) * effectGrowth
     const mpRegen = (spec.mpRegen ?? 0) * effectGrowth
@@ -209,13 +217,11 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     if (stackPercentText) {
       effect = `${effect}，${t('game.abilityDesc.buffStackBySpellAttackPercent', { ratio: stackPercentText })}`
     }
-    const resistancePerStack = spec.resistancePerStack ?? 0
-    if (resistancePerStack > 0) {
+    if (usesResistanceStacks) {
       const ratio = (spec.resistanceStackRatio ?? 1) * 100
       effect = `${effect}，${t('game.abilityDesc.buffStackByResistance', { ratio: formatNumber(ratio) })}`
     }
-    const missingPerStack = spec.missingHitpointsPerStack ?? 0
-    if (missingPerStack > 0) {
+    if (usesMissingStacks) {
       effect = `${effect}，${t('game.abilityDesc.buffStackByMissingHp', { n: formatNumber(missingPerStack) })}`
     }
     return effect
