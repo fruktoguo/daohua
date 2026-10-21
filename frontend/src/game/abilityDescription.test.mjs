@@ -61,7 +61,7 @@ test.after(() => {
   } catch {}
 })
 
-test('describeAbility：甘露无论 camelCase 还是 kebab-case 均正确说明对生命值百分比最低的队友施加增益', () => {
+test('describeAbility：甘露主描述只保留施加关系与层数构成，百分比随等级缩放', () => {
   const ganluCamel = {
     abilityId: 'ability.ganlu',
     name: '甘露',
@@ -84,16 +84,22 @@ test('describeAbility：甘露无论 camelCase 还是 kebab-case 均正确说明
 
   const camelResult = describeAbility(ganluCamel, 1)
   assert.ok(
-    camelResult.description.includes('对生命值百分比最低的队友施加增益'),
-    `甘露描述应包含目标说明，实际为: ${camelResult.description}`
+    camelResult.description.includes('对生命值百分比最低的队友施加 [[8%术法攻击 + 1层]] 的 [[甘露]]。'),
+    `甘露主描述应只保留施加关系与层数构成，实际为: ${camelResult.description}`
   )
   assert.ok(
-    camelResult.description.includes('每层每秒回复 1 点气血'),
-    `甘露描述应包含每秒回血效果，实际为: ${camelResult.description}`
+    !camelResult.description.includes('每层每秒回复') && !camelResult.description.includes('重复施加'),
+    `甘露主描述不应堆叠 Buff 效果与控制细节，实际为: ${camelResult.description}`
   )
   assert.ok(
-    camelResult.description.includes('层数为 1 + 施法者术法攻击的 8%（向下取整）'),
-    `甘露描述应包含法攻百分比层数说明，实际为: ${camelResult.description}`
+    camelResult.lines.includes('[[甘露]]：每层每秒回复 1 点气血，持续 10 秒'),
+    `甘露 Buff 效果应进入词条行，实际为: ${camelResult.lines.join(' | ')}`
+  )
+
+  const lv2Result = describeAbility(ganluCamel, 2)
+  assert.ok(
+    lv2Result.description.includes('[[8.2%术法攻击 + 1层]]'),
+    `甘露层数百分比应随等级成长，实际为: ${lv2Result.description}`
   )
 
   const ganluKebab = {
@@ -102,7 +108,7 @@ test('describeAbility：甘露无论 camelCase 还是 kebab-case 均正确说明
   }
   const kebabResult = describeAbility(ganluKebab, 1)
   assert.ok(
-    kebabResult.description.includes('对生命值百分比最低的队友施加增益'),
+    kebabResult.description.includes('对生命值百分比最低的队友施加'),
     `kebab 格式甘露描述应包含目标说明，实际为: ${kebabResult.description}`
   )
 })
@@ -130,7 +136,7 @@ test('describeAbility：清平乐正确说明为生命值百分比最低的队�
   )
 })
 
-test('describeAbility：破阵子与碎罡保持全队/自身目标说明', () => {
+test('describeAbility：破阵子保持直接效果短句，增伤随等级成长', () => {
   const pozhen = {
     abilityId: 'ability.pozhen-melody',
     name: '破阵子',
@@ -144,30 +150,19 @@ test('describeAbility：破阵子与碎罡保持全队/自身目标说明', () =
       damageBonusPoints: 40,
     },
   }
-  const pozhenResult = describeAbility(pozhen, 1)
-  assert.ok(pozhenResult.description.includes('使己方全体伤害提升'))
-  assert.ok(pozhenResult.description.includes('40%'))
-
-  const suiGang = {
-    abilityId: 'ability.sui-gang',
-    name: '碎罡',
-    description: '崩碎自身护体罡气。',
-    targetType: 'self',
-    category: 'physical',
-    buffs: [
-      {
-        name: '碎罡',
-        durationSeconds: 10.0,
-        damageAbsorptionPoints: -100,
-        attackPower: 50,
-      },
-    ],
-  }
-  const suiGangResult = describeAbility(suiGang, 1)
-  assert.ok(suiGangResult.description.includes('使自身伤害减免'))
+  const lv1 = describeAbility(pozhen, 1)
+  assert.ok(
+    lv1.description.includes('使己方全体伤害提升 40%，持续 10 秒。'),
+    `破阵子应保持直接效果短句，实际为: ${lv1.description}`
+  )
+  const lv2 = describeAbility(pozhen, 2)
+  assert.ok(
+    lv2.description.includes('使己方全体伤害提升 40.8%'),
+    `破阵子增伤应随等级成长，实际为: ${lv2.description}`
+  )
 })
 
-test('describeAbility：碎罡层数随等级成长但每层数值固定', () => {
+test('describeAbility：碎罡三 Buff 胶囊化，层数构成随等级成长且每层效果固定', () => {
   const suiGang = {
     abilityId: 'ability.sui-gang',
     name: '碎罡',
@@ -176,6 +171,12 @@ test('describeAbility：碎罡层数随等级成长但每层数值固定', () =>
     category: 'physical',
     element: 'none',
     buffs: [
+      {
+        name: '碎罡',
+        durationSeconds: 20.0,
+        resistancePoints: -400,
+        stackPolicy: 'maxKeep',
+      },
       {
         name: '煞力',
         durationSeconds: 20.0,
@@ -194,21 +195,47 @@ test('describeAbility：碎罡层数随等级成长但每层数值固定', () =>
       },
     ],
   }
-  const result = describeAbility(suiGang, 2)
+  const lv1 = describeAbility(suiGang, 1)
   assert.ok(
-    result.description.includes('每层提升 1 点物理攻击力'),
-    `煞力每层物攻不应随等级放大，实际为: ${result.description}`
+    lv1.description.includes('对自身施加 [[碎罡]]、[[煞力]]、[[罡锋]]。'),
+    `碎罡主描述应只列高亮 Buff 名，实际为: ${lv1.description}`
   )
   assert.ok(
-    result.description.includes('每层提升 1 点命中') && result.description.includes('每层提升 1 点暴击'),
-    `罡锋每层命中/暴击不应随等级放大，实际为: ${result.description}`
+    !lv1.description.includes('重复施加') && !lv1.description.includes('随功法等级与技能增幅'),
+    `碎罡主描述不应出现控制细节长句，实际为: ${lv1.description}`
+  )
+
+  const lv2 = describeAbility(suiGang, 2)
+  assert.ok(
+    lv2.lines.includes('[[煞力]]：[[1 + 30.6%双抗 层]]，每层物攻 +1，持续 20 秒')
+      && lv2.lines.includes('[[罡锋]]：[[每 4.9 点已损气血 1 层]]，每层命中/暴击 +1，持续 20 秒'),
+    `碎罡层数构成应随等级成长并进入词条行，实际为: ${lv2.lines.join(' | ')}`
+  )
+})
+
+test('describeAbility：嘲讽主描述保留威胁与施加关系，Buff 效果进入词条行', () => {
+  const taunt = {
+    abilityId: 'ability.taunt',
+    name: '嘲讽',
+    description: '怒喝惊四野，引敌向吾身。',
+    targetType: 'self',
+    category: 'physical',
+    element: 'none',
+    threatGain: 500,
+    buff: {
+      name: '嘲讽',
+      durationSeconds: 60.0,
+      threatPoints: 400,
+      threatPerSecondMaxHpPoints: 10,
+    },
+  }
+  const result = describeAbility(taunt, 1)
+  assert.ok(
+    result.description.includes('引动敌意向己，获得 500 点威胁值，对自身施加 [[嘲讽]]。'),
+    `嘲讽主描述应保留威胁与施加关系，实际为: ${result.description}`
   )
   assert.ok(
-    result.description.includes('层数为 1 + 施法者双抗总和的 30%（向下取整）'),
-    `煞力应说明双抗百分比层数口径，实际为: ${result.description}`
-  )
-  assert.ok(
-    result.description.includes('每损失 5 点气血获得一层，层数随功法等级与技能增幅提升'),
-    `罡锋应说明已损气血层数口径，实际为: ${result.description}`
+    result.lines.includes('[[嘲讽]]：威胁获取提升 400%，每秒获得 10% 最大生命的威胁，持续 60 秒'),
+    `嘲讽 Buff 效果应进入词条行，实际为: ${result.lines.join(' | ')}`
   )
 })

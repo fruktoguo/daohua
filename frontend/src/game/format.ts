@@ -31,14 +31,6 @@ export interface EffectTooltipContent {
 }
 
 /**
- * 格式化技能系数为整数百分比字符串（如 "+15%"）
- */
-function abilityPercent(ratio: number): string {
-  const percent = Math.round(ratio * 100)
-  return `${percent > 0 ? '+' : ''}${percent}%`
-}
-
-/**
  * 伤害构成百分比（不带正负号，如 "60%"、"61.8%"）
  */
 function abilityRatioPercent(ratio: number): string {
@@ -161,21 +153,36 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const threatGain = (ability.threatGain ?? 0) * levelGrowth
   const threatPoints = (ability.threatPoints ?? 0) * levelGrowth
   const buff = ability.buff
-  // 战内 Buff 子句：buffs[] 逐个描述（碎罡同时授予碎罡、煞力与罡锋），回落单 buff。
-  // 回复/增伤/免伤/攻击/命中/暴击/双抗/威胁逐条并列，全零回退通用增益文案。
-  const buffClause = (spec: NonNullable<typeof ability.buff>) => {
-    const duration = spec.durationSeconds ?? 0
-    const spellStackPercent = spec.spellAttackStackPercent ?? 0
-    const resistancePerStack = spec.resistancePerStack ?? 0
+  const buffSpecs = ability.buffs && ability.buffs.length > 0 ? ability.buffs : buff ? [buff] : []
+
+  /**
+   * 层数派生构成：与服务端优先级一致（已损气血 > 法攻百分比 > 双抗百分比）。
+   * 等级成长只放大百分比/层数，不改变每层效果量；展示值随技能等级即时变化。
+   */
+  const stackComposition = (spec: NonNullable<typeof ability.buff>): string | null => {
     const missingPerStack = spec.missingHitpointsPerStack ?? 0
-    // 层数来源优先级与服务端一致：已损气血 > 法攻百分比 > 双抗百分比。
-    const usesMissingStacks = missingPerStack > 0
-    const usesSpellPercentStacks = !usesMissingStacks && spellStackPercent > 0
-    const usesResistanceStacks = !usesMissingStacks && !usesSpellPercentStacks && resistancePerStack > 0
-    // 有层数派生的 Buff 把等级成长折入层数，每层效果量不再二次放大。
-    const effectGrowth = usesMissingStacks || usesSpellPercentStacks || usesResistanceStacks
-      ? 1
-      : levelGrowth
+    if (missingPerStack > 0) {
+      const effective = +(missingPerStack / levelGrowth).toFixed(1)
+      return t('game.abilityDesc.buffStackMissingComposition', { n: formatNumber(effective) })
+    }
+    const spellStackPercent = spec.spellAttackStackPercent ?? 0
+    if (spellStackPercent > 0) {
+      return t('game.abilityDesc.buffStackSpellComposition', {
+        ratio: abilityRatioPercent(spellStackPercent * levelGrowth),
+      })
+    }
+    const resistancePerStack = spec.resistancePerStack ?? 0
+    if (resistancePerStack > 0) {
+      return t('game.abilityDesc.buffStackResistanceComposition', {
+        ratio: abilityRatioPercent((spec.resistanceStackRatio ?? 1) * levelGrowth),
+      })
+    }
+    return null
+  }
+
+  /** Buff 词条行效果：有层数派生的 Buff 每层数值固定，其余仍按等级成长放大。 */
+  const buffDetailParts = (spec: NonNullable<typeof ability.buff>): string[] => {
+    const effectGrowth = stackComposition(spec) ? 1 : levelGrowth
     const hpRegen = (spec.hpRegen ?? 0) * effectGrowth
     const hpRegenPerSecond = (spec.hpRegenPerSecond ?? 0) * effectGrowth
     const mpRegen = (spec.mpRegen ?? 0) * effectGrowth
@@ -187,46 +194,79 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     const resistancePoints = spec.resistancePoints ?? 0
     const buffThreatPoints = (spec.threatPoints ?? 0) * effectGrowth
     const threatPerSecond = (spec.threatPerSecondMaxHpPoints ?? 0) * effectGrowth
-    const effects: string[] = []
+    const parts: string[] = []
     // 面板自动回复沿 5 秒网格结算；每层每秒回复独立成句，避免与面板属性混淆。
-    if (hpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegen', { target, n: formatNumber(hpRegen) }))
-    if (hpRegenPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegenPerSecond', { target, n: formatNumber(hpRegenPerSecond) }))
-    if (mpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffMpRegen', { target, n: formatNumber(mpRegen) }))
-    if (bonusPoints !== 0) effects.push(t('game.abilityDesc.effectBuffDamage', { target, n: abilityPercent(bonusPoints / 100) }))
-    if (absorbPoints !== 0) effects.push(t('game.abilityDesc.effectBuffAbsorb', { target, n: abilityPercent(absorbPoints / (100 + absorbPoints)) }))
-    if (attackPower !== 0) effects.push(t('game.abilityDesc.effectBuffAttackPower', { n: formatNumber(attackPower) }))
-    if (accuracy !== 0) effects.push(t('game.abilityDesc.effectBuffAccuracy', { n: formatNumber(accuracy) }))
-    if (critical !== 0) effects.push(t('game.abilityDesc.effectBuffCritical', { n: formatNumber(critical) }))
-    if (resistancePoints !== 0) effects.push(t('game.abilityDesc.effectBuffResistance', { n: abilityPercent(Math.abs(resistancePoints) / (100 + Math.abs(resistancePoints))) }))
-    if (buffThreatPoints !== 0) effects.push(t('game.abilityDesc.threatRatioClause', { n: abilityPercent(buffThreatPoints / 100) }))
-    if (threatPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffThreatPerSecond', { n: abilityPercent(threatPerSecond / 100) }))
-    let effect = effects.length > 0 ? effects.join('，') : t('game.abilityDesc.effectBuff', { target })
-    if (effects.length > 0 && !effects.some(e => e.includes(target))) {
-      effect = `${t('game.abilityDesc.effectBuff', { target })}，${effect}`
+    if (hpRegen !== 0) parts.push(t('game.abilityDesc.buffDetailHpRegen', { n: formatNumber(hpRegen) }))
+    if (hpRegenPerSecond !== 0) parts.push(t('game.abilityDesc.buffDetailHpRegenPerSecond', { n: formatNumber(hpRegenPerSecond) }))
+    if (mpRegen !== 0) parts.push(t('game.abilityDesc.buffDetailMpRegen', { n: formatNumber(mpRegen) }))
+    if (bonusPoints !== 0) parts.push(t('game.abilityDesc.buffDetailDamageBonus', { n: abilityRatioPercent(bonusPoints / 100) }))
+    if (absorbPoints !== 0) parts.push(t('game.abilityDesc.buffDetailAbsorb', { n: abilityRatioPercent(absorbPoints / (100 + absorbPoints)) }))
+    if (attackPower !== 0) parts.push(t('game.abilityDesc.effectBuffAttackPower', { n: formatNumber(attackPower) }))
+    if (accuracy !== 0 && critical !== 0 && accuracy === critical) {
+      parts.push(t('game.abilityDesc.buffDetailAccuracyCritical', { n: formatNumber(accuracy) }))
+    } else {
+      if (accuracy !== 0) parts.push(t('game.abilityDesc.effectBuffAccuracy', { n: formatNumber(accuracy) }))
+      if (critical !== 0) parts.push(t('game.abilityDesc.effectBuffCritical', { n: formatNumber(critical) }))
     }
-    if (duration > 0) {
-      effect = `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
-    }
-    // 叠层与动态层数：maxKeep 取最高层数；层数来源逐条说明（法攻/双抗/已损气血）——与服务端授予同口径。
-    if (spec.stackPolicy === 'maxKeep') {
-      effect = `${effect}，${t('game.abilityDesc.buffStackMaxKeep')}`
-    }
-    const stackPercentText = usesSpellPercentStacks
-      ? `${+((spellStackPercent * 100).toFixed(1))}%`
-      : ''
-    if (stackPercentText) {
-      effect = `${effect}，${t('game.abilityDesc.buffStackBySpellAttackPercent', { ratio: stackPercentText })}`
-    }
-    if (usesResistanceStacks) {
-      const ratio = (spec.resistanceStackRatio ?? 1) * 100
-      effect = `${effect}，${t('game.abilityDesc.buffStackByResistance', { ratio: formatNumber(ratio) })}`
-    }
-    if (usesMissingStacks) {
-      effect = `${effect}，${t('game.abilityDesc.buffStackByMissingHp', { n: formatNumber(missingPerStack) })}`
-    }
-    return effect
+    if (resistancePoints !== 0) parts.push(t('game.abilityDesc.buffDetailResistance', { n: abilityRatioPercent(Math.abs(resistancePoints) / (100 + Math.abs(resistancePoints))) }))
+    if (buffThreatPoints !== 0) parts.push(t('game.abilityDesc.threatRatioClause', { n: abilityRatioPercent(buffThreatPoints / 100) }))
+    if (threatPerSecond !== 0) parts.push(t('game.abilityDesc.effectBuffThreatPerSecond', { n: abilityRatioPercent(threatPerSecond / 100) }))
+    return parts
   }
-  const buffSpecs = ability.buffs && ability.buffs.length > 0 ? ability.buffs : buff ? [buff] : []
+
+  const buffLabel = (spec: NonNullable<typeof ability.buff>, index: number): string =>
+    `[[${spec.name || (buffSpecs.length === 1 ? t('game.abilityAside.buffTitle') : `状态${index + 1}`)}]]`
+
+  /** Buff 细节行：效果 + 持续时间；多 Buff 主描述未展开构成时在此补层数构成。 */
+  const buffDetailLine = (
+    spec: NonNullable<typeof ability.buff>,
+    index: number,
+    includeComposition: boolean,
+  ): string => {
+    const composition = includeComposition ? stackComposition(spec) : null
+    const parts = composition
+      ? [`[[${composition}]]`, ...buffDetailParts(spec)]
+      : buffDetailParts(spec)
+    const detail = parts.length > 0 ? parts.join('，') : t('game.abilityDesc.effectBuff', { target })
+    const duration = spec.durationSeconds ?? 0
+    return t('game.abilityDesc.buffDetail', {
+      buff: buffLabel(spec, index),
+      detail: duration > 0
+        ? `${detail}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
+        : detail,
+    })
+  }
+
+  /** 主描述施加句：单 Buff 层数构成放进胶囊；多 Buff 只列高亮名称，构成与效果交给词条行。 */
+  const buffApplicationClause = (): string => {
+    if (buffSpecs.length === 1) {
+      const spec = buffSpecs[0]
+      const composition = stackComposition(spec)
+      return composition
+        ? t('game.abilityDesc.buffApplySingle', {
+          target,
+          composition: `[[${composition}]]`,
+          buff: buffLabel(spec, 0),
+        })
+        : t('game.abilityDesc.buffApplyMulti', { target, buffs: buffLabel(spec, 0) })
+    }
+    return t('game.abilityDesc.buffApplyMulti', {
+      target,
+      buffs: buffSpecs.map((spec, index) => buffLabel(spec, index)).join('、'),
+    })
+  }
+
+  /** 非层数 Buff 的直接效果句（破阵子等）：保留目标与效果，不展开层数控制细节。 */
+  const buffDirectClause = (spec: NonNullable<typeof ability.buff>): string => {
+    const parts = buffDetailParts(spec)
+    const detail = parts.length > 0 ? parts.join('，') : t('game.abilityDesc.effectBuff', { target })
+    const duration = spec.durationSeconds ?? 0
+    const effect = t('game.abilityDesc.buffEffectApply', { target, detail })
+    return duration > 0
+      ? `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
+      : effect
+  }
+
   const clauses: string[] = []
   if (healing) {
     clauses.push(t('game.abilityDesc.effectHeal', { target, expr: healExpr }))
@@ -239,17 +279,20 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
       ? t('game.abilityDesc.effectThreatGain', { n: formatNumber(threatGain) })
       : ''
     if (threatPoints > 0) {
-      const ratio = t('game.abilityDesc.threatRatioClause', { n: abilityPercent(threatPoints / 100) })
+      const ratio = t('game.abilityDesc.threatRatioClause', { n: abilityRatioPercent(threatPoints / 100) })
       clause = clause ? `${clause}，${ratio}` : ratio
     }
-    // 嘲讽类技能即时威胁与限时 Buff 并存：Buff 子句并连，不被威胁主句吞掉。
+    // 嘲讽类技能即时威胁与限时 Buff 并存：主描述只交代威胁与施加关系，Buff 效果进词条行。
     if (buffSpecs.length > 0) {
-      const buffs = buffSpecs.map(spec => buffClause(spec)).join('；')
-      clause = clause ? `${clause}，${buffs}` : buffs
+      const apply = buffApplicationClause()
+      clause = clause ? `${clause}，${apply}` : apply
     }
     clauses.push(clause || t('game.abilityDesc.effectThreat'))
   } else if (buffSpecs.length > 0) {
-    clauses.push(buffSpecs.map(spec => buffClause(spec)).join('；'))
+    const hasStackBuff = buffSpecs.some(spec => stackComposition(spec) !== null)
+    clauses.push(hasStackBuff
+      ? buffApplicationClause()
+      : buffSpecs.map(spec => buffDirectClause(spec)).join('；'))
   } else {
     clauses.push(t('game.abilityDesc.effectBuff', { target }))
   }
@@ -264,12 +307,20 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const effectSentence = `${clauses.join('；')}。`
   const description = ability.description ? `${ability.description}\n${effectSentence}` : effectSentence
 
+  // Buff 细节只在主描述未展开效果时补行：多 Buff 只列名称，或层数派生/嘲讽类 Buff 未在主描述展开效果。
+  const showBuffDetailLines = buffSpecs.length > 1
+    || (buffSpecs.length > 0
+      && (buffSpecs.some(spec => stackComposition(spec) !== null) || threatGain > 0 || threatPoints > 0))
+  const buffLines = showBuffDetailLines
+    ? buffSpecs.map((spec, index) => buffDetailLine(spec, index, buffSpecs.length > 1))
+    : []
   const lines = [
     t('game.abilityDesc.level', { n: normalizedLevel }),
     // 配表字段可缺省，服务端按 0 处理，前端同口径。
     t('game.abilityDesc.cooldownTime', { n: ((ability.cooldownMilliseconds ?? 0) / 1000).toFixed(1) }),
     t('game.abilityDesc.castTime', { n: ((ability.castMilliseconds ?? 0) / 1000).toFixed(1) }),
     t('game.abilityDesc.manaCost', { n: formatNumber(ability.manaCost ?? 0) }),
+    ...buffLines,
   ]
   return {
     title: ability.name,

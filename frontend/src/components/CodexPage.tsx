@@ -1264,17 +1264,10 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
       badgeTone="qi"
       description={
         <div>
-          {/* 功法真实伤害构成与具体加成叙述 */}
+          {/* 功法风味 + 伤害构成叙述（describeAbility 已包含配表风味，避免重复渲染） */}
           {abilityInfo.description && (
             <div className="codex-effect-text" style={{ marginBottom: 6 }}>
               <ValueText className="effect-value-capsule" text={abilityInfo.description} />
-            </div>
-          )}
-
-          {/* 技能风味描述 */}
-          {ability.description && ability.description !== abilityInfo.description && (
-            <div className="codex-stat-line" style={{ marginBottom: 6 }}>
-              {ability.description}
             </div>
           )}
 
