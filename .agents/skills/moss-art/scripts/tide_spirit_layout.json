@@ -1,38 +1,48 @@
 {
   "summary": {
     "canvas": "single",
-    "caption": "A minimalist 2D game sprite of [潮汐之灵 - Spirit of the Tides] in Chinese Xianxia dark fantasy paper-cut planar polygonal silhouette art style on a solid pure black background (#000000). High contrast flat 2D graphic, sharp angular hard edges, distinct warm bone-white cardboard outer contour outline with a narrow inner black incised groove, pure flat solid color fills, strictly zero gradients, zero soft shading, zero blur, zero realistic fluid water splash, zero modern 3D rendering, perfectly centered isolated game asset, highly readable at 96px."
+    "caption": "东方古典玄幻修仙风格，2D极简暗黑折面剪纸风游戏精灵立绘。纯黑实色背景（#000000），极具水系仙法意境与潮汐威势的【潮汐之灵】。身姿优雅高贵，融合深渊玄墨（55%）、浪花骨白（20%）与幽蓝潮水（25%）三色。身侧展开两道凌厉优美的硬边折面波涛水浪翼翅，胸前悬浮深海潮汐宝珠并垂落两缕清澈的群青水流飘带。大块面硬边折角几何，实色平涂，绝无柔光渐变、绝无写实水汽水花散雾，外带暖骨白纸板细描边与墨黑隔离凹槽，96px图标下水元素特征鲜明而极具高级感。"
   },
   "items": [
     {
-      "label": "character body silhouette",
+      "label": "玄墨仙灵身躯与燕尾水褶",
       "bbox": [
-        -380,
+        -360,
+        -160,
+        380,
+        160
+      ],
+      "caption": "潮汐之灵的玄水主体身躯。深墨玄黑（#121212）硬边多边形折面剪影，修长优雅的悬浮仙灵体态，下半身垂落如收拢墨浪的燕尾水褶，线条刚柔并济，实色平涂。"
+    },
+    {
+      "label": "翻卷波涛水浪折面翼翅",
+      "bbox": [
         -240,
-        360,
-        240
+        -420,
+        260,
+        420
       ],
-      "caption": "The main body mass of the floating tidal spirit. A sleek, imposing, continuous solid near-black planar polygonal silhouette (#121212) shaped like a tapered inverted triangle, ending below in two sharp rigid downward-pointing dark tails. Clean sharp faceted angular cutouts, solid opaque dark mass taking 70% area, strictly no gradients, no mist trails."
+      "caption": "潮汐之灵身侧两翼展开的巨大硬边折面潮汐水浪翼翅。由高饱和纯净群青幽蓝色（#0284c7）与天青碧蓝（#38bdf8）硬角多边形层叠构成，如层叠翻卷的仙道浪峰波涛，外缘带有锐利的骨白浪花折角硬边，线条如刀劈浪裂，水系神圣动势，实色平涂无水花碎散。"
     },
     {
-      "label": "bone-white armor mask",
+      "label": "骨白破浪仙冠与水纹面甲",
       "bbox": [
-        -280,
+        -320,
+        -100,
         -80,
-        -90,
-        180
+        140
       ],
-      "caption": "A prominent sharp bone-white Daoist water-talisman faceplate armor mask mounted on the upper front of the dark body. Crisp flat ivory-white angular geometric facet plate with a tiny sharp glowing cyan diamond eye slit. Bold graphic shape, 20% area, distinct hard edges, strictly solid flat white."
+      "caption": "潮汐之灵头部的骨白面具与角冠。羊脂白玉般的硬边骨甲，额顶生有一对如破浪卷云般的优雅长角冠，面甲上开一道狭长凌厉的菱形冷冽幽蓝仙目，纯白实色硬边。"
     },
     {
-      "label": "demonic energy core",
+      "label": "潮汐龙珠与幽蓝水流飘带",
       "bbox": [
         -40,
         -70,
-        110,
+        320,
         70
       ],
-      "caption": "A single solid saturated pure deep ocean blue (#0284c7) hexagonal water spirit energy core crystal embedded firmly in the center chest, isolated single accent color (8% area), strictly flat solid color with no diffuse glow, completely surrounded by a thin near-black breathing groove separating it from the white mask above."
+      "caption": "胸前悬浮的深海潮汐宝珠及下垂的水流灵带。正中一颗纯正高饱和群青蓝六角潮汐晶核，向下延伸出两道狭长优美的纯蓝色硬边水纹飘带垂坠于玄黑裙裾正中，纯蓝实色，与黑色身躯交错呼应。"
     }
   ],
   "bbox_coord_space": "abs_centralized",
