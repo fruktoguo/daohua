@@ -170,20 +170,20 @@ function isActorMatchingId(entityId: string, actorKey: string): boolean {
  * 3. 血量文字数值独立于切片之上渲染，杜绝层级遮挡与跳变；
  * 4. 具有自动清理定时器以防内存泄漏。
  */
-/** 渲染战斗浮字胶囊内的极简二值属性小图标 */
+/** 渲染战斗浮字前缀内的极简二值属性小图标（成对图标略缩小以压缩宽度） */
 function renderFloatBadgeIcon(badge: 'break' | 'parry' | 'crit' | 'break-crit'): React.ReactNode {
   switch (badge) {
     case 'crit':
-      return <StatGlyph glyph="crit" size={13.5} />
+      return <StatGlyph glyph="crit" size={16.5} />
     case 'break':
-      return <StatGlyph glyph="parry-break" size={13.5} />
+      return <StatGlyph glyph="parry-break" size={16.5} />
     case 'parry':
-      return <StatGlyph glyph="parry-resolve" size={13.5} />
+      return <StatGlyph glyph="parry-resolve" size={16.5} />
     case 'break-crit':
       return (
         <>
-          <StatGlyph glyph="parry-break" size={13.5} />
-          <StatGlyph glyph="crit" size={13.5} />
+          <StatGlyph glyph="parry-break" size={15} />
+          <StatGlyph glyph="crit" size={15} />
         </>
       )
   }
