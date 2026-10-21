@@ -1,5 +1,8 @@
 import { create } from 'zustand'
+import type { CodexFilterState } from './game/codexFilters'
+import { DEFAULT_CODEX_FILTERS } from './game/codexFilters'
 import type { AwakenedTraitResult } from './game/types'
+import { MOBILE_NAV_GROUP_DEFS, MOBILE_NAV_GROUP_ORDER, mobileNavGroupIdOf, type MobileNavGroupId } from './mobileNav'
 
 /**
  * 客户端主界面顶级页签标识：
@@ -21,12 +24,6 @@ export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' |
 
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
-/** 图鉴材料子分类：药材 vs 矿石 vs 异材 */
-export type CodexMaterialSubTab = 'herb' | 'mineral' | 'exotic'
-/** 图鉴制造子分类：炼丹 vs 炼器 vs 阵法 vs 符箓 */
-export type CodexCraftingSubTab = 'alchemy' | 'forging' | 'formation' | 'talisman'
-/** 图鉴特质子分类：全部 vs 各品阶 */
-export type CodexTraitSubTab = 'all' | 'q1' | 'q2' | 'q3' | 'q4' | 'q5'
 
 /** 同道页子选项卡：队伍 / 邀请（后续同道玩法沿用同一结构扩展） */
 export type SocialSubTab = 'party' | 'invite'
@@ -88,18 +85,10 @@ interface UiStore {
   codexCategory: CodexCategory
   /** 切换图鉴分类 */
   setCodexCategory: (category: CodexCategory) => void
-  /** 图鉴制造子分类 */
-  codexCraftingSubTab: CodexCraftingSubTab
-  /** 切换图鉴制造子分类 */
-  setCodexCraftingSubTab: (subTab: CodexCraftingSubTab) => void
-  /** 图鉴材料子分类 */
-  codexMaterialSubTab: CodexMaterialSubTab
-  /** 切换图鉴材料子分类 */
-  setCodexMaterialSubTab: (subTab: CodexMaterialSubTab) => void
-  /** 图鉴特质子分类 */
-  codexTraitSubTab: CodexTraitSubTab
-  /** 切换图鉴特质子分类 */
-  setCodexTraitSubTab: (subTab: CodexTraitSubTab) => void
+  /** 图鉴各顶级分类自己的筛选状态（子分类/分组/等阶等按分类独立保存） */
+  codexFilters: Readonly<Record<CodexCategory, CodexFilterState>>
+  /** 合并更新指定图鉴分类的筛选状态 */
+  setCodexFilters: (category: CodexCategory, patch: Partial<CodexFilterState>) => void
   /** 觉醒石抽卡结果列表（非 null 时唤起抽取弹窗） */
   awakenResults: AwakenedTraitResult[] | null
   /** 打开觉醒结果弹窗 */
@@ -110,11 +99,20 @@ interface UiStore {
   tutorialMapFocusNodeId: string | null
   /** 设置新手引导地图聚焦的目标节点 ID */
   setTutorialMapFocusNodeId: (nodeId: string | null) => void
+  /** 各分组记忆的落点页签：切回分组时直达上次所见的子项 */
+  mobileNavMemory: Record<MobileNavGroupId, TabId>
+  /** 按分组激活其记忆页签（首次为组内首项）并展开子行 */
+  activateMobileNavGroup: (group: MobileNavGroupId) => void
   /** 战斗模拟器弹窗开启状态 */
   simulatorOpen: boolean
   /** 切换/设置模拟器弹窗状态 */
   setSimulatorOpen: (open: boolean) => void
 }
+
+/** 各分组的初始落点：组内首个页签（与 `MOBILE_NAV_GROUPS` 同源，避免两处硬编码顺序） */
+const INITIAL_NAV_MEMORY = Object.fromEntries(
+  MOBILE_NAV_GROUP_ORDER.map(id => [id, MOBILE_NAV_GROUP_DEFS[id].tabs[0] as TabId]),
+) as Record<MobileNavGroupId, TabId>
 
 /**
  * UI 视图全局 Zustand 状态管理
@@ -124,10 +122,20 @@ export const useUiStore = create<UiStore>(set => ({
   setActiveTab: activeTab => {
     // 'alchemy' 不是独立页面：作为直达技艺-炼丹的别名，同时展开二级导航并复位子选项卡
     if (activeTab === 'alchemy') {
-      set({ activeTab: 'crafting', craftingMode: 'alchemy', craftingNavExpanded: true, alchemySubTab: 'extraction' })
-    } else {
-      set({ activeTab })
+      set(state => ({
+        activeTab: 'crafting',
+        craftingMode: 'alchemy',
+        craftingNavExpanded: true,
+        alchemySubTab: 'extraction',
+        mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf('crafting')]: 'crafting' },
+      }))
+      return
     }
+    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见
+    set(state => ({
+      activeTab,
+      mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(activeTab)]: activeTab },
+    }))
   },
   craftingMode: 'alchemy',
   // 切换技艺模式时同时复位对应子选项卡，避免残留上一个模式的深层选中态
@@ -156,17 +164,30 @@ export const useUiStore = create<UiStore>(set => ({
   setPartySubTab: partySubTab => set({ partySubTab }),
   codexCategory: 'material',
   setCodexCategory: codexCategory => set({ codexCategory }),
-  codexMaterialSubTab: 'herb',
-  setCodexMaterialSubTab: codexMaterialSubTab => set({ codexMaterialSubTab }),
-  codexCraftingSubTab: 'alchemy',
-  setCodexCraftingSubTab: codexCraftingSubTab => set({ codexCraftingSubTab }),
-  codexTraitSubTab: 'all',
-  setCodexTraitSubTab: codexTraitSubTab => set({ codexTraitSubTab }),
+  codexFilters: {
+    material: DEFAULT_CODEX_FILTERS,
+    crafting: DEFAULT_CODEX_FILTERS,
+    building: DEFAULT_CODEX_FILTERS,
+    ability: DEFAULT_CODEX_FILTERS,
+    monster: DEFAULT_CODEX_FILTERS,
+    trait: DEFAULT_CODEX_FILTERS,
+  },
+  // 逐分类浅合并：切分类只改自己那一份筛选，其余分类的子分类与等阶保持不动。
+  setCodexFilters: (category, patch) => set(state => ({
+    codexFilters: { ...state.codexFilters, [category]: { ...state.codexFilters[category], ...patch } },
+  })),
   awakenResults: null,
   openAwakenResult: awakenResults => set({ awakenResults }),
   closeAwakenResult: () => set({ awakenResults: null }),
   tutorialMapFocusNodeId: null,
   setTutorialMapFocusNodeId: tutorialMapFocusNodeId => set({ tutorialMapFocusNodeId }),
+  mobileNavMemory: INITIAL_NAV_MEMORY,
+  activateMobileNavGroup: group => set(state => {
+    // 已在该分组：子行本就展开，重复点击不再改签，避免误触把玩家从子页签踢回首项
+    if (mobileNavGroupIdOf(state.activeTab) === group) return {}
+    const target = state.mobileNavMemory[group] ?? MOBILE_NAV_GROUP_DEFS[group].tabs[0]
+    return { activeTab: target, mobileNavMemory: { ...state.mobileNavMemory, [group]: target } }
+  }),
   simulatorOpen: false,
   setSimulatorOpen: simulatorOpen => set({ simulatorOpen }),
 }))

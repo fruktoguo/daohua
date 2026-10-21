@@ -103,31 +103,41 @@
   color: var(--seal);
 }
 
-:root[data-theme="light"] :is(.nav-item.active .nav-glyph, .settings-nav-item.active .settings-nav-glyph, .bottom-nav button.active .bottom-glyph) {
+:root[data-theme="light"] :is(.nav-item.active .nav-glyph, .settings-nav-item.active .settings-nav-glyph, .bottom-nav-row button.active .bottom-glyph, .bottom-sub-tab-btn.active .bottom-sub-tab-glyph) {
   border-color: var(--seal);
   box-shadow: none;
 }
 
-:root[data-theme="light"] :is(.log-tabs button.active, .market-tabs button.active, .market-category-chips button.active, .crafting-sub-tab-btn.active, .insight-sub-tab-btn.active, .market-toggle-btn.active, .combat-zone-tabs button.active, .presence-options button.active, .auth-tab-btn.active) {
+:root[data-theme="light"] :is(.log-tabs button.active, .market-tabs button.active, .market-category-chips button.active, .crafting-sub-tab-btn.active, .insight-sub-tab-btn.active, .option-toggle-btn.active, .combat-zone-tabs button.active, .presence-options button.active, .auth-tab-btn.active) {
   border-color: var(--seal);
   color: var(--seal);
   background: var(--seal-faint);
   box-shadow: none;
 }
 
-:root[data-theme="light"] .market-toggle-group {
+:root[data-theme="light"] .option-toggle-group {
   background: rgba(var(--surface-rgb), 0.35);
   border-color: var(--gold-dim);
 }
 
-:root[data-theme="light"] .market-grade-select {
+:root[data-theme="light"] .filter-grade-select {
   background: rgba(var(--surface-rgb), 0.55);
   border-color: var(--gold-dim);
   color: var(--text);
 }
 
-:root[data-theme="light"] .market-toggle-btn:not(.active) {
+:root[data-theme="light"] .option-toggle-btn:not(.active) {
   color: var(--text-dim);
+}
+
+:root[data-theme="light"] .option-toggle-count {
+  background: rgba(125, 82, 26, 0.12);
+}
+
+:root[data-theme="light"] .bottom-sub-tab-btn.active {
+  border-color: var(--seal-border);
+  background: var(--seal-faint);
+  box-shadow: none;
 }
 
 :root[data-theme="light"] .insight-tab-btn.active {
@@ -136,7 +146,7 @@
   background: var(--seal-faint);
 }
 
-:root[data-theme="light"] .bottom-nav button.active { color: var(--seal); }
+:root[data-theme="light"] :is(.bottom-nav-row button.active, .bottom-sub-tab-btn.active) { color: var(--seal); }
 :root[data-theme="light"] .chat-entry-list li.is-active { background: var(--seal-faint); }
 :root[data-theme="light"] .choice-menu-option.is-selected,
 :root[data-theme="light"] .item-grid-picker-card--empty.is-selected {
@@ -1214,8 +1224,7 @@
   background: rgba(var(--surface-rgb), 0.8);
 }
 
-:root[data-theme="light"] .codex-tab-count,
-:root[data-theme="light"] .codex-sub-tab-count {
+:root[data-theme="light"] .codex-tab-count {
   background: rgba(125, 82, 26, 0.12);
 }
 
@@ -1228,10 +1237,6 @@
   border-color: var(--gold-dim);
   background: rgba(var(--surface-rgb), 0.95);
   color: var(--gold);
-}
-
-:root[data-theme="light"] .codex-sub-tab-btn:not(.active) {
-  border-color: var(--gold-dim);
 }
 
 :root[data-theme="light"] .trait-card-checkbox {

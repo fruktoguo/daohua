@@ -30,6 +30,7 @@ import { TutorialOverlay } from './tutorial/TutorialOverlay'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { StatGlyph } from './components/StatGlyph'
+import { Icon, type IconName } from './components/Icon'
 import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
@@ -38,13 +39,15 @@ import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
 import { calculateActionYieldPreview, isActionAvailableAtNode, ROOT_ASPECT_LABEL_KEYS } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
-import type { ActionDefinition, ActionType, AutoUseBarType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
+import type { ActionDefinition, AutoUseBarType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
 import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
 import { installAntiMultiOpen, disposeAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
 import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
 import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
 import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab } from './uiStore'
+import { MOBILE_NAV_GROUPS, TAB_ICON, mobileNavGroupById, mobileNavGroupIdOf } from './mobileNav'
+import { useLogUnreadStore } from './logging/logUnreadStore'
 import { useT, getT } from './i18n'
 
 // 非首屏页面按首次进入时拆包；页面组件仍只挂载于 activeTab，保持原有隐藏/卸载生命周期语义。
@@ -68,67 +71,6 @@ function PanelLoading({ label }: { label: string }): React.JSX.Element {
 
 /** 全局共享的空冷却表（冻结对象）：避免每次渲染创建新引用触发下游 memo 失效 */
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
-
-type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'shop' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel' | 'codex'
-
-/**
- * 矢量图标组件（按名称渲染内联 SVG）
- */
-const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element {
-  const common = {
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    strokeWidth: 1.7,
-    viewBox: '0 0 24 24',
-  }
-
-  switch (name) {
-    case 'insight':
-      return <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg>
-    case 'cultivation':
-      return <svg {...common}><path d="M12 4.5c2 2.4 2 6.2 0 8.6-2-2.4-2-6.2 0-8.6Z" /><path d="M4.8 8.8c3 .3 5.4 2.4 6.1 5.4-3.2-.2-5.7-2.3-6.1-5.4Z" /><path d="M19.2 8.8c-3 .3-5.4 2.4-6.1 5.4 3.2-.2 5.7-2.3 6.1-5.4Z" /><path d="M3.5 15.5c2.6 2.8 5.4 4 8.5 4s5.9-1.2 8.5-4" /></svg>
-    case 'exploration':
-      return <svg {...common}><circle cx="17.5" cy="6" r="2.2" /><path d="M3 19 9.5 7l4.5 7 2.5-3.5L21 19H3Z" /></svg>
-    case 'alchemy':
-      return <svg {...common}><path d="M8.5 10V7.5M15.5 10V7.5" /><path d="M5.5 10.5h13v3.5a6.5 6.5 0 0 1-13 0v-3.5Z" /><path d="M9 21v-2M15 21v-2" /></svg>
-    case 'crafting':
-      return <svg {...common}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z" /></svg>
-    case 'forging':
-      return <svg {...common}><path d="M15 12l-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9" /><path d="M17.64 4.36a3 3 0 0 0-4.24 0L12 5.76l4.24 4.24 1.4-1.4a3 3 0 0 0 0-4.24Z" /><path d="m14 7 3 3" /></svg>
-    case 'talisman':
-      return <svg {...common}><path d="M7 3h10v18l-2.5-1.8L12 21l-2.5-1.8L7 21V3Z" /><path d="m10 7 4 4-4 4" /></svg>
-    case 'formation':
-      return <svg {...common}><circle cx="12" cy="12" r="8" /><path d="M12 4v3M12 17v3M4 12h3M17 12h3" /><path d="M12 8.5 15.5 12 12 15.5 8.5 12 12 8.5Z" /></svg>
-    case 'enhancement':
-      return <svg {...common}><path d="m12 3 6 6h-3.5v6h-5V9H6l6-6Z" /><path d="M5 20h14" /></svg>
-    case 'map':
-      return <svg {...common}><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" /><path d="M9 3v15M15 6v15" /></svg>
-    case 'combat':
-      return <svg {...common}><path d="m5 4 15 15M19 4 4 19" /><path d="m7 7 3-3 3 3M17 17l-3 3-3-3" /></svg>
-    case 'market':
-      return <svg {...common}><path d="M4 8.5h16M6 8.5V20h12V8.5" /><path d="m5 4h14l1 4.5H4L5 4Z" /><path d="M9 12h6M9 15.5h6" /></svg>
-    case 'shop':
-      return <svg {...common}><path d="M4 9.5h16M5.5 9.5V20h13V9.5" /><path d="M3.8 9.5 5.6 4h12.8l1.8 5.5" /><path d="M3.8 9.5c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4c0 1.4 1 2.4 2.2 2.4s2.2-1 2.2-2.4" /><path d="M9.8 20v-4.5h4.4V20" /></svg>
-    case 'social':
-      return <svg {...common}><circle cx="8.5" cy="8" r="3.2" /><circle cx="16.5" cy="9.5" r="2.6" /><path d="M3.5 19.5c.6-3.4 2.6-5.4 5-5.4s4.4 2 5 5.4M13.5 19.5c.4-2.6 1.6-4.2 3.2-4.2 1.5 0 2.7 1.4 3.3 3.6" /></svg>
-    case 'inventory':
-      return <svg {...common}><path d="M9 7c0-1.8 1.2-2.8 3-2.8s3 1 3 2.8" /><path d="M6.5 9.5C5.5 14.5 7.5 20 12 20s6.5-5.5 5.5-10.5c-1.7 1-3.6 1.5-5.5 1.5s-3.8-.5-5.5-1.5Z" /><path d="M9.5 13.5h5" /></svg>
-    case 'log':
-      return <svg {...common}><path d="M8 4.5h9.5a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H8" /><path d="M8 4.5a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2" /><path d="M11 9.5h5M11 13.5h5" /></svg>
-    case 'settings':
-      return <svg {...common}><circle cx="12" cy="12" r="3.2" /><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M18.4 5.6l-1.9 1.9M7.5 16.5l-1.9 1.9" /></svg>
-    case 'spirit':
-      return <svg {...common}><path d="M12 2.5 18.5 8 12 21.5 5.5 8 12 2.5Z" /><path d="M5.5 8h13M12 2.5 9.5 8 12 21.5" /></svg>
-    case 'loop':
-      return <svg {...common}><path d="M5.5 12.5a6.5 6.5 0 0 1 11.5-4.2" /><path d="M17.5 3.5v4h-4" /><path d="M18.5 11.5a6.5 6.5 0 0 1-11.5 4.2" /><path d="M6.5 20.5v-4h4" /></svg>
-    case 'travel':
-      return <svg {...common}><circle cx="5" cy="18.5" r="1.8" /><path d="M7.8 18.5h4.7a4 4 0 0 0 4-4v-2a3 3 0 0 1 3-3" /><path d="m16.5 6.5 3 3-3 3" /></svg>
-    case 'codex':
-      return <svg {...common}><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" /><path d="M6 6h10" /><path d="M6 10h10" /><path d="M6 14h6" /></svg>
-  }
-})
 
 /** 查询背包中指定物品的持有数量（未持有返回 0）；只计基础变体，与服务端 AssetKey(itemId) 空变体校验一致 */
 function itemAmount(inventory: InventoryItem[], itemId: string): number {
@@ -1075,8 +1017,8 @@ const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefin
 
 /**
  * 竖屏技艺模式切换栏（炼丹/炼器/符箓/阵法/强化）
- * 桌面端由侧边栏可折叠二级菜单承载，竖屏侧边栏整体隐藏，此处补一层底部页签；
- * 桌面视口由 CSS display:none 隐藏，仅 ≤960px 显示。
+ * 桌面端由侧边栏可折叠二级菜单承载；竖屏侧边栏整体隐藏，本栏作为底部导航「技艺」组的
+ * 子行渲染（与「历练」「市集」「更多」组的子行同层同款），页面主体内不再重复出现。
  */
 const CraftingModeTabs = memo(function CraftingModeTabs(): React.JSX.Element {
   const t = useT()
@@ -1084,28 +1026,28 @@ const CraftingModeTabs = memo(function CraftingModeTabs(): React.JSX.Element {
   const setCraftingMode = useUiStore(state => state.setCraftingMode)
   const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
   return (
-    <nav aria-label={t('app.nav.crafting')} className="crafting-mode-tabs" role="tablist">
+    <div aria-label={t('app.nav.crafting')} className="bottom-sub-tabs bottom-sub-tabs--crafting" role="tablist">
       {CRAFTING_NAV_MODES.map(mode => {
         const level = calculateTechniqueProgress(techniqueExperiences?.[mode.id] ?? 0).level
         return (
           <button
             aria-selected={craftingMode === mode.id}
-            className={`crafting-mode-tab-btn${craftingMode === mode.id ? ' active' : ''}`}
+            className={`bottom-sub-tab-btn${craftingMode === mode.id ? ' active' : ''}`}
             key={mode.id}
             onClick={() => setCraftingMode(mode.id)}
             role="tab"
             type="button"
           >
-            <span className="crafting-mode-tab-glyph" aria-hidden="true"><StatGlyph glyph={mode.id} tone={mode.tone} size={16} /></span>
+            <span className="bottom-sub-tab-glyph" aria-hidden="true"><StatGlyph glyph={mode.id} tone={mode.tone} size={16} /></span>
             {/* 等级数字经 pill-tone 容器对子级 underlined-value 分色，与侧边栏技艺色一致 */}
-            <span className={`crafting-mode-tab-text pill-tone--${mode.tone}`}>
+            <span className={`bottom-sub-tab-text pill-tone--${mode.tone}`}>
               {t(`app.crafting.${mode.id}`)}
-              <span className="crafting-mode-tab-level underlined-value">{level}</span>
+              <span className="bottom-sub-tab-level underlined-value">{level}</span>
             </span>
           </button>
         )
       })}
-    </nav>
+    </div>
   )
 })
 
@@ -1290,7 +1232,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         </div>
       )}
       <AutoUse bar={craftingMode} />
-      <CraftingModeTabs />
+      {/* 技艺模式切换条由底部导航「技艺」组的子行承载（竖屏），页面内不再重复渲染 */}
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
@@ -2321,7 +2263,6 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
   const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
   // 只延迟首次查看：后续切回其它页签不卸载战场，保留详情、动画与观察目标生命周期。
   if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
-  const setActiveTab = useUiStore(state => state.setActiveTab)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
   const closeModal = useCallback(() => setSelectedAction(null), [])
@@ -2337,14 +2278,6 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
           type="button"
         >
           {t('combat.report.title')}
-        </button>
-        {/* 侧边栏在移动端整体隐藏，详情页补充「记录」入口保证竖屏可达 */}
-        <button
-          className="ghost-button records-open-mobile"
-          onClick={() => setActiveTab('records')}
-          type="button"
-        >
-          {t('app.nav.records')}
         </button>
       </header>
       <div className="expedition-content expedition-content--duel">
@@ -2375,42 +2308,106 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
 
 
 
-/** 移动端底部导航栏页签配置（顺序即展示顺序，labelKey/icon 均与 TabId 同名） */
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
-  { tab: 'insight', labelKey: 'insight', icon: 'insight' },
-  { tab: 'market', labelKey: 'market', icon: 'market' },
-  { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
-  { tab: 'crafting', labelKey: 'crafting', icon: 'crafting' },
-  { tab: 'map', labelKey: 'map', icon: 'map' },
-  { tab: 'combat', labelKey: 'combat', icon: 'combat' },
-  { tab: 'social', labelKey: 'social', icon: 'social' },
-  { tab: 'codex', labelKey: 'codex', icon: 'codex' },
-  { tab: 'shop', labelKey: 'shop', icon: 'shop' },
-  { tab: 'inventory', labelKey: 'inventory', icon: 'inventory' },
-  { tab: 'log', labelKey: 'log', icon: 'log' },
-  { tab: 'settings', labelKey: 'settings', icon: 'settings' },
-]
+/** 底部导航「更多」角标统计的日志分组：战斗分组恒不计未读，其余计入（与 logUnreadStore 语义一致） */
+const LOG_GROUPS_FOR_BADGE = ['all', 'world', 'nearby', 'system', 'friend', 'sect', 'party'] as const
+
 /**
- * 移动端底部快捷导航栏
+ * 移动端底部导航栏：7 个一级分组 + 组内子行。
+ *
+ * 分组与组内页签真源在 `mobileNav.ts`；本组件只负责渲染与点击编排：
+ * - 点击非当前分组 → 切到该组记忆页签并展开子行（一次点击直达内容）；
+ * - 点击当前分组 → 不变签（子行本就展开，重复点可选子项）；
+ * - 组内子项点击 → 切换页签，子行保持展开。
+ * 子行高度经 `--mobile-nav-offset` 反写页面底部占位，避免内容被遮。
  */
 const BottomNav = memo(function BottomNav(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const setActiveTab = useUiStore(state => state.setActiveTab)
+  const activateGroup = useUiStore(state => state.activateMobileNavGroup)
+  const navRef = useRef<HTMLElement>(null)
+  const activeGroupId = mobileNavGroupIdOf(activeTab)
+  const activeGroup = mobileNavGroupById(activeGroupId)
+
+  // 未读与邀请角标必须上提到一级分组：日志/同道沉到「更多」子行后，
+  // 若不在分组层露出计数，私聊与组队邀请会完全静默。分组角标取两者之和，
+  // 子行各自只显示自己的那一份（日志显示未读数、同道显示有多少条邀请）。
+  const unreadCounts = useLogUnreadStore(state => state.unreadCounts)
+  const partyInvitation = useSocialStore(state => state.partyInvitation)
+  const logUnread = useMemo(() => {
+    let total = 0
+    for (const group of LOG_GROUPS_FOR_BADGE) total += unreadCounts[group] ?? 0
+    return total
+  }, [unreadCounts])
+  const inviteBadge = partyInvitation ? 1 : 0
+  const moreBadge = logUnread + inviteBadge
+  /** 子行各自角标：日志只报未读条数，同道只报待处理邀请数，避免两项混算误导 */
+  const subBadge = (tab: TabId): number => tab === 'log' ? logUnread : tab === 'social' ? inviteBadge : 0
+
+  // 子行高度随内容（技艺条比纯文字子行高）变化，用实测高度反写 CSS 变量驱动底部占位。
+  const subVisible = activeGroup.subNav !== 'none'
+  useLayoutEffect(() => {
+    const node = navRef.current
+    if (!node) return undefined
+    const root = document.documentElement
+    const apply = () => root.style.setProperty('--mobile-nav-offset', `${node.getBoundingClientRect().height}px`)
+    apply()
+    if (typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver(apply)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [subVisible, activeGroupId])
+
   return (
-    <nav className="bottom-nav" aria-label={t('app.nav.mobileNavAria')}>
-      {BOTTOM_TABS.map(item => (
-        <button
-          className={activeTab === item.tab ? 'active' : ''}
-          data-tour={item.tab === 'map' ? 'nav-map' : undefined}
-          key={item.tab}
-          onClick={() => setActiveTab(item.tab)}
-          type="button"
-        >
-          <span className="bottom-glyph" aria-hidden="true"><Icon name={item.icon} /></span>
-          <span>{t(`app.nav.${item.labelKey}`)}</span>
-        </button>
-      ))}
+    <nav aria-label={t('app.nav.mobileNavAria')} className="bottom-nav" ref={navRef}>
+      {subVisible && (
+        <div className="bottom-sub-nav">
+          {activeGroup.subNav === 'crafting'
+            ? <CraftingModeTabs />
+            : activeGroup.tabs.length > 1 && (
+              <div aria-label={t(`app.nav.${activeGroup.labelKey}`)} className="bottom-sub-tabs" role="tablist">
+                {activeGroup.tabs.map(tab => (
+                  <button
+                    aria-selected={activeTab === tab}
+                    className={`bottom-sub-tab-btn${activeTab === tab ? ' active' : ''}`}
+                    data-tour={tab === 'map' ? 'nav-map' : undefined}
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    role="tab"
+                    type="button"
+                  >
+                    <span className="bottom-sub-tab-glyph" aria-hidden="true"><Icon name={TAB_ICON[tab]} /></span>
+                    <span className="bottom-sub-tab-text">{t(`app.nav.${tab}`)}</span>
+                    {subBadge(tab) > 0 && activeTab !== tab && (
+                      <span className="bottom-sub-tab-badge">{subBadge(tab) > 99 ? '99+' : subBadge(tab)}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+        </div>
+      )}
+      <div className="bottom-nav-row">
+        {MOBILE_NAV_GROUPS.map(group => {
+          const isActive = group.id === activeGroupId
+          const badge = group.id === 'more' ? moreBadge : 0
+          return (
+            <button
+              aria-current={isActive ? 'page' : undefined}
+              className={isActive ? 'active' : ''}
+              key={group.id}
+              onClick={() => activateGroup(group.id)}
+              type="button"
+            >
+              <span className="bottom-glyph" aria-hidden="true">
+                <Icon name={group.icon} />
+                {badge > 0 && <span className="bottom-glyph-badge">{badge > 99 ? '99+' : badge}</span>}
+              </span>
+              <span>{t(`app.nav.${group.labelKey}`)}</span>
+            </button>
+          )
+        })}
+      </div>
     </nav>
   )
 })

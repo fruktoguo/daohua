@@ -77,7 +77,7 @@ const VILLAGE_NODE = `[data-node-id="${HOME_NODE_ID}"]`
 /** 地图侧边「规划路线」与启程确认钮锚点。 */
 const TRAVEL_PLAN = '[data-tour="travel-plan"]'
 const TRAVEL_CONFIRM = '[data-tour="travel-confirm"]'
-/** 左侧主导航「地图」入口锚点（Sidebar）。 */
+/** 主导航「地图」入口锚点：桌面侧边栏按钮与竖屏底部「历练」组的地图子项共用同一锚点。 */
 const NAV_MAP = '[data-tour="nav-map"]'
 /** 详情页主面板锚点（CombatDetailsPage）：等待步切到「详情」页签并聚焦展示行动实况，可看不可点。 */
 const DETAIL_PAGE = '[data-tour="combat-detail"]'
@@ -93,7 +93,8 @@ const PREP_COMBAT: readonly TutorialPrepare[] = [{ type: 'tab', tab: 'combat' }]
 
 /** 「先回云溪村」前置引导链：打开地图 → 点云溪村节点 → 规划路线 → 启程 → 等待到达。 */
 const AWAY_PREFIX_HOME: readonly TutorialUiStep[] = [
-  { selector: NAV_MAP, titleKey: 'app.tutorial.returnHome.map.title', bodyKey: 'app.tutorial.returnHome.map.body', advance: 'target' },
+  // 先切到历练组：竖屏「地图」是历练组的子项，只有该组展开时才渲染出可点锚点。
+  { selector: NAV_MAP, titleKey: 'app.tutorial.returnHome.map.title', bodyKey: 'app.tutorial.returnHome.map.body', advance: 'target', prepare: PREP_EXPLORATION },
   { selector: VILLAGE_NODE, titleKey: 'app.tutorial.returnHome.node.title', bodyKey: 'app.tutorial.returnHome.node.body', advance: 'target', prepare: PREP_MAP, mapFocusNodeId: HOME_NODE_ID },
   { selector: TRAVEL_PLAN, titleKey: 'app.tutorial.returnHome.plan.title', bodyKey: 'app.tutorial.returnHome.plan.body', advance: 'target', prepare: PREP_MAP },
   { selector: TRAVEL_CONFIRM, modalBound: true, titleKey: 'app.tutorial.returnHome.confirm.title', bodyKey: 'app.tutorial.returnHome.confirm.body', advance: 'target' },

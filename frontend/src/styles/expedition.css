@@ -4268,20 +4268,7 @@
   }
 }
 
-/* 移动端补充的「记录」入口：桌面端由侧边栏底部承载，默认隐藏避免重复（须在媒体查询块之前声明） */
-.records-open-mobile {
-  display: none;
-  padding: 4px 14px;
-  font-size: 12px;
-  letter-spacing: 1px;
-}
-
 @media (max-width: 960px) {
-  /* 竖屏：详情页头部露出「记录」入口（侧边栏入口在此断点隐藏） */
-  .records-open-mobile {
-    display: inline-flex;
-    align-items: center;
-  }
 
   /* 竖屏：终止/快捷行动按钮不再悬浮遮挡卡片，落到战场下方独立一行 */
   .combat-arena-controls {

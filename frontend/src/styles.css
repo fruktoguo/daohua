@@ -3571,9 +3571,6 @@ input[type="checkbox"] {
 }
 
 /* 技艺模式切换栏：桌面侧边栏二级菜单的移动端替身，桌面视口隐藏 */
-.crafting-mode-tabs {
-  display: none;
-}
 .location-sub-badge {
   display: inline-flex;
   align-items: center;
@@ -4588,8 +4585,11 @@ input[type="checkbox"] {
   padding-bottom: 6px;
 }
 
-/* 坊市多维筛选栏与多选一 Toggle 组 (Market Filters & Option Toggles) */
-.market-manual-filters {
+/* 多维筛选栏与多选一 Toggle 组 (Filter Bar & Option Toggles)
+   坊市浏览、万象图鉴等一切「维度 + 互斥选项」筛选面板共用同一模板：
+   每个维度 = 标签(.filter-label) + 单选组(.option-toggle-group/.option-toggle-btn)；
+   等阶等量级较多的维度用原生下拉(.filter-grade-select)。 */
+.filter-bar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4599,7 +4599,7 @@ input[type="checkbox"] {
   border-bottom: 1px dashed rgba(201, 180, 109, 0.15);
 }
 
-.market-filter-label {
+.filter-label {
   flex-shrink: 0;
   margin-left: 2px;
   color: var(--text-dim);
@@ -4607,14 +4607,14 @@ input[type="checkbox"] {
   letter-spacing: 0.06em;
 }
 
-.market-grade-field {
+.filter-grade-field {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
 
-.market-grade-select {
+.filter-grade-select {
   height: 26px;
   padding: 0 6px;
   border: 1px solid rgba(201, 180, 109, 0.22);
@@ -4627,16 +4627,16 @@ input[type="checkbox"] {
   transition: border-color 0.15s ease;
 }
 
-.market-grade-select:hover {
+.filter-grade-select:hover {
   border-color: rgba(201, 180, 109, 0.4);
 }
 
-.market-grade-select:focus-visible {
+.filter-grade-select:focus-visible {
   outline: 1px solid var(--gold-dim, rgba(201, 180, 109, 0.5));
   outline-offset: 1px;
 }
 
-.market-toggle-group {
+.option-toggle-group {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
@@ -4650,19 +4650,19 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
-.market-toggle-group.is-disabled {
+.option-toggle-group.is-disabled {
   opacity: 0.42;
   filter: grayscale(0.6);
   border-color: rgba(201, 180, 109, 0.12);
 }
 
-.market-toggle-group.is-disabled:hover {
+.option-toggle-group.is-disabled:hover {
   opacity: 0.68;
   filter: grayscale(0.3);
   border-color: rgba(201, 180, 109, 0.25);
 }
 
-.market-toggle-btn {
+.option-toggle-btn {
   padding: 3px 10px;
   font-size: 12px;
   font-weight: 500;
@@ -4676,20 +4676,31 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
-.market-toggle-btn:hover:not(.active) {
+.option-toggle-btn:hover:not(.active) {
   color: var(--text);
   background: rgba(201, 180, 109, 0.08);
 }
 
-.market-toggle-btn.active {
+.option-toggle-btn.active {
   color: var(--gold-bright);
   background: rgba(201, 180, 109, 0.18);
   font-weight: 600;
   box-shadow: 0 0 6px rgba(201, 180, 109, 0.15);
 }
 
-.market-toggle-group.is-disabled .market-toggle-btn.active {
+.option-toggle-group.is-disabled .option-toggle-btn.active {
   box-shadow: none;
+}
+
+/* 选项角标：收集度类面板（图鉴）在选项右侧展示「已收录/总数」 */
+.option-toggle-count {
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 0.72em;
+  font-weight: 500;
+  opacity: 0.85;
 }
 
 .market-browse-grid {
@@ -6455,7 +6466,7 @@ input[type="checkbox"] {
 
   .app-body {
     grid-template-columns: minmax(0, 1fr);
-    padding: 9px 9px calc(72px + env(safe-area-inset-bottom));
+    padding: 9px 9px calc(var(--mobile-nav-offset, 58px) + 10px + env(safe-area-inset-bottom));
   }
 
   .sidebar,
@@ -6490,6 +6501,8 @@ input[type="checkbox"] {
     max-height: 40%;
   }
 
+  /* 底部导航：一级分组行 + 组内子行两级。子行在上，分组行贴底。
+     --mobile-nav-offset 由 BottomNav 实测高度反写，供页面底部占位与提示气泡避让。 */
   .bottom-nav {
     position: fixed;
     right: 0;
@@ -6497,16 +6510,21 @@ input[type="checkbox"] {
     left: 0;
     z-index: 40;
     display: flex;
+    flex-direction: column;
     padding-bottom: env(safe-area-inset-bottom);
     border-top: 1px solid var(--gold-dim);
     background: rgba(7, 6, 4, 0.98);
   }
 
-  .bottom-nav button {
+  .bottom-nav-row {
+    display: flex;
+  }
+
+  .bottom-nav-row button {
     display: flex;
     min-width: 0;
-    min-height: 62px;
-    padding: 7px 0 5px;
+    min-height: 58px;
+    padding: 6px 0 4px;
     flex: 1;
     align-items: center;
     flex-direction: column;
@@ -6517,11 +6535,12 @@ input[type="checkbox"] {
     font-size: 11px;
   }
 
-  .bottom-nav button.active {
+  .bottom-nav-row button.active {
     color: var(--gold-bright);
   }
 
   .bottom-glyph {
+    position: relative;
     display: grid;
     width: 28px;
     height: 28px;
@@ -6530,30 +6549,52 @@ input[type="checkbox"] {
     color: currentColor;
   }
 
-  .bottom-nav button.active .bottom-glyph {
+  .bottom-nav-row button.active .bottom-glyph {
     border-color: var(--gold);
     box-shadow: 0 0 10px rgba(201, 180, 109, 0.2);
   }
 
-  /* 技艺模式切换栏：竖屏补在技艺页底部、全局底部导航之上的第二层页签 */
-  .crafting-mode-tabs {
+  /* 分组层未读/邀请角标：日志与同道沉到「更多」子行后，计数必须在这一级露出 */
+  .bottom-glyph-badge {
+    position: absolute;
+    top: -5px;
+    right: -7px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    border: 1px solid var(--bg);
+    color: #1b1206;
+    background: var(--danger);
+    font-size: 9px;
+    font-style: normal;
+    line-height: 13px;
+    text-align: center;
+    border-radius: 8px;
+  }
+
+  /* 组内子行：仅在当前分组有第二层时渲染，横向滚动兜住「更多」组五项 */
+  .bottom-sub-nav {
     display: flex;
-    flex-shrink: 0;
-    gap: 2px;
-    padding: 6px 4px 4px;
-    overflow-x: auto;
     border-top: 1px solid var(--gold-faint);
+  }
+
+  .bottom-sub-tabs {
+    display: flex;
+    width: 100%;
+    gap: 2px;
+    padding: 5px 4px 3px;
+    overflow-x: auto;
     scrollbar-width: thin;
   }
 
-  .crafting-mode-tab-btn {
+  .bottom-sub-tab-btn {
     display: flex;
     min-width: 0;
-    flex: 1 0 62px;
-    flex-direction: column;
+    flex: 1 0 56px;
     align-items: center;
-    gap: 2px;
-    padding: 4px 2px;
+    justify-content: center;
+    gap: 4px;
+    padding: 11px 2px;
     border: 1px solid transparent;
     color: var(--text-dim);
     background: transparent;
@@ -6561,41 +6602,57 @@ input[type="checkbox"] {
     white-space: nowrap;
   }
 
-  .crafting-mode-tab-btn.active {
+  .bottom-sub-tab-btn.active {
+    border-color: var(--gold-faint);
     color: var(--gold-bright);
+    background: rgba(201, 180, 109, 0.08);
   }
 
-  .crafting-mode-tab-glyph {
+  .bottom-sub-tab-glyph {
     display: grid;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
     place-items: center;
     border: 1px solid var(--gold-faint);
     color: currentColor;
   }
 
-  .crafting-mode-tab-btn.active .crafting-mode-tab-glyph {
+  .bottom-sub-tab-btn.active .bottom-sub-tab-glyph {
     border-color: var(--gold);
-    box-shadow: 0 0 10px rgba(201, 180, 109, 0.2);
+    box-shadow: 0 0 8px rgba(201, 180, 109, 0.18);
   }
 
-  .crafting-mode-tab-text {
+  .bottom-sub-tab-text {
     display: inline-flex;
     align-items: baseline;
     gap: 3px;
+    min-width: 0;
   }
 
   /* 与侧边栏 nav-sub-level 同款：去下划线与加粗，仅留 pill-tone 分色数字 */
-  .crafting-mode-tab-level.underlined-value {
+  .bottom-sub-tab-level.underlined-value {
     padding: 0;
     border-bottom: none;
     font-weight: 400;
     font-size: 10px;
   }
 
+  .bottom-sub-tab-badge {
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    color: #1b1206;
+    background: var(--danger);
+    font-size: 9px;
+    line-height: 15px;
+    text-align: center;
+    border-radius: 8px;
+  }
+
   .notice {
     right: 10px;
-    bottom: calc(72px + env(safe-area-inset-bottom));
+    bottom: calc(var(--mobile-nav-offset, 58px) + 10px + env(safe-area-inset-bottom));
     max-width: calc(100% - 20px);
   }
 }
