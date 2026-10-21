@@ -12,7 +12,7 @@ import { UnitNumber } from './UnitNumber'
 import { ValueText } from './ValueText'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
-import { createAbilityBuffAsideCard, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
+import { createAbilityBuffAsideCards, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -300,10 +300,8 @@ export function resolveItemTooltipAsideCards(
       list.push(createInternalRootExpAsideCard())
     }
     if (matchedAbility) {
-      const abilityBuffAside = createAbilityBuffAsideCard(matchedAbility, 1)
-      if (abilityBuffAside) {
-        list.push(abilityBuffAside)
-      }
+      const abilityBuffCards = createAbilityBuffAsideCards(matchedAbility, 1)
+      list.push(...abilityBuffCards)
     }
   }
 

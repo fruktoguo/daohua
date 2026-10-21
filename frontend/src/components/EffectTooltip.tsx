@@ -16,7 +16,7 @@ import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
 import type { AbilityBonusStat } from '../game/format'
-import type { CombatAbilityDefinition } from '../game/types'
+import type { AbilityBuffSpec, CombatAbilityDefinition } from '../game/types'
 /**
  * 功法/词条/效果悬浮气泡内容结构
  */
@@ -149,15 +149,14 @@ export function createInternalAbilityBonusAsideCard(
 }
 
 /**
- * 提取功法战内 Buff 的效果条目列表 (BonusAsideItem[])
- * 复用装备/药品同款「通用属性数值加成」解析口径，功法 Buff 与实时 Buff 展示完全一致。
+ * 提取单个战内 Buff 效果规格的条目列表 (BonusAsideItem[])
+ * 支持碎罡等双抗、攻击力、命中、暴击、叠层来源与机制说明条目。
  */
-export function extractAbilityBuffBonusItems(
-  ability: CombatAbilityDefinition,
+export function extractSingleBuffSpecBonusItems(
+  buff: AbilityBuffSpec,
   level = 1
 ): BonusAsideItem[] {
-  const buff = ability.buff
-  if (!buff) return []
+  const t = getT()
   // Buff 效果量随功法等级成长（与服务端 CastSkill 同式：每级 +2% 线性成长）。
   const levelGrowth = 1 + (Math.max(1, level) - 1) * 0.02
   const scaled = {
@@ -171,41 +170,110 @@ export function extractAbilityBuffBonusItems(
     threatPoints: buff.threatPoints !== undefined ? buff.threatPoints * levelGrowth : undefined,
     damageBonusPoints: buff.damageBonusPoints !== undefined ? buff.damageBonusPoints * levelGrowth : undefined,
     threatPerSecondMaxHpPoints: buff.threatPerSecondMaxHpPoints !== undefined ? buff.threatPerSecondMaxHpPoints * levelGrowth : undefined,
+    attackPower: buff.attackPower !== undefined ? buff.attackPower * levelGrowth : undefined,
+    accuracy: buff.accuracy !== undefined ? buff.accuracy * levelGrowth : undefined,
+    critical: buff.critical !== undefined ? buff.critical * levelGrowth : undefined,
+    resistancePoints: buff.resistancePoints,
+    hpRegenPerSecond: buff.hpRegenPerSecond !== undefined ? buff.hpRegenPerSecond * levelGrowth : undefined,
   }
   const items = extractBuffBonusItems(scaled)
-  // 持续时间与叠层规则同列展示：Buff 本身不携带时长，单独补一条持续时间条目。
   const duration = buff.durationSeconds ?? 0
   if (duration > 0) {
     items.push({
       glyph: 'cooldown-reduction',
-      label: getT()('game.abilityAside.buffDurationLabel'),
+      label: t('game.abilityAside.buffDurationLabel'),
       tone: 'slate',
       value: `${duration}秒`,
+    })
+  }
+  // 叠层来源与机制说明条目
+  if (buff.resistancePerStack && buff.resistancePerStack > 0) {
+    const ratio = Math.round((buff.resistanceStackRatio ?? 1) * 100)
+    items.push({
+      glyph: 'foundation',
+      label: '层数来源',
+      tone: 'purple',
+      value: `自身${ratio}%双抗折算`,
+    })
+  }
+  if (buff.missingHitpointsPerStack && buff.missingHitpointsPerStack > 0) {
+    items.push({
+      glyph: 'hp',
+      label: '层数来源',
+      tone: 'crimson',
+      value: `已损气血每${buff.missingHitpointsPerStack}点折算`,
+    })
+  }
+  if (buff.spellAttackStackInterval && buff.spellAttackStackInterval > 0) {
+    items.push({
+      glyph: 'spell-atk',
+      label: '层数来源',
+      tone: 'indigo',
+      value: `法攻每${buff.spellAttackStackInterval}点折算`,
+    })
+  }
+  if (buff.stackPolicy === 'maxKeep') {
+    items.push({
+      glyph: 'realm',
+      label: '叠层规则',
+      tone: 'gold',
+      value: '取最高层数',
     })
   }
   return items
 }
 
 /**
- * 构造功法战内 Buff 独立副卡片 (Bonus Aside Card)
- * 与装备属性、药品效果、实时 Buff 共用同一套「通用属性数值加成独立悬浮窗」。
+ * 提取功法战内 Buff 的效果条目列表 (BonusAsideItem[])
+ * 兼容单 Buff 或 buffs[] 取首项。
+ */
+export function extractAbilityBuffBonusItems(
+  ability: CombatAbilityDefinition,
+  level = 1
+): BonusAsideItem[] {
+  const buffSpecs = ability.buffs && ability.buffs.length > 0 ? ability.buffs : ability.buff ? [ability.buff] : []
+  if (buffSpecs.length === 0) return []
+  return extractSingleBuffSpecBonusItems(buffSpecs[0], level)
+}
+
+/**
+ * 构造功法战内全部 Buff 独立副卡片列表 (FloatingAsideCard[])
+ * 支持 buffs[] 多状态并列展开（如碎罡同时授予「碎罡」破防与「罡锋」锐利两张独立副卡）。
+ */
+export function createAbilityBuffAsideCards(
+  ability: CombatAbilityDefinition,
+  level = 1
+): FloatingAsideCard[] {
+  const buffSpecs = ability.buffs && ability.buffs.length > 0
+    ? ability.buffs
+    : ability.buff
+    ? [ability.buff]
+    : []
+  if (buffSpecs.length === 0) return []
+  const t = getT()
+  return buffSpecs.map((spec, index) => {
+    const items = extractSingleBuffSpecBonusItems(spec, level)
+    const buffName = spec.name || (buffSpecs.length === 1 ? t('game.abilityAside.buffTitle') : `状态${index + 1}`)
+    const isDebuff = (spec.resistancePoints ?? 0) < 0 || (spec.damageAbsorptionPoints ?? 0) < 0
+    return createBonusAsideCard({
+      id: `aside-ability-buff-${ability.abilityId}-${spec.buffId || index}`,
+      mark: isDebuff ? '减益状态' : t('game.abilityAside.buffMark'),
+      title: `${t('game.abilityAside.buffTitle')}·${buffName}`,
+      tone: isDebuff ? 'crimson' : 'emerald',
+      items,
+    })
+  })
+}
+
+/**
+ * 构造功法战内首个 Buff 独立副卡片 (兼容旧单卡调用)
  */
 export function createAbilityBuffAsideCard(
   ability: CombatAbilityDefinition,
   level = 1
 ): FloatingAsideCard | null {
-  const buff = ability.buff
-  if (!buff) return null
-  const items = extractAbilityBuffBonusItems(ability, level)
-  if (items.length === 0) return null
-  const t = getT()
-  return createBonusAsideCard({
-    id: `aside-ability-buff-${ability.abilityId}`,
-    mark: t('game.abilityAside.buffMark'),
-    title: buff.name ? `${t('game.abilityAside.buffTitle')}·${buff.name}` : t('game.abilityAside.buffTitle'),
-    tone: 'emerald',
-    items,
-  })
+  const cards = createAbilityBuffAsideCards(ability, level)
+  return cards[0] ?? null
 }
 
 /**
@@ -222,9 +290,9 @@ export function resolveAbilityAsideCards(
   if (totalExp !== undefined) {
     list.push(createAbilityProgressAsideCard(ability.abilityId, totalExp, tone))
   }
-  const buffCard = createAbilityBuffAsideCard(ability, level)
-  if (buffCard) {
-    list.push(buffCard)
+  const buffCards = createAbilityBuffAsideCards(ability, level)
+  if (buffCards.length > 0) {
+    list.push(...buffCards)
   }
   if (ability.discipline === 'internal') {
     const bonusCard = createInternalAbilityBonusAsideCard(ability, level)

@@ -41,7 +41,7 @@ import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
 import { MonsterTooltipTarget } from './MonsterDisplay'
-import { createAbilityBuffAsideCard, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
+import { createAbilityBuffAsideCards, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
 import {
   describeItemEffects,
   ItemTile,
@@ -1104,10 +1104,8 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
 
   const asideCards = useMemo(() => {
     const list: FloatingAsideCard[] = []
-    const buffCard = createAbilityBuffAsideCard(ability, 1)
-    if (buffCard) {
-      list.push(buffCard)
-    }
+    const buffCards = createAbilityBuffAsideCards(ability, 1)
+    list.push(...buffCards)
     if (ability.discipline === 'internal') {
       const internalBonus = createInternalAbilityBonusAsideCard(ability, 1)
       if (internalBonus) {
