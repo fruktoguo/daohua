@@ -418,3 +418,142 @@ test('resolveMonsterSkillTriggers: 怪物槽位触发条件优先于功法默认
     '功法默认条件在怪物视角下恒假，正是水灵不爆技能的根因',
   )
 })
+
+test('expeditionSimulator: 副手与六大部位装备属性注入与强化缩放生效', () => {
+  // 验证副手（off-hand）及其他部位装备均能正常被推演引擎读取、属性合并与强化缩放
+  const allyWithSixGear = {
+    id: 'ally-full-gear',
+    name: '六神装修士',
+    isSelf: true,
+    formationIndex: 1,
+    attributes: {
+      maxHitpoints: 500,
+      maxManapoints: 200,
+      physicalAttack: 50,
+      spellAttack: 50,
+      armor: 20,
+      magicResistance: 20,
+      accuracy: 30,
+      evasion: 20,
+      critical: 20,
+      criticalResistance: 20,
+      criticalDamagePoints: 50,
+      breakPower: 10,
+      parryResolve: 10,
+      hpRegenPerFiveSeconds: 10,
+      mpRegenPerFiveSeconds: 5,
+      attackIntervalMilliseconds: 1000,
+      physicalDamageBonusPoints: 0,
+      spellDamageBonusPoints: 0,
+      metalDamageBonusPoints: 0,
+      woodDamageBonusPoints: 0,
+      waterDamageBonusPoints: 0,
+      fireDamageBonusPoints: 0,
+      earthDamageBonusPoints: 0,
+      totalDamageBonusPoints: 0,
+      basicAttackBonusPoints: 0,
+      skillBonusPoints: 0,
+      physicalDamageReductionPoints: 0,
+      spellDamageReductionPoints: 0,
+      metalDamageReductionPoints: 0,
+      woodDamageReductionPoints: 0,
+      waterDamageReductionPoints: 0,
+      fireDamageReductionPoints: 0,
+      earthDamageReductionPoints: 0,
+      damageAbsorptionPoints: 0,
+      fixedDamageBonus: 0,
+      fixedDamageReduction: 0,
+      fixedPhysicalDamageBonus: 0,
+      fixedPhysicalDamageReduction: 0,
+      fixedSpellDamageBonus: 0,
+      fixedSpellDamageReduction: 0,
+      attackSpeedPoints: 0,
+      actionSpeedPoints: 0,
+      cooldownReductionPoints: 0,
+      threatBonusPoints: 0,
+      hpDrainPoints: 0,
+      mpDrainPoints: 0,
+      damageReflectPoints: 0,
+      healingBonusPoints: 0,
+    },
+    abilitySlots: [
+      { slotIndex: 0, abilityId: 'internal-1', level: 1 },
+      { slotIndex: 1, abilityId: 'spell-fire', level: 1 },
+    ],
+    equipment: [
+      { itemId: 'equipment.stick-t2', enhancementLevel: 20 }, // 武器 (+20 -> scale 3.0)
+      { itemId: 'equipment.shield-t2', enhancementLevel: 10 }, // 副手盾牌 (+10 -> scale 2.0)
+      { itemId: 'equipment.robe-t2', enhancementLevel: 0 },   // 衣服 (+0 -> scale 1.0)
+    ],
+  }
+
+  const equipmentDefs = [
+    {
+      equipmentId: 'equipment.stick-t2',
+      name: '朝元杖',
+      slot: 'weapon',
+      tier: 2,
+      flatStats: { spellAttack: 42 },
+    },
+    {
+      equipmentId: 'equipment.shield-t2',
+      name: '玄铁灵盾',
+      slot: 'off-hand',
+      tier: 2,
+      flatStats: { armor: 30, maxHitpoints: 100 },
+    },
+    {
+      equipmentId: 'equipment.robe-t2',
+      name: '流云法袍',
+      slot: 'armor',
+      tier: 2,
+      flatStats: { magicResistance: 25 },
+    },
+  ]
+
+  const report = ExpeditionSimulator.runSimulation(
+    {
+      nodeId: 'test-node-offhand',
+      nodeName: '副手验证地点',
+      durationSeconds: 60,
+      seed: 123456n,
+      allies: [allyWithSixGear],
+    },
+    {
+      encounters: [{
+        encounterId: 'test-enc',
+        name: '单怪遭遇',
+        minThreat: 10,
+        maxThreat: 20,
+        enemy: {
+          enemyId: 'dummy',
+          name: '木桩怪',
+          rank: 'normal',
+          experience: 10,
+          attributes: {
+            maxHitpoints: 2000,
+            maxManapoints: 0,
+            physicalAttack: 10,
+            spellAttack: 0,
+            armor: 5,
+            magicResistance: 5,
+            accuracy: 10,
+            evasion: 0,
+            attackIntervalMilliseconds: 2000,
+          },
+        },
+      }],
+      abilities: [{
+        abilityId: 'spell-fire',
+        name: '火球术',
+        damageRatio: 1.0,
+        castMilliseconds: 0,
+        cooldownMilliseconds: 1000,
+      }],
+      equipment: equipmentDefs,
+    }
+  )
+
+  assert.ok(report.totalEncounters > 0, '必须完成遭遇战推演')
+  assert.ok(report.damageStats.totalDamage > 0, '必须产生伤害')
+})

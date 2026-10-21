@@ -2,9 +2,12 @@ import { memo, useCallback, useMemo, useState } from 'react'
 import { useGameStore } from '../../game/gameStore'
 import { useSocialStore } from '../../game/socialStore'
 import { useT } from '../../i18n'
-import type { AutoUseSlot, CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes } from '../../game/types'
+import type { AutoUseSlot, CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../../game/types'
 import { roundStat, sanitizeAttributes, type SimulatorCombatantConfig } from '../../game/simulator/simulatorTypes'
 import { StatGlyph } from '../StatGlyph'
+import { ItemGridPicker, type ItemPickerEntry } from '../ItemGridPicker'
+import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
+import { findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../../game/ids'
 
 interface SimulatorPartyEditorProps {
   allies: SimulatorCombatantConfig[]
@@ -63,14 +66,26 @@ const DEFAULT_ATTRIBUTES: CombatAttributes = {
   healingBonusPoints: 0,
 }
 
-const EQUIPMENT_SLOTS = [
-  { key: 'weapon', label: '兵器/法宝' },
-  { key: 'helmet', label: '冠帽/头盔' },
-  { key: 'chest', label: '法袍/胸甲' },
-  { key: 'legs', label: '道裤/下装' },
-  { key: 'boots', label: '蹑云/鞋履' },
-  { key: 'accessory', label: '配饰/佩玉' },
-] as const
+interface SimulatorSlotConfig {
+  slot: EquipmentSlot
+  labelKey: 'slotWeapon' | 'slotOffHand' | 'slotHead' | 'slotArmor' | 'slotLegs' | 'slotTrinket'
+}
+
+const SIMULATOR_SLOTS: readonly SimulatorSlotConfig[] = [
+  { slot: 'weapon', labelKey: 'slotWeapon' },
+  { slot: 'off-hand', labelKey: 'slotOffHand' },
+  { slot: 'head', labelKey: 'slotHead' },
+  { slot: 'armor', labelKey: 'slotArmor' },
+  { slot: 'legs', labelKey: 'slotLegs' },
+  { slot: 'trinket', labelKey: 'slotTrinket' },
+]
+
+function isSlotMatch(equipmentSlot: EquipmentSlot, targetSlot: EquipmentSlot): boolean {
+  if (equipmentSlot === targetSlot) return true
+  if (targetSlot === 'weapon' && equipmentSlot === 'two-hand') return true
+  if (targetSlot === 'trinket' && (equipmentSlot === 'ring' || equipmentSlot === 'neck' || equipmentSlot === 'talisman')) return true
+  return false
+}
 
 type SubTabKey = 'attributes' | 'skills' | 'equipment' | 'consumables'
 
@@ -92,6 +107,51 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
   const equipmentCatalog = useGameStore(state => state.equipment)
   const itemsCatalog = useGameStore(state => state.items)
 
+  // 当前正在呼出 ItemGridPicker 选择的部位
+  const [activePickingSlot, setActivePickingSlot] = useState<{ config: SimulatorSlotConfig; anchor: HTMLElement } | null>(null)
+
+  // 映射当前角色已装备的 6 大部位（对齐游戏内六部位归并逻辑）
+  const slotEquippedMap = useMemo(() => {
+    const map = new Map<EquipmentSlot, { item: EquippedItem; definition?: ItemDefinition; equipmentDef?: CombatEquipmentDefinition }>()
+    for (const eq of currentAlly?.equipment || []) {
+      const eqDef = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
+      if (!eqDef) continue
+      const itemDef = findItemInCatalog(itemsCatalog, eq.itemId)
+      for (const config of SIMULATOR_SLOTS) {
+        if (isSlotMatch(eqDef.slot, config.slot)) {
+          map.set(config.slot, { item: eq, definition: itemDef, equipmentDef: eqDef })
+          break
+        }
+      }
+    }
+    return map
+  }, [currentAlly?.equipment, equipmentCatalog, itemsCatalog])
+
+  // 当前选中部位的待选装备列表（从配表中筛选所有匹配该槽位的可用装备）
+  const pickerItems = useMemo<ItemPickerEntry[]>(() => {
+    if (!activePickingSlot) return []
+    const targetSlot = activePickingSlot.config.slot
+    const matching: ItemPickerEntry[] = []
+
+    for (const eqDef of equipmentCatalog) {
+      if (!isSlotMatch(eqDef.slot, targetSlot)) continue
+      const itemDef = findItemInCatalog(itemsCatalog, eqDef.equipmentId)
+      matching.push({
+        itemId: eqDef.equipmentId,
+        name: eqDef.name,
+        amount: 1,
+        tier: eqDef.tier,
+        category: resolveItemCategoryLabel(eqDef.slot, t),
+        description: eqDef.description ?? itemDef?.description ?? '',
+        definition: itemDef,
+        equipmentDefinition: eqDef,
+        enhancementLevel: 0,
+      })
+    }
+
+    matching.sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name))
+    return matching
+  }, [activePickingSlot, equipmentCatalog, itemsCatalog, t])
   // 1. 导入自身完整配置 (属性 + 功法 + 装备 + 消耗品)
   const handleImportSelf = useCallback(() => {
     if (!currentAlly) return
@@ -188,23 +248,33 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
     onChangeAllies(nextList)
   }, [allies, currentAlly, onChangeAllies, selectedIdx])
 
-  // 7. 装备更新
-  const handleUpdateEquipment = useCallback((slotKey: string, itemId: string, enhancementLevel: number) => {
+  // 7. 装备更新（按 isSlotMatch 精确互斥）
+  const handleUpdateEquipment = useCallback((slot: EquipmentSlot, itemId: string, enhancementLevel: number) => {
     if (!currentAlly) return
     const currentEquip = [...(currentAlly.equipment || [])]
-    // 寻找匹配 slot 的已有项
     const filtered = currentEquip.filter(eq => {
-      const def = equipmentCatalog.find(e => e.equipmentId === eq.itemId)
-      return def?.slot !== slotKey
+      const def = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
+      if (!def) return false
+      return !isSlotMatch(def.slot, slot)
     })
     if (itemId) {
-      filtered.push({ itemId, enhancementLevel: Math.max(0, Math.min(20, enhancementLevel)) })
+      filtered.push({ itemId, enhancementLevel: Math.max(0, Math.min(20, Math.floor(enhancementLevel))) })
     }
     const updated: SimulatorCombatantConfig = { ...currentAlly, equipment: filtered }
     const nextList = [...allies]
     nextList[selectedIdx] = updated
     onChangeAllies(nextList)
   }, [allies, currentAlly, equipmentCatalog, onChangeAllies, selectedIdx])
+
+  const handleSelectEquipmentFromPicker = useCallback((selectedItemId: string | null) => {
+    if (!activePickingSlot || !currentAlly) return
+    const targetSlot = activePickingSlot.config.slot
+    const currentSlotData = slotEquippedMap.get(targetSlot)
+    const currentEnhance = currentSlotData?.item.enhancementLevel ?? 0
+
+    handleUpdateEquipment(targetSlot, selectedItemId || '', currentEnhance)
+    setActivePickingSlot(null)
+  }, [activePickingSlot, currentAlly, handleUpdateEquipment, slotEquippedMap])
 
   // 8. 消耗品更新
   const handleUpdateConsumable = useCallback((slotIndex: number, itemId: string | null, quantity: number, enabled: boolean) => {
@@ -586,9 +656,6 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
       {/* 2. 功法技能子 Tab */}
       {activeSubTab === 'skills' && (
         <div className="sim-skills-editor-panel">
-          <div className="sim-skills-header-hint">
-            配置 5 个功法槽位：0 号槽位为内功心法（决定六维乘率与心法增幅），1~4 号槽位为主动战斗神通。
-          </div>
           <div className="sim-skills-slot-list">
             {[0, 1, 2, 3, 4].map(slotIdx => {
               const isInternal = slotIdx === 0
@@ -652,68 +719,132 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
       {/* 3. 穿戴装备子 Tab */}
       {activeSubTab === 'equipment' && (
         <div className="sim-equipment-editor-panel">
-          <div className="sim-equipment-header-hint">
-            配置六大部位已穿戴装备与强化等级（+0 ~ +20），装备基础属性与强化系数将直接注入战斗推演中。
-          </div>
           <div className="sim-equipment-grid">
-            {EQUIPMENT_SLOTS.map(slotMeta => {
-              const currentEquipped = (currentAlly.equipment || []).find(eq => {
-                const def = equipmentCatalog.find(e => e.equipmentId === eq.itemId)
-                return def?.slot === slotMeta.key
-              })
-              const selectedItemId = currentEquipped?.itemId || ''
-              const enhancementLevel = currentEquipped?.enhancementLevel || 0
-              const availableInSlot = equipmentCatalog.filter(e => e.slot === slotMeta.key)
-              const selectedDef = equipmentCatalog.find(e => e.equipmentId === selectedItemId)
+            {SIMULATOR_SLOTS.map(config => {
+              const data = slotEquippedMap.get(config.slot)
+              const equippedItem = data?.item
+              const equipmentDef = data?.equipmentDef
+              const definition = data?.definition
+              const slotName = t(`app.equipmentPanel.${config.labelKey}`)
+              const picking = activePickingSlot?.config.slot === config.slot
+
+              let metadata = undefined
+              let displayName = ''
+              if (equippedItem && equipmentDef) {
+                const meta = resolveItemMetadata(equippedItem.itemId)
+                metadata = withItemGrade(
+                  meta ?? {
+                    label: equipmentDef.name,
+                    glyph: '·',
+                    tone: 'gold',
+                    category: resolveItemCategoryLabel(equipmentDef.slot, t),
+                    rarity: 'mundane',
+                    rarityLabel: '',
+                    description: equipmentDef.description ?? definition?.description ?? '',
+                    source: '',
+                    usage: '',
+                  },
+                  equipmentDef.tier ?? meta?.tier ?? 1,
+                )
+                displayName = equippedItem.enhancementLevel > 0
+                  ? `${equipmentDef.name} +${equippedItem.enhancementLevel}`
+                  : equipmentDef.name
+              }
 
               return (
-                <div key={slotMeta.key} className="sim-equip-card">
-                  <div className="sim-equip-header">
-                    <span className="sim-equip-slot-name">{slotMeta.label}</span>
-                    {selectedItemId && (
-                      <button
-                        type="button"
-                        className="sim-equip-remove-btn"
-                        onClick={() => handleUpdateEquipment(slotMeta.key, '', 0)}
+                <div key={config.slot} className={`sim-equipment-slot-card ${equippedItem ? 'is-equipped' : 'is-empty'}`}>
+                  {/* 左侧：游戏内标准 64px 装备格子 */}
+                  <div className="sim-equipment-slot-tile-anchor">
+                    {equippedItem && equipmentDef && metadata ? (
+                      <ItemTooltipTarget
+                        className="equipment-slot-anchor"
+                        definition={definition}
+                        equipmentDefinition={equipmentDef}
+                        enhancementLevel={equippedItem.enhancementLevel}
+                        itemId={equippedItem.itemId}
+                        metadata={metadata}
                       >
-                        卸下
+                        <button
+                          className={`equipment-slot-btn is-equipped${picking ? ' is-picking' : ''}`}
+                          onClick={e => {
+                            const anchor = e.currentTarget
+                            setActivePickingSlot(prev => prev?.config.slot === config.slot ? null : { config, anchor })
+                          }}
+                          type="button"
+                          aria-label={`${slotName}: ${displayName}`}
+                        >
+                          <ItemTile
+                            category={resolveItemCategoryLabel(equipmentDef.slot, t)}
+                            className="inventory-cell"
+                            enhancementLevel={equippedItem.enhancementLevel}
+                            itemId={equippedItem.itemId}
+                            level={metadata.level}
+                            name={displayName}
+                            rarity={metadata.rarity}
+                          />
+                        </button>
+                      </ItemTooltipTarget>
+                    ) : (
+                      <button
+                        className={`equipment-slot-btn is-empty${picking ? ' is-picking' : ''}`}
+                        onClick={e => {
+                          const anchor = e.currentTarget
+                          setActivePickingSlot(prev => prev?.config.slot === config.slot ? null : { config, anchor })
+                        }}
+                        type="button"
+                        aria-label={slotName}
+                      >
+                        <span className="equipment-slot-empty-label">{slotName}</span>
                       </button>
                     )}
                   </div>
-                  <div className="sim-equip-body">
-                    <select
-                      className="sim-select sim-equip-select"
-                      value={selectedItemId}
-                      onChange={e => handleUpdateEquipment(slotMeta.key, e.target.value, enhancementLevel)}
-                    >
-                      <option value="">(未穿戴)</option>
-                      {availableInSlot.map(eq => (
-                        <option key={eq.equipmentId} value={eq.equipmentId}>
-                          {eq.name} (T{eq.tier})
-                        </option>
-                      ))}
-                    </select>
-                    {selectedItemId && (
-                      <div className="sim-equip-enhance-row">
-                        <span className="sim-enhance-label">强化:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={20}
-                          className="sim-input sim-enhance-input"
-                          value={enhancementLevel}
-                          onChange={e => handleUpdateEquipment(slotMeta.key, selectedItemId, Number(e.target.value))}
-                        />
-                        <span className="sim-enhance-badge text-gold">+{enhancementLevel}</span>
+
+                  {/* 右侧：槽位标题、名称、强化等级微调与卸下 */}
+                  <div className="sim-equipment-slot-info">
+                    <div className="sim-equipment-slot-header">
+                      <span className="sim-equipment-slot-title">{slotName}</span>
+                      {equippedItem && (
+                        <button
+                          type="button"
+                          className="sim-equip-remove-btn"
+                          onClick={() => handleUpdateEquipment(config.slot, '', 0)}
+                        >
+                          卸下
+                        </button>
+                      )}
+                    </div>
+
+                    {equippedItem && equipmentDef && metadata ? (
+                      <div className="sim-equipment-slot-details">
+                        <div className="sim-equipment-item-name" data-rarity={metadata.rarity}>
+                          {equipmentDef.name}
+                          <span className="sim-equipment-tier-tag">T{equipmentDef.tier}</span>
+                        </div>
+                        <div className="sim-equip-enhance-row">
+                          <span className="sim-enhance-label">强化:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={20}
+                            className="sim-input sim-enhance-input"
+                            value={equippedItem.enhancementLevel}
+                            onChange={e => handleUpdateEquipment(config.slot, equippedItem.itemId, Number(e.target.value))}
+                          />
+                          <span className="sim-enhance-badge text-gold">+{equippedItem.enhancementLevel}</span>
+                        </div>
                       </div>
-                    )}
-                    {selectedDef && selectedDef.flatStats && (
-                      <div className="sim-equip-stats-preview">
-                        {Object.entries(selectedDef.flatStats).map(([k, v]) => (
-                          <span key={k} className="sim-equip-stat-pill">
-                            {k}: +{Math.round((v as number) * (1 + enhancementLevel * 0.1))}
-                          </span>
-                        ))}
+                    ) : (
+                      <div
+                        className="sim-equipment-slot-empty-hint"
+                        onClick={e => {
+                          const card = e.currentTarget.closest('.sim-equipment-slot-card')
+                          const btn = card?.querySelector('.equipment-slot-btn') as HTMLElement | null
+                          if (btn) {
+                            setActivePickingSlot({ config, anchor: btn })
+                          }
+                        }}
+                      >
+                        (点击格子挑选装备)
                       </div>
                     )}
                   </div>
@@ -721,15 +852,23 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
               )
             })}
           </div>
+
+          {/* 装备待选网格列表 */}
+          <ItemGridPicker
+            allowEmpty
+            anchor={activePickingSlot?.anchor ?? null}
+            items={pickerItems}
+            onClose={() => setActivePickingSlot(null)}
+            onSelect={handleSelectEquipmentFromPicker}
+            open={activePickingSlot !== null}
+            title={activePickingSlot ? t('app.equipmentPanel.chooseEquipmentTitle', { slot: t(`app.equipmentPanel.${activePickingSlot.config.labelKey}`) }) : ''}
+            value={activePickingSlot ? (slotEquippedMap.get(activePickingSlot.config.slot)?.item.itemId ?? null) : null}
+          />
         </div>
       )}
-
       {/* 4. 战斗消耗品子 Tab */}
       {activeSubTab === 'consumables' && (
         <div className="sim-consumables-editor-panel">
-          <div className="sim-consumables-header-hint">
-            配置战斗自动药品栏（槽位 0~2）与通用栏（槽位 3~5），血量低于 60% 自动服用气血丹药，法力低于 40% 自动服用补气灵散。
-          </div>
           <div className="sim-consumables-grid">
             {[0, 1, 2, 3, 4, 5].map(sIdx => {
               const isPotion = sIdx < 3
