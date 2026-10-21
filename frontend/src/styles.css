@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   color: #e9e3d2;
   background: #151412;
   font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, SimSun, serif;
@@ -129,7 +130,9 @@ body::after {
 
 button,
 input,
-select {
+select,
+textarea {
+  color-scheme: inherit;
   color: inherit;
   font: inherit;
   letter-spacing: 0;
@@ -242,7 +245,21 @@ select {
   border: 1px solid var(--gold-dim);
   border-radius: 0;
   color: var(--text);
-  background: rgba(201, 180, 109, 0.04);
+  background-color: var(--panel);
+}
+
+select {
+  color-scheme: inherit;
+}
+
+select option,
+select optgroup {
+  color: var(--text);
+  background-color: var(--panel);
+}
+
+select option:disabled {
+  color: var(--text-dim);
 }
 
 input[type="number"] {
@@ -4620,11 +4637,18 @@ input[type="checkbox"] {
   border: 1px solid rgba(201, 180, 109, 0.22);
   border-radius: 4px;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.35);
+  background-color: rgba(0, 0, 0, 0.45);
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
+  color-scheme: inherit;
   transition: border-color 0.15s ease;
+}
+
+.filter-grade-select option,
+.filter-grade-select optgroup {
+  color: var(--text);
+  background-color: var(--panel);
 }
 
 .filter-grade-select:hover {

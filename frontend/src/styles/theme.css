@@ -1,5 +1,10 @@
 /** 显示主题：仅调整配色与字重，沿用原有布局、纹饰与交互动效。 */
 :root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="dark"] :is(input, select, textarea) { color: var(--text); background-color: var(--panel); border-color: var(--gold-dim); }
+:root[data-theme="dark"] :is(select option, select optgroup) { color: var(--text); background-color: var(--panel); }
+:root[data-theme="dark"] select option:disabled { color: var(--text-dim); }
+:root[data-theme="dark"] .filter-grade-select { background-color: rgba(0, 0, 0, 0.45); border-color: rgba(201, 180, 109, 0.22); color: var(--text); }
+:root[data-theme="dark"] :is(.filter-grade-select option, .filter-grade-select optgroup) { color: var(--text); background-color: var(--panel); }
 
 :root[data-theme="light"] {
   color-scheme: light;
@@ -74,7 +79,8 @@
 :root[data-theme="light"] :is(input, select, textarea) { color: var(--text); background-color: var(--panel); border-color: var(--gold-dim); }
 :root[data-theme="light"] textarea { font-weight: var(--font-weight-regular); }
 :root[data-theme="light"] :is(input, textarea)::placeholder { color: var(--text-dim); opacity: 1; }
-:root[data-theme="light"] select option { color: var(--text); background: var(--panel); }
+:root[data-theme="light"] :is(select option, select optgroup) { color: var(--text); background: var(--panel); }
+:root[data-theme="light"] select option:disabled { color: var(--text-dim); }
 :root[data-theme="light"] :is(button, input, select, textarea):focus-visible { outline-color: var(--seal); }
 :root[data-theme="light"] ::selection { color: var(--on-accent); background: var(--seal); }
 :root[data-theme="light"] input[type="checkbox"] { accent-color: var(--seal); }

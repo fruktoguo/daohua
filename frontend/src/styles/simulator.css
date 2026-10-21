@@ -297,11 +297,18 @@
   background: var(--bg);
   border: 1px solid var(--gold-faint);
   color: var(--text);
+  color-scheme: inherit;
   padding: 5px 8px;
   border-radius: 4px;
   font-size: 13px;
   outline: none;
   transition: border-color 0.2s ease;
+}
+
+.sim-select option,
+.sim-select optgroup {
+  color: var(--text);
+  background-color: var(--panel);
 }
 
 .sim-select:focus,
