@@ -125,8 +125,14 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const flatDamage = (ability.flatDamage ?? 0) * levelGrowth
   const healingRatio = (ability.healingRatio ?? 0) * levelGrowth
   const flatHealing = (ability.flatHealing ?? 0) * levelGrowth
-  // wire 上 targetType 已是 kebab 规范化词（enemy/all-enemies/self/all-allies/lowest-hp-ally）。
-  const target = t(`game.abilityTarget.${ability.targetType ?? 'enemy'}`)
+  // wire 上 targetType 已是 kebab 规范化词（enemy/all-enemies/self/all-allies/lowest-hp-ally），同时兼容原始配表 camelCase。
+  const rawTargetType = ability.targetType ?? 'enemy'
+  const normalizedTargetKey = ({
+    allEnemies: 'all-enemies',
+    allAllies: 'all-allies',
+    lowestHitpointsAlly: 'lowest-hp-ally',
+  } as Record<string, string>)[rawTargetType] ?? rawTargetType
+  const target = t(`game.abilityTarget.${normalizedTargetKey}`)
   const categoryLabel = t(`combat.encounter.damageCategory.${ability.category}`)
   const elementWord = ability.element && ability.element !== 'none'
     ? t(`game.abilityDesc.elementWord.${ability.element}`)
@@ -172,7 +178,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     const effects: string[] = []
     // 面板自动回复沿 5 秒网格结算；每层每秒回复独立成句，避免与面板属性混淆。
     if (hpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegen', { target, n: formatNumber(hpRegen) }))
-    if (hpRegenPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegenPerSecond', { n: formatNumber(hpRegenPerSecond) }))
+    if (hpRegenPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegenPerSecond', { target, n: formatNumber(hpRegenPerSecond) }))
     if (mpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffMpRegen', { target, n: formatNumber(mpRegen) }))
     if (bonusPoints !== 0) effects.push(t('game.abilityDesc.effectBuffDamage', { target, n: abilityPercent(bonusPoints / 100) }))
     if (absorbPoints !== 0) effects.push(t('game.abilityDesc.effectBuffAbsorb', { target, n: abilityPercent(absorbPoints / (100 + absorbPoints)) }))
@@ -183,6 +189,9 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     if (buffThreatPoints !== 0) effects.push(t('game.abilityDesc.threatRatioClause', { n: abilityPercent(buffThreatPoints / 100) }))
     if (threatPerSecond !== 0) effects.push(t('game.abilityDesc.effectBuffThreatPerSecond', { n: abilityPercent(threatPerSecond / 100) }))
     let effect = effects.length > 0 ? effects.join('，') : t('game.abilityDesc.effectBuff', { target })
+    if (effects.length > 0 && !effects.some(e => e.includes(target))) {
+      effect = `${t('game.abilityDesc.effectBuff', { target })}，${effect}`
+    }
     if (duration > 0) {
       effect = `${effect}，${t('game.abilityDesc.buffDuration', { n: formatNumber(duration) })}`
     }

@@ -432,7 +432,7 @@ export const gameZh = {
       'all-enemies': '敌方全体',
       self: '自身',
       'all-allies': '己方全体',
-      'lowest-hp-ally': '生命最低的友方',
+      'lowest-hp-ally': '生命值百分比最低的队友',
       enemy: '单个目标',
     },
     abilityDesc: {
@@ -445,7 +445,7 @@ export const gameZh = {
       effectThreat: '提升自身威胁值',
       effectBuff: '为{target}施加增益',
       effectBuffHpRegen: '使{target}每 5 秒回复 {n} 点气血',
-      effectBuffHpRegenPerSecond: '每层每秒回复 {n} 点气血',
+      effectBuffHpRegenPerSecond: '对{target}施加增益，每层每秒回复 {n} 点气血',
       effectBuffAttackPower: '每层提升 {n} 点物理攻击力',
       effectBuffAccuracy: '每层提升 {n} 点命中',
       effectBuffCritical: '每层提升 {n} 点暴击',
