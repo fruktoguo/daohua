@@ -188,6 +188,11 @@
   pointer-events: stroke;
 }
 
+.world-map-edge-curve {
+  overflow: visible;
+  pointer-events: none;
+}
+
 .world-map-edge-group {
   pointer-events: stroke;
   cursor: pointer;
@@ -2411,7 +2416,8 @@
   position: absolute;
   left: 50%;
   bottom: 6px;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   font-family: "Impact", "Arial Black", "Trebuchet MS", "Helvetica Neue", sans-serif;
   font-size: 15px;
   font-weight: 900;
@@ -2528,7 +2534,6 @@
   font-style: normal;
   padding: 0;
   margin-right: 4px;
-  vertical-align: 1px;
   line-height: 1;
   text-shadow: none;
   -webkit-text-stroke: 0;
