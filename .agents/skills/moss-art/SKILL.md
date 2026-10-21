@@ -67,7 +67,7 @@ MOSS-Image 采用中心原点坐标系（`abs_centralized`，范围 -512 ~ +512�
 {
   "summary": {
     "canvas": "single",
-    "caption": "A minimalist 2D game sprite of [玄潮灵 - Mystic Tide Spirit] in Chinese Xianxia dark fantasy paper-cut planar polygonal silhouette art style on a solid pure black background (#000000). High contrast flat 2D graphic, sharp angular hard edges, distinct warm bone-white cardboard outer contour outline with a narrow inner black incised groove, pure flat solid color fills, strictly zero gradients, zero soft shading, zero blur, zero realistic fluid water splash, zero modern 3D rendering, perfectly centered isolated game asset, highly readable at 96px."
+    "caption": "A minimalist 2D game sprite of [潮汐之灵 - Spirit of the Tides] in Chinese Xianxia dark fantasy paper-cut planar polygonal silhouette art style on a solid pure black background (#000000). High contrast flat 2D graphic, sharp angular hard edges, distinct warm bone-white cardboard outer contour outline with a narrow inner black incised groove, pure flat solid color fills, strictly zero gradients, zero soft shading, zero blur, zero realistic fluid water splash, zero modern 3D rendering, perfectly centered isolated game asset, highly readable at 96px."
   },
   "items": [
     {
@@ -164,7 +164,7 @@ python .agents/skills/moss-art/scripts/moss_generator.py --help
 # 1. 运行内置预设批次 (例如武器4件套、防具6件套、建筑组)
 python .agents/skills/moss-art/scripts/moss_generator.py --batch weapons_trail_4 --steps 35 --cfg 3.5
 
-# 2. 运行单体多部件解耦 Layout JSON (例如玄潮灵单体怪物立绘)
+# 2. 运行单体多部件解耦 Layout JSON (例如潮汐之灵单体怪物立绘)
 python .agents/skills/moss-art/scripts/moss_generator.py \
   --layout path/to/tide_spirit_layout.json \
   --single-entity enemy.tide-spirit \

@@ -660,9 +660,9 @@ PRESET_BATCHES = {
         },
         {
             "id": "tide-spirit",
-            "name": "玄潮灵",
+            "name": "潮汐之灵",
             "bbox": [-420, 80, -80, 420],
-            "caption": "Top-right monster: [玄潮灵 - Mystic Tide Spirit]. A mystical floating elemental water spirit apparition, ethereal deep ocean blue-black aquatic core surrounded by swirling tidal vortex tendrils, adorned with bone-white aquatic crystal carapace plates, glowing deep sapphire blue water runes and spiritual mist trails below, facing right, clean sharp silhouette, dark ink contour outline."
+            "caption": "Top-right monster: [潮汐之灵 - Spirit of the Tides]. A mystical floating elemental water spirit apparition, ethereal deep ocean blue-black aquatic core surrounded by swirling tidal vortex tendrils, adorned with bone-white aquatic crystal carapace plates, glowing deep sapphire blue water runes and spiritual mist trails below, facing right, clean sharp silhouette, dark ink contour outline."
         },
         {
             "id": "iron-boar",
