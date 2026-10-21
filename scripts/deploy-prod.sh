@@ -241,7 +241,27 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
       printf 'COMPUTE_IMAGE=%s\n' '$COMPUTE_IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
     fi
   fi
+  expected_app_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$IMAGE')\"
+  expected_compute_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$COMPUTE_IMAGE')\"
   sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' /opt/daohua/ccr-auto-update.sh
+  # 更新锁被 timer 占用时 ccr-auto-update.sh 会跳过本轮并以 0 退出；
+  # 必须等运行容器真正收敛到目标镜像且健康，否则后续健康检查与烟测会打到旧容器并误报成功。
+  converged=0
+  for attempt in {1..150}; do
+    running_app_id=\"\$(sudo docker inspect --format '{{.Image}}' daohua-app 2>/dev/null || true)\"
+    running_compute_id=\"\$(sudo docker inspect --format '{{.Image}}' daohua-compute 2>/dev/null || true)\"
+    running_app_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-app 2>/dev/null || true)\"
+    running_compute_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-compute 2>/dev/null || true)\"
+    if [[ \"\$running_app_id\" == \"\$expected_app_id\" && \"\$running_compute_id\" == \"\$expected_compute_id\" && \"\$running_app_health\" == healthy && \"\$running_compute_health\" == healthy ]]; then
+      converged=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ \"\$converged\" != 1 ]]; then
+    printf '运行容器未在 300 秒内收敛到目标镜像: app=%s(期望 %s) compute=%s(期望 %s)\n' \"\$running_app_id\" \"\$expected_app_id\" \"\$running_compute_id\" \"\$expected_compute_id\" >&2
+    exit 1
+  fi
   sudo systemctl enable --now daohua-ccr-auto-update.timer
   sudo systemctl enable --now daohua-db-backup.timer
   sudo systemctl enable --now daohua-base-backup.timer
