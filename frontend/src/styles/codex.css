@@ -102,52 +102,18 @@
   background: rgba(0, 0, 0, 0.3);
 }
 
-.codex-sub-tabs {
-  display: flex;
-  gap: 6px;
-  margin-top: 2px;
-  overflow-x: auto;
-}
-
-.codex-sub-tab-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(201, 180, 109, 0.15);
-  border-radius: 3px;
-  color: var(--text-dim);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-}
-
-.codex-sub-tab-count {
-  font-size: 0.72rem;
-  opacity: 0.8;
-  padding: 1px 5px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.codex-sub-tab-btn:hover {
-  color: var(--text);
-  border-color: var(--gold-dim);
-}
-
-.codex-sub-tab-btn.active {
-  color: var(--gold);
-  border-color: var(--gold);
-  background: rgba(201, 180, 109, 0.12);
-}
-
 .codex-content {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+/* 图鉴筛选栏：嵌在顶栏卡片内，去掉坊市版本的下边框与下外边距，收紧与内容区的间距 */
+.codex-header .codex-filter-bar {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .codex-grid {
@@ -346,6 +312,27 @@
   font-size: 0.8rem;
   color: var(--text-dim);
   line-height: 1.4;
+}
+
+/* 图鉴建造条目的加成公式行：属性名胶囊 + 基准值下划线 + 每级增幅小字 */
+.codex-building-bonus-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.codex-building-bonus-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.codex-building-bonus-growth {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .codex-effect-text {

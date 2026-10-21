@@ -1,48 +1,16 @@
 import type { ItemDefinition, InventoryItem } from './types'
-import type { CodexMaterialSubTab } from '../uiStore'
+import { resolveCodexMaterialSubTab } from './codexFilters.ts'
 
 /**
- * 判定材料是否属于指定的图鉴子分类：
- * - herb（药材）：自然采集之草木灵材（spiritMaterial/herb）及百草精粹（草木精华、伴灵精华、桃木晶、灵松晶）
- * - mineral（矿石）：矿脉采掘之原矿（mineral）及金铁精材（百炼铁、赤铜精）
- * - exotic（异材）：妖兽讨伐掉落之奇珍残蜕（exoticMaterial）
- */
-export function isMaterialSubTabItem(
-  item: ItemDefinition,
-  subTab: CodexMaterialSubTab
-): boolean {
-  const sub = item.subCategory
-  if (subTab === 'herb') {
-    return (
-      sub === 'spiritMaterial' ||
-      sub === 'herb' ||
-      item.itemId === 'item.herb-essence' ||
-      item.itemId === 'item.banling-essence' ||
-      item.itemId === 'item.peach-wood-crystal' ||
-      item.itemId === 'item.spirit-pine-crystal'
-    )
-  }
-  if (subTab === 'mineral') {
-    return (
-      sub === 'mineral' ||
-      item.itemId === 'item.refined-iron' ||
-      item.itemId === 'item.refined-copper'
-    )
-  }
-  if (subTab === 'exotic') {
-    return sub === 'exoticMaterial'
-  }
-  return false
-}
-/**
  * 解析材料所关联的生活技艺：
- * - herb（草木灵材、百草精粹）-> gathering（采集）
- * - mineral（矿石、金铁精材）-> mining（采矿）
- * - exotic（异材残蜕）-> null（无专属生活技艺）
+ * - 灵材（`spiritMaterial`）-> gathering（采集）
+ * - 矿石（`mineral`）-> mining（采矿）
+ * - 异材残蜕与精材 -> null（无专属生活技艺，纯由境界裁决）
  */
 export function resolveMaterialTechnique(item: ItemDefinition): 'gathering' | 'mining' | null {
-  if (isMaterialSubTabItem(item, 'herb')) return 'gathering'
-  if (isMaterialSubTabItem(item, 'mineral')) return 'mining'
+  const subTab = resolveCodexMaterialSubTab(item)
+  if (subTab === 'spiritMaterial') return 'gathering'
+  if (subTab === 'mineral') return 'mining'
   return null
 }
 

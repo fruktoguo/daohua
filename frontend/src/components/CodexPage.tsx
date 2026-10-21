@@ -3,14 +3,32 @@ import React, { memo, useCallback, useMemo } from 'react'
 import {
   formatDualUnlockCondition,
   formatRealmUnlockCondition,
-  isMaterialSubTabItem,
   isMaterialUnlocked,
   resolveMaterialTechnique,
 } from '../game/codexCalculations'
+import {
+  matchesCodexCollect,
+  matchesCodexGrade,
+  matchesCodexTraitGrade,
+  resolveCodexCraftingSubTab,
+  resolveCodexMaterialSubTab,
+  resolveCodexMonsterRank,
+  tallyCodexBuckets,
+  DEFAULT_CODEX_FILTERS,
+  type CodexAbilityDamage,
+  type CodexAbilityDiscipline,
+  type CodexBuildingGroup,
+  type CodexCraftingSubTab,
+  type CodexFilterState,
+  type CodexMaterialSubTab,
+  type CodexMonsterRank,
+  type CodexTraitGrade,
+} from '../game/codexFilters'
 import { calculateTechniqueProgress, TECHNIQUE_IDS, TRAIT_DEFINITIONS } from '../game/combatConstants'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
+  convertLevelToTier,
   convertTierToLevel,
   findItemInCatalog,
   resolveActionLevel,
@@ -31,11 +49,14 @@ import type {
   CombatEquipmentDefinition,
   ItemDefinition,
 } from '../game/types'
+import { getBuildingBonusFormulas } from '../game/buildingCalculations'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
 import { useT } from '../i18n'
-import type { CodexCraftingSubTab, CodexMaterialSubTab, CodexTraitSubTab } from '../uiStore'
+import type { CodexCategory } from '../uiStore'
 import { useUiStore } from '../uiStore'
+import { OptionToggle, type OptionToggleOption } from './OptionToggle'
 import { PillBonusLabel, type PillTone } from './PillLabel'
+import { StatGlyph } from './StatGlyph'
 import { TraitBarItem } from './TraitBarItem'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -50,49 +71,113 @@ import {
 } from './ItemDisplay'
 import { ValueText } from './ValueText'
 
-/** 材料分类映射定义 */
-const MATERIAL_SUB_TABS: ReadonlyArray<{ id: CodexMaterialSubTab; labelKey: string }> = [
-  { id: 'herb', labelKey: 'materialHerb' },
-  { id: 'mineral', labelKey: 'materialMineral' },
-  { id: 'exotic', labelKey: 'materialExotic' },
+/** 顶部主分类定义（材料居首，与总纲收录顺序一致） */
+const CODEX_CATEGORIES: ReadonlyArray<{ id: CodexCategory; labelKey: string }> = [
+  { id: 'material', labelKey: 'tabMaterial' },
+  { id: 'crafting', labelKey: 'tabCrafting' },
+  { id: 'building', labelKey: 'tabBuilding' },
+  { id: 'ability', labelKey: 'tabAbility' },
+  { id: 'monster', labelKey: 'tabMonster' },
+  { id: 'trait', labelKey: 'tabTrait' },
 ]
 
-/** 制造分类映射定义 */
-const CRAFTING_SUB_TABS: ReadonlyArray<{ id: CodexCraftingSubTab; labelKey: string }> = [
-  { id: 'alchemy', labelKey: 'craftingAlchemy' },
-  { id: 'forging', labelKey: 'craftingForging' },
-  { id: 'formation', labelKey: 'craftingFormation' },
-  { id: 'talisman', labelKey: 'craftingTalisman' },
+/** 材料子分类（配表 `subCategory` 四类） */
+const MATERIAL_SUB_TABS: ReadonlyArray<Exclude<CodexMaterialSubTab, 'all'>> = [
+  'spiritMaterial',
+  'mineral',
+  'exoticMaterial',
+  'refinedMaterial',
 ]
+const MATERIAL_TAB_LABELS: Record<Exclude<CodexMaterialSubTab, 'all'>, string> = {
+  spiritMaterial: 'materialSpirit',
+  mineral: 'materialMineral',
+  exoticMaterial: 'materialExotic',
+  refinedMaterial: 'materialRefined',
+}
 
-/** 特质分类映射定义 */
-const TRAIT_SUB_TABS: ReadonlyArray<{ id: CodexTraitSubTab; labelKey: string; quality?: number }> = [
-  { id: 'all', labelKey: 'traitAll' },
-  { id: 'q1', labelKey: 'traitQ1', quality: 1 },
-  { id: 'q2', labelKey: 'traitQ2', quality: 2 },
-  { id: 'q3', labelKey: 'traitQ3', quality: 3 },
-  { id: 'q4', labelKey: 'traitQ4', quality: 4 },
-  { id: 'q5', labelKey: 'traitQ5', quality: 5 },
+/** 技艺子分类（炼丹 / 炼器 / 阵法 / 符箓） */
+const CRAFTING_SUB_TABS: ReadonlyArray<Exclude<CodexCraftingSubTab, 'all'>> = [
+  'alchemy',
+  'forging',
+  'formation',
+  'talisman',
 ]
+const CRAFTING_TAB_LABELS: Record<Exclude<CodexCraftingSubTab, 'all'>, string> = {
+  alchemy: 'craftingAlchemy',
+  forging: 'craftingForging',
+  formation: 'craftingFormation',
+  talisman: 'craftingTalisman',
+}
 
+/** 建筑分组（配表 `group`） */
+const BUILDING_GROUPS: ReadonlyArray<Exclude<CodexBuildingGroup, 'all'>> = ['production', 'combat']
+const BUILDING_GROUP_LABELS: Record<Exclude<CodexBuildingGroup, 'all'>, string> = {
+  production: 'buildingProduction',
+  combat: 'buildingCombat',
+}
 
+/** 功法门类与伤害大类 */
+const ABILITY_DISCIPLINES: ReadonlyArray<Exclude<CodexAbilityDiscipline, 'all'>> = ['spell', 'internal']
+const ABILITY_DISCIPLINE_LABELS: Record<Exclude<CodexAbilityDiscipline, 'all'>, string> = {
+  spell: 'abilitySpell',
+  internal: 'abilityInternal',
+}
+const ABILITY_DAMAGES: ReadonlyArray<Exclude<CodexAbilityDamage, 'all'>> = ['physical', 'spell']
+const ABILITY_DAMAGE_LABELS: Record<Exclude<CodexAbilityDamage, 'all'>, string> = {
+  physical: 'damagePhysical',
+  spell: 'damageSpell',
+}
+
+/** 妖兽生命层次 */
+const MONSTER_RANKS: ReadonlyArray<Exclude<CodexMonsterRank, 'all'>> = ['normal', 'elite', 'boss']
+const MONSTER_RANK_LABELS: Record<Exclude<CodexMonsterRank, 'all'>, string> = {
+  normal: 'monsterNormal',
+  elite: 'monsterElite',
+  boss: 'monsterBoss',
+}
+
+/** 特质品阶（Q1 凡品 ~ Q5 天品） */
+const TRAIT_GRADES: ReadonlyArray<Exclude<CodexTraitGrade, 'all'>> = ['q1', 'q2', 'q3', 'q4', 'q5']
+const TRAIT_GRADE_LABELS: Record<Exclude<CodexTraitGrade, 'all'>, string> = {
+  q1: 'traitQ1',
+  q2: 'traitQ2',
+  q3: 'traitQ3',
+  q4: 'traitQ4',
+  q5: 'traitQ5',
+}
+const TRAIT_GRADE_QUALITY: Record<Exclude<CodexTraitGrade, 'all'>, number> = {
+  q1: 1,
+  q2: 2,
+  q3: 3,
+  q4: 4,
+  q5: 5,
+}
+
+/** 等阶下拉档位：与品质档 `ITEM_GRADE_ORDER`（1~8 阶）同域 */
+const GRADE_TIERS: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 7, 8]
 
 /**
  * 万象图鉴页面组件
  * 对应主界面顶级页签 'codex'
- * 包含四大分类：制造配方、建筑图谱、功法神通、大世界妖兽
+ *
+ * 主分类：材料 / 技艺 / 建造 / 功法 / 妖兽 / 特质；
+ * 每个主分类下挂一条与坊市同款的「多维筛选栏」——每维一个「全部 + 互斥选项」Toggle 组
+ * （首项「全部」表示该维不过滤），维度之间 AND 联合，等阶用原生下拉。
+ * Toggle 角标展示该选项的「已收录 / 总数」，筛选状态按分类分别常驻 `useUiStore.codexFilters`。
  */
 export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const t = useT()
 
   const codexCategory = useUiStore(state => state.codexCategory)
   const setCodexCategory = useUiStore(state => state.setCodexCategory)
-  const codexMaterialSubTab = useUiStore(state => state.codexMaterialSubTab)
-  const setCodexMaterialSubTab = useUiStore(state => state.setCodexMaterialSubTab)
-  const codexCraftingSubTab = useUiStore(state => state.codexCraftingSubTab)
-  const setCodexCraftingSubTab = useUiStore(state => state.setCodexCraftingSubTab)
-  const codexTraitSubTab = useUiStore(state => state.codexTraitSubTab)
-  const setCodexTraitSubTab = useUiStore(state => state.setCodexTraitSubTab)
+  const codexFilters = useUiStore(state => state.codexFilters)
+  const setCodexFilters = useUiStore(state => state.setCodexFilters)
+
+  const filters: CodexFilterState = codexFilters[codexCategory] ?? DEFAULT_CODEX_FILTERS
+  const updateFilters = useCallback(
+    (patch: Partial<CodexFilterState>) => setCodexFilters(codexCategory, patch),
+    [setCodexFilters, codexCategory],
+  )
 
   const stats = useGameStore(state => state.stats)
   const realmLevel = stats.realmLevel ?? 1
@@ -108,7 +193,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const learnedAbilityIds = useGameStore(state => state.combat?.learnedAbilityIds ?? [])
   const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
 
-  // 计算玩家当前各生活技艺等级
+  // 玩家当前各生活技艺等级（材料与配方的技艺解锁判定共用）
   const techniqueLevels = useMemo(() => {
     const map: Record<string, number> = {}
     for (const id of TECHNIQUE_IDS) {
@@ -117,56 +202,55 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     return map
   }, [techniqueExperiences])
 
-  // 0. 天地材料分类池：全量材料池（药材、矿石、异材）
-  const allMaterials = useMemo(() => {
-    return items.filter(it => it.category === 'material')
-  }, [items])
+  /** 收录度角标文本：与顶部大分类进度胶囊同一口径 */
+  const countLabel = useCallback(
+    (entry?: { collected: number; total: number }) => (entry ? `${entry.collected}/${entry.total}` : undefined),
+    [],
+  )
+
+  // ===== 0. 天地材料 =====
+  const allMaterials = useMemo(() => items.filter(it => it.category === 'material'), [items])
 
   const isItemUnlocked = useCallback(
     (item: ItemDefinition): boolean => isMaterialUnlocked(item, realmLevel, inventory, techniqueLevels),
     [realmLevel, inventory, techniqueLevels]
   )
 
-  const currentSubTabMaterials = useMemo(() => {
-    return allMaterials.filter(it => isMaterialSubTabItem(it, codexMaterialSubTab))
-  }, [allMaterials, codexMaterialSubTab])
+  const materialTally = useMemo(() => tallyCodexBuckets(
+    allMaterials,
+    [
+      { value: 'all' as CodexMaterialSubTab, match: () => true },
+      ...MATERIAL_SUB_TABS.map(sub => ({
+        value: sub as CodexMaterialSubTab,
+        match: (it: ItemDefinition) => resolveCodexMaterialSubTab(it) === sub,
+      })),
+    ],
+    isItemUnlocked,
+  ), [allMaterials, isItemUnlocked])
 
+  const materialTabOptions = useMemo<ReadonlyArray<OptionToggleOption<CodexMaterialSubTab>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll'), count: countLabel(materialTally.all) },
+    ...MATERIAL_SUB_TABS.map(sub => ({
+      value: sub,
+      label: t(`app.codex.${MATERIAL_TAB_LABELS[sub]}`),
+      count: countLabel(materialTally[sub]),
+    })),
+  ], [t, materialTally, countLabel])
 
-  const sortedMaterials = useMemo(() => {
-    return [...currentSubTabMaterials].sort((a, b) => {
-      const levelA = convertTierToLevel(a.tier ?? 1)
-      const levelB = convertTierToLevel(b.tier ?? 1)
-      if (levelA !== levelB) return levelA - levelB
-      return a.itemId.localeCompare(b.itemId)
-    })
-  }, [currentSubTabMaterials])
+  const visibleMaterials = useMemo(() => {
+    return allMaterials
+      .filter(it => matchesCodexGrade(it.tier, filters.grade))
+      .filter(it => filters.materialSubTab === 'all' || resolveCodexMaterialSubTab(it) === filters.materialSubTab)
+      .filter(it => matchesCodexCollect(filters.collect, isItemUnlocked(it)))
+      .sort((a, b) => {
+        const levelA = convertTierToLevel(a.tier ?? 1)
+        const levelB = convertTierToLevel(b.tier ?? 1)
+        if (levelA !== levelB) return levelA - levelB
+        return a.itemId.localeCompare(b.itemId)
+      })
+  }, [allMaterials, filters.grade, filters.materialSubTab, filters.collect, isItemUnlocked])
 
-  const materialSubTabProgress = useMemo(() => {
-    const map: Record<CodexMaterialSubTab, { unlocked: number; total: number }> = {
-      herb: { unlocked: 0, total: 0 },
-      mineral: { unlocked: 0, total: 0 },
-      exotic: { unlocked: 0, total: 0 },
-    }
-    for (const item of allMaterials) {
-      const isUnlocked = isItemUnlocked(item)
-      for (const tab of MATERIAL_SUB_TABS) {
-        if (isMaterialSubTabItem(item, tab.id)) {
-          map[tab.id].total += 1
-          if (isUnlocked) {
-            map[tab.id].unlocked += 1
-          }
-        }
-      }
-    }
-    return map
-  }, [allMaterials, isItemUnlocked])
-
-  const totalMaterialUnlockedCount = useMemo(() => {
-    return allMaterials.filter(isItemUnlocked).length
-  }, [allMaterials, isItemUnlocked])
-  const totalMaterialCount = allMaterials.length
-
-  // 1. 制造配方分类池：全量技艺配方池（包含炼丹、炼器、阵法、符箓）
+  // ===== 1. 技艺配方 =====
   const allCraftingActions = useMemo(() => {
     return actions.filter(a =>
       a.type === 'alchemy' ||
@@ -182,37 +266,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     )
   }, [actions])
 
-  // 子分类判定函数
-  const isSubTabAction = useCallback((action: ActionDefinition, subTab: CodexCraftingSubTab): boolean => {
-    if (subTab === 'alchemy') {
-      return (
-        action.technique === 'alchemy' ||
-        action.id.startsWith('alchemy.') ||
-        action.id.startsWith('craft.extract-')
-      )
-    }
-    if (subTab === 'forging') {
-      return (
-        action.technique === 'forging' ||
-        action.id.startsWith('forge.') ||
-        action.id.startsWith('craft.refine-')
-      )
-    }
-    if (subTab === 'formation') {
-      return action.technique === 'formation' || action.id.startsWith('formation.')
-    }
-    if (subTab === 'talisman') {
-      return action.technique === 'talisman' || action.id.startsWith('talisman.')
-    }
-    return false
-  }, [])
-
-  // 当前选中子分类的配方池
-  const currentSubTabActions = useMemo(() => {
-    return allCraftingActions.filter(a => isSubTabAction(a, codexCraftingSubTab))
-  }, [allCraftingActions, isSubTabAction, codexCraftingSubTab])
-
-  // 制造配方是否解锁：境界达到或对应制造技艺等级达到（双重「或」判定）
+  // 配方是否解锁：境界达到或对应制造技艺等级达到（双重「或」判定）
   const isActionUnlocked = useCallback(
     (action: ActionDefinition): boolean => {
       const requiredLevel = resolveActionLevel(action, items, equipment, encounters)
@@ -225,48 +279,140 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     [items, equipment, encounters, realmLevel, techniqueLevels]
   )
 
-  // 制造配方按所需境界排序（当前展示列表）
-  const sortedCraftingActions = useMemo(() => {
-    return [...currentSubTabActions].sort((a, b) => {
-      const levelA = resolveActionLevel(a, items, equipment, encounters)
-      const levelB = resolveActionLevel(b, items, equipment, encounters)
-      if (levelA !== levelB) return levelA - levelB
-      return a.id.localeCompare(b.id)
-    })
-  }, [currentSubTabActions, items, equipment, encounters])
+  const craftingTally = useMemo(() => tallyCodexBuckets(
+    allCraftingActions,
+    [
+      { value: 'all' as CodexCraftingSubTab, match: () => true },
+      ...CRAFTING_SUB_TABS.map(sub => ({
+        value: sub as CodexCraftingSubTab,
+        match: (action: ActionDefinition) => resolveCodexCraftingSubTab(action) === sub,
+      })),
+    ],
+    isActionUnlocked,
+  ), [allCraftingActions, isActionUnlocked])
 
-  // 各子 Tab 独立的解锁与总数统计
-  const subTabProgress = useMemo(() => {
-    const map: Record<CodexCraftingSubTab, { unlocked: number; total: number }> = {
-      alchemy: { unlocked: 0, total: 0 },
-      forging: { unlocked: 0, total: 0 },
-      formation: { unlocked: 0, total: 0 },
-      talisman: { unlocked: 0, total: 0 },
-    }
-    for (const action of allCraftingActions) {
-      const isUnlocked = isActionUnlocked(action)
-      for (const tab of CRAFTING_SUB_TABS) {
-        if (isSubTabAction(action, tab.id)) {
-          map[tab.id].total += 1
-          if (isUnlocked) {
-            map[tab.id].unlocked += 1
-          }
-        }
-      }
-    }
-    return map
-  }, [allCraftingActions, isSubTabAction, isActionUnlocked])
-  // 2. 建筑图谱按 requiredRealmLevel 排序
-  const sortedBuildings = useMemo(() => {
-    return [...buildings].sort((a, b) => a.requiredRealmLevel - b.requiredRealmLevel)
-  }, [buildings])
+  const craftingTabOptions = useMemo<ReadonlyArray<OptionToggleOption<CodexCraftingSubTab>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll'), count: countLabel(craftingTally.all) },
+    ...CRAFTING_SUB_TABS.map(sub => ({
+      value: sub,
+      label: t(`app.codex.${CRAFTING_TAB_LABELS[sub]}`),
+      count: countLabel(craftingTally[sub]),
+    })),
+  ], [t, craftingTally, countLabel])
 
-  // 3. 功法神通按等阶与 ID 排序
-  const sortedAbilities = useMemo(() => {
-    return [...abilities].sort((a, b) => ((a.tier ?? 1) - (b.tier ?? 1)) || a.abilityId.localeCompare(b.abilityId))
-  }, [abilities])
+  const visibleCraftingActions = useMemo(() => {
+    return allCraftingActions
+      .filter(a => matchesCodexGrade(convertLevelToTier(resolveActionLevel(a, items, equipment, encounters)), filters.grade))
+      .filter(a => filters.craftingSubTab === 'all' || resolveCodexCraftingSubTab(a) === filters.craftingSubTab)
+      .filter(a => matchesCodexCollect(filters.collect, isActionUnlocked(a)))
+      .sort((a, b) => {
+        const levelA = resolveActionLevel(a, items, equipment, encounters)
+        const levelB = resolveActionLevel(b, items, equipment, encounters)
+        if (levelA !== levelB) return levelA - levelB
+        return a.id.localeCompare(b.id)
+      })
+  }, [allCraftingActions, filters.grade, filters.craftingSubTab, filters.collect, isActionUnlocked, items, equipment, encounters])
 
-  // 4. 从遭遇战与地图节点生态全量聚合去重大世界怪物列表
+  // ===== 2. 建筑图谱 =====
+  const isBuildingUnlocked = useCallback(
+    (building: BuildingDefinition): boolean => realmLevel >= building.requiredRealmLevel,
+    [realmLevel],
+  )
+
+  const sortedBuildings = useMemo(
+    () => [...buildings].sort((a, b) => a.requiredRealmLevel - b.requiredRealmLevel),
+    [buildings],
+  )
+
+  const buildingTally = useMemo(() => tallyCodexBuckets(
+    sortedBuildings,
+    [
+      { value: 'all' as CodexBuildingGroup, match: () => true },
+      ...BUILDING_GROUPS.map(group => ({
+        value: group as CodexBuildingGroup,
+        match: (b: BuildingDefinition) => b.group === group,
+      })),
+    ],
+    isBuildingUnlocked,
+  ), [sortedBuildings, isBuildingUnlocked])
+
+  const buildingGroupOptions = useMemo<ReadonlyArray<OptionToggleOption<CodexBuildingGroup>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll'), count: countLabel(buildingTally.all) },
+    ...BUILDING_GROUPS.map(group => ({
+      value: group,
+      label: t(`app.codex.${BUILDING_GROUP_LABELS[group]}`),
+      count: countLabel(buildingTally[group]),
+    })),
+  ], [t, buildingTally, countLabel])
+
+  const visibleBuildings = useMemo(() => sortedBuildings
+    .filter(b => filters.buildingGroup === 'all' || b.group === filters.buildingGroup)
+    .filter(b => matchesCodexCollect(filters.collect, isBuildingUnlocked(b))),
+  [sortedBuildings, filters.buildingGroup, filters.collect, isBuildingUnlocked])
+
+  // ===== 3. 功法神通 =====
+  const sortedAbilities = useMemo(
+    () => [...abilities].sort((a, b) => ((a.tier ?? 1) - (b.tier ?? 1)) || a.abilityId.localeCompare(b.abilityId)),
+    [abilities],
+  )
+
+  const learnedSet = useMemo(() => new Set(learnedAbilityIds), [learnedAbilityIds])
+  const isAbilityLearned = useCallback(
+    (ability: CombatAbilityDefinition): boolean => learnedSet.has(ability.abilityId),
+    [learnedSet],
+  )
+
+  const abilityDisciplineTally = useMemo(() => tallyCodexBuckets(
+    sortedAbilities,
+    [
+      { value: 'all' as CodexAbilityDiscipline, match: () => true },
+      ...ABILITY_DISCIPLINES.map(discipline => ({
+        value: discipline as CodexAbilityDiscipline,
+        match: (a: CombatAbilityDefinition) => (a.discipline === 'internal' ? 'internal' : 'spell') === discipline,
+      })),
+    ],
+    isAbilityLearned,
+  ), [sortedAbilities, isAbilityLearned])
+
+  const abilityDamageTally = useMemo(() => tallyCodexBuckets(
+    sortedAbilities,
+    [
+      { value: 'all' as CodexAbilityDamage, match: () => true },
+      ...ABILITY_DAMAGES.map(damage => ({
+        value: damage as CodexAbilityDamage,
+        match: (a: CombatAbilityDefinition) => a.category === damage,
+      })),
+    ],
+    isAbilityLearned,
+  ), [sortedAbilities, isAbilityLearned])
+
+  const abilityDisciplineOptions = useMemo<ReadonlyArray<OptionToggleOption<CodexAbilityDiscipline>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll'), count: countLabel(abilityDisciplineTally.all) },
+    ...ABILITY_DISCIPLINES.map(discipline => ({
+      value: discipline,
+      label: t(`app.codex.${ABILITY_DISCIPLINE_LABELS[discipline]}`),
+      count: countLabel(abilityDisciplineTally[discipline]),
+    })),
+  ], [t, abilityDisciplineTally, countLabel])
+
+  const abilityDamageOptions = useMemo<ReadonlyArray<OptionToggleOption<CodexAbilityDamage>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll'), count: countLabel(abilityDamageTally.all) },
+    ...ABILITY_DAMAGES.map(damage => ({
+      value: damage,
+      label: t(`app.codex.${ABILITY_DAMAGE_LABELS[damage]}`),
+      count: countLabel(abilityDamageTally[damage]),
+    })),
+  ], [t, abilityDamageTally, countLabel])
+
+  const visibleAbilities = useMemo(() => sortedAbilities
+    .filter(a => matchesCodexGrade(a.tier, filters.grade))
+    .filter(a => filters.abilityDiscipline === 'all'
+      || (a.discipline === 'internal' ? 'internal' : 'spell') === filters.abilityDiscipline)
+    .filter(a => filters.abilityDamage === 'all' || a.category === filters.abilityDamage)
+    .filter(a => matchesCodexCollect(filters.collect, isAbilityLearned(a))),
+  [sortedAbilities, filters.grade, filters.abilityDiscipline, filters.abilityDamage, filters.collect, isAbilityLearned])
+
+  // ===== 4. 大世界妖兽 =====
   const allMonsters = useMemo(() => {
     const map = new Map<string, CombatantDefinition>()
     const addMonster = (enemy?: CombatantDefinition | null) => {
@@ -296,32 +442,40 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     return Array.from(map.values()).sort((a, b) => (a.level ?? 1) - (b.level ?? 1))
   }, [encounters, maps])
 
-  // 进度计数
   const defeatedSet = useMemo(() => new Set(stats.defeatedMonsterIds ?? []), [stats.defeatedMonsterIds])
-  const learnedSet = useMemo(() => new Set(learnedAbilityIds), [learnedAbilityIds])
+  const isMonsterDefeated = useCallback(
+    (monster: CombatantDefinition): boolean => defeatedSet.has(monster.enemyId),
+    [defeatedSet],
+  )
 
-  // 技艺总解锁数与总配方数（全量技艺，不随子 Tab 改变）
-  const totalCraftingUnlockedCount = useMemo(() => {
-    return allCraftingActions.filter(isActionUnlocked).length
-  }, [allCraftingActions, isActionUnlocked])
-  const totalCraftingCount = allCraftingActions.length
+  const monsterRankTally = useMemo(() => tallyCodexBuckets(
+    allMonsters,
+    [
+      { value: 'all' as CodexMonsterRank, match: () => true },
+      ...MONSTER_RANKS.map(rank => ({
+        value: rank as CodexMonsterRank,
+        match: (m: CombatantDefinition) => resolveCodexMonsterRank(m.rank) === rank,
+      })),
+    ],
+    isMonsterDefeated,
+  ), [allMonsters, isMonsterDefeated])
 
-  const buildingUnlockedCount = useMemo(() => {
-    return sortedBuildings.filter(b => b.requiredRealmLevel <= realmLevel).length
-  }, [sortedBuildings, realmLevel])
-  const totalBuildingCount = sortedBuildings.length
+  const monsterRankOptions = useMemo<ReadonlyArray<OptionToggleOption<CodexMonsterRank>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll'), count: countLabel(monsterRankTally.all) },
+    ...MONSTER_RANKS.map(rank => ({
+      value: rank,
+      label: t(`app.codex.${MONSTER_RANK_LABELS[rank]}`),
+      count: countLabel(monsterRankTally[rank]),
+    })),
+  ], [t, monsterRankTally, countLabel])
 
-  const abilityLearnedCount = useMemo(() => {
-    return sortedAbilities.filter(a => learnedSet.has(a.abilityId)).length
-  }, [sortedAbilities, learnedSet])
-  const totalAbilityCount = sortedAbilities.length
+  const visibleMonsters = useMemo(() => allMonsters
+    .filter(m => matchesCodexGrade(m.tier, filters.grade))
+    .filter(m => filters.monsterRank === 'all' || resolveCodexMonsterRank(m.rank) === filters.monsterRank)
+    .filter(m => matchesCodexCollect(filters.collect, isMonsterDefeated(m))),
+  [allMonsters, filters.grade, filters.monsterRank, filters.collect, isMonsterDefeated])
 
-  const monsterDefeatedCount = useMemo(() => {
-    return allMonsters.filter(m => defeatedSet.has(m.enemyId)).length
-  }, [allMonsters, defeatedSet])
-  const totalMonsterCount = allMonsters.length
- 
-  // 特质图鉴数据与解锁进度
+  // ===== 5. 特质志 =====
   const unlockedTraitsMap = useMemo(() => {
     const map = new Map<string, number>()
     for (const ut of stats.unlockedTraits ?? []) {
@@ -330,50 +484,74 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
     return map
   }, [stats.unlockedTraits])
 
-  const allTraits = useMemo(() => {
-    return Object.values(TRAIT_DEFINITIONS).sort((a, b) => {
-      if (a.quality !== b.quality) return a.quality - b.quality
-      if (a.cost !== b.cost) return a.cost - b.cost
-      return a.id.localeCompare(b.id)
-    })
-  }, [])
+  const allTraits = useMemo(() => Object.values(TRAIT_DEFINITIONS).sort((a, b) => {
+    if (a.quality !== b.quality) return a.quality - b.quality
+    if (a.cost !== b.cost) return a.cost - b.cost
+    return a.id.localeCompare(b.id)
+  }), [])
 
-  const traitUnlockedCount = useMemo(() => {
-    return allTraits.filter(tr => unlockedTraitsMap.has(tr.id)).length
-  }, [allTraits, unlockedTraitsMap])
-  const totalTraitCount = allTraits.length
+  const isTraitUnlocked = useCallback(
+    (trait: { id: string }): boolean => unlockedTraitsMap.has(trait.id),
+    [unlockedTraitsMap],
+  )
 
-  const traitSubTabProgress = useMemo(() => {
-    const map: Record<CodexTraitSubTab, { unlocked: number; total: number }> = {
-      all: { unlocked: traitUnlockedCount, total: totalTraitCount },
-      q1: { unlocked: 0, total: 0 },
-      q2: { unlocked: 0, total: 0 },
-      q3: { unlocked: 0, total: 0 },
-      q4: { unlocked: 0, total: 0 },
-      q5: { unlocked: 0, total: 0 },
-    }
-    for (const tr of allTraits) {
-      const isUnlocked = unlockedTraitsMap.has(tr.id)
-      const qKey = `q${tr.quality}` as CodexTraitSubTab
-      if (map[qKey]) {
-        map[qKey].total += 1
-        if (isUnlocked) map[qKey].unlocked += 1
-      }
-    }
-    return map
-  }, [allTraits, unlockedTraitsMap, traitUnlockedCount, totalTraitCount])
+  const traitGradeTally = useMemo(() => tallyCodexBuckets(
+    allTraits,
+    [
+      { value: 'all' as CodexTraitGrade, match: () => true },
+      ...TRAIT_GRADES.map(grade => ({
+        value: grade as CodexTraitGrade,
+        match: (tr: { quality: number }) => tr.quality === TRAIT_GRADE_QUALITY[grade],
+      })),
+    ],
+    isTraitUnlocked,
+  ), [allTraits, isTraitUnlocked])
 
-  const sortedTraits = useMemo(() => {
-    if (codexTraitSubTab === 'all') return allTraits
-    const tab = TRAIT_SUB_TABS.find(t => t.id === codexTraitSubTab)
-    if (!tab?.quality) return allTraits
-    return allTraits.filter(t => t.quality === tab.quality)
-  }, [allTraits, codexTraitSubTab])
+  const traitGradeOptions = useMemo<ReadonlyArray<OptionToggleOption<CodexTraitGrade>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll'), count: countLabel(traitGradeTally.all) },
+    ...TRAIT_GRADES.map(grade => ({
+      value: grade,
+      label: t(`app.codex.${TRAIT_GRADE_LABELS[grade]}`),
+      count: countLabel(traitGradeTally[grade]),
+    })),
+  ], [t, traitGradeTally, countLabel])
 
-   // 万象图鉴全景总进度
-  const grandUnlocked = totalMaterialUnlockedCount + totalCraftingUnlockedCount + buildingUnlockedCount + abilityLearnedCount + monsterDefeatedCount + traitUnlockedCount
-  const grandTotal = totalMaterialCount + totalCraftingCount + totalBuildingCount + totalAbilityCount + totalMonsterCount + totalTraitCount
-   const grandPercent = grandTotal > 0 ? Math.round((grandUnlocked / grandTotal) * 100) : 0
+  const visibleTraits = useMemo(() => allTraits
+    .filter(tr => matchesCodexTraitGrade(tr.quality, filters.traitGrade))
+    .filter(tr => matchesCodexCollect(filters.collect, isTraitUnlocked(tr))),
+  [allTraits, filters.traitGrade, filters.collect, isTraitUnlocked])
+
+  // ===== 收录状态与等阶（跨分类共用维度） =====
+  const collectOptions = useMemo<ReadonlyArray<OptionToggleOption<NonNullable<CodexFilterState['collect']>>>>(() => [
+    { value: 'all', label: t('app.codex.filterAll') },
+    { value: 'collected', label: t('app.codex.collected') },
+    { value: 'missing', label: t('app.codex.uncollected') },
+  ], [t])
+
+  const gradeOptions = useMemo(() => [
+    { value: 0, label: t('app.codex.filterAll') },
+    ...GRADE_TIERS.map(tier => ({ value: tier, label: t('app.codex.gradeOption', { tier: formatNumber(tier) }) })),
+  ], [t])
+
+  /** 当前分类的主导航分类计数（顶部主 Tab 角标） */
+  const categoryCounts = useMemo<Record<CodexCategory, { collected: number; total: number }>>(() => ({
+    material: { collected: materialTally.all.collected, total: materialTally.all.total },
+    crafting: { collected: craftingTally.all.collected, total: craftingTally.all.total },
+    building: { collected: buildingTally.all.collected, total: buildingTally.all.total },
+    ability: { collected: abilityDisciplineTally.all.collected, total: abilityDisciplineTally.all.total },
+    monster: { collected: monsterRankTally.all.collected, total: monsterRankTally.all.total },
+    trait: { collected: traitGradeTally.all.collected, total: traitGradeTally.all.total },
+  }), [materialTally, craftingTally, buildingTally, abilityDisciplineTally, monsterRankTally, traitGradeTally])
+
+  const grandUnlocked = Object.values(categoryCounts).reduce((sum, entry) => sum + entry.collected, 0)
+  const grandTotal = Object.values(categoryCounts).reduce((sum, entry) => sum + entry.total, 0)
+  const grandPercent = grandTotal > 0 ? Math.round((grandUnlocked / grandTotal) * 100) : 0
+
+  /** 当前分类是否具备等阶维度（建造/特质无等阶） */
+  const hasGradeFilter = codexCategory === 'material'
+    || codexCategory === 'crafting'
+    || codexCategory === 'ability'
+    || codexCategory === 'monster'
 
   return (
     <div className="codex-page panel">
@@ -388,138 +566,153 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
           </div>
         </div>
 
-        {/* 五大主分类切换：材料居首 */}
+        {/* 六大主分类切换：材料居首 */}
         <nav className="codex-tabs" role="tablist">
-          <button
-            className={`codex-tab-btn${codexCategory === 'material' ? ' active' : ''}`}
-            onClick={() => setCodexCategory('material')}
-            type="button"
-          >
-            <span>{t('app.codex.tabMaterial')}</span>
-            <span className="codex-tab-count">{totalMaterialUnlockedCount}/{totalMaterialCount}</span>
-          </button>
-          <button
-            className={`codex-tab-btn${codexCategory === 'crafting' ? ' active' : ''}`}
-            onClick={() => setCodexCategory('crafting')}
-            type="button"
-          >
-            <span>{t('app.codex.tabCrafting')}</span>
-            <span className="codex-tab-count">{totalCraftingUnlockedCount}/{totalCraftingCount}</span>
-          </button>
-          <button
-            className={`codex-tab-btn${codexCategory === 'building' ? ' active' : ''}`}
-            onClick={() => setCodexCategory('building')}
-            type="button"
-          >
-            <span>{t('app.codex.tabBuilding')}</span>
-            <span className="codex-tab-count">{buildingUnlockedCount}/{totalBuildingCount}</span>
-          </button>
-          <button
-            className={`codex-tab-btn${codexCategory === 'ability' ? ' active' : ''}`}
-            onClick={() => setCodexCategory('ability')}
-            type="button"
-          >
-            <span>{t('app.codex.tabAbility')}</span>
-            <span className="codex-tab-count">{abilityLearnedCount}/{totalAbilityCount}</span>
-          </button>
-          <button
-            className={`codex-tab-btn${codexCategory === 'monster' ? ' active' : ''}`}
-            onClick={() => setCodexCategory('monster')}
-            type="button"
-          >
-            <span>{t('app.codex.tabMonster')}</span>
-            <span className="codex-tab-count">{monsterDefeatedCount}/{totalMonsterCount}</span>
-          </button>
-          <button
-            className={`codex-tab-btn${codexCategory === 'trait' ? ' active' : ''}`}
-            onClick={() => setCodexCategory('trait')}
-            type="button"
-          >
-            <span>{t('app.codex.tabTrait')}</span>
-            <span className="codex-tab-count">{traitUnlockedCount}/{totalTraitCount}</span>
-          </button>
+          {CODEX_CATEGORIES.map(category => (
+            <button
+              aria-selected={codexCategory === category.id}
+              className={`codex-tab-btn${codexCategory === category.id ? ' active' : ''}`}
+              key={category.id}
+              onClick={() => setCodexCategory(category.id)}
+              role="tab"
+              type="button"
+            >
+              <span>{t(`app.codex.${category.labelKey}`)}</span>
+              <span className="codex-tab-count">
+                {categoryCounts[category.id].collected}/{categoryCounts[category.id].total}
+              </span>
+            </button>
+          ))}
         </nav>
 
-        {/* 材料分类下的二级子切换（药材、矿石、异材） */}
-        {codexCategory === 'material' && (
-          <div className="codex-sub-tabs" role="tablist">
-            {MATERIAL_SUB_TABS.map(tab => {
-              const prog = materialSubTabProgress[tab.id]
-              return (
-                <button
-                  className={`codex-sub-tab-btn${codexMaterialSubTab === tab.id ? ' active' : ''}`}
-                  key={tab.id}
-                  onClick={() => setCodexMaterialSubTab(tab.id)}
-                  type="button"
-                >
-                  <span>{t(`app.codex.${tab.labelKey}`)}</span>
-                  <span className="codex-sub-tab-count">{prog.unlocked}/{prog.total}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
+        {/* 分类多维筛选栏：与坊市同款「全部 + 互斥选项」Toggle 组，维度之间 AND 联合 */}
+        <div className="filter-bar codex-filter-bar" role="toolbar" aria-label={t('app.codex.filterAria')}>
+          {codexCategory === 'material' && (
+            <>
+              <span className="filter-label">{t('app.codex.filterCategoryLabel')}</span>
+              <OptionToggle
+                ariaLabel={t('app.codex.filterCategoryAria')}
+                onChange={next => updateFilters({ materialSubTab: next })}
+                options={materialTabOptions}
+                value={filters.materialSubTab}
+              />
+            </>
+          )}
 
-        {/* 制造分类下的二级子切换（炼丹、炼器、阵法、符箓） */}
-        {codexCategory === 'crafting' && (
-          <div className="codex-sub-tabs" role="tablist">
-            {CRAFTING_SUB_TABS.map(tab => {
-              const prog = subTabProgress[tab.id]
-              return (
-                <button
-                  className={`codex-sub-tab-btn${codexCraftingSubTab === tab.id ? ' active' : ''}`}
-                  key={tab.id}
-                  onClick={() => setCodexCraftingSubTab(tab.id)}
-                  type="button"
-                >
-                  <span>{t(`app.codex.${tab.labelKey}`)}</span>
-                  <span className="codex-sub-tab-count">{prog.unlocked}/{prog.total}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
+          {codexCategory === 'crafting' && (
+            <>
+              <span className="filter-label">{t('app.codex.filterCategoryLabel')}</span>
+              <OptionToggle
+                ariaLabel={t('app.codex.filterCategoryAria')}
+                onChange={next => updateFilters({ craftingSubTab: next })}
+                options={craftingTabOptions}
+                value={filters.craftingSubTab}
+              />
+            </>
+          )}
 
-        {/* 特质分类下的二级子切换（按品阶：全部、凡品、黄品、玄品、地品、天品） */}
-        {codexCategory === 'trait' && (
-          <div className="codex-sub-tabs" role="tablist">
-            {TRAIT_SUB_TABS.map(tab => {
-              const prog = traitSubTabProgress[tab.id]
-              return (
-                <button
-                  className={`codex-sub-tab-btn${codexTraitSubTab === tab.id ? ' active' : ''}`}
-                  key={tab.id}
-                  onClick={() => setCodexTraitSubTab(tab.id)}
-                  type="button"
-                >
-                  <span>{t(`app.codex.${tab.labelKey}`)}</span>
-                  <span className="codex-sub-tab-count">{prog.unlocked}/{prog.total}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
+          {codexCategory === 'building' && (
+            <>
+              <span className="filter-label">{t('app.codex.filterCategoryLabel')}</span>
+              <OptionToggle
+                ariaLabel={t('app.codex.filterCategoryAria')}
+                onChange={next => updateFilters({ buildingGroup: next })}
+                options={buildingGroupOptions}
+                value={filters.buildingGroup}
+              />
+            </>
+          )}
+
+          {codexCategory === 'ability' && (
+            <>
+              <span className="filter-label">{t('app.codex.filterDisciplineLabel')}</span>
+              <OptionToggle
+                ariaLabel={t('app.codex.filterDisciplineAria')}
+                onChange={next => updateFilters({ abilityDiscipline: next })}
+                options={abilityDisciplineOptions}
+                value={filters.abilityDiscipline}
+              />
+              <span className="filter-label">{t('app.codex.filterDamageLabel')}</span>
+              <OptionToggle
+                ariaLabel={t('app.codex.filterDamageAria')}
+                onChange={next => updateFilters({ abilityDamage: next })}
+                options={abilityDamageOptions}
+                value={filters.abilityDamage}
+              />
+            </>
+          )}
+
+          {codexCategory === 'monster' && (
+            <>
+              <span className="filter-label">{t('app.codex.filterRankLabel')}</span>
+              <OptionToggle
+                ariaLabel={t('app.codex.filterRankAria')}
+                onChange={next => updateFilters({ monsterRank: next })}
+                options={monsterRankOptions}
+                value={filters.monsterRank}
+              />
+            </>
+          )}
+
+          {codexCategory === 'trait' && (
+            <>
+              <span className="filter-label">{t('app.codex.filterTraitGradeLabel')}</span>
+              <OptionToggle
+                ariaLabel={t('app.codex.filterTraitGradeAria')}
+                onChange={next => updateFilters({ traitGrade: next })}
+                options={traitGradeOptions}
+                value={filters.traitGrade}
+              />
+            </>
+          )}
+
+          {hasGradeFilter && (
+            <label className="filter-grade-field">
+              <span className="filter-label">{t('app.codex.filterTierLabel')}</span>
+              <select
+                aria-label={t('app.codex.filterTierAria')}
+                className="filter-grade-select"
+                onChange={event => updateFilters({ grade: Number(event.target.value) })}
+                value={filters.grade}
+              >
+                {gradeOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <span className="filter-label">{t('app.codex.filterCollectLabel')}</span>
+          <OptionToggle
+            ariaLabel={t('app.codex.filterCollectAria')}
+            onChange={next => updateFilters({ collect: next })}
+            options={collectOptions}
+            value={filters.collect}
+          />
+        </div>
       </header>
 
       {/* 主体图鉴内容 */}
       <main className="codex-content">
         {codexCategory === 'material' && (
           <div className="codex-grid codex-tile-grid">
-            {sortedMaterials.map(item => (
+            {visibleMaterials.map(item => (
               <CodexMaterialEntry
                 isUnlocked={isItemUnlocked(item)}
                 item={item}
                 key={item.itemId}
               />
             ))}
-            {sortedMaterials.length === 0 && (
+            {visibleMaterials.length === 0 && (
               <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
             )}
           </div>
         )}
         {codexCategory === 'crafting' && (
           <div className="codex-grid codex-tile-grid">
-            {sortedCraftingActions.map(action => (
+            {visibleCraftingActions.map(action => (
               <CodexCraftingEntry
                 action={action}
                 encounters={encounters}
@@ -530,7 +723,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
                 techniqueLevel={action.technique ? (techniqueLevels[action.technique] ?? 0) : 0}
               />
             ))}
-            {sortedCraftingActions.length === 0 && (
+            {visibleCraftingActions.length === 0 && (
               <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
             )}
           </div>
@@ -538,7 +731,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
         {codexCategory === 'building' && (
           <div className="codex-grid codex-grid--wide">
-            {sortedBuildings.map(building => (
+            {visibleBuildings.map(building => (
               <CodexBuildingEntry
                 building={building}
                 items={items}
@@ -546,7 +739,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
                 realmLevel={realmLevel}
               />
             ))}
-            {sortedBuildings.length === 0 && (
+            {visibleBuildings.length === 0 && (
               <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
             )}
           </div>
@@ -554,14 +747,14 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
         {codexCategory === 'ability' && (
           <div className="codex-grid codex-tile-grid">
-            {sortedAbilities.map(ability => (
+            {visibleAbilities.map(ability => (
               <CodexAbilityEntry
                 ability={ability}
                 isLearned={learnedSet.has(ability.abilityId)}
                 key={ability.abilityId}
               />
             ))}
-            {sortedAbilities.length === 0 && (
+            {visibleAbilities.length === 0 && (
               <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
             )}
           </div>
@@ -569,7 +762,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
         {codexCategory === 'monster' && (
           <div className="codex-grid codex-grid--wide">
-            {allMonsters.map(monster => (
+            {visibleMonsters.map(monster => (
               <CodexMonsterEntry
                 abilities={abilities}
                 isDefeated={defeatedSet.has(monster.enemyId)}
@@ -578,7 +771,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
                 monster={monster}
               />
             ))}
-            {allMonsters.length === 0 && (
+            {visibleMonsters.length === 0 && (
               <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
             )}
           </div>
@@ -586,7 +779,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
         {codexCategory === 'trait' && (
           <div className="codex-trait-list">
-            {sortedTraits.map(tr => (
+            {visibleTraits.map(tr => (
               <TraitBarItem
                 def={tr}
                 key={tr.id}
@@ -594,7 +787,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
                 mode="codex"
               />
             ))}
-            {sortedTraits.length === 0 && (
+            {visibleTraits.length === 0 && (
               <div className="codex-empty">{t('app.codex.emptyCategory')}</div>
             )}
           </div>
@@ -928,22 +1121,14 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
 
   const groupLabel =
     building.group === 'production'
-      ? '生产'
+      ? t('combat.nearby.groupProduction')
       : building.group === 'combat'
-        ? '战斗'
-        : '其他'
+        ? t('combat.nearby.groupCombat')
+        : t('combat.nearby.groupOther')
 
-  // 具体建筑效果拆解
-  const modifierLines: string[] = []
-  if (building.modifiers) {
-    const m = building.modifiers
-    if (m.explorationOutputRatio) modifierLines.push(`历练采集收益 +${Math.round(m.explorationOutputRatio * 100)}%`)
-    if (m.alchemyOutputRatio) modifierLines.push(`炼丹产出收益 +${Math.round(m.alchemyOutputRatio * 100)}%`)
-    if (m.cultivationOutputRatio) modifierLines.push(`吐纳修炼收益 +${Math.round(m.cultivationOutputRatio * 100)}%`)
-    if (m.alchemySpeedRatio) modifierLines.push(`炼制行动速度 +${Math.round(m.alchemySpeedRatio * 100)}%`)
-    if (m.combatDamageReductionRatio) modifierLines.push(`战斗伤害减免 +${Math.round(m.combatDamageReductionRatio * 100)}%`)
-    if (m.combatHitpointRegen) modifierLines.push(`战斗气血回复 +${m.combatHitpointRegen}/秒`)
-  }
+  // 建筑效果按配表成长模型拆解为「1 级基准 + 每级增幅」，
+  // 只读 modifiers 会让所有建筑看起来是恒定加成，与真实结算脱节。
+  const bonusFormulas = getBuildingBonusFormulas(building, (key, def) => t(key) || def)
 
   const hoverContent = (
     <FloatingInfoCard
@@ -956,6 +1141,35 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
               {building.description}
             </div>
           )}
+
+          {/* 建筑效果：加成条目胶囊化，基准值与每级增幅分列，避免误读为恒定数值 */}
+          {bonusFormulas.length > 0 ? (
+            <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 4, borderTop: 'none', marginBottom: 6 }}>
+              <span className="codex-hover-title">{t('app.codex.buildingEffect')}：</span>
+              <div className="codex-building-bonus-list">
+                {bonusFormulas.map(formula => (
+                  <span className="codex-building-bonus-row" key={formula.key}>
+                    <PillBonusLabel
+                      icon={<StatGlyph glyph={formula.glyph} size={14} />}
+                      label={formula.label}
+                      tone={formula.tone}
+                      value={formula.baseText}
+                    />
+                    {formula.growthText && (
+                      <span className="codex-building-bonus-growth">
+                        {t('app.codex.buildingBonusGrowth', { value: formula.growthText })}
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : building.effect ? (
+            <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 4, borderTop: 'none', marginBottom: 6 }}>
+              <span className="codex-hover-title">{t('app.codex.buildingEffect')}：</span>
+              <span className="codex-stat-line">{building.effect}</span>
+            </div>
+          ) : null}
 
           {/* 建造材料（中文物品名） */}
           <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 4, borderTop: 'none', marginBottom: 6 }}>
@@ -982,12 +1196,11 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
           </div>
         </div>
       }
-      lines={modifierLines.length > 0 ? modifierLines : [building.effect]}
       stats={[
-        { label: '建筑类型', value: groupLabel, tone: 'muted' },
-        { label: '建筑等阶', value: `Lv. ${building.requiredRealmLevel}`, tone: 'gold' },
+        { label: t('app.codex.buildingType'), value: groupLabel, tone: 'muted' },
+        { label: t('app.codex.buildingTier'), value: `Lv. ${building.requiredRealmLevel}`, tone: 'gold' },
       ]}
-      subtitle={`公共设施 · ${groupLabel}`}
+      subtitle={t('app.codex.buildingSubtitle', { group: groupLabel })}
       title={building.name}
       titleIcon={resolveBuildingIconUrl(building.buildingId)}
     />
@@ -1104,8 +1317,7 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
 
   const asideCards = useMemo(() => {
     const list: FloatingAsideCard[] = []
-    const buffCards = createAbilityBuffAsideCards(ability, 1)
-    list.push(...buffCards)
+    list.push(...createAbilityBuffAsideCards(ability, 1))
     if (ability.discipline === 'internal') {
       const internalBonus = createInternalAbilityBonusAsideCard(ability, 1)
       if (internalBonus) {

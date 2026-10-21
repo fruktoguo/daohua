@@ -7,6 +7,8 @@ export interface BuildingBonusDescriptor {
   labelKey: string
   defaultLabel: string
   tone: PillTone
+  /** 属性极简二值小图标 ID（`frontend/src/assets/glyphs/` 下的资源名） */
+  glyph: string
   isRatio: boolean
   unit?: string
 }
@@ -18,6 +20,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrCultivationOutput',
     defaultLabel: '吐纳修炼收益',
     tone: 'cyan',
+    glyph: 'bio-cultivation',
     isRatio: true,
   },
   {
@@ -25,6 +28,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrGatheringSpeed',
     defaultLabel: '采集采伐速度',
     tone: 'emerald',
+    glyph: 'gathering',
     isRatio: true,
   },
   {
@@ -32,6 +36,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrMiningSpeed',
     defaultLabel: '采矿挖掘速度',
     tone: 'bronze',
+    glyph: 'mining',
     isRatio: true,
   },
   {
@@ -39,6 +44,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrAlchemySpeed',
     defaultLabel: '炼丹行动速度',
     tone: 'amber',
+    glyph: 'alchemy',
     isRatio: true,
   },
   {
@@ -46,6 +52,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrForgingSpeed',
     defaultLabel: '炼器精炼速度',
     tone: 'gold',
+    glyph: 'forging',
     isRatio: true,
   },
   {
@@ -53,6 +60,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrTalismanSpeed',
     defaultLabel: '符箓绘制速度',
     tone: 'purple',
+    glyph: 'talisman',
     isRatio: true,
   },
   {
@@ -60,6 +68,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrFormationSpeed',
     defaultLabel: '阵盘研制速度',
     tone: 'sky',
+    glyph: 'formation',
     isRatio: true,
   },
   {
@@ -67,6 +76,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrEnhancementSpeed',
     defaultLabel: '装备强化速度',
     tone: 'crimson',
+    glyph: 'enhancement',
     isRatio: true,
   },
   {
@@ -74,6 +84,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrMonsterWeaken',
     defaultLabel: '此地怪物削弱',
     tone: 'crimson',
+    glyph: 'bio-monsters',
     isRatio: true,
   },
   {
@@ -81,6 +92,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrCombatHpRegen',
     defaultLabel: '战斗气血回复',
     tone: 'emerald',
+    glyph: 'hp-regen',
     isRatio: false,
     unit: '/5秒',
   },
@@ -89,6 +101,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrCombatMpRegen',
     defaultLabel: '战斗灵力回复',
     tone: 'sky',
+    glyph: 'mp-regen',
     isRatio: false,
     unit: '/5秒',
   },
@@ -97,6 +110,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrExplorationSpeed',
     defaultLabel: '历练采集速度',
     tone: 'sky',
+    glyph: 'action-speed',
     isRatio: true,
   },
   {
@@ -104,6 +118,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrExplorationOutput',
     defaultLabel: '历练采集收益',
     tone: 'emerald',
+    glyph: 'combat-exp',
     isRatio: true,
   },
   {
@@ -111,6 +126,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrAlchemyOutput',
     defaultLabel: '炼丹炼器收益',
     tone: 'gold',
+    glyph: 'alchemy',
     isRatio: true,
   },
   {
@@ -118,6 +134,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     labelKey: 'combat.nearby.attrCombatDamageReduction',
     defaultLabel: '战斗伤害减免',
     tone: 'bronze',
+    glyph: 'total-damage',
     isRatio: true,
   },
 ]
@@ -129,6 +146,24 @@ export interface BuildingBonusItem {
   tone: PillTone
   valueText: string
   numericValue: number
+}
+
+/**
+ * 单项加成公式展示数据（1 级基准值 + 每级线性增幅）。
+ *
+ * 配表模型为 `Lv N 生效 = Base + Growth × (N - 1)`（总纲 §9.4），
+ * 因此图鉴等无等级上下文的位置必须同时给出基准值与每级增幅，缺一即误导。
+ */
+export interface BuildingBonusFormula {
+  key: keyof BuildingModifiers
+  label: string
+  tone: PillTone
+  /** 属性极简二值小图标 ID */
+  glyph: string
+  /** 1 级基准值文本（如 `+12%`） */
+  baseText: string
+  /** 每级增幅文本（如 `+2%`）；无增幅时为空串 */
+  growthText: string
 }
 
 /** 升级对比展示行数据（参考境界突破） */
@@ -281,6 +316,39 @@ export function getBuildingUpgradeComparison(
   }
 
   return rows
+}
+
+/**
+ * 解析建筑的加成公式项列表（1 级基准 + 每级增幅）。
+ *
+ * 图鉴没有当前等级上下文，只展示 `modifiers` 的静态基准会让玩家误以为加成恒定不变；
+ * 此函数按配表真实成长模型同时给出基准值与每级增量，供图鉴与列表直接渲染。
+ */
+export function getBuildingBonusFormulas(
+  definitionOrModifiers: BuildingDefinition | BuildingModifiers | undefined,
+  resolveLabel?: (key: string, defaultText: string) => string
+): BuildingBonusFormula[] {
+  if (!definitionOrModifiers) return []
+  const { baseModifiers, growthModifiers } = extractModifiers(definitionOrModifiers)
+
+  const formulas: BuildingBonusFormula[] = []
+  for (const descriptor of BUILDING_BONUS_DESCRIPTORS) {
+    const baseVal = baseModifiers?.[descriptor.key] ?? 0
+    if (baseVal <= 0) continue
+
+    const growthVal = growthModifiers?.[descriptor.key] ?? baseVal
+    const label = resolveLabel ? resolveLabel(descriptor.labelKey, descriptor.defaultLabel) : descriptor.defaultLabel
+    formulas.push({
+      key: descriptor.key,
+      label,
+      tone: descriptor.tone,
+      glyph: descriptor.glyph,
+      baseText: formatBuildingModifierValue(descriptor, baseVal),
+      growthText: Math.abs(growthVal) < 0.0001 ? '' : formatBuildingModifierValue(descriptor, growthVal, true),
+    })
+  }
+
+  return formulas
 }
 
 /**

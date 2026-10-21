@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  getBuildingBonusFormulas,
   getBuildingBonusItems,
   getBuildingUpgradeComparison,
   getBuildingSummaryBonusText,
@@ -120,4 +121,72 @@ test('buildingCalculations：列表摘要卡片直显文本', () => {
 
   assert.equal(getBuildingSummaryBonusText(definition, 2), '采集采伐速度 +14%')
   assert.equal(getBuildingSummaryBonusText(definition, 0), '建成生效: 采集采伐速度 +12%')
+})
+
+test('buildingCalculations：加成公式同时给出 1 级基准与每级增幅', () => {
+  const definition = {
+    buildingId: 'building.alchemy-hearth',
+    name: '丹房',
+    description: '',
+    effect: '提升此地炼丹行动的速度',
+    requiredRealmLevel: 1,
+    group: 'production',
+    baseModifiers: { alchemySpeedRatio: 0.12 },
+    growthModifiers: { alchemySpeedRatio: 0.02 },
+  }
+
+  const formulas = getBuildingBonusFormulas(definition)
+  assert.equal(formulas.length, 1)
+  assert.equal(formulas[0].key, 'alchemySpeedRatio')
+  assert.equal(formulas[0].label, '炼丹行动速度')
+  assert.equal(formulas[0].baseText, '+12%')
+  assert.equal(formulas[0].growthText, '+2%')
+})
+
+test('buildingCalculations：固定值加成（战斗气血回复）公式带时间单位', () => {
+  const definition = {
+    buildingId: 'building.rejuvenation-array',
+    name: '回春阵',
+    description: '',
+    effect: '',
+    requiredRealmLevel: 19,
+    group: 'combat',
+    baseModifiers: { combatHitpointRegen: 2.4, monsterWeakenRatio: 0.06 },
+    growthModifiers: { combatHitpointRegen: 0.4, monsterWeakenRatio: 0.01 },
+  }
+
+  const formulas = getBuildingBonusFormulas(definition)
+  const hpRegen = formulas.find(item => item.key === 'combatHitpointRegen')
+  const weaken = formulas.find(item => item.key === 'monsterWeakenRatio')
+
+  assert.equal(hpRegen.baseText, '+2.4/5秒')
+  assert.equal(hpRegen.growthText, '+0.4/5秒')
+  // 怪物削弱为折减语义，基准与增幅都带负号
+  assert.equal(weaken.baseText, '-6%')
+  assert.equal(weaken.growthText, '-1%')
+})
+
+test('buildingCalculations：缺 growthModifiers 时每级增幅回落基准值（与服务端同口径）', () => {
+  const flat = { explorationOutputRatio: 0.05 }
+
+  const formulas = getBuildingBonusFormulas(flat)
+  assert.equal(formulas[0].baseText, '+5%')
+  assert.equal(formulas[0].growthText, '+5%')
+})
+
+test('buildingCalculations：显式零增幅时不输出每级文案（图鉴不渲染空成长行）', () => {
+  const definition = {
+    buildingId: 'building.test',
+    name: '测试',
+    description: '',
+    effect: '',
+    requiredRealmLevel: 1,
+    group: 'other',
+    baseModifiers: { explorationOutputRatio: 0.05 },
+    growthModifiers: { explorationOutputRatio: 0 },
+  }
+
+  const formulas = getBuildingBonusFormulas(definition)
+  assert.equal(formulas[0].baseText, '+5%')
+  assert.equal(formulas[0].growthText, '')
 })

@@ -15,6 +15,7 @@ import {
   type MaterialRarityFilter,
 } from '../../game/marketStore'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
+import { OptionToggle, type OptionToggleOption } from '../OptionToggle'
 import {
   isMaterial,
   matchesConsumable,
@@ -56,12 +57,6 @@ const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
 /** 品阶下拉档位：与品质档 `ITEM_GRADE_ORDER`（1~8 阶）同域 */
 const GRADE_TIERS: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 7, 8]
 
-/** 坊市筛选项（Toggle 组通用） */
-interface MarketFilterOption<T extends string> {
-  value: T
-  label: string
-}
-
 /** 材料子分类判定：与品类丝带同一 `resolveItemSubCategory` 口径 */
 function matchesMaterialSubCategory(item: MarketInstrument, sub: string): boolean {
   if (sub === 'all') return true
@@ -71,49 +66,6 @@ function matchesMaterialSubCategory(item: MarketInstrument, sub: string): boolea
   if (sub === 'exoticMaterial') return subKey === 'exoticMaterial'
   if (sub === 'refinedMaterial') return subKey === 'refinedMaterial'
   return true
-}
-
-/** 通用多选一 Toggle 组 Props（首项约定为「任意」） */
-interface MarketOptionToggleProps<T extends string> {
-  ariaLabel: string
-  disabled?: boolean
-  onChange: (value: T) => void
-  options: ReadonlyArray<MarketFilterOption<T>>
-  value: T
-}
-
-/** 通用多选一 Toggle 组：任意 + 互斥选项，支持整体置灰 */
-function MarketOptionToggle<T extends string>({
-  ariaLabel,
-  disabled,
-  onChange,
-  options,
-  value,
-}: MarketOptionToggleProps<T>): React.JSX.Element {
-  return (
-    <div
-      aria-disabled={disabled}
-      aria-label={ariaLabel}
-      className={`market-toggle-group${disabled ? ' is-disabled' : ''}`}
-      role="group"
-    >
-      {options.map(option => (
-        <button
-          aria-pressed={value === option.value}
-          className={`market-toggle-btn${value === option.value ? ' active' : ''}`}
-          key={option.value}
-          onClick={() => {
-            if (disabled) return
-            onChange(option.value)
-          }}
-          tabIndex={disabled ? -1 : undefined}
-          type="button"
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  )
 }
 
 /** 坊市可交易标的单个卡片 Props */
@@ -306,20 +258,20 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   }
 
   // 4. 筛选选项常量：首项恒为「任意」，其余互斥
-  const materialRarityOptions = useMemo<ReadonlyArray<MarketFilterOption<MaterialRarityFilter>>>(() => [
+  const materialRarityOptions = useMemo<ReadonlyArray<OptionToggleOption<MaterialRarityFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'common', label: t('market.browse.filter.rarity.common') },
     { value: 'rare', label: t('market.browse.filter.rarity.rare') },
   ], [t])
 
-  const equipmentKindOptions = useMemo<ReadonlyArray<MarketFilterOption<EquipmentKindFilter>>>(() => [
+  const equipmentKindOptions = useMemo<ReadonlyArray<OptionToggleOption<EquipmentKindFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'physical', label: t('market.browse.filter.kind.physical') },
     { value: 'spell', label: t('market.browse.filter.kind.spell') },
     { value: 'defense', label: t('market.browse.filter.kind.defense') },
   ], [t])
 
-  const equipmentSlotOptions = useMemo<ReadonlyArray<MarketFilterOption<EquipmentSlotFilter>>>(() => [
+  const equipmentSlotOptions = useMemo<ReadonlyArray<OptionToggleOption<EquipmentSlotFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'weapon', label: t('market.browse.sub.weapon') },
     { value: 'offHand', label: t('market.browse.sub.offHand') },
@@ -330,26 +282,26 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
     { value: 'tool', label: t('market.browse.sub.tool') },
   ], [t])
 
-  const consumableKindOptions = useMemo<ReadonlyArray<MarketFilterOption<ConsumableKindFilter>>>(() => [
+  const consumableKindOptions = useMemo<ReadonlyArray<OptionToggleOption<ConsumableKindFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'combatPotion', label: t('market.browse.filter.consumable.combatPotion') },
     { value: 'combatGeneral', label: t('market.browse.filter.consumable.combatGeneral') },
     { value: 'technique', label: t('market.browse.filter.consumable.technique') },
   ], [t])
 
-  const disciplineOptions = useMemo<ReadonlyArray<MarketFilterOption<ManualDisciplineFilter>>>(() => [
+  const disciplineOptions = useMemo<ReadonlyArray<OptionToggleOption<ManualDisciplineFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'spell', label: t('market.browse.manual.spell') },
     { value: 'internal', label: t('market.browse.manual.internal') },
   ], [t])
 
-  const manualCategoryOptions = useMemo<ReadonlyArray<MarketFilterOption<ManualCategoryFilter>>>(() => [
+  const manualCategoryOptions = useMemo<ReadonlyArray<OptionToggleOption<ManualCategoryFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'physical', label: t('market.browse.manual.physical') },
     { value: 'spell', label: t('market.browse.manual.magic') },
   ], [t])
 
-  const manualFormOptions = useMemo<ReadonlyArray<MarketFilterOption<ManualFormFilter>>>(() => [
+  const manualFormOptions = useMemo<ReadonlyArray<OptionToggleOption<ManualFormFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'tome', label: t('market.browse.manual.tome') },
     { value: 'fragment', label: t('market.browse.manual.fragment') },
@@ -453,11 +405,11 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
         </div>
       )}
 
-      <div className="market-manual-filters" role="toolbar" aria-label={t('market.browse.filterSubCategoryAria')}>
+      <div className="filter-bar" role="toolbar" aria-label={t('market.browse.filterSubCategoryAria')}>
         {primaryTab === 'material' && (
           <>
-            <span className="market-filter-label">{t('market.browse.filter.rarityLabel')}</span>
-            <MarketOptionToggle
+            <span className="filter-label">{t('market.browse.filter.rarityLabel')}</span>
+            <OptionToggle
               ariaLabel={t('market.browse.filter.rarityAria')}
               onChange={next => {
                 setMaterialRarity(next)
@@ -471,8 +423,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 
         {primaryTab === 'equipment' && (
           <>
-            <span className="market-filter-label">{t('market.browse.filter.kindLabel')}</span>
-            <MarketOptionToggle
+            <span className="filter-label">{t('market.browse.filter.kindLabel')}</span>
+            <OptionToggle
               ariaLabel={t('market.browse.filter.kindAria')}
               disabled={equipmentSlot === 'tool'}
               onChange={next => {
@@ -482,8 +434,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               options={equipmentKindOptions}
               value={equipmentKind}
             />
-            <span className="market-filter-label">{t('market.browse.filter.slotLabel')}</span>
-            <MarketOptionToggle
+            <span className="filter-label">{t('market.browse.filter.slotLabel')}</span>
+            <OptionToggle
               ariaLabel={t('market.browse.filter.slotAria')}
               onChange={next => {
                 setEquipmentSlot(next)
@@ -497,8 +449,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 
         {primaryTab === 'consumable' && (
           <>
-            <span className="market-filter-label">{t('market.browse.filter.consumableLabel')}</span>
-            <MarketOptionToggle
+            <span className="filter-label">{t('market.browse.filter.consumableLabel')}</span>
+            <OptionToggle
               ariaLabel={t('market.browse.filter.consumableAria')}
               onChange={next => {
                 setConsumableKind(next)
@@ -512,8 +464,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 
         {primaryTab === 'manual' && (
           <>
-            <span className="market-filter-label">{t('market.browse.filter.disciplineLabel')}</span>
-            <MarketOptionToggle
+            <span className="filter-label">{t('market.browse.filter.disciplineLabel')}</span>
+            <OptionToggle
               ariaLabel={t('market.browse.manual.disciplineAria')}
               onChange={next => {
                 setManualDiscipline(next)
@@ -522,8 +474,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               options={disciplineOptions}
               value={manualDiscipline}
             />
-            <span className="market-filter-label">{t('market.browse.filter.damageLabel')}</span>
-            <MarketOptionToggle
+            <span className="filter-label">{t('market.browse.filter.damageLabel')}</span>
+            <OptionToggle
               ariaLabel={t('market.browse.manual.categoryAria')}
               onChange={next => {
                 setManualCategory(next)
@@ -532,8 +484,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               options={manualCategoryOptions}
               value={manualCategory}
             />
-            <span className="market-filter-label">{t('market.browse.filter.formLabel')}</span>
-            <MarketOptionToggle
+            <span className="filter-label">{t('market.browse.filter.formLabel')}</span>
+            <OptionToggle
               ariaLabel={t('market.browse.manual.formAria')}
               onChange={next => {
                 setManualForm(next)
@@ -545,11 +497,11 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
           </>
         )}
 
-        <label className="market-grade-field">
-          <span className="market-filter-label">{t('market.browse.filter.gradeLabel')}</span>
+        <label className="filter-grade-field">
+          <span className="filter-label">{t('market.browse.filter.gradeLabel')}</span>
           <select
             aria-label={t('market.browse.filter.gradeAria')}
-            className="market-grade-select"
+            className="filter-grade-select"
             onChange={handleGradeChange}
             value={gradeFilter}
           >
