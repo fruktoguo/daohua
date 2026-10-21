@@ -156,9 +156,13 @@ export function extractSingleBuffSpecBonusItems(
   buff: AbilityBuffSpec,
   level = 1
 ): BonusAsideItem[] {
-  const t = getT()
   // Buff 效果量随功法等级成长（与服务端 CastSkill 同式：每级 +2% 线性成长）。
   const levelGrowth = 1 + (Math.max(1, level) - 1) * 0.02
+  const isStacked = Boolean(
+    (buff.resistancePerStack && buff.resistancePerStack > 0) ||
+    (buff.missingHitpointsPerStack && buff.missingHitpointsPerStack > 0) ||
+    (buff.spellAttackStackInterval && buff.spellAttackStackInterval > 0)
+  )
   const scaled = {
     ...buff,
     hpRegen: buff.hpRegen !== undefined ? buff.hpRegen * levelGrowth : undefined,
@@ -175,52 +179,10 @@ export function extractSingleBuffSpecBonusItems(
     critical: buff.critical !== undefined ? buff.critical * levelGrowth : undefined,
     resistancePoints: buff.resistancePoints,
     hpRegenPerSecond: buff.hpRegenPerSecond !== undefined ? buff.hpRegenPerSecond * levelGrowth : undefined,
+    isPerStack: isStacked,
   }
-  const items = extractBuffBonusItems(scaled)
-  const duration = buff.durationSeconds ?? 0
-  if (duration > 0) {
-    items.push({
-      glyph: 'cooldown-reduction',
-      label: t('game.abilityAside.buffDurationLabel'),
-      tone: 'slate',
-      value: `${duration}秒`,
-    })
-  }
-  // 叠层来源与机制说明条目
-  if (buff.resistancePerStack && buff.resistancePerStack > 0) {
-    const ratio = Math.round((buff.resistanceStackRatio ?? 1) * 100)
-    items.push({
-      glyph: 'foundation',
-      label: '层数来源',
-      tone: 'purple',
-      value: `自身${ratio}%双抗折算`,
-    })
-  }
-  if (buff.missingHitpointsPerStack && buff.missingHitpointsPerStack > 0) {
-    items.push({
-      glyph: 'hp',
-      label: '层数来源',
-      tone: 'crimson',
-      value: `已损气血每${buff.missingHitpointsPerStack}点折算`,
-    })
-  }
-  if (buff.spellAttackStackInterval && buff.spellAttackStackInterval > 0) {
-    items.push({
-      glyph: 'spell-atk',
-      label: '层数来源',
-      tone: 'indigo',
-      value: `法攻每${buff.spellAttackStackInterval}点折算`,
-    })
-  }
-  if (buff.stackPolicy === 'maxKeep') {
-    items.push({
-      glyph: 'realm',
-      label: '叠层规则',
-      tone: 'gold',
-      value: '取最高层数',
-    })
-  }
-  return items
+  // 纯粹返回 Buff 本身带来的状态效果条目；持续时间与层数计算等属于添加事件控制的外部属性，由技能描述自身交代。
+  return extractBuffBonusItems(scaled)
 }
 
 /**

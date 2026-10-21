@@ -48,47 +48,28 @@ const QUALITY_TONE_MAP: Record<number, FloatingTone> = {
  * 构造特质关联的独立 Buff / 状态附属悬浮卡片 (Aside Card)
  * 只要特质带有 Buff（如看不到我关联隐身 Buff），Hover 时统一通过独立副窗口呈现，杜绝仅在自身描述中单薄交代的割裂表现。
  */
-export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAsideCard[] {
+export function resolveTraitAsideCards(def: TraitMeta, _level = 1): FloatingAsideCard[] {
   const cards: FloatingAsideCard[] = []
-  const scale = getTraitLevelScale(level)
-
   if (def.id === 'trait.bukandaowo') {
-    const duration = (10 * scale).toFixed(1).replace(/\.0$/, '')
-    const items: BonusAsideItem[] = [
-      {
-        glyph: 'cooldown-reduction',
-        label: '持续时间',
-        tone: 'slate',
-        value: `${duration}秒`,
-      },
-      {
-        glyph: 'threat-bonus',
-        label: '威胁增幅',
-        tone: 'crimson',
-        value: '-100%',
-      },
-    ]
     cards.push(
       createBonusAsideCard({
         id: `aside-trait-buff-${def.id}`,
         mark: '特质状态',
         title: '状态·隐身',
         tone: 'purple',
-        items,
+        items: [
+          {
+            glyph: 'threat-bonus',
+            label: '威胁增幅',
+            tone: 'crimson',
+            value: '-100%',
+          },
+        ],
       })
     )
   } else if (def.buff) {
     const buff = def.buff
     const items: BonusAsideItem[] = []
-    if (typeof buff.durationSeconds === 'number' && buff.durationSeconds > 0) {
-      const duration = (buff.durationSeconds * scale).toFixed(1).replace(/\.0$/, '')
-      items.push({
-        glyph: 'cooldown-reduction',
-        label: '持续时间',
-        tone: 'slate',
-        value: `${duration}秒`,
-      })
-    }
     if (typeof buff.threatPoints === 'number' && buff.threatPoints !== 0) {
       items.push({
         glyph: 'threat-bonus',

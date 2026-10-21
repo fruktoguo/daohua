@@ -732,7 +732,8 @@ export function extractBuffBonusItems(buff: {
   resistancePoints?: number
   hpRegenPerSecond?: number
   stacks?: number
-}): BonusAsideItem[] {
+  isPerStack?: boolean
+}) : BonusAsideItem[] {
   const t = getT()
   const items: BonusAsideItem[] = []
 
@@ -849,13 +850,14 @@ export function extractBuffBonusItems(buff: {
   // 2c. 层数承载数值通道（攻击力/命中/暴击/双抗/每秒回血）：
   // 每层基础量 × 层数折算为当前总加成，与结算口径一致——不展示单层值以免与实战不符。
   const stacks = buff.stacks && buff.stacks > 0 ? buff.stacks : 1
+  const perStackSuffix = buff.isPerStack && (buff.stacks === undefined || buff.stacks <= 1) ? '/层' : ''
   if (buff.attackPower && buff.attackPower !== 0) {
     const total = buff.attackPower * stacks
     items.push({
       glyph: 'phys-atk',
       label: t('market.effect.badgeAttackPower'),
       tone: total < 0 ? 'crimson' : 'gold',
-      value: `${total > 0 ? '+' : ''}${formatNumber(total)}`,
+      value: `${total > 0 ? '+' : ''}${formatNumber(total)}${perStackSuffix}`,
     })
   }
   if (buff.accuracy && buff.accuracy !== 0) {
@@ -864,7 +866,7 @@ export function extractBuffBonusItems(buff: {
       glyph: 'accuracy',
       label: t('market.effect.badgeAccuracy'),
       tone: total < 0 ? 'crimson' : 'jade',
-      value: `${total > 0 ? '+' : ''}${formatNumber(total)}`,
+      value: `${total > 0 ? '+' : ''}${formatNumber(total)}${perStackSuffix}`,
     })
   }
   if (buff.critical && buff.critical !== 0) {
@@ -873,7 +875,7 @@ export function extractBuffBonusItems(buff: {
       glyph: 'crit',
       label: t('market.effect.badgeCritical'),
       tone: total < 0 ? 'crimson' : 'gold',
-      value: `${total > 0 ? '+' : ''}${formatNumber(total)}`,
+      value: `${total > 0 ? '+' : ''}${formatNumber(total)}${perStackSuffix}`,
     })
   }
   if (buff.resistancePoints && buff.resistancePoints !== 0) {

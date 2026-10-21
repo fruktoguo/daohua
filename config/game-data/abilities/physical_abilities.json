@@ -154,6 +154,12 @@
         "name": "碎罡",
         "durationSeconds": 20.0,
         "resistancePoints": -400.0,
+        "stackPolicy": "maxKeep"
+      },
+      {
+        "buffId": "buff.sha-li",
+        "name": "煞力",
+        "durationSeconds": 20.0,
         "attackPower": 1.0,
         "resistancePerStack": 1.0,
         "resistanceStackRatio": 0.3,
