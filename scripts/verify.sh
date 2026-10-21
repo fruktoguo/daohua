@@ -116,11 +116,11 @@ if [[ "$RUN_BACKEND" -eq 1 ]]; then
 
   if [[ -f tests/Domain.Tests/Domain.Tests.csproj ]]; then
     printf '%s\n' '==> 领域测试'
-    run_suite domain tests/Domain.Tests/Domain.Tests.csproj 300
+    run_suite domain tests/Domain.Tests/Domain.Tests.csproj 120
   fi
   if [[ -f tests/Ecs.Tests/Ecs.Tests.csproj ]]; then
     printf '%s\n' '==> ECS 运行时与适配边界测试'
-    run_suite ecs tests/Ecs.Tests/Ecs.Tests.csproj 80
+    run_suite ecs tests/Ecs.Tests/Ecs.Tests.csproj 40
   fi
 
   if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
@@ -176,11 +176,11 @@ if [[ "$RUN_BACKEND" -eq 1 ]]; then
       fi
 
       printf '%s\n' '==> 服务端测试'
-      run_suite server tests/Server.Tests/Server.Tests.csproj 300
+      run_suite server tests/Server.Tests/Server.Tests.csproj 150
     else
       # --fast：跳过需要真实数据库的 PostgresIntegration 门禁，只跑纯内存/契约用例。
       printf '%s\n' '==> 服务端测试（跳过 PostgresIntegration）'
-      run_suite server tests/Server.Tests/Server.Tests.csproj 180 --filter "Category!=PostgresIntegration"
+      run_suite server tests/Server.Tests/Server.Tests.csproj 50 --filter "Category!=PostgresIntegration"
     fi
   fi
 
