@@ -719,7 +719,7 @@ public sealed class GameDataCatalog
             {
                 if (entry.ValueKind != JsonValueKind.Object || !entry.TryGetProperty("id", out var idProperty)) continue;
                 var id = idProperty.GetString() ?? string.Empty;
-                if (id.StartsWith("item.", StringComparison.Ordinal))
+                if (id.StartsWith("item.", StringComparison.Ordinal) || id.StartsWith("currency.", StringComparison.Ordinal))
                 {
                     var definition = ParseItem(entry, id);
                     items.Add(definition.Id, definition);

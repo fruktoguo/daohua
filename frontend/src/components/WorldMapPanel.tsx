@@ -986,13 +986,13 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
         const itemDef = findItemInCatalog(items, itemId)
         list.push({
           itemId,
-          name: itemDef?.name ?? itemId,
+          name: itemDef?.name ?? (itemId === 'currency.spirit-stone' ? t('game.item.currency.spirit-stone.label') : itemId),
           quantity: yieldEntry.amount,
         })
       }
     }
     return list
-  }, [selectedNode, actions, items])
+  }, [selectedNode, actions, items, t])
 
   // 2. 提取该地点的栖息生灵（普通/精英/领主）
   const nodeMonsters = useMemo(() => {
