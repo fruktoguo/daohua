@@ -1,0 +1,40 @@
+{
+  "summary": {
+    "canvas": "single",
+    "caption": "A minimalist 2D game sprite of [潮汐之灵 - Spirit of the Tides] in Chinese Xianxia dark fantasy paper-cut planar polygonal silhouette art style on a solid pure black background (#000000). High contrast flat 2D graphic, sharp angular hard edges, distinct warm bone-white cardboard outer contour outline with a narrow inner black incised groove, pure flat solid color fills, strictly zero gradients, zero soft shading, zero blur, zero realistic fluid water splash, zero modern 3D rendering, perfectly centered isolated game asset, highly readable at 96px."
+  },
+  "items": [
+    {
+      "label": "character body silhouette",
+      "bbox": [
+        -380,
+        -240,
+        360,
+        240
+      ],
+      "caption": "The main body mass of the floating tidal spirit. A sleek, imposing, continuous solid near-black planar polygonal silhouette (#121212) shaped like a tapered inverted triangle, ending below in two sharp rigid downward-pointing dark tails. Clean sharp faceted angular cutouts, solid opaque dark mass taking 70% area, strictly no gradients, no mist trails."
+    },
+    {
+      "label": "bone-white armor mask",
+      "bbox": [
+        -280,
+        -80,
+        -90,
+        180
+      ],
+      "caption": "A prominent sharp bone-white Daoist water-talisman faceplate armor mask mounted on the upper front of the dark body. Crisp flat ivory-white angular geometric facet plate with a tiny sharp glowing cyan diamond eye slit. Bold graphic shape, 20% area, distinct hard edges, strictly solid flat white."
+    },
+    {
+      "label": "demonic energy core",
+      "bbox": [
+        -40,
+        -70,
+        110,
+        70
+      ],
+      "caption": "A single solid saturated pure deep ocean blue (#0284c7) hexagonal water spirit energy core crystal embedded firmly in the center chest, isolated single accent color (8% area), strictly flat solid color with no diffuse glow, completely surrounded by a thin near-black breathing groove separating it from the white mask above."
+    }
+  ],
+  "bbox_coord_space": "abs_centralized",
+  "bbox_format": "yxyx"
+}

@@ -34,7 +34,7 @@
   },
   {
     "id": "enemy.tide-spirit",
-    "name": "玄潮灵",
+    "name": "潮汐之灵",
     "visual": {
       "renderer": "text",
       "source": "潮"

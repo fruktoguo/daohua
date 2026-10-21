@@ -1234,11 +1234,16 @@ def main():
     images = wait_for_completion(pid)
     print(f"推理完成！产出大图: {images}")
     
-    latest_img = os.path.join(COMFY_OUTPUT_DIR, images[-1])
+    rmbg_img = next(
+        (os.path.join(COMFY_OUTPUT_DIR, name) for name in reversed(images) if name.startswith("daohua-")),
+        None,
+    )
+    latest_img = rmbg_img if rmbg_img and os.path.exists(rmbg_img) else os.path.join(COMFY_OUTPUT_DIR, images[-1])
     raw_img = next(
         (os.path.join(COMFY_OUTPUT_DIR, name) for name in images if name.startswith("moss-image_")),
         None,
     )
+    print(f"选用透明主体大图: {latest_img}")
     
     # 2. 落盘分流
     if args.single_entity:

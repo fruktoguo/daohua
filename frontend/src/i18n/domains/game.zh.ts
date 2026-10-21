@@ -276,7 +276,7 @@ export const gameZh = {
       'item.tome.tide': { label: '《潮汐秘籍》', description: '潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀，引动潮汐怒涛，席卷全体敌阵。' },
       'item.fragment.tide': { label: '《潮汐·残卷》', description: '潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀残页，记录引动浪涛拍岸之法。' },
       'item.rough-wolf-hide': { label: '粗韧狼皮', description: '古道妖狼身上剥取的坚韧外皮，毛刺如针，抗风挡煞。' },
-      'item.water-spirit-core': { label: '水灵原核', description: '玄潮灵体内凝聚的纯净水精灵核，触手温润冰凉，蕴含微弱潮汐灵力。' },
+      'item.water-spirit-core': { label: '水灵原核', description: '潮汐之灵体内凝聚的纯净水精灵核，触手温润冰凉，蕴含微弱潮汐灵力。' },
       'item.rock-fang': { label: '坚岩獠齿', description: '铁甲岩獠口中突出的灰白獠牙，质如岩石，沉重尖锐。' },
       'item.thick-beast-hide': { label: '重甲厚皮', description: '附着泥沙硬石的厚重兽皮，粗砺坚固，胜似凡铁皮革。' },
       'item.golden-ape-bone': { label: '金背猿骨', description: '撼地金背猿身上的粗大金骨，隐隐透出金属光泽，密度惊人。' },
