@@ -937,18 +937,20 @@ def build_layout_prompt(items_spec, summary_caption=None):
     }
     return json.dumps(layout, ensure_ascii=False, indent=2)
 
-def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daohua"):
+def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daohua", aspect_ratio="1:1 (Square)", negative_prompt=None):
     prompt = json.loads(json.dumps(workflow)) # deepcopy
     
     # Node 4: 正向提示词
     prompt["4"]["inputs"]["text"] = prompt_str
     
     # Node 5: 负向提示词
-    prompt["5"]["inputs"]["text"] = "overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, overflow, touching borders, crowded, clutter, modern, western fantasy, blurry, bad anatomy, worst quality, watermark, text"
+    if not negative_prompt:
+        negative_prompt = "overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, overflow, touching borders, crowded, clutter, modern, western fantasy, blurry, bad anatomy, worst quality, watermark, text"
+    prompt["5"]["inputs"]["text"] = negative_prompt
     
-    # Node 19: 分辨率 1:1
+    # Node 19: 分辨率与长宽比
     if "19" in prompt:
-        prompt["19"]["inputs"]["aspect_ratio"] = "1:1 (Square)"
+        prompt["19"]["inputs"]["aspect_ratio"] = aspect_ratio
         prompt["19"]["inputs"]["megapixels"] = 1.0
         
     # Node 16: KSampler 参数调优 (按官方推荐: 35步, CFG 3.5)
@@ -1055,78 +1057,208 @@ def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size
         
     return saved_paths
 
+def process_single_entity(image_path, entity_id, output_dir, target_size=256, inner_size=230, remove_bg=True, hard_binary=False):
+    """处理单体对象（如单只怪物/角色/法宝）：提取透明主体后居中缩放并保存。"""
+    os.makedirs(output_dir, exist_ok=True)
+    im = Image.open(image_path).convert("RGBA")
+    arr = np.array(im)
+    r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+    
+    if hard_binary:
+        lum = (r.astype(int) + g.astype(int) + b.astype(int)) // 3
+        is_white = (lum > 100) & (a > 50)
+        arr[is_white] = [255, 255, 255, 255]
+        arr[~is_white] = [0, 0, 0, 0]
+    elif remove_bg:
+        has_rmbg_alpha = (a == 0).any()
+        if not has_rmbg_alpha:
+            is_bg = (r > 235) & (g > 235) & (b > 235)
+            arr[:, :, 3] = np.where(is_bg, 0, a)
+            
+    clean_crop = Image.fromarray(arr)
+    c_bbox = clean_crop.getbbox()
+    if c_bbox:
+        clean_crop = clean_crop.crop(c_bbox)
+        
+    cw, ch = clean_crop.size
+    scale = inner_size / max(cw, ch)
+    new_w, new_h = max(1, int(cw * scale)), max(1, int(ch * scale))
+    resized = clean_crop.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    
+    canvas = Image.new("RGBA", (target_size, target_size), (0, 0, 0, 0))
+    canvas.paste(resized, ((target_size - new_w) // 2, (target_size - new_h) // 2), resized)
+    
+    clean_id = entity_id
+    if entity_id.startswith("enemy."):
+        clean_id = entity_id[6:]
+    elif entity_id.startswith("player."):
+        clean_id = entity_id[7:]
+        
+    out_name = f"{clean_id}.webp"
+    out_path = os.path.join(output_dir, out_name)
+    canvas.save(out_path, format="WEBP", lossless=True)
+    print(f"  [EXPORTED SINGLE] {clean_id} -> {out_path} ({os.path.getsize(out_path)} bytes)")
+    return out_path
+
+def dispatch_category_outputs(image_path, entity_id, category, raw_image_path=None):
+    """按资产大类（monster/character/item/building/emblem/scene）自动多轨落盘。"""
+    clean_id = entity_id.replace("enemy.", "").replace("player.", "")
+    if category == "monster":
+        art_dir = os.path.join(REPO_ROOT, "art", "avatars")
+        process_single_entity(image_path, clean_id, art_dir, target_size=512, inner_size=460)
+        pub_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
+        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115)
+    elif category == "character":
+        art_dir = os.path.join(REPO_ROOT, "art", "avatars")
+        process_single_entity(image_path, clean_id, art_dir, target_size=1024, inner_size=920)
+        pub_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
+        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115)
+    elif category in ("item", "equipment", "ability"):
+        art_dir = os.path.join(REPO_ROOT, "art", "items")
+        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=108)
+        items_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "items")
+        process_single_entity(image_path, entity_id, items_dir, target_size=64, inner_size=54)
+    elif category == "building":
+        art_dir = os.path.join(REPO_ROOT, "art", "buildings")
+        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=112)
+        bldg_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "buildings")
+        process_single_entity(image_path, entity_id, bldg_dir, target_size=64, inner_size=56)
+    elif category in ("emblem", "glyph"):
+        use_img = raw_image_path if raw_image_path and os.path.exists(raw_image_path) else image_path
+        art_dir = os.path.join(REPO_ROOT, "art", "emblems")
+        process_single_entity(use_img, entity_id, art_dir, target_size=128, inner_size=110, hard_binary=True)
+    elif category == "scene":
+        art_dir = os.path.join(REPO_ROOT, "art", "scenes")
+        os.makedirs(art_dir, exist_ok=True)
+        out_art = os.path.join(art_dir, f"{clean_id}.webp")
+        im = Image.open(image_path)
+        im.save(out_art, format="WEBP", quality=90)
+        pub_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "scenes")
+        os.makedirs(pub_dir, exist_ok=True)
+        out_pub = os.path.join(pub_dir, f"{clean_id}.webp")
+        im.save(out_pub, format="WEBP", quality=85)
+        print(f"  [EXPORTED SCENE] {clean_id} -> {out_art} & {out_pub}")
+
 def main():
-    parser = argparse.ArgumentParser(description="MOSS-Image 本地修仙图标批量生成与切片工具")
+    parser = argparse.ArgumentParser(description="MOSS-Image 本地全量仙侠视觉资产自动化生成与切片工具")
     parser.add_argument("--batch", choices=list(PRESET_BATCHES.keys()), help="预设批次名称")
+    parser.add_argument("--layout", type=str, help="自定义 Layout JSON 文件路径或 JSON 字符串")
+    parser.add_argument("--single-entity", type=str, help="单体资产标识符 (如 enemy.tide-spirit 或 building.peak-cottage)，不进行九宫切片")
+    parser.add_argument("--category", choices=["monster", "character", "item", "equipment", "ability", "building", "emblem", "scene"], help="资产大类")
     parser.add_argument("--steps", type=int, default=35, help="推理步数 (推荐 35-45)")
     parser.add_argument("--cfg", type=float, default=3.5, help="CFG 引导比例 (推荐 3.0-4.0)")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
+    parser.add_argument("--aspect-ratio", default="1:1 (Square)", help="长宽比: '1:1 (Square)', '16:9 (Landscape)', '4:3'")
+    parser.add_argument("--negative", type=str, default=None, help="自定义负向提示词")
     parser.add_argument("--dry-run", action="store_true", help="仅组装提示词，不实际提交")
     args = parser.parse_args()
     
-    if not args.batch:
+    if not args.batch and not args.layout:
         parser.print_help()
+        print("\n[错误] 请指定 --batch 预设批次，或者传入 --layout 结构化 JSON！")
         return 0
         
-    items = PRESET_BATCHES[args.batch]
-    if "tome" in args.batch:
-        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual thread-bound book sprite sheet, clean bold cartoon shapes, traditional Chinese thread-bound ancient book with colored cover and white binding stitches on left spine, a vertical paper label strip on top-left of cover, thick book pages visible at bottom and right edge, minimal simple white doodle emblem drawn on the front cover, bold dark ink outline, flat clean colors with subtle shading, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
-    elif "fragment" in args.batch:
-        summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
-    elif "logos_" in args.batch:
-        summary_cap = "a 2x2 grid sprite sheet of 4 minimalist bold vector logo icons, stencil cut silhouette graphic symbol marks, strictly solid pure white icons on solid pure black background, high contrast binary black and white, zero gradients, zero shading, zero colors, crisp clean stencil cut lines and distinct negative space contours, sharp graphic edges, flat 2D vector clip-art."
-    elif "buildings_" in args.batch:
-        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts architecture building facility icon sprite sheet, clean bold cartoon shapes, traditional Chinese Daoist pavilion workshop shrine building, solid vibrant ink colors with subtle shading, distinct dark ink outline, floating on solid pure white background, generous empty white spacing between items, strictly no overflow, clean 2D game icon."
-    elif "emblem" in args.batch:
-        summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
-    elif "monsters_" in args.batch:
-        summary_cap = "a clean 2x2 grid sprite sheet of four Chinese Xianxia mythical beast monsters and spiritual apparitions on a pure solid white background. Dark fantasy stylized paper-cut planar polygonal silhouette art style with dark ink contours, rich dark black mass silhouette, distinct bone-white structural plates, isolated vibrant mystical energy accent colors, facing right, 3/4 dynamic battle stance, high contrast, perfectly centered isolated game sprites."
+    # 1. 组装提示词
+    if args.layout:
+        if os.path.isfile(args.layout):
+            with open(args.layout, "r", encoding="utf-8") as f:
+                prompt_str = f.read().strip()
+        else:
+            prompt_str = args.layout.strip()
+        # 尝试解析验证
+        parsed_json = json.loads(prompt_str)
+        items = parsed_json.get("items", [])
+        batch_tag = args.single_entity or "custom_layout"
     else:
-        summary_cap = None
-    prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
+        batch_tag = args.batch
+        items = PRESET_BATCHES[args.batch]
+        if "tome" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual thread-bound book sprite sheet, clean bold cartoon shapes, traditional Chinese thread-bound ancient book with colored cover and white binding stitches on left spine, a vertical paper label strip on top-left of cover, thick book pages visible at bottom and right edge, minimal simple white doodle emblem drawn on the front cover, bold dark ink outline, flat clean colors with subtle shading, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+        elif "fragment" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+        elif "logos_" in args.batch:
+            summary_cap = "a 2x2 grid sprite sheet of 4 minimalist bold vector logo icons, stencil cut silhouette graphic symbol marks, strictly solid pure white icons on solid pure black background, high contrast binary black and white, zero gradients, zero shading, zero colors, crisp clean stencil cut lines and distinct negative space contours, sharp graphic edges, flat 2D vector clip-art."
+        elif "buildings_" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia martial arts architecture building facility icon sprite sheet, clean bold cartoon shapes, traditional Chinese Daoist pavilion workshop shrine building, solid vibrant ink colors with subtle shading, distinct dark ink outline, floating on solid pure white background, generous empty white spacing between items, strictly no overflow, clean 2D game icon."
+        elif "emblem" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+        elif "monsters_" in args.batch:
+            summary_cap = "a clean 2x2 grid sprite sheet of four Chinese Xianxia mythical beast monsters and spiritual apparitions on a pure solid white background. Dark fantasy stylized paper-cut planar polygonal silhouette art style with dark ink contours, rich dark black mass silhouette, distinct bone-white structural plates, isolated vibrant mystical energy accent colors, facing right, 3/4 dynamic battle stance, high contrast, perfectly centered isolated game sprites."
+        else:
+            summary_cap = None
+        prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
     
-    print(f"\n=== MOSS-Image 任务组装: 批次 [{args.batch}] (包含 {len(items)} 个道具) ===")
+    # 自动推导 category
+    category = args.category
+    if not category:
+        if args.single_entity:
+            if "enemy." in args.single_entity or "wolf" in args.single_entity or "spirit" in args.single_entity or "boar" in args.single_entity or "ape" in args.single_entity:
+                category = "monster"
+            elif "building." in args.single_entity:
+                category = "building"
+            elif "emblem." in args.single_entity:
+                category = "emblem"
+            else:
+                category = "item"
+        elif args.batch:
+            if "monsters_" in args.batch or args.batch.startswith("boss_"):
+                category = "monster"
+            elif "buildings_" in args.batch:
+                category = "building"
+            elif "emblem" in args.batch or "logos_" in args.batch:
+                category = "emblem"
+            else:
+                category = "item"
+        else:
+            category = "item"
+            
+    # 针对暗黑折面怪物的专属负向词
+    neg_prompt = args.negative
+    if not neg_prompt and category == "monster":
+        neg_prompt = "overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, soft gradient, lighting shadows, blur, water splashes, fluid trails, messy smoke, modern, western fantasy, bad anatomy, watermark, text"
+        
+    print(f"\n=== MOSS-Image 任务组装: 标的 [{batch_tag}] (类别: {category}) ===")
     print(prompt_str)
     
     if args.dry_run:
-        print("\n[DRY RUN] 提示词已组装完毕，未提交到 ComfyUI。")
+        print(f"\n[DRY RUN] 提示词与布局已组装完毕 (长宽比: {args.aspect_ratio}, 步数: {args.steps}, CFG: {args.cfg})，未提交到 ComfyUI。")
         return 0
         
     print("\n正在获取 ComfyUI 最新工作流...")
     wf = get_latest_workflow()
     print("正在向 ComfyUI (127.0.0.1:8188) 提交生图任务...")
-    pid = submit_task(wf, prompt_str, seed=args.seed, steps=args.steps, cfg=args.cfg, prefix=f"daohua-{args.batch}")
+    pid = submit_task(wf, prompt_str, seed=args.seed, steps=args.steps, cfg=args.cfg, prefix=f"daohua-{batch_tag}", aspect_ratio=args.aspect_ratio, negative_prompt=neg_prompt)
     print(f"任务已排队，Prompt ID: {pid}")
     
     print("正在等待 GPU 推理完成...")
     images = wait_for_completion(pid)
     print(f"推理完成！产出大图: {images}")
     
-    # 找到最新产物物理路径
     latest_img = os.path.join(COMFY_OUTPUT_DIR, images[-1])
-    if args.batch.startswith("boss_") or args.batch.startswith("monsters_"):
+    raw_img = next(
+        (os.path.join(COMFY_OUTPUT_DIR, name) for name in images if name.startswith("moss-image_")),
+        None,
+    )
+    
+    # 2. 落盘分流
+    if args.single_entity:
+        print(f"开始单体多部件解耦整合导出 ({category}): {latest_img} -> 实体 ID: {args.single_entity}")
+        dispatch_category_outputs(latest_img, args.single_entity, category, raw_image_path=raw_img)
+    elif category == "monster":
         art_avatars_dir = os.path.join(REPO_ROOT, "art", "avatars")
         print(f"开始自动切片、去底与 512px WebP 怪物母模归档: {latest_img} -> {art_avatars_dir}")
         process_and_slice(latest_img, items, output_dir=art_avatars_dir, target_size=512, inner_size=460)
         out_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
-        t_size, in_size = 256, 230
-        print(f"开始自动切片、去底与 256px WebP 怪物立绘下采样: {latest_img} -> {out_dir}")
-    elif "emblem" in args.batch or "logos_" in args.batch:
+        t_size, in_size = 128, 115
+        print(f"开始自动切片、去底与 128px WebP 怪物立绘下采样: {latest_img} -> {out_dir}")
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+    elif category == "emblem":
         out_dir = os.path.join(REPO_ROOT, "art", "emblems")
         t_size, in_size = 128, 110
-        # 纯黑底纯白形的二值图腾批次必须取未经抠图的原图（node 30 的 moss-image_*.png）：
-        # 工作流的 node 18 保存的是 RMBG 抠图产物，黑底会被当成背景抠掉、
-        # 白形随之退化成描边，二值化阈值便只剩轮廓线而非实心形。
-        raw_img = next(
-            (os.path.join(COMFY_OUTPUT_DIR, name) for name in images if name.startswith("moss-image_")),
-            None,
-        )
-        if raw_img and os.path.exists(raw_img):
-            latest_img = raw_img
-            print(f"图腾批次改用未抠图原图（纯黑底纯白形）: {latest_img}")
-        print(f"开始自动切片、去底与 128px WebP 高精图腾母版下采样: {latest_img} -> {out_dir}")
-    elif "buildings_" in args.batch:
-        # 建筑批次：同时生成 128px 高精母版与 64px 前端图标
+        use_img = raw_img if raw_img and os.path.exists(raw_img) else latest_img
+        print(f"图腾批次使用未抠图原图执行硬二值化阈值切片: {use_img} -> {out_dir}")
+        process_and_slice(use_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+    elif category == "building":
         art_buildings_dir = os.path.join(REPO_ROOT, "art", "buildings")
         frontend_buildings_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "buildings")
         print(f"开始自动切片、去底与 128px WebP 高精建筑母版导出: {latest_img} -> {art_buildings_dir}")
@@ -1134,6 +1266,7 @@ def main():
         out_dir = frontend_buildings_dir
         t_size, in_size = 64, 56
         print(f"开始自动切片、去底与 64px WebP 游戏建筑瓦片导出: {latest_img} -> {out_dir}")
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
     else:
         art_items_dir = os.path.join(REPO_ROOT, "art", "items")
         print(f"开始自动切片、去底与 128px WebP 道具母模归档: {latest_img} -> {art_items_dir}")
@@ -1141,8 +1274,9 @@ def main():
         out_dir = OUTPUT_DIR
         t_size, in_size = 64, 54
         print(f"开始自动切片、去底与 64px WebP 道具图标下采样: {latest_img} -> {out_dir}")
-    saved = process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
-    print(f"\n=== 批次 [{args.batch}] 全部切片成功并落盘至工程目录！ ===")
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+        
+    print(f"\n=== 标的 [{batch_tag}] 处理完成并已落盘！ ===")
     return 0
 
 if __name__ == "__main__":
