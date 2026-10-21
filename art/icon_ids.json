@@ -105,5 +105,9 @@
     "聚灵阵盘": "item.juling-formation-disk",
     "功德": "item.gongde",
     "功德·绑定": "item.gongde-bound"
+  },
+  "仙侠灵珍与五行玄术": {
+    "觉醒石": "item.awakening-stone",
+    "甘露": "ability.ganlu"
   }
 }
