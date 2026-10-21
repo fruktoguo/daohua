@@ -900,7 +900,7 @@
 /*
  * 物品卡片标题左侧图标：缺图时不渲染该节点。
  * image-rendering: pixelated 与瓦片图标保持一致（见 selection-grid.css 的 .item-tile-icon）：
- * 源图 32px 缩到 24px 属缩小场景，最近邻会让边缘更硬、不糊。
+ * 源图 48px 缩到 24px 属 2 倍缩小场景，最近邻会让边缘更硬、不糊。
  */
 .daohua-floating-card-title-icon {
   width: 24px;

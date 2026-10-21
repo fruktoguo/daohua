@@ -6025,7 +6025,7 @@ input[type="checkbox"] {
 /*
  * 行内物品小图标：与文字同高、基线微调，缺图时该节点不渲染（见 ItemIcon）。
  * image-rendering: pixelated 与瓦片图标保持一致（见 selection-grid.css 的 .item-tile-icon）：
- * 这里源图 32px 缩到 16px 是**缩小 2 倍的整数比**，最近邻表现为边缘更硬挺、不糊，
+ * 这里源图 48px 缩到 16px 是**缩小 3 倍的整数比**，最近邻表现为边缘更硬挺、不糊，
  * 代价是细节被抽样省略；若行内小图显得破碎，把这一行去掉即可单独回退。
  */
 .item-reference-icon {
