@@ -474,7 +474,7 @@ export const gameZh = {
       effectBuffAbsorb: '使{target}伤害减免{n}',
       buffDuration: '持续{n}秒',
       buffStackMaxKeep: '重复施加只保留最高层数',
-      buffStackBySpellAttack: '施法者每 {n} 点术法攻击额外叠加一层',
+      buffStackBySpellAttackPercent: '层数为 1 + 施法者术法攻击的 {ratio}（向下取整），随功法等级与技能增幅提升',
       buffStackByResistance: '层数为施法者双抗总和的 {ratio}%',
       buffStackByMissingHp: '每损失 {n} 点气血获得一层',
       penetration: '抗性穿透 {n}',

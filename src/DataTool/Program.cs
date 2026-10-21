@@ -438,7 +438,7 @@ static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
     "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "threatPoints", "maxStacks",
     "hpRegenPostRatio", "mpRegenPostRatio", "threatPerSecondMaxHpPoints", "resetOnWave",
-    "stackPolicy", "spellAttackStackInterval",
+    "stackPolicy", "spellAttackStackPercent",
     "attackPower", "accuracy", "critical", "resistancePoints", "hpRegenPerSecond",
     "missingHitpointsPerStack", "resistancePerStack", "resistanceStackRatio"
 };

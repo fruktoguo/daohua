@@ -156,7 +156,8 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   // 效果叙述主句：按效果类型一次性写清目标、数值与伤害类别。
   const hitCount = ability.hitCount ?? 0
   const healing = ability.effectType === 'heal'
-  // 支援类数值同样吃 levelGrowth：固定威胁与 Buff 点数项均按每级 +2% 放大。
+  // 支援类数值同样吃 levelGrowth：固定威胁与 Buff 点数项均按每级 +2% 放大；
+  // 唯一例外是法攻百分比层数通道——成长折入层数后，效果量保持每层基础值。
   const threatGain = (ability.threatGain ?? 0) * levelGrowth
   const threatPoints = (ability.threatPoints ?? 0) * levelGrowth
   const buff = ability.buff
@@ -164,17 +165,20 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   // 回复/增伤/免伤/攻击/命中/暴击/双抗/威胁逐条并列，全零回退通用增益文案。
   const buffClause = (spec: NonNullable<typeof ability.buff>) => {
     const duration = spec.durationSeconds ?? 0
-    const hpRegen = (spec.hpRegen ?? 0) * levelGrowth
-    const hpRegenPerSecond = (spec.hpRegenPerSecond ?? 0) * levelGrowth
-    const mpRegen = (spec.mpRegen ?? 0) * levelGrowth
-    const bonusPoints = (spec.damageBonusPoints ?? 0) * levelGrowth
-    const absorbPoints = (spec.damageAbsorptionPoints ?? 0) * levelGrowth
-    const attackPower = (spec.attackPower ?? 0) * levelGrowth
-    const accuracy = (spec.accuracy ?? 0) * levelGrowth
-    const critical = (spec.critical ?? 0) * levelGrowth
+    const spellStackPercent = spec.spellAttackStackPercent ?? 0
+    const usesSpellPercentStacks = spellStackPercent > 0 && (spec.missingHitpointsPerStack ?? 0) <= 0
+    const effectGrowth = usesSpellPercentStacks ? 1 : levelGrowth
+    const hpRegen = (spec.hpRegen ?? 0) * effectGrowth
+    const hpRegenPerSecond = (spec.hpRegenPerSecond ?? 0) * effectGrowth
+    const mpRegen = (spec.mpRegen ?? 0) * effectGrowth
+    const bonusPoints = (spec.damageBonusPoints ?? 0) * effectGrowth
+    const absorbPoints = (spec.damageAbsorptionPoints ?? 0) * effectGrowth
+    const attackPower = (spec.attackPower ?? 0) * effectGrowth
+    const accuracy = (spec.accuracy ?? 0) * effectGrowth
+    const critical = (spec.critical ?? 0) * effectGrowth
     const resistancePoints = spec.resistancePoints ?? 0
-    const buffThreatPoints = (spec.threatPoints ?? 0) * levelGrowth
-    const threatPerSecond = (spec.threatPerSecondMaxHpPoints ?? 0) * levelGrowth
+    const buffThreatPoints = (spec.threatPoints ?? 0) * effectGrowth
+    const threatPerSecond = (spec.threatPerSecondMaxHpPoints ?? 0) * effectGrowth
     const effects: string[] = []
     // 面板自动回复沿 5 秒网格结算；每层每秒回复独立成句，避免与面板属性混淆。
     if (hpRegen !== 0) effects.push(t('game.abilityDesc.effectBuffHpRegen', { target, n: formatNumber(hpRegen) }))
@@ -199,9 +203,11 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     if (spec.stackPolicy === 'maxKeep') {
       effect = `${effect}，${t('game.abilityDesc.buffStackMaxKeep')}`
     }
-    const stackInterval = spec.spellAttackStackInterval ?? 0
-    if (stackInterval > 0) {
-      effect = `${effect}，${t('game.abilityDesc.buffStackBySpellAttack', { n: formatNumber(stackInterval) })}`
+    const stackPercentText = usesSpellPercentStacks
+      ? `${+((spellStackPercent * 100).toFixed(1))}%`
+      : ''
+    if (stackPercentText) {
+      effect = `${effect}，${t('game.abilityDesc.buffStackBySpellAttackPercent', { ratio: stackPercentText })}`
     }
     const resistancePerStack = spec.resistancePerStack ?? 0
     if (resistancePerStack > 0) {

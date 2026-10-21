@@ -69,7 +69,7 @@ test('describeAbility：甘露无论 camelCase 还是 kebab-case 均正确说明
     targetType: 'lowestHitpointsAlly',
     category: 'spell',
     element: 'water',
-    cooldownMilliseconds: 12000,
+    cooldownMilliseconds: 20000,
     castMilliseconds: 1500,
     manaCost: 6.0,
     buff: {
@@ -78,7 +78,7 @@ test('describeAbility：甘露无论 camelCase 还是 kebab-case 均正确说明
       durationSeconds: 10.0,
       hpRegenPerSecond: 1.0,
       stackPolicy: 'maxKeep',
-      spellAttackStackInterval: 10.0,
+      spellAttackStackPercent: 0.08,
     },
   }
 
@@ -90,6 +90,10 @@ test('describeAbility：甘露无论 camelCase 还是 kebab-case 均正确说明
   assert.ok(
     camelResult.description.includes('每层每秒回复 1 点气血'),
     `甘露描述应包含每秒回血效果，实际为: ${camelResult.description}`
+  )
+  assert.ok(
+    camelResult.description.includes('层数为 1 + 施法者术法攻击的 8%（向下取整）'),
+    `甘露描述应包含法攻百分比层数说明，实际为: ${camelResult.description}`
   )
 
   const ganluKebab = {

@@ -1334,8 +1334,8 @@ export interface AbilityBuffSpec {
   resistanceStackRatio?: number
   /** 叠层策略：capped 封顶累加 / perCaster 按施法者隔离 / maxKeep 取最高层数 */
   stackPolicy?: 'capped' | 'perCaster' | 'maxKeep'
-  /** 施法者每多少点法攻额外叠加 1 层（甘露为 10） */
-  spellAttackStackInterval?: number
+  /** 施法者术法攻击参与层数折算的百分比（甘露为 0.08 即 8%，随等级与技能增幅提升） */
+  spellAttackStackPercent?: number
   /** 层数上限（缺省 1） */
   maxStacks?: number
 }

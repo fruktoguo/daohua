@@ -140,7 +140,7 @@
     "tier": 1,
     "category": "spell",
     "element": "water",
-    "cooldownMilliseconds": 12000,
+    "cooldownMilliseconds": 20000,
     "castMilliseconds": 1500,
     "targetType": "lowestHitpointsAlly",
     "damageRatio": 0.0,
@@ -150,7 +150,7 @@
       "durationSeconds": 10.0,
       "hpRegenPerSecond": 1.0,
       "stackPolicy": "maxKeep",
-      "spellAttackStackInterval": 10.0
+      "spellAttackStackPercent": 0.08
     },
     "defaultTriggers": [
       {

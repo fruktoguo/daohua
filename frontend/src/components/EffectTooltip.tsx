@@ -157,28 +157,34 @@ export function extractSingleBuffSpecBonusItems(
   level = 1
 ): BonusAsideItem[] {
   // Buff 效果量随功法等级成长（与服务端 CastSkill 同式：每级 +2% 线性成长）。
+  // 法攻百分比层数通道的成长已折入层数，效果量保持每层基础值，不再二次放大。
   const levelGrowth = 1 + (Math.max(1, level) - 1) * 0.02
+  const hasSpellPercentStacks = Boolean(
+    buff.spellAttackStackPercent && buff.spellAttackStackPercent > 0
+      && (!buff.missingHitpointsPerStack || buff.missingHitpointsPerStack <= 0)
+  )
+  const effectGrowth = hasSpellPercentStacks ? 1 : levelGrowth
   const isStacked = Boolean(
     (buff.resistancePerStack && buff.resistancePerStack > 0) ||
     (buff.missingHitpointsPerStack && buff.missingHitpointsPerStack > 0) ||
-    (buff.spellAttackStackInterval && buff.spellAttackStackInterval > 0)
+    hasSpellPercentStacks
   )
   const scaled = {
     ...buff,
-    hpRegen: buff.hpRegen !== undefined ? buff.hpRegen * levelGrowth : undefined,
-    mpRegen: buff.mpRegen !== undefined ? buff.mpRegen * levelGrowth : undefined,
-    hpRegenPostRatio: buff.hpRegenPostRatio !== undefined ? buff.hpRegenPostRatio * levelGrowth : undefined,
-    mpRegenPostRatio: buff.mpRegenPostRatio !== undefined ? buff.mpRegenPostRatio * levelGrowth : undefined,
-    damageAbsorptionPoints: buff.damageAbsorptionPoints !== undefined ? buff.damageAbsorptionPoints * levelGrowth : undefined,
-    attackSpeedPoints: buff.attackSpeedPoints !== undefined ? buff.attackSpeedPoints * levelGrowth : undefined,
-    threatPoints: buff.threatPoints !== undefined ? buff.threatPoints * levelGrowth : undefined,
-    damageBonusPoints: buff.damageBonusPoints !== undefined ? buff.damageBonusPoints * levelGrowth : undefined,
-    threatPerSecondMaxHpPoints: buff.threatPerSecondMaxHpPoints !== undefined ? buff.threatPerSecondMaxHpPoints * levelGrowth : undefined,
-    attackPower: buff.attackPower !== undefined ? buff.attackPower * levelGrowth : undefined,
-    accuracy: buff.accuracy !== undefined ? buff.accuracy * levelGrowth : undefined,
-    critical: buff.critical !== undefined ? buff.critical * levelGrowth : undefined,
+    hpRegen: buff.hpRegen !== undefined ? buff.hpRegen * effectGrowth : undefined,
+    mpRegen: buff.mpRegen !== undefined ? buff.mpRegen * effectGrowth : undefined,
+    hpRegenPostRatio: buff.hpRegenPostRatio !== undefined ? buff.hpRegenPostRatio * effectGrowth : undefined,
+    mpRegenPostRatio: buff.mpRegenPostRatio !== undefined ? buff.mpRegenPostRatio * effectGrowth : undefined,
+    damageAbsorptionPoints: buff.damageAbsorptionPoints !== undefined ? buff.damageAbsorptionPoints * effectGrowth : undefined,
+    attackSpeedPoints: buff.attackSpeedPoints !== undefined ? buff.attackSpeedPoints * effectGrowth : undefined,
+    threatPoints: buff.threatPoints !== undefined ? buff.threatPoints * effectGrowth : undefined,
+    damageBonusPoints: buff.damageBonusPoints !== undefined ? buff.damageBonusPoints * effectGrowth : undefined,
+    threatPerSecondMaxHpPoints: buff.threatPerSecondMaxHpPoints !== undefined ? buff.threatPerSecondMaxHpPoints * effectGrowth : undefined,
+    attackPower: buff.attackPower !== undefined ? buff.attackPower * effectGrowth : undefined,
+    accuracy: buff.accuracy !== undefined ? buff.accuracy * effectGrowth : undefined,
+    critical: buff.critical !== undefined ? buff.critical * effectGrowth : undefined,
     resistancePoints: buff.resistancePoints,
-    hpRegenPerSecond: buff.hpRegenPerSecond !== undefined ? buff.hpRegenPerSecond * levelGrowth : undefined,
+    hpRegenPerSecond: buff.hpRegenPerSecond !== undefined ? buff.hpRegenPerSecond * effectGrowth : undefined,
     isPerStack: isStacked,
   }
   // 纯粹返回 Buff 本身带来的状态效果条目；持续时间与层数计算等属于添加事件控制的外部属性，由技能描述自身交代。

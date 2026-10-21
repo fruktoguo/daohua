@@ -302,7 +302,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     }
 
     /// <summary>
-    /// 授予单条 Buff 规格：层数由施法者属性（法攻每 N 点 1 层 / 双抗总和按比例）与目标状态
+    /// 授予单条 Buff 规格：层数由施法者属性（法攻百分比 / 双抗总和按比例）与目标状态
     /// （每损失 N 点气血 1 层）派生。层数承载数值——Buff 只存每层基础量，结算时统一按层数线性放大。
     /// </summary>
     private static void GrantBuff(JsonElement buff, CombatantState caster, CombatantState target,
@@ -311,25 +311,30 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var baseBuffId = AbilityText(buff, "buffId") ?? $"ability-buff:{abilityId}";
         var policy = AbilityText(buff, "stackPolicy") ?? "capped";
         var buffId = policy == "perCaster" ? $"{baseBuffId}:{caster.Id}" : baseBuffId;
-        var initialStacks = InitialStacks(buff, caster, target);
-        // Buff 效果量随技能等级成长（全部数值项同式）；时长/叠层上限不成长。
+        var spellStackPercent = AbilityNumber(buff, "spellAttackStackPercent");
+        var initialStacks = InitialStacks(buff, caster, target, levelGrowth);
+        // 法攻百分比层数通道已把等级成长折入层数，效果量保持每层基础值，防止等级被二次放大；
+        // 其余层数来源仍按等级成长放大全部数值项。时长/叠层上限不成长。
+        var usesSpellPercentStacks = AbilityNumber(buff, "missingHitpointsPerStack") <= 0
+            && spellStackPercent > 0;
+        var effectGrowth = usesSpellPercentStacks ? 1.0 : levelGrowth;
         var grant = new CombatBuffState(buffId,
             grantedAtSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), initialStacks,
-            AbilityNumber(buff, "hpRegen") * levelGrowth, AbilityNumber(buff, "mpRegen") * levelGrowth,
-            AbilityNumber(buff, "attackSpeedPoints") * levelGrowth,
-            AbilityNumber(buff, "damageAbsorptionPoints") * levelGrowth,
-            AbilityNumber(buff, "threatPoints") * levelGrowth,
-            AbilityNumber(buff, "hpRegenPostRatio") * levelGrowth,
-            AbilityNumber(buff, "mpRegenPostRatio") * levelGrowth,
-            AbilityNumber(buff, "damageBonusPoints") * levelGrowth,
-            AbilityNumber(buff, "threatPerSecondMaxHpPoints") * levelGrowth,
+            AbilityNumber(buff, "hpRegen") * effectGrowth, AbilityNumber(buff, "mpRegen") * effectGrowth,
+            AbilityNumber(buff, "attackSpeedPoints") * effectGrowth,
+            AbilityNumber(buff, "damageAbsorptionPoints") * effectGrowth,
+            AbilityNumber(buff, "threatPoints") * effectGrowth,
+            AbilityNumber(buff, "hpRegenPostRatio") * effectGrowth,
+            AbilityNumber(buff, "mpRegenPostRatio") * effectGrowth,
+            AbilityNumber(buff, "damageBonusPoints") * effectGrowth,
+            AbilityNumber(buff, "threatPerSecondMaxHpPoints") * effectGrowth,
             AbilityText(buff, "name") ?? baseBuffId,
             ResetOnWave: buff.TryGetProperty("resetOnWave", out var resetFlag) && resetFlag.ValueKind == JsonValueKind.True,
-            AttackPower: AbilityNumber(buff, "attackPower") * levelGrowth,
-            Accuracy: AbilityNumber(buff, "accuracy") * levelGrowth,
-            Critical: AbilityNumber(buff, "critical") * levelGrowth,
+            AttackPower: AbilityNumber(buff, "attackPower") * effectGrowth,
+            Accuracy: AbilityNumber(buff, "accuracy") * effectGrowth,
+            Critical: AbilityNumber(buff, "critical") * effectGrowth,
             ResistancePoints: AbilityNumber(buff, "resistancePoints"),
-            HpRegenPerSecond: AbilityNumber(buff, "hpRegenPerSecond") * levelGrowth,
+            HpRegenPerSecond: AbilityNumber(buff, "hpRegenPerSecond") * effectGrowth,
             MissingHitpointsPerStack: AbilityNumber(buff, "missingHitpointsPerStack"));
         // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
         var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
@@ -352,11 +357,13 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     }
 
     /// <summary>
-    /// 派生授予层数：基础 1 层；<c>missingHitpointsPerStack</c> &gt; 0 时层数完全由目标已损气血决定
-    /// （每 N 点已损 1 层，满血 0 层）；否则 <c>spellAttackStackInterval</c> 按法攻每 N 点 +1 层；
-    /// 否则 <c>resistancePerStack</c> 按施法者双抗总和比例折算层数。
+    /// 派生授予层数：<c>missingHitpointsPerStack</c> &gt; 0 时层数完全由目标已损气血决定
+    /// （每 N 点已损 1 层，满血 0 层）；否则 <c>spellAttackStackPercent</c> 按「基础 1 层 +
+    /// 施法者术法攻击的百分比（含等级成长与技能增幅）向下取整」；否则 <c>resistancePerStack</c>
+    /// 按施法者双抗总和比例折算层数；均未配置时为基础 1 层。
     /// </summary>
-    private static double InitialStacks(JsonElement buff, CombatantState caster, CombatantState target)
+    private static double InitialStacks(JsonElement buff, CombatantState caster, CombatantState target,
+        double levelGrowth)
     {
         var missingPerStack = AbilityNumber(buff, "missingHitpointsPerStack");
         if (missingPerStack > 0)
@@ -364,9 +371,15 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             var missing = Math.Max(0, target.Stats.MaxHitpoints - target.Hitpoints);
             return Math.Floor(missing / missingPerStack);
         }
-        var spellAttackInterval = AbilityNumber(buff, "spellAttackStackInterval");
-        if (spellAttackInterval > 0)
-            return 1.0 + Math.Floor(Math.Max(0, caster.Stats.SpellAttack) / spellAttackInterval);
+        var spellAttackPercent = AbilityNumber(buff, "spellAttackStackPercent");
+        if (spellAttackPercent > 0)
+        {
+            // 基础 1 层 + 百分比额外层数；等级与技能增幅只提升百分比，不改变每层回血量。
+            // epsilon 吸收二进制浮点在整数边界上的下偏。
+            var extraStacks = Math.Max(0, caster.Stats.SpellAttack) * spellAttackPercent * levelGrowth
+                * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear);
+            return 1 + Math.Floor(extraStacks + 1e-9);
+        }
         var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
         if (resistancePerStack > 0)
         {
