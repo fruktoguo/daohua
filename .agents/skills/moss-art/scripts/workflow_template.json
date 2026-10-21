@@ -1,0 +1,265 @@
+{
+  "1": {
+    "inputs": {
+      "unet_name": "moss_image_sft_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "MOSSImageUNETLoader",
+    "_meta": {
+      "title": "MOSS-Image Diffusion Model (int8_convrot)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "clip_name": "moss_image_qwen35_9b_int8_convrot.safetensors",
+      "device": "default"
+    },
+    "class_type": "MOSSImageCLIPLoader",
+    "_meta": {
+      "title": "MOSS-Image Qwen3.5-9B (int8)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "vae_name": "moss_image_sft_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "{\n  \"summary\": {\n    \"canvas\": \"single\",\n    \"caption\": \"a 2x2 grid sprite sheet of 4 minimalist bold vector logo icons, stencil cut silhouette graphic symbol marks, strictly solid pure white icons on solid pure black background, high contrast binary black and white, zero gradients, zero shading, zero colors, crisp clean stencil cut lines and distinct negative space contours, sharp graphic edges, flat 2D vector clip-art.\"\n  },\n  \"items\": [\n    {\n      \"label\": \"object\",\n      \"caption\": \"Top-left item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a single plump water droplet sitting upright inside an open three-petal lotus cradle, the droplet shape itself solid and opaque with no hollow interior, the lotus petals solid filled shapes, one single unified solid white emblem, no thin strokes, no outline-only line art, no hollow rings, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art.\",\n      \"bbox\": [\n        -420,\n        -420,\n        -80,\n        -80\n      ]\n    },\n    {\n      \"label\": \"object\",\n      \"caption\": \"Top-right item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a rounded teardrop dew drop resting on two symmetric thick crescent petals, both droplet and petals drawn as solid opaque filled shapes with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, no hollow rings, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art.\",\n      \"bbox\": [\n        -420,\n        80,\n        -80,\n        420\n      ]\n    },\n    {\n      \"label\": \"object\",\n      \"caption\": \"Bottom-left item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a bold water droplet shape cradled by an open lotus blossom of three thick solid petals, droplet and petals entirely solid opaque white with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art.\",\n      \"bbox\": [\n        80,\n        -420,\n        420,\n        -80\n      ]\n    },\n    {\n      \"label\": \"object\",\n      \"caption\": \"Bottom-right item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a large smooth teardrop above two wide upward crescent petal arcs, all shapes rendered as solid opaque white filled forms with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art.\",\n      \"bbox\": [\n        80,\n        80,\n        420,\n        420\n      ]\n    }\n  ],\n  \"bbox_coord_space\": \"abs_centralized\",\n  \"bbox_format\": \"yxyx\"\n}",
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, overflow, touching borders, crowded, clutter, modern, western fantasy, blurry, bad anatomy, worst quality, watermark, text",
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "inputs": {
+      "width": [
+        "19",
+        0
+      ],
+      "height": [
+        "19",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "13": {
+    "inputs": {
+      "double_layers": "",
+      "single_layers": "22",
+      "start_percent": 0.0,
+      "end_percent": 1.0,
+      "model": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "SkipLayerGuidanceDiTSimple",
+    "_meta": {
+      "title": "Uncond skip layer 22"
+    }
+  },
+  "15": {
+    "inputs": {
+      "shift": 5.0,
+      "model": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "Flow sigma shift 5"
+    }
+  },
+  "16": {
+    "inputs": {
+      "seed": 538071584977898,
+      "steps": 40,
+      "cfg": 3.3,
+      "sampler_name": "euler",
+      "scheduler": "sgm_uniform",
+      "denoise": 1.0,
+      "model": [
+        "20",
+        0
+      ],
+      "positive": [
+        "24",
+        0
+      ],
+      "negative": [
+        "25",
+        0
+      ],
+      "latent_image": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler (euler / sgm_uniform)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "samples": [
+        "22",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "18": {
+    "inputs": {
+      "filename_prefix": "daohua-logos_ganlu",
+      "images": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "19": {
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 1.0,
+      "multiple": 32
+    },
+    "class_type": "ResolutionSelector",
+    "_meta": {
+      "title": "Resolution Selector (Size)"
+    }
+  },
+  "20": {
+    "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "ModelAttentionBackend",
+    "_meta": {
+      "title": "模型注意力后端"
+    }
+  },
+  "22": {
+    "inputs": {
+      "anything": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "24": {
+    "inputs": {
+      "anything": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "25": {
+    "inputs": {
+      "anything": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "26": {
+    "inputs": {
+      "anything": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "27": {
+    "inputs": {
+      "rem_mode": "RMBG-1.4",
+      "image_output": "Preview",
+      "save_prefix": "ComfyUI",
+      "torchscript_jit": false,
+      "add_background": "none",
+      "refine_foreground": false,
+      "images": [
+        "26",
+        0
+      ]
+    },
+    "class_type": "easy imageRemBg",
+    "_meta": {
+      "title": "图像背景移除"
+    }
+  },
+  "30": {
+    "inputs": {
+      "filename_prefix": "moss-image",
+      "images": [
+        "26",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

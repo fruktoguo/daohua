@@ -183,7 +183,7 @@ PRESET_BATCHES = {
             "id": "item.gongde",
             "name": "功德",
             "bbox": [120, 180, 400, 440],
-            "caption": "Bottom-right item: [功德 - Merit Coin]. A glowing circular celestial coin forged from golden merit light, carved with cloud patterns, pure auspicious aura, dark ink outline."
+            "caption": "Bottom-right item: [功德 - Golden Soul Fire]. A floating ethereal wisp of pure sacred golden soul fire, celestial spiritual flame, teardrop fire wisp rising upwards, warm auspicious golden radiance, organic flame shape, absolutely no coin or disc, dark ink outline."
         }
     ],
     # 内功体系批次 A (5门基础心法技能 + 基础秘籍线装书, 2x3 网格)
@@ -649,13 +649,242 @@ PRESET_BATCHES = {
             "bbox": [80, 80, 420, 420],
             "caption": "Bottom-right item: [绝顶道庐 - Mountain Peak Thatched Cottage]. A stylized Chinese Xianxia rustic hermit thatched cottage perched on a dramatic mountain cliff ledge next to a gnarled ancient pine tree, surrounded by swirling sea of clouds, peaceful Daoist retreat, bold dark ink outline, clean 2D game icon."
         }
-    ]
+    ],
+    # 二图怪物立绘组 (4只怪物, 2x2 网格)
+    "monsters_trail_4": [
+        {
+            "id": "green-wolf",
+            "name": "青脊妖狼",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left monster: [青脊妖狼 - Green-Spine Demon Wolf]. A ferocious agile quadruped demon wolf stalking low in a pounce stance, sleek dark black-grey muscular planar facets, sharp bone-white claws and fangs, a row of glowing emerald-cyan crystalline bone spikes protruding along its spine from neck to tail, piercing glowing teal diamond eyes, facing right, clean sharp silhouette, dark ink contour outline."
+        },
+        {
+            "id": "tide-spirit",
+            "name": "玄潮灵",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right monster: [玄潮灵 - Mystic Tide Spirit]. A mystical floating elemental water spirit apparition, ethereal deep ocean blue-black aquatic core surrounded by swirling tidal vortex tendrils, adorned with bone-white aquatic crystal carapace plates, glowing deep sapphire blue water runes and spiritual mist trails below, facing right, clean sharp silhouette, dark ink contour outline."
+        },
+        {
+            "id": "iron-boar",
+            "name": "铁甲岩獠",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left monster: [铁甲岩獠 - Iron-Armored Stone Boar]. A massive heavy quadruped armored demon boar, low sturdy center of gravity, body covered in dark iron-gray jagged stone-slate carapace armor, two enormous upward-curving sharp bone-white tusks protruding from jaws, glowing amber-gold magma fissures between rock plates, small glowing fierce amber eyes, facing right, heavy unstoppable tank beast, dark ink contour outline."
+        },
+        {
+            "id": "golden-ape-boss",
+            "name": "撼地金背猿",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right monster: [撼地金背猿 - Earth-Shaking Golden-Backed Demon Ape]. A towering ferocious bipedal demon gorilla boss standing proudly on two legs, broad massive muscular shoulders, near-black iron-like demonic ape chest and arms, sharp bone-white knuckle plates and fang mask, entire upper back and shoulders clad in brilliant glowing solid golden vajra carapace fur and radiant gold aura veins, glowing crimson demonic eyes, facing right, tyrannical boss stance, dark ink contour outline."
+        }
+    ],
+    # 二图武器组 (4件武器, 2x2 网格)
+    "weapons_trail_4": [
+        {
+            "id": "equipment.xuantie-sword",
+            "name": "玄铁长剑",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [玄铁长剑 - Dark Iron Longsword]. A straight double-edged Chinese Daoist Jian sword forged from deep black meteor iron, cold sharp silver-white polished blade edge, 45-degree diagonal composition, simple dark bronze guard, hilt wrapped in black cord with dark cyan silk tassel, dark ink outline."
+        },
+        {
+            "id": "equipment.piyan-blade",
+            "name": "劈岩重刀",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [劈岩重刀 - Rock-Cleaving Heavy Dao]. A massive single-edged Chinese heavy broadsword saber, thick notched dark steel blade capable of smashing boulders, 45-degree diagonal composition, rugged brass ring pommel, sturdy wrapped two-handed handle, dark ink outline."
+        },
+        {
+            "id": "equipment.kuteng-staff",
+            "name": "枯藤法杖",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [枯藤法杖 - Withered Vine Staff]. An ancient Daoist gnarled wooden walking staff carved from thousand-year spirit vines, 45-degree diagonal composition, twisting roots at the crown holding a glowing raw jade stone, rustic warm wood grain, dark ink outline."
+        },
+        {
+            "id": "equipment.mingquan-zither",
+            "name": "鸣泉古琴",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [鸣泉古琴 - Spring-Resonating Guqin]. An elegant Chinese classical seven-string Guqin zither musical weapon, 45-degree diagonal composition, dark lacquered scorched paulownia wood body, silver silk strings gleaming with subtle cyan water ripple sheen, dark ink outline."
+        }
+    ],
+    # 二图副手与饰品组 (4件套, 2x2 网格)
+    "offhands_accessories_4": [
+        {
+            "id": "equipment.tiemu-shield",
+            "name": "铁木坚盾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [铁木坚盾 - Ironwood Heavy Shield]. A sturdy Chinese Han-dynasty rectangular kite shield made of laminated black ironwood and bronze rims, embossed with an ancient Daoist cloud beast mask in center, heavy defensive armor texture, dark ink outline."
+        },
+        {
+            "id": "equipment.ningshui-charm",
+            "name": "凝水灵符",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [凝水灵符 - Water Condensation Talisman]. A floating Daoist jade talisman plate carved from translucent deep cyan water jade, inscribed with glowing cinnabar seal script runes, hung with a delicate braided dark blue silk knot tassel, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-ring",
+            "name": "苍狼煞牙戒",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [苍狼煞牙戒 - Dark Wolf Fang Ring]. A rugged martial finger ring forged from dark blackened silver, mounted with a curved sharp pale wolf fang, faint eerie emerald-green spiritual glint on fang tip, dark ink outline."
+        },
+        {
+            "id": "equipment.bibo-pendant",
+            "name": "碧波静心佩",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [碧波静心佩 - Azure Wave Calming Jade Pendant]. An elegant teardrop-shaped Chinese pendant carved from luminous water-green celadon jade with swirling carved wave motifs, suspended from an intricate crimson silk braided knot, dark ink outline."
+        }
+    ],
+    # 二图重甲与狼皮轻甲组 (6件套, 2x3 网格)
+    "armors_heavy_wolf_6": [
+        {
+            "id": "equipment.xuantie-headband",
+            "name": "玄铁护额",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [玄铁护额 - Dark Iron Headband]. A heavy martial forehead plate forged from cold dark meteor iron, reinforced with bronze rivets, tied with sturdy black fabric straps, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.suozi-armor",
+            "name": "锁子重甲",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [锁子重甲 - Iron Chainmail Cuirass]. A sturdy sleeveless combat torso armor made of dense interlocking dark iron chain rings, reinforced with a bronze central chest mirror plate, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.diejia-leggings",
+            "name": "叠甲胫",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [叠甲胫 - Segmented Iron Greaves]. Heavy martial armored trousers reinforced with overlapping dark steel plate greaves covering the shins, leather knee caps, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-cap",
+            "name": "苍狼皮冠",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [苍狼皮冠 - Grey Wolf Fur Cap]. A rugged martial warrior cap crafted from dark grey wolf pelt, soft white fur trim around the brim, leather cords tied underneath, clean symmetrical silhouette, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-vest",
+            "name": "苍狼轻裘",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [苍狼轻裘 - Grey Wolf Fur Vest]. A lightweight combat vest sewn from tough dark-grey wolf leather with wolf fur collar and bronze belt clasps, agile martial cut, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-pants",
+            "name": "苍狼皮裤",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [苍狼皮裤 - Grey Wolf Leather Pants]. Agile martial artist trousers made of supple grey wolf hide, reinforced with leather cross-bindings around calves and shins, symmetrical frontal view, dark ink outline."
+        }
+    ],
+    # 二图布甲与材料组 (3件布甲 + 3件战利品材料, 2x3 网格)
+    "cloth_materials_6": [
+        {
+            "id": "equipment.liuyun-ribbon",
+            "name": "流云法带",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [流云法带 - Flowing Cloud Ribbon Headband]. An elegant Daoist silk headband woven from celestial azure-blue silk, embroidered with delicate silver cloud wave patterns, long twin ribbons draping down symmetrically, dark ink outline."
+        },
+        {
+            "id": "equipment.bishui-robe",
+            "name": "碧水灵袍",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [碧水灵袍 - Azure Water Spirit Robe]. A flowing traditional Chinese Daoist celestial scholar robe made of pale cyan and deep aquamarine silk, wide flowing sleeves, white lapels with water ripple borders, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.zhishui-pants",
+            "name": "织水法裤",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [织水法裤 - Woven Water Daoist Pants]. Loose comfortable Daoist cultivation trousers tailored from fine pale-blue silk, gathered neatly at ankles with soft white silk bindings, clean symmetrical silhouette, dark ink outline."
+        },
+        {
+            "id": "item.rough-wolf-hide",
+            "name": "粗韧狼皮",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [粗韧狼皮 - Rough Wolf Hide]. A cleanly cured pelt of a wild green-spine demon wolf, textured coarse grey-green fur with thick durable leather backing, folded neatly, compact game item icon, dark ink outline."
+        },
+        {
+            "id": "item.water-spirit-core",
+            "name": "水灵原核",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [水灵原核 - Water Spirit Core]. A pristine spherical elemental spirit orb formed from condensed pure water essence, glowing with serene azure-blue luminescence, faint water mist wisps coiling around it, dark ink outline."
+        },
+        {
+            "id": "item.rock-fang",
+            "name": "坚岩獠齿",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [坚岩獠齿 - Rock Boar Tusk]. A thick heavy curved beast tusk harvested from an armored boar, stony grey bone texture with sharp ivory-white tip, rugged fossilized striations, compact 45-degree angle, dark ink outline."
+        }
+    ],
+    # 二图首领材料与主动战技组 (3件材料 + 2件战技 + 1件备用图腾, 2x3 网格)
+    "boss_materials_abilities_6": [
+        {
+            "id": "item.thick-beast-hide",
+            "name": "重甲厚皮",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [重甲厚皮 - Thick Armored Hide]. A bundle of heavy hardened beast carapace hide from an armored boar, dense blackish-brown leather layered with slate-like scales, exceptionally tough armor crafting material, dark ink outline."
+        },
+        {
+            "id": "item.golden-ape-bone",
+            "name": "金背猿骨",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [金背猿骨 - Golden Ape Bone]. A heavy massive primal beast bone rib harvested from the golden-backed ape king, gleaming with warm metallic golden patina on pale dense bone, radiant vajra strength aura, dark ink outline."
+        },
+        {
+            "id": "item.ape-heart",
+            "name": "暴猿煞心",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [暴猿煞心 - Berserk Ape Demon Heart]. An extraordinary crystallized demonic beast heart radiating fiery red and molten gold energy, pulsating with fierce primal beast qi, wrapped in dark sinews, rare boss trophy, dark ink outline."
+        },
+        {
+            "id": "ability.tide",
+            "name": "潮汐战技",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [潮汐 - Surging Tide Skill]. A dynamic Chinese martial spell combat skill icon depicting a colossal roaring ocean wave crest breaking forwards, foaming turquoise water splashes, Daoist water rune spiral in center, dark ink outline."
+        },
+        {
+            "id": "ability.sui-gang",
+            "name": "碎罡战技",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [碎罡 - Gang-Shattering Fist Skill]. A violent martial arts combat skill icon showing a heavy golden armored vajra ape fist smashing downward, shattering a translucent defensive qi barrier into glowing gold crystalline shards, explosive shockwave impact, dark ink outline."
+        },
+        {
+            "id": "emblem.tide.candidate",
+            "name": "潮汐法印",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [潮汐法印 - Mystic Tidal Water Talisman Seal]. A circular Daoist jade seal medallion with deep relief carving of swirling ocean waves and a tranquil pearl in center, deep cyan jade with gold inlays, dark ink outline."
+        }
+    ],
+    # 纯黑底纯白二值矢量Logo图腾组 D (潮汐水系心法图腾，供线装书与残卷合成)
+    "logos_tide": [
+        {
+            "id": "emblem.tide.a",
+            "name": "潮汐图腾候选 A",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of three stylized crashing ocean wave crests surging upwards into a powerful spiral vortex, crisp clean stencil cut negative black contour lines separating wave layers, solid opaque white filled shapes, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.tide.b",
+            "name": "潮汐图腾候选 B",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a Daoist yin-yang circle formed by two swirling surging tidal wave crests, solid opaque white shapes with distinct negative black stencil cut lines, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.tide.c",
+            "name": "潮汐图腾候选 C",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a grand curling tsunami ocean wave with foaming water droplets splashing above, bold solid white shapes with crisp stencil cut negative lines, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.tide.d",
+            "name": "潮汐图腾候选 D",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of concentric swirling water current ripples forming a mystical tidal pearl vortex in the center, solid opaque white shapes, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        }
+    ],
 }
 
 def get_latest_workflow():
     with urllib.request.urlopen(f"{COMFY_HOST}/history") as resp:
         history = json.loads(resp.read().decode())
     if not history:
+        template_path = os.path.join(CURRENT_DIR, "workflow_template.json")
+        if os.path.exists(template_path):
+            with open(template_path, "r", encoding="utf-8") as f:
+                return json.load(f)
         raise RuntimeError("No history found in ComfyUI.")
     
     # 优先从历史中获取包含 Node 27 (easy imageRemBg) 的工作流
@@ -741,7 +970,7 @@ def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daoh
         res = json.loads(resp.read().decode())
     return res["prompt_id"]
 
-def wait_for_completion(prompt_id, timeout=120):
+def wait_for_completion(prompt_id, timeout=300):
     start = time.time()
     while time.time() - start < timeout:
         time.sleep(2)
@@ -850,6 +1079,8 @@ def main():
         summary_cap = "simplified stylized 2D Chinese Xianxia martial arts architecture building facility icon sprite sheet, clean bold cartoon shapes, traditional Chinese Daoist pavilion workshop shrine building, solid vibrant ink colors with subtle shading, distinct dark ink outline, floating on solid pure white background, generous empty white spacing between items, strictly no overflow, clean 2D game icon."
     elif "emblem" in args.batch:
         summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+    elif "monsters_" in args.batch:
+        summary_cap = "a clean 2x2 grid sprite sheet of four Chinese Xianxia mythical beast monsters and spiritual apparitions on a pure solid white background. Dark fantasy stylized paper-cut planar polygonal silhouette art style with dark ink contours, rich dark black mass silhouette, distinct bone-white structural plates, isolated vibrant mystical energy accent colors, facing right, 3/4 dynamic battle stance, high contrast, perfectly centered isolated game sprites."
     else:
         summary_cap = None
     prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
@@ -873,7 +1104,10 @@ def main():
     
     # 找到最新产物物理路径
     latest_img = os.path.join(COMFY_OUTPUT_DIR, images[-1])
-    if args.batch.startswith("boss_"):
+    if args.batch.startswith("boss_") or args.batch.startswith("monsters_"):
+        art_avatars_dir = os.path.join(REPO_ROOT, "art", "avatars")
+        print(f"开始自动切片、去底与 512px WebP 怪物母模归档: {latest_img} -> {art_avatars_dir}")
+        process_and_slice(latest_img, items, output_dir=art_avatars_dir, target_size=512, inner_size=460)
         out_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
         t_size, in_size = 256, 230
         print(f"开始自动切片、去底与 256px WebP 怪物立绘下采样: {latest_img} -> {out_dir}")
@@ -901,6 +1135,9 @@ def main():
         t_size, in_size = 64, 56
         print(f"开始自动切片、去底与 64px WebP 游戏建筑瓦片导出: {latest_img} -> {out_dir}")
     else:
+        art_items_dir = os.path.join(REPO_ROOT, "art", "items")
+        print(f"开始自动切片、去底与 128px WebP 道具母模归档: {latest_img} -> {art_items_dir}")
+        process_and_slice(latest_img, items, output_dir=art_items_dir, target_size=128, inner_size=108)
         out_dir = OUTPUT_DIR
         t_size, in_size = 64, 54
         print(f"开始自动切片、去底与 64px WebP 道具图标下采样: {latest_img} -> {out_dir}")

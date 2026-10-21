@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 
 /**
- * 玩家主角本命矢量立绘默认资源地址
+ * 玩家主角本命立绘默认资源地址（128px WebP q80，矢量源母模归档于 art/avatars/）
  */
-export const DEFAULT_PLAYER_AVATAR_SRC = '/avatars/player.svg'
+export const DEFAULT_PLAYER_AVATAR_SRC = '/avatars/player.webp'
 
 /**
  * 支持的形象资源格式类型
@@ -15,40 +15,40 @@ export type AvatarImageFormat = 'webp' | 'png' | 'svg'
  */
 export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: AvatarImageFormat }> = {
   // 玩家
-  player: { src: '/avatars/player.svg', format: 'svg' },
-  'player-female': { src: '/avatars/player.svg', format: 'svg' },
-  'player-male': { src: '/avatars/player-male.svg', format: 'svg' },
-  'avatar-gothic-lolita': { src: '/avatars/avatar-gothic-lolita.svg', format: 'svg' },
-  'avatar-katana-jk': { src: '/avatars/avatar-katana-jk.svg', format: 'svg' },
-  'avatar-mecha-petite': { src: '/avatars/avatar-mecha-petite.svg', format: 'svg' },
-  'avatar-hoodie-jk': { src: '/avatars/avatar-hoodie-jk.svg', format: 'svg' },
-  'avatar-magic-male': { src: '/avatars/avatar-magic-male.svg', format: 'svg' },
-  'avatar-magic-female': { src: '/avatars/avatar-magic-female.svg', format: 'svg' },
-  'avatar-fire-male': { src: '/avatars/avatar-fire-male.svg', format: 'svg' },
-  'avatar-fire-female': { src: '/avatars/avatar-fire-female.svg', format: 'svg' },
-  'avatar-body-male': { src: '/avatars/avatar-body-male.svg', format: 'svg' },
-  'avatar-body-female': { src: '/avatars/avatar-body-female.svg', format: 'svg' },
-  'avatar-wood-male': { src: '/avatars/avatar-wood-male.svg', format: 'svg' },
-  'avatar-wood-female': { src: '/avatars/avatar-wood-female.svg', format: 'svg' },
-  'avatar-star-male': { src: '/avatars/avatar-star-male.svg', format: 'svg' },
-  'avatar-star-female': { src: '/avatars/avatar-star-female.svg', format: 'svg' },
-  'magic-male': { src: '/avatars/avatar-magic-male.svg', format: 'svg' },
-  'magic-female': { src: '/avatars/avatar-magic-female.svg', format: 'svg' },
-  'fire-male': { src: '/avatars/avatar-fire-male.svg', format: 'svg' },
-  'fire-female': { src: '/avatars/avatar-fire-female.svg', format: 'svg' },
-  'body-male': { src: '/avatars/avatar-body-male.svg', format: 'svg' },
-  'body-female': { src: '/avatars/avatar-body-female.svg', format: 'svg' },
-  'wood-male': { src: '/avatars/avatar-wood-male.svg', format: 'svg' },
-  'wood-female': { src: '/avatars/avatar-wood-female.svg', format: 'svg' },
-  'star-male': { src: '/avatars/avatar-star-male.svg', format: 'svg' },
-  'star-female': { src: '/avatars/avatar-star-female.svg', format: 'svg' },
-  'gothic-lolita': { src: '/avatars/avatar-gothic-lolita.svg', format: 'svg' },
-  'katana-jk': { src: '/avatars/avatar-katana-jk.svg', format: 'svg' },
-  'mecha-petite': { src: '/avatars/avatar-mecha-petite.svg', format: 'svg' },
-  'hoodie-jk': { src: '/avatars/avatar-hoodie-jk.svg', format: 'svg' },
-  default: { src: '/avatars/player.svg', format: 'svg' },
-  female: { src: '/avatars/player.svg', format: 'svg' },
-  male: { src: '/avatars/player-male.svg', format: 'svg' },
+  player: { src: '/avatars/player.webp', format: 'webp' },
+  'player-female': { src: '/avatars/player.webp', format: 'webp' },
+  'player-male': { src: '/avatars/player-male.webp', format: 'webp' },
+  'avatar-gothic-lolita': { src: '/avatars/avatar-gothic-lolita.webp', format: 'webp' },
+  'avatar-katana-jk': { src: '/avatars/avatar-katana-jk.webp', format: 'webp' },
+  'avatar-mecha-petite': { src: '/avatars/avatar-mecha-petite.webp', format: 'webp' },
+  'avatar-hoodie-jk': { src: '/avatars/avatar-hoodie-jk.webp', format: 'webp' },
+  'avatar-magic-male': { src: '/avatars/avatar-magic-male.webp', format: 'webp' },
+  'avatar-magic-female': { src: '/avatars/avatar-magic-female.webp', format: 'webp' },
+  'avatar-fire-male': { src: '/avatars/avatar-fire-male.webp', format: 'webp' },
+  'avatar-fire-female': { src: '/avatars/avatar-fire-female.webp', format: 'webp' },
+  'avatar-body-male': { src: '/avatars/avatar-body-male.webp', format: 'webp' },
+  'avatar-body-female': { src: '/avatars/avatar-body-female.webp', format: 'webp' },
+  'avatar-wood-male': { src: '/avatars/avatar-wood-male.webp', format: 'webp' },
+  'avatar-wood-female': { src: '/avatars/avatar-wood-female.webp', format: 'webp' },
+  'avatar-star-male': { src: '/avatars/avatar-star-male.webp', format: 'webp' },
+  'avatar-star-female': { src: '/avatars/avatar-star-female.webp', format: 'webp' },
+  'magic-male': { src: '/avatars/avatar-magic-male.webp', format: 'webp' },
+  'magic-female': { src: '/avatars/avatar-magic-female.webp', format: 'webp' },
+  'fire-male': { src: '/avatars/avatar-fire-male.webp', format: 'webp' },
+  'fire-female': { src: '/avatars/avatar-fire-female.webp', format: 'webp' },
+  'body-male': { src: '/avatars/avatar-body-male.webp', format: 'webp' },
+  'body-female': { src: '/avatars/avatar-body-female.webp', format: 'webp' },
+  'wood-male': { src: '/avatars/avatar-wood-male.webp', format: 'webp' },
+  'wood-female': { src: '/avatars/avatar-wood-female.webp', format: 'webp' },
+  'star-male': { src: '/avatars/avatar-star-male.webp', format: 'webp' },
+  'star-female': { src: '/avatars/avatar-star-female.webp', format: 'webp' },
+  'gothic-lolita': { src: '/avatars/avatar-gothic-lolita.webp', format: 'webp' },
+  'katana-jk': { src: '/avatars/avatar-katana-jk.webp', format: 'webp' },
+  'mecha-petite': { src: '/avatars/avatar-mecha-petite.webp', format: 'webp' },
+  'hoodie-jk': { src: '/avatars/avatar-hoodie-jk.webp', format: 'webp' },
+  default: { src: '/avatars/player.webp', format: 'webp' },
+  female: { src: '/avatars/player.webp', format: 'webp' },
+  male: { src: '/avatars/player-male.webp', format: 'webp' },
   // T1 怪物 (练气期)
   'demonized-rabbit': { src: '/avatars/demonized-rabbit.webp', format: 'webp' },
   'wood-spirit': { src: '/avatars/wood-spirit.webp', format: 'webp' },
@@ -57,6 +57,11 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   'demon-ape': { src: '/avatars/demon-ape.webp', format: 'webp' },
   'armored-bear': { src: '/avatars/armored-bear.webp', format: 'webp' },
   'chang-tiger': { src: '/avatars/chang-tiger.webp', format: 'webp' },
+  // T1 二图怪物 (青云古道)
+  'green-wolf': { src: '/avatars/green-wolf.webp', format: 'webp' },
+  'tide-spirit': { src: '/avatars/tide-spirit.webp', format: 'webp' },
+  'iron-boar': { src: '/avatars/iron-boar.webp', format: 'webp' },
+  'golden-ape-boss': { src: '/avatars/golden-ape-boss.webp', format: 'webp' },
 
   // T2 怪物 (筑基期)
   'rift-wolf': { src: '/avatars/rift-wolf.webp', format: 'webp' },
@@ -82,10 +87,11 @@ export function normalizeAvatarId(id?: string | null): string {
 /** 候选 URL 列表进程内缓存：候选集在会话内不变，避免每次渲染重建数组 */
 const AVATAR_URL_CACHE = new Map<string, readonly string[]>()
 /**
- * 根据 ID 智能生成回退候选 URL 列表（已注册项直接精准返回单一路径，未注册项尝试 svg 与 webp）
+ * 根据 ID 智能生成回退候选 URL 列表（已注册项直接精准返回单一路径，未注册项尝试 webp 位图）
  */
 export function getAvatarCandidateUrls(rawId?: string | null): readonly string[] {
   const id = normalizeAvatarId(rawId)
+
   if (!id) return [DEFAULT_PLAYER_AVATAR_SRC]
 
   const cached = AVATAR_URL_CACHE.get(id)
@@ -98,8 +104,8 @@ export function getAvatarCandidateUrls(rawId?: string | null): readonly string[]
     return direct
   }
 
-  // 未注册未知 ID：优先尝试 svg（矢量角色）再尝试 webp（位图怪物）
-  const candidates: readonly string[] = [`/avatars/${id}.svg`, `/avatars/${id}.webp`]
+  // 未注册未知 ID：尝试 webp 位图（运行时头像统一 128px WebP q80）
+  const candidates: readonly string[] = [`/avatars/${id}.webp`]
   AVATAR_URL_CACHE.set(id, candidates)
   return candidates
 }
@@ -188,77 +194,77 @@ export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   {
     id: 'male',
     nameKey: 'app.avatar.maleName',
-    src: '/avatars/player-male.svg',
+    src: '/avatars/player-male.webp',
   },
   {
     id: 'magic-male',
     nameKey: 'app.avatar.magicMaleName',
-    src: '/avatars/avatar-magic-male.svg',
+    src: '/avatars/avatar-magic-male.webp',
   },
   {
     id: 'magic-female',
     nameKey: 'app.avatar.magicFemaleName',
-    src: '/avatars/avatar-magic-female.svg',
+    src: '/avatars/avatar-magic-female.webp',
   },
   {
     id: 'fire-male',
     nameKey: 'app.avatar.fireMaleName',
-    src: '/avatars/avatar-fire-male.svg',
+    src: '/avatars/avatar-fire-male.webp',
   },
   {
     id: 'fire-female',
     nameKey: 'app.avatar.fireFemaleName',
-    src: '/avatars/avatar-fire-female.svg',
+    src: '/avatars/avatar-fire-female.webp',
   },
   {
     id: 'body-male',
     nameKey: 'app.avatar.bodyMaleName',
-    src: '/avatars/avatar-body-male.svg',
+    src: '/avatars/avatar-body-male.webp',
   },
   {
     id: 'body-female',
     nameKey: 'app.avatar.bodyFemaleName',
-    src: '/avatars/avatar-body-female.svg',
+    src: '/avatars/avatar-body-female.webp',
   },
   {
     id: 'wood-male',
     nameKey: 'app.avatar.woodMaleName',
-    src: '/avatars/avatar-wood-male.svg',
+    src: '/avatars/avatar-wood-male.webp',
   },
   {
     id: 'wood-female',
     nameKey: 'app.avatar.woodFemaleName',
-    src: '/avatars/avatar-wood-female.svg',
+    src: '/avatars/avatar-wood-female.webp',
   },
   {
     id: 'star-male',
     nameKey: 'app.avatar.starMaleName',
-    src: '/avatars/avatar-star-male.svg',
+    src: '/avatars/avatar-star-male.webp',
   },
   {
     id: 'star-female',
     nameKey: 'app.avatar.starFemaleName',
-    src: '/avatars/avatar-star-female.svg',
+    src: '/avatars/avatar-star-female.webp',
   },
   {
     id: 'gothic-lolita',
     nameKey: 'app.avatar.gothicLolitaName',
-    src: '/avatars/avatar-gothic-lolita.svg',
+    src: '/avatars/avatar-gothic-lolita.webp',
   },
   {
     id: 'katana-jk',
     nameKey: 'app.avatar.katanaJkName',
-    src: '/avatars/avatar-katana-jk.svg',
+    src: '/avatars/avatar-katana-jk.webp',
   },
   {
     id: 'mecha-petite',
     nameKey: 'app.avatar.mechaPetiteName',
-    src: '/avatars/avatar-mecha-petite.svg',
+    src: '/avatars/avatar-mecha-petite.webp',
   },
   {
     id: 'hoodie-jk',
     nameKey: 'app.avatar.hoodieJkName',
-    src: '/avatars/avatar-hoodie-jk.svg',
+    src: '/avatars/avatar-hoodie-jk.webp',
   },
 ]
 
