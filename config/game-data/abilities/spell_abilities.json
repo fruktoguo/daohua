@@ -161,7 +161,7 @@
         "buffId": null
       }
     ],
-    "manaCost": 6.0,
+    "manaCost": 20.0,
     "rootAttribute": "meridians",
     "discipline": "spell"
   }

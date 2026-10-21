@@ -39,7 +39,7 @@ export const insightZh = {
       meridians: {
         name: '经脉',
         pinyin: 'jīng mài',
-        desc: '百脉俱通，灵气自生。\n每点提升 1% +7 灵力上限、1% +1 法抗、1% +0.5 灵力回复。',
+        desc: '百脉俱通，灵气自生。\n每点提升 1% +7 灵力上限、1% +1 法抗、2% 灵力回复。',
         benefit1: '灵力上限',
         benefit2: '法抗',
         benefit3: '灵力回复',

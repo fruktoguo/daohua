@@ -172,8 +172,8 @@ export const ROOT_ATTRIBUTES_CONFIG = {
     mpRatioPerLevel: 0.01,
     magicResFlatPerLevel: 1,
     magicResRatioPerLevel: 0.01,
-    mpRegenFlatPerLevel: 1,
-    mpRegenRatioPerLevel: 0.01,
+    mpRegenFlatPerLevel: 0,
+    mpRegenRatioPerLevel: 0.02,
   },
   bone: {
     hpFlatPerLevel: 12,

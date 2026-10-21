@@ -2131,7 +2131,7 @@ insight.root.meridians.benefit1,"灵力上限",""
 insight.root.meridians.benefit2,"法抗",""
 insight.root.meridians.benefit3,"灵力回复",""
 insight.root.meridians.desc,"百脉俱通，灵气自生。
-每点提升 1% +7 灵力上限、1% +1 法抗、1% +0.5 灵力回复。",""
+每点提升 1% +7 灵力上限、1% +1 法抗、2% 灵力回复。",""
 insight.root.meridians.name,"经脉",""
 insight.root.meridians.pinyin,"jīng mài",""
 insight.root.stamina.benefit1,"生命上限",""

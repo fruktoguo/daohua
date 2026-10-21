@@ -103,7 +103,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         bonuses: [
           { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel * 7)}`, tone: 'cyan' as PillTone },
           { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel)}`, tone: 'violet' as PillTone },
-          { value: `${Math.floor(meridiansLevel)}% +${Number((meridiansLevel * 0.5).toFixed(1))}`, tone: 'cyan' as PillTone },
+          { value: `${Math.floor(meridiansLevel * 2)}%`, tone: 'cyan' as PillTone },
         ],
       },
       {

@@ -9,6 +9,14 @@ namespace Domain.Tests;
 /// </summary>
 public sealed class CombatGanluBuffTests
 {
+    /// <summary>配表契约：甘露单次施放消耗 20 点灵力（配表直读，无二次换算）。</summary>
+    [Fact]
+    public void EmbeddedCatalogGanluCostsTwentyMana()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        Assert.Equal(20, JsonRead.Number(catalog.Abilities["ability.ganlu"], "manaCost"), 9);
+    }
+
     /// <summary>
     /// 术法攻击 125 时：等级 1、技能增幅 0 → 1 + floor(10) = 11 层；
     /// 等级 2、技能增幅 25 → 1 + floor(12.75) = 13 层；两种情况下每层回血均为 1.0。
@@ -28,7 +36,7 @@ public sealed class CombatGanluBuffTests
           "damageRatio": 0,
           "cooldownMilliseconds": 20000,
           "castMilliseconds": 1000,
-          "manaCost": 6,
+          "manaCost": 20,
           "buff": {
             "buffId": "buff.test.ganlu",
             "name": "甘露",
