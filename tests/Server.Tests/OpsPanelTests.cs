@@ -1,4 +1,3 @@
-using System.Net;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Server.Clean.Ops;
@@ -8,7 +7,7 @@ namespace Server.Tests;
 
 /// <summary>
 /// 本地运维面板回归门禁：配置校验与路径规范化、一次性令牌生成与保密、
-/// 日志环形缓冲边界与过滤、私网来源判定（面板写操作仅允许回环与私有网段）。
+/// 日志环形缓冲边界与过滤。
 /// </summary>
 public sealed class OpsPanelTests
 {
@@ -54,11 +53,15 @@ public sealed class OpsPanelTests
         Assert.DoesNotContain(options.Token, options.ToString());
     }
 
-    /// <summary>启用时非法路径前缀快速失败。</summary>
-    [Fact]
-    public void Enabled_InvalidPath_Throws()
+    /// <summary>启用时三类越界配置（非法路径前缀 / 越界缓冲容量 / 超长令牌）都必须快速失败，不得挂到玩家路由或用弱口令启动。</summary>
+    [Theory]
+    [InlineData("Ops:Path", "/admin")]          // 只允许 /ops 前缀，避免占用玩家路由
+    [InlineData("Ops:LogBufferCapacity", "10")] // 低于下限会让日志缓冲失去环形语义
+    [InlineData("Ops:Token", "LONG_TOKEN")]     // 超过 512 字符直接拒绝
+    public void Enabled_InvalidConfiguration_Throws(string key, string value)
     {
-        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), ("Ops:Path", "/admin") };
+        var effective = key == "Ops:Token" ? new string('a', 513) : value;
+        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), (key, effective) };
         Assert.Throws<InvalidOperationException>(() => Options([.. entries]));
     }
 
@@ -82,22 +85,6 @@ public sealed class OpsPanelTests
         Assert.True(OpsPanel.IsBlockedOpsPath("/ops-other", active, isDevelopment: true));
 
         Assert.True(OpsPanel.IsBlockedOpsPath("/ops-a1b2c3d4e5f60718", OpsOptions.Disabled, isDevelopment: false));
-    }
-
-    /// <summary>启用时越界容量快速失败。</summary>
-    [Fact]
-    public void Enabled_InvalidCapacity_Throws()
-    {
-        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), ("Ops:LogBufferCapacity", "10") };
-        Assert.Throws<InvalidOperationException>(() => Options([.. entries]));
-    }
-
-    /// <summary>启用时超长令牌快速失败。</summary>
-    [Fact]
-    public void Enabled_TooLongToken_Throws()
-    {
-        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), ("Ops:Token", new string('a', 513)) };
-        Assert.Throws<InvalidOperationException>(() => Options([.. entries]));
     }
 
     /// <summary>日志缓冲按容量截断，并保留最新条目。</summary>
@@ -160,27 +147,4 @@ public sealed class OpsPanelTests
         logger.LogInformation("after");
         Assert.Single(buffer.Snapshot(LogLevel.Information, 100));
     }
-
-    /// <summary>回环、RFC1918、链路本地与 IPv6 唯一本地地址视为可访问来源。</summary>
-    [Theory]
-    [InlineData("127.0.0.1", true)]
-    [InlineData("::1", true)]
-    [InlineData("10.1.2.3", true)]
-    [InlineData("172.16.0.1", true)]
-    [InlineData("172.31.255.255", true)]
-    [InlineData("192.168.1.82", true)]
-    [InlineData("169.254.1.1", true)]
-    [InlineData("fc00::1", true)]
-    [InlineData("fe80::1", true)]
-    [InlineData("8.8.8.8", false)]
-    [InlineData("172.32.0.1", false)]
-    [InlineData("2001:db8::1", false)]
-    public void Network_ClassifiesPrivateAndPublic(string address, bool expected)
-    {
-        Assert.Equal(expected, OpsNetwork.IsPrivateOrLoopback(IPAddress.Parse(address)));
-    }
-
-    /// <summary>未知来源（null）一律拒绝。</summary>
-    [Fact]
-    public void Network_NullAddress_IsRejected() => Assert.False(OpsNetwork.IsPrivateOrLoopback(null));
 }

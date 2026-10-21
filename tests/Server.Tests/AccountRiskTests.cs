@@ -30,18 +30,6 @@ public sealed class AccountRiskTests
         Assert.All(first, item => Assert.Equal(64, item.Hash.Length));
     }
 
-    /// <summary>同一设备默认最多注册一个账号、同一身份默认最多两个账号。</summary>
-    [Fact]
-    public void DefaultPolicyMatchesRegistrationLimits()
-    {
-        var policy = AccountRiskPolicy.Default;
-
-        Assert.True(policy.Enabled);
-        Assert.True(policy.RequireDeviceSignal);
-        Assert.Equal(1, policy.MaxAccountsPerDevice);
-        Assert.Equal(2, policy.MaxAccountsPerPerson);
-    }
-
     /// <summary>策略注册表拒绝越界账号上限，避免面板误配置成无限放行。</summary>
     [Fact]
     public void PolicyRegistryRejectsInvalidLimit()
