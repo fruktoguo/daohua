@@ -1204,13 +1204,34 @@ export function formatTraitDescription(id: string, level = 1): string {
     const pct = Math.round(100 * scale)
     return `不动如山撼未动。受到伤害时以坚韧气魄招引敌意，将所受之威的 ${pct}% 化为敌方瞩目`
   }
-  // 普通数值特质：按正则将正向百分比提取并缩放
-  return meta.description.replace(/(\+)?(\d+(\.\d+)?)%/g, (match, prefix, numStr) => {
+  // 普通数值特质：按正则将正向百分比提取并缩放（双刃剑惩罚锁定不放大）
+  return meta.description.replace(/([+-])?(\d+(?:\.\d+)?)%/g, (match, prefix, numStr, offset, fullStr) => {
     const val = Number.parseFloat(numStr)
     if (Number.isNaN(val)) return match
-    // 双刃剑惩罚（降低 X%）不放大
-    const isPenalty = match.includes('-')
+
+    // 获取当前百分比修饰的前置短语（向前回溯至最近的标点符号或句首）
+    const prefixText = fullStr.slice(0, offset)
+    const lastPunctIndex = Math.max(
+      prefixText.lastIndexOf('。'),
+      prefixText.lastIndexOf('、'),
+      prefixText.lastIndexOf('，'),
+      prefixText.lastIndexOf('；'),
+      prefixText.lastIndexOf(';')
+    )
+    const clause = lastPunctIndex >= 0 ? prefixText.slice(lastPunctIndex + 1) : prefixText
+
+    // 双刃剑惩罚锁定不放大：显式负号、降低/减少/削弱/扣除、受到伤害增加/承伤增加等
+    const isPenalty =
+      prefix === '-' ||
+      clause.includes('降低') ||
+      clause.includes('减少') ||
+      clause.includes('削弱') ||
+      clause.includes('扣除') ||
+      clause.includes('受到') ||
+      clause.includes('承伤')
+
     if (isPenalty) return match
+
     const scaled = (val * scale).toFixed(1).replace(/\.0$/, '')
     return `${prefix ?? ''}${scaled}%`
   })
