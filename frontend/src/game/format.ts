@@ -167,7 +167,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     }
     const spellStackPercent = spec.spellAttackStackPercent ?? 0
     if (spellStackPercent > 0) {
-      return t('game.abilityDesc.buffStackSpellComposition', {
+      return t('game.abilityDesc.buffStackSpellFormula', {
         ratio: abilityRatioPercent(spellStackPercent * levelGrowth),
       })
     }
@@ -225,7 +225,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   ): string => {
     const composition = includeComposition ? stackComposition(spec) : null
     const parts = composition
-      ? [`[[${composition}]]`, ...buffDetailParts(spec)]
+      ? [composition, ...buffDetailParts(spec)]
       : buffDetailParts(spec)
     const detail = parts.length > 0 ? parts.join('，') : t('game.abilityDesc.effectBuff', { target })
     const duration = spec.durationSeconds ?? 0
@@ -245,7 +245,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
       return composition
         ? t('game.abilityDesc.buffApplySingle', {
           target,
-          composition: `[[${composition}]]`,
+          composition,
           buff: buffLabel(spec, 0),
         })
         : t('game.abilityDesc.buffApplyMulti', { target, buffs: buffLabel(spec, 0) })

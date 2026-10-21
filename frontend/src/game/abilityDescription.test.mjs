@@ -84,7 +84,7 @@ test('describeAbility：甘露主描述只保留施加关系与层数构成，�
 
   const camelResult = describeAbility(ganluCamel, 1)
   assert.ok(
-    camelResult.description.includes('对生命值百分比最低的队友施加 [[8%术法攻击 + 1层]] 的 [[甘露]]。'),
+    camelResult.description.includes('对生命值百分比最低的队友施加 [[8%术法攻击]] [[+ 1层]] 的 [[甘露]]。'),
     `甘露主描述应只保留施加关系与层数构成，实际为: ${camelResult.description}`
   )
   assert.ok(
@@ -98,7 +98,7 @@ test('describeAbility：甘露主描述只保留施加关系与层数构成，�
 
   const lv2Result = describeAbility(ganluCamel, 2)
   assert.ok(
-    lv2Result.description.includes('[[8.2%术法攻击 + 1层]]'),
+    lv2Result.description.includes('[[8.2%术法攻击]] [[+ 1层]]'),
     `甘露层数百分比应随等级成长，实际为: ${lv2Result.description}`
   )
 
@@ -207,8 +207,8 @@ test('describeAbility：碎罡三 Buff 胶囊化，层数构成随等级成长�
 
   const lv2 = describeAbility(suiGang, 2)
   assert.ok(
-    lv2.lines.includes('[[煞力]]：[[1 + 30.6%双抗 层]]，每层物攻 +1，持续 20 秒')
-      && lv2.lines.includes('[[罡锋]]：[[每 4.9 点已损气血 1 层]]，每层命中/暴击 +1，持续 20 秒'),
+    lv2.lines.includes('[[煞力]]：[[1 + 30.6%双抗]] 层，每层物攻 +1，持续 20 秒')
+      && lv2.lines.includes('[[罡锋]]：每 [[4.9 点已损气血]] [[1 层]]，每层命中/暴击 +1，持续 20 秒'),
     `碎罡层数构成应随等级成长并进入词条行，实际为: ${lv2.lines.join(' | ')}`
   )
 })

@@ -330,8 +330,12 @@ export function EffectTooltipTarget({
               else if (line.includes('消耗') || line.includes('灵力')) glyphName = 'mp'
               else if (line.includes('等级')) glyphName = 'realm'
               return (
-                <span key={line} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  {glyphName && <StatGlyph glyph={glyphName} size={14} />}
+                <span key={line}>
+                  {glyphName && (
+                    <span style={{ marginRight: 6 }}>
+                      <StatGlyph glyph={glyphName} size={14} />
+                    </span>
+                  )}
                   <ValueText className="effect-value-capsule" text={line} />
                 </span>
               )
