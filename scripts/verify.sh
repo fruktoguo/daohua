@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# 合并必跑最小充分门禁：工具链、Release 构建、Domain/Ecs/Server 三套测试（自动供给
-# daohua_market_test 集成测试库）、DataTool 校验、Compose 配置与前端构建。
+# 合并必跑最小充分门禁：工具链、restore+Release 构建、Domain/Ecs/Server 三套测试（自动供给
+# daohua_market_test 集成测试库，并按 trx 实际执行数硬校验非空）、DataTool 校验、前端单测与
+# 构建、Compose 配置。
 # 容量门禁不在合并必跑内：容量相关变更与发布前，在本地或受控测试库执行
 # scripts/capacity-target.sh（AGENTS.md §9）；本脚本不执行远程发布或生产恢复验证。
 #
 # 分级（默认全量，与合并/交付口径一致；分级只服务日常快速自检，不能替代交付前的全量门禁）:
 #   --fast       日常快速自检：跳过 Compose 校验与 PostgresIntegration 集成测试，其余全跑。
 #   --backend    只跑后端面：Release 构建、Domain/Ecs/Server 三套测试、DataTool 校验。
-#   --frontend   只跑前端面：依赖安装、i18n 词条、日志标记、类型检查与生产构建。
+#   --frontend   只跑前端面：依赖安装、i18n 词条、日志标记、前端单测、类型检查与生产构建。
 #   -h, --help   打印本用法。
 #
 # 环境变量：
-#   SKIP_NPM_CI=1   跳过前端依赖安装（即使锁定文件已变化）
-#   VERIFY_DOCKER=1 追加生产镜像构建
+#   SKIP_NPM_CI=1          跳过前端依赖安装（即使锁定文件已变化）
+#   VERIFY_DOCKER=1        追加生产镜像构建
+#   VERIFY_RESULTS_DIR     测试 trx 落盘目录（默认 artifacts/verify-results）
 
 set -Eeuo pipefail
 
@@ -82,17 +84,43 @@ ensure_frontend_deps() {
   npm --prefix frontend ci --include=dev --ignore-scripts --no-audit --no-fund
 }
 
+# `dotnet test` 在筛选器零匹配、或测试宿主根本没启动（如 obj/ 里的 NuGet 包路径
+# 指向其它机器导致 IsTestProject 为空）时返回 0 且只打印空白——门禁会「全绿但一个用例都没跑」。
+# 因此所有测试套件统一落 trx 并校验实际执行数；下限只用于抓「近乎零」，不钉死具体用例数，
+# 避免每加一个测试就要改门禁。
+RESULTS_DIR="${VERIFY_RESULTS_DIR:-artifacts/verify-results}"
+run_suite() {
+  local name="$1" project="$2" floor="$3"
+  shift 3
+  local dir="$RESULTS_DIR/$name"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  dotnet test "$project" --configuration Release --no-build --disable-build-servers --nologo \
+    --logger "trx;LogFileName=$name.trx" --results-directory "$dir" "$@"
+  local executed
+  executed="$(grep -o 'executed="[0-9]*"' "$dir/$name.trx" 2>/dev/null | head -1 | tr -dc '0-9' || true)"
+  if [[ -z "$executed" ]] || (( executed < floor )); then
+    printf '门禁失败：%s 实际执行 %s 个用例（下限 %s）。dotnet test 对零匹配返回 0，必须硬失败。\n' \
+      "$name" "${executed:-0}" "$floor" >&2
+    exit 1
+  fi
+  printf '%s 实际执行 %s 个用例。\n' "$name" "$executed"
+}
+
 if [[ "$RUN_BACKEND" -eq 1 ]]; then
   printf '%s\n' '==> Release 构建'
-  dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
+  # 显式 restore 后再 --no-restore 构建：实测 `dotnet build` 隐式还原在解决方案级
+  # 会逐项目重算（同一状态下 9~47s 抖动），拆开后稳定 restore 约 2s + build 约 5s。
+  dotnet restore Game.slnx --disable-build-servers --nologo
+  dotnet build Game.slnx --configuration Release --no-restore --disable-build-servers --nologo
 
   if [[ -f tests/Domain.Tests/Domain.Tests.csproj ]]; then
     printf '%s\n' '==> 领域测试'
-    dotnet test tests/Domain.Tests/Domain.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+    run_suite domain tests/Domain.Tests/Domain.Tests.csproj 300
   fi
   if [[ -f tests/Ecs.Tests/Ecs.Tests.csproj ]]; then
     printf '%s\n' '==> ECS 运行时与适配边界测试'
-    dotnet test tests/Ecs.Tests/Ecs.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+    run_suite ecs tests/Ecs.Tests/Ecs.Tests.csproj 80
   fi
 
   if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
@@ -148,11 +176,11 @@ if [[ "$RUN_BACKEND" -eq 1 ]]; then
       fi
 
       printf '%s\n' '==> 服务端测试'
-      dotnet test tests/Server.Tests/Server.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+      run_suite server tests/Server.Tests/Server.Tests.csproj 300
     else
       # --fast：跳过需要真实数据库的 PostgresIntegration 门禁，只跑纯内存/契约用例。
       printf '%s\n' '==> 服务端测试（跳过 PostgresIntegration）'
-      dotnet test tests/Server.Tests/Server.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo --filter "Category!=PostgresIntegration"
+      run_suite server tests/Server.Tests/Server.Tests.csproj 180 --filter "Category!=PostgresIntegration"
     fi
   fi
 
@@ -170,6 +198,20 @@ if [[ "$RUN_FRONTEND" -eq 1 ]]; then
 
   printf '%s\n' '==> 日志富文本标记转义校验'
   node scripts/check-log-markup.mjs
+
+  # 前端纯逻辑单测（node:test）：此前 10 个 *.test.mjs 无任何入口执行，
+  # 其中 codexCalculations / realmCalculations 已漂移失败数月无人发现。
+  # 引号内的 glob 由 node 自身展开（node>=22 支持），不依赖 shell globstar。
+  printf '%s\n' '==> 前端逻辑单测'
+  node --test "frontend/src/**/*.test.mjs"
+
+  # 契约脚本的唯一既有入口是 tests/Server.Tests/FrontendContractTests（随 --backend 跑）。
+  # 全量/后端模式下它已被执行，此处再跑就是同一个脚本重复一遍；
+  # 只有「单独跑前端面」时它才完全缺席，因此在那种模式下直调一次补齐。
+  if [[ "$RUN_BACKEND" -eq 0 ]]; then
+    printf '%s\n' '==> 前后端契约解码校验（--frontend 补充执行）'
+    node scripts/check-frontend-contracts.mjs
+  fi
 
   printf '%s\n' '==> 前端类型检查与生产构建'
   npm --prefix frontend run build
