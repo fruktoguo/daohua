@@ -21,6 +21,39 @@ function getEdgeDistance(
   return Math.hypot(to.x - from.x, to.y - from.y)
 }
 
+/** 稳定字符串散列：为连线弧向提供确定性符号，避免每次渲染改变形状 */
+function stableEdgeHash(value: string): number {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0
+  }
+  return Math.abs(hash)
+}
+
+/** 计算连线的轻微弧线控制点与文字落点；弯曲量随边长收敛，端点保持不变 */
+function getEdgeCurve(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  edgeId: string,
+): { controlX: number; controlY: number; labelX: number; labelY: number } {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy) || 1
+  const bend = Math.min(3.2, 0.7 + length * 0.06)
+  const direction = stableEdgeHash(edgeId) % 2 === 0 ? 1 : -1
+  const offset = bend * direction
+  const normalX = -dy / length
+  const normalY = dx / length
+  const midX = (from.x + to.x) / 2
+  const midY = (from.y + to.y) / 2
+  return {
+    controlX: midX + normalX * offset,
+    controlY: midY + normalY * offset,
+    labelX: midX + normalX * offset * 0.5,
+    labelY: midY + normalY * offset * 0.5,
+  }
+}
+
 /**
  * 合并后的世界图视图：大世界共用单一坐标系，区域（maps 条目）仅作显示分组；
  * 寻路与玩家位置插值一律对全图求值，跨区域路径天然可用。
@@ -1158,8 +1191,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               const distance = getEdgeDistance(from, to)
               const isPlanned = plannedEdges.has(edge.edgeId)
               const isCrossing = worldIndex.nodeOwner.get(edge.fromNodeId) !== worldIndex.nodeOwner.get(edge.toNodeId)
-              const midX = (from.x + to.x) / 2
-              const midY = (from.y + to.y) / 2
+              const curve = getEdgeCurve(from, to, edge.edgeId)
+              const curvePath = `M ${from.x} ${from.y} Q ${curve.controlX} ${curve.controlY} ${to.x} ${to.y}`
 
               return (
                 <g
@@ -1167,19 +1200,29 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                   className={`world-map-edge-group${isPlanned ? ' is-planned' : ''}${isCrossing ? ' is-crossing' : ''}`}
                   key={edge.edgeId}
                 >
-                  {/* 宽容度高的透明交互拾取层 (28px) */}
-                  <line className="world-map-edge-hitbox" x1={nx(from.x)} x2={nx(to.x)} y1={ny(from.y)} y2={ny(to.y)} />
-                  {/* 底色衬线 */}
-                  <line className="world-map-edge-bg" x1={nx(from.x)} x2={nx(to.x)} y1={ny(from.y)} y2={ny(to.y)} />
-                  {/* 核心主路径 */}
-                  <line className="world-map-edge-line" x1={nx(from.x)} x2={nx(to.x)} y1={ny(from.y)} y2={ny(to.y)} />
+                  {/* 曲线路径层：viewBox 直接使用世界坐标，preserveAspectRatio=none 映射到画布尺寸 */}
+                  <svg
+                    className="world-map-edge-curve"
+                    height="100%"
+                    overflow="visible"
+                    preserveAspectRatio="none"
+                    viewBox={`0 0 ${worldBounds.width} ${worldBounds.height}`}
+                    width="100%"
+                  >
+                    {/* 宽容度高的透明交互拾取层 (28px) */}
+                    <path className="world-map-edge-hitbox" d={curvePath} vectorEffect="non-scaling-stroke" />
+                    {/* 底色衬线 */}
+                    <path className="world-map-edge-bg" d={curvePath} vectorEffect="non-scaling-stroke" />
+                    {/* 核心主路径 */}
+                    <path className="world-map-edge-line" d={curvePath} vectorEffect="non-scaling-stroke" />
+                  </svg>
                   {/* 距离文字标注（标准字形比例，带黑色轮廓发光） */}
                   <text
                     className="world-map-edge-label-text"
                     dominantBaseline="central"
                     textAnchor="middle"
-                    x={nx(midX)}
-                    y={ny(midY)}
+                    x={nx(curve.labelX)}
+                    y={ny(curve.labelY)}
                   >
                     {t('combat.map.edgeDistance', { distance: distance.toFixed(1) })}
                   </text>

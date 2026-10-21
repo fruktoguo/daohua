@@ -9,8 +9,8 @@
         "id": "node.astral-rift",
         "name": "裂天界隙",
         "description": "天空撕裂出幽紫裂痕的界域边缘，罡风呼啸，是踏入星陨异境的起点。",
-        "x": 128,
-        "y": 40,
+        "x": 129,
+        "y": 41,
         "availableActionIds": [
           "combat.sweep-twilight-valley"
         ],
