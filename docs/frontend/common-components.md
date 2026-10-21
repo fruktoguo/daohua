@@ -40,6 +40,7 @@
 - **适用场景**：
   - **复合数值展示**（暗墨卡片底、图标、胶囊包裹名称、专属下划线高亮数值、可选内联经验进度文本与底边进度条、可选集成 Hover Tooltip） -> `PillStatLabel`
   - **属性加成/词缀标签**（无外边框轻量流式、胶囊名、专属色调下划线值、可选集成 Tooltip） -> `PillBonusLabel`
+  - **建筑效果加成公式行**：图鉴「建造」悬浮卡内的建筑加成一律走 `PillBonusLabel`（`icon` 传 `StatGlyph` 属性小图标），并在其后追加「每级 +X%」成长小字；数据来源为 `frontend/src/game/buildingCalculations.ts` 的 `getBuildingBonusFormulas`（全量描述表 `BUILDING_BONUS_DESCRIPTORS` 驱动，新增修饰项字段只需在该表登记），样式类 `.codex-building-bonus-row` / `.codex-building-bonus-growth`（[`codex.css`](../../frontend/src/styles/codex.css)）。禁止在组件内手写字段 if 链拼加成文本。
   - 支持修仙色调 (`PillTone`)：`gold`, `jade`, `qi`, `purple`, `amber`, `crimson`, `emerald`, `cyan`, `violet`, `indigo`, `teal`, `bronze`, `silver`, `slate`, `sky`, `muted`, `default`
 - **组件源码**：[`frontend/src/components/PillLabel.tsx`](../../frontend/src/components/PillLabel.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.compound-stat-label`, `.compound-bonus-label`, `.pill-tone--*`)
@@ -65,13 +66,23 @@
 
 ---
 
+## 4.1 竖屏底部两级导航 (Mobile Bottom Nav)
+
+- **适用场景**：竖屏（≤960px）底部主导航。一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。
+- **分组真源**：`frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUPS` / `MOBILE_NAV_GROUP_DEFS` / `GROUP_OF_TAB` / `TAB_ICON`）。新增页签必须同时登记 `GROUP_OF_TAB`，否则 `satisfies Record<TabId, …>` 编译失败——这是竖屏可达性的编译期兜底。
+- **组件**：`BottomNav`（`frontend/src/App.tsx`）负责渲染与点击编排，`CraftingModeTabs` 作为技艺组的子行被复用；点击语义与落点记忆规则见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
+- **样式类名**：`.bottom-nav`, `.bottom-nav-row`, `.bottom-glyph`, `.bottom-glyph-badge`, `.bottom-sub-nav`, `.bottom-sub-tabs`, `.bottom-sub-tab-btn`, `.bottom-sub-tab-glyph`, `.bottom-sub-tab-text`, `.bottom-sub-tab-badge`
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.bottom-nav`)，浅色主题接管见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+---
+
 ## 5. 面板二级导航与子选项卡 (Panel Sub-Tabs Navigation)
 
 - **适用场景**：
   - 面板主分类下的二级切换栏（如内视根基下的「六维」与「基础」切换，采用紧凑暗墨胶囊按键与金色微光高亮）。
-  - **坊市多级分类子导航与多维筛选体系 (`MarketBrowseGrid`)**：一级主 Tab 为（全部/材料/装备/消耗品/功法）。材料保留 `.insight-sub-tabs` 二级子分类（灵材/矿石/异材/精材），并叠加稀有度筛选。全部品类共用 `.market-manual-filters` 多维筛选栏：每个维度为「任意 + 互斥选项」单选 Toggle（`.market-toggle-group` / `MarketOptionToggle`，首项「任意」表示该维不过滤），维度间 AND 联合；品阶为跨品类全局原生下拉（`.market-grade-select`，`0` 表示任意，1~8 阶对应品质档）。装备维度为类型（物理/法术/防御）与部位（六部位 + 工具），选中「工具」时类型组自动置灰禁用并在过滤中忽略类型维度；消耗品维度为战斗药品/战斗通用/技艺；功法维度为门类（术法/内功）、伤害（物理/法术）、形式（全本/残卷）。所有筛选状态常驻 `useMarketStore`。
-  - **万象图鉴多级分类导航 (`CodexPage`)**：在一级主分类（材料/技艺/建造/功法/妖兽）中材料居首；材料分类下复用 `.codex-sub-tabs` 与 `.codex-sub-tab-btn` 展示二级子分类（药材/矿石/异材），技艺分类下展示（炼丹/炼器/阵法/符箓），子类划分统一走 `isMaterialSubTabItem` 纯函数。
-- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`, `.market-manual-filters`, `.market-filter-label`, `.market-grade-field`, `.market-grade-select`, `.market-toggle-group`, `.market-toggle-btn`, `.codex-sub-tabs`, `.codex-sub-tab-btn`
+  - **坊市多级分类子导航与多维筛选体系 (`MarketBrowseGrid`)**：一级主 Tab 为（全部/材料/装备/消耗品/功法）。材料保留 `.insight-sub-tabs` 二级子分类（灵材/矿石/异材/精材），并叠加稀有度筛选。全部品类共用 `.filter-bar` 多维筛选栏：每个维度为「任意 + 互斥选项」单选 Toggle（`.option-toggle-group` + `OptionToggle` 公共组件，首项「任意」表示该维不过滤），维度间 AND 联合；品阶为跨品类全局原生下拉（`.filter-grade-select`，`0` 表示任意，1~8 阶对应品质档）。装备维度为类型（物理/法术/防御）与部位（六部位 + 工具），选中「工具」时类型组自动置灰禁用并在过滤中忽略类型维度；消耗品维度为战斗药品/战斗通用/技艺；功法维度为门类/伤害大类/载体形式。筛选状态常驻 `useMarketStore`。
+  - **万象图鉴多维筛选导航 (`CodexPage`)**：一级主分类（材料/技艺/建造/功法/妖兽/特质，材料居首）下挂同款 `.filter-bar` + `OptionToggle` 筛选栏，取代旧的独立子 Tab 条——每个主分类各自成组：材料（灵材/矿石/异材/精材，取配表 `subCategory`）、技艺（炼丹/炼器/阵法/符箓，取配表 `technique`）、建造（生产/战斗，取配表 `group`）、功法（门类 + 伤害大类）、妖兽（妖兽/精英/妖王，取配表 `rank`）、特质（凡品 ~ 天品），另叠等阶下拉与收录状态（全部/已收录/未收录）。**Toggle 选项支持 `count` 角标**展示该选项的「已收录/总数」，与一级页签及总进度胶囊同口径；筛选状态按主分类分别常驻 `useUiStore.codexFilters`。分类纯函数收拢在 `frontend/src/game/codexFilters.ts`。
+- **样式类名**：通用 `.filter-bar`, `.filter-label`, `.filter-grade-field`, `.filter-grade-select`, `.option-toggle-group`, `.option-toggle-btn`, `.option-toggle-count`；面板专用 `.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`, `.codex-filter-bar`
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-sub-tabs`)
 
 ---
@@ -93,23 +104,23 @@
     - **功法战技是例外，必须显式接线**：物品与装备的 ID 会作为 `itemId` 流经既有展示位而自动生效，
       而战技面板走的是 `ability.name`，需调用方自己传 `ability.abilityId`
       （接入点：`AbilitiesPanel` 装配槽瓦片 + 已学功法列表，`AbilityGridPicker` 网格瓦片，`App.tsx` 战斗面板槽位）。
-    - `.webp` 为运行时资源，**全项目只保留这一档：64×64**（由 `art/` 切图管线产出，脚本默认参数即 64）；
+    - `.webp` 为运行时资源，**全项目只保留这一档：48×48 有损 q90**（由 `art/` 切图管线的 64px 产出经 LANCZOS 降采样重编码，2026-10-21 体积裁定）；
       `.png` 为早期历史图片，现已全部转出为 WebP 并移出该目录。注册表仍同时认两种后缀，同名时 `.webp` 优先。
     - **资产分层约定**：非运行时位置只留**原始分辨率** —— AI 原图在 `art/source/`，
       另有 26 张早期图标的**唯一高清副本**在 `art/legacy_128/`（其原图在本机已不存在，不可删）。
       切图中间档（256 工程母版）**不常驻**，需要时由 `art/sheets.json` 一条命令重建。
       详见 [`TASK-20260913-06.md`](../tasks/archive/archive-2026-09.md)。
-    - **编码档位**：**降色 256 + 无损 WebP**（`--web-palette 256 --web-lossless`）。
-      90 张合计 **168.1 KB**：同口径下比原先的有损 q90（267.2 KB）**小 37%**，可见像素 RGB 还高 4.13 dB。
-      有损 WebP 会把**边缘半透明像素的 RGB** 带偏（表现为轮廓发白、整体褪色发灰），降色 + 无损没有这个毛病。
-      换编码档位前先读 [`TASK-20260913-07.md`](../tasks/archive/archive-2026-09.md) 的实测对照表。
+    - **编码档位（2026-10-21 起）**：**48×48 有损 WebP q90**。151 张旧图标 64px 档 471 KB → 48px 档 318 KB（-32.4%），
+      含二图新增共 178 张合计 371 KB。体积优先的取舍：有损 WebP 会让**边缘半透明像素的 RGB** 轻微带偏，
+      如需极致纯净度可整体回退 64px 降色 256 + 无损档（历史实测对照见 [`TASK-20260913-07.md`](../tasks/archive/archive-2026-09.md)）。
   - **图标渲染统一关闭线性插值（`image-rendering: pixelated`）**：三处图标 `<img>` 都用最近邻缩放，
     保留像素质感（改动前是浏览器默认双线性，会发虚）。位置：
     `.item-tile-icon`（[`selection-grid.css`](../../frontend/src/styles/selection-grid.css)）、
     `.item-reference-icon`（[`styles.css`](../../frontend/src/styles.css)，16px）、
     `.daohua-floating-card-title-icon`（[`floating-popover.css`](../../frontend/src/styles/floating-popover.css)，24px）。
-    瓦片绘制区固定为 52px，故 64×64 源在 DPR1 是**缩小** 0.81×、在 DPR2 是**放大** 1.63× —— 两种密度均已实测无走样。
-    **但若源图升到 ≥128px，缩小倍率会明显变大（DPR1 约 2.46×），届时必须重新实测这三处。**
+    瓦片绘制区固定为 52px，故 48×48 源在 DPR1 是**放大** 1.08×、在 DPR2 是**放大** 2.17× —— `pixelated` 下呈硬边放大，
+    需要更锐利时可整体回退 64px 源（DPR1 0.81× / DPR2 1.63×，历史实测无走样）。
+    **若源图升到 ≥128px，会反转为缩小场景，届时必须重新实测这三处。**
   - **hover 反馈零重绘架构**：瓦片子树不做任何 `transition`——实测密集网格 hover 时任意 transition（含 transform）都会逐帧主线程重绘（79 格扫过约 19fps）。动效全部由合成器线程承担：辉光为常驻 `.item-tile-glow` 叠加层做 `opacity` fade-in（`ItemTile` 内置；裸写 `.item-tile` 的功法槽/功法挑选器需手动补 `<span class="item-tile-glow" aria-hidden="true" />`），丝带与角标缩放走 keyframe `animation`（`item-ribbon-zoom-in` / `item-corner-zoom-in`），边缘扫光保持 transform+opacity keyframes；绘制类属性（丝带底色、角标 `box-shadow`）瞬时切换。选中态辉光为静态 `opacity: 1`。
   - **强化装备 `+N` 资产变体**：钱包以 `variant="+N"` 区分强化等级资产行。展示链路统一约定——`parseEnhancementVariant(variant)` 解析等级；`ItemCard`/候选条目名称显示 `装备名 +N`；`ItemTooltipTarget` 接收 `enhancementLevel`，`describeEquipmentEffects` 按 `enhancementBonus × level` 在主卡追加 `(+强化加成)` 后缀；已装备槽位名同样带 `+N`。任何新增装备展示位必须沿用该口径，不得自行拼字符串或丢等级。
   - **坊市装备强化等级盘口选择与开单弹窗联动**：装备标的在坊市选中后先进入 `MarketEnhancementPicker`（`market-enhance-*` 四列网格行：物品瓦片 + 悬浮详情按 `enhancementLevel` 缩放 + 该变体行持有量 | 最佳出售价+购买 | 最佳收购价+出售 | 查看全部进入该级盘口）；挂单弹窗（`MarketOrderModal`）在装备标的下内置强化等级字段与背包持存快捷芯片组，等级切换即时动态读取对应变体行背包库存与穿戴可用量（开单/持存/已装备拦截全部按 `(itemId, "+N")` 变体键对账），自动钳位最大可挂售量并异步拉取对应等级盘口深度，`market.place` 负载 `variant: "+N"`。
@@ -312,8 +323,11 @@
 ## 22. 战斗技能触发条件编辑器 (Combat Trigger Editor)
 
 - **适用场景**：
-  - 功法自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
-  - **触发条件跟随功法 ID 而非槽位**：`combat.abilityTriggers`（`abilityId → CombatTrigger[]` 映射）是玩家侧唯一的条件存储——卸下再装配、跨槽位移动同一功法时条件保留；已学功法目录瓦片与装配槽位均可打开同一功法维度的编辑器，编辑器标题用功法名。槽位字段 `CombatAbilitySlot` 不再携带 `triggers`。
+  - 功法自动施放触发条件的编辑与配置弹窗（支持自身/目标/友方与敌方单体及集合对象依赖，气血/真元比例或固定阈值条件，群体存活/阵亡数量聚合条件，生效/未生效状态比较，`equal` 浮点等值比较；条数上限与 Buff 词表均由服务端下发） -> `CombatTriggerEditor`
+  - **两条独立存储通道，不可混用**：功法条件走 `combat.abilityTriggers`（`abilityId → CombatTrigger[]`），消耗品条件走 `combat.consumableTriggers`（`itemId → CombatTrigger[]`）。前者键必须是已习得功法，写消耗品 ID 会被服务端以「功法未习得」拒绝，故消耗品条件必须走后者。
+  - **条件列表三态语义**：键**缺失** = 未配置（回退配表 `defaultTriggers` / `consumable.triggers` 出厂默认）；键存在且为 **空数组** = 玩家显式选择「无条件恒可用」，不回退默认；键存在且非空 = AND 约束。因此「清空全部」写入空数组而非删除键，命令层不得把空数组折叠为键缺失。消耗品与功法同构。
+  - **Buff 词表与规约常量均来自服务端**：`buff-stacks` 的可选 Buff 取自 `GET /api/v1/catalog/buffs`（服务端从消耗品 `consumable.buffs[]`、功法 `buff.buffId` 或合成 `ability-buff:<id>`、行动产出 Buff、特质注入 Buff 派生），条数上限与 `equal` 容差取自 `GET /api/v1/catalog/triggers`；前端**禁止**硬编码 Buff 列表与上限，引用配表中不存在的 Buff 会被服务端在命令期拒绝（该条件层数恒 0，属死配置）。
+  - **触发条件跟随功法 ID 而非槽位**：`combat.abilityTriggers` 中的功法条件在卸下再装配、跨槽位移动同一功法时保留；已学功法目录瓦片与装配槽位均可打开同一功法维度的编辑器，编辑器标题用功法名。槽位字段 `CombatAbilitySlot` 不携带 `triggers`。消耗品条件同理按物品 ID 挂接，不随槽位走。
   - **未展开时 Hover 浮现与展开时弹窗大按钮接管互斥机制**：
     - **未展开选择时**：瓦片（功法槽、已学功法、战斗详情消耗品槽）鼠标 hover/focus-within 时从上缘/下缘外侧浮现暗金微光条件胶囊（11px 字号、3px 9px 内边距、`::before` 扩充 34px×60px 连续热区防滑脱）；
     - **展开选择弹窗时**：槽位进入 `.is-picking` 状态，CSS 强制彻底隐藏瓦片上的 hover 条件按钮（消除遮挡与双按钮混乱），由选择弹窗（`CandidatePicker` / `AbilityGridPicker` / `ItemGridPicker`）顶部 Header 右侧呈现的**放大一倍大号「⚙ 触发条件」胶囊按钮**（高度 32px / 触屏 36px，字号 13px，金边微光，`has-triggers` 态微光高亮）全权接管，点击直接打开条件编辑器并关闭选择弹窗。
@@ -461,7 +475,7 @@
 ## 32. 万象图鉴与百科展示模板 (Codex Page · Compendium Layout)
 
 - **适用场景**：
-  - **万象图鉴主页面**（四大分类：制造配方、建筑图谱、功法神通、大世界妖兽）：整合全景收集度进度胶囊、多级选项卡切换、未解锁条目的暗墨置灰与锁头遮罩。
+  - **万象图鉴主页面**（六大分类：天地材料、技艺配方、建筑图谱、功法神通、大世界妖兽、特质志）：整合全景收集度进度胶囊、一级分类页签 + 二级多维 Toggle 筛选栏（见 §5）、未解锁条目的暗墨置灰与锁头遮罩。
   - **悬浮卡片解锁条件**：统一条目 Hover 悬浮卡（`FloatingPopover` + `FloatingInfoCard`），在卡内显著位置挂载 `.codex-unlock-condition-pill`，统一注明对应解锁方式（境界等级、秘籍研读、妖兽讨伐降服）。
 - **组件源码**：[`frontend/src/components/CodexPage.tsx`](../../frontend/src/components/CodexPage.tsx)
 - **样式文件**：[`frontend/src/styles/codex.css`](../../frontend/src/styles/codex.css)
@@ -489,12 +503,13 @@
 ## 34. 本地离线确定性战斗模拟器 (Combat Simulator Modal)
 
 - **适用场景**：
-  - **战斗推演与数值验证**：在战场顶部操作区（「战斗统计」按钮旁）提供「模拟器」常驻入口，弹窗唤起本地确定性战斗模拟器；
-  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人战斗属性（数值自动保留 1 位小数）与技能装配，或一键导入当前队伍队友；支持微调属性与技能；
-  - **环境与时长设置**：支持大地图节点生态、快捷时长（10m~24h）与种子控制；
+  - **战斗推演与数值验证**：在战场顶部操作区（「战斗统计」按钮旁）提供「模拟器」常驻入口，唤起全屏沉浸视口战斗模拟器（`100vw × 100dvh` 双列流式自适应排版）；
+  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人战斗属性（数值自动保留 1 位小数）、技能与穿戴装备，或一键导入当前队伍队友；支持微调属性与技能；
+  - **装备部位与格子规范**：严格对齐游戏内 6 大部位（武器/副手/头部/衣服/下装/饰品），完全复用游戏内标准 64px 装备格子（`ItemTile` + `ItemTooltipTarget`，空槽虚线、穿戴显图标丝带强化角标并 Hover 展示中文属性与强化缩放卡片），点击格子直接呼出 `ItemGridPicker` 待选列表挑选全量装备，支持强化等级（+0~+20）与快捷卸下；
+  - **环境与时长设置**：支持大地图节点生态、快捷时长（10m~24h）与多节点多选横向对比；
   - **综合报表展示**：
     - **战斗波次与胜率**：总场次、胜场、胜率、最高到达波次、妖怪击杀统计；
-    - **收益转化**：战利品掉落明细（`ItemTile` + `ItemTooltipTarget`，展示总数与 `/hr` 速率）、每小时修为速率；
+    - **收益转化**：战利品掉落明细（`ItemTile` + `ItemTooltipTarget`，展示总数与 `/hr` 速率）、每小时修为速率、市场参考价每日折算总收益；
     - **灵力状态评估**：缺蓝时间占比（%）、充足/轻度/中度/严重状态、技能卡蓝次数与等蓝耗时、调优建议。
   - 主弹窗容器：[`frontend/src/components/simulator/CombatSimulatorModal.tsx`](../../frontend/src/components/simulator/CombatSimulatorModal.tsx)
   - 阵容编辑：[`frontend/src/components/simulator/SimulatorPartyEditor.tsx`](../../frontend/src/components/simulator/SimulatorPartyEditor.tsx)

@@ -69,4 +69,4 @@ a 2x2 grid sprite sheet of 4 minimalist bold vector logo icons, stencil cut silh
 | 图腾母版库 | `art/emblems/` | 128×128 RGBA WebP（纯净暖米棕镂空 Logo） |
 | AI 生成器 | `.agents/skills/moss-art/scripts/moss_generator.py` | 驱动 ComfyUI MOSS-Image 批量出图 |
 | 自动合成工具 | `.agents/skills/moss-art/scripts/composite_manuals.py` | 封皮分色、去黑、倾斜、下采样导出 |
-| 最终游戏资源 | `frontend/src/assets/items/` | 64×64 无损 WebP (`item.tome.*`, `item.fragment.*`) |
+| 最终游戏资源 | `frontend/src/assets/items/` | 48×48 有损 WebP q90 (`item.tome.*`, `item.fragment.*`)：由 64×64 无损档统一下采样重编码（2026-10-21 体积裁定） |
