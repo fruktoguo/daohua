@@ -3682,6 +3682,18 @@
   padding: 34px 0;
   scrollbar-width: thin;
 }
+.combat-slot-row--consumables {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-width: max-content;
+  height: 100%;
+}
+
+.combat-slot-section--abilities {
+  border-left: 1px solid var(--gold-faint);
+}
+
 
 .combat-slot-section {
   position: relative;
@@ -4303,25 +4315,70 @@
     background: rgba(10, 9, 6, 0.97);
   }
 
-  /* 竖屏：消耗药品/通用物品两组并列一行、功法组独占一行；格子统一缩至桌面 2/3（64→42px） */
+  /* 竖屏：消耗品与功法分上下独立背景卡片，彻底避免边框重叠与文字遮挡；格子统一为 48px */
   .combat-slot-tray {
-    --item-slot-size: 42px;
-    --item-tile-size: 42px;
-    flex-direction: row;
-    flex-wrap: wrap;
+    --item-slot-size: var(--mobile-consumable-slot-size, 48px);
+    --item-tile-size: var(--mobile-consumable-slot-size, 48px);
+    display: flex;
+    flex-direction: column;
     align-items: stretch;
+    gap: 8px;
+    padding: 10px 0 14px;
     overflow-x: hidden;
   }
 
-  .combat-slot-section {
+  /* 消耗品栏位整行：左右各一组（药品3格/通用3格），同在一行且有独立完整背景框 */
+  .combat-slot-row--consumables {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 4px;
+    border: 1px solid var(--gold-faint);
+    background: rgba(201, 180, 109, 0.025);
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+
+  .combat-slot-row--consumables .combat-slot-section {
+    position: relative;
     flex: 1 1 0;
     width: auto;
     min-width: 0;
+    height: auto;
+    padding: 0 4px 0 14px;
+    border: 0;
+    background: transparent;
   }
 
-  /* 42px 槽高容纳不下带字距的竖排标签（4 字约 48px），竖屏收紧字距避免裁切 */
-  .combat-slot-section .slot-group-label {
+  .combat-slot-row--consumables .combat-slot-section + .combat-slot-section {
+    border-left: 1px solid var(--gold-faint);
+  }
+
+  /* 功法行：独占一行，带独立完整背景框与内边距，与上方消耗品行平级有间距 */
+  .combat-slot-section--abilities {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    padding: 6px 4px 6px 14px;
+    border: 1px solid var(--gold-faint);
+    background: rgba(201, 180, 109, 0.025);
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+
+  /* 竖排标签在 48px 槽高下收紧字距居左显示，彻底解决文字遮挡 */
+  .combat-slot-tray .slot-group-label {
+    left: 2px;
     letter-spacing: 0;
+    font-size: 10px;
+    width: 1em;
   }
 
   /* 缩小后的格上角标过小难辨，竖屏详情栏隐藏（丝带保留品类色块可辨，不做隐藏） */
@@ -4329,31 +4386,27 @@
     display: none;
   }
 
-  /* 同排两组物品之间沿用竖向分隔线 */
-  .combat-slot-section + .combat-slot-section {
-    padding-top: 0;
-    border-top: 0;
-    border-left: 1px solid var(--gold-faint);
-  }
-
-  /* 功法组折行独占一行，分隔线回到顶边 */
-  .combat-slot-tray .combat-slot-section:last-child {
-    flex: 1 1 100%;
-    width: 100%;
-    padding-top: 6px;
-    border-top: 1px solid var(--gold-faint);
-    border-left: 0;
-  }
-
-  .combat-slot-section .auto-use-slots,
-  .combat-slot-section .combat-slot-grid {
+  .combat-slot-section .auto-use-slots {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 3px;
     width: 100%;
     min-width: 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .combat-slot-grid--abilities {
+    display: flex;
+    flex-direction: row;
     justify-content: flex-start;
+    align-items: center;
+    gap: 3px;
+    padding-top: 0;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
   }
 }
 

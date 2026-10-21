@@ -1307,9 +1307,14 @@
 }
 
 @media (max-width: 960px) {
-  /* 竖屏：行动页自动消耗品槽位均分整行宽度，避免最小定宽造成横向溢出 */
+  :root {
+    --mobile-consumable-slot-size: 48px;
+  }
+
+  /* 竖屏：行动页自动消耗品托盘，统一槽位大小（48px），避免不规则拉伸 */
   .auto-use-tray {
     grid-template-columns: minmax(0, 1fr);
+    padding: 12px 0;
   }
 
   .slot-group {
@@ -1317,47 +1322,59 @@
   }
 
   .auto-use-slots {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
     width: 100%;
     min-width: 0;
   }
 
-  /* 拉伸仅限行动页托盘：战斗详情页 combat-slot-tray 由 expedition.css 缩至 42px 固定尺寸 */
-  .auto-use-tray .auto-use-slot {
-    width: auto;
-    min-width: 0;
-    flex: 1 1 0;
-    aspect-ratio: auto;
+  /* 详情、历练、技艺三处消耗品格子统一为 48px 正方形 */
+  .auto-use-tray .auto-use-slot,
+  .combat-slot-tray .auto-use-slot,
+  .combat-slot-tray .combat-slot-card {
+    width: var(--mobile-consumable-slot-size);
+    height: var(--mobile-consumable-slot-size);
+    min-width: var(--mobile-consumable-slot-size);
+    min-height: var(--mobile-consumable-slot-size);
+    flex: 0 0 var(--mobile-consumable-slot-size);
+    aspect-ratio: 1 / 1;
   }
 
   .auto-use-tray .item-use-slot-tooltip,
-  .auto-use-tray .item-use-slot-shell {
+  .auto-use-tray .item-use-slot-shell,
+  .auto-use-tray .item-use-slot,
+  .combat-slot-tray .item-use-slot-tooltip,
+  .combat-slot-tray .item-use-slot-shell,
+  .combat-slot-tray .item-use-slot,
+  .combat-slot-tray .combat-ability-slot {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .auto-use-tray .item-use-slot--empty,
+  .combat-slot-tray .item-use-slot--empty,
+  .combat-slot-tray .combat-ability-slot--empty {
+    min-width: 0;
+    min-height: 0;
     width: 100%;
     height: 100%;
   }
 
-  .auto-use-tray .item-use-slot {
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-  }
-
-  .auto-use-tray .item-use-slot--empty {
-    min-width: 0;
-    min-height: 60px;
-  }
-
-  /* 功法槽组（内功+术法×4）竖屏允许换行：nowrap+min-content 会把整组撑出视口右侧 */
-  .combat-slot-grid,
-  .combat-slot-grid--abilities {
-    flex-wrap: wrap;
-    min-width: 0;
-    justify-content: flex-start;
-  }
-
-  /* 压过基础规则里 .combat-slot-tray .slot-group:last-child 的 min-width: max-content；
-     宽度交由 expedition.css 按排位分配（两组物品同行、功法组独占一行） */
+  /* 压过基础规则里 .combat-slot-tray .slot-group:last-child 的 min-width: max-content */
   .combat-slot-tray .slot-group.combat-slot-section,
   .combat-slot-section {
     min-width: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  :root {
+    --mobile-consumable-slot-size: 44px;
   }
 }

@@ -31,8 +31,8 @@ export interface MobileNavGroup {
   readonly subNav: MobileNavSubNav
 }
 
-/** 一级分组展示顺序：主线循环（历练→详情）在最左，收纳型「更多」在最右 */
-export const MOBILE_NAV_GROUP_ORDER: readonly MobileNavGroupId[] = ['explore', 'detail', 'insight', 'craft', 'market', 'bag', 'more']
+/** 一级分组展示顺序：内视、坊市、历练、详情、技艺、背包、更多 */
+export const MOBILE_NAV_GROUP_ORDER: readonly MobileNavGroupId[] = ['insight', 'market', 'explore', 'detail', 'craft', 'bag', 'more']
 
 /** 分组定义真源（键即分组标识，展示顺序由 `MOBILE_NAV_GROUP_ORDER` 决定） */
 export const MOBILE_NAV_GROUP_DEFS: { readonly [K in MobileNavGroupId]: Omit<MobileNavGroup, 'id'> } = {

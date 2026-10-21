@@ -2001,10 +2001,12 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   return (
     <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
       <div className="combat-slot-tray">
-        <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" />
-        <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.generalGroup')} slotGroup="general" />
+        <div className="combat-slot-row combat-slot-row--consumables">
+          <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" />
+          <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.generalGroup')} slotGroup="general" />
+        </div>
 
-        <section className="slot-group combat-slot-section" aria-label={t('app.combatPanel.abilitiesAria')}>
+        <section className="slot-group combat-slot-section combat-slot-section--abilities" aria-label={t('app.combatPanel.abilitiesAria')}>
           <span className="slot-group-label">{t('app.combatPanel.abilitiesGroup')}</span>
           <div className="combat-slot-grid combat-slot-grid--abilities">
             {combat.abilitySlots.map((slot, index) => {

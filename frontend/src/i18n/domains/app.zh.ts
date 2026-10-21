@@ -32,7 +32,7 @@ export const appZh = {
       records: '记录',
       settings: '设置',
       // 移动端底部导航一级分组名（组内子项沿用上面对应页签名）
-      marketGroup: '市集',
+      marketGroup: '坊市',
       more: '更多',
       sidebarAria: '行动导航',
       mobileNavAria: '移动端导航',
