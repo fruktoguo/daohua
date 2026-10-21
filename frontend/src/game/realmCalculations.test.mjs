@@ -1,6 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calculateRealmInfo, calculateRealmProgress } from './combatConstants.ts'
+import fs from 'node:fs'
+import path from 'node:path'
+import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
+import { build } from 'esbuild'
+
+// combatConstants 走 `import { getT } from '../i18n'` 的目录导入（Vite 解析），
+// Node 原生 ESM 不支持目录导入，必须先用 esbuild 打包成单文件再加载。
+const tempOut = path.join(tmpdir(), `daohua-realm-test-${Date.now()}.mjs`)
+await build({
+  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/combatConstants.ts')],
+  bundle: true,
+  format: 'esm',
+  outfile: tempOut,
+  logLevel: 'error',
+})
+const { calculateRealmInfo, calculateRealmProgress } = await import(pathToFileURL(tempOut).href)
+test.after(() => {
+  try { fs.unlinkSync(tempOut) } catch { /* 临时文件可能已被清理 */ }
+})
 
 test('境界判定：Lv.18（叩天门）在有本层修为经验时不跃迁为修真段或飞升', () => {
   // 零经验 Lv.18

@@ -20,85 +20,81 @@ const allMaterials = rawMaterials
     sellPrice: it.sellPrice ?? 0,
   }))
 
-test('codexCalculations: materials.json 中材料总数刚好为 25 项', () => {
-  assert.equal(allMaterials.length, 25)
-})
+// 判据只锁「分类规则」，不锁配表条目数：材料随玩法扩张会持续新增，
+// 把总数与 ID 清单钉死会让测试在每次加材料时误红，从而被习惯性跳过。
+const subtabOf = it =>
+  isMaterialSubTabItem(it, 'herb') ? 'herb'
+    : isMaterialSubTabItem(it, 'mineral') ? 'mineral'
+      : isMaterialSubTabItem(it, 'exotic') ? 'exotic'
+        : null
 
-test('codexCalculations: 药材子Tab (herb) 准确收录 9 项草木灵材与草木精粹', () => {
-  const herbItems = allMaterials.filter(it => isMaterialSubTabItem(it, 'herb'))
-  const herbIds = herbItems.map(it => it.itemId).sort()
-  const expectedHerbIds = [
-    'item.banling-essence',
-    'item.banling-flower',
-    'item.herb-essence',
-    'item.morning-dew',
-    'item.ningxue-grass',
-    'item.peach-wood',
-    'item.peach-wood-crystal',
-    'item.spirit-pine-crystal',
-    'item.yinlingsong-wood',
-  ].sort()
+test('codexCalculations: 每项材料必须且只能落入一个子 Tab（互斥且完备）', () => {
+  const unclassified = allMaterials.filter(it => subtabOf(it) === null).map(it => it.itemId)
+  assert.deepEqual(unclassified, [], '所有材料都必须被某一子 Tab 收录，否则图鉴里会整条消失')
 
-  assert.equal(herbItems.length, 9)
-  assert.deepEqual(herbIds, expectedHerbIds)
-})
-
-test('codexCalculations: 矿石子Tab (mineral) 准确收录 4 项原矿与金铁精材', () => {
-  const mineralItems = allMaterials.filter(it => isMaterialSubTabItem(it, 'mineral'))
-  const mineralIds = mineralItems.map(it => it.itemId).sort()
-  const expectedMineralIds = [
-    'item.crimson-copper',
-    'item.dark-iron',
-    'item.refined-copper',
-    'item.refined-iron',
-  ].sort()
-
-  assert.equal(mineralItems.length, 4)
-  assert.deepEqual(mineralIds, expectedMineralIds)
-})
-
-test('codexCalculations: 异材子Tab (exotic) 准确收录 12 项妖兽讨伐残蜕', () => {
-  const exoticItems = allMaterials.filter(it => isMaterialSubTabItem(it, 'exotic'))
-  const exoticIds = exoticItems.map(it => it.itemId).sort()
-  const expectedExoticIds = [
-    'item.beast-bone',
-    'item.beast-fang',
-    'item.beast-hide',
-    'item.broken-blade',
-    'item.broken-spirit-core',
-    'item.demon-core',
-    'item.demon-dan',
-    'item.fire-feather',
-    'item.meteor-fragment',
-    'item.sha-bone',
-    'item.sha-fang',
-    'item.soul-talisman',
-  ].sort()
-
-  assert.equal(exoticItems.length, 12)
-  assert.deepEqual(exoticIds, expectedExoticIds)
-})
-
-test('codexCalculations: 25项材料在三大子Tab中严格互斥且完备，无一重合且无一遗漏', () => {
-  const herbIds = new Set(allMaterials.filter(it => isMaterialSubTabItem(it, 'herb')).map(it => it.itemId))
-  const mineralIds = new Set(allMaterials.filter(it => isMaterialSubTabItem(it, 'mineral')).map(it => it.itemId))
-  const exoticIds = new Set(allMaterials.filter(it => isMaterialSubTabItem(it, 'exotic')).map(it => it.itemId))
-
-  // 互斥性验证
-  for (const id of herbIds) {
-    assert.equal(mineralIds.has(id), false, `ID ${id} 不应同时属于矿石`)
-    assert.equal(exoticIds.has(id), false, `ID ${id} 不应同时属于异材`)
-  }
-  for (const id of mineralIds) {
-    assert.equal(exoticIds.has(id), false, `ID ${id} 不应同时属于异材`)
-  }
-
-  // 完备性验证
-  assert.equal(herbIds.size + mineralIds.size + exoticIds.size, 25)
+  // 三个子 Tab 的判定是三个独立谓词，必须两两互斥，否则同一材料会在多个 Tab 重复出现。
   for (const it of allMaterials) {
-    const inAny = herbIds.has(it.itemId) || mineralIds.has(it.itemId) || exoticIds.has(it.itemId)
-    assert.equal(inAny, true, `材料 ${it.itemId} 必须落入三者之一`)
+    const hits = ['herb', 'mineral', 'exotic'].filter(t => isMaterialSubTabItem(it, t))
+    assert.equal(hits.length, 1, `材料 ${it.itemId} 命中子 Tab ${hits.join('/') || '（无）'}，必须恰好命中一个`)
   }
+})
+
+test('codexCalculations: 子 Tab 归属与配表 subCategory 语义一致', () => {
+  // 妖兽残蜕必须进「异材」；原矿必须进「矿石」；草木灵材必须进「药材」。
+  const bySub = sub => allMaterials.filter(it => it.subCategory === sub)
+  const expectSubtab = (sub, tab) => {
+    const items = bySub(sub)
+    assert.ok(items.length > 0, `配表必须仍存在 subCategory=${sub} 的材料，否则该断言空跑`)
+    for (const it of items) assert.equal(subtabOf(it), tab, `${it.itemId}（${sub}）必须归入 ${tab}`)
+  }
+  expectSubtab('exoticMaterial', 'exotic')
+  expectSubtab('mineral', 'mineral')
+  expectSubtab('spiritMaterial', 'herb')
+
+  // refinedMaterial 是「精粹」混合类，按物品 ID 显式分流到药材或矿石，
+  // 这是分类器里唯一的特例分支，必须逐项锁死（新增精粹时必须同步改分类器）。
+  const refinedSplit = {
+    'item.herb-essence': 'herb',
+    'item.banling-essence': 'herb',
+    'item.peach-wood-crystal': 'herb',
+    'item.spirit-pine-crystal': 'herb',
+    'item.refined-iron': 'mineral',
+    'item.refined-copper': 'mineral',
+  }
+  for (const [itemId, tab] of Object.entries(refinedSplit)) {
+    const item = allMaterials.find(it => it.itemId === itemId)
+    assert.ok(item, `精粹分流表列出的 ${itemId} 必须仍存在于配表`)
+    assert.equal(subtabOf(item), tab, `${itemId} 必须归入 ${tab}`)
+  }
+  const unlistedRefined = bySub('refinedMaterial')
+    .map(it => it.itemId)
+    .filter(id => !(id in refinedSplit))
+  assert.deepEqual(unlistedRefined, [], '新增的 refinedMaterial 材料必须显式登记分流去向，否则图鉴归属未定义')
+})
+
+test('codexCalculations: 药材子Tab 收录全部草木灵材与精粹且无遗漏', () => {
+  const herbItems = allMaterials.filter(it => isMaterialSubTabItem(it, 'herb'))
+  const expected = allMaterials
+    .filter(it => it.subCategory === 'spiritMaterial'
+      || ['item.herb-essence', 'item.banling-essence', 'item.peach-wood-crystal', 'item.spirit-pine-crystal'].includes(it.itemId))
+    .map(it => it.itemId)
+    .sort()
+  assert.deepEqual(herbItems.map(it => it.itemId).sort(), expected)
+})
+
+test('codexCalculations: 矿石子Tab 收录全部原矿与金铁精材且无遗漏', () => {
+  const mineralItems = allMaterials.filter(it => isMaterialSubTabItem(it, 'mineral'))
+  const expected = allMaterials
+    .filter(it => it.subCategory === 'mineral' || ['item.refined-iron', 'item.refined-copper'].includes(it.itemId))
+    .map(it => it.itemId)
+    .sort()
+  assert.deepEqual(mineralItems.map(it => it.itemId).sort(), expected)
+})
+
+test('codexCalculations: 异材子Tab 收录全部妖兽残蜕且无遗漏', () => {
+  const exoticItems = allMaterials.filter(it => isMaterialSubTabItem(it, 'exotic'))
+  const expected = allMaterials.filter(it => it.subCategory === 'exoticMaterial').map(it => it.itemId).sort()
+  assert.deepEqual(exoticItems.map(it => it.itemId).sort(), expected)
 })
 
 test('codexCalculations: 解锁规则验证（境界、技艺与背包三路联动）', () => {

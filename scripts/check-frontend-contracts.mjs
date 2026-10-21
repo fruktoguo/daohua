@@ -49,8 +49,8 @@ try {
   const cardEnvelope = decodeEnvelope(encodeJsonEnvelope(WireMessageType.PlayerCard, cardRequestId, 1, playerCard))
   assert.equal(cardEnvelope.messageType, WireMessageType.PlayerCard)
   const decodedCard = decodeJsonPayload(cardEnvelope)
-  assert.equal(decodedCard.autoUseSlots[0].quantity, 3)
-  assert.equal(decodedCard.autoUseSlots[0].offlineReserveQuantity, 7)
+  // 整包 deepEqual 已覆盖「数量 3 / 离线储备 7」两个标量：普通钱包数量与不可售的离线储备
+  // 被求和或互相覆盖都会让结构不等，无需再单独断言两个字段。
   assert.deepEqual(decodedCard, playerCard)
   const { parseCsvToMap, LOCALES } = await server.ssrLoadModule('/src/i18n/index.ts')
   const { registerBaseAttributeAnchors, calculateBaseAttributes } = await server.ssrLoadModule('/src/game/combatConstants.ts')
