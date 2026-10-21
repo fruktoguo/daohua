@@ -165,7 +165,9 @@ export const TraitBarItem = memo(function TraitBarItem({
       <div
         className={`trait-bar-item trait-quality--q${quality} ${mode === 'awaken' ? 'is-awaken-mode' : ''} ${
           isEquipped ? 'is-equipped' : ''
-        } ${isNew ? 'has-new-ribbon' : ''} ${disabled ? 'is-disabled' : ''} ${onClick ? 'is-clickable' : ''} ${className}`.trim()}
+        } ${isNew ? 'has-new-ribbon' : ''} ${disabled ? 'is-disabled' : ''} ${
+          mode === 'codex' && level === 0 ? 'is-uncollected' : ''
+        } ${onClick ? 'is-clickable' : ''} ${className}`.trim()}
         onClick={disabled ? undefined : onClick}
         style={style}
       >
@@ -213,7 +215,7 @@ export const TraitBarItem = memo(function TraitBarItem({
             {level > 0 ? (
               <span className="trait-bar-level">Lv.{level}</span>
             ) : (
-              <span className="trait-bar-unlocked-state text-dim">{t('insight.traits.unequipped')}</span>
+              <span className="trait-bar-unlocked-state text-dim">{t('app.codex.uncollected')}</span>
             )}
           </div>
         )}

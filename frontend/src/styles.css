@@ -10200,6 +10200,13 @@ input[type="checkbox"] {
   cursor: not-allowed;
 }
 
+.trait-bar-item.is-uncollected {
+  opacity: 0.65;
+}
+
+.trait-bar-item.is-uncollected:hover {
+  opacity: 0.95;
+}
 .trait-bar-item.is-equipped {
   background: rgba(32, 25, 14, 0.92);
   border-color: var(--gold-bright);
