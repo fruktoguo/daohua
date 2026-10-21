@@ -1247,6 +1247,128 @@
   background: rgba(125, 82, 26, 0.18);
 }
 
+/* 特质长条通用样式 (TraitBarItem) 与内视、万象图鉴浅色适配 */
+:root[data-theme="light"] .trait-bar-item {
+  border-color: rgba(125, 82, 26, 0.22);
+  background: rgba(var(--surface-rgb), 0.9);
+  box-shadow: 0 1px 3px rgba(71, 49, 18, 0.08);
+}
+
+:root[data-theme="light"] .trait-bar-item:hover:not(.is-disabled) {
+  background: rgba(var(--surface-rgb), 0.98);
+  box-shadow: 0 2px 8px rgba(71, 49, 18, 0.14);
+}
+
+:root[data-theme="light"] .trait-bar-item.is-equipped {
+  border-color: var(--gold);
+  background: rgba(125, 82, 26, 0.09);
+  box-shadow: 0 0 0 1px var(--gold-faint), 0 2px 6px rgba(125, 82, 26, 0.12);
+}
+
+/* 品阶边框与高亮微光 */
+:root[data-theme="light"] .trait-quality--q1 {
+  border-color: rgba(76, 88, 104, 0.35);
+  box-shadow: 0 1px 3px rgba(76, 88, 104, 0.1);
+}
+:root[data-theme="light"] .trait-quality--q2 {
+  border-color: rgba(23, 96, 67, 0.45);
+  box-shadow: 0 1px 4px rgba(23, 96, 67, 0.12);
+}
+:root[data-theme="light"] .trait-quality--q3 {
+  border-color: rgba(22, 92, 118, 0.45);
+  box-shadow: 0 1px 4px rgba(22, 92, 118, 0.12);
+}
+:root[data-theme="light"] .trait-quality--q4 {
+  border-color: rgba(105, 64, 140, 0.45);
+  box-shadow: 0 1px 4px rgba(105, 64, 140, 0.12);
+}
+:root[data-theme="light"] .trait-quality--q5 {
+  border-color: rgba(125, 82, 26, 0.55);
+  box-shadow: 0 1px 4px rgba(125, 82, 26, 0.18);
+}
+
+/* 品阶小标签 */
+:root[data-theme="light"] .trait-quality--q1 .trait-bar-quality-tag { color: var(--silver); }
+:root[data-theme="light"] .trait-quality--q2 .trait-bar-quality-tag { color: var(--jade); }
+:root[data-theme="light"] .trait-quality--q3 .trait-bar-quality-tag { color: var(--qi); }
+:root[data-theme="light"] .trait-quality--q4 .trait-bar-quality-tag { color: var(--purple); }
+:root[data-theme="light"] .trait-quality--q5 .trait-bar-quality-tag { color: var(--gold); }
+
+/* 特质名称：浅色底改用高对比度深色 */
+:root[data-theme="light"] .trait-quality--q1 .trait-bar-name { color: var(--text); }
+:root[data-theme="light"] .trait-quality--q2 .trait-bar-name { color: var(--jade); }
+:root[data-theme="light"] .trait-quality--q3 .trait-bar-name { color: var(--qi); }
+:root[data-theme="light"] .trait-quality--q4 .trait-bar-name { color: var(--purple); }
+:root[data-theme="light"] .trait-quality--q5 .trait-bar-name { color: var(--gold-bright); }
+
+/* 消耗点数与右侧等级 */
+:root[data-theme="light"] .trait-bar-cost {
+  color: var(--text-dim);
+  background: rgba(125, 82, 26, 0.1);
+}
+:root[data-theme="light"] .trait-bar-level {
+  color: var(--gold);
+  background: rgba(125, 82, 26, 0.08);
+  border-color: rgba(125, 82, 26, 0.25);
+}
+
+/* 快捷操作按钮与浮层按钮 */
+:root[data-theme="light"] .trait-bar-action-btn.is-equip {
+  color: var(--gold-bright);
+  background: rgba(125, 82, 26, 0.12);
+  border: 1px solid var(--gold-dim);
+}
+:root[data-theme="light"] .trait-bar-action-btn.is-equip:hover:not(:disabled) {
+  background: var(--gold);
+  color: #fffaf0;
+}
+:root[data-theme="light"] .trait-bar-action-btn.is-unequip {
+  color: var(--danger);
+  background: var(--seal-faint);
+  border: 1px solid var(--seal-border);
+}
+:root[data-theme="light"] .trait-bar-action-btn.is-unequip:hover:not(:disabled) {
+  background: var(--seal);
+  color: #fffaf0;
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-equip {
+  color: var(--on-accent);
+  background: var(--seal);
+  border-color: var(--seal-deep);
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-equip:hover:not(:disabled) {
+  background: var(--seal-deep);
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-unequip {
+  color: var(--danger);
+  background: var(--seal-faint);
+  border-color: var(--seal-border);
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-unequip:hover:not(:disabled) {
+  background: var(--seal);
+  color: var(--on-accent);
+}
+:root[data-theme="light"] .trait-popover-scale-hint {
+  border-top-color: var(--gold-faint);
+  color: var(--gold);
+}
+
+/* 内视特质面板：容量卡片与空状态提示框 */
+:root[data-theme="light"] .insight-traits-capacity-card {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.85);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.08), inset 0 0 12px rgba(117, 83, 25, 0.04);
+}
+
+:root[data-theme="light"] .insight-traits-empty {
+  border-color: rgba(125, 82, 26, 0.25);
+  background: rgba(125, 82, 26, 0.04);
+  color: var(--text-dim);
+}
+:root[data-theme="light"] .insight-traits-empty p {
+  color: var(--text-dim);
+}
+
 :root[data-theme="light"] .invite-code {
   border-color: var(--gold-dim);
   background: rgba(125, 82, 26, 0.06);
@@ -1279,6 +1401,7 @@
   .arena-action-track,
   .arena-life-progress-bar,
   .insight-traits-progress-bar,
+  .trait-bar-exp-track,
   .trait-card-exp-track,
   .trait-capacity-track,
   .building-progress-track,
