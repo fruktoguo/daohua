@@ -266,6 +266,7 @@ export const appZh = {
     // 行动与技能页面
     action: {
       needs: '消耗',
+      foundationCost: '底蕴 {amount}（现有 {current}）',
       none: '无',
       outputs: '产出',
       insights: '感悟',

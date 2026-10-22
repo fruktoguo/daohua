@@ -714,6 +714,128 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         break;
                     }
+                    case "progression.heaven_gate":
+                    {
+                        // 天门阵盘四步同命令：roll（开天门抽取）→ allocate（五行重分配）→
+                        // enter（入天门令灵根生效）→ reroll（逆天改命重洗，可选消耗逆命丹降低底蕴成本）。
+                        var gateAction = payload.TryGetProperty("action", out var gateActionElement)
+                            && gateActionElement.ValueKind == JsonValueKind.String
+                                ? gateActionElement.GetString()?.Trim().ToLowerInvariant() : null;
+                        if (string.IsNullOrEmpty(gateAction))
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "天门操作无效。", before);
+                        var gateProgression = before.State.Progression;
+                        if (!HeavenGateRules.IsHeavenGateRealm(gateProgression.RealmLevel))
+                            return new PlayerCommandResult(false, "REALM_TOO_LOW",
+                                $"境界尚未抵达叩天门（需 {HeavenGateRules.HeavenGateRealmLevel} 级）。", before);
+                        // 底蕴成本与改命成本都按「当前境界升级所需修为」折算：满级或配表缺失时成本退化为 0。
+                        var gateExpCap = gameData.RealmProgression?.ExpCapFor(gateProgression.RealmLevel) ?? 0;
+                        switch (gateAction)
+                        {
+                            case "roll":
+                            {
+                                if (gateProgression.HeavenGateRolled is not null)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_ALREADY_ROLLED", "天门已开，灵根已现。", before);
+                                // 叩天门本级必须在修为圆满时开天门：该级突破已被领域前置阻断，满修后唯一出路即开天门。
+                                if (gateProgression.RealmLevel == HeavenGateRules.HeavenGateRealmLevel
+                                    && gateExpCap > 0 && gateProgression.Experience < gateExpCap - 1e-9)
+                                    return new PlayerCommandResult(false, "EXPERIENCE_NOT_FULL", "修为未满，天门未应。", before);
+                                var rollSeed = HeavenGateRandomSeed(playerId, gateProgression.HeavenGateRerollCount);
+                                var rolledValues = HeavenGateRules.Roll(rollSeed, gateProgression.HeavenGateRerollCount);
+                                touched = ecs.MutatePlayer(playerId, aggregate =>
+                                {
+                                    var gate = aggregate.Progression.HeavenGate;
+                                    gate.Apply(rolledValues, null, entered: false, gate.RerollCount);
+                                    aggregate.Touch(PlayerSectionKind.Progression);
+                                });
+                                break;
+                            }
+                            case "allocate":
+                            {
+                                if (gateProgression.HeavenGateRolled is not { } rolledAllocation)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ROLLED", "尚未开天门，无可分配灵根。", before);
+                                if (gateProgression.HeavenGateEntered)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_ALREADY_ENTERED", "已入天门，如需重洗请逆天改命。", before);
+                                if (!TryReadLinggen(payload, out var candidateValues))
+                                    return new PlayerCommandResult(false, "INVALID_PAYLOAD", "灵根点数须为 0~100 的整数。", before);
+                                if (!HeavenGateRules.IsValidAllocation(rolledAllocation, candidateValues))
+                                    return new PlayerCommandResult(false, "INVALID_ALLOCATION",
+                                        $"五行分配须总值守恒（须为 {rolledAllocation.Total}）且至少一条灵根。", before);
+                                touched = ecs.MutatePlayer(playerId, aggregate =>
+                                {
+                                    var gate = aggregate.Progression.HeavenGate;
+                                    gate.Apply(gate.RolledValues, candidateValues, entered: false, gate.RerollCount);
+                                    aggregate.Touch(PlayerSectionKind.Progression);
+                                });
+                                break;
+                            }
+                            case "enter":
+                            {
+                                if (gateProgression.HeavenGateRolled is not { } rolledEnter)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ROLLED", "尚未开天门，无可入天门。", before);
+                                if (gateProgression.HeavenGateEntered)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_ALREADY_ENTERED", "灵根已生效。", before);
+                                // 未显式分配时以抽取结果直接入天门：抽取值本身即守恒的合法分布。
+                                var confirmedEnter = gateProgression.HeavenGateConfirmed ?? rolledEnter;
+                                if (!HeavenGateRules.IsValidAllocation(rolledEnter, confirmedEnter))
+                                    return new PlayerCommandResult(false, "INVALID_ALLOCATION",
+                                        $"五行分配须总值守恒（须为 {rolledEnter.Total}）且至少一条灵根。", before);
+                                touched = ecs.MutatePlayer(playerId, aggregate =>
+                                {
+                                    var gate = aggregate.Progression.HeavenGate;
+                                    gate.Apply(rolledEnter, confirmedEnter, entered: true, gate.RerollCount);
+                                    aggregate.Touch(PlayerSectionKind.Progression);
+                                });
+                                break;
+                            }
+                            case "reroll":
+                            {
+                                if (!gateProgression.HeavenGateEntered)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ENTERED", "尚未入天门，无法逆天改命。", before);
+                                var usePill = payload.TryGetProperty("usePill", out var pillElement)
+                                    && pillElement.ValueKind == JsonValueKind.True;
+                                // 改命成本与逆命丹价值同源：两者都由 HeavenGateRules 的同一比例口径折算。
+                                var rerollCost = HeavenGateRules.ResolveRerollFoundationCost(gateExpCap, usePill);
+                                if (gateProgression.Foundation + 1e-9 < rerollCost)
+                                    return new PlayerCommandResult(false, "INSUFFICIENT_FOUNDATION",
+                                        $"底蕴不足，逆天改命需 {rerollCost:0} 点底蕴。", before);
+                                var pillKey = new AssetKey(new ItemId(HeavenGateRules.ReverseFatePillItemId));
+                                if (usePill && wallet.Get(pillKey) + 1e-9 < 1)
+                                    return new PlayerCommandResult(false, "INSUFFICIENT_ITEM", "逆命丹数量不足。", before);
+                                var nextRerollCount = gateProgression.HeavenGateRerollCount + 1;
+                                var rerollSeed = HeavenGateRandomSeed(playerId, nextRerollCount);
+                                var rerolledValues = HeavenGateRules.Roll(rerollSeed, nextRerollCount);
+                                touched = ecs.MutatePlayer(playerId, aggregate =>
+                                {
+                                    var gate = aggregate.Progression.HeavenGate;
+                                    // 单写者门内再校验一次：底蕴扣减绝不能把池子打成负数。
+                                    if (aggregate.Progression.Foundation + 1e-9 < rerollCost)
+                                        throw new DomainException(DomainErrorCode.Conflict, "底蕴不足，逆天改命失败。");
+                                    aggregate.Progression.Foundation -= rerollCost;
+                                    // 改命即重洗：抽取值直接生效（入天门状态保持），累计次数永久递增不清零。
+                                    gate.Apply(rerolledValues, rerolledValues, entered: true, nextRerollCount);
+                                    aggregate.Touch(PlayerSectionKind.Progression);
+                                });
+                                if (!usePill) break;
+                                var rerollSnapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+                                await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore,
+                                    new EconomyTransactionRequest(requestId, $"heaven-gate:{playerId:D}:{requestId:D}", command,
+                                        playerId,
+                                        [new Server.Clean.AssetDelta(playerId, HeavenGateRules.ReverseFatePillItemId, string.Empty, -1)],
+                                        DateTimeOffset.UtcNow,
+                                        JsonSerializer.SerializeToUtf8Bytes(new
+                                        {
+                                            action = gateAction, cost = rerollCost, rerollCount = nextRerollCount
+                                        })),
+                                    CreateReceipt(playerId, requestId, command, payloadHash, rerollSnapshot.StateVersion),
+                                    cancellationToken).ConfigureAwait(false);
+                                receiptAlreadyCommitted = true;
+                                break;
+                            }
+                            default:
+                                return new PlayerCommandResult(false, "INVALID_PAYLOAD", "天门操作无效。", before);
+                        }
+                        break;
+                    }
                     case "world.travel":
                     {
                         var targetNodeId = payload.TryGetProperty("targetNodeId", out var targetNode) ? targetNode.GetString() : null;
@@ -1966,6 +2088,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     {
         "ability.learn" => "功法参悟完毕。",
         "progression.breakthrough" => "突破成功，境界晋升。",
+        // 天门阵盘四步共用一条回执文案：具体结果（灵根点数、改命次数）由快照透出，气泡不再复述。
+        "progression.heaven_gate" => "天门已应，灵根既定。",
         "world.travel" => "已启程赶路。",
         "building.build" => "建造已发起。",
         "building.upgrade" => "升级已发起。",
@@ -2236,7 +2360,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private static bool ShouldPersistReceipt(string command) => command is
         "action.enqueue" or "action.remove" or
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
-        "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
+        "loadout.replace" or "ability.learn" or "progression.breakthrough" or "progression.heaven_gate" or "world.travel" or
         "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "player.unlock_avatar" or "market.claim" or
         "item.discard" or "item.sell" or "trait.set" or "item.use" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
 
@@ -2288,6 +2412,43 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         return payload.TryGetProperty(property, out var element)
             && element.ValueKind == JsonValueKind.String
             && Guid.TryParse(element.GetString(), out value);
+    }
+
+    /// <summary>
+    /// 读取五行灵根分配载荷（metal/wood/water/fire/earth 五键）：缺键按 0 处理，
+    /// 非整数或越界一律视为无效载荷——绝不夹取，非法输入必须由调用方整体拒绝。
+    /// </summary>
+    private static bool TryReadLinggen(JsonElement payload, out LinggenValues values)
+    {
+        values = LinggenValues.Empty;
+        var metals = new int[5];
+        for (var i = 0; i < LinggenElementOrder.Length; i++)
+        {
+            var property = LinggenElementOrder[i];
+            if (!payload.TryGetProperty(property, out var element)) continue;
+            if (element.ValueKind == JsonValueKind.Null) continue;
+            if (element.ValueKind != JsonValueKind.Number || !element.TryGetDouble(out var points)) return false;
+            if (!double.IsFinite(points) || points != Math.Floor(points)
+                || points < 0 || points > LinggenValues.MaxPointsPerElement) return false;
+            metals[i] = (int)points;
+        }
+        values = new LinggenValues(metals[0], metals[1], metals[2], metals[3], metals[4]);
+        return true;
+    }
+
+    /// <summary>抽取载荷键序：与 <see cref="LinggenElement"/> 五行枚举顺序一一对应。</summary>
+    private static readonly string[] LinggenElementOrder = ["metal", "wood", "water", "fire", "earth"];
+
+    /// <summary>
+    /// 开天门 / 逆天改命的抽取种子：由玩家标识与已发生的改命次数确定性派生——
+    /// 同一玩家同一次数在任何实例、任何时刻都抽出同一份灵根（离线补算与在线重放口径一致）。
+    /// </summary>
+    private static long HeavenGateRandomSeed(Guid playerId, int sequence)
+    {
+        Span<byte> buffer = stackalloc byte[20];
+        playerId.TryWriteBytes(buffer);
+        BitConverter.TryWriteBytes(buffer[16..], sequence);
+        return BitConverter.ToInt64(SHA256.HashData(buffer));
     }
 
     private PlayerRuntimeSnapshot ToSnapshot(EcsPlayerSnapshot snapshot)

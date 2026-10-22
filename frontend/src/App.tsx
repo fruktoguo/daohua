@@ -1552,6 +1552,11 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const hasRateBonus = multiplierBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
   const isPending = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.isPendingBreakthrough)
 
+  // 特殊配方的底蕴成本基数：当前升级所需修为（与服务端按 expCap 折算的口径一致）。
+  const foundationCostExpBase = useMemo(
+    () => calculateRealmProgress(stats?.experience ?? 0, stats?.realmLevel).expToNext ?? 0,
+    [stats?.experience, stats?.realmLevel],
+  )
   const inputs = useMemo(() => {
     const list = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
     if (isDrawQi && spiritStoneTier > 0) {
@@ -1603,14 +1608,23 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
       <dl className="action-detail-list">
         <div>
           <dt>{t('app.action.needs')}</dt>
-          <dd>{inputs.length === 0 ? <span className="action-detail-empty">{t('app.action.none')}</span> : inputs.map(input => (
+          <dd>{inputs.length === 0 && !(action.foundationCostRatio ?? 0) ? <span className="action-detail-empty">{t('app.action.none')}</span> : inputs.map(input => (
             <ActionDetailItem
               amount={input.amount}
               current={itemAmount(inventory, input.itemId)}
               itemId={input.itemId}
               key={input.itemId}
             />
-          ))}</dd>
+          ))}
+          {(action.foundationCostRatio ?? 0) > 0 && (
+            // 底蕴成本按当前升级所需修为折算，是特殊配方（逆命丹）的额外投入。
+            <span className="action-detail-extra">
+              {t('app.action.foundationCost', {
+                amount: Math.max(1, Math.round(foundationCostExpBase * (action.foundationCostRatio ?? 0))),
+                current: Math.floor(stats?.foundation ?? 0),
+              })}
+            </span>
+          )}</dd>
         </div>
 
         {startsImmediately ? (

@@ -105,6 +105,7 @@ export const gameZh = {
       'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝气草炼制而成的凡品止血散剂，可迅速闭合寻常外伤创口。' },
       'alchemy.refine-shunqi-pill': { name: '顺气丸', description: '以草木精华与晨露炼制的调息灵丸，可抚平体内翻涌气血，加速灵力恢复。' },
       'alchemy.refine-tongmai-pill': { name: '通脉丹', description: '以伴灵精华与妖核淬炼而成的通脉灵丹，药力直透经络百骸，大益周天行气。' },
+      'alchemy.refine-reverse-fate-pill': { name: '逆命丹', description: '以升级所需修为的底蕴强行凝丹，为逆天改命留下一次挣脱天命的余地。' },
 
       // 精炼加工
       'craft.refine-iron': { name: '百炼铁', description: '千锤百炼去除凡火杂质，精炼高纯乌铁。' },
@@ -273,6 +274,7 @@ export const gameZh = {
       'item.fragment.xuanyuan-yiqi-gong': { label: '《玄元一气功·残卷》', description: '玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。' },
       'item.gathering-incense': { label: '寻灵香', description: '青烟袅袅起，引路觅灵踪。\n以幽谷异草凝制的线香，点燃后青烟袅袅，香气沉静。' },
       'item.alchemy-flame': { label: '地火引', description: '地火苗藏玉管中。\n封存在温玉小管中的一缕地脉火苗，静默跳动，热力含而不发。' },
+      'item.reverse-fate-pill': { label: '逆命丹', description: '丹成可暂借一线天命。\n色泽晦暗如墨的异种丹丸，入喉后逆冲经络，为逆天改命强行撕开一道缝隙。' },
       'item.tome.tide': { label: '《潮汐秘籍》', description: '潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀，引动潮汐怒涛，席卷全体敌阵。' },
       'item.fragment.tide': { label: '《潮汐·残卷》', description: '潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀残页，记录引动浪涛拍岸之法。' },
       'item.rough-wolf-hide': { label: '粗韧狼皮', description: '古道妖狼身上剥取的坚韧外皮，毛刺如针，抗风挡煞。' },

@@ -101,5 +101,29 @@
         "aspect": "consciousness"
       }
     ]
+  },
+  {
+    "id": "alchemy.refine-reverse-fate-pill",
+    "name": "逆命丹",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 60,
+    "inputs": {},
+    "foundationCostRatio": 0.25,
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.reverse-fate-pill",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
   }
 ]

@@ -145,7 +145,9 @@ public static class PlayerAttributeResolver
             string.Equals(state.World.NodeBuildingNodeId, state.World.NodeId, StringComparison.Ordinal)
                 ? state.World.NodeBuildingEffects
                 : null, state.Progression.TraitIds,
-            state.Progression.UnlockedTraits?.ToDictionary(t => t.Id, t => t.Level, StringComparer.Ordinal));
+            state.Progression.UnlockedTraits?.ToDictionary(t => t.Id, t => t.Level, StringComparer.Ordinal),
+            // 未入天门（或快照缺省）时按空灵根结算：五系点数全 0，行为等同未取得灵根。
+            state.Progression.HeavenGateEntered ? state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty : LinggenValues.Empty);
 
     /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。
     /// 带「属性输入修订号」缓存：同配表实例且全部输入源版本号未变时直接复用上轮结果；
@@ -162,7 +164,8 @@ public static class PlayerAttributeResolver
             new(player.Resources.Hitpoints, player.Resources.MaxHitpoints, player.Resources.Manapoints,
                 player.Resources.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
             player.World.EffectiveNodeBuildingEffects, player.Progression.TraitIds,
-            player.Progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal));
+            player.Progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal),
+            player.Progression.HeavenGate.EffectiveValues);
         if (catalog.BaseAttributes is not null)
             player.StoreCachedAttributes(catalog, resolved);
         return resolved;
@@ -174,18 +177,21 @@ public static class PlayerAttributeResolver
         => Resolve(progression.RealmLevel, loadout.EquippedItemIds, loadout.Export(), buffs.Active,
             new(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints,
                 combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects, progression.TraitIds,
-            progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal));
+            progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal),
+            progression.HeavenGate.EffectiveValues);
 
     /// <summary>同一组直接分段的属性输入修订号，允许状态所有者复用已解析面板。</summary>
     public static long InputRevision(PlayerProgression progression, PlayerWorldState world,
         PlayerBuffState buffs, PlayerLoadoutState loadout)
         => progression.RealmLevelVersion + world.AttributeInputVersion + buffs.Active.Version
             + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion
-            + progression.TraitIds.Version + progression.UnlockedTraits.Version + loadout.AbilitySlots.Version;
+            + progression.TraitIds.Version + progression.UnlockedTraits.Version + loadout.AbilitySlots.Version
+            + progression.HeavenGate.Version;
 
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
         PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null,
-        IReadOnlyList<string>? traitIds = null, IReadOnlyDictionary<string, int>? traitLevels = null)
+        IReadOnlyList<string>? traitIds = null, IReadOnlyDictionary<string, int>? traitLevels = null,
+        LinggenValues linggen = default)
     {
         var traits = traitIds is { Count: > 0 } ? traitIds.ToArray() : null;
         var threatOnTaken = CombatTraitRules.ThreatOnTakenPoints(traits, traitLevels);
@@ -204,6 +210,16 @@ public static class PlayerAttributeResolver
         double P(string key) => points.GetValueOrDefault(key);
         void AddPoint(string key, double value) { if (value != 0) points[key] = P(key) + value; }
         CombatTraitRules.AccumulateModifiers(traits, traitLevels, traitRatios, points);
+        // 五行灵根点数并入对应五行增伤 / 减伤点数通道（总纲 §7.7.5）：每点灵根 1 点，
+        // 增伤走 Linear、减伤走 NonLinear，均与装备 / Buff / 特质同键累加，不新造乘区。
+        if (!linggen.IsEmpty)
+            foreach (var (element, prefix) in ElementPointChannels)
+            {
+                var linggenPoints = linggen.Of(element);
+                if (linggenPoints <= 0) continue;
+                AddPoint(prefix + "DamageBonusPoints", HeavenGateRules.ResolveDamageBonusPoints(linggenPoints));
+                AddPoint(prefix + "DamageReductionPoints", HeavenGateRules.ResolveDamageReductionPoints(linggenPoints));
+            }
         foreach (var id in equipment)
         {
             // 配表历史删项或未知装备优雅跳过，不提供加成但拒绝阻断玩家加载与模拟
@@ -365,6 +381,16 @@ public static class PlayerAttributeResolver
             Effects = new CombatEffectProfile(P("hpDrainPoints"), P("mpDrainPoints"), P("damageReflectPoints"), P("healingBonusPoints"), P("threatOnTakenPoints"))
         };
     }
+
+    /// <summary>五行元素与点数通道前缀的固定映射：灵根点数按此表并入 <c>{prefix}DamageBonusPoints</c> / <c>{prefix}DamageReductionPoints</c>。</summary>
+    private static readonly (CombatElement Element, string Prefix)[] ElementPointChannels =
+    [
+        (CombatElement.Metal, "metal"),
+        (CombatElement.Wood, "wood"),
+        (CombatElement.Water, "water"),
+        (CombatElement.Fire, "fire"),
+        (CombatElement.Earth, "earth")
+    ];
 
     /// <summary>百分比比率按双模式 Linear 结算：正值 1+x，负值 1/(1+|x|) 软着陆。</summary>
     private static double SoftRatio(double ratio)

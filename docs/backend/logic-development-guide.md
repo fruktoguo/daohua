@@ -97,6 +97,8 @@
 | `loadout.replace` | 装备/功法/消耗品装配变更 |
 | `ability.learn` | 功法秘籍/残卷研读（`item.tome.*`/`item.fragment.*`，`quantity` 支持批量逐本结算，幂等键必需） |
 | `progression.breakthrough` | 境界突破 |
+| `progression.heaven_gate` | 开天门阵盘（roll/allocate/enter/reroll） |
+| `progression.heaven_gate` | 天门阵盘：开天门抽取（`action=roll`）/五行重分配（`allocate`）/入天门（`enter`）/逆天改命（`reroll`，`usePill` 可用逆命丹把底蕴成本 25%→5%） |
 | `world.travel` | 世界节点移动（自动先推进模拟再规划路径） |
 | `building.build` / `building.upgrade` / `building.contribute` | 节点公共建筑发起建造/发起升级/提交材料（注册表锁内校验钱包并原子扣减） |
 | `market.place` / `market.cancel` / `market.claim` | 挂单/撤单/结算领取 |

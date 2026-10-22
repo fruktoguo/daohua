@@ -21,6 +21,8 @@ import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
 import { CombatAttributePanel } from './CombatAttributePanel'
 import { BreakthroughConfirmModal } from './BreakthroughConfirmModal'
+import { HeavenGateModal, LINGGEN_AXIS_CAP, LINGGEN_ELEMENT_KEYS } from './HeavenGateModal'
+import { linggenBonusPercent, linggenReducePercent, shouldShowOpenHeavenGate } from '../game/linggenCalculations'
 import { StatGlyph } from './StatGlyph'
 import { TraitBarItem } from './TraitBarItem'
 
@@ -28,7 +30,7 @@ import { TraitBarItem } from './TraitBarItem'
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'technique' | 'biography' | 'traits'
 
 /** 根基模块二级子 Tab 标识 (六维灵根与基础属性乘区) */
-type RootsSubTab = 'sixDimensions' | 'baseAttributes'
+type RootsSubTab = 'sixDimensions' | 'baseAttributes' | 'linggen'
 
 /**
  * 角色内视修行总览主页面 (InsightPage)
@@ -47,6 +49,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<InsightTab>('roots')
   const [rootsSubTab, setRootsSubTab] = useState<RootsSubTab>('sixDimensions')
   const [isBreakthroughModalOpen, setIsBreakthroughModalOpen] = useState(false)
+  const [isHeavenGateModalOpen, setIsHeavenGateModalOpen] = useState(false)
 
   const name = useGameStore(state => state.name)
   const stats = useGameStore(state => state.stats)
@@ -54,9 +57,18 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const loadout = useGameStore(state => state.combat)
   const attributes = useGameStore(state => state.combatAttributes)
   const buffs = useGameStore(state => state.buffs)
+  const inventory = useGameStore(state => state.inventory)
+  // 逆命丹持有量：逆天改命时可选消耗，把底蕴成本从 25% 降到 5%。
+  const reverseFatePillCount = useMemo(
+    () => inventory.reduce((total, item) => item.itemId === 'item.reverse-fate-pill' ? total + item.amount : total, 0),
+    [inventory],
+  )
 
   // 境界计算体系 (大境界 · 境界阶段 · 小境界)
   const realmProgress = useMemo(() => calculateRealmProgress(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
+  // 叩天门满修但尚未入天门：突破按钮语义改为「开天门」，且服务端会阻断直接突破。
+  const expFull = isPendingBreakthrough || realmProgress.progressPercentage >= 99.99
+  const showOpenGateBtn = shouldShowOpenHeavenGate(stats.realmLevel ?? 1, stats.heavenGateEntered === true, expFull)
   const realmInfo = useMemo(() => calculateRealmInfo(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
 
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
@@ -315,7 +327,16 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   <div className="insight-progress-fill" style={{ width: `${isPendingBreakthrough || realmInfo.layerProgress >= 99.99 ? 100 : realmInfo.layerProgress}%` }} />
                 </div>
               </FloatingTooltip>
-              {(isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.experience ?? 0) > 0)) && (
+              {showOpenGateBtn && (
+                <button
+                  className="insight-breakthrough-btn"
+                  onClick={() => setIsHeavenGateModalOpen(true)}
+                  type="button"
+                >
+                  {t('insight.heavenGate.openBtn')}
+                </button>
+              )}
+              {!showOpenGateBtn && (isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.experience ?? 0) > 0)) && (
                 <button
                   className="insight-breakthrough-btn"
                   onClick={() => setIsBreakthroughModalOpen(true)}
@@ -397,6 +418,15 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               >
                 {t('insight.subTab.base')}
               </button>
+              {stats.heavenGateEntered === true && (
+                <button
+                  className={`insight-sub-tab-btn ${rootsSubTab === 'linggen' ? 'active' : ''}`}
+                  onClick={() => setRootsSubTab('linggen')}
+                  type="button"
+                >
+                  {t('insight.subTab.linggen')}
+                </button>
+              )}
             </div>
 
             {rootsSubTab === 'sixDimensions' ? (
@@ -424,6 +454,51 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : rootsSubTab === 'linggen' ? (
+              <div className="insight-linggen-layout">
+                <div className="insight-roots-list">
+                  {LINGGEN_ELEMENT_KEYS.map(key => {
+                    const points = stats.heavenGateConfirmed?.[key] ?? 0
+                    const bonus = linggenBonusPercent(points)
+                    const reduce = linggenReducePercent(points)
+                    return (
+                      <div className="insight-root-row" key={key}>
+                        <PillStatLabel
+                          label={t(`insight.heavenGate.element.${key}`)}
+                          value={points}
+                          tone="gold"
+                          tooltip={t('insight.heavenGate.enterHint')}
+                          tooltipTone="gold"
+                        />
+                        <div className="insight-root-bonuses">
+                          <PillBonusLabel
+                            label={t('insight.heavenGate.statBonus')}
+                            value={`${bonus}%`}
+                            tone="gold"
+                          />
+                          <PillBonusLabel
+                            label={t('insight.heavenGate.statReduce')}
+                            value={`${reduce}%`}
+                            tone="jade"
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="insight-linggen-actions">
+                  <span className="insight-linggen-meta">
+                    {t('insight.heavenGate.rerollCount', { count: stats.heavenGateRerollCount ?? 0 })}
+                  </span>
+                  <button
+                    className="insight-breakthrough-btn"
+                    type="button"
+                    onClick={() => setIsHeavenGateModalOpen(true)}
+                  >
+                    {t('insight.heavenGate.rerollBtn')}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="insight-base-layout">
@@ -742,6 +817,22 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         )}
       </div>
 
+      {/* 开天门阵盘：叩天门满修后由此取得五行灵根，入天门后方可继续突破 */}
+      <HeavenGateModal
+        open={isHeavenGateModalOpen}
+        rolled={stats.heavenGateRolled}
+        confirmed={stats.heavenGateConfirmed}
+        entered={stats.heavenGateEntered === true}
+        rerollCount={stats.heavenGateRerollCount ?? 0}
+        rerollCostPlain={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.25))}
+        rerollCostPill={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.05))}
+        reverseFatePillCount={reverseFatePillCount}
+        onRoll={() => gameClient.sendCommand('progression.heaven_gate', { action: 'roll' })}
+        onAllocate={values => gameClient.sendCommand('progression.heaven_gate', { action: 'allocate', ...values })}
+        onEnter={() => gameClient.sendCommand('progression.heaven_gate', { action: 'enter' })}
+        onReroll={usePill => gameClient.sendCommand('progression.heaven_gate', { action: 'reroll', usePill })}
+        onClose={() => setIsHeavenGateModalOpen(false)}
+      />
       {/* 破境突破二次确认弹窗：确认后才发送突破命令，发送即关闭（突破后预览已失效） */}
       <BreakthroughConfirmModal
         open={isBreakthroughModalOpen}

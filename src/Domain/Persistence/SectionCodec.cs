@@ -67,7 +67,7 @@ public static class SectionCodec
     /// 玩家按物品 ID 覆盖配表 consumable.triggers 出厂默认，与 abilityTriggers 同构（键存在即覆盖）。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 37;
+    public const int CurrentSchemaVersion = 38;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>

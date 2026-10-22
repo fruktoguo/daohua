@@ -1,4 +1,4 @@
-import { getT, type TFunction } from '../i18n'
+import { getT, hasTranslation, type TFunction } from '../i18n'
 import { calculateAbilityLevelAndProgress } from './combatConstants'
 import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
 
@@ -1082,6 +1082,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.xuanyuan-yiqi-gong': { glyph: '📜', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualFragment' },
   'item.gathering-incense': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
   'item.alchemy-flame': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
+  'item.reverse-fate-pill': { glyph: '⚫', tone: 'violet', rarity: 'mystic', level: 18, subCategory: 'pill' },
   'equipment.qingfeng-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
   'equipment.pishan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
   'equipment.shufa-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
@@ -1089,7 +1090,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.zhakou-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
   'equipment.fan-tie-dart': { glyph: '🗡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
   'equipment.tiepi-guard': { glyph: '🛡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
-  'equipment.qingmu-bead': { glyph: '�', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.qingmu-bead': { glyph: '📿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
   'equipment.ganlu-flask': { glyph: '🏺', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
   'equipment.shouya-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
   'equipment.jiujie-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
@@ -1111,7 +1112,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.tafeng-pants': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
   'equipment.xuantie-dart': { glyph: '🗡️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
   'equipment.xuanjia-guard': { glyph: '🛡️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.yaoling-bead': { glyph: '�', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.yaoling-bead': { glyph: '📿', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
   'equipment.huichun-bell': { glyph: '🔔', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
   'equipment.chiwen-ring': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
   'equipment.chaoyuan-staff': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
@@ -1120,6 +1121,33 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.pichen-shirt': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
   'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
   'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  // 一阶野外材料与秘籍（配表 items/manuals 全量对齐，防止未登记条目丢失图标与品类）
+  'item.rock-fang': { glyph: '🦷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.water-spirit-core': { glyph: '💧', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.thick-beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.rough-wolf-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.golden-ape-bone': { glyph: '🦴', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.ape-heart': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.tome.tide': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.tide': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  // 一阶武器 / 护具 / 法宝（配表 equipment 全量对齐）
+  'equipment.xuantie-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.piyan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.kuteng-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.mingquan-zither': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.xuantie-headband': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.suozi-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.diejia-leggings': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.canglang-cap': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.canglang-vest': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.canglang-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.liuyun-ribbon': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.bishui-robe': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.zhishui-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.tiemu-shield': { glyph: '🛡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.ningshui-charm': { glyph: '🔖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.canglang-ring': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  'equipment.bibo-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
   // 七技艺工具（tool-<techniqueId> 专属槽位；品类经 tool- 归一显示「技艺工具」）
   'equipment.tool-herb-hoe': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
   'equipment.tool-prospect-compass': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
@@ -1135,11 +1163,18 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
  * @param itemId 物品唯一标识
  */
 export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
-  const core = ITEM_META_CORES[itemId]
   const t = getT()
+  const core = ITEM_META_CORES[itemId]
+  // 名称与描述的唯一真源是 i18n 词典；静态元数据表只承载图标/品质/品类等非文本信息。
+  // 新配表条目即使尚未登记静态元数据，也必须拿到可读文本，禁止回退原始 ID。
+  const label = hasTranslation(`game.item.${itemId}.label`) ? t(`game.item.${itemId}.label`) : undefined
+  const description = hasTranslation(`game.item.${itemId}.description`)
+    ? t(`game.item.${itemId}.description`)
+    : undefined
+
   if (core) {
     return {
-      label: t(`game.item.${itemId}.label`),
+      label: label ?? itemId,
       glyph: core.glyph,
       tone: core.tone,
       category: resolveItemCategoryLabel(core.subCategory, t),
@@ -1147,30 +1182,33 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
       rarityLabel: t(`game.rarityLabel.${core.rarityLabelOverride ?? core.rarity}`),
       tier: core.level ?? 1,
       level: convertTierToLevel(core.level ?? 1),
-      description: t(`game.item.${itemId}.description`),
+      description: description ?? '',
     }
   }
 
   if (itemId.startsWith('equipment.')) {
-    // 元数据表未登记的装备：优先取静态兜底装备定义的中文名，避免直接回显 equipment.* 标识。
-    const fallbackName = EQUIPMENT_MAP[itemId]?.name
+    // 静态元数据未登记的装备：名称走词典，品质/等阶按静态兜底定义推导。
+    const fallback = EQUIPMENT_MAP[itemId]
+    const tier = Math.max(1, fallback?.tier ?? 1)
+    const grade = resolveItemGrade(tier)
     return {
-      label: fallbackName || itemId,
+      label: label ?? fallback?.name ?? itemId,
       glyph: '⚔️',
       tone: 'gray',
-      category: resolveItemCategoryLabel('equipment', t),
-      rarity: 'mundane',
-      rarityLabel: t('game.rarityLabel.mundane'),
-      tier: 1,
-      level: 1,
-      description: '',
+      category: resolveItemCategoryLabel(fallback?.slot ?? 'equipment', t),
+      rarity: grade.rarity,
+      rarityLabel: grade.label,
+      tier,
+      level: convertTierToLevel(tier),
+      description: description ?? fallback?.description ?? '',
     }
   }
+
   if (itemId.startsWith('item.tome.') || itemId.startsWith('item.fragment.')) {
     const isTome = itemId.startsWith('item.tome.')
     const slug = itemId.slice(isTome ? 'item.tome.'.length : 'item.fragment.'.length)
     return {
-      label: isTome ? `《${slug}秘籍》` : `《${slug}·残卷》`,
+      label: label ?? (isTome ? `《${slug}秘籍》` : `《${slug}·残卷》`),
       glyph: isTome ? '📘' : '📜',
       tone: 'gray',
       category: resolveItemCategoryLabel(isTome ? 'manualTome' : 'manualFragment', t),
@@ -1178,7 +1216,22 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
       rarityLabel: t('game.rarityLabel.mundane'),
       tier: 1,
       level: 1,
-      description: '',
+      description: description ?? '',
+    }
+  }
+
+  // 普通物品（材料/丹药/消耗品）：词典有词条即可展示，图标与品类取中性兜底。
+  if (label !== undefined || description !== undefined) {
+    return {
+      label: label ?? itemId,
+      glyph: '·',
+      tone: 'gold',
+      category: resolveItemCategoryLabel(undefined, t),
+      rarity: 'mundane',
+      rarityLabel: t('game.rarityLabel.mundane'),
+      tier: 1,
+      level: 1,
+      description: description ?? '',
     }
   }
 
@@ -1291,6 +1344,17 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     durationSeconds: 300,
     isContinuous: true,
     alchemyMultiplier: 1.25,
+  },
+  'item.reverse-fate-pill': {
+    itemId: 'item.reverse-fate-pill',
+    name: '逆命丹',
+    description: '丹成可暂借一线天命。\n色泽晦暗如墨的异种丹丸，入喉后逆冲经络，为逆天改命强行撕开一道缝隙。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'pill',
+    tier: 3,
+    sellPrice: 0,
+    isTradable: false,
   },
   'item.awakening-stone': {
     itemId: 'item.awakening-stone',

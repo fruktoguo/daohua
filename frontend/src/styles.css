@@ -7668,6 +7668,114 @@ input[type="checkbox"] {
   flex-wrap: wrap;
 }
 
+/* 灵根子页：五行点数行与底部改命入口 */
+.insight-linggen-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insight-linggen-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.insight-linggen-meta {
+  font-size: 12px;
+  color: var(--text-muted, #9aa0a6);
+}
+
+/* 开天门阵盘弹窗：五行点数编辑与改命区 */
+.heaven-gate-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.heaven-gate-modal-title {
+  margin: 0;
+  font-size: 18px;
+  color: var(--gold);
+}
+
+.heaven-gate-modal-subtitle,
+.heaven-gate-modal-state {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted, #9aa0a6);
+}
+
+.heaven-gate-axis-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.heaven-gate-axis-row {
+  display: grid;
+  grid-template-columns: 40px 84px 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.heaven-gate-axis-name {
+  font-weight: 600;
+}
+
+.heaven-gate-axis-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.24);
+  color: inherit;
+  font: inherit;
+}
+
+.heaven-gate-axis-stat {
+  font-size: 12px;
+  color: var(--text-muted, #9aa0a6);
+}
+
+.heaven-gate-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.heaven-gate-reroll {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.heaven-gate-reroll-cost {
+  font-size: 13px;
+  color: var(--gold);
+}
+
+.heaven-gate-reroll-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.heaven-gate-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .insight-foundation-pill-row {
   display: flex;
   align-items: center;

@@ -60,7 +60,8 @@ public static class PostgresSchema
     /// v39：market.item_stats 增 reference_price 参考价格字段（最近10次成交单价单值滑动平均EMA，单笔购买多次算一次；无成交价回落配表回收价）——存档载荷未变。
     /// v40：loadout 分段载荷新增 consumableTriggers 消耗品触发条件映射（可缺省解码为 null/[]，表结构未变）——
     /// 存档标签推进至 v37，玩家八分段无表结构变化。
-    public const int Version = 40;
+    /// v41：progression 分段载荷新增 heavenGate 五行灵根状态（可缺省解码为未开天门），存档标签推进至 v38；表结构未变。
+    public const int Version = 41;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """

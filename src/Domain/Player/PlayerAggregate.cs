@@ -66,6 +66,9 @@ public sealed class PlayerProgression
     /// <summary>道龄（已流逝寿元，秒）；随模拟时间自然累积，寿元上限由等阶配表决定。</summary>
     public double AgeSeconds { get; set; }
 
+    /// <summary>开天门与五行灵根状态：叩天门满修为后必须先开天门取得灵根才能继续突破。</summary>
+    public PlayerHeavenGateState HeavenGate { get; } = new();
+
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
     public double SimulationCarrySeconds { get; set; }
 
@@ -189,6 +192,7 @@ public sealed class PlayerProgression
         TotalDefeats = state.TotalDefeats;
         CultivationSeconds = state.CultivationSeconds;
         AgeSeconds = state.AgeSeconds;
+        HeavenGate.Apply(state.HeavenGateRolled, state.HeavenGateConfirmed, state.HeavenGateEntered, state.HeavenGateRerollCount);
     }
 }
 
@@ -669,7 +673,7 @@ public sealed partial class PlayerAggregate
 
     /// <summary>
     /// 属性解析输入修订号：由全部属性输入源的单调版本号合成
-    /// （境界阶层 / 节点建筑效果三元组 / 穿戴装备 ID / 装备槽强化 / 六维经验 / 活跃 Buff）。
+    /// （境界阶层 / 节点建筑效果三元组 / 穿戴装备 ID / 装备槽强化 / 六维经验 / 活跃 Buff / 五行灵根）。
     /// 任一输入源写入都会令其严格增大，合成值相等当且仅当全部输入未变；
     /// 属性解析缓存以「同配表实例 + 本修订号未变」为命中条件，命中结果与全量重算逐位一致。
     /// </summary>
@@ -682,7 +686,9 @@ public sealed partial class PlayerAggregate
         + Loadout.CoreAttributesVersion
         + Progression.TraitIds.Version
         + Progression.UnlockedTraits.Version
-        + Loadout.AbilitySlots.Version;
+        + Loadout.AbilitySlots.Version
+        // 开天门 / 逆天改命改写生效灵根：五行增伤减伤点数随之变化，必须令面板缓存失效。
+        + Progression.HeavenGate.Version;
 
     /// <summary>尝试命中属性解析缓存：同配表实例且属性输入修订号未变时复用上轮结果。</summary>
     internal bool TryGetCachedAttributes(GameDataCatalog catalog, out PlayerAttributes attributes)
@@ -1025,6 +1031,10 @@ public sealed partial class PlayerAggregate
                 throw new DomainException(DomainErrorCode.Conflict, "已至最高境界，无可突破。");
             if (Progression.Experience < cap - 1e-9)
                 throw new DomainException(DomainErrorCode.Conflict, "修为未满，尚未触及瓶颈。");
+            // 叩天门满修为后必须先开天门取得灵根：未入天门时阻断突破，
+            // 保证灵根是进入练气期的必经前置而非可跳过流程。
+            if (HeavenGateRules.IsHeavenGateRealm(Progression.RealmLevel) && !Progression.HeavenGate.Entered)
+                throw new DomainException(DomainErrorCode.Conflict, "需先叩开天门取得灵根，方可继续突破。");
         }
         var realmBefore = Progression.RealmLevel;
         Progression.RealmLevel = checked(Progression.RealmLevel + 1);

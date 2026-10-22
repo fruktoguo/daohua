@@ -75,7 +75,7 @@ try {
   }
   // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 37, sectionVersion: 1,
+    section: 'world', schemaVersion: 38, sectionVersion: 1,
     data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
@@ -109,7 +109,7 @@ try {
     remainingRepeats: -1, completedRepeats: 4, executionKind: 'timed',
   }
   const queueSection = {
-    section: 'action_queue', schemaVersion: 37, sectionVersion: 1, data: [queueRow],
+    section: 'action_queue', schemaVersion: 38, sectionVersion: 1, data: [queueRow],
     checksum: createHash('sha256').update(JSON.stringify([queueRow]), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
@@ -248,7 +248,7 @@ try {
     },
   }
   const triggerSection = {
-    section: 'loadout', schemaVersion: 37, sectionVersion: 1, data: triggerLoadout,
+    section: 'loadout', schemaVersion: 38, sectionVersion: 1, data: triggerLoadout,
     checksum: createHash('sha256').update(JSON.stringify(triggerLoadout), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:07Z',
   }
@@ -263,7 +263,7 @@ try {
     'ability.test': [{ dependency: 'enemy', condition: 'alive-count', comparator: 'greater-than-equal', value: 2 }],
   } }
   const setSection = {
-    section: 'loadout', schemaVersion: 37, sectionVersion: 1, data: setTrigger,
+    section: 'loadout', schemaVersion: 38, sectionVersion: 1, data: setTrigger,
     checksum: createHash('sha256').update(JSON.stringify(setTrigger), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:08Z',
   }

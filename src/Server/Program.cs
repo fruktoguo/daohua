@@ -328,6 +328,9 @@ if (processRole == ServerProcessRole.Api)
                 combatEncounterId = action.CombatEncounterId,
                 hiddenFromCatalog = action.HiddenFromCatalog,
                 inputs = action.Inputs.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
+                // 底蕴成本比例：逆命丹等特殊配方以「升级所需修为 × 比例」额外扣底蕴，
+                // 前端据此展示成本提示，准入与扣除一律由服务端裁决。
+                foundationCostRatio = action.FoundationCostRatio,
                 yields = action.Yields.Select(entry => new
                 {
                     kind = entry.Kind.ToString().ToLowerInvariant(),

@@ -74,9 +74,13 @@ internal static partial class ActionExecutionRules
                 hasInputs = false;
                 break;
             }
+        // 底蕴成本（逆命丹等特殊配方）：与材料同为准入前置，不足时按「底蕴不足」阻断而非扣成负数。
+        var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
+        var hasFoundation = player.Progression.Foundation >= foundationCost;
         // 讨伐行动不走「地点不符」口径：地点校验失败按条件不足阻断；其余行动维持原文案。
+        // 材料优先于底蕴报文案：两者同时不足时先引导补材料（底蕴成本本身由修为规模决定）。
         var blockedReason = availableHere
-            ? "材料不足，行动受阻。"
+            ? hasInputs ? "底蕴不足，行动受阻。" : "材料不足，行动受阻。"
             : definition.ExecutionKind == ActionExecutionKind.CombatEncounter
                 ? "条件不足，行动受阻。"
                 : "当前位置不允许执行该行动。";
@@ -109,7 +113,7 @@ internal static partial class ActionExecutionRules
                 action.EnhancementCurrentLevel = prep.CurrentLevel;
             }
         }
-        if (!availableHere || !hasInputs)
+        if (!availableHere || !hasInputs || !hasFoundation)
         {
             // 地点不符且自动移动开启：插队赶路至入队锚点替代 Blocked；任一前置不满足回落原语义。
             // 讨伐行动除外——讨伐跟随玩家移动，当前地点不可执行时直接条件不足阻断，不赶回锚点。
@@ -405,6 +409,16 @@ internal static partial class ActionExecutionRules
         }
         // 本层修为上限：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
         var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
+        // 底蕴成本：与准入同一解析口径（当前升级所需修为 × 配表比例）。轮间底蕴被其他结算消耗时
+        // 按强化同语义回退为 Blocked，本轮不产生任何收益、扣减或轮次计数。
+        var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
+        if (foundationCost > player.Progression.Foundation)
+        {
+            action.Status = ActionQueueStatus.Blocked;
+            events ??= new SimulationEventTail();
+            events.Add(new SimulationEvent(target, "action.blocked", "底蕴不足，行动受阻。", definition.Id));
+            return;
+        }
         if (!double.IsFinite(experienceGain) || !double.IsFinite(manaGain) || !double.IsFinite(hitpointGain)
             || !double.IsFinite(player.Progression.Experience + 3 * experienceGain)
             || !double.IsFinite(player.Progression.Foundation + experienceGain))
@@ -455,6 +469,10 @@ internal static partial class ActionExecutionRules
             AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), -spiritStoneDeduction);
         }
         CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
+        // 底蕴成本先行扣除：CreditExperience 的 1:1 兑换放大要在这个池子上结算，
+        // 若先兑换再扣成本会把可用底蕴重复花两次（池子可能被扣成负数）。
+        // 上文准入与轮内复核已保证 Foundation ≥ foundationCost，扣减后恒为非负。
+        player.Progression.Foundation -= foundationCost;
         // 修为类收益统一结算（总纲 §7.11.1）：瓶颈截断 + 底蕴 1:1 兑换放大（≤3×amp）+
         // 增幅溢量沉淀为底蕴；满级（cap≤0）全额沉淀。非战斗行动不增加战斗经验。
         var experienceDelta = player.Progression.CreditExperience(experienceGain, expCap);
@@ -469,7 +487,7 @@ internal static partial class ActionExecutionRules
         player.RecordStats(action.Id, target.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
         {
             Experience = experienceDelta,
-            Foundation = experienceGain - experienceDelta,
+            Foundation = experienceGain - experienceDelta - foundationCost,
             Cycles = 1,
             ItemGains = itemRewards,
             ItemLosses = finalItemLosses
@@ -650,6 +668,23 @@ internal static partial class ActionExecutionRules
         if (!double.IsFinite(next))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动资源累计增量超出数值范围。");
         deltas[asset] = next;
+    }
+
+    /// <summary>
+    /// 单轮行动的额外底蕴成本（当前升级所需修为 × 配表比例，至少 1 点）。
+    /// 与 <see cref="HeavenGateRules.ResolveReverseFatePillFoundationCost"/> 同口径，
+    /// 准入校验与单轮结算共用本解析，保证「校验通过即必然扣得动」。
+    /// 比例 ≤ 0、无境界进度配置或已满级（无升级所需修为）时返回 0，即不产生底蕴成本。
+    /// </summary>
+    /// <param name="player">玩家状态视图（读境界与升级所需修为）。</param>
+    /// <param name="definition">当前行动定义。</param>
+    /// <param name="gameData">配表目录；缺境界进度时不折算成本。</param>
+    internal static double ResolveActionFoundationCost(IPlayerActionContext player,
+        ActionDefinition definition, GameDataCatalog? gameData)
+    {
+        if (definition.FoundationCostRatio <= 0) return 0;
+        var expToNext = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? 0;
+        return HeavenGateRules.ResolveFoundationCost(expToNext, definition.FoundationCostRatio);
     }
 
     /// <summary>ItemId 便捷重载：基础键变体为空串。</summary>

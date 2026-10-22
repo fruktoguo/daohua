@@ -109,6 +109,9 @@ public enum ActionExecutionKind : byte
 /// <param name="Technique">关联的技艺 ID（对应技艺等级提供行动速度加成）；无关联为 null。</param>
 /// <param name="ExcludedNodeIds">禁止执行该行动的地图节点集合（黑名单）：AllowedNodeIds 缺省时行动默认全图可行，
 /// 仅此处列出的节点被排除（如引气入体之类常驻行动按地点裁剪）；与 AllowedNodeIds 互斥。</param>
+/// <param name="Level">行动等级（技艺/配方等级）；null 表示由配方消耗推导。</param>
+/// <param name="FoundationCostRatio">单轮额外底蕴成本比例：按当前境界升级所需修为折算（逆命丹 0.25）；
+/// 0 表示该行动无底蕴成本，准入与结算完全沿用材料通道。</param>
 public sealed record ActionDefinition(
     ActionId Id,
     string Name,
@@ -122,7 +125,8 @@ public sealed record ActionDefinition(
     string? CombatEncounterId = null,
     string? Technique = null,
     IReadOnlySet<string>? ExcludedNodeIds = null,
-    int? Level = null)
+    int? Level = null,
+    double FoundationCostRatio = 0)
 {
 }
 
@@ -365,6 +369,10 @@ public sealed class ActionCatalog
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动定义无效。");
         if (!double.IsFinite(definition.DurationSeconds) || definition.DurationSeconds < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的数值无效。");
+        // 底蕴成本比例是「升级所需修为」的折算系数：只接受 [0, 1] 内的有限数，0 表示不启用该通道。
+        if (!double.IsFinite(definition.FoundationCostRatio)
+            || definition.FoundationCostRatio < 0 || definition.FoundationCostRatio > 1)
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的底蕴成本比例必须为 [0,1] 内的有限数。");
         if (!Enum.IsDefined(definition.ExecutionKind)
             || (definition.ExecutionKind == ActionExecutionKind.CombatEncounter
                 && string.IsNullOrWhiteSpace(definition.CombatEncounterId)))
@@ -944,7 +952,15 @@ public sealed class GameDataCatalog
         var level = entry.TryGetProperty("level", out var levelProp) && levelProp.TryGetInt32(out var lvl) && lvl > 0
             ? lvl
             : (int?)null;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId, technique, excludedNodes, level);
+        // 底蕴成本比例缺省 0（无该通道）；非数值或非 [0,1] 的非法配置按 0 处理，
+        // 与「配表笔误不得让行动永久不可执行」的自愈口径一致。
+        var foundationCostRatio = entry.TryGetProperty("foundationCostRatio", out var foundationProperty)
+            && foundationProperty.ValueKind == JsonValueKind.Number
+            && foundationProperty.TryGetDouble(out var parsedFoundationRatio)
+            && double.IsFinite(parsedFoundationRatio) && parsedFoundationRatio is >= 0 and <= 1
+            ? parsedFoundationRatio
+            : 0;
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId, technique, excludedNodes, level, foundationCostRatio);
     }
 
     /// <summary>

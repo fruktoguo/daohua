@@ -33,6 +33,7 @@ import type {
   ExpeditionPhase,
   ExpeditionProgress,
   InventoryItem,
+  LinggenValues,
   MonsterDropDefinition,
   NearbyMonsterDefinition,
   NodeBuilding,
@@ -48,7 +49,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 37
+const SNAPSHOT_SCHEMA_VERSION = 38
 
 type JsonObject = Record<string, unknown>
 
@@ -848,6 +849,24 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
   }
 }
 
+/**
+ * 五行灵根点数映射：服务端以 LinggenValues 序列化，字段缺失视为未取得灵根。
+ * 单系点数按 [0, 100] 夹取，与领域口径保持一致。
+ */
+function mapLinggenValues(value: unknown): LinggenValues | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const row = value as Record<string, unknown>
+  const clamp = (raw: unknown) => Math.max(0, Math.min(100, Math.trunc(numberValue(raw))))
+  const mapped = {
+    metal: clamp(row.metal),
+    wood: clamp(row.wood),
+    water: clamp(row.water),
+    fire: clamp(row.fire),
+    earth: clamp(row.earth),
+  }
+  return mapped.metal + mapped.wood + mapped.water + mapped.fire + mapped.earth > 0 ? mapped : undefined
+}
+
 function mapStats(value: unknown): Stats {
   const row = object(value)
   const normalKills = numberValue(row.normalKills)
@@ -859,6 +878,10 @@ function mapStats(value: unknown): Stats {
     lifetimeExperience: numberValue(row.lifetimeExperience),
     foundation: numberValue(row.foundation),
     combatExperience: numberValue(row.combatExperience),
+    heavenGateRolled: mapLinggenValues(row.heavenGateRolled),
+    heavenGateConfirmed: mapLinggenValues(row.heavenGateConfirmed),
+    heavenGateEntered: row.heavenGateEntered === true,
+    heavenGateRerollCount: Math.max(0, Math.trunc(numberValue(row.heavenGateRerollCount))),
     completedActions: numberValue(row.completedActions),
     normalKills,
     eliteKills,

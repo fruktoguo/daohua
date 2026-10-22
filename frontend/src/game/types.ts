@@ -314,6 +314,8 @@ export interface ActionDefinition {
   combatEncounterId?: string
   /** 消耗材料物品与数量映射 */
   inputs?: Record<string, number>
+  /** 额外底蕴成本比例：按当前升级所需修为折算（逆命丹等特殊配方；缺省 0 表示无底蕴成本） */
+  foundationCostRatio?: number
   /** 行动收益列表（修为/灵力/气血/物品/增益） */
   yields?: ActionYield[]
   /** 允许执行该行动的地图节点 ID 列表 */
@@ -1183,6 +1185,18 @@ export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen'
 }
 
 /**
+ * 五行灵根点数（服务端 progression.heavenGate* 透传）。
+ * 每系点数 0~100：100 点提供 100% 对应五行增伤；减伤走收益递减曲线，100 点即伤害减半。
+ */
+export interface LinggenValues {
+  metal: number
+  wood: number
+  water: number
+  fire: number
+  earth: number
+}
+
+/**
  * 角色历史累计统计数据
  */
 export interface Stats {
@@ -1194,6 +1208,14 @@ export interface Stats {
   lifetimeExperience: number
   /** 底蕴池（progression.foundation 透传：修为圆满后沉淀，修炼时消耗兑换额外修为，突破不清空） */
   foundation: number
+  /** 开天门抽取的原始灵根分布（progression.heavenGateRolled 透传；未开天门为 undefined） */
+  heavenGateRolled?: LinggenValues
+  /** 已确认生效的五行灵根（progression.heavenGateConfirmed 透传；未入天门为 undefined） */
+  heavenGateConfirmed?: LinggenValues
+  /** 是否已完成入天门（progression.heavenGateEntered 透传） */
+  heavenGateEntered?: boolean
+  /** 逆天改命累计次数（progression.heavenGateRerollCount 透传：永久保留） */
+  heavenGateRerollCount?: number
   /** 战斗经验池（progression.combatExperience 透传：按修为基础量同步积累，不受增幅影响） */
   combatExperience: number
   /** 累计采集灵草次数 */

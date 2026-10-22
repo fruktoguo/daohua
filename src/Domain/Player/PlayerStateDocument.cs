@@ -46,7 +46,15 @@ public sealed record PlayerProgressionState(
     double LifetimeExperience = 0,
     IReadOnlyList<string>? TraitIds = null,
     IReadOnlyList<string>? DefeatedMonsterIds = null,
-    IReadOnlyList<Domain.Combat.TraitProgressState>? UnlockedTraits = null);
+    IReadOnlyList<Domain.Combat.TraitProgressState>? UnlockedTraits = null,
+    /// <summary>开天门抽取结果；未开天门为 null（可缺省解码）。</summary>
+    LinggenValues? HeavenGateRolled = null,
+    /// <summary>已确认生效的五行灵根；未入天门为 null（可缺省解码）。</summary>
+    LinggenValues? HeavenGateConfirmed = null,
+    /// <summary>是否已完成入天门。</summary>
+    bool HeavenGateEntered = false,
+    /// <summary>逆天改命累计次数（永久保留，不随突破清零）。</summary>
+    int HeavenGateRerollCount = 0);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -197,7 +205,11 @@ public sealed partial class PlayerAggregate
                 Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
                 Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null,
                 Progression.DefeatedMonsterIds.Count > 0 ? Progression.DefeatedMonsterIds.ToArray() : null,
-                Progression.UnlockedTraits.Count > 0 ? Progression.UnlockedTraits.Values.ToArray() : null),
+                Progression.UnlockedTraits.Count > 0 ? Progression.UnlockedTraits.Values.ToArray() : null,
+                Progression.HeavenGate.RolledValues,
+                Progression.HeavenGate.ConfirmedValues,
+                Progression.HeavenGate.Entered,
+                Progression.HeavenGate.RerollCount),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs },
             GetCachedBuffs(),
@@ -438,6 +450,13 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.Foundation = state.Progression.Foundation;
         aggregate.Progression.CombatExperience = state.Progression.CombatExperience;
         aggregate.Progression.LifetimeExperience = state.Progression.LifetimeExperience;
+        // 开天门状态属于 progression 分段持久化字段，必须在恢复边界一并写回，
+        // 否则重连/离线补算后灵根丢失会直接让叩天门突破前置失效。
+        aggregate.Progression.HeavenGate.Apply(
+            state.Progression.HeavenGateRolled,
+            state.Progression.HeavenGateConfirmed,
+            state.Progression.HeavenGateEntered,
+            state.Progression.HeavenGateRerollCount);
         if (state.Progression.TraitIds is { Count: > 0 } traitIds)
         {
             if (traitIds.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128))
@@ -627,6 +646,10 @@ public sealed partial class PlayerAggregate
         if (restored.Progression.TraitIds.Count > 0) Progression.TraitIds.AddRange(restored.Progression.TraitIds);
         Progression.DefeatedMonsterIds.Clear();
         if (restored.Progression.DefeatedMonsterIds.Count > 0) Progression.DefeatedMonsterIds.AddRange(restored.Progression.DefeatedMonsterIds);
+        Progression.HeavenGate.Apply(restored.Progression.HeavenGate.RolledValues,
+            restored.Progression.HeavenGate.ConfirmedValues,
+            restored.Progression.HeavenGate.Entered,
+            restored.Progression.HeavenGate.RerollCount);
         Progression.UnlockedTraits.Clear();
         if (restored.Progression.UnlockedTraits is { Count: > 0 } unlocked)
         {
@@ -838,7 +861,11 @@ public sealed partial class PlayerAggregate
                 Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
                 Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null,
                 Progression.DefeatedMonsterIds.Count > 0 ? Progression.DefeatedMonsterIds.ToArray() : null,
-                Progression.UnlockedTraits.Count > 0 ? Progression.UnlockedTraits.Values.ToArray() : null),
+                Progression.UnlockedTraits.Count > 0 ? Progression.UnlockedTraits.Values.ToArray() : null,
+                Progression.HeavenGate.RolledValues,
+                Progression.HeavenGate.ConfirmedValues,
+                Progression.HeavenGate.Entered,
+                Progression.HeavenGate.RerollCount),
             Progression.RealmLevelVersion,
             Progression.TraitIds.Version,
             Progression.DefeatedMonsterIds.Version,
