@@ -20,6 +20,10 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     /// <summary>慢消费者关闭码：4009 落在自定义私有段且未被防多开占用，前端走默认自动重连恢复全量快照。</summary>
     public const int SlowConsumerCloseCode = 4009;
 
+    // 会话创建即处于「握手快照未入队」状态：OnSnapshotUpdated 订阅先于握手完成，装载期与握手
+    // 编码窗口内的模拟推进不得抢发增量（否则 delta 先于首帧全量到达，客户端尚未归属即抛错）。
+    private volatile bool _handshakeSnapshotPending = true;
+
     private readonly Channel<byte[]> _outbound = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(capacity)
     {
         FullMode = BoundedChannelFullMode.Wait,
@@ -203,6 +207,10 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     public void MarkDeltaDropped() => _deltaResyncPending = true;
     /// 全段重投帧成功入队后解除标记；窄化增量与回执的基线提交不视作补投——它们不覆盖被丢的未触及分段。
     public void CompleteDeltaResync() => _deltaResyncPending = false;
+    /// 握手全量快照已入队（基线已提交）前禁止实时增量推送：装载期模拟推进改走丢帧重投通道。
+    public bool HandshakeSnapshotPending => _handshakeSnapshotPending;
+    /// 握手快照入队并提交基线后解除抑制；此后增量推送照常。
+    public void CompleteHandshakeSnapshot() => _handshakeSnapshotPending = false;
 }
 
 /// <summary>
@@ -331,6 +339,14 @@ public static class WebSocketEndpoint
             // 换节点会触发同节点修士的附近列表刷新，也是组队讨伐在场条件的仲裁触发源。
             await presence.UpdateNodeAsync(snapshot.PlayerId,
                 snapshot.State.World.EdgeId is null ? snapshot.State.World.NodeId : null, token);
+            // 握手全量快照入队前禁止增量：此时推送基线为空，delta 会携带全部分段并抢在首帧全量
+            // 之前到达客户端（客户端 store 尚未归属即抛「增量快照归属不一致」）。改登记丢帧重投：
+            // 发送循环在通道排空且握手快照基线就绪后按全段重编码幂等补发。
+            if (session.HandshakeSnapshotPending)
+            {
+                session.MarkDeltaDropped();
+                return;
+            }
             // 入队失败登记重投：静止态角色可能再无推送事件，仅靠基线保留无法补回被丢分段。
             if (!TryPushDelta(session, snapshot, gameData, snapshot.TouchedSections))
                 session.MarkDeltaDropped();
@@ -354,6 +370,8 @@ public static class WebSocketEndpoint
             void ResyncDroppedDelta()
             {
                 if (!session.DeltaResyncPending) return;
+                // 握手快照基线未就绪时不得重投：此时 delta 仍是全段形态且会抢在首帧全量之前。
+                if (session.HandshakeSnapshotPending) return;
                 var snapshot = runtime.TryGetLoaded(session.PlayerId);
                 if (snapshot is not null && TryPushDelta(session, snapshot, gameData, null))
                     session.CompleteDeltaResync();
@@ -646,6 +664,9 @@ public static class WebSocketEndpoint
                         foreach (var section in initialSnapshot.Sections)
                             initialSectionChecksums[section.Section] = section.Checksum;
                         session.CommitPushBaseline(initialSectionChecksums, initialSnapshot.Assets);
+                        // 全量快照已入队且基线已提交：解除实时增量抑制；期间被抑制的推进
+                        // 经 DeltaResyncPending 在通道排空后全段重投补齐。
+                        session.CompleteHandshakeSnapshot();
                         // 重连回放：把环形缓冲内的最近战报一次性补发给本会话。
                         var recentLogs = runtime.GetRecentLogEvents(session.PlayerId);
                         if (recentLogs.Count > 0)
@@ -865,7 +886,7 @@ public static class WebSocketEndpoint
                         // 倒地停手或无战斗事件时立即交付，无需等待下一时钟边界；
                         // 帧被慢消费者丢弃则保留武装重投，客户端按 enemyId 缓存复用无需重复下发。
                         session.SetInspectedUnit(inspect.Side is null ? null : inspect);
-                        if (inspect.Side is not null)
+                        if (inspect.Side is not null && !session.HandshakeSnapshotPending)
                         {
                             var inspectSnapshot = runtime.TryGetLoaded(session.PlayerId);
                             if (inspectSnapshot is not null && TryPushDelta(session, inspectSnapshot, gameData, null))

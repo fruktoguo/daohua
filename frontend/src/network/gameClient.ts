@@ -651,6 +651,10 @@ export class GameClient {
         }
         case WireMessageType.SnapshotDelta: {
           const dto = decodeJsonPayload<PlayerSnapshotDeltaDto>(envelope)
+          // 首帧全量快照未到达前（store 归属尚未建立），任何增量都无处合并：
+          // 正常握手服务端保证 Snapshot 先行；此分支兜底极端竞态（旧会话残留帧等），
+          // 静默丢弃等待服务端重连全量，不再抛「归属不一致」红字打断登录流程。
+          if (!useGameStore.getState().hasReceivedSnapshot) break
           const current = useGameStore.getState().toSnapshotView()
           const patch = await decodePlayerSnapshotDeltaDto(dto, current, envelope.payload)
           if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
@@ -671,12 +675,16 @@ export class GameClient {
           // 携带（推送基线已前移后不再重发），整帧丢弃会造成永久缺失；过旧/重复内容
           // 由 applyPatch/applySnapshot 的版本门禁幂等丢弃，requestId 必须与信封一致。
           if (result.snapshotForm === CommandResultSnapshotForm.Delta && isPlayerSnapshotDeltaDto(result.snapshot)) {
-            const current = useGameStore.getState().toSnapshotView()
-            const patch = await decodePlayerSnapshotDeltaDto(result.snapshot, current, envelope.payload, ['snapshot', 'changedSections'])
-            if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
-            // 钱包类命令（market.*/item.*）不推状态版本：同版本回执仍携带资产差额必须合入，仅丢弃严格更旧的回执。
-            useGameStore.getState().applyPatch(patch, { allowSameVersion: true })
-            appliedBusinessPayload = true
+            // 全量快照未到达前的命令回执增量无处合并（同 SnapshotDelta 分支兜底口径）；
+            // 仅跳过快照合并，回执的 message/notice 照常展示，状态差额由随后握手全量快照覆盖。
+            if (useGameStore.getState().hasReceivedSnapshot) {
+              const current = useGameStore.getState().toSnapshotView()
+              const patch = await decodePlayerSnapshotDeltaDto(result.snapshot, current, envelope.payload, ['snapshot', 'changedSections'])
+              if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+              // 钱包类命令（market.*/item.*）不推状态版本：同版本回执仍携带资产差额必须合入，仅丢弃严格更旧的回执。
+              useGameStore.getState().applyPatch(patch, { allowSameVersion: true })
+              appliedBusinessPayload = true
+            }
           } else if (result.snapshotForm === CommandResultSnapshotForm.Snapshot && isPlayerSnapshotDto(result.snapshot)) {
             // 内嵌全量快照的 sections 位于信封 JSON 的 snapshot 成员内，按路径定位 data 字节区间。
             const snapshot = await decodePlayerSnapshotDto(result.snapshot, envelope.payload, this.account, this.sequenceId, ['snapshot', 'sections'])
