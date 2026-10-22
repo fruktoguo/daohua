@@ -26,6 +26,18 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# 迁移前必须能判定「库版本」与「存档标签版本」两个独立目标：
+#   EXPECTED_SCHEMA_VERSION  = PostgresSchema.Version（platform.schema_version 目标）
+#   EXPECTED_SECTION_VERSION = SectionCodec.CurrentSchemaVersion（分段载荷标签目标）
+# 两者并不相等（例如 v41 / v38），搞混会把存档标签推进到解码器拒绝的值。
+EXPECTED_SCHEMA_VERSION="$(grep -oE 'public const int Version = [0-9]+' "$ROOT_DIR/src/Server/Clean/PostgresSchema.cs" | grep -oE '[0-9]+' | head -n1)"
+EXPECTED_SECTION_VERSION="$(grep -oE 'public const int CurrentSchemaVersion = [0-9]+' "$ROOT_DIR/src/Domain/Persistence/SectionCodec.cs" | grep -oE '[0-9]+' | head -n1)"
+if [[ -z "$EXPECTED_SCHEMA_VERSION" || -z "$EXPECTED_SECTION_VERSION" ]]; then
+  printf '无法从源码推断 schema 版本（库/存档标签），拒绝部署：迁移校验缺少判定依据。\n' >&2
+  exit 1
+fi
+
 REMOTE_HOST="${SSH_HOST:-yuohira}"
 IMAGE="${APP_IMAGE:-}"
 COMPUTE_IMAGE="${COMPUTE_IMAGE:-}"
@@ -173,8 +185,14 @@ scp -q \
   "$ROOT_DIR/deploy/daohua-wal-archive.timer" \
   "$ROOT_DIR/deploy/install-caddy.sh" \
   "$ROOT_DIR/deploy/daohua.yuohira.com.caddy" \
+  "$ROOT_DIR/deploy/migrate-prod-db.sh" \
   "$ROOT_DIR/scripts/smoke-production.mjs" \
   "${REMOTE_HOST}:${REMOTE_TMP}/"
+
+# migrations/ 不在镜像内（可整体删除、不参与构建上下文），只能由部署链同步到生产目录。
+printf '==> 上传兼容性迁移脚本\n'
+ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf '${REMOTE_TMP}/migrations' && mkdir -p '${REMOTE_TMP}/migrations'"
+scp -q "$ROOT_DIR"/migrations/*.sql "${REMOTE_HOST}:${REMOTE_TMP}/migrations/"
 
 printf '==> 安装生产 Compose 与 systemd timer\n'
 printf '==> 校验生产环境变量\n'
@@ -215,6 +233,10 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -m 0755 '$REMOTE_TMP/wal-archive.sh' /opt/daohua/wal-archive.sh
   sudo install -m 0755 '$REMOTE_TMP/market-ledger-archive.sh' /opt/daohua/market-ledger-archive.sh
   sudo install -m 0755 '$REMOTE_TMP/postgres-wal-archive.sh' /opt/daohua/postgres-wal-archive.sh
+  sudo install -m 0755 '$REMOTE_TMP/migrate-prod-db.sh' /opt/daohua/migrate-prod-db.sh
+  sudo rm -rf /opt/daohua/migrations
+  sudo install -d -m 0755 /opt/daohua/migrations
+  sudo cp -f '$REMOTE_TMP'/migrations/*.sql /opt/daohua/migrations/
   sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.service' /etc/systemd/system/daohua-ccr-auto-update.service
   sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.timer' /etc/systemd/system/daohua-ccr-auto-update.timer
   sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.service' /etc/systemd/system/daohua-db-backup.service
@@ -243,6 +265,15 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   fi
   expected_app_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$IMAGE')\"
   expected_compute_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$COMPUTE_IMAGE')\"
+  # 迁移必须先于新镜像启动，且必须在旧写者停止之后执行：
+  # 旧版本进程在迁移窗口内仍会按旧标签写存档，导致新版本加载玩家时
+  # 抛 'section schema 版本不受支持' 并无限重连（生产事故 2026-10-22）。
+  sudo systemctl stop daohua-ccr-auto-update.timer
+  sudo env \\
+    DAOHUA_DIR=/opt/daohua \\
+    EXPECTED_SCHEMA_VERSION='$EXPECTED_SCHEMA_VERSION' \\
+    EXPECTED_SECTION_VERSION='$EXPECTED_SECTION_VERSION' \\
+    /opt/daohua/migrate-prod-db.sh
   sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' /opt/daohua/ccr-auto-update.sh
   # 更新锁被 timer 占用时 ccr-auto-update.sh 会跳过本轮并以 0 退出；
   # 必须等运行容器真正收敛到目标镜像且健康，否则后续健康检查与烟测会打到旧容器并误报成功。
