@@ -39,6 +39,8 @@ public sealed record ServerOptions(
     public ServerProcessRole ProcessRole { get; init; } = ServerProcessRole.Api;
     /// <summary>历史过期数据单次清理批次大小</summary>
     public int RetentionBatchSize { get; init; } = 256;
+    /// <summary>留存清理周期；高频结算流水会持续写入，周期过长会追不上生成速率。</summary>
+    public TimeSpan RetentionInterval { get; init; } = TimeSpan.FromHours(1);
     /// <summary>已投递的 Outbox 消息保留期限</summary>
     public TimeSpan DeliveredOutboxRetention { get; init; } = TimeSpan.FromDays(7);
     /// <summary>会话凭据最长保留期限</summary>
@@ -122,6 +124,7 @@ public sealed record ServerOptions(
         var ecsShardCount = configuration.GetValue("Ecs:ShardCount", 1);
         var bootstrap = configuration.GetValue("Storage:EnableSchemaBootstrap", true);
         var retentionBatch = configuration.GetValue("Storage:RetentionBatchSize", 256);
+        var retentionIntervalSeconds = configuration.GetValue("Storage:RetentionIntervalSeconds", 3600);
         var outboxRetentionDays = configuration.GetValue("Storage:DeliveredOutboxRetentionDays", 7);
         var sessionRetentionDays = configuration.GetValue("Storage:SessionRetentionDays", 7);
         var auditRetentionDays = configuration.GetValue("Storage:AuditRetentionDays", 30);
@@ -156,6 +159,7 @@ public sealed record ServerOptions(
             throw new InvalidOperationException("Market 分片配置无效。");
         if (ecsShardCount is < 1 or > 64) throw new InvalidOperationException("Ecs:ShardCount 必须在 1..64。");
         if (retentionBatch is < 1 or > 10_000) throw new InvalidOperationException("Storage:RetentionBatchSize 必须在 1..10000。");
+        if (retentionIntervalSeconds is < 60 or > 86_400) throw new InvalidOperationException("Storage:RetentionIntervalSeconds 必须在 60..86400。");
         if (outboxRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:DeliveredOutboxRetentionDays 必须在 1..3650。");
         if (sessionRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SessionRetentionDays 必须在 1..3650。");
         if (auditRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:AuditRetentionDays 必须在 1..3650。");
@@ -208,6 +212,7 @@ public sealed record ServerOptions(
             bootstrap)
         {
             RetentionBatchSize = retentionBatch,
+            RetentionInterval = TimeSpan.FromSeconds(retentionIntervalSeconds),
             DeliveredOutboxRetention = TimeSpan.FromDays(outboxRetentionDays),
             SessionRetention = TimeSpan.FromDays(sessionRetentionDays),
             AuditRetention = TimeSpan.FromDays(auditRetentionDays),

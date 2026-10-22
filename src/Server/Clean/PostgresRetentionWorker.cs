@@ -145,25 +145,27 @@ public sealed record RetentionResult(
     public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes + EmptyTransactions;
 }
 
-/// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后每小时一批。</summary>
+/// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后按配置周期分批清理。</summary>
 public sealed class PostgresRetentionWorker(
     PostgresRetentionRepository repository,
+    ServerOptions options,
     ILogger<PostgresRetentionWorker> logger) : BackgroundService
 {
     private readonly LogThrottle _errorLog = new(TimeSpan.FromMinutes(1));
 
     /// <summary>
     /// 清理主循环：启动延迟 5 分钟（避开建库与 key-ring 热路径）后首跑，
-    /// 之后经 PeriodicTimer 每小时触发一轮 <see cref="PostgresRetentionRepository.PruneAsync"/>；
-    /// 单轮失败经节流记日志，下个周期重试，停机令牌取消即退出。
+    /// 之后经 PeriodicTimer 按 <see cref="ServerOptions.RetentionInterval"/> 触发一轮
+    /// <see cref="PostgresRetentionRepository.PruneAsync"/>；单轮失败经节流记日志，下个周期重试。
+    /// 周期必须显著短于高频结算流水的积压速度，否则单轮批上限追不上生成速率。
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // 避开刚启动时的 schema/key-ring 热路径；之后每小时最多做一次小批量删除。
+        // 避开刚启动时的 schema/key-ring 热路径；之后按配置周期分批删除。
         try { await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken); }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
 
-        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+        using var timer = new PeriodicTimer(options.RetentionInterval);
         do
         {
             try { await repository.PruneAsync(DateTimeOffset.UtcNow, stoppingToken); }
