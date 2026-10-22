@@ -25,14 +25,10 @@ public sealed class PartyValuationService
     private static readonly TimeSpan DisplayCacheTtl = TimeSpan.FromSeconds(30);
     /// <summary>功法 ID 前缀；去掉它即得到秘籍/残卷物品 ID 后缀。</summary>
     private const string AbilityIdPrefix = "ability.";
-    /// <summary>秘籍物品 ID 前缀。</summary>
-    private const string TomePrefix = "item.tome.";
     /// <summary>残卷物品 ID 前缀（秘籍缺配表时的回单价目）。</summary>
     private const string FragmentPrefix = "item.fragment.";
     /// <summary>单本残卷研读注入的标准经验点数（EcsPlayerRuntimeAdapter 对齐）。</summary>
     private const double ExpPerFragment = 500d;
-    /// <summary>单本全本秘籍等效残卷倍率（10,000 / 500 = 20）。</summary>
-    private const double TomeToFragmentRatio = 20d;
 
     private readonly IPlayerRuntime _runtime;
     private readonly PostgresSectionRepository _sections;
@@ -210,27 +206,18 @@ public sealed class PartyValuationService
         return 0;
     }
 
-    /// <summary>残卷单价：残卷坊市参考价优先；无则按全本秘籍参考价/20折算；无则回退残卷配表回收价保底。</summary>
+    /// <summary>残卷单价：只读取残卷标的（残卷坊市参考价优先，无则回退残卷配表回收价）。</summary>
     private double FragmentUnitPrice(string suffix)
     {
         var fragmentId = new ItemId(FragmentPrefix + suffix);
-        var tomeId = new ItemId(TomePrefix + suffix);
 
         // 1. 残卷坊市参考价优先
         if (_market?.TryGetReferencePrice(new MarketInstrument(fragmentId)) is { } fragRef && fragRef > 0)
             return fragRef;
 
-        // 2. 全本秘籍坊市参考价（全本 10,000 经验 = 20 本残卷）
-        if (_market?.TryGetReferencePrice(new MarketInstrument(tomeId)) is { } tomeRef && tomeRef > 0)
-            return tomeRef / TomeToFragmentRatio;
-
-        // 3. 残卷配表回收价
+        // 2. 残卷配表回收价保底
         if (_catalog.Items.TryGetValue(fragmentId, out var fragDef))
             return Math.Max(0, fragDef.SellPrice);
-
-        // 4. 若缺残卷定义，尝试全本秘籍回收价 / 10
-        if (_catalog.Items.TryGetValue(tomeId, out var tomeDef))
-            return Math.Max(0, tomeDef.SellPrice / 10.0);
 
         return 0;
     }
