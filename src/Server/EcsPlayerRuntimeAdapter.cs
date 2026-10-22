@@ -731,8 +731,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (!HeavenGateRules.IsHeavenGateRealm(gateProgression.RealmLevel))
                             return new PlayerCommandResult(false, "REALM_TOO_LOW",
                                 $"境界尚未抵达叩天门（需 {HeavenGateRules.HeavenGateRealmLevel} 级）。", before);
-                        // 底蕴成本与改命成本都按「当前境界升级所需修为」折算：满级或配表缺失时成本退化为 0。
-                        var gateExpCap = gameData.RealmProgression?.ExpCapFor(gateProgression.RealmLevel) ?? 0;
+                        // 底蕴成本与改命成本都按「当前境界升级所需修为（含灵根乘区，总纲 §7.7.5.1）」折算：
+                        // 满级或配表缺失时成本退化为 0。
+                        var gateExpCap = HeavenGateRules.ResolveExpCapWithLinggen(
+                            gateProgression.RealmLevel,
+                            gateProgression.HeavenGateConfirmed ?? LinggenValues.Empty,
+                            gateProgression.HeavenGateEntered,
+                            gameData.RealmProgression);
                         switch (gateAction)
                         {
                             case "roll":

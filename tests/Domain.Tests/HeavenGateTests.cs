@@ -26,11 +26,13 @@ public sealed class HeavenGateTests
         Assert.Contains("叩开天门", error.Message, StringComparison.Ordinal);
 
         // 入天门后同一状态可以正常突破：灵根是前置而非永久封禁。
+        // 五系齐全 → 灵根乘区 3.0（§7.7.5.1），瓶颈同步放大，需补足到乘区后瓶颈。
         player.Progression.HeavenGate.Apply(
             new LinggenValues(60, 60, 60, 60, 60),
             new LinggenValues(60, 60, 60, 60, 60),
             entered: true,
             rerollCount: 0);
+        player.Progression.Experience = Realm.ExpCapFor(HeavenGateRules.HeavenGateRealmLevel) * 3;
         player.Breakthrough(Realm);
         Assert.Equal(HeavenGateRules.HeavenGateRealmLevel + 1, player.Progression.RealmLevel);
     }
@@ -169,5 +171,55 @@ public sealed class HeavenGateTests
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "问道", Baseline, "catalog-a");
         player.Progression.RealmLevel = realmLevel;
         return player;
+    }
+
+    /// <summary>
+    /// 灵根破镜乘区真实接入突破瓶颈（总纲 §7.7.5.1）：入天门后瓶颈 = 配表值 × (1 + 0.5×(条数−1))，
+    /// 修为只到原瓶颈（未乘乘区）时不得突破；补足到乘区后瓶颈才放行；未入天门时瓶颈保持原值。
+    /// </summary>
+    [Fact]
+    public void BreakthroughCapScalesWithLinggenMultiplierAfterEnteringGate()
+    {
+        const int gateLevel = HeavenGateRules.HeavenGateRealmLevel;
+        const int nextLevel = gateLevel + 1;
+        var rawCap = Realm.ExpCapFor(gateLevel);
+
+        // 场景 1：未入天门（仅有 confirmed 未 entered 也不放大），瓶颈恒为配表原值。
+        var player = CreatePlayerAt(gateLevel);
+        player.Progression.HeavenGate.Apply(
+            new LinggenValues(60, 60, 60, 60, 60),
+            new LinggenValues(60, 60, 60, 60, 60),
+            entered: false,
+            rerollCount: 0);
+        player.Progression.Experience = rawCap;
+        var gateBlock = Assert.Throws<DomainException>(() => player.Breakthrough(Realm));
+        Assert.Contains("叩开天门", gateBlock.Message, StringComparison.Ordinal);
+
+        // 场景 2：入天门五系齐全 → 乘区 3.0，瓶颈 = 800000 × 3 = 2400000。
+        // 修为仅到原瓶颈时必须被乘区挡下（这正是「破镜难度真实生效」的断言）。
+        player.Progression.HeavenGate.Apply(
+            new LinggenValues(60, 60, 60, 60, 60),
+            new LinggenValues(60, 60, 60, 60, 60),
+            entered: true,
+            rerollCount: 0);
+        player.Progression.Experience = rawCap;
+        var capped = Assert.Throws<DomainException>(() => player.Breakthrough(Realm));
+        Assert.Contains("修为未满", capped.Message, StringComparison.Ordinal);
+
+        // 场景 3：补足到乘区后瓶颈（3× 原值）即可突破，突破清零本层修为。
+        player.Progression.Experience = rawCap * 3;
+        player.Breakthrough(Realm);
+        Assert.Equal(nextLevel, player.Progression.RealmLevel);
+        Assert.Equal(0, player.Progression.Experience);
+
+        // 场景 4：下一层散功为单灵根（拖掉四轴）→ 乘区回落 1.0，瓶颈回到配表原值。
+        player.Progression.HeavenGate.Apply(
+            new LinggenValues(100, 0, 0, 0, 0),
+            new LinggenValues(100, 0, 0, 0, 0),
+            entered: true,
+            rerollCount: 0);
+        player.Progression.Experience = Realm.ExpCapFor(nextLevel);
+        player.Breakthrough(Realm);
+        Assert.Equal(nextLevel + 1, player.Progression.RealmLevel);
     }
 }

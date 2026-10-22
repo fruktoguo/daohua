@@ -1026,7 +1026,11 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvariantViolation, "当前境界状态无效。");
         if (realm is not null)
         {
-            var cap = realm.ExpCapFor(Progression.RealmLevel);
+            // 灵根破镜乘区（总纲 §7.7.5.1）：入天门后每多一条有效灵根，本层修为瓶颈 +50%，
+            // 未入天门恒 1.0——突破前置本来就要求先开天门，此处对叩天门层与后续层统一按同一口径放大。
+            var linggenMultiplier = HeavenGateRules.ResolveCultivationMultiplier(
+                Progression.HeavenGate.EffectiveValues, Progression.HeavenGate.Entered);
+            var cap = realm.ExpCapFor(Progression.RealmLevel) * linggenMultiplier;
             if (cap <= 0)
                 throw new DomainException(DomainErrorCode.Conflict, "已至最高境界，无可突破。");
             if (Progression.Experience < cap - 1e-9)

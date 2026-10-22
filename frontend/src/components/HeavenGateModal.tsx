@@ -135,7 +135,9 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   const immutableTotal = innate.metal + innate.wood + innate.water + innate.fire + innate.earth
   const isAtInnate = LINGGEN_AXES.every(axis => roots[axis.key] === innate[axis.key])
   const hasActiveRoot = roots.metal + roots.wood + roots.water + roots.fire + roots.earth > 0
-  const multiplier = linggenCultivationMultiplier(roots, entered)
+  // 破镜难度展示口径：入天门后为当前权威乘区；调配阶段为「入天门后将生效」的预览
+  // （随拖拽整轴归零/复活而变，与入天门瞬间的服务端计算结果一致）。
+  const multiplier = linggenCultivationMultiplier(roots, true)
   const hasPill = reverseFatePillCount > 0
   const evaluation = useMemo(
     () => evaluateSpiritualRoots(roots, hasRolled),

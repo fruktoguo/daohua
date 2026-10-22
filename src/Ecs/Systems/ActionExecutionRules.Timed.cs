@@ -268,8 +268,9 @@ internal static partial class ActionExecutionRules
         double multiplier, GameDataCatalog? gameData, Guid actionInstanceId, double atUnixSeconds)
     {
         if (wholeSeconds <= 0) return;
-        // 本层修为上限：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
-        var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
+        // 本层修为上限（已含灵根乘区）：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
+        var expCap = HeavenGateRules.ResolveExpCapWithLinggen(player.Progression.RealmLevel, player.Progression.HeavenGate.EffectiveValues, player.Progression.HeavenGate.Entered, gameData?.RealmProgression);
+        if (expCap <= 0) expCap = double.PositiveInfinity;
         // 溢出预检查沿用“先校验后变更”语义：rate * 整秒数越界时不得污染任何进度数值。
         var seconds = (double)wholeSeconds;
         var combatTouched = false;
@@ -407,8 +408,9 @@ internal static partial class ActionExecutionRules
                 case ActionYieldKind.Hitpoints: hitpointGain += amount; break;
             }
         }
-        // 本层修为上限：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
-        var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
+        // 本层修为上限（已含灵根乘区）：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
+        var expCap = HeavenGateRules.ResolveExpCapWithLinggen(player.Progression.RealmLevel, player.Progression.HeavenGate.EffectiveValues, player.Progression.HeavenGate.Entered, gameData?.RealmProgression);
+        if (expCap <= 0) expCap = double.PositiveInfinity;
         // 底蕴成本：与准入同一解析口径（当前升级所需修为 × 配表比例）。轮间底蕴被其他结算消耗时
         // 按强化同语义回退为 Blocked，本轮不产生任何收益、扣减或轮次计数。
         var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
@@ -683,7 +685,8 @@ internal static partial class ActionExecutionRules
         ActionDefinition definition, GameDataCatalog? gameData)
     {
         if (definition.FoundationCostRatio <= 0) return 0;
-        var expToNext = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? 0;
+        // 底蕴成本基数与修为瓶颈同口径：含灵根破镜乘区（总纲 §7.7.5.1）。
+        var expToNext = HeavenGateRules.ResolveExpCapWithLinggen(player.Progression.RealmLevel, player.Progression.HeavenGate.EffectiveValues, player.Progression.HeavenGate.Entered, gameData?.RealmProgression);
         return HeavenGateRules.ResolveFoundationCost(expToNext, definition.FoundationCostRatio);
     }
 

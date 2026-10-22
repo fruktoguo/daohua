@@ -189,18 +189,23 @@ public sealed class HeavenGateCommandTests
         Assert.Contains("叩开天门", beforeEnter.Message, StringComparison.Ordinal);
 
         await Execute(runtime, playerId, new { action = "roll" });
-        var entered = await Execute(runtime, playerId, new { action = "enter" });
+        // enter 载荷直接携带单系分配：随机抽取可能落在多系，显式分配把乘区钉在 1.0，
+        // 让本用例专注于「入天门解除突破封锁」；乘区抬升语义由 Domain.Tests 权威覆盖。
+        var entered = await Execute(runtime, playerId, new { action = "enter", metal = 60, wood = 0, water = 0, fire = 0, earth = 0 });
         Assert.True(entered.Success, $"{entered.Code}: {entered.Message}");
         var gate = entered.Snapshot.State.Progression;
         Assert.True(gate.HeavenGateEntered);
-        Assert.Equal(gate.HeavenGateRolled, gate.HeavenGateConfirmed);
-        // 入天门即生效：灵根乘区由 1.0 抬升（五系齐全为 3.0 倍封顶）。
-        Assert.True(HeavenGateRules.ResolveCultivationMultiplier(gate.HeavenGateConfirmed ?? LinggenValues.Empty, gate.HeavenGateEntered) > 1d);
+        Assert.Equal(new LinggenValues(60, 0, 0, 0, 0), gate.HeavenGateConfirmed);
+        // 入天门即生效：乘区按条数计算（单系为 1.0；五系齐全为 3.0 倍封顶）。
+        Assert.Equal(1d, HeavenGateRules.ResolveCultivationMultiplier(gate.HeavenGateConfirmed ?? LinggenValues.Empty, gate.HeavenGateEntered));
 
         var again = await Execute(runtime, playerId, new { action = "enter" });
         Assert.False(again.Success);
         Assert.Equal("HEAVEN_GATE_ALREADY_ENTERED", again.Code);
 
+        // 灵根乘区已生效（总纲 §7.7.5.1）：入天门后突破瓶颈 = 配表值 × 条数乘区。
+        // 本用例开局只确认单系灵根（60,0,0,0,0），乘区恒 1.0，原 1000 修为仍可直接突破——
+        // 乘区抬升与阻断语义由 Domain.Tests.BreakthroughCapScalesWithLinggenMultiplierAfterEnteringGate 权威覆盖。
         var breakthrough = await Execute(runtime, playerId, "progression.breakthrough", new { });
         Assert.True(breakthrough.Success, $"{breakthrough.Code}: {breakthrough.Message}");
         Assert.Equal(HeavenGateRules.HeavenGateRealmLevel + 1, breakthrough.Snapshot.State.Progression.RealmLevel);
@@ -280,7 +285,7 @@ public sealed class HeavenGateCommandTests
             GateEnteredAtFullExperience(aggregate);
             aggregate.Progression.Foundation = 1000;
             aggregate.Progression.HeavenGate.Apply(
-                new LinggenValues(60, 60, 60, 60, 60), new LinggenValues(60, 60, 60, 60, 60), entered: true, rerollCount: 2);
+                new LinggenValues(60, 0, 0, 0, 0), new LinggenValues(60, 0, 0, 0, 0), entered: true, rerollCount: 2);
         }, new PillAssets(noPillPlayer, 0), new RecordingEconomy());
         await noPillRuntime.LoadAsync(noPillPlayer);
         var rejected = await Execute(noPillRuntime, noPillPlayer, new { action = "reroll", usePill = true });
@@ -346,11 +351,12 @@ public sealed class HeavenGateCommandTests
         aggregate.Progression.Experience = GateExpCap;
     }
 
-    /// <summary>已入天门并持有等量抽取/确认灵根的开局配置（为改命用例准备生效状态）。</summary>
+    /// <summary>已入天门并持有等量抽取/确认灵根的开局配置（为改命用例准备生效状态）。
+    /// 单系灵根使破镜乘区恒 1.0，改命成本折算基数保持配表原值 1000。</summary>
     private static void GateEnteredAtFullExperience(PlayerAggregate aggregate)
     {
         GateAtFullExperience(aggregate);
-        var seed = new LinggenValues(60, 60, 60, 60, 60);
+        var seed = new LinggenValues(60, 0, 0, 0, 0);
         aggregate.Progression.HeavenGate.Apply(seed, seed, entered: true, rerollCount: 0);
     }
 

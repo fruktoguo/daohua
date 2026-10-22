@@ -882,6 +882,8 @@ function mapStats(value: unknown): Stats {
     heavenGateConfirmed: mapLinggenValues(row.heavenGateConfirmed),
     heavenGateEntered: row.heavenGateEntered === true,
     heavenGateRerollCount: Math.max(0, Math.trunc(numberValue(row.heavenGateRerollCount))),
+    linggenMultiplier: numberValue(row.linggenMultiplier, 1),
+    expToNextLinggen: numberValue(row.expToNextLinggen),
     completedActions: numberValue(row.completedActions),
     normalKills,
     eliteKills,

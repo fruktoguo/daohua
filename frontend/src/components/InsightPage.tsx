@@ -66,7 +66,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   )
 
   // 境界计算体系 (大境界 · 境界阶段 · 小境界)
+  // 灵根乘区生效后（入天门）以服务端权威 expToNextLinggen 为准；未入天门回退本地曲线（乘区恒 1，两者一致）。
   const realmProgress = useMemo(() => calculateRealmProgress(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
+  const authoritativeExpToNext = stats.heavenGateEntered === true && (stats.expToNextLinggen ?? 0) > 0
+    ? stats.expToNextLinggen!
+    : (realmProgress.expToNext ?? 0)
   // 叩天门满修但尚未入天门：突破按钮语义改为「开天门」，且服务端会阻断直接突破。
   const expFull = isPendingBreakthrough || realmProgress.progressPercentage >= 99.99
   const showOpenGateBtn = shouldShowOpenHeavenGate(stats.realmLevel ?? 1, stats.heavenGateEntered === true, expFull)
@@ -826,9 +830,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         entered={stats.heavenGateEntered === true}
         rerollCount={stats.heavenGateRerollCount ?? 0}
         foundation={stats.foundation ?? 0}
-        expToNext={realmProgress.expToNext ?? 0}
-        rerollCostPlain={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.25))}
-        rerollCostPill={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.05))}
+        expToNext={authoritativeExpToNext}
+        rerollCostPlain={Math.max(1, Math.round(authoritativeExpToNext * 0.25))}
+        rerollCostPill={Math.max(1, Math.round(authoritativeExpToNext * 0.05))}
         reverseFatePillCount={reverseFatePillCount}
         onRoll={() => gameClient.sendCommand('progression.heaven_gate', { action: 'roll' })}
         onAllocate={values => gameClient.sendCommand('progression.heaven_gate', {

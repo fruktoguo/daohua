@@ -279,6 +279,15 @@ public static class ProtocolSnapshotMapper
             heavenGateConfirmed = state.Progression.HeavenGateConfirmed,
             heavenGateEntered = state.Progression.HeavenGateEntered,
             heavenGateRerollCount = state.Progression.HeavenGateRerollCount,
+            // 灵根破镜乘区与乘区后权威修为瓶颈（总纲 §7.7.5.1）：前端显示与本地曲线预判同源。
+            linggenMultiplier = Domain.Player.HeavenGateRules.ResolveCultivationMultiplier(
+                state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
+                state.Progression.HeavenGateEntered),
+            expToNextLinggen = Domain.Player.HeavenGateRules.ResolveExpCapWithLinggen(
+                state.Progression.RealmLevel,
+                state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
+                state.Progression.HeavenGateEntered,
+                gameData?.RealmProgression),
             lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
                 ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
                 : 0

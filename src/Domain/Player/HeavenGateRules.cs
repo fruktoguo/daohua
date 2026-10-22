@@ -190,6 +190,22 @@ public static class HeavenGateRules
     }
 
     /// <summary>
+    /// 本层修为瓶颈（含灵根乘区，总纲 §7.7.5.1）：配表 ExpCapFor × <see cref="ResolveCultivationMultiplier"/>。
+    /// 突破校验、行动修为封顶与底蕴成本折算基数统一走本口径，保证全链路一致；瓶颈非正时原样返回。
+    /// </summary>
+    /// <param name="realmLevel">当前境界等级。</param>
+    /// <param name="confirmedValues">已确认灵根（未开天门传 Empty）。</param>
+    /// <param name="entered">是否已入天门。</param>
+    /// <param name="realm">境界进度配表。</param>
+    public static double ResolveExpCapWithLinggen(int realmLevel, LinggenValues confirmedValues, bool entered,
+        GameData.RealmProgressionCatalog? realm)
+    {
+        var rawCap = realm?.ExpCapFor(realmLevel) ?? 0;
+        if (rawCap <= 0) return rawCap;
+        return rawCap * ResolveCultivationMultiplier(confirmedValues, entered);
+    }
+
+    /// <summary>
     /// 确定性伪随机数发生器：xorshift 变体，保证同种子同序列，便于离线补算与在线逐帧结果一致。
     /// </summary>
     private struct DeterministicRandom(long seed)

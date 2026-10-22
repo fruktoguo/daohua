@@ -1216,6 +1216,10 @@ export interface Stats {
   heavenGateEntered?: boolean
   /** 逆天改命累计次数（progression.heavenGateRerollCount 透传：永久保留） */
   heavenGateRerollCount?: number
+  /** 灵根破镜乘区（progression.linggenMultiplier 透传：入天门后每多一条有效灵根 +50%，未入天门为 1） */
+  linggenMultiplier?: number
+  /** 乘区后权威修为瓶颈（progression.expToNextLinggen 透传：配表瓶颈 × 灵根乘区，未入天门等于配表值） */
+  expToNextLinggen?: number
   /** 战斗经验池（progression.combatExperience 透传：按修为基础量同步积累，不受增幅影响） */
   combatExperience: number
   /** 累计采集灵草次数 */
