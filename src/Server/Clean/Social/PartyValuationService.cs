@@ -29,10 +29,14 @@ public sealed class PartyValuationService
     private const string TomePrefix = "item.tome.";
     /// <summary>残卷物品 ID 前缀（秘籍缺配表时的回单价目）。</summary>
     private const string FragmentPrefix = "item.fragment.";
+    /// <summary>单本残卷研读注入的标准经验点数（EcsPlayerRuntimeAdapter 对齐）。</summary>
+    private const double ExpPerFragment = 500d;
+    /// <summary>单本全本秘籍等效残卷倍率（10,000 / 500 = 20）。</summary>
+    private const double TomeToFragmentRatio = 20d;
 
     private readonly IPlayerRuntime _runtime;
     private readonly PostgresSectionRepository _sections;
-    private readonly MarketRuntime _market;
+    private readonly MarketRuntime? _market;
     private readonly GameDataCatalog _catalog;
     /// <summary>装备原料成本与基础回收价缓存，避免重复遍历递归锻造配方。</summary>
     private readonly Dictionary<string, double> _costCache = new(StringComparer.Ordinal);
@@ -44,7 +48,7 @@ public sealed class PartyValuationService
     /// <param name="sections">分段仓储（离线玩家 loadout 读取）。</param>
     /// <param name="market">市场运行时（卖一档价只读出口）。</param>
     /// <param name="catalog">游戏配表（物品定义与回收价）。</param>
-    public PartyValuationService(IPlayerRuntime runtime, PostgresSectionRepository sections, MarketRuntime market, GameDataCatalog catalog)
+    public PartyValuationService(IPlayerRuntime runtime, PostgresSectionRepository sections, MarketRuntime? market, GameDataCatalog catalog)
     {
         _runtime = runtime;
         _sections = sections;
@@ -156,12 +160,16 @@ public sealed class PartyValuationService
         {
             foreach (var (abilityId, exp) in loadout.AbilityExperiences)
             {
-                var level = AbilityExpCurve.LevelFor(exp);
-                if (level < 1) continue;
+                if (!double.IsFinite(exp) || exp < 0) continue;
                 var suffix = abilityId.StartsWith(AbilityIdPrefix, StringComparison.Ordinal)
                     ? abilityId[AbilityIdPrefix.Length..]
                     : abilityId;
-                abilitiesTotal += level * (ItemUnitPrice(TomePrefix + suffix) ?? ItemUnitPrice(FragmentPrefix + suffix) ?? 0);
+                var fragmentPrice = FragmentUnitPrice(suffix);
+                if (fragmentPrice <= 0) continue;
+
+                // 功法按总经验折算残卷数量（每 500 经验 = 1 本残卷），已学功法底线按 1 本残卷计
+                var fragmentCount = Math.Max(1.0, exp / ExpPerFragment);
+                abilitiesTotal += fragmentCount * fragmentPrice;
             }
         }
 
@@ -191,7 +199,7 @@ public sealed class PartyValuationService
             ? string.Create(CultureInfo.InvariantCulture, $"+{levelInt:0}")
             : string.Empty;
         var instrument = new MarketInstrument(new ItemId(itemIdText), variant);
-        var refPrice = _market.TryGetReferencePrice(instrument);
+        var refPrice = _market?.TryGetReferencePrice(instrument);
         if (refPrice is > 0) return refPrice.Value;
 
         // 无市场参考价时，回退到系统商店回收价（原料成本×2.0工匠增值 + 强化造价折旧，总纲 §4.6）
@@ -202,12 +210,29 @@ public sealed class PartyValuationService
         return 0;
     }
 
-    /// <summary>普通物品单价：配表未知返回 null（供秘籍→残卷回退判断），否则参考价优先、回收价兜底。</summary>
-    private double? ItemUnitPrice(string itemIdText)
+    /// <summary>残卷单价：残卷坊市参考价优先；无则按全本秘籍参考价/20折算；无则回退残卷配表回收价保底。</summary>
+    private double FragmentUnitPrice(string suffix)
     {
-        var itemId = new ItemId(itemIdText);
-        if (!_catalog.Items.TryGetValue(itemId, out var definition)) return null;
-        return _market.TryGetReferencePrice(new MarketInstrument(itemId)) ?? Math.Max(0, definition.SellPrice);
+        var fragmentId = new ItemId(FragmentPrefix + suffix);
+        var tomeId = new ItemId(TomePrefix + suffix);
+
+        // 1. 残卷坊市参考价优先
+        if (_market?.TryGetReferencePrice(new MarketInstrument(fragmentId)) is { } fragRef && fragRef > 0)
+            return fragRef;
+
+        // 2. 全本秘籍坊市参考价（全本 10,000 经验 = 20 本残卷）
+        if (_market?.TryGetReferencePrice(new MarketInstrument(tomeId)) is { } tomeRef && tomeRef > 0)
+            return tomeRef / TomeToFragmentRatio;
+
+        // 3. 残卷配表回收价
+        if (_catalog.Items.TryGetValue(fragmentId, out var fragDef))
+            return Math.Max(0, fragDef.SellPrice);
+
+        // 4. 若缺残卷定义，尝试全本秘籍回收价 / 10
+        if (_catalog.Items.TryGetValue(tomeId, out var tomeDef))
+            return Math.Max(0, tomeDef.SellPrice / 10.0);
+
+        return 0;
     }
 }
 
