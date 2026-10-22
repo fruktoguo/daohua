@@ -14,8 +14,8 @@ export const BOARD_CENTER = { x: 200, y: 200 } as const
 /** 单轴满值（100 点）对应的半径。 */
 export const BOARD_MAX_RADIUS = 150
 
-/** 灵根 0 点对应的内环半径：位于外环半径的大概 1/8 处（约 20px），丹田按钮位于其内。 */
-export const BOARD_MIN_RADIUS = 20
+/** 灵根 0 点对应的内环基准半径（40px）：确保归零时所有滑块内容完整展露，绝不被中心圆环遮挡。 */
+export const BOARD_MIN_RADIUS = 40
 
 /** 单系灵根点数上限。 */
 export const LINGGEN_AXIS_CAP = 100

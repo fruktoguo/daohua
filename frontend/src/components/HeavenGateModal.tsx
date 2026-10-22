@@ -314,7 +314,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
               {/* 视觉层 1：底纹 + 周天阵环 + 聚灵微粒 + 仪式灵波 */}
               <g className="hg-board__bg-layer">
                 <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="168" className="hg-board__bg-disc" />
-                {[158, 130, 92, 54].map(r => (
+                {[150, 122, 95, 68, 40].map(r => (
                   <circle key={r} cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r={r} className="hg-board__tex-ring" />
                 ))}
                 <g className="hg-board__bagua-ring">
@@ -503,7 +503,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   const dx = anchor.x - BOARD_CENTER.x
                   const dy = anchor.y - BOARD_CENTER.y
                   // 顶部金轴需越过刻度文字（100 标签在 y=54），其余轴取 1.12 倍外圈即可。
-                  const outward = dy < -0.5 ? 1.19 : 1.13
+                  const outward = dy < -0.5 ? 1.24 : 1.15
                   const labelX = BOARD_CENTER.x + dx * outward
                   const labelY = BOARD_CENTER.y + dy * outward
                   const isRight = dx > 0.01
@@ -527,28 +527,12 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   )
                 })}
               </g>
-              {/* 视觉层 8.5：中心内环大印按钮（开天门 / 入天门操作核心） */}
-              <g
-                className={`hg-dantian ${boardState === 'finalized' ? 'hg-dantian--disabled' : ''}`}
-                role={boardState === 'finalized' ? 'img' : 'button'}
-                tabIndex={boardState === 'finalized' ? -1 : 0}
-                aria-label={boardState === 'unrolled' ? '开天门' : boardState === 'allocating' ? '叩入天门' : '道根已定'}
-                onClick={() => {
-                  if (boardState === 'unrolled') onRoll()
-                  else if (boardState === 'allocating') handleEnterClick()
-                }}
-                onKeyDown={event => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    if (boardState === 'unrolled') onRoll()
-                    else if (boardState === 'allocating') handleEnterClick()
-                  }
-                }}
-              >
-                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="26" className="hg-dantian__halo" />
-                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="20" className="hg-dantian__core" />
+              {/* 视觉层 6：中心丹田（精巧微型化，无 hover 效果，pointer-events 为 none，绝不干扰拖拽） */}
+              <g className="hg-dantian" aria-hidden="true">
+                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="18" className="hg-dantian__halo" />
+                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="14" className="hg-dantian__core" />
                 <text x={BOARD_CENTER.x} y={BOARD_CENTER.y + 1} className="hg-dantian__text">
-                  {boardState === 'unrolled' ? '开天门' : '灵'}
+                  {boardState === 'unrolled' ? '天门' : '灵'}
                 </text>
               </g>
             </svg>
@@ -662,9 +646,14 @@ export const HeavenGateModal = memo(function HeavenGateModal({
             )}
 
             {boardState === 'unrolled' && (
-              <button type="button" className="hg-btn hg-btn--ghost" onClick={onClose}>
-                {t('insight.heavenGate.closeBtn')}
-              </button>
+              <>
+                <button type="button" className="hg-btn hg-btn--primary" onClick={onRoll}>
+                  {t('insight.heavenGate.rollBtn')}
+                </button>
+                <button type="button" className="hg-btn hg-btn--ghost" onClick={onClose}>
+                  {t('insight.heavenGate.closeBtn')}
+                </button>
+              </>
             )}
           </div>
         </footer>
