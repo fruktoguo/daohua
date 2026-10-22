@@ -115,7 +115,17 @@ scripts/deploy-prod.sh \
 
 部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）、`daohua-ledger-archive.timer`（每日流水分区归档）和 `daohua-wal-archive.timer`（每小时 WAL 巡检/轮转）。任一定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
 
-`daohua-ccr-auto-update.timer` 每分钟检查 `prod`：Server 与 ComputeNode 镜像 ID 均未变化时不重建；替换前先把当前运行镜像标记为 `daohua-rollback:app-previous` / `daohua-rollback:compute-previous`，随后 `compose up --force-recreate` 先替换再 `wait_healthy`/`wait_ready`；任一环节失败即经回滚标签恢复上一版本，并把失败的 `app_id|compute_id` 组合 marker 写入 `/opt/daohua/failed-image.id`，CCR 出现新版本前不再重试该候选。成功后在线客户端通过 Cookie 会话和 WebSocket 自动重连恢复。
+部署脚本在替换镜像前会强制执行一次数据库迁移闸门（`/opt/daohua/migrate-prod-db.sh`）：
+
+1. 从仓库源码读出两个独立目标：`EXPECTED_SCHEMA_VERSION`（`PostgresSchema.Version`）与 `EXPECTED_SECTION_VERSION`（`SectionCodec.CurrentSchemaVersion`）。两者**不相等**（例如库 v41 对应存档标签 v38），用错会把标签推进到解码器拒绝的值，脚本因此拒绝在缺少目标时继续。
+2. 校验 `daohua-app` 与 `daohua-compute` 已停止写者；未停且未显式 `--allow-running` 时直接失败。**这是硬要求**：旧版本进程在迁移窗口内仍会按旧标签写存档，使新版本加载玩家时抛 `section schema 版本不受支持` 并无限重连（2026-10-22 生产事故）。
+3. 全库 `pg_dump -Fc` 备份到 `/opt/daohua/backups/pre-migration/`（失败即中止，`--skip-backup` 可跳过）。
+4. 按 `platform.schema_version` 链式应用 `migrations/` 中落后脚本，涉及真实资产退款的脚本拒绝自动执行。
+5. 校验库版本达到代码要求，并要求 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version` **无任何一行**偏离当前解码器版本；不满足即非零退出，绝不带着旧标签启动新镜像。
+
+迁移完成后再由 `ccr-auto-update.sh` 重建容器。`migrations/` 不在镜像内，由部署链同步到 `/opt/daohua/migrations/`。
+
+`daohua-ccr-auto-update.timer` 每分钟检查 `prod`：Server 与 ComputeNode 镜像 ID 均未变化时不重建；替换前先把当前运行镜像标记为 `daohua-rollback:app-previous` / `daohua-rollback:compute-previous`，随后 `compose up --force-recreate` 先替换再 `wait_healthy`/`wait_ready`；任一环节失败即经回滚标签恢复上一版本，并把失败的 `app_id|compute_id` 组合 marker 写入 `/opt/daohua/failed-image.id`，CCR 出现新版本前不再重试该候选。成功后在线客户端通过 Cookie 会话和 WebSocket 自动重连恢复。自动更新 timer 只做镜像替换，**不执行迁移**；携带 schema 变更的发布必须走 `deploy-prod.sh`。
 
 查看状态：
 
