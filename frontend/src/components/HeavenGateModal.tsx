@@ -142,9 +142,14 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     [hasRolled, roots],
   )
 
+  const toastTimerRef = useRef<number | null>(null)
   const showToast = useCallback((message: string) => {
     setToast(message)
-    window.setTimeout(() => setToast(current => (current === message ? null : current)), 1200)
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null
+      setToast(null)
+    }, 1200)
   }, [])
 
   /** 客户端坐标换算为阵盘 400×400 坐标。 */
@@ -537,9 +542,14 @@ export const HeavenGateModal = memo(function HeavenGateModal({
               </g>
             </svg>
 
-            {toast && (
-              <div className="hg-board__toast" role="status" aria-live="polite">{toast}</div>
-            )}
+            <div
+              className="hg-board__toast"
+              role="status"
+              aria-live="polite"
+              data-visible={toast ? 'true' : 'false'}
+            >
+              {toast ?? ''}
+            </div>
           </div>
 
           {boardState === 'allocating' && !hasActiveRoot && (

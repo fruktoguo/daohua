@@ -122,7 +122,9 @@
 
     .hg-panel {
       position: relative;
-      width: 100%;
+      /* 宽高全部锁定为固定值：弹性宽度在拖拽中会产生亚像素回缩，固定值彻底消除 */
+      width: 520px;
+      min-width: 520px;
       max-width: 520px;
       height: 672px;
       min-height: 672px;
@@ -661,7 +663,8 @@
 
     .hg-handle {
       cursor: grab;
-      transition: transform var(--hg-dur-fast) var(--hg-ease), opacity var(--hg-dur-slow) var(--hg-ease);
+      /* 拖拽中 transform 必须即时跟随指针（无 transition），否则滑块滞后于鼠标产生视觉抖动 */
+      transition: opacity var(--hg-dur-slow) var(--hg-ease);
       outline: none;
     }
 
@@ -885,7 +888,8 @@
       font-weight: 700;
       fill: var(--hg-ink-main);
       text-shadow: var(--hg-text-stroke);
-      transition: font-size var(--hg-dur-fast) var(--hg-ease), fill var(--hg-dur-fast) var(--hg-ease);
+      /* 数值字号不参与过渡：拖拽时频繁 +N/-N 缩放抖动，仅保留颜色过渡 */
+      transition: fill var(--hg-dur-fast) var(--hg-ease);
     }
 
     .hg-label__base {
@@ -907,7 +911,7 @@
     }
 
     .hg-label[data-active="true"] .hg-label__val {
-      font-size: 24px;
+      font-size: 20px;
       fill: var(--hg-label-color);
     }
 
@@ -950,10 +954,25 @@
       box-shadow: var(--hg-shadow-sm);
       z-index: 5;
       pointer-events: none;
+      white-space: nowrap;
+      /* 稳定性关键：提示位为固定占位常驻元素，仅透明度切换，绝不引起布局回流 */
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 160ms var(--hg-ease), visibility 0s linear 160ms;
+    }
+
+    .hg-board__toast[data-visible="true"] {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 160ms var(--hg-ease);
     }
 
     .hg-board__single-notice {
-      margin-top: 2px;
+      position: absolute;
+      left: 50%;
+      bottom: 8px;
+      transform: translateX(-50%);
+      margin-top: 0;
       font-size: 12px;
       font-weight: 600;
       color: var(--hg-ochre);
@@ -961,6 +980,7 @@
       border: 1px solid var(--hg-border);
       padding: 2px 10px;
       border-radius: 4px;
+      white-space: nowrap;
     }
 
     /* ==========================================================================
