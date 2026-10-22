@@ -34,6 +34,8 @@ public sealed class PartyValuationService
     private readonly PostgresSectionRepository _sections;
     private readonly MarketRuntime _market;
     private readonly GameDataCatalog _catalog;
+    /// <summary>装备原料成本与基础回收价缓存，避免重复遍历递归锻造配方。</summary>
+    private readonly Dictionary<string, double> _costCache = new(StringComparer.Ordinal);
     /// <summary>展示估值缓存：playerId → (估值细分结果, TickCount64 过期点)。</summary>
     private readonly ConcurrentDictionary<Guid, (ValuationResult Value, long ExpiresAt)> _displayCache = new();
 
@@ -142,10 +144,7 @@ public sealed class PartyValuationService
         var toolsTotal = 0d;
         foreach (var slot in loadout.Equipment)
         {
-            var variant = slot.EnhancementLevel > 0
-                ? string.Create(CultureInfo.InvariantCulture, $"+{slot.EnhancementLevel:0}")
-                : string.Empty;
-            var price = EquipmentUnitPrice(slot.ItemId, variant);
+            var price = EquipmentUnitPrice(slot.ItemId, slot.EnhancementLevel);
             if (IsTool(slot.ItemId))
                 toolsTotal += price;
             else
@@ -183,15 +182,23 @@ public sealed class PartyValuationService
         return false;
     }
 
-    /// <summary>装备单价：配表已知装备才算价，市场参考价优先；无参考价按配表回收价兜底，无回收价计 0。</summary>
-    private double EquipmentUnitPrice(string itemIdText, string variant)
+    /// <summary>装备单价：配表已知装备才算价，市场参考价优先；无参考价按包含强化折旧的商店回收价兜底，无回收价计 0。</summary>
+    private double EquipmentUnitPrice(string itemIdText, double enhancementLevel)
     {
         if (!_catalog.RawEquipments.ContainsKey(itemIdText)) return 0;
+        var levelInt = (int)Math.Floor(enhancementLevel);
+        var variant = levelInt > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"+{levelInt:0}")
+            : string.Empty;
         var instrument = new MarketInstrument(new ItemId(itemIdText), variant);
         var refPrice = _market.TryGetReferencePrice(instrument);
         if (refPrice is > 0) return refPrice.Value;
-        if (_catalog.Items.TryGetValue(new ItemId(itemIdText), out var itemDef))
-            return Math.Max(0, itemDef.SellPrice);
+
+        // 无市场参考价时，回退到系统商店回收价（原料成本×2.0工匠增值 + 强化造价折旧，总纲 §4.6）
+        if (EnhancementRules.ComputeEquipmentBaseSellPrice(_catalog, itemIdText, _costCache) is { } basePrice && basePrice > 0)
+        {
+            return EnhancementRules.CalculateEquipmentSellPrice(basePrice, levelInt);
+        }
         return 0;
     }
 
