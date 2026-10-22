@@ -262,7 +262,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
 
   return (
     <>
-    <Modal open={open} labelledBy={titleId} onClose={onClose} size="large" initialFocusRef={confirmRef}>
+    <Modal open={open} labelledBy={titleId} onClose={onClose} size="large" className="heaven-gate-modal" initialFocusRef={confirmRef}>
       <section className={boardClass} data-state={boardState}>
         {/* A 判语区 */}
         <header className="hg-header">

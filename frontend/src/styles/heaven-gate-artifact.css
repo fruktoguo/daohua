@@ -99,8 +99,27 @@
     }
 
     /* ==========================================================================
-       4. 独立阵盘主面板（严格非全屏，合适卡片尺寸，四区紧凑排布）
+       3. 弹窗壳去壳化：开天门使用独立阵盘卡纸，外层 Modal 壳不再叠加双层边框
        ========================================================================== */
+    .heaven-gate-modal.modal-shell {
+      width: auto;
+      max-width: none;
+      padding: 0;
+      border: none;
+      background: none;
+      box-shadow: none;
+      overflow: visible;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .heaven-gate-modal .modal-close {
+      top: 14px;
+      right: 14px;
+      z-index: 20;
+    }
+
     .hg-panel {
       position: relative;
       width: 100%;
