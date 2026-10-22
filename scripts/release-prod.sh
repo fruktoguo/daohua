@@ -34,7 +34,7 @@ SKIP_BACKUP=0
 SKIP_SMOKE=0
 PUSH_EXISTING=0
 ALLOW_DIRTY=0
-
+SKIP_APK=0
 usage() {
   printf '%s\n' \
     '用法：scripts/release-prod.sh [选项]' \
@@ -43,6 +43,7 @@ usage() {
     '  --skip-odin      跳过 odin 计算节点发布（仅更新主服）' \
     '  --skip-backup    跳过发布前远端数据库备份（生产默认保留）' \
     '  --skip-smoke     跳过部署后的内网与公网烟测' \
+    '  --skip-apk       跳过本地 Android 安装包打包' \
     '  --push-existing  跳过镜像重新构建，仅推送本机已有镜像' \
     '  --allow-dirty    允许未提交工作区构建（仅排障）' \
     '  --host HOST      主服 SSH 别名（默认 yuohira）' \
@@ -55,6 +56,7 @@ while (($# > 0)); do
     --skip-odin) SKIP_ODIN=1; shift ;;
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --skip-smoke) SKIP_SMOKE=1; shift ;;
+    --skip-apk) SKIP_APK=1; shift ;;
     --push-existing) PUSH_EXISTING=1; shift ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --host) REMOTE_HOST="${2:?--host 缺少值}"; shift 2 ;;
@@ -183,6 +185,21 @@ else
   echo "STREAM_C_EXIT:0" >> "$STATUS_FILE"
   PID_STREAM_C=""
 fi
+# 流 D: 本地 Android 安装包构建 (daohua.apk)
+STREAM_D_LOG="$RELEASE_TMP/stream_d_apk.log"
+if [[ "$SKIP_APK" != "1" ]]; then
+  (
+    set -Eeuo pipefail
+    printf '[流 D] 本地并发构建 Android 离线混合安装包 (daohua.apk)...\n'
+    bash "$ROOT_DIR/scripts/build-apk.sh" --soft-fail > "$STREAM_D_LOG" 2>&1
+    echo "STREAM_D_EXIT:0" >> "$STATUS_FILE"
+  ) &
+  PID_STREAM_D=$!
+else
+  echo "STREAM_D_EXIT:0" >> "$STATUS_FILE"
+  PID_STREAM_D=""
+fi
+
 
 # 等待并发任务结束
 wait $PID_STREAM_A || {
@@ -209,6 +226,16 @@ if [[ -n "$PID_STREAM_C" ]]; then
   }
   printf '  ✔ [流 C] odin arm64 预传完成。\n'
 fi
+if [[ -n "$PID_STREAM_D" ]]; then
+  wait $PID_STREAM_D || {
+    printf '警告: [流 D] Android APK 打包未成功，详细日志请见: %s\n' "$STREAM_D_LOG" >&2
+  }
+  if [[ -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
+    APK_SIZE="$(ls -lh "$ROOT_DIR/artifacts/daohua.apk" | awk '{print $5}')"
+    printf '  ✔ [流 D] Android 安装包构建完成: artifacts/daohua.apk (%s)。\n' "$APK_SIZE"
+  fi
+fi
+
 
 # ------------------------------------------------------------------------------
 # 阶段 2: 提取镜像 Digest
@@ -304,6 +331,10 @@ printf '  • Server 镜像  : %s\n' "$APP_IMAGE_REF"
 printf '  • Compute 镜像 : %s\n' "$COMPUTE_IMAGE_REF"
 if [[ -n "$OPS_PATH" ]]; then
   printf '  • 运维后台地址 : https://daohua.yuohira.com%s\n' "$OPS_PATH"
+fi
+if [[ -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
+  APK_SIZE="$(ls -lh "$ROOT_DIR/artifacts/daohua.apk" | awk '{print $5}')"
+  printf '  • 安卓安装包   : artifacts/daohua.apk (%s)\n' "$APK_SIZE"
 fi
 printf '  • 双层烟测结果 : 全部通过\n'
 printf '======================================================\n\n'

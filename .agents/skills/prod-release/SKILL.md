@@ -1,7 +1,7 @@
 ---
 name: prod-release
 description: >-
-  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），采用三路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检），覆盖门禁、库版本与配表删项前置对账、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
+  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），并并发构建 Android 离线混合安装包（daohua.apk），采用四路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检 ∥ 安卓安装包构建），覆盖门禁、库版本与配表删项前置对账、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
 ---
 
 # 正式服快速发布（yuohira 主服 + odin 计算节点）
@@ -10,25 +10,25 @@ description: >-
 
 ## 极速流水线总览（最大化并行）
 
-`.dockerignore` 已排除 `**/bin`、`**/obj`、`**/node_modules`，因此门禁通过后**阶段 1（镜像构建推送）、阶段 2（远端备份）、阶段 4 前半（odin 交叉编译与预上传）必须三路并发启动**，将总耗时压缩一半以上：
+`.dockerignore` 已排除 `**/bin`、`**/obj`、`**/node_modules`，因此门禁通过后**阶段 1（镜像构建推送）、阶段 2（远端备份）、阶段 4 前半（odin 交叉编译与预上传）、阶段 1d（Android 离线混合安装包构建）必须四路并发启动**，将总耗时压缩到极致：
 
 ```text
 阶段 0：本机与远端单回合并发预检 → verify.sh --full 全量门禁
-  ↓（门禁全绿后三路并发）
+  ↓（门禁全绿后四路并发）
   ├─ 流 A（阶段 1）：docker-build-prod.sh --push 构建并推送成对镜像
   ├─ 流 B（阶段 2）：yuohira 远端 backup.sh + verify-backup.sh（含迁移脚本预置）
-  └─ 流 C（阶段 4a）：本地 dotnet publish linux-arm64 → scp 预传至 odin:/root/daohua-compute.new/
-  ↓（三路汇合）
+  ├─ 流 C（阶段 4a）：本地 dotnet publish linux-arm64 → scp 预传至 odin:/root/daohua-compute.new/
+  └─ 流 D（阶段 1d）：本地 scripts/build-apk.sh --soft-fail 并发打包 Android 混合离线 APK
+  ↓（四路汇合）
 阶段 2.5：（仅 schema 升级/配表删项时）停服 → 迁移链 / 存档替换
   ↓（双端并发切换）
   ├─ 阶段 3：deploy-prod.sh 成对 @sha256 更新主服 + 回环/公网双层烟测
   └─ 阶段 4b：odin 原子换目录 + 重启进程
   ↓
-阶段 5：双端指纹/接入验证 + 提取 Ops 后台路径 → 收尾登记
+阶段 5：双端指纹/接入验证 + 提取 Ops 后台路径 + 输出安卓安装包 → 收尾登记
 ```
 
-> **官方一键总控入口**：仓库根目录下的 `scripts/release-prod.sh` 已将上述流水线（三路并发打包推送/备份/交叉编译 → 自动解析 sha256 digest → 自动主服部署与双层烟测 → odin 热重启 → 结果验证）全自动化闭环，日常发布可直接执行 `bash scripts/release-prod.sh`（支持 `--skip-odin`、`--skip-backup`、`--skip-smoke` 等选项）。
-
+> **官方一键总控入口**：仓库根目录下的 `scripts/release-prod.sh` 已将上述流水线（四路并发打包推送/备份/交叉编译/安卓构建 → 自动解析 sha256 digest → 自动主服部署与双层烟测 → odin 热重启 → 结果验证）全自动化闭环，日常发布可直接执行 `bash scripts/release-prod.sh`（支持 `--skip-odin`、`--skip-backup`、`--skip-smoke`、`--skip-apk` 等选项）。
 ---
 
 ## 阶段 0：单回合并发预检与最小门禁
@@ -77,10 +77,9 @@ ssh -o BatchMode=yes odin 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https:
 
 ---
 
-## 阶段 1 ∥ 阶段 2 ∥ 阶段 4a：三路并发构建、备份与预传
+## 阶段 1 ∥ 阶段 2 ∥ 阶段 4a ∥ 阶段 1d：四路并发构建、备份、预传与安卓打包
 
-`verify.sh --full` 全绿后，**在同一回合并发启动以下三个后台任务**：
-
+`verify.sh --full` 全绿后，**在同一回合并发启动以下四个后台任务**：
 ### 流 A（阶段 1）：构建并推送成对不可变镜像
 
 ```bash
@@ -109,6 +108,17 @@ rm -rf /tmp/daohua-compute-odin \
   && ssh -o BatchMode=yes odin 'rm -rf /root/daohua-compute.new && mkdir -p /root/daohua-compute.new' \
   && scp -q -r /tmp/daohua-compute-odin/* odin:/root/daohua-compute.new/
 ```
+### 流 D（阶段 1d）：Android 离线混合安装包并发构建
+
+```bash
+bash scripts/build-apk.sh --soft-fail
+```
+
+- 自动将 `frontend/dist` 编译打包进 Android 壳工程的 `assets/www/` 离线目录（约 1.2MB 压缩离线包，含全部前端代码与美术 WebP 贴图）。
+- 输出产物固定为 `artifacts/daohua.apk`。
+- **Git 隔离红线**：APK 安装包及构建缓存严格受 `.gitignore` 与本地 `.git/info/exclude` 忽略，**严禁将 APK 安装包加入 Git 追踪或提交**。
+- 脚本内置 `--soft-fail`，在无 Android SDK 的 Linux 环境下会自动安全跳过，不阻塞云端镜像发布。
+
 
 ---
 
@@ -193,6 +203,7 @@ ssh -o BatchMode=yes yuohira '
 1. `odin` 的 `gameDataFingerprint` 与主服烟测输出完全一致，且 `ComputeLinkEndpoint` 日志出现 `计算节点接入 ... name=odin`（注意：`deploy-prod.sh` 重载 Caddy 时会使 `odin` 短暂断线一次，30s 内会自动重连拨入）。
 2. 主服日志无 `fail:` / `DomainException`。
 3. 若主服启用了随机后台路径（`/ops-<16hex>`），从启动日志提取并在总结中告知用户。
+4. 核验并汇报 `artifacts/daohua.apk` 文件大小及路径（若成功生成）。
 
 ---
 
@@ -216,4 +227,5 @@ ssh -o BatchMode=yes yuohira '
 ## 收尾
 
 1. 更新 `docs/tasks.md` 对应任务状态（双端版本 tag、digest、配表指纹、烟测与迁移记录）。
-2. Git 提交按用户指示执行（发布本身不自动提交）。
+2. 汇报 `artifacts/daohua.apk` 安装包路径供用户分发或移动端测试。
+3. Git 提交按用户指示执行（发布本身不自动提交）。
