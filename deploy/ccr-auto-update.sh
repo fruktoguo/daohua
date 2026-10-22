@@ -121,6 +121,29 @@ if [[ -n "$running_compute_id" ]]; then
 fi
 
 printf '发现新镜像，开始成对更新: %s\n' "$candidate_marker"
+
+# schema 闸门：自动更新只做镜像替换，不执行迁移。若候选镜像要求更高的库版本
+# （发布携带 schema 变更），必须由 deploy-prod.sh 走「停写 → 迁移 → 换镜像」，
+# 否则新镜像会带着旧库版本启动，或旧容器在迁移窗口里写回旧存档标签
+# （生产事故 2026-10-22：7 名玩家因 section schema 标签不一致无法加载）。
+EXPECTED_SCHEMA_VERSION_FILE="${EXPECTED_SCHEMA_VERSION_FILE:-${DEPLOY_DIR}/schema-version.expected}"
+if [[ -f "$EXPECTED_SCHEMA_VERSION_FILE" ]]; then
+  expected_schema_version="$(tr -dc '0-9' < "$EXPECTED_SCHEMA_VERSION_FILE")"
+  if [[ -n "$expected_schema_version" ]]; then
+    db_schema_version="$(
+      docker exec "${DB_CONTAINER_NAME:-daohua-db}" \
+        psql -X -t -A -U "${DB_USER_NAME:-daohua}" -d "${DB_NAME:-daohua}" \
+        -c 'SELECT max(version) FROM platform.schema_version;' 2>/dev/null || true
+    )"
+    if [[ "$db_schema_version" != "$expected_schema_version" ]]; then
+      printf '库 schema 版本 v%s 与镜像要求 v%s 不一致：自动更新不执行迁移，本次跳过。\n' \
+        "${db_schema_version:-未知}" "$expected_schema_version" >&2
+      printf '请使用 scripts/deploy-prod.sh 发布（它会先停写、迁移再替换镜像）。\n' >&2
+      exit 0
+    fi
+  fi
+fi
+
 if deploy_pair "$APP_IMAGE" "$COMPUTE_IMAGE"; then
   rm -f "$FAILED_IMAGE_FILE"
   printf '镜像更新成功: %s\n' "$candidate_marker"

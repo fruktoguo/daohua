@@ -234,6 +234,7 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -m 0755 '$REMOTE_TMP/market-ledger-archive.sh' /opt/daohua/market-ledger-archive.sh
   sudo install -m 0755 '$REMOTE_TMP/postgres-wal-archive.sh' /opt/daohua/postgres-wal-archive.sh
   sudo install -m 0755 '$REMOTE_TMP/migrate-prod-db.sh' /opt/daohua/migrate-prod-db.sh
+  printf '%s\n' '$EXPECTED_SCHEMA_VERSION' | sudo tee /opt/daohua/schema-version.expected >/dev/null
   sudo rm -rf /opt/daohua/migrations
   sudo install -d -m 0755 /opt/daohua/migrations
   sudo cp -f '$REMOTE_TMP'/migrations/*.sql /opt/daohua/migrations/
