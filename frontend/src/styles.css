@@ -484,6 +484,22 @@ input[type="checkbox"] {
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--text-dim);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.connection-dot::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: -6px;
+  right: -6px;
+}
+
+.connection-dot:hover {
+  transform: scale(1.3);
 }
 
 .connection-dot--online {
@@ -494,107 +510,6 @@ input[type="checkbox"] {
 .connection-dot--connecting,
 .connection-dot--reconnecting {
   background: var(--gold-bright);
-}
-
-.connection-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 1px 7px 1px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(201, 180, 109, 0.2);
-  background: rgba(14, 26, 42, 0.45);
-  font-family: var(--font-number);
-  font-size: 11px;
-  line-height: 1.2;
-  color: var(--text-dim);
-  cursor: pointer;
-  user-select: none;
-  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
-}
-
-.connection-pill:hover {
-  border-color: rgba(114, 169, 140, 0.45);
-  background: rgba(14, 26, 42, 0.7);
-}
-
-.connection-pill-indicator {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--text-dim);
-  transition: background 0.2s ease, box-shadow 0.2s ease;
-}
-
-.connection-pill--online .connection-pill-indicator {
-  background: var(--jade);
-  box-shadow: 0 0 6px rgba(114, 169, 140, 0.85);
-}
-
-.connection-pill--online .connection-pill-count,
-.connection-pill--online .connection-pill-item--online .connection-pill-num {
-  color: var(--jade);
-}
-
-.connection-pill--connecting .connection-pill-indicator,
-.connection-pill--reconnecting .connection-pill-indicator {
-  background: var(--gold-bright);
-  box-shadow: 0 0 6px rgba(201, 180, 109, 0.65);
-}
-
-.connection-pill--connecting .connection-pill-count,
-.connection-pill--reconnecting .connection-pill-count {
-  color: var(--gold-bright);
-}
-
-.connection-pill--offline .connection-pill-indicator {
-  background: var(--text-dim);
-}
-
-.connection-pill-count {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.connection-pill-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-}
-
-.connection-pill-num {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.connection-pill-item--online .connection-pill-num {
-  color: var(--jade);
-}
-
-.connection-pill-item--idle .connection-pill-num {
-  color: var(--gold-bright);
-}
-
-.connection-pill-item--offline .connection-pill-num {
-  color: var(--text-dim);
-}
-.connection-pill-tag {
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: -0.02em;
-}
-
-.connection-pill-sep {
-  color: var(--text-faint);
-  font-size: 10px;
-  user-select: none;
-  padding: 0 1px;
-}
-
-@media (max-width: 420px) {
-  .connection-pill-tag {
-    display: none;
-  }
 }
 
 .connection-status-tooltip {

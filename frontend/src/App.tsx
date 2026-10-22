@@ -703,25 +703,9 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
             <RealmBadge realmInfo={realmInfo} />
             <FloatingTooltip placement="bottom" title={connectionTooltip} tone={connection === 'online' ? 'jade' : 'danger'}>
               <span
-                className={`connection-pill connection-pill--${connection}`}
+                className={`connection-dot connection-dot--${connection}`}
                 onMouseEnter={() => gameClient.pingNow()}
-              >
-                <span className="connection-pill-indicator" />
-                <span className="connection-pill-item connection-pill-item--online" title={t('app.topbar.onlineCountLabel')}>
-                  <span className="connection-pill-num">{onlineCount !== null ? onlineCount : '-'}</span>
-                  <span className="connection-pill-tag">{t('app.topbar.presenceOnlineTag')}</span>
-                </span>
-                <span className="connection-pill-sep" aria-hidden="true">·</span>
-                <span className="connection-pill-item connection-pill-item--idle" title={t('app.topbar.offlineIdleCountLabel')}>
-                  <span className="connection-pill-num">{offlineIdleCount !== null ? offlineIdleCount : '-'}</span>
-                  <span className="connection-pill-tag">{t('app.topbar.presenceIdleTag')}</span>
-                </span>
-                <span className="connection-pill-sep" aria-hidden="true">·</span>
-                <span className="connection-pill-item connection-pill-item--offline" title={t('app.topbar.offlineCountLabel')}>
-                  <span className="connection-pill-num">{offlineCount !== null ? offlineCount : '-'}</span>
-                  <span className="connection-pill-tag">{t('app.topbar.presenceOfflineTag')}</span>
-                </span>
-              </span>
+              />
             </FloatingTooltip>
           </div>
           <FloatingTooltip
