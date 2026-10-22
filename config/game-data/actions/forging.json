@@ -556,7 +556,7 @@
     "level": 9,
     "durationSeconds": 16,
     "inputs": {
-      "item.peach-crystal": 7,
+      "item.peach-wood-crystal": 7,
       "item.water-spirit-core": 1
     },
     "yields": [
@@ -583,7 +583,7 @@
     "level": 9,
     "durationSeconds": 16,
     "inputs": {
-      "item.peach-crystal": 7,
+      "item.peach-wood-crystal": 7,
       "item.water-spirit-core": 1
     },
     "yields": [
@@ -772,7 +772,7 @@
     "level": 9,
     "durationSeconds": 11,
     "inputs": {
-      "item.peach-crystal": 5,
+      "item.peach-wood-crystal": 5,
       "item.water-spirit-core": 1
     },
     "yields": [
@@ -799,7 +799,7 @@
     "level": 9,
     "durationSeconds": 16,
     "inputs": {
-      "item.peach-crystal": 7,
+      "item.peach-wood-crystal": 7,
       "item.water-spirit-core": 1
     },
     "yields": [
@@ -826,7 +826,7 @@
     "level": 9,
     "durationSeconds": 11,
     "inputs": {
-      "item.peach-crystal": 5,
+      "item.peach-wood-crystal": 5,
       "item.water-spirit-core": 1
     },
     "yields": [
@@ -880,7 +880,7 @@
     "level": 9,
     "durationSeconds": 11,
     "inputs": {
-      "item.peach-crystal": 5,
+      "item.peach-wood-crystal": 5,
       "item.water-spirit-core": 1
     },
     "yields": [
@@ -934,7 +934,7 @@
     "level": 9,
     "durationSeconds": 11,
     "inputs": {
-      "item.peach-crystal": 5,
+      "item.peach-wood-crystal": 5,
       "item.water-spirit-core": 1
     },
     "yields": [

@@ -120,10 +120,20 @@ public static class SimulationLogMapper
         }
     }
 
+    /// <summary>
+    /// 资产名称解析：物品与装备共用同一引用语法，装备产出（锻造/强化链）同样必须显示中文名，
+    /// 否则日志会裸显 `equipment.*` 标识。
+    /// </summary>
     private static string ItemName(GameDataCatalog gameData, ItemId itemId) =>
-        gameData.RawItems.TryGetValue(itemId.Value, out var item)
-        && item.TryGetProperty("name", out var name)
-        && name.ValueKind == JsonValueKind.String
-            ? name.GetString() ?? itemId.Value
-            : itemId.Value;
+        ReadName(gameData.RawItems, itemId.Value)
+        ?? ReadName(gameData.RawEquipments, itemId.Value)
+        ?? itemId.Value;
+
+    private static string? ReadName(IReadOnlyDictionary<string, JsonElement> table, string id)
+    {
+        if (!table.TryGetValue(id, out var row)) return null;
+        return row.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
+            ? name.GetString()
+            : null;
+    }
 }

@@ -24,7 +24,7 @@ await build({
       setup(b) {
         b.onResolve({ filter: /i18n/ }, args => ({ path: args.path, namespace: 'mock-i18n' }))
         b.onLoad({ filter: /.*/, namespace: 'mock-i18n' }, () => ({
-          contents: 'export const getT = () => (key) => key === "game.category.special" ? "特殊" : key; export const useT = () => (key) => key;',
+          contents: 'export const getT = () => (key) => key === "game.category.special" ? "特殊" : key; export const useT = () => (key) => key; export const hasTranslation = () => false;',
           loader: 'js',
         }))
       },

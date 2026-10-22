@@ -284,6 +284,16 @@ function translate(locale: Locale, key: string, params?: TParams): string {
   return interpolate(template, params)
 }
 
+/**
+ * 判定词条是否真实存在（中文词典或已加载外语包），不经过键名回显兜底。
+ * 供实体名称解析区分「缺词条」与「词条值恰好等于键名」，避免把原始 ID 当名称展示。
+ */
+export function hasTranslation(key: string): boolean {
+  const locale = useI18nStore.getState().locale
+  if (locale !== 'zh-CN' && CSV_CACHE[locale]?.[key] !== undefined) return true
+  return lookup(zhCN, key) !== undefined
+}
+
 /** 非响应式翻译：用于事件回调、格式化辅助函数等非渲染路径；渲染期由 useT() 的订阅驱动刷新。 */
 export function getT(): TFunction {
   const locale = useI18nStore.getState().locale

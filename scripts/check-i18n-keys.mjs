@@ -57,6 +57,15 @@ for (const key of dictKeys) {
   for (let i = 1; i < parts.length; i++) dictPrefixes.add(parts.slice(0, i).join('.'))
 }
 const has = key => dictKeys.has(key)
+/** 读取中文词条值（扁平路径）；缺失返回 undefined，供「词条值 == 原始 ID」反向校验使用。 */
+const lookupLabel = key => {
+  let node = zhCN
+  for (const part of key.split('.')) {
+    if (node === null || typeof node !== 'object') return undefined
+    node = node[part]
+  }
+  return typeof node === 'string' ? node : undefined
+}
 
 // 2) 配表实体与枚举采集（动态键族的真值来源）。
 const dataDir = join(ROOT, 'config/game-data')
@@ -77,12 +86,30 @@ const styles = new Set()
 const targets = new Set()
 const slots = new Set()
 const buffs = new Set()
+/** 配表中真实定义的物品/装备实体 ID（rows[].id 前缀即实体类型） */
+const definedAssets = new Set()
+/** 配表任意位置引用到的物品/装备实体 ID（制造输入/产出、掉落表、商店报价等） */
+const referencedAssets = new Set()
+
+/** 采集物品/装备型 ID 引用：这些位置一旦指向未定义实体，界面会裸显原始 ID */
+const collectAssetRef = value => {
+  if (typeof value !== 'string' || value.length === 0) return
+  if (!value.startsWith('item.') && !value.startsWith('equipment.')) return
+  referencedAssets.add(value)
+  if (value.startsWith('item.')) items.add(value)
+  else equipments.add(value)
+}
 
 for (const row of rows) {
   const id = typeof row.id === 'string' ? row.id : undefined
   if (id) {
-    if (id.startsWith('item.')) items.add(id)
-    else if (id.startsWith('equipment.')) equipments.add(id)
+    if (id.startsWith('item.')) {
+      items.add(id)
+      definedAssets.add(id)
+    } else if (id.startsWith('equipment.')) {
+      equipments.add(id)
+      definedAssets.add(id)
+    }
     // 行动表以 durationSeconds + type 为判别特征（地图节点、敌怪、建筑无此组合）。
     if (typeof row.durationSeconds === 'number' && typeof row.type === 'string') actions.add(id)
   }
@@ -93,6 +120,15 @@ for (const row of rows) {
   if (typeof row.slot === 'string') slots.add(row.slot)
   if (typeof row.buffId === 'string') buffs.add(row.buffId)
   if (row.yields) for (const entry of row.yields) if (typeof entry.buffId === 'string') buffs.add(entry.buffId)
+  // 引用面：掉落表、制造输入/产出、商店与奖励清单（嵌套字段不在顶层 row.itemId 内）。
+  collectAssetRef(row.itemId)
+  collectAssetRef(row.targetItemId)
+  for (const drop of row.dropTable ?? []) collectAssetRef(drop.itemId)
+  for (const key of Object.keys(row.inputs ?? {})) collectAssetRef(key)
+  for (const key of Object.keys(row.consumes ?? {})) collectAssetRef(key)
+  for (const entry of row.yields ?? []) collectAssetRef(entry.id)
+  for (const entry of row.outputs ?? []) collectAssetRef(entry.itemId ?? entry.id)
+  for (const entry of row.rewards ?? []) collectAssetRef(entry.itemId ?? entry.id)
 }
 
 // 3) 源码字面量扫描：形如 domain.path 的字符串必须是词条键或其父路径。
@@ -129,9 +165,30 @@ for (const [key, where] of badLiterals) {
 const requireKey = key => {
   if (!has(key)) failures.push(`配表枚举缺少词条 ${key}`)
 }
+// 引用完整性：任何被制造配方、掉落表、商店或奖励引用的实体必须在配表中真实定义，
+// 否则服务端无法下发名称，前端只能裸显 ID。
+for (const id of referencedAssets) {
+  if (!definedAssets.has(id)) {
+    failures.push(`配表引用了未定义的物品/装备 ${id}（界面会裸显原始 ID）`)
+  }
+}
+// 前端静态元数据覆盖：图标/品质/品类由 ITEM_META_CORES 驱动，配表新增实体必须同步登记。
+const idsSource = readFileSync(join(FE, 'src/game/ids.ts'), 'utf8')
+const metaCoreIds = new Set(
+  [...idsSource.matchAll(/^\s*'((?:item|equipment)\.[\w.-]+)':\s*\{\s*glyph:/gm)].map(match => match[1]),
+)
+for (const id of definedAssets) {
+  if (!metaCoreIds.has(id)) {
+    failures.push(`前端静态元数据缺少 ${id}（物品图标与品质会退化）`)
+  }
+}
 for (const id of [...items, ...equipments]) {
+  if (!definedAssets.has(id)) continue // 未定义实体已由引用完整性检查报告
   requireKey(`game.item.${id}.label`)
   requireKey(`game.item.${id}.description`)
+  // 词条值本身不得是实体 ID：否则界面「有词条」却仍然裸显标识。
+  const label = lookupLabel(`game.item.${id}.label`)
+  if (label === id) failures.push(`词条 ${`game.item.${id}.label`} 的值是原始 ID，界面会裸显标识`)
 }
 for (const id of actions) requireKey(`game.action.${id}.name`)
 // 服务端 ToAbilityDto 会把 fiveElements 归一为 five-elements，两种写法都验。
