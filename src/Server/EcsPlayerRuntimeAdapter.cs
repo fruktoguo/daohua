@@ -759,7 +759,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     return new PlayerCommandResult(false, "INVALID_PAYLOAD", "灵根点数须为 0~100 的整数。", before);
                                 if (!HeavenGateRules.IsValidAllocation(rolledAllocation, candidateValues))
                                     return new PlayerCommandResult(false, "INVALID_ALLOCATION",
-                                        $"五行分配须总值守恒（须为 {rolledAllocation.Total}）且至少一条灵根。", before);
+                                        "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。", before);
                                 touched = ecs.MutatePlayer(playerId, aggregate =>
                                 {
                                     var gate = aggregate.Progression.HeavenGate;
@@ -774,11 +774,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ROLLED", "尚未开天门，无可入天门。", before);
                                 if (gateProgression.HeavenGateEntered)
                                     return new PlayerCommandResult(false, "HEAVEN_GATE_ALREADY_ENTERED", "灵根已生效。", before);
-                                // 未显式分配时以抽取结果直接入天门：抽取值本身即守恒的合法分布。
+                                // 未显式分配时以抽取结果直接入天门：抽取值本身即零消耗的合法分布。
                                 var confirmedEnter = gateProgression.HeavenGateConfirmed ?? rolledEnter;
                                 if (!HeavenGateRules.IsValidAllocation(rolledEnter, confirmedEnter))
                                     return new PlayerCommandResult(false, "INVALID_ALLOCATION",
-                                        $"五行分配须总值守恒（须为 {rolledEnter.Total}）且至少一条灵根。", before);
+                                        "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。", before);
                                 touched = ecs.MutatePlayer(playerId, aggregate =>
                                 {
                                     var gate = aggregate.Progression.HeavenGate;

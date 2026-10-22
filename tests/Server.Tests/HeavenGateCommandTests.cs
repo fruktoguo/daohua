@@ -79,10 +79,10 @@ public sealed class HeavenGateCommandTests
     }
 
     /// <summary>
-    /// 分配必须总值守恒：改动总值的提交被拒；守恒提交写入待生效灵根而不立刻生效。
+    /// 分配走点数池：透支可分配额度的提交被拒；合法提交写入待生效灵根而不立刻生效。
     /// </summary>
     [Fact]
-    public async Task AllocateMustPreserveRolledTotalAndDoesNotTakeEffectBeforeEntering()
+    public async Task AllocateMustStayWithinPointPoolAndDoesNotTakeEffectBeforeEntering()
     {
         var playerId = Guid.NewGuid();
         await using var runtime = CreateRuntime(playerId, GateAtFullExperience);
@@ -90,15 +90,20 @@ public sealed class HeavenGateCommandTests
         var rolled = await Execute(runtime, playerId, new { action = "roll" });
         var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
 
-        var redistribution = SpreadAcross(rolledValues.Total, reverse: true);
+        // 合法分配：把一系散到 0（返还半数点数），其余四系各加少许，仍然在额度内。
+        var drainedAxis = LinggenElement.Metal;
+        var redistribution = rolledValues.With(drainedAxis, 0);
 
-        // 多给 1 点即破坏守恒：必须在写入前整体拒绝。
-        var inflated = InflateByOne(redistribution);
+        // 透支：把全部五系都拉到 100，远超可分配点数，必须在写入前整体拒绝。
+        var overdrawn = new LinggenValues(
+            LinggenValues.MaxPointsPerElement, LinggenValues.MaxPointsPerElement,
+            LinggenValues.MaxPointsPerElement, LinggenValues.MaxPointsPerElement,
+            LinggenValues.MaxPointsPerElement);
         var illegal = await Execute(runtime, playerId, new
         {
             action = "allocate",
-            metal = inflated.Metal, wood = inflated.Wood, water = inflated.Water,
-            fire = inflated.Fire, earth = inflated.Earth
+            metal = overdrawn.Metal, wood = overdrawn.Wood, water = overdrawn.Water,
+            fire = overdrawn.Fire, earth = overdrawn.Earth
         });
         Assert.False(illegal.Success);
         Assert.Equal("INVALID_ALLOCATION", illegal.Code);
@@ -303,27 +308,6 @@ public sealed class HeavenGateCommandTests
         var seed = new LinggenValues(60, 60, 60, 60, 60);
         aggregate.Progression.HeavenGate.Apply(seed, seed, entered: true, rerollCount: 0);
     }
-
-    /// <summary>把给定总值按单系上限均匀铺开，用于构造守恒的重分配提交。</summary>
-    private static LinggenValues SpreadAcross(int total, bool reverse = false)
-    {
-        var axes = new int[5];
-        var remaining = total;
-        for (var i = 0; i < axes.Length && remaining > 0; i++)
-        {
-            var index = reverse ? axes.Length - 1 - i : i;
-            var slice = Math.Min(LinggenValues.MaxPointsPerElement, remaining);
-            axes[index] = slice;
-            remaining -= slice;
-        }
-        return new LinggenValues(axes[0], axes[1], axes[2], axes[3], axes[4]);
-    }
-
-    /// <summary>在单系容量允许时给金系 +1，构造「总值 +1」的非法分配（容量已满时改加土系）。</summary>
-    private static LinggenValues InflateByOne(LinggenValues values)
-        => values.Metal < LinggenValues.MaxPointsPerElement
-            ? values with { Metal = values.Metal + 1 }
-            : values with { Earth = values.Earth + 1 };
 
     /// <summary>发送一条命令：字段与 requestId 平铺进同一载荷（与前端 gameClient 的拼装口径一致）。</summary>
     private static ValueTask<PlayerCommandResult> Execute(EcsPlayerRuntimeAdapter runtime, Guid playerId,

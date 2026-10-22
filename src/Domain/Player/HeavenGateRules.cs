@@ -107,14 +107,57 @@ public static class HeavenGateRules
     }
 
     /// <summary>
-    /// 校验重分配是否守恒：五系点数全部合法，且总值与抽取结果一致。
-    /// 玩家只能在总值不变的前提下调整五行分布。
+    /// 单轴点数池净贡献：低于先天值按「散功 2 返 1」折半**返还**（正贡献），
+    /// 高于先天值按 1:1 **消耗**（负贡献）。
     /// </summary>
-    /// <param name="rolled">本次抽取的原始结果。</param>
+    /// <param name="innateValue">该轴抽取时的先天值。</param>
+    /// <param name="currentValue">该轴当前值。</param>
+    public static double ResolveAxisPointContribution(int innateValue, int currentValue)
+        => currentValue <= innateValue
+            ? (innateValue - currentValue) * 0.5
+            : -(currentValue - innateValue);
+
+    /// <summary>
+    /// 剩余可分配点数：五轴净贡献之和（散功折半返还记正、灌注 1:1 消耗记负）。
+    /// 为负表示当前分布已透支可分配额度；为 0 表示额度刚好用尽。
+    /// </summary>
+    /// <param name="innate">抽取时的先天分布。</param>
+    /// <param name="current">当前分布。</param>
+    public static double ResolveRemainingPoints(LinggenValues innate, LinggenValues current)
+    {
+        var total = 0d;
+        foreach (var element in Enum.GetValues<LinggenElement>())
+            total += ResolveAxisPointContribution(innate.Of(element), current.Of(element));
+        return Math.Round(total * 2, MidpointRounding.AwayFromZero) / 2;
+    }
+
+    /// <summary>
+    /// 单轴在其余四轴让点支持下可达的最高值：让点额度按 1:1 转化为该轴点数。
+    /// </summary>
+    /// <param name="innate">抽取时的先天分布。</param>
+    /// <param name="current">当前分布。</param>
+    /// <param name="axis">目标轴。</param>
+    public static int ResolveMaxReachableValue(LinggenValues innate, LinggenValues current, LinggenElement axis)
+    {
+        var pool = 0d;
+        foreach (var element in Enum.GetValues<LinggenElement>())
+        {
+            if (element == axis) continue;
+            pool += ResolveAxisPointContribution(innate.Of(element), current.Of(element));
+        }
+        // 其余轴让出的点数按 1:1 追加到本轴；让点额度可能为负（其余轴被灌注过），此时上限低于当前值。
+        var raw = current.Of(axis) + pool;
+        return Math.Clamp((int)Math.Floor(raw), 0, LinggenValues.MaxPointsPerElement);
+    }
+
+    /// <summary>
+    /// 校验重分配是否成立：五系点数合法、剩余点数不得为负、且至少保留一条有效灵根。
+    /// </summary>
+    /// <param name="innate">抽取时的先天分布（原生点数基准）。</param>
     /// <param name="candidate">玩家提交的分布。</param>
-    public static bool IsValidAllocation(LinggenValues rolled, LinggenValues candidate)
+    public static bool IsValidAllocation(LinggenValues innate, LinggenValues candidate)
         => candidate.IsValid
-            && candidate.Total == rolled.Total
+            && ResolveRemainingPoints(innate, candidate) >= 0
             && candidate.EffectiveCount > 0;
 
     /// <summary>

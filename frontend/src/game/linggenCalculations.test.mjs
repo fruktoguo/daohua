@@ -1,11 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  applyAxisDrag,
+  axisPointContribution,
   linggenBonusPercent,
   linggenReducePercent,
   linggenCultivationMultiplier,
   linggenEffectiveCount,
   linggenTotal,
+  maxReachableValue,
+  remainingPoints,
   shouldShowOpenHeavenGate,
 } from './linggenCalculations.ts'
 
@@ -52,4 +56,35 @@ test('linggenCalculations：叩天门满修且未入天门时才展示「开天�
   assert.equal(shouldShowOpenHeavenGate(18, true, true), false)
   // 未到叩天门境界不展示。
   assert.equal(shouldShowOpenHeavenGate(17, false, true), false)
+})
+
+test('linggenCalculations：点数池按「散功 2 返 1、灌注 1:1」结算', () => {
+  const innate = { metal: 60, wood: 60, water: 60, fire: 60, earth: 60 }
+  // 金系散到 0 返还 30 点；木系拉到 90 消耗 30 点，额度刚好用尽。
+  assert.equal(axisPointContribution(60, 0), 30)
+  assert.equal(axisPointContribution(60, 90), -30)
+  const drained = { ...innate, metal: 0 }
+  assert.equal(remainingPoints(innate, drained), 30)
+  assert.equal(maxReachableValue(innate, drained, 'wood'), 90)
+  const result = applyAxisDrag(innate, drained, 'wood', 90)
+  assert.equal(result.roots.wood, 90)
+  assert.equal(result.remainingPoints, 0)
+  assert.equal(result.hitInsufficientBalance, false)
+})
+
+test('linggenCalculations：超出可分配额度时停在可达上限并标记不足', () => {
+  const innate = { metal: 60, wood: 60, water: 60, fire: 60, earth: 60 }
+  const drained = { ...innate, metal: 0 }
+  const result = applyAxisDrag(innate, drained, 'wood', 100)
+  // 只有 30 点额度，木系最多到 90；不得凭空拉到 100。
+  assert.equal(result.roots.wood, 90)
+  assert.equal(result.hitInsufficientBalance, true)
+})
+
+test('linggenCalculations：拖到 0 触发下限边界', () => {
+  const innate = { metal: 60, wood: 60, water: 60, fire: 60, earth: 60 }
+  const result = applyAxisDrag(innate, innate, 'metal', 0)
+  assert.equal(result.roots.metal, 0)
+  assert.equal(result.hitBound, 'min')
+  assert.equal(result.remainingPoints, 30)
 })

@@ -824,11 +824,19 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         confirmed={stats.heavenGateConfirmed}
         entered={stats.heavenGateEntered === true}
         rerollCount={stats.heavenGateRerollCount ?? 0}
+        expToNext={realmProgress.expToNext ?? 0}
         rerollCostPlain={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.25))}
         rerollCostPill={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.05))}
         reverseFatePillCount={reverseFatePillCount}
         onRoll={() => gameClient.sendCommand('progression.heaven_gate', { action: 'roll' })}
-        onAllocate={values => gameClient.sendCommand('progression.heaven_gate', { action: 'allocate', ...values })}
+        onAllocate={values => gameClient.sendCommand('progression.heaven_gate', {
+          action: 'allocate',
+          metal: values.metal,
+          wood: values.wood,
+          water: values.water,
+          fire: values.fire,
+          earth: values.earth,
+        })}
         onEnter={() => gameClient.sendCommand('progression.heaven_gate', { action: 'enter' })}
         onReroll={usePill => gameClient.sendCommand('progression.heaven_gate', { action: 'reroll', usePill })}
         onClose={() => setIsHeavenGateModalOpen(false)}

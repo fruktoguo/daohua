@@ -1,0 +1,1243 @@
+    /* ==========================================================================
+       1. 设计令牌（浅色主题默认，严格照抄字面值）
+       ========================================================================== */
+    :root,
+    .hg-panel {
+      --hg-paper-bg: #ecece8;
+      --hg-paper-surface: #f5f5f1;
+      --hg-paper-bright: #f8f8f5;
+      --hg-ink-faint: rgba(17, 17, 17, 0.12);
+      --hg-border: rgba(34, 26, 19, 0.16);
+      --hg-border-strong: rgba(34, 26, 19, 0.32);
+      --hg-border-emph: rgba(34, 26, 19, 0.42);
+
+      --hg-ink-main: #111111;
+      --hg-ink-deep: #21242a;
+      --hg-ink-gray: #555555;
+      --hg-ink-light: #b2b2b2;
+
+      --hg-ochre: #9b5a2c;
+      --hg-ochre-deep: #7e4b27;
+      --hg-seal-red: #c53c3c;
+      --hg-seal-red-hover: #a12b2b;
+
+      --hg-metal: #a67c33;
+      --hg-wood: #4d7a43;
+      --hg-water: #4a7398;
+      --hg-fire: #b44b39;
+      --hg-earth: #7a5a32;
+
+      --hg-radar-grid: rgba(34, 26, 19, 0.22);
+      --hg-radar-axis: rgba(34, 26, 19, 0.30);
+
+      --hg-panel-grad: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(250, 248, 242, 0.48));
+      --hg-modal-grad: linear-gradient(180deg, rgba(249, 247, 241, 0.98), rgba(239, 235, 225, 0.97));
+
+      --hg-shadow-hard: 10px 10px 0 rgba(0, 0, 0, 0.12);
+      --hg-shadow-card: 14px 14px 0 rgba(0, 0, 0, 0.12);
+      --hg-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+      --hg-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.10);
+      --hg-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.14);
+
+      --hg-text-stroke: 2px 2px 0 rgba(255, 248, 236, 0.78);
+      --hg-poly-fill: rgba(197, 60, 60, 0.13);
+      --hg-poly-stroke: #c53c3c;
+      --hg-poly-inner: rgba(155, 90, 44, 0.22);
+
+      --hg-font-brush: 'Zhi Mang Xing', 'Ma Shan Zheng', cursive;
+      --hg-font-sans: 'YouYuan', '幼圆', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', sans-serif;
+      --hg-font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+
+      --hg-dur-fast: 180ms;
+      --hg-dur-slow: 280ms;
+      --hg-ease: cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    /* ==========================================================================
+       2. 深色主题覆盖块（玄夜古卷，独立提亮墨色与五行色）
+       ========================================================================== */
+    :root[data-theme="dark"] .hg-panel {
+      --hg-paper-bg: #181411;
+      --hg-paper-surface: #211c18;
+      --hg-paper-bright: #2a2420;
+      --hg-ink-faint: rgba(255, 244, 229, 0.16);
+      --hg-border: rgba(246, 238, 224, 0.18);
+      --hg-border-strong: rgba(246, 238, 224, 0.34);
+      --hg-border-emph: rgba(246, 238, 224, 0.46);
+
+      --hg-ink-main: #f6eee0;
+      --hg-ink-deep: #f0e5d6;
+      --hg-ink-gray: #d7c7b8;
+      --hg-ink-light: #9f9082;
+
+      --hg-ochre: #d38a4c;
+      --hg-ochre-deep: #f2c28d;
+      --hg-seal-red: #d36f5c;
+      --hg-seal-red-hover: #ea8c79;
+
+      --hg-metal: #d9b36a;
+      --hg-wood: #86c477;
+      --hg-water: #8ab8dd;
+      --hg-fire: #e8856f;
+      --hg-earth: #c09a68;
+
+      --hg-radar-grid: rgba(246, 238, 224, 0.28);
+      --hg-radar-axis: rgba(246, 238, 224, 0.38);
+
+      --hg-panel-grad: linear-gradient(180deg, rgba(63, 54, 48, 0.72), rgba(36, 30, 27, 0.56));
+      --hg-modal-grad: linear-gradient(180deg, rgba(38, 32, 28, 0.98), rgba(28, 24, 21, 0.97));
+
+      --hg-shadow-hard: 10px 10px 0 rgba(0, 0, 0, 0.34);
+      --hg-shadow-card: 14px 14px 0 rgba(0, 0, 0, 0.34);
+      --hg-shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.30);
+      --hg-shadow-md: 0 8px 22px rgba(0, 0, 0, 0.34);
+
+      --hg-text-stroke: 2px 2px 0 rgba(0, 0, 0, 0.32);
+      --hg-poly-fill: rgba(211, 138, 76, 0.16);
+      --hg-poly-stroke: #d38a4c;
+      --hg-poly-inner: rgba(242, 194, 141, 0.28);
+    }
+
+    /* ==========================================================================
+       4. 独立阵盘主面板（严格非全屏，合适卡片尺寸，四区紧凑排布）
+       ========================================================================== */
+    .hg-panel {
+      position: relative;
+      width: 100%;
+      background-color: var(--hg-paper-surface);
+      background-image: var(--hg-modal-grad);
+      border: 1.5px solid var(--hg-border-strong);
+      border-radius: 4px;
+      box-shadow: var(--hg-shadow-card);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      color: var(--hg-ink-main);
+      user-select: none;
+      overflow: hidden;
+      transition: background var(--hg-dur-slow) var(--hg-ease), border-color var(--hg-dur-slow) var(--hg-ease);
+    }
+
+    /* 四角古卷硬边装饰线 */
+    .hg-panel::before {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      border: 1px solid var(--hg-ink-faint);
+      border-radius: 4px;
+      pointer-events: none;
+    }
+
+    /* 保存失败抖动反馈：±3px 两次，共 240ms */
+    @keyframes hg-panel-shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-3px); }
+      40%, 80% { transform: translateX(3px); }
+    }
+
+    .hg-panel[data-state="save-error"] {
+      animation: hg-panel-shake 240ms var(--hg-ease);
+    }
+
+    /* 顶部保存失败印红提示条 */
+    .hg-error-banner {
+      background: var(--hg-seal-red);
+      color: #f8f8f5;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--hg-border-emph);
+      box-shadow: var(--hg-shadow-sm);
+      z-index: 10;
+    }
+
+    /* ==========================================================================
+       5. A 判语区（顶部标题与灵根资质判语）
+       ========================================================================== */
+    .hg-header {
+      position: relative;
+      background: var(--hg-panel-grad);
+      border: 1px solid var(--hg-border);
+      border-radius: 4px;
+      padding: 8px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 1;
+    }
+
+    .hg-header__top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--hg-ink-faint);
+      padding-bottom: 4px;
+    }
+
+    .hg-header__title-group {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .hg-header__title {
+      font-family: var(--hg-font-serif);
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--hg-ink-deep);
+      letter-spacing: 0.06em;
+    }
+
+    .hg-header__subtitle {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--hg-ochre);
+    }
+
+    .hg-verdict {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 2px;
+    }
+
+    .hg-verdict__title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hg-verdict__name {
+      font-family: var(--hg-font-brush);
+      font-size: 38px;
+      font-weight: 400;
+      line-height: 1.05;
+      color: var(--hg-ink-main);
+      text-shadow: var(--hg-text-stroke);
+    }
+
+    .hg-verdict__seal {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      background: var(--hg-seal-red);
+      color: #f8f8f5;
+      border: 1px solid var(--hg-ink-main);
+      border-radius: 4px;
+      font-family: var(--hg-font-serif);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.18);
+    }
+
+    .hg-verdict__desc {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--hg-ink-gray);
+      line-height: 1.4;
+    }
+
+    /* ==========================================================================
+       6. B 阵盘区（正方形居中，SVG 400x400 坐标系）
+       ========================================================================== */
+    .hg-board {
+      position: relative;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--hg-panel-grad);
+      border: 1px solid var(--hg-border);
+      border-radius: 4px;
+      padding: 6px;
+      z-index: 1;
+    }
+
+    .hg-board__stage {
+      position: relative;
+      width: 100%;
+      max-width: 340px;
+      aspect-ratio: 1 / 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hg-board__svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      user-select: none;
+      overflow: visible;
+    }
+
+    /* 视觉层 1：底纹同心圆与周天八卦阵环 */
+    .hg-board__bg-disc {
+      fill: var(--hg-paper-bright);
+      stroke: var(--hg-border);
+      stroke-width: 1px;
+    }
+
+    .hg-board__tex-ring {
+      fill: none;
+      stroke: var(--hg-ink-faint);
+      stroke-width: 1px;
+      stroke-dasharray: 2 4;
+    }
+
+    @keyframes hg-bagua-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .hg-board__bagua-ring {
+      transform-origin: 200px 200px;
+      animation: hg-bagua-spin 64s linear infinite;
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    .hg-board__bagua-tick {
+      stroke: var(--hg-ochre);
+      stroke-width: 1.2px;
+    }
+
+    /* 聚灵微粒向丹田汇聚 */
+    @keyframes hg-mote-drift {
+      0% { opacity: 0; transform: scale(1.08); }
+      45% { opacity: 0.65; }
+      100% { opacity: 0; transform: scale(0.32); }
+    }
+
+    .hg-mote {
+      transform-origin: 200px 200px;
+      animation: hg-mote-drift 4.2s ease-in infinite;
+      pointer-events: none;
+    }
+    .hg-mote--1 { fill: var(--hg-metal); animation-delay: 0s; }
+    .hg-mote--2 { fill: var(--hg-wood); animation-delay: 0.8s; }
+    .hg-mote--3 { fill: var(--hg-water); animation-delay: 1.6s; }
+    .hg-mote--4 { fill: var(--hg-fire); animation-delay: 2.4s; }
+    .hg-mote--5 { fill: var(--hg-earth); animation-delay: 3.2s; }
+
+    /* 开天门/逆天改命/破境灵波扩散 */
+    @keyframes hg-ritual-burst {
+      0% { r: 28px; opacity: 0.85; stroke-width: 3px; }
+      100% { r: 162px; opacity: 0; stroke-width: 0.5px; }
+    }
+
+    .hg-board__ritual-wave {
+      fill: none;
+      stroke: var(--hg-ochre);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .hg-board__ritual-wave[data-burst="true"] {
+      animation: hg-ritual-burst 380ms var(--hg-ease) forwards;
+    }
+
+    /* 视觉层 2：4 道刻度环（25/50/75 为 1px，100 为 1.5px 强边框） */
+    @keyframes hg-ring-enter {
+      from { opacity: 0; transform: scale(0.92); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .hg-board__ring {
+      fill: none;
+      stroke: var(--hg-radar-grid);
+      stroke-width: 1px;
+      transform-origin: 200px 200px;
+      animation: hg-ring-enter var(--hg-dur-slow) var(--hg-ease) backwards;
+    }
+
+    .hg-board__ring--25  { animation-delay: 0ms; }
+    .hg-board__ring--50  { animation-delay: 40ms; }
+    .hg-board__ring--75  { animation-delay: 80ms; }
+    .hg-board__ring--100 {
+      stroke: var(--hg-border-strong);
+      stroke-width: 1.5px;
+      animation-delay: 120ms;
+    }
+
+    .hg-board__scale-text {
+      font-family: var(--hg-font-serif);
+      font-size: 11px;
+      font-weight: 600;
+      fill: var(--hg-ink-light);
+      pointer-events: none;
+    }
+
+    .hg-board__scale-text--100 {
+      fill: var(--hg-ink-gray);
+      font-weight: 700;
+    }
+
+    /* 视觉层 3 & 4：五条主轴线与轴线灵光流 */
+    .hg-axis--metal { --hg-axis-color: var(--hg-metal); }
+    .hg-axis--wood  { --hg-axis-color: var(--hg-wood); }
+    .hg-axis--water { --hg-axis-color: var(--hg-water); }
+    .hg-axis--fire  { --hg-axis-color: var(--hg-fire); }
+    .hg-axis--earth { --hg-axis-color: var(--hg-earth); }
+
+    .hg-axis {
+      cursor: pointer;
+    }
+
+    .hg-axis__hit {
+      stroke: transparent;
+      stroke-width: 28px;
+      stroke-linecap: round;
+    }
+
+    .hg-axis__line {
+      stroke: var(--hg-radar-axis);
+      stroke-width: 1px;
+      transition: stroke var(--hg-dur-fast) var(--hg-ease), stroke-width var(--hg-dur-fast) var(--hg-ease), opacity var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    /* 余额为 0 时外延段虚线提示 */
+    .hg-axis__locked-ext {
+      stroke: var(--hg-ink-faint);
+      stroke-width: 1.5px;
+      stroke-dasharray: 3 3;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-panel[data-balance="zero"] .hg-axis__locked-ext {
+      opacity: 0.75;
+    }
+
+    @keyframes hg-aura-flow {
+      from { stroke-dashoffset: 36; }
+      to   { stroke-dashoffset: 0; }
+    }
+
+    .hg-axis__aura {
+      stroke: var(--hg-axis-color);
+      stroke-width: 2.5px;
+      stroke-linecap: round;
+      stroke-dasharray: 8 10;
+      opacity: 0.34;
+      animation: hg-aura-flow 3.6s linear infinite;
+      pointer-events: none;
+      transition: opacity var(--hg-dur-fast) var(--hg-ease), stroke-width var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    /* 已归零的轴：不画灵光流，轴线降到 0.35 透明度并改虚线 */
+    .hg-axis[data-zero="true"] .hg-axis__line {
+      opacity: 0.35;
+      stroke-dasharray: 4 4;
+    }
+
+    .hg-axis[data-zero="true"] .hg-axis__aura {
+      display: none;
+    }
+
+    /* 尚未抽取态：五轴虚线，无灵光流 */
+    .hg-panel[data-state="unrolled"] .hg-axis__line {
+      stroke-dasharray: 4 4;
+      opacity: 0.45;
+    }
+
+    .hg-panel[data-state="unrolled"] .hg-axis__aura,
+    .hg-panel[data-state="unrolled"] .hg-axis__locked-ext {
+      display: none;
+    }
+
+    /* 拖拽中该轴高亮 */
+    .hg-axis[data-active="true"] .hg-axis__line {
+      stroke: var(--hg-axis-color);
+      stroke-width: 2px;
+      opacity: 1;
+      stroke-dasharray: none;
+    }
+
+    .hg-axis[data-active="true"] .hg-axis__aura {
+      opacity: 0.68;
+      stroke-width: 3.5px;
+    }
+
+    /* 视觉层 5：多边形填充、先天基准虚线框、五条受左右顶点驱动的灵脉边 */
+    .hg-polygon--innate {
+      fill: none;
+      stroke: var(--hg-ochre);
+      stroke-width: 1.2px;
+      stroke-dasharray: 4 3;
+      opacity: 0.52;
+      pointer-events: none;
+    }
+
+    .hg-polygon {
+      fill: var(--hg-poly-fill);
+      stroke: var(--hg-poly-stroke);
+      stroke-width: 1.5px;
+      stroke-linejoin: round;
+      transition: fill var(--hg-dur-fast) var(--hg-ease), opacity var(--hg-dur-fast) var(--hg-ease);
+      pointer-events: none;
+    }
+
+    .hg-polygon--inner {
+      fill: none;
+      stroke: var(--hg-poly-inner);
+      stroke-width: 3.5px;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+
+    /* 五条独立灵脉边：每个五行顶点直接影响其左右两条邻边 */
+    @keyframes hg-edge-aura-flow {
+      from { stroke-dashoffset: 48; }
+      to   { stroke-dashoffset: 0; }
+    }
+
+    .hg-edge__base {
+      stroke-linecap: round;
+      transition: stroke-width var(--hg-dur-fast) var(--hg-ease), opacity var(--hg-dur-fast) var(--hg-ease);
+      pointer-events: none;
+    }
+
+    .hg-edge__flow-a,
+    .hg-edge__flow-b {
+      stroke-linecap: round;
+      stroke-dasharray: 10 14;
+      animation: hg-edge-aura-flow 2.8s linear infinite;
+      pointer-events: none;
+      transition: stroke-width var(--hg-dur-fast) var(--hg-ease), opacity var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-edge__flow-b {
+      animation-direction: reverse;
+      stroke-dasharray: 6 18;
+    }
+
+    .hg-edge[data-boost="earth"] .hg-edge__flow-a,
+    .hg-edge[data-boost="earth"] .hg-edge__flow-b {
+      animation-duration: 1.9s;
+    }
+
+    .hg-edge[data-boost="heaven"] .hg-edge__flow-a,
+    .hg-edge[data-boost="heaven"] .hg-edge__flow-b {
+      animation-duration: 1.1s;
+      filter: drop-shadow(0 0 3px var(--hg-ochre));
+    }
+
+    .hg-edge[data-active="true"] .hg-edge__base {
+      filter: drop-shadow(0 0 4px var(--hg-poly-stroke));
+    }
+
+    .hg-panel[data-state="unrolled"] .hg-board__polygon-group {
+      opacity: 0;
+    }
+
+    /* 定型态：多边形描边高亮扫过一圈 280ms */
+    @keyframes hg-finalize-sweep {
+      0% { stroke-width: 2px; stroke-dasharray: 0 600; }
+      50% { stroke-width: 4px; stroke: var(--hg-ochre-deep); }
+      100% { stroke-width: 2.5px; stroke-dasharray: 600 0; }
+    }
+
+    .hg-panel[data-state="finalized"] .hg-polygon {
+      animation: hg-finalize-sweep var(--hg-dur-slow) var(--hg-ease) forwards;
+    }
+
+    /* 视觉层 6：中心丹田（圆形 64 单位，2s 呼吸脉动，绝不放按钮） */
+    @keyframes hg-dantian-breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); }
+    }
+
+    .hg-dantian {
+      transform-origin: 200px 200px;
+      animation: hg-dantian-breathe 2s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    .hg-dantian__halo {
+      fill: var(--hg-paper-surface);
+      stroke: var(--hg-border-strong);
+      stroke-width: 1.5px;
+    }
+
+    .hg-dantian__core {
+      fill: var(--hg-paper-bright);
+      stroke: var(--hg-ochre);
+      stroke-width: 1px;
+    }
+
+    .hg-dantian__text {
+      font-family: var(--hg-font-brush);
+      font-size: 24px;
+      fill: var(--hg-ochre);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .hg-panel[data-state="unrolled"] .hg-dantian__text {
+      font-family: var(--hg-font-serif);
+      font-size: 14px;
+      font-weight: 700;
+      fill: var(--hg-ink-deep);
+    }
+
+    /* 视觉层 7：五轴具象化「灵根仙株滑块」与滑块随行「地灵/天灵」铭牌 */
+    .hg-handle--metal { --hg-handle-color: var(--hg-metal); }
+    .hg-handle--wood  { --hg-handle-color: var(--hg-wood); }
+    .hg-handle--water { --hg-handle-color: var(--hg-water); }
+    .hg-handle--fire  { --hg-handle-color: var(--hg-fire); }
+    .hg-handle--earth { --hg-handle-color: var(--hg-earth); }
+
+    .hg-handle {
+      cursor: grab;
+      transition: transform var(--hg-dur-fast) var(--hg-ease), opacity var(--hg-dur-slow) var(--hg-ease);
+      outline: none;
+    }
+
+    .hg-handle__hit {
+      fill: transparent;
+    }
+
+    /* 向心扎根丹田的盘绕灵根须脉 */
+    .hg-handle__roots {
+      fill: none;
+      stroke: var(--hg-handle-color);
+      stroke-width: 1.5px;
+      stroke-linecap: round;
+      opacity: 0.85;
+      transition: stroke-width var(--hg-dur-fast) var(--hg-ease), opacity var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    /* 灵根侧翼护法灵叶（>=60 地灵 / >=90 天灵绽放） */
+    .hg-handle__leaves {
+      fill: var(--hg-paper-bright);
+      stroke: var(--hg-handle-color);
+      stroke-width: 1.3px;
+      opacity: 0.35;
+      transform: scale(0.82);
+      transition: all var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-handle[data-tier="earth"] .hg-handle__leaves {
+      opacity: 0.95;
+      transform: scale(1);
+      fill: var(--hg-handle-color);
+    }
+
+    .hg-handle[data-tier="heaven"] .hg-handle__leaves {
+      opacity: 1;
+      transform: scale(1.15);
+      fill: var(--hg-seal-red);
+      stroke: var(--hg-ink-main);
+    }
+
+    /* 灵根主晶株体 */
+    .hg-handle__diamond {
+      fill: var(--hg-handle-color);
+      stroke: var(--hg-ink-main);
+      stroke-width: 1.5px;
+      transition: transform var(--hg-dur-fast) var(--hg-ease), stroke-width var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    /* 灵根内部叶脉纹 */
+    .hg-handle__vein {
+      fill: none;
+      stroke: var(--hg-paper-bright);
+      stroke-width: 1.1px;
+      stroke-linecap: round;
+      opacity: 0.88;
+      pointer-events: none;
+    }
+
+    /* 外拉半切面锁定遮罩：当余额不足或达 100 时，朝外冠部呈半透明锁定态 */
+    .hg-handle__outward-cap {
+      fill: var(--hg-paper-surface);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-panel[data-balance="zero"] .hg-handle__outward-cap,
+    .hg-handle[data-max="true"] .hg-handle__outward-cap {
+      opacity: 0.62;
+    }
+
+    .hg-handle[data-zero="true"] .hg-handle__roots {
+      opacity: 0.25;
+      stroke-dasharray: 2 2;
+    }
+
+    .hg-panel[data-balance="zero"] .hg-handle[data-zero="true"] {
+      opacity: 0.48;
+    }
+
+    .hg-handle__pip {
+      fill: var(--hg-paper-bright);
+      pointer-events: none;
+    }
+
+    /* 灵根品阶法环：>=60 地灵阵环，>=90 天灵星轨环 */
+    .hg-handle__tier-ring {
+      fill: none;
+      stroke: var(--hg-handle-color);
+      stroke-width: 1.3px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-handle[data-tier="earth"] .hg-handle__tier-ring {
+      opacity: 0.85;
+      stroke-dasharray: 4 2;
+    }
+
+    .hg-handle[data-tier="heaven"] .hg-handle__tier-ring {
+      opacity: 1;
+      stroke: var(--hg-seal-red);
+      stroke-width: 1.8px;
+      stroke-dasharray: 6 3;
+      transform-origin: 0px 0px;
+      animation: hg-bagua-spin 8s linear infinite;
+    }
+
+    /* 直接挂载在灵根滑块正上方的「地灵 / 天灵」品阶铭牌（随滑块移动，正向不旋转） */
+    .hg-handle__badge {
+      opacity: 0;
+      transform: translate(0, -20px) scale(0.82);
+      transition: opacity var(--hg-dur-fast) var(--hg-ease), transform var(--hg-dur-fast) var(--hg-ease);
+      pointer-events: none;
+    }
+
+    .hg-handle[data-tier="earth"] .hg-handle__badge,
+    .hg-handle[data-tier="heaven"] .hg-handle__badge {
+      opacity: 1;
+      transform: translate(0, -22px) scale(1);
+    }
+
+    .hg-handle__badge-bg {
+      fill: var(--hg-paper-bright);
+      stroke: var(--hg-ochre);
+      stroke-width: 1.2px;
+    }
+
+    .hg-handle__badge-text {
+      font-family: var(--hg-font-serif);
+      font-size: 11px;
+      font-weight: 800;
+      fill: var(--hg-ochre);
+    }
+
+    .hg-handle[data-tier="heaven"] .hg-handle__badge-bg {
+      fill: var(--hg-seal-red);
+      stroke: var(--hg-ink-main);
+      stroke-width: 1.3px;
+    }
+
+    .hg-handle[data-tier="heaven"] .hg-handle__badge-text {
+      fill: #f8f8f5;
+    }
+
+    /* 桌面端手柄悬停放大 1.15 倍 */
+    @media (hover: hover) and (pointer: fine) {
+      .hg-handle:hover .hg-handle__scale {
+        transform: scale(1.15);
+      }
+      .hg-axis:hover .hg-axis__line {
+        stroke: var(--hg-axis-color);
+        opacity: 0.85;
+      }
+    }
+
+    .hg-handle__scale {
+      transition: transform var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    /* 手柄选中/拖拽态：放大 1.25 倍 + 外发光 */
+    .hg-handle[data-dragging="true"] {
+      cursor: grabbing;
+    }
+
+    .hg-handle[data-dragging="true"] .hg-handle__scale,
+    .hg-handle:focus-visible .hg-handle__scale {
+      transform: scale(1.25);
+      filter: drop-shadow(0 0 5px var(--hg-handle-color));
+    }
+
+    .hg-handle[data-dragging="true"] .hg-handle__diamond,
+    .hg-handle:focus-visible .hg-handle__diamond {
+      stroke: var(--hg-paper-bright);
+      stroke-width: 2px;
+    }
+
+    /* 到底反馈：位置回弹 2px 一次，120ms */
+    @keyframes hg-handle-bounce {
+      0%, 100% { transform: scale(1.25) translateY(0); }
+      50% { transform: scale(1.25) translateY(-2px); }
+    }
+
+    .hg-handle[data-bounce="true"] .hg-handle__scale {
+      animation: hg-handle-bounce 120ms var(--hg-ease) 1;
+    }
+
+    .hg-panel[data-state="unrolled"] .hg-board__handles {
+      display: none;
+    }
+
+    .hg-panel[data-state="finalized"] .hg-board__handles {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--hg-dur-slow) var(--hg-ease);
+    }
+
+    .hg-panel[data-state="saving"] .hg-board__handles {
+      pointer-events: none;
+    }
+
+    /* 视觉层 8：顶点标签（五行汉字 22px + 当前数值 20px + 先天初值提示） */
+    .hg-label--metal { --hg-label-color: var(--hg-metal); }
+    .hg-label--wood  { --hg-label-color: var(--hg-wood); }
+    .hg-label--water { --hg-label-color: var(--hg-water); }
+    .hg-label--fire  { --hg-label-color: var(--hg-fire); }
+    .hg-label--earth { --hg-label-color: var(--hg-earth); }
+
+    .hg-label__name {
+      font-family: var(--hg-font-brush);
+      font-size: 22px;
+      font-weight: 400;
+      fill: var(--hg-label-color);
+      text-shadow: var(--hg-text-stroke);
+    }
+
+    .hg-label__val {
+      font-family: var(--hg-font-serif);
+      font-size: 20px;
+      font-weight: 700;
+      fill: var(--hg-ink-main);
+      text-shadow: var(--hg-text-stroke);
+      transition: font-size var(--hg-dur-fast) var(--hg-ease), fill var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-label__base {
+      font-family: var(--hg-font-serif);
+      font-size: 11px;
+      font-weight: 600;
+      fill: var(--hg-ink-gray);
+      opacity: 0.78;
+    }
+
+    .hg-panel[data-state="unrolled"] .hg-label__val {
+      font-size: 15px;
+      font-weight: 600;
+      fill: var(--hg-ink-light);
+    }
+
+    .hg-panel[data-state="unrolled"] .hg-label__base {
+      display: none;
+    }
+
+    .hg-label[data-active="true"] .hg-label__val {
+      font-size: 24px;
+      fill: var(--hg-label-color);
+    }
+
+    /* 视觉层 9：拖拽中的增量提示（+{delta} / −{delta}） */
+    .hg-drag-tip {
+      pointer-events: none;
+      transition: opacity var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-drag-tip[hidden] {
+      display: none;
+    }
+
+    .hg-drag-tip__bg {
+      fill: var(--hg-paper-bright);
+      stroke: var(--hg-border-emph);
+      stroke-width: 1.5px;
+    }
+
+    .hg-drag-tip__text {
+      font-family: var(--hg-font-serif);
+      font-size: 13px;
+      font-weight: 700;
+      fill: var(--hg-ochre);
+    }
+
+    /* 阵盘浮动短提示（剩余点数不足 / 已达上限 100 / 已归零） */
+    .hg-board__toast {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--hg-paper-bright);
+      border: 1.5px solid var(--hg-seal-red);
+      color: var(--hg-seal-red);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 4px;
+      box-shadow: var(--hg-shadow-sm);
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .hg-board__single-notice {
+      margin-top: 2px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--hg-ochre);
+      background: var(--hg-paper-bright);
+      border: 1px solid var(--hg-border);
+      padding: 2px 10px;
+      border-radius: 4px;
+    }
+
+    /* ==========================================================================
+       7. C 底部状态区（横向三栏）
+       ========================================================================== */
+    .hg-stats {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 1.25fr;
+      gap: 8px;
+      z-index: 1;
+    }
+
+    .hg-stat {
+      background: var(--hg-panel-grad);
+      border: 1px solid var(--hg-border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 2px;
+      transition: border-color var(--hg-dur-fast) var(--hg-ease), background-color var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-stat__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .hg-stat__label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--hg-ink-gray);
+    }
+
+    .hg-stat__badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--hg-border);
+      color: var(--hg-ink-light);
+    }
+
+    .hg-panel[data-balance="positive"] .hg-stat--remaining {
+      border-color: var(--hg-ochre);
+    }
+
+    .hg-panel[data-balance="positive"] .hg-stat__badge {
+      background: var(--hg-ochre);
+      color: #f8f8f5;
+      border-color: var(--hg-ochre-deep);
+    }
+
+    .hg-stat__main {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      margin: 2px 0;
+    }
+
+    .hg-stat__value {
+      font-family: var(--hg-font-serif);
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--hg-ink-main);
+    }
+
+    .hg-panel[data-balance="positive"] .hg-stat--remaining .hg-stat__value {
+      color: var(--hg-ochre);
+    }
+
+    .hg-stat--remaining[data-flash="insufficient"] {
+      border-color: var(--hg-seal-red);
+      background: rgba(197, 60, 60, 0.12);
+    }
+
+    .hg-stat--remaining[data-flash="insufficient"] .hg-stat__value {
+      color: var(--hg-seal-red);
+    }
+
+    .hg-stat__unit {
+      font-family: var(--hg-font-serif);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--hg-ink-light);
+    }
+
+    .hg-stat__sub {
+      font-size: 11px;
+      color: var(--hg-ink-gray);
+      line-height: 1.3;
+    }
+
+    .hg-stat__pity-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--hg-ochre);
+      color: var(--hg-ochre);
+      background: var(--hg-paper-bright);
+    }
+
+    /* 玩家升级所需修为最大值进度条（1.0x ~ 3.0x 五段槽） */
+    .hg-exp-bar {
+      position: relative;
+      width: 100%;
+      height: 8px;
+      background: var(--hg-paper-bg);
+      border: 1px solid var(--hg-border-strong);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 2px;
+    }
+
+    .hg-exp-bar__cap {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, var(--hg-wood) 0%, var(--hg-ochre) 60%, var(--hg-seal-red) 100%);
+      transition: width var(--hg-dur-slow) var(--hg-ease);
+    }
+
+    .hg-exp-bar__ticks {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      pointer-events: none;
+    }
+
+    .hg-exp-bar__ticks span:not(:last-child) {
+      border-right: 1px solid var(--hg-paper-surface);
+    }
+
+    /* 全零突破警告态 */
+    .hg-panel[data-warning="all-zero"] .hg-stat--remaining {
+      border-color: var(--hg-seal-red);
+      background: rgba(197, 60, 60, 0.09);
+    }
+
+    .hg-stat__warning {
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--hg-seal-red);
+      line-height: 1.3;
+    }
+
+    /* ==========================================================================
+       8. D 操作区（右对齐按钮 + 保存中呼吸条）
+       ========================================================================== */
+    .hg-actions {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-top: 4px;
+      z-index: 1;
+    }
+
+    @keyframes hg-saving-pulse {
+      0%, 100% { opacity: 0.25; transform: scaleX(0.4); }
+      50% { opacity: 1; transform: scaleX(1); }
+    }
+
+    .hg-actions__saving-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--hg-ochre);
+      opacity: 0;
+      transform-origin: center;
+      pointer-events: none;
+    }
+
+    .hg-panel[data-state="saving"] .hg-actions__saving-bar {
+      animation: hg-saving-pulse 800ms ease-in-out infinite;
+    }
+
+    .hg-actions__group {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .hg-actions__group[hidden] {
+      display: none !important;
+    }
+
+    .hg-btn {
+      appearance: none;
+      font-family: var(--hg-font-serif);
+      font-size: 14px;
+      font-weight: 700;
+      padding: 8px 16px;
+      border-radius: 4px;
+      border: 1.5px solid var(--hg-border-strong);
+      background: var(--hg-paper-bright);
+      color: var(--hg-ink-main);
+      cursor: pointer;
+      box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.10);
+      transition: all var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-btn:hover:not(:disabled) {
+      border-color: var(--hg-ochre);
+      color: var(--hg-ochre);
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.14);
+    }
+
+    .hg-btn:active:not(:disabled) {
+      transform: translate(1px, 1px);
+      box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.12);
+    }
+
+    .hg-btn--ochre {
+      border-color: var(--hg-ochre);
+      color: var(--hg-ochre);
+    }
+
+    .hg-btn--primary {
+      background: var(--hg-seal-red);
+      border-color: var(--hg-ink-main);
+      color: #f8f8f5;
+    }
+
+    .hg-btn--primary:hover:not(:disabled) {
+      background: var(--hg-seal-red-hover);
+      border-color: var(--hg-ink-main);
+      color: #f8f8f5;
+    }
+
+    .hg-btn:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    /* ==========================================================================
+       9. 响应式断点（720px / 480px）
+       ========================================================================== */
+    @media (max-width: 719px) {
+      .hg-panel {
+        padding: 12px 14px;
+        gap: 8px;
+      }
+      .hg-verdict__name {
+        font-size: 28px;
+      }
+      .hg-board__stage {
+        max-width: 300px;
+      }
+      .hg-stat__value {
+        font-size: 20px;
+      }
+      .hg-actions__group {
+        flex-wrap: wrap;
+      }
+    }
+
+    @media (max-width: 479px) {
+      .hg-panel {
+        padding: 10px 12px;
+      }
+      .hg-verdict__name {
+        font-size: 24px;
+      }
+      .hg-verdict__desc {
+        font-size: 12px;
+      }
+      .hg-board__stage {
+        max-width: 256px;
+      }
+      .hg-stats {
+        grid-template-columns: 1fr 1fr;
+      }
+      .hg-stat--cultivation {
+        grid-column: 1 / -1;
+      }
+      .hg-actions__group {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+      .hg-btn {
+        padding: 8px 6px;
+        font-size: 12px;
+        text-align: center;
+      }
+    }
+
+    /* ==========================================================================
+       10. 无障碍减弱动态效果（prefers-reduced-motion: reduce）
+       ========================================================================== */
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ==========================================================================
+       10. 逆天改命开关与成本行（本项目扩展：产物原型未包含道具抵扣入口）
+       ========================================================================== */
+    .hg-reroll-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--hg-font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--hg-ink-gray);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .hg-reroll-toggle input {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--hg-ochre);
+      cursor: pointer;
+    }
+
+    .hg-cost-line {
+      margin: 0;
+      font-size: 12px;
+      color: var(--hg-ochre);
+      text-align: right;
+    }

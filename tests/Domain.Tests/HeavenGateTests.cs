@@ -53,16 +53,40 @@ public sealed class HeavenGateTests
     }
 
     /// <summary>
-    /// 重分配必须总值守恒：改变总值或清空全部灵根的提交一律拒绝。
+    /// 重分配走「散功 2 返 1、灌注 1:1」点数池：透支可分配额度或清空全部灵根一律拒绝。
     /// </summary>
     [Fact]
-    public void AllocationMustPreserveTotalAndKeepOneEffectiveRoot()
+    public void AllocationUsesPointPoolAndKeepsOneEffectiveRoot()
     {
-        var rolled = new LinggenValues(60, 60, 60, 60, 60);
+        var innate = new LinggenValues(60, 60, 60, 60, 60);
 
-        Assert.True(HeavenGateRules.IsValidAllocation(rolled, new LinggenValues(100, 100, 40, 40, 20)));
-        Assert.False(HeavenGateRules.IsValidAllocation(rolled, new LinggenValues(100, 100, 40, 40, 21)));
-        Assert.False(HeavenGateRules.IsValidAllocation(rolled, LinggenValues.Empty));
+        // 金系散到 0 返还 30 点，木系从 60 拉到 90 消耗 30 点，额度刚好用尽。
+        Assert.Equal(0, HeavenGateRules.ResolveRemainingPoints(innate, new LinggenValues(0, 90, 60, 60, 60)), 6);
+        // 只散不灌时全额返还（60 → 0 返还 30）。
+        Assert.Equal(30, HeavenGateRules.ResolveRemainingPoints(innate, new LinggenValues(0, 60, 60, 60, 60)), 6);
+        Assert.True(HeavenGateRules.IsValidAllocation(innate, new LinggenValues(0, 90, 60, 60, 60)));
+
+        // 再把火系也拉到 90 需额外 30 点，已无余额可透支。
+        Assert.True(HeavenGateRules.ResolveRemainingPoints(innate, new LinggenValues(0, 90, 60, 90, 60)) < 0);
+        Assert.False(HeavenGateRules.IsValidAllocation(innate, new LinggenValues(0, 90, 60, 90, 60)));
+
+        // 五系归零没有有效灵根，禁止确认。
+        Assert.False(HeavenGateRules.IsValidAllocation(innate, LinggenValues.Empty));
+    }
+
+    /// <summary>
+    /// 单轴可达上限由其余四轴的让点额度决定，且夹取在 [0, 100]。
+    /// </summary>
+    [Fact]
+    public void MaxReachableValueUsesDonatedPointsFromOtherAxes()
+    {
+        var innate = new LinggenValues(60, 60, 60, 60, 60);
+        // 其余四轴各散到 0，共返还 4 × 30 = 120 点，但单轴封顶 100。
+        var drained = new LinggenValues(60, 0, 0, 0, 0);
+        Assert.Equal(LinggenValues.MaxPointsPerElement,
+            HeavenGateRules.ResolveMaxReachableValue(innate, drained, LinggenElement.Metal));
+        // 全部维持先天值时没有额外额度，上限即当前值。
+        Assert.Equal(60, HeavenGateRules.ResolveMaxReachableValue(innate, innate, LinggenElement.Metal));
     }
 
     /// <summary>

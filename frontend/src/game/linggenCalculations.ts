@@ -1,27 +1,22 @@
 /**
- * 开天门与五行灵根的纯展示计算。
+ * 开天门与五行灵根的纯计算：展示换算 + 阵盘点数池分配。
  *
- * 与领域 `HeavenGateRules` 同口径，但只承担前端展示所需的换算，
+ * 与领域 `HeavenGateRules` 同口径，但只承担前端所需的换算与即时反馈，
  * 不重复实现业务准入判断（能否突破、改命是否成立一律由服务端裁决）。
  */
+import {
+  BOARD_CENTER,
+  BOARD_MAX_RADIUS,
+  LINGGEN_AXES,
+  LINGGEN_AXIS_CAP,
+  LINGGEN_ELEMENT_KEYS,
+  clampPoints,
+  type LinggenElementKey,
+  type LinggenPoints,
+} from './linggenBoard.ts'
 
-/** 五行灵根系别键（与领域 LinggenElement 一一对应）。 */
-export type LinggenElementKey = 'metal' | 'wood' | 'water' | 'fire' | 'earth'
-
-/** 五行固定顺序：金属性起顺时针排布。 */
-export const LINGGEN_ELEMENT_KEYS: readonly LinggenElementKey[] = ['metal', 'wood', 'water', 'fire', 'earth']
-
-/** 单系灵根点数上限（雷达图刻度）。 */
-export const LINGGEN_AXIS_CAP = 100
-
-/** 五行灵根点数形状（与服务端 progression.heavenGate* 透传一致）。 */
-export interface LinggenPoints {
-  metal: number
-  wood: number
-  water: number
-  fire: number
-  earth: number
-}
+export type { LinggenElementKey, LinggenPoints }
+export { LINGGEN_AXIS_CAP, LINGGEN_ELEMENT_KEYS }
 
 /** 叩天门境界等级：该级满修为后必须先开天门取得灵根。 */
 export const HEAVEN_GATE_REALM_LEVEL = 18
@@ -78,4 +73,98 @@ export function linggenCultivationMultiplier(values: LinggenPoints | undefined, 
  */
 export function shouldShowOpenHeavenGate(realmLevel: number, entered: boolean, expFull: boolean): boolean {
   return realmLevel >= HEAVEN_GATE_REALM_LEVEL && !entered && expFull
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 点数池分配模型（阵盘拖拽）
+//
+// 每个灵根有抽取时的先天值 B：低于 B 时按「散功 2 返 1」折半返还点数，
+// 高于 B 时按 1:1 消耗点数。玩家只能在可用额度内调整五行分布。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 单轴净贡献：散功返还记正，灌注消耗记负。 */
+export function axisPointContribution(innateValue: number, currentValue: number): number {
+  return currentValue <= innateValue
+    ? (innateValue - currentValue) * 0.5
+    : -(currentValue - innateValue)
+}
+
+/** 剩余可分配点数（为负表示已透支）。 */
+export function remainingPoints(innate: LinggenPoints, current: LinggenPoints): number {
+  const total = LINGGEN_ELEMENT_KEYS.reduce(
+    (sum, key) => sum + axisPointContribution(innate[key], current[key]),
+    0,
+  )
+  return Math.round(total * 2) / 2
+}
+
+/** 其余四轴让点支持下，该轴可达的最高值。 */
+export function maxReachableValue(
+  innate: LinggenPoints,
+  current: LinggenPoints,
+  axisKey: LinggenElementKey,
+): number {
+  const pool = LINGGEN_ELEMENT_KEYS.reduce(
+    (sum, key) => (key === axisKey ? sum : sum + axisPointContribution(innate[key], current[key])),
+    0,
+  )
+  return Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.floor(current[axisKey] + pool)))
+}
+
+/** 拖拽结果：新分布、剩余点数与三种边界反馈。 */
+export interface AxisDragResult {
+  roots: LinggenPoints
+  remainingPoints: number
+  appliedDelta: number
+  /** 因点数不足未能拉到目标值。 */
+  hitInsufficientBalance: boolean
+  /** 触达 0 或 100 的边界。 */
+  hitBound: 'min' | 'max' | null
+}
+
+/** 把某轴拖到目标值，返回受限后的结果。 */
+export function applyAxisDrag(
+  innate: LinggenPoints,
+  current: LinggenPoints,
+  axisKey: LinggenElementKey,
+  targetValue: number,
+): AxisDragResult {
+  const clampedTarget = clampPoints(targetValue)
+  const before = current[axisKey]
+  const delta = clampedTarget - before
+  const next: LinggenPoints = { ...current }
+  let hitInsufficientBalance = false
+  let hitBound: 'min' | 'max' | null = null
+
+  if (delta > 0) {
+    const reachable = maxReachableValue(innate, current, axisKey)
+    const applied = Math.min(clampedTarget, reachable)
+    next[axisKey] = applied
+    if (applied < clampedTarget) hitInsufficientBalance = true
+    if (applied >= LINGGEN_AXIS_CAP && clampedTarget >= LINGGEN_AXIS_CAP) hitBound = 'max'
+  } else if (delta < 0) {
+    next[axisKey] = clampedTarget
+    if (clampedTarget === 0 && targetValue <= 0) hitBound = 'min'
+  }
+
+  return {
+    roots: next,
+    remainingPoints: remainingPoints(innate, next),
+    appliedDelta: next[axisKey] - before,
+    hitInsufficientBalance,
+    hitBound,
+  }
+}
+
+/** 指针在轴向上的投影值（0~100）。 */
+export function projectPointerToAxis(
+  pointer: { x: number; y: number },
+  axisIndex: number,
+): number {
+  const axis = LINGGEN_AXES[axisIndex]
+  if (!axis) return 0
+  const dx = pointer.x - BOARD_CENTER.x
+  const dy = pointer.y - BOARD_CENTER.y
+  const projected = Math.max(0, dx * axis.unitCos + dy * axis.unitSin)
+  return Math.round((projected / BOARD_MAX_RADIUS) * LINGGEN_AXIS_CAP)
 }
