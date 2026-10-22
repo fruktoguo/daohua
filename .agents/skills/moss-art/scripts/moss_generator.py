@@ -23,6 +23,13 @@ REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", "..", ".."))
 OUTPUT_DIR = os.path.join(REPO_ROOT, "frontend", "src", "assets", "items")
 COMFY_OUTPUT_DIR = r"D:\Tools\AI\ComfyUI-Shared\output"
 
+# Turbo 加速 LoRA（SFT 4-step v2，civitai 3006599 / akhaliq 蒸馏）：官方参数 steps=4 / CFG=1.0 / 强度=1.0，
+# 必须经 LoraLoaderModelOnly 运行时挂载，禁止合并进 bf16 底模权重；一次只挂一个 turbo LoRA。
+TURBO_LORA_NAME = "moss_image_sft_4_steps_lora_v2_600_avg_rank_72_bf16.safetensors"
+TURBO_LORA_DIR = r"D:\Tools\AI\ComfyUI-Shared\models\loras"
+TURBO_STEPS = 4
+TURBO_CFG = 1.0
+
 # 预设系列道具定义
 PRESET_BATCHES = {
     # 副手装备 B 组 (4件套, 2x2 网格)
@@ -937,7 +944,7 @@ def build_layout_prompt(items_spec, summary_caption=None):
     }
     return json.dumps(layout, ensure_ascii=False, indent=2)
 
-def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daohua", aspect_ratio="1:1 (Square)", negative_prompt=None):
+def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daohua", aspect_ratio="1:1 (Square)", negative_prompt=None, turbo=False):
     prompt = json.loads(json.dumps(workflow)) # deepcopy
     
     # Node 4: 正向提示词
@@ -960,6 +967,25 @@ def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daoh
         prompt["16"]["inputs"]["seed"] = seed if seed is not None else random.randint(100000000000000, 999999999999999)
         prompt["16"]["inputs"]["sampler_name"] = "euler"
         prompt["16"]["inputs"]["scheduler"] = "sgm_uniform"
+
+    # Turbo 路线：动态注入 LoraLoaderModelOnly，接管 KSampler 的 model 输入。
+    # 插在 model 输入锚点（而非固定上游节点号），对模板与历史工作流均成立。
+    if turbo:
+        if not os.path.exists(os.path.join(TURBO_LORA_DIR, TURBO_LORA_NAME)):
+            raise FileNotFoundError(f"Turbo LoRA 缺失: {os.path.join(TURBO_LORA_DIR, TURBO_LORA_NAME)}")
+        if "16" not in prompt:
+            raise RuntimeError("工作流缺少 Node 16 (KSampler)，无法注入 Turbo LoRA。")
+        lora_node = {
+            "inputs": {
+                "lora_name": TURBO_LORA_NAME,
+                "strength_model": 1.0,
+                "model": prompt["16"]["inputs"]["model"],
+            },
+            "class_type": "LoraLoaderModelOnly",
+            "_meta": {"title": "MOSS-Image Turbo LoRA (4步加速)"},
+        }
+        prompt["turbo"] = lora_node
+        prompt["16"]["inputs"]["model"] = ["turbo", 0]
         
     # Node 18: SaveImage
     if "18" in prompt:
@@ -1145,14 +1171,24 @@ def main():
     parser.add_argument("--layout", type=str, help="自定义 Layout JSON 文件路径或 JSON 字符串")
     parser.add_argument("--single-entity", type=str, help="单体资产标识符 (如 enemy.tide-spirit 或 building.peak-cottage)，不进行九宫切片")
     parser.add_argument("--category", choices=["monster", "character", "item", "equipment", "ability", "building", "emblem", "scene"], help="资产大类")
-    parser.add_argument("--steps", type=int, default=35, help="推理步数 (推荐 35-45)")
-    parser.add_argument("--cfg", type=float, default=3.5, help="CFG 引导比例 (推荐 3.0-4.0)")
+    parser.add_argument("--steps", type=int, default=None, help="推理步数 (标准 35-45；turbo 默认 4)")
+    parser.add_argument("--cfg", type=float, default=None, help="CFG 引导比例 (标准 3.0-4.0；turbo 默认 1.0)")
+    parser.add_argument("--turbo", action="store_true", help="启用 MOSS-Image Turbo 4步加速 LoRA (CFG 1.0, 强度 1.0, 与标准路线互斥)")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     parser.add_argument("--aspect-ratio", default="1:1 (Square)", help="长宽比: '1:1 (Square)', '16:9 (Landscape)', '4:3'")
     parser.add_argument("--negative", type=str, default=None, help="自定义负向提示词")
     parser.add_argument("--dry-run", action="store_true", help="仅组装提示词，不实际提交")
     args = parser.parse_args()
-    
+
+    # Turbo 路线默认值：steps=4 / CFG=1.0（官方口径），显式传 --steps/--cfg 可覆盖。
+    if args.turbo:
+        steps = args.steps if args.steps is not None else TURBO_STEPS
+        cfg = args.cfg if args.cfg is not None else TURBO_CFG
+    else:
+        steps = args.steps if args.steps is not None else 35
+        cfg = args.cfg if args.cfg is not None else 3.5
+    args.steps, args.cfg = steps, cfg
+
     if not args.batch and not args.layout:
         parser.print_help()
         print("\n[错误] 请指定 --batch 预设批次，或者传入 --layout 结构化 JSON！")
@@ -1221,13 +1257,14 @@ def main():
     print(prompt_str)
     
     if args.dry_run:
-        print(f"\n[DRY RUN] 提示词与布局已组装完毕 (长宽比: {args.aspect_ratio}, 步数: {args.steps}, CFG: {args.cfg})，未提交到 ComfyUI。")
+        turbo_tag = "TURBO 4步" if args.turbo else "标准 35步"
+        print(f"\n[DRY RUN] 提示词与布局已组装完毕 (长宽比: {args.aspect_ratio}, 步数: {args.steps}, CFG: {args.cfg}, 模式: {turbo_tag})，未提交到 ComfyUI。")
         return 0
-        
+
     print("\n正在获取 ComfyUI 最新工作流...")
     wf = get_latest_workflow()
     print("正在向 ComfyUI (127.0.0.1:8188) 提交生图任务...")
-    pid = submit_task(wf, prompt_str, seed=args.seed, steps=args.steps, cfg=args.cfg, prefix=f"daohua-{batch_tag}", aspect_ratio=args.aspect_ratio, negative_prompt=neg_prompt)
+    pid = submit_task(wf, prompt_str, seed=args.seed, steps=args.steps, cfg=args.cfg, prefix=f"daohua-{batch_tag}", aspect_ratio=args.aspect_ratio, negative_prompt=neg_prompt, turbo=args.turbo)
     print(f"任务已排队，Prompt ID: {pid}")
     
     print("正在等待 GPU 推理完成...")
