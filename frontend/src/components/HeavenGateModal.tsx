@@ -509,24 +509,29 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   const anchor = vertexPoint(axis, LINGGEN_AXIS_CAP)
                   const dx = anchor.x - BOARD_CENTER.x
                   const dy = anchor.y - BOARD_CENTER.y
-                  // 顶部金轴需越过刻度文字（100 标签在 y=54），其余轴取 1.12 倍外圈即可。
-                  const outward = dy < -0.5 ? 1.24 : 1.15
+                  // 顶部金轴收紧外扩比并把三行文字整体下压：22px 毛笔字与描边不再触顶被裁。
+                  // 其余四轴取 1.15 倍外圈即可。
+                  const outward = dy < -0.5 ? 1.14 : 1.15
                   const labelX = BOARD_CENTER.x + dx * outward
                   const labelY = BOARD_CENTER.y + dy * outward
+                  // 顶部轴的金字基线额外下移 8px，确保笔画上缘与 text-stroke 完整落在 viewBox 内。
+                  const nameDy = dy < -0.5 ? -6 : -14
+                  const valDy = dy < -0.5 ? 12 : 4
+                  const baseDy = dy < -0.5 ? 26 : 18
                   const isRight = dx > 0.01
                   const isLeft = dx < -0.01
                   const textAnchor = isRight ? 'start' : isLeft ? 'end' : 'middle'
                   const value = hasRolled ? String(roots[axis.key]) : t('insight.heavenGate.undetermined')
                   return (
                     <g key={axis.key} className={`hg-label hg-label--${axis.key}`} data-axis={axis.key}>
-                      <text x={labelX} y={labelY - 14} textAnchor={textAnchor} className="hg-label__name">
+                      <text x={labelX} y={labelY + nameDy} textAnchor={textAnchor} className="hg-label__name">
                         {axis.label}
                       </text>
-                      <text x={labelX} y={labelY + 4} textAnchor={textAnchor} className="hg-label__val">
+                      <text x={labelX} y={labelY + valDy} textAnchor={textAnchor} className="hg-label__val">
                         {value}
                       </text>
                       {hasRolled && (
-                        <text x={labelX} y={labelY + 18} textAnchor={textAnchor} className="hg-label__base">
+                        <text x={labelX} y={labelY + baseDy} textAnchor={textAnchor} className="hg-label__base">
                           {`(初${innate[axis.key]})`}
                         </text>
                       )}

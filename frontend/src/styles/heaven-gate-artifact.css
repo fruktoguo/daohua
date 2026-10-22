@@ -126,9 +126,9 @@
       width: 520px;
       min-width: 520px;
       max-width: 520px;
-      height: 672px;
-      min-height: 672px;
-      max-height: 672px;
+      height: 688px;
+      min-height: 688px;
+      max-height: 688px;
       background-color: var(--hg-paper-surface);
       background-image: var(--hg-modal-grad);
       border: 1.5px solid var(--hg-border-strong);
@@ -307,9 +307,10 @@
     .hg-board {
       position: relative;
       width: 100%;
-      height: 350px;
-      min-height: 350px;
-      max-height: 350px;
+      /* 高度加厚：顶部金轴毛笔字与描边需要额外透气空间，不再贴边裁切 */
+      height: 366px;
+      min-height: 366px;
+      max-height: 366px;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
