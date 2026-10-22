@@ -104,7 +104,8 @@ public sealed class ComputeResultCommitter(
                     claim.PlayerId,
                     deltas,
                     trusted.LastSimulatedAt,
-                    output),
+                    output,
+                    PersistLedger: false),
                 cancellationToken);
             if (!committed.Applied)
                 throw new InvalidOperationException("冷挂机资产事务未提交。");

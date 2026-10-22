@@ -7,6 +7,8 @@
 - 本目录**随时可整体删除**，不产生任何影响：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 - 空库启动永远由权威 `src/Server/Clean/PostgresSchema.cs` 的 `PostgresSchema.Sql` 直建当前版本，不经过本目录。
 - 代码中禁止实现 migration runner，禁止对 本目录的运行时依赖；本地开发启动链（`reset-outdated-players.sh` 经 `dev.sh`）可对本地回环库自动执行，其余场景由人工或运维流程显式执行（如 `psql -f` 或 `docker exec ... psql -f`）。
+- **生产库统一走 `deploy/migrate-prod-db.sh`**（由 `scripts/deploy-prod.sh` 在替换镜像前自动调用）：它强制「停写 → 备份 → 链式迁移 → 标签校验」顺序。禁止在 `daohua-app` / `daohua-compute` 仍运行时手工执行迁移——旧版本进程会把已推进的分段标签写回旧值，新版本进程随即无法加载这些玩家（`section schema 版本不受支持`）。
+- 迁移成功判据不仅是 `platform.schema_version` 达标，还要求 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 无任何一行偏离当前 `SectionCodec.CurrentSchemaVersion`。库版本与存档标签版本是两个独立数字（如库 v41 ↔ 标签 v38），不得互相替代。
 - 若删除本目录且库版本落后：启动门禁照旧报 schema 版本不匹配，由使用者选择重建库（本地开发默认路径）。
 
 ## 本地库升级入口
@@ -69,5 +71,9 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0032_v31_to_v32.sql` | world 分段建筑效果增 `monsterWeakenRatio`（封魔阵怪物削弱，可缺省解码）、组队会话规格增 `MonsterWeakenRatio`，表结构未变，schema_version 写入 32 |
 | `0037_v36_to_v37.sql` | 停服备份后显式执行；旧活跃全量托管会话按已提交检查点归并未耗余量退款并写经济流水，终局 inbox 保留奖励及槽时钟，未初始化行仅结束；会话 JSON 切换在线钱包/离线储备，数据库版本 37、玩家分段仍为 36；事务失败全回滚，重执行不重复退款 |
 | `0038_v37_to_v38.sql` | 新增 `economy.shop_daily_purchases` 系统商店每日限购认领行（与经济事务同事务累加），数据库版本 38、玩家分段与存档标签仍为 36；纯表结构新增，可自动链执行 |
+| `0039_v38_to_v39.sql` | `market.item_stats` 增 reference_price 字段（EMA 成交均价），schema_version 写入 39，存档标签未变 |
+| `0040_v39_to_v40.sql` | loadout 分段新增 consumableTriggers 消耗品触发映射，存档标签推进至 37，schema_version 写入 40 |
+| `0041_v40_to_v41.sql` | progression 分段新增 heavenGate 五行灵根状态，存档标签推进至 38，schema_version 写入 41 |
+| `0042_v41_to_v42.sql` | 放宽 `party_session_inbox.consumed_transaction_id` 约束（允许 NULL，外键改 ON DELETE SET NULL），解绑历史推演流水；`ix_section_flush_ready` 优化为单列 (next_attempt_at) 恢复 HOT；schema_version 写入 42，存档标签未变 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

@@ -187,6 +187,7 @@ public sealed record ShopPurchaseClaim(Guid PlayerId, string OfferId, long DayIn
 /// <param name="Receipts">随事务一并写入的命令幂等回执。</param>
 /// <param name="ParticipationReceipt">随成员资产和分段一并确认的组队会话结算收件箱。</param>
 /// <param name="ShopPurchase">随事务原子认领的系统商店每日限购配额（可空）。</param>
+/// <param name="PersistLedger">是否向不可变金融账本（economy.transactions 与 transaction_lines）持久化流水。高频推演/掉落等内部状态演进置为 false，仅更新余额与分段，从根上杜绝无意义流水撑爆磁盘。</param>
 public sealed record EconomyTransactionRequest(
     Guid TransactionId,
     string IdempotencyKey,
@@ -198,7 +199,8 @@ public sealed record EconomyTransactionRequest(
     IReadOnlyList<SectionWrite>? Sections = null,
     IReadOnlyList<CommandReceipt>? Receipts = null,
     Social.ParticipationInboxReceipt? ParticipationReceipt = null,
-    ShopPurchaseClaim? ShopPurchase = null);
+    ShopPurchaseClaim? ShopPurchase = null,
+    bool PersistLedger = true);
 
 /// <summary>资产事务提交结局。</summary>
 /// <param name="TransactionId">实际落库的事务标识（幂等命中时为已存事务 ID）。</param>

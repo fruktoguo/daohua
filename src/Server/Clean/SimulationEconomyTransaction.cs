@@ -39,10 +39,12 @@ public static class SimulationEconomyTransaction
         ISimulationTransactionIdentity? identity = null)
     {
         var key = $"simulation:{playerId:D}:{result.StateVersion}:{result.To.ToUnixTimeMilliseconds()}";
+        // 挂机推演与掉落属于高频状态演进，资产变动由聚合快照与钱包直接承载，禁止向不可变金融账本（economy.transactions）沉淀流水。
         return new EconomyTransactionRequest(
             identity?.Create(key) ?? Guid.NewGuid(), key, "simulation.reward", playerId,
             result.AssetDeltas.Select(delta => new AssetDelta(delta.PlayerId.Value,
                 delta.Asset.ItemId.Value, delta.Asset.Variant, delta.QuantityDelta)).ToArray(),
-            result.To, JsonSerializer.SerializeToUtf8Bytes(new { result.StateVersion, result.To }));
+            result.To, JsonSerializer.SerializeToUtf8Bytes(new { result.StateVersion, result.To }),
+            PersistLedger: false);
     }
 }

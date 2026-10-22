@@ -61,7 +61,8 @@ public static class PostgresSchema
     /// v40：loadout 分段载荷新增 consumableTriggers 消耗品触发条件映射（可缺省解码为 null/[]，表结构未变）——
     /// 存档标签推进至 v37，玩家八分段无表结构变化。
     /// v41：progression 分段载荷新增 heavenGate 五行灵根状态（可缺省解码为未开天门），存档标签推进至 v38；表结构未变。
-    public const int Version = 41;
+    /// v42：放宽 party_session_inbox.consumed_transaction_id 约束（允许 NULL，解除结算空流水绑定；外键加 ON DELETE SET NULL），ix_section_flush_ready 优化为单列 (next_attempt_at) 恢复 HOT 更新——存档载荷与标签未变。
+    public const int Version = 42;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -413,7 +414,7 @@ public static class PostgresSchema
         last_error varchar(512) NULL,
         updated_at timestamptz NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS ix_section_flush_ready ON platform.section_flush_queue(next_attempt_at, lease_until);
+    CREATE INDEX IF NOT EXISTS ix_section_flush_ready ON platform.section_flush_queue(next_attempt_at);
     CREATE INDEX IF NOT EXISTS ix_section_flush_player ON platform.section_flush_queue(player_id, section_kind, state_version DESC);
 
     CREATE TABLE IF NOT EXISTS platform.integration_outbox (
@@ -555,9 +556,9 @@ public static class PostgresSchema
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL,
         consumed_at timestamptz NULL,
-        consumed_transaction_id uuid NULL REFERENCES economy.transactions(transaction_id),
+        consumed_transaction_id uuid NULL REFERENCES economy.transactions(transaction_id) ON DELETE SET NULL,
         PRIMARY KEY (session_id, player_id, sequence),
-        CHECK ((consumed_at IS NULL) = (consumed_transaction_id IS NULL))
+        CONSTRAINT ck_party_session_inbox_consumed CHECK (consumed_at IS NOT NULL OR consumed_transaction_id IS NULL)
     );
     CREATE INDEX IF NOT EXISTS ix_party_session_inbox_pending
         ON social.party_session_inbox(player_id, created_at, session_id, sequence) WHERE consumed_at IS NULL;

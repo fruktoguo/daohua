@@ -37,7 +37,7 @@ public sealed class ParticipationAdapterIntegrationTests
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         var checkpoint = (await fixture.Store.LoadAsync(fixture.SessionId))!;
         Assert.Equal(2, checkpoint.Version);
-        Assert.Equal(6L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         foreach (var player in fixture.Players)
         {
             Assert.Empty(await fixture.Store.LoadPendingAsync(player));
@@ -47,7 +47,7 @@ public sealed class ParticipationAdapterIntegrationTests
         var afterFirst = fixture.Players.ToDictionary(player => player, fixture.RewardSnapshot);
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         Assert.Equal(checkpoint.Version, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
-        Assert.Equal(6L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         foreach (var player in fixture.Players) Assert.Equal(afterFirst[player], fixture.RewardSnapshot(player));
 
         var offline = fixture.Players[2];
@@ -65,14 +65,14 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Equal(beforeReturn.Version, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
         Assert.Equal(4, returned.State.Actions[0].Participation!.AppliedSequence);
         Assert.Empty(await fixture.Store.LoadPendingAsync(offline));
-        Assert.Equal(12L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         var waves = fixture.Players.Select(player => fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].CompletedRepeats).ToArray();
         Assert.All(waves, wave => Assert.Equal(waves[0], wave));
         var returnedRewards = fixture.RewardSnapshot(offline);
         await fixture.Adapter.LoadAsync(offline);
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
         Assert.Equal(returnedRewards, fixture.RewardSnapshot(offline));
-        Assert.Equal(12L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
 
         await fixture.Runtime.EndAsync(fixture.SessionId, fixture.Clock.UtcNow, "member-unready");
         var terminal = new Dictionary<Guid, ActionParticipationMemberSettlement>();
@@ -82,7 +82,7 @@ public sealed class ParticipationAdapterIntegrationTests
             terminal[player] = JsonSerializer.Deserialize<ActionParticipationMemberSettlement>(item.PayloadJson, PersistenceJson.Options)!;
         }
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
-        Assert.Equal(15L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         foreach (var player in fixture.Players)
         {
             var state = fixture.Adapter.TryGetLoaded(player)!.State;
@@ -96,7 +96,7 @@ public sealed class ParticipationAdapterIntegrationTests
             Assert.Empty(await fixture.Store.LoadPendingAsync(player));
         }
         await fixture.Adapter.AdvanceAllAsync(fixture.Clock.UtcNow);
-        Assert.Equal(15L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
     }
 
     /// <summary>赶路先领取会话终局，不能把参与引用挂在队尾并阻断后续操作。</summary>
@@ -137,7 +137,7 @@ public sealed class ParticipationAdapterIntegrationTests
             .AcquireAsync(player, Guid.NewGuid(), TimeSpan.FromSeconds(45)));
         await Assert.ThrowsAsync<PlayerOwnershipLostException>(async () =>
             await fixture.Adapter.MutateOwnedAsync(player, aggregate => aggregate.SetQueuePaused(true)));
-        Assert.Equal(3L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         Assert.Single(await fixture.Store.LoadPendingAsync(player));
         Assert.Equal(1, fixture.Ecs.ExportSnapshot(player).State.Actions[0].Participation!.AppliedSequence);
     }
@@ -178,7 +178,7 @@ public sealed class ParticipationAdapterIntegrationTests
             fixture.SessionId, fixture.Players[0], Guid.NewGuid().ToString("D"));
         var errors = await Assert.ThrowsAsync<AggregateException>(async () => await fixture.Adapter.AdvanceAllAsync(firstTarget));
         Assert.Contains(errors.InnerExceptions, error => error.Message.Contains(fixture.Players[0].ToString("D"), StringComparison.Ordinal));
-        Assert.Equal(5L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         Assert.Equal(1, fixture.Adapter.TryGetLoaded(fixture.Players[0])!.State.Actions[0].Participation!.AppliedSequence);
         foreach (var player in fixture.Players.Skip(1))
             Assert.Equal(2, fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation!.AppliedSequence);
@@ -193,7 +193,7 @@ public sealed class ParticipationAdapterIntegrationTests
         var personalAfter = fixture.Adapter.TryGetLoaded(personalPlayer)!;
         Assert.Equal(secondTarget, personalAfter.LastSimulatedAt);
         Assert.Equal(7, personalAfter.State.Actions[0].CompletedRepeats);
-        Assert.Equal(5L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
     }
 
     /// <summary>开场已消费但参与引用丢失时，退休行动的终局仍按收件箱序号续接并保留个人队列。</summary>
@@ -204,7 +204,7 @@ public sealed class ParticipationAdapterIntegrationTests
         var player = fixture.Players[0];
         Assert.Equal(1, fixture.Adapter.TryGetLoaded(player)!.State.Actions[0].Participation!.AppliedSequence);
         Assert.Empty(await fixture.Store.LoadPendingAsync(player));
-        Assert.Equal(3L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         await fixture.Adapter.MutateOwnedAsync(player, aggregate => aggregate.RemoveAction(aggregate.Actions[0].Id));
         await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var row = (await fixture.Store.LoadAsync(fixture.SessionId))!;
@@ -224,12 +224,12 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Equal(document.Expedition!.PlayerHitpoints, restored.State.Combat.Hitpoints);
         Assert.Equal(document.Expedition.PlayerManapoints, restored.State.Combat.Manapoints);
         Assert.Empty(await fixture.Store.LoadPendingAsync(player));
-        Assert.Equal(4L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         await fixture.Adapter.RemoveAsync(player, flush: true, offlineSince: null);
         var reloaded = await fixture.Adapter.LoadAsync(player);
         Assert.Equal(restored.State.Progression.CombatExperience, reloaded.State.Progression.CombatExperience);
         Assert.Equal(fixture.PersonalActions[player], Assert.Single(reloaded.State.Actions).Id);
-        Assert.Equal(4L, await fixture.SettlementTransactionCountAsync());
+        Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
     }
 
     /// <summary>终局先被对账消费后，过时的开场投递不能重新插入永不结束的参与引用。</summary>
@@ -250,7 +250,7 @@ public sealed class ParticipationAdapterIntegrationTests
                 Assert.Equal(fixture.PersonalActions[player], Assert.Single(state.Actions).Id);
                 Assert.Empty(await fixture.Store.LoadPendingAsync(player));
             }
-            Assert.Equal(6L, await fixture.SettlementTransactionCountAsync());
+            Assert.Equal(0L, await fixture.SettlementTransactionCountAsync());
         }
         finally
         {

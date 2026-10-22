@@ -30,7 +30,8 @@ public sealed class ComputeTransactionTests
         Assert.Equal(ComputeApplyOutcome.Applied, await fixture.CommitAsync());
         Assert.True((long)(await fixture.ScalarAsync("SELECT state_version FROM game.player_state_heads WHERE player_id = $1", fixture.PlayerId))! > fixture.Request.SourceStateVersion);
         Assert.Equal(0d, await fixture.ScalarAsync("SELECT quantity FROM economy.player_asset_balances WHERE player_id = $1 AND asset_id = 'item.ningxue-grass'", fixture.PlayerId));
-        Assert.Equal(1L, await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE transaction_id = $1", fixture.Claim.JobId));
+        // 冷挂机补算收益直接落钱包与分段，禁止向不可变金融账本（economy.transactions）沉淀流水
+        Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE transaction_id = $1", fixture.Claim.JobId));
         Assert.Equal("succeeded", await fixture.ScalarAsync("SELECT status FROM platform.compute_jobs WHERE job_id = $1", fixture.Claim.JobId));
     }
 
@@ -212,7 +213,8 @@ public sealed class ComputeTransactionTests
         Assert.Equal(ComputeApplyOutcome.Applied, await fixture.CommitAsync());
         Assert.Equal("succeeded",
             await fixture.ScalarAsync("SELECT status FROM platform.compute_jobs WHERE job_id = $1", fixture.Claim.JobId));
-        Assert.Equal(1L,
+        // 同样验证冷挂机补算不沉淀无意义推演流水
+        Assert.Equal(0L,
             await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE transaction_id = $1", fixture.Claim.JobId));
     }
 

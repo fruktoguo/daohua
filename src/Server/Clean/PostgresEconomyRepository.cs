@@ -188,51 +188,54 @@ public sealed class PostgresEconomyRepository(
             throw new ArgumentException("合并后的资产变更量必须为有限非零 double。", nameof(request));
         var requestHash = ComputeRequestHash(request, deltas);
 
-        var inserted = false;
-        await using (var insert = new NpgsqlCommand("""
-            INSERT INTO economy.transactions
-                (transaction_id, idempotency_key, request_hash, transaction_type, actor_id, result_payload, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (idempotency_key) DO NOTHING
-            RETURNING transaction_id
-            """, connection, transaction))
+        if (request.PersistLedger)
         {
-            insert.Parameters.Add(new NpgsqlParameter { Value = request.TransactionId });
-            insert.Parameters.Add(new NpgsqlParameter { Value = request.IdempotencyKey });
-            insert.Parameters.Add(new NpgsqlParameter { Value = requestHash });
-            insert.Parameters.Add(new NpgsqlParameter { Value = request.TransactionType });
-            insert.Parameters.Add(new NpgsqlParameter { Value = request.ActorId });
-            insert.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = request.ResultPayload.IsEmpty ? [] : request.ResultPayload.ToArray() });
-            insert.Parameters.Add(new NpgsqlParameter { Value = occurredAt });
-            inserted = await insert.ExecuteScalarAsync(cancellationToken) is Guid;
-        }
-
-        if (!inserted)
-        {
-            await using var existing = new NpgsqlCommand("""
-                SELECT transaction_id, request_hash, transaction_type, actor_id, result_payload, created_at
-                FROM economy.transactions
-                WHERE idempotency_key = $1
-                FOR SHARE
-                """, connection, transaction);
-            existing.Parameters.Add(new NpgsqlParameter { Value = request.IdempotencyKey });
-            Guid transactionId;
-            byte[] payload;
-            DateTimeOffset committedAt;
-            await using (var reader = await existing.ExecuteReaderAsync(cancellationToken))
+            var inserted = false;
+            await using (var insert = new NpgsqlCommand("""
+                INSERT INTO economy.transactions
+                    (transaction_id, idempotency_key, request_hash, transaction_type, actor_id, result_payload, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (idempotency_key) DO NOTHING
+                RETURNING transaction_id
+                """, connection, transaction))
             {
-                if (!await reader.ReadAsync(cancellationToken))
-                    throw new InvalidOperationException("幂等事务已存在但无法读取结果。");
-                transactionId = reader.GetGuid(0);
-                if (!string.Equals(reader.GetString(1), requestHash, StringComparison.Ordinal)
-                    || !string.Equals(reader.GetString(2), request.TransactionType, StringComparison.Ordinal)
-                    || reader.GetGuid(3) != request.ActorId)
-                    throw new EconomyIdempotencyConflictException(request.IdempotencyKey);
-                payload = reader.GetFieldValue<byte[]>(4);
-                committedAt = reader.GetFieldValue<DateTimeOffset>(5);
+                insert.Parameters.Add(new NpgsqlParameter { Value = request.TransactionId });
+                insert.Parameters.Add(new NpgsqlParameter { Value = request.IdempotencyKey });
+                insert.Parameters.Add(new NpgsqlParameter { Value = requestHash });
+                insert.Parameters.Add(new NpgsqlParameter { Value = request.TransactionType });
+                insert.Parameters.Add(new NpgsqlParameter { Value = request.ActorId });
+                insert.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = request.ResultPayload.IsEmpty ? [] : request.ResultPayload.ToArray() });
+                insert.Parameters.Add(new NpgsqlParameter { Value = occurredAt });
+                inserted = await insert.ExecuteScalarAsync(cancellationToken) is Guid;
             }
-            // 幂等命中：不写任何行，结果随调用方事务边界一并提交。
-            return new EconomyTransactionResult(transactionId, request.IdempotencyKey, true, true, committedAt, payload);
+
+            if (!inserted)
+            {
+                await using var existing = new NpgsqlCommand("""
+                    SELECT transaction_id, request_hash, transaction_type, actor_id, result_payload, created_at
+                    FROM economy.transactions
+                    WHERE idempotency_key = $1
+                    FOR SHARE
+                    """, connection, transaction);
+                existing.Parameters.Add(new NpgsqlParameter { Value = request.IdempotencyKey });
+                Guid transactionId;
+                byte[] payload;
+                DateTimeOffset committedAt;
+                await using (var reader = await existing.ExecuteReaderAsync(cancellationToken))
+                {
+                    if (!await reader.ReadAsync(cancellationToken))
+                        throw new InvalidOperationException("幂等事务已存在但无法读取结果。");
+                    transactionId = reader.GetGuid(0);
+                    if (!string.Equals(reader.GetString(1), requestHash, StringComparison.Ordinal)
+                        || !string.Equals(reader.GetString(2), request.TransactionType, StringComparison.Ordinal)
+                        || reader.GetGuid(3) != request.ActorId)
+                        throw new EconomyIdempotencyConflictException(request.IdempotencyKey);
+                    payload = reader.GetFieldValue<byte[]>(4);
+                    committedAt = reader.GetFieldValue<DateTimeOffset>(5);
+                }
+                // 幂等命中：不写任何行，结果随调用方事务边界一并提交。
+                return new EconomyTransactionResult(transactionId, request.IdempotencyKey, true, true, committedAt, payload);
+            }
         }
 
         if (request.ParticipationReceipt is { } participationReceipt)
@@ -254,32 +257,35 @@ public sealed class PostgresEconomyRepository(
         for (var i = 0; i < ordered.Length; i++)
             committedBalances[i] = await ApplyBalanceDeltaAsync(connection, transaction, ordered[i], occurredAt, cancellationToken);
 
-        // 流水行按请求原始次序一次写入：unnest+ordinality 保证 line_no 与请求行序一致。
-        var linePlayers = new Guid[request.Deltas.Count];
-        var lineAssets = new string[request.Deltas.Count];
-        var lineVariants = new string[request.Deltas.Count];
-        var lineAmounts = new double[request.Deltas.Count];
-        for (var i = 0; i < request.Deltas.Count; i++)
+        // 流水行仅在沉淀金融账本且存在增量时写入：unnest+ordinality 保证 line_no 与请求行序一致。
+        if (request.PersistLedger && request.Deltas.Count > 0)
         {
-            var delta = request.Deltas[i];
-            linePlayers[i] = delta.PlayerId;
-            lineAssets[i] = delta.AssetId;
-            lineVariants[i] = delta.Variant;
-            lineAmounts[i] = delta.Delta;
-        }
-        await using (var lines = new NpgsqlCommand("""
-            INSERT INTO economy.transaction_lines
-                (transaction_id, line_no, player_id, asset_id, variant, delta)
-            SELECT $1, (line.ord - 1)::smallint, line.player_id, line.asset_id, line.variant, line.delta
-            FROM unnest($2, $3, $4, $5) WITH ORDINALITY AS line(player_id, asset_id, variant, delta, ord)
-            """, connection, transaction))
-        {
-            lines.Parameters.Add(new NpgsqlParameter { Value = request.TransactionId });
-            lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid, Value = linePlayers });
-            lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar, Value = lineAssets });
-            lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar, Value = lineVariants });
-            lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Double, Value = lineAmounts });
-            await lines.ExecuteNonQueryAsync(cancellationToken);
+            var linePlayers = new Guid[request.Deltas.Count];
+            var lineAssets = new string[request.Deltas.Count];
+            var lineVariants = new string[request.Deltas.Count];
+            var lineAmounts = new double[request.Deltas.Count];
+            for (var i = 0; i < request.Deltas.Count; i++)
+            {
+                var delta = request.Deltas[i];
+                linePlayers[i] = delta.PlayerId;
+                lineAssets[i] = delta.AssetId;
+                lineVariants[i] = delta.Variant;
+                lineAmounts[i] = delta.Delta;
+            }
+            await using (var lines = new NpgsqlCommand("""
+                INSERT INTO economy.transaction_lines
+                    (transaction_id, line_no, player_id, asset_id, variant, delta)
+                SELECT $1, (line.ord - 1)::smallint, line.player_id, line.asset_id, line.variant, line.delta
+                FROM unnest($2, $3, $4, $5) WITH ORDINALITY AS line(player_id, asset_id, variant, delta, ord)
+                """, connection, transaction))
+            {
+                lines.Parameters.Add(new NpgsqlParameter { Value = request.TransactionId });
+                lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid, Value = linePlayers });
+                lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar, Value = lineAssets });
+                lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar, Value = lineVariants });
+                lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Double, Value = lineAmounts });
+                await lines.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         await PostgresSectionRepository.EnqueueInTransactionAsync(connection, transaction,
@@ -294,7 +300,7 @@ public sealed class PostgresEconomyRepository(
             consume.Parameters.AddWithValue(consumedReceipt.PlayerId);
             consume.Parameters.AddWithValue(consumedReceipt.Sequence);
             consume.Parameters.AddWithValue(occurredAt);
-            consume.Parameters.AddWithValue(request.TransactionId);
+            consume.Parameters.Add(new NpgsqlParameter { Value = request.PersistLedger ? request.TransactionId : DBNull.Value });
             if (await consume.ExecuteNonQueryAsync(cancellationToken) != 1)
                 throw new InvalidOperationException("组队会话结算收件箱消费确认失败，拒绝提交成员状态与资产。");
         }
