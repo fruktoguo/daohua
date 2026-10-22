@@ -1270,5 +1270,8 @@ public sealed class EcsAdapterBoundaryTests
         public ValueTask<int> CountOfflineIdlePlayersAsync(
             DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(0);
+        public ValueTask<OfflinePlayerCounts> CountOfflinePlayersAsync(
+            DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(new OfflinePlayerCounts(0, 0));
     }
 }

@@ -78,6 +78,11 @@ public sealed record PartySessionRecord(
 /// <param name="PartyId">原队伍 ID。</param>
 public sealed record PartyMemberEviction(Guid PlayerId, Guid PartyId);
 
+/// <summary>离线修士统计结果（总离线与48小时内挂机收益中修士）。</summary>
+/// <param name="TotalOffline">总离线修士数（有效注册且非在线、非封禁）。</param>
+/// <param name="IdleOffline">48小时收益窗口内离线挂机修士数。</param>
+public readonly record struct OfflinePlayerCounts(int TotalOffline, int IdleOffline);
+
 /// <summary>待处理的队伍邀请。</summary>
 /// <param name="PartyId">邀请方队伍。</param>
 /// <param name="InviterId">邀请人玩家 ID。</param>
@@ -333,6 +338,11 @@ public interface ISocialRepository
     /// 统计当前离线挂机修士人数（offline_since >= cutoff 且 presence &lt;&gt; 'suspended'），并排除已在线的玩家集合。
     /// </summary>
     ValueTask<int> CountOfflineIdlePlayersAsync(DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 统计当前离线修士总人数与48小时离线挂机人数（排除当前在线与被封禁修士）。
+    /// </summary>
+    ValueTask<OfflinePlayerCounts> CountOfflinePlayersAsync(DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default);
 }
 
 /// <summary>传音消息持久化边界。</summary>

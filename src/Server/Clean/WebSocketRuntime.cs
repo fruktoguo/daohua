@@ -672,7 +672,7 @@ public static class WebSocketEndpoint
                             ? runtime.CountNodeDuelCombatTeams(playerState.World.NodeId)
                             : 0;
                         await QueueJsonAsync(session, WireMessageType.Pong, envelope.RequestId,
-                            new PongResponse(DateTimeOffset.UtcNow, pongStats.OnlineCount, pongStats.OfflineIdleCount, nodeDuelTeams),
+                            new PongResponse(DateTimeOffset.UtcNow, pongStats.OnlineCount, pongStats.OfflineIdleCount, nodeDuelTeams, pongStats.OfflineCount),
                             cancellationToken);
                         break;
                     case WireMessageType.ActionIntent:

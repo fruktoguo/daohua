@@ -532,7 +532,8 @@ input[type="checkbox"] {
   box-shadow: 0 0 6px rgba(114, 169, 140, 0.85);
 }
 
-.connection-pill--online .connection-pill-count {
+.connection-pill--online .connection-pill-count,
+.connection-pill--online .connection-pill-item--online .connection-pill-num {
   color: var(--jade);
 }
 
@@ -554,6 +555,44 @@ input[type="checkbox"] {
 .connection-pill-count {
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+.connection-pill-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.connection-pill-num {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.connection-pill-item--online .connection-pill-num {
+  color: var(--jade);
+}
+
+.connection-pill-item--offline .connection-pill-num {
+  color: var(--text-dim);
+}
+
+.connection-pill-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: -0.02em;
+}
+
+.connection-pill-sep {
+  color: var(--text-faint);
+  font-size: 10px;
+  user-select: none;
+  padding: 0 1px;
+}
+
+@media (max-width: 420px) {
+  .connection-pill-tag {
+    display: none;
+  }
 }
 
 .connection-status-tooltip {
@@ -584,6 +623,30 @@ input[type="checkbox"] {
   font-family: var(--font-number);
   font-weight: 600;
   font-size: 11px;
+}
+
+.connection-status-tooltip-divider {
+  height: 1px;
+  background: rgba(201, 180, 109, 0.2);
+  margin: 3px 0;
+}
+
+.connection-status-tooltip-row--sub {
+  padding-left: 8px;
+  opacity: 0.85;
+}
+
+.connection-status-tooltip-row--sub .connection-status-tooltip-label,
+.connection-status-tooltip-row--sub .connection-status-tooltip-value {
+  font-size: 10px;
+}
+
+.connection-status-tooltip-value--online {
+  color: var(--jade);
+}
+
+.connection-status-tooltip-value--total {
+  color: var(--gold-bright);
 }
 .realm-progress {
   position: relative;

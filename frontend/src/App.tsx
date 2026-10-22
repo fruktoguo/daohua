@@ -639,6 +639,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   const connection = useGameStore(state => state.connection)
   const latencyMs = useGameStore(state => state.latencyMs)
   const onlineCount = useGameStore(state => state.onlineCount)
+  const offlineCount = useGameStore(state => state.offlineCount)
   const offlineIdleCount = useGameStore(state => state.offlineIdleCount)
   const setActiveTab = useUiStore(state => state.setActiveTab)
   const realmProgress = useMemo(() => calculateRealmProgress(experience ?? 0, realmLevel), [realmLevel, experience])
@@ -655,8 +656,9 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
     : latencyMs !== null
       ? t('app.topbar.latency', { ms: latencyMs })
       : '-'
-  const hasStats = onlineCount !== null || offlineIdleCount !== null
-  const totalCount = (onlineCount ?? 0) + (offlineIdleCount ?? 0)
+  const effectiveOffline = offlineCount ?? offlineIdleCount
+  const hasStats = onlineCount !== null || effectiveOffline !== null
+  const totalCount = (onlineCount ?? 0) + (effectiveOffline ?? 0)
   const connectionTooltip = (
     <div className="connection-status-tooltip">
       <div className="connection-status-tooltip-row">
@@ -665,11 +667,28 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
       </div>
       <div className="connection-status-tooltip-row">
         <span className="connection-status-tooltip-label">{t('app.topbar.onlineCountLabel')}</span>
-        <strong className="connection-status-tooltip-value">{onlineCount !== null ? onlineCount : '-'}</strong>
+        <strong className="connection-status-tooltip-value connection-status-tooltip-value--online">
+          {onlineCount !== null ? t('app.topbar.countPerson', { count: onlineCount }) : '-'}
+        </strong>
       </div>
       <div className="connection-status-tooltip-row">
-        <span className="connection-status-tooltip-label">{t('app.topbar.offlineIdleCountLabel')}</span>
-        <strong className="connection-status-tooltip-value">{offlineIdleCount !== null ? offlineIdleCount : '-'}</strong>
+        <span className="connection-status-tooltip-label">{t('app.topbar.offlineCountLabel')}</span>
+        <strong className="connection-status-tooltip-value">
+          {effectiveOffline !== null ? t('app.topbar.countPerson', { count: effectiveOffline }) : '-'}
+        </strong>
+      </div>
+      {offlineIdleCount !== null && offlineCount !== null && offlineIdleCount !== offlineCount && (
+        <div className="connection-status-tooltip-row connection-status-tooltip-row--sub">
+          <span className="connection-status-tooltip-label">{t('app.topbar.offlineIdleCountLabel')}</span>
+          <span className="connection-status-tooltip-value">{t('app.topbar.countPerson', { count: offlineIdleCount })}</span>
+        </div>
+      )}
+      <div className="connection-status-tooltip-divider" />
+      <div className="connection-status-tooltip-row connection-status-tooltip-row--total">
+        <span className="connection-status-tooltip-label">{t('app.topbar.totalPlayerCountLabel')}</span>
+        <strong className="connection-status-tooltip-value connection-status-tooltip-value--total">
+          {hasStats ? t('app.topbar.countPerson', { count: totalCount }) : '-'}
+        </strong>
       </div>
     </div>
   )
@@ -698,7 +717,15 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
                 onMouseEnter={() => gameClient.pingNow()}
               >
                 <span className="connection-pill-indicator" />
-                <span className="connection-pill-count">{hasStats ? totalCount : '-'}</span>
+                <span className="connection-pill-item connection-pill-item--online" title={t('app.topbar.onlineCountLabel')}>
+                  <span className="connection-pill-num">{onlineCount !== null ? onlineCount : '-'}</span>
+                  <span className="connection-pill-tag">{t('app.topbar.presenceOnlineTag')}</span>
+                </span>
+                <span className="connection-pill-sep" aria-hidden="true">·</span>
+                <span className="connection-pill-item connection-pill-item--offline" title={t('app.topbar.offlineCountLabel')}>
+                  <span className="connection-pill-num">{effectiveOffline !== null ? effectiveOffline : '-'}</span>
+                  <span className="connection-pill-tag">{t('app.topbar.presenceOfflineTag')}</span>
+                </span>
               </span>
             </FloatingTooltip>
           </div>

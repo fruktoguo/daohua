@@ -129,6 +129,8 @@ export interface PresenceStatsDto {
   offlineIdleCount: number
   /** 当前节点开启斗法并且正在战斗的队伍总数 */
   nodeDuelCombatTeamCount?: number
+  /** 当前离线修士总人数（排除当前在线与被封禁修士） */
+  offlineCount?: number
 }
 
 /** 心跳应答 Pong 载荷 */
@@ -141,6 +143,8 @@ export interface PongResponse {
   offlineIdleCount?: number
   /** 当前节点开启斗法并且正在战斗的队伍总数 */
   nodeDuelCombatTeamCount?: number
+  /** 当前离线修士总人数 */
+  offlineCount?: number
 }
 
 /** HelloAck 握手应答载荷 */

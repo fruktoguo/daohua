@@ -890,30 +890,44 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     /// <inheritdoc />
     public async ValueTask<int> CountOfflineIdlePlayersAsync(DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
     {
+        var counts = await CountOfflinePlayersAsync(cutoff, onlinePlayerIds, cancellationToken);
+        return counts.IdleOffline;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<OfflinePlayerCounts> CountOfflinePlayersAsync(DateTimeOffset cutoff, IReadOnlyCollection<Guid> onlinePlayerIds, CancellationToken cancellationToken = default)
+    {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var hasOnline = onlinePlayerIds.Count > 0;
         var sql = hasOnline
             ? """
-              SELECT count(*)
-              FROM game.player_projection
-              WHERE presence <> 'suspended'
-                AND offline_since IS NOT NULL
-                AND offline_since >= $1
-                AND NOT (player_id = ANY($2))
+              SELECT
+                  count(*) FILTER (WHERE NOT (p.player_id = ANY($2))),
+                  count(*) FILTER (WHERE j.offline_since IS NOT NULL AND j.offline_since >= $1 AND NOT (p.player_id = ANY($2)))
+              FROM identity.players p
+              LEFT JOIN game.player_projection j ON j.player_id = p.player_id AND j.presence <> 'suspended'
+              WHERE p.status = 1
               """
             : """
-              SELECT count(*)
-              FROM game.player_projection
-              WHERE presence <> 'suspended'
-                AND offline_since IS NOT NULL
-                AND offline_since >= $1
+              SELECT
+                  count(*),
+                  count(*) FILTER (WHERE j.offline_since IS NOT NULL AND j.offline_since >= $1)
+              FROM identity.players p
+              LEFT JOIN game.player_projection j ON j.player_id = p.player_id AND j.presence <> 'suspended'
+              WHERE p.status = 1
               """;
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = cutoff });
         if (hasOnline)
             command.Parameters.Add(new NpgsqlParameter { Value = onlinePlayerIds.ToArray() });
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is long count ? (int)count : Convert.ToInt32(result);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            var total = reader.GetInt64(0);
+            var idle = reader.GetInt64(1);
+            return new OfflinePlayerCounts((int)total, (int)idle);
+        }
+        return new OfflinePlayerCounts(0, 0);
     }
 
     /// <summary>
