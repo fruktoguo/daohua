@@ -1799,6 +1799,8 @@
 
 /* ================= 角色（固定 3:4 竖向尺寸，绝不拉扁） ================= */
 .arena-actor {
+  --actor-base-width: 96px;
+  --actor-base-height: 184px;
   --arena-hit-return: 3px;
   --arena-hit-settle: -2px;
   --arena-hit-shift: -7px;
@@ -1814,8 +1816,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  width: 96px;
-  gap: 3px;
+  width: calc(var(--actor-base-width) * var(--arena-scale, 1));
+  height: calc(var(--actor-base-height) * var(--arena-scale, 1));
   justify-content: center;
   align-items: center;
   overflow: visible;
@@ -1825,8 +1827,26 @@
   box-shadow: none;
   padding: 0;
   cursor: pointer;
-  transform: translateZ(0);
   flex-shrink: 0;
+}
+
+.arena-actor-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--actor-base-width, 96px);
+  height: var(--actor-base-height, 184px);
+  transform: translate(-50%, -50%) scale(var(--arena-scale, 1));
+  transform-origin: center center;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 3px;
+  overflow: visible;
+  pointer-events: auto;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
 }
 
 .arena-actor:focus-visible {
@@ -1867,7 +1887,8 @@
 }
 
 .arena-overhead>strong {
-  overflow: visible;
+  overflow: hidden;
+  max-width: 100%;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Arial Rounded MT Bold", sans-serif;
   font-size: 11px;
@@ -4115,6 +4136,37 @@
   min-width: max-content;
 }
 
+/* ================= 横屏紧凑高度响应式：低高度视口优化战场高度让渡 ================= */
+@media (min-width: 761px) and (max-height: 760px) {
+  .combat-slot-tray {
+    --item-slot-size: 52px;
+    --item-tile-size: 52px;
+    padding: 16px 0;
+  }
+  .expedition-duel {
+    grid-template-rows: minmax(180px, 1fr) auto;
+  }
+  .combat-arena-field {
+    padding: 6px clamp(8px, 2vw, 20px) 6px;
+    gap: clamp(8px, 2vw, 24px);
+  }
+}
+
+@media (min-width: 761px) and (max-height: 640px) {
+  .combat-slot-tray {
+    --item-slot-size: 44px;
+    --item-tile-size: 44px;
+    padding: 10px 0;
+  }
+  .expedition-duel {
+    grid-template-rows: minmax(160px, 1fr) auto;
+  }
+  .combat-arena-field {
+    padding: 4px clamp(6px, 1.5vw, 16px) 4px;
+    gap: clamp(6px, 1.5vw, 16px);
+  }
+}
+
 @media (max-width: 1200px) {
   .world-map-layout {
     grid-template-columns: minmax(0, 1fr) 230px;
@@ -4217,6 +4269,15 @@
   /* 角色保持原版竖向卡片样式、整体缩小一档，纵列下多个角色才站得下 */
   .arena-actor {
     width: 60px;
+    height: auto;
+    gap: 2px;
+  }
+
+  .arena-actor-card {
+    position: static;
+    width: 100%;
+    height: auto;
+    transform: none;
     gap: 2px;
   }
 

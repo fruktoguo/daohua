@@ -25,6 +25,7 @@ import { useCombatVfx } from '../vfx/useCombatVfx'
 import { StatGlyph } from './StatGlyph'
 import { useUiStore } from '../uiStore'
 import { COMBAT_RESOURCE_EFFECT_LIMIT, collectScheduledCombatEvents, combatHitDelayMilliseconds } from '../game/combatFeedback'
+import { computeArenaFormationScale } from '../game/combatScale'
 
 /** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名；传入 world+maps 时按当前驻留地点本地化 */
 function resolveQueueEntryDisplayName(
@@ -1195,45 +1196,47 @@ function ArenaActor({
       role={interactive ? 'button' : undefined}
       tabIndex={interactive && visible ? 0 : -1}
     >
-      <header className="arena-overhead">
-        <strong>{name || '\u00a0'}</strong>
-        <div className="arena-vitals">
-          <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} recentEvents={recentEvents} />
-          <ArenaResource actorKey={actorKey} frozen={hp <= 0} max={maxMp} tone="mp" value={mp} />
-          {threat != null && (
-            <span aria-label={t('combat.arena.threatAria', { n: formatInteger(threat) })} className="arena-threat">
-              <i aria-hidden="true">{t('combat.arena.threatGlyph')}</i>
-              <b><UnitNumber disableTooltip value={threat} /></b>
+      <div className="arena-actor-card">
+        <header className="arena-overhead">
+          <strong>{name || '\u00a0'}</strong>
+          <div className="arena-vitals">
+            <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} recentEvents={recentEvents} />
+            <ArenaResource actorKey={actorKey} frozen={hp <= 0} max={maxMp} tone="mp" value={mp} />
+            {threat != null && (
+              <span aria-label={t('combat.arena.threatAria', { n: formatInteger(threat) })} className="arena-threat">
+                <i aria-hidden="true">{t('combat.arena.threatGlyph')}</i>
+                <b><UnitNumber disableTooltip value={threat} /></b>
+              </span>
+            )}
+          </div>
+        </header>
+        <div className="arena-avatar-stage">
+          <div className="arena-avatar" aria-label={t('combat.arena.portraitAria', { name })}>
+            <ArenaPortrait actorId={actorId} fallback={seal} isDead={hp <= 0} name={name} role={role} visual={visual} />
+          </div>
+          {actionMotion && (
+            <span className={`arena-action-fx arena-action-fx--${actionMotion.kind}`} key={actionMotion.id} aria-hidden="true">
+              <i /><i /><i />
+            </span>
+          )}
+          {impact && (
+            <span
+              className={`arena-impact-fx arena-impact-fx--${impact.variant}`}
+              key={impact.id}
+              aria-hidden="true"
+              style={{
+                '--impact-distance': `${impact.distance}px`,
+                '--impact-distance-far': `${impact.distance * 1.8}px`,
+                '--impact-opacity': impact.opacity,
+              } as CSSProperties}
+            >
+              <i /><i /><i />
             </span>
           )}
         </div>
-      </header>
-      <div className="arena-avatar-stage">
-        <div className="arena-avatar" aria-label={t('combat.arena.portraitAria', { name })}>
-          <ArenaPortrait actorId={actorId} fallback={seal} isDead={hp <= 0} name={name} role={role} visual={visual} />
-        </div>
-        {actionMotion && (
-          <span className={`arena-action-fx arena-action-fx--${actionMotion.kind}`} key={actionMotion.id} aria-hidden="true">
-            <i /><i /><i />
-          </span>
-        )}
-        {impact && (
-          <span
-            className={`arena-impact-fx arena-impact-fx--${impact.variant}`}
-            key={impact.id}
-            aria-hidden="true"
-            style={{
-              '--impact-distance': `${impact.distance}px`,
-              '--impact-distance-far': `${impact.distance * 1.8}px`,
-              '--impact-opacity': impact.opacity,
-            } as CSSProperties}
-          >
-            <i /><i /><i />
-          </span>
-        )}
+        <ArenaActionBar action={action} role={role} />
+        <ArenaActorBuffs buffs={buffs} />
       </div>
-      <ArenaActionBar action={action} role={role} />
-      <ArenaActorBuffs buffs={buffs} />
     </article>
   )
 }
@@ -1967,6 +1970,57 @@ function estimateServerNowUnixMilliseconds(): number {
 }
 
 /**
+ * 战场九宫格阵型自适应缩放 Hook
+ * 监听阵型容器真实几何空间，根据 3x3 槽位尺寸与角色基准尺寸（宽 96px，高 206px 含 Buff 与上下防撞冗余）
+ * 动态推导并下发 --arena-scale，保证在任意分辨率与显示缩放（如 125%、150%、175% 等）的横屏模式下，
+ * 双方 18 个角色（3x3 allies + 3x3 enemies）全部完整容纳且绝不发生垂直碰撞踩头。
+ */
+function useArenaFormationScale(
+  formationRef: React.RefObject<HTMLDivElement | null>,
+  shellRef: React.RefObject<HTMLDivElement | null>
+): number {
+  const [scale, setScale] = useState<number>(1)
+
+  useEffect(() => {
+    const formationEl = formationRef.current
+    if (!formationEl || typeof ResizeObserver === 'undefined') return
+
+    const updateScale = () => {
+      const rect = formationEl.getBoundingClientRect()
+      const width = rect.width
+      const height = rect.height
+
+      if (width <= 0 || height <= 0) return
+
+      const nextScale = computeArenaFormationScale(width, height, window.innerWidth)
+
+      if (shellRef.current) {
+        if (nextScale === 1 && (window.innerWidth <= 760 || width <= 200)) {
+          shellRef.current.style.removeProperty('--arena-scale')
+        } else {
+          shellRef.current.style.setProperty('--arena-scale', nextScale.toString())
+        }
+      }
+
+      setScale(prev => (Math.abs(prev - nextScale) >= 0.01 ? nextScale : prev))
+    }
+
+    updateScale()
+
+    const observer = new ResizeObserver(updateScale)
+    observer.observe(formationEl)
+    window.addEventListener('resize', updateScale)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateScale)
+    }
+  }, [formationRef, shellRef])
+
+  return scale
+}
+
+/**
  * 主战场竞技场核心组件 (CombatArena)
  *
  * 核心功能与交互流程：
@@ -2033,6 +2087,8 @@ export const CombatArena = memo(function CombatArena({
   const arenaShellRef = useRef<HTMLDivElement | null>(null)
   const vfxOverlayRef = useRef<HTMLDivElement | null>(null)
   const vfxRuntimeRef = useCombatVfx(arenaShellRef, vfxOverlayRef)
+  const alliesFormationRef = useRef<HTMLDivElement | null>(null)
+  const arenaScale = useArenaFormationScale(alliesFormationRef, arenaShellRef)
 
   const current = queue[0] ?? null
   const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
@@ -2484,7 +2540,11 @@ export const CombatArena = memo(function CombatArena({
 
 
   return (
-    <div className="combat-arena-shell" ref={arenaShellRef}>
+    <div
+      className="combat-arena-shell"
+      ref={arenaShellRef}
+      style={{ '--arena-scale': arenaScale } as CSSProperties}
+    >
       {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
       {/* 战斗统计入口：仅战斗相位显示，浮于详情左上角不占布局 */}
@@ -2511,7 +2571,7 @@ export const CombatArena = memo(function CombatArena({
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
             组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}
         <div className="arena-side arena-side--allies">
-          <div className="arena-formation arena-formation--allies">
+          <div className="arena-formation arena-formation--allies" ref={alliesFormationRef}>
             {allyEntries.length > 0 ? (
               <>
                 {allyEntries.map((ally, index) => {
