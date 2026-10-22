@@ -55,6 +55,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private readonly ConcurrentDictionary<Guid, byte> _walletReloadRequired = new();
     // COMMIT 无法精确重放确认时保留租约与错误证据，拒绝装载、推进和刷盘，防止不确定终态覆盖 durable 状态。
     private readonly ConcurrentDictionary<Guid, EconomyCommitOutcomeUnknownException> _fencedCommits = new();
+    // 栅栏对应的结局核实入口：结局未知后必须能用同一事务标识/幂等键精确重放才能查明事实。
+    // 没有它栅栏只能靠进程重启清除，玩家会被永久锁在门外（COMMIT 回包丢失 + 核实请求也超时即触发）。
+    private readonly ConcurrentDictionary<Guid, Func<CancellationToken, ValueTask<bool>>> _fenceResolvers = new();
     private readonly ConcurrentDictionary<Guid, PlayerLogBuffer> _logs = new();
     // 玩家级单写者门：命令/装载/刷盘/卸载统一经此串行进入 Fiber，不设全局加载门。
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _playerGates = new();
@@ -236,7 +239,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (playerId == Guid.Empty) throw new ArgumentException("PlayerId 不能为空。", nameof(playerId));
-        ThrowIfCommitFenced(playerId);
+        // 结局未知的栅栏先做一次性幂等核实：确认已提交即解除并继续，仍无法确认才 fail-closed。
+        if (await TryResolveFencedCommitAsync(playerId, cancellationToken).ConfigureAwait(false) is { } fenced) throw fenced;
         if (_loaded.TryGetValue(playerId, out var cached)) return cached;
 
         // 多实例写保护闸门：未抢到 player_runtime_leases 租约即 fail-closed，不进入加载。
@@ -983,6 +987,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         catch (EconomyCommitOutcomeUnknownException unknown)
                         {
+                            // 建筑贡献自身的重放也失败时才落到这里；仍要留下核实入口，
+                            // 用同一幂等键再确认一次（命中历史 applied 即证明已提交），否则玩家被永久围栏。
+                            _fenceResolvers[playerId] = token => ResolveContributeOutcomeAsync(
+                                before.State.World.NodeId, buildingId, requested, contributeContext, token);
                             _fencedCommits[playerId] = unknown;
                             _logger.LogCritical(unknown, "建筑贡献结局无法确认，保留玩家租约 player={PlayerId}", playerId);
                             throw;
@@ -1580,9 +1588,16 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 }
             }
             // fenced 玩家仍参加上面的续租，但不允许进入任何变更、推进或刷盘路径。
-            var fenced = ids.Where(_fencedCommits.ContainsKey).ToHashSet();
+            // 但栅栏不是死锁：每轮先用幂等事实核实一次（确认已提交即解除），
+            // 否则 COMMIT 回包与核实请求同时超时后该玩家只能等进程重启才能再上线。
+            var fenced = new HashSet<Guid>();
+            foreach (var playerId in ids.Where(_fencedCommits.ContainsKey))
+                if (await TryResolveFencedCommitAsync(playerId, cancellationToken).ConfigureAwait(false) is not null)
+                    fenced.Add(playerId);
+            // 核实成功会丢弃陈旧内存状态：这些玩家本轮没有可推进实体，等下次装载重建。
+            ids = ids.Where(id => !fenced.Contains(id) && _loaded.ContainsKey(id)).ToArray();
             uncommitted.ExceptWith(fenced);
-            ids = ids.Where(id => !fenced.Contains(id)).ToArray();
+            uncommitted.IntersectWith(ids);
             // 市场等外部来源的入账使缓存钱包失效：重读并收集余额真实变化的玩家，
             // 随后推进其版本让本轮推送把资产差量带给客户端（资产不属分段编码轴）。
             var walletsSynced = new HashSet<Guid>();
@@ -1835,7 +1850,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         try
         {
             if (!_loaded.TryGetValue(playerId, out snapshot)) return;
-            ThrowIfCommitFenced(playerId);
+            // 卸载前同样先核实未知结局：确认已提交后允许正常落盘卸载，避免玩家因栅栏无法离线。
+            if (await TryResolveFencedCommitAsync(playerId, cancellationToken).ConfigureAwait(false) is { } fenced) throw fenced;
+            // 核实成功已丢弃陈旧内存状态（实体与缓存均已移除）：本实例不再持有可卸载状态，直接归还租约。
+            if (!_loaded.ContainsKey(playerId))
+            {
+                if (_leaseRenewedAt.TryRemove(playerId, out _) && ownership is not null)
+                    await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
             await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false);
             if (flush)
             {
@@ -1979,7 +2002,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         try
         {
             await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false);
-            ThrowIfCommitFenced(playerId);
+            // 刷盘同样先核实未知结局：确认提交后必须继续刷盘，否则脏分段滞留到下次进程重启。
+            if (await TryResolveFencedCommitAsync(playerId, cancellationToken).ConfigureAwait(false) is { } fenced) throw fenced;
+            // 核实成功会丢弃陈旧内存状态：此时没有可刷内容，等待下一次装载重建。
+            if (!_loaded.ContainsKey(playerId)) return;
         }
         catch (PlayerOwnershipLostException)
         {
@@ -2252,6 +2278,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             catch (Exception confirmationError)
             {
                 unknown.Data["ConfirmationError"] = confirmationError;
+                // 栅栏必须携带结局核实入口：否则 COMMIT 回包与核实请求同时超时后，玩家只能等进程重启才恢复。
+                _fenceResolvers[playerId] = token => ResolveOutcomeAsync(request, token);
                 _fencedCommits[playerId] = unknown;
                 _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
                 _logger.LogCritical(unknown, "资产提交结局无法确认，保留玩家租约并禁止后续写入 player={PlayerId} transaction={TransactionId}", playerId, request.TransactionId);
@@ -2263,6 +2291,82 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private void ThrowIfCommitFenced(Guid playerId)
     {
         if (_fencedCommits.TryGetValue(playerId, out var unknown)) throw unknown;
+    }
+
+    /// <summary>
+    /// 结局核实：以同一请求精确重放资产事务。命中幂等键即读回既有结果（事务已提交），
+    /// 否则本次重放真正提交它——两种结局都让「未知」变成「已知已提交」，可安全解除栅栏。
+    /// </summary>
+    /// <returns>落实为已提交返回 true；仍未确认返回 false。</returns>
+    private async ValueTask<bool> ResolveOutcomeAsync(EconomyTransactionRequest request, CancellationToken cancellationToken)
+    {
+        var result = await economy.CommitAsync(request, cancellationToken).ConfigureAwait(false);
+        return result.Applied;
+    }
+
+    /// <summary>
+    /// 建筑贡献的结局核实：以同一幂等键与上下文重放整笔原子事务。
+    /// 命中历史 applied 时注册表按首次提交的接纳量返回，不重复扣材料、不重复写建筑行。
+    /// </summary>
+    /// <returns>确认已提交返回 true；仍未确认返回 false。</returns>
+    private async ValueTask<bool> ResolveContributeOutcomeAsync(string nodeId, string buildingId,
+        IReadOnlyDictionary<string, double> requested, NodeBuildingContributionTransaction context,
+        CancellationToken cancellationToken)
+    {
+        var outcome = await nodeBuildings!.ContributeAsync(nodeId, buildingId, requested, context, cancellationToken)
+            .ConfigureAwait(false);
+        return outcome.Success && outcome.Economy is { Applied: true };
+    }
+
+    /// <summary>
+    /// 结局未知栅栏的核实：栅栏的用途是阻止不确定终态覆盖 durable 状态，不是永久封禁玩家。
+    /// COMMIT 已发出但连接中断时，事务要么留下完整幂等记录（含流水/分段/回执），要么整体回滚，
+    /// 二者可由幂等键唯一判定；因此这里用同一请求精确重放一次提交——拿到确定结果即解除栅栏，
+    /// 仍无法确认则继续 fail-closed（保留租约与证据），避免写入未知结局。
+    /// </summary>
+    /// <returns>栅栏已解除返回 null；仍然存在返回待抛出的原始证据。</returns>
+    private async ValueTask<EconomyCommitOutcomeUnknownException?> TryResolveFencedCommitAsync(
+        Guid playerId, CancellationToken cancellationToken)
+    {
+        if (!_fencedCommits.TryGetValue(playerId, out var unknown)) return null;
+        if (!_fenceResolvers.TryGetValue(playerId, out var resolve)) return unknown;
+        try
+        {
+            using var confirmation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            if (!await resolve(confirmation.Token).ConfigureAwait(false)) return unknown;
+        }
+        catch (Exception resolutionError)
+        {
+            unknown.Data["ResolutionError"] = resolutionError;
+            return unknown;
+        }
+        // 核实成功：幂等事实已确定（本次重放提交或确认既有提交），可以安全恢复写入。
+        _fencedCommits.TryRemove(playerId, out _);
+        _fenceResolvers.TryRemove(playerId, out _);
+        // 已提交事务同时带走了分段写回与资产扣减，内存实体在结局未知期间没有同步这份权威状态，
+        // 必须整体丢弃后由下一次装载从 durable 事实重建，绝不能用陈旧钱包继续写入。
+        if (_loaded.ContainsKey(playerId)) DiscardInMemoryStateForRecovery(playerId);
+        _logger.LogWarning(unknown, "资产提交结局已由幂等事实确认，解除玩家写入栅栏并丢弃陈旧内存状态 player={PlayerId}", playerId);
+        return null;
+    }
+
+    /// <summary>
+    /// 结局核实成功后的内存清理：移除 ECS 实体与全部派生缓存（不刷盘、不动租约），
+    /// 使下一次装载严格以 durable 分段与余额为起点。调用方必须持有该玩家 gate。
+    /// </summary>
+    private void DiscardInMemoryStateForRecovery(Guid playerId)
+    {
+        ecs.RemovePlayer(playerId);
+        _loaded.TryRemove(playerId, out _);
+        _wallets.TryRemove(playerId, out _);
+        _dirtyAt.TryRemove(playerId, out _);
+        _pendingReceipts.TryRemove(playerId, out _);
+        _walletReloadRequired.TryRemove(playerId, out _);
+        _dirtyAt.TryRemove(playerId, out _);
+        _recentRequests.TryRemove(playerId, out _);
+        _attributeRevisions.TryRemove(playerId, out _);
+        _publishedVersions.TryRemove(playerId, out _);
+        RuntimeInstrumentation.Count("lifecycle.player_recovered_after_unknown_commit");
     }
 
     /// <summary>失效标记存在时重读钱包；返回缓存余额是否真实变化（市场外部入账检测用）。</summary>

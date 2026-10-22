@@ -708,6 +708,33 @@ public sealed class EcsAdapterBoundaryTests
     }
 
     [Fact]
+    public async Task OutcomeUnknownFenceClearsOnceIdempotencyFactConfirmsCommit()
+    {
+        // 回归：COMMIT 回包与后续核实请求同时失败（数据库重启/连接中断）后，栅栏曾经永久保留，
+        // 玩家每次握手都抛结局未知、被关在门外直到进程重启。栅栏必须能在幂等事实可确认时自动解除。
+        var fixture = CreateFixture(new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 1, 1));
+        await using var adapter = fixture.Adapter;
+        await adapter.LoadAsync(fixture.PlayerId);
+        fixture.Economy.CommitThenUnknown = true;
+        fixture.Economy.FailConfirmation = true;
+        var payload = JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash" });
+
+        await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () =>
+            await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload, 0, Guid.NewGuid()));
+
+        // 数据库恢复：核实请求此时可获得确定结局（第一次提交其实已落库）。
+        fixture.Economy.FailConfirmation = false;
+        var recovered = await adapter.LoadAsync(fixture.PlayerId);
+
+        Assert.Single(fixture.Economy.Requests);
+        Assert.Equal(0d, recovered.Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
+        // 栅栏解除后写入路径必须恢复正常；核实重放命中幂等，不得重复扣减同一事务。
+        var mutated = await adapter.MutateOwnedAsync(fixture.PlayerId, aggregate => aggregate.SkipTutorial());
+        Assert.Equal(PresenceState.Offline, mutated.State.Presence);
+        Assert.Single(fixture.Economy.Requests);
+    }
+
+    [Fact]
     public async Task BatchRechecksLoadedPlayersAfterWaitingForUnloadGate()
     {
         var fixture = CreateFixture();
