@@ -159,13 +159,14 @@ ssh -o BatchMode=yes odin '
   [[ -d /root/daohua-compute ]] && mv /root/daohua-compute /root/daohua-compute.old
   mv /root/daohua-compute.new /root/daohua-compute
   chmod +x /root/daohua-compute/DaoHua.ComputeNode
-  pkill -x DaoHua.ComputeNode || true
+  pkill -x DaoHua.ComputeNode 2>/dev/null || pkill -x DaoHua.ComputeN 2>/dev/null || true
 '
 ```
 
 **Windows / PRoot 必防坑**：
 - `scp` 不保留执行权限位，必须 `chmod +x /root/daohua-compute/DaoHua.ComputeNode`。
 - **禁止用 `pkill -f "DaoHua[.]ComputeNode"`**：`ssh odin '...'` 经 PRoot 启动时，PRoot 进程自身的 cmdline 含有整段脚本字符串，`pkill -f` 会把当前 SSH 会话自身杀掉（`proot info: vpid 1: terminated with signal 15`）；必须用精确进程名 `pkill -x DaoHua.ComputeNode`。
+- **必须补截断名兜底**：PRoot 下 `/proc/<pid>/comm` 被截断到 15 字符（`DaoHua.ComputeN`），只写全名 `pkill -x DaoHua.ComputeNode` 不会终止旧进程——旧二进制继续占用 8090，新目录虽已切换但未接管，`/healthz` 仍报旧配表指纹并持续 `GAME_DATA_FINGERPRINT_MISMATCH`。终止命令固定写 `pkill -x DaoHua.ComputeNode 2>/dev/null || pkill -x DaoHua.ComputeN 2>/dev/null || true`，随后用进程启动时间与 `/healthz` 指纹确认已换成新二进制。
 - Termux 外层守护 `daohua_compute_watchdog.sh` 会在 10 秒内自动拉起新二进制；守护日志文件在 Termux 主目录 `/data/data/com.termux/files/home/daohua_compute.log`（PRoot 内 `~` 是 `/root`，查日志须写完整路径）。
 
 ---
@@ -209,7 +210,7 @@ ssh -o BatchMode=yes yuohira '
 ### 回滚路径
 
 - **镜像回滚**（仅限未执行跨版本数据库迁移时）：`scripts/deploy-prod.sh --image <旧app@sha256> --compute-image <旧compute@sha256>`。
-- **odin 回滚**：`ssh odin 'rm -rf /root/daohua-compute && mv /root/daohua-compute.old /root/daohua-compute && pkill -x DaoHua.ComputeNode || true'`。
+- **odin 回滚**：`ssh odin 'rm -rf /root/daohua-compute && mv /root/daohua-compute.old /root/daohua-compute && (pkill -x DaoHua.ComputeNode 2>/dev/null || pkill -x DaoHua.ComputeN 2>/dev/null || true)'`。
 - **数据回滚**（已执行不可逆 schema 迁移时）：从阶段 2 生成的 `/opt/daohua/backups/hourly/*.dump` 或 `/opt/daohua/pitr-restore.sh` 恢复——**必须获得用户明确许可后执行**。
 
 ## 收尾
