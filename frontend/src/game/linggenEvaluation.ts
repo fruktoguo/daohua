@@ -1,8 +1,12 @@
 /**
  * 灵根品质与修仙资质评价体系
  *
- * 移植自道界核心资质规则 (daojie spiritual-roots)，根据五行灵根点数分布，
- * 动态解算出称号（name）、品阶印章（seal）以及沉浸式修仙评语（desc）。
+ * 对标修仙小说公认谱系（《凡人修仙传》天灵根/真灵根/伪（杂）灵根 + 传统上中下品语汇）：
+ * - 单系论「天灵根 / 真灵根」，极弱为废灵根；
+ * - 双/三系按两两纯度论「上品 / 中品 / 下品」；
+ * - 四系及以上不成天/上品者定名「X 系杂灵根」；
+ * - 五系皆弱皆全（总值不足）即通称的「废灵根」。
+ * 纯展示函数：称号（name）、品阶印章（seal）与沉浸式评语（desc），零结算影响。
  */
 import {
   type LinggenElementKey,
@@ -11,9 +15,9 @@ import {
 } from './linggenBoard.ts'
 
 export interface LinggenEvaluation {
-  /** 资质名称，例如「火木真双灵根」「金先天道胎灵根」「五行天灵根」 */
+  /** 资质名称，例如「火真灵根」「金木上品双灵根」「废灵根」 */
   name: string
-  /** 资质印章铭牌，例如「单灵根 · 极品」「五灵根 · 天品」 */
+  /** 资质印章铭牌，例如「单灵根 · 天品」「五灵根 · 废品」 */
   seal: string
   /** 详细修仙风味评语 */
   desc: string
@@ -26,6 +30,21 @@ const ELEMENT_NAMES: Record<LinggenElementKey, string> = {
   fire: '火',
   earth: '土',
 }
+
+/** 天灵根单系门槛：灵气归一，杂质极少。 */
+const HEAVEN_TIER = 90
+/** 真灵根单系门槛：结丹有望的资格线。 */
+const TRUE_TIER = 60
+/** 单系真灵根之下的下品下限。 */
+const SINGLE_LOWER_TIER = 35
+/** 上品门槛：双/三系两两纯度。 */
+const UPPER_TIER = 75
+/** 中品门槛：双/三系两两纯度。 */
+const MIDDLE_TIER = 55
+/** 五系杂灵根总值下限（低于即废灵根）。 */
+const FIVE_MIXED_TOTAL = 200
+/** 五系杂灵根单系下限。 */
+const FIVE_MIXED_MIN = 40
 
 function joinElements(keys: LinggenElementKey[]): string {
   return keys.map(k => ELEMENT_NAMES[k]).join('')
@@ -54,6 +73,7 @@ export function evaluateSpiritualRoots(
     .sort((a, b) => b.value - a.value)
 
   const total = entries.reduce((sum, e) => sum + e.value, 0)
+  const lowest = entries[entries.length - 1].value
 
   if (entries.length === 0) {
     return {
@@ -63,243 +83,172 @@ export function evaluateSpiritualRoots(
     }
   }
 
-  const spread = entries[0].value - entries[entries.length - 1].value
-
-  // 单灵根
+  // ── 单灵根：天灵根 / 真灵根 / 下品 / 废 ──────────────────────────────
   if (entries.length === 1) {
     const name = ELEMENT_NAMES[entries[0].key]
     const val = entries[0].value
-    if (val >= 100) {
-      return {
-        name: `${name}先天道胎灵根`,
-        seal: '单灵根 · 极境',
-        desc: '仅存一系，且数值圆满，已近先天道胎之象。',
-      }
-    }
-    if (val >= 95) {
-      return {
-        name: `${name}极品天灵根`,
-        seal: '单灵根 · 极品',
-        desc: '单一属性纯度极高，已是最上层的单系资质。',
-      }
-    }
-    if (val >= 90) {
+    if (val >= HEAVEN_TIER) {
       return {
         name: `${name}天灵根`,
         seal: '单灵根 · 天品',
-        desc: '灵气归一，杂质极少，属于典型的单系天灵根。',
+        desc: val >= 100
+          ? '一系圆满百数，灵气归一不染纤尘，正是上天的宠儿，结丹无碍，仙途坦荡。'
+          : '仅存一系而杂质极少，修炼一日可抵旁人数日，宗门争抢的天灵根。',
       }
     }
-    if (val >= 80) {
+    if (val >= TRUE_TIER) {
       return {
         name: `${name}真灵根`,
-        seal: '单灵根 · 上品',
-        desc: '虽然未到天品，但依旧属于极强的单系资质。',
+        seal: '单灵根 · 真品',
+        desc: '一系纯粹充裕，虽不及天灵根那般逆天，却已有结丹之望，立足修仙界足矣。',
       }
     }
-    if (val >= 35) {
+    if (val >= SINGLE_LOWER_TIER) {
       return {
-        name: `${name}偏枯单灵根`,
-        seal: '单灵根 · 偏弱',
-        desc: '路线纯粹，但根基偏枯，后续更依赖资源和机缘。',
+        name: `${name}下品灵根`,
+        seal: '单灵根 · 下品',
+        desc: '路线倒也纯粹，只是根基偏枯薄弱，进境迟缓，须以丹药资源苦苦支撑。',
       }
     }
     return {
       name: `${name}废灵根`,
       seal: '单灵根 · 近废',
-      desc: '虽然形式上只余一系，但数值太低，几近枯竭。',
+      desc: '一系孤悬却微弱如烛，灵气入体即散，纵有仙缘也难以为继。',
     }
   }
 
-  // 双灵根
+  const names = joinElements(entries.map(e => e.key))
+
+  // ── 双灵根：天品 / 上品 / 中品 / 下品 / 废 ────────────────────────────
   if (entries.length === 2) {
-    const names = joinElements(entries.map(e => e.key))
-    const highCount = entries.filter(e => e.value >= 90).length
-    if (highCount === 2) {
+    const allUpper = entries.every(e => e.value >= HEAVEN_TIER)
+    if (allUpper) {
       return {
-        name: `${names}天灵根`,
+        name: `${names}双天灵根`,
         seal: '双灵根 · 天品',
-        desc: '双系皆过九十，兼顾变化与纯度，属于极罕见的双系天灵根。',
+        desc: '两系皆臻九十余而不驳，兼顾变化与纯度，万中无一的双系天灵根。',
       }
     }
-    if (entries[0].value >= 80 && entries[1].value >= 80) {
+    if (entries.every(e => e.value >= UPPER_TIER)) {
       return {
-        name: `${names}真双灵根`,
+        name: `${names}上品双灵根`,
         seal: '双灵根 · 上品',
-        desc: '两系都很扎实，是双修路线里相当漂亮的一档。',
+        desc: '两系俱都充裕扎实，双修相济，他日结丹有望，宗门中已可列入重点栽培之册。',
       }
     }
-    if (spread <= 8 && entries[1].value >= 50) {
+    if (entries.every(e => e.value >= MIDDLE_TIER)) {
       return {
-        name: `${names}均衡双灵根`,
-        seal: '双灵根 · 均衡',
-        desc: '两系强弱接近，灵气分布平滑，适合走互补路线。',
+        name: `${names}中品双灵根`,
+        seal: '双灵根 · 中品',
+        desc: '两系皆可堪一用，只是纯度平平，进境不快，胜在路子互补。',
       }
     }
-    if (total <= 40) {
+    if (total > 45 && entries[0].value >= MIDDLE_TIER) {
       return {
-        name: `${names}废双灵根`,
-        seal: '双灵根 · 近废',
-        desc: '两系都沾一点，却都不成气候，属于典型废双灵根。',
-      }
-    }
-    if (total <= 80) {
-      return {
-        name: `${names}杂双灵根`,
-        seal: '双灵根 · 杂驳',
-        desc: '两系都不算太强，难称精品，只能算常见的杂双灵根。',
+        name: `${names}下品双灵根`,
+        seal: '双灵根 · 下品',
+        desc: '一系尚可一观，另一系已然孱弱，修行时灵气总在取舍间耗散。',
       }
     }
     return {
-      name: `${names}双灵根`,
-      seal: '双灵根 · 常规',
-      desc: '标准双灵根格局，既有变化，也承担了纯度被分走的代价。',
+      name: `${names}废双灵根`,
+      seal: '双灵根 · 近废',
+      desc: '两系皆沾皮毛，俱不成气候，寻常杂役弟子也强他三分。',
     }
   }
 
-  // 三灵根
+  // ── 三灵根：天品 / 上品 / 中品 / 下品 / 废 ────────────────────────────
   if (entries.length === 3) {
-    const names = joinElements(entries.map(e => e.key))
-    if (entries.every(e => e.value >= 90)) {
+    if (entries.every(e => e.value >= HEAVEN_TIER)) {
       return {
-        name: `${names}三系天灵根`,
+        name: `${names}三天灵根`,
         seal: '三灵根 · 天品',
-        desc: '三系齐强且都过九十，放在三灵根里已近传说。',
+        desc: '三系齐强皆过九十，驳杂之弊一洗而空，放在三灵根里已近传说。',
       }
     }
-    if (entries.every(e => e.value >= 75)) {
+    if (entries.every(e => e.value >= UPPER_TIER)) {
       return {
-        name: `${names}真三灵根`,
+        name: `${names}上品三灵根`,
         seal: '三灵根 · 上品',
-        desc: '三系根基都很扎实，胜在路子广、兼容性强。',
+        desc: '三系根基俱都扎实，兼容并包，虽有分纯之弊，底子仍胜过世间大多数修士。',
       }
     }
-    if (spread <= 10 && entries[2].value >= 45) {
+    if (entries.every(e => e.value >= MIDDLE_TIER)) {
       return {
-        name: `${names}均衡三灵根`,
-        seal: '三灵根 · 均衡',
-        desc: '三系分布平滑，没有明显短板，适合多属性体系。',
+        name: `${names}中品三灵根`,
+        seal: '三灵根 · 中品',
+        desc: '三系平平各可堪用，无甚短板也无甚长处，修行全看功法与资源。',
       }
     }
-    if (total <= 60) {
+    if (total > 60 && entries[0].value >= MIDDLE_TIER) {
       return {
-        name: `${names}废三灵根`,
-        seal: '三灵根 · 近废',
-        desc: '三系都有，却都过于孱弱，修行时容易处处分散。',
-      }
-    }
-    if (total <= 120) {
-      return {
-        name: `${names}杂三灵根`,
-        seal: '三灵根 · 杂驳',
-        desc: '很常见的普通资质，广而不精，更看后续功法与资源。',
+        name: `${names}下品三灵根`,
+        seal: '三灵根 · 下品',
+        desc: '三系散乱唯首系尚可，灵气三分其力，进境迟缓已是定数。',
       }
     }
     return {
-      name: `${names}三灵根`,
-      seal: '三灵根 · 常规',
-      desc: '标准三灵根，属性选择更多，但每一系分到的纯度也更少。',
+      name: `${names}废三灵根`,
+      seal: '三灵根 · 近废',
+      desc: '三系俱弱如风中残烛，看似选择繁多，实则寸步难行。',
     }
   }
 
-  // 四灵根
+  // ── 四灵根：天品 / 上品 / 杂灵根 / 废 ─────────────────────────────────
   if (entries.length === 4) {
-    const names = joinElements(entries.map(e => e.key))
-    if (entries.every(e => e.value >= 90)) {
+    if (entries.every(e => e.value >= HEAVEN_TIER)) {
       return {
         name: `${names}四象天灵根`,
         seal: '四灵根 · 天品',
-        desc: '四系全部极高，已经超出常规四灵根应有的驳杂程度。',
+        desc: '四象俱全而条条极高，驳杂之数反成周天之势，此等资质百年难遇。',
       }
     }
-    if (entries.every(e => e.value >= 70)) {
+    if (entries.every(e => e.value >= UPPER_TIER)) {
       return {
-        name: `${names}真四灵根`,
+        name: `${names}上品四灵根`,
         seal: '四灵根 · 上品',
-        desc: '四系都不低，说明这次开门极顺，属于相当漂亮的四灵根。',
+        desc: '四系俱都不弱，纯度虽被摊薄，胜在法术路数极广，教人不敢小觑。',
       }
     }
-    if (total <= 90) {
+    if (total > 120 && lowest >= 40) {
       return {
-        name: `${names}废四灵根`,
-        seal: '四灵根 · 近废',
-        desc: '四系过多又过弱，属性不少，但每一条都像风中残烛。',
-      }
-    }
-    if (total <= 160) {
-      return {
-        name: `${names}杂四灵根`,
-        seal: '四灵根 · 杂驳',
-        desc: '四系驳杂，纯度摊得很散，是典型的普通杂四灵根。',
+        name: `${names}杂灵根`,
+        seal: '四灵根 · 杂品',
+        desc: '四气混杂、灵气混沌，吸纳十份能留三分已是不易，进境迟缓，俗称的伪灵根便是此流。',
       }
     }
     return {
-      name: `${names}四灵根`,
-      seal: '四灵根 · 常规',
-      desc: '四系并存，天然适合更复杂的路线，只是单系优势更难拉出来。',
+      name: `${names}废四灵根`,
+      seal: '四灵根 · 近废',
+      desc: '四系皆弱，条条如游丝，灵气未入玉府便已溃散大半。',
     }
   }
 
-  // 五灵根
-  if (entries.every(e => e.value === 100)) {
-    return {
-      name: '神灵根',
-      seal: '五灵根 · 神品',
-      desc: '五行俱圆满，条条皆为百数，已经不是寻常五灵根能形容的资质。',
-    }
-  }
-  if (entries.every(e => e.value >= 90)) {
+  // ── 五灵根：天品 / 上品 / 杂灵根 / 废灵根 ────────────────────────────
+  if (entries.every(e => e.value >= HEAVEN_TIER)) {
     return {
       name: '五行天灵根',
       seal: '五灵根 · 天品',
-      desc: '五行俱全且全部过九十，极其稀有，真正意义上的五行齐鸣。',
+      desc: '五行俱强皆过九十，齐鸣共振自成周天，万古罕逢，一旦有成当镇压一世。',
     }
   }
-  if (entries.every(e => e.value >= 80)) {
+  if (entries.every(e => e.value >= UPPER_TIER)) {
     return {
-      name: '五行真灵根',
-      seal: '五灵根 · 极上',
-      desc: '五行全部强势，虽然未到全体天品，但整体已经非常夸张。',
-    }
-  }
-  if (spread <= 10 && entries[4].value >= 55) {
-    return {
-      name: '五行均衡灵根',
-      seal: '五灵根 · 均衡',
-      desc: '五行分布极其平均，没有明显偏科，最适合全系兼修路线。',
-    }
-  }
-  if (total <= 45) {
-    return {
-      name: '废灵根',
-      seal: '五灵根 · 近废',
-      desc: '五行俱全却极度孱弱，看似什么都有，实则每一系都不足以撑起修行。',
-    }
-  }
-  if (total <= 120) {
-    return {
-      name: '杂灵根',
-      seal: '五灵根 · 杂驳',
-      desc: '五行混杂、纯度偏低，是最常见的一类灵根，优点是适配面广。',
-    }
-  }
-  if (total <= 220) {
-    return {
-      name: '下品五灵根',
-      seal: '五灵根 · 普通',
-      desc: '属于五灵根里比较常见的一档，路子很多，但单系都不算特别强。',
-    }
-  }
-  if (total <= 320) {
-    return {
-      name: '上品五灵根',
+      name: '五行上品灵根',
       seal: '五灵根 · 上品',
-      desc: '五行总值不低，已经跳出普通杂灵根范畴，整体底子相当扎实。',
+      desc: '五行俱全且俱都充裕，虽承分纯之弊，但五系齐修之势已非常人可及。',
+    }
+  }
+  if (total >= FIVE_MIXED_TOTAL && lowest >= FIVE_MIXED_MIN) {
+    return {
+      name: '五行杂灵根',
+      seal: '五灵根 · 杂品',
+      desc: '五行混杂、灵气驳杂难凝，修炼事倍功半，这便是修士口中摇头叹息的伪灵根。',
     }
   }
   return {
-    name: '极品五行灵根',
-    seal: '五灵根 · 极品',
-    desc: '五行俱全且整体总值极高，虽然未必每条都达天品，但底子已经极厚。',
+    name: '废灵根',
+    seal: '五灵根 · 废品',
+    desc: '五行俱全却皆孱弱不堪，灵气入体即散于四肢百骸——仙路于常人而言已然断绝，唯有逆天改命，或可搏出一线机缘。',
   }
 }
