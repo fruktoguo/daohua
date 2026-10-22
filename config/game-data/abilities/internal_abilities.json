@@ -35,7 +35,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageBonusPoints": 10
+      "physicalDamageBonusPoints": 5
     }
   },
   {
@@ -57,7 +57,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageReductionPoints": 10
+      "physicalDamageReductionPoints": 5
     }
   },
   {
@@ -78,7 +78,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "actionSpeedPoints": 5
+      "actionSpeedPoints": 2.5
     }
   },
   {
@@ -99,7 +99,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "spellDamageBonusPoints": 10
+      "spellDamageBonusPoints": 5
     }
   },
   {
@@ -121,7 +121,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageBonusPoints": 15
+      "physicalDamageBonusPoints": 7.5
     }
   },
   {
@@ -144,8 +144,8 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageReductionPoints": 10,
-      "spellDamageReductionPoints": 10
+      "physicalDamageReductionPoints": 5,
+      "spellDamageReductionPoints": 5
     }
   },
   {
@@ -167,7 +167,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "spellDamageBonusPoints": 15
+      "spellDamageBonusPoints": 7.5
     }
   },
   {

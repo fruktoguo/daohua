@@ -325,12 +325,12 @@
           "name": "掌心雷 (0CD 填充技，非普攻)",
           "abilityId": "ability.palm-lightning",
           "baseCastSeconds": 2.0,
-          "baseDamageRatioPct": 60.0,
+          "baseDamageRatioPct": 70.0,
           "flatDamage": 10,
           "cooldownSeconds": 0.0,
           "finalCastSeconds": 1.0,
-          "finalDamageRatioPct": 258.0,
-          "description": "普通技能槽位技能：吟唱 2.0s 仅受行动速度点数 ÷(1+p/100) 缩短至 1.00s，60% AP + 10 固定伤害，享受技能增幅等阶成长 (60% -> 258% AP)。0CD 时放技能栏末尾可在蓝量充足时完全顶替普攻；普攻本身与物理系统一为 1.0s 基准 100%->200% AD 物理伤害。"
+          "finalDamageRatioPct": 301.0,
+          "description": "普通技能槽位技能：吟唱 2.0s 仅受行动速度点数 ÷(1+p/100) 缩短至 1.00s，70% AP + 10 固定伤害，享受技能增幅等阶成长 (70% -> 301% AP)。0CD 时放技能栏末尾可在蓝量充足时完全顶替普攻；普攻本身与物理系统一为 1.0s 基准 100%->200% AD 物理伤害。"
         },
         "skills": [
           {
@@ -517,7 +517,7 @@
               "pct": 0.0
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 1.728025880028734,
               "pct": 78.36410636810768
             }
@@ -579,7 +579,7 @@
         "physicalAutoIntervalSeconds": 1.0,
         "physicalAutoDamageRatioPct": 100.0,
         "magicAutoCastSeconds": 2.0,
-        "magicAutoDamageRatioPct": 60.0
+        "magicAutoDamageRatioPct": 70.0
       },
       "rootMultiplier": {
         "rootPercentage": 0.03,
@@ -720,7 +720,7 @@
               "pct": 20.41680551375347
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 16.974546713177823,
               "pct": 63.79584062611715
             }
@@ -782,7 +782,7 @@
         "physicalAutoIntervalSeconds": 0.982,
         "physicalAutoDamageRatioPct": 101.8,
         "magicAutoCastSeconds": 1.98,
-        "magicAutoDamageRatioPct": 78.0
+        "magicAutoDamageRatioPct": 91.0
       },
       "rootMultiplier": {
         "rootPercentage": 0.54,
@@ -923,7 +923,7 @@
               "pct": 31.61024179223702
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 37.45193798849609,
               "pct": 46.6177226345337
             }
@@ -985,7 +985,7 @@
         "physicalAutoIntervalSeconds": 0.948,
         "physicalAutoDamageRatioPct": 105.3,
         "magicAutoCastSeconds": 1.95,
-        "magicAutoDamageRatioPct": 96.0
+        "magicAutoDamageRatioPct": 112.0
       },
       "rootMultiplier": {
         "rootPercentage": 0.9,
@@ -1126,7 +1126,7 @@
               "pct": 32.395454616897815
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 114.4965337349649,
               "pct": 44.78942637842499
             }
@@ -1188,7 +1188,7 @@
         "physicalAutoIntervalSeconds": 0.897,
         "physicalAutoDamageRatioPct": 110.6,
         "magicAutoCastSeconds": 1.89,
-        "magicAutoDamageRatioPct": 114.0
+        "magicAutoDamageRatioPct": 133.0
       },
       "rootMultiplier": {
         "rootPercentage": 1.26,
@@ -1329,7 +1329,7 @@
               "pct": 32.98169507128696
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 349.3043630809097,
               "pct": 44.07853829398375
             }
@@ -1391,7 +1391,7 @@
         "physicalAutoIntervalSeconds": 0.831,
         "physicalAutoDamageRatioPct": 117.7,
         "magicAutoCastSeconds": 1.82,
-        "magicAutoDamageRatioPct": 132.0
+        "magicAutoDamageRatioPct": 154.0
       },
       "rootMultiplier": {
         "rootPercentage": 1.62,
@@ -1532,7 +1532,7 @@
               "pct": 33.96555765225081
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 971.9694888630272,
               "pct": 42.656492061568336
             }
@@ -1594,7 +1594,7 @@
         "physicalAutoIntervalSeconds": 0.752,
         "physicalAutoDamageRatioPct": 126.6,
         "magicAutoCastSeconds": 1.73,
-        "magicAutoDamageRatioPct": 150.0
+        "magicAutoDamageRatioPct": 175.0
       },
       "rootMultiplier": {
         "rootPercentage": 1.98,
@@ -1735,7 +1735,7 @@
               "pct": 34.612098953422496
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 2892.353804176941,
               "pct": 41.264449212671536
             }
@@ -1797,7 +1797,7 @@
         "physicalAutoIntervalSeconds": 0.661,
         "physicalAutoDamageRatioPct": 137.3,
         "magicAutoCastSeconds": 1.63,
-        "magicAutoDamageRatioPct": 168.0
+        "magicAutoDamageRatioPct": 196.0
       },
       "rootMultiplier": {
         "rootPercentage": 2.34,
@@ -1938,7 +1938,7 @@
               "pct": 34.979067393562396
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 7438.74890007375,
               "pct": 41.16368995760427
             }
@@ -2000,7 +2000,7 @@
         "physicalAutoIntervalSeconds": 0.563,
         "physicalAutoDamageRatioPct": 149.9,
         "magicAutoCastSeconds": 1.5,
-        "magicAutoDamageRatioPct": 186.0
+        "magicAutoDamageRatioPct": 217.0
       },
       "rootMultiplier": {
         "rootPercentage": 2.7,
@@ -2141,7 +2141,7 @@
               "pct": 36.90322956601177
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 21434.83258073683,
               "pct": 38.210121653000236
             }
@@ -2203,7 +2203,7 @@
         "physicalAutoIntervalSeconds": 0.461,
         "physicalAutoDamageRatioPct": 164.2,
         "magicAutoCastSeconds": 1.36,
-        "magicAutoDamageRatioPct": 204.0
+        "magicAutoDamageRatioPct": 238.0
       },
       "rootMultiplier": {
         "rootPercentage": 3.06,
@@ -2344,7 +2344,7 @@
               "pct": 38.855466929380015
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 60657.274320490695,
               "pct": 35.29895506640428
             }
@@ -2406,7 +2406,7 @@
         "physicalAutoIntervalSeconds": 0.357,
         "physicalAutoDamageRatioPct": 180.4,
         "magicAutoCastSeconds": 1.2,
-        "magicAutoDamageRatioPct": 222.0
+        "magicAutoDamageRatioPct": 259.0
       },
       "rootMultiplier": {
         "rootPercentage": 3.42,
@@ -2547,7 +2547,7 @@
               "pct": 43.09593763950093
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 195953.20937514945,
               "pct": 28.04936963505534
             }
@@ -2609,7 +2609,7 @@
         "physicalAutoIntervalSeconds": 0.258,
         "physicalAutoDamageRatioPct": 198.4,
         "magicAutoCastSeconds": 1.02,
-        "magicAutoDamageRatioPct": 240.0
+        "magicAutoDamageRatioPct": 280.0
       },
       "rootMultiplier": {
         "rootPercentage": 3.78,
@@ -2750,7 +2750,7 @@
               "pct": 42.034395375665135
             },
             "skill_3": {
-              "name": "掌心雷 (0CD 填充 60%)",
+              "name": "掌心雷 (0CD 填充 60% 假设)",
               "dps": 494910.3130889711,
               "pct": 27.854475541659298
             }
@@ -2812,7 +2812,7 @@
         "physicalAutoIntervalSeconds": 0.25,
         "physicalAutoDamageRatioPct": 200.0,
         "magicAutoCastSeconds": 1.0,
-        "magicAutoDamageRatioPct": 258.0
+        "magicAutoDamageRatioPct": 301.0
       },
       "rootMultiplier": {
         "rootPercentage": 3.81,
