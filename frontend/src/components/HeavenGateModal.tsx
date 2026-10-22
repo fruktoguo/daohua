@@ -3,20 +3,15 @@ import { Modal } from './Modal'
 import { useT } from '../i18n'
 import {
   applyAxisDrag,
-  linggenBonusPercent,
   linggenCultivationMultiplier,
-  linggenReducePercent,
-  maxReachableValue,
   projectPointerToAxis,
   remainingPoints,
 } from '../game/linggenCalculations'
 import {
   BOARD_CENTER,
-  BOARD_MAX_RADIUS,
   LINGGEN_AXES,
   LINGGEN_AXIS_CAP,
   axisTier,
-  clampPoints,
   polygonPoints,
   vertexPoint,
   type LinggenElementKey,
