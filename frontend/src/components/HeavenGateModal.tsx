@@ -43,6 +43,8 @@ interface HeavenGateModalProps {
   entered: boolean
   /** 逆天改命累计次数 */
   rerollCount: number
+  /** 当前玩家底蕴池储量 */
+  foundation?: number,
   /** 当前升级所需修为（用于折算改命成本与乘区上限） */
   expToNext: number
   /** 逆天改命默认底蕴成本（25% 档） */
@@ -79,6 +81,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   confirmed,
   entered,
   rerollCount,
+  foundation = 0,
   expToNext: _expToNext,
   rerollCostPlain,
   rerollCostPill,
@@ -690,9 +693,20 @@ export const HeavenGateModal = memo(function HeavenGateModal({
         open={true}
         title={t('insight.heavenGate.rerollConfirmTitle')}
         description={
-          usePill && hasPill
-            ? t('insight.heavenGate.rerollConfirmWithPillCost', { cost: rerollCostPill })
-            : t('insight.heavenGate.rerollConfirmCost', { cost: rerollCostPlain })
+          foundation < (usePill && hasPill ? rerollCostPill : rerollCostPlain)
+            ? t('insight.heavenGate.rerollConfirmInsufficient', {
+                foundation: Math.floor(foundation).toLocaleString(),
+                cost: (usePill && hasPill ? rerollCostPill : rerollCostPlain).toLocaleString(),
+              })
+            : usePill && hasPill
+            ? t('insight.heavenGate.rerollConfirmWithPillCostWithFoundation', {
+                foundation: Math.floor(foundation).toLocaleString(),
+                cost: rerollCostPill.toLocaleString(),
+              })
+            : t('insight.heavenGate.rerollConfirmCostWithFoundation', {
+                foundation: Math.floor(foundation).toLocaleString(),
+                cost: rerollCostPlain.toLocaleString(),
+              })
         }
         confirmLabel={t('insight.heavenGate.rerollBtn')}
         danger={true}

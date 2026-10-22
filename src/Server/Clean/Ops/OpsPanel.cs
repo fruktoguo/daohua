@@ -21,6 +21,7 @@ public sealed record OpsUnloadRequest(Guid PlayerId, bool Flush = true);
 
 /// <summary>计算节点排空请求。</summary>
 /// <param name="NodeId">目标节点 ID；为空表示全部在线节点。</param>
+public sealed record OpsGrantFoundationRequest(Guid? PlayerId, double Amount);
 public sealed record OpsDrainRequest(Guid? NodeId);
 
 /// <summary>运维面板可修改的账号检测策略；所有阈值由服务端校验。</summary>
@@ -523,6 +524,33 @@ public static class OpsPanel
             await players.RemoveAsync(request.PlayerId, request.Flush, null, cancellationToken);
             Audit(loggerFactory, context, "unload", request.PlayerId);
             return Results.Ok(new { action = "unload", playerId = request.PlayerId, flushed = request.Flush });
+        });
+
+        group.MapPost("/api/actions/grant-foundation", async (HttpContext context, OpsGrantFoundationRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        {
+            if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            var amount = request.Amount <= 0 ? 100_000_000d : request.Amount;
+            if (request.PlayerId is { } targetId && targetId != Guid.Empty)
+            {
+                await players.MutateOwnedAsync(targetId, agg =>
+                {
+                    agg.Progression.Foundation = Math.Max(agg.Progression.Foundation, amount);
+                    agg.Touch(PlayerSectionKind.Progression);
+                }, cancellationToken);
+                Audit(loggerFactory, context, "grant-foundation", targetId);
+                return Results.Ok(new { action = "grant-foundation", playerId = targetId, amount });
+            }
+            var loaded = await players.GetLoadedSnapshotsAsync(cancellationToken);
+            foreach (var snapshot in loaded)
+            {
+                await players.MutateOwnedAsync(snapshot.PlayerId, agg =>
+                {
+                    agg.Progression.Foundation = Math.Max(agg.Progression.Foundation, amount);
+                    agg.Touch(PlayerSectionKind.Progression);
+                }, cancellationToken);
+            }
+            Audit(loggerFactory, context, "grant-foundation-all", null);
+            return Results.Ok(new { action = "grant-foundation", scope = "all", count = loaded.Count, amount });
         });
 
         group.MapPost("/api/actions/compute-drain", (HttpContext context, OpsDrainRequest request, OpsOptions opts, ComputeLinkRegistry registry, ILoggerFactory loggerFactory) =>

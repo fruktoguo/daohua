@@ -825,6 +825,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         confirmed={stats.heavenGateConfirmed}
         entered={stats.heavenGateEntered === true}
         rerollCount={stats.heavenGateRerollCount ?? 0}
+        foundation={stats.foundation ?? 0}
         expToNext={realmProgress.expToNext ?? 0}
         rerollCostPlain={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.25))}
         rerollCostPill={Math.max(1, Math.round((realmProgress.expToNext ?? 0) * 0.05))}
