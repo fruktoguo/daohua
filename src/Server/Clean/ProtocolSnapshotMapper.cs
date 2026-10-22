@@ -274,6 +274,11 @@ public static class ProtocolSnapshotMapper
             traitIds = state.Progression.TraitIds ?? (IReadOnlyList<string>)[],
             unlockedTraits = state.Progression.UnlockedTraits ?? (IReadOnlyList<Domain.Combat.TraitProgressState>)[],
             defeatedMonsterIds = state.Progression.DefeatedMonsterIds ?? (IReadOnlyList<string>)[],
+            // 开天门与五行灵根：叩天门满修后的必经流程，缺这段投影会让客户端永远看不到抽取结果。
+            heavenGateRolled = state.Progression.HeavenGateRolled,
+            heavenGateConfirmed = state.Progression.HeavenGateConfirmed,
+            heavenGateEntered = state.Progression.HeavenGateEntered,
+            heavenGateRerollCount = state.Progression.HeavenGateRerollCount,
             lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
                 ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
                 : 0

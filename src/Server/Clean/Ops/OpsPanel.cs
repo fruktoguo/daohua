@@ -217,7 +217,15 @@ public static class OpsPanel
                     normalKills = state.Progression.NormalKills,
                     eliteKills = state.Progression.EliteKills,
                     bossKills = state.Progression.BossKills,
-                    totalDefeats = state.Progression.TotalDefeats
+                    totalDefeats = state.Progression.TotalDefeats,
+                    // 开天门与灵根状态：排查叩天门突破前置与灵根未生效类问题的一手证据。
+                    heavenGate = new
+                    {
+                        rolled = state.Progression.HeavenGateRolled,
+                        confirmed = state.Progression.HeavenGateConfirmed,
+                        entered = state.Progression.HeavenGateEntered,
+                        rerollCount = state.Progression.HeavenGateRerollCount
+                    }
                 },
                 combat = new
                 {

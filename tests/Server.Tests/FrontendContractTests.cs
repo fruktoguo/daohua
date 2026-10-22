@@ -30,10 +30,31 @@ public sealed class FrontendContractTests
         var restored = PlayerAggregate.Restore(player.ExportState());
         Assert.Equal("ability.heavy-slash", restored.Loadout.AbilitySlots[0].AbilityId);
         Assert.Equal(0, restored.Loadout.CoreAttributes.Levels(catalog.RealmProgression).Stamina);
-        var state = restored.ExportState();
+        // 开天门灵根状态必须随 progression 分段下发：缺这段投影会让客户端永远看不到抽取结果，
+        // 表现为「点抽取灵根没反应」（数据已落库但界面收不到）。
+        player.Progression.HeavenGate.Apply(
+            new LinggenValues(53, 57, 95, 36, 0), new LinggenValues(53, 57, 95, 36, 0),
+            entered: false, rerollCount: 2);
+        var state = player.ExportState();
+        Assert.Equal(new LinggenValues(53, 57, 95, 36, 0), state.Progression.HeavenGateRolled);
+        Assert.Equal(2, state.Progression.HeavenGateRerollCount);
+        Assert.False(state.Progression.HeavenGateEntered);
         var snapshot = new PlayerRuntimeSnapshot(player.PlayerId.Value, player.AccountId.Value.ToString(), player.DisplayName,
             player.StateVersion, player.LastSimulatedAt, state, 0, []);
         var dto = ProtocolSnapshotMapper.ToSnapshot(snapshot, catalog.Fingerprint, catalog);
+        // 协议投影必须显式携带灵根四字段：只落库不下发会让前端永远停在「未抽取」。
+        var progressionJson = JsonSerializer.Serialize(
+            dto.Sections.Single(section => section.Section == "progression").Data, ProtocolJson.Options);
+        using (var projected = JsonDocument.Parse(progressionJson))
+        {
+            var projectedRoot = projected.RootElement;
+            Assert.True(projectedRoot.TryGetProperty("heavenGateRolled", out var rolledJson), "progression 投影缺少 heavenGateRolled。");
+            Assert.Equal(53, rolledJson.GetProperty("metal").GetInt32());
+            Assert.Equal(95, rolledJson.GetProperty("water").GetInt32());
+            Assert.True(projectedRoot.TryGetProperty("heavenGateEntered", out var enteredJson));
+            Assert.False(enteredJson.GetBoolean());
+            Assert.Equal(2, projectedRoot.GetProperty("heavenGateRerollCount").GetInt32());
+        }
         var fixture = Path.Combine(Path.GetTempPath(), $"daohua-frontend-contract-{Guid.NewGuid():N}.json");
         try
         {
