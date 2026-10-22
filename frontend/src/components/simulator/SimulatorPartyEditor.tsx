@@ -2,12 +2,14 @@ import { memo, useCallback, useMemo, useState } from 'react'
 import { useGameStore } from '../../game/gameStore'
 import { useSocialStore } from '../../game/socialStore'
 import { useT } from '../../i18n'
-import type { AutoUseSlot, CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../../game/types'
+import type { AutoUseSlot, CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEquipmentDefinition, CombatTrigger, EquipmentSlot, EquippedItem, ExpeditionAlly, ItemDefinition } from '../../game/types'
 import { roundStat, sanitizeAttributes, type SimulatorCombatantConfig } from '../../game/simulator/simulatorTypes'
 import { StatGlyph } from '../StatGlyph'
 import { ItemGridPicker, type ItemPickerEntry } from '../ItemGridPicker'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import { findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../../game/ids'
+import { CombatTriggerEditor } from '../CombatTriggerEditor'
+import { describeCombatTrigger } from '../../game/format'
 
 interface SimulatorPartyEditorProps {
   allies: SimulatorCombatantConfig[]
@@ -106,10 +108,18 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
   const myConsumables = useGameStore(state => state.queue?.autoUseSlots?.combat)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const itemsCatalog = useGameStore(state => state.items)
+  const expedition = useGameStore(state => state.queue?.entries?.[0]?.expedition)
+
+  // 当前正在编辑触发器的技能或消耗品
+  const [editingTrigger, setEditingTrigger] = useState<{
+    type: 'ability' | 'consumable'
+    id: string
+    name: string
+    initialTriggers: CombatTrigger[]
+  } | null>(null)
 
   // 当前正在呼出 ItemGridPicker 选择的部位
   const [activePickingSlot, setActivePickingSlot] = useState<{ config: SimulatorSlotConfig; anchor: HTMLElement } | null>(null)
-
   // 映射当前角色已装备的 6 大部位（对齐游戏内六部位归并逻辑）
   const slotEquippedMap = useMemo(() => {
     const map = new Map<EquipmentSlot, { item: EquippedItem; definition?: ItemDefinition; equipmentDef?: CombatEquipmentDefinition }>()
@@ -155,13 +165,22 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
   // 1. 导入自身完整配置 (属性 + 功法 + 装备 + 消耗品)
   const handleImportSelf = useCallback(() => {
     if (!currentAlly) return
+    const abilityTriggers: Record<string, CombatTrigger[]> = { ...(myCombat?.abilityTriggers ?? {}) }
+    if (myCombat?.abilitySlots) {
+      for (const s of myCombat.abilitySlots) {
+        if (s.abilityId && s.triggers && !abilityTriggers[s.abilityId]) {
+          abilityTriggers[s.abilityId] = s.triggers.map(t => ({ ...t }))
+        }
+      }
+    }
     const newAlly: SimulatorCombatantConfig = {
       ...currentAlly,
       name: myName || t('combat.simulator.selfName'),
       isSelf: true,
       attributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
       abilitySlots: myCombat?.abilitySlots ? myCombat.abilitySlots.map(s => ({ ...s })) : [],
-      abilityTriggers: myCombat?.abilityTriggers ? { ...myCombat.abilityTriggers } : {},
+      abilityTriggers,
+      consumableTriggers: myCombat?.consumableTriggers ? { ...myCombat.consumableTriggers } : {},
       equipment: myCombat?.equipment ? myCombat.equipment.map(e => ({ ...e })) : [],
       consumables: myConsumables ? myConsumables.map(c => ({ ...c })) : [],
     }
@@ -170,24 +189,65 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
     onChangeAllies(nextList)
   }, [allies, currentAlly, myAttributes, myCombat, myConsumables, myName, onChangeAllies, selectedIdx, t])
 
-  // 2. 导入队友
+  // 2. 导入队友 (若已在探险阵列中则导入其实时属性、技能槽与触发条件)
   const handleImportTeammate = useCallback((memberId: string, memberName: string) => {
     if (!currentAlly) return
-    const newAlly: SimulatorCombatantConfig = {
-      ...currentAlly,
-      id: memberId,
-      name: memberName,
-      isSelf: false,
-      attributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
-      abilitySlots: myCombat?.abilitySlots ? myCombat.abilitySlots.map(s => ({ ...s })) : [],
-      equipment: [],
-      consumables: [],
+    const expeditionAlly = expedition?.allies?.find((a: ExpeditionAlly) => a.playerId === memberId)
+    let newAlly: SimulatorCombatantConfig
+
+    if (expeditionAlly) {
+      const abilityTriggers: Record<string, CombatTrigger[]> = {}
+      if (expeditionAlly.skills) {
+        for (const s of expeditionAlly.skills) {
+          if (s.abilityId && s.triggers) {
+            abilityTriggers[s.abilityId] = s.triggers.map((t: CombatTrigger) => ({ ...t }))
+          }
+        }
+      }
+      const rawAlly = expeditionAlly as unknown as Record<string, unknown>
+      if ('abilityTriggers' in rawAlly && rawAlly.abilityTriggers && typeof rawAlly.abilityTriggers === 'object') {
+        Object.assign(abilityTriggers, rawAlly.abilityTriggers as Record<string, CombatTrigger[]>)
+      }
+
+      const consumableTriggers: Record<string, CombatTrigger[]> = {}
+      if ('consumableTriggers' in rawAlly && rawAlly.consumableTriggers && typeof rawAlly.consumableTriggers === 'object') {
+        Object.assign(consumableTriggers, rawAlly.consumableTriggers as Record<string, CombatTrigger[]>)
+      }
+
+      const allyConsumables = 'consumables' in rawAlly && Array.isArray(rawAlly.consumables)
+        ? (rawAlly.consumables as AutoUseSlot[]).map((c: AutoUseSlot) => ({ ...c }))
+        : (myConsumables ? myConsumables.map((c: AutoUseSlot) => ({ ...c })) : [])
+
+      newAlly = {
+        ...currentAlly,
+        id: memberId,
+        name: expeditionAlly.displayName || memberName,
+        isSelf: false,
+        attributes: expeditionAlly.attributes ? sanitizeAttributes(expeditionAlly.attributes) : (myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES }),
+        abilitySlots: expeditionAlly.skills ? expeditionAlly.skills.map((s: CombatAbilitySlot) => ({ ...s })) : (myCombat?.abilitySlots ? myCombat.abilitySlots.map((s: CombatAbilitySlot) => ({ ...s })) : []),
+        abilityTriggers,
+        consumableTriggers,
+        equipment: expeditionAlly.equipment ? expeditionAlly.equipment.map((e: EquippedItem) => ({ ...e })) : [],
+        consumables: allyConsumables,
+      }
+    } else {
+      newAlly = {
+        ...currentAlly,
+        id: memberId,
+        name: memberName,
+        isSelf: false,
+        attributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
+        abilitySlots: myCombat?.abilitySlots ? myCombat.abilitySlots.map(s => ({ ...s })) : [],
+        abilityTriggers: myCombat?.abilityTriggers ? { ...myCombat.abilityTriggers } : {},
+        consumableTriggers: myCombat?.consumableTriggers ? { ...myCombat.consumableTriggers } : {},
+        equipment: myCombat?.equipment ? myCombat.equipment.map(e => ({ ...e })) : [],
+        consumables: myConsumables ? myConsumables.map(c => ({ ...c })) : [],
+      }
     }
     const nextList = [...allies]
     nextList[selectedIdx] = newAlly
     onChangeAllies(nextList)
-  }, [allies, currentAlly, myAttributes, myCombat?.abilitySlots, onChangeAllies, selectedIdx])
-
+  }, [allies, currentAlly, expedition?.allies, myAttributes, myCombat, myConsumables, onChangeAllies, selectedIdx])
   // 3. 修改属性值
   const handleUpdateStat = useCallback((key: keyof CombatAttributes, val: number) => {
     if (!currentAlly) return
@@ -407,28 +467,28 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
           className={`sim-sub-tab-btn ${activeSubTab === 'attributes' ? 'is-active' : ''}`}
           onClick={() => setActiveSubTab('attributes')}
         >
-          📊 战斗属性
+          <StatGlyph glyph="foundation" /> 战斗属性
         </button>
         <button
           type="button"
           className={`sim-sub-tab-btn ${activeSubTab === 'skills' ? 'is-active' : ''}`}
           onClick={() => setActiveSubTab('skills')}
         >
-          📜 功法技能
+          <StatGlyph glyph="skill-bonus" /> 功法技能
         </button>
         <button
           type="button"
           className={`sim-sub-tab-btn ${activeSubTab === 'equipment' ? 'is-active' : ''}`}
           onClick={() => setActiveSubTab('equipment')}
         >
-          🛡️ 穿戴装备
+          <StatGlyph glyph="armor" /> 穿戴装备
         </button>
         <button
           type="button"
           className={`sim-sub-tab-btn ${activeSubTab === 'consumables' ? 'is-active' : ''}`}
           onClick={() => setActiveSubTab('consumables')}
         >
-          🧪 战斗消耗
+          <StatGlyph glyph="alchemy" /> 战斗消耗
         </button>
       </div>
 
@@ -698,6 +758,35 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
                         </div>
                       )}
                     </div>
+                    {selectedAbilityId && !isInternal && (
+                      <div className="sim-trigger-config-row">
+                        <span className="sim-trigger-label">触发条件:</span>
+                        <button
+                          type="button"
+                          className="sim-trigger-btn"
+                          onClick={() => {
+                            const curTriggers = currentAlly.abilityTriggers?.[selectedAbilityId] ?? slot?.triggers ?? def?.defaultTriggers ?? []
+                            setEditingTrigger({
+                              type: 'ability',
+                              id: selectedAbilityId,
+                              name: def?.name || selectedAbilityId,
+                              initialTriggers: curTriggers,
+                            })
+                          }}
+                        >
+                          {(() => {
+                            const curTriggers = currentAlly.abilityTriggers?.[selectedAbilityId] ?? slot?.triggers ?? def?.defaultTriggers ?? []
+                            if (curTriggers.length === 0) {
+                              return <span className="text-muted">无条件 (就绪即放) [配置]</span>
+                            }
+                            if (curTriggers.length === 1) {
+                              return <span className="text-cyan">{describeCombatTrigger(curTriggers[0])} [配置]</span>
+                            }
+                            return <span className="text-cyan">{curTriggers.length}条条件 ({describeCombatTrigger(curTriggers[0])} 等) [配置]</span>
+                          })()}
+                        </button>
+                      </div>
+                    )}
                     {def && (
                       <div className="sim-skill-desc-row">
                         <span className="sim-skill-tag">消耗: {def.manaCost} MP</span>
@@ -918,12 +1007,80 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
                         />
                       </div>
                     )}
+                    {itemId && (
+                      <div className="sim-trigger-config-row">
+                        <span className="sim-trigger-label">触发条件:</span>
+                        <button
+                          type="button"
+                          className="sim-trigger-btn"
+                          onClick={() => {
+                            const itemDef = findItemInCatalog(itemsCatalog, itemId)
+                            const curTriggers = currentAlly.consumableTriggers?.[itemId] ?? itemDef?.triggers ?? []
+                            setEditingTrigger({
+                              type: 'consumable',
+                              id: itemId,
+                              name: itemDef?.name || itemId,
+                              initialTriggers: curTriggers,
+                            })
+                          }}
+                        >
+                          {(() => {
+                            const itemDef = findItemInCatalog(itemsCatalog, itemId)
+                            const curTriggers = currentAlly.consumableTriggers?.[itemId] ?? itemDef?.triggers ?? []
+                            if (curTriggers.length === 0) {
+                              return <span className="text-muted">默认健康度 / 就绪即用 [配置]</span>
+                            }
+                            if (curTriggers.length === 1) {
+                              return <span className="text-cyan">{describeCombatTrigger(curTriggers[0])} [配置]</span>
+                            }
+                            return <span className="text-cyan">{curTriggers.length}条条件 ({describeCombatTrigger(curTriggers[0])} 等) [配置]</span>
+                          })()}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )
             })}
           </div>
         </div>
+      )}
+
+      {editingTrigger && (
+        <CombatTriggerEditor
+          open={true}
+          title={`${editingTrigger.name} · 触发条件配置`}
+          initialTriggers={editingTrigger.initialTriggers}
+          onClose={() => setEditingTrigger(null)}
+          onSave={savedTriggers => {
+            if (!currentAlly) return
+            const triggersToSave = savedTriggers ?? []
+            let updated: SimulatorCombatantConfig
+            if (editingTrigger.type === 'ability') {
+              const newAbilityTriggers = {
+                ...(currentAlly.abilityTriggers || {}),
+                [editingTrigger.id]: triggersToSave,
+              }
+              const newSlots = (currentAlly.abilitySlots || []).map(s => {
+                if (s.abilityId === editingTrigger.id) {
+                  return { ...s, triggers: triggersToSave }
+                }
+                return s
+              })
+              updated = { ...currentAlly, abilityTriggers: newAbilityTriggers, abilitySlots: newSlots }
+            } else {
+              const newConsumableTriggers = {
+                ...(currentAlly.consumableTriggers || {}),
+                [editingTrigger.id]: triggersToSave,
+              }
+              updated = { ...currentAlly, consumableTriggers: newConsumableTriggers }
+            }
+            const nextList = [...allies]
+            nextList[selectedIdx] = updated
+            onChangeAllies(nextList)
+            setEditingTrigger(null)
+          }}
+        />
       )}
     </div>
   )

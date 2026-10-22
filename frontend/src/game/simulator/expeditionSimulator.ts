@@ -51,8 +51,9 @@ import type {
   SkillManaConsumptionStat,
   SimBattleLogRecord,
   SimCombatLogEvent,
+  WaveDurationBreakdown,
+  WaveDurationStat,
 } from './simulatorTypes.ts'
-
 interface RawEnemySpec {
   enemyId: string
   name: string
@@ -125,6 +126,10 @@ export class ExpeditionSimulator {
     let normalKills = 0
     let eliteKills = 0
     let bossKills = 0
+
+    const normalDurations: number[] = []
+    const eliteDurations: number[] = []
+    const bossDurations: number[] = []
 
     const itemDrops = new Map<string, number>()
     const monsterKillMap = new Map<string, MonsterKillStat>()
@@ -204,7 +209,7 @@ export class ExpeditionSimulator {
           .map(({ slot, slotIndex }) => {
             const abilityId = slot.abilityId as string
             const def = abilityMap.get(abilityId)
-            const triggers = ally.abilityTriggers?.[abilityId] || def?.defaultTriggers || []
+            const triggers = ally.abilityTriggers?.[abilityId] ?? slot.triggers ?? def?.defaultTriggers ?? []
             return {
               slotIndex,
               abilityId,
@@ -232,7 +237,8 @@ export class ExpeditionSimulator {
           skills,
           0,
           ally.id,
-          ally.consumables
+          ally.consumables,
+          ally.consumableTriggers
         )
       })
     }
@@ -303,6 +309,16 @@ export class ExpeditionSimulator {
       const battleDuration = combat.elapsedSeconds
       currentElapsedSeconds += battleDuration
       combatActiveSeconds += battleDuration
+
+      const isBossWave = waveResult.rawEnemies.some(e => e.rank === 'boss')
+      const isEliteWave = !isBossWave && waveResult.rawEnemies.some(e => e.rank === 'elite')
+      if (isBossWave) {
+        bossDurations.push(battleDuration)
+      } else if (isEliteWave) {
+        eliteDurations.push(battleDuration)
+      } else {
+        normalDurations.push(battleDuration)
+      }
 
       // 留存战斗日志
       if (currentBattleEvents && (outcome === 'defeat' || recentBattleLogs.length < 5 || currentElapsedSeconds >= totalTargetSeconds)) {
@@ -619,6 +635,31 @@ export class ExpeditionSimulator {
     }))
     manaConsumptionStats.sort((a, b) => b.totalManaSpent - a.totalManaSpent)
 
+    const buildDurationStat = (durations: number[]): WaveDurationStat => {
+      if (durations.length === 0) {
+        return { count: 0, averageSeconds: 0, minSeconds: 0, maxSeconds: 0 }
+      }
+      const sum = durations.reduce((a, b) => a + b, 0)
+      return {
+        count: durations.length,
+        averageSeconds: Number((sum / durations.length).toFixed(1)),
+        minSeconds: Number(Math.min(...durations).toFixed(1)),
+        maxSeconds: Number(Math.max(...durations).toFixed(1)),
+      }
+    }
+
+    const allDurations = normalDurations.concat(eliteDurations, bossDurations)
+    const overallAverageSeconds = allDurations.length > 0
+      ? Number((allDurations.reduce((a, b) => a + b, 0) / allDurations.length).toFixed(1))
+      : 0
+
+    const durationBreakdown: WaveDurationBreakdown = {
+      overallAverageSeconds,
+      normal: buildDurationStat(normalDurations),
+      elite: eliteDurations.length > 0 ? buildDurationStat(eliteDurations) : null,
+      boss: bossDurations.length > 0 ? buildDurationStat(bossDurations) : null,
+    }
+
     const totalKills = normalKills + eliteKills + bossKills
     const winRate = totalEncounters > 0 ? victories / totalEncounters : 0
     const encountersPerHour = Number((totalEncounters / totalHours).toFixed(1))
@@ -677,6 +718,7 @@ export class ExpeditionSimulator {
       sixDimensionBreakdown,
       manaDeficit: manaTracker.generateReport(),
       recentBattleLogs,
+      durationBreakdown,
     }
   }
 

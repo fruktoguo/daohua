@@ -2079,3 +2079,129 @@
   vertical-align: middle;
 }
 
+/* 触发条件配置条 */
+.sim-trigger-config-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--bg-raised);
+  border: 1px dashed var(--gold-faint);
+  border-radius: 4px;
+}
+
+.sim-trigger-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.sim-trigger-btn {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-trigger-btn:hover {
+  background: var(--gold-faint);
+}
+
+/* 平均场次时长分析卡片 */
+.sim-card--duration-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sim-overall-duration-badge {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--gold-faint);
+}
+
+.sim-overall-duration-badge strong {
+  color: var(--gold-bright);
+  font-family: monospace;
+}
+
+.sim-duration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.sim-duration-block {
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.2s ease;
+}
+
+.sim-duration-block:hover {
+  border-color: var(--gold);
+}
+
+.sim-duration-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sim-duration-type-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.sim-duration-type-tag.tag-normal {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.sim-duration-type-tag.tag-elite {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.sim-duration-type-tag.tag-boss {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.sim-duration-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+.sim-duration-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text-bright);
+}
+
+.sim-duration-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+}

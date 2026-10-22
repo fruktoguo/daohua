@@ -34,6 +34,8 @@ export interface SimulatorCombatantConfig {
   equipment?: EquippedItem[]
   /** 战斗自动消耗品配置 (3药品 + 3通用) */
   consumables?: AutoUseSlot[]
+  /** 消耗品独立触发器映射表 (itemId -> triggers) */
+  consumableTriggers?: Record<string, CombatTrigger[]>
 }
 
 /**
@@ -253,6 +255,34 @@ export interface SimBattleLogRecord {
 
 
 /**
+ * 波次战斗时长统计
+ */
+export interface WaveDurationStat {
+  /** 场次数 */
+  count: number
+  /** 平均单场战斗时长（秒） */
+  averageSeconds: number
+  /** 最短耗时（秒） */
+  minSeconds: number
+  /** 最长耗时（秒） */
+  maxSeconds: number
+}
+
+/**
+ * 遭遇时长深度细分（普通回/精英回/BOSS回）
+ */
+export interface WaveDurationBreakdown {
+  /** 全场平均单场战斗时长（秒） */
+  overallAverageSeconds: number
+  /** 普通回耗时统计 */
+  normal: WaveDurationStat
+  /** 精英回耗时统计（若未刷出精英则为 null） */
+  elite?: WaveDurationStat | null
+  /** BOSS回耗时统计（若未刷出妖王则为 null） */
+  boss?: WaveDurationStat | null
+}
+
+/**
  * 模拟器最终输出的综合分析报表
  */
 export interface SimulatorReport {
@@ -344,6 +374,8 @@ export interface SimulatorReport {
   manaDeficit: ManaDeficitReport
   /** 最近战斗详细事件日志（供玩家回溯复盘死因与战局走势） */
   recentBattleLogs: SimBattleLogRecord[]
+  /** 单场战斗时长分析 (普通回/精英回/BOSS回) */
+  durationBreakdown: WaveDurationBreakdown
 }
 
 /**
@@ -372,6 +404,8 @@ export interface SimulatorNodeComparisonItem {
   /** 推荐标签（最高收益/极速升级/稳健挂机等） */
   recommendTag?: string
   /** 对应的完整单点报表 */
+  /** 单场平均耗时（秒） */
+  avgDurationSeconds: number
   report: SimulatorReport
 }
 

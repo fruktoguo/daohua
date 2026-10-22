@@ -11,6 +11,7 @@ import {
   type SimulatorReport,
 } from '../../game/simulator/simulatorTypes'
 import { ExpeditionSimulator } from '../../game/simulator/expeditionSimulator'
+import { StatGlyph } from '../StatGlyph'
 import { SimulatorPartyEditor } from './SimulatorPartyEditor'
 import { SimulatorConfigPanel } from './SimulatorConfigPanel'
 import { SimulatorResultsView } from './SimulatorResultsView'
@@ -115,6 +116,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
         },
         abilitySlots: myCombat?.abilitySlots ? myCombat.abilitySlots.map(s => ({ ...s })) : [],
         abilityTriggers: myCombat?.abilityTriggers ? { ...myCombat.abilityTriggers } : {},
+        consumableTriggers: myCombat?.consumableTriggers ? { ...myCombat.consumableTriggers } : {},
         equipment: myCombat?.equipment ? myCombat.equipment.map(e => ({ ...e })) : [],
         consumables: myConsumables ? myConsumables.map(c => ({ ...c })) : [],
       }
@@ -209,6 +211,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
             deathsPerHour: rep.playerDeathsPerHour,
             maxWave: rep.maxWave,
             report: rep,
+            avgDurationSeconds: rep.durationBreakdown.overallAverageSeconds,
           })
         }
 
@@ -243,7 +246,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
     >
       <div className="sim-modal-header">
         <div className="sim-modal-title-wrap">
-          <span className="sim-title-icon">⚔️</span>
+          <StatGlyph glyph="attack" className="sim-title-icon" size={20} />
           <h2 id="sim-modal-title" className="sim-title-text">
             {t('combat.simulator.modalTitle')}
           </h2>

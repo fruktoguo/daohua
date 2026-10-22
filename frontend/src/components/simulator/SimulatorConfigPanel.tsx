@@ -99,14 +99,14 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
             className="sim-batch-btn"
             onClick={() => onSelectAllNodesInMap(currentNodes.map(item => item.node.nodeId))}
           >
-            ✓ 全选当前区域 ({currentNodes.length})
+            全选当前区域 ({currentNodes.length})
           </button>
           <button
             type="button"
             className="sim-batch-btn sim-batch-btn--clear"
             onClick={onClearSelectedNodes}
           >
-            ✕ 清空已选
+            清空已选
           </button>
         </div>
 

@@ -557,3 +557,285 @@ test('expeditionSimulator: 副手与六大部位装备属性注入与强化缩�
   assert.ok(report.totalEncounters > 0, '必须完成遭遇战推演')
   assert.ok(report.damageStats.totalDamage > 0, '必须产生伤害')
 })
+
+test('expeditionSimulator: 平均场次时长分析与普通/精英/BOSS回拆分自洽', () => {
+  const baseAttrs = {
+    maxHitpoints: 1000,
+    maxManapoints: 500,
+    physicalAttack: 100,
+    spellAttack: 100,
+    armor: 20,
+    magicResistance: 20,
+    accuracy: 100,
+    evasion: 20,
+    critical: 20,
+    criticalResistance: 10,
+    criticalDamagePoints: 50,
+    breakPower: 10,
+    parryResolve: 10,
+    hpRegenPerFiveSeconds: 10,
+    mpRegenPerFiveSeconds: 10,
+    attackIntervalMilliseconds: 1000,
+    physicalDamageBonusPoints: 0,
+    spellDamageBonusPoints: 0,
+    metalDamageBonusPoints: 0,
+    woodDamageBonusPoints: 0,
+    waterDamageBonusPoints: 0,
+    fireDamageBonusPoints: 0,
+    earthDamageBonusPoints: 0,
+    totalDamageBonusPoints: 0,
+    basicAttackBonusPoints: 0,
+    skillBonusPoints: 0,
+    physicalDamageReductionPoints: 0,
+    spellDamageReductionPoints: 0,
+    metalDamageReductionPoints: 0,
+    woodDamageReductionPoints: 0,
+    waterDamageReductionPoints: 0,
+    fireDamageReductionPoints: 0,
+    earthDamageReductionPoints: 0,
+    damageAbsorptionPoints: 0,
+    fixedDamageBonus: 0,
+    fixedDamageReduction: 0,
+    fixedPhysicalDamageBonus: 0,
+    fixedPhysicalDamageReduction: 0,
+    fixedSpellDamageBonus: 0,
+    fixedSpellDamageReduction: 0,
+    attackSpeedPoints: 0,
+    actionSpeedPoints: 0,
+    cooldownReductionPoints: 0,
+    threatBonusPoints: 0,
+    hpDrainPoints: 0,
+    mpDrainPoints: 0,
+    damageReflectPoints: 0,
+    healingBonusPoints: 0,
+  }
+
+  const ally = {
+    id: 'test-player',
+    name: '测试修士',
+    isSelf: true,
+    formationIndex: 0,
+    attributes: baseAttrs,
+    abilitySlots: [
+      { slotIndex: 0, abilityId: 'internal-basic', level: 1 },
+      { slotIndex: 1, abilityId: 'spell-fire', level: 1 },
+    ],
+  }
+
+  // 1. 无精英和Boss遭遇（纯普通小怪）
+  const normalOnlyReport = ExpeditionSimulator.runSimulation(
+    {
+      nodeId: 'node-normal',
+      nodeName: '普通节点',
+      durationSeconds: 300,
+      seed: 42n,
+      allies: [ally],
+    },
+    {
+      encounters: [{
+        encounterId: 'enc-normal',
+        name: '仅普通小怪',
+        minThreat: 10,
+        maxThreat: 20,
+        enemy: {
+          enemyId: 'mob-normal',
+          name: '小妖',
+          rank: 'normal',
+          experience: 10,
+          attributes: { ...baseAttrs, maxHitpoints: 200, physicalAttack: 10 },
+        },
+        battlesPerElite: 0,
+        battlesPerBoss: 0,
+      }],
+      abilities: [{
+        abilityId: 'spell-fire',
+        name: '火球术',
+        damageRatio: 1.5,
+        castMilliseconds: 0,
+        cooldownMilliseconds: 1000,
+      }],
+    }
+  )
+
+  assert.ok(normalOnlyReport.durationBreakdown, '必须包含 durationBreakdown 统计')
+  assert.ok(normalOnlyReport.durationBreakdown.normal.count > 0, '普通回场次大于0')
+  assert.ok(normalOnlyReport.durationBreakdown.overallAverageSeconds > 0, '全场平均战斗时长大于0')
+  assert.equal(normalOnlyReport.durationBreakdown.elite, null, '纯普通怪节点 elite 为 null')
+  assert.equal(normalOnlyReport.durationBreakdown.boss, null, '纯普通怪节点 boss 为 null')
+
+  // 2. 包含精英与Boss遭遇
+  const bossReport = ExpeditionSimulator.runSimulation(
+    {
+      nodeId: 'node-boss',
+      nodeName: '首领节点',
+      durationSeconds: 1200,
+      seed: 42n,
+      allies: [ally],
+    },
+    {
+      encounters: [{
+        encounterId: 'enc-boss',
+        name: '首领巢穴',
+        minThreat: 10,
+        maxThreat: 20,
+        battlesPerElite: 2,
+        battlesPerBoss: 4,
+        enemy: {
+          enemyId: 'mob-normal',
+          name: '小妖',
+          rank: 'normal',
+          experience: 10,
+          attributes: { ...baseAttrs, maxHitpoints: 200, physicalAttack: 10 },
+        },
+        eliteEnemies: [{
+          enemyId: 'mob-elite',
+          name: '精英头领',
+          rank: 'elite',
+          experience: 50,
+          attributes: { ...baseAttrs, maxHitpoints: 500, physicalAttack: 20 },
+        }],
+        bossEnemies: [{
+          enemyId: 'mob-boss',
+          name: '妖王',
+          rank: 'boss',
+          experience: 200,
+          attributes: { ...baseAttrs, maxHitpoints: 1500, physicalAttack: 30 },
+        }],
+      }],
+      abilities: [{
+        abilityId: 'spell-fire',
+        name: '火球术',
+        damageRatio: 2.0,
+        castMilliseconds: 0,
+        cooldownMilliseconds: 500,
+      }],
+    }
+  )
+
+  assert.ok(bossReport.durationBreakdown.normal.count > 0, '有普通回')
+  assert.ok(bossReport.durationBreakdown.elite && bossReport.durationBreakdown.elite.count > 0, '有精英回')
+  assert.ok(bossReport.durationBreakdown.boss && bossReport.durationBreakdown.boss.count > 0, '有BOSS回')
+  assert.ok(bossReport.durationBreakdown.boss.averageSeconds >= bossReport.durationBreakdown.normal.averageSeconds, 'Boss回单场平均耗时应大于等于普通回')
+})
+
+test('expeditionSimulator: 技能与消耗品触发器导入与求值自洽', () => {
+  const baseAttrs = {
+    maxHitpoints: 1000,
+    maxManapoints: 500,
+    physicalAttack: 50,
+    spellAttack: 50,
+    armor: 10,
+    magicResistance: 10,
+    accuracy: 100,
+    evasion: 10,
+    critical: 10,
+    criticalResistance: 10,
+    criticalDamagePoints: 50,
+    breakPower: 10,
+    parryResolve: 10,
+    hpRegenPerFiveSeconds: 0,
+    mpRegenPerFiveSeconds: 0,
+    attackIntervalMilliseconds: 1000,
+    physicalDamageBonusPoints: 0,
+    spellDamageBonusPoints: 0,
+    metalDamageBonusPoints: 0,
+    woodDamageBonusPoints: 0,
+    waterDamageBonusPoints: 0,
+    fireDamageBonusPoints: 0,
+    earthDamageBonusPoints: 0,
+    totalDamageBonusPoints: 0,
+    basicAttackBonusPoints: 0,
+    skillBonusPoints: 0,
+    physicalDamageReductionPoints: 0,
+    spellDamageReductionPoints: 0,
+    metalDamageReductionPoints: 0,
+    woodDamageReductionPoints: 0,
+    waterDamageReductionPoints: 0,
+    fireDamageReductionPoints: 0,
+    earthDamageReductionPoints: 0,
+    damageAbsorptionPoints: 0,
+    fixedDamageBonus: 0,
+    fixedDamageReduction: 0,
+    fixedPhysicalDamageBonus: 0,
+    fixedPhysicalDamageReduction: 0,
+    fixedSpellDamageBonus: 0,
+    fixedSpellDamageReduction: 0,
+    attackSpeedPoints: 0,
+    actionSpeedPoints: 0,
+    cooldownReductionPoints: 0,
+    threatBonusPoints: 0,
+    hpDrainPoints: 0,
+    mpDrainPoints: 0,
+    damageReflectPoints: 0,
+    healingBonusPoints: 0,
+  }
+
+  // 配置触发条件：仅在自身气血 <= 40% 时释放治疗技能与吃药
+  const ally = {
+    id: 'test-caster',
+    name: '控场修士',
+    isSelf: true,
+    formationIndex: 0,
+    attributes: baseAttrs,
+    abilitySlots: [
+      { slotIndex: 0, abilityId: 'internal-1', level: 1 },
+      { slotIndex: 1, abilityId: 'spell-heal', level: 1 },
+    ],
+    abilityTriggers: {
+      'spell-heal': [
+        { dependency: 'self', condition: 'current-hp-percentage', comparator: 'less-than-equal', value: 40 },
+      ],
+    },
+    consumables: [
+      { itemId: 'item.ningxue-pill', quantity: 10, enabled: true },
+    ],
+    consumableTriggers: {
+      'item.ningxue-pill': [
+        { dependency: 'self', condition: 'current-hp-percentage', comparator: 'less-than-equal', value: 30 },
+      ],
+    },
+  }
+
+  const report = ExpeditionSimulator.runSimulation(
+    {
+      nodeId: 'test-triggers',
+      nodeName: '触发器测试',
+      durationSeconds: 120,
+      seed: 888n,
+      allies: [ally],
+    },
+    {
+      encounters: [{
+        encounterId: 'enc-low-dmg',
+        name: '低伤怪',
+        minThreat: 10,
+        maxThreat: 20,
+        enemy: {
+          enemyId: 'mob-weak',
+          name: '弱怪',
+          rank: 'normal',
+          experience: 10,
+          attributes: { ...baseAttrs, maxHitpoints: 300, physicalAttack: 1 },
+        },
+      }],
+      abilities: [{
+        abilityId: 'spell-heal',
+        name: '回春术',
+        damageRatio: 0,
+        healingRatio: 1.0,
+        castMilliseconds: 0,
+        cooldownMilliseconds: 1000,
+        manaCost: 10,
+      }],
+      items: [{
+        itemId: 'item.ningxue-pill',
+        name: '凝血丹',
+        sellPrice: 10,
+      }],
+    }
+  )
+
+  // 弱怪每次攻击只有 1 点伤害，120s 内玩家血量一直在 90% 以上，条件（<=40% 与 <=30%）从未满足
+  const healManaStat = report.manaConsumptionStats.find(s => s.abilityId === 'spell-heal')
+  assert.equal(healManaStat?.castCount ?? 0, 0, '血量未降至40%以下时，受条件限制的治疗技能不应施放')
+})

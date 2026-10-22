@@ -335,6 +335,7 @@ export class SimCombatant implements SimUnitView {
   public buffs: SimBuff[] = []
   public combatExperience = 0
   public consumables: AutoUseSlot[] = []
+  public consumableTriggers?: Record<string, CombatTrigger[]>
   public consumableCooldowns: number[] = []
 
   constructor(
@@ -346,7 +347,8 @@ export class SimCombatant implements SimUnitView {
     skills: SimSkill[],
     combatExperience = 0,
     definitionId?: string,
-    consumables?: AutoUseSlot[]
+    consumables?: AutoUseSlot[],
+    consumableTriggers?: Record<string, CombatTrigger[]>
   ) {
     this.id = id
     this.name = name
@@ -360,6 +362,7 @@ export class SimCombatant implements SimUnitView {
     this.skillCooldowns = new Array(skills.length).fill(0)
     this.definitionId = definitionId || id
     this.consumables = consumables || []
+    this.consumableTriggers = consumableTriggers
     this.consumableCooldowns = new Array(this.consumables.length).fill(0)
   }
 
@@ -768,7 +771,21 @@ export class SimCombatEncounter {
         const isHealing = itemId.includes('ningxue') || itemId.includes('blood') || itemId.includes('heal') || itemId.includes('wound')
         const isMana = itemId.includes('qi') || itemId.includes('mana') || itemId.includes('spirit')
 
-        if (isHealing && ally.hitpoints < ally.maxHitpoints * 0.6) {
+        // 触发条件求值：若已配置独立触发器（含空数组表示无条件就绪即用），按条件严格求值；未配置则保持默认健康度阈值
+        const triggers = ally.consumableTriggers?.[slot.itemId]
+        if (triggers !== undefined && triggers !== null) {
+          if (triggers.length > 0) {
+            const primaryEnemy = this.enemies.find(o => o.isAlive) ?? null
+            if (!SimSkillTriggerEvaluator.matchesAll(triggers, ally, primaryEnemy, this.allies, this.enemies)) {
+              continue
+            }
+          }
+        } else {
+          if (isHealing && ally.hitpoints >= ally.maxHitpoints * 0.6) continue
+          if (isMana && ally.manapoints >= ally.maxManapoints * 0.4) continue
+        }
+
+        if (isHealing) {
           const healAmount = Math.min(ally.maxHitpoints - ally.hitpoints, Math.max(50, ally.maxHitpoints * 0.3))
           ally.hitpoints += healAmount
           ally.consumableCooldowns[sIdx] = nowSeconds + 10

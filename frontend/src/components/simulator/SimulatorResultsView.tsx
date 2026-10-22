@@ -3,7 +3,7 @@ import { useT } from '../../i18n'
 import type { MultiNodeSimulatorReport, SimulatorNodeComparisonItem, SimulatorReport } from '../../game/simulator/simulatorTypes'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import { resolveItemMetadata } from '../../game/ids'
-
+import { StatGlyph } from '../StatGlyph'
 interface SimulatorResultsViewProps {
   multiReport?: MultiNodeSimulatorReport | null
   report?: SimulatorReport | null
@@ -56,6 +56,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
         killsPerHour: Number((singleReport.totalKills / (singleReport.totalSimulatedSeconds / 3600)).toFixed(1)),
         deathsPerHour: singleReport.playerDeathsPerHour,
         maxWave: singleReport.maxWave,
+        avgDurationSeconds: singleReport.durationBreakdown?.overallAverageSeconds ?? 0,
         report: singleReport,
       }]
     }
@@ -100,7 +101,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
   if (!currentReport && comparisonList.length === 0) {
     return (
       <div className="sim-results-empty">
-        <span className="sim-empty-icon">⚔️</span>
+        <StatGlyph glyph="attack" className="sim-empty-icon" size={24} />
         <span className="sim-empty-text">{t('combat.simulator.noReportHint')}</span>
       </div>
     )
@@ -120,14 +121,14 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
           className={`sim-group-tab ${activeGroup === 'comparison' ? 'is-active' : ''}`}
           onClick={() => setActiveGroup('comparison')}
         >
-          🏆 简要信息对比 ({comparisonList.length} 个地点)
+          <StatGlyph glyph="bio-pvp-win" /> 简要信息对比 ({comparisonList.length} 个地点)
         </button>
         <button
           type="button"
           className={`sim-group-tab ${activeGroup === 'details' ? 'is-active' : ''}`}
           onClick={() => setActiveGroup('details')}
         >
-          🔍 节点详细剖析 [{currentReport?.nodeName || '当前节点'}]
+          节点详细剖析 [{currentReport?.nodeName || '当前节点'}]
         </button>
       </div>
 
@@ -138,28 +139,28 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
           {champions && (
             <div className="sim-champions-grid">
               <div className="sim-champ-card champ-revenue">
-                <div className="sim-champ-badge">💰 收益之最</div>
+                <div className="sim-champ-badge"><StatGlyph glyph="mining" /> 收益之最</div>
                 <div className="sim-champ-title">{champions.revenue.nodeName}</div>
                 <div className="sim-champ-val text-gold">+{champions.revenue.dailyRevenue.toLocaleString()} 灵石/天</div>
                 <div className="sim-champ-sub">[{champions.revenue.mapName}] · 胜率 {(champions.revenue.winRate * 100).toFixed(1)}%</div>
               </div>
 
               <div className="sim-champ-card champ-exp">
-                <div className="sim-champ-badge">⚡ 修为最速</div>
+                <div className="sim-champ-badge"><StatGlyph glyph="experience" /> 修为最速</div>
                 <div className="sim-champ-title">{champions.exp.nodeName}</div>
                 <div className="sim-champ-val text-cyan">+{champions.exp.dailyCultivationExp.toLocaleString()} 修为/天</div>
                 <div className="sim-champ-sub">[{champions.exp.mapName}] · 遇敌 {champions.exp.encountersPerHour}/hr</div>
               </div>
 
               <div className="sim-champ-card champ-sixdim">
-                <div className="sim-champ-badge">🗡️ 六维之冠</div>
+                <div className="sim-champ-badge"><StatGlyph glyph="foundation" /> 六维之冠</div>
                 <div className="sim-champ-title">{champions.sixDim.nodeName}</div>
                 <div className="sim-champ-val text-emerald">+{champions.sixDim.dailySixDimensionExp.toLocaleString()} 六维/天</div>
                 <div className="sim-champ-sub">[{champions.sixDim.mapName}]</div>
               </div>
 
               <div className="sim-champ-card champ-safe">
-                <div className="sim-champ-badge">🛡️ 稳健挂机</div>
+                <div className="sim-champ-badge"><StatGlyph glyph="armor" /> 稳健挂机</div>
                 <div className="sim-champ-title">{champions.winRate.nodeName}</div>
                 <div className="sim-champ-val text-emerald">{(champions.winRate.winRate * 100).toFixed(1)}% 胜率</div>
                 <div className="sim-champ-sub">阵亡: {champions.winRate.deathsPerHour}/hr · 收益: {champions.winRate.dailyRevenue.toLocaleString()}/天</div>
@@ -190,6 +191,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                     <th>击杀速率</th>
                     <th>阵亡频次</th>
                     <th>最高波次</th>
+                    <th>平均单场</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -229,6 +231,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                           </span>
                         </td>
                         <td>Wave {item.maxWave}</td>
+                        <td>{item.avgDurationSeconds ? `${item.avgDurationSeconds.toFixed(1)}s` : '--'}</td>
                         <td>
                           <button
                             type="button"
@@ -281,35 +284,35 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
               className={`sim-nav-pill ${detailSubTab === 'overview' ? 'is-active' : ''}`}
               onClick={() => setDetailSubTab('overview')}
             >
-              📊 战况总览
+              <StatGlyph glyph="bio-monsters" /> 战况总览
             </button>
             <button
               type="button"
               className={`sim-nav-pill ${detailSubTab === 'combat' ? 'is-active' : ''}`}
               onClick={() => setDetailSubTab('combat')}
             >
-              ⚔️ 伤害与承伤
+              <StatGlyph glyph="attack" /> 伤害与承伤
             </button>
             <button
               type="button"
               className={`sim-nav-pill ${detailSubTab === 'mana' ? 'is-active' : ''}`}
               onClick={() => setDetailSubTab('mana')}
             >
-              💧 灵力与恢复
+              <StatGlyph glyph="mp" /> 灵力与恢复
             </button>
             <button
               type="button"
               className={`sim-nav-pill ${detailSubTab === 'yields' ? 'is-active' : ''}`}
               onClick={() => setDetailSubTab('yields')}
             >
-              🎁 战利品与收益
+              <StatGlyph glyph="gathering" /> 战利品与收益
             </button>
             <button
               type="button"
               className={`sim-nav-pill ${detailSubTab === 'logs' ? 'is-active' : ''}`}
               onClick={() => setDetailSubTab('logs')}
             >
-              📜 战斗日志 ({currentReport?.recentBattleLogs.length || 0})
+              战斗日志 ({currentReport?.recentBattleLogs.length || 0})
             </button>
           </nav>
 
@@ -366,6 +369,69 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                       {currentReport!.totalEncounters} 场 · {currentReport!.encountersPerHour}/hr
                     </span>
                   </div>
+                </div>
+              </section>
+              {/* 平均场次时长分析 (普通回/精英回/BOSS回) */}
+              <section className="sim-card sim-card--duration-breakdown">
+                <div className="sim-card-header">
+                  <div className="sim-card-title-wrap">
+                    <span className="sim-card-title">平均场次时长分析</span>
+                    <span className="sim-card-sub">单场战斗耗时统计与各波次类型细分</span>
+                  </div>
+                  <span className="sim-overall-duration-badge">
+                    全场平均单场: <strong>{currentReport!.durationBreakdown?.overallAverageSeconds?.toFixed(1) ?? '0.0'}s</strong>
+                  </span>
+                </div>
+                <div className="sim-duration-grid">
+                  {/* 1. 普通回（恒显） */}
+                  <div className="sim-duration-block sim-duration-block--normal">
+                    <div className="sim-duration-header">
+                      <span className="sim-duration-type-tag tag-normal">普通回</span>
+                      <span className="sim-duration-count">{currentReport!.durationBreakdown?.normal?.count ?? 0} 场</span>
+                    </div>
+                    <div className="sim-duration-value">
+                      {(currentReport!.durationBreakdown?.normal?.count ?? 0) > 0
+                        ? `${currentReport!.durationBreakdown.normal.averageSeconds.toFixed(1)}s`
+                        : '--'}
+                    </div>
+                    <div className="sim-duration-sub">
+                      {(currentReport!.durationBreakdown?.normal?.count ?? 0) > 0
+                        ? `范围 ${currentReport!.durationBreakdown.normal.minSeconds.toFixed(1)}s ~ ${currentReport!.durationBreakdown.normal.maxSeconds.toFixed(1)}s`
+                        : '未刷出寻常妖兽'}
+                    </div>
+                  </div>
+
+                  {/* 2. 精英回（有则展示，无则隐藏） */}
+                  {currentReport!.durationBreakdown?.elite && currentReport!.durationBreakdown.elite.count > 0 && (
+                    <div className="sim-duration-block sim-duration-block--elite">
+                      <div className="sim-duration-header">
+                        <span className="sim-duration-type-tag tag-elite">精英回</span>
+                        <span className="sim-duration-count">{currentReport!.durationBreakdown.elite.count} 场</span>
+                      </div>
+                      <div className="sim-duration-value">
+                        {currentReport!.durationBreakdown.elite.averageSeconds.toFixed(1)}s
+                      </div>
+                      <div className="sim-duration-sub">
+                        范围 {currentReport!.durationBreakdown.elite.minSeconds.toFixed(1)}s ~ {currentReport!.durationBreakdown.elite.maxSeconds.toFixed(1)}s
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. BOSS回（有则展示，无则隐藏） */}
+                  {currentReport!.durationBreakdown?.boss && currentReport!.durationBreakdown.boss.count > 0 && (
+                    <div className="sim-duration-block sim-duration-block--boss">
+                      <div className="sim-duration-header">
+                        <span className="sim-duration-type-tag tag-boss">BOSS回</span>
+                        <span className="sim-duration-count">{currentReport!.durationBreakdown.boss.count} 场</span>
+                      </div>
+                      <div className="sim-duration-value">
+                        {currentReport!.durationBreakdown.boss.averageSeconds.toFixed(1)}s
+                      </div>
+                      <div className="sim-duration-sub">
+                        范围 {currentReport!.durationBreakdown.boss.minSeconds.toFixed(1)}s ~ {currentReport!.durationBreakdown.boss.maxSeconds.toFixed(1)}s
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -533,7 +599,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
 
                   {manaDeficit.suggestions.length > 0 && (
                     <div className="sim-mana-suggestions-box">
-                      <div className="sim-suggestion-header">💡 战斗调优建议:</div>
+                      <div className="sim-suggestion-header">战斗调优建议:</div>
                       <ul className="sim-suggestion-list">
                         {manaDeficit.suggestions.map((sug, idx) => (
                           <li key={idx} className="sim-suggestion-item">{sug}</li>
