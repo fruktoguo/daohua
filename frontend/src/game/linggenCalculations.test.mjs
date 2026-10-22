@@ -88,3 +88,31 @@ test('linggenCalculations：拖到 0 触发下限边界', () => {
   assert.equal(result.hitBound, 'min')
   assert.equal(result.remainingPoints, 30)
 })
+
+test('linggenCalculations：多轴极端拖拽绝不发生透支，未分配点数严格恒 >= 0', () => {
+  const innate = { metal: 0, wood: 67, water: 99, fire: 69, earth: 0 }
+  // 1. 水火全部散功到 0
+  let current = { ...innate, water: 0, fire: 0 }
+  // 水返还 49.5，火返还 34.5，总池 84 点
+  assert.equal(remainingPoints(innate, current), 84)
+
+  // 2. 尝试把金拉到 100：金最多只能到 0 + 84 = 84 点
+  const dragMetal = applyAxisDrag(innate, current, 'metal', 100)
+  assert.equal(dragMetal.roots.metal, 84)
+  assert.equal(dragMetal.remainingPoints, 0)
+  assert.equal(dragMetal.hitInsufficientBalance, true)
+  current = dragMetal.roots
+
+  // 3. 此时池中点数已耗尽（0 点），尝试把土也拉到 100：土必须停在 0 点，绝不能被拉高！
+  const dragEarth = applyAxisDrag(innate, current, 'earth', 100)
+  assert.equal(dragEarth.roots.earth, 0)
+  assert.ok(dragEarth.remainingPoints >= 0, '未分配点数绝不能为负')
+  assert.equal(dragEarth.hitInsufficientBalance, true)
+  current = dragEarth.roots
+
+  // 4. 尝试把木拉到 100：木必须停在先天 67 点，绝不能被拉高！
+  const dragWood = applyAxisDrag(innate, current, 'wood', 100)
+  assert.equal(dragWood.roots.wood, 67)
+  assert.ok(dragWood.remainingPoints >= 0, '未分配点数绝不能为负')
+  assert.equal(dragWood.hitInsufficientBalance, true)
+})

@@ -99,17 +99,22 @@ export function remainingPoints(innate: LinggenPoints, current: LinggenPoints): 
   return Math.round(total * 2) / 2
 }
 
-/** 其余四轴让点支持下，该轴可达的最高值。 */
+/** 其余四轴让点支持下，该轴可达的最高理论上限（保证 remainingPoints 恒 >= 0，严禁透支）。 */
 export function maxReachableValue(
   innate: LinggenPoints,
   current: LinggenPoints,
   axisKey: LinggenElementKey,
 ): number {
-  const pool = LINGGEN_ELEMENT_KEYS.reduce(
+  const innateVal = innate[axisKey]
+  const otherPool = LINGGEN_ELEMENT_KEYS.reduce(
     (sum, key) => (key === axisKey ? sum : sum + axisPointContribution(innate[key], current[key])),
     0,
   )
-  return Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.floor(current[axisKey] + pool)))
+  const maxAllowed = otherPool >= 0
+    ? innateVal + otherPool
+    : innateVal + 2 * otherPool
+
+  return Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.floor(maxAllowed)))
 }
 
 /** 拖拽结果：新分布、剩余点数与三种边界反馈。 */
@@ -123,7 +128,7 @@ export interface AxisDragResult {
   hitBound: 'min' | 'max' | null
 }
 
-/** 把某轴拖到目标值，返回受限后的结果。 */
+/** 把某轴拖到目标值，返回受限后的结果（点数池绝不允许透支，remainingPoints 恒 >= 0）。 */
 export function applyAxisDrag(
   innate: LinggenPoints,
   current: LinggenPoints,
@@ -132,25 +137,29 @@ export function applyAxisDrag(
 ): AxisDragResult {
   const clampedTarget = clampPoints(targetValue)
   const before = current[axisKey]
-  const delta = clampedTarget - before
-  const next: LinggenPoints = { ...current }
-  let hitInsufficientBalance = false
-  let hitBound: 'min' | 'max' | null = null
+  const reachable = maxReachableValue(innate, current, axisKey)
+  // 目标值绝对不能超过在点数池约束下的理论上限！
+  const applied = Math.min(clampedTarget, reachable)
+  const next: LinggenPoints = { ...current, [axisKey]: applied }
 
-  if (delta > 0) {
-    const reachable = maxReachableValue(innate, current, axisKey)
-    const applied = Math.min(clampedTarget, reachable)
-    next[axisKey] = applied
-    if (applied < clampedTarget) hitInsufficientBalance = true
-    if (applied >= LINGGEN_AXIS_CAP && clampedTarget >= LINGGEN_AXIS_CAP) hitBound = 'max'
-  } else if (delta < 0) {
-    next[axisKey] = clampedTarget
-    if (clampedTarget === 0 && targetValue <= 0) hitBound = 'min'
+  let finalRemaining = remainingPoints(innate, next)
+  // 坚固守卫：若存在浮点微小误差导致 remainingPoints < 0，坚决回退保证恒 >= 0
+  while (finalRemaining < 0 && next[axisKey] > 0) {
+    next[axisKey] -= 1
+    finalRemaining = remainingPoints(innate, next)
   }
+
+  const hitInsufficientBalance = applied < clampedTarget
+  const hitBound =
+    applied === 0 && targetValue <= 0
+      ? 'min'
+      : applied === LINGGEN_AXIS_CAP && clampedTarget >= LINGGEN_AXIS_CAP
+        ? 'max'
+        : null
 
   return {
     roots: next,
-    remainingPoints: remainingPoints(innate, next),
+    remainingPoints: Math.max(0, finalRemaining),
     appliedDelta: next[axisKey] - before,
     hitInsufficientBalance,
     hitBound,

@@ -583,18 +583,22 @@ export const HeavenGateModal = memo(function HeavenGateModal({
           </div>
         </div>
 
-        {/* D 底部操作区（居中排布：重置与逆天改命；入天门与开天门由内环中心印章按钮承担） */}
-        <footer className="hg-actions">
-          {hasRolled && hasPill && (
-            <label className="hg-reroll-toggle">
-              <input
-                type="checkbox"
-                checked={usePill}
-                onChange={event => setUsePill(event.currentTarget.checked)}
-              />
-              <span>{t('insight.heavenGate.usePillLabel')}</span>
-            </label>
-          )}
+        {/* D 底部操作区（三行固定高度占位，确保绝不发生纵向跳动） */}
+        <footer className="hg-footer">
+          <div className="hg-footer__top">
+            {hasRolled && hasPill ? (
+              <label className="hg-reroll-toggle">
+                <input
+                  type="checkbox"
+                  checked={usePill}
+                  onChange={event => setUsePill(event.currentTarget.checked)}
+                />
+                <span>{t('insight.heavenGate.usePillLabel')}</span>
+              </label>
+            ) : (
+              <div className="hg-footer__spacer" aria-hidden="true" />
+            )}
+          </div>
 
           <div className="hg-actions__group">
             {boardState === 'allocating' && (
@@ -656,15 +660,19 @@ export const HeavenGateModal = memo(function HeavenGateModal({
               </>
             )}
           </div>
-        </footer>
 
-        {hasRolled && (
-          <p className="hg-cost-line">
-            {usePill && hasPill
-              ? t('insight.heavenGate.costPill', { cost: rerollCostPill })
-              : t('insight.heavenGate.costPlain', { cost: rerollCostPlain })}
-          </p>
-        )}
+          <div className="hg-footer__bottom">
+            {hasRolled ? (
+              <p className="hg-cost-line">
+                {usePill && hasPill
+                  ? t('insight.heavenGate.costPill', { cost: rerollCostPill })
+                  : t('insight.heavenGate.costPlain', { cost: rerollCostPlain })}
+              </p>
+            ) : (
+              <div className="hg-footer__spacer" aria-hidden="true" />
+            )}
+          </div>
+        </footer>
       </section>
     </Modal>
     {open && confirmAction === 'enter' && (
