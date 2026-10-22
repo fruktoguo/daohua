@@ -99,10 +99,27 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   const [toast, setToast] = useState<string | null>(null)
   const dragOriginRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
 
-  // 服务端状态变化时同步本地草稿：入天门后以确认值只读展示，否则以抽取值为先天基准。
+  // 生成服务端真源的纯值指纹：防止后台高频推流（对象引用变化但数值未变）冲刷玩家正在拖拽的草稿。
+  const sourceFingerprint = useMemo(() => {
+    if (entered) {
+      const c = confirmed ?? emptyPoints()
+      return `entered:${c.metal},${c.wood},${c.water},${c.fire},${c.earth}`
+    }
+    if (rolled) {
+      return `rolled:${rolled.metal},${rolled.wood},${rolled.water},${rolled.fire},${rolled.earth}:${rerollCount}`
+    }
+    return 'unrolled'
+  }, [confirmed, entered, rerollCount, rolled])
+
+  const lastSyncedRef = useRef<string | null>(null)
+
+  // 只有服务端核心数值（抽取结果、确认生效或改命次数）真正改变时才同步；
+  // 常规状态推流（挂机/战斗等秒级快照更新）绝不覆盖玩家正在调整的本地草稿。
   useEffect(() => {
+    if (lastSyncedRef.current === sourceFingerprint) return
+    lastSyncedRef.current = sourceFingerprint
     setRoots(entered ? confirmed ?? emptyPoints() : rolled ?? emptyPoints())
-  }, [entered, confirmed, rolled])
+  }, [entered, confirmed, rolled, sourceFingerprint])
 
   const innate = rolled ?? emptyPoints()
   const hasRolled = useMemo(
@@ -528,7 +545,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                 <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="26" className="hg-dantian__halo" />
                 <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="20" className="hg-dantian__core" />
                 <text x={BOARD_CENTER.x} y={BOARD_CENTER.y + 1} className="hg-dantian__text">
-                  {boardState === 'unrolled' ? '开天门' : boardState === 'allocating' ? '入天门' : '灵'}
+                  {boardState === 'unrolled' ? '开天门' : '灵'}
                 </text>
               </g>
             </svg>
@@ -611,6 +628,15 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   {usePill && hasPill
                     ? t('insight.heavenGate.rerollWithPillBtn')
                     : t('insight.heavenGate.rerollBtn')}
+                </button>
+                <button
+                  ref={confirmRef}
+                  type="button"
+                  className="hg-btn hg-btn--primary"
+                  disabled={!hasActiveRoot || remaining < 0}
+                  onClick={handleEnterClick}
+                >
+                  {t('insight.heavenGate.enterBtn')}
                 </button>
               </>
             )}
