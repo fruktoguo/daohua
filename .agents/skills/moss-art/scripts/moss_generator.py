@@ -23,11 +23,12 @@ REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", "..", ".."))
 OUTPUT_DIR = os.path.join(REPO_ROOT, "frontend", "src", "assets", "items")
 COMFY_OUTPUT_DIR = r"D:\Tools\AI\ComfyUI-Shared\output"
 
-# Turbo 加速 LoRA（SFT 4-step v2，civitai 3006599 / akhaliq 蒸馏）：官方参数 steps=4 / CFG=1.0 / 强度=1.0，
+# Turbo 加速 LoRA（SFT 4-step v2，civitai 3006599 / akhaliq 蒸馏）：官方参数 CFG=1.0 / 强度=1.0，
 # 必须经 LoraLoaderModelOnly 运行时挂载，禁止合并进 bf16 底模权重；一次只挂一个 turbo LoRA。
+# 步数官方口径 4(1024²)/6(1536宽)/8(2048²)，本项目默认取 8 步出图更稳（仍远快于标准 35 步）。
 TURBO_LORA_NAME = "moss_image_sft_4_steps_lora_v2_600_avg_rank_72_bf16.safetensors"
 TURBO_LORA_DIR = r"D:\Tools\AI\ComfyUI-Shared\models\loras"
-TURBO_STEPS = 4
+TURBO_STEPS = 8
 TURBO_CFG = 1.0
 
 # 预设系列道具定义
@@ -884,6 +885,22 @@ PRESET_BATCHES = {
     ],
 }
 
+def _sanitize_workflow(wf):
+    """清洗任意来源工作流：剔除 turbo 注入节点并把 KSampler 的 model 输入复原到原生链路。
+
+    turbo 节点是 submit_task 动态注入的运行时附件，历史取回的工作流若保留它，
+    KSampler.model 会悬空指向已删除节点或形成自环，导致执行图损坏空转。
+    """
+    if "turbo" not in wf:
+        return wf
+    wf.pop("turbo")
+    if "16" in wf and wf["16"].get("inputs", {}).get("model") == ["turbo", 0]:
+        restored = next((src for src in ("20", "15", "1") if src in wf), None)
+        if restored is None:
+            raise RuntimeError("工作流缺少原生模型链路节点 (20/15/1)，无法复原 KSampler 上游。")
+        wf["16"]["inputs"]["model"] = [restored, 0]
+    return wf
+
 def get_latest_workflow():
     with urllib.request.urlopen(f"{COMFY_HOST}/history") as resp:
         history = json.loads(resp.read().decode())
@@ -893,18 +910,18 @@ def get_latest_workflow():
             with open(template_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         raise RuntimeError("No history found in ComfyUI.")
-    
+
     # 优先从历史中获取包含 Node 27 (easy imageRemBg) 的工作流
     for pid in reversed(list(history.keys())):
         p = history[pid].get("prompt", [None, None, {}])[2]
         if "27" in p and p["27"].get("class_type") == "easy imageRemBg":
-            wf = json.loads(json.dumps(p))
+            wf = _sanitize_workflow(json.loads(json.dumps(p)))
             wf["18"]["inputs"]["images"] = ["27", 0]
             return wf
-            
+
     # 若历史中未找到，则取最新并显式注入 Node 27 抠图节点
     latest_id = list(history.keys())[-1]
-    wf = json.loads(json.dumps(history[latest_id]["prompt"][2]))
+    wf = _sanitize_workflow(json.loads(json.dumps(history[latest_id]["prompt"][2])))
     wf["27"] = {
         "inputs": {
             "rem_mode": "RMBG-1.4",
@@ -1171,23 +1188,24 @@ def main():
     parser.add_argument("--layout", type=str, help="自定义 Layout JSON 文件路径或 JSON 字符串")
     parser.add_argument("--single-entity", type=str, help="单体资产标识符 (如 enemy.tide-spirit 或 building.peak-cottage)，不进行九宫切片")
     parser.add_argument("--category", choices=["monster", "character", "item", "equipment", "ability", "building", "emblem", "scene"], help="资产大类")
-    parser.add_argument("--steps", type=int, default=None, help="推理步数 (标准 35-45；turbo 默认 4)")
-    parser.add_argument("--cfg", type=float, default=None, help="CFG 引导比例 (标准 3.0-4.0；turbo 默认 1.0)")
-    parser.add_argument("--turbo", action="store_true", help="启用 MOSS-Image Turbo 4步加速 LoRA (CFG 1.0, 强度 1.0, 与标准路线互斥)")
+    parser.add_argument("--steps", type=int, default=None, help="推理步数 (turbo 默认 8；full 全量默认 35)")
+    parser.add_argument("--cfg", type=float, default=None, help="CFG 引导比例 (turbo 默认 1.0；full 全量默认 3.5)")
+    parser.add_argument("--full", action="store_true", help="退出 turbo 加速路线，走标准 35 步 / CFG 3.5 全量生成（SLG Layer 22 全效）")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     parser.add_argument("--aspect-ratio", default="1:1 (Square)", help="长宽比: '1:1 (Square)', '16:9 (Landscape)', '4:3'")
     parser.add_argument("--negative", type=str, default=None, help="自定义负向提示词")
     parser.add_argument("--dry-run", action="store_true", help="仅组装提示词，不实际提交")
     args = parser.parse_args()
 
-    # Turbo 路线默认值：steps=4 / CFG=1.0（官方口径），显式传 --steps/--cfg 可覆盖。
-    if args.turbo:
-        steps = args.steps if args.steps is not None else TURBO_STEPS
-        cfg = args.cfg if args.cfg is not None else TURBO_CFG
-    else:
+    # 默认 turbo 加速路线（steps=8 / CFG=1.0）；--full 走标准 35 步 / CFG 3.5。显式 --steps/--cfg 可覆盖。
+    if args.full:
         steps = args.steps if args.steps is not None else 35
         cfg = args.cfg if args.cfg is not None else 3.5
+    else:
+        steps = args.steps if args.steps is not None else TURBO_STEPS
+        cfg = args.cfg if args.cfg is not None else TURBO_CFG
     args.steps, args.cfg = steps, cfg
+    args.turbo = not args.full
 
     if not args.batch and not args.layout:
         parser.print_help()
@@ -1257,7 +1275,7 @@ def main():
     print(prompt_str)
     
     if args.dry_run:
-        turbo_tag = "TURBO 4步" if args.turbo else "标准 35步"
+        turbo_tag = "TURBO 8步加速" if args.turbo else "FULL 标准全量"
         print(f"\n[DRY RUN] 提示词与布局已组装完毕 (长宽比: {args.aspect_ratio}, 步数: {args.steps}, CFG: {args.cfg}, 模式: {turbo_tag})，未提交到 ComfyUI。")
         return 0
 
