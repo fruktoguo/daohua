@@ -8,6 +8,7 @@ import {
   projectPointerToAxis,
   remainingPoints,
 } from '../game/linggenCalculations'
+import { evaluateSpiritualRoots } from '../game/linggenEvaluation'
 import {
   BOARD_CENTER,
   LINGGEN_AXES,
@@ -116,6 +117,10 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   const hasActiveRoot = roots.metal + roots.wood + roots.water + roots.fire + roots.earth > 0
   const multiplier = linggenCultivationMultiplier(roots, entered)
   const hasPill = reverseFatePillCount > 0
+  const evaluation = useMemo(
+    () => evaluateSpiritualRoots(roots, hasRolled),
+    [hasRolled, roots],
+  )
 
   const showToast = useCallback((message: string) => {
     setToast(message)
@@ -242,19 +247,15 @@ export const HeavenGateModal = memo(function HeavenGateModal({
         {/* A 判语区 */}
         <header className="hg-header">
           <div className="hg-header__top">
-            <div className="hg-header__title-group">
-              <h2 id={titleId} className="hg-header__title">{t('insight.heavenGate.title')}</h2>
-              <span className="hg-header__subtitle">{t('insight.heavenGate.subtitle')}</span>
-            </div>
+            <h2 id={titleId} className="hg-header__title">{t('insight.heavenGate.title')}</h2>
+            <p className="hg-header__subtitle">叩开天门别凡骨 · 五气朝元定道根</p>
           </div>
           <div className="hg-verdict">
             <div className="hg-verdict__title-wrap">
-              <span className="hg-verdict__name">{verdictName(roots, hasRolled, t)}</span>
-              {hasRolled && hasActiveRoot && (
-                <span className="hg-verdict__seal">{verdictSeal(roots, t)}</span>
-              )}
+              <span className="hg-verdict__name">{evaluation.name}</span>
+              <span className="hg-verdict__seal">{evaluation.seal}</span>
             </div>
-            <p className="hg-verdict__desc">{verdictDesc(roots, hasRolled, multiplier, t)}</p>
+            <p className="hg-verdict__desc">{evaluation.desc}</p>
           </div>
         </header>
 
@@ -417,14 +418,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                 </g>
               </g>
 
-              {/* 视觉层 6：中心丹田 */}
-              <g className="hg-dantian">
-                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="32" className="hg-dantian__halo" />
-                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="24" className="hg-dantian__core" />
-                <text x={BOARD_CENTER.x} y={BOARD_CENTER.y + 1} className="hg-dantian__text">
-                  {boardState === 'unrolled' ? '开天门' : '灵'}
-                </text>
-              </g>
+
 
               {/* 视觉层 7：五轴灵根仙株滑块 */}
               <g className="hg-board__handles">
@@ -513,6 +507,30 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   )
                 })}
               </g>
+              {/* 视觉层 8.5：中心内环大印按钮（开天门 / 入天门操作核心） */}
+              <g
+                className={`hg-dantian ${boardState === 'finalized' ? 'hg-dantian--disabled' : ''}`}
+                role={boardState === 'finalized' ? 'img' : 'button'}
+                tabIndex={boardState === 'finalized' ? -1 : 0}
+                aria-label={boardState === 'unrolled' ? '开天门' : boardState === 'allocating' ? '叩入天门' : '道根已定'}
+                onClick={() => {
+                  if (boardState === 'unrolled') onRoll()
+                  else if (boardState === 'allocating') handleEnterClick()
+                }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    if (boardState === 'unrolled') onRoll()
+                    else if (boardState === 'allocating') handleEnterClick()
+                  }
+                }}
+              >
+                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="26" className="hg-dantian__halo" />
+                <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="20" className="hg-dantian__core" />
+                <text x={BOARD_CENTER.x} y={BOARD_CENTER.y + 1} className="hg-dantian__text">
+                  {boardState === 'unrolled' ? '开天门' : boardState === 'allocating' ? '入天门' : '灵'}
+                </text>
+              </g>
             </svg>
 
             {toast && (
@@ -525,87 +543,56 @@ export const HeavenGateModal = memo(function HeavenGateModal({
           )}
         </div>
 
-        {/* C 底部状态区 */}
+        {/* C 底部状态区（精简为未分配、总、后续破镜难度三栏） */}
         <div className="hg-stats">
           <div className="hg-stat hg-stat--remaining">
             <div className="hg-stat__head">
-              <span className="hg-stat__label">{t('insight.heavenGate.remainingPoints')}</span>
-              <span className="hg-stat__badge">{t('insight.heavenGate.allocatable')}</span>
+              <span className="hg-stat__label">未分配</span>
             </div>
             <div className="hg-stat__main">
-              {/* 定型态灵根已定，点数池不再参与分配，显示破折号而非余额。 */}
               <strong className="hg-stat__value">
                 {boardState === 'allocating' && hasRolled ? formatPoints(remaining) : '--'}
               </strong>
             </div>
-            <div className="hg-stat__sub">{t('insight.heavenGate.remainingHint')}</div>
           </div>
 
           <div className="hg-stat hg-stat--total">
             <div className="hg-stat__head">
-              <span className="hg-stat__label">{t('insight.heavenGate.totalPoints')}</span>
-              <span className="hg-stat__pity-badge">
-                {t('insight.heavenGate.rerollCount', { count: rerollCount })}
-              </span>
+              <span className="hg-stat__label">总</span>
             </div>
             <div className="hg-stat__main">
               <strong className="hg-stat__value">
                 {hasRolled ? `${currentTotal} (初${immutableTotal})` : '--'}
               </strong>
             </div>
-            <div className="hg-stat__sub">
-              {boardState === 'allocating' && hasRolled && currentTotal < immutableTotal
-                ? t('insight.heavenGate.totalLoss', { loss: immutableTotal - currentTotal })
-                : t('insight.heavenGate.totalHint')}
-            </div>
           </div>
 
           <div className="hg-stat hg-stat--cultivation">
             <div className="hg-stat__head">
-              <span className="hg-stat__label">{t('insight.heavenGate.statMultiplier')}</span>
+              <span className="hg-stat__label">后续破镜难度</span>
             </div>
             <div className="hg-stat__main">
               <strong className="hg-stat__value">
-                {t('insight.heavenGate.multiplierValue', { value: multiplier.toFixed(1) })}
+                {`×${multiplier.toFixed(1)}`}
               </strong>
-            </div>
-            <div className="hg-exp-bar" aria-hidden="true">
-              <div
-                className="hg-exp-bar__cap"
-                style={{ width: `${hasRolled && hasActiveRoot ? Math.min(100, (multiplier / 3) * 100) : 0}%` }}
-              />
-              <div className="hg-exp-bar__ticks">
-                <span /><span /><span /><span /><span />
-              </div>
-            </div>
-            <div className="hg-stat__sub">
-              {t('insight.heavenGate.capHint', {
-                cap: Math.round(Math.max(1, expToNext) * multiplier),
-              })}
             </div>
           </div>
         </div>
 
-        {/* D 操作区 */}
+        {/* D 底部操作区（居中排布：重置与逆天改命；入天门与开天门由内环中心印章按钮承担） */}
         <footer className="hg-actions">
+          {hasRolled && hasPill && (
+            <label className="hg-reroll-toggle">
+              <input
+                type="checkbox"
+                checked={usePill}
+                onChange={event => setUsePill(event.currentTarget.checked)}
+              />
+              <span>{t('insight.heavenGate.usePillLabel')}</span>
+            </label>
+          )}
+
           <div className="hg-actions__group">
-            {boardState === 'unrolled' && (
-              <button type="button" className="hg-btn hg-btn--primary" onClick={onRoll}>
-                {t('insight.heavenGate.rollBtn')}
-              </button>
-            )}
-
-            {hasRolled && hasPill && (
-              <label className="hg-reroll-toggle">
-                <input
-                  type="checkbox"
-                  checked={usePill}
-                  onChange={event => setUsePill(event.currentTarget.checked)}
-                />
-                <span>{t('insight.heavenGate.usePillLabel')}</span>
-              </label>
-            )}
-
             {boardState === 'allocating' && (
               <>
                 <button
@@ -614,7 +601,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   disabled={isAtInnate}
                   onClick={handleReset}
                 >
-                  {t('insight.heavenGate.resetBtn')}
+                  重置
                 </button>
                 <button
                   type="button"
@@ -624,15 +611,6 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   {usePill && hasPill
                     ? t('insight.heavenGate.rerollWithPillBtn')
                     : t('insight.heavenGate.rerollBtn')}
-                </button>
-                <button
-                  ref={confirmRef}
-                  type="button"
-                  className="hg-btn hg-btn--primary"
-                  disabled={!hasActiveRoot || remaining < 0}
-                  onClick={handleEnterClick}
-                >
-                  {t('insight.heavenGate.enterBtn')}
                 </button>
               </>
             )}
@@ -652,6 +630,12 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   {t('insight.heavenGate.closeBtn')}
                 </button>
               </>
+            )}
+
+            {boardState === 'unrolled' && (
+              <button type="button" className="hg-btn hg-btn--ghost" onClick={onClose}>
+                {t('insight.heavenGate.closeBtn')}
+              </button>
             )}
           </div>
         </footer>
@@ -705,33 +689,3 @@ function formatPoints(value: number): string {
 }
 
 /** 判语标题：按最高灵根数量与品阶给出定性评级。 */
-function verdictName(roots: LinggenPoints, hasRolled: boolean, t: (key: string) => string): string {
-  if (!hasRolled) return t('insight.heavenGate.verdict.unrolled')
-  const active = LINGGEN_AXES.filter(axis => roots[axis.key] > 0)
-  if (active.length === 0) return t('insight.heavenGate.verdict.empty')
-  if (active.length === 1) return t('insight.heavenGate.verdict.single')
-  if (active.length === 5) return t('insight.heavenGate.verdict.balanced')
-  return t('insight.heavenGate.verdict.mixed')
-}
-
-/** 判语印章：天灵/地灵档位与有效灵根条数。 */
-function verdictSeal(roots: LinggenPoints, t: (key: string, params?: Record<string, string | number>) => string): string {
-  const heavenCount = LINGGEN_AXES.filter(axis => axisTier(roots[axis.key]) === 'heaven').length
-  const earthCount = LINGGEN_AXES.filter(axis => axisTier(roots[axis.key]) === 'earth').length
-  if (heavenCount > 0) return t('insight.heavenGate.seal.heaven', { count: heavenCount })
-  if (earthCount > 0) return t('insight.heavenGate.seal.earth', { count: earthCount })
-  return t('insight.heavenGate.seal.mortal')
-}
-
-/** 判语说明：点明有效灵根数与升级需求乘区。 */
-function verdictDesc(
-  roots: LinggenPoints,
-  hasRolled: boolean,
-  multiplier: number,
-  t: (key: string, params?: Record<string, string | number>) => string,
-): string {
-  if (!hasRolled) return t('insight.heavenGate.verdict.unrolledDesc')
-  const active = LINGGEN_AXES.filter(axis => roots[axis.key] > 0).length
-  if (active === 0) return t('insight.heavenGate.verdict.emptyDesc')
-  return t('insight.heavenGate.verdict.desc', { count: active, multiplier: multiplier.toFixed(1) })
-}

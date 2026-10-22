@@ -171,30 +171,39 @@
 
     .hg-header__top {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
+      text-align: center;
       border-bottom: 1px solid var(--hg-ink-faint);
-      padding-bottom: 4px;
+      padding-bottom: 8px;
+      gap: 4px;
     }
 
     .hg-header__title-group {
       display: flex;
-      align-items: baseline;
-      gap: 8px;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
     }
 
     .hg-header__title {
       font-family: var(--hg-font-serif);
-      font-size: 16px;
-      font-weight: 800;
+      font-size: 24px;
+      font-weight: 900;
       color: var(--hg-ink-deep);
-      letter-spacing: 0.06em;
+      letter-spacing: 0.12em;
+      margin: 0;
     }
 
     .hg-header__subtitle {
-      font-size: 12px;
-      font-weight: 500;
+      font-family: var(--hg-font-serif);
+      font-size: 13px;
+      font-weight: 600;
       color: var(--hg-ochre);
+      letter-spacing: 0.1em;
+      margin: 0;
+      opacity: 0.92;
     }
 
     .hg-verdict {
@@ -554,40 +563,72 @@
     /* 视觉层 6：中心丹田（圆形 64 单位，2s 呼吸脉动，绝不放按钮） */
     @keyframes hg-dantian-breathe {
       0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.06); }
+      50% { transform: scale(1.05); }
     }
 
     .hg-dantian {
       transform-origin: 200px 200px;
-      animation: hg-dantian-breathe 2s ease-in-out infinite;
-      pointer-events: none;
+      animation: hg-dantian-breathe 2.4s ease-in-out infinite;
+      pointer-events: auto;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .hg-dantian:hover .hg-dantian__halo {
+      stroke: var(--hg-ochre);
+      filter: drop-shadow(0 0 6px var(--hg-ochre));
+    }
+
+    .hg-dantian:hover .hg-dantian__core {
+      fill: var(--hg-panel-grad);
+    }
+
+    .hg-dantian--disabled {
+      cursor: default;
+      animation: none;
+    }
+
+    .hg-dantian--disabled:hover .hg-dantian__halo {
+      stroke: var(--hg-border-strong);
+      filter: none;
     }
 
     .hg-dantian__halo {
       fill: var(--hg-paper-surface);
       stroke: var(--hg-border-strong);
       stroke-width: 1.5px;
+      transition: all var(--hg-dur-fast) var(--hg-ease);
     }
 
     .hg-dantian__core {
       fill: var(--hg-paper-bright);
       stroke: var(--hg-ochre);
-      stroke-width: 1px;
+      stroke-width: 1.5px;
+      transition: all var(--hg-dur-fast) var(--hg-ease);
     }
 
     .hg-dantian__text {
-      font-family: var(--hg-font-brush);
-      font-size: 24px;
+      font-family: var(--hg-font-serif);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
       fill: var(--hg-ochre);
       text-anchor: middle;
       dominant-baseline: central;
+      pointer-events: none;
     }
 
-    .hg-panel[data-state="unrolled"] .hg-dantian__text {
-      font-family: var(--hg-font-serif);
-      font-size: 14px;
-      font-weight: 700;
-      fill: var(--hg-ink-deep);
+    .hg-panel[data-state="unrolled"] .hg-dantian__text,
+    .hg-panel[data-state="allocating"] .hg-dantian__text {
+      font-size: 12px;
+      font-weight: 900;
+      fill: var(--hg-crimson);
+    }
+
+    .hg-panel[data-state="finalized"] .hg-dantian__text {
+      font-family: var(--hg-font-brush);
+      font-size: 18px;
+      fill: var(--hg-ink-gray);
     }
 
     /* 视觉层 7：五轴具象化「灵根仙株滑块」与滑块随行「地灵/天灵」铭牌 */
@@ -1057,9 +1098,11 @@
     .hg-actions {
       position: relative;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: center;
       padding-top: 4px;
+      gap: 6px;
       z-index: 1;
     }
 
@@ -1087,8 +1130,9 @@
     .hg-actions__group {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px;
       width: 100%;
     }
 
@@ -1239,5 +1283,6 @@
       margin: 0;
       font-size: 12px;
       color: var(--hg-ochre);
-      text-align: right;
+      text-align: center;
+      width: 100%;
     }

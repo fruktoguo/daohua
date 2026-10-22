@@ -7,6 +7,7 @@
 import {
   BOARD_CENTER,
   BOARD_MAX_RADIUS,
+  BOARD_MIN_RADIUS,
   LINGGEN_AXES,
   LINGGEN_AXIS_CAP,
   LINGGEN_ELEMENT_KEYS,
@@ -165,6 +166,10 @@ export function projectPointerToAxis(
   if (!axis) return 0
   const dx = pointer.x - BOARD_CENTER.x
   const dy = pointer.y - BOARD_CENTER.y
-  const projected = Math.max(0, dx * axis.unitCos + dy * axis.unitSin)
-  return Math.round((projected / BOARD_MAX_RADIUS) * LINGGEN_AXIS_CAP)
+  const projected = dx * axis.unitCos + dy * axis.unitSin
+  // 投影在内环以内即视为归零（0 点），拉至外圈或以外记为满值（100 点）。
+  if (projected <= BOARD_MIN_RADIUS) return 0
+  if (projected >= BOARD_MAX_RADIUS) return LINGGEN_AXIS_CAP
+  const ratio = (projected - BOARD_MIN_RADIUS) / (BOARD_MAX_RADIUS - BOARD_MIN_RADIUS)
+  return Math.round(ratio * LINGGEN_AXIS_CAP)
 }
