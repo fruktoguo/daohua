@@ -126,6 +126,57 @@ public sealed class HeavenGateCommandTests
     /// <summary>
     /// 入天门令灵根生效：入天门状态与确认灵根同时成立，随后突破前置解除；重复入天门被拒。
     /// </summary>
+    /// <summary>
+    /// 入天门单次发包：enter 载荷中直接携带五行分配点数，服务端一次性完成校验、分配与入天门生效。
+    /// </summary>
+    [Fact]
+    public async Task EnterWithDirectCandidateValuesSucceedsInSingleCommand()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = CreateRuntime(playerId, GateAtFullExperience);
+        await runtime.LoadAsync(playerId);
+        var rolled = await Execute(runtime, playerId, new { action = "roll" });
+        var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
+        var modified = rolledValues.With(LinggenElement.Metal, 0);
+
+        var entered = await Execute(runtime, playerId, new
+        {
+            action = "enter",
+            metal = modified.Metal, wood = modified.Wood, water = modified.Water,
+            fire = modified.Fire, earth = modified.Earth
+        });
+        Assert.True(entered.Success, $"{entered.Code}: {entered.Message}");
+        var gate = entered.Snapshot.State.Progression;
+        Assert.True(gate.HeavenGateEntered);
+        Assert.Equal(modified, gate.HeavenGateConfirmed);
+    }
+
+    /// <summary>
+    /// 未入天门时（allocating 阶段）亦允许逆天改命：扣除底蕴后抽取原生值刷新，保持未入天门状态。
+    /// </summary>
+    [Fact]
+    public async Task RerollBeforeEnteringIsAllowedAndKeepsNotEntered()
+    {
+        var playerId = Guid.NewGuid();
+        var cost = HeavenGateRules.ResolveRerollFoundationCost(GateExpCap, useReverseFatePill: false);
+        await using var runtime = CreateRuntime(playerId, aggregate =>
+        {
+            GateAtFullExperience(aggregate);
+            aggregate.Progression.Foundation = cost + 1000;
+        });
+        await runtime.LoadAsync(playerId);
+        var firstRoll = await Execute(runtime, playerId, new { action = "roll" });
+        var firstRolledValues = firstRoll.Snapshot.State.Progression.HeavenGateRolled!.Value;
+
+        var rerolled = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
+        Assert.True(rerolled.Success, $"{rerolled.Code}: {rerolled.Message}");
+        var gate = rerolled.Snapshot.State.Progression;
+        Assert.False(gate.HeavenGateEntered);
+        Assert.Equal(1, gate.HeavenGateRerollCount);
+        Assert.NotNull(gate.HeavenGateRolled);
+        Assert.NotEqual(firstRolledValues, gate.HeavenGateRolled.Value);
+    }
+
     [Fact]
     public async Task EnterActivatesLinggenAndUnblocksBreakthrough()
     {
@@ -239,23 +290,17 @@ public sealed class HeavenGateCommandTests
         Assert.Equal(2, rejected.Snapshot.State.Progression.HeavenGateRerollCount);
     }
 
-    /// <summary>未入天门不得逆天改命；载荷缺 action 或 action 未知一律 INVALID_PAYLOAD。</summary>
+    /// <summary>未开天门不得逆天改命；载荷缺 action 或 action 未知一律 INVALID_PAYLOAD。</summary>
     [Fact]
-    public async Task RerollBeforeEnteringAndUnknownActionsAreRejected()
+    public async Task RerollBeforeRollingAndUnknownActionsAreRejected()
     {
         var playerId = Guid.NewGuid();
-        await using var runtime = CreateRuntime(playerId, aggregate =>
-        {
-            aggregate.Progression.RealmLevel = HeavenGateRules.HeavenGateRealmLevel;
-            aggregate.Progression.Experience = GateExpCap;
-            aggregate.Progression.Foundation = 1000;
-            aggregate.Progression.HeavenGate.Apply(new LinggenValues(60, 60, 60, 60, 60), null, entered: false, rerollCount: 0);
-        });
+        await using var runtime = CreateRuntime(playerId, GateAtFullExperience);
         await runtime.LoadAsync(playerId);
 
         var reroll = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
         Assert.False(reroll.Success);
-        Assert.Equal("HEAVEN_GATE_NOT_ENTERED", reroll.Code);
+        Assert.Equal("HEAVEN_GATE_NOT_ROLLED", reroll.Code);
 
         var noAction = await Execute(runtime, playerId, new { });
         Assert.False(noAction.Success);

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Modal } from './Modal'
+import { ConfirmDialog } from './ConfirmDialog'
 import { useT } from '../i18n'
 import {
   applyAxisDrag,
@@ -53,8 +54,8 @@ interface HeavenGateModalProps {
   onRoll: () => void
   /** 提交五行分布 */
   onAllocate: (values: LinggenPoints) => void
-  /** 确认入天门 */
-  onEnter: () => void
+  /** 确认入天门（提交最终五行分布） */
+  onEnter: (values: LinggenPoints) => void
   /** 逆天改命（可选消耗逆命丹） */
   onReroll: (usePill: boolean) => void
   /** 关闭弹窗 */
@@ -190,7 +191,9 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     setRoots(current => applyAxisDrag(innate, current, axisKey, current[axisKey] + delta).roots)
   }, [boardState, innate])
 
-  const handleConfirm = useCallback(() => {
+  const [confirmAction, setConfirmAction] = useState<'enter' | 'reroll' | null>(null)
+
+  const handleEnterClick = useCallback(() => {
     if (!hasActiveRoot) {
       showToast(t('insight.heavenGate.toast.allZero'))
       return
@@ -199,9 +202,23 @@ export const HeavenGateModal = memo(function HeavenGateModal({
       showToast(t('insight.heavenGate.toast.insufficient'))
       return
     }
-    onAllocate(roots)
-    onEnter()
-  }, [hasActiveRoot, onAllocate, onEnter, remaining, roots, showToast, t])
+    setConfirmAction('enter')
+  }, [hasActiveRoot, remaining, showToast, t])
+
+  const executeEnter = useCallback(() => {
+    setConfirmAction(null)
+    onEnter(roots)
+    onClose()
+  }, [onClose, onEnter, roots])
+
+  const handleRerollClick = useCallback(() => {
+    setConfirmAction('reroll')
+  }, [])
+
+  const executeReroll = useCallback(() => {
+    setConfirmAction(null)
+    onReroll(usePill && hasPill)
+  }, [hasPill, onReroll, usePill])
 
   const handleReset = useCallback(() => setRoots(innate), [innate])
 
@@ -219,6 +236,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     (remaining > 0 ? ' hg-panel--balance-positive' : '')
 
   return (
+    <>
     <Modal open={open} labelledBy={titleId} onClose={onClose} size="large" initialFocusRef={confirmRef}>
       <section className={boardClass} data-state={boardState}>
         {/* A 判语区 */}
@@ -577,6 +595,17 @@ export const HeavenGateModal = memo(function HeavenGateModal({
               </button>
             )}
 
+            {hasRolled && hasPill && (
+              <label className="hg-reroll-toggle">
+                <input
+                  type="checkbox"
+                  checked={usePill}
+                  onChange={event => setUsePill(event.currentTarget.checked)}
+                />
+                <span>{t('insight.heavenGate.usePillLabel')}</span>
+              </label>
+            )}
+
             {boardState === 'allocating' && (
               <>
                 <button
@@ -590,16 +619,18 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                 <button
                   type="button"
                   className="hg-btn hg-btn--ochre"
-                  onClick={() => onReroll(false)}
+                  onClick={handleRerollClick}
                 >
-                  {t('insight.heavenGate.rerollBtn')}
+                  {usePill && hasPill
+                    ? t('insight.heavenGate.rerollWithPillBtn')
+                    : t('insight.heavenGate.rerollBtn')}
                 </button>
                 <button
                   ref={confirmRef}
                   type="button"
                   className="hg-btn hg-btn--primary"
                   disabled={!hasActiveRoot || remaining < 0}
-                  onClick={handleConfirm}
+                  onClick={handleEnterClick}
                 >
                   {t('insight.heavenGate.enterBtn')}
                 </button>
@@ -608,20 +639,10 @@ export const HeavenGateModal = memo(function HeavenGateModal({
 
             {boardState === 'finalized' && (
               <>
-                {hasPill && (
-                  <label className="hg-reroll-toggle">
-                    <input
-                      type="checkbox"
-                      checked={usePill}
-                      onChange={event => setUsePill(event.currentTarget.checked)}
-                    />
-                    <span>{t('insight.heavenGate.usePillLabel')}</span>
-                  </label>
-                )}
                 <button
                   type="button"
                   className="hg-btn hg-btn--ochre"
-                  onClick={() => onReroll(usePill && hasPill)}
+                  onClick={handleRerollClick}
                 >
                   {usePill && hasPill
                     ? t('insight.heavenGate.rerollWithPillBtn')
@@ -644,6 +665,32 @@ export const HeavenGateModal = memo(function HeavenGateModal({
         )}
       </section>
     </Modal>
+    {open && confirmAction === 'enter' && (
+      <ConfirmDialog
+        open={true}
+        title={t('insight.heavenGate.enterConfirmTitle')}
+        description={t('insight.heavenGate.enterConfirmBody')}
+        confirmLabel={t('insight.heavenGate.confirmEnter')}
+        onConfirm={executeEnter}
+        onClose={() => setConfirmAction(null)}
+      />
+    )}
+    {open && confirmAction === 'reroll' && (
+      <ConfirmDialog
+        open={true}
+        title={t('insight.heavenGate.rerollConfirmTitle')}
+        description={
+          usePill && hasPill
+            ? t('insight.heavenGate.rerollConfirmWithPillCost', { cost: rerollCostPill })
+            : t('insight.heavenGate.rerollConfirmCost', { cost: rerollCostPlain })
+        }
+        confirmLabel={t('insight.heavenGate.rerollBtn')}
+        danger={true}
+        onConfirm={executeReroll}
+        onClose={() => setConfirmAction(null)}
+      />
+    )}
+  </>
   )
 })
 

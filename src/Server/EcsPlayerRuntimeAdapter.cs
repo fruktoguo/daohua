@@ -778,8 +778,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ROLLED", "尚未开天门，无可入天门。", before);
                                 if (gateProgression.HeavenGateEntered)
                                     return new PlayerCommandResult(false, "HEAVEN_GATE_ALREADY_ENTERED", "灵根已生效。", before);
-                                // 未显式分配时以抽取结果直接入天门：抽取值本身即零消耗的合法分布。
-                                var confirmedEnter = gateProgression.HeavenGateConfirmed ?? rolledEnter;
+                                // 支持在 enter 载荷中直接携带最终分配值，单次发包即可完成分配与入天门；未传时沿用已分配或抽取原生值。
+                                var confirmedEnter = TryReadLinggen(payload, out var directCandidate)
+                                    ? directCandidate
+                                    : gateProgression.HeavenGateConfirmed ?? rolledEnter;
                                 if (!HeavenGateRules.IsValidAllocation(rolledEnter, confirmedEnter))
                                     return new PlayerCommandResult(false, "INVALID_ALLOCATION",
                                         "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。", before);
@@ -793,8 +795,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             }
                             case "reroll":
                             {
-                                if (!gateProgression.HeavenGateEntered)
-                                    return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ENTERED", "尚未入天门，无法逆天改命。", before);
+                                if (gateProgression.HeavenGateRolled is null)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ROLLED", "尚未开天门，无可逆天改命。", before);
                                 var usePill = payload.TryGetProperty("usePill", out var pillElement)
                                     && pillElement.ValueKind == JsonValueKind.True;
                                 // 改命成本与逆命丹价值同源：两者都由 HeavenGateRules 的同一比例口径折算。
@@ -808,6 +810,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 var nextRerollCount = gateProgression.HeavenGateRerollCount + 1;
                                 var rerollSeed = HeavenGateRandomSeed(playerId, nextRerollCount);
                                 var rerolledValues = HeavenGateRules.Roll(rerollSeed, nextRerollCount);
+                                var alreadyEntered = gateProgression.HeavenGateEntered;
                                 touched = ecs.MutatePlayer(playerId, aggregate =>
                                 {
                                     var gate = aggregate.Progression.HeavenGate;
@@ -815,8 +818,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     if (aggregate.Progression.Foundation + 1e-9 < rerollCost)
                                         throw new DomainException(DomainErrorCode.Conflict, "底蕴不足，逆天改命失败。");
                                     aggregate.Progression.Foundation -= rerollCost;
-                                    // 改命即重洗：抽取值直接生效（入天门状态保持），累计次数永久递增不清零。
-                                    gate.Apply(rerolledValues, rerolledValues, entered: true, nextRerollCount);
+                                    // 若此前已入天门则重洗后直接生效；若此前仍在分配阶段，则更新抽取原生值并保持未入天门。
+                                    gate.Apply(rerolledValues, alreadyEntered ? rerolledValues : null, entered: alreadyEntered, nextRerollCount);
                                     aggregate.Touch(PlayerSectionKind.Progression);
                                 });
                                 if (!usePill) break;
@@ -2525,12 +2528,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private static bool TryReadLinggen(JsonElement payload, out LinggenValues values)
     {
         values = LinggenValues.Empty;
+        // 载荷必须完整包含 metal, wood, water, fire, earth 五系且全部为合法整数；
+        // 缺任一属性（如仅发 action: enter/allocate）即视为未显式指定，返回 false。
         var metals = new int[5];
         for (var i = 0; i < LinggenElementOrder.Length; i++)
         {
             var property = LinggenElementOrder[i];
-            if (!payload.TryGetProperty(property, out var element)) continue;
-            if (element.ValueKind == JsonValueKind.Null) continue;
+            if (!payload.TryGetProperty(property, out var element)) return false;
             if (element.ValueKind != JsonValueKind.Number || !element.TryGetDouble(out var points)) return false;
             if (!double.IsFinite(points) || points != Math.Floor(points)
                 || points < 0 || points > LinggenValues.MaxPointsPerElement) return false;
