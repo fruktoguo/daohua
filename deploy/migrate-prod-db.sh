@@ -91,8 +91,8 @@ writers_running() {
 }
 
 stop_writers() {
-  log '停止 app 与 compute 写者（迁移窗口内不允许写入存档标签）'
-  compose stop app compute
+  log '停止 app 与 compute-node 写者（迁移窗口内不允许写入存档标签）'
+  compose stop app compute-node
   local remaining
   remaining="$(writers_running)"
   if [[ -n "$remaining" ]]; then
@@ -101,8 +101,8 @@ stop_writers() {
 }
 
 restart_writers() {
-  log '恢复 app 与 compute（使用当前 daohua.env 中的镜像）'
-  compose up -d app compute
+  log '恢复 app 与 compute-node（使用当前 daohua.env 中的镜像）'
+  compose up -d app compute-node
 }
 
 # ------------------------------------------------------------------------------
