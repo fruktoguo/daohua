@@ -28,7 +28,7 @@ public sealed class PlayerPresenceStatsService(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private long _lastRefreshTicks = long.MinValue;
     private int _cachedOfflineIdleCount;
-    private int _cachedOfflineTotalCount;
+    private int _cachedOfflinePureCount;
 
     /// <inheritdoc />
     public async ValueTask<PresenceStatsDto> GetStatsAsync(CancellationToken cancellationToken = default)
@@ -39,7 +39,7 @@ public sealed class PlayerPresenceStatsService(
 
         if (nowTicks - lastTicks < CacheInterval.Ticks && lastTicks != long.MinValue)
         {
-            return new PresenceStatsDto(onlineCount, Volatile.Read(ref _cachedOfflineIdleCount), 0, Volatile.Read(ref _cachedOfflineTotalCount));
+            return new PresenceStatsDto(onlineCount, Volatile.Read(ref _cachedOfflineIdleCount), 0, Volatile.Read(ref _cachedOfflinePureCount));
         }
 
         await _gate.WaitAsync(cancellationToken);
@@ -48,7 +48,7 @@ public sealed class PlayerPresenceStatsService(
             nowTicks = clock.UtcNow.UtcTicks;
             if (nowTicks - _lastRefreshTicks < CacheInterval.Ticks && _lastRefreshTicks != long.MinValue)
             {
-                return new PresenceStatsDto(onlineCount, _cachedOfflineIdleCount, 0, _cachedOfflineTotalCount);
+                return new PresenceStatsDto(onlineCount, _cachedOfflineIdleCount, 0, _cachedOfflinePureCount);
             }
 
             var cutoff = clock.UtcNow - PlayerLifecycleRules.OfflineIdleLimit;
@@ -56,14 +56,14 @@ public sealed class PlayerPresenceStatsService(
             var counts = await repository.CountOfflinePlayersAsync(cutoff, onlineIds, cancellationToken);
 
             _cachedOfflineIdleCount = counts.IdleOffline;
-            _cachedOfflineTotalCount = counts.TotalOffline;
+            _cachedOfflinePureCount = counts.PureOffline;
             Volatile.Write(ref _lastRefreshTicks, nowTicks);
-            return new PresenceStatsDto(onlineCount, counts.IdleOffline, 0, counts.TotalOffline);
+            return new PresenceStatsDto(onlineCount, counts.IdleOffline, 0, counts.PureOffline);
         }
         catch when (_lastRefreshTicks != long.MinValue)
         {
             // 数据库偶发抖动时优雅回退最后一次缓存结果
-            return new PresenceStatsDto(onlineCount, _cachedOfflineIdleCount, 0, _cachedOfflineTotalCount);
+            return new PresenceStatsDto(onlineCount, _cachedOfflineIdleCount, 0, _cachedOfflinePureCount);
         }
         finally
         {

@@ -567,15 +567,17 @@ input[type="checkbox"] {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-
 .connection-pill-item--online .connection-pill-num {
   color: var(--jade);
+}
+
+.connection-pill-item--idle .connection-pill-num {
+  color: var(--gold-bright);
 }
 
 .connection-pill-item--offline .connection-pill-num {
   color: var(--text-dim);
 }
-
 .connection-pill-tag {
   font-size: 10px;
   color: var(--text-muted);
@@ -625,28 +627,16 @@ input[type="checkbox"] {
   font-size: 11px;
 }
 
-.connection-status-tooltip-divider {
-  height: 1px;
-  background: rgba(201, 180, 109, 0.2);
-  margin: 3px 0;
-}
-
-.connection-status-tooltip-row--sub {
-  padding-left: 8px;
-  opacity: 0.85;
-}
-
-.connection-status-tooltip-row--sub .connection-status-tooltip-label,
-.connection-status-tooltip-row--sub .connection-status-tooltip-value {
-  font-size: 10px;
-}
-
 .connection-status-tooltip-value--online {
   color: var(--jade);
 }
 
-.connection-status-tooltip-value--total {
+.connection-status-tooltip-value--idle {
   color: var(--gold-bright);
+}
+
+.connection-status-tooltip-value--offline {
+  color: var(--text-dim);
 }
 .realm-progress {
   position: relative;

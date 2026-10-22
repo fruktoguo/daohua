@@ -129,7 +129,7 @@ export interface PresenceStatsDto {
   offlineIdleCount: number
   /** 当前节点开启斗法并且正在战斗的队伍总数 */
   nodeDuelCombatTeamCount?: number
-  /** 当前离线修士总人数（排除当前在线与被封禁修士） */
+  /** 当前完全离线（非挂机）修士人数 */
   offlineCount?: number
 }
 
@@ -143,7 +143,7 @@ export interface PongResponse {
   offlineIdleCount?: number
   /** 当前节点开启斗法并且正在战斗的队伍总数 */
   nodeDuelCombatTeamCount?: number
-  /** 当前离线修士总人数 */
+  /** 当前完全离线（非挂机）修士人数 */
   offlineCount?: number
 }
 

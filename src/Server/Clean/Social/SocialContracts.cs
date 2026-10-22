@@ -78,10 +78,14 @@ public sealed record PartySessionRecord(
 /// <param name="PartyId">原队伍 ID。</param>
 public sealed record PartyMemberEviction(Guid PlayerId, Guid PartyId);
 
-/// <summary>离线修士统计结果（总离线与48小时内挂机收益中修士）。</summary>
+/// <summary>离线修士统计结果（总离线、48小时内挂机收益中修士与非挂机纯离线修士）。</summary>
 /// <param name="TotalOffline">总离线修士数（有效注册且非在线、非封禁）。</param>
 /// <param name="IdleOffline">48小时收益窗口内离线挂机修士数。</param>
-public readonly record struct OfflinePlayerCounts(int TotalOffline, int IdleOffline);
+public readonly record struct OfflinePlayerCounts(int TotalOffline, int IdleOffline)
+{
+    /// <summary>非挂机离线人数（超出48小时收益期或完全离线）。</summary>
+    public int PureOffline => Math.Max(0, TotalOffline - IdleOffline);
+}
 
 /// <summary>待处理的队伍邀请。</summary>
 /// <param name="PartyId">邀请方队伍。</param>

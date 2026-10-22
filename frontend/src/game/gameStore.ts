@@ -98,7 +98,7 @@ interface GameStore {
   onlineCount: number | null
   /** 最近获知的48小时离线挂机人数（null 表示尚无统计数据） */
   offlineIdleCount: number | null
-  /** 最近获知的离线修士总人数（null 表示尚无统计数据） */
+  /** 最近获知的完全离线（非挂机）修士人数（null 表示尚无统计数据） */
   offlineCount: number | null
   /** 最近获知的当前节点开启斗法并且正在战斗的队伍总数（null 表示尚无统计数据） */
   nodeDuelCombatTeamCount: number | null
