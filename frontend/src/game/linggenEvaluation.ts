@@ -72,9 +72,7 @@ export function evaluateSpiritualRoots(
     .filter(entry => entry.value > 0)
     .sort((a, b) => b.value - a.value)
 
-  const total = entries.reduce((sum, e) => sum + e.value, 0)
-  const lowest = entries[entries.length - 1].value
-
+  // 五系全部归零时 entries 为空：必须先于 lowest 计算短路，否则 entries[-1] 未定义直接崩溃。
   if (entries.length === 0) {
     return {
       name: '五系皆空',
@@ -82,6 +80,9 @@ export function evaluateSpiritualRoots(
       desc: '体内五行之气断绝，灵气无所依附，无法聚气修行。',
     }
   }
+
+  const total = entries.reduce((sum, e) => sum + e.value, 0)
+  const lowest = entries[entries.length - 1].value
 
   // ── 单灵根：天灵根 / 真灵根 / 下品 / 废 ──────────────────────────────
   if (entries.length === 1) {

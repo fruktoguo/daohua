@@ -8,6 +8,13 @@ test('evaluateSpiritualRoots：未抽取时返回未定', () => {
   assert.equal(result.seal, '凡胎未化')
 })
 
+test('evaluateSpiritualRoots：五系全部归零不崩溃并返回五系皆空', () => {
+  // 回归：曾因 lowest 在空数组守卫之前计算而崩溃（entries[-1].value）
+  const result = evaluateSpiritualRoots({ metal: 0, wood: 0, water: 0, fire: 0, earth: 0 }, true)
+  assert.equal(result.name, '五系皆空')
+  assert.equal(result.seal, '灵根尽绝')
+})
+
 test('evaluateSpiritualRoots：单系满百仍是天灵根（圆满评语）', () => {
   const result = evaluateSpiritualRoots({ metal: 100, wood: 0, water: 0, fire: 0, earth: 0 }, true)
   assert.equal(result.name, '金天灵根')
