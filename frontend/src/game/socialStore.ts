@@ -1,6 +1,18 @@
 import { create } from 'zustand'
-import type { FriendDto, FriendRequestDto, NearbyPlayerDto, PartyDto, PartyInvitationDto, PartyLobbyDto, PartySeekerDto, PlayerCardDto, SocialStateDto } from '../network/protocol'
+import type {
+  FriendDto,
+  FriendRequestDto,
+  NearbyPlayerDto,
+  PartyDto,
+  PartyInvitationDto,
+  PartyLobbyDto,
+  PartySeekerDto,
+  PlayerCardDto,
+  SocialStateDto,
+  ValuationBreakdownDto,
+} from '../network/protocol'
 import { gameClient } from '../network/gameClient'
+import { useGameStore } from './gameStore'
 
 /** 队伍开启槽位数下限（§21.13：2~5） */
 export const PARTY_OPEN_SLOTS_MIN = 2
@@ -31,6 +43,8 @@ interface SocialStore {
   lobby: PartyLobbyDto | null
   /** 大厅回执携带的本人身家；尚未查询过为 null */
   myValuation: number | null
+  /** 大厅回执或同节点自身投影携带的本人身家细分；尚未获取时为 null */
+  myValuationBreakdown: ValuationBreakdownDto | null
   /** 当前展示的角色信息卡（PlayerCard 帧应答，含 error 字段的失败应答）；未打开为 null */
   playerCard: PlayerCardDto | null
   /** 角色信息卡在途请求 ID：请求已发出、应答未回，弹窗处于加载态；空闲为 null */
@@ -74,7 +88,7 @@ interface SocialStore {
   setPartyPvp: (pvpEnabled: boolean) => boolean
 }
 
-const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId'> = {
+const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId'> = {
   friends: [],
   incomingRequests: [],
   outgoingRequests: [],
@@ -84,6 +98,7 @@ const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequest
   nearbyPlayers: [],
   lobby: null,
   myValuation: null,
+  myValuationBreakdown: null,
   playerCard: null,
   playerCardRequestId: null,
   activeFriendId: null,
@@ -107,9 +122,23 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
       seeking: state.seeking ?? null,
       nearbyPlayers: Array.isArray(state.nearbyPlayers) ? state.nearbyPlayers : [],
       activeFriendId: stillFriend ? current.activeFriendId : null,
+      myValuation: (() => {
+        const myId = useGameStore.getState().playerId
+        const me = myId ? state.nearbyPlayers?.find(p => p.playerId === myId) : null
+        return me?.valuation ?? current.myValuation
+      })(),
+      myValuationBreakdown: (() => {
+        const myId = useGameStore.getState().playerId
+        const me = myId ? state.nearbyPlayers?.find(p => p.playerId === myId) : null
+        return me?.valuationBreakdown ?? current.myValuationBreakdown
+      })(),
     }
   }),
-  applyLobby: lobby => set({ lobby, myValuation: lobby.myValuation }),
+  applyLobby: lobby => set({
+    lobby,
+    myValuation: lobby.myValuation,
+    myValuationBreakdown: lobby.myValuationBreakdown ?? null,
+  }),
   requestPlayerCard: playerId => {
     const requestId = gameClient.requestPlayerCard(playerId)
     // 发送失败（断线）不进入加载态；成功则以 requestId 配对后续应答。

@@ -958,6 +958,15 @@ public sealed record FriendDto(string PlayerId, string DisplayName, bool Online)
 /// <param name="DisplayName">对端道号</param>
 /// <param name="CreatedAtUnixMilliseconds">申请时刻（Unix 毫秒）</param>
 public sealed record FriendRequestDto(string RequestId, string PlayerId, string DisplayName, long CreatedAtUnixMilliseconds);
+/// <summary>身家估值构成细分（战斗装备、参悟功法、技艺工具）。</summary>
+/// <param name="Equipment">战斗装备市场估值（已穿戴非 tool 装备）</param>
+/// <param name="Abilities">已参悟功法市场估值（参悟等级 × 对应秘籍单价）</param>
+/// <param name="Tools">生活技艺工具市场估值（已穿戴 tool-* 装备）</param>
+public sealed record ValuationBreakdownDto(
+    double Equipment = 0,
+    double Abilities = 0,
+    double Tools = 0);
+
 
 /// <summary>队伍成员条目。</summary>
 /// <param name="PlayerId">成员玩家 ID</param>
@@ -967,7 +976,7 @@ public sealed record FriendRequestDto(string RequestId, string PlayerId, string 
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
 /// <param name="RealmLevel">成员境界等级</param>
 /// <param name="LevelMalus">成员受到的队伍等级惩罚比率（0~0.9）</param>
-public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0, string Avatar = "player");
+public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0, string Avatar = "player", ValuationBreakdownDto? ValuationBreakdown = null);
 
 /// <summary>组队讨伐活跃会话（总纲 §21.13：会话持有唯一权威战斗状态，成员读取个人结算投影）。</summary>
 /// <param name="SessionId">会话唯一标识</param>
@@ -1012,7 +1021,7 @@ public sealed record PartyDto(
 /// <param name="DisplayName">修士道号</param>
 /// <param name="RealmLevel">境界等级</param>
 /// <param name="Valuation">身家估值</param>
-public sealed record NearbyPlayerDto(string PlayerId, string DisplayName, int RealmLevel = 1, double Valuation = 0, string Avatar = "player");
+public sealed record NearbyPlayerDto(string PlayerId, string DisplayName, int RealmLevel = 1, double Valuation = 0, string Avatar = "player", ValuationBreakdownDto? ValuationBreakdown = null);
 
 /// <summary>待处理的队伍邀请条目。</summary>
 /// <param name="PartyId">邀请方队伍标识</param>
@@ -1026,7 +1035,7 @@ public sealed record PartyInvitationDto(string PartyId, string InviterId, string
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>
 /// <param name="MinValuation">期望队友的最低身家；0 表示不设要求</param>
 /// <param name="CreatedAtUnixMilliseconds">登记时刻（Unix 毫秒）</param>
-public sealed record PartySeekerDto(string ActivityKind, string NodeId, double MinValuation, long CreatedAtUnixMilliseconds);
+public sealed record PartySeekerDto(string ActivityKind, string NodeId, double MinValuation, long CreatedAtUnixMilliseconds, ValuationBreakdownDto? ValuationBreakdown = null);
 
 /// <summary>社交状态下发载荷；RequestId 非空表示对某条 <see cref="SocialActionDto"/> 的回执，为空表示服务端主动推送。</summary>
 /// <param name="RequestId">关联的社交指令请求 ID，主动推送时为 null</param>
@@ -1059,7 +1068,7 @@ public sealed record PartyLobbyRequestDto(string RequestId, string? ActivityKind
 /// <param name="DisplayName">成员道号</param>
 /// <param name="Online">是否在线</param>
 /// <param name="Valuation">成员身家</param>
-public sealed record PartyLobbyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation);
+public sealed record PartyLobbyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, ValuationBreakdownDto? ValuationBreakdown = null);
 
 /// <summary>大厅公开队伍条目。</summary>
 /// <param name="PartyId">队伍唯一标识（加入凭据）</param>
@@ -1099,7 +1108,8 @@ public sealed record PartyLobbySeekerDto(
     string ActivityKind,
     string NodeId,
     double MinValuation,
-    long CreatedAtUnixMilliseconds);
+    long CreatedAtUnixMilliseconds,
+    ValuationBreakdownDto? ValuationBreakdown = null);
 
 /// <summary>组队大厅下发载荷。</summary>
 /// <param name="RequestId">关联的 <see cref="PartyLobbyRequestDto"/> 请求 ID</param>
@@ -1110,7 +1120,8 @@ public sealed record PartyLobbyDto(
     string RequestId,
     double MyValuation,
     IReadOnlyList<PartyLobbyEntryDto> Parties,
-    IReadOnlyList<PartyLobbySeekerDto> Seekers);
+    IReadOnlyList<PartyLobbySeekerDto> Seekers,
+    ValuationBreakdownDto? MyValuationBreakdown = null);
 
 /// <summary>单位详情观察目标（UnitInspect 火忘帧载荷）。</summary>
 /// <param name="Side">观察侧：<c>enemy</c> 敌方 / <c>ally</c> 己方盟友；与 <paramref name="Index"/> 同为 null 时表示清除观察目标</param>
@@ -1192,4 +1203,5 @@ public sealed record PlayerCardDto(
     IReadOnlyList<PlayerCardEquipmentDto>? Equipment = null,
     IReadOnlyList<PlayerCardAutoUseSlotDto>? AutoUseSlots = null,
     object? Attributes = null,
-    IReadOnlyDictionary<string, int>? TechniqueLevels = null);
+    IReadOnlyDictionary<string, int>? TechniqueLevels = null,
+    ValuationBreakdownDto? ValuationBreakdown = null);

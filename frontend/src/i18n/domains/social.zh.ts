@@ -39,6 +39,13 @@ export const socialZh = {
     memberCountOf: '{count}/{slots}',
     valuationValue: '身家 {value}',
     minValuationValue: '身家 ≥ {value}',
+    valuationBreakdown: {
+      title: '身家估值',
+      equipment: '战斗装备',
+      abilities: '参悟功法',
+      tools: '技艺工具',
+      desc: '包含穿戴装备、参悟功法与技艺工具的市场参考价估值。',
+    },
     activity: {
       any: '不限',
       combat: '讨伐',

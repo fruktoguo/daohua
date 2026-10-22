@@ -144,7 +144,7 @@ public sealed class SocialRuntime
         var invitation = snapshot.Invitation;
 
         // 队伍成员身家走展示缓存口径（≤30s），推送风暴下摊薄估值开销。
-        IReadOnlyDictionary<Guid, double> valuations = new Dictionary<Guid, double>();
+        IReadOnlyDictionary<Guid, ValuationResult> valuations = new Dictionary<Guid, ValuationResult>();
         var levelMap = new Dictionary<Guid, int>();
         var malusMap = new Dictionary<Guid, double>();
         if (party is { Members.Count: > 0 })
@@ -213,11 +213,12 @@ public sealed class SocialRuntime
                     [.. party.Members.Select(member => new PartyMemberDto(
                         member.PlayerId.ToString("D"), member.DisplayName,
                         _presence.IsOnline(member.PlayerId),
-                        valuations.TryGetValue(member.PlayerId, out var value) ? value : 0,
+                        valuations.TryGetValue(member.PlayerId, out var value) ? value.Total : 0,
                         member.Ready,
                         levelMap.GetValueOrDefault(member.PlayerId, 1),
                         malusMap.GetValueOrDefault(member.PlayerId, 0),
-                        _presence.GetAvatar(member.PlayerId)))],
+                        _presence.GetAvatar(member.PlayerId),
+                        valuations.TryGetValue(member.PlayerId, out var v) ? v.ToDto() : null))],
                     party.OpenSlots,
                     snapshot.PartySession is { } session
                         ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,
@@ -240,7 +241,11 @@ public sealed class SocialRuntime
         if (nearby.Count == 0) return nearby;
         var nearbyGuids = nearby.Select(p => Guid.Parse(p.PlayerId)).ToArray();
         var nearbyValuations = await _valuation.ComputeDisplayAsync(nearbyGuids, cancellationToken);
-        return [.. nearby.Select(p => p with { Valuation = nearbyValuations.GetValueOrDefault(Guid.Parse(p.PlayerId), p.Valuation) })];
+        return [.. nearby.Select(p =>
+        {
+            var res = nearbyValuations.GetValueOrDefault(Guid.Parse(p.PlayerId));
+            return p with { Valuation = res.Total, ValuationBreakdown = res.ToDto() };
+        })];
     }
 
 
@@ -278,11 +283,11 @@ public sealed class SocialRuntime
             var minMemberValuation = double.MaxValue;
             foreach (var member in party.Members)
             {
-                var value = valuations.TryGetValue(member.PlayerId, out var found) ? found : 0;
-                if (value < minMemberValuation) minMemberValuation = value;
+                var value = valuations.TryGetValue(member.PlayerId, out var found) ? found : default;
+                if (value.Total < minMemberValuation) minMemberValuation = value.Total;
                 memberDtos.Add(new PartyLobbyMemberDto(
                     member.PlayerId.ToString("D"), member.DisplayName,
-                    _presence.IsOnline(member.PlayerId), value));
+                    _presence.IsOnline(member.PlayerId), value.Total, value.ToDto()));
             }
             if (minMemberValuation < minValuation) continue;
             entries.Add(new PartyLobbyEntryDto(
@@ -299,20 +304,22 @@ public sealed class SocialRuntime
         var seekerDtos = new List<PartyLobbySeekerDto>(seekers.Count);
         foreach (var seeker in seekers)
         {
-            var value = valuations.TryGetValue(seeker.PlayerId, out var found) ? found : 0;
-            if (value < minValuation) continue;
+            var value = valuations.TryGetValue(seeker.PlayerId, out var found) ? found : default;
+            if (value.Total < minValuation) continue;
             seekerDtos.Add(new PartyLobbySeekerDto(
                 seeker.PlayerId.ToString("D"), seeker.DisplayName,
-                _presence.IsOnline(seeker.PlayerId), value,
+                _presence.IsOnline(seeker.PlayerId), value.Total,
                 seeker.ActivityKind, seeker.NodeId, seeker.MinValuation,
-                seeker.CreatedAt.ToUnixTimeMilliseconds()));
+                seeker.CreatedAt.ToUnixTimeMilliseconds(),
+                value.ToDto()));
         }
 
         return new PartyLobbyDto(
             request.RequestId,
-            valuations.TryGetValue(playerId, out var mine) ? mine : 0,
+            valuations.TryGetValue(playerId, out var mine) ? mine.Total : 0,
             entries,
-            seekerDtos);
+            seekerDtos,
+            valuations.TryGetValue(playerId, out var myV) ? myV.ToDto() : null);
     }
 
     /// <summary>
@@ -366,7 +373,7 @@ public sealed class SocialRuntime
 
         var core = state.Loadout.CoreAttributes;
         var levels = core.Levels(_gameData.RealmProgression);
-        var valuation = await _valuation.ComputeAsync(targetId, cancellationToken);
+        var valuation = await _valuation.ComputeBreakdownAsync(targetId, cancellationToken);
         var availableBalances = _assetBalances is null
             ? [] : await _assetBalances.LoadBalancesAsync(targetId, cancellationToken);
         var offlineReserves = _participation is null
@@ -402,7 +409,7 @@ public sealed class SocialRuntime
             Experience: state.Progression.Experience,
             ExperienceToNext: _gameData.RealmProgression?.ExpCapFor(state.Progression.RealmLevel) ?? 0,
             CombatExperience: state.Progression.CombatExperience,
-            Valuation: valuation,
+            Valuation: valuation.Total,
             CoreAttributes: new PlayerCardCoreDto(
                 core.StaminaExp, core.MeridiansExp, core.AttackExp,
                 core.BoneExp, core.AgilityExp, core.ConsciousnessExp,
@@ -415,7 +422,8 @@ public sealed class SocialRuntime
             Equipment: [.. state.Loadout.Equipment.Select(item => new PlayerCardEquipmentDto(item.ItemId, item.EnhancementLevel))],
             AutoUseSlots: combatSlots,
             Attributes: attributes,
-            TechniqueLevels: techniqueLevels);
+            TechniqueLevels: techniqueLevels,
+            ValuationBreakdown: valuation.ToDto());
     }
 
     /// <summary>执行一条社交指令。</summary>

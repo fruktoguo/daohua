@@ -13,6 +13,7 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FloatingPopover, FloatingTooltip, type FloatingPlacement } from './FloatingPopover'
 import { Modal } from './Modal'
+import { ValuationHoverTarget } from './ValuationDisplay'
 
 /** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
@@ -293,6 +294,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
   const t = useT()
   const lobby = useSocialStore(state => state.lobby)
   const myValuation = useSocialStore(state => state.myValuation)
+  const myValuationBreakdown = useSocialStore(state => state.myValuationBreakdown)
   const myPartyId = useSocialStore(state => state.party?.partyId ?? null)
   const myPlayerId = useGameStore(state => state.playerId)
   const isLeader = useSocialStore(state => {
@@ -322,7 +324,11 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
       <PartyProfileFields onChange={setFilter} value={filter} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={refresh} type="button">{t('social.action.refreshLobby')}</button>
-        {myValuation !== null && <span className="party-my-valuation">{t('social.lobby.myValuation', { value: formatNumber(myValuation) })}</span>}
+        {myValuation !== null && (
+          <ValuationHoverTarget breakdown={myValuationBreakdown} valuation={myValuation}>
+            <span className="party-my-valuation" style={{ cursor: 'help' }}>{t('social.lobby.myValuation', { value: formatNumber(myValuation) })}</span>
+          </ValuationHoverTarget>
+        )}
       </div>
 
       <h4 className="party-list-heading">{t('social.lobby.partiesHeading')}</h4>
@@ -377,7 +383,9 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
               <span className="party-lobby-node">{nodeLabel(seeker.nodeId, nodeNames, t('social.field.anyNode'))}</span>
             </div>
             <div className="party-lobby-entry-meta">
-              <span>{t('social.valuationValue', { value: formatNumber(seeker.valuation) })}</span>
+              <ValuationHoverTarget breakdown={seeker.valuationBreakdown} valuation={seeker.valuation}>
+                <span style={{ cursor: 'help' }}>{t('social.valuationValue', { value: formatNumber(seeker.valuation) })}</span>
+              </ValuationHoverTarget>
               {seeker.minValuation > 0 && <span>{t('social.lobby.seekerWants', { value: formatNumber(seeker.minValuation) })}</span>}
             </div>
             {isLeader && seeker.playerId !== myPlayerId && (
@@ -693,7 +701,9 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                   <CharacterAvatar actorId={resolvePlayerActorId(member.avatar)} name={member.displayName} role="player" />
                 </div>
                 <div className="party-slot-meta">
-                  <span className="party-member-valuation">{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>
+                  <ValuationHoverTarget breakdown={member.valuationBreakdown} valuation={member.valuation}>
+                    <span className="party-member-valuation" style={{ cursor: 'help' }}>{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>
+                  </ValuationHoverTarget>
                 </div>
                 {/* 就绪勾选是卡内独立控件：拦截冒泡避免误触角色卡。 */}
                 <div className="party-slot-foot" onClick={event => event.stopPropagation()}>

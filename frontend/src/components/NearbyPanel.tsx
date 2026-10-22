@@ -13,6 +13,7 @@ import { gameClient } from '../network/gameClient'
 import { ItemReference } from './ItemDisplay'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { RealmBadge } from './RealmBadge'
+import { ValuationHoverTarget } from './ValuationDisplay'
 import {
   getBuildingBonusItems,
   getBuildingUpgradeComparison,
@@ -111,6 +112,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const avatarId = useAvatarStore(state => state.avatarId)
   const nearbyPlayers = useSocialStore(state => state.nearbyPlayers)
   const myValuation = useSocialStore(state => state.myValuation)
+  const myValuationBreakdown = useSocialStore(state => state.myValuationBreakdown)
   const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const [buildPickerOpen, setBuildPickerOpen] = useState(false)
   const [detailBuildingId, setDetailBuildingId] = useState<string | null>(null)
@@ -272,9 +274,11 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                     </div>
                     <div className="nearby-player-info-cell">
                       <strong className="nearby-player-name">{name}</strong>
-                      <div className="nearby-player-valuation">
-                        {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(myValuation ?? 0))}</span>
-                      </div>
+                      <ValuationHoverTarget breakdown={myValuationBreakdown} valuation={myValuation ?? 0}>
+                        <div className="nearby-player-valuation" style={{ cursor: 'help' }}>
+                          {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(myValuation ?? 0))}</span>
+                        </div>
+                      </ValuationHoverTarget>
                     </div>
                   </div>
                   {/* 下部 20%：三段式牌匾 */}
@@ -298,9 +302,11 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                         </div>
                         <div className="nearby-player-info-cell">
                           <strong className="nearby-player-name">{player.displayName}</strong>
-                          <div className="nearby-player-valuation">
-                            {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(player.valuation ?? 0))}</span>
-                          </div>
+                          <ValuationHoverTarget breakdown={player.valuationBreakdown} valuation={player.valuation ?? 0}>
+                            <div className="nearby-player-valuation" style={{ cursor: 'help' }}>
+                              {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(player.valuation ?? 0))}</span>
+                            </div>
+                          </ValuationHoverTarget>
                           <div className="nearby-player-actions" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={() => gameClient.sendSocialAction('friend.request', player.playerId)}

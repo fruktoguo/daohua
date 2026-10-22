@@ -16,6 +16,7 @@ import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
 import { CombatAttributePanel } from './CombatAttributePanel'
+import { ValuationHoverTarget } from './ValuationDisplay'
 
 /** 战斗消耗品每组栏位数（与服务端 AutoUseBar.DefaultSlotCount 一致：药品 3 + 通用 3） */
 const CONSUMABLE_GROUP_SLOTS = 3
@@ -253,10 +254,12 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
                 {card.online ? t('social.online') : t('social.offline')}
               </span>
             </div>
-            <div className="player-card-hero-valuation">
-              <span className="player-card-stat-label">{t('social.card.valuation')}：</span>
-              <strong className="player-card-stat-value tone-gold">{formatNumber(Math.floor(card.valuation))}</strong>
-            </div>
+            <ValuationHoverTarget breakdown={card.valuationBreakdown} valuation={card.valuation}>
+              <div className="player-card-hero-valuation" style={{ cursor: 'help' }}>
+                <span className="player-card-stat-label">{t('social.card.valuation')}：</span>
+                <strong className="player-card-stat-value tone-gold">{formatNumber(Math.floor(card.valuation))}</strong>
+              </div>
+            </ValuationHoverTarget>
           </div>
         </div>
         {/* 下部 20%：三段式牌匾 */}
@@ -277,10 +280,12 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
           <span className="player-card-stat-label">{t('social.card.combatExp')}</span>
           <strong className="player-card-stat-value">{formatNumber(Math.floor(card.combatExperience))}</strong>
         </div>
-        <div className="player-card-stat">
-          <span className="player-card-stat-label">{t('social.card.valuation')}</span>
-          <strong className="player-card-stat-value tone-gold">{formatNumber(Math.floor(card.valuation))}</strong>
-        </div>
+        <ValuationHoverTarget breakdown={card.valuationBreakdown} valuation={card.valuation}>
+          <div className="player-card-stat" style={{ cursor: 'help' }}>
+            <span className="player-card-stat-label">{t('social.card.valuation')}</span>
+            <strong className="player-card-stat-value tone-gold">{formatNumber(Math.floor(card.valuation))}</strong>
+          </div>
+        </ValuationHoverTarget>
       </div>
 
       {/* 5 大分组 Tab 切换 */}

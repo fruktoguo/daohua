@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Text.Json;
 using Domain.GameData;
 using Domain.Market;
 using Domain.Persistence;
 using Domain.Player;
+using Protocol;
 
 namespace Server.Clean.Social;
 
@@ -32,8 +34,8 @@ public sealed class PartyValuationService
     private readonly PostgresSectionRepository _sections;
     private readonly MarketRuntime _market;
     private readonly GameDataCatalog _catalog;
-    /// <summary>展示估值缓存：playerId → (身家, TickCount64 过期点)。</summary>
-    private readonly ConcurrentDictionary<Guid, (double Value, long ExpiresAt)> _displayCache = new();
+    /// <summary>展示估值缓存：playerId → (估值细分结果, TickCount64 过期点)。</summary>
+    private readonly ConcurrentDictionary<Guid, (ValuationResult Value, long ExpiresAt)> _displayCache = new();
 
     /// <summary>构造身家估值服务。</summary>
     /// <param name="runtime">玩家运行时（已装载快照只读）。</param>
@@ -48,24 +50,31 @@ public sealed class PartyValuationService
         _catalog = catalog;
     }
 
-    /// <summary>实时身家：入队裁决与匹配自动并入使用，不走缓存。</summary>
+    /// <summary>实时身家细分：入队裁决、名片构建与匹配自动并入使用，不走缓存。</summary>
     /// <param name="playerId">玩家 ID。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    /// <returns>身家估值；玩家无装配分段时返回 0。</returns>
-    public async ValueTask<double> ComputeAsync(Guid playerId, CancellationToken cancellationToken = default)
+    /// <returns>身家细分结果；玩家无装配分段时各项为 0。</returns>
+    public async ValueTask<ValuationResult> ComputeBreakdownAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var loadout = await LoadLoadoutAsync(playerId, cancellationToken);
-        return loadout is null ? 0 : Compute(loadout);
+        return loadout is null ? default : Compute(loadout);
     }
 
-    /// <summary>批量展示身家：≤30s 缓存摊薄大厅/队伍面板的重复估值，缺席玩家计 0。</summary>
+    /// <summary>实时总身家便捷方法：仅需总值比较门槛处使用。</summary>
+    public async ValueTask<double> ComputeAsync(Guid playerId, CancellationToken cancellationToken = default)
+    {
+        var result = await ComputeBreakdownAsync(playerId, cancellationToken);
+        return result.Total;
+    }
+
+    /// <summary>批量展示身家细分：≤30s 缓存摊薄大厅/队伍面板的重复估值，缺席玩家计 0。</summary>
     /// <param name="playerIds">玩家 ID 集合。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    /// <returns>playerId → 身家的完整映射。</returns>
-    public async ValueTask<IReadOnlyDictionary<Guid, double>> ComputeDisplayAsync(
+    /// <returns>playerId → 身家细分结果的完整映射。</returns>
+    public async ValueTask<IReadOnlyDictionary<Guid, ValuationResult>> ComputeDisplayAsync(
         IReadOnlyCollection<Guid> playerIds, CancellationToken cancellationToken = default)
     {
-        var result = new Dictionary<Guid, double>(playerIds.Count);
+        var result = new Dictionary<Guid, ValuationResult>(playerIds.Count);
         var misses = new List<Guid>();
         var now = Environment.TickCount64;
         foreach (var playerId in playerIds)
@@ -82,7 +91,7 @@ public sealed class PartyValuationService
         {
             var value = loadouts.TryGetValue(playerId, out var document) && document is not null
                 ? Compute(document)
-                : 0;
+                : default;
             _displayCache[playerId] = (value, now + (long)DisplayCacheTtl.TotalMilliseconds);
             result[playerId] = value;
         }
@@ -90,10 +99,10 @@ public sealed class PartyValuationService
     }
 
     /// <summary>个人展示身家（缓存版单点入口）。</summary>
-    public async ValueTask<double> ComputeDisplayAsync(Guid playerId, CancellationToken cancellationToken = default)
+    public async ValueTask<ValuationResult> ComputeDisplayAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var values = await ComputeDisplayAsync([playerId], cancellationToken);
-        return values.TryGetValue(playerId, out var value) ? value : 0;
+        return values.TryGetValue(playerId, out var value) ? value : default;
     }
 
     /// <summary>读取单个玩家的装配文档：已装载走运行时快照，否则读持久化分段。</summary>
@@ -126,17 +135,24 @@ public sealed class PartyValuationService
         return result;
     }
 
-    /// <summary>按口径合计装备与功法价值；非有限结果归零。</summary>
-    private double Compute(PlayerLoadoutDocument loadout)
+    /// <summary>按口径合计战斗装备、功法与技艺工具价值；非有限结果归零。</summary>
+    private ValuationResult Compute(PlayerLoadoutDocument loadout)
     {
-        var total = 0d;
+        var equipmentTotal = 0d;
+        var toolsTotal = 0d;
         foreach (var slot in loadout.Equipment)
         {
             var variant = slot.EnhancementLevel > 0
                 ? string.Create(CultureInfo.InvariantCulture, $"+{slot.EnhancementLevel:0}")
                 : string.Empty;
-            total += EquipmentUnitPrice(slot.ItemId, variant);
+            var price = EquipmentUnitPrice(slot.ItemId, variant);
+            if (IsTool(slot.ItemId))
+                toolsTotal += price;
+            else
+                equipmentTotal += price;
         }
+
+        var abilitiesTotal = 0d;
         if (loadout.AbilityExperiences is not null)
         {
             foreach (var (abilityId, exp) in loadout.AbilityExperiences)
@@ -146,10 +162,25 @@ public sealed class PartyValuationService
                 var suffix = abilityId.StartsWith(AbilityIdPrefix, StringComparison.Ordinal)
                     ? abilityId[AbilityIdPrefix.Length..]
                     : abilityId;
-                total += level * (ItemUnitPrice(TomePrefix + suffix) ?? ItemUnitPrice(FragmentPrefix + suffix) ?? 0);
+                abilitiesTotal += level * (ItemUnitPrice(TomePrefix + suffix) ?? ItemUnitPrice(FragmentPrefix + suffix) ?? 0);
             }
         }
-        return double.IsFinite(total) ? total : 0;
+
+        return new ValuationResult(
+            double.IsFinite(equipmentTotal) ? equipmentTotal : 0,
+            double.IsFinite(abilitiesTotal) ? abilitiesTotal : 0,
+            double.IsFinite(toolsTotal) ? toolsTotal : 0);
+    }
+
+    private bool IsTool(string itemIdText)
+    {
+        if (_catalog.RawEquipments.TryGetValue(itemIdText, out var element)
+            && element.TryGetProperty("slot", out var slotProp)
+            && slotProp.ValueKind == JsonValueKind.String)
+        {
+            return slotProp.GetString()?.StartsWith("tool-", StringComparison.Ordinal) == true;
+        }
+        return false;
     }
 
     /// <summary>装备单价：配表已知装备才算价，市场参考价优先；无参考价按配表回收价兜底，无回收价计 0。</summary>
@@ -171,4 +202,11 @@ public sealed class PartyValuationService
         if (!_catalog.Items.TryGetValue(itemId, out var definition)) return null;
         return _market.TryGetReferencePrice(new MarketInstrument(itemId)) ?? Math.Max(0, definition.SellPrice);
     }
+}
+
+/// <summary>身家估值细分计算结果。</summary>
+public readonly record struct ValuationResult(double Equipment, double Abilities, double Tools)
+{
+    public double Total => Equipment + Abilities + Tools;
+    public ValuationBreakdownDto ToDto() => new(Equipment, Abilities, Tools);
 }

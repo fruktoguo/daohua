@@ -541,6 +541,16 @@ export interface FriendRequestDto {
   displayName: string
   createdAtUnixMilliseconds: number
 }
+/** 身家估值构成细分（战斗装备、参悟功法、技艺工具） */
+export interface ValuationBreakdownDto {
+  /** 战斗装备市场估值（已穿戴非 tool 装备） */
+  equipment: number
+  /** 已参悟功法市场估值（参悟等级 × 对应秘籍单价） */
+  abilities: number
+  /** 生活技艺工具市场估值（已穿戴 tool-* 装备） */
+  tools: number
+}
+
 
 /** 队伍成员条目 */
 export interface PartyMemberDto {
@@ -556,6 +566,7 @@ export interface PartyMemberDto {
   realmLevel?: number
   /** 成员受到的队伍等级惩罚比率（0~0.9） */
   levelMalus?: number
+  valuationBreakdown?: ValuationBreakdownDto | null
 }
 
 /** 行动参与所属组织的活跃会话视图：开战裁决产生，成员变动即散场。 */
@@ -601,6 +612,7 @@ export interface NearbyPlayerDto {
   displayName: string
   realmLevel?: number
   valuation?: number
+  valuationBreakdown?: ValuationBreakdownDto | null
   avatar?: string
 }
 
@@ -623,6 +635,7 @@ export interface PartySeekerDto {
   minValuation: number
   /** 登记时刻（Unix 毫秒） */
   createdAtUnixMilliseconds: number
+  valuationBreakdown?: ValuationBreakdownDto | null
 }
 
 /** SocialState 社交状态下发载荷 */
@@ -657,6 +670,7 @@ export interface PartyLobbyMemberDto {
   displayName: string
   online: boolean
   valuation: number
+  valuationBreakdown?: ValuationBreakdownDto | null
 }
 
 /** 大厅公开队伍条目 */
@@ -685,6 +699,7 @@ export interface PartyLobbySeekerDto {
   nodeId: string
   minValuation: number
   createdAtUnixMilliseconds: number
+  valuationBreakdown?: ValuationBreakdownDto | null
 }
 
 /** PartyLobby 组队大厅下发载荷 */
@@ -697,6 +712,7 @@ export interface PartyLobbyDto {
   parties: PartyLobbyEntryDto[]
   /** 匹配中散人列表（按登记时间倒序，至多 50 条） */
   seekers: PartyLobbySeekerDto[]
+  myValuationBreakdown?: ValuationBreakdownDto | null
 }
 
 /** PlayerCardRequest 角色信息卡查询请求载荷 */
@@ -778,6 +794,8 @@ export interface PlayerCardDto {
   combatExperience: number
   /** 装备与功法估值身家 */
   valuation: number
+  /** 身家估值构成细分 */
+  valuationBreakdown?: ValuationBreakdownDto | null
   /** 六维经验与等级投影 */
   coreAttributes: PlayerCardCoreDto | null
   /** 已穿戴装备（战斗装备与技艺工具合并清单，槽位语义由配表 slot 判定） */

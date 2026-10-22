@@ -1220,3 +1220,62 @@
   height: auto;
   display: block;
 }
+
+/* 12. 身家构成悬浮卡片 (Valuation Breakdown Card) */
+.valuation-breakdown-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 140px;
+  padding: 2px 0;
+  box-sizing: border-box;
+}
+
+.valuation-breakdown-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.valuation-breakdown-title {
+  font-size: 11px;
+  color: var(--text-dim, #8c8273);
+  letter-spacing: 0.5px;
+}
+
+.valuation-breakdown-total {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+}
+
+.valuation-breakdown-divider {
+  height: 1px;
+  background: linear-gradient(90deg, rgba(201, 180, 109, 0.45) 0%, rgba(201, 180, 109, 0.08) 100%);
+  margin: 1px 0 2px;
+}
+
+.valuation-breakdown-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.valuation-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.valuation-breakdown-label {
+  color: var(--text-muted, #a69f92);
+}
+
+.valuation-breakdown-val {
+  color: var(--text-bright, #e8dfcf);
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+}
