@@ -697,6 +697,48 @@ public sealed class PostgresSchemaHostedService(
             logger.LogInformation("PostgreSQL schema bootstrap 已关闭，已校验 schema v{Version}。", PostgresSchema.Version);
         else
             logger.LogInformation("PostgreSQL schema v{Version} 已就绪。", PostgresSchema.Version);
+
+        // 存档标签非阻塞巡检：不阻断启动（避免个别离线玩家的脏数据拖死全服），
+        // 但若有偏离当前解码器版本的行，必须在启动日志明确告警并给出修复 SQL。
+        await WarnStaleSectionLabelsAsync(connection, cancellationToken);
+    }
+
+    private async Task WarnStaleSectionLabelsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var expected = global::Domain.Persistence.SectionCodec.CurrentSchemaVersion;
+            await using var command = new NpgsqlCommand($"""
+                SELECT
+                    (SELECT count(*) FROM game.player_state_heads WHERE schema_version <> {expected}),
+                    (SELECT count(*) FROM game.player_state_sections WHERE schema_version <> {expected}),
+                    (SELECT count(*) FROM platform.section_flush_queue WHERE schema_version <> {expected});
+                """, connection)
+            {
+                CommandTimeout = 10
+            };
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var heads = reader.GetInt64(0);
+                var sections = reader.GetInt64(1);
+                var queue = reader.GetInt64(2);
+                if (heads + sections + queue > 0)
+                {
+                    logger.LogWarning(
+                        "检测到存档标签与当前解码器版本 (v{Expected}) 不一致：heads={Heads} sections={Sections} queue={Queue}；这些玩家加载时会抛异常。若系手动迁移遗留，请停写后推进标签：" +
+                        $"UPDATE game.player_state_sections SET schema_version = {expected} WHERE schema_version <> {expected}; " +
+                        $"UPDATE game.player_state_heads SET schema_version = {expected} WHERE schema_version <> {expected}; " +
+                        $"UPDATE platform.section_flush_queue SET schema_version = {expected} WHERE schema_version <> {expected};",
+                        expected, heads, sections, queue);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // 巡检仅用于运维预警，查询失败不阻止服务正常启动。
+            logger.LogDebug(exception, "启动期存档标签巡检跳过。");
+        }
     }
 
     /// <summary>无资源需要停止时清理。</summary>
