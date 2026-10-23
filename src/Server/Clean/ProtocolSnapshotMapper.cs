@@ -613,6 +613,10 @@ public static class ProtocolSnapshotMapper
             playerRespawnAtSeconds = expedition.PlayerRespawnAtSeconds,
             playerRespawnDurationSeconds = gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
                 ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
+            // 读条已走完但复活策略条件未成立的等待复查时刻：前端据此把读条改为「等待条件」态。
+            playerRespawnWaitingUntilSeconds = expedition.Phase == CombatExpeditionPhase.Combat
+                && expedition.PlayerState?.RespawnWaitingUntilSeconds is { } waitingSelf
+                    ? waitingSelf : (double?)null,
             // 本机战内 Buff（含开战注入的消耗品副本）：战斗时钟到期时刻随快照下发，
             // 前端按 battleElapsedSeconds 反推剩余；非战斗相位改投跨波携带态
             // （expiresAt = 冻结时钟基准 + 剩余秒数，前端换算后倒计时即剩余时长）。
@@ -704,6 +708,8 @@ public static class ProtocolSnapshotMapper
                     state.ThreatBonusPoints, state.Buffs),
                 pendingAbilityId, pendingActionDurationSeconds = pendingDuration,
                 respawnAtSeconds = state.RespawnAtSeconds,
+                // 读条已走完但策略条件未成立：等待复查时刻（null 表示未在等待）。
+                respawnWaitingUntilSeconds = state.RespawnWaitingUntilSeconds,
                 // 战内 Buff：战斗相位投波中实时快照；非战斗相位投跨波携带态
                 // （本机位取 playerCarriedBuffs，盟友位取镜像 CombatBuffs）。
                 buffs = expedition.Phase == CombatExpeditionPhase.Combat

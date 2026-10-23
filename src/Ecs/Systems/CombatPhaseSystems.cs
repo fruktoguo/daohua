@@ -131,6 +131,7 @@ public sealed class CombatAllyRespawnSystem : YuoSystem<CombatEncounterComponent
         var ally = context.Ally ?? throw new InvalidOperationException("复活相位缺少盟友上下文。");
         ally.Hitpoints = ally.Stats.MaxHitpoints;
         ally.RespawnAtSeconds = double.PositiveInfinity;
+        ally.RespawnDeadlineSeconds = double.PositiveInfinity;
         CombatActSystem.DecideInitialActions(encounter);
         // 复活标记分流：本机成员走 PlayerRespawns（沿用单人写回口径），其余成员进盟友标记列表。
         if (context.AllyIndex == encounter.SelfIndex)
@@ -213,6 +214,11 @@ public sealed class CombatAllyDownedSystem : YuoSystem<CombatEncounterComponent>
         var encounter = context.Encounter;
         var ally = context.Ally ?? throw new InvalidOperationException("倒地相位缺少盟友上下文。");
         ally.RespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
+        // 等待硬上限：阵亡时刻 + 2 × 复活读条。策略条件互等（A 等 B、B 等 A）时到点强制起身，
+        // 战场必然推进；读条为 0（团灭即败遭遇）时上限恒为 +∞，不引入等待语义。
+        ally.RespawnDeadlineSeconds = encounter.PlayerRespawnSeconds > 0
+            ? encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds * 2
+            : double.PositiveInfinity;
         if (encounter.IsAllAlliesDowned) InterruptCasts(encounter);
         else InterruptCast(ally);
         if (context.AllyIndex == encounter.SelfIndex)

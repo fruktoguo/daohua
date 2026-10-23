@@ -163,11 +163,20 @@ public sealed partial class CombatEventAdvanceSystem
         }
 
         // 倒地复活先结算：到点的盟友起身；单人路径等价于 IsPlayerDowned 分支的复活派发。
+        // 门禁未过（复活策略条件不成立）时把截止点推到下次判定时刻，绝不留在过去——
+        // 否则自然边界恒等于同一过期值，AdvanceTo 在一帧内空转到事件上限。
         for (var i = 0; i < encounter.PlayerAllies.Count; i++)
         {
             var ally = encounter.PlayerAllies[i];
             if (ally.IsAlive || !double.IsFinite(ally.RespawnAtSeconds)
                 || ally.RespawnAtSeconds > encounter.ElapsedSeconds + 1e-12) continue;
+            if (!encounter.CanRespawn(i, out var retryAtSeconds))
+            {
+                ally.RespawnAtSeconds = Math.Max(retryAtSeconds, ally.RespawnAtSeconds);
+                ally.RespawnWaitingUntilSeconds = ally.RespawnAtSeconds;
+                continue;
+            }
+            ally.RespawnWaitingUntilSeconds = double.PositiveInfinity;
             context.AllyIndex = i;
             context.Ally = ally;
             dispatcher.Dispatch<ICombatAllyRespawnPhase>(host, context);

@@ -26,6 +26,9 @@ namespace Domain.Player;
 /// <param name="ConsumableSlots">开打冻结的非耐久战斗消耗品槽配置与时钟；库存由会话工作钱包或离线储备提供。</param>
 /// <param name="InternalArt">开打定格的 0 号内功位心法：内功不进施放序列，冻结技能槽里没有它，
 /// 但六维乘率与修为增减点必须在会话内按成员逐人结算，故单列一份冻结输入。</param>
+/// <param name="RespawnPolicy">成员的复活时机策略冻结值（总纲 §7.9.4.1）：倒地后是否立即起身由本人设定裁决。</param>
+/// <param name="RespawnTargetPlayerId">指定队友存活策略的观察对象玩家 ID（成员序内的 PlayerId 文本）；
+/// 仅当策略为该分支且目标在册时有效，未指定/目标离册时退化为直接复活。</param>
 public sealed partial record ActionParticipantSnapshot(
     string PlayerId,
     string DisplayName,
@@ -44,7 +47,9 @@ public sealed partial record ActionParticipantSnapshot(
     double RegenCarrySeconds = 0,
     IReadOnlyList<ActionConsumableSlot>? ConsumableSlots = null,
     string Avatar = "player",
-    InternalArtSnapshot? InternalArt = null)
+    InternalArtSnapshot? InternalArt = null,
+    CombatRespawnPolicy RespawnPolicy = CombatRespawnPolicy.Immediate,
+    string? RespawnTargetPlayerId = null)
 {
     /// <summary>成员快照持久化不变量校验。</summary>
     public bool IsValid => Guid.TryParse(PlayerId, out var id) && id != Guid.Empty
@@ -68,7 +73,10 @@ public sealed partial record ActionParticipantSnapshot(
         && (ConsumableSlots is null || (ConsumableSlots.Count <= AutoUseSlotState.CombatSlotCount
             && ConsumableSlots.All(slot => slot is not null && slot.IsValid)
             && ConsumableSlots.Select(slot => (slot.Group, slot.SlotIndex)).Distinct().Count() == ConsumableSlots.Count))
-        && (InternalArt is null || InternalArt.IsValid);
+        && (InternalArt is null || InternalArt.IsValid)
+        && Enum.IsDefined(RespawnPolicy)
+        && (RespawnTargetPlayerId is null
+            || (Guid.TryParse(RespawnTargetPlayerId, out var targetId) && targetId != Guid.Empty));
 }
 
 /// <summary>

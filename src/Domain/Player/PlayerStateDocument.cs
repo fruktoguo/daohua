@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Domain.Combat;
 using Domain.World;
 
 namespace Domain.Player;
@@ -110,7 +111,11 @@ public sealed record PlayerSettingsStateDocument(
     /// <summary>本命形象外观标识（默认 player，可选 player-male）</summary>
     string Avatar = "player",
     /// <summary>已解锁形象标识集合（默认包含女剑修与男剑修）</summary>
-    IReadOnlyList<string>? UnlockedAvatars = null)
+    IReadOnlyList<string>? UnlockedAvatars = null,
+    /// <summary>组队讨伐复活时机策略（缺省级为直接复活）</summary>
+    CombatRespawnPolicy RespawnPolicy = CombatRespawnPolicy.Immediate,
+    /// <summary>指定队友存活策略的观察对象玩家 ID（缺省为未指定）</summary>
+    Guid? RespawnTargetPlayerId = null)
 {
     /// <summary>检查形象是否已解锁（女剑修与男剑修恒为已解锁）。</summary>
     public bool IsAvatarUnlocked(string? avatar)
@@ -134,7 +139,9 @@ public sealed record PlayerSettingsStateDocument(
             && TutorialRewardsStep == other.TutorialRewardsStep
             && Avatar == other.Avatar
             && ((AutoUseSlots == null && other.AutoUseSlots == null) || (AutoUseSlots != null && other.AutoUseSlots != null && AutoUseSlots.SequenceEqual(other.AutoUseSlots)))
-            && ((UnlockedAvatars == null && other.UnlockedAvatars == null) || (UnlockedAvatars != null && other.UnlockedAvatars != null && UnlockedAvatars.SequenceEqual(other.UnlockedAvatars)));
+            && ((UnlockedAvatars == null && other.UnlockedAvatars == null) || (UnlockedAvatars != null && other.UnlockedAvatars != null && UnlockedAvatars.SequenceEqual(other.UnlockedAvatars)))
+            && RespawnPolicy == other.RespawnPolicy
+            && Nullable.Equals(RespawnTargetPlayerId, other.RespawnTargetPlayerId);
     }
 
     public override int GetHashCode()
@@ -149,6 +156,8 @@ public sealed record PlayerSettingsStateDocument(
         hash.Add(TutorialStep);
         hash.Add(TutorialRewardsStep);
         hash.Add(Avatar);
+        hash.Add(RespawnPolicy);
+        hash.Add(RespawnTargetPlayerId);
         return hash.ToHashCode();
     }
 }
@@ -328,6 +337,8 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.TutorialStep == Settings.TutorialStep
             && _cachedSettingsDoc.TutorialRewardsStep == Settings.TutorialRewardsStep
             && _cachedSettingsDoc.Avatar == Settings.Avatar
+            && _cachedSettingsDoc.RespawnPolicy == Settings.RespawnPolicy
+            && _cachedSettingsDoc.RespawnTargetPlayerId == Settings.RespawnTargetPlayerId
             && _cachedSettingsDoc.UnlockedAvatars != null
             && _cachedSettingsDoc.UnlockedAvatars.Count == Settings.UnlockedAvatars.Count
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
@@ -345,7 +356,9 @@ public sealed partial class PlayerAggregate
             Settings.TutorialStep,
             Settings.TutorialRewardsStep,
             Settings.Avatar,
-            Settings.UnlockedAvatars.ToArray());
+            Settings.UnlockedAvatars.ToArray(),
+            Settings.RespawnPolicy,
+            Settings.RespawnTargetPlayerId);
     }
 
     private AutoUseSlotState[] GetCachedAutoUseSlots()
@@ -537,6 +550,8 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
         aggregate.Settings.TutorialStep = state.Settings.TutorialStep;
         aggregate.Settings.TutorialRewardsStep = state.Settings.TutorialRewardsStep;
+        aggregate.Settings.RespawnPolicy = state.Settings.RespawnPolicy;
+        aggregate.Settings.RespawnTargetPlayerId = state.Settings.RespawnTargetPlayerId;
         aggregate.Settings.UnlockedAvatars.Clear();
         aggregate.Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultFemaleAvatar);
         aggregate.Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultMaleAvatar);
@@ -688,6 +703,8 @@ public sealed partial class PlayerAggregate
         Settings.TutorialStep = restored.Settings.TutorialStep;
         Settings.TutorialRewardsStep = restored.Settings.TutorialRewardsStep;
         Settings.Avatar = restored.Settings.Avatar;
+        Settings.RespawnPolicy = restored.Settings.RespawnPolicy;
+        Settings.RespawnTargetPlayerId = restored.Settings.RespawnTargetPlayerId;
         Settings.AutoUseSlots.Clear();
         Settings.AutoUseSlots.AddRange(restored.Settings.AutoUseSlots);
         _actions.Clear();
@@ -894,7 +911,7 @@ public sealed partial class PlayerAggregate
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
                 Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds,
                 Settings.QueuePaused, Settings.TutorialStep, Settings.TutorialRewardsStep, Settings.Avatar,
-                Settings.UnlockedAvatars.ToArray())),
+                Settings.UnlockedAvatars.ToArray(), Settings.RespawnPolicy, Settings.RespawnTargetPlayerId)),
         PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
         PlayerSectionKind.Duel => new DuelCheckpoint(
             ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),
@@ -973,6 +990,8 @@ public sealed partial class PlayerAggregate
                 Settings.TutorialStep = data.State.TutorialStep;
         Settings.TutorialRewardsStep = data.State.TutorialRewardsStep;
                 Settings.Avatar = data.State.Avatar;
+                Settings.RespawnPolicy = data.State.RespawnPolicy;
+                Settings.RespawnTargetPlayerId = data.State.RespawnTargetPlayerId;
                 Settings.UnlockedAvatars.Clear();
                 Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultFemaleAvatar);
                 Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultMaleAvatar);

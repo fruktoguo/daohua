@@ -1,3 +1,4 @@
+using Domain.Combat;
 using Domain.World;
 
 namespace Domain.Player;
@@ -400,6 +401,16 @@ public sealed class PlayerSettingsState
     public string Avatar { get; set; } = DefaultFemaleAvatar;
     /// <summary>已解锁的形象标识集合（默认仅开放女剑修与男剑修）。</summary>
     public HashSet<string> UnlockedAvatars { get; } = [DefaultFemaleAvatar, DefaultMaleAvatar];
+    /// <summary>
+    /// 组队讨伐的复活时机策略（总纲 §7.9.4.1）：本人在会话内倒地时的起身时机，由本人设定。
+    /// 单人战斗恒按直接复活处理，此设置只在参与会话中生效。
+    /// </summary>
+    public CombatRespawnPolicy RespawnPolicy { get; set; } = CombatRespawnPolicy.Immediate;
+    /// <summary>
+    /// 「指定队友存活」的观察对象玩家 ID；null 表示未指定（该策略退化为直接复活）。
+    /// 目标不在队伍中时同样按直接复活处理，不改写玩家设置。
+    /// </summary>
+    public Guid? RespawnTargetPlayerId { get; set; }
 
     /// <summary>检查形象是否已解锁（女剑修与男剑修恒为已解锁）。</summary>
     public bool IsAvatarUnlocked(string? avatar)
@@ -953,6 +964,34 @@ public sealed partial class PlayerAggregate
     {
         if (Settings.AutoTravelEnabled == enabled) return;
         Settings.AutoTravelEnabled = enabled;
+        Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 设置组队讨伐的复活时机策略（总纲 §7.9.4.1）。非「指定队友存活」分支一律清空观察对象，
+    /// 避免残留引用在日后切回该分支时指向已离队的旧目标。
+    /// </summary>
+    /// <param name="policy">复活时机策略。</param>
+    /// <param name="targetPlayerId">指定队友存活策略的观察对象；其余分支忽略。</param>
+    public void SetRespawnPolicy(CombatRespawnPolicy policy, Guid? targetPlayerId = null)
+    {
+        var target = policy == CombatRespawnPolicy.TargetAllyAlive ? targetPlayerId : null;
+        if (target == Guid.Empty) target = null;
+        if (Settings.RespawnPolicy == policy && Settings.RespawnTargetPlayerId == target) return;
+        Settings.RespawnPolicy = policy;
+        Settings.RespawnTargetPlayerId = target;
+        Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 清除复活策略中的失效观察对象：目标已离队/不存在时退化为直接复活。
+    /// 由社交仲裁在成员变动后调用，届时下一场会话的冻结值即为已修正的策略。
+    /// </summary>
+    public void ClearRespawnTargetIf(Guid departedPlayerId)
+    {
+        if (Settings.RespawnTargetPlayerId != departedPlayerId) return;
+        Settings.RespawnTargetPlayerId = null;
+        Settings.RespawnPolicy = CombatRespawnPolicy.Immediate;
         Touch(PlayerSectionKind.Settings);
     }
 

@@ -489,6 +489,7 @@ internal static class CombatActionRules
             battleState.Player.Hitpoints = battleState.Player.Stats.MaxHitpoints;
             player.Resources.Hitpoints = battleState.Player.Hitpoints;
             battleState.Player.RespawnAtSeconds = double.PositiveInfinity;
+            battleState.Player.RespawnDeadlineSeconds = double.PositiveInfinity;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.respawned", "复活完成，气血与灵力恢复。", definition.Id);
         }
 
@@ -572,6 +573,20 @@ internal static class CombatActionRules
             gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1,
             allies: spec is not null ? CarryAlliesToSearch(battleState) : null) with
         { RecentEvents = updatedBattle.RecentEvents, PlayerRespawnAtSeconds = remainingSelfOnWave };
+    }
+
+    /// <summary>
+    /// 解析「指定队友存活」策略的观察成员下标：按成员序匹配 PlayerId。
+    /// 未指定、目标不在本场名册、或目标即本人时返回 -1（策略据此退化为直接复活）。
+    /// </summary>
+    private static int ResolveRespawnTargetIndex(ActionParticipationSpec spec, ActionParticipantSnapshot member)
+    {
+        if (member.RespawnPolicy != CombatRespawnPolicy.TargetAllyAlive
+            || string.IsNullOrWhiteSpace(member.RespawnTargetPlayerId)) return -1;
+        for (var i = 0; i < spec.Members.Count; i++)
+            if (string.Equals(spec.Members[i].PlayerId, member.RespawnTargetPlayerId, StringComparison.Ordinal))
+                return string.Equals(spec.Members[i].PlayerId, member.PlayerId, StringComparison.Ordinal) ? -1 : i;
+        return -1;
     }
 
     /// <summary>仅在载入已有远征时恢复战斗单位；运行中的实体持续借用同一状态。</summary>
@@ -805,6 +820,10 @@ internal static class CombatActionRules
             {
                 var member = spec.Members[i];
                 var unit = battle.PlayerAllies[i];
+                // 复活时机策略随开打定格注入：本人设定决定自己倒地后的起身时机（总纲 §7.9.4.1）。
+                // 目标下标按成员序解析——目标不在册时 -1，策略退化为直接复活。
+                unit.RespawnPolicy = member.RespawnPolicy;
+                unit.RespawnTargetIndex = ResolveRespawnTargetIndex(spec, member);
                 if (i == selfIndex)
                 {
                     // 本机成员入场镜像 = 战外资源池（战间回复已入账），上限按冻结面板钳制——
@@ -832,6 +851,7 @@ internal static class CombatActionRules
                     {
                         unit.Hitpoints = member.Stats.MaxHitpoints;
                         unit.RespawnAtSeconds = double.PositiveInfinity;
+                        unit.RespawnDeadlineSeconds = double.PositiveInfinity;
                         if (i == selfIndex) player.Resources.Hitpoints = member.Stats.MaxHitpoints;
                     }
                     else
@@ -839,6 +859,9 @@ internal static class CombatActionRules
                         unit.RespawnAtSeconds = battle.ElapsedSeconds + (carryRemaining is > 0
                             ? Math.Min(carryRemaining.Value, respawnSeconds)
                             : respawnSeconds);
+                        // 波间携带的倒地者在新波及时钟上重设等待硬上限：跨波沿用旧绝对时刻会失准，
+                        // 恒为 +∞ 又会让策略条件不成立时无界等待（自然边界落 +∞ 直接破坏推进）。
+                        unit.RespawnDeadlineSeconds = battle.ElapsedSeconds + respawnSeconds * 2;
                     }
                 }
                 unit.ExternalBuffStacks = buffId => SumFrozenBuffStacks(member.ExternalBuffs, buffId);
@@ -931,6 +954,7 @@ internal static class CombatActionRules
                 {
                     battle.Player.Hitpoints = player.Resources.MaxHitpoints;
                     battle.Player.RespawnAtSeconds = double.PositiveInfinity;
+                    battle.Player.RespawnDeadlineSeconds = double.PositiveInfinity;
                     player.Resources.Hitpoints = player.Resources.MaxHitpoints;
                 }
                 else
@@ -938,6 +962,8 @@ internal static class CombatActionRules
                     battle.Player.RespawnAtSeconds = battle.ElapsedSeconds + (carryRemaining is > 0
                         ? Math.Min(carryRemaining.Value, respawnSeconds)
                         : respawnSeconds);
+                    // 与盟友同口径：倒地入场同样受等待硬上限约束，条件不成立也不得无界等待。
+                    battle.Player.RespawnDeadlineSeconds = battle.ElapsedSeconds + respawnSeconds * 2;
                     AddCombatEventAt(ref events, entryAt, "combat.downed",
                         $"你以倒地状态随队迎战：{waveNames}。", definition.Id);
                 }

@@ -249,7 +249,9 @@ public sealed partial class PlayerAggregate
             Resources.RegenCarrySeconds,
             CaptureConsumableSlots(Settings.AutoUseSlots, gameData),
             Avatar: Settings.Avatar,
-            InternalArt: CaptureInternalArt(Loadout, gameData));
+            InternalArt: CaptureInternalArt(Loadout, gameData),
+            RespawnPolicy: Settings.RespawnPolicy,
+            RespawnTargetPlayerId: Settings.RespawnTargetPlayerId?.ToString("D"));
     }
 
     /// <summary>
@@ -380,6 +382,8 @@ public sealed partial record ActionParticipantSnapshot
             state.Combat.RegenCarrySeconds,
             PlayerAggregate.CaptureConsumableSlots(state.Settings.AutoUseSlots ?? [], catalog),
             Avatar: state.Settings.Avatar,
-            InternalArt: PlayerAggregate.CaptureInternalArt(loadout, catalog));
+            InternalArt: PlayerAggregate.CaptureInternalArt(loadout, catalog),
+            RespawnPolicy: state.Settings.RespawnPolicy,
+            RespawnTargetPlayerId: state.Settings.RespawnTargetPlayerId?.ToString("D"));
     }
 }

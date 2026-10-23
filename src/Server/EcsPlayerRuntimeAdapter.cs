@@ -1276,6 +1276,32 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             await presence.UpdateAvatarAsync(playerId, normalized, cancellationToken).ConfigureAwait(false);
                         break;
                     }
+                    case "respawn.policy":
+                    {
+                        // 复活时机策略由成员本人设定（总纲 §7.9.4.1）：只写本人设置，不触碰队伍与其他成员。
+                        var policyText = payload.TryGetProperty("policy", out var policyElement) ? policyElement.GetString() : null;
+                        if (!TryParseRespawnPolicy(policyText, out var policy))
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "复活策略无效。", before);
+                        Guid? targetPlayerId = null;
+                        if (policy == CombatRespawnPolicy.TargetAllyAlive)
+                        {
+                            if (!payload.TryGetProperty("targetPlayerId", out var targetElement)
+                                || !TryReadGuid(payload, "targetPlayerId", out var parsedTarget))
+                                return new PlayerCommandResult(false, "INVALID_PAYLOAD", "指定队友策略必须指定队友。", before);
+                            // 只能指定同队成员：跨队引用既无法观察也无法在会话内解析，直接拒绝而非静默退化。
+                            var partyId = socialRepository is null
+                                ? null : await socialRepository.GetPartyIdAsync(playerId, cancellationToken).ConfigureAwait(false);
+                            var party = partyId is { } id && socialRepository is not null
+                                ? await socialRepository.GetPartyAsync(id, cancellationToken).ConfigureAwait(false) : null;
+                            if (party is null || party.Members.All(member => member.PlayerId != parsedTarget))
+                                return new PlayerCommandResult(false, "TARGET_NOT_IN_PARTY", "只能指定当前队伍中的队友。", before);
+                            if (parsedTarget == playerId)
+                                return new PlayerCommandResult(false, "INVALID_PAYLOAD", "不能指定自己。", before);
+                            targetPlayerId = parsedTarget;
+                        }
+                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetRespawnPolicy(policy, targetPlayerId));
+                        break;
+                    }
                     case "player.unlock_avatar":
                     {
                         var avatar = payload.TryGetProperty("avatar", out var avatarElement) ? avatarElement.GetString() : null;
@@ -2524,6 +2550,18 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         return payload.TryGetProperty(property, out var element)
             && element.ValueKind == JsonValueKind.String
             && Guid.TryParse(element.GetString(), out value);
+    }
+
+    /// <summary>解析复活时机策略标识；仅接受协议约定的三个取值。</summary>
+    private static bool TryParseRespawnPolicy(string? value, out CombatRespawnPolicy policy)
+    {
+        switch (value)
+        {
+            case "immediate": policy = CombatRespawnPolicy.Immediate; return true;
+            case "all-allies-ready": policy = CombatRespawnPolicy.AllAlliesReady; return true;
+            case "target-ally-alive": policy = CombatRespawnPolicy.TargetAllyAlive; return true;
+            default: policy = CombatRespawnPolicy.Immediate; return false;
+        }
     }
 
     /// <summary>

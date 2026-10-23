@@ -63,7 +63,9 @@ public static class PostgresSchema
     /// v41：progression 分段载荷新增 heavenGate 五行灵根状态（可缺省解码为未开天门），存档标签推进至 v38；表结构未变。
     /// v42：放宽 party_session_inbox.consumed_transaction_id 约束（允许 NULL，解除结算空流水绑定；外键加 ON DELETE SET NULL），ix_section_flush_ready 优化为单列 (next_attempt_at) 恢复 HOT 更新——存档载荷与标签未变。
     /// v43：transaction_lines 外键补齐 ON DELETE CASCADE，支持级联回收；留存清理彻底扫荡 2 小时前战斗掉落/消耗等易失性流水——存档载荷与标签未变。
-    public const int Version = 43;
+    /// v44：settings 分段载荷新增组队复活时机策略字段（respawnPolicy/respawnTargetPlayerId，可缺省解码为直接复活）；
+    /// 存档标签推进至 v39，表结构未变。
+    public const int Version = 44;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -622,7 +624,8 @@ public static class PostgresSchema
     );
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
-        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now())
+        (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

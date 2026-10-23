@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Domain.Common;
+using Domain.Combat;
 using Domain.Player;
 using DomainState = Domain.Player.PlayerAggregateState;
 using DomainSectionKind = Domain.Player.PlayerSectionKind;
@@ -65,9 +66,12 @@ public static class SectionCodec
     /// v36：progression 分段载荷新增 unlockedTraits 特质等级经验养成集合（可缺省解码为 null/[]，表结构未变）。
     /// v37：loadout 分段载荷新增 consumableTriggers 消耗品触发条件映射（可缺省解码为 null/[]，表结构未变）——
     /// 玩家按物品 ID 覆盖配表 consumable.triggers 出厂默认，与 abilityTriggers 同构（键存在即覆盖）。
+    /// v38：settings 分段载荷新增 respawnPolicy / respawnTargetPlayerId 组队复活时机策略（可缺省解码为
+    /// 直接复活与未指定）；combat 分段战斗快照新增 respawnPolicy / respawnTargetIndex /
+    /// respawnDeadlineSeconds（可缺省解码），表结构未变。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 38;
+    public const int CurrentSchemaVersion = 39;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -217,7 +221,7 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar]),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar], state.Settings.RespawnPolicy, state.Settings.RespawnTargetPlayerId),
                 DomainSectionKind.ActionQueue => state.Actions,
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -245,7 +249,7 @@ public static class SectionCodec
             (PlayerSectionKinds.Combat, state.Combat),
             (PlayerSectionKinds.Buffs, state.Buffs),
             (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
-            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar])),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar], state.Settings.RespawnPolicy, state.Settings.RespawnTargetPlayerId)),
             (PlayerSectionKinds.ActionQueue, state.Actions),
             (PlayerSectionKinds.Duel, state.Duel)
         };
@@ -314,7 +318,9 @@ public static class SectionCodec
                 // 防止升级后重学/推进重复领取阶段赠送（v15 起载荷自带游标，max 不生效）。
                 Math.Max(settings.TutorialRewardsStep, ImplyTutorialRewardsStep(settings.TutorialStep)),
                 ResolveAvatar(settings.Avatar, settings.UnlockedAvatars),
-                ResolveUnlockedAvatars(settings.UnlockedAvatars)),
+                ResolveUnlockedAvatars(settings.UnlockedAvatars),
+                settings.RespawnPolicy,
+                settings.RespawnTargetPlayerId),
             actions,
             loadout.State,
             duel,
@@ -441,5 +447,9 @@ public static class SectionCodec
         /// <summary>本命形象外观标识；缺省解码为 player。</summary>
         string Avatar = "player",
         /// <summary>已解锁形象标识集合；v33 前载荷缺省解码为 null。</summary>
-        IReadOnlyList<string>? UnlockedAvatars = null);
+        IReadOnlyList<string>? UnlockedAvatars = null,
+        /// <summary>组队讨伐复活时机策略；v38 及更早载荷缺省解码为直接复活。</summary>
+        CombatRespawnPolicy RespawnPolicy = CombatRespawnPolicy.Immediate,
+        /// <summary>指定队友存活策略的观察对象玩家 ID；缺省解码为 null（未指定）。</summary>
+        Guid? RespawnTargetPlayerId = null);
 }

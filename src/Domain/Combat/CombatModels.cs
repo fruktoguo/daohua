@@ -13,6 +13,20 @@ public enum CombatDamageKind : byte
     Spell = 1
 }
 
+/// <summary>
+/// 组队讨伐的复活时机策略（总纲 §7.9.4.1）：倒地读条走完后是否立刻起身，由成员自设策略裁决。
+/// 策略只在组队会话内生效——单人战斗恒为 <see cref="Immediate"/>。
+/// </summary>
+public enum CombatRespawnPolicy : byte
+{
+    /// <summary>直接复活：读条走完立即满血起身（缺省值，与既有行为逐位一致）。</summary>
+    Immediate = 0,
+    /// <summary>全员就绪：全部队友均存活或尚在复活读条中（可复活）时才起身。</summary>
+    AllAlliesReady = 1,
+    /// <summary>指定队友存活：仅当指定队友本人处于存活状态时才起身。</summary>
+    TargetAllyAlive = 2
+}
+
 /// <summary>攻击携带的五行属性；无属性攻击跳过五行减免。</summary>
 public enum CombatElement : byte
 {
@@ -341,6 +355,26 @@ public sealed class CombatantState
     /// 起身后回 +∞；敌方单位与团灭即败遭遇恒为 +∞。倒地单位不出手，回复/冷却照常推进。
     /// </summary>
     public double RespawnAtSeconds { get; internal set; } = double.PositiveInfinity;
+    /// <summary>
+    /// 复活时机策略（仅友方单位使用；敌方恒 <see cref="CombatRespawnPolicy.Immediate"/>）：
+    /// 读条走完后先经此策略裁决是否立即起身，未通过则等待条件成立（总纲 §7.9.4.1）。
+    /// </summary>
+    public CombatRespawnPolicy RespawnPolicy { get; internal set; } = CombatRespawnPolicy.Immediate;
+    /// <summary>
+    /// <see cref="CombatRespawnPolicy.TargetAllyAlive"/> 的观察对象：盟友阵列中的成员下标（-1 表示未指定）。
+    /// 目标离队或策略非该分支时置 -1，此时策略退化为直接复活。
+    /// </summary>
+    public int RespawnTargetIndex { get; internal set; } = -1;
+    /// <summary>
+    /// 复活等待硬上限（战斗时钟秒，+∞ 表示无上限）：倒地瞬间按「阵亡时刻 + 2 × 复活读条」定格。
+    /// 策略条件长期不成立时到点强制起身，保证战斗必然推进——等待不得成为时钟停滞来源。
+    /// </summary>
+    public double RespawnDeadlineSeconds { get; internal set; } = double.PositiveInfinity;
+    /// <summary>
+    /// 复活等待门禁的下次复查时刻（战斗时钟秒）：+∞ 表示未在等待（正常读条中或已起身）。
+    /// 读条走完但策略条件尚未成立时置为该复查时刻，仅供表现层区分「读条未满」与「等待条件」。
+    /// </summary>
+    public double RespawnWaitingUntilSeconds { get; internal set; } = double.PositiveInfinity;
     /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
     /// <summary>参与目标抽取与对外展示的有效威胁值：Threat ×(1 + (面板威胁增幅 + 嘲讽修正 + 战内 Buff 威胁)/100)。</summary>
@@ -515,6 +549,9 @@ public sealed class CombatantState
 
 /// <summary>战斗单位可持久化的运行时快照。</summary>
 /// <param name="RespawnAtSeconds">友方倒地复活截止点（战斗时钟秒）；null 表示未倒地或敌方单位（恒无复活点）。</param>
+/// <param name="RespawnPolicy">复活时机策略；缺省解码为直接复活（与历史存档逐位一致）。</param>
+/// <param name="RespawnTargetIndex">指定队友存活策略的观察成员下标；-1 表示未指定。</param>
+/// <param name="RespawnDeadlineSeconds">复活等待硬上限（战斗时钟秒）；null 表示无上限。</param>
 public sealed record CombatantSnapshot(
     double Hitpoints,
     double Manapoints,
@@ -527,7 +564,11 @@ public sealed record CombatantSnapshot(
     IReadOnlyList<double>? SkillCooldownUntil = null,
     double SkillCastCount = 0,
     IReadOnlyList<CombatBuffState>? Buffs = null,
-    double? RespawnAtSeconds = null)
+    double? RespawnAtSeconds = null,
+    CombatRespawnPolicy RespawnPolicy = CombatRespawnPolicy.Immediate,
+    int RespawnTargetIndex = -1,
+    double? RespawnDeadlineSeconds = null,
+    double? RespawnWaitingUntilSeconds = null)
 {
     /// <summary>快照字段的有限性/取值域校验（不含上限比对——上限依赖施法时面板）。</summary>
     internal bool IsValid => double.IsFinite(Hitpoints) && Hitpoints >= 0
@@ -540,6 +581,12 @@ public sealed record CombatantSnapshot(
         && PendingSkillIndex >= -1
         && double.IsFinite(SkillCastCount) && SkillCastCount >= 0
         && (RespawnAtSeconds is null || (double.IsFinite(RespawnAtSeconds.Value) && RespawnAtSeconds.Value >= 0))
+        && Enum.IsDefined(RespawnPolicy)
+        && RespawnTargetIndex is >= -1 and <= 4
+        && (RespawnDeadlineSeconds is null
+            || (double.IsFinite(RespawnDeadlineSeconds.Value) && RespawnDeadlineSeconds.Value >= 0))
+        && (RespawnWaitingUntilSeconds is null
+            || (double.IsFinite(RespawnWaitingUntilSeconds.Value) && RespawnWaitingUntilSeconds.Value >= 0))
         && (SkillCooldownUntil is null || SkillCooldownUntil.All(value => double.IsFinite(value) && value >= 0))
         && (Buffs is null || Buffs.All(buff => buff is not null && buff.IsValid));
 }
@@ -639,6 +686,75 @@ public sealed class CombatEncounterState
                     primary = enemy;
             return primary;
         }
+    }
+
+    /// <summary>
+    /// 判定盟友此刻能否起身（总纲 §7.9.4.1 复活时机策略）。返回 true 表示立即起身；
+    /// 返回 false 时 <paramref name="retryAtSeconds"/> 给出下一次判定时刻（恒大于当前时钟），
+    /// 保证边界调度总能推进——等待绝不允许把复活截止点留在过去。
+    /// </summary>
+    /// <param name="allyIndex">待起身盟友的成员下标。</param>
+    /// <param name="retryAtSeconds">条件未成立时的下一判定时刻（战斗时钟秒）。</param>
+    public bool CanRespawn(int allyIndex, out double retryAtSeconds)
+    {
+        retryAtSeconds = double.PositiveInfinity;
+        var ally = PlayerAllies[allyIndex];
+        // 等待硬上限：到点强制起身，策略条件不再阻塞（避免互等僵局永久冻结战场）。
+        if (ally.RespawnDeadlineSeconds <= ElapsedSeconds + 1e-12) return true;
+        switch (ally.RespawnPolicy)
+        {
+            case CombatRespawnPolicy.AllAlliesReady:
+                // 全员就绪：其余队友均存活或仍在复活读条中即视为可复活；任一队友彻底出局则继续等。
+                if (AllAlliesRespawnable(allyIndex)) return true;
+                retryAtSeconds = NextAllyDecisionAt(allyIndex);
+                return false;
+            case CombatRespawnPolicy.TargetAllyAlive:
+                // 指定队友存活分支：目标下标失效（未指定/越界/指向自己）退化为直接复活。
+                if (ally.RespawnTargetIndex < 0 || ally.RespawnTargetIndex >= PlayerAllies.Count
+                    || ally.RespawnTargetIndex == allyIndex) return true;
+                if (PlayerAllies[ally.RespawnTargetIndex].IsAlive) return true;
+                retryAtSeconds = NextAllyDecisionAt(allyIndex);
+                return false;
+            default:
+                return true;
+        }
+
+        // 下次可能的条件变化时刻：任一其他盟友的复活截止点（其起身会改变门禁输入）。
+        double NextAllyDecisionAt(int selfIndex)
+        {
+            var next = double.PositiveInfinity;
+            for (var i = 0; i < PlayerAllies.Count; i++)
+            {
+                if (i == selfIndex) continue;
+                var other = PlayerAllies[i];
+                if (other.IsAlive) continue;
+                if (other.RespawnAtSeconds < next) next = other.RespawnAtSeconds;
+            }
+            // 门禁只看「谁能起身」，其唯一变化源是复活读条到点；叠加硬上限保证有界。
+            next = Math.Min(next, ally.RespawnDeadlineSeconds);
+            // 读条到点时刻可能已不早于当前时钟（同边界多个起身）：推一格最小步长防复读同一时刻。
+            return next > ElapsedSeconds + 1e-12 ? next : ElapsedSeconds + RespawnRetryStepSeconds;
+        }
+    }
+
+    /// <summary>等待门禁复查的最小推进步长（秒）：条件输入无变化时防止在同一时刻反复判定。</summary>
+    public const double RespawnRetryStepSeconds = 1;
+
+    /// <summary>
+    /// 全员就绪判定：除自身外全部队友要么存活、要么仍有待触发的复活读条（可复活）。
+    /// 单人战斗恒成立（无其他队友）。
+    /// </summary>
+    private bool AllAlliesRespawnable(int selfIndex)
+    {
+        for (var i = 0; i < PlayerAllies.Count; i++)
+        {
+            if (i == selfIndex) continue;
+            var other = PlayerAllies[i];
+            if (other.IsAlive) continue;
+            // 阵亡且无待触发复活点 = 彻底出局（团灭即败遭遇）→ 条件不成立。
+            if (!double.IsFinite(other.RespawnAtSeconds)) return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -784,7 +900,11 @@ public sealed class CombatEncounterState
             state.Threat, state.PendingSkillIndex, state.ThreatBonusPoints, state.BonusAbsorptionPoints,
             state.SkillCooldownUntil, state.SkillCastCount,
             state.Buffs.Count == 0 ? null : state.Buffs.ToArray(),
-            double.IsFinite(state.RespawnAtSeconds) ? state.RespawnAtSeconds : null);
+            double.IsFinite(state.RespawnAtSeconds) ? state.RespawnAtSeconds : null,
+            state.RespawnPolicy,
+            state.RespawnTargetIndex,
+            double.IsFinite(state.RespawnDeadlineSeconds) ? state.RespawnDeadlineSeconds : null,
+            double.IsFinite(state.RespawnWaitingUntilSeconds) ? state.RespawnWaitingUntilSeconds : null);
 
     private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
     {
@@ -798,6 +918,11 @@ public sealed class CombatEncounterState
             || snapshot.PendingSkillIndex < -1
             || !double.IsFinite(snapshot.SkillCastCount) || snapshot.SkillCastCount < 0
             || (snapshot.RespawnAtSeconds is { } respawnAt && (!double.IsFinite(respawnAt) || respawnAt < 0))
+            || !Enum.IsDefined(snapshot.RespawnPolicy)
+            || snapshot.RespawnTargetIndex is < -1 or > 4
+            || (snapshot.RespawnDeadlineSeconds is { } deadline && (!double.IsFinite(deadline) || deadline < 0))
+            || (snapshot.RespawnWaitingUntilSeconds is { } waitingUntil
+                && (!double.IsFinite(waitingUntil) || waitingUntil < 0))
             || (snapshot.SkillCooldownUntil is { } cooldowns
                 && (cooldowns.Count != state.Skills.Count || cooldowns.Any(value => !double.IsFinite(value) || value < 0)))
             || (snapshot.Buffs is { } buffs && buffs.Any(buff => buff is null || !buff.IsValid)))
@@ -817,6 +942,11 @@ public sealed class CombatEncounterState
         state.SkillCastCount = snapshot.SkillCastCount;
         // 倒地复活截止点随快照恢复（友方单位口径）；null 表示未倒地。
         state.RespawnAtSeconds = snapshot.RespawnAtSeconds ?? double.PositiveInfinity;
+        // 复活时机策略与等待上限随快照恢复：等待期间跨进程重启不丢失门禁输入。
+        state.RespawnPolicy = snapshot.RespawnPolicy;
+        state.RespawnTargetIndex = snapshot.RespawnTargetIndex;
+        state.RespawnDeadlineSeconds = snapshot.RespawnDeadlineSeconds ?? double.PositiveInfinity;
+        state.RespawnWaitingUntilSeconds = snapshot.RespawnWaitingUntilSeconds ?? double.PositiveInfinity;
         // 战内 Buff 随快照恢复：过期时刻是战斗时钟值，恢复后按原时刻到期，事件序列不漂移。
         state.Buffs.Clear();
         if (snapshot.Buffs is not null) state.Buffs.AddRange(snapshot.Buffs);
