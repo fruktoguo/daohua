@@ -2580,6 +2580,7 @@ export const CombatArena = memo(function CombatArena({
                     return (
                       <div className={`arena-slot arena-slot--occupied arena-slot--slot-${slot}${ally.hp <= 0 ? ' arena-slot--slain' : ''}`} key={ally.actorKey}>
                         <ArenaActor
+                          action={playerAction}
                           actorId={selfActorId}
                           actorKey="player"
                           buffs={playerDisplayBuffs}
