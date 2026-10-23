@@ -919,4 +919,56 @@ public sealed class ActionParticipationSessionTests
         Assert.True(allyRevived.State.Hitpoints > 0, "累计时间超过复活时长后，队员应成功满血复活！");
         Assert.Equal(10, allyRevived.State.Hitpoints);
     }
+
+    [Fact]
+    public void RestoreCombatBattleGracefullyHealsExpiredOrDriftedRespawnAtSeconds()
+    {
+        var (catalog, _, original) = CreateParty();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) =>
+            {
+                var s = CombatantStats.Create(
+                    index == 1 ? 10 : 50_000,
+                    1,
+                    index == 1 ? 0 : 500,
+                    1);
+                return member with { Stats = s, InitialHitpoints = s.MaxHitpoints };
+            }).ToArray()
+        };
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var searchSec = session.Export().Expedition!.PhaseDurationSeconds;
+        session.AdvanceTo(Baseline.AddSeconds(searchSec + 1));
+        var doc = session.Export();
+        Assert.Equal(CombatExpeditionPhase.Combat, doc.Expedition!.Phase);
+
+        // 模拟旧数据或相对秒数历史快照：倒地成员的 RespawnAtSeconds 早于当前战斗时钟
+        var currentElapsed = doc.Expedition.BattleElapsedSeconds;
+        var corruptedAllies = doc.Expedition.Allies!.Select(ally =>
+        {
+            if (ally.MemberIndex == 1)
+            {
+                // 故意构造 respawnAt = currentElapsed - 5（已过去5秒）
+                return ally with
+                {
+                    State = ally.State with { RespawnAtSeconds = Math.Max(0, currentElapsed - 5) }
+                };
+            }
+            return ally;
+        }).ToArray();
+
+        var corruptedDoc = doc with
+        {
+            Expedition = doc.Expedition with { Allies = corruptedAllies }
+        };
+
+        // 恢复时不应抛出 DomainException: 持久化复活截止点与生命状态不一致
+        var restored = ActionParticipationSessionEngine.Restore(corruptedDoc, catalog);
+        Assert.NotNull(restored);
+        // 推进一小步，受损单位应在当前刻顺利结算并复活起身
+        restored.AdvanceTo(Baseline.AddSeconds(searchSec + 2));
+        var afterState = restored.Export();
+        var ally1 = Assert.Single(afterState.Expedition!.Allies!, a => a.MemberIndex == 1);
+        Assert.True(ally1.State.Hitpoints > 0);
+    }
 }

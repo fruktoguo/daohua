@@ -559,7 +559,7 @@ internal static class CombatActionRules
                     ? Math.Max(0, battleState.PlayerRespawnAtSeconds - battleState.ElapsedSeconds) : (double?)null;
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1,
-                    allies: spec is not null ? CarryAllies(battleState) : null) with
+                    allies: spec is not null ? CarryAlliesToSearch(battleState) : null) with
                 { RecentEvents = updatedBattle.RecentEvents, PlayerRespawnAtSeconds = remainingSelfOnRound };
                 return;
             }
@@ -570,7 +570,7 @@ internal static class CombatActionRules
             ? Math.Max(0, battleState.PlayerRespawnAtSeconds - battleState.ElapsedSeconds) : (double?)null;
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
             gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1,
-            allies: spec is not null ? CarryAllies(battleState) : null) with
+            allies: spec is not null ? CarryAlliesToSearch(battleState) : null) with
         { RecentEvents = updatedBattle.RecentEvents, PlayerRespawnAtSeconds = remainingSelfOnWave };
     }
 
@@ -600,11 +600,20 @@ internal static class CombatActionRules
             for (var i = 0; i < spec.Members.Count; i++)
             {
                 allyTemplates[i] = new CombatantTemplate(spec.Members[i].Stats, spec.Members[i].Skills);
-                allySnapshots[i] = i == selfIndex
+                var snap = (i == selfIndex
                     ? selfSnapshot with { RespawnAtSeconds = expedition.PlayerRespawnAtSeconds }
-                    : FindAllyCarry(expedition.Allies, i)?.State
-                        ?? throw new DomainException(DomainErrorCode.InvariantViolation,
-                            $"组队远征缺少成员 {i} 的战斗快照。");
+                    : FindAllyCarry(expedition.Allies, i)?.State)
+                    ?? throw new DomainException(DomainErrorCode.InvariantViolation,
+                        $"组队远征缺少成员 {i} 的战斗快照。");
+                if (snap.Hitpoints > 0)
+                {
+                    snap = snap with { RespawnAtSeconds = null };
+                }
+                else if (snap.RespawnAtSeconds is { } at && at < expedition.BattleElapsedSeconds)
+                {
+                    snap = snap with { RespawnAtSeconds = expedition.BattleElapsedSeconds };
+                }
+                allySnapshots[i] = snap;
             }
             battleState = CombatEncounterState.RestoreAllied(
                 encounter.Id,
@@ -1633,6 +1642,24 @@ internal static class CombatActionRules
     /// 倒地成员保持气血为 0 与当前灵力，不跨波瞬间回满（总纲 §7.9.1/§7.9.4）。
     /// </summary>
     private static IReadOnlyList<ExpeditionAllyState> CarryAllies(CombatEncounterState battle)
+    {
+        var allies = battle.PlayerAllies;
+        var list = new List<ExpeditionAllyState>(allies.Count - 1);
+        for (var i = 0; i < allies.Count; i++)
+        {
+            if (i == battle.SelfIndex) continue;
+            var ally = allies[i];
+            list.Add(new ExpeditionAllyState(i,
+                CombatEncounterState.Snapshot(ally),
+                PendingActionText(ally), PendingActionDurationOf(ally),
+                PlayerCombatSkillState.FromCombatant(ally, battle.ElapsedSeconds),
+                PlayerCombatBuffState.FromCombatant(ally, battle.ElapsedSeconds)));
+        }
+        return list;
+    }
+
+    /// <summary>波次清空进入搜寻阶段时的盟友携带导出：倒地成员复活截止点折算为相对剩余秒数。</summary>
+    private static IReadOnlyList<ExpeditionAllyState> CarryAlliesToSearch(CombatEncounterState battle)
     {
         var allies = battle.PlayerAllies;
         var list = new List<ExpeditionAllyState>(allies.Count - 1);
