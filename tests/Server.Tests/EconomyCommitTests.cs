@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Server.Clean;
 using Xunit;
@@ -233,6 +234,57 @@ public sealed class EconomyCommitTests
         Assert.Equal(commitCount, Convert.ToInt32(await Scalar(source,
             "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id IN (SELECT transaction_id FROM economy.transactions WHERE actor_id=$1 AND transaction_type='simulation.concurrent')",
             player)));
+    }
+    /// <summary>两级留存体系测试：短期流水（item.sell/simulation.reward 等）2 小时后连带明细级联清理；长期流水（market/shop.buy）保留 14 天。</summary>
+    [Fact]
+    public async Task TwoTierRetention_DeletesVolatileTransactionsPastTwoHoursAndKeepsMarketUntilFourteenDays()
+    {
+        var (source, repository, player) = await ArrangeAsync();
+        await using var ownedSource = source;
+        var now = DateTimeOffset.UtcNow;
+
+        var shortTx1 = Guid.NewGuid();
+        var shortTx2 = Guid.NewGuid();
+        var marketTx = Guid.NewGuid();
+
+        // 1. 写入带有明细行的 item.sell、simulation.reward 和 market 事务
+        await repository.CommitAsync(new EconomyTransactionRequest(shortTx1, $"sell:{shortTx1:D}", "item.sell", player,
+            [new(player, "currency.spirit-stone", "", 10)], OccurredAt: now));
+        await repository.CommitAsync(new EconomyTransactionRequest(shortTx2, $"sim:{shortTx2:D}", "simulation.reward", player,
+            [new(player, "item.ore", "", 2)], OccurredAt: now));
+        await repository.CommitAsync(new EconomyTransactionRequest(marketTx, $"mkt:{marketTx:D}", "market", player,
+            [new(player, "item.sword", "", 1)], OccurredAt: now));
+
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx1));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", shortTx1));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx2));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
+
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = "Host=unused;Database=unused"
+        }).Build());
+        var retention = new PostgresRetentionRepository(source, options, NullLogger<PostgresRetentionRepository>.Instance);
+
+        // 2. 模拟 1 小时后：未满 2 小时，全部保留
+        await retention.PruneAsync(now.AddHours(1), CancellationToken.None);
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx1));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx2));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
+
+        // 3. 模拟 3 小时后：短期流水（item.sell 与 simulation.reward）连带其明细行被级联清理；长期流水（market）完整保留
+        await retention.PruneAsync(now.AddHours(3), CancellationToken.None);
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx1));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", shortTx1));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx2));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", shortTx2));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", marketTx));
+
+        // 4. 模拟 15 天后：长期流水（market）也被滚动清理
+        await retention.PruneAsync(now.AddDays(15), CancellationToken.None);
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", marketTx));
     }
 
     private static async Task<(NpgsqlDataSource Source, PostgresEconomyRepository Repository, Guid Player)> ArrangeAsync()
