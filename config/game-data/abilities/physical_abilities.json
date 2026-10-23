@@ -15,7 +15,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }
@@ -41,7 +41,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }
@@ -64,6 +64,7 @@
     "damageRatio": 0.0,
     "threatGain": 500.0,
     "buff": {
+      "buffId": "buff.taunt",
       "name": "嘲讽",
       "durationSeconds": 60.0,
       "threatPoints": 400,
@@ -72,10 +73,10 @@
     "defaultTriggers": [
       {
         "dependency": "self",
-        "condition": "current-hp",
-        "comparator": "greater-than-equal",
-        "value": 1.0,
-        "buffId": null
+        "condition": "buff-stacks",
+        "comparator": "equal",
+        "value": 0.0,
+        "buffId": "buff.taunt"
       }
     ],
     "manaCost": 20.0,
@@ -99,7 +100,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }
@@ -125,7 +126,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }
@@ -178,10 +179,10 @@
     "defaultTriggers": [
       {
         "dependency": "self",
-        "condition": "current-hp-percentage",
-        "comparator": "less-than-equal",
-        "value": 50.0,
-        "buffId": null
+        "condition": "buff-stacks",
+        "comparator": "equal",
+        "value": 0.0,
+        "buffId": "buff.sui-gang"
       }
     ],
     "manaCost": 0.0,

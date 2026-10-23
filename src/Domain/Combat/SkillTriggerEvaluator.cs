@@ -25,10 +25,11 @@ public static class SkillTriggerEvaluator
     /// <param name="allies">施放方全体友军。</param>
     /// <param name="opponents">敌方全体单位。</param>
     public static bool MatchesAll(IReadOnlyList<JsonElement> triggers, CombatantState caster,
-        CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents)
+        CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents,
+        double elapsedSeconds = 0)
     {
         foreach (var trigger in triggers)
-            if (!Matches(trigger, caster, primaryTarget, allies, opponents)) return false;
+            if (!Matches(trigger, caster, primaryTarget, allies, opponents, elapsedSeconds)) return false;
         return true;
     }
 
@@ -159,56 +160,85 @@ public static class SkillTriggerEvaluator
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 必须配置正持续时长。");
     }
 
-    /// <summary>单体对象依赖词表：自身 / 本轮锁定目标 / 友敌双方经成员选择解析出的单体。</summary>
-    private static bool IsUnitDependency(string? dependency) => dependency is "self" or "target-enemy"
+    /// <summary>单体对象依赖词表：自身 / 本轮锁定目标 / 友敌双方经成员选择解析出的单体（含历史兼容）。</summary>
+    private static bool IsUnitDependency(string? dependency) => dependency is "self" or "target-enemy" or "target"
         or "ally-lowest-hp" or "ally-highest-hp" or "enemy-lowest-hp" or "enemy-highest-hp";
 
-    /// <summary>集合对象依赖词表：友方/敌方全体存活单位构成的集合（群体聚合条件的作用域）。</summary>
-    private static bool IsSetDependency(string? dependency) => dependency is "ally" or "enemy";
+    /// <summary>集合对象依赖词表：友方/敌方全体单位构成的集合（群体聚合条件的作用域）。</summary>
+    private static bool IsSetDependency(string? dependency) => dependency is "ally" or "enemy" or "allies" or "enemies";
 
-    /// <summary>集合对象可选条件词表：作用于集合的群体聚合值。</summary>
-    private static bool IsSetCondition(string? condition) => condition is "alive-count" or "dead-count";
+    /// <summary>全局战场依赖词表。</summary>
+    private static bool IsBattleDependency(string? dependency) => dependency is "battle";
+
+    /// <summary>集合对象数值聚合条件词表：存活/阵亡/总数、总生命/总灵力百分比、最低/最高生命百分比。</summary>
+    private static bool IsNumericSetCondition(string? condition) => condition is "alive-count" or "dead-count" or "total-count"
+        or "total-hp-percentage" or "total-mana-percentage" or "lowest-hp-percentage" or "highest-hp-percentage";
+
+    /// <summary>集合对象布尔/存在性条件词表（is-active 有 / is-inactive 无）。</summary>
+    private static bool IsBoolSetCondition(string? condition) => condition is "has-player" or "has-elite" or "has-boss" or "has-summon";
 
     /// <summary>单体数值条件词表。</summary>
     private static bool IsNumericUnitCondition(string? condition) => condition is "current-hp" or "missing-hp"
         or "current-hp-percentage" or "missing-hp-percentage" or "current-mana" or "missing-mana"
         or "current-mana-percentage" or "missing-mana-percentage" or "buff-stacks";
 
-    /// <summary>Boolean 条件词表（活性语义，仅 is-active/is-inactive 比对）。</summary>
-    private static bool IsBoolCondition(string? condition) => condition is "stun-status" or "blind-status" or "silence-status";
+    /// <summary>单体 Boolean 条件词表（身份与状态，is-active 是 / is-inactive 否）。</summary>
+    private static bool IsBoolUnitCondition(string? condition) => condition is "is-player" or "is-elite" or "is-boss" or "is-summon"
+        or "stun-status" or "blind-status" or "silence-status";
+
+    /// <summary>战场数值条件词表。</summary>
+    private static bool IsBattleCondition(string? condition) => condition is "elapsed-seconds";
 
     /// <summary>
-    /// 校验单条触发条件配表：对象-类型-比对三元组必须按作用域矩阵自洽——单体对象仅可用
-    /// 单体状态条件，集合对象仅可用群体聚合条件；Boolean 条件只接受是否比对，
-    /// 数值条件只接受大小等于比对。技能与消耗品共用同一词表。
+    /// 校验单条触发条件配表：对象-类型-比对三元组必须按作用域矩阵自洽。
+    /// 单体对象仅可用单体数值或身份条件；集合对象仅可用群体大盘/极值/数量或存在性条件；
+    /// 战场对象仅可用战场时钟条件。布尔条件仅接受活性比对，数值条件接受大小等于比对。
     /// </summary>
     /// <param name="trigger">触发条件 JSON；非法时抛出 InvalidArgument。</param>
-    /// <param name="knownBuffIds">可选 Buff 词表：非 null 时 buff-stacks 的 buffId 必须命中。
-    /// 装载期与命令期传当前配表派生集合；传 null 只校验 buffId 非空。</param>
+    /// <param name="knownBuffIds">可选 Buff 词表：非 null 时 buff-stacks 的 buffId 必须命中。</param>
     public static void ValidateTrigger(JsonElement trigger, IReadOnlySet<string>? knownBuffIds = null)
     {
         var dependency = JsonRead.Text(trigger, "dependency");
-        if (!IsUnitDependency(dependency) && !IsSetDependency(dependency))
+        if (!IsUnitDependency(dependency) && !IsSetDependency(dependency) && !IsBattleDependency(dependency))
             throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件对象无效。");
+
         var condition = JsonRead.Text(trigger, "condition");
-        var conditionValid = IsSetDependency(dependency)
-            ? IsSetCondition(condition)
-            : IsNumericUnitCondition(condition) || IsBoolCondition(condition);
+        bool conditionValid;
+        bool isBool;
+
+        if (IsBattleDependency(dependency))
+        {
+            conditionValid = IsBattleCondition(condition);
+            isBool = false;
+        }
+        else if (IsSetDependency(dependency))
+        {
+            conditionValid = IsNumericSetCondition(condition) || IsBoolSetCondition(condition);
+            isBool = IsBoolSetCondition(condition);
+        }
+        else
+        {
+            conditionValid = IsNumericUnitCondition(condition) || IsBoolUnitCondition(condition);
+            isBool = IsBoolUnitCondition(condition);
+        }
+
         if (!conditionValid)
             throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件类型对所选对象不可用。");
+
         var comparator = JsonRead.Text(trigger, "comparator");
-        var comparatorValid = IsBoolCondition(condition)
+        var comparatorValid = isBool
             ? comparator is "is-active" or "is-inactive"
             : comparator is "greater-than-equal" or "less-than-equal" or "greater-than" or "less-than" or "equal";
         if (!comparatorValid)
             throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件比对方式与类型不匹配。");
-        if (JsonRead.Number(trigger, "value") < 0)
+
+        if (!isBool && JsonRead.Number(trigger, "value") < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件阈值无效。");
+
         if (condition != "buff-stacks") return;
         var buffId = JsonRead.Text(trigger, "buffId");
         if (string.IsNullOrWhiteSpace(buffId))
             throw new DomainException(DomainErrorCode.InvalidArgument, "状态层数条件必须指定具体状态。");
-        // 配表中不存在的 Buff 层数恒为 0，条件永远不成立——属静默死配置，装载/命令期一律拒绝。
         if (knownBuffIds is not null && !knownBuffIds.Contains(buffId))
             throw new DomainException(DomainErrorCode.InvalidArgument, $"触发条件引用了不存在的状态：{buffId}。");
     }
@@ -228,36 +258,76 @@ public static class SkillTriggerEvaluator
     }
 
     private static bool Matches(JsonElement trigger, CombatantState caster,
-        CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents)
+        CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents,
+        double elapsedSeconds)
     {
         if (trigger.ValueKind != JsonValueKind.Object) return false;
         var dependency = JsonRead.Text(trigger, "dependency") ?? "self";
+        var condition = JsonRead.Text(trigger, "condition");
         double value;
-        if (IsSetDependency(dependency))
+
+        if (IsBattleDependency(dependency))
         {
-            // 群体聚合条件：对集合求值，集合为空仍返回真实计数（0）。
-            var set = dependency == "ally" ? allies : opponents;
-            var condition = JsonRead.Text(trigger, "condition");
-            if (condition is "alive-count" or "dead-count")
+            value = condition switch
             {
-                var aliveWanted = condition == "alive-count";
-                var count = 0;
-                for (var i = 0; i < set.Count; i++)
-                    if (set[i].IsAlive == aliveWanted) count++;
-                value = count;
+                "elapsed-seconds" => elapsedSeconds,
+                _ => double.NaN
+            };
+        }
+        else if (IsSetDependency(dependency))
+        {
+            var set = dependency is "ally" or "allies" ? allies : opponents;
+            if (IsBoolSetCondition(condition))
+            {
+                var matched = condition switch
+                {
+                    "has-player" => AnyAlive(set, static u => u.IsPlayer),
+                    "has-elite" => AnyAlive(set, static u => u.Rank == Domain.GameData.CombatMonsterRank.Elite),
+                    "has-boss" => AnyAlive(set, static u => u.Rank == Domain.GameData.CombatMonsterRank.Boss),
+                    "has-summon" => AnyAlive(set, static u => u.IsSummon),
+                    _ => false
+                };
+                value = matched ? 1d : 0d;
             }
             else
             {
-                value = double.NaN;
+                value = condition switch
+                {
+                    "alive-count" => CountAlive(set),
+                    "dead-count" => set.Count - CountAlive(set),
+                    "total-count" => set.Count,
+                    "total-hp-percentage" => TotalHpPercentage(set),
+                    "total-mana-percentage" => TotalManaPercentage(set),
+                    "lowest-hp-percentage" => MinAliveHpPercentage(set),
+                    "highest-hp-percentage" => MaxAliveHpPercentage(set),
+                    _ => double.NaN
+                };
             }
         }
         else
         {
             var unit = ResolveDependency(dependency, caster, primaryTarget, allies, opponents);
-            // 依赖无法解析（如敌方全灭后仍被求值）或词表外输入：运行时一律判定失败，不抛异常。
             if (unit is null) return false;
-            value = ReadCondition(trigger, unit);
+
+            if (IsBoolUnitCondition(condition))
+            {
+                var matched = condition switch
+                {
+                    "is-player" => unit.IsPlayer,
+                    "is-elite" => unit.Rank == Domain.GameData.CombatMonsterRank.Elite,
+                    "is-boss" => unit.Rank == Domain.GameData.CombatMonsterRank.Boss,
+                    "is-summon" => unit.IsSummon,
+                    "stun-status" or "blind-status" or "silence-status" => false,
+                    _ => false
+                };
+                value = matched ? 1d : 0d;
+            }
+            else
+            {
+                value = ReadCondition(trigger, unit);
+            }
         }
+
         if (!double.IsFinite(value)) return false;
         var threshold = JsonRead.Number(trigger, "value");
         return JsonRead.Text(trigger, "comparator") switch
@@ -267,11 +337,82 @@ public static class SkillTriggerEvaluator
             "greater-than" => value > threshold,
             "less-than" => value < threshold,
             "equal" => Math.Abs(value - threshold) <= EqualTolerance,
-            // 状态/层数类条件的活性比较：value 为层数计数（当前恒 ≥0）。
             "is-active" => value > 0,
             "is-inactive" => value <= 0,
             _ => false
         };
+    }
+
+    private static int CountAlive(IReadOnlyList<CombatantState> units)
+    {
+        var count = 0;
+        for (var i = 0; i < units.Count; i++)
+            if (units[i].IsAlive) count++;
+        return count;
+    }
+
+    private static bool AnyAlive(IReadOnlyList<CombatantState> units, Func<CombatantState, bool> predicate)
+    {
+        for (var i = 0; i < units.Count; i++)
+        {
+            var unit = units[i];
+            if (unit.IsAlive && predicate(unit)) return true;
+        }
+        return false;
+    }
+
+    private static double TotalHpPercentage(IReadOnlyList<CombatantState> units)
+    {
+        double sumHp = 0;
+        double sumMaxHp = 0;
+        for (var i = 0; i < units.Count; i++)
+        {
+            var unit = units[i];
+            sumHp += Math.Max(0, unit.Hitpoints);
+            sumMaxHp += Math.Max(0, unit.Stats.MaxHitpoints);
+        }
+        return sumMaxHp > 0 ? (sumHp / sumMaxHp) * 100d : 0d;
+    }
+
+    private static double TotalManaPercentage(IReadOnlyList<CombatantState> units)
+    {
+        double sumMp = 0;
+        double sumMaxMp = 0;
+        for (var i = 0; i < units.Count; i++)
+        {
+            var unit = units[i];
+            sumMp += Math.Max(0, unit.Manapoints);
+            sumMaxMp += Math.Max(0, unit.Stats.MaxManapoints);
+        }
+        return sumMaxMp > 0 ? (sumMp / sumMaxMp) * 100d : 0d;
+    }
+
+    private static double MinAliveHpPercentage(IReadOnlyList<CombatantState> units)
+    {
+        var min = double.PositiveInfinity;
+        for (var i = 0; i < units.Count; i++)
+        {
+            var unit = units[i];
+            if (!unit.IsAlive) continue;
+            var maxHp = unit.Stats.MaxHitpoints;
+            var pct = maxHp > 0 ? (unit.Hitpoints / maxHp) * 100d : 0d;
+            if (pct < min) min = pct;
+        }
+        return double.IsPositiveInfinity(min) ? double.NaN : min;
+    }
+
+    private static double MaxAliveHpPercentage(IReadOnlyList<CombatantState> units)
+    {
+        var max = double.NegativeInfinity;
+        for (var i = 0; i < units.Count; i++)
+        {
+            var unit = units[i];
+            if (!unit.IsAlive) continue;
+            var maxHp = unit.Stats.MaxHitpoints;
+            var pct = maxHp > 0 ? (unit.Hitpoints / maxHp) * 100d : 0d;
+            if (pct > max) max = pct;
+        }
+        return double.IsNegativeInfinity(max) ? double.NaN : max;
     }
 
     /// <summary>
@@ -283,7 +424,7 @@ public static class SkillTriggerEvaluator
         => dependency switch
         {
             "self" => caster,
-            "target-enemy" => primaryTarget is { IsAlive: true } ? primaryTarget : null,
+            "target" or "target-enemy" => primaryTarget is { IsAlive: true } ? primaryTarget : null,
             "ally-lowest-hp" => MinAliveBy(allies, static unit => unit.Hitpoints / unit.Stats.MaxHitpoints),
             "ally-highest-hp" => MaxAliveBy(allies, static unit => unit.Hitpoints),
             "enemy-lowest-hp" => MinAliveBy(opponents, static unit => unit.Hitpoints / unit.Stats.MaxHitpoints),

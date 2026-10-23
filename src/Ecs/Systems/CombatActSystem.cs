@@ -81,7 +81,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 if (cooldowns[i] > encounter.ElapsedSeconds + 1e-12) continue;
                 // 触发条件为唯一可用性门槛：空表恒可用；求值失败（依赖缺失/词表外输入）跳过本槽。
                 if (slot.Triggers is { Count: > 0 } triggers
-                    && !SkillTriggerEvaluator.MatchesAll(triggers, unit, target, allies, opponents))
+                    && !SkillTriggerEvaluator.MatchesAll(triggers, unit, target, allies, opponents, encounter.ElapsedSeconds))
                     continue;
                 var manaCost = AbilityNumber(slot.Ability, "manaCost");
                 if (unit.Manapoints < manaCost) continue;

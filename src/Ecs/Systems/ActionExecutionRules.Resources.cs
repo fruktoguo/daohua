@@ -350,8 +350,9 @@ internal static partial class ActionExecutionRules
                     live?.Flush();
                     evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
                 }
+                var elapsedSec = player.Actions[0].Expedition?.BattleElapsedSeconds ?? 0;
                 if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, evalCaster, evalTarget,
-                        evalAllies!, evalEnemies!)) continue;
+                        evalAllies!, evalEnemies!, elapsedSec)) continue;
             }
             // 已记账扣件汇总按原列表顺序逐条累加（与 LINQ Where+Sum 同序，位级一致）。
             var consumed = 0d;

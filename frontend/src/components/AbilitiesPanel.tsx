@@ -318,7 +318,8 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
       {/* 触发条件编辑器（功法维度：title 用功法名） */}
       {editingTriggerAbilityId !== null && (
         <CombatTriggerEditor
-          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? []}
+          defaultTriggers={abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.defaultTriggers ?? []}
+          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.defaultTriggers ?? []}
           onClose={() => setEditingTriggerAbilityId(null)}
           onSave={saveTriggers}
           open

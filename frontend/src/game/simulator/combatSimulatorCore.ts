@@ -337,7 +337,9 @@ export class SimCombatant implements SimUnitView {
   public consumables: AutoUseSlot[] = []
   public consumableTriggers?: Record<string, CombatTrigger[]>
   public consumableCooldowns: number[] = []
-
+  public isPlayer: boolean
+  public isSummon = false
+  public rank?: string
   constructor(
     id: string,
     name: string,
@@ -348,11 +350,16 @@ export class SimCombatant implements SimUnitView {
     combatExperience = 0,
     definitionId?: string,
     consumables?: AutoUseSlot[],
-    consumableTriggers?: Record<string, CombatTrigger[]>
+    consumableTriggers?: Record<string, CombatTrigger[]>,
+    rank?: string,
+    isSummon = false
   ) {
     this.id = id
     this.name = name
     this.isAlly = isAlly
+    this.isPlayer = isAlly
+    this.rank = rank
+    this.isSummon = isSummon
     this.memberIndex = memberIndex
     this.stats = ensureCombatAttributes(stats)
     this.skills = skills
@@ -571,7 +578,7 @@ export class SimCombatEncounter {
 
         // 触发条件判断
         if (slot.triggers && slot.triggers.length > 0) {
-          if (!SimSkillTriggerEvaluator.matchesAll(slot.triggers, unit, target, allies, opponents)) {
+          if (!SimSkillTriggerEvaluator.matchesAll(slot.triggers, unit, target, allies, opponents, this.elapsedSeconds)) {
             if (unit.isAlly && unit.memberIndex === 0 && this.tracker) {
               this.tracker.cancelPendingDeficit(slot.slotIndex, this.elapsedSeconds)
             }
@@ -776,7 +783,7 @@ export class SimCombatEncounter {
         if (triggers !== undefined && triggers !== null) {
           if (triggers.length > 0) {
             const primaryEnemy = this.enemies.find(o => o.isAlive) ?? null
-            if (!SimSkillTriggerEvaluator.matchesAll(triggers, ally, primaryEnemy, this.allies, this.enemies)) {
+            if (!SimSkillTriggerEvaluator.matchesAll(triggers, ally, primaryEnemy, this.allies, this.enemies, this.elapsedSeconds)) {
               continue
             }
           }

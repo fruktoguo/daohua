@@ -1393,6 +1393,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       })()}
       {isCombat && editingTriggerItemId !== null && (
         <CombatTriggerEditor
+          defaultTriggers={findItemInCatalog(itemCatalog, editingTriggerItemId)?.triggers ?? []}
           initialTriggers={combat?.consumableTriggers?.[editingTriggerItemId] ?? findItemInCatalog(itemCatalog, editingTriggerItemId)?.triggers ?? []}
           onClose={() => setEditingTriggerItemId(null)}
           onSave={saveItemTriggers}
@@ -2132,7 +2133,8 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
       />
       {editingTriggerAbilityId !== null && (
         <CombatTriggerEditor
-          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? []}
+          defaultTriggers={findAbilityInCatalog(abilities, editingTriggerAbilityId)?.defaultTriggers ?? []}
+          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? findAbilityInCatalog(abilities, editingTriggerAbilityId)?.defaultTriggers ?? []}
           onClose={() => setEditingTriggerAbilityId(null)}
           onSave={saveTriggers}
           open

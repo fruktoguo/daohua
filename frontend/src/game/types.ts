@@ -165,15 +165,19 @@ export type MarketOrderStatus = 'active' | 'partially-filled' | 'filled' | 'canc
 export type CombatTriggerDependency =
   | 'self'
   | 'target-enemy'
+  | 'target'
   | 'ally-lowest-hp'
   | 'ally-highest-hp'
   | 'enemy-lowest-hp'
   | 'enemy-highest-hp'
-  /** 集合对象：我方全体存活单位（配 alive-count / dead-count 群体聚合条件） */
+  /** 集合对象：友方全体单位（allies 规范命名，兼容 ally） */
+  | 'allies'
   | 'ally'
-  /** 集合对象：敌方全体单位（配 alive-count / dead-count 群体聚合条件） */
+  /** 集合对象：敌方全体单位（enemies 规范命名，兼容 enemy） */
+  | 'enemies'
   | 'enemy'
-
+  /** 全局战场环境：时钟与全局状态 */
+  | 'battle'
 /**
  * 触发条件可引用的 Buff 词表项（服务端从当前配表派生；前端编辑器只从这里取项）
  */
@@ -216,11 +220,27 @@ export type CombatTriggerCondition =
   | 'stun-status'
   | 'blind-status'
   | 'silence-status'
-  /** 群体聚合：我方/敌方集合中存活成员数量（仅集合对象可用） */
+  /** 群体规模数量 */
   | 'alive-count'
-  /** 群体聚合：我方/敌方集合中已阵亡成员数量（仅集合对象可用） */
   | 'dead-count'
-
+  | 'total-count'
+  /** 群体大盘百分比与极端成员 */
+  | 'total-hp-percentage'
+  | 'total-mana-percentage'
+  | 'lowest-hp-percentage'
+  | 'highest-hp-percentage'
+  /** 单体实体身份识别 */
+  | 'is-player'
+  | 'is-elite'
+  | 'is-boss'
+  | 'is-summon'
+  /** 群体成员存在性检索 */
+  | 'has-player'
+  | 'has-elite'
+  | 'has-boss'
+  | 'has-summon'
+  /** 全局战场时钟（秒） */
+  | 'elapsed-seconds'
 /**
  * 战斗自动触发条件比较操作符
  */

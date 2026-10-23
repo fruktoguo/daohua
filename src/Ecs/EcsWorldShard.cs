@@ -814,7 +814,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             && World.GetEntity(nodeParent)?.GetComponent<NodeBuildingComponent>() is { } nodeBuilding
             ? NodeBuildingRules.WeakenMonsterStats(definition.Stats, nodeBuilding.Effects.MonsterWeakenRatio)
             : definition.Stats;
-        combatant.State = new CombatantState($"enemy:{entity.ID}", stats, definition.Skills); combatant.IsPlayer = false;
+        combatant.State = new CombatantState($"enemy:{entity.ID}", stats, definition.Skills)
+        {
+            DefinitionId = definition.Id,
+            Rank = definition.Rank
+        };
+        combatant.IsPlayer = false;
         entity.AddComponent<SkillStateComponent>();
         entity.AddComponent<BuffComponent>();
         entity.AddComponent<DropProfileComponent>().Drops = definition.DropTable;
@@ -849,7 +854,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         // 钉死入战同样吃节点封魔阵类削弱：取玩家当前驻留节点的建筑投影。
         var weaken = player.GetComponent<PlayerWorldComponent>()?.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio ?? 0;
         var enemyTemplates = enemyDefinitions.Select(m =>
-            new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(m.Stats, weaken), m.Skills)).ToArray();
+            new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(m.Stats, weaken), m.Skills, m.Id, m.Rank)).ToArray();
         var state = Systems.CombatEventAdvanceSystem.Start(encounterId, seed, new CombatantTemplate(playerStats, playerSkills), enemyTemplates, definition.PlayerRespawnSeconds);
         var battleStartUnix = player.GetComponent<PlayerActionQueueComponent>()?.LastAdvancedAt.ToUnixTimeSeconds() ?? StartAt.ToUnixTimeSeconds();
         foreach (var active in player.GetComponent<PlayerBuffComponent>()?.Active ?? [])

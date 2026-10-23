@@ -458,18 +458,27 @@ export function describeCombatTrigger(trigger: CombatTrigger): string {
   }
 
   if (trigger.comparator === 'is-active' || trigger.comparator === 'is-inactive') {
+    const active = trigger.comparator === 'is-active'
+    if (trigger.condition.startsWith('is-')) {
+      const role = condition.replace(/^是/, '')
+      return active ? `当 ${dependency} 是 ${role} 时` : `当 ${dependency} 不是 ${role} 时`
+    }
+    if (trigger.condition.startsWith('has-')) {
+      const role = condition.replace(/^有/, '')
+      return active ? `当 ${dependency} 有 ${role} 时` : `当 ${dependency} 无 ${role} 时`
+    }
     return t('game.trigger.template.status', { dependency, condition, comparator })
   }
   const isPercentage = trigger.condition.includes('percentage')
+  const unit = isPercentage ? '%' : trigger.condition === 'elapsed-seconds' ? '秒' : ''
   return t('game.trigger.template.value', {
     dependency,
     condition,
     comparator,
     value: formatNumber(trigger.value),
-    unit: isPercentage ? '%' : '',
+    unit,
   })
 }
-
 /**
  * 中文万进制大数阶梯单位数组 (万、亿、兆、京、垓、秭、穰、沟、涧、正、载、极)
  */

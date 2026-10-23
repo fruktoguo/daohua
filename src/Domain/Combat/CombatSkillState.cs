@@ -24,11 +24,55 @@ public sealed record SkillSlot(JsonElement Ability, double Level = 1, IReadOnlyL
     public IReadOnlyList<JsonElement> Triggers { get; init; } = Triggers ?? DefaultTriggers(Ability);
 
     private static JsonElement[] DefaultTriggers(JsonElement ability)
-        => ability.ValueKind == JsonValueKind.Object
+    {
+        if (ability.ValueKind == JsonValueKind.Object
             && ability.TryGetProperty("defaultTriggers", out var defaults)
-            && defaults.ValueKind == JsonValueKind.Array
-            ? defaults.EnumerateArray().Select(trigger => trigger.Clone()).ToArray()
-            : [];
+            && defaults.ValueKind == JsonValueKind.Array)
+            return defaults.EnumerateArray().Select(trigger => trigger.Clone()).ToArray();
+
+        return InferDefaultTriggers(ability);
+    }
+
+    /// <summary>
+    /// 根据技能特性自动推导出厂默认使用条件：
+    /// 1. 治疗技能：友方最低生命百分比 < 75%
+    /// 2. Buff技能：自身/目标不存在该Buff (层数 == 0)
+    /// 3. 伤害/通用技能：目标当前生命 > 1
+    /// </summary>
+    internal static JsonElement[] InferDefaultTriggers(JsonElement ability)
+    {
+        if (ability.ValueKind != JsonValueKind.Object) return [];
+        var effectType = JsonRead.Text(ability, "effectType");
+        if (string.Equals(effectType, "heal", StringComparison.OrdinalIgnoreCase))
+        {
+            return [JsonDocument.Parse("""
+                {"dependency":"allies","condition":"lowest-hp-percentage","comparator":"less-than","value":75.0}
+                """).RootElement.Clone()];
+        }
+
+        // 纯 Buff 技能
+        string? buffId = null;
+        if (ability.TryGetProperty("buff", out var buff) && buff.ValueKind == JsonValueKind.Object)
+            buffId = JsonRead.Text(buff, "buffId");
+        else if (ability.TryGetProperty("buffs", out var buffs) && buffs.ValueKind == JsonValueKind.Array && buffs.GetArrayLength() > 0)
+            buffId = JsonRead.Text(buffs[0], "buffId");
+
+        var damageRatio = JsonRead.Number(ability, "damageRatio");
+        var flatDamage = JsonRead.Number(ability, "flatDamage");
+        if (!string.IsNullOrEmpty(buffId) && damageRatio <= 0 && flatDamage <= 0)
+        {
+            var targetType = JsonRead.Text(ability, "targetType");
+            var dep = targetType is "targetEnemy" or "allEnemies" ? "target-enemy" : "self";
+            return [JsonDocument.Parse($$"""
+                {"dependency":"{{dep}}","condition":"buff-stacks","comparator":"equal","value":0.0,"buffId":"{{buffId}}"}
+                """).RootElement.Clone()];
+        }
+
+        // 默认伤害技能：目标生命 > 1
+        return [JsonDocument.Parse("""
+            {"dependency":"target-enemy","condition":"current-hp","comparator":"greater-than","value":1.0}
+            """).RootElement.Clone()];
+    }
 
     /// <summary>由玩家装配槽位构建通用技能槽：触发条件键缺失时回退配表 defaultTriggers。</summary>
     /// <param name="slots">玩家装配槽位列表（空槽跳过）。</param>

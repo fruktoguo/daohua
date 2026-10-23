@@ -56,6 +56,68 @@ test('skillTriggerEvaluator: 条件判定自洽', () => {
     ),
     true
   )
+
+  // 战斗时间判定 (elapsedSeconds >= 10)
+  assert.equal(
+    SimSkillTriggerEvaluator.matches(
+      { dependency: 'battle', condition: 'elapsed-seconds', comparator: 'greater-than-equal', value: 10 },
+      caster, null, [caster], [], 15
+    ),
+    true
+  )
+  assert.equal(
+    SimSkillTriggerEvaluator.matches(
+      { dependency: 'battle', condition: 'elapsed-seconds', comparator: 'greater-than-equal', value: 10 },
+      caster, null, [caster], [], 5
+    ),
+    false
+  )
+
+  // 友方最低生命百分比 < 75%
+  const woundedAlly = { isAlive: true, hitpoints: 30, maxHitpoints: 100, manapoints: 0, maxManapoints: 100, buffs: [] }
+  assert.equal(
+    SimSkillTriggerEvaluator.matches(
+      { dependency: 'allies', condition: 'lowest-hp-percentage', comparator: 'less-than', value: 75 },
+      caster, null, [caster, woundedAlly], []
+    ),
+    true
+  )
+
+  // 友方总生命百分比
+  assert.equal(
+    SimSkillTriggerEvaluator.matches(
+      { dependency: 'allies', condition: 'total-hp-percentage', comparator: 'less-than', value: 50 },
+      caster, null, [caster, woundedAlly], [] // (50 + 30) / 200 = 40% < 50%
+    ),
+    true
+  )
+
+  // 敌方存在妖王
+  const bossEnemy = { isAlive: true, hitpoints: 1000, maxHitpoints: 1000, manapoints: 0, maxManapoints: 100, buffs: [], rank: 'boss' }
+  assert.equal(
+    SimSkillTriggerEvaluator.matches(
+      { dependency: 'enemies', condition: 'has-boss', comparator: 'is-active', value: 1 },
+      caster, null, [caster], [bossEnemy]
+    ),
+    true
+  )
+  assert.equal(
+    SimSkillTriggerEvaluator.matches(
+      { dependency: 'enemies', condition: 'has-boss', comparator: 'is-inactive', value: 0 },
+      caster, null, [caster], [bossEnemy]
+    ),
+    false
+  )
+
+  // 目标是召唤物
+  const summonTarget = { isAlive: true, hitpoints: 50, maxHitpoints: 50, manapoints: 0, maxManapoints: 0, buffs: [], isSummon: true }
+  assert.equal(
+    SimSkillTriggerEvaluator.matches(
+      { dependency: 'target-enemy', condition: 'is-summon', comparator: 'is-active', value: 1 },
+      caster, summonTarget, [caster], [summonTarget]
+    ),
+    true
+  )
 })
 
 test('manaDeficitTracker: 灵力缺口追踪与时间占比自洽', () => {

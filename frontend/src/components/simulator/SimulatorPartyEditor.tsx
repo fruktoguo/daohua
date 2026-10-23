@@ -116,6 +116,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
     id: string
     name: string
     initialTriggers: CombatTrigger[]
+    defaultTriggers?: CombatTrigger[] | null
   } | null>(null)
 
   // 当前正在呼出 ItemGridPicker 选择的部位
@@ -771,6 +772,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
                               id: selectedAbilityId,
                               name: def?.name || selectedAbilityId,
                               initialTriggers: curTriggers,
+                              defaultTriggers: def?.defaultTriggers ?? [],
                             })
                           }}
                         >
@@ -1021,6 +1023,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
                               id: itemId,
                               name: itemDef?.name || itemId,
                               initialTriggers: curTriggers,
+                              defaultTriggers: itemDef?.triggers ?? [],
                             })
                           }}
                         >
@@ -1051,6 +1054,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
           open={true}
           title={`${editingTrigger.name} · 触发条件配置`}
           initialTriggers={editingTrigger.initialTriggers}
+          defaultTriggers={editingTrigger.defaultTriggers}
           onClose={() => setEditingTrigger(null)}
           onSave={savedTriggers => {
             if (!currentAlly) return

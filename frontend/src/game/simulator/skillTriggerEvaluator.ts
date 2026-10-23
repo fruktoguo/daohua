@@ -10,6 +10,9 @@ export interface SimUnitView {
   manapoints: number
   maxManapoints: number
   buffs: ReadonlyArray<{ id: string; stacks: number }>
+  isPlayer?: boolean
+  isSummon?: boolean
+  rank?: 'minion' | 'normal' | 'elite' | 'boss' | string
 }
 
 /**
@@ -24,11 +27,12 @@ export class SimSkillTriggerEvaluator {
     caster: SimUnitView,
     primaryTarget: SimUnitView | null,
     allies: readonly SimUnitView[],
-    opponents: readonly SimUnitView[]
+    opponents: readonly SimUnitView[],
+    elapsedSeconds: number = 0
   ): boolean {
     if (!triggers || triggers.length === 0) return true
     for (const trigger of triggers) {
-      if (!this.matches(trigger, caster, primaryTarget, allies, opponents)) {
+      if (!this.matches(trigger, caster, primaryTarget, allies, opponents, elapsedSeconds)) {
         return false
       }
     }
@@ -40,27 +44,88 @@ export class SimSkillTriggerEvaluator {
     caster: SimUnitView,
     primaryTarget: SimUnitView | null,
     allies: readonly SimUnitView[],
-    opponents: readonly SimUnitView[]
+    opponents: readonly SimUnitView[],
+    elapsedSeconds: number = 0
   ): boolean {
     const dependency = (trigger.dependency as string) || 'self'
     let value: number
 
-    if (dependency === 'ally' || dependency === 'enemy') {
+    if (dependency === 'battle') {
+      value = trigger.condition === 'elapsed-seconds' ? elapsedSeconds : Number.NaN
+    } else if (dependency === 'ally' || dependency === 'allies' || dependency === 'enemy' || dependency === 'enemies') {
       // 集合对象依赖
-      const set = dependency === 'ally' ? allies : opponents
+      const set = dependency === 'ally' || dependency === 'allies' ? allies : opponents
       const condition = trigger.condition as string
-      if (condition === 'alive-count') {
-        value = set.filter(u => u.isAlive).length
-      } else if (condition === 'dead-count') {
-        value = set.filter(u => !u.isAlive).length
-      } else {
-        return false
+      switch (condition) {
+        case 'alive-count':
+          value = set.filter(u => u.isAlive).length
+          break
+        case 'dead-count':
+          value = set.filter(u => !u.isAlive).length
+          break
+        case 'total-count':
+          value = set.length
+          break
+        case 'total-hp-percentage': {
+          const sumHp = set.reduce((sum, u) => sum + Math.max(0, u.hitpoints), 0)
+          const sumMax = set.reduce((sum, u) => sum + Math.max(0, u.maxHitpoints), 0)
+          value = sumMax > 0 ? (sumHp / sumMax) * 100 : 0
+          break
+        }
+        case 'total-mana-percentage': {
+          const sumMp = set.reduce((sum, u) => sum + Math.max(0, u.manapoints), 0)
+          const sumMax = set.reduce((sum, u) => sum + Math.max(0, u.maxManapoints), 0)
+          value = sumMax > 0 ? (sumMp / sumMax) * 100 : 0
+          break
+        }
+        case 'lowest-hp-percentage': {
+          const alive = set.filter(u => u.isAlive)
+          if (alive.length === 0) return false
+          value = Math.min(...alive.map(u => (u.maxHitpoints > 0 ? (u.hitpoints / u.maxHitpoints) * 100 : 0)))
+          break
+        }
+        case 'highest-hp-percentage': {
+          const alive = set.filter(u => u.isAlive)
+          if (alive.length === 0) return false
+          value = Math.max(...alive.map(u => (u.maxHitpoints > 0 ? (u.hitpoints / u.maxHitpoints) * 100 : 0)))
+          break
+        }
+        case 'has-player':
+          value = set.some(u => u.isAlive && u.isPlayer) ? 1 : 0
+          break
+        case 'has-elite':
+          value = set.some(u => u.isAlive && u.rank === 'elite') ? 1 : 0
+          break
+        case 'has-boss':
+          value = set.some(u => u.isAlive && u.rank === 'boss') ? 1 : 0
+          break
+        case 'has-summon':
+          value = set.some(u => u.isAlive && u.isSummon) ? 1 : 0
+          break
+        default:
+          return false
       }
     } else {
       // 单体对象依赖
       const unit = this.resolveUnit(dependency, caster, primaryTarget, allies, opponents)
       if (!unit || !unit.isAlive) return false
-      value = this.readCondition(trigger, unit)
+      switch (trigger.condition) {
+        case 'is-player':
+          value = unit.isPlayer ? 1 : 0
+          break
+        case 'is-elite':
+          value = unit.rank === 'elite' ? 1 : 0
+          break
+        case 'is-boss':
+          value = unit.rank === 'boss' ? 1 : 0
+          break
+        case 'is-summon':
+          value = unit.isSummon ? 1 : 0
+          break
+        default:
+          value = this.readCondition(trigger, unit)
+          break
+      }
     }
 
     if (!Number.isFinite(value)) return false
@@ -81,12 +146,13 @@ export class SimSkillTriggerEvaluator {
         return value <= 0
       default:
         if ((trigger.comparator as string) === 'equal') {
-          // 与服务端 SkillTriggerEvaluator.EqualTolerance 同值：浮点百分比无法精确相等。
           return Math.abs(value - threshold) <= 1e-6
         }
         return false
     }
   }
+
+
 
   private static resolveUnit(
     dependency: string,
@@ -98,6 +164,7 @@ export class SimSkillTriggerEvaluator {
     switch (dependency) {
       case 'self':
         return caster
+      case 'target':
       case 'target-enemy':
         return primaryTarget && primaryTarget.isAlive ? primaryTarget : null
       case 'ally-lowest-hp':

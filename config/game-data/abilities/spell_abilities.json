@@ -14,7 +14,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }
@@ -40,7 +40,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }
@@ -66,10 +66,10 @@
     "flatHealing": 20,
     "defaultTriggers": [
       {
-        "dependency": "self",
-        "condition": "missing-hp",
-        "comparator": "greater-than-equal",
-        "value": 1.0,
+        "dependency": "allies",
+        "condition": "lowest-hp-percentage",
+        "comparator": "less-than",
+        "value": 75.0,
         "buffId": null
       }
     ],
@@ -93,7 +93,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }
@@ -115,6 +115,7 @@
     "targetType": "allAllies",
     "damageRatio": 0.0,
     "buff": {
+      "buffId": "buff.pozhen",
       "name": "破阵子",
       "durationSeconds": 10.0,
       "damageBonusPoints": 40
@@ -122,10 +123,10 @@
     "defaultTriggers": [
       {
         "dependency": "self",
-        "condition": "current-hp",
-        "comparator": "greater-than-equal",
-        "value": 1.0,
-        "buffId": null
+        "condition": "buff-stacks",
+        "comparator": "equal",
+        "value": 0.0,
+        "buffId": "buff.pozhen"
       }
     ],
     "manaCost": 50.0,
@@ -154,10 +155,10 @@
     },
     "defaultTriggers": [
       {
-        "dependency": "ally-lowest-hp",
-        "condition": "missing-hp",
-        "comparator": "greater-than-equal",
-        "value": 1.0,
+        "dependency": "allies",
+        "condition": "lowest-hp-percentage",
+        "comparator": "less-than",
+        "value": 75.0,
         "buffId": null
       }
     ],
@@ -182,7 +183,7 @@
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
-        "comparator": "greater-than-equal",
+        "comparator": "greater-than",
         "value": 1.0,
         "buffId": null
       }

@@ -6,8 +6,14 @@ import { useGameStore } from '../game/gameStore'
 import { DEFAULT_TRIGGER_SPEC, type CombatTrigger, type CombatTriggerDependency, type CombatTriggerCondition, type CombatTriggerComparator } from '../game/types'
 import { useT } from '../i18n'
 
-/** 集合对象依赖：条件下拉切换为群体聚合词表，比较方式只保留数值比较。 */
-const SET_DEPENDENCIES: readonly CombatTriggerDependency[] = ['ally', 'enemy']
+/** 集合对象依赖列表（群体聚合与存在性词表的作用域） */
+const SET_DEPENDENCIES: readonly CombatTriggerDependency[] = ['ally', 'enemy', 'allies', 'enemies']
+/** 单体身份与群体存在性布尔条件列表（比较方式为 is-active / is-inactive） */
+const BOOL_CONDITIONS: readonly CombatTriggerCondition[] = [
+  'is-player', 'is-elite', 'is-boss', 'is-summon',
+  'has-player', 'has-elite', 'has-boss', 'has-summon',
+  'stun-status', 'blind-status', 'silence-status',
+]
 
 /**
  * 触发条件下拉选项定义
@@ -160,10 +166,12 @@ function TriggerValueField({
 interface CombatTriggerEditorProps {
   /** 弹窗展开状态 */
   open: boolean
-  /** 弹窗标题（通常为正在编辑的技能名称） */
+  /** 弹窗标题（通常为正在编辑的技能或物品名称） */
   title: string
   /** 初始触发条件列表 */
   initialTriggers?: CombatTrigger[]
+  /** 出厂默认触发条件（用于「重置为默认」按钮） */
+  defaultTriggers?: CombatTrigger[] | null
   /** 关闭弹窗回调 */
   onClose: () => void
   /** 保存触发条件回调（null 表示清空所有条件，默认总是释放） */
@@ -190,6 +198,7 @@ export function CombatTriggerEditor({
   open,
   title,
   initialTriggers,
+  defaultTriggers,
   onClose,
   onSave,
 }: CombatTriggerEditorProps): React.JSX.Element | null {
@@ -201,30 +210,31 @@ export function CombatTriggerEditor({
   const triggerBuffs = useGameStore(state => state.triggerBuffs)
   const maxTriggers = triggerSpec.maxTriggersPerList
 
-  // initialTriggers 经 ref 中转：战斗快照刷新会让外部 combat 对象（含 triggers 数组）整体换引用，
-  // 若把 initialTriggers 放进依赖，弹窗打开期间每次快照下发都会把未保存的编辑内容重置回旧值。
-  // 因此只在 open 变为 true 的瞬间经 ref 同步一次，打开期间外部刷新一律不打断编辑。
   const initialTriggersRef = useRef(initialTriggers)
   initialTriggersRef.current = initialTriggers
   useEffect(() => {
     if (open) setTriggers(cloneTriggers(initialTriggersRef.current))
   }, [open])
 
-  const isPercentage = (condition: string) => condition.includes('percentage')
-  // Buff 词表首项作为新建 buff 条件的默认值：硬编码不存在的 Buff 会得到层数恒 0 的死条件。
+
   const defaultBuffId = triggerBuffs[0]?.buffId ?? null
 
-  // 条件切换时重置比较符与数值，状态层数默认判断为“大于 0”
   const updateTrigger = (index: number, patch: Partial<CombatTrigger>) => {
     setTriggers(current => current.map((trigger, triggerIndex) => {
       if (triggerIndex !== index) return trigger
       const next = { ...trigger, ...patch }
-      // 对象切换时条件与比较方式必须同步收敛：单体对象的数值条件对集合对象不成立，反之亦然。
+
+      // 对象切换时收敛条件类型
       if (patch.dependency !== undefined && patch.dependency !== trigger.dependency) {
-        if (SET_DEPENDENCIES.includes(patch.dependency)) {
-          next.condition = 'alive-count'
+        if (patch.dependency === 'battle') {
+          next.condition = 'elapsed-seconds'
           next.comparator = 'greater-than-equal'
-          next.value = 2
+          next.value = 10
+          next.buffId = null
+        } else if (SET_DEPENDENCIES.includes(patch.dependency)) {
+          next.condition = 'lowest-hp-percentage'
+          next.comparator = 'less-than-equal'
+          next.value = 75
           next.buffId = null
         } else {
           next.condition = 'current-hp-percentage'
@@ -234,14 +244,28 @@ export function CombatTriggerEditor({
         }
         return next
       }
+
+      // 条件切换时收敛比较方式与阈值
       if (patch.condition !== undefined && patch.condition !== trigger.condition) {
-        if (patch.condition === 'buff-stacks') {
-          next.comparator = 'greater-than'
+        if (BOOL_CONDITIONS.includes(patch.condition)) {
+          next.comparator = 'is-active'
+          next.value = 1
+          next.buffId = null
+        } else if (patch.condition === 'buff-stacks') {
+          next.comparator = 'equal'
           next.value = 0
           next.buffId = next.buffId ?? defaultBuffId
+        } else if (patch.condition === 'elapsed-seconds') {
+          next.comparator = 'greater-than-equal'
+          next.value = 10
+          next.buffId = null
+        } else if (patch.condition.endsWith('-count')) {
+          next.comparator = 'greater-than-equal'
+          next.value = 2
+          next.buffId = null
         } else {
-          next.comparator = isPercentage(next.condition) ? 'less-than-equal' : 'greater-than-equal'
-          next.value = isPercentage(next.condition) ? 50 : 0
+          next.comparator = patch.condition.includes('percentage') ? 'less-than-equal' : 'greater-than-equal'
+          next.value = patch.condition.includes('percentage') ? 50 : 1
           next.buffId = null
         }
       }
@@ -278,9 +302,86 @@ export function CombatTriggerEditor({
             <p className="combat-trigger-empty">{t('game.trigger.editor.empty')}</p>
           )}
           {triggers.map((trigger, index) => {
-            const percentage = isPercentage(trigger.condition)
+            const percentage = trigger.condition.includes('percentage')
             const isBuff = trigger.condition === 'buff-stacks'
-            const unit = percentage ? '%' : isBuff ? t('combat.trigger.buffStackUnit') : t('combat.trigger.pointUnit')
+            const isBool = BOOL_CONDITIONS.includes(trigger.condition)
+            const isTime = trigger.condition === 'elapsed-seconds'
+            const isCount = trigger.condition.endsWith('-count')
+            const unit = percentage ? '%' : isBuff ? t('combat.trigger.buffStackUnit') : isTime ? t('combat.trigger.secondUnit') : isCount ? t('combat.trigger.unitUnit') : t('combat.trigger.pointUnit')
+
+            // 规范化当前 dependency，保证选中回显匹配
+            const depValue = trigger.dependency === 'target' ? 'target-enemy'
+              : trigger.dependency === 'ally' ? 'allies'
+              : trigger.dependency === 'enemy' ? 'enemies'
+              : trigger.dependency
+
+            // 二级条件候选列表（根据一级对象智能联动）
+            let conditionOptions: readonly TriggerSelectOption[]
+            if (depValue === 'battle') {
+              conditionOptions = [
+                { id: 'elapsed-seconds', label: t('game.trigger.condition.elapsed-seconds'), subtitle: t('combat.trigger.subtitle.elapsedSeconds') },
+              ]
+            } else if (SET_DEPENDENCIES.includes(trigger.dependency)) {
+              conditionOptions = [
+                { id: 'lowest-hp-percentage', label: t('game.trigger.condition.lowest-hp-percentage'), subtitle: t('combat.trigger.subtitle.lowestHpPercentage') },
+                { id: 'highest-hp-percentage', label: t('game.trigger.condition.highest-hp-percentage'), subtitle: t('combat.trigger.subtitle.highestHpPercentage') },
+                { id: 'total-hp-percentage', label: t('game.trigger.condition.total-hp-percentage'), subtitle: t('combat.trigger.subtitle.totalHpPercentage') },
+                { id: 'total-mana-percentage', label: t('game.trigger.condition.total-mana-percentage'), subtitle: t('combat.trigger.subtitle.totalManaPercentage') },
+                { id: 'alive-count', label: t('game.trigger.condition.alive-count'), subtitle: t('combat.trigger.subtitle.aliveCount') },
+                { id: 'total-count', label: t('game.trigger.condition.total-count'), subtitle: t('combat.trigger.subtitle.totalCount') },
+                { id: 'dead-count', label: t('game.trigger.condition.dead-count'), subtitle: t('combat.trigger.subtitle.deadCount') },
+                { id: 'has-summon', label: t('game.trigger.condition.has-summon'), subtitle: t('combat.trigger.subtitle.hasSummon') },
+                { id: 'has-elite', label: t('game.trigger.condition.has-elite'), subtitle: t('combat.trigger.subtitle.hasElite') },
+                { id: 'has-boss', label: t('game.trigger.condition.has-boss'), subtitle: t('combat.trigger.subtitle.hasBoss') },
+                { id: 'has-player', label: t('game.trigger.condition.has-player'), subtitle: t('combat.trigger.subtitle.hasPlayer') },
+              ]
+            } else {
+              conditionOptions = [
+                { id: 'current-hp-percentage', label: t('game.trigger.condition.current-hp-percentage') },
+                { id: 'missing-hp-percentage', label: t('game.trigger.condition.missing-hp-percentage') },
+                { id: 'current-mana-percentage', label: t('game.trigger.condition.current-mana-percentage') },
+                { id: 'missing-mana-percentage', label: t('game.trigger.condition.missing-mana-percentage') },
+                { id: 'current-hp', label: t('game.trigger.condition.current-hp') },
+                { id: 'missing-hp', label: t('game.trigger.condition.missing-hp') },
+                { id: 'current-mana', label: t('game.trigger.condition.current-mana') },
+                { id: 'missing-mana', label: t('game.trigger.condition.missing-mana') },
+                { id: 'buff-stacks', label: t('game.trigger.condition.buff-stacks'), subtitle: t('combat.trigger.subtitle.buffStacks') },
+                { id: 'is-summon', label: t('game.trigger.condition.is-summon'), subtitle: t('combat.trigger.subtitle.isSummon') },
+                { id: 'is-elite', label: t('game.trigger.condition.is-elite'), subtitle: t('combat.trigger.subtitle.isElite') },
+                { id: 'is-boss', label: t('game.trigger.condition.is-boss'), subtitle: t('combat.trigger.subtitle.isBoss') },
+                { id: 'is-player', label: t('game.trigger.condition.is-player'), subtitle: t('combat.trigger.subtitle.isPlayer') },
+              ]
+            }
+
+            // 比较器候选列表（布尔型 vs 数值型）
+            let comparatorOptions: readonly TriggerSelectOption[]
+            if (trigger.condition.startsWith('is-')) {
+              comparatorOptions = [
+                { id: 'is-active', label: t('combat.trigger.boolYes') },
+                { id: 'is-inactive', label: t('combat.trigger.boolNo') },
+              ]
+            } else if (trigger.condition.startsWith('has-')) {
+              comparatorOptions = [
+                { id: 'is-active', label: t('combat.trigger.boolHave') },
+                { id: 'is-inactive', label: t('combat.trigger.boolNone') },
+              ]
+            } else if (isBuff) {
+              comparatorOptions = [
+                { id: 'equal', label: t('game.trigger.comparator.equal') },
+                { id: 'greater-than', label: t('game.trigger.comparator.greater-than') },
+                { id: 'greater-than-equal', label: t('game.trigger.comparator.greater-than-equal') },
+                { id: 'less-than-equal', label: t('game.trigger.comparator.less-than-equal') },
+                { id: 'less-than', label: t('game.trigger.comparator.less-than') },
+              ]
+            } else {
+              comparatorOptions = [
+                { id: 'less-than-equal', label: t('game.trigger.comparator.less-than-equal') },
+                { id: 'less-than', label: t('game.trigger.comparator.less-than') },
+                { id: 'greater-than-equal', label: t('game.trigger.comparator.greater-than-equal') },
+                { id: 'greater-than', label: t('game.trigger.comparator.greater-than') },
+                { id: 'equal', label: t('game.trigger.comparator.equal') },
+              ]
+            }
 
             return (
               <section className="combat-trigger-card" key={index}>
@@ -299,7 +400,7 @@ export function CombatTriggerEditor({
                   >×</button>
                 </header>
 
-                <div className={`combat-trigger-fields${isBuff ? ' has-buff' : ''}`}>
+                <div className={`combat-trigger-fields${isBuff ? ' has-buff' : ''}${isBool ? ' is-bool' : ''}`}>
                   <TriggerSelectField
                     className="combat-trigger-field--dep"
                     label={t('combat.trigger.dependencyLabel')}
@@ -307,37 +408,18 @@ export function CombatTriggerEditor({
                     options={[
                       { id: 'self', label: t('game.trigger.dependency.self') },
                       { id: 'target-enemy', label: t('game.trigger.dependency.target-enemy'), subtitle: t('combat.trigger.subtitle.targetEnemy') },
-                      { id: 'ally-lowest-hp', label: t('game.trigger.dependency.ally-lowest-hp'), subtitle: t('combat.trigger.subtitle.allyLowestHp') },
-                      { id: 'ally-highest-hp', label: t('game.trigger.dependency.ally-highest-hp'), subtitle: t('combat.trigger.subtitle.allyHighestHp') },
-                      { id: 'enemy-lowest-hp', label: t('game.trigger.dependency.enemy-lowest-hp'), subtitle: t('combat.trigger.subtitle.enemyLowestHp') },
-                      { id: 'enemy-highest-hp', label: t('game.trigger.dependency.enemy-highest-hp'), subtitle: t('combat.trigger.subtitle.enemyHighestHp') },
-                      { id: 'ally', label: t('game.trigger.dependency.ally'), subtitle: t('combat.trigger.subtitle.allySet') },
-                      { id: 'enemy', label: t('game.trigger.dependency.enemy'), subtitle: t('combat.trigger.subtitle.enemySet') },
+                      { id: 'allies', label: t('game.trigger.dependency.allies'), subtitle: t('combat.trigger.subtitle.allies') },
+                      { id: 'enemies', label: t('game.trigger.dependency.enemies'), subtitle: t('combat.trigger.subtitle.enemies') },
+                      { id: 'battle', label: t('game.trigger.dependency.battle'), subtitle: t('combat.trigger.subtitle.battle') },
                     ]}
-                    value={trigger.dependency}
+                    value={depValue}
                   />
 
                   <TriggerSelectField
                     className="combat-trigger-field--cond"
                     label={t('combat.trigger.conditionLabel')}
                     onSelect={value => updateTrigger(index, { condition: value as CombatTriggerCondition })}
-                    options={(SET_DEPENDENCIES.includes(trigger.dependency)
-                      ? [
-                          { id: 'alive-count', label: t('game.trigger.condition.alive-count'), subtitle: t('combat.trigger.subtitle.aliveCount') },
-                          { id: 'dead-count', label: t('game.trigger.condition.dead-count'), subtitle: t('combat.trigger.subtitle.deadCount') },
-                        ]
-                      : [
-                          { id: 'current-hp-percentage', label: t('game.trigger.condition.current-hp-percentage') },
-                          { id: 'missing-hp-percentage', label: t('game.trigger.condition.missing-hp-percentage') },
-                          { id: 'current-mana-percentage', label: t('game.trigger.condition.current-mana-percentage') },
-                          { id: 'missing-mana-percentage', label: t('game.trigger.condition.missing-mana-percentage') },
-                          { id: 'current-hp', label: t('game.trigger.condition.current-hp') },
-                          { id: 'missing-hp', label: t('game.trigger.condition.missing-hp') },
-                          { id: 'current-mana', label: t('game.trigger.condition.current-mana') },
-                          { id: 'missing-mana', label: t('game.trigger.condition.missing-mana') },
-                          { id: 'buff-stacks', label: t('game.trigger.condition.buff-stacks'), subtitle: t('combat.trigger.subtitle.buffStacks') },
-                        ]
-                    )}
+                    options={conditionOptions}
                     value={trigger.condition}
                   />
 
@@ -359,35 +441,22 @@ export function CombatTriggerEditor({
                     className="combat-trigger-field--comp"
                     label={t('combat.trigger.comparatorLabel')}
                     onSelect={value => updateTrigger(index, { comparator: value as CombatTriggerComparator })}
-                    options={(isBuff
-                      ? [
-                          { id: 'greater-than', label: t('game.trigger.comparator.greater-than') },
-                          { id: 'equal', label: t('game.trigger.comparator.equal') },
-                          { id: 'greater-than-equal', label: t('game.trigger.comparator.greater-than-equal') },
-                          { id: 'less-than-equal', label: t('game.trigger.comparator.less-than-equal') },
-                          { id: 'less-than', label: t('game.trigger.comparator.less-than') },
-                        ]
-                      : [
-                          { id: 'less-than-equal', label: t('game.trigger.comparator.less-than-equal') },
-                          { id: 'less-than', label: t('game.trigger.comparator.less-than') },
-                          { id: 'greater-than-equal', label: t('game.trigger.comparator.greater-than-equal') },
-                          { id: 'greater-than', label: t('game.trigger.comparator.greater-than') },
-                          { id: 'equal', label: t('game.trigger.comparator.equal') },
-                        ]
-                    )}
+                    options={comparatorOptions}
                     value={trigger.comparator}
                   />
 
-                  <TriggerValueField
-                    className="combat-trigger-field--val"
-                    label={percentage ? t('combat.trigger.thresholdPercent') : t('combat.trigger.threshold')}
-                    value={trigger.value}
-                    unit={unit}
-                    min={0}
-                    max={percentage ? 100 : undefined}
-                    step={percentage ? 0.5 : 1}
-                    onChange={value => updateTrigger(index, { value })}
-                  />
+                  {!isBool && (
+                    <TriggerValueField
+                      className="combat-trigger-field--val"
+                      label={percentage ? t('combat.trigger.thresholdPercent') : t('combat.trigger.threshold')}
+                      value={trigger.value}
+                      unit={unit}
+                      min={0}
+                      max={percentage ? 100 : undefined}
+                      step={percentage ? 0.5 : 1}
+                      onChange={value => updateTrigger(index, { value })}
+                    />
+                  )}
                 </div>
               </section>
             )
@@ -412,6 +481,10 @@ export function CombatTriggerEditor({
             onClick={() => onSave(null)}
             type="button"
           >{t('combat.trigger.clearAll')}</button>
+          <button
+            onClick={() => setTriggers(cloneTriggers(defaultTriggers ?? []))}
+            type="button"
+          >{t('combat.trigger.resetDefault')}</button>
           <span>{t('combat.trigger.andHint', { count: formatNumber(triggers.length), max: formatNumber(maxTriggers) })}</span>
           <button
             className="primary"

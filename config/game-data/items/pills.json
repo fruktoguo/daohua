@@ -37,14 +37,7 @@
           "damageAbsorptionPoints": 5
         }
       ],
-      "triggers": [
-        {
-          "dependency": "self",
-          "condition": "current-hp-percentage",
-          "comparator": "less-than-equal",
-          "value": 60
-        }
-      ]
+      "triggers": []
     },
     "subCategory": "pill"
   },
@@ -69,14 +62,7 @@
           "attackSpeedPoints": 5
         }
       ],
-      "triggers": [
-        {
-          "dependency": "self",
-          "condition": "current-mana-percentage",
-          "comparator": "less-than-equal",
-          "value": 50
-        }
-      ]
+      "triggers": []
     },
     "subCategory": "pill"
   },

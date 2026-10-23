@@ -1,3 +1,4 @@
+using Domain.GameData;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -258,8 +259,13 @@ public sealed record CombatBuffState(
         && double.IsFinite(MissingHitpointsPerStack);
 }
 
-/// <summary>战斗单位生成模板：静态属性 + 可选技能槽。</summary>
-public sealed record CombatantTemplate(CombatantStats Stats, IReadOnlyList<SkillSlot>? Skills = null);
+/// <summary>战斗单位生成模板：静态属性 + 可选技能槽 + 实体属性扩展。</summary>
+public sealed record CombatantTemplate(
+    CombatantStats Stats,
+    IReadOnlyList<SkillSlot>? Skills = null,
+    string? DefinitionId = null,
+    CombatMonsterRank? Rank = null,
+    bool IsSummon = false);
 
 /// <summary>
 /// 战斗交锋中的单位动态运行时状态（维护当前气血、灵力、威胁与下一次出手时刻）。
@@ -296,6 +302,12 @@ public sealed class CombatantState
     public long EntityId { get; set; } = -1;
     /// <summary>配表怪物定义 ID（玩家为 null）。</summary>
     public string? DefinitionId { get; set; }
+    /// <summary>单位阶层：妖兽(普通)/精英/妖王，玩家为 null。</summary>
+    public CombatMonsterRank? Rank { get; set; }
+    /// <summary>是否为召唤物。</summary>
+    public bool IsSummon { get; set; }
+    /// <summary>是否为玩家（含镜像）。</summary>
+    public bool IsPlayer => !string.IsNullOrEmpty(Id) && Id.StartsWith("player", StringComparison.Ordinal);
     /// <summary>战斗静态属性面板；进行中战斗跨步复用时由 <see cref="RefreshStats"/> 换入最新结算结果。</summary>
     public CombatantStats Stats { get; private set; }
     /// <summary>随战技能槽（玩家/怪物/斗法镜像共用同构槽位模型）。</summary>
@@ -659,10 +671,20 @@ public sealed class CombatEncounterState
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇原地复活时长无效。");
         var allyStates = new CombatantState[allies.Count];
         for (var i = 0; i < allies.Count; i++)
-            allyStates[i] = new CombatantState(i == selfIndex ? "player" : $"ally:{i}", allies[i].Stats, allies[i].Skills);
+            allyStates[i] = new CombatantState(i == selfIndex ? "player" : $"ally:{i}", allies[i].Stats, allies[i].Skills)
+            {
+                DefinitionId = allies[i].DefinitionId,
+                Rank = allies[i].Rank,
+                IsSummon = allies[i].IsSummon
+            };
         var enemyStates = new CombatantState[enemies.Count];
         for (var i = 0; i < enemies.Count; i++)
-            enemyStates[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
+            enemyStates[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills)
+            {
+                DefinitionId = enemies[i].DefinitionId,
+                Rank = enemies[i].Rank,
+                IsSummon = enemies[i].IsSummon
+            };
         // 特质开战授予（如看不到我→隐身 buff）：仅首次开战路径生效；
         // 快照恢复由 Buffs 还原不重复授予，复活起身亦不视为开战。
         // 授予顺序为盟友序→敌方序：单人退化为 玩家→敌人，与既有序列逐位一致。

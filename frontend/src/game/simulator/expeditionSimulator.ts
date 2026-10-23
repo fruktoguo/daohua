@@ -959,7 +959,10 @@ export class ExpeditionSimulator {
         e.attributes,
         skills,
         0,
-        e.enemyId
+        e.enemyId,
+        [],
+        undefined,
+        e.rank
       )
     })
 
