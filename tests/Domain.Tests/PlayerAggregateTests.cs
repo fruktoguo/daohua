@@ -399,4 +399,36 @@ public sealed class PlayerAggregateTests
         var decoded = SectionCodec.DecodeAggregate(bundle);
         Assert.Equal("player-male", decoded.Settings.Avatar);
     }
+
+    /// <summary>
+    /// 底蕴浮点数精度下溢保护：
+    /// 1. 负微小浮点数赋给 Foundation 自动钳制为 0；
+    /// 2. CreditExperience 在完全消耗底蕴时，残余底蕴精确归零而不产生负数浮点误差；
+    /// 3. ComputeExperienceCredit 对传入的负底蕴做 Math.Max(0) 保护，不吞减收益。
+    /// </summary>
+    [Fact]
+    public void Foundation_PrecisionUnderflowIsDefended()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "道玄", Baseline, "catalog-a");
+        player.Progression.Foundation = -3.552713678800501e-15;
+        Assert.Equal(0.0, player.Progression.Foundation);
+
+        // 底蕴 100 点，单笔收益 5 点：三倍放大上限消耗 2×amp=10 点底蕴，余 90 点
+        player.Progression.Foundation = 100.0;
+        player.Progression.CreditExperience(5.0, 1000.0);
+        Assert.Equal(90.0, player.Progression.Foundation);
+
+        // 再次收益 100 点（上限消耗 200 点底蕴）：90 点底蕴全部耗尽，由于 IEEE 754 精度误差可能产生的微小负数被自动钳制为 0
+        player.Progression.CreditExperience(100.0, 1000.0);
+        Assert.Equal(0.0, player.Progression.Foundation);
+
+        var seed = player.ExportState();
+        var dirty = seed with { Progression = seed.Progression with { Foundation = -3.552713678800501e-15 } };
+        var restored = PlayerAggregate.Restore(dirty);
+        Assert.Equal(0.0, restored.Progression.Foundation);
+
+        // 静态计算容错
+        var credit = PlayerProgression.ComputeExperienceCredit(10.0, 1000.0, 0.0, -1e-15);
+        Assert.Equal(10.0, credit);
+    }
 }

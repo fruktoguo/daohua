@@ -46,8 +46,13 @@ public sealed class PlayerProgression
     public VersionedList<string> DefeatedMonsterIds { get; } = new();
     /// <summary>当前层修为（突破计量条，expToNext 封顶，突破清零）</summary>
     public double Experience { get; set; }
+    private double _foundation;
     /// <summary>底蕴：修为满层溢出沉淀池；未满层时按 1:1 兑换放大修为获取（单笔 ≤3× 增幅量），突破不清空。</summary>
-    public double Foundation { get; set; }
+    public double Foundation
+    {
+        get => _foundation;
+        set => _foundation = double.IsFinite(value) && value < 1e-9 ? 0 : value;
+    }
     /// <summary>战斗经验：修为类收益按增幅前基础量等额累积的对抗池；只累积不消耗，突破不清空。</summary>
     public double CombatExperience { get; set; }
     /// <summary>道途累计获得的修为总量（单调递增，含已沉淀为底蕴的部分，不随突破清零）</summary>
@@ -85,7 +90,7 @@ public sealed class PlayerProgression
     /// <returns>实际计入本层修为的量。</returns>
     public static double ComputeExperienceCredit(double amplifiedAmount, double cap, double experience, double foundation)
         => Math.Min(3.0 * amplifiedAmount,
-            Math.Min(amplifiedAmount + foundation, Math.Max(0, cap - experience)));
+            Math.Min(amplifiedAmount + Math.Max(0.0, foundation), Math.Max(0, cap - experience)));
 
     /// <summary>
     /// 修为类收益统一结算（总纲 §7.11.1）：
@@ -106,7 +111,7 @@ public sealed class PlayerProgression
             throw new DomainException(DomainErrorCode.InvalidArgument, "修为收益入账参数无效。");
         var credited = ComputeExperienceCredit(amplifiedAmount, cap, Experience, Foundation);
         Experience += credited;
-        Foundation += amplifiedAmount - credited;
+        Foundation = Math.Max(0.0, Foundation + amplifiedAmount - credited);
         CombatExperience += combatExperience;
         LifetimeExperience += amplifiedAmount;
         if (!double.IsFinite(Experience) || !double.IsFinite(Foundation) || !double.IsFinite(CombatExperience) || !double.IsFinite(LifetimeExperience))

@@ -822,7 +822,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     // 单写者门内再校验一次：底蕴扣减绝不能把池子打成负数。
                                     if (aggregate.Progression.Foundation + 1e-9 < rerollCost)
                                         throw new DomainException(DomainErrorCode.Conflict, "底蕴不足，逆天改命失败。");
-                                    aggregate.Progression.Foundation -= rerollCost;
+                                    aggregate.Progression.Foundation = Math.Max(0.0, aggregate.Progression.Foundation - rerollCost);
                                     // 若此前已入天门则重洗后直接生效；若此前仍在分配阶段，则更新抽取原生值并保持未入天门。
                                     gate.Apply(rerolledValues, alreadyEntered ? rerolledValues : null, entered: alreadyEntered, nextRerollCount);
                                     aggregate.Touch(PlayerSectionKind.Progression);

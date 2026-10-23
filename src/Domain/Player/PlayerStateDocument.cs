@@ -407,7 +407,7 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.TotalDefeats) || state.Progression.TotalDefeats < 0 ||
             !double.IsFinite(state.Progression.CultivationSeconds) || state.Progression.CultivationSeconds < 0 ||
             !double.IsFinite(state.Progression.AgeSeconds) || state.Progression.AgeSeconds < 0 ||
-            !double.IsFinite(state.Progression.Foundation) || state.Progression.Foundation < 0 ||
+            !double.IsFinite(state.Progression.Foundation) || state.Progression.Foundation < -1e-9 ||
             !double.IsFinite(state.Progression.CombatExperience) || state.Progression.CombatExperience < 0 ||
             !double.IsFinite(state.Progression.LifetimeExperience) || state.Progression.LifetimeExperience < 0 ||
             !double.IsFinite(state.World.X) || !double.IsFinite(state.World.Y) || !double.IsFinite(state.World.ExplorationSeed) ||
@@ -460,7 +460,7 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.TotalDefeats = state.Progression.TotalDefeats;
         aggregate.Progression.CultivationSeconds = state.Progression.CultivationSeconds;
         aggregate.Progression.AgeSeconds = state.Progression.AgeSeconds;
-        aggregate.Progression.Foundation = state.Progression.Foundation;
+        aggregate.Progression.Foundation = Math.Max(0.0, state.Progression.Foundation);
         aggregate.Progression.CombatExperience = state.Progression.CombatExperience;
         aggregate.Progression.LifetimeExperience = state.Progression.LifetimeExperience;
         // 开天门状态属于 progression 分段持久化字段，必须在恢复边界一并写回，

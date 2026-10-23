@@ -76,7 +76,7 @@ internal static partial class ActionExecutionRules
             }
         // 底蕴成本（逆命丹等特殊配方）：与材料同为准入前置，不足时按「底蕴不足」阻断而非扣成负数。
         var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
-        var hasFoundation = player.Progression.Foundation >= foundationCost;
+        var hasFoundation = foundationCost <= 0 || player.Progression.Foundation + 1e-9 >= foundationCost;
         // 讨伐行动不走「地点不符」口径：地点校验失败按条件不足阻断；其余行动维持原文案。
         // 材料优先于底蕴报文案：两者同时不足时先引导补材料（底蕴成本本身由修为规模决定）。
         var blockedReason = availableHere
@@ -414,7 +414,7 @@ internal static partial class ActionExecutionRules
         // 底蕴成本：与准入同一解析口径（当前升级所需修为 × 配表比例）。轮间底蕴被其他结算消耗时
         // 按强化同语义回退为 Blocked，本轮不产生任何收益、扣减或轮次计数。
         var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
-        if (foundationCost > player.Progression.Foundation)
+        if (foundationCost > 0 && foundationCost > player.Progression.Foundation + 1e-9)
         {
             action.Status = ActionQueueStatus.Blocked;
             events ??= new SimulationEventTail();
@@ -474,7 +474,7 @@ internal static partial class ActionExecutionRules
         // 底蕴成本先行扣除：CreditExperience 的 1:1 兑换放大要在这个池子上结算，
         // 若先兑换再扣成本会把可用底蕴重复花两次（池子可能被扣成负数）。
         // 上文准入与轮内复核已保证 Foundation ≥ foundationCost，扣减后恒为非负。
-        player.Progression.Foundation -= foundationCost;
+        player.Progression.Foundation = Math.Max(0.0, player.Progression.Foundation - foundationCost);
         // 修为类收益统一结算（总纲 §7.11.1）：瓶颈截断 + 底蕴 1:1 兑换放大（≤3×amp）+
         // 增幅溢量沉淀为底蕴；满级（cap≤0）全额沉淀。非战斗行动不增加战斗经验。
         var experienceDelta = player.Progression.CreditExperience(experienceGain, expCap);

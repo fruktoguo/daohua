@@ -117,6 +117,35 @@ public sealed class EcsAlchemyFoundationCostTests
         Assert.Equal(ActionQueueStatus.Blocked, paid.State.Actions[0].Status);
     }
 
+    /// <summary>
+    /// 零底蕴成本行动（如引气入体、普通炼丹）即便遇到历史快照下溢带负底蕴（如 -3.55e-15），
+    /// 准入与单轮完成结算也恒放行，绝对不报「底蕴不足」阻断，且结算后底蕴自动自愈归零。
+    /// </summary>
+    [Fact]
+    public async Task ZeroRatioActionWithUnderflowFoundationStartsAndCompletesSuccessfully()
+    {
+        var freeCatalog = CreateCatalog(0);
+        var player = CreatePlayer(freeCatalog);
+        player.Enqueue(new(new ActionId(ActionIdValue), 1), From, freeCatalog.Actions);
+        var seed = player.ExportState();
+        // 模拟极端脏输入：Progression 持久化快照带着 -3.55e-15
+        var dirtyState = seed with
+        {
+            Progression = seed.Progression with { Foundation = -3.552713678800501e-15 }
+        };
+
+        using var runtime = new EcsGameRuntime(freeCatalog, From);
+        var id = runtime.CreatePlayer(dirtyState);
+        await runtime.RunPlayerOnceAsync(id, From.AddSeconds(10));
+
+        var snapshot = runtime.ExportSnapshot(id);
+        Assert.Empty(snapshot.State.Actions);
+        Assert.Equal(1, snapshot.State.Progression.CompletedActions);
+        Assert.Equal(0, snapshot.State.Progression.Foundation);
+        Assert.Equal(1, snapshot.Assets.GetValueOrDefault(new AssetKey(new ItemId(PillItemId))));
+        Assert.DoesNotContain(runtime.DrainSimulationEvents(id), entry => entry.Code == "action.blocked");
+    }
+
     /// <summary>解析器口径：非数值/越界配置按 0 回落，缺省字段亦为 0。</summary>
     [Theory]
     [InlineData("0.25", 0.25)]
