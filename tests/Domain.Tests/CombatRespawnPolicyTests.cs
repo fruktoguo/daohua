@@ -174,6 +174,45 @@ public sealed class CombatRespawnPolicyTests
     }
 
     /// <summary>
+    /// 观察对象离队后清理设置：指名到该队友的「指定队友存活」收敛为直接复活，
+    /// 避免本人界面停在指向已不存在队友的策略上（战斗侧虽已退化，但设置必须同步收敛）。
+    /// </summary>
+    [Fact]
+    public void ClearingDepartedTargetRevertsPolicyToImmediate()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "复活策略", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(player, catalog);
+        var teammate = Guid.NewGuid();
+
+        player.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, teammate);
+        Assert.Equal(CombatRespawnPolicy.TargetAllyAlive, player.Settings.RespawnPolicy);
+        Assert.Equal(teammate, player.Settings.RespawnTargetPlayerId);
+
+        player.ClearRespawnTargetIf(teammate);
+        Assert.Equal(CombatRespawnPolicy.Immediate, player.Settings.RespawnPolicy);
+        Assert.Null(player.Settings.RespawnTargetPlayerId);
+    }
+
+    /// <summary>
+    /// 清理只针对真正离队的观察对象：其他成员离队不得影响本人策略（否则多人队里任意人退出都会误伤）。
+    /// </summary>
+    [Fact]
+    public void ClearingUnrelatedTargetLeavesPolicyUntouched()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "复活策略", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(player, catalog);
+        var target = Guid.NewGuid();
+
+        player.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, target);
+        player.ClearRespawnTargetIf(Guid.NewGuid());
+
+        Assert.Equal(CombatRespawnPolicy.TargetAllyAlive, player.Settings.RespawnPolicy);
+        Assert.Equal(target, player.Settings.RespawnTargetPlayerId);
+    }
+
+    /// <summary>
     /// 双盟友场景：高血量敌人确保战斗不会因敌方全灭提前结束。
     /// </summary>
     private static CombatEncounterState CreateTwoAllyEncounter(double respawnSeconds)
