@@ -483,6 +483,15 @@ internal static class CombatActionRules
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{WaveNames()}。", definition.Id);
             return;
         }
+        // 躺尸期间敌方全灭（单人口径，总纲 §7.9.4 第 4 条）：玩家满血起身进入下一波搜寻。
+        if (spec is null && !battleState.Player.IsAlive)
+        {
+            battleState.Player.Hitpoints = battleState.Player.Stats.MaxHitpoints;
+            player.Resources.Hitpoints = battleState.Player.Hitpoints;
+            battleState.Player.RespawnAtSeconds = double.PositiveInfinity;
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.respawned", "复活完成，气血与灵力恢复。", definition.Id);
+        }
+
 
         // 波次清空才结算掉落与完成一次重复；逐只发放击杀奖励并计入生平斩妖。
         var pvpEnabled = action.Intent.PvpEnabled;
@@ -546,21 +555,23 @@ internal static class CombatActionRules
             {
                 // 波次清空的致死一击事件随搜寻相位保留到客户端消费：击杀跳字与受击反馈
                 // 与终局结算同属一次补算步进，丢弃即永远看不到最后一击。
+                var remainingSelfOnRound = spec is not null && !battleState.Player.IsAlive && double.IsFinite(battleState.PlayerRespawnAtSeconds)
+                    ? Math.Max(0, battleState.PlayerRespawnAtSeconds - battleState.ElapsedSeconds) : (double?)null;
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1,
                     allies: spec is not null ? CarryAllies(battleState) : null) with
-                { RecentEvents = updatedBattle.RecentEvents };
-                player.FinishActionRound(action.Id, loopable: true, killAtUnix);
+                { RecentEvents = updatedBattle.RecentEvents, PlayerRespawnAtSeconds = remainingSelfOnRound };
                 return;
             }
             player.FinishActionRound(action.Id, loopable: !tutorialAdvanced, killAtUnix);
             return;
         }
+        var remainingSelfOnWave = spec is not null && !battleState.Player.IsAlive && double.IsFinite(battleState.PlayerRespawnAtSeconds)
+            ? Math.Max(0, battleState.PlayerRespawnAtSeconds - battleState.ElapsedSeconds) : (double?)null;
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
             gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1,
             allies: spec is not null ? CarryAllies(battleState) : null) with
-        { RecentEvents = updatedBattle.RecentEvents };
-        action.ProgressSeconds = 0;
+        { RecentEvents = updatedBattle.RecentEvents, PlayerRespawnAtSeconds = remainingSelfOnWave };
     }
 
     /// <summary>仅在载入已有远征时恢复战斗单位；运行中的实体持续借用同一状态。</summary>
@@ -574,7 +585,7 @@ internal static class CombatActionRules
         var templates = waveEnemies.Select(enemy =>
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
-            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills);
+            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills, monster.Id, monster.Rank);
         }).ToArray();
         var selfSnapshot = expedition.PlayerState ?? new CombatantSnapshot(
             expedition.PlayerHitpoints, expedition.PlayerManapoints,
@@ -766,7 +777,7 @@ internal static class CombatActionRules
         // 节点封魔阵类削弱：怪物模板按当前节点建筑投影折减气血上限与双攻双防（单人取本机投影，会话取经 spec 冻结注入）。
         var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
         var enemyTemplates = wave.Select(monster =>
-            new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills)).ToArray();
+            new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills, monster.Id, monster.Rank)).ToArray();
         var respawnSeconds = InBattleRespawnSeconds(encounter);
         var spec = action.Participation?.Spec;
         CombatEncounterState battle;
@@ -804,7 +815,23 @@ internal static class CombatActionRules
                 }
                 // 会话只创建一份战斗，入场倒地者的复活时钟必须覆盖全部成员。
                 if (!unit.IsAlive && respawnSeconds > 0)
-                    unit.RespawnAtSeconds = battle.ElapsedSeconds + respawnSeconds;
+                {
+                    var carryRemaining = i == selfIndex
+                        ? completedSearch.PlayerRespawnAtSeconds
+                        : FindAllyCarry(carried, i)?.State.RespawnAtSeconds;
+                    if (carryRemaining is <= 0)
+                    {
+                        unit.Hitpoints = member.Stats.MaxHitpoints;
+                        unit.RespawnAtSeconds = double.PositiveInfinity;
+                        if (i == selfIndex) player.Resources.Hitpoints = member.Stats.MaxHitpoints;
+                    }
+                    else
+                    {
+                        unit.RespawnAtSeconds = battle.ElapsedSeconds + (carryRemaining is > 0
+                            ? Math.Min(carryRemaining.Value, respawnSeconds)
+                            : respawnSeconds);
+                    }
+                }
                 unit.ExternalBuffStacks = buffId => SumFrozenBuffStacks(member.ExternalBuffs, buffId);
                 // 持续消耗品 Buff 按开打定格注入：剩余时长按会话墙钟折算（入场时刻 - 开打时刻），
                 // 波间搜索同样消耗 Buff 时长；会话期间不补能、不扣减本地槽位（各成员推演位级一致）。
@@ -889,9 +916,23 @@ internal static class CombatActionRules
             // 组队入场即倒地（开打定格气血为 0）：共享剧本照常开打，本机成员按倒地口径登记——
             // 原地复活遭遇进入复活读条，否则等波次清空满状态起身；会话行动不可阻塞/轮转离队首。
             if (respawnSeconds > 0)
-                battle.Player.RespawnAtSeconds = battle.ElapsedSeconds + respawnSeconds;
-            AddCombatEventAt(ref events, entryAt, "combat.downed",
-                $"你以倒地状态随队迎战：{waveNames}。", definition.Id);
+            {
+                var carryRemaining = completedSearch.PlayerRespawnAtSeconds;
+                if (carryRemaining is <= 0)
+                {
+                    battle.Player.Hitpoints = player.Resources.MaxHitpoints;
+                    battle.Player.RespawnAtSeconds = double.PositiveInfinity;
+                    player.Resources.Hitpoints = player.Resources.MaxHitpoints;
+                }
+                else
+                {
+                    battle.Player.RespawnAtSeconds = battle.ElapsedSeconds + (carryRemaining is > 0
+                        ? Math.Min(carryRemaining.Value, respawnSeconds)
+                        : respawnSeconds);
+                    AddCombatEventAt(ref events, entryAt, "combat.downed",
+                        $"你以倒地状态随队迎战：{waveNames}。", definition.Id);
+                }
+            }
         }
 
         var atUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
@@ -1458,7 +1499,7 @@ internal static class CombatActionRules
                         && (triggerTarget is null || battleEnemies[i].EffectiveThreat > triggerTarget.EffectiveThreat))
                         triggerTarget = battleEnemies[i];
                 if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggerList, battle.Player,
-                        triggerTarget, battle.PlayerAllies, battleEnemies)) continue;
+                        triggerTarget, battle.PlayerAllies, battleEnemies, battle.ElapsedSeconds)) continue;
             }
             var itemId = item.Id;
             var available = (assetBalances?.Get(new AssetKey(itemId)) ?? 0d)
@@ -1599,8 +1640,14 @@ internal static class CombatActionRules
         {
             if (i == battle.SelfIndex) continue;
             var ally = allies[i];
+            var snapshot = CombatEncounterState.Snapshot(ally);
+            if (!ally.IsAlive && double.IsFinite(ally.RespawnAtSeconds))
+            {
+                var remaining = Math.Max(0, ally.RespawnAtSeconds - battle.ElapsedSeconds);
+                snapshot = snapshot with { RespawnAtSeconds = remaining };
+            }
             list.Add(new ExpeditionAllyState(i,
-                CombatEncounterState.Snapshot(ally),
+                snapshot,
                 PendingActionText(ally), PendingActionDurationOf(ally),
                 PlayerCombatSkillState.FromCombatant(ally, battle.ElapsedSeconds),
                 PlayerCombatBuffState.FromCombatant(ally, battle.ElapsedSeconds)));

@@ -2252,7 +2252,7 @@ export const CombatArena = memo(function CombatArena({
     const respawnMs = Math.max(1,
       Math.round((expedition?.playerRespawnDurationSeconds ?? 0) * 1000)
       || (expedition?.encounterId ? findEncounterInCatalog(encounters, expedition.encounterId)?.playerRespawnMilliseconds : undefined)
-      || 10000)
+      || 180000)
     const respawnName = t('combat.arena.phaseDeath')
     return [...allies]
       .sort((a, b) => a.memberIndex - b.memberIndex)

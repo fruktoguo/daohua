@@ -858,4 +858,65 @@ public sealed class ActionParticipationSessionTests
         foreach (var member in members) member.StartActionParticipation(spec, Baseline, catalog.Actions);
         return (catalog, members, spec);
     }
+
+    [Fact]
+    public void DownedAllyCarriesRemainingRespawnTimeAcrossWavesAndRespawnsWhenDue()
+    {
+        var (catalog, _, original) = CreateParty();
+        // 构造一个低血量队员1，入场即被怪打死；队员0（队长）高攻击高气血迅速秒怪
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) =>
+            {
+                if (index == 1)
+                {
+                    var fragileStats = CombatantStats.Create(10, 0, 0, 1) with { MaxManapoints = 50 };
+                    return member with
+                    {
+                        Stats = fragileStats,
+                        InitialHitpoints = 0 // 直接以倒地状态随队迎战
+                    };
+                }
+                return member;
+            }).ToArray()
+        };
+
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var initial = session.Export();
+        var searchSec = initial.Expedition!.PhaseDurationSeconds;
+
+        // 推进到第一波开打后 1 秒
+        session.AdvanceTo(Baseline.AddSeconds(searchSec + 1));
+        var wave1State = session.Export();
+        Assert.NotNull(wave1State.Expedition);
+        var allyWave1 = Assert.Single(wave1State.Expedition!.Allies!, a => a.MemberIndex == 1);
+        Assert.Equal(0, allyWave1.State.Hitpoints);
+        Assert.NotNull(allyWave1.State.RespawnAtSeconds);
+        Assert.True(double.IsFinite(allyWave1.State.RespawnAtSeconds.Value));
+        var remainingWave1 = wave1State.Expedition.Phase == CombatExpeditionPhase.Combat
+            ? allyWave1.State.RespawnAtSeconds!.Value - wave1State.Expedition.BattleElapsedSeconds
+            : allyWave1.State.RespawnAtSeconds!.Value;
+        Assert.True(remainingWave1 > 0 && remainingWave1 <= 180);
+
+        // 推进到几波之后（比如再推进 10 秒，队长已击杀多只怪波次清空进入后续波次），
+        // 队员1的复活时钟必须随着实际流逝时间缩减，而绝不得被反复重置回满额 180 秒！
+        session.AdvanceTo(Baseline.AddSeconds(searchSec + 10));
+        var waveNState = session.Export();
+        var allyWaveN = Assert.Single(waveNState.Expedition!.Allies!, a => a.MemberIndex == 1);
+        if (allyWaveN.State.Hitpoints <= 0)
+        {
+            var remainingSec = waveNState.Expedition.Phase == CombatExpeditionPhase.Combat
+                ? allyWaveN.State.RespawnAtSeconds!.Value - waveNState.Expedition.BattleElapsedSeconds
+                : allyWaveN.State.RespawnAtSeconds!.Value;
+            Assert.True(remainingSec <= remainingWave1 - 8,
+                $"跨波次后剩余复活时间未流逝：当前剩余 {remainingSec}s，波次1初始 {remainingWave1}s");
+        }
+
+        // 继续推进超过完整 180 秒复活周期（搜寻+战斗累计满 200 秒），队员1必须成功复活起身且满血！
+        session.AdvanceTo(Baseline.AddSeconds(searchSec + 200));
+        var revivedState = session.Export();
+        var allyRevived = Assert.Single(revivedState.Expedition!.Allies!, a => a.MemberIndex == 1);
+        Assert.True(allyRevived.State.Hitpoints > 0, "累计时间超过复活时长后，队员应成功满血复活！");
+        Assert.Equal(10, allyRevived.State.Hitpoints);
+    }
 }

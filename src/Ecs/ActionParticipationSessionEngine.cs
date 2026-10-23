@@ -577,7 +577,7 @@ public sealed class ActionParticipationSessionEngine
             _members[row.MemberIndex].Loadout.ConsumableTriggers);
         if (triggerList.Count > 0
             && !SkillTriggerEvaluator.MatchesAll(triggerList, caster, HighestThreatAlive(_battle.Enemies),
-                _battle.PlayerAllies, _battle.Enemies)) return;
+                _battle.PlayerAllies, _battle.Enemies, _battle?.ElapsedSeconds ?? 0)) return;
         SpendBalance(row.MemberIndex, row.ItemId);
         _consumables![index] = _consumables![index] with {
             SustainedExpiresAtUnixSeconds = now + consumable.DurationSeconds,
@@ -614,7 +614,7 @@ public sealed class ActionParticipationSessionEngine
             var evalCaster = caster ?? BuildSessionEvalCaster(memberIndex);
             var allies = _battle?.PlayerAllies ?? (IReadOnlyList<CombatantState>)[evalCaster];
             var enemies = _battle?.Enemies ?? (IReadOnlyList<CombatantState>)[];
-            if (!SkillTriggerEvaluator.MatchesAll(triggerList, evalCaster, target, allies, enemies)) return;
+            if (!SkillTriggerEvaluator.MatchesAll(triggerList, evalCaster, target, allies, enemies, _battle?.ElapsedSeconds ?? 0)) return;
         }
         var cooldown = consumable.CooldownSeconds;
         if (cooldown <= 0)
@@ -881,15 +881,53 @@ public sealed class ActionParticipationSessionEngine
             var member = _members[i];
             var hpBefore = member.Resources.Hitpoints;
             ActionExecutionRules.CompleteResourceRegeneration(member, _catalog, seconds, regenerateAllies: false);
-            if (i == 0) continue;
+            if (i == 0)
+            {
+                if (member.Resources.Hitpoints <= 0 && expedition.PlayerRespawnAtSeconds is { } remainingSelf)
+                {
+                    var next = remainingSelf - seconds;
+                    if (next <= 0)
+                    {
+                        member.Resources.Hitpoints = member.Resources.MaxHitpoints;
+                        expedition = expedition with { PlayerHitpoints = member.Resources.MaxHitpoints, PlayerRespawnAtSeconds = null };
+                        _collectors[0].Events.Add(new(_advancedAt, "combat.respawned", "复活完成，气血与灵力恢复。", _spec.ActionId));
+                    }
+                    else
+                    {
+                        expedition = expedition with { PlayerRespawnAtSeconds = next };
+                    }
+                }
+                continue;
+            }
             if (member.Resources.Hitpoints > hpBefore)
                 Canonical.Duel.ReportFor(Action.Id)!.CombatStats.RecordHealing($"ally:{i}", member.DisplayName,
                     autoRegen: true, member.Resources.Hitpoints - hpBefore);
             var index = Array.FindIndex(allies, ally => ally.MemberIndex == i);
-            allies[index] = allies[index] with { State = allies[index].State with
-            { Hitpoints = member.Resources.Hitpoints, Manapoints = member.Resources.Manapoints } };
+            if (index >= 0)
+            {
+                var allyState = allies[index].State;
+                if (member.Resources.Hitpoints <= 0 && allyState.RespawnAtSeconds is { } remainingAlly)
+                {
+                    var next = remainingAlly - seconds;
+                    if (next <= 0)
+                    {
+                        member.Resources.Hitpoints = member.Resources.MaxHitpoints;
+                        allyState = allyState with { Hitpoints = member.Resources.MaxHitpoints, Manapoints = member.Resources.Manapoints, RespawnAtSeconds = null };
+                        _collectors[i].Events.Add(new(_advancedAt, "combat.respawned", "复活完成，气血与灵力恢复。", _spec.ActionId));
+                    }
+                    else
+                    {
+                        allyState = allyState with { Hitpoints = member.Resources.Hitpoints, Manapoints = member.Resources.Manapoints, RespawnAtSeconds = next };
+                    }
+                }
+                else
+                {
+                    allyState = allyState with { Hitpoints = member.Resources.Hitpoints, Manapoints = member.Resources.Manapoints };
+                }
+                allies[index] = allies[index] with { State = allyState };
+            }
         }
-        if (allies.Length > 0) Action.Expedition = Action.Expedition! with { Allies = allies };
+        Action.Expedition = allies.Length > 0 ? expedition with { Allies = allies } : expedition;
     }
 
     private double AdvanceBattle(DateTimeOffset from, DateTimeOffset target, double remaining)

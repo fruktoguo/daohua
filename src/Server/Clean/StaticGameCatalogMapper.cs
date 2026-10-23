@@ -218,7 +218,7 @@ public static class StaticGameCatalogMapper
                 battlesPerBoss = ReadInt(encounter, "battlesPerBoss", 0),
                 searchMilliseconds = ReadInt(encounter, "searchMilliseconds", 5_000),
                 respawnMilliseconds = ReadInt(encounter, "respawnMilliseconds", 5_000),
-                playerRespawnMilliseconds = ReadInt(encounter, "playerRespawnMilliseconds", 5_000)
+                playerRespawnMilliseconds = ReadInt(encounter, "playerRespawnMilliseconds", 180_000)
             };
         }).ToArray();
 

@@ -611,9 +611,8 @@ public static class ProtocolSnapshotMapper
             expedition.Seed,
             // 倒地窗口（原地复活遭遇）：复活截止点与读条时长（战斗时钟秒），前端据此渲染阵亡置灰与复活读条。
             playerRespawnAtSeconds = expedition.PlayerRespawnAtSeconds,
-            playerRespawnDurationSeconds = expedition.PlayerRespawnAtSeconds is not null
-                && gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
-                    ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
+            playerRespawnDurationSeconds = gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
+                ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
             // 本机战内 Buff（含开战注入的消耗品副本）：战斗时钟到期时刻随快照下发，
             // 前端按 battleElapsedSeconds 反推剩余；非战斗相位改投跨波携带态
             // （expiresAt = 冻结时钟基准 + 剩余秒数，前端换算后倒计时即剩余时长）。

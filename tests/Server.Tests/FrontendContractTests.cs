@@ -70,4 +70,21 @@ public sealed class FrontendContractTests
         }
         finally { File.Delete(fixture); }
     }
+
+    /// <summary>遭遇静态目录投影中的 playerRespawnMilliseconds 必须与领域默认值（180000ms）严格一致，防前端复活读条错位。</summary>
+    [Fact]
+    public void EncountersMapperHasAccuratePlayerRespawnMilliseconds()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var encounters = StaticGameCatalogMapper.Encounters(catalog);
+        Assert.NotEmpty(encounters);
+        foreach (var encounter in encounters)
+        {
+            var json = JsonSerializer.Serialize(encounter, ProtocolJson.Options);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            Assert.True(root.TryGetProperty("playerRespawnMilliseconds", out var msProp));
+            Assert.Equal(180_000, msProp.GetInt32());
+        }
+    }
 }
