@@ -694,6 +694,59 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Equal(CombatRespawnPolicy.AllAlliesReady, fixture.Adapter.TryGetLoaded(bystander)!.State.Settings.RespawnPolicy);
     }
 
+    /// <summary>
+    /// 被队长踢出时策略重置为直接复活（§7.9.4.1），且曾指名被踢者的成员同样重置。
+    /// 踢人与离队是两条独立入口（前者由队长发起、被踢者无从预先响应），需各自回归。
+    /// </summary>
+    [Fact]
+    public async Task KickResetsKickedAndNominatorPolicies()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var leader = fixture.Players[0];
+        var nominator = fixture.Players[1];
+        var kicked = fixture.Players[2];
+
+        await fixture.Adapter.MutateOwnedAsync(nominator,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, kicked));
+        await fixture.Adapter.MutateOwnedAsync(kicked,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.AllAlliesReady));
+
+        var action = new Protocol.SocialActionDto(
+            Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyKick, TargetPlayerId: kicked.ToString("D"));
+        Assert.True((await social.ApplyAsync(leader, action)).Success);
+
+        // 被踢者本人重置，指名他的成员同样重置。
+        Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(kicked)!.State.Settings.RespawnPolicy);
+        Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(nominator)!.State.Settings.RespawnPolicy);
+        Assert.Null(fixture.Adapter.TryGetLoaded(nominator)!.State.Settings.RespawnTargetPlayerId);
+    }
+
+    /// <summary>
+    /// 加入队伍同样是归属变化：本人策略重置为直接复活，不得沿用离队前（或上一队）的设定。
+    /// </summary>
+    [Fact]
+    public async Task JoiningPartyResetsOwnRespawnPolicy()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var rejoiner = fixture.Players[1];
+
+        // 先离队，再设定策略：模拟玩家离队后改了设置、随后重新入队。
+        Assert.True((await social.ApplyAsync(rejoiner,
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyLeave))).Success);
+        await fixture.Adapter.MutateOwnedAsync(rejoiner,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, fixture.Players[0]));
+        Assert.Equal(CombatRespawnPolicy.TargetAllyAlive, fixture.Adapter.TryGetLoaded(rejoiner)!.State.Settings.RespawnPolicy);
+
+        var join = new Protocol.SocialActionDto(
+            Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyJoin, PartyId: fixture.PartyId.ToString("D"));
+        Assert.True((await social.ApplyAsync(rejoiner, join)).Success);
+
+        Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(rejoiner)!.State.Settings.RespawnPolicy);
+        Assert.Null(fixture.Adapter.TryGetLoaded(rejoiner)!.State.Settings.RespawnTargetPlayerId);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(NpgsqlDataSource source, DateTimeOffset startedAt, Guid[] players, bool owned)
