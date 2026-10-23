@@ -81,18 +81,19 @@ public sealed class PostgresRetentionRepository(
             ORDER BY inbox.consumed_at
             LIMIT $2
             """, "DELETE FROM social.party_session_inbox inbox USING ({0}) doomed WHERE inbox.session_id = doomed.session_id AND inbox.player_id = doomed.player_id AND inbox.sequence = doomed.sequence", now, cancellationToken);
-        // 回收无明细且无未消费收件箱引用的纯时钟/空流水，避免空事务在小硬盘上无界累积。
+        // 回收非金融、非市场类易失性流水（战斗物品获得、挂机推演、物品消耗、教程赠送等）；
+        // 这类流水只保留 2 小时（存档已在计算节点按小时异地备份，主服不存历史垃圾），
+        // 超过 2 小时连带其明细行（外键 ON DELETE CASCADE）一并彻底清理，不占用主服务器宝贵磁盘。
         var deletedEmptyTransactions = await DeleteBatchAsync(connection, transaction, """
             SELECT t.transaction_id
             FROM economy.transactions t
             WHERE t.created_at < $1
-              AND t.transaction_type IN ('simulation.reward', 'participation.settlement')
-              AND NOT EXISTS (SELECT 1 FROM economy.transaction_lines l WHERE l.transaction_id = t.transaction_id)
+              AND t.transaction_type IN ('simulation.reward', 'participation.settlement', 'item.use', 'tutorial.skip')
               AND NOT EXISTS (SELECT 1 FROM social.party_session_inbox i WHERE i.consumed_transaction_id = t.transaction_id)
             ORDER BY t.created_at
             LIMIT $2
             """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
-            now - TimeSpan.FromHours(1), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
+            now - TimeSpan.FromHours(2), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
         await transaction.CommitAsync(cancellationToken);
 
         var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions);
