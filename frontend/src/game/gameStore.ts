@@ -52,6 +52,10 @@ interface GameStore {
   hasReceivedSnapshot: boolean
   /** 新手引导里程碑下标（settings 分段权威；0~6 进行中，7 完成/跳过终态） */
   tutorialStep: number
+  /** 本人组队讨伐复活时机策略（settings 分段权威） */
+  respawnPolicy: PlayerSnapshot['respawnPolicy']
+  /** 「指定队友存活」的观察对象玩家 ID；未指定为 null */
+  respawnTargetPlayerId: PlayerSnapshot['respawnTargetPlayerId']
   /** 行动队列状态（当前执行、等待列表、自动消耗槽位） */
   queue: PlayerSnapshot['queue']
   /** 背包物品列表 */
@@ -219,6 +223,8 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
       buildableBuildingIds: null,
     },
     tutorialStep: 0,
+    respawnPolicy: 'immediate',
+    respawnTargetPlayerId: null,
   }
 }
 
@@ -313,6 +319,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isPendingBreakthrough: false,
   hasReceivedSnapshot: false,
   tutorialStep: 0,
+  respawnPolicy: initial.respawnPolicy,
+  respawnTargetPlayerId: initial.respawnTargetPlayerId,
   queue: initial.queue,
   inventory: initial.inventory,
   buffs: initial.buffs,
@@ -422,6 +430,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       world: snapshot.world ?? initial.world!,
       duel: snapshot.duel,
       tutorialStep: snapshot.tutorialStep,
+      respawnPolicy: snapshot.respawnPolicy,
+      respawnTargetPlayerId: snapshot.respawnTargetPlayerId,
     })
     // 刷新自动进详情：首个权威快照且行动队列非空时，直接切到「详情」页查看当前行动统计与战况。
     if (isFirstSnapshot && snapshot.queue.entries.length > 0) {
@@ -473,6 +483,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       world: patch.world ?? state.world,
       duel: patch.duel ?? state.duel,
       tutorialStep: patch.tutorialStep ?? state.tutorialStep,
+      respawnPolicy: patch.respawnPolicy ?? state.respawnPolicy,
+      respawnTargetPlayerId: patch.respawnTargetPlayerId === undefined
+        ? state.respawnTargetPlayerId
+        : patch.respawnTargetPlayerId,
     })
   },
   toSnapshotView: () => {
@@ -500,6 +514,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       world: state.world,
       duel: state.duel,
       tutorialStep: state.tutorialStep,
+      respawnPolicy: state.respawnPolicy,
+      respawnTargetPlayerId: state.respawnTargetPlayerId,
     }
   },
   resetGameStore: () => set({
@@ -528,6 +544,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     combatAttributes: initial.combatAttributes,
     world: initial.world!,
     duel: initial.duel,
+    tutorialStep: initial.tutorialStep,
+    respawnPolicy: initial.respawnPolicy,
+    respawnTargetPlayerId: initial.respawnTargetPlayerId,
     marketStats: {},
   }),
 }))

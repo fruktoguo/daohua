@@ -3379,6 +3379,18 @@
   box-shadow: none;
 }
 
+/* 复活等待条件态：读条已走完、策略条件未成立——轨道转为琥珀暗纹，明确「不推进」语义。 */
+.arena-action-bar--respawn-wait .arena-action-track {
+  background:
+    repeating-linear-gradient(45deg, rgba(251, 191, 36, 0.22) 0 4px, rgba(0, 0, 0, 0) 4px 8px),
+    #090b10;
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.arena-action-bar--respawn-wait .arena-action-badge {
+  color: #fcd34d;
+}
+
 .arena-action-badge {
   position: absolute;
   top: 50%;

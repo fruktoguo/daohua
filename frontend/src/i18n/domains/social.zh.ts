@@ -169,6 +169,15 @@ export const socialZh = {
       label: '斗法',
       hint: '整队作为一个单位参与斗法（PVP）撮合；仅队长可修改',
     },
+    // 本人复活时机策略（§7.9.4.1）：倒地读条走完后是否立刻起身，由本人设定
+    respawn: {
+      heading: '复活时机',
+      immediate: '直接复活',
+      allAlliesReady: '全员就绪',
+      targetAllyAlive: '指定队友存活',
+      targetPlaceholder: '选择队友',
+      waitNote: '条件不满足则原地等待，最多再等一个读条时长后强制起身',
+    },
     session: {
       cancelHint: '组队讨伐由队伍统一调度，无法单独移除；如需终止，请在队伍页离队（将解散本次共战）',
       badge: '组队讨伐',

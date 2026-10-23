@@ -13,7 +13,9 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FloatingPopover, FloatingTooltip, type FloatingPlacement } from './FloatingPopover'
 import { Modal } from './Modal'
+import { OptionToggle, type OptionToggleOption } from './OptionToggle'
 import { ValuationHoverTarget } from './ValuationDisplay'
+import type { RespawnPolicy } from '../game/types'
 
 /** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
@@ -557,6 +559,66 @@ const LeaderProfileModal = memo(function LeaderProfileModal({ onClose }: {
   )
 })
 
+/**
+ * 本人复活时机策略（总纲 §7.9.4.1）：倒地读条走完后是否立刻起身，由成员本人设定，
+ * 因此不受 isLeader 限制——队内人人可改自己那一条，改动只写本人 settings（respawn.policy 命令）。
+ * 三选一用 OptionToggle；「指定队友存活」联动展开队友下拉（排除自己）。
+ */
+const RespawnPolicyField = memo(function RespawnPolicyField({
+  members,
+  myPlayerId,
+}: {
+  members: readonly PartyMemberDto[]
+  myPlayerId: string
+}): React.JSX.Element {
+  const t = useT()
+  const policy = useGameStore(state => state.respawnPolicy)
+  const targetPlayerId = useGameStore(state => state.respawnTargetPlayerId)
+  const setRespawnPolicy = useSocialStore(state => state.setRespawnPolicy)
+  const teammates = useMemo(() => members.filter(member => member.playerId !== myPlayerId), [members, myPlayerId])
+  // 无队友时「指定队友存活」无从观察（服务端会退化为直接复活），故不呈现该选项；
+  // 队友中途离队令服务端策略退化时，此处同样回落展示「直接复活」——与实际起身行为一致。
+  const options = useMemo<OptionToggleOption<RespawnPolicy>[]>(() => [
+    { value: 'immediate', label: t('social.respawn.immediate') },
+    { value: 'all-allies-ready', label: t('social.respawn.allAlliesReady') },
+    ...(teammates.length > 0
+      ? [{ value: 'target-ally-alive' as const, label: t('social.respawn.targetAllyAlive') }]
+      : []),
+  ], [teammates.length, t])
+  const value = options.some(option => option.value === policy) ? policy : 'immediate'
+
+  return (
+    <div className="party-respawn-row">
+      <span className="party-respawn-label">{t('social.respawn.heading')}</span>
+      <OptionToggle
+        ariaLabel={t('social.respawn.heading')}
+        onChange={next => {
+          if (next !== 'target-ally-alive') {
+            setRespawnPolicy(next)
+            return
+          }
+          // 切到「指定队友存活」必须同时给出观察对象：沿用仍在队中的旧目标，否则取首位队友。
+          const retained = teammates.find(member => member.playerId === targetPlayerId) ?? teammates[0]
+          setRespawnPolicy('target-ally-alive', retained.playerId)
+        }}
+        options={options}
+        value={value}
+      />
+      {value === 'target-ally-alive' && teammates.length > 0 && (
+        <div className="party-respawn-target">
+          <DropdownSelect
+            label={t('social.respawn.targetPlaceholder')}
+            onSelect={playerId => { setRespawnPolicy('target-ally-alive', playerId) }}
+            options={teammates.map(member => ({ id: member.playerId, label: member.displayName }))}
+            value={targetPlayerId ?? ''}
+          />
+        </div>
+      )}
+      <span className="party-card-desc">{t('social.respawn.waitNote')}</span>
+    </div>
+  )
+})
+
 /** 在队视图：顶部操作条 + 档案摘要 + 槽位横排成员卡（银河奶牛式）；大厅与创建只在无队伍态出现。 */
 const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
   const t = useT()
@@ -638,6 +700,8 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
           {party.minValuation > 0 && ` · ${t('social.minValuationValue', { value: formatNumber(party.minValuation) })}`}
           {' · '}{t('social.memberCountOf', { count: party.members.length, slots: openSlots })}
         </p>
+        {/* 复活时机策略属本人设置：队内人人可改自己那条，不受队长权限限制。 */}
+        <RespawnPolicyField members={party.members} myPlayerId={myPlayerId} />
       </section>
 
       <section className="party-card">

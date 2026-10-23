@@ -499,7 +499,8 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
   useLayoutEffect(() => {
     const fill = fillRef.current
     if (!fill) return
-    if (!action || action.durationMilliseconds <= 0) {
+    // 复活等待条件态没有可推进的读条：进度恒为 0，且不排任何动画。
+    if (!action || action.durationMilliseconds <= 0 || action.kind === 'respawn-wait') {
       animationRef.current?.cancel()
       fill.style.transform = 'scaleX(0)'
       anchorRef.current = null
@@ -588,6 +589,11 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
     }
 
     badge.style.display = ''
+    // 复活等待条件态：读条已走完、条件未成立，只展示等待文案，不做倒计时推进。
+    if (action.kind === 'respawn-wait') {
+      if (badge.textContent !== action.name) badge.textContent = action.name
+      return
+    }
     const duration = Math.max(1, action.durationMilliseconds)
     // 基础攻击 (kind === 'attack') 统一显示本地化名称，其余直接展示服务端 wire 名称
     let baseName = action.name.replace(/\s*\([\d.]+s\/[\d.]+s\)/, '').trim()
@@ -634,6 +640,7 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
     action?.completesAtUnixMilliseconds,
     action?.durationMilliseconds,
     action?.elapsedMilliseconds,
+    action?.kind,
     action?.name,
     lastSyncPerformanceTime,
     role,
@@ -648,7 +655,8 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
  * 角色行动条组合容器 (ArenaActionBar)
  */
 function ArenaActionBar({ action, role }: { action?: CombatActionState | null; role: 'player' | 'enemy' }): React.JSX.Element {
-  const isRevivalAction = action?.kind === 'respawn'
+  // 复活读条与复活等待条件都只属于己方：敌方永不渲染这两态。
+  const isRevivalAction = action?.kind === 'respawn' || action?.kind === 'respawn-wait'
   const effectiveAction = role === 'enemy' && isRevivalAction ? null : action
   return (
     <div className={`arena-action-bar arena-action-bar--${role} arena-action-bar--${effectiveAction?.kind ?? 'wait'}`}>
@@ -1889,9 +1897,21 @@ function allyActionState(
   abilities: readonly CombatAbilityDefinition[],
   respawnDurationMilliseconds: number,
   respawnName: string,
+  respawnWaitName: string,
   phase?: ExpeditionProgress['phase'],
 ): CombatActionState | null {
   if (ally.hitpoints <= 0) {
+    // 读条已走完、策略条件未成立：respawnAtSeconds 已被推到下次复查时刻，
+    // 此时不再显示读条倒计时，改为不推进的等待态，等条件成立后自动回到读条/起身。
+    if (ally.respawnWaitingUntilSeconds != null) {
+      return {
+        kind: 'respawn-wait',
+        name: respawnWaitName,
+        durationMilliseconds: 1,
+        elapsedMilliseconds: 0,
+        completesAtUnixMilliseconds: null,
+      }
+    }
     if (ally.respawnAtSeconds == null) return null
     const duration = Math.max(1, respawnDurationMilliseconds)
     const remaining = Math.max(0, (ally.respawnAtSeconds - battleElapsedSeconds) * 1000)
@@ -2254,6 +2274,7 @@ export const CombatArena = memo(function CombatArena({
       || (expedition?.encounterId ? findEncounterInCatalog(encounters, expedition.encounterId)?.playerRespawnMilliseconds : undefined)
       || 180000)
     const respawnName = t('combat.arena.phaseDeath')
+    const respawnWaitName = t('combat.arena.respawnWaiting')
     return [...allies]
       .sort((a, b) => a.memberIndex - b.memberIndex)
       .slice(0, ALLY_DEPTH_SLOTS.length)
@@ -2270,7 +2291,7 @@ export const CombatArena = memo(function CombatArena({
         maxMp: Math.max(1, ally.maxManapoints ?? ally.manapoints),
         isSelf: ally.memberIndex === selfIndex,
         threat: ally.threat,
-        action: allyActionState(ally, battleElapsed, serverNow, abilities, respawnMs, respawnName, expedition?.phase),
+        action: allyActionState(ally, battleElapsed, serverNow, abilities, respawnMs, respawnName, respawnWaitName, expedition?.phase),
         attributes: ally.attributes ?? null,
         skills: ally.skills ?? null,
         equipment: ally.equipment ?? null,
@@ -2394,6 +2415,16 @@ export const CombatArena = memo(function CombatArena({
         // 倒地窗口：玩家阵亡原地复活，行动条改为复活读条（战斗时钟上的绝对截止点）。
         const respawnAt = expedition.playerRespawnAtSeconds
         if (respawnAt != null) {
+          // 读条已走完但复活策略条件未成立：改为不推进的等待态文案。
+          if (expedition.playerRespawnWaitingUntilSeconds != null) {
+            return {
+              kind: 'respawn-wait',
+              name: t('combat.arena.respawnWaiting'),
+              durationMilliseconds: 1,
+              elapsedMilliseconds: 0,
+              completesAtUnixMilliseconds: null,
+            }
+          }
           const duration = Math.max(1, (expedition.playerRespawnDurationSeconds ?? 0) * 1000)
           const remaining = Math.max(0, (respawnAt - battleElapsed) * 1000)
           return {

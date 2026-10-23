@@ -28,7 +28,7 @@ globalThis.sessionStorage = globalThis.window.sessionStorage
 globalThis.document = { documentElement: { lang: '' }, addEventListener: () => {}, removeEventListener: () => {} }
 const server = await createServer({ root: fileURLToPath(new URL('../frontend', import.meta.url)), server: { middlewareMode: true } })
 try {
-  const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } = await server.ssrLoadModule('/src/network/snapshot.ts')
+  const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto, SNAPSHOT_SCHEMA_VERSION } = await server.ssrLoadModule('/src/network/snapshot.ts')
   const { encodeJsonEnvelope, decodeEnvelope, decodeJsonPayload, WireMessageType, createRequestId } = await server.ssrLoadModule('/src/network/protocol.ts')
   const { GameClient } = await server.ssrLoadModule('/src/network/gameClient.ts')
   const { setSessionAccount } = await server.ssrLoadModule('/src/network/sessionState.ts')
@@ -75,7 +75,7 @@ try {
   }
   // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 38, sectionVersion: 1,
+    section: 'world', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1,
     data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
@@ -109,7 +109,7 @@ try {
     remainingRepeats: -1, completedRepeats: 4, executionKind: 'timed',
   }
   const queueSection = {
-    section: 'action_queue', schemaVersion: 38, sectionVersion: 1, data: [queueRow],
+    section: 'action_queue', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data: [queueRow],
     checksum: createHash('sha256').update(JSON.stringify([queueRow]), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
@@ -120,6 +120,27 @@ try {
   // 坏 checksum 必须在完整业务解码阶段失败，不能被合法 envelope 提前清零。
   const badChecksum = { ...delta, changedSections: [{ ...section, checksum: '0'.repeat(64) }] }
   await assert.rejects(decodePlayerSnapshotDeltaDto(badChecksum, current, Buffer.from(JSON.stringify(badChecksum))), /checksum|校验/i)
+
+  // settings 分段复活时机策略：服务端 System.Text.Json 把 CombatRespawnPolicy 序列化为枚举序号，
+  // 解码必须同时容忍数字与字符串两种形态，且观察对象只在「指定队友存活」下保留。
+  const respawnPatchFor = async (policyValue, stateVersion) => {
+    const data = { settings: { autoUseSlots: [], respawnPolicy: policyValue, respawnTargetPlayerId: '11111111-1111-1111-1111-111111111111' }, presence: 1 }
+    const body = {
+      playerId: current.playerId, stateVersion, lastSimulatedAt: '2026-09-14T00:00:06Z',
+      changedSections: [{
+        section: 'settings', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data,
+        checksum: createHash('sha256').update(JSON.stringify(data), 'utf8').digest('hex'),
+        updatedAt: '2026-09-14T00:00:06Z',
+      }],
+    }
+    return decodePlayerSnapshotDeltaDto(body, current, Buffer.from(JSON.stringify(body)))
+  }
+  const ordinalPatch = await respawnPatchFor(2, 6)
+  assert.equal(ordinalPatch.respawnPolicy, 'target-ally-alive', '枚举序号 2 必须解码为指定队友存活')
+  assert.equal(ordinalPatch.respawnTargetPlayerId, '11111111-1111-1111-1111-111111111111')
+  const stringPatch = await respawnPatchFor('all-allies-ready', 7)
+  assert.equal(stringPatch.respawnPolicy, 'all-allies-ready', '字符串形态必须同样可解码')
+  assert.equal(stringPatch.respawnTargetPlayerId, null, '非指定队友存活策略必须丢弃观察对象')
 
   // 真实坏帧计数：坏 JSON 计入失败，合法 Pong 不清零；完整业务 payload 成功应用后恢复。
   setSessionAccount({ accountId: 'account.test', playerId: 'player.test', account: 'account.test', name: '契约测试' })
@@ -248,7 +269,7 @@ try {
     },
   }
   const triggerSection = {
-    section: 'loadout', schemaVersion: 38, sectionVersion: 1, data: triggerLoadout,
+    section: 'loadout', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data: triggerLoadout,
     checksum: createHash('sha256').update(JSON.stringify(triggerLoadout), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:07Z',
   }
@@ -263,7 +284,7 @@ try {
     'ability.test': [{ dependency: 'enemy', condition: 'alive-count', comparator: 'greater-than-equal', value: 2 }],
   } }
   const setSection = {
-    section: 'loadout', schemaVersion: 38, sectionVersion: 1, data: setTrigger,
+    section: 'loadout', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data: setTrigger,
     checksum: createHash('sha256').update(JSON.stringify(setTrigger), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:08Z',
   }

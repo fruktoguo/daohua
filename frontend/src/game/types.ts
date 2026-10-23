@@ -26,6 +26,15 @@ export type TechniqueId = 'alchemy' | 'forging' | 'talisman' | 'enhancement' | '
 export type PresenceMode = 'online' | 'idle-offline' | 'fully-offline'
 
 /**
+ * 组队讨伐的复活时机策略（本人设置，settings 分段随快照下发；`respawn.policy` 命令载荷同值）：
+ * - 'immediate': 直接复活——读条走完立即满血起身（缺省）
+ * - 'all-allies-ready': 全员就绪——全部队友均存活或仍在复活读条中时才起身
+ * - 'target-ally-alive': 指定队友存活——仅当指定队友存活时才起身
+ * 读条走完但条件未成立时原地等待，硬上限为阵亡时刻 + 2 × 复活读条，到点强制起身。
+ */
+export type RespawnPolicy = 'immediate' | 'all-allies-ready' | 'target-ally-alive'
+
+/**
  * 行动队列条目运行状态：排队中 (queued)、运行中 (running)、受阻中断 (blocked)
  */
 export type QueueEntryStatus = 'queued' | 'running' | 'blocked'
@@ -49,9 +58,11 @@ export type ActionExecutionKind = 'timed' | 'combat-encounter' | 'travel'
 export type ExpeditionPhase = 'initial-search' | 'search' | 'combat' | 'respawn' | 'duel-pending' | 'duel'
 
 /**
- * 实时战斗动作类型：攻击 (attack)、施法 (cast)、控制 (control)、等待/调息 (wait)、复活读条 (respawn)
+ * 实时战斗动作类型：攻击 (attack)、施法 (cast)、控制 (control)、等待/调息 (wait)、
+ * 复活读条 (respawn)、复活等待条件 (respawn-wait)——后者读条已走完但复活策略条件未成立，
+ * 不再推进进度条，只展示等待态文案。
  */
-export type CombatActionKind = 'attack' | 'cast' | 'control' | 'wait' | 'respawn'
+export type CombatActionKind = 'attack' | 'cast' | 'control' | 'wait' | 'respawn' | 'respawn-wait'
 
 /**
  * 战斗流派/武道门类：御剑 (sword)、重刃 (blade)、符箓 (talisman)、五行奇术 (five-elements)、横练肉身 (body)
@@ -562,6 +573,9 @@ export interface ExpeditionAlly {
   pendingActionDurationSeconds: number
   /** 倒地复活截止点（战斗时钟秒）；存活或无复活窗口时为 null */
   respawnAtSeconds?: number | null
+  /** 复活等待条件标记（战斗时钟秒）：读条已走完但复活策略条件尚未成立时的下次复查时刻；
+   * 非 null 表示「正在等待复活条件」——此时 respawnAtSeconds 已被推到未来复查点，UI 不应再显示读条倒计时 */
+  respawnWaitingUntilSeconds?: number | null
   /** 开打冻结战斗属性面板（与玩家 combat.attributes 同一形状）；仅被观察目标命中时随快照携带 */
   attributes?: CombatAttributes | null
   /** 开打冻结功法槽位（CombatAbilitySlot 形状）；与 attributes 同帧一次性交付，未观察时为 null */
@@ -630,6 +644,9 @@ export interface ExpeditionProgress {
   playerRespawnAtSeconds?: number | null
   /** 原地复活读条总时长（秒）：倒地窗口内非空 */
   playerRespawnDurationSeconds?: number | null
+  /** 复活等待条件标记（战斗时钟秒）：读条已走完但本人复活策略条件尚未成立时的下次复查时刻；
+   * 非 null 表示「正在等待复活条件」——此时 playerRespawnAtSeconds 已被推到未来复查点，UI 不应再显示读条倒计时 */
+  playerRespawnWaitingUntilSeconds?: number | null
   /** 当前波次序号 */
   waveNumber?: number | null
   /** 玩家有效威胁值：基础实际值×(1+威胁增幅点数/100)，与目标判定同口径 */
@@ -2039,6 +2056,10 @@ export interface PlayerSnapshot {
   renameCooldownSeconds?: number
   /** 新手引导里程碑下标（settings 分段权威；0~6 进行中，7 完成/跳过终态） */
   tutorialStep: number
+  /** 本人组队讨伐复活时机策略（settings 分段权威；单人战斗恒按直接复活处理） */
+  respawnPolicy: RespawnPolicy
+  /** 「指定队友存活」策略的观察对象玩家 ID；未指定为 null（该策略退化为直接复活） */
+  respawnTargetPlayerId: string | null
 }
 
 /**
@@ -2069,6 +2090,10 @@ export interface PlayerPatch {
   createdAtUnixSeconds?: number
   renameCooldownSeconds?: number
   tutorialStep?: number
+  /** 本人复活时机策略（settings 分段变更时下发） */
+  respawnPolicy?: RespawnPolicy
+  /** 「指定队友存活」的观察对象玩家 ID；未指定为 null */
+  respawnTargetPlayerId?: string | null
 }
 
 /**

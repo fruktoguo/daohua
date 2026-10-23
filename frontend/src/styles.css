@@ -9176,6 +9176,35 @@ input[type="checkbox"] {
   font-size: 12px;
 }
 
+/* 本人复活时机策略行（§7.9.4.1）：本人设置，队内人人可改，故按普通设置行而非队长区呈现。 */
+.party-respawn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(201, 180, 109, 0.15);
+}
+
+.party-respawn-label {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+/* 「指定队友存活」联动的队友下拉：与 Toggle 同高、限宽避免撑爆头部操作区。 */
+.party-respawn-target {
+  display: flex;
+  min-width: 120px;
+  max-width: 200px;
+  flex: 0 1 160px;
+}
+
+.party-respawn-target .party-select {
+  flex: 1 1 auto;
+}
+
 .party-fields {
   display: flex;
   flex-wrap: wrap;

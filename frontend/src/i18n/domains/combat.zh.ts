@@ -17,6 +17,7 @@ export const combatZh = {
       glyphSpeed: '速',
       buffsAria: '当前状态效果',
       phaseDeath: '复活中',
+      respawnWaiting: '等待复活条件',
       phaseSearch: '寻找中',
       phaseHunt: '搜寻目标',
       sigilSearch: '识',

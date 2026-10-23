@@ -41,6 +41,7 @@ import type {
   PlayerSnapshot,
   QueueEntry,
   QueueState,
+  RespawnPolicy,
   Stats,
   TraitProgress,
   TravelSegment,
@@ -49,7 +50,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 38
+export const SNAPSHOT_SCHEMA_VERSION = 39
 
 type JsonObject = Record<string, unknown>
 
@@ -578,6 +579,10 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const playerRespawnDurationSeconds = row.playerRespawnDurationSeconds === null || row.playerRespawnDurationSeconds === undefined
     ? null
     : finiteNumber(row.playerRespawnDurationSeconds, `行动 ${actionId} 的 playerRespawnDurationSeconds`)
+  // 复活等待条件标记：读条已走完但策略条件尚未成立时的下次复查时刻；null 表示未在等待。
+  const playerRespawnWaitingUntilSeconds = row.playerRespawnWaitingUntilSeconds === null || row.playerRespawnWaitingUntilSeconds === undefined
+    ? null
+    : finiteNumber(row.playerRespawnWaitingUntilSeconds, `行动 ${actionId} 的 playerRespawnWaitingUntilSeconds`)
   const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 outcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 outcome 枚举值无效。`)
 
@@ -645,6 +650,10 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
           respawnAtSeconds: ally.respawnAtSeconds === null || ally.respawnAtSeconds === undefined
             ? null
             : finiteNumber(ally.respawnAtSeconds, `${label}.respawnAtSeconds`),
+          // 复活等待条件标记：非 null 表示读条已走完、正在等待策略条件。
+          respawnWaitingUntilSeconds: ally.respawnWaitingUntilSeconds === null || ally.respawnWaitingUntilSeconds === undefined
+            ? null
+            : finiteNumber(ally.respawnWaitingUntilSeconds, `${label}.respawnWaitingUntilSeconds`),
           attributes: ally.attributes === null || ally.attributes === undefined
             ? null
             : mapCombatAttributes(ally.attributes, `${label}.attributes`),
@@ -673,6 +682,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     enemies,
     playerRespawnAtSeconds,
     playerRespawnDurationSeconds,
+    playerRespawnWaitingUntilSeconds,
     waveNumber,
     playerThreat,
     playerBuffs: mapCombatBuffs(row.playerBuffs, `行动 ${actionId} 的 playerBuffs`),
@@ -917,6 +927,32 @@ function mapStats(value: unknown): Stats {
 function enumValue<T extends string>(value: unknown, values: readonly T[], name: string): T {
   if (typeof value !== 'string' || !values.includes(value as T)) throw new Error(`${name} 枚举无效。`)
   return value as T
+}
+
+/** 复活时机策略三值，下标即服务端 CombatRespawnPolicy 枚举序号（immediate=0 / all-allies-ready=1 / target-ally-alive=2） */
+const RESPAWN_POLICIES: readonly RespawnPolicy[] = ['immediate', 'all-allies-ready', 'target-ally-alive']
+
+/** settings 分段中的复活策略两项解码（策略与观察对象必须在同一处解析才能保证二者互相约束） */
+function mapSettingsRespawn(settings: JsonObject, base?: { respawnPolicy: RespawnPolicy; respawnTargetPlayerId: string | null }): {
+  respawnPolicy: RespawnPolicy
+  respawnTargetPlayerId: string | null
+} {
+  if (!('respawnPolicy' in settings) && !('respawnTargetPlayerId' in settings)) {
+    // 旧版服务端/快照未携带该两项：沿用既有值（全量首帧缺省为直接复活）。
+    return { respawnPolicy: base?.respawnPolicy ?? 'immediate', respawnTargetPlayerId: base?.respawnTargetPlayerId ?? null }
+  }
+  // 同时容忍字符串与数字两种线上形态（System.Text.Json 默认把 enum 序列化为 0/1/2 序号），
+  // 非法值一律回落「直接复活」——策略读错只会让复活更早，不得让整帧快照解码失败。
+  const raw = settings.respawnPolicy
+  const respawnPolicy = (RESPAWN_POLICIES as readonly unknown[]).includes(raw)
+    ? raw as RespawnPolicy
+    : (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 && raw < RESPAWN_POLICIES.length ? RESPAWN_POLICIES[raw] : 'immediate')
+  // 观察对象只在「指定队友存活」下有意义：其余策略（含服务端退化）一律丢弃。
+  const target = settings.respawnTargetPlayerId
+  const respawnTargetPlayerId = respawnPolicy === 'target-ally-alive' && typeof target === 'string' && target.length > 0
+    ? target
+    : null
+  return { respawnPolicy, respawnTargetPlayerId }
 }
 
 function mapCombat(value: unknown): { resources: CombatResourceState; attributes: CombatAttributes } {
@@ -1488,6 +1524,7 @@ export async function decodePlayerSnapshotDto(
     isPendingBreakthrough: statsRealm.expToNext > 0 && statsRealm.expToNext - statsRealm.currentLayerExp <= 0.0001 && stats.experience > 0,
     renameCooldownSeconds: Math.max(0, renameCooldownUntil - serverTime),
     tutorialStep: numberValue(settings.tutorialStep, 0),
+    ...mapSettingsRespawn(settings),
   }
 }
 
@@ -1540,6 +1577,10 @@ export async function decodePlayerSnapshotDeltaDto(
     }
     patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)
     patch.tutorialStep = numberValue(settings.tutorialStep, 0)
+    Object.assign(patch, mapSettingsRespawn(settings, {
+      respawnPolicy: current.respawnPolicy,
+      respawnTargetPlayerId: current.respawnTargetPlayerId,
+    }))
   }
   if (sections.has('progression')) {
     patch.stats = mapStats(sections.get('progression'))

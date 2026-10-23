@@ -1,4 +1,4 @@
-import type { CombatAttributes } from '../game/types'
+import type { CombatAttributes, RespawnPolicy } from '../game/types'
 
 /**
  * 道化太初客户端二进制信封协议（DHW1 = DaoHua Wire v1）。
@@ -291,6 +291,17 @@ export interface CommandRequest {
   payload: unknown
   /** 乐观并发校验的期望状态版本；缺省/0 表示不校验 */
   expectedStateVersion?: number
+}
+
+/**
+ * respawn.policy 命令载荷：本人复活时机策略（settings 分段随之变更并推增量快照）。
+ * targetPlayerId 仅在 policy='target-ally-alive' 时下发，且必须是当前队伍中的其他成员。
+ */
+export interface RespawnPolicyCommandPayload {
+  /** 复活时机策略（三值固定字符串，服务端严格校验） */
+  policy: RespawnPolicy
+  /** 「指定队友存活」的观察对象玩家 ID；其余策略省略 */
+  targetPlayerId?: string
 }
 
 /** 命令回执快照形态：与服务端 CommandResultSnapshotForms 严格一一对应 */

@@ -8,9 +8,11 @@ import type {
   PartyLobbyDto,
   PartySeekerDto,
   PlayerCardDto,
+  RespawnPolicyCommandPayload,
   SocialStateDto,
   ValuationBreakdownDto,
 } from '../network/protocol'
+import type { RespawnPolicy } from './types'
 import { gameClient } from '../network/gameClient'
 import { useGameStore } from './gameStore'
 
@@ -86,6 +88,12 @@ interface SocialStore {
    * 会话存续期间修改由服务端裁决散场重建。非队长/非讨伐/同值不派发，返回 false。
    */
   setPartyPvp: (pvpEnabled: boolean) => boolean
+  /**
+   * 本人设定组队讨伐的复活时机策略（respawn.policy 命令，写本人 settings，不影响队友）。
+   * 校验：策略为三值之一；`target-ally-alive` 必须指定当前队伍中的其他成员（不能是自己）。
+   * 目标无变化时不派发，返回 false。
+   */
+  setRespawnPolicy: (policy: RespawnPolicy, targetPlayerId?: string | null) => boolean
 }
 
 const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId'> = {
@@ -180,5 +188,20 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
     if (party.activityKind !== 'combat') return false
     if (party.pvpEnabled === pvpEnabled) return false
     return gameClient.sendSocialAction('party.update', undefined, undefined, { party: { pvpEnabled } })
+  },
+  setRespawnPolicy: (policy, targetPlayerId) => {
+    const myId = gameClient.playerId
+    // 指定队友存活：目标必须是当前队伍中的其他成员（自己与非队友都不可作为观察对象）；
+    // 其余两支是纯本人设置，不依赖队伍状态。
+    const target = policy === 'target-ally-alive' ? (targetPlayerId ?? null) : null
+    if (policy === 'target-ally-alive') {
+      const members = get().party?.members ?? []
+      if (target === null || target === myId || !members.some(member => member.playerId === target)) return false
+    }
+    // 与服务端下发状态同值时不派发，避免每次点击都产生一次无意义写盘与快照推送。
+    const current = useGameStore.getState()
+    if (current.respawnPolicy === policy && current.respawnTargetPlayerId === target) return false
+    const payload: RespawnPolicyCommandPayload = target === null ? { policy } : { policy, targetPlayerId: target }
+    return gameClient.sendCommand('respawn.policy', payload)
   },
 }))
