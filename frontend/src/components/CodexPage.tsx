@@ -882,7 +882,7 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
           </div>
           {/* 物品背景故事描述 */}
           {metadata.description && (
-            <div style={{ paddingTop: 6, borderTop: '1px solid rgba(201, 180, 109, 0.15)', color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+            <div style={{ paddingTop: 6, borderTop: '1px solid rgba(201, 180, 109, 0.15)', color: 'var(--text-dim)', fontSize: 'var(--text-sm)', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
               {metadata.description}
             </div>
           )}
@@ -1060,7 +1060,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
 
           {/* 后面：物品背景故事描述 */}
           {metadata.description && (
-            <div style={{ paddingTop: 6, borderTop: '1px solid rgba(201, 180, 109, 0.15)', color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.5 }}>
+            <div style={{ paddingTop: 6, borderTop: '1px solid rgba(201, 180, 109, 0.15)', color: 'var(--text-dim)', fontSize: 'var(--text-sm)', lineHeight: 1.5 }}>
               {metadata.description}
             </div>
           )}
@@ -1137,7 +1137,7 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
       description={
         <div>
           {building.description && (
-            <div style={{ marginBottom: 6, color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.5 }}>
+            <div style={{ marginBottom: 6, color: 'var(--text-dim)', fontSize: 'var(--text-sm)', lineHeight: 1.5 }}>
               {building.description}
             </div>
           )}

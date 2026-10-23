@@ -2215,7 +2215,7 @@
   background: transparent;
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -2405,7 +2405,7 @@
   background: rgba(7, 6, 4, 0.95);
   border: 1px solid currentColor;
   color: var(--jade);
-  font-size: 7.5px;
+  font-size: var(--text-3xs);
   font-weight: 800;
   line-height: 1;
   padding: 1px 2px;
@@ -2476,7 +2476,7 @@
 .arena-resource-floats em.is-dodge {
   color: #2dd4bf;
   font-family: -apple-system, "SF Pro Rounded", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 14.5px;
+  font-size: var(--text-md);
   font-style: normal;
   letter-spacing: 1.5px;
   text-shadow:
@@ -2502,7 +2502,7 @@
 
 .arena-resource-floats em.is-parry {
   color: #93c5fd;
-  font-size: 13.5px;
+  font-size: var(--text-base);
   letter-spacing: -0.5px;
   opacity: 0.92;
   text-shadow:
@@ -3404,7 +3404,7 @@
   background: transparent;
   color: #fef08a;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
@@ -3555,7 +3555,7 @@
   writing-mode: vertical-rl;
   text-orientation: upright;
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 2px;
   color: currentColor;
@@ -4646,7 +4646,7 @@
   background: rgba(7, 6, 4, 0.92);
   border: 1px solid var(--gold-bright);
   color: var(--gold-bright);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   padding: 0 5px;
   border-radius: 3px;
@@ -4667,7 +4667,7 @@
 .arena-life-target-total {
   display: flex;
   justify-content: space-between;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
 }
 
 .arena-life-target-title span,
@@ -4703,7 +4703,7 @@
 }
 
 .arena-life-input-chip {
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   color: #d1d5db;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);

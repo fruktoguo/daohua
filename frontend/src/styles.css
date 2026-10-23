@@ -25,6 +25,35 @@
   --sidebar-width: 250px;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
+
+  /* Typography Tokens: 阶梯字号标准尺度 */
+  --text-3xs: 8px;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 20px;
+  --text-hero: 24px;
+
+  /* Typography Tokens: 功能语义化别名 */
+  --font-size-micro: var(--text-3xs);
+  --font-size-badge: var(--text-2xs);
+  --font-size-caption: var(--text-xs);
+  --font-size-sub: var(--text-sm);
+  --font-size-body: var(--text-base);
+  --font-size-regular: var(--text-md);
+  --font-size-title: var(--text-lg);
+  --font-size-header: var(--text-xl);
+  --font-size-display: var(--text-2xl);
+  --font-size-hero: var(--text-hero);
+
+  /* 常用字体族别名 */
+  --font-number: "JetBrains Mono", Consolas, monospace;
+  --font-numeric: "JetBrains Mono", Consolas, monospace;
+  --font-kaiti: "Kaiti SC", STKaiti, KaiTi, serif;
 }
 
 * {
@@ -45,12 +74,13 @@ body,
 body {
   min-width: 320px;
   overflow: hidden;
+  overscroll-behavior-y: none;
   color: var(--text);
   background:
     radial-gradient(1200px 700px at 50% -10%, #201e18 0%, transparent 60%),
     radial-gradient(900px 600px at 50% 115%, #1c1a14 0%, transparent 55%),
     var(--bg);
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -403,7 +433,7 @@ input[type="checkbox"] {
   margin: 0;
   color: var(--gold);
   font-family: "Kaiti SC", STKaiti, KaiTi, "Noto Serif SC", serif;
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: var(--font-weight-regular);
   text-shadow: 0 0 18px rgba(201, 180, 109, 0.2);
 }
@@ -412,7 +442,7 @@ input[type="checkbox"] {
   margin: 0;
   flex-basis: 100%;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .topbar {
@@ -466,7 +496,7 @@ input[type="checkbox"] {
   overflow: hidden;
   color: var(--text);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
-  font-size: 15px;
+  font-size: var(--text-lg);
   text-overflow: ellipsis;
 }
 
@@ -475,7 +505,7 @@ input[type="checkbox"] {
   border: 1px solid var(--gold-dim);
   color: var(--gold-bright);
   background: rgba(201, 180, 109, 0.07);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .connection-dot {
@@ -518,7 +548,7 @@ input[type="checkbox"] {
   gap: 4px;
   min-width: 96px;
   padding: 1px 0;
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1.35;
 }
 
@@ -532,14 +562,14 @@ input[type="checkbox"] {
 
 .connection-status-tooltip-label {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .connection-status-tooltip-value {
   color: var(--text-bright);
   font-family: var(--font-number);
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .connection-status-tooltip-value--online {
@@ -604,7 +634,7 @@ input[type="checkbox"] {
   justify-content: center;
   z-index: 1;
   color: #f0f9ff;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.6px;
@@ -633,12 +663,12 @@ input[type="checkbox"] {
 
 .wallet-label {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .wallet-amount {
   color: var(--gold-bright);
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3607,7 +3637,7 @@ input[type="checkbox"] {
 
 .action-card-lock-icon {
   margin-right: 2px;
-  font-size: 8.5px;
+  font-size: var(--text-3xs);
 }
 
 .action-card[data-rarity="mundane"] {
@@ -7176,7 +7206,7 @@ input[type="checkbox"] {
 
 .insight-realm-diamond-text {
   transform: rotate(-45deg);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 900;
   line-height: 1;
   font-family: serif, "Songti SC", "SimSun";
@@ -7836,7 +7866,7 @@ input[type="checkbox"] {
   padding: 2px 8px;
   background: rgba(201, 180, 109, 0.12);
   border: 1px solid rgba(201, 180, 109, 0.3);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--gold-bright);
   display: flex;
   align-items: center;
@@ -8123,14 +8153,14 @@ input[type="checkbox"] {
 }
 
 .unit-number-tooltip-label {
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: var(--font-weight-medium);
   opacity: 0.85;
   color: var(--gold-light, #e8d69a);
 }
 
 .unit-number-tooltip-split {
-  font-size: 12.5px;
+  font-size: var(--text-base);
   font-weight: 700;
   color: #fffdf5;
   letter-spacing: 0.5px;
@@ -8485,7 +8515,7 @@ input[type="checkbox"] {
 }
 
 .avatar-tile-name {
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--gold-bright, #f1df9a);
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -8578,7 +8608,7 @@ input[type="checkbox"] {
 
 .modal-form-hint {
   margin: 4px 0 0;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
 }
 
@@ -8820,7 +8850,7 @@ input[type="checkbox"] {
 
 .saved-account-name {
   color: var(--gold-bright);
-  font-size: 13.5px;
+  font-size: var(--text-base);
 }
 
 .saved-account-id {
@@ -10329,7 +10359,7 @@ input[type="checkbox"] {
   width: 48px;
   transform: rotate(45deg);
   text-align: center;
-  font-size: 7.5px;
+  font-size: var(--text-3xs);
   font-weight: 800;
   letter-spacing: 0.5px;
   line-height: 12px;

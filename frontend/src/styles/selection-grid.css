@@ -303,7 +303,7 @@
   color: #080806;
   background: var(--item-accent);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-  font-size: 6px;
+  font-size: var(--text-3xs);
   font-weight: 700;
   line-height: 1.2;
   text-align: center;
@@ -314,7 +314,7 @@
 .item-tile .item-corner {
   max-width: calc(100% - 10px);
   padding: 1px 4px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.2;
   /* 同丝带/瓦片：不做 transition，高亮瞬时切换 */
 }
@@ -402,7 +402,7 @@
   overflow-wrap: anywhere;
   color: var(--text);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: var(--font-weight-regular);
   line-height: 1.2;
   text-align: center;
@@ -484,7 +484,7 @@
   place-self: center;
   aspect-ratio: 1 / 1;
   padding: 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .item-grid-picker-card,
@@ -526,7 +526,7 @@
   color: var(--gold-light, #e8d08c);
   background: linear-gradient(180deg, rgba(24, 22, 16, 0.96) 0%, rgba(9, 10, 8, 0.96) 100%);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 4px rgba(201, 180, 109, 0.12);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 500;
   line-height: 1.25;
   letter-spacing: 0.5px;
@@ -572,7 +572,7 @@
   min-height: 28px;
   padding: 4px 6px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   bottom: 100%;
   left: 50%;
@@ -597,7 +597,7 @@
     max-width: 100%;
     padding: 4px 4px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 }
 
@@ -701,7 +701,7 @@
     inset 0 0 12px color-mix(in srgb, var(--duration-accent) 18%, transparent);
   border-radius: 7px;
   font-family: Arial, sans-serif;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 3px #000;
@@ -843,7 +843,7 @@
 
 .slot-group-label {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .slot-group--reserved {
@@ -908,7 +908,7 @@
   border: 1px dashed var(--gold-dim);
   color: var(--text-dim);
   background: rgba(201, 180, 109, 0.025);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 :is(
@@ -940,7 +940,7 @@
   border-radius: 999px;
   color: var(--gold-bright);
   background: rgba(7, 8, 6, 0.9);
-  font-size: 6px;
+  font-size: var(--text-3xs);
   line-height: 11px;
   transform-origin: top right;
 }
@@ -953,7 +953,7 @@
 
 /* 装配等级静态徽标数字（等级恒等于已参悟等级，不可编辑） */
 .combat-ability-level-value {
-  font-size: 7px;
+  font-size: var(--text-3xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -997,7 +997,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1009,7 +1009,7 @@
   border: 1px solid var(--gold-dim);
   color: var(--text);
   background: rgba(201, 180, 109, 0.04);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 /* 展开选择弹窗时顶部旁边展示的大号触发条件按钮（高度 32px/触屏 36px） */
@@ -1024,7 +1024,7 @@
   color: var(--gold-light, #e8d08c);
   background: linear-gradient(180deg, rgba(32, 28, 18, 0.96) 0%, rgba(14, 15, 12, 0.96) 100%);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 6px rgba(201, 180, 109, 0.15);
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 500;
   line-height: 1.25;
   letter-spacing: 0.5px;
@@ -1047,7 +1047,7 @@
 }
 
 .candidate-picker-condition-icon {
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1;
 }
 
@@ -1059,7 +1059,7 @@
   .candidate-picker-condition-btn {
     min-height: 36px;
     padding: 6px 16px;
-    font-size: 13px;
+    font-size: var(--text-base);
   }
 }
 .candidate-picker-grid {
@@ -1113,7 +1113,7 @@
   box-shadow:
     0 3px 9px rgba(0, 0, 0, 0.62),
     0 0 7px rgba(201, 180, 109, 0.16);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1171,7 +1171,7 @@
   box-shadow:
     0 3px 9px rgba(0, 0, 0, 0.62),
     0 0 7px rgba(201, 180, 109, 0.16);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1210,7 +1210,7 @@
   max-width: 100%;
   overflow: hidden;
   color: var(--text-dim);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1218,7 +1218,7 @@
 .choice-menu-trigger strong {
   max-width: 100%;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .choice-menu-modal {
@@ -1232,13 +1232,13 @@
 
 .choice-menu-modal-header span {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .choice-menu-modal-header h2 {
   margin: 2px 0 0;
   color: var(--gold-bright);
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: var(--font-weight-regular);
 }
 

@@ -120,21 +120,21 @@
 .tutorial-card[data-placement="left"] .tutorial-arrow { right: -7px; top: 50%; margin-top: -6px; border-left: none; border-bottom: none; }
 
 .tutorial-kicker {
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.12em;
   color: var(--gold);
 }
 
 .tutorial-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-weight: var(--font-weight-medium);
   color: var(--text);
 }
 
 .tutorial-body {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: 1.7;
   color: var(--text-dim);
   white-space: pre-line;
@@ -161,7 +161,7 @@
 }
 
 .tutorial-stage-rewards-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--gold-dim, var(--text-dim));
   letter-spacing: 0.05em;
 }
@@ -191,7 +191,7 @@
 .tutorial-btn {
   padding: 6px 14px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-sm);
   border-radius: 6px;
   border: 1px solid var(--gold-dim);
   background: transparent;
@@ -211,7 +211,7 @@
 .tutorial-btn--primary:hover { background: var(--gold-bright); border-color: var(--gold-bright); color: #1a150c; }
 
 .tutorial-waiting {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--gold);
   letter-spacing: 0.08em;
   animation: tutorial-waiting-blink 1.4s ease-in-out infinite;
@@ -234,9 +234,9 @@
     padding: 10px 14px 9px;
     gap: 5px;
   }
-  .tutorial-kicker { font-size: 10px; letter-spacing: 0.08em; }
-  .tutorial-title { font-size: 14px; }
-  .tutorial-body { font-size: 12px; line-height: 1.55; }
+  .tutorial-kicker { font-size: var(--text-2xs); letter-spacing: 0.08em; }
+  .tutorial-title { font-size: var(--text-md); }
+  .tutorial-body { font-size: var(--text-sm); line-height: 1.55; }
   .tutorial-stage-rewards { display: none; }
   .tutorial-progress { height: 2px; }
   .tutorial-btn { padding: 5px 12px; }

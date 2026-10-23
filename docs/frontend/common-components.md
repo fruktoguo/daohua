@@ -553,3 +553,29 @@
 
 4. **常驻面板惰性挂载，首次可见才构建**
    - 非首屏页签的大体量面板（全图索引、观测器、测量）用 `hasBeenVisible` 范式延迟挂载，此后常驻不卸载（保留用户状态），范例见 `CombatDetailsPage`（战场）与 `MapPage`（大地图）。
+
+---
+
+## 37. 全局 Typography 排版与字号设计规范 (Design Tokens)
+
+所有组件与样式**严禁散落硬编码像素值**（如 `11px`、`12px`、`13px`），更禁止随意书写微调离散值（如 `10.5px`、`11.5px`、`12.5px`、`0.85rem`）。凡定义字号，必须统一使用 `frontend/src/styles.css` `:root` 中声明的标准 Design Tokens。
+
+### 37.1 阶梯尺度与语义功能查找表
+
+| 尺度 Token | 像素等值 | 语义功能 Token | 规范适用场景（什么情况下使用） |
+| :--- | :--- | :--- | :--- |
+| `--text-3xs` | `8px` | `--font-size-micro` | 极小装备强化角标 (+20)、紧凑压缩微标 |
+| `--text-2xs` | `10px` | `--font-size-badge` | 胶囊角标、状态微标签、进度条百分比微字、材料堆叠数量标签 |
+| `--text-xs` | `11px` | `--font-size-caption` | 属性名 Label、次要提示副文本、Hover 浮层小字（配合 `--text-dim`） |
+| `--text-sm` | `12px` | `--font-size-sub` | 列表项、日志消息正文、次级按钮、副卡片内容、下拉框选择项 |
+| `--text-base` | `13px` | `--font-size-body` | 紧凑正文、主要按钮、选择器选项、Tab 页签、表单输入框 |
+| `--text-md` | `14px` | `--font-size-regular` | 页面基准正文、全局 `body` 默认字号 |
+| `--text-lg` | `16px` | `--font-size-title` | 卡片标题、模块二级小标题、金币与灵石重点金额高亮 |
+| `--text-xl` | `18px` | `--font-size-header` | 页面级主标题、全屏/大模态弹窗 Header、境界突破标题 |
+| `--text-2xl` | `20px` | `--font-size-display` | 核心大标题、核心境界大字 |
+| `--text-hero` | `24px` | `--font-size-hero` | 战场特大暴击跳字、开卷立绘震撼大字 |
+
+### 37.2 字重与字体规范联动
+- **标准字重**：`font-weight: var(--font-weight-regular)` (暗色 400 / 浅色 600)、`font-weight: var(--font-weight-medium)` (暗色 500 / 浅色 600)。
+- **等宽数值字体**：`font-family: var(--font-number)` / `var(--font-numeric)`（数字、收益率、坐标、时间倒计时一律使用）。
+- **仙侠古典楷体**：`font-family: var(--font-kaiti)`（境界名、功法卷轴、空槽提示等古典仙侠语境）。
