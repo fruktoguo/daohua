@@ -582,6 +582,56 @@ public sealed class ParticipationAdapterIntegrationTests
             CancellationToken cancellationToken = default) => fixture.Runtime.EndAsync(sessionId, at, reason, cancellationToken);
     }
 
+    /// <summary>
+    /// 本人离队时复活策略重置为直接复活（§7.9.4.1）：策略依赖「与谁同队」这一前提，
+    /// 归属一变就不得沿用旧选择；此处走真实 party.leave 链路验证接线。
+    /// </summary>
+    [Fact]
+    public async Task LeavingPartyResetsOwnRespawnPolicy()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var leaver = fixture.Players[1];
+
+        await fixture.Adapter.MutateOwnedAsync(leaver,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.AllAlliesReady));
+        Assert.Equal(CombatRespawnPolicy.AllAlliesReady, fixture.Adapter.TryGetLoaded(leaver)!.State.Settings.RespawnPolicy);
+
+        Assert.True((await social.ApplyAsync(leaver,
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyLeave))).Success);
+
+        Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(leaver)!.State.Settings.RespawnPolicy);
+        Assert.Null(fixture.Adapter.TryGetLoaded(leaver)!.State.Settings.RespawnTargetPlayerId);
+    }
+
+    /// <summary>
+    /// 被指名的队友离队时，指名者的策略重置为直接复活——等待条件已永不可能成立；
+    /// 与本人无关的成员离队则不得改写本人策略。
+    /// </summary>
+    [Fact]
+    public async Task DepartingTargetResetsNominatorButUnrelatedDepartureDoesNot()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var nominator = fixture.Players[0];
+        var target = fixture.Players[2];
+
+        await fixture.Adapter.MutateOwnedAsync(nominator,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, target));
+        // 旁观者把策略设为「全员就绪」，任何人的离队都不应影响它。
+        await fixture.Adapter.MutateOwnedAsync(fixture.Players[1],
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.AllAlliesReady));
+
+        Assert.True((await social.ApplyAsync(target,
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyLeave))).Success);
+
+        // 指名者：观察对象离队 → 重置。
+        Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(nominator)!.State.Settings.RespawnPolicy);
+        Assert.Null(fixture.Adapter.TryGetLoaded(nominator)!.State.Settings.RespawnTargetPlayerId);
+        // 旁观者：离队的不是它的观察对象（它本就没有观察对象）→ 不重置。
+        Assert.Equal(CombatRespawnPolicy.AllAlliesReady, fixture.Adapter.TryGetLoaded(fixture.Players[1])!.State.Settings.RespawnPolicy);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(NpgsqlDataSource source, DateTimeOffset startedAt, Guid[] players, bool owned)
