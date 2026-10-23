@@ -197,6 +197,18 @@
         "dropChance": 0.05,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.sui-gang",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.sui-gang",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [

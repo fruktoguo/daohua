@@ -1130,6 +1130,8 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.ape-heart': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
   'item.tome.tide': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.tide': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.sui-gang': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.sui-gang': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   // 一阶武器 / 护具 / 法宝（配表 equipment 全量对齐）
   'equipment.xuantie-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
   'equipment.piyan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
@@ -1393,7 +1395,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'weapon',
     tier: 1,
     baseStatRatios: { spellAttack: 0.2 },
-    flatStats: { spellAttack: 10, accuracy: 10, skillBonusPoints: 5 },
+    flatStats: { spellAttack: 10, accuracy: 10, spellDamageBonusPoints: 5, skillBonusPoints: 5 },
   },
   'equipment.suxin-zither': {
     equipmentId: 'equipment.suxin-zither',
@@ -1401,7 +1403,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'weapon',
     tier: 1,
     baseStatRatios: { spellAttack: 0.14 },
-    flatStats: { spellAttack: 8, manapointRegen: 2, healingBonusPoints: 50, skillBonusPoints: 5 },
+    flatStats: { spellAttack: 8, manapointRegen: 2, healingBonusPoints: 50, spellDamageBonusPoints: 5, skillBonusPoints: 5 },
   },
   'equipment.shufa-scarf': {
     equipmentId: 'equipment.shufa-scarf',
@@ -1457,7 +1459,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'head',
     tier: 1,
     baseStatRatios: { spellAttack: 0.08 },
-    flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2 },
+    flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
   'equipment.suma-robe': {
     equipmentId: 'equipment.suma-robe',
@@ -1465,7 +1467,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'armor',
     tier: 1,
     baseStatRatios: { spellAttack: 0.16 },
-    flatStats: { spellAttack: 9, accuracy: 5, criticalChance: 3, maxHitpoints: 3, spellResistance: 4, spellDamageBonusPoints: 2 },
+    flatStats: { spellAttack: 9, accuracy: 5, criticalChance: 3, maxHitpoints: 3, spellResistance: 4, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
   'equipment.xingqi-pants': {
     equipmentId: 'equipment.xingqi-pants',
@@ -1473,7 +1475,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'legs',
     tier: 1,
     baseStatRatios: { spellAttack: 0.08 },
-    flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2 },
+    flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
   'equipment.taomu-talisman': {
     equipmentId: 'equipment.taomu-talisman',
@@ -1497,7 +1499,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'off-hand',
     tier: 1,
     baseStatRatios: { spellAttack: 0.1 },
-    flatStats: { spellAttack: 6, accuracy: 6, skillBonusPoints: 4 },
+    flatStats: { spellAttack: 6, accuracy: 6, spellDamageBonusPoints: 4, skillBonusPoints: 4 },
   },
   'equipment.tiepi-guard': {
     equipmentId: 'equipment.tiepi-guard',
@@ -1536,7 +1538,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'weapon',
     tier: 2,
     baseStatRatios: { spellAttack: 0.28 },
-    flatStats: { spellAttack: 14, accuracy: 14, skillBonusPoints: 15 },
+    flatStats: { spellAttack: 14, accuracy: 14, spellDamageBonusPoints: 15, skillBonusPoints: 15 },
   },
   'equipment.songfeng-zither': {
     equipmentId: 'equipment.songfeng-zither',
@@ -1544,7 +1546,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'weapon',
     tier: 2,
     baseStatRatios: { spellAttack: 0.18 },
-    flatStats: { spellAttack: 12, manapointRegen: 3, healingBonusPoints: 50, skillBonusPoints: 15 },
+    flatStats: { spellAttack: 12, manapointRegen: 3, healingBonusPoints: 50, spellDamageBonusPoints: 15, skillBonusPoints: 15 },
   },
   'equipment.xuantie-dart': {
     equipmentId: 'equipment.xuantie-dart',
@@ -1560,7 +1562,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'off-hand',
     tier: 2,
     baseStatRatios: { spellAttack: 0.14 },
-    flatStats: { spellAttack: 8, accuracy: 10, skillBonusPoints: 6 },
+    flatStats: { spellAttack: 8, accuracy: 10, spellDamageBonusPoints: 6, skillBonusPoints: 6 },
   },
   'equipment.xuanjia-guard': {
     equipmentId: 'equipment.xuanjia-guard',
@@ -1631,7 +1633,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'head',
     tier: 2,
     baseStatRatios: { spellAttack: 0.12 },
-    flatStats: { spellAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, spellResistance: 4, spellDamageBonusPoints: 2 },
+    flatStats: { spellAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, spellResistance: 4, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
   'equipment.pichen-shirt': {
     equipmentId: 'equipment.pichen-shirt',
@@ -1639,7 +1641,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'armor',
     tier: 2,
     baseStatRatios: { spellAttack: 0.2 },
-    flatStats: { spellAttack: 12, accuracy: 6, criticalChance: 4, maxHitpoints: 6, spellResistance: 8, spellDamageBonusPoints: 2 },
+    flatStats: { spellAttack: 12, accuracy: 6, criticalChance: 4, maxHitpoints: 6, spellResistance: 8, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
   'equipment.liuyun-skirt': {
     equipmentId: 'equipment.liuyun-skirt',
@@ -1647,7 +1649,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     slot: 'legs',
     tier: 2,
     baseStatRatios: { spellAttack: 0.12 },
-    flatStats: { spellAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, spellResistance: 4, spellDamageBonusPoints: 2 },
+    flatStats: { spellAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, spellResistance: 4, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
   'equipment.juling-pendant': {
     equipmentId: 'equipment.juling-pendant',

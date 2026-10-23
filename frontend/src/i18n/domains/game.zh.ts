@@ -277,6 +277,8 @@ export const gameZh = {
       'item.reverse-fate-pill': { label: '逆命丹', description: '丹成可暂借一线天命。\n色泽晦暗如墨的异种丹丸，入喉后逆冲经络，为逆天改命强行撕开一道缝隙。' },
       'item.tome.tide': { label: '《潮汐秘籍》', description: '潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀，引动潮汐怒涛，席卷全体敌阵。' },
       'item.fragment.tide': { label: '《潮汐·残卷》', description: '潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀残页，记录引动浪涛拍岸之法。' },
+      'item.tome.sui-gang': { label: '《碎罡秘籍》', description: '碎罡崩甲，化煞成锋。\n记载舍却护体罡气、以血勇换取杀伐之力的体魄秘典，字字皆带煞意。' },
+      'item.fragment.sui-gang': { label: '《碎罡·残卷》', description: '碎罡崩甲，化煞成锋。\n记载舍却护体罡气、以血勇换取杀伐之力的残页，笔锋凌厉如刀。' },
       'item.rough-wolf-hide': { label: '粗韧狼皮', description: '古道妖狼身上剥取的坚韧外皮，毛刺如针，抗风挡煞。' },
       'item.water-spirit-core': { label: '水灵原核', description: '潮汐之灵体内凝聚的纯净水精灵核，触手温润冰凉，蕴含微弱潮汐灵力。' },
       'item.rock-fang': { label: '坚岩獠齿', description: '铁甲岩獠口中突出的灰白獠牙，质如岩石，沉重尖锐。' },

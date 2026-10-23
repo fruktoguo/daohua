@@ -38,6 +38,7 @@
     "flatStats": {
       "spellAttack": 10,
       "accuracy": 10,
+      "spellDamageBonusPoints": 5,
       "skillBonusPoints": 5
     }
   },
@@ -53,6 +54,7 @@
       "spellAttack": 8,
       "manapointRegen": 2,
       "healingBonusPoints": 50,
+      "spellDamageBonusPoints": 5,
       "skillBonusPoints": 5
     }
   },
@@ -98,6 +100,7 @@
     "flatStats": {
       "spellAttack": 12,
       "accuracy": 12,
+      "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
     }
   },
@@ -114,6 +117,7 @@
       "spellAttack": 10,
       "manapointRegen": 2.5,
       "healingBonusPoints": 60,
+      "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
     }
   },
@@ -162,6 +166,7 @@
     "flatStats": {
       "spellAttack": 14,
       "accuracy": 14,
+      "spellDamageBonusPoints": 15,
       "skillBonusPoints": 15
     }
   },
@@ -179,6 +184,7 @@
       "spellAttack": 12,
       "manapointRegen": 3,
       "healingBonusPoints": 50,
+      "spellDamageBonusPoints": 15,
       "skillBonusPoints": 15
     }
   }

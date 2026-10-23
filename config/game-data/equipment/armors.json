@@ -115,7 +115,8 @@
       "criticalChance": 2,
       "maxHitpoints": 2,
       "spellResistance": 2,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -132,7 +133,8 @@
       "criticalChance": 3,
       "maxHitpoints": 3,
       "spellResistance": 4,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -149,7 +151,8 @@
       "criticalChance": 2,
       "maxHitpoints": 2,
       "spellResistance": 2,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -275,7 +278,8 @@
       "criticalChance": 3,
       "maxHitpoints": 2,
       "spellResistance": 2,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -293,7 +297,8 @@
       "criticalChance": 4,
       "maxHitpoints": 3,
       "spellResistance": 4,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -311,7 +316,8 @@
       "criticalChance": 3,
       "maxHitpoints": 2,
       "spellResistance": 2,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -444,7 +450,8 @@
       "criticalChance": 2,
       "maxHitpoints": 4,
       "spellResistance": 4,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -463,7 +470,8 @@
       "criticalChance": 4,
       "maxHitpoints": 6,
       "spellResistance": 8,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   },
   {
@@ -482,7 +490,8 @@
       "criticalChance": 2,
       "maxHitpoints": 4,
       "spellResistance": 4,
-      "spellDamageBonusPoints": 2
+      "spellDamageBonusPoints": 2,
+      "skillBonusPoints": 2
     }
   }
 ]

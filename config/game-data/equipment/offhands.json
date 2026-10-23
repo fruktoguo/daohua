@@ -24,6 +24,7 @@
     "flatStats": {
       "spellAttack": 6,
       "accuracy": 6,
+      "spellDamageBonusPoints": 4,
       "skillBonusPoints": 4
     }
   },
@@ -81,6 +82,7 @@
     "flatStats": {
       "spellAttack": 8,
       "accuracy": 7,
+      "spellDamageBonusPoints": 4,
       "skillBonusPoints": 4
     }
   },
@@ -113,6 +115,7 @@
     "flatStats": {
       "spellAttack": 8,
       "accuracy": 10,
+      "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
     }
   },

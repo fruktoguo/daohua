@@ -417,5 +417,25 @@
     "tier": 1,
     "sellPrice": 10,
     "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.sui-gang",
+    "name": "《碎罡秘籍》",
+    "description": "碎罡崩甲，化煞成锋。\n记载舍却护体罡气、以血勇换取杀伐之力的体魄秘典，字字皆带煞意。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.sui-gang",
+    "name": "《碎罡·残卷》",
+    "description": "碎罡崩甲，化煞成锋。\n记载舍却护体罡气、以血勇换取杀伐之力的残页，笔锋凌厉如刀。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
   }
 ]
