@@ -603,8 +603,6 @@ public sealed class SocialRuntime
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
                 if (!await _repository.TryKickPartyMemberAsync(partyId.Value, targetId.Value, cancellationToken))
                     return new SocialOutcome(SocialFailure.TargetNotFound);
-                // 被踢者移除后，其余成员若曾把复活策略指名到他，就地收敛为直接复活。
-                await ClearDepartedRespawnTargetsAsync([.. party.Members.Select(member => member.PlayerId)], targetId.Value, cancellationToken);
                 // 踢出使阵容收缩：活跃会话条件必然失效，先仲裁散场再广播。
                 await ArbitratePartySessionAsync(partyId.Value, "member-kicked", cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), targetId.Value], playerId);
@@ -724,9 +722,6 @@ public sealed class SocialRuntime
                     }
                 }
                 await _repository.DeletePartyIfEmptyAsync(partyId.Value, cancellationToken);
-                // 离队者的观察对象身份对称失效：其余成员指名的策略一并收敛为直接复活。
-                if (party is not null)
-                    await ClearDepartedRespawnTargetsAsync([.. party.Members.Select(member => member.PlayerId)], playerId, cancellationToken);
                 // 离队使活跃会话的冻结名册失效：先仲裁散场，再广播新旧成员。
                 await ArbitratePartySessionAsync(partyId.Value, "member-left", cancellationToken);
                 await NotifyAsync(affected, playerId);
@@ -1292,22 +1287,6 @@ public sealed class SocialRuntime
     }
 
     /// <summary>
-    /// 成员移除后清理复活策略里的失效观察对象（§7.9.4.1）：策略若指名了已离队的队友，
-    /// 由社交仲裁改为直接复活——否则本人界面会停在指向不存在队友的「指定队友存活」上。
-    /// 战斗侧本身已按名册解析并退化（不会阻塞起身），但视图与设置必须同步收敛，避免表现与真实行为分叉。
-    /// </summary>
-    private async ValueTask ClearDepartedRespawnTargetsAsync(IEnumerable<Guid> remainingMembers, Guid departedPlayerId, CancellationToken cancellationToken)
-    {
-        if (_players is null) return;
-        foreach (var memberId in remainingMembers)
-        {
-            if (memberId == departedPlayerId) continue;
-            await ApplySessionMutationAsync(memberId,
-                aggregate => aggregate.ClearRespawnTargetIf(departedPlayerId), cancellationToken);
-        }
-    }
-
-    /// <summary>
     /// 会话成员对账通道：在线/离线成员统一经玩家运行时门内装载、结算消费与可选变更；
     /// 本会话强拉的离线实体变更后即卸并强制落盘，不留驻内存、不落「在线」假状态。
     /// </summary>
@@ -1347,12 +1326,6 @@ public sealed class SocialRuntime
                         await _repository.TryTransferPartyLeaderAsync(partyId, next.PlayerId, cancellationToken);
                 }
                 await _repository.DeletePartyIfEmptyAsync(partyId, cancellationToken);
-                // 被逐出者可能曾是他人的复活观察对象：逐人清理，避免策略长期悬空。
-                var remaining = party.Members
-                    .Where(member => group.All(item => item.PlayerId != member.PlayerId))
-                    .Select(member => member.PlayerId).ToList();
-                foreach (var evictedMember in group)
-                    await ClearDepartedRespawnTargetsAsync(remaining, evictedMember.PlayerId, cancellationToken);
                 await ArbitratePartySessionOwnedAsync(partyId, "member-offline-timeout", forceDissolve: false, cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), .. group.Select(item => item.PlayerId)]);
                 _logger.LogInformation("48h 离线逐出完成：队伍 {PartyId} 移除 {Count} 人。", partyId, group.Count());
