@@ -81,19 +81,34 @@ public sealed class PostgresRetentionRepository(
             ORDER BY inbox.consumed_at
             LIMIT $2
             """, "DELETE FROM social.party_session_inbox inbox USING ({0}) doomed WHERE inbox.session_id = doomed.session_id AND inbox.player_id = doomed.player_id AND inbox.sequence = doomed.sequence", now, cancellationToken);
-        // 回收非金融、非市场类易失性流水（战斗物品获得、挂机推演、物品消耗、教程赠送等）；
-        // 这类流水只保留 2 小时（存档已在计算节点按小时异地备份，主服不存历史垃圾），
-        // 超过 2 小时连带其明细行（外键 ON DELETE CASCADE）一并彻底清理，不占用主服务器宝贵磁盘。
-        var deletedEmptyTransactions = await DeleteBatchAsync(connection, transaction, """
+        // 两级经济流水留存体系：
+        // 1. 短期流水（保存 2 小时）：战斗物品获得、挂机推演、物品消耗、商店回收、技能参悟、建筑捐献、教程赠送等；
+        //    这类单机业务已实时落入玩家八分段快照，且每小时由计算节点异地冷备，主服仅保留 2 小时给临时重连确认，
+        //    超过 2 小时连带其明细行（外键 ON DELETE CASCADE）一并彻底清理。
+        var deletedShortTerm = await DeleteBatchAsync(connection, transaction, """
             SELECT t.transaction_id
             FROM economy.transactions t
             WHERE t.created_at < $1
-              AND t.transaction_type IN ('simulation.reward', 'participation.settlement', 'item.use', 'tutorial.skip')
+              AND t.transaction_type NOT IN ('market', 'shop.buy', 'player.unlock_avatar')
               AND NOT EXISTS (SELECT 1 FROM social.party_session_inbox i WHERE i.consumed_transaction_id = t.transaction_id)
             ORDER BY t.created_at
             LIMIT $2
             """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
             now - TimeSpan.FromHours(2), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
+
+        // 2. 长期流水（保存 14 天）：仅限跨玩家订单撮合（market）、核心资产/功德消耗（shop.buy、player.unlock_avatar）；
+        //    作为不可变金融账本保留 14 天供对账排查，超过 14 天自动滚动轮转清理，防磁盘无界累积。
+        var deletedLongTerm = await DeleteBatchAsync(connection, transaction, """
+            SELECT t.transaction_id
+            FROM economy.transactions t
+            WHERE t.created_at < $1
+              AND t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar')
+            ORDER BY t.created_at
+            LIMIT $2
+            """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
+            now - TimeSpan.FromDays(14), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
+
+        var deletedEmptyTransactions = deletedShortTerm + deletedLongTerm;
         await transaction.CommitAsync(cancellationToken);
 
         var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions);
