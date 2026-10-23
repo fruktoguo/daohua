@@ -58,6 +58,7 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
   /* Firefox 标准滚动条属性；Chrome 内核在 ::-webkit-scrollbar 生效时忽略这两项 */
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -69,6 +70,17 @@ body,
   width: 100%;
   height: 100%;
   margin: 0;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 表单输入与文本域保持可交互与文本选择 */
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 body {
@@ -457,7 +469,7 @@ input[type="checkbox"] {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  padding: 9px 12px 15px 12px;
+  padding: calc(9px + env(safe-area-inset-top, 0px)) 12px 15px 12px;
   border-bottom: 1px solid var(--gold-dim);
   background: rgba(7, 6, 4, 0.95);
   box-shadow: 0 1px 14px rgba(0, 0, 0, 0.45);
@@ -6387,7 +6399,7 @@ input[type="checkbox"] {
 
   .topbar {
     gap: 10px;
-    padding: 9px 10px 15px 10px;
+    padding: calc(9px + env(safe-area-inset-top, 0px)) 10px 15px 10px;
   }
 
   .player-block {
@@ -6411,7 +6423,7 @@ input[type="checkbox"] {
     max-height: none;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 9px;
-    padding: 8px 10px 15px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 15px;
   }
 
   .player-block {
