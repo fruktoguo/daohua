@@ -632,6 +632,68 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Equal(CombatRespawnPolicy.AllAlliesReady, fixture.Adapter.TryGetLoaded(fixture.Players[1])!.State.Settings.RespawnPolicy);
     }
 
+    /// <summary>
+    /// 队伍解散时全员策略重置为直接复活（§7.9.4.1）：解散是最彻底的归属变化，
+    /// 三人都不得沿用原队伍的复活时机设定。
+    /// </summary>
+    [Fact]
+    public async Task DisbandResetsEveryMemberPolicy()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var leader = fixture.Players[0];
+        var other = fixture.Players[1];
+        var target = fixture.Players[2];
+
+        await fixture.Adapter.MutateOwnedAsync(other,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, target));
+        await fixture.Adapter.MutateOwnedAsync(leader,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.AllAlliesReady));
+
+        Assert.True((await social.ApplyAsync(leader,
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyDisband))).Success);
+
+        foreach (var player in fixture.Players)
+        {
+            Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(player)!.State.Settings.RespawnPolicy);
+            Assert.Null(fixture.Adapter.TryGetLoaded(player)!.State.Settings.RespawnTargetPlayerId);
+        }
+    }
+
+    /// <summary>
+    /// 48h 离线超时逐出：被逐者本人策略重置，曾指名他的成员同样重置；
+    /// 与逐出者无关的成员不受影响。
+    /// </summary>
+    [Fact]
+    public async Task OfflineTimeoutEvictionResetsEvictedAndNominatorPolicies()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var nominator = fixture.Players[0];
+        var bystander = fixture.Players[1];
+        var evicted = fixture.Players[2];
+
+        await fixture.Adapter.MutateOwnedAsync(nominator,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, evicted));
+        await fixture.Adapter.MutateOwnedAsync(bystander,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.AllAlliesReady));
+        await fixture.Adapter.MutateOwnedAsync(evicted,
+            aggregate => aggregate.SetRespawnPolicy(CombatRespawnPolicy.AllAlliesReady));
+
+        // 把被逐者投影为「离线且超期」：离线锚点早于 cutoff，且 presence 非 online。
+        await fixture.SqlAsync("""
+            UPDATE game.player_projection SET presence = 'offline', offline_since = $2 WHERE player_id = $1
+            """, evicted, fixture.StartedAt.AddDays(-3));
+
+        await social.EvictOfflinePartyMembersAsync(TimeSpan.FromHours(48));
+
+        Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(nominator)!.State.Settings.RespawnPolicy);
+        Assert.Null(fixture.Adapter.TryGetLoaded(nominator)!.State.Settings.RespawnTargetPlayerId);
+        Assert.Equal(CombatRespawnPolicy.Immediate, fixture.Adapter.TryGetLoaded(evicted)!.State.Settings.RespawnPolicy);
+        // 旁观者未被逐出、也未指名任何人 → 策略保持不变。
+        Assert.Equal(CombatRespawnPolicy.AllAlliesReady, fixture.Adapter.TryGetLoaded(bystander)!.State.Settings.RespawnPolicy);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(NpgsqlDataSource source, DateTimeOffset startedAt, Guid[] players, bool owned)
