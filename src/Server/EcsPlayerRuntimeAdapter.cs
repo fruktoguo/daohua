@@ -1278,23 +1278,19 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     }
                     case "respawn.policy":
                     {
-                        // 复活时机策略由成员本人设定（总纲 §7.9.4.1）：只写本人设置，不触碰队伍与其他成员。
+                        // 复活时机策略是玩家自己的设置项（总纲 §7.9.4.1）：只写本人 settings 分段，
+                        // 不读队伍、不限队长、任何队伍变动都不得改写它——存什么就是什么。
                         var policyText = payload.TryGetProperty("policy", out var policyElement) ? policyElement.GetString() : null;
                         if (!TryParseRespawnPolicy(policyText, out var policy))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "复活策略无效。", before);
                         Guid? targetPlayerId = null;
                         if (policy == CombatRespawnPolicy.TargetAllyAlive)
                         {
-                            if (!payload.TryGetProperty("targetPlayerId", out var targetElement)
+                            // 观察对象允许先于组队设定（离线设置、换队后沿用），故此处只校验是否为合法玩家标识；
+                            // 目标是否真在会话名册内由战斗侧按成员序解析，不在册时退化为直接复活。
+                            if (!payload.TryGetProperty("targetPlayerId", out _)
                                 || !TryReadGuid(payload, "targetPlayerId", out var parsedTarget))
                                 return new PlayerCommandResult(false, "INVALID_PAYLOAD", "指定队友策略必须指定队友。", before);
-                            // 只能指定同队成员：跨队引用既无法观察也无法在会话内解析，直接拒绝而非静默退化。
-                            var partyId = socialRepository is null
-                                ? null : await socialRepository.GetPartyIdAsync(playerId, cancellationToken).ConfigureAwait(false);
-                            var party = partyId is { } id && socialRepository is not null
-                                ? await socialRepository.GetPartyAsync(id, cancellationToken).ConfigureAwait(false) : null;
-                            if (party is null || party.Members.All(member => member.PlayerId != parsedTarget))
-                                return new PlayerCommandResult(false, "TARGET_NOT_IN_PARTY", "只能指定当前队伍中的队友。", before);
                             if (parsedTarget == playerId)
                                 return new PlayerCommandResult(false, "INVALID_PAYLOAD", "不能指定自己。", before);
                             targetPlayerId = parsedTarget;

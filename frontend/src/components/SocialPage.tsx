@@ -576,16 +576,14 @@ const RespawnPolicyField = memo(function RespawnPolicyField({
   const targetPlayerId = useGameStore(state => state.respawnTargetPlayerId)
   const setRespawnPolicy = useSocialStore(state => state.setRespawnPolicy)
   const teammates = useMemo(() => members.filter(member => member.playerId !== myPlayerId), [members, myPlayerId])
-  // 无队友时「指定队友存活」无从观察（服务端会退化为直接复活），故不呈现该选项；
-  // 队友中途离队令服务端策略退化时，此处同样回落展示「直接复活」——与实际起身行为一致。
+  // 三项始终呈现：本设置属于玩家自己，不因当前是否组队而隐藏或禁用。
   const options = useMemo<OptionToggleOption<RespawnPolicy>[]>(() => [
     { value: 'immediate', label: t('social.respawn.immediate') },
     { value: 'all-allies-ready', label: t('social.respawn.allAlliesReady') },
-    ...(teammates.length > 0
-      ? [{ value: 'target-ally-alive' as const, label: t('social.respawn.targetAllyAlive') }]
-      : []),
-  ], [teammates.length, t])
-  const value = options.some(option => option.value === policy) ? policy : 'immediate'
+    { value: 'target-ally-alive', label: t('social.respawn.targetAllyAlive') },
+  ], [t])
+  // 观察对象只在队伍内有意义：指向已不在队的玩家时按未指定展示，等玩家重新选择。
+  const targetInParty = targetPlayerId !== null && teammates.some(member => member.playerId === targetPlayerId)
 
   return (
     <div className="party-respawn-row">
@@ -597,20 +595,22 @@ const RespawnPolicyField = memo(function RespawnPolicyField({
             setRespawnPolicy(next)
             return
           }
-          // 切到「指定队友存活」必须同时给出观察对象：沿用仍在队中的旧目标，否则取首位队友。
+          // 切到该策略必须同时给出观察对象：沿用仍在队中的旧目标，否则取首位队友。
+          // 客户端不替玩家臆断长期选择——队伍归属一变服务端会把策略重置回直接复活。
           const retained = teammates.find(member => member.playerId === targetPlayerId) ?? teammates[0]
+          if (retained === undefined) return
           setRespawnPolicy('target-ally-alive', retained.playerId)
         }}
         options={options}
-        value={value}
+        value={policy}
       />
-      {value === 'target-ally-alive' && teammates.length > 0 && (
+      {policy === 'target-ally-alive' && teammates.length > 0 && (
         <div className="party-respawn-target">
           <DropdownSelect
             label={t('social.respawn.targetPlaceholder')}
             onSelect={playerId => { setRespawnPolicy('target-ally-alive', playerId) }}
             options={teammates.map(member => ({ id: member.playerId, label: member.displayName }))}
-            value={targetPlayerId ?? ''}
+            value={targetInParty ? targetPlayerId ?? '' : ''}
           />
         </div>
       )}

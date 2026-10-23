@@ -190,14 +190,11 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
     return gameClient.sendSocialAction('party.update', undefined, undefined, { party: { pvpEnabled } })
   },
   setRespawnPolicy: (policy, targetPlayerId) => {
-    const myId = gameClient.playerId
-    // 指定队友存活：目标必须是当前队伍中的其他成员（自己与非队友都不可作为观察对象）；
-    // 其余两支是纯本人设置，不依赖队伍状态。
+    // 复活策略是玩家自己的设置：不校验队伍、不校验队长，本人存什么就是什么。
+    // 「指定队友存活」的观察对象允许先于组队设定（离线设置、换队后沿用），
+    // 是否真在会话名册内由战斗侧按成员序解析，不在册时退化为直接复活。
     const target = policy === 'target-ally-alive' ? (targetPlayerId ?? null) : null
-    if (policy === 'target-ally-alive') {
-      const members = get().party?.members ?? []
-      if (target === null || target === myId || !members.some(member => member.playerId === target)) return false
-    }
+    if (policy === 'target-ally-alive' && target === null) return false
     // 与服务端下发状态同值时不派发，避免每次点击都产生一次无意义写盘与快照推送。
     const current = useGameStore.getState()
     if (current.respawnPolicy === policy && current.respawnTargetPlayerId === target) return false

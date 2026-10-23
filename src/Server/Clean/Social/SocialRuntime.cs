@@ -570,6 +570,8 @@ public sealed class SocialRuntime
                         _ => SocialFailure.AlreadyInParty
                     });
                 }
+                // 入队即归属变化：本人复活策略回到缺省（换队、被邀入队后都不得沿用上一队的设定）。
+                await ResetRespawnPoliciesAsync([playerId], playerId, cancellationToken);
                 // 成员加入是讨伐仲裁触发点（总纲 §21.13）：阵容变化先裁决再广播。
                 await ArbitratePartySessionAsync(partyId, "member-joined", cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), playerId], playerId);
@@ -603,6 +605,9 @@ public sealed class SocialRuntime
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
                 if (!await _repository.TryKickPartyMemberAsync(partyId.Value, targetId.Value, cancellationToken))
                     return new SocialOutcome(SocialFailure.TargetNotFound);
+                // 归属变化重置复活策略：被踢者本人回到缺省，其余曾指名他的成员同样重置。
+                await ResetRespawnPoliciesAsync(
+                    [.. party.Members.Select(member => member.PlayerId), targetId.Value], targetId.Value, cancellationToken);
                 // 踢出使阵容收缩：活跃会话条件必然失效，先仲裁散场再广播。
                 await ArbitratePartySessionAsync(partyId.Value, "member-kicked", cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), targetId.Value], playerId);
@@ -621,6 +626,9 @@ public sealed class SocialRuntime
                 // 成员/邀请随 ON DELETE CASCADE 清除，聊天卡片链接置空失效。
                 var former = await _repository.DisbandPartyAsync(partyId.Value, cancellationToken);
                 if (former is null) return new SocialOutcome(SocialFailure.PartyNotFound);
+                // 解散同样改变归属：全部原成员回到缺省策略（每人各自重置自己）。
+                foreach (var member in former)
+                    await ResetRespawnPoliciesAsync([member.PlayerId], member.PlayerId, cancellationToken);
                 await NotifyAsync([.. former.Select(member => member.PlayerId)], playerId);
                 return SocialOutcome.Ok;
             }
@@ -722,6 +730,9 @@ public sealed class SocialRuntime
                     }
                 }
                 await _repository.DeletePartyIfEmptyAsync(partyId.Value, cancellationToken);
+                // 归属变化重置复活策略：离队者本人回到缺省，其余曾指名他的成员同样重置。
+                if (party is not null)
+                    await ResetRespawnPoliciesAsync(party.Members.Select(member => member.PlayerId), playerId, cancellationToken);
                 // 离队使活跃会话的冻结名册失效：先仲裁散场，再广播新旧成员。
                 await ArbitratePartySessionAsync(partyId.Value, "member-left", cancellationToken);
                 await NotifyAsync(affected, playerId);
@@ -1287,6 +1298,29 @@ public sealed class SocialRuntime
     }
 
     /// <summary>
+    /// 队伍归属变化后重置复活策略（总纲 §7.9.4.1）。策略虽然是玩家自己的设置，但它依赖
+    /// 「当前与谁同队」这一前提，归属一变就必须回到缺省的「直接复活」，否则玩家会按不再成立的意图倒地等待：
+    /// 1. 离队/换队/被踢/超时逐出的玩家本人；
+    /// 2. 把「指定队友存活」指名到该离队者的其余成员。
+    /// 经既有单写者通道逐人处理（在线离线统一，离线成员装载后即卸并强制落盘）。
+    /// </summary>
+    /// <param name="members">受影响玩家（含发起离队者本人）。</param>
+    /// <param name="departedPlayerId">离队玩家标识：本人重置全部策略，其余成员仅重置指名到他的策略。</param>
+    private async ValueTask ResetRespawnPoliciesAsync(IEnumerable<Guid> members, Guid departedPlayerId, CancellationToken cancellationToken)
+    {
+        if (_players is null) return;
+        foreach (var memberId in members.Distinct())
+        {
+            await ApplySessionMutationAsync(memberId,
+                aggregate => {
+                    if (memberId == departedPlayerId) aggregate.ResetRespawnPolicy();
+                    else aggregate.ResetRespawnPolicyIfTarget(departedPlayerId);
+                },
+                cancellationToken);
+        }
+    }
+
+    /// <summary>
     /// 会话成员对账通道：在线/离线成员统一经玩家运行时门内装载、结算消费与可选变更；
     /// 本会话强拉的离线实体变更后即卸并强制落盘，不留驻内存、不落「在线」假状态。
     /// </summary>
@@ -1326,6 +1360,11 @@ public sealed class SocialRuntime
                         await _repository.TryTransferPartyLeaderAsync(partyId, next.PlayerId, cancellationToken);
                 }
                 await _repository.DeletePartyIfEmptyAsync(partyId, cancellationToken);
+                // 归属变化重置复活策略：逐人处理（被逐者本人回到缺省，其余曾指名他们的成员同样重置）。
+                foreach (var evictedMember in group)
+                    await ResetRespawnPoliciesAsync(
+                        [.. party.Members.Select(member => member.PlayerId), evictedMember.PlayerId],
+                        evictedMember.PlayerId, cancellationToken);
                 await ArbitratePartySessionOwnedAsync(partyId, "member-offline-timeout", forceDissolve: false, cancellationToken);
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), .. group.Select(item => item.PlayerId)]);
                 _logger.LogInformation("48h 离线逐出完成：队伍 {PartyId} 移除 {Count} 人。", partyId, group.Count());

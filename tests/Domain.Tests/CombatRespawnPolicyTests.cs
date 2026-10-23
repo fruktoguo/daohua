@@ -174,6 +174,77 @@ public sealed class CombatRespawnPolicyTests
     }
 
     /// <summary>
+    /// 本人离开队伍/换队后策略重置为缺省的直接复活（§7.9.4.1）：
+    /// 策略依赖「与谁同队」这一前提，归属一变就不得沿用旧选择。
+    /// </summary>
+    [Fact]
+    public void ResetRespawnPolicyRevertsToImmediate()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "复活策略", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(player, catalog);
+
+        player.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, Guid.NewGuid());
+        Assert.Equal(CombatRespawnPolicy.TargetAllyAlive, player.Settings.RespawnPolicy);
+
+        player.ResetRespawnPolicy();
+        Assert.Equal(CombatRespawnPolicy.Immediate, player.Settings.RespawnPolicy);
+        Assert.Null(player.Settings.RespawnTargetPlayerId);
+    }
+
+    /// <summary>
+    /// 被指名的观察对象离队时，本人策略重置为直接复活——指名对象已不在队，等待条件永不可能成立。
+    /// </summary>
+    [Fact]
+    public void DepartingTargetResetsPolicyToImmediate()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "复活策略", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(player, catalog);
+        var target = Guid.NewGuid();
+
+        player.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, target);
+        player.ResetRespawnPolicyIfTarget(target);
+
+        Assert.Equal(CombatRespawnPolicy.Immediate, player.Settings.RespawnPolicy);
+        Assert.Null(player.Settings.RespawnTargetPlayerId);
+    }
+
+    /// <summary>
+    /// 重置只针对真正被指名离队的目标：其他队友离开不得改写本人策略，
+    /// 否则多人队里任意人退出都会静默清掉别人精心设的选项。
+    /// </summary>
+    [Fact]
+    public void UnrelatedDepartureLeavesPolicyUntouched()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "复活策略", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(player, catalog);
+        var target = Guid.NewGuid();
+
+        player.SetRespawnPolicy(CombatRespawnPolicy.TargetAllyAlive, target);
+        player.ResetRespawnPolicyIfTarget(Guid.NewGuid());
+
+        Assert.Equal(CombatRespawnPolicy.TargetAllyAlive, player.Settings.RespawnPolicy);
+        Assert.Equal(target, player.Settings.RespawnTargetPlayerId);
+    }
+
+    /// <summary>
+    /// 非「指定队友存活」的两支策略没有观察对象，任何人离队都不触发重置。
+    /// </summary>
+    [Fact]
+    public void DepartureDoesNotResetPoliciesWithoutTarget()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "复活策略", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(player, catalog);
+
+        player.SetRespawnPolicy(CombatRespawnPolicy.AllAlliesReady);
+        player.ResetRespawnPolicyIfTarget(Guid.NewGuid());
+        Assert.Equal(CombatRespawnPolicy.AllAlliesReady, player.Settings.RespawnPolicy);
+    }
+
+    /// <summary>
     /// 双盟友场景：高血量敌人确保战斗不会因敌方全灭提前结束。
     /// </summary>
     private static CombatEncounterState CreateTwoAllyEncounter(double respawnSeconds)

@@ -984,15 +984,31 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 清除复活策略中的失效观察对象：目标已离队/不存在时退化为直接复活。
-    /// 由社交仲裁在成员变动后调用，届时下一场会话的冻结值即为已修正的策略。
+    /// 复活时机策略的重置（总纲 §7.9.4.1）：把策略收敛回缺省的「直接复活」并清空观察对象。
+    /// 该设置虽然是玩家自己的数据，但在两种队伍归属变化下必须重置——因为策略依赖的
+    /// 「与谁同队」这一前提已经改变，沿用旧选择会让玩家按不再成立的意图倒地等待：
+    /// 1. 本人离队/换队（含被踢、超时逐出、解散）；
+    /// 2. 被指名的观察对象离队。
+    /// 仅在当前策略非缺省时置脏，避免无意义的设置分段写回。
     /// </summary>
-    public void ClearRespawnTargetIf(Guid departedPlayerId)
+    public void ResetRespawnPolicy()
     {
-        if (Settings.RespawnTargetPlayerId != departedPlayerId) return;
-        Settings.RespawnTargetPlayerId = null;
+        if (Settings.RespawnPolicy == CombatRespawnPolicy.Immediate && Settings.RespawnTargetPlayerId is null) return;
         Settings.RespawnPolicy = CombatRespawnPolicy.Immediate;
+        Settings.RespawnTargetPlayerId = null;
         Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 指定队友存活策略下的观察对象离队：策略重置为直接复活（§7.9.4.1）。
+    /// 仅当本人策略正是「指定队友存活」且指名到该玩家时才生效——其他策略与无关成员离队一律不受影响。
+    /// </summary>
+    /// <param name="departedPlayerId">已离队的玩家标识。</param>
+    public void ResetRespawnPolicyIfTarget(Guid departedPlayerId)
+    {
+        if (Settings.RespawnPolicy != CombatRespawnPolicy.TargetAllyAlive) return;
+        if (Settings.RespawnTargetPlayerId != departedPlayerId) return;
+        ResetRespawnPolicy();
     }
 
     /// <summary>
