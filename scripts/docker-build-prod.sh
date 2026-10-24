@@ -101,6 +101,7 @@ if [[ "$BUILD" == "1" ]]; then
   cp -R "$PRIVATE_ROOT/server/." "$STAGING_DIR/src/Private/"
   cp -R "$PRIVATE_ROOT/frontend/antiMulti/." "$STAGING_DIR/frontend/src/private-impl/"
 
+  NODE_IMAGE_REF="${NODE_IMAGE:-ccr.ccs.tencentyun.com/yuohira/node:22-alpine}"
   common_args=(
     --platform "$PLATFORM"
     --load
@@ -108,6 +109,7 @@ if [[ "$BUILD" == "1" ]]; then
     --build-arg "BUILD_VERSION=${RELEASE_TAG}"
     --build-arg "VCS_REF=${VCS_REF}"
     --build-arg "NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}"
+    --build-arg "NODE_IMAGE=${NODE_IMAGE_REF}"
   )
   if [[ "$PULL" == "1" ]]; then common_args+=(--pull); fi
   printf '构建 Server 镜像: %s（完整口径，含私有扩展模块）\n' "$RELEASE_IMAGE"
