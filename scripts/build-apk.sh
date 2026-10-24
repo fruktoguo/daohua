@@ -23,14 +23,20 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKIP_WEB_BUILD=0
 SOFT_FAIL=0
 HD_MODE=1
+REQUIRE_FULL=0
+UPLOAD_RELEASE=0
+RELEASE_TAG=""
 
 while (($# > 0)); do
   case "$1" in
     --no-hd) HD_MODE=0; shift ;;
     --skip-web-build) SKIP_WEB_BUILD=1; shift ;;
     --soft-fail) SOFT_FAIL=1; shift ;;
+    --require-full|--complete) REQUIRE_FULL=1; shift ;;
+    --release) UPLOAD_RELEASE=1; shift ;;
+    --tag) RELEASE_TAG="${2:?--tag 缺少值}"; shift 2 ;;
     -h|--help)
-      printf '用法: scripts/build-apk.sh [--no-hd] [--skip-web-build] [--soft-fail]\n'
+      printf '用法: scripts/build-apk.sh [--no-hd] [--skip-web-build] [--soft-fail] [--require-full] [--release] [--tag TAG]\n'
       exit 0
       ;;
     *)
@@ -52,10 +58,27 @@ trap cleanup EXIT INT TERM
 
 printf '\n======================================================\n'
 printf '        道化太初 · Android 安装包构建流水线\n'
-if [[ "$HD_MODE" == "1" ]]; then
-  printf '        [模式: 全量超清 Retina (立绘 1024px | 建筑 128px | 道具 128px)]\n'
+if [[ -f "$ROOT_DIR/scripts/sync-private-modules.mjs" ]]; then
+  node "$ROOT_DIR/scripts/sync-private-modules.mjs" >/dev/null 2>&1 || true
+fi
+
+HAS_PRIVATE=0
+if [[ -f "$ROOT_DIR/frontend/src/private-impl/index.ts" ]]; then
+  HAS_PRIVATE=1
+  printf '        [口径: 完整客户端 (含反多开子系统与专有防护)]\n'
 else
-  printf '        [模式: Web 默认轻量版]\n'
+  if [[ "$REQUIRE_FULL" == "1" ]]; then
+    printf '\n错误: 指定了 --require-full (必须完全版本)，但未检测到私有扩展模块 (缺少 frontend/src/private-impl/index.ts)。\n' >&2
+    printf '正式服客户端必须包含反多开声明，拒绝构建开源 Stub 版！\n' >&2
+    exit 1
+  fi
+  printf '        [口径: 开源客户端 (Stub，仅供本地测试)]\n'
+fi
+
+if [[ "$HD_MODE" == "1" ]]; then
+  printf '        [画质: 全量超清 Retina (立绘 1024px | 建筑 128px | 道具 128px)]\n'
+else
+  printf '        [画质: Web 默认轻量版]\n'
 fi
 printf '======================================================\n\n'
 
@@ -141,6 +164,13 @@ if [[ -f "$RELEASE_APK" ]]; then
     printf '  • 视觉规格: 立绘 1024px | 建筑 128px | 道具 128px 超清覆盖\n'
   fi
   printf '======================================================\n\n'
+  if [[ "$UPLOAD_RELEASE" == "1" ]]; then
+    UPLOAD_ARGS=("--file" "$ROOT_DIR/artifacts/daohua.apk")
+    if [[ -n "$RELEASE_TAG" ]]; then
+      UPLOAD_ARGS+=("--tag" "$RELEASE_TAG")
+    fi
+    bash "$ROOT_DIR/scripts/upload-release-apk.sh" "${UPLOAD_ARGS[@]}"
+  fi
 else
   if [[ "$SOFT_FAIL" == "1" ]]; then
     printf '警告: 未找到生成的 app-release.apk\n'

@@ -35,6 +35,7 @@ SKIP_SMOKE=0
 PUSH_EXISTING=0
 ALLOW_DIRTY=0
 SKIP_APK=0
+SKIP_APK_UPLOAD=0
 usage() {
   printf '%s\n' \
     '用法：scripts/release-prod.sh [选项]' \
@@ -44,6 +45,7 @@ usage() {
     '  --skip-backup    跳过发布前远端数据库备份（生产默认保留）' \
     '  --skip-smoke     跳过部署后的内网与公网烟测' \
     '  --skip-apk       跳过本地 Android 安装包打包' \
+    '  --skip-apk-upload 跳过向 GitHub Releases 上传安装包' \
     '  --push-existing  跳过镜像重新构建，仅推送本机已有镜像' \
     '  --allow-dirty    允许未提交工作区构建（仅排障）' \
     '  --host HOST      主服 SSH 别名（默认 yuohira）' \
@@ -57,6 +59,7 @@ while (($# > 0)); do
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --skip-smoke) SKIP_SMOKE=1; shift ;;
     --skip-apk) SKIP_APK=1; shift ;;
+    --skip-apk-upload) SKIP_APK_UPLOAD=1; shift ;;
     --push-existing) PUSH_EXISTING=1; shift ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --host) REMOTE_HOST="${2:?--host 缺少值}"; shift 2 ;;
@@ -185,20 +188,6 @@ else
   echo "STREAM_C_EXIT:0" >> "$STATUS_FILE"
   PID_STREAM_C=""
 fi
-# 流 D: 本地 Android 安装包构建 (daohua.apk)
-STREAM_D_LOG="$RELEASE_TMP/stream_d_apk.log"
-if [[ "$SKIP_APK" != "1" ]]; then
-  (
-    set -Eeuo pipefail
-    printf '[流 D] 本地并发构建 Android 离线混合安装包 (daohua.apk)...\n'
-    bash "$ROOT_DIR/scripts/build-apk.sh" --soft-fail > "$STREAM_D_LOG" 2>&1
-    echo "STREAM_D_EXIT:0" >> "$STATUS_FILE"
-  ) &
-  PID_STREAM_D=$!
-else
-  echo "STREAM_D_EXIT:0" >> "$STATUS_FILE"
-  PID_STREAM_D=""
-fi
 
 
 # 等待并发任务结束
@@ -225,15 +214,6 @@ if [[ -n "$PID_STREAM_C" ]]; then
     exit 1
   }
   printf '  ✔ [流 C] odin arm64 预传完成。\n'
-fi
-if [[ -n "$PID_STREAM_D" ]]; then
-  wait $PID_STREAM_D || {
-    printf '警告: [流 D] Android APK 打包未成功，详细日志请见: %s\n' "$STREAM_D_LOG" >&2
-  }
-  if [[ -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
-    APK_SIZE="$(ls -lh "$ROOT_DIR/artifacts/daohua.apk" | awk '{print $5}')"
-    printf '  ✔ [流 D] Android 安装包构建完成: artifacts/daohua.apk (%s)。\n' "$APK_SIZE"
-  fi
 fi
 
 
@@ -303,6 +283,24 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
+# 阶段 3.5: Android 完全版客户端编译与 GitHub Releases 自动发布
+# ------------------------------------------------------------------------------
+RELEASE_DOWNLOAD_URL=""
+if [[ "$SKIP_APK" != "1" ]]; then
+  printf '\n==> [阶段 3.5] 独占构建 Android 完全版安装包并发布到 GitHub Releases...\n'
+  PKG_VERSION="$(node -p "try{require('./frontend/package.json').version}catch(e){'0.1.0'}" 2>/dev/null || printf '0.1.0')"
+  RELEASE_TAG="v${PKG_VERSION}-sha-${GIT_REV}"
+  APK_ARGS=("--soft-fail" "--require-full")
+  if [[ "$SKIP_APK_UPLOAD" != "1" ]]; then
+    APK_ARGS+=("--release" "--tag" "$RELEASE_TAG")
+  fi
+  bash "$ROOT_DIR/scripts/build-apk.sh" "${APK_ARGS[@]}"
+  if [[ -f "$ROOT_DIR/artifacts/daohua.apk" && "$SKIP_APK_UPLOAD" != "1" ]]; then
+    RELEASE_DOWNLOAD_URL="https://github.com/fruktoguo/daohua/releases/download/${RELEASE_TAG}/daohua.apk"
+  fi
+fi
+
+# ------------------------------------------------------------------------------
 # 阶段 4: 双端状态核对与运维入口提取
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 4/4] 双端状态核验与日志汇总...\n'
@@ -334,7 +332,10 @@ if [[ -n "$OPS_PATH" ]]; then
 fi
 if [[ -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
   APK_SIZE="$(ls -lh "$ROOT_DIR/artifacts/daohua.apk" | awk '{print $5}')"
-  printf '  • 安卓安装包   : artifacts/daohua.apk (%s)\n' "$APK_SIZE"
+  printf '  • 安卓安装包   : artifacts/daohua.apk (%s, 完全版)\n' "$APK_SIZE"
+  if [[ -n "$RELEASE_DOWNLOAD_URL" ]]; then
+    printf '  • Release 直链 : %s\n' "$RELEASE_DOWNLOAD_URL"
+  fi
 fi
 printf '  • 双层烟测结果 : 全部通过\n'
 printf '======================================================\n\n'
