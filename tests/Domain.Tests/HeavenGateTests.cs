@@ -66,8 +66,8 @@ public sealed class HeavenGateTests
             sum0 += HeavenGateRules.Roll(i * 10007L, 0).Total;
         }
         var avg0 = sum0 / sampleCount;
-        // 初始期望 100 左右（容许合理统计波动 90~110）
-        Assert.InRange(avg0, 85.0, 115.0);
+        // 初始期望 180 左右（容许合理统计波动 165~195）
+        Assert.InRange(avg0, 165.0, 195.0);
 
         var sum40 = 0.0;
         var hit500 = false;
