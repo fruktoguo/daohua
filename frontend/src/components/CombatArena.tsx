@@ -1988,9 +1988,15 @@ function estimateServerNowUnixMilliseconds(): number {
  */
 function useArenaFormationScale(
   formationRef: React.RefObject<HTMLDivElement | null>,
-  shellRef: React.RefObject<HTMLDivElement | null>
-): number {
-  const [scale, setScale] = useState<number>(1)
+  shellRef: React.RefObject<HTMLDivElement | null>,
+  allyCount: number,
+  enemyCount: number
+): { allyScale: number; enemyScale: number; minScale: number } {
+  const [scales, setScales] = useState<{ allyScale: number; enemyScale: number; minScale: number }>({
+    allyScale: 1,
+    enemyScale: 1,
+    minScale: 1,
+  })
 
   useEffect(() => {
     const formationEl = formationRef.current
@@ -2003,17 +2009,27 @@ function useArenaFormationScale(
 
       if (width <= 0 || height <= 0) return
 
-      const nextScale = computeArenaFormationScale(width, height, window.innerWidth)
+      const nextAllyScale = computeArenaFormationScale(width, height, window.innerWidth, allyCount)
+      const nextEnemyScale = computeArenaFormationScale(width, height, window.innerWidth, enemyCount)
+      const nextMinScale = Math.min(nextAllyScale, nextEnemyScale)
 
       if (shellRef.current) {
-        if (nextScale === 1 && (window.innerWidth <= 760 || width <= 200)) {
+        if (nextMinScale === 1 && (window.innerWidth <= 760 || width <= 200)) {
           shellRef.current.style.removeProperty('--arena-scale')
         } else {
-          shellRef.current.style.setProperty('--arena-scale', nextScale.toString())
+          shellRef.current.style.setProperty('--arena-scale', nextMinScale.toString())
         }
       }
 
-      setScale(prev => (Math.abs(prev - nextScale) >= 0.01 ? nextScale : prev))
+      setScales(prev => {
+        if (
+          Math.abs(prev.allyScale - nextAllyScale) >= 0.01 ||
+          Math.abs(prev.enemyScale - nextEnemyScale) >= 0.01
+        ) {
+          return { allyScale: nextAllyScale, enemyScale: nextEnemyScale, minScale: nextMinScale }
+        }
+        return prev
+      })
     }
 
     updateScale()
@@ -2026,9 +2042,9 @@ function useArenaFormationScale(
       observer.disconnect()
       window.removeEventListener('resize', updateScale)
     }
-  }, [formationRef, shellRef])
+  }, [formationRef, shellRef, allyCount, enemyCount])
 
-  return scale
+  return scales
 }
 
 /**
@@ -2112,7 +2128,6 @@ export const CombatArena = memo(function CombatArena({
   const vfxOverlayRef = useRef<HTMLDivElement | null>(null)
   const vfxRuntimeRef = useCombatVfx(arenaShellRef, vfxOverlayRef)
   const alliesFormationRef = useRef<HTMLDivElement | null>(null)
-  const arenaScale = useArenaFormationScale(alliesFormationRef, arenaShellRef)
 
   const current = queue[0] ?? null
   const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
@@ -2394,6 +2409,14 @@ export const CombatArena = memo(function CombatArena({
     ? Math.max(80, (expedition.durationSeconds - expedition.elapsedSeconds) * 1000
       - Math.max(0, performance.now() - lastQueueSyncPerformanceTime))
     : CORPSE_DISSIPATE_LEAD_MS
+  const allyCount = Math.max(1, allyEntries.length)
+  const enemyCount = Math.max(1, displayEntries.length)
+  const { allyScale, enemyScale, minScale } = useArenaFormationScale(
+    alliesFormationRef,
+    arenaShellRef,
+    allyCount,
+    enemyCount
+  )
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (isCombat) {
@@ -2578,7 +2601,7 @@ export const CombatArena = memo(function CombatArena({
     <div
       className="combat-arena-shell"
       ref={arenaShellRef}
-      style={{ '--arena-scale': arenaScale } as CSSProperties}
+      style={{ '--arena-scale': minScale } as CSSProperties}
     >
       {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
@@ -2606,7 +2629,11 @@ export const CombatArena = memo(function CombatArena({
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
             组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}
         <div className="arena-side arena-side--allies">
-          <div className="arena-formation arena-formation--allies" ref={alliesFormationRef}>
+          <div
+            className="arena-formation arena-formation--allies"
+            ref={alliesFormationRef}
+            style={{ '--arena-scale': allyScale } as CSSProperties}
+          >
             {allyEntries.length > 0 ? (
               <>
                 {allyEntries.map((ally, index) => {
@@ -2714,7 +2741,7 @@ export const CombatArena = memo(function CombatArena({
             enemyVisible ? (
               <div
                 className="arena-formation arena-formation--enemies"
-                style={{ '--corpse-fade-ms': `${corpseFadeMs}ms` } as CSSProperties}
+                style={{ '--arena-scale': enemyScale, '--corpse-fade-ms': `${corpseFadeMs}ms` } as CSSProperties}
               >
                 {displayEntries.map((entry, index) => (
                   <div
@@ -2752,7 +2779,10 @@ export const CombatArena = memo(function CombatArena({
                   ))}
               </div>
             ) : (
-              <div className="arena-formation arena-formation--enemies">
+              <div
+                className="arena-formation arena-formation--enemies"
+                style={{ '--arena-scale': enemyScale } as CSSProperties}
+              >
                 {Array.from({ length: 9 }).map((_, i) => (
                   <div className={`arena-slot arena-slot--empty arena-slot--slot-${i + 1}`} key={`empty-slot-${i + 1}`} />
                 ))}

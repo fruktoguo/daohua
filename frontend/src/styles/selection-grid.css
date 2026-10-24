@@ -871,7 +871,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding-top: 8px;
+  padding-top: 0;
   flex-wrap: nowrap;
   min-width: max-content;
 }

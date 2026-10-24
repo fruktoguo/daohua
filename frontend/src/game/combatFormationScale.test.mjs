@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { computeArenaFormationScale } from './combatScale.ts'
+import { computeArenaFormationScale, resolveOccupiedRows } from './combatScale.ts'
 
 test('combatFormationScale: 竖屏视口 (<= 760px) 保持 1 不缩放（由移动端专用纵列样式接管）', () => {
   assert.equal(computeArenaFormationScale(320, 480, 760), 1)
@@ -92,4 +92,31 @@ test('combatFormationScale: 5角色与18角色阵型——上下排槽位垂直�
       `在「${desc}」(${w}x${h}) 下，Slot 2 (前排上) 踩到 Slot 1 (前排中) 头上，重叠量: ${-verticalGap}px`
     )
   }
+})
+
+test('resolveOccupiedRows: 1~3人占1行(中排)，4~6人占2行，7~9人占3行', () => {
+  assert.equal(resolveOccupiedRows(1), 1)
+  assert.equal(resolveOccupiedRows(2), 1)
+  assert.equal(resolveOccupiedRows(3), 1)
+  assert.equal(resolveOccupiedRows(4), 2)
+  assert.equal(resolveOccupiedRows(5), 2)
+  assert.equal(resolveOccupiedRows(6), 2)
+  assert.equal(resolveOccupiedRows(7), 3)
+  assert.equal(resolveOccupiedRows(8), 3)
+  assert.equal(resolveOccupiedRows(9), 3)
+  assert.equal(resolveOccupiedRows(undefined), 3)
+})
+
+test('combatFormationScale: 3人及以下按单行自适应展开至满额 1.0~1.05', () => {
+  // 1080p 125% 缩放下（360x380），若按3行算只能缩放到 0.58~0.65；
+  // 但当一方是 3 人时，按 1 行自适应，可用高度充足，缩放达到饱满的 1.0~1.05！
+  const scale3 = computeArenaFormationScale(360, 380, 1536, 3)
+  assert.ok(scale3 >= 1.0 && scale3 <= 1.05, `3人单行 scale 应在 1.0~1.05 之间，实际: ${scale3}`)
+
+  const scale1 = computeArenaFormationScale(360, 380, 1536, 1)
+  assert.ok(scale1 >= 1.0 && scale1 <= 1.05, `1人单行 scale 应在 1.0~1.05 之间，实际: ${scale1}`)
+
+  // 5人时按 2 行自适应（约 0.85），大于 3 行的 0.58
+  const scale5 = computeArenaFormationScale(360, 380, 1536, 5)
+  assert.ok(scale5 >= 0.80 && scale5 <= 0.90, `5人双行 scale 应在 0.80~0.90 之间，实际: ${scale5}`)
 })

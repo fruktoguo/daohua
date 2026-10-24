@@ -51,6 +51,7 @@
 .expedition-content--duel {
   margin-right: -12px;
   margin-left: -12px;
+  margin-bottom: -12px;
   overflow: hidden;
 }
 
@@ -3689,10 +3690,11 @@
   display: block;
   min-width: 0;
   margin: 0;
-  padding: 5px 0;
+  padding: 0;
   border: 0;
   border-top: 1px solid rgba(205, 133, 77, 0.28);
   background: transparent;
+  overflow: visible;
 }
 
 .combat-equipment-slot>.combat-slot-label {
@@ -3707,11 +3709,9 @@
   min-width: 0;
   align-items: stretch;
   gap: 0;
-  overflow-x: auto;
-  overflow-y: visible;
-  overscroll-behavior-x: contain;
-  /* 预留充足上下外侧留白（34px），使 ConditionedTile 悬浮浮现的条件按钮（高 28px）在上下两侧均不被容器裁切截断 */
-  padding: 34px 0;
+  overflow: visible;
+  /* 紧凑贴边布局：收窄上下死黑冗余空白，让渡垂直视口高度至上方战场舞台 */
+  padding: 4px 0;
   scrollbar-width: thin;
 }
 .combat-slot-row--consumables {
@@ -4153,7 +4153,7 @@
   .combat-slot-tray {
     --item-slot-size: 52px;
     --item-tile-size: 52px;
-    padding: 16px 0;
+    padding: 3px 0;
   }
   .expedition-duel {
     grid-template-rows: minmax(180px, 1fr) auto;
@@ -4168,7 +4168,7 @@
   .combat-slot-tray {
     --item-slot-size: 44px;
     --item-tile-size: 44px;
-    padding: 10px 0;
+    padding: 2px 0;
   }
   .expedition-duel {
     grid-template-rows: minmax(160px, 1fr) auto;
