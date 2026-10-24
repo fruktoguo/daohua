@@ -31,6 +31,7 @@ try {
   const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto, SNAPSHOT_SCHEMA_VERSION } = await server.ssrLoadModule('/src/network/snapshot.ts')
   const { encodeJsonEnvelope, decodeEnvelope, decodeJsonPayload, WireMessageType, createRequestId } = await server.ssrLoadModule('/src/network/protocol.ts')
   const { GameClient } = await server.ssrLoadModule('/src/network/gameClient.ts')
+  const { COMBAT_TRIGGER_COMPARATORS, COMBAT_TRIGGER_CONDITIONS, COMBAT_TRIGGER_DEPENDENCIES } = await server.ssrLoadModule('/src/game/types.ts')
   const { setSessionAccount } = await server.ssrLoadModule('/src/network/sessionState.ts')
   if (process.argv[2]) {
     // fixture 文件字节即信封 JSON 原始字节：section data 区间校验按线上字节逐位复算。
@@ -292,6 +293,31 @@ try {
   const setPatch = await decodePlayerSnapshotDeltaDto(setDelta, current, Buffer.from(JSON.stringify(setDelta)))
   assert.equal(setPatch.combat.abilityTriggers['ability.test'][0].dependency, 'enemy', '集合对象依赖必须可解码')
   assert.equal(setPatch.combat.abilityTriggers['ability.test'][0].condition, 'alive-count', '群体聚合条件必须可解码')
+  // 验证全部战斗触发条件依赖目标、判定类型与比较符均可成功反序列化解码，彻底杜绝单边遗漏抛「枚举无效」
+  const allDepsTriggers = COMBAT_TRIGGER_DEPENDENCIES.map(dep => ({
+    dependency: dep, condition: 'current-hp', comparator: 'greater-than-equal', value: 10,
+  }))
+  const allCondsTriggers = COMBAT_TRIGGER_CONDITIONS.map(cond => ({
+    dependency: 'self', condition: cond, comparator: cond.startsWith('is-') || cond.startsWith('has-') ? 'is-active' : 'greater-than-equal', value: 1, buffId: 'buff.zhixue',
+  }))
+  const allCompsTriggers = COMBAT_TRIGGER_COMPARATORS.map(comp => ({
+    dependency: 'self', condition: 'current-hp', comparator: comp, value: 50,
+  }))
+  const fullTriggersLoadout = { ...triggerLoadout, abilityTriggers: {
+    'ability.deps': allDepsTriggers,
+    'ability.conds': allCondsTriggers,
+    'ability.comps': allCompsTriggers,
+  } }
+  const fullTriggerSection = {
+    section: 'loadout', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data: fullTriggersLoadout,
+    checksum: createHash('sha256').update(JSON.stringify(fullTriggersLoadout), 'utf8').digest('hex'),
+    updatedAt: '2026-09-14T00:00:09Z',
+  }
+  const fullTriggerDelta = { playerId: current.playerId, stateVersion: 8, lastSimulatedAt: '2026-09-14T00:00:09Z', changedSections: [fullTriggerSection] }
+  const fullTriggerPatch = await decodePlayerSnapshotDeltaDto(fullTriggerDelta, current, Buffer.from(JSON.stringify(fullTriggerDelta)))
+  assert.equal(fullTriggerPatch.combat.abilityTriggers['ability.deps'].length, COMBAT_TRIGGER_DEPENDENCIES.length, '全部 trigger.dependency 必须可解码')
+  assert.equal(fullTriggerPatch.combat.abilityTriggers['ability.conds'].length, COMBAT_TRIGGER_CONDITIONS.length, '全部 trigger.condition 必须可解码')
+  assert.equal(fullTriggerPatch.combat.abilityTriggers['ability.comps'].length, COMBAT_TRIGGER_COMPARATORS.length, '全部 trigger.comparator 必须可解码')
   // 静态代码门禁：扫描 frontend/src 下全部 TSX/TS 组件与自定义 Hook，
   // 严禁在条件返回（early return）之后调用 Hook，严格遵循 React Rules of Hooks。
   const require = createRequire(import.meta.url)
@@ -301,12 +327,17 @@ try {
   function findTsxFiles(dir) {
     const results = []
     for (const file of readdirSync(dir)) {
+      if (file === 'node_modules' || file === 'dist' || file === 'private-impl') continue
       const full = path.join(dir, file)
-      const stat = statSync(full)
-      if (stat.isDirectory()) {
-        results.push(...findTsxFiles(full))
-      } else if (file.endsWith('.tsx') || file.endsWith('.ts')) {
-        results.push(full)
+      try {
+        const stat = statSync(full)
+        if (stat.isDirectory()) {
+          results.push(...findTsxFiles(full))
+        } else if (file.endsWith('.tsx') || file.endsWith('.ts')) {
+          results.push(full)
+        }
+      } catch {
+        // 跨平台挂载点/无权限路径安全跳过
       }
     }
     return results

@@ -16,13 +16,17 @@ const failures = []
 /** 递归列出目录下指定后缀的文件 */
 function walk(dir, exts, out = []) {
   for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name === 'dist' || name === 'private-impl') continue
     const path = join(dir, name)
-    const stat = statSync(path)
-    if (stat.isDirectory()) {
-      if (name === 'node_modules' || name === 'dist') continue
-      walk(path, exts, out)
-    } else if (exts.includes(extname(path))) {
-      out.push(path)
+    try {
+      const stat = statSync(path)
+      if (stat.isDirectory()) {
+        walk(path, exts, out)
+      } else if (exts.includes(extname(path))) {
+        out.push(path)
+      }
+    } catch {
+      // 跨平台挂载点/无权限路径安全跳过
     }
   }
   return out

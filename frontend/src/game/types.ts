@@ -173,24 +173,30 @@ export type MarketSide = 'buy' | 'sell'
 export type MarketOrderStatus = 'active' | 'partially-filled' | 'filled' | 'cancelled' | 'expired'
 
 /**
+ * 战斗自动触发条件依赖目标枚举清单（权威单源，与服务端 SkillTriggerEvaluator 严格对齐）
+ */
+export const COMBAT_TRIGGER_DEPENDENCIES = [
+  'self',
+  'target-enemy',
+  'target',
+  'ally-lowest-hp',
+  'ally-highest-hp',
+  'enemy-lowest-hp',
+  'enemy-highest-hp',
+  /** 集合对象：友方全体单位（allies 规范命名，兼容 ally） */
+  'allies',
+  'ally',
+  /** 集合对象：敌方全体单位（enemies 规范命名，兼容 enemy） */
+  'enemies',
+  'enemy',
+  /** 全局战场环境：时钟与全局状态 */
+  'battle',
+] as const
+
+/**
  * 战斗自动触发条件依赖目标
  */
-export type CombatTriggerDependency =
-  | 'self'
-  | 'target-enemy'
-  | 'target'
-  | 'ally-lowest-hp'
-  | 'ally-highest-hp'
-  | 'enemy-lowest-hp'
-  | 'enemy-highest-hp'
-  /** 集合对象：友方全体单位（allies 规范命名，兼容 ally） */
-  | 'allies'
-  | 'ally'
-  /** 集合对象：敌方全体单位（enemies 规范命名，兼容 enemy） */
-  | 'enemies'
-  | 'enemy'
-  /** 全局战场环境：时钟与全局状态 */
-  | 'battle'
+export type CombatTriggerDependency = (typeof COMBAT_TRIGGER_DEPENDENCIES)[number]
 /**
  * 触发条件可引用的 Buff 词表项（服务端从当前配表派生；前端编辑器只从这里取项）
  */
@@ -218,55 +224,67 @@ export interface TriggerSpec {
 export const DEFAULT_TRIGGER_SPEC: TriggerSpec = { maxTriggersPerList: 4, equalTolerance: 1e-6 }
 
 /**
+ * 战斗自动触发条件判定类型枚举清单（权威单源，与服务端 SkillTriggerEvaluator 严格对齐）
+ */
+export const COMBAT_TRIGGER_CONDITIONS = [
+  'current-hp',
+  'current-mana',
+  'missing-hp',
+  'missing-mana',
+  'current-hp-percentage',
+  'missing-hp-percentage',
+  'current-mana-percentage',
+  'missing-mana-percentage',
+  'buff-stacks',
+  'stun-status',
+  'blind-status',
+  'silence-status',
+  /** 群体规模数量 */
+  'alive-count',
+  'dead-count',
+  'total-count',
+  /** 群体大盘百分比与极端成员 */
+  'total-hp-percentage',
+  'total-mana-percentage',
+  'lowest-hp-percentage',
+  'highest-hp-percentage',
+  /** 单体实体身份识别 */
+  'is-player',
+  'is-elite',
+  'is-boss',
+  'is-summon',
+  /** 群体成员存在性检索 */
+  'has-player',
+  'has-elite',
+  'has-boss',
+  'has-summon',
+  /** 全局战场时钟（秒） */
+  'elapsed-seconds',
+] as const
+
+/**
  * 战斗自动触发条件判定类型
  */
-export type CombatTriggerCondition =
-  | 'current-hp'
-  | 'current-mana'
-  | 'missing-hp'
-  | 'missing-mana'
-  | 'current-hp-percentage'
-  | 'missing-hp-percentage'
-  | 'current-mana-percentage'
-  | 'missing-mana-percentage'
-  | 'buff-stacks'
-  | 'stun-status'
-  | 'blind-status'
-  | 'silence-status'
-  /** 群体规模数量 */
-  | 'alive-count'
-  | 'dead-count'
-  | 'total-count'
-  /** 群体大盘百分比与极端成员 */
-  | 'total-hp-percentage'
-  | 'total-mana-percentage'
-  | 'lowest-hp-percentage'
-  | 'highest-hp-percentage'
-  /** 单体实体身份识别 */
-  | 'is-player'
-  | 'is-elite'
-  | 'is-boss'
-  | 'is-summon'
-  /** 群体成员存在性检索 */
-  | 'has-player'
-  | 'has-elite'
-  | 'has-boss'
-  | 'has-summon'
-  /** 全局战场时钟（秒） */
-  | 'elapsed-seconds'
+export type CombatTriggerCondition = (typeof COMBAT_TRIGGER_CONDITIONS)[number]
+
+/**
+ * 战斗自动触发条件比较操作符枚举清单（权威单源，与服务端 SkillTriggerEvaluator 严格对齐）
+ */
+export const COMBAT_TRIGGER_COMPARATORS = [
+  'less-than-equal',
+  'greater-than-equal',
+  'is-active',
+  'is-inactive',
+  'less-than',
+  'greater-than',
+  /** 浮点相等：按服务端 EqualTolerance 容差判定，不与精确 == 等价 */
+  'equal',
+] as const
+
 /**
  * 战斗自动触发条件比较操作符
  */
-export type CombatTriggerComparator =
-  | 'less-than-equal'
-  | 'greater-than-equal'
-  | 'is-active'
-  | 'is-inactive'
-  | 'less-than'
-  | 'greater-than'
-  /** 浮点相等：按服务端 EqualTolerance 容差判定，不与精确 == 等价 */
-  | 'equal'
-
+export type CombatTriggerComparator = (typeof COMBAT_TRIGGER_COMPARATORS)[number]
 /**
  * 功法技能效果类型
  */

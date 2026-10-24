@@ -11,6 +11,11 @@ import { getPlayerAvatarSrc, type PlayerAvatarId, useAvatarStore } from '../game
 import { isBuffEffectChannel, type BuffEffectEntry } from '../game/buffChannels'
 import { calculateRealmProgress } from '../game/combatConstants'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
+import {
+  COMBAT_TRIGGER_COMPARATORS,
+  COMBAT_TRIGGER_CONDITIONS,
+  COMBAT_TRIGGER_DEPENDENCIES,
+} from '../game/types'
 import type {
   ActionType,
   AutoUseBarType,
@@ -307,9 +312,9 @@ async function verifyHeadChecksum(dto: PlayerSnapshotDto): Promise<void> {
 }
 
 function mapPresence(value: unknown): PlayerSnapshot['presenceMode'] {
-  if (value === 0) return 'fully-offline'
-  if (value === 1) return 'online'
-  if (value === 2) return 'idle-offline'
+  if (value === 0 || value === 'offline' || value === 'fully-offline') return 'fully-offline'
+  if (value === 1 || value === 'online') return 'online'
+  if (value === 2 || value === 'idle-offline' || value === 'suspended') return 'idle-offline'
   throw new Error('玩家 presence 枚举值无效。')
 }
 
@@ -414,6 +419,11 @@ function optionalString(value: unknown, name: string): string | null {
 
 function mapExecutionKind(value: unknown, fallback?: QueueEntry['executionKind']): QueueEntry['executionKind'] {
   if (value === null || value === undefined) return fallback
+  if (typeof value === 'number') {
+    if (value === 0) return 'timed'
+    if (value === 1) return 'combat-encounter'
+    if (value === 2) return 'travel'
+  }
   if (typeof value !== 'string') throw new Error('行动 executionKind 字段无效。')
   switch (value.trim().toLowerCase().replaceAll('_', '-')) {
     case 'timed': return 'timed'
@@ -771,7 +781,10 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     const serverActionName = optionalString(row.actionName, `行动 ${actionId} 的 actionName`)
     const serverActionType = optionalString(row.actionType, `行动 ${actionId} 的 actionType`)
     const statusRaw = row.status
-    const status = statusRaw === 0 ? 'queued' : statusRaw === 1 ? 'running' : statusRaw === 2 ? 'blocked' : (() => { throw new Error(`行动 ${actionId} 状态无效。`) })()
+    const status = statusRaw === 0 || statusRaw === 'queued' ? 'queued'
+      : statusRaw === 1 || statusRaw === 'running' ? 'running'
+      : statusRaw === 2 || statusRaw === 'blocked' ? 'blocked'
+      : (() => { throw new Error(`行动 ${actionId} 状态无效。`) })()
     const entryId = stringValue(row.id)
     if (!entryId) throw new Error(`行动 ${actionId} 缺少实例 ID。`)
     const expedition = row.expedition === null || row.expedition === undefined
@@ -1008,9 +1021,9 @@ function mapTriggers(value: unknown): CombatTrigger[] {
   return value.map(item => {
     const row = requiredObject(item, 'trigger')
     return {
-      dependency: enumValue(row.dependency, ['self', 'target-enemy', 'ally-lowest-hp', 'ally-highest-hp', 'enemy-lowest-hp', 'enemy-highest-hp', 'ally', 'enemy'], 'trigger.dependency'),
-      condition: enumValue(row.condition, ['current-hp', 'current-mana', 'missing-hp', 'missing-mana', 'current-hp-percentage', 'missing-hp-percentage', 'current-mana-percentage', 'missing-mana-percentage', 'buff-stacks', 'stun-status', 'blind-status', 'silence-status', 'alive-count', 'dead-count'], 'trigger.condition'),
-      comparator: enumValue(row.comparator, ['less-than-equal', 'greater-than-equal', 'is-active', 'is-inactive', 'less-than', 'greater-than', 'equal'], 'trigger.comparator'),
+      dependency: enumValue(row.dependency, COMBAT_TRIGGER_DEPENDENCIES, 'trigger.dependency'),
+      condition: enumValue(row.condition, COMBAT_TRIGGER_CONDITIONS, 'trigger.condition'),
+      comparator: enumValue(row.comparator, COMBAT_TRIGGER_COMPARATORS, 'trigger.comparator'),
       value: finiteValue(row.value, 'trigger.value'),
       buffId: optionalString(row.buffId, 'trigger.buffId'),
     }
