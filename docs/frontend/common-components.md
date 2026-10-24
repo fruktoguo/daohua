@@ -579,3 +579,15 @@
 - **标准字重**：`font-weight: var(--font-weight-regular)` (暗色 400 / 浅色 600)、`font-weight: var(--font-weight-medium)` (暗色 500 / 浅色 600)。
 - **等宽数值字体**：`font-family: var(--font-number)` / `var(--font-numeric)`（数字、收益率、坐标、时间倒计时一律使用）。
 - **仙侠古典楷体**：`font-family: var(--font-kaiti)`（境界名、功法卷轴、空槽提示等古典仙侠语境）。
+
+---
+
+## 38. 顶栏社区外链与快捷操作组 (Topbar Actions & Community Links)
+
+- **适用场景**：
+  - **横版顶栏右上角快捷操作组**（`.topbar-actions`，常驻深浅色切换按钮 `<TaijiToggle />`，并在其左侧集成 QQ 交流群、GitHub 源码仓库与 GitHub 游戏安装包下载三枚修仙微光圆形按钮） -> `TopbarCommunityLinks`
+  - **官方 QQ 交流群图标按钮**：点击优先调用 Clipboard API 将群号 `940886387` 复制到剪贴板（非安全上下文降级），并唤起全局提示气泡 `setNotice`；鼠标悬停通过 `FloatingTooltip`（`tone="gold"`）展示群号及点击复制说明。
+  - **GitHub 源码仓库与安装包下载外链按钮**：分别安全新窗口跳转（`target="_blank" rel="noopener noreferrer"`）至代码主页及 Releases 发布页；鼠标悬停通过 `FloatingTooltip` 展示简练说明。
+  - **响应式视口规则**：在横版（宽屏/桌面端）常驻呈现；竖屏移动端（$\le 960\text{px}$）自动隐藏外链按钮，保留纯粹顶栏道号展示空间。
+- **组件源码**：[`frontend/src/components/TopbarCommunityLinks.tsx`](../../frontend/src/components/TopbarCommunityLinks.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.topbar-actions`, `.topbar-link-btn`)，浅色主题见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)

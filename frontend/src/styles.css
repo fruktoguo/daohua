@@ -133,6 +133,48 @@ body::after {
 ::view-transition-old(root) { z-index: 0; }
 ::view-transition-new(root) { z-index: 2147483646; }
 
+/* 顶栏右上角操作区：容纳社区外链组与太极深浅色切换 */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+
+.topbar-link-btn {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--gold-faint);
+  border-radius: 50%;
+  background: rgba(201, 180, 109, 0.04);
+  color: var(--text-dim);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.topbar-link-btn:hover {
+  border-color: var(--gold);
+  background: rgba(201, 180, 109, 0.12);
+  color: var(--gold-bright);
+  box-shadow: 0 0 10px var(--gold-faint);
+  transform: translateY(-1px);
+}
+
+.topbar-link-btn:active {
+  transform: translateY(0);
+}
+
+.topbar-link-btn svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 /* 顶栏太极开关：对称正置双鱼，盘底为偏差暖米色，鱼眼取对色；常态静止，仅点击时经 --taiji-spin 翻转 180°。 */
 .taiji-toggle {
   display: grid;
@@ -6434,6 +6476,10 @@ input[type="checkbox"] {
     padding-right: 0;
     border-right: 0;
   }
+  .topbar-actions .topbar-link-btn {
+    display: none;
+  }
+
 
   .queue-center {
     grid-column: 1 / -1;

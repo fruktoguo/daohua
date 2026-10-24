@@ -762,6 +762,19 @@
   box-shadow: 0 0 12px var(--gold-faint), inset 0 1px 4px rgba(71, 49, 18, 0.14);
 }
 
+:root[data-theme="light"] .topbar-link-btn {
+  border-color: rgba(140, 105, 50, 0.22);
+  background: rgba(140, 105, 50, 0.05);
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .topbar-link-btn:hover {
+  border-color: var(--gold);
+  background: rgba(140, 105, 50, 0.12);
+  color: var(--gold-deep);
+  box-shadow: 0 0 10px rgba(184, 134, 11, 0.22);
+}
+
 /* 头像台与全屏入口保留原有径向层次，避免多层深色渐变变成同一平面。 */
 :root[data-theme="light"] .equipment-stage {
   background: radial-gradient(ellipse at 50% 50%, rgba(68, 110, 125, 0.16) 0%, rgba(var(--shade-rgb), 0.5) 80%),

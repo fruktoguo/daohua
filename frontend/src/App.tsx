@@ -26,6 +26,7 @@ import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
 import { RightSidebar } from './components/RightSidebar'
 import { TaijiToggle } from './components/TaijiToggle'
+import { TopbarCommunityLinks } from './components/TopbarCommunityLinks'
 import { TutorialOverlay } from './tutorial/TutorialOverlay'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
@@ -725,7 +726,10 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
         </div>
       </div>
       <QueueCenter />
-      <TaijiToggle />
+      <div className="topbar-actions">
+        <TopbarCommunityLinks />
+        <TaijiToggle />
+      </div>
     </header>
   )
 })

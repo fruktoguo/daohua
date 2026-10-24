@@ -207,6 +207,13 @@ export const appZh = {
       ascendedComplete: '飞升圆满 (100%)',
       themeToLight: '转为浅色',
       themeToDark: '转为深色',
+      qqTip: '官方QQ群：{group}（点击复制）',
+      qqCopied: '已复制官方QQ群号：{group}',
+      qqAria: '官方QQ群 {group}，点击复制群号',
+      githubTip: 'GitHub 源码仓库',
+      githubAria: '打开 GitHub 源码仓库',
+      downloadTip: '游戏安装包下载 (Releases)',
+      downloadAria: '打开 GitHub 游戏安装包下载页面',
     },
     // 行动队列
     queue: {
