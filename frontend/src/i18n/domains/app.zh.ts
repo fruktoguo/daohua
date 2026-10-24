@@ -534,6 +534,8 @@ export const appZh = {
       unlockAvatarConfirmBtn: '确认消耗 5,000 功德解锁',
       aboutHeading: '关于与社区',
       versionLabel: '客户端版本',
+      nativeVersionLabel: 'Android 客户端',
+      checkUpdateBtn: '检查更新',
       qqGroupLabel: '官方QQ交流群',
       qqActionBtn: '唤起QQ加群',
       qqCopyBtn: '复制群号',

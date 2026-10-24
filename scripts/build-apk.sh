@@ -126,6 +126,23 @@ if [[ "$HD_MODE" == "1" ]]; then
   node "$ROOT_DIR/scripts/inject-hd-assets.mjs" overlay-dist "$SHELL_DIR/app/src/main/assets/www"
 fi
 
+# 准备版本指纹并注入 Android 构建工程
+GIT_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")"
+PKG_VERSION="$(node -p "try { require('./frontend/package.json').version } catch(e) { '0.1.0' }" 2>/dev/null || echo "0.1.0")"
+if [[ -z "$RELEASE_TAG" ]]; then
+  RELEASE_TAG="v${PKG_VERSION}-sha-${GIT_SHA}"
+fi
+COMMIT_COUNT="$(git rev-list --count HEAD 2>/dev/null || echo "100")"
+APP_VERSION_CODE="$(( 10000 + COMMIT_COUNT ))"
+BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+VERSION_JSON="{\"versionName\":\"${PKG_VERSION}\",\"versionCode\":${APP_VERSION_CODE},\"gitSha\":\"${GIT_SHA}\",\"releaseTag\":\"${RELEASE_TAG}\",\"buildTime\":\"${BUILD_TIME}\"}"
+mkdir -p "$SHELL_DIR/app/src/main/assets" "$SHELL_DIR/app/src/main/assets/www"
+printf '%s\n' "$VERSION_JSON" > "$SHELL_DIR/app/src/main/assets/app-version.json"
+printf '%s\n' "$VERSION_JSON" > "$SHELL_DIR/app/src/main/assets/www/app-version.json"
+
+GRADLE_PROPS="-PappVersionName=${PKG_VERSION} -PappVersionCode=${APP_VERSION_CODE}"
+
 # 2. 执行 Android 打包
 printf '\n==> 执行 Android assembleRelease 打包...\n'
 
@@ -138,11 +155,11 @@ if command -v cmd.exe >/dev/null 2>&1; then
   if [[ "$SHELL_DIR" =~ artifacts/android-shell ]]; then
     WIN_SHELL_PATH="artifacts\\android-shell"
   fi
-  cmd.exe /c "${WIN_GRADLE} -p ${WIN_SHELL_PATH} assembleRelease" && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
+  cmd.exe /c "${WIN_GRADLE} -p ${WIN_SHELL_PATH} assembleRelease ${GRADLE_PROPS}" && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
 elif command -v gradle >/dev/null 2>&1; then
-  gradle -p "$SHELL_DIR" assembleRelease && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
+  gradle -p "$SHELL_DIR" assembleRelease ${GRADLE_PROPS} && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
 elif [[ -f "/c/Users/YuoHira/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle.bat" ]]; then
-  "/c/Users/YuoHira/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle.bat" -p "$SHELL_DIR" assembleRelease && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
+  "/c/Users/YuoHira/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle.bat" -p "$SHELL_DIR" assembleRelease ${GRADLE_PROPS} && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
 fi
 
 if [[ "$BUILD_SUCCESS" != "1" ]]; then
@@ -167,6 +184,8 @@ if [[ -f "$RELEASE_APK" ]]; then
   if [[ "$HD_MODE" == "1" ]]; then
     printf '  • 视觉规格: 立绘 1024px | 建筑 128px | 道具 128px 超清覆盖\n'
   fi
+  printf '  • 版本指纹: %s (versionCode: %s)\n' "$RELEASE_TAG" "$APP_VERSION_CODE"
+  printf '  • 自动更新: 已内嵌 (每小时自动检测 GitHub Releases: fruktoguo/daohua)\n'
   printf '======================================================\n\n'
   if [[ "$UPLOAD_RELEASE" == "1" ]]; then
     UPLOAD_ARGS=("--file" "$ROOT_DIR/artifacts/daohua.apk")

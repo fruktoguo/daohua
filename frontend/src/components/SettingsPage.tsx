@@ -18,6 +18,18 @@ import {
   openProtocolUrl,
 } from './TopbarCommunityLinks'
 
+interface DaoHuaNativeBridge {
+  getAppVersion(): string
+  getGitSha(): string
+  checkUpdate(): void
+}
+
+declare global {
+  interface Window {
+    DaoHuaNative?: DaoHuaNativeBridge
+  }
+}
+
 /** 设置页面分类（账号、显示偏好、形象、引导、关于） */
 type SettingsTab = 'account' | 'display' | 'avatar' | 'tutorial' | 'about'
 
@@ -398,6 +410,23 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                     {CLIENT_VERSION}
                   </span>
                 </div>
+                {typeof window !== 'undefined' && window.DaoHuaNative && (
+                  <div className="setting-row">
+                    <div>
+                      <span className="setting-label">{t('app.settings.nativeVersionLabel')}</span>
+                      <p className="setting-desc font-mono">
+                        {window.DaoHuaNative.getAppVersion()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-modify-btn"
+                      onClick={() => window.DaoHuaNative?.checkUpdate()}
+                    >
+                      {t('app.settings.checkUpdateBtn')}
+                    </button>
+                  </div>
+                )}
                 <div className="setting-row">
                   <div>
                     <span className="setting-label">{t('app.settings.qqGroupLabel')}</span>
