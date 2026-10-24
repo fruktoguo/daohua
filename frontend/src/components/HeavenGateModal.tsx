@@ -20,6 +20,14 @@ import {
   type LinggenPoints,
 } from '../game/linggenBoard'
 
+/** 阵盘 SVG 视口几何参数（中心严格对准 (200, 200)，四周预留 65px 外圈文本辐射空间）。 */
+const BOARD_VIEWBOX = {
+  minX: -65,
+  minY: -65,
+  size: 530,
+} as const
+const BOARD_VIEWBOX_ATTR = `${BOARD_VIEWBOX.minX} ${BOARD_VIEWBOX.minY} ${BOARD_VIEWBOX.size} ${BOARD_VIEWBOX.size}`
+
 /** 阵盘视觉态。 */
 type BoardState = 'unrolled' | 'allocating' | 'finalized'
 
@@ -154,13 +162,13 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     }, 1200)
   }, [])
 
-  /** 客户端坐标换算为阵盘 400×400 坐标。 */
+  /** 客户端坐标换算为阵盘 SVG 坐标系。 */
   const toBoardPoint = useCallback((clientX: number, clientY: number) => {
     const rect = svgRef.current?.getBoundingClientRect()
     if (!rect || rect.width <= 0 || rect.height <= 0) return null
     return {
-      x: ((clientX - rect.left) * 400) / rect.width,
-      y: ((clientY - rect.top) * 400) / rect.height,
+      x: BOARD_VIEWBOX.minX + ((clientX - rect.left) * BOARD_VIEWBOX.size) / rect.width,
+      y: BOARD_VIEWBOX.minY + ((clientY - rect.top) * BOARD_VIEWBOX.size) / rect.height,
     }
   }, [])
 
@@ -292,7 +300,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
             <svg
               ref={svgRef}
               className="hg-board__svg"
-              viewBox="0 0 400 400"
+              viewBox={BOARD_VIEWBOX_ATTR}
               role="application"
               aria-label={t('insight.heavenGate.boardAria')}
             >
@@ -491,49 +499,83 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                           <path d="M 0,-9 L 0,6 M -4,-2 L 0,2 L 4,-2" className="hg-handle__vein" />
                         </g>
                         <circle cx="0" cy="-1" r="2.2" className="hg-handle__pip" />
-                        <g className="hg-handle__badge">
-                          <rect x="-17" y="-9" width="34" height="17" rx="3" className="hg-handle__badge-bg" />
-                          <text x="0" y="0.5" textAnchor="middle" dominantBaseline="central" className="hg-handle__badge-text">
-                            {tier === 'heaven' ? '天灵' : '地灵'}
-                          </text>
-                        </g>
                       </g>
                     </g>
                   )
                 })}
               </g>
 
-              {/* 视觉层 8：顶点标签（固定贴在阵盘外圈，纵向三行依次为五行字、当前值、先天值） */}
-              <g className="hg-board__labels">
+              {/* 视觉层 8：顶点标签（沿各轴自圆盘边缘向外排布：五行文本 -> 五行数字 -> 初始数字 -> 天灵/地灵铭牌，中心共线对齐） */}
+              <g className="hg-board__labels" pointerEvents="none">
                 {LINGGEN_AXES.map(axis => {
-                  const anchor = vertexPoint(axis, LINGGEN_AXIS_CAP)
-                  const dx = anchor.x - BOARD_CENTER.x
-                  const dy = anchor.y - BOARD_CENTER.y
-                  // 顶部金轴收紧外扩比并把三行文字整体下压：22px 毛笔字与描边不再触顶被裁。
-                  // 其余四轴取 1.15 倍外圈即可。
-                  const outward = dy < -0.5 ? 1.14 : 1.15
-                  const labelX = BOARD_CENTER.x + dx * outward
-                  const labelY = BOARD_CENTER.y + dy * outward
-                  // 顶部轴的金字基线额外下移 8px，确保笔画上缘与 text-stroke 完整落在 viewBox 内。
-                  const nameDy = dy < -0.5 ? -6 : -14
-                  const valDy = dy < -0.5 ? 12 : 4
-                  const baseDy = dy < -0.5 ? 26 : 18
-                  const isRight = dx > 0.01
-                  const isLeft = dx < -0.01
-                  const textAnchor = isRight ? 'start' : isLeft ? 'end' : 'middle'
-                  const value = hasRolled ? String(roots[axis.key]) : t('insight.heavenGate.undetermined')
+                  const val = roots[axis.key]
+                  const tier = axisTier(val)
+                  // 沿该轴辐射单位向量计算各元素中心坐标
+                  const namePos = {
+                    x: Number((BOARD_CENTER.x + 190 * axis.unitCos).toFixed(1)),
+                    y: Number((BOARD_CENTER.y + 190 * axis.unitSin).toFixed(1)),
+                  }
+                  const valPos = {
+                    x: Number((BOARD_CENTER.x + 214 * axis.unitCos).toFixed(1)),
+                    y: Number((BOARD_CENTER.y + 214 * axis.unitSin).toFixed(1)),
+                  }
+                  const basePos = {
+                    x: Number((BOARD_CENTER.x + 233 * axis.unitCos).toFixed(1)),
+                    y: Number((BOARD_CENTER.y + 233 * axis.unitSin).toFixed(1)),
+                  }
+                  const badgePos = {
+                    x: Number((BOARD_CENTER.x + 251 * axis.unitCos).toFixed(1)),
+                    y: Number((BOARD_CENTER.y + 251 * axis.unitSin).toFixed(1)),
+                  }
+                  const displayValue = hasRolled ? String(val) : t('insight.heavenGate.undetermined')
                   return (
                     <g key={axis.key} className={`hg-label hg-label--${axis.key}`} data-axis={axis.key}>
-                      <text x={labelX} y={labelY + nameDy} textAnchor={textAnchor} className="hg-label__name">
+                      <text
+                        x={namePos.x}
+                        y={namePos.y}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="hg-label__name"
+                      >
                         {axis.label}
                       </text>
-                      <text x={labelX} y={labelY + valDy} textAnchor={textAnchor} className="hg-label__val">
-                        {value}
+                      <text
+                        x={valPos.x}
+                        y={valPos.y}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="hg-label__val"
+                      >
+                        {displayValue}
                       </text>
                       {hasRolled && (
-                        <text x={labelX} y={labelY + baseDy} textAnchor={textAnchor} className="hg-label__base">
+                        <text
+                          x={basePos.x}
+                          y={basePos.y}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          className="hg-label__base"
+                        >
                           {`(初${innate[axis.key]})`}
                         </text>
+                      )}
+                      {hasRolled && tier !== 'none' && (
+                        <g
+                          className="hg-label__badge"
+                          data-tier={tier}
+                          transform={`translate(${badgePos.x}, ${badgePos.y})`}
+                        >
+                          <rect x="-16" y="-8.5" width="32" height="17" rx="3" className="hg-label__badge-bg" />
+                          <text
+                            x="0"
+                            y="0.5"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            className="hg-label__badge-text"
+                          >
+                            {tier === 'heaven' ? '天灵' : '地灵'}
+                          </text>
+                        </g>
                       )}
                     </g>
                   )
