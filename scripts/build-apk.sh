@@ -104,7 +104,11 @@ if [[ "$SKIP_WEB_BUILD" != "1" || ! -d "$ROOT_DIR/frontend/dist" ]]; then
   fi
 
   printf '==> [2/4] 编译前端 Web 产物...\n'
-  npm --prefix "$ROOT_DIR/frontend" run build
+  if command -v cmd.exe >/dev/null 2>&1; then
+    cmd.exe /c "npm --prefix frontend run build"
+  else
+    npm --prefix "$ROOT_DIR/frontend" run build
+  fi
 
   if [[ "$HD_MODE" == "1" ]]; then
     printf '==> [3/4] 恢复前端工作区 (确保 Git 零改动)...\n'
