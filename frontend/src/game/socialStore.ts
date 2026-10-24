@@ -12,7 +12,7 @@ import type {
   SocialStateDto,
   ValuationBreakdownDto,
 } from '../network/protocol'
-import type { RespawnPolicy } from './types'
+import type { BattleReport, RespawnPolicy } from './types'
 import { gameClient } from '../network/gameClient'
 import { useGameStore } from './gameStore'
 
@@ -21,6 +21,16 @@ export const PARTY_OPEN_SLOTS_MIN = 2
 /** 队伍开启槽位数上限 */
 export const PARTY_OPEN_SLOTS_MAX = 5
 
+
+/** 队伍成员当前行动收益缓存项 */
+export interface TeammateReportEntry {
+  report: BattleReport | null
+  loading: boolean
+  updatedAtMs: number
+}
+
+/** 存储在途的队友行动收益请求（requestId → playerId） */
+const teammatePendingReqs = new Map<string, string>()
 /**
  * 社交状态接口（好友、申请、队伍、匹配登记、附近修士）。
  * 数据完全来自服务端下发的 SocialState / PartyLobby 帧：客户端不做任何本地推演，
@@ -53,6 +63,10 @@ interface SocialStore {
   playerCardRequestId: string | null
   /** 好友频道当前选中的私聊对象玩家 ID */
   activeFriendId: string | null
+  /** 队伍成员当前行动收益缓存（键为 playerId） */
+  teammateReports: Readonly<Record<string, TeammateReportEntry>>
+  /** 请求指定队伍成员的当前行动收益（复用 PlayerCardRequest） */
+  requestTeammateReport: (playerId: string) => void
   /** 应用服务端下发的社交状态 */
   applyState: (state: SocialStateDto) => void
   /** 应用服务端下发的大厅视图（整体替换） */
@@ -96,7 +110,7 @@ interface SocialStore {
   setRespawnPolicy: (policy: RespawnPolicy, targetPlayerId?: string | null) => boolean
 }
 
-const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId'> = {
+const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId' | 'teammateReports'> = {
   friends: [],
   incomingRequests: [],
   outgoingRequests: [],
@@ -110,6 +124,7 @@ const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequest
   playerCard: null,
   playerCardRequestId: null,
   activeFriendId: null,
+  teammateReports: {},
 }
 
 /**
@@ -153,13 +168,50 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
     if (requestId === null) return
     set({ playerCard: null, playerCardRequestId: requestId })
   },
+  requestTeammateReport: playerId => {
+    const requestId = gameClient.requestPlayerCard(playerId)
+    if (requestId === null) return
+    teammatePendingReqs.set(requestId, playerId)
+    set(curr => ({
+      teammateReports: {
+        ...curr.teammateReports,
+        [playerId]: {
+          report: curr.teammateReports[playerId]?.report ?? null,
+          loading: true,
+          updatedAtMs: curr.teammateReports[playerId]?.updatedAtMs ?? 0,
+        },
+      },
+    }))
+  },
   applyPlayerCard: card => {
+    const isTeammateReq = teammatePendingReqs.has(card.requestId)
+    if (isTeammateReq) {
+      teammatePendingReqs.delete(card.requestId)
+    }
+    if (card.playerId) {
+      set(curr => ({
+        teammateReports: {
+          ...curr.teammateReports,
+          [card.playerId]: {
+            report: card.currentReport ?? null,
+            loading: false,
+            updatedAtMs: Date.now(),
+          },
+        },
+      }))
+    }
+    // 若仅是查询队友行动收益，不触发 PlayerCardModal 弹窗
+    if (isTeammateReq && card.requestId !== get().playerCardRequestId) return
+
     if (card.requestId !== get().playerCardRequestId) return
     set({ playerCard: card, playerCardRequestId: null })
   },
   closePlayerCard: () => set({ playerCard: null, playerCardRequestId: null }),
   setActiveFriend: activeFriendId => set({ activeFriendId }),
-  reset: () => set({ ...EMPTY }),
+  reset: () => {
+    teammatePendingReqs.clear()
+    set({ ...EMPTY })
+  },
   readyParty: () => {
     const party = get().party
     if (!party || party.activeSession) return false

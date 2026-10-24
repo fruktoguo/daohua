@@ -1525,3 +1525,21 @@
     background: rgba(var(--surface-rgb), 0.97);
   }
 }
+
+/* 行动统计面板简要卡片浅色模式适配 */
+:root[data-theme="light"] .battle-report-kpi-card {
+  background: rgba(var(--surface-rgb), 0.7);
+}
+:root[data-theme="light"] .battle-report-brief-drop-row {
+  background: rgba(var(--surface-rgb), 0.45);
+  border-color: var(--gold-faint);
+}
+:root[data-theme="light"] .battle-report-kpi-value--crimson {
+  color: var(--danger);
+}
+:root[data-theme="light"] .battle-report-kpi-value--cyan {
+  color: var(--qi);
+}
+:root[data-theme="light"] .battle-report-kpi-value--emerald {
+  color: var(--jade);
+}

@@ -1,4 +1,4 @@
-import type { CombatAttributes, RespawnPolicy } from '../game/types'
+import type { BattleReport, CombatAttributes, RespawnPolicy } from '../game/types'
 
 /**
  * 道化太初客户端二进制信封协议（DHW1 = DaoHua Wire v1）。
@@ -833,6 +833,8 @@ export interface PlayerCardDto {
   attributes?: CombatAttributes | null
   /** 生活技艺等级表（techniqueId → level） */
   techniqueLevels?: Record<string, number> | null
+  /** 当前行动账本（若目标有进行中行动） */
+  currentReport?: BattleReport | null
 }
 
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1

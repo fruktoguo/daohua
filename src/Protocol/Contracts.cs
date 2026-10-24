@@ -1207,4 +1207,5 @@ public sealed record PlayerCardDto(
     IReadOnlyList<PlayerCardAutoUseSlotDto>? AutoUseSlots = null,
     object? Attributes = null,
     IReadOnlyDictionary<string, int>? TechniqueLevels = null,
-    ValuationBreakdownDto? ValuationBreakdown = null);
+    ValuationBreakdownDto? ValuationBreakdown = null,
+    object? CurrentReport = null);

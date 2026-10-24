@@ -44,6 +44,33 @@ public sealed class WireEnvelopeTests
         Assert.Equal(3, wireSlot.GetProperty("quantity").GetDouble());
         Assert.Equal(7, wireSlot.GetProperty("offlineReserveQuantity").GetDouble());
     }
+
+    [Fact]
+    public void PlayerCardEnvelope_RoundTripsCurrentReport()
+    {
+        var requestId = Guid.NewGuid();
+        var card = new PlayerCardDto(
+            requestId.ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            CurrentReport: new
+            {
+                reportId = "test-report-id",
+                actionId = "combat.hunt",
+                experience = 1200.0,
+                combatExperience = 600.0,
+                encounters = 10,
+                items = new[] { new { itemId = "item.ningxue-pill", quantity = 5 } }
+            });
+        var bytes = WireEnvelopeCodec.Encode(WireEnvelope.Json(WireMessageType.PlayerCard, requestId, 9, card));
+        Assert.True(WireEnvelopeCodec.TryDecode(bytes, out var decoded));
+        Assert.Equal(WireMessageType.PlayerCard, decoded.MessageType);
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<PlayerCardDto>(decoded, out var restored));
+        Assert.NotNull(restored!.CurrentReport);
+        using var json = JsonDocument.Parse(decoded.Payload);
+        var reportElem = json.RootElement.GetProperty("currentReport");
+        Assert.Equal("test-report-id", reportElem.GetProperty("reportId").GetString());
+        Assert.Equal(1200.0, reportElem.GetProperty("experience").GetDouble());
+    }
     /// <summary>篡改帧解码返回 false；超 MaxFrameBytes 的载荷在构造信封时即抛 ProtocolException。</summary>
 
     [Fact]

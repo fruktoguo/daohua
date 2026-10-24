@@ -3827,18 +3827,178 @@
   flex-shrink: 0;
 }
 
+.battle-report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.battle-report-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .battle-report-title {
   color: var(--gold-bright);
   font-size: 12px;
   letter-spacing: 2px;
 }
 
+.battle-report-mode-tabs button,
+.battle-report-member-tabs button {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+.battle-report-loading,
 .battle-report-empty {
   margin: 0;
   color: var(--text-dim);
   font-size: 11px;
 }
 
+/* ===== 行动简要统计视图 (ReportBriefSection) ===== */
+.battle-report-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.battle-report-brief-head-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.battle-report-brief-duration {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* 四大核心速率指标网格 */
+.battle-report-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.battle-report-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--gold-faint);
+  border-radius: 3px;
+  min-width: 0;
+}
+
+.battle-report-kpi-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
+.battle-report-kpi-value {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.battle-report-kpi-value--gold {
+  color: var(--gold-bright);
+}
+
+.battle-report-kpi-value--crimson {
+  color: #f87171;
+}
+
+.battle-report-kpi-value--cyan {
+  color: #38bdf8;
+}
+
+.battle-report-kpi-value--emerald {
+  color: #4ade80;
+}
+
+.battle-report-kpi-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 主要产出日估算 */
+.battle-report-brief-drops {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--gold-faint);
+}
+
+.battle-report-brief-drops-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--gold-dim);
+}
+
+.battle-report-brief-drops-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.battle-report-brief-drops-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-report-brief-drops-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 4px;
+}
+
+.battle-report-brief-drop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 2px;
+}
+
+.battle-report-brief-drop-rates {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.battle-report-brief-drop-daily-qty {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.battle-report-brief-drop-daily-val {
+  font-size: 10px;
+  color: var(--gold-bright);
+}
 .battle-report-body {
   display: grid;
   min-height: 0;

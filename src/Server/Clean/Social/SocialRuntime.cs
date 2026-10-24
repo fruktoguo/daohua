@@ -423,7 +423,8 @@ public sealed class SocialRuntime
             AutoUseSlots: combatSlots,
             Attributes: attributes,
             TechniqueLevels: techniqueLevels,
-            ValuationBreakdown: valuation.ToDto());
+            ValuationBreakdown: valuation.ToDto(),
+            CurrentReport: state.Duel.CurrentReport);
     }
 
     /// <summary>执行一条社交指令。</summary>
