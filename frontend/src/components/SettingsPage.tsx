@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { RenameModal } from './RenameModal'
 import { ChangePasswordModal } from './ChangePasswordModal'
@@ -8,16 +8,26 @@ import { LOCALES, useI18nStore, useT } from '../i18n'
 import { AVATAR_OPTIONS, getPlayerAvatarSrc, normalizePlayerAvatarId, useAvatarStore, type AvatarOption } from '../game/avatarStore'
 import { useThemeStore } from '../game/themeStore'
 import { TUTORIAL_DONE } from '../tutorial/steps'
+import { CLIENT_VERSION } from '../network/versionManager'
+import {
+  OFFICIAL_QQ_GROUP,
+  GITHUB_REPO_URL,
+  GITHUB_LATEST_APK_DOWNLOAD_URL,
+  resolveQqGroupLink,
+  copyTextToClipboard,
+  openProtocolUrl,
+} from './TopbarCommunityLinks'
 
-/** 设置页面分类（账号、显示偏好、形象与引导） */
-type SettingsTab = 'account' | 'display' | 'avatar' | 'tutorial'
+/** 设置页面分类（账号、显示偏好、形象、引导、关于） */
+type SettingsTab = 'account' | 'display' | 'avatar' | 'tutorial' | 'about'
 
 /** 设置分类导航配置：顺序即左栏展示顺序 */
-const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; labelKey: 'tabAccount' | 'tabDisplay' | 'tabAvatar' | 'tabTutorial' }> = [
+const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; labelKey: 'tabAccount' | 'tabDisplay' | 'tabAvatar' | 'tabTutorial' | 'tabAbout' }> = [
   { id: 'account', labelKey: 'tabAccount' },
   { id: 'display', labelKey: 'tabDisplay' },
   { id: 'avatar', labelKey: 'tabAvatar' },
   { id: 'tutorial', labelKey: 'tabTutorial' },
+  { id: 'about', labelKey: 'tabAbout' },
 ]
 
 /** 左栏分类小图标（22px 格内 13px 描边矢量，与全局 Icon 同风格） */
@@ -47,8 +57,13 @@ const SETTINGS_NAV_ICONS: Record<SettingsTab, React.JSX.Element> = {
       <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
     </svg>
   ),
+  about: (
+    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-4M12 8h.01" />
+    </svg>
+  ),
 }
-
 /** 格式化绝对时间戳为 YYYY-MM-DD HH:mm:ss 字符串 */
 function formatDateTime(unixSeconds: number, fallbackText: string): string {
   if (!unixSeconds || unixSeconds <= 0) return fallbackText
@@ -141,6 +156,31 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
 
   const cooldownStr = formatCooldown(remainingCooldown, t)
   const accountValue = `${account || name}${sequenceId > 0 ? `#${sequenceId}` : ''}`
+
+  const handleOpenQqInSettings = useCallback(async () => {
+    const deepLink = resolveQqGroupLink()
+    const copyPromise = copyTextToClipboard(OFFICIAL_QQ_GROUP)
+    const opened = openProtocolUrl(deepLink)
+    const copied = await copyPromise
+
+    window.setTimeout(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
+      }
+      if (!opened) {
+        useGameStore.getState().setNotice(t('app.topbar.qqLaunchBlocked', { group: OFFICIAL_QQ_GROUP }))
+      } else if (copied) {
+        useGameStore.getState().setNotice(t('app.topbar.qqLaunchedWithCopied', { group: OFFICIAL_QQ_GROUP }))
+      } else {
+        useGameStore.getState().setNotice(t('app.topbar.qqLaunched', { group: OFFICIAL_QQ_GROUP }))
+      }
+    }, 600)
+  }, [t])
+
+  const handleCopyQqOnly = useCallback(async () => {
+    await copyTextToClipboard(OFFICIAL_QQ_GROUP)
+    useGameStore.getState().setNotice(t('app.topbar.qqCopied', { group: OFFICIAL_QQ_GROUP }))
+  }, [t])
 
   return (
     <section className="panel settings-page">
@@ -346,6 +386,72 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                 })}
               </div>
             </section>
+          )}
+
+          {activeTab === 'about' && (
+            <>
+              <section className="settings-group" aria-label={t('app.settings.aboutHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.aboutHeading')}</h3>
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.settings.versionLabel')}</span>
+                  <span className="setting-value font-mono">
+                    {CLIENT_VERSION}
+                  </span>
+                </div>
+                <div className="setting-row">
+                  <div>
+                    <span className="setting-label">{t('app.settings.qqGroupLabel')}</span>
+                    <p className="setting-desc">{OFFICIAL_QQ_GROUP}</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="inline-modify-btn"
+                      onClick={handleOpenQqInSettings}
+                    >
+                      {t('app.settings.qqActionBtn')}
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-modify-btn"
+                      onClick={handleCopyQqOnly}
+                    >
+                      {t('app.settings.qqCopyBtn')}
+                    </button>
+                  </div>
+                </div>
+                <div className="setting-row">
+                  <div>
+                    <span className="setting-label">{t('app.settings.githubLabel')}</span>
+                    <p className="setting-desc">fruktoguo/daohua</p>
+                  </div>
+                  <a
+                    className="inline-modify-btn"
+                    href={GITHUB_REPO_URL}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    {t('app.settings.githubActionBtn')}
+                  </a>
+                </div>
+                <div className="setting-row">
+                  <div>
+                    <span className="setting-label">{t('app.settings.downloadLabel')}</span>
+                    <p className="setting-desc">{t('app.settings.downloadDesc')}</p>
+                  </div>
+                  <a
+                    className="inline-modify-btn"
+                    download="daohua.apk"
+                    href={GITHUB_LATEST_APK_DOWNLOAD_URL}
+                    onClick={() => useGameStore.getState().setNotice(t('app.topbar.downloadStarted'))}
+                    style={{ textDecoration: 'none' }}
+                  >
+                    {t('app.settings.downloadActionBtn')}
+                  </a>
+                </div>
+              </section>
+            </>
           )}
         </div>
       </div>

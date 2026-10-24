@@ -16,7 +16,7 @@ export const GITHUB_REPO_URL = 'https://github.com/fruktoguo/DaoHua'
 export const GITHUB_LATEST_APK_DOWNLOAD_URL = 'https://github.com/fruktoguo/daohua/releases/latest/download/daohua.apk'
 
 /** 根据运行环境解析 QQ 群 DeepLink 协议地址 */
-function resolveQqGroupLink(): string {
+export function resolveQqGroupLink(): string {
   if (typeof navigator === 'undefined') return QQ_GROUP_DESKTOP_DEEP_LINK
   const ua = navigator.userAgent.toLowerCase()
   const isMobile = /android|iphone|ipad|ipod|mobile/.test(ua)
@@ -24,7 +24,7 @@ function resolveQqGroupLink(): string {
 }
 
 /** 异步复制群号至剪贴板（支持非安全上下文平滑降级） */
-async function copyTextToClipboard(text: string): Promise<boolean> {
+export async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     if (navigator?.clipboard) {
       await navigator.clipboard.writeText(text)
@@ -50,7 +50,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 /** 原地尝试唤起本地客户端协议链接，杜绝空白标签页弹出 */
-function openProtocolUrl(url: string): boolean {
+export function openProtocolUrl(url: string): boolean {
   try {
     const link = document.createElement('a')
     link.href = url
