@@ -5,48 +5,107 @@ import { FloatingTooltip } from './FloatingPopover'
 
 /** 官方 QQ 群号 */
 export const OFFICIAL_QQ_GROUP = '940886387'
+/** 移动端 QQ 加群 DeepLink 协议（对齐父项目 daojie-yusheng） */
+export const QQ_GROUP_MOBILE_DEEP_LINK = `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${OFFICIAL_QQ_GROUP}&card_type=group&source=qrcode`
+/** 桌面端 QQ 加群 DeepLink 协议（对齐父项目 daojie-yusheng） */
+export const QQ_GROUP_DESKTOP_DEEP_LINK = `tencent://AddContact/?fromId=45&fromSubId=1&subcmd=all&uin=${OFFICIAL_QQ_GROUP}`
+
 /** GitHub 源码仓库地址 */
 export const GITHUB_REPO_URL = 'https://github.com/fruktoguo/DaoHua'
-/** GitHub 安装包 Releases 下载地址 */
-export const GITHUB_RELEASES_URL = 'https://github.com/fruktoguo/DaoHua/releases'
+/** GitHub 最新版本安装包直链下载地址（直接调用下载，不跳转页面） */
+export const GITHUB_LATEST_APK_DOWNLOAD_URL = 'https://github.com/fruktoguo/daohua/releases/latest/download/daohua.apk'
+
+/** 根据运行环境解析 QQ 群 DeepLink 协议地址 */
+function resolveQqGroupLink(): string {
+  if (typeof navigator === 'undefined') return QQ_GROUP_DESKTOP_DEEP_LINK
+  const ua = navigator.userAgent.toLowerCase()
+  const isMobile = /android|iphone|ipad|ipod|mobile/.test(ua)
+  return isMobile ? QQ_GROUP_MOBILE_DEEP_LINK : QQ_GROUP_DESKTOP_DEEP_LINK
+}
+
+/** 异步复制群号至剪贴板（支持非安全上下文平滑降级） */
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator?.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // 降级使用 textarea
+  }
+  try {
+    const input = document.createElement('textarea')
+    input.value = text
+    input.style.position = 'fixed'
+    input.style.opacity = '0'
+    input.style.left = '-9999px'
+    document.body.appendChild(input)
+    input.select()
+    const success = document.execCommand('copy')
+    document.body.removeChild(input)
+    return success
+  } catch {
+    return false
+  }
+}
+
+/** 原地尝试唤起本地客户端协议链接，杜绝空白标签页弹出 */
+function openProtocolUrl(url: string): boolean {
+  try {
+    const link = document.createElement('a')
+    link.href = url
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    return true
+  } catch {
+    try {
+      window.location.href = url
+      return true
+    } catch {
+      return false
+    }
+  }
+}
 
 /**
  * 横版顶栏社区与安装包下载外链组：
- * 包含 QQ 交流群（点击一键复制群号）、GitHub 仓库与 GitHub 游戏安装包下载。
+ * 包含 QQ 交流群（直接唤起 QQ 客户端 + 静默复制群号备用）、GitHub 仓库与 GitHub 最新安装包直接下载（原地下载不跳转）。
  */
 export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.JSX.Element {
   const t = useT()
 
-  const handleCopyQq = useCallback(async () => {
-    let copied = false
-    try {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(OFFICIAL_QQ_GROUP)
-        copied = true
+  const handleOpenQq = useCallback(async () => {
+    const deepLink = resolveQqGroupLink()
+    const copyPromise = copyTextToClipboard(OFFICIAL_QQ_GROUP)
+
+    // 原地唤起本地客户端协议，不产生跳转空白页
+    const opened = openProtocolUrl(deepLink)
+    const copied = await copyPromise
+
+    window.setTimeout(() => {
+      // 若已切出至 QQ 客户端（浏览器进入后台），不弹出额外气泡打扰
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
       }
-    } catch {
-      // 降级使用 textarea
-    }
-    if (!copied) {
-      try {
-        const input = document.createElement('textarea')
-        input.value = OFFICIAL_QQ_GROUP
-        input.style.position = 'fixed'
-        input.style.opacity = '0'
-        document.body.appendChild(input)
-        input.select()
-        copied = document.execCommand('copy')
-        document.body.removeChild(input)
-      } catch {
-        // 容错兜底
+      if (!opened) {
+        useGameStore.getState().setNotice(t('app.topbar.qqLaunchBlocked', { group: OFFICIAL_QQ_GROUP }))
+      } else if (copied) {
+        useGameStore.getState().setNotice(t('app.topbar.qqLaunchedWithCopied', { group: OFFICIAL_QQ_GROUP }))
+      } else {
+        useGameStore.getState().setNotice(t('app.topbar.qqLaunched', { group: OFFICIAL_QQ_GROUP }))
       }
-    }
-    useGameStore.getState().setNotice(t('app.topbar.qqCopied', { group: OFFICIAL_QQ_GROUP }))
+    }, 600)
+  }, [t])
+
+  const handleDownloadClick = useCallback(() => {
+    useGameStore.getState().setNotice(t('app.topbar.downloadStarted'))
   }, [t])
 
   return (
     <>
-      {/* 1. 官方 QQ 群（点击复制） */}
+      {/* 1. 官方 QQ 群（直接唤起客户端并复制群号备用） */}
       <FloatingTooltip
         displayContents
         placement="bottom"
@@ -56,7 +115,7 @@ export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.
         <button
           aria-label={t('app.topbar.qqAria', { group: OFFICIAL_QQ_GROUP })}
           className="topbar-link-btn"
-          onClick={handleCopyQq}
+          onClick={handleOpenQq}
           type="button"
         >
           <svg aria-hidden="true" fill="currentColor" viewBox="0 0 24 24">
@@ -89,7 +148,7 @@ export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.
         </a>
       </FloatingTooltip>
 
-      {/* 3. GitHub 游戏安装包下载 */}
+      {/* 3. GitHub 游戏安装包直接下载（原地下载不跳转页面） */}
       <FloatingTooltip
         displayContents
         placement="bottom"
@@ -99,9 +158,9 @@ export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.
         <a
           aria-label={t('app.topbar.downloadAria')}
           className="topbar-link-btn"
-          href={GITHUB_RELEASES_URL}
-          rel="noopener noreferrer"
-          target="_blank"
+          download="daohua.apk"
+          href={GITHUB_LATEST_APK_DOWNLOAD_URL}
+          onClick={handleDownloadClick}
         >
           <svg
             aria-hidden="true"
