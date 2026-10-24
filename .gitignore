@@ -17,6 +17,7 @@ BenchmarkDotNet.Artifacts/
 *.tsbuildinfo
 
 # 私有客户端模块挂载点（scripts/sync-private-modules.mjs 从 ../DaoHua-Private 以 junction/symlink 挂载）
+frontend/src/private-impl
 frontend/src/private-impl/
 
 # 本地运行数据和持久化状态
