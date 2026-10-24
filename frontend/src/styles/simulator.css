@@ -2,10 +2,20 @@
 
 /* 1. 战场顶部左侧操作区（统计与模拟器入口并排） */
 .combat-arena-top-actions {
-  position: absolute;
+  position: static;
   z-index: 9;
-  top: 10px;
-  left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-dim, rgba(201, 180, 109, 0.12));
+  background: var(--surface-translucent, rgba(0, 0, 0, 0.18));
+  min-height: 38px;
+  gap: 8px;
+}
+
+.combat-arena-top-actions-left,
+.combat-arena-top-actions-right {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -14,10 +24,16 @@
 .combat-arena-top-actions .combat-stats-open,
 .combat-arena-top-actions .combat-simulator-open {
   position: static;
-  padding: 4px 14px;
+  padding: 3px 12px;
   font-size: 12px;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
+
+.combat-arena-top-actions .combat-stop-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
 
 /* 2. 模拟器弹窗基础外壳（全屏大视口排版） */
 .modal-backdrop:has(.sim-modal) {

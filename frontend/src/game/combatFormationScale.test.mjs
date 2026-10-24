@@ -116,7 +116,7 @@ test('combatFormationScale: 3人及以下按单行自适应展开至满额 1.0~1
   const scale1 = computeArenaFormationScale(360, 380, 1536, 1)
   assert.ok(scale1 >= 1.0 && scale1 <= 1.05, `1人单行 scale 应在 1.0~1.05 之间，实际: ${scale1}`)
 
-  // 5人时按 2 行自适应（约 0.85），大于 3 行的 0.58
+  // 5人时按 2 行自适应（约 1.0），大于 3 行的 0.58~0.65
   const scale5 = computeArenaFormationScale(360, 380, 1536, 5)
-  assert.ok(scale5 >= 0.80 && scale5 <= 0.90, `5人双行 scale 应在 0.80~0.90 之间，实际: ${scale5}`)
+  assert.ok(scale5 >= 0.85 && scale5 <= 1.05, `5人双行 scale 应在 0.85~1.05 之间，实际: ${scale5}`)
 })

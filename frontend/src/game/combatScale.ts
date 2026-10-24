@@ -4,9 +4,9 @@
  * 双方 18 个角色（3x3 allies + 3x3 enemies）全部完整容纳且绝不发生垂直碰撞踩头。
  */
 
-/** 角色基准卡片尺寸：宽 96px，高 206px（包含 overhead 42px + avatar 120px + action bar 12px + 底部 buff 列表 24px + 防撞边距 8px） */
+/** 角色基准卡片尺寸：宽 96px，高 184px（对齐 CSS --actor-base-height: 184px） */
 export const ARENA_ACTOR_BASE_WIDTH = 96
-export const ARENA_ACTOR_BASE_HEIGHT = 206
+export const ARENA_ACTOR_BASE_HEIGHT = 184
 
 /**
  * 根据参战单位数量推导阵型所占有效行数：
@@ -32,7 +32,8 @@ export function computeArenaFormationScale(
   width: number,
   height: number,
   windowWidth = 1024,
-  unitCount = 9
+  unitCount = 9,
+  explicitRows?: number
 ): number {
   if (width <= 0 || height <= 0) return 1
   if (windowWidth <= 760 || width <= 200) return 1
@@ -41,19 +42,21 @@ export function computeArenaFormationScale(
   const gap = Math.max(4, Math.min(12, width * 0.015))
   const slotWidth = (width - 2 * gap) / 3
 
-  const rows = resolveOccupiedRows(unitCount)
-  // 当占用 1 行时，该行单位坐镇正中（Row 2），上下两侧（Row 1 与 Row 3）完全为空，
-  // 垂直可用空间为阵型容器的整高；当占用 2 行时分摊 2 行高度；3 行时除以 3。
+  const rows = explicitRows ?? resolveOccupiedRows(unitCount)
+  // 严格根据参战行数推导每个槽位的实际可用高度：
+  // 1 行时：占满整个垂直空间（上下无同行挤压），满额 1.0~1.05 舒展；
+  // 2 行时：等分两行高度 (height - gap) / 2，严格缩放到槽位内，绝不溢出到顶层与底层；
+  // 3 行时：等分三行高度 (height - 2*gap) / 3，严格限制卡片总高度 <= 槽高，
+  //         彻底消除第 1 排名字被顶部裁切、第 3 排行动栏被底部裁切的几何缺陷。
   const slotHeight = rows === 1
     ? (height - 2 * gap)
     : rows === 2
       ? (height - gap) / 2
       : (height - 2 * gap) / 3
 
-  const scaleH = (slotHeight - 2) / ARENA_ACTOR_BASE_HEIGHT
-  const scaleW = (slotWidth - 2) / ARENA_ACTOR_BASE_WIDTH
+  const scaleH = Math.max(0.2, (slotHeight - 4) / ARENA_ACTOR_BASE_HEIGHT)
+  const scaleW = Math.max(0.2, (slotWidth - 2) / ARENA_ACTOR_BASE_WIDTH)
 
-  // 取两轴较严格的缩放比，允许范围 [0.2, 1.05]，保留两位小数防抖
   const ideal = Math.min(1.05, Math.min(scaleH, scaleW))
   return Math.max(0.2, Math.min(1.05, Math.round(ideal * 100) / 100))
 }

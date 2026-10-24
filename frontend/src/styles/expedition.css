@@ -1538,7 +1538,7 @@
   min-width: 0;
   height: 100%;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(201, 180, 109, 0.28);
   background:
@@ -1609,7 +1609,7 @@
   align-items: center;
   justify-content: center;
   gap: clamp(12px, 3vw, 36px);
-  padding: 10px clamp(12px, 3vw, 28px) 8px;
+  padding: 16px clamp(12px, 3vw, 28px) 14px;
   overflow: visible;
   background:
     linear-gradient(rgba(201, 180, 109, 0.035) 1px, transparent 1px),
@@ -1644,6 +1644,38 @@
   align-items: center;
   justify-items: center;
   overflow: visible;
+}
+
+/* ================= 阵型分排自适应布局（支持单排、双排、三排动态切换） ================= */
+
+/* 1 排模式（1~3人）：只展示中间行 (Row 2：槽位 1, 4, 7)，上下预留空槽隐藏；单行垂直居中拉伸 */
+.arena-formation--rows-1 {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+.arena-formation--rows-1 :is(.arena-slot--slot-2, .arena-slot--slot-3, .arena-slot--slot-5, .arena-slot--slot-6, .arena-slot--slot-8, .arena-slot--slot-9) {
+  display: none !important;
+}
+.arena-formation--rows-1 :is(.arena-slot--slot-1, .arena-slot--slot-4, .arena-slot--slot-7) {
+  grid-row: 1 !important;
+}
+
+/* 2 排模式（4~6人）：等分两排，上行 (槽位 2, 5, 8) 居上排，下行 (槽位 1, 4, 7) 居下排；第 3 排预留空槽隐藏 */
+.arena-formation--rows-2 {
+  grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+}
+.arena-formation--rows-2 :is(.arena-slot--slot-3, .arena-slot--slot-6, .arena-slot--slot-9) {
+  display: none !important;
+}
+.arena-formation--rows-2 :is(.arena-slot--slot-2, .arena-slot--slot-5, .arena-slot--slot-8) {
+  grid-row: 1 !important;
+}
+.arena-formation--rows-2 :is(.arena-slot--slot-1, .arena-slot--slot-4, .arena-slot--slot-7) {
+  grid-row: 2 !important;
+}
+
+/* 3 排模式（7~9人）：等分三排九宫格 */
+.arena-formation--rows-3 {
+  grid-template-rows: repeat(3, minmax(0, 1fr)) !important;
 }
 
 /* 己方阵容槽位布局（左为后排，右为前排） */

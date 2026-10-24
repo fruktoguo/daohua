@@ -26,7 +26,7 @@ import { useCombatVfx } from '../vfx/useCombatVfx'
 import { StatGlyph } from './StatGlyph'
 import { useUiStore } from '../uiStore'
 import { COMBAT_RESOURCE_EFFECT_LIMIT, collectScheduledCombatEvents, combatHitDelayMilliseconds } from '../game/combatFeedback'
-import { computeArenaFormationScale } from '../game/combatScale'
+import { computeArenaFormationScale, resolveOccupiedRows } from '../game/combatScale'
 
 /** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名；传入 world+maps 时按当前驻留地点本地化 */
 function resolveQueueEntryDisplayName(
@@ -1988,14 +1988,15 @@ function estimateServerNowUnixMilliseconds(): number {
  */
 function useArenaFormationScale(
   formationRef: React.RefObject<HTMLDivElement | null>,
-  shellRef: React.RefObject<HTMLDivElement | null>,
   allyCount: number,
   enemyCount: number
-): { allyScale: number; enemyScale: number; minScale: number } {
-  const [scales, setScales] = useState<{ allyScale: number; enemyScale: number; minScale: number }>({
+): { allyScale: number; enemyScale: number; allyRows: number; enemyRows: number } {
+  const allyRows = resolveOccupiedRows(allyCount)
+  const enemyRows = resolveOccupiedRows(enemyCount)
+
+  const [scales, setScales] = useState<{ allyScale: number; enemyScale: number }>({
     allyScale: 1,
     enemyScale: 1,
-    minScale: 1,
   })
 
   useEffect(() => {
@@ -2009,24 +2010,15 @@ function useArenaFormationScale(
 
       if (width <= 0 || height <= 0) return
 
-      const nextAllyScale = computeArenaFormationScale(width, height, window.innerWidth, allyCount)
-      const nextEnemyScale = computeArenaFormationScale(width, height, window.innerWidth, enemyCount)
-      const nextMinScale = Math.min(nextAllyScale, nextEnemyScale)
-
-      if (shellRef.current) {
-        if (nextMinScale === 1 && (window.innerWidth <= 760 || width <= 200)) {
-          shellRef.current.style.removeProperty('--arena-scale')
-        } else {
-          shellRef.current.style.setProperty('--arena-scale', nextMinScale.toString())
-        }
-      }
+      const nextAllyScale = computeArenaFormationScale(width, height, window.innerWidth, allyCount, allyRows)
+      const nextEnemyScale = computeArenaFormationScale(width, height, window.innerWidth, enemyCount, enemyRows)
 
       setScales(prev => {
         if (
           Math.abs(prev.allyScale - nextAllyScale) >= 0.01 ||
           Math.abs(prev.enemyScale - nextEnemyScale) >= 0.01
         ) {
-          return { allyScale: nextAllyScale, enemyScale: nextEnemyScale, minScale: nextMinScale }
+          return { allyScale: nextAllyScale, enemyScale: nextEnemyScale }
         }
         return prev
       })
@@ -2042,9 +2034,9 @@ function useArenaFormationScale(
       observer.disconnect()
       window.removeEventListener('resize', updateScale)
     }
-  }, [formationRef, shellRef, allyCount, enemyCount])
+  }, [formationRef, allyCount, enemyCount, allyRows, enemyRows])
 
-  return scales
+  return { allyScale: scales.allyScale, enemyScale: scales.enemyScale, allyRows, enemyRows }
 }
 
 /**
@@ -2411,9 +2403,8 @@ export const CombatArena = memo(function CombatArena({
     : CORPSE_DISSIPATE_LEAD_MS
   const allyCount = Math.max(1, allyEntries.length)
   const enemyCount = Math.max(1, displayEntries.length)
-  const { allyScale, enemyScale, minScale } = useArenaFormationScale(
+  const { allyScale, enemyScale, allyRows, enemyRows } = useArenaFormationScale(
     alliesFormationRef,
-    arenaShellRef,
     allyCount,
     enemyCount
   )
@@ -2601,36 +2592,54 @@ export const CombatArena = memo(function CombatArena({
     <div
       className="combat-arena-shell"
       ref={arenaShellRef}
-      style={{ '--arena-scale': minScale } as CSSProperties}
     >
       {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
-      {/* 战斗统计入口：仅战斗相位显示，浮于详情左上角不占布局 */}
-      {/* 战场顶部操作区：统计与模拟器入口 */}
+      {/* 战场顶部操作区：统计与模拟器入口 + 终止行动按钮（固定顶栏独立行，绝不遮挡角色名称与行动栏） */}
       <div className="combat-arena-top-actions">
-        {isCombat && (
+        <div className="combat-arena-top-actions-left">
+          {isCombat && (
+            <button
+              className="ghost-button combat-stats-open"
+              onClick={() => setStatsOpen(true)}
+              type="button"
+            >
+              {t('combat.stats.title')}
+            </button>
+          )}
           <button
-            className="ghost-button combat-stats-open"
-            onClick={() => setStatsOpen(true)}
+            className="ghost-button combat-simulator-open"
+            onClick={() => setSimulatorOpen(true)}
             type="button"
           >
-            {t('combat.stats.title')}
+            {t('combat.simulator.topbarBtn')}
           </button>
+        </div>
+
+        {current && isCombat && (
+          <div className="combat-arena-top-actions-right">
+            <button
+              className="danger combat-stop-btn"
+              onClick={() => {
+                if (hasActionParticipation(current)) {
+                  setPendingQuitSession(true)
+                  return
+                }
+                setPendingStopEntryId(current.entryId)
+              }}
+              type="button"
+            >
+              {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName, world, maps) })}
+            </button>
+          </div>
         )}
-        <button
-          className="ghost-button combat-simulator-open"
-          onClick={() => setSimulatorOpen(true)}
-          type="button"
-        >
-          {t('combat.simulator.topbarBtn')}
-        </button>
       </div>
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
             组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}
         <div className="arena-side arena-side--allies">
           <div
-            className="arena-formation arena-formation--allies"
+            className={`arena-formation arena-formation--allies arena-formation--rows-${allyRows}`}
             ref={alliesFormationRef}
             style={{ '--arena-scale': allyScale } as CSSProperties}
           >
@@ -2740,7 +2749,7 @@ export const CombatArena = memo(function CombatArena({
           {isCombat ? (
             enemyVisible ? (
               <div
-                className="arena-formation arena-formation--enemies"
+                className={`arena-formation arena-formation--enemies arena-formation--rows-${enemyRows}`}
                 style={{ '--arena-scale': enemyScale, '--corpse-fade-ms': `${corpseFadeMs}ms` } as CSSProperties}
               >
                 {displayEntries.map((entry, index) => (
@@ -2780,7 +2789,7 @@ export const CombatArena = memo(function CombatArena({
               </div>
             ) : (
               <div
-                className="arena-formation arena-formation--enemies"
+                className={`arena-formation arena-formation--enemies arena-formation--rows-${enemyRows}`}
                 style={{ '--arena-scale': enemyScale } as CSSProperties}
               >
                 {Array.from({ length: 9 }).map((_, i) => (
@@ -2805,34 +2814,15 @@ export const CombatArena = memo(function CombatArena({
         </div>
       </div>
 
-      <div className="combat-arena-controls">
-        {/* 生活/赶路详情卡自带终止按钮；此处独立终止钮仅保留给右侧无卡片的战斗相位 */}
-        {current ? (
-          isCombat ? (
-            <button
-              className="danger"
-              onClick={() => {
-                // 行动参与会话不受 action.remove：「终止」= 取消参战，经散场确认派发 party.unready；
-                // 散场后挂起的个人队首行动由服务端自动恢复续跑（§21.13）
-                if (hasActionParticipation(current)) {
-                  setPendingQuitSession(true)
-                  return
-                }
-                setPendingStopEntryId(current.entryId)
-              }}
-              type="button"
-            >
-              {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName, world, maps) })}
-            </button>
-          ) : null
-        ) : availableActions.length > 0 ? (
-          availableActions.map(action => (
+      {!isCombat && availableActions.length > 0 && (
+        <div className="combat-arena-controls">
+          {availableActions.map(action => (
             <button key={action.id} onClick={() => onOpenAction(action)} type="button">
               {localizeActionDisplayText(action.name, world, maps)}
             </button>
-          ))
-        ) : null}
-      </div>
+          ))}
+        </div>
+      )}
       <ConfirmDialog
         confirmLabel={t('combat.arena.stopConfirmBtn')}
         danger
