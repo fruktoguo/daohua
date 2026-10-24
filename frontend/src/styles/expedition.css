@@ -1527,8 +1527,8 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: minmax(220px, 1fr) auto;
-  gap: 0;
+  grid-template-rows: minmax(200px, 1fr) auto;
+  gap: 10px;
   overflow: hidden;
 }
 
@@ -1609,7 +1609,7 @@
   align-items: center;
   justify-content: center;
   gap: clamp(12px, 3vw, 36px);
-  padding: 16px clamp(12px, 3vw, 28px) 14px;
+  padding: 12px clamp(12px, 3vw, 28px) 20px;
   overflow: visible;
   background:
     linear-gradient(rgba(201, 180, 109, 0.035) 1px, transparent 1px),
@@ -3721,7 +3721,7 @@
   display: block;
   min-width: 0;
   margin: 0;
-  padding: 4px 0 6px;
+  padding: 2px 0 6px;
   border: 0;
   border-top: 1px solid rgba(205, 133, 77, 0.28);
   background: transparent;
@@ -4188,9 +4188,10 @@
   }
   .expedition-duel {
     grid-template-rows: minmax(180px, 1fr) auto;
+    gap: 8px;
   }
   .combat-arena-field {
-    padding: 6px clamp(8px, 2vw, 20px) 6px;
+    padding: 8px clamp(8px, 2vw, 20px) 16px;
     gap: clamp(8px, 2vw, 24px);
   }
 }
@@ -4203,12 +4204,14 @@
   }
   .expedition-duel {
     grid-template-rows: minmax(160px, 1fr) auto;
+    gap: 6px;
   }
   .combat-arena-field {
-    padding: 4px clamp(6px, 1.5vw, 16px) 4px;
+    padding: 6px clamp(6px, 1.5vw, 16px) 12px;
     gap: clamp(6px, 1.5vw, 16px);
   }
 }
+
 
 @media (max-width: 1200px) {
   .world-map-layout {
