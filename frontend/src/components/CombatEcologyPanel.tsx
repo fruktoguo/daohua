@@ -1,0 +1,186 @@
+import { memo, useMemo } from 'react'
+import { formatInteger } from '../game/format'
+import { useGameStore } from '../game/gameStore'
+import { findEncounterInCatalog } from '../game/ids'
+import type { ActionDefinition, CombatantDefinition } from '../game/types'
+import { useT } from '../i18n'
+import { CharacterAvatar } from './CharacterAvatar'
+import { MonsterTooltipTarget } from './MonsterDisplay'
+/** 节点生态怪物的生命层次分组（驱动角标徽记与瓦片描边色调） */
+type EcologyMonsterRank = 'normal' | 'elite' | 'boss'
+
+interface EcologyMonsterEntry {
+  /** 怪物配表定义（服务端目录投影，CombatantDefinition 全字段） */
+  enemy: CombatantDefinition
+  rank: EcologyMonsterRank
+  /** 精英/领主出没周期提示（如「逢 20 场出没」） */
+  intervalHint?: string
+}
+
+/**
+ * 栖息妖兽图标瓦片 (EcologyMonsterTile)
+ *
+ * 瓦片本体只保留立绘图标、生命层次角标与等级底标；
+ * 悬停弹出简要信息卡（生命层次/境界/气血/攻击/护甲），
+ * 单击弹出详细信息卡（六维属性、消耗预算、攻速间隔、出没周期、击杀收益、施展功法与掉落物图标）。
+ */
+const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: EcologyMonsterEntry }): React.JSX.Element {
+  const t = useT()
+  const { enemy, rank, intervalHint } = entry
+
+  return (
+    <MonsterTooltipTarget
+      displayContents
+      intervalHint={intervalHint}
+      isBoss={rank === 'boss'}
+      isElite={rank === 'elite'}
+      monster={enemy}
+      placement="top"
+    >
+      <button
+        aria-label={t('combat.ecology.inspectAria', { name: enemy.name })}
+        className={`ecology-monster-tile is-${rank}`}
+        type="button"
+      >
+        <CharacterAvatar
+          actorId={enemy.enemyId}
+          className="ecology-monster-avatar"
+          fallback={enemy.name.slice(0, 1)}
+          isFlipped
+          name={enemy.name}
+          role="enemy"
+          visual={enemy.visual}
+        />
+        {rank !== 'normal' && (
+          <span aria-hidden="true" className={`ecology-monster-rank is-${rank}`}>
+            {rank === 'boss' ? t('combat.nearby.markBoss') : t('combat.nearby.markElite')}
+          </span>
+        )}
+        <span className="ecology-monster-level">Lv.{enemy.level ?? 1}</span>
+      </button>
+    </MonsterTooltipTarget>
+  )
+})
+
+/**
+ * 讨伐行动节点生态面板 (CombatEcologyPanel)
+ *
+ * 展示当前驻留地点的栖息妖兽：数据取静态目录中当前节点按 `encounterIds` 预解析的
+ * monsters/eliteEnemies/bossEnemies（与服务端 ResolveCombatEncounter 实战遭遇同根同源），
+ * 替代旧版按行动固定 `combatEncounterId` 平铺全部数值的遭遇面板。
+ * 行进在道路上或节点未配置生态时，回退展示行动钉死遭遇的怪群。
+ */
+export const CombatEcologyPanel = memo(function CombatEcologyPanel({
+  action,
+}: {
+  /** 当前打开配置弹窗的讨伐行动定义 */
+  action: ActionDefinition
+}): React.JSX.Element {
+  const t = useT()
+  const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
+  const encounters = useGameStore(state => state.encounters)
+
+  const node = useMemo(() => (
+    world.nodeId === null
+      ? undefined
+      : maps.find(map => map.mapId === world.mapId)?.nodes.find(item => item.nodeId === world.nodeId)
+  ), [maps, world.mapId, world.nodeId])
+
+  const hasEcology = (node?.monsters?.length ?? 0)
+    + (node?.eliteEnemies?.length ?? 0)
+    + (node?.bossEnemies?.length ?? 0) > 0
+
+  // 节点生态优先；无生态（行进中/未配遭遇）回退行动钉死遭遇，与服务端无节点遭遇时的回退口径一致
+  const entries = useMemo<EcologyMonsterEntry[]>(() => {
+    if (node && hasEcology) {
+      const eliteIds = new Set((node.eliteEnemies ?? []).map(enemy => enemy.enemyId))
+      const bossIds = new Set((node.bossEnemies ?? []).map(enemy => enemy.enemyId))
+      const normalMonsters = (node.monsters ?? []).filter(enemy => !eliteIds.has(enemy.enemyId) && !bossIds.has(enemy.enemyId))
+      return [
+        ...normalMonsters.map(enemy => ({ enemy, rank: 'normal' as const })),
+        ...(node.eliteEnemies ?? []).map(enemy => ({
+          enemy,
+          rank: 'elite' as const,
+          intervalHint: t('combat.nearby.eliteIntervalHint', { count: (world.eliteInterval && world.eliteInterval > 0) ? world.eliteInterval : 5 }),
+        })),
+        ...(node.bossEnemies ?? []).map(enemy => ({
+          enemy,
+          rank: 'boss' as const,
+          intervalHint: t('combat.nearby.bossIntervalHint', { count: (world.bossInterval && world.bossInterval > 0) ? world.bossInterval : 20 }),
+        })),
+      ]
+    }
+    const encounter = action.combatEncounterId
+      ? findEncounterInCatalog(encounters, action.combatEncounterId)
+      : undefined
+    if (!encounter) return []
+    const spawns = encounter.randomSpawns.length > 0
+      ? encounter.randomSpawns
+      : [{ enemy: encounter.enemy, weight: 1, strength: 1 }]
+    const list: EcologyMonsterEntry[] = spawns.map(spawn => ({ enemy: spawn.enemy, rank: 'normal' }))
+    for (const enemy of encounter.bossEnemies) {
+      if (!list.some(item => item.enemy.enemyId === enemy.enemyId)) {
+        list.push({
+          enemy,
+          rank: 'boss',
+          intervalHint: t('combat.nearby.bossIntervalHint', { count: (encounter.battlesPerBoss && encounter.battlesPerBoss > 0) ? encounter.battlesPerBoss : 20 }),
+        })
+      }
+    }
+    return list
+  }, [node, hasEcology, world.eliteInterval, world.bossInterval, action.combatEncounterId, encounters, t])
+
+  // 遭遇来源名：节点生态取节点 encounterIds 解析名，回退取行动遭遇名
+  const encounterNames = useMemo(() => {
+    const ids = node && hasEcology
+      ? node.encounterIds
+      : (action.combatEncounterId ? [action.combatEncounterId] : [])
+    return ids
+      .map(id => findEncounterInCatalog(encounters, id)?.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0)
+  }, [node, hasEcology, action.combatEncounterId, encounters])
+
+  const heading = node && hasEcology ? world.locationName : (encounterNames[0] ?? world.locationName)
+  const hasBudget = node && hasEcology && (world.maxBudget ?? 0) > 0
+  const fallbackEncounter = !hasEcology && action.combatEncounterId
+    ? findEncounterInCatalog(encounters, action.combatEncounterId)
+    : undefined
+
+  return (
+    <section className="combat-ecology-panel" aria-label={t('combat.ecology.aria', { name: heading })}>
+      <header className="combat-encounter-heading">
+        <div>
+          <span>{t('combat.ecology.heading')}</span>
+          <h3>{heading}</h3>
+        </div>
+        <dl>
+          {encounterNames.length > 0 && (
+            <div><dt>{t('combat.ecology.encounters')}</dt><dd>{encounterNames.join('、')}</dd></div>
+          )}
+          {hasBudget && (
+            <div>
+              <dt>{t('combat.nearby.dangerBudget')}</dt>
+              <dd>{formatInteger(world.minBudget ?? 0)} ~ {formatInteger(world.maxBudget ?? 0)}</dd>
+            </div>
+          )}
+          {fallbackEncounter && (fallbackEncounter.maxTotalStrength ?? 0) > 0 && (
+            <div>
+              <dt>{t('combat.encounter.maxStrength')}</dt>
+              <dd>{formatInteger(fallbackEncounter.maxTotalStrength)}</dd>
+            </div>
+          )}
+        </dl>
+      </header>
+      {entries.length > 0 ? (
+        <div className="ecology-monster-strip">
+          {entries.map(item => (
+            <EcologyMonsterTile entry={item} key={item.enemy.enemyId} />
+          ))}
+        </div>
+      ) : (
+        <p className="nearby-empty">{t('combat.nearby.noMonsters')}</p>
+      )}
+    </section>
+  )
+})

@@ -1,0 +1,457 @@
+/**
+ * daohua 新基线跨边界烟测。
+ * 使用 Node 内置 net/tls 实现 WebSocket 握手与帧读写，不引入 ws 运行时依赖，
+ * 可以正确携带 Cookie/Authorization。生产烟测必须显式提供已有会话 Cookie、会话令牌，
+ * 或账号与口令；不会在未明确要求时自动注册账号。
+ *
+ * 鉴权优先级：SMOKE_COOKIE > SMOKE_SESSION_TOKEN > SMOKE_ACCOUNT/SMOKE_PASSWORD 登录。
+ * 仅当显式设置 SMOKE_REGISTER=1 时，登录失败后才尝试注册。
+ */
+import crypto from 'node:crypto'
+import http from 'node:http'
+import https from 'node:https'
+import net from 'node:net'
+import tls from 'node:tls'
+import process from 'node:process'
+
+const smokeDeviceId = process.env.SMOKE_DEVICE_ID || crypto.randomUUID()
+const smokeDeviceConfig = process.env.SMOKE_DEVICE_CONFIG || crypto.createHash('sha256').update(`daohua-smoke-${smokeDeviceId}`).digest('hex')
+const riskSignals = { deviceId: smokeDeviceId, deviceConfigHash: smokeDeviceConfig, browserFingerprint: smokeDeviceConfig }
+
+const baseUrl = new URL(process.argv[2] || 'http://127.0.0.1:5128')
+const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 15_000)
+const requireStatic = process.env.SMOKE_REQUIRE_STATIC !== '0'
+const runWebSocket = process.env.SMOKE_RUN_WEBSOCKET !== '0'
+// 公网模式下 /readyz 属内部端点，应被网关拦截；仍返回 2xx 反而说明内部面泄漏。
+const requireReadyz = process.env.SMOKE_REQUIRE_READYZ !== '0'
+
+async function main() {
+  const health = await fetchJson('/healthz')
+  if (health.status !== 'ok') throw new Error('健康状态不符合预期。')
+  if (typeof health.version !== 'string' || health.version.length === 0) throw new Error('健康端点缺少版本信息。')
+  let readyStatus = null
+  if (requireReadyz) {
+    const ready = await fetchJson('/readyz')
+    if (!['ok', 'ready'].includes(ready.status)) throw new Error('就绪状态不符合预期。')
+    readyStatus = ready.status
+  } else {
+    const readyCode = await requestStatus('/readyz')
+    if (readyCode < 400) throw new Error(`公网 /readyz 未被拦截（HTTP ${readyCode}），内部端点泄漏。`)
+    readyStatus = 'blocked'
+  }
+  if (requireStatic) {
+    const html = await fetchText('/')
+    if (!html.includes('id="root"')) throw new Error('首页不是预期的前端入口。')
+  }
+  const meta = await fetchJson('/api/v1/meta')
+
+  let firstPacket = null
+  let authMode = null
+  let warning = null
+  if (runWebSocket) {
+    const auth = await getWebSocketAuthHeaders()
+    authMode = auth.mode
+    firstPacket = await smokeWebSocket(meta.gameDataFingerprint || '', auth.headers)
+  } else {
+    warning = 'SMOKE_RUN_WEBSOCKET=0，已跳过 WebSocket。'
+  }
+
+  console.log(JSON.stringify({
+    baseUrl: baseUrl.origin,
+    version: health.version || health.contractVersion || meta.version || null,
+    gameDataFingerprint: meta.gameDataFingerprint || health.gameDataFingerprint || null,
+    readyStatus,
+    authMode,
+    webSocketFirstPacket: firstPacket?.type || null,
+    webSocketProtocolVersion: firstPacket?.protocolVersion || null,
+    warning,
+  }, null, 2))
+}
+
+async function fetchJson(path) {
+  const response = await requestHttp(path, 'application/json')
+  return JSON.parse(response.body.toString('utf8'))
+}
+
+async function fetchText(path) {
+  const response = await requestHttp(path, 'text/html')
+  return response.body.toString('utf8')
+}
+
+function requestStatus(path) {
+  return requestHttpRaw(path, 'application/json').then(result => result.statusCode)
+}
+
+function requestHttp(path, accept, method = 'GET', body = undefined) {
+  return requestHttpRaw(path, accept, method, body).then(result => {
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw new Error(`${path} 返回 HTTP ${result.statusCode}: ${result.body.toString('utf8').slice(0, 240)}`)
+    }
+    return result
+  })
+}
+
+function requestHttpRaw(path, accept, method = 'GET', body = undefined) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(path, baseUrl)
+    const transport = target.protocol === 'https:' ? https : http
+    const headers = { Accept: accept }
+    if (body !== undefined) headers['Content-Type'] = 'application/json'
+    const request = transport.request(target, {
+      method,
+      headers,
+      timeout: timeoutMs,
+    }, response => {
+      const chunks = []
+      response.on('data', chunk => chunks.push(Buffer.from(chunk)))
+      response.on('end', () => {
+        resolve({ statusCode: response.statusCode || 0, headers: response.headers, body: Buffer.concat(chunks) })
+      })
+    })
+    request.once('timeout', () => request.destroy(new Error(`${path} 请求超时`)))
+    request.once('error', reject)
+    if (body !== undefined) request.write(JSON.stringify(body))
+    request.end()
+  })
+}
+
+async function getWebSocketAuthHeaders() {
+  const explicitCookie = process.env.SMOKE_COOKIE || ''
+  if (explicitCookie) return { mode: 'cookie', headers: { Cookie: explicitCookie } }
+  const sessionToken = process.env.SMOKE_SESSION_TOKEN || ''
+  if (sessionToken) return { mode: 'bearer-session', headers: { Authorization: `Bearer ${sessionToken}` } }
+
+  const account = process.env.SMOKE_ACCOUNT || ''
+  const password = process.env.SMOKE_PASSWORD || ''
+  if (!account || !password) {
+    throw new Error('烟测必须显式提供 SMOKE_COOKIE、SMOKE_SESSION_TOKEN，或同时提供 SMOKE_ACCOUNT 与 SMOKE_PASSWORD。')
+  }
+  if (!/^[a-zA-Z0-9_]{3,32}$/.test(account) || password.length < 6 || password.length > 24) {
+    throw new Error('SMOKE_ACCOUNT/SMOKE_PASSWORD 不符合账号鉴权要求。')
+  }
+
+  let loginError = null
+  try {
+    const login = await requestHttp('/api/v1/auth/login', 'application/json', 'POST', { account, password, riskSignals })
+    return { mode: 'login', headers: { Cookie: cookieHeader(login.headers) } }
+  } catch (error) {
+    loginError = error
+  }
+
+  if (process.env.SMOKE_REGISTER !== '1') {
+    throw new Error(`烟测账号登录失败；如需使用注册流程必须显式设置 SMOKE_REGISTER=1：${loginError?.message || 'unknown'}`)
+  }
+  try {
+    const registration = await requestHttp('/api/v1/auth/register', 'application/json', 'POST', {
+      account,
+      password,
+      displayName: process.env.SMOKE_DISPLAY_NAME || `部署烟测-${account}`,
+      riskSignals,
+    })
+    return { mode: 'register', headers: { Cookie: cookieHeader(registration.headers) } }
+  } catch (registrationError) {
+    // 账号可能已经存在但密码正确：再次登录获取当前 session。
+    try {
+      const login = await requestHttp('/api/v1/auth/login', 'application/json', 'POST', { account, password, riskSignals })
+      return { mode: 'login-after-register-conflict', headers: { Cookie: cookieHeader(login.headers) } }
+    } catch (loginError) {
+      throw new Error(`烟测账号注册/登录均失败：注册=${registrationError.message}；登录=${loginError.message}`)
+    }
+  }
+}
+
+function cookieHeader(headers) {
+  const setCookie = headers['set-cookie']
+  if (!setCookie || setCookie.length === 0) throw new Error('鉴权响应缺少会话 Cookie。')
+  return setCookie.map(value => value.split(';', 1)[0]).join('; ')
+}
+
+async function smokeWebSocket(gameDataFingerprint, authHeaders) {
+  const target = new URL('/ws', baseUrl)
+  const socket = await openWebSocket(target, authHeaders)
+  try {
+    socket.write(encodeClientFrame(encodeEnvelope(1, {
+      clientVersion: 'smoke',
+      deviceFingerprint: smokeDeviceConfig,
+      deviceConfigHash: smokeDeviceConfig,
+      deviceId: smokeDeviceId,
+      gameDataFingerprint,
+    })))
+
+    let helloAck = null
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const frame = await socket.nextFrame(deadline - Date.now())
+      if (frame.opcode === 0x8) throw new Error(`WebSocket 在首帧前关闭，关闭码: ${frame.payload.readUInt16BE(0) || 1000}`)
+      if (frame.opcode === 0x9) {
+        socket.write(encodeClientFrame(frame.payload, 0xA))
+        continue
+      }
+      if (frame.opcode !== 0x2) continue
+      const packet = decodeEnvelope(frame.payload)
+      if (packet.protocolVersion !== 1) throw new Error('WebSocket 协议版本异常。')
+      if (packet.type === 2) {
+        validateHelloAck(packet, gameDataFingerprint)
+        helloAck = packet
+        continue
+      }
+      if (packet.type === 3) {
+        if (!helloAck || packet.sequence <= helloAck.sequence) throw new Error('WebSocket hello/snapshot 序列不符合 wire.v1。')
+        validateSnapshot(packet)
+        return packet
+      }
+      if (packet.type === 10) throw new Error('WebSocket 返回错误帧。')
+    }
+    throw new Error('WebSocket 烟测超时。')
+  } finally {
+    socket.close()
+  }
+}
+
+function validateHelloAck(packet, expectedFingerprint) {
+  const payload = packet.payload
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('HelloAck JSON 载荷必须是对象。')
+  if (typeof payload.serverVersion !== 'string' || payload.serverVersion.length === 0) throw new Error('HelloAck 缺少 serverVersion。')
+  if (payload.protocolVersion !== 1) throw new Error('HelloAck protocolVersion 无效。')
+  if (typeof payload.gameDataFingerprint !== 'string' || payload.gameDataFingerprint.length === 0) throw new Error('HelloAck 缺少 gameDataFingerprint。')
+  if (expectedFingerprint && payload.gameDataFingerprint !== expectedFingerprint) throw new Error('HelloAck 配表指纹不匹配。')
+  if (!Number.isSafeInteger(payload.serverSequence) || payload.serverSequence !== packet.sequence || payload.serverSequence <= 0) throw new Error('HelloAck serverSequence 无效。')
+}
+
+function validateSnapshot(packet) {
+  const payload = packet.payload
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Snapshot JSON 载荷必须是对象。')
+  if (typeof payload.playerId !== 'string' || payload.playerId.length === 0) throw new Error('Snapshot 缺少 playerId。')
+  if (typeof payload.displayName !== 'string') throw new Error('Snapshot displayName 类型无效。')
+  if (typeof payload.lastSimulatedAt !== 'string' || !Number.isFinite(Date.parse(payload.lastSimulatedAt))) throw new Error('Snapshot lastSimulatedAt 无效。')
+  if (!Number.isSafeInteger(payload.stateVersion) || payload.stateVersion <= 0) throw new Error('Snapshot stateVersion 无效。')
+  if (!payload.head || typeof payload.head !== 'object' || Array.isArray(payload.head)) throw new Error('Snapshot 缺少 head。')
+  if (!Number.isSafeInteger(payload.head.stateVersion) || payload.head.stateVersion !== payload.stateVersion) throw new Error('Snapshot head.stateVersion 无效。')
+  if (!Number.isSafeInteger(payload.head.schemaVersion) || payload.head.schemaVersion <= 0) throw new Error('Snapshot head.schemaVersion 无效。')
+  if (!Array.isArray(payload.sections) || payload.sections.length < 8) throw new Error('Snapshot sections 不完整。')
+  const sections = new Set()
+  for (const section of payload.sections) {
+    if (!section || typeof section !== 'object' || Array.isArray(section) || typeof section.section !== 'string' || !section.section) throw new Error('Snapshot section 标识无效。')
+    if (sections.has(section.section)) throw new Error('Snapshot sections 存在重复分段。')
+    sections.add(section.section)
+    if (!Number.isSafeInteger(section.sectionVersion) || section.sectionVersion <= 0) throw new Error('Snapshot sectionVersion 无效。')
+    if (!Number.isSafeInteger(section.schemaVersion) || section.schemaVersion <= 0) throw new Error('Snapshot section schemaVersion 无效。')
+    if (!section.data || typeof section.data !== 'object') throw new Error('Snapshot section data 无效。')
+  }
+  for (const required of ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue', 'duel']) {
+    if (!sections.has(required)) throw new Error(`Snapshot 缺少 ${required} 分段。`)
+  }
+}
+
+function encodeEnvelope(messageType, payload) {
+  const body = Buffer.from(JSON.stringify(payload), 'utf8')
+  const output = Buffer.allocUnsafe(36 + body.length)
+  output.writeUInt32BE(0x44485731, 0)
+  output.writeUInt16BE(1, 4)
+  output.writeUInt8(messageType, 6)
+  output.writeUInt8(1, 7) // WireCodec.Json
+  crypto.randomBytes(16).copy(output, 8)
+  output.writeBigInt64BE(1n, 24)
+  output.writeUInt32BE(body.length, 32)
+  body.copy(output, 36)
+  return output
+}
+
+function decodeEnvelope(buffer) {
+  if (buffer.length < 36 || buffer.readUInt32BE(0) !== 0x44485731) throw new Error('WebSocket 返回非 DHW1 二进制帧。')
+  const payloadLength = buffer.readUInt32BE(32)
+  if (buffer.readUInt16BE(4) !== 1 || buffer.readUInt8(7) !== 1 || payloadLength !== buffer.length - 36 || payloadLength > 1_048_576) {
+    throw new Error('WebSocket DHW1 帧头校验失败。')
+  }
+  let payload
+  try {
+    payload = JSON.parse(buffer.subarray(36).toString('utf8'))
+  } catch {
+    throw new Error('WebSocket JSON 载荷无效。')
+  }
+  const sequenceBigInt = buffer.readBigInt64BE(24)
+  const sequence = Number(sequenceBigInt)
+  if (sequenceBigInt <= 0n || !Number.isSafeInteger(sequence)) throw new Error('WebSocket 序列无效。')
+  return {
+    protocolVersion: buffer.readUInt16BE(4),
+    type: buffer.readUInt8(6),
+    sequence,
+    payload,
+  }
+}
+
+function encodeClientFrame(payload, opcode = 0x2) {
+  if (payload.length > 1_048_576) throw new Error('烟测帧超过 1 MiB。')
+  const mask = crypto.randomBytes(4)
+  let header
+  if (payload.length < 126) {
+    header = Buffer.alloc(2)
+    header[1] = 0x80 | payload.length
+  } else if (payload.length <= 0xffff) {
+    header = Buffer.alloc(4)
+    header[1] = 0x80 | 126
+    header.writeUInt16BE(payload.length, 2)
+  } else {
+    header = Buffer.alloc(10)
+    header[1] = 0x80 | 127
+    header.writeBigUInt64BE(BigInt(payload.length), 2)
+  }
+  header[0] = 0x80 | opcode
+  const masked = Buffer.allocUnsafe(payload.length)
+  for (let index = 0; index < payload.length; index++) masked[index] = payload[index] ^ mask[index % 4]
+  return Buffer.concat([header, mask, masked])
+}
+
+function openWebSocket(target, headers) {
+  return new Promise((resolve, reject) => {
+    const key = crypto.randomBytes(16).toString('base64')
+    const useTls = target.protocol === 'wss:' || target.protocol === 'https:'
+    const transport = useTls ? tls : net
+    const options = {
+      host: target.hostname,
+      port: Number(target.port || (useTls ? 443 : 80)),
+      ...(useTls ? { servername: target.hostname, rejectUnauthorized: process.env.SMOKE_TLS_VERIFY !== '0' } : {}),
+    }
+    const raw = transport.connect(options)
+    let buffer = Buffer.alloc(0)
+    let settled = false
+    const timeout = setTimeout(() => raw.destroy(new Error('WebSocket 握手超时。')), timeoutMs)
+    const fail = error => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      raw.destroy()
+      reject(error)
+    }
+    raw.once('error', fail)
+    const connectedEvent = useTls ? 'secureConnect' : 'connect'
+    raw.once(connectedEvent, () => {
+      const path = `${target.pathname || '/'}${target.search || ''}`
+      const host = target.port ? `${target.hostname}:${target.port}` : target.hostname
+      const lines = [
+        `GET ${path} HTTP/1.1`,
+        `Host: ${host}`,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        `Sec-WebSocket-Key: ${key}`,
+        'Sec-WebSocket-Version: 13',
+      ]
+      for (const [name, value] of Object.entries(headers || {})) lines.push(`${name}: ${value}`)
+      raw.write(`${lines.join('\r\n')}\r\n\r\n`)
+    })
+    const onData = chunk => {
+      buffer = Buffer.concat([buffer, chunk])
+      const boundary = buffer.indexOf('\r\n\r\n')
+      if (boundary < 0) return
+      clearTimeout(timeout)
+      const responseHead = buffer.subarray(0, boundary).toString('latin1')
+      buffer = buffer.subarray(boundary + 4)
+      const lines = responseHead.split('\r\n')
+      if (!/^HTTP\/1\.1 101(?: |$)/.test(lines[0])) return fail(new Error(`WebSocket 握手失败: ${lines[0]}`))
+      const responseHeaders = new Map()
+      for (const line of lines.slice(1)) {
+        const separator = line.indexOf(':')
+        if (separator > 0) responseHeaders.set(line.slice(0, separator).toLowerCase(), line.slice(separator + 1).trim())
+      }
+      const expectedAccept = crypto.createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64')
+      if (responseHeaders.get('sec-websocket-accept') !== expectedAccept) return fail(new Error('WebSocket Sec-WebSocket-Accept 校验失败。'))
+      settled = true
+      clearTimeout(timeout)
+      raw.off('data', onData)
+      resolve(new RawWebSocket(raw, buffer))
+    }
+    raw.on('data', onData)
+  })
+}
+
+class RawWebSocket {
+  #socket
+  #buffer
+  #waiters = []
+  #closed = false
+
+  constructor(socket, initialBuffer) {
+    this.#socket = socket
+    this.#buffer = initialBuffer
+    socket.on('data', chunk => {
+      this.#buffer = Buffer.concat([this.#buffer, chunk])
+      this.#drain()
+    })
+    socket.on('close', () => {
+      this.#closed = true
+      this.#drain()
+    })
+    socket.on('error', error => {
+      this.#closed = true
+      for (const waiter of this.#waiters.splice(0)) waiter.reject(error)
+    })
+  }
+
+  write(frame) { this.#socket.write(frame) }
+
+  nextFrame(timeout) {
+    const frame = this.#tryReadFrame()
+    if (frame) return Promise.resolve(frame)
+    if (this.#closed) return Promise.reject(new Error('WebSocket 已关闭。'))
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const index = this.#waiters.findIndex(waiter => waiter.resolve === resolve)
+        if (index >= 0) this.#waiters.splice(index, 1)
+        reject(new Error('WebSocket 帧读取超时。'))
+      }, Math.max(1, timeout))
+      this.#waiters.push({ resolve: value => { clearTimeout(timer); resolve(value) }, reject: error => { clearTimeout(timer); reject(error) } })
+    })
+  }
+
+  close() {
+    if (this.#closed) return
+    try { this.#socket.write(encodeClientFrame(Buffer.from([0x03, 0xE8]), 0x8)) } catch {}
+    this.#socket.end()
+    this.#closed = true
+  }
+
+  #drain() {
+    while (this.#waiters.length > 0) {
+      const frame = this.#tryReadFrame()
+      if (!frame) break
+      this.#waiters.shift().resolve(frame)
+    }
+    if (this.#closed) {
+      for (const waiter of this.#waiters.splice(0)) waiter.reject(new Error('WebSocket 已关闭。'))
+    }
+  }
+
+  #tryReadFrame() {
+    if (this.#buffer.length < 2) return null
+    const first = this.#buffer[0]
+    const second = this.#buffer[1]
+    const fin = (first & 0x80) !== 0
+    const opcode = first & 0x0f
+    const masked = (second & 0x80) !== 0
+    let length = second & 0x7f
+    let offset = 2
+    if (length === 126) {
+      if (this.#buffer.length < 4) return null
+      length = this.#buffer.readUInt16BE(2)
+      offset = 4
+    } else if (length === 127) {
+      if (this.#buffer.length < 10) return null
+      const value = this.#buffer.readBigUInt64BE(2)
+      if (value > 1_048_576n) throw new Error('WebSocket 帧超过 1 MiB。')
+      length = Number(value)
+      offset = 10
+    }
+    if (length > 1_048_576) throw new Error('WebSocket 帧超过 1 MiB。')
+    const maskOffset = masked ? 4 : 0
+    if (this.#buffer.length < offset + maskOffset + length) return null
+    const mask = masked ? this.#buffer.subarray(offset, offset + 4) : null
+    const payloadStart = offset + maskOffset
+    const payload = Buffer.from(this.#buffer.subarray(payloadStart, payloadStart + length))
+    this.#buffer = this.#buffer.subarray(payloadStart + length)
+    if (mask) for (let index = 0; index < payload.length; index++) payload[index] ^= mask[index % 4]
+    if (!fin && opcode !== 0x0) throw new Error('烟测不支持未完成控制帧。')
+    return { fin, opcode, payload }
+  }
+}
+
+await main()

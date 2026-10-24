@@ -1,0 +1,441 @@
+[
+  {
+    "id": "item.tome.heavy-slash",
+    "name": "《重斩秘籍》",
+    "description": "重剑无锋，大巧不工。\n古朴厚重的蓝皮线装册页，字迹苍劲凌厉，隐有破空刀意。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.heavy-slash",
+    "name": "《重斩·残卷》",
+    "description": "重剑无锋，大巧不工。\n古朴厚重的蓝皮线装册页，字迹苍劲凌厉，隐有破空刀意。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.chain-strike",
+    "name": "《连环秘籍》",
+    "description": "剑势连绵，环环相扣。\n记录连绵发力法门的武道典籍，图谱招式如水银泻地。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.chain-strike",
+    "name": "《连环·残卷》",
+    "description": "剑势连绵，环环相扣。\n记录连绵发力法门的武道典籍，图谱招式如水银泻地。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.palm-lightning",
+    "name": "《掌心雷秘籍》",
+    "description": "袖中掌起一声雷。\n以雷击木皮为封面的道门符诀典籍，字里行间隐有电芒跃动。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.palm-lightning",
+    "name": "《掌心雷·残卷》",
+    "description": "袖中掌起一声雷。\n以雷击木皮为封面的道门符诀典籍，字里行间隐有电芒跃动。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.ganlu",
+    "name": "《甘露秘籍》",
+    "description": "天降甘露，润物无声。\n以清水写就的道门符诀典籍，纸页间隐有露珠滚动不落。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.ganlu",
+    "name": "《甘露·残卷》",
+    "description": "天降甘露，润物无声。\n以清水写就的道门符诀典籍，纸页间隐有露珠滚动不落。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.blazing-blast",
+    "name": "《轰炎秘籍》",
+    "description": "轰炎一怒焚千里。\n绘有炽烈火纹的朱红古卷，卷轴触手灼热。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.blazing-blast",
+    "name": "《轰炎·残卷》",
+    "description": "轰炎一怒焚千里。\n绘有炽烈火纹的朱红古卷，卷轴触手灼热。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.taunt",
+    "name": "《嘲讽秘籍》",
+    "description": "一声断喝，万敌回首。\n记载引敌锁神之术的杂家古册，言语乖张奇诡。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.taunt",
+    "name": "《嘲讽·残卷》",
+    "description": "一声断喝，万敌回首。\n记载引敌锁神之术的杂家古册，言语乖张奇诡。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.heavy-clouds",
+    "name": "《重云秘籍》",
+    "description": "重云压城，掌覆千军。\n封皮如云海翻涌的玄妙道卷，内页以云篆古字书就。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.heavy-clouds",
+    "name": "《重云·残卷》",
+    "description": "重云压城，掌覆千军。\n封皮如云海翻涌的玄妙道卷，内页以云篆古字书就。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.qingping-melody",
+    "name": "《清平乐秘籍》",
+    "description": "清平一曲起，枯木又逢春。\n娟秀工整的琴谱仙卷，翻阅间隐有空灵琴音绕梁。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.qingping-melody",
+    "name": "《清平乐·残卷》",
+    "description": "清平一曲起，枯木又逢春。\n娟秀工整的琴谱仙卷，翻阅间隐有空灵琴音绕梁。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.lightning-attraction",
+    "name": "《雷光引秘籍》",
+    "description": "九霄雷落，万钧天威。\n紫绫包边的上乘雷法真经，通篇流转着纯正的九霄雷意。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.lightning-attraction",
+    "name": "《雷光引·残卷》",
+    "description": "九霄雷落，万钧天威。\n紫绫包边的上乘雷法真经，通篇流转着纯正的九霄雷意。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.pozhen-melody",
+    "name": "《破阵子秘籍》",
+    "description": "一曲破阵壮军威。\n铁划银钩写就的金戈战曲秘本，翻之顿觉杀伐之气扑面。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.pozhen-melody",
+    "name": "《破阵子·残卷》",
+    "description": "一曲破阵壮军威。\n铁划银钩写就的金戈战曲秘本，翻之顿觉杀伐之气扑面。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.star-piercer",
+    "name": "《贯星秘籍》",
+    "description": "一剑横空贯星斗。\n以银丝装订的黄品箭道真解，星芒内蕴，锋芒毕露。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.star-piercer",
+    "name": "《贯星·残卷》",
+    "description": "一剑横空贯星斗。\n以银丝装订的黄品箭道真解，星芒内蕴，锋芒毕露。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.tuna-gong",
+    "name": "《吐纳功秘籍》",
+    "description": "一呼一吸，气行周身。\n记录道家入门呼吸吐纳法门的旧绢册页，可调和经脉、固本培元。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.tuna-gong",
+    "name": "《吐纳功·残卷》",
+    "description": "一呼一吸，气行周身。\n记录道家入门呼吸吐纳法门的旧绢册页，可调和经脉、固本培元。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.manniu-jin",
+    "name": "《蛮牛劲秘籍》",
+    "description": "力蛮如牛，不尚机巧。\n粗粝兽皮缝制的刚猛力修图谱，专修纯粹肉身蛮力。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.manniu-jin",
+    "name": "《蛮牛劲·残卷》",
+    "description": "力蛮如牛，不尚机巧。\n粗粝兽皮缝制的刚猛力修图谱，专修纯粹肉身蛮力。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.tiebu-shan",
+    "name": "《铁布衫秘籍》",
+    "description": "筋骨如铁，刀枪不入。\n铁线编织的硬气功册页，记录淬炼体魄与骨骼的横练之法。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.tiebu-shan",
+    "name": "《铁布衫·残卷》",
+    "description": "筋骨如铁，刀枪不入。\n铁线编织的硬气功册页，记录淬炼体魄与骨骼的横练之法。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.feiyan-gong",
+    "name": "《飞燕功秘籍》",
+    "description": "身轻如燕，踏雪无痕。\n羽绢抄录的轻身行气图，研读可御气轻身、踏草如飞。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.feiyan-gong",
+    "name": "《飞燕功·残卷》",
+    "description": "身轻如燕，踏雪无痕。\n羽绢抄录的轻身行气图，研读可御气轻身、踏草如飞。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.qingxin-jue",
+    "name": "《清心诀秘籍》",
+    "description": "清心寡欲，灵台空明。\n素白锦缎绣制的道家静坐口诀，澄净心神杂念，专蓄术法灵光。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.qingxin-jue",
+    "name": "《清心诀·残卷》",
+    "description": "清心寡欲，灵台空明。\n素白锦缎绣制的道家静坐口诀，澄净心神杂念，专蓄术法灵光。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.fenxue-gong",
+    "name": "《焚血功秘籍》",
+    "description": "燃血为薪，力可崩山。\n隐带血腥煞气的魔门残卷，以肉身本源气血为薪柴换取绝强狂力。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.fenxue-gong",
+    "name": "《焚血功·残卷》",
+    "description": "燃血为薪，力可崩山。\n隐带血腥煞气的魔门残卷，以肉身本源气血为薪柴换取绝强狂力。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.xiaozhoutian-gong",
+    "name": "《小周天功秘籍》",
+    "description": "气行任督，周天不息。\n玄门正宗护体真经，灵息搬运、周天循环，坚不可摧。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.xiaozhoutian-gong",
+    "name": "《小周天功·残卷》",
+    "description": "气行任督，周天不息。\n玄门正宗护体真经，灵息搬运、周天循环，坚不可摧。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.cunshen-jue",
+    "name": "《存神诀秘籍》",
+    "description": "存神内视，万虑皆空。\n紫玉简雕刻的上乘内视真经，凝练识海神识，洞察万物生克。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.cunshen-jue",
+    "name": "《存神诀·残卷》",
+    "description": "存神内视，万虑皆空。\n紫玉简雕刻的上乘内视真经，凝练识海神识，洞察万物生克。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.lianjing-huaqi-jue",
+    "name": "《炼精化气诀秘籍》",
+    "description": "炼精化气，舍形求真。\n泛黄道书上记载的夺造化速成秘术，尽舍肉身形魄以速成无上金丹。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.lianjing-huaqi-jue",
+    "name": "《炼精化气诀·残卷》",
+    "description": "炼精化气，舍形求真。\n泛黄道书上记载的夺造化速成秘术，尽舍肉身形魄以速成无上金丹。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.xuanyuan-yiqi-gong",
+    "name": "《玄元一气功秘籍》",
+    "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 3,
+    "sellPrice": 500,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.xuanyuan-yiqi-gong",
+    "name": "《玄元一气功·残卷》",
+    "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 3,
+    "sellPrice": 50,
+    "subCategory": "manualFragment"
+  }
+  ,
+  {
+    "id": "item.tome.tide",
+    "name": "《潮汐秘籍》",
+    "description": "潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀，引动潮汐怒涛，席卷全体敌阵。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.tide",
+    "name": "《潮汐·残卷》",
+    "description": "潮起千重浪，汐落万顷涛。\n记载水灵暗涌之道的上乘法诀残页，记录引动浪涛拍岸之法。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  },
+  {
+    "id": "item.tome.sui-gang",
+    "name": "《碎罡秘籍》",
+    "description": "碎罡崩甲，化煞成锋。\n记载舍却护体罡气、以血勇换取杀伐之力的体魄秘典，字字皆带煞意。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "subCategory": "manualTome"
+  },
+  {
+    "id": "item.fragment.sui-gang",
+    "name": "《碎罡·残卷》",
+    "description": "碎罡崩甲，化煞成锋。\n记载舍却护体罡气、以血勇换取杀伐之力的残页，笔锋凌厉如刀。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "subCategory": "manualFragment"
+  }
+]

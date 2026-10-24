@@ -1,0 +1,203 @@
+[
+  {
+    "id": "enemy.rift-wolf",
+    "name": "裂齿妖狼",
+    "visual": {
+      "renderer": "text",
+      "source": "狼"
+    },
+    "style": "sword",
+    "level": 14,
+    "tier": 2,
+    "budgetCost": 30,
+    "weights": {
+      "hp": 1.29,
+      "mp": 0.89,
+      "ad": 0.98,
+      "armor": 1.13,
+      "mres": 0.51,
+      "hit": 1.0,
+      "eva": 1.0
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.chain-strike",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.chain-strike",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.fenxue-gong",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.fenxue-gong",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.85
+      }
+    ]
+  },
+  {
+    "id": "enemy.star-flame-crow",
+    "name": "星屑火鸦",
+    "visual": {
+      "renderer": "text",
+      "source": "鸦"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "fire",
+    "level": 16,
+    "tier": 2,
+    "budgetCost": 35,
+    "weights": {
+      "hp": 1.15,
+      "mp": 1.33,
+      "ap": 2.28,
+      "armor": 0.82,
+      "mres": 0.41,
+      "hit": 1.11,
+      "eva": 1.66
+    },
+    "dropTable": [
+      {
+        "itemId": "item.fire-feather",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.lightning-attraction",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.lightning-attraction",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.blazing-blast",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.blazing-blast",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.cunshen-jue",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.cunshen-jue",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.palm-lightning",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
+    ],
+    "modifiers": {
+      "fireDamageReductionPoints": 11.299999999999999
+    }
+  },
+  {
+    "id": "enemy.plunder-cultivator",
+    "name": "掠灵邪修",
+    "visual": {
+      "renderer": "text",
+      "source": "修"
+    },
+    "style": "talisman",
+    "category": "spell",
+    "element": "wood",
+    "level": 18,
+    "tier": 2,
+    "budgetCost": 40,
+    "weights": {
+      "hp": 1.2,
+      "mp": 1.48,
+      "ap": 2.19,
+      "armor": 0.92,
+      "mres": 0.51,
+      "hit": 1.0,
+      "eva": 1.2
+    },
+    "dropTable": [
+      {
+        "itemId": "item.soul-talisman",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.pozhen-melody",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.pozhen-melody",
+        "dropChance": 0.02,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.lianjing-huaqi-jue",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.lianjing-huaqi-jue",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.lightning-attraction",
+        "level": 1,
+        "triggerHpRatio": 0.85
+      }
+    ],
+    "modifiers": {
+      "woodDamageReductionPoints": 9.200000000000001
+    }
+  }
+]

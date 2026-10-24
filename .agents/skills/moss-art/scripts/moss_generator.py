@@ -1,0 +1,1343 @@
+#!/usr/bin/env python3
+"""
+道化太初 · MOSS-Image 本地自动化生图与资产切片工具
+通过本地 ComfyUI REST API (MOSS-Image + Qwen 3.5 9B + RMBG 抠图) 
+实现多区域精细布局生成、自动切片、去底与 64px WebP 一键落盘。
+"""
+
+import os
+import sys
+import json
+import time
+import random
+import argparse
+import urllib.request
+import urllib.parse
+from PIL import Image
+import numpy as np
+
+COMFY_HOST = "http://127.0.0.1:8188"
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# 从 .agents/skills/moss-art/scripts 向上回退 4 层到达仓库根目录
+REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", "..", ".."))
+OUTPUT_DIR = os.path.join(REPO_ROOT, "frontend", "src", "assets", "items")
+COMFY_OUTPUT_DIR = r"D:\Tools\AI\ComfyUI-Shared\output"
+
+# Turbo 加速 LoRA（SFT 4-step v2，civitai 3006599 / akhaliq 蒸馏）：官方参数 CFG=1.0 / 强度=1.0，
+# 必须经 LoraLoaderModelOnly 运行时挂载，禁止合并进 bf16 底模权重；一次只挂一个 turbo LoRA。
+# 步数官方口径 4(1024²)/6(1536宽)/8(2048²)，本项目默认取 8 步出图更稳（仍远快于标准 35 步）。
+TURBO_LORA_NAME = "moss_image_sft_4_steps_lora_v2_600_avg_rank_72_bf16.safetensors"
+TURBO_LORA_DIR = r"D:\Tools\AI\ComfyUI-Shared\models\loras"
+TURBO_STEPS = 8
+TURBO_CFG = 1.0
+
+# 预设系列道具定义
+PRESET_BATCHES = {
+    # 副手装备 B 组 (4件套, 2x2 网格)
+    # 副手装备 A 组 (4件套, 2x2 网格)
+    "offhands_a": [
+        {
+            "id": "equipment.fan-tie-dart",
+            "name": "兽骨匕",
+            "bbox": [-400, -400, -130, -130], # Top-Left
+            "caption": "Top-left item: [兽骨匕 - Bone Dagger]. A stylized curved dagger carved from ancient pale beast bone, 45-degree diagonal dynamic composition, clean bold silhouette, wrapped dark cord hilt, compact and neat, dark ink outline."
+        },
+        {
+            "id": "equipment.qingmu-bead",
+            "name": "桃灵珠",
+            "bbox": [-400, 130, -130, 400], # Top-Right
+            "caption": "Top-right item: [桃灵珠 - Peach-wood Spirit Bead]. A smooth floating celestial bead carved from centuries-old peach wood, warm amber wood grain, simple red cinnabar braided tassel below, clean spherical silhouette, dark ink outline."
+        },
+        {
+            "id": "equipment.tiepi-guard",
+            "name": "精铁盾",
+            "bbox": [130, -400, 400, -130], # Bottom-Left
+            "caption": "Bottom-left item: [精铁盾 - Heavy Iron Shield]. A sturdy Chinese Han-dynasty square kite shield made of dark meteor iron, clean bold defensive shape, subtle bronze boss in center, compact and sturdy, dark ink outline."
+        },
+        {
+            "id": "equipment.ganlu-flask",
+            "name": "甘露瓶",
+            "bbox": [130, 130, 400, 400], # Bottom-Right
+            "caption": "Bottom-right item: [甘露瓶 - Jade Dew Flask]. An elegant celadon jade vase flask, slender neck, tied with a simple gold silk ribbon, clean peaceful Daoist bottle silhouette, dark ink outline."
+        }
+    ],
+    "offhands_b": [
+        {
+            "id": "equipment.xuantie-dart",
+            "name": "赤牙匕",
+            "bbox": [-400, -400, -130, -130], # Top-Left: 紧凑居中，外围大间隙
+            "caption": "Top-left item: [赤牙匕 - Crimson Fang Dagger]. A stylized curved beast-fang dagger, 45-degree diagonal dynamic composition, clean bold silhouette, crimson red blade with cold edge, dark wrapped hilt, compact and neat, dark ink outline."
+        },
+        {
+            "id": "equipment.yaoling-bead",
+            "name": "曜灵珠",
+            "bbox": [-400, 130, -130, 400], # Top-Right: 紧凑居中，外围大间隙
+            "caption": "Top-right item: [曜灵珠 - Sun Radiance Bead]. A simple smooth floating celestial pearl, warm amber and crimson red hues, minimalist red cord tassel below, clean spherical shape, dark ink outline."
+        },
+        {
+            "id": "equipment.xuanjia-guard",
+            "name": "赤铜盾",
+            "bbox": [130, -400, 400, -130], # Bottom-Left: 紧凑居中，外围大间隙
+            "caption": "Bottom-left item: [赤铜盾 - Crimson Bronze Shield]. A clean Chinese Han-dynasty square kite shield, bold oxidized red-bronze surface, simple bronze beast-mask in center, sturdy and compact, dark ink outline."
+        },
+        {
+            "id": "equipment.huichun-bell",
+            "name": "回春铃",
+            "bbox": [130, 130, 400, 400], # Bottom-Right: 紧凑居中，外围大间隙
+            "caption": "Bottom-right item: [回春铃 - Spring Rejuvenation Bell]. A stylized ancient bronze Daoist bell, simple elegant bell silhouette, jade green patina accents, clean and compact, dark ink outline."
+        }
+    ],
+    # 物理输出防具 6 件套 (T1 三件套 + T2 三件套, 2x3 六宫格网格)
+    "physical_armors_6": [
+        # 行 1: T1 物理输出三件套 (巾/甲/裤)
+        {
+            "id": "equipment.jinfeng-scarf",
+            "name": "劲风巾",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [劲风巾 - Jinfeng Wind Headband]. A stylized navy-blue martial artist headband, bold simple silhouette, flowing sharp ribbon tails, dark ink outline."
+        },
+        {
+            "id": "equipment.qingpi-armor",
+            "name": "轻皮甲",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [轻皮甲 - Light Leather Armor]. A stylized sleeveless combat cuirass sewn from dark cured leather, bronze shoulder rivets, simple symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.jixing-pants",
+            "name": "疾行裤",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [疾行裤 - Swift Strider Pants]. Stylized dark martial artist pants with brown leather gaiter wraps around shins, clean silhouette, dark ink outline."
+        },
+        # 行 2: T2 物理输出三件套 (巾/甲/裤)
+        {
+            "id": "equipment.zhanfeng-scarf",
+            "name": "斩风巾",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [斩风巾 - Windcleaver Headband]. An elite martial headband with silver wind-crest emblem and flying dark ribbons, sharp agile silhouette, dark ink outline."
+        },
+        {
+            "id": "equipment.liegang-armor",
+            "name": "裂罡甲",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [裂罡甲 - Astral Breaker Armor]. A heavy battle harness made of laminated black iron plates and demon beast carapace, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.tafeng-pants",
+            "name": "踏风裤",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [踏风裤 - Windstrider Pants]. Dark martial trousers reinforced with segmented iron shin guards, clean sharp silhouette, dark ink outline."
+        }
+    ],
+    # 生产生活工具组 1 (采药/采矿/炼丹/锻造 4件套, 2x2 网格)
+    "life_tools_4": [
+        {
+            "id": "equipment.tool-herb-hoe",
+            "name": "桃木铲",
+            "bbox": [-400, -400, -130, -130],
+            "caption": "Top-left item: [桃木铲 - Peach-wood Herbal Spade]. A compact traditional herbalist hand spade carved from aged peach wood, smooth wooden handle, clean blade for digging spirit herbs, dark ink outline."
+        },
+        {
+            "id": "equipment.tool-prospect-compass",
+            "name": "精铁镐",
+            "bbox": [-400, 130, -130, 400],
+            "caption": "Top-right item: [精铁镐 - Iron Mining Pick]. A durable compact hand pickaxe forged from dark refined iron, angled pointed head for mining ore, wrapped wooden grip, dark ink outline."
+        },
+        {
+            "id": "equipment.tool-flame-ding",
+            "name": "灵火炉",
+            "bbox": [130, -400, 400, -130],
+            "caption": "Bottom-left item: [灵火炉 - Spirit Flame Cauldron]. A small portable bronze alchemy crucible burner, tripod legs, gentle warm spiritual flame glow inside, dark ink outline."
+        },
+        {
+            "id": "equipment.tool-forge-hammer",
+            "name": "百炼铁钳",
+            "bbox": [130, 130, 400, 400],
+            "caption": "Bottom-right item: [百炼铁钳 - Master Blacksmith Tongs]. Sturdy Chinese blacksmith iron tongs for holding red-hot metals, simple strong mechanical hinge, dark ink outline."
+        }
+    ],
+    # 生活工具与阵法道具组 2 (制符/布阵/淬灵 + 符箓/阵盘/功德 6件套, 2x3 网格)
+    "talisman_formation_6": [
+        {
+            "id": "equipment.tool-talisman-brush",
+            "name": "桃木笔",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [桃木笔 - Talisman Calligraphy Brush]. An ancient calligraphy brush carved from peach wood, fine dark animal hair tip, red cinnabar accents, dark ink outline."
+        },
+        {
+            "id": "equipment.tool-formation-flag",
+            "name": "桃晶旗",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [桃晶旗 - Formation Banner]. A small triangular Daoist spiritual formation flag made of yellow silk, attached to a peach-wood pole, simple trigram symbol, dark ink outline."
+        },
+        {
+            "id": "equipment.tool-quench-anvil",
+            "name": "淬灵锤",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [淬灵锤 - Quenching Hammer]. A heavy square blacksmith hammer forged from meteoric black iron, polished striking face, dark ink outline."
+        },
+        {
+            "id": "item.leiji-talisman",
+            "name": "雷击符",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [雷击符 - Thunderstrike Talisman]. A traditional Daoist paper talisman on yellow spirit paper, vermilion cinnabar lightning runes drawn boldly, dark ink outline."
+        },
+        {
+            "id": "item.juling-formation-disk",
+            "name": "聚灵阵盘",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [聚灵阵盘 - Spirit Gathering Formation Disk]. An octagonal bronze Daoist formation plate engraved with concentric bagua trigrams, azure spiritual glow in center, dark ink outline."
+        },
+        {
+            "id": "item.gongde",
+            "name": "功德",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [功德 - Golden Soul Fire]. A floating ethereal wisp of pure sacred golden soul fire, celestial spiritual flame, teardrop fire wisp rising upwards, warm auspicious golden radiance, organic flame shape, absolutely no coin or disc, dark ink outline."
+        }
+    ],
+    # 内功体系批次 A (5门基础心法技能 + 基础秘籍线装书, 2x3 网格)
+    "internal_abilities_a": [
+        {
+            "id": "ability.tuna-gong",
+            "name": "吐纳功",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [吐纳功 - Breathing Qi Art]. A stylized Daoist breath cultivation icon, swirling white and cyan mist forming a serene circular vortex, peaceful meditative aura, dark ink outline."
+        },
+        {
+            "id": "ability.manniu-jin",
+            "name": "蛮牛劲",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [蛮牛劲 - Raging Bull Force]. A stylized ferocious bronze ox bull head emblem, crimson red and earthy brown hues, raw physical brute force, dark ink outline."
+        },
+        {
+            "id": "ability.tiebu-shan",
+            "name": "铁布衫",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [铁布衫 - Iron Shirt Defense]. A stylized ancient iron bell shield aura enclosing an iron silhouette, deep slate iron gray and dull bronze, impenetrable defense, dark ink outline."
+        },
+        {
+            "id": "ability.feiyan-gong",
+            "name": "飞燕功",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [飞燕功 - Flying Swallow Grace]. A stylized agile swallow bird in dynamic soaring flight, emerald green and swift wind arcs, graceful agility, dark ink outline."
+        },
+        {
+            "id": "ability.qingxin-jue",
+            "name": "清心诀",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [清心诀 - Clear Heart Art]. A stylized luminous pale blue lotus flower floating in spiritual water, ice blue dewdrop in center, serene mental clarity, dark ink outline."
+        },
+        {
+            "id": "base_tome",
+            "name": "基础秘籍线装书",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [基础秘籍 - Daoist Manual Tome]. An antique traditional Chinese thread-bound martial arts book with blue-indigo fabric cover, white label strip on left, clean front 3/4 perspective, dark ink outline."
+        }
+    ],
+    # 内功体系批次 B (5门进阶心法技能 + 基础残卷古页, 2x3 网格)
+    "internal_abilities_b": [
+        {
+            "id": "ability.fenxue-gong",
+            "name": "焚血功",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [焚血功 - Blood Burning Art]. A stylized demonic flame heart emblem, boiling crimson blood vapors and violent fiery orange tendrils, explosive sacrifice power, dark ink outline."
+        },
+        {
+            "id": "ability.xiaozhoutian-gong",
+            "name": "小周天功",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [小周天功 - Microcosmic Orbit]. A stylized golden meridian circulation circle with glowing acupoints, pure solar gold and amber Daoist energy stream, harmonious balance, dark ink outline."
+        },
+        {
+            "id": "ability.cunshen-jue",
+            "name": "存神诀",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [存神诀 - Soul Enshrining Art]. A stylized mystical all-seeing third eye glowing with violet spiritual consciousness, radiant purple mist, profound Daoist meditation, dark ink outline."
+        },
+        {
+            "id": "ability.lianjing-huaqi-jue",
+            "name": "炼精化气诀",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [炼精化气诀 - Essence Transmutation]. A stylized internal cinnabar tripod crucible refining scarlet vital essence into translucent white spiritual vapor, alchemical sublimation, dark ink outline."
+        },
+        {
+            "id": "ability.xuanyuan-yiqi-gong",
+            "name": "玄元一气功",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [玄元一气功 - Primordial Origin Qi]. A grand cosmic primordial taiji vortex of deep azure and profound gold, swirling starry primordial vapor, supreme orthodox Daoism, dark ink outline."
+        },
+        {
+            "id": "base_fragment",
+            "name": "基础残卷古页",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [基础残卷 - Ancient Scroll Fragment]. A weathered torn fragment of ancient golden silk parchment, frayed edges, faint mysterious cinnabar calligraphy runes, dark ink outline."
+        }
+    ],
+    # 首领怪物立绘 (筑基期 Lv18 玄元残魄)
+    "boss_xuanyuan_remnant": [
+        {
+            "id": "xuanyuan-remnant",
+            "name": "玄元残魄",
+            "bbox": [-450, -420, 450, 420],
+            "caption": "Centered character: [玄元残魄 - Xuanyuan Sect Remnant Soul]. A powerful ancient Taoist sect master's ethereal ghostly apparition phantom, floating in mid-air, translucent azure spiritual ghost robes torn at edges, stern ethereal spectral bearded face with glowing eyes, floating ancient cracked bronze talisman sword by his side, surrounded by gentle dark cyan spiritual ectoplasm flame mist, dark ink outline, majestic and tragic Daoist boss aura."
+        }
+    ],
+    # 真实古风线装秘籍书本批次 A (前 5 门心法线装书)
+    "tomes_group_a": [
+        {
+            "id": "item.tome.tuna-gong",
+            "name": "《吐纳功秘籍》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《吐纳功秘籍》 - Tuna Breathing Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark indigo blue cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle swirling breath vortex emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.manniu-jin",
+            "name": "《蛮牛劲秘籍》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《蛮牛劲秘籍》 - Raging Bull Force Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark brown leather cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle ferocious bull head horns emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.tiebu-shan",
+            "name": "《铁布衫秘籍》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《铁布衫秘籍》 - Iron Shirt Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark iron-gray fabric cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle ancient iron bell shield armor emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.feiyan-gong",
+            "name": "《飞燕功秘籍》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《飞燕功秘籍》 - Flying Swallow Tome Book]. A stylized Chinese thread-bound ancient martial arts book, deep emerald green cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle soaring flying swallow bird emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.qingxin-jue",
+            "name": "《清心诀秘籍》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《清心诀秘籍》 - Clear Heart Tome Book]. A stylized Chinese thread-bound ancient martial arts book, pale icy-blue cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle serene water lotus flower emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 真实古风线装秘籍书本批次 B (后 5 门进阶心法线装书)
+    "tomes_group_b": [
+        {
+            "id": "item.tome.fenxue-gong",
+            "name": "《焚血功秘籍》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《焚血功秘籍》 - Blood Burning Tome Book]. A stylized Chinese thread-bound ancient martial arts book, dark crimson red cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle demonic flame heart emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.xiaozhoutian-gong",
+            "name": "《小周天功秘籍》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《小周天功秘籍》 - Microcosmic Orbit Tome Book]. A stylized Chinese thread-bound ancient martial arts book, bright golden-yellow cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle golden meridian orbit circle emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.cunshen-jue",
+            "name": "《存神诀秘籍》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《存神诀秘籍》 - Soul Enshrining Tome Book]. A stylized Chinese thread-bound ancient martial arts book, deep violet-purple cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle mystical third eye emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.lianjing-huaqi-jue",
+            "name": "《炼精化气诀秘籍》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《炼精化气诀秘籍》 - Essence Transmutation Tome Book]. A stylized Chinese thread-bound ancient martial arts book, celadon jade-green cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle three-legged alchemy cauldron tripod emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.tome.xuanyuan-yiqi-gong",
+            "name": "《玄元一气功秘籍》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《玄元一气功秘籍》 - Primordial Origin Qi Tome Book]. A stylized Chinese thread-bound ancient martial arts book, deep slate-black cover with white binding stitches on left spine, vertical paper label on cover, a simple white doodle primordial taiji crest emblem drawn in the center of the cover, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 真实古风心法残卷批次 A (前 5 门心法泛黄古绢残卷)
+    "fragments_group_a": [
+        {
+            "id": "item.fragment.tuna-gong",
+            "name": "《吐纳功·残卷》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《吐纳功·残卷》 - Tuna Breathing Scroll Fragment]. A weathered torn fragment of antique Daoist parchment paper, jagged rough edges, a simple white doodle swirling breath vortex emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.manniu-jin",
+            "name": "《蛮牛劲·残卷》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《蛮牛劲·残卷》 - Raging Bull Force Scroll Fragment]. A weathered torn fragment of antique coarse beast-hide parchment, jagged rough edges, a simple white doodle ferocious bull head horns emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.tiebu-shan",
+            "name": "《铁布衫·残卷》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《铁布衫·残卷》 - Iron Shirt Scroll Fragment]. A weathered torn fragment of antique dark-gray iron-fiber parchment, jagged rough edges, a simple white doodle ancient iron bell shield armor emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.feiyan-gong",
+            "name": "《飞燕功·残卷》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《飞燕功·残卷》 - Flying Swallow Scroll Fragment]. A weathered torn fragment of antique emerald-tinted silk parchment, jagged rough edges, a simple white doodle soaring flying swallow bird emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.qingxin-jue",
+            "name": "《清心诀·残卷》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《清心诀·残卷》 - Clear Heart Scroll Fragment]. A weathered torn fragment of antique pale icy-tinted parchment paper, jagged rough edges, a simple white doodle serene water lotus flower emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 真实古风心法残卷批次 B (后 5 门进阶心法泛黄古卷残卷)
+    "fragments_group_b": [
+        {
+            "id": "item.fragment.fenxue-gong",
+            "name": "《焚血功·残卷》",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [《焚血功·残卷》 - Blood Burning Scroll Fragment]. A weathered charred fragment of dark crimson demon parchment paper, burnt rough edges, a simple white doodle demonic flame heart emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.xiaozhoutian-gong",
+            "name": "《小周天功·残卷》",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [《小周天功·残卷》 - Microcosmic Orbit Scroll Fragment]. A weathered torn fragment of golden-yellow sacred silk parchment, jagged rough edges, a simple white doodle golden meridian orbit circle emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.cunshen-jue",
+            "name": "《存神诀·残卷》",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [《存神诀·残卷》 - Soul Enshrining Scroll Fragment]. A weathered torn fragment of deep-purple mystical Daoist parchment, jagged rough edges, a simple white doodle mystical third eye emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.lianjing-huaqi-jue",
+            "name": "《炼精化气诀·残卷》",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [《炼精化气诀·残卷》 - Essence Transmutation Scroll Fragment]. A weathered torn fragment of jade-tinted alchemical scripture parchment, jagged rough edges, a simple white doodle three-legged cauldron tripod emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "item.fragment.xuanyuan-yiqi-gong",
+            "name": "《玄元一气功·残卷》",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [《玄元一气功·残卷》 - Primordial Origin Qi Scroll Fragment]. A weathered torn fragment of ancient primordial slate-black Daoist scripture parchment, jagged rough edges, a simple white doodle primordial taiji crest emblem drawn in the center, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 纯手绘象牙白简笔画图腾组 A (前 5 门心法图腾，供线装书与残卷合成)
+    "emblems_group_a": [
+        {
+            "id": "emblem.tuna-gong",
+            "name": "吐纳功图腾",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [吐纳功图腾 - Tuna Breathing Logo]. A bold solid pure white minimalist vector silhouette logo of a taiji breath vortex with swirling thick mist curves, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.manniu-jin",
+            "name": "蛮牛劲图腾",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [蛮牛劲图腾 - Raging Bull Logo]. A bold solid pure white minimalist vector silhouette logo of a ferocious raging bull head with massive thick horns, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.tiebu-shan",
+            "name": "铁布衫图腾",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [铁布衫图腾 - Iron Shirt Logo]. A bold solid pure white minimalist vector silhouette logo of an ancient heavy defensive iron bell and shield cuirass, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.feiyan-gong",
+            "name": "飞燕功图腾",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [飞燕功图腾 - Flying Swallow Logo]. A bold solid pure white minimalist vector silhouette logo of a soaring flying swallow bird with split tail and broad wings, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.qingxin-jue",
+            "name": "清心诀图腾",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [清心诀图腾 - Clear Heart Logo]. A bold solid pure white minimalist vector silhouette logo of a serene water lotus flower with a crystal teardrop, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        }
+    ],
+    # 纯黑底纯白二值矢量Logo图腾组 C (甘露水灵辅助功法图腾，供线装书与残卷合成)
+    # 必须走 logos_ 版式：纯黑底 + 纯白形，二值化阈值才有对比度（白底白形会被抠图与阈值同时抹平）。
+    # 四个象限各出一版候选（同一母题不同造型），生成后择优取用为 emblem.ganlu。
+    "logos_ganlu": [
+        {
+            "id": "emblem.ganlu.a",
+            "name": "甘露图腾候选 A",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a single plump water droplet sitting upright inside an open three-petal lotus cradle, the droplet shape itself solid and opaque with no hollow interior, the lotus petals solid filled shapes, one single unified solid white emblem, no thin strokes, no outline-only line art, no hollow rings, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.ganlu.b",
+            "name": "甘露图腾候选 B",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a rounded teardrop dew drop resting on two symmetric thick crescent petals, both droplet and petals drawn as solid opaque filled shapes with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, no hollow rings, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.ganlu.c",
+            "name": "甘露图腾候选 C",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a bold water droplet shape cradled by an open lotus blossom of three thick solid petals, droplet and petals entirely solid opaque white with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.ganlu.d",
+            "name": "甘露图腾候选 D",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [甘露图腾候选 - Sweet Dew Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a large smooth teardrop above two wide upward crescent petal arcs, all shapes rendered as solid opaque white filled forms with no hollow interior, one single unified solid white emblem, no thin strokes, no outline-only line art, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        }
+    ],
+    # 纯白二值矢量Logo图腾组 B (后 5 门心法图腾，供线装书与残卷合成)
+    "emblems_group_b": [
+        {
+            "id": "emblem.fenxue-gong",
+            "name": "焚血功图腾",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [焚血功图腾 - Blood Burning Logo]. A bold solid pure white minimalist vector silhouette logo of a blazing flame heart with sharp fire tendrils, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.xiaozhoutian-gong",
+            "name": "小周天功图腾",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [小周天功图腾 - Microcosmic Orbit Logo]. A bold solid pure white minimalist vector silhouette logo of a sacred microcosmic circular orbit with cardinal dots, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.cunshen-jue",
+            "name": "存神诀图腾",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [存神诀图腾 - Soul Enshrining Logo]. A bold solid pure white minimalist vector silhouette logo of a mystical third eye of divine consciousness, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.lianjing-huaqi-jue",
+            "name": "炼精化气诀图腾",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [炼精化气诀图腾 - Essence Transmutation Logo]. A bold solid pure white minimalist vector silhouette logo of an ancient three-legged cauldron tripod with rising steam, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        },
+        {
+            "id": "emblem.xuanyuan-yiqi-gong",
+            "name": "玄元一气功图腾",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [玄元一气功图腾 - Primordial Origin Qi Logo]. A bold solid pure white minimalist vector silhouette logo of a primordial cosmic taiji symbol surrounded by cloud rings, clean simple graphic icon mark, solid white shape, no gradients, no shading, flat 2D."
+        }
+    ],
+    # 纯黑底纯白二值矢量Logo (2x2 田字格，4个道具，界限分明负空间切割，零渐变)
+    "logos_4_batch_1": [
+        {
+            "id": "emblem.tuna-gong",
+            "name": "吐纳功图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [吐纳功图腾 - Tuna Breath Taiji Logo]. A bold minimalist vector silhouette logo of a taiji breath vortex, two distinct swirling curved white fish separated by a crisp black S-curve gap, two solid circular dots in negative space, clean distinct shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.manniu-jin",
+            "name": "蛮牛劲图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [蛮牛劲图腾 - Raging Bull Stencil Logo]. A bold minimalist vector silhouette logo of a raging bull head, stencil cut graphic symbol, sharp thick horns separated from skull with distinct negative black lines, stylized triangular head with hollow black eye slits and ring, clean distinct white segments, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.tiebu-shan",
+            "name": "铁布衫图腾",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [铁布衫图腾 - Iron Shirt Bell Shield Logo]. A bold minimalist vector silhouette logo of an ancient temple bell shield, distinct white armor plate outlines separated by crisp black groove lines, solid pure white on solid pure black, strictly no gradients, high contrast stencil cut."
+        },
+        {
+            "id": "emblem.feiyan-gong",
+            "name": "飞燕功图腾",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [飞燕功图腾 - Flying Swallow Stencil Logo]. A bold minimalist vector silhouette logo of a soaring swallow bird in flight, distinct angular wings separated by crisp negative black feather slots, split scissor tail, clean solid pure white on solid pure black, strictly no gradients, high contrast."
+        }
+    ],
+    # 批次 2：清心诀、焚血功、小周天功、存神诀
+    "logos_4_batch_2": [
+        {
+            "id": "emblem.qingxin-jue",
+            "name": "清心诀图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [清心诀图腾 - Clear Heart Lotus Logo]. A bold minimalist vector silhouette logo of a serene water lotus flower with a crystal dewdrop above, petals separated by crisp negative black space cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.fenxue-gong",
+            "name": "焚血功图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [焚血功图腾 - Blood Burning Flame Heart Logo]. A bold minimalist vector silhouette logo of a blazing flame heart with three sharp fire tendrils, flame layers separated by crisp negative black cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.xiaozhoutian-gong",
+            "name": "小周天功图腾",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [小周天功图腾 - Microcosmic Orbit Stencil Logo]. A bold minimalist vector silhouette logo of a sacred microcosmic circular meridian ring with four cardinal acupoint dots and an internal S-flow, ring separated by crisp negative black gaps, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.cunshen-jue",
+            "name": "存神诀图腾",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [存神诀图腾 - Soul Enshrining Eye Logo]. A bold minimalist vector silhouette logo of an ancient divine consciousness eye with a central circular pupil and radiating stylized rays, eyelid separated from pupil by crisp negative black space, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        }
+    ],
+    # 批次 3：炼精化气诀、玄元一气功 (2个道具放在上排)
+    "logos_4_batch_3": [
+        {
+            "id": "emblem.lianjing-huaqi-jue",
+            "name": "炼精化气诀图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [炼精化气诀图腾 - Essence Transmutation Tripod Logo]. A bold minimalist vector silhouette logo of an ancient three-legged bronze alchemy cauldron tripod with two swirling steam ribbons above, tripod legs and handles separated by crisp negative black cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        },
+        {
+            "id": "emblem.xuanyuan-yiqi-gong",
+            "name": "玄元一气功图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [玄元一气功图腾 - Primordial Origin Qi Grand Logo]. A bold minimalist vector silhouette logo of a grand primordial cosmic taiji emblem surrounded by two celestial cloud rings, taiji fish and cloud rings separated by crisp negative black cuts, clean distinct stencil shapes, solid pure white on solid pure black, strictly no gradients, high contrast."
+        }
+    ],
+    # 建筑批次 A (基础生产 4 建筑：蒲团、灵材坊、采石坊、丹房)
+    "buildings_group_a": [
+        {
+            "id": "building.meditation-circle",
+            "name": "蒲团",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [蒲团 - Meditation Circle]. A stylized Chinese Xianxia woven spiritual grass meditation cushion mat, circular woven straw cushion surrounded by gentle swirling white qi mist vapors and faint glowing taiji rings, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.gathering-tent",
+            "name": "灵材坊",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [灵材坊 - Gathering Workshop]. A stylized Chinese Xianxia herbal gathering workshop shelter, rustic bamboo and wood hut with open drying racks holding colorful dried medicinal herbs and bundled spirit wood logs, hanging gourds, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.mining-workshop",
+            "name": "采石坊",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [采石坊 - Mining Workshop]. A stylized Chinese Xianxia stone masonry mining workshop shed, built of heavy gray stone blocks, piled with uncut glowing crystal ore boulders, heavy iron pickaxe and rock sieve, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.alchemy-hearth",
+            "name": "丹房",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [丹房 - Alchemy Chamber]. A stylized Chinese Xianxia alchemy pavilion room, traditional tiled eaves, housing a large glowing three-legged bronze pill cauldron furnace with rising white pill steam and red spirit coals, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 建筑批次 B (高阶生产 4 建筑：炼器室、制符室、衍阵台、淬灵室)
+    "buildings_group_b": [
+        {
+            "id": "building.forge-anvil",
+            "name": "炼器室",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [炼器室 - Forging Chamber]. A stylized Chinese Xianxia blacksmith forge workshop, heavy dark iron anvil on wood stump, blazing earth-fire melting furnace with glowing molten steel, large heavy iron forging hammer, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.talisman-chamber",
+            "name": "制符室",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [制符室 - Talisman Chamber]. A stylized Chinese Xianxia Daoist talisman crafting studio, fine mahogany writing desk with cinnabar ink stone, wolf-hair brush, floating glowing yellow paper talismans inscribed with red runes, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.formation-platform",
+            "name": "衍阵台",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [衍阵台 - Formation Platform]. A stylized Chinese Xianxia circular stone array deduction altar, octagonal bagua stone platform with five colorful array banners planted at edges, floating glowing bronze compass in center, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.enhancement-chamber",
+            "name": "淬灵室",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [淬灵室 - Enhancement Chamber]. A stylized Chinese Xianxia mystical weapon quenching chamber, bubbling spirit water basin pool, glowing elemental runes on stone pedestals, floating enchanted sword receiving spiritual flames, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 建筑批次 C (战斗防护 3 阵法 + 地标 1 道庐：封魔阵、回春阵、回元阵、绝顶道庐)
+    "buildings_group_c": [
+        {
+            "id": "building.demon-seal-array",
+            "name": "封魔阵",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [封魔阵 - Demon Sealing Array]. A stylized Chinese Xianxia demon suppressing array altar, four tall ancient weathered stone pillar pillars wrapped with heavy iron chains, glowing red and golden demonic containment runes on the stone ground, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.rejuvenation-array",
+            "name": "回春阵",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [回春阵 - Rejuvenation Array]. A stylized Chinese Xianxia healing life rejuvenation circle altar, ring of polished green jade stones, blooming spiritual vines and emerald leaves, radiant soothing green vitality glow, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.mana-regen-array",
+            "name": "回元阵",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [回元阵 - Mana Gathering Array]. A stylized Chinese Xianxia mana gathering circle altar, ring of deep sapphire crystal shards, swirling cosmic blue starlight vortex converging toward center, vibrant azure spiritual light, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "building.peak-cottage",
+            "name": "绝顶道庐",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [绝顶道庐 - Mountain Peak Thatched Cottage]. A stylized Chinese Xianxia rustic hermit thatched cottage perched on a dramatic mountain cliff ledge next to a gnarled ancient pine tree, surrounded by swirling sea of clouds, peaceful Daoist retreat, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 二图怪物立绘组 (4只怪物, 2x2 网格)
+    "monsters_trail_4": [
+        {
+            "id": "green-wolf",
+            "name": "青脊妖狼",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left monster: [青脊妖狼 - Green-Spine Demon Wolf]. A ferocious agile quadruped demon wolf stalking low in a pounce stance, sleek dark black-grey muscular planar facets, sharp bone-white claws and fangs, a row of glowing emerald-cyan crystalline bone spikes protruding along its spine from neck to tail, piercing glowing teal diamond eyes, facing right, clean sharp silhouette, dark ink contour outline."
+        },
+        {
+            "id": "tide-spirit",
+            "name": "潮汐之灵",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right monster: [潮汐之灵 - Spirit of the Tides]. A mystical floating elemental water spirit apparition, ethereal deep ocean blue-black aquatic core surrounded by swirling tidal vortex tendrils, adorned with bone-white aquatic crystal carapace plates, glowing deep sapphire blue water runes and spiritual mist trails below, facing right, clean sharp silhouette, dark ink contour outline."
+        },
+        {
+            "id": "iron-boar",
+            "name": "铁甲岩獠",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left monster: [铁甲岩獠 - Iron-Armored Stone Boar]. A massive heavy quadruped armored demon boar, low sturdy center of gravity, body covered in dark iron-gray jagged stone-slate carapace armor, two enormous upward-curving sharp bone-white tusks protruding from jaws, glowing amber-gold magma fissures between rock plates, small glowing fierce amber eyes, facing right, heavy unstoppable tank beast, dark ink contour outline."
+        },
+        {
+            "id": "golden-ape-boss",
+            "name": "撼地金背猿",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right monster: [撼地金背猿 - Earth-Shaking Golden-Backed Demon Ape]. A towering ferocious bipedal demon gorilla boss standing proudly on two legs, broad massive muscular shoulders, near-black iron-like demonic ape chest and arms, sharp bone-white knuckle plates and fang mask, entire upper back and shoulders clad in brilliant glowing solid golden vajra carapace fur and radiant gold aura veins, glowing crimson demonic eyes, facing right, tyrannical boss stance, dark ink contour outline."
+        }
+    ],
+    # 二图武器组 (4件武器, 2x2 网格)
+    "weapons_trail_4": [
+        {
+            "id": "equipment.xuantie-sword",
+            "name": "玄铁长剑",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [玄铁长剑 - Dark Iron Longsword]. A straight double-edged Chinese Daoist Jian sword forged from deep black meteor iron, cold sharp silver-white polished blade edge, 45-degree diagonal composition, simple dark bronze guard, hilt wrapped in black cord with dark cyan silk tassel, dark ink outline."
+        },
+        {
+            "id": "equipment.piyan-blade",
+            "name": "劈岩重刀",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [劈岩重刀 - Rock-Cleaving Heavy Dao]. A massive single-edged Chinese heavy broadsword saber, thick notched dark steel blade capable of smashing boulders, 45-degree diagonal composition, rugged brass ring pommel, sturdy wrapped two-handed handle, dark ink outline."
+        },
+        {
+            "id": "equipment.kuteng-staff",
+            "name": "枯藤法杖",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [枯藤法杖 - Withered Vine Staff]. An ancient Daoist gnarled wooden walking staff carved from thousand-year spirit vines, 45-degree diagonal composition, twisting roots at the crown holding a glowing raw jade stone, rustic warm wood grain, dark ink outline."
+        },
+        {
+            "id": "equipment.mingquan-zither",
+            "name": "鸣泉古琴",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [鸣泉古琴 - Spring-Resonating Guqin]. An elegant Chinese classical seven-string Guqin zither musical weapon, 45-degree diagonal composition, dark lacquered scorched paulownia wood body, silver silk strings gleaming with subtle cyan water ripple sheen, dark ink outline."
+        }
+    ],
+    # 二图副手与饰品组 (4件套, 2x2 网格)
+    "offhands_accessories_4": [
+        {
+            "id": "equipment.tiemu-shield",
+            "name": "铁木坚盾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [铁木坚盾 - Ironwood Heavy Shield]. A sturdy Chinese Han-dynasty rectangular kite shield made of laminated black ironwood and bronze rims, embossed with an ancient Daoist cloud beast mask in center, heavy defensive armor texture, dark ink outline."
+        },
+        {
+            "id": "equipment.ningshui-charm",
+            "name": "凝水灵符",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [凝水灵符 - Water Condensation Talisman]. A floating Daoist jade talisman plate carved from translucent deep cyan water jade, inscribed with glowing cinnabar seal script runes, hung with a delicate braided dark blue silk knot tassel, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-ring",
+            "name": "苍狼煞牙戒",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [苍狼煞牙戒 - Dark Wolf Fang Ring]. A rugged martial finger ring forged from dark blackened silver, mounted with a curved sharp pale wolf fang, faint eerie emerald-green spiritual glint on fang tip, dark ink outline."
+        },
+        {
+            "id": "equipment.bibo-pendant",
+            "name": "碧波静心佩",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [碧波静心佩 - Azure Wave Calming Jade Pendant]. An elegant teardrop-shaped Chinese pendant carved from luminous water-green celadon jade with swirling carved wave motifs, suspended from an intricate crimson silk braided knot, dark ink outline."
+        }
+    ],
+    # 二图重甲与狼皮轻甲组 (6件套, 2x3 网格)
+    "armors_heavy_wolf_6": [
+        {
+            "id": "equipment.xuantie-headband",
+            "name": "玄铁护额",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [玄铁护额 - Dark Iron Headband]. A heavy martial forehead plate forged from cold dark meteor iron, reinforced with bronze rivets, tied with sturdy black fabric straps, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.suozi-armor",
+            "name": "锁子重甲",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [锁子重甲 - Iron Chainmail Cuirass]. A sturdy sleeveless combat torso armor made of dense interlocking dark iron chain rings, reinforced with a bronze central chest mirror plate, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.diejia-leggings",
+            "name": "叠甲胫",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [叠甲胫 - Segmented Iron Greaves]. Heavy martial armored trousers reinforced with overlapping dark steel plate greaves covering the shins, leather knee caps, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-cap",
+            "name": "苍狼皮冠",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [苍狼皮冠 - Grey Wolf Fur Cap]. A rugged martial warrior cap crafted from dark grey wolf pelt, soft white fur trim around the brim, leather cords tied underneath, clean symmetrical silhouette, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-vest",
+            "name": "苍狼轻裘",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [苍狼轻裘 - Grey Wolf Fur Vest]. A lightweight combat vest sewn from tough dark-grey wolf leather with wolf fur collar and bronze belt clasps, agile martial cut, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.canglang-pants",
+            "name": "苍狼皮裤",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [苍狼皮裤 - Grey Wolf Leather Pants]. Agile martial artist trousers made of supple grey wolf hide, reinforced with leather cross-bindings around calves and shins, symmetrical frontal view, dark ink outline."
+        }
+    ],
+    # 二图布甲与材料组 (3件布甲 + 3件战利品材料, 2x3 网格)
+    "cloth_materials_6": [
+        {
+            "id": "equipment.liuyun-ribbon",
+            "name": "流云法带",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [流云法带 - Flowing Cloud Ribbon Headband]. An elegant Daoist silk headband woven from celestial azure-blue silk, embroidered with delicate silver cloud wave patterns, long twin ribbons draping down symmetrically, dark ink outline."
+        },
+        {
+            "id": "equipment.bishui-robe",
+            "name": "碧水灵袍",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [碧水灵袍 - Azure Water Spirit Robe]. A flowing traditional Chinese Daoist celestial scholar robe made of pale cyan and deep aquamarine silk, wide flowing sleeves, white lapels with water ripple borders, symmetrical frontal view, dark ink outline."
+        },
+        {
+            "id": "equipment.zhishui-pants",
+            "name": "织水法裤",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [织水法裤 - Woven Water Daoist Pants]. Loose comfortable Daoist cultivation trousers tailored from fine pale-blue silk, gathered neatly at ankles with soft white silk bindings, clean symmetrical silhouette, dark ink outline."
+        },
+        {
+            "id": "item.rough-wolf-hide",
+            "name": "粗韧狼皮",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [粗韧狼皮 - Rough Wolf Hide]. A cleanly cured pelt of a wild green-spine demon wolf, textured coarse grey-green fur with thick durable leather backing, folded neatly, compact game item icon, dark ink outline."
+        },
+        {
+            "id": "item.water-spirit-core",
+            "name": "水灵原核",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [水灵原核 - Water Spirit Core]. A pristine spherical elemental spirit orb formed from condensed pure water essence, glowing with serene azure-blue luminescence, faint water mist wisps coiling around it, dark ink outline."
+        },
+        {
+            "id": "item.rock-fang",
+            "name": "坚岩獠齿",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [坚岩獠齿 - Rock Boar Tusk]. A thick heavy curved beast tusk harvested from an armored boar, stony grey bone texture with sharp ivory-white tip, rugged fossilized striations, compact 45-degree angle, dark ink outline."
+        }
+    ],
+    # 二图首领材料与主动战技组 (3件材料 + 2件战技 + 1件备用图腾, 2x3 网格)
+    "boss_materials_abilities_6": [
+        {
+            "id": "item.thick-beast-hide",
+            "name": "重甲厚皮",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [重甲厚皮 - Thick Armored Hide]. A bundle of heavy hardened beast carapace hide from an armored boar, dense blackish-brown leather layered with slate-like scales, exceptionally tough armor crafting material, dark ink outline."
+        },
+        {
+            "id": "item.golden-ape-bone",
+            "name": "金背猿骨",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [金背猿骨 - Golden Ape Bone]. A heavy massive primal beast bone rib harvested from the golden-backed ape king, gleaming with warm metallic golden patina on pale dense bone, radiant vajra strength aura, dark ink outline."
+        },
+        {
+            "id": "item.ape-heart",
+            "name": "暴猿煞心",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [暴猿煞心 - Berserk Ape Demon Heart]. An extraordinary crystallized demonic beast heart radiating fiery red and molten gold energy, pulsating with fierce primal beast qi, wrapped in dark sinews, rare boss trophy, dark ink outline."
+        },
+        {
+            "id": "ability.tide",
+            "name": "潮汐战技",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [潮汐 - Surging Tide Skill]. A dynamic Chinese martial spell combat skill icon depicting a colossal roaring ocean wave crest breaking forwards, foaming turquoise water splashes, Daoist water rune spiral in center, dark ink outline."
+        },
+        {
+            "id": "ability.sui-gang",
+            "name": "碎罡战技",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [碎罡 - Gang-Shattering Fist Skill]. A violent martial arts combat skill icon showing a heavy golden armored vajra ape fist smashing downward, shattering a translucent defensive qi barrier into glowing gold crystalline shards, explosive shockwave impact, dark ink outline."
+        },
+        {
+            "id": "emblem.tide.candidate",
+            "name": "潮汐法印",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [潮汐法印 - Mystic Tidal Water Talisman Seal]. A circular Daoist jade seal medallion with deep relief carving of swirling ocean waves and a tranquil pearl in center, deep cyan jade with gold inlays, dark ink outline."
+        }
+    ],
+    # 纯黑底纯白二值矢量Logo图腾组 D (潮汐水系心法图腾，供线装书与残卷合成)
+    "logos_tide": [
+        {
+            "id": "emblem.tide.a",
+            "name": "潮汐图腾候选 A",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of three stylized crashing ocean wave crests surging upwards into a powerful spiral vortex, crisp clean stencil cut negative black contour lines separating wave layers, solid opaque white filled shapes, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.tide.b",
+            "name": "潮汐图腾候选 B",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a Daoist yin-yang circle formed by two swirling surging tidal wave crests, solid opaque white shapes with distinct negative black stencil cut lines, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.tide.c",
+            "name": "潮汐图腾候选 C",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of a grand curling tsunami ocean wave with foaming water droplets splashing above, bold solid white shapes with crisp stencil cut negative lines, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        },
+        {
+            "id": "emblem.tide.d",
+            "name": "潮汐图腾候选 D",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of concentric swirling water current ripples forming a mystical tidal pearl vortex in the center, solid opaque white shapes, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
+        }
+    ],
+}
+
+def _sanitize_workflow(wf):
+    """清洗任意来源工作流：剔除 turbo 注入节点并把 KSampler 的 model 输入复原到原生链路。
+
+    turbo 节点是 submit_task 动态注入的运行时附件，历史取回的工作流若保留它，
+    KSampler.model 会悬空指向已删除节点或形成自环，导致执行图损坏空转。
+    """
+    if "turbo" not in wf:
+        return wf
+    wf.pop("turbo")
+    if "16" in wf and wf["16"].get("inputs", {}).get("model") == ["turbo", 0]:
+        restored = next((src for src in ("20", "15", "1") if src in wf), None)
+        if restored is None:
+            raise RuntimeError("工作流缺少原生模型链路节点 (20/15/1)，无法复原 KSampler 上游。")
+        wf["16"]["inputs"]["model"] = [restored, 0]
+    return wf
+
+def get_latest_workflow():
+    with urllib.request.urlopen(f"{COMFY_HOST}/history") as resp:
+        history = json.loads(resp.read().decode())
+    if not history:
+        template_path = os.path.join(CURRENT_DIR, "workflow_template.json")
+        if os.path.exists(template_path):
+            with open(template_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        raise RuntimeError("No history found in ComfyUI.")
+
+    # 优先从历史中获取包含 Node 27 (easy imageRemBg) 的工作流
+    for pid in reversed(list(history.keys())):
+        p = history[pid].get("prompt", [None, None, {}])[2]
+        if "27" in p and p["27"].get("class_type") == "easy imageRemBg":
+            wf = _sanitize_workflow(json.loads(json.dumps(p)))
+            wf["18"]["inputs"]["images"] = ["27", 0]
+            return wf
+
+    # 若历史中未找到，则取最新并显式注入 Node 27 抠图节点
+    latest_id = list(history.keys())[-1]
+    wf = _sanitize_workflow(json.loads(json.dumps(history[latest_id]["prompt"][2])))
+    wf["27"] = {
+        "inputs": {
+            "rem_mode": "RMBG-1.4",
+            "image_output": "Preview",
+            "save_prefix": "ComfyUI",
+            "torchscript_jit": False,
+            "add_background": "none",
+            "refine_foreground": False,
+            "images": ["26", 0] if "26" in wf else ["17", 0]
+        },
+        "class_type": "easy imageRemBg",
+        "_meta": {"title": "图像背景移除"}
+    }
+    if "18" in wf:
+        wf["18"]["inputs"]["images"] = ["27", 0]
+    return wf
+
+def build_layout_prompt(items_spec, summary_caption=None):
+    if not summary_caption:
+        summary_caption = "simplified stylized 2D Chinese Xianxia game item icon sprite sheet, clean bold shapes, simplified painterly ink-wash style, clear silhouette, restrained details, bold brushwork, flat clean colors with subtle shading, distinct dark ink outline, compact icons floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+    
+    layout = {
+        "summary": {
+            "canvas": "single",
+            "caption": summary_caption
+        },
+        "items": [
+            {
+                "label": "object",
+                "caption": it["caption"],
+                "bbox": it["bbox"]
+            }
+            for it in items_spec
+        ],
+        "bbox_coord_space": "abs_centralized",
+        "bbox_format": "yxyx"
+    }
+    return json.dumps(layout, ensure_ascii=False, indent=2)
+
+def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daohua", aspect_ratio="1:1 (Square)", negative_prompt=None, turbo=False):
+    prompt = json.loads(json.dumps(workflow)) # deepcopy
+    
+    # Node 4: 正向提示词
+    prompt["4"]["inputs"]["text"] = prompt_str
+    
+    # Node 5: 负向提示词
+    if not negative_prompt:
+        negative_prompt = "overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, overflow, touching borders, crowded, clutter, modern, western fantasy, blurry, bad anatomy, worst quality, watermark, text"
+    prompt["5"]["inputs"]["text"] = negative_prompt
+    
+    # Node 19: 分辨率与长宽比
+    if "19" in prompt:
+        prompt["19"]["inputs"]["aspect_ratio"] = aspect_ratio
+        prompt["19"]["inputs"]["megapixels"] = 1.0
+        
+    # Node 16: KSampler 参数调优 (按官方推荐: 35步, CFG 3.5)
+    if "16" in prompt:
+        prompt["16"]["inputs"]["steps"] = steps
+        prompt["16"]["inputs"]["cfg"] = cfg
+        prompt["16"]["inputs"]["seed"] = seed if seed is not None else random.randint(100000000000000, 999999999999999)
+        prompt["16"]["inputs"]["sampler_name"] = "euler"
+        prompt["16"]["inputs"]["scheduler"] = "sgm_uniform"
+
+    # Turbo 路线：动态注入 LoraLoaderModelOnly，接管 KSampler 的 model 输入。
+    # 插在 model 输入锚点（而非固定上游节点号），对模板与历史工作流均成立。
+    if turbo:
+        if not os.path.exists(os.path.join(TURBO_LORA_DIR, TURBO_LORA_NAME)):
+            raise FileNotFoundError(f"Turbo LoRA 缺失: {os.path.join(TURBO_LORA_DIR, TURBO_LORA_NAME)}")
+        if "16" not in prompt:
+            raise RuntimeError("工作流缺少 Node 16 (KSampler)，无法注入 Turbo LoRA。")
+        lora_node = {
+            "inputs": {
+                "lora_name": TURBO_LORA_NAME,
+                "strength_model": 1.0,
+                "model": prompt["16"]["inputs"]["model"],
+            },
+            "class_type": "LoraLoaderModelOnly",
+            "_meta": {"title": "MOSS-Image Turbo LoRA (4步加速)"},
+        }
+        prompt["turbo"] = lora_node
+        prompt["16"]["inputs"]["model"] = ["turbo", 0]
+        
+    # Node 18: SaveImage
+    if "18" in prompt:
+        prompt["18"]["inputs"]["filename_prefix"] = prefix
+
+    # 提交
+    payload = json.dumps({"prompt": prompt, "client_id": "daohua_moss_gen"}).encode("utf-8")
+    req = urllib.request.Request(f"{COMFY_HOST}/prompt", data=payload, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as resp:
+        res = json.loads(resp.read().decode())
+    return res["prompt_id"]
+
+def wait_for_completion(prompt_id, timeout=300):
+    start = time.time()
+    while time.time() - start < timeout:
+        time.sleep(2)
+        try:
+            with urllib.request.urlopen(f"{COMFY_HOST}/history/{prompt_id}") as resp:
+                data = json.loads(resp.read().decode())
+                if prompt_id in data and data[prompt_id].get("status", {}).get("completed", False):
+                    outputs = data[prompt_id].get("outputs", {})
+                    images = []
+                    for nid, nout in outputs.items():
+                        for img in nout.get("images", []):
+                            images.append(img["filename"])
+                    return images
+        except Exception:
+            pass
+    raise TimeoutError(f"Task {prompt_id} timed out after {timeout}s.")
+
+def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size=64, inner_size=54):
+    os.makedirs(output_dir, exist_ok=True)
+    im = Image.open(image_path).convert("RGBA")
+    w_full, h_full = im.size
+    cx, cy = w_full / 2.0, h_full / 2.0
+    
+    saved_paths = []
+    for it in items_spec:
+        # bbox 格式: [y_min, x_min, y_max, x_max] (相对中心点)
+        ymin, xmin, ymax, xmax = it["bbox"]
+        box = (int(cx + xmin), int(cy + ymin), int(cx + xmax), int(cy + ymax))
+        is_emblem = "emblem" in it.get("id", "")
+        if is_emblem:
+            # 纯黑底纯白二值图腾批次取的是未经抠图的原图，各象限图形彼此独立且互不相连，
+            # 因此这里必须严格按 bbox 裁切、不得外扩，否则会把邻格候选一起框进来。
+            safe_box = (max(0, box[0]), max(0, box[1]), min(w_full, box[2]), min(h_full, box[3]))
+        else:
+            # 外扩 12% 避免边缘轻微裁切，由于已有 RMBG 抠图透明背景，各道具天然独立
+            pad_x = int((box[2] - box[0]) * 0.12)
+            pad_y = int((box[3] - box[1]) * 0.12)
+            safe_box = (
+                max(0, box[0] - pad_x),
+                max(0, box[1] - pad_y),
+                min(w_full, box[2] + pad_x),
+                min(h_full, box[3] + pad_y)
+            )
+        crop = im.crop(safe_box)
+        
+        # 自动去底与二值化
+        arr = np.array(crop)
+        r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+        if is_emblem:
+            # 纯黑底纯白二值矢量图腾：严格二值化 (Hard Binary Threshold)，零渐变，纯白+透明
+            lum = (r.astype(int) + g.astype(int) + b.astype(int)) // 3
+            is_white = (lum > 100) & (a > 50)
+            arr[is_white] = [255, 255, 255, 255]
+            arr[~is_white] = [0, 0, 0, 0]
+        else:
+            # 如果大图原本没有透明通道 (纯白底原图)，才执行去白底；
+            # 若已有 RMBG 抠图透明背景 (即 a.min() == 0)，则直接保留原始抠图结果，绝对不去掉内部的白云、白雾和白色灵气！
+            has_rmbg_alpha = (a == 0).any()
+            if not has_rmbg_alpha:
+                is_bg = (r > 235) & (g > 235) & (b > 235)
+                arr[:, :, 3] = np.where(is_bg, 0, a)
+        clean_crop = Image.fromarray(arr)
+        
+        # 提取真实内容 BBox
+        c_bbox = clean_crop.getbbox()
+        if c_bbox:
+            clean_crop = clean_crop.crop(c_bbox)
+            
+        cw, ch = clean_crop.size
+        scale = inner_size / max(cw, ch)
+        new_w, new_h = max(1, int(cw * scale)), max(1, int(ch * scale))
+        resized = clean_crop.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        
+        canvas = Image.new("RGBA", (target_size, target_size), (0, 0, 0, 0))
+        canvas.paste(resized, ((target_size - new_w) // 2, (target_size - new_h) // 2), resized)
+        
+        out_name = f"{it['id']}.webp"
+        out_path = os.path.join(output_dir, out_name)
+        canvas.save(out_path, format="WEBP", lossless=True)
+        saved_paths.append((it["name"], out_path))
+        print(f"  [EXPORTED] {it['name']} ({it['id']}) -> {out_path} ({os.path.getsize(out_path)} bytes)")
+        
+    return saved_paths
+
+def process_single_entity(image_path, entity_id, output_dir, target_size=256, inner_size=230, remove_bg=True, hard_binary=False):
+    """处理单体对象（如单只怪物/角色/法宝）：提取透明主体后居中缩放并保存。"""
+    os.makedirs(output_dir, exist_ok=True)
+    im = Image.open(image_path).convert("RGBA")
+    arr = np.array(im)
+    r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+    
+    if hard_binary:
+        lum = (r.astype(int) + g.astype(int) + b.astype(int)) // 3
+        is_white = (lum > 100) & (a > 50)
+        arr[is_white] = [255, 255, 255, 255]
+        arr[~is_white] = [0, 0, 0, 0]
+    elif remove_bg:
+        has_rmbg_alpha = (a == 0).any()
+        if not has_rmbg_alpha:
+            is_bg = (r > 235) & (g > 235) & (b > 235)
+            arr[:, :, 3] = np.where(is_bg, 0, a)
+            
+    clean_crop = Image.fromarray(arr)
+    c_bbox = clean_crop.getbbox()
+    if c_bbox:
+        clean_crop = clean_crop.crop(c_bbox)
+        
+    cw, ch = clean_crop.size
+    scale = inner_size / max(cw, ch)
+    new_w, new_h = max(1, int(cw * scale)), max(1, int(ch * scale))
+    resized = clean_crop.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    
+    canvas = Image.new("RGBA", (target_size, target_size), (0, 0, 0, 0))
+    canvas.paste(resized, ((target_size - new_w) // 2, (target_size - new_h) // 2), resized)
+    
+    clean_id = entity_id
+    if entity_id.startswith("enemy."):
+        clean_id = entity_id[6:]
+    elif entity_id.startswith("player."):
+        clean_id = entity_id[7:]
+        
+    out_name = f"{clean_id}.webp"
+    out_path = os.path.join(output_dir, out_name)
+    canvas.save(out_path, format="WEBP", lossless=True)
+    print(f"  [EXPORTED SINGLE] {clean_id} -> {out_path} ({os.path.getsize(out_path)} bytes)")
+    return out_path
+
+def dispatch_category_outputs(image_path, entity_id, category, raw_image_path=None):
+    """按资产大类（monster/character/item/building/emblem/scene）自动多轨落盘。"""
+    clean_id = entity_id.replace("enemy.", "").replace("player.", "")
+    if category == "monster":
+        art_dir = os.path.join(REPO_ROOT, "art", "avatars")
+        process_single_entity(image_path, clean_id, art_dir, target_size=512, inner_size=460)
+        pub_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
+        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115)
+    elif category == "character":
+        art_dir = os.path.join(REPO_ROOT, "art", "avatars")
+        process_single_entity(image_path, clean_id, art_dir, target_size=1024, inner_size=920)
+        pub_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
+        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115)
+    elif category in ("item", "equipment", "ability"):
+        art_dir = os.path.join(REPO_ROOT, "art", "items")
+        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=108)
+        items_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "items")
+        process_single_entity(image_path, entity_id, items_dir, target_size=64, inner_size=54)
+    elif category == "building":
+        art_dir = os.path.join(REPO_ROOT, "art", "buildings")
+        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=112)
+        bldg_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "buildings")
+        process_single_entity(image_path, entity_id, bldg_dir, target_size=64, inner_size=56)
+    elif category in ("emblem", "glyph"):
+        use_img = raw_image_path if raw_image_path and os.path.exists(raw_image_path) else image_path
+        art_dir = os.path.join(REPO_ROOT, "art", "emblems")
+        process_single_entity(use_img, entity_id, art_dir, target_size=128, inner_size=110, hard_binary=True)
+    elif category == "scene":
+        art_dir = os.path.join(REPO_ROOT, "art", "scenes")
+        os.makedirs(art_dir, exist_ok=True)
+        out_art = os.path.join(art_dir, f"{clean_id}.webp")
+        im = Image.open(image_path)
+        im.save(out_art, format="WEBP", quality=90)
+        pub_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "scenes")
+        os.makedirs(pub_dir, exist_ok=True)
+        out_pub = os.path.join(pub_dir, f"{clean_id}.webp")
+        im.save(out_pub, format="WEBP", quality=85)
+        print(f"  [EXPORTED SCENE] {clean_id} -> {out_art} & {out_pub}")
+
+def main():
+    parser = argparse.ArgumentParser(description="MOSS-Image 本地全量仙侠视觉资产自动化生成与切片工具")
+    parser.add_argument("--batch", choices=list(PRESET_BATCHES.keys()), help="预设批次名称")
+    parser.add_argument("--layout", type=str, help="自定义 Layout JSON 文件路径或 JSON 字符串")
+    parser.add_argument("--single-entity", type=str, help="单体资产标识符 (如 enemy.tide-spirit 或 building.peak-cottage)，不进行九宫切片")
+    parser.add_argument("--category", choices=["monster", "character", "item", "equipment", "ability", "building", "emblem", "scene"], help="资产大类")
+    parser.add_argument("--steps", type=int, default=None, help="推理步数 (turbo 默认 8；full 全量默认 35)")
+    parser.add_argument("--cfg", type=float, default=None, help="CFG 引导比例 (turbo 默认 1.0；full 全量默认 3.5)")
+    parser.add_argument("--full", action="store_true", help="退出 turbo 加速路线，走标准 35 步 / CFG 3.5 全量生成（SLG Layer 22 全效）")
+    parser.add_argument("--seed", type=int, default=None, help="随机种子")
+    parser.add_argument("--aspect-ratio", default="1:1 (Square)", help="长宽比: '1:1 (Square)', '16:9 (Landscape)', '4:3'")
+    parser.add_argument("--negative", type=str, default=None, help="自定义负向提示词")
+    parser.add_argument("--dry-run", action="store_true", help="仅组装提示词，不实际提交")
+    args = parser.parse_args()
+
+    # 默认 turbo 加速路线（steps=8 / CFG=1.0）；--full 走标准 35 步 / CFG 3.5。显式 --steps/--cfg 可覆盖。
+    if args.full:
+        steps = args.steps if args.steps is not None else 35
+        cfg = args.cfg if args.cfg is not None else 3.5
+    else:
+        steps = args.steps if args.steps is not None else TURBO_STEPS
+        cfg = args.cfg if args.cfg is not None else TURBO_CFG
+    args.steps, args.cfg = steps, cfg
+    args.turbo = not args.full
+
+    if not args.batch and not args.layout:
+        parser.print_help()
+        print("\n[错误] 请指定 --batch 预设批次，或者传入 --layout 结构化 JSON！")
+        return 0
+        
+    # 1. 组装提示词
+    if args.layout:
+        if os.path.isfile(args.layout):
+            with open(args.layout, "r", encoding="utf-8") as f:
+                prompt_str = f.read().strip()
+        else:
+            prompt_str = args.layout.strip()
+        # 尝试解析验证
+        parsed_json = json.loads(prompt_str)
+        items = parsed_json.get("items", [])
+        batch_tag = args.single_entity or "custom_layout"
+    else:
+        batch_tag = args.batch
+        items = PRESET_BATCHES[args.batch]
+        if "tome" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia martial arts secret manual thread-bound book sprite sheet, clean bold cartoon shapes, traditional Chinese thread-bound ancient book with colored cover and white binding stitches on left spine, a vertical paper label strip on top-left of cover, thick book pages visible at bottom and right edge, minimal simple white doodle emblem drawn on the front cover, bold dark ink outline, flat clean colors with subtle shading, compact book items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+        elif "fragment" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia ancient weathered parchment scroll fragment sprite sheet, clean bold shapes, torn rough paper edges, faint ancient cinnabar calligraphy runes, warm golden-amber parchment tone, clean bold silhouette, restrained details, bold brushwork, flat clean colors, distinct dark ink outline, compact fragment items floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+        elif "logos_" in args.batch:
+            summary_cap = "a 2x2 grid sprite sheet of 4 minimalist bold vector logo icons, stencil cut silhouette graphic symbol marks, strictly solid pure white icons on solid pure black background, high contrast binary black and white, zero gradients, zero shading, zero colors, crisp clean stencil cut lines and distinct negative space contours, sharp graphic edges, flat 2D vector clip-art."
+        elif "buildings_" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia martial arts architecture building facility icon sprite sheet, clean bold cartoon shapes, traditional Chinese Daoist pavilion workshop shrine building, solid vibrant ink colors with subtle shading, distinct dark ink outline, floating on solid pure white background, generous empty white spacing between items, strictly no overflow, clean 2D game icon."
+        elif "emblem" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
+        elif "monsters_" in args.batch:
+            summary_cap = "a clean 2x2 grid sprite sheet of four Chinese Xianxia mythical beast monsters and spiritual apparitions on a pure solid white background. Dark fantasy stylized paper-cut planar polygonal silhouette art style with dark ink contours, rich dark black mass silhouette, distinct bone-white structural plates, isolated vibrant mystical energy accent colors, facing right, 3/4 dynamic battle stance, high contrast, perfectly centered isolated game sprites."
+        else:
+            summary_cap = None
+        prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
+    
+    # 自动推导 category
+    category = args.category
+    if not category:
+        if args.single_entity:
+            if "enemy." in args.single_entity or "wolf" in args.single_entity or "spirit" in args.single_entity or "boar" in args.single_entity or "ape" in args.single_entity:
+                category = "monster"
+            elif "building." in args.single_entity:
+                category = "building"
+            elif "emblem." in args.single_entity:
+                category = "emblem"
+            else:
+                category = "item"
+        elif args.batch:
+            if "monsters_" in args.batch or args.batch.startswith("boss_"):
+                category = "monster"
+            elif "buildings_" in args.batch:
+                category = "building"
+            elif "emblem" in args.batch or "logos_" in args.batch:
+                category = "emblem"
+            else:
+                category = "item"
+        else:
+            category = "item"
+            
+    # 针对暗黑折面怪物的专属负向词
+    neg_prompt = args.negative
+    if not neg_prompt and category == "monster":
+        neg_prompt = "overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, soft gradient, lighting shadows, blur, water splashes, fluid trails, messy smoke, modern, western fantasy, bad anatomy, watermark, text"
+        
+    print(f"\n=== MOSS-Image 任务组装: 标的 [{batch_tag}] (类别: {category}) ===")
+    print(prompt_str)
+    
+    if args.dry_run:
+        turbo_tag = "TURBO 8步加速" if args.turbo else "FULL 标准全量"
+        print(f"\n[DRY RUN] 提示词与布局已组装完毕 (长宽比: {args.aspect_ratio}, 步数: {args.steps}, CFG: {args.cfg}, 模式: {turbo_tag})，未提交到 ComfyUI。")
+        return 0
+
+    print("\n正在获取 ComfyUI 最新工作流...")
+    wf = get_latest_workflow()
+    print("正在向 ComfyUI (127.0.0.1:8188) 提交生图任务...")
+    pid = submit_task(wf, prompt_str, seed=args.seed, steps=args.steps, cfg=args.cfg, prefix=f"daohua-{batch_tag}", aspect_ratio=args.aspect_ratio, negative_prompt=neg_prompt, turbo=args.turbo)
+    print(f"任务已排队，Prompt ID: {pid}")
+    
+    print("正在等待 GPU 推理完成...")
+    images = wait_for_completion(pid)
+    print(f"推理完成！产出大图: {images}")
+    
+    rmbg_img = next(
+        (os.path.join(COMFY_OUTPUT_DIR, name) for name in reversed(images) if name.startswith("daohua-")),
+        None,
+    )
+    latest_img = rmbg_img if rmbg_img and os.path.exists(rmbg_img) else os.path.join(COMFY_OUTPUT_DIR, images[-1])
+    raw_img = next(
+        (os.path.join(COMFY_OUTPUT_DIR, name) for name in images if name.startswith("moss-image_")),
+        None,
+    )
+    print(f"选用透明主体大图: {latest_img}")
+    
+    # 2. 落盘分流
+    if args.single_entity:
+        print(f"开始单体多部件解耦整合导出 ({category}): {latest_img} -> 实体 ID: {args.single_entity}")
+        dispatch_category_outputs(latest_img, args.single_entity, category, raw_image_path=raw_img)
+    elif category == "monster":
+        art_avatars_dir = os.path.join(REPO_ROOT, "art", "avatars")
+        print(f"开始自动切片、去底与 512px WebP 怪物母模归档: {latest_img} -> {art_avatars_dir}")
+        process_and_slice(latest_img, items, output_dir=art_avatars_dir, target_size=512, inner_size=460)
+        out_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
+        t_size, in_size = 128, 115
+        print(f"开始自动切片、去底与 128px WebP 怪物立绘下采样: {latest_img} -> {out_dir}")
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+    elif category == "emblem":
+        out_dir = os.path.join(REPO_ROOT, "art", "emblems")
+        t_size, in_size = 128, 110
+        use_img = raw_img if raw_img and os.path.exists(raw_img) else latest_img
+        print(f"图腾批次使用未抠图原图执行硬二值化阈值切片: {use_img} -> {out_dir}")
+        process_and_slice(use_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+    elif category == "building":
+        art_buildings_dir = os.path.join(REPO_ROOT, "art", "buildings")
+        frontend_buildings_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "buildings")
+        print(f"开始自动切片、去底与 128px WebP 高精建筑母版导出: {latest_img} -> {art_buildings_dir}")
+        process_and_slice(latest_img, items, output_dir=art_buildings_dir, target_size=128, inner_size=112)
+        out_dir = frontend_buildings_dir
+        t_size, in_size = 64, 56
+        print(f"开始自动切片、去底与 64px WebP 游戏建筑瓦片导出: {latest_img} -> {out_dir}")
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+    else:
+        art_items_dir = os.path.join(REPO_ROOT, "art", "items")
+        print(f"开始自动切片、去底与 128px WebP 道具母模归档: {latest_img} -> {art_items_dir}")
+        process_and_slice(latest_img, items, output_dir=art_items_dir, target_size=128, inner_size=108)
+        out_dir = OUTPUT_DIR
+        t_size, in_size = 64, 54
+        print(f"开始自动切片、去底与 64px WebP 道具图标下采样: {latest_img} -> {out_dir}")
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+        
+    print(f"\n=== 标的 [{batch_tag}] 处理完成并已落盘！ ===")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

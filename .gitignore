@@ -1,0 +1,53 @@
+# .NET 构建、测试与分析产物
+**/bin/
+**/obj/
+artifacts/
+**/TestResults/
+BenchmarkDotNet.Artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# 前端依赖、构建与缓存产物
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+*.tsbuildinfo
+
+# 私有客户端模块挂载点（scripts/sync-private-modules.mjs 从 ../DaoHua-Private 以 junction/symlink 挂载）
+frontend/src/private-impl/
+
+# 本地运行数据和持久化状态
+data/
+**/data/snapshots/
+**/data/outbox/
+
+# 美术切图管线的中间产物（由 art/sheets.json 可完全重建，母版与运行资源才是交付物）
+art/_build/
+
+# 本地环境变量和凭据
+.env
+.env.*
+!.env.example
+
+# IDE、系统与临时文件
+**/.vs/
+**/.idea/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.pid
+temp/
+
+# 本地 Agent 记忆与工作区（含内部运维笔记，不入库）
+.workbuddy/
+.playwright-cli/
+.claude/
+
+# Python 缓存与临时调试库
+__pycache__/
+*.pyc
+history_tmp.db

@@ -1,0 +1,33 @@
+[
+  {
+    "id": "cultivation.draw-qi",
+    "name": "引气入体",
+    "description": "吐纳天地灵气，滋养气血经络，积累灵力与修为。",
+    "type": "cultivation",
+    "durationSeconds": 10,
+    "yields": [
+      {
+        "kind": "experience",
+        "per": "repeat",
+        "percentage": 100
+      },
+      {
+        "kind": "mana",
+        "per": "repeat",
+        "amount": 10
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 50,
+        "aspect": "meridians"
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 50,
+        "aspect": "bone"
+      }
+    ]
+  }
+]

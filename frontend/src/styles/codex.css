@@ -1,0 +1,352 @@
+/**
+ * 万象图鉴样式表 (Codex)
+ * 遵循道化太初暗墨修仙风格：黑底金边、翡翠绿、灵气青与朱红点缀
+ */
+
+.codex-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px;
+  gap: 14px;
+}
+
+.codex-header {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 14px 16px 8px 16px;
+}
+
+.codex-hero-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.codex-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.codex-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 500;
+  color: var(--gold-bright);
+  letter-spacing: 0.05em;
+}
+
+.codex-progress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(201, 180, 109, 0.1);
+  border: 1px solid var(--gold-dim);
+  border-radius: 12px;
+  font-size: var(--text-xs);
+  color: var(--gold);
+}
+
+.codex-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.15);
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.codex-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.codex-tab-btn:hover {
+  color: var(--text);
+  background: rgba(201, 180, 109, 0.06);
+}
+
+.codex-tab-btn.active {
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.14);
+  border-color: var(--gold-dim);
+  font-weight: 500;
+}
+
+.codex-tab-count {
+  font-size: var(--text-xs);
+  opacity: 0.8;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.codex-content {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* 图鉴筛选栏：嵌在顶栏卡片内，去掉坊市版本的下边框与下外边距，收紧与内容区的间距 */
+.codex-header .codex-filter-bar {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.codex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 12px;
+  padding: 4px 0 24px 0;
+}
+
+.codex-grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.codex-entry-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.codex-entry-wrapper--locked {
+  filter: grayscale(0.85) brightness(0.65);
+  opacity: 0.72;
+  transition: filter 0.2s, opacity 0.2s;
+}
+
+.codex-entry-wrapper--locked:hover {
+  filter: grayscale(0.5) brightness(0.8);
+  opacity: 0.9;
+}
+
+.codex-lock-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  background: rgba(10, 10, 10, 0.85);
+  border: 1px solid var(--gold-dim);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold-dim);
+  font-size: var(--text-2xs);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.codex-wide-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.codex-wide-card:hover {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.codex-wide-card--locked {
+  filter: grayscale(0.85) brightness(0.65);
+  opacity: 0.72;
+}
+
+.codex-wide-card--locked:hover {
+  filter: grayscale(0.5) brightness(0.8);
+  opacity: 0.9;
+}
+
+.codex-card-avatar-box {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--gold-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.codex-card-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+}
+
+.codex-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.codex-card-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.codex-card-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-card-level {
+  font-size: var(--text-2xs);
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.codex-card-sub {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-unlock-condition-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: var(--text-xs);
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.codex-unlock-condition-pill--unlocked {
+  background: rgba(114, 169, 140, 0.15);
+  color: var(--jade);
+  border: 1px solid rgba(114, 169, 140, 0.3);
+}
+
+.codex-unlock-condition-pill--locked {
+  background: rgba(200, 82, 63, 0.12);
+  color: #d87060;
+  border: 1px solid rgba(200, 82, 63, 0.25);
+}
+.codex-hover-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(201, 180, 109, 0.12);
+}
+
+.codex-hover-title {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--gold);
+}
+
+.codex-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.codex-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: rgba(201, 180, 109, 0.08);
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  color: var(--text);
+}
+
+.codex-stat-line {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+/* 图鉴建造条目的加成公式行：属性名胶囊 + 基准值下划线 + 每级增幅小字 */
+.codex-building-bonus-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.codex-building-bonus-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.codex-building-bonus-growth {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.codex-effect-text {
+  font-size: var(--text-xs);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.codex-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: var(--text-dim);
+  font-size: var(--text-base);
+}

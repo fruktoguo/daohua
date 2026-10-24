@@ -1,0 +1,899 @@
+using System.Text.Json;
+
+namespace Domain.Tests;
+
+/// <summary>
+/// 七技艺体系与装备强化的领域门禁（总纲 §20）：经验曲线逐段推进、技艺速度折减、
+/// 强化成本/成功率/确定性判定、+N 资产变体迁移、雷击符打击与阵盘持续消耗品生命周期。
+/// </summary>
+public sealed class TechniqueAndEnhancementTests
+{
+    private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private static PlayerAggregate CreatePlayer(string name) =>
+        PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
+
+    private static AssetWallet CreateWallet(PlayerAggregate player, params (AssetKey Asset, double Quantity)[] balances)
+    {
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Restore(balances.Select(balance => new AssetBalance(player.PlayerId, balance.Asset, balance.Quantity, 0)));
+        return wallet;
+    }
+
+    private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
+
+    /// <summary>技艺经验逐段推进：不足一段停在当前级，曲线封顶后不再升。</summary>
+    [Fact]
+    public void TechniqueLevelAdvancesSegmentBySegment()
+    {
+        var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
+        // 削减后三段为 10 / 26 / 49：累计 10 升 1 级、36 升 2 级、85 升 3 级（封顶）。
+        Assert.Equal(0, TechniqueCatalog.LevelFor(0, curve));
+        Assert.Equal(0, TechniqueCatalog.LevelFor(9.999, curve));
+        Assert.Equal(1, TechniqueCatalog.LevelFor(10, curve));
+        Assert.Equal(1, TechniqueCatalog.LevelFor(35.999, curve));
+        Assert.Equal(2, TechniqueCatalog.LevelFor(36, curve));
+        Assert.Equal(3, TechniqueCatalog.LevelFor(85, curve));
+        // 曲线封顶后经验继续累计但等级不再推进；无效输入按 0 级计。
+        Assert.Equal(3, TechniqueCatalog.LevelFor(9999, curve));
+        Assert.Equal(0, TechniqueCatalog.LevelFor(-5, curve));
+        Assert.Equal(0, TechniqueCatalog.LevelFor(double.NaN, curve));
+        Assert.Equal(0, TechniqueCatalog.LevelFor(10, null));
+        foreach (var id in new[] { "alchemy", "forging", "talisman", "enhancement", "formation", "gathering", "mining" })
+            Assert.True(TechniqueCatalog.IsKnown(id));
+        Assert.False(TechniqueCatalog.IsKnown("cooking"));
+        Assert.False(TechniqueCatalog.IsKnown(null));
+    }
+
+    /// <summary>
+    /// 技艺前期削减：升入 1 级 -90%，逐级线性收敛至升入 30 级 -0%，
+    /// 30 级以后的段值与修为曲线完全一致（修为曲线本身不被削减）。
+    /// </summary>
+    [Fact]
+    public void TechniqueSegmentExpLinearlyDiscountsFirstThirtyLevels()
+    {
+        var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
+        // 0→1 级 -90%（100→10）、1→2 级 -86.9%（200→26）、2→3 级 -83.8%（300→49）。
+        Assert.Equal(10, TechniqueCatalog.ExpToNextFor(0, curve));
+        Assert.Equal(26, TechniqueCatalog.ExpToNextFor(1, curve));
+        Assert.Equal(49, TechniqueCatalog.ExpToNextFor(2, curve));
+        Assert.Equal(0, TechniqueCatalog.ExpToNextFor(3, curve));
+        Assert.Equal(0, TechniqueCatalog.ExpToNextFor(-1, curve));
+        Assert.Equal(0, TechniqueCatalog.ExpToNextFor(0, null));
+
+        Assert.Equal(0.90, TechniqueCatalog.EarlyDiscountRatio(1), 12);
+        Assert.Equal(0.45, TechniqueCatalog.EarlyDiscountRatio(15.5), 12);
+        Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(30), 12);
+        Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(31), 12);
+        Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(0), 12);
+        for (var level = 2; level <= 30; level++)
+            Assert.True(TechniqueCatalog.EarlyDiscountRatio(level) < TechniqueCatalog.EarlyDiscountRatio(level - 1));
+
+        // 31 段等值曲线：前 29 段被削减、第 30/31 段与修为曲线一致（30 级起削减归零）。
+        var longCurve = new RealmProgressionCatalog(Enumerable.Repeat(1000d, 31).ToArray(), [80]);
+        Assert.Equal(100, TechniqueCatalog.ExpToNextFor(0, longCurve));
+        Assert.Equal(1000, TechniqueCatalog.ExpToNextFor(29, longCurve));
+        Assert.Equal(1000, TechniqueCatalog.ExpToNextFor(30, longCurve));
+        Assert.Equal(1000, longCurve.ExpCapFor(31));
+    }
+
+    /// <summary>技艺等级按 5%/级折减计时行动耗时；未配置技艺字段的行动不受影响。</summary>
+    [Fact]
+    public void TechniqueSpeedDiscountsTimedActionDuration()
+    {
+        var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
+        var alchemy = new ActionDefinition(new ActionId("alchemy.test"), "炼丹测试", ActionKind.Alchemy, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Alchemy);
+        var plain = alchemy with { Id = new ActionId("plain.test"), Technique = null };
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([alchemy, plain]), realmProgression: curve);
+        var player = CreatePlayer("甲");
+        var action = player.Enqueue(new ActionIntent(alchemy.Id, -1), Baseline, catalog.Actions);
+        var wallet = CreateWallet(player);
+
+        // 0 级：无折减；技艺经验 300 按削减后曲线推进到 3 级 → 10 / (1 + 0.05×3)。
+        Assert.Equal(10, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null));
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Alchemy] = 300;
+        var level = TechniqueCatalog.LevelFor(300, curve);
+        Assert.Equal(10 / (1 + TechniqueCatalog.SpeedBonusRatio(level)),
+            SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
+        // 未配置技艺字段的行动不读技艺经验。
+        var plainAction = player.Enqueue(new ActionIntent(plain.Id, -1), Baseline, catalog.Actions);
+        Assert.Equal(10, SimulationEngine.TimedActionDuration(player, plainAction, plain, catalog, wallet, null));
+    }
+
+    /// <summary>每完成一个有效行动轮次，技艺经验按基础耗时入账并写入战报 techniqueExp 账本。</summary>
+    [Fact]
+    public void TechniqueExperienceAccruesPerCompletedRepeat()
+    {
+        var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
+        var gather = new ActionDefinition(new ActionId("gather.test"), "采集测试", ActionKind.Exploration, 5,
+            new Dictionary<ItemId, double>(),
+            [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, new ItemId("item.test-ore"))],
+            Technique: TechniqueCatalog.Gathering);
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([gather]), realmProgression: curve);
+        var player = CreatePlayer("采集者");
+        player.Enqueue(new ActionIntent(gather.Id, -1), Baseline, catalog.Actions);
+        var wallet = CreateWallet(player);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(5, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
+        Assert.Contains(player.Duel.CurrentReport?.TechniqueExp ?? [],
+            entry => entry.TechniqueId == TechniqueCatalog.Gathering && entry.Experience == 5);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(10, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
+        // 技艺经验累计 10 恰好够 0→1 级（首段削减后 100→10）；不足时停在 0 级。
+        Assert.Equal(0, TechniqueCatalog.LevelFor(9.999, curve));
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering] = 10;
+        Assert.Equal(1, TechniqueCatalog.LevelFor(
+            player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering], curve));
+    }
+
+    /// <summary>
+    /// 高等阶非战斗行动（如 18 级 T2 挖矿赤铜矿）按等级基准经验获得技艺经验（107 点而非 1 级 8 点），
+    /// 1 级行动（如乌铁矿 6 秒）保持 6 点。
+    /// </summary>
+    [Fact]
+    public void HighLevelActionGrantsScaledTechniqueExperience()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var crimsonCopper = catalog.Actions.Get(new ActionId("explore.mine-crimson-copper"));
+        Assert.Equal(18, crimsonCopper.Level);
+
+        var player = CreatePlayer("矿工-赤铜");
+        player.World.NodeId = "node.fluorite-abyss";
+        player.Enqueue(new ActionIntent(crimsonCopper.Id, 1), Baseline, catalog.Actions);
+        var wallet = CreateWallet(player);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(crimsonCopper.DurationSeconds), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        // 18 级 8 秒行动单轮基准经验为 round(133.417 × 0.8) = 107
+        Assert.Equal(107, player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+        var report = player.Duel.CurrentReport ?? player.Duel.Reports.FirstOrDefault();
+        Assert.Contains(report?.TechniqueExp ?? [],
+            entry => entry.TechniqueId == TechniqueCatalog.Mining && entry.Experience == 107);
+
+        // 对比 1 级行动：挖掘乌铁矿（6 秒）获得 6 点技艺经验
+        var darkIron = catalog.Actions.Get(new ActionId("explore.mine-dark-iron"));
+        Assert.Equal(1, darkIron.Level);
+        var player1 = CreatePlayer("矿工-乌铁");
+        player1.World.NodeId = "node.rock-beach";
+        player1.Enqueue(new ActionIntent(darkIron.Id, 1), Baseline, catalog.Actions);
+        var wallet1 = CreateWallet(player1);
+        var result1 = SimulationEngine.AdvanceTo(player1, Baseline.AddSeconds(darkIron.DurationSeconds), catalog, wallet1);
+        result1.AssetDeltas.ToList().ForEach(wallet1.Apply);
+        Assert.Equal(6, player1.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+    }
+
+    /// <summary>强化公式族：变体解析、成本、成功率查表/指数/clamp 与技艺修正全部对齐规约。</summary>
+    [Fact]
+    public void EnhancementRulesMatchSpecification()
+    {
+        Assert.Equal(0, EnhancementRules.ParseLevel(null));
+        Assert.Equal(0, EnhancementRules.ParseLevel(""));
+        Assert.Equal(3, EnhancementRules.ParseLevel("+3"));
+        Assert.Null(EnhancementRules.ParseLevel("x"));
+        Assert.Null(EnhancementRules.ParseLevel("+"));
+        var sword = new ItemId("equipment.test-sword");
+        Assert.Equal(new AssetKey(sword), EnhancementRules.KeyFor(sword, 0));
+        Assert.Equal("+3", EnhancementRules.KeyFor(sword, 3).Variant);
+
+        Assert.Equal(6, EnhancementRules.DurationSeconds(1));
+        Assert.Equal(25, EnhancementRules.DurationSeconds(20));
+        Assert.Equal(10, EnhancementRules.SpiritStoneCostFor(1));
+        Assert.Equal(200, EnhancementRules.SpiritStoneCostFor(20));
+
+        Assert.Equal(0.5, EnhancementRules.BaseSuccessRate(1), 12);
+        Assert.Equal(0.35, EnhancementRules.BaseSuccessRate(10), 12);
+        Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(11), 12);
+        // t=11..20 基础成功率统一为 30%（0.30）。
+        Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(20), 12);
+        // 技艺修正：L≥t 线性乘算 ×(1+0.01×L)；L<t 乘性衰减 ×0.9^(t-L)；终值 clamp [0, 0.99]。
+        Assert.Equal(0.99, EnhancementRules.SuccessRate(1, 127), 12);
+        Assert.Equal(0.5 * Math.Pow(0.9, 1), EnhancementRules.SuccessRate(1, 0), 12);
+        Assert.Equal(0.4 * (1.0 + 0.01 * 5), EnhancementRules.SuccessRate(5, 5), 12);
+
+        // 判定种子取行动实例 Id 前 8 字节、通道独立：同实例同轮必得同结果，异实例结果流独立。
+        var prep = new EnhancementRules.Preparation(sword, 0, 1, 10, null, 0.5);
+        var instanceA = Guid.NewGuid();
+        var instanceB = Guid.NewGuid();
+        Assert.Equal(EnhancementRules.Roll(instanceA, 0, prep), EnhancementRules.Roll(instanceA, 0, prep));
+        Assert.Equal(1, EnhancementRules.ResultLevel(prep, EnhancementRules.Outcome.Success));
+        Assert.Equal(0, EnhancementRules.ResultLevel(prep, EnhancementRules.Outcome.FailReset));
+        Assert.Equal(0, EnhancementRules.ResultLevel(prep, EnhancementRules.Outcome.FailProtected));
+        var prepProtected = prep with { ProtectionItemId = new ItemId("item.test-mat"), CurrentLevel = 4, TargetLevel = 5 };
+        // 保护生效：较当前等级回落一级（+4 → +3），非保级。
+        Assert.Equal(3, EnhancementRules.ResultLevel(prepProtected, EnhancementRules.Outcome.FailProtected));
+        Assert.Equal(EnhancementRules.Roll(instanceA, 3, prep), EnhancementRules.Roll(instanceA, 3, prep));
+        _ = EnhancementRules.Roll(instanceB, 0, prep); // 不同实例走同通道独立判定，不共享随机游标。
+    }
+
+    /// <summary>强化当前等级：仅读取背包内未穿戴件（扣除已装备数量后持有 ≥1）的最高变体；已穿戴件不进入判定，无可用件返回 -1。</summary>
+    [Fact]
+    public void EnhancementCurrentLevelOnlyReadsAvailableInventoryExcludingEquipped()
+    {
+        var loadout = new PlayerLoadoutState();
+        var sword = new ItemId("equipment.test-sword");
+        Assert.Equal(-1, EnhancementRules.CurrentLevel(loadout, sword, new Dictionary<AssetKey, double>()));
+
+        // 背包持有 +3 且未穿戴：当前等级为 3
+        var holdings = new Dictionary<AssetKey, double> { [new AssetKey(sword, "+3")] = 1 };
+        Assert.Equal(3, EnhancementRules.CurrentLevel(loadout, sword, holdings));
+
+        // 穿戴了这件 +3（holdings=1, equipped=1）：背包内可用为 0，不可强化，返回 -1
+        loadout.Equipment.Add(new PlayerEquipmentSlot(sword.Value, 3));
+        Assert.Equal(-1, EnhancementRules.CurrentLevel(loadout, sword, holdings));
+
+        // 持有 2 件 +3，穿戴 1 件：背包内仍有 1 件未穿戴的 +3，返回 3
+        holdings[new AssetKey(sword, "+3")] = 2;
+        Assert.Equal(3, EnhancementRules.CurrentLevel(loadout, sword, holdings));
+
+        // 穿戴了 +5（holdings 没有 +5 只有 +2）：已穿戴的不作为强化目标，只看背包内的 +2，返回 2
+        loadout.Equipment[0] = new PlayerEquipmentSlot(sword.Value, 5);
+        holdings.Clear();
+        holdings[new AssetKey(sword, "+2")] = 1;
+        Assert.Equal(2, EnhancementRules.CurrentLevel(loadout, sword, holdings));
+    }
+
+    [Fact]
+    public void EnhancementRulesDistinguishMultipleVariantsWhenCoexisting()
+    {
+        var loadout = new PlayerLoadoutState();
+        var sword = new ItemId("equipment.test-sword");
+        // 背包同时持有一把 +20 和一把 +0（无变体）
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(sword, "+20")] = 1,
+            [new AssetKey(sword)] = 1,
+        };
+
+        // 当 targetCap=20 时，+20 已达标被排除，未达标的 +0 被正确选出作为强化目标
+        Assert.Equal(0, EnhancementRules.CurrentLevel(loadout, sword, holdings, targetCap: 20));
+        // 指定 preferredLevel=0，精准选中 +0
+        Assert.Equal(0, EnhancementRules.CurrentLevel(loadout, sword, holdings, targetCap: 20, preferredLevel: 0));
+
+        // 若 targetCap=10，+20 同样被排除，返回 0
+        Assert.Equal(0, EnhancementRules.CurrentLevel(loadout, sword, holdings, targetCap: 10));
+
+        // 若持存中只有 +20，targetCap=20 时无未达标件，返回 -1
+        var only20 = new Dictionary<AssetKey, double> { [new AssetKey(sword, "+20")] = 1 };
+        Assert.Equal(-1, EnhancementRules.CurrentLevel(loadout, sword, only20, targetCap: 20));
+
+        // 测试 Resolve 链路：同时持有 +20 与 +0 时，意图指明 targetLevel=20，能正常开跑且当前等级为 0
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑","flatStats":{"physicalAttack":10}}""")
+        };
+        var catalog = CreateMinimalCatalog(rawEquipments: rawEquipments);
+        holdings[new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId))] = 1000;
+
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), 1,
+            Parameters: new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 20,
+                [EnhancementRules.InitialLevelParameter] = 0,
+            }) with { TargetItemId = sword.Value };
+
+        var prep = EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out var check, out var reason);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(0, prep.CurrentLevel);
+        Assert.Equal(1, prep.TargetLevel);
+    }
+    /// <summary>
+    /// 强化端到端：单轮结算冻结成本、转移 +N 变体并授予技艺经验；
+    /// 材料守恒与事件语义在成功/失败任一分支下都成立。
+    /// </summary>
+    [Fact]
+    public void EnhancementRepeatSettlesVariantMaterialsAndTechniqueExp()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var enhance = new ActionDefinition(new ActionId("enhance.equipment"), "装备强化",
+            ActionKind.Enhancement, 0, new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Enhancement);
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑","flatStats":{"physicalAttack":10}}""")
+        };
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([enhance]),
+            rawEquipments: rawEquipments,
+            realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
+        var player = CreatePlayer("强化者");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var wallet = CreateWallet(player,
+            (new AssetKey(sword), 1), (new AssetKey(stone), 500));
+        player.Enqueue(new ActionIntent(enhance.Id, -1, TargetItemId: sword.Value), Baseline, catalog.Actions);
+
+        // t=1 基础耗时 6s（技艺 0 级无折减）：一轮结算后材料按冻结成本扣除。
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6.2), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(490, wallet.Get(new AssetKey(stone)));
+        // 强化资产守恒：目标装备总持有恒为 1，落在基础键或 +1 变体键上。
+        var swordHeld = wallet.Get(new AssetKey(sword)) + wallet.Get(new AssetKey(sword, "+1"));
+        Assert.Equal(1, swordHeld);
+        Assert.Equal(6, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement]);
+        Assert.Contains(result.Events, entry => entry.Code is "enhance.succeeded" or "enhance.failed");
+    }
+
+    /// <summary>目标装备或材料不足时强化行动走阻塞语义，不产出、不扣件。</summary>
+    [Fact]
+    public void EnhancementBlocksWhenTargetOrMaterialsMissing()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var enhance = new ActionDefinition(new ActionId("enhance.equipment"), "装备强化",
+            ActionKind.Enhancement, 0, new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Enhancement);
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑"}""")
+        };
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([enhance]), rawEquipments: rawEquipments);
+        var player = CreatePlayer("空手");
+        player.Enqueue(new ActionIntent(enhance.Id, -1, TargetItemId: sword.Value), Baseline, catalog.Actions);
+        var wallet = CreateWallet(player);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        Assert.Equal(ActionQueueStatus.Blocked, player.Actions[0].Status);
+        Assert.Contains(result.Events, entry => entry.Code == "action.blocked");
+        Assert.Empty(result.AssetDeltas);
+        Assert.Empty(player.Loadout.TechniqueExperiences);
+    }
+    /// <summary>装备中不可被强化，且强化背包内装备不会同步或修改已装备槽位的强化等级。</summary>
+    [Fact]
+    public void EnhancementDoesNotAffectOrTargetEquippedItems()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var enhance = new ActionDefinition(new ActionId("enhance.equipment"), "装备强化",
+            ActionKind.Enhancement, 0, new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Enhancement);
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑"}""")
+        };
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([enhance]),
+            rawEquipments: rawEquipments,
+            realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
+        var player = CreatePlayer("穿戴者");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+
+        // 场景 1：身上穿戴了 1 件 +0 测试剑，钱包总共只有 1 件 +0 测试剑（未穿戴数量为 0）
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(sword.Value, 0));
+        var wallet = CreateWallet(player,
+            (new AssetKey(sword), 1), (new AssetKey(stone), 500));
+        player.Enqueue(new ActionIntent(enhance.Id, -1, TargetItemId: sword.Value), Baseline, catalog.Actions);
+
+        // 背包内无可用件，行动直接阻塞
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        Assert.Equal(ActionQueueStatus.Blocked, player.Actions[0].Status);
+        Assert.Contains(result.Events, entry => entry.Code == "action.blocked");
+        Assert.Equal(0, player.Loadout.Equipment[0].EnhancementLevel);
+
+        // 场景 2：背包额外有 1 件未穿戴的 +0 测试剑（钱包总共 2 件，穿戴 1 件，背包可用 1 件）
+        wallet.Credit(new AssetKey(sword), 1, "test");
+        player.Actions[0].Status = ActionQueueStatus.Running;
+        player.Loadout.Equipment[0] = new PlayerEquipmentSlot(sword.Value, 3); // 身上穿戴 +3 测试剑
+
+        // 推进一轮强化：针对背包内的 +0 测试剑推进（目标等级 1）
+        result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(16.2), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        // 身上穿戴的 +3 测试剑绝对不受影响，依然为 3
+        Assert.Equal(3, player.Loadout.Equipment[0].EnhancementLevel);
+    }
+
+    /// <summary>
+    /// 保护材料裁决：装备未配置 enhanceProtectionItems 时仅同装备裸件可代护（+0 时须持有 ≥2），
+    /// 其他物品一律无效；配置白名单后只允许列表内物品，自身裸件反而被拒。
+    /// </summary>
+    [Fact]
+    public void EnhancementProtectionMaterialFollowsWhitelistOrBaseCopyFallback()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var guardOre = new ItemId("item.guard-ore");
+        var other = new ItemId("item.other-mat");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑"}"""),
+            ["equipment.listed-sword"] = Json("""{"id":"equipment.listed-sword","name":"白名单剑","enhanceProtectionItems":["item.guard-ore"]}""")
+        });
+        var listedSword = new ItemId("equipment.listed-sword");
+        var loadout = new PlayerLoadoutState();
+
+        static Dictionary<AssetKey, double> Holdings(params (AssetKey Key, double Qty)[] rows)
+            => rows.ToDictionary(row => row.Key, row => row.Qty);
+        var ready = Holdings(
+            (new AssetKey(stone), 999));
+
+        // 未配置白名单：+0 本体代护，本体+代护同一裸键，仅持 1 件不足。
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), -1,
+            TargetItemId: sword.Value, AuxItemId: sword.Value);
+        var prep = EnhancementRules.Resolve(loadout, intent,
+            new Dictionary<AssetKey, double>(ready) { [new AssetKey(sword)] = 1 }, catalog, 0,
+            out var check, out _);
+        Assert.Null(prep);
+        Assert.Equal(EnhancementRules.Check.Blocked, check);
+
+        // 裸件 ≥2 时 Ready，Preparation 冻结保护材料为同装备。
+        prep = EnhancementRules.Resolve(loadout, intent,
+            new Dictionary<AssetKey, double>(ready) { [new AssetKey(sword)] = 2 }, catalog, 0,
+            out check, out _);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(sword, prep!.ProtectionItemId);
+
+        // +N 变体强化以另一件裸件代护：源键与保护键不同，裸件 ≥1 即可。
+        intent = new ActionIntent(new ActionId("enhance.equipment"), -1,
+            TargetItemId: sword.Value, AuxItemId: sword.Value);
+        prep = EnhancementRules.Resolve(loadout, intent,
+            new Dictionary<AssetKey, double>(ready)
+            {
+                [new AssetKey(sword, "+3")] = 1,
+                [new AssetKey(sword)] = 1
+            }, catalog, 0, out check, out _);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(3, prep!.CurrentLevel);
+
+        // 未配置白名单时非本装备物品一律无效。
+        intent = new ActionIntent(new ActionId("enhance.equipment"), -1,
+            TargetItemId: sword.Value, AuxItemId: other.Value);
+        Assert.Null(EnhancementRules.Resolve(loadout, intent,
+            new Dictionary<AssetKey, double>(ready)
+            {
+                [new AssetKey(sword)] = 1,
+                [new AssetKey(other)] = 5
+            }, catalog, 0, out check, out _));
+        Assert.Equal(EnhancementRules.Check.Blocked, check);
+
+        // 已配置白名单：列表内材料可用；自身裸件与列表外物品被拒。
+        intent = new ActionIntent(new ActionId("enhance.equipment"), -1,
+            TargetItemId: listedSword.Value, AuxItemId: guardOre.Value);
+        prep = EnhancementRules.Resolve(loadout, intent,
+            new Dictionary<AssetKey, double>(ready)
+            {
+                [new AssetKey(listedSword)] = 1,
+                [new AssetKey(guardOre)] = 1
+            }, catalog, 0, out check, out _);
+        Assert.NotNull(prep);
+        Assert.Equal(guardOre, prep!.ProtectionItemId);
+
+        intent = new ActionIntent(new ActionId("enhance.equipment"), -1,
+            TargetItemId: listedSword.Value, AuxItemId: listedSword.Value);
+        Assert.Null(EnhancementRules.Resolve(loadout, intent,
+            new Dictionary<AssetKey, double>(ready)
+            {
+                [new AssetKey(listedSword)] = 2
+            }, catalog, 0, out check, out _));
+        Assert.Equal(EnhancementRules.Check.Blocked, check);
+    }
+    /// <summary>
+    /// 起护等级判定：当前等级未达起护线时即使意图携带保护材料也不消耗且失败归零；
+    /// 达到起护线后才检查并消耗保护材料，失败较当前等级回落一级（保护生效掉一级）；
+    /// 起护等级在参数中最低 clamp 为 2。
+    /// </summary>
+    [Fact]
+    public void EnhancementProtectFromLevelControlsMaterialConsumptionAndOutcome()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var guardOre = new ItemId("item.guard-ore");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑","enhanceProtectionItems":["item.guard-ore"]}""")
+        });
+        var loadout = new PlayerLoadoutState();
+
+        // 意图设定：从 +3 开始保护（protectLevel=3）
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), -1,
+            TargetItemId: sword.Value, AuxItemId: guardOre.Value,
+            Parameters: new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 5,
+                [EnhancementRules.ProtectFromLevelParameter] = 3
+            });
+
+        // 场景 1：当前装备为 +1（未达起护等级 3）
+        // 即使没有保护材料（guardOre 数量为 0），准入依然通过，Preparation.ProtectionItemId 恒为 null
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(sword, "+1")] = 1,
+            [new AssetKey(stone)] = 500
+        };
+        var prep = EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out var check, out _, currentTrackedLevel: 1);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Null(prep!.ProtectionItemId); // 未达线，不启用保护
+
+        // 场景 2：当前装备达到 +3（已达起护等级 3）
+        // 缺乏保护材料时受阻 Blocked
+        holdings.Clear();
+        holdings[new AssetKey(sword, "+3")] = 1;
+        holdings[new AssetKey(stone)] = 500;
+        Assert.Null(EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out check, out _, currentTrackedLevel: 3));
+        Assert.Equal(EnhancementRules.Check.Blocked, check);
+
+        // 补充保护材料后通过，Preparation.ProtectionItemId 激活
+        holdings[new AssetKey(guardOre)] = 2;
+        prep = EnhancementRules.Resolve(loadout, intent, holdings, catalog, 0, out check, out _, currentTrackedLevel: 3);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(guardOre, prep!.ProtectionItemId);
+
+        // 场景 3：参数传入 protectLevel=1 时，服务端强制钳制为最低 2
+        var intentLow = intent with
+        {
+            Parameters = new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 5,
+                [EnhancementRules.ProtectFromLevelParameter] = 1 // 试图设定为 1
+            }
+        };
+        holdings.Clear();
+        holdings[new AssetKey(sword, "+1")] = 1;
+        holdings[new AssetKey(stone)] = 500;
+        // +1 件未达最低阈值 2，因此仍不消耗保护
+        prep = EnhancementRules.Resolve(loadout, intentLow, holdings, catalog, 0, out check, out _, currentTrackedLevel: 1);
+        Assert.NotNull(prep);
+        Assert.Null(prep!.ProtectionItemId);
+    }
+
+    /// <summary>
+    /// 多件同名装备连续冲阶（单品锁定验证）：玩家背包持有多件同名基础装备（5 件 +0 铁剑），
+    /// 设定强化目标为 +3，执行多轮强化；系统必须锁定同一件装备持续强化，绝对不得轮番把多件装备都冲到 +1；
+    /// 目标达成后行动出队，背包中其余 4 件 +0 原封不动。
+    /// </summary>
+    [Fact]
+    public void EnhancementLocksOntoSingleItemWithoutCyclingThroughBagDuplicates()
+    {
+        var sword = new ItemId("equipment.test-sword");
+        var enhance = new ActionDefinition(new ActionId("enhance.equipment"), "装备强化",
+            ActionKind.Enhancement, 0, new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Enhancement);
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [sword.Value] = Json("""{"id":"equipment.test-sword","name":"测试剑","tier":1}""")
+        };
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([enhance]),
+            rawEquipments: rawEquipments,
+            realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
+        var player = CreatePlayer("专一强化者");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+
+        // 背包持有 5 件 +0 测试剑与充裕灵石
+        var wallet = CreateWallet(player,
+            (new AssetKey(sword), 5), (new AssetKey(stone), 5000));
+
+        // 目标为 +3，无限循环直到目标达成自动出队
+        player.Enqueue(new ActionIntent(enhance.Id, -1,
+            TargetItemId: sword.Value,
+            Parameters: new Dictionary<string, double>
+            {
+                [EnhancementRules.TargetLevelParameter] = 3,
+                [EnhancementRules.InitialLevelParameter] = 0
+            }), Baseline, catalog.Actions);
+
+        // 模拟推进多轮（由于判定概率，推进足够长的时间直到达到 +3 出队或完成）
+        var now = Baseline;
+        for (var step = 0; step < 300; step++)
+        {
+            if (player.Actions.Count == 0) break;
+            now = now.AddSeconds(10);
+            var result = SimulationEngine.AdvanceTo(player, now, catalog, wallet);
+            result.AssetDeltas.ToList().ForEach(wallet.Apply);
+        }
+
+        // 核心不变量断言：
+        // 1. 其余 4 件 +0 测试剑绝对原封不动！绝不能发生“多件都被强化成 +1”的缺陷！
+        // 2. 目标件已达到 +3，行动圆满完成出队（队列已无行动）
+        Assert.Empty(player.Actions);
+        Assert.Equal(4, wallet.Get(new AssetKey(sword)));
+        Assert.Equal(1, wallet.Get(new AssetKey(sword, "+3")));
+        Assert.Equal(0, wallet.Get(new AssetKey(sword, "+1")));
+        Assert.Equal(0, wallet.Get(new AssetKey(sword, "+2")));
+    }
+
+    /// <summary>
+    /// 聚灵阵盘为普通持续消耗品：入场自动消耗 1 件充入 300s（战斗时钟扣减），
+    /// 不再走 durable 战外永驻注入；耗竭前槽位不写冷却。
+    /// </summary>
+    [Fact]
+    public void FormationDiskChargesDurationOnBattleEntryWithoutDurableBuff()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("阵修");
+        var disk = new ItemId("item.juling-formation-disk");
+        // 配表判定：普通持续消耗品 300s 持续且无冷却（0s CD），buff 双通道不变。
+        var consumable = catalog.Items[disk].Consumable!;
+        Assert.True(consumable.IsContinuous);
+        Assert.False(consumable.Durable);
+        Assert.Equal(300, consumable.DurationSeconds);
+        Assert.Equal(0, consumable.CooldownSeconds);
+        var wallet = CreateWallet(player, (new AssetKey(disk), 2));
+        player.ConfigureAutoUse("combat", 0, disk.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+        player.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), Baseline, catalog.Actions);
+
+        // 非 durable：战斗行动推进中不再注入战外永驻 ActiveBuff。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "formation.juling");
+
+        // 搜寻结束入场：自动消耗 1 件并充入 300s 剩余时长；耗竭前冷却为零。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(40), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(1d, wallet.Get(new AssetKey(disk)));
+        Assert.InRange(player.Settings.AutoUseSlots[0].RemainingDurationSeconds, 0, 300);
+        Assert.Equal(0, player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds);
+        Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "formation.juling");
+    }
+
+    /// <summary>
+    /// 雷击符：战斗中激活扣除自身灵力 5%，对当前主要敌人造成
+    /// 0.2×灵力上限 + 2.0×法攻 的无掷点技能伤害，随后进入冷却。
+    /// </summary>
+    [Fact]
+    public void StrikeTalismanConsumesManaAndDamagesPrimaryEnemy()
+    {
+        var strike = new ItemId("item.test-strike");
+        var strikeJson = """
+            {"id":"item.test-strike","name":"测试雷符","kind":"consumable","category":"talisman",
+             "consumable":{"usableInActionTypes":["combat"],"cooldownSeconds":60,
+             "strike":{"manaCostRatio":0.05,"manaDamageRatio":0.2,"spellAttackRatio":2.0,"element":"wood"}}}
+            """;
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("combat.test"), "讨伐测试", ActionKind.Combat, 0,
+                new Dictionary<ItemId, double>(), [],
+                ExecutionKind: ActionExecutionKind.CombatEncounter, CombatEncounterId: "encounter.test")
+        ]);
+        var items = new Dictionary<ItemId, ItemDefinition>
+        {
+            [strike] = new(strike, "测试雷符", "", true, 0,
+                new ConsumableDefinition(new HashSet<string> { "combat" },
+                    Strike: new ConsumableStrike(0.05, 0.2, 2.0, CombatElement.Wood),
+                    CooldownSeconds: 60),
+                "talisman"),
+        };
+        var rawItems = new Dictionary<string, JsonElement> { [strike.Value] = Json(strikeJson) };
+        var monster = new CombatMonsterDefinition("enemy.test", "测试妖兽", 1, 1, CombatMonsterRank.Minion,
+            CombatantStats.Create(100_000, 0, 0, 2), [], []);
+        var encounter = new CombatEncounterDefinition("encounter.test", "测试遭遇", 1, 1, 1, 1, 1, 180,
+            [new CombatSpawnDefinition("enemy.test", 1, 1)], [], [], 0);
+        var catalog = new GameDataCatalog("test-1", "test-fingerprint", actions,
+            items: items, rawItems: rawItems,
+            combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter });
+        var player = CreatePlayer("符修");
+        var wallet = CreateWallet(player, (new AssetKey(strike), 1));
+        player.ConfigureAutoUse("combat", 0, strike.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        // 搜寻 1s 入战后，下一资源边界雷击符激活：扣 5% 灵力（5），消耗 1 件，伤害落敌快照。
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(0, wallet.Get(new AssetKey(strike)));
+        Assert.Equal(95, player.Resources.Manapoints, 9);
+        Assert.True(player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds > 0);
+        var enemyState = player.Actions[0].Expedition?.Enemies?[0].State;
+        Assert.NotNull(enemyState);
+        // 兜底面板：MaxManapoints=100、SpellAttack=0 → 打击基数 0.2×100=20；
+        // 妖兽法抗 0 → 平方穿甲 20²/(20+1) ≈ 19.0476；敌人另承受玩家普攻，HP 不得高于全额雷击后的水位。
+        Assert.True(enemyState!.Hitpoints <= 100_000 - 400d / 21 + 1e-6,
+            $"雷击全额应已入账，实际 HP={enemyState.Hitpoints}");
+        Assert.Contains(result.Events, entry => entry.Code == "auto-use.activated");
+    }
+
+    /// <summary>雷击符灵力不足时不激活：不扣件、不进入冷却、敌人快照不动。</summary>
+    [Fact]
+    public void StrikeTalismanSkipsWhenManaInsufficient()
+    {
+        var strike = new ItemId("item.test-strike");
+        var strikeJson = """
+            {"id":"item.test-strike","name":"测试雷符","kind":"consumable","category":"talisman",
+             "consumable":{"usableInActionTypes":["combat"],"cooldownSeconds":60,
+             "strike":{"manaCostRatio":0.5,"manaDamageRatio":0.2,"spellAttackRatio":2.0,"element":"wood"}}}
+            """;
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("combat.test"), "讨伐测试", ActionKind.Combat, 0,
+                new Dictionary<ItemId, double>(), [],
+                ExecutionKind: ActionExecutionKind.CombatEncounter, CombatEncounterId: "encounter.test")
+        ]);
+        var items = new Dictionary<ItemId, ItemDefinition>
+        {
+            [strike] = new(strike, "测试雷符", "", true, 0,
+                new ConsumableDefinition(new HashSet<string> { "combat" },
+                    Strike: new ConsumableStrike(0.5, 0.2, 2.0, CombatElement.Wood),
+                    CooldownSeconds: 60),
+                "talisman"),
+        };
+        var rawItems = new Dictionary<string, JsonElement> { [strike.Value] = Json(strikeJson) };
+        var monster = new CombatMonsterDefinition("enemy.test", "测试妖兽", 1, 1, CombatMonsterRank.Minion,
+            CombatantStats.Create(100_000, 0, 0, 2), [], []);
+        var encounter = new CombatEncounterDefinition("encounter.test", "测试遭遇", 1, 1, 1, 1, 1, 180,
+            [new CombatSpawnDefinition("enemy.test", 1, 1)], [], [], 0);
+        var catalog = new GameDataCatalog("test-1", "test-fingerprint", actions,
+            items: items, rawItems: rawItems,
+            combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter });
+        var player = CreatePlayer("符修");
+        var wallet = CreateWallet(player, (new AssetKey(strike), 1));
+        player.ConfigureAutoUse("combat", 0, strike.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        // manaCostRatio 0.5 × 上限 100 = 50；灵力压到 10 → 灵力不足跳过激活。
+        player.Resources.Manapoints = 10;
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(1, wallet.Get(new AssetKey(strike)));
+        Assert.Equal(0, player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds);
+        Assert.DoesNotContain(result.Events, entry => entry.Code == "auto-use.activated");
+    }
+
+    /// <summary>旧版装配文档（缺技艺经验字段）恢复安全：不抹除既有累计，等级按 0 起算。</summary>
+    [Fact]
+    public void LoadoutRestoreToleratesMissingTechniqueExperiences()
+    {
+        var loadout = new PlayerLoadoutState();
+        var document = new PlayerLoadoutDocument(new PlayerCoreAttributes(), [], []);
+        loadout.Restore(document);
+        Assert.Empty(loadout.TechniqueExperiences);
+        loadout.TechniqueExperiences[TechniqueCatalog.Alchemy] = 42;
+        // 缺省文档恢复不抹除既有技艺累计（槽位装配替换路径共享同一语义）。
+        loadout.Restore(document);
+        Assert.Equal(42, loadout.TechniqueExperiences[TechniqueCatalog.Alchemy]);
+        // 非法技艺键仍被拒绝。
+        var invalid = document with
+        {
+            TechniqueExperiences = new Dictionary<string, double> { ["cooking"] = 1 }
+        };
+        Assert.Throws<DomainException>(() => loadout.Restore(invalid));
+    }
+
+    /// <summary>
+    /// 技艺工具：装备 tool-mining 槽位后 mining 行动耗时按 基础/(1+0.1) 折减，
+    /// 与技艺等级加成并入同一除数加算；不匹配技艺的行动与不匹配技艺的工具均不生效。
+    /// </summary>
+    [Fact]
+    public void EquippedToolSpeedsMatchingTechniqueAction()
+    {
+        var compass = new ItemId("equipment.tool-prospect-compass");
+        var hoe = new ItemId("equipment.tool-herb-hoe");
+        var mining = new ActionDefinition(new ActionId("mine.test"), "挖矿测试", ActionKind.Exploration, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Mining);
+        var alchemy = new ActionDefinition(new ActionId("alchemy.test"), "炼丹测试", ActionKind.Alchemy, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Alchemy);
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([mining, alchemy]),
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                [compass.Value] = Json("""{"id":"equipment.tool-prospect-compass","name":"赤铜镐","slot":"tool-mining","tier":1,"techniqueBonus":{"technique":"mining","speedRatio":0.1}}"""),
+                [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"桃木铲","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
+            },
+            realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
+        var player = CreatePlayer("矿工");
+        var wallet = CreateWallet(player);
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(compass.Value, 0));
+        var miningAction = player.Enqueue(new ActionIntent(mining.Id, -1), Baseline, catalog.Actions);
+
+        // 工具命中绑定技艺：10 / (1 + 0.1)；配表缺失时按无加成计。
+        Assert.Equal(10 / 1.1, SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+        Assert.Equal(0.1, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, catalog), 12);
+        Assert.Equal(0, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, null));
+
+        // 技艺等级与工具加成同点加算：10 / (1 + 0.05×L + 0.1)。
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining] = 300;
+        var miningLevel = TechniqueCatalog.LevelFor(300, catalog.RealmProgression);
+        Assert.Equal(10 / (1 + 0.1 + TechniqueCatalog.SpeedBonusRatio(miningLevel)),
+            SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+
+        // 不匹配技艺的行动（alchemy）不受 mining 工具加成；
+        // 绑定其他技艺的工具（桃木铲→gathering）也不计入 mining 除数。
+        var alchemyAction = player.Enqueue(new ActionIntent(alchemy.Id, -1), Baseline, catalog.Actions);
+        Assert.Equal(10, SimulationEngine.TimedActionDuration(player, alchemyAction, alchemy, catalog, wallet, null));
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(hoe.Value, 0));
+        Assert.Equal(10 / (1 + 0.1 + TechniqueCatalog.SpeedBonusRatio(miningLevel)),
+            SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+
+        // 工具槽位前缀判定。
+        Assert.True(TechniqueCatalog.IsToolSlot("tool-mining"));
+        Assert.False(TechniqueCatalog.IsToolSlot("weapon"));
+        Assert.False(TechniqueCatalog.IsToolSlot(null));
+    }
+
+    /// <summary>技艺工具可强化：tool- 槽位装备在强化准入通过并可正常提升强化等级。</summary>
+    [Fact]
+    public void TechniqueToolCanBeEnhanced()
+    {
+        var hoe = new ItemId("equipment.tool-herb-hoe");
+        var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
+        {
+            [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"桃木铲","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
+        });
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), -1, TargetItemId: hoe.Value);
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(hoe)] = 1,
+            [new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId))] = 999
+        };
+        var prep = EnhancementRules.Resolve(new PlayerLoadoutState(), intent, holdings, catalog, 0,
+            out var check, out var reason);
+        Assert.NotNull(prep);
+        Assert.Equal(EnhancementRules.Check.Ready, check);
+        Assert.Equal(10, prep.SpiritStoneCost);
+        Assert.Equal(1, prep.TargetLevel);
+    }
+
+    /// <summary>技艺工具强化等级缩放：+N 工具的速度加成按 1.05^N 缩放生效。</summary>
+    [Fact]
+    public void EquippedToolEnhancementScalesSpeedRatio()
+    {
+        var compass = new ItemId("equipment.tool-prospect-compass");
+        var mining = new ActionDefinition(new ActionId("mine.test"), "挖矿测试", ActionKind.Exploration, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Mining);
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([mining]),
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                [compass.Value] = Json("""{"id":"equipment.tool-prospect-compass","name":"赤铜镐","slot":"tool-mining","tier":1,"techniqueBonus":{"technique":"mining","speedRatio":0.1}}""")
+            });
+        var player = CreatePlayer("矿工");
+        var wallet = CreateWallet(player);
+        // +2 等级赤铜镐：速度加成 = 0.1 × 1.05^2 = 0.11025
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(compass.Value, 2));
+        var miningAction = player.Enqueue(new ActionIntent(mining.Id, -1), Baseline, catalog.Actions);
+
+        var expectedRatio = 0.1 * Math.Pow(1.05, 2);
+        Assert.Equal(expectedRatio, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, catalog), 12);
+        Assert.Equal(10 / (1 + expectedRatio), SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+    }
+
+    /// <summary>装备强化商店回收折旧遵循总纲 §4.6.2 闭式常数公式，白板绝对保底且随等级递增。</summary>
+    [Fact]
+    public void EquipmentSellPriceDepreciationFollowsClosedFormula()
+    {
+        const double v0 = 312.0; // 青锋剑白板基础售价
+        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 0));
+        Assert.Equal(478.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 1));
+        Assert.Equal(691.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 2));
+        Assert.Equal(1495.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 5));
+        Assert.Equal(3449.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 10));
+        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 20));
+
+        // 越界截断保护
+        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, -1));
+        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 99));
+        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(0, 5));
+        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(-10, 5));
+    }
+
+    /// <summary>白板装备基础售价计算等于锻造原材料成本的 2.0 倍（制造翻倍铁律）。</summary>
+    [Fact]
+    public void ComputeEquipmentBaseSellPrice_ComputesDoubledMaterialCost()
+    {
+        var darkIron = new ItemDefinition(new ItemId("item.dark-iron"), "乌铁", "", true, 5);
+        var beastBone = new ItemDefinition(new ItemId("item.beast-bone"), "兽骨", "", true, 6);
+        var swordAction = new ActionDefinition(
+            new ActionId("forge.test-sword"),
+            "锻造测试剑",
+            ActionKind.Alchemy,
+            10,
+            new Dictionary<ItemId, double> { [darkIron.Id] = 10, [beastBone.Id] = 2 }, // 成本: 10*5 + 2*6 = 62
+            [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, Item: new ItemId("equipment.test-sword"))]);
+        var catalog = new GameDataCatalog("test", "fp", new ActionCatalog([swordAction]),
+            items: new Dictionary<ItemId, ItemDefinition> { [darkIron.Id] = darkIron, [beastBone.Id] = beastBone },
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                ["equipment.test-sword"] = Json("""{"id":"equipment.test-sword","name":"测试剑","slot":"weapon"}""")
+            });
+
+        var cost = EnhancementRules.ComputeEquipmentMaterialCost(catalog, "equipment.test-sword");
+        Assert.Equal(62.0, cost);
+        var v0 = EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, "equipment.test-sword");
+        Assert.Equal(124.0, v0);
+    }
+
+    private static GameDataCatalog CreateMinimalCatalog(
+        ActionCatalog? actions = null,
+        Dictionary<string, JsonElement>? rawEquipments = null,
+        RealmProgressionCatalog? realmProgression = null)
+        => new("test-1", "test-fingerprint", actions ?? ActionCatalog.Default,
+            items: new Dictionary<ItemId, ItemDefinition>(),
+            rawEquipments: rawEquipments,
+            realmProgression: realmProgression);
+}

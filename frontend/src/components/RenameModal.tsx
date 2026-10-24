@@ -1,0 +1,102 @@
+import { memo, useState } from 'react'
+import { Modal } from './Modal'
+import { gameClient } from '../network/gameClient'
+import { useGameStore } from '../game/gameStore'
+import { useT } from '../i18n'
+
+/** 修改道号模态窗 Props */
+interface RenameModalProps {
+  /** 弹窗是否展开 */
+  open: boolean
+  /** 关闭弹窗回调 */
+  onClose: () => void
+}
+
+/** 道号字符格式校验规则（2-12字符，支持汉字、英文字母、数字与下划线） */
+const NAME_REGEX = /^[\p{L}\p{N}_·]{2,12}$/u
+
+/**
+ * 修改修士道号模态窗组件 (RenameModal)
+ *
+ * 具备实时格式与长度校验，向服务端发送 player.rename 指令并在成功时关闭弹窗。
+ */
+export const RenameModal = memo(function RenameModal({ open, onClose }: RenameModalProps): React.JSX.Element | null {
+  const t = useT()
+  const currentName = useGameStore(state => state.name)
+  const [draft, setDraft] = useState(currentName)
+  const [validationError, setValidationError] = useState<string | null>(null)
+
+  const validate = (value: string): string | null => {
+    const trimmed = value.trim()
+    if (!trimmed) return t('app.rename.errorEmpty')
+    if (trimmed.length < 2 || trimmed.length > 12) return t('app.rename.errorLength')
+    if (!NAME_REGEX.test(trimmed)) return t('app.rename.errorFormat')
+    if (trimmed === currentName) return t('app.rename.errorSame')
+    return null
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setDraft(value)
+    setValidationError(validate(value))
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const error = validate(draft)
+    if (error) {
+      setValidationError(error)
+      return
+    }
+    const trimmed = draft.trim()
+    const sent = gameClient.sendCommand('player.rename', { displayName: trimmed })
+    if (sent) {
+      onClose()
+    }
+  }
+
+  return (
+    <Modal
+      className="modal-form-shell"
+      labelledBy="rename-modal-title"
+      onClose={onClose}
+      open={open}
+      size="small"
+    >
+      <header className="panel-header modal-form-header">
+        <h2 id="rename-modal-title">{t('app.rename.title')}</h2>
+      </header>
+      <form onSubmit={handleSubmit} className="modal-form">
+        <div className="modal-form-field">
+          <label htmlFor="modal-form-input" className="modal-form-label">
+            {t('app.rename.inputLabel')}
+          </label>
+          <input
+            id="modal-form-input"
+            className="modal-form-input"
+            maxLength={12}
+            onChange={handleChange}
+            placeholder={t('app.rename.inputPlaceholder')}
+            type="text"
+            value={draft}
+            autoFocus
+          />
+          {validationError && <span className="modal-form-error">{validationError}</span>}
+          <p className="modal-form-hint">{t('app.rename.hint')}</p>
+        </div>
+        <div className="modal-form-actions">
+          <button type="button" className="modal-form-cancel" onClick={onClose}>
+            {t('app.rename.cancelBtn')}
+          </button>
+          <button
+            type="submit"
+            className="modal-form-submit active"
+            disabled={Boolean(validationError) || !draft.trim() || draft.trim() === currentName}
+          >
+            {t('app.rename.submitBtn')}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+})

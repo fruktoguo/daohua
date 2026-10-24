@@ -1,0 +1,86 @@
+[
+  {
+    "id": "equipment.shouya-pendant",
+    "name": "兽牙坠",
+    "description": "兽牙悬颈，野性随身。\n以凶兽獠牙穿系而成的粗犷项坠，野性十足。",
+    "slot": "trinket",
+    "baseStatRatios": {
+      "physicalAttack": 0.1
+    },
+    "flatStats": {
+      "criticalChance": 4,
+      "hitpointRegen": 2
+    }
+  },
+  {
+    "id": "equipment.taomu-talisman",
+    "name": "桃木符",
+    "description": "桃符雕古木，幽香辟不祥。\n百年阳坡桃木雕刻而成的辟邪木符，散发着草木幽香。",
+    "slot": "trinket",
+    "baseStatRatios": {
+      "spellAttack": 0.1
+    },
+    "flatStats": {
+      "criticalChance": 4,
+      "manapointRegen": 2
+    }
+  },
+  {
+    "id": "equipment.canglang-ring",
+    "name": "苍狼煞牙戒",
+    "description": "狼牙嵌骨戒，煞气暗藏锋。\n采古道妖狼尖锐獠牙配沉铁打磨的扳指，触体微凉，暗蕴杀伐戾气。",
+    "slot": "trinket",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.12
+    },
+    "flatStats": {
+      "criticalChance": 5,
+      "hitpointRegen": 2.5
+    }
+  },
+  {
+    "id": "equipment.bibo-pendant",
+    "name": "碧波静心佩",
+    "description": "碧波凝翠佩，静心拂俗尘。\n采自落石险隘深涧的灵水玉佩，佩之如沐清泉，宁心静气，回气绵绵。",
+    "slot": "trinket",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.12
+    },
+    "flatStats": {
+      "criticalChance": 5,
+      "manapointRegen": 2.5
+    }
+  },
+  {
+    "id": "equipment.chiwen-ring",
+    "name": "赤纹戒",
+    "description": "赤纹绕指龙吟细。\n赤红铜精打磨而成的指环，戒面铭刻着古朴赤龙纹样。",
+    "slot": "trinket",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.16
+    },
+    "flatStats": {
+      "criticalChance": 4,
+      "hitpointRegen": 3
+    }
+  },
+  {
+    "id": "equipment.juling-pendant",
+    "name": "聚灵佩",
+    "description": "灵晶作佩，清气萦身。\n青翠灵松晶雕琢而成的通灵玉佩，常年萦绕着淡淡清气。",
+    "slot": "trinket",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "spellAttack": 0.16
+    },
+    "flatStats": {
+      "criticalChance": 4,
+      "manapointRegen": 3
+    }
+  }
+]

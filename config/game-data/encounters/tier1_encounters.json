@@ -1,0 +1,130 @@
+[
+  {
+    "id": "encounter.qi-beast",
+    "name": "溪谷林间",
+    "minBudget": 10,
+    "maxBudget": 15,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.wood-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.herb-valley",
+    "name": "百草青野",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.demonized-rabbit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.shuyu-brook",
+    "name": "漱玉溪涧",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.water-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.tea-house",
+    "name": "望云后山",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.wood-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.rock-beach",
+    "name": "清石水滩",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.wood-spirit",
+        "weight": 1,
+        "strength": 15
+      },
+      {
+        "enemyId": "enemy.water-spirit",
+        "weight": 1,
+        "strength": 15
+      },
+      {
+        "enemyId": "enemy.fire-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.sunset-ridge",
+    "name": "桃林坡石",
+    "minBudget": 20,
+    "maxBudget": 65,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.demonized-rabbit",
+        "weight": 3,
+        "strength": 15
+      }
+    ],
+    "maxTotalStrength": 65,
+    "eliteEnemyIds": [
+      "enemy.armored-bear"
+    ],
+    "battlesPerElite": 5
+  },
+  {
+    "id": "encounter.twilight-pass",
+    "name": "山门试炼",
+    "minBudget": 30,
+    "maxBudget": 60,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.fire-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ]
+  },
+  {
+    "id": "encounter.cloud-peak",
+    "name": "云巅试炼",
+    "minBudget": 35,
+    "maxBudget": 80,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.fire-spirit",
+        "weight": 2,
+        "strength": 15
+      }
+    ],
+    "maxTotalStrength": 80,
+    "eliteEnemyIds": [
+      "enemy.demon-ape"
+    ],
+    "battlesPerElite": 5,
+    "bossEnemyIds": [
+      "enemy.chang-tiger"
+    ],
+    "battlesPerBoss": 20
+  }
+]

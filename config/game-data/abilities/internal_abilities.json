@@ -1,0 +1,215 @@
+[
+  {
+    "id": "ability.tuna-gong",
+    "name": "吐纳功",
+    "description": "一呼一吸，气行周身。道家入门心法，调和经脉，固本培元。",
+    "discipline": "internal",
+    "style": "five-elements",
+    "tier": 1,
+    "category": "spell",
+    "element": "none",
+    "rootAttribute": "meridians",
+    "rootExpEfficiencyPerLevel": 0.02,
+    "rootExpMultipliers": {
+      "meridians": 1.5,
+      "bone": 1.5,
+      "attack": 0.5,
+      "consciousness": 0.5
+    }
+  },
+  {
+    "id": "ability.manniu-jin",
+    "name": "蛮牛劲",
+    "description": "力蛮如牛，不尚机巧。淬炼一身蛮力与筋肉，专修刚猛武道。",
+    "discipline": "internal",
+    "style": "body",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "rootAttribute": "attack",
+    "rootExpEfficiencyPerLevel": 0.02,
+    "rootExpMultipliers": {
+      "attack": 2.0,
+      "consciousness": 0.5,
+      "agility": 0.5
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "physicalDamageBonusPoints": 5
+    }
+  },
+  {
+    "id": "ability.tiebu-shan",
+    "name": "铁布衫",
+    "description": "筋骨如铁，刀枪不入。横练筋骨皮肉，铸就铜浇铁铸之躯。",
+    "discipline": "internal",
+    "style": "body",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "rootAttribute": "stamina",
+    "rootExpEfficiencyPerLevel": 0.02,
+    "rootExpMultipliers": {
+      "stamina": 2.0,
+      "bone": 1.2,
+      "attack": 0.4,
+      "consciousness": 0.4
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "physicalDamageReductionPoints": 5
+    }
+  },
+  {
+    "id": "ability.feiyan-gong",
+    "name": "飞燕功",
+    "description": "身轻如燕，踏雪无痕。吐纳轻灵之气，游走闪避，疾步如风。",
+    "discipline": "internal",
+    "style": "body",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "rootAttribute": "agility",
+    "rootExpEfficiencyPerLevel": 0.02,
+    "rootExpMultipliers": {
+      "agility": 2.0,
+      "stamina": 0.5,
+      "attack": 0.5
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "actionSpeedPoints": 2.5
+    }
+  },
+  {
+    "id": "ability.qingxin-jue",
+    "name": "清心诀",
+    "description": "清心寡欲，灵台空明。涤荡凡思杂念，凝练神识，专精术法奥义。",
+    "discipline": "internal",
+    "style": "mind",
+    "tier": 1,
+    "category": "spell",
+    "element": "none",
+    "rootAttribute": "consciousness",
+    "rootExpEfficiencyPerLevel": 0.02,
+    "rootExpMultipliers": {
+      "consciousness": 2.0,
+      "stamina": 0.5,
+      "attack": 0.5
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "spellDamageBonusPoints": 5
+    }
+  },
+  {
+    "id": "ability.fenxue-gong",
+    "name": "焚血功",
+    "description": "燃血为薪，力可崩山。魔道刚猛心法，彻底献祭生机气血，换取撼地狂力。",
+    "discipline": "internal",
+    "style": "body",
+    "tier": 2,
+    "category": "physical",
+    "element": "none",
+    "rootAttribute": "attack",
+    "rootExpEfficiencyPerLevel": 0.03,
+    "cultivationExpBonusPoints": -10,
+    "rootExpMultipliers": {
+      "attack": 3.5,
+      "stamina": 0.0,
+      "consciousness": 0.5
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "physicalDamageBonusPoints": 7.5
+    }
+  },
+  {
+    "id": "ability.xiaozhoutian-gong",
+    "name": "小周天功",
+    "description": "气行任督，周天不息。玄门正宗护体心法，灵息搬运，周天循环，坚不可摧。",
+    "discipline": "internal",
+    "style": "five-elements",
+    "tier": 2,
+    "category": "spell",
+    "element": "none",
+    "rootAttribute": "bone",
+    "rootExpEfficiencyPerLevel": 0.03,
+    "rootExpMultipliers": {
+      "bone": 3.0,
+      "stamina": 0.75,
+      "attack": 0.75,
+      "agility": 0.75,
+      "consciousness": 0.75
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "physicalDamageReductionPoints": 5,
+      "spellDamageReductionPoints": 5
+    }
+  },
+  {
+    "id": "ability.cunshen-jue",
+    "name": "存神诀",
+    "description": "存神内视，万虑皆空。上乘修仙冥想法，神识出窍，洞察天机，术法威能大增。",
+    "discipline": "internal",
+    "style": "mind",
+    "tier": 2,
+    "category": "spell",
+    "element": "none",
+    "rootAttribute": "consciousness",
+    "rootExpEfficiencyPerLevel": 0.03,
+    "rootExpMultipliers": {
+      "consciousness": 3.5,
+      "stamina": 0.6,
+      "attack": 0.5,
+      "agility": 0.4
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "spellDamageBonusPoints": 7.5
+    }
+  },
+  {
+    "id": "ability.lianjing-huaqi-jue",
+    "name": "炼精化气诀",
+    "description": "炼精化气，舍形求真。玄门速成秘法，将肉身本源精气全数转化为境界修为。",
+    "discipline": "internal",
+    "style": "five-elements",
+    "tier": 2,
+    "category": "spell",
+    "element": "none",
+    "rootAttribute": "meridians",
+    "rootExpEfficiencyPerLevel": 0.03,
+    "cultivationExpBonusPoints": 20,
+    "rootExpMultipliers": {
+      "stamina": 0.7,
+      "meridians": 0.7,
+      "attack": 0.7,
+      "bone": 0.7,
+      "agility": 0.7,
+      "consciousness": 0.7
+    }
+  },
+  {
+    "id": "ability.xuanyuan-yiqi-gong",
+    "name": "玄元一气功",
+    "description": "玄元一气，六合归真。玄门上乘筑基心法，采天地纯粹玄元之气，周天百骸形神兼修，无偏无颇。",
+    "discipline": "internal",
+    "style": "five-elements",
+    "tier": 3,
+    "quality": 3,
+    "category": "spell",
+    "element": "none",
+    "rootAttribute": "meridians",
+    "rootExpEfficiencyPerLevel": 0.04,
+    "rootExpMultipliers": {
+      "stamina": 2.0,
+      "meridians": 2.0,
+      "attack": 2.0,
+      "bone": 2.0,
+      "agility": 2.0,
+      "consciousness": 2.0
+    }
+  }
+]

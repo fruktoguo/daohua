@@ -1,0 +1,3 @@
+[submodule "vendor/YuoCore"]
+	path = vendor/YuoCore
+	url = https://github.com/fruktoguo/YuoCore.git

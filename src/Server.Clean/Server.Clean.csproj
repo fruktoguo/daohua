@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Server.Clean</RootNamespace>
+    <AssemblyName>DaoHua.Server.Clean</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- 私有扩展模块（反多开等）：默认探测兄弟仓库 DaoHua-Private（仓库根上一级），
+         存在则源码注入本程序集——在主仓库内构建为开源版，从私有测试引用构建时自动为完整版；
+         生产镜像构建显式传入 DaoHuaPrivateRoot（/src/Private），路径缺失时通配零匹配自动降级为开源版。 -->
+    <DaoHuaPrivateRoot Condition="'$(DaoHuaPrivateRoot)' == '' and Exists('$(MSBuildThisFileDirectory)../../../DaoHua-Private')">$(MSBuildThisFileDirectory)../../../DaoHua-Private</DaoHuaPrivateRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Server.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Domain/Domain.csproj" />
+    <ProjectReference Include="../Protocol/Protocol.csproj" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <Compile Include="GlobalUsings.cs" />
+    <Compile Include="BenchmarkTelemetry.cs" />
+    <Compile Include="BenchmarkHost.cs" />
+    <Compile Include="PlayerLogBuffer.cs" />
+    <Compile Include="../Server/GlobalUsings.cs" Link="GlobalUsings.cs" />
+    <Compile Include="../Server/Clean/**/*.cs" LinkBase="Clean" />
+    <Compile Include="$(DaoHuaPrivateRoot)/server/**/*.cs" Condition="'$(DaoHuaPrivateRoot)' != ''" LinkBase="Private" />
+  </ItemGroup>
+</Project>

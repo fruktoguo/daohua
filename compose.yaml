@@ -1,0 +1,224 @@
+name: daohua-local
+
+services:
+  db:
+    # PostgreSQL 18 使用独立本地卷；原 PostgreSQL 17 卷保留，不自动升级或删除。
+    image: postgres:18-alpine
+    container_name: daohua-local-db
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: daohua
+      POSTGRES_USER: daohua
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-daohua-local-dev}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - max_connections=50
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - fsync=on
+      - -c
+      - full_page_writes=on
+      - -c
+      - synchronous_commit=on
+      - -c
+      - wal_compression=on
+      - -c
+      - archive_mode=off
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - max_wal_size=1GB
+      - -c
+      - min_wal_size=128MB
+      - -c
+      - autovacuum=on
+      - -c
+      - autovacuum_max_workers=2
+    volumes:
+      - daohua-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U daohua -d daohua"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    shm_size: 256m
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  app:
+    build:
+      context: .
+      target: server-runtime
+      args:
+        BUILD_VERSION: local
+    image: daohua:local
+    container_name: daohua-local-app
+    init: true
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      compute-node:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${APP_PORT:-5128}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=32;Minimum Pool Size=2;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__EnableSchemaBootstrap: "true"
+      Storage__SectionFlushBatchSize: "8192"
+      Storage__SectionFlushIntervalMilliseconds: "1000"
+      Storage__SectionFlushLeaseSeconds: "30"
+      Storage__OutboxBatchSize: "128"
+      Storage__OutboxPollIntervalMilliseconds: "1000"
+      Storage__RetentionBatchSize: "256"
+      Storage__DeliveredOutboxRetentionDays: "7"
+      Storage__SessionRetentionDays: "7"
+      Storage__AuditRetentionDays: "30"
+      Storage__ComputeJobRetentionDays: "2"
+      Storage__DataProtectionKeyRetentionDays: "180"
+      Server__MaxWebSocketMessageBytes: "1048576"
+      Server__WebSocketOutboundCapacity: "256"
+      Auth__SessionLifetimeDays: "30"
+      Market__PartitionCount: "1"
+      Market__PartitionId: "0"
+      ComputeNode__Enabled: "true"
+      ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
+      Ops__Enabled: "${OPS_ENABLED:-true}"
+      Ops__Path: "${OPS_PATH:-}"
+      Ops__Token: "${OPS_TOKEN:-}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    cpus: "${APP_CPUS:-1.00}"
+    mem_limit: ${APP_MEM_LIMIT:-1536m}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # ComputeNode 是无状态可丢失的派生计算服务，不挂载数据库卷、不接收公网流量。
+  compute-node:
+    build:
+      context: .
+      target: compute-runtime
+      args:
+        BUILD_VERSION: local
+    image: daohua-compute:local
+    container_name: daohua-local-compute
+    init: true
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8090
+      ComputeNode__Urls: http://+:8090
+      ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
+      # 反向拨入：节点主动 WebSocket 连接主服链路，进入动态节点组接收批次。
+      ComputeNode__UpstreamUrl: "http://app:8080/internal/compute-link"
+      ComputeNode__NodeName: "local-compute"
+      ComputeNode__MaxJobsPerBatch: "128"
+      ComputeNode__MaxConcurrentBatches: "2"
+      GameData__Directory: /app/config/game-data
+    expose:
+      - "8090"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    cpus: "${COMPUTE_CPUS:-0.25}"
+    mem_limit: ${COMPUTE_MEM_LIMIT:-512m}
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8090/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
+  # 默认 app 已内置 SectionFlushWorker；独立 worker 可通过 profile 启用。
+  persistence-worker:
+    profiles: ["worker"]
+    image: daohua:local
+    container_name: daohua-local-persistence-worker
+    init: true
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["dotnet", "Server.dll", "--role", "persistence-worker"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://127.0.0.1:8081
+      DAOHUA_PROCESS_ROLE: persistence-worker
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=16;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__EnableSchemaBootstrap: "false"
+      Storage__SectionFlushBatchSize: "8192"
+      Storage__SectionFlushIntervalMilliseconds: "1000"
+      Storage__SectionFlushLeaseSeconds: "30"
+      Storage__OutboxBatchSize: "128"
+      Storage__OutboxPollIntervalMilliseconds: "1000"
+      ComputeNode__Enabled: "true"
+      ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    cpus: "${WORKER_CPUS:-0.50}"
+    mem_limit: ${WORKER_MEM_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
+volumes:
+  daohua-postgres:
+    name: daohua-local-postgres18

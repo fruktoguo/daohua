@@ -1,0 +1,393 @@
+/**
+ * 商店页（shop）：系统商店货架与独立二次确认购买弹窗。
+ * 视觉语言沿用暗墨金线修仙面板：紧凑物品格子展示、等宽数值、限购角标与金色功德微标。
+ */
+
+.shop-page {
+  display: flex;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.shop-header {
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.shop-subtitle {
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  letter-spacing: 0.14em;
+}
+
+.shop-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.shop-header-status {
+  font-size: var(--text-sm);
+}
+
+.shop-header-status.is-error {
+  color: var(--danger);
+}
+
+.shop-header-status.is-loading {
+  color: var(--text-dim);
+}
+
+.shop-wallet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--gold-dim);
+  background: var(--gold-faint);
+  color: var(--gold-bright);
+  font-size: var(--text-sm);
+  border-radius: 4px;
+  cursor: help;
+}
+
+.shop-wallet-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.2);
+  border: 1px solid var(--gold);
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.shop-wallet-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+}
+
+.shop-wallet-unit {
+  font-size: var(--text-xs);
+  color: var(--gold);
+}
+
+.shop-refresh {
+  min-width: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold);
+  background: transparent;
+  font-size: var(--text-base);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.shop-refresh:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.shop-refresh:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.shop-board {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 6px 16px;
+}
+
+.shop-empty {
+  margin: 48px 0 0;
+  color: var(--text-dim);
+  font-size: var(--text-base);
+  text-align: center;
+}
+
+/* 紧凑货架网格 */
+.shop-shelf-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-content: start;
+}
+
+/* 单个紧凑商品格子条目 */
+.shop-item-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(201, 180, 109, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(160deg, rgba(201, 180, 109, 0.06), transparent 50%),
+    linear-gradient(180deg, rgba(31, 29, 24, 0.94), rgba(22, 21, 18, 0.98));
+  cursor: pointer;
+  transition: border-color 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
+  user-select: none;
+  min-width: 82px;
+}
+
+.shop-item-slot:hover {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 10px rgba(201, 180, 109, 0.2);
+}
+
+.shop-item-slot:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.shop-item-slot:active {
+  transform: translateY(0);
+}
+
+.shop-item-slot.is-sold-out {
+  opacity: 0.65;
+  border-color: rgba(140, 130, 110, 0.18);
+}
+
+.shop-slot-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shop-item-target {
+  display: block;
+}
+
+.shop-item-tile-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.shop-item-tile-wrap .item-tile {
+  --item-tile-size: 60px;
+}
+
+/* 物品格子右上角限购/售罄角标 */
+.shop-slot-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.02em;
+  background: rgba(201, 180, 109, 0.25);
+  color: var(--gold-bright);
+  border: 1px solid var(--gold);
+  line-height: 1.2;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.shop-slot-badge.is-sold-out {
+  background: rgba(217, 79, 79, 0.25);
+  color: var(--danger-bright, #ff6b6b);
+  border-color: var(--danger, #d94f4f);
+}
+
+/* 格子底部价格 */
+.shop-slot-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.shop-price-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xs);
+  color: var(--gold);
+  background: rgba(201, 180, 109, 0.15);
+  border: 1px solid rgba(201, 180, 109, 0.35);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 1.2;
+}
+
+.shop-price-val {
+  font-weight: var(--font-weight-medium);
+}
+
+/* 独立二次确认购买弹窗 (ShopBuyModal) */
+.shop-buy-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+}
+
+.shop-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shop-modal-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-medium);
+  color: var(--gold-bright);
+  letter-spacing: 0.08em;
+}
+
+.shop-modal-item-showcase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.shop-modal-item-showcase .item-tile {
+  --item-tile-size: 64px;
+}
+
+.shop-modal-item-name {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-medium);
+  color: var(--gold-bright);
+  letter-spacing: 0.04em;
+}
+
+.shop-modal-item-sub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+
+.shop-modal-limit-note {
+  font-size: var(--text-xs);
+  color: var(--gold);
+  background: rgba(201, 180, 109, 0.12);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(201, 180, 109, 0.25);
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-modal-limit-note.is-exhausted {
+  color: var(--danger-bright, #ff6b6b);
+  background: rgba(217, 79, 79, 0.12);
+  border-color: rgba(217, 79, 79, 0.3);
+}
+
+.shop-modal-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(201, 180, 109, 0.15);
+  border-radius: 6px;
+  background: rgba(20, 19, 16, 0.6);
+}
+
+.shop-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-base);
+}
+
+.shop-modal-row-label {
+  color: var(--text-dim);
+}
+
+.shop-modal-row-val {
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-modal-row.is-total .shop-modal-row-val {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-medium);
+  color: var(--gold-bright);
+}
+
+.shop-modal-row-val.is-insufficient {
+  color: var(--danger-bright, #ff6b6b);
+}
+
+.shop-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.shop-modal-confirm-btn {
+  min-width: 104px;
+  padding: 8px 18px;
+  border: 1px solid var(--gold);
+  background: linear-gradient(180deg, rgba(232, 214, 154, 0.22), rgba(201, 180, 109, 0.08));
+  color: var(--gold-bright);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border-radius: 4px;
+}
+
+.shop-modal-confirm-btn:hover:not(:disabled) {
+  border-color: var(--gold-bright);
+  background: linear-gradient(180deg, rgba(232, 214, 154, 0.32), rgba(201, 180, 109, 0.15));
+  color: #fff;
+  box-shadow: 0 0 10px rgba(201, 180, 109, 0.25);
+}
+
+.shop-modal-confirm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: rgba(201, 180, 109, 0.18);
+  background: transparent;
+  color: var(--text-dim);
+}
+
+@media (max-width: 768px) {
+  .shop-shelf-grid {
+    gap: 12px;
+  }
+
+  .shop-item-slot {
+    min-width: 74px;
+    padding: 6px 8px;
+  }
+
+  .shop-item-tile-wrap .item-tile {
+    --item-tile-size: 52px;
+  }
+}

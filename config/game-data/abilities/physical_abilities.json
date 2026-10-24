@@ -1,0 +1,192 @@
+[
+  {
+    "id": "ability.heavy-slash",
+    "name": "重斩",
+    "description": "重剑破空，一斩开山。",
+    "style": "sword",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 18000,
+    "castMilliseconds": 1000,
+    "damageRatio": 1.8,
+    "flatDamage": 20,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 10.0,
+    "rootAttribute": "agility",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.chain-strike",
+    "name": "连环",
+    "description": "剑势连绵，环环相扣。",
+    "style": "sword",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 16000,
+    "castMilliseconds": 1000,
+    "damageRatio": 0.8,
+    "flatDamage": 10,
+    "hitCount": 3,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 10.0,
+    "rootAttribute": "agility",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.taunt",
+    "name": "嘲讽",
+    "description": "怒喝惊四野，引敌向吾身。",
+    "style": "body",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 55000,
+    "castMilliseconds": 200,
+    "targetType": "self",
+    "damageRatio": 0.0,
+    "threatGain": 500.0,
+    "buff": {
+      "buffId": "buff.taunt",
+      "name": "嘲讽",
+      "durationSeconds": 60.0,
+      "threatPoints": 400,
+      "threatPerSecondMaxHpPoints": 10
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "self",
+        "condition": "buff-stacks",
+        "comparator": "equal",
+        "value": 0.0,
+        "buffId": "buff.taunt"
+      }
+    ],
+    "manaCost": 20.0,
+    "rootAttribute": "stamina",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.heavy-clouds",
+    "name": "重云",
+    "description": "重云压城阙，掌落万敌崩。",
+    "style": "sword",
+    "tier": 2,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 24000,
+    "castMilliseconds": 2000,
+    "targetType": "allEnemies",
+    "damageRatio": 1.2,
+    "flatDamage": 40,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 40.0,
+    "rootAttribute": "agility",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.star-piercer",
+    "name": "贯星",
+    "description": "一剑贯星斗，余势仍未休。",
+    "style": "sword",
+    "tier": 2,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 36000,
+    "castMilliseconds": 2000,
+    "damageRatio": 3.0,
+    "flatDamage": 50,
+    "chainOnKillCount": 2,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 30.0,
+    "rootAttribute": "agility",
+    "discipline": "spell"
+  }
+  ,
+  {
+    "id": "ability.sui-gang",
+    "name": "碎罡",
+    "description": "崩碎自身护体罡气，化坚甲为无边煞力，舍身狂暴，撼天裂地。",
+    "style": "blade",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 60000,
+    "castMilliseconds": 3000,
+    "targetType": "self",
+    "damageRatio": 0.0,
+    "flatDamage": 0,
+    "buffs": [
+      {
+        "buffId": "buff.sui-gang",
+        "name": "碎罡",
+        "durationSeconds": 20.0,
+        "resistancePoints": -400.0,
+        "stackPolicy": "maxKeep"
+      },
+      {
+        "buffId": "buff.sha-li",
+        "name": "煞力",
+        "durationSeconds": 20.0,
+        "attackPower": 1.0,
+        "resistancePerStack": 1.0,
+        "resistanceStackRatio": 0.3,
+        "stackPolicy": "maxKeep"
+      },
+      {
+        "buffId": "buff.gang-feng",
+        "name": "罡锋",
+        "durationSeconds": 20.0,
+        "accuracy": 1.0,
+        "critical": 1.0,
+        "missingHitpointsPerStack": 5.0,
+        "stackPolicy": "maxKeep"
+      }
+    ],
+    "defaultTriggers": [
+      {
+        "dependency": "self",
+        "condition": "buff-stacks",
+        "comparator": "equal",
+        "value": 0.0,
+        "buffId": "buff.sui-gang"
+      }
+    ],
+    "manaCost": 0.0,
+    "rootAttribute": "stamina",
+    "discipline": "spell"
+  }
+]

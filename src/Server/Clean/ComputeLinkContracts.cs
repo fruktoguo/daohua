@@ -1,0 +1,134 @@
+using System.Text.Json.Nodes;
+
+namespace Server.Clean;
+
+/// <summary>
+/// compute-link.v1.3：计算节点 → 主服的反向拨入链路契约。
+/// 节点主动建立 WebSocket 长连接（握手携带 X-Compute-Token）后即注册进动态节点组，
+/// 主服经该连接下发 compute.v2 批次并回收结果；连接存活即节点在线，断开即热拔出。
+/// v1.1 在 hello 增加节点批次承接能力字段（MaxJobsPerBatch/MaxBatchBytes），主服按协商能力装配批次；
+/// v1.2 在 hello 增加 RuntimeFingerprint（进程架构/运行时描述），注册视图与接入日志透传，
+/// 用于跨架构确定性差异诊断，不参与裁决。
+/// v1.3 增加优雅排空帧：drain（主服→节点，主服下线/排空通知）与 draining（节点→主服，
+/// 节点停机排空通知）；两帧都是提示语义，底层正确性仍由 compute_jobs 租约兜底。
+/// 批次载荷完全复用 <see cref="ComputeDispatchContract"/> 的 compute.v2 类型，链路本身只定义信封。
+/// </summary>
+public static class ComputeLinkContract
+{
+    /// <summary>链路契约版本，必须与节点端完全一致。</summary>
+    public const string Version = "compute-link.v1.3";
+    /// <summary>节点拨入端点路径。</summary>
+    public const string Path = "/internal/compute-link";
+    /// <summary>握手鉴权请求头（与 compute.v1 同源）。</summary>
+    public const string TokenHeader = ComputeDispatchContract.TokenHeader;
+    /// <summary>单帧消息最大字节数：compute.v2 批次上限 16 MiB + 信封冗余。</summary>
+    public const int MaxMessageBytes = 20 * 1024 * 1024;
+    /// <summary>同时在线节点数上限，超出拒绝拨入。</summary>
+    public const int MaxConnectedNodes = 64;
+    /// <summary>节点单条链路声明的最大并发批次数上限。</summary>
+    public const int MaxNodeConcurrency = 64;
+    /// <summary>握手首帧（hello）等待超时。</summary>
+    public static readonly TimeSpan HelloTimeout = TimeSpan.FromSeconds(15);
+    /// <summary>nodeName 最大长度。</summary>
+    public const int MaxNodeNameLength = 128;
+}
+
+/// <summary>
+/// 节点拨入后的首帧握手：声明契约版本、节点名、并发容量、配表指纹、批次承接能力与运行时指纹。
+/// MaxJobsPerBatch/MaxBatchBytes 为 0 表示未声明，主服按自身配置上限装配；
+/// RuntimeFingerprint 形如 "Arm64/.NET 10.0.1"，仅作诊断展示，不参与裁决。
+/// </summary>
+public sealed record ComputeLinkHello(
+    string ContractVersion,
+    string NodeName,
+    int MaxConcurrentBatches,
+    string? GameDataFingerprint,
+    int MaxJobsPerBatch = 0,
+    long MaxBatchBytes = 0,
+    string? RuntimeFingerprint = null);
+
+/// <summary>主服接受注册后的应答帧。</summary>
+public sealed record ComputeLinkWelcome(
+    string ContractVersion,
+    Guid NodeId,
+    long ServerTimeUnixMilliseconds);
+
+/// <summary>主服经链路下发的单个批次。</summary>
+public sealed record ComputeLinkBatch(Guid BatchId, ComputeAdvanceBatchRequest Request);
+
+/// <summary>节点回传的批次结果。</summary>
+public sealed record ComputeLinkResult(Guid BatchId, ComputeAdvanceBatchResponse? Response);
+
+/// <summary>链路级错误帧（握手拒绝等），发出后连接即被关闭。</summary>
+public sealed record ComputeLinkError(string Code, string Message);
+
+/// <summary>
+/// 主服 → 节点的排空通知（v1.3）：主服停机/滚动升级前下发，
+/// 节点停止接新批次、把在飞批次跑完回传后主动断链并重连（落点可能是新实例）。
+/// Reason 仅用于日志诊断；帧丢失时退化为普通断线，语义由任务租约兜底。
+/// </summary>
+public sealed record ComputeLinkDrain(string? Reason = null);
+
+/// <summary>
+/// 节点 → 主服的排空通知（v1.3）：节点停机/重部署前上报，
+/// 主服立即把该节点标记为 Draining 停止派发新批次；在飞批次结果照常回收，
+/// 节点排空完成后自行断链，注销仍走既有断线路径。
+/// </summary>
+public sealed record ComputeLinkDraining(string? Reason = null);
+
+/// <summary>
+/// compute-link 帧编解码：所有消息扁平序列化为 JSON 文本帧，
+/// 以顶层 type 字段判别类型（hello/welcome/batch/result/error/drain/draining），未知类型直接判非法。
+/// </summary>
+public static class ComputeLinkCodec
+{
+    /// <summary>把链路消息编码为 WebSocket 文本帧字节。</summary>
+    public static byte[] Encode(object message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        var node = JsonSerializer.SerializeToNode(message, ServerJson.Options)!.AsObject();
+        node.Insert(0, "type", message switch
+        {
+            ComputeLinkHello => "hello",
+            ComputeLinkWelcome => "welcome",
+            ComputeLinkBatch => "batch",
+            ComputeLinkResult => "result",
+            ComputeLinkError => "error",
+            ComputeLinkDrain => "drain",
+            ComputeLinkDraining => "draining",
+            _ => throw new InvalidDataException($"未知链路消息类型：{message.GetType().Name}。")
+        });
+        return JsonSerializer.SerializeToUtf8Bytes(node, ServerJson.Options);
+    }
+
+    /// <summary>把一帧原始字节解码为具体链路消息；type 缺失或非法时抛 <see cref="InvalidDataException"/>。</summary>
+    public static object Decode(ReadOnlyMemory<byte> frame)
+    {
+        using var document = JsonDocument.Parse(frame);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("type", out var typeElement)
+            || typeElement.ValueKind != JsonValueKind.String)
+        {
+            throw new InvalidDataException("链路帧缺少 type 判别字段。");
+        }
+        return typeElement.GetString() switch
+        {
+            "hello" => root.Deserialize<ComputeLinkHello>(ServerJson.Options)
+                ?? throw new InvalidDataException("hello 帧载荷无效。"),
+            "welcome" => root.Deserialize<ComputeLinkWelcome>(ServerJson.Options)
+                ?? throw new InvalidDataException("welcome 帧载荷无效。"),
+            "batch" => root.Deserialize<ComputeLinkBatch>(ServerJson.Options)
+                ?? throw new InvalidDataException("batch 帧载荷无效。"),
+            "result" => root.Deserialize<ComputeLinkResult>(ServerJson.Options)
+                ?? throw new InvalidDataException("result 帧载荷无效。"),
+            "error" => root.Deserialize<ComputeLinkError>(ServerJson.Options)
+                ?? throw new InvalidDataException("error 帧载荷无效。"),
+            "drain" => root.Deserialize<ComputeLinkDrain>(ServerJson.Options)
+                ?? throw new InvalidDataException("drain 帧载荷无效。"),
+            "draining" => root.Deserialize<ComputeLinkDraining>(ServerJson.Options)
+                ?? throw new InvalidDataException("draining 帧载荷无效。"),
+            var other => throw new InvalidDataException($"未知链路帧类型：{other}。")
+        };
+    }
+}

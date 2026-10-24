@@ -1,0 +1,244 @@
+[
+  {
+    "id": "map.qingyun-mountains",
+    "name": "青云仙山",
+    "description": "青云宗庇护之下的入门修真福地。山脚炊烟、清溪灵草，山道茶肆坊市，山顶绝顶草庐俯瞰红尘茫茫云海。",
+    "backgroundSeed": 73021,
+    "nodes": [
+      {
+        "id": "node.yunxi-village",
+        "name": "云溪村",
+        "description": "炊烟袅袅的宁静山村，溪水穿村而过，老槐树与古井见证一代代求道者的启程。",
+        "npcs": [
+          {
+            "id": "npc.gate-disciple",
+            "name": "守山弟子",
+            "kind": "npc",
+            "description": "村口木栅旁登记来往行人的年轻弟子。",
+            "effect": "集里有规矩，北井夜里别去，西岭入夜前回来。"
+          }
+        ],
+        "x": 20,
+        "y": 65,
+        "availableActionIds": [
+          "cultivation.draw-qi",
+          "explore.gather-ningxue-grass",
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.qi-beast"
+        ],
+        "buildableTemplate": "all",
+        "prebuiltBuildings": [
+          { "buildingId": "building.demon-seal-array", "level": 30 },
+          { "buildingId": "building.rejuvenation-array", "level": 40 },
+          { "buildingId": "building.mana-regen-array", "level": 40 }
+        ]
+      },
+      {
+        "id": "node.shuyu-brook",
+        "name": "漱玉溪",
+        "description": "清澈见底的山涧溪流，鹅卵石如玉，破晓时分灵木上的露水最为纯净。",
+        "x": 12,
+        "y": 82,
+        "availableActionIds": [
+          "explore.collect-morning-dew",
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.shuyu-brook"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.herb-valley",
+        "name": "百草谷",
+        "description": "背阴潮湿的山谷中野生草木繁茂，药香扑鼻，自生低阶灵草。",
+        "npcs": [
+          {
+            "id": "npc.herbalist-lin",
+            "name": "采药人林伯",
+            "kind": "npc",
+            "description": "青岚药谷的老采药人，熟悉药谷每一条路，知道哪片坡的草壮。",
+            "effect": "采药先认炁，认炁先认地。"
+          }
+        ],
+        "x": 10,
+        "y": 45,
+        "availableActionIds": [
+          "explore.gather-ningxue-grass",
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.herb-valley"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.peach-forest",
+        "name": "落霞桃林",
+        "description": "阳坡之上漫山桃花盛开，古桃木枝干苍劲，蕴含微弱纯阳灵气。",
+        "x": 38,
+        "y": 78,
+        "availableActionIds": [
+          "explore.chop-peach-wood"
+        ],
+        "encounterIds": [
+          "encounter.sunset-ridge"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.rock-beach",
+        "name": "清石水滩",
+        "description": "溪水冲刷出的露天砂石滩，裸露的山岩中可见沉重致密的乌铁矿石。",
+        "x": 35,
+        "y": 92,
+        "availableActionIds": [
+          "explore.mine-dark-iron",
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.rock-beach"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.tea-house",
+        "name": "望云茶肆",
+        "description": "山道转折处的草棚茶摊，过路散修在此歇脚喝茶、互通有无，灵市交易活跃。",
+        "x": 45,
+        "y": 48,
+        "npcs": [
+          {
+            "id": "npc.market-broker",
+            "name": "灵市牙人",
+            "kind": "npc",
+            "description": "替往来散修整理挂牌与交割的牙人，不问来路，也不问去处。",
+            "effect": "坊市挂单中介"
+          }
+        ],
+        "availableActionIds": [
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.tea-house"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.cloud-gate",
+        "name": "青云山门",
+        "description": "白玉石牌坊高耸入云，连接凡尘与仙门，宗门守山灵兽护佑试炼。",
+        "x": 60,
+        "y": 30,
+        "availableActionIds": [
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.twilight-pass"
+        ],
+        "buildableTemplate": "all",
+        "prebuiltBuildings": [
+          { "buildingId": "building.demon-seal-array", "level": 20 }
+        ]
+      },
+      {
+        "id": "node.cloud-peak",
+        "name": "云巅草庐",
+        "description": "青云仙山极巅之所，没入茫茫云海之上。老道闲坐崖边抚琴观云，俯瞰人间万家灯火。",
+        "x": 82,
+        "y": 15,
+        "npcs": [
+          {
+            "id": "npc.peak-elder",
+            "name": "抚琴老道",
+            "kind": "npc",
+            "description": "闲坐崖边抚琴观云的老道，俯瞰人间万家灯火，少与来客攀谈。",
+            "effect": "静观云海"
+          }
+        ],
+        "buildings": [
+          {
+            "id": "building.peak-cottage",
+            "name": "绝顶道庐",
+            "kind": "building",
+            "description": "依悬崖古松而建的简朴茅庐，俯瞰茫茫云海与人间烟火。",
+            "effect": "吐纳修炼效果提升 25%"
+          }
+        ],
+        "cultivationMultiplier": 1.25,
+        "availableActionIds": [
+          "cultivation.draw-qi",
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.cloud-peak"
+        ],
+        "buildableTemplate": "all"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge.village-shuyu",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.shuyu-brook",
+        "durationSeconds": 8
+      },
+      {
+        "id": "edge.village-herb",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.herb-valley",
+        "durationSeconds": 10
+      },
+      {
+        "id": "edge.village-peach",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.peach-forest",
+        "durationSeconds": 9
+      },
+      {
+        "id": "edge.village-tea",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.tea-house",
+        "durationSeconds": 12
+      },
+      {
+        "id": "edge.shuyu-rock",
+        "fromNodeId": "node.shuyu-brook",
+        "toNodeId": "node.rock-beach",
+        "durationSeconds": 11
+      },
+      {
+        "id": "edge.peach-rock",
+        "fromNodeId": "node.peach-forest",
+        "toNodeId": "node.rock-beach",
+        "durationSeconds": 7
+      },
+      {
+        "id": "edge.herb-tea",
+        "fromNodeId": "node.herb-valley",
+        "toNodeId": "node.tea-house",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.peach-tea",
+        "fromNodeId": "node.peach-forest",
+        "toNodeId": "node.tea-house",
+        "durationSeconds": 10
+      },
+      {
+        "id": "edge.tea-gate",
+        "fromNodeId": "node.tea-house",
+        "toNodeId": "node.cloud-gate",
+        "durationSeconds": 12
+      },
+      {
+        "id": "edge.gate-peak",
+        "fromNodeId": "node.cloud-gate",
+        "toNodeId": "node.cloud-peak",
+        "durationSeconds": 15
+      }
+    ]
+  }
+]

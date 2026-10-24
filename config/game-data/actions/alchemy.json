@@ -1,0 +1,129 @@
+[
+  {
+    "id": "alchemy.refine-qi-pill",
+    "name": "引气丹",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 12,
+    "inputs": {
+      "item.ningxue-grass": 3
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.qi-gathering-pill",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-zhixue-powder",
+    "name": "止血散",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.herb-essence": 1,
+      "item.ningxue-grass": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.zhixue-powder",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-shunqi-pill",
+    "name": "顺气丸",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.herb-essence": 1,
+      "item.morning-dew": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.shunqi-pill",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-tongmai-pill",
+    "name": "通脉丹",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.banling-essence": 2,
+      "item.demon-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.tongmai-pill",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-reverse-fate-pill",
+    "name": "逆命丹",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 60,
+    "inputs": {},
+    "foundationCostRatio": 0.25,
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.reverse-fate-pill",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  }
+]

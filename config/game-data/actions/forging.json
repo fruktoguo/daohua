@@ -1,0 +1,1650 @@
+[
+  {
+    "id": "forge.qingfeng-sword",
+    "name": "青锋剑",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-bone": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.qingfeng-sword",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.pishan-blade",
+    "name": "劈山刀",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-bone": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.pishan-blade",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.shufa-scarf",
+    "name": "束发巾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.shufa-scarf",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.baina-armor",
+    "name": "百衲甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.baina-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.zhakou-pants",
+    "name": "扎口裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.zhakou-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.jinfeng-scarf",
+    "name": "劲风巾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.jinfeng-scarf",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.qingpi-armor",
+    "name": "轻皮甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.qingpi-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.jixing-pants",
+    "name": "疾行裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.jixing-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.fan-tie-dart",
+    "name": "兽骨匕",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-bone": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.fan-tie-dart",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tiepi-guard",
+    "name": "精铁盾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tiepi-guard",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.shouya-pendant",
+    "name": "兽牙坠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-bone": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.shouya-pendant",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.jiujie-staff",
+    "name": "九节杖",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.jiujie-staff",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.suxin-zither",
+    "name": "素心琴",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.suxin-zither",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.hunyuan-scarf",
+    "name": "混元巾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.hunyuan-scarf",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.suma-robe",
+    "name": "素麻袍",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.suma-robe",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.xingqi-pants",
+    "name": "行气裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xingqi-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.qingmu-bead",
+    "name": "桃灵珠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.qingmu-bead",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.ganlu-flask",
+    "name": "甘露瓶",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.ganlu-flask",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.taomu-talisman",
+    "name": "桃木符",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.taomu-talisman",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.xuantie-sword",
+    "name": "玄铁长剑",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 16,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.rock-fang": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xuantie-sword",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.piyan-blade",
+    "name": "劈岩重刀",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 16,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.rock-fang": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.piyan-blade",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.kuteng-staff",
+    "name": "枯藤法杖",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 16,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.water-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.kuteng-staff",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.mingquan-zither",
+    "name": "鸣泉古琴",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 16,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.water-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.mingquan-zither",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.xuantie-headband",
+    "name": "玄铁护额",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.thick-beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xuantie-headband",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.suozi-armor",
+    "name": "锁子重甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 16,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.thick-beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.suozi-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.diejia-leggings",
+    "name": "叠甲胫",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.thick-beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.diejia-leggings",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.canglang-cap",
+    "name": "苍狼皮冠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.rough-wolf-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.canglang-cap",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.canglang-vest",
+    "name": "苍狼轻裘",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 16,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.rough-wolf-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.canglang-vest",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.canglang-pants",
+    "name": "苍狼皮裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.rough-wolf-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.canglang-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.liuyun-ribbon",
+    "name": "流云法带",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.water-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.liuyun-ribbon",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.bishui-robe",
+    "name": "碧水灵袍",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 16,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.water-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.bishui-robe",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.zhishui-pants",
+    "name": "织水法裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.water-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.zhishui-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tiemu-shield",
+    "name": "铁木坚盾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.thick-beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tiemu-shield",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.ningshui-charm",
+    "name": "凝水灵符",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.water-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.ningshui-charm",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.canglang-ring",
+    "name": "苍狼煞牙戒",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.rough-wolf-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.canglang-ring",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.bibo-pendant",
+    "name": "碧波静心佩",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 9,
+    "durationSeconds": 11,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.water-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.bibo-pendant",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.pogang-sword",
+    "name": "破罡剑",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-copper": 7,
+      "item.beast-fang": 1,
+      "equipment.qingfeng-sword": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.pogang-sword",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.zhansha-blade",
+    "name": "斩煞刀",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-copper": 7,
+      "item.beast-fang": 1,
+      "equipment.pishan-blade": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.zhansha-blade",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.chijin-helmet",
+    "name": "赤金盔",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.shufa-scarf": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.chijin-helmet",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.yulin-armor",
+    "name": "鱼鳞甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-copper": 7,
+      "item.beast-fang": 1,
+      "equipment.baina-armor": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.yulin-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tazhen-greaves",
+    "name": "踏阵胫",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.zhakou-pants": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tazhen-greaves",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.zhanfeng-scarf",
+    "name": "斩风巾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.jinfeng-scarf": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.zhanfeng-scarf",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.liegang-armor",
+    "name": "裂罡甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-copper": 7,
+      "item.beast-fang": 1,
+      "equipment.qingpi-armor": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.liegang-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tafeng-pants",
+    "name": "踏风裤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.jixing-pants": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tafeng-pants",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.xuantie-dart",
+    "name": "赤牙匕",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.fan-tie-dart": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xuantie-dart",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.xuanjia-guard",
+    "name": "赤铜盾",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.tiepi-guard": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xuanjia-guard",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.chiwen-ring",
+    "name": "赤纹戒",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.refined-copper": 5,
+      "item.beast-fang": 1,
+      "equipment.shouya-pendant": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.chiwen-ring",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.chaoyuan-staff",
+    "name": "朝元杖",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.spirit-pine-crystal": 7,
+      "item.soul-talisman": 1,
+      "equipment.jiujie-staff": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.chaoyuan-staff",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.songfeng-zither",
+    "name": "松风琴",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.spirit-pine-crystal": 7,
+      "item.soul-talisman": 1,
+      "equipment.suxin-zither": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.songfeng-zither",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.ziwu-crown",
+    "name": "子午冠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.spirit-pine-crystal": 5,
+      "item.soul-talisman": 1,
+      "equipment.hunyuan-scarf": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.ziwu-crown",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.pichen-shirt",
+    "name": "辟尘衫",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.spirit-pine-crystal": 7,
+      "item.fire-feather": 1,
+      "equipment.suma-robe": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.pichen-shirt",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.liuyun-skirt",
+    "name": "流云裳",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.spirit-pine-crystal": 5,
+      "item.fire-feather": 1,
+      "equipment.xingqi-pants": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.liuyun-skirt",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.yaoling-bead",
+    "name": "曜灵珠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.spirit-pine-crystal": 5,
+      "item.soul-talisman": 1,
+      "equipment.qingmu-bead": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.yaoling-bead",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.huichun-bell",
+    "name": "回春铃",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.spirit-pine-crystal": 5,
+      "item.fire-feather": 1,
+      "equipment.ganlu-flask": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.huichun-bell",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.juling-pendant",
+    "name": "聚灵佩",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.spirit-pine-crystal": 5,
+      "item.soul-talisman": 1,
+      "equipment.taomu-talisman": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.juling-pendant",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-herb-hoe",
+    "name": "桃木铲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 1,
+      "item.peach-wood": 4
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-herb-hoe",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-prospect-compass",
+    "name": "精铁镐",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 2,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-prospect-compass",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-flame-ding",
+    "name": "灵火炉",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 2,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-flame-ding",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-forge-hammer",
+    "name": "百炼铁钳",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 2,
+      "item.beast-bone": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-forge-hammer",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-talisman-brush",
+    "name": "桃木笔",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood": 5,
+      "item.beast-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-talisman-brush",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-formation-flag",
+    "name": "桃晶旗",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.peach-wood": 4,
+      "item.peach-wood-crystal": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-formation-flag",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-quench-anvil",
+    "name": "淬灵锤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-iron": 2,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-quench-anvil",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  }
+]

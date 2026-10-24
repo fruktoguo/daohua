@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    观测埋点编译开关：默认编译进本地/测试/基准构建；
+    生产镜像发布传入 -p:DaoHuaObservability=false 后，
+    DAOHUA_OBSERVE_OFF / YUOCORE_TRACE_OFF 让 RuntimeInstrumentation 与
+    YuoCoreTrace 的全部调用点在 JIT 后折叠为零指令（结构体 default + 空 Dispose）。
+  -->
+  <PropertyGroup Condition="'$(DaoHuaObservability)' == 'false'">
+    <DefineConstants>$(DefineConstants);DAOHUA_OBSERVE_OFF;YUOCORE_TRACE_OFF</DefineConstants>
+  </PropertyGroup>
+</Project>

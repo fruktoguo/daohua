@@ -1,0 +1,193 @@
+[
+  {
+    "id": "map.starfall-domain",
+    "name": "星陨异境",
+    "description": "天穹被天外陨星撕裂的狂暴异界（修仙三图）。焦土散发着荧光煞气，草木扭曲变异，乃是叩开仙门、踏入真正修仙界的试炼凶地。",
+    "backgroundSeed": 91402,
+    "nodes": [
+      {
+        "id": "node.astral-rift",
+        "name": "裂天界隙",
+        "description": "天空撕裂出幽紫裂痕的界域边缘，罡风呼啸，是踏入星陨异境的起点。",
+        "x": 129,
+        "y": 41,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.rift-edge"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.carrion-tomb",
+        "name": "腐生古冢",
+        "description": "古修残骨与腐朽道袍堆叠之地，死气深重，吸纳死气伴生的伴灵花在此妖艳绽放。",
+        "x": 132,
+        "y": 65,
+        "availableActionIds": [
+          "explore.gather-banling-flower"
+        ],
+        "encounterIds": [
+          "encounter.carrion-tomb"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.scorched-pines",
+        "name": "畸木焦林",
+        "description": "被天外星火烧焦的黑木林，枝干扭曲如人肢，吸收星煞之气的引灵松在此生长。",
+        "x": 135,
+        "y": 15,
+        "availableActionIds": [
+          "explore.chop-yinlingsong"
+        ],
+        "encounterIds": [
+          "encounter.charred-pines"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.fluorite-abyss",
+        "name": "荧石铜渊",
+        "description": "裂谷深处散发着幽绿荧光与滚烫地热的矿脉，伴生有高温赤铜矿石。",
+        "x": 160,
+        "y": 70,
+        "availableActionIds": [
+          "explore.mine-crimson-copper"
+        ],
+        "encounterIds": [
+          "encounter.crimson-abyss"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.blood-pool",
+        "name": "冥煞血池",
+        "description": "地脉煞气汇聚而成的污血潭，掠灵邪修与嗜血妖物在此祭炼魔煞法器。",
+        "x": 155,
+        "y": 35,
+        "cultivationMultiplier": 0.8,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.blood-rite"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.bone-pit",
+        "name": "白骨荒坑",
+        "description": "古战场万人坑遗迹，煞气化形为残刃尸煞与尸兵，四处游荡游猎生者。",
+        "x": 175,
+        "y": 55,
+        "cultivationMultiplier": 0.8,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.bone-pit"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.meteor-crater",
+        "name": "坠星天坑",
+        "description": "天外陨星坠落砸出的万丈巨坑，核心星核灼烧万物，坠星异兽盘踞在此。",
+        "x": 188,
+        "y": 25,
+        "cultivationMultiplier": 0.7,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.xuanyuan-ruins",
+        "name": "玄元门遗址",
+        "description": "星陨焦土深处被血煞阵法遮掩的上古道门废墟，残存灵脉与煞气交织，隐有玄门一气回荡。",
+        "x": 172,
+        "y": 35,
+        "cultivationMultiplier": 1.0,
+        "hidden": true,
+        "requirements": {
+          "consciousness": 30
+        },
+        "availableActionIds": [
+          "explore.mine-spirit-stone",
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.xuanyuan-ruins"
+        ],
+        "buildableTemplate": "all"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge.rift-tomb",
+        "fromNodeId": "node.astral-rift",
+        "toNodeId": "node.carrion-tomb",
+        "durationSeconds": 12
+      },
+      {
+        "id": "edge.rift-pines",
+        "fromNodeId": "node.astral-rift",
+        "toNodeId": "node.scorched-pines",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.tomb-abyss",
+        "fromNodeId": "node.carrion-tomb",
+        "toNodeId": "node.fluorite-abyss",
+        "durationSeconds": 15
+      },
+      {
+        "id": "edge.pines-blood",
+        "fromNodeId": "node.scorched-pines",
+        "toNodeId": "node.blood-pool",
+        "durationSeconds": 13
+      },
+      {
+        "id": "edge.tomb-blood",
+        "fromNodeId": "node.carrion-tomb",
+        "toNodeId": "node.blood-pool",
+        "durationSeconds": 16
+      },
+      {
+        "id": "edge.abyss-bone",
+        "fromNodeId": "node.fluorite-abyss",
+        "toNodeId": "node.bone-pit",
+        "durationSeconds": 11
+      },
+      {
+        "id": "edge.blood-bone",
+        "fromNodeId": "node.blood-pool",
+        "toNodeId": "node.bone-pit",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.pines-crater",
+        "fromNodeId": "node.scorched-pines",
+        "toNodeId": "node.meteor-crater",
+        "durationSeconds": 18
+      },
+      {
+        "id": "edge.bone-crater",
+        "fromNodeId": "node.bone-pit",
+        "toNodeId": "node.meteor-crater",
+        "durationSeconds": 16
+      },
+      {
+        "id": "edge.blood-xuanyuan",
+        "fromNodeId": "node.blood-pool",
+        "toNodeId": "node.xuanyuan-ruins",
+        "durationSeconds": 15
+      }
+    ]
+  }
+]

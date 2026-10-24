@@ -1,0 +1,278 @@
+[
+  {
+    "id": "enemy.demon-ape",
+    "name": "魔猿",
+    "visual": {
+      "renderer": "text",
+      "source": "猿"
+    },
+    "style": "sword",
+    "level": 8,
+    "rank": "elite",
+    "budgetCost": 35,
+    "weights": {
+      "hp": 0.87,
+      "mp": 1.15,
+      "ad": 1.01,
+      "armor": 1.01,
+      "mres": 0.29,
+      "hit": 1.09,
+      "eva": 1.09,
+      "break": 1.09,
+      "parry": 1.09
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-hide",
+        "dropChance": 0.5,
+        "minQuantity": 5,
+        "maxQuantity": 5
+      },
+      {
+        "itemId": "item.beast-bone",
+        "dropChance": 0.5,
+        "minQuantity": 5,
+        "maxQuantity": 5
+      },
+      {
+        "itemId": "item.tome.chain-strike",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.chain-strike",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.manniu-jin",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.manniu-jin",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 0.9
+      }
+    ]
+  },
+  {
+    "id": "enemy.armored-bear",
+    "name": "铁甲熊",
+    "visual": {
+      "renderer": "text",
+      "source": "熊"
+    },
+    "level": 5,
+    "rank": "elite",
+    "budgetCost": 45,
+    "weights": {
+      "hp": 1.08,
+      "mp": 1.15,
+      "ad": 0.87,
+      "armor": 1.45,
+      "mres": 0.58,
+      "hit": 0.87,
+      "eva": 0.72,
+      "break": 0.72,
+      "parry": 1.45
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-bone",
+        "dropChance": 0.5,
+        "minQuantity": 5,
+        "maxQuantity": 5
+      },
+      {
+        "itemId": "item.broken-spirit-core",
+        "dropChance": 0.5,
+        "minQuantity": 5,
+        "maxQuantity": 5
+      },
+      {
+        "itemId": "item.tome.heavy-slash",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-slash",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.taunt",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.taunt",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tiebu-shan",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tiebu-shan",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.taunt",
+        "level": 1,
+        "triggerHpRatio": 0.8
+      }
+    ]
+  },
+  {
+    "id": "enemy.chang-tiger",
+    "name": "伥虎",
+    "visual": {
+      "renderer": "text",
+      "source": "虎"
+    },
+    "style": "blade",
+    "level": 12,
+    "rank": "boss",
+    "budgetCost": 100,
+    "weights": {
+      "hp": 0.7,
+      "mp": 1.73,
+      "ad": 1.04,
+      "armor": 1.04,
+      "mres": 0.29,
+      "hit": 1.16,
+      "eva": 0.87,
+      "break": 1.16,
+      "parry": 1.16
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-hide",
+        "dropChance": 1.0,
+        "minQuantity": 10,
+        "maxQuantity": 10
+      },
+      {
+        "itemId": "item.beast-bone",
+        "dropChance": 1.0,
+        "minQuantity": 10,
+        "maxQuantity": 10
+      },
+      {
+        "itemId": "item.demon-dan",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.sha-fang",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.heavy-slash",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-slash",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.chain-strike",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.chain-strike",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tiebu-shan",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tiebu-shan",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.manniu-jin",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.manniu-jin",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tuna-gong",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tuna-gong",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.7
+      },
+      {
+        "abilityId": "ability.blazing-blast",
+        "level": 1,
+        "triggerHpRatio": 0.4
+      }
+    ],
+    "modifiers": {
+      "fireDamageReductionPoints": 5.8
+    }
+  }
+]

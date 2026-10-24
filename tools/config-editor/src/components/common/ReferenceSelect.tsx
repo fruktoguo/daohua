@@ -1,0 +1,342 @@
+// ==============================================================================
+// 文件名称: ReferenceSelect.tsx
+// 主要职责: 现代扁平化跨表外键 ID 引用下拉搜索组件 (Raycast/Spotlight 风格 Popover)
+// ==============================================================================
+
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { useConfigContext } from '../../context/ConfigContext';
+
+/** 跨表引用目标种类：决定选项数据源与徽章配色，与 GlobalLookups 的六张索引表一一对应。 */
+export type ReferenceKind = 'item' | 'ability' | 'monster' | 'encounter' | 'action' | 'node';
+
+interface ReferenceSelectProps {
+  kind: ReferenceKind;
+  label?: string;
+  description?: string;
+  value?: string | null;
+  onChange: (id: string | undefined) => void;
+  allowClear?: boolean;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+}
+
+/** 跨表外键引用选择器：按 kind 从全局索引取候选，Popover 内支持按名称/ID/副标题模糊搜索；引用值在索引中不存在时以红色「无效外键」警示（实时死链提示）。 */
+export function ReferenceSelect({
+  kind,
+  label,
+  description,
+  value,
+  onChange,
+  allowClear = true,
+  placeholder = '选择关联目标...',
+  className = '',
+  disabled = false
+}: ReferenceSelectProps) {
+  const { lookups } = useConfigContext();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 点击外部关闭弹层
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      // 延迟聚焦：弹层刚挂载时 ref 尚未绑定到 DOM，同步 focus 会落空，必须等下一帧渲染完成。
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  // 跨表选项索引
+  const options = useMemo(() => {
+    switch (kind) {
+      case 'item':
+        return lookups.itemList.map(i => ({
+          id: i.id,
+          title: i.name,
+          subtitle: `T${i.tier || 1} · ${i.category || i.kind || '物品'}`,
+          badge: i.kind,
+          badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+        }));
+      case 'ability':
+        return lookups.abilityList.map(a => ({
+          id: a.id,
+          title: a.name,
+          subtitle: `${a.style || '五行'} · ${a.category || '物理'} · ${a.element || '无'}`,
+          badge: a.style,
+          badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20'
+        }));
+      case 'monster':
+        return lookups.monsterList.map(m => ({
+          id: m.id,
+          title: m.name,
+          subtitle: `Lv.${m.level || 1} · ${m.rank || 'minion'}`,
+          badge: m.rank,
+          badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20'
+        }));
+      case 'encounter':
+        return lookups.encounterList.map(e => ({
+          id: e.id,
+          title: e.name,
+          subtitle: `遭遇战 · ${e.bossCount ? `包含 ${e.bossCount} 位首领` : '普通怪物群'}`,
+          badge: '遭遇',
+          badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+        }));
+      case 'action':
+        return lookups.actionList.map(a => ({
+          id: a.id,
+          title: a.name,
+          subtitle: `类型: ${a.type || '常规'}`,
+          badge: a.type,
+          badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
+        }));
+      case 'node':
+        return lookups.nodeList.map(n => ({
+          id: n.id,
+          title: n.name,
+          subtitle: `${n.mapName} · (${n.x}, ${n.y})`,
+          badge: n.mapId,
+          badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+        }));
+      default:
+        return [];
+    }
+  }, [kind, lookups]);
+
+  const currentOption = useMemo(() => {
+    if (!value) return null;
+    return options.find(o => o.id === value);
+  }, [value, options]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    const term = searchTerm.toLowerCase();
+    return options.filter(
+      o => o.id.toLowerCase().includes(term) || o.title.toLowerCase().includes(term) || o.subtitle.toLowerCase().includes(term)
+    );
+  }, [options, searchTerm]);
+
+  return (
+    <div className={`flex flex-col gap-1.5 ${className}`} ref={containerRef}>
+      {label && (
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5 tracking-tight">
+            {label}
+            {value && !currentOption && (
+              <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                未找到 ID: {value}
+              </span>
+            )}
+          </label>
+          {description && <span className="text-[11px] text-zinc-500 font-normal">{description}</span>}
+        </div>
+      )}
+
+      <div className="relative">
+        <div
+          onClick={() => !disabled && setIsOpen(!isOpen)}
+          className={`w-full min-h-[34px] px-3 py-1.5 bg-zinc-900/90 border rounded-lg flex items-center justify-between cursor-pointer text-sm transition-all duration-150 ${
+            isOpen
+              ? 'border-indigo-500 ring-2 ring-indigo-500/20'
+              : !currentOption && value
+              ? 'border-rose-500/50 bg-rose-500/5'
+              : 'border-zinc-800 hover:border-zinc-700'
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          {currentOption ? (
+            <div className="flex items-center gap-2 truncate">
+              <span className="font-medium text-zinc-100">{currentOption.title}</span>
+              <span className="text-xs text-zinc-500 font-mono">({currentOption.id})</span>
+              <span className="text-[11px] text-zinc-400 hidden sm:inline">{currentOption.subtitle}</span>
+            </div>
+          ) : value ? (
+            <span className="text-rose-300 font-mono text-xs truncate">无效外键: {value}</span>
+          ) : (
+            <span className="text-zinc-500 text-xs">{placeholder}</span>
+          )}
+
+          <div className="flex items-center gap-1.5 text-zinc-400 shrink-0">
+            {allowClear && value && !disabled && (
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onChange(undefined);
+                }}
+                className="hover:text-rose-400 p-0.5 text-xs text-zinc-500 transition-colors"
+                title="清空选择"
+              >
+                ✕
+              </button>
+            )}
+            <svg className={`w-4 h-4 text-zinc-500 transition-transform duration-150 ${isOpen ? 'rotate-180 text-indigo-400' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+
+        {/* 现代扁平 Popover 搜索浮层 */}
+        {isOpen && (
+          <div className="absolute z-50 left-0 right-0 top-full mt-1.5 bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl overflow-hidden max-h-72 flex flex-col backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-100">
+            <div className="p-2 border-b border-zinc-800 bg-zinc-950/60 flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-zinc-500 shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder={`搜索名称、ID、分类 (共 ${options.length} 条)...`}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full bg-transparent border-none text-xs text-zinc-100 placeholder-zinc-500 outline-none"
+              />
+            </div>
+            <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 p-1">
+              {allowClear && (
+                <div
+                  onClick={() => {
+                    onChange(undefined);
+                    setIsOpen(false);
+                  }}
+                  className="px-2.5 py-1.5 hover:bg-zinc-800/60 rounded-md cursor-pointer text-xs text-zinc-400 flex items-center justify-between transition-colors"
+                >
+                  <span>— 清空选择 (置空) —</span>
+                </div>
+              )}
+              {filteredOptions.length === 0 ? (
+                <div className="p-4 text-center text-xs text-zinc-500">未找到匹配条目</div>
+              ) : (
+                filteredOptions.map(opt => (
+                  <div
+                    key={opt.id}
+                    onClick={() => {
+                      onChange(opt.id);
+                      setIsOpen(false);
+                    }}
+                    className={`px-2.5 py-1.5 hover:bg-zinc-800/80 rounded-md cursor-pointer flex items-center justify-between text-xs transition-colors ${
+                      opt.id === value ? 'bg-indigo-500/15 border-l-2 border-indigo-500 text-indigo-200 font-medium' : 'text-zinc-200'
+                    }`}
+                  >
+                    <div className="flex flex-col gap-0.5 truncate">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-zinc-100">{opt.title}</span>
+                        <span className="font-mono text-[11px] text-zinc-500">({opt.id})</span>
+                      </div>
+                      <span className="text-[11px] text-zinc-400">{opt.subtitle}</span>
+                    </div>
+                    {opt.badge && (
+                      <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full border shrink-0 ml-2 ${opt.badgeColor || 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
+                        {opt.badge}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface MultiReferenceSelectProps {
+  kind: ReferenceKind;
+  label?: string;
+  description?: string;
+  values?: string[];
+  onChange: (ids: string[]) => void;
+  placeholder?: string;
+  className?: string;
+}
+
+/** 多值跨表引用编辑器：已选条目以可删除 Chip 展示，底部内嵌单选 ReferenceSelect 追加新引用；重复添加会被静默忽略。 */
+export function MultiReferenceSelect({
+  kind,
+  label,
+  description,
+  values = [],
+  onChange,
+  placeholder = '+ 添加关联项...',
+  className = ''
+}: MultiReferenceSelectProps) {
+  const { lookups } = useConfigContext();
+  const currentSet = new Set(values || []);
+
+  const add = (id: string | undefined) => {
+    if (id && !currentSet.has(id)) {
+      onChange([...(values || []), id]);
+    }
+  };
+
+  const remove = (id: string) => {
+    onChange((values || []).filter(v => v !== id));
+  };
+
+  const getName = (id: string) => {
+    switch (kind) {
+      case 'item': return lookups.items.get(id)?.name || id;
+      case 'ability': return lookups.abilities.get(id)?.name || id;
+      case 'monster': return lookups.monsters.get(id)?.name || id;
+      case 'encounter': return lookups.encounters.get(id)?.name || id;
+      case 'action': return lookups.actions.get(id)?.name || id;
+      case 'node': return lookups.nodes.get(id)?.name || id;
+      default: return id;
+    }
+  };
+
+  return (
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+      {label && (
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-zinc-300 tracking-tight">
+            {label} <span className="text-zinc-500 font-mono">({values.length})</span>
+          </label>
+          {description && <span className="text-[11px] text-zinc-500 font-normal">{description}</span>}
+        </div>
+      )}
+
+      <div className="p-2 bg-zinc-900/60 border border-zinc-800/80 rounded-lg flex flex-col gap-2">
+        <div className="flex flex-wrap gap-1.5 min-h-[28px] items-center">
+          {values.length === 0 ? (
+            <span className="text-xs text-zinc-500 italic pl-1">暂无关联项</span>
+          ) : (
+            values.map(id => (
+              <span
+                key={id}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800/80 border border-zinc-700/60 text-xs text-zinc-200 shadow-sm"
+              >
+                <span className="font-medium text-zinc-100">{getName(id)}</span>
+                <span className="font-mono text-[10px] text-zinc-400">({id})</span>
+                <button
+                  type="button"
+                  onClick={() => remove(id)}
+                  className="hover:text-rose-400 ml-1 text-zinc-500 transition-colors"
+                >
+                  ✕
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+
+        <div className="pt-1.5 border-t border-zinc-800/60">
+          <ReferenceSelect
+            kind={kind}
+            value={null}
+            onChange={add}
+            placeholder={placeholder}
+            allowClear={false}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

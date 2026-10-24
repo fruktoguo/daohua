@@ -1,0 +1,154 @@
+[
+  {
+    "id": "craft.refine-iron",
+    "name": "百炼铁",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.dark-iron": 3
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.refined-iron",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "craft.refine-peach-wood-crystal",
+    "name": "桃木晶",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood": 3
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.peach-wood-crystal",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "craft.extract-herb-essence",
+    "name": "草木精华",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.ningxue-grass": 2,
+      "item.morning-dew": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.herb-essence",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "craft.refine-copper",
+    "name": "赤铜精",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.crimson-copper": 3
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.refined-copper",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "craft.refine-spirit-pine-crystal",
+    "name": "灵松晶",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.yinlingsong-wood": 3
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.spirit-pine-crystal",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "craft.extract-banling-essence",
+    "name": "伴灵精华",
+    "description": "",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 13,
+    "inputs": {
+      "item.banling-flower": 2,
+      "item.morning-dew": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.banling-essence",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  }
+]

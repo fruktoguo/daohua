@@ -1,0 +1,434 @@
+using Domain.Persistence;
+
+namespace Domain.Tests;
+
+/// <summary>
+/// 玩家聚合测试：快照往返、队列推进、重复次数与状态恢复的约束回归。
+/// </summary>
+public sealed class PlayerAggregateTests
+{
+    private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// 快照导出/恢复往返保留身份、版本号、修为与队列中行动的进行中进度。
+    /// </summary>
+    [Fact]
+    public void RestoreRoundTripKeepsStateAndQueue()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "青云", Baseline, "catalog-a");
+        var action = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, ActionCatalog.Default);
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(12), ActionCatalog.Default);
+
+        var restored = PlayerAggregate.Restore(player.ExportState());
+
+        Assert.Equal(player.PlayerId, restored.PlayerId);
+        Assert.Equal(player.StateVersion, restored.StateVersion);
+        Assert.Equal(player.Progression.Experience, restored.Progression.Experience);
+        Assert.Single(restored.Actions);
+        Assert.Equal(action.Id, restored.Actions[0].Id);
+        Assert.Equal(player.Actions[0].ProgressSeconds, restored.Actions[0].ProgressSeconds);
+    }
+
+    /// <summary>
+    /// 物品栏域词表与槽位容量：历练栏 6 槽（下标 0-5），技艺栏与战斗每组各 3 槽；
+    /// 旧行动类型 cultivation 已并入历练栏，不再是合法栏域。
+    /// </summary>
+    [Fact]
+    public void AutoUseBarVocabularyAndSlotCapacitiesAreEnforced()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "栏域", Baseline, "catalog-a");
+
+        player.ConfigureAutoUse("exploration", 5, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("forging", 2, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("combat", 2, "item.zhixue-powder", 1, true, AutoUseSlotState.SlotGroupPotion);
+        Assert.Equal(3, player.Settings.AutoUseSlots.Count);
+
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("cultivation", 0, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("travel", 0, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("exploration", 6, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("forging", 3, null, 1, false));
+        Assert.Throws<DomainException>(() => player.ConfigureAutoUse("combat", 3, null, 1, false));
+        Assert.Equal(3, player.Settings.AutoUseSlots.Count);
+    }
+
+    /// <summary>
+    /// 恢复边界丢弃非法栏域槽位：旧存档中的 cultivation 槽位、越界下标与非法分组
+    /// 在恢复时静默失效，不阻断读档也不混入新词表的匹配路径。
+    /// </summary>
+    [Fact]
+    public void RestoreDropsSlotsWithUnknownBarOrOutOfRangeIndex()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "旧档", Baseline, "catalog-a");
+        player.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 1, true);
+        var state = player.ExportState();
+        var tampered = state with
+        {
+            Settings = state.Settings with
+            {
+                AutoUseSlots = (state.Settings.AutoUseSlots ?? []).Concat(
+                [
+                    new AutoUseSlotState("cultivation", 0, "item.tongmai-pill", 1, true),
+                    new AutoUseSlotState("exploration", 9, "item.tongmai-pill", 1, true),
+                    new AutoUseSlotState("combat", 0, "item.zhixue-powder", 1, true, Group: "bogus"),
+                ]).ToArray(),
+            },
+        };
+
+        var restored = PlayerAggregate.Restore(tampered);
+
+        var slot = Assert.Single(restored.Settings.AutoUseSlots);
+        Assert.Equal("exploration", slot.ActionType);
+    }
+
+    /// <summary>
+    /// 自动用药剩余时长随快照持久化：同款药仅调数量时保留，停用或换药时清零，
+    /// 防止把旧药时长误算到新药上。
+    /// </summary>
+    [Fact]
+    public void AutoUseRemainingDurationPersistsAndClearsWhenDisabledOrSwitched()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "丹药槽", Baseline, "catalog-a");
+        player.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 1, true);
+        player.Settings.AutoUseSlots[0] = player.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 180d };
+
+        var restored = PlayerAggregate.Restore(player.ExportState());
+        Assert.Equal(180d, Assert.Single(restored.Settings.AutoUseSlots).RemainingDurationSeconds);
+
+        restored.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 2, true);
+        Assert.Equal(180d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+
+        restored.ConfigureAutoUse("exploration", 0, "item.qi-gathering-pill", 2, false);
+        Assert.Equal(0d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+
+        restored.Settings.AutoUseSlots[0] = restored.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 30d };
+        restored.ConfigureAutoUse("exploration", 0, "item.tongmai-pill", 1, true);
+        Assert.Equal(0d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+    }
+
+    /// <summary>
+    /// 模拟时钟单调递增：向过去推进必须抛错。
+    /// </summary>
+    [Fact]
+    public void CannotAdvanceBackwards()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        Assert.Throws<DomainException>(() => SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(-1), ActionCatalog.Default));
+    }
+
+    /// <summary>
+    /// 空队列推进墙钟是无效推进：不产生版本递增、不标脏分段，避免无谓的快照刷写。
+    /// </summary>
+    [Fact]
+    public void EmptyQueueClockAdvanceDoesNotCreateStateVersion()
+    {
+        var created = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var player = PlayerAggregate.Restore(created.ExportState());
+        var version = player.StateVersion;
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(60), ActionCatalog.Default);
+
+        Assert.Equal(version, player.StateVersion);
+        Assert.False(result.Changed);
+        Assert.Empty(player.DirtySections);
+    }
+
+    /// <summary>
+    /// 不足一轮的部分推进同样算 Changed：进度秒与按秒收益即时入账，CompletedRepeats 仍为 0。
+    /// </summary>
+    [Fact]
+    public void PartialActionAdvanceIsReportedAsChanged()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, ActionCatalog.Default);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), ActionCatalog.Default);
+
+        Assert.True(result.Changed);
+        Assert.Equal(0, result.CompletedRepeats);
+        Assert.Equal(1, player.Actions[0].ProgressSeconds);
+        Assert.Equal(0, player.Progression.Experience);
+    }
+
+    /// <summary>
+    /// 无限循环不变量：RemainingRepeats == -1 完成多轮后必须保持队列项不得自动出队。
+    /// </summary>
+    [Fact]
+    public void InfiniteActionKeepsQueueEntryAfterCompletedRounds()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        // 无限重复语义与引导无关：终态化避免教程推进对绑定行动的强制出队截断。
+        player.SkipTutorial();
+        var action = player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), Baseline, ActionCatalog.Default);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(17), ActionCatalog.Default);
+
+        Assert.Equal(2, result.CompletedRepeats);
+        Assert.Single(player.Actions);
+        Assert.Equal(action.Id, player.Actions[0].Id);
+        Assert.Equal(-1, player.Actions[0].RemainingRepeats);
+    }
+
+    /// <summary>
+    /// -1 无限语义经快照往返不丢失：Intent.RepeatCount 与 RemainingRepeats 均保持 -1。
+    /// </summary>
+    [Fact]
+    public void RestoreKeepsInfiniteActionState()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), Baseline, ActionCatalog.Default);
+
+        var restored = PlayerAggregate.Restore(player.ExportState());
+
+        var action = Assert.Single(restored.Actions);
+        Assert.Equal(-1, action.Intent.RepeatCount);
+        Assert.Equal(-1, action.RemainingRepeats);
+    }
+
+    /// <summary>
+    /// 零时长 + 无限次数会让模拟原地空转，必须在入队边界即拒绝。
+    /// </summary>
+    [Fact]
+    public void InfiniteZeroDurationActionIsRejected()
+    {
+        var instant = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.instant"), "瞬时", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), [])
+        ]);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+
+        var error = Assert.Throws<DomainException>(() => player.Enqueue(new ActionIntent(new ActionId("test.instant"), -1), Baseline, instant));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    /// <summary>
+    /// 数值统一 double 但次数语义为整数：非整数 RepeatCount 入队即拒绝。
+    /// </summary>
+    [Fact]
+    public void EnqueueRejectsNonIntegerRepeatCount()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+
+        var error = Assert.Throws<DomainException>(() => player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionCatalog.Default));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    /// <summary>非法小数或越界重复次数恢复时必须快速失败，不得静默丢弃行动。</summary>
+    [Fact]
+    public void RestoreRejectsInvalidRepeatCountsWithoutDroppingActions()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var invalid = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5),
+            Baseline, ActionQueueStatus.Pending, 0, 1.5, 0);
+        var state = player.ExportState() with { Actions = [invalid] };
+
+        var error = Assert.Throws<DomainException>(() => PlayerAggregate.Restore(state));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+        Assert.Contains("行动状态", error.Message);
+    }
+
+    /// <summary>
+    /// 快照中未定义的队列状态枚举值恢复时必须拒绝，防止坏数据进入运行时。
+    /// </summary>
+    [Fact]
+    public void RestoreRejectsUndefinedActionStatus()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var state = player.ExportState() with
+        {
+            Actions = [new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, (ActionQueueStatus)99, 0, 1, 0)]
+        };
+
+        var error = Assert.Throws<DomainException>(() => PlayerAggregate.Restore(state));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    /// <summary>
+    /// 快照中重复的行动实例 Id 恢复时必须拒绝。
+    /// </summary>
+    [Fact]
+    public void RestoreRejectsDuplicateActionIds()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var id = Guid.NewGuid();
+        var action = new QueuedActionState(id, new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, ActionQueueStatus.Pending, 0, 1, 0);
+        var state = player.ExportState() with { Actions = [action, action] };
+
+        var error = Assert.Throws<DomainException>(() => PlayerAggregate.Restore(state));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    /// <summary>
+    /// 收益溢出为非有限值（double.MaxValue 累加溢出）时必须在写入进度前快速失败：
+    /// 修为与 LastSimulatedAt 均不得被部分突变。
+    /// </summary>
+    [Fact]
+    public void SimulationRejectsNonFiniteRewardBeforeMutatingProgress()
+    {
+        var catalog = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.overflow"), "溢出", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, double.MaxValue)])
+        ]);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("test.overflow")), Baseline, catalog);
+
+        var error = Assert.Throws<DomainException>(() => SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog));
+
+        Assert.Equal(DomainErrorCode.InvariantViolation, error.Code);
+        Assert.Equal(0, player.Progression.Experience);
+        Assert.Equal(Baseline, player.LastSimulatedAt);
+    }
+
+    /// <summary>
+    /// 触及流水号差集：操作前后 DirtySectionMarks 差分得到「本次新增标脏」分段；
+    /// 重复标脏同段戳号继续前进（已标脏段本次重标仍计入触及），ConsumeDirtySections 不影响流水号。
+    /// </summary>
+    [Fact]
+    public void DirtySectionMarks_TrackPerOperationTouchedSections()
+    {
+        var player = PlayerAggregate.Restore(
+            PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a").ExportState());
+        Assert.Empty(player.DirtySectionMarks);
+        var marksBefore = new Dictionary<PlayerSectionKind, long>(player.DirtySectionMarks);
+
+        // 操作 1：入队行动 → ActionQueue 出现在差集
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, ActionCatalog.Default);
+        var touched = player.DirtySectionMarks
+            .Where(pair => !marksBefore.TryGetValue(pair.Key, out var previous) || previous != pair.Value)
+            .Select(pair => pair.Key)
+            .ToHashSet();
+        Assert.Equal([PlayerSectionKind.ActionQueue], touched);
+
+        // 模拟刷盘消费：脏集合清空但流水号保留（网络增量不得消费 DirtySections）
+        Assert.NotEmpty(player.ConsumeDirtySections());
+        Assert.NotEmpty(player.DirtySectionMarks);
+
+        // 操作 2：再次标脏同段（已标脏过不算豁免）→ 戳号前进仍被差集捕获
+        var marksBefore2 = new Dictionary<PlayerSectionKind, long>(player.DirtySectionMarks);
+        player.MarkDirty(PlayerSectionKind.ActionQueue);
+        player.MarkDirty(PlayerSectionKind.Settings);
+        var touched2 = player.DirtySectionMarks
+            .Where(pair => !marksBefore2.TryGetValue(pair.Key, out var previous) || previous != pair.Value)
+            .Select(pair => pair.Key)
+            .ToHashSet();
+        Assert.Equal([PlayerSectionKind.ActionQueue, PlayerSectionKind.Settings], touched2);
+
+        // 事务回滚重置流水号历史：回滚点之后的标脏视为未发生
+        player.RestoreFrom(player.ExportState());
+        Assert.Empty(player.DirtySectionMarks);
+    }
+
+    /// <summary>
+    /// 离线在线状态切换重置斗法离线账本时，Duel 分段必须标脏：重置结果要随刷盘落库。
+    /// </summary>
+    [Fact]
+    public void SetPresenceOffline_MarksDuelSectionForOfflineReportReset()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.ConsumeDirtySections(); // 新建聚合自带全段脏标记，先清空再断言操作增量
+        player.SetPresence(PresenceState.Online, Baseline);
+        Assert.DoesNotContain(PlayerSectionKind.Duel, player.DirtySections);
+
+        player.SetPresence(PresenceState.Offline, Baseline);
+        Assert.Contains(PlayerSectionKind.Duel, player.DirtySections);
+        Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
+    }
+
+
+    /// <summary>
+    /// 切换本命形象：字段规整化存储，并正确标脏 Settings 分段。
+    /// </summary>
+    [Fact]
+    public void SetAvatar_UpdatesSettingsAndMarksSettingsDirty()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "道玄", Baseline, "catalog-a");
+        Assert.Equal("player", player.Settings.Avatar);
+
+        player.ConsumeDirtySections();
+        player.SetAvatar("male");
+        Assert.Equal("player-male", player.Settings.Avatar);
+        Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
+
+        // 重复设置同形象不重复标脏
+        player.ConsumeDirtySections();
+        player.SetAvatar("player-male");
+        Assert.DoesNotContain(PlayerSectionKind.Settings, player.DirtySections);
+        // 切换回默认
+        player.SetAvatar("default");
+        Assert.Equal("player", player.Settings.Avatar);
+        Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
+
+        // 支持各种合法形象标识（需已解锁）
+        player.UnlockAvatar("gothic-lolita");
+        player.SetAvatar("gothic-lolita");
+        Assert.Equal("gothic-lolita", player.Settings.Avatar);
+
+        // 状态恢复往返不丢失形象
+        var exported = player.ExportState();
+        var restored = PlayerAggregate.Restore(exported);
+        Assert.Equal("gothic-lolita", restored.Settings.Avatar);
+
+        var fresh = PlayerAggregate.Create(player.PlayerId, player.AccountId, player.DisplayName, player.CreatedAt, "catalog-a");
+        fresh.RestoreFrom(exported);
+        Assert.Equal("gothic-lolita", fresh.Settings.Avatar);
+    }
+
+    /// <summary>
+    /// 存档编解码：形象标识完整往返，且旧存档无 avatar 字段时安全回退默认 player。
+    /// </summary>
+    [Fact]
+    public void SectionCodec_AvatarRoundTrip_PreservesValueAndDefaults()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "青玄", Baseline, "catalog-a");
+        player.SetAvatar("male");
+
+        var state = player.ExportState();
+        var writes = SectionCodec.EncodeAggregateFull(state, Baseline);
+        var sections = writes.ToDictionary(
+            w => w.SectionKind,
+            w => new StoredSection(w.PlayerId, w.SectionKind, w.StateVersion, w.SchemaVersion, w.Codec, w.Payload.ToArray(), w.RawBytes, w.Checksum, w.UpdatedAt),
+            StringComparer.Ordinal);
+        var bundle = new PlayerStateBundle(
+            new PlayerIdentity(state.PlayerId.Value, state.AccountId.Value, state.DisplayName, state.CreatedAt),
+            new PlayerStateHead(state.PlayerId.Value, state.StateVersion, SectionCodec.CurrentSchemaVersion, state.LastSimulatedAt, state.GameDataFingerprint, SectionCodec.ComputeHeadChecksum(sections.Values), Baseline),
+            sections,
+            []);
+
+        var decoded = SectionCodec.DecodeAggregate(bundle);
+        Assert.Equal("player-male", decoded.Settings.Avatar);
+    }
+
+    /// <summary>
+    /// 底蕴浮点数精度下溢保护：
+    /// 1. 负微小浮点数赋给 Foundation 自动钳制为 0；
+    /// 2. CreditExperience 在完全消耗底蕴时，残余底蕴精确归零而不产生负数浮点误差；
+    /// 3. ComputeExperienceCredit 对传入的负底蕴做 Math.Max(0) 保护，不吞减收益。
+    /// </summary>
+    [Fact]
+    public void Foundation_PrecisionUnderflowIsDefended()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "道玄", Baseline, "catalog-a");
+        player.Progression.Foundation = -3.552713678800501e-15;
+        Assert.Equal(0.0, player.Progression.Foundation);
+
+        // 底蕴 100 点，单笔收益 5 点：三倍放大上限消耗 2×amp=10 点底蕴，余 90 点
+        player.Progression.Foundation = 100.0;
+        player.Progression.CreditExperience(5.0, 1000.0);
+        Assert.Equal(90.0, player.Progression.Foundation);
+
+        // 再次收益 100 点（上限消耗 200 点底蕴）：90 点底蕴全部耗尽，由于 IEEE 754 精度误差可能产生的微小负数被自动钳制为 0
+        player.Progression.CreditExperience(100.0, 1000.0);
+        Assert.Equal(0.0, player.Progression.Foundation);
+
+        var seed = player.ExportState();
+        var dirty = seed with { Progression = seed.Progression with { Foundation = -3.552713678800501e-15 } };
+        var restored = PlayerAggregate.Restore(dirty);
+        Assert.Equal(0.0, restored.Progression.Foundation);
+
+        // 静态计算容错
+        var credit = PlayerProgression.ComputeExperienceCredit(10.0, 1000.0, 0.0, -1e-15);
+        Assert.Equal(10.0, credit);
+    }
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Pull DaoHua Backups to Local Compute Node
+After=network-online.target
+
+[Timer]
+# 主服每小时整点 (:00) 执行备份，计算节点在每小时第 15 分钟自动拉取
+OnCalendar=*-*-* *:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

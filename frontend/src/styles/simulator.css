@@ -1,0 +1,2233 @@
+/* 道化太初 · 战斗模拟器样式表（深度自适应深色与浅色修仙主题） */
+
+/* 1. 战场顶部左侧操作区（统计与模拟器入口并排） */
+.combat-arena-top-actions {
+  position: absolute;
+  z-index: 9;
+  top: 10px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.combat-arena-top-actions .combat-stats-open,
+.combat-arena-top-actions .combat-simulator-open {
+  position: static;
+  padding: 4px 14px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+/* 2. 模拟器弹窗基础外壳（全屏大视口排版） */
+.modal-backdrop:has(.sim-modal) {
+  padding: 0;
+  display: block;
+}
+
+.sim-modal {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  z-index: 75;
+}
+
+.sim-modal .modal-close {
+  top: 10px;
+  right: 14px;
+  z-index: 80;
+}
+
+.sim-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  padding-right: 64px;
+  border-bottom: 1px solid var(--gold-faint);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+:root[data-theme="light"] .sim-modal-header {
+  border-bottom-color: rgba(125, 82, 26, 0.18);
+  box-shadow: 0 1px 8px rgba(71, 49, 18, 0.05);
+}
+
+.sim-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-title-icon {
+  font-size: 16px;
+}
+
+.sim-title-text {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  letter-spacing: 0.5px;
+}
+
+.sim-main-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-main-tabs {
+  background: var(--bg-raised);
+  border-color: rgba(125, 82, 26, 0.2);
+}
+
+.sim-main-tab {
+  padding: 5px 14px;
+  font-size: 13px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-main-tab:hover {
+  color: var(--text);
+}
+
+.sim-main-tab.is-active {
+  background: var(--gold-faint);
+  color: var(--gold-bright);
+  font-weight: 600;
+  box-shadow: 0 0 8px var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-main-tab.is-active {
+  background: var(--panel);
+  color: var(--gold-bright);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.12);
+}
+
+.sim-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+:root[data-theme="light"] .sim-tab-dot {
+  background: #059669;
+  box-shadow: 0 0 4px #059669;
+}
+
+.sim-modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 24px;
+  overflow: hidden;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 3. 配置双栏布局 */
+.sim-config-layout {
+  display: grid;
+  grid-template-columns: minmax(580px, 1.35fr) minmax(400px, 1fr);
+  gap: 24px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.sim-left-column,
+.sim-right-column {
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.sim-results-layout {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+@media (max-width: 960px) {
+  .sim-config-layout {
+    grid-template-columns: 1fr;
+  }
+}
+/* 4. 阵容编辑区 */
+.sim-party-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sim-party-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.sim-party-tab-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.sim-party-tab-btn.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-party-tab-btn.is-active {
+  background: var(--panel);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.12);
+}
+
+.sim-tag-self {
+  font-size: 10px;
+  padding: 1px 5px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  border-radius: 3px;
+}
+
+:root[data-theme="light"] .sim-tag-self {
+  background: rgba(5, 150, 105, 0.12);
+  border-color: rgba(5, 150, 105, 0.3);
+  color: #047857;
+}
+
+.sim-tab-close {
+  font-size: 14px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.sim-tab-close:hover {
+  color: var(--danger);
+}
+
+.sim-party-tab-add {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px dashed var(--gold-faint);
+  color: var(--gold);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sim-party-tab-add:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  background: var(--gold-faint);
+}
+
+.sim-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-radius: 6px;
+  border: 1px solid var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-editor-toolbar {
+  box-shadow: 0 1px 3px rgba(71, 49, 18, 0.06);
+}
+
+.sim-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--gold-faint);
+  transition: all 0.2s ease;
+}
+
+.sim-btn--primary {
+  background: var(--gold-faint);
+  color: var(--gold-bright);
+  border-color: var(--gold-dim);
+}
+
+.sim-btn--primary:hover {
+  background: var(--gold);
+  color: var(--on-accent, #ffffff);
+  border-color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .sim-btn--primary {
+  background: var(--bg-raised);
+  color: var(--gold-bright);
+  border-color: rgba(125, 82, 26, 0.3);
+}
+
+:root[data-theme="light"] .sim-btn--primary:hover {
+  background: var(--gold);
+  color: #ffffff;
+  border-color: var(--gold-bright);
+}
+
+.sim-btn--secondary {
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--gold-faint);
+}
+
+.sim-btn--secondary:hover {
+  color: var(--text);
+  border-color: var(--gold-dim);
+}
+
+.sim-teammate-import-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.sim-select,
+.sim-input {
+  background: var(--bg);
+  border: 1px solid var(--gold-faint);
+  color: var(--text);
+  color-scheme: inherit;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.sim-select option,
+.sim-select optgroup {
+  color: var(--text);
+  background-color: var(--panel);
+}
+
+.sim-select:focus,
+.sim-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 6px var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-select,
+:root[data-theme="light"] .sim-input {
+  background: var(--panel);
+  border-color: rgba(125, 82, 26, 0.25);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .sim-select:focus,
+:root[data-theme="light"] .sim-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 6px rgba(125, 82, 26, 0.2);
+}
+
+/* 5. 战斗属性输入网格 */
+.sim-stats-grid-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+:root[data-theme="light"] .sim-stats-grid-container {
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+.sim-stats-subheading {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.sim-stat-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sim-stat-name {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-stat-field .sim-input {
+  padding: 4px 6px;
+  font-size: 12px;
+  width: 100%;
+}
+
+/* 6. 配置面板 (右栏) */
+.sim-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sim-config-section {
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:root[data-theme="light"] .sim-config-section {
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+.sim-config-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.sim-config-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sim-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.sim-field-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sim-duration-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sim-preset-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+:root[data-theme="light"] .sim-preset-btn {
+  background: var(--bg-raised);
+}
+
+.sim-preset-btn.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-preset-btn.is-active {
+  background: var(--panel);
+  color: var(--gold-bright);
+  border-color: var(--gold);
+  box-shadow: 0 1px 3px rgba(71, 49, 18, 0.12);
+}
+
+.sim-custom-duration {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.sim-input--short {
+  width: 70px;
+}
+
+.sim-seconds-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+.sim-action-area {
+  margin-top: 4px;
+}
+
+.sim-run-button {
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.4) 0%, rgba(201, 180, 109, 0.15) 100%);
+  border: 1px solid var(--gold);
+  color: var(--gold-bright);
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 0 14px var(--gold-faint);
+  transition: all 0.2s ease;
+}
+
+.sim-run-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.55) 0%, rgba(201, 180, 109, 0.25) 100%);
+  box-shadow: 0 0 20px var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-run-button {
+  background: linear-gradient(135deg, var(--seal) 0%, var(--seal-deep) 100%);
+  border-color: var(--seal-deep);
+  color: #fffaf0;
+  box-shadow: 0 2px 8px rgba(178, 51, 39, 0.25);
+}
+
+:root[data-theme="light"] .sim-run-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #c53c2f 0%, #9e2a1d 100%);
+  box-shadow: 0 4px 14px rgba(178, 51, 39, 0.35);
+}
+
+.sim-run-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 7. 结果展示视图 */
+.sim-results-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sim-results-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 50px 20px;
+  color: var(--text-dim);
+}
+
+.sim-empty-icon {
+  font-size: 32px;
+  opacity: 0.5;
+}
+
+.sim-card {
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+:root[data-theme="light"] .sim-card {
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+.sim-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.sim-card-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sim-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .sim-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.sim-kpi-block {
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+:root[data-theme="light"] .sim-kpi-block {
+  background: var(--bg);
+  border-color: rgba(125, 82, 26, 0.15);
+}
+
+.sim-kpi-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sim-kpi-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text-bright);
+}
+
+.sim-kpi-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* 8. 灵力缺口板块 */
+.sim-card--mana {
+  border-color: rgba(117, 169, 173, 0.35);
+  background: rgba(20, 26, 28, 0.6);
+}
+
+:root[data-theme="light"] .sim-card--mana {
+  background: rgba(22, 92, 118, 0.05);
+  border-color: rgba(22, 92, 118, 0.25);
+}
+
+.sim-mana-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-diagnosis-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.sim-diagnosis-badge.is-sufficient {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.sim-diagnosis-badge.is-mild {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.sim-diagnosis-badge.is-moderate {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.sim-diagnosis-badge.is-severe {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+:root[data-theme="light"] .sim-diagnosis-badge.is-sufficient {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+  border-color: rgba(5, 150, 105, 0.35);
+}
+
+:root[data-theme="light"] .sim-diagnosis-badge.is-mild {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+:root[data-theme="light"] .sim-diagnosis-badge.is-moderate {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.35);
+}
+
+:root[data-theme="light"] .sim-diagnosis-badge.is-severe {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.sim-mana-ratio-highlight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-mana-ratio-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.sim-mana-ratio-num {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.sim-mana-ratio-num.is-sufficient { color: #34d399; }
+.sim-mana-ratio-num.is-mild { color: #60a5fa; }
+.sim-mana-ratio-num.is-moderate { color: #fbbf24; }
+.sim-mana-ratio-num.is-severe { color: #f87171; }
+
+:root[data-theme="light"] .sim-mana-ratio-num.is-sufficient { color: #047857; }
+:root[data-theme="light"] .sim-mana-ratio-num.is-mild { color: #1d4ed8; }
+:root[data-theme="light"] .sim-mana-ratio-num.is-moderate { color: #b45309; }
+:root[data-theme="light"] .sim-mana-ratio-num.is-severe { color: #b91c1c; }
+
+.sim-mana-pool-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+  background: var(--bg-raised);
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+:root[data-theme="light"] .sim-mana-pool-summary {
+  background: var(--bg);
+}
+
+.sim-pool-item {
+  color: var(--text-dim);
+}
+
+.sim-pool-item strong {
+  color: var(--gold-bright);
+}
+
+/* 9. 技能卡蓝明细表格 */
+.sim-skill-deficit-table-wrap {
+  overflow-x: auto;
+}
+
+.sim-skill-deficit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.sim-skill-deficit-table th,
+.sim-skill-deficit-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-skill-deficit-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+  background: var(--bg-raised);
+}
+
+:root[data-theme="light"] .sim-skill-deficit-table th {
+  background: rgba(125, 82, 26, 0.06);
+}
+
+.sim-skill-deficit-table tr:hover td {
+  background: var(--gold-faint);
+}
+
+.sim-skill-name-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-slot-badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  background: var(--gold-faint);
+  border-radius: 3px;
+  color: var(--gold);
+}
+
+.sim-table-progress-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-mini-bar-bg {
+  width: 60px;
+  height: 6px;
+  background: var(--bg-raised);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--gold-faint);
+}
+
+.sim-mini-bar-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 3px;
+}
+
+.sim-suggestions-box {
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+:root[data-theme="light"] .sim-suggestions-box {
+  background: var(--bg);
+}
+
+.sim-suggestions-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.sim-suggestions-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 10. 战利品掉落网格 */
+.sim-exp-rate-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.sim-total-exp {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sim-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+  gap: 10px;
+}
+
+.sim-item-tile-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-item-rate-badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--gold-faint);
+  color: var(--gold-bright);
+  font-family: monospace;
+}
+
+.sim-no-drops {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 16px;
+  text-align: center;
+}
+
+/* 色调高对比度类名（深浅色自适应） */
+.text-emerald { color: #10b981; }
+.text-amber { color: #f59e0b; }
+.text-crimson { color: #ef4444; }
+.text-gold { color: var(--gold-bright); }
+
+:root[data-theme="light"] .text-emerald { color: #047857; font-weight: 600; }
+:root[data-theme="light"] .text-amber { color: #b45309; font-weight: 600; }
+:root[data-theme="light"] .text-crimson { color: #b91c1c; font-weight: 600; }
+:root[data-theme="light"] .text-gold { color: var(--gold); font-weight: 600; }
+/* 11. 模拟器结果分类导航（Sub-Pills） */
+.sim-nav-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+:root[data-theme="light"] .sim-nav-pills {
+  background: #fbf7ee;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-nav-pill {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-nav-pill:hover {
+  color: var(--text);
+  background: var(--gold-faint);
+}
+
+.sim-nav-pill.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  font-weight: 600;
+  box-shadow: 0 0 6px var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-nav-pill.is-active {
+  background: #f5eedc;
+  border-color: #8c5b1b;
+  color: #78480d;
+  box-shadow: 0 1px 3px rgba(71, 49, 18, 0.12);
+}
+
+.sim-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 12. 妖兽位阶标签 */
+.sim-rank-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.sim-rank-tag.rank-normal {
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--text-dim);
+}
+
+.sim-rank-tag.rank-elite {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+}
+
+:root[data-theme="light"] .sim-rank-tag.rank-elite {
+  background: rgba(109, 40, 217, 0.12);
+  color: #6d28d9;
+}
+
+.sim-rank-tag.rank-boss {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-rank-tag.rank-boss {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
+/* 13. 通用数据表格样式 */
+.sim-data-table-wrap {
+  overflow-x: auto;
+}
+
+.sim-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.sim-data-table th,
+.sim-data-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-data-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+  background: var(--bg-raised);
+  white-space: nowrap;
+}
+
+:root[data-theme="light"] .sim-data-table th {
+  background: rgba(125, 82, 26, 0.05);
+  color: #5d4017;
+}
+
+.sim-data-table tr:hover td {
+  background: var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-data-table tr:hover td {
+  background: rgba(125, 82, 26, 0.04);
+}
+
+.sim-header-with-badge {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sim-metric-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .sim-metric-pill {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.15);
+  color: #634316;
+}
+
+.sim-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sim-filter-label {
+  color: var(--text-dim);
+}
+
+.sim-filter-select {
+  padding: 2px 8px;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+}
+
+.sim-progress-bar.bar-damage {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.sim-progress-bar.bar-damage-taken {
+  background: linear-gradient(90deg, #8b5cf6, #ec4899);
+}
+
+/* 14. 两栏恢复明细表格 */
+.sim-two-column-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .sim-two-column-tables {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sim-column-table-box {
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--bg);
+}
+
+:root[data-theme="light"] .sim-column-table-box {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.15);
+}
+
+.sim-table-box-title {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+/* 15. 战利品掉落图文卡片 */
+.sim-items-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.sim-item-row-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  transition: border-color 0.15s ease;
+}
+
+:root[data-theme="light"] .sim-item-row-card {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-item-row-card:hover {
+  border-color: var(--gold-bright);
+}
+
+.sim-item-card-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sim-item-full-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sim-item-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.sim-stat-sub {
+  color: var(--text-dim);
+}
+
+.sim-stat-rate {
+  font-weight: 600;
+  font-family: monospace;
+}
+
+/* 16. 战斗事件流水日志查看器 */
+.sim-logs-container {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  min-height: 380px;
+}
+
+@media (max-width: 768px) {
+  .sim-logs-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sim-logs-sidebar {
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+:root[data-theme="light"] .sim-logs-sidebar {
+  background: #fbf7ee;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-logs-sidebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sim-log-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+:root[data-theme="light"] .sim-log-nav-item {
+  background: #fdfaf3;
+}
+
+.sim-log-nav-item:hover {
+  border-color: var(--gold-faint);
+}
+
+.sim-log-nav-item.is-active {
+  border-color: var(--gold-bright);
+  background: var(--gold-faint);
+}
+
+:root[data-theme="light"] .sim-log-nav-item.is-active {
+  background: #f2e9d5;
+  border-color: #8c5b1b;
+}
+
+.sim-log-outcome-indicator {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.sim-log-outcome-indicator.indicator-victory {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+:root[data-theme="light"] .sim-log-outcome-indicator.indicator-victory {
+  background: rgba(4, 120, 87, 0.15);
+  color: #047857;
+}
+
+.sim-log-outcome-indicator.indicator-defeat {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+:root[data-theme="light"] .sim-log-outcome-indicator.indicator-defeat {
+  background: rgba(185, 28, 28, 0.15);
+  color: #b91c1c;
+}
+
+.sim-log-nav-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.sim-log-nav-title {
+  font-weight: 500;
+}
+
+.sim-log-nav-time {
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+.sim-logs-content {
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 10px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+:root[data-theme="light"] .sim-logs-content {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+.sim-log-stream-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.sim-log-stream-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.sim-log-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.sim-log-badge.badge-victory {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.sim-log-badge.badge-defeat {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.sim-log-stream-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.sim-log-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+:root[data-theme="light"] .sim-log-line {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.sim-log-time {
+  color: var(--text-dim);
+  font-weight: 600;
+  min-width: 38px;
+}
+
+.sim-log-text {
+  flex: 1;
+  word-break: break-all;
+}
+
+.sim-log-line.log-type-attack {
+  color: var(--text);
+}
+
+.sim-log-line.log-type-skill {
+  color: #38bdf8;
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-skill {
+  color: #0284c7;
+}
+
+.sim-log-line.log-type-heal {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.08);
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-heal {
+  color: #059669;
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.sim-log-line.log-type-defeat {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-defeat {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.sim-log-line.log-type-victory {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .sim-log-line.log-type-victory {
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.08);
+}
+
+.sim-log-line.log-type-natural_regen {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* 颜色辅助类 */
+.text-main { color: var(--text); }
+.text-dim { color: var(--text-dim); }
+.text-indigo { color: #818cf8; }
+:root[data-theme="light"] .text-indigo { color: #4f46e5; font-weight: 600; }
+
+/* ==========================================================================
+   13. 模拟器深度重构增强样式（子 Tab、装备/消耗品/技能配置、多节点对比）
+   ========================================================================== */
+
+/* 参战者子 Tab (属性 / 技能 / 装备 / 消耗品) */
+.sim-sub-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.sim-sub-tab-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid var(--gold-faint);
+  background: var(--panel);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-sub-tab-btn.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+/* 属性模块化分类 */
+.sim-stats-category-block {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+:root[data-theme="light"] .sim-stats-category-block {
+  background: #fbf8f0;
+  border-color: rgba(125, 82, 26, 0.15);
+}
+
+.sim-stats-category-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--gold-faint);
+  padding-bottom: 4px;
+}
+
+/* 技能配置面板 */
+.sim-skills-editor-panel,
+.sim-equipment-editor-panel,
+.sim-consumables-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+
+.sim-skills-slot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-skill-slot-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  align-items: flex-start;
+}
+
+.sim-skill-slot-card.is-internal {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.sim-skill-slot-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+  white-space: nowrap;
+  padding-top: 5px;
+}
+
+.sim-skill-slot-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-skill-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sim-skill-select {
+  flex: 1;
+}
+
+.sim-skill-level-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-skill-level-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sim-skill-level-input {
+  width: 50px;
+  text-align: center;
+}
+
+.sim-skill-desc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.sim-skill-tag {
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  color: var(--text-dim);
+}
+
+.sim-skill-desc-text {
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+/* 装备配置网格（严格对齐游戏内 6 大部位：2 列对齐） */
+.sim-equipment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 680px) {
+  .sim-equipment-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sim-equipment-slot-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-faint);
+  background: var(--panel);
+  transition: all 0.2s ease;
+}
+
+.sim-equipment-slot-card:hover {
+  border-color: rgba(201, 180, 109, 0.35);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+:root[data-theme="light"] .sim-equipment-slot-card {
+  background: #fdfaf3;
+  border-color: rgba(125, 82, 26, 0.16);
+}
+
+:root[data-theme="light"] .sim-equipment-slot-card:hover {
+  border-color: rgba(125, 82, 26, 0.35);
+  background: #fbf5e8;
+}
+
+.sim-equipment-slot-tile-anchor {
+  flex-shrink: 0;
+  width: var(--item-slot-size, 64px);
+  height: var(--item-slot-size, 64px);
+}
+
+.sim-equipment-slot-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-equipment-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sim-equipment-slot-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  font-family: var(--font-kaiti, serif);
+  letter-spacing: 0.5px;
+}
+
+.sim-equip-remove-btn {
+  font-size: 11px;
+  color: #ef4444;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
+.sim-equip-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  text-decoration: none;
+}
+
+.sim-equipment-slot-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sim-equipment-item-name {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-equipment-tier-tag {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--gold-faint);
+  color: var(--gold);
+}
+
+.sim-equip-enhance-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.sim-enhance-label {
+  color: var(--text-dim);
+}
+
+.sim-enhance-input {
+  width: 46px;
+  text-align: center;
+}
+
+.sim-enhance-badge {
+  font-weight: bold;
+  font-size: 11px;
+}
+
+.sim-equipment-slot-empty-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+}
+
+.sim-equipment-slot-empty-hint:hover {
+  color: var(--gold);
+}
+/* 消耗品配置网格 */
+.sim-consumables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.sim-consumable-card {
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-consumable-card.is-potion {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.sim-consumable-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sim-consumable-slot-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.sim-consumable-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.sim-consumable-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-consumable-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.sim-qty-input {
+  width: 60px;
+  text-align: center;
+}
+
+/* 地点多选与批量操作 */
+.sim-config-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.sim-selection-count-badge {
+  font-size: 11px;
+  color: var(--gold-bright);
+  background: var(--gold-faint);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.sim-node-batch-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sim-batch-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-batch-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.sim-batch-btn--clear {
+  color: #ef4444;
+}
+
+.sim-node-multiselect-container {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.sim-node-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+}
+
+.sim-node-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.sim-node-card:hover {
+  border-color: var(--gold);
+}
+
+.sim-node-card.is-selected {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  box-shadow: 0 0 6px rgba(212, 163, 89, 0.2);
+}
+
+.sim-node-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-node-checkbox {
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.sim-node-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.sim-node-card-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* 结果界面双组切换 */
+.sim-result-group-switcher {
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid var(--gold-faint);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+}
+
+.sim-group-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sim-group-tab.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  box-shadow: 0 2px 8px rgba(212, 163, 89, 0.2);
+}
+
+/* 冠军卡片排布 */
+.sim-champions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sim-champ-card {
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sim-champ-card.champ-revenue { border-color: rgba(245, 158, 11, 0.4); }
+.sim-champ-card.champ-exp { border-color: rgba(6, 182, 212, 0.4); }
+.sim-champ-card.champ-sixdim { border-color: rgba(16, 185, 129, 0.4); }
+.sim-champ-card.champ-safe { border-color: rgba(59, 130, 246, 0.4); }
+
+.sim-champ-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.sim-champ-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text-bright);
+}
+
+.sim-champ-val {
+  font-size: 15px;
+  font-weight: bold;
+  font-family: monospace;
+}
+
+.sim-champ-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* 对比表格高亮列 */
+.th-highlight-gold, .td-highlight-gold {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.th-highlight-cyan, .td-highlight-cyan {
+  background: rgba(6, 182, 212, 0.08);
+}
+
+.th-highlight-emerald, .td-highlight-emerald {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.sim-tag-champ {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+
+.champ-tag-rev {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.champ-tag-exp {
+  background: rgba(6, 182, 212, 0.2);
+  color: #06b6d4;
+}
+
+.sim-table-action-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  background: var(--gold-faint);
+  border: 1px solid var(--gold);
+  color: var(--gold-bright);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sim-table-action-btn:hover {
+  background: var(--gold);
+  color: #000;
+}
+
+/* 详细剖析节点切换器 */
+.sim-node-detail-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.sim-picker-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.sim-picker-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sim-picker-pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-picker-pill.is-active {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+.sim-pill-revenue {
+  font-size: 10px;
+  color: #f59e0b;
+  font-family: monospace;
+}
+
+.sim-yields-table td {
+  vertical-align: middle;
+}
+
+/* 触发条件配置条 */
+.sim-trigger-config-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--bg-raised);
+  border: 1px dashed var(--gold-faint);
+  border-radius: 4px;
+}
+
+.sim-trigger-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.sim-trigger-btn {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-trigger-btn:hover {
+  background: var(--gold-faint);
+}
+
+/* 平均场次时长分析卡片 */
+.sim-card--duration-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sim-overall-duration-badge {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--gold-faint);
+}
+
+.sim-overall-duration-badge strong {
+  color: var(--gold-bright);
+  font-family: monospace;
+}
+
+.sim-duration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.sim-duration-block {
+  background: var(--bg-raised);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.2s ease;
+}
+
+.sim-duration-block:hover {
+  border-color: var(--gold);
+}
+
+.sim-duration-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sim-duration-type-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.sim-duration-type-tag.tag-normal {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.sim-duration-type-tag.tag-elite {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.sim-duration-type-tag.tag-boss {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.sim-duration-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+.sim-duration-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text-bright);
+}
+
+.sim-duration-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* 浅色主题补漏：表格操作按钮悬停黑字压深棕（≈3.3:1）、收益胶囊荧光橙（≈2.1:1）、
+   时长标签浅灰/荧光紫红（≈2.5~2.9:1）在纸白底上均不达标，换用浅色语义色。 */
+:root[data-theme="light"] .sim-table-action-btn:hover {
+  background: var(--gold);
+  color: var(--on-accent);
+}
+
+:root[data-theme="light"] .sim-pill-revenue {
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .sim-duration-type-tag.tag-normal {
+  color: var(--silver);
+  border-color: rgba(76, 88, 104, 0.4);
+}
+
+:root[data-theme="light"] .sim-duration-type-tag.tag-elite {
+  color: var(--purple);
+  border-color: rgba(105, 64, 140, 0.4);
+}
+
+:root[data-theme="light"] .sim-duration-type-tag.tag-boss {
+  color: var(--danger);
+  border-color: rgba(178, 51, 39, 0.4);
+}

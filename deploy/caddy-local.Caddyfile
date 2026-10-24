@@ -1,0 +1,30 @@
+# ==============================================================================
+# 道化太初 · 本地开发反向代理（Docker 化 Caddy）
+#
+# 作用：把 http://daohua.localhost 反代到本地前端 dev server（默认 127.0.0.1:15172），
+#       本地开发无需再记端口；/api、/ops/api 与 /ws 由 Vite dev server 再分流到后端 5128。
+#
+# 域名说明：按 RFC 6761，浏览器会把 *.localhost 直接解析到回环地址，无需修改 /etc/hosts。
+#
+# 启动（由 scripts/dev.sh 自动完成；容器端口转发由 Docker Desktop 处理，无需 sudo）：
+#   docker run -d --rm --name daohua-local-caddy -p 80:80 \
+#     -e DAOHUA_FRONTEND_PORT=15172 \
+#     -v "$PWD/deploy/caddy-local.Caddyfile:/etc/caddy/Caddyfile:ro" \
+#     caddy:2-alpine
+#
+# 上游地址用 host.docker.internal：Caddy 跑在容器里，回环地址指向容器自身，
+# 必须经 Docker Desktop 的宿主机别名才能访问宿主上的 Vite dev server。
+# 上游端口可用容器环境变量覆盖：DAOHUA_FRONTEND_PORT（默认 15172）。
+#
+# 与生产配置的差异（刻意为之）：本地不复制 deploy/daohua.yuohira.com.caddy 中的
+# /ops、/api/metrics、/readyz 等私有路径拦截——本地运维面板与诊断端点必须可用；
+# 生产拦截口径以生产站点配置为唯一真源。
+# ==============================================================================
+
+http://daohua.localhost {
+	encode zstd gzip
+
+	# 单一上游：Vite dev server 同时承载页面、HMR WebSocket 与 /api、/ops/api、/ws 代理。
+	# Caddy 的 reverse_proxy 自动处理 WebSocket 升级，无需额外配置。
+	reverse_proxy host.docker.internal:{$DAOHUA_FRONTEND_PORT:15172}
+}

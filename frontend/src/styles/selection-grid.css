@@ -1,0 +1,1380 @@
+:root {
+  --item-slot-size: 64px;
+  --item-tile-size: 64px;
+}
+
+.inventory-grid,
+.candidate-picker-grid,
+.market-browse-grid,
+  .abilities-learned-grid,
+  .codex-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--item-slot-size));
+  gap: 6px;
+  align-content: start;
+  align-items: start;
+  grid-auto-rows: var(--item-slot-size);
+}
+
+.market-browse-grid {
+  /* 外边距与列间距严格相等：auto-fill 恒按满行算列轨数（非满行/稀疏列表条目仍占同列位），
+     space-evenly 把余量均分到首列前/列间/末列后每个位置；配合左右 padding = gap 6px，
+     视觉外边距 = 6 + 均分额 = 列间距，完全一致。 */
+  justify-content: space-evenly;
+  contain: paint;
+}
+
+.market-browse-grid.is-scrolling {
+  pointer-events: none;
+}
+
+.market-browse-tooltip {
+  content-visibility: auto;
+  contain-intrinsic-size: var(--item-slot-size) var(--item-slot-size);
+}
+
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell,
+  .codex-tile-anchor
+) {
+  --item-frame-rgb: 201, 180, 109;
+  position: relative;
+  display: grid;
+  width: var(--item-slot-size);
+  height: var(--item-slot-size);
+  min-width: var(--item-slot-size);
+  min-height: var(--item-slot-size);
+  aspect-ratio: 1 / 1;
+  overflow: visible;
+  place-items: center;
+  padding: 0;
+  isolation: isolate;
+  align-self: start;
+  justify-self: start;
+}
+
+:is(
+  .item-tile,
+  .item-use-slot--empty,
+  .combat-ability-slot--empty,
+  .item-grid-picker-card--empty
+)::before {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  opacity: 0;
+  background: linear-gradient(90deg, #8a5200 0%, #d59618 68%, #ffd66b 88%, #fff5cc 97%, #fff 100%);
+  box-shadow: 0 1px 2px rgba(255, 245, 204, 0.96), 0 2px 6px rgba(238, 166, 31, 0.92), 0 5px 10px rgba(155, 84, 0, 0.42);
+  transform: scaleX(0);
+  transform-origin: left center;
+  content: "";
+  pointer-events: none;
+}
+
+:is(
+  .item-tile,
+  .item-use-slot--empty,
+  .combat-ability-slot--empty,
+  .item-grid-picker-card--empty
+)::after {
+  position: absolute;
+  z-index: 12;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  opacity: 0;
+  background: linear-gradient(270deg, #8a5200 0%, #d59618 68%, #ffd66b 88%, #fff5cc 97%, #fff 100%);
+  box-shadow: 0 -1px 2px rgba(255, 245, 204, 0.96), 0 -2px 6px rgba(238, 166, 31, 0.92), 0 -5px 10px rgba(155, 84, 0, 0.42);
+  transform: scaleX(0);
+  transform-origin: right center;
+  content: "";
+  pointer-events: none;
+}
+
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-tile::before,
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-tile::after,
+:is(
+  .item-tile,
+  .item-use-slot--empty,
+  .combat-ability-slot--empty,
+  .item-grid-picker-card--empty
+):is(:hover, :focus-visible, :focus-within)::before,
+:is(
+  .item-tile,
+  .item-use-slot--empty,
+  .combat-ability-slot--empty,
+  .item-grid-picker-card--empty
+):is(:hover, :focus-visible, :focus-within)::after,
+.item-grid-picker-card--empty.is-selected::before,
+.item-grid-picker-card--empty.is-selected::after {
+  /* 不沿用全局 ui-edge-light-fill：其关键帧动画 filter: brightness()，
+     filter 不在合成器线程上，密集网格逐格 hover 掠过时会逐帧触发主线程重绘。
+     这里用纯 transform + opacity 变体，全程可合成；光感由 ::before/::after 自带的 box-shadow 承担。 */
+  animation: ui-edge-light-fill-flat 0.6s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+}
+
+@keyframes ui-edge-light-fill-flat {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  72%,
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.item-tile {
+  --item-accent: rgb(139, 143, 149);
+  --item-glow: rgba(139, 143, 149, 0.24);
+  --item-surface: rgba(139, 143, 149, 0.12);
+  width: var(--item-tile-size);
+  height: var(--item-tile-size);
+  min-width: var(--item-tile-size);
+  max-width: var(--item-tile-size);
+  min-height: var(--item-tile-size);
+  max-height: var(--item-tile-size);
+  aspect-ratio: 1 / 1;
+  place-self: center;
+  box-sizing: border-box;
+  align-content: center;
+  gap: 1px;
+  overflow: visible;
+  isolation: isolate;
+  border-color: var(--item-accent);
+  background:
+    linear-gradient(135deg, var(--item-surface), transparent 52%),
+    linear-gradient(0deg, rgba(28, 27, 24, 0.88), rgba(36, 35, 32, 0.94));
+  box-shadow:
+    inset 2px 0 0 color-mix(in srgb, var(--item-accent) 56%, transparent),
+    inset 0 0 14px rgba(0, 0, 0, 0.22);
+  transform: none;
+  /* 密集网格 hover 高亮不走 transition：实测本路径任意 transition（含 transform）都会逐帧主线程重绘
+     （79 格悬停扫过 ~19fps，全禁后 61fps 满帧）。hover 态瞬时切换；动效由 ::before/::after 边缘光的
+     transform + opacity 关键帧承担，跑在合成器线程。 */
+}
+
+.item-tile[data-rarity="mundane"] {
+  --item-accent: rgb(170, 178, 188);
+  --item-glow: rgba(170, 178, 188, 0.15);
+  --item-surface: rgba(170, 178, 188, 0.08);
+  border-color: rgba(215, 222, 230, 0.28);
+}
+
+.item-tile[data-rarity="yellow"] {
+  --item-accent: rgb(58, 156, 96);
+  --item-glow: rgba(58, 156, 96, 0.28);
+  --item-surface: rgba(58, 156, 96, 0.14);
+}
+
+.item-tile[data-rarity="mystic"] {
+  --item-accent: rgb(79, 143, 216);
+  --item-glow: rgba(79, 143, 216, 0.32);
+  --item-surface: rgba(79, 143, 216, 0.18);
+}
+
+.item-tile[data-rarity="earth"] {
+  --item-accent: rgb(123, 97, 209);
+  --item-glow: rgba(123, 97, 209, 0.34);
+  --item-surface: rgba(123, 97, 209, 0.2);
+}
+
+.item-tile[data-rarity="heaven"] {
+  --item-accent: rgb(226, 138, 46);
+  --item-glow: rgba(226, 138, 46, 0.35);
+  --item-surface: rgba(226, 138, 46, 0.2);
+}
+
+.item-tile[data-rarity="spirit"] {
+  --item-accent: rgb(37, 184, 216);
+  --item-glow: rgba(37, 184, 216, 0.35);
+  --item-surface: rgba(37, 184, 216, 0.2);
+}
+
+.item-tile[data-rarity="saint"] {
+  --item-accent: rgb(217, 74, 74);
+  --item-glow: rgba(217, 74, 74, 0.38);
+  --item-surface: rgba(217, 74, 74, 0.21);
+}
+
+.item-tile[data-rarity="emperor"] {
+  --item-accent: rgb(236, 86, 72);
+  --item-glow: rgba(236, 86, 72, 0.44);
+  --item-surface: rgba(236, 86, 72, 0.22);
+  background:
+    linear-gradient(115deg, rgba(236, 86, 72, 0.24), rgba(229, 151, 43, 0.2) 18%, rgba(227, 204, 63, 0.17) 34%, rgba(69, 179, 107, 0.19) 50%, rgba(37, 184, 216, 0.2) 66%, rgba(123, 97, 209, 0.22) 82%, rgba(210, 79, 183, 0.24)),
+    linear-gradient(0deg, rgba(28, 27, 24, 0.88), rgba(36, 35, 32, 0.94));
+  box-shadow:
+    inset 2px 0 0 rgba(236, 86, 72, 0.92),
+    inset 0 0 0 2px rgba(236, 86, 72, 0.18),
+    inset 0 0 20px rgba(236, 86, 72, 0.1);
+}
+
+/* 瓦片 hover 辉光：由 ItemTile 内的 .item-tile-glow 叠加层承载 box-shadow，
+   hover 只动画 opacity（合成器线程）。原先直接过渡/切换瓦片自身 box-shadow
+   的路径实测在密集网格 hover 时逐帧主线程重绘（79 格扫过约 19fps），
+   故辉光改为叠加层 fade-in。is-selected 为常驻态，直接点亮不播动画。 */
+.item-tile-glow {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 10px var(--item-glow),
+    0 0 20px color-mix(in srgb, var(--item-accent) 24%, transparent),
+    inset 2px 0 0 var(--item-accent),
+    inset 0 0 16px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  pointer-events: none;
+}
+
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-tile-glow,
+.item-use-slot:is(:hover, :focus-visible) .item-tile-glow,
+.item-grid-picker-card:is(:hover:not(:disabled), :focus-visible) .item-tile-glow,
+.market-browse-card:is(:hover:not(:disabled), :focus-visible) .item-tile-glow,
+.market-detail-item-card:is(:hover, :focus-visible) .item-tile-glow {
+  animation: item-tile-glow-in 0.22s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+}
+
+.item-grid-picker-card.is-selected .item-tile-glow,
+.market-browse-card.is-selected .item-tile-glow {
+  opacity: 1;
+}
+
+.item-use-slot--depleted .item-tile-glow {
+  display: none;
+}
+
+@keyframes item-tile-glow-in {
+  to { opacity: 1; }
+}
+
+.item-type-ribbon {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 6px 0 0;
+  pointer-events: none;
+  transform-origin: top left;
+  /* 不做 transition（含 transform）：实测本路径 transition 会逐帧主线程重绘。
+     hover 缩放改用 keyframe 动画（合成器线程，零重绘），见下方 hover 规则。 */
+}
+
+.item-type-ribbon > span {
+  position: absolute;
+  top: 4px;
+  left: -11px;
+  width: 38px;
+  overflow: hidden;
+  padding: 1px 0;
+  transform: rotate(-45deg);
+  color: #080806;
+  background: var(--item-accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-tile .item-corner {
+  max-width: calc(100% - 10px);
+  padding: 1px 4px;
+  font-size: var(--text-2xs);
+  line-height: 1.2;
+  /* 同丝带/瓦片：不做 transition，高亮瞬时切换 */
+}
+
+.item-tile .item-corner--top-right {
+  top: 0;
+  right: 0;
+  transform-origin: top right;
+}
+
+.item-tile .item-corner--bottom-right {
+  right: 0;
+  bottom: 0;
+  transform-origin: bottom right;
+}
+
+/* hover 缩放用 keyframe 而非 transition/直接 transform：keyframes 的 transform/opacity
+   走合成器线程，实测满帧；transition 即使只过 transform 也会逐帧主线程重绘。 */
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-type-ribbon {
+  animation: item-ribbon-zoom-in 0.2s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+}
+
+@keyframes item-ribbon-zoom-in {
+  to { transform: scale(1.22); }
+}
+
+/* 丝带高亮：提亮底色 + 叠加外发光 box-shadow，替代原来的 filter: brightness() drop-shadow()。
+   两者观感等价，但 box-shadow 不产生离屏纹理，密集网格下逐格 hover 不再逐帧重绘。 */
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-type-ribbon > span {
+  background: color-mix(in srgb, var(--item-accent) 88%, #fff);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.45),
+    0 0 6px var(--item-glow),
+    0 0 12px color-mix(in srgb, var(--item-accent) 32%, transparent);
+}
+
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-corner--top-right {
+  animation: item-corner-zoom-in 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.62),
+    0 0 8px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 55%, transparent),
+    0 0 16px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 28%, transparent);
+}
+
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-corner--bottom-right {
+  animation: item-corner-zoom-in 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.62),
+    0 0 8px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 55%, transparent),
+    0 0 16px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 28%, transparent);
+}
+
+@keyframes item-corner-zoom-in {
+  to { transform: scale(1.05); }
+}
+
+.item-tile-name {
+  display: block;
+  max-width: 100%;
+  padding: 6px 3px 4px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.2;
+  text-align: center;
+}
+
+/*
+ * 物品图标（有图标资源的物品整块瓦片改用图片渲染）。
+ * 绝对定位铺满瓦片：瓦片本身是 grid，若让图标参与网格流会与丝带/角标争抢行高，
+ * 因此直接脱离文档流，让左上角品类丝带与角标照旧叠在图标之上。
+ *
+ * image-rendering: pixelated —— 源图 48px 小于实际绘制区（52px），属**轻微放大**（1.08×）场景。
+ * 关掉浏览器的双线性插值、改用最近邻，保留像素质感（用户明确要求）。
+ * 若日后把源图换成 ≥ 绘制区的尺寸（如 128px），此处会反过来变成**缩小**场景，
+ * 最近邻会造成细节走样，需连带重新评估这一行。
+ */
+.item-tile-icon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 5px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+}
+
+.item-use-slot-tooltip {
+  height: var(--item-slot-size);
+  width: var(--item-slot-size);
+  flex: 0 0 var(--item-slot-size);
+}
+
+.item-use-slot-shell {
+  position: relative;
+  display: block;
+  width: var(--item-tile-size);
+  height: var(--item-tile-size);
+  overflow: visible;
+}
+
+.combat-ability-slot-shell {
+  width: var(--item-slot-size);
+  height: var(--item-slot-size);
+}
+
+.item-use-slot {
+  width: var(--item-tile-size);
+  height: var(--item-tile-size);
+  min-width: var(--item-tile-size);
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  overflow: visible;
+}
+
+.auto-use-slot .item-use-slot-tooltip,
+.combat-slot-card .item-use-slot-tooltip {
+  width: var(--item-slot-size);
+  min-width: var(--item-slot-size);
+}
+
+.auto-use-slot .item-use-slot:not(.item-use-slot--empty),
+.combat-slot-card .item-use-slot:not(.item-use-slot--empty) {
+  width: var(--item-tile-size);
+  min-width: var(--item-tile-size);
+}
+
+.item-use-slot--empty {
+  width: var(--item-tile-size);
+  height: var(--item-tile-size);
+  min-width: var(--item-tile-size);
+  min-height: var(--item-tile-size);
+  max-width: var(--item-tile-size);
+  max-height: var(--item-tile-size);
+  flex: 0 0 var(--item-tile-size);
+  place-self: center;
+  aspect-ratio: 1 / 1;
+  padding: 6px;
+  font-size: var(--text-sm);
+}
+
+.item-grid-picker-card,
+.market-browse-card {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+}
+
+/* 网格内 button 触发器关闭全局 button 过渡（同上：hover 路径不做逐帧重绘） */
+:is(
+  .item-grid-picker-card,
+  .market-browse-card,
+  .item-use-slot,
+  .combat-ability-slot,
+  .item-slot-inline-action,
+  .combat-ability-level-control
+) {
+  transition: none;
+}
+
+.item-use-slot-cell,
+.combat-ability-cell {
+  width: var(--item-tile-size);
+  height: var(--item-tile-size);
+}
+
+.item-slot-inline-action {
+  position: absolute;
+  z-index: 6;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--gold-dim) 80%, transparent);
+  border-radius: 6px;
+  color: var(--gold-light, #e8d08c);
+  background: linear-gradient(180deg, rgba(24, 22, 16, 0.96) 0%, rgba(9, 10, 8, 0.96) 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 4px rgba(201, 180, 109, 0.12);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+}
+
+.item-slot-inline-action::after {
+  display: none;
+}
+/* 框外条件入口无缝外扩热区：上下左右外扩 8~12px 透明点击域，
+   使鼠标从瓦片跨向按钮时 100% 连续不断触，大幅降低点偏滑脱概率 */
+.item-slot-inline-action--condition::before {
+  display: block;
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: auto;
+}
+
+/* 已配置触发条件时（如「条件2」）：边框微光高亮与明度强调 */
+.item-slot-inline-action--condition.has-triggers {
+  border-color: color-mix(in srgb, var(--gold-bright) 90%, transparent);
+  color: var(--gold-bright);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.75), 0 0 8px rgba(201, 180, 109, 0.38);
+}
+
+.item-slot-inline-action--condition {
+  /* 框外 Hover 条件调节按钮：宽度翻倍（min-width: 80px，水平 padding 翻倍至 18px，居中对齐），
+     高度提升 50%（min-height: 30px，垂直 padding 5px，字号提升至 13px 粗体）；
+     默认悬于瓦片上缘外侧居中（bottom: 100%），悬浮卡经视口翻转到瓦片上方时由组件加
+     is-below 切到下缘外侧避让。只用 opacity + pointer-events 隐藏而不用
+     visibility/display，保留键盘 Tab 聚焦可达性。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.7), 0 0 6px rgba(201, 180, 109, 0.2);
+  z-index: 10006 !important;
+}
+
+.item-slot-inline-action--condition.is-below {
+  bottom: auto;
+  top: 100%;
+  transform-origin: top center;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .item-slot-inline-action--condition {
+    min-height: 30px;
+    width: 100%;
+    max-width: 100%;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-size: var(--text-sm);
+  }
+}
+
+/* 已学功法目录瓦片的条件容器：ConditionedTile 作为 grid cell 包裹瓦片，
+   提供相对定位基准并令瓦片居中 */
+.abilities-learned-cell,
+.conditioned-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--item-slot-size, var(--item-tile-size, 64px));
+  height: var(--item-slot-size, var(--item-tile-size, 64px));
+}
+/* 为已学功法目录网格首排预留冲顶裕量，杜绝第一排 hover 浮现条件按钮时被截断 */
+.abilities-learned-grid {
+  overflow: visible;
+  padding-top: 28px;
+  margin-top: -22px;
+}
+
+
+/* 浮现触发域统一为 ConditionedTile 容器（conditioned-tile）；ItemUseSlot 的
+   item-use-slot-tooltip 挂点保留给物品槽形态。条件按钮一律挂在悬浮卡触发域之外，
+   hover 期间容器提升层叠防止框外按钮被相邻瓦片遮挡。 */
+:is(
+  .conditioned-tile,
+  .item-use-slot-tooltip,
+  .auto-use-slot,
+  .combat-slot-card,
+  .abilities-slot-card
+):is(:hover, :focus-visible, :focus-within) {
+  z-index: 10005 !important;
+}
+
+:is(
+  .conditioned-tile,
+  .item-use-slot-tooltip
+):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition {
+  pointer-events: auto;
+  /* keyframe 的 opacity/transform 走合成器线程，hover 不逐帧重绘 */
+  animation: item-condition-rise-in 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) both;
+}
+
+:is(
+  .conditioned-tile,
+  .item-use-slot-tooltip
+):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition.is-below {
+  animation-name: item-condition-rise-in-below;
+}
+
+/* 上缘浮现：从略下方浮入；下缘浮现（is-below）：从略上方浮入 */
+@keyframes item-condition-rise-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes item-condition-rise-in-below {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* 鼠标落到浮现后的按钮上：提亮反馈 */
+:is(
+  .conditioned-tile,
+  .item-use-slot-tooltip
+):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition:hover:not(:disabled) {
+  filter: brightness(1.12) drop-shadow(0 0 4px rgba(201, 180, 109, 0.28));
+}
+
+/* 关键互斥：当槽位处于展开选择状态（.is-picking）时，彻底隐藏瓦片上的 hover 条件按钮，
+   避免与弹窗大按钮同时出现，也彻底防止被弹窗遮挡。只在弹窗上显示一个大按钮。 */
+:is(.abilities-slot-card, .combat-slot-card, .auto-use-slot).is-picking .item-slot-inline-action--condition {
+  display: none !important;
+}
+
+/* 持续消耗品剩余时间旋转填充遮罩与倒计时数字。
+   扇形约定：起点为 12 点方向，边界顺时针扫过（右 → 下 → 左），暗区代表剩余时长。
+   因此暗区必须锚定在 1turn 一侧、由 (1 - 剩余比) 起算；若写成
+   `conic-gradient(from 0turn, 暗色 calc(ratio * 1turn), transparent 0)` 则边界会逆时针倒扫。
+   注意：本规则必须由 Element 独占，禁止在元素上再挂 combat-ability-cooldown。
+   后者定义在 styles/expedition.css，会在 main.tsx 中后于本文件加载；两者选择器权重相同，
+   同挂时后加载者胜出，会把 color 与 background（含扇形起点角）整段覆盖回战斗冷却样式。 */
+.item-slot-duration-overlay {
+  --cooldown-ratio: 1;
+  --duration-accent: #d9f7ed;
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--duration-accent);
+  /* 暗区浓度刻意压到 0.5 左右：持续消耗品的 ratio 从 1 开始，蒙层在生效初期几乎覆盖整块瓦片，
+     若沿用 0.86 会把物品图标与名称彻底糊住（“物品信息完全看不清”）。
+     现在剩余区仍与已流逝区形成清晰的明暗分界，同时保底看清是哪个物品。
+     调浓会牺牲可读性，调稀会削弱剩余时长对比，改动此值需同时回看两种状态。 */
+  background:
+    conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), rgba(8, 15, 17, 0.5) 0),
+    linear-gradient(rgba(7, 12, 13, 0.1), rgba(7, 12, 13, 0.1));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--duration-accent) 78%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--duration-accent) 18%, transparent);
+  border-radius: 7px;
+  font-family: Arial, sans-serif;
+  font-size: var(--text-base);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+  /* 保持 visible：圆角已由 border-radius 完成，本就不需要 overflow 裁剪；
+     同时避免把外扩 1px 的 .item-slot-duration-ring 静默裁掉。 */
+  overflow: visible;
+}
+
+/* 倒计时数字。类名与 AbilitiesPanel 的技能冷却蒙层共用，两边都是蒙层里唯一的文本子元素。 */
+.item-slot-duration-text {
+  position: relative;
+  z-index: 1;
+}
+
+/* --ring-phase 必须注册成 <angle> 才会被逐帧插值，否则 @keyframes 对它只是跳变、看不出流动。 */
+@property --ring-phase {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* 外圈淡金虚线弧：与扇形同起点（12 点）、同方向（顺时针）、同角度，
+   并比瓦片自身边框整体外扩 1px（inset -1px + 8px 圆角，与 .item-tile 的 1px/7px 边框同心）。
+   拆成两层是为了叠加两道遮罩且互不干扰：
+   1) 本层负责「扇形范围」——复用与遮罩背景完全一致的 conic 公式，因此逐帧天然同步；
+   2) 其 ::before 负责「虚线相位」——由 repeating-conic-gradient 加 --ring-phase 旋转出流动效果。
+   嵌套元素各自的遮罩按交集合成，所以虚线永远只出现在扇形内；若改成在同一元素上用
+   mask-composite 叠两道遮罩，一旦该属性不被支持就会退化成并集，虚线会跑到扇形之外。 */
+.item-slot-duration-ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: 8px;
+  pointer-events: none;
+  -webkit-mask-image: conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), #000 0);
+  mask-image: conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), #000 0);
+}
+
+/* 虚线相位：10deg 实 + 8deg 虚，周期 18deg 可整分 360deg，旋转一周首尾无缝。
+   纯 CSS 无法滚动 border: dashed 的虚线相位，因此这里用实线 border + 旋转遮罩图案来造虚线。
+   角速度恒定，四边虚线速度一致，仅圆角处因离圆心更远而弧长略长。
+   12s/圈（30deg/s）是体感值：3s 像走马灯、6s 仍偏快，再慢就几乎没有「流动」暗示了。
+   改这个数只影响观感，不影响虚线覆盖的角度范围。 */
+.item-slot-duration-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid color-mix(in srgb, var(--gold-bright) 88%, transparent);
+  border-radius: inherit;
+  -webkit-mask-image: repeating-conic-gradient(from var(--ring-phase, 0deg), #000 0deg 10deg, transparent 10deg 18deg);
+  mask-image: repeating-conic-gradient(from var(--ring-phase, 0deg), #000 0deg 10deg, transparent 10deg 18deg);
+  animation:
+    item-slot-duration-ring-flow 12s linear infinite,
+    item-slot-duration-ring-pulse 2.6s ease-in-out infinite;
+}
+
+/* 全局 @media (prefers-reduced-motion: reduce) 已把 animation-duration 压到 0.01ms，无需在此重复兜底。 */
+@keyframes item-slot-duration-ring-flow {
+  to { --ring-phase: 360deg; }
+}
+
+@keyframes item-slot-duration-ring-pulse {
+  0%,
+  100% { opacity: 0.62; }
+
+  50% { opacity: 1; }
+}
+
+.item-use-slot.item-use-slot--continuous-active .item-slot-duration-overlay {
+  --duration-accent: #bfffe8;
+}
+
+.item-use-slot-shell[data-rarity="mundane"] .item-slot-duration-overlay {
+  --duration-accent: #e8f4ff;
+}
+
+.item-use-slot-shell.is-continuous-active {
+  box-shadow: 0 0 8px rgba(80, 200, 160, 0.35);
+}
+
+.item-use-slot.item-use-slot--continuous-active .item-tile {
+  border-color: rgba(80, 200, 160, 0.55);
+}
+
+.auto-use-tray {
+  display: grid;
+  min-width: 0;
+  /* 每个托盘只承载一组栏域槽位（历练 6 槽、技艺/战斗组各 3 槽）：auto-fit 折叠空轨道，
+     槽组撑满整行宽度，轨道同时按 min-content 兜底保证边框容纳任意槽位数。 */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 5px;
+  margin-top: auto;
+  overflow-x: auto;
+  padding: 32px 0;
+  border-top: 1px solid var(--gold-faint);
+  flex-shrink: 0;
+}
+
+.skill-page {
+  display: flex;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.skill-page .panel-header {
+  flex-shrink: 0;
+}
+
+.skill-page .action-cards,
+.skill-page .action-sections {
+  min-height: 0;
+  flex: 1;
+  align-content: start;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-bottom: 6px;
+}
+
+.skill-page .auto-use-tray {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.slot-group {
+  display: grid;
+  min-width: 160px;
+  min-height: 0;
+  align-content: start;
+  justify-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(201, 180, 109, 0.025);
+  overflow: visible;
+}
+
+.slot-group-label {
+  color: var(--text-dim);
+  font-size: var(--text-2xs);
+}
+
+.slot-group--reserved {
+  background:
+    linear-gradient(135deg, rgba(201, 180, 109, 0.018), transparent 60%),
+    rgba(201, 180, 109, 0.012);
+}
+
+.auto-use-slots,
+.combat-slot-grid {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-top: 0;
+  flex-wrap: nowrap;
+  min-width: max-content;
+  overflow: visible;
+}
+
+.combat-slot-grid--abilities {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-top: 8px;
+  flex-wrap: nowrap;
+  min-width: max-content;
+}
+
+.auto-use-slot,
+.combat-slot-card {
+  position: relative;
+  display: grid;
+  width: var(--item-slot-size);
+  height: var(--item-slot-size);
+  min-width: var(--item-slot-size);
+  min-height: var(--item-slot-size);
+  flex: 0 0 var(--item-slot-size);
+  flex-shrink: 0;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+}
+
+.combat-ability-slot {
+  display: grid;
+  width: var(--item-tile-size);
+  height: var(--item-tile-size);
+  min-width: var(--item-tile-size);
+  min-height: var(--item-tile-size);
+  padding: 0;
+  overflow: visible;
+  place-items: center;
+  border: 0;
+  background: transparent;
+}
+
+.combat-ability-slot--empty {
+  padding: 6px;
+  border: 1px dashed var(--gold-dim);
+  color: var(--text-dim);
+  background: rgba(201, 180, 109, 0.025);
+  font-size: var(--text-2xs);
+}
+
+:is(
+  .item-grid-picker-card,
+  .market-browse-card,
+  .item-use-slot:not(.item-use-slot--empty),
+  .combat-ability-slot:not(.combat-ability-slot--empty)
+)::before,
+:is(
+  .item-grid-picker-card,
+  .market-browse-card,
+  .item-use-slot:not(.item-use-slot--empty),
+  .combat-ability-slot:not(.combat-ability-slot--empty)
+)::after {
+  display: none;
+}
+
+.combat-ability-level-control {
+  position: absolute;
+  z-index: 6;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  height: 13px;
+  align-items: center;
+  gap: 1px;
+  padding: 0 3px;
+  border: 1px solid color-mix(in srgb, var(--gold-dim) 72%, transparent);
+  border-radius: 999px;
+  color: var(--gold-bright);
+  background: rgba(7, 8, 6, 0.9);
+  font-size: var(--text-3xs);
+  line-height: 11px;
+  transform-origin: top right;
+}
+
+/* Lv 徽标已随条件按钮移到槽位卡片层，hover 提亮触发域随卡片 */
+:is(.abilities-slot-card, .combat-slot-card):is(:hover, :focus-visible, :focus-within) .combat-ability-level-control {
+  filter: brightness(1.12) drop-shadow(0 0 4px rgba(201, 180, 109, 0.28));
+  transform: none;
+}
+
+/* 装配等级静态徽标数字（等级恒等于已参悟等级，不可编辑） */
+.combat-ability-level-value {
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.item-grid-picker-card {
+  min-height: 0;
+  aspect-ratio: 1;
+}
+
+.item-grid-picker-card--empty {
+  min-height: var(--item-slot-size);
+  aspect-ratio: 1 / 1;
+}
+
+/* ── 通用待选列表（CandidatePicker 贴槽浮层） ──────────────────────────
+   网格列数由共享 auto-fill 组自动判定；卡片收缩适应候选数，
+   宽度上限沿用 daohua-floating-card--auto（约 5 列封顶）。 */
+.candidate-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.candidate-picker-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+
+.candidate-picker-header-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.candidate-picker-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-picker-search {
+  width: 120px;
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 1px solid var(--gold-dim);
+  color: var(--text);
+  background: rgba(201, 180, 109, 0.04);
+  font-size: var(--text-xs);
+}
+
+/* 展开选择弹窗时顶部旁边展示的大号触发条件按钮（高度 32px/触屏 36px） */
+.candidate-picker-condition-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid color-mix(in srgb, var(--gold-dim) 80%, transparent);
+  border-radius: 999px;
+  color: var(--gold-light, #e8d08c);
+  background: linear-gradient(180deg, rgba(32, 28, 18, 0.96) 0%, rgba(14, 15, 12, 0.96) 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 6px rgba(201, 180, 109, 0.15);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.candidate-picker-condition-btn:hover:not(:disabled) {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  filter: brightness(1.15) drop-shadow(0 0 6px rgba(201, 180, 109, 0.35));
+}
+
+.candidate-picker-condition-btn.has-triggers {
+  border-color: color-mix(in srgb, var(--gold-bright) 90%, transparent);
+  color: var(--gold-bright);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(201, 180, 109, 0.4);
+}
+
+.candidate-picker-condition-icon {
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+.candidate-picker-condition-label {
+  font-family: inherit;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .candidate-picker-condition-btn {
+    min-height: 36px;
+    padding: 6px 16px;
+    font-size: var(--text-base);
+  }
+}
+.candidate-picker-grid {
+  /* 约 4 行半高度：露出第 5 行边缘提示可滚动 */
+  max-height: 312px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+/* 正在被待选列表设置的槽位高亮描边 */
+:is(.auto-use-slot, .combat-slot-card, .abilities-slot-card).is-picking,
+.equipment-slot-btn.is-picking {
+  outline: 1px solid var(--gold-bright);
+  outline-offset: 2px;
+  border-radius: 7px;
+}
+
+.catalog-picker-eyebrow {
+  letter-spacing: 0;
+}
+
+.catalog-picker-grid {
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+}
+
+.catalog-picker-card {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 24px 8px 18px;
+  border-color: rgba(201, 180, 109, 0.3);
+  text-align: center;
+}
+
+.catalog-picker-card--empty {
+  align-content: center;
+}
+
+.catalog-picker-corner {
+  position: absolute;
+  z-index: 2;
+  max-width: 62%;
+  overflow: hidden;
+  padding: 2px 9px;
+  border: 1px solid color-mix(in srgb, var(--gold-dim) 66%, transparent);
+  border-radius: 999px;
+  color: var(--text-dim);
+  background: rgba(7, 8, 6, 0.94);
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.62),
+    0 0 7px rgba(201, 180, 109, 0.16);
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-picker-corner--top-left {
+  top: -9px;
+  left: -5px;
+  color: var(--gold);
+}
+
+.catalog-picker-corner--top-right {
+  top: -9px;
+  right: -5px;
+}
+
+.catalog-picker-copy {
+  width: 100%;
+  gap: 5px;
+  place-items: center;
+}
+
+.catalog-picker-copy strong,
+.catalog-picker-copy span,
+.catalog-picker-copy small {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.picker-trigger {
+  position: relative;
+  display: grid;
+  width: 92px;
+  min-width: 92px;
+  min-height: 0;
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 22px 7px 10px;
+  text-align: center;
+}
+
+.picker-trigger-label {
+  position: absolute;
+  z-index: 2;
+  top: -9px;
+  left: -5px;
+  max-width: 78%;
+  overflow: hidden;
+  padding: 2px 9px;
+  border: 1px solid color-mix(in srgb, var(--gold-dim) 66%, transparent);
+  border-radius: 999px;
+  color: var(--gold);
+  background: rgba(7, 8, 6, 0.94);
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.62),
+    0 0 7px rgba(201, 180, 109, 0.16);
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-trigger-copy {
+  width: 100%;
+  place-items: center;
+  gap: 4px;
+}
+
+.picker-trigger-copy strong,
+.picker-trigger-copy small {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.choice-menu {
+  width: 88px;
+}
+
+.choice-menu-trigger {
+  display: grid;
+  width: 88px;
+  min-height: 0;
+  aspect-ratio: 1;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 7px;
+  text-align: center;
+}
+
+.choice-menu-trigger small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-menu-trigger strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+}
+
+.choice-menu-modal {
+  width: min(92vw, 620px);
+}
+
+.choice-menu-modal-header {
+  padding: 0 30px 10px 0;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.choice-menu-modal-header span {
+  color: var(--text-dim);
+  font-size: var(--text-2xs);
+}
+
+.choice-menu-modal-header h2 {
+  margin: 2px 0 0;
+  color: var(--gold-bright);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-regular);
+}
+
+.choice-menu-options {
+  display: grid;
+  max-height: min(62dvh, 480px);
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  padding: 12px 2px 2px;
+}
+
+.choice-menu-option {
+  min-height: 0;
+  aspect-ratio: 1;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px;
+  border-color: rgba(201, 180, 109, 0.25);
+  text-align: center;
+}
+
+.choice-menu-option strong,
+.choice-menu-option small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.item-tooltip--mundane { border-color: #a7ada9; }
+.item-tooltip--yellow { border-color: #d9bd42; }
+.item-tooltip--mystic { border-color: #39bbce; }
+.item-tooltip--earth { border-color: #d66c3d; }
+.item-tooltip--heaven { border-color: #5889e4; }
+.item-tooltip--spirit { border-color: #6ac985; }
+.item-tooltip--saint { border-color: #d45cad; }
+.item-tooltip--emperor { border-color: #f2d17c; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.72), 0 0 20px rgba(242, 209, 124, 0.18); }
+
+@media (max-width: 520px) {
+  .catalog-picker-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .picker-trigger,
+  .combat-picker-trigger {
+    width: 84px;
+    min-width: 84px;
+  }
+
+  .catalog-picker-card,
+  .item-grid-picker-card,
+  .item-grid-picker-card--empty {
+    width: 100%;
+  }
+
+  .choice-menu-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 380px) {
+  .catalog-picker-grid,
+  .choice-menu-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  :root {
+    --mobile-consumable-slot-size: 48px;
+  }
+
+  /* 竖屏：行动页自动消耗品托盘，统一槽位大小（48px），避免不规则拉伸 */
+  .auto-use-tray {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 0;
+  }
+
+  .slot-group {
+    min-width: 0;
+  }
+
+  .auto-use-slots {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* 详情、历练、技艺三处消耗品格子统一为 48px 正方形 */
+  .auto-use-tray .auto-use-slot,
+  .combat-slot-tray .auto-use-slot,
+  .combat-slot-tray .combat-slot-card {
+    width: var(--mobile-consumable-slot-size);
+    height: var(--mobile-consumable-slot-size);
+    min-width: var(--mobile-consumable-slot-size);
+    min-height: var(--mobile-consumable-slot-size);
+    flex: 0 0 var(--mobile-consumable-slot-size);
+    aspect-ratio: 1 / 1;
+  }
+
+  .auto-use-tray .item-use-slot-tooltip,
+  .auto-use-tray .item-use-slot-shell,
+  .auto-use-tray .item-use-slot,
+  .combat-slot-tray .item-use-slot-tooltip,
+  .combat-slot-tray .item-use-slot-shell,
+  .combat-slot-tray .item-use-slot,
+  .combat-slot-tray .combat-ability-slot {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .auto-use-tray .item-use-slot--empty,
+  .combat-slot-tray .item-use-slot--empty,
+  .combat-slot-tray .combat-ability-slot--empty {
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 压过基础规则里 .combat-slot-tray .slot-group:last-child 的 min-width: max-content */
+  .combat-slot-tray .slot-group.combat-slot-section,
+  .combat-slot-section {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  :root {
+    --mobile-consumable-slot-size: 44px;
+  }
+}

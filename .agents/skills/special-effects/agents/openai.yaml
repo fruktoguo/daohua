@@ -1,0 +1,6 @@
+interface:
+  display_name: "特殊效果实现"
+  short_description: "实现装备被动、技能附加效果与 Buff，统一触发时序、状态归属及确定性验证"
+  default_prompt: "使用 $special-effects 完整实现本次特殊玩法效果，核对触发时机、数据接入、共享结算与必要验证。"
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,358 @@
+using Domain.Common;
+using Domain.GameData;
+using Domain.Player;
+using Domain.Simulation;
+using Domain.World;
+using Xunit;
+
+namespace Domain.Tests;
+
+/// <summary>
+/// 队列无限循环（Queue Loop）与受阻轮换测试套件。
+/// 验证：单任务重复、多任务次序交替、禁用循环出队、移动单次豁免、受阻轮换与全受阻安全停泊。
+/// </summary>
+public sealed class QueueLoopTests
+{
+    private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private static PlayerAggregate CreatePlayer(string name) =>
+        PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
+    /// <summary>
+    /// 新建角色默认关闭 LoopEnabled 与 AutoTravelEnabled（防止误导新手玩家）。
+    /// </summary>
+    [Fact]
+    public void NewlyCreatedPlayer_HasLoopAndAutoTravelDisabledByDefault()
+    {
+        var player = CreatePlayer("萌新");
+        Assert.False(player.Settings.LoopEnabled);
+        Assert.False(player.Settings.AutoTravelEnabled);
+
+        var doc = player.ExportState().Settings;
+        Assert.False(doc.LoopEnabled);
+        Assert.False(doc.AutoTravelEnabled);
+    }
+
+    /// <summary>
+    /// LoopEnabled 下单任务次数耗尽后自动重置续跑，绝不出队（循环队列核心不变量）。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_RepeatsSingleActionIndefinitely_WhenLoopEnabled()
+    {
+        // 单任务（吐纳 2 次，单次 10 秒），在 Settings.LoopEnabled = true 时，
+        // 每轮完成后重置次数并继续下一轮，绝不出队。
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("甲");
+        player.SetLoopEnabled(true);
+        Assert.True(player.Settings.LoopEnabled);
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, catalog.Actions);
+
+        // 推进 25 秒：前 20 秒完成 2 轮（第 1 轮 10s，第 2 轮 10s），触发循环重置为 2 次，随后第 3 轮推进 5 秒
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(25), catalog);
+
+        Assert.True(result.Changed);
+        Assert.Single(player.Actions);
+        var action = player.Actions[0];
+        Assert.Equal(2, action.CompletedRepeats);
+        Assert.Equal(2, action.RemainingRepeats); // 重置后初始 2 次，正在执行第 1 次
+        Assert.Equal(5, action.ProgressSeconds);
+        Assert.Equal(ActionQueueStatus.Running, action.Status);
+        Assert.Equal(20d, player.Progression.Experience);
+        Assert.Equal(2, player.Progression.CompletedActions);
+    }
+
+    /// <summary>
+    /// LoopEnabled 下多任务按 FIFO 轮转：完成的行动移到队尾，下一项升为队首进入 Running。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_CyclesMultipleActionsInOrder_WhenLoopEnabled()
+    {
+        // 多个不同任务（采集 1 次 2 秒 + 吐纳 1 次 3 秒）在 Settings.LoopEnabled = true 时，依次交替循环执行
+        var herb = new ItemId("item.herb");
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.gather"), "采药", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, herb)]),
+            new ActionDefinition(new ActionId("test.draw-qi"), "吐纳", ActionKind.Cultivation, 3, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
+        ]);
+        var catalog = new GameDataCatalog("test", "test", actions, new Dictionary<ItemId, ItemDefinition>());
+
+        var player = CreatePlayer("乙");
+        player.SetLoopEnabled(true);
+        Assert.True(player.Settings.LoopEnabled);
+        player.Enqueue(new ActionIntent(new ActionId("test.gather"), 1), Baseline, actions);
+        player.Enqueue(new ActionIntent(new ActionId("test.draw-qi"), 1), Baseline, actions);
+
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(new ActionId("test.gather"), player.Actions[0].Intent.ActionId);
+        Assert.Equal(new ActionId("test.draw-qi"), player.Actions[1].Intent.ActionId);
+
+        // 推进 2 秒：采药完成，轮换到队尾，吐纳成为队首并激活为 Running
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog);
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(new ActionId("test.draw-qi"), player.Actions[0].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Running, player.Actions[0].Status);
+        Assert.Equal(new ActionId("test.gather"), player.Actions[1].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Pending, player.Actions[1].Status);
+
+        // 再推进 3 秒（累计 5 秒）：吐纳完成，轮换到队尾，采药重回队首
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog);
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(new ActionId("test.gather"), player.Actions[0].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Running, player.Actions[0].Status);
+        Assert.Equal(new ActionId("test.draw-qi"), player.Actions[1].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Pending, player.Actions[1].Status);
+
+        // 再推进 2 秒（累计 7 秒）：采药再次完成并轮转，总完成数 = 3
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(7), catalog);
+        Assert.Equal(new ActionId("test.draw-qi"), player.Actions[0].Intent.ActionId);
+        Assert.Equal(3, player.Progression.CompletedActions);
+    }
+
+    /// <summary>
+    /// 关闭循环后次数耗尽直接出队且队列不再复活。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_RemovesActionDirectly_WhenLoopDisabled()
+    {
+        // 当 player.SetLoopEnabled(false) 时，任务次数耗尽后直接从队列移除，队列最终变空
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("丙");
+        Assert.False(player.Settings.LoopEnabled);
+
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, catalog.Actions);
+
+        // 推进 20 秒完成 2 轮
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog);
+
+        Assert.Equal(2, result.CompletedActions);
+        Assert.Empty(player.Actions);
+        Assert.Equal(2, player.Progression.CompletedActions);
+
+        // 再次推进墙钟，队列不会复活
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(40), catalog);
+        Assert.Empty(player.Actions);
+    }
+
+    /// <summary>
+    /// 移动行动是循环豁免：即使 LoopEnabled 开启，到达目的地后也直接出队绝不重入。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_DoesNotLoopTravelAction_EvenWhenLoopEnabled()
+    {
+        // 移动行动（world.travel）属于单次位移，即使 LoopEnabled = true，到达目的地后也绝不出队重入
+        var graph = new WorldGraph();
+        graph.AddNode(WorldNode.Create("n1", "起点", 0, 0));
+        graph.AddNode(WorldNode.Create("n2", "终点", 10, 0));
+        graph.AddUndirectedEdge(WorldEdge.Create("e12", "n1", "n2", 10, 10));
+
+        var actionCatalog = new ActionCatalog([
+            new ActionDefinition(new ActionId("world.travel"), "移动", ActionKind.Exploration, 0,
+                new Dictionary<ItemId, double>(), [],
+                ExecutionKind: ActionExecutionKind.Travel)
+        ]);
+        var gameData = new GameDataCatalog("travel", "travel", actionCatalog, worldGraph: graph);
+
+        var player = CreatePlayer("行者");
+        player.TravelTo("n1");
+        player.SetLoopEnabled(true);
+        Assert.True(player.Settings.LoopEnabled);
+
+        var plan = graph.Plan("n1", "n2");
+        var travelState = new TravelActionState("n2", plan.TotalTravelSeconds, plan.EdgeIds, plan.Segments);
+        player.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, "n2"), Baseline, actionCatalog, travelState);
+
+        // 推进 10 秒抵达目的地
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), gameData);
+
+        Assert.Equal("n2", player.World.NodeId);
+        Assert.Null(player.World.EdgeId);
+        Assert.Equal(0, player.World.EdgeProgress);
+        Assert.Contains(result.Events, e => e.Code == "world.arrived");
+        Assert.Empty(player.Actions); // 关键门禁：到达后直接出队，绝不出队重入
+    }
+
+    /// <summary>
+    /// 原地复活倒地等待是战斗内部阶段而非完成/受阻：队列保持原行动不轮换不计完成，
+    /// 到达复活边界满血起身后同一行动续打同一波敌人。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_WaitsForRespawnWithoutCompletingOrRotatingDefeatedAction()
+    {
+        // 阵亡是战斗内部等待阶段，不是完成或材料受阻，队列必须保持当前行动。
+        var combatActionId = new ActionId("combat.boss");
+        var qiActionId = new ActionId("cultivation.draw-qi");
+        var actions = new ActionCatalog([
+            new ActionDefinition(combatActionId, "强力妖兽", ActionKind.Combat, 0,
+                new Dictionary<ItemId, double>(), [],
+                ExecutionKind: ActionExecutionKind.CombatEncounter,
+                CombatEncounterId: "encounter.boss"),
+            new ActionDefinition(qiActionId, "吐纳", ActionKind.Cultivation, 2,
+                new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
+        ]);
+        var monster = new CombatMonsterDefinition("enemy.boss", "妖皇", 100, 1, CombatMonsterRank.Boss,
+            CombatantStats.Create(10_000, 10_000, 0, 1), [], []);
+        var encounter = new CombatEncounterDefinition(
+            "encounter.boss", "妖皇巢穴", 100, 100, 1, 1, 1, 180,
+            [new CombatSpawnDefinition("enemy.boss", 1, 1)], [], [], 0);
+        var catalog = new GameDataCatalog("boss-test", "boss-test", actions,
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { ["encounter.boss"] = encounter },
+            combatMonsters: new Dictionary<string, CombatMonsterDefinition> { ["enemy.boss"] = monster });
+
+        var player = CreatePlayer("丁");
+        player.SetLoopEnabled(true);
+        Assert.True(player.Settings.LoopEnabled);
+
+        player.Enqueue(new ActionIntent(combatActionId, 1), Baseline, actions);
+        player.Enqueue(new ActionIntent(qiActionId, 1), Baseline, actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), catalog);
+
+        Assert.Contains(result.Events, e => e.Code == "combat.lost");
+        Assert.Equal(2, player.Actions.Count);
+        var combat = player.Actions[0];
+        Assert.Equal(combatActionId, combat.Intent.ActionId);
+        // 倒地窗口仍是 Combat 相位：妖皇保留在场上，复活截止点已挂上战斗时钟。
+        Assert.Equal(CombatExpeditionPhase.Combat, combat.Expedition!.Phase);
+        var respawnAt = Assert.IsType<double>(combat.Expedition.PlayerRespawnAtSeconds);
+        Assert.Single(combat.Expedition.Enemies!, e => e.State.Hitpoints > 0);
+        Assert.Equal(ActionQueueStatus.Pending, player.Actions[1].Status);
+        Assert.Equal(0, player.Progression.CompletedActions);
+        var boundary = player.LastSimulatedAt.AddSeconds(respawnAt - combat.Expedition.BattleElapsedSeconds);
+        SimulationEngine.AdvanceTo(player, boundary.AddMilliseconds(-1), catalog);
+        Assert.Equal(0, player.Resources.Hitpoints);
+        var resumed = SimulationEngine.AdvanceTo(player, boundary, catalog);
+        Assert.Contains(resumed.Events, e => e.Code == "combat.respawned");
+        Assert.Equal(player.Resources.MaxHitpoints, player.Resources.Hitpoints);
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(combat.Id, player.Actions[0].Id);
+        Assert.Equal(1, combat.RemainingRepeats);
+        Assert.Equal(0, player.Progression.CompletedActions);
+    }
+
+    /// <summary>
+    /// 未开启循环时，制造行动耗尽材料后直接出队（直接消失），后续行动升为队首继续推进（即使该制造设为无限重复 -1）。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_RemovesBlockedCraftingAction_WhenLoopDisabled_EvenWithInfiniteRepeats()
+    {
+        var woodId = new ItemId("item.peach-wood");
+        var crystalId = new ItemId("item.peach-wood-crystal");
+        var craftId = new ActionId("craft.refine-peach-wood-crystal");
+        var qiId = new ActionId("cultivation.draw-qi");
+        var actions = new ActionCatalog([
+            new ActionDefinition(craftId, "制作桃木晶", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [woodId] = 3 },
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, crystalId)]),
+            new ActionDefinition(qiId, "吐纳", ActionKind.Cultivation, 5,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
+        ]);
+        var catalog = new GameDataCatalog("test-craft", "test-craft", actions);
+
+        var player = CreatePlayer("哇哇乱杀");
+        Assert.False(player.Settings.LoopEnabled);
+
+        // 排队：制作桃木晶（-1 无限重复）+ 吐纳（1 次）
+        player.Enqueue(new ActionIntent(craftId, -1), Baseline, actions);
+        player.Enqueue(new ActionIntent(qiId, 1), Baseline, actions);
+
+        // 初始钱包只有 3 个桃木（恰好只够做 1 轮）
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Credit(new AssetKey(woodId), 3, "init");
+
+        // 推进 10 秒：第 1 轮桃木晶完成，消耗 3 桃木，获得 1 桃木晶
+        var r1 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        foreach (var d in r1.AssetDeltas) wallet.Apply(d);
+        Assert.Equal(0, wallet.Get(new AssetKey(woodId)));
+        Assert.Equal(1, wallet.Get(new AssetKey(crystalId)));
+
+        // 再推进 2 秒（累计 12 秒）：第 2 轮因桃木不足受阻；未开启循环，桃木晶直接终止出队，吐纳升为队首 Running 并推进 2 秒
+        var r2 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(12), catalog, wallet);
+        foreach (var d in r2.AssetDeltas) wallet.Apply(d);
+
+        Assert.Single(player.Actions);
+        Assert.Equal(qiId, player.Actions[0].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Running, player.Actions[0].Status);
+        Assert.Equal(2.0, player.Actions[0].ProgressSeconds);
+        Assert.Equal(2.0, player.Progression.Experience);
+    }
+
+    /// <summary>
+    /// 开启循环时，制造行动耗尽材料后自动变到队尾，后续行动升为队首继续推进，且队尾项状态重置为 Pending。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_RotatesBlockedCraftingActionToTail_WhenLoopEnabled_EvenWithInfiniteRepeats()
+    {
+        var woodId = new ItemId("item.peach-wood");
+        var crystalId = new ItemId("item.peach-wood-crystal");
+        var craftId = new ActionId("craft.refine-peach-wood-crystal");
+        var qiId = new ActionId("cultivation.draw-qi");
+        var actions = new ActionCatalog([
+            new ActionDefinition(craftId, "制作桃木晶", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [woodId] = 3 },
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, crystalId)]),
+            new ActionDefinition(qiId, "吐纳", ActionKind.Cultivation, 5,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
+        ]);
+        var catalog = new GameDataCatalog("test-craft-loop", "test-craft-loop", actions);
+
+        var player = CreatePlayer("循环挂机者");
+        player.SetLoopEnabled(true);
+        Assert.True(player.Settings.LoopEnabled);
+
+        player.Enqueue(new ActionIntent(craftId, -1), Baseline, actions);
+        player.Enqueue(new ActionIntent(qiId, 1), Baseline, actions);
+
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Credit(new AssetKey(woodId), 3, "init");
+
+        // 推进 10 秒：第 1 轮桃木晶完成
+        var r1 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        foreach (var d in r1.AssetDeltas) wallet.Apply(d);
+
+        // 再推进 2 秒（累计 12 秒）：第 2 轮因桃木不足受阻；开启循环，桃木晶变到队尾，吐纳升为队首 Running
+        var r2 = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(12), catalog, wallet);
+        foreach (var d in r2.AssetDeltas) wallet.Apply(d);
+
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(qiId, player.Actions[0].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Running, player.Actions[0].Status);
+        Assert.Equal(2.0, player.Actions[0].ProgressSeconds);
+
+        // 桃木晶已被变到队尾，且状态已重置为 Pending 等待调度
+        Assert.Equal(craftId, player.Actions[1].Intent.ActionId);
+        Assert.Equal(ActionQueueStatus.Pending, player.Actions[1].Status);
+    }
+
+    /// <summary>
+    /// 开启循环时，若队列中全部行动均因材料不足受阻，单轮转满一圈后安全熔断进入安全空转期，绝不触发无限死循环。
+    /// </summary>
+    [Fact]
+    public void QueueLoop_EntersSafeIdling_WhenAllActionsBlocked_InLoopMode()
+    {
+        var woodId = new ItemId("item.peach-wood");
+        var ironId = new ItemId("item.dark-iron");
+        var craftWood = new ActionId("craft.refine-peach-wood-crystal");
+        var craftIron = new ActionId("craft.refine-iron");
+        var actions = new ActionCatalog([
+            new ActionDefinition(craftWood, "制作桃木晶", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [woodId] = 3 }, []),
+            new ActionDefinition(craftIron, "制作百炼铁", ActionKind.Alchemy, 10,
+                new Dictionary<ItemId, double> { [ironId] = 3 }, [])
+        ]);
+        var catalog = new GameDataCatalog("test-all-blocked", "test-all-blocked", actions);
+
+        var player = CreatePlayer("双空手");
+        player.SetLoopEnabled(true);
+
+        player.Enqueue(new ActionIntent(craftWood, 1), Baseline, actions);
+        player.Enqueue(new ActionIntent(craftIron, 1), Baseline, actions);
+
+        var wallet = new AssetWallet(player.PlayerId); // 两个材料全无
+
+        // 推进 5 秒：安全熔断，不抛 MaxTransitionsPerAdvance 异常
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet);
+
+        Assert.Equal(2, player.Actions.Count);
+        Assert.Equal(ActionQueueStatus.Blocked, player.Actions[0].Status);
+    }
+}

@@ -1,0 +1,230 @@
+[
+  {
+    "id": "enemy.demonized-rabbit",
+    "name": "魔化野兔",
+    "visual": {
+      "renderer": "text",
+      "source": "兔"
+    },
+    "budgetCost": 15,
+    "weights": {
+      "hp": 0.6,
+      "ad": 0.3,
+      "armor": 0.65,
+      "hit": 1.0,
+      "eva": 1.0
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-hide",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.feiyan-gong",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.feiyan-gong",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  {
+    "id": "enemy.wood-spirit",
+    "name": "木灵",
+    "visual": {
+      "renderer": "text",
+      "source": "木"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "wood",
+    "level": 3,
+    "budgetCost": 15,
+    "weights": {
+      "hp": 0.6,
+      "mp": 0.2,
+      "ad": 0.4,
+      "ap": 0.4,
+      "armor": 0.87,
+      "hit": 1.0,
+      "eva": 1.0
+    },
+    "dropTable": [
+      {
+        "itemId": "item.broken-spirit-core",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.palm-lightning",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.palm-lightning",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tuna-gong",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tuna-gong",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.palm-lightning",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
+    ],
+    "modifiers": {
+      "woodDamageReductionPoints": 10.8
+    }
+  },
+  {
+    "id": "enemy.fire-spirit",
+    "name": "火灵",
+    "visual": {
+      "renderer": "text",
+      "source": "火"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "fire",
+    "level": 5,
+    "budgetCost": 15,
+    "weights": {
+      "hp": 0.6,
+      "mp": 0.3,
+      "ad": 0.4,
+      "ap": 0.4,
+      "armor": 0.65,
+      "hit": 1.0,
+      "eva": 1.0
+    },
+    "dropTable": [
+      {
+        "itemId": "item.broken-spirit-core",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.blazing-blast",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.blazing-blast",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.qingxin-jue",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.qingxin-jue",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.blazing-blast",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
+    ],
+    "modifiers": {
+      "fireDamageReductionPoints": 13.0
+    }
+  },
+  {
+    "id": "enemy.water-spirit",
+    "name": "水灵",
+    "visual": {
+      "renderer": "text",
+      "source": "水"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "water",
+    "level": 4,
+    "budgetCost": 15,
+    "weights": {
+      "hp": 0.6,
+      "mp": 0.25,
+      "ad": 0.35,
+      "ap": 0.45,
+      "armor": 0.75,
+      "hit": 1.0,
+      "eva": 1.0
+    },
+    "dropTable": [
+      {
+        "itemId": "item.broken-spirit-core",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.ganlu",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.ganlu",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.palm-lightning",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.palm-lightning",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.ganlu",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
+    ],
+    "modifiers": {
+      "waterDamageReductionPoints": 12.0
+    }
+  }
+]

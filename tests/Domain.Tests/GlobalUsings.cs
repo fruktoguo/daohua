@@ -1,0 +1,11 @@
+global using DaoHua.Ecs;
+global using Domain.Common;
+global using Domain.Combat;
+global using Domain.Economy;
+global using Domain.GameData;
+global using Domain.Market;
+global using Domain.Player;
+global using Domain.Simulation;
+global using Domain.World;
+global using Protocol;
+global using Xunit;

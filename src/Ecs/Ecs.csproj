@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DaoHua.Ecs</RootNamespace>
+    <AssemblyName>DaoHua.Ecs</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ecs.Tests" />
+    <InternalsVisibleTo Include="Server" />
+    <InternalsVisibleTo Include="Domain.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Domain/Domain.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj" />
+  </ItemGroup>
+</Project>

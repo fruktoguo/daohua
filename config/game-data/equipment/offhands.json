@@ -1,0 +1,153 @@
+[
+  {
+    "id": "equipment.fan-tie-dart",
+    "name": "兽骨匕",
+    "description": "袖底藏锋，反握出奇。\n百炼铁包兽骨打制的贴身轻匕，短小精悍，反握藏锋。",
+    "slot": "off-hand",
+    "baseStatRatios": {
+      "physicalAttack": 0.1
+    },
+    "flatStats": {
+      "physicalAttack": 6,
+      "accuracy": 6,
+      "physicalDamageBonusPoints": 4
+    }
+  },
+  {
+    "id": "equipment.qingmu-bead",
+    "name": "桃灵珠",
+    "description": "桃木凝华，珠转法生。\n老桃木灵芯磨成的法珠，握于掌心可助法诀流转。",
+    "slot": "off-hand",
+    "baseStatRatios": {
+      "spellAttack": 0.1
+    },
+    "flatStats": {
+      "spellAttack": 6,
+      "accuracy": 6,
+      "spellDamageBonusPoints": 4,
+      "skillBonusPoints": 4
+    }
+  },
+  {
+    "id": "equipment.tiepi-guard",
+    "name": "精铁盾",
+    "description": "方寸精铁，亦可挡锋。\n百炼精铁与厚皮蒙合的轻盾，轻便顺手，护住身前要害。",
+    "slot": "off-hand",
+    "baseStatRatios": {
+      "physicalArmor": 0.06,
+      "spellResistance": 0.06
+    },
+    "flatStats": {
+      "maxHitpoints": 10,
+      "physicalDamageReductionPoints": 4
+    }
+  },
+  {
+    "id": "equipment.ganlu-flask",
+    "name": "甘露瓶",
+    "description": "甘露一滴，枯木回春。\n盛有清晨甘露的小瓷瓶，贴身携带可润养经脉。",
+    "slot": "off-hand",
+    "flatStats": {
+      "hitpointRegen": 2,
+      "manapointRegen": 1,
+      "maxManapoints": 10,
+      "cooldownReductionPoints": 3,
+      "healingBonusPoints": 5
+    }
+  },
+  {
+    "id": "equipment.tiemu-shield",
+    "name": "铁木坚盾",
+    "description": "古铁裹坚木，沉雄不可破。\n采古松坚木为底、外包沉铁重甲的防御圆盾，沉雄如岳，卸力消劲。",
+    "slot": "off-hand",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalArmor": 0.07,
+      "spellResistance": 0.07
+    },
+    "flatStats": {
+      "maxHitpoints": 13,
+      "physicalDamageReductionPoints": 4
+    }
+  },
+  {
+    "id": "equipment.ningshui-charm",
+    "name": "凝水灵符",
+    "description": "水华凝玉符，灵波润术芒。\n以水灵原核雕琢的御水法符，佩于左臂，引动水脉灵韵增幅术法。",
+    "slot": "off-hand",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.12
+    },
+    "flatStats": {
+      "spellAttack": 8,
+      "accuracy": 7,
+      "spellDamageBonusPoints": 4,
+      "skillBonusPoints": 4
+    }
+  },
+  {
+    "id": "equipment.xuantie-dart",
+    "name": "赤牙匕",
+    "description": "赤铜淬芒，嵌齿破罡。\n融入赤铜精与兽牙锻造的破罡短刃，寒芒夺魄，破空穿甲。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.14
+    },
+    "flatStats": {
+      "physicalAttack": 8,
+      "accuracy": 10,
+      "physicalDamageBonusPoints": 6
+    }
+  },
+  {
+    "id": "equipment.yaoling-bead",
+    "name": "曜灵珠",
+    "description": "曜光蕴珠，法随念转。\n灵松晶温养出的曜灵法珠，珠内光华流转不息。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "spellAttack": 0.14
+    },
+    "flatStats": {
+      "spellAttack": 8,
+      "accuracy": 10,
+      "spellDamageBonusPoints": 6,
+      "skillBonusPoints": 6
+    }
+  },
+  {
+    "id": "equipment.xuanjia-guard",
+    "name": "赤铜盾",
+    "description": "赤铜覆面，不动如山。\n赤铜厚甲拼合的护手重盾，盾面沉厚，可挡刀剑术法。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalArmor": 0.08,
+      "spellResistance": 0.08
+    },
+    "flatStats": {
+      "maxHitpoints": 16,
+      "physicalDamageReductionPoints": 6
+    }
+  },
+  {
+    "id": "equipment.huichun-bell",
+    "name": "回春铃",
+    "description": "铃动回春，息续不绝。\n镂刻回春符纹的铜铃，铃声清越，闻者气血渐苏。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "flatStats": {
+      "hitpointRegen": 3,
+      "manapointRegen": 1,
+      "maxManapoints": 16,
+      "cooldownReductionPoints": 5,
+      "healingBonusPoints": 6
+    }
+  }
+]

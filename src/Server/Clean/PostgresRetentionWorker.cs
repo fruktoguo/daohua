@@ -1,0 +1,196 @@
+namespace Server.Clean;
+
+/// <summary>
+/// 只清理可重建或已过期的运行记录，避免日志、回执和冷挂机结果在小硬盘上无界增长。
+/// 资产余额、订单、成交和未投递 outbox 永不由该 worker 删除；权威流水归档由备份/归档流程负责。
+/// </summary>
+public sealed class PostgresRetentionRepository(
+    NpgsqlDataSource dataSource,
+    ServerOptions options,
+    ILogger<PostgresRetentionRepository> logger)
+{
+    /// <summary>对可清理表各删一小批过期行，并回收已结束会话的已消费结算载荷（同一事务）。</summary>
+    public async ValueTask<RetentionResult> PruneAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var outboxBefore = now - options.DeliveredOutboxRetention;
+        var sessionsBefore = now - options.SessionRetention;
+        var auditBefore = now - options.AuditRetention;
+        var riskBefore = now - options.AccountRiskEventRetention;
+        var computeBefore = now - options.ComputeJobRetention;
+        var keysBefore = now - options.DataProtectionKeyRetention;
+        var claimsBefore = now - options.SettlementClaimRetention;
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var deletedOutbox = await DeleteBatchAsync(connection, transaction, """
+            SELECT outbox_id
+            FROM platform.integration_outbox
+            WHERE delivered_at IS NOT NULL AND delivered_at < $1
+            ORDER BY delivered_at
+            LIMIT $2
+            """, "DELETE FROM platform.integration_outbox o USING ({0}) doomed WHERE o.outbox_id = doomed.outbox_id", outboxBefore, cancellationToken);
+        var deletedSessions = await DeleteBatchAsync(connection, transaction, """
+            SELECT session_id
+            FROM identity.auth_sessions
+            WHERE (revoked_at IS NOT NULL AND revoked_at < $1)
+               OR expires_at < $1
+            ORDER BY expires_at
+            LIMIT $2
+            """, "DELETE FROM identity.auth_sessions s USING ({0}) doomed WHERE s.session_id = doomed.session_id", sessionsBefore, cancellationToken);
+        var deletedAudit = await DeleteBatchAsync(connection, transaction, """
+            SELECT event_id
+            FROM identity.audit_events
+            WHERE occurred_at < $1
+            ORDER BY occurred_at
+            LIMIT $2
+            """, "DELETE FROM identity.audit_events e USING ({0}) doomed WHERE e.event_id = doomed.event_id", auditBefore, cancellationToken);
+        var deletedRisk = await DeleteBatchAsync(connection, transaction, """
+            SELECT event_id FROM identity.account_risk_events WHERE occurred_at < $1 ORDER BY occurred_at LIMIT $2
+            """, "DELETE FROM identity.account_risk_events e USING ({0}) doomed WHERE e.event_id=doomed.event_id", riskBefore, cancellationToken,
+                batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
+        var deletedCompute = await DeleteBatchAsync(connection, transaction, """
+            SELECT job_id
+            FROM platform.compute_jobs
+            WHERE updated_at < $1
+              AND status IN ('succeeded', 'failed', 'cancelled', 'dead')
+            ORDER BY updated_at
+            LIMIT $2
+            """, "DELETE FROM platform.compute_jobs j USING ({0}) doomed WHERE j.job_id = doomed.job_id", computeBefore, cancellationToken);
+        var deletedKeys = await DeleteBatchAsync(connection, transaction, """
+            SELECT key_id
+            FROM identity.data_protection_keys
+            WHERE expires_at IS NOT NULL AND expires_at < $1
+            ORDER BY expires_at
+            LIMIT $2
+            """, "DELETE FROM identity.data_protection_keys k USING ({0}) doomed WHERE k.key_id = doomed.key_id", keysBefore, cancellationToken);
+        var deletedClaims = await DeleteBatchAsync(connection, transaction, """
+            SELECT player_id, request_id
+            FROM market.settlement_claims
+            WHERE claimed_at < $1
+            ORDER BY claimed_at
+            LIMIT $2
+            """, "DELETE FROM market.settlement_claims c USING ({0}) doomed WHERE c.player_id = doomed.player_id AND c.request_id = doomed.request_id", claimsBefore, cancellationToken);
+        // 终局后不再有下一检查点，复用低频清理回收末批已确认载荷；未消费结算始终保留。
+        var deletedParticipationInboxes = await DeleteBatchAsync(connection, transaction, """
+            SELECT inbox.session_id, inbox.player_id, inbox.sequence
+            FROM social.party_session_inbox inbox
+            JOIN social.party_sessions session ON session.session_id = inbox.session_id
+            WHERE session.ended_at IS NOT NULL AND inbox.consumed_at <= $1
+            ORDER BY inbox.consumed_at
+            LIMIT $2
+            """, "DELETE FROM social.party_session_inbox inbox USING ({0}) doomed WHERE inbox.session_id = doomed.session_id AND inbox.player_id = doomed.player_id AND inbox.sequence = doomed.sequence", now, cancellationToken);
+        // 两级经济流水留存体系：
+        // 1. 短期流水（保存 2 小时）：战斗物品获得、挂机推演、物品消耗、商店回收、技能参悟、建筑捐献、教程赠送等；
+        //    这类单机业务已实时落入玩家八分段快照，且每小时由计算节点异地冷备，主服仅保留 2 小时给临时重连确认，
+        //    超过 2 小时连带其明细行（外键 ON DELETE CASCADE）一并彻底清理。
+        var deletedShortTerm = await DeleteBatchAsync(connection, transaction, """
+            SELECT t.transaction_id
+            FROM economy.transactions t
+            WHERE t.created_at < $1
+              AND t.transaction_type NOT IN ('market', 'shop.buy', 'player.unlock_avatar')
+              AND NOT EXISTS (SELECT 1 FROM social.party_session_inbox i WHERE i.consumed_transaction_id = t.transaction_id)
+            ORDER BY t.created_at
+            LIMIT $2
+            """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
+            now - TimeSpan.FromHours(2), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
+
+        // 2. 长期流水（保存 14 天）：仅限跨玩家订单撮合（market）、核心资产/功德消耗（shop.buy、player.unlock_avatar）；
+        //    作为不可变金融账本保留 14 天供对账排查，超过 14 天自动滚动轮转清理，防磁盘无界累积。
+        var deletedLongTerm = await DeleteBatchAsync(connection, transaction, """
+            SELECT t.transaction_id
+            FROM economy.transactions t
+            WHERE t.created_at < $1
+              AND t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar')
+            ORDER BY t.created_at
+            LIMIT $2
+            """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
+            now - TimeSpan.FromDays(14), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
+
+        var deletedEmptyTransactions = deletedShortTerm + deletedLongTerm;
+        await transaction.CommitAsync(cancellationToken);
+
+        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions);
+        if (result.Total > 0)
+            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} emptyTransactions={EmptyTransactions}",
+                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes, result.EmptyTransactions);
+        return result;
+    }
+
+    private async Task<int> DeleteBatchAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string selectorSql,
+        string deleteTemplate,
+        DateTimeOffset before,
+        CancellationToken cancellationToken,
+        int? batchSize = null)
+    {
+        await using var command = new NpgsqlCommand(string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            deleteTemplate,
+            selectorSql), connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = before });
+        command.Parameters.Add(new NpgsqlParameter { Value = batchSize ?? options.RetentionBatchSize });
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+}
+
+/// <summary>一轮清理的删除行数统计。</summary>
+/// <param name="Outbox">已删除的已投递 outbox 行数。</param>
+/// <param name="Sessions">已删除的过期/已撤销会话行数。</param>
+/// <param name="Audit">已删除的审计事件行数。</param>
+/// <param name="ComputeJobs">已删除的终态冷挂机任务行数。</param>
+/// <param name="DataProtectionKeys">已删除的过期 Data Protection key 行数。</param>
+/// <param name="SettlementClaims">已删除的过期结算确认游标行数。</param>
+/// <param name="AccountRiskEvents">已删除的过期账号风险事件行数。</param>
+/// <param name="ParticipationInboxes">已删除的终态会话已消费结算载荷行数。</param>
+public sealed record RetentionResult(
+    int Outbox,
+    int Sessions,
+    int Audit,
+    int ComputeJobs,
+    int DataProtectionKeys,
+    int SettlementClaims,
+    int AccountRiskEvents,
+    int ParticipationInboxes = 0,
+    int EmptyTransactions = 0)
+{
+    /// <summary>本轮删除总行数。</summary>
+    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes + EmptyTransactions;
+}
+
+/// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后按配置周期分批清理。</summary>
+public sealed class PostgresRetentionWorker(
+    PostgresRetentionRepository repository,
+    ServerOptions options,
+    ILogger<PostgresRetentionWorker> logger) : BackgroundService
+{
+    private readonly LogThrottle _errorLog = new(TimeSpan.FromMinutes(1));
+
+    /// <summary>
+    /// 清理主循环：启动延迟 5 分钟（避开建库与 key-ring 热路径）后首跑，
+    /// 之后经 PeriodicTimer 按 <see cref="ServerOptions.RetentionInterval"/> 触发一轮
+    /// <see cref="PostgresRetentionRepository.PruneAsync"/>；单轮失败经节流记日志，下个周期重试。
+    /// 周期必须显著短于高频结算流水的积压速度，否则单轮批上限追不上生成速率。
+    /// </summary>
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // 避开刚启动时的 schema/key-ring 热路径；之后按配置周期分批删除。
+        try { await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken); }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+
+        using var timer = new PeriodicTimer(options.RetentionInterval);
+        do
+        {
+            try { await repository.PruneAsync(DateTimeOffset.UtcNow, stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception exception)
+            {
+                if (_errorLog.TryAcquire()) logger.LogError(exception, "低频运行数据清理失败，将在下个周期重试。");
+            }
+        }
+        while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+}

@@ -1,0 +1,54 @@
+[
+  {
+    "id": "combat.hunt-qi-beast",
+    "name": "讨伐 青云仙山",
+    "description": "在青云仙山各处搜寻妖兽踪迹，迎战山野灵物与守山妖兽。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.twilight-pass",
+    "availableNodeIds": [
+      "node.yunxi-village",
+      "node.shuyu-brook",
+      "node.herb-valley",
+      "node.peach-forest",
+      "node.rock-beach",
+      "node.cloud-gate",
+      "node.cloud-peak"
+    ]
+  },
+  {
+    "id": "combat.sweep-twilight-valley",
+    "name": "讨伐 星陨异境",
+    "description": "深入星陨异境搜寻妖兽踪迹——界隙狼群、焦林火鸦、血池邪修、荒坑尸煞，各险地盘踞不同妖物。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.twilight-valley",
+    "availableNodeIds": [
+      "node.astral-rift",
+      "node.carrion-tomb",
+      "node.scorched-pines",
+      "node.fluorite-abyss",
+      "node.blood-pool",
+      "node.bone-pit",
+      "node.meteor-crater"
+    ]
+  }
+  ,
+  {
+    "id": "combat.hunt-trail-beast",
+    "name": "讨伐 青云古道",
+    "description": "在青云古道沿线搜寻凶兽踪迹——驿路苍狼、险栈暗涌、落石巨獠、古关暴猿，步步凶险。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.boundary-pass",
+    "availableNodeIds": [
+      "node.trail-inn",
+      "node.pine-plank",
+      "node.rocky-gorge",
+      "node.boundary-pass"
+    ]
+  }
+]

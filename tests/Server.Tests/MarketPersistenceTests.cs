@@ -1,0 +1,479 @@
+using System.Text.Json;
+using Domain.Common;
+using Domain.Market;
+using DaoHua.Ecs;
+using Domain.Combat;
+using Domain.GameData;
+using Domain.Persistence;
+using Domain.Player;
+using Server.Clean.Social;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using Server.Clean;
+using Xunit;
+
+namespace Server.Tests;
+
+/// <summary>
+/// 市场持久化集成测试（PostgreSQL）：撮合成交税费、30 天过期退款、
+/// 事务原子性、幂等重放与 Serializable 并发竞争的端到端回归。
+/// </summary>
+[Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
+public sealed class MarketPersistenceTests
+{
+    /// <summary>
+    /// 部分成交→税费落库→重启过期退款全链路：幂等键重放不重复结算，
+    /// 退款中途失败整笔回滚不丢单，并发 Expire 经 40001 重试后金额仍精确一致。
+    /// </summary>
+    [Fact]
+    public async Task PartialTradeTaxAndExpirationAreDurableAtomicAndIdempotent()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场集成测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = connectionString,
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var seller = PlayerId.New();
+        var buyer = PlayerId.New();
+        await Seed(source, seller.Value, "item.market-test", 10);
+        await Seed(source, buyer.Value, "currency.spirit-stone", 2000);
+        var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+        var instrument = new MarketInstrument(new ItemId("item.market-test"));
+        await using var runtime = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await runtime.StartAsync(default);
+        var now = DateTimeOffset.UtcNow;
+        var sell = new PlaceOrderRequest(OrderId.New(), seller, instrument, MarketSide.Sell, 100, 10, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        var buy = new PlaceOrderRequest(OrderId.New(), buyer, instrument, MarketSide.Buy, 110, 4, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await runtime.PlaceAsync(sell);
+        var result = await runtime.PlaceAsync(buy);
+        Assert.Single(result.Fills);
+        await runtime.PlaceAsync(buy);
+        Assert.Equal(392d, await Balance(source, seller.Value, "currency.spirit-stone"));
+        Assert.Equal(1600d, await Balance(source, buyer.Value, "currency.spirit-stone"));
+        Assert.Equal(4d, await Balance(source, buyer.Value, "item.market-test"));
+        var stored = await repository.LoadOrderAsync(sell.OrderId.Value);
+        Assert.Equal(TimeSpan.FromDays(30), stored!.ExpiresAt - stored.CreatedAt);
+        await runtime.StopAsync(default);
+        await Sql(source, "UPDATE market.orders SET created_at=now()-interval '31 days', expires_at=now()-interval '1 day' WHERE order_id=$1", sell.OrderId.Value);
+        await using var restored = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await restored.StartAsync(default);
+        Assert.Empty(restored.GetOrders(seller));
+        Assert.Equal("expired", (await repository.LoadOrderAsync(sell.OrderId.Value))!.Status);
+        Assert.Equal(6d, await Balance(source, seller.Value, "item.market-test"));
+        var fence = (long)(await Scalar(source, "SELECT fence_token FROM market.partition_leases WHERE partition_id=$1", options.MarketPartitionId))!;
+        Assert.True(await repository.ExpireAsync(sell.OrderId.Value, seller.Value, fence, DateTimeOffset.UtcNow));
+        Assert.Equal(6d, await Balance(source, seller.Value, "item.market-test"));
+
+        var pending = new MarketOrderInput(Guid.NewGuid(), options.MarketPartitionId, buyer.Value, "buy", instrument.ItemId.Value, "", 10, 3, Guid.NewGuid().ToString(), now.AddDays(-31));
+        await repository.CommitPlacementAsync(pending, [], fence);
+        // 外部持久化边界失败必须整笔回滚，不能先下架再丢失退款。
+        await Sql(source, $"CREATE FUNCTION market.reject_{pending.OrderId:N}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION '测试退款失败'; END $$; CREATE TRIGGER reject_{pending.OrderId:N} BEFORE UPDATE ON economy.player_asset_balances FOR EACH ROW WHEN (OLD.player_id = '{buyer.Value}') EXECUTE FUNCTION market.reject_{pending.OrderId:N}();");
+        try
+        {
+            await Assert.ThrowsAsync<PostgresException>(async () => await repository.ExpireAsync(pending.OrderId, buyer.Value, fence, DateTimeOffset.UtcNow));
+            Assert.Equal("active", (await repository.LoadOrderAsync(pending.OrderId))!.Status);
+            Assert.Equal(1570d, await Balance(source, buyer.Value, "currency.spirit-stone"));
+        }
+        finally
+        {
+            await Sql(source, $"DROP TRIGGER reject_{pending.OrderId:N} ON economy.player_asset_balances; DROP FUNCTION market.reject_{pending.OrderId:N}();");
+        }
+        var competing = await Task.WhenAll(ExpireWithSerializationRetry(), ExpireWithSerializationRetry());
+        Assert.All(competing, Assert.True);
+        Assert.Equal(1600d, await Balance(source, buyer.Value, "currency.spirit-stone"));
+        await restored.StopAsync(default);
+
+        async Task<bool> ExpireWithSerializationRetry()
+        {
+            try { return await repository.ExpireAsync(pending.OrderId, buyer.Value, fence, DateTimeOffset.UtcNow); }
+            catch (PostgresException error) when (error.SqlState == "40001")
+            {
+                return await repository.ExpireAsync(pending.OrderId, buyer.Value, fence, DateTimeOffset.UtcNow);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 租约重获回归：写路径命中失效 fence 立即降级 fail-closed（写请求被拒、IsReady 回落）；
+    /// 抢占方租约自然过期后，监管循环自动重获租约并重建盘口恢复写能力，无需进程重启。
+    /// </summary>
+    [Fact]
+    public async Task LeaseLossTriggersFailClosedThenAutoRecovery()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场租约重获测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = connectionString,
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var seller = PlayerId.New();
+        await Seed(source, seller.Value, "item.market-recover", 10);
+        var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+        var instrument = new MarketInstrument(new ItemId("item.market-recover"));
+        await using var runtime = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await runtime.StartAsync(default);
+        Assert.True(runtime.IsReady);
+
+        // 模拟其他实例抢占写者租约：owner 换人且 fence 前移，本实例持有的 fence 立即失效。
+        var usurper = Guid.NewGuid();
+        await Sql(source, "UPDATE market.partition_leases SET owner_instance_id=$1, fence_token=fence_token+100, expires_at=now()+interval '30 seconds' WHERE partition_id=$2", usurper, options.MarketPartitionId);
+        var order = new PlaceOrderRequest(OrderId.New(), seller, instrument, MarketSide.Sell, 10, 1, DateTimeOffset.UtcNow, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await Assert.ThrowsAsync<MarketLeaseLostException>(async () => await runtime.PlaceAsync(order));
+        Assert.False(runtime.IsReady);
+
+        // 抢占方租约不归还期间保持 fail-closed；其过期后监管循环重获写权并恢复就绪。
+        await Sql(source, "UPDATE market.partition_leases SET expires_at=now()-interval '1 second' WHERE partition_id=$1", options.MarketPartitionId);
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(60);
+        while (!runtime.IsReady && DateTimeOffset.UtcNow < deadline)
+            await Task.Delay(250);
+        Assert.True(runtime.IsReady);
+
+        // 恢复后原请求可重新提交：订单落库且冻结资产按正常路径扣除。
+        var result = await runtime.PlaceAsync(order);
+        Assert.Equal(MarketOrderStatus.Active, result.IncomingOrder.Status);
+        Assert.Equal(9d, await Balance(source, seller.Value, "item.market-recover"));
+        await runtime.StopAsync(default);
+    }
+
+    /// <summary>
+    /// 变体摘要只回有单簿：基础簿与 "+N" 簿各自独立统计卖一/买一价，
+    /// 全部成交后的空簿跳过，其他品种簿不混入；输出按基础簿居前、等级升序。
+    /// </summary>
+    [Fact]
+    public async Task VariantSummariesReturnOnlyBooksWithActiveOrders()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场变体摘要测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = connectionString,
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var seller = PlayerId.New();
+        var buyer = PlayerId.New();
+        var itemId = new ItemId("equipment.variant-test");
+        await Seed(source, seller.Value, "equipment.variant-test", 5);
+        await SeedVariant(source, seller.Value, "equipment.variant-test", "+2", 5);
+        await SeedVariant(source, seller.Value, "equipment.variant-test", "+4", 5);
+        await Seed(source, buyer.Value, "currency.spirit-stone", 2000);
+        var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+        await using var runtime = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await runtime.StartAsync(default);
+        var now = DateTimeOffset.UtcNow;
+        // 基础簿挂卖单、+2 簿挂卖单、+3 簿挂买单：三簿各带一档；+4 簿买卖全额成交后成空簿。
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), seller, new MarketInstrument(itemId), MarketSide.Sell, 100, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), seller, new MarketInstrument(itemId, "+2"), MarketSide.Sell, 200, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), buyer, new MarketInstrument(itemId, "+3"), MarketSide.Buy, 50, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), seller, new MarketInstrument(itemId, "+4"), MarketSide.Sell, 60, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), buyer, new MarketInstrument(itemId, "+4"), MarketSide.Buy, 60, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+
+        var summaries = runtime.GetVariantSummaries(itemId);
+
+        Assert.Equal(3, summaries.Count);
+        Assert.Equal("", summaries[0].Variant);
+        Assert.Equal(100, summaries[0].BestAskPrice);
+        Assert.Null(summaries[0].BestBidPrice);
+        Assert.Equal("+2", summaries[1].Variant);
+        Assert.Equal(200, summaries[1].BestAskPrice);
+        Assert.Null(summaries[1].BestBidPrice);
+        Assert.Equal("+3", summaries[2].Variant);
+        Assert.Null(summaries[2].BestAskPrice);
+        Assert.Equal(50, summaries[2].BestBidPrice);
+        await runtime.StopAsync(default);
+    }
+
+    /// <summary>
+    /// 每标的单笔约束端到端：同标的反向/同向第二笔被拒且不落库、不冻结资产；
+    /// 跨变体与跨标的互不影响；撤单后可换向重挂；重启重建属主索引后约束照旧生效。
+    /// </summary>
+    [Fact]
+    public async Task SingleActiveOrderPerInstrumentIsRejectedAndSurvivesRestart()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场单笔挂单约束测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = connectionString,
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var player = PlayerId.New();
+        var otherItem = $"item.single-order-other-{Guid.NewGuid():N}";
+        // Seed 建号并落一笔余额，其余资产行走 SeedVariant 追加（同一玩家只能建号一次）。
+        await Seed(source, player.Value, "item.single-order", 10);
+        await SeedVariant(source, player.Value, otherItem, "", 10);
+        await SeedVariant(source, player.Value, "item.single-order", "+3", 10);
+        await SeedVariant(source, player.Value, "currency.spirit-stone", "", 10_000);
+        var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+        var instrument = new MarketInstrument(new ItemId("item.single-order"));
+        var enhanced = new MarketInstrument(new ItemId("item.single-order"), "+3");
+        await using var runtime = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await runtime.StartAsync(default);
+
+        var now = DateTimeOffset.UtcNow;
+        var sell = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Sell, 100, 4, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await runtime.PlaceAsync(sell);
+        Assert.Equal(sell.OrderId, runtime.GetActiveOrder(player, instrument)?.OrderId);
+
+        // 同标的反向（买）与同向（卖）第二笔都被拒，且不产生任何订单/冻结副作用。
+        var opposite = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Buy, 100, 2, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        var sameSide = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Sell, 120, 2, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        foreach (var rejected in new[] { opposite, sameSide })
+        {
+            var error = await Assert.ThrowsAsync<DomainException>(async () => await runtime.PlaceAsync(rejected));
+            Assert.Equal(DomainErrorCode.OwnerOrderExists, error.Code);
+            Assert.Null(await repository.LoadOrderAsync(rejected.OrderId.Value));
+        }
+        Assert.Equal(6d, await Balance(source, player.Value, "item.single-order"));
+        Assert.Equal(10_000d, await Balance(source, player.Value, "currency.spirit-stone"));
+        Assert.Single(runtime.GetOrders(player));
+
+        // 跨变体与跨标的放行：各标的独立一笔。
+        var enhancedSell = new PlaceOrderRequest(OrderId.New(), player, enhanced, MarketSide.Sell, 900, 1, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        var otherSell = new PlaceOrderRequest(OrderId.New(), player, new MarketInstrument(new ItemId(otherItem)), MarketSide.Sell, 50, 2, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await runtime.PlaceAsync(enhancedSell);
+        await runtime.PlaceAsync(otherSell);
+
+        // 撤单后换向重挂：约束随活动单消失而解除。
+        await runtime.CancelAsync(sell.OrderId, player, instrument, $"market-cancel:{player.Value:D}:{sell.OrderId.Value:D}");
+        Assert.Null(runtime.GetActiveOrder(player, instrument));
+        var rebid = new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Buy, 90, 1, now, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await runtime.PlaceAsync(rebid);
+        Assert.Equal(rebid.OrderId, runtime.GetActiveOrder(player, instrument)?.OrderId);
+
+        // 重启重建盘口后属主索引随之重建：同标的新增单依旧被拒。
+        await runtime.StopAsync(default);
+        await using var restored = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await restored.StartAsync(default);
+        Assert.Equal(rebid.OrderId, restored.GetActiveOrder(player, instrument)?.OrderId);
+        var afterRestart = await Assert.ThrowsAsync<DomainException>(async () => await restored.PlaceAsync(
+            new PlaceOrderRequest(OrderId.New(), player, instrument, MarketSide.Sell, 95, 1, now, new IdempotencyKey(Guid.NewGuid().ToString()))));
+        Assert.Equal(DomainErrorCode.OwnerOrderExists, afterRestart.Code);
+        await restored.StopAsync(default);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OnlineLastConsumableIsSpentBeforeSellOrIndependentEconomyDebit(bool sell)
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true);
+        fixture.EnterCombat();
+        var order = fixture.Order(fixture.Player, MarketSide.Sell);
+        await Assert.ThrowsAsync<EconomyInsufficientBalanceException>(async () =>
+        {
+            if (sell) await fixture.Market.PlaceAsync(order);
+            else await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.debit:{Guid.NewGuid():N}",
+                "test.debit", fixture.Player.Value, [new(fixture.Player.Value, ConsumableMarketFixture.ItemId, "", -1)]));
+        });
+        Assert.Equal(0, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        Assert.Equal(fixture.Clock.UtcNow, (await fixture.CheckpointAsync()).LastSimulatedAt);
+        Assert.Null(await fixture.Repository.LoadOrderAsync(order.OrderId.Value));
+        Assert.Empty(fixture.Market.GetOrders(fixture.Player));
+        Assert.True(fixture.Market.IsReady);
+    }
+
+    [Fact]
+    public async Task PassiveBuyerConsumesOldStockBeforeMatchedPurchaseCreditsNewStock()
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true);
+        await fixture.Market.PlaceAsync(fixture.Order(fixture.Player, MarketSide.Buy));
+        fixture.EnterCombat();
+        var result = await fixture.Market.PlaceAsync(fixture.Order(fixture.Other, MarketSide.Sell));
+        Assert.Single(result.Fills);
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        Assert.Equal(fixture.Clock.UtcNow, (await fixture.CheckpointAsync()).LastSimulatedAt);
+        Assert.Equal(0, await Balance(fixture.Source, fixture.Other.Value, ConsumableMarketFixture.ItemId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellationAndStartupExpiryAdvanceBeforeRefundAndResumeAtNextBoundary(bool expire)
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(1, online: true,
+            combatStats: CombatantStats.Create(50_000, 0, 1, 1));
+        var order = fixture.Order(fixture.Player, MarketSide.Sell);
+        await fixture.Market.PlaceAsync(order);
+        fixture.EnterCombat();
+        if (expire)
+        {
+            await fixture.Market.StopAsync(default);
+            await fixture.Market.DisposeAsync();
+            await Sql(fixture.Source, "UPDATE market.orders SET created_at=now()-interval '31 days', expires_at=now()-interval '1 day' WHERE order_id=$1", order.OrderId.Value);
+            fixture.Market = new MarketRuntime(fixture.Repository, fixture.Options,
+                NullLogger<MarketRuntime>.Instance, fixture.Participation);
+            await fixture.Market.StartAsync(default);
+        }
+        else
+            await fixture.Market.CancelAsync(order.OrderId, fixture.Player, order.Instrument,
+                $"market-cancel:{fixture.Player.Value:D}:{order.OrderId.Value:D}");
+        var checkpoint = await fixture.CheckpointAsync();
+        Assert.Equal(fixture.Clock.UtcNow, checkpoint.LastSimulatedAt);
+        var document = JsonSerializer.Deserialize<ActionParticipationSessionDocument>(checkpoint.StateJson,
+            PersistenceJson.Options)!;
+        Assert.Equal(CombatExpeditionPhase.Combat, document.Expedition!.Phase);
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        var nextEvaluation = DateTimeOffset.FromUnixTimeMilliseconds(
+            checked((long)Math.Round(document.NextConsumableEvaluationAtUnixSeconds * 1000d)));
+        Assert.True(nextEvaluation > fixture.Clock.UtcNow);
+        Assert.True(nextEvaluation <= fixture.Clock.UtcNow.AddSeconds(5));
+        fixture.Clock.AdvanceTo(nextEvaluation.AddMilliseconds(-1));
+        await fixture.Participation.AdvanceOnlineAsync(fixture.Clock.UtcNow);
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+        fixture.Clock.AdvanceTo(nextEvaluation);
+        await fixture.Participation.AdvanceOnlineAsync(fixture.Clock.UtcNow);
+        Assert.Equal(0, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+    }
+
+    [Fact]
+    public async Task OfflineEconomyAndMarketMutationsDoNotAdvanceSession()
+    {
+        await using var fixture = await ConsumableMarketFixture.CreateAsync(0, online: false);
+        var before = await fixture.CheckpointAsync();
+        fixture.EnterCombat();
+        await fixture.Economy.CommitAsync(new(Guid.NewGuid(), $"test.credit:{Guid.NewGuid():N}", "test.credit",
+            fixture.Player.Value, [new(fixture.Player.Value, ConsumableMarketFixture.ItemId, "", 1)]));
+        var order = fixture.Order(fixture.Player, MarketSide.Sell);
+        await fixture.Market.PlaceAsync(order);
+        await fixture.Market.CancelAsync(order.OrderId, fixture.Player, order.Instrument,
+            $"market-cancel:{fixture.Player.Value:D}:{order.OrderId.Value:D}");
+        Assert.Equal(before, await fixture.CheckpointAsync());
+        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
+    }
+
+    private sealed class ConsumableMarketFixture : IAsyncDisposable
+    {
+        public const string ItemId = "item.leiji-talisman";
+        public required NpgsqlDataSource Source { get; init; }
+        public required ServerOptions Options { get; init; }
+        public required PlayerId Player { get; init; }
+        public required PlayerId Other { get; init; }
+        public required Guid PartyId { get; init; }
+        public required ActionParticipationSpec Spec { get; init; }
+        public required TestClock Clock { get; init; }
+        public required ActionParticipationRuntime Participation { get; init; }
+        public required PostgresParticipationSessionStore Sessions { get; init; }
+        public required PostgresEconomyRepository Economy { get; init; }
+        public required PostgresMarketRepository Repository { get; init; }
+        public required MarketRuntime Market { get; set; }
+        public required double SearchSeconds { get; init; }
+
+        public void EnterCombat() => Clock.AdvanceTo(DateTimeOffset.FromUnixTimeMilliseconds(
+            (long)(Spec.StartedAtUnixSeconds * 1000)).AddSeconds(SearchSeconds + 0.1));
+
+        public PlaceOrderRequest Order(PlayerId owner, MarketSide side) => new(OrderId.New(), owner,
+            new MarketInstrument(new Domain.Common.ItemId(ItemId)), side, 100, 1, Clock.UtcNow,
+            new IdempotencyKey(Guid.NewGuid().ToString()));
+
+        public async Task<ActionParticipationSessionRecord> CheckpointAsync() => (await Sessions.LoadAsync(Spec.SessionId))!;
+
+        public static async Task<ConsumableMarketFixture> CreateAsync(double stock, bool online,
+            CombatantStats? combatStats = null)
+        {
+            var connectionString = PostgresTestSchema.RequireConnectionString("消耗品市场边界测试");
+            var source = NpgsqlDataSource.Create(connectionString);
+            await PostgresTestSchema.EnsureAsync(source);
+            var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["Storage:ConnectionString"] = connectionString }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+            var player = PlayerId.New();
+            var ally = PlayerId.New();
+            var other = PlayerId.New();
+            await Seed(source, player.Value, ItemId, stock);
+            await SeedVariant(source, player.Value, "currency.spirit-stone", "", 1000);
+            await Seed(source, ally.Value, "currency.spirit-stone", 1000);
+            await Seed(source, other.Value, ItemId, 1);
+            var startedAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            var social = new PostgresSocialRepository(source);
+            var partyId = await social.CreatePartyAsync(player.Value, PartyProfileRecord.Default, startedAt);
+            Assert.True(await social.TryUpdatePartyOpenSlotsAsync(partyId, 2, startedAt));
+            Assert.Equal(PartyJoinResult.Joined, await social.TryJoinPartyAsync(partyId, ally.Value, startedAt));
+            foreach (var member in new[] { player, ally })
+            {
+                Assert.True(await social.TrySetPartyMemberReadyAsync(member.Value, true));
+                await Sql(source, "INSERT INTO game.player_projection(player_id,current_node_id,last_active_at,updated_at) VALUES ($1,'node.test',$2,$2)", member.Value, startedAt);
+                var world = SectionCodec.Encode(member.Value, PlayerSectionKinds.World, 1,
+                    new PlayerWorldStateDocument("node.test", 0, 0, 0), startedAt);
+                await Sql(source, "INSERT INTO game.player_state_sections(player_id,section_kind,section_version,schema_version,codec,payload,raw_bytes,stored_bytes,checksum,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+                    member.Value, world.SectionKind, world.StateVersion, world.SchemaVersion, world.Codec,
+                    world.Payload.ToArray(), world.RawBytes, world.StoredBytes, world.Checksum, startedAt);
+            }
+            var catalog = GameDataCatalog.LoadEmbedded();
+            var stats = combatStats ?? CombatantStats.Create(50_000, 2_000, 1, 1);
+            var spec = new ActionParticipationSpec($"action:{Guid.NewGuid():N}", "encounter.qi-beast", "node.test", 97,
+                0, startedAt.ToUnixTimeMilliseconds() / 1000d,
+                new[] { player, ally }.Select((member, index) => new ActionParticipantSnapshot(member.Value.ToString("D"),
+                    $"成员{index}", 1, 0, 0, stats.MaxHitpoints, stats.MaxManapoints, stats, [],
+                    ConsumableSlots: index == 0 ? [new(ItemId, "combat", AutoUseSlotState.SlotGroupGeneral, 0)] : null)).ToArray())
+            { ActionId = new ActionId("combat.hunt-qi-beast") };
+            var presence = new OnlinePresenceRegistry();
+            if (online) await presence.RegisterAsync(player.Value, "成员0", spec.NodeId);
+            var clock = new TestClock(startedAt);
+            var sessions = new PostgresParticipationSessionStore(source);
+            var participation = new ActionParticipationRuntime(catalog, sessions, presence, clock, NullLogger<ActionParticipationRuntime>.Instance);
+            await participation.CreateAsync(partyId, spec);
+            var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+            var market = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance, participation);
+            await market.StartAsync(default);
+            return new ConsumableMarketFixture
+            {
+                Source = source, Options = options, Player = player, Other = other, PartyId = partyId, Spec = spec, Clock = clock,
+                Participation = participation, Sessions = sessions, Repository = repository, Market = market,
+                Economy = new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance, participation),
+                SearchSeconds = ActionParticipationSessionEngine.Create(spec, catalog).Export().Expedition!.PhaseDurationSeconds
+            };
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Market.StopAsync(default);
+            await Market.DisposeAsync();
+            await Sql(Source, "DELETE FROM social.party_session_inbox WHERE session_id=$1", Spec.SessionId);
+            await Sql(Source, "DELETE FROM social.party_sessions WHERE session_id=$1", Spec.SessionId);
+            await Sql(Source, "DELETE FROM social.parties WHERE party_id=$1", PartyId);
+            await Source.DisposeAsync();
+        }
+    }
+
+    private sealed class TestClock(DateTimeOffset start) : IPlayerSimulationClock
+    {
+        public DateTimeOffset UtcNow { get; private set; } = start;
+        public bool IsDeterministic => true;
+        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
+    }
+
+    /// <summary>造数：建账号、建玩家并预置一笔资产余额。</summary>
+    private static async Task Seed(NpgsqlDataSource source, Guid playerId, string asset, double amount)
+    {
+        await Sql(source, "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", playerId, playerId.ToString());
+        await Sql(source, "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,invite_code,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,(left(replace($1::text,'-',''),16)),now(),now(),1)", playerId, playerId.ToString());
+        await Sql(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES ($1,$2,'',$3,1,now())", playerId, asset, amount);
+    }
+
+    /// <summary>向已建账号的玩家追加一笔带变体的资产余额行（建号由 <see cref="Seed"/> 负责）。</summary>
+    private static async Task SeedVariant(NpgsqlDataSource source, Guid playerId, string asset, string variant, double amount)
+    {
+        await Sql(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES ($1,$2,$3,$4,1,now())", playerId, asset, variant, amount);
+    }
+
+    private static async Task<double> Balance(NpgsqlDataSource source, Guid player, string asset) =>
+        Convert.ToDouble(await Scalar(source, "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id=$2 AND variant=''", player, asset));
+
+    private static async Task<object?> Scalar(NpgsqlDataSource source, string sql, params object[] values)
+    {
+        await using var command = source.CreateCommand(sql);
+        foreach (var value in values) command.Parameters.Add(new NpgsqlParameter { Value = value });
+        return await command.ExecuteScalarAsync();
+    }
+
+    private static async Task Sql(NpgsqlDataSource source, string sql, params object[] values)
+    {
+        await using var command = source.CreateCommand(sql);
+        foreach (var value in values) command.Parameters.Add(new NpgsqlParameter { Value = value });
+        await command.ExecuteNonQueryAsync();
+    }
+}

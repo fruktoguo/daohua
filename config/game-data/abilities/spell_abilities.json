@@ -1,0 +1,195 @@
+[
+  {
+    "id": "ability.palm-lightning",
+    "name": "掌心雷",
+    "description": "袖中掌起一声雷。",
+    "style": "fiveElements",
+    "tier": 1,
+    "category": "spell",
+    "element": "wood",
+    "castMilliseconds": 2000,
+    "damageRatio": 0.7,
+    "flatDamage": 10,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 4.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.blazing-blast",
+    "name": "轰炎",
+    "description": "轰炎一怒焚千里。",
+    "style": "fiveElements",
+    "tier": 1,
+    "category": "spell",
+    "element": "fire",
+    "cooldownMilliseconds": 24000,
+    "castMilliseconds": 3000,
+    "targetType": "allEnemies",
+    "damageRatio": 1.0,
+    "flatDamage": 20,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 10.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.qingping-melody",
+    "name": "清平乐",
+    "description": "清平一曲起，枯木又逢春。",
+    "style": "fiveElements",
+    "tier": 2,
+    "category": "spell",
+    "element": "wood",
+    "cooldownMilliseconds": 30000,
+    "castMilliseconds": 500,
+    "effectType": "heal",
+    "targetType": "lowestHitpointsAlly",
+    "damageRatio": 0.0,
+    "healingRatio": 0.6,
+    "flatHealing": 20,
+    "defaultTriggers": [
+      {
+        "dependency": "allies",
+        "condition": "lowest-hp-percentage",
+        "comparator": "less-than",
+        "value": 75.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 10.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.lightning-attraction",
+    "name": "雷光引",
+    "description": "九霄雷落，万钧天威。",
+    "style": "fiveElements",
+    "tier": 2,
+    "category": "spell",
+    "element": "wood",
+    "cooldownMilliseconds": 28000,
+    "castMilliseconds": 500,
+    "damageRatio": 1.5,
+    "flatDamage": 30,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 20.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.pozhen-melody",
+    "name": "破阵子",
+    "description": "一曲破阵壮军威。",
+    "style": "talisman",
+    "tier": 2,
+    "category": "spell",
+    "element": "none",
+    "cooldownMilliseconds": 60000,
+    "castMilliseconds": 5000,
+    "targetType": "allAllies",
+    "damageRatio": 0.0,
+    "buff": {
+      "buffId": "buff.pozhen",
+      "name": "破阵子",
+      "durationSeconds": 10.0,
+      "damageBonusPoints": 40
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "self",
+        "condition": "buff-stacks",
+        "comparator": "equal",
+        "value": 0.0,
+        "buffId": "buff.pozhen"
+      }
+    ],
+    "manaCost": 50.0,
+    "rootAttribute": "consciousness",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.ganlu",
+    "name": "甘露",
+    "description": "天降甘露，润物无声。",
+    "style": "fiveElements",
+    "tier": 1,
+    "category": "spell",
+    "element": "water",
+    "cooldownMilliseconds": 20000,
+    "castMilliseconds": 1500,
+    "targetType": "lowestHitpointsAlly",
+    "damageRatio": 0.0,
+    "buff": {
+      "buffId": "buff.ganlu",
+      "name": "甘露",
+      "durationSeconds": 10.0,
+      "hpRegenPerSecond": 1.0,
+      "stackPolicy": "maxKeep",
+      "spellAttackStackPercent": 0.08
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "allies",
+        "condition": "lowest-hp-percentage",
+        "comparator": "less-than",
+        "value": 75.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 20.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
+  }
+  ,
+  {
+    "id": "ability.tide",
+    "name": "潮汐",
+    "description": "引动幽深潮汐暗涌，巨浪滔天，席卷全体敌阵。",
+    "style": "fiveElements",
+    "tier": 1,
+    "category": "spell",
+    "element": "water",
+    "castMilliseconds": 3000,
+    "targetType": "allEnemies",
+    "damageRatio": 0.5,
+    "flatDamage": 10,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 10.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
+  }
+]

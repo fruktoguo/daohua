@@ -1,0 +1,1721 @@
+import { getT, hasTranslation, type TFunction } from '../i18n'
+import { calculateAbilityLevelAndProgress } from './combatConstants'
+import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
+
+/**
+ * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
+ */
+export const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat', 'enhancement']
+
+// 行动定义只保留纯数据核心：显示文本统一走 i18n（game.action.<id>.*），
+// 由 resolveActionDefinition 在渲染期按当前语言解析，避免数据表内重复存放文案。
+/**
+ * 行动定义纯数据核心（不包含多语言展示文案）
+ */
+export type ActionDefinitionCore = Omit<ActionDefinition, 'name' | 'description'>
+
+/**
+ * 静态兜底行动核心定义列表
+ */
+const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
+  // 修炼
+  {
+    id: 'cultivation.draw-qi', type: 'cultivation', durationSeconds: 10, yields: [
+      { kind: 'experience', per: 'repeat', amount: 10, percentage: 100 },
+      { kind: 'mana', per: 'repeat', amount: 10 },
+      { kind: 'rootexp', per: 'repeat', amount: 5, percentage: 50, aspect: 'meridians' },
+      { kind: 'rootexp', per: 'repeat', amount: 5, percentage: 50, aspect: 'bone' },
+    ],
+  },
+
+  // 采集
+  { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.ningxue-grass', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 8, aspect: 'agility' }] },
+  { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
+  { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.dark-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'stamina' }] },
+  { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.morning-dew', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
+  { id: 'explore.gather-banling-flower', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-flower', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
+  { id: 'explore.chop-yinlingsong', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.yinlingsong-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
+  { id: 'explore.mine-crimson-copper', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.crimson-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 54, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 53, percentage: 50, aspect: 'stamina' }] },
+
+  // 赶路
+  { id: 'world.travel', type: 'exploration', durationSeconds: 1, executionKind: 'travel', hiddenFromCatalog: true, yields: [{ kind: 'rootexp', per: 'second', amount: 1, aspect: 'agility' }] },
+
+  // 炼丹
+  { id: 'alchemy.refine-qi-pill', type: 'alchemy', durationSeconds: 12, inputs: { 'item.ningxue-grass': 3, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.qi-gathering-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 12, aspect: 'consciousness' }] },
+  { id: 'alchemy.refine-zhixue-powder', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.zhixue-powder', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'alchemy.refine-shunqi-pill', type: 'alchemy', durationSeconds: 10, inputs: { 'item.herb-essence': 1, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.shunqi-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'alchemy.refine-tongmai-pill', type: 'alchemy', durationSeconds: 20, inputs: { 'item.banling-essence': 2, 'item.demon-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.tongmai-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+
+  // 精炼加工
+  { id: 'craft.refine-iron', type: 'alchemy', durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'craft.refine-peach-wood-crystal', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'craft.extract-herb-essence', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.herb-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'craft.refine-copper', type: 'alchemy', durationSeconds: 15, inputs: { 'item.crimson-copper': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
+  { id: 'craft.refine-spirit-pine-crystal', type: 'alchemy', durationSeconds: 15, inputs: { 'item.yinlingsong-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.spirit-pine-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
+  { id: 'craft.extract-banling-essence', type: 'alchemy', durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
+
+  // 讨伐战斗
+  { id: 'combat.hunt-qi-beast', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-pass' },
+  { id: 'combat.sweep-twilight-valley', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-valley' },
+
+  // 锻造装备 (等阶1)
+  { id: 'forge.qingfeng-sword', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.qingfeng-sword', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.pishan-blade', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pishan-blade', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.shufa-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.shufa-scarf', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.baina-armor', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.baina-armor', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.zhakou-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.zhakou-pants', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.jinfeng-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.jinfeng-scarf', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.qingpi-armor', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.qingpi-armor', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.jixing-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.jixing-pants', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.fan-tie-dart', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.fan-tie-dart', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.tiepi-guard', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tiepi-guard', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.shouya-pendant', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.shouya-pendant', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.jiujie-staff', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.jiujie-staff', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.suxin-zither', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.suxin-zither', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.hunyuan-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.hunyuan-scarf', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.suma-robe', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.suma-robe', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.xingqi-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.xingqi-pants', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.qingmu-bead', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.qingmu-bead', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.ganlu-flask', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.ganlu-flask', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.taomu-talisman', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.taomu-talisman', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+
+  // 锻造装备 (等阶2)
+  { id: 'forge.pogang-sword', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.qingfeng-sword': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pogang-sword', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 334, aspect: 'consciousness' }] },
+  { id: 'forge.zhansha-blade', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.pishan-blade': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.zhansha-blade', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 334, aspect: 'consciousness' }] },
+  { id: 'forge.chijin-helmet', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shufa-scarf': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.chijin-helmet', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.yulin-armor', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.baina-armor': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.yulin-armor', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 334, aspect: 'consciousness' }] },
+  { id: 'forge.tazhen-greaves', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.zhakou-pants': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tazhen-greaves', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.zhanfeng-scarf', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.jinfeng-scarf': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.zhanfeng-scarf', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.liegang-armor', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.qingpi-armor': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.liegang-armor', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 334, aspect: 'consciousness' }] },
+  { id: 'forge.tafeng-pants', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.jixing-pants': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tafeng-pants', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.xuantie-dart', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.fan-tie-dart': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.xuantie-dart', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.xuanjia-guard', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.tiepi-guard': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.xuanjia-guard', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.chiwen-ring', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shouya-pendant': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.chiwen-ring', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.chaoyuan-staff', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.jiujie-staff': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.chaoyuan-staff', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 334, aspect: 'consciousness' }] },
+  { id: 'forge.songfeng-zither', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.suxin-zither': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.songfeng-zither', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 334, aspect: 'consciousness' }] },
+  { id: 'forge.ziwu-crown', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.hunyuan-scarf': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.ziwu-crown', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.pichen-shirt', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.fire-feather': 1, 'equipment.suma-robe': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pichen-shirt', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 334, aspect: 'consciousness' }] },
+  { id: 'forge.liuyun-skirt', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.xingqi-pants': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.liuyun-skirt', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.yaoling-bead', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.qingmu-bead': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.yaoling-bead', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.huichun-bell', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.ganlu-flask': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.huichun-bell', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'forge.juling-pendant', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.taomu-talisman': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.juling-pendant', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+
+  // 技艺工具锻造（炼器技艺，产出 tool-* 专属槽位装备）
+  { id: 'forge.tool-herb-hoe', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.refined-iron': 1, 'item.peach-wood': 4 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-herb-hoe', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.tool-prospect-compass', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 2, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-prospect-compass', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-flame-ding', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 2, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-flame-ding', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-forge-hammer', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 2, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-forge-hammer', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-talisman-brush', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.peach-wood': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-talisman-brush', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'forge.tool-formation-flag', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.peach-wood': 4, 'item.peach-wood-crystal': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-formation-flag', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
+  { id: 'forge.tool-quench-anvil', type: 'alchemy', technique: 'forging', durationSeconds: 20, inputs: { 'item.refined-iron': 2, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-quench-anvil', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 20, aspect: 'consciousness' }] },
+]
+
+/** 静态兜底行动的 ID 索引（服务端目录未到达前供 resolveActionDefinition 查询） */
+const ACTION_CORE_MAP = new Map<string, ActionDefinitionCore>(ACTION_DEFINITION_CORES.map(c => [c.id, c]))
+
+/** 动态配表行动字典缓存（在服务端目录拉取后注册） */
+const dynamicActionsMap = new Map<string, ActionDefinition>()
+
+/**
+ * 注册从服务端 Catalog 拉取的动态行动定义
+ */
+export function registerCatalogActions(actions: readonly ActionDefinition[]): void {
+  for (const action of actions) {
+    dynamicActionsMap.set(action.id, action)
+  }
+}
+
+let cachedActionsRef: ReadonlyArray<ActionDefinition> | null = null
+let cachedActionMap: Map<string, ActionDefinition> = new Map()
+
+/**
+ * 获取行动目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getActionMap<T extends ActionDefinition>(actions: readonly T[]): Map<string, T> {
+  if (actions === cachedActionsRef) return cachedActionMap as Map<string, T>
+  cachedActionsRef = actions
+  const map = new Map<string, T>()
+  for (const action of actions) {
+    map.set(action.id, action)
+  }
+  cachedActionMap = map as Map<string, ActionDefinition>
+  return map
+}
+
+/**
+ * 在行动目录中 O(1) 高效查找行动定义
+ */
+export function findActionInCatalog(actions: readonly ActionDefinition[], actionId: string): ActionDefinition | undefined {
+  return getActionMap(actions).get(actionId)
+}
+
+/**
+ * 解析单个行动的完整定义（注入当前语言的名称和描述）
+ * 优先级：
+ * 1. 动态 catalog actions (结合当前 i18n 覆盖或配表名)
+ * 2. 静态 ACTION_CORE_MAP 兜底 (结合当前 i18n)
+ * 3. 仅通过 i18n 键兜底构建
+ * @param id 行动唯一标识符
+ */
+export function resolveActionDefinition(id: string): ActionDefinition | undefined {
+  const t = getT()
+  const nameKey = `game.action.${id}.name`
+  const descKey = `game.action.${id}.description`
+  const translatedName = t(nameKey)
+  const translatedDesc = t(descKey)
+  const hasI18nName = translatedName !== nameKey
+  const hasI18nDesc = translatedDesc !== descKey
+
+  const dynamic = dynamicActionsMap.get(id)
+  if (dynamic) {
+    return {
+      ...dynamic,
+      name: hasI18nName ? translatedName : (dynamic.name || id),
+      description: hasI18nDesc ? translatedDesc : (dynamic.description || ''),
+    }
+  }
+
+  const core = ACTION_CORE_MAP.get(id)
+  if (core) {
+    return {
+      ...core,
+      name: hasI18nName ? translatedName : core.id,
+      description: hasI18nDesc ? translatedDesc : '',
+    }
+  }
+
+  if (hasI18nName) {
+    return {
+      id,
+      name: translatedName,
+      description: hasI18nDesc ? translatedDesc : '',
+      type: 'cultivation',
+      durationSeconds: 0,
+    }
+  }
+
+  return undefined
+}
+
+// 离线兜底目录：仅在服务端目录尚未到达时展示；语言取模块加载时的当前语言，
+// 服务端目录到达后即被整体替换。
+/**
+ * 解析全部离线兜底行动定义
+ */
+export function resolveActionDefinitions(): ActionDefinition[] {
+  return ACTION_DEFINITION_CORES.map(core => resolveActionDefinition(core.id)!)
+}
+
+/**
+ * 将等阶 (Tier) 换算为修士/物品等级 (Level)
+ * 等阶1 -> 1级, 等阶2 -> 18级, 等阶3 -> 30级, 等阶N(>=2) -> 18 + (N - 2) * 12 级
+ */
+export function convertTierToLevel(tier = 1): number {
+  const t = Math.max(1, Math.floor(tier))
+  if (t <= 1) return 1
+  return 18 + (t - 2) * 12
+}
+
+/**
+ * 将修士/物品等级 (Level) 逆向反推为等阶 (Tier, 1~8)
+ * 1 级 -> 等阶 1, 18 级 -> 等阶 2, 30 级 -> 等阶 3, 每 12 级升一阶
+ */
+export function convertLevelToTier(level = 1): number {
+  if (level <= 1) return 1
+  return Math.max(1, Math.min(8, Math.floor((level - 18) / 12) + 2))
+}
+
+let cachedItemsRef: ReadonlyArray<{ itemId: string }> | null = null
+let cachedItemMap: Map<string, { itemId: string }> = new Map()
+
+/**
+ * 获取物品目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getItemMap<T extends { itemId: string }>(items: readonly T[]): Map<string, T> {
+  if (items === cachedItemsRef) return cachedItemMap as Map<string, T>
+  cachedItemsRef = items
+  const map = new Map<string, T>()
+  for (const item of items) {
+    map.set(item.itemId, item)
+  }
+  cachedItemMap = map as Map<string, { itemId: string }>
+  return map
+}
+
+let cachedEquipmentRef: ReadonlyArray<{ equipmentId: string }> | null = null
+let cachedEquipmentMap: Map<string, { equipmentId: string }> = new Map()
+
+/**
+ * 获取装备目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getEquipmentMap<T extends { equipmentId: string }>(equipment: readonly T[]): Map<string, T> {
+  if (equipment === cachedEquipmentRef) return cachedEquipmentMap as Map<string, T>
+  cachedEquipmentRef = equipment
+  const map = new Map<string, T>()
+  for (const eq of equipment) {
+    map.set(eq.equipmentId, eq)
+  }
+  cachedEquipmentMap = map as Map<string, { equipmentId: string }>
+  return map
+}
+
+let cachedAbilitiesRef: ReadonlyArray<{ abilityId: string }> | null = null
+let cachedAbilityMap: Map<string, { abilityId: string }> = new Map()
+
+/**
+ * 获取功法技能目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getAbilityMap<T extends { abilityId: string }>(abilities: readonly T[]): Map<string, T> {
+  if (abilities === cachedAbilitiesRef) return cachedAbilityMap as Map<string, T>
+  cachedAbilitiesRef = abilities
+  const map = new Map<string, T>()
+  for (const ab of abilities) {
+    map.set(ab.abilityId, ab)
+  }
+  cachedAbilityMap = map as Map<string, { abilityId: string }>
+  return map
+}
+
+let cachedEncountersRef: ReadonlyArray<{ encounterId: string; enemy?: { enemyId: string } }> | null = null
+let cachedEncounterMap: Map<string, { encounterId: string; enemy?: { enemyId: string } }> = new Map()
+
+/**
+ * 获取战斗遭遇目录的 O(1) 字典映射（支持 encounterId 与 enemy.enemyId 双向索引）
+ */
+export function getEncounterMap<T extends { encounterId: string; enemy?: { enemyId: string } }>(encounters: readonly T[]): Map<string, T> {
+  if (encounters === cachedEncountersRef) return cachedEncounterMap as Map<string, T>
+  cachedEncountersRef = encounters
+  const map = new Map<string, T>()
+  for (const enc of encounters) {
+    map.set(enc.encounterId, enc)
+    if (enc.enemy?.enemyId) {
+      map.set(enc.enemy.enemyId, enc)
+    }
+  }
+  cachedEncounterMap = map as Map<string, { encounterId: string; enemy?: { enemyId: string } }>
+  return map
+}
+
+/**
+ * 在物品目录中 O(1) 高效查找物品定义
+ */
+export function findItemInCatalog<T extends { itemId: string }>(items: readonly T[], itemId: string): T | undefined {
+  return getItemMap(items).get(itemId)
+}
+
+/**
+ * 在装备目录中 O(1) 高效查找装备定义
+ */
+export function findEquipmentInCatalog<T extends { equipmentId: string }>(equipment: readonly T[], equipmentId: string): T | undefined {
+  return getEquipmentMap(equipment).get(equipmentId)
+}
+
+/**
+ * 在功法目录中 O(1) 高效查找技能定义
+ */
+export function findAbilityInCatalog<T extends { abilityId: string }>(abilities: readonly T[], abilityId: string): T | undefined {
+  return getAbilityMap(abilities).get(abilityId)
+}
+
+/**
+ * 资源标识 → 展示名字统一口径（物品 / 装备 / 静态词条三级回退）。
+ *
+ * 行动消耗与产出、图鉴配方、掉落明细等场合的标识既可能是 `item.*` 也可能是
+ * `equipment.*`（如锻造升级链把成品装备作为输入）。只查物品目录会让装备条目
+ * 直接落到原始标识上，界面因此显示 `equipment.xxx`。统一走本函数后：
+ * 物品目录命中 → 装备目录命中 → 静态元数据词条 → 原标识兜底。
+ */
+export function resolveAssetLabel(
+  id: string,
+  items: readonly { itemId: string; name?: string | null }[] = [],
+  equipment: readonly { equipmentId: string; name?: string | null }[] = [],
+): string {
+  const item = findItemInCatalog(items, id)
+  if (item?.name) return item.name
+  const eq = findEquipmentInCatalog(equipment, id)
+  if (eq?.name) return eq.name
+  const meta = resolveItemMetadata(id)
+  if (meta?.label && !meta.label.startsWith('game.') && meta.label !== id) return meta.label
+  return id
+}
+
+/**
+ * 储物袋展示分组键：重要（货币与特殊物品）、消耗品、装备法宝、功法、材料
+ */
+export type InventoryGroupKey = 'important' | 'consumable' | 'equipment' | 'manual' | 'material'
+
+/** 储物袋分组固定展示顺序（空组不渲染） */
+export const INVENTORY_GROUP_ORDER: readonly InventoryGroupKey[] = ['important', 'consumable', 'equipment', 'manual', 'material']
+
+/**
+ * 判定背包物品所属的展示分组。
+ * 依据物品目录 kind/category 键与装备目录命中（InventoryItem.subCategory 是二级细分键，不作一级分组依据）；
+ * 目录未覆盖时按 itemId 前缀兜底，仍无法识别归入材料组。
+ */
+export function resolveInventoryGroup(
+  itemId: string,
+  items: readonly { itemId: string; kind?: string; category?: string }[],
+  equipment: readonly { equipmentId: string }[],
+): InventoryGroupKey {
+  if (itemId.startsWith('equipment.') || findEquipmentInCatalog(equipment, itemId) !== undefined) return 'equipment'
+  if (itemId.startsWith('item.tome.') || itemId.startsWith('item.fragment.')) return 'manual'
+  if (itemId.startsWith('currency.') || itemId === 'item.awakening-stone') return 'important'
+  const definition = findItemInCatalog(items, itemId)
+  if (!definition) return 'material'
+  if (definition.category === 'manual') return 'manual'
+  if (definition.kind === 'equipment' || definition.category === 'equipment') return 'equipment'
+  if (definition.kind === 'currency' || definition.kind === 'resource'
+    || definition.category === 'currency' || definition.category === 'chest'
+    || definition.category === 'special' || definition.kind === 'special') return 'important'
+  if (definition.kind === 'consumable') return 'consumable'
+  return 'material'
+}
+
+/**
+ * 功法已参悟等级：由功法经验表经立方曲线导出，与服务端 AbilityExpCurve 同式；
+ * 未习得或无经验记录按 1 级计。
+ */
+export function learnedAbilityLevel(
+  abilityExperiences: Readonly<Record<string, number>> | undefined,
+  abilityId: string,
+): number {
+  return calculateAbilityLevelAndProgress(abilityExperiences?.[abilityId] ?? 0).level
+}
+
+/**
+ * 将功法装配到指定槽位：同一功法若已装配在其它槽位，视为「移动」——
+ * 从原槽位移除，而非让服务端以重复装配拒绝。
+ * 触发条件按功法 ID 独立挂接（combat.abilityTriggers），装配移动时无需随迁。
+ */
+export function assignAbilityToSlot(
+  slots: readonly CombatAbilitySlot[],
+  index: number,
+  abilityId: string | null,
+): CombatAbilitySlot[] {
+  return slots.map((slot, slotIndex) => {
+    if (slotIndex === index) return { ...slot, abilityId }
+    return slot.abilityId === abilityId ? { ...slot, abilityId: null } : slot
+  })
+}
+
+/**
+ * 功法槽位发送前归一化：
+ * 1. 类别互斥——内功位（index 0）只允许 discipline=internal 的心法内功，其余术法位
+ *    只允许神通术法；类别不匹配的槽位 abilityId 置空，清理历史遗留的跨类装配；
+ * 2. 装配等级对齐已参悟等级——技能等级只放大输出数值（灵力消耗不随等级变化），
+ *    调低无收益，统一回填为参悟等级，避免遗留 1 级槽位以低等级结算。
+ * 与服务端 loadout.replace 的槽位校验一致，避免整条命令因旧数据被拒。
+ */
+export function normalizeAbilitySlots(
+  slots: readonly CombatAbilitySlot[],
+  abilities: readonly { abilityId: string; discipline?: 'internal' | 'spell' }[],
+  abilityExperiences: Readonly<Record<string, number>> | undefined,
+): CombatAbilitySlot[] {
+  return slots.map((slot, index) => {
+    if (slot.abilityId === null || slot.abilityId === undefined) return slot
+    const definition = findAbilityInCatalog(abilities, slot.abilityId)
+    const isInternal = (definition?.discipline ?? 'spell') === 'internal'
+    if ((index === 0) !== isInternal) return { ...slot, abilityId: null }
+    const learnedLevel = learnedAbilityLevel(abilityExperiences, slot.abilityId)
+    return slot.level === learnedLevel ? slot : { ...slot, level: learnedLevel }
+  })
+}
+
+/**
+ * 在遭遇目录中 O(1) 高效查找遭遇/敌怪定义
+ */
+export function findEncounterInCatalog<T extends { encounterId: string; enemy?: { enemyId: string } }>(encounters: readonly T[], encounterOrEnemyId: string): T | undefined {
+  return getEncounterMap(encounters).get(encounterOrEnemyId)
+}
+
+/**
+ * 在遭遇目录与地图节点生态中按 enemyId 查找敌怪静态定义 (findCombatantInCatalog)
+ *
+ * 仅用于掉落预览等静态配表查询；实战数值（气血/属性/出手时序）一律走 wire 快照，
+ * 禁止经此路径补齐。匹配顺序：遭遇主敌 → 刷怪池候选 → Boss 列表 → 各节点
+ * 普通/精英/首领生态，首个命中即返回（enemyId 全仓唯一，顺序仅决定查找成本）。
+ */
+export function findCombatantInCatalog(
+  encounters: readonly CombatEncounterDefinition[],
+  maps: readonly WorldMapDefinition[],
+  enemyId: string,
+): CombatantDefinition | undefined {
+  for (const enc of encounters) {
+    if (enc.enemy.enemyId === enemyId) return enc.enemy
+    for (const spawn of enc.randomSpawns) {
+      if (spawn.enemy.enemyId === enemyId) return spawn.enemy
+    }
+    for (const elite of enc.eliteEnemies ?? []) {
+      if (elite.enemyId === enemyId) return elite
+    }
+    for (const boss of enc.bossEnemies) {
+      if (boss.enemyId === enemyId) return boss
+    }
+  }
+  for (const map of maps) {
+    for (const node of map.nodes) {
+      for (const pool of [node.monsters, node.eliteEnemies, node.bossEnemies]) {
+        const hit = pool?.find(enemy => enemy.enemyId === enemyId)
+        if (hit) return hit
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * 行动显示文本按当前驻留地点本地化：
+ * 行动名/描述中内嵌的当前地图名替换为当前节点名
+ * （「讨伐 青云仙山」在漱玉溪显示为「讨伐 漱玉溪」），与「讨伐行动在当前节点
+ * 生态展开」的实战语义一致——服务端 ResolveCombatEncounter 按玩家当前节点
+ * encounterIds 抽取遭遇。行进在道路上（nodeId=null）或文本不含地图名时原样返回。
+ */
+export function localizeActionDisplayText(
+  text: string,
+  world: Pick<WorldState, 'mapId' | 'nodeId' | 'locationName'>,
+  maps: readonly Pick<WorldMapDefinition, 'mapId' | 'name'>[],
+): string {
+  if (world.nodeId === null) return text
+  const mapName = maps.find(map => map.mapId === world.mapId)?.name
+  const { locationName } = world
+  if (!mapName || !locationName || mapName === locationName || !text.includes(mapName)) return text
+  return text.split(mapName).join(locationName)
+}
+
+/**
+ * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的真实等级 (Level)
+ * 优先级：
+ * 1. 产出物品/装备的显式等级或通过等阶换算得到的等级
+ * 2. 战斗遭遇 (combatEncounterId) 对应的等级
+ * 3. 输入消耗材料的最大等级
+ * 4. 默认 1 级
+ */
+export function resolveActionLevel(
+  action: ActionDefinition,
+  items?: ReadonlyArray<{ itemId: string; tier?: number }>,
+  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
+  encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
+): number {
+  if (typeof action.level === 'number' && action.level > 0) return action.level
+  const eqMap = equipment ? getEquipmentMap(equipment) : null
+  const itMap = items ? getItemMap(items) : null
+  const encMap = encounters ? getEncounterMap(encounters) : null
+
+  if (action.yields) {
+    for (const yieldEntry of action.yields) {
+      if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
+      const outId = yieldEntry.id
+      const eq = eqMap?.get(outId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return convertTierToLevel(eq.tier)
+      const it = itMap?.get(outId)
+      if (it && typeof it.tier === 'number' && it.tier > 0) return convertTierToLevel(it.tier)
+      const meta = ITEM_META_CORES[outId]
+      if (meta?.level && meta.level > 0) {
+        return meta.level > 2 ? meta.level : convertTierToLevel(meta.level)
+      }
+    }
+  }
+
+  if (action.combatEncounterId) {
+    const enc = encMap?.get(action.combatEncounterId)
+    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return convertTierToLevel(enc.tier)
+    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return convertTierToLevel(2)
+    return convertTierToLevel(1)
+  }
+
+  if (action.inputs) {
+    let maxTier = 1
+    for (const inId of Object.keys(action.inputs)) {
+      const eq = eqMap?.get(inId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
+      const it = itMap?.get(inId)
+      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
+      const meta = ITEM_META_CORES[inId]
+      if (meta?.level && meta.level > maxTier) maxTier = meta.level
+    }
+    if (maxTier > 1) return convertTierToLevel(maxTier)
+  }
+
+  return 1
+}
+
+/**
+ * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的品质 (Rarity)
+ */
+export function resolveActionRarity(
+  action: ActionDefinition,
+  items?: ReadonlyArray<{ itemId: string; tier?: number }>,
+  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
+  encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
+): ItemRarity {
+  const eqMap = equipment ? getEquipmentMap(equipment) : null
+  const itMap = items ? getItemMap(items) : null
+  const encMap = encounters ? getEncounterMap(encounters) : null
+
+  if (action.yields) {
+    for (const yieldEntry of action.yields) {
+      if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
+      const outId = yieldEntry.id
+      const meta = ITEM_META_CORES[outId]
+      if (meta?.rarity) return meta.rarity
+      const eq = eqMap?.get(outId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return resolveItemGrade(eq.tier).rarity
+      const it = itMap?.get(outId)
+      if (it && typeof it.tier === 'number' && it.tier > 0) return resolveItemGrade(it.tier).rarity
+    }
+  }
+
+  if (action.combatEncounterId) {
+    const enc = encMap?.get(action.combatEncounterId)
+    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return resolveItemGrade(enc.tier).rarity
+    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return 'spirit'
+    return 'mundane'
+  }
+
+  if (action.inputs) {
+    let maxTier = 1
+    for (const inId of Object.keys(action.inputs)) {
+      const meta = ITEM_META_CORES[inId]
+      if (meta?.rarity) return meta.rarity
+      const eq = eqMap?.get(inId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
+      const it = itMap?.get(inId)
+      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
+    }
+    if (maxTier > 1) return resolveItemGrade(maxTier).rarity
+  }
+
+  return 'mundane'
+}
+
+// 页签仅保留非文本元数据；label 统一经 actionTabLabel() 走 i18n。
+/**
+ * 各行动类型对应的 UI 图标符号与主题色
+ */
+export const ACTION_TAB_META: Record<ActionType, { glyph: string; accent: string }> = {
+  cultivation: { glyph: '☯', accent: 'cyan' },
+  exploration: { glyph: '⌕', accent: 'green' },
+  alchemy: { glyph: '⚗', accent: 'violet' },
+  combat: { glyph: '⚔', accent: 'orange' },
+  enhancement: { glyph: '⬡', accent: 'gold' },
+}
+
+/**
+ * 获取行动类型的多语言显示标签
+ */
+export function actionTabLabel(type: ActionType): string {
+  return getT()(`game.tab.${type}`)
+}
+
+/** 自动使用物品栏域全集（独立于行动大类的归属键，见总纲 §6.2.3）。 */
+export const AUTO_USE_BARS: readonly AutoUseBarType[] = ['exploration', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement', 'combat']
+
+/** 制造技艺栏域词表：制造大类行动按 technique 归属这些栏域之一。 */
+const MANUFACTURING_BARS: readonly AutoUseBarType[] = ['alchemy', 'forging', 'talisman', 'formation']
+
+/** 各物品栏域槽位数（战斗栏 = 药品栏 3 + 通用栏 3 的合并数组长度）。 */
+export const AUTO_USE_BAR_SLOT_COUNT: Record<AutoUseBarType, number> = {
+  exploration: 6,
+  alchemy: 3,
+  forging: 3,
+  talisman: 3,
+  formation: 3,
+  enhancement: 3,
+  combat: 6,
+}
+
+/**
+ * 行动定义 → 归属物品栏域：修炼/历练 → exploration；制造大类 → technique 同名栏域；
+ * 强化 → enhancement；战斗 → combat；无对应栏域（如赶路）返回 null。
+ */
+export function autoUseBarFor(action: { type: ActionType; technique?: string | null }): AutoUseBarType | null {
+  switch (action.type) {
+    case 'cultivation':
+    case 'exploration':
+      return 'exploration'
+    case 'alchemy':
+      return (MANUFACTURING_BARS as readonly string[]).includes(action.technique ?? '')
+        ? action.technique as AutoUseBarType
+        : null
+    case 'enhancement':
+      return 'enhancement'
+    case 'combat':
+      return 'combat'
+    default:
+      return null
+  }
+}
+
+/** 获取物品栏域的多语言显示标签。 */
+export function autoUseBarLabel(bar: AutoUseBarType): string {
+  return getT()(`game.bar.${bar}`)
+}
+
+/**
+ * 物品品质枚举：凡、黄、玄、地、天、灵、圣、帝
+ */
+export type ItemRarity = 'mundane' | 'yellow' | 'mystic' | 'earth' | 'heaven' | 'spirit' | 'saint' | 'emperor'
+
+/**
+ * 物品品质信息（包含品质枚举与本地化文案）
+ */
+export interface ItemGrade {
+  rarity: ItemRarity
+  label: string
+}
+
+/** 品质档 1~8 与品质枚举的升序对照表（下标 = tier - 1） */
+const ITEM_GRADE_ORDER: readonly ItemRarity[] = [
+  'mundane', 'yellow', 'mystic', 'earth', 'heaven', 'spirit', 'saint', 'emperor',
+]
+
+/**
+ * 根据品质档数值 (tier, 1~8) 计算对应的物品品质与多语言文本
+ * @param tier 品质档数值
+ */
+export function resolveItemGrade(tier = 1): ItemGrade {
+  const index = Math.max(0, Math.min(ITEM_GRADE_ORDER.length - 1, Math.floor(tier) - 1))
+  const rarity = ITEM_GRADE_ORDER[index]
+  return { rarity, label: getT()(`game.grade.${rarity}`) }
+}
+
+/**
+ * 将指定品质档应用到物品元数据上
+ */
+export function withItemGrade(metadata: ItemMetadata, tier = metadata.tier ?? (metadata.level && metadata.level <= 8 ? metadata.level : 1)): ItemMetadata {
+  const rawTier = tier ?? metadata.tier ?? 1
+  const normalizedTier = rawTier > 8 ? convertLevelToTier(rawTier) : Math.max(1, Math.floor(rawTier))
+  const grade = resolveItemGrade(normalizedTier)
+  return {
+    ...metadata,
+    rarity: grade.rarity,
+    rarityLabel: grade.label,
+    tier: normalizedTier,
+    level: convertTierToLevel(normalizedTier),
+  }
+}
+
+/**
+ * 物品完整元数据结构体
+ */
+export interface ItemMetadata {
+  /** 物品名称 */
+  label: string
+  /** 物品图标符号 */
+  glyph: string
+  /** 色调主题 */
+  tone: string
+  /** 分类名称（如 "材料", "丹药"） */
+  category: string
+  /** 品质等级 */
+  rarity: ItemRarity
+  /** 品质中文/多语言标签（如 "黄品", "通宝"） */
+  rarityLabel: string
+  /** 物品等阶 (1~8) */
+  tier?: number
+  /** 物品境界等级 (1, 18, 30...) */
+  level?: number
+  /** 详细描述 */
+  description: string
+  /** 产出来源（可选） */
+  source?: string
+  /** 用途说明（可选） */
+  usage?: string
+}
+
+/**
+ * 物品分类多语言键枚举
+ */
+export type ItemCategoryKey =
+  | 'general' | 'special' | 'material' | 'spiritMaterial' | 'mineral' | 'exoticMaterial' | 'refinedMaterial'
+  | 'herb' | 'pill' | 'food' | 'drink'
+  | 'talisman' | 'formation' | 'manual' | 'manualTome' | 'equipment' | 'chest' | 'currency' | 'resource'
+  | 'spiritFood' | 'spiritDrink' | 'loot' | 'rareLoot' | 'manualFragment' | 'tool'
+  | 'explorationSupply' | 'alchemySupply' | 'weapon' | 'two-hand' | 'off-hand' | 'head' | 'armor'
+  | 'legs' | 'trinket' | 'ring' | 'neck' | 'mainHandImplement' | 'twoHandImplement'
+/**
+ * 解析物品分类的多语言显示文本
+ * @param category 分类键名或原始文本
+ * @param t 可选的本地化函数（默认取全局 getT）
+ */
+export function resolveItemCategoryLabel(category?: string | null, t?: TFunction): string {
+  if (!category) return (t ?? getT())('game.category.general')
+  const fn = t ?? getT()
+  // 技艺工具槽位键（tool-<techniqueId>）归一为统一「技艺工具」品类词条，避免逐槽位立词条
+  const normalized = category.startsWith('tool-') ? 'tool' : category
+  const key = `game.category.${normalized}`
+  const translated = fn(key)
+  if (translated !== key) {
+    return translated
+  }
+  const lower = normalized.toLowerCase()
+  const lowerKey = `game.category.${lower}`
+  const lowerTranslated = fn(lowerKey)
+  if (lowerTranslated !== lowerKey) {
+    return lowerTranslated
+  }
+  return category
+}
+
+/**
+ * 解析物品细分品类键（左上角品类丝带的统一口径）：
+ * 装备细分即穿戴槽位；其余优先取服务端配表显式 subCategory（herb/mineral/pill/
+ * manualTome/manualFragment 等）；功法书配表缺失时按 itemId 前缀区分秘籍全本/
+ * 招式残卷；均未命中回退传入的兜底键（可为已本地化文本）。
+ * 返回值经 resolveItemCategoryLabel 渲染为展示文案。
+ */
+export function resolveItemSubCategory(
+  itemId: string,
+  definition?: { category?: string | null; subCategory?: string | null } | null,
+  equipmentDef?: { slot?: string | null } | null,
+  fallbackSubCategory?: string | null,
+): string | undefined {
+  if (equipmentDef?.slot) return equipmentDef.slot
+  if (definition?.subCategory) return definition.subCategory
+  if (itemId.startsWith('item.tome.')) return 'manualTome'
+  if (itemId.startsWith('item.fragment.')) return 'manualFragment'
+  return fallbackSubCategory ?? undefined
+}
+
+/**
+ * 装备强化资产变体解析：钱包行 variant 为 "+"+level（如 "+3"），基础行缺省/空串。
+ * 返回非负整数强化等级；非法或缺省一律按 0 计。
+ */
+export function parseEnhancementVariant(variant?: string | null): number {
+  if (!variant) return 0
+  const normalized = variant.startsWith('+') ? variant.slice(1) : variant
+  const parsed = Number(normalized)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+}
+
+/**
+ * 装备强化各等级受保折旧常数表（总纲 §4.6.2，alpha = 0.50）：
+ * beta: 累计期望保护消耗底模数加成系数；
+ * fee: 累计期望手续费残值返还（灵石）。
+ */
+const ENHANCEMENT_DEPRECIATION_TABLE: readonly { beta: number; fee: number }[] = [
+  { beta: 0.000, fee: 0 },     // +0
+  { beta: 0.500, fee: 10 },    // +1
+  { beta: 1.111, fee: 32 },    // +2
+  { beta: 1.722, fee: 66 },    // +3
+  { beta: 2.472, fee: 116 },   // +4
+  { beta: 3.222, fee: 178 },   // +5
+  { beta: 3.972, fee: 253 },   // +6
+  { beta: 4.901, fee: 353 },   // +7
+  { beta: 5.829, fee: 467 },   // +8
+  { beta: 6.758, fee: 596 },   // +9
+  { beta: 7.687, fee: 739 },   // +10
+  { beta: 8.853, fee: 922 },   // +11
+  { beta: 10.020, fee: 1122 }, // +12
+  { beta: 11.187, fee: 1339 }, // +13
+  { beta: 12.353, fee: 1572 }, // +14
+  { beta: 13.520, fee: 1822 }, // +15
+  { beta: 14.687, fee: 2089 }, // +16
+  { beta: 15.853, fee: 2372 }, // +17
+  { beta: 17.020, fee: 2672 }, // +18
+  { beta: 18.187, fee: 2989 }, // +19
+  { beta: 19.353, fee: 3322 }, // +20
+]
+
+/**
+ * 计算指定强化等级的装备商店回收单价（总纲 §4.6.2 50% 额外造价折旧闭式查表）：
+ * SellPrice(+N) = round(V0 * (1 + beta_N) + F_N)；
+ * N=0 时恒等于 V0；N 越界按 [0, 20] 截断。
+ */
+export function calculateEquipmentSellPrice(baseSellPrice: number, enhancementLevel: number): number {
+  if (baseSellPrice <= 0 || !Number.isFinite(baseSellPrice)) return 0
+  const level = Math.max(0, Math.min(20, Math.floor(enhancementLevel)))
+  const entry = ENHANCEMENT_DEPRECIATION_TABLE[level]
+  if (!entry) return Math.round(baseSellPrice)
+  return Math.round(baseSellPrice * (1 + entry.beta) + entry.fee)
+}
+
+/** 45 件装备白板商店基础回收售价字典（V0 = 锻造原材料成本 * 2.0，总纲 §4.6.1 双倍增值铁律） */
+export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
+  'equipment.shouya-pendant': 312,
+  'equipment.taomu-talisman': 324,
+  'equipment.chiwen-ring': 1560,
+  'equipment.juling-pendant': 1588,
+  'equipment.shufa-scarf': 312,
+  'equipment.baina-armor': 432,
+  'equipment.zhakou-pants': 312,
+  'equipment.jinfeng-scarf': 312,
+  'equipment.qingpi-armor': 432,
+  'equipment.jixing-pants': 312,
+  'equipment.hunyuan-scarf': 324,
+  'equipment.suma-robe': 432,
+  'equipment.xingqi-pants': 312,
+  'equipment.chijin-helmet': 1560,
+  'equipment.yulin-armor': 2160,
+  'equipment.tazhen-greaves': 1560,
+  'equipment.zhanfeng-scarf': 1560,
+  'equipment.liegang-armor': 2160,
+  'equipment.tafeng-pants': 1560,
+  'equipment.ziwu-crown': 1588,
+  'equipment.pichen-shirt': 2160,
+  'equipment.liuyun-skirt': 1560,
+  'equipment.fan-tie-dart': 312,
+  'equipment.qingmu-bead': 324,
+  'equipment.tiepi-guard': 312,
+  'equipment.ganlu-flask': 324,
+  'equipment.xuantie-dart': 1560,
+  'equipment.yaoling-bead': 1588,
+  'equipment.xuanjia-guard': 1560,
+  'equipment.huichun-bell': 1584,
+  'equipment.tool-herb-hoe': 100,
+  'equipment.tool-prospect-compass': 144,
+  'equipment.tool-flame-ding': 144,
+  'equipment.tool-forge-hammer': 132,
+  'equipment.tool-talisman-brush': 62,
+  'equipment.tool-formation-flag': 100,
+  'equipment.tool-quench-anvil': 144,
+  'equipment.qingfeng-sword': 432,
+  'equipment.pishan-blade': 432,
+  'equipment.jiujie-staff': 444,
+  'equipment.suxin-zither': 444,
+  'equipment.pogang-sword': 2160,
+  'equipment.zhansha-blade': 2160,
+  'equipment.chaoyuan-staff': 2188,
+  'equipment.songfeng-zither': 2188,
+}
+
+/**
+ * 获取指定装备的基础回收售价（V0）：
+ * 优先取配表定义下发的 sellPrice，若未下发则回落静态字典。
+ */
+export function resolveEquipmentBaseSellPrice(equipmentId: string, eqDef?: CombatEquipmentDefinition): number {
+  if (eqDef?.sellPrice && eqDef.sellPrice > 0) return eqDef.sellPrice
+  return EQUIPMENT_BASE_SELL_PRICES[equipmentId] ?? 0
+}
+
+/**
+ * 获取物品的市场参考价格：
+ * 优先取坊市最近 10 次成交的滑动平均参考价（referencePrice，一次购买多个算一次）；
+ * 若无成交价记录，则按照系统回收价格（sellPrice）兜底；
+ * 若均无则返回 0。
+ */
+export function getItemReferencePrice(
+  itemId: string,
+  enhancementLevel: number = 0,
+  itemsCatalog?: readonly ItemDefinition[] | null,
+  marketStats?: Record<string, MarketItemStats> | null,
+): number {
+  if (marketStats) {
+    const key = `${itemId}|${enhancementLevel}`
+    const stats = marketStats[key]
+    if (stats?.referencePrice && stats.referencePrice > 0) {
+      return stats.referencePrice
+    }
+    if (enhancementLevel > 0) {
+      const baseStats = marketStats[`${itemId}|0`]
+      if (baseStats?.referencePrice && baseStats.referencePrice > 0) {
+        return baseStats.referencePrice
+      }
+    }
+  }
+
+  if (itemsCatalog) {
+    const def = itemsCatalog.find(i => i.itemId === itemId)
+    if (def?.sellPrice && def.sellPrice > 0) {
+      return def.sellPrice
+    }
+  }
+
+  const eqBase = resolveEquipmentBaseSellPrice(itemId)
+  if (eqBase > 0) {
+    return calculateEquipmentSellPrice(eqBase, enhancementLevel)
+  }
+
+  const defaultDef = resolveDefaultItemDefinition(itemId)
+  if (defaultDef?.sellPrice && defaultDef.sellPrice > 0) {
+    return defaultDef.sellPrice
+  }
+
+  return 0
+}
+
+/**
+ * 汇总当前所有被占用的装备实例数量（已穿戴 + 正在进行强化锁定的装备）：
+ * 复合键为 `${itemId}#${enhancementLevel}`。
+ * 背包陈列、挑选器与槽位装配中，可支配数量 = 钱包持存 - 该占用计数。
+ */
+export function collectOccupiedEquipmentCounts(
+  combatEquipment?: readonly EquippedItem[],
+  queueEntries?: readonly QueueEntry[],
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const eq of combatEquipment ?? []) {
+    const key = `${eq.itemId}#${Math.floor(eq.enhancementLevel)}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  for (const qEntry of queueEntries ?? []) {
+    if ((qEntry.type === 'enhancement' || qEntry.actionId === 'enhance.equipment') && qEntry.targetItemId) {
+      const level = Math.floor(
+        qEntry.enhancementCurrentLevel
+          ?? (typeof qEntry.parameters?.initialLevel === 'number' ? qEntry.parameters.initialLevel : 0)
+      )
+      const key = `${qEntry.targetItemId}#${level}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+let occupiedEquipmentSourceRef: readonly EquippedItem[] | undefined
+let occupiedQueueSourceRef: readonly QueueEntry[] | undefined
+let occupiedCountsCache: Map<string, number> = new Map()
+
+/**
+ * 已穿戴/强化锁定占用计数的按引用缓存版本。
+ *
+ * 背包网格中每个格子都会读取本物品的占用件数，selector 在**每次状态通知**（每条服务端补丁）都会重跑：
+ * 若各自重建整表，成本随「背包格数 × 装备与队列长度」放大。这里按两个入参的引用身份缓存，
+ * 同一份状态只构建一次表，其余读取退化为 O(1) 查表。返回值只读，调用方不得修改。
+ */
+export function getOccupiedEquipmentCounts(
+  combatEquipment?: readonly EquippedItem[],
+  queueEntries?: readonly QueueEntry[],
+): Map<string, number> {
+  if (combatEquipment === occupiedEquipmentSourceRef && queueEntries === occupiedQueueSourceRef) {
+    return occupiedCountsCache
+  }
+  occupiedCountsCache = collectOccupiedEquipmentCounts(combatEquipment, queueEntries)
+  occupiedEquipmentSourceRef = combatEquipment
+  occupiedQueueSourceRef = queueEntries
+  return occupiedCountsCache
+}
+
+/**
+ * 物品元数据纯数据核心
+ */
+interface ItemMetaCore {
+  glyph: string
+  tone: string
+  rarity: ItemRarity
+  level?: number
+  /** 子类型键（左上角品类丝带展示口径；装备类条目即槽位键） */
+  subCategory: ItemCategoryKey
+  /** 特例覆盖：灵石品质标签「通宝」不随 rarity 推导。 */
+  rarityLabelOverride?: 'currency'
+}
+
+/**
+ * 基础物品静态元数据字典
+ */
+const ITEM_META_CORES: Record<string, ItemMetaCore> = {
+  'item.ningxue-grass': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
+  'item.peach-wood': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
+  'item.dark-iron': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'mineral' },
+  'item.beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.beast-bone': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.morning-dew': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
+  'item.broken-spirit-core': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.demon-dan': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.sha-fang': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.banling-flower': { glyph: '🌿', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'spiritMaterial' },
+  'item.yinlingsong-wood': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'spiritMaterial' },
+  'item.crimson-copper': { glyph: '⛏️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'mineral' },
+  'item.beast-fang': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.fire-feather': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.soul-talisman': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.leiji-talisman': { glyph: '⚡', tone: 'cyan', rarity: 'mundane', level: 1, subCategory: 'talisman' },
+  'item.juling-formation-disk': { glyph: '⬡', tone: 'violet', rarity: 'mundane', level: 1, subCategory: 'formation' },
+  'item.broken-blade': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.sha-bone': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.demon-core': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.meteor-fragment': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.refined-iron': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
+  'item.peach-wood-crystal': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
+  'item.herb-essence': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
+  'item.refined-copper': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'refinedMaterial' },
+  'item.spirit-pine-crystal': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'refinedMaterial' },
+  'item.banling-essence': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'refinedMaterial' },
+  'item.qi-gathering-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
+  'item.zhixue-powder': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
+  'item.shunqi-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
+  'item.tongmai-pill': { glyph: '💊', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'pill' },
+  'currency.spirit-stone': { glyph: '◈', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
+  'item.gongde': { glyph: '功', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
+  'item.gongde-bound': { glyph: '德', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
+  'item.awakening-stone': { glyph: '✦', tone: 'gold', rarity: 'heaven', level: 54, subCategory: 'special' },
+  'item.tome.heavy-slash': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.heavy-slash': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.chain-strike': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.chain-strike': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.palm-lightning': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.palm-lightning': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.ganlu': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.ganlu': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.blazing-blast': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.blazing-blast': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.taunt': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.taunt': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.heavy-clouds': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.heavy-clouds': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.qingping-melody': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.qingping-melody': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.lightning-attraction': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.lightning-attraction': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.pozhen-melody': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.pozhen-melody': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.star-piercer': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.star-piercer': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.tuna-gong': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.tuna-gong': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.manniu-jin': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.manniu-jin': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.tiebu-shan': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.tiebu-shan': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.feiyan-gong': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.feiyan-gong': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.qingxin-jue': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.qingxin-jue': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.fenxue-gong': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.fenxue-gong': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.xiaozhoutian-gong': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.xiaozhoutian-gong': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.cunshen-jue': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.cunshen-jue': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.lianjing-huaqi-jue': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.lianjing-huaqi-jue': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.xuanyuan-yiqi-gong': { glyph: '📘', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualTome' },
+  'item.fragment.xuanyuan-yiqi-gong': { glyph: '📜', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualFragment' },
+  'item.gathering-incense': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
+  'item.alchemy-flame': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
+  'item.reverse-fate-pill': { glyph: '⚫', tone: 'violet', rarity: 'mystic', level: 18, subCategory: 'pill' },
+  'equipment.qingfeng-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.pishan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.shufa-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.baina-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.zhakou-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.fan-tie-dart': { glyph: '🗡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.tiepi-guard': { glyph: '🛡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.qingmu-bead': { glyph: '📿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.ganlu-flask': { glyph: '🏺', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.shouya-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  'equipment.jiujie-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.suxin-zither': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.hunyuan-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.suma-robe': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.xingqi-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.taomu-talisman': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  'equipment.pogang-sword': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.zhansha-blade': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.chijin-helmet': { glyph: '👑', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
+  'equipment.yulin-armor': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
+  'equipment.tazhen-greaves': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
+  'equipment.jinfeng-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.qingpi-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.jixing-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.zhanfeng-scarf': { glyph: '👑', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
+  'equipment.liegang-armor': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
+  'equipment.tafeng-pants': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
+  'equipment.xuantie-dart': { glyph: '🗡️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.xuanjia-guard': { glyph: '🛡️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.yaoling-bead': { glyph: '📿', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.huichun-bell': { glyph: '🔔', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.chiwen-ring': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  'equipment.chaoyuan-staff': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.songfeng-zither': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.ziwu-crown': { glyph: '👑', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
+  'equipment.pichen-shirt': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
+  'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
+  'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  // 一阶野外材料与秘籍（配表 items/manuals 全量对齐，防止未登记条目丢失图标与品类）
+  'item.rock-fang': { glyph: '🦷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.water-spirit-core': { glyph: '💧', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.thick-beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.rough-wolf-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.golden-ape-bone': { glyph: '🦴', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.ape-heart': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.tome.tide': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.tide': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.sui-gang': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.sui-gang': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  // 一阶武器 / 护具 / 法宝（配表 equipment 全量对齐）
+  'equipment.xuantie-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.piyan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.kuteng-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.mingquan-zither': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.xuantie-headband': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.suozi-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.diejia-leggings': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.canglang-cap': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.canglang-vest': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.canglang-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.liuyun-ribbon': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.bishui-robe': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.zhishui-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.tiemu-shield': { glyph: '🛡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.ningshui-charm': { glyph: '🔖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.canglang-ring': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  'equipment.bibo-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  // 七技艺工具（tool-<techniqueId> 专属槽位；品类经 tool- 归一显示「技艺工具」）
+  'equipment.tool-herb-hoe': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-prospect-compass': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-flame-ding': { glyph: '🔥', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-forge-hammer': { glyph: '🗜️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-talisman-brush': { glyph: '🖌️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-formation-flag': { glyph: '🚩', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-quench-anvil': { glyph: '🔨', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+}
+
+/**
+ * 根据物品 ID 解析带多语言文案的完整物品元数据
+ * @param itemId 物品唯一标识
+ */
+export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
+  const t = getT()
+  const core = ITEM_META_CORES[itemId]
+  // 名称与描述的唯一真源是 i18n 词典；静态元数据表只承载图标/品质/品类等非文本信息。
+  // 新配表条目即使尚未登记静态元数据，也必须拿到可读文本，禁止回退原始 ID。
+  const label = hasTranslation(`game.item.${itemId}.label`) ? t(`game.item.${itemId}.label`) : undefined
+  const description = hasTranslation(`game.item.${itemId}.description`)
+    ? t(`game.item.${itemId}.description`)
+    : undefined
+
+  if (core) {
+    return {
+      label: label ?? itemId,
+      glyph: core.glyph,
+      tone: core.tone,
+      category: resolveItemCategoryLabel(core.subCategory, t),
+      rarity: core.rarity,
+      rarityLabel: t(`game.rarityLabel.${core.rarityLabelOverride ?? core.rarity}`),
+      tier: core.level ?? 1,
+      level: convertTierToLevel(core.level ?? 1),
+      description: description ?? '',
+    }
+  }
+
+  if (itemId.startsWith('equipment.')) {
+    // 静态元数据未登记的装备：名称走词典，品质/等阶按静态兜底定义推导。
+    const fallback = EQUIPMENT_MAP[itemId]
+    const tier = Math.max(1, fallback?.tier ?? 1)
+    const grade = resolveItemGrade(tier)
+    return {
+      label: label ?? fallback?.name ?? itemId,
+      glyph: '⚔️',
+      tone: 'gray',
+      category: resolveItemCategoryLabel(fallback?.slot ?? 'equipment', t),
+      rarity: grade.rarity,
+      rarityLabel: grade.label,
+      tier,
+      level: convertTierToLevel(tier),
+      description: description ?? fallback?.description ?? '',
+    }
+  }
+
+  if (itemId.startsWith('item.tome.') || itemId.startsWith('item.fragment.')) {
+    const isTome = itemId.startsWith('item.tome.')
+    const slug = itemId.slice(isTome ? 'item.tome.'.length : 'item.fragment.'.length)
+    return {
+      label: label ?? (isTome ? `《${slug}秘籍》` : `《${slug}·残卷》`),
+      glyph: isTome ? '📘' : '📜',
+      tone: 'gray',
+      category: resolveItemCategoryLabel(isTome ? 'manualTome' : 'manualFragment', t),
+      rarity: 'mundane',
+      rarityLabel: t('game.rarityLabel.mundane'),
+      tier: 1,
+      level: 1,
+      description: description ?? '',
+    }
+  }
+
+  // 普通物品（材料/丹药/消耗品）：词典有词条即可展示，图标与品类取中性兜底。
+  if (label !== undefined || description !== undefined) {
+    return {
+      label: label ?? itemId,
+      glyph: '·',
+      tone: 'gold',
+      category: resolveItemCategoryLabel(undefined, t),
+      rarity: 'mundane',
+      rarityLabel: t('game.rarityLabel.mundane'),
+      tier: 1,
+      level: 1,
+      description: description ?? '',
+    }
+  }
+
+  return undefined
+}
+
+/** 静态兜底物品定义：服务端 catalog 未下发对应条目时，保证常用消耗品仍可展示与解算 */
+const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
+  'item.qi-gathering-pill': {
+    itemId: 'item.qi-gathering-pill',
+    name: '引气丹',
+    description: '通体泛着淡青色光泽的初阶灵丹，散发着淡淡的草木清香。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'pill',
+    tier: 1,
+    sellPrice: 30,
+    isTradable: true,
+    usableBars: ['exploration'],
+    durationSeconds: 300,
+    isContinuous: true,
+    cultivationMultiplier: 1.3,
+  },
+  'item.zhixue-powder': {
+    itemId: 'item.zhixue-powder',
+    name: '止血散',
+    description: '由草木研磨而成的暗红药粉，药性辛温，微带草木清气。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'pill',
+    tier: 1,
+    sellPrice: 82,
+    isTradable: true,
+    usableBars: ['combat'],
+    cooldownSeconds: 60,
+    hitpointRestore: 0,
+    buffEffects: [
+      {
+        buffId: 'buff.zhixue',
+        name: '止血散·回春',
+        durationSeconds: 30,
+        hpRegen: 36,
+        damageAbsorptionPoints: 5,
+      },
+    ],
+  },
+  'item.shunqi-pill': {
+    itemId: 'item.shunqi-pill',
+    name: '顺气丸',
+    description: '圆润微润的暗黄药丸，气味清凉醒脑。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'pill',
+    tier: 1,
+    sellPrice: 88,
+    isTradable: true,
+    usableBars: ['combat'],
+    cooldownSeconds: 60,
+    buffEffects: [
+      {
+        buffId: 'buff.shunqi',
+        name: '顺气丸·凝神',
+        durationSeconds: 30,
+        mpRegen: 24,
+        attackSpeedPoints: 5,
+      },
+    ],
+  },
+  'item.tongmai-pill': {
+    itemId: 'item.tongmai-pill',
+    name: '通脉丹',
+    description: '丹面铭刻着细密紫纹的凝气灵丹，丹晕如雾缭绕。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'pill',
+    tier: 2,
+    sellPrice: 40304,
+    isTradable: true,
+    usableBars: ['exploration'],
+    durationSeconds: 300,
+    isContinuous: true,
+    cultivationMultiplier: 1.5,
+  },
+  'item.gathering-incense': {
+    itemId: 'item.gathering-incense',
+    name: '寻灵香',
+    description: '以幽谷异草凝制的线香，点燃后青烟袅袅，香气沉静。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'explorationSupply',
+    tier: 1,
+    sellPrice: 20,
+    isTradable: true,
+    usableBars: ['exploration'],
+    durationSeconds: 300,
+    isContinuous: true,
+    gatheringMultiplier: 1.5,
+  },
+  'item.alchemy-flame': {
+    itemId: 'item.alchemy-flame',
+    name: '地火引',
+    description: '封存在温玉小管中的一缕地脉火苗，静默跳动，热力含而不发。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'alchemySupply',
+    tier: 1,
+    sellPrice: 22,
+    isTradable: true,
+    usableBars: ['alchemy'],
+    durationSeconds: 300,
+    isContinuous: true,
+    alchemyMultiplier: 1.25,
+  },
+  'item.reverse-fate-pill': {
+    itemId: 'item.reverse-fate-pill',
+    name: '逆命丹',
+    description: '丹成可暂借一线天命。\n色泽晦暗如墨的异种丹丸，入喉后逆冲经络，为逆天改命强行撕开一道缝隙。',
+    kind: 'consumable',
+    category: 'consumable',
+    subCategory: 'pill',
+    tier: 3,
+    sellPrice: 0,
+    isTradable: false,
+  },
+  'item.awakening-stone': {
+    itemId: 'item.awakening-stone',
+    name: '觉醒石',
+    description: '天地通玄，宿慧初开。\n蕴含先天气运的玄奥灵石。使用后可随机觉醒一项先天特质；若已拥有，则为该特质注入领悟经验，促其突破升阶。',
+    kind: 'material',
+    category: 'special',
+    subCategory: 'special',
+    tier: 5,
+    sellPrice: 100,
+    isTradable: true,
+  },
+}
+
+/** 静态兜底装备定义：服务端 catalog 未下发对应条目时，保证等阶1/2 装备仍可展示属性 */
+const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefinition>> = {
+  'equipment.qingfeng-sword': {
+    equipmentId: 'equipment.qingfeng-sword',
+    name: '青锋剑',
+    slot: 'weapon',
+    tier: 1,
+    baseStatRatios: { physicalAttack: 0.2 },
+    flatStats: { physicalAttack: 10, accuracy: 10 },
+  },
+  'equipment.pishan-blade': {
+    equipmentId: 'equipment.pishan-blade',
+    name: '劈山刀',
+    slot: 'weapon',
+    tier: 1,
+    baseStatRatios: { physicalAttack: 0.1, physicalArmor: 0.14 },
+    flatStats: { physicalAttack: 8, physicalArmor: 8, threatBonusPoints: 200 },
+  },
+  'equipment.jiujie-staff': {
+    equipmentId: 'equipment.jiujie-staff',
+    name: '九节杖',
+    slot: 'weapon',
+    tier: 1,
+    baseStatRatios: { spellAttack: 0.2 },
+    flatStats: { spellAttack: 10, accuracy: 10, spellDamageBonusPoints: 5, skillBonusPoints: 5 },
+  },
+  'equipment.suxin-zither': {
+    equipmentId: 'equipment.suxin-zither',
+    name: '素心琴',
+    slot: 'weapon',
+    tier: 1,
+    baseStatRatios: { spellAttack: 0.14 },
+    flatStats: { spellAttack: 8, manapointRegen: 2, healingBonusPoints: 50, spellDamageBonusPoints: 5, skillBonusPoints: 5 },
+  },
+  'equipment.shufa-scarf': {
+    equipmentId: 'equipment.shufa-scarf',
+    name: '束发巾',
+    slot: 'head',
+    tier: 1,
+    baseStatRatios: { physicalArmor: 0.08, spellResistance: 0.02 },
+    flatStats: { maxHitpoints: 6, physicalArmor: 4, spellResistance: 2, physicalDamageReductionPoints: 2, threatBonusPoints: 10 },
+  },
+  'equipment.baina-armor': {
+    equipmentId: 'equipment.baina-armor',
+    name: '百衲甲',
+    slot: 'armor',
+    tier: 1,
+    baseStatRatios: { physicalArmor: 0.16, spellResistance: 0.04 },
+    flatStats: { maxHitpoints: 10, physicalArmor: 8, spellResistance: 2, physicalDamageReductionPoints: 2, threatBonusPoints: 15 },
+  },
+  'equipment.zhakou-pants': {
+    equipmentId: 'equipment.zhakou-pants',
+    name: '扎口裤',
+    slot: 'legs',
+    tier: 1,
+    baseStatRatios: { physicalArmor: 0.08, spellResistance: 0.02 },
+    flatStats: { physicalArmor: 5, spellResistance: 1, maxHitpoints: 6, physicalDamageReductionPoints: 2, threatBonusPoints: 10 },
+  },
+  'equipment.jinfeng-scarf': {
+    equipmentId: 'equipment.jinfeng-scarf',
+    name: '劲风巾',
+    slot: 'head',
+    tier: 1,
+    baseStatRatios: { physicalAttack: 0.08 },
+    flatStats: { physicalAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, physicalArmor: 2, physicalDamageBonusPoints: 2 },
+  },
+  'equipment.qingpi-armor': {
+    equipmentId: 'equipment.qingpi-armor',
+    name: '轻皮甲',
+    slot: 'armor',
+    tier: 1,
+    baseStatRatios: { physicalAttack: 0.16 },
+    flatStats: { physicalAttack: 9, accuracy: 5, criticalChance: 3, maxHitpoints: 3, physicalArmor: 4, physicalDamageBonusPoints: 2 },
+  },
+  'equipment.jixing-pants': {
+    equipmentId: 'equipment.jixing-pants',
+    name: '疾行裤',
+    slot: 'legs',
+    tier: 1,
+    baseStatRatios: { physicalAttack: 0.08 },
+    flatStats: { physicalAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, physicalArmor: 2, physicalDamageBonusPoints: 2 },
+  },
+  'equipment.hunyuan-scarf': {
+    equipmentId: 'equipment.hunyuan-scarf',
+    name: '混元巾',
+    slot: 'head',
+    tier: 1,
+    baseStatRatios: { spellAttack: 0.08 },
+    flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
+  },
+  'equipment.suma-robe': {
+    equipmentId: 'equipment.suma-robe',
+    name: '素麻袍',
+    slot: 'armor',
+    tier: 1,
+    baseStatRatios: { spellAttack: 0.16 },
+    flatStats: { spellAttack: 9, accuracy: 5, criticalChance: 3, maxHitpoints: 3, spellResistance: 4, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
+  },
+  'equipment.xingqi-pants': {
+    equipmentId: 'equipment.xingqi-pants',
+    name: '行气裤',
+    slot: 'legs',
+    tier: 1,
+    baseStatRatios: { spellAttack: 0.08 },
+    flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
+  },
+  'equipment.taomu-talisman': {
+    equipmentId: 'equipment.taomu-talisman',
+    name: '桃木符',
+    slot: 'trinket',
+    tier: 1,
+    baseStatRatios: { spellAttack: 0.1 },
+    flatStats: { criticalChance: 4, manapointRegen: 2 },
+  },
+  'equipment.fan-tie-dart': {
+    equipmentId: 'equipment.fan-tie-dart',
+    name: '兽骨匕',
+    slot: 'off-hand',
+    tier: 1,
+    baseStatRatios: { physicalAttack: 0.1 },
+    flatStats: { physicalAttack: 6, accuracy: 6, physicalDamageBonusPoints: 4 },
+  },
+  'equipment.qingmu-bead': {
+    equipmentId: 'equipment.qingmu-bead',
+    name: '桃灵珠',
+    slot: 'off-hand',
+    tier: 1,
+    baseStatRatios: { spellAttack: 0.1 },
+    flatStats: { spellAttack: 6, accuracy: 6, spellDamageBonusPoints: 4, skillBonusPoints: 4 },
+  },
+  'equipment.tiepi-guard': {
+    equipmentId: 'equipment.tiepi-guard',
+    name: '精铁盾',
+    slot: 'off-hand',
+    tier: 1,
+    baseStatRatios: { physicalArmor: 0.06, spellResistance: 0.06 },
+    flatStats: { maxHitpoints: 10, physicalDamageReductionPoints: 4 },
+  },
+  'equipment.ganlu-flask': {
+    equipmentId: 'equipment.ganlu-flask',
+    name: '甘露瓶',
+    slot: 'off-hand',
+    tier: 1,
+    flatStats: { hitpointRegen: 2, manapointRegen: 1, maxManapoints: 10, cooldownReductionPoints: 3, healingBonusPoints: 5 },
+  },
+  'equipment.pogang-sword': {
+    equipmentId: 'equipment.pogang-sword',
+    name: '破罡剑',
+    slot: 'weapon',
+    tier: 2,
+    baseStatRatios: { physicalAttack: 0.28 },
+    flatStats: { physicalAttack: 14, accuracy: 14 },
+  },
+  'equipment.zhansha-blade': {
+    equipmentId: 'equipment.zhansha-blade',
+    name: '斩煞刀',
+    slot: 'weapon',
+    tier: 2,
+    baseStatRatios: { physicalAttack: 0.14, physicalArmor: 0.2 },
+    flatStats: { physicalAttack: 11, physicalArmor: 11, threatBonusPoints: 300 },
+  },
+  'equipment.chaoyuan-staff': {
+    equipmentId: 'equipment.chaoyuan-staff',
+    name: '朝元杖',
+    slot: 'weapon',
+    tier: 2,
+    baseStatRatios: { spellAttack: 0.28 },
+    flatStats: { spellAttack: 14, accuracy: 14, spellDamageBonusPoints: 15, skillBonusPoints: 15 },
+  },
+  'equipment.songfeng-zither': {
+    equipmentId: 'equipment.songfeng-zither',
+    name: '松风琴',
+    slot: 'weapon',
+    tier: 2,
+    baseStatRatios: { spellAttack: 0.18 },
+    flatStats: { spellAttack: 12, manapointRegen: 3, healingBonusPoints: 50, spellDamageBonusPoints: 15, skillBonusPoints: 15 },
+  },
+  'equipment.xuantie-dart': {
+    equipmentId: 'equipment.xuantie-dart',
+    name: '赤牙匕',
+    slot: 'off-hand',
+    tier: 2,
+    baseStatRatios: { physicalAttack: 0.14 },
+    flatStats: { physicalAttack: 8, accuracy: 10, physicalDamageBonusPoints: 6 },
+  },
+  'equipment.yaoling-bead': {
+    equipmentId: 'equipment.yaoling-bead',
+    name: '曜灵珠',
+    slot: 'off-hand',
+    tier: 2,
+    baseStatRatios: { spellAttack: 0.14 },
+    flatStats: { spellAttack: 8, accuracy: 10, spellDamageBonusPoints: 6, skillBonusPoints: 6 },
+  },
+  'equipment.xuanjia-guard': {
+    equipmentId: 'equipment.xuanjia-guard',
+    name: '赤铜盾',
+    slot: 'off-hand',
+    tier: 2,
+    baseStatRatios: { physicalArmor: 0.08, spellResistance: 0.08 },
+    flatStats: { maxHitpoints: 16, physicalDamageReductionPoints: 6 },
+  },
+  'equipment.huichun-bell': {
+    equipmentId: 'equipment.huichun-bell',
+    name: '回春铃',
+    slot: 'off-hand',
+    tier: 2,
+    flatStats: { hitpointRegen: 3, manapointRegen: 1, maxManapoints: 16, cooldownReductionPoints: 5, healingBonusPoints: 6 },
+  },
+  'equipment.chijin-helmet': {
+    equipmentId: 'equipment.chijin-helmet',
+    name: '赤金盔',
+    slot: 'head',
+    tier: 2,
+    baseStatRatios: { physicalArmor: 0.12, spellResistance: 0.04 },
+    flatStats: { maxHitpoints: 8, physicalArmor: 6, spellResistance: 2, physicalDamageReductionPoints: 2, threatBonusPoints: 15 },
+  },
+  'equipment.yulin-armor': {
+    equipmentId: 'equipment.yulin-armor',
+    name: '鱼鳞甲',
+    slot: 'armor',
+    tier: 2,
+    baseStatRatios: { physicalArmor: 0.22, spellResistance: 0.06 },
+    flatStats: { maxHitpoints: 14, physicalArmor: 11, spellResistance: 3, physicalDamageReductionPoints: 2, threatBonusPoints: 20 },
+  },
+  'equipment.tazhen-greaves': {
+    equipmentId: 'equipment.tazhen-greaves',
+    name: '踏阵胫',
+    slot: 'legs',
+    tier: 2,
+    baseStatRatios: { physicalArmor: 0.12, spellResistance: 0.04 },
+    flatStats: { physicalArmor: 6, spellResistance: 2, maxHitpoints: 8, physicalDamageReductionPoints: 2, threatBonusPoints: 15 },
+  },
+  'equipment.zhanfeng-scarf': {
+    equipmentId: 'equipment.zhanfeng-scarf',
+    name: '斩风巾',
+    slot: 'head',
+    tier: 2,
+    baseStatRatios: { physicalAttack: 0.12 },
+    flatStats: { physicalAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, physicalArmor: 4, physicalDamageBonusPoints: 2 },
+  },
+  'equipment.liegang-armor': {
+    equipmentId: 'equipment.liegang-armor',
+    name: '裂罡甲',
+    slot: 'armor',
+    tier: 2,
+    baseStatRatios: { physicalAttack: 0.2 },
+    flatStats: { physicalAttack: 12, accuracy: 6, criticalChance: 4, maxHitpoints: 6, physicalArmor: 8, physicalDamageBonusPoints: 2 },
+  },
+  'equipment.tafeng-pants': {
+    equipmentId: 'equipment.tafeng-pants',
+    name: '踏风裤',
+    slot: 'legs',
+    tier: 2,
+    baseStatRatios: { physicalAttack: 0.12 },
+    flatStats: { physicalAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, physicalArmor: 4, physicalDamageBonusPoints: 2 },
+  },
+  'equipment.ziwu-crown': {
+    equipmentId: 'equipment.ziwu-crown',
+    name: '子午冠',
+    slot: 'head',
+    tier: 2,
+    baseStatRatios: { spellAttack: 0.12 },
+    flatStats: { spellAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, spellResistance: 4, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
+  },
+  'equipment.pichen-shirt': {
+    equipmentId: 'equipment.pichen-shirt',
+    name: '辟尘衫',
+    slot: 'armor',
+    tier: 2,
+    baseStatRatios: { spellAttack: 0.2 },
+    flatStats: { spellAttack: 12, accuracy: 6, criticalChance: 4, maxHitpoints: 6, spellResistance: 8, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
+  },
+  'equipment.liuyun-skirt': {
+    equipmentId: 'equipment.liuyun-skirt',
+    name: '流云裳',
+    slot: 'legs',
+    tier: 2,
+    baseStatRatios: { spellAttack: 0.12 },
+    flatStats: { spellAttack: 6, accuracy: 4, criticalChance: 2, maxHitpoints: 4, spellResistance: 4, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
+  },
+  'equipment.juling-pendant': {
+    equipmentId: 'equipment.juling-pendant',
+    name: '聚灵佩',
+    slot: 'trinket',
+    tier: 2,
+    baseStatRatios: { spellAttack: 0.16 },
+    flatStats: { criticalChance: 4, manapointRegen: 3 },
+  },
+}
+
+/**
+ * 按物品 ID 查询静态兜底物品定义，缺省字段补齐为安全默认值；
+ * 未登记的 ID 返回 undefined（交由服务端目录或元数据表兜底）。
+ */
+export function resolveDefaultItemDefinition(itemId: string): ItemDefinition | undefined {
+  const def = DEFAULT_ITEM_DEFINITIONS[itemId]
+  if (!def) return undefined
+  return {
+    itemId,
+    name: def.name ?? itemId,
+    description: def.description ?? '',
+    kind: def.kind ?? 'consumable',
+    category: def.category ?? 'consumable',
+    subCategory: def.subCategory ?? null,
+    tier: def.tier ?? 1,
+    sellPrice: def.sellPrice ?? 0,
+    isTradable: def.isTradable ?? true,
+    usableBars: def.usableBars ?? [],
+    cooldownSeconds: def.cooldownSeconds ?? 0,
+    hitpointRestore: def.hitpointRestore ?? 0,
+    manapointRestore: def.manapointRestore ?? 0,
+    buffEffects: def.buffEffects ?? null,
+    durationSeconds: def.durationSeconds ?? 0,
+    isContinuous: def.isContinuous ?? false,
+    cultivationMultiplier: def.cultivationMultiplier ?? 1,
+    gatheringMultiplier: def.gatheringMultiplier ?? 1,
+    alchemyMultiplier: def.alchemyMultiplier ?? 1,
+  }
+}
+
+/**
+ * 按装备 ID 查询静态兜底装备定义，缺省字段补齐为安全默认值；
+ * 未登记的 ID 返回 undefined（交由服务端目录兜底）。
+ */
+export function resolveDefaultEquipmentDefinition(equipmentId: string): CombatEquipmentDefinition | undefined {
+  const def = DEFAULT_EQUIPMENT_DEFINITIONS[equipmentId]
+  if (!def) return undefined
+  return {
+    equipmentId,
+    name: def.name ?? equipmentId,
+    slot: def.slot ?? 'weapon',
+    tier: def.tier ?? 1,
+    sellPrice: def.sellPrice ?? EQUIPMENT_BASE_SELL_PRICES[equipmentId] ?? 0,
+    enhancementBonus: def.enhancementBonus,
+    baseStatRatios: def.baseStatRatios,
+    flatStats: def.flatStats,
+  }
+}
+
+/** 静态基础物品定义字典 */
+export const ITEM_MAP: Readonly<Record<string, Partial<ItemDefinition>>> = DEFAULT_ITEM_DEFINITIONS
+
+/** 静态基础装备定义字典 */
+export const EQUIPMENT_MAP: Readonly<Record<string, Partial<CombatEquipmentDefinition>>> = DEFAULT_EQUIPMENT_DEFINITIONS
+
+/** 静态基础物品元数据字典 */
+export const ITEM_META_MAP: Readonly<Record<string, ItemMetaCore>> = ITEM_META_CORES
+

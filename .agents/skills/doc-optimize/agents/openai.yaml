@@ -1,0 +1,6 @@
+interface:
+  display_name: "文档优化治理"
+  short_description: "体检 docs/ 全域并治理索引、坏链、重复、看板膨胀与排版，表达层自主改、事实层报审"
+  default_prompt: "使用 $doc-optimize 优化文档：先跑 node scripts/doc-audit.mjs 取证，再按索引→形态→看板→去重→取证的顺序处置，表达结构可自主修改，删除、合并与事实订正一律报审；纯文档改动不自动提交。"
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,29 @@
+[
+  {
+    "id": "formation.deploy-juling",
+    "name": "聚灵阵盘",
+    "description": "以桃木晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。",
+    "type": "alchemy",
+    "technique": "formation",
+    "executionKind": "timed",
+    "durationSeconds": 30,
+    "inputs": {
+      "item.peach-wood-crystal": 6,
+      "item.broken-spirit-core": 6
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.juling-formation-disk",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  }
+]

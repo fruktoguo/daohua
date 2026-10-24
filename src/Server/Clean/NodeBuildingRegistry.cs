@@ -1,0 +1,803 @@
+namespace Server.Clean;
+
+/// <summary>建筑行写事务的结局类别；错误码与文案由注册表统一映射，仓储不回传展示文案。</summary>
+public enum NodeBuildingWriteStatus : byte
+{
+    /// <summary>写入已提交。</summary>
+    Applied,
+    /// <summary>目标行不存在。</summary>
+    NotFound,
+    /// <summary>建筑当前没有进行中的工程。</summary>
+    Idle,
+    /// <summary>按活行剩余需求封顶后没有可接受的材料数量。</summary>
+    NothingToContribute,
+    /// <summary>背包扣减回调拒绝（视为材料不足）。</summary>
+    DebitDenied,
+    /// <summary>建筑尚未建成，不能发起升级。</summary>
+    Incomplete,
+    /// <summary>建筑已有工程进行中。</summary>
+    Busy
+}
+
+/// <summary>
+/// 一次建筑行写事务的结果：结局类别 + 数据库活行（写入成功时为写后行）。
+/// 注册表据此校正进程内缓存并映射既有错误码；AppliedMaterials 为实际入库的材料明细。
+/// </summary>
+public sealed record NodeBuildingWriteOutcome(
+    NodeBuildingWriteStatus Status,
+    NodeBuildingState? State = null,
+    IReadOnlyDictionary<string, double>? AppliedMaterials = null,
+    EconomyTransactionResult? Economy = null);
+
+/// <summary>建筑贡献与资产、回执同事务提交所需的纯值上下文，不携带数据库或异步副作用。</summary>
+public sealed record NodeBuildingContributionTransaction(
+    Guid PlayerId,
+    Guid RequestId,
+    string IdempotencyKey,
+    string TransactionType,
+    DateTimeOffset OccurredAt,
+    IReadOnlyList<SectionWrite>? Sections = null,
+    IReadOnlyList<CommandReceipt>? Receipts = null);
+
+/// <summary>
+/// 节点公共建筑持久化适配：game.node_buildings 按 (node_id, building_id) 主键读写，
+/// 材料投入明细以 jsonb 字典落库；读路径在服务启动后首次访问时全量加载。
+/// 写路径统一为「SELECT ... FOR UPDATE 锁行 → 按数据库活行裁决 → 写回」的短事务：
+/// 跨实例写者在行锁上串行，封顶/可升级性等裁决只认活行而非调用方缓存，
+/// 杜绝贡献材料被旧投影整行覆盖的丢更新问题（见 docs/distributed-readiness.md §F）。
+/// </summary>
+public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
+{
+    /// <summary>加载全部节点建筑行；表为空返回空列表。</summary>
+    public async ValueTask<IReadOnlyList<(string NodeId, NodeBuildingState State)>> LoadAllAsync(CancellationToken cancellationToken)
+    {
+        var result = new List<(string, NodeBuildingState)>();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT node_id, building_id, level, target_level, started_at_unix_seconds, contributed_materials
+            FROM game.node_buildings
+            """, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add((
+                reader.GetString(0),
+                new NodeBuildingState(
+                    reader.GetString(1),
+                    reader.GetInt32(2),
+                    reader.GetInt32(3),
+                    reader.GetDouble(4),
+                    ReadMaterials(reader.GetString(5)))));
+        }
+        return result;
+    }
+
+    /// <summary>按主键读取单行建筑状态（不加锁）；行不存在返回 null，供缓存采纳活行使用。</summary>
+    public async ValueTask<NodeBuildingState?> TryLoadAsync(string nodeId, string buildingId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT level, target_level, started_at_unix_seconds, contributed_materials
+            FROM game.node_buildings
+            WHERE node_id = $1 AND building_id = $2
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+        command.Parameters.Add(new NpgsqlParameter { Value = buildingId });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new NodeBuildingState(
+            buildingId,
+            reader.GetInt32(0),
+            reader.GetInt32(1),
+            reader.GetDouble(2),
+            ReadMaterials(reader.GetString(3)));
+    }
+
+    /// <summary>写入一座新建筑；同节点同种已存在时按唯一约束裁决返回 false。</summary>
+    public async ValueTask<bool> InsertIfAbsentAsync(string nodeId, NodeBuildingState state, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO game.node_buildings (node_id, building_id, level, target_level, started_at_unix_seconds, contributed_materials, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
+            ON CONFLICT (node_id, building_id) DO NOTHING
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.BuildingId });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.Level });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.TargetLevel });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.StartedAtUnixSeconds });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            Value = JsonSerializer.Serialize(state.ContributedMaterials ?? new Dictionary<string, double>()),
+            NpgsqlDbType = NpgsqlDbType.Jsonb
+        });
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    /// <summary>
+    /// 贡献材料事务：先按幂等键读取历史经济事务，再锁建筑活行计算实际接纳量；资产、建筑、回执和分段写回
+    /// 均在同一个 Serializable 事务中完成。历史幂等命中时不重新按当前活行封顶，也不更新建筑行。
+    /// </summary>
+    public async ValueTask<NodeBuildingWriteOutcome> ContributeAsync(
+        string nodeId, string buildingId, BuildingDefinition definition,
+        IReadOnlyDictionary<string, double> requested, NodeBuildingContributionTransaction context,
+        CancellationToken cancellationToken)
+    {
+        EconomyCommitOutcomeUnknownException? unknown = null;
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var confirmation = unknown is null ? null : new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                return await ContributeCoreAsync(nodeId, buildingId, definition, requested, context,
+                    confirmation?.Token ?? cancellationToken);
+            }
+            catch (PostgresException exception) when (exception.SqlState is "40001" or "40P01"
+                && attempt < 5 && unknown is null && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(25 * (attempt + 1)), cancellationToken);
+            }
+            catch (EconomyCommitOutcomeUnknownException exception) when (unknown is null)
+            {
+                // 原上下文精确重放：先查询历史 applied；没有历史事实才重做整笔原子事务。
+                unknown = exception;
+            }
+            catch (Exception exception) when (unknown is not null)
+            {
+                unknown.Data["ConfirmationError"] = exception;
+                throw unknown;
+            }
+            catch (EconomyInsufficientBalanceException)
+            {
+                return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.DebitDenied);
+            }
+        }
+    }
+
+    private async ValueTask<NodeBuildingWriteOutcome> ContributeCoreAsync(
+        string nodeId, string buildingId, BuildingDefinition definition,
+        IReadOnlyDictionary<string, double> requested, NodeBuildingContributionTransaction context,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var existing = await PostgresEconomyRepository.TryLoadCommittedAsync(
+            connection, transaction, context.IdempotencyKey, cancellationToken);
+        if (existing is not null)
+        {
+            var applied = ReadAppliedMaterials(existing.ResultPayload);
+            var replayRequest = CreateContributionRequest(nodeId, buildingId, requested, applied, context);
+            var replay = PostgresEconomyRepository.ValidateReplay(replayRequest, existing);
+            // 返回当前活行仅刷新派生缓存，不改变建筑；实际接纳量始终来自首次提交的结果。
+            var live = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, live, applied, replay);
+        }
+
+        var row = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
+        if (row is null) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NotFound);
+        if (row.TargetLevel <= 0) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Idle, row);
+        var required = NodeBuildingRules.RequiredMaterials(definition, row.TargetLevel);
+        var appliedMaterials = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var (itemId, rawQuantity) in requested.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            var quantity = Math.Floor(rawQuantity);
+            if (!required.TryGetValue(itemId, out var need) || !double.IsFinite(quantity) || quantity <= 0) continue;
+            var remaining = Math.Max(0.0, need - row.ContributedMaterials.GetValueOrDefault(itemId));
+            var accepted = Math.Floor(Math.Min(remaining, quantity));
+            if (accepted > 0) appliedMaterials[itemId] = accepted;
+        }
+        if (appliedMaterials.Count == 0)
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NothingToContribute, row);
+
+        var request = CreateContributionRequest(nodeId, buildingId, requested, appliedMaterials, context);
+        var economy = await PostgresEconomyRepository.CommitCoreAsync(connection, transaction, request, cancellationToken);
+        if (economy.AlreadyCommitted)
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, null, ReadAppliedMaterials(economy.ResultPayload), economy);
+
+        var nowUnixSeconds = context.OccurredAt.ToUnixTimeMilliseconds() / 1000.0;
+        // 提交新材料前按旧材料封顶结算有效已耗工时；材料停滞等待期间的无效墙钟时间不积蓄，重锚定基准起始时刻。
+        var effectiveElapsed = NodeBuildingRules.EffectiveElapsedSeconds(row, definition, nowUnixSeconds);
+        var merged = new Dictionary<string, double>(row.ContributedMaterials, StringComparer.Ordinal);
+        foreach (var (itemId, quantity) in appliedMaterials)
+            merged[itemId] = merged.GetValueOrDefault(itemId) + quantity;
+        var updated = row with
+        {
+            StartedAtUnixSeconds = nowUnixSeconds - effectiveElapsed,
+            ContributedMaterials = merged
+        };
+        await UpdateLockedRowAsync(connection, transaction, nodeId, updated, cancellationToken);
+        await PostgresEconomyRepository.CommitTransactionAsync(transaction, context.RequestId, cancellationToken);
+        return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, updated, appliedMaterials, economy);
+    }
+
+    private static EconomyTransactionRequest CreateContributionRequest(string nodeId, string buildingId,
+        IReadOnlyDictionary<string, double> requested, IReadOnlyDictionary<string, double> applied,
+        NodeBuildingContributionTransaction context)
+        => new(context.RequestId, context.IdempotencyKey, context.TransactionType, context.PlayerId,
+            applied.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => new AssetDelta(context.PlayerId, pair.Key, string.Empty, -pair.Value)).ToArray(),
+            context.OccurredAt, JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                nodeId,
+                buildingId,
+                requested = requested.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value),
+                applied = applied.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value)
+            }), context.Sections, context.Receipts);
+
+    private static IReadOnlyDictionary<string, double> ReadAppliedMaterials(ReadOnlyMemory<byte> payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+        if (!document.RootElement.TryGetProperty("applied", out var applied)
+            || applied.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("建筑幂等事务结果缺少 applied 明细。");
+        return applied.EnumerateObject()
+            .Where(property => property.Value.ValueKind == JsonValueKind.Number && property.Value.TryGetDouble(out var quantity) && double.IsFinite(quantity) && quantity > 0)
+            .ToDictionary(property => property.Name, property => property.Value.GetDouble(), StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// 升级发起事务：行锁内先对活行做惰性完工推算（到期工程先落成再评估，与读路径同口径），
+    /// 再按活行校验可升级性并写回目标等级；跨实例并发升级在行锁上串行，后到者按活行报 Busy。
+    /// </summary>
+    public async ValueTask<NodeBuildingWriteOutcome> StartUpgradeAsync(
+        string nodeId,
+        string buildingId,
+        BuildingDefinition definition,
+        double nowUnixSeconds,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var row = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
+        if (row is null)
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NotFound);
+        // 退化行（Level == TargetLevel）完工不改写等级，按原行继续评估（与 FinalizeCompletionsAsync 跳过口径一致）。
+        var finalized = NodeBuildingRules.FinalizeIfComplete(row, definition, nowUnixSeconds);
+        var live = finalized.Level == row.Level ? row : finalized;
+        if (live.Level <= 0)
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Incomplete, row);
+        if (live.TargetLevel > 0)
+            return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Busy, row);
+        var upgraded = live with
+        {
+            TargetLevel = live.Level + 1,
+            StartedAtUnixSeconds = nowUnixSeconds,
+            ContributedMaterials = new Dictionary<string, double>(StringComparer.Ordinal)
+        };
+        await UpdateLockedRowAsync(connection, transaction, nodeId, upgraded, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, upgraded);
+    }
+
+    /// <summary>
+    /// 惰性完工事务：行锁内读活行，到期则落成目标等级写回，未到期或被外部改过则原样返回活行；
+    /// 行不存在返回 null。完工结算幂等，双实例重复执行落到同一结果。
+    /// </summary>
+    public async ValueTask<NodeBuildingState?> FinalizeIfDueAsync(
+        string nodeId,
+        string buildingId,
+        BuildingDefinition definition,
+        double nowUnixSeconds,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var row = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
+        if (row is null) return null;
+        var finalized = NodeBuildingRules.FinalizeIfComplete(row, definition, nowUnixSeconds);
+        if (finalized.Level == row.Level) return row;
+        await UpdateLockedRowAsync(connection, transaction, nodeId, finalized, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return finalized;
+    }
+
+    /// <summary>锁住并读取单行建筑状态；FOR UPDATE 让跨实例写者在行锁上串行。行不存在返回 null。</summary>
+    private static async ValueTask<NodeBuildingState?> SelectForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string nodeId,
+        string buildingId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT level, target_level, started_at_unix_seconds, contributed_materials
+            FROM game.node_buildings
+            WHERE node_id = $1 AND building_id = $2
+            FOR UPDATE
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+        command.Parameters.Add(new NpgsqlParameter { Value = buildingId });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new NodeBuildingState(
+            buildingId,
+            reader.GetInt32(0),
+            reader.GetInt32(1),
+            reader.GetDouble(2),
+            ReadMaterials(reader.GetString(3)));
+    }
+
+    /// <summary>把已锁定行写回为指定状态；行锁保证同一时刻只有本事务是写者。</summary>
+    private static async ValueTask UpdateLockedRowAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string nodeId,
+        NodeBuildingState state,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            UPDATE game.node_buildings
+            SET level = $3, target_level = $4, started_at_unix_seconds = $5,
+                contributed_materials = $6::jsonb, updated_at = now()
+            WHERE node_id = $1 AND building_id = $2
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.BuildingId });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.Level });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.TargetLevel });
+        command.Parameters.Add(new NpgsqlParameter { Value = state.StartedAtUnixSeconds });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            Value = JsonSerializer.Serialize(state.ContributedMaterials ?? new Dictionary<string, double>()),
+            NpgsqlDbType = NpgsqlDbType.Jsonb
+        });
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>解析 contributed_materials jsonb 字典：仅采纳有限正数项，与历史落库口径一致。</summary>
+    private static Dictionary<string, double> ReadMaterials(string json)
+    {
+        var materials = new Dictionary<string, double>(StringComparer.Ordinal);
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (property.Value.ValueKind == JsonValueKind.Number
+                    && property.Value.TryGetDouble(out var quantity)
+                    && double.IsFinite(quantity) && quantity > 0)
+                    materials[property.Name] = quantity;
+            }
+        }
+        return materials;
+    }
+}
+
+/// <summary>
+/// 建筑拥挤使用读模型仓储：由既有读模型表派生 (节点, 行动 ID) → 正在使用人数。
+/// 写路径零新增——game.player_action_queue 随分段刷盘与 ComputeNode 回写事务性全量重建，
+/// game.player_projection.current_node_id 同事务维护；本仓储只做 GROUP BY 聚合读。
+/// </summary>
+public sealed class PostgresNodeActivityRepository(NpgsqlDataSource dataSource)
+{
+    /// <summary>
+    /// 聚合当前全图使用计数：玩家行动队列中 Running 行动按其驻留节点归类；
+    /// suspended 玩家不计（状态挂起不参与增益占用）。返回 (节点, 行动 ID, 人数) 明细行，
+    /// 行动 ID → 行动类别的归并由注册表按配表完成。
+    /// </summary>
+    public async ValueTask<IReadOnlyList<(string NodeId, string ActionId, int Count)>> LoadActionCountsAsync(CancellationToken cancellationToken)
+    {
+        var result = new List<(string, string, int)>();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT p.current_node_id, q.action_id, COUNT(*)::int
+            FROM game.player_action_queue q
+            JOIN game.player_projection p ON p.player_id = q.player_id
+            WHERE q.status = 'running' AND p.presence <> 'suspended' AND p.current_node_id IS NOT NULL
+            GROUP BY p.current_node_id, q.action_id
+            """, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add((reader.GetString(0), reader.GetString(1), reader.GetInt32(2)));
+        return result;
+    }
+}
+
+/// <summary>建筑命令结局；贡献命令在 AppliedMaterials 中回传实际入库的材料量（按剩余需求封顶）。</summary>
+public sealed record NodeBuildingMutationResult(
+    bool Success,
+    string? ErrorCode = null,
+    string? Message = null,
+    IReadOnlyDictionary<string, double>? AppliedMaterials = null,
+    EconomyTransactionResult? Economy = null)
+{
+    /// <summary>构造失败结局；不携带材料回执。</summary>
+    /// <param name="code">机器可读错误码（如 BUILDING_EXISTS、INSUFFICIENT_MATERIALS）。</param>
+    /// <param name="message">面向客户端的中文提示。</param>
+    public static NodeBuildingMutationResult Fail(string code, string message) => new(false, code, message);
+    /// <summary>构造成功结局；贡献命令请改用直接构造以携带 AppliedMaterials。</summary>
+    public static NodeBuildingMutationResult Ok() => new(true);
+}
+
+/// <summary>
+/// 单节点建筑只读快照：不可变数组 + 单调递增版本戳。
+/// 同节点内容任何变化（建造/升级/材料/完工）都会递增版本；版本不变即可跳过下游重投影。
+/// </summary>
+public sealed record NodeBuildingSnapshot(long Version, IReadOnlyList<NodeBuildingState> Buildings);
+
+/// <summary>
+/// 节点公共建筑共享注册表：跨玩家的权威建筑状态，进程内缓存 + PostgreSQL 持久化。
+/// 写路径（建造/升级/贡献/惰性完工落库）经仓储行锁事务按数据库活行裁决——进程内
+/// _gate 只负责本实例的缓存一致与快照发布，跨实例正确性由行锁保证；裁决后把活行
+/// 采纳进缓存并重发该节点快照。读路径为 Volatile 发布的不可变快照，玩家每拍推进
+/// 零锁直读，仅在快照内检测到到期完工工程时才进锁结算并重发该节点快照。
+/// </summary>
+public sealed class NodeBuildingRegistry(
+    PostgresNodeBuildingRepository repository,
+    GameDataCatalog gameData,
+    ILogger<NodeBuildingRegistry> logger,
+    PostgresNodeActivityRepository? activity = null)
+{
+    /// <summary>「节点无建筑」的空快照：版本恒 0。</summary>
+    private static readonly NodeBuildingSnapshot EmptySnapshot = new(0, []);
+    /// <summary>「节点无使用人数」的空计数集。</summary>
+    private static readonly IReadOnlyDictionary<ActionKind, double> EmptyUsage =
+        new Dictionary<ActionKind, double>();
+    /// <summary>使用计数读模型刷新间隔：与 15s 分段脏龄去抖同量级，更快刷新也拿不到更新的落库数据。</summary>
+    private static readonly TimeSpan UsageRefreshInterval = TimeSpan.FromSeconds(15);
+
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    /// <summary>使用计数读模型的独立刷新门：与建筑写锁分离，GROUP BY 不阻塞建筑读路径。</summary>
+    private readonly SemaphoreSlim _usageGate = new(1, 1);
+    /// <summary>使用计数上次刷新的 UTC ticks（long 读写原子，避免 DateTimeOffset 撕裂读）。</summary>
+    private long _usageRefreshedTicks = long.MinValue;
+    /// <summary>已发布使用计数：节点 → 行动类别 → 正在使用人数；锁内整体替换引用。</summary>
+    private IReadOnlyDictionary<string, IReadOnlyDictionary<ActionKind, double>> _usage =
+        new Dictionary<string, IReadOnlyDictionary<ActionKind, double>>(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<NodeBuildingState>> _nodes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _versions = new(StringComparer.Ordinal);
+    /// <summary>已发布只读快照：锁内整体替换引用；锁外 Volatile 读取，数组内容不可变。</summary>
+    private IReadOnlyDictionary<string, NodeBuildingSnapshot> _snapshot =
+        new Dictionary<string, NodeBuildingSnapshot>(StringComparer.Ordinal);
+    private volatile bool _loaded;
+
+    private async ValueTask EnsureLoadedAsync(CancellationToken cancellationToken)
+    {
+        if (_loaded) return;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_loaded) return;
+            foreach (var (nodeId, state) in await repository.LoadAllAsync(cancellationToken))
+            {
+                if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];
+                list.Add(state);
+            }
+            await SeedPrebuiltBuildingsAsync(cancellationToken);
+            PublishAll();
+            _loaded = true;
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// 节点自带建筑播种：地图节点 prebuiltBuildings 声明的竣工建筑在首次装载时落座。
+    /// InsertIfAbsent 幂等——同 (节点, 建筑) 已存在行时采纳活行现状（含玩家升级结果），
+    /// 播种只负责「缺则补座」，跨实例并发由表唯一约束收敛。
+    /// </summary>
+    private async ValueTask SeedPrebuiltBuildingsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var map in gameData.Maps)
+        {
+            if (map.ValueKind != JsonValueKind.Object
+                || !map.TryGetProperty("nodes", out var nodesElement)
+                || nodesElement.ValueKind != JsonValueKind.Array)
+                continue;
+            foreach (var node in nodesElement.EnumerateArray())
+            {
+                var nodeId = node.TryGetProperty("id", out var idProperty) ? idProperty.GetString() : null;
+                if (string.IsNullOrWhiteSpace(nodeId)) continue;
+                var seeds = NodeBuildingRules.ResolvePrebuiltBuildings(node);
+                if (seeds.Count == 0) continue;
+                if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];
+                foreach (var seed in seeds)
+                {
+                    if (!gameData.Buildings.ContainsKey(seed.BuildingId))
+                    {
+                        logger.LogWarning("节点自带建筑配表缺失 node={NodeId} building={BuildingId}，跳过播种。", nodeId, seed.BuildingId);
+                        continue;
+                    }
+                    if (list.Any(entry => string.Equals(entry.BuildingId, seed.BuildingId, StringComparison.Ordinal))) continue;
+                    var seeded = new NodeBuildingState(seed.BuildingId, seed.Level, 0, 0,
+                        new Dictionary<string, double>(StringComparer.Ordinal));
+                    if (await repository.InsertIfAbsentAsync(nodeId, seeded, cancellationToken))
+                    {
+                        list.Add(seeded);
+                        logger.LogInformation("节点自带建筑落座 node={NodeId} building={BuildingId} level={Level}",
+                            nodeId, seed.BuildingId, seed.Level);
+                    }
+                    else if (await repository.TryLoadAsync(nodeId, seed.BuildingId, cancellationToken) is { } live)
+                    {
+                        list.Add(live);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 返回指定节点当前建筑快照（含惰性完工结算；完工跳变会落库并递增版本）。
+    /// 无到期工程时零锁直读已发布快照；节点无建筑返回版本 0 的空快照。
+    /// </summary>
+    public async ValueTask<NodeBuildingSnapshot> BuildingsForAsync(string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken);
+        var published = Volatile.Read(ref _snapshot);
+        if (!published.TryGetValue(nodeId, out var entry) || !HasDueCompletion(entry.Buildings, now))
+            return entry ?? EmptySnapshot;
+        // 读路径快进快出：只有快照内确有到期完工工程时才进写锁做惰性结算并重发。
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_nodes.TryGetValue(nodeId, out var list) || list.Count == 0) return EmptySnapshot;
+            if (await FinalizeCompletionsAsync(nodeId, list, now, cancellationToken))
+                PublishNode(nodeId, list);
+            return Volatile.Read(ref _snapshot).GetValueOrDefault(nodeId, EmptySnapshot);
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// 全图建筑索引：遍历已发布快照的全部节点逐节点走 <see cref="BuildingsForAsync"/>
+    /// （含惰性完工结算），返回 nodeId → 建筑快照字典；供地图浏览等跨节点只读展示使用。
+    /// </summary>
+    public async ValueTask<IReadOnlyDictionary<string, NodeBuildingSnapshot>> AllBuildingsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken);
+        var published = Volatile.Read(ref _snapshot);
+        var result = new Dictionary<string, NodeBuildingSnapshot>(published.Count, StringComparer.Ordinal);
+        foreach (var nodeId in published.Keys.OrderBy(key => key, StringComparer.Ordinal))
+        {
+            var snapshot = await BuildingsForAsync(nodeId, now, cancellationToken);
+            if (snapshot.Buildings.Count > 0) result[nodeId] = snapshot;
+        }
+        return result;
+    }
+
+    /// <summary>汇总指定节点已建成建筑效果（含拥挤衰减）；无建筑返回空效果集。</summary>
+    public async ValueTask<BuildingEffectSet> EffectsForAsync(string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var snapshot = await BuildingsForAsync(nodeId, now, cancellationToken);
+        if (snapshot.Buildings.Count == 0) return BuildingEffectSet.Empty;
+        var counts = await UsageForAsync(nodeId, now, cancellationToken);
+        return NodeBuildingRules.AggregateEffects(snapshot.Buildings, gameData.Buildings,
+            now.ToUnixTimeMilliseconds() / 1000d, counts);
+    }
+
+    /// <summary>
+    /// 指定节点各行动类别的正在使用人数（秒级最终一致读模型）。
+    /// 读模型仓储未装配时恒空——等价零拥挤满效口径，单元测试与无库环境行为不变。
+    /// </summary>
+    public async ValueTask<IReadOnlyDictionary<ActionKind, double>> UsageForAsync(
+        string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (activity is null) return EmptyUsage;
+        if (Volatile.Read(ref _usageRefreshedTicks) <= now.UtcTicks - UsageRefreshInterval.Ticks)
+            await RefreshUsageAsync(now, cancellationToken);
+        return _usage.TryGetValue(nodeId, out var counts) ? counts : EmptyUsage;
+    }
+
+    /// <summary>
+    /// 按建筑快照逐座汇总拥挤使用三元组（使用中人数/承载上限/效率系数）；
+    /// 与效果投影同一口径——同一份计数既驱动衰减也驱动展示。
+    /// </summary>
+    public IReadOnlyList<NodeBuildingUsage> UsagesFor(
+        IReadOnlyList<NodeBuildingState> buildings,
+        IReadOnlyDictionary<ActionKind, double> countsByKind,
+        double nowUnixSeconds)
+    {
+        var usages = new List<NodeBuildingUsage>(buildings.Count);
+        foreach (var state in buildings)
+        {
+            if (!gameData.Buildings.TryGetValue(state.BuildingId, out var definition)) continue;
+            var level = NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds);
+            var users = NodeBuildingRules.ActiveUsers(definition.Modifiers, countsByKind);
+            usages.Add(new(state.BuildingId, users,
+                NodeBuildingRules.CrowdCapacity(level), NodeBuildingRules.CrowdEfficiency(level, users)));
+        }
+        return usages;
+    }
+
+    /// <summary>
+    /// 到期重建使用计数读模型：单条 GROUP BY 覆盖全图节点，行动 ID 按配表归并到行动类别；
+    /// 读模型故障向上抛出由调用方按既有节拍重试，不污染已发布计数。
+    /// </summary>
+    private async ValueTask RefreshUsageAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await _usageGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (Volatile.Read(ref _usageRefreshedTicks) > now.UtcTicks - UsageRefreshInterval.Ticks) return;
+            var rows = await activity!.LoadActionCountsAsync(cancellationToken);
+            var usage = new Dictionary<string, IReadOnlyDictionary<ActionKind, double>>(StringComparer.Ordinal);
+            foreach (var (nodeId, actionId, count) in rows)
+            {
+                if (!gameData.Actions.TryGet(new ActionId(actionId), out var definition)) continue;
+                if (!usage.TryGetValue(nodeId, out var byKind))
+                    usage[nodeId] = byKind = new Dictionary<ActionKind, double>();
+                var kinds = (Dictionary<ActionKind, double>)byKind;
+                kinds[definition.Kind] = kinds.GetValueOrDefault(definition.Kind) + count;
+            }
+            Volatile.Write(ref _usage, usage);
+            Volatile.Write(ref _usageRefreshedTicks, now.UtcTicks);
+        }
+        finally { _usageGate.Release(); }
+    }
+
+    /// <summary>发起新建筑建造（目标等级 1）；同节点同种仅允许一座。</summary>
+    public async ValueTask<NodeBuildingMutationResult> StartConstructionAsync(string nodeId, BuildingDefinition definition, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];
+            if (list.Any(entry => string.Equals(entry.BuildingId, definition.Id, StringComparison.Ordinal)))
+                return NodeBuildingMutationResult.Fail("BUILDING_EXISTS", "此地已有同类建筑或同类工程进行中。");
+            var state = new NodeBuildingState(
+                definition.Id,
+                0,
+                1,
+                now.ToUnixTimeMilliseconds() / 1000d,
+                new Dictionary<string, double>(StringComparer.Ordinal));
+            // 缓存未收录不代表行不存在：并发实例可能已抢先建行，以唯一约束裁决为准；
+            // 撞行时把活行采纳进快照，让「已存在」的节点立刻看得见那座建筑。
+            if (!await repository.InsertIfAbsentAsync(nodeId, state, cancellationToken))
+            {
+                if (await repository.TryLoadAsync(nodeId, definition.Id, cancellationToken) is { } existing)
+                    AdoptState(nodeId, existing);
+                return NodeBuildingMutationResult.Fail("BUILDING_EXISTS", "此地已有同类建筑或同类工程进行中。");
+            }
+            list.Add(state);
+            PublishNode(nodeId, list);
+            return NodeBuildingMutationResult.Ok();
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>发起升级工程（目标等级 = 当前有效等级 + 1）；仅已建成且空闲的建筑可升级。</summary>
+    public async ValueTask<NodeBuildingMutationResult> StartUpgradeAsync(string nodeId, string buildingId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken);
+        if (!gameData.Buildings.TryGetValue(buildingId, out var definition))
+            return NodeBuildingMutationResult.Fail("BUILDING_NOT_FOUND", "此地没有该建筑。");
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_nodes.TryGetValue(nodeId, out var list)
+                && await FinalizeCompletionsAsync(nodeId, list, now, cancellationToken))
+                PublishNode(nodeId, list);
+            // 可升级性以数据库活行为准（行锁内先做惰性完工再校验），缓存仅作快照展示。
+            var outcome = await repository.StartUpgradeAsync(
+                nodeId, buildingId, definition, now.ToUnixTimeMilliseconds() / 1000d, cancellationToken);
+            if (outcome.State is { } live) AdoptState(nodeId, live);
+            return outcome.Status switch
+            {
+                NodeBuildingWriteStatus.Applied => NodeBuildingMutationResult.Ok(),
+                NodeBuildingWriteStatus.Incomplete => NodeBuildingMutationResult.Fail("BUILDING_INCOMPLETE", "建筑尚未建成，无法升级。"),
+                NodeBuildingWriteStatus.Busy => NodeBuildingMutationResult.Fail("BUILDING_BUSY", "该建筑已有工程进行中。"),
+                _ => NodeBuildingMutationResult.Fail("BUILDING_NOT_FOUND", "此地没有该建筑。")
+            };
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>仓储原子提交成功后才采纳建筑活行；玩家 World 仅是随后刷新的派生投影。</summary>
+    public async ValueTask<NodeBuildingMutationResult> ContributeAsync(
+        string nodeId,
+        string buildingId,
+        IReadOnlyDictionary<string, double> requested,
+        NodeBuildingContributionTransaction context,
+        CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken);
+        if (!gameData.Buildings.TryGetValue(buildingId, out var definition))
+            return NodeBuildingMutationResult.Fail("BUILDING_NOT_FOUND", "此地没有该建筑。");
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var outcome = await repository.ContributeAsync(nodeId, buildingId, definition, requested, context, cancellationToken);
+            if (outcome.State is { } live) AdoptState(nodeId, live);
+            return outcome.Status switch
+            {
+                NodeBuildingWriteStatus.Applied => new NodeBuildingMutationResult(true, AppliedMaterials: outcome.AppliedMaterials, Economy: outcome.Economy),
+                NodeBuildingWriteStatus.Idle => NodeBuildingMutationResult.Fail("BUILDING_IDLE", "该建筑当前没有进行中的工程。"),
+                NodeBuildingWriteStatus.NothingToContribute => NodeBuildingMutationResult.Fail("NOTHING_TO_CONTRIBUTE", "没有可提交的材料数量。"),
+                NodeBuildingWriteStatus.DebitDenied => NodeBuildingMutationResult.Fail("INSUFFICIENT_MATERIALS", "背包材料不足。"),
+                _ => NodeBuildingMutationResult.Fail("BUILDING_NOT_FOUND", "此地没有该建筑。")
+            };
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>快照内是否存在已到期完工的工程（材料与时间双进度满格）；纯只读推算，不进锁。</summary>
+    private bool HasDueCompletion(IReadOnlyList<NodeBuildingState> buildings, DateTimeOffset now)
+    {
+        var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
+        foreach (var state in buildings)
+        {
+            // TargetLevel == Level 的退化行永远不会改写等级，不算到期（与 FinalizeCompletionsAsync 跳过条件对齐）。
+            if (state.TargetLevel <= 0 || state.TargetLevel == state.Level) continue;
+            if (gameData.Buildings.TryGetValue(state.BuildingId, out var definition)
+                && NodeBuildingRules.IsComplete(state, definition, nowUnixSeconds))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 把数据库活行/写后行采纳进缓存：未收录条目（外部实例创建）追加，已有条目按内容
+    /// 差异替换；有实质变化时重发该节点快照，缓存由此对跨实例写入自愈。
+    /// </summary>
+    private void AdoptState(string nodeId, NodeBuildingState state)
+    {
+        if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];
+        var index = list.FindIndex(entry => string.Equals(entry.BuildingId, state.BuildingId, StringComparison.Ordinal));
+        if (index >= 0 && StatesEqual(list[index], state)) return;
+        if (index < 0) list.Add(state);
+        else list[index] = state;
+        PublishNode(nodeId, list);
+    }
+
+    /// <summary>两条建筑状态的内容等价比较（材料明细按键值逐项比对）。</summary>
+    private static bool StatesEqual(NodeBuildingState a, NodeBuildingState b)
+    {
+        if (a.Level != b.Level || a.TargetLevel != b.TargetLevel
+            || !a.StartedAtUnixSeconds.Equals(b.StartedAtUnixSeconds)
+            || a.ContributedMaterials.Count != b.ContributedMaterials.Count)
+            return false;
+        foreach (var (itemId, quantity) in a.ContributedMaterials)
+        {
+            if (!b.ContributedMaterials.TryGetValue(itemId, out var other) || !other.Equals(quantity))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>锁内重发单节点快照：复制为不可变数组并递增版本戳，读路径随后零锁可见。</summary>
+    private void PublishNode(string nodeId, List<NodeBuildingState> list)
+    {
+        var version = _versions.GetValueOrDefault(nodeId) + 1;
+        _versions[nodeId] = version;
+        var next = new Dictionary<string, NodeBuildingSnapshot>(_snapshot, StringComparer.Ordinal);
+        next[nodeId] = new NodeBuildingSnapshot(version, list.ToArray());
+        Volatile.Write(ref _snapshot, next);
+    }
+
+    /// <summary>锁内重建全量快照：仅在初次加载后调用一次，各节点版本从 1 起（0 保留给空节点）。</summary>
+    private void PublishAll()
+    {
+        var next = new Dictionary<string, NodeBuildingSnapshot>(_nodes.Count, StringComparer.Ordinal);
+        foreach (var (nodeId, list) in _nodes)
+        {
+            var version = _versions.GetValueOrDefault(nodeId) + 1;
+            _versions[nodeId] = version;
+            next[nodeId] = new NodeBuildingSnapshot(version, list.ToArray());
+        }
+        Volatile.Write(ref _snapshot, next);
+    }
+
+    /// <summary>
+    /// 惰性完工结算：对快照内已到双进度满格的工程，经仓储行锁事务按活行落成有效等级；
+    /// 活行被外部改过时采纳活行。返回缓存是否有实质变化。
+    /// </summary>
+    private async ValueTask<bool> FinalizeCompletionsAsync(string nodeId, List<NodeBuildingState> list, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var changed = false;
+        var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
+        for (var index = 0; index < list.Count; index++)
+        {
+            var state = list[index];
+            if (state.TargetLevel <= 0 || !gameData.Buildings.TryGetValue(state.BuildingId, out var definition)) continue;
+            if (!NodeBuildingRules.IsComplete(state, definition, nowUnixSeconds)) continue;
+            var live = await repository.FinalizeIfDueAsync(nodeId, state.BuildingId, definition, nowUnixSeconds, cancellationToken);
+            if (live is null || StatesEqual(live, state)) continue;
+            if (live.Level != state.Level)
+                logger.LogInformation("节点建筑完工 node={NodeId} building={BuildingId} level={Level}", nodeId, live.BuildingId, live.Level);
+            list[index] = live;
+            changed = true;
+        }
+        return changed;
+    }
+}

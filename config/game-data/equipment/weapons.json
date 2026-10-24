@@ -1,0 +1,191 @@
+[
+  {
+    "id": "equipment.qingfeng-sword",
+    "name": "青锋剑",
+    "description": "青锋映水，寒光澄秋。\n青钢淬火锻造的三尺长剑，剑身青光如秋水澄澈。",
+    "slot": "weapon",
+    "baseStatRatios": {
+      "physicalAttack": 0.2
+    },
+    "flatStats": {
+      "physicalAttack": 10,
+      "accuracy": 10
+    }
+  },
+  {
+    "id": "equipment.pishan-blade",
+    "name": "劈山刀",
+    "description": "重刀沉似岳，劈落断山峦。\n沉重坚实的山林朴刀，刀背厚重，刀锋刃口雪亮。",
+    "slot": "weapon",
+    "baseStatRatios": {
+      "physicalAttack": 0.1,
+      "physicalArmor": 0.14
+    },
+    "flatStats": {
+      "physicalAttack": 8,
+      "physicalArmor": 8,
+      "threatBonusPoints": 200
+    }
+  },
+  {
+    "id": "equipment.jiujie-staff",
+    "name": "九节杖",
+    "description": "九节灵杖出山竹。\n老山竹根削成的九节法杖，通体油亮光滑。",
+    "slot": "weapon",
+    "baseStatRatios": {
+      "spellAttack": 0.2
+    },
+    "flatStats": {
+      "spellAttack": 10,
+      "accuracy": 10,
+      "spellDamageBonusPoints": 5,
+      "skillBonusPoints": 5
+    }
+  },
+  {
+    "id": "equipment.suxin-zither",
+    "name": "素心琴",
+    "description": "桐木制琴，清音洗心。\n以山中老桐木制成的七弦古琴，音质清越素雅。",
+    "slot": "weapon",
+    "baseStatRatios": {
+      "spellAttack": 0.14
+    },
+    "flatStats": {
+      "spellAttack": 8,
+      "manapointRegen": 2,
+      "healingBonusPoints": 50,
+      "spellDamageBonusPoints": 5,
+      "skillBonusPoints": 5
+    }
+  },
+  {
+    "id": "equipment.xuantie-sword",
+    "name": "玄铁长剑",
+    "description": "古道寒铁铸，剑芒贯长虹。\n采古道沉铁反复锻打的精良长剑，剑体沉凝，锋锐逼人。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.24
+    },
+    "flatStats": {
+      "physicalAttack": 12,
+      "accuracy": 12
+    }
+  },
+  {
+    "id": "equipment.piyan-blade",
+    "name": "劈岩重刀",
+    "description": "刀重开绝壁，劈落碎层岩。\n百炼沉铁融合凶兽重骨打造的阔刃大刀，刀锋厚重，悍勇无匹。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "physicalAttack": 0.12,
+      "physicalArmor": 0.16
+    },
+    "flatStats": {
+      "physicalAttack": 10,
+      "physicalArmor": 10,
+      "threatBonusPoints": 250
+    }
+  },
+  {
+    "id": "equipment.kuteng-staff",
+    "name": "枯藤法杖",
+    "description": "悬崖生古藤，纳水引灵泉。\n取自落石险隘绝壁上的苍老灵藤，引动天地水汽，术法绵延。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.24
+    },
+    "flatStats": {
+      "spellAttack": 12,
+      "accuracy": 12,
+      "spellDamageBonusPoints": 6,
+      "skillBonusPoints": 6
+    }
+  },
+  {
+    "id": "equipment.mingquan-zither",
+    "name": "鸣泉古琴",
+    "description": "水鸣涧壑底，清响洗凡尘。\n嵌有水灵原核的素雅古琴，抚弄间若涧泉鸣玉，舒经活络。",
+    "slot": "weapon",
+    "tier": 1,
+    "baseStatRatios": {
+      "spellAttack": 0.16
+    },
+    "flatStats": {
+      "spellAttack": 10,
+      "manapointRegen": 2.5,
+      "healingBonusPoints": 60,
+      "spellDamageBonusPoints": 6,
+      "skillBonusPoints": 6
+    }
+  },
+  {
+    "id": "equipment.pogang-sword",
+    "name": "破罡剑",
+    "description": "剑芒吞赤铜，锋出破罡气。\n融入赤铜精淬炼的锋锐灵剑，剑芒吞吐，能破护体罡气。",
+    "slot": "weapon",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.28
+    },
+    "flatStats": {
+      "physicalAttack": 14,
+      "accuracy": 14
+    }
+  },
+  {
+    "id": "equipment.zhansha-blade",
+    "name": "斩煞刀",
+    "description": "血槽暗隐斩煞锋。\n百炼铁融合赤铜打造的厚重大刀，刀身隐泛暗红血槽。",
+    "slot": "weapon",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.14,
+      "physicalArmor": 0.2
+    },
+    "flatStats": {
+      "physicalAttack": 11,
+      "physicalArmor": 11,
+      "threatBonusPoints": 300
+    }
+  },
+  {
+    "id": "equipment.chaoyuan-staff",
+    "name": "朝元杖",
+    "description": "松芯为杖，云聚朝元。\n引灵松树芯雕琢的长杖，杖头盘旋如祥云聚顶。",
+    "slot": "weapon",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "spellAttack": 0.28
+    },
+    "flatStats": {
+      "spellAttack": 14,
+      "accuracy": 14,
+      "spellDamageBonusPoints": 15,
+      "skillBonusPoints": 15
+    }
+  },
+  {
+    "id": "equipment.songfeng-zither",
+    "name": "松风琴",
+    "description": "抚弦生松涛，清响入云深。\n千年引灵松精雕而成的古琴，抚弦宛如松涛阵阵。",
+    "slot": "weapon",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "spellAttack": 0.18
+    },
+    "flatStats": {
+      "spellAttack": 12,
+      "manapointRegen": 3,
+      "healingBonusPoints": 50,
+      "spellDamageBonusPoints": 15,
+      "skillBonusPoints": 15
+    }
+  }
+]

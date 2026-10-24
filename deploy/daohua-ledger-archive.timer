@@ -1,0 +1,11 @@
+[Unit]
+Description=每日执行道化市场成交与审计分区归档
+
+[Timer]
+OnCalendar=*-*-* 03:40:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+Unit=daohua-ledger-archive.service
+
+[Install]
+WantedBy=timers.target

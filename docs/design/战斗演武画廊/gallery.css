@@ -1,0 +1,148 @@
+/* =========================================================================
+   道化太初 · 战斗演武画廊 —— 画廊专属样式
+   约定：真实界面样式一律来自 frontend/src 直链样式表，本文件只承载：
+   1. 特效覆盖层与特效节点基类（全部绝对定位，零布局回流）；
+   2. 演武控制台与画廊标记；
+   3. 跨技能共享的通用粒子/震屏关键帧（技能专属帧在各 vfx/abilities/*.js 内自含注入）。
+   ========================================================================= */
+
+/* ---------- 特效覆盖层（挂在 .combat-arena-shell 内，overflow:hidden 裁剪） ---------- */
+.vfx-stage-overlay {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 特效节点统一基类：以目标点为中心展开，自身不占据布局空间 */
+.vfx-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transform: translateZ(0);
+}
+
+/* ---------- 屏幕震动（挂在 .combat-arena-shell，只动 transform） ---------- */
+@keyframes vfx-quake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-3px, 2px); }
+  40% { transform: translate(3px, -2px); }
+  60% { transform: translate(-2px, -2px); }
+  80% { transform: translate(2px, 2px); }
+}
+@keyframes vfx-quake-heavy {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-7px, 4px); }
+  30% { transform: translate(6px, -5px); }
+  45% { transform: translate(-5px, -4px); }
+  60% { transform: translate(5px, 3px); }
+  75% { transform: translate(-3px, 2px); }
+  90% { transform: translate(2px, -2px); }
+}
+.combat-arena-shell.is-quake { animation: vfx-quake 0.34s ease-out both; }
+.combat-arena-shell.is-quake-heavy { animation: vfx-quake-heavy 0.46s ease-out both; }
+
+/* ---------- 跳字扩展：暴击印章 / 灵力消耗 / 状态字（挂在真实 arena-resource-floats 内） ---------- */
+.arena-resource-floats em.is-crit {
+  font-size: 15px;
+  font-weight: 900;
+  color: #ffd166;
+  text-shadow: 0 0 8px rgba(255, 90, 40, 0.9), 0 1px 2px #000;
+}
+.arena-resource-floats em .dmg-float-stamp {
+  display: block;
+  margin-bottom: 1px;
+  color: #ff6b4a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+/* ---------- Buff 行占位：预留一行高度，获得增益时不推挤立绘/行动条（布局稳定） ---------- */
+.arena-actor-buff-list { min-height: 26px; }
+.arena-actor-buff-list:empty::after { content: ""; display: block; height: 0; }
+
+/* ---------- 演武目标选中环（沿用真实 hover 金辉语法，仅提示演出目标） ---------- */
+.arena-actor.is-selected-target .arena-avatar .character-avatar {
+  filter: drop-shadow(0 0 10px rgba(232, 214, 154, 0.75)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45));
+}
+.arena-actor.is-selected-target::before {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  width: 76px;
+  height: 76px;
+  margin: -44px 0 0 -38px;
+  border: 1px dashed rgba(232, 214, 154, 0.55);
+  border-radius: 50%;
+  content: "";
+  animation: vfx-target-spin 6s linear infinite;
+}
+@keyframes vfx-target-spin { to { transform: rotate(360deg); } }
+
+/* ---------- 功法瓦片演武态：吟唱中槽位发光脉冲 ---------- */
+.combat-ability-cell.is-vfx-casting {
+  box-shadow: 0 0 0 1px rgba(232, 214, 154, 0.8), 0 0 16px rgba(232, 214, 154, 0.45);
+}
+.combat-ability-cell.is-vfx-cd { filter: saturate(0.4) brightness(0.7); }
+
+/* ---------- 演武控制台（右栏「演武」tab，沿用 abilities-section/slot-group 面板语法） ---------- */
+.vfx-console-panel { display: flex; flex-direction: column; gap: 10px; padding: 10px; overflow-y: auto; }
+.vfx-console-block { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-bottom: 1px solid rgba(201, 180, 109, 0.12); }
+.vfx-console-block:last-child { border-bottom: 0; }
+.vfx-segment { display: flex; gap: 0; border: 1px solid rgba(201, 180, 109, 0.28); border-radius: 3px; overflow: hidden; }
+.vfx-segment-btn {
+  flex: 1;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+.vfx-segment-btn.is-active { background: rgba(201, 180, 109, 0.16); color: var(--gold-bright); }
+.vfx-console-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.vfx-ctl-btn {
+  padding: 4px 10px;
+  border: 1px solid rgba(201, 180, 109, 0.28);
+  border-radius: 3px;
+  background: rgba(201, 180, 109, 0.06);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.vfx-ctl-btn:hover { border-color: var(--gold-bright); color: var(--gold-bright); }
+.vfx-ctl-btn.is-active { border-color: #34d399; color: #6ee7b7; background: rgba(16, 185, 129, 0.12); }
+.vfx-ctl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.vfx-console-hint { margin: 0; color: var(--text-muted); font-size: 10.5px; line-height: 1.6; }
+.vfx-console-hint code { color: var(--gold-dim); font-size: 10px; }
+.vfx-selftest { color: var(--text-dim); font-size: 11px; line-height: 1.7; white-space: pre-wrap; }
+.vfx-selftest.is-pass { color: #6ee7b7; }
+.vfx-selftest.is-fail { color: #fca5a5; }
+
+/* ---------- 已学功法目录瓦片沿用真实 item-tile，画廊追加演出光标提示 ---------- */
+.abilities-learned-grid .item-tile { cursor: pointer; }
+.abilities-learned-grid .item-tile:hover { filter: brightness(1.18); }
+.catalog-ability-tile { position: relative; min-height: 62px; }
+
+/* ---------- 战斗日志类型着色（真实 log-message 之上的画廊扩展修饰） ---------- */
+.log-entry--damage .log-message { color: #f0a08a; }
+.log-entry--heal .log-message { color: #7dd6a8; }
+.log-entry--cast .log-message { color: #b9a5f0; }
+.log-entry--buff .log-message { color: var(--gold-bright); }
+.log-entry--defeat .log-message { color: #8a8f9e; font-style: italic; }
+.log-entry--system .log-message { color: var(--gold-dim); }
+
+/* ---------- 自检报告 ---------- */
+.vfx-selftest-row { padding: 1px 0; }
+.vfx-selftest-row.ok { color: #6ee7b7; }
+.vfx-selftest-row.fail { color: #fca5a5; }
+.vfx-selftest-row i { color: var(--text-muted); font-style: normal; }
+.vfx-selftest-summary { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(201, 180, 109, 0.15); color: var(--gold-bright); font-weight: 700; }

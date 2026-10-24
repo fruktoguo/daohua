@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Domain</AssemblyName>
+    <RootNamespace>Domain</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 分段级回滚检查点等 internal API：仅供服务端单写者运行时与测试集访问，不构成第二套可变通道。 -->
+    <InternalsVisibleTo Include="Server" />
+    <InternalsVisibleTo Include="Server.Tests" />
+    <InternalsVisibleTo Include="Domain.Tests" />
+    <InternalsVisibleTo Include="DaoHua.Ecs" />
+    <InternalsVisibleTo Include="Ecs.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="../../config/game-data/**/*.json">
+      <Link>Catalog/Defaults/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <LogicalName>Domain.Catalog.Defaults.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

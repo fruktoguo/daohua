@@ -1,0 +1,11 @@
+[
+  {
+    "id": "enhance.equipment",
+    "name": "装备强化",
+    "description": "以灵石为媒淬炼装备本体逐级铭纹，成败之间砥砺器物威能。",
+    "type": "enhancement",
+    "technique": "enhancement",
+    "executionKind": "timed",
+    "durationSeconds": 0
+  }
+]

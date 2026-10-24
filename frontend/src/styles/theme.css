@@ -1,0 +1,1514 @@
+/** 显示主题：仅调整配色与字重，沿用原有布局、纹饰与交互动效。 */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="dark"] :is(input, select, textarea) { color: var(--text); background-color: var(--panel); border-color: var(--gold-dim); }
+:root[data-theme="dark"] :is(select option, select optgroup) { color: var(--text); background-color: var(--panel); }
+:root[data-theme="dark"] select option:disabled { color: var(--text-dim); }
+:root[data-theme="dark"] .filter-grade-select { background-color: rgba(0, 0, 0, 0.45); border-color: rgba(201, 180, 109, 0.22); color: var(--text); }
+:root[data-theme="dark"] :is(.filter-grade-select option, .filter-grade-select optgroup) { color: var(--text); background-color: var(--panel); }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  font-synthesis: weight;
+  color: var(--text);
+  background: var(--bg);
+  --bg: #f1ecdc;
+  --bg-raised: #e4dbc4;
+  --panel: #f9f5ea;
+  --surface-rgb: 249, 245, 234;
+  --shade-rgb: 226, 215, 190;
+  --gold: #7d521a;
+  --gold-bright: #61400e;
+  --gold-dim: #8f7243;
+  --gold-faint: rgba(125, 82, 26, 0.28);
+  --gold-light: var(--gold-bright);
+  --gold-primary: var(--gold);
+  --seal: #b23327;
+  --seal-deep: #8c2418;
+  --seal-faint: rgba(178, 51, 39, 0.09);
+  --seal-border: rgba(178, 51, 39, 0.38);
+  --text: #2b2417;
+  --text-bright: #1c150b;
+  --text-dim: #584d3a;
+  --jade: #176043;
+  --qi: #165c76;
+  --danger: var(--seal);
+  --danger-bright: #a12b20;
+  --purple: #69408c;
+  --amber: #8a4514;
+  --rose: #903c58;
+  --silver: #4c5868;
+  --on-accent: #fffaf0;
+  --font-weight-regular: 600;
+  --font-weight-medium: 600;
+  --scrollbar-thumb: rgba(125, 82, 26, 0.38);
+  --scrollbar-thumb-hover: rgba(125, 82, 26, 0.6);
+}
+
+/* 战斗统计分段配色（浅色底加深对比）：物理=印红、术法=蓝、自动回复=翠、其他治疗=紫 */
+:root[data-theme="light"] .combat-stats-panel {
+  --cs-phys: #b23327;
+  --cs-spell: #2f6bb3;
+  --cs-regen: #2e7d4f;
+  --cs-other: #7d4fa0;
+}
+
+/* 纸白材质与墨色文字分别配对，不对图像或特效施加反色滤镜；背景平色，不叠渐变。 */
+:root[data-theme="light"] body {
+  background: var(--bg);
+}
+
+:root[data-theme="light"] .panel {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44' fill='none' stroke='%238a6c35' stroke-width='2.2'%3E%3Cpath d='M9 42L2 42L2 2L42 2L42 9'/%3E%3Cpath d='M8 34L8 8L34 8' stroke='%23a99161' stroke-width='1'/%3E%3Crect x='0.4' y='0.4' width='3.2' height='3.2' transform='rotate(45 2 2)' fill='%23614519' stroke='none'/%3E%3C/svg%3E") left -2px top -2px / 44px 44px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 56' fill='none' stroke='%238a6c35' stroke-width='1.6'%3E%3Cpath d='M46 2L54 2L54 54L2 54L2 46'/%3E%3C/svg%3E") right -2px bottom -2px / 56px 56px no-repeat,
+    var(--panel);
+  box-shadow: 0 0 0 1px rgba(125, 82, 26, 0.12),
+    0 8px 24px rgba(60, 44, 20, 0.09),
+    inset 0 0 0 5px var(--panel), inset 0 0 0 6px var(--gold-faint);
+}
+
+:root[data-theme="light"] :is(.topbar, .bottom-nav) {
+  background: rgba(var(--surface-rgb), 0.96);
+  box-shadow: 0 1px 14px rgba(71, 49, 18, 0.12);
+}
+
+:root[data-theme="light"] :is(.daohua-floating-card, .login-card, .status-card, .notice, .compound-stat-label) {
+  box-shadow: 0 8px 24px rgba(71, 49, 18, 0.16), inset 0 0 18px rgba(117, 83, 25, 0.04);
+}
+
+:root[data-theme="light"] .modal-backdrop { background: rgba(47, 39, 24, 0.32); }
+:root[data-theme="light"] :is(input, select, textarea) { color: var(--text); background-color: var(--panel); border-color: var(--gold-dim); }
+:root[data-theme="light"] textarea { font-weight: var(--font-weight-regular); }
+:root[data-theme="light"] :is(input, textarea)::placeholder { color: var(--text-dim); opacity: 1; }
+:root[data-theme="light"] :is(select option, select optgroup) { color: var(--text); background: var(--panel); }
+:root[data-theme="light"] select option:disabled { color: var(--text-dim); }
+:root[data-theme="light"] :is(button, input, select, textarea):focus-visible { outline-color: var(--seal); }
+:root[data-theme="light"] ::selection { color: var(--on-accent); background: var(--seal); }
+:root[data-theme="light"] input[type="checkbox"] { accent-color: var(--seal); }
+:root[data-theme="light"] :is(.panel-header h2, .world-map-node > strong, .arena-overhead > strong, .arena-buff-glyph, .arena-search-text-vertical) { text-shadow: none; }
+
+/* 印章红接管主操作与选中态：实心主按钮、导航红条、tab/胶囊选中、勾选项，金色退回纹饰与语义。 */
+:root[data-theme="light"] :is(.action-modal-submit, .modal-form-submit, .login-submit-btn, .status-btn.primary, .confirm-dialog-actions .confirm-primary:not(.danger), .quantity-selector button.active) {
+  border-color: var(--seal-deep);
+  background: var(--seal);
+}
+
+:root[data-theme="light"] :is(.action-modal-submit, .modal-form-submit, .login-submit-btn, .status-btn.primary, .confirm-dialog-actions .confirm-primary:not(.danger)):hover:not(:disabled) {
+  border-color: var(--seal-deep);
+  background: var(--seal-deep);
+}
+
+:root[data-theme="light"] :is(.nav-item.active, .nav-sub-item.active, .settings-nav-item.active) {
+  border-color: var(--seal-border);
+  background: var(--seal-faint);
+  box-shadow: inset 2px 0 0 var(--seal);
+}
+
+:root[data-theme="light"] .settings-nav-item.active,
+:root[data-theme="light"] .nav-item.active .nav-label,
+:root[data-theme="light"] .nav-sub-item.active {
+  color: var(--seal);
+}
+
+:root[data-theme="light"] :is(.nav-item.active .nav-glyph, .settings-nav-item.active .settings-nav-glyph, .bottom-nav-row button.active .bottom-glyph, .bottom-sub-tab-btn.active .bottom-sub-tab-glyph) {
+  border-color: var(--seal);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] :is(.log-tabs button.active, .market-tabs button.active, .market-category-chips button.active, .crafting-sub-tab-btn.active, .insight-sub-tab-btn.active, .option-toggle-btn.active, .combat-zone-tabs button.active, .presence-options button.active, .auth-tab-btn.active) {
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .option-toggle-group {
+  background: rgba(var(--surface-rgb), 0.35);
+  border-color: var(--gold-dim);
+}
+
+:root[data-theme="light"] .filter-grade-select {
+  background: rgba(var(--surface-rgb), 0.55);
+  border-color: var(--gold-dim);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .option-toggle-btn:not(.active) {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .option-toggle-count {
+  background: rgba(125, 82, 26, 0.12);
+}
+
+:root[data-theme="light"] .bottom-sub-tab-btn.active {
+  border-color: var(--seal-border);
+  background: var(--seal-faint);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .insight-tab-btn.active {
+  border-bottom-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+}
+
+:root[data-theme="light"] :is(.bottom-nav-row button.active, .bottom-sub-tab-btn.active) { color: var(--seal); }
+:root[data-theme="light"] .chat-entry-list li.is-active { background: var(--seal-faint); }
+:root[data-theme="light"] .choice-menu-option.is-selected,
+:root[data-theme="light"] .item-grid-picker-card--empty.is-selected {
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+}
+:root[data-theme="light"] .catalog-picker-card.is-selected {
+  border-color: var(--seal);
+  background: var(--seal-faint);
+  box-shadow: none;
+}
+:root[data-theme="light"] .market-browse-card.is-selected .item-tile { outline-color: var(--seal); }
+
+:root[data-theme="light"] button.danger,
+:root[data-theme="light"] button.danger:hover:not(:disabled),
+:root[data-theme="light"] .badge-danger,
+:root[data-theme="light"] .log-reference--enemy,
+:root[data-theme="light"] .log-reference--encounter,
+:root[data-theme="light"] .log-reference--mechanic,
+:root[data-theme="light"] .value-capsule--damage,
+:root[data-theme="light"] .value-capsule--negative,
+:root[data-theme="light"] .ecology-monster-rank.is-boss,
+:root[data-theme="light"] .item-use-slot-shell.is-depleted .item-corner--bottom-right,
+:root[data-theme="light"] .action-stat-pill--hitpoints strong,
+:root[data-theme="light"] .duel-option-status .duel-cooldown,
+:root[data-theme="light"] .market-header-status.is-error,
+:root[data-theme="light"] .market-tax-text,
+:root[data-theme="light"] .character-attribute-role-badge--enemy,
+:root[data-theme="light"] .tone-red,
+:root[data-theme="light"] .pill-tone--crimson .underlined-value,
+:root[data-theme="light"] .unit-number--tone-crimson,
+:root[data-theme="light"] .settings-group--danger .settings-group-title,
+:root[data-theme="light"] .modal-form-error,
+:root[data-theme="light"] .status-error-icon,
+:root[data-theme="light"] .saved-account-remove:hover,
+:root[data-theme="light"] .login-error-msg,
+:root[data-theme="light"] .error-stack-text,
+:root[data-theme="light"] .world-monster-pill,
+:root[data-theme="light"] .nearby-budget-pill,
+:root[data-theme="light"] .building-action-btn.is-confirm,
+:root[data-theme="light"] .arena-actor--enemy .arena-avatar,
+:root[data-theme="light"] .arena-actor--enemy .arena-seal,
+:root[data-theme="light"] .arena-buff-square--danger .arena-buff-glyph,
+:root[data-theme="light"] .arena-search-state--death,
+:root[data-theme="light"] .daohua-floating-menu-item--danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .queue-dropdown,
+:root[data-theme="light"] .choice-menu-popover,
+:root[data-theme="light"] .item-tooltip,
+:root[data-theme="light"] .effect-tooltip,
+:root[data-theme="light"] .notice,
+:root[data-theme="light"] .insight-stat-tooltip {
+  background: var(--panel);
+}
+
+:root[data-theme="light"] .topbar,
+:root[data-theme="light"] .compound-stat-label:hover,
+:root[data-theme="light"] .world-map-tool-btn:hover,
+:root[data-theme="light"] .world-map-node:hover:not(:disabled),
+:root[data-theme="light"] .arena-buff-square .arena-buff-stack {
+  background: rgba(var(--surface-rgb), 0.95);
+}
+
+:root[data-theme="light"] .tone-orange,
+:root[data-theme="light"] .combat-trigger-index,
+:root[data-theme="light"] .action-notice-badge--pending,
+:root[data-theme="light"] .market-action-btn--sell,
+:root[data-theme="light"] .market-book-side-tag--ask,
+:root[data-theme="light"] .market-level--ask strong,
+:root[data-theme="light"] .market-own-side,
+:root[data-theme="light"] .market-order-badge--sell,
+:root[data-theme="light"] .market-quick-btn--ask,
+:root[data-theme="light"] .pill-tone--amber .underlined-value {
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .tone-silver,
+:root[data-theme="light"] .capsule-label,
+:root[data-theme="light"] .pill-tone--slate .underlined-value,
+:root[data-theme="light"] .unit-number--tone-muted,
+:root[data-theme="light"] .arena-life-input-chip {
+  color: var(--silver);
+}
+
+:root[data-theme="light"] .qc-current {
+  background: linear-gradient(115deg, rgba(117, 169, 173, 0.055), transparent 38%), linear-gradient(270deg, rgba(201, 180, 109, 0.045), transparent 42%), var(--panel);
+}
+
+:root[data-theme="light"] .qc-next,
+:root[data-theme="light"] .equipment-tools-section,
+:root[data-theme="light"] .abilities-slot-tag-badge {
+  background: rgba(var(--surface-rgb), 0.7);
+}
+
+:root[data-theme="light"] .qc-next:hover,
+:root[data-theme="light"] .right-sidebar-tab-btn:hover,
+:root[data-theme="light"] .equipment-slot-btn.is-equipped,
+:root[data-theme="light"] .insight-stat-box,
+:root[data-theme="light"] .insight-buffs-box,
+:root[data-theme="light"] .insight-record-card {
+  background: rgba(var(--surface-rgb), 0.85);
+}
+
+:root[data-theme="light"] .badge-duel,
+:root[data-theme="light"] .ecology-monster-rank.is-elite,
+:root[data-theme="light"] .action-stat-pill--buff strong,
+:root[data-theme="light"] .action-notice-badge--foundation,
+:root[data-theme="light"] .action-bonus-pill--foundation,
+:root[data-theme="light"] .duel-option-toggle strong,
+:root[data-theme="light"] .pill-tone--violet .underlined-value,
+:root[data-theme="light"] .pill-tone--purple .underlined-value,
+:root[data-theme="light"] .unit-number--tone-purple,
+:root[data-theme="light"] .world-monster-pill.is-elite,
+:root[data-theme="light"] .nearby-interval-hint,
+:root[data-theme="light"] .arena-buff-square--purple .arena-buff-glyph,
+:root[data-theme="light"] .arena-buff-square--violet .arena-buff-glyph,
+:root[data-theme="light"] .battle-report-levelups,
+:root[data-theme="light"] .battle-report-duel-record,
+:root[data-theme="light"] .daohua-floating-aside-card--purple .daohua-floating-aside-title,
+:root[data-theme="light"] .daohua-floating-aside-card--purple .daohua-floating-aside-mark,
+:root[data-theme="light"] .daohua-floating-badge--purple {
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .confirm-dialog-actions .confirm-primary:not(.danger),
+:root[data-theme="light"] .quantity-selector button.active,
+:root[data-theme="light"] .action-modal-submit,
+:root[data-theme="light"] .action-modal-submit:hover:not(:disabled),
+:root[data-theme="light"] .market-order-btn-submit--buy,
+:root[data-theme="light"] .market-order-btn-submit--sell,
+:root[data-theme="light"] .modal-form-submit,
+:root[data-theme="light"] .login-submit-btn,
+:root[data-theme="light"] .status-btn.primary,
+:root[data-theme="light"] .item-type-ribbon > span {
+  color: var(--on-accent);
+}
+
+:root[data-theme="light"] .event-log time,
+:root[data-theme="light"] .log-reference--ability,
+:root[data-theme="light"] .value-capsule--mana,
+:root[data-theme="light"] .action-stat-pill--qi strong,
+:root[data-theme="light"] .action-stat-pill--mana strong,
+:root[data-theme="light"] .action-bonus-pill--world,
+:root[data-theme="light"] .tone-blue,
+:root[data-theme="light"] .pill-tone--cyan .underlined-value,
+:root[data-theme="light"] .pill-tone--indigo .underlined-value,
+:root[data-theme="light"] .pill-tone--teal .underlined-value,
+:root[data-theme="light"] .pill-tone--sky .underlined-value,
+:root[data-theme="light"] .pill-tone--qi .underlined-value,
+:root[data-theme="light"] .unit-number--tone-jade,
+:root[data-theme="light"] .unit-number--tone-qi,
+:root[data-theme="light"] .travel-highlight-time,
+:root[data-theme="light"] .arena-buff-square--cyan .arena-buff-glyph {
+  color: var(--qi);
+}
+
+:root[data-theme="light"] .log-reference--item,
+:root[data-theme="light"] .log-reference--location,
+:root[data-theme="light"] .combat-encounter-heading span,
+:root[data-theme="light"] .action-bonus-pill--pill,
+:root[data-theme="light"] .market-action-btn--buy,
+:root[data-theme="light"] .market-book-side-tag--bid,
+:root[data-theme="light"] .market-level--bid strong,
+:root[data-theme="light"] .market-own-side--buy,
+:root[data-theme="light"] .market-order-badge--buy,
+:root[data-theme="light"] .market-quick-btn--bid,
+:root[data-theme="light"] .character-attribute-role-badge--player,
+:root[data-theme="light"] .tone-green,
+:root[data-theme="light"] .pill-tone--emerald .underlined-value,
+:root[data-theme="light"] .pill-tone--jade .underlined-value,
+:root[data-theme="light"] .unit-number--tone-emerald,
+:root[data-theme="light"] .world-resource-pill,
+:root[data-theme="light"] .world-building-popover small,
+:root[data-theme="light"] .world-current-stay-badge,
+:root[data-theme="light"] .combat-phase-badge,
+:root[data-theme="light"] .arena-seal,
+:root[data-theme="light"] .arena-buff-square--jade .arena-buff-glyph,
+:root[data-theme="light"] .arena-buff-tooltip-desc,
+:root[data-theme="light"] .arena-travel-tag,
+:root[data-theme="light"] .badge-party,
+:root[data-theme="light"] .daohua-floating-menu-item--jade:hover:not(:disabled) {
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .log-reference--character,
+:root[data-theme="light"] .log-reference--action,
+:root[data-theme="light"] .value-capsule,
+:root[data-theme="light"] .value-capsule--percent,
+:root[data-theme="light"] .action-stat-pill--experience strong,
+:root[data-theme="light"] .action-bonus-pill--buff,
+:root[data-theme="light"] .action-bonus-pill--pending,
+  /* tone-gold 单独提炼为深金褐色，保证浅色底对比度 */
+:root[data-theme="light"] .pill-tone--gold .underlined-value,
+:root[data-theme="light"] .pill-tone--bronze .underlined-value,
+:root[data-theme="light"] .insight-breakthrough-btn,
+:root[data-theme="light"] .unit-number--tone-amber,
+:root[data-theme="light"] .cooldown-tag,
+:root[data-theme="light"] .world-monster-pill.is-boss,
+:root[data-theme="light"] .arena-buff-square--qi .arena-buff-glyph {
+  color: var(--gold);
+}
+
+
+:root[data-theme="light"] .tone-gold {
+  color: var(--gold-bright);
+}
+:root[data-theme="light"] .item-reference-compound,
+:root[data-theme="light"] .contribute-list input[type="number"],
+:root[data-theme="light"] .daohua-floating-card-stats {
+  background: rgba(var(--surface-rgb), 0.35);
+}
+
+:root[data-theme="light"] .item-reference-compound:hover,
+:root[data-theme="light"] .equipment-slot-btn.is-empty {
+  background: rgba(var(--surface-rgb), 0.55);
+}
+
+:root[data-theme="light"] .item-reference-compound .capsule-label,
+:root[data-theme="light"] .right-sidebar-tab-btn.is-active,
+:root[data-theme="light"] .compound-stat-label,
+:root[data-theme="light"] .pill-tone--silver .underlined-value,
+:root[data-theme="light"] .insight-stat-tooltip,
+:root[data-theme="light"] .unit-number-tooltip-split,
+:root[data-theme="light"] .daohua-floating-aside-single-row .daohua-floating-aside-val {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .value-capsule--health,
+:root[data-theme="light"] .value-capsule--positive {
+  color: var(--rose);
+}
+
+:root[data-theme="light"] .chat-composer input {
+  background: rgba(var(--surface-rgb), 0.28);
+}
+
+:root[data-theme="light"] .combat-ecology-panel {
+  background: linear-gradient(90deg, rgba(63, 106, 91, 0.055), transparent 42%), rgba(var(--surface-rgb), 0.34);
+}
+
+:root[data-theme="light"] .ecology-monster-tile,
+:root[data-theme="light"] .right-sidebar-tab-btn {
+  background: rgba(var(--surface-rgb), 0.72);
+}
+
+:root[data-theme="light"] .ecology-monster-level {
+  background: rgba(var(--surface-rgb), 0.62);
+}
+
+:root[data-theme="light"] .item-use-slot.item-use-slot--depleted .item-tile,
+:root[data-theme="light"] .item-use-slot.item-use-slot--depleted:hover .item-tile,
+:root[data-theme="light"] .item-use-slot.item-use-slot--depleted:focus-visible .item-tile {
+  background: linear-gradient(145deg, rgba(214, 79, 70, 0.14), transparent 54%), linear-gradient(0deg, rgba(var(--shade-rgb), 0.48), rgba(var(--surface-rgb), 0.82));
+}
+
+:root[data-theme="light"] .crafting-sub-tab-btn,
+:root[data-theme="light"] .market-levels,
+:root[data-theme="light"] .market-own-order {
+  background: rgba(var(--surface-rgb), 0.25);
+}
+
+:root[data-theme="light"] .action-card {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--item-surface, rgba(201, 180, 109, 0.05)) 40%, transparent), transparent 75%), rgba(var(--surface-rgb), 0.85);
+}
+
+:root[data-theme="light"] .market-header-status,
+:root[data-theme="light"] .travel-route-section,
+:root[data-theme="light"] .arena-life-meta {
+  background: rgba(var(--surface-rgb), 0.3);
+}
+
+:root[data-theme="light"] .market-detail-navbar {
+  background: rgba(var(--surface-rgb), 0.38);
+}
+
+:root[data-theme="light"] .market-order-modal-item-preview,
+:root[data-theme="light"] .monster-rank-tag {
+  background: rgba(var(--surface-rgb), 0.4);
+}
+
+:root[data-theme="light"] .right-sidebar-tab-btn.is-active {
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+  box-shadow: none;
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .equipment-slot-btn.is-empty:hover,
+:root[data-theme="light"] .avatar-tile {
+  background: rgba(var(--surface-rgb), 0.75);
+}
+
+:root[data-theme="light"] .abilities-slot-tag-badge.is-internal,
+:root[data-theme="light"] .avatar-tile:hover,
+:root[data-theme="light"] .item-slot-inline-action,
+:root[data-theme="light"] .combat-ability-level-control {
+  background: rgba(var(--surface-rgb), 0.9);
+}
+
+:root[data-theme="light"] .combat-ability-slot.is-internal-slot {
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.6) 0%, rgba(var(--surface-rgb), 0.9) 100%);
+}
+
+:root[data-theme="light"] .item-corner,
+:root[data-theme="light"] .login-card,
+:root[data-theme="light"] .status-card,
+:root[data-theme="light"] .catalog-picker-corner,
+:root[data-theme="light"] .picker-trigger-label,
+:root[data-theme="light"] .world-map-stage {
+  background: rgba(var(--surface-rgb), 0.94);
+}
+
+:root[data-theme="light"] .character-attribute-avatar-stage {
+  background: radial-gradient(circle at 50% 50%, rgba(201, 180, 109, 0.1) 0%, rgba(var(--surface-rgb), 0.95) 75%);
+}
+
+:root[data-theme="light"] .bottom-nav {
+  background: rgba(var(--surface-rgb), 0.98);
+}
+
+:root[data-theme="light"] .insight-page-header,
+:root[data-theme="light"] .error-stack-container {
+  background: rgba(var(--surface-rgb), 0.6);
+}
+
+:root[data-theme="light"] .insight-sub-tab-btn,
+:root[data-theme="light"] .world-location-sections::-webkit-scrollbar-track {
+  background: rgba(var(--surface-rgb), 0.2);
+}
+
+:root[data-theme="light"] .compound-stat-label,
+:root[data-theme="light"] .world-map-tool-btn {
+  background: rgba(var(--surface-rgb), 0.88);
+}
+
+:root[data-theme="light"] .capsule-label {
+  background: rgba(var(--surface-rgb), 0.45);
+}
+
+:root[data-theme="light"] .insight-record-card--featured {
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.9) 0%, rgba(var(--surface-rgb), 0.9) 100%);
+}
+
+:root[data-theme="light"] .settings-profile {
+  background: radial-gradient(120% 160% at 12% 50%, rgba(201, 180, 109, 0.1), rgba(var(--surface-rgb), 0.4) 70%);
+}
+
+:root[data-theme="light"] .settings-profile-avatar {
+  background: radial-gradient(circle, rgba(201, 180, 109, 0.16), rgba(var(--surface-rgb), 0.85) 72%);
+}
+
+:root[data-theme="light"] .avatar-tile.active {
+  background: radial-gradient(circle at 50% 30%, rgba(201, 180, 109, 0.15) 0%, rgba(var(--surface-rgb), 0.95) 100%);
+}
+:root[data-theme="light"] .avatar-tile.is-locked {
+  background: rgba(var(--surface-rgb), 0.5);
+  border-color: rgba(120, 100, 70, 0.2);
+}
+
+:root[data-theme="light"] .avatar-tile-lock-badge {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--gold-dim);
+  border-color: rgba(120, 100, 70, 0.35);
+}
+
+
+:root[data-theme="light"] .login-screen,
+:root[data-theme="light"] .status-screen {
+  background: radial-gradient(circle at 50% 40%, var(--panel) 0%, var(--panel) 70%);
+}
+
+:root[data-theme="light"] .item-tile {
+  background: linear-gradient(135deg, var(--item-surface), transparent 52%), linear-gradient(0deg, rgba(var(--shade-rgb), 0.5), rgba(var(--surface-rgb), 0.82));
+}
+
+:root[data-theme="light"] .item-tile[data-rarity="emperor"] {
+  background: linear-gradient(115deg, rgba(236, 86, 72, 0.24), rgba(229, 151, 43, 0.2) 18%, rgba(227, 204, 63, 0.17) 34%, rgba(69, 179, 107, 0.19) 50%, rgba(37, 184, 216, 0.2) 66%, rgba(123, 97, 209, 0.22) 82%, rgba(210, 79, 183, 0.24)), linear-gradient(0deg, rgba(var(--shade-rgb), 0.5), rgba(var(--surface-rgb), 0.82));
+}
+
+:root[data-theme="light"] .item-slot-duration-overlay {
+  background: conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), rgba(var(--surface-rgb), 0.5) 0), linear-gradient(rgba(var(--surface-rgb), 0.1), rgba(var(--surface-rgb), 0.1));
+}
+
+:root[data-theme="light"] .world-map-layout {
+  background: rgba(var(--surface-rgb), 0.58);
+}
+
+:root[data-theme="light"] .world-map-node {
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.14), transparent 52%), rgba(var(--surface-rgb), 0.96);
+}
+
+:root[data-theme="light"] .world-location-panel {
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.055), transparent 38%), rgba(var(--surface-rgb), 0.85);
+}
+
+:root[data-theme="light"] .combat-arena-shell {
+  background: linear-gradient(90deg, rgba(53, 82, 71, 0.08), transparent 42%, rgba(117, 44, 39, 0.08)), rgba(var(--surface-rgb), 0.82);
+}
+
+:root[data-theme="light"] .arena-buff-square,
+:root[data-theme="light"] .arena-life-count-badge {
+  background: rgba(var(--surface-rgb), 0.92);
+}
+
+:root[data-theme="light"] .arena-search-state {
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.88), rgba(var(--surface-rgb), 0.92));
+}
+
+:root[data-theme="light"] .arena-event-log {
+  background: rgba(var(--surface-rgb), 0.18);
+}
+
+:root[data-theme="light"] .arena-life-card {
+  background: linear-gradient(135deg, rgba(var(--surface-rgb), 0.95), rgba(var(--surface-rgb), 0.98));
+}
+
+:root[data-theme="light"] .arena-life-icon-box {
+  background: radial-gradient(circle, rgba(201, 180, 109, 0.18), rgba(var(--surface-rgb), 0.5));
+}
+
+:root[data-theme="light"] .arena-life-icon-box--travel {
+  background: radial-gradient(circle, rgba(94, 185, 230, 0.2), rgba(var(--surface-rgb), 0.5));
+}
+
+:root[data-theme="light"] .arena-idle-card {
+  background: rgba(var(--surface-rgb), 0.65);
+}
+
+:root[data-theme="light"] .daohua-floating-card {
+  background: rgba(var(--surface-rgb), 0.96);
+}
+
+/* 品质框保留八品色相，浅色底上的角标与丝带使用对应深色。 */
+:root[data-theme="light"] [data-rarity] {
+  --item-glow: color-mix(in srgb, var(--item-accent) 22%, transparent);
+  --item-surface: color-mix(in srgb, var(--item-accent) 8%, transparent);
+}
+:root[data-theme="light"] [data-rarity="mundane"] { --item-accent: #4c5868; }
+:root[data-theme="light"] [data-rarity="yellow"] { --item-accent: #176043; }
+:root[data-theme="light"] [data-rarity="mystic"] { --item-accent: #225c94; }
+:root[data-theme="light"] [data-rarity="earth"] { --item-accent: #69408c; }
+:root[data-theme="light"] [data-rarity="heaven"] { --item-accent: #874418; }
+:root[data-theme="light"] [data-rarity="spirit"] { --item-accent: #165c76; }
+:root[data-theme="light"] [data-rarity="saint"] { --item-accent: #9b3428; }
+:root[data-theme="light"] [data-rarity="emperor"] { --item-accent: #902b28; }
+:root[data-theme="light"] .item-type-ribbon > span { background: var(--item-accent); text-shadow: none; }
+:root[data-theme="light"] .item-slot-duration-overlay { --duration-accent: var(--jade); text-shadow: none; }
+:root[data-theme="light"] .item-slot-duration-overlay.is-cooldown { --duration-accent: var(--qi); }
+
+/* 实心操作按钮和进度覆盖文字使用独立的前景色。 */
+:root[data-theme="light"] .market-order-btn-submit--buy { background: var(--jade); }
+:root[data-theme="light"] .market-order-btn-submit--sell { background: var(--amber); }
+:root[data-theme="light"] .market-order-btn-submit--buy:hover:not(:disabled) { background: #124e36; }
+:root[data-theme="light"] .market-order-btn-submit--sell:hover:not(:disabled) { background: #723812; }
+
+/* 境界色混入墨色以保留阶段差异，浅色文字与纸白底保持对比。 */
+:root[data-theme="light"] .insight-realm-master-frame {
+  --realm-ink: color-mix(in srgb, var(--realm-accent) 45%, var(--text));
+  --realm-minor-bg: var(--panel);
+  box-shadow: 0 0 10px var(--gold-faint) !important;
+}
+
+:root[data-theme="light"] .world-map-node.is-selected { background: #e8dbc0; }
+:root[data-theme="light"] .world-map-edge-bg { stroke: #d1c4a8; }
+:root[data-theme="light"] .world-map-edge-line { stroke: var(--gold-dim); }
+:root[data-theme="light"] .world-map-edge-group.is-planned .world-map-edge-line { stroke: var(--gold-bright); }
+:root[data-theme="light"] .world-map-edge-label-text,
+:root[data-theme="light"] .world-map-edge-group:hover .world-map-edge-label-text { fill: var(--gold-bright); stroke: var(--panel); }
+:root[data-theme="light"] .arena-buff-cd-track { stroke: var(--gold-faint); }
+:root[data-theme="light"] .arena-buff-cd-fill { stroke: var(--gold-bright); }
+
+:root[data-theme="light"] :is(.value-capsule--damage, .value-capsule--negative) { color: var(--danger); }
+:root[data-theme="light"] :is(.value-capsule--health, .value-capsule--positive) { color: var(--rose); }
+:root[data-theme="light"] .value-capsule--mana { color: var(--qi); }
+:root[data-theme="light"] .pill-tone--indigo .underlined-value { color: #494d98; }
+:root[data-theme="light"] .pill-tone--teal .underlined-value { color: #14625c; }
+:root[data-theme="light"] .compound-exp-text { opacity: 1; }
+
+/* 原有纹饰在浅色材质上加深金线，保留角纹、法阵与流光层次。 */
+:root[data-theme="light"] :is(body::before, body::after) { opacity: 0.15; }
+:root[data-theme="light"] .panel-header::after { background: linear-gradient(90deg, var(--gold-dim), var(--gold-faint) 70%, transparent); }
+:root[data-theme="light"] :is(.action-card, .item-tile, .avatar-tile, .settings-profile-avatar) { box-shadow: inset 0 0 12px rgba(91, 64, 21, 0.12), 0 2px 5px rgba(71, 49, 18, 0.12); }
+:root[data-theme="light"] :is(.settings-group, .presence-options button, .auth-tab-btn, .right-sidebar-tab-btn) { border-color: var(--gold-dim); }
+
+/* 浅色阴影沿用原有层数与纹饰几何，减弱黑色压边，避免细节变成灰糊。 */
+:root[data-theme="light"] :is(.progress, .queue-combat-vital) {
+  border-color: rgba(143, 114, 67, 0.45);
+  background:
+    linear-gradient(180deg, rgba(var(--shade-rgb), 0.65), rgba(var(--surface-rgb), 0.78)),
+    rgba(var(--shade-rgb), 0.88);
+  box-shadow: inset 0 1px 4px rgba(71, 49, 18, 0.16);
+}
+:root[data-theme="light"] .progress::after {
+  border-top-color: rgba(255, 255, 255, 0.4);
+  border-bottom-color: rgba(71, 49, 18, 0.12);
+}
+:root[data-theme="light"] .progress-text,
+:root[data-theme="light"] .right-sidebar-tab-btn.is-active,
+:root[data-theme="light"] .arena-life-progress-text { text-shadow: 0 1px 2px rgba(255, 255, 255, 0.65); }
+/* 顶部行动栏战斗血条：浅色主题下底槽为温润米灰，文字采用深墨色配合全向柔和白光晕，在浅色未填充底槽与高饱和红绿填充段均清晰可辨 */
+:root[data-theme="light"] .queue-combat-vital > strong {
+  color: var(--text);
+  font-weight: 600;
+  text-shadow:
+    1px 0 0 rgba(255, 255, 255, 0.85),
+    -1px 0 0 rgba(255, 255, 255, 0.85),
+    0 1px 0 rgba(255, 255, 255, 0.85),
+    0 -1px 0 rgba(255, 255, 255, 0.85),
+    1px 1px 0 rgba(255, 255, 255, 0.85),
+    -1px 1px 0 rgba(255, 255, 255, 0.85),
+    1px -1px 0 rgba(255, 255, 255, 0.85),
+    -1px -1px 0 rgba(255, 255, 255, 0.85),
+    0 0 3px rgba(255, 255, 255, 0.95);
+}
+:root[data-theme="light"] .queue-combat-vital > strong > span:first-child {
+  color: var(--text-dim);
+}
+:root[data-theme="light"] .queue-dropdown { box-shadow: 0 14px 36px rgba(71, 49, 18, 0.163); }
+:root[data-theme="light"] .choice-menu-popover { box-shadow: 0 12px 28px rgba(71, 49, 18, 0.163); }
+:root[data-theme="light"] .item-use-slot-shell.is-depleted .item-corner--bottom-right { box-shadow: 0 3px 9px rgba(71, 49, 18, 0.155), 0 0 9px rgba(238, 98, 86, 0.48); }
+:root[data-theme="light"] .item-use-slot.item-use-slot--depleted .item-tile,
+:root[data-theme="light"] .item-use-slot.item-use-slot--depleted:hover .item-tile,
+:root[data-theme="light"] .item-use-slot.item-use-slot--depleted:focus-visible .item-tile { box-shadow: 0 0 12px rgba(214, 79, 70, 0.32), inset 0 0 22px rgba(71, 49, 18, 0.1); }
+:root[data-theme="light"] .action-card { box-shadow: inset 0 0 12px rgba(71, 49, 18, 0.087); }
+:root[data-theme="light"] .action-card:hover { box-shadow: 0 0 12px var(--item-glow, rgba(201, 180, 109, 0.3)), 0 4px 12px rgba(71, 49, 18, 0.125), inset 0 0 16px rgba(71, 49, 18, 0.05); }
+:root[data-theme="light"] .action-card .item-corner { box-shadow: 0 2px 6px rgba(71, 49, 18, 0.15), 0 0 5px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 30%, transparent); }
+:root[data-theme="light"] .action-card:is(:hover, :focus-visible, :focus-within) .item-corner--top-right { box-shadow: 0 2px 6px rgba(71, 49, 18, 0.15), 0 0 7px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 55%, transparent), 0 0 13px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 26%, transparent); }
+:root[data-theme="light"] .equipment-stage { box-shadow: inset 0 0 40px rgba(71, 49, 18, 0.15); }
+:root[data-theme="light"] .item-corner { box-shadow: 0 3px 9px rgba(71, 49, 18, 0.155), 0 0 7px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 30%, transparent); }
+:root[data-theme="light"] .item-tooltip { box-shadow: 0 12px 32px rgba(71, 49, 18, 0.18), inset 0 0 24px rgba(201, 180, 109, 0.035); }
+:root[data-theme="light"] .effect-tooltip { box-shadow: 0 12px 32px rgba(71, 49, 18, 0.18), inset 0 0 24px rgba(117, 169, 173, 0.045); }
+:root[data-theme="light"] .character-attribute-avatar-stage { box-shadow: inset 0 0 12px rgba(71, 49, 18, 0.15); }
+:root[data-theme="light"] .insight-modal { box-shadow: 0 16px 48px rgba(71, 49, 18, 0.212), 0 0 24px rgba(201, 180, 109, 0.15) !important; }
+:root[data-theme="light"] .insight-realm-minor-box { box-shadow: inset 0 0 6px rgba(71, 49, 18, 0.125); }
+:root[data-theme="light"] .insight-stat-tooltip { box-shadow: 0 4px 16px rgba(71, 49, 18, 0.212); }
+:root[data-theme="light"] .avatar-tile:hover { box-shadow: 0 4px 14px rgba(71, 49, 18, 0.113); }
+:root[data-theme="light"] .item-tile { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--item-accent) 56%, transparent), inset 0 0 18px rgba(71, 49, 18, 0.09); }
+:root[data-theme="light"] .item-tile-glow { box-shadow: 0 0 10px var(--item-glow), 0 0 20px color-mix(in srgb, var(--item-accent) 24%, transparent), inset 2px 0 0 var(--item-accent), inset 0 0 16px rgba(71, 49, 18, 0.05); }
+:root[data-theme="light"] .item-type-ribbon > span { box-shadow: 0 1px 4px rgba(71, 49, 18, 0.113); }
+:root[data-theme="light"] :is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-type-ribbon > span { box-shadow: 0 1px 4px rgba(71, 49, 18, 0.113), 0 0 6px var(--item-glow), 0 0 12px color-mix(in srgb, var(--item-accent) 32%, transparent); }
+:root[data-theme="light"] :is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-corner--top-right,
+:root[data-theme="light"] :is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-corner--bottom-right { box-shadow: 0 3px 9px rgba(71, 49, 18, 0.155), 0 0 8px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 55%, transparent), 0 0 16px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 28%, transparent); }
+:root[data-theme="light"] .item-slot-inline-action { box-shadow: 0 2px 7px rgba(71, 49, 18, 0.12); }
+:root[data-theme="light"] .catalog-picker-corner,
+:root[data-theme="light"] .picker-trigger-label { box-shadow: 0 3px 9px rgba(71, 49, 18, 0.155), 0 0 7px rgba(201, 180, 109, 0.16); }
+:root[data-theme="light"] .item-tooltip--emperor { box-shadow: 0 12px 32px rgba(71, 49, 18, 0.18), 0 0 20px rgba(242, 209, 124, 0.18); }
+:root[data-theme="light"] .world-map-stage::after { box-shadow: inset 0 0 90px rgba(71, 49, 18, 0.175); }
+:root[data-theme="light"] .world-map-tool-btn { box-shadow: 0 2px 8px rgba(71, 49, 18, 0.15); }
+:root[data-theme="light"] .world-map-node { box-shadow: 0 0 0 3px rgba(71, 49, 18, 0.17), 0 8px 20px rgba(71, 49, 18, 0.14); }
+:root[data-theme="light"] .world-map-node>strong { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.2); }
+:root[data-theme="light"] .world-map-node:hover:not(:disabled) { box-shadow: 0 0 0 3px rgba(71, 49, 18, 0.17), 0 0 16px rgba(232, 214, 154, 0.4); }
+:root[data-theme="light"] .world-map-node.is-selected { box-shadow: 0 0 0 3px rgba(71, 49, 18, 0.17), 0 0 24px rgba(232, 214, 154, 0.45); }
+:root[data-theme="light"] .combat-arena-shell { box-shadow: inset 0 0 54px rgba(71, 49, 18, 0.12); }
+:root[data-theme="light"] .arena-overhead>strong { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.237); }
+:root[data-theme="light"] .arena-buff-square { box-shadow: 0 2px 6px rgba(71, 49, 18, 0.15); }
+:root[data-theme="light"] .arena-buff-glyph { text-shadow: 0 1px 2px rgba(71, 49, 18, 0.225); }
+:root[data-theme="light"] .arena-search-state { box-shadow: 0 0 12px rgba(71, 49, 18, 0.175), inset 0 0 8px rgba(201, 180, 109, 0.08); }
+:root[data-theme="light"] .arena-search-text-vertical { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.225); }
+:root[data-theme="light"] .arena-life-card { box-shadow: 0 4px 20px rgba(71, 49, 18, 0.15), inset 0 0 16px rgba(201, 180, 109, 0.05); }
+
+/* 图标与立绘的投影在浅色纸面上换成暖棕柔影；死亡灰化保留，仅降投影浓度。 */
+:root[data-theme="light"] .item-tile-icon,
+:root[data-theme="light"] .avatar-tile-icon,
+:root[data-theme="light"] .settings-profile-avatar img,
+:root[data-theme="light"] .daohua-floating-card-title-icon {
+  filter: drop-shadow(0 1px 2px rgba(71, 49, 18, 0.25));
+}
+:root[data-theme="light"] .character-avatar,
+:root[data-theme="light"] .arena-avatar .character-avatar {
+  filter: drop-shadow(0 4px 6px rgba(71, 49, 18, 0.28));
+}
+:root[data-theme="light"] .character-avatar.is-dead,
+:root[data-theme="light"] .character-avatar-vector-wrap.is-dead,
+:root[data-theme="light"] .arena-actor.is-dead .arena-avatar .character-avatar {
+  filter: grayscale(1) drop-shadow(0 2px 4px rgba(71, 49, 18, 0.2));
+}
+:root[data-theme="light"] .world-player-arrow-svg {
+  filter: drop-shadow(0 2px 5px rgba(71, 49, 18, 0.4));
+}
+:root[data-theme="light"] .taiji-icon {
+  box-shadow: 0 0 8px var(--gold-faint), inset 0 1px 4px rgba(71, 49, 18, 0.14);
+}
+:root[data-theme="light"] .taiji-toggle:hover .taiji-icon {
+  box-shadow: 0 0 12px var(--gold-faint), inset 0 1px 4px rgba(71, 49, 18, 0.14);
+}
+
+/* 头像台与全屏入口保留原有径向层次，避免多层深色渐变变成同一平面。 */
+:root[data-theme="light"] .equipment-stage {
+  background: radial-gradient(ellipse at 50% 50%, rgba(68, 110, 125, 0.16) 0%, rgba(var(--shade-rgb), 0.5) 80%),
+    linear-gradient(180deg, rgba(var(--surface-rgb), 0.95) 0%, rgba(var(--shade-rgb), 0.55) 100%);
+}
+:root[data-theme="light"] :is(.login-screen, .status-screen) { background: var(--bg); }
+:root[data-theme="light"] .insight-modal { background: var(--panel) !important; }
+:root[data-theme="light"] .insight-realm-master-frame { background: linear-gradient(135deg, #eee4ce, #dbd0b9); }
+:root[data-theme="light"] .arena-idle-sigil { opacity: 0.9; }
+:root[data-theme="light"] .item-use-slot-shell.is-depleted .item-corner--bottom-right { color: var(--on-accent); background: var(--danger); }
+
+
+/* ===== 浅色主题：角色卡片、附近玩家与队伍展示（消除深灰底色，提升宣纸古风对比度） ===== */
+
+/* 附近玩家卡片：淡玉宣纸底色与高对比边界 */
+:root[data-theme="light"] .nearby-card.is-player {
+  border-color: rgba(23, 96, 67, 0.38);
+  background: rgba(var(--surface-rgb), 0.88);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+:root[data-theme="light"] .nearby-card.is-player.is-interactive:hover {
+  border-color: var(--jade);
+  background: rgba(var(--surface-rgb), 0.98);
+  box-shadow: 0 2px 10px rgba(23, 96, 67, 0.18);
+}
+
+/* 附近玩家头像展示台：温润浅玉色微光取代死黑底座 */
+:root[data-theme="light"] .nearby-player-avatar-cell {
+  border-color: rgba(23, 96, 67, 0.35);
+  background: radial-gradient(circle at 50% 50%, rgba(23, 96, 67, 0.08) 0%, rgba(var(--surface-rgb), 0.95) 85%);
+  box-shadow: inset 0 0 8px rgba(71, 49, 18, 0.08);
+}
+
+/* 附近玩家名字与身家：深浓墨色与金明高对比度 */
+:root[data-theme="light"] .nearby-player-info-cell .nearby-player-name {
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .nearby-player-info-cell .nearby-player-valuation {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .nearby-player-valuation .tone-gold {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .nearby-player-bottom {
+  border-top-color: rgba(23, 96, 67, 0.22);
+}
+
+
+:root[data-theme="light"] .player-card-modal .modal-close {
+  background: rgba(var(--surface-rgb), 0.75);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.15);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .player-card-modal .modal-close:hover {
+  background: rgba(var(--surface-rgb), 0.95);
+  color: var(--danger);
+}
+/* 角色名片弹窗头部卡片：宣纸画卷渐变取代沉闷灰块 */
+:root[data-theme="light"] .player-card-hero {
+  border-color: var(--gold-faint);
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.96) 0%, rgba(var(--shade-rgb), 0.38) 100%);
+  box-shadow: inset 0 0 16px rgba(71, 49, 18, 0.05), 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+/* 角色名片头像展示台：浅金微光展示台 */
+:root[data-theme="light"] .player-card-hero-avatar {
+  border-color: var(--gold-faint);
+  background: radial-gradient(circle at 50% 50%, rgba(201, 180, 109, 0.14) 0%, rgba(var(--surface-rgb), 0.95) 80%);
+  box-shadow: inset 0 0 10px rgba(71, 49, 18, 0.1);
+}
+
+:root[data-theme="light"] .player-card-name {
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .player-card-hero-valuation {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .player-card-hero-valuation .tone-gold {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .player-card-hero-bottom {
+  border-top-color: var(--gold-faint);
+}
+
+/* 角色名片属性统计条：明亮纸白底色与加深对比度 */
+:root[data-theme="light"] .player-card-stats {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.72);
+  box-shadow: inset 0 0 12px rgba(71, 49, 18, 0.04);
+}
+
+:root[data-theme="light"] .player-card-stat-label {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .player-card-stat-value {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .player-card-stat-value.tone-gold {
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .player-card-section-title {
+  color: var(--gold);
+  border-bottom-color: var(--gold-faint);
+}
+
+:root[data-theme="light"] .player-card-consumable-label {
+  color: var(--text-dim);
+}
+
+/* 队伍成员卡片（同道面板）：去除透明黑灰底色 */
+:root[data-theme="light"] .party-slot-card {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.85);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.06);
+}
+
+:root[data-theme="light"] .party-slot.is-self .party-slot-card {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.12);
+}
+
+:root[data-theme="light"] .party-slot-empty {
+  border-color: var(--gold-faint);
+  color: var(--text-dim);
+  background: rgba(var(--surface-rgb), 0.4);
+}
+
+/* 浅色模式下属性胶囊外边框加深对比（原深色透明边框在纸白底上偏淡） */
+:root[data-theme="light"] .pill-tone--emerald { border-color: rgba(23, 96, 67, 0.45); }
+:root[data-theme="light"] .pill-tone--jade { border-color: rgba(23, 96, 67, 0.45); }
+:root[data-theme="light"] .pill-tone--cyan { border-color: rgba(22, 92, 118, 0.45); }
+:root[data-theme="light"] .pill-tone--qi { border-color: rgba(22, 92, 118, 0.45); }
+:root[data-theme="light"] .pill-tone--crimson { border-color: rgba(178, 51, 39, 0.45); }
+:root[data-theme="light"] .pill-tone--bronze { border-color: rgba(143, 114, 67, 0.5); }
+:root[data-theme="light"] .pill-tone--gold { border-color: rgba(125, 82, 26, 0.45); }
+:root[data-theme="light"] .pill-tone--silver { border-color: rgba(76, 88, 104, 0.45); }
+:root[data-theme="light"] .pill-tone--purple { border-color: rgba(105, 64, 140, 0.45); }
+:root[data-theme="light"] .pill-tone--amber { border-color: rgba(138, 69, 20, 0.45); }
+:root[data-theme="light"] .pill-tone--slate { border-color: rgba(88, 77, 58, 0.45); }
+
+/* 子选项卡（未选中态在浅色底上轮廓清晰） */
+:root[data-theme="light"] .insight-sub-tab-btn:not(.active) {
+  border-color: var(--gold-dim);
+  color: var(--text-dim);
+}
+
+/* 浅色模式下市场行情副气泡各胶囊与数值高对比呈现 */
+:root[data-theme="light"] .daohua-market-aside-badge--ask {
+  color: #a8502f;
+  background: rgba(168, 80, 47, 0.12);
+  border-color: rgba(168, 80, 47, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-price--ask {
+  color: #a8502f;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-badge--bid {
+  color: #277850;
+  background: rgba(39, 120, 80, 0.12);
+  border-color: rgba(39, 120, 80, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-price--bid {
+  color: #277850;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-badge--recycle {
+  color: #8c6b12;
+  background: rgba(140, 107, 18, 0.12);
+  border-color: rgba(140, 107, 18, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-price--recycle {
+  color: #8c6b12;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-badge--volume {
+  color: #2e747c;
+  background: rgba(46, 116, 124, 0.12);
+  border-color: rgba(46, 116, 124, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-volume-val {
+  color: #2e747c;
+}
+
+/* 浅色模式下效果与 Buff 副气泡各胶囊与数值高对比呈现 */
+:root[data-theme="light"] .daohua-effect-aside-badge--qi {
+  color: #2e747c;
+  background: rgba(46, 116, 124, 0.12);
+  border-color: rgba(46, 116, 124, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--emerald,
+:root[data-theme="light"] .daohua-effect-aside-badge--jade {
+  color: #277850;
+  background: rgba(39, 120, 80, 0.12);
+  border-color: rgba(39, 120, 80, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--cyan {
+  color: #1e6c98;
+  background: rgba(30, 108, 152, 0.12);
+  border-color: rgba(30, 108, 152, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--gold {
+  color: #8c6b12;
+  background: rgba(140, 107, 18, 0.12);
+  border-color: rgba(140, 107, 18, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--crimson {
+  color: #b23a2a;
+  background: rgba(178, 58, 42, 0.12);
+  border-color: rgba(178, 58, 42, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--amber {
+  color: #a8502f;
+  background: rgba(168, 80, 47, 0.12);
+  border-color: rgba(168, 80, 47, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--purple {
+  color: #69408c;
+  background: rgba(105, 64, 140, 0.12);
+  border-color: rgba(105, 64, 140, 0.35);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-badge--danger {
+  color: #c8523f;
+  background: rgba(200, 82, 63, 0.14);
+  border-color: rgba(200, 82, 63, 0.4);
+  box-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-val.is-positive {
+  color: #277850;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-effect-aside-val.is-negative {
+  color: #c8523f;
+  text-shadow: none;
+}
+/* ==========================================================================
+   全界面浅色对比度与深色遗留面补齐
+   依据《总纲 13.1.1》：浅色普通文本对实际底色 ≥ 4.5:1，必要控件边界 ≥ 3:1，
+   深色主题的高亮文字不得直接复用到浅色底。以下规则只作用于浅色主题，
+   深色分支与既有纹饰、布局、动效保持不变。
+   ========================================================================== */
+
+/* 1. 语义文字变量：--text-muted / --text-normal / --text-sub 此前没有浅色定义，
+      调用点只能落到深色主题的浅色回退字面量（#f0f0f0、rgba(233,227,210,.85)），
+      在纸白底上接近隐形。此处补齐三档浅色语义字色。 */
+:root[data-theme="light"] {
+  --text-muted: var(--text-dim);
+  --text-normal: var(--text-bright);
+  --text-sub: var(--text-dim);
+}
+
+/* 2. 物品角标胶囊：底色已由浅色主题提亮为纸白，文字仍是深色主题的柔和浅灰，
+      实际对比度仅 1.67:1。改为浅色次要文字色（7.54:1）。 */
+:root[data-theme="light"] .item-corner,
+:root[data-theme="light"] .item-corner--bottom-right,
+:root[data-theme="light"] .action-card .item-corner {
+  color: var(--text-dim);
+}
+
+/* 3. 引气入体灵石档位按钮：底板与描边取自深色主题的白色微光，纸白底上边界不足 3:1；
+      悬停色又取未定义的 --text-normal（回退 #f0f0f0）等于隐形。补齐常态边界与悬停态。 */
+:root[data-theme="light"] .spirit-stone-tier-btn {
+  border-color: rgba(125, 82, 26, 0.35);
+  background: rgba(var(--surface-rgb), 0.6);
+}
+
+:root[data-theme="light"] .spirit-stone-tier-btn:hover {
+  border-color: var(--gold);
+  background: rgba(var(--surface-rgb), 0.9);
+  color: var(--text-bright);
+}
+
+/* 4. 坊市行情副气泡：在售/求购存量高亮沿用深色主题的浅赭 #f6bfa8、浅碧 #aae0c2
+      （1.49:1 / 1.36:1）。改用与同卡片徽章一致的深赭 #a8502f、深碧 #277850。 */
+:root[data-theme="light"] .daohua-market-aside-stock-val--ask.is-active {
+  color: #a8502f;
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .daohua-market-aside-stock-val--bid.is-active {
+  color: #277850;
+  text-shadow: none;
+}
+
+/* 5. 语义徽章：浅色底统一改用同色相深色，避免深色主题的高明度色直接铺在纸白上。 */
+:root[data-theme="light"] .badge-spirit-stone {
+  border-color: rgba(125, 82, 26, 0.45);
+  background: rgba(125, 82, 26, 0.1);
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .party-pvp-teams-badge {
+  border-color: rgba(105, 64, 140, 0.4);
+  background: rgba(105, 64, 140, 0.1);
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .party-malus-badge {
+  border-color: rgba(178, 51, 39, 0.4);
+  background: rgba(178, 51, 39, 0.12);
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .codex-unlock-condition-pill--locked {
+  border-color: rgba(178, 51, 39, 0.35);
+  background: rgba(178, 51, 39, 0.1);
+  color: #a12b20;
+}
+
+:root[data-theme="light"] .ops-tone--warn {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .sim-log-badge.badge-victory {
+  background: rgba(5, 150, 105, 0.14);
+  color: #036a4d;
+}
+
+:root[data-theme="light"] .sim-log-badge.badge-defeat {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+/* 6. 行动数值胶囊：根经验与技艺两档沿用深色主题的荧光绿/橙（1.67:1 / 1.96:1）。 */
+:root[data-theme="light"] .action-stat-pill--rootexp {
+  border-color: rgba(23, 96, 67, 0.35);
+}
+
+:root[data-theme="light"] .action-stat-pill--rootexp strong {
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .action-stat-pill--technique {
+  border-color: rgba(138, 69, 20, 0.35);
+}
+
+:root[data-theme="light"] .action-stat-pill--technique strong {
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .duel-option-status .duel-node-teams {
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .building-load-status-bar.is-overload {
+  border-color: rgba(178, 51, 39, 0.35);
+  background: rgba(178, 51, 39, 0.08);
+  color: var(--danger);
+}
+
+/* 7. 危险操作主按钮：深色主题的浅红字 #ffb4b4 压在半透明红底上，浅色底实测 1.06:1。
+      浅色改走印章红：常态淡红底 + 深红字，悬停反转为实心红底 + 米白字。 */
+:root[data-theme="light"] .action-modal-submit--danger {
+  border-color: rgba(178, 51, 39, 0.45);
+  background: rgba(178, 51, 39, 0.1);
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .action-modal-submit--danger:hover:not(:disabled) {
+  border-color: var(--seal-deep);
+  background: var(--seal);
+  color: var(--on-accent);
+}
+
+/* 8. 坊市逐档买卖按钮：深色主题的浅碧/浅赭字压在近乎透明的底上（1.83:1 / 2.03:1）。 */
+:root[data-theme="light"] .market-level-trade-btn {
+  background: rgba(var(--surface-rgb), 0.55);
+}
+
+:root[data-theme="light"] .market-level-trade-btn--bid {
+  border-color: rgba(23, 96, 67, 0.35);
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .market-level-trade-btn--ask {
+  border-color: rgba(138, 69, 20, 0.35);
+  color: var(--amber);
+}
+
+/* 9. 属性小图标：胶囊数值已按浅色主题加深，图标仍是荧光色系（1.6~2.1:1）。
+      与同胶囊 .underlined-value 的浅色语义色保持一致。 */
+:root[data-theme="light"] .pill-tone--emerald .compound-icon,
+:root[data-theme="light"] .pill-tone--jade .compound-icon {
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .pill-tone--cyan .compound-icon,
+:root[data-theme="light"] .pill-tone--sky .compound-icon,
+:root[data-theme="light"] .pill-tone--qi .compound-icon {
+  color: var(--qi);
+}
+
+:root[data-theme="light"] .pill-tone--violet .compound-icon,
+:root[data-theme="light"] .pill-tone--purple .compound-icon {
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .pill-tone--indigo .compound-icon {
+  color: #494d98;
+}
+
+:root[data-theme="light"] .pill-tone--teal .compound-icon {
+  color: #14625c;
+}
+
+:root[data-theme="light"] .pill-tone--gold .compound-icon,
+:root[data-theme="light"] .pill-tone--bronze .compound-icon {
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .pill-tone--amber .compound-icon {
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .pill-tone--crimson .compound-icon {
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .pill-tone--silver .compound-icon {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .pill-tone--slate .compound-icon {
+  color: var(--silver);
+}
+
+/* 10. 未做浅色适配的深色面：以下容器/胶囊在浅色主题仍保留深色半透明底，
+       与纸白面板形成突兀色块，且内部深墨文字落在深底上（最低 2.09:1）。
+       按既有浅色材质规范改为纸白半透明底 + 金褐描边。 */
+:root[data-theme="light"] .building-section-card {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.72);
+}
+
+:root[data-theme="light"] .building-load-item {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.55);
+}
+
+:root[data-theme="light"] .building-bonus-pill {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.8);
+}
+
+:root[data-theme="light"] .codex-tab-count {
+  background: rgba(125, 82, 26, 0.12);
+}
+
+:root[data-theme="light"] .codex-card-avatar-box {
+  border-color: var(--gold-dim);
+  background: rgba(var(--surface-rgb), 0.88);
+}
+
+:root[data-theme="light"] .codex-lock-badge {
+  border-color: var(--gold-dim);
+  background: rgba(var(--surface-rgb), 0.95);
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .trait-card-checkbox {
+  background: rgba(125, 82, 26, 0.1);
+}
+
+:root[data-theme="light"] .trait-card-checkbox.is-checked {
+  background: rgba(125, 82, 26, 0.18);
+}
+
+/* 特质长条通用样式 (TraitBarItem) 与内视、万象图鉴浅色适配 */
+:root[data-theme="light"] .trait-bar-item {
+  border-color: rgba(125, 82, 26, 0.22);
+  background: rgba(var(--surface-rgb), 0.9);
+  box-shadow: 0 1px 3px rgba(71, 49, 18, 0.08);
+}
+
+:root[data-theme="light"] .trait-bar-item:hover:not(.is-disabled) {
+  background: rgba(var(--surface-rgb), 0.98);
+  box-shadow: 0 2px 8px rgba(71, 49, 18, 0.14);
+}
+
+:root[data-theme="light"] .trait-bar-item.is-equipped {
+  border-color: var(--gold);
+  background: rgba(125, 82, 26, 0.09);
+  box-shadow: 0 0 0 1px var(--gold-faint), 0 2px 6px rgba(125, 82, 26, 0.12);
+}
+
+/* 品阶边框与高亮微光 */
+:root[data-theme="light"] .trait-quality--q1 {
+  border-color: rgba(76, 88, 104, 0.35);
+  box-shadow: 0 1px 3px rgba(76, 88, 104, 0.1);
+}
+:root[data-theme="light"] .trait-quality--q2 {
+  border-color: rgba(23, 96, 67, 0.45);
+  box-shadow: 0 1px 4px rgba(23, 96, 67, 0.12);
+}
+:root[data-theme="light"] .trait-quality--q3 {
+  border-color: rgba(22, 92, 118, 0.45);
+  box-shadow: 0 1px 4px rgba(22, 92, 118, 0.12);
+}
+:root[data-theme="light"] .trait-quality--q4 {
+  border-color: rgba(105, 64, 140, 0.45);
+  box-shadow: 0 1px 4px rgba(105, 64, 140, 0.12);
+}
+:root[data-theme="light"] .trait-quality--q5 {
+  border-color: rgba(125, 82, 26, 0.55);
+  box-shadow: 0 1px 4px rgba(125, 82, 26, 0.18);
+}
+
+/* 品阶小标签 */
+:root[data-theme="light"] .trait-quality--q1 .trait-bar-quality-tag { color: var(--silver); }
+:root[data-theme="light"] .trait-quality--q2 .trait-bar-quality-tag { color: var(--jade); }
+:root[data-theme="light"] .trait-quality--q3 .trait-bar-quality-tag { color: var(--qi); }
+:root[data-theme="light"] .trait-quality--q4 .trait-bar-quality-tag { color: var(--purple); }
+:root[data-theme="light"] .trait-quality--q5 .trait-bar-quality-tag { color: var(--gold); }
+
+/* 特质名称：浅色底改用高对比度深色 */
+:root[data-theme="light"] .trait-quality--q1 .trait-bar-name { color: var(--text); }
+:root[data-theme="light"] .trait-quality--q2 .trait-bar-name { color: var(--jade); }
+:root[data-theme="light"] .trait-quality--q3 .trait-bar-name { color: var(--qi); }
+:root[data-theme="light"] .trait-quality--q4 .trait-bar-name { color: var(--purple); }
+:root[data-theme="light"] .trait-quality--q5 .trait-bar-name { color: var(--gold-bright); }
+
+/* 消耗点数与右侧等级 */
+:root[data-theme="light"] .trait-bar-cost {
+  color: var(--text-dim);
+  background: rgba(125, 82, 26, 0.1);
+}
+:root[data-theme="light"] .trait-bar-level {
+  color: var(--gold);
+  background: rgba(125, 82, 26, 0.08);
+  border-color: rgba(125, 82, 26, 0.25);
+}
+
+/* 快捷操作按钮与浮层按钮 */
+:root[data-theme="light"] .trait-bar-action-btn.is-equip {
+  color: var(--gold-bright);
+  background: rgba(125, 82, 26, 0.12);
+  border: 1px solid var(--gold-dim);
+}
+:root[data-theme="light"] .trait-bar-action-btn.is-equip:hover:not(:disabled) {
+  background: var(--gold);
+  color: #fffaf0;
+}
+:root[data-theme="light"] .trait-bar-action-btn.is-unequip {
+  color: var(--danger);
+  background: var(--seal-faint);
+  border: 1px solid var(--seal-border);
+}
+:root[data-theme="light"] .trait-bar-action-btn.is-unequip:hover:not(:disabled) {
+  background: var(--seal);
+  color: #fffaf0;
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-equip {
+  color: var(--on-accent);
+  background: var(--seal);
+  border-color: var(--seal-deep);
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-equip:hover:not(:disabled) {
+  background: var(--seal-deep);
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-unequip {
+  color: var(--danger);
+  background: var(--seal-faint);
+  border-color: var(--seal-border);
+}
+:root[data-theme="light"] .trait-popover-action-btn.is-unequip:hover:not(:disabled) {
+  background: var(--seal);
+  color: var(--on-accent);
+}
+:root[data-theme="light"] .trait-popover-scale-hint {
+  border-top-color: var(--gold-faint);
+  color: var(--gold);
+}
+
+/* 内视特质面板：容量卡片与空状态提示框 */
+:root[data-theme="light"] .insight-traits-capacity-card {
+  border-color: var(--gold-faint);
+  background: rgba(var(--surface-rgb), 0.85);
+  box-shadow: 0 1px 4px rgba(71, 49, 18, 0.08), inset 0 0 12px rgba(117, 83, 25, 0.04);
+}
+
+:root[data-theme="light"] .insight-traits-empty {
+  border-color: rgba(125, 82, 26, 0.25);
+  background: rgba(125, 82, 26, 0.04);
+  color: var(--text-dim);
+}
+:root[data-theme="light"] .insight-traits-empty p {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .invite-code {
+  border-color: var(--gold-dim);
+  background: rgba(125, 82, 26, 0.06);
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .breakthrough-modal-row-gain.underlined-value {
+  border-color: rgba(125, 82, 26, 0.28);
+  background: rgba(125, 82, 26, 0.08);
+}
+
+:root[data-theme="light"] .item-reference-compound {
+  border-color: rgba(125, 82, 26, 0.35);
+}
+
+:root[data-theme="light"] .item-reference-compound:hover {
+  border-color: var(--gold-dim);
+}
+
+/* 竞技场生活卡数值芯片：深色主题的白色微光边在纸白卡面上不可见，补金褐边界。 */
+:root[data-theme="light"] .arena-life-input-chip {
+  border-color: rgba(143, 114, 67, 0.45);
+  background: rgba(var(--surface-rgb), 0.6);
+}
+
+/* 11. 进度条底槽：深色主题以 6%~70% 黑或 8% 白作槽底，浅色主题下前者是黑板、
+       后者在纸白上完全不可见。统一改用温润米褐槽底，与已修复的 .progress 一致。 */
+:root[data-theme="light"] :is(.insight-progress-bar,
+  .arena-resource-track,
+  .arena-resource-meter,
+  .arena-action-track,
+  .arena-life-progress-bar,
+  .insight-traits-progress-bar,
+  .trait-bar-exp-track,
+  .trait-card-exp-track,
+  .trait-capacity-track,
+  .building-progress-track,
+  .daohua-floating-aside-progress,
+  .arena-search-progress-vertical) {
+  border-color: rgba(143, 114, 67, 0.45);
+  background: linear-gradient(180deg, rgba(var(--shade-rgb), 0.55), rgba(var(--surface-rgb), 0.7));
+}
+
+:root[data-theme="light"] :is(.compound-stat-progress-track, .nav-sub-progress) {
+  background: rgba(125, 82, 26, 0.18);
+}
+
+/* 底槽提亮后，生活卡进度文字需由白字转深墨字，沿用顶部战斗血条的描边处理。 */
+:root[data-theme="light"] .arena-life-progress-text {
+  color: var(--text);
+}
+
+/* 12. 六维资质雷达图：蛛网、轴线、基准环与百分比数值原先为深色主题的浅色常量，
+       在纸白气泡内几乎不可见（网格 ≈1.03:1，100%~200% 数值 1.7:1）。
+       此处改写组件暴露的同名颜色令牌，保留图形结构与动效。 */
+:root[data-theme="light"] .root-aspect-radar-svg {
+  --radar-web: rgba(125, 82, 26, 0.22);
+  --radar-web-inner: rgba(125, 82, 26, 0.14);
+  --radar-base-fill: rgba(125, 82, 26, 0.04);
+  --radar-base-stroke: rgba(125, 82, 26, 0.5);
+  --radar-label: var(--gold);
+  --radar-shape: var(--qi);
+  --radar-shape-deep: var(--qi);
+  --radar-vertex-fill: var(--panel);
+  --radar-vertex-stroke: var(--qi);
+  --radar-value-super: var(--qi);
+  --radar-value-growth: #1e6c98;
+  --radar-value-decay: var(--danger);
+}
+
+/* 13. 浅色适配补漏：以上各段覆盖清单此前漏掉的成员——
+       金色实底选中态按钮（深棕底压近黑字 ≈1.5:1）、战斗日志机制高亮（深底荧光字 ≈1.5~2.2:1）、
+       底部导航角标与浮动副气泡中性值、跨域长路悬停线、品类冷却描边。 */
+:root[data-theme="light"] .spirit-stone-tier-btn.is-active,
+:root[data-theme="light"] .market-quick-btn.active,
+:root[data-theme="light"] .breakthrough-modal-actions .breakthrough-modal-confirm {
+  border-color: var(--seal-deep);
+  background: var(--seal);
+  color: var(--on-accent);
+}
+
+:root[data-theme="light"] :is(.log-reference--mechanic-break, .log-reference--mechanic[data-mechanic="break"]) {
+  border-color: rgba(138, 69, 20, 0.6);
+  color: var(--amber);
+  background: rgba(138, 69, 20, 0.1);
+}
+
+:root[data-theme="light"] :is(.log-reference--mechanic-crit, .log-reference--mechanic[data-mechanic="crit"]) {
+  border-color: rgba(125, 82, 26, 0.65);
+  color: var(--gold);
+  background: rgba(125, 82, 26, 0.1);
+}
+
+:root[data-theme="light"] :is(.log-reference--mechanic-dodge, .log-reference--mechanic[data-mechanic="dodge"]) {
+  border-color: rgba(23, 96, 67, 0.6);
+  color: var(--jade);
+  background: rgba(23, 96, 67, 0.1);
+}
+
+:root[data-theme="light"] :is(.log-reference--mechanic-parry, .log-reference--mechanic[data-mechanic="parry"]) {
+  border-color: rgba(22, 92, 118, 0.6);
+  color: var(--qi);
+  background: rgba(22, 92, 118, 0.1);
+}
+
+:root[data-theme="light"] .bottom-glyph-badge,
+:root[data-theme="light"] .bottom-sub-tab-badge {
+  color: var(--on-accent);
+}
+
+:root[data-theme="light"] .daohua-effect-aside-val {
+  color: var(--text);
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .world-map-edge-group.is-crossing:hover .world-map-edge-line {
+  stroke: var(--jade);
+}
+
+:root[data-theme="light"] .arena-buff-square--qi .arena-buff-cd-fill { stroke: var(--gold); }
+:root[data-theme="light"] .arena-buff-square--jade .arena-buff-cd-fill { stroke: var(--jade); }
+:root[data-theme="light"] :is(.arena-buff-square--purple, .arena-buff-square--violet) .arena-buff-cd-fill { stroke: var(--purple); }
+:root[data-theme="light"] .arena-buff-square--danger .arena-buff-cd-fill { stroke: var(--danger); }
+:root[data-theme="light"] .arena-buff-square--cyan .arena-buff-cd-fill { stroke: var(--qi); }
+
+/* 窄屏设置分类条横向排列，激活红线由左侧竖条切换为底部横条。 */
+@media (max-width: 960px) {
+  :root[data-theme="light"] .settings-nav-item.active {
+    box-shadow: inset 0 -2px 0 var(--seal);
+  }
+
+  /* 竖屏生活卡吸底进度区沿用面板底色，避免深色横条压在浅色卡面上 */
+  :root[data-theme="light"] .arena-life-footer {
+    background: rgba(var(--surface-rgb), 0.97);
+  }
+}
