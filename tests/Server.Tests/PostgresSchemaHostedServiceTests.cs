@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Server.Tests;
 
+[Collection("PostgresIntegration")]
 public sealed class PostgresSchemaHostedServiceTests
 {
     private static readonly string? ConnectionString =
@@ -17,6 +18,7 @@ public sealed class PostgresSchemaHostedServiceTests
             return;
 
         await using var dataSource = NpgsqlDataSource.Create(ConnectionString);
+        await PostgresTestSchema.EnsureAsync(dataSource);
         var options = new ServerOptions(
             ServiceName: "test",
             ConnectionString: ConnectionString,

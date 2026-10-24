@@ -864,7 +864,7 @@ const commands = {
   },
   kick: {
     usage: "kick <玩家>", desc: "踢下线（写）",
-    confirm: async (a) => `踢下线玩家 ${a[0]}（关闭码 4010，客户端会重连）`,
+    confirm: async (a) => `踢下线玩家 ${a[0]}（关闭码 4011，客户端会重连）`,
     run: async (a) => {
       const playerId = await resolvePlayerTarget(a[0]);
       const d = await apiPost("/actions/kick", { playerId });

@@ -70,7 +70,7 @@ export function OpsActionsView(): React.JSX.Element {
               if (!target) return
               setPending({
                 title: '踢下线',
-                description: `将立即断开玩家 ${target} 的在线连接（关闭码 4010），客户端会自行重连。`,
+                description: `将立即断开玩家 ${target} 的在线连接（关闭码 4011），客户端会自行重连。`,
                 danger: true,
                 run: () => opsPost('/actions/kick', { playerId: target }),
               })

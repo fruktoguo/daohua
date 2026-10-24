@@ -137,7 +137,14 @@ public sealed class HeavenGateCommandTests
         await runtime.LoadAsync(playerId);
         var rolled = await Execute(runtime, playerId, new { action = "roll" });
         var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-        var modified = rolledValues.With(LinggenElement.Metal, 0);
+        var (source, target) = rolledValues.Metal >= 2 ? (LinggenElement.Metal, LinggenElement.Wood)
+            : rolledValues.Wood >= 2 ? (LinggenElement.Wood, LinggenElement.Metal)
+            : rolledValues.Water >= 2 ? (LinggenElement.Water, LinggenElement.Fire)
+            : rolledValues.Fire >= 2 ? (LinggenElement.Fire, LinggenElement.Water)
+            : (LinggenElement.Earth, LinggenElement.Metal);
+        var modified = rolledValues
+            .With(source, rolledValues.Of(source) - 2)
+            .With(target, Math.Min(100, rolledValues.Of(target) + 1));
 
         var entered = await Execute(runtime, playerId, new
         {

@@ -35,8 +35,8 @@ public sealed record OpsAccountRiskPolicyRequest(bool Enabled, bool RequireDevic
 /// </summary>
 public static class OpsPanel
 {
-    /// <summary>运维踢出会话使用的自定义关闭码（私有段，避开防多开 4005-4008 与慢消费者 4009）。</summary>
-    public const int KickCloseCode = 4010;
+    /// <summary>运维踢出会话使用的自定义关闭码（私有段，避开防多开 4005-4008、慢消费者 4009 与专用客户端要求 4010——4010 前端禁止自动重连）。</summary>
+    public const int KickCloseCode = 4011;
 
     /// <summary>运维密码请求头名。</summary>
     public const string TokenHeader = "X-Ops-Token";
