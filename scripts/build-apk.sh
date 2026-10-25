@@ -97,7 +97,30 @@ else
 fi
 
 # 1. 前端编译与资源同步
-if [[ "$SKIP_WEB_BUILD" != "1" || ! -d "$ROOT_DIR/frontend/dist" ]]; then
+GIT_REV="$(git rev-parse HEAD 2>/dev/null || echo "dev")"
+HD_CACHE_DIR="$ROOT_DIR/artifacts/.hd-dist-cache"
+
+NEED_WEB_BUILD=0
+if [[ "$SKIP_WEB_BUILD" == "1" && -d "$ROOT_DIR/frontend/dist" ]]; then
+  NEED_WEB_BUILD=0
+elif [[ "$HD_MODE" != "1" ]]; then
+  if [[ ! -d "$ROOT_DIR/frontend/dist" ]]; then
+    NEED_WEB_BUILD=1
+  else
+    printf '==> [复用] 检测到已有前端 Web 产物，跳过重复编译。\n'
+  fi
+else
+  # HD_MODE=1
+  if [[ -d "$HD_CACHE_DIR" && -f "$HD_CACHE_DIR/.git_rev" && "$(cat "$HD_CACHE_DIR/.git_rev" 2>/dev/null)" == "$GIT_REV" ]]; then
+    printf '==> [缓存命中] 检测到当前提交的高清前端产物缓存，直接复用。\n'
+    mkdir -p "$ROOT_DIR/frontend/dist"
+    cp -r "$HD_CACHE_DIR"/dist/* "$ROOT_DIR/frontend/dist/"
+  else
+    NEED_WEB_BUILD=1
+  fi
+fi
+
+if [[ "$NEED_WEB_BUILD" == "1" ]]; then
   if [[ "$HD_MODE" == "1" ]]; then
     printf '==> [1/4] 注入高清建筑与道具母模...\n'
     node "$ROOT_DIR/scripts/inject-hd-assets.mjs" apply
@@ -113,6 +136,11 @@ if [[ "$SKIP_WEB_BUILD" != "1" || ! -d "$ROOT_DIR/frontend/dist" ]]; then
   if [[ "$HD_MODE" == "1" ]]; then
     printf '==> [3/4] 恢复前端工作区 (确保 Git 零改动)...\n'
     node "$ROOT_DIR/scripts/inject-hd-assets.mjs" restore
+    # 写入缓存
+    rm -rf "$HD_CACHE_DIR"
+    mkdir -p "$HD_CACHE_DIR/dist"
+    cp -r "$ROOT_DIR/frontend/dist"/* "$HD_CACHE_DIR/dist/"
+    printf '%s\n' "$GIT_REV" > "$HD_CACHE_DIR/.git_rev"
   fi
 fi
 

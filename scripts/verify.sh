@@ -33,16 +33,19 @@ usage() {
   printf '  --full       全量交付门禁：含 PostgresIntegration 集成测试与 Compose 配置校验\n'
   printf '  --backend    仅后端：Release 构建、三套测试、DataTool 校验（可叠加 --full）\n'
   printf '  --frontend   仅前端：依赖安装、i18n、日志标记、单测、契约、类型检查与生产构建\n'
+  printf '  --serial     禁用前后端并发，强制纯串行执行\n'
   printf '\n环境变量: SKIP_NPM_CI=1 跳过前端依赖安装；VERIFY_DOCKER=1 追加生产镜像构建\n'
 }
 
 FULL=0
 SCOPE="all"
+PARALLEL=1
 for arg in "$@"; do
   case "$arg" in
     --full) FULL=1 ;;
     --backend) SCOPE="backend" ;;
     --frontend) SCOPE="frontend" ;;
+    --serial) PARALLEL=0 ;;
     -h|--help) usage; exit 0 ;;
     *)
       printf '未知参数: %s\n\n' "$arg" >&2
@@ -122,7 +125,7 @@ run_suite() {
   printf '%s 实际执行 %s 个用例。\n' "$name" "$executed"
 }
 
-if [[ "$RUN_BACKEND" -eq 1 ]]; then
+run_backend_pipeline() {
   printf '%s\n' '==> Release 构建'
   # 显式 restore 后再 --no-restore 构建：实测 `dotnet build` 隐式还原在解决方案级
   # 会逐项目重算（同一状态下 9~47s 抖动），拆开后稳定 restore 约 2s + build 约 5s。
@@ -212,9 +215,9 @@ if [[ "$RUN_BACKEND" -eq 1 ]]; then
       --configuration Release --disable-build-servers --nologo
     run_suite private "$PRIVATE_ROOT/tests/DaoHuaPrivate.Tests/DaoHuaPrivate.Tests.csproj" 5
   fi
-fi
+}
 
-if [[ "$RUN_FRONTEND" -eq 1 ]]; then
+run_frontend_pipeline() {
   ensure_frontend_deps
 
   # 私有客户端模块挂载：存在即完整版构建（vite alias 自动切换），缺失即开源 stub。
@@ -247,6 +250,58 @@ if [[ "$RUN_FRONTEND" -eq 1 ]]; then
   if [[ -e frontend/src/private-impl/index.ts ]]; then
     printf '%s\n' '==> 私有前端实现类型检查（完整口径，tsc 走挂载视图）'
     (cd frontend && npx --no-install tsc -p tsconfig.private-impl.json)
+  fi
+}
+
+if [[ "$RUN_BACKEND" -eq 1 && "$RUN_FRONTEND" -eq 1 && "$PARALLEL" -eq 1 ]]; then
+  printf '%s\n' '==> 启动前后端并发双轨门禁流水线（并行加速模式）'
+  VERIFY_TMP="$(mktemp -d "${TMPDIR:-/tmp}/daohua-verify.XXXXXX")"
+  cleanup_verify_tmp() {
+    rm -rf "$VERIFY_TMP" >/dev/null 2>&1 || true
+  }
+  trap cleanup_verify_tmp EXIT
+
+  BACKEND_STATUS_FILE="$VERIFY_TMP/backend.status"
+  FRONTEND_STATUS_FILE="$VERIFY_TMP/frontend.status"
+
+  (
+    set -Eeuo pipefail
+    run_backend_pipeline
+    echo "0" > "$BACKEND_STATUS_FILE"
+  ) 2>&1 | sed -u 's/^/[后端] /' &
+  PID_BACKEND=$!
+
+  (
+    set -Eeuo pipefail
+    run_frontend_pipeline
+    echo "0" > "$FRONTEND_STATUS_FILE"
+  ) 2>&1 | sed -u 's/^/[前端] /' &
+  PID_FRONTEND=$!
+
+  wait "$PID_BACKEND" || {
+    printf '\n错误: 后端门禁流水线执行失败！\n' >&2
+    exit 1
+  }
+  wait "$PID_FRONTEND" || {
+    printf '\n错误: 前端门禁流水线执行失败！\n' >&2
+    exit 1
+  }
+
+  if [[ ! -f "$BACKEND_STATUS_FILE" || "$(cat "$BACKEND_STATUS_FILE")" != "0" ]]; then
+    printf '\n错误: 后端门禁未成功到达终点。\n' >&2
+    exit 1
+  fi
+  if [[ ! -f "$FRONTEND_STATUS_FILE" || "$(cat "$FRONTEND_STATUS_FILE")" != "0" ]]; then
+    printf '\n错误: 前端门禁未成功到达终点。\n' >&2
+    exit 1
+  fi
+  printf '\n%s\n\n' '✔ 前后端双轨流水线并发校验全部通过！'
+else
+  if [[ "$RUN_BACKEND" -eq 1 ]]; then
+    run_backend_pipeline
+  fi
+  if [[ "$RUN_FRONTEND" -eq 1 ]]; then
+    run_frontend_pipeline
   fi
 fi
 

@@ -107,7 +107,7 @@ odin 是 aarch64 掌机（Termux + PRoot Ubuntu），必须在本地交叉编译
 rm -rf /tmp/daohua-compute-odin \
   && dotnet publish src/ComputeNode -c Release -r linux-arm64 --self-contained -o /tmp/daohua-compute-odin --nologo \
   && ssh -o BatchMode=yes odin 'rm -rf /root/daohua-compute.new && mkdir -p /root/daohua-compute.new' \
-  && scp -q -r /tmp/daohua-compute-odin/* odin:/root/daohua-compute.new/
+  && tar -czf - -C /tmp/daohua-compute-odin . | ssh -o BatchMode=yes odin 'tar -xzf - -C /root/daohua-compute.new/'
 ```
 
 

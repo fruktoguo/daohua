@@ -28,6 +28,7 @@ BACKUP_HOURLY_KEEP="${BACKUP_HOURLY_KEEP:-24}"
 BACKUP_DAILY_KEEP="${BACKUP_DAILY_KEEP:-7}"
 BACKUP_WEEKLY_KEEP="${BACKUP_WEEKLY_KEEP:-4}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
+BACKUP_COMPRESS_LEVEL="${BACKUP_COMPRESS_LEVEL:-3}"
 LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
 
 if [[ "${EUID}" -ne 0 && "${ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
@@ -67,7 +68,7 @@ if ! compose exec -T db sh -ceu '
   exec pg_dump \
     --username="${POSTGRES_USER:?POSTGRES_USER 未注入}" \
     --dbname="${POSTGRES_DB:?POSTGRES_DB 未注入}" \
-    --format=custom --compress=gzip:9 --no-owner --no-privileges
+    --format=custom --compress="gzip:${BACKUP_COMPRESS_LEVEL}" --no-owner --no-privileges
 ' >"$partial"; then
   rm -f "$partial"
   printf '数据库备份失败。\n' >&2

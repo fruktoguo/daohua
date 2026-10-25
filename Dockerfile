@@ -5,7 +5,7 @@ ARG DOTNET_RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 
 FROM ${NODE_IMAGE} AS frontend-build
 WORKDIR /src/frontend
-ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
+ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 ARG BUILD_VERSION=dev
 ENV VITE_APP_VERSION=${BUILD_VERSION}
 COPY frontend/package.json frontend/package-lock.json ./
@@ -67,7 +67,7 @@ COPY --from=dotnet-build --chown=10001:10001 /out/server/ ./
 COPY --from=frontend-build --chown=10001:10001 /src/frontend/dist/ ./wwwroot/
 RUN test ! -d /app/data || ! find /app/data -type f -print -quit | grep -q .
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=3s --start-period=3s --retries=3 \
     CMD curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null || exit 1
 ENTRYPOINT ["dotnet", "Server.dll"]
 
@@ -75,7 +75,7 @@ FROM runtime-base AS compute-runtime
 COPY --from=dotnet-build --chown=10001:10001 /out/compute/ ./
 RUN test ! -d /app/data || ! find /app/data -type f -print -quit | grep -q .
 EXPOSE 8090
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=3s --start-period=3s --retries=3 \
     CMD curl --fail --silent --show-error http://127.0.0.1:8090/healthz >/dev/null || exit 1
 ENTRYPOINT ["dotnet", "DaoHua.ComputeNode.dll"]
 
