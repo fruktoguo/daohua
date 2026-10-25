@@ -1,23 +1,43 @@
-/* ability.heavy-clouds · 重云：云纹收束为水势山印，垂直压落而非烟雾遮挡。 */
+/* ability.heavy-clouds · 重云 —— 掌势重云压顶，席卷敌阵
+ * 镜像 config/game-data/abilities/physical_abilities.json：
+ *   敌方全体 / 吟唱 2000ms / 1.2×AD+40 / 冷却 24s / 灵力 40
+ * 演出（全粒子）：白金粒子云浪自左向右横扫敌阵，雾团层叠推进，逐目标压顶命中 */
 (window.DaohuaVFXModules = window.DaohuaVFXModules || []).push(function (VFX) {
   'use strict';
-  VFX.register('ability.heavy-clouds', ctx => VFX.castParticles(ctx, {
-    id: 'ability.heavy-clouds', duration: 850,
-    script(tl, fx) {
-      const colors = ['#e3fbff', '#9bdced', '#6d9fc9', '#d8c78f'];
-      fx.targets.forEach((target, index) => {
-        const t = fx.point(target);
-        const s = fx.scale(target);
-        const at = 100 + index * 70;
-        const hit = at + 150;
-        for (let row = 0; row < 3; row++) {
-          fx.stage.path(tl, [[t.x - 54 * s, t.y - 75 * s + row * 13], [t.x - 25 * s, t.y - 85 * s + row * 13], [t.x + 12 * s, t.y - 80 * s + row * 13], [t.x + 51 * s, t.y - 72 * s + row * 13]], { at, count: 20, travel: 80, life: [180, 230], colors, size: [1, 1.8], length: [5, 10] });
+
+  VFX.register('ability.heavy-clouds', (ctx) => {
+    VFX.motion(ctx.caster.el, 'cast');
+    ctx.targets.forEach((target, i) => {
+      const at = 220 + i * 160;
+      VFX.after(at, () => {
+        const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
+        // 云浪推进方向：出手方在目标右侧时整体水平镜像（自右向左压顶）
+        const cStage = ctx.caster.el.querySelector('.arena-avatar-stage') || ctx.caster.el;
+        const dir = t.x < VFX.center(cStage).x ? -1 : 1;
+        const host = VFX.node(null, t.x, t.y);
+        host.style.setProperty('--c', '#e8d69a');
+        // 云浪主体：大片雾团自攻侧向目标滚过（更大更厚）
+        for (let k = 0; k < 12; k++) {
+          const smoke = VFX.child(host, 'vfx-p-smoke');
+          const sx = 40 + Math.random() * 44;
+          smoke.style.width = sx + 'px';
+          smoke.style.height = sx * 0.7 + 'px';
+          const offX = -96 + k * 20 + Math.random() * 14;
+          smoke.style.left = (dir > 0 ? offX : -offX - sx) + 'px';
+          smoke.style.top = (-44 + Math.random() * 50) + 'px';
+          smoke.style.setProperty('--dx', ((120 + Math.random() * 70) * dir) + 'px');
+          smoke.style.setProperty('--dy', ((Math.random() - 0.5) * 26) + 'px');
+          smoke.style.setProperty('--dur', (650 + Math.random() * 450) + 'ms');
+          smoke.style.setProperty('--c', 'rgba(215,205,175,.55)');
         }
-        fx.stage.stream(tl, { at: at + 35, x0: t.x, y0: t.y - 94 * s, x1: t.x, y1: t.y + 22 * s, flight: 115, count: 20, stagger: 4, life: 100, spread: 24, colors, head: 'diamond', headSize: 5, headLength: 10 });
-        fx.stage.path(tl, [[t.x - 38 * s, t.y + 14 * s], [t.x, t.y + 33 * s], [t.x + 38 * s, t.y + 14 * s]], { at: hit, count: 26, travel: 30, life: [170, 240], colors, size: [1.3, 2.2], length: [5, 10] });
-        fx.hit(target, hit, { colors, count: 26, radius: 54, angle: Math.PI / 2, spread: 2.8, gravity: 250, variant: 'ripple' });
+        // 云浪内裹挟的剑气光点（迎击侧起风，向目标方向吹送）
+        VFX.particles(t.x - 40 * dir, t.y, { cls: 'vfx-p-glow', count: 26, spread: 56, size: [5, 9], dur: [400, 680], dist: [70, 150], angle: dir > 0 ? 0 : Math.PI, arc: 0.9 });
+        VFX.particles(t.x - 26 * dir, t.y - 8, { cls: 'vfx-p-spark', count: 16, directional: true, spread: 30, size: [12, 22], dur: [320, 540], dist: [48, 110], angle: dir > 0 ? 0.15 : Math.PI - 0.15, arc: 0.7 });
+        VFX.retire(host, 1300);
+        ctx.impact(target, 200);
       });
-      fx.VFX.quake(false);
-    },
-  }));
+    });
+    VFX.quake(false);
+    return 1600;
+  });
 });

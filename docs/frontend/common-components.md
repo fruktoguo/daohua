@@ -42,7 +42,6 @@
   - **复合数值展示**（暗墨卡片底、图标、胶囊包裹名称、专属下划线高亮数值、可选内联经验进度文本与底边进度条、可选集成 Hover Tooltip） -> `PillStatLabel`
   - **属性加成/词缀标签**（无外边框轻量流式、胶囊名、专属色调下划线值、可选集成 Tooltip） -> `PillBonusLabel`
   - **建筑效果加成公式行**：图鉴「建造」悬浮卡内的建筑加成一律走 `PillBonusLabel`（`icon` 传 `StatGlyph` 属性小图标），并在其后追加「每级 +X%」成长小字；数据来源为 `frontend/src/game/buildingCalculations.ts` 的 `getBuildingBonusFormulas`（全量描述表 `BUILDING_BONUS_DESCRIPTORS` 驱动，新增修饰项字段只需在该表登记），样式类 `.codex-building-bonus-row` / `.codex-building-bonus-growth`（[`codex.css`](../../frontend/src/styles/codex.css)）。禁止在组件内手写字段 if 链拼加成文本。
-  - **内视「根基 → 灵根」五行行**：主卡 `PillStatLabel` 承载元素图标 + 元素名 + 合并增减伤 `+23% / 18%`（`formatLinggenBoostReduce`，与斗法「特殊」页五行增减对同一 `PercentValue` 口径：增伤 Linear / 减伤 NonLinear）+ 该系点数进度 `92/100`；衍生加成逐条走 `PillBonusLabel`，图标与色系由 `LINGGEN_DERIVED_SPECS` 配表驱动（每系独立登记，含 `glyph`/`tone`/`max`），色系对齐 `STAT_TONE_MAP`；行宽由 `.insight-root-row .compound-stat-label.insight-linggen-main` 单独放宽。禁止再拆成独立的「增伤」「减伤」两胶囊，也不得给衍生条目统一单一 `teal` 纯文本色。
   - 支持修仙色调 (`PillTone`)：`gold`, `jade`, `qi`, `purple`, `amber`, `crimson`, `emerald`, `cyan`, `violet`, `indigo`, `teal`, `bronze`, `silver`, `slate`, `sky`, `muted`, `default`
 - **组件源码**：[`frontend/src/components/PillLabel.tsx`](../../frontend/src/components/PillLabel.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.compound-stat-label`, `.compound-bonus-label`, `.pill-tone--*`)
@@ -413,8 +412,6 @@
 - **适用场景**：
   - 历练遭遇战/斗法回放中功法出手、普攻命中、吟唱前摇的粒子演出；统一走 `src/vfx/` 模块，禁止在 `CombatArena` 或其他业务组件内硬编码技能特效。
   - **单一真源**：特效脚本真源在 `docs/design/战斗演武画廊/vfx/`（画廊与正式前端共享同一批 classic-script 队列模块，无 import/export）；脚本向 `window.DaohuaVFXModules` 推入注册函数，前端经 `import.meta.glob(eager)` 引入后在 `createCombatVfx` drain 注册——改画廊脚本即改正式页面演出。
-  - **全技能程序化粒子时间轴**：13 门主动技经 `VFX.castParticles` 使用 `particle-stage.js` 的 Canvas 单循环固定粒子池，公共编排接口为 `skill-runtime.js`；10 门常驻内功只在 `internal-arts.js` 提供自身运功预览。粒子高亮硬芯、短命中帧、无烟雾贴图；不支持内功伪造施法。
-  - **预览控制**：画廊演武控制台按主动/内功筛选全部 23 门功法，可重播、暂停、0.5×/1×/2× 变速；目录直读即时粒子预览，装配槽仍按真实吟唱与沙盘结算演示。
   - **模块化注册**：`vfx/abilities/<skill>.js` 每真实功法一个模块，`VFX.register('ability.x', handler)`；前端 glob 自动发现——新增技能只需在画廊目录新增文件并在画廊 `index.html` 加一行 script 标签，正式前端零改动。
   - **演出上下文 `VfxPlayContext`**：`{side, casterEl, targetEls, ability, castMs, after}` 由桥接层在出手时刻解析（目标按配表 `targetType` 从 `.arena-actor--player/enemy:not(.is-dead)` DOM 快照），技能模块只做纯粒子演出，不写结算。
   - **触发源**：玩家 `combatResources.castingAbilityId`（出现播 `feedback.castRing`、完成时刻播技能）；敌方 `ExpeditionEnemy.pendingAbilityId` + `nextAttackAtSeconds`；斗法 `duel.events[].abilityId + atSeconds`；普攻出手时刻播 `feedback.attack`；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。

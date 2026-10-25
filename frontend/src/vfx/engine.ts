@@ -108,8 +108,6 @@ interface GalleryVfxContext {
   targets: GalleryActorRef[]
   castMs?: number
   ability?: CombatAbilityDefinition | null
-  /** 战斗实时演出不参与画廊预览变速/暂停。 */
-  clock: 'battle'
   after: (ms: number, fn: () => void) => void
   /** 以下结算回调在正式前端均为 noop（沙箱语义，仅供脚本调用不生效） */
   impact: () => void
@@ -130,7 +128,6 @@ function toGalleryContext(ctx: VfxPlayContext): GalleryVfxContext {
     targets: ctx.targetEls.map(el => ({ el, side: ctx.side === 'ally' ? 'enemy' as const : 'ally' as const })),
     castMs: ctx.castMs,
     ability: ctx.ability ?? null,
-    clock: 'battle',
     after: ctx.after,
     impact: noop,
     heal: noop,
@@ -166,20 +163,6 @@ interface Point {
   y: number
 }
 
-/** 双宿主共享的 Canvas 粒子舞台；classic script 不提供模块导出。 */
-interface ParticleStage {
-  timeline: (options: { seed: string; clock?: string; speed?: number }) => unknown
-  setPaused: (paused: boolean) => void
-  cancel: (clock?: string) => void
-  dispose: () => void
-}
-
-declare global {
-  interface Window {
-    DaohuaParticleStage?: { create: (host: HTMLElement, options?: { capacity?: number }) => ParticleStage }
-  }
-}
-
 /**
  * 战斗特效播放引擎（表现层，不参与结算）。
  * 向覆盖层挂载特效节点并托管其生命周期；画廊共享脚本经 register 注册为
@@ -191,7 +174,6 @@ export class VfxEngine {
   private readonly registry = new Map<string, VfxHandler>()
   private readonly liveNodes = new Set<HTMLElement>()
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
-  private canvasStage: ParticleStage | null = null
   private disposed = false
 
   /**
@@ -486,16 +468,6 @@ export class VfxEngine {
     injectVfxStyles(id, cssText)
   }
 
-  /** 共享技能脚本使用的 Canvas 粒子舞台（懒创建，沿用覆盖层坐标系）。 */
-  particleStage(): ParticleStage {
-    if (!this.canvasStage) {
-      const factory = window.DaohuaParticleStage
-      if (!factory) throw new Error('共享粒子舞台未加载。')
-      this.canvasStage = factory.create(this.overlayEl, { capacity: 1800 })
-    }
-    return this.canvasStage
-  }
-
   /** 覆盖层元素（共享脚本契约） */
   overlay(): HTMLElement {
     return this.overlayEl
@@ -542,8 +514,6 @@ export class VfxEngine {
     this.liveNodes.forEach(el => el.remove())
     this.liveNodes.clear()
     this.shellEl.classList.remove('is-quake', 'is-quake-heavy')
-    this.canvasStage?.dispose()
-    this.canvasStage = null
     this.overlayEl.replaceChildren()
   }
 }

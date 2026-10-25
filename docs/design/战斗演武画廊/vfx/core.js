@@ -17,14 +17,6 @@
   const impactVariants = ['cleave', 'ripple', 'splinter'];
   let impactSequences = new WeakMap();
   const activeImpacts = new Map();
-  let canvasStage = null;
-
-  /** 共享 Canvas 舞台：每个战场覆盖层只有一个，旧 DOM 反馈与技能可并存清理。 */
-  function particleStage() {
-    const host = overlay();
-    if (!canvasStage && host && host.isConnected) canvasStage = window.DaohuaParticleStage.create(host);
-    return canvasStage;
-  }
 
   /**
    * 特效模块注册队列（双宿主共享契约）：
@@ -394,7 +386,7 @@
     fx.style.setProperty('--impact-opacity', String(0.75 + s * 0.25));
     fx.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
     stage.appendChild(fx);
-    const timer = after(340, () => {
+    const timer = after(560, () => {
       actorEl.classList.remove('is-hit');
       fx.remove();
       activeImpacts.delete(actorEl);
@@ -497,9 +489,8 @@
     return handler(ctx) || 0;
   }
 
-  /** 清理全部特效节点、粒子舞台与延时（重置沙盘用） */
+  /** 清理全部特效节点与延时（重置沙盘用） */
   function resetAll() {
-    if (canvasStage) canvasStage.cancel();
     timers.forEach(t => clearTimeout(t));
     timers.clear();
     activeImpacts.clear();
@@ -529,7 +520,6 @@
     node,
     overlay,
     particles,
-    particleStage,
     play,
     projectile,
     quake,
