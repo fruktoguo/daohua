@@ -1,43 +1,23 @@
-/* ability.chain-strike · 连环 —— 剑势连绵，连环进击
- * 镜像 config/game-data/abilities/physical_abilities.json：
- *   单体敌 / 吟唱 1000ms / 1.0×AD+15 / 冷却 16s / 灵力 10
- * 演出（全粒子）：三段交错粒子刀光快速切过目标，每段附带火花迸溅 */
+/* ability.chain-strike · 连环：三次明确交替的火影斩，逐段同帧结算。 */
 (window.DaohuaVFXModules = window.DaohuaVFXModules || []).push(function (VFX) {
   'use strict';
-
-  VFX.register('ability.chain-strike', (ctx) => {
-    const target = ctx.targets[0];
-    if (!target) return 0;
-    VFX.motion(ctx.caster.el, 'attack');
-    const s = VFX.center(ctx.caster.el.querySelector('.arena-avatar-stage') || ctx.caster.el);
-    const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
-    // 攻击行进方向：出手方在目标右侧时斩切几何整体水平镜像
-    const dir = t.x < s.x ? -1 : 1;
-
-    // 三段斩：角度交替的粒子刀光（跨度加大、光点更粗）
-    const cuts = [
-      { x1: -64, y1: -42, x2: 58, y2: 20 },
-      { x1: 60, y1: -36, x2: -56, y2: 26 },
-      { x1: -46, y1: -62, x2: 48, y2: 42 },
-    ];
-    cuts.forEach((c, i) => {
-      const at = 120 + i * 150;
-      VFX.after(at, () => {
-        const host = VFX.node(null, t.x, t.y - 6);
-        host.style.setProperty('--c', i === 1 ? '#ffe9a8' : '#ffd166');
-        VFX.trail(t.x + c.x1 * dir, t.y - 6 + c.y1, t.x + c.x2 * dir, t.y - 6 + c.y2, {
-          cls: 'vfx-p-glow', count: 32, size: [5, 11], jitter: 6, scatter: 30, dur: [260, 460],
-        });
-        VFX.trail(t.x + c.x1 * dir, t.y - 6 + c.y1, t.x + c.x2 * dir, t.y - 6 + c.y2, {
-          cls: 'vfx-p-mote', count: 18, size: [3, 5], jitter: 4, scatter: 14, dur: [220, 380],
-        });
-        VFX.particles(t.x, t.y - 4, { cls: 'vfx-p-spark', count: 15, directional: true, spread: 16, size: [11, 20], dur: [260, 460], dist: [30, 74] });
-        const fl = VFX.spawn('vfx-p-flare', t.x, t.y - 6, 380);
-        fl.style.setProperty('--fs', '0.7');
-        VFX.retire(host, 700);
-        ctx.impact(target, 0);
-      });
-    });
-    return 950;
-  });
+  VFX.register('ability.chain-strike', ctx => VFX.castParticles(ctx, {
+    id: 'ability.chain-strike', motion: 'attack', duration: 820,
+    script(tl, fx) {
+      const target = fx.targets[0];
+      const t = fx.point(target);
+      const s = fx.scale(target);
+      const dir = fx.direction(fx.source, t);
+      const angles = [dir * 0.62, -dir * 0.7, dir * 1.16];
+      for (let i = 0; i < 3; i++) {
+        const at = 70 + i * 170;
+        const x = t.x + (i - 1) * 6 * s;
+        const y = t.y + (i === 2 ? 6 : -3) * s;
+        const colors = i === 1 ? ['#fff4c6', '#ffcf63', '#ff8b3f'] : ['#fff8da', '#ffbb53', '#ff6941'];
+        fx.stage.stream(tl, { at: at - 55, x0: fx.source.x, y0: fx.source.y - 8 * i, x1: x, y1: y, flight: 55, count: 7, stagger: 4, life: 70, spread: 9, colors, headSize: 2.8, headLength: 8 });
+        fx.stage.slash(tl, { at, x, y, length: (104 + i * 8) * s, bend: (i % 2 ? 20 : -24) * s, angle: angles[i], count: 27, travel: 60, life: [125, 200], hold: 35, colors, size: [1, 2], length: [5, 10] });
+        fx.hit(target, at + 60, { colors, count: 14, ringCount: 16, radius: 34, angle: angles[i], spread: 1.9, variant: i === 1 ? 'splinter' : 'cleave' });
+      }
+    },
+  }));
 });

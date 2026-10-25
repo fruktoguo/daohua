@@ -20,7 +20,9 @@ import type { CombatAbilityDefinition } from '../game/types'
 export { injectVfxStyles } from './engine'
 export type { VfxEngine, VfxPlayContext } from './engine'
 
-/** 共享特效脚本：入队 window.DaohuaVFXModules（副作用导入，文件即真源） */
+/** 共享特效脚本：先粒子舞台与公共编排，再反馈与逐技能实现（副作用入队）。 */
+import '../../../docs/design/战斗演武画廊/vfx/particle-stage.js'
+import '../../../docs/design/战斗演武画廊/vfx/skill-runtime.js'
 import.meta.glob('../../../docs/design/战斗演武画廊/vfx/feedback.js', { eager: true })
 import.meta.glob('../../../docs/design/战斗演武画廊/vfx/abilities/*.js', { eager: true })
 

@@ -1,54 +1,23 @@
-/* ability.palm-lightning · 掌心雷 —— 从掌心发出一道雷光
- * 镜像 config/game-data/abilities/spell_abilities.json：
- *   单体敌 / 吟唱 2000ms / 0.6×AD+10 / 无冷却 / 灵力 4 / 五行·木
- * 演出（全粒子）：紫电粒子流以高抖动拖尾模拟电弧击中目标 → 命中点电花爆 + 分叉余电 */
+/* ability.palm-lightning · 掌心雷：细亮锯齿电桥、短分叉与针状电花。 */
 (window.DaohuaVFXModules = window.DaohuaVFXModules || []).push(function (VFX) {
   'use strict';
-
-  VFX.register('ability.palm-lightning', (ctx) => {
-    const target = ctx.targets[0];
-    if (!target) return 0;
-    VFX.motion(ctx.caster.el, 'cast');
-    const s = VFX.center(ctx.caster.el.querySelector('.arena-avatar-stage') || ctx.caster.el);
-    const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
-
-    VFX.after(140, () => {
-      // 电弧通道：两层高抖动拖尾 —— 亮芯(mote) + 紫外光晕(glow)，jitter 大制造电弧扭曲感
-      const core = VFX.trail(s.x, s.y - 6, t.x, t.y - 4, {
-        cls: 'vfx-p-mote', count: 56, size: [3, 5], jitter: 15, scatter: 16, dur: [240, 430],
-      });
-      core.style.setProperty('--c', '#e9d5ff');
-      const halo = VFX.trail(s.x, s.y - 6, t.x, t.y - 4, {
-        cls: 'vfx-p-glow', count: 38, size: [7, 13], jitter: 19, scatter: 34, dur: [320, 580],
-      });
-      halo.style.setProperty('--c', '#a855f7');
-
-      // 命中点：电花爆闪 + 分叉余电 + 电火花
-      VFX.after(90, () => {
-        const hit = VFX.node(null, t.x, t.y);
-        hit.style.setProperty('--c', '#c084fc');
-        const fl = VFX.child(hit, 'vfx-p-flare');
-        fl.style.setProperty('--c', '#d8b4fe');
-        fl.style.setProperty('--fs', '1.4');
-        const ring = VFX.child(hit, 'vfx-p-ring');
-        ring.style.setProperty('--c', 'rgba(200,150,255,.85)');
-        ring.style.setProperty('--ring-scale', '2.4');
-        // 三条分叉余电（短程拖尾）
-        for (let k = 0; k < 4; k++) {
-          const a = (-0.75 + k * 0.5) * Math.PI + (Math.random() - 0.5) * 0.5;
-          const bx = Math.cos(a) * (46 + Math.random() * 30);
-          const by = Math.sin(a) * (40 + Math.random() * 26);
-          const br = VFX.trail(t.x, t.y - 4, t.x + bx, t.y - 4 + by, {
-            cls: 'vfx-p-mote', count: 14, size: [2.5, 4], jitter: 10, scatter: 12, dur: [220, 400],
-          });
-          br.style.setProperty('--c', '#c084fc');
-        }
-        VFX.particles(t.x, t.y, { cls: 'vfx-p-spark', count: 28, directional: true, spread: 16, size: [11, 22], dur: [280, 520], dist: [34, 92] });
-        VFX.particles(t.x, t.y, { cls: 'vfx-p-glow', count: 20, spread: 16, size: [5, 9], dur: [350, 620], dist: [26, 72] });
-        VFX.retire(hit, 900);
-        ctx.impact(target, 0);
-      });
-    });
-    return 1050;
-  });
+  VFX.register('ability.palm-lightning', ctx => VFX.castParticles(ctx, {
+    id: 'ability.palm-lightning', duration: 640,
+    script(tl, fx) {
+      const target = fx.targets[0];
+      const t = fx.point(target);
+      const colors = ['#fbf5ff', '#ddc5ff', '#a983f7'];
+      fx.stage.converge(tl, { at: 0, x: fx.source.x, y: fx.source.y - 5, count: 18, radius: 46, life: [90, 140], colors });
+      // 主干电桥：双重错峰锯齿电矢
+      fx.stage.bolt(tl, { at: 90, x0: fx.source.x, y0: fx.source.y - 5, x1: t.x, y1: t.y - 4, count: 56, travel: 45, life: [140, 210], hold: 60, colors, jitter: 24, segments: 10, size: [1.2, 2.2], length: [6, 12] });
+      fx.stage.bolt(tl, { at: 110, x0: fx.source.x, y0: fx.source.y - 5, x1: t.x, y1: t.y - 4, count: 32, travel: 35, life: [100, 160], hold: 45, colors: ['#ffffff', '#fffbe8'], jitter: 14, segments: 8, size: [0.9, 1.5], length: [5, 9], glow: false });
+      // 命中爆散的三向分支电弧与电针残芒
+      for (let i = 0; i < 4; i++) {
+        const angle = i * Math.PI / 2 + 0.35;
+        fx.stage.bolt(tl, { at: 145, x0: t.x, y0: t.y - 4, x1: t.x + Math.cos(angle) * 52, y1: t.y + Math.sin(angle) * 44, count: 16, travel: 30, life: [130, 200], colors, jitter: 12, segments: 5, size: [0.9, 1.6], length: [4, 9] });
+      }
+      fx.stage.burst(tl, { at: 145, x: t.x, y: t.y - 4, count: 28, angle: 0, spread: Math.PI * 2, speed: [120, 280], life: [180, 320], shape: 'needle', colors, size: [1.1, 2.2], length: [6, 14] });
+      fx.hit(target, 145, { colors, count: 30, radius: 48, variant: 'cleave' });
+    },
+  }));
 });

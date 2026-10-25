@@ -33,6 +33,7 @@
   let ambient = true;
   let autoDemoTimers = [];
   let demoSide = 'ally';
+  let lastPreview = null;
 
   /* ---------------- DOM 查询 ---------------- */
   function el(id) { return document.getElementById(id); }
@@ -300,6 +301,7 @@
     const caster = actors[casterId];
     const ability = CATALOG.byId(abilityId);
     if (!caster || !ability) return false;
+    if (ability.discipline === 'internal') return previewAbility(abilityId, casterId, { visualOnly: true }) > 0;
     const manual = !!(opts && opts.manual);
     if (!caster.alive) { log(caster.name + ' 已倒下，无法出手', 'system'); return false; }
     if (caster.casting) { log(caster.name + ' 正在吟唱中', 'system'); return false; }
@@ -369,7 +371,7 @@
         VFX.floatText(target.el, '威胁 +' + (ability.threatGain || 0), { kind: 'hp', stamp: '嘲讽' });
         log(target.name + ' 运功怒喝，威胁值 +' + (ability.threatGain || 0), 'buff');
       }),
-      buffApply: (target, atMs) => VFX.after(atMs || 0, () => applyBuffFx(target, ability.buff)),
+      buffApply: (target, atMs, buff) => VFX.after(atMs || 0, () => applyBuffFx(target, buff || ability.buff || (ability.buffs && ability.buffs[0]))),
       kill,
       reviveActor,
       regen: (actor) => {
@@ -399,6 +401,38 @@
     };
     VFX.play('feedback.attack', ctx);
     return true;
+  }
+
+  /* ---------------- 全技能视觉预览：不经过读条，专供目录逐项验收 ---------------- */
+  function previewAbility(abilityId, casterId, options) {
+    const ability = CATALOG.byId(abilityId);
+    const caster = actors[casterId || (demoSide === 'ally' ? 'player' : 'enemy2')];
+    if (!ability || !caster || !caster.el) return 0;
+    const o = options || {};
+    lastPreview = { id: abilityId, casterId: caster.id };
+    const targets = ability.discipline === 'internal' ? [caster] : resolveTargets(caster, ability);
+    if (!targets.length) return 0;
+    const ctx = buildCtx(caster, targets, ability);
+    ctx.clock = 'preview';
+    ctx.seed = o.seed || abilityId;
+    if (o.visualOnly) {
+      ctx.impact = () => {};
+      ctx.heal = () => {};
+      ctx.threat = () => {};
+      ctx.buffApply = () => {};
+    }
+    if (o.restart) VFX.particleStage().cancel('preview');
+    if (ability.discipline === 'internal') return VFX.previewInternal(abilityId, ctx);
+    return VFX.play(abilityId, ctx);
+  }
+
+  /** 从技能脚本重建并重放到目标帧；预览回调为空，不触发伤害或 Buff。 */
+  function seekPreview(milliseconds) {
+    const stage = VFX.particleStage();
+    stage.cancel('preview');
+    stage.setPaused(true);
+    if (lastPreview) previewAbility(lastPreview.id, lastPreview.casterId, { visualOnly: true, seed: lastPreview.id });
+    stage.seek(milliseconds);
   }
 
   /* ---------------- 通用反馈演示按钮 ---------------- */
@@ -511,12 +545,12 @@
       log('演示出手方不可用，请先重置战场', 'system');
       return 0;
     }
-    // 出手方已阵亡则先复位战场，保证轮播完整跑完十式
+    // 出手方已阵亡则先复位战场，保证全部主动技能连续演完。
     if (!caster.alive) resetAll();
     caster.mp = caster.maxMp;
     setVitals(caster);
     let t = 600;
-    CATALOG.ABILITIES.forEach(ability => {
+    CATALOG.activeAbilities().forEach(ability => {
       const timer = setTimeout(() => {
         // 轮播中途被环境普攻带走则复活续演，不中断演出节奏
         if (!caster.alive) reviveActor(caster);
@@ -525,9 +559,9 @@
         castAbility(casterId, ability.id, { manual: true });
       }, t);
       autoDemoTimers.push(timer);
-      t += ability.castMilliseconds + 2400;
+      t += ability.castMilliseconds + 1400;
     });
-    log('开始全量功法轮播（' + CATALOG.ABILITIES.length + ' 式 · ' + (demoSide === 'ally' ? '我方' : '敌方') + '出手）', 'system');
+    log('开始主动技能轮播（' + CATALOG.activeAbilities().length + ' 式 · ' + (demoSide === 'ally' ? '我方' : '敌方') + '出手）', 'system');
     return t;
   }
 
@@ -597,6 +631,8 @@
     autoDemo,
     stopAutoDemo,
     playFeedback,
+    previewAbility,
+    seekPreview,
     resetAll,
     reviveActor,
     setAmbient,

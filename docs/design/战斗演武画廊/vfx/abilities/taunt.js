@@ -1,40 +1,23 @@
-/* ability.taunt · 嘲讽 —— 运功怒喝，激将敌手
- * 镜像 config/game-data/abilities/physical_abilities.json：
- *   自身 / 吟唱 200ms / 仇恨+500（2×仇恨倍率）/ 冷却 55s / 灵力 20 / discipline=internal
- * 演出（全粒子）：金色粒子冲击波双环炸开 + 怒气火星升腾 + 护身光晕 */
+/* ability.taunt · 嘲讽：胸前怒核爆开三重锐角声纹，不制造虚假伤害。 */
 (window.DaohuaVFXModules = window.DaohuaVFXModules || []).push(function (VFX) {
   'use strict';
-
-  VFX.register('ability.taunt', (ctx) => {
-    const caster = ctx.caster;
-    VFX.motion(caster.el, 'cast');
-    const t = VFX.center(caster.el.querySelector('.arena-avatar-stage') || caster.el);
-    const host = VFX.node(null, t.x, t.y + 30);
-    host.style.setProperty('--c', '#ffc450');
-
-    // 双重冲击环（粒子光晕环）
-    const r1 = VFX.child(host, 'vfx-p-ring');
-    r1.style.setProperty('--c', 'rgba(255,196,80,.95)');
-    r1.style.setProperty('--ring-scale', '3.2');
-    r1.style.setProperty('--dur', '.75s');
-    const r2 = VFX.child(host, 'vfx-p-ring');
-    r2.style.setProperty('--c', 'rgba(255,226,150,.55)');
-    r2.style.setProperty('--ring-scale', '4.4');
-    r2.style.setProperty('--dur', '.95s');
-    r2.style.animationDelay = '.1s';
-
-    // 环周金色粒子向外炸开（环形均布）
-    VFX.particles(t.x, t.y + 26, { cls: 'vfx-p-glow', count: 42, spread: 40, size: [4, 9], dur: [460, 780], dist: [64, 140] });
-    // 怒气火星自头顶升腾
-    VFX.particles(t.x, t.y - 20, { cls: 'vfx-p-ember', count: 24, spread: 30, size: [4, 8], dur: [650, 1100], dist: [18, 48], rise: 100 });
-    VFX.emit(t.x, t.y - 26, { cls: 'vfx-p-ember', interval: 80, duration: 560, perBurst: 4, spread: 26, size: [3, 6], dur: [550, 850], dist: [14, 34], rise: 90 });
-    // 护身光晕一闪
-    const ward = VFX.spawn('vfx-p-flare', t.x, t.y - 12, 700);
-    ward.style.setProperty('--c', '#ffcf5e');
-    ward.style.setProperty('--fs', '1.5');
-
-    ctx.threat(caster, 150);
-    VFX.retire(host, 1200);
-    return 1100;
-  });
+  VFX.register('ability.taunt', ctx => VFX.castParticles(ctx, {
+    id: 'ability.taunt', duration: 650,
+    script(tl, fx) {
+      const t = fx.source;
+      const s = fx.scale(fx.caster);
+      const colors = ['#fff1ba', '#ffc354', '#ec7843'];
+      fx.stage.converge(tl, { at: 0, x: t.x, y: t.y - 12 * s, count: 18, radius: 48 * s, life: [110, 160], colors });
+      for (let i = 0; i < 3; i++) {
+        const at = 130 + i * 65;
+        fx.stage.ring(tl, { at, x: t.x, y: t.y - 10 * s, radius: 14, endRadius: (72 + i * 20) * s, squash: 0.72, count: 32, life: [210, 300], colors, size: [1, 1.9], length: [5, 9] });
+        for (let side = -1; side <= 1; side += 2) {
+          fx.stage.path(tl, [[t.x + side * 20 * s, t.y - 16 * s], [t.x + side * (50 + i * 16) * s, t.y - 30 * s], [t.x + side * (68 + i * 16) * s, t.y - 18 * s]], { at, count: 14, travel: 35, life: [150, 230], colors, size: [1, 1.8] });
+        }
+      }
+      fx.stage.burst(tl, { at: 130, x: t.x, y: t.y - 8, count: 22, angle: -Math.PI / 2, spread: 2.7, speed: [80, 200], gravity: 220, life: [230, 400], colors, shape: 'diamond' });
+      fx.threat(fx.caster, 130);
+      fx.buff(fx.caster, 130);
+    },
+  }));
 });

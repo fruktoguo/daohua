@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="../../../frontend/src/styles/selection-grid.css">
   <link rel="stylesheet" href="../../../frontend/src/styles/expedition.css">
   <link rel="stylesheet" href="../../../frontend/src/styles/floating-popover.css">
+  <link rel="stylesheet" href="../../../frontend/src/styles/vfx.css">
   <!-- 演武画廊专属样式：特效覆盖层、跳字、演武控制台 -->
   <link rel="stylesheet" href="gallery.css">
 </head>
@@ -234,7 +235,7 @@
                               </div>
                             </header>
                             <div class="arena-avatar-stage">
-                              <div class="arena-avatar" aria-label="少侠形象"><img alt="少侠" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.svg"></div>
+                              <div class="arena-avatar" aria-label="少侠形象"><img alt="少侠" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.webp"></div>
                             </div>
                             <div class="arena-action-bar arena-action-bar--player arena-action-bar--wait">
                               <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
@@ -267,7 +268,7 @@
                               </div>
                             </header>
                             <div class="arena-avatar-stage">
-                              <div class="arena-avatar" aria-label="云裳形象"><img alt="云裳" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.svg" style="filter:hue-rotate(150deg) saturate(.85)"></div>
+                              <div class="arena-avatar" aria-label="云裳形象"><img alt="云裳" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.webp" style="filter:hue-rotate(150deg) saturate(.85)"></div>
                             </div>
                             <div class="arena-action-bar arena-action-bar--player arena-action-bar--wait">
                               <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
@@ -300,7 +301,7 @@
                               </div>
                             </header>
                             <div class="arena-avatar-stage">
-                              <div class="arena-avatar" aria-label="岳罡形象"><img alt="岳罡" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.svg" style="filter:hue-rotate(-48deg) saturate(.7) brightness(.82)"></div>
+                              <div class="arena-avatar" aria-label="岳罡形象"><img alt="岳罡" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.webp" style="filter:hue-rotate(-48deg) saturate(.7) brightness(.82)"></div>
                             </div>
                             <div class="arena-action-bar arena-action-bar--player arena-action-bar--wait">
                               <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
@@ -493,7 +494,7 @@
                 </div>
                 <div class="equipment-avatar-center">
                   <div class="equipment-avatar-phantom-halo" aria-hidden="true"></div>
-                  <div class="equipment-avatar-phantom-stage"><img alt="少侠" class="character-avatar character-avatar--player equipment-avatar-phantom" draggable="false" src="../../../frontend/public/avatars/player.svg"></div>
+                  <div class="equipment-avatar-phantom-stage"><img alt="少侠" class="character-avatar character-avatar--player equipment-avatar-phantom" draggable="false" src="../../../frontend/public/avatars/player.webp"></div>
                   <div class="equipment-avatar-meta">
                     <strong class="equipment-avatar-name">少侠</strong>
                     <div class="equipment-avatar-badge-wrap">
@@ -542,21 +543,47 @@
             <div class="vfx-console-panel" data-right-view="vfx">
               <section class="abilities-section">
                 <div class="abilities-section-header"><span class="abilities-section-title">演武控制台</span><span class="abilities-section-badge">VFX</span></div>
+                <div class="vfx-console-block vfx-library-block">
+                  <div class="vfx-library-heading"><span class="slot-group-label">功法粒子目录</span><span class="abilities-section-badge"><b id="vfxCatalogTotal">23</b> 式</span></div>
+                  <div class="vfx-current" aria-live="polite">
+                    <div class="vfx-current-heading"><strong id="vfxCurrentName">选择一门功法</strong><span id="vfxCurrentKind">全量粒子目录</span></div>
+                    <p id="vfxCurrentDescription">点击技能图标预览；内功仅展示自身运功。</p>
+                  </div>
+                  <div class="vfx-transport" role="group" aria-label="粒子播放控制">
+                    <button class="vfx-ctl-btn vfx-ctl-btn--primary" id="vfxReplay" type="button">重播</button>
+                    <button class="vfx-ctl-btn" id="vfxPause" type="button" aria-pressed="false">暂停</button>
+                    <button class="vfx-ctl-btn" id="vfxCastActual" type="button">吟唱演示</button>
+                    <span class="vfx-playback-state" id="vfxPlaybackState">待选择</span>
+                  </div>
+                  <div class="vfx-transport vfx-speed-group" role="group" aria-label="粒子播放速度">
+                    <span class="slot-group-label">播放速度</span>
+                    <button class="vfx-ctl-btn" data-vfx-speed="0.5" type="button" aria-pressed="false">0.5×</button>
+                    <button class="vfx-ctl-btn is-active" data-vfx-speed="1" type="button" aria-pressed="true">1×</button>
+                    <button class="vfx-ctl-btn" data-vfx-speed="2" type="button" aria-pressed="false">2×</button>
+                  </div>
+                  <div class="vfx-catalog-filters" role="group" aria-label="功法目录筛选">
+                    <button class="vfx-ctl-btn is-active" data-vfx-filter="all" type="button" aria-pressed="true">全部</button>
+                    <button class="vfx-ctl-btn" data-vfx-filter="active" type="button" aria-pressed="false">主动 <b id="vfxActiveTotal">13</b></button>
+                    <button class="vfx-ctl-btn" data-vfx-filter="internal" type="button" aria-pressed="false">内功 <b id="vfxInternalTotal">10</b></button>
+                  </div>
+                  <div class="vfx-ability-catalog" id="vfxAbilityCatalog" aria-label="全部功法粒子预览"></div>
+                  <p class="vfx-console-hint">主动技点击即重播；内功仅作自身运功展示。</p>
+                </div>
                 <div class="vfx-console-block">
                   <span class="slot-group-label">出手方</span>
                   <div class="vfx-segment" role="group" aria-label="出手方切换">
                     <button class="vfx-segment-btn is-active" data-side="ally" type="button">我方演示</button>
                     <button class="vfx-segment-btn" data-side="enemy" type="button">敌方演示</button>
                   </div>
-                  <p class="vfx-console-hint">功法点击即演武；敌方可按其配表技能出手（魔猿·重斩 / 火鸦·掌心雷），亦可演示任意功法。</p>
+                  <p class="vfx-console-hint">切换演示出手方，观察不同方向的粒子轨迹。</p>
                 </div>
                 <div class="vfx-console-block">
                   <span class="slot-group-label">连续演武</span>
                   <div class="vfx-console-actions">
-                    <button class="vfx-ctl-btn" id="autoDemoBtn" type="button">▶ 全量功法轮播</button>
+                    <button class="vfx-ctl-btn" id="autoDemoBtn" type="button">▶ 主动技能轮播</button>
                     <button class="vfx-ctl-btn" id="ambientBtn" type="button">⏸ 环境普攻已开启</button>
                   </div>
-                  <p class="vfx-console-hint">轮播按配表吟唱/冷却节奏依次演武全部功法；环境普攻驱动双方行动条与受击反馈，模拟真实战斗底噪。</p>
+                  <p class="vfx-console-hint">轮播依次演示全部主动技能；环境普攻演示战场底噪。</p>
                 </div>
                 <div class="vfx-console-block">
                   <span class="slot-group-label">通用反馈</span>
@@ -579,7 +606,7 @@
                   <div class="vfx-console-actions">
                     <button class="vfx-ctl-btn" id="resetBtn" type="button">↺ 重置战场</button>
                   </div>
-                  <p class="vfx-console-hint">技能数据镜像自 <code>config/game-data/abilities/*.json</code>；特效脚本按技能 id 拆分于 <code>vfx/abilities/</code>。</p>
+                  <p class="vfx-console-hint">恢复全员气血、灵力与战场状态。</p>
                 </div>
                 <div class="vfx-console-block" id="selftestBlock" hidden>
                   <span class="slot-group-label">自检</span>
@@ -594,7 +621,9 @@
   </div>
 
   <!-- 特效引擎与脚本：经典 script 加载（file:// 直开可用，不依赖 ES module） -->
+  <script src="vfx/particle-stage.js"></script>
   <script src="vfx/core.js"></script>
+  <script src="vfx/skill-runtime.js"></script>
   <script src="vfx/catalog.js"></script>
   <script src="vfx/feedback.js"></script>
   <script src="vfx/abilities/heavy-slash.js"></script>
@@ -607,6 +636,10 @@
   <script src="vfx/abilities/qingping-melody.js"></script>
   <script src="vfx/abilities/lightning-attraction.js"></script>
   <script src="vfx/abilities/pozhen-melody.js"></script>
+  <script src="vfx/abilities/sui-gang.js"></script>
+  <script src="vfx/abilities/ganlu.js"></script>
+  <script src="vfx/abilities/tide.js"></script>
+  <script src="vfx/abilities/internal-arts.js"></script>
   <script src="sandbox.js"></script>
   <script src="gallery.js"></script>
 </body>

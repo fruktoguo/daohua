@@ -24,6 +24,16 @@
   pointer-events: none;
 }
 
+/* 技能统一走共享 Canvas：高 DPI 硬芯粒子、透明背景，不覆盖交互或改变布局。 */
+.vfx-particle-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .combat-arena-shell.is-quake {
   animation: vfx-quake 0.36s ease-out;
 }
