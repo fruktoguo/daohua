@@ -76,6 +76,8 @@ scripts/verify.sh --full
 SMOKE_REQUIRE_STATIC=0 node scripts/smoke-production.mjs http://127.0.0.1:5128
 ```
 
+`Server.csproj` 显式设 `<StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>`：前端由 Vite 构建后整目录拷入 `wwwroot`（见 `Dockerfile`），不使用 SDK 静态资源管线。开启该管线会在 `WebApplication.CreateBuilder` 阶段就按 `staticwebassets.runtime.json` 构造 `PhysicalFileProvider`，一旦清单仍指向已被删除的 `wwwroot`（例如曾临时创建后清理），进程会在 `Program.cs` 之前抛 `DirectoryNotFoundException` 崩溃重启，代码里的目录守卫来不及生效。若从旧版本升级后仍遇到该异常，执行 `dotnet clean` 或用 `rm -rf src/Server/bin src/Server/obj` 清掉残留清单。
+
 容器同构烟测：
 
 ```bash

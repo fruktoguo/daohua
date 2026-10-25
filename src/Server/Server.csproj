@@ -6,6 +6,11 @@
     <AssemblyName>Server</AssemblyName>
     <RootNamespace>Server</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- 前端由 Vite 构建后直接拷入 wwwroot（生产镜像见 Dockerfile），从不使用 SDK 静态资源管线。
+         关闭它可避免残留清单崩溃：SDK 在 CreateBuilder 阶段就按 staticwebassets.runtime.json
+         构造 PhysicalFileProvider，一旦该清单指向已删除的 wwwroot，进程会在 Program.cs 之前崩掉，
+         代码里的目录守卫根本来不及生效。 -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
 
   <ItemGroup>
