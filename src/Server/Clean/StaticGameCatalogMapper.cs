@@ -23,6 +23,7 @@ public static class StaticGameCatalogMapper
             var category = ReadString(item, "category", "material");
             var subCategory = ReadString(item, "subCategory");
             var tier = ReadInt(item, "tier", 1);
+            var level = item.TryGetProperty("level", out var lvl) && lvl.TryGetInt32(out var lvVal) && lvVal > 0 ? (int?)lvVal : null;
             var sellPrice = ReadDouble(item, "sellPrice", 0);
             var isTradable = ReadBool(item, "isTradable", true);
 
@@ -84,6 +85,7 @@ public static class StaticGameCatalogMapper
                 category,
                 subCategory = subCategory.Length > 0 ? subCategory : null,
                 tier,
+                level,
                 sellPrice,
                 isTradable,
                 usableBars,

@@ -149,7 +149,7 @@ function ItemTooltipCardContent({
         label: itemDef.name || baseMetadata.label,
         category: subCategoryLabel,
         tier: itemDef.tier ?? baseMetadata.tier,
-        level: itemDef.tier ? convertTierToLevel(itemDef.tier) : baseMetadata.level,
+        level: itemDef.level ?? baseMetadata.level ?? (itemDef.tier ? convertTierToLevel(itemDef.tier) : undefined),
         description: itemDef.description || baseMetadata.description,
       }
     : eqDef
@@ -165,7 +165,7 @@ function ItemTooltipCardContent({
   const tier = rawMetadata.tier ?? (eqDef?.tier || itemDef?.tier || (rawMetadata.level && rawMetadata.level <= 8 ? rawMetadata.level : 1))
   const normalizedTier = tier > 8 ? 1 : Math.max(1, Math.floor(tier))
   const grade = resolveItemGrade(normalizedTier)
-  const levelNumber = convertTierToLevel(normalizedTier)
+  const levelNumber = itemDef?.level ?? rawMetadata.level ?? convertTierToLevel(normalizedTier)
 
   const metadata: ItemMetadata = {
     ...rawMetadata,
@@ -1517,8 +1517,10 @@ export function ItemCard({ item, definition, equipmentDefinition }: { item: Inve
   // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
   const t = useT()
   const meta = resolveItemMetadata(item.itemId)
+  const rawMeta = meta ?? fallbackMetadata(item.itemId)
+  const baseMeta = definition?.level != null ? { ...rawMeta, level: definition.level } : rawMeta
   const metadata = withItemGrade(
-    meta ?? fallbackMetadata(item.itemId),
+    baseMeta,
     item.tier ?? meta?.tier ?? 1,
   )
   // 强化变体行（AssetKey "+N"）：名称附强化等级、悬浮卡片按该等级缩放属性预览。

@@ -33,9 +33,9 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
   { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.dark-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'stamina' }] },
   { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.morning-dew', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
-  { id: 'explore.gather-banling-flower', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-flower', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
-  { id: 'explore.chop-yinlingsong', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.yinlingsong-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
-  { id: 'explore.mine-crimson-copper', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.crimson-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 54, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 53, percentage: 50, aspect: 'stamina' }] },
+  { id: 'explore.gather-banling-flower', type: 'exploration', level: 18, durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-flower', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
+  { id: 'explore.chop-yinlingsong', type: 'exploration', level: 18, durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.yinlingsong-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
+  { id: 'explore.mine-crimson-copper', type: 'exploration', level: 18, durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.crimson-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 54, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 53, percentage: 50, aspect: 'stamina' }] },
 
   // 赶路
   { id: 'world.travel', type: 'exploration', durationSeconds: 1, executionKind: 'travel', hiddenFromCatalog: true, yields: [{ kind: 'rootexp', per: 'second', amount: 1, aspect: 'agility' }] },
@@ -50,9 +50,9 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'craft.refine-iron', type: 'alchemy', durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
   { id: 'craft.refine-peach-wood-crystal', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
   { id: 'craft.extract-herb-essence', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.herb-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
-  { id: 'craft.refine-copper', type: 'alchemy', durationSeconds: 15, inputs: { 'item.crimson-copper': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
-  { id: 'craft.refine-spirit-pine-crystal', type: 'alchemy', durationSeconds: 15, inputs: { 'item.yinlingsong-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.spirit-pine-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
-  { id: 'craft.extract-banling-essence', type: 'alchemy', durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
+  { id: 'craft.refine-copper', type: 'alchemy', level: 18, durationSeconds: 15, inputs: { 'item.crimson-copper': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
+  { id: 'craft.refine-spirit-pine-crystal', type: 'alchemy', level: 18, durationSeconds: 15, inputs: { 'item.yinlingsong-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.spirit-pine-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
+  { id: 'craft.extract-banling-essence', type: 'alchemy', level: 18, durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
 
   // 讨伐战斗
   { id: 'combat.hunt-qi-beast', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-pass' },
@@ -682,16 +682,21 @@ export function resolveItemGrade(tier = 1): ItemGrade {
 /**
  * 将指定品质档应用到物品元数据上
  */
-export function withItemGrade(metadata: ItemMetadata, tier = metadata.tier ?? (metadata.level && metadata.level <= 8 ? metadata.level : 1)): ItemMetadata {
-  const rawTier = tier ?? metadata.tier ?? 1
+export function withItemGrade(metadata: ItemMetadata, tier?: number): ItemMetadata {
+  const isExplicitTier = tier !== undefined
+  const rawTier = tier ?? metadata.tier ?? (metadata.level && metadata.level <= 8 ? metadata.level : 1)
   const normalizedTier = rawTier > 8 ? convertLevelToTier(rawTier) : Math.max(1, Math.floor(rawTier))
   const grade = resolveItemGrade(normalizedTier)
+  const tierChanged = isExplicitTier && metadata.tier !== undefined && normalizedTier !== metadata.tier
+  const effectiveLevel = !tierChanged && metadata.level != null
+    ? metadata.level
+    : convertTierToLevel(normalizedTier)
   return {
     ...metadata,
     rarity: grade.rarity,
     rarityLabel: grade.label,
     tier: normalizedTier,
-    level: convertTierToLevel(normalizedTier),
+    level: effectiveLevel,
   }
 }
 
@@ -1003,33 +1008,35 @@ interface ItemMetaCore {
  * 基础物品静态元数据字典
  */
 const ITEM_META_CORES: Record<string, ItemMetaCore> = {
+  // 材料品阶口径（TASK-20261025-08 & 09）：凡品/稀有度按掉落概率决定（普通凡品 tier1，稀有黄/玄品 tier>=2）；
+  // 等级（level）按产出源（怪物等级、采集地生态、加工梯队）细化，打破全员 Lv.1 机械感。
   'item.ningxue-grass': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
   'item.peach-wood': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
   'item.dark-iron': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'mineral' },
   'item.beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.beast-bone': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.morning-dew': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
-  'item.broken-spirit-core': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.demon-dan': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.sha-fang': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.banling-flower': { glyph: '🌿', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'spiritMaterial' },
-  'item.yinlingsong-wood': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'spiritMaterial' },
-  'item.crimson-copper': { glyph: '⛏️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'mineral' },
-  'item.beast-fang': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
-  'item.fire-feather': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
-  'item.soul-talisman': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
+  'item.beast-bone': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'exoticMaterial' },
+  'item.morning-dew': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 2, subCategory: 'spiritMaterial' },
+  'item.broken-spirit-core': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 4, subCategory: 'exoticMaterial' },
+  'item.demon-dan': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'exoticMaterial' },
+  'item.sha-fang': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'exoticMaterial' },
+  'item.banling-flower': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 12, subCategory: 'spiritMaterial' },
+  'item.yinlingsong-wood': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'spiritMaterial' },
+  'item.crimson-copper': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 15, subCategory: 'mineral' },
+  'item.beast-fang': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
+  'item.fire-feather': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'exoticMaterial' },
+  'item.soul-talisman': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 18, subCategory: 'exoticMaterial' },
   'item.leiji-talisman': { glyph: '⚡', tone: 'cyan', rarity: 'mundane', level: 1, subCategory: 'talisman' },
   'item.juling-formation-disk': { glyph: '⬡', tone: 'violet', rarity: 'mundane', level: 1, subCategory: 'formation' },
-  'item.broken-blade': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
-  'item.sha-bone': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
-  'item.demon-core': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
-  'item.meteor-fragment': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'exoticMaterial' },
-  'item.refined-iron': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
-  'item.peach-wood-crystal': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
-  'item.herb-essence': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
-  'item.refined-copper': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'refinedMaterial' },
-  'item.spirit-pine-crystal': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'refinedMaterial' },
-  'item.banling-essence': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'refinedMaterial' },
+  'item.broken-blade': { glyph: '🪵', tone: 'violet', rarity: 'mystic', level: 20, subCategory: 'exoticMaterial' },
+  'item.sha-bone': { glyph: '🪵', tone: 'violet', rarity: 'mystic', level: 22, subCategory: 'exoticMaterial' },
+  'item.demon-core': { glyph: '🪵', tone: 'violet', rarity: 'mystic', level: 24, subCategory: 'exoticMaterial' },
+  'item.meteor-fragment': { glyph: '🪵', tone: 'violet', rarity: 'mystic', level: 24, subCategory: 'exoticMaterial' },
+  'item.refined-iron': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
+  'item.peach-wood-crystal': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
+  'item.herb-essence': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
+  'item.refined-copper': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'refinedMaterial' },
+  'item.spirit-pine-crystal': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 15, subCategory: 'refinedMaterial' },
+  'item.banling-essence': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'refinedMaterial' },
   'item.qi-gathering-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
   'item.zhixue-powder': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
   'item.shunqi-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
@@ -1122,12 +1129,12 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
   'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
   // 一阶野外材料与秘籍（配表 items/manuals 全量对齐，防止未登记条目丢失图标与品类）
-  'item.rock-fang': { glyph: '🦷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.water-spirit-core': { glyph: '💧', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.thick-beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.rough-wolf-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.golden-ape-bone': { glyph: '🦴', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.ape-heart': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.rock-fang': { glyph: '🦷', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
+  'item.water-spirit-core': { glyph: '💧', tone: 'gray', rarity: 'mundane', level: 11, subCategory: 'exoticMaterial' },
+  'item.thick-beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
+  'item.rough-wolf-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 10, subCategory: 'exoticMaterial' },
+  'item.golden-ape-bone': { glyph: '🦴', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'exoticMaterial' },
+  'item.ape-heart': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'exoticMaterial' },
   'item.tome.tide': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.tide': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.sui-gang': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },

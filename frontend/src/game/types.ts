@@ -1083,6 +1083,8 @@ export interface ItemDefinition {
   subCategory?: string | null
   /** 等阶（1~8，映射品质与等级） */
   tier: number
+  /** 显式境界/需求等级（若未配置则由 tier 推导） */
+  level?: number | null
   /** 系统出售价（灵石） */
   sellPrice: number
   /** 是否允许市场挂单交易 */

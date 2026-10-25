@@ -81,6 +81,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
+    "level": 18,
     "durationSeconds": 13,
     "inputs": {
       "item.crimson-copper": 3
@@ -106,6 +107,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
+    "level": 18,
     "durationSeconds": 13,
     "inputs": {
       "item.yinlingsong-wood": 3
@@ -131,6 +133,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "alchemy",
+    "level": 18,
     "durationSeconds": 13,
     "inputs": {
       "item.banling-flower": 2,

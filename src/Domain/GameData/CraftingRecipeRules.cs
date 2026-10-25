@@ -36,14 +36,20 @@ public static class CraftingRecipeRules
     }
 
     /// <summary>
-    /// 解析制造行动所需解锁境界等级。
-    /// 依据产出物（Yields）与消耗材料（Inputs）中包含物品/装备的最大 Tier 裁决。
+    /// 解析行动所需解锁境界等级。
+    /// 配表显式声明的 <c>level</c> 优先级最高（行动本身即承载关卡，如 T1 采集点可配置 18 级门槛）；
+    /// 缺省时依据产出物（Yields）与消耗材料（Inputs）中包含物品/装备的最大 Tier 裁决。
+    /// 该优先级与装配期经验结算（<c>GameDataCatalog.ResolveActionCatalog</c>）及前端
+    /// <c>resolveActionLevel</c> 完全一致，禁止两处口径分叉。
     /// </summary>
     public static int ResolveRequiredRealmLevel(ActionDefinition action,
         IReadOnlyDictionary<string, JsonElement>? rawItems,
         IReadOnlyDictionary<string, JsonElement>? rawEquipments)
     {
         ArgumentNullException.ThrowIfNull(action);
+
+        // 0. 配表显式等级优先（行动自身即关卡定义）
+        if (action.Level is { } explicitLevel) return explicitLevel;
 
         // 1. 优先按产出物（Yields）的 Tier 裁决（与前端 resolveActionLevel 一致）
         if (action.Yields is { Count: > 0 })

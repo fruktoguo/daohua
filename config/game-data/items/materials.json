@@ -5,8 +5,10 @@
     "description": "幽谷凝气，叶脉含朱。\n生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 5,
-    "subCategory": "spiritMaterial"
+    "subCategory": "spiritMaterial",
+    "level": 1
   },
   {
     "id": "item.peach-wood",
@@ -14,8 +16,10 @@
     "description": "向阳生古木，纯阳辟百邪。\n向阳坡地采伐的百年老木，木质坚致密实，隐泛淡淡纯阳辟邪之意。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 5,
-    "subCategory": "spiritMaterial"
+    "subCategory": "spiritMaterial",
+    "level": 1
   },
   {
     "id": "item.dark-iron",
@@ -23,8 +27,10 @@
     "description": "乌金沉矿色如墨。\n深山老矿采掘出的未淬原铁，色沉如墨，质地沉重坚硬。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 5,
-    "subCategory": "mineral"
+    "subCategory": "mineral",
+    "level": 1
   },
   {
     "id": "item.beast-hide",
@@ -32,8 +38,10 @@
     "description": "异兽遗革，坚韧如甲。\n凡间野兽异变后留下的粗糙兽皮，皮质坚韧厚密。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 6,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 1
   },
   {
     "id": "item.beast-bone",
@@ -41,8 +49,10 @@
     "description": "山野遗白骨，密质胜坚石。\n山野猛兽身上的坚硬兽骨，骨质密实惨白。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 6,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 3
   },
   {
     "id": "item.morning-dew",
@@ -50,8 +60,10 @@
     "description": "破晓凝珠润草尖。\n破晓清晨凝结于山涧草木叶尖的无根甘露，清澈明净，不染尘埃。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 8,
-    "subCategory": "spiritMaterial"
+    "subCategory": "spiritMaterial",
+    "level": 2
   },
   {
     "id": "item.broken-spirit-core",
@@ -59,8 +71,10 @@
     "description": "灵核虽碎，微芒未泯。\n初具灵机的精怪异兽体内残留的微弱灵核碎屑，晶芒微弱。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 12,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 4
   },
   {
     "id": "item.demon-dan",
@@ -68,8 +82,10 @@
     "description": "凶兽凝丹魄，煞纹隐血光。\n深山凶兽体内凝结而成的浑浊兽丹，表面隐现血色煞纹。",
     "kind": "material",
     "category": "material",
+    "tier": 2,
     "sellPrice": 8000,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 12
   },
   {
     "id": "item.sha-fang",
@@ -77,8 +93,10 @@
     "description": "森白利齿浸血腥。\n凶兽口中浸透血气的森白尖齿，锋刃如匕，透着阵阵森冷凶煞。",
     "kind": "material",
     "category": "material",
+    "tier": 2,
     "sellPrice": 2000,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 12
   },
   {
     "id": "item.banling-flower",
@@ -86,9 +104,10 @@
     "description": "灵泉漱玉，幽蕊含光。\n生长在悬崖灵泉旁的幽蓝野花，花瓣常年吞吐微光，暗香浮动。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 15,
-    "subCategory": "spiritMaterial"
+    "subCategory": "spiritMaterial",
+    "level": 12
   },
   {
     "id": "item.yinlingsong-wood",
@@ -96,9 +115,10 @@
     "description": "绝壁生苍松，引风聚灵韵。\n扎根于绝壁云海间的苍劲古松，松针苍翠，自生引聚清风灵韵之势。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 15,
-    "subCategory": "spiritMaterial"
+    "subCategory": "spiritMaterial",
+    "level": 14
   },
   {
     "id": "item.crimson-copper",
@@ -106,9 +126,10 @@
     "description": "灵脉赤铜含火纹。\n伴生于灵脉浅层的赤红矿石，触手温热，断面隐现熔岩纹理。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 15,
-    "subCategory": "mineral"
+    "subCategory": "mineral",
+    "level": 15
   },
   {
     "id": "item.beast-fang",
@@ -116,9 +137,10 @@
     "description": "狼吻遗锋，坚利如铁。\n荒野妖狼口中脱落的锋锐利齿，尖端坚硬如铁。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 18,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 14
   },
   {
     "id": "item.fire-feather",
@@ -126,9 +148,10 @@
     "description": "灵禽遗赤羽，星火缀翎梢。\n灵禽异鸟身上的赤红翎羽，羽丝流转着点点火光星芒。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 18,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 16
   },
   {
     "id": "item.soul-talisman",
@@ -136,9 +159,10 @@
     "description": "朱砂斑驳符灵在。\n残破泛黄的古旧符纸，朱砂符印斑驳，仍隐有灵力回荡。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 20,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 18
   },
   {
     "id": "item.broken-blade",
@@ -146,9 +170,10 @@
     "description": "断刃埋沙，杀气未销。\n战场遗迹中出土的古战断刃，虽缺锋芒，却自有一股肃杀戾气。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 3,
     "sellPrice": 2000,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 20
   },
   {
     "id": "item.sha-bone",
@@ -156,9 +181,10 @@
     "description": "魔煞侵苍骨，触手生冰寒。\n历经魔煞侵蚀的苍黑异骨，触之刺骨冰寒。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 3,
     "sellPrice": 2000,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 22
   },
   {
     "id": "item.demon-core",
@@ -166,9 +192,10 @@
     "description": "心脉结晶蕴狂澜。\n异种古兽心脉凝成的晶核，内里流转着狂暴深邃的星陨灵息。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 3,
     "sellPrice": 20000,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 24
   },
   {
     "id": "item.meteor-fragment",
@@ -176,9 +203,10 @@
     "description": "星坠九霄，火痕犹烈。\n自九天星穹坠落的大地陨铁碎片，表面布满星火熔铸的焦痕。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 3,
     "sellPrice": 10000,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 24
   },
   {
     "id": "item.refined-iron",
@@ -186,8 +214,10 @@
     "description": "凡火千锤炼，精铁去浊尘。\n经凡火千锤百炼去除凡浊的原铁精料，铁质匀密坚固。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 30,
-    "subCategory": "refinedMaterial"
+    "subCategory": "refinedMaterial",
+    "level": 3
   },
   {
     "id": "item.peach-wood-crystal",
@@ -195,8 +225,10 @@
     "description": "桃木凝晶琥珀光。\n自百年老桃木中淬炼凝结的琥珀状灵晶，木香淡雅，通体晶莹。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 30,
-    "subCategory": "refinedMaterial"
+    "subCategory": "refinedMaterial",
+    "level": 3
   },
   {
     "id": "item.herb-essence",
@@ -204,8 +236,10 @@
     "description": "百草凝露，生机内蕴。\n萃取百草朝露精粹而成的碧绿药露，香气清纯，生机内蕴。",
     "kind": "material",
     "category": "material",
+    "tier": 1,
     "sellPrice": 36,
-    "subCategory": "refinedMaterial"
+    "subCategory": "refinedMaterial",
+    "level": 3
   },
   {
     "id": "item.refined-copper",
@@ -213,9 +247,10 @@
     "description": "地火炼赤铜，精纯流金泽。\n赤铜经地火淬炼出的赤金铜精，光泽流转，致密纯正。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 90,
-    "subCategory": "refinedMaterial"
+    "subCategory": "refinedMaterial",
+    "level": 16
   },
   {
     "id": "item.spirit-pine-crystal",
@@ -223,9 +258,10 @@
     "description": "松芯凝翠藏灵风。\n引灵松树芯灵髓凝出的青翠松晶，晶莹透亮，内含一缕清灵松风。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 90,
-    "subCategory": "refinedMaterial"
+    "subCategory": "refinedMaterial",
+    "level": 15
   },
   {
     "id": "item.banling-essence",
@@ -233,9 +269,10 @@
     "description": "幽蓝淬露，灵机盎然。\n伴灵花与山泉淬炼出的幽蓝清液，纯澈剔透，灵机盎然。",
     "kind": "material",
     "category": "material",
-    "tier": 2,
+    "tier": 1,
     "sellPrice": 76,
-    "subCategory": "refinedMaterial"
+    "subCategory": "refinedMaterial",
+    "level": 14
   },
   {
     "id": "item.leiji-talisman",
@@ -255,11 +292,12 @@
       "strike": {
         "manaCostRatio": 0.05,
         "manaDamageRatio": 0.2,
-        "spellAttackRatio": 2.0,
+        "spellAttackRatio": 2,
         "element": "wood"
       }
     },
-    "subCategory": "talisman"
+    "subCategory": "talisman",
+    "level": 1
   },
   {
     "id": "item.juling-formation-disk",
@@ -284,7 +322,8 @@
         }
       ]
     },
-    "subCategory": "formation"
+    "subCategory": "formation",
+    "level": 1
   },
   {
     "id": "currency.spirit-stone",
@@ -320,9 +359,9 @@
     "tier": 5,
     "sellPrice": 100,
     "isTradable": true,
-    "subCategory": "special"
-  }
-  ,
+    "subCategory": "special",
+    "level": 54
+  },
   {
     "id": "item.rough-wolf-hide",
     "name": "粗韧狼皮",
@@ -331,7 +370,8 @@
     "category": "material",
     "tier": 1,
     "sellPrice": 8,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 10
   },
   {
     "id": "item.water-spirit-core",
@@ -341,7 +381,8 @@
     "category": "material",
     "tier": 1,
     "sellPrice": 15,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 11
   },
   {
     "id": "item.rock-fang",
@@ -351,7 +392,8 @@
     "category": "material",
     "tier": 1,
     "sellPrice": 30,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 14
   },
   {
     "id": "item.thick-beast-hide",
@@ -361,7 +403,8 @@
     "category": "material",
     "tier": 1,
     "sellPrice": 30,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 14
   },
   {
     "id": "item.golden-ape-bone",
@@ -371,7 +414,8 @@
     "category": "material",
     "tier": 1,
     "sellPrice": 200,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 16
   },
   {
     "id": "item.ape-heart",
@@ -379,8 +423,9 @@
     "description": "撼地巨猿狂暴之力的精粹煞心，握在掌中仍有雄浑沉重的搏动之感。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
+    "tier": 2,
     "sellPrice": 1000,
-    "subCategory": "exoticMaterial"
+    "subCategory": "exoticMaterial",
+    "level": 16
   }
 ]

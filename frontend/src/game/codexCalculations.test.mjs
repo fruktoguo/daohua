@@ -53,36 +53,40 @@ test('codexCalculations: 技艺归属与材料子分类一致（灵材→采集�
 })
 
 test('codexCalculations: 解锁规则验证（境界、技艺与背包三路联动）', () => {
-  const t1Item = allMaterials.find(it => it.itemId === 'item.ningxue-grass')
-  const t2Herb = allMaterials.find(it => it.itemId === 'item.banling-flower')
-  const t2Mineral = allMaterials.find(it => it.itemId === 'item.crimson-copper')
-  const t2Exotic = allMaterials.find(it => it.itemId === 'item.beast-fang')
-  assert.ok(t1Item && t2Herb && t2Mineral && t2Exotic, '测试用材料必须存在于配表中')
+  const commonHerb = allMaterials.find(it => it.itemId === 'item.banling-flower')
+  const commonMineral = allMaterials.find(it => it.itemId === 'item.crimson-copper')
+  const commonExotic = allMaterials.find(it => it.itemId === 'item.beast-fang')
+  const rareExotic = allMaterials.find(it => it.itemId === 'item.demon-dan')
+  assert.ok(commonHerb && commonMineral && commonExotic && rareExotic, '测试用材料必须存在于配表中')
+  assert.equal(commonHerb.tier, 1)
+  assert.equal(rareExotic.tier, 2)
 
-  // 1 级修士：T1 自动解锁，T2 默认锁定
-  assert.equal(isMaterialUnlocked(t1Item, 1, []), true)
-  assert.equal(isMaterialUnlocked(t2Herb, 1, []), false)
-  assert.equal(isMaterialUnlocked(t2Mineral, 1, []), false)
-  assert.equal(isMaterialUnlocked(t2Exotic, 1, []), false)
+  // 凡品材料（采集直出/高爆率战利品）一律 1 级默认解锁，无论技艺与背包
+  assert.equal(isMaterialUnlocked(commonHerb, 1, []), true)
+  assert.equal(isMaterialUnlocked(commonMineral, 1, []), true)
+  assert.equal(isMaterialUnlocked(commonExotic, 1, []), true)
 
-  // 1 级修士但采集 18 级：灵材解锁，矿石与异材仍然锁定
-  assert.equal(isMaterialUnlocked(t2Herb, 1, [], { gathering: 18 }), true)
-  assert.equal(isMaterialUnlocked(t2Mineral, 1, [], { gathering: 18 }), false)
-  assert.equal(isMaterialUnlocked(t2Exotic, 1, [], { gathering: 18 }), false)
+  // 稀有材料（tier >= 2）默认锁定，境界达标才由境界路径解锁
+  assert.equal(isMaterialUnlocked(rareExotic, 1, []), false)
+  assert.equal(isMaterialUnlocked(rareExotic, 18, []), true)
 
-  // 1 级修士但采矿 18 级：矿石解锁，灵材与异材仍然锁定
-  assert.equal(isMaterialUnlocked(t2Herb, 1, [], { mining: 18 }), false)
-  assert.equal(isMaterialUnlocked(t2Mineral, 1, [], { mining: 18 }), true)
-  assert.equal(isMaterialUnlocked(t2Exotic, 1, [], { mining: 18 }), false)
+  // 背包持有稀有材料：提前点亮解锁
+  assert.equal(isMaterialUnlocked(rareExotic, 1, [{ itemId: 'item.demon-dan', amount: 1 }]), true)
 
-  // 1 级修士但背包持有 T2 材料：提前点亮解锁
-  assert.equal(isMaterialUnlocked(t2Herb, 1, [{ itemId: 'item.banling-flower', amount: 1 }]), true)
-  assert.equal(isMaterialUnlocked(t2Exotic, 1, [{ itemId: 'item.beast-fang', amount: 1 }]), true)
+  // 技艺路径按 subCategory 分派（灵材→采集、矿石→采矿、异材/精材无技艺）：
+  // 当前配表凡品材料已无技艺门槛，用同构材料定义验证分派逻辑本身不退化
+  const herbAt18 = { itemId: 'item.test-herb', tier: 2, subCategory: 'spiritMaterial' }
+  const mineralAt18 = { itemId: 'item.test-ore', tier: 2, subCategory: 'mineral' }
+  const exoticAt18 = { itemId: 'item.test-exotic', tier: 2, subCategory: 'exoticMaterial' }
+  assert.equal(isMaterialUnlocked(herbAt18, 1, [], { gathering: 18 }), true)
+  assert.equal(isMaterialUnlocked(mineralAt18, 1, [], { gathering: 18 }), false)
+  assert.equal(isMaterialUnlocked(mineralAt18, 1, [], { mining: 18 }), true)
+  assert.equal(isMaterialUnlocked(exoticAt18, 1, [], { gathering: 18, mining: 18 }), false)
 
-  // 18 级修士（叩天门）：T2 全体系境界自动解锁，无需技艺或背包持有
-  assert.equal(isMaterialUnlocked(t2Herb, 18, []), true)
-  assert.equal(isMaterialUnlocked(t2Mineral, 18, []), true)
-  assert.equal(isMaterialUnlocked(t2Exotic, 18, []), true)
+  // 稀有阶梯：tier 3 门槛 30 级，18 级不足以解锁
+  const exoticAt30 = { itemId: 'item.test-exotic-3', tier: 3, subCategory: 'exoticMaterial' }
+  assert.equal(isMaterialUnlocked(exoticAt30, 18, []), false)
+  assert.equal(isMaterialUnlocked(exoticAt30, 30, []), true)
 })
 
 test('codexCalculations: 双重解锁文案格式化验证', () => {
