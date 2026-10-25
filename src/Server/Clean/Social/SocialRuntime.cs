@@ -1165,7 +1165,7 @@ public sealed class SocialRuntime
             : (await _nodeBuildings.EffectsForAsync(targetNode, startedAt, cancellationToken)).MonsterWeakenRatio;
         var spec = new ActionParticipationSpec(
             sessionId, encounterId, targetNode, seed,
-            snapshots.Max(member => member!.SearchSpeedPoints),
+            snapshots.Average(member => member!.SearchSpeedPoints),
             startedAt.ToUnixTimeMilliseconds() / 1000d,
             [.. snapshots.Select(member => member!)])
         {

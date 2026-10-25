@@ -123,6 +123,7 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const combat = useGameStore(state => state.combat)
   const world = useGameStore(state => state.world)
   const queueEntries = useGameStore(state => state.queue?.entries)
+  const stats = useGameStore(state => state.stats)
 
   // 正在执行或排队中的强化行动（从权威队列获取）
   const activeEnhanceEntry = useMemo(
@@ -265,6 +266,11 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
     }
     return ratio
   }, [combat?.equipment, equipmentCatalog])
+  // 金灵根对装备强化速度的加成（100 点 = +25%）
+  const linggenSpeedRatio = useMemo(() => {
+    if (!stats?.heavenGateEntered || !stats.heavenGateConfirmed) return 0
+    return 0.25 * (Math.max(0, Math.min(100, stats.heavenGateConfirmed.metal ?? 0)) / 100)
+  }, [stats?.heavenGateEntered, stats?.heavenGateConfirmed])
 
   const itemTier = selected?.equipmentDefinition?.tier ?? 1
   const itemLevel = convertTierToLevel(itemTier)
@@ -279,9 +285,9 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
     const buildingSpeed = world?.buildingEffects?.enhancementSpeedRatio ?? 0
     const baseDuration = enhanceBaseDurationSeconds(nextLevel)
     const durationAfterBuilding = buildingSpeed > 0 ? baseDuration / (1 + buildingSpeed) : baseDuration
-    const actualDuration = durationAfterBuilding / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel + toolSpeedRatio)
+    const actualDuration = durationAfterBuilding / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel + toolSpeedRatio + linggenSpeedRatio)
     return { successRate, spiritCost, baseDuration, actualDuration }
-  }, [nextLevel, techniqueLevel, toolSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
+  }, [nextLevel, techniqueLevel, toolSpeedRatio, linggenSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
 
   const submit = () => {
     if (!selected || maxedOut) return

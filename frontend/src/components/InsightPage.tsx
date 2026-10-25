@@ -24,7 +24,7 @@ import { CombatAttributePanel } from './CombatAttributePanel'
 import { BreakthroughConfirmModal } from './BreakthroughConfirmModal'
 import { HeavenGateModal } from './HeavenGateModal'
 import { LINGGEN_ELEMENT_KEYS } from '../game/linggenBoard'
-import { linggenBonusPercent, linggenReducePercent, shouldShowOpenHeavenGate } from '../game/linggenCalculations'
+import { getLinggenDerivedBonuses, linggenBonusPercent, linggenReducePercent, shouldShowOpenHeavenGate } from '../game/linggenCalculations'
 import { StatGlyph } from './StatGlyph'
 import { TraitBarItem } from './TraitBarItem'
 
@@ -474,6 +474,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                     const points = stats.heavenGateConfirmed?.[key] ?? 0
                     const bonus = linggenBonusPercent(points)
                     const reduce = linggenReducePercent(points)
+                    const derived = getLinggenDerivedBonuses(key, points)
                     return (
                       <div className="insight-root-row" key={key}>
                         <PillStatLabel
@@ -494,6 +495,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                             value={`${reduce}%`}
                             tone="jade"
                           />
+                          {derived.map(item => (
+                            <PillBonusLabel
+                              key={item.labelKey}
+                              label={t(item.labelKey)}
+                              value={item.valueText}
+                              tone="teal"
+                            />
+                          ))}
                         </div>
                       </div>
                     )

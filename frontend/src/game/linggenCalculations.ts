@@ -23,21 +23,91 @@ export { LINGGEN_AXIS_CAP, LINGGEN_ELEMENT_KEYS }
 export const HEAVEN_GATE_REALM_LEVEL = 18
 
 /**
- * 灵根提供的五行增伤百分比（Linear）：100 点即 100%。
+ * 灵根提供的五行增伤百分比（Linear）：100 点即 25%（总纲 §7.7.5.1）。
  * @param points 该系灵根点数。
  */
 export function linggenBonusPercent(points: number): number {
   const safe = Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.trunc(points) || 0))
-  return Math.round((safe / LINGGEN_AXIS_CAP) * 100)
+  return Math.round((safe / LINGGEN_AXIS_CAP) * 25)
 }
 
 /**
- * 灵根提供的五行实际减伤百分比（NonLinear 收益递减）：100 点对应 50%，即伤害减半。
+ * 灵根提供的五行减伤百分比（NonLinear 收敛）：100 点对应 25 点减伤点数（总纲 §7.7.5.1）。
  * @param points 该系灵根点数。
  */
 export function linggenReducePercent(points: number): number {
   const safe = Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.trunc(points) || 0))
-  return Math.round((safe / (safe + LINGGEN_AXIS_CAP)) * 100)
+  return Math.round((safe / LINGGEN_AXIS_CAP) * 25)
+}
+
+/** 灵根百艺速度加成：100 点对应 25% 技艺速度。 */
+export function linggenTechniqueSpeedRatio(linggen: LinggenPoints | undefined, techniqueId: string | null): number {
+  if (!linggen || !techniqueId) return 0
+  switch (techniqueId) {
+    case 'alchemy':
+    case 'forging':
+      return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.fire)) / LINGGEN_AXIS_CAP)
+    case 'talisman':
+      return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.water)) / LINGGEN_AXIS_CAP)
+    case 'gathering':
+      return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.wood)) / LINGGEN_AXIS_CAP)
+    case 'enhancement':
+      return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.metal)) / LINGGEN_AXIS_CAP)
+    case 'formation':
+      return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.earth)) / LINGGEN_AXIS_CAP)
+    default:
+      return 0
+  }
+}
+
+export interface LinggenDerivedBonus {
+  labelKey: string
+  valueText: string
+}
+
+/** 获取单系灵根的所有衍生战斗与百艺加成条目。 */
+export function getLinggenDerivedBonuses(element: LinggenElementKey, points: number): LinggenDerivedBonus[] {
+  const safe = Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.trunc(points) || 0))
+  if (safe <= 0) return []
+  const factor = safe / LINGGEN_AXIS_CAP
+  switch (element) {
+    case 'fire':
+      return [
+        { labelKey: 'insight.heavenGate.derived.critChance', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.critDamage', valueText: `+${+(25 * factor).toFixed(1)}%` },
+        { labelKey: 'insight.heavenGate.derived.alchemyForgingSpeed', valueText: `+${Math.round(25 * factor)}%` },
+      ]
+    case 'water':
+      return [
+        { labelKey: 'insight.heavenGate.derived.maxMana', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.parry', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.regen', valueText: `+${Math.round(100 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.talismanSpeed', valueText: `+${Math.round(25 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.searchSpeed', valueText: `+${Math.round(20 * factor)}%` },
+      ]
+    case 'wood':
+      return [
+        { labelKey: 'insight.heavenGate.derived.maxHp', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.healingBonus', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.gatheringSpeed', valueText: `+${Math.round(25 * factor)}%` },
+      ]
+    case 'metal':
+      return [
+        { labelKey: 'insight.heavenGate.derived.attack', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.break', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.accuracy', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.enhancementSpeed', valueText: `+${Math.round(25 * factor)}%` },
+      ]
+    case 'earth': {
+      const flatDr = +(1.0 + safe * 0.09).toFixed(2)
+      return [
+        { labelKey: 'insight.heavenGate.derived.defense', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.criticalAvoidance', valueText: `+${Math.round(50 * factor)}%` },
+        { labelKey: 'insight.heavenGate.derived.fixedDamageReduction', valueText: `+${flatDr}` },
+        { labelKey: 'insight.heavenGate.derived.formationSpeed', valueText: `+${Math.round(25 * factor)}%` },
+      ]
+    }
+  }
 }
 
 /** 五系点数总和。 */

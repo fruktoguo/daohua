@@ -197,16 +197,16 @@ public sealed class HeavenGateTests
     }
 
     /// <summary>
-    /// 灵根点数与增伤/减伤点数一一对应：100 点提供 100 点增伤，减伤同样 100 点但走 NonLinear
-    /// 曲线（100 点对应实际减伤 50%，即伤害减半）。
+    /// 灵根点数与增伤/减伤点数换算：100 点提供 25 点增伤，减伤同样 25 点但走 NonLinear
+    /// 曲线（25 点对应实际减伤 20%，NonLinear 乘数 0.8，总纲 §7.7.5.1）。
     /// </summary>
     [Fact]
-    public void LinggenPointsMapToOneHundredPercentBonusAndHalvedDamage()
+    public void LinggenPointsMapToTwentyFivePercentBonusAndReduction()
     {
-        Assert.Equal(100, HeavenGateRules.ResolveDamageBonusPoints(100));
-        Assert.Equal(100, HeavenGateRules.ResolveDamageReductionPoints(100));
-        // NonLinear 曲线的实际生效值：100 / (100 + 100) = 0.5。
-        Assert.Equal(0.5, PercentValue.Multiplier(100, PercentCurveMode.NonLinear), 6);
+        Assert.Equal(25, HeavenGateRules.ResolveDamageBonusPoints(100));
+        Assert.Equal(25, HeavenGateRules.ResolveDamageReductionPoints(100));
+        // NonLinear 曲线的实际生效值：100 / (100 + 25) = 0.8。
+        Assert.Equal(0.8, PercentValue.Multiplier(25, PercentCurveMode.NonLinear), 6);
     }
 
     /// <summary>

@@ -23,7 +23,8 @@ public static class TimedActionDurationRules
         IReadOnlyDictionary<string, double>? techniqueExperiences,
         IReadOnlyList<PlayerEquipmentSlot>? equipment,
         GameDataCatalog? gameData,
-        int? enhancementTargetLevel = null)
+        int? enhancementTargetLevel = null,
+        LinggenValues linggen = default)
     {
         var duration = baseDuration;
         if (kind == ActionKind.Enhancement && enhancementTargetLevel is not null)
@@ -43,7 +44,8 @@ public static class TimedActionDurationRules
                 ? storedExp : 0;
             var level = TechniqueCatalog.LevelFor(exp, gameData?.RealmProgression);
             duration /= 1 + TechniqueCatalog.SpeedBonusRatio(level)
-                + TechniqueCatalog.EquippedToolSpeedRatio(equipment, technique, gameData);
+                + TechniqueCatalog.EquippedToolSpeedRatio(equipment, technique, gameData)
+                + HeavenGateRules.ResolveTechniqueSpeedRatio(linggen, technique);
         }
 
         return duration;
@@ -88,7 +90,8 @@ public static class TimedActionDurationRules
             player.Loadout.TechniqueExperiences,
             player.Loadout.Equipment,
             gameData,
-            targetLevel);
+            targetLevel,
+            player.Progression.HeavenGate.EffectiveValues);
     }
 
     /// <summary>根据导出的玩家状态快照计算单轮实际耗时（秒，供协议序列化与快照投影使用）。</summary>
@@ -116,7 +119,8 @@ public static class TimedActionDurationRules
             state.Loadout.TechniqueExperiences,
             state.Loadout.Equipment,
             gameData,
-            targetLevel);
+            targetLevel,
+            state.Progression.HeavenGateEntered ? state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty : LinggenValues.Empty);
     }
 
     private static Dictionary<AssetKey, double> EnhancementEffectiveBalances(

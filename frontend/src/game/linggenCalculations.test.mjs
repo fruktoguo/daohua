@@ -8,23 +8,25 @@ import {
   linggenCultivationMultiplier,
   linggenEffectiveCount,
   linggenTotal,
+  linggenTechniqueSpeedRatio,
+  getLinggenDerivedBonuses,
   maxReachableValue,
   remainingPoints,
   shouldShowOpenHeavenGate,
 } from './linggenCalculations.ts'
 
-test('linggenCalculations：100 点灵根 = 100% 增伤，减伤走收益递减为 50%（伤害减半）', () => {
-  assert.equal(linggenBonusPercent(100), 100)
-  assert.equal(linggenReducePercent(100), 50)
-  // 半量投入即为半量增伤，减伤按曲线提前收敛。
-  assert.equal(linggenBonusPercent(50), 50)
-  assert.equal(linggenReducePercent(50), 33)
+test('linggenCalculations：100 点灵根 = 25% 增伤，减伤走 NonLinear 收敛为 25%', () => {
+  assert.equal(linggenBonusPercent(100), 25)
+  assert.equal(linggenReducePercent(100), 25)
+  // 半量投入即为半量增伤与减伤
+  assert.equal(linggenBonusPercent(50), 13)
+  assert.equal(linggenReducePercent(50), 13)
 })
 
 test('linggenCalculations：零与越界点数被夹取到合法区间', () => {
   assert.equal(linggenBonusPercent(0), 0)
   assert.equal(linggenReducePercent(0), 0)
-  assert.equal(linggenBonusPercent(180), 100)
+  assert.equal(linggenBonusPercent(180), 25)
   assert.equal(linggenBonusPercent(-20), 0)
 })
 
@@ -46,6 +48,28 @@ test('linggenCalculations：总值统计与空灵根', () => {
   assert.equal(linggenTotal(undefined), 0)
   assert.equal(linggenTotal({ metal: 40, wood: 50, water: 60, fire: 70, earth: 80 }), 300)
   assert.equal(linggenEffectiveCount(undefined), 0)
+})
+
+test('linggenCalculations：衍生战斗与百艺加成及技艺速度', () => {
+  const roots = { metal: 100, wood: 100, water: 100, fire: 100, earth: 100 }
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'alchemy'), 0.25)
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'forging'), 0.25)
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'talisman'), 0.25)
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'gathering'), 0.25)
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'enhancement'), 0.25)
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'formation'), 0.25)
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'mining'), 0)
+  assert.equal(linggenTechniqueSpeedRatio(undefined, 'alchemy'), 0)
+
+  const fireBonuses = getLinggenDerivedBonuses('fire', 100)
+  assert.equal(fireBonuses.length, 3)
+  assert.equal(fireBonuses[0].valueText, '+50%')
+  assert.equal(fireBonuses[1].valueText, '+25%')
+  assert.equal(fireBonuses[2].valueText, '+25%')
+
+  const earthBonuses = getLinggenDerivedBonuses('earth', 100)
+  assert.equal(earthBonuses.length, 4)
+  assert.equal(earthBonuses[2].valueText, '+10')
 })
 
 test('linggenCalculations：叩天门满修且未入天门时才展示「开天门」', () => {

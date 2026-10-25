@@ -241,19 +241,100 @@ public static class HeavenGateRules
             && candidate.EffectiveCount > 0;
 
     /// <summary>
-    /// 灵根提供的五行增伤点数：每点灵根提供 1 点增伤，100 点即 100%（Linear 直加）。
+    /// 灵根提供的五行增伤点数：每点灵根提供 0.25 点增伤，100 点即 25%（Linear 直加，总纲 §7.7.5.1）。
     /// </summary>
     /// <param name="points">该系灵根点数。</param>
     public static double ResolveDamageBonusPoints(int points)
-        => Math.Clamp(points, 0, LinggenValues.MaxPointsPerElement);
+        => Math.Clamp(points, 0, LinggenValues.MaxPointsPerElement) * 0.25;
 
     /// <summary>
-    /// 灵根提供的五行减伤点数：与增伤同为每点 1 点，但减伤走 NonLinear 曲线，
-    /// 100 点对应实际减伤 50%（伤害减半），与总纲第七篇 §7.7.5 收敛口径一致。
+    /// 灵根提供的五行减伤点数：每点灵根提供 0.25 点减伤点数，100 点对应 25 点（NonLinear 收敛，总纲 §7.7.5.1）。
     /// </summary>
     /// <param name="points">该系灵根点数。</param>
     public static double ResolveDamageReductionPoints(int points)
-        => Math.Clamp(points, 0, LinggenValues.MaxPointsPerElement);
+        => Math.Clamp(points, 0, LinggenValues.MaxPointsPerElement) * 0.25;
+
+    // ── 火系衍生 ──
+    /// <summary>火灵根暴击率加成（100 点 = +50% 基础属性比例）。</summary>
+    public static double ResolveFireCriticalChanceRatio(int firePoints)
+        => 0.50 * (Math.Clamp(firePoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>火灵根暴击伤害加成（100 点 = +25 点暴伤点数）。</summary>
+    public static double ResolveFireCriticalDamageBonusPoints(int firePoints)
+        => 25.0 * (Math.Clamp(firePoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    // ── 水系衍生 ──
+    /// <summary>水灵根最大灵力上限加成（100 点 = +50% 基础属性比例）。</summary>
+    public static double ResolveWaterMaxManapointsRatio(int waterPoints)
+        => 0.50 * (Math.Clamp(waterPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>水灵根化解/拆招加成（100 点 = +50% 基础属性比例）。</summary>
+    public static double ResolveWaterParryRatio(int waterPoints)
+        => 0.50 * (Math.Clamp(waterPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>水灵根生命与灵力自动回复加成（100 点 = +100% 基础属性比例）。</summary>
+    public static double ResolveWaterRegenRatio(int waterPoints)
+        => 1.00 * (Math.Clamp(waterPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>水灵根波间寻怪速度点数（100 点 = +20 点寻怪速度点数）。</summary>
+    public static double ResolveWaterSearchSpeedPoints(int waterPoints)
+        => 20.0 * (Math.Clamp(waterPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    // ── 木系衍生 ──
+    /// <summary>木灵根最大生命上限加成（100 点 = +50% 基础属性比例）。</summary>
+    public static double ResolveWoodMaxHitpointsRatio(int woodPoints)
+        => 0.50 * (Math.Clamp(woodPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>木灵根治疗与被治疗增幅加成（100 点 = +50 点治疗点数）。</summary>
+    public static double ResolveWoodHealingBonusPoints(int woodPoints)
+        => 50.0 * (Math.Clamp(woodPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    // ── 金系衍生 ──
+    /// <summary>金灵根双攻加成（物理攻击与术法攻击各 +50% 基础属性比例）。</summary>
+    public static double ResolveMetalAttackRatio(int metalPoints)
+        => 0.50 * (Math.Clamp(metalPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>金灵根破招加成（100 点 = +50% 基础属性比例）。</summary>
+    public static double ResolveMetalBreakRatio(int metalPoints)
+        => 0.50 * (Math.Clamp(metalPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>金灵根命中加成（100 点 = +50% 基础属性比例）。</summary>
+    public static double ResolveMetalAccuracyRatio(int metalPoints)
+        => 0.50 * (Math.Clamp(metalPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    // ── 土系衍生 ──
+    /// <summary>土灵根双防加成（物理护甲与法术抗性各 +50% 基础属性比例）。</summary>
+    public static double ResolveEarthDefenseRatio(int earthPoints)
+        => 0.50 * (Math.Clamp(earthPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>土灵根免爆抗暴加成（100 点 = +50% 基础属性比例）。</summary>
+    public static double ResolveEarthCriticalAvoidanceRatio(int earthPoints)
+        => 0.50 * (Math.Clamp(earthPoints, 0, LinggenValues.MaxPointsPerElement) / 100.0);
+
+    /// <summary>
+    /// 土灵根固定减伤（保底机制：P=0 为 0；P>=1 时基础保底 1.0 点，每点灵根额外 +0.09 点，满级 100 点整 10.0 点）。
+    /// </summary>
+    public static double ResolveEarthFixedDamageReduction(int earthPoints)
+    {
+        var safe = Math.Clamp(earthPoints, 0, LinggenValues.MaxPointsPerElement);
+        return safe <= 0 ? 0 : 1.0 + safe * 0.09;
+    }
+
+    // ── 百艺机缘速度 ──
+    /// <summary>
+    /// 灵根对七大生活技艺行动的耗时折减加成（duration /= 1 + 技艺等级加成 + 工具加成 + 灵根百艺加成）：
+    /// 炼丹/炼器(火)、符箓(水)、采集(木)、强化(金)、阵法(土)，100 点各加速 25%（总纲 §7.7.5.1）。
+    /// </summary>
+    public static double ResolveTechniqueSpeedRatio(LinggenValues linggen, string? technique) => technique switch
+    {
+        GameData.TechniqueCatalog.Alchemy => 0.25 * (Math.Clamp(linggen.Fire, 0, LinggenValues.MaxPointsPerElement) / 100.0),
+        GameData.TechniqueCatalog.Forging => 0.25 * (Math.Clamp(linggen.Fire, 0, LinggenValues.MaxPointsPerElement) / 100.0),
+        GameData.TechniqueCatalog.Talisman => 0.25 * (Math.Clamp(linggen.Water, 0, LinggenValues.MaxPointsPerElement) / 100.0),
+        GameData.TechniqueCatalog.Gathering => 0.25 * (Math.Clamp(linggen.Wood, 0, LinggenValues.MaxPointsPerElement) / 100.0),
+        GameData.TechniqueCatalog.Enhancement => 0.25 * (Math.Clamp(linggen.Metal, 0, LinggenValues.MaxPointsPerElement) / 100.0),
+        GameData.TechniqueCatalog.Formation => 0.25 * (Math.Clamp(linggen.Earth, 0, LinggenValues.MaxPointsPerElement) / 100.0),
+        _ => 0
+    };
 
     /// <summary>
     /// 灵根带来的升级所需修为乘区：每多一条有效灵根使上限 +50%，五系齐全为 3.0 倍。

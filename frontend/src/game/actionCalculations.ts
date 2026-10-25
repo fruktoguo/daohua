@@ -6,6 +6,7 @@ import type { ActionDefinition, AutoUseBarType, AutoUseSlot, InventoryItem, Item
 import { calculateRealmProgress, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './combatConstants'
 import { autoUseBarFor, findEquipmentInCatalog } from './ids'
 import { getT } from '../i18n'
+import { linggenTechniqueSpeedRatio } from './linggenCalculations'
 
 /** 非物品、非增益的资源类收益类别（修为/灵力/气血） */
 export type ResourceYieldKind = 'mana' | 'hitpoints' | 'experience'
@@ -323,6 +324,22 @@ export function calculateActionYieldPreview({
           percent: speedPercent,
         }),
       })
+    }
+    // 灵根百艺速度加成：入天门后生效，100 点对应 25% 技艺速度加成
+    if (stats?.heavenGateEntered && stats.heavenGateConfirmed) {
+      const linggenRatio = linggenTechniqueSpeedRatio(stats.heavenGateConfirmed, techniqueId)
+      if (linggenRatio > 0) {
+        techniqueSpeedRatio += linggenRatio
+        const speedPercent = Math.round(linggenRatio * 100)
+        bonuses.push({
+          sourceName: t('insight.subTab.linggen'),
+          tag: t('app.action.bonusBuildingSpeedTag', { percent: speedPercent }),
+          type: 'speed',
+          description: t('app.action.bonusLinggenSpeedDesc', {
+            percent: speedPercent,
+          }),
+        })
+      }
     }
   }
 

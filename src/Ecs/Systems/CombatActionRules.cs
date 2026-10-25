@@ -722,12 +722,12 @@ internal static class CombatActionRules
         if (waveNumber < 1)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗波次无效。");
 
-        // 首波使用遭遇固定搜寻读条；波间搜寻按行动速度点数除数缩短（境界成长已注入该通道）。
-        // 参与会话寻敌速度取共享剧本定格的参与者最大值（探路最快者带路），各成员推演位级一致。
-        var actionSpeedPoints = spec?.SearchSpeedPoints ?? player.ResolveAttributes(gameData).ActionSpeedPoints;
+        // 首波使用遭遇固定搜寻读条；波间搜寻按寻敌速度点数除数缩短（行动速度通道与水灵根加成）。
+        // 参与会话寻敌速度取共享剧本定格的全体在场成员算术平均值（组队协同普惠），单人直接取自身寻敌速度。
+        var searchSpeedPoints = spec?.SearchSpeedPoints ?? player.ResolveAttributes(gameData).SearchSpeedPoints;
         var duration = phase == CombatExpeditionPhase.InitialSearch
             ? encounter.SearchSeconds
-            : encounter.RespawnSeconds * PercentValue.Multiplier(actionSpeedPoints, PercentCurveMode.NonLinear);
+            : encounter.RespawnSeconds * PercentValue.Multiplier(searchSpeedPoints, PercentCurveMode.NonLinear);
         if (!double.IsFinite(duration) || duration <= 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻时长无效。");
         var selfIndex = spec?.SelfIndexOf(player.PlayerId) ?? 0;

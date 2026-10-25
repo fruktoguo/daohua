@@ -72,6 +72,8 @@ public sealed record PlayerAttributes(
     public double AttackSpeedPoints { get; init; }
     /// <summary>行动速度点数（NonLinear：缩短全部读条）。</summary>
     public double ActionSpeedPoints { get; init; }
+    /// <summary>寻敌速度点数（NonLinear：波间搜寻时长除数；水灵根与行动速度通道注入）。</summary>
+    public double SearchSpeedPoints { get; init; }
     /// <summary>冷却缩减点数（NonLinear：缩短全部冷却）。</summary>
     public double CooldownReductionPoints { get; init; }
     /// <summary>掉落增幅点数（Linear：队战共享掉率合计与单件归属权重；100 点 = 100%，总纲 §21.13）。</summary>
@@ -213,6 +215,7 @@ public static class PlayerAttributeResolver
         // 五行灵根点数并入对应五行增伤 / 减伤点数通道（总纲 §7.7.5）：每点灵根 1 点，
         // 增伤走 Linear、减伤走 NonLinear，均与装备 / Buff / 特质同键累加，不新造乘区。
         if (!linggen.IsEmpty)
+        {
             foreach (var (element, prefix) in ElementPointChannels)
             {
                 var linggenPoints = linggen.Of(element);
@@ -220,6 +223,57 @@ public static class PlayerAttributeResolver
                 AddPoint(prefix + "DamageBonusPoints", HeavenGateRules.ResolveDamageBonusPoints(linggenPoints));
                 AddPoint(prefix + "DamageReductionPoints", HeavenGateRules.ResolveDamageReductionPoints(linggenPoints));
             }
+
+            // 火：暴击 +50%、暴伤 +25%
+            var fire = linggen.Fire;
+            if (fire > 0)
+            {
+                ratios["criticalChance"] = ratios.GetValueOrDefault("criticalChance") + HeavenGateRules.ResolveFireCriticalChanceRatio(fire);
+                AddPoint("criticalDamageBonusPoints", HeavenGateRules.ResolveFireCriticalDamageBonusPoints(fire));
+            }
+
+            // 水：灵力上限 +50%、化解 +50%、生命灵力自动回复 +100%、寻怪速度 +20%
+            var water = linggen.Water;
+            if (water > 0)
+            {
+                ratios["maxManapoints"] = ratios.GetValueOrDefault("maxManapoints") + HeavenGateRules.ResolveWaterMaxManapointsRatio(water);
+                ratios["parry"] = ratios.GetValueOrDefault("parry") + HeavenGateRules.ResolveWaterParryRatio(water);
+                var waterRegen = HeavenGateRules.ResolveWaterRegenRatio(water);
+                ratios["hitpointRegen"] = ratios.GetValueOrDefault("hitpointRegen") + waterRegen;
+                ratios["manapointRegen"] = ratios.GetValueOrDefault("manapointRegen") + waterRegen;
+                AddPoint("searchSpeedPoints", HeavenGateRules.ResolveWaterSearchSpeedPoints(water));
+            }
+
+            // 木：最大生命 +50%、治疗与被治疗增幅 +50%
+            var wood = linggen.Wood;
+            if (wood > 0)
+            {
+                ratios["maxHitpoints"] = ratios.GetValueOrDefault("maxHitpoints") + HeavenGateRules.ResolveWoodMaxHitpointsRatio(wood);
+                AddPoint("healingBonusPoints", HeavenGateRules.ResolveWoodHealingBonusPoints(wood));
+            }
+
+            // 金：双攻 +50%、破招 +50%、命中 +50%
+            var metal = linggen.Metal;
+            if (metal > 0)
+            {
+                var metalAtk = HeavenGateRules.ResolveMetalAttackRatio(metal);
+                ratios["physicalAttack"] = ratios.GetValueOrDefault("physicalAttack") + metalAtk;
+                ratios["spellAttack"] = ratios.GetValueOrDefault("spellAttack") + metalAtk;
+                ratios["break"] = ratios.GetValueOrDefault("break") + HeavenGateRules.ResolveMetalBreakRatio(metal);
+                ratios["accuracy"] = ratios.GetValueOrDefault("accuracy") + HeavenGateRules.ResolveMetalAccuracyRatio(metal);
+            }
+
+            // 土：双防 +50%、免爆 +50%、固定减伤（保底 1.0 + 0.09*P，满级 10.0）
+            var earth = linggen.Earth;
+            if (earth > 0)
+            {
+                var earthDef = HeavenGateRules.ResolveEarthDefenseRatio(earth);
+                ratios["physicalArmor"] = ratios.GetValueOrDefault("physicalArmor") + earthDef;
+                ratios["spellResistance"] = ratios.GetValueOrDefault("spellResistance") + earthDef;
+                ratios["criticalAvoidance"] = ratios.GetValueOrDefault("criticalAvoidance") + HeavenGateRules.ResolveEarthCriticalAvoidanceRatio(earth);
+                flat["fixedDamageReduction"] = flat.GetValueOrDefault("fixedDamageReduction") + HeavenGateRules.ResolveEarthFixedDamageReduction(earth);
+            }
+        }
         foreach (var id in equipment)
         {
             // 配表历史删项或未知装备优雅跳过，不提供加成但拒绝阻断玩家加载与模拟
@@ -399,6 +453,7 @@ public static class PlayerAttributeResolver
             FixedSpellDamageReduction = flat.GetValueOrDefault("fixedSpellDamageReduction") + P("fixedSpellDamageReduction"),
             AttackSpeedPoints = P("attackSpeedPoints"),
             ActionSpeedPoints = P("actionSpeedPoints"),
+            SearchSpeedPoints = P("actionSpeedPoints") + P("searchSpeedPoints"),
             CooldownReductionPoints = P("cooldownReductionPoints"),
             DropBonusPoints = P("dropBonusPoints"),
             ResistanceScale = tier,

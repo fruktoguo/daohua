@@ -304,6 +304,7 @@ export const appZh = {
       bonusBuildingSpeedDesc: '当前地点公共建筑使行动速度增加 {percent}%',
       bonusTechniqueSpeedDesc: '{name}技艺 Lv.{level} 使行动速度增加 {percent}%',
       bonusToolSpeedDesc: '{name} 使行动速度增加 {percent}%',
+      bonusLinggenSpeedDesc: '五行灵根赋能使行动速度增加 {percent}%',
       bonusBuffDesc: '状态增益【{name}】提供 {percent}% 效果',
       bonusSpiritStoneSource: '灵石注灵',
       bonusSpiritStoneDesc: '每轮消耗 {cost} 灵石，修为与灵力基础产出提升 {percent}',

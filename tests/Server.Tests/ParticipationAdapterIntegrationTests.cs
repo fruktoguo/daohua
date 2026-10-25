@@ -512,7 +512,7 @@ public sealed class ParticipationAdapterIntegrationTests
             await fixture.Adapter.MutateOwnedAsync(player,
                 aggregate => frozen.Add(aggregate.CaptureActionParticipantSnapshot(fixture.Catalog)));
         var spec = new ActionParticipationSpec(fixture.SessionId, "encounter.qi-beast", "node.yunxi-village", 97,
-            frozen.Max(member => member.SearchSpeedPoints), startedAt.ToUnixTimeMilliseconds() / 1000d, frozen)
+            frozen.Average(member => member.SearchSpeedPoints), startedAt.ToUnixTimeMilliseconds() / 1000d, frozen)
         { ActionId = new("combat.hunt-qi-beast") };
         await fixture.Runtime.CreateAsync(fixture.PartyId, spec);
         foreach (var player in fixture.Players)
@@ -809,7 +809,7 @@ public sealed class ParticipationAdapterIntegrationTests
             foreach (var player in players)
                 await fixture.Adapter.MutateOwnedAsync(player, aggregate => frozen.Add(aggregate.CaptureActionParticipantSnapshot(fixture.Catalog)));
             var spec = new ActionParticipationSpec(fixture.SessionId, "encounter.qi-beast", "node.yunxi-village", 97,
-                frozen.Max(member => member.SearchSpeedPoints), startedAt.ToUnixTimeMilliseconds() / 1000d, frozen)
+                frozen.Average(member => member.SearchSpeedPoints), startedAt.ToUnixTimeMilliseconds() / 1000d, frozen)
             { ActionId = new("combat.hunt-qi-beast") };
             await fixture.Runtime.CreateAsync(fixture.PartyId, spec);
             Assert.Equal(1, (await fixture.Store.LoadAsync(fixture.SessionId))!.Version);
