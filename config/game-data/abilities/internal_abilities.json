@@ -35,7 +35,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageBonusPoints": 5
+      "physicalDamageBonusPoints": 7.5
     }
   },
   {
@@ -57,7 +57,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageReductionPoints": 5
+      "physicalDamageReductionPoints": 7.5
     }
   },
   {
@@ -78,7 +78,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "actionSpeedPoints": 2.5
+      "actionSpeedPoints": 3.75
     }
   },
   {
@@ -99,7 +99,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "spellDamageBonusPoints": 5
+      "spellDamageBonusPoints": 7.5
     }
   },
   {
@@ -115,13 +115,13 @@
     "rootExpEfficiencyPerLevel": 0.03,
     "cultivationExpBonusPoints": -10,
     "rootExpMultipliers": {
-      "attack": 3.5,
+      "attack": 5.5,
       "stamina": 0.0,
       "consciousness": 0.5
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageBonusPoints": 7.5
+      "physicalDamageBonusPoints": 15
     }
   },
   {
@@ -144,8 +144,8 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageReductionPoints": 5,
-      "spellDamageReductionPoints": 5
+      "physicalDamageReductionPoints": 7.5,
+      "spellDamageReductionPoints": 7.5
     }
   },
   {
@@ -167,7 +167,7 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "spellDamageBonusPoints": 7.5
+      "spellDamageBonusPoints": 11.25
     }
   },
   {
