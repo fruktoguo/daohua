@@ -44,7 +44,7 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'alchemy.refine-qi-pill', type: 'alchemy', durationSeconds: 12, inputs: { 'item.ningxue-grass': 3, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.qi-gathering-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 12, aspect: 'consciousness' }] },
   { id: 'alchemy.refine-zhixue-powder', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.zhixue-powder', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
   { id: 'alchemy.refine-shunqi-pill', type: 'alchemy', durationSeconds: 10, inputs: { 'item.herb-essence': 1, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.shunqi-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
-  { id: 'alchemy.refine-tongmai-pill', type: 'alchemy', durationSeconds: 20, inputs: { 'item.banling-essence': 2, 'item.demon-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.tongmai-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
+  { id: 'alchemy.refine-tongmai-pill', type: 'alchemy', durationSeconds: 20, inputs: { 'item.banling-essence': 1, 'item.banling-flower': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.tongmai-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
 
   // 精炼加工
   { id: 'craft.refine-iron', type: 'alchemy', durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
@@ -1310,7 +1310,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'pill',
     tier: 2,
-    sellPrice: 40304,
+    sellPrice: 182,
     isTradable: true,
     usableBars: ['exploration'],
     durationSeconds: 300,

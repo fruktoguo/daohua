@@ -73,7 +73,7 @@
     "kind": "consumable",
     "category": "consumable",
     "tier": 2,
-    "sellPrice": 40304,
+    "sellPrice": 182,
     "consumable": {
       "usableInActionTypes": [
         "exploration"

@@ -84,8 +84,8 @@
     "technique": "alchemy",
     "durationSeconds": 13,
     "inputs": {
-      "item.banling-essence": 2,
-      "item.demon-core": 1
+      "item.banling-essence": 1,
+      "item.banling-flower": 1
     },
     "yields": [
       {
