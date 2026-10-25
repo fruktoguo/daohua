@@ -7728,6 +7728,11 @@ input[type="checkbox"] {
   box-sizing: border-box;
 }
 
+/* 灵根行主卡：数值区为合并增减伤「+25% / 20%」加点数进度，需比六维主卡更宽 */
+.insight-root-row .compound-stat-label.insight-linggen-main {
+  width: 232px;
+}
+
 .player-card-dims .compound-stat-label {
   width: 100%;
   box-sizing: border-box;

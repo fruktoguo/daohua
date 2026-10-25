@@ -23,8 +23,13 @@ import { useT } from '../i18n'
 import { CombatAttributePanel } from './CombatAttributePanel'
 import { BreakthroughConfirmModal } from './BreakthroughConfirmModal'
 import { HeavenGateModal } from './HeavenGateModal'
-import { LINGGEN_ELEMENT_KEYS } from '../game/linggenBoard'
-import { getLinggenDerivedBonuses, linggenBonusPercent, linggenReducePercent, shouldShowOpenHeavenGate } from '../game/linggenCalculations'
+import { LINGGEN_AXIS_CAP, LINGGEN_ELEMENT_KEYS } from '../game/linggenBoard'
+import {
+  LINGGEN_ELEMENT_TONES,
+  formatLinggenBoostReduce,
+  getLinggenDerivedBonuses,
+  shouldShowOpenHeavenGate,
+} from '../game/linggenCalculations'
 import { StatGlyph } from './StatGlyph'
 import { TraitBarItem } from './TraitBarItem'
 
@@ -472,35 +477,30 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-roots-list">
                   {LINGGEN_ELEMENT_KEYS.map(key => {
                     const points = stats.heavenGateConfirmed?.[key] ?? 0
-                    const bonus = linggenBonusPercent(points)
-                    const reduce = linggenReducePercent(points)
                     const derived = getLinggenDerivedBonuses(key, points)
                     return (
                       <div className="insight-root-row" key={key}>
                         <PillStatLabel
+                          className="insight-linggen-main"
+                          icon={<StatGlyph glyph={`element-${key}`} />}
                           label={t(`insight.heavenGate.element.${key}`)}
-                          value={points}
-                          tone="gold"
-                          tooltip={t('insight.heavenGate.enterHint')}
-                          tooltipTone="gold"
+                          value={formatLinggenBoostReduce(points)}
+                          tone={LINGGEN_ELEMENT_TONES[key]}
+                          progress={{
+                            current: points,
+                            max: LINGGEN_AXIS_CAP,
+                            text: `${points}/${LINGGEN_AXIS_CAP}`,
+                          }}
+                          tooltip={t(`insight.combat.${key}BoostReduceTooltip`)}
                         />
                         <div className="insight-root-bonuses">
-                          <PillBonusLabel
-                            label={t('insight.heavenGate.statBonus')}
-                            value={`${bonus}%`}
-                            tone="gold"
-                          />
-                          <PillBonusLabel
-                            label={t('insight.heavenGate.statReduce')}
-                            value={`${reduce}%`}
-                            tone="jade"
-                          />
                           {derived.map(item => (
                             <PillBonusLabel
-                              key={item.labelKey}
+                              key={item.key}
+                              icon={<StatGlyph glyph={item.glyph} />}
                               label={t(item.labelKey)}
                               value={item.valueText}
-                              tone="teal"
+                              tone={item.tone}
                             />
                           ))}
                         </div>

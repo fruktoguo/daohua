@@ -4,6 +4,7 @@
  * 与领域 `HeavenGateRules` 同口径，但只承担前端所需的换算与即时反馈，
  * 不重复实现业务准入判断（能否突破、改命是否成立一律由服务端裁决）。
  */
+import type { PillTone } from '../components/PillLabel'
 import {
   BOARD_CENTER,
   BOARD_MAX_RADIUS,
@@ -15,6 +16,7 @@ import {
   type LinggenElementKey,
   type LinggenPoints,
 } from './linggenBoard.ts'
+import { PercentValue } from './percentValue.ts'
 
 export type { LinggenElementKey, LinggenPoints }
 export { LINGGEN_AXIS_CAP, LINGGEN_ELEMENT_KEYS }
@@ -23,21 +25,15 @@ export { LINGGEN_AXIS_CAP, LINGGEN_ELEMENT_KEYS }
 export const HEAVEN_GATE_REALM_LEVEL = 18
 
 /**
- * 灵根提供的五行增伤百分比（Linear）：100 点即 25%（总纲 §7.7.5.1）。
+ * 五行增减伤合并展示文本：`+25% / 20%`。
+ *
+ * 与斗法「特殊」面板的五行增减对完全同口径（增伤走 Linear 分子、减伤走 NonLinear 分母收敛），
+ * 因此同一灵根点数在两处得到的文本必然一致（总纲 §7.7.5.1：每点灵根 0.25 点增减伤点数）。
  * @param points 该系灵根点数。
  */
-export function linggenBonusPercent(points: number): number {
-  const safe = Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.trunc(points) || 0))
-  return Math.round((safe / LINGGEN_AXIS_CAP) * 25)
-}
-
-/**
- * 灵根提供的五行减伤百分比（NonLinear 收敛）：100 点对应 25 点减伤点数（总纲 §7.7.5.1）。
- * @param points 该系灵根点数。
- */
-export function linggenReducePercent(points: number): number {
-  const safe = Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.trunc(points) || 0))
-  return Math.round((safe / LINGGEN_AXIS_CAP) * 25)
+export function formatLinggenBoostReduce(points: number): string {
+  const damagePoints = (Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.trunc(points) || 0)) / LINGGEN_AXIS_CAP) * 25
+  return `${PercentValue.linear(damagePoints).format()} / ${PercentValue.nonLinear(damagePoints).format()}`
 }
 
 /** 灵根百艺速度加成：100 点对应 25% 技艺速度。 */
@@ -60,54 +56,105 @@ export function linggenTechniqueSpeedRatio(linggen: LinggenPoints | undefined, t
   }
 }
 
-export interface LinggenDerivedBonus {
-  labelKey: string
-  valueText: string
+/** 五行灵根主题色：与斗法「特殊」面板五行增减对同取色（金 gold / 木 emerald / 水 cyan / 火 amber / 土 bronze）。 */
+export const LINGGEN_ELEMENT_TONES: Record<LinggenElementKey, PillTone> = {
+  metal: 'gold',
+  wood: 'emerald',
+  water: 'cyan',
+  fire: 'amber',
+  earth: 'bronze',
 }
 
-/** 获取单系灵根的所有衍生战斗与百艺加成条目。 */
+/** 单条衍生加成的展示契约：图标与色系由配表驱动，组件层不做任何字段分支。 */
+export interface LinggenDerivedBonus {
+  key: string
+  labelKey: string
+  valueText: string
+  /** 属性极简二值小图标 ID（`frontend/src/assets/glyphs/glyph.<id>.webp`） */
+  glyph: string
+  tone: PillTone
+}
+
+/**
+ * 衍生加成配表项（总纲 §7.7.5.1 三列：元素攻防 / 战斗专精 / 百艺机缘）。
+ * 组成为「属性图标 + 词条键 + 色系 + 解算参数」，组件层只按此表渲染，禁止字段分支。
+ */
+interface LinggenDerivedSpec {
+  key: string
+  /** 100 点满值加成：比例类为百分比上限（50 即 +50%），固定类为点数上限（10 即 +10 点） */
+  max: number
+  /** 属性极简二值小图标 ID（`frontend/src/assets/glyphs/glyph.<id>.webp`） */
+  glyph: string
+  /** 属性主色，与内视斗法面板 `STAT_TONE_MAP` 同口径 */
+  tone: PillTone
+  /** 数值小数位，缺省按整数展示 */
+  decimals?: number
+  /** 固定点数类：走土系专属公式 1.0 + 点数 × 0.09（P≥1 时生效，满级整 10 点） */
+  fixedPoints?: boolean
+}
+
+/**
+ * 五系衍生加成配表。同一项在不同系别的语义不同（如「速度」分属炼丹与炼器），
+ * 故逐系独立登记，禁止在组件里用元素 if 链拼装。
+ */
+const LINGGEN_DERIVED_SPECS: Record<LinggenElementKey, readonly LinggenDerivedSpec[]> = {
+  fire: [
+    { key: 'critChance', max: 50, glyph: 'crit', tone: 'gold' },
+    { key: 'critDamage', max: 25, glyph: 'crit-damage', decimals: 1, tone: 'gold' },
+    { key: 'alchemySpeed', max: 25, glyph: 'alchemy', tone: 'amber' },
+    { key: 'forgingSpeed', max: 25, glyph: 'forging', tone: 'gold' },
+  ],
+  water: [
+    { key: 'maxMana', max: 50, glyph: 'mp', tone: 'cyan' },
+    { key: 'parry', max: 50, glyph: 'parry-resolve', tone: 'silver' },
+    { key: 'hpRegen', max: 100, glyph: 'hp-regen', tone: 'emerald' },
+    { key: 'mpRegen', max: 100, glyph: 'mp-regen', tone: 'cyan' },
+    { key: 'talismanSpeed', max: 25, glyph: 'talisman', tone: 'purple' },
+    { key: 'searchSpeed', max: 20, glyph: 'action-speed', tone: 'sky' },
+  ],
+  wood: [
+    { key: 'maxHp', max: 50, glyph: 'hp', tone: 'emerald' },
+    { key: 'healingBonus', max: 50, glyph: 'healing-bonus', tone: 'violet' },
+    { key: 'gatheringSpeed', max: 25, glyph: 'gathering', tone: 'emerald' },
+  ],
+  metal: [
+    { key: 'physicalAttack', max: 50, glyph: 'phys-atk', tone: 'crimson' },
+    { key: 'spellAttack', max: 50, glyph: 'spell-atk', tone: 'indigo' },
+    { key: 'break', max: 50, glyph: 'parry-break', tone: 'amber' },
+    { key: 'accuracy', max: 50, glyph: 'accuracy', tone: 'sky' },
+    { key: 'enhancementSpeed', max: 25, glyph: 'enhancement', tone: 'crimson' },
+  ],
+  earth: [
+    { key: 'physicalArmor', max: 50, glyph: 'armor', tone: 'bronze' },
+    { key: 'spellResistance', max: 50, glyph: 'magic-res', tone: 'violet' },
+    { key: 'criticalAvoidance', max: 50, glyph: 'crit-avoid', tone: 'slate' },
+    { key: 'fixedDamageReduction', max: 10, glyph: 'total-damage', fixedPoints: true, tone: 'bronze' },
+    { key: 'formationSpeed', max: 25, glyph: 'formation', tone: 'sky' },
+  ],
+}
+
+/** 按配表解算单系衍生加成（点数 ≤ 0 时该系不产出任何条目）。 */
 export function getLinggenDerivedBonuses(element: LinggenElementKey, points: number): LinggenDerivedBonus[] {
   const safe = Math.max(0, Math.min(LINGGEN_AXIS_CAP, Math.trunc(points) || 0))
   if (safe <= 0) return []
   const factor = safe / LINGGEN_AXIS_CAP
-  switch (element) {
-    case 'fire':
-      return [
-        { labelKey: 'insight.heavenGate.derived.critChance', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.critDamage', valueText: `+${+(25 * factor).toFixed(1)}%` },
-        { labelKey: 'insight.heavenGate.derived.alchemyForgingSpeed', valueText: `+${Math.round(25 * factor)}%` },
-      ]
-    case 'water':
-      return [
-        { labelKey: 'insight.heavenGate.derived.maxMana', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.parry', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.regen', valueText: `+${Math.round(100 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.talismanSpeed', valueText: `+${Math.round(25 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.searchSpeed', valueText: `+${Math.round(20 * factor)}%` },
-      ]
-    case 'wood':
-      return [
-        { labelKey: 'insight.heavenGate.derived.maxHp', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.healingBonus', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.gatheringSpeed', valueText: `+${Math.round(25 * factor)}%` },
-      ]
-    case 'metal':
-      return [
-        { labelKey: 'insight.heavenGate.derived.attack', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.break', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.accuracy', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.enhancementSpeed', valueText: `+${Math.round(25 * factor)}%` },
-      ]
-    case 'earth': {
-      const flatDr = +(1.0 + safe * 0.09).toFixed(2)
-      return [
-        { labelKey: 'insight.heavenGate.derived.defense', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.criticalAvoidance', valueText: `+${Math.round(50 * factor)}%` },
-        { labelKey: 'insight.heavenGate.derived.fixedDamageReduction', valueText: `+${flatDr}` },
-        { labelKey: 'insight.heavenGate.derived.formationSpeed', valueText: `+${Math.round(25 * factor)}%` },
-      ]
+  return LINGGEN_DERIVED_SPECS[element].map(spec => {
+    let valueText: string
+    if (spec.fixedPoints) {
+      valueText = `+${+(1.0 + safe * 0.09).toFixed(2)}`
+    } else {
+      const raw = spec.max * factor
+      // 小数位只按需展示：满值 25 点仍显示「+25%」，半量 12.5 点显示「+12.5%」。
+      valueText = `+${spec.decimals ? Number(raw.toFixed(spec.decimals)) : Math.round(raw)}%`
     }
-  }
+    return {
+      key: spec.key,
+      labelKey: `insight.heavenGate.derived.${spec.key}`,
+      valueText,
+      glyph: spec.glyph,
+      tone: spec.tone,
+    }
+  })
 }
 
 /** 五系点数总和。 */

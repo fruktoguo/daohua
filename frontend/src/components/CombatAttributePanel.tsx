@@ -1,7 +1,7 @@
 import { memo, useState } from 'react'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
-import { PercentValue } from '../game/combatConstants'
+import { PercentValue } from '../game/percentValue'
 import { useGameStore } from '../game/gameStore'
 import {
   findAbilityInCatalog,

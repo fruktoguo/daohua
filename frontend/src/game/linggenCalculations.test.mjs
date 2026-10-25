@@ -3,8 +3,7 @@ import assert from 'node:assert/strict'
 import {
   applyAxisDrag,
   axisPointContribution,
-  linggenBonusPercent,
-  linggenReducePercent,
+  formatLinggenBoostReduce,
   linggenCultivationMultiplier,
   linggenEffectiveCount,
   linggenTotal,
@@ -15,19 +14,17 @@ import {
   shouldShowOpenHeavenGate,
 } from './linggenCalculations.ts'
 
-test('linggenCalculations：100 点灵根 = 25% 增伤，减伤走 NonLinear 收敛为 25%', () => {
-  assert.equal(linggenBonusPercent(100), 25)
-  assert.equal(linggenReducePercent(100), 25)
-  // 半量投入即为半量增伤与减伤
-  assert.equal(linggenBonusPercent(50), 13)
-  assert.equal(linggenReducePercent(50), 13)
+test('linggenCalculations：增减伤合并文本与斗法面板同口径（增伤 Linear、减伤 NonLinear）', () => {
+  // 100 点 = 25 点增减伤：增伤直加 +25%，减伤按 25/(100+25) 收敛为 20%。
+  assert.equal(formatLinggenBoostReduce(100), '+25% / 20%')
+  // 50 点 = 12.5 点：增伤 +12%，减伤 11.11% 向下取整为 11%。
+  assert.equal(formatLinggenBoostReduce(50), '+12% / 11%')
 })
 
 test('linggenCalculations：零与越界点数被夹取到合法区间', () => {
-  assert.equal(linggenBonusPercent(0), 0)
-  assert.equal(linggenReducePercent(0), 0)
-  assert.equal(linggenBonusPercent(180), 25)
-  assert.equal(linggenBonusPercent(-20), 0)
+  assert.equal(formatLinggenBoostReduce(0), '0% / 0%')
+  assert.equal(formatLinggenBoostReduce(180), '+25% / 20%')
+  assert.equal(formatLinggenBoostReduce(-20), '0% / 0%')
 })
 
 test('linggenCalculations：升级需求乘区只在入天门后生效，五系齐全为三倍', () => {
@@ -61,15 +58,28 @@ test('linggenCalculations：衍生战斗与百艺加成及技艺速度', () => {
   assert.equal(linggenTechniqueSpeedRatio(roots, 'mining'), 0)
   assert.equal(linggenTechniqueSpeedRatio(undefined, 'alchemy'), 0)
 
+  // 火系：暴击率 + 暴击伤害 + 炼丹速度 + 炼器速度（丹器分列，避免含糊合并项）。
   const fireBonuses = getLinggenDerivedBonuses('fire', 100)
-  assert.equal(fireBonuses.length, 3)
-  assert.equal(fireBonuses[0].valueText, '+50%')
-  assert.equal(fireBonuses[1].valueText, '+25%')
-  assert.equal(fireBonuses[2].valueText, '+25%')
+  assert.deepEqual(
+    fireBonuses.map(item => [item.key, item.valueText]),
+    [['critChance', '+50%'], ['critDamage', '+25%'], ['alchemySpeed', '+25%'], ['forgingSpeed', '+25%']],
+  )
 
+  // 每条衍生加成必须自带上线图标与专属色系，禁止组件层回落成纯文本单色。
+  for (const item of [...fireBonuses, ...getLinggenDerivedBonuses('earth', 100)]) {
+    assert.ok(item.glyph.length > 0, `${item.key} 缺少图标`)
+    assert.ok(item.tone.length > 0, `${item.key} 缺少色系`)
+    assert.equal(item.labelKey, `insight.heavenGate.derived.${item.key}`)
+  }
+  assert.equal(new Set(fireBonuses.map(item => item.tone)).size > 1, true)
+
+  // 土系固定减伤走专属公式 1.0 + 点数 × 0.09（100 点整 10 点）。
   const earthBonuses = getLinggenDerivedBonuses('earth', 100)
-  assert.equal(earthBonuses.length, 4)
-  assert.equal(earthBonuses[2].valueText, '+10')
+  assert.equal(earthBonuses.length, 5)
+  assert.equal(earthBonuses.find(item => item.key === 'fixedDamageReduction').valueText, '+10')
+
+  // 点数归零的系别不产出任何衍生条目。
+  assert.deepEqual(getLinggenDerivedBonuses('metal', 0), [])
 })
 
 test('linggenCalculations：叩天门满修且未入天门时才展示「开天门」', () => {
