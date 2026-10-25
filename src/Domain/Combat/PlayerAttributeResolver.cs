@@ -206,12 +206,12 @@ public static class PlayerAttributeResolver
         var a = catalog.BaseAttributes.At(level);
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
-        var traitRatios = new Dictionary<string, double>(StringComparer.Ordinal);
         // 点数通道汇总：装备 flatStats 中 *Points 键（随强化缩放，总纲 §4）+ Buff/特质点数通道（100 点 = 100%）。
         var points = new Dictionary<string, double>(StringComparer.Ordinal);
         double P(string key) => points.GetValueOrDefault(key);
         void AddPoint(string key, double value) { if (value != 0) points[key] = P(key) + value; }
-        CombatTraitRules.AccumulateModifiers(traits, traitLevels, traitRatios, points);
+        // 特质百分比与装备、灵根加算并入常驻外物大乘区（TASK-20261026-03，三乘区收拢），特质点数并入点数通道。
+        CombatTraitRules.AccumulateModifiers(traits, traitLevels, ratios, points);
         // 五行灵根点数并入对应五行增伤 / 减伤点数通道（总纲 §7.7.5）：每点灵根 1 点，
         // 增伤走 Linear、减伤走 NonLinear，均与装备 / Buff / 特质同键累加，不新造乘区。
         if (!linggen.IsEmpty)
@@ -403,12 +403,14 @@ public static class PlayerAttributeResolver
                 foreach (var pair in buff.StatRatios)
                     buffRatios[pair.Key] = buffRatios.GetValueOrDefault(pair.Key) + pair.Value * buff.Stacks;
         }
-        // 属性管线：(基础锚点+六维固定值) ×(1+六维%) +装备固定值 → ×(1+装备%) → ×(1+Buff%) → ×(1+特质%)，负向按比例软着陆。
+        // 属性管线（TASK-20261026-03 三大乘区收拢）：
+        // (基础锚点+六维固定值) ×(1+六维%) +装备固定值
+        // → × SoftRatio(装备% + 特质% + 灵根% + 默认%) [常驻外物大乘区，内部加算]
+        // → × SoftRatio(Buff%) [战时/状态Buff乘区，各Buff间加算]，负向按比例软着陆。
         double Stat(string key, double value) =>
             ((value + RootFlat(key)) * (1 + RootRatio(key)) + flat.GetValueOrDefault(key))
             * SoftRatio(ratios.GetValueOrDefault(key))
-            * SoftRatio(buffRatios.GetValueOrDefault(key))
-            * SoftRatio(traitRatios.GetValueOrDefault(key));
+            * SoftRatio(buffRatios.GetValueOrDefault(key));
         // 回复收口公式（总纲 §20.3）：(面板回复 + Σ固定加成) × (1 + Σ后段比率)。
         double hpRegen = (Stat("hitpointRegen", a.HpRegen) + hpRegenFlat) * (1 + hpRegenPost);
         double mpRegen = (Stat("manapointRegen", a.MpRegen) + mpRegenFlat) * (1 + mpRegenPost);
