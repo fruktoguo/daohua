@@ -1254,7 +1254,13 @@ internal static class CombatActionRules
             var cultivationExp = cultivationBonus != 0
                 ? Math.Max(0, experience * (1 + cultivationBonus / 100d))
                 : experience;
-            var expCap = gameData.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
+            // 本层修为瓶颈（含灵根乘区，总纲 §7.7.5.1）：与打坐/轮次结算同一口径，
+            // 否则入天门后击杀收益会在裸瓶颈处全部沉淀为底蕴、永远够不到乘区后的突破门槛。
+            var expCap = gameData.RealmProgression is null
+                ? double.PositiveInfinity
+                : HeavenGateRules.ResolveExpCapWithLinggen(player.Progression.RealmLevel,
+                    player.Progression.HeavenGate.EffectiveValues, player.Progression.HeavenGate.Entered,
+                    gameData.RealmProgression);
             var creditedExp = player.Progression.CreditExperience(cultivationExp, expCap, combatExperience: experience);
             player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta
             {

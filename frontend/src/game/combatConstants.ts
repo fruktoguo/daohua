@@ -569,12 +569,30 @@ export function getRootCumulativeExpForLevel(level: number): number {
 }
 
 /**
+ * 服务端权威本层修为瓶颈（`progression.expToNextLinggen` 透传，已含灵根破镜乘区）。
+ *
+ * 入天门后瓶颈 = 配表值 × 灵根乘区（总纲 §7.7.5.1），本地静态曲线只有配表原值，
+ * 因此只要服务端下发了正数就必须以它为准；缺失（老快照/满级）时返回 undefined 回退静态曲线。
+ * @param expToNextLinggen 服务端下发的乘区后瓶颈
+ * @param realmLevel 服务端权威境界等级（满级时服务端下发 0，视为无下一层）
+ */
+export function serverExpToNextCap(
+  expToNextLinggen: number | undefined,
+  realmLevel: number | undefined,
+): number | undefined {
+  if (typeof expToNextLinggen !== 'number' || !Number.isFinite(expToNextLinggen) || expToNextLinggen <= 0) return undefined
+  if (typeof realmLevel === 'number' && Number.isFinite(realmLevel) && realmLevel >= MAX_REALM_LEVEL) return undefined
+  return expToNextLinggen
+}
+
+/**
  * 根据总修为或当前层修为+显式境界等级计算境界进度与当前等级
  * @param totalExperience 角色累计获得的总修为（或当前层获得的修为）
  * @param explicitRealmLevel 可选的服务端权威境界等级 (1..127)
+ * @param expToNextCap 可选的服务端权威本层修为瓶颈（含灵根乘区）；缺省时用本地静态曲线
  * @returns 包含当前等级、当前重进度、下一重所需修为、百分比与带小数精度的总等级
  */
-export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?: number): {
+export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?: number, expToNextCap?: number): {
   level: number
   currentLayerExp: number
   expToNext: number
@@ -583,10 +601,13 @@ export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?:
 } {
   const experience = Math.max(0, totalExperience)
   let level = 1
+  const capOverride = typeof expToNextCap === 'number' && Number.isFinite(expToNextCap) && expToNextCap > 0
+    ? expToNextCap
+    : 0
 
   if (typeof explicitRealmLevel === 'number' && Number.isFinite(explicitRealmLevel) && explicitRealmLevel >= 1) {
     level = Math.min(MAX_REALM_LEVEL, Math.floor(explicitRealmLevel))
-    const expToNext = level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
+    const expToNext = capOverride > 0 ? capOverride : level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
     const currentLayerExp = expToNext > 0 ? Math.min(expToNext, experience) : 0
 
     if (expToNext <= 0 || level >= MAX_REALM_LEVEL) {
@@ -616,8 +637,8 @@ export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?:
   }
 
   const baseExp = REALM_LEVEL_CUMULATIVE_EXP[level]
-  const expToNext = level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
-  const currentLayerExp = experience - baseExp
+  const expToNext = capOverride > 0 ? capOverride : level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
+  const currentLayerExp = expToNext > 0 ? Math.min(expToNext, experience - baseExp) : 0
 
   if (expToNext <= 0 || level >= MAX_REALM_LEVEL) {
     return {
@@ -811,10 +832,11 @@ export interface RealmInfo {
  * 根据总修为值与显式境界等级计算当前的 大境界、境界阶段、小境界 及专属棱形徽章信息
  * @param experience 角色累计修为（或当前层修为）
  * @param explicitRealmLevel 可选的服务端权威境界等级
+ * @param expToNextCap 可选的服务端权威本层修为瓶颈（含灵根乘区）；缺省时用本地静态曲线
  * @returns 境界展示数据
  */
-export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number): RealmInfo {
-  const progress = calculateRealmProgress(experience, explicitRealmLevel)
+export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number, expToNextCap?: number): RealmInfo {
+  const progress = calculateRealmProgress(experience, explicitRealmLevel, expToNextCap)
   const level = progress.level
   const totalLevel = progress.totalLevel
   const layerProgress = progress.progressPercentage

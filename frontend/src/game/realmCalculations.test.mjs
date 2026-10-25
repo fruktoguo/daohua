@@ -16,7 +16,7 @@ await build({
   outfile: tempOut,
   logLevel: 'error',
 })
-const { calculateRealmInfo, calculateRealmProgress } = await import(pathToFileURL(tempOut).href)
+const { calculateRealmInfo, calculateRealmProgress, serverExpToNextCap } = await import(pathToFileURL(tempOut).href)
 test.after(() => {
   try { fs.unlinkSync(tempOut) } catch { /* 临时文件可能已被清理 */ }
 })
@@ -112,4 +112,33 @@ test('境界判定：修真九大境界与终极飞升命名与阶段自洽', ()
   assert.equal(lv127.minorName, '飞升')
   assert.equal(lv127.rankChar, '极')
   assert.equal(lv127.fullDisplayName, '飞升 [极] 飞升')
+})
+
+test('入天门乘区瓶颈：进度与满修判定必须用服务端权威 expToNextLinggen，而非本地裸曲线', () => {
+  // 复现证据：Lv.18 配表裸瓶颈 800000，五系齐全灵根乘区 3.0 → 权威瓶颈 2400000。
+  // 修前前端只读本地静态表，800000/800000 就已显示圆满并允许点突破，服务端却回「修为未满」。
+  const bare = calculateRealmProgress(800000, 18)
+  assert.equal(bare.expToNext, 800000)
+  assert.equal(bare.progressPercentage, 100)
+
+  const cap = serverExpToNextCap(2400000, 18)
+  assert.equal(cap, 2400000)
+  const authoritative = calculateRealmProgress(800000, 18, cap)
+  assert.equal(authoritative.expToNext, 2400000)
+  assert.equal(authoritative.currentLayerExp, 800000)
+  assert.ok(Math.abs(authoritative.progressPercentage - 100 / 3) < 1e-9)
+  assert.ok(authoritative.progressPercentage < 99.99, '满修误判会让按钮在未满时可用')
+
+  // 达到权威瓶颈后才算圆满
+  const full = calculateRealmProgress(2400000, 18, cap)
+  assert.equal(full.currentLayerExp, 2400000)
+  assert.equal(full.progressPercentage, 100)
+  assert.equal(full.totalLevel, 19)
+
+  // 缺省/非法授权值回退本地曲线：老快照或满级时不得把进度算成 0 或 NaN
+  assert.equal(serverExpToNextCap(undefined, 18), undefined)
+  assert.equal(serverExpToNextCap(0, 18), undefined)
+  assert.equal(serverExpToNextCap(Number.NaN, 18), undefined)
+  assert.equal(serverExpToNextCap(2400000, 127), undefined)
+  assert.equal(calculateRealmProgress(800000, 18, undefined).progressPercentage, 100)
 })

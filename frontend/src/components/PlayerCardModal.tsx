@@ -218,7 +218,13 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
   const myPlayerId = useGameStore(state => state.playerId)
   const isSelf = myPlayerId !== null && myPlayerId === card.playerId
 
-  const realmInfo = useMemo(() => calculateRealmInfo(card.experience, card.realmLevel), [card.experience, card.realmLevel])
+  // 名片瓶颈由服务端按灵根乘区下发（experienceToNext），徽章进度沿用同一口径，
+  // 否则入天门玩家名片会在裸瓶颈处显示圆满（总纲 §7.7.5.1）。
+  const realmInfo = useMemo(
+    () => calculateRealmInfo(card.experience, card.realmLevel,
+      card.experienceToNext > 0 ? card.experienceToNext : undefined),
+    [card.experience, card.realmLevel, card.experienceToNext],
+  )
 
   const { combatEquipment, toolEquipment } = useMemo(() => {
     const combat: NonNullable<PlayerCardDto['equipment']> = []

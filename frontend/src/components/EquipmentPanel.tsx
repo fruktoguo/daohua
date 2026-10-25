@@ -9,7 +9,7 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { ItemGridPicker, itemPickerEntryKey, type ItemPickerEntry } from './ItemGridPicker'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { RealmBadge } from './RealmBadge'
-import { calculateRealmInfo } from '../game/combatConstants'
+import { calculateRealmInfo, serverExpToNextCap } from '../game/combatConstants'
 
 /** 槽位标签词条键（app.equipmentPanel 段下）：六部位 + 七技艺工具空槽文案 */
 type EquipmentSlotLabelKey =
@@ -176,6 +176,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   const experience = useGameStore(state => state.stats.experience)
   const avatarId = useAvatarStore(state => state.avatarId)
   const realmLevel = useGameStore(state => state.stats.realmLevel)
+  const expToNextLinggen = useGameStore(state => state.stats.expToNextLinggen)
   const combat = useGameStore(state => state.combat)
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
@@ -184,7 +185,11 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
 
   const [activePickingSlot, setActivePickingSlot] = useState<{ config: SlotConfig; anchor: HTMLElement } | null>(null)
 
-  const realmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, realmLevel), [realmLevel, experience])
+  // 徽章层进进度按服务端权威瓶颈（含灵根乘区）折算，与顶栏/内视同口径。
+  const realmInfo = useMemo(
+    () => calculateRealmInfo(experience ?? 0, realmLevel, serverExpToNextCap(expToNextLinggen, realmLevel)),
+    [realmLevel, experience, expToNextLinggen],
+  )
 
   const equippedList = combat?.equipment ?? []
 

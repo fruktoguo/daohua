@@ -61,7 +61,13 @@ public sealed partial class PlayerAggregate
                 // （容器只投递原始份额，个人瓶颈与底蕴兑换在成员单写者内结算）。
                 var combatExperience = delta.CombatExperience;
                 var amplified = delta.CultivationExperience > 0 ? delta.CultivationExperience : combatExperience;
-                var cap = catalog.RealmProgression?.ExpCapFor(Progression.RealmLevel) ?? double.PositiveInfinity;
+                // 个人瓶颈与打坐/单人战斗同口径：含灵根乘区（总纲 §7.7.5.1），
+                // 否则组队成员入天门后的份额会在裸瓶颈截断、永远无法触及乘区后的突破门槛。
+                var cap = catalog.RealmProgression is null
+                    ? double.PositiveInfinity
+                    : HeavenGateRules.ResolveExpCapWithLinggen(Progression.RealmLevel,
+                        Progression.HeavenGate.EffectiveValues, Progression.HeavenGate.Entered,
+                        catalog.RealmProgression);
                 var credited = Progression.CreditExperience(amplified, cap, combatExperience: combatExperience);
                 delta = delta with
                 {

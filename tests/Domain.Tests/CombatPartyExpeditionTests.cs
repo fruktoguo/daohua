@@ -221,6 +221,51 @@ public sealed class CombatPartyExpeditionTests
     }
 
     /// <summary>
+    /// 组队结算的个人瓶颈必须含灵根乘区（总纲 §7.7.5.1）：入天门成员已到裸瓶颈时，
+    /// 后续击杀份额必须继续记入修为，不能被裸瓶颈全部转成底蕴。
+    /// </summary>
+    [Fact]
+    public void PartySettlementCreditsExperienceBeyondBareCapAfterEnteringHeavenGate()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var realm = catalog.RealmProgression ?? throw new InvalidOperationException("配表缺少境界进度定义。");
+        var bareCap = realm.ExpCapFor(HeavenGateRules.HeavenGateRealmLevel);
+        var linggen = new LinggenValues(60, 60, 60, 60, 60);
+
+        var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var member = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "入天门", baseline, catalog.Fingerprint);
+        member.Progression.RealmLevel = HeavenGateRules.HeavenGateRealmLevel;
+        member.Progression.Experience = bareCap;
+        member.Progression.HeavenGate.Apply(linggen, linggen, entered: true, rerollCount: 0);
+        PlayerAttributeResolver.Apply(member, catalog);
+
+        var memberStats = CombatantStats.Create(50_000, 2_000, 500, 1.0);
+        var frozen = new ActionParticipantSnapshot(
+            member.PlayerId.Value.ToString("D"), member.DisplayName, member.Progression.RealmLevel,
+            0, 0, memberStats.MaxHitpoints, memberStats.MaxManapoints,
+            memberStats, [], null, PlayerCombatSkillState.Empty);
+        var spec = new ActionParticipationSpec(
+            "session.linggen-cap", "encounter.qi-beast", "node.test", 98,
+            0, baseline.ToUnixTimeMilliseconds() / 1000d, [frozen])
+        {
+            ActionId = new ActionId("combat.hunt-qi-beast")
+        };
+        Assert.True(spec.IsValid);
+        Assert.NotNull(member.StartActionParticipation(spec, baseline, catalog.Actions));
+
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var probe = session.AdvanceTo(baseline.AddSeconds(600));
+        var before = member.Progression.Experience;
+        member.ApplyActionParticipationSettlement(probe[0], catalog);
+
+        Assert.True(member.Progression.NormalKills > 0);
+        Assert.True(member.Progression.Experience > before,
+            $"入天门成员组队收益被裸瓶颈截断：experience={member.Progression.Experience} 未超过 {before}");
+        Assert.True(member.Progression.Experience <= bareCap * 3 + 1e-6,
+            $"修为越过灵根乘区后瓶颈：experience={member.Progression.Experience}");
+    }
+
+    /// <summary>
     /// 聚合级端到端：唯一会话推演，两名玩家只消费各自结算投影——
     /// 双方击杀数与远征相位逐位一致（确定性铁律）、经验按在场人头平分、
     /// 共享掉落归属不重不漏（必掉品两钱包之和恒等于击杀数）。

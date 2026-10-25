@@ -9,7 +9,7 @@
  */
 import { getPlayerAvatarSrc, type PlayerAvatarId, useAvatarStore } from '../game/avatarStore'
 import { isBuffEffectChannel, type BuffEffectEntry } from '../game/buffChannels'
-import { calculateRealmProgress } from '../game/combatConstants'
+import { calculateRealmProgress, serverExpToNextCap } from '../game/combatConstants'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
 import {
   COMBAT_TRIGGER_COMPARATORS,
@@ -1509,7 +1509,10 @@ export async function decodePlayerSnapshotDto(
   const name = dto.displayName
   const serverTime = seconds(dto.lastSimulatedAt)
   const stats = mapStats(progression)
-  const statsRealm = calculateRealmProgress(stats.experience, stats.realmLevel)
+  // 入天门后本层瓶颈含灵根乘区（总纲 §7.7.5.1）：满修判定必须用服务端权威 expToNextLinggen 口径，
+  // 否则修炼收益在裸瓶颈处就显示「可突破」，点下去服务端会以「修为未满」拒绝。
+  const statsRealm = calculateRealmProgress(stats.experience, stats.realmLevel,
+    serverExpToNextCap(stats.expToNextLinggen, stats.realmLevel))
   const renameCooldownUntil = numberValue(settings.renameCooldownUntilUnixSeconds)
   return {
     playerId: dto.playerId,
@@ -1602,7 +1605,8 @@ export async function decodePlayerSnapshotDeltaDto(
   }
   if (sections.has('progression')) {
     patch.stats = mapStats(sections.get('progression'))
-    const realm = calculateRealmProgress(patch.stats.experience, patch.stats.realmLevel)
+    const realm = calculateRealmProgress(patch.stats.experience, patch.stats.realmLevel,
+      serverExpToNextCap(patch.stats.expToNextLinggen, patch.stats.realmLevel))
     patch.isPendingBreakthrough = realm.expToNext > 0 && realm.expToNext - realm.currentLayerExp <= 0.0001 && patch.stats.experience > 0
   }
   if (sections.has('world')) patch.world = mapWorld(sections.get('world'))

@@ -8,7 +8,7 @@ import { resolveItemMetadata } from '../game/ids'
 import { CharacterAvatar } from './CharacterAvatar'
 import { Modal } from './Modal'
 import { formatInteger, formatNumber, formatRemainingSeconds } from '../game/format'
-import { calculateRealmInfo } from '../game/combatConstants'
+import { calculateRealmInfo, serverExpToNextCap } from '../game/combatConstants'
 import { gameClient } from '../network/gameClient'
 import { ItemReference } from './ItemDisplay'
 import { MonsterTooltipTarget } from './MonsterDisplay'
@@ -106,7 +106,12 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const world = useGameStore(state => state.world)
   const stats = useGameStore(state => state.stats)
   const experience = useGameStore(state => state.stats.experience)
-  const selfRealmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, stats.realmLevel ?? 1), [experience, stats.realmLevel])
+  // 自身徽章按服务端权威瓶颈（含灵根乘区）折算；旁人与怪物没有该字段，保持纯等级展示。
+  const selfRealmInfo = useMemo(
+    () => calculateRealmInfo(experience ?? 0, stats.realmLevel ?? 1,
+      serverExpToNextCap(stats.expToNextLinggen, stats.realmLevel ?? 1)),
+    [experience, stats.realmLevel, stats.expToNextLinggen],
+  )
   const buildingCatalog = useGameStore(state => state.buildings)
   const inventory = useGameStore(state => state.inventory)
   const avatarId = useAvatarStore(state => state.avatarId)

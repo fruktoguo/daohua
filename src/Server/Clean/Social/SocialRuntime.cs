@@ -407,7 +407,10 @@ public sealed class SocialRuntime
             Online: _presence.IsOnline(targetId),
             RealmLevel: state.Progression.RealmLevel,
             Experience: state.Progression.Experience,
-            ExperienceToNext: _gameData.RealmProgression?.ExpCapFor(state.Progression.RealmLevel) ?? 0,
+            // 名片瓶颈与内视/顶栏同一口径（总纲 §7.7.5.1）：含灵根乘区，否则入天门玩家名片显示裸瓶颈、进度越界。
+            ExperienceToNext: HeavenGateRules.ResolveExpCapWithLinggen(state.Progression.RealmLevel,
+                state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty,
+                state.Progression.HeavenGateEntered, _gameData.RealmProgression),
             CombatExperience: state.Progression.CombatExperience,
             Valuation: valuation.Total,
             CoreAttributes: new PlayerCardCoreDto(

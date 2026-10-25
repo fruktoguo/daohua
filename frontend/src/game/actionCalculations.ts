@@ -3,7 +3,7 @@
  */
 
 import type { ActionDefinition, AutoUseBarType, AutoUseSlot, InventoryItem, ItemDefinition, NodeBuildingEffectSet, Stats } from './types'
-import { calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './combatConstants'
+import { calculateRealmProgress, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './combatConstants'
 import { autoUseBarFor, findEquipmentInCatalog } from './ids'
 import { getT } from '../i18n'
 
@@ -358,7 +358,9 @@ export function calculateActionYieldPreview({
   let cultivationDetail: CultivationYieldDetail | undefined
   if (isCultivation) {
     const experience = stats?.experience ?? 0
-    const realmProgress = calculateRealmProgress(experience, stats?.realmLevel)
+    // 圆满判定必须用服务端权威瓶颈（含灵根乘区），否则入天门玩家在裸瓶颈处就被告知「修为圆满待突破」。
+    const realmProgress = calculateRealmProgress(experience, stats?.realmLevel,
+      serverExpToNextCap(stats?.expToNextLinggen, stats?.realmLevel))
     const expToCap = realmProgress.expToNext - realmProgress.currentLayerExp
     const isPendingBreakthrough = realmProgress.expToNext > 0 && expToCap <= 0.0001 && experience > 0
 

@@ -32,7 +32,7 @@ import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgress
 import { UnitNumber } from './components/UnitNumber'
 import { StatGlyph } from './components/StatGlyph'
 import { Icon, type IconName } from './components/Icon'
-import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
+import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
@@ -636,14 +636,23 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   const experience = useGameStore(state => state.stats.experience)
   const lifetimeExperience = useGameStore(state => state.stats.lifetimeExperience)
   const realmLevel = useGameStore(state => state.stats.realmLevel)
+  const expToNextLinggen = useGameStore(state => state.stats.expToNextLinggen)
   const connection = useGameStore(state => state.connection)
   const latencyMs = useGameStore(state => state.latencyMs)
   const onlineCount = useGameStore(state => state.onlineCount)
   const offlineCount = useGameStore(state => state.offlineCount)
   const offlineIdleCount = useGameStore(state => state.offlineIdleCount)
   const setActiveTab = useUiStore(state => state.setActiveTab)
-  const realmProgress = useMemo(() => calculateRealmProgress(experience ?? 0, realmLevel), [realmLevel, experience])
-  const realmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, realmLevel), [realmLevel, experience])
+  // 入天门后本层瓶颈含灵根乘区（总纲 §7.7.5.1），进度条与徽章统一取服务端权威 expToNextLinggen。
+  const expToNextCap = serverExpToNextCap(expToNextLinggen, realmLevel)
+  const realmProgress = useMemo(
+    () => calculateRealmProgress(experience ?? 0, realmLevel, expToNextCap),
+    [realmLevel, experience, expToNextCap],
+  )
+  const realmInfo = useMemo(
+    () => calculateRealmInfo(experience ?? 0, realmLevel, expToNextCap),
+    [realmLevel, experience, expToNextCap],
+  )
   const connectionText = connection === 'online'
     ? t('app.topbar.connected')
     : connection === 'connecting'
@@ -1562,10 +1571,11 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const hasRateBonus = multiplierBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
   const isPending = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.isPendingBreakthrough)
 
-  // 特殊配方的底蕴成本基数：当前升级所需修为（与服务端按 expCap 折算的口径一致）。
+  // 特殊配方的底蕴成本基数：当前升级所需修为（与服务端 ResolveExpCapWithLinggen 折算口径一致，含灵根乘区）。
   const foundationCostExpBase = useMemo(
-    () => calculateRealmProgress(stats?.experience ?? 0, stats?.realmLevel).expToNext ?? 0,
-    [stats?.experience, stats?.realmLevel],
+    () => calculateRealmProgress(stats?.experience ?? 0, stats?.realmLevel,
+      serverExpToNextCap(stats?.expToNextLinggen, stats?.realmLevel)).expToNext ?? 0,
+    [stats?.experience, stats?.realmLevel, stats?.expToNextLinggen],
   )
   const inputs = useMemo(() => {
     const list = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))

@@ -14,6 +14,7 @@ import {
   calculateBaseAttributes,
   calculateTechniqueProgress,
   calculateTraitCapacity,
+  serverExpToNextCap,
   TRAIT_DEFINITIONS,
 } from '../game/combatConstants'
 import { useGameStore } from '../game/gameStore'
@@ -66,15 +67,21 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   )
 
   // 境界计算体系 (大境界 · 境界阶段 · 小境界)
-  // 灵根乘区生效后（入天门）以服务端权威 expToNextLinggen 为准；未入天门回退本地曲线（乘区恒 1，两者一致）。
-  const realmProgress = useMemo(() => calculateRealmProgress(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
-  const authoritativeExpToNext = stats.heavenGateEntered === true && (stats.expToNextLinggen ?? 0) > 0
-    ? stats.expToNextLinggen!
-    : (realmProgress.expToNext ?? 0)
+  // 入天门后瓶颈 = 配表值 × 灵根乘区（总纲 §7.7.5.1），必须用服务端权威 expToNextLinggen；
+  // 未入天门时乘区恒 1，服务端值与本地静态曲线一致，可安全回退。
+  const expToNextCap = serverExpToNextCap(stats.expToNextLinggen, stats.realmLevel)
+  const realmProgress = useMemo(
+    () => calculateRealmProgress(stats.experience ?? 0, stats.realmLevel, expToNextCap),
+    [stats.realmLevel, stats.experience, expToNextCap],
+  )
+  const authoritativeExpToNext = realmProgress.expToNext ?? 0
   // 叩天门满修但尚未入天门：突破按钮语义改为「开天门」，且服务端会阻断直接突破。
   const expFull = isPendingBreakthrough || realmProgress.progressPercentage >= 99.99
   const showOpenGateBtn = shouldShowOpenHeavenGate(stats.realmLevel ?? 1, stats.heavenGateEntered === true, expFull)
-  const realmInfo = useMemo(() => calculateRealmInfo(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
+  const realmInfo = useMemo(
+    () => calculateRealmInfo(stats.experience ?? 0, stats.realmLevel, expToNextCap),
+    [stats.realmLevel, stats.experience, expToNextCap],
+  )
 
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
   // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
