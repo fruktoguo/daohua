@@ -11,13 +11,13 @@
     // ---- physical_abilities.json（物理武技） ----
     {
       id: 'ability.heavy-slash', name: '重斩', discipline: 'spell', category: 'physical',
-      element: 'none', tier: 1, castMilliseconds: 1000, cooldownMilliseconds: 18000,
+      element: 'metal', tier: 1, castMilliseconds: 1000, cooldownMilliseconds: 18000,
       manaCost: 10, damageRatio: 1.8, flatDamage: 20, targetType: 'single',
       description: '蓄势挥出沉重一剑', icon: 'ability.heavy-slash',
     },
     {
       id: 'ability.chain-strike', name: '连环', discipline: 'spell', category: 'physical',
-      element: 'none', tier: 1, castMilliseconds: 1000, cooldownMilliseconds: 16000,
+      element: 'fire', tier: 1, castMilliseconds: 1000, cooldownMilliseconds: 16000,
       manaCost: 10, damageRatio: 1.0, flatDamage: 15, targetType: 'single',
       description: '剑势连绵，连环进击', icon: 'ability.chain-strike',
     },
@@ -29,13 +29,13 @@
     },
     {
       id: 'ability.heavy-clouds', name: '重云', discipline: 'spell', category: 'physical',
-      element: 'none', tier: 2, castMilliseconds: 2000, cooldownMilliseconds: 24000,
+      element: 'water', tier: 2, castMilliseconds: 2000, cooldownMilliseconds: 24000,
       manaCost: 40, damageRatio: 1.2, flatDamage: 40, targetType: 'allEnemies',
       description: '掌势重云压顶，席卷敌阵', icon: 'ability.heavy-clouds',
     },
     {
       id: 'ability.star-piercer', name: '贯星', discipline: 'spell', category: 'physical',
-      element: 'none', tier: 2, castMilliseconds: 2000, cooldownMilliseconds: 36000,
+      element: 'metal', tier: 2, castMilliseconds: 2000, cooldownMilliseconds: 36000,
       manaCost: 30, damageRatio: 3.0, flatDamage: 50, targetType: 'single',
       description: '剑气如流星贯空', icon: 'ability.star-piercer',
     },
