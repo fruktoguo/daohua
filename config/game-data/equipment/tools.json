@@ -8,7 +8,8 @@
     "techniqueBonus": {
       "technique": "gathering",
       "speedRatio": 0.1
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tool-prospect-compass",
@@ -19,7 +20,8 @@
     "techniqueBonus": {
       "technique": "mining",
       "speedRatio": 0.1
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tool-flame-ding",
@@ -30,7 +32,8 @@
     "techniqueBonus": {
       "technique": "alchemy",
       "speedRatio": 0.1
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tool-forge-hammer",
@@ -41,7 +44,8 @@
     "techniqueBonus": {
       "technique": "forging",
       "speedRatio": 0.1
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tool-talisman-brush",
@@ -52,7 +56,8 @@
     "techniqueBonus": {
       "technique": "talisman",
       "speedRatio": 0.1
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tool-formation-flag",
@@ -63,7 +68,8 @@
     "techniqueBonus": {
       "technique": "formation",
       "speedRatio": 0.1
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tool-quench-anvil",
@@ -74,6 +80,7 @@
     "techniqueBonus": {
       "technique": "enhancement",
       "speedRatio": 0.1
-    }
+    },
+    "level": 1
   }
 ]

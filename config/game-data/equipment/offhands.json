@@ -11,7 +11,8 @@
       "physicalAttack": 6,
       "accuracy": 6,
       "physicalDamageBonusPoints": 4
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.qingmu-bead",
@@ -26,7 +27,8 @@
       "accuracy": 6,
       "spellDamageBonusPoints": 4,
       "skillBonusPoints": 4
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tiepi-guard",
@@ -40,7 +42,8 @@
     "flatStats": {
       "maxHitpoints": 10,
       "physicalDamageReductionPoints": 4
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.ganlu-flask",
@@ -53,7 +56,8 @@
       "maxManapoints": 10,
       "cooldownReductionPoints": 3,
       "healingBonusPoints": 5
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.tiemu-shield",
@@ -68,7 +72,8 @@
     "flatStats": {
       "maxHitpoints": 13,
       "physicalDamageReductionPoints": 4
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.ningshui-charm",
@@ -84,7 +89,8 @@
       "accuracy": 7,
       "spellDamageBonusPoints": 4,
       "skillBonusPoints": 4
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.xuantie-dart",
@@ -100,7 +106,8 @@
       "physicalAttack": 8,
       "accuracy": 10,
       "physicalDamageBonusPoints": 6
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.yaoling-bead",
@@ -117,7 +124,8 @@
       "accuracy": 10,
       "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.xuanjia-guard",
@@ -133,7 +141,8 @@
     "flatStats": {
       "maxHitpoints": 16,
       "physicalDamageReductionPoints": 6
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.huichun-bell",
@@ -148,6 +157,7 @@
       "maxManapoints": 16,
       "cooldownReductionPoints": 5,
       "healingBonusPoints": 6
-    }
+    },
+    "level": 18
   }
 ]

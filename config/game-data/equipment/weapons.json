@@ -10,7 +10,8 @@
     "flatStats": {
       "physicalAttack": 10,
       "accuracy": 10
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.pishan-blade",
@@ -25,7 +26,8 @@
       "physicalAttack": 8,
       "physicalArmor": 8,
       "threatBonusPoints": 200
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.jiujie-staff",
@@ -40,7 +42,8 @@
       "accuracy": 10,
       "spellDamageBonusPoints": 5,
       "skillBonusPoints": 5
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.suxin-zither",
@@ -56,7 +59,8 @@
       "healingBonusPoints": 50,
       "spellDamageBonusPoints": 5,
       "skillBonusPoints": 5
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.xuantie-sword",
@@ -70,7 +74,8 @@
     "flatStats": {
       "physicalAttack": 12,
       "accuracy": 12
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.piyan-blade",
@@ -86,7 +91,8 @@
       "physicalAttack": 10,
       "physicalArmor": 10,
       "threatBonusPoints": 250
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.kuteng-staff",
@@ -102,7 +108,8 @@
       "accuracy": 12,
       "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.mingquan-zither",
@@ -119,7 +126,8 @@
       "healingBonusPoints": 60,
       "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.pogang-sword",
@@ -134,7 +142,8 @@
     "flatStats": {
       "physicalAttack": 14,
       "accuracy": 14
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.zhansha-blade",
@@ -151,7 +160,8 @@
       "physicalAttack": 11,
       "physicalArmor": 11,
       "threatBonusPoints": 300
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.chaoyuan-staff",
@@ -168,7 +178,8 @@
       "accuracy": 14,
       "spellDamageBonusPoints": 15,
       "skillBonusPoints": 15
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.songfeng-zither",
@@ -186,6 +197,7 @@
       "healingBonusPoints": 50,
       "spellDamageBonusPoints": 15,
       "skillBonusPoints": 15
-    }
+    },
+    "level": 18
   }
 ]

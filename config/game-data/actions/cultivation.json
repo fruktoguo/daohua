@@ -29,5 +29,37 @@
         "aspect": "bone"
       }
     ]
+  },
+  {
+    "id": "cultivation.lianjing-huaqi",
+    "name": "炼精化气",
+    "description": "引天地之清气，炼肉身之精微，气沉丹田，化为精纯真元。",
+    "type": "cultivation",
+    "level": 18,
+    "durationSeconds": 10,
+    "yields": [
+      {
+        "kind": "experience",
+        "per": "repeat",
+        "percentage": 100
+      },
+      {
+        "kind": "mana",
+        "per": "repeat",
+        "amount": 100
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 50,
+        "aspect": "meridians"
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 50,
+        "aspect": "bone"
+      }
+    ]
   }
 ]

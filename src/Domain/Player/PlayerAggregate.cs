@@ -541,7 +541,7 @@ public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
     /// <summary>队列项唯一实例标识</summary>
     public Guid Id { get; }
     /// <summary>行动配置意图</summary>
-    public ActionIntent Intent { get; }
+    public ActionIntent Intent { get; internal set; }
     /// <summary>入队时间（UTC）</summary>
     public DateTimeOffset EnqueuedAt { get; }
     /// <summary>当前调度状态</summary>
@@ -1084,8 +1084,9 @@ public sealed partial class PlayerAggregate
     /// <summary>
     /// 突破至下一境界阶层。要求当前修为触及配表瓶颈（Experience ≥ expToNext），
     /// 突破后重置当前阶层灵气与修为，推进 Progression 脏标记。
+    /// 若传入 actions 行动目录，将自动升级队列中低于当前境界最高可用档位的修炼行动。
     /// </summary>
-    public void Breakthrough(Domain.GameData.RealmProgressionCatalog? realm)
+    public void Breakthrough(Domain.GameData.RealmProgressionCatalog? realm, ActionCatalog? actions = null)
     {
         if (Progression.RealmLevel < 1)
             throw new DomainException(DomainErrorCode.InvariantViolation, "当前境界状态无效。");
@@ -1113,7 +1114,64 @@ public sealed partial class PlayerAggregate
         RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null,
             LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d,
             new PlayerStatsDelta { LevelUp = new PlayerReportLevelUp("realm", "", realmBefore, Progression.RealmLevel) });
+        if (actions is not null)
+        {
+            TryUpgradeCultivationActions(actions);
+        }
         Touch(PlayerSectionKind.Progression);
+    }
+
+    /// <summary>
+    /// 检测当前行动队列中的修炼类型行动，若当前境界已解锁更高阶的修炼行动，则平滑升级至最高可用等级。
+    /// </summary>
+    public bool TryUpgradeCultivationActions(ActionCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        if (_actions.Count == 0) return false;
+        var highestCultivation = ResolveHighestAvailableCultivation(catalog, Progression.RealmLevel);
+        if (highestCultivation is null) return false;
+
+        var changed = false;
+        for (var i = 0; i < _actions.Count; i++)
+        {
+            var action = _actions[i];
+            if (!catalog.TryGet(action.Intent.ActionId, out var currentDef) || currentDef.Kind != ActionKind.Cultivation)
+                continue;
+            var currentLevel = currentDef.Level ?? 1;
+            var targetLevel = highestCultivation.Level ?? 1;
+            if (targetLevel > currentLevel && action.Intent.ActionId != highestCultivation.Id)
+            {
+                action.Intent = action.Intent with { ActionId = highestCultivation.Id };
+                ActionReportBook.EnsureActionReport(this, action.Id, highestCultivation.Id, highestCultivation.Name, LastSimulatedAt);
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            Touch(PlayerSectionKind.ActionQueue);
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// 根据境界等级在行动目录中查找可用的最高阶修炼行动。
+    /// </summary>
+    public static ActionDefinition? ResolveHighestAvailableCultivation(ActionCatalog catalog, int realmLevel)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        ActionDefinition? best = null;
+        var bestLevel = -1;
+        foreach (var def in catalog.All)
+        {
+            if (def.Kind != ActionKind.Cultivation) continue;
+            var reqLevel = def.Level ?? 1;
+            if (realmLevel >= reqLevel && reqLevel > bestLevel)
+            {
+                best = def;
+                bestLevel = reqLevel;
+            }
+        }
+        return best;
     }
 
     /// <summary>

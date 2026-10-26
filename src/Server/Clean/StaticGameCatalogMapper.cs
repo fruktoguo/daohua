@@ -122,7 +122,8 @@ public static class StaticGameCatalogMapper
                 var desc = ReadString(eq, "description");
                 var slot = ReadString(eq, "slot", "weapon");
                 var tier = ReadInt(eq, "tier", 1);
-            var sellPrice = Domain.Player.EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, id, costCache) ?? 0;
+                var level = Domain.GameData.CraftingRecipeRules.ResolveEquipmentRequiredLevel(id, catalog.RawEquipments);
+                var sellPrice = Domain.Player.EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, id, costCache) ?? 0;
             var baseStatRatios = eq.TryGetProperty("baseStatRatios", out var bsr) && bsr.ValueKind == JsonValueKind.Object
                 ? bsr.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
                 : new Dictionary<string, double>();
@@ -157,6 +158,7 @@ public static class StaticGameCatalogMapper
                 description = desc,
                 slot,
                 tier,
+                level,
                 sellPrice,
                 baseStatRatios,
                 flatStats,

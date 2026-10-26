@@ -393,8 +393,8 @@ export function calculateActionYieldPreview({
 
     cultivationDetail = { isPendingBreakthrough }
   }
-  // 引气入体灵石注灵加速（总纲 §6.4.3）：仅放大修为与灵力基础值，重算后续乘区；六维经验定额不受影响
-  const spiritStoneCost = (action.id === 'cultivation.draw-qi' && parameters?.spiritStone)
+  // 修炼灵石注灵加速（总纲 §6.4.3）：仅放大修为与灵力基础值，重算后续乘区；六维经验定额不受影响
+  const spiritStoneCost = ((action.id === 'cultivation.draw-qi' || action.type === 'cultivation') && parameters?.spiritStone)
     ? parameters.spiritStone
     : 0
   const spiritStoneMultiplier = spiritStoneCost >= 100

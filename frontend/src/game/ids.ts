@@ -27,6 +27,14 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
       { kind: 'rootexp', per: 'repeat', amount: 5, percentage: 50, aspect: 'bone' },
     ],
   },
+  {
+    id: 'cultivation.lianjing-huaqi', type: 'cultivation', level: 18, durationSeconds: 10, yields: [
+      { kind: 'experience', per: 'repeat', amount: 133, percentage: 100 },
+      { kind: 'mana', per: 'repeat', amount: 100 },
+      { kind: 'rootexp', per: 'repeat', amount: 67, percentage: 50, aspect: 'meridians' },
+      { kind: 'rootexp', per: 'repeat', amount: 67, percentage: 50, aspect: 'bone' },
+    ],
+  },
 
   // 采集
   { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.ningxue-grass', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 8, aspect: 'agility' }] },

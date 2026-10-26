@@ -172,6 +172,19 @@ public static class PlayerActionQueueRules
             {
                 var priority = mutation.Kind == PlayerActionQueueMutationKind.EnqueuePriority;
                 var intent = ValidateIntent(mutation.Intent, mutation.Catalog, priority, mutation.Participation);
+                if (mutation.Catalog is not null && mutation.Catalog.TryGet(intent.ActionId, out var actionDef)
+                    && actionDef.Kind == ActionKind.Cultivation)
+                {
+                    var playerLevel = work.Player.Progression.RealmLevel;
+                    var reqLevel = actionDef.Level ?? 1;
+                    if (playerLevel < reqLevel)
+                        throw new DomainException(DomainErrorCode.Conflict, $"境界未达要求（需达到 Lv.{reqLevel}），无法进行 {actionDef.Name}。");
+                    var highest = PlayerAggregate.ResolveHighestAvailableCultivation(mutation.Catalog, playerLevel);
+                    if (highest is not null && (highest.Level ?? 1) > reqLevel)
+                    {
+                        intent = intent with { ActionId = highest.Id };
+                    }
+                }
                 var personalActionCount = 0;
                 var hasParticipation = false;
                 for (var i = 0; i < actions.Count; i++)

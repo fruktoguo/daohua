@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from 'react'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
-import { collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
+import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
 import { useT } from '../i18n'
 import type { CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../game/types'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -294,6 +294,13 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
 
     // 若选择了新装备则推入（强化变体行以条目自带等级为准）
     if (selectedItemId) {
+      const selectedEqDef = findEquipmentInCatalog(equipmentCatalog, selectedItemId)
+      const requiredLevel = selectedEqDef?.level ?? convertTierToLevel(selectedEqDef?.tier ?? 1)
+      const isAlreadyEquipped = (combat.equipment ?? []).some(eq => eq.itemId === selectedItemId)
+      if (!isAlreadyEquipped && (realmLevel ?? 1) < requiredLevel) {
+        useGameStore.getState().setNotice(t('app.inventoryPanel.equipmentRealmTooLow', { level: requiredLevel }))
+        return
+      }
       nextEquipped.push({
         itemId: selectedItemId,
         enhancementLevel: entry?.enhancementLevel ?? 0,

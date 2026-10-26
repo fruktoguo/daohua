@@ -1,4 +1,5 @@
 import { memo, type ReactNode, useCallback } from 'react'
+import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { calculateEquipmentSellPrice, convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
@@ -158,15 +159,14 @@ function ItemTooltipCardContent({
         label: eqDef.name || baseMetadata.label,
         category: subCategoryLabel,
         tier: eqDef.tier ?? baseMetadata.tier,
-        level: eqDef.tier ? convertTierToLevel(eqDef.tier) : baseMetadata.level,
+        level: eqDef.level ?? (eqDef.tier ? convertTierToLevel(eqDef.tier) : baseMetadata.level),
       }
     : baseMetadata
 
   const tier = rawMetadata.tier ?? (eqDef?.tier || itemDef?.tier || (rawMetadata.level && rawMetadata.level <= 8 ? rawMetadata.level : 1))
   const normalizedTier = tier > 8 ? 1 : Math.max(1, Math.floor(tier))
   const grade = resolveItemGrade(normalizedTier)
-  const levelNumber = itemDef?.level ?? rawMetadata.level ?? convertTierToLevel(normalizedTier)
-
+  const levelNumber = eqDef?.level ?? itemDef?.level ?? rawMetadata.level ?? convertTierToLevel(normalizedTier)
   const metadata: ItemMetadata = {
     ...rawMetadata,
     rarity: grade.rarity,
@@ -181,10 +181,22 @@ function ItemTooltipCardContent({
     ...describeManualEffects(itemId, abilityCatalog),
   ]
 
+  const isEquipment = eqDef !== undefined || itemId.startsWith('equipment.')
+  const playerRealmLevel = useGameStore((state) => state.stats?.realmLevel) ?? 1
+
   const stats: { label: string; value: ReactNode; tone?: FloatingTone }[] = [
     { label: t('market.tooltip.category'), value: resolveItemCategoryLabel(metadata.category, t), tone: 'muted' },
   ]
-  if (metadata.level !== undefined) {
+  if (isEquipment) {
+    const requiredLevel = eqDef?.level ?? metadata.level ?? 1
+    const realmInfo = calculateRealmInfo(0, requiredLevel)
+    const isMet = playerRealmLevel >= requiredLevel
+    stats.push({
+      label: t('app.equipmentPanel.requiredRealm'),
+      value: `${realmInfo.fullDisplayName} (Lv. ${formatNumber(requiredLevel)})`,
+      tone: isMet ? 'gold' : 'danger',
+    })
+  } else if (metadata.level !== undefined) {
     stats.push({ label: t('market.tooltip.level'), value: `Lv. ${formatNumber(metadata.level)}`, tone: 'gold' })
   }
   if (amount !== undefined) {

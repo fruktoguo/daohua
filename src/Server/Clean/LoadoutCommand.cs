@@ -36,6 +36,9 @@ public static class LoadoutCommand
             throw new DomainException(DomainErrorCode.InvalidArgument, "装配槽位载荷无效。");
         var equipment = new List<PlayerEquipmentSlot>();
         var slots = new HashSet<string>(StringComparer.Ordinal);
+        // 收集本次替换前已穿戴的装备清单：已有装备即使境界不足也豁免拦截（不强制脱下），仅新穿戴装备严格校验境界等级。
+        var currentlyEquipped = new HashSet<string>(player.Loadout.Equipment.Select(e => e.ItemId), StringComparer.Ordinal);
+        var playerRealmLevel = player.Progression.RealmLevel;
         foreach (var raw in rawEquipment.EnumerateArray())
         {
             var id = raw.GetProperty("itemId").GetString() ?? throw new JsonException("装备 ID 不能为空。");
@@ -53,6 +56,9 @@ public static class LoadoutCommand
             if (!catalog.RawEquipments.TryGetValue(id, out var definition)
                 || wallet.Get(heldKey) - lockedInEnhance < 1)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "装备不存在、未持有或正处于强化锁定中。");
+            var requiredLevel = CraftingRecipeRules.ResolveEquipmentRequiredLevel(id, catalog.RawEquipments);
+            if (!currentlyEquipped.Contains(id) && playerRealmLevel < requiredLevel)
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"境界不足，无法穿戴该装备（需境界 Lv.{requiredLevel}）。");
             var slot = definition.GetProperty("slot").GetString()!;
             // 双手武器独占武器与副手两个槽位，与任一单手槽共存即冲突。
             if (!slots.Add(slot) || (slots.Contains("two-hand") && (slots.Contains("weapon") || slots.Contains("off-hand"))))

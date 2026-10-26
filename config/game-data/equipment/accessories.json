@@ -10,7 +10,8 @@
     "flatStats": {
       "criticalChance": 4,
       "hitpointRegen": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.taomu-talisman",
@@ -23,7 +24,8 @@
     "flatStats": {
       "criticalChance": 4,
       "manapointRegen": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.canglang-ring",
@@ -37,7 +39,8 @@
     "flatStats": {
       "criticalChance": 5,
       "hitpointRegen": 2.5
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.bibo-pendant",
@@ -51,7 +54,8 @@
     "flatStats": {
       "criticalChance": 5,
       "manapointRegen": 2.5
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.chiwen-ring",
@@ -66,7 +70,8 @@
     "flatStats": {
       "criticalChance": 4,
       "hitpointRegen": 3
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.juling-pendant",
@@ -81,6 +86,7 @@
     "flatStats": {
       "criticalChance": 4,
       "manapointRegen": 3
-    }
+    },
+    "level": 18
   }
 ]

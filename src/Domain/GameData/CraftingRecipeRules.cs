@@ -111,11 +111,60 @@ public static class CraftingRecipeRules
         return ResolveItemLevel(id, catalog.RawItems, catalog.RawEquipments);
     }
 
-    /// <summary>单个物品/装备 ID 的等阶代表等级（tier → 境界等级换算，未命中按 T1）。</summary>
+    /// <summary>
+    /// 解析单个装备穿戴所需的境界等级。
+    /// 优先读取配表显式声明的 level；缺省时依据 tier 换算（未命中按 1 级）。
+    /// </summary>
+    public static int ResolveEquipmentRequiredLevel(string id, GameDataCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        return ResolveEquipmentRequiredLevel(id, catalog.RawEquipments);
+    }
+
+    /// <summary>
+    /// 解析单个装备穿戴所需的境界等级。
+    /// 优先读取配表显式声明的 level；缺省时依据 tier 换算（未命中按 1 级）。
+    /// </summary>
+    public static int ResolveEquipmentRequiredLevel(string id, IReadOnlyDictionary<string, JsonElement>? rawEquipments)
+    {
+        if (string.IsNullOrWhiteSpace(id) || rawEquipments is null) return 1;
+        if (rawEquipments.TryGetValue(id, out var element))
+        {
+            if (element.TryGetProperty("level", out var lvl) && lvl.TryGetInt32(out var l) && l > 0)
+                return l;
+            if (element.TryGetProperty("tier", out var tier) && tier.TryGetInt32(out var t) && t > 0)
+                return ConvertTierToLevel(t);
+        }
+        return 1;
+    }
+
+    /// <summary>单个物品/装备 ID 的等阶代表等级（优先读取显式 level，缺省 tier → 境界等级换算，未命中按 T1）。</summary>
     public static int ResolveItemLevel(string id,
         IReadOnlyDictionary<string, JsonElement>? rawItems,
         IReadOnlyDictionary<string, JsonElement>? rawEquipments)
-        => ConvertTierToLevel(ResolveItemOrEquipmentTier(id, rawItems, rawEquipments));
+    {
+        if (string.IsNullOrWhiteSpace(id)) return 1;
+
+        if (rawEquipments is not null
+            && rawEquipments.TryGetValue(id, out var eqElement))
+        {
+            if (eqElement.TryGetProperty("level", out var eqLvl) && eqLvl.TryGetInt32(out var l) && l > 0)
+                return l;
+            if (eqElement.TryGetProperty("tier", out var eqTier) && eqTier.TryGetInt32(out var t) && t > 0)
+                return ConvertTierToLevel(t);
+        }
+
+        if (rawItems is not null
+            && rawItems.TryGetValue(id, out var itemElement))
+        {
+            if (itemElement.TryGetProperty("level", out var itemLvl) && itemLvl.TryGetInt32(out var l) && l > 0)
+                return l;
+            if (itemElement.TryGetProperty("tier", out var itemTier) && itemTier.TryGetInt32(out var t) && t > 0)
+                return ConvertTierToLevel(t);
+        }
+
+        return 1;
+    }
 
     public static int ResolveItemOrEquipmentTier(string id, GameDataCatalog catalog)
     {

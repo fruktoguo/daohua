@@ -14,7 +14,8 @@
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 100
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.baina-armor",
@@ -31,7 +32,8 @@
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 150
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.zhakou-pants",
@@ -48,7 +50,8 @@
       "maxHitpoints": 6,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 100
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.jinfeng-scarf",
@@ -65,7 +68,8 @@
       "maxHitpoints": 2,
       "physicalArmor": 2,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.qingpi-armor",
@@ -82,7 +86,8 @@
       "maxHitpoints": 3,
       "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.jixing-pants",
@@ -99,7 +104,8 @@
       "maxHitpoints": 2,
       "physicalArmor": 2,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.hunyuan-scarf",
@@ -117,7 +123,8 @@
       "spellResistance": 2,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.suma-robe",
@@ -135,7 +142,8 @@
       "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.xingqi-pants",
@@ -153,7 +161,8 @@
       "spellResistance": 2,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 1
   },
   {
     "id": "equipment.xuantie-headband",
@@ -171,7 +180,8 @@
       "spellResistance": 3,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 120
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.suozi-armor",
@@ -189,7 +199,8 @@
       "spellResistance": 3,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 180
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.diejia-leggings",
@@ -207,7 +218,8 @@
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 120
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.canglang-cap",
@@ -225,7 +237,8 @@
       "maxHitpoints": 2,
       "physicalArmor": 2,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.canglang-vest",
@@ -243,7 +256,8 @@
       "maxHitpoints": 3,
       "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.canglang-pants",
@@ -261,7 +275,8 @@
       "maxHitpoints": 2,
       "physicalArmor": 2,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.liuyun-ribbon",
@@ -280,7 +295,8 @@
       "spellResistance": 2,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.bishui-robe",
@@ -299,7 +315,8 @@
       "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.zhishui-pants",
@@ -318,7 +335,8 @@
       "spellResistance": 2,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 9
   },
   {
     "id": "equipment.chijin-helmet",
@@ -337,7 +355,8 @@
       "spellResistance": 2,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 150
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.yulin-armor",
@@ -356,7 +375,8 @@
       "spellResistance": 3,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 200
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.tazhen-greaves",
@@ -375,7 +395,8 @@
       "maxHitpoints": 8,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 150
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.zhanfeng-scarf",
@@ -394,7 +415,8 @@
       "maxHitpoints": 4,
       "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.liegang-armor",
@@ -413,7 +435,8 @@
       "maxHitpoints": 6,
       "physicalArmor": 8,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.tafeng-pants",
@@ -432,7 +455,8 @@
       "maxHitpoints": 4,
       "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.ziwu-crown",
@@ -452,7 +476,8 @@
       "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.pichen-shirt",
@@ -472,7 +497,8 @@
       "spellResistance": 8,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 18
   },
   {
     "id": "equipment.liuyun-skirt",
@@ -492,6 +518,7 @@
       "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
-    }
+    },
+    "level": 18
   }
 ]

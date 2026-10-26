@@ -711,7 +711,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     }
                     case "progression.breakthrough":
                     {
-                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Breakthrough(gameData.RealmProgression));
+                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Breakthrough(gameData.RealmProgression, gameData.Actions));
                         // 邀请里程碑：突破成功后按新境界等级发放到期奖励（仓储内幂等+同事务翻转标记）。
                         if (invitations is not null)
                         {

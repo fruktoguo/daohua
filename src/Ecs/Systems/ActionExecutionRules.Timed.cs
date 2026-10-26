@@ -380,7 +380,7 @@ internal static partial class ActionExecutionRules
         // 余额充足扣减灵石并享受倍率，余额不足平滑降级为 1.0 倍标准结算且不中断队列。
         var cultivationBaseMultiplier = 1.0;
         var spiritStoneDeduction = 0;
-        if (definition.Id.Value == "cultivation.draw-qi"
+        if ((definition.Id.Value == "cultivation.draw-qi" || definition.Kind == ActionKind.Cultivation)
             && action.Intent.Parameters is not null
             && action.Intent.Parameters.TryGetValue("spiritStone", out var reqStone)
             && reqStone > 0)

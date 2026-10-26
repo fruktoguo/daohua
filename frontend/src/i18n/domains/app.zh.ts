@@ -419,7 +419,7 @@ export const appZh = {
       useAwakenDescription: '使用觉醒石感悟天地机缘，随机觉醒先天特质，或为已觉醒特质注入突破经验。',
       confirmUse: '确认参悟',
       confirmAwaken: '确认觉醒',
-      // 储物袋分段小标题（同视图内分组陈列，非 Tab 切换）
+      equipmentRealmTooLow: '境界不足，无法穿戴该装备（需达到 Lv.{level}）。',
       group: {
         important: '重要',
         consumable: '消耗品',
@@ -440,6 +440,7 @@ export const appZh = {
       emptySlot: '空置',
       chooseEquipmentTitle: '选择装备 · {slot}',
       noEquipmentForSlot: '储物袋中暂无适合该部位的装备',
+      requiredRealm: '需求境界',
       toolsTitle: '技艺法宝',
       toolGathering: '采集',
       toolMining: '挖掘',

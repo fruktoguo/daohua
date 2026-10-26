@@ -1529,7 +1529,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   // 制造类行动（炼丹/炼器/精炼/强化）默认单轮：材料逐轮消耗结算，无限默认会烧穿背包；
   // 其余行动（探索/修炼/战斗/赶路）维持无限循环口径不变。
   const isManufacture = action.type === 'alchemy' || action.type === 'enhancement'
-  const isDrawQi = action.id === 'cultivation.draw-qi'
+  const isDrawQi = action.id === 'cultivation.draw-qi' || action.type === 'cultivation'
   const [repeats, setRepeats] = useState(isManufacture ? 1 : -1)
   const [spiritStoneTier, setSpiritStoneTier] = useState<number>(0)
   const [pvpEnabled, setPvpEnabled] = useState(false)
@@ -2174,6 +2174,7 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
   const encounters = useGameStore(state => state.encounters)
   const world = useGameStore(state => state.world)
   const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
+  const realmLevel = useGameStore(state => state.stats.realmLevel)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
 
   const visibleActions = useMemo(() => actions.filter(action => (
@@ -2188,11 +2189,12 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
     interface ActionGroup { key: string; label: string; actions: ActionDefinition[] }
     const result: ActionGroup[] = []
     const resident: ActionDefinition[] = []
+    const cultivations: ActionDefinition[] = []
     const hunts: ActionDefinition[] = []
     const others: ActionDefinition[] = []
     const byTechnique = new Map<string, ActionDefinition[]>()
     for (const action of visibleActions) {
-      if (action.type === 'cultivation') { resident.push(action); continue }
+      if (action.type === 'cultivation') { cultivations.push(action); continue }
       if (action.type === 'combat') { hunts.push(action); continue }
       if (action.technique) {
         const list = byTechnique.get(action.technique) ?? []
@@ -2201,6 +2203,15 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
         continue
       }
       others.push(action)
+    }
+    // 自动选取自身等级可以使用的最高等级的修炼，修炼行动只会显示一个
+    if (cultivations.length > 0) {
+      const currentRealmLevel = realmLevel ?? 1
+      const available = cultivations.filter(a => (a.level ?? 1) <= currentRealmLevel)
+      const best = available.length > 0
+        ? available.reduce((prev, curr) => (curr.level ?? 1) > (prev.level ?? 1) ? curr : prev)
+        : cultivations.reduce((prev, curr) => (curr.level ?? 1) < (prev.level ?? 1) ? curr : prev)
+      resident.push(best)
     }
     if (resident.length > 0) result.push({ key: 'resident', label: t('app.combatPanel.residentActions'), actions: resident })
     for (const id of TECHNIQUE_IDS) {
@@ -2221,7 +2232,7 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
     if (others.length > 0) result.push({ key: 'other', label: t('app.combatPanel.otherActions'), actions: others })
     if (hunts.length > 0) result.push({ key: 'combat', label: t('app.combatPanel.huntActions'), actions: hunts })
     return result
-  }, [techniqueExperiences, t, visibleActions, itemCatalog, equipmentCatalog, encounters])
+  }, [realmLevel, techniqueExperiences, t, visibleActions, itemCatalog, equipmentCatalog, encounters])
 
   const closeModal = useCallback(() => setSelectedAction(null), [])
 
