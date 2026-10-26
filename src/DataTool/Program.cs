@@ -440,15 +440,16 @@ static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
     "hpRegenPostRatio", "mpRegenPostRatio", "threatPerSecondMaxHpPoints", "resetOnWave",
     "stackPolicy", "spellAttackStackPercent",
     "attackPower", "accuracy", "critical", "resistancePoints", "hpRegenPerSecond",
-    "missingHitpointsPerStack", "resistancePerStack", "resistanceStackRatio"
+    "missingHitpointsPerStack", "resistancePerStack", "resistanceStackRatio",
+    "evasion", "evasionPostRatio"
 };
 
 /// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典与回复后段乘区）。</summary>
 static HashSet<string> ConsumableBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
-    "attackSpeedPoints", "damageAbsorptionPoints", "statRatios",
-    "hpRegenPostRatio", "mpRegenPostRatio"
+    "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "statRatios",
+    "hpRegenPostRatio", "mpRegenPostRatio", "evasion", "evasionPostRatio", "teamWide"
 };
 
 /// <summary>消耗品顶层授权键（durable 阵盘与 strike 雷击符规格）。</summary>

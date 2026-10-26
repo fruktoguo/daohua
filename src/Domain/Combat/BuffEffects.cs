@@ -67,7 +67,11 @@ public enum BuffEffectChannel : byte
     /// <summary>双抗点数（Instance 型）：正增负破防，逐实例累加后统一乘算，不随层数放大、不吃等级成长。</summary>
     ResistancePoints = 12,
     /// <summary>威胁增幅点数：叠加进有效威胁乘区（§7.8.1）。</summary>
-    ThreatPoints = 13
+    ThreatPoints = 13,
+    /// <summary>每层闪避点数加成。</summary>
+    Evasion = 14,
+    /// <summary>闪避后段乘区比率。</summary>
+    EvasionPostRatio = 15
 }
 
 /// <summary>Buff 效果载荷条目：通道 + 每层基础值（Instance 型通道为总值）。</summary>
@@ -127,6 +131,10 @@ public static class BuffEffectRegistry
         new(BuffEffectChannel.ResistancePoints, "resistancePoints",
             BuffEffectStackMode.Instance, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.ThreatPoints, "threatPoints",
+            BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.Evasion, "evasion",
+            BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.EvasionPostRatio, "evasionPostRatio",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
     ];
 

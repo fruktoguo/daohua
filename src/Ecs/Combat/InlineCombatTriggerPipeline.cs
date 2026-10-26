@@ -179,3 +179,15 @@ public sealed class InlineThreatOnTakenHandler : CombatTriggerHandler, IInlineOn
             trigger.Context.Target.Stats.Effects.ThreatOnTakenPoints);
     }
 }
+
+/// <summary>内联阵盘受击反击：受击方受实伤后由己方存活天雷阵/血煞阵持有者反击。</summary>
+[CombatTriggerOrder(400)]
+public sealed class InlineFormationReactiveStrikeHandler : CombatTriggerHandler, IInlineOnHitTrigger
+{
+    /// <summary>宿主为受击方时派发己方阵盘反击。</summary>
+    public void OnHit(PendingCombatTrigger trigger)
+    {
+        if (!ReferenceEquals(trigger.Unit, trigger.Context.Target)) return;
+        CombatTriggerMath.FormationReactiveStrike(trigger.Context);
+    }
+}

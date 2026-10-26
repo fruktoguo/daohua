@@ -262,6 +262,7 @@ public sealed partial class CombatEventAdvanceSystem
             if (unit.Stats.HpRegen != 0 || unit.Stats.MpRegen != 0) regenPending = true;
             // Buff 通道的网格存在性读聚合标志（值非零判定，与原逐字段口径一致）。
             if (unit.BuffRegenTickPending) regenPending = true;
+            if (unit.BuffStacks("formation.tianlei") > 0 || unit.BuffStacks("formation.xuesha") > 0) regenPending = true;
             if (unit.BuffSecondTickPending) threatTickPending = true;
             var buffs = unit.Buffs;
             for (var i = 0; i < buffs.Count; i++)

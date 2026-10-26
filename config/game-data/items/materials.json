@@ -326,6 +326,133 @@
     "level": 1
   },
   {
+    "id": "item.tianlei-formation-disk",
+    "name": "天雷阵盘",
+    "description": "雷殛隐阵方寸间。\n雷击木精雕的八角阵盘，铭刻引雷符纹。阵起之时，敌遭重创必招天雷反噬，唯施阵者须常注法力维系。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 620,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": true,
+      "durationSeconds": 300,
+      "buffs": [
+        {
+          "buffId": "formation.tianlei",
+          "name": "天雷阵",
+          "teamWide": false
+        }
+      ]
+    },
+    "subCategory": "formation",
+    "level": 9
+  },
+  {
+    "id": "item.mizong-formation-disk",
+    "name": "迷踪阵盘",
+    "description": "幻烟缥缈影难寻。\n流云玉石雕琢的方寸阵盘，布设后云雾缭绕全队身侧，步法虚实莫测，极大提升全队闪避游走之能。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 580,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": true,
+      "durationSeconds": 300,
+      "buffs": [
+        {
+          "buffId": "formation.mizong",
+          "name": "迷踪阵",
+          "teamWide": true,
+          "evasion": 10,
+          "evasionPostRatio": 0.3
+        }
+      ]
+    },
+    "subCategory": "formation",
+    "level": 9
+  },
+  {
+    "id": "item.xuesha-formation-disk",
+    "name": "血煞阵盘",
+    "description": "煞气滔滔噬生机。\n浸透凶兽精血的森冷骨盘，以自身生机气血为引展开血海之阵，敌受创则煞气崩裂直刺其魄，并反哺自身。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 680,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": true,
+      "durationSeconds": 300,
+      "buffs": [
+        {
+          "buffId": "formation.xuesha",
+          "name": "血煞阵",
+          "teamWide": false
+        }
+      ]
+    },
+    "subCategory": "formation",
+    "level": 9
+  },
+  {
+    "id": "item.pogang-talisman",
+    "name": "破罡真符",
+    "description": "金芒破罡裂坚甲。\n纯阳金精混合朱砂绘制的金行战符，祭出即化作裂甲金芒贯穿敌阵，重创同时崩解护甲。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 320,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "triggers": [],
+      "strike": {
+        "manaCostRatio": 0.05,
+        "manaDamageRatio": 0.25,
+        "spellAttackRatio": 2.2,
+        "element": "metal"
+      }
+    },
+    "subCategory": "talisman",
+    "level": 9
+  },
+  {
+    "id": "item.taixuan-tianlei-talisman",
+    "name": "太玄天雷神符",
+    "description": "九霄紫电落玄霄。\n以上古玄纸绘制的上清紫府雷符，蕴藏暴烈雷霆本源，祭出引动九霄天霆绝杀妖邪。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 850,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "triggers": [],
+      "strike": {
+        "manaCostRatio": 0.08,
+        "manaDamageRatio": 0.35,
+        "spellAttackRatio": 3.0,
+        "element": "wood"
+      }
+    },
+    "subCategory": "talisman",
+    "level": 18
+  },
+  {
     "id": "currency.spirit-stone",
     "name": "灵石",
     "description": "晶棱含光，灵韵内藏。\n蕴含纯净天地灵气的六角晶石，光华内敛。",

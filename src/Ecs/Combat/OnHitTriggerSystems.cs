@@ -56,3 +56,16 @@ public sealed class ThreatOnTakenSystem : YuoSystem<CombatantComponent, ThreatOn
         CombatTriggerMath.ThreatOnTaken(trigger.Context, unit.State!.Stats.Effects.ThreatOnTakenPoints);
     }
 }
+
+/// <summary>阵盘反击：受击方为敌对单位时由己方存活天雷阵/血煞阵持有者反击。</summary>
+[SystemOrder(400)]
+public sealed class FormationReactiveStrikeSystem : YuoSystem<CombatantComponent, FormationReactiveStrikeComponent>, IOnHitTrigger
+{
+    /// <summary>Tag 派发入口：信箱负载宿主为受击方时派发己方阵盘反击。</summary>
+    public override void Run(CombatantComponent unit, FormationReactiveStrikeComponent marker)
+    {
+        var trigger = unit.Entity.GetComponent<CombatTriggerInboxComponent>()?.Trigger;
+        if (trigger is null || !ReferenceEquals(trigger.Context.Target, unit.State)) return;
+        CombatTriggerMath.FormationReactiveStrike(trigger.Context);
+    }
+}

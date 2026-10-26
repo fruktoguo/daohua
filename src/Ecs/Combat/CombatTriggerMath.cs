@@ -65,4 +65,101 @@ public static class CombatTriggerMath
         if (gained <= 0) return;
         context.Target.Threat += gained;
     }
+
+    /// <summary>
+    /// 阵盘受击反击反应：敌方单位受到有效伤害时，己方在场存活且持有天雷阵/血煞阵的单位
+    /// 各自独立判定 20% 概率触发天雷或血煞反击。
+    /// </summary>
+    public static void FormationReactiveStrike(CombatHitContext context)
+    {
+        if (!context.Hit || context.Damage <= 0 || !context.Target.IsAlive) return;
+        var encounter = context.Encounter;
+        if (encounter.PlayerAllies.Contains(context.Target)) return;
+
+        var allies = encounter.PlayerAllies;
+        for (var i = 0; i < allies.Count; i++)
+        {
+            var ally = allies[i];
+            if (!ally.IsAlive || !context.Target.IsAlive) continue;
+
+            // 1. 天雷阵盘：20% 几率触发木系雷击，每秒最多 1 次，耗蓝 1%
+            if (ally.BuffStacks("formation.tianlei") > 0)
+            {
+                var canTrigger = ally.LastTianleiTriggerAtSeconds < 0
+                    || (context.AtSeconds - ally.LastTianleiTriggerAtSeconds) >= 1.0 - 1e-9;
+                var manaCost = ally.Stats.MaxManapoints * 0.01;
+                if (canTrigger && ally.Manapoints >= manaCost && context.NextRoll() < 0.20)
+                {
+                    ally.Manapoints = Math.Max(0, ally.Manapoints - manaCost);
+                    ally.LastTianleiTriggerAtSeconds = context.AtSeconds;
+
+                    var rawDamage = ally.EffectiveStats.SpellAttack * 0.5 + 10;
+                    var strikeStats = ally.EffectiveStats with
+                    {
+                        AttackPower = rawDamage,
+                        DamageKind = CombatDamageKind.Spell,
+                        Element = CombatElement.Wood
+                    };
+                    var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
+                    if (damage > 0)
+                    {
+                        var targetHpBefore = context.Target.Hitpoints;
+                        context.Target.Hitpoints = Math.Max(0, context.Target.Hitpoints - damage);
+                        var actualDamage = targetHpBefore - context.Target.Hitpoints;
+                        ally.Threat += actualDamage;
+                        encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Spell, actualDamage, 0);
+                        context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
+                            actualDamage, true, CombatDamageKind.Spell, context.Target.Hitpoints)
+                        {
+                            AbilityId = "item.tianlei-formation-disk"
+                        });
+                    }
+                }
+            }
+
+            if (!context.Target.IsAlive) break;
+
+            // 2. 血煞阵盘：20% 几率触发物理无五行血煞，每秒最多 1 次，10% 最大生命伤害并 100% 吸血
+            if (ally.BuffStacks("formation.xuesha") > 0)
+            {
+                var canTrigger = ally.LastXueshaTriggerAtSeconds < 0
+                    || (context.AtSeconds - ally.LastXueshaTriggerAtSeconds) >= 1.0 - 1e-9;
+                if (canTrigger && context.NextRoll() < 0.20)
+                {
+                    ally.LastXueshaTriggerAtSeconds = context.AtSeconds;
+
+                    var rawDamage = ally.Stats.MaxHitpoints * 0.10;
+                    var strikeStats = ally.EffectiveStats with
+                    {
+                        AttackPower = rawDamage,
+                        DamageKind = CombatDamageKind.Physical,
+                        Element = CombatElement.None
+                    };
+                    var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
+                    if (damage > 0)
+                    {
+                        var targetHpBefore = context.Target.Hitpoints;
+                        context.Target.Hitpoints = Math.Max(0, context.Target.Hitpoints - damage);
+                        var actualDamage = targetHpBefore - context.Target.Hitpoints;
+
+                        var heal = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, actualDamage);
+                        if (heal > 0)
+                        {
+                            ally.Hitpoints += heal;
+                            encounter.StatsBook?.RecordHealing(ally, autoRegen: false, heal);
+                        }
+
+                        ally.Threat += actualDamage;
+                        encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Physical, actualDamage, 0);
+                        context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
+                            actualDamage, true, CombatDamageKind.Physical, context.Target.Hitpoints)
+                        {
+                            AbilityId = "item.xuesha-formation-disk",
+                            Healing = heal
+                        });
+                    }
+                }
+            }
+        }
+    }
 }

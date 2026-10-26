@@ -292,8 +292,9 @@ public sealed partial class PlayerAggregate
                 // 效果键按注册表解析（持续消耗品定格无等级成长，乘区恒 1）；statRatios 沿用既有定格口径不采集。
                 list.Add(new ActionSustainedBuff(buffId, slot.RemainingDurationSeconds, 1,
                     JsonRead.Text(buff, "name") ?? buffId,
-                    // 阵法类（subCategory=formation）持续消耗品 Buff 全队生效——注入己方阵列而非仅使用者。
-                    TeamWide: string.Equals(item.SubCategory, Domain.GameData.AutoUseBar.Formation, StringComparison.Ordinal),
+                    // 阵法类（subCategory=formation）持续消耗品 Buff 默认全队生效；若显式声明 teamWide: false 则仅个人独立生效。
+                    TeamWide: string.Equals(item.SubCategory, Domain.GameData.AutoUseBar.Formation, StringComparison.Ordinal)
+                        && (!buff.TryGetProperty("teamWide", out var tw) || tw.GetBoolean()),
                     Effects: BuffEffectParser.Parse(buff, 1.0)));
             }
         }

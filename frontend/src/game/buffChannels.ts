@@ -19,6 +19,8 @@ export type BuffEffectChannel =
   | 'damageAbsorptionPoints'
   | 'resistancePoints'
   | 'threatPoints'
+  | 'evasion'
+  | 'evasionPostRatio'
 
 /** 单条效果载荷：通道 + 每层基础值（resistancePoints 实例型通道为总值）。 */
 export interface BuffEffectEntry {
@@ -69,6 +71,8 @@ export const BUFF_CHANNELS: Record<BuffEffectChannel, BuffChannelDisplay> = {
   damageAbsorptionPoints: { labelKey: 'market.effect.badgeDamageAbsorption', glyph: 'total-damage', positiveTone: 'jade', negativeTone: 'crimson', format: 'absorption', perStack: false },
   resistancePoints: { labelKey: 'market.effect.badgeResistance', glyph: 'foundation', positiveTone: 'jade', negativeTone: 'crimson', format: 'resistance', perStack: false },
   threatPoints: { labelKey: 'market.effect.badgeThreat', glyph: 'threat-bonus', positiveTone: 'amber', negativeTone: 'crimson', format: 'percentPoint', perStack: false },
+  evasion: { labelKey: 'market.effect.badgeEvasion', glyph: 'evasion', positiveTone: 'cyan', negativeTone: 'crimson', format: 'flat', perStack: true },
+  evasionPostRatio: { labelKey: 'market.effect.badgeEvasionPostRatio', glyph: 'evasion', positiveTone: 'cyan', negativeTone: 'crimson', format: 'percentRaw', perStack: false },
 }
 
 /** wire 通道名 → 是否已登记（未登记通道不参与展示渲染）。 */

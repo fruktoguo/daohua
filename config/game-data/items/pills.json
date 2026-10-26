@@ -67,6 +67,114 @@
     "subCategory": "pill"
   },
   {
+    "id": "item.yuyuan-dan",
+    "name": "愈元丹",
+    "description": "愈元固本，血气充盈。\n以十年灵药萃炼的碧绿丹丸，服之药力如涓涓春水涤荡周身经脉，迅速愈合创伤并凝结护体气罩。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 180,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 60,
+      "buffs": [
+        {
+          "buffId": "buff.yuyuan",
+          "name": "愈元丹·回春",
+          "durationSeconds": 30,
+          "hpRegen": 72,
+          "damageAbsorptionPoints": 15
+        }
+      ],
+      "triggers": []
+    },
+    "subCategory": "pill",
+    "level": 9
+  },
+  {
+    "id": "item.ningqi-powder",
+    "name": "凝气散",
+    "description": "聚水成渊，凝气聚神。\n散发微蓝荧光的细腻药粉，吸纳天地游离灵气，短时间内极大加速经脉内灵力流转与出手速度。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 190,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 60,
+      "buffs": [
+        {
+          "buffId": "buff.ningqi",
+          "name": "凝气散·凝神",
+          "durationSeconds": 30,
+          "mpRegen": 48,
+          "attackSpeedPoints": 10
+        }
+      ],
+      "triggers": []
+    },
+    "subCategory": "pill",
+    "level": 9
+  },
+  {
+    "id": "item.jiuzhuan-balm",
+    "name": "九转还魂膏",
+    "description": "九转生死还玉魂。\n玄玉匣盛放的金色膏药，散发馥郁药香。于叩天关危殆关头敷用，可强行逆转气血衰败并固守神魂坚不可摧。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 520,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 60,
+      "buffs": [
+        {
+          "buffId": "buff.jiuzhuan-balm",
+          "name": "九转还魂·生机",
+          "durationSeconds": 30,
+          "hpRegen": 150,
+          "damageAbsorptionPoints": 40
+        }
+      ],
+      "triggers": []
+    },
+    "subCategory": "pill",
+    "level": 18
+  },
+  {
+    "id": "item.taiyi-juqi-pill",
+    "name": "太乙聚气丹",
+    "description": "太乙归真，紫府潮生。\n丹成九纹的玄门高阶灵丹，入腹化作浩瀚灵力汪洋，催动术法威能大涨，生生不息。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 550,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 60,
+      "buffs": [
+        {
+          "buffId": "buff.taiyi-juqi",
+          "name": "太乙聚气·归真",
+          "durationSeconds": 30,
+          "mpRegen": 100,
+          "damageBonusPoints": 15
+        }
+      ],
+      "triggers": []
+    },
+    "subCategory": "pill",
+    "level": 18
+  },
+  {
     "id": "item.tongmai-pill",
     "name": "通脉丹",
     "description": "紫纹锁丹，药透经络。\n丹面铭刻着细密紫纹的凝气灵丹，丹晕如雾缭绕。",

@@ -37,6 +37,21 @@ public sealed class CombatBuffChannelTests
         Assert.Equal(2, unit.EffectiveStats.MagicResistance);
     }
 
+    [Fact]
+    public void MizongFormationEvasionBuffFoldsIntoEffectiveStats()
+    {
+        var unit = UnitWithBuffs(
+            new CombatBuffState("formation.mizong", 300, 1,
+                Effects: [
+                    new BuffEffect(BuffEffectChannel.Evasion, 10),
+                    new BuffEffect(BuffEffectChannel.EvasionPostRatio, 0.3)
+                ]));
+        Assert.Equal(10, unit.BuffTotal(BuffEffectChannel.Evasion));
+        Assert.Equal(0.3, unit.BuffTotal(BuffEffectChannel.EvasionPostRatio));
+        // (初始 5 + 10) * 1.3 = 19.5
+        Assert.Equal(19.5, unit.EffectiveStats.Evasion);
+    }
+
     /// <summary>
     /// 受控入口失效完整性：SetBuff 覆盖、RemoveBuffsWhere 剔除、ReplaceBuffs 整体替换后，
     /// 聚合值与周期网格标志立即重建——防止 stale 缓存把过期 Buff 的增益残留在结算里。

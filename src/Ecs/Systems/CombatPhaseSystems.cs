@@ -109,6 +109,11 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
                 unit.SyncDerivedStacks();
             }
             if (mp != 0) unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);
+            // 阵盘维持消耗：天雷阵每5秒扣除 1% 最大法力，血煞阵每5秒扣除 1% 最大气血（保底1点防猝死）。
+            if (unit.IsAlive && unit.BuffStacks("formation.tianlei") > 0)
+                unit.Manapoints = Math.Max(0, unit.Manapoints - unit.Stats.MaxManapoints * 0.01);
+            if (unit.IsAlive && unit.BuffStacks("formation.xuesha") > 0)
+                unit.Hitpoints = Math.Max(1, unit.Hitpoints - unit.Stats.MaxHitpoints * 0.01);
         }
 
         /// <summary>把单个 Buff 上指定通道的层数放大值累进目标（按 Buff 实例列表序，与逐字段累加同序）。</summary>

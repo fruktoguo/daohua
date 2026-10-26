@@ -29,6 +29,9 @@ public sealed class ThornsComponent : YuoComponent;
 /// <summary>受击时按攻击方面板原始伤害累积自身威胁标记组件（力微饭否类嘲讽）。</summary>
 public sealed class ThreatOnTakenComponent : YuoComponent;
 
+/// <summary>敌方单位受击后触发己方阵盘反击标记组件。</summary>
+public sealed class FormationReactiveStrikeComponent : YuoComponent;
+
 /// <summary>
 /// 内联触发器派发器：无实体宿主（纯领域推进、斗法剧本）使用的等价路径。
 /// 与实体派发共用 CombatTriggerMath，参数直读 Stats.Effects——
@@ -95,6 +98,7 @@ public static class CombatTriggerSurface
         SyncMarker<ManaLeechComponent>(entity, unit.Stats.Effects.MpDrainPoints > 0);
         SyncMarker<ThornsComponent>(entity, unit.Stats.Effects.DamageReflectPoints > 0);
         SyncMarker<ThreatOnTakenComponent>(entity, unit.Stats.Effects.ThreatOnTakenPoints > 0);
+        SyncMarker<FormationReactiveStrikeComponent>(entity, !unit.IsPlayer);
     }
 
     private static void SyncMarker<T>(YuoEntity entity, bool enabled) where T : YuoComponent, new()

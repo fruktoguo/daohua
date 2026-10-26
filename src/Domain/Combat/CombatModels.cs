@@ -350,6 +350,10 @@ public sealed class CombatantState
     public double[]? SkillCooldownUntil { get; internal set; }
     /// <summary>累计完成施放的技能次数，作为技能出手的确定性抽样独立计数器。</summary>
     public double SkillCastCount { get; internal set; }
+    /// <summary>天雷阵上次触发时刻（秒），保证单人每秒最多触发一次。</summary>
+    internal double LastTianleiTriggerAtSeconds { get; set; } = -1;
+    /// <summary>血煞阵上次触发时刻（秒），保证单人每秒最多触发一次。</summary>
+    internal double LastXueshaTriggerAtSeconds { get; set; } = -1;
     /// <summary>
     /// 倒地复活截止点（战斗时钟秒）：仅友方单位使用——阵亡瞬间置为 ElapsedSeconds + 遭遇复活读条，
     /// 起身后回 +∞；敌方单位与团灭即败遭遇恒为 +∞。倒地单位不出手，回复/冷却照常推进。
@@ -529,7 +533,8 @@ public sealed class CombatantState
                 Accuracy = Math.Max(0, Stats.Accuracy + totals[(int)BuffEffectChannel.Accuracy]),
                 Critical = Math.Max(0, Stats.Critical + totals[(int)BuffEffectChannel.Critical]),
                 Defense = Math.Max(0, Stats.Defense * resistance),
-                MagicResistance = Math.Max(0, Stats.MagicResistance * resistance)
+                MagicResistance = Math.Max(0, Stats.MagicResistance * resistance),
+                Evasion = Math.Max(0, (Stats.Evasion + totals[(int)BuffEffectChannel.Evasion]) * (1 + totals[(int)BuffEffectChannel.EvasionPostRatio]))
             };
         }
     }

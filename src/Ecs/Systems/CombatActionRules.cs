@@ -1558,9 +1558,10 @@ internal static class CombatActionRules
                 || !rawItem.TryGetProperty("consumable", out var raw)
                 || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array)
                 continue;
-            var teamWide = string.Equals(item.SubCategory, Domain.GameData.AutoUseBar.Formation, StringComparison.Ordinal);
+            var baseTeamWide = string.Equals(item.SubCategory, Domain.GameData.AutoUseBar.Formation, StringComparison.Ordinal);
             foreach (var buff in buffs.EnumerateArray())
             {
+                var teamWide = baseTeamWide && (!buff.TryGetProperty("teamWide", out var tw) || tw.GetBoolean());
                 var buffId = buff.GetProperty("buffId").GetString()!;
                 // 效果键按注册表解析（与组队定格同键集；持续消耗品无等级成长，乘区恒 1）。
                 var effects = BuffEffectParser.Parse(buff, 1.0);
