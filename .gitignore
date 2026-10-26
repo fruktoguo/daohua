@@ -52,3 +52,6 @@ temp/
 __pycache__/
 *.pyc
 history_tmp.db
+
+# 本地单次运维脚本
+scripts/update-player-*.mjs
