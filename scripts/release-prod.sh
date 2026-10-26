@@ -36,6 +36,7 @@ PUSH_EXISTING=0
 ALLOW_DIRTY=0
 SKIP_APK=0
 SKIP_APK_UPLOAD=0
+SKIP_CADDY=0
 usage() {
   printf '%s\n' \
     '用法：scripts/release-prod.sh [选项]' \
@@ -44,6 +45,7 @@ usage() {
     '  --skip-odin      跳过 odin 计算节点发布（仅更新主服）' \
     '  --skip-backup    跳过发布前远端数据库备份（生产默认保留）' \
     '  --skip-smoke     跳过部署后的内网与公网烟测' \
+    '  --skip-caddy     跳过远端 Caddy 站点配置安装与 reload' \
     '  --skip-apk       跳过本地 Android 安装包打包' \
     '  --skip-apk-upload 跳过向 GitHub Releases 上传安装包' \
     '  --push-existing  跳过镜像重新构建，仅推送本机已有镜像' \
@@ -58,6 +60,7 @@ while (($# > 0)); do
     --skip-odin) SKIP_ODIN=1; shift ;;
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --skip-smoke) SKIP_SMOKE=1; shift ;;
+    --skip-caddy) SKIP_CADDY=1; shift ;;
     --skip-apk) SKIP_APK=1; shift ;;
     --skip-apk-upload) SKIP_APK_UPLOAD=1; shift ;;
     --push-existing) PUSH_EXISTING=1; shift ;;
@@ -260,6 +263,9 @@ DEPLOY_FLAGS=(
 )
 if [[ "$SKIP_SMOKE" == "1" ]]; then
   DEPLOY_FLAGS+=("--skip-smoke")
+fi
+if [[ "$SKIP_CADDY" == "1" ]]; then
+  DEPLOY_FLAGS+=("--skip-caddy")
 fi
 
 printf '  - 触发主服部署 (deploy-prod.sh)...\n'
