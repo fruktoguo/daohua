@@ -12,6 +12,7 @@ import {
   maxReachableValue,
   remainingPoints,
   shouldShowOpenHeavenGate,
+  getAllLinggenBonuses,
 } from './linggenCalculations.ts'
 
 test('linggenCalculations：增减伤合并文本与斗法面板同口径（增伤 Linear、减伤 NonLinear）', () => {
@@ -81,6 +82,22 @@ test('linggenCalculations：衍生战斗与百艺加成及技艺速度', () => {
   // 点数归零的系别不产出任何衍生条目。
   assert.deepEqual(getLinggenDerivedBonuses('metal', 0), [])
 })
+test('linggenCalculations：getAllLinggenBonuses 完整聚合五系攻防与衍生加成', () => {
+  const roots = { metal: 100, wood: 50, water: 0, fire: 80, earth: 20 }
+  const all = getAllLinggenBonuses(roots)
+  assert.equal(all.length, 5)
+
+  const metal = all.find(item => item.element === 'metal')
+  assert.equal(metal.points, 100)
+  assert.equal(metal.boostReduceText, '+25% / 20%')
+  assert.equal(metal.derived.length, 5) // 物理攻击/法术攻击/破招/命中/强化速度
+
+  const water = all.find(item => item.element === 'water')
+  assert.equal(water.points, 0)
+  assert.equal(water.boostReduceText, '0% / 0%')
+  assert.equal(water.derived.length, 0)
+})
+
 
 test('linggenCalculations：叩天门满修且未入天门时才展示「开天门」', () => {
   assert.equal(shouldShowOpenHeavenGate(18, false, true), true)

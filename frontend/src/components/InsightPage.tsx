@@ -870,6 +870,21 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
           })
           setIsHeavenGateModalOpen(false)
         }}
+        onAccept={values => {
+          gameClient.sendCommand('progression.heaven_gate', {
+            action: 'accept',
+            metal: values.metal,
+            wood: values.wood,
+            water: values.water,
+            fire: values.fire,
+            earth: values.earth,
+          })
+        }}
+        onDiscard={() => {
+          gameClient.sendCommand('progression.heaven_gate', {
+            action: 'discard',
+          })
+        }}
         onReroll={usePill => gameClient.sendCommand('progression.heaven_gate', { action: 'reroll', usePill })}
         onClose={() => setIsHeavenGateModalOpen(false)}
       />

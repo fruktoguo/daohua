@@ -243,10 +243,10 @@ public sealed class HeavenGateCommandTests
         Assert.Equal(foundationBefore - expectedCost, gate.Foundation, 6);
         Assert.Equal(1, gate.HeavenGateRerollCount);
         Assert.True(gate.HeavenGateEntered);
-        // 改命即重洗：抽取值与确认值同时换新且仍在配表区间内。
-        Assert.Equal(gate.HeavenGateRolled, gate.HeavenGateConfirmed);
-        Assert.InRange(gate.HeavenGateConfirmed!.Value.Total, HeavenGateRules.RollTotalMin, HeavenGateRules.RollTotalMax);
-
+        // 改命生成候选灵根：Rolled 换新，但已生效的 Confirmed 保持原值不变。
+        Assert.NotEqual(gate.HeavenGateRolled, gate.HeavenGateConfirmed);
+        Assert.Equal(new LinggenValues(60, 0, 0, 0, 0), gate.HeavenGateConfirmed);
+        Assert.InRange(gate.HeavenGateRolled!.Value.Total, HeavenGateRules.RollTotalMin, HeavenGateRules.RollTotalMax);
         // 底蕴不足：同一命令整体拒绝，不改底蕴也不加改命次数。
         var poorPlayer = Guid.NewGuid();
         await using var poorRuntime = CreateRuntime(poorPlayer, aggregate =>
@@ -323,6 +323,67 @@ public sealed class HeavenGateCommandTests
         var unknown = await Execute(runtime, playerId, new { action = "ascend" });
         Assert.False(unknown.Success);
         Assert.Equal("INVALID_PAYLOAD", unknown.Code);
+    }
+
+    /// <summary>
+    /// 逆天改命后选择替换（accept）或保留（discard）的完整业务闭环：
+    /// 1. 改命后生效灵根保持原状，新灵根存入 Rolled 作为待决议候选；
+    /// 2. 执行 accept（可带微调五行）后，新灵根覆盖写入 Confirmed 生效，候选清除；
+    /// 3. 再次改命后执行 discard，候选新灵根废弃，原 Confirmed 保持不变。
+    /// </summary>
+    [Fact]
+    public async Task RerollAcceptAndDiscardFlowBehavesCorrectly()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = CreateRuntime(playerId, aggregate =>
+        {
+            GateEnteredAtFullExperience(aggregate);
+            aggregate.Progression.Foundation = 5000;
+        });
+        await runtime.LoadAsync(playerId);
+        var initialConfirmed = (await runtime.LoadAsync(playerId)).State.Progression.HeavenGateConfirmed;
+        Assert.Equal(new LinggenValues(60, 0, 0, 0, 0), initialConfirmed);
+
+        // 1. 改命：扣底蕴，次数+1，Rolled 刷新，Confirmed 原样保留
+        var rerolled = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
+        Assert.True(rerolled.Success);
+        var candidateRoll = rerolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
+        Assert.NotEqual(initialConfirmed, candidateRoll);
+        Assert.Equal(initialConfirmed, rerolled.Snapshot.State.Progression.HeavenGateConfirmed);
+
+        // 2. 采纳替换（带微调）：散功 2 点换灌注 1 点，严格在额度内
+        var (source, target) = candidateRoll.Metal >= 2 ? (LinggenElement.Metal, LinggenElement.Wood)
+            : candidateRoll.Wood >= 2 ? (LinggenElement.Wood, LinggenElement.Metal)
+            : candidateRoll.Water >= 2 ? (LinggenElement.Water, LinggenElement.Fire)
+            : (LinggenElement.Fire, LinggenElement.Earth);
+        var modified = candidateRoll
+            .With(source, candidateRoll.Of(source) - 2)
+            .With(target, Math.Min(LinggenValues.MaxPointsPerElement, candidateRoll.Of(target) + 1));
+        var accepted = await Execute(runtime, playerId, new
+        {
+            action = "accept",
+            metal = modified.Metal,
+            wood = modified.Wood,
+            water = modified.Water,
+            fire = modified.Fire,
+            earth = modified.Earth,
+        });
+        Assert.True(accepted.Success, $"{accepted.Code}: {accepted.Message}");
+        var gateAccepted = accepted.Snapshot.State.Progression;
+        Assert.Equal(modified, gateAccepted.HeavenGateConfirmed);
+        Assert.Equal(modified, gateAccepted.HeavenGateRolled);
+
+        // 3. 再次改命，随后放弃（discard）
+        var rerolledAgain = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
+        Assert.True(rerolledAgain.Success);
+        Assert.Equal(modified, rerolledAgain.Snapshot.State.Progression.HeavenGateConfirmed);
+        Assert.NotEqual(modified, rerolledAgain.Snapshot.State.Progression.HeavenGateRolled);
+
+        var discarded = await Execute(runtime, playerId, new { action = "discard" });
+        Assert.True(discarded.Success, $"{discarded.Code}: {discarded.Message}");
+        var gateDiscarded = discarded.Snapshot.State.Progression;
+        Assert.Equal(modified, gateDiscarded.HeavenGateConfirmed);
+        Assert.Equal(modified, gateDiscarded.HeavenGateRolled);
     }
 
     /// <summary>同一 requestId 重放走幂等回执：状态不再变更，也不重复扣底蕴。</summary>

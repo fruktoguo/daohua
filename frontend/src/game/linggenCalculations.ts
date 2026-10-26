@@ -74,6 +74,24 @@ export interface LinggenDerivedBonus {
   glyph: string
   tone: PillTone
 }
+/** 单系五行灵根完整加成集合（含攻防增免伤与多条衍生加成）。 */
+export interface LinggenElementFullBonuses {
+  element: LinggenElementKey
+  points: number
+  boostReduceText: string
+  derived: LinggenDerivedBonus[]
+}
+
+/** 获取指定灵根调配下的五系完整加成列表。 */
+export function getAllLinggenBonuses(roots: LinggenPoints): LinggenElementFullBonuses[] {
+  return (['metal', 'wood', 'water', 'fire', 'earth'] as const).map(element => ({
+    element,
+    points: roots[element],
+    boostReduceText: formatLinggenBoostReduce(roots[element]),
+    derived: getLinggenDerivedBonuses(element, roots[element]),
+  }))
+}
+
 
 /**
  * 衍生加成配表项（总纲 §7.7.5.1 三列：元素攻防 / 战斗专精 / 百艺机缘）。

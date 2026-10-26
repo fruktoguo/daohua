@@ -793,7 +793,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 touched = ecs.MutatePlayer(playerId, aggregate =>
                                 {
                                     var gate = aggregate.Progression.HeavenGate;
-                                    gate.Apply(rolledEnter, confirmedEnter, entered: true, gate.RerollCount);
+                                    gate.Apply(confirmedEnter, confirmedEnter, entered: true, gate.RerollCount);
                                     aggregate.Touch(PlayerSectionKind.Progression);
                                 });
                                 break;
@@ -823,8 +823,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     if (aggregate.Progression.Foundation + 1e-9 < rerollCost)
                                         throw new DomainException(DomainErrorCode.Conflict, "底蕴不足，逆天改命失败。");
                                     aggregate.Progression.Foundation = Math.Max(0.0, aggregate.Progression.Foundation - rerollCost);
-                                    // 若此前已入天门则重洗后直接生效；若此前仍在分配阶段，则更新抽取原生值并保持未入天门。
-                                    gate.Apply(rerolledValues, alreadyEntered ? rerolledValues : null, entered: alreadyEntered, nextRerollCount);
+                                    // 若此前已入天门：新灵根作为候选存入 RolledValues，ConfirmedValues 原灵根保持不变；
+                                    // 若此前在未入天门分配阶段：更新抽取原生值并保持未入天门。
+                                    gate.Apply(rerolledValues, alreadyEntered ? gate.ConfirmedValues : null, entered: alreadyEntered, nextRerollCount);
                                     aggregate.Touch(PlayerSectionKind.Progression);
                                 });
                                 if (!usePill) break;
@@ -841,6 +842,39 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     CreateReceipt(playerId, requestId, command, payloadHash, rerollSnapshot.StateVersion),
                                     cancellationToken).ConfigureAwait(false);
                                 receiptAlreadyCommitted = true;
+                                break;
+                            }
+                            case "accept":
+                            {
+                                if (!gateProgression.HeavenGateEntered)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ENTERED", "尚未入天门，无可替换灵根。", before);
+                                if (gateProgression.HeavenGateRolled is not { } candidateRoll)
+                                    return new PlayerCommandResult(false, "NO_PENDING_REROLL", "无待裁决的改命灵根。", before);
+                                var confirmedNew = TryReadLinggen(payload, out var directCandidate)
+                                    ? directCandidate
+                                    : candidateRoll;
+                                if (!HeavenGateRules.IsValidAllocation(candidateRoll, confirmedNew))
+                                    return new PlayerCommandResult(false, "INVALID_ALLOCATION",
+                                        "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。", before);
+                                touched = ecs.MutatePlayer(playerId, aggregate =>
+                                {
+                                    var gate = aggregate.Progression.HeavenGate;
+                                    gate.Apply(confirmedNew, confirmedNew, entered: true, gate.RerollCount);
+                                    aggregate.Touch(PlayerSectionKind.Progression);
+                                });
+                                break;
+                            }
+                            case "discard":
+                            {
+                                if (!gateProgression.HeavenGateEntered)
+                                    return new PlayerCommandResult(false, "HEAVEN_GATE_NOT_ENTERED", "尚未入天门，无可放弃灵根。", before);
+                                var existingConfirmed = gateProgression.HeavenGateConfirmed ?? LinggenValues.Empty;
+                                touched = ecs.MutatePlayer(playerId, aggregate =>
+                                {
+                                    var gate = aggregate.Progression.HeavenGate;
+                                    gate.Apply(existingConfirmed, existingConfirmed, entered: true, gate.RerollCount);
+                                    aggregate.Touch(PlayerSectionKind.Progression);
+                                });
                                 break;
                             }
                             default:

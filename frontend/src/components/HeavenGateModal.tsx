@@ -1,9 +1,12 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Modal } from './Modal'
 import { ConfirmDialog } from './ConfirmDialog'
+import { PillBonusLabel } from './PillLabel'
+import { StatGlyph } from './StatGlyph'
 import { useT } from '../i18n'
 import {
   applyAxisDrag,
+  getAllLinggenBonuses,
   linggenCultivationMultiplier,
   projectPointerToAxis,
   remainingPoints,
@@ -67,6 +70,10 @@ interface HeavenGateModalProps {
   onAllocate: (values: LinggenPoints) => void
   /** 确认入天门（提交最终五行分布） */
   onEnter: (values: LinggenPoints) => void
+  /** 采纳替换新灵根（改命后提交最终调配） */
+  onAccept?: (values: LinggenPoints) => void
+  /** 放弃本次改命（保留原有灵根） */
+  onDiscard?: () => void
   /** 逆天改命（可选消耗逆命丹） */
   onReroll: (usePill: boolean) => void
   /** 关闭弹窗 */
@@ -97,6 +104,8 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   onRoll,
   onAllocate: _onAllocate,
   onEnter,
+  onAccept,
+  onDiscard,
   onReroll,
   onClose,
 }: HeavenGateModalProps): React.JSX.Element {
@@ -110,8 +119,21 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   const [toast, setToast] = useState<string | null>(null)
   const dragOriginRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
 
+  // 判断是否存在改命待裁决候选灵根：已入天门且抽取值与已生效值不一致
+  const isPendingReroll = useMemo(() => {
+    if (!entered || !rolled || !confirmed) return false
+    return rolled.metal !== confirmed.metal
+      || rolled.wood !== confirmed.wood
+      || rolled.water !== confirmed.water
+      || rolled.fire !== confirmed.fire
+      || rolled.earth !== confirmed.earth
+  }, [confirmed, entered, rolled])
+
   // 生成服务端真源的纯值指纹：防止后台高频推流（对象引用变化但数值未变）冲刷玩家正在拖拽的草稿。
   const sourceFingerprint = useMemo(() => {
+    if (isPendingReroll && rolled) {
+      return `pending_reroll:${rolled.metal},${rolled.wood},${rolled.water},${rolled.fire},${rolled.earth}:${rerollCount}`
+    }
     if (entered) {
       const c = confirmed ?? emptyPoints()
       return `entered:${c.metal},${c.wood},${c.water},${c.fire},${c.earth}`
@@ -120,24 +142,31 @@ export const HeavenGateModal = memo(function HeavenGateModal({
       return `rolled:${rolled.metal},${rolled.wood},${rolled.water},${rolled.fire},${rolled.earth}:${rerollCount}`
     }
     return 'unrolled'
-  }, [confirmed, entered, rerollCount, rolled])
+  }, [confirmed, entered, isPendingReroll, rerollCount, rolled])
 
   const lastSyncedRef = useRef<string | null>(null)
 
-  // 只有服务端核心数值（抽取结果、确认生效或改命次数）真正改变时才同步；
-  // 常规状态推流（挂机/战斗等秒级快照更新）绝不覆盖玩家正在调整的本地草稿。
+  // 只有服务端核心数值真正改变时才同步草稿
   useEffect(() => {
     if (lastSyncedRef.current === sourceFingerprint) return
     lastSyncedRef.current = sourceFingerprint
-    setRoots(entered ? confirmed ?? emptyPoints() : rolled ?? emptyPoints())
-  }, [entered, confirmed, rolled, sourceFingerprint])
+    if (isPendingReroll) {
+      setRoots(rolled ?? emptyPoints())
+    } else if (entered) {
+      setRoots(confirmed ?? emptyPoints())
+    } else {
+      setRoots(rolled ?? emptyPoints())
+    }
+  }, [confirmed, entered, isPendingReroll, rolled, sourceFingerprint])
 
-  const innate = rolled ?? emptyPoints()
+  const innate = (isPendingReroll ? rolled : (entered ? confirmed : rolled)) ?? emptyPoints()
   const hasRolled = useMemo(
     () => innate.metal + innate.wood + innate.water + innate.fire + innate.earth > 0,
     [innate],
   )
-  const boardState: BoardState = entered ? 'finalized' : hasRolled ? 'allocating' : 'unrolled'
+  const boardState: BoardState = isPendingReroll
+    ? 'allocating'
+    : (entered ? 'finalized' : hasRolled ? 'allocating' : 'unrolled')
   const remaining = remainingPoints(innate, roots)
   const currentTotal = roots.metal + roots.wood + roots.water + roots.fire + roots.earth
   const immutableTotal = innate.metal + innate.wood + innate.water + innate.fire + innate.earth
@@ -151,6 +180,9 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     () => evaluateSpiritualRoots(roots, hasRolled),
     [hasRolled, roots],
   )
+  // 实时根据当前拖拽调配解算五系完整加成
+  const fullBonuses = useMemo(() => getAllLinggenBonuses(roots), [roots])
+
 
   const toastTimerRef = useRef<number | null>(null)
   const showToast = useCallback((message: string) => {
@@ -231,7 +263,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     setRoots(current => applyAxisDrag(innate, current, axisKey, current[axisKey] + delta).roots)
   }, [boardState, innate])
 
-  const [confirmAction, setConfirmAction] = useState<'enter' | 'reroll' | null>(null)
+  const [confirmAction, setConfirmAction] = useState<'enter' | 'reroll' | 'accept' | 'discard' | null>(null)
 
   const handleEnterClick = useCallback(() => {
     if (!hasActiveRoot) {
@@ -251,6 +283,33 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     onClose()
   }, [onClose, onEnter, roots])
 
+  const handleAcceptClick = useCallback(() => {
+    if (!hasActiveRoot) {
+      showToast(t('insight.heavenGate.toast.allZero'))
+      return
+    }
+    if (remaining < 0) {
+      showToast(t('insight.heavenGate.toast.insufficient'))
+      return
+    }
+    setConfirmAction('accept')
+  }, [hasActiveRoot, remaining, showToast, t])
+
+  const executeAccept = useCallback(() => {
+    setConfirmAction(null)
+    onAccept?.(roots)
+    onClose()
+  }, [onAccept, onClose, roots])
+
+  const handleDiscardClick = useCallback(() => {
+    setConfirmAction('discard')
+  }, [])
+
+  const executeDiscard = useCallback(() => {
+    setConfirmAction(null)
+    onDiscard?.()
+  }, [onDiscard])
+
   const handleRerollClick = useCallback(() => {
     setConfirmAction('reroll')
   }, [])
@@ -259,7 +318,6 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     setConfirmAction(null)
     onReroll(usePill && hasPill)
   }, [hasPill, onReroll, usePill])
-
   const handleReset = useCallback(() => setRoots(innate), [innate])
 
   // 五轴顶点（当前分布）与先天基准分布
@@ -278,7 +336,9 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   return (
     <>
     <Modal open={open} labelledBy={titleId} onClose={onClose} size="large" className="heaven-gate-modal" initialFocusRef={confirmRef}>
-      <section className={boardClass} data-state={boardState}>
+      <section className={boardClass} data-state={boardState} data-pending-reroll={isPendingReroll ? 'true' : 'false'}>
+        <div className="hg-panel__body">
+          <div className="hg-panel__left">
         {/* A 判语区 */}
         <header className="hg-header">
           <div className="hg-header__top">
@@ -660,7 +720,34 @@ export const HeavenGateModal = memo(function HeavenGateModal({
           </div>
 
           <div className="hg-actions__group">
-            {boardState === 'allocating' && (
+            {isPendingReroll ? (
+              <>
+                <button
+                  type="button"
+                  className="hg-btn hg-btn--ghost"
+                  onClick={handleDiscardClick}
+                >
+                  {t('insight.heavenGate.discardBtn')}
+                </button>
+                <button
+                  type="button"
+                  className="hg-btn hg-btn--ghost"
+                  disabled={isAtInnate}
+                  onClick={handleReset}
+                >
+                  {t('insight.heavenGate.resetBtn')}
+                </button>
+                <button
+                  ref={confirmRef}
+                  type="button"
+                  className="hg-btn hg-btn--primary"
+                  disabled={!hasActiveRoot || remaining < 0}
+                  onClick={handleAcceptClick}
+                >
+                  {t('insight.heavenGate.acceptBtn')}
+                </button>
+              </>
+            ) : boardState === 'allocating' ? (
               <>
                 <button
                   type="button"
@@ -668,7 +755,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   disabled={isAtInnate}
                   onClick={handleReset}
                 >
-                  重置
+                  {t('insight.heavenGate.resetBtn')}
                 </button>
                 <button
                   type="button"
@@ -689,7 +776,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   {t('insight.heavenGate.enterBtn')}
                 </button>
               </>
-            )}
+            ) : null}
 
             {boardState === 'finalized' && (
               <>
@@ -732,6 +819,57 @@ export const HeavenGateModal = memo(function HeavenGateModal({
             )}
           </div>
         </footer>
+          </div>
+
+          {/* E 右栏：实时五行加成全览面板 */}
+          <aside className="hg-panel__right" role="region" aria-label={t('insight.heavenGate.bonusesTitle')}>
+            <div className="hg-bonuses-aside">
+              <div className="hg-bonuses-aside__head">
+                <span className="hg-bonuses-aside__title">{t('insight.heavenGate.bonusesTitle')}</span>
+                {isPendingReroll && (
+                  <span className="hg-bonuses-aside__badge">{t('insight.heavenGate.pendingRerollBadge')}</span>
+                )}
+              </div>
+              <div className="hg-bonuses-aside__list">
+                {fullBonuses.map(item => (
+                  <div
+                    key={item.element}
+                    className="hg-bonus-card"
+                    data-element={item.element}
+                    data-active={item.points > 0 ? 'true' : 'false'}
+                  >
+                    <div className="hg-bonus-card__top">
+                      <span className={`hg-bonus-card__badge hg-bonus-card__badge--${item.element}`}>
+                        {t(`insight.heavenGate.element.${item.element}`)}
+                      </span>
+                      <span className="hg-bonus-card__points">
+                        {item.points} 点
+                      </span>
+                      <span className="hg-bonus-card__boost">
+                        {item.boostReduceText}
+                      </span>
+                    </div>
+                    <div className="hg-bonus-card__derived">
+                      {item.derived.length > 0 ? (
+                        item.derived.map(bonus => (
+                          <PillBonusLabel
+                            key={bonus.key}
+                            icon={<StatGlyph glyph={bonus.glyph} size={13} />}
+                            label={t(bonus.labelKey)}
+                            value={bonus.valueText}
+                            tone={bonus.tone}
+                          />
+                        ))
+                      ) : (
+                        <span className="hg-bonus-card__empty">{t('insight.heavenGate.noDerivedBonus')}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
       </section>
     </Modal>
     {open && confirmAction === 'enter' && (
@@ -767,6 +905,27 @@ export const HeavenGateModal = memo(function HeavenGateModal({
         confirmLabel={t('insight.heavenGate.rerollBtn')}
         danger={true}
         onConfirm={executeReroll}
+        onClose={() => setConfirmAction(null)}
+      />
+    )}
+    {open && confirmAction === 'accept' && (
+      <ConfirmDialog
+        open={true}
+        title={t('insight.heavenGate.acceptConfirmTitle')}
+        description={t('insight.heavenGate.acceptConfirmBody')}
+        confirmLabel={t('insight.heavenGate.acceptBtn')}
+        onConfirm={executeAccept}
+        onClose={() => setConfirmAction(null)}
+      />
+    )}
+    {open && confirmAction === 'discard' && (
+      <ConfirmDialog
+        open={true}
+        title={t('insight.heavenGate.discardConfirmTitle')}
+        description={t('insight.heavenGate.discardConfirmBody')}
+        confirmLabel={t('insight.heavenGate.discardBtn')}
+        danger={true}
+        onConfirm={executeDiscard}
         onClose={() => setConfirmAction(null)}
       />
     )}

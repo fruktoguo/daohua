@@ -122,10 +122,9 @@
 
     .hg-panel {
       position: relative;
-      /* 宽高全部锁定为固定值：弹性宽度在拖拽中会产生亚像素回缩，固定值彻底消除 */
-      width: 520px;
-      min-width: 520px;
-      max-width: 520px;
+      width: 860px;
+      min-width: 860px;
+      max-width: 860px;
       height: 688px;
       min-height: 688px;
       max-height: 688px;
@@ -137,13 +136,156 @@
       padding: 14px 16px;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
-      gap: 8px;
       color: var(--hg-ink-main);
       user-select: none;
       overflow: hidden;
       box-sizing: border-box;
       transition: background var(--hg-dur-slow) var(--hg-ease), border-color var(--hg-dur-slow) var(--hg-ease);
+    }
+
+    .hg-panel__body {
+      display: flex;
+      flex-direction: row;
+      gap: 16px;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .hg-panel__left {
+      width: 504px;
+      min-width: 504px;
+      max-width: 504px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .hg-panel__right {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ==========================================================================
+       8. 右栏实时五行加成全览面板
+       ========================================================================== */
+    .hg-bonuses-aside {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: var(--hg-panel-grad);
+      border: 1px solid var(--hg-border);
+      border-radius: 4px;
+      padding: 10px 12px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .hg-bonuses-aside__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid var(--hg-border);
+      flex-shrink: 0;
+    }
+
+    .hg-bonuses-aside__title {
+      font-family: var(--hg-font-serif);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--hg-ink-main);
+    }
+
+    .hg-bonuses-aside__badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--hg-ochre);
+      color: #fff;
+    }
+
+    .hg-bonuses-aside__list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 2px;
+    }
+
+    .hg-bonus-card {
+      background: var(--hg-paper-bright);
+      border: 1px solid var(--hg-border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-bonus-card[data-active="true"] {
+      border-color: var(--hg-border-strong);
+    }
+
+    .hg-bonus-card[data-active="false"] {
+      opacity: 0.52;
+    }
+
+    .hg-bonus-card__top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hg-bonus-card__badge {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: #fff;
+    }
+    .hg-bonus-card__badge--metal { background: var(--hg-metal); color: #fff; }
+    .hg-bonus-card__badge--wood { background: var(--hg-wood); color: #fff; }
+    .hg-bonus-card__badge--water { background: var(--hg-water); color: #fff; }
+    .hg-bonus-card__badge--fire { background: var(--hg-fire); color: #fff; }
+    .hg-bonus-card__badge--earth { background: var(--hg-earth); color: #fff; }
+
+    .hg-bonus-card__points {
+      font-family: var(--hg-font-serif);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--hg-ink-main);
+    }
+
+    .hg-bonus-card__boost {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--hg-ink-gray);
+      margin-left: auto;
+    }
+
+    .hg-bonus-card__derived {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .hg-bonus-card__empty {
+      font-size: 11px;
+      color: var(--hg-ink-faint);
+      font-style: italic;
     }
 
     /* 四角古卷硬边装饰线 */
@@ -1280,6 +1422,27 @@
     /* ==========================================================================
        9. 响应式断点（720px / 480px）
        ========================================================================== */
+    @media (max-width: 879px) {
+      .hg-panel {
+        width: 520px;
+        min-width: auto;
+        max-width: 96vw;
+        height: auto;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+      .hg-panel__body {
+        flex-direction: column;
+        gap: 12px;
+        height: auto;
+      }
+      .hg-panel__left {
+        width: 100%;
+        min-width: auto;
+        max-width: 100%;
+      }
+    }
+
     @media (max-width: 719px) {
       .hg-panel {
         padding: 12px 14px;
