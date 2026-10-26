@@ -64,11 +64,11 @@ if [[ -z "$db_state" || "$db_state" != true\ healthy ]]; then
   exit 1
 fi
 
-if ! compose exec -T db sh -ceu '
+if ! compose exec -T -e BACKUP_COMPRESS_LEVEL="${BACKUP_COMPRESS_LEVEL}" db sh -ceu '
   exec pg_dump \
     --username="${POSTGRES_USER:?POSTGRES_USER 未注入}" \
     --dbname="${POSTGRES_DB:?POSTGRES_DB 未注入}" \
-    --format=custom --compress="gzip:${BACKUP_COMPRESS_LEVEL}" --no-owner --no-privileges
+    --format=custom --compress="gzip:${BACKUP_COMPRESS_LEVEL:-3}" --no-owner --no-privileges
 ' >"$partial"; then
   rm -f "$partial"
   printf '数据库备份失败。\n' >&2
