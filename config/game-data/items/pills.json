@@ -67,9 +67,9 @@
     "subCategory": "pill"
   },
   {
-    "id": "item.yuyuan-dan",
-    "name": "愈元丹",
-    "description": "愈元固本，血气充盈。\n以十年灵药萃炼的碧绿丹丸，服之药力如涓涓春水涤荡周身经脉，迅速愈合创伤并凝结护体气罩。",
+    "id": "item.shengji-balm",
+    "name": "生肌膏",
+    "description": "金创生肌，肉芽速生。\n江湖名医以世俗奇药调配的暗青药膏，敷于创口可止血收口，凝结气罡防护周全。",
     "kind": "consumable",
     "category": "consumable",
     "tier": 1,
@@ -81,8 +81,8 @@
       "cooldownSeconds": 60,
       "buffs": [
         {
-          "buffId": "buff.yuyuan",
-          "name": "愈元丹·回春",
+          "buffId": "buff.shengji",
+          "name": "生肌膏·复肌",
           "durationSeconds": 30,
           "hpRegen": 72,
           "damageAbsorptionPoints": 15
@@ -96,7 +96,7 @@
   {
     "id": "item.ningqi-powder",
     "name": "凝气散",
-    "description": "聚水成渊，凝气聚神。\n散发微蓝荧光的细腻药粉，吸纳天地游离灵气，短时间内极大加速经脉内灵力流转与出手速度。",
+    "description": "调气顺脉，吐纳归心。\n凡俗宗师自灵草中析出的清凉药散，服之平复翻涌气血，短时加快内劲运转与出手速度。",
     "kind": "consumable",
     "category": "consumable",
     "tier": 1,
@@ -121,13 +121,13 @@
     "level": 9
   },
   {
-    "id": "item.jiuzhuan-balm",
-    "name": "九转还魂膏",
-    "description": "九转生死还玉魂。\n玄玉匣盛放的金色膏药，散发馥郁药香。于叩天关危殆关头敷用，可强行逆转气血衰败并固守神魂坚不可摧。",
+    "id": "item.huangya-pill",
+    "name": "黄芽丹",
+    "description": "黄芽初生，生机绵绵。\n道门低阶灵草初生嫩芽淬炼的初品灵丹，温润柔和，可护持叩关修士经脉血肉不伤。",
     "kind": "consumable",
     "category": "consumable",
     "tier": 2,
-    "sellPrice": 520,
+    "sellPrice": 480,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -135,8 +135,8 @@
       "cooldownSeconds": 60,
       "buffs": [
         {
-          "buffId": "buff.jiuzhuan-balm",
-          "name": "九转还魂·生机",
+          "buffId": "buff.huangya",
+          "name": "黄芽丹·润脉",
           "durationSeconds": 30,
           "hpRegen": 150,
           "damageAbsorptionPoints": 40
@@ -148,13 +148,13 @@
     "level": 18
   },
   {
-    "id": "item.taiyi-juqi-pill",
-    "name": "太乙聚气丹",
-    "description": "太乙归真，紫府潮生。\n丹成九纹的玄门高阶灵丹，入腹化作浩瀚灵力汪洋，催动术法威能大涨，生生不息。",
+    "id": "item.heqi-pill",
+    "name": "合气丹",
+    "description": "吐纳六合，引气归元。\n炼气期修士常备的基础灵丹，吞服即可助紫府吸纳天地灵气，加速真气周天搬运。",
     "kind": "consumable",
     "category": "consumable",
     "tier": 2,
-    "sellPrice": 550,
+    "sellPrice": 500,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -162,8 +162,8 @@
       "cooldownSeconds": 60,
       "buffs": [
         {
-          "buffId": "buff.taiyi-juqi",
-          "name": "太乙聚气·归真",
+          "buffId": "buff.heqi",
+          "name": "合气丹·吐纳",
           "durationSeconds": 30,
           "mpRegen": 100,
           "damageBonusPoints": 15
