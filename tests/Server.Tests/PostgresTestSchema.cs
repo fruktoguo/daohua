@@ -55,6 +55,11 @@ internal static class PostgresTestSchema
                         INSERT INTO platform.schema_version(version, applied_at) VALUES ({PostgresSchema.Version}, now()) ON CONFLICT (version) DO NOTHING;
                         """, connection) { CommandTimeout = 60 };
                     await updateVersions.ExecuteNonQueryAsync();
+                    // 历史运行的未完结 compute 任务会跨轮残留并随租约超时反复重试（实测 Attempts 20+），
+                    // 占满 ClaimDueAsync 批次槽位后新入队任务领不到租约，Compute 系测试间歇假红；
+                    // 测试库按清零口径每轮供给即净态，此处统一清掉上一轮残留。
+                    await using var cleanJobs = new NpgsqlCommand("DELETE FROM platform.compute_jobs", connection) { CommandTimeout = 60 };
+                    await cleanJobs.ExecuteNonQueryAsync();
                     return;
                 }
                 catch (PostgresException exception) when (attempt < 5 && exception.SqlState is "23505" or "40P01" or "40001")
