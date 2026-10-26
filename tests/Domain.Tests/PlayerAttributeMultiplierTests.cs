@@ -82,4 +82,39 @@ public sealed class PlayerAttributeMultiplierTests
         var forbiddenMultiplicative = baseAttr.Ad * 1.20 * 1.20;
         Assert.NotEqual(forbiddenMultiplicative, resolved.PhysicalAttack);
     }
+
+    [Fact]
+    public void CultivationExpBonus_ScalesWithInternalAbilityLevel()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+
+        // 1. 装备 1 级《炼精化气诀》
+        const string internalId = "ability.lianjing-huaqi-jue";
+        player.LearnAbility(new(internalId));
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot(internalId, 1);
+
+        var resolvedLv1 = PlayerAttributeResolver.Resolve(player, catalog);
+        // Lv1 基础点数为 20
+        Assert.Equal(20.0, resolvedLv1.CultivationExpBonusPoints, precision: 6);
+        Assert.Equal(0.0, resolvedLv1.CombatExpBonusPoints, precision: 6);
+
+        // 2. 升为 2 级（+5% 成长：20 * 1.05 = 21）
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot(internalId, 2);
+        var resolvedLv2 = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(21.0, resolvedLv2.CultivationExpBonusPoints, precision: 6);
+
+        // 3. 升为 5 级（成长 1 + 0.05 * 4 = 1.20：20 * 1.2 = 24）
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot(internalId, 5);
+        var resolvedLv5 = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(24.0, resolvedLv5.CultivationExpBonusPoints, precision: 6);
+
+        // 4. 换装 1 级《焚血功》：产生 -10 战斗修为获取
+        const string fenxueId = "ability.fenxue-gong";
+        player.LearnAbility(new(fenxueId));
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot(fenxueId, 1);
+        var resolvedFenxue = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(0.0, resolvedFenxue.CultivationExpBonusPoints, precision: 6);
+        Assert.Equal(-10.0, resolvedFenxue.CombatExpBonusPoints, precision: 6);
+    }
 }

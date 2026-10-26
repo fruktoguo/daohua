@@ -2121,6 +2121,9 @@ insight.combat.attributesLoading,"属性读取中…",""
 insight.combat.basicAttackBonus,"普攻增幅",""
 insight.combat.basicAttackBonusTooltip,"增幅普通攻击的伤害
 公式：普攻伤害 ×(1+普攻增幅/100)",""
+insight.combat.combatExpBonus,"战斗修为获取",""
+insight.combat.combatExpBonusTooltip,"增幅战斗中击杀怪物获得的境界修为
+公式：战斗修为 ×(1+(修为获取+战斗修为获取)/100)",""
 insight.combat.cooldownReduction,"冷却缩减",""
 insight.combat.cooldownReductionTooltip,"缩短所有功法冷却时间
 公式：冷却 ×100/(100+冷却缩减)",""
@@ -2133,6 +2136,9 @@ insight.combat.critDamageTooltip,"暴击时造成的伤害倍率
 公式：暴击伤害 = 1+暴击伤害点数/100（基础 50 点 = 150%）",""
 insight.combat.critTooltip,"打出致命一击的几率
 公式：暴击率 = 暴击 / (暴击 + 对方免暴 + 100)",""
+insight.combat.cultivationExpBonus,"修为获取",""
+insight.combat.cultivationExpBonusTooltip,"增幅全渠道获得的境界修为（含打坐修行与击杀）
+公式：最终修为 ×(1+修为获取/100)",""
 insight.combat.damageReflect,"伤害反弹",""
 insight.combat.damageReflectTooltip,"将受到的伤害部分弹回攻击方
 公式：反弹量 = 承伤 ×伤害反弹/100",""

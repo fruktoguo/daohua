@@ -194,6 +194,10 @@ const STAT_KEY_TO_GLYPH: Record<string, string> = {
 
   // 底蕴、经验与修行
   cultivationExpBonusPoints: 'experience',
+  combatExpBonusPoints: 'experience',
+  cultivationExpBonus: 'experience',
+  combatExpBonus: 'experience',
+  战斗修为获取: 'experience',
   修为获取: 'experience',
   修为: 'experience',
   灵气: 'experience',

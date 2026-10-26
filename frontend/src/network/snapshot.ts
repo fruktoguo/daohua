@@ -345,6 +345,7 @@ function mapCombatAttributes(value: unknown, name: string): CombatAttributes {
     'fixedPhysicalDamageBonus', 'fixedPhysicalDamageReduction',
     'fixedSpellDamageBonus', 'fixedSpellDamageReduction',
     'attackSpeedPoints', 'actionSpeedPoints', 'cooldownReductionPoints', 'threatBonusPoints',
+    'cultivationExpBonusPoints', 'combatExpBonusPoints',
     'hpDrainPoints', 'mpDrainPoints', 'damageReflectPoints', 'healingBonusPoints',
   ] as const
   const numbers = Object.fromEntries(numericKeys.map(key => [key, finiteValue(source[key], `${name}.${key}`)]))

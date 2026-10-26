@@ -111,6 +111,8 @@ export function extractInternalAbilityBonusItems(
       threatBonusPoints: { label: '威胁增幅', tone: 'crimson' },
       healingBonusPoints: { label: '治疗增幅', tone: 'violet' },
       damageAbsorptionPoints: { label: '伤害减免', tone: 'emerald' },
+      cultivationExpBonusPoints: { label: '修为获取', tone: 'gold' },
+      combatExpBonusPoints: { label: '战斗修为获取', tone: 'amber' },
     }
     for (const [stat, baseVal] of Object.entries(ability.passive)) {
       if (typeof baseVal === 'number' && baseVal !== 0) {

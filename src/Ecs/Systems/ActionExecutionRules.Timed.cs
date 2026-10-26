@@ -280,10 +280,16 @@ internal static partial class ActionExecutionRules
         var experienceCredited = 0d;
         var foundationDelta = 0d;
         var rootExpGains = new Dictionary<CoreAspectKind, double>();
+        var cultivationExpMultiplier = gameData is not null
+            ? Math.Max(0, 1 + player.ResolveAttributes(gameData).CultivationExpBonusPoints / 100d)
+            : 1.0;
         foreach (var yield in definition.Yields)
         {
             if (yield.Period != ActionYieldPeriod.PerSecond) continue;
-            var rate = yield.Amount * multiplier;
+            var baseAmount = yield.Kind == ActionYieldKind.Experience
+                ? yield.Amount * cultivationExpMultiplier
+                : yield.Amount;
+            var rate = baseAmount * multiplier;
             var total = rate * seconds;
             if (!double.IsFinite(rate) || !double.IsFinite(total))
                 throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
@@ -394,6 +400,9 @@ internal static partial class ActionExecutionRules
         // 先汇总数值型收益并完成有限性校验，再统一落账，沿用“先校验后变更”语义。
         // experienceGain 记增幅后总量（底蕴结算输入）。
         double experienceGain = 0, manaGain = 0, hitpointGain = 0;
+        var repeatCultivationMultiplier = gameData is not null
+            ? Math.Max(0, 1 + player.ResolveAttributes(gameData).CultivationExpBonusPoints / 100d)
+            : 1.0;
         foreach (var yield in definition.Yields)
         {
             if (yield.Period != ActionYieldPeriod.PerRepeat) continue;
@@ -403,7 +412,7 @@ internal static partial class ActionExecutionRules
             var amount = baseYield * autoUseMultiplier;
             switch (yield.Kind)
             {
-                case ActionYieldKind.Experience: experienceGain += amount; break;
+                case ActionYieldKind.Experience: experienceGain += amount * repeatCultivationMultiplier; break;
                 case ActionYieldKind.Mana: manaGain += amount; break;
                 case ActionYieldKind.Hitpoints: hitpointGain += amount; break;
             }

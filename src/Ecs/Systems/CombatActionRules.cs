@@ -1250,7 +1250,8 @@ internal static class CombatActionRules
                 ? monster.Experience
                 : monster.Experience / spec.Members.Count * (1 - spec.LevelMalusFor(selfIndex));
             var rawExp = experience;
-            var cultivationBonus = ResolveInternalCultivationBonus(player, gameData);
+            var attributes = player.ResolveAttributes(gameData);
+            var cultivationBonus = attributes.CultivationExpBonusPoints + attributes.CombatExpBonusPoints;
             var cultivationExp = cultivationBonus != 0
                 ? Math.Max(0, experience * (1 + cultivationBonus / 100d))
                 : experience;
@@ -1416,15 +1417,6 @@ internal static class CombatActionRules
         return Enum.TryParse(property.GetString(), true, out attribute) && Enum.IsDefined(attribute);
     }
 
-    private static double ResolveInternalCultivationBonus(IPlayerResourceContext player, GameDataCatalog gameData)
-    {
-        if (player.Loadout.AbilitySlots.Count == 0) return 0;
-        var slot = player.Loadout.AbilitySlots[0];
-        if (slot.AbilityId is null) return 0;
-        if (!gameData.Abilities.TryGetValue(slot.AbilityId, out var ability)
-            || DeterministicCombatEngine.AbilityText(ability, "discipline") != "internal") return 0;
-        return JsonRead.Number(ability, "cultivationExpBonusPoints");
-    }
     /// <summary>功法显示名：配表缺失或无名时回退 ID 本体，保证日志引用标签不为空。</summary>
     private static string AbilityName(GameDataCatalog gameData, string abilityId)
         => gameData.Abilities.TryGetValue(abilityId, out var ability)

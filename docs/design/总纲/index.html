@@ -1745,8 +1745,8 @@ $$T(N) = T_0 \times \left( 1 + 0.30 \times (N - 1) \right)$$
 - `rootExpMultipliers`：六维乘率表，键为 `stamina`/`meridians`/`attack`/`bone`/`agility`/`consciousness` 子集，未列维度缺省 `1.0`，允许配 `0`（献祭归墟——该维终身停长，为真代价）。
 - **六维入账公式**：`share_i = experience × mult_i × eff`（每个归属维度各得全额乘以自身乘率）；非守恒——六维总效率 = `eff × Σmult/6`，允许偏离 100%（总量是内功强度的定价旋钮：偏科越狠/总量越高，代价越硬）。
 - `rootExpEfficiencyPerLevel`：参悟等级每级提升六维总效率，`eff = 1 + perLevel × (参悟Lv − 1)`；参悟等级与术法同口径由功法经验立方曲线导出，内功不施放、参悟经验唯一来源为秘籍/残卷研读（§5.2）。
-- `cultivationExpBonusPoints`：修为类收益增减点（1 点 = 1%），作为独立乘区乘在增幅后收益量 `amp` 上，对全部修为类收益路径生效（击杀/行动收益/冥想，见 [第七篇](./07-战斗数值与内视规约.md) §7.11.1）；负值为「弃道从武」型内功的代价。
-- `passive`：常驻面板效果块，复用装备 `flatStats` 同族点数字段汇入 `PlayerAttributeResolver`；基础数值按现行口径配置，并随参悟等级线性成长，每级提升 +5%（`passiveScale = 1 + 0.05 × (Lv − 1)`）。
+- `cultivationExpBonusPoints`（修为获取）与 `combatExpBonusPoints`（战斗修为获取）：属于角色通用特殊属性族（100 点 = 100%）。其中 `cultivationExpBonusPoints` 为全路径修为收益通用增幅（击杀/行动收益/冥想/打坐引气，见 [第七篇](./07-战斗数值与内视规约.md) §7.11.1）；`combatExpBonusPoints` 为战斗专精修为增幅，仅在击杀怪物/战胜结算时额外叠加生效。
+- `passive`：常驻面板效果块，复用装备 `flatStats` 同族点数字段汇入 `PlayerAttributeResolver`；基础数值按现行口径配置，并随参悟等级线性成长，每级提升 +5%（`passiveScale = 1 + 0.05 × (Lv − 1)`）。内功心法不再使用独立的顶层修为字段，统一通过 `passive` 挂载上述属性（如炼精化气诀配置 `cultivationExpBonusPoints: 20`，焚血功配置 `combatExpBonusPoints: -10`），享受参悟等级成长红利。
 - `rootAttribute`：保留为主修维度标识（UI 归属展示/设计语义），不再承担分配计算——分配唯一由 `rootExpMultipliers` 决定。
 - 未装备内功时六维全归属、各得全额（每维 `experience`，总量 6×）；神通/外功声明 `rootAttribute` 不参与分配。
 
@@ -1766,10 +1766,10 @@ $$T(N) = T_0 \times \left( 1 + 0.30 \times (N - 1) \right)$$
 
 | 名称 | 功法 ID | 乘率配置（未列 = 1.0） | 六维总效率 | 参悟效率/级 | 修为点 | 常驻效果 | 风味描述 |
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- | :--- |
-| **焚血功** | `ability.fenxue-gong` | 力5.5 体0 识0.5 | **150%** | +3.0% | **−10** | 物理增伤 +15% (每级+5%) | 燃血为薪，力可崩山 |
+| **焚血功** | `ability.fenxue-gong` | 力5.5 体0 识0.5 | **150%** | +3.0% | 0 | 物理增伤 +15%、战斗修为获取 -10% (每级+5%) | 燃血为薪，力可崩山 |
 | **小周天功** | `ability.xiaozhoutian-gong` | 骨3.0 体0.75 力0.75 身0.75 识0.75 | 117% | +3.0% | 0 | 物理减伤 +7.5%、术法减伤 +7.5% (每级+5%) | 气行任督，周天不息 |
 | **存神诀** | `ability.cunshen-jue` | 识3.5 体0.6 力0.5 身0.4 | 117% | +3.0% | 0 | 术法增伤 +11.25% (每级+5%) | 存神内视，万虑皆空 |
-| **炼精化气诀** | `ability.lianjing-huaqi-jue` | 全维 0.7 | **70%** | +3.0% | **+20** | — | 炼精化气，舍形求真 |
+| **炼精化气诀** | `ability.lianjing-huaqi-jue` | 全维 0.7 | **70%** | +3.0% | 0 | 修为获取 +20% (每级+5%) | 炼精化气，舍形求真 |
 
 **T3 筑基·玄门心法**（筑基境命名走玄门真解；六维全翻倍总和 1200%，作为高阶内功成长标杆）：
 
@@ -2731,7 +2731,7 @@ Buff 的数值效果不再以平铺 record 字段承载，统一收敛为**效�
 - 暂存区冻结的权威判据是「队首行动挂载对局回放」；`ActiveDuelId` 残留而队首无对局（崩溃或部分落盘窗口产生的孤儿预约）不构成冻结理由：模拟推进在暂存结算前自动清理孤儿标记（对玩家下发系统日志事件），暂存区随即恢复到期入账。孤儿冻结若不设自愈，挂机掉落只进不出，最终堆积到超限拒载、玩家永久无法上线。
 - 斗法落败时，败方暂存区全部物品转移给胜方；胜方入账走自身模拟的 `AssetDelta` 事务，败方仅清自身分段。
 - 每次新战斗行动会话重置本次收益账本，统计修为（`Experience`）、底蕴（`Foundation` 净变动）、战斗经验（`CombatExperience`）、六维经验（`RootExp`）与物品；归档最多保留 `maxBattleReports`（默认 10）条。
-- 击杀收益为单参数 `experience`：同额经 `CreditExperience` 结算修为三池、等额累积战斗经验。配表 `experience` 为显式覆盖项——缺省按怪物 `level`+`rank` 派生（`RealmProgressionCatalog.MonsterKillExperience`）：`experience = expToNext[level] / 1000 × 0.9^(level-1) × rankMult`，份额以 Lv1 = 1/1000 为基准、每级指数衰减 10% 渐近 0（同级刷怪的修为条效率随等级递减），层次倍率小怪 1×、精英 3×、妖王 10×；等级超出 `expToNext` 配表上界时按末档非零修为条派生。多人同场击杀按在场玩家平分（共战会话语义见 [第二十一篇 §21.13](./21-同道与组队系统.md)，含掉落增幅加权归属与等级惩罚细则）。六维经验每个归属维度各得全额 `experience × mult_i × eff`（总量 = `experience × eff × Σmult`，非守恒；mult 缺省 1.0、可为 0；`eff = 1 + rootExpEfficiencyPerLevel × (参悟Lv − 1)`），未装内功六维全归属、各得全额（总量 6×），神通/外功不参与分配。修为类收益的 `amp` 另乘内功 `cultivationExpBonusPoints` 独立乘区（见 [第五篇](./05-技能神通与秘籍残卷体系.md) §5.3）。怪物战斗经验不入配表，按其 `level` 经 `CumulativeExpFor` 派生（见 §7.7.6）。
+- 击杀收益为单参数 `experience`：同额经 `CreditExperience` 结算修为三池、等额累积战斗经验。配表 `experience` 为显式覆盖项——缺省按怪物 `level`+`rank` 派生（`RealmProgressionCatalog.MonsterKillExperience`）：`experience = expToNext[level] / 1000 × 0.9^(level-1) × rankMult`，份额以 Lv1 = 1/1000 为基准、每级指数衰减 10% 渐近 0（同级刷怪的修为条效率随等级递减），层次倍率小怪 1×、精英 3×、妖王 10×；等级超出 `expToNext` 配表上界时按末档非零修为条派生。多人同场击杀按在场玩家平分（共战会话语义见 [第二十一篇 §21.13](./21-同道与组队系统.md)，含掉落增幅加权归属与等级惩罚细则）。六维经验每个归属维度各得全额 `experience × mult_i × eff`（总量 = `experience × eff × Σmult`，非守恒；mult 缺省 1.0、可为 0；`eff = 1 + rootExpEfficiencyPerLevel × (参悟Lv − 1)`），未装内功六维全归属、各得全额（总量 6×），神通/外功不参与分配。修为类收益的 `amp` 乘角色特殊属性乘区 `1 + (cultivationExpBonusPoints + combatExpBonusPoints) / 100`（通用修为获取 + 战斗修为获取，打坐引气等非战斗路径仅吃通用修为获取，见 [第五篇](./05-技能神通与秘籍残卷体系.md) §5.3.1）。怪物战斗经验不入配表，按其 `level` 经 `CumulativeExpFor` 派生（见 §7.7.6）。
 
 ### 7.10.4 队伍斗法（整队为一个匹配单位）
 

@@ -113,7 +113,6 @@
     "element": "none",
     "rootAttribute": "attack",
     "rootExpEfficiencyPerLevel": 0.03,
-    "cultivationExpBonusPoints": -10,
     "rootExpMultipliers": {
       "attack": 5.5,
       "stamina": 0.0,
@@ -121,7 +120,8 @@
     },
     "passiveEfficiencyPerLevel": 0.05,
     "passive": {
-      "physicalDamageBonusPoints": 15
+      "physicalDamageBonusPoints": 15,
+      "combatExpBonusPoints": -10
     }
   },
   {
@@ -181,7 +181,6 @@
     "element": "none",
     "rootAttribute": "meridians",
     "rootExpEfficiencyPerLevel": 0.03,
-    "cultivationExpBonusPoints": 20,
     "rootExpMultipliers": {
       "stamina": 0.7,
       "meridians": 0.7,
@@ -189,6 +188,10 @@
       "bone": 0.7,
       "agility": 0.7,
       "consciousness": 0.7
+    },
+    "passiveEfficiencyPerLevel": 0.05,
+    "passive": {
+      "cultivationExpBonusPoints": 20
     }
   },
   {

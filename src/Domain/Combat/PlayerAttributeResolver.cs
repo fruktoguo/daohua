@@ -78,6 +78,10 @@ public sealed record PlayerAttributes(
     public double CooldownReductionPoints { get; init; }
     /// <summary>掉落增幅点数（Linear：队战共享掉率合计与单件归属权重；100 点 = 100%，总纲 §21.13）。</summary>
     public double DropBonusPoints { get; init; }
+    /// <summary>修为获取增幅点数（Linear：全渠道修为获取加成；100 点 = 100%，总纲 §5.3.1）。</summary>
+    public double CultivationExpBonusPoints { get; init; }
+    /// <summary>战斗修为获取增幅点数（Linear：仅战斗怪物击杀等战斗渠道生效；100 点 = 100%，总纲 §5.3.1）。</summary>
+    public double CombatExpBonusPoints { get; init; }
 
     /// <summary>抗性缩放倍率（等于当前等阶 Tier）。</summary>
     public double ResistanceScale { get; init; } = 1;
@@ -458,6 +462,8 @@ public static class PlayerAttributeResolver
             SearchSpeedPoints = P("actionSpeedPoints") + P("searchSpeedPoints"),
             CooldownReductionPoints = P("cooldownReductionPoints"),
             DropBonusPoints = P("dropBonusPoints"),
+            CultivationExpBonusPoints = P("cultivationExpBonusPoints"),
+            CombatExpBonusPoints = P("combatExpBonusPoints"),
             ResistanceScale = tier,
             Traits = traits,
             Effects = new CombatEffectProfile(P("hpDrainPoints"), P("mpDrainPoints"), P("damageReflectPoints"), P("healingBonusPoints"), P("threatOnTakenPoints"))

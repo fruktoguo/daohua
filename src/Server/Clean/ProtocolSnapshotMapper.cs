@@ -384,6 +384,8 @@ public static class ProtocolSnapshotMapper
         a.FixedPhysicalDamageBonus, a.FixedPhysicalDamageReduction,
         a.FixedSpellDamageBonus, a.FixedSpellDamageReduction,
         a.AttackSpeedPoints, a.ActionSpeedPoints, a.CooldownReductionPoints,
+        cultivationExpBonusPoints = a.CultivationExpBonusPoints,
+        combatExpBonusPoints = a.CombatExpBonusPoints,
         threatBonusPoints = a.ThreatBonusPoints + extraThreatBonusPoints,
         hpDrainPoints = a.Effects.HpDrainPoints, mpDrainPoints = a.Effects.MpDrainPoints,
         damageReflectPoints = a.Effects.DamageReflectPoints, healingBonusPoints = a.Effects.HealingBonusPoints
@@ -416,6 +418,8 @@ public static class ProtocolSnapshotMapper
         s.FixedPhysicalDamageBonus, s.FixedPhysicalDamageReduction,
         s.FixedSpellDamageBonus, s.FixedSpellDamageReduction,
         s.AttackSpeedPoints, s.ActionSpeedPoints, s.CooldownReductionPoints,
+        cultivationExpBonusPoints = 0d,
+        combatExpBonusPoints = 0d,
         threatBonusPoints = s.ThreatBonusPoints + extraThreatBonusPoints,
         hpDrainPoints = s.Effects.HpDrainPoints, mpDrainPoints = s.Effects.MpDrainPoints,
         damageReflectPoints = s.Effects.DamageReflectPoints, healingBonusPoints = s.Effects.HealingBonusPoints

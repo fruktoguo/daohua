@@ -1028,6 +1028,10 @@ export interface CombatAttributes {
   /** 冷却缩减点数（NonLinear：缩短全部冷却） */
   cooldownReductionPoints: number
   /** 威胁增幅点数（Linear） */
+  /** 修为获取增幅点数（Linear：全渠道生效） */
+  cultivationExpBonusPoints?: number
+  /** 战斗修为获取增幅点数（Linear：仅战斗击杀等渠道生效） */
+  combatExpBonusPoints?: number
   threatBonusPoints: number
   /** 气血汲取点数（Linear 非负） */
   hpDrainPoints: number
