@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using Domain.Common;
 using Domain.GameData;
@@ -90,9 +91,12 @@ public sealed class HeavenGateCommandTests
         var rolled = await Execute(runtime, playerId, new { action = "roll" });
         var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
 
-        // 合法分配：把一系散到 0（返还半数点数），其余四系各加少许，仍然在额度内。
-        var drainedAxis = LinggenElement.Metal;
-        var redistribution = rolledValues.With(drainedAxis, 0);
+        // 合法分配：散功轴选点数最大的系，散功后保留 1 点——roll 点数全部集中在单一系时
+        // 把该系散到 0 会触发「未保留有效灵根」拒绝，那是分配额度的正确行为而非本测试场景。
+        var drainedAxis = new[] { LinggenElement.Metal, LinggenElement.Wood, LinggenElement.Water, LinggenElement.Fire, LinggenElement.Earth }
+            .OrderByDescending(rolledValues.Of)
+            .First();
+        var redistribution = rolledValues.With(drainedAxis, Math.Min(1, rolledValues.Of(drainedAxis)));
 
         // 透支：把全部五系都拉到 100，远超可分配点数，必须在写入前整体拒绝。
         var overdrawn = new LinggenValues(
