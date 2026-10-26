@@ -137,14 +137,17 @@ public sealed class HeavenGateCommandTests
         await runtime.LoadAsync(playerId);
         var rolled = await Execute(runtime, playerId, new { action = "roll" });
         var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-        var (source, target) = rolledValues.Metal >= 2 ? (LinggenElement.Metal, LinggenElement.Wood)
-            : rolledValues.Wood >= 2 ? (LinggenElement.Wood, LinggenElement.Metal)
-            : rolledValues.Water >= 2 ? (LinggenElement.Water, LinggenElement.Fire)
-            : rolledValues.Fire >= 2 ? (LinggenElement.Fire, LinggenElement.Water)
-            : (LinggenElement.Earth, LinggenElement.Metal);
-        var modified = rolledValues
-            .With(source, rolledValues.Of(source) - 2)
-            .With(target, Math.Min(100, rolledValues.Of(target) + 1));
+        // 微调源选点数最大的系，保证「散功 2 点」不越界；roll 出全系点数不足 2 时
+        // 不存在合法的散功换灌注分配，改为携带原生值走直接候选值路径。
+        var (source, target) = new[] { (LinggenElement.Metal, LinggenElement.Wood), (LinggenElement.Wood, LinggenElement.Metal),
+                (LinggenElement.Water, LinggenElement.Fire), (LinggenElement.Fire, LinggenElement.Water), (LinggenElement.Earth, LinggenElement.Metal) }
+            .OrderByDescending(pair => rolledValues.Of(pair.Item1))
+            .First();
+        var modified = rolledValues.Of(source) >= 2
+            ? rolledValues
+                .With(source, rolledValues.Of(source) - 2)
+                .With(target, Math.Min(100, rolledValues.Of(target) + 1))
+            : rolledValues;
 
         var entered = await Execute(runtime, playerId, new
         {
@@ -351,14 +354,17 @@ public sealed class HeavenGateCommandTests
         Assert.NotEqual(initialConfirmed, candidateRoll);
         Assert.Equal(initialConfirmed, rerolled.Snapshot.State.Progression.HeavenGateConfirmed);
 
-        // 2. 采纳替换（带微调）：散功 2 点换灌注 1 点，严格在额度内
-        var (source, target) = candidateRoll.Metal >= 2 ? (LinggenElement.Metal, LinggenElement.Wood)
-            : candidateRoll.Wood >= 2 ? (LinggenElement.Wood, LinggenElement.Metal)
-            : candidateRoll.Water >= 2 ? (LinggenElement.Water, LinggenElement.Fire)
-            : (LinggenElement.Fire, LinggenElement.Earth);
-        var modified = candidateRoll
-            .With(source, candidateRoll.Of(source) - 2)
-            .With(target, Math.Min(LinggenValues.MaxPointsPerElement, candidateRoll.Of(target) + 1));
+        // 2. 采纳替换（带微调）：散功 2 点换灌注 1 点，严格在额度内；微调源选点数最大的系，
+        //    全系点数不足 2 时改为采纳候选原生值（不存在合法的散功换灌注分配）。
+        var (source, target) = new[] { (LinggenElement.Metal, LinggenElement.Wood), (LinggenElement.Wood, LinggenElement.Metal),
+                (LinggenElement.Water, LinggenElement.Fire), (LinggenElement.Fire, LinggenElement.Earth), (LinggenElement.Earth, LinggenElement.Metal) }
+            .OrderByDescending(pair => candidateRoll.Of(pair.Item1))
+            .First();
+        var modified = candidateRoll.Of(source) >= 2
+            ? candidateRoll
+                .With(source, candidateRoll.Of(source) - 2)
+                .With(target, Math.Min(LinggenValues.MaxPointsPerElement, candidateRoll.Of(target) + 1))
+            : candidateRoll;
         var accepted = await Execute(runtime, playerId, new
         {
             action = "accept",
