@@ -673,7 +673,6 @@ internal static partial class ActionExecutionRules
                 || wallet.Get(new AssetKey(item.Id)) < 1
                 || !gameData.RawItems[id.Value].TryGetProperty("consumable", out var raw)
                 || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array) continue;
-            double Read(JsonElement obj, string key) => obj.TryGetProperty(key, out var v) ? v.GetDouble() : 0;
             foreach (var buff in buffs.EnumerateArray())
             {
                 var buffId = buff.GetProperty("buffId").GetString()!;
