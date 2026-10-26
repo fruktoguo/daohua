@@ -1113,6 +1113,10 @@ export interface ItemDefinition {
   gatheringMultiplier?: number
   /** 炼丹产出倍率 */
   alchemyMultiplier?: number
+  /** 百艺技艺行动速度加成比率（如 0.3 即 +30% 速度） */
+  techniqueSpeedRatio?: number
+  /** 强化成功率加成（如 0.03 即 +3% 成功率） */
+  enhancementSuccessBonus?: number
   /** 耐久型持续消耗品（true 时槽位持有即生效，不消耗不耗竭；如聚灵阵盘） */
   durable?: boolean
   /** 即时打击规格（符箓类消耗品：祭出即耗灵力造成元素术法伤害，无吟唱/命中/暴击掷点） */
@@ -1561,6 +1565,8 @@ export interface CombatEquipmentDefinition {
   slot: EquipmentSlot
   /** 等阶 */
   tier: number
+  /** 需求境界等级（穿戴门槛） */
+  level?: number
   /** 白板商店回收售价（灵石，V0） */
   sellPrice?: number
   /** 每级强化附加的属性增益（配表原始字典） */

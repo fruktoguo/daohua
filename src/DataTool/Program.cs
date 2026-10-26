@@ -457,7 +457,8 @@ static HashSet<string> ConsumableKeys() => new(StringComparer.Ordinal)
 {
     "usableInActionTypes", "durationSeconds", "isContinuous", "durable",
     "cultivationMultiplier", "gatheringMultiplier", "alchemyMultiplier",
-    "cooldownSeconds", "hitpointRestore", "manapointRestore", "buffs", "triggers", "strike"
+    "cooldownSeconds", "hitpointRestore", "manapointRestore", "buffs", "triggers", "strike",
+    "techniqueSpeedRatio", "enhancementSuccessBonus"
 };
 
 /// <summary>雷击符打击规格授权键。</summary>

@@ -211,7 +211,9 @@ public sealed record ConsumableDefinition(
     IReadOnlyList<JsonElement>? Triggers = null,
     bool Durable = false,
     ConsumableStrike? Strike = null,
-    double CooldownSeconds = 0)
+    double CooldownSeconds = 0,
+    double TechniqueSpeedRatio = 0,
+    double EnhancementSuccessBonus = 0)
 {
     /// <summary>药品类消耗品分类键：战斗域药品栏仅接受本分类的即时消耗品。</summary>
     public const string CategoryPill = "pill";
@@ -1120,7 +1122,9 @@ public sealed class GameDataCatalog
                 triggers,
                 JsonRead.Boolean(consumableProperty, "durable"),
                 strike,
-                JsonRead.Number(consumableProperty, "cooldownSeconds"));
+                JsonRead.Number(consumableProperty, "cooldownSeconds"),
+                JsonRead.Number(consumableProperty, "techniqueSpeedRatio"),
+                JsonRead.Number(consumableProperty, "enhancementSuccessBonus"));
         }
         var category = entry.TryGetProperty("category", out var categoryProperty)
             ? categoryProperty.GetString() ?? "general" : "general";

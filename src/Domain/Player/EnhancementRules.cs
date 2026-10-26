@@ -142,13 +142,14 @@ public static class EnhancementRules
         return Math.Clamp(rate, 0.01, 0.5);
     }
 
-    /// <summary>技艺修正后成功率：L≥t 线性乘算 ×(1+0.01×L)，L&lt;t 乘性衰减 ×0.9^(t-L)，终值 clamp [0, 0.99]。</summary>
-    public static double SuccessRate(int targetLevel, double techniqueLevel)
+    /// <summary>技艺与辅助消耗品修正后成功率：L≥t 线性乘算 ×(1+0.01×L)，L<t 乘性衰减 ×0.9^(t-L)，叠加消耗品加成后 clamp [0, 0.99]。</summary>
+    public static double SuccessRate(int targetLevel, double techniqueLevel, double consumableBonus = 0)
     {
         var rate = BaseSuccessRate(targetLevel);
         rate = techniqueLevel >= targetLevel
             ? rate * (1.0 + 0.01 * techniqueLevel)
             : rate * Math.Pow(0.9, targetLevel - techniqueLevel);
+        rate += consumableBonus;
         return Math.Clamp(rate, 0, 0.99);
     }
 
@@ -165,7 +166,8 @@ public static class EnhancementRules
     /// <param name="reason">非 Ready 时的事件文案。</param>
     public static Preparation? Resolve(PlayerLoadoutState loadout, ActionIntent intent,
         IReadOnlyDictionary<AssetKey, double> holdings, GameDataCatalog? gameData,
-        double techniqueLevel, out Check check, out string reason, int? currentTrackedLevel = null)
+        double techniqueLevel, out Check check, out string reason, int? currentTrackedLevel = null,
+        double consumableBonus = 0)
     {
         check = Check.Blocked;
         reason = "强化材料不足，行动受阻。";
@@ -303,7 +305,28 @@ public static class EnhancementRules
         check = Check.Ready;
         reason = string.Empty;
         return new Preparation(itemId, current, target, spiritStoneCost,
-            effectiveProtectionItemId, SuccessRate(target, techniqueLevel));
+            effectiveProtectionItemId, SuccessRate(target, techniqueLevel, consumableBonus));
+    }
+
+    /// <summary>
+    /// 获取玩家强化自动栏（AutoUseBar.Enhancement）中当前生效的持续消耗品所提供的强化成功率加成（如淬灵粉 +0.03、固灵砂 +0.05）。
+    /// </summary>
+    public static double EffectiveEnhancementSuccessBonus(
+        IReadOnlyList<AutoUseSlotState>? slots,
+        GameDataCatalog? gameData)
+    {
+        if (slots is null || slots.Count == 0 || gameData is null) return 0;
+        var bonus = 0d;
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            if (!slot.Enabled || slot.ItemId is null || slot.RemainingDurationSeconds <= 0) continue;
+            if (!string.Equals(slot.ActionType, Domain.GameData.AutoUseBar.Enhancement, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item) || item.Consumable is null) continue;
+            if (item.Consumable.EnhancementSuccessBonus > 0)
+                bonus += item.Consumable.EnhancementSuccessBonus;
+        }
+        return bonus;
     }
 
     /// <summary>

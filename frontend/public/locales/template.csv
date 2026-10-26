@@ -1447,6 +1447,7 @@ game.category.chest,"宝箱",""
 game.category.consumable,"消耗品",""
 game.category.currency,"货币",""
 game.category.drink,"灵饮",""
+game.category.enhancementSupply,"强化辅料",""
 game.category.equipment,"装备",""
 game.category.exoticMaterial,"异材",""
 game.category.explorationSupply,"探索用品",""
@@ -1709,6 +1710,9 @@ game.item.item.broken-spirit-core.label,"破碎灵核",""
 game.item.item.crimson-copper.description,"灵脉赤铜含火纹。
 伴生于灵脉浅层的赤红矿石，触手温热，断面隐现熔岩纹理。",""
 game.item.item.crimson-copper.label,"赤铜",""
+game.item.item.cuiling-powder.description,"淬灵生辉，抚平微瑕。
+粗炼灵骨研磨而成的细腻白灰，涂敷于待强法器胎体之上，能稍稍平复材质内应力，使强化成功率提高三厘。",""
+game.item.item.cuiling-powder.label,"淬灵粉",""
 game.item.item.dark-iron.description,"乌金沉矿色如墨。
 深山老矿采掘出的未淬原铁，色沉如墨，质地沉重坚硬。",""
 game.item.item.dark-iron.label,"乌铁",""
@@ -1718,6 +1722,9 @@ game.item.item.demon-core.label,"妖核",""
 game.item.item.demon-dan.description,"凶兽凝丹魄，煞纹隐血光。
 深山凶兽体内凝结而成的浑浊兽丹，表面隐现血色煞纹。",""
 game.item.item.demon-dan.label,"妖丹",""
+game.item.item.dingshen-incense.description,"幽香定神，百艺自通。
+凡间匠师采集静心草木精制的盘香，点燃后香烟凝而不散，使人神清气爽、手眼敏捷，百工技艺动作如飞。",""
+game.item.item.dingshen-incense.label,"定神香",""
 game.item.item.fire-feather.description,"灵禽遗赤羽，星火缀翎梢。
 灵禽异鸟身上的赤红翎羽，羽丝流转着点点火光星芒。",""
 game.item.item.fire-feather.label,"火羽",""
@@ -1799,6 +1806,9 @@ game.item.item.gongde-bound.description,"邀友同道所得之功德，系于己
 game.item.item.gongde-bound.label,"功德·绑定",""
 game.item.item.gongde.description,"行善积德所凝的功德金光，可予同道交换流转。",""
 game.item.item.gongde.label,"功德",""
+game.item.item.guling-sand.description,"金砂固胎，脉络贯通。
+地脉灵矿反复澄洗析出的纯净金砂，淬炼时借火温渗入法器回路稳固胚胎，使强化成功率提高五厘。",""
+game.item.item.guling-sand.label,"固灵砂",""
 game.item.item.heqi-pill.description,"吐纳六合，引气归元。
 炼气期修士常备的基础灵丹，吞服即可助紫府吸纳天地灵气，加速真气周天搬运。",""
 game.item.item.heqi-pill.label,"合气丹",""
@@ -1838,6 +1848,9 @@ game.item.item.peach-wood.label,"桃木",""
 game.item.item.qi-gathering-pill.description,"丹光淡青，引气归真。
 通体泛着淡青色光泽的初阶灵丹，散发着淡淡的草木清香。",""
 game.item.item.qi-gathering-pill.label,"引气丹",""
+game.item.item.qingling-incense.description,"青木凝芯，神通灵犀。
+以道门百年青灵木芯配以清心灵露凝练的上乘线香，香气通灵彻髓，助叩关修士神识清澈、真气流转极速。",""
+game.item.item.qingling-incense.label,"青灵香",""
 game.item.item.refined-copper.description,"地火炼赤铜，精纯流金泽。
 赤铜经地火淬炼出的赤金铜精，光泽流转，致密纯正。",""
 game.item.item.refined-copper.label,"赤铜精",""

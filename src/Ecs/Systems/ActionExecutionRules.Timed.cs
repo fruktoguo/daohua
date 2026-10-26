@@ -97,8 +97,9 @@ internal static partial class ActionExecutionRules
             var techniqueLevel = TechniqueCatalog.LevelFor(
                 player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
                 gameData?.RealmProgression);
+            var enhancementBonus = EnhancementRules.EffectiveEnhancementSuccessBonus(player.Settings.AutoUseSlots, gameData);
             var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
-                    out var check, out var reason, action.EnhancementCurrentLevel);
+                    out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus);
             if (prep is null)
             {
                 if (check == EnhancementRules.Check.TargetReached)
@@ -808,8 +809,9 @@ internal static partial class ActionExecutionRules
             player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
             gameData?.RealmProgression);
         var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
+        var enhancementBonus = EnhancementRules.EffectiveEnhancementSuccessBonus(player.Settings.AutoUseSlots, gameData);
         var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
-            out var check, out var reason, action.EnhancementCurrentLevel);
+            out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus);
         if (prep is null)
         {
             // 轮间状态漂移（材料被消耗/装备被移除/目标已达成）：按开轮准入同语义回退为阻塞或提前完成，

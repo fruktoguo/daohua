@@ -888,6 +888,79 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(124.0, v0);
     }
 
+    /// <summary>通用技艺加速物品（定神香 30%、青灵香 50%）在持续时间内提供准确的速度除数折减，耗尽后恢复。</summary>
+    [Fact]
+    public void GenericTechniqueSpeedConsumablesDiscountDuration()
+    {
+        var dingshen = new ItemDefinition(new ItemId("item.dingshen-incense"), "定神香", "", true, 120,
+            new ConsumableDefinition(new HashSet<string> { AutoUseBar.Exploration, AutoUseBar.Alchemy, AutoUseBar.Forging },
+                DurationSeconds: 300, IsContinuous: true, TechniqueSpeedRatio: 0.3));
+        var qingling = new ItemDefinition(new ItemId("item.qingling-incense"), "青灵香", "", true, 380,
+            new ConsumableDefinition(new HashSet<string> { AutoUseBar.Exploration, AutoUseBar.Alchemy, AutoUseBar.Forging },
+                DurationSeconds: 300, IsContinuous: true, TechniqueSpeedRatio: 0.5));
+        var alchemy = new ActionDefinition(new ActionId("alchemy.test"), "炼丹测试", ActionKind.Alchemy, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Alchemy);
+        var catalog = new GameDataCatalog("test", "fp", new ActionCatalog([alchemy]),
+            items: new Dictionary<ItemId, ItemDefinition> { [dingshen.Id] = dingshen, [qingling.Id] = qingling });
+
+        var player = CreatePlayer("测试道友");
+        var wallet = CreateWallet(player);
+        var action = player.Enqueue(new ActionIntent(alchemy.Id, -1), Baseline, catalog.Actions);
+
+        // 未配置消耗品：耗时 10 秒
+        Assert.Equal(10.0, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
+
+        // 1. 装配定神香（300s，生效中）：耗时折减为 10 / (1 + 0.3)
+        player.Settings.AutoUseSlots.Add(new AutoUseSlotState(AutoUseBar.Alchemy, 0, dingshen.Id.Value, 1, true, RemainingDurationSeconds: 300));
+        Assert.Equal(0.3, TimedActionDurationRules.EffectiveConsumableSpeedRatio(player.Settings.AutoUseSlots, alchemy, catalog), 12);
+        Assert.Equal(10.0 / 1.3, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
+
+        // 2. 切换为青灵香（50%）：耗时折减为 10 / (1 + 0.5)
+        player.Settings.AutoUseSlots[0] = new AutoUseSlotState(AutoUseBar.Alchemy, 0, qingling.Id.Value, 1, true, RemainingDurationSeconds: 200);
+        Assert.Equal(0.5, TimedActionDurationRules.EffectiveConsumableSpeedRatio(player.Settings.AutoUseSlots, alchemy, catalog), 12);
+        Assert.Equal(10.0 / 1.5, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
+
+        // 3. 持续时间耗尽（RemainingDurationSeconds <= 0）：速度加成归零，恢复 10 秒
+        player.Settings.AutoUseSlots[0] = player.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 0 };
+        Assert.Equal(0.0, TimedActionDurationRules.EffectiveConsumableSpeedRatio(player.Settings.AutoUseSlots, alchemy, catalog), 12);
+        Assert.Equal(10.0, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
+    }
+
+    /// <summary>强化专属成功率消耗品（淬灵粉 +3%、固灵砂 +5%）在生效期间提供准确的成功率加算。</summary>
+    [Fact]
+    public void EnhancementSuccessBonusConsumablesIncreaseSuccessRate()
+    {
+        var cuiling = new ItemDefinition(new ItemId("item.cuiling-powder"), "淬灵粉", "", true, 150,
+            new ConsumableDefinition(new HashSet<string> { AutoUseBar.Enhancement },
+                DurationSeconds: 300, IsContinuous: true, EnhancementSuccessBonus: 0.03));
+        var guling = new ItemDefinition(new ItemId("item.guling-sand"), "固灵砂", "", true, 450,
+            new ConsumableDefinition(new HashSet<string> { AutoUseBar.Enhancement },
+                DurationSeconds: 300, IsContinuous: true, EnhancementSuccessBonus: 0.05));
+        var catalog = new GameDataCatalog("test", "fp", ActionCatalog.Default,
+            items: new Dictionary<ItemId, ItemDefinition> { [cuiling.Id] = cuiling, [guling.Id] = guling });
+
+        var slots = new List<AutoUseSlotState>
+        {
+            new(AutoUseBar.Enhancement, 0, cuiling.Id.Value, 1, true, RemainingDurationSeconds: 300)
+        };
+
+        // 1. 淬灵粉：解析为 +0.03，成功率精准上浮 0.03
+        Assert.Equal(0.03, EnhancementRules.EffectiveEnhancementSuccessBonus(slots, catalog), 12);
+        var baseRate = EnhancementRules.SuccessRate(1, 0, 0);
+        var boostedRate = EnhancementRules.SuccessRate(1, 0, 0.03);
+        Assert.Equal(baseRate + 0.03, boostedRate, 12);
+
+        // 2. 固灵砂：解析为 +0.05，成功率精准上浮 0.05
+        slots[0] = new AutoUseSlotState(AutoUseBar.Enhancement, 0, guling.Id.Value, 1, true, RemainingDurationSeconds: 150);
+        Assert.Equal(0.05, EnhancementRules.EffectiveEnhancementSuccessBonus(slots, catalog), 12);
+        var gulingRate = EnhancementRules.SuccessRate(1, 0, 0.05);
+        Assert.Equal(baseRate + 0.05, gulingRate, 12);
+
+        // 3. 槽位未启用或耗竭时：加成归零
+        slots[0] = slots[0] with { RemainingDurationSeconds = 0 };
+        Assert.Equal(0.0, EnhancementRules.EffectiveEnhancementSuccessBonus(slots, catalog), 12);
+    }
+
     private static GameDataCatalog CreateMinimalCatalog(
         ActionCatalog? actions = null,
         Dictionary<string, JsonElement>? rawEquipments = null,

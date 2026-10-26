@@ -24,7 +24,8 @@ public static class TimedActionDurationRules
         IReadOnlyList<PlayerEquipmentSlot>? equipment,
         GameDataCatalog? gameData,
         int? enhancementTargetLevel = null,
-        LinggenValues linggen = default)
+        LinggenValues linggen = default,
+        double consumableSpeedRatio = 0)
     {
         var duration = baseDuration;
         if (kind == ActionKind.Enhancement && enhancementTargetLevel is not null)
@@ -45,7 +46,8 @@ public static class TimedActionDurationRules
             var level = TechniqueCatalog.LevelFor(exp, gameData?.RealmProgression);
             duration /= 1 + TechniqueCatalog.SpeedBonusRatio(level)
                 + TechniqueCatalog.EquippedToolSpeedRatio(equipment, technique, gameData)
-                + HeavenGateRules.ResolveTechniqueSpeedRatio(linggen, technique);
+                + HeavenGateRules.ResolveTechniqueSpeedRatio(linggen, technique)
+                + consumableSpeedRatio;
         }
 
         return duration;
@@ -82,6 +84,7 @@ public static class TimedActionDurationRules
             targetLevel = current >= 0 ? current + 1 : null;
         }
 
+        var consumableSpeed = EffectiveConsumableSpeedRatio(player.Settings.AutoUseSlots, definition, gameData);
         return CalculateCore(
             definition.DurationSeconds,
             definition.Kind,
@@ -91,7 +94,8 @@ public static class TimedActionDurationRules
             player.Loadout.Equipment,
             gameData,
             targetLevel,
-            player.Progression.HeavenGate.EffectiveValues);
+            player.Progression.HeavenGate.EffectiveValues,
+            consumableSpeed);
     }
 
     /// <summary>根据导出的玩家状态快照计算单轮实际耗时（秒，供协议序列化与快照投影使用）。</summary>
@@ -111,6 +115,7 @@ public static class TimedActionDurationRules
             targetLevel = current + 1;
         }
 
+        var consumableSpeed = EffectiveConsumableSpeedRatio(state.Settings.AutoUseSlots, definition, gameData);
         return CalculateCore(
             definition.DurationSeconds,
             definition.Kind,
@@ -120,7 +125,32 @@ public static class TimedActionDurationRules
             state.Loadout.Equipment,
             gameData,
             targetLevel,
-            state.Progression.HeavenGateEntered ? state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty : LinggenValues.Empty);
+            state.Progression.HeavenGateEntered ? state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty : LinggenValues.Empty,
+            consumableSpeed);
+    }
+
+    /// <summary>
+    /// 获取玩家自动栏中当前生效的持续消耗品所提供的通用技艺行动速度加成比率。
+    /// 匹配当次行动所属的自动使用栏，且消耗品仍有剩余生效时间（RemainingDurationSeconds > 0）。
+    /// </summary>
+    public static double EffectiveConsumableSpeedRatio(
+        IReadOnlyList<AutoUseSlotState>? slots,
+        ActionDefinition definition,
+        GameDataCatalog? gameData)
+    {
+        if (slots is null || slots.Count == 0 || gameData is null) return 0;
+        var bar = AutoUseBar.For(definition);
+        var ratio = 0d;
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            if (!slot.Enabled || slot.ItemId is null || slot.RemainingDurationSeconds <= 0) continue;
+            if (bar is not null && !string.Equals(slot.ActionType, bar, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item) || item.Consumable is null) continue;
+            if (item.Consumable.TechniqueSpeedRatio > 0)
+                ratio += item.Consumable.TechniqueSpeedRatio;
+        }
+        return ratio;
     }
 
     private static Dictionary<AssetKey, double> EnhancementEffectiveBalances(

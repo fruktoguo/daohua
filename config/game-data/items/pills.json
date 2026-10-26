@@ -235,5 +235,83 @@
     "tier": 2,
     "sellPrice": 0,
     "subCategory": "pill"
+  },
+  {
+    "id": "item.dingshen-incense",
+    "name": "定神香",
+    "description": "幽香定神，百艺自通。\n凡间匠师采集静心草木精制的盘香，点燃后香烟凝而不散，使人神清气爽、手眼敏捷，百工技艺动作如飞。",
+    "kind": "consumable",
+    "category": "consumable",
+    "sellPrice": 120,
+    "consumable": {
+      "usableInActionTypes": [
+        "exploration",
+        "alchemy",
+        "forging",
+        "talisman",
+        "formation"
+      ],
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "techniqueSpeedRatio": 0.3
+    },
+    "subCategory": "explorationSupply"
+  },
+  {
+    "id": "item.qingling-incense",
+    "name": "青灵香",
+    "description": "青木凝芯，神通灵犀。\n以道门百年青灵木芯配以清心灵露凝练的上乘线香，香气通灵彻髓，助叩关修士神识清澈、真气流转极速。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 380,
+    "consumable": {
+      "usableInActionTypes": [
+        "exploration",
+        "alchemy",
+        "forging",
+        "talisman",
+        "formation"
+      ],
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "techniqueSpeedRatio": 0.5
+    },
+    "subCategory": "explorationSupply"
+  },
+  {
+    "id": "item.cuiling-powder",
+    "name": "淬灵粉",
+    "description": "淬灵生辉，抚平微瑕。\n粗炼灵骨研磨而成的细腻白灰，涂敷于待强法器胎体之上，能稍稍平复材质内应力，使强化成功率提高三厘。",
+    "kind": "consumable",
+    "category": "consumable",
+    "sellPrice": 150,
+    "consumable": {
+      "usableInActionTypes": [
+        "enhancement"
+      ],
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "enhancementSuccessBonus": 0.03
+    },
+    "subCategory": "enhancementSupply"
+  },
+  {
+    "id": "item.guling-sand",
+    "name": "固灵砂",
+    "description": "金砂固胎，脉络贯通。\n地脉灵矿反复澄洗析出的纯净金砂，淬炼时借火温渗入法器回路稳固胚胎，使强化成功率提高五厘。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 450,
+    "consumable": {
+      "usableInActionTypes": [
+        "enhancement"
+      ],
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "enhancementSuccessBonus": 0.05
+    },
+    "subCategory": "enhancementSupply"
   }
 ]
