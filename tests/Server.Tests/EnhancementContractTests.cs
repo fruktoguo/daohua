@@ -155,6 +155,55 @@ public sealed class EnhancementContractTests
         Assert.True(craftResult.Success, $"{craftResult.Code}: {craftResult.Message}");
     }
     /// <summary>
+    /// 验证逆命丹（特殊底蕴配方）的硬性境界门槛：
+    /// 玩家角色境界未达 18 级时，即使炼丹技艺达到 18 级以上，入队依然被拒绝（RECIPE_LOCKED）且提示不含技艺放行；
+    /// 只有角色境界达到 18 级时才允许入队。
+    /// </summary>
+    [Fact]
+    public async Task ActionEnqueue_ReverseFatePill_RequiresRealmLevel18AndRefusesTechniqueBypass()
+    {
+        var playerId = Guid.NewGuid();
+        var repo = new FakeRepository(playerId, p =>
+        {
+            p.Progression.RealmLevel = 1;
+            p.Loadout.TechniqueExperiences["alchemy"] = 5_000_000;
+        });
+
+        await using var runtime = EcsRuntimeFactory.Create(
+            repo, new EmptyAssets(), new NoopEconomy(),
+            LoadCatalogFiles("expected-attributes.json", "items/pills.json", "actions/alchemy.json"));
+        await runtime.LoadAsync(playerId);
+
+        // 境界 1 级但炼丹技艺达标：因含有 FoundationCostRatio，严禁技艺跨境界放行，必须拒绝
+        var rejectedRequestId = Guid.NewGuid();
+        var rejectedResult = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                rejectedRequestId.ToString("D"), "alchemy.refine-reverse-fate-pill", 1), ProtocolJson.Options),
+            0, rejectedRequestId);
+        Assert.False(rejectedResult.Success);
+        Assert.Equal("RECIPE_LOCKED", rejectedResult.Code);
+        Assert.Contains("需境界达到 18 级", rejectedResult.Message);
+        Assert.DoesNotContain("或炼丹达到", rejectedResult.Message);
+
+        // 角色境界达到 18 级：允许入队
+        var player18Id = Guid.NewGuid();
+        var repo18 = new FakeRepository(player18Id, p =>
+        {
+            p.Progression.RealmLevel = 18;
+        });
+        await using var runtime18 = EcsRuntimeFactory.Create(
+            repo18, new EmptyAssets(), new NoopEconomy(),
+            LoadCatalogFiles("expected-attributes.json", "items/pills.json", "actions/alchemy.json"));
+        await runtime18.LoadAsync(player18Id);
+
+        var acceptedRequestId = Guid.NewGuid();
+        var acceptedResult = await runtime18.ExecuteAsync(player18Id, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                acceptedRequestId.ToString("D"), "alchemy.refine-reverse-fate-pill", 1), ProtocolJson.Options),
+            0, acceptedRequestId);
+        Assert.True(acceptedResult.Success, $"{acceptedResult.Code}: {acceptedResult.Message}");
+    }
+    /// <summary>
     /// 装备持有校验按资产变体键结算：钱包只持 +2 变体时，装配基础形态与 +3 均拒绝，
     /// 装配 +2 成功并写入槽位等级；小数等级同样拒绝。
     /// </summary>

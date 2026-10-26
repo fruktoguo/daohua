@@ -81,7 +81,9 @@ public static class CraftingRecipeRules
     /// 1. 所需等级 requiredLevel <= 1 默认解锁；
     /// 2. 玩家角色境界达到 requiredLevel；
     /// 3. 若行动关联技艺（technique），且对应技艺等级达到 requiredLevel。
-    /// 境界与技艺等级为「或」关系（满足任一即放行）。
+    /// 境界与技艺等级通常为「或」关系（满足任一即放行）；
+    /// 但若行动声明了底蕴成本（FoundationCostRatio > 0，如逆命丹），底蕴成本按境界升级所需修为折算，
+    /// 为杜绝低境界利用低底蕴批量炼丹套利，必须角色境界实打实达到 requiredLevel，不享受技艺跨境界放行。
     /// </summary>
     public static bool IsActionUnlocked(
         ActionDefinition action,
@@ -95,6 +97,7 @@ public static class CraftingRecipeRules
         requiredLevel = ResolveRequiredRealmLevel(action, catalog);
         if (requiredLevel <= 1) return true;
         if (realmLevel >= requiredLevel) return true;
+        if (action.FoundationCostRatio > 0) return false;
         if (!string.IsNullOrEmpty(action.Technique) && techniqueLevel >= requiredLevel) return true;
         return false;
     }

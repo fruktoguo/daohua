@@ -77,10 +77,16 @@ internal static partial class ActionExecutionRules
         // 底蕴成本（逆命丹等特殊配方）：与材料同为准入前置，不足时按「底蕴不足」阻断而非扣成负数。
         var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
         var hasFoundation = foundationCost <= 0 || player.Progression.Foundation + 1e-9 >= foundationCost;
+        // 特殊底蕴配方（逆命丹等）：严禁低境界角色偷跑执行，角色境界必须实打实达到配方所需等级。
+        var levelUnlocked = definition.FoundationCostRatio <= 0
+            || gameData is null
+            || player.Progression.RealmLevel >= CraftingRecipeRules.ResolveRequiredRealmLevel(definition, gameData);
         // 讨伐行动不走「地点不符」口径：地点校验失败按条件不足阻断；其余行动维持原文案。
-        // 材料优先于底蕴报文案：两者同时不足时先引导补材料（底蕴成本本身由修为规模决定）。
+        // 境界门槛优先于材料与底蕴报文案：未达境界时先阻断境界。
         var blockedReason = availableHere
-            ? hasInputs ? "底蕴不足，行动受阻。" : "材料不足，行动受阻。"
+            ? !levelUnlocked ? "尚未达到该行动所需境界等级，行动受阻。"
+                : !hasInputs ? "材料不足，行动受阻。"
+                : "底蕴不足，行动受阻。"
             : definition.ExecutionKind == ActionExecutionKind.CombatEncounter
                 ? "条件不足，行动受阻。"
                 : "当前位置不允许执行该行动。";
@@ -113,7 +119,7 @@ internal static partial class ActionExecutionRules
                 action.EnhancementCurrentLevel = prep.CurrentLevel;
             }
         }
-        if (!availableHere || !hasInputs || !hasFoundation)
+        if (!availableHere || !hasInputs || !hasFoundation || !levelUnlocked)
         {
             // 地点不符且自动移动开启：插队赶路至入队锚点替代 Blocked；任一前置不满足回落原语义。
             // 讨伐行动除外——讨伐跟随玩家移动，当前地点不可执行时直接条件不足阻断，不赶回锚点。

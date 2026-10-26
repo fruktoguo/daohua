@@ -108,6 +108,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "alchemy",
+    "level": 18,
     "durationSeconds": 60,
     "inputs": {},
     "foundationCostRatio": 0.25,

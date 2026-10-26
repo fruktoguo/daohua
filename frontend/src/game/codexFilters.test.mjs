@@ -113,3 +113,28 @@ test('codexFilters: 默认筛选状态为「全部维度不过滤」', () => {
     assert.ok(value === 'all' || value === 0, `默认筛选必须是不做过滤的取值，实际是 ${String(value)}`)
   }
 })
+test('codexFilters: 逆命丹配方解析为 18 级且底蕴配方必须境界达标才解锁', () => {
+  const reversePill = actions.find(a => a.id === 'alchemy.refine-reverse-fate-pill')
+  assert.ok(reversePill, '配表必须存在逆命丹炼制行动')
+  assert.equal(reversePill.level, 18, '逆命丹行动必须显式配置 level: 18')
+  const pills = readRows('items')
+  const pillItem = pills.find(it => it.id === 'item.reverse-fate-pill')
+  assert.ok(pillItem, '配表必须存在逆命丹道具')
+  assert.equal(pillItem.tier, 2, '逆命丹道具必须配置 tier: 2')
+
+  // 模拟 App.tsx / CodexPage.tsx 中的解锁判定：
+  const isUnlocked = (action, realmLevel, techLevel) => {
+    const reqLevel = action.level ?? (action.tier ? (action.tier <= 1 ? 1 : 18 + (action.tier - 2) * 12) : 1)
+    if (reqLevel <= 1) return true
+    if (realmLevel >= reqLevel) return true
+    const isTechAllowed = !action.foundationCostRatio && Boolean(action.technique && techLevel >= reqLevel)
+    return isTechAllowed
+  }
+
+  // 1 级境界，即使炼丹技艺 30 级，也绝不能放行逆命丹
+  assert.equal(isUnlocked(reversePill, 1, 30), false)
+  assert.equal(isUnlocked(reversePill, 17, 30), false)
+
+  // 18 级境界，技艺 0 级也可放行
+  assert.equal(isUnlocked(reversePill, 18, 0), true)
+})

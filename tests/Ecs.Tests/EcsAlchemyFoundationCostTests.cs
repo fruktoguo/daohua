@@ -26,8 +26,10 @@ public sealed class EcsAlchemyFoundationCostTests
     public void EmbeddedReverseFatePillRecipeDeclaresFoundationCostAndOthersDoNot()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
-        Assert.Equal(HeavenGateRules.ReverseFatePillFoundationRatio,
-            catalog.Actions.Get(new ActionId(ActionIdValue)).FoundationCostRatio);
+        var action = catalog.Actions.Get(new ActionId(ActionIdValue));
+        Assert.Equal(HeavenGateRules.ReverseFatePillFoundationRatio, action.FoundationCostRatio);
+        Assert.Equal(HeavenGateRules.HeavenGateRealmLevel, action.Level);
+        Assert.Equal(HeavenGateRules.HeavenGateRealmLevel, CraftingRecipeRules.ResolveRequiredRealmLevel(action, catalog));
         Assert.Equal(0, catalog.Actions.Get(new ActionId("alchemy.refine-qi-pill")).FoundationCostRatio);
     }
 
@@ -55,6 +57,42 @@ public sealed class EcsAlchemyFoundationCostTests
         Assert.Equal(ActionQueueStatus.Blocked, snapshot.State.Actions[0].Status);
         Assert.Equal(0, snapshot.Assets.GetValueOrDefault(new AssetKey(new ItemId(PillItemId))));
         Assert.Contains(runtime.DrainSimulationEvents(id), entry => entry.Code == "action.blocked");
+    }
+    /// <summary>
+    /// 境界门槛硬阻断：角色境界未达 18 级时，即使队列中存在逆命丹行动且底蕴充足，
+    /// 也被硬阻断为 Blocked，不扣底蕴、不产出逆命丹。
+    /// 达到 18 级后，底蕴充足时顺利解阻并炼出逆命丹。
+    /// </summary>
+    [Fact]
+    public async Task UnderLevelPlayerCannotStartReverseFatePillRecipeEvenIfInQueue()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        // 1 级角色，给予超量底蕴
+        player.Progression.Foundation = 10_000_000;
+        player.Enqueue(new(new ActionId(ActionIdValue), 1), From, catalog.Actions);
+
+        using var runtime = new EcsGameRuntime(catalog, From);
+        var id = runtime.CreatePlayer(player.ExportState());
+        await runtime.RunPlayerOnceAsync(id, From.AddSeconds(10));
+
+        var snapshot = runtime.ExportSnapshot(id);
+        Assert.Equal(ActionQueueStatus.Blocked, snapshot.State.Actions[0].Status);
+        Assert.Equal(0, snapshot.Assets.GetValueOrDefault(new AssetKey(new ItemId(PillItemId))));
+        var events = runtime.DrainSimulationEvents(id);
+        Assert.Contains(events, entry => entry.Code == "action.blocked" && entry.Message.Contains("尚未达到该行动所需境界等级"));
+
+        // 达到 18 级后：顺利推进并产出逆命丹
+        var player18 = CreatePlayer(catalog);
+        player18.Progression.RealmLevel = HeavenGateRules.HeavenGateRealmLevel;
+        player18.Progression.Foundation = 10_000_000;
+        player18.Enqueue(new(new ActionId(ActionIdValue), 1), From, catalog.Actions);
+        using var runtime18 = new EcsGameRuntime(catalog, From);
+        var id18 = runtime18.CreatePlayer(player18.ExportState());
+        await runtime18.RunPlayerOnceAsync(id18, From.AddSeconds(70));
+        var snapshot18 = runtime18.ExportSnapshot(id18);
+        Assert.Empty(snapshot18.State.Actions);
+        Assert.Equal(1, snapshot18.Assets.GetValueOrDefault(new AssetKey(new ItemId(PillItemId))));
     }
 
     /// <summary>

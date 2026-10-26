@@ -272,6 +272,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
       const requiredLevel = resolveActionLevel(action, items, equipment, encounters)
       if (requiredLevel <= 1) return true
       if (realmLevel >= requiredLevel) return true
+      if (action.foundationCostRatio && action.foundationCostRatio > 0) return false
       const tech = action.technique
       if (tech && (techniqueLevels[tech] ?? 0) >= requiredLevel) return true
       return false
@@ -949,7 +950,8 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
 }): React.JSX.Element {
   const t = useT()
   const requiredLevel = resolveActionLevel(action, items, equipment, encounters)
-  const isUnlocked = requiredLevel <= 1 || realmLevel >= requiredLevel || techniqueLevel >= requiredLevel
+  const isTechAllowed = !action.foundationCostRatio && Boolean(techniqueLevel && techniqueLevel >= requiredLevel)
+  const isUnlocked = requiredLevel <= 1 || realmLevel >= requiredLevel || isTechAllowed
   // 首选产出物品
   const outputYield = action.yields?.find(y => y.kind === 'item' && y.id)
   const outputItemId = outputYield?.id ?? action.id
@@ -1039,7 +1041,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
                 }`}
                 style={{ marginTop: 0 }}
               >
-                {formatDualUnlockCondition(requiredLevel, action.technique ? techniqueName : null)}
+                {formatDualUnlockCondition(requiredLevel, action.technique && !action.foundationCostRatio ? techniqueName : null)}
               </span>
             </div>
             {inputEntries.length > 0 && (

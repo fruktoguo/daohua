@@ -124,6 +124,7 @@
     "description": "丹成可暂借一线天命。\n色泽晦暗如墨的异种丹丸，入喉后逆冲经络，为逆天改命强行撕开一道缝隙。",
     "kind": "consumable",
     "category": "consumable",
+    "tier": 2,
     "sellPrice": 0,
     "subCategory": "pill"
   }

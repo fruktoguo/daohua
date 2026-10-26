@@ -1361,7 +1361,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     kind: 'consumable',
     category: 'consumable',
     subCategory: 'pill',
-    tier: 3,
+    tier: 2,
     sellPrice: 0,
     isTradable: false,
   },

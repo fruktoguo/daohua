@@ -463,7 +463,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     "mining" => "采矿",
                                     _ => null
                                 };
-                                var techHint = techniqueName is not null ? $"或{techniqueName}达到 {requiredLevel} 级" : string.Empty;
+                                var techHint = techniqueName is not null && actionDefinition.FoundationCostRatio <= 0
+                                    ? $"或{techniqueName}达到 {requiredLevel} 级"
+                                    : string.Empty;
                                 var errorMessage = isRecipe
                                     ? $"尚未解锁该制造图鉴（需境界达到 {requiredLevel} 级{techHint}）。"
                                     : $"尚未达到该行动所需等级（需境界达到 {requiredLevel} 级{techHint}）。";

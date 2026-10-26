@@ -284,4 +284,25 @@ public sealed class HeavenGateTests
         player.Breakthrough(Realm);
         Assert.Equal(nextLevel + 1, player.Progression.RealmLevel);
     }
+    /// <summary>
+    /// 逆命丹制作门槛回归：必须角色境界达到 18 级（凡俗 [天] 叩天门），
+    /// 底蕴成本特殊行动严禁仅凭炼丹技艺等级跨境界放行。
+    /// </summary>
+    [Fact]
+    public void ReverseFatePillCraftingRequiresRealmLevel18()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var action = catalog.Actions.Get(new ActionId("alchemy.refine-reverse-fate-pill"));
+        Assert.Equal(HeavenGateRules.HeavenGateRealmLevel, action.Level);
+        var requiredLevel = CraftingRecipeRules.ResolveRequiredRealmLevel(action, catalog);
+        Assert.Equal(HeavenGateRules.HeavenGateRealmLevel, requiredLevel);
+
+        // 境界未达 18 级：即使炼丹技艺满 30 级，也严禁放行
+        Assert.False(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 1, techniqueLevel: 30, catalog, out _));
+        Assert.False(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 17, techniqueLevel: 30, catalog, out _));
+
+        // 境界达到 18 级：技艺 0 级也允许解锁与制作
+        Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 18, techniqueLevel: 0, catalog, out _));
+        Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 25, techniqueLevel: 0, catalog, out _));
+    }
 }

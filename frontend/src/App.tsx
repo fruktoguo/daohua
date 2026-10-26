@@ -1187,7 +1187,8 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       const techLevel = action.technique
         ? calculateTechniqueProgress(techniqueExperiences?.[action.technique] ?? 0).level
         : 0
-      if (level <= 1 || level <= realmLevel || (action.technique && level <= techLevel)) {
+      const isTechAllowed = !action.foundationCostRatio && Boolean(action.technique && level <= techLevel)
+      if (level <= 1 || level <= realmLevel || isTechAllowed) {
         actionLevelMap[action.id] = level
         unlockedList.push(action)
       }
