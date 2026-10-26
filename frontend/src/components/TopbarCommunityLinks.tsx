@@ -99,7 +99,13 @@ export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.
     }, 600)
   }, [t])
 
-  const handleDownloadClick = useCallback(() => {
+  const handleDownloadClick = useCallback((event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (typeof window !== 'undefined' && window.DaoHuaNative?.checkUpdate) {
+      event.preventDefault()
+      window.DaoHuaNative.checkUpdate()
+      useGameStore.getState().setNotice(t('app.settings.nativeUpdateChecking'))
+      return
+    }
     useGameStore.getState().setNotice(t('app.topbar.downloadStarted'))
   }, [t])
 
@@ -161,6 +167,8 @@ export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.
           download="daohua.apk"
           href={GITHUB_LATEST_APK_DOWNLOAD_URL}
           onClick={handleDownloadClick}
+          rel="noopener noreferrer"
+          target="_blank"
         >
           <svg
             aria-hidden="true"

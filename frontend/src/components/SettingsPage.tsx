@@ -194,6 +194,16 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
     useGameStore.getState().setNotice(t('app.topbar.qqCopied', { group: OFFICIAL_QQ_GROUP }))
   }, [t])
 
+  const isNative = typeof window !== 'undefined' && Boolean(window.DaoHuaNative)
+  const nativeVersion = typeof window !== 'undefined' ? (window.DaoHuaNative?.getAppVersion() || '1.0.0') : '1.0.0'
+
+  const handleCheckNativeUpdate = useCallback(() => {
+    if (typeof window !== 'undefined' && window.DaoHuaNative?.checkUpdate) {
+      window.DaoHuaNative.checkUpdate()
+      useGameStore.getState().setNotice(t('app.settings.nativeUpdateChecking'))
+    }
+  }, [t])
+
   return (
     <section className="panel settings-page">
       <header className="panel-header">
@@ -466,18 +476,36 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                 </div>
                 <div className="setting-row">
                   <div>
-                    <span className="setting-label">{t('app.settings.downloadLabel')}</span>
-                    <p className="setting-desc">{t('app.settings.downloadDesc')}</p>
+                    <span className="setting-label">
+                      {isNative ? t('app.settings.nativeUpdateLabel') : t('app.settings.downloadLabel')}
+                    </span>
+                    <p className="setting-desc">
+                      {isNative
+                        ? t('app.settings.nativeUpdateDesc', { version: nativeVersion })
+                        : t('app.settings.downloadDesc')}
+                    </p>
                   </div>
-                  <a
-                    className="inline-modify-btn"
-                    download="daohua.apk"
-                    href={GITHUB_LATEST_APK_DOWNLOAD_URL}
-                    onClick={() => useGameStore.getState().setNotice(t('app.topbar.downloadStarted'))}
-                    style={{ textDecoration: 'none' }}
-                  >
-                    {t('app.settings.downloadActionBtn')}
-                  </a>
+                  {isNative ? (
+                    <button
+                      className="inline-modify-btn"
+                      onClick={handleCheckNativeUpdate}
+                      type="button"
+                    >
+                      {t('app.settings.nativeUpdateBtn')}
+                    </button>
+                  ) : (
+                    <a
+                      className="inline-modify-btn"
+                      download="daohua.apk"
+                      href={GITHUB_LATEST_APK_DOWNLOAD_URL}
+                      onClick={() => useGameStore.getState().setNotice(t('app.topbar.downloadStarted'))}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      {t('app.settings.downloadActionBtn')}
+                    </a>
+                  )}
                 </div>
               </section>
             </>
