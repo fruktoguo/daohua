@@ -138,3 +138,40 @@ test('codexFilters: 逆命丹配方解析为 18 级且底蕴配方必须境界�
   // 18 级境界，技艺 0 级也可放行
   assert.equal(isUnlocked(reversePill, 18, 0), true)
 })
+
+test('codexFilters: 三大战术阵盘与消耗品配方完整录入图鉴且产出对齐', () => {
+  const expectedTacticalDisks = [
+    { actionId: 'formation.craft-tianlei', itemId: 'item.tianlei-formation-disk', tech: 'formation', level: 9 },
+    { actionId: 'formation.craft-mizong', itemId: 'item.mizong-formation-disk', tech: 'formation', level: 9 },
+    { actionId: 'formation.craft-xuesha', itemId: 'item.xuesha-formation-disk', tech: 'formation', level: 9 },
+  ]
+  for (const disk of expectedTacticalDisks) {
+    const act = actions.find(a => a.id === disk.actionId)
+    assert.ok(act, `必须存在配方 ${disk.actionId}`)
+    assert.equal(act.technique, disk.tech)
+    assert.equal(act.level, disk.level)
+    assert.equal(act.yields?.find(y => y.kind === 'item')?.id, disk.itemId)
+    assert.equal(resolveCodexCraftingSubTab(act), disk.tech)
+  }
+
+  const expectedConsumables = [
+    { actionId: 'alchemy.refine-shengji-balm', itemId: 'item.shengji-balm', level: 9 },
+    { actionId: 'alchemy.refine-ningqi-powder', itemId: 'item.ningqi-powder', level: 9 },
+    { actionId: 'alchemy.refine-huangya-pill', itemId: 'item.huangya-pill', level: 18 },
+    { actionId: 'alchemy.refine-heqi-pill', itemId: 'item.heqi-pill', level: 18 },
+    { actionId: 'alchemy.refine-dingshen-incense', itemId: 'item.dingshen-incense', level: undefined },
+    { actionId: 'alchemy.refine-qingling-incense', itemId: 'item.qingling-incense', level: 18 },
+    { actionId: 'alchemy.refine-cuiling-powder', itemId: 'item.cuiling-powder', level: undefined },
+    { actionId: 'alchemy.refine-guling-sand', itemId: 'item.guling-sand', level: 18 },
+  ]
+  for (const c of expectedConsumables) {
+    const act = actions.find(a => a.id === c.actionId)
+    assert.ok(act, `必须存在配方 ${c.actionId}`)
+    assert.equal(act.technique, 'alchemy')
+    if (c.level !== undefined) {
+      assert.equal(act.level, c.level)
+    }
+    assert.equal(act.yields?.find(y => y.kind === 'item')?.id, c.itemId)
+    assert.equal(resolveCodexCraftingSubTab(act), 'alchemy')
+  }
+})

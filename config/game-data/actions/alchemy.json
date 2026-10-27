@@ -126,5 +126,219 @@
         "aspect": "consciousness"
       }
     ]
+  },
+  {
+    "id": "alchemy.refine-shengji-balm",
+    "name": "生肌膏",
+    "description": "以草木精华配以粗韧狼皮胶熬制，金创敷之肉芽速生。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "level": 9,
+    "durationSeconds": 12,
+    "inputs": {
+      "item.herb-essence": 2,
+      "item.rough-wolf-hide": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.shengji-balm",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-ningqi-powder",
+    "name": "凝气散",
+    "description": "以草木精华调和清晨甘露，顺脉调气，百脉流转自如。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "level": 9,
+    "durationSeconds": 12,
+    "inputs": {
+      "item.herb-essence": 2,
+      "item.morning-dew": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.ningqi-powder",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-huangya-pill",
+    "name": "黄芽丹",
+    "description": "道门初阶灵草嫩芽所萃伴灵精华炼就，温润固脉，生机绵绵。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "level": 18,
+    "durationSeconds": 15,
+    "inputs": {
+      "item.banling-essence": 2,
+      "item.banling-flower": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.huangya-pill",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-heqi-pill",
+    "name": "合气丹",
+    "description": "伴灵精华与水灵原核水乳交融，吞服引天地灵气汇入紫府汪洋。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "level": 18,
+    "durationSeconds": 15,
+    "inputs": {
+      "item.banling-essence": 2,
+      "item.water-spirit-core": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.heqi-pill",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-dingshen-incense",
+    "name": "定神香",
+    "description": "以草木精华拌和桃木细粉精制盘香，幽香定神，百工动作如飞。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.herb-essence": 1,
+      "item.peach-wood": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.dingshen-incense",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-qingling-incense",
+    "name": "青灵香",
+    "description": "以伴灵精华浸润引灵松芯，凝炼上乘灵香，香气通灵彻髓。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "level": 18,
+    "durationSeconds": 15,
+    "inputs": {
+      "item.banling-essence": 2,
+      "item.yinlingsong-wood": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.qingling-incense",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-cuiling-powder",
+    "name": "淬灵粉",
+    "description": "乌铁细研入破碎灵核精微粉末，涂敷器胎抚平微瑕，助益强化。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.dark-iron": 2,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.cuiling-powder",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "alchemy.refine-guling-sand",
+    "name": "固灵砂",
+    "description": "赤铜精砂借水灵原核澄洗淬炼，渗入法器回路稳固胚胎，强化无忧。",
+    "type": "alchemy",
+    "technique": "alchemy",
+    "level": 18,
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-copper": 2,
+      "item.water-spirit-core": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.guling-sand",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
   }
 ]

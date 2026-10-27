@@ -25,5 +25,89 @@
         "aspect": "consciousness"
       }
     ]
+  },
+  {
+    "id": "formation.craft-tianlei",
+    "name": "天雷阵盘",
+    "description": "以桃木晶与水灵原核为引，刻录九霄引雷神纹，阵起引天雷殛敌。",
+    "type": "alchemy",
+    "technique": "formation",
+    "executionKind": "timed",
+    "level": 9,
+    "durationSeconds": 30,
+    "inputs": {
+      "item.peach-wood-crystal": 6,
+      "item.water-spirit-core": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.tianlei-formation-disk",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "formation.craft-mizong",
+    "name": "迷踪阵盘",
+    "description": "以桃木晶与粗韧狼皮为基，篆刻迷踪乱神符印，云雾蒸腾惑敌视线。",
+    "type": "alchemy",
+    "technique": "formation",
+    "executionKind": "timed",
+    "level": 9,
+    "durationSeconds": 30,
+    "inputs": {
+      "item.peach-wood-crystal": 6,
+      "item.rough-wolf-hide": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.mizong-formation-disk",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "formation.craft-xuesha",
+    "name": "血煞阵盘",
+    "description": "以百炼铁融炼兽血残骨，布设血煞炼魔阵纹，以敌煞血反哺己身。",
+    "type": "alchemy",
+    "technique": "formation",
+    "executionKind": "timed",
+    "level": 9,
+    "durationSeconds": 30,
+    "inputs": {
+      "item.refined-iron": 6,
+      "item.beast-bone": 6
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.xuesha-formation-disk",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
   }
 ]

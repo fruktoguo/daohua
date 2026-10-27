@@ -1115,31 +1115,30 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
     } else if (craftingMode === 'alchemy') {
       // 炼丹行动池须剥离符箓/阵法/强化技艺行动，避免经 type=alchemy 串入炼丹列表
       const pool = availableActions.filter(a => a.technique !== 'talisman' && a.technique !== 'formation' && a.technique !== 'enhancement')
+      const isExtraction = (a: ActionDefinition) =>
+        (a.id === 'craft.extract-herb-essence' ||
+         a.id === 'craft.extract-banling-essence' ||
+         a.id.startsWith('craft.extract-') ||
+         a.id.includes('essence') ||
+         a.id.includes('extract')) &&
+        !a.id.startsWith('craft.refine-')
+
+      const isCombatPill = (a: ActionDefinition) => {
+        const yieldId = a.yields?.find(y => y.kind === 'item')?.id
+        const item = yieldId ? itemCatalog.find(it => it.itemId === yieldId) : undefined
+        if (item?.usableBars?.includes('combat')) return true
+        return a.id.includes('zhixue') || a.id.includes('shunqi')
+      }
+
       if (alchemySubTab === 'extraction') {
         // 提炼：草木精华、伴灵精华等纯药材提炼（排除锻造精炼）
-        list = pool.filter(a =>
-          (a.id === 'craft.extract-herb-essence' ||
-           a.id === 'craft.extract-banling-essence' ||
-           a.id.startsWith('craft.extract-') ||
-           a.id.includes('essence') ||
-           a.id.includes('extract')) &&
-          !a.id.startsWith('craft.refine-')
-        )
-      } else if (alchemySubTab === 'cultivation') {
-        // 修炼丹药：引气丹、通脉丹
-        list = pool.filter(a =>
-          a.id === 'alchemy.refine-qi-pill' ||
-          a.id === 'alchemy.refine-tongmai-pill' ||
-          (a.type === 'alchemy' && !a.id.includes('zhixue') && !a.id.includes('shunqi') && !a.id.startsWith('craft.extract-') && !a.id.startsWith('forge.') && !a.id.startsWith('craft.refine-'))
-        )
+        list = pool.filter(isExtraction)
+      } else if (alchemySubTab === 'combat') {
+        // 斗法药剂：止血散、顺气丸、生肌膏、凝气散、黄芽丹、合气丹等战时消耗品
+        list = pool.filter(a => !isExtraction(a) && isCombatPill(a))
       } else {
-        // 斗法药剂：止血散、顺气丸
-        list = pool.filter(a =>
-          a.id === 'alchemy.refine-zhixue-powder' ||
-          a.id === 'alchemy.refine-shunqi-pill' ||
-          a.id.includes('zhixue') ||
-          a.id.includes('shunqi')
-        )
+        // 修炼与百艺：引气丹、通脉丹、逆命丹、定神香、青灵香、淬灵粉、固灵砂等
+        list = pool.filter(a => !isExtraction(a) && !isCombatPill(a))
       }
     } else if (craftingMode === 'forging') {
       // 炼器：精炼、武器、头部、衣服、腿部、鞋履、饰品

@@ -107,6 +107,14 @@ export const gameZh = {
       'alchemy.refine-shunqi-pill': { name: '顺气丸', description: '以草木精华与晨露炼制的调息灵丸，可抚平体内翻涌气血，加速灵力恢复。' },
       'alchemy.refine-tongmai-pill': { name: '通脉丹', description: '以伴灵精华与伴灵花淬炼而成的通脉灵丹，药力直透经络百骸，大益周天行气。' },
       'alchemy.refine-reverse-fate-pill': { name: '逆命丹', description: '以升级所需修为的底蕴强行凝丹，为逆天改命留下一次挣脱天命的余地。' },
+      'alchemy.refine-shengji-balm': { name: '生肌膏', description: '以草木精华配以粗韧狼皮胶熬制，金创敷之肉芽速生。' },
+      'alchemy.refine-ningqi-powder': { name: '凝气散', description: '以草木精华调和清晨甘露，顺脉调气，百脉流转自如。' },
+      'alchemy.refine-huangya-pill': { name: '黄芽丹', description: '道门初阶灵草嫩芽所萃伴灵精华炼就，温润固脉，生机绵绵。' },
+      'alchemy.refine-heqi-pill': { name: '合气丹', description: '伴灵精华与水灵原核水乳交融，吞服引天地灵气汇入紫府汪洋。' },
+      'alchemy.refine-dingshen-incense': { name: '定神香', description: '以草木精华拌和桃木细粉精制盘香，幽香定神，百工动作如飞。' },
+      'alchemy.refine-qingling-incense': { name: '青灵香', description: '以伴灵精华浸润引灵松芯，凝炼上乘灵香，香气通灵彻髓。' },
+      'alchemy.refine-cuiling-powder': { name: '淬灵粉', description: '乌铁细研入破碎灵核精微粉末，涂敷器胎抚平微瑕，助益强化。' },
+      'alchemy.refine-guling-sand': { name: '固灵砂', description: '赤铜精砂借水灵原核澄洗淬炼，渗入法器回路稳固胚胎，强化无忧。' },
 
       // 精炼加工
       'craft.refine-iron': { name: '百炼铁', description: '千锤百炼去除凡火杂质，精炼高纯乌铁。' },
@@ -188,6 +196,9 @@ export const gameZh = {
       // 符箓·阵法·强化
       'talisman.draw-leiji': { name: '雷击符', description: '以桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。' },
       'formation.deploy-juling': { name: '聚灵阵盘', description: '以桃木晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。' },
+      'formation.craft-tianlei': { name: '天雷阵盘', description: '以桃木晶与水灵原核为引，刻录九霄引雷神纹，阵起引天雷殛敌。' },
+      'formation.craft-mizong': { name: '迷踪阵盘', description: '以桃木晶与粗韧狼皮为基，篆刻迷踪乱神符印，云雾蒸腾惑敌视线。' },
+      'formation.craft-xuesha': { name: '血煞阵盘', description: '以百炼铁融炼兽血残骨，布设血煞炼魔阵纹，以敌煞血反哺己身。' },
       'enhance.equipment': { name: '装备强化', description: '以灵石为媒淬炼装备本体逐级铭纹，成败之间砥砺器物威能。' },
 
       // 讨伐战斗
