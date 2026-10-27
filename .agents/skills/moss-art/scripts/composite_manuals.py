@@ -32,7 +32,8 @@ INTERNAL_CONFIGS = [
     ("lianjing-huaqi-jue", "《炼精化气诀秘籍》", (25, 90, 88), -6),
     ("xuanyuan-yiqi-gong", "《玄元一气功秘籍》", (32, 36, 42), -7),
     ("ganlu", "《甘露秘籍》", (40, 108, 138), -8),
-    ("tide", "《潮汐秘籍》", (22, 85, 130), -7)
+    ("tide", "《潮汐秘籍》", (22, 85, 130), -7),
+    ("sui-gang", "《碎罡秘籍》", (120, 38, 30), -8),
 ]
 
 # 原版同款带棕带黄的宣纸象牙古色 (暖黄米棕 #edd8b5: RGB 237, 216, 181)
@@ -40,6 +41,8 @@ IVORY_BUFF = np.array([237, 216, 181], dtype=np.uint8)
 
 def synthesize_all():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    art_items_dir = os.path.join(REPO_ROOT, "art", "items")
+    os.makedirs(art_items_dir, exist_ok=True)
     
     # 1. 线装书母模
     src_tome = Image.open(os.path.join(LEGACY_DIR, "item.tome.heavy-slash.png")).convert("RGBA")
@@ -130,6 +133,7 @@ def synthesize_all():
         tome_64 = book_img.resize((64, 64), Image.Resampling.LANCZOS)
         out_tome = os.path.join(OUTPUT_DIR, f"item.tome.{slug}.webp")
         tome_64.save(out_tome, format="WEBP", lossless=True)
+        book_img.save(os.path.join(art_items_dir, f"item.tome.{slug}.webp"), format="WEBP", lossless=True)
         
         # B. 合成残卷
         frag_arr = clean_frag_arr.copy()
@@ -160,6 +164,7 @@ def synthesize_all():
         frag_64 = frag_img.resize((64, 64), Image.Resampling.LANCZOS)
         out_frag = os.path.join(OUTPUT_DIR, f"item.fragment.{slug}.webp")
         frag_64.save(out_frag, format="WEBP", lossless=True)
+        frag_img.save(os.path.join(art_items_dir, f"item.fragment.{slug}.webp"), format="WEBP", lossless=True)
         
         count += 2
         print(f"[OK] {name} (tilt {tilt_angle} deg) -> item.tome.{slug}.webp & item.fragment.{slug}.webp")

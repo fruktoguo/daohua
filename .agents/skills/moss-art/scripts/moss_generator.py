@@ -883,6 +883,111 @@ PRESET_BATCHES = {
             "caption": "Bottom-right item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of concentric swirling water current ripples forming a mystical tidal pearl vortex in the center, solid opaque white shapes, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
         }
     ],
+    # 阶梯消耗品与丹药膏散组 (6件套, 2x3 六宫格网格)
+    "consumables_pills_6": [
+        {
+            "id": "item.reverse-fate-pill",
+            "name": "逆命丹",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [逆命丹 - Reverse Fate Pill]. A rare mystical Daoist elixir pill, deep obsidian black and dark bronze gold sheen, distinct glowing crimson cracks on the pill surface, subtle wisps of dark violet spiritual aura, clean spherical silhouette, dark ink outline."
+        },
+        {
+            "id": "item.shengji-balm",
+            "name": "生肌膏",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [生肌膏 - Flesh Regrowth Balm]. A round celadon porcelain ointment jar open to reveal smooth dark jade-green herbal medicinal balm cream inside, small wooden dipping spatula resting beside, clean compact shape, dark ink outline."
+        },
+        {
+            "id": "item.ningqi-powder",
+            "name": "凝气散",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [凝气散 - Qi Condensation Powder]. A shallow carved white jade dish holding a small heap of fine crystalline ice-blue spiritual medicinal powder, subtle sparkling cool azure aura, clean silhouette, dark ink outline."
+        },
+        {
+            "id": "item.huangya-pill",
+            "name": "黄芽丹",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [黄芽丹 - Yellow Sprout Pill]. A smooth Daoist spiritual pill of soft warm amber-yellow color with faint fresh herbal green luster, translucent jade sheen, perfectly spherical silhouette, dark ink outline."
+        },
+        {
+            "id": "item.heqi-pill",
+            "name": "合气丹",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [合气丹 - Harmony Qi Pill]. A pristine milky-white Daoist pill inscribed with a subtle swirling red cinnabar yin-yang spiral seam, harmonious spiritual vapor, clean spherical shape, dark ink outline."
+        },
+        {
+            "id": "item.dingshen-incense",
+            "name": "定神香",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [定神香 - Mind Calming Coil Incense]. A dark bronze burner dish holding a neatly wound spiral coil of dark brown herbal incense, faint vertical wisp of white soothing fragrant smoke rising, clean compact shape, dark ink outline."
+        }
+    ],
+    # 阵盘、线香与强化砂粉组 (6件套, 2x3 六宫格网格)
+    "consumables_formations_6": [
+        {
+            "id": "item.tianlei-formation-disk",
+            "name": "天雷阵盘",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [天雷阵盘 - Heavenly Thunder Formation Disk]. An octagonal Daoist plate carved from dark charred lightning-struck wood, engraved with sharp golden-cyan lightning trigram runes, crackling azure electric core in center, dark ink outline."
+        },
+        {
+            "id": "item.mizong-formation-disk",
+            "name": "迷踪阵盘",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [迷踪阵盘 - Lost Trace Formation Disk]. An elegant circular Daoist formation plate sculpted from floating white cloud jade, surrounded by gentle wisps of misty phantom smoke, silver concentric divination rings, dark ink outline."
+        },
+        {
+            "id": "item.xuesha-formation-disk",
+            "name": "血煞阵盘",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [血煞阵盘 - Blood Fiend Formation Disk]. A menacing round plate carved from pale ancient demon beast bone, etched with deep crimson blood-sacrifice talisman runes, dark ominous red aura, dark ink outline."
+        },
+        {
+            "id": "item.qingling-incense",
+            "name": "青灵香",
+            "bbox": [120, -440, 400, -180],
+            "caption": "Bottom-left item: [青灵香 - Azure Spirit Stick Incense]. A set of slender jade-green Daoist incense sticks standing upright in a simple antique bronze incense holder, burning red ember tip emitting straight upright azure smoke, clean silhouette, dark ink outline."
+        },
+        {
+            "id": "item.cuiling-powder",
+            "name": "淬灵粉",
+            "bbox": [120, -130, 400, 130],
+            "caption": "Bottom-center item: [淬灵粉 - Spirit Quenching Powder]. A neat dark lacquer saucer containing fine ivory-white mineral powder used for equipment enhancement, soft shimmering silver specks, clean compact shape, dark ink outline."
+        },
+        {
+            "id": "item.guling-sand",
+            "name": "固灵砂",
+            "bbox": [120, 180, 400, 440],
+            "caption": "Bottom-right item: [固灵砂 - Solidifying Gold Sand]. A small rustic stoneware cup filled with dense glittering metallic gold crystalline grains and spirit sand, warm golden gleam, clean compact shape, dark ink outline."
+        }
+    ],
+    # 纯黑底纯白二值矢量Logo图腾组 (碎罡体魄功法图腾，供线装书与残卷合成, 2x2 四宫格)
+    "logos_sui_gang": [
+        {
+            "id": "emblem.sui-gang",
+            "name": "碎罡图腾",
+            "bbox": [-400, -400, -130, -130],
+            "caption": "Top-left item: [碎罡图腾 - Armor Shattering Emblem]. A solid filled pure white minimalist vector silhouette logo of a heavy armored fist punching forward and violently shattering a protective hexagonal energy shield into flying sharp shards, crisp clean stencil cut negative black contour lines separating the fist and fractured shield plates, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.sui-gang.b",
+            "name": "碎罡图腾候选 B",
+            "bbox": [-400, 130, -130, 400],
+            "caption": "Top-right item: [碎罡图腾候选 B - Armor Shattering Emblem Candidate B]. A solid filled pure white minimalist vector logo of a heavy battle axe crashing down through a cracked barrier shield, sharp angular shockwaves radiating outward, crisp clean stencil cut negative black contour lines, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.sui-gang.c",
+            "name": "碎罡图腾候选 C",
+            "bbox": [130, -400, 400, -130],
+            "caption": "Bottom-left item: [碎罡图腾候选 C - Armor Shattering Emblem Candidate C]. A solid filled pure white minimalist vector logo of a fierce demonic claw crushing a radiant talisman plate with explosive fracture lines, crisp clean stencil cut negative black contours, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.sui-gang.d",
+            "name": "碎罡图腾候选 D",
+            "bbox": [130, 130, 400, 400],
+            "caption": "Bottom-right item: [碎罡图腾候选 D - Armor Shattering Emblem Candidate D]. A solid filled pure white minimalist vector logo of intersecting sharp geometric blades piercing through a shattered circular halo crest, crisp clean stencil cut negative black lines, strictly solid pure white on solid pure black."
+        }
+    ],
 }
 
 def _sanitize_workflow(wf):
