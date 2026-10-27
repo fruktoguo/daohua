@@ -6,18 +6,18 @@ set -Eeuo pipefail
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
 WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
-WAL_RETENTION_DAYS="${WAL_RETENTION_DAYS:-8}"
+WAL_RETENTION_HOURS="${WAL_RETENTION_HOURS:-1}"
 
 usage() {
   printf '%s\n' \
     '用法：wal-archive.sh verify|prune|status' \
     '  verify  检查文件名、权限、临时文件和最近 WAL 段' \
-    '  prune   删除超过 WAL_RETENTION_DAYS 的 WAL 段（默认 8 天）' \
+    '  prune   删除超过 WAL_RETENTION_HOURS 的 WAL 段（默认 1 小时）' \
     '  status  输出归档目录容量与文件数量'
 }
 
-[[ "$WAL_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]] || {
-  printf 'WAL_RETENTION_DAYS 必须是正整数。\n' >&2
+[[ "$WAL_RETENTION_HOURS" =~ ^[1-9][0-9]*$ ]] || {
+  printf 'WAL_RETENTION_HOURS 必须是正整数。\n' >&2
   exit 2
 }
 
@@ -27,7 +27,7 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
   WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
-  WAL_RETENTION_DAYS="${WAL_RETENTION_DAYS:-8}"
+  WAL_RETENTION_HOURS="${WAL_RETENTION_HOURS:-1}"
 fi
 
 action="${1:-status}"
@@ -73,13 +73,13 @@ case "$action" in
   prune)
     while IFS= read -r -d '' file; do
       if [[ "$(basename "$file")" =~ ^([0-9A-Fa-f]{24}|[0-9A-Fa-f]{24}\.[0-9A-Fa-f]{8}\.backup|[0-9A-Fa-f]{8}\.history)\.gz$ ]]; then
-        if [[ "$(find "$file" -prune -mtime "+$((WAL_RETENTION_DAYS - 1))" -print)" == "$file" ]]; then
+        if [[ "$(find "$file" -prune -mmin "+$((WAL_RETENTION_HOURS * 60))" -print)" == "$file" ]]; then
           printf '%s\n' "$file"
           rm -f -- "$file"
         fi
       fi
     done < <(find "$WAL_ARCHIVE_DIR" -maxdepth 1 -type f -print0)
-    printf 'WAL 归档轮转完成: retention_days=%s\n' "$WAL_RETENTION_DAYS"
+    printf 'WAL 归档轮转完成: retention_hours=%s\n' "$WAL_RETENTION_HOURS"
     ;;
   status)
     du -sh "$WAL_ARCHIVE_DIR"

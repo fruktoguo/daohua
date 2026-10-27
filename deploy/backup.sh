@@ -107,3 +107,7 @@ prune_backups "${BACKUP_DIR}/weekly" "$BACKUP_WEEKLY_KEEP"
 
 printf '数据库备份完成: %s\n' "$hour_archive"
 printf '校验文件: %s\n' "$sha_file"
+
+if [[ -x "${DEPLOY_DIR}/wal-archive.sh" ]]; then
+  "${DEPLOY_DIR}/wal-archive.sh" prune || true
+fi
