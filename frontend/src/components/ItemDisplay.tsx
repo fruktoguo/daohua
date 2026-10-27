@@ -441,6 +441,62 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />
     )
   }
+  // 持续/技艺增益属性
+  if (definition.techniqueSpeedRatio && definition.techniqueSpeedRatio > 0) {
+    lines.push(
+      <PillBonusLabel
+        key="item-technique-speed"
+        icon={<StatGlyph glyph="forging" size={14.5} />}
+        label={t('market.aside.badgeTechniqueSpeed')}
+        tone="gold"
+        value={`+${Math.round(definition.techniqueSpeedRatio * 100)}%`}
+      />
+    )
+  }
+  if (definition.enhancementSuccessBonus && definition.enhancementSuccessBonus > 0) {
+    lines.push(
+      <PillBonusLabel
+        key="item-enhancement-success"
+        icon={<StatGlyph glyph="threat-bonus" size={14.5} />}
+        label={t('market.aside.badgeEnhancementSuccess')}
+        tone="gold"
+        value={`+${formatNumber(definition.enhancementSuccessBonus * 100, { maxDecimals: 1 })}%`}
+      />
+    )
+  }
+  if (definition.cultivationMultiplier && definition.cultivationMultiplier > 1) {
+    lines.push(
+      <PillBonusLabel
+        key="item-cultivation"
+        icon={<StatGlyph glyph="bio-cultivation" size={14.5} />}
+        label={t('market.aside.badgeCultivation')}
+        tone="qi"
+        value={`+${Math.round((definition.cultivationMultiplier - 1) * 100)}%`}
+      />
+    )
+  }
+  if (definition.gatheringMultiplier && definition.gatheringMultiplier > 1) {
+    lines.push(
+      <PillBonusLabel
+        key="item-gathering"
+        icon={<StatGlyph glyph="alchemy" size={14.5} />}
+        label={t('market.aside.badgeGathering')}
+        tone="jade"
+        value={`+${Math.round((definition.gatheringMultiplier - 1) * 100)}%`}
+      />
+    )
+  }
+  if (definition.alchemyMultiplier && definition.alchemyMultiplier > 1) {
+    lines.push(
+      <PillBonusLabel
+        key="item-alchemy"
+        icon={<StatGlyph glyph="alchemy" size={14.5} />}
+        label={t('market.aside.badgeAlchemy')}
+        tone="gold"
+        value={`+${Math.round((definition.alchemyMultiplier - 1) * 100)}%`}
+      />
+    )
+  }
   // 即时打击规格（符箓）：祭出耗灵一击，伤害 = 最大灵力×manaDamageRatio + 术法攻击×spellAttackRatio
   if (definition.strike) {
     const strike = definition.strike
@@ -473,15 +529,19 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />
     )
   }
-  // 持续时长（如丹药、消耗品）：规范展示在物品自身主卡片中
-  if (definition.durationSeconds && definition.durationSeconds > 0) {
+  // 持续时长（如丹药、消耗品）：规范展示在物品自身主卡片中（支持 definition.durationSeconds 及战斗药品 Buff 内部 durationSeconds）
+  const buffDuration = definition.buffEffects?.find(b => (b.durationSeconds ?? 0) > 0)?.durationSeconds ?? 0
+  const effectiveDuration = (definition.durationSeconds && definition.durationSeconds > 0)
+    ? definition.durationSeconds
+    : buffDuration
+  if (effectiveDuration > 0) {
     lines.push(
       <PillBonusLabel
         key="item-duration"
         icon={<StatGlyph glyph="cooldown-reduction" size={14.5} />}
         label={t('market.aside.badgeDuration')}
         tone="slate"
-        value={`${formatNumber(definition.durationSeconds)}秒`}
+        value={`${formatNumber(effectiveDuration)}秒`}
       />
     )
   }
@@ -954,6 +1014,9 @@ export function resolveItemAsideCards(
   if (!definition) return []
   const t = getT()
   const cards: FloatingAsideCard[] = []
+  const durationSubtitle = definition.durationSeconds && definition.durationSeconds > 0
+    ? t('market.aside.duration', { seconds: formatNumber(definition.durationSeconds) })
+    : undefined
 
   // 1. 修炼丹药/持续消耗品效果 (如引气丹、通脉丹)
   if (definition.cultivationMultiplier && definition.cultivationMultiplier > 1) {
@@ -970,6 +1033,7 @@ export function resolveItemAsideCards(
         id: `aside-cultivation-${definition.itemId}`,
         mark: t('market.aside.buff'),
         title: definition.name || fallbackName || t('market.aside.buff'),
+        subtitle: durationSubtitle,
         tone: 'qi',
         items,
       })
@@ -991,6 +1055,7 @@ export function resolveItemAsideCards(
         id: `aside-gathering-${definition.itemId}`,
         mark: t('market.aside.buff'),
         title: definition.name || fallbackName || t('market.aside.buff'),
+        subtitle: durationSubtitle,
         tone: 'jade',
         items,
       })
@@ -1012,6 +1077,51 @@ export function resolveItemAsideCards(
         id: `aside-alchemy-${definition.itemId}`,
         mark: t('market.aside.buff'),
         title: definition.name || fallbackName || t('market.aside.buff'),
+        subtitle: durationSubtitle,
+        tone: 'gold',
+        items,
+      })
+    )
+  }
+
+  // 4. 百艺技艺速度加成 (如定神香、青灵香)
+  if (definition.techniqueSpeedRatio && definition.techniqueSpeedRatio > 0) {
+    const items: BonusAsideItem[] = [
+      {
+        glyph: 'forging',
+        label: t('market.aside.badgeTechniqueSpeed'),
+        tone: 'gold',
+        value: `+${Math.round(definition.techniqueSpeedRatio * 100)}%`,
+      },
+    ]
+    cards.push(
+      createBonusAsideCard({
+        id: `aside-technique-${definition.itemId}`,
+        mark: t('market.aside.buff'),
+        title: definition.name || fallbackName || t('market.aside.buff'),
+        subtitle: durationSubtitle,
+        tone: 'gold',
+        items,
+      })
+    )
+  }
+
+  // 5. 强化成功率加成 (如淬灵粉、固灵砂)
+  if (definition.enhancementSuccessBonus && definition.enhancementSuccessBonus > 0) {
+    const items: BonusAsideItem[] = [
+      {
+        glyph: 'threat-bonus',
+        label: t('market.aside.badgeEnhancementSuccess'),
+        tone: 'gold',
+        value: `+${formatNumber(definition.enhancementSuccessBonus * 100, { maxDecimals: 1 })}%`,
+      },
+    ]
+    cards.push(
+      createBonusAsideCard({
+        id: `aside-enhancement-${definition.itemId}`,
+        mark: t('market.aside.buff'),
+        title: definition.name || fallbackName || t('market.aside.buff'),
+        subtitle: durationSubtitle,
         tone: 'gold',
         items,
       })
@@ -1022,11 +1132,15 @@ export function resolveItemAsideCards(
   for (const buff of definition.buffEffects ?? []) {
     // 配表 Buff 定义为平铺键规格：转换为通道载荷后走统一注册表解析。
     const items = extractBuffBonusItems({ ...buff, effects: specToBuffEffects(buff as unknown as Record<string, number | undefined>, 1) })
+    const buffDurationSubtitle = buff.durationSeconds && buff.durationSeconds > 0
+      ? t('market.aside.duration', { seconds: formatNumber(buff.durationSeconds) })
+      : undefined
     cards.push(
       createBonusAsideCard({
         id: `aside-buff-${buff.name}`,
         mark: t('market.aside.buff'),
         title: buff.name,
+        subtitle: buffDurationSubtitle,
         tone: 'gold',
         items,
       })

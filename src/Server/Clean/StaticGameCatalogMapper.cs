@@ -37,6 +37,8 @@ public static class StaticGameCatalogMapper
             var cultivationMultiplier = hasConsumable ? ReadDouble(consumable, "cultivationMultiplier", 1) : 1;
             var gatheringMultiplier = hasConsumable ? ReadDouble(consumable, "gatheringMultiplier", 1) : 1;
             var alchemyMultiplier = hasConsumable ? ReadDouble(consumable, "alchemyMultiplier", 1) : 1;
+            var techniqueSpeedRatio = hasConsumable ? ReadDouble(consumable, "techniqueSpeedRatio", 0) : 0;
+            var enhancementSuccessBonus = hasConsumable ? ReadDouble(consumable, "enhancementSuccessBonus", 0) : 0;
             var cooldownSeconds = hasConsumable ? ReadDouble(consumable, "cooldownSeconds", 0) : 0;
             var hitpointRestore = hasConsumable ? ReadDouble(consumable, "hitpointRestore", 0) : 0;
             var manapointRestore = hasConsumable ? ReadDouble(consumable, "manapointRestore", 0) : 0;
@@ -94,6 +96,8 @@ public static class StaticGameCatalogMapper
                 cultivationMultiplier,
                 gatheringMultiplier,
                 alchemyMultiplier,
+                techniqueSpeedRatio,
+                enhancementSuccessBonus,
                 cooldownSeconds,
                 hitpointRestore,
                 manapointRestore,

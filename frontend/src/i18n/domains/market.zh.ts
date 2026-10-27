@@ -265,6 +265,8 @@ export const marketZh = {
       badgeCultivation: '修炼效率',
       badgeGathering: '采集产出',
       badgeAlchemy: '炼丹产出',
+      badgeTechniqueSpeed: '技艺速度',
+      badgeEnhancementSuccess: '强化成功率',
       badgeDuration: '持续时间',
       badgeStacks: '当前层数',
       unitSeconds: '秒',
