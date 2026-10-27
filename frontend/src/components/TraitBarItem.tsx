@@ -7,7 +7,7 @@ import {
 } from '../game/combatConstants'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
 import { createBonusAsideCard, type BonusAsideItem } from './ItemDisplay'
-import { useT } from '../i18n'
+import { getT, useT } from '../i18n'
 export interface TraitBarItemProps {
   /** 特质定义 */
   def: TraitMeta
@@ -49,18 +49,19 @@ const QUALITY_TONE_MAP: Record<number, FloatingTone> = {
  * 只要特质带有 Buff（如看不到我关联隐身 Buff），Hover 时统一通过独立副窗口呈现，杜绝仅在自身描述中单薄交代的割裂表现。
  */
 export function resolveTraitAsideCards(def: TraitMeta, _level = 1): FloatingAsideCard[] {
+  const t = getT()
   const cards: FloatingAsideCard[] = []
   if (def.id === 'trait.bukandaowo') {
     cards.push(
       createBonusAsideCard({
         id: `aside-trait-buff-${def.id}`,
-        mark: '特质状态',
-        title: '状态·隐身',
+        mark: t('combat.trait.stateMark'),
+        title: t('combat.trait.stealthTitle'),
         tone: 'purple',
         items: [
           {
             glyph: 'threat-bonus',
-            label: '威胁增幅',
+            label: t('game.abilityStat.threatBonusPoints'),
             tone: 'crimson',
             value: '-100%',
           },
@@ -73,7 +74,7 @@ export function resolveTraitAsideCards(def: TraitMeta, _level = 1): FloatingAsid
     if (typeof buff.threatPoints === 'number' && buff.threatPoints !== 0) {
       items.push({
         glyph: 'threat-bonus',
-        label: '威胁增幅',
+        label: t('game.abilityStat.threatBonusPoints'),
         tone: buff.threatPoints > 0 ? 'crimson' : 'teal',
         value: `${buff.threatPoints > 0 ? '+' : ''}${buff.threatPoints}%`,
       })
@@ -82,8 +83,8 @@ export function resolveTraitAsideCards(def: TraitMeta, _level = 1): FloatingAsid
       cards.push(
         createBonusAsideCard({
           id: `aside-trait-buff-${def.id}`,
-          mark: '特质状态',
-          title: buff.name ? `状态·${buff.name}` : '特质状态',
+          mark: t('combat.trait.stateMark'),
+          title: buff.name ? t('combat.trait.stateTitle', { name: buff.name }) : t('combat.trait.stateMark'),
           tone: 'purple',
           items,
         })

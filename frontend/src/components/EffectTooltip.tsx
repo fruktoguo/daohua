@@ -16,7 +16,7 @@ import { createBonusAsideCard, extractBuffBonusItems, type BonusAsideItem } from
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
-import type { AbilityBonusStat } from '../game/format'
+import { abilityPassiveStatLabel, type AbilityBonusStat } from '../game/format'
 import type { AbilityBuffSpec, CombatAbilityDefinition } from '../game/types'
 /**
  * 功法/词条/效果悬浮气泡内容结构
@@ -91,7 +91,7 @@ export function extractInternalAbilityBonusItems(
     const val = ability.cultivationExpBonusPoints
     items.push({
       glyph: 'experience',
-      label: '修为获取',
+      label: abilityPassiveStatLabel('cultivationExpBonusPoints'),
       tone: val >= 0 ? 'gold' : 'amber',
       value: `${val > 0 ? '+' : ''}${val}%`,
     })
@@ -100,28 +100,28 @@ export function extractInternalAbilityBonusItems(
   if (ability.passive) {
     const passiveEffPerLevel = ability.passiveEfficiencyPerLevel ?? 0.05
     const passiveScale = Math.max(0, 1.0 + passiveEffPerLevel * levelOffset)
-    const statConfigs: Record<string, { label: string; tone: PillTone }> = {
-      physicalDamageBonusPoints: { label: '物理增伤', tone: 'crimson' },
-      spellDamageBonusPoints: { label: '术法增伤', tone: 'indigo' },
-      physicalDamageReductionPoints: { label: '物理减伤', tone: 'emerald' },
-      spellDamageReductionPoints: { label: '术法减伤', tone: 'violet' },
-      actionSpeedPoints: { label: '行动加速', tone: 'teal' },
-      attackSpeedPoints: { label: '攻击攻速', tone: 'teal' },
-      criticalDamageBonusPoints: { label: '暴击伤害', tone: 'gold' },
-      threatBonusPoints: { label: '威胁增幅', tone: 'crimson' },
-      healingBonusPoints: { label: '治疗增幅', tone: 'violet' },
-      damageAbsorptionPoints: { label: '伤害减免', tone: 'emerald' },
-      cultivationExpBonusPoints: { label: '修为获取', tone: 'gold' },
-      combatExpBonusPoints: { label: '战斗修为获取', tone: 'amber' },
+    const statTones: Record<string, PillTone> = {
+      physicalDamageBonusPoints: 'crimson',
+      spellDamageBonusPoints: 'indigo',
+      physicalDamageReductionPoints: 'emerald',
+      spellDamageReductionPoints: 'violet',
+      actionSpeedPoints: 'teal',
+      attackSpeedPoints: 'teal',
+      criticalDamageBonusPoints: 'gold',
+      threatBonusPoints: 'crimson',
+      healingBonusPoints: 'violet',
+      damageAbsorptionPoints: 'emerald',
+      cultivationExpBonusPoints: 'gold',
+      combatExpBonusPoints: 'amber',
     }
     for (const [stat, baseVal] of Object.entries(ability.passive)) {
       if (typeof baseVal === 'number' && baseVal !== 0) {
         const scaledVal = Math.round(baseVal * passiveScale * 100) / 100
-        const cfg = statConfigs[stat] ?? { label: stat, tone: 'default' }
+        const label = abilityPassiveStatLabel(stat)
         items.push({
-          glyph: resolveStatGlyph(stat) ?? resolveStatGlyph(cfg.label) ?? undefined,
-          label: cfg.label,
-          tone: cfg.tone,
+          glyph: resolveStatGlyph(stat) ?? resolveStatGlyph(label) ?? undefined,
+          label,
+          tone: statTones[stat] ?? 'default',
           value: `${scaledVal > 0 ? '+' : ''}${scaledVal}%`,
         })
       }
@@ -204,11 +204,13 @@ export function createAbilityBuffAsideCards(
   const t = getT()
   return buffSpecs.map((spec, index) => {
     const items = extractSingleBuffSpecBonusItems(spec, level)
-    const buffName = spec.name || (buffSpecs.length === 1 ? t('game.abilityAside.buffTitle') : `状态${index + 1}`)
+    const buffName = spec.name || (buffSpecs.length === 1
+      ? t('game.abilityAside.buffTitle')
+      : t('game.abilityAside.buffFallback', { index: index + 1 }))
     const isDebuff = (spec.resistancePoints ?? 0) < 0 || (spec.damageAbsorptionPoints ?? 0) < 0
     return createBonusAsideCard({
       id: `aside-ability-buff-${ability.abilityId}-${spec.buffId || index}`,
-      mark: isDebuff ? '减益状态' : t('game.abilityAside.buffMark'),
+      mark: isDebuff ? t('game.abilityAside.debuffMark') : t('game.abilityAside.buffMark'),
       title: `${t('game.abilityAside.buffTitle')}·${buffName}`,
       tone: isDebuff ? 'crimson' : 'emerald',
       items,

@@ -251,6 +251,7 @@ export const marketZh = {
       level: '等阶',
       held: '持有',
       price: '售价',
+      priceWithUnit: '{value} 灵石',
     },
     aside: {
       tomeComprehension: '秘籍参悟',

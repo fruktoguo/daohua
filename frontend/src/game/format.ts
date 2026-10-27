@@ -38,6 +38,29 @@ function abilityRatioPercent(ratio: number): string {
 }
 
 /**
+ * 功法被动属性展示标签单一来源：describeAbility 与 EffectTooltip 的被动词条行共用，
+ * 新增属性时只需在此补一个 case 与对应词条，避免两处文案漂移。
+ */
+export function abilityPassiveStatLabel(stat: string): string {
+  const t = getT()
+  switch (stat) {
+    case 'physicalDamageBonusPoints': return t('game.abilityStat.physicalDamageBonusPoints')
+    case 'spellDamageBonusPoints': return t('game.abilityStat.spellDamageBonusPoints')
+    case 'physicalDamageReductionPoints': return t('game.abilityStat.physicalDamageReductionPoints')
+    case 'spellDamageReductionPoints': return t('game.abilityStat.spellDamageReductionPoints')
+    case 'actionSpeedPoints': return t('game.abilityStat.actionSpeedPoints')
+    case 'attackSpeedPoints': return t('game.abilityStat.attackSpeedPoints')
+    case 'criticalDamageBonusPoints': return t('game.abilityStat.criticalDamageBonusPoints')
+    case 'threatBonusPoints': return t('game.abilityStat.threatBonusPoints')
+    case 'healingBonusPoints': return t('game.abilityStat.healingBonusPoints')
+    case 'damageAbsorptionPoints': return t('game.abilityStat.damageAbsorptionPoints')
+    case 'cultivationExpBonusPoints': return t('game.abilityStat.cultivationExpBonusPoints')
+    case 'combatExpBonusPoints': return t('game.abilityStat.combatExpBonusPoints')
+    default: return stat
+  }
+}
+
+/**
  * 根据功法技能定义与当前等级，生成用于 Tooltip 展示的结构化说明数据：
  * 主描述 = 配表韵文 + 完整效果叙述句（参照英雄联盟技能说明：全部机制融在一段
  * 连贯文本里，数值以 [[ ]] 胶囊内嵌高亮，而非拆散成配置项式的标签行）；
@@ -61,7 +84,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
       const val = ability.cultivationExpBonusPoints
       bonuses.push({
         key: 'cultivationExpBonusPoints',
-        label: '修为获取',
+        label: abilityPassiveStatLabel('cultivationExpBonusPoints'),
         tone: val >= 0 ? 'gold' : 'amber',
         value: `${val > 0 ? '+' : ''}${val}%`,
       })
@@ -70,28 +93,27 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     if (ability.passive) {
       const passiveEffPerLevel = ability.passiveEfficiencyPerLevel ?? 0.05
       const passiveScale = Math.max(0, 1.0 + passiveEffPerLevel * levelOffset)
-      const statConfigs: Record<string, { label: string; tone: string }> = {
-        physicalDamageBonusPoints: { label: '物理增伤', tone: 'crimson' },
-        spellDamageBonusPoints: { label: '术法增伤', tone: 'indigo' },
-        physicalDamageReductionPoints: { label: '物理减伤', tone: 'emerald' },
-        spellDamageReductionPoints: { label: '术法减伤', tone: 'violet' },
-        actionSpeedPoints: { label: '行动加速', tone: 'teal' },
-        attackSpeedPoints: { label: '攻击攻速', tone: 'teal' },
-        criticalDamageBonusPoints: { label: '暴击伤害', tone: 'gold' },
-        threatBonusPoints: { label: '威胁增幅', tone: 'crimson' },
-        healingBonusPoints: { label: '治疗增幅', tone: 'violet' },
-        damageAbsorptionPoints: { label: '伤害减免', tone: 'emerald' },
-        cultivationExpBonusPoints: { label: '修为获取', tone: 'gold' },
-        combatExpBonusPoints: { label: '战斗修为获取', tone: 'amber' },
+      const statTones: Record<string, string> = {
+        physicalDamageBonusPoints: 'crimson',
+        spellDamageBonusPoints: 'indigo',
+        physicalDamageReductionPoints: 'emerald',
+        spellDamageReductionPoints: 'violet',
+        actionSpeedPoints: 'teal',
+        attackSpeedPoints: 'teal',
+        criticalDamageBonusPoints: 'gold',
+        threatBonusPoints: 'crimson',
+        healingBonusPoints: 'violet',
+        damageAbsorptionPoints: 'emerald',
+        cultivationExpBonusPoints: 'gold',
+        combatExpBonusPoints: 'amber',
       }
       for (const [stat, baseVal] of Object.entries(ability.passive)) {
         if (typeof baseVal === 'number' && baseVal !== 0) {
           const scaledVal = Math.round(baseVal * passiveScale * 100) / 100
-          const cfg = statConfigs[stat] ?? { label: stat, tone: 'default' }
           bonuses.push({
             key: stat,
-            label: cfg.label,
-            tone: cfg.tone,
+            label: abilityPassiveStatLabel(stat),
+            tone: statTones[stat] ?? 'default',
             value: `${scaledVal > 0 ? '+' : ''}${scaledVal}%`,
           })
         }
@@ -463,16 +485,20 @@ export function describeCombatTrigger(trigger: CombatTrigger): string {
     const active = trigger.comparator === 'is-active'
     if (trigger.condition.startsWith('is-')) {
       const role = condition.replace(/^是/, '')
-      return active ? `当 ${dependency} 是 ${role} 时` : `当 ${dependency} 不是 ${role} 时`
+      return active
+        ? t('game.trigger.template.roleIs', { dependency, role })
+        : t('game.trigger.template.roleIsNot', { dependency, role })
     }
     if (trigger.condition.startsWith('has-')) {
       const role = condition.replace(/^有/, '')
-      return active ? `当 ${dependency} 有 ${role} 时` : `当 ${dependency} 无 ${role} 时`
+      return active
+        ? t('game.trigger.template.roleHas', { dependency, role })
+        : t('game.trigger.template.roleHasNot', { dependency, role })
     }
     return t('game.trigger.template.status', { dependency, condition, comparator })
   }
   const isPercentage = trigger.condition.includes('percentage')
-  const unit = isPercentage ? '%' : trigger.condition === 'elapsed-seconds' ? '秒' : ''
+  const unit = isPercentage ? '%' : trigger.condition === 'elapsed-seconds' ? t('game.trigger.unit.seconds') : ''
   return t('game.trigger.template.value', {
     dependency,
     condition,

@@ -1797,9 +1797,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                   <div className="spirit-stone-tier-group" role="radiogroup" aria-label={t('app.action.spiritStoneInject')}>
                     {[
                       { value: 0, label: t('app.action.spiritStoneTierNone') },
-                      { value: 1 * stoneScale, label: `${1 * stoneScale} 灵石 (+20%)` },
-                      { value: 10 * stoneScale, label: `${10 * stoneScale} 灵石 (+100%)` },
-                      { value: 100 * stoneScale, label: `${100 * stoneScale} 灵石 (+300%)` },
+                      { value: 1 * stoneScale, label: t('app.action.spiritStoneTierLow', { n: 1 * stoneScale }) },
+                      { value: 10 * stoneScale, label: t('app.action.spiritStoneTierMid', { n: 10 * stoneScale }) },
+                      { value: 100 * stoneScale, label: t('app.action.spiritStoneTierHigh', { n: 100 * stoneScale }) },
                     ].map(tier => (
                       <button
                         key={tier.value}

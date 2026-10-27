@@ -850,7 +850,7 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
     { label: t('market.tooltip.level'), value: `Lv. ${formatNumber(levelNumber)}`, tone: 'gold' },
   ]
   if (item.sellPrice !== undefined) {
-    stats.push({ label: t('market.tooltip.price'), value: `${formatNumber(item.sellPrice)} 灵石`, tone: 'jade' })
+    stats.push({ label: t('market.tooltip.price'), value: t('market.tooltip.priceWithUnit', { value: formatNumber(item.sellPrice) }), tone: 'jade' })
   }
 
   const hoverContent = (
@@ -1337,7 +1337,9 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
         }`}
       >
         <ItemTile
-          category={ability.discipline === 'internal' ? '内功' : (ability.category === 'spell' ? '术法' : '武技')}
+          category={ability.discipline === 'internal'
+            ? t('app.codex.disciplineInternal')
+            : (ability.category === 'spell' ? t('app.codex.disciplineSpell') : t('app.codex.disciplineMartial'))}
           className="inventory-cell"
           itemId={ability.abilityId}
           level={ability.tier ?? 1}
@@ -1382,7 +1384,7 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
       }`}
       style={{ marginTop: 0 }}
     >
-      {isDefeated ? t('app.codex.defeated') : '在野外讨伐并击败该妖兽'}
+      {isDefeated ? t('app.codex.defeated') : t('app.codex.undefeatedHint')}
     </div>
   )
 

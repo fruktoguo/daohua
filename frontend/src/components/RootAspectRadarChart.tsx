@@ -1,4 +1,5 @@
 import React, { memo, useId } from 'react'
+import { useT } from '../i18n'
 
 export interface RootAspectRadarChartProps {
   /** 六维经验分配乘率表（key 为 stamina/meridians/attack/bone/agility/consciousness，默认 1.0） */
@@ -11,7 +12,6 @@ export interface RootAspectRadarChartProps {
 
 interface AspectConfig {
   key: string
-  name: string
   angle: number // radians
   lx: number
   ly: number
@@ -27,12 +27,13 @@ const MAX_R = 54  // 极化上限环半径 (400%)
 const ANGLES = [-90, -30, 30, 90, 150, 210].map((deg) => (deg * Math.PI) / 180)
 
 const ASPECTS: readonly AspectConfig[] = [
-  { key: 'stamina', name: '体魄', angle: ANGLES[0], lx: CX, ly: 14, anchor: 'middle' },
-  { key: 'meridians', name: '经脉', angle: ANGLES[1], lx: 174, ly: 48, anchor: 'start' },
-  { key: 'attack', name: '力道', angle: ANGLES[2], lx: 174, ly: 118, anchor: 'start' },
-  { key: 'bone', name: '根骨', angle: ANGLES[3], lx: CX, ly: 154, anchor: 'middle' },
-  { key: 'agility', name: '身法', angle: ANGLES[4], lx: 56, ly: 118, anchor: 'end' },
-  { key: 'consciousness', name: '神识', angle: ANGLES[5], lx: 56, ly: 48, anchor: 'end' },
+  // 六维标签复用 insight.root.* 既有词条（attack 对应根基页的「力道」strength）
+  { key: 'stamina', angle: ANGLES[0], lx: CX, ly: 14, anchor: 'middle' },
+  { key: 'meridians', angle: ANGLES[1], lx: 174, ly: 48, anchor: 'start' },
+  { key: 'attack', angle: ANGLES[2], lx: 174, ly: 118, anchor: 'start' },
+  { key: 'bone', angle: ANGLES[3], lx: CX, ly: 154, anchor: 'middle' },
+  { key: 'agility', angle: ANGLES[4], lx: 56, ly: 118, anchor: 'end' },
+  { key: 'consciousness', angle: ANGLES[5], lx: 56, ly: 48, anchor: 'end' },
 ]
 
 /** 根据百分比计算顶点半径（0%~100% 对应 4~30px，100%~400% 对应 30~54px） */
@@ -71,6 +72,7 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
 }: RootAspectRadarChartProps): React.JSX.Element {
   const gradientId = useId()
   const filterId = useId()
+  const t = useT()
 
   const eff = Math.max(0, efficiency)
 
@@ -116,7 +118,7 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
   return (
     <div className={`root-aspect-radar-shell ${className}`.trim()}>
       <svg
-        aria-label="六维资质雷达图"
+        aria-label={t('game.abilityAside.radarAria')}
         className="root-aspect-radar-svg"
         viewBox="0 0 230 172"
       >
@@ -219,7 +221,7 @@ export const RootAspectRadarChart = memo(function RootAspectRadarChart({
               style={{ fill: 'var(--text-dim, rgba(233, 227, 210, 0.72))' }}
               x={s.lx}
             >
-              {s.name}
+              {t(`insight.root.${s.key === 'attack' ? 'strength' : s.key}.name`)}
             </tspan>
             <tspan
               dy="12"

@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Modal } from './Modal'
 import { TRAIT_DEFINITIONS } from '../game/combatConstants'
+import { useT } from '../i18n'
 import { useUiStore } from '../uiStore'
 import { TraitBarItem } from './TraitBarItem'
 
@@ -10,6 +11,7 @@ import { TraitBarItem } from './TraitBarItem'
  */
 export const AwakenResultModal = memo(function AwakenResultModal(): React.JSX.Element | null {
   const titleId = useId()
+  const t = useT()
   const awakenResults = useUiStore(state => state.awakenResults)
   const closeAwakenResult = useUiStore(state => state.closeAwakenResult)
   const listEndRef = useRef<HTMLDivElement | null>(null)
@@ -136,7 +138,7 @@ export const AwakenResultModal = memo(function AwakenResultModal(): React.JSX.El
             onClick={handleConfirmOrSkip}
             type="button"
           >
-            {isAllVisible ? '收下' : '跳过'}
+            {isAllVisible ? t('app.awaken.takeBtn') : t('app.awaken.skipBtn')}
           </button>
         </footer>
       </div>

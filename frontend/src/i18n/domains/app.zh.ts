@@ -37,6 +37,11 @@ export const appZh = {
       sidebarAria: '行动导航',
       mobileNavAria: '移动端导航',
     },
+    // 觉醒抽卡结果弹窗
+    awaken: {
+      takeBtn: '收下',
+      skipBtn: '跳过',
+    },
     // 图鉴（制造配方、建筑、技能、怪物）
     codex: {
       title: '万象图鉴',
@@ -95,6 +100,10 @@ export const appZh = {
       unlearned: '未领悟',
       defeated: '已降服',
       undefeated: '未降服',
+      undefeatedHint: '在野外讨伐并击败该妖兽',
+      disciplineInternal: '内功',
+      disciplineSpell: '术法',
+      disciplineMartial: '武技',
       unlockCondition: '解锁条件',
       conditionMaterialLevel: '境界达到 {level} 级自动收录',
       conditionLevel: '境界达到 {level} 级自动领悟',
@@ -326,9 +335,9 @@ export const appZh = {
       autoUseLabel: '物品使用',
       spiritStoneInject: '灵石注灵',
       spiritStoneTierNone: '不消耗',
-      spiritStoneTier1: '1 灵石 (+20%)',
-      spiritStoneTier10: '10 灵石 (+100%)',
-      spiritStoneTier100: '100 灵石 (+300%)',
+      spiritStoneTierLow: '{n} 灵石 (+20%)',
+      spiritStoneTierMid: '{n} 灵石 (+100%)',
+      spiritStoneTierHigh: '{n} 灵石 (+300%)',
       spiritStoneBadge: '💎 {count}/轮',
       locationActionEmpty: '当前位置没有开放此类行动，请先在历练地图中移动。',
       // 斗法（PVP）勾选块

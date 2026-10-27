@@ -1,11 +1,11 @@
-import { commonZh } from '../domains/common.zh'
-import { appZh } from '../domains/app.zh'
-import { insightZh } from '../domains/insight.zh'
-import { marketZh } from '../domains/market.zh'
-import { combatZh } from '../domains/combat.zh'
-import { gameZh } from '../domains/game.zh'
-import { socialZh } from '../domains/social.zh'
-import { shopZh } from '../domains/shop.zh'
+import { commonZh } from '../domains/common.zh.ts'
+import { appZh } from '../domains/app.zh.ts'
+import { insightZh } from '../domains/insight.zh.ts'
+import { marketZh } from '../domains/market.zh.ts'
+import { combatZh } from '../domains/combat.zh.ts'
+import { gameZh } from '../domains/game.zh.ts'
+import { socialZh } from '../domains/social.zh.ts'
+import { shopZh } from '../domains/shop.zh.ts'
 
 /**
  * 中文源词典：新增文案先登记到对应域的 .zh.ts，再同步到同名 .en.ts。

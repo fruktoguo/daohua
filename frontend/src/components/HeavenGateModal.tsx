@@ -180,7 +180,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   const multiplier = linggenCultivationMultiplier(roots, true)
   const hasPill = reverseFatePillCount > 0
   const evaluation = useMemo(
-    () => evaluateSpiritualRoots(roots, hasRolled),
+    () => evaluateSpiritualRoots(roots, hasRolled, t),
     [hasRolled, roots],
   )
   // 实时根据当前拖拽调配解算五系完整加成

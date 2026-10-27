@@ -383,6 +383,11 @@ export const combatZh = {
       partyInvitedBy: '{name} 邀请你加入队伍',
     },
     // 触发条件编辑器（依赖/条件/比较器枚举展示复用 game.trigger.*，不在此重复）
+    trait: {
+      stateMark: '特质状态',
+      stealthTitle: '状态·隐身',
+      stateTitle: '状态·{name}',
+    },
     trigger: {
       indexLabel: '条件 {n}',
       removeAria: '删除条件 {n}',

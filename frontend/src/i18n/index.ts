@@ -8,7 +8,7 @@
 // ==============================================================================
 import { useCallback } from 'react'
 import { create } from 'zustand'
-import { zhCN, type Messages } from './locales/zh-CN'
+import { zhCN, type Messages } from './locales/zh-CN.ts'
 
 // 构建时只注册实际存在的语言包；模板本身不是可选语言。
 const localeFiles = typeof (import.meta as any).glob === 'function'
