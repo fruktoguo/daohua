@@ -204,7 +204,8 @@ public sealed class HeavenGateCommandTests
 
         var rolled = await Execute(runtime, playerId, new { action = "roll" });
         var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-        var maxMetal = HeavenGateRules.ResolveMaxReachableValue(rolledValues, LinggenValues.Empty, LinggenElement.Metal);
+        var allOtherZero = rolledValues with { Wood = 0, Water = 0, Fire = 0, Earth = 0 };
+        var maxMetal = HeavenGateRules.ResolveMaxReachableValue(rolledValues, allOtherZero, LinggenElement.Metal);
         // enter 载荷直接携带单系分配：随机抽取可能落在多系，显式分配把乘区钉在 1.0，
         // 让本用例专注于「入天门解除突破封锁」；乘区抬升语义由 Domain.Tests 权威覆盖。
         var entered = await Execute(runtime, playerId, new { action = "enter", metal = maxMetal, wood = 0, water = 0, fire = 0, earth = 0 });

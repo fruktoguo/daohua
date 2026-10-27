@@ -394,12 +394,14 @@ export function calculateActionYieldPreview({
     cultivationDetail = { isPendingBreakthrough }
   }
   // 修炼灵石注灵加速（总纲 §6.4.3）：仅放大修为与灵力基础值，重算后续乘区；六维经验定额不受影响
+  // 二级修炼（Lv.18 炼精化气）灵石消耗翻倍（2 / 20 / 200）
+  const stoneScale = (action.level ?? 1) >= 18 ? 2 : 1
   const spiritStoneCost = ((action.id === 'cultivation.draw-qi' || action.type === 'cultivation') && parameters?.spiritStone)
     ? parameters.spiritStone
     : 0
-  const spiritStoneMultiplier = spiritStoneCost >= 100
+  const spiritStoneMultiplier = spiritStoneCost >= 100 * stoneScale
     ? 4.0
-    : (spiritStoneCost >= 10 ? 2.0 : (spiritStoneCost >= 1 ? 1.2 : 1.0))
+    : (spiritStoneCost >= 10 * stoneScale ? 2.0 : (spiritStoneCost >= 1 * stoneScale ? 1.2 : 1.0))
   if (spiritStoneMultiplier > 1.0) {
     const stonePercent = Math.round((spiritStoneMultiplier - 1.0) * 100)
     bonuses.push({

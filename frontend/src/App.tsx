@@ -1530,6 +1530,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   // 其余行动（探索/修炼/战斗/赶路）维持无限循环口径不变。
   const isManufacture = action.type === 'alchemy' || action.type === 'enhancement'
   const isDrawQi = action.id === 'cultivation.draw-qi' || action.type === 'cultivation'
+  const stoneScale = (action.level ?? 1) >= 18 ? 2 : 1
   const [repeats, setRepeats] = useState(isManufacture ? 1 : -1)
   const [spiritStoneTier, setSpiritStoneTier] = useState<number>(0)
   const [pvpEnabled, setPvpEnabled] = useState(false)
@@ -1797,9 +1798,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                   <div className="spirit-stone-tier-group" role="radiogroup" aria-label={t('app.action.spiritStoneInject')}>
                     {[
                       { value: 0, label: t('app.action.spiritStoneTierNone') },
-                      { value: 1, label: t('app.action.spiritStoneTier1') },
-                      { value: 10, label: t('app.action.spiritStoneTier10') },
-                      { value: 100, label: t('app.action.spiritStoneTier100') },
+                      { value: 1 * stoneScale, label: `${1 * stoneScale} 灵石 (+20%)` },
+                      { value: 10 * stoneScale, label: `${10 * stoneScale} 灵石 (+100%)` },
+                      { value: 100 * stoneScale, label: `${100 * stoneScale} 灵石 (+300%)` },
                     ].map(tier => (
                       <button
                         key={tier.value}

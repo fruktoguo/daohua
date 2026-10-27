@@ -97,4 +97,43 @@ public sealed class CultivationProgressionTests
         Assert.Equal("cultivation.lianjing-huaqi", player.Actions[0].Intent.ActionId.Value);
         Assert.Equal(-1, player.Actions[0].RemainingRepeats);
     }
+
+    [Fact]
+    public void SpiritStoneScale_Tier1VersusTier2()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var drawQi = catalog.Actions.Get(new ActionId("cultivation.draw-qi"));
+        var lianjing = catalog.Actions.Get(new ActionId("cultivation.lianjing-huaqi"));
+
+        Assert.Equal(1, PlayerAggregate.ResolveCultivationSpiritStoneScale(drawQi));
+        Assert.Equal(2, PlayerAggregate.ResolveCultivationSpiritStoneScale(lianjing));
+    }
+
+    [Fact]
+    public void CultivationSpiritStoneDoublingExecution()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "注灵修士", Baseline, catalog.Fingerprint);
+        player.Progression.RealmLevel = 18;
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Apply(new AssetDelta(player.PlayerId, new AssetKey(stone), 1000, "test"));
+
+        // 18 级角色挂炼精化气，配置 20 灵石档位 (二级翻倍的中档)
+        var intent = new ActionIntent(
+            new ActionId("cultivation.lianjing-huaqi"),
+            1,
+            Parameters: new Dictionary<string, double> { ["spiritStone"] = 20 });
+        player.Enqueue(intent, Baseline, catalog.Actions);
+
+        // 推进 10.2 秒完成一轮
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10.2), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        // 验证扣减了 20 灵石（剩余 980）
+        Assert.Equal(980, wallet.Get(new AssetKey(stone)));
+
+        // 验证产出：18 级基准 133 * 2.0 = 266 修为
+        Assert.Equal(266, player.Progression.Experience);
+    }
 }

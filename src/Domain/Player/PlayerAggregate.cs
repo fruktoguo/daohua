@@ -1175,6 +1175,12 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
+    /// 解析修炼行动的灵石注灵消耗系数（一级凡俗 1x，二级炼气 2x）。
+    /// </summary>
+    public static int ResolveCultivationSpiritStoneScale(ActionDefinition? definition)
+        => (definition?.Level is { } lvl && lvl >= 18) ? 2 : 1;
+
+    /// <summary>
     /// 传送到或移动至指定世界地图节点及坐标。
     /// </summary>
     public void TravelTo(string nodeId, double x = 0, double y = 0)

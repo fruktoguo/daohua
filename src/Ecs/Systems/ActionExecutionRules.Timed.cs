@@ -385,14 +385,14 @@ internal static partial class ActionExecutionRules
             && action.Intent.Parameters.TryGetValue("spiritStone", out var reqStone)
             && reqStone > 0)
         {
-            var tierCost = reqStone >= 100 ? 100 : (reqStone >= 10 ? 10 : (reqStone >= 1 ? 1 : 0));
-            var tierMultiplier = tierCost switch
-            {
-                100 => 4.0, // +300%
-                10 => 2.0,  // +100%
-                1 => 1.2,   // +20%
-                _ => 1.0
-            };
+            var stoneScale = PlayerAggregate.ResolveCultivationSpiritStoneScale(definition);
+            var highTier = 100 * stoneScale;
+            var midTier = 10 * stoneScale;
+            var lowTier = 1 * stoneScale;
+            var tierCost = reqStone >= highTier ? highTier : (reqStone >= midTier ? midTier : (reqStone >= lowTier ? lowTier : 0));
+            var tierMultiplier = tierCost == highTier
+                ? 4.0 // +300%
+                : (tierCost == midTier ? 2.0 : (tierCost == lowTier ? 1.2 : 1.0));
             if (tierCost > 0)
             {
                 var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
