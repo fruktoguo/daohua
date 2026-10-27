@@ -175,3 +175,50 @@ test('codexFilters: 三大战术阵盘与消耗品配方完整录入图鉴且产
     assert.equal(resolveCodexCraftingSubTab(act), 'alchemy')
   }
 })
+
+test('制造面板分类隔离：炼丹池绝不混入炼器/阵法/符箓，且三级子选项卡互斥完备', () => {
+  const items = readRows('items')
+  const itemMap = new Map(items.map(it => [it.id, it]))
+
+  const alchemyPool = actions.filter(a => a.technique === 'alchemy' || a.id.startsWith('alchemy.') || a.id.startsWith('craft.extract-'))
+  const forgingPool = actions.filter(a => a.technique === 'forging' || a.id.startsWith('forge.') || a.id.startsWith('craft.refine-'))
+  const formationPool = actions.filter(a => a.technique === 'formation')
+  const talismanPool = actions.filter(a => a.technique === 'talisman')
+
+  // 1. 各工门池绝不串入其它工门行动
+  for (const a of alchemyPool) {
+    assert.ok(!a.id.startsWith('forge.'), `炼丹池绝不能包含锻造装备: ${a.id}`)
+    assert.ok(!a.id.startsWith('craft.refine-'), `炼丹池绝不能包含锻造精炼: ${a.id}`)
+    assert.ok(!a.id.startsWith('formation.'), `炼丹池绝不能包含阵法: ${a.id}`)
+    assert.ok(!a.id.startsWith('talisman.'), `炼丹池绝不能包含符箓: ${a.id}`)
+  }
+  for (const a of forgingPool) {
+    assert.ok(!a.id.startsWith('alchemy.'), `炼器池绝不能包含炼丹: ${a.id}`)
+    assert.ok(!a.id.startsWith('craft.extract-'), `炼器池绝不能包含药材提取: ${a.id}`)
+  }
+
+  // 2. 炼丹三级分类互斥完备
+  const isExtraction = a =>
+    (a.id === 'craft.extract-herb-essence' ||
+     a.id === 'craft.extract-banling-essence' ||
+     a.id.startsWith('craft.extract-') ||
+     a.id.includes('essence') ||
+     a.id.includes('extract')) &&
+    !a.id.startsWith('craft.refine-')
+
+  const isCombatPill = a => {
+    const yieldId = a.yields?.find(y => y.kind === 'item')?.id
+    const it = yieldId ? itemMap.get(yieldId) : undefined
+    if (it?.consumable?.usableInActionTypes?.includes('combat')) return true
+    return a.id.includes('zhixue') || a.id.includes('shunqi')
+  }
+
+  const extractions = alchemyPool.filter(isExtraction)
+  const combatPills = alchemyPool.filter(a => !isExtraction(a) && isCombatPill(a))
+  const cultivationPills = alchemyPool.filter(a => !isExtraction(a) && !isCombatPill(a))
+
+  assert.equal(extractions.length, 2, '提炼子类应有草木精华与伴灵精华')
+  assert.equal(combatPills.length, 6, '斗法子类应有止血散、顺气丸、生肌膏、凝气散、黄芽丹、合气丹')
+  assert.equal(cultivationPills.length, 7, '修炼子类应有引气丹、通脉丹、逆命丹、定神香、青灵香、淬灵粉、固灵砂')
+  assert.equal(extractions.length + combatPills.length + cultivationPills.length, alchemyPool.length, '炼丹池三级分类总数应等于炼丹池全量')
+})

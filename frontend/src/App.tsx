@@ -1113,8 +1113,8 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       // 符箓/阵法制造行动复用 alchemy 行动类型，按 technique 归属独立页签展示
       list = availableActions.filter(a => a.technique === craftingMode)
     } else if (craftingMode === 'alchemy') {
-      // 炼丹行动池须剥离符箓/阵法/强化技艺行动，避免经 type=alchemy 串入炼丹列表
-      const pool = availableActions.filter(a => a.technique !== 'talisman' && a.technique !== 'formation' && a.technique !== 'enhancement')
+      // 炼丹行动池严格限定 technique === 'alchemy'，杜绝锻造装备等其它技艺行动串入
+      const pool = availableActions.filter(a => a.technique === 'alchemy' || a.id.startsWith('alchemy.') || a.id.startsWith('craft.extract-'))
       const isExtraction = (a: ActionDefinition) =>
         (a.id === 'craft.extract-herb-essence' ||
          a.id === 'craft.extract-banling-essence' ||
@@ -1141,8 +1141,8 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         list = pool.filter(a => !isExtraction(a) && !isCombatPill(a))
       }
     } else if (craftingMode === 'forging') {
-      // 炼器：精炼、武器、头部、衣服、腿部、鞋履、饰品
-      const pool = availableActions.filter(a => a.technique !== 'talisman' && a.technique !== 'formation' && a.technique !== 'enhancement')
+      // 炼器：精炼、武器、头部、衣服、腿部、鞋履、饰品（严格限定 technique === 'forging'）
+      const pool = availableActions.filter(a => a.technique === 'forging' || a.id.startsWith('forge.') || a.id.startsWith('craft.refine-'))
       if (forgingSubTab === 'refining') {
         // 精炼：百炼铁、桃木晶、赤铜精、灵松晶等锻造灵材精炼
         list = pool.filter(a =>
