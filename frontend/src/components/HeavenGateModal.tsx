@@ -346,7 +346,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
         <header className="hg-header">
           <div className="hg-header__top">
             <h2 id={titleId} className="hg-header__title">{t('insight.heavenGate.title')}</h2>
-            <p className="hg-header__subtitle">叩开天门别凡骨 · 五气朝元定道根</p>
+            <p className="hg-header__subtitle">{t('insight.heavenGate.subtitle')}</p>
           </div>
           <div className="hg-verdict">
             <div className="hg-verdict__title-wrap">
@@ -600,7 +600,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                         dominantBaseline="central"
                         className="hg-label__name"
                       >
-                        {axis.label}
+                        {t(`insight.heavenGate.element.${axis.key}`)}
                       </text>
                       <text
                         x={valPos.x}
@@ -619,7 +619,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                           dominantBaseline="central"
                           className="hg-label__base"
                         >
-                          {`(初${innate[axis.key]})`}
+                          {t('insight.heavenGate.innateBase', { value: innate[axis.key] })}
                         </text>
                       )}
                       {hasRolled && tier !== 'none' && (
@@ -636,7 +636,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                             dominantBaseline="central"
                             className="hg-label__badge-text"
                           >
-                            {tier === 'heaven' ? '天灵' : '地灵'}
+                            {tier === 'heaven' ? t('insight.heavenGate.tierHeaven') : t('insight.heavenGate.tierEarth')}
                           </text>
                         </g>
                       )}
@@ -649,7 +649,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                 <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="18" className="hg-dantian__halo" />
                 <circle cx={BOARD_CENTER.x} cy={BOARD_CENTER.y} r="14" className="hg-dantian__core" />
                 <text x={BOARD_CENTER.x} y={BOARD_CENTER.y + 1} className="hg-dantian__text">
-                  {boardState === 'unrolled' ? '天门' : '灵'}
+                  {boardState === 'unrolled' ? t('insight.heavenGate.dantianUnrolled') : t('insight.heavenGate.dantianRolled')}
                 </text>
               </g>
             </svg>
@@ -673,7 +673,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
         <div className="hg-stats">
           <div className="hg-stat hg-stat--remaining">
             <div className="hg-stat__head">
-              <span className="hg-stat__label">未分配</span>
+              <span className="hg-stat__label">{t('insight.heavenGate.unallocated')}</span>
             </div>
             <div className="hg-stat__main">
               <strong className="hg-stat__value">
@@ -684,18 +684,18 @@ export const HeavenGateModal = memo(function HeavenGateModal({
 
           <div className="hg-stat hg-stat--total">
             <div className="hg-stat__head">
-              <span className="hg-stat__label">总</span>
+              <span className="hg-stat__label">{t('insight.heavenGate.totalShort')}</span>
             </div>
             <div className="hg-stat__main">
               <strong className="hg-stat__value">
-                {hasRolled ? `${currentTotal} (初${immutableTotal})` : '--'}
+                {hasRolled ? `${currentTotal} ${t('insight.heavenGate.innateBase', { value: immutableTotal })}` : '--'}
               </strong>
             </div>
           </div>
 
           <div className="hg-stat hg-stat--cultivation">
             <div className="hg-stat__head">
-              <span className="hg-stat__label">后续破镜难度</span>
+              <span className="hg-stat__label">{t('insight.heavenGate.nextBreakDifficulty')}</span>
             </div>
             <div className="hg-stat__main">
               <strong className="hg-stat__value">
@@ -857,7 +857,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                         {t(`insight.heavenGate.element.${item.element}`)}
                       </span>
                       <span className="hg-bonus-card__points">
-                        {item.points} 点
+                        {t('insight.heavenGate.pointsUnit', { points: item.points })}
                       </span>
                       <span className="hg-bonus-card__boost">
                         {item.boostReduceText}
