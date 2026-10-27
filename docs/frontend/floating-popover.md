@@ -55,15 +55,21 @@
 - 专用容器样式为 `position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 10000; pointer-events: none;`；
 - 浮层彻底脱离任何局部 CSS 上下文，绝对避免被 `overflow: hidden` 或 `transform` 裁切。
 
-### 3.2 智能视口安全定位算法 (`computeSafeFloatingPosition`)
-每次展开或窗口变化时，算法会根据触发器（Anchor）与浮层自身尺寸执行安全计算：
-1. **上下自动翻转（Auto-Flip Y）**：若优选下方（`bottom`）但下方可视空间小于 `浮层高度 + gap`，且上方空间更充足，则自动翻转至上方（`top`），反之亦然；
-2. **左右自动翻转（Auto-Flip X）**：若优选右侧（`right`）但右侧空间不足，自动翻转至左侧；
-3. **视口边界安全夹持（Viewport Clamp）**：
-   $$\text{left} = \text{clamp}(\text{padding}, \text{rawLeft}, \text{viewportWidth} - \text{width} - \text{padding})$$
-   $$\text{top} = \text{clamp}(\text{padding}, \text{rawTop}, \text{viewportHeight} - \text{height} - \text{padding})$$
-4. **超长内容保护**：浮层最大高度受限于 `calc(100vh - 24px)`，超出时内部平滑滚动，绝不顶出屏幕。
-
+### 3.2 智能视口安全定位与自适应等比缩放算法 (`computeSafeFloatingPosition`)
+每次展开或窗口变化时，算法会根据触发器（Anchor）与浮层自身未缩放尺寸（Layout Size）执行安全计算：
+1. **视口溢出检测与自适应等比缩放（Adaptive Viewport Scale）**：
+   - 测量浮层自然尺寸（`floatingW`, `floatingH`）与视口可用空间（`availableW = viewportW - padding * 2`, `availableH = viewportH - padding * 2`）；
+   - 当自然高度或宽度超出视口可用空间时（如竖屏模式多张副气泡纵向单列堆叠），自动计算等比缩小比例：
+     $$\text{scale} = \max\left(0.5, \, \min\left(1.0, \, \frac{\text{availableH}}{\text{floatingH}}, \, \frac{\text{availableW}}{\text{floatingW}}\right)\right)$$
+   - **硬性缩放下限（最多缩小至 50%）**：缩放比例绝对不低于 `0.5`，确保字形、胶囊标签与图标始终具备可读性与辨识度；
+   - 空间充裕时保持 `1.0`（无任何缩小与性能开销）；
+2. **上下自动翻转（Auto-Flip Y）**：基于缩放后的物理尺寸（`scaledH = floatingH * scale`），若优选下方（`bottom`）但下方可视空间小于 `scaledH + gap`，且上方空间更充足，则自动翻转至上方（`top`），反之亦然；
+3. **左右自动翻转（Auto-Flip X）**：若优选右侧（`right`）但右侧空间小于 `scaledW + gap`，自动翻转至左侧；
+4. **视口边界物理安全夹持（Viewport Clamp）**：
+   $$\text{left} = \text{clamp}(\text{padding}, \text{rawLeft}, \text{viewportWidth} - \text{scaledW} - \text{padding})$$
+   $$\text{top} = \text{clamp}(\text{padding}, \text{rawTop}, \text{viewportHeight} - \text{scaledH} - \text{padding})$$
+   采用 `transform-origin: top left` 与几何包围盒对齐，消除任何负边距与居中偏移抖动；
+5. **极端超长内容滚动兜底**：在 $\le 768\text{px}$ 移动端/竖屏下，即使卡片极多缩小到 50% 后仍超出屏幕，浮层整体容器（`.daohua-floating-layer`）无缝衔接 `overflow-y: auto` 与古典金灰细滚动条，100% 杜绝卡片掉到屏幕外无法查看的问题。
 ### 3.3 双端交互与 0 阻碍事件穿透
 
 #### A. 桌面端 (Hover 模式)

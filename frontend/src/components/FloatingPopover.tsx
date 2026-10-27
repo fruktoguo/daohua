@@ -17,30 +17,19 @@ import { createPortal } from 'react-dom'
 import { formatChineseSplitNumber, formatNumber } from '../game/format'
 import { getT } from '../i18n'
 import { ValueText } from './ValueText'
-
-/**
- * 悬浮位置偏好
- */
-export type FloatingPlacement =
-  | 'top'
-  | 'top-start'
-  | 'top-end'
-  | 'bottom'
-  | 'bottom-start'
-  | 'bottom-end'
-  | 'left'
-  | 'left-start'
-  | 'left-end'
-  | 'right'
-  | 'right-start'
-  | 'right-end'
-  | 'auto'
-
-/**
- * 悬浮间距配置：支持单一数值，或针对上下左右各方向的独立间隙
- */
-export type FloatingGap = number | { top?: number; bottom?: number; left?: number; right?: number }
-
+export {
+  computeSafeFloatingPosition,
+  type FloatingPlacement,
+  type FloatingGap,
+  type PositionResult,
+  type ComputeSafeFloatingPositionOptions,
+} from './floatingPosition'
+import {
+  computeSafeFloatingPosition,
+  type FloatingPlacement,
+  type FloatingGap,
+  type PositionResult,
+} from './floatingPosition'
 /**
  * 气泡与菜单的修仙视觉色调
  */
@@ -324,127 +313,6 @@ function isTouchPointerDevice(): boolean {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0
 }
 
-/**
- * 视口边界与位置计算结果
- */
-interface PositionResult {
-  left: number
-  top: number
-  actualPlacement: FloatingPlacement
-}
-
-/**
- * 计算浮层在视口内的安全坐标，绝对避免被裁剪、遮挡或超出屏幕
- */
-function computeSafeFloatingPosition(
-  anchorRect: DOMRect,
-  floatingSize: { width: number; height: number },
-  placement: FloatingPlacement = 'bottom',
-  options: {
-    gap?: FloatingGap
-    padding?: number
-  } = {}
-): PositionResult {
-  const { gap = 8, padding = 10 } = options
-  const gapObj = typeof gap === 'number'
-    ? { top: gap, bottom: gap, left: gap, right: gap }
-    : { top: 8, bottom: 8, left: 8, right: 8, ...gap }
-
-  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1920
-  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 1080
-
-  const floatingW = floatingSize.width
-  const floatingH = floatingSize.height
-
-  // 1. 判断主要方向
-  let primary: 'top' | 'bottom' | 'left' | 'right' = 'bottom'
-  let align: 'start' | 'center' | 'end' = 'center'
-
-  if (placement === 'auto') {
-    const spaceBelow = viewportHeight - anchorRect.bottom
-    const spaceAbove = anchorRect.top
-    primary = spaceBelow >= floatingH + gapObj.bottom || spaceBelow >= spaceAbove ? 'bottom' : 'top'
-  } else {
-    const parts = placement.split('-')
-    primary = parts[0] as 'top' | 'bottom' | 'left' | 'right'
-    if (parts[1] === 'start') align = 'start'
-    else if (parts[1] === 'end') align = 'end'
-    else align = 'center'
-  }
-
-  // 2. 上下翻转检测
-  if (primary === 'bottom') {
-    const spaceBelow = viewportHeight - anchorRect.bottom
-    const spaceAbove = anchorRect.top
-    if (spaceBelow < floatingH + gapObj.bottom && spaceAbove > spaceBelow) {
-      primary = 'top'
-    }
-  } else if (primary === 'top') {
-    const spaceAbove = anchorRect.top
-    const spaceBelow = viewportHeight - anchorRect.bottom
-    if (spaceAbove < floatingH + gapObj.top && spaceBelow > spaceAbove) {
-      primary = 'bottom'
-    }
-  }
-
-  // 3. 左右翻转检测
-  if (primary === 'right') {
-    const spaceRight = viewportWidth - anchorRect.right
-    const spaceLeft = anchorRect.left
-    if (spaceRight < floatingW + gapObj.right && spaceLeft > spaceRight) {
-      primary = 'left'
-    }
-  } else if (primary === 'left') {
-    const spaceLeft = anchorRect.left
-    const spaceRight = viewportWidth - anchorRect.right
-    if (spaceLeft < floatingW + gapObj.left && spaceRight > spaceLeft) {
-      primary = 'right'
-    }
-  }
-
-  let rawLeft = 0
-  let rawTop = 0
-
-  // 4. 根据决定的主方向和对齐方式计算初始坐标
-  if (primary === 'top' || primary === 'bottom') {
-    const currentGap = primary === 'top' ? gapObj.top : gapObj.bottom
-    rawTop = primary === 'top' ? anchorRect.top - floatingH - currentGap : anchorRect.bottom + currentGap
-
-    if (align === 'start') {
-      rawLeft = anchorRect.left
-    } else if (align === 'end') {
-      rawLeft = anchorRect.right - floatingW
-    } else {
-      rawLeft = anchorRect.left + (anchorRect.width - floatingW) / 2
-    }
-  } else {
-    const currentGap = primary === 'left' ? gapObj.left : gapObj.right
-    rawLeft = primary === 'left' ? anchorRect.left - floatingW - currentGap : anchorRect.right + currentGap
-
-    if (align === 'start') {
-      rawTop = anchorRect.top
-    } else if (align === 'end') {
-      rawTop = anchorRect.bottom - floatingH
-    } else {
-      rawTop = anchorRect.top + (anchorRect.height - floatingH) / 2
-    }
-  }
-
-  // 5. 严格夹持在可视区域内 (Clamp to Viewport Safe Bounds)
-  const maxSafeLeft = Math.max(padding, viewportWidth - floatingW - padding)
-  const maxSafeTop = Math.max(padding, viewportHeight - floatingH - padding)
-
-  const safeLeft = Math.min(Math.max(padding, rawLeft), maxSafeLeft)
-  const safeTop = Math.min(Math.max(padding, rawTop), maxSafeTop)
-
-  const actualPlacement: FloatingPlacement = align === 'center' ? primary : (`${primary}-${align}` as FloatingPlacement)
-
-  return {
-    left: Math.round(safeLeft),
-    top: Math.round(safeTop),
-    actualPlacement,
-  }
-}
 
 /**
  * 获取或创建专用的全局 Floating Portal 容器，确保 z-index 并在任何界面顶层
@@ -623,6 +491,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       left: -9999,
       top: -9999,
       actualPlacement: placement,
+      scale: 1,
     })
 
     const setOpen = useCallback(
@@ -732,7 +601,8 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         if (
           prev.left === result.left &&
           prev.top === result.top &&
-          prev.actualPlacement === result.actualPlacement
+          prev.actualPlacement === result.actualPlacement &&
+          prev.scale === result.scale
         ) {
           return prev
         }
@@ -1041,7 +911,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
           <div
             className={`daohua-floating-layer ${hasAside ? 'daohua-floating-layer--composite' : ''} ${
               interactive ? 'daohua-floating-layer--interactive' : 'daohua-floating-layer--passthrough'
-            }`}
+            }${pos.scale < 1 ? ' daohua-floating-layer--scaled' : ''}`}
             data-placement={pos.actualPlacement}
             id={id}
             onClick={handleFloatingContentClick}
@@ -1053,8 +923,11 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
               left: `${pos.left}px`,
               top: `${pos.top}px`,
               zIndex: 10000,
+              transformOrigin: 'top left',
+              '--floating-scale': pos.scale,
+              transform: `scale(${pos.scale})`,
               ...style,
-            }}
+            } as CSSProperties}
           >
             {/* 主列：承载主气泡面板，并在副卡较多时吸附承载左列副卡片 */}
             <div

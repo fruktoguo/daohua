@@ -20,15 +20,17 @@
 
 /* 2. 悬浮图层 */
 .daohua-floating-layer {
+  --floating-scale: 1;
   position: fixed;
   display: flex;
   flex-direction: row;
   align-items: flex-start;
   gap: 8px;
-  max-width: calc(100vw - 20px);
-  max-height: calc(100vh - 20px);
-  transform-origin: top center;
+  max-width: calc((100vw - 20px) / var(--floating-scale, 1));
+  max-height: calc((100vh - 20px) / var(--floating-scale, 1));
+  transform-origin: top left;
   animation: daohua-floating-enter 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  box-sizing: border-box;
 }
 
 /* 2.1 悬浮图层双列网格列容器 (Dual-Column Aside Grid) */
@@ -60,27 +62,23 @@
   pointer-events: none !important;
 }
 
-.daohua-floating-layer[data-placement^="top"] {
-  transform-origin: bottom center;
-}
-
-.daohua-floating-layer[data-placement^="left"] {
-  transform-origin: right center;
-}
-
-.daohua-floating-layer[data-placement^="right"] {
-  transform-origin: left center;
-}
-
 @keyframes daohua-floating-enter {
   0% {
     opacity: 0;
-    transform: scale(0.96) translateY(2px);
+    transform: scale(calc(var(--floating-scale, 1) * 0.96)) translateY(2px);
   }
   100% {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: scale(var(--floating-scale, 1)) translateY(0);
   }
+}
+
+/* 缩放态紧凑投影强化 */
+.daohua-floating-layer--scaled .daohua-floating-card {
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    inset 0 0 16px rgba(201, 180, 109, 0.05);
 }
 
 /* 3. 触发器 */
@@ -103,7 +101,7 @@
   position: relative;
   /* 默认采用 medium 标准 300px 宽度，避免宽窄不一 */
   width: min(300px, calc(100vw - 24px));
-  max-height: calc(100vh - 24px);
+  max-height: calc((100vh - 24px) / var(--floating-scale, 1));
   overflow-y: auto;
   overflow-x: hidden;
   background: rgba(14, 12, 7, 0.96);
@@ -1196,9 +1194,32 @@
 
 /* 10. 移动端与小屏响应式适配 */
 @media (max-width: 768px) {
+  .daohua-floating-layer {
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(201, 180, 109, 0.25) transparent;
+  }
+
+  .daohua-floating-layer::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .daohua-floating-layer::-webkit-scrollbar-thumb {
+    background: rgba(201, 180, 109, 0.25);
+    border-radius: 2px;
+  }
+
+  .daohua-floating-layer::-webkit-scrollbar-thumb:hover {
+    background: rgba(201, 180, 109, 0.45);
+  }
+
   .daohua-floating-layer--composite {
     flex-direction: column;
-    max-width: calc(100vw - 16px);
+    max-width: calc((100vw - 16px) / var(--floating-scale, 1));
   }
 
   .daohua-floating-column {
@@ -1212,8 +1233,8 @@
   }
 
   .daohua-floating-card {
-    width: min(300px, calc(100vw - 16px));
-    max-width: calc(100vw - 16px);
+    width: min(300px, calc((100vw - 16px) / var(--floating-scale, 1)));
+    max-width: calc((100vw - 16px) / var(--floating-scale, 1));
   }
 
   .daohua-floating-aside-card {
