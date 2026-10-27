@@ -300,7 +300,12 @@
   color: var(--qi);
 }
 :root[data-theme="light"] .daohua-floating-badge--gold {
-  color: var(--gold-dim);
+  /* 浅色 gold-dim(#8f7243) 压纸底仅 4.14:1，小字徽章改用更深的 --gold(#7d521a) */
+  color: var(--gold);
+}
+:root[data-theme="light"] .daohua-floating-menu-group-title {
+  /* 同 gold-dim 对比度边界，悬浮菜单分组标题一并加深 */
+  color: var(--gold);
 }
 
 :root[data-theme="light"] .confirm-dialog-actions .confirm-primary:not(.danger),
