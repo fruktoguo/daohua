@@ -2,6 +2,41 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
+import { build } from 'esbuild'
+
+// 编译 ids.ts 获得纯净 ESM 模块（mock 掉对 React/Zustand 的 i18n 目录依赖）
+const tempOut = path.join(tmpdir(), `daohua-ids-codex-test-${Date.now()}.mjs`)
+await build({
+  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/ids.ts')],
+  bundle: true,
+  format: 'esm',
+  outfile: tempOut,
+  logLevel: 'error',
+  plugins: [
+    {
+      name: 'mock-i18n',
+      setup(b) {
+        b.onResolve({ filter: /i18n/ }, args => ({ path: args.path, namespace: 'mock-i18n' }))
+        b.onLoad({ filter: /.*/, namespace: 'mock-i18n' }, () => ({
+          contents: 'export const getT = () => (key) => key; export const useT = () => (key) => key; export const hasTranslation = () => false;',
+          loader: 'js',
+        }))
+      },
+    },
+  ],
+})
+const { resolveActionRarity, resolveActionLevel, convertLevelToTier } = await import(pathToFileURL(tempOut).href)
+
+test.after(() => {
+  try {
+    fs.unlinkSync(tempOut)
+  } catch {
+    // 忽略临时文件清理失败
+  }
+})
+
 import {
   DEFAULT_CODEX_FILTERS,
   matchesCodexCollect,
@@ -221,4 +256,100 @@ test('制造面板分类隔离：炼丹池绝不混入炼器/阵法/符箓，且
   assert.equal(combatPills.length, 6, '斗法子类应有止血散、顺气丸、生肌膏、凝气散、黄芽丹、合气丹')
   assert.equal(cultivationPills.length, 7, '修炼子类应有引气丹、通脉丹、逆命丹、定神香、青灵香、淬灵粉、固灵砂')
   assert.equal(extractions.length + combatPills.length + cultivationPills.length, alchemyPool.length, '炼丹池三级分类总数应等于炼丹池全量')
+})
+
+test('resolveActionRarity: 技艺、历练行动与品阶等级严格对齐，18级对应黄阶', async () => {
+  const items = readRows('items')
+  const equipment = readRows('equipment')
+  const encounters = readRows('encounters')
+
+  assert.equal(convertLevelToTier(18), 2, '18级必须对应等阶2（黄阶）')
+  assert.equal(convertLevelToTier(1), 1, '1级必须对应等阶1（凡品）')
+  assert.equal(convertLevelToTier(9), 1, '9级必须对应等阶1（凡品）')
+  assert.equal(convertLevelToTier(30), 3, '30级必须对应等阶3（玄阶）')
+
+  // 1. 炼丹技艺：所有18级丹药与辅料一律为黄阶（yellow），绝无绿蓝混淆
+  const yellowAlchemyIds = [
+    'alchemy.refine-reverse-fate-pill',
+    'alchemy.refine-huangya-pill',
+    'alchemy.refine-heqi-pill',
+    'alchemy.refine-tongmai-pill',
+    'alchemy.refine-qingling-incense',
+    'alchemy.refine-guling-sand',
+  ]
+  for (const id of yellowAlchemyIds) {
+    const act = actions.find(a => a.id === id)
+    assert.ok(act, `行动 ${id} 必须存在`)
+    assert.equal(resolveActionLevel(act, items, equipment, encounters), 18, `${id} 等级必须为18`)
+    assert.equal(resolveActionRarity(act, items, equipment, encounters), 'yellow', `${id} 品质必须为黄阶（yellow）`)
+  }
+
+  // 2. 技艺精炼/提炼：即使产出物为基础精材（tier 1），18级行动依然判定为黄阶（yellow）
+  const yellowCraftingIds = [
+    'craft.extract-banling-essence',
+    'craft.refine-copper',
+    'craft.refine-spirit-pine-crystal',
+  ]
+  for (const id of yellowCraftingIds) {
+    const act = actions.find(a => a.id === id)
+    assert.ok(act, `精炼/提炼行动 ${id} 必须存在`)
+    assert.equal(resolveActionLevel(act, items, equipment, encounters), 18, `${id} 等级必须为18`)
+    assert.equal(resolveActionRarity(act, items, equipment, encounters), 'yellow', `${id} 品阶必须按18级对应黄阶（yellow）`)
+  }
+
+  // 3. 历练大类（采集、伐木、采矿）：18级行动一律对应黄阶（yellow）
+  const yellowExplorationIds = [
+    'explore.gather-banling-flower',
+    'explore.chop-yinlingsong',
+    'explore.mine-crimson-copper',
+  ]
+  for (const id of yellowExplorationIds) {
+    const act = actions.find(a => a.id === id)
+    assert.ok(act, `历练行动 ${id} 必须存在`)
+    assert.equal(resolveActionLevel(act, items, equipment, encounters), 18, `${id} 等级必须为18`)
+    assert.equal(resolveActionRarity(act, items, equipment, encounters), 'yellow', `${id} 品阶必须按18级对应黄阶（yellow）`)
+  }
+
+  // 4. 修炼与讨伐：18级行动一律对应黄阶（yellow）
+  const sweepValley = actions.find(a => a.id === 'combat.sweep-twilight-valley')
+  assert.ok(sweepValley)
+  assert.equal(resolveActionLevel(sweepValley, items, equipment, encounters), 18)
+  assert.equal(resolveActionRarity(sweepValley, items, equipment, encounters), 'yellow')
+
+  const lianjing = actions.find(a => a.id === 'cultivation.lianjing-huaqi')
+  assert.ok(lianjing)
+  assert.equal(resolveActionLevel(lianjing, items, equipment, encounters), 18)
+  assert.equal(resolveActionRarity(lianjing, items, equipment, encounters), 'yellow')
+
+  // 5. 炼器打造：T2装备打造一律对应黄阶（yellow）
+  const pogang = actions.find(a => a.id === 'forge.pogang-sword')
+  assert.ok(pogang)
+  assert.equal(resolveActionRarity(pogang, items, equipment, encounters), 'yellow')
+
+  // 6. 凡阶行动校验：1级与9级行动均保持凡阶（mundane）
+  const mundaneIds = [
+    'alchemy.refine-qi-pill',
+    'alchemy.refine-zhixue-powder',
+    'alchemy.refine-shunqi-pill',
+    'alchemy.refine-shengji-balm',
+    'alchemy.refine-ningqi-powder',
+    'craft.extract-herb-essence',
+    'craft.refine-iron',
+    'explore.gather-ningxue-grass',
+    'explore.chop-peach-wood',
+    'explore.mine-dark-iron',
+    'cultivation.draw-qi',
+    'combat.hunt-qi-beast',
+    'combat.hunt-trail-beast',
+    'forge.qingfeng-sword',
+    'forge.xuantie-sword',
+    'formation.deploy-juling',
+    'talisman.draw-leiji',
+    'enhance.equipment',
+  ]
+  for (const id of mundaneIds) {
+    const act = actions.find(a => a.id === id)
+    assert.ok(act, `凡阶行动 ${id} 必须存在`)
+    assert.equal(resolveActionRarity(act, items, equipment, encounters), 'mundane', `${id} 品阶必须为凡阶（mundane）`)
+  }
 })

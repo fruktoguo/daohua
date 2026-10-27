@@ -63,8 +63,9 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'craft.extract-banling-essence', type: 'alchemy', level: 18, durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
 
   // 讨伐战斗
-  { id: 'combat.hunt-qi-beast', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-pass' },
-  { id: 'combat.sweep-twilight-valley', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-valley' },
+  { id: 'combat.hunt-qi-beast', type: 'combat', level: 1, durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-pass' },
+  { id: 'combat.hunt-trail-beast', type: 'combat', level: 9, durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.boundary-pass' },
+  { id: 'combat.sweep-twilight-valley', type: 'combat', level: 18, durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-valley' },
 
   // 锻造装备 (等阶1)
   { id: 'forge.qingfeng-sword', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.qingfeng-sword', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 15, aspect: 'consciousness' }] },
@@ -500,9 +501,9 @@ export function localizeActionDisplayText(
  */
 export function resolveActionLevel(
   action: ActionDefinition,
-  items?: ReadonlyArray<{ itemId: string; tier?: number }>,
-  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
-  encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
+  items?: ReadonlyArray<{ itemId: string; tier?: number | null; level?: number | null }>,
+  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number | null; level?: number | null }>,
+  encounters?: ReadonlyArray<{ encounterId: string; tier?: number | null; level?: number | null }>
 ): number {
   if (typeof action.level === 'number' && action.level > 0) return action.level
   const eqMap = equipment ? getEquipmentMap(equipment) : null
@@ -528,6 +529,7 @@ export function resolveActionLevel(
     const enc = encMap?.get(action.combatEncounterId)
     if (enc && typeof enc.tier === 'number' && enc.tier > 0) return convertTierToLevel(enc.tier)
     if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return convertTierToLevel(2)
+    if (action.combatEncounterId.includes('boundary') || action.combatEncounterId.includes('trail')) return 9
     return convertTierToLevel(1)
   }
 
@@ -546,56 +548,98 @@ export function resolveActionLevel(
 
   return 1
 }
+/**
+ * 物品品质枚举：凡、黄、玄、地、天、灵、圣、帝
+ */
+export type ItemRarity = 'mundane' | 'yellow' | 'mystic' | 'earth' | 'heaven' | 'spirit' | 'saint' | 'emperor'
 
 /**
- * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的品质 (Rarity)
+ * 物品品质信息（包含品质枚举与本地化文案）
+ */
+export interface ItemGrade {
+  rarity: ItemRarity
+  label: string
+}
+
+/** 品质档 1~8 与品质枚举的升序对照表（下标 = tier - 1） */
+const ITEM_GRADE_ORDER: readonly ItemRarity[] = [
+  'mundane', 'yellow', 'mystic', 'earth', 'heaven', 'spirit', 'saint', 'emperor',
+]
+
+/**
+ * 根据品质档数值 (tier, 1~8) 计算对应的物品品质与多语言文本
+ * @param tier 品质档数值
+ */
+export function resolveItemGrade(tier = 1): ItemGrade {
+  const index = Math.max(0, Math.min(ITEM_GRADE_ORDER.length - 1, Math.floor(tier) - 1))
+  const rarity = ITEM_GRADE_ORDER[index]
+  return { rarity, label: getT()(`game.grade.${rarity}`) }
+}
+
+
+/**
+ * 根据行动配置与其关联的产出/消耗/遭遇及行动等级，解析行动的品质 (Rarity)
+ * 规则（总纲与用户规范）：
+ * 1. 所有的技艺（炼丹、炼器、符箓、阵法、强化）、历练行动（采集、修炼、讨伐等），
+ *    都必须具备与品阶等级严格对应的边框颜色。
+ * 2. 行动等级（如 18 级）直接映射到品阶（18 级对应黄阶 T2，30 级对应玄阶 T3，每 12 级一阶）。
+ * 3. 若产出物/遭遇战存在更高的显式品阶（Tier > maxTier），则以其中的最高品阶为准。
+ * 4. 没有显式高阶品阶时，严格按行动等级对应的品阶（18 级 -> 黄阶 yellow）。
  */
 export function resolveActionRarity(
   action: ActionDefinition,
-  items?: ReadonlyArray<{ itemId: string; tier?: number }>,
-  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
-  encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
+  items?: ReadonlyArray<{ itemId: string; tier?: number | null; level?: number | null }>,
+  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number | null; level?: number | null }>,
+  encounters?: ReadonlyArray<{ encounterId: string; tier?: number | null; level?: number | null }>
 ): ItemRarity {
   const eqMap = equipment ? getEquipmentMap(equipment) : null
   const itMap = items ? getItemMap(items) : null
   const encMap = encounters ? getEncounterMap(encounters) : null
 
+  // 1. 先由行动等级（无论自身配置还是推导出的）计算出基础等阶（18级 -> Tier 2 黄阶）
+  const actionLevel = resolveActionLevel(action, items, equipment, encounters)
+  let maxTier = convertLevelToTier(actionLevel)
+
+  // 2. 检查产出物品/装备是否有显式更高的品阶
   if (action.yields) {
     for (const yieldEntry of action.yields) {
       if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
       const outId = yieldEntry.id
-      const meta = ITEM_META_CORES[outId]
-      if (meta?.rarity) return meta.rarity
       const eq = eqMap?.get(outId)
-      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return resolveItemGrade(eq.tier).rarity
+      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
       const it = itMap?.get(outId)
-      if (it && typeof it.tier === 'number' && it.tier > 0) return resolveItemGrade(it.tier).rarity
+      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
+      const meta = ITEM_META_CORES[outId]
+      if (meta?.rarity) {
+        const idx = ITEM_GRADE_ORDER.indexOf(meta.rarity)
+        if (idx >= 0 && idx + 1 > maxTier) maxTier = idx + 1
+      }
     }
   }
 
+  // 3. 遭遇战按遭遇配置的显式 tier 是否更高
   if (action.combatEncounterId) {
     const enc = encMap?.get(action.combatEncounterId)
-    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return resolveItemGrade(enc.tier).rarity
-    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return 'spirit'
-    return 'mundane'
+    if (enc && typeof enc.tier === 'number' && enc.tier > maxTier) maxTier = enc.tier
   }
 
+  // 4. 输入消耗材料如果具有更高的显式品阶也可作为参考
   if (action.inputs) {
-    let maxTier = 1
     for (const inId of Object.keys(action.inputs)) {
-      const meta = ITEM_META_CORES[inId]
-      if (meta?.rarity) return meta.rarity
       const eq = eqMap?.get(inId)
       if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
       const it = itMap?.get(inId)
       if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
+      const meta = ITEM_META_CORES[inId]
+      if (meta?.rarity) {
+        const idx = ITEM_GRADE_ORDER.indexOf(meta.rarity)
+        if (idx >= 0 && idx + 1 > maxTier) maxTier = idx + 1
+      }
     }
-    if (maxTier > 1) return resolveItemGrade(maxTier).rarity
   }
 
-  return 'mundane'
+  return resolveItemGrade(maxTier).rarity
 }
-
 // 页签仅保留非文本元数据；label 统一经 actionTabLabel() 走 i18n。
 /**
  * 各行动类型对应的 UI 图标符号与主题色
@@ -657,34 +701,6 @@ export function autoUseBarFor(action: { type: ActionType; technique?: string | n
 /** 获取物品栏域的多语言显示标签。 */
 export function autoUseBarLabel(bar: AutoUseBarType): string {
   return getT()(`game.bar.${bar}`)
-}
-
-/**
- * 物品品质枚举：凡、黄、玄、地、天、灵、圣、帝
- */
-export type ItemRarity = 'mundane' | 'yellow' | 'mystic' | 'earth' | 'heaven' | 'spirit' | 'saint' | 'emperor'
-
-/**
- * 物品品质信息（包含品质枚举与本地化文案）
- */
-export interface ItemGrade {
-  rarity: ItemRarity
-  label: string
-}
-
-/** 品质档 1~8 与品质枚举的升序对照表（下标 = tier - 1） */
-const ITEM_GRADE_ORDER: readonly ItemRarity[] = [
-  'mundane', 'yellow', 'mystic', 'earth', 'heaven', 'spirit', 'saint', 'emperor',
-]
-
-/**
- * 根据品质档数值 (tier, 1~8) 计算对应的物品品质与多语言文本
- * @param tier 品质档数值
- */
-export function resolveItemGrade(tier = 1): ItemGrade {
-  const index = Math.max(0, Math.min(ITEM_GRADE_ORDER.length - 1, Math.floor(tier) - 1))
-  const rarity = ITEM_GRADE_ORDER[index]
-  return { rarity, label: getT()(`game.grade.${rarity}`) }
 }
 
 /**
@@ -1051,7 +1067,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.qi-gathering-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
   'item.zhixue-powder': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
   'item.shunqi-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
-  'item.tongmai-pill': { glyph: '💊', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'pill' },
+  'item.tongmai-pill': { glyph: '💊', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'pill' },
   'item.shengji-balm': { glyph: '💊', tone: 'emerald', rarity: 'mundane', level: 9, subCategory: 'pill' },
   'item.ningqi-powder': { glyph: '💊', tone: 'cyan', rarity: 'mundane', level: 9, subCategory: 'pill' },
   'item.huangya-pill': { glyph: '💊', tone: 'gold', rarity: 'yellow', level: 18, subCategory: 'pill' },
@@ -1104,11 +1120,11 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.xuanyuan-yiqi-gong': { glyph: '📜', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualFragment' },
   'item.gathering-incense': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
   'item.alchemy-flame': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
-  'item.reverse-fate-pill': { glyph: '⚫', tone: 'violet', rarity: 'mystic', level: 18, subCategory: 'pill' },
+  'item.reverse-fate-pill': { glyph: '⚫', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'pill' },
   'item.dingshen-incense': { glyph: '🕯️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'explorationSupply' },
-  'item.qingling-incense': { glyph: '🕯️', tone: 'cyan', rarity: 'spirit', level: 18, subCategory: 'explorationSupply' },
+  'item.qingling-incense': { glyph: '🕯️', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'explorationSupply' },
   'item.cuiling-powder': { glyph: '✨', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'enhancementSupply' },
-  'item.guling-sand': { glyph: '⭐', tone: 'cyan', rarity: 'spirit', level: 18, subCategory: 'enhancementSupply' },
+  'item.guling-sand': { glyph: '⭐', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'enhancementSupply' },
   'equipment.qingfeng-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
   'equipment.pishan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
   'equipment.shufa-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
@@ -1201,15 +1217,26 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
     : undefined
 
   if (core) {
+    const rawTier = core.rarity
+      ? ITEM_GRADE_ORDER.indexOf(core.rarity) + 1
+      : core.level
+      ? (core.level > 8 ? convertLevelToTier(core.level) : core.level)
+      : 1
+    const tier = Math.max(1, Math.min(8, rawTier))
+    const grade = resolveItemGrade(tier)
+    const level = core.level != null
+      ? (core.level <= 8 && core.rarity !== 'mundane' ? convertTierToLevel(core.level) : core.level)
+      : convertTierToLevel(tier)
+
     return {
       label: label ?? itemId,
       glyph: core.glyph,
       tone: core.tone,
       category: resolveItemCategoryLabel(core.subCategory, t),
-      rarity: core.rarity,
-      rarityLabel: t(`game.rarityLabel.${core.rarityLabelOverride ?? core.rarity}`),
-      tier: core.level ?? 1,
-      level: convertTierToLevel(core.level ?? 1),
+      rarity: core.rarity ?? grade.rarity,
+      rarityLabel: t(`game.rarityLabel.${core.rarityLabelOverride ?? core.rarity ?? grade.rarity}`),
+      tier,
+      level,
       description: description ?? '',
     }
   }

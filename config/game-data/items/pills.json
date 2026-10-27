@@ -190,7 +190,8 @@
       "isContinuous": true,
       "cultivationMultiplier": 1.5
     },
-    "subCategory": "pill"
+    "subCategory": "pill",
+    "level": 18
   },
   {
     "id": "item.gathering-incense",

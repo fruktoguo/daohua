@@ -82,6 +82,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "alchemy",
+    "level": 18,
     "durationSeconds": 13,
     "inputs": {
       "item.banling-essence": 1,
