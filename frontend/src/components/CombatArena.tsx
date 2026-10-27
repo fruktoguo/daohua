@@ -1286,6 +1286,7 @@ function ArenaLifeGoalCard({
   queueEntry,
   actionDef,
   onStop,
+  hidden = false,
 }: {
   /** 当前正在执行的队列条目 */
   queueEntry?: QueueEntry | null
@@ -1293,6 +1294,8 @@ function ArenaLifeGoalCard({
   actionDef?: ActionDefinition | null
   /** 中止当前生活行动回调 */
   onStop?: () => void
+  /** 所在页签是否处于隐藏态：隐藏时冻结 world 订阅，保持挂载但不随赶路增量重渲 */
+  hidden?: boolean
 }): React.JSX.Element {
   const t = useT()
   const itemCatalog = useGameStore(state => state.items)
@@ -1300,7 +1303,7 @@ function ArenaLifeGoalCard({
   const inventory = useGameStore(state => state.inventory)
   const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
   const stats = useGameStore(state => state.stats)
-  const world = useGameStore(state => state.world)
+  const world = useGameStore(hidden ? () => FROZEN_WORLD : state => state.world)
   const maps = useGameStore(state => state.maps)
   const combat = useGameStore(state => state.combat)
 
@@ -1546,15 +1549,18 @@ function ArenaLifeGoalCard({
 function ArenaTravelCard({
   queueEntry,
   onStop,
+  hidden = false,
 }: {
   /** 当前正在执行的队列条目 */
   queueEntry?: QueueEntry | null
   /** 中止当前赶路行动回调 */
   onStop?: () => void
+  /** 所在页签是否处于隐藏态：隐藏时冻结 world 订阅，保持挂载但不随赶路增量重渲 */
+  hidden?: boolean
 }): React.JSX.Element {
   const t = useT()
   const expedition = queueEntry?.expedition
-  const world = useGameStore(state => state.world)
+  const world = useGameStore(hidden ? () => FROZEN_WORLD : state => state.world)
   const maps = useGameStore(state => state.maps)
   const actionName = resolveQueueEntryDisplayName(queueEntry, t('combat.travel.fallbackActionName'), world, maps)
   // 目的地名称优先按 wire 字段 travelDestinationNodeId 从地图定义解析，不再解析中文前缀
@@ -2061,6 +2067,7 @@ const FROZEN_COMBAT_ATTRIBUTES = frozenInitialState.combatAttributes
 const FROZEN_BUFFS = frozenInitialState.buffs
 const FROZEN_ACTIONS = frozenInitialState.actions
 const FROZEN_QUEUE_ENTRIES = frozenInitialState.queue.entries
+const FROZEN_WORLD = frozenInitialState.world
 
 export const CombatArena = memo(function CombatArena({
   onOpenAction,
@@ -2079,7 +2086,7 @@ export const CombatArena = memo(function CombatArena({
   const selfActorId = resolvePlayerActorId(avatarId)
   const buffs = useGameStore(hidden ? () => FROZEN_BUFFS : state => state.buffs)
   const actions = useGameStore(hidden ? () => FROZEN_ACTIONS : state => state.actions)
-  const world = useGameStore(state => state.world)
+  const world = useGameStore(hidden ? () => FROZEN_WORLD : state => state.world)
   const maps = useGameStore(state => state.maps)
   const encounters = useGameStore(state => state.encounters)
   const queue = useGameStore(hidden ? () => FROZEN_QUEUE_ENTRIES : state => state.queue.entries)
@@ -2801,12 +2808,14 @@ export const CombatArena = memo(function CombatArena({
             <ArenaTravelCard
               onStop={() => setPendingStopEntryId(current.entryId)}
               queueEntry={current}
+              hidden={hidden}
             />
           ) : isLifeAction ? (
             <ArenaLifeGoalCard
               actionDef={activeAction}
               onStop={() => setPendingStopEntryId(current.entryId)}
               queueEntry={current}
+              hidden={hidden}
             />
           ) : (
             <ArenaIdleCard />

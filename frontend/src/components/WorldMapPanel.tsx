@@ -1042,16 +1042,24 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     return selectedNode?.buildings ?? []
   }, [selectedNode])
 
-  // 3b. 全图玩家公共建筑索引：挂载时拉取一次，此后随本节点建筑投影变化刷新；
-  // 失败静默——玩家建筑胶囊是增强展示，索引缺失不影响地图主体功能。
+  // 3b. 全图玩家公共建筑索引：挂载时拉取一次，此后随本节点建筑投影内容变化刷新；
+  // 依赖用内容指纹而非数组身份——world 段每拍解码都产出新数组，身份依赖会在赶路/施工期间逐拍重拉全图索引；
+  // 隐藏页签不拉取，重新可见时刷新一次；失败静默——玩家建筑胶囊是增强展示，索引缺失不影响地图主体功能。
   const [buildingIndex, setBuildingIndex] = useState<Record<string, MapNodeBuilding[]>>({})
+  const ownBuildingsFingerprint = useMemo(
+    () => (world.nodeBuildings ?? [])
+      .map(building => `${building.entityId}:${building.level}:${building.targetLevel}`)
+      .join('|'),
+    [world.nodeBuildings],
+  )
   useEffect(() => {
+    if (hidden) return
     let cancelled = false
     void fetchNodeBuildingIndex()
       .then(index => { if (!cancelled) setBuildingIndex(index) })
       .catch(() => undefined)
     return () => { cancelled = true }
-  }, [world.nodeBuildings])
+  }, [ownBuildingsFingerprint, hidden])
 
   // 选中节点的玩家公共建筑：当前节点优先用快照实时投影（含刚发起的建造/升级），
   // 其余节点用全图索引摘要。

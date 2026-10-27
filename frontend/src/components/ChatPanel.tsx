@@ -78,9 +78,12 @@ export function ChatChannelPanel({ channel }: { channel: ChatChannel }): React.J
   const items = useMemo(() => toChatFeedItems(messages), [messages])
   const { listRef, onScroll } = useStickyScroll(chatState.revision)
 
+  // 历史回放按频道作用域拉取：世界频道仅挂载时一次，附近随节点、队伍随队伍变化；
+  // 三频道共用 [nodeId, partyId] 依赖会让赶路换节点连带重拉世界/队伍整段历史。
+  const historyScope = channel === 'nearby' ? nodeId : channel === 'party' ? partyId : null
   useEffect(() => {
     gameClient.requestChatHistory(channel)
-  }, [channel, nodeId, partyId])
+  }, [channel, historyScope])
 
   const hint = channel === 'nearby' && !nodeId
     ? t('combat.chat.nearbyUnavailable')
@@ -248,9 +251,12 @@ export function PartyChannelPanel(): React.JSX.Element {
   const items = useMemo(() => toChatFeedItems(messages), [messages])
   const { listRef, onScroll } = useStickyScroll(chatState.revision)
 
+  // 依赖取队伍 ID 标量而非 party 对象身份：任何影响本人的社交推送都会换 party 对象，
+  // 对象身份依赖会在聊天内容未变时整段重拉队伍历史。
+  const partyId = party?.partyId ?? null
   useEffect(() => {
-    if (party) gameClient.requestChatHistory('party')
-  }, [party])
+    if (partyId !== null) gameClient.requestChatHistory('party')
+  }, [partyId])
 
   const partyMemberIds = new Set(party?.members.map(member => member.playerId) ?? [])
   const invitableFriends = friends.filter(friend => !partyMemberIds.has(friend.playerId))
