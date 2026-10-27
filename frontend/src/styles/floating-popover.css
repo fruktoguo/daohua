@@ -972,6 +972,36 @@
   color: #c49eff;
 }
 
+.daohua-floating-badge--cyan {
+  background: rgba(79, 143, 216, 0.12);
+  border-color: rgba(79, 143, 216, 0.4);
+  color: #7bb5f2;
+}
+
+.daohua-floating-badge--amber {
+  background: rgba(226, 138, 46, 0.12);
+  border-color: rgba(226, 138, 46, 0.4);
+  color: #f0be82;
+}
+
+.daohua-floating-badge--crimson {
+  background: rgba(217, 74, 74, 0.12);
+  border-color: rgba(217, 74, 74, 0.4);
+  color: #f87171;
+}
+
+.daohua-floating-badge--muted {
+  background: rgba(170, 178, 188, 0.12);
+  border-color: rgba(170, 178, 188, 0.35);
+  color: #aab2bc;
+}
+
+.daohua-floating-badge--gold {
+  background: rgba(201, 180, 109, 0.12);
+  border-color: rgba(201, 180, 109, 0.4);
+  color: var(--gold, #c9b46d);
+}
+
 .daohua-floating-card-subtitle {
   font-size: var(--text-xs);
   color: var(--text-dim, rgba(233, 227, 210, 0.56));

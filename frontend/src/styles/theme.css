@@ -281,6 +281,28 @@
   color: var(--purple);
 }
 
+:root[data-theme="light"] .daohua-floating-badge--cyan {
+  color: #225c94;
+}
+:root[data-theme="light"] .daohua-floating-badge--amber {
+  color: #874418;
+}
+:root[data-theme="light"] .daohua-floating-badge--crimson {
+  color: #9b3428;
+}
+:root[data-theme="light"] .daohua-floating-badge--muted {
+  color: #4c5868;
+}
+:root[data-theme="light"] .daohua-floating-badge--jade {
+  color: var(--jade);
+}
+:root[data-theme="light"] .daohua-floating-badge--qi {
+  color: var(--qi);
+}
+:root[data-theme="light"] .daohua-floating-badge--gold {
+  color: var(--gold-dim);
+}
+
 :root[data-theme="light"] .confirm-dialog-actions .confirm-primary:not(.danger),
 :root[data-theme="light"] .quantity-selector button.active,
 :root[data-theme="light"] .action-modal-submit,

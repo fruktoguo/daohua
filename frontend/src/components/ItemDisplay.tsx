@@ -79,7 +79,7 @@ function fallbackMetadata(itemId: string): ItemMetadata {
   return {
     label: def?.name || itemId,
     glyph: isTome ? '📘' : isFragment ? '📜' : '·',
-    tone: tier >= 2 ? 'green' : 'gold',
+    tone: rarityToTone(grade.rarity),
     category: resolveItemCategoryLabel(def?.subCategory ?? (isTome ? 'manualTome' : isFragment ? 'manualFragment' : undefined), t),
     rarity: grade.rarity,
     rarityLabel: grade.label,
@@ -94,17 +94,20 @@ function fallbackMetadata(itemId: string): ItemMetadata {
 export function rarityToTone(rarity: ItemRarity): FloatingTone {
   switch (rarity) {
     case 'emperor':
+      return 'gold'
     case 'saint':
-      return 'gold'
+      return 'crimson'
     case 'spirit':
-    case 'heaven':
-      return 'purple'
-    case 'earth':
       return 'qi'
+    case 'heaven':
+      return 'amber'
+    case 'earth':
+      return 'purple'
     case 'mystic':
-      return 'jade'
+      return 'cyan'
     case 'yellow':
-      return 'gold'
+      return 'jade'
+    case 'mundane':
     default:
       return 'muted'
   }
