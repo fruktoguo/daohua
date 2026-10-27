@@ -4451,7 +4451,7 @@
     grid-template-rows: minmax(0, 1fr);
     gap: 8px;
     padding: 6px 4px;
-    overflow: hidden;
+    overflow: visible;
   }
 
   /* 竖屏：阵侧容器占满网格单元并消除外层垂直居中与溢出穿透 */
@@ -4461,7 +4461,7 @@
     max-height: 100%;
     justify-content: stretch;
     align-items: center;
-    overflow: hidden;
+    overflow: visible;
     padding: 2px 0;
   }
 
@@ -4483,7 +4483,7 @@
   /* 单角色时：完全容纳于视口内，垂直居中且禁用滚动，彻底杜绝特效/行动条/飘字触发滚动条闪烁与页面大小抖动 */
   .arena-formation:not(:has(.arena-slot--occupied ~ .arena-slot--occupied)) {
     justify-content: center;
-    overflow-y: hidden;
+    overflow: visible;
   }
 
   /* 多角色（2~3人及以上）时：从顶部安全内边距处对齐排列，平稳向下滚动，首位角色血条稳居视口内不被顶破 */
