@@ -2,6 +2,11 @@
 // 前端 i18n 词条覆盖门禁：校验源码中出现的全部翻译键、以及配表驱动的动态键族是否都有中文词条。
 // 任何一条缺失都会让界面把词条键（如 game.item.item.foo.label）或原始实体 ID 裸显给玩家，
 // 因此本脚本在缺失时以非零码退出，作为合并前的最小门禁之一（由 scripts/verify.sh 调用）。
+//
+// 覆盖面（七类）：
+// 1. 源码字面量键 ↔ 词典；2. 配表驱动动态键族；3. 前端静态元数据；4. 引用完整性；
+// 5. 模板字面量键（t(`prefix.${x}`) 前缀必须是词典父路径）；6. 占位符契约（无参调用不得命中带 {x} 占位符的词条）；
+// 7. CJK 硬编码（UI 层绕过 i18n 的中文字面量）与 template.csv ↔ 词典双向同步。
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, extname } from 'node:path'
 import { createRequire } from 'node:module'
@@ -221,7 +226,141 @@ for (const buffId of buffs) {
   requireKey(`combat.trigger.buff.${buffId.startsWith('buff.') ? buffId.slice(5) : buffId}`)
 }
 
-// 5) 结论
+// 5) 模板字面量键前缀校验：t(`prefix.${expr}`) 的静态前缀必须是词典中真实存在的键或键前缀，
+//    否则该键族整族脱离门禁视野，拼错前缀会让整组词条回显键名。
+//    兼容两类真实现：跨段父路径（`game.item.${id}.label`）与同段拼接族（`insight.traits.qualityQ${q}` → qualityQ1..5）。
+const templateCallRe = /(?<![A-Za-z0-9_$.])t\(\s*`([^`{]*)\$\{/g
+const hasKeyWithStem = stem => {
+  for (const key of dictKeys) {
+    if (key.startsWith(stem)) return true
+  }
+  return false
+}
+for (const file of sourceFiles) {
+  const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/')
+  if (rel.includes('/network/')) continue
+  const content = readFileSync(file, 'utf8')
+  content.split('\n').forEach((line, index) => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
+    templateCallRe.lastIndex = 0
+    let match
+    while ((match = templateCallRe.exec(line))) {
+      const stem = match[1].replace(/\.$/, '') // 去掉 ${ 前的尾点后按父路径校验
+      if (stem.length === 0) continue // 前缀完全动态（${} 开头），无法静态校验
+      if (!DOMAINS.includes(stem.split('.')[0])) continue // 非词条前缀（如 aria-id、css 类拼接）
+      if (dictPrefixes.has(stem) || has(stem) || hasKeyWithStem(stem)) continue
+      failures.push(`模板键前缀不存在于词典 ${match[1]}*（${rel}:${index + 1}）`)
+    }
+  })
+}
+
+// 6) 占位符契约：t('key') 无参调用命中的词条若含 {name} 占位符，会把占位符原样裸显给玩家。
+const noArgCallRe = /(?<![A-Za-z0-9_$.])t\(\s*(['"])([\w-]+(?:\.[\w-]+)*)\1\s*\)/g
+const placeholderRe = /\{[a-zA-Z]\w*\}/
+for (const file of sourceFiles) {
+  const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/')
+  if (rel.includes('/network/')) continue
+  readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
+    noArgCallRe.lastIndex = 0
+    let match
+    while ((match = noArgCallRe.exec(line))) {
+      const key = match[2]
+      if (!DOMAINS.includes(key.split('.')[0])) continue
+      const value = lookupLabel(key)
+      if (value === undefined || !placeholderRe.test(value)) continue
+      failures.push(`词条 ${key} 含占位符但被无参调用（${rel}:${index + 1}，会裸显 {…}）`)
+    }
+  })
+}
+
+// 7) CJK 硬编码检测：UI 层（App/main/components）绕过 i18n 的中文字符串与 JSX 文本。
+//    豁免面（均有明确设计理由，新增豁免须在此登记）：
+//    - components/simulator/**：开发沙盘工具，非正式玩家面（tools 口径）；
+//    - MarketBrowseGrid.tsx：labelKey + fallback 双保险模式（fallback 仅在缺键时兜底，键存在即不显示）；
+//    - VectorCharacter.tsx：按服务端下发中文名匹配立绘形态，属 zh 输入耦合逻辑而非展示文案；
+//    - LoginPage.tsx：随机占位道号池，属游戏内容数据；
+//    - ErrorBoundary.tsx / main.tsx：崩溃诊断与启动失败信息，面向开发者控制台。
+//    行级豁免：单字 CJK（图标化字形 token，如 glyph: '修'）；includes('中文') 对译文的运行时反查。
+const cjkTwoPlus = /[\u4e00-\u9fff][\u4e00-\u9fff]/
+const zhCoupledMatchRe = /\.includes\(\s*(['"`])[^'"`]*[\u4e00-\u9fff]/
+const CJK_FILE_EXEMPT = fragment =>
+  fragment.includes('/simulator/') ||
+  fragment.endsWith('/market/MarketBrowseGrid.tsx') ||
+  fragment.endsWith('/VectorCharacter.tsx') ||
+  fragment.endsWith('/LoginPage.tsx') ||
+  fragment.endsWith('/ErrorBoundary.tsx') ||
+  fragment.endsWith('/main.tsx')
+for (const file of sourceFiles) {
+  const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/')
+  if (!rel.startsWith('frontend/src/components/') && !rel.endsWith('frontend/src/App.tsx')) continue
+  if (CJK_FILE_EXEMPT(rel)) continue
+  readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
+    const code = trimmed.replace(/(?<!:)\/\/.*$/, '') // 去行尾注释（URL 的 // 前有冒号不剥离）
+    if (!/[\u4e00-\u9fff]/.test(code)) return
+    if (zhCoupledMatchRe.test(code)) return
+    const inStr = code.match(/(['"`])((?:(?!\1).)*[\u4e00-\u9fff](?:(?!\1).)*)\1/)
+    const inJsx = code.match(/>([^<>{}]*[\u4e00-\u9fff][^<>{}]*)</)
+    const hit = inStr?.[2] ?? inJsx?.[1]
+    if (hit === undefined || !cjkTwoPlus.test(hit)) return
+    failures.push(`UI 层疑似绕过 i18n 的中文硬编码「${hit.trim().slice(0, 24)}」（${rel}:${index + 1}）`)
+  })
+}
+
+// 8) template.csv ↔ 词典双向同步：模板是翻译工单的提交载体，与词典漂移会让外语包
+//    拿到过期键集；zh_source 列必须与词典值逐字一致（构建脚本 export-i18n-csv.mjs 负责生成）。
+const csvPath = join(FE, 'public/locales/template.csv')
+{
+  const raw = readFileSync(csvPath, 'utf8')
+  if (raw.charCodeAt(0) === 0xfeff) failures.push('template.csv 带 BOM，翻译管线会静默吞掉首行')
+  // RFC4180 状态机：引号字段可含逗号/换行/双写引号
+  const rows = []
+  let field = ''
+  let record = []
+  let inQuotes = false
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (raw[i + 1] === '"') { field += '"'; i++ } else inQuotes = false
+      } else field += ch
+    } else if (ch === '"') {
+      inQuotes = true
+    } else if (ch === ',') {
+      record.push(field); field = ''
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && raw[i + 1] === '\n') i++
+      if (record.length > 0 || field.length > 0) { record.push(field); rows.push(record) }
+      record = []; field = ''
+    } else field += ch
+  }
+  if (record.length > 0 || field.length > 0) { record.push(field); rows.push(record) }
+  const csvKeys = new Map()
+  for (let i = 1; i < rows.length; i++) { // 首行为表头
+    const [key, source] = rows[i]
+    if (key === undefined || key.length === 0) continue
+    if (csvKeys.has(key)) failures.push(`template.csv 重复键 ${key}`)
+    csvKeys.set(key, source ?? '')
+  }
+  for (const key of csvKeys.keys()) {
+    if (!dictKeys.has(key)) failures.push(`template.csv 含词典不存在的键 ${key}`)
+  }
+  for (const key of dictKeys) {
+    if (!csvKeys.has(key)) failures.push(`词典键 ${key} 未同步进 template.csv`)
+  }
+  for (const [key, source] of csvKeys) {
+    const dictValue = lookupLabel(key)
+    if (dictValue !== undefined && dictValue !== source) {
+      failures.push(`template.csv 的 ${key} 中文源与词典漂移（需重跑 export-i18n-csv.mjs）`)
+    }
+  }
+}
+
+// 9) 结论
 if (failures.length === 0) {
   console.log(
     `i18n 词条校验通过：${dictKeys.size} 条中文词条，${sourceFiles.length} 个源码文件，` +
