@@ -770,7 +770,7 @@ export type ItemCategoryKey =
 export function resolveItemCategoryLabel(category?: string | null, t?: TFunction): string {
   if (!category) return (t ?? getT())('game.category.general')
   const fn = t ?? getT()
-  // 技艺工具槽位键（tool-<techniqueId>）归一为统一「技艺工具」品类词条，避免逐槽位立词条
+  // 技艺工具槽位键（tool-<techniqueId>）归一为统一「工具」品类词条（双字规范），避免逐槽位立词条
   const normalized = category.startsWith('tool-') ? 'tool' : category
   const key = `game.category.${normalized}`
   const translated = fn(key)
@@ -1192,7 +1192,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.ningshui-charm': { glyph: '🔖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
   'equipment.canglang-ring': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
   'equipment.bibo-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
-  // 七技艺工具（tool-<techniqueId> 专属槽位；品类经 tool- 归一显示「技艺工具」）
+  // 七技艺工具（tool-<techniqueId> 专属槽位；品类经 tool- 归一双字显示「工具」）
   'equipment.tool-herb-hoe': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
   'equipment.tool-prospect-compass': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
   'equipment.tool-flame-ding': { glyph: '🔥', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
