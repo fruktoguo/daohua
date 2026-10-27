@@ -1853,6 +1853,7 @@
   justify-content: center;
   align-items: center;
   overflow: visible;
+  contain: layout;
   border: 0;
   outline: 0;
   background: transparent;
@@ -4474,21 +4475,22 @@
     min-height: 0;
     max-height: 100%;
     justify-content: flex-start;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
     scrollbar-width: thin;
+    scrollbar-gutter: stable;
     padding: 4px 0;
   }
 
-  /* 竖屏自适应居中与防顶破：内容少时 margin:auto 垂直居中，内容多（超出一屏）时 auto-margin 归零，
-     第 1 个角色严格从 padding-top 处对齐展示，名字与血条绝对不被顶入顶部区域，后续角色流畅向下滚动 */
-  .arena-formation::before,
-  .arena-formation::after {
-    content: "";
-    flex: 0 0 auto;
-    height: 0;
-    margin: auto;
-    pointer-events: none;
+  /* 单角色时：完全容纳于视口内，垂直居中且禁用滚动，彻底杜绝特效/行动条/飘字触发滚动条闪烁与页面大小抖动 */
+  .arena-formation:not(:has(.arena-slot--occupied ~ .arena-slot--occupied)) {
+    justify-content: center;
+    overflow-y: hidden;
+  }
+
+  /* 多角色（2~3人及以上）时：从顶部安全内边距处对齐排列，平稳向下滚动，首位角色血条稳居视口内不被顶破 */
+  .arena-formation:has(.arena-slot--occupied ~ .arena-slot--occupied) {
+    justify-content: flex-start;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
   }
 
   .arena-formation .arena-slot {
@@ -4501,13 +4503,14 @@
     display: none;
   }
 
-  /* 角色保持原版竖向卡片样式、整体缩小一档，纵列下多个角色才站得下 */
+  /* 角色保持原版竖向卡片样式、整体缩小一档，纵列下多个角色才站得下；设定基准最小高度防止 Buff 增删引起高度跳跃 */
   .arena-actor {
     width: 60px;
     height: auto;
+    min-height: 120px;
     gap: 2px;
+    contain: layout;
   }
-
   .arena-actor-card {
     position: static;
     width: 100%;
