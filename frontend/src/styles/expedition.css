@@ -1016,7 +1016,7 @@
 }
 
 .nearby-interval-hint {
-  color: #c084fc !important;
+  color: var(--purple);
   font-weight: var(--font-weight-medium);
 }
 

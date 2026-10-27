@@ -26,6 +26,7 @@
       --hg-water: #4a7398;
       --hg-fire: #b44b39;
       --hg-earth: #7a5a32;
+      --hg-on-element: #f8f8f5;
 
       --hg-radar-grid: rgba(34, 26, 19, 0.22);
       --hg-radar-axis: rgba(34, 26, 19, 0.30);
@@ -80,6 +81,7 @@
       --hg-water: #8ab8dd;
       --hg-fire: #e8856f;
       --hg-earth: #c09a68;
+      --hg-on-element: #241a10;
 
       --hg-radar-grid: rgba(246, 238, 224, 0.28);
       --hg-radar-axis: rgba(246, 238, 224, 0.38);
@@ -211,7 +213,7 @@
       padding: 2px 6px;
       border-radius: 4px;
       background: var(--hg-ochre);
-      color: #fff;
+      color: var(--hg-on-element);
     }
 
     .hg-bonuses-aside__list {
@@ -253,13 +255,13 @@
       font-weight: 700;
       padding: 1px 6px;
       border-radius: 3px;
-      color: #fff;
+      color: var(--hg-on-element);
     }
-    .hg-bonus-card__badge--metal { background: var(--hg-metal); color: #fff; }
-    .hg-bonus-card__badge--wood { background: var(--hg-wood); color: #fff; }
-    .hg-bonus-card__badge--water { background: var(--hg-water); color: #fff; }
-    .hg-bonus-card__badge--fire { background: var(--hg-fire); color: #fff; }
-    .hg-bonus-card__badge--earth { background: var(--hg-earth); color: #fff; }
+    .hg-bonus-card__badge--metal { background: var(--hg-metal); color: var(--hg-on-element); }
+    .hg-bonus-card__badge--wood { background: var(--hg-wood); color: var(--hg-on-element); }
+    .hg-bonus-card__badge--water { background: var(--hg-water); color: var(--hg-on-element); }
+    .hg-bonus-card__badge--fire { background: var(--hg-fire); color: var(--hg-on-element); }
+    .hg-bonus-card__badge--earth { background: var(--hg-earth); color: var(--hg-on-element); }
 
     .hg-bonus-card__points {
       font-family: var(--hg-font-serif);
@@ -312,7 +314,7 @@
     /* 顶部保存失败印红提示条 */
     .hg-error-banner {
       background: var(--hg-seal-red);
-      color: #f8f8f5;
+      color: var(--hg-on-element);
       font-size: 13px;
       font-weight: 600;
       text-align: center;
@@ -417,7 +419,7 @@
       align-items: center;
       padding: 1px 6px;
       background: var(--hg-seal-red);
-      color: #f8f8f5;
+      color: var(--hg-on-element);
       border: 1px solid var(--hg-ink-main);
       border-radius: 4px;
       font-family: var(--hg-font-serif);
@@ -942,7 +944,7 @@
     }
 
     .hg-label__badge[data-tier="heaven"] .hg-label__badge-text {
-      fill: #f8f8f5;
+      fill: var(--hg-on-element);
     }
 
     /* 桌面端手柄悬停放大 1.15 倍 */
@@ -1172,7 +1174,7 @@
 
     .hg-panel[data-balance="positive"] .hg-stat__badge {
       background: var(--hg-ochre);
-      color: #f8f8f5;
+      color: var(--hg-on-element);
       border-color: var(--hg-ochre-deep);
     }
 
@@ -1426,13 +1428,13 @@
     .hg-btn--primary {
       background: var(--hg-seal-red);
       border-color: var(--hg-ink-main);
-      color: #f8f8f5;
+      color: var(--hg-on-element);
     }
 
     .hg-btn--primary:hover:not(:disabled) {
       background: var(--hg-seal-red-hover);
       border-color: var(--hg-ink-main);
-      color: #f8f8f5;
+      color: var(--hg-on-element);
     }
 
     .hg-btn:disabled {

@@ -618,6 +618,10 @@
   --item-surface: color-mix(in srgb, var(--item-accent) 8%, transparent);
 }
 :root[data-theme="light"] [data-rarity="mundane"] { --item-accent: #4c5868; }
+:root[data-theme="light"] .item-tile[data-rarity="mundane"] {
+  /* 深色侧淡灰边框在纸白底上不可见，浅色改用石板蓝半透明描边 */
+  border-color: rgba(76, 88, 104, 0.7);
+}
 :root[data-theme="light"] [data-rarity="yellow"] { --item-accent: #176043; }
 :root[data-theme="light"] [data-rarity="mystic"] { --item-accent: #225c94; }
 :root[data-theme="light"] [data-rarity="earth"] { --item-accent: #69408c; }
@@ -776,6 +780,17 @@
 }
 :root[data-theme="light"] .world-player-arrow-svg {
   filter: drop-shadow(0 2px 5px rgba(71, 49, 18, 0.4));
+}
+:root[data-theme="light"] .player-arrow-symbol {
+  fill: var(--jade);
+}
+:root[data-theme="light"] .player-arrow-tip {
+  fill: var(--gold-bright);
+  filter: drop-shadow(0 0 3px rgba(125, 82, 26, 0.55));
+}
+:root[data-theme="light"] .shop-modal-confirm-btn:hover:not(:disabled) {
+  /* 浅金渐变 hover 底上白字对比不足，浅色改用深金文字 */
+  color: var(--gold-bright);
 }
 :root[data-theme="light"] .taiji-icon {
   box-shadow: 0 0 8px var(--gold-faint), inset 0 1px 4px rgba(71, 49, 18, 0.14);
