@@ -883,109 +883,109 @@ PRESET_BATCHES = {
             "caption": "Bottom-right item: [潮汐图腾候选 - Tidal Wave Emblem Candidate]. A completely solid filled pure white minimalist vector silhouette logo of concentric swirling water current ripples forming a mystical tidal pearl vortex in the center, solid opaque white shapes, strictly solid pure white on solid pure black, high contrast, flat 2D clip-art."
         }
     ],
-    # 阶梯消耗品与丹药膏散组 (6件套, 2x3 六宫格网格)
+    # 阶梯消耗品与丹药膏散组 (极简质朴古典仙侠手绘静物风, 零文本)
     "consumables_pills_6": [
         {
             "id": "item.reverse-fate-pill",
             "name": "逆命丹",
             "bbox": [-400, -440, -120, -180],
-            "caption": "Top-left item: [逆命丹 - Reverse Fate Pill]. A rare mystical Daoist elixir pill, deep obsidian black and dark bronze gold sheen, distinct glowing crimson cracks on the pill surface, subtle wisps of dark violet spiritual aura, clean spherical silhouette, dark ink outline."
+            "caption": "Top-left item: A single smooth spherical Daoist elixir pill, deep lustrous obsidian black and dark bronze gold hue, resting on three simple dark lotus petals at base, perfectly round and neat, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words, no letters, no fire, no smoke."
         },
         {
             "id": "item.shengji-balm",
             "name": "生肌膏",
             "bbox": [-400, -130, -120, 130],
-            "caption": "Top-center item: [生肌膏 - Flesh Regrowth Balm]. A round celadon porcelain ointment jar open to reveal smooth dark jade-green herbal medicinal balm cream inside, small wooden dipping spatula resting beside, clean compact shape, dark ink outline."
+            "caption": "Top-center item: A small round celadon ceramic jar open to show smooth dark-green herbal salve ointment inside, simple wooden lid leaning beside, clean rounded cartoon shapes, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words."
         },
         {
             "id": "item.ningqi-powder",
             "name": "凝气散",
             "bbox": [-400, 180, -120, 440],
-            "caption": "Top-right item: [凝气散 - Qi Condensation Powder]. A shallow carved white jade dish holding a small heap of fine crystalline ice-blue spiritual medicinal powder, subtle sparkling cool azure aura, clean silhouette, dark ink outline."
+            "caption": "Top-right item: A simple shallow white porcelain saucer holding a small neat heap of soft pale sky-blue healing powder, clean rounded shapes, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words."
         },
         {
             "id": "item.huangya-pill",
             "name": "黄芽丹",
             "bbox": [120, -440, 400, -180],
-            "caption": "Bottom-left item: [黄芽丹 - Yellow Sprout Pill]. A smooth Daoist spiritual pill of soft warm amber-yellow color with faint fresh herbal green luster, translucent jade sheen, perfectly spherical silhouette, dark ink outline."
+            "caption": "Bottom-left item: A single smooth spherical Daoist elixir pill of soft warm amber-yellow color, resting on three simple small green leaf petals at base, perfectly round and neat, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words."
         },
         {
             "id": "item.heqi-pill",
             "name": "合气丹",
             "bbox": [120, -130, 400, 130],
-            "caption": "Bottom-center item: [合气丹 - Harmony Qi Pill]. A pristine milky-white Daoist pill inscribed with a subtle swirling red cinnabar yin-yang spiral seam, harmonious spiritual vapor, clean spherical shape, dark ink outline."
+            "caption": "Bottom-center item: A single smooth spherical Daoist elixir pill of milky white color with a single faint red yin-yang swirl line, resting on three simple small white petal cups at base, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words."
         },
         {
             "id": "item.dingshen-incense",
             "name": "定神香",
             "bbox": [120, 180, 400, 440],
-            "caption": "Bottom-right item: [定神香 - Mind Calming Coil Incense]. A dark bronze burner dish holding a neatly wound spiral coil of dark brown herbal incense, faint vertical wisp of white soothing fragrant smoke rising, clean compact shape, dark ink outline."
+            "caption": "Bottom-right item: A small round antique bronze censer dish holding a neatly coiled dark brown incense spiral, two simple thin wisps of curling smoke rising above, clean bold shapes, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words."
         }
     ],
-    # 阵盘、线香与强化砂粉组 (6件套, 2x3 六宫格网格)
+    # 阵盘、线香与强化砂粉组 (极简质朴古典仙侠手绘静物风, 零文本)
     "consumables_formations_6": [
         {
             "id": "item.tianlei-formation-disk",
             "name": "天雷阵盘",
             "bbox": [-400, -440, -120, -180],
-            "caption": "Top-left item: [天雷阵盘 - Heavenly Thunder Formation Disk]. An octagonal Daoist plate carved from dark charred lightning-struck wood, engraved with sharp golden-cyan lightning trigram runes, crackling azure electric core in center, dark ink outline."
+            "caption": "Top-left item: A flat octagonal Daoist formation plate made of dark charred wood, simple bagua lines carved on the rim, a smooth cyan-blue glowing thunder gem embedded in the center, clean sturdy geometric silhouette, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words, no lightning bolts."
         },
         {
             "id": "item.mizong-formation-disk",
             "name": "迷踪阵盘",
             "bbox": [-400, -130, -120, 130],
-            "caption": "Top-center item: [迷踪阵盘 - Lost Trace Formation Disk]. An elegant circular Daoist formation plate sculpted from floating white cloud jade, surrounded by gentle wisps of misty phantom smoke, silver concentric divination rings, dark ink outline."
+            "caption": "Top-center item: A flat octagonal Daoist formation plate sculpted from pale white jade, simple concentric decorative rings on the surface, a smooth pearl in the center, two simple cartoon cloud curls beside, clean geometric silhouette, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no letters."
         },
         {
             "id": "item.xuesha-formation-disk",
             "name": "血煞阵盘",
             "bbox": [-400, 180, -120, 440],
-            "caption": "Top-right item: [血煞阵盘 - Blood Fiend Formation Disk]. A menacing round plate carved from pale ancient demon beast bone, etched with deep crimson blood-sacrifice talisman runes, dark ominous red aura, dark ink outline."
+            "caption": "Top-right item: A flat octagonal Daoist formation plate made of aged ivory beast bone, simple crimson red border trim, a smooth dark red agate stone embedded in the center, clean sturdy geometric silhouette, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no spikes, no fire."
         },
         {
             "id": "item.qingling-incense",
             "name": "青灵香",
             "bbox": [120, -440, 400, -180],
-            "caption": "Bottom-left item: [青灵香 - Azure Spirit Stick Incense]. A set of slender jade-green Daoist incense sticks standing upright in a simple antique bronze incense holder, burning red ember tip emitting straight upright azure smoke, clean silhouette, dark ink outline."
+            "caption": "Bottom-left item: A small antique bronze incense holder holding three slender jade-green incense sticks standing upright, tiny orange tips, two simple thin wisps of vertical smoke, clean bold shapes, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no letters."
         },
         {
             "id": "item.cuiling-powder",
             "name": "淬灵粉",
             "bbox": [120, -130, 400, 130],
-            "caption": "Bottom-center item: [淬灵粉 - Spirit Quenching Powder]. A neat dark lacquer saucer containing fine ivory-white mineral powder used for equipment enhancement, soft shimmering silver specks, clean compact shape, dark ink outline."
+            "caption": "Bottom-center item: A small rustic cloth pouch lying on its side, opening to spill out a small neat heap of white spirit powder, clean cartoon shapes, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words."
         },
         {
             "id": "item.guling-sand",
             "name": "固灵砂",
             "bbox": [120, 180, 400, 440],
-            "caption": "Bottom-right item: [固灵砂 - Solidifying Gold Sand]. A small rustic stoneware cup filled with dense glittering metallic gold crystalline grains and spirit sand, warm golden gleam, clean compact shape, dark ink outline."
+            "caption": "Bottom-right item: A simple small brown clay bowl filled with smooth golden grains and yellow sand, clean bold shapes, flat hand-painted 2D game icon, thick dark ink outline, strictly no text, no words."
         }
     ],
-    # 纯黑底纯白二值矢量Logo图腾组 (碎罡体魄功法图腾，供线装书与残卷合成, 2x2 四宫格)
+    # 纯黑底纯白二值矢量Logo图腾组 (碎罡体魄功法图腾，极简硬边大块面, 2x2 四宫格)
     "logos_sui_gang": [
         {
             "id": "emblem.sui-gang",
             "name": "碎罡图腾",
             "bbox": [-400, -400, -130, -130],
-            "caption": "Top-left item: [碎罡图腾 - Armor Shattering Emblem]. A solid filled pure white minimalist vector silhouette logo of a heavy armored fist punching forward and violently shattering a protective hexagonal energy shield into flying sharp shards, crisp clean stencil cut negative black contour lines separating the fist and fractured shield plates, strictly solid pure white on solid pure black."
+            "caption": "Top-left item: A solid filled pure white minimalist vector logo of a heavy shield cleanly split into two halves by a sharp diagonal fracture groove, bold massive white shapes with wide distinct negative black stencil cut lines, high contrast stencil cut silhouette, zero tiny shards, zero noise, strictly solid pure white on solid pure black."
         },
         {
             "id": "emblem.sui-gang.b",
             "name": "碎罡图腾候选 B",
             "bbox": [-400, 130, -130, 400],
-            "caption": "Top-right item: [碎罡图腾候选 B - Armor Shattering Emblem Candidate B]. A solid filled pure white minimalist vector logo of a heavy battle axe crashing down through a cracked barrier shield, sharp angular shockwaves radiating outward, crisp clean stencil cut negative black contour lines, strictly solid pure white on solid pure black."
+            "caption": "Top-right item: A solid filled pure white minimalist vector logo of a powerful clenched fist breaking a thick barrier ring, bold broad white shapes with clean stencil cut negative black contour lines, strictly solid pure white on solid pure black."
         },
         {
             "id": "emblem.sui-gang.c",
             "name": "碎罡图腾候选 C",
             "bbox": [130, -400, 400, -130],
-            "caption": "Bottom-left item: [碎罡图腾候选 C - Armor Shattering Emblem Candidate C]. A solid filled pure white minimalist vector logo of a fierce demonic claw crushing a radiant talisman plate with explosive fracture lines, crisp clean stencil cut negative black contours, strictly solid pure white on solid pure black."
+            "caption": "Bottom-left item: A solid filled pure white minimalist vector logo of a heavy Daoist broadsword splitting a mountain peak, bold solid white shapes, clean stencil cut, strictly solid pure white on solid pure black."
         },
         {
             "id": "emblem.sui-gang.d",
             "name": "碎罡图腾候选 D",
             "bbox": [130, 130, 400, 400],
-            "caption": "Bottom-right item: [碎罡图腾候选 D - Armor Shattering Emblem Candidate D]. A solid filled pure white minimalist vector logo of intersecting sharp geometric blades piercing through a shattered circular halo crest, crisp clean stencil cut negative black lines, strictly solid pure white on solid pure black."
+            "caption": "Bottom-right item: A solid filled pure white minimalist vector logo of an iron battle shield breaking into two pieces, broad solid white shapes, strictly solid pure white on solid pure black."
         }
     ],
 }
@@ -1046,8 +1046,7 @@ def get_latest_workflow():
 
 def build_layout_prompt(items_spec, summary_caption=None):
     if not summary_caption:
-        summary_caption = "simplified stylized 2D Chinese Xianxia game item icon sprite sheet, clean bold shapes, simplified painterly ink-wash style, clear silhouette, restrained details, bold brushwork, flat clean colors with subtle shading, distinct dark ink outline, compact icons floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
-    
+        summary_caption = "simplified stylized 2D Chinese Xianxia game item icon sprite sheet, clean bold cartoon shapes, simplified flat hand-painted style, clear rounded silhouette, minimal restrained details, flat clean colors with subtle cell shading, distinct dark ink outline, compact icons floating on solid pure white background, generous empty white spacing between items, strictly no overflow, strictly zero text, zero letters, zero words."
     layout = {
         "summary": {
             "canvas": "single",
@@ -1074,8 +1073,7 @@ def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daoh
     
     # Node 5: 负向提示词
     if not negative_prompt:
-        negative_prompt = "overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, overflow, touching borders, crowded, clutter, modern, western fantasy, blurry, bad anatomy, worst quality, watermark, text"
-    prompt["5"]["inputs"]["text"] = negative_prompt
+        negative_prompt = "text, letters, words, chinese characters, hanzi, font, label, signature, watermark, overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, glowing particles, neon glow, lightning bolts, fire, smoke, crowded, clutter, blurry, bad anatomy, worst quality"
     
     # Node 19: 分辨率与长宽比
     if "19" in prompt:
@@ -1182,8 +1180,22 @@ def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size
             if not has_rmbg_alpha:
                 is_bg = (r > 235) & (g > 235) & (b > 235)
                 arr[:, :, 3] = np.where(is_bg, 0, a)
+        if not is_emblem:
+            from scipy.ndimage import label
+            alpha_mask = arr[:, :, 3] > 40
+            if alpha_mask.any():
+                labeled, num_features = label(alpha_mask)
+                if num_features > 1:
+                    sizes = np.bincount(labeled.ravel())
+                    sizes[0] = 0
+                    max_label = sizes.argmax()
+                    max_size = sizes[max_label]
+                    keep_mask = np.zeros_like(alpha_mask, dtype=bool)
+                    for lbl in range(1, num_features + 1):
+                        if sizes[lbl] >= 0.12 * max_size:
+                            keep_mask |= (labeled == lbl)
+                    arr[~keep_mask, 3] = 0
         clean_crop = Image.fromarray(arr)
-        
         # 提取真实内容 BBox
         c_bbox = clean_crop.getbbox()
         if c_bbox:
@@ -1437,8 +1449,8 @@ def main():
         print(f"开始自动切片、去底与 128px WebP 道具母模归档: {latest_img} -> {art_items_dir}")
         process_and_slice(latest_img, items, output_dir=art_items_dir, target_size=128, inner_size=108)
         out_dir = OUTPUT_DIR
-        t_size, in_size = 64, 54
-        print(f"开始自动切片、去底与 64px WebP 道具图标下采样: {latest_img} -> {out_dir}")
+        t_size, in_size = 48, 42
+        print(f"开始自动切片、去底与 48px WebP 道具图标下采样: {latest_img} -> {out_dir}")
         process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
         
     print(f"\n=== 标的 [{batch_tag}] 处理完成并已落盘！ ===")

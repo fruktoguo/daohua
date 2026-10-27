@@ -130,9 +130,9 @@ def synthesize_all():
         pos_y = 60 - rh // 2
         
         book_img.paste(emblem_final, (pos_x, pos_y), emblem_final)
-        tome_64 = book_img.resize((64, 64), Image.Resampling.LANCZOS)
+        tome_48 = book_img.resize((48, 48), Image.Resampling.LANCZOS)
         out_tome = os.path.join(OUTPUT_DIR, f"item.tome.{slug}.webp")
-        tome_64.save(out_tome, format="WEBP", lossless=True)
+        tome_48.save(out_tome, format="WEBP", quality=90)
         book_img.save(os.path.join(art_items_dir, f"item.tome.{slug}.webp"), format="WEBP", lossless=True)
         
         # B. 合成残卷
@@ -161,9 +161,9 @@ def synthesize_all():
         fpos_y = 62 - frh // 2
         
         frag_img.paste(emblem_f_final, (fpos_x, fpos_y), emblem_f_final)
-        frag_64 = frag_img.resize((64, 64), Image.Resampling.LANCZOS)
+        frag_48 = frag_img.resize((48, 48), Image.Resampling.LANCZOS)
         out_frag = os.path.join(OUTPUT_DIR, f"item.fragment.{slug}.webp")
-        frag_64.save(out_frag, format="WEBP", lossless=True)
+        frag_48.save(out_frag, format="WEBP", quality=90)
         frag_img.save(os.path.join(art_items_dir, f"item.fragment.{slug}.webp"), format="WEBP", lossless=True)
         
         count += 2
