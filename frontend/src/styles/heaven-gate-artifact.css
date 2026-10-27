@@ -1370,6 +1370,29 @@
       line-height: 18px;
       color: var(--hg-ochre);
       text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }
+
+    .hg-cost-line__sep {
+      opacity: 0.5;
+      margin: 0 6px;
+      color: var(--hg-border-strong);
+      user-select: none;
+    }
+
+    .hg-reroll-count-hint {
+      color: var(--hg-ink-gray);
+      border-bottom: 1px dashed var(--hg-border-strong);
+      cursor: help;
+      transition: color var(--hg-dur-fast) var(--hg-ease), border-color var(--hg-dur-fast) var(--hg-ease);
+    }
+
+    .hg-reroll-count-hint:hover {
+      color: var(--hg-ochre);
+      border-color: var(--hg-ochre);
     }
 
     .hg-reroll-toggle {
@@ -1528,10 +1551,3 @@
       cursor: pointer;
     }
 
-    .hg-cost-line {
-      margin: 0;
-      font-size: 12px;
-      color: var(--hg-ochre);
-      text-align: center;
-      width: 100%;
-    }

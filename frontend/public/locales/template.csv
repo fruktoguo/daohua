@@ -2352,6 +2352,8 @@ insight.heavenGate.enterBtn,"入天门",""
 insight.heavenGate.enterConfirmBody,"确认以当前五行灵根叩开天门？入天门后灵根正式生效，五行乘区随之确立；之后如需重新分配或重选灵根，须通过「逆天改命」消耗底蕴。",""
 insight.heavenGate.enterConfirmTitle,"叩入天门",""
 insight.heavenGate.entered,"已入天门，灵根既定",""
+insight.heavenGate.expectedPointsTooltip,"期望总点数：{points} 点
+（基准 180 点，每次改命 +8 点，最高 500 点）",""
 insight.heavenGate.multiplierValue,"升级所需修为 ×{value}",""
 insight.heavenGate.noDerivedBonus,"暂无特化加成",""
 insight.heavenGate.noticeNeedExpFull,"修为圆满后方可开天门",""

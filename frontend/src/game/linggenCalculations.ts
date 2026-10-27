@@ -317,3 +317,14 @@ export function projectPointerToAxis(
   const ratio = (projected - BOARD_MIN_RADIUS) / (BOARD_MAX_RADIUS - BOARD_MIN_RADIUS)
   return Math.round(ratio * LINGGEN_AXIS_CAP)
 }
+
+/**
+ * 逆天改命抽取灵根的期望总点数：
+ * 基准期望 180 点，每次改命期望 +8 点，40 次改命期望达到 500 点封顶。
+ * 与领域 `HeavenGateRules` 截断指数温度分布模型完全同口径。
+ * @param rerollCount 逆天改命累计次数
+ */
+export function getHeavenGateExpectedPoints(rerollCount: number): number {
+  const count = Math.max(0, Math.trunc(rerollCount) || 0)
+  return Math.min(500, 180 + count * 8)
+}

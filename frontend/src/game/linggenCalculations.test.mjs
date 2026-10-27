@@ -13,6 +13,7 @@ import {
   remainingPoints,
   shouldShowOpenHeavenGate,
   getAllLinggenBonuses,
+  getHeavenGateExpectedPoints,
 } from './linggenCalculations.ts'
 
 test('linggenCalculations：增减伤合并文本与斗法面板同口径（增伤 Linear、减伤 NonLinear）', () => {
@@ -166,4 +167,21 @@ test('linggenCalculations：多轴极端拖拽绝不发生透支，未分配点�
   assert.equal(dragWood.roots.wood, 67)
   assert.ok(dragWood.remainingPoints >= 0, '未分配点数绝不能为负')
   assert.equal(dragWood.hitInsufficientBalance, true)
+})
+
+test('linggenCalculations：getHeavenGateExpectedPoints 期望总点数计算与 500 点封顶', () => {
+  // 0 次改命：初始基准期望 180 点
+  assert.equal(getHeavenGateExpectedPoints(0), 180)
+  // 负数或非法输入：自动防抖归 0，保持基准 180 点
+  assert.equal(getHeavenGateExpectedPoints(-1), 180)
+  assert.equal(getHeavenGateExpectedPoints(Number.NaN), 180)
+  // 每次改命 +8 点期望
+  assert.equal(getHeavenGateExpectedPoints(1), 188)
+  assert.equal(getHeavenGateExpectedPoints(5), 220)
+  assert.equal(getHeavenGateExpectedPoints(10), 260)
+  // 40 次改命：180 + 40 * 8 = 500 点达到峰值
+  assert.equal(getHeavenGateExpectedPoints(40), 500)
+  // 超过 40 次：硬上限 500 点不溢出
+  assert.equal(getHeavenGateExpectedPoints(50), 500)
+  assert.equal(getHeavenGateExpectedPoints(100), 500)
 })

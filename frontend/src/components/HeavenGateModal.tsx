@@ -1,12 +1,14 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Modal } from './Modal'
 import { ConfirmDialog } from './ConfirmDialog'
+import { FloatingTooltip } from './FloatingPopover'
 import { PillBonusLabel } from './PillLabel'
 import { StatGlyph } from './StatGlyph'
 import { useT } from '../i18n'
 import {
   applyAxisDrag,
   getAllLinggenBonuses,
+  getHeavenGateExpectedPoints,
   linggenCultivationMultiplier,
   projectPointerToAxis,
   remainingPoints,
@@ -118,6 +120,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   const [drag, setDrag] = useState<DragSession>({ active: false, pointerId: 0, axisIndex: -1, startValue: 0 })
   const [toast, setToast] = useState<string | null>(null)
   const dragOriginRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+  const expectedPoints = useMemo(() => getHeavenGateExpectedPoints(rerollCount), [rerollCount])
 
   // 判断是否存在改命待裁决候选灵根：已入天门且抽取值与已生效值不一致
   const isPendingReroll = useMemo(() => {
@@ -808,15 +811,26 @@ export const HeavenGateModal = memo(function HeavenGateModal({
           </div>
 
           <div className="hg-footer__bottom">
-            {hasRolled ? (
-              <p className="hg-cost-line">
-                {usePill && hasPill
-                  ? t('insight.heavenGate.costPill', { cost: rerollCostPill })
-                  : t('insight.heavenGate.costPlain', { cost: rerollCostPlain })}
-              </p>
-            ) : (
-              <div className="hg-footer__spacer" aria-hidden="true" />
-            )}
+            <div className="hg-cost-line">
+              {hasRolled && (
+                <>
+                  <span>
+                    {usePill && hasPill
+                      ? t('insight.heavenGate.costPill', { cost: rerollCostPill })
+                      : t('insight.heavenGate.costPlain', { cost: rerollCostPlain })}
+                  </span>
+                  <span className="hg-cost-line__sep" aria-hidden="true">·</span>
+                </>
+              )}
+              <FloatingTooltip
+                tone="gold"
+                title={t('insight.heavenGate.expectedPointsTooltip', { points: expectedPoints })}
+              >
+                <span className="hg-reroll-count-hint">
+                  {t('insight.heavenGate.rerollCount', { count: rerollCount })}
+                </span>
+              </FloatingTooltip>
+            </div>
           </div>
         </footer>
           </div>

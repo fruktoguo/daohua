@@ -50,6 +50,7 @@ export const insightZh = {
       rolledReady: '灵根已现，调整五行分布后入天门',
       entered: '已入天门，灵根既定',
       rerollCount: '逆天改命 {count} 次',
+      expectedPointsTooltip: '期望总点数：{points} 点\n（基准 180 点，每次改命 +8 点，最高 500 点）',
       totalPoints: '总值',
       remainingPoints: '可调整',
       costPlain: '逆天改命消耗 {cost} 底蕴',
