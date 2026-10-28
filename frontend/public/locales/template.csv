@@ -2763,28 +2763,28 @@ market.effect.damageBonusPoints,"伤害提升 {n}",""
 market.effect.damageReductionPct,"受击伤害减免 +{n}%",""
 market.effect.durableTag,"部署常驻生效",""
 market.effect.evasionPostRatio,"闪避乘区 {n}",""
-market.effect.formationScopePersonal,"个人独立",""
-market.effect.formationScopeTeam,"全队共享",""
-market.effect.formationScopeTeamUnique,"全队共享 (唯一)",""
+market.effect.formationScopePersonal,"自身",""
+market.effect.formationScopeTeam,"队伍",""
+market.effect.formationScopeTeamUnique,"队伍",""
 market.effect.gatheringOutput,"采集产出 {value}",""
 market.effect.healingBonus,"额外治疗提升 +{n}%",""
 market.effect.hpRegenPerFiveSeconds,"每5秒气血回复 +{n}",""
 market.effect.hpRegenPostRatio,"气血回复乘区 {n}",""
-market.effect.knownJuling,"全队共享布阵
+market.effect.knownJuling,"队伍布阵
 每5秒灵力回复 +5
 灵力回复加成 +30%",""
-market.effect.knownMizong,"全队共享布阵(唯一)
+market.effect.knownMizong,"队伍布阵
 全队闪避 +10
 全队闪避加成 +30%",""
 market.effect.knownQiGathering,"修炼效率 +30%",""
 market.effect.knownShunqi,"每5秒灵力回复 +8
 施法攻速 +5%",""
-market.effect.knownTianlei,"个人独立布阵
+market.effect.knownTianlei,"自身布阵
 受击20%概率引雷 (CD 1秒)
 伤害: 术攻50% + 10 (木)
 触发耗蓝1%，每5秒耗蓝1%",""
 market.effect.knownTongmai,"修炼效率 +50%",""
-market.effect.knownXuesha,"个人独立布阵
+market.effect.knownXuesha,"自身布阵
 受击20%概率触发血煞 (CD 1秒)
 伤害: 最大生命10% (物理)
 实际伤害100%吸血，每5秒耗血1%",""

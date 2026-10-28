@@ -518,7 +518,7 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />,
     )
   }
-  // 战术阵盘核心机制行（主卡片）
+  // 战术阵盘核心机制行（主卡片自身内部展示）
   if (definition.itemId === 'item.tianlei-formation-disk') {
     lines.push(
       <PillBonusLabel
@@ -541,6 +541,13 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
         label={t('market.effect.badgeTianleiDamage')}
         tone="cyan"
         value={t('market.effect.tianleiDamageFormula')}
+      />,
+      <PillBonusLabel
+        key="item-tianlei-trigger-cost"
+        icon={<StatGlyph glyph="mp-regen" size={14.5} />}
+        label={t('market.effect.badgeTianleiTriggerCost')}
+        tone="crimson"
+        value={t('market.effect.tianleiTriggerCostValue')}
       />,
       <PillBonusLabel
         key="item-tianlei-cost"
@@ -588,31 +595,8 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
         value={t('market.effect.xueshaCostValue')}
       />,
     )
-  } else if (definition.itemId === 'item.mizong-formation-disk') {
-    lines.push(
-      <PillBonusLabel
-        key="item-formation-scope"
-        icon={<StatGlyph glyph="realm" size={14.5} />}
-        label={t('market.effect.badgeFormationScope')}
-        tone="gold"
-        value={t('market.effect.formationScopeTeamUnique')}
-      />,
-      <PillBonusLabel
-        key="item-mizong-evasion"
-        icon={<StatGlyph glyph="evasion" size={14.5} />}
-        label={t('market.effect.badgeEvasion')}
-        tone="cyan"
-        value="+10"
-      />,
-      <PillBonusLabel
-        key="item-mizong-ratio"
-        icon={<StatGlyph glyph="evasion" size={14.5} />}
-        label={t('market.effect.badgeEvasionPostRatio')}
-        tone="cyan"
-        value="+30%"
-      />,
-    )
-  } else if (definition.itemId === 'item.juling-formation-disk') {
+  } else if (definition.itemId === 'item.mizong-formation-disk' || definition.itemId === 'item.juling-formation-disk') {
+    // 迷踪阵盘与聚灵阵盘的属性增益由侧边 Aside 卡片展示，主卡片仅标记布阵范围
     lines.push(
       <PillBonusLabel
         key="item-formation-scope"
@@ -620,20 +604,6 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
         label={t('market.effect.badgeFormationScope')}
         tone="gold"
         value={t('market.effect.formationScopeTeam')}
-      />,
-      <PillBonusLabel
-        key="item-juling-mp"
-        icon={<StatGlyph glyph="mp-regen" size={14.5} />}
-        label={t('market.effect.badgeMpRegen')}
-        tone="cyan"
-        value="+5/5秒"
-      />,
-      <PillBonusLabel
-        key="item-juling-ratio"
-        icon={<StatGlyph glyph="mp-regen" size={14.5} />}
-        label={t('market.effect.badgeMpPostRatio')}
-        tone="cyan"
-        value="+30%"
       />,
     )
   }
@@ -1004,7 +974,7 @@ export function extractBuffBonusItems(buff: {
         glyph: 'realm',
         label: t('market.effect.badgeFormationScope'),
         tone: 'gold',
-        value: t('market.effect.formationScopeTeamUnique'),
+        value: t('market.effect.formationScopeTeam'),
       },
       {
         glyph: 'evasion',
@@ -1373,8 +1343,12 @@ export function resolveItemAsideCards(
     )
   }
 
-  // 4. 战斗丹药附带的 Buff 效果 (如止血散、顺气丸)
+  // 4. 战斗丹药与阵法附带的 Buff 效果 (如止血散、顺气丸、迷踪阵)
   for (const buff of definition.buffEffects ?? []) {
+    // 天雷阵盘与血煞阵盘机制已在主卡片自身内部完整展示，不在此生成右侧增益副气泡
+    if (buff.buffId === 'formation.tianlei' || buff.buffId === 'formation.xuesha') {
+      continue
+    }
     // 配表 Buff 定义为平铺键规格：转换为通道载荷后走统一注册表解析。
     const items = extractBuffBonusItems({ ...buff, effects: specToBuffEffects(buff as unknown as Record<string, number | undefined>, 1) })
     const buffDurationSubtitle = buff.durationSeconds && buff.durationSeconds > 0
