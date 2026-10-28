@@ -22,20 +22,18 @@ test('五系全部归零不崩溃并返回五系皆空', () => {
   assert.equal(result.seal, '灵根尽绝')
 })
 
-// ── 单灵根：先天道胎 / 极品 / 天品 / 真品 / 偏枯 / 近废 ─────────────────────
-test('单系满百为先天道胎灵根', () => {
-  const result = judge(100)
-  assert.equal(result.name, '金先天道胎灵根')
-  assert.equal(result.seal, '单灵根 · 极境资质')
+// ── 单灵根：天灵根（含满百）/ 真灵根 / 偏枯 / 近废 ──────────────────────────
+test('单系满百归入天灵根，不设独立满值档', () => {
+  // 裁定：≥90 一律称天灵根，满值语义只体现在评语，避免自造词
+  const full = judge(100)
+  assert.equal(full.name, '金天灵根')
+  assert.equal(full.seal, '单灵根 · 天品')
+  const near = judge(0, 0, 0, 92)
+  assert.equal(near.name, '火天灵根')
+  assert.equal(near.seal, '单灵根 · 天品')
 })
 
-test('单系 95~99 为极品天灵根', () => {
-  const result = judge(0, 0, 0, 0, 95)
-  assert.equal(result.name, '土极品天灵根')
-  assert.equal(result.seal, '单灵根 · 极品')
-})
-
-test('单系 90~94 为天灵根', () => {
+test('单系 90~100 为天灵根', () => {
   const result = judge(0, 0, 0, 92)
   assert.equal(result.name, '火天灵根')
   assert.equal(result.seal, '单灵根 · 天品')
@@ -169,11 +167,11 @@ test('四系总值 >160 且不成上品为常规四灵根', () => {
   assert.equal(result.seal, '四灵根 · 常规')
 })
 
-// ── 五灵根：神品 / 天品 / 极上 / 均衡 / 近废 / 杂驳 / 普通 / 上品 / 极品 ────
-test('五系皆满百为神灵根', () => {
+// ── 五灵根：仙品 / 天品 / 极上 / 均衡 / 近废 / 杂驳 / 普通 / 上品 / 极品 ────
+test('五系皆满百为仙灵根', () => {
   const result = judge(100, 100, 100, 100, 100)
-  assert.equal(result.name, '神灵根')
-  assert.equal(result.seal, '五灵根 · 神品')
+  assert.equal(result.name, '仙灵根')
+  assert.equal(result.seal, '五灵根 · 仙品')
 })
 
 test('五系皆 ≥90 为五行天灵根', () => {

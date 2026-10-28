@@ -4,6 +4,8 @@
  * 分级口径与 `daojie-yusheng` 的 `describeSpiritualRoots` 完全一致：
  * 按「有效灵根条数」分支，同一分支内**先判纯度档（天品/上品）、再按离散度与总值梯度分档**，
  * 不设单系绝对门槛——一条微末残系不会把高总值灵根压成废灵根。
+ * 单系天品不细分满值档：≥90 一律称「天灵根」，满值语义只体现在评语；
+ * 五系全满百定名「仙灵根」。
  * 纯展示函数：称号（name）、品阶印章（seal）与沉浸式评语（desc），零结算影响。
  * 文案一律经 t 走 `insight.heavenGate.evaluation.*` 词条族（键全部字面量书写，供 i18n 门禁静态校验）；
  * 五行串接复用 `insight.heavenGate.element.*` 词条，名称模板以 {elements} 插值承接按点数降序拼接的五行字符。
@@ -24,11 +26,9 @@ export interface LinggenEvaluation {
   desc: string
 }
 
-/** 单系满值：先天道胎档门槛。 */
-const INNATE_DAO_TIER = 100
-/** 单系极品档门槛。 */
-const SUPREME_TIER = 95
-/** 天品档门槛（单/双/三/四/五系通用）。 */
+/** 单系满值：五系满百的仙灵根门槛。 */
+const FULL_TIER = 100
+/** 天品档门槛（单/双/三/四/五系通用）：≥ 该值一律称「天灵根」。 */
 const HEAVEN_TIER = 90
 /** 单系真品与双系上品门槛。 */
 const TRUE_TIER = 80
@@ -85,16 +85,8 @@ interface TierRule {
 
 /** 各条数族的档位判定表：顺序即优先级，纯度高者先判，其后按总值梯度。 */
 const RULES: Record<number, TierRule[]> = {
-  // ── 单灵根：先天道胎 / 极品 / 天品 / 真品 / 偏枯 / 近废 ─────────────────
+  // ── 单灵根：天灵根（≥90，含满百）/ 真灵根 / 偏枯 / 近废 ─────────────────
   1: [
-    { match: c => c.entries[0].value >= INNATE_DAO_TIER,
-      nameKey: 'insight.heavenGate.evaluation.single.innateDao.name',
-      sealKey: 'insight.heavenGate.evaluation.single.innateDao.seal',
-      descKey: 'insight.heavenGate.evaluation.single.innateDao.desc' },
-    { match: c => c.entries[0].value >= SUPREME_TIER,
-      nameKey: 'insight.heavenGate.evaluation.single.supreme.name',
-      sealKey: 'insight.heavenGate.evaluation.single.supreme.seal',
-      descKey: 'insight.heavenGate.evaluation.single.supreme.desc' },
     { match: c => c.entries[0].value >= HEAVEN_TIER,
       nameKey: 'insight.heavenGate.evaluation.single.heaven.name',
       sealKey: 'insight.heavenGate.evaluation.single.heaven.seal',
@@ -189,12 +181,12 @@ const RULES: Record<number, TierRule[]> = {
       sealKey: 'insight.heavenGate.evaluation.quad.normal.seal',
       descKey: 'insight.heavenGate.evaluation.quad.normal.desc' },
   ],
-  // ── 五灵根：神品 / 天品 / 极上 / 均衡 / 近废 / 杂驳 / 普通 / 上品 / 极品 ──
+  // ── 五灵根：仙灵根（全满百）/ 天品 / 极上 / 均衡 / 近废 / 杂驳 / 普通 / 上品 / 极品 ──
   5: [
-    { match: c => c.entries.every(e => e.value >= INNATE_DAO_TIER),
-      nameKey: 'insight.heavenGate.evaluation.five.god.name',
-      sealKey: 'insight.heavenGate.evaluation.five.god.seal',
-      descKey: 'insight.heavenGate.evaluation.five.god.desc' },
+    { match: c => c.entries.every(e => e.value >= FULL_TIER),
+      nameKey: 'insight.heavenGate.evaluation.five.xian.name',
+      sealKey: 'insight.heavenGate.evaluation.five.xian.seal',
+      descKey: 'insight.heavenGate.evaluation.five.xian.desc' },
     { match: c => c.entries.every(e => e.value >= HEAVEN_TIER),
       nameKey: 'insight.heavenGate.evaluation.five.heaven.name',
       sealKey: 'insight.heavenGate.evaluation.five.heaven.seal',

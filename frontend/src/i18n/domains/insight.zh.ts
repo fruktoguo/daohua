@@ -139,20 +139,10 @@ export const insightZh = {
           desc: '体内五行之气断绝，灵气无所依附，无法聚气修行。',
         },
         single: {
-          innateDao: {
-            name: '{elements}先天道胎灵根',
-            seal: '单灵根 · 极境资质',
-            desc: '一系圆满百数，灵气归一不染纤尘，正是上天的宠儿，结丹无碍，仙途坦荡。',
-          },
-          supreme: {
-            name: '{elements}极品天灵根',
-            seal: '单灵根 · 极品',
-            desc: '单一属性纯度几近圆满，杂质荡然无存，已是单系资质中的最上一层。',
-          },
           heaven: {
             name: '{elements}天灵根',
             seal: '单灵根 · 天品',
-            desc: '仅存一系而杂质极少，修炼一日可抵旁人数日，宗门争抢的天灵根。',
+            desc: '一系纯粹而杂质几无，灵气归一，修炼一日可抵旁人数日，宗门争抢的天灵根。',
           },
           true: {
             name: '{elements}真灵根',
@@ -262,10 +252,10 @@ export const insightZh = {
           },
         },
         five: {
-          god: {
-            name: '神灵根',
-            seal: '五灵根 · 神品',
-            desc: '五行条条圆满百数，齐鸣共振自成周天，已非凡俗五灵根所能名状。',
+          xian: {
+            name: '仙灵根',
+            seal: '五灵根 · 仙品',
+            desc: '五行条条圆满百数，五气浑然一体、再无彼此之别，古来只闻其名，仙途之上已无窒碍。',
           },
           heaven: {
             name: '五行天灵根',
