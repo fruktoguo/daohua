@@ -110,4 +110,32 @@ public sealed class FrontendContractTests
         Assert.True(cuiling.TryGetProperty("enhancementSuccessBonus", out var cuilingBonus));
         Assert.Equal(0.03, cuilingBonus.GetDouble(), precision: 3);
     }
+
+    /// <summary>阵盘物品静态目录投影中必须包含 teamWide、evasion、evasionPostRatio 等效果字段，防止前端悬浮无法展示详细信息。</summary>
+    [Fact]
+    public void ItemsMapperIncludesFormationDiskBuffEffects()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var items = StaticGameCatalogMapper.Items(catalog);
+        var json = JsonSerializer.Serialize(items, ProtocolJson.Options);
+        using var doc = JsonDocument.Parse(json);
+        var array = doc.RootElement.EnumerateArray().ToArray();
+
+        // 迷踪阵盘验证：buffEffects 必须包含 teamWide = true，evasion = 10，evasionPostRatio = 0.3
+        var mizong = array.Single(e => e.GetProperty("itemId").GetString() == "item.mizong-formation-disk");
+        var mizongBuffs = mizong.GetProperty("buffEffects").EnumerateArray().ToArray();
+        var mizongBuff = Assert.Single(mizongBuffs);
+        Assert.True(mizongBuff.GetProperty("teamWide").GetBoolean());
+        Assert.Equal(10, mizongBuff.GetProperty("evasion").GetDouble(), precision: 2);
+        Assert.Equal(0.3, mizongBuff.GetProperty("evasionPostRatio").GetDouble(), precision: 2);
+
+        // 天雷阵盘与血煞阵盘验证：teamWide 为 false（个人独立生效）
+        var tianlei = array.Single(e => e.GetProperty("itemId").GetString() == "item.tianlei-formation-disk");
+        var tianleiBuff = Assert.Single(tianlei.GetProperty("buffEffects").EnumerateArray());
+        Assert.False(tianleiBuff.GetProperty("teamWide").GetBoolean());
+
+        var xuesha = array.Single(e => e.GetProperty("itemId").GetString() == "item.xuesha-formation-disk");
+        var xueshaBuff = Assert.Single(xuesha.GetProperty("buffEffects").EnumerateArray());
+        Assert.False(xueshaBuff.GetProperty("teamWide").GetBoolean());
+    }
 }

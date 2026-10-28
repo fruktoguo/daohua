@@ -63,16 +63,20 @@ public static class StaticGameCatalogMapper
             // 消耗品增益效果与领域结算读取的字段一一对应（SimulationEngine 只消费以下键），
             // 不下发领域未消费的占位字段，避免前端误以为存在自动触发/阈值语义。
             // hpRegenPostRatio/mpRegenPostRatio 为后段回复乘区（固定回复合并后再乘）。
+            // teamWide 标识全队光环还是个人独立生效；evasion 与 evasionPostRatio 为战术阵盘闪避通道。
             var buffEffects = hasConsumable && consumable.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array
                 ? buffsArray.EnumerateArray().Select(b => new
                 {
                     buffId = ReadString(b, "buffId"),
                     name = ReadString(b, "name", ReadString(b, "buffId", "增益")),
                     durationSeconds = ReadDouble(b, "durationSeconds", 0),
+                    teamWide = b.TryGetProperty("teamWide", out var tw) ? tw.GetBoolean() : string.Equals(subCategory, "formation", StringComparison.Ordinal),
                     hpRegen = ReadDouble(b, "hpRegen", 0),
                     mpRegen = ReadDouble(b, "mpRegen", 0),
                     hpRegenPostRatio = ReadDouble(b, "hpRegenPostRatio", 0),
                     mpRegenPostRatio = ReadDouble(b, "mpRegenPostRatio", 0),
+                    evasion = ReadDouble(b, "evasion", 0),
+                    evasionPostRatio = ReadDouble(b, "evasionPostRatio", 0),
                     attackSpeedPoints = ReadDouble(b, "attackSpeedPoints", 0),
                     damageAbsorptionPoints = ReadDouble(b, "damageAbsorptionPoints", 0)
                 }).ToArray()

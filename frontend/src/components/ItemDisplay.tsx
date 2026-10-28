@@ -518,6 +518,125 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />,
     )
   }
+  // 战术阵盘核心机制行（主卡片）
+  if (definition.itemId === 'item.tianlei-formation-disk') {
+    lines.push(
+      <PillBonusLabel
+        key="item-formation-scope"
+        icon={<StatGlyph glyph="realm" size={14.5} />}
+        label={t('market.effect.badgeFormationScope')}
+        tone="gold"
+        value={t('market.effect.formationScopePersonal')}
+      />,
+      <PillBonusLabel
+        key="item-tianlei-trigger"
+        icon={<StatGlyph glyph="crit" size={14.5} />}
+        label={t('market.effect.badgeTianleiTrigger')}
+        tone="cyan"
+        value={t('market.effect.tianleiTriggerValue')}
+      />,
+      <PillBonusLabel
+        key="item-tianlei-damage"
+        icon={<StatGlyph glyph="phys-damage" size={14.5} />}
+        label={t('market.effect.badgeTianleiDamage')}
+        tone="cyan"
+        value={t('market.effect.tianleiDamageFormula')}
+      />,
+      <PillBonusLabel
+        key="item-tianlei-cost"
+        icon={<StatGlyph glyph="mp-regen" size={14.5} />}
+        label={t('market.effect.badgeTianleiCost')}
+        tone="crimson"
+        value={t('market.effect.tianleiCostValue')}
+      />,
+    )
+  } else if (definition.itemId === 'item.xuesha-formation-disk') {
+    lines.push(
+      <PillBonusLabel
+        key="item-formation-scope"
+        icon={<StatGlyph glyph="realm" size={14.5} />}
+        label={t('market.effect.badgeFormationScope')}
+        tone="gold"
+        value={t('market.effect.formationScopePersonal')}
+      />,
+      <PillBonusLabel
+        key="item-xuesha-trigger"
+        icon={<StatGlyph glyph="crit" size={14.5} />}
+        label={t('market.effect.badgeXueshaTrigger')}
+        tone="crimson"
+        value={t('market.effect.xueshaTriggerValue')}
+      />,
+      <PillBonusLabel
+        key="item-xuesha-damage"
+        icon={<StatGlyph glyph="phys-damage" size={14.5} />}
+        label={t('market.effect.badgeXueshaDamage')}
+        tone="crimson"
+        value={t('market.effect.xueshaDamageFormula')}
+      />,
+      <PillBonusLabel
+        key="item-xuesha-lifesteal"
+        icon={<StatGlyph glyph="hp-regen" size={14.5} />}
+        label={t('market.effect.badgeXueshaLifesteal')}
+        tone="emerald"
+        value={t('market.effect.xueshaLifestealValue')}
+      />,
+      <PillBonusLabel
+        key="item-xuesha-cost"
+        icon={<StatGlyph glyph="hp-regen" size={14.5} />}
+        label={t('market.effect.badgeXueshaCost')}
+        tone="crimson"
+        value={t('market.effect.xueshaCostValue')}
+      />,
+    )
+  } else if (definition.itemId === 'item.mizong-formation-disk') {
+    lines.push(
+      <PillBonusLabel
+        key="item-formation-scope"
+        icon={<StatGlyph glyph="realm" size={14.5} />}
+        label={t('market.effect.badgeFormationScope')}
+        tone="gold"
+        value={t('market.effect.formationScopeTeamUnique')}
+      />,
+      <PillBonusLabel
+        key="item-mizong-evasion"
+        icon={<StatGlyph glyph="evasion" size={14.5} />}
+        label={t('market.effect.badgeEvasion')}
+        tone="cyan"
+        value="+10"
+      />,
+      <PillBonusLabel
+        key="item-mizong-ratio"
+        icon={<StatGlyph glyph="evasion" size={14.5} />}
+        label={t('market.effect.badgeEvasionPostRatio')}
+        tone="cyan"
+        value="+30%"
+      />,
+    )
+  } else if (definition.itemId === 'item.juling-formation-disk') {
+    lines.push(
+      <PillBonusLabel
+        key="item-formation-scope"
+        icon={<StatGlyph glyph="realm" size={14.5} />}
+        label={t('market.effect.badgeFormationScope')}
+        tone="gold"
+        value={t('market.effect.formationScopeTeam')}
+      />,
+      <PillBonusLabel
+        key="item-juling-mp"
+        icon={<StatGlyph glyph="mp-regen" size={14.5} />}
+        label={t('market.effect.badgeMpRegen')}
+        tone="cyan"
+        value="+5/5秒"
+      />,
+      <PillBonusLabel
+        key="item-juling-ratio"
+        icon={<StatGlyph glyph="mp-regen" size={14.5} />}
+        label={t('market.effect.badgeMpPostRatio')}
+        tone="cyan"
+        value="+30%"
+      />,
+    )
+  }
   // 耐久型持续消耗品（阵盘）：部署后槽位持有即生效，不消耗不耗竭
   if (definition.durable) {
     lines.push(
@@ -700,6 +819,10 @@ export function describeBuffEffectLines(buff: {
       'buff.shunqi': 'market.effect.knownShunqi',
       'buff.qiGathering': 'market.effect.knownQiGathering',
       'buff.tongmai': 'market.effect.knownTongmai',
+      'formation.tianlei': 'market.effect.knownTianlei',
+      'formation.xuesha': 'market.effect.knownXuesha',
+      'formation.mizong': 'market.effect.knownMizong',
+      'formation.juling': 'market.effect.knownJuling',
     }
     const knownKey = KNOWN_BUFF_EFFECT_KEYS[buff.buffId]
     if (knownKey) {
@@ -800,11 +923,133 @@ export function extractBuffBonusItems(buff: {
   statRatios?: Record<string, number> | null
   stacks?: number
   isPerStack?: boolean
+  teamWide?: boolean
 }) : BonusAsideItem[] {
   const t = getT()
   const items: BonusAsideItem[] = []
   const stacks = buff.stacks && buff.stacks > 0 ? buff.stacks : 1
 
+  // 0. 阵法类战术 Buff 结构化专属解析
+  if (buff.buffId === 'formation.tianlei') {
+    return [
+      {
+        glyph: 'realm',
+        label: t('market.effect.badgeFormationScope'),
+        tone: 'gold',
+        value: t('market.effect.formationScopePersonal'),
+      },
+      {
+        glyph: 'crit',
+        label: t('market.effect.badgeTianleiTrigger'),
+        tone: 'cyan',
+        value: t('market.effect.tianleiTriggerValue'),
+      },
+      {
+        glyph: 'phys-damage',
+        label: t('market.effect.badgeTianleiDamage'),
+        tone: 'cyan',
+        value: t('market.effect.tianleiDamageFormula'),
+      },
+      {
+        glyph: 'mp-regen',
+        label: t('market.effect.badgeTianleiTriggerCost'),
+        tone: 'crimson',
+        value: t('market.effect.tianleiTriggerCostValue'),
+      },
+      {
+        glyph: 'mp-regen',
+        label: t('market.effect.badgeTianleiCost'),
+        tone: 'crimson',
+        value: t('market.effect.tianleiCostValue'),
+      },
+    ]
+  }
+  if (buff.buffId === 'formation.xuesha') {
+    return [
+      {
+        glyph: 'realm',
+        label: t('market.effect.badgeFormationScope'),
+        tone: 'gold',
+        value: t('market.effect.formationScopePersonal'),
+      },
+      {
+        glyph: 'crit',
+        label: t('market.effect.badgeXueshaTrigger'),
+        tone: 'crimson',
+        value: t('market.effect.xueshaTriggerValue'),
+      },
+      {
+        glyph: 'phys-damage',
+        label: t('market.effect.badgeXueshaDamage'),
+        tone: 'crimson',
+        value: t('market.effect.xueshaDamageFormula'),
+      },
+      {
+        glyph: 'hp-regen',
+        label: t('market.effect.badgeXueshaLifesteal'),
+        tone: 'emerald',
+        value: t('market.effect.xueshaLifestealValue'),
+      },
+      {
+        glyph: 'hp-regen',
+        label: t('market.effect.badgeXueshaCost'),
+        tone: 'crimson',
+        value: t('market.effect.xueshaCostValue'),
+      },
+    ]
+  }
+  if (buff.buffId === 'formation.mizong') {
+    return [
+      {
+        glyph: 'realm',
+        label: t('market.effect.badgeFormationScope'),
+        tone: 'gold',
+        value: t('market.effect.formationScopeTeamUnique'),
+      },
+      {
+        glyph: 'evasion',
+        label: t('market.effect.badgeEvasion'),
+        tone: 'cyan',
+        value: '+10',
+      },
+      {
+        glyph: 'evasion',
+        label: t('market.effect.badgeEvasionPostRatio'),
+        tone: 'cyan',
+        value: '+30%',
+      },
+    ]
+  }
+  if (buff.buffId === 'formation.juling') {
+    return [
+      {
+        glyph: 'realm',
+        label: t('market.effect.badgeFormationScope'),
+        tone: 'gold',
+        value: t('market.effect.formationScopeTeam'),
+      },
+      {
+        glyph: 'mp-regen',
+        label: t('market.effect.badgeMpRegen'),
+        tone: 'cyan',
+        value: '+5/5秒',
+      },
+      {
+        glyph: 'mp-regen',
+        label: t('market.effect.badgeMpPostRatio'),
+        tone: 'cyan',
+        value: '+30%',
+      },
+    ]
+  }
+  if (buff.teamWide) {
+    items.push({
+      glyph: 'realm',
+      label: t('market.effect.badgeFormationScope'),
+      tone: 'gold',
+      value: t('market.effect.formationScopeTeam'),
+    })
+  }
   // 1. 效果通道载荷：层数承载通道按层数折算当前总加成（与结算口径一致），
   // tone 按折算后正负取注册表声明的正/负色调。
   for (const effect of buff.effects ?? []) {

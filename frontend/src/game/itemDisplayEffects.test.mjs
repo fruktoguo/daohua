@@ -117,7 +117,7 @@ await build({
   ],
 })
 
-const { describeItemEffects, resolveItemAsideCards } = await import(pathToFileURL(tempOut).href)
+const { describeItemEffects, resolveItemAsideCards, extractBuffBonusItems } = await import(pathToFileURL(tempOut).href)
 
 test('describeItemEffects: 战斗药品（如止血散）从 buffEffects 提取持续时间与冷却', () => {
   const zhixueItem = {
@@ -232,4 +232,63 @@ test('resolveItemAsideCards: 战斗药品 Buff 副卡片显示持续时间副标
   assert.equal(cards.length, 1, '止血散应生成 1 张 Buff 副卡片')
   assert.equal(cards[0].id, 'aside-buff-止血散·回春')
   assert.equal(cards[0].subtitle, '持续 30 秒')
+})
+
+test('describeItemEffects: 三大阵盘（天雷/迷踪/血煞）主卡片包含范围与机制伤害/闪避行', () => {
+  const tianleiItem = {
+    itemId: 'item.tianlei-formation-disk',
+    name: '天雷阵盘',
+    category: 'consumable',
+    subCategory: 'formation',
+    durationSeconds: 300,
+  }
+  const tianleiLines = describeItemEffects(tianleiItem)
+  assert.ok(tianleiLines.some(l => l.key === 'item-formation-scope' && l.props.value === '个人独立'), '天雷阵盘应标明个人独立')
+  assert.ok(tianleiLines.some(l => l.key === 'item-tianlei-trigger'), '天雷阵盘应包含触发几率行')
+  assert.ok(tianleiLines.some(l => l.key === 'item-tianlei-damage'), '天雷阵盘应包含天雷伤害行')
+  assert.ok(tianleiLines.some(l => l.key === 'item-tianlei-cost'), '天雷阵盘应包含维持法力行')
+
+  const xueshaItem = {
+    itemId: 'item.xuesha-formation-disk',
+    name: '血煞阵盘',
+    category: 'consumable',
+    subCategory: 'formation',
+    durationSeconds: 300,
+  }
+  const xueshaLines = describeItemEffects(xueshaItem)
+  assert.ok(xueshaLines.some(l => l.key === 'item-formation-scope' && l.props.value === '个人独立'), '血煞阵盘应标明个人独立')
+  assert.ok(xueshaLines.some(l => l.key === 'item-xuesha-trigger'), '血煞阵盘应包含触发几率行')
+  assert.ok(xueshaLines.some(l => l.key === 'item-xuesha-damage'), '血煞阵盘应包含伤害公式行')
+  assert.ok(xueshaLines.some(l => l.key === 'item-xuesha-lifesteal'), '血煞阵盘应包含吸血转化行')
+
+  const mizongItem = {
+    itemId: 'item.mizong-formation-disk',
+    name: '迷踪阵盘',
+    category: 'consumable',
+    subCategory: 'formation',
+    durationSeconds: 300,
+  }
+  const mizongLines = describeItemEffects(mizongItem)
+  assert.ok(mizongLines.some(l => l.key === 'item-formation-scope' && l.props.value.includes('全队共享')), '迷踪阵盘应标明全队共享')
+  assert.ok(mizongLines.some(l => l.key === 'item-mizong-evasion' && l.props.value === '+10'), '迷踪阵盘应包含固定闪避行')
+  assert.ok(mizongLines.some(l => l.key === 'item-mizong-ratio' && l.props.value === '+30%'), '迷踪阵盘应包含闪避加成行')
+})
+
+test('extractBuffBonusItems: 阵法 Buff（天雷/迷踪/血煞/聚灵）提取结构化副卡条目', () => {
+  const tianleiItems = extractBuffBonusItems({ buffId: 'formation.tianlei', name: '天雷阵' })
+  assert.ok(tianleiItems.length >= 4, '天雷阵应解析出至少 4 项条目')
+  assert.equal(tianleiItems[0].label, '布阵范围')
+  assert.equal(tianleiItems[0].value, '个人独立')
+
+  const xueshaItems = extractBuffBonusItems({ buffId: 'formation.xuesha', name: '血煞阵' })
+  assert.ok(xueshaItems.length >= 4, '血煞阵应解析出至少 4 项条目')
+  assert.equal(xueshaItems[0].label, '布阵范围')
+  assert.equal(xueshaItems[3].label, '煞血反哺')
+  assert.equal(xueshaItems[3].value, '100% 实际伤害吸血')
+
+  const mizongItems = extractBuffBonusItems({ buffId: 'formation.mizong', name: '迷踪阵' })
+  assert.ok(mizongItems.length >= 3, '迷踪阵应解析出至少 3 项条目')
+  assert.ok(mizongItems[0].value.includes('全队共享'))
+  assert.equal(mizongItems[1].value, '+10')
+  assert.equal(mizongItems[2].value, '+30%')
 })

@@ -1156,6 +1156,10 @@ export interface BuffModifiers {
   hpRegenPostRatio?: number
   /** 灵力回复后段比率 */
   mpRegenPostRatio?: number
+  /** 固定闪避点数 */
+  evasion?: number
+  /** 闪避后段比率乘区 */
+  evasionPostRatio?: number
   /** 通用属性比率字典（可选） */
   statRatios?: Record<string, number> | null
 }
@@ -1170,6 +1174,8 @@ export interface ItemBuffEffectDefinition extends BuffModifiers {
   name: string
   /** 单次生效秒数 */
   durationSeconds: number
+  /** 是否全队共享光环（阵法类消耗品，false 时为使用者个人独立生效） */
+  teamWide?: boolean
 }
 
 /**
