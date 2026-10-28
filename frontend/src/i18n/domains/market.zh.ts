@@ -114,7 +114,10 @@ export const marketZh = {
     noActiveOrders: '暂无活动挂单',
     status: {
       partiallyFilled: '部分成交',
+      partiallyFilledPrefix: '已成 ',
+      partiallyFilledDetail: '已成交 {filled} / 总数量 {total}（剩余 {remaining}）',
       open: '挂单中',
+      openDetail: '挂单中（总数量 {total}）',
     },
     createdAt: '创建于 {time}',
     expiresOn: '{date} 到期',

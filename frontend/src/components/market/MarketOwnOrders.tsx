@@ -55,12 +55,40 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
                 ?? findEquipmentInCatalog(equipmentCatalog ?? [], order.itemId)?.name
                 ?? order.itemId
               const displayName = order.enhancementLevel > 0 ? `${baseName} +${order.enhancementLevel}` : baseName
+              const isPartial = order.status === 'partially-filled'
+              const progressDetail = isPartial
+                ? t('market.status.partiallyFilledDetail', {
+                    filled: formatNumber(order.filledQuantity),
+                    total: formatNumber(order.originalQuantity),
+                    remaining: formatNumber(order.remainingQuantity),
+                  })
+                : t('market.status.openDetail', { total: formatNumber(order.originalQuantity) })
               return (
               <div className="market-own-order" key={order.orderId}>
                 <span className={`market-own-side market-own-side--${order.side}`}>{order.side === 'buy' ? t('market.side.buy') : t('market.side.sell')}</span>
                 <strong><ItemIcon itemId={order.itemId} />{displayName}</strong>
-                <span><UnitNumber value={order.price} /> × <UnitNumber value={order.remainingQuantity} /></span>
-                <span>{order.status === 'partially-filled' ? t('market.status.partiallyFilled') : t('market.status.open')}</span>
+                <span className="market-own-price-qty">
+                  <span className="market-own-price-main"><UnitNumber value={order.price} /> × <UnitNumber value={order.remainingQuantity} /></span>
+                  {isPartial && (
+                    <span className="market-own-mobile-fill" title={progressDetail}>
+                      {t('market.status.partiallyFilledPrefix')}
+                      <UnitNumber disableTooltip value={order.filledQuantity} />/<UnitNumber disableTooltip value={order.originalQuantity} />
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={isPartial ? 'market-own-status--partial' : undefined}
+                  title={progressDetail}
+                >
+                  {isPartial ? (
+                    <>
+                      <span className="market-own-fill-label">{t('market.status.partiallyFilledPrefix')}</span>
+                      <UnitNumber disableTooltip value={order.filledQuantity} /> / <UnitNumber disableTooltip value={order.originalQuantity} />
+                    </>
+                  ) : (
+                    t('market.status.open')
+                  )}
+                </span>
                 <time dateTime={order.expiresAt ?? order.createdAt} title={t('market.createdAt', { time: new Date(order.createdAt).toLocaleString('zh-CN') })}>
                   {order.expiresAt ? t('market.expiresOn', { date: new Date(order.expiresAt).toLocaleDateString('zh-CN') }) : t('market.noExpiry')}
                 </time>

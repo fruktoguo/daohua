@@ -5137,7 +5137,7 @@ input[type="checkbox"] {
 .market-own-order {
   display: grid;
   min-height: 34px;
-  grid-template-columns: 44px minmax(90px, 1fr) minmax(90px, auto) 58px minmax(94px, auto) 28px;
+  grid-template-columns: 44px minmax(90px, 1fr) minmax(84px, auto) minmax(76px, auto) minmax(94px, auto) 28px;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
@@ -5166,6 +5166,32 @@ input[type="checkbox"] {
   font-family: Arial, sans-serif;
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.market-own-order > .market-own-status--partial {
+  color: var(--gold-bright, #ffd57e);
+}
+
+.market-own-price-qty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  line-height: 1.25;
+}
+
+.market-own-price-main,
+.market-own-mobile-fill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-own-mobile-fill {
+  display: none;
+  color: var(--gold-bright, #ffd57e);
+  font-size: 10px;
 }
 
 .market-own-order > time {
@@ -7054,6 +7080,9 @@ input[type="checkbox"] {
 
   .market-own-order > time {
     display: none;
+  }
+  .market-own-mobile-fill {
+    display: block;
   }
 
   .market-toolbar {
