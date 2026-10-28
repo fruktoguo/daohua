@@ -88,5 +88,24 @@
       "manapointRegen": 3
     },
     "level": 18
+  },
+  {
+    "id": "equipment.rongling-pendant",
+    "name": "融灵妖丹佩",
+    "description": "妖丹温润藏造化，古玉聚气引灵机。\n嵌百载伥虎灵韵内丹于青铜古佩之中，通灵聚气，天地造化与异宝奇珍感知倍增。",
+    "slot": "trinket",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {},
+    "flatStats": {
+      "maxHitpoints": 15,
+      "hitpointRegen": 2,
+      "manapointRegen": 1,
+      "dropBonusPoints": 5
+    },
+    "enhanceProtectionItems": [
+      "item.demon-dan"
+    ],
+    "level": 12
   }
 ]

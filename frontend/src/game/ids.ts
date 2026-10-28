@@ -1227,6 +1227,14 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.pichen-shirt': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
   'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
   'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  // 稀有材料专属特殊装备
+  'equipment.baihu-dagger': { glyph: '🗡️', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'off-hand' },
+  'equipment.rongling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'trinket' },
+  'equipment.handi-armor': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'armor' },
+  'equipment.duanchen-blade': { glyph: '⚔️', tone: 'cyan', rarity: 'mystic', level: 20, subCategory: 'weapon' },
+  'equipment.mingsha-crown': { glyph: '👑', tone: 'cyan', rarity: 'mystic', level: 22, subCategory: 'head' },
+  'equipment.fentian-greaves': { glyph: '👖', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'legs' },
+  'equipment.demon-core-staff': { glyph: '⚔️', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'weapon' },
   // 一阶野外材料与秘籍（配表 items/manuals 全量对齐，防止未登记条目丢失图标与品类）
   'item.rock-fang': { glyph: '🦷', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
   'item.water-spirit-core': { glyph: '💧', tone: 'gray', rarity: 'mundane', level: 11, subCategory: 'exoticMaterial' },

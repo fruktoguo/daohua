@@ -1646,5 +1646,202 @@
         "aspect": "consciousness"
       }
     ]
+  },
+  {
+    "id": "forge.baihu-dagger",
+    "name": "白虎煞牙匕",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 25,
+    "inputs": {
+      "item.sha-fang": 1,
+      "equipment.fan-tie-dart": 20,
+      "item.refined-iron": 30,
+      "item.rock-fang": 20
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.baihu-dagger",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.rongling-pendant",
+    "name": "融灵妖丹佩",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 25,
+    "inputs": {
+      "item.demon-dan": 1,
+      "equipment.taomu-talisman": 20,
+      "item.peach-wood-crystal": 30,
+      "item.water-spirit-core": 20
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.rongling-pendant",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.handi-armor",
+    "name": "撼地金刚铠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 30,
+    "inputs": {
+      "item.ape-heart": 1,
+      "item.golden-ape-bone": 5,
+      "equipment.suozi-armor": 20,
+      "item.refined-copper": 30,
+      "item.thick-beast-hide": 20
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.handi-armor",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.duanchen-blade",
+    "name": "断尘残刃剑",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 35,
+    "inputs": {
+      "item.broken-blade": 1,
+      "equipment.pogang-sword": 50,
+      "item.refined-copper": 50,
+      "item.beast-fang": 30
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.duanchen-blade",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.mingsha-crown",
+    "name": "九幽煞骨冠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 35,
+    "inputs": {
+      "item.sha-bone": 1,
+      "equipment.ziwu-crown": 50,
+      "item.spirit-pine-crystal": 50,
+      "item.soul-talisman": 30
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.mingsha-crown",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.fentian-greaves",
+    "name": "陨星踏虚胫",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 40,
+    "inputs": {
+      "item.meteor-fragment": 1,
+      "equipment.tafeng-pants": 50,
+      "item.refined-copper": 50,
+      "item.rough-wolf-hide": 30
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.fentian-greaves",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.demon-core-staff",
+    "name": "坠星天核杖",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 40,
+    "inputs": {
+      "item.demon-core": 1,
+      "equipment.chaoyuan-staff": 50,
+      "item.spirit-pine-crystal": 50,
+      "item.fire-feather": 30
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.demon-core-staff",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
   }
 ]

@@ -199,5 +199,45 @@
       "skillBonusPoints": 15
     },
     "level": 18
+  },
+  {
+    "id": "equipment.duanchen-blade",
+    "name": "断尘残刃剑",
+    "description": "古战遗刃埋沙碛，断折难掩煞气森。\n古战场出土的前代飞剑残刃，虽失剑尖，剑内铭刻的真元灵轨完好，出剑疾如残影。",
+    "slot": "weapon",
+    "tier": 3,
+    "quality": 3,
+    "baseStatRatios": {
+      "physicalAttack": 0.28
+    },
+    "flatStats": {
+      "physicalAttack": 14,
+      "breakPower": 14,
+      "attackSpeedPoints": 15
+    },
+    "enhanceProtectionItems": [
+      "item.broken-blade"
+    ],
+    "level": 20
+  },
+  {
+    "id": "equipment.demon-core-staff",
+    "name": "坠星天核杖",
+    "description": "星核倒悬灵潮涌，古木生辉引九霄。\n以坠星古兽心脉妖核为枢机嵌于神木之巅，杖起之时沟通天地星海，诸法随心极速流转。",
+    "slot": "weapon",
+    "tier": 3,
+    "quality": 3,
+    "baseStatRatios": {
+      "spellAttack": 0.32
+    },
+    "flatStats": {
+      "spellAttack": 16,
+      "accuracy": 16,
+      "cooldownReductionPoints": 15
+    },
+    "enhanceProtectionItems": [
+      "item.demon-core"
+    ],
+    "level": 24
   }
 ]

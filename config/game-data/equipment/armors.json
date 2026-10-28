@@ -520,5 +520,68 @@
       "skillBonusPoints": 2
     },
     "level": 18
+  },
+  {
+    "id": "equipment.handi-armor",
+    "name": "撼地金刚铠",
+    "description": "猿骨铸龙脊，狂心御万击。\n以金背巨猿金刚肋骨为主架、嵌狂暴煞心于护心宝镜之重装战铠，坚不可摧，震击反噬。",
+    "slot": "armor",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalArmor": 0.20,
+      "maxHitpoints": 0.10
+    },
+    "flatStats": {
+      "physicalArmor": 12,
+      "maxHitpoints": 10,
+      "damageReflectPoints": 15
+    },
+    "enhanceProtectionItems": [
+      "item.ape-heart"
+    ],
+    "level": 16
+  },
+  {
+    "id": "equipment.mingsha-crown",
+    "name": "九幽煞骨冠",
+    "description": "幽骨聚煞寒透顶，神识澄明万法辟。\n坠魔祭司魔煞头骨雕成的幽冥道冠，刺骨冰寒阻绝妄念，常驻幽冥壁障化解诸般煞气。",
+    "slot": "head",
+    "tier": 3,
+    "quality": 3,
+    "baseStatRatios": {
+      "spellResistance": 0.12,
+      "physicalArmor": 0.06
+    },
+    "flatStats": {
+      "spellResistance": 6,
+      "maxHitpoints": 8,
+      "damageAbsorptionPoints": 8
+    },
+    "enhanceProtectionItems": [
+      "item.sha-bone"
+    ],
+    "level": 22
+  },
+  {
+    "id": "equipment.fentian-greaves",
+    "name": "陨星踏虚胫",
+    "description": "踏碎星辰履九霄，虚空渡步不沾尘。\n九天陨星黑铁熔铸的流线战胫，表面流转暗红星火余温，身轻若燕，行动极速绝尘。",
+    "slot": "legs",
+    "tier": 3,
+    "quality": 3,
+    "baseStatRatios": {
+      "evasion": 0.14,
+      "physicalArmor": 0.08
+    },
+    "flatStats": {
+      "evasion": 8,
+      "criticalAvoidance": 6,
+      "actionSpeedPoints": 10
+    },
+    "enhanceProtectionItems": [
+      "item.meteor-fragment"
+    ],
+    "level": 24
   }
 ]

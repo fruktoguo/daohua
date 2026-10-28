@@ -429,7 +429,8 @@ static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
     "damageAbsorptionPoints",
     "attackSpeedPoints", "actionSpeedPoints", "cooldownReductionPoints", "threatBonusPoints",
     "criticalDamageBonusPoints",
-    "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints", "threatOnTakenPoints"
+    "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints", "threatOnTakenPoints",
+    "dropBonusPoints", "cultivationExpBonusPoints", "combatExpBonusPoints"
 };
 
 /// <summary>技能战内 Buff 授权键：读条/免伤/增伤/威胁点数与回复、时长、叠层上限与层数派生通道。</summary>

@@ -988,6 +988,54 @@ PRESET_BATCHES = {
             "caption": "Bottom-right item: A solid filled pure white minimalist vector logo of an iron battle shield breaking into two pieces, broad solid white shapes, strictly solid pure white on solid pure black."
         }
     ],
+    # 稀有材料打造专属装备批次 A (4件套: 白虎煞牙匕、融灵妖丹佩、断尘残刃剑、坠星天核杖)
+    "rare_weapons": [
+        {
+            "id": "equipment.baihu-dagger",
+            "name": "白虎煞牙匕",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [白虎煞牙匕 - White Tiger Fiend Fang Dagger]. A curved ferocious ritual dagger carved from the sharpened fang of an ancient tiger demon, pale jagged bone blade with subtle dark-red blood runes, 45-degree diagonal composition, dark cord-wrapped hilt with a crimson tiger-stripe tassel, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "equipment.rongling-pendant",
+            "name": "融灵妖丹佩",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [融灵妖丹佩 - Spirit-Merging Beast Dan Pendant]. A sacred circular Chinese Daoist talisman pendant carved from dark bronze and celadon jade, mounting a glowing amber tiger demon core orb in the center, delicate braided red cinnabar cord and gold tassel below, clean floating symmetrical silhouette, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "equipment.duanchen-blade",
+            "name": "断尘残刃剑",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [断尘残刃剑 - Dust-Severing Broken Blade]. An ancient broken Chinese Daoist flying sword forged from dark cold iron, fractured jagged blade tip still radiating subtle cyan spiritual sword-qi, 45-degree diagonal dynamic composition, weathered bronze crossguard, wrapped dark hilt, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "equipment.demon-core-staff",
+            "name": "坠星天核杖",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [坠星天核杖 - Falling Star Core Staff]. An ancient gnarled Daoist spirit-wood staff, 45-degree diagonal composition, the top carved like dragon claws clasping a pulsating glowing purple and crimson meteoric star demon core crystal, subtle starry dust drifting, bold dark ink outline, clean 2D game icon."
+        }
+    ],
+    # 稀有材料打造专属装备批次 B (3件套防具: 九幽煞骨冠、撼地金刚铠、陨星踏虚胫)
+    "rare_armors": [
+        {
+            "id": "equipment.mingsha-crown",
+            "name": "九幽煞骨冠",
+            "bbox": [-400, -440, -120, -180],
+            "caption": "Top-left item: [九幽煞骨冠 - Nether Fiend Bone Crown]. A sinister Daoist lotus crown sculpted from polished dark demon-beast skull bone, pale bone spikes curving upward like horns, subtle eerie pale-blue spiritual fire glow, clean symmetrical frontal view, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "equipment.handi-armor",
+            "name": "撼地金刚铠",
+            "bbox": [-400, -130, -120, 130],
+            "caption": "Top-center item: [撼地金刚铠 - Earth-Shaking Vajra Armor]. A massive heavy combat cuirass constructed of interlaced golden ape bone ribs and dark crimson bronze plates, a heavy glowing gold vajra beast heart mirror mounted in the center chest, symmetrical frontal view, bold dark ink outline, clean 2D game icon."
+        },
+        {
+            "id": "equipment.fentian-greaves",
+            "name": "陨星踏虚胫",
+            "bbox": [-400, 180, -120, 440],
+            "caption": "Top-right item: [陨星踏虚胫 - Meteor Void-Striding Greaves]. Heavy martial armored greaves forged from dark meteoric iron with glowing orange molten star-fire veins across the shin plates, supple leather calf bindings, symmetrical frontal view, bold dark ink outline, clean 2D game icon."
+        }
+    ],
 }
 
 def _sanitize_workflow(wf):

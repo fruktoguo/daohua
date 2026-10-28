@@ -159,5 +159,25 @@
       "healingBonusPoints": 6
     },
     "level": 18
+  },
+  {
+    "id": "equipment.baihu-dagger",
+    "name": "白虎煞牙匕",
+    "description": "白虎裂风煞，森齿刃如锋。\n以山林凶兽伥虎口中森白利齿打磨而成的副手短匕，寒芒淬血，暴烈无匹。",
+    "slot": "off-hand",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.10
+    },
+    "flatStats": {
+      "physicalAttack": 8,
+      "accuracy": 9,
+      "criticalDamageBonusPoints": 30
+    },
+    "enhanceProtectionItems": [
+      "item.sha-fang"
+    ],
+    "level": 12
   }
 ]

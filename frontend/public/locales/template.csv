@@ -1350,6 +1350,8 @@ game.action.explore.mine-dark-iron.description,"在清石水滩露天砂石层�
 game.action.explore.mine-dark-iron.name,"挖掘 乌铁矿",""
 game.action.explore.mine-spirit-stone.description,"在玄元门遗址深处的灵石矿脉中开采天然灵石。",""
 game.action.explore.mine-spirit-stone.name,"开采 灵石矿脉",""
+game.action.forge.baihu-dagger.description,"以伥虎煞齿与兽骨匕合铸之凶煞短匕，出招暴烈。",""
+game.action.forge.baihu-dagger.name,"白虎煞牙匕",""
 game.action.forge.baina-armor.description,"以百炼铁与兽皮拼接缝制的护身短甲，结实耐磨。",""
 game.action.forge.baina-armor.name,"百衲甲",""
 game.action.forge.bibo-pendant.description,"以桃木晶与水灵原核雕琢的灵水玉佩，回气绵绵。",""
@@ -1370,12 +1372,20 @@ game.action.forge.chijin-helmet.description,"以赤铜精与兽牙重铸束发�
 game.action.forge.chijin-helmet.name,"赤金盔",""
 game.action.forge.chiwen-ring.description,"以赤铜精与兽牙重铸兽牙坠炼制的灵戒。",""
 game.action.forge.chiwen-ring.name,"赤纹戒",""
+game.action.forge.demon-core-staff.description,"以坠星妖核与朝元杖合灵之天星法杖，神通疾转。",""
+game.action.forge.demon-core-staff.name,"坠星天核杖",""
 game.action.forge.diejia-leggings.description,"以百炼铁与重甲厚皮缝缀的沉铁护腿，下盘如岳。",""
 game.action.forge.diejia-leggings.name,"叠甲胫",""
+game.action.forge.duanchen-blade.description,"以古战残刃与破罡剑熔炼重铸之古修残锋，疾风出招。",""
+game.action.forge.duanchen-blade.name,"断尘残刃剑",""
 game.action.forge.fan-tie-dart.description,"以百炼铁与兽骨打制的贴身轻匕，反握藏锋。",""
 game.action.forge.fan-tie-dart.name,"兽骨匕",""
+game.action.forge.fentian-greaves.description,"以陨星破片与踏风裤熔铸之流线战胫，行动极速。",""
+game.action.forge.fentian-greaves.name,"陨星踏虚胫",""
 game.action.forge.ganlu-flask.description,"以桃木晶与破碎灵核烧制的小瓷瓶，盛满晨露甘露。",""
 game.action.forge.ganlu-flask.name,"甘露瓶",""
+game.action.forge.handi-armor.description,"以暴猿煞心、金背猿骨与锁子重甲精炼铸就的重铠，坚韧反震。",""
+game.action.forge.handi-armor.name,"撼地金刚铠",""
 game.action.forge.huichun-bell.description,"以灵松晶与火羽重铸甘露瓶而成的回春铜铃。",""
 game.action.forge.huichun-bell.name,"回春铃",""
 game.action.forge.hunyuan-scarf.description,"以桃木晶与破碎灵核炼制的静心道巾，轻柔透气。",""
@@ -1398,6 +1408,8 @@ game.action.forge.liuyun-skirt.description,"以灵松晶与火羽重铸行气裤
 game.action.forge.liuyun-skirt.name,"流云裳",""
 game.action.forge.mingquan-zither.description,"以桃木晶与水灵原核精制的碧泉古琴，清音洗心。",""
 game.action.forge.mingquan-zither.name,"鸣泉古琴",""
+game.action.forge.mingsha-crown.description,"以祭司煞骨与子午冠精雕之幽冥道冠，幽冥护体。",""
+game.action.forge.mingsha-crown.name,"九幽煞骨冠",""
 game.action.forge.ningshui-charm.description,"以桃木晶与水灵原核雕琢的御水法符，增幅术法。",""
 game.action.forge.ningshui-charm.name,"凝水灵符",""
 game.action.forge.pichen-shirt.description,"以灵松晶与火羽重铸素麻袍织就的不染法衣。",""
@@ -1414,6 +1426,8 @@ game.action.forge.qingmu-bead.description,"以桃木晶与破碎灵核磨制的�
 game.action.forge.qingmu-bead.name,"桃灵珠",""
 game.action.forge.qingpi-armor.description,"以百炼铁与兽皮精裁的轻巧短甲，护心御风。",""
 game.action.forge.qingpi-armor.name,"轻皮甲",""
+game.action.forge.rongling-pendant.description,"以伥虎妖丹与桃木符融铸之灵气古佩，通灵聚宝。",""
+game.action.forge.rongling-pendant.name,"融灵妖丹佩",""
 game.action.forge.shouya-pendant.description,"以百炼铁穿系凶兽尖牙制成的项坠，野性十足。",""
 game.action.forge.shouya-pendant.name,"兽牙坠",""
 game.action.forge.shufa-scarf.description,"以百炼铁与兽皮编织的武行束发头巾，简朴干练。",""
@@ -1544,6 +1558,9 @@ game.grade.yellow,"黄",""
 game.item.currency.spirit-stone.description,"晶棱含光，灵韵内藏。
 蕴含纯净天地灵气的六角晶石，光华内敛。",""
 game.item.currency.spirit-stone.label,"灵石",""
+game.item.equipment.baihu-dagger.description,"白虎裂风煞，森齿刃如锋。
+以山林凶兽伥虎口中森白利齿打磨而成的副手短匕，寒芒淬血，暴烈无匹。",""
+game.item.equipment.baihu-dagger.label,"白虎煞牙匕",""
 game.item.equipment.baina-armor.description,"百衲联皮布，缝缀成坚甲。
 多层坚韧粗布与兽皮拼接缝制的护身短甲，结实耐磨。",""
 game.item.equipment.baina-armor.label,"百衲甲",""
@@ -1574,15 +1591,27 @@ game.item.equipment.chijin-helmet.label,"赤金盔",""
 game.item.equipment.chiwen-ring.description,"赤纹绕指龙吟细。
 赤红铜精打磨而成的指环，戒面铭刻着古朴赤龙纹样。",""
 game.item.equipment.chiwen-ring.label,"赤纹戒",""
+game.item.equipment.demon-core-staff.description,"星核倒悬灵潮涌，古木生辉引九霄。
+以坠星古兽心脉妖核为枢机嵌于神木之巅，杖起之时沟通天地星海，诸法随心极速流转。",""
+game.item.equipment.demon-core-staff.label,"坠星天核杖",""
 game.item.equipment.diejia-leggings.description,"叠甲护腿，下盘如岳。
 层层铁叶缝缀包裹的武行护腿，稳固下盘，步履沉实。",""
 game.item.equipment.diejia-leggings.label,"叠甲胫",""
+game.item.equipment.duanchen-blade.description,"古战遗刃埋沙碛，断折难掩煞气森。
+古战场出土的前代飞剑残刃，虽失剑尖，剑内铭刻的真元灵轨完好，出剑疾如残影。",""
+game.item.equipment.duanchen-blade.label,"断尘残刃剑",""
 game.item.equipment.fan-tie-dart.description,"袖底藏锋，反握出奇。
 百炼铁包兽骨打制的贴身轻匕，短小精悍，反握藏锋。",""
 game.item.equipment.fan-tie-dart.label,"兽骨匕",""
+game.item.equipment.fentian-greaves.description,"踏碎星辰履九霄，虚空渡步不沾尘。
+九天陨星黑铁熔铸的流线战胫，表面流转暗红星火余温，身轻若燕，行动极速绝尘。",""
+game.item.equipment.fentian-greaves.label,"陨星踏虚胫",""
 game.item.equipment.ganlu-flask.description,"甘露一滴，枯木回春。
 盛有清晨甘露的小瓷瓶，贴身携带可润养经脉。",""
 game.item.equipment.ganlu-flask.label,"甘露瓶",""
+game.item.equipment.handi-armor.description,"猿骨铸龙脊，狂心御万击。
+以金背巨猿金刚肋骨为主架、嵌狂暴煞心于护心宝镜之重装战铠，坚不可摧，震击反噬。",""
+game.item.equipment.handi-armor.label,"撼地金刚铠",""
 game.item.equipment.huichun-bell.description,"铃动回春，息续不绝。
 镂刻回春符纹的铜铃，铃声清越，闻者气血渐苏。",""
 game.item.equipment.huichun-bell.label,"回春铃",""
@@ -1616,6 +1645,9 @@ game.item.equipment.liuyun-skirt.label,"流云裳",""
 game.item.equipment.mingquan-zither.description,"水鸣涧壑底，清响洗凡尘。
 嵌有水灵原核的素雅古琴，抚弄间若涧泉鸣玉，舒经活络。",""
 game.item.equipment.mingquan-zither.label,"鸣泉古琴",""
+game.item.equipment.mingsha-crown.description,"幽骨聚煞寒透顶，神识澄明万法辟。
+坠魔祭司魔煞头骨雕成的幽冥道冠，刺骨冰寒阻绝妄念，常驻幽冥壁障化解诸般煞气。",""
+game.item.equipment.mingsha-crown.label,"九幽煞骨冠",""
 game.item.equipment.ningshui-charm.description,"水华凝玉符，灵波润术芒。
 以水灵原核雕琢的御水法符，佩于左臂，引动水脉灵韵增幅术法。",""
 game.item.equipment.ningshui-charm.label,"凝水灵符",""
@@ -1640,6 +1672,9 @@ game.item.equipment.qingmu-bead.label,"桃灵珠",""
 game.item.equipment.qingpi-armor.description,"皮薄身轻，动如奔雷。
 坚韧兽皮剪裁缝制的轻巧短甲，护心御风，便于拳脚发力。",""
 game.item.equipment.qingpi-armor.label,"轻皮甲",""
+game.item.equipment.rongling-pendant.description,"妖丹温润藏造化，古玉聚气引灵机。
+嵌百载伥虎灵韵内丹于青铜古佩之中，通灵聚气，天地造化与异宝奇珍感知倍增。",""
+game.item.equipment.rongling-pendant.label,"融灵妖丹佩",""
 game.item.equipment.shouya-pendant.description,"兽牙悬颈，野性随身。
 以凶兽獠牙穿系而成的粗犷项坠，野性十足。",""
 game.item.equipment.shouya-pendant.label,"兽牙坠",""

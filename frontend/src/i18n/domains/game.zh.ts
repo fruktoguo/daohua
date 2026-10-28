@@ -192,6 +192,14 @@ export const gameZh = {
       'forge.tool-talisman-brush': { name: '桃木笔', description: '以桃木为杆、残魄灵符凝锋制成的画符灵笔，落纸符意自成。' },
       'forge.tool-formation-flag': { name: '桃晶旗', description: '以桃木与桃木晶扎就的小小阵旗，插落之处地气听调。' },
       'forge.tool-quench-anvil': { name: '淬灵锤', description: '以百炼铁与碎灵核合铸的强化重锤，落锤器物灵光内蕴。' },
+      // 稀有材料打造专属装备
+      'forge.baihu-dagger': { name: '白虎煞牙匕', description: '以伥虎煞齿与兽骨匕合铸之凶煞短匕，出招暴烈。' },
+      'forge.rongling-pendant': { name: '融灵妖丹佩', description: '以伥虎妖丹与桃木符融铸之灵气古佩，通灵聚宝。' },
+      'forge.handi-armor': { name: '撼地金刚铠', description: '以暴猿煞心、金背猿骨与锁子重甲精炼铸就的重铠，坚韧反震。' },
+      'forge.duanchen-blade': { name: '断尘残刃剑', description: '以古战残刃与破罡剑熔炼重铸之古修残锋，疾风出招。' },
+      'forge.mingsha-crown': { name: '九幽煞骨冠', description: '以祭司煞骨与子午冠精雕之幽冥道冠，幽冥护体。' },
+      'forge.fentian-greaves': { name: '陨星踏虚胫', description: '以陨星破片与踏风裤熔铸之流线战胫，行动极速。' },
+      'forge.demon-core-staff': { name: '坠星天核杖', description: '以坠星妖核与朝元杖合灵之天星法杖，神通疾转。' },
 
       // 符箓·阵法·强化
       'talisman.draw-leiji': { name: '雷击符', description: '以桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。' },
@@ -371,6 +379,14 @@ export const gameZh = {
       'equipment.tool-talisman-brush': { label: '桃木笔', description: '桃木为杆，魂丝聚锋。\n桃木削杆、魂丝聚锋的画符灵笔，蘸朱砂落纸，符意一气呵成。' },
       'equipment.tool-formation-flag': { label: '桃晶旗', description: '旗落之处地气调。\n桃木晶缀顶的小小阵旗，插落之处地气听调，阵势应手而成。' },
       'equipment.tool-quench-anvil': { label: '淬灵锤', description: '灵芯淬刃，落锤生灵。\n碎灵芯嵌心的百炼强化重锤，落锤器物灵光内蕴，强化事半功倍。' },
+      // 稀有材料专属特殊装备
+      'equipment.baihu-dagger': { label: '白虎煞牙匕', description: '白虎裂风煞，森齿刃如锋。\n以山林凶兽伥虎口中森白利齿打磨而成的副手短匕，寒芒淬血，暴烈无匹。' },
+      'equipment.rongling-pendant': { label: '融灵妖丹佩', description: '妖丹温润藏造化，古玉聚气引灵机。\n嵌百载伥虎灵韵内丹于青铜古佩之中，通灵聚气，天地造化与异宝奇珍感知倍增。' },
+      'equipment.handi-armor': { label: '撼地金刚铠', description: '猿骨铸龙脊，狂心御万击。\n以金背巨猿金刚肋骨为主架、嵌狂暴煞心于护心宝镜之重装战铠，坚不可摧，震击反噬。' },
+      'equipment.duanchen-blade': { label: '断尘残刃剑', description: '古战遗刃埋沙碛，断折难掩煞气森。\n古战场出土的前代飞剑残刃，虽失剑尖，剑内铭刻的真元灵轨完好，出剑疾如残影。' },
+      'equipment.mingsha-crown': { label: '九幽煞骨冠', description: '幽骨聚煞寒透顶，神识澄明万法辟。\n坠魔祭司魔煞头骨雕成的幽冥道冠，刺骨冰寒阻绝妄念，常驻幽冥壁障化解诸般煞气。' },
+      'equipment.fentian-greaves': { label: '陨星踏虚胫', description: '踏碎星辰履九霄，虚空渡步不沾尘。\n九天陨星黑铁熔铸的流线战胫，表面流转暗红星火余温，身轻若燕，行动极速绝尘。' },
+      'equipment.demon-core-staff': { label: '坠星天核杖', description: '星核倒悬灵潮涌，古木生辉引九霄。\n以坠星古兽心脉妖核为枢机嵌于神木之巅，杖起之时沟通天地星海，诸法随心极速流转。' },
     },
     realm: {
       stageFallback: '凡俗',

@@ -24,15 +24,32 @@ const levelToTier = (level) => (level <= 1 ? 1 : Math.min(8, Math.floor((level -
 const isGradeMaterial = (itemId) =>
   materialById.has(itemId) && materialById.get(itemId).category === 'material'
 
+const rareEquipmentIds = new Set([
+  'equipment.baihu-dagger',
+  'equipment.rongling-pendant',
+  'equipment.handi-armor',
+  'equipment.duanchen-blade',
+  'equipment.mingsha-crown',
+  'equipment.fentian-greaves',
+  'equipment.demon-core-staff'
+])
+
 const gatherYields = new Set()
 const manufacturingInputs = new Set()
+const rareEquipmentInputs = new Map()
 for (const action of actions) {
-  for (const y of action.yields ?? []) {
+  const yields = action.yields ?? []
+  for (const y of yields) {
     if (y.kind === 'item' && y.id && isGradeMaterial(y.id)) gatherYields.add(y.id)
   }
-  // 制造 = 生活制造大类的 alchemy/forging/talisman/formation 行动，收集其全部材料消耗
+  // 制造 = 生活制造大类的 alchemy/forging/talisman/formation 行动
   if (action.type === 'alchemy' || action.type === 'enhancement') {
-    for (const itemId of Object.keys(action.inputs ?? {})) manufacturingInputs.add(itemId)
+    const rareItem = yields.find(y => rareEquipmentIds.has(y.id))
+    if (rareItem) {
+      rareEquipmentInputs.set(rareItem.id, Object.keys(action.inputs ?? {}))
+    } else {
+      for (const itemId of Object.keys(action.inputs ?? {})) manufacturingInputs.add(itemId)
+    }
   }
 }
 
@@ -90,9 +107,17 @@ test('材料品阶：常规物品与装备制造只允许消耗凡品材料', ()
     const tier = materialById.get(itemId)?.tier
     // 非材料条目（装备、残卷等）不在材料品阶规则内
     if (tier === undefined) continue
-    if (tier !== 1) violations.push(`${itemId} 为 tier${tier} 稀有材料却被制造配方消耗`)
+    if (tier !== 1) violations.push(`${itemId} 为 tier${tier} 稀有材料却被常规制造配方消耗`)
   }
   assert.deepEqual(violations, [], '稀有材料不得出现在常规制造配方的消耗栏')
+})
+
+test('材料品阶：专属特殊装备锻造必须消耗对应稀有材料', () => {
+  assert.equal(rareEquipmentInputs.size, rareEquipmentIds.size, '全部 7 件特殊装备必须拥有锻造配方')
+  for (const [equipId, inputs] of rareEquipmentInputs) {
+    const rareInputs = inputs.filter(id => (materialById.get(id)?.tier ?? 1) >= 2)
+    assert.equal(rareInputs.length, 1, `${equipId} 锻造配方必须且只能消耗 1 种稀有材料`)
+  }
 })
 
 test('材料品阶：凡品材料必有正产出来源（采集 / 高爆率掉落 / 凡品加工）', () => {
