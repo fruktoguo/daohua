@@ -436,6 +436,8 @@ export const appZh = {
         manual: '功法',
         material: '材料',
       },
+      groupTotalValue: '总价值 {total} 灵石',
+      groupTotalValueExact: '该品类总价值：{total} 灵石',
     },
     // 装备面板
     equipmentPanel: {

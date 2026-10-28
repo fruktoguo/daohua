@@ -1,6 +1,6 @@
 import { getT, hasTranslation, type TFunction } from '../i18n'
 import { calculateAbilityLevelAndProgress } from './combatConstants'
-import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
+import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
 
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
@@ -961,6 +961,70 @@ export function getItemReferencePrice(
   }
 
   return 0
+}
+
+/**
+ * 获取背包物品单件系统出售/回收价值（灵石计）：
+ * 1. 装备类（itemId 以 equipment. 开头或命中装备配表）：按基础回收售价与当前强化等级变体计算折算后售价；
+ * 2. 普通物品：按配表定义 sellPrice 下发值，未下发则尝试静态字典 resolveDefaultItemDefinition 兜底；
+ * 3. 灵石本身 sellPrice 为 1（返回 1），不可出售通宝/物品返回 0。
+ */
+export function resolveInventoryItemUnitPrice(
+  itemId: string,
+  variant?: string | null,
+  itemMap?: Map<string, ItemDefinition> | readonly ItemDefinition[] | null,
+  eqMap?: Map<string, CombatEquipmentDefinition> | readonly CombatEquipmentDefinition[] | null,
+): number {
+  const eqDef = eqMap
+    ? (eqMap instanceof Map ? eqMap.get(itemId) : findEquipmentInCatalog(eqMap, itemId))
+    : undefined
+  const isEquipment = itemId.startsWith('equipment.') || eqDef !== undefined
+  if (isEquipment) {
+    const eqBase = resolveEquipmentBaseSellPrice(itemId, eqDef)
+    if (eqBase > 0) {
+      const enhancementLevel = parseEnhancementVariant(variant)
+      return calculateEquipmentSellPrice(eqBase, enhancementLevel)
+    }
+  }
+
+  const itemDef = itemMap
+    ? (itemMap instanceof Map ? itemMap.get(itemId) : findItemInCatalog(itemMap, itemId))
+    : undefined
+  if (itemDef?.sellPrice && itemDef.sellPrice > 0) {
+    return itemDef.sellPrice
+  }
+
+  const defaultDef = resolveDefaultItemDefinition(itemId)
+  if (defaultDef?.sellPrice && defaultDef.sellPrice > 0) {
+    return defaultDef.sellPrice
+  }
+
+  return 0
+}
+
+/**
+ * 汇总计算储物袋某一组中所有可支配物品的合计总价值（以灵石计价）：
+ * 自动扣除已被穿戴或正在强化锁定的件数；无有效价值时返回 0。
+ */
+export function calculateInventoryGroupTotalValue(
+  items: readonly InventoryItem[],
+  itemMap?: Map<string, ItemDefinition> | readonly ItemDefinition[] | null,
+  eqMap?: Map<string, CombatEquipmentDefinition> | readonly CombatEquipmentDefinition[] | null,
+  occupiedCounts?: ReadonlyMap<string, number> | null,
+): number {
+  let total = 0
+  for (const item of items) {
+    if (item.amount <= 0) continue
+    const enhanceLevel = parseEnhancementVariant(item.variant)
+    const occupied = occupiedCounts?.get(`${item.itemId}#${enhanceLevel}`) ?? 0
+    const availableAmount = Math.max(0, item.amount - occupied)
+    if (availableAmount <= 0) continue
+    const unitPrice = resolveInventoryItemUnitPrice(item.itemId, item.variant, itemMap, eqMap)
+    if (unitPrice > 0) {
+      total += availableAmount * unitPrice
+    }
+  }
+  return total
 }
 
 /**

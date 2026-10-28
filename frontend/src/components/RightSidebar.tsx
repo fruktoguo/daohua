@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 import { useGameStore } from '../game/gameStore'
-import { INVENTORY_GROUP_ORDER, getEquipmentMap, getItemMap, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
+import { INVENTORY_GROUP_ORDER, calculateInventoryGroupTotalValue, getEquipmentMap, getItemMap, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
+import { formatNumber } from '../game/format'
 import type { InventoryItem } from '../game/types'
 import { useUiStore, type RightColumnTab } from '../uiStore'
 import { useT } from '../i18n'
@@ -60,22 +61,38 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
   // 队列补丁到这里只退化为一次 O(袋内条目) 过滤。
   const groups = useMemo(() => {
     const occupiedCounts = getOccupiedEquipmentCounts(equippedList, queueEntries)
-    if (occupiedCounts.size === 0) return sortedGroups.filter(group => group.list.length > 0)
+    const itemMap = getItemMap(items)
+    const eqMap = getEquipmentMap(equipment)
     return sortedGroups
-      .map(group => ({
-        key: group.key,
-        list: group.list.filter(item =>
-          item.amount - (occupiedCounts.get(`${item.itemId}#${parseEnhancementVariant(item.variant)}`) ?? 0) > 0
-        ),
-      }))
+      .map(group => {
+        const filteredList = occupiedCounts.size === 0
+          ? group.list
+          : group.list.filter(item =>
+              item.amount - (occupiedCounts.get(`${item.itemId}#${parseEnhancementVariant(item.variant)}`) ?? 0) > 0
+            )
+        const totalValue = calculateInventoryGroupTotalValue(filteredList, itemMap, eqMap, occupiedCounts)
+        return {
+          key: group.key,
+          list: filteredList,
+          totalValue,
+        }
+      })
       .filter(group => group.list.length > 0)
-  }, [sortedGroups, equippedList, queueEntries])
+  }, [sortedGroups, equippedList, queueEntries, items, equipment])
   return (
     <div className={`inventory-view-panel ${className}`.trim()}>
       {groups.map(group => (
         <section className="inventory-group" key={group.key}>
           <div className="inventory-group-header">
-            <span className="inventory-group-title">{t(`app.inventoryPanel.group.${group.key}`)}</span>
+            <span className="inventory-group-title">
+              <span className="inventory-group-name">{t(`app.inventoryPanel.group.${group.key}`)}</span>
+              <span
+                className="inventory-group-value"
+                title={t('app.inventoryPanel.groupTotalValueExact', { total: group.totalValue.toLocaleString('zh-CN') })}
+              >
+                （{t('app.inventoryPanel.groupTotalValue', { total: formatNumber(group.totalValue) })}）
+              </span>
+            </span>
             <span className="inventory-group-count">{group.list.length}</span>
           </div>
           <div className="inventory-grid">

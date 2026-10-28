@@ -6041,10 +6041,26 @@ input[type="checkbox"] {
 }
 
 .inventory-group-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
   color: var(--gold-bright);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.5px;
+}
+
+.inventory-group-name {
+  flex-shrink: 0;
+}
+
+.inventory-group-value {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 0;
+  cursor: help;
+  white-space: nowrap;
 }
 
 .inventory-group-count {
