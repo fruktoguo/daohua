@@ -1,0 +1,16 @@
+{
+  "id": "market.settings",
+  "referencePrice": {
+    "tradeBaseWeight": 15,
+    "globalMultiplier": 1.0,
+    "maxSingleTradeWeight": 0.5,
+    "targetCapacities": {
+      "enhancedEquipment": 48,
+      "equipment": 96,
+      "consumable": 240,
+      "manual": 240,
+      "material": 1000,
+      "default": 300
+    }
+  }
+}

@@ -90,6 +90,8 @@ public sealed class MarketItemStatsTests
             Assert.Equal(4d, stats3.BidQuantity);
             Assert.Equal(3d, stats3.DayVolume);
             Assert.Equal(3d, stats3.WeekVolume);
+            Assert.Equal(90d, stats3.ReferencePrice);
+            Assert.Equal(90d, runtime.TryGetReferencePrice(instrument));
 
             // 4. 撤销 90 元卖单余量（2 件）：卖一价自动回落到 100 元，成交量不受撤单影响保留
             await runtime.CancelAsync(sellOrder2.OrderId, seller2, instrument, $"market-cancel:{seller2.Value:D}:{sellOrder2.OrderId.Value:D}");

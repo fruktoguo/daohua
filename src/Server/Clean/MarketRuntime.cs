@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using Domain.Common;
+using Domain.GameData;
 using Domain.Market;
 using Domain.Player;
 using Server.Clean.Social;
@@ -28,6 +29,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private readonly ServerOptions _options;
     private readonly ILogger<MarketRuntime> _logger;
     private readonly IParticipationAssetBoundary? _participationAssets;
+    private readonly GameDataCatalog? _gameData;
     private readonly ConcurrentDictionary<MarketInstrument, OrderBook> _books = new();
     private readonly ConcurrentDictionary<MarketInstrument, double> _referencePrices = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -54,12 +56,14 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     /// <param name="logger">日志记录器。</param>
     /// <param name="participationAssets">资产提交前结清在线消耗品实耗的会话门；独立仓储测试可省略。</param>
     public MarketRuntime(PostgresMarketRepository store, ServerOptions options, ILogger<MarketRuntime> logger,
-        IParticipationAssetBoundary? participationAssets = null)
+        IParticipationAssetBoundary? participationAssets = null,
+        GameDataCatalog? gameData = null)
     {
         _store = store;
         _options = options;
         _logger = logger;
         _participationAssets = participationAssets;
+        _gameData = gameData;
     }
 
     /// <summary>
@@ -449,7 +453,15 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                     {
                         if (double.IsFinite(fill.Price) && fill.Price > 0)
                         {
-                            _referencePrices.AddOrUpdate(request.Instrument, fill.Price, (_, old) => old * 0.9 + fill.Price * 0.1);
+                            var weight = ReferencePriceRules.CalculateTradeWeight(
+                                request.Instrument.ItemId.Value,
+                                request.Instrument.Variant,
+                                fill.Quantity,
+                                _gameData);
+                            _referencePrices.AddOrUpdate(
+                                request.Instrument,
+                                fill.Price,
+                                (_, old) => ReferencePriceRules.CalculateNextReferencePrice(old, fill.Price, weight));
                         }
                     }
                     // 买卖双方钱包均已随成交事务入账：通知在线玩家运行时重读余额并推送差额。

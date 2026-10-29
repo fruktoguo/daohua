@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Domain.Player;
 using Domain.World;
-
+using Domain.Market;
 namespace Domain.GameData;
 
 /// <summary>行动行为类型分类</summary>
@@ -496,7 +496,8 @@ public sealed class GameDataCatalog
         DuelSettings? duel = null,
         RealmProgressionCatalog? realmProgression = null,
         IReadOnlyDictionary<string, BuildingDefinition>? buildings = null,
-        ShopCatalog? shopOffers = null)
+        ShopCatalog? shopOffers = null,
+        MarketReferencePriceSettings? marketReferencePrice = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -524,6 +525,7 @@ public sealed class GameDataCatalog
                 throw new DomainException(error.Code, $"功法 {abilityId} 配表无效：{error.Message}");
             }
         Duel = duel ?? DuelSettings.Default;
+        MarketReferencePrice = marketReferencePrice ?? MarketReferencePriceSettings.Default;
         // 怪物同构建模底座 = 期望玩家面板（expectedAttributes / tiers[].finalExpected），禁止回退裸锚点；
         // 期望目录与基础锚点同为 1/18/30/…/127 等阶边界，TierAt 口径一致可复用。
         CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, expectedAttributes, baseAttributes, Abilities, realmProgression);
@@ -613,6 +615,8 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<string, BuildingDefinition> Buildings { get; }
     /// <summary>系统商店商品目录（官价直售；未配置 shop 配表时为空目录）。</summary>
     public ShopCatalog ShopOffers { get; }
+    /// <summary>坊市市场参考价量次复合平滑模型调参（market.json）。</summary>
+    public MarketReferencePriceSettings MarketReferencePrice { get; }
 
     /// <summary>
     /// 触发条件可引用的 Buff 标识 → 显示名派生表：从当前配表枚举实际可被授予的 Buff——
@@ -694,6 +698,7 @@ public sealed class GameDataCatalog
         var buildings = new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal);
         var shopOffers = new List<ShopOfferDefinition>();
         DuelSettings? duel = null;
+        MarketReferencePriceSettings? marketReferencePrice = null;
         BaseAttributeCatalog? baseAttributes = null;
         BaseAttributeCatalog? expectedAttributes = null;
         RealmProgressionCatalog? realmProgression = null;
@@ -756,6 +761,10 @@ public sealed class GameDataCatalog
                 {
                     duel = DuelSettings.Parse(entry);
                 }
+                else if (id.StartsWith("market.", StringComparison.Ordinal))
+                {
+                    marketReferencePrice = MarketReferencePriceSettings.Parse(entry);
+                }
                 else if (id.StartsWith("building.", StringComparison.Ordinal))
                 {
                     buildings.Add(id, ParseBuilding(entry, id));
@@ -774,10 +783,8 @@ public sealed class GameDataCatalog
             }
         }
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
-        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, expectedAttributes: expectedAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings, shopOffers: new ShopCatalog(shopOffers));
+        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, expectedAttributes: expectedAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings, shopOffers: new ShopCatalog(shopOffers), marketReferencePrice: marketReferencePrice);
     }
-
-    /// <summary>
     /// 从当前程序集嵌入的 .json 资源中反射加载完整游戏数据。
     /// </summary>
     public static GameDataCatalog LoadEmbedded(Assembly? assembly = null)

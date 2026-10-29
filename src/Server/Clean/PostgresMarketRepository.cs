@@ -1,3 +1,5 @@
+using Domain.GameData;
+using Domain.Market;
 namespace Server.Clean;
 
 /// <summary>
@@ -7,7 +9,8 @@ namespace Server.Clean;
 public sealed class PostgresMarketRepository(
     NpgsqlDataSource dataSource,
     ServerOptions options,
-    ILogger<PostgresMarketRepository> logger) : IMarketTransactionStore
+    ILogger<PostgresMarketRepository> logger,
+    GameDataCatalog? gameData = null) : IMarketTransactionStore
 {
     private static readonly string CoinsAsset = "currency.spirit-stone";
 
@@ -467,7 +470,7 @@ public sealed class PostgresMarketRepository(
     /// 成交量与滑动平均参考价更新：
     /// 成交量按日/周键累加；参考价按最近 10 次成交单价的单值滑动平均（EMA，α = 0.1；单笔购买多个算作一次，以单价更新）。
     /// </summary>
-    private static async Task BumpItemStatsVolumeAndReferencePriceAsync(
+    private async Task BumpItemStatsVolumeAndReferencePriceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string assetId,
@@ -486,17 +489,19 @@ public sealed class PostgresMarketRepository(
         foreach (var fill in fills)
         {
             if (!double.IsFinite(fill.Price) || fill.Price <= 0) continue;
+            var weight = ReferencePriceRules.CalculateTradeWeight(assetId, variant, fill.Quantity, gameData);
             await using var command = new NpgsqlCommand("""
                 UPDATE market.item_stats
                 SET reference_price = CASE
                     WHEN reference_price IS NULL THEN $3
-                    ELSE reference_price * 0.9 + $3 * 0.1 END,
+                    ELSE reference_price * (1.0 - $4) + $3 * $4 END,
                     updated_at = now()
                 WHERE asset_id = $1 AND variant = $2
                 """, connection, transaction);
             command.Parameters.Add(new NpgsqlParameter { Value = assetId });
             command.Parameters.Add(new NpgsqlParameter { Value = variant });
             command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = fill.Price });
+            command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = weight });
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
