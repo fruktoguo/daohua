@@ -99,6 +99,7 @@
   - **仅持有 itemId + 数量的行内场景**（账本物品得失、斗法暂存区、日志引用等）：统一渲染复合胶囊（行内小图标 + 名称胶囊 + `×数量` 下划线值 + 悬浮详情卡片） -> `ItemReference`（`amount` 提供时渲染 `item-reference-compound` 复合胶囊；`valueContent` 可覆写值区内容）
   - **消耗/产出条目（持有·需求对照）**：行动详情与强化预览的「物品 ×需求 / 持有/需求」行内条目统一用 `ActionDetailItem`（ItemDisplay 导出）；`current` 提供时显示 `持有 / 需求` 并在不足时以 `is-insufficient` 警示，缺省仅显示 `×需求`。
   - **怪物掉落条目（概率 + 数量区间）**：怪物悬浮/详情卡的掉落明细——同款复合胶囊，`×数量` 值区展示掉落区间（min=max 显示单值否则 `min-max`）+ 胶囊尾部 `（概率%）` dim 小字，对应「先按 dropChance 判定再抽数量区间」语义 -> `ItemDropReference`（薄封装 `ItemReference`，概率样式见 `expedition.css` `.world-monster-drop-chance`）
+  - **制造配方中型长方形瓦片 (`.action-card--crafting`)**：技艺面板（炼丹、炼器、符箓、阵法）与历练生活行动配方展示为中型长方形瓦片（高度 58px / 移动端 50px）。左侧设立 44px×44px（移动端 38px）中型物品图标槽（`.action-card-thumb`，内置 48px WebP 物品图片，`pixelated` 硬边最近邻渲染，带品质外边框与技艺图标/法印首字兜底），右侧垂直居中展示配方名称（`.action-card-content` + `.action-card-name`），右上角遵循统一角标规范展示 `Lv. X` 等级角标（`.item-corner--top-right`，未解锁带 🔒 标识与灰度效果），Hover 联动品质光晕并完整弹出产出法宝/丹药详情浮层。
   - **图标（有图用图、无图回退文本）**：传入资源 ID 即可。该资源在
     `frontend/src/assets/items/<资源ID>.{webp,png}` 有图时，`ItemTile` 用图片整块替换中间的文本名称；
     没有图时自动保持原文本渲染。行内文本/列表行等不适合放整块方块的场合，改用

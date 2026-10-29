@@ -1432,7 +1432,7 @@ const AutoUse = memo(function AutoUse({ bar }: { bar: AutoUseBarType }): React.J
 })
 
 /**
- * 单个行动卡片组件（纯净形态：仅显示名称与右上角 Lv. 胶囊角标，品质色彩渲染整张卡片）
+ * 单个行动卡片组件（制造配方呈现中型长方形图标瓦片；常规历练行动保留紧凑形态；右上角统一 Lv. 角标）
  */
 const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
@@ -1472,6 +1472,11 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
     if (!primaryOutputId) return undefined
     return findItemInCatalog(itemCatalog, primaryOutputId)
   }, [primaryOutputId, itemCatalog])
+  const eqDef = useMemo(() => {
+    if (!primaryOutputId) return undefined
+    return findEquipmentInCatalog(equipmentCatalog, primaryOutputId)
+  }, [primaryOutputId, equipmentCatalog])
+  const itemIconUrl = useMemo(() => resolveItemIconUrl(primaryOutputId), [primaryOutputId])
 
   const cardButton = (
     <button
@@ -1486,7 +1491,30 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
         {isLocked && <span className="action-card-lock-icon" aria-hidden="true">🔒</span>}
         Lv. <UnitNumber disableTooltip value={level} />
       </span>
-      <strong className="action-card-name">{displayName}</strong>
+      {isCrafting && (
+        <span className="action-card-thumb" aria-hidden="true">
+          {itemIconUrl ? (
+            <img
+              alt=""
+              className="action-card-thumb-img"
+              decoding="async"
+              draggable={false}
+              src={itemIconUrl}
+            />
+          ) : (
+            <span className="action-card-thumb-fallback">
+              {action.technique ? (
+                <Icon name={action.technique as IconName} />
+              ) : (
+                displayName.slice(0, 1)
+              )}
+            </span>
+          )}
+        </span>
+      )}
+      <span className="action-card-content">
+        <strong className="action-card-name">{displayName}</strong>
+      </span>
     </button>
   )
 
@@ -1495,6 +1523,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       <ItemTooltipTarget
         className="action-card-tooltip-wrapper"
         definition={itemDef}
+        equipmentDefinition={eqDef}
         itemId={primaryOutputId}
       >
         {cardButton}

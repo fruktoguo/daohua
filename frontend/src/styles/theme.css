@@ -449,6 +449,11 @@
   background: linear-gradient(135deg, color-mix(in srgb, var(--item-surface, rgba(201, 180, 109, 0.05)) 40%, transparent), transparent 75%), rgba(var(--surface-rgb), 0.85);
 }
 
+:root[data-theme="light"] .action-card-thumb {
+  background: rgba(var(--surface-rgb), 0.55);
+  box-shadow: inset 0 0 6px rgba(71, 49, 18, 0.12);
+}
+
 :root[data-theme="light"] .market-header-status,
 :root[data-theme="light"] .travel-route-section,
 :root[data-theme="light"] .arena-life-meta {
