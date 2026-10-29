@@ -91,6 +91,7 @@ const STAT_KEY_TO_GLYPH: Record<string, string> = {
   暴击率: 'crit',
 
   critAvoid: 'crit-avoid',
+  criticalAvoidance: 'crit-avoid',
   criticalResistance: 'crit-avoid',
   tenacity: 'crit-avoid',
   免暴: 'crit-avoid',
@@ -158,6 +159,10 @@ const STAT_KEY_TO_GLYPH: Record<string, string> = {
   damageReflect: 'damage-reflect',
   damageReflectPoints: 'damage-reflect',
   伤害反弹: 'damage-reflect',
+
+  dropBonus: 'experience',
+  dropBonusPoints: 'experience',
+  掉落加成: 'experience',
 
   // 增减伤
   damageAbsorption: 'total-damage',

@@ -709,7 +709,10 @@ const STAT_RATIO_LABEL_KEYS: Record<string, string> = {
   evasion: 'market.stat.evasion',
   criticalChance: 'market.stat.critChance',
   criticalAvoidance: 'market.stat.critAvoidance',
+  criticalResistance: 'market.stat.critAvoidance',
+  breakPower: 'market.stat.breakPower',
   break: 'market.stat.breakPower',
+  parryResolve: 'market.stat.parryResolve',
   parry: 'market.stat.parryResolve',
   hitpointRegen: 'market.stat.hitpointRegen',
   manapointRegen: 'market.stat.manapointRegen',
@@ -1463,7 +1466,7 @@ export function resolveManualAsideCard(
  * - 物理护甲/护甲穿透 -> bronze（青铜）
  * - 术法抗性/法术穿透 -> violet（紫罗兰）
  * - 命中 -> sky（天蓝）
- * - 闪避/施法攻速 -> teal（水绿）
+ * - 闪避/行动速度 -> teal（水绿）
  * - 暴击率/暴击伤害 -> gold（道金）
  * - 免暴/韧性 -> slate（玄岩灰）
  * - 破招 -> amber（琥珀橙）
@@ -1556,11 +1559,15 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
 
   // 破招 (琥珀橙)
   parryBreak: 'amber',
+  breakPower: 'amber',
 
   // 化解 (银白)
   parryResolve: 'silver',
-}
 
+  // 掉落加成 (道金)
+  dropBonus: 'gold',
+  dropBonusPoints: 'gold',
+}
 /** 点数键 → 词条标签与曲线口径（战斗设计 §7.5：增伤类 Linear / 减伤速率类 NonLinear / 速率类 rate） */
 const POINT_STAT_LABELS: Record<string, { label: string; curve: 'linear' | 'nonlinear' | 'rate' }> = {
   physicalDamageBonusPoints: { label: 'market.stat.physicalDamageBonus', curve: 'linear' },
@@ -1590,8 +1597,8 @@ const POINT_STAT_LABELS: Record<string, { label: string; curve: 'linear' | 'nonl
   mpDrainPoints: { label: 'market.stat.mpDrain', curve: 'linear' },
   damageReflectPoints: { label: 'market.stat.damageReflect', curve: 'linear' },
   healingBonusPoints: { label: 'market.stat.healingBonus', curve: 'linear' },
+  dropBonusPoints: { label: 'market.stat.dropBonus', curve: 'linear' },
 }
-
 /** 技艺工具技艺标识 → 速度加成词条键 */
 const TOOL_SPEED_LABEL_KEYS: Record<string, string> = {
   gathering: 'combat.nearby.attrGatheringSpeed',
@@ -1617,7 +1624,10 @@ const EQUIPMENT_RATIO_LABEL_KEYS: Record<string, string> = {
   evasion: 'market.stat.evasion',
   eva: 'market.stat.evasion',
   criticalChance: 'market.stat.critChance',
-  criticalDamage: 'market.stat.criticalDamage',
+  criticalAvoidance: 'market.stat.critAvoidance',
+  criticalResistance: 'market.stat.critAvoidance',
+  breakPower: 'market.stat.breakPower',
+  parryResolve: 'market.stat.parryResolve',
   damageAbsorption: 'market.stat.damageReduction',
   actionSpeed: 'market.stat.actionSpeed',
   cooldownReduction: 'market.stat.cooldownReduction',
@@ -1642,6 +1652,12 @@ const EQUIPMENT_FLAT_LABEL_KEYS: Record<string, string> = {
   manapointRegen: 'market.stat.manapointRegen',
   mpRegen: 'market.stat.manapointRegen',
   criticalChance: 'market.stat.critChance',
+  criticalAvoidance: 'market.stat.critAvoidance',
+  criticalResistance: 'market.stat.critAvoidance',
+  breakPower: 'market.stat.breakPower',
+  break: 'market.stat.breakPower',
+  parryResolve: 'market.stat.parryResolve',
+  parry: 'market.stat.parryResolve',
   tenacity: 'market.stat.resilience',
   fixedDamageBonus: 'market.stat.fixedDamageBonus',
   fixedDamageReduction: 'market.stat.fixedDamageReduction',
