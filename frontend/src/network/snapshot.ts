@@ -526,7 +526,7 @@ function mapBuffEffects(value: unknown, label: string): BuffEffectEntry[] {
     if (!isBuffEffectChannel(channel)) throw new Error(`${at}.channel 不是已登记的效果通道：${channel}`)
     return {
       channel,
-      value: finiteNumber(effect.value, `${at}.value`),
+      value: finiteValue(effect.value, `${at}.value`),
     }
   })
 }

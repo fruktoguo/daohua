@@ -318,6 +318,61 @@ try {
   assert.equal(fullTriggerPatch.combat.abilityTriggers['ability.deps'].length, COMBAT_TRIGGER_DEPENDENCIES.length, '全部 trigger.dependency 必须可解码')
   assert.equal(fullTriggerPatch.combat.abilityTriggers['ability.conds'].length, COMBAT_TRIGGER_CONDITIONS.length, '全部 trigger.condition 必须可解码')
   assert.equal(fullTriggerPatch.combat.abilityTriggers['ability.comps'].length, COMBAT_TRIGGER_COMPARATORS.length, '全部 trigger.comparator 必须可解码')
+  // buffs 分段与负值效果通道（碎罡 resistancePoints = -400 等破防/减益 Buff）：
+  // 效果通道载荷允许负值，解码不得因负数抛「必须是有限且不小于 0 的数值」。
+  const suiGangBuffsPayload = [
+    {
+      buffId: 'buff.sui-gang',
+      name: '碎罡',
+      stacks: 1,
+      expiresAtUnixSeconds: 1726272020,
+      sourceItemId: null,
+      effects: [{ channel: 'resistancePoints', value: -400 }],
+      statRatios: null,
+    },
+  ]
+  const buffsSection = {
+    section: 'buffs', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data: suiGangBuffsPayload,
+    checksum: createHash('sha256').update(JSON.stringify(suiGangBuffsPayload), 'utf8').digest('hex'),
+    updatedAt: '2026-09-14T00:00:10Z',
+  }
+  const buffsDelta = { playerId: current.playerId, stateVersion: 9, lastSimulatedAt: '2026-09-14T00:00:10Z', changedSections: [buffsSection] }
+  const buffsPatch = await decodePlayerSnapshotDeltaDto(buffsDelta, current, Buffer.from(JSON.stringify(buffsDelta)))
+  assert.equal(buffsPatch.buffs.length, 1, 'buffs 分段中碎罡状态必须正常解码')
+  assert.equal(buffsPatch.buffs[0].effects[0].value, -400, '负值效果载荷必须完整保留')
+
+  // 战斗行动队列与 expedition.playerBuffs 负值效果通道（用户真实报错还原）：
+  // 释放《碎罡》后，战内 Buff playerBuffs 携带 resistancePoints: -400，必须平滑解码。
+  const expeditionQueueRow = {
+    id: 'aaaaaaaa-0000-0000-0000-000000000002',
+    intent: { actionId: 'combat.sweep-twilight-valley', repeatCount: -1, targetNodeId: null, parameters: null, pvpEnabled: false },
+    actionName: '扫荡暮霞谷', actionType: 'combat', status: 1, progressSeconds: 5, durationSeconds: 60,
+    remainingRepeats: -1, completedRepeats: 0, executionKind: 'combat-encounter',
+    expedition: {
+      phase: 'combat', phaseElapsedSeconds: 5, phaseDurationSeconds: 0,
+      playerHitpoints: 80, playerManapoints: 30, seed: 42,
+      battleElapsedSeconds: 5, playerNextAttackAtSeconds: 6, playerAttackCount: 3, playerThreat: 10,
+      waveNumber: 1, outcome: 0, enemies: [], encounterId: 'encounter.twilight-valley',
+      playerBuffs: [
+        {
+          buffId: 'buff.sui-gang',
+          name: '碎罡',
+          stacks: 1,
+          expiresAtSeconds: 25,
+          effects: [{ channel: 'resistancePoints', value: -400 }],
+        },
+      ],
+    },
+  }
+  const expeditionQueueSection = {
+    section: 'action_queue', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data: [expeditionQueueRow],
+    checksum: createHash('sha256').update(JSON.stringify([expeditionQueueRow]), 'utf8').digest('hex'),
+    updatedAt: '2026-09-14T00:00:11Z',
+  }
+  const expeditionQueueDelta = { playerId: current.playerId, stateVersion: 10, lastSimulatedAt: '2026-09-14T00:00:11Z', changedSections: [expeditionQueueSection] }
+  const expeditionQueuePatch = await decodePlayerSnapshotDeltaDto(expeditionQueueDelta, current, Buffer.from(JSON.stringify(expeditionQueueDelta)))
+  assert.equal(expeditionQueuePatch.queue.entries[0].expedition.playerBuffs[0].buffId, 'buff.sui-gang')
+  assert.equal(expeditionQueuePatch.queue.entries[0].expedition.playerBuffs[0].effects[0].value, -400, '战内 playerBuffs 负值效果载荷必须完整保留')
   // 静态代码门禁：扫描 frontend/src 下全部 TSX/TS 组件与自定义 Hook，
   // 严禁在条件返回（early return）之后调用 Hook，严格遵循 React Rules of Hooks。
   const require = createRequire(import.meta.url)
