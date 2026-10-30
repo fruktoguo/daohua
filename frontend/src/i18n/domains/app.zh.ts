@@ -198,6 +198,8 @@ export const appZh = {
       historyTitle: '记录',
       historyEmpty: '暂无此装备强化记录',
       historyCount: '{successes}次 / {attempts}次',
+      historyCountSuccess: '{n}次',
+      historyCountTotal: '{n}次',
       historyRate: '{rate}% 成功率',
     },
     // 顶栏与玩家状态

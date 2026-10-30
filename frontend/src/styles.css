@@ -4483,9 +4483,10 @@ input[type="checkbox"] {
 }
 
 .enhancement-history-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px 1fr 76px;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-sm, 4px);
   background: var(--bg-card, rgba(255, 255, 255, 0.03));
@@ -4497,20 +4498,38 @@ input[type="checkbox"] {
 .enhancement-history-level {
   font-weight: 700;
   color: var(--gold);
-  min-width: 32px;
+  text-align: left;
 }
 
 .enhancement-history-counts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.enhancement-history-success {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+.enhancement-history-divider {
   color: var(--text-dim);
-  flex: 1;
-  text-align: center;
+  margin: 0 4px;
+}
+
+.enhancement-history-total {
+  color: var(--text-main);
+  font-weight: 500;
 }
 
 .enhancement-history-rate {
   font-weight: 600;
   color: var(--text-main);
-  min-width: 80px;
   text-align: right;
+  white-space: nowrap;
 }
 /* 斗法勾选块：仅 combat-encounter 行动弹窗展示 */
 .duel-option {

@@ -295,7 +295,7 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const historyRows = useMemo(() => {
     if (!selected?.itemId) return []
     const rows: Array<{ level: number; attempts: number; successes: number; successRate: number }> = []
-    for (let lvl = 1; lvl <= ENHANCE_MAX_LEVEL; lvl++) {
+    for (let lvl = ENHANCE_MAX_LEVEL; lvl >= 1; lvl--) {
       const stat = enhancementStats[lvl]
       if (stat && stat.attempts > 0) {
         rows.push({
@@ -526,10 +526,13 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
               <div className="enhancement-history-row" key={row.level}>
                 <span className="enhancement-history-level">+{row.level}</span>
                 <span className="enhancement-history-counts">
-                  {t('app.enhancement.historyCount', {
-                    successes: formatNumber(row.successes),
-                    attempts: formatNumber(row.attempts),
-                  })}
+                  <span className="enhancement-history-success">
+                    {t('app.enhancement.historyCountSuccess', { n: formatNumber(row.successes) })}
+                  </span>
+                  <span className="enhancement-history-divider">/</span>
+                  <span className="enhancement-history-total">
+                    {t('app.enhancement.historyCountTotal', { n: formatNumber(row.attempts) })}
+                  </span>
                 </span>
                 <span className="enhancement-history-rate">
                   {t('app.enhancement.historyRate', {
