@@ -972,6 +972,13 @@ public static class WebSocketEndpoint
                 {
                     logger.LogWarning(ex, "WebSocket 消息处理失败，已回错误帧并保持连接 playerId={PlayerId} messageType={MessageType}",
                         session.PlayerId, envelope.MessageType);
+                    if (envelope.MessageType == WireMessageType.Hello)
+                    {
+                        // 握手阶段核心状态加载失败（如玩家实体装载崩溃），该会话无法继续保持合法状态；
+                        // 必须主动关闭连接以防客户端进入未握手死循环，并促使客户端退避或重新连接。
+                        session.RequestClose(1011, "握手处理失败。");
+                        return;
+                    }
                     try
                     {
                         await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId,

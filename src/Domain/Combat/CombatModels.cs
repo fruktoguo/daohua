@@ -970,7 +970,7 @@ public sealed class CombatEncounterState
             || (snapshot.RespawnWaitingUntilSeconds is { } waitingUntil
                 && (!double.IsFinite(waitingUntil) || waitingUntil < 0))
             || (snapshot.SkillCooldownUntil is { } cooldowns
-                && (cooldowns.Count != state.Skills.Count || cooldowns.Any(value => !double.IsFinite(value) || value < 0)))
+                && cooldowns.Any(value => !double.IsFinite(value) || value < 0))
             || (snapshot.Buffs is { } buffs && buffs.Any(buff => buff is null || !buff.IsValid)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
         // 上限来自恢复时点解析面板，随装备/Buff/境界/配表漂移；历史快照可合法超出，越界按上限钳制。
@@ -984,7 +984,21 @@ public sealed class CombatEncounterState
         // 配表技能槽数量可能随版本变化：越界的吟唱槽位回退为普攻出手。
         state.PendingSkillIndex = snapshot.PendingSkillIndex >= 0 && snapshot.PendingSkillIndex < state.Skills.Count
             ? snapshot.PendingSkillIndex : -1;
-        state.SkillCooldownUntil = snapshot.SkillCooldownUntil?.ToArray();
+        if (state.Skills.Count > 0)
+        {
+            var restoredCooldowns = new double[state.Skills.Count];
+            if (snapshot.SkillCooldownUntil is { } saved)
+            {
+                var copyCount = Math.Min(saved.Count, state.Skills.Count);
+                for (var i = 0; i < copyCount; i++)
+                    restoredCooldowns[i] = saved[i];
+            }
+            state.SkillCooldownUntil = restoredCooldowns;
+        }
+        else
+        {
+            state.SkillCooldownUntil = null;
+        }
         state.SkillCastCount = snapshot.SkillCastCount;
         // 倒地复活截止点随快照恢复（友方单位口径）；null 表示未倒地。
         state.RespawnAtSeconds = snapshot.RespawnAtSeconds ?? double.PositiveInfinity;
