@@ -189,16 +189,17 @@ public static class ReferencePriceRules
     {
         if (!double.IsFinite(fillPrice) || fillPrice <= 0)
         {
-            return currentReferencePrice is { } cur && double.IsFinite(cur) && cur > 0 ? cur : 0;
+            return currentReferencePrice is { } cur && double.IsFinite(cur) && cur > 0 ? Math.Round(cur) : 0;
         }
 
         if (currentReferencePrice is not { } oldPrice || !double.IsFinite(oldPrice) || oldPrice <= 0)
         {
-            return fillPrice;
+            return Math.Round(fillPrice);
         }
 
         var validWeight = Math.Clamp(weight, 0.0, 1.0);
-        return oldPrice * (1.0 - validWeight) + fillPrice * validWeight;
+        var nextPrice = oldPrice * (1.0 - validWeight) + fillPrice * validWeight;
+        return Math.Max(1.0, Math.Round(nextPrice));
     }
 
     /// <summary>

@@ -493,8 +493,8 @@ public sealed class PostgresMarketRepository(
             await using var command = new NpgsqlCommand("""
                 UPDATE market.item_stats
                 SET reference_price = CASE
-                    WHEN reference_price IS NULL THEN $3
-                    ELSE reference_price * (1.0 - $4) + $3 * $4 END,
+                    WHEN reference_price IS NULL THEN round($3::numeric)
+                    ELSE GREATEST(1.0, round((reference_price * (1.0 - $4) + $3 * $4)::numeric)) END,
                     updated_at = now()
                 WHERE asset_id = $1 AND variant = $2
                 """, connection, transaction);

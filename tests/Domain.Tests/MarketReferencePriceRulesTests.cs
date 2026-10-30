@@ -36,16 +36,16 @@ public sealed class MarketReferencePriceRulesTests
         // 假设施加新价格 200，原价格 100
         // 1 笔 60 个直接演化：
         var priceAfter60 = ReferencePriceRules.CalculateNextReferencePrice(100.0, 200.0, weightSingle60);
-        // 100 * (1 - 0.075) + 200 * 0.075 = 92.5 + 15 = 107.5
-        Assert.Equal(107.5, priceAfter60, 4);
+        // 100 * (1 - 0.075) + 200 * 0.075 = 92.5 + 15 = 107.5 -> 四舍五入取整为 108
+        Assert.Equal(108.0, priceAfter60);
 
         // 3 笔 10 个连续演化（一阶泰勒展开严格等价，小步长复利高度逼近）：
         var p1 = ReferencePriceRules.CalculateNextReferencePrice(100.0, 200.0, weightSingle10);
         var p2 = ReferencePriceRules.CalculateNextReferencePrice(p1, 200.0, weightSingle10);
         var p3 = ReferencePriceRules.CalculateNextReferencePrice(p2, 200.0, weightSingle10);
 
-        // 连续 3 笔 10 个：100 * (1 - 0.025)^3 + 200 * (1 - (1 - 0.025)^3) ≈ 107.31
-        Assert.InRange(p3, 107.0, 107.5);
+        // 连续 3 笔 10 个每步整型演化后为 106
+        Assert.Equal(106.0, p3);
     }
 
     [Fact]
@@ -67,7 +67,8 @@ public sealed class MarketReferencePriceRulesTests
 
         // 3 笔成交后，旧价格影响仅剩 (2/3)^3 = 8/27 ≈ 29.6%，新价格占 70.4%
         // p3 = 1000 + 9000 * (8/27) = 1000 + 2666.67 = 3666.67
-        Assert.Equal(3666.67, p3, 2);
+        // p3 取整后为 3667
+        Assert.Equal(3667.0, p3);
     }
 
     [Fact]
@@ -104,8 +105,8 @@ public sealed class MarketReferencePriceRulesTests
 
         // 恶意对敲 1 个材料，价格从 5 灵石拉到 50 灵石
         var p1 = ReferencePriceRules.CalculateNextReferencePrice(5.0, 50.0, weight);
-        // 单笔仅推动 0.72 灵石，均价仅为 5.72
-        Assert.Equal(5.72, p1, 4);
+        // 单笔推动 0.72 灵石，均价 5.72 四舍五入取整为 6
+        Assert.Equal(6.0, p1);
     }
 
     [Fact]
