@@ -238,4 +238,30 @@ public sealed class CombatRelocationTests
         Assert.Equal(seed, expedition.Seed);
         Assert.DoesNotContain(moved.Events, e => e.Code == "combat.search.started");
     }
+
+    /// <summary>
+    /// 验证真实配表中玄元门遗址（node.xuanyuan-ruins）已纳入星陨异境讨伐白名单，
+    /// 且在驻留该节点推进战斗时，正确命中玄元门遗址专属遭遇（encounter.xuanyuan-ruins）及其 BOSS。
+    /// </summary>
+    [Fact]
+    public void CombatAction_XuanyuanRuins_ResolvesCorrectEncounterFromRealCatalog()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var actionDef = catalog.Actions.Get(new ActionId("combat.sweep-twilight-valley"));
+        Assert.NotNull(actionDef.AllowedNodeIds);
+        Assert.Contains("node.xuanyuan-ruins", actionDef.AllowedNodeIds);
+
+        var player = CreatePlayer("玄元探秘者");
+        player.TravelTo("node.xuanyuan-ruins");
+        player.Enqueue(new ActionIntent(actionDef.Id, -1), Baseline, catalog.Actions);
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(0.5), catalog);
+
+        Assert.NotEmpty(player.Actions);
+        var expedition = player.Actions[0].Expedition;
+        Assert.NotNull(expedition);
+        Assert.Equal("encounter.xuanyuan-ruins", expedition.EncounterId);
+
+        var encounter = catalog.CombatEncounters[expedition.EncounterId];
+        Assert.Contains("enemy.xuanyuan-remnant", encounter.BossEnemyIds);
+    }
 }
