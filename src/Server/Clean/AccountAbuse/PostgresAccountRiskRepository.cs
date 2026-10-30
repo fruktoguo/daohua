@@ -207,6 +207,8 @@ public sealed class PostgresAccountRiskRepository(
         var hasRequiredDevice = deviceSignals.Any(item => item.Kind == (idEnabled ? AccountRiskSignalKind.DeviceId : AccountRiskSignalKind.DeviceConfig));
         if (policy.RequireDeviceSignal && (idEnabled || configEnabled) && !hasRequiredDevice)
             return Deny(AccountRiskErrorCodes.RiskSignalRequired, "设备校验失败，请刷新后重试。", signals, "设备信号缺失");
+        if (signals.Any(item => item.Kind == AccountRiskSignalKind.Headless))
+            return Deny(AccountRiskErrorCodes.HeadlessBrowserBlocked, "检测到自动化或非标准运行环境。", signals, "自动化运行环境");
         var counts = orderedSignals.Length == 0
             ? new Dictionary<(string Kind, string Hash), int>()
             : await CountAccountsAsync(connection, transaction, orderedSignals, accountId, cancellationToken);

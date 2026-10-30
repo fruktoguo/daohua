@@ -171,6 +171,7 @@ public sealed class AccountRiskBoundaryTests
         for (var index = 0; index < 3; index++)
         {
             var context = new DefaultHttpContext();
+            context.Request.Headers.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
             context.Connection.RemoteIpAddress = ip;
             var missing = collector.Collect(context, new(null, null, null, null), false);
             var rejected = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, null, missing);
@@ -179,6 +180,7 @@ public sealed class AccountRiskBoundaryTests
         for (var index = 0; index < 2; index++)
         {
             var context = new DefaultHttpContext();
+            context.Request.Headers.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
             context.Connection.RemoteIpAddress = ip;
             var signals = collector.Collect(context, new(config, Guid.NewGuid().ToString("D"), null, null), false);
             var result = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, null, signals);

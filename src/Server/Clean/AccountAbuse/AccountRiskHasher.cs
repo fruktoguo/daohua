@@ -46,7 +46,8 @@ public sealed class AccountRiskHasher
         Add(values, AccountRiskSignalKind.Network, signals.NetworkHash, ModuleEnabled(policy, "network"));
         Add(values, AccountRiskSignalKind.Person, signals.PersonKey, ModuleEnabled(policy, "accountAssociation"));
         Add(values, AccountRiskSignalKind.UserAgent, signals.UserAgent, enabled: ModuleEnabled(policy, "browserFingerprint"));
-
+        if (signals.IsHeadless)
+            values.Add((AccountRiskSignalKind.Headless, "HEADLESS"));
         return values
             .Select(item => new AccountRiskSignalHash(item.Kind, HashValue(item.Kind, item.Value)))
             .OrderBy(item => item.Kind, StringComparer.Ordinal)

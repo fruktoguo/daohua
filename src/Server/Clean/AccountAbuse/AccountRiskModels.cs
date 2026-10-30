@@ -7,7 +7,8 @@ public sealed record AccountRiskSignals(
     string? IpAddress = null,
     string? NetworkHash = null,
     string? PersonKey = null,
-    string? UserAgent = null);
+    string? UserAgent = null,
+    bool IsHeadless = false);
 
 /// <summary>账号风控模块的动态策略；运维端可以替换注册表中的实例而无需重启进程。</summary>
 public sealed record AccountRiskPolicy(
@@ -29,10 +30,10 @@ public sealed record AccountRiskPolicy(
     [
         new("deviceConfigHash", "设备配置", true, 45, 2),
         new("deviceId", "设备标识", true, 100, 1),
-        new("ipAddress", "来源 IP", true, 20, 2),
+        new("ipAddress", "来源 IP", true, 40, 2),
         new("network", "网络环境", true, 15, 2),
-        new("browserFingerprint", "浏览器指纹", true, 10, 2),
-        new("registrationVelocity", "注册频率", true, 80, 10),
+        new("browserFingerprint", "设备指纹", true, 40, 2),
+        new("registrationVelocity", "注册频率", true, 80, 3),
         new("accountAssociation", "账号关联上限", true, 100, 2),
         new("tabGuard", "标签页互斥", true, 100, 1),
         new("singleSession", "单账号互踢", true, 100, 1),
@@ -106,6 +107,8 @@ public static class AccountRiskSignalKind
     public const string Person = "person";
     /// <summary>客户端标识摘要，仅作为审计辅助维度。</summary>
     public const string UserAgent = "user_agent";
+    /// <summary>无头浏览器或自动化脚本运行特征，直接硬拦截。</summary>
+    public const string Headless = "headless";
 }
 
 /// <summary>注册风控拒绝原因，供 HTTP 与运维面板使用。</summary>
@@ -117,6 +120,8 @@ public static class AccountRiskErrorCodes
     public const string PersonAccountLimit = "PERSON_ACCOUNT_LIMIT";
     /// <summary>风控策略开启但请求没有可用设备信号。</summary>
     public const string RiskSignalRequired = "RISK_SIGNAL_REQUIRED";
+    /// <summary>检测到无头浏览器或自动化环境。</summary>
+    public const string HeadlessBrowserBlocked = "HEADLESS_BROWSER_BLOCKED";
 }
 
 /// <summary>单条信号的持久化哈希；只暴露摘要前缀给运维视图。</summary>

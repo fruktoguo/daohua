@@ -6,6 +6,7 @@ export interface AccountSignalsDto {
   deviceId: string | null
   networkHash: string | null
   browserFingerprint: string | null
+  automated?: boolean
 }
 
 interface CoarseNetworkConnection {
@@ -37,7 +38,13 @@ export async function collectAccountSignals(): Promise<AccountSignalsDto> {
     collectNetworkHash(),
     collectBrowserFingerprint(),
   ])
-  return { deviceConfigHash: configHash, deviceId: getStableDeviceId(), networkHash, browserFingerprint }
+  return {
+    deviceConfigHash: configHash,
+    deviceId: getStableDeviceId(),
+    networkHash,
+    browserFingerprint,
+    automated: detectHeadlessEnvironment(),
+  }
 }
 
 /** 本地存储和普通 Cookie 双份保留安装标识；它属于可伪造的关联信号，不是认证凭据。 */
@@ -160,4 +167,64 @@ async function hashSignal(value: string): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+/** 探测当前环境是否属于无头浏览器或自动化脚本运行沙盒。 */
+export function detectHeadlessEnvironment(): boolean {
+  try {
+    // 1. 自动化控制标准标志 (navigator.webdriver)
+    if (navigator.webdriver === true) return true
+
+    // 2. 自动化工具注入全局变量扫描
+    const win = window as unknown as Record<string, unknown>
+    if (
+      win.__nightmare ||
+      win._phantom ||
+      win.callPhantom ||
+      win.__selenium_unwrapped ||
+      win.__webdriver_evaluate ||
+      win.__driver_evaluate ||
+      win.domAutomation ||
+      win.domAutomationController
+    ) {
+      return true
+    }
+
+    // 3. WebGL 软件光栅化模拟器检测（无实体显卡）
+    const canvas = document.createElement('canvas')
+    const gl = (canvas.getContext('webgl') ?? canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null
+    if (gl) {
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info')
+      if (debugInfo) {
+        const renderer = String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '').toLowerCase()
+        if (
+          renderer.includes('swiftshader') ||
+          renderer.includes('llvmpipe') ||
+          renderer.includes('software rasterizer') ||
+          renderer.includes('mesa offscreen') ||
+          renderer.includes('virtualbox')
+        ) {
+          gl.getExtension('WEBGL_lose_context')?.loseContext()
+          return true
+        }
+      }
+      gl.getExtension('WEBGL_lose_context')?.loseContext()
+    }
+
+    // 4. 语言特征异常（正常 Chromium 至少有一个首选语言）
+    if (Array.isArray(navigator.languages) && navigator.languages.length === 0) {
+      return true
+    }
+
+    // 5. 桌面端 Chrome 插件数组缺失（桌面端通常内置 PDF 等原生插件，无头环境为空）
+    const ua = navigator.userAgent.toLowerCase()
+    const isDesktopChrome = (ua.includes('chrome') || ua.includes('chromium')) &&
+      !ua.includes('android') && !ua.includes('mobile') && !ua.includes('iphone') && !ua.includes('ipad')
+    if (isDesktopChrome && navigator.plugins && navigator.plugins.length === 0) {
+      return true
+    }
+  } catch {
+    // 探针执行异常时不阻断正常游玩
+  }
+  return false
 }

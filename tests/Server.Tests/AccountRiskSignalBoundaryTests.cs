@@ -99,4 +99,83 @@ public sealed class AccountRiskSignalBoundaryTests
         Assert.Equal("203.0.113.195", signals.IpAddress);
         Assert.Equal("203.0.113.0/24", signals.NetworkHash);
     }
+
+    /// <summary>客户端探测或请求头中命中无头/自动化特征时，风险信号正确标记 IsHeadless 并哈希为 Headless 信号。</summary>
+    [Fact]
+    public void HeadlessEnvironmentIsIdentifiedByClientProbeOrHeaders()
+    {
+        var collector = new AccountRiskRequestContext(new EphemeralDataProtectionProvider());
+        var hasher = new AccountRiskHasher("test-headless");
+
+        // 1. 正常桌面 Chrome
+        var normalContext = new DefaultHttpContext();
+        normalContext.Request.Headers.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        var normalSignals = collector.Collect(normalContext, new(null, Guid.NewGuid().ToString("D"), null, null, Automated: false));
+        Assert.False(normalSignals.IsHeadless);
+        Assert.DoesNotContain(hasher.Hash(normalSignals, AccountRiskPolicy.Default), s => s.Kind == AccountRiskSignalKind.Headless);
+
+        // 2. 客户端自报自动化环境
+        var automatedSignals = collector.Collect(normalContext, new(null, Guid.NewGuid().ToString("D"), null, null, Automated: true));
+        Assert.True(automatedSignals.IsHeadless);
+        Assert.Contains(hasher.Hash(automatedSignals, AccountRiskPolicy.Default), s => s.Kind == AccountRiskSignalKind.Headless);
+
+        // 3. User-Agent 包含 HeadlessChrome
+        var headlessContext = new DefaultHttpContext();
+        headlessContext.Request.Headers.UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0.0.0 Safari/537.36";
+        var headlessSignals = collector.Collect(headlessContext, new(null, Guid.NewGuid().ToString("D"), null, null));
+        Assert.True(headlessSignals.IsHeadless);
+        Assert.Contains(hasher.Hash(headlessSignals, AccountRiskPolicy.Default), s => s.Kind == AccountRiskSignalKind.Headless);
+
+        // 4. Client Hints (Sec-CH-UA) 包含 HeadlessChrome
+        var hintsContext = new DefaultHttpContext();
+        hintsContext.Request.Headers.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+        hintsContext.Request.Headers["Sec-CH-UA"] = "\"HeadlessChrome\";v=\"120\", \"Chromium\";v=\"120\"";
+        var hintsSignals = collector.Collect(hintsContext, new(null, Guid.NewGuid().ToString("D"), null, null));
+        Assert.True(hintsSignals.IsHeadless);
+
+        // 5. 缺少 User-Agent 的裸脚本请求
+        var emptyContext = new DefaultHttpContext();
+        var bareSignals = collector.Collect(emptyContext, new(null, Guid.NewGuid().ToString("D"), null, null));
+        Assert.True(bareSignals.IsHeadless);
+    }
+
+    /// <summary>同一物理设备的指纹在隐身/无痕窗口（每次无 Cookie）下仍推导出相同 PersonKey，确保主体限制无法被无痕窗口绕过。</summary>
+    [Fact]
+    public void FingerprintAnchorsStablePersonKeyAcrossIncognitoWindows()
+    {
+        var collector = new AccountRiskRequestContext(new EphemeralDataProtectionProvider());
+        var stableFingerprint = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+
+        // 模拟第 1 个无痕窗口：无 Cookie，上报临时随机 DeviceId + 稳定硬件指纹
+        var window1 = new DefaultHttpContext();
+        window1.Request.Headers.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0";
+        var signals1 = collector.Collect(window1, new(null, Guid.NewGuid().ToString("D"), null, stableFingerprint));
+
+        // 模拟第 2 个无痕窗口：完全丢弃 Cookie，生成新的临时 DeviceId，但硬件指纹相同
+        var window2 = new DefaultHttpContext();
+        window2.Request.Headers.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0";
+        var signals2 = collector.Collect(window2, new(null, Guid.NewGuid().ToString("D"), null, stableFingerprint));
+
+        // 两者临时 DeviceId 不同，但 PersonKey 均稳定锚定在硬件指纹上
+        Assert.NotEqual(signals1.DeviceId, signals2.DeviceId);
+        Assert.Equal($"fp:{stableFingerprint}", signals1.PersonKey);
+        Assert.Equal($"fp:{stableFingerprint}", signals2.PersonKey);
+        Assert.Equal(signals1.PersonKey, signals2.PersonKey);
+    }
+
+    /// <summary>验证加固后的风控模块权重与频次门槛，确保符合防批量产号要求。</summary>
+    [Fact]
+    public void HardenedPolicyModuleWeightsReflectStricterAntiAbuse()
+    {
+        var policy = AccountRiskPolicy.Default;
+        var ip = policy.Modules.Single(m => m.Id == "ipAddress");
+        var fingerprint = policy.Modules.Single(m => m.Id == "browserFingerprint");
+        var velocity = policy.Modules.Single(m => m.Id == "registrationVelocity");
+
+        Assert.Equal(40, ip.Weight);
+        Assert.Equal(40, fingerprint.Weight);
+        Assert.Equal(80, velocity.Weight);
+        Assert.Equal(3, velocity.Threshold); // 1 小时内注册 >= 3 次即加 80 分秒拒
+        Assert.Equal(80, policy.RiskThreshold);
+    }
 }
