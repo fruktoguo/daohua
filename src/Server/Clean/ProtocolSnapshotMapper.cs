@@ -290,7 +290,8 @@ public static class ProtocolSnapshotMapper
                 gameData?.RealmProgression),
             lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
                 ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
-                : 0
+                : 0,
+            stagedEnhancements = state.Progression.StagedEnhancements ?? []
         },
         PlayerSectionKind.World => ToWorldSection(state.World, gameData),
         PlayerSectionKind.Combat => ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")),

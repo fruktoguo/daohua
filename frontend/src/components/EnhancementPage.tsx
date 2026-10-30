@@ -13,6 +13,7 @@ import {
   enhanceSuccessRate,
 } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
+import { useEnhancementStats } from '../game/enhancementRecordStore'
 import { useGameStore } from '../game/gameStore'
 import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
 import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, QueueEntry } from '../game/types'
@@ -124,6 +125,7 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const world = useGameStore(state => state.world)
   const queueEntries = useGameStore(state => state.queue?.entries)
   const stats = useGameStore(state => state.stats)
+  const playerId = useGameStore(state => state.playerId)
 
   // 正在执行或排队中的强化行动（从权威队列获取）
   const activeEnhanceEntry = useMemo(
@@ -289,6 +291,24 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
     return { successRate, spiritCost, baseDuration, actualDuration }
   }, [nextLevel, techniqueLevel, toolSpeedRatio, linggenSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
 
+  const enhancementStats = useEnhancementStats(playerId, selected?.itemId)
+  const historyRows = useMemo(() => {
+    if (!selected?.itemId) return []
+    const rows: Array<{ level: number; attempts: number; successes: number; successRate: number }> = []
+    for (let lvl = 1; lvl <= ENHANCE_MAX_LEVEL; lvl++) {
+      const stat = enhancementStats[lvl]
+      if (stat && stat.attempts > 0) {
+        rows.push({
+          level: lvl,
+          attempts: stat.attempts,
+          successes: stat.successes,
+          successRate: stat.successRate,
+        })
+      }
+    }
+    return rows
+  }, [enhancementStats, selected?.itemId])
+
   const submit = () => {
     if (!selected || maxedOut) return
     // 强化行动入队：targetItemId 携带装备基础 ID，parameters 附带目标等级与起始等级；
@@ -432,6 +452,7 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
         {!selected ? (
           <p className="setting-desc">{t('app.enhancement.previewEmpty')}</p>
         ) : (
+          <>
           <dl className="action-detail-list">
             <div>
               <dt>{t('app.enhancement.levelFlow')}</dt>
@@ -493,6 +514,34 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
               </dd>
             </div>
           </dl>
+            <div className="enhancement-history-card">
+              <h4 className="enhancement-history-title">
+                <span>{t('app.enhancement.historyTitle')}</span>
+              </h4>
+              {historyRows.length > 0 ? (
+                <div className="enhancement-history-list">
+                  {historyRows.map(row => (
+                    <div className="enhancement-history-row" key={row.level}>
+                      <span className="enhancement-history-level">+{row.level}</span>
+                      <span className="enhancement-history-counts">
+                        {t('app.enhancement.historyCount', {
+                          successes: formatNumber(row.successes),
+                          attempts: formatNumber(row.attempts),
+                        })}
+                      </span>
+                      <span className="enhancement-history-rate">
+                        {t('app.enhancement.historyRate', {
+                          rate: formatNumber(row.successRate * 100, { maxDecimals: 1 }),
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="enhancement-history-empty">{t('app.enhancement.historyEmpty')}</p>
+              )}
+            </div>
+          </>
         )}
       </div>
 

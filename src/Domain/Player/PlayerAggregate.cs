@@ -44,6 +44,68 @@ public sealed class PlayerProgression
     public VersionedDictionary<string, Domain.Combat.TraitProgressState> UnlockedTraits { get; } = new(StringComparer.Ordinal);
     /// <summary>已击败妖兽 ID 集合（enemy.*，总纲 §23）：万象图鉴妖兽志解锁记录；写入递增版本号。</summary>
     public VersionedList<string> DefeatedMonsterIds { get; } = new();
+    /// <summary>服务端暂存的装备分级强化履历记录（按 ActionId 索引）；供离线挂机暂存、客户端上线拉取与双向回执确认清理。</summary>
+    public VersionedDictionary<Guid, ActionEnhancementRecord> StagedEnhancements { get; } = new();
+
+    /// <summary>
+    /// 记录单次强化尝试结果：按行动实例与目标等级累加 Attempts 与 Successes。
+    /// </summary>
+    public bool RecordEnhancementAttempt(Guid actionId, string itemId, int targetLevel, bool success, double atUnixSeconds)
+    {
+        if (actionId == Guid.Empty || string.IsNullOrWhiteSpace(itemId) || targetLevel < 1 || targetLevel > EnhancementRules.MaxLevel)
+            return false;
+
+        if (!StagedEnhancements.TryGetValue(actionId, out var record))
+        {
+            record = new ActionEnhancementRecord
+            {
+                ActionId = actionId,
+                ItemId = itemId,
+                IsCompleted = false,
+                UpdatedAtUnixSeconds = atUnixSeconds
+            };
+            StagedEnhancements[actionId] = record;
+        }
+
+        var current = record.Levels.TryGetValue(targetLevel, out var stat) ? stat : new EnhancementLevelStat(0, 0);
+        record.Levels[targetLevel] = new EnhancementLevelStat(current.Attempts + 1, current.Successes + (success ? 1 : 0));
+        record.UpdatedAtUnixSeconds = atUnixSeconds;
+        return true;
+    }
+
+    /// <summary>
+    /// 将指定行动实例的强化记录标记为已完成（行动出队或达成目标）。
+    /// </summary>
+    public bool MarkEnhancementCompleted(Guid actionId, double atUnixSeconds)
+    {
+        if (actionId == Guid.Empty) return false;
+        if (StagedEnhancements.TryGetValue(actionId, out var record) && !record.IsCompleted)
+        {
+            record.IsCompleted = true;
+            record.UpdatedAtUnixSeconds = atUnixSeconds;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 响应客户端确认回执：彻底移除所有已标记为 IsCompleted 的暂存记录；
+    /// 正在进行中（IsCompleted == false）的记录坚决保留，直到行动彻底完成并再次被确认。
+    /// </summary>
+    public int RemoveCompletedEnhancementRecords(IEnumerable<Guid> actionIds)
+    {
+        if (actionIds is null) return 0;
+        var removed = 0;
+        foreach (var id in actionIds)
+        {
+            if (StagedEnhancements.TryGetValue(id, out var record) && record.IsCompleted)
+            {
+                if (StagedEnhancements.Remove(id))
+                    removed++;
+            }
+        }
+        return removed;
+    }
     /// <summary>当前层修为（突破计量条，expToNext 封顶，突破清零）</summary>
     public double Experience { get; set; }
     private double _foundation;
@@ -170,7 +232,7 @@ public sealed class PlayerProgression
     }
 
     /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
-    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion, long unlockedTraitsVersion)
+    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion, long unlockedTraitsVersion, long stagedEnhancementsVersion)
     {
         _realmLevel = state.RealmLevel;
         RealmLevelVersion = realmLevelVersion;
@@ -199,6 +261,13 @@ public sealed class PlayerProgression
         CultivationSeconds = state.CultivationSeconds;
         AgeSeconds = state.AgeSeconds;
         HeavenGate.Apply(state.HeavenGateRolled, state.HeavenGateConfirmed, state.HeavenGateEntered, state.HeavenGateRerollCount);
+        StagedEnhancements.Clear();
+        if (state.StagedEnhancements is { Count: > 0 } staged)
+        {
+            foreach (var r in staged)
+                StagedEnhancements[r.ActionId] = r.Clone();
+        }
+        StagedEnhancements.RestoreVersion(stagedEnhancementsVersion);
     }
 }
 
@@ -818,6 +887,19 @@ public sealed partial class PlayerAggregate
             MarkDirty(PlayerSectionKind.Duel);
         }
         Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 客户端回执确认后清理已完成的强化暂存记录，并标记 Progression 分段为脏。
+    /// </summary>
+    public int RemoveCompletedEnhancementRecords(IEnumerable<Guid> actionIds)
+    {
+        var count = Progression.RemoveCompletedEnhancementRecords(actionIds);
+        if (count > 0)
+        {
+            MarkDirty(PlayerSectionKind.Progression);
+        }
+        return count;
     }
 
     /// <summary>

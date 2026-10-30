@@ -1227,6 +1227,23 @@ export interface LinggenValues {
   earth: number
 }
 
+/** 强化单等级胜负记录 */
+export interface EnhancementLevelStat {
+  /** 尝试总次数 */
+  attempts: number
+  /** 成功次数 */
+  successes: number
+}
+
+/** 服务端下发的装备分级强化暂存记录 */
+export interface StagedEnhancementRecord {
+  actionId: string
+  itemId: string
+  levels: Record<number, EnhancementLevelStat>
+  isCompleted: boolean
+  updatedAtUnixSeconds: number
+}
+
 /**
  * 角色历史累计统计数据
  */
@@ -1251,6 +1268,8 @@ export interface Stats {
   linggenMultiplier?: number
   /** 乘区后权威修为瓶颈（progression.expToNextLinggen 透传：配表瓶颈 × 灵根乘区，未入天门等于配表值） */
   expToNextLinggen?: number
+  /** 服务端暂存的装备分级强化履历记录（供本地持久化与回执清理） */
+  stagedEnhancements?: StagedEnhancementRecord[]
   /** 战斗经验池（progression.combatExperience 透传：按修为基础量同步积累，不受增幅影响） */
   combatExperience: number
   /** 累计采集灵草次数 */

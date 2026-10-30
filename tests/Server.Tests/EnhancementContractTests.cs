@@ -257,6 +257,59 @@ public sealed class EnhancementContractTests
         Assert.Equal(30, experiences.GetProperty("enhancement").GetDouble());
     }
 
+    /// <summary>
+    /// enhancement.ack_records 命令契约与 progression 分段快照透出（TASK-20261030-01）：
+    /// 1. 快照 progression 分段包含 stagedEnhancements 数组；
+    /// 2. enhancement.ack_records 命令仅清除标记为 isCompleted 的记录，未完成记录继续保留。
+    /// </summary>
+    [Fact]
+    public async Task EnhancementAckCommand_RemovesOnlyCompletedRecordsAndProjectsToDto()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = GameDataCatalog.BuiltIn;
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), new EmptyAssets(), new NoopEconomy(), catalog);
+        await runtime.LoadAsync(playerId);
+
+        var actionA = Guid.NewGuid();
+        var actionB = Guid.NewGuid();
+
+        // 人工塞入两条暂存记录：A 已完成，B 进行中
+        await runtime.MutateOwnedAsync(playerId, p =>
+        {
+            p.Progression.RecordEnhancementAttempt(actionA, "equipment.test-sword", 1, true, 1000);
+            p.Progression.MarkEnhancementCompleted(actionA, 1005);
+            p.Progression.RecordEnhancementAttempt(actionB, "equipment.test-robe", 1, false, 1002);
+            p.MarkDirty(PlayerSectionKind.Progression);
+        });
+
+        // 1. 验证快照投出 stagedEnhancements
+        var snapshot = await runtime.LoadAsync(playerId);
+        var dto = ProtocolSnapshotMapper.ToSnapshot(snapshot, "fp", catalog);
+        var progressionSection = Assert.Single(dto.Sections, s => s.Section == PlayerSectionKinds.Progression);
+        var stagedProp = progressionSection.Data.GetProperty("stagedEnhancements");
+        Assert.Equal(JsonValueKind.Array, stagedProp.ValueKind);
+        Assert.Equal(2, stagedProp.GetArrayLength());
+
+        // 2. 发送 enhancement.ack_records 确认 [actionA, actionB]
+        var ackRequestId = Guid.NewGuid();
+        var ackPayload = JsonSerializer.SerializeToElement(new
+        {
+            actionIds = new[] { actionA.ToString("D"), actionB.ToString("D") }
+        });
+        var ackResult = await runtime.ExecuteAsync(playerId, "enhancement.ack_records", ackPayload, 0, ackRequestId);
+        Assert.True(ackResult.Success, $"{ackResult.Code}: {ackResult.Message}");
+
+        // 3. 验证只有 actionA 被清除，actionB（进行中）严格保留
+        var afterDto = ProtocolSnapshotMapper.ToSnapshot(ackResult.Snapshot, "fp", catalog);
+        var afterProgression = Assert.Single(afterDto.Sections, s => s.Section == PlayerSectionKinds.Progression);
+        var afterStaged = afterProgression.Data.GetProperty("stagedEnhancements");
+        Assert.Equal(1, afterStaged.GetArrayLength());
+        var remainingRecord = afterStaged[0];
+        Assert.Equal(actionB.ToString("D"), remainingRecord.GetProperty("actionId").GetString());
+        Assert.False(remainingRecord.GetProperty("isCompleted").GetBoolean());
+    }
+
     /// <summary>强化装备 item.sell 正确按 +N 受保折旧单价结算，精确扣除变体行并贷记对应灵石。</summary>
     [Fact]
     public async Task ItemSell_EnhancedEquipment_CalculatesDepreciatedPriceAndDeductsVariantRow()

@@ -55,7 +55,9 @@ public sealed record PlayerProgressionState(
     /// <summary>是否已完成入天门。</summary>
     bool HeavenGateEntered = false,
     /// <summary>逆天改命累计次数（永久保留，不随突破清零）。</summary>
-    int HeavenGateRerollCount = 0);
+    int HeavenGateRerollCount = 0,
+    /// <summary>服务端暂存的装备分级强化履历记录集合（可缺省解码为 null）。</summary>
+    IReadOnlyList<ActionEnhancementRecord>? StagedEnhancements = null);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -218,7 +220,8 @@ public sealed partial class PlayerAggregate
                 Progression.HeavenGate.RolledValues,
                 Progression.HeavenGate.ConfirmedValues,
                 Progression.HeavenGate.Entered,
-                Progression.HeavenGate.RerollCount),
+                Progression.HeavenGate.RerollCount,
+                Progression.StagedEnhancements.Count > 0 ? Progression.StagedEnhancements.Values.Select(r => r.Clone()).ToArray() : null),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs },
             GetCachedBuffs(),
@@ -490,6 +493,14 @@ public sealed partial class PlayerAggregate
                 throw new DomainException(DomainErrorCode.InvalidArgument, "玩家击败妖兽记录无效。");
             aggregate.Progression.DefeatedMonsterIds.AddRange(defeatedMonsterIds);
         }
+        if (state.Progression.StagedEnhancements is { Count: > 0 } stagedEnhancements)
+        {
+            foreach (var r in stagedEnhancements)
+            {
+                if (r is not null && r.ActionId != Guid.Empty && !string.IsNullOrWhiteSpace(r.ItemId))
+                    aggregate.Progression.StagedEnhancements[r.ActionId] = r.Clone();
+            }
+        }
         aggregate.World.NodeId = state.World.NodeId;
         aggregate.World.EdgeId = state.World.EdgeId;
         aggregate.World.EdgeProgress = state.World.EdgeProgress;
@@ -669,6 +680,12 @@ public sealed partial class PlayerAggregate
         {
             foreach (var (_, t) in unlocked) Progression.UnlockedTraits[t.Id] = t;
         }
+        Progression.StagedEnhancements.Clear();
+        if (restored.Progression.StagedEnhancements.Count > 0)
+        {
+            foreach (var (k, v) in restored.Progression.StagedEnhancements)
+                Progression.StagedEnhancements[k] = v.Clone();
+        }
         World.NodeId = restored.World.NodeId;
         World.EdgeId = restored.World.EdgeId;
         World.EdgeProgress = restored.World.EdgeProgress;
@@ -822,7 +839,7 @@ public sealed partial class PlayerAggregate
         long SectionVersion,
         Domain.Combat.DuelSettings DuelSettingsTuning);
 
-    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion, long TraitIdsVersion, long DefeatedMonsterIdsVersion, long UnlockedTraitsVersion);
+    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion, long TraitIdsVersion, long DefeatedMonsterIdsVersion, long UnlockedTraitsVersion, long StagedEnhancementsVersion);
     private sealed record WorldCheckpoint(PlayerWorldStateDocument State, long AttributeInputVersion);
     private sealed record CombatCheckpoint(PlayerCombatStateDocument State);
     private sealed record BuffsCheckpoint(ActiveBuff[] Items, long Version);
@@ -881,11 +898,13 @@ public sealed partial class PlayerAggregate
                 Progression.HeavenGate.RolledValues,
                 Progression.HeavenGate.ConfirmedValues,
                 Progression.HeavenGate.Entered,
-                Progression.HeavenGate.RerollCount),
+                Progression.HeavenGate.RerollCount,
+                Progression.StagedEnhancements.Count > 0 ? Progression.StagedEnhancements.Values.Select(r => r.Clone()).ToArray() : null),
             Progression.RealmLevelVersion,
             Progression.TraitIds.Version,
             Progression.DefeatedMonsterIds.Version,
-            Progression.UnlockedTraits.Version),
+            Progression.UnlockedTraits.Version,
+            Progression.StagedEnhancements.Version),
         PlayerSectionKind.World => new WorldCheckpoint(
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress,
                 World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
@@ -930,7 +949,7 @@ public sealed partial class PlayerAggregate
             case PlayerSectionKind.Progression:
             {
                 var data = (ProgressionCheckpoint)checkpoint;
-                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion, data.TraitIdsVersion, data.DefeatedMonsterIdsVersion, data.UnlockedTraitsVersion);
+                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion, data.TraitIdsVersion, data.DefeatedMonsterIdsVersion, data.UnlockedTraitsVersion, data.StagedEnhancementsVersion);
                 break;
             }
             case PlayerSectionKind.World:

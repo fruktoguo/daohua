@@ -1012,6 +1012,72 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(0.0, EnhancementRules.EffectiveEnhancementSuccessBonus(slots, catalog), 12);
     }
 
+    /// <summary>
+    /// 装备分级强化履历与暂存记录生命周期测试（TASK-20261030-01）：
+    /// 1. 分级尝试与胜负次数精准累加；
+    /// 2. 进行中（IsCompleted=false）记录不会被客户端回执误删；
+    /// 3. 出队标记 IsCompleted=true 后，回执可彻底清理该条记录；
+    /// 4. 聚合导出与恢复完整保留暂存明细。
+    /// </summary>
+    [Fact]
+    public void StagedEnhancementRecords_LifecycleAndAckPruning()
+    {
+        var playerId = new PlayerId(Guid.NewGuid());
+        var accountId = new AccountId(Guid.NewGuid());
+        var player = PlayerAggregate.Create(playerId, accountId, "测试修士", Baseline, "test-fp");
+
+        var actionA = Guid.NewGuid();
+        var actionB = Guid.NewGuid();
+        var swordId = "equipment.qingyun-sword";
+        var robeId = "equipment.wujin-robe";
+
+        // 行动 A 强化剑：+1 尝试 3 次，成 2 次；+2 尝试 2 次，成 1 次
+        Assert.True(player.Progression.RecordEnhancementAttempt(actionA, swordId, 1, true, 1000));
+        Assert.True(player.Progression.RecordEnhancementAttempt(actionA, swordId, 1, false, 1001));
+        Assert.True(player.Progression.RecordEnhancementAttempt(actionA, swordId, 1, true, 1002));
+        Assert.True(player.Progression.RecordEnhancementAttempt(actionA, swordId, 2, false, 1003));
+        Assert.True(player.Progression.RecordEnhancementAttempt(actionA, swordId, 2, true, 1004));
+
+        // 行动 B 强化甲：+1 尝试 1 次，成 1 次（正在进行中）
+        Assert.True(player.Progression.RecordEnhancementAttempt(actionB, robeId, 1, true, 1005));
+
+        var recA = player.Progression.StagedEnhancements[actionA];
+        Assert.Equal(swordId, recA.ItemId);
+        Assert.False(recA.IsCompleted);
+        Assert.Equal(3, recA.Levels[1].Attempts);
+        Assert.Equal(2, recA.Levels[1].Successes);
+        Assert.Equal(2.0 / 3.0, recA.Levels[1].SuccessRate, 6);
+        Assert.Equal(2, recA.Levels[2].Attempts);
+        Assert.Equal(1, recA.Levels[2].Successes);
+
+        // 测试：当客户端回执尝试移除尚未完成的 actionA 与 actionB 时，服务端拒绝移除（返回 0）
+        var removedActive = player.RemoveCompletedEnhancementRecords([actionA, actionB]);
+        Assert.Equal(0, removedActive);
+        Assert.Equal(2, player.Progression.StagedEnhancements.Count);
+
+        // 行动 A 出队完成：
+        Assert.True(player.Progression.MarkEnhancementCompleted(actionA, 1010));
+        Assert.True(player.Progression.StagedEnhancements[actionA].IsCompleted);
+
+        // 再次发送回执移除 [actionA, actionB]：只有 actionA 被清理，actionB（仍在进行中）严格保留
+        var removedFinished = player.RemoveCompletedEnhancementRecords([actionA, actionB]);
+        Assert.Equal(1, removedFinished);
+        Assert.False(player.Progression.StagedEnhancements.ContainsKey(actionA));
+        Assert.True(player.Progression.StagedEnhancements.ContainsKey(actionB));
+        Assert.False(player.Progression.StagedEnhancements[actionB].IsCompleted);
+
+        // 快照导出与恢复往返验证
+        var exported = player.ExportState();
+        Assert.NotNull(exported.Progression.StagedEnhancements);
+        Assert.Single(exported.Progression.StagedEnhancements);
+        Assert.Equal(actionB, exported.Progression.StagedEnhancements[0].ActionId);
+
+        var restored = PlayerAggregate.Restore(exported);
+        Assert.True(restored.Progression.StagedEnhancements.ContainsKey(actionB));
+        Assert.Equal(robeId, restored.Progression.StagedEnhancements[actionB].ItemId);
+        Assert.Equal(1, restored.Progression.StagedEnhancements[actionB].Levels[1].Successes);
+    }
+
     private static GameDataCatalog CreateMinimalCatalog(
         ActionCatalog? actions = null,
         Dictionary<string, JsonElement>? rawEquipments = null,

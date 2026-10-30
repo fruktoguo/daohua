@@ -530,6 +530,25 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         });
                         break;
                     }
+                    case "enhancement.ack_records":
+                    {
+                        var actionIds = new List<Guid>();
+                        if (payload.TryGetProperty("actionIds", out var idsElem) && idsElem.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var idElem in idsElem.EnumerateArray())
+                            {
+                                if (idElem.ValueKind == JsonValueKind.String && Guid.TryParse(idElem.GetString(), out var parsedId))
+                                {
+                                    actionIds.Add(parsedId);
+                                }
+                            }
+                        }
+                        if (actionIds.Count > 0)
+                        {
+                            touched = ecs.MutatePlayer(playerId, aggregate => aggregate.RemoveCompletedEnhancementRecords(actionIds));
+                        }
+                        break;
+                    }
                     case "queue.move":
                     {
                         if (!TryReadGuid(payload, "actionInstanceId", out var actionInstanceId)

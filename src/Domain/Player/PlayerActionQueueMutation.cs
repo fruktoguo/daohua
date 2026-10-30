@@ -443,7 +443,11 @@ public static class PlayerActionQueueRules
                 player.MarkDirty(PlayerSectionKind.Combat);
             }
             foreach (var instanceId in work.ArchiveIds)
+            {
                 ActionReportBook.ArchiveActionReport(player, instanceId, work.EndedAtUnixSeconds, work.MaxBattleReports);
+                if (player.Progression.MarkEnhancementCompleted(instanceId, work.EndedAtUnixSeconds))
+                    player.MarkDirty(PlayerSectionKind.Progression);
+            }
             ApplyStructure(work);
             ActivateHead(work);
             Commit(work);

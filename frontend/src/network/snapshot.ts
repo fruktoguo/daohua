@@ -945,6 +945,32 @@ function mapStats(value: unknown): Stats {
           })
           .filter((t): t is TraitProgress => t !== null)
       : [],
+    stagedEnhancements: Array.isArray(row.stagedEnhancements)
+      ? row.stagedEnhancements
+          .map((item: unknown) => {
+            if (!item || typeof item !== 'object') return null
+            const rec = item as Record<string, unknown>
+            const actionId = typeof rec.actionId === 'string' ? rec.actionId : ''
+            const itemId = typeof rec.itemId === 'string' ? rec.itemId : ''
+            const isCompleted = rec.isCompleted === true
+            const updatedAtUnixSeconds = typeof rec.updatedAtUnixSeconds === 'number' ? rec.updatedAtUnixSeconds : 0
+            const rawLevels = (rec.levels && typeof rec.levels === 'object') ? rec.levels as Record<string, unknown> : {}
+            const levels: Record<number, { attempts: number; successes: number }> = {}
+            for (const [lvlStr, statVal] of Object.entries(rawLevels)) {
+              const lvl = Number(lvlStr)
+              if (Number.isSafeInteger(lvl) && statVal && typeof statVal === 'object') {
+                const statObj = statVal as Record<string, unknown>
+                const attempts = typeof statObj.attempts === 'number' ? Math.max(0, Math.floor(statObj.attempts)) : 0
+                const successes = typeof statObj.successes === 'number' ? Math.max(0, Math.floor(statObj.successes)) : 0
+                if (attempts > 0) {
+                  levels[lvl] = { attempts, successes }
+                }
+              }
+            }
+            return actionId && itemId ? { actionId, itemId, levels, isCompleted, updatedAtUnixSeconds } : null
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null)
+      : [],
   }
 }
 

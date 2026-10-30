@@ -841,6 +841,8 @@ internal static partial class ActionExecutionRules
         }
         var outcome = EnhancementRules.Roll(action.Id, action.CompletedRepeats, prep);
         var resultLevel = EnhancementRules.ResultLevel(prep, outcome);
+        var isSuccess = outcome == EnhancementRules.Outcome.Success;
+        player.Progression.RecordEnhancementAttempt(action.Id, prep.ItemId.Value, prep.TargetLevel, isSuccess, atUnix);
         action.EnhancementCurrentLevel = resultLevel;
         var fromKey = EnhancementRules.KeyFor(prep.ItemId, prep.CurrentLevel);
         var toKey = EnhancementRules.KeyFor(prep.ItemId, resultLevel);
