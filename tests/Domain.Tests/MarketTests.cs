@@ -181,4 +181,36 @@ public sealed class MarketTests
             restored.Place(new PlaceOrderRequest(OrderId.New(), owner, instrument, MarketSide.Buy, 6, 1, now, new IdempotencyKey("buy"))));
         Assert.Equal(DomainErrorCode.OwnerOrderExists, error.Code);
     }
+
+    [Fact]
+    public void PlaceSkipsProhibitedCrossTradePartnersWithoutMatching()
+    {
+        var instrument = new MarketInstrument(new ItemId("item.material.iron"));
+        var book = new OrderBook(instrument);
+        var bigAccount = PlayerId.New();
+        var normalSeller = PlayerId.New();
+        var botAccount = PlayerId.New();
+        var now = DateTimeOffset.UtcNow;
+
+        // 大号挂天价卖单 20000 灵石，正常玩家挂正常卖单 100 灵石
+        var bigSell = book.Place(new PlaceOrderRequest(OrderId.New(), bigAccount, instrument, MarketSide.Sell, 20000, 10, now, new IdempotencyKey("big-sell")));
+        var normalSell = book.Place(new PlaceOrderRequest(OrderId.New(), normalSeller, instrument, MarketSide.Sell, 100, 5, now, new IdempotencyKey("norm-sell")));
+
+        // 小号发起买单（最高愿意出 20000 灵石，但设置了禁止与大号成交的谓词）
+        var botBuy = book.Place(
+            new PlaceOrderRequest(OrderId.New(), botAccount, instrument, MarketSide.Buy, 20000, 10, now, new IdempotencyKey("bot-buy")),
+            journal: null,
+            isProhibitedCrossTrade: (incoming, maker) => maker == bigAccount);
+
+        // 断言：小号只吃了正常卖家的 5 个，大号的 10 个被完全跳过！
+        Assert.Single(botBuy.Fills);
+        Assert.Equal(normalSeller, botBuy.Fills[0].SellerId);
+        Assert.Equal(5, botBuy.Fills[0].Quantity);
+        Assert.Equal(100, botBuy.Fills[0].Price);
+
+        // 大号的订单完好无损挂在盘口
+        var bigActive = book.ActiveOrderOf(bigAccount);
+        Assert.NotNull(bigActive);
+        Assert.Equal(10, bigActive.RemainingQuantity);
+    }
 }

@@ -109,7 +109,8 @@ public sealed class OrderBook
     /// </summary>
     /// <param name="request">挂单请求。</param>
     /// <param name="journal">可选撤销日志；为 null 时与无日志挂单完全等价。</param>
-    public PlacementResult Place(PlaceOrderRequest request, OrderBookJournal? journal)
+    /// <param name="isProhibitedCrossTrade">可选成交禁止谓词（用于风控影子隔离关联方与同设备小号自买自卖）。</param>
+    public PlacementResult Place(PlaceOrderRequest request, OrderBookJournal? journal, Func<PlayerId, PlayerId, bool>? isProhibitedCrossTrade = null)
     {
         // 起始水位必须在任何校验/写入前捕获：调用方收到异常后按日志回滚时恒为安全无操作。
         journal?.Capture(_version, _sequence);
@@ -150,8 +151,8 @@ public sealed class OrderBook
         {
             if (incoming.RemainingQuantity <= 0) break;
             var maker = candidates[i];
-            // 自成交防护：同一玩家的订单禁止撮合互刷
-            if (maker.OwnerId == incoming.OwnerId) continue;
+            // 自成交与关联方成交防护：同一玩家或风控关联的订单禁止撮合互刷
+            if (maker.OwnerId == incoming.OwnerId || (isProhibitedCrossTrade is not null && isProhibitedCrossTrade(incoming.OwnerId, maker.OwnerId))) continue;
             var quantity = Math.Min(incoming.RemainingQuantity, maker.RemainingQuantity);
             var price = maker.Price;
             var buyer = incoming.Side == MarketSide.Buy ? incoming : maker;

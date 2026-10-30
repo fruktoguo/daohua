@@ -74,3 +74,23 @@
 接口为 `GET /ops/api/account-abuse` 与 `POST /ops/api/account-abuse/policy`。沿用面板 Development-only 边界；生产不装配 Ops 路由，生产 Caddy 拦截 `/ops`。当前生产部署中修改策略需另行授权受控运维流程，本任务没有将开发面板开放到公网。
 
 风险事件按 `Storage:AccountRiskEventRetentionDays`（默认 30 天）分批清理，稳定账号关联和 HMAC 密钥不随事件清理。schema 与分段标签统一为 v11（v11 重建 `account_risk_events.event_kind` 约束纳入 `handshake`，修复开发中间态 v10 库的旧约束；载荷结构未改变）；一次性迁移位于 `migrations/0010_v9_to_v10.sql` 与 `migrations/0011_v10_to_v11.sql`，不参与运行时。独立压测环境若需要大量注册，应显式调整策略，禁止在生产绕过检测。
+
+## 8. 即时监听与交易层熔断防御
+
+针对小号异步采伐、高价挂单、离线倒金洗钱的特征，确立基于原生事件持续监听与撮合即时熔断的纵深防御：
+
+### 8.1 前端交互持续监听探针
+- **`event.isTrusted` 全局捕获**：在 `window` 捕获阶段注册核心操作交互监听；凡由脚本 `element.click()` 或 `dispatchEvent` 触发的合成事件（`isTrusted === false`），直接就地阻断并上报异常。
+- **前驱轨迹时钟监测**：持续监听 `pointermove`/`touchmove` 记录时间戳；点击发生时比对最后移动时间，若无前驱移动（原地瞬移点击），判定为自动化注入点击。
+- **移动端触控面积与压力**：在触屏环境下检测 `radiusX/radiusY` 与 `force`，捕获虚拟点击器与模拟器特征的死板零面积触控。
+
+### 8.2 坊市交易即时熔断
+- **挂单价格倍率强校验**：普通材料（`category == "material"`）挂单单价不得超过其系统回收价（`sellPrice`）的 50 倍（`MaxMaterialPriceMultiplier`），从源头禁止低级材料充当天价倒金运钞车。
+- **撮合关联即时熔断**：在订单撮合成交（`ApplyFillAsync`）瞬间，即时核验买卖双方关系：
+  1. 买卖双方不可为同一玩家（`BuyerId == SellerId`）；
+  2. 买卖双方不可属于同一设备主体（`Buyer.PersonKey == Seller.PersonKey`）；
+  3. 买卖双方不可存在邀请上下级关联关系（`IsInviterOrInvitee`，查 `social.player_invitations`）；
+  命中上述任一关联，撮合事务直接拒绝该成交，杜绝自买自卖定向套现。
+
+### 8.3 WebSocket 发包间隔即时监听
+- 对每个在线会话维护最近指令到达时差序列，若连续多笔指令发包间隔的标准差极小（小于 5ms，明显的 `setInterval` 机械循环），触发发包限流阻断。

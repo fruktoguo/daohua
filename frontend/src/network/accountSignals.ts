@@ -1,5 +1,5 @@
 import { getBrowserFingerprint } from '../private'
-
+import { getInteractionStats } from './interactionGuard'
 /** 认证入口上传的风险信号；身份和来源 IP 由服务端独立推导。 */
 export interface AccountSignalsDto {
   deviceConfigHash: string | null
@@ -172,9 +172,11 @@ async function hashSignal(value: string): Promise<string | null> {
 /** 探测当前环境是否属于无头浏览器或自动化脚本运行沙盒。 */
 export function detectHeadlessEnvironment(): boolean {
   try {
+    // 0. 运行时捕获到非法非信任合成点击
+    if (getInteractionStats().untrustedClicks > 0) return true
+
     // 1. 自动化控制标准标志 (navigator.webdriver)
     if (navigator.webdriver === true) return true
-
     // 2. 自动化工具注入全局变量扫描
     const win = window as unknown as Record<string, unknown>
     if (

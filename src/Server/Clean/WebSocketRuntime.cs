@@ -574,6 +574,7 @@ public static class WebSocketEndpoint
     {
         var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(options.MaxWebSocketMessageBytes, 64 * 1024));
         long lastInboundSequence = 0;
+        var paceTracker = new CommandPaceTracker();
         var handshaken = false;
         using var handshakeDeadline = new CancellationTokenSource();
         var deadlineTask = Task.Delay(TimeSpan.FromSeconds(10), handshakeDeadline.Token).ContinueWith(task =>
@@ -780,6 +781,8 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("REQUEST_ID_MISMATCH", "行动请求 ID 与协议信封不一致。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
+                        paceTracker = paceTracker.Record(System.Diagnostics.Stopwatch.GetTimestamp(), out var actionMachinePaced);
+                        if (actionMachinePaced) await Task.Delay(200, cancellationToken);
                         var actionPayload = JsonSerializer.SerializeToElement(action, ProtocolJson.Options);
                         PlayerCommandResult actionResult;
                         try
@@ -819,6 +822,8 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_COMMAND", "通用命令标识、名称或期望版本无效。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
+                        paceTracker = paceTracker.Record(System.Diagnostics.Stopwatch.GetTimestamp(), out var commandMachinePaced);
+                        if (commandMachinePaced) await Task.Delay(200, cancellationToken);
                         PlayerCommandResult commandResult;
                         try
                         {
@@ -1158,5 +1163,70 @@ public static class WebSocketEndpoint
             return ValueTask.CompletedTask;
         }
         return session.SendJsonAsync(messageType, requestId, payload, cancellationToken);
+    }
+
+    /// <summary>
+    /// 命令发包机械时钟即时监测器：统计连续指令到达间隔的标准差，抓出死循环 setInterval 脚本。
+    /// </summary>
+    private readonly struct CommandPaceTracker
+    {
+        private readonly long[] _timestamps;
+        private readonly int _head;
+        private readonly int _count;
+
+        public CommandPaceTracker()
+        {
+            _timestamps = new long[6];
+            _head = 0;
+            _count = 0;
+        }
+
+        private CommandPaceTracker(long[] timestamps, int head, int count)
+        {
+            _timestamps = timestamps;
+            _head = head;
+            _count = count;
+        }
+
+        public CommandPaceTracker Record(long nowTicks, out bool isMachinePacing)
+        {
+            var nextTimestamps = _timestamps ?? new long[6];
+            var nextHead = (_head + 1) % 6;
+            nextTimestamps[nextHead] = nowTicks;
+            var nextCount = Math.Min(6, _count + 1);
+
+            isMachinePacing = false;
+            if (nextCount >= 6)
+            {
+                Span<double> intervals = stackalloc double[5];
+                double sum = 0;
+                var prev = nextTimestamps[(_head + 6 - 5 + 1) % 6];
+                for (var i = 0; i < 5; i++)
+                {
+                    var curr = nextTimestamps[(_head + 6 - 5 + 1 + i + 1) % 6];
+                    var deltaMs = (curr - prev) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                    intervals[i] = deltaMs;
+                    sum += deltaMs;
+                    prev = curr;
+                }
+
+                var mean = sum / 5.0;
+                // 高频机械时钟区间（单次 50ms ~ 2500ms）
+                if (mean <= 2500.0 && mean >= 50.0)
+                {
+                    double varianceSum = 0;
+                    for (var i = 0; i < 5; i++)
+                    {
+                        var diff = intervals[i] - mean;
+                        varianceSum += diff * diff;
+                    }
+                    var stdDev = Math.Sqrt(varianceSum / 5.0);
+                    if (stdDev < 4.0)
+                        isMachinePacing = true;
+                }
+            }
+
+            return new CommandPaceTracker(nextTimestamps, nextHead, nextCount);
+        }
     }
 }

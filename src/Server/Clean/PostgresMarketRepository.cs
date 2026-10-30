@@ -220,6 +220,48 @@ public sealed class PostgresMarketRepository(
             : null;
     }
 
+    /// 读取与指定玩家存在风控禁止成交关联的玩家标识集合（结义邀请上下级、同设备主体）。
+    /// </summary>
+    public async ValueTask<HashSet<Guid>> GetProhibitedTradePartnersAsync(Guid playerId, CancellationToken cancellationToken = default)
+    {
+        if (playerId == Guid.Empty) return [];
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var partners = new HashSet<Guid>();
+
+        // 1. 邀请关联（我的邀请者，以及我邀请的小号）
+        await using (var inviteCmd = new NpgsqlCommand("""
+            SELECT inviter_id FROM social.player_invitations WHERE invitee_id = $1
+            UNION ALL
+            SELECT invitee_id FROM social.player_invitations WHERE inviter_id = $1
+            """, connection))
+        {
+            inviteCmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            await using var reader = await inviteCmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                partners.Add(reader.GetGuid(0));
+        }
+
+        // 2. 同设备 / 同主体关联
+        await using (var deviceCmd = new NpgsqlCommand("""
+            SELECT p2.player_id
+            FROM identity.players p1
+            JOIN identity.account_risk_signals s1 ON s1.account_id = p1.account_id
+            JOIN identity.account_risk_signals s2 ON s2.signal_kind = s1.signal_kind AND s2.signal_hash = s1.signal_hash
+            JOIN identity.players p2 ON p2.account_id = s2.account_id
+            WHERE p1.player_id = $1
+              AND s1.signal_kind IN ('person', 'device', 'fingerprint')
+              AND p2.player_id <> $1
+            """, connection))
+        {
+            deviceCmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            await using var reader = await deviceCmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                partners.Add(reader.GetGuid(0));
+        }
+
+        return partners;
+    }
+
     /// <summary>
     /// 抢占本分片写者租约。仅在租约不存在、已过期或本就属于本实例时成功；
     /// 每次成功接管 fence_token 递增，使旧写者未提交的事务因 fence 校验失败而无法再写。
@@ -277,9 +319,18 @@ public sealed class PostgresMarketRepository(
         CancellationToken cancellationToken = default)
     {
         ValidateOrder(order);
+        if (gameData is not null && gameData.Items.TryGetValue(new Domain.Common.ItemId(order.AssetId), out var itemConfig))
+        {
+            if (string.Equals(itemConfig.Category, "material", StringComparison.OrdinalIgnoreCase))
+            {
+                var basePrice = itemConfig.SellPrice > 0 ? itemConfig.SellPrice : 1.0;
+                var maxPrice = basePrice * 50.0;
+                if (order.Price > maxPrice)
+                    throw new ArgumentException($"材料挂单单价超出基准价值上限（最高 {maxPrice} 灵石）。", nameof(order));
+            }
+        }
         if (order.PartitionId != options.MarketPartitionId)
             throw new ArgumentException("订单分片与当前市场写者不一致。", nameof(order));
-        if (fenceToken <= 0) throw new ArgumentOutOfRangeException(nameof(fenceToken));
         if (fills is null || fills.Count > 256)
             throw new ArgumentException("单次成交数量超过上限。", nameof(fills));
         var now = order.CreatedAt ?? DateTimeOffset.UtcNow;
@@ -792,9 +843,8 @@ public sealed class PostgresMarketRepository(
         var proceeds = gross - fill.SellerTax;
         if (double.IsNaN(gross) || double.IsInfinity(gross) || gross <= 0 || fill.SellerTax > gross || proceeds < 0)
             throw new ArgumentException("成交金额无效。", nameof(fill));
-
+        await ValidateCrossTradeEligibilityAsync(connection, transaction, fill.BuyerId, fill.SellerId, cancellationToken);
         await ValidateFillOrdersAsync(connection, transaction, fill, partitionId, cancellationToken);
-
         // 挂单时已经从双方余额扣除冻结额；成交只消费冻结并把结算资产记入对手方，
         // 不再二次扣减余额。这样重试或同一批次多笔成交不会产生双花。
         await ConsumeReservationAsync(connection, transaction, fill.BuyOrderId, gross, fill.Quantity, fill.TradeId, cancellationToken);
@@ -1240,7 +1290,57 @@ public sealed class PostgresMarketRepository(
         if (fill.TradeId == Guid.Empty || fill.BuyOrderId == Guid.Empty || fill.SellOrderId == Guid.Empty || fill.BuyerId == Guid.Empty || fill.SellerId == Guid.Empty || partitionId < 0 || string.IsNullOrWhiteSpace(fill.AssetId) || fill.AssetId.Length > 128 || fill.Variant is null || fill.Variant.Length > 128 || fill.Price <= 0 || fill.Quantity <= 0 || fill.SellerTax < 0 || double.IsNaN(fill.Price) || double.IsInfinity(fill.Price) || double.IsNaN(fill.Quantity) || double.IsInfinity(fill.Quantity) || double.IsNaN(fill.SellerTax) || double.IsInfinity(fill.SellerTax))
             throw new ArgumentException("成交参数无效。", nameof(fill));
     }
+
+    private static async Task ValidateCrossTradeEligibilityAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid buyerId,
+        Guid sellerId,
+        CancellationToken cancellationToken)
+    {
+        if (buyerId == sellerId)
+            throw new MarketProhibitedTradeException("不可购买自身订单。");
+
+        // 1. 邀请上下级即时熔断
+        await using (var inviteCheck = new NpgsqlCommand("""
+            SELECT 1 FROM social.player_invitations
+            WHERE (invitee_id = $1 AND inviter_id = $2)
+               OR (invitee_id = $2 AND inviter_id = $1)
+            LIMIT 1
+            """, connection, transaction))
+        {
+            inviteCheck.Parameters.Add(new NpgsqlParameter { Value = buyerId });
+            inviteCheck.Parameters.Add(new NpgsqlParameter { Value = sellerId });
+            if (await inviteCheck.ExecuteScalarAsync(cancellationToken) is not null)
+                throw new MarketProhibitedTradeException("结义邀请关联同道之间不可定向成交。");
+        }
+
+        // 2. 同设备 / 同主体即时熔断 (基于 identity.account_risk_signals)
+        await using (var riskCheck = new NpgsqlCommand("""
+            SELECT 1
+            FROM identity.players pb
+            JOIN identity.players ps ON ps.player_id = $2
+            JOIN identity.account_risk_signals sb ON sb.account_id = pb.account_id
+            JOIN identity.account_risk_signals ss ON ss.account_id = ps.account_id
+            WHERE pb.player_id = $1
+              AND sb.signal_kind IN ('person', 'device', 'fingerprint')
+              AND ss.signal_kind = sb.signal_kind
+              AND ss.signal_hash = sb.signal_hash
+            LIMIT 1
+            """, connection, transaction))
+        {
+            riskCheck.Parameters.Add(new NpgsqlParameter { Value = buyerId });
+            riskCheck.Parameters.Add(new NpgsqlParameter { Value = sellerId });
+            if (await riskCheck.ExecuteScalarAsync(cancellationToken) is not null)
+                throw new MarketProhibitedTradeException("同设备或关联主体账号之间不可定向成交。");
+        }
+    }
 }
+
+/// <summary>
+/// 坊市交易风控即时熔断异常（自买自卖、结义邀请小号向大号接盘、同设备主体互刷倒金）。
+/// </summary>
+public sealed class MarketProhibitedTradeException(string message) : ArgumentException(message);
 
 /// <summary>到期合批关单的目标订单（由内存盘口到期索引收集）。</summary>
 /// <param name="OrderId">订单唯一标识。</param>
