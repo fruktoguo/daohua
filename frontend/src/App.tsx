@@ -1803,6 +1803,11 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
               <dd style={{ alignItems: 'center' }}>
                 <span className="action-detail-value">
                   {t('app.action.durationPerRound', { seconds: formatNumber(Math.max(0.1, yieldPreview.actualDurationSeconds), { maxDecimals: 1 }) })}
+                  {yieldPreview.actualDurationSeconds < yieldPreview.baseDurationSeconds - 0.05 && (
+                    <span className="action-detail-base-duration">
+                      （{t('app.action.baseDuration', { seconds: formatNumber(yieldPreview.baseDurationSeconds, { maxDecimals: 1 }) })}）
+                    </span>
+                  )}
                 </span>
                 {speedBonuses.map((bonus, idx) => (
                   <FloatingTooltip

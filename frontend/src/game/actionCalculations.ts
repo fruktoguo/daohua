@@ -341,6 +341,32 @@ export function calculateActionYieldPreview({
         })
       }
     }
+    // 持续消耗品通用百艺速度加成（与服务端 TimedActionDurationRules.EffectiveConsumableSpeedRatio 同口径）
+    for (const slot of slotsForType) {
+      if (!slot || !slot.enabled || !slot.itemId) continue
+      const itemDef = items.find(item => item.itemId === slot.itemId)
+      if (!itemDef) continue
+      const isContinuous = itemDef.isContinuous === true && (itemDef.durationSeconds ?? 0) > 0
+      const isApplicable = isContinuous && actionBar !== null && (itemDef.usableBars?.includes(actionBar) ?? false)
+      if (!isApplicable) continue
+      const hasRemaining = (slot.remainingDurationSeconds ?? 0) > 0
+      const hasStock = getItemAmount(inventory, slot.itemId) >= 1
+      if (!hasRemaining && !hasStock) continue
+
+      if (itemDef.techniqueSpeedRatio && itemDef.techniqueSpeedRatio > 0) {
+        techniqueSpeedRatio += itemDef.techniqueSpeedRatio
+        const speedPercent = Math.round(itemDef.techniqueSpeedRatio * 100)
+        bonuses.push({
+          sourceName: itemDef.name,
+          tag: t('app.action.bonusBuildingSpeedTag', { percent: speedPercent }),
+          type: 'speed',
+          description: t('app.action.bonusToolSpeedDesc', {
+            name: itemDef.name,
+            percent: speedPercent,
+          }),
+        })
+      }
+    }
   }
 
   const actualDurationSeconds = (buildingSpeedRatio > 0

@@ -200,6 +200,7 @@ internal static partial class ActionExecutionRules
                 e.Definition = definition;
                 return;
             }
+            e.Multiplier = PrepareTimedAction(e.Player, action, definition, e.Catalog, e.WorkingWallet, e.Cursor, e.Core);
             var duration = TimedActionDuration(e.Player, action, definition, e.Catalog, e.WorkingWallet, e.Core.Deltas);
             if (duration <= 0)
             {
@@ -211,7 +212,6 @@ internal static partial class ActionExecutionRules
             e.PreparedAction = action;
             e.Definition = definition;
             e.Duration = duration;
-            e.Multiplier = PrepareTimedAction(e.Player, action, definition, e.Catalog, e.WorkingWallet, e.Cursor, e.Core);
             return;
         }
         e.Waiting = true;

@@ -323,6 +323,7 @@ export const appZh = {
       pendingBreakthroughTag: '圆满待突破',
       pendingBreakthroughDesc: '当前境界圆满待突破，修炼所得修为将 100% 自动转化为道基底蕴',
       duration: '耗时',
+      baseDuration: '基准 {seconds}s',
       durationPerRound: '{seconds}s / 次',
       combatUnlimited: '不限时，战斗至分出胜负',
       repeats: '次数',

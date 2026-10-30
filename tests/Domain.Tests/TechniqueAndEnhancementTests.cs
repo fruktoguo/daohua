@@ -926,6 +926,57 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(10.0, SimulationEngine.TimedActionDuration(player, action, alchemy, catalog, wallet, null), 12);
     }
 
+    /// <summary>通用技艺加速物品（定神香）在采矿与炼器行动中端到端自动充能、扣件、加速并扣减时长；对无技艺修炼行动不激活。</summary>
+    [Fact]
+    public void GenericTechniqueSpeedConsumablesEndToEndAutoUseAndAdvance()
+    {
+        var dingshen = new ItemDefinition(new ItemId("item.dingshen-incense"), "定神香", "", true, 120,
+            new ConsumableDefinition(new HashSet<string> { AutoUseBar.Exploration, AutoUseBar.Forging },
+                DurationSeconds: 300, IsContinuous: true, TechniqueSpeedRatio: 0.3));
+        var miningAction = new ActionDefinition(new ActionId("explore.mine-test"), "采矿测试", ActionKind.Exploration, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Mining);
+        var forgingAction = new ActionDefinition(new ActionId("forging.refine-test"), "炼器测试", ActionKind.Alchemy, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Forging);
+        var drawQiAction = new ActionDefinition(new ActionId("cultivation.draw-qi"), "吐纳", ActionKind.Cultivation, 10,
+            new Dictionary<ItemId, double>(), []);
+
+        var catalog = new GameDataCatalog("test", "fp", new ActionCatalog([miningAction, forgingAction, drawQiAction]),
+            items: new Dictionary<ItemId, ItemDefinition> { [dingshen.Id] = dingshen });
+
+        // 1. 采矿行动：历练栏放入未充能定神香（RemainingDurationSeconds = 0），钱包持存 3 个
+        var player = CreatePlayer("采矿道友");
+        var wallet = CreateWallet(player, (new AssetKey(dingshen.Id), 3));
+        player.Settings.AutoUseSlots.Add(new AutoUseSlotState(AutoUseBar.Exploration, 0, dingshen.Id.Value, 1, true, RemainingDurationSeconds: 0));
+        player.Enqueue(new ActionIntent(miningAction.Id, -1), Baseline, catalog.Actions);
+
+        // 推进一轮：单轮耗时折减为 10 / 1.3 ≈ 7.6923s
+        // 推进 8 秒足以完成单轮
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(8), catalog, wallet);
+        foreach (var d in result.AssetDeltas) wallet.Apply(d);
+        Assert.True(result.CompletedRepeats > 0, $"实际完成轮次: {result.CompletedRepeats}, 事件: {string.Join(", ", result.Events.Select(e => e.Code))}");
+
+        // 断言：定神香自动扣除 1 个（剩余 2 个）并触发 activated 事件
+        Assert.Equal(2.0, wallet.Get(new AssetKey(dingshen.Id)));
+        Assert.Contains(result.Events, e => e.Code == "auto-use.activated");
+        // 槽位已充能且扣减了一轮的实际耗时（300 - 10/1.3）
+        var slot = player.Settings.AutoUseSlots[0];
+        Assert.InRange(slot.RemainingDurationSeconds, 290.0, 300.0 - (10.0 / 1.3));
+
+        // 2. 负向场景：吐纳修炼（无技艺）中定神香不应激活不扣件
+        var playerCultivation = CreatePlayer("修炼道友");
+        var walletCultivation = CreateWallet(playerCultivation, (new AssetKey(dingshen.Id), 3));
+        playerCultivation.Settings.AutoUseSlots.Add(new AutoUseSlotState(AutoUseBar.Exploration, 0, dingshen.Id.Value, 1, true, RemainingDurationSeconds: 0));
+        playerCultivation.Enqueue(new ActionIntent(drawQiAction.Id, -1), Baseline, catalog.Actions);
+
+        var cultResult = SimulationEngine.AdvanceTo(playerCultivation, Baseline.AddSeconds(12), catalog, walletCultivation);
+        foreach (var d in cultResult.AssetDeltas) walletCultivation.Apply(d);
+
+        // 定神香依然为 3，未充能不消耗
+        Assert.Equal(3.0, walletCultivation.Get(new AssetKey(dingshen.Id)));
+        Assert.DoesNotContain(cultResult.Events, e => e.Code == "auto-use.activated");
+        Assert.Equal(0.0, playerCultivation.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+    }
+
     /// <summary>强化专属成功率消耗品（淬灵粉 +3%、固灵砂 +5%）在生效期间提供准确的成功率加算。</summary>
     [Fact]
     public void EnhancementSuccessBonusConsumablesIncreaseSuccessRate()

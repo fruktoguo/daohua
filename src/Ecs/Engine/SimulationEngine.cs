@@ -550,32 +550,35 @@ public static partial class SimulationEngine
                     ref events, ref completedActions, ref completedRepeats);
                 continue;
             }
+            var actionAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
+            var autoUseMultiplier = PrepareTimedActionCore(player, action, definition,
+                isActionStart, gameData, assetBalances, actionAt, ref deltas, ref events);
             var duration = TimedActionDuration(player, action, definition, gameData, assetBalances, deltas);
             if (duration <= 0)
             {
                 // 开发期容错自愈：Enqueue 拒绝“-1 且时长≤0”，但配表热更可能把存量行动时长改为 0，
                 // 队头空转会耗尽转换上限并让玩家永久卡死。此处移出失效行动并留事件证据，继续推进后续行动。
                 player.RemoveAction(action.Id, incrementVersion: false,
-                    endedAtUnixSeconds: from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d);
+                    endedAtUnixSeconds: actionAt.ToUnixTimeMilliseconds() / 1000d);
                 events ??= new SimulationEventTail();
                 events.Add(new SimulationEvent(
-                    from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                    actionAt,
                     "action.invalid-dropped",
                     $"行动 {definition.Name} 的时长配置无效（{duration:0.######} 秒），已自动移出队列。",
                     definition.Id));
                 continue;
             }
-
-            var actionAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
-            var autoUseMultiplier = PrepareTimedActionCore(player, action, definition,
-                isActionStart, gameData, assetBalances, actionAt, ref deltas, ref events);
             var needed = Math.Max(0, duration - action.ProgressSeconds);
             var step = Math.Min(remainingSeconds, needed);
             remainingSeconds -= step;
             AdvanceTimedAction(player, action, definition, autoUseMultiplier, gameData, step,
                 from.AddSeconds((target - from).TotalSeconds - remainingSeconds));
-            if (action.ProgressSeconds + 1e-9 < duration) break;
-            CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, assetBalances, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events, ref completedActions, ref completedRepeats);
+            if (action.ProgressSeconds + 1e-9 >= duration)
+            {
+                CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, assetBalances,
+                    from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                    ref deltas, ref events, ref completedActions, ref completedRepeats);
+            }
         }
 
         // 道龄随模拟时间自然流逝；Progression 仅在发生实际状态转移时标脏，避免空队列每秒刷盘。

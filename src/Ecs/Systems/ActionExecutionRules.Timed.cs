@@ -485,7 +485,8 @@ internal static partial class ActionExecutionRules
             deltas ??= new Dictionary<AssetKey, double>();
             AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), -spiritStoneDeduction);
         }
-        CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
+        var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : definition.DurationSeconds;
+        CompleteSustainedAutoUse(player, definition, consumedSeconds, gameData, target, ref events);
         // 底蕴成本先行扣除：CreditExperience 的 1:1 兑换放大要在这个池子上结算，
         // 若先兑换再扣成本会把可用底蕴重复花两次（池子可能被扣成负数）。
         // 上文准入与轮内复核已保证 Foundation ≥ foundationCost，扣减后恒为非负。
@@ -564,7 +565,7 @@ internal static partial class ActionExecutionRules
         for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
         {
             var slot = player.Settings.AutoUseSlots[i];
-            if (!TryGetSustainedConsumable(slot, Domain.GameData.AutoUseBar.For(definition), definition.Kind,
+            if (!TryGetSustainedConsumable(slot, Domain.GameData.AutoUseBar.For(definition), definition,
                 gameData, out var item, out var consumable)) continue;
 
             if (slot.RemainingDurationSeconds > consumable.DurationSeconds)
@@ -607,19 +608,20 @@ internal static partial class ActionExecutionRules
     internal static void CompleteSustainedAutoUse(
         IPlayerActionContext player,
         ActionDefinition definition,
+        double consumedSeconds,
         GameDataCatalog? gameData,
         DateTimeOffset at,
         ref SimulationEventTail? events)
     {
-        if (gameData is null || player.Settings.AutoUseSlots.Count == 0) return;
+        if (gameData is null || player.Settings.AutoUseSlots.Count == 0 || consumedSeconds <= 0) return;
         for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
         {
             var slot = player.Settings.AutoUseSlots[i];
-            if (!TryGetSustainedConsumable(slot, Domain.GameData.AutoUseBar.For(definition), definition.Kind,
+            if (!TryGetSustainedConsumable(slot, Domain.GameData.AutoUseBar.For(definition), definition,
                 gameData, out var item, out var consumable)
                 || slot.RemainingDurationSeconds <= 0)
                 continue;
-            var remaining = Math.Max(0d, slot.RemainingDurationSeconds - definition.DurationSeconds);
+            var remaining = Math.Max(0d, slot.RemainingDurationSeconds - consumedSeconds);
             var updated = slot with { RemainingDurationSeconds = remaining };
             player.Settings.AutoUseSlots[i] = updated;
             player.MarkDirty(PlayerSectionKind.Settings);
@@ -634,11 +636,11 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>槽位是否对运行中行动产出持续消耗品：
-    /// 同栏域 + 物品声明该栏域 + 对该行动大类确有加成（倍率 &gt; 1，无效场景不充能不扣时长）。</summary>
+    /// 同栏域 + 物品声明该栏域 + 对该行动大类确有加成（收益倍率 > 1 或提供技艺加速/强化成功率，无效场景不充能不扣时长）。</summary>
     internal static bool TryGetSustainedConsumable(
         AutoUseSlotState slot,
         string? actionBarId,
-        ActionKind actionKind,
+        ActionDefinition definition,
         GameDataCatalog gameData,
         out ItemDefinition item,
         out ConsumableDefinition consumable)
@@ -653,7 +655,15 @@ internal static partial class ActionExecutionRules
         // durable 持续品（阵盘）不走时长扣件路径：由资源边界的 ActiveBuff 注入/清除承载。
         return consumable is { IsContinuous: true, DurationSeconds: > 0, Durable: false }
             && consumable.UsableInBars.Contains(actionBarId)
-            && consumable.GetMultiplier(actionKind) > 1d;
+            && HasActiveConsumableEffect(consumable, definition);
+    }
+
+    internal static bool HasActiveConsumableEffect(ConsumableDefinition consumable, ActionDefinition definition)
+    {
+        if (consumable.GetMultiplier(definition.Kind) > 1d) return true;
+        if (consumable.TechniqueSpeedRatio > 0 && definition.Technique is not null && TechniqueCatalog.IsKnown(definition.Technique)) return true;
+        if (consumable.EnhancementSuccessBonus > 0 && definition.Kind == ActionKind.Enhancement) return true;
+        return false;
     }
 
     internal static double CultivationMultiplier(GameDataCatalog catalog, string nodeId)
@@ -875,6 +885,7 @@ internal static partial class ActionExecutionRules
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
+        CompleteSustainedAutoUse(player, definition, duration, gameData, target, ref events);
         events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(target,
             outcome == EnhancementRules.Outcome.Success ? "enhance.succeeded" : "enhance.failed",
