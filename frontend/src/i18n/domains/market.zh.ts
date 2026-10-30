@@ -282,6 +282,8 @@ export const marketZh = {
       title: '市场价格',
       mark: '坊市',
       none: '-',
+      referencePriceLabel: '参考价',
+      guaranteedPriceLabel: '保底价',
       askLine: '最低在售价 {price} · 总在售 {count}',
       bidLine: '最高收购价 {price} · 总收购 {count}',
       volumeLine: '今日成交 {day} · 本周成交 {week}',

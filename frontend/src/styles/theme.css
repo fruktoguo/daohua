@@ -1022,6 +1022,14 @@
 :root[data-theme="light"] .daohua-market-aside-volume-val {
   color: #2e747c;
 }
+:root[data-theme="light"] .daohua-market-aside-head-ref-val {
+  color: #8c6b12;
+  text-shadow: none;
+}
+:root[data-theme="light"] .daohua-market-aside-head-ref--fallback .daohua-market-aside-head-ref-val {
+  color: #7a5d0e;
+  text-shadow: none;
+}
 
 /* 浅色模式下效果与 Buff 副气泡各胶囊与数值高对比呈现 */
 :root[data-theme="light"] .daohua-effect-aside-badge--qi {

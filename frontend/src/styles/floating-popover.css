@@ -440,7 +440,55 @@
 
 /* 坊市市场价格副气泡 (Market Stats Aside Card) */
 .daohua-floating-aside-card[data-aside-id*="aside-market-"] {
-  min-width: 228px;
+  min-width: 240px;
+}
+
+/* 坊市市场价格副卡头部：完整参考价高亮显示 */
+.daohua-market-aside-head-ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  margin-left: auto;
+  line-height: 1;
+}
+
+.daohua-market-aside-head-ref-label {
+  font-size: var(--text-2xs);
+  color: var(--text-dim, rgba(233, 227, 210, 0.65));
+  letter-spacing: 0.5px;
+}
+
+.daohua-market-aside-head-ref-val {
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: #ffe6a3;
+  text-shadow: 0 0 8px rgba(232, 214, 154, 0.45);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+}
+
+.daohua-market-aside-head-ref-unit {
+  font-size: var(--text-2xs);
+  color: var(--text-dim, rgba(233, 227, 210, 0.65));
+}
+
+/* 官方回收保底态 */
+.daohua-market-aside-head-ref--fallback .daohua-market-aside-head-ref-val {
+  color: #ebd69b;
+  text-shadow: 0 0 6px rgba(201, 180, 109, 0.3);
+}
+
+.daohua-market-aside-head-ref--fallback .daohua-market-aside-head-ref-label {
+  color: rgba(235, 214, 155, 0.75);
+}
+
+/* 暂无参考价态 */
+.daohua-market-aside-head-ref--none .daohua-market-aside-head-ref-val {
+  color: var(--text-dim, rgba(233, 227, 210, 0.45));
+  text-shadow: none;
+  font-size: var(--text-xs);
+  font-weight: 500;
 }
 
 .daohua-market-aside-body {

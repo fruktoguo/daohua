@@ -51,7 +51,7 @@ export interface FloatingAsideCard {
   id?: string
   mark?: string
   title: string
-  subtitle?: string
+  subtitle?: ReactNode
   tone?: FloatingTone
   lines?: readonly (string | ReactNode)[]
   content?: ReactNode

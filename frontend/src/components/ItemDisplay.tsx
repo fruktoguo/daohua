@@ -1,6 +1,6 @@
 import { memo, type ReactNode, useCallback } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
-import { describeAbility, formatAbilityCategory, formatInteger, formatNumber } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatExactNumber, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { calculateEquipmentSellPrice, convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
@@ -326,7 +326,7 @@ export function resolveItemTooltipAsideCards(
   }
 
   // 4. 坊市行情副卡
-  const marketAside = resolveMarketStatsAsideCard(itemId, enhancementLevel, itemDef, eqDef, rawMetadata.label)
+  const marketAside = resolveMarketStatsAsideCard(itemId, enhancementLevel, itemDef, eqDef)
   if (marketAside) {
     list.push(marketAside)
   }
@@ -1088,7 +1088,6 @@ function resolveMarketStatsAsideCard(
   enhancementLevel: number,
   itemDef: ItemDefinition | undefined,
   eqDef: CombatEquipmentDefinition | undefined,
-  itemName: string,
 ): FloatingAsideCard | null {
   // 可交易口径与坊市浏览网格一致：配表 isTradable 物品或装备类标的（全部装备可挂单）。
   const tradable = itemDef?.isTradable === true
@@ -1115,11 +1114,37 @@ function resolveMarketStatsAsideCard(
   const weekVol = stats?.weekVolume ?? 0
   const referencePrice = stats?.referencePrice != null && stats.referencePrice > 0 ? stats.referencePrice : null
 
+  let subtitleNode: ReactNode
+  if (referencePrice !== null) {
+    subtitleNode = (
+      <span className="daohua-market-aside-head-ref">
+        <span className="daohua-market-aside-head-ref-label">{t('market.price.referencePriceLabel')}</span>
+        <span className="daohua-market-aside-head-ref-val">{formatExactNumber(referencePrice)}</span>
+        <span className="daohua-market-aside-head-ref-unit">{spiritUnit}</span>
+      </span>
+    )
+  } else if (vendorPrice !== null) {
+    subtitleNode = (
+      <span className="daohua-market-aside-head-ref daohua-market-aside-head-ref--fallback">
+        <span className="daohua-market-aside-head-ref-label">{t('market.price.guaranteedPriceLabel')}</span>
+        <span className="daohua-market-aside-head-ref-val">{formatExactNumber(vendorPrice)}</span>
+        <span className="daohua-market-aside-head-ref-unit">{spiritUnit}</span>
+      </span>
+    )
+  } else {
+    subtitleNode = (
+      <span className="daohua-market-aside-head-ref daohua-market-aside-head-ref--none">
+        <span className="daohua-market-aside-head-ref-label">{t('market.price.referencePriceLabel')}</span>
+        <span className="daohua-market-aside-head-ref-val">{t('market.price.none')}</span>
+      </span>
+    )
+  }
+
   return {
     id: `aside-market-${itemId}-${enhancementLevel}`,
     mark: t('market.price.mark'),
     title: t('market.price.title'),
-    subtitle: enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName,
+    subtitle: subtitleNode,
     tone: 'gold',
     content: (
       <div className="daohua-market-aside-body">
@@ -1202,18 +1227,6 @@ function resolveMarketStatsAsideCard(
             <span className="daohua-market-aside-volume-chip">
               <span className="daohua-market-aside-volume-label">{t('market.price.weekVolume')}</span>
               <span className="daohua-market-aside-volume-val">{formatNumber(weekVol)}</span>
-            </span>
-            <span className="daohua-market-aside-volume-chip">
-              <span className="daohua-market-aside-volume-label">{t('market.price.averagePrice')}</span>
-              {referencePrice !== null ? (
-                <span className="daohua-market-aside-volume-val daohua-market-aside-volume-val--price">
-                  {formatNumber(referencePrice)}
-                </span>
-              ) : (
-                <span className="daohua-market-aside-volume-val daohua-market-aside-volume-val--empty">
-                  {t('market.price.none')}
-                </span>
-              )}
             </span>
           </div>
         </div>
