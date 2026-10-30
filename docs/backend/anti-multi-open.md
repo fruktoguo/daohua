@@ -15,24 +15,25 @@
 
 | 模块 ID | 默认行为 | 性质 |
 | --- | --- | --- |
+| `headless` | 识别为无头浏览器或自动化脚本运行环境时直接拒绝 | 硬限制（直接阻断） |
 | `deviceId` | 相同安装标识最多注册 1 个账号 | 硬限制 |
 | `deviceConfigHash` | 关联账号数达到 2 后加 45 分 | 软风险，同型号设备可能相同 |
-| `ipAddress` | 关联账号数达到 2 后加 20 分 | 软风险 |
+| `ipAddress` | 关联账号数达到 2 后加 40 分 | 软风险 |
 | `network` | 同网段关联数达到 2 后加 15 分 | 软风险 |
-| `browserFingerprint` | 指纹关联数达到 2 后加 10 分 | 软风险 |
-| `registrationVelocity` | 同 IP 一小时内成功注册达到 10 次后加 80 分 | 软风险，拒绝事件不计入速度 |
+| `browserFingerprint` | 指纹关联数达到 2 后加 40 分 | 软风险 |
+| `registrationVelocity` | 同 IP 一小时内成功注册达到 3 次后加 80 分 | 软风险，拒绝事件不计入速度 |
 | `accountAssociation` | 相同稳定设备主体最多关联 2 个账号 | 硬限制 |
 | `tabGuard` | 同浏览器标签页互斥，提供接管入口 | 客户端交互约束 |
 | `singleSession` | 新连接顶替同账号旧连接 | 服务端在线所有权 |
 | `onlineDeviceQuota` | 同设备最多 2 个不同账号在线 | 服务端在线配额 |
-
 配置、IP、网段、指纹的评分覆盖注册、登录和握手；速度仅作用于注册。风险分数累加后截断至 100，默认阈值 80、处置 `deny`。`allow` 放行并记录，`review` 放行并标记复核，`deny` 拒绝本次请求。设备注册与主体关联额度直接拒绝，不受软风险处置影响。总开关、注册检测、设备信号必填、两类上限、软模块权重/阈值及所有模块开关均可动态调整。
 
 关闭设备 ID 模块只关闭安装标识注册额度；账号关联模块仍独立使用稳定主体限制账号数。关闭配置模块只移除配置评分，不残留配置派生的主体限制。单账号互踢关闭时仍拒绝第二个同时连接，避免破坏玩家单写者所有权。
 
 ## 3. 信号边界与权威存储
 
-- `AccountRiskRequestContext` 严格校验 64 位十六进制摘要和 UUID。稳定主体由设备 ID 推导，不用低熵配置摘要认人；无实际 ID 且无有效受保护 Cookie 时不生成随机锚点。默认设备 ID 模块开启且必填时，单独配置摘要不能替代设备 ID。
+- `AccountRiskRequestContext` 严格校验 64 位十六进制摘要和 UUID。稳定主体由受保护 Cookie 中的设备 ID 或稳定物理/配置指纹（`fingerprint:{hash}`）推导，禁止在请求缺少设备 Cookie 时生成随机无关联 UUID 导致主体硬限制被隐身/无痕模式穿透。默认设备 ID 模块开启且必填时，单独配置摘要不能替代设备 ID。
+- 自动化与无头环境防御：前端多维检测 `navigator.webdriver`、软件光栅化 GPU（SwiftShader/llvmpipe/Mesa 等）、空插件列表与注入特征；服务端校验 User-Agent 与 Sec-CH-UA 客户端 Hints，命中自动化特征时直接拒绝注册并关闭连接（返回 `HEADLESS_BROWSER_BLOCKED`）。
 - 服务端签发 `daohua.device` 的 Data Protection Cookie（HttpOnly、SameSite=Lax、HTTPS 时 Secure），有效 Cookie 优先于客户端重报的 ID。前端普通 Cookie 与 localStorage 双份保存安装 UUID，均属于可伪造信号，不是认证凭据。
 - 来源 IP 只读取可信代理处理后的 `RemoteIpAddress`，IPv4-mapped 归一化；网段由服务端推导为 IPv4 `/24` 或 IPv6 `/64`。客户端上报的网络类型摘要不决定权威网段。
 - `AccountRiskHasher` 使用数据库首次生成的 32 字节 HMAC 密钥。`identity.account_risk_signals` 只保存 HMAC 与关联时间，`identity.account_risk_events` 保存脱敏判定、理由和分数；原始 IP、设备配置和浏览器摘要不落库。
