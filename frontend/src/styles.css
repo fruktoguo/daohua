@@ -4332,7 +4332,7 @@ input[type="checkbox"] {
   flex: 1 1 auto;
   min-height: 0;
   align-content: start;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.95fr);
   gap: 14px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -4468,29 +4468,16 @@ input[type="checkbox"] {
   color: var(--gold-bright);
 }
 
-.enhancement-history-card {
-  margin-top: 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 4px);
-  background: rgba(0, 0, 0, 0.12);
-}
-
-.enhancement-history-title {
+.enhancement-history-group {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 0 0 8px 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--gold-bright);
+  flex-direction: column;
 }
 
 .enhancement-history-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 180px;
+  max-height: 380px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -4499,9 +4486,10 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
-  border-radius: 3px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 4px);
   background: var(--bg-card, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -4524,15 +4512,6 @@ input[type="checkbox"] {
   min-width: 80px;
   text-align: right;
 }
-
-.enhancement-history-empty {
-  margin: 0;
-  padding: 12px 0;
-  font-size: 12px;
-  color: var(--text-dim);
-  text-align: center;
-}
-
 /* 斗法勾选块：仅 combat-encounter 行动弹窗展示 */
 .duel-option {
   display: grid;

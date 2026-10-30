@@ -452,7 +452,6 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
         {!selected ? (
           <p className="setting-desc">{t('app.enhancement.previewEmpty')}</p>
         ) : (
-          <>
           <dl className="action-detail-list">
             <div>
               <dt>{t('app.enhancement.levelFlow')}</dt>
@@ -514,34 +513,34 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
               </dd>
             </div>
           </dl>
-            <div className="enhancement-history-card">
-              <h4 className="enhancement-history-title">
-                <span>{t('app.enhancement.historyTitle')}</span>
-              </h4>
-              {historyRows.length > 0 ? (
-                <div className="enhancement-history-list">
-                  {historyRows.map(row => (
-                    <div className="enhancement-history-row" key={row.level}>
-                      <span className="enhancement-history-level">+{row.level}</span>
-                      <span className="enhancement-history-counts">
-                        {t('app.enhancement.historyCount', {
-                          successes: formatNumber(row.successes),
-                          attempts: formatNumber(row.attempts),
-                        })}
-                      </span>
-                      <span className="enhancement-history-rate">
-                        {t('app.enhancement.historyRate', {
-                          rate: formatNumber(row.successRate * 100, { maxDecimals: 1 }),
-                        })}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="enhancement-history-empty">{t('app.enhancement.historyEmpty')}</p>
-              )}
-            </div>
-          </>
+        )}
+      </div>
+
+      <div className="settings-group enhancement-history-group">
+        <h3 className="settings-group-title">{t('app.enhancement.historyTitle')}</h3>
+        {!selected ? (
+          <p className="setting-desc">{t('app.enhancement.previewEmpty')}</p>
+        ) : historyRows.length > 0 ? (
+          <div className="enhancement-history-list">
+            {historyRows.map(row => (
+              <div className="enhancement-history-row" key={row.level}>
+                <span className="enhancement-history-level">+{row.level}</span>
+                <span className="enhancement-history-counts">
+                  {t('app.enhancement.historyCount', {
+                    successes: formatNumber(row.successes),
+                    attempts: formatNumber(row.attempts),
+                  })}
+                </span>
+                <span className="enhancement-history-rate">
+                  {t('app.enhancement.historyRate', {
+                    rate: formatNumber(row.successRate * 100, { maxDecimals: 1 }),
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="setting-desc">{t('app.enhancement.historyEmpty')}</p>
         )}
       </div>
 

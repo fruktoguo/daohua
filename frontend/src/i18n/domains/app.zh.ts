@@ -195,7 +195,7 @@ export const appZh = {
       techniqueInline: '技艺 Lv.{level} · 加速 +{value}%',
       stoneCost: '灵石 ×{count}',
       insufficient: '持有不足',
-      historyTitle: '强化履历',
+      historyTitle: '记录',
       historyEmpty: '暂无此装备强化记录',
       historyCount: '{successes}次 / {attempts}次',
       historyRate: '{rate}% 成功率',
