@@ -16,7 +16,7 @@ import process from 'node:process'
 
 const smokeDeviceId = process.env.SMOKE_DEVICE_ID || crypto.randomUUID()
 const smokeDeviceConfig = process.env.SMOKE_DEVICE_CONFIG || crypto.createHash('sha256').update(`daohua-smoke-${smokeDeviceId}`).digest('hex')
-const riskSignals = { deviceId: smokeDeviceId, deviceConfigHash: smokeDeviceConfig, browserFingerprint: smokeDeviceConfig }
+const riskSignals = { deviceId: smokeDeviceId, deviceConfigHash: smokeDeviceConfig, browserFingerprint: smokeDeviceConfig, automated: false }
 
 const baseUrl = new URL(process.argv[2] || 'http://127.0.0.1:5128')
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 15_000)
@@ -96,6 +96,7 @@ function requestHttpRaw(path, accept, method = 'GET', body = undefined) {
     const target = new URL(path, baseUrl)
     const transport = target.protocol === 'https:' ? https : http
     const headers = { Accept: accept }
+    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     if (body !== undefined) headers['Content-Type'] = 'application/json'
     const request = transport.request(target, {
       method,
@@ -335,6 +336,7 @@ function openWebSocket(target, headers) {
         'Connection: Upgrade',
         `Sec-WebSocket-Key: ${key}`,
         'Sec-WebSocket-Version: 13',
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       ]
       for (const [name, value] of Object.entries(headers || {})) lines.push(`${name}: ${value}`)
       raw.write(`${lines.join('\r\n')}\r\n\r\n`)
