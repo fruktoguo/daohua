@@ -241,9 +241,14 @@ static void ValidateReferences(string directory)
             }
             foreach (var drop in Elements(Property(monster, "dropTable")))
             {
-                Require(items.Contains(Text(drop, "itemId")), $"{Rel(directory, file)} 怪物 {id} 掉落了不存在的物品 {Text(drop, "itemId")}。");
-                var chance = Number(drop, "dropChance", 1);
+                var dropItemId = Text(drop, "itemId");
+                Require(items.Contains(dropItemId), $"{Rel(directory, file)} 怪物 {id} 掉落了不存在的物品 {dropItemId}。");
+                var chance = Number(drop, "dropChance", 0);
                 Require(chance > 0 && chance <= 1, $"{Rel(directory, file)} 怪物 {id} 掉落概率 {chance} 超出 (0,1]。");
+                var minQuantity = Number(drop, "minQuantity", 0);
+                var maxQuantity = Number(drop, "maxQuantity", 0);
+                Require(minQuantity > 0, $"{Rel(directory, file)} 怪物 {id} 掉落 {dropItemId} 的 minQuantity 必须大于 0。");
+                Require(maxQuantity >= minQuantity, $"{Rel(directory, file)} 怪物 {id} 掉落 {dropItemId} 的 maxQuantity ({maxQuantity}) 必须大于等于 minQuantity ({minQuantity})。");
             }
             // modifiers 段为百分比点数词汇表；五行抗性等历史误植键直接拒绝。
             foreach (var key in ObjectKeys(Property(monster, "modifiers")))

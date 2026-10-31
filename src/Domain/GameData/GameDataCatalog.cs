@@ -1199,11 +1199,20 @@ public sealed class GameDataCatalog
             // 等阶边界由 12 阶锚点目录判定——levelExpected 是 127 个每级锚点，不能直接当等阶边界用。
             var tier = tierBoundaries.TierAt(level);
             var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
-                ? dropValue.EnumerateArray().Select(drop => new CombatDropDefinition(
-                    new ItemId(JsonRead.Text(drop, "itemId", "")),
-                    JsonRead.Number(drop, "dropChance", 0),
-                    JsonRead.Number(drop, "minQuantity", 0),
-                    JsonRead.Number(drop, "maxQuantity", 0))).ToArray()
+                ? dropValue.EnumerateArray().Select(drop =>
+                {
+                    var itemId = new ItemId(JsonRead.Text(drop, "itemId", ""));
+                    var dropChance = JsonRead.Number(drop, "dropChance", 0);
+                    var minQuantity = JsonRead.Number(drop, "minQuantity", 0);
+                    var maxQuantity = JsonRead.Number(drop, "maxQuantity", 0);
+                    if (!itemId.IsValid)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 掉落物品 ID 无效。");
+                    if (dropChance <= 0 || dropChance > 1)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 掉落条目 {itemId} 的概率无效 ({dropChance})。");
+                    if (minQuantity <= 0 || maxQuantity < minQuantity)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 掉落条目 {itemId} 的数量区间无效 [{minQuantity}, {maxQuantity}]。");
+                    return new CombatDropDefinition(itemId, dropChance, minQuantity, maxQuantity);
+                }).ToArray()
                 : [];
             var skills = JsonRead.Array(value, "skills").Select(skill =>
             {
