@@ -5206,6 +5206,21 @@ input[type="checkbox"] {
   border-color: var(--gold-dim);
 }
 
+.market-level-cancel-btn {
+  color: var(--crimson, #e06c75);
+  border-color: rgba(224, 108, 117, 0.4);
+}
+
+.market-level-cancel-btn:hover {
+  color: #ff858d;
+  border-color: rgba(224, 108, 117, 0.85);
+  background: rgba(224, 108, 117, 0.12);
+}
+
+.market-level.market-level--own {
+  background: rgba(218, 165, 32, 0.08);
+}
+
 .market-empty {
   display: grid;
   min-height: 118px;

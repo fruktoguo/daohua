@@ -5,6 +5,7 @@ import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketOrder, MarketVariantSummary } from '../game/types'
 import { useMarketStore, type MarketTab } from '../game/marketStore'
 import { fetchMarketBook, fetchMarketOrders, fetchMarketVariants } from '../network/apiClient'
+import { gameClient } from '../network/gameClient'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { MarketBookPanel } from './market/MarketBookPanel'
 import { MarketBrowseGrid } from './market/MarketBrowseGrid'
@@ -203,7 +204,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const equipmentCatalog = useGameStore(state => state.equipment)
   const playerId = useGameStore(state => state.playerId)
   const inventory = useGameStore(state => state.inventory)
-
+  const setNotice = useGameStore(state => state.setNotice)
   const instruments = useMemo<MarketInstrument[]>(() => {
     const tradableItems: MarketInstrument[] = catalog
       .filter(item => item.isTradable)
@@ -382,6 +383,11 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const openQuickTrade = useCallback((side: 'sell' | 'buy', price: number) => {
     openOrderModal(side, effectiveLevel, price)
   }, [effectiveLevel, openOrderModal])
+  const handleCancelOrder = useCallback((orderId: string) => {
+    if (!gameClient.sendCommand('market.cancel', { orderId })) return
+    setNotice(getT()('market.notice.cancelSubmitted'))
+    window.setTimeout(refresh, 120)
+  }, [refresh, setNotice])
   // 盘口详情返回：装备回到强化等级选择视图，非装备直接回标的列表。
   const handleBackFromDetail = useCallback(() => {
     if (isEquipment) setDetailLevel(null)
@@ -486,7 +492,13 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                 metadata={selectedMetadata}
                 onBack={handleBackFromDetail}
               />
-              <MarketBookPanel book={activeBook} onQuickTrade={openQuickTrade} sides={['bid', 'ask']} />
+              <MarketBookPanel
+                book={activeBook}
+                onCancelOrder={handleCancelOrder}
+                onQuickTrade={openQuickTrade}
+                orders={orders}
+                sides={['bid', 'ask']}
+              />
             </div>
           )
         )}

@@ -1234,6 +1234,15 @@
   color: var(--amber);
 }
 
+:root[data-theme="light"] .market-level-cancel-btn {
+  border-color: rgba(184, 46, 58, 0.35);
+  color: var(--crimson);
+}
+
+:root[data-theme="light"] .market-level.market-level--own {
+  background: rgba(184, 134, 11, 0.12);
+}
+
 /* 9. 属性小图标：胶囊数值已按浅色主题加深，图标仍是荧光色系（1.6~2.1:1）。
       与同胶囊 .underlined-value 的浅色语义色保持一致。 */
 :root[data-theme="light"] .pill-tone--emerald .compound-icon,

@@ -1,8 +1,8 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { formatNumber } from '../../game/format'
 import { UnitNumber } from '../UnitNumber'
 import { useT } from '../../i18n'
-import type { MarketBook, MarketLevel } from '../../game/types'
+import type { MarketBook, MarketLevel, MarketOrder } from '../../game/types'
 
 /** 盘口深度默认占位行数（确保盘口高度规整不跳动） */
 const BOOK_PLACEHOLDER_ROWS = 8
@@ -13,10 +13,12 @@ const BOOK_PLACEHOLDER_ROWS = 8
  * 三列布局：单价、挂单总量、快捷交易按钮；快捷按钮只挂在最优档（买一/卖一）行上，
  * 买盘最优档对应「按买一价卖出」，卖盘最优档对应「按卖一价买入」。
  */
-function MarketRows({ levels, side, onQuickTrade }: {
+function MarketRows({ levels, side, onQuickTrade, ownOrdersByPrice, onCancelOrder }: {
   levels: readonly MarketLevel[]
   side: 'ask' | 'bid'
   onQuickTrade?: (price: number) => void
+  ownOrdersByPrice?: ReadonlyMap<number, MarketOrder>
+  onCancelOrder?: (orderId: string) => void
 }): React.JSX.Element {
   const t = useT()
   const placeholders = Math.max(0, BOOK_PLACEHOLDER_ROWS - levels.length)
@@ -27,26 +29,39 @@ function MarketRows({ levels, side, onQuickTrade }: {
         <span role="columnheader">{t('market.quantity')}</span>
         <span role="columnheader">{t('market.book.actionColumn')}</span>
       </div>
-      {levels.map((level, index) => (
-        <div className={`market-level market-level--${side}`} key={level.price} role="row">
-          <strong role="cell"><UnitNumber tooltipLabel={t('market.unitPrice')} value={level.price} tone={side === 'bid' ? 'jade' : 'crimson'} /></strong>
-          <span role="cell"><UnitNumber value={level.quantity} /></span>
-          <span role="cell" className="market-level-action">
-            {index === 0 && onQuickTrade && (
-              <button
-                aria-label={side === 'bid'
-                  ? t('market.book.quickSellAria', { price: formatNumber(level.price) })
-                  : t('market.book.quickBuyAria', { price: formatNumber(level.price) })}
-                className={`market-level-trade-btn market-level-trade-btn--${side}`}
-                onClick={() => onQuickTrade(level.price)}
-                type="button"
-              >
-                {side === 'bid' ? t('market.book.quickSell') : t('market.book.quickBuy')}
-              </button>
-            )}
-          </span>
-        </div>
-      ))}
+      {levels.map((level, index) => {
+        const ownOrder = ownOrdersByPrice?.get(level.price)
+        return (
+          <div className={`market-level market-level--${side}${ownOrder ? ' market-level--own' : ''}`} key={level.price} role="row">
+            <strong role="cell"><UnitNumber tooltipLabel={t('market.unitPrice')} value={level.price} tone={side === 'bid' ? 'jade' : 'crimson'} /></strong>
+            <span role="cell"><UnitNumber value={level.quantity} /></span>
+            <span role="cell" className="market-level-action">
+              {ownOrder ? (
+                <button
+                  aria-label={t('market.book.cancelOwnOrderAria', { price: formatNumber(level.price) })}
+                  className="market-level-trade-btn market-level-cancel-btn"
+                  onClick={() => onCancelOrder?.(ownOrder.orderId)}
+                  title={t('market.cancelOrder')}
+                  type="button"
+                >
+                  {t('common.cancel')}
+                </button>
+              ) : index === 0 && onQuickTrade ? (
+                <button
+                  aria-label={side === 'bid'
+                    ? t('market.book.quickSellAria', { price: formatNumber(level.price) })
+                    : t('market.book.quickBuyAria', { price: formatNumber(level.price) })}
+                  className={`market-level-trade-btn market-level-trade-btn--${side}`}
+                  onClick={() => onQuickTrade(level.price)}
+                  type="button"
+                >
+                  {side === 'bid' ? t('market.book.quickSell') : t('market.book.quickBuy')}
+                </button>
+              ) : null}
+            </span>
+          </div>
+        )
+      })}
       {levels.length === 0
         ? <div className="market-empty">{t('market.book.noOrders')}</div>
         : Array.from({ length: placeholders }, (_, index) => (
@@ -67,6 +82,10 @@ interface MarketBookPanelProps {
    * 传入后买一/卖一行尾渲染对应快捷交易按钮。
    */
   onQuickTrade?: (side: 'buy' | 'sell', price: number) => void
+  /** 玩家当前在坊市的全部活动挂单（用于识别在当前标的盘口所处价格档位的自身订单） */
+  orders?: readonly MarketOrder[]
+  /** 撤销自身订单回调 */
+  onCancelOrder?: (orderId: string) => void
 }
 
 /**
@@ -75,8 +94,36 @@ interface MarketBookPanelProps {
  * 左右双列或单向展示指定标的的买一至买N、卖一至卖N档位价格、累计挂单总量与笔数；
  * 最优档行尾提供快捷交易入口（买一卖出/卖一买入），由宿主打开挂单弹窗并预填对手价。
  */
-export const MarketBookPanel = memo(function MarketBookPanel({ book, sides = ['bid', 'ask'], onQuickTrade }: MarketBookPanelProps): React.JSX.Element {
+export const MarketBookPanel = memo(function MarketBookPanel({
+  book,
+  sides = ['bid', 'ask'],
+  onQuickTrade,
+  orders,
+  onCancelOrder,
+}: MarketBookPanelProps): React.JSX.Element {
   const t = useT()
+
+  const ownBidsByPrice = useMemo(() => {
+    if (!book || !orders || orders.length === 0) return new Map<number, MarketOrder>()
+    const map = new Map<number, MarketOrder>()
+    for (const order of orders) {
+      if (order.itemId === book.itemId && order.enhancementLevel === book.enhancementLevel && order.side === 'buy') {
+        map.set(order.price, order)
+      }
+    }
+    return map
+  }, [book, orders])
+
+  const ownAsksByPrice = useMemo(() => {
+    if (!book || !orders || orders.length === 0) return new Map<number, MarketOrder>()
+    const map = new Map<number, MarketOrder>()
+    for (const order of orders) {
+      if (order.itemId === book.itemId && order.enhancementLevel === book.enhancementLevel && order.side === 'sell') {
+        map.set(order.price, order)
+      }
+    }
+    return map
+  }, [book, orders])
   return (
     <div className="market-book-panel">
       <div className="market-book">
@@ -88,7 +135,9 @@ export const MarketBookPanel = memo(function MarketBookPanel({ book, sides = ['b
             </div>
             <MarketRows
               levels={book?.bids ?? []}
+              onCancelOrder={onCancelOrder}
               onQuickTrade={onQuickTrade ? price => onQuickTrade('sell', price) : undefined}
+              ownOrdersByPrice={ownBidsByPrice}
               side="bid"
             />
           </section>
@@ -101,7 +150,9 @@ export const MarketBookPanel = memo(function MarketBookPanel({ book, sides = ['b
             </div>
             <MarketRows
               levels={book?.asks ?? []}
+              onCancelOrder={onCancelOrder}
               onQuickTrade={onQuickTrade ? price => onQuickTrade('buy', price) : undefined}
+              ownOrdersByPrice={ownAsksByPrice}
               side="ask"
             />
           </section>

@@ -107,6 +107,7 @@ export const marketZh = {
       quickBuy: '买入',
       quickSellAria: '按买一价 {price} 卖出',
       quickBuyAria: '按卖一价 {price} 买入',
+      cancelOwnOrderAria: '撤销自身挂单（单价 {price}）',
       noOrders: '暂无挂单',
     },
     activeOrdersTotal: '共 {count} 笔活动挂单',
