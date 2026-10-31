@@ -31,6 +31,9 @@ export type ConsumableKindFilter = 'any' | 'combatPotion' | 'combatGeneral' | 't
 /** 材料稀有度过滤：任意 (any) | 普通 (common) | 稀有 (rare) */
 export type MaterialRarityFilter = 'any' | 'common' | 'rare'
 
+
+/** 坊市标的网格卡片右下角数量显示模式：'owned' (自身拥有，默认) | 'onSale' (坊市在售) */
+export type MarketAmountDisplayMode = 'owned' | 'onSale'
 /**
  * 坊市交易标的元数据定义
  */
@@ -132,6 +135,8 @@ export interface MarketUiState {
   materialRarity: MaterialRarityFilter
   /** 品阶过滤（0 表示任意，1~8 对应品质档） */
   gradeFilter: number
+  /** 标的卡片右下角数量显示模式：自身拥有 (owned) | 坊市在售 (onSale) */
+  amountDisplayMode: MarketAmountDisplayMode
 
 
   /** 设置一级主分类并重置子分类与滚动位置 */
@@ -162,6 +167,10 @@ export interface MarketUiState {
   setMaterialRarity: (rarity: MaterialRarityFilter) => void
   /** 设置品阶过滤（0 为任意）并重置滚动位置 */
   setGradeFilter: (grade: number) => void
+  /** 设置标的卡片右下角数量显示模式 */
+  setAmountDisplayMode: (mode: MarketAmountDisplayMode) => void
+  /** 翻转标的卡片右下角数量显示模式（owned <-> onSale） */
+  toggleAmountDisplayMode: () => void
   /** 重置全部过滤项至默认状态 */
   resetFilters: () => void
 }
@@ -188,6 +197,7 @@ export const useMarketStore = create<MarketUiState>((set) => ({
   consumableKind: 'any',
   materialRarity: 'any',
   gradeFilter: 0,
+  amountDisplayMode: 'owned',
 
 
   setPrimaryTab: (primaryTab) => set({ primaryTab, subCategory: 'all', scrollTop: 0 }),
@@ -204,6 +214,10 @@ export const useMarketStore = create<MarketUiState>((set) => ({
   setConsumableKind: (consumableKind) => set({ consumableKind, scrollTop: 0 }),
   setMaterialRarity: (materialRarity) => set({ materialRarity, scrollTop: 0 }),
   setGradeFilter: (gradeFilter) => set({ gradeFilter, scrollTop: 0 }),
+  setAmountDisplayMode: (amountDisplayMode) => set({ amountDisplayMode }),
+  toggleAmountDisplayMode: () => set((state) => ({
+    amountDisplayMode: state.amountDisplayMode === 'owned' ? 'onSale' : 'owned',
+  })),
   resetFilters: () => set({
     primaryTab: 'all',
     subCategory: 'all',

@@ -11,6 +11,7 @@ import {
   type ManualCategoryFilter,
   type ManualDisciplineFilter,
   type ManualFormFilter,
+  type MarketAmountDisplayMode,
   type MarketPrimaryCategory,
   type MaterialRarityFilter,
 } from '../../game/marketStore'
@@ -71,7 +72,9 @@ function matchesMaterialSubCategory(item: MarketInstrument, sub: string): boolea
 /** 坊市可交易标的单个卡片 Props */
 interface MarketBrowseCardItemProps {
   item: MarketInstrument
-  amount: number
+  ownedAmount: number
+  onSaleAmount: number
+  mode: MarketAmountDisplayMode
   selected: boolean
   onSelect: (itemId: string) => void
   openDelay?: number
@@ -80,7 +83,9 @@ interface MarketBrowseCardItemProps {
 /** 隔离后的单个坊市标的卡片（memo 避免 80+ 个格子联级重绘） */
 const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
   item,
-  amount,
+  ownedAmount,
+  onSaleAmount,
+  mode,
   selected,
   onSelect,
   openDelay = 150,
@@ -92,9 +97,11 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
     onSelect(item.itemId)
   }, [item.itemId, onSelect])
 
+  const displayAmount = mode === 'onSale' ? onSaleAmount : ownedAmount
+
   return (
     <ItemTooltipTarget
-      amount={amount}
+      amount={ownedAmount}
       className="market-browse-tooltip"
       definition={item.definition}
       equipmentDefinition={item.equipmentDefinition}
@@ -104,7 +111,9 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
       tabIndex={-1}
     >
       <button
-        aria-label={t('market.browse.itemOwned', { name: item.name, count: formatNumber(amount) })}
+        aria-label={mode === 'onSale'
+          ? t('market.browse.itemOnSale', { name: item.name, count: formatNumber(displayAmount) })
+          : t('market.browse.itemOwned', { name: item.name, count: formatNumber(displayAmount) })}
         aria-selected={selected}
         className={`market-browse-card${selected ? ' is-selected' : ''}`}
         onClick={handleClick}
@@ -112,10 +121,10 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
         type="button"
       >
         <ItemTile
-          amount={amount}
+          amount={displayAmount}
           category={resolveItemCategoryLabel(
             resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)}
-          className="inventory-cell"
+          className={`inventory-cell${mode === 'onSale' ? ' is-onsale-mode' : ''}`}
           itemId={item.itemId}
           level={metadata.level}
           name={item.name}
@@ -149,6 +158,9 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 }: MarketBrowseGridProps): React.JSX.Element {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
+  const marketStats = useGameStore(state => state.marketStats)
+  const amountDisplayMode = useMarketStore(state => state.amountDisplayMode)
+  const toggleAmountDisplayMode = useMarketStore(state => state.toggleAmountDisplayMode)
 
   // 1. 接入跨界面常驻的坊市状态中心（仅订阅必要属性，高频 scrollTop 不订阅以实现滚动零重绘）
   const primaryTab = useMarketStore(state => state.primaryTab)
@@ -230,6 +242,17 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
     for (const entry of inventory) amounts.set(entry.itemId, (amounts.get(entry.itemId) ?? 0) + entry.amount)
     return amounts
   }, [inventory])
+
+  // 3.1 坊市在售字典 O(1) 映射：从 marketStats 聚合该 itemId 下全部变体（如装备的各强化等级）活动卖单剩余总量
+  const marketOnSaleMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const stats of Object.values(marketStats)) {
+      if (stats.askQuantity > 0) {
+        map.set(stats.itemId, (map.get(stats.itemId) ?? 0) + stats.askQuantity)
+      }
+    }
+    return map
+  }, [marketStats])
 
   const resetScroll = useCallback(() => {
     if (gridRef.current) {
@@ -364,19 +387,37 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   return (
     <div className="market-browse">
       <div className="market-browse-toolbar">
-        <div className="market-category-chips" role="tablist" aria-label={t('market.browse.filterCategoryAria')}>
-          {PRIMARY_TABS.map(tab => (
-            <button
-              aria-selected={primaryTab === tab.id}
-              className={primaryTab === tab.id ? 'active' : ''}
-              key={tab.id}
-              onClick={() => handlePrimaryTabChange(tab.id)}
-              role="tab"
-              type="button"
-            >
-              {t(tab.labelKey) || tab.fallback}
-            </button>
-          ))}
+        <div className="market-category-bar">
+          <div className="market-category-chips" role="tablist" aria-label={t('market.browse.filterCategoryAria')}>
+            {PRIMARY_TABS.map(tab => (
+              <button
+                aria-selected={primaryTab === tab.id}
+                className={primaryTab === tab.id ? 'active' : ''}
+                key={tab.id}
+                onClick={() => handlePrimaryTabChange(tab.id)}
+                role="tab"
+                type="button"
+              >
+                {t(tab.labelKey) || tab.fallback}
+              </button>
+            ))}
+          </div>
+          <button
+            aria-checked={amountDisplayMode === 'onSale'}
+            aria-label={t('market.browse.amountMode.aria')}
+            className={`market-amount-toggle${amountDisplayMode === 'onSale' ? ' is-onsale' : ''}`}
+            onClick={toggleAmountDisplayMode}
+            role="switch"
+            title={t('market.browse.amountMode.tooltip')}
+            type="button"
+          >
+            <span className={`market-amount-toggle-option${amountDisplayMode === 'owned' ? ' is-active' : ''}`}>
+              {t('market.browse.amountMode.owned')}
+            </span>
+            <span className={`market-amount-toggle-option${amountDisplayMode === 'onSale' ? ' is-active' : ''}`}>
+              {t('market.browse.amountMode.onSale')}
+            </span>
+          </button>
         </div>
         <input
           aria-label={t('market.browse.searchItems')}
@@ -387,7 +428,6 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
           value={query}
         />
       </div>
-
       {primaryTab === 'material' && (
         <div className="insight-sub-tabs market-sub-tabs" role="tablist" aria-label={t('market.browse.filterSubCategoryAria')}>
           {MATERIAL_SUB_TABS.map(sub => (
@@ -523,11 +563,13 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
       >
         {visibleItems.map(item => (
           <MarketBrowseCardItem
-            amount={inventoryMap.get(item.itemId) ?? 0}
             item={item}
             key={item.itemId}
+            mode={amountDisplayMode}
+            onSaleAmount={marketOnSaleMap.get(item.itemId) ?? 0}
             onSelect={onSelect}
             openDelay={150}
+            ownedAmount={inventoryMap.get(item.itemId) ?? 0}
             selected={value === item.itemId}
           />
         ))}

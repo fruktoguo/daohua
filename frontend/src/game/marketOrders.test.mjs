@@ -89,3 +89,60 @@ test('marketBook: 盘口自身订单按标的、等级、方向与价格精确�
   const aria = marketZh.market.book.cancelOwnOrderAria.replace('{price}', '120')
   assert.equal(aria, '撤销自身挂单（单价 120）')
 })
+
+test('marketBrowse: 坊市在售总量聚合与角标显示模式自洽', () => {
+  // 1. 模拟全服行情统计 marketStats：含基础物品与同一装备多强化等级
+  const marketStats = {
+    'item.iron-ore|0': {
+      itemId: 'item.iron-ore',
+      enhancementLevel: 0,
+      askQuantity: 50,
+    },
+    'equipment.bronze-sword|0': {
+      itemId: 'equipment.bronze-sword',
+      enhancementLevel: 0,
+      askQuantity: 3,
+    },
+    'equipment.bronze-sword|3': {
+      itemId: 'equipment.bronze-sword',
+      enhancementLevel: 3,
+      askQuantity: 2,
+    },
+    'equipment.bronze-sword|5': {
+      itemId: 'equipment.bronze-sword',
+      enhancementLevel: 5,
+      askQuantity: 1,
+    },
+    'item.rare-herb|0': {
+      itemId: 'item.rare-herb',
+      enhancementLevel: 0,
+      askQuantity: 0,
+    },
+  }
+
+  // 2. 聚合在售总量字典
+  const marketOnSaleMap = new Map()
+  for (const stats of Object.values(marketStats)) {
+    if (stats.askQuantity > 0) {
+      marketOnSaleMap.set(stats.itemId, (marketOnSaleMap.get(stats.itemId) ?? 0) + stats.askQuantity)
+    }
+  }
+
+  // 验证：普通物品单盘口在售数量
+  assert.equal(marketOnSaleMap.get('item.iron-ore'), 50)
+  // 验证：装备标的汇总全部变体强化等级（0级3件 + 3级2件 + 5级1件 = 6件）
+  assert.equal(marketOnSaleMap.get('equipment.bronze-sword'), 6)
+  // 验证：无在售活动单标的返回 0
+  assert.equal(marketOnSaleMap.get('item.rare-herb') ?? 0, 0)
+
+  // 3. 验证模式文案插值与自洽
+  const dict = marketZh.market.browse
+  assert.equal(dict.amountMode.owned, '持有')
+  assert.equal(dict.amountMode.onSale, '在售')
+
+  const ownedAria = dict.itemOwned.replace('{name}', '铁矿石').replace('{count}', '10')
+  assert.equal(ownedAria, '铁矿石，拥有 10')
+
+  const onSaleAria = dict.itemOnSale.replace('{name}', '铁矿石').replace('{count}', '50')
+  assert.equal(onSaleAria, '铁矿石，在售 50')
+})

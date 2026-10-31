@@ -245,9 +245,16 @@ export const marketZh = {
         gradeAria: '品阶筛选',
         gradeOption: '{tier} 阶',
       },
+      amountMode: {
+        aria: '切换物品右下角数量显示模式',
+        tooltip: '点击切换右下角显示自身拥有或坊市在售数量',
+        owned: '持有',
+        onSale: '在售',
+      },
       searchItems: '搜索物品',
       gridAria: '全部可交易物品',
       itemOwned: '{name}，拥有 {count}',
+      itemOnSale: '{name}，在售 {count}',
       noMatch: '没有匹配的物品',
     },
     tooltip: {
