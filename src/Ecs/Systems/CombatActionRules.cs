@@ -796,14 +796,15 @@ internal static class CombatActionRules
             || (!completedSearch.DuelSeekFailed
                 && completedSearch.PhaseElapsedSeconds + 1e-9 < completedSearch.PhaseDurationSeconds))
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻尚未完成，不能进入战斗。");
+        var spec = action.Participation?.Spec;
+        var partySize = spec?.Members.Count ?? 1;
         var wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters,
-            completedSearch.Seed, completedSearch.WaveNumber);
+            completedSearch.Seed, completedSearch.WaveNumber, partySize);
         // 节点封魔阵类削弱：怪物模板按当前节点建筑投影折减气血上限与双攻双防（单人取本机投影，会话取经 spec 冻结注入）。
         var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
         var enemyTemplates = wave.Select(monster =>
             new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills, monster.Id, monster.Rank)).ToArray();
         var respawnSeconds = InBattleRespawnSeconds(encounter);
-        var spec = action.Participation?.Spec;
         CombatEncounterState battle;
         if (spec is not null)
         {

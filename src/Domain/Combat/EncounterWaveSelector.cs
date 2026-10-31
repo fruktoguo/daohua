@@ -5,13 +5,32 @@ namespace Domain.Combat;
 
 /// <summary>
 /// 按遭遇预算生成确定性的单波怪物阵容。
-/// 波次结构：普通波最多 3 只普通怪；精英波 1 只精英 + 普通怪护从；Boss 波 1 只 Boss + 普通怪护从。
-/// 总强度受 maxTotalStrength 约束；普通怪抽取按预算轮盘直至预算耗尽或满编 3 只。
+/// 波次结构：普通波最多 3 只普通怪（组队最多 9 只）；精英波 1 只精英 + 普通怪护从；Boss 波 1 只 Boss + 普通怪护从。
+/// 总强度受 maxTotalStrength 约束；组队讨伐时随队伍人数增加动态提高威胁度（每多1人+15%，最多160%）。
 /// </summary>
 public static class EncounterWaveSelector
 {
-    /// <summary>单波满编怪物数量（1 特殊怪 + 2 护从 / 3 普通怪）。</summary>
+    /// <summary>单人单波满编怪物数量（1 特殊怪 + 2 护从 / 3 普通怪）。</summary>
     public const int MaxWaveSize = 3;
+
+    /// <summary>组队讨伐单波满编怪物数量（九宫格 3x3 敌方阵型上限 9 只）。</summary>
+    public const int MaxAlliedWaveSize = 9;
+
+    /// <summary>组队讨伐每多一名玩家增加的威胁度比率（15%）。</summary>
+    public const double ThreatRatioPerExtraPlayer = 0.15;
+
+    /// <summary>组队最终威胁度加成倍率上限（160%）。</summary>
+    public const double MaxThreatMultiplier = 1.60;
+
+    /// <summary>
+    /// 计算队伍人数对应的最终威胁度加成倍率：
+    /// 以单人（1 人）为基准 1.0 (100%)，每多一个玩家增加 15%，最高封顶 160% (1.60)。
+    /// </summary>
+    public static double GetPartyThreatMultiplier(int partySize)
+    {
+        var extra = Math.Max(0, partySize - 1);
+        return Math.Min(MaxThreatMultiplier, 1.0 + extra * ThreatRatioPerExtraPlayer);
+    }
 
     /// <summary>
     /// 遭遇刷怪池的物化缓存：RandomSpawns 拆为并行数组，免每波 ToArray/字段反射。
@@ -32,9 +51,10 @@ public static class EncounterWaveSelector
     /// <param name="monsters">怪物定义表（预算与强度校验依据）。</param>
     /// <param name="seed">确定性随机种子。</param>
     /// <param name="waveNumber">当前波次（1 起）。</param>
-    /// <returns>本波怪物定义列表（1~MaxWaveSize 只）。</returns>
+    /// <param name="partySize">队伍参战人数（默认 1；每多 1 人增加 15% 威胁度，最多 160%）。</param>
+    /// <returns>本波怪物定义列表（单人 1~MaxWaveSize 只，组队 1~MaxAlliedWaveSize 只）。</returns>
     public static IReadOnlyList<CombatMonsterDefinition> Select(CombatEncounterDefinition encounter,
-        IReadOnlyDictionary<string, CombatMonsterDefinition> monsters, long seed, int waveNumber)
+        IReadOnlyDictionary<string, CombatMonsterDefinition> monsters, long seed, int waveNumber, int partySize = 1)
     {
         ArgumentNullException.ThrowIfNull(encounter); ArgumentNullException.ThrowIfNull(monsters);
         if (waveNumber < 1 || !double.IsFinite(encounter.MinBudget) || !double.IsFinite(encounter.MaxBudget)
@@ -43,9 +63,13 @@ public static class EncounterWaveSelector
         var bossInterval = encounter.BattlesPerBoss > 0 ? encounter.BattlesPerBoss : 20;
         var eliteInterval = encounter.BattlesPerElite > 0 ? encounter.BattlesPerElite : 5;
         var special = waveNumber % bossInterval == 0 ? encounter.BossEnemyIds : waveNumber % eliteInterval == 0 ? encounter.EliteEnemyIds : null;
+        var threatMultiplier = GetPartyThreatMultiplier(partySize);
+        var minBudget = encounter.MinBudget * threatMultiplier;
+        var maxBudget = encounter.MaxBudget * threatMultiplier;
+        var strengthPool = encounter.MaxTotalStrength > 0 ? encounter.MaxTotalStrength * threatMultiplier : double.PositiveInfinity;
+        var maxWaveSize = partySize > 1 ? MaxAlliedWaveSize : MaxWaveSize;
         var result = new List<CombatMonsterDefinition>();
-        var remain = encounter.MinBudget + (Next(ref seed) % 1_000_000UL) / 1_000_000d * (encounter.MaxBudget - encounter.MinBudget);
-        var strengthPool = encounter.MaxTotalStrength > 0 ? encounter.MaxTotalStrength : double.PositiveInfinity;
+        var remain = minBudget + (Next(ref seed) % 1_000_000UL) / 1_000_000d * (maxBudget - minBudget);
         var spawns = s_spawnCache.GetValue(encounter, static e =>
         {
             var entries = e.RandomSpawns;
@@ -71,7 +95,7 @@ public static class EncounterWaveSelector
             if (!double.IsFinite(monster.BudgetCost) || monster.BudgetCost <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "特殊怪物预算无效。");
             result.Add(monster);
-            remain = encounter.MaxBudget - monster.BudgetCost;
+            remain = maxBudget - monster.BudgetCost;
             // 特殊怪强度取自刷怪池条目：原 strengthOf 字典按 RandomSpawns 序覆盖填充，
             // 等价于取最后一个匹配条目——反向扫描复刻该语义，缺省为 0。
             var specialStrength = 0d;
@@ -93,7 +117,7 @@ public static class EncounterWaveSelector
             budgetCosts[i] = definition.BudgetCost;
         }
         if (spawnCount == 0 && result.Count == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇没有有效怪物池。");
-        while (result.Count < MaxWaveSize && remain > 0)
+        while (result.Count < maxWaveSize && remain > 0)
         {
             // affordable 子集不物化：单趟按原顺序累加满足预算/强度门槛的候选权重，与原 Where+Sum 同序。
             var total = 0d;

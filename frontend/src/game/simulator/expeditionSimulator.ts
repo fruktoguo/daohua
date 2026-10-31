@@ -276,8 +276,8 @@ export class ExpeditionSimulator {
         }
       }
 
-      // 2. 生成本波怪物阵容
-      const waveResult = this.generateWave(encounter, seed, waveNumber, abilityMap)
+      // 2. 生成本波怪物阵容（组队人数驱动威胁度倍率与波次怪量扩容，与 EncounterWaveSelector.cs 对齐）
+      const waveResult = this.generateWave(encounter, seed, waveNumber, abilityMap, config.allies.length)
       seed = waveResult.nextSeed
       const enemies = waveResult.enemies
 
@@ -778,7 +778,8 @@ export class ExpeditionSimulator {
     encounter: CombatEncounterDefinition,
     seed: bigint,
     waveNumber: number,
-    abilityMap: Map<string, CombatAbilityDefinition>
+    abilityMap: Map<string, CombatAbilityDefinition>,
+    partySize = 1
   ): {
     enemies: SimCombatant[]
     rawEnemies: RawEnemySpec[]
@@ -789,15 +790,21 @@ export class ExpeditionSimulator {
     const isBoss = waveNumber % bossInterval === 0
     const isElite = !isBoss && waveNumber % eliteInterval === 0
 
+    // 组队威胁度缩放（与 EncounterWaveSelector.cs 100% 对齐）：单人 100% 基准，
+    // 每多 1 名玩家 +15%，上限 160%；组队（partySize > 1）波次怪量上限扩容至 9 只。
+    const extraPlayers = Math.max(0, partySize - 1)
+    const threatMultiplier = Math.min(1.6, 1.0 + extraPlayers * 0.15)
+    const maxWaveSize = partySize > 1 ? 9 : 3
+
     const rawEnemies: RawEnemySpec[] = []
     let currentSeed = seed
-    const minBudget = 'minBudget' in encounter && typeof encounter.minBudget === 'number' ? encounter.minBudget : 30
-    const maxBudget = 'maxBudget' in encounter && typeof encounter.maxBudget === 'number' ? encounter.maxBudget : 60
+    const minBudget = ('minBudget' in encounter && typeof encounter.minBudget === 'number' ? encounter.minBudget : 30) * threatMultiplier
+    const maxBudget = ('maxBudget' in encounter && typeof encounter.maxBudget === 'number' ? encounter.maxBudget : 60) * threatMultiplier
     const { roll: budgetRoll, nextSeed: s0 } = rollMillionth(currentSeed)
     currentSeed = s0
 
     let remain = minBudget + budgetRoll * (maxBudget - minBudget)
-    let strengthPool = encounter.maxTotalStrength > 0 ? encounter.maxTotalStrength : Number.POSITIVE_INFINITY
+    let strengthPool = encounter.maxTotalStrength > 0 ? encounter.maxTotalStrength * threatMultiplier : Number.POSITIVE_INFINITY
 
     // 特殊波次优先加入特殊怪
     if (isBoss && encounter.bossEnemies && encounter.bossEnemies.length > 0) {
@@ -852,12 +859,12 @@ export class ExpeditionSimulator {
       strengthPool -= 20
     }
 
-    // 预算轮盘抽取普通小怪 (最多 3 只)
+    // 预算轮盘抽取普通小怪（单人口径最多 3 只，组队扩容至 9 只九宫格满编）
     const spawns = encounter.randomSpawns && encounter.randomSpawns.length > 0
       ? encounter.randomSpawns
       : [{ enemy: encounter.enemy, weight: 1, strength: 15 }]
 
-    while (rawEnemies.length < 3 && remain > 0) {
+    while (rawEnemies.length < maxWaveSize && remain > 0) {
       const affordable = spawns.filter(s => {
         const cost = s.enemy?.budgetCost || s.strength || 15
         const str = s.strength || 15

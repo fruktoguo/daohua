@@ -601,4 +601,52 @@ public sealed class CombatPartyExpeditionTests
         if (id.StartsWith("enemy:", StringComparison.Ordinal) && int.TryParse(id[6..], out var enemy)) return 100 + enemy;
         return -1;
     }
+    /// <summary>
+    /// 组队威胁度缩放倍率门禁（TASK-20261031-06）：
+    /// 单人（1人）为 100%，每多 1 人 +15%，上限 160% 封顶。
+    /// </summary>
+    [Fact]
+    public void PartyThreatMultiplierScalesWithPlayerCountAndCapsAt160Percent()
+    {
+        Assert.Equal(1.00, EncounterWaveSelector.GetPartyThreatMultiplier(0), 6);
+        Assert.Equal(1.00, EncounterWaveSelector.GetPartyThreatMultiplier(1), 6);
+        Assert.Equal(1.15, EncounterWaveSelector.GetPartyThreatMultiplier(2), 6);
+        Assert.Equal(1.30, EncounterWaveSelector.GetPartyThreatMultiplier(3), 6);
+        Assert.Equal(1.45, EncounterWaveSelector.GetPartyThreatMultiplier(4), 6);
+        Assert.Equal(1.60, EncounterWaveSelector.GetPartyThreatMultiplier(5), 6);
+        Assert.Equal(1.60, EncounterWaveSelector.GetPartyThreatMultiplier(6), 6);
+        Assert.Equal(1.60, EncounterWaveSelector.GetPartyThreatMultiplier(10), 6);
+    }
+
+    /// <summary>
+    /// 组队威胁度放大预算并扩容波次怪量门禁（TASK-20261031-06）：
+    /// 单人时即使预算充裕，波次怪量严格封顶 3 只（MaxWaveSize）；
+    /// 组队时解除 3 只封顶（支持至九宫格满编 9 只），且遭遇预算按威胁度倍率线性放大。
+    /// </summary>
+    [Fact]
+    public void EncounterWaveSelectorPartySizeScalesThreatAndExpandsWaveSize()
+    {
+        var monster = new CombatMonsterDefinition("enemy.goblin", "地精", 10, 1, CombatMonsterRank.Minion,
+            CombatantStats.Create(100, 10, 0, 1), [], []);
+        var monsters = new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster };
+        // 预算区间 60~60：单怪成本 10，理论最多可容纳 6 只
+        var encounter = new CombatEncounterDefinition("encounter.threat-test", "威胁度测试遭遇", 60, 60, 0, 1, 1, 180,
+            [new CombatSpawnDefinition(monster.Id, 1, 10)], [], [], 0);
+
+        // 单人：预算 60，受单人满编 3 只限制，结果恒为 3 只
+        var soloDefault = EncounterWaveSelector.Select(encounter, monsters, 12345, 1);
+        var soloExplicit = EncounterWaveSelector.Select(encounter, monsters, 12345, 1, partySize: 1);
+        Assert.Equal(3, soloDefault.Count);
+        Assert.Equal(3, soloExplicit.Count);
+
+        // 2 人队伍（威胁度 115%）：预算放大为 60 * 1.15 = 69 点；
+        // 解除 3 只限制后，单怪 10 点预算可稳定生成 6 只怪
+        var duo = EncounterWaveSelector.Select(encounter, monsters, 12345, 1, partySize: 2);
+        Assert.Equal(6, duo.Count);
+
+        // 5 人满编队伍（威胁度 160%）：预算放大为 60 * 1.60 = 96 点；
+        // 96 点预算可生成 9 只怪（受九宫格 9 只满编限制封顶）
+        var squad = EncounterWaveSelector.Select(encounter, monsters, 12345, 1, partySize: 5);
+        Assert.Equal(9, squad.Count);
+    }
 }
