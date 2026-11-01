@@ -160,6 +160,7 @@ docker compose -f deploy/compose.prod.yaml down
 | `reset-outdated-players.sh` | 本地库版本漂移处置：存档行或 `platform.schema_version` 落后时优先执行 `migrations/` 迁移链（经 `migrate-local-db.sh`）；迁移后仍有不可迁移存档漂移时须控制台交互确认（输入 RESET）才重置玩家游戏域数据（保留账号/角色名），拒绝或无 TTY 则中止启动；`dev.sh` 启动时自动调用，仅作用于本地回环库，`--dry-run` 只检测 |
 | `backup-pull-sync.sh` | 计算节点端定时拉取云端主服 PostgreSQL 备份、本地长期归档与 SHA-256 完整性对账脚本（位于 `deploy/`） |
 | `install-backup-sync.sh` | 计算节点端一键安装并启用 systemd 备份拉取定时器脚本（位于 `deploy/`） |
+|`taptap-publish.sh`|TapTap 开发者中心包体管理与发布：检查 CLI 环境与认证上下文（`status`）、发起设备码授权（`login`）、物料盘点（`inspect`）、Android APK 安全上传（`upload`，支持 `--dry-run`/`--yes`）、应用提审前资料缺口与合规预检（`review-check`）|
 
 ## 6. 实现规则
 
