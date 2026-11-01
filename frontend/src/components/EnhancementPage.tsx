@@ -19,6 +19,7 @@ import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCata
 import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, QueueEntry } from '../game/types'
 import { useT, type TFunction } from '../i18n'
 import { gameClient } from '../network/gameClient'
+import { MAX_ACTION_REPEATS } from '../network/protocol'
 import { ChoiceMenu } from './CatalogPicker'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { ActionDetailItem, ItemReference } from './ItemDisplay'
@@ -421,7 +422,7 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
             allowInfinity
             ariaLabel={t('app.enhancement.repeatsAria')}
             disabled={isEnhancing || !selected || maxedOut}
-            max={1000}
+            max={MAX_ACTION_REPEATS}
             onChange={setUserRepeats}
             presets={[1, 10, 100]}
             value={repeats}

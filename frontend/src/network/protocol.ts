@@ -253,6 +253,9 @@ export interface PlayerSnapshotDeltaDto {
   displayName?: string | null
 }
 
+/** 行动计划执行次数上限（有限循环最大值，与服务端领域与协议对齐：1,000,000） */
+export const MAX_ACTION_REPEATS = 1_000_000
+
 /** ActionIntent 行动入队请求载荷 */
 export interface ActionIntentRequest {
   /** 请求关联 ID（与 ActionResult 配对） */

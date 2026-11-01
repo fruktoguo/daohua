@@ -21,6 +21,7 @@ import type { PillTone } from './components/PillLabel'
 import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel, type NearbyTab } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
+import { MAX_ACTION_REPEATS } from './network/protocol'
 import { WorldMapPanel } from './components/WorldMapPanel'
 import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
@@ -1855,7 +1856,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                 <QuantitySelector
                   allowInfinity
                   ariaLabel={t('app.action.repeatsAria')}
-                  max={1000}
+                  max={MAX_ACTION_REPEATS}
                   onChange={setRepeats}
                   presets={[1, 10, 100]}
                   value={repeats}
@@ -1918,7 +1919,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           <QuantitySelector
             allowInfinity
             ariaLabel={t('app.action.repeatsAria')}
-            max={1000}
+            max={MAX_ACTION_REPEATS}
             onChange={setRepeats}
             presets={[1, 10, 100]}
             value={repeats}
