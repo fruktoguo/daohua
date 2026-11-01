@@ -27,6 +27,7 @@ public sealed class AccountRiskRegistrationTests
         Assert.True(first.Success);
         Assert.False(second.Success);
         Assert.Equal(AccountRiskErrorCodes.DeviceAlreadyRegistered, second.ErrorCode);
+        Assert.Contains("SEC-D01", second.Message);
         Assert.Equal(1, await CountAssociatedAccountsAsync(fixture, signals, AccountRiskSignalKind.DeviceId));
     }
 
@@ -47,6 +48,7 @@ public sealed class AccountRiskRegistrationTests
         Assert.True(results[1].Success);
         Assert.False(results[2].Success);
         Assert.Equal(AccountRiskErrorCodes.PersonAccountLimit, results[2].ErrorCode);
+        Assert.Contains("SEC-P01", results[2].Message);
         Assert.Equal(2, await CountAssociatedAccountsAsync(
             fixture, new AccountRiskSignals(PersonKey: person), AccountRiskSignalKind.Person));
     }

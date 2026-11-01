@@ -178,4 +178,37 @@ public sealed class AccountRiskSignalBoundaryTests
         Assert.Equal(3, velocity.Threshold); // 1 小时内注册 >= 3 次即加 80 分秒拒
         Assert.Equal(80, policy.RiskThreshold);
     }
+
+    /// <summary>验证风控非明文诊断错误码与引导文案格式化规则。</summary>
+    [Fact]
+    public void DiagnosticErrorCodesAndMessagesFormatCorrectly()
+    {
+        // 1. 单项硬拦截提示文案
+        var deviceDeny = PostgresAccountRiskRepository.FormatRiskMessage("SEC-D01");
+        Assert.Equal("当前环境未能通过安全校验，如果是正常游玩，请在QQ群中联系管理解决（错误码：SEC-D01）", deviceDeny);
+
+        var personDeny = PostgresAccountRiskRepository.FormatRiskMessage("SEC-P01");
+        Assert.Equal("当前环境未能通过安全校验，如果是正常游玩，请在QQ群中联系管理解决（错误码：SEC-P01）", personDeny);
+
+        // 2. 软风险多维组合码推导
+        // IP + 网络 + 设备配置 (100分) -> SEC-100-NC
+        var ncCode = PostgresAccountRiskRepository.BuildSoftRiskCode(100, ["来源 IP关联过多", "网络环境关联过多", "设备配置关联过多"]);
+        Assert.Equal("SEC-100-NC", ncCode);
+
+        // 纯 IP (80分) -> SEC-80-N
+        var nCode = PostgresAccountRiskRepository.BuildSoftRiskCode(80, ["来源 IP关联过多"]);
+        Assert.Equal("SEC-80-N", nCode);
+
+        // 设备配置 + 频控 (90分) -> SEC-90-CV
+        var cvCode = PostgresAccountRiskRepository.BuildSoftRiskCode(90, ["设备配置关联过多", "注册过于频繁"]);
+        Assert.Equal("SEC-90-CV", cvCode);
+
+        // 指纹 (40分未加前缀项兜底) -> SEC-40-F
+        var fCode = PostgresAccountRiskRepository.BuildSoftRiskCode(40, ["设备指纹关联过多"]);
+        Assert.Equal("SEC-40-F", fCode);
+
+        // 无匹配原因兜底 -> SEC-80-GEN
+        var genCode = PostgresAccountRiskRepository.BuildSoftRiskCode(80, []);
+        Assert.Equal("SEC-80-GEN", genCode);
+    }
 }

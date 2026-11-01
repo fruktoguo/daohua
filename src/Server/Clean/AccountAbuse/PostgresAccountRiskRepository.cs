@@ -206,9 +206,9 @@ public sealed class PostgresAccountRiskRepository(
         var configEnabled = policy.Modules.Single(item => item.Id == "deviceConfigHash").Enabled;
         var hasRequiredDevice = deviceSignals.Any(item => item.Kind == (idEnabled ? AccountRiskSignalKind.DeviceId : AccountRiskSignalKind.DeviceConfig));
         if (policy.RequireDeviceSignal && (idEnabled || configEnabled) && !hasRequiredDevice)
-            return Deny(AccountRiskErrorCodes.RiskSignalRequired, "设备校验失败，请刷新后重试。", signals, "设备信号缺失");
+            return Deny(AccountRiskErrorCodes.RiskSignalRequired, FormatRiskMessage("SEC-S01"), signals, "设备信号缺失");
         if (signals.Any(item => item.Kind == AccountRiskSignalKind.Headless))
-            return Deny(AccountRiskErrorCodes.HeadlessBrowserBlocked, "检测到自动化或非标准运行环境。", signals, "自动化运行环境");
+            return Deny(AccountRiskErrorCodes.HeadlessBrowserBlocked, FormatRiskMessage("SEC-B01"), signals, "自动化运行环境");
         var counts = orderedSignals.Length == 0
             ? new Dictionary<(string Kind, string Hash), int>()
             : await CountAccountsAsync(connection, transaction, orderedSignals, accountId, cancellationToken);
@@ -216,16 +216,16 @@ public sealed class PostgresAccountRiskRepository(
         {
             foreach (var signal in deviceSignals.Where(item => item.Kind == AccountRiskSignalKind.DeviceId))
                 if (GetCount(counts, signal) >= policy.MaxAccountsPerDevice)
-                    return Deny(AccountRiskErrorCodes.DeviceAlreadyRegistered, "该设备已达到可注册账号上限。", signals, "设备注册上限");
+                    return Deny(AccountRiskErrorCodes.DeviceAlreadyRegistered, FormatRiskMessage("SEC-D01"), signals, "设备注册上限");
         }
         var person = signals.FirstOrDefault(item => item.Kind == AccountRiskSignalKind.Person);
         if (person is not null && GetCount(counts, person) >= policy.MaxAccountsPerPerson)
-            return Deny(AccountRiskErrorCodes.PersonAccountLimit, "该设备关联的账号数量已达上限。", signals, "关联账号上限");
+            return Deny(AccountRiskErrorCodes.PersonAccountLimit, FormatRiskMessage("SEC-P01"), signals, "关联账号上限");
         if (!registration && policy.Modules.Single(item => item.Id == "accountAssociation").Enabled)
         {
             foreach (var device in deviceSignals.Where(item => item.Kind == AccountRiskSignalKind.DeviceId))
                 if (GetCount(counts, device) >= policy.MaxAccountsPerPerson)
-                    return Deny(AccountRiskErrorCodes.PersonAccountLimit, "该设备关联的账号数量已达上限。", signals, "关联账号上限");
+                    return Deny(AccountRiskErrorCodes.PersonAccountLimit, FormatRiskMessage("SEC-P01"), signals, "关联账号上限");
         }
         var score = 0;
         var reasons = new List<string>();
@@ -257,8 +257,27 @@ public sealed class PostgresAccountRiskRepository(
         }
         score = Math.Min(100, score);
         var action = score >= policy.RiskThreshold ? policy.HighRiskAction : "allow";
+        var softSecCode = action == "deny" ? BuildSoftRiskCode(score, reasons) : null;
         return new(action != "deny", action == "deny" ? "RISK_SCORE_TOO_HIGH" : null,
-            action == "deny" ? (registration ? "注册受限，请稍后重试。" : "账号使用受限，请稍后重试。") : null, signals, score, action, reasons);
+            action == "deny" ? FormatRiskMessage(softSecCode!) : null, signals, score, action, reasons);
+    }
+
+    internal static string FormatRiskMessage(string secCode) =>
+        $"当前环境未能通过安全校验，如果是正常游玩，请在QQ群中联系管理解决（错误码：{secCode}）";
+
+    internal static string BuildSoftRiskCode(int score, IReadOnlyList<string> reasons)
+    {
+        var tags = "";
+        if (reasons.Any(r => r.Contains("IP") || r.Contains("网络")))
+            tags += "N";
+        if (reasons.Any(r => r.Contains("设备配置")))
+            tags += "C";
+        if (reasons.Any(r => r.Contains("指纹")))
+            tags += "F";
+        if (reasons.Any(r => r.Contains("频繁")))
+            tags += "V";
+        var suffix = tags.Length > 0 ? tags : "GEN";
+        return $"SEC-{score}-{suffix}";
     }
 
     /// <summary>把账号关联与账号创建放在同一事务内。</summary>
