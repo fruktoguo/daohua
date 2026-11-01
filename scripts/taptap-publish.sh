@@ -25,7 +25,7 @@ if [[ "$COMMAND" != -* ]] && [[ $# -gt 0 ]]; then
   shift
 fi
 
-DEV_ID="${TAPTAP_DEV_ID:-}"
+DEV_ID="${TAPTAP_DEV_ID:-446202}"
 APP_ID="${TAPTAP_APP_ID:-}"
 APK_PATH="artifacts/daohua.apk"
 DRY_RUN=0
@@ -83,14 +83,33 @@ while (($# > 0)); do
   esac
 done
 
+USE_WSL_CLI=0
 ensure_cli() {
-  if ! command -v taptap-cli >/dev/null 2>&1; then
-    printf '错误: 未找到 taptap-cli 命令。\n' >&2
-    printf '请先执行安装: npm i -g @taptap/cli --registry=https://registry.npmjs.org/\n' >&2
-    exit 1
+  if taptap-cli auth status 2>/dev/null | grep -q "Bearer Token"; then
+    USE_WSL_CLI=0
+    return 0
   fi
+  if command -v wsl >/dev/null 2>&1 && wsl bash -c "taptap-cli auth status" 2>/dev/null | grep -q "Bearer Token"; then
+    USE_WSL_CLI=1
+    return 0
+  fi
+  if command -v taptap-cli >/dev/null 2>&1; then
+    USE_WSL_CLI=0
+    return 0
+  fi
+  printf '错误: 未找到 taptap-cli 命令。\n' >&2
+  printf '请先执行安装: npm i -g @taptap/cli --registry=https://registry.npmjs.org/\n' >&2
+  exit 1
 }
 
+run_cli() {
+  ensure_cli
+  if [[ "$USE_WSL_CLI" == "1" ]]; then
+    wsl bash -c "cd /mnt/d/Project/Vibe/DaoHua && taptap-cli $(printf '%q ' "$@")"
+  else
+    taptap-cli "$@"
+  fi
+}
 cmd_status() {
   ensure_cli
   printf '\n======================================================\n'
@@ -98,11 +117,13 @@ cmd_status() {
   printf '======================================================\n'
   
   printf '• CLI 工具版本: '
-  taptap-cli version --format json 2>/dev/null | grep '"version"' || taptap-cli version || true
+  run_cli version --format json 2>/dev/null | grep '"version"' || run_cli version || true
   
   printf '\n• 认证状态检查:\n'
-  taptap-cli auth status || true
-  
+  run_cli auth status || true
+  if [[ "$USE_WSL_CLI" == "1" ]]; then
+    printf '  (已自动桥接至 WSL 环境凭据)\n'
+  fi
   printf '\n• 上下文参数配置:\n'
   if [[ -n "$DEV_ID" ]]; then
     printf '  - 开发者 ID (DEV_ID): %s\n' "$DEV_ID"
@@ -143,7 +164,7 @@ cmd_inspect() {
   # 将相对路径规范化为工作区相对路径
   local target_rel
   target_rel="$(realpath --relative-to="$ROOT_DIR" "$APK_PATH" 2>/dev/null || echo "$APK_PATH")"
-  taptap-cli materials +inspect "$target_rel" --format pretty
+  run_cli materials +inspect "$target_rel" --format pretty
 }
 
 cmd_upload() {
@@ -167,7 +188,7 @@ cmd_upload() {
   local target_rel
   target_rel="$(realpath --relative-to="$ROOT_DIR" "$APK_PATH" 2>/dev/null || echo "$APK_PATH")"
 
-  local upload_cmd=(taptap-cli upload-apk "$target_rel" --dev-id "$DEV_ID" --app-id "$APP_ID")
+  local upload_cmd=(run_cli upload-apk "$target_rel" --dev-id "$DEV_ID" --app-id "$APP_ID")
   
   if [[ -n "$IDEMPOTENCY_KEY" ]]; then
     upload_cmd+=(--idempotency-key "$IDEMPOTENCY_KEY")
@@ -203,7 +224,7 @@ cmd_review_check() {
   fi
 
   printf '正在检查 TapTap 应用提审状态 (dev-id: %s, app-id: %s)...\n' "$DEV_ID" "$APP_ID"
-  taptap-cli app analyze-app-status --dev-id "$DEV_ID" --app-id "$APP_ID" --format pretty
+  run_cli app analyze-app-status --dev-id "$DEV_ID" --app-id "$APP_ID" --format pretty
 }
 
 case "$COMMAND" in
