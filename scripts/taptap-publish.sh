@@ -26,7 +26,7 @@ if [[ "$COMMAND" != -* ]] && [[ $# -gt 0 ]]; then
 fi
 
 DEV_ID="${TAPTAP_DEV_ID:-446202}"
-APP_ID="${TAPTAP_APP_ID:-}"
+APP_ID="${TAPTAP_APP_ID:-1017706}"
 APK_PATH="artifacts/daohua.apk"
 DRY_RUN=0
 CONFIRM_YES=0
