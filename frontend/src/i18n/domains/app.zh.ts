@@ -346,8 +346,9 @@ export const appZh = {
       spiritStoneTierMid: '{n} 灵石 (+100%)',
       spiritStoneTierHigh: '{n} 灵石 (+300%)',
       spiritStoneBadge: '💎 {count}/轮',
+      difficulty: '难度',
+      difficultyDefault: '默认',
       locationActionEmpty: '当前位置没有开放此类行动，请先在历练地图中移动。',
-      // 斗法（PVP）勾选块
       duel: {
         title: '斗法',
         descMatch: '可匹配实力相近的玩家队伍进行实时斗法。',

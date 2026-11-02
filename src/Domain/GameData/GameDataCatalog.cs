@@ -1,3 +1,4 @@
+using Domain.Combat;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -1308,6 +1309,8 @@ public sealed class GameDataCatalog
                 // 战斗经验不入配表：怪物按配表 level 取「升到该级的累计修为」派生（总纲 §7.7.6）。
                 CombatExperience = realmProgression?.CumulativeExpFor(level) ?? 0
             };
+            // 怪物基础属性在数值计算时执行向上取整
+            stats = CombatDifficultyRules.CeilStats(stats);
             // 击杀奖励单参数：experience 同时喂修为结算（瓶颈/底蕴/战斗经验）与六维入账（总纲 §7.11）。
             // 配表显式声明时生效；缺省按境界曲线派生 expToNext[level]/1000×0.9^(level-1)×层次倍率（§7.10.3）。
             var experience = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("experience", out _)

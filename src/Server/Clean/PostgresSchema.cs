@@ -65,8 +65,8 @@ public static class PostgresSchema
     /// v43：transaction_lines 外键补齐 ON DELETE CASCADE，支持级联回收；留存清理彻底扫荡 2 小时前战斗掉落/消耗等易失性流水——存档载荷与标签未变。
     /// v44：settings 分段载荷新增组队复活时机策略字段（respawnPolicy/respawnTargetPlayerId，可缺省解码为直接复活）；
     /// 存档标签推进至 v39，表结构未变。
-    /// v45：Buff 效果载荷收敛为通道模型（总纲 §7.9.5.3），存档标签推进至 v40（不可缺省解码，走交互确认清零）；表结构未变。
-    public const int Version = 45;
+    /// v46：social.parties 增 difficulty 队伍讨伐难度列（0~5，默认 0）；无存档载荷变更。
+    public const int Version = 46;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -514,6 +514,8 @@ public static class PostgresSchema
         pvp_enabled boolean NOT NULL DEFAULT false,
         -- 开启槽位（总纲 §21.13）：2~5，默认 5；收窄后不得低于当前队员数（由社交层裁决保证）。
         open_slots smallint NOT NULL DEFAULT 5 CHECK (open_slots BETWEEN 2 AND 5),
+        -- 队伍讨伐难度（总纲 §7.3）：0~5，默认 0。
+        difficulty smallint NOT NULL DEFAULT 0 CHECK (difficulty BETWEEN 0 AND 5),
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -626,7 +628,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

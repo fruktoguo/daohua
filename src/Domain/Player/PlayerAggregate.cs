@@ -577,6 +577,7 @@ public enum ActionQueueStatus : byte
 /// <param name="AnchorNodeId">入队锚点节点：入队时玩家驻留节点，自动移动（AutoTravelEnabled）开轮地点不符时的自动赶路目的地；旅途中入队为 null</param>
 /// <param name="TargetItemId">目标物品 ID：强化行动指定要强化的装备（决定强化等级与动态时长）。</param>
 /// <param name="AuxItemId">辅助物品 ID：强化行动的保护材料（须在装备配表 enhanceProtectionItems 列表内，或同装备无强化基础件代护）。</param>
+/// <param name="Difficulty">讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5；决定怪物属性指数放大、经验/掉落加成与斗法匹配区间。</param>
 public sealed record ActionIntent(
     ActionId ActionId,
     double RepeatCount = 1,
@@ -585,7 +586,8 @@ public sealed record ActionIntent(
     bool PvpEnabled = false,
     string? AnchorNodeId = null,
     string? TargetItemId = null,
-    string? AuxItemId = null)
+    string? AuxItemId = null,
+    int Difficulty = 0)
 {
 }
 

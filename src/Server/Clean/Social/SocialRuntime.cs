@@ -224,7 +224,8 @@ public sealed class SocialRuntime
                         ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,
                             [.. session.MemberIds.Select(id => id.ToString("D"))],
                             session.StartedAt.ToUnixTimeMilliseconds())
-                        : null),
+                        : null,
+                    party.Profile.Difficulty),
             invitation is null
                 ? null
                 : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName, invitation.PartyName),
@@ -861,7 +862,15 @@ public sealed class SocialRuntime
             pvpEnabled = false;
         }
 
-        result = new PartyProfileRecord(name, activity, nodeId, minValuation, isPublic, pvpEnabled);
+        var difficulty = baseline.Difficulty;
+        if (patch?.Difficulty is { } rawDiff)
+        {
+            if (rawDiff is < 0 or > 5) return false;
+            difficulty = rawDiff;
+        }
+        else if (full) difficulty = 0;
+
+        result = new PartyProfileRecord(name, activity, nodeId, minValuation, isPublic, pvpEnabled, difficulty);
         return true;
     }
 
@@ -1053,7 +1062,8 @@ public sealed class SocialRuntime
                 || stillTarget is null
                 || !rosterIntact
                 || !string.Equals(stillTarget, session.NodeId, StringComparison.Ordinal)
-                || session.PvpEnabled != party.Profile.PvpEnabled)
+                || session.PvpEnabled != party.Profile.PvpEnabled
+                || session.Difficulty != party.Profile.Difficulty)
                 await DissolveSessionAsync(session, reason, cancellationToken);
             return;
         }
@@ -1171,7 +1181,8 @@ public sealed class SocialRuntime
         {
             ActionId = action.Id,
             PvpEnabled = party.Profile.PvpEnabled,
-            MonsterWeakenRatio = monsterWeakenRatio
+            MonsterWeakenRatio = monsterWeakenRatio,
+            Difficulty = party.Profile.Difficulty
         };
         if (!spec.IsValid)
         {

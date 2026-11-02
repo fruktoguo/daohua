@@ -107,6 +107,8 @@ interface GameStore {
   offlineCount: number | null
   /** 最近获知的当前节点开启斗法并且正在战斗的队伍总数（null 表示尚无统计数据） */
   nodeDuelCombatTeamCount: number | null
+  /** 最近获知的当前节点各难度区间斗法队伍数列表 [默认, T1~T3, T4~T5] */
+  nodeDuelCombatTeamsByBracket: readonly number[] | null
   /** 终态断连原因的 i18n 词条 key（顶号/会话失效等；null 表示无特定原因，恢复在线时自动清除） */
   disconnectReason: string | null
   /** 顶部全局提示消息（为 null 时隐藏） */
@@ -120,7 +122,7 @@ interface GameStore {
   /** 设置终态断连原因词条 key */
   setDisconnectReason: (key: string | null) => void
   /** 更新在线与离线挂机人数、离线总人数及当前节点斗法战斗队伍数统计 */
-  setPresenceStats: (onlineCount: number, offlineIdleCount: number, nodeDuelCombatTeamCount?: number, offlineCount?: number) => void
+  setPresenceStats: (onlineCount: number, offlineIdleCount: number, nodeDuelCombatTeamCount?: number, offlineCount?: number, nodeDuelCombatTeamsByBracket?: readonly number[]) => void
   setNotice: (notice: string | null) => void
   /** 更新行动目录 */
   setActions: (actions: readonly ActionDefinition[]) => void
@@ -351,11 +353,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   offlineIdleCount: null,
   offlineCount: null,
   nodeDuelCombatTeamCount: null,
-  setPresenceStats: (onlineCount, offlineIdleCount, nodeDuelCombatTeamCount, offlineCount) => set(state => ({
+  nodeDuelCombatTeamsByBracket: null,
+  setPresenceStats: (onlineCount, offlineIdleCount, nodeDuelCombatTeamCount, offlineCount, nodeDuelCombatTeamsByBracket) => set(state => ({
     onlineCount,
     offlineIdleCount,
     offlineCount: offlineCount !== undefined ? offlineCount : state.offlineCount,
     nodeDuelCombatTeamCount: nodeDuelCombatTeamCount !== undefined ? nodeDuelCombatTeamCount : state.nodeDuelCombatTeamCount,
+    nodeDuelCombatTeamsByBracket: nodeDuelCombatTeamsByBracket !== undefined ? nodeDuelCombatTeamsByBracket : state.nodeDuelCombatTeamsByBracket,
   })),
   setLatencyMs: (latencyMs) => set({ latencyMs }),
   setDisconnectReason: (key) => set({ disconnectReason: key }),
@@ -554,6 +558,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     offlineIdleCount: null,
     offlineCount: null,
     nodeDuelCombatTeamCount: null,
+    nodeDuelCombatTeamsByBracket: null,
     inventory: initial.inventory,
     queue: initial.queue,
     buffs: initial.buffs,

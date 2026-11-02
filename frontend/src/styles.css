@@ -4540,6 +4540,47 @@ input[type="checkbox"] {
   border: 1px solid rgba(148, 103, 189, 0.35);
   background: rgba(148, 103, 189, 0.06);
 }
+.duel-option-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.difficulty-option-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.difficulty-option-select strong {
+  color: #c9a2e8;
+}
+
+.difficulty-select {
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(148, 103, 189, 0.45);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.difficulty-select:focus {
+  outline: none;
+  border-color: #a78bfa;
+}
+
+.party-difficulty-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 
 .duel-option-toggle {
   display: flex;

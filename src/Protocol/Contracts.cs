@@ -359,7 +359,8 @@ public sealed record AntiMultiOpenConfigDto(bool TabGuardEnabled);
 /// <param name="OfflineIdleCount">当前48小时内离线挂机人数</param>
 /// <param name="NodeDuelCombatTeamCount">当前节点开启斗法并且正在战斗的队伍总数（缺省为 0）</param>
 /// <param name="OfflineCount">当前完全离线（非挂机）修士人数（缺省为 0）</param>
-public sealed record PresenceStatsDto(int OnlineCount, int OfflineIdleCount, int NodeDuelCombatTeamCount = 0, int OfflineCount = 0);
+/// <param name="NodeDuelCombatTeamsByBracket">当前节点各难度区间斗法队伍数列表 [默认, T1~T3, T4~T5]</param>
+public sealed record PresenceStatsDto(int OnlineCount, int OfflineIdleCount, int NodeDuelCombatTeamCount = 0, int OfflineCount = 0, IReadOnlyList<int>? NodeDuelCombatTeamsByBracket = null);
 
 /// <summary>心跳应答 Pong 载荷</summary>
 /// <param name="ServerTime">服务端当前时间戳</param>
@@ -367,7 +368,8 @@ public sealed record PresenceStatsDto(int OnlineCount, int OfflineIdleCount, int
 /// <param name="OfflineIdleCount">当前48小时内离线挂机人数</param>
 /// <param name="NodeDuelCombatTeamCount">当前节点开启斗法并且正在战斗的队伍总数（缺省为 0）</param>
 /// <param name="OfflineCount">当前完全离线（非挂机）修士人数（缺省为 0）</param>
-public sealed record PongResponse(DateTimeOffset ServerTime, int OnlineCount = 0, int OfflineIdleCount = 0, int NodeDuelCombatTeamCount = 0, int OfflineCount = 0);
+/// <param name="NodeDuelCombatTeamsByBracket">当前节点各难度区间斗法队伍数列表 [默认, T1~T3, T4~T5]</param>
+public sealed record PongResponse(DateTimeOffset ServerTime, int OnlineCount = 0, int OfflineIdleCount = 0, int NodeDuelCombatTeamCount = 0, int OfflineCount = 0, IReadOnlyList<int>? NodeDuelCombatTeamsByBracket = null);
 
 /// <summary>握手问候应答载荷</summary>
 /// <param name="ServerVersion">服务端版本号</param>
@@ -460,6 +462,7 @@ public sealed record PlayerSnapshotDeltaDto(
 /// <param name="PvpEnabled">斗法开关：玩家同意参与 PVP 匹配，仅对战斗遭遇行动生效</param>
 /// <param name="TargetItemId">目标物品标识，可选；强化行动必填目标装备</param>
 /// <param name="AuxItemId">辅助物品标识，可选；强化行动用于指定护符等辅助消耗品</param>
+/// <param name="Difficulty">讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5</param>
 public sealed record ActionIntentRequest(
     string RequestId,
     string ActionId,
@@ -468,7 +471,8 @@ public sealed record ActionIntentRequest(
     [property: JsonConverter(typeof(CamelCaseKeyDoubleDictionaryConverter))] IReadOnlyDictionary<string, double>? Parameters = null,
     bool PvpEnabled = false,
     string? TargetItemId = null,
-    string? AuxItemId = null);
+    string? AuxItemId = null,
+    int Difficulty = 0);
 
 /// <summary>行动排队意图应答 DTO</summary>
 /// <param name="RequestId">请求唯一标识</param>
@@ -923,6 +927,7 @@ public static class SocialActions
 /// <param name="PvpEnabled">队伍斗法开关（总纲 §7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
 /// 仅 activityKind='combat' 可为 true、仅队长经 <c>party.update</c> 修改，会话存续期间修改触发散场重建</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；仅 <c>party.slots</c> 消费，create/update/match.set 忽略</param>
+/// <param name="Difficulty">讨伐难度等级（0~5）</param>
 public sealed record PartyProfileDto(
     string? Name = null,
     string? ActivityKind = null,
@@ -930,7 +935,8 @@ public sealed record PartyProfileDto(
     double? MinValuation = null,
     bool? IsPublic = null,
     bool? PvpEnabled = null,
-    int? OpenSlots = null);
+    int? OpenSlots = null,
+    int? Difficulty = null);
 
 /// <summary>客户端社交指令请求。</summary>
 /// <param name="RequestId">请求唯一标识，服务端回执配对键</param>
@@ -1006,6 +1012,7 @@ public sealed record PartySessionDto(
 /// <param name="Members">成员列表（含队长）</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；成员数达到槽位且全员就绪位于目标节点时自动开战</param>
 /// <param name="ActiveSession">进行中的组队讨伐会话；无会话为 null（散场即随下次状态推送消失）</param>
+/// <param name="Difficulty">队伍设定的讨伐难度等级（0~5）</param>
 public sealed record PartyDto(
     string PartyId,
     string LeaderId,
@@ -1017,7 +1024,8 @@ public sealed record PartyDto(
     bool PvpEnabled,
     IReadOnlyList<PartyMemberDto> Members,
     int OpenSlots,
-    PartySessionDto? ActiveSession = null);
+    PartySessionDto? ActiveSession = null,
+    int Difficulty = 0);
 
 /// <summary>同节点在线修士条目。</summary>
 /// <param name="PlayerId">修士玩家 ID</param>

@@ -131,6 +131,8 @@ export interface PresenceStatsDto {
   offlineIdleCount: number
   /** 当前节点开启斗法并且正在战斗的队伍总数 */
   nodeDuelCombatTeamCount?: number
+  /** 当前节点各难度区间斗法队伍数列表 [默认, T1~T3, T4~T5] */
+  nodeDuelCombatTeamsByBracket?: readonly number[]
   /** 当前完全离线（非挂机）修士人数 */
   offlineCount?: number
 }
@@ -145,6 +147,8 @@ export interface PongResponse {
   offlineIdleCount?: number
   /** 当前节点开启斗法并且正在战斗的队伍总数 */
   nodeDuelCombatTeamCount?: number
+  /** 当前节点各难度区间斗法队伍数列表 [默认, T1~T3, T4~T5] */
+  nodeDuelCombatTeamsByBracket?: readonly number[]
   /** 当前完全离线（非挂机）修士人数 */
   offlineCount?: number
 }
@@ -270,6 +274,8 @@ export interface ActionIntentRequest {
   parameters?: Record<string, number> | null
   /** 是否勾选斗法（PVP 匹配），仅战斗遭遇行动有效 */
   pvpEnabled?: boolean
+  /** 讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5 */
+  difficulty?: number
   /** 目标物品标识，可选；强化行动必填目标装备 */
   targetItemId?: string | null
   /** 辅助物品标识，可选；强化行动用于指定护符等辅助消耗品 */
@@ -531,6 +537,8 @@ export interface PartyProfileDto {
   /** 队伍斗法开关（§7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
    * 仅 activityKind='combat' 可为 true、仅队长经 party.update 修改，会话中修改触发散场重建 */
   pvpEnabled?: boolean | null
+  /** 队伍设定的讨伐难度（0~5） */
+  difficulty?: number | null
   /** 开启槽位数（2~5）；仅 party.slots 使用 */
   openSlots?: number | null
 }
@@ -628,6 +636,8 @@ export interface PartyDto {
   /** 进行中的组队讨伐会话；无会话为 null */
   activeSession?: PartySessionDto | null
   members: PartyMemberDto[]
+  /** 队伍设定的讨伐难度等级（0~5） */
+  difficulty: number
 }
 
 /** 同节点在线修士条目 */

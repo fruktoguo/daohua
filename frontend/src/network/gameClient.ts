@@ -663,6 +663,7 @@ export class GameClient {
               hello.presenceStats.offlineIdleCount,
               hello.presenceStats.nodeDuelCombatTeamCount,
               hello.presenceStats.offlineCount,
+              hello.presenceStats.nodeDuelCombatTeamsByBracket,
             )
           }
           applyAntiMultiOpenConfig(hello.antiMultiOpen)
@@ -837,6 +838,7 @@ export class GameClient {
               pong.offlineIdleCount ?? 0,
               pong.nodeDuelCombatTeamCount,
               pong.offlineCount,
+              pong.nodeDuelCombatTeamsByBracket,
             )
           }
           return

@@ -24,7 +24,7 @@ interface EcologyMonsterEntry {
  * 悬停弹出简要信息卡（生命层次/境界/气血/攻击/护甲），
  * 单击弹出详细信息卡（六维属性、消耗预算、攻速间隔、出没周期、击杀收益、施展功法与掉落物图标）。
  */
-const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: EcologyMonsterEntry }): React.JSX.Element {
+const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry, difficulty = 0 }: { entry: EcologyMonsterEntry; difficulty?: number }): React.JSX.Element {
   const t = useT()
   const { enemy, rank, intervalHint } = entry
 
@@ -35,6 +35,7 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
       isBoss={rank === 'boss'}
       isElite={rank === 'elite'}
       monster={enemy}
+      difficulty={difficulty}
       placement="top"
     >
       <button
@@ -72,9 +73,12 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
  */
 export const CombatEcologyPanel = memo(function CombatEcologyPanel({
   action,
+  difficulty = 0,
 }: {
   /** 当前打开配置弹窗的讨伐行动定义 */
   action: ActionDefinition
+  /** 当前选中的历练难度等级 */
+  difficulty?: number
 }): React.JSX.Element {
   const t = useT()
   const world = useGameStore(state => state.world)
@@ -175,7 +179,7 @@ export const CombatEcologyPanel = memo(function CombatEcologyPanel({
       {entries.length > 0 ? (
         <div className="ecology-monster-strip">
           {entries.map(item => (
-            <EcologyMonsterTile entry={item} key={item.enemy.enemyId} />
+            <EcologyMonsterTile difficulty={difficulty} entry={item} key={item.enemy.enemyId} />
           ))}
         </div>
       ) : (

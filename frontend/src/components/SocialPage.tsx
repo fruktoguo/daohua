@@ -3,6 +3,7 @@ import { useGameStore } from '../game/gameStore'
 import { PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
 import { formatNumber } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
+import { getDifficultyBracket } from '../game/combatDifficulty'
 import { useT } from '../i18n'
 import { requestJson } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
@@ -48,15 +49,15 @@ function useDefaultNodeId(): string {
 }
 
 /** 表单节点字段默认值口径：activityKind 固定讨伐，nodeId 跟随玩家当前节点。 */
-const DEFAULT_PROFILE_FORM = { activityKind: PartyActivityKind.Combat as PartyActivityKindType, minValuation: '', isPublic: true }
+const DEFAULT_PROFILE_FORM = { activityKind: PartyActivityKind.Combat as PartyActivityKindType, minValuation: '', isPublic: true, difficulty: 0 }
 
 /**
  * 目标节点「跟随当前位置」表单态：返回 {value, onChange} 直接对接 PartyProfileFields。
  * 用户未手动选择过节点时展示并提交玩家当前节点（挂载瞬间可能在途中/快照未装载，
  * 初始值会停在空串，不能用 useState 一次性固化）；手动选择（含「不限」）后以手选值为准。
  */
-function useCurrentNodeField(form: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean },
-  setForm: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }) => void,
+function useCurrentNodeField(form: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number },
+  setForm: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number }) => void,
 ): { nodeId: string; onChange: (next: typeof form) => void } {
   const defaultNodeId = useDefaultNodeId()
   const [touched, setTouched] = useState(false)
@@ -150,8 +151,8 @@ const PartyProfileFields = memo(function PartyProfileFields({
   onChange,
   showPublic = false,
 }: {
-  value: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }
-  onChange: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }) => void
+  value: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number }
+  onChange: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number }) => void
   showPublic?: boolean
 }): React.JSX.Element {
   const t = useT()
@@ -206,6 +207,24 @@ const PartyProfileFields = memo(function PartyProfileFields({
           value={value.nodeId}
         />
       </div>
+      {value.activityKind === PartyActivityKind.Combat && (
+        <div className="party-field">
+          <span>{t('social.field.difficulty')}</span>
+          <DropdownSelect
+            label={t('social.field.difficulty')}
+            onSelect={id => onChange({ ...value, difficulty: Number(id) })}
+            options={[
+              { id: '0', label: t('app.action.difficultyDefault') },
+              { id: '1', label: 'T1' },
+              { id: '2', label: 'T2' },
+              { id: '3', label: 'T3' },
+              { id: '4', label: 'T4' },
+              { id: '5', label: 'T5' },
+            ]}
+            value={String(value.difficulty ?? 0)}
+          />
+        </div>
+      )}
       <label className="party-field">
         <span>{t('social.field.minValuation')}</span>
         <input
@@ -304,7 +323,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
     return party !== null && party.leaderId === myPlayerId
   })
   // 大厅是浏览工具：筛选默认「不限」全量展示，与创建/匹配表单的「战斗+当前地点」默认区分。
-  const [filter, setFilter] = useState({ activityKind: PartyActivityKind.Any as PartyActivityKindType, nodeId: '', minValuation: '', isPublic: true })
+  const [filter, setFilter] = useState({ activityKind: PartyActivityKind.Any as PartyActivityKindType, nodeId: '', minValuation: '', isPublic: true, difficulty: 0 })
 
   const refresh = (): void => {
     gameClient.requestPartyLobby({
@@ -417,6 +436,7 @@ const CreateSection = memo(function CreateSection(): React.JSX.Element {
       nodeId: nodeField.nodeId,
       minValuation: parseMinValuation(form.minValuation),
       isPublic: form.isPublic,
+      difficulty: form.difficulty ?? 0,
     }
     gameClient.sendSocialAction('party.create', undefined, undefined, { party })
   }
@@ -497,6 +517,7 @@ const LeaderProfileModal = memo(function LeaderProfileModal({ onClose }: {
     nodeId: party?.nodeId ?? '',
     minValuation: party && party.minValuation > 0 ? String(party.minValuation) : '',
     isPublic: party?.isPublic ?? true,
+    difficulty: party?.difficulty ?? 0,
   })
   // 会话进行中调整槽位需二次确认（§21.13：阵容锁定，变动即散场）
   const [pendingSlots, setPendingSlots] = useState<number | null>(null)
@@ -509,6 +530,7 @@ const LeaderProfileModal = memo(function LeaderProfileModal({ onClose }: {
       nodeId: form.nodeId,
       minValuation: parseMinValuation(form.minValuation),
       isPublic: form.isPublic,
+      difficulty: form.difficulty ?? 0,
     }
     gameClient.sendSocialAction('party.update', undefined, undefined, { party: partyPatch })
     onClose()
@@ -625,6 +647,14 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const party = useSocialStore(state => state.party)
   const myPlayerId = useGameStore(state => state.playerId)
   const nodeDuelCombatTeamCount = useGameStore(state => state.nodeDuelCombatTeamCount)
+  const nodeDuelCombatTeamsByBracket = useGameStore(state => state.nodeDuelCombatTeamsByBracket)
+  const partyBracket = getDifficultyBracket(party?.difficulty ?? 0)
+  const displayedNodeTeams = nodeDuelCombatTeamsByBracket
+    ? (nodeDuelCombatTeamsByBracket[partyBracket] ?? 0)
+    : nodeDuelCombatTeamCount
+  const setPartyDifficulty = (difficulty: number): void => {
+    gameClient.sendSocialAction('party.update', undefined, undefined, { party: { difficulty } })
+  }
   const friends = useSocialStore(state => state.friends)
   const readyParty = useSocialStore(state => state.readyParty)
   const unreadyParty = useSocialStore(state => state.unreadyParty)
@@ -647,13 +677,11 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   // 会话期间成员变动（离队/移出/收窄槽位）即散场：确认弹窗统一追加散场提示。
   const sessionSuffix = sessionActive ? t('social.confirm.sessionSuffix') : ''
   const selfMember = party.members.find(member => member.playerId === myPlayerId)
-  // 本人参战开关：待命期自由切换；会话中取消即散场，先经确认弹窗（顶部按钮与本人卡勾选共用）。
   const toggleSelfReady = (): void => {
     if (sessionActive) setConfirmQuitSession(true)
     else if (selfMember?.ready) unreadyParty()
     else readyParty()
   }
-  // 槽位阵列：队长固定首槽，其余按名册序；不足 openSlots 以空槽占位。
   const sortedMembers = [...party.members].sort(
     (a, b) => Number(b.playerId === party.leaderId) - Number(a.playerId === party.leaderId),
   )
@@ -669,20 +697,39 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
               <button onClick={() => setEditing(true)} type="button">{t('social.action.editProfile')}</button>
             )}
             {party.activityKind === 'combat' && (
-              <label className="party-pvp-toggle" title={t('social.pvp.hint')}>
-                <input
-                  checked={party.pvpEnabled}
-                  disabled={!isLeader}
-                  onChange={event => setPartyPvp(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{t('social.pvp.label')}</span>
-                {nodeDuelCombatTeamCount !== null && (
-                  <span className="party-pvp-teams-badge">
-                    {t('app.action.duel.nodeTeams', { count: nodeDuelCombatTeamCount })}
-                  </span>
-                )}
-              </label>
+              <>
+                <label className="party-difficulty-select" title={t('social.field.difficulty')}>
+                  <span className="party-difficulty-label">{t('social.field.difficulty')}</span>
+                  <select
+                    aria-label={t('social.field.difficulty')}
+                    className="difficulty-select"
+                    disabled={!isLeader}
+                    onChange={event => setPartyDifficulty(Number(event.target.value))}
+                    value={party.difficulty ?? 0}
+                  >
+                    <option value={0}>{t('app.action.difficultyDefault')}</option>
+                    <option value={1}>T1</option>
+                    <option value={2}>T2</option>
+                    <option value={3}>T3</option>
+                    <option value={4}>T4</option>
+                    <option value={5}>T5</option>
+                  </select>
+                </label>
+                <label className="party-pvp-toggle" title={t('social.pvp.hint')}>
+                  <input
+                    checked={party.pvpEnabled}
+                    disabled={!isLeader}
+                    onChange={event => setPartyPvp(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>{t('social.pvp.label')}</span>
+                  {displayedNodeTeams !== null && (
+                    <span className="party-pvp-teams-badge">
+                      {t('app.action.duel.nodeTeams', { count: displayedNodeTeams })}
+                    </span>
+                  )}
+                </label>
+              </>
             )}
           </span>
           <span className="party-actions-group">
@@ -695,6 +742,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
         <h3 className="party-name">{party.name}</h3>
         <p className="party-meta">
           {t(`social.activity.${party.activityKind}`)}
+          {party.activityKind === 'combat' && ` (${(party.difficulty ?? 0) > 0 ? `T${party.difficulty}` : t('app.action.difficultyDefault')})`}
           {' · '}{nodeLabel(party.nodeId, nodeNames, t('social.field.anyNode'))}
           {' · '}{party.isPublic ? t('social.visibility.public') : t('social.visibility.private')}
           {party.minValuation > 0 && ` · ${t('social.minValuationValue', { value: formatNumber(party.minValuation) })}`}

@@ -197,7 +197,7 @@ public sealed partial class PlayerAggregate
                 return _actions[0];
             return null;
         }
-        var intent = new ActionIntent(spec.ActionId, -1, spec.NodeId, PvpEnabled: spec.PvpEnabled);
+        var intent = new ActionIntent(spec.ActionId, -1, spec.NodeId, PvpEnabled: spec.PvpEnabled, Difficulty: spec.Difficulty);
         return EnqueuePriority(intent, at, catalog,
             participation: new ActionParticipationBinding(spec, endsAtUnixSeconds, appliedSequence)) as QueuedAction;
     }

@@ -34,10 +34,11 @@ public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool R
 /// <param name="IsPublic">是否进入组队大厅。</param>
 /// <param name="PvpEnabled">队伍斗法开关（总纲 §7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
 /// 仅 activityKind='combat' 可为 true、仅队长可改、会话创建时冻结进参与规格。</param>
-public sealed record PartyProfileRecord(string Name, string ActivityKind, string NodeId, double MinValuation, bool IsPublic, bool PvpEnabled)
+/// <param name="Difficulty">队伍设定的讨伐难度（0~5，默认 0）。</param>
+public sealed record PartyProfileRecord(string Name, string ActivityKind, string NodeId, double MinValuation, bool IsPublic, bool PvpEnabled, int Difficulty = 0)
 {
     /// <summary>默认档案：不限目标、无门槛、不公开、不斗法（邀请制自建队伍沿用）。</summary>
-    public static readonly PartyProfileRecord Default = new("", "any", "", 0, false, false);
+    public static readonly PartyProfileRecord Default = new("", "any", "", 0, false, false, 0);
 }
 
 /// <summary>队伍与其成员。</summary>
@@ -71,7 +72,8 @@ public sealed record PartySessionRecord(
     string SpecJson,
     DateTimeOffset? EndedAt = null,
     string? EndReason = null,
-    bool PvpEnabled = false);
+    bool PvpEnabled = false,
+    int Difficulty = 0);
 
 /// <summary>48h 离线逐出结果：一条被删除的成员行。</summary>
 /// <param name="PlayerId">被逐出玩家 ID。</param>

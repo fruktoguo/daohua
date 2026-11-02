@@ -498,11 +498,12 @@ internal static class CombatActionRules
         var pvpEnabled = action.Intent.PvpEnabled;
         var killAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         var killSeed = updatedBattle.Seed;
+        var difficulty = spec?.Difficulty ?? action.Intent.Difficulty;
         foreach (var enemy in waveEnemies)
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
             ApplyCombatRewards(player, monster, killSeed, pvpEnabled, killAtUnix, gameData, action.Id, ref deltas,
-                ref stagedItems, spec, expedition.SelfIndex);
+                ref stagedItems, spec, expedition.SelfIndex, difficulty);
             killSeed = DeterministicSequence.NextSeed(killSeed);
             switch (monster.Rank)
             {
@@ -597,10 +598,12 @@ internal static class CombatActionRules
         var waveEnemies = expedition.Enemies!;
         // 快照恢复按恢复时点的建筑投影重解析削弱（与玩家面板「随输入漂移、越界钳制」口径一致）。
         var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
+        var difficulty = action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty;
         var templates = waveEnemies.Select(enemy =>
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
-            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills, monster.Id, monster.Rank);
+            var scaledStats = CombatDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty);
+            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(scaledStats, weaken), monster.Skills, monster.Id, monster.Rank);
         }).ToArray();
         var selfSnapshot = expedition.PlayerState ?? new CombatantSnapshot(
             expedition.PlayerHitpoints, expedition.PlayerManapoints,
@@ -802,8 +805,12 @@ internal static class CombatActionRules
             completedSearch.Seed, completedSearch.WaveNumber, partySize);
         // 节点封魔阵类削弱：怪物模板按当前节点建筑投影折减气血上限与双攻双防（单人取本机投影，会话取经 spec 冻结注入）。
         var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
+        var difficulty = spec?.Difficulty ?? action.Intent.Difficulty;
         var enemyTemplates = wave.Select(monster =>
-            new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken), monster.Skills, monster.Id, monster.Rank)).ToArray();
+        {
+            var scaledStats = CombatDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty);
+            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(scaledStats, weaken), monster.Skills, monster.Id, monster.Rank);
+        }).ToArray();
         var respawnSeconds = InBattleRespawnSeconds(encounter);
         CombatEncounterState battle;
         if (spec is not null)
@@ -1238,7 +1245,8 @@ internal static class CombatActionRules
         ref Dictionary<AssetKey, double>? deltas,
         ref List<DuelStagedItem>? stagedItems,
         ActionParticipationSpec? spec = null,
-        int selfIndex = 0)
+        int selfIndex = 0,
+        int difficulty = 0)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.reward");
         if (monster.Experience > 0)
@@ -1247,9 +1255,10 @@ internal static class CombatActionRules
             // 1:1 兑换放大 ≤3×、溢量沉淀）、战斗经验按基础量等额入账、六维各归属维度得全额；
             // 满级（cap≤0）修为部分全额沉淀为底蕴，六维与战斗经验不受影响。
             // 组队会话份额 = 基础量 ÷ 在场人头 ×(1-等级惩罚)（总纲 §21.13）。
-            var experience = spec is null
+            var diffExpMult = CombatDifficultyRules.ExperienceMultiplier(difficulty);
+            var experience = (spec is null
                 ? monster.Experience
-                : monster.Experience / spec.Members.Count * (1 - spec.LevelMalusFor(selfIndex));
+                : monster.Experience / spec.Members.Count * (1 - spec.LevelMalusFor(selfIndex))) * diffExpMult;
             var rawExp = experience;
             var attributes = player.ResolveAttributes(gameData);
             var cultivationBonus = attributes.CultivationExpBonusPoints + attributes.CombatExpBonusPoints;
@@ -1279,6 +1288,8 @@ internal static class CombatActionRules
         var dropBonus = pvpEnabled
             ? baseDropBonus * PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear)
             : baseDropBonus;
+        var diffDropRateMult = CombatDifficultyRules.DropRateMultiplier(difficulty);
+        var diffDropQtyMult = CombatDifficultyRules.DropQuantityMultiplier(difficulty);
         foreach (var drop in monster.DropTable)
         {
             if (!drop.ItemId.IsValid || drop.MinQuantity <= 0 || drop.MaxQuantity < drop.MinQuantity || drop.DropChance <= 0) continue;
@@ -1287,10 +1298,27 @@ internal static class CombatActionRules
             var roll = (unchecked((ulong)DeterministicSequence.NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
             var quantityRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DropQuantityChannelSalt)) % 1_000_000UL) / 1_000_000d;
             seed = DeterministicSequence.NextSeed(seed);
-            if (roll > Math.Min(1, drop.DropChance * dropBonus)) continue;
+
+            var effectiveDropChance = drop.DropChance;
+            var minQty = drop.MinQuantity;
+            var maxQty = drop.MaxQuantity;
+            if (drop.DropChance >= 1.0 - 1e-9)
+            {
+                // 概率已经是 100% 的保底掉落，提升掉落量（向上取整）
+                minQty = Math.Ceiling(minQty * diffDropQtyMult);
+                maxQty = Math.Ceiling(maxQty * diffDropQtyMult);
+                if (maxQty < minQty) maxQty = minQty;
+            }
+            else
+            {
+                // 概率未达 100% 的，提升掉落率
+                effectiveDropChance = effectiveDropChance * diffDropRateMult;
+            }
+
+            if (roll > Math.Min(1, effectiveDropChance * dropBonus)) continue;
             // 数量为闭区间 [min, max] 整数均匀抽样：跨度 +1 保证最大数量可达。
-            var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity + 1) * quantityRoll);
-            quantity = Math.Clamp(quantity, drop.MinQuantity, drop.MaxQuantity);
+            var quantity = Math.Floor(minQty + (maxQty - minQty + 1) * quantityRoll);
+            quantity = Math.Clamp(quantity, minQty, maxQty);
             // 组队掉落归属：按各成员 (1+增幅)×(1-惩罚) 加权抽样，全零退化均等；
             // 归属掷点走独立盐位侧流——全体成员的模拟掷出同一归属，各自账本只记自己的件。
             if (spec is not null
@@ -1316,7 +1344,8 @@ internal static class CombatActionRules
         if (rareDropChance > 0)
         {
             var rareRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ UniversalRareDropRollSalt)) % 1_000_000UL) / 1_000_000d;
-            if (rareRoll <= Math.Min(1, rareDropChance * dropBonus))
+            var effectiveRareChance = rareDropChance * diffDropRateMult;
+            if (rareRoll <= Math.Min(1, effectiveRareChance * dropBonus))
             {
                 var bagItemId = StorageBagDropRules.ResolveStorageBagItemId(monster.Level);
                 const double bagQuantity = 1.0;

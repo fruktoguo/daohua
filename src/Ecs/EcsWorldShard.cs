@@ -305,6 +305,19 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     new ActionIntent(actionId, repeatCount), _clock.Current, GameData.Actions));
         });
 
+    public void EnqueueActionIntent(Guid playerId, ActionIntent intent, Guid? actionInstanceId = null)
+        => ExecuteOwned(() =>
+        {
+            if (actionInstanceId == Guid.Empty)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "行动实例标识不能为空。");
+            var entity = GetPlayer(playerId);
+            var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
+            entity.GetComponent<PlayerActionQueueMutationComponent>()!.Sink.Dispatch(
+                new EcsPlayerActionContext(entity), queue.Actions,
+                new(PlayerActionQueueMutationKind.Enqueue, actionInstanceId ?? Guid.Empty,
+                    intent, _clock.Current, GameData.Actions));
+        });
+
     public ValueTask RunOnceAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
         => new(RunOnceCoreAsync(target, null, cancellationToken));
 

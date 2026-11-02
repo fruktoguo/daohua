@@ -132,8 +132,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     /// <inheritdoc />
     public int CountNodeDuelCombatTeams(string? nodeId)
     {
-        if (string.IsNullOrEmpty(nodeId)) return 0;
-        var count = 0;
+        var brackets = CountNodeDuelCombatTeamsByBracket(nodeId);
+        return brackets[0] + brackets[1] + brackets[2];
+    }
+
+    /// <inheritdoc />
+    public int[] CountNodeDuelCombatTeamsByBracket(string? nodeId)
+    {
+        if (string.IsNullOrEmpty(nodeId)) return [0, 0, 0];
+        var counts = new int[3];
         var accountedSessions = new HashSet<string>(StringComparer.Ordinal);
         foreach (var snapshot in _loaded.Values)
         {
@@ -145,20 +152,22 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             var head = state.Actions[0];
             if (head.Status != ActionQueueStatus.Running || !head.Intent.PvpEnabled)
                 continue;
+            var difficulty = head.Participation?.Spec?.Difficulty ?? head.Intent.Difficulty;
+            var bracket = CombatDifficultyRules.GetBracket(difficulty);
             if (head.Participation is { Reference.SessionId: { Length: > 0 } sessionId } participation)
             {
                 if (participation.EndsAtUnixSeconds > snapshot.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d)
                 {
                     if (accountedSessions.Add(sessionId))
-                        count++;
+                        counts[bracket]++;
                 }
             }
             else if (head.Expedition is not null)
             {
-                count++;
+                counts[bracket]++;
             }
         }
-        return count;
+        return counts;
     }
     /// <inheritdoc />
     public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
@@ -432,7 +441,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (!Guid.TryParse(request.RequestId, out var actionRequestId) || actionRequestId != requestId)
                             throw new DomainException(DomainErrorCode.InvalidArgument, "请求标识不一致。");
                         var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount,
-                            request.TargetNodeId, request.Parameters, request.PvpEnabled)
+                            request.TargetNodeId, request.Parameters, request.PvpEnabled, Difficulty: CombatDifficultyRules.Clamp(request.Difficulty))
                             with { TargetItemId = request.TargetItemId, AuxItemId = request.AuxItemId };
                         // 行动参与会话由组织适配器投递，客户端只能入队普通行动。
                         // 参与期间仍禁止手动进入斗法撮合。
@@ -1859,17 +1868,18 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var band = gameData.Duel.PowerBandRatio;
         // 候选池先行快照：门禁内 MutatePlayer 的原子判据仍是最终裁决，池只承担初选与随机。
         // 严格同节点约束：排除移动中（EdgeId 非空）或节点未知的候选人。
-        var candidates = new List<(Guid PlayerId, double Power, string NodeId)>();
+        var candidates = new List<(Guid PlayerId, double Power, string NodeId, int Bracket)>();
         foreach (var id in ids)
         {
-            (Guid PlayerId, double Power, string NodeId)? info = null;
+            (Guid PlayerId, double Power, string NodeId, int Bracket)? info = null;
             ecs.MutatePlayer(id, aggregate =>
             {
                 if (aggregate.CanJoinDuel(nowUnix)
                     && aggregate.World.EdgeId is null
                     && !string.IsNullOrEmpty(aggregate.World.NodeId))
                 {
-                    info = (id, aggregate.DuelPower(gameData), aggregate.World.NodeId);
+                    var difficulty = aggregate.Actions.Count > 0 ? aggregate.Actions[0].Intent.Difficulty : 0;
+                    info = (id, aggregate.DuelPower(gameData), aggregate.World.NodeId, CombatDifficultyRules.GetBracket(difficulty));
                 }
             });
             if (info is { } entry) candidates.Add(entry);
@@ -1879,6 +1889,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         {
             double seekerPower = 0;
             string? seekerNodeId = null;
+            var seekerBracket = 0;
             var pending = false;
             ecs.MutatePlayer(seekerId, aggregate =>
             {
@@ -1889,12 +1900,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     pending = true;
                     seekerPower = aggregate.DuelPower(gameData);
                     seekerNodeId = aggregate.World.NodeId;
+                    var difficulty = aggregate.Actions.Count > 0 ? aggregate.Actions[0].Intent.Difficulty : 0;
+                    seekerBracket = CombatDifficultyRules.GetBracket(difficulty);
                 }
             });
             if (!pending || seekerNodeId is null) continue;
             var pool = candidates
                 .Where(candidate => candidate.PlayerId != seekerId
                     && candidate.NodeId == seekerNodeId
+                    && candidate.Bracket == seekerBracket
                     && candidate.Power >= seekerPower * (1 - band) && candidate.Power <= seekerPower * (1 + band))
                 .ToList();
             if (pool.Count == 0)

@@ -222,7 +222,8 @@ public static class PlayerActionQueueRules
                     priority ? intent.AnchorNodeId : intent.AnchorNodeId ??
                         (work.Player.World.EdgeId is null ? work.Player.World.NodeId : null),
                     intent.TargetItemId,
-                    intent.AuxItemId);
+                    intent.AuxItemId,
+                    intent.Difficulty);
                 work.Action = new(instanceId, normalized, mutation.At)
                     { Travel = mutation.Travel, Participation = mutation.Participation };
                 // 插队顶替会移除同类远征行动：被顶替者携带远征且玩家气血归零时按脱战复苏 1 HP，

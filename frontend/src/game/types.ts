@@ -411,6 +411,8 @@ export interface QueueEntry {
   expedition?: ExpeditionProgress | null
   /** 是否勾选斗法（PVP 匹配），仅战斗遭遇行动有效 */
   pvpEnabled: boolean
+  /** 讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5 */
+  difficulty: number
   /** 强化等行动的目标物品 ID（ActionIntent.TargetItemId 投影） */
   targetItemId?: string | null
   /** 辅助物品 ID（如强化保护材料；ActionIntent.AuxItemId 投影） */

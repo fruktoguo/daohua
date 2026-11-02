@@ -182,6 +182,11 @@ public sealed record ActionParticipationSpec(
     /// </summary>
     public double MonsterWeakenRatio { get; init; }
 
+    /// <summary>
+    /// 讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5；决定怪物属性指数放大、经验/掉落加成与斗法匹配区间。
+    /// </summary>
+    public int Difficulty { get; init; }
+
     /// <summary>会话规格持久化不变量。</summary>
     public bool IsValid => ActionId.IsValid
         && !string.IsNullOrWhiteSpace(SessionId) && SessionId.Length <= 64
@@ -190,6 +195,7 @@ public sealed record ActionParticipationSpec(
         && double.IsFinite(SearchSpeedPoints) && SearchSpeedPoints >= 0
         && double.IsFinite(MonsterWeakenRatio) && MonsterWeakenRatio >= 0
         && double.IsFinite(StartedAtUnixSeconds) && StartedAtUnixSeconds >= 0
+        && Difficulty >= 0 && Difficulty <= 5
         && Members is { Count: >= 1 and <= 5 } && Members.All(member => member is not null && member.IsValid)
         && Members.Select(member => Guid.Parse(member.PlayerId)).Distinct().Count() == Members.Count;
 

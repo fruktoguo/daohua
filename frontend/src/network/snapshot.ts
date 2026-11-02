@@ -865,6 +865,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       travelSegments,
       expedition,
       pvpEnabled: booleanValue(intent.pvpEnabled),
+      difficulty: numberValue(intent.difficulty, 0),
       targetItemId,
       auxItemId,
       targetLevel,

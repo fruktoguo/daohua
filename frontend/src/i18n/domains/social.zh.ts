@@ -74,6 +74,7 @@ export const socialZh = {
       isPublic: '公开到大厅',
       openSlots: '开启槽位',
       openSlotsHint: '共战开打需占满全部槽位；收窄槽位不得低于当前队员数',
+      difficulty: '难度',
     },
     action: {
       create: '创建队伍',

@@ -172,6 +172,9 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     public void EnqueueAction(Guid playerId, ActionId actionId, double repeatCount = 1, Guid? actionInstanceId = null)
         => GetShard(playerId).EnqueueAction(playerId, actionId, repeatCount, actionInstanceId);
 
+    public void EnqueueActionIntent(Guid playerId, ActionIntent intent, Guid? actionInstanceId = null)
+        => GetShard(playerId).EnqueueActionIntent(playerId, intent, actionInstanceId);
+
     /// <summary>把全部分片按固定顺序推进到 target；分片间暂不并发，避免把调度变化混入结果一致性验证。</summary>
     public ValueTask RunOnceAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
         => RunAllShardsAsync(target, cancellationToken);

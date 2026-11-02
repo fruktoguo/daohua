@@ -35,6 +35,7 @@ import { StatGlyph } from './components/StatGlyph'
 import { Icon, type IconName } from './components/Icon'
 import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
+import { getDifficultyBracket } from './game/combatDifficulty'
 import { useGameStore } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
@@ -1553,6 +1554,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
   const duel = useGameStore(state => state.duel)
   const nodeDuelCombatTeamCount = useGameStore(state => state.nodeDuelCombatTeamCount)
+  const nodeDuelCombatTeamsByBracket = useGameStore(state => state.nodeDuelCombatTeamsByBracket)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
   // 制造类行动（炼丹/炼器/精炼/强化）默认单轮：材料逐轮消耗结算，无限默认会烧穿背包；
@@ -1563,6 +1565,11 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const [repeats, setRepeats] = useState(isManufacture ? 1 : -1)
   const [spiritStoneTier, setSpiritStoneTier] = useState<number>(0)
   const [pvpEnabled, setPvpEnabled] = useState(false)
+  const [difficulty, setDifficulty] = useState(0)
+  const currentBracket = getDifficultyBracket(difficulty)
+  const displayedDuelTeams = nodeDuelCombatTeamsByBracket
+    ? (nodeDuelCombatTeamsByBracket[currentBracket] ?? 0)
+    : nodeDuelCombatTeamCount
   const [, setClockTick] = useState(0)
 
   const actionLevel = useMemo(
@@ -1652,11 +1659,12 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
         <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true"><Icon name={action.type} /></span>
         <div>
           <h2 id={titleId}>{displayName}</h2>
-          {!isCrafting && displayDescription ? <p>{displayDescription}</p> : null}
+          {!startsImmediately && !isCrafting && displayDescription ? <p>{displayDescription}</p> : null}
         </div>
       </header>
 
-      <dl className="action-detail-list">
+      {!startsImmediately && (
+        <dl className="action-detail-list">
         <div>
           <dt>{t('app.action.needs')}</dt>
           <dd>{inputs.length === 0 && !(action.foundationCostRatio ?? 0) ? <span className="action-detail-empty">{t('app.action.none')}</span> : inputs.map(input => (
@@ -1678,21 +1686,6 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           )}</dd>
         </div>
 
-        {startsImmediately ? (
-          <>
-            <div>
-              <dt>{t('app.action.outputs')}</dt>
-              <dd>
-                <span className="action-detail-empty">{t('app.action.combatDrops')}</span>
-              </dd>
-            </div>
-            <div>
-              <dt>{t('app.action.duration')}</dt>
-              <dd><span className="action-detail-value">{t('app.action.combatUnlimited')}</span></dd>
-            </div>
-          </>
-        ) : (
-          <>
             <div>
               <dt>{t('app.action.outputs')}</dt>
               <dd>
@@ -1863,51 +1856,69 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                 />
               </dd>
             </div>
-          </>
-        )}
-      </dl>
+        </dl>
+      )}
 
-      {startsImmediately && <CombatEcologyPanel action={action} />}
+      {startsImmediately && <CombatEcologyPanel action={action} difficulty={difficulty} />}
 
       {startsImmediately && (
         <section className="duel-option" aria-label={t('app.action.duel.title')}>
-          <FloatingPopover
-            content={
-              <FloatingInfoCard
-                badge={t('app.queue.duelBadge')}
-                badgeTone="purple"
-                lines={[
-                  t('app.action.duel.descMatch'),
-                  t('app.action.duel.descDrop'),
-                  t('app.action.duel.descStaging'),
-                  t('app.action.duel.descPenalty'),
-                ]}
-                title={t('app.action.duel.title')}
-              />
-            }
-            displayContents
-            interactive={false}
-            placement="top"
-            size="medium"
-            trigger="hover"
-          >
-            <label className="duel-option-toggle">
-              <input
-                checked={pvpEnabled}
-                onChange={event => setPvpEnabled(event.target.checked)}
-                type="checkbox"
-              />
-              <strong>{t('app.action.duel.title')}</strong>
-              <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>
+          <div className="duel-option-controls">
+            <FloatingPopover
+              content={
+                <FloatingInfoCard
+                  badge={t('app.queue.duelBadge')}
+                  badgeTone="purple"
+                  lines={[
+                    t('app.action.duel.descMatch'),
+                    t('app.action.duel.descDrop'),
+                    t('app.action.duel.descStaging'),
+                    t('app.action.duel.descPenalty'),
+                  ]}
+                  title={t('app.action.duel.title')}
+                />
+              }
+              displayContents
+              interactive={false}
+              placement="top"
+              size="medium"
+              trigger="hover"
+            >
+              <label className="duel-option-toggle">
+                <input
+                  checked={pvpEnabled}
+                  onChange={event => setPvpEnabled(event.target.checked)}
+                  type="checkbox"
+                />
+                <strong>{t('app.action.duel.title')}</strong>
+                <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>
+              </label>
+            </FloatingPopover>
+
+            <label className="difficulty-option-select">
+              <strong>{t('app.action.difficulty')}</strong>
+              <select
+                aria-label={t('app.action.difficulty')}
+                className="difficulty-select"
+                onChange={event => setDifficulty(Number(event.target.value))}
+                value={difficulty}
+              >
+                <option value={0}>{t('app.action.difficultyDefault')}</option>
+                <option value={1}>T1</option>
+                <option value={2}>T2</option>
+                <option value={3}>T3</option>
+                <option value={4}>T4</option>
+                <option value={5}>T5</option>
+              </select>
             </label>
-          </FloatingPopover>
+          </div>
           <div className="duel-option-status">
             <span>{t('app.action.duel.charges', { n: duel.encounterCharges })}</span>
             {duelCooldownRemaining > 0 && (
               <span className="duel-cooldown">{t('app.action.duel.cooldown', { time: formatRemainingSeconds(duelCooldownRemaining) })}</span>
             )}
-            {nodeDuelCombatTeamCount !== null && (
-              <span className="duel-node-teams">{t('app.action.duel.nodeTeams', { count: nodeDuelCombatTeamCount })}</span>
+            {displayedDuelTeams !== null && (
+              <span className="duel-node-teams">{t('app.action.duel.nodeTeams', { count: displayedDuelTeams })}</span>
             )}
           </div>
         </section>
@@ -1936,6 +1947,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
             actionId: action.id,
             repeatCount: repeats,
             pvpEnabled,
+            difficulty,
             parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
           })) {
             onClose()
