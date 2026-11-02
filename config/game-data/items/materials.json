@@ -504,5 +504,16 @@
     "sellPrice": 1000,
     "subCategory": "exoticMaterial",
     "level": 16
+  },
+  {
+    "id": "item.storage-bag.broken",
+    "name": "破损的储物袋",
+    "description": "岁月磨蚀的低阶储物袋，袋口符印残缺，内有乾坤封存。\n使用后可尝试破除残余封禁，获取封存于其中的灵石、功德与珍稀机缘。",
+    "kind": "material",
+    "category": "special",
+    "tier": 1,
+    "sellPrice": 50,
+    "subCategory": "special",
+    "level": 1
   }
 ]

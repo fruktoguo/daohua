@@ -368,7 +368,7 @@ export function resolveInventoryGroup(
 ): InventoryGroupKey {
   if (itemId.startsWith('equipment.') || findEquipmentInCatalog(equipment, itemId) !== undefined) return 'equipment'
   if (itemId.startsWith('item.tome.') || itemId.startsWith('item.fragment.')) return 'manual'
-  if (itemId.startsWith('currency.') || itemId === 'item.awakening-stone') return 'important'
+  if (itemId.startsWith('currency.') || itemId === 'item.awakening-stone' || itemId.startsWith('item.storage-bag')) return 'important'
   const definition = findItemInCatalog(items, itemId)
   if (!definition) return 'material'
   if (definition.category === 'manual') return 'manual'
@@ -1140,6 +1140,7 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.gongde': { glyph: '功', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.gongde-bound': { glyph: '德', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.awakening-stone': { glyph: '✦', tone: 'gold', rarity: 'heaven', level: 54, subCategory: 'special' },
+  'item.storage-bag.broken': { glyph: '囊', tone: 'gold', rarity: 'mundane', level: 1, subCategory: 'special' },
   'item.tome.heavy-slash': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.heavy-slash': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.chain-strike': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
@@ -1552,6 +1553,17 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     subCategory: 'special',
     tier: 5,
     sellPrice: 100,
+    isTradable: true,
+  },
+  'item.storage-bag.broken': {
+    itemId: 'item.storage-bag.broken',
+    name: '破损的储物袋',
+    description: '岁月磨蚀的低阶储物袋，袋口符印残缺，内有乾坤封存。\n使用后可尝试破除残余封禁，获取封存于其中的灵石、功德与珍稀机缘。',
+    kind: 'material',
+    category: 'special',
+    subCategory: 'special',
+    tier: 1,
+    sellPrice: 50,
     isTradable: true,
   },
 }

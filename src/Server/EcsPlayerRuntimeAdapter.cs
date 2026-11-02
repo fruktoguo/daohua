@@ -420,6 +420,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 IReadOnlyList<Server.Clean.Social.InvitationMilestoneGrant>? invitationGrants = null;
                 List<LogEventDto>? tutorialSkipLogs = null;
                 object? customData = null;
+                string? customNotice = null;
                 var receiptAlreadyCommitted = false;
                 var wallet = WalletOf(playerId);
                 switch (command)
@@ -726,6 +727,51 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             break;
                         }
 
+                        if (string.Equals(useItemId, StorageBagDropRules.BrokenBagItemId.Value, StringComparison.Ordinal))
+                        {
+                            var bagKey = StorageBagDropRules.BrokenBagItemId;
+                            var ownedBags = wallet.Get(new AssetKey(bagKey));
+                            if (ownedBags + 1e-9 < useQuantity)
+                                return new PlayerCommandResult(false, "INSUFFICIENT_RESOURCE", "储物袋数量不足。", before);
+
+                            var openResult = StorageBagOpenRules.OpenBrokenBags(Random.Shared, useQuantity);
+                            customNotice = $"储物袋开启成功！获得 {openResult.SpiritStones} 灵石"
+                                + (openResult.Gongde > 0 ? $"、{openResult.Gongde} 功德" : "")
+                                + (openResult.AwakeningStones > 0 ? $"、{openResult.AwakeningStones} 觉醒石" : "") + "。";
+                            customData = new
+                            {
+                                storageBagResult = new
+                                {
+                                    itemId = bagKey.Value,
+                                    quantity = useQuantity,
+                                    spiritStones = openResult.SpiritStones,
+                                    gongde = openResult.Gongde,
+                                    awakeningStones = openResult.AwakeningStones
+                                }
+                            };
+
+                            var deltas = new List<Server.Clean.AssetDelta>
+                            {
+                                new(playerId, bagKey.Value, string.Empty, -useQuantity)
+                            };
+                            if (openResult.SpiritStones > 0)
+                                deltas.Add(new(playerId, StorageBagOpenRules.SpiritStoneItemId.Value, string.Empty, openResult.SpiritStones));
+                            if (openResult.Gongde > 0)
+                                deltas.Add(new(playerId, StorageBagOpenRules.GongdeItemId.Value, string.Empty, openResult.Gongde));
+                            if (openResult.AwakeningStones > 0)
+                                deltas.Add(new(playerId, StorageBagOpenRules.AwakeningStoneItemId.Value, string.Empty, openResult.AwakeningStones));
+
+                            var mutated = ToSnapshot(ecs.ExportSnapshot(playerId));
+                            var useReceipt = CreateReceipt(playerId, requestId, command, payloadHash, mutated.StateVersion);
+                            await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore,
+                                new EconomyTransactionRequest(
+                                    requestId, $"item-use:{playerId:D}:{requestId:D}", command, playerId,
+                                    deltas, DateTimeOffset.UtcNow,
+                                    JsonSerializer.SerializeToUtf8Bytes(new { itemId = bagKey.Value, quantity = useQuantity })),
+                                useReceipt, cancellationToken).ConfigureAwait(false);
+                            receiptAlreadyCommitted = true;
+                            break;
+                        }
                         return new PlayerCommandResult(false, "UNSUPPORTED_ITEM", "该物品不可直接使用。", before);
                     }
                     case "progression.breakthrough":
@@ -1555,7 +1601,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     }
                 if (forfeit is { } resolvedForfeit)
                     await RouteDuelForfeitAsync(resolvedForfeit, notifications, cancellationToken).ConfigureAwait(false);
-                return new PlayerCommandResult(true, "OK", SuccessNotice(command), after, outcome.Simulation, outcome.Logs, customData);
+                return new PlayerCommandResult(true, "OK", customNotice ?? SuccessNotice(command), after, outcome.Simulation, outcome.Logs, customData);
             }
             catch (DomainException exception)
             {

@@ -1311,11 +1311,40 @@ internal static class CombatActionRules
                 player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = drop.ItemId, GainedQuantity = quantity });
             }
         }
+        // 全怪物通用稀有掉落（代码规则配置）：随怪物等级与生命层次计算爆率，产出储物袋（现阶段为破损的储物袋）
+        var rareDropChance = StorageBagDropRules.CalculateDropChance(monster.Level, monster.Rank);
+        if (rareDropChance > 0)
+        {
+            var rareRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ UniversalRareDropRollSalt)) % 1_000_000UL) / 1_000_000d;
+            if (rareRoll <= Math.Min(1, rareDropChance * dropBonus))
+            {
+                var bagItemId = StorageBagDropRules.ResolveStorageBagItemId(monster.Level);
+                const double bagQuantity = 1.0;
+                if (spec is null || RollDropAssignment(spec, seed ^ UniversalRareDropAssignmentSalt) == selfIndex)
+                {
+                    if (pvpEnabled)
+                    {
+                        ActionReportBook.StageCombatItem(player, bagItemId, bagQuantity, killAtUnixSeconds,
+                            gameData.Duel.StagedBucketSeconds);
+                        var bucketedAt = Math.Ceiling(killAtUnixSeconds / gameData.Duel.StagedBucketSeconds) * gameData.Duel.StagedBucketSeconds;
+                        (stagedItems ??= []).Add(new DuelStagedItem(bagItemId.Value, bagQuantity, bucketedAt));
+                    }
+                    else
+                    {
+                        AddDelta(deltas ??= new Dictionary<AssetKey, double>(), bagItemId, bagQuantity);
+                        player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = bagItemId, GainedQuantity = bagQuantity });
+                    }
+                }
+            }
+        }
     }
 
+    /// <summary>通用稀有掉落判定独立盐位。</summary>
+    private const long UniversalRareDropRollSalt = unchecked((long)0x5A17B4C83D9E2F1AUL);
+    /// <summary>通用稀有掉落组队归属抽样独立盐位。</summary>
+    private const long UniversalRareDropAssignmentSalt = unchecked((long)0x3D9E2F1A5A17B4C8UL);
     /// <summary>掉落归属掷点专用盐位（与判定/数量侧流互不相同）。</summary>
     private const long DropAssignmentChannelSalt = unchecked((long)0xC2B2AE3D27D4EB4FUL);
-
     /// <summary>
     /// 共享掉落的单件归属抽样：权重 = 各成员 (1+掉落增幅点数/100)×(1-等级惩罚)，
     /// 全零权重退化为均匀抽样。掷点输入为规格内冻结面板，各成员模拟逐位一致。

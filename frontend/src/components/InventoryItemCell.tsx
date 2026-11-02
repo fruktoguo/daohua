@@ -52,13 +52,14 @@ function ItemQuantityDialog({
   const isDiscard = mode === 'discard'
   const isTome = item.itemId.startsWith('item.tome.')
   const isAwakeningStone = item.itemId === 'item.awakening-stone'
+  const isStorageBag = item.itemId.startsWith('item.storage-bag')
   const max = Math.max(1, Math.floor(item.amount))
   const [quantity, setQuantity] = useState(1)
   const presets = [...new Set([1, 10, 100, max].filter(value => value >= 1 && value <= max))].sort((a, b) => a - b)
 
   const confirm = () => {
     if (isUse) {
-      if (item.itemId === 'item.awakening-stone') {
+      if (item.itemId === 'item.awakening-stone' || isStorageBag) {
         gameClient.sendCommand('item.use', { itemId: item.itemId, quantity })
       } else {
         gameClient.sendCommand('ability.learn', { itemId: item.itemId, quantity })
@@ -78,22 +79,26 @@ function ItemQuantityDialog({
       <div className="confirm-dialog">
          <h2 id={titleId}>
            {isUse
-            ? isAwakeningStone
-              ? t('app.inventoryPanel.useAwakenTitle', { name: item.name })
-              : t('app.inventoryPanel.useTitle', { name: item.name })
+            ? isStorageBag
+              ? t('app.inventoryPanel.useStorageBagTitle', { name: item.name })
+              : isAwakeningStone
+                ? t('app.inventoryPanel.useAwakenTitle', { name: item.name })
+                : t('app.inventoryPanel.useTitle', { name: item.name })
              : t(isDiscard ? 'app.inventoryPanel.discardTitle' : 'app.inventoryPanel.recycleTitle', { name: item.name })}
          </h2>
          <p>
            {isUse
-            ? isAwakeningStone
-              ? t('app.inventoryPanel.useAwakenDescription')
-               : t(isTome ? 'app.inventoryPanel.useTomeDescription' : 'app.inventoryPanel.useFragmentDescription')
+            ? isStorageBag
+              ? t('app.inventoryPanel.useStorageBagDescription')
+              : isAwakeningStone
+                ? t('app.inventoryPanel.useAwakenDescription')
+                : t(isTome ? 'app.inventoryPanel.useTomeDescription' : 'app.inventoryPanel.useFragmentDescription')
              : isDiscard
                ? t('app.inventoryPanel.discardDescription')
                : t('app.inventoryPanel.recycleDescription', { price: formatNumber(unitPrice) })}
          </p>
          <QuantitySelector
-          ariaLabel={t(isUse ? (isAwakeningStone ? 'app.inventoryPanel.useAwakenQuantityAria' : 'app.inventoryPanel.useQuantityAria') : 'app.inventoryPanel.quantityAria')}
+          ariaLabel={t(isUse ? (isStorageBag ? 'app.inventoryPanel.useStorageBagQuantityAria' : isAwakeningStone ? 'app.inventoryPanel.useAwakenQuantityAria' : 'app.inventoryPanel.useQuantityAria') : 'app.inventoryPanel.quantityAria')}
           max={max}
           onChange={value => setQuantity(Math.max(1, Math.min(max, value)))}
           presets={presets}
@@ -111,7 +116,7 @@ function ItemQuantityDialog({
             onClick={confirm}
             type="button"
           >
-            {t(isUse ? (isAwakeningStone ? 'app.inventoryPanel.confirmAwaken' : 'app.inventoryPanel.confirmUse') : isDiscard ? 'app.inventoryPanel.confirmDiscard' : 'app.inventoryPanel.confirmRecycle')}
+            {t(isUse ? (isStorageBag ? 'app.inventoryPanel.confirmOpen' : isAwakeningStone ? 'app.inventoryPanel.confirmAwaken' : 'app.inventoryPanel.confirmUse') : isDiscard ? 'app.inventoryPanel.confirmDiscard' : 'app.inventoryPanel.confirmRecycle')}
           </button>
         </div>
       </div>
@@ -152,8 +157,9 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const [dialog, setDialog] = useState<ItemQuantityDialogMode | null>(null)
 
   const isAwakeningStone = item.itemId === 'item.awakening-stone'
+  const isStorageBag = item.itemId.startsWith('item.storage-bag')
   const isManual = item.itemId.startsWith('item.tome.') || item.itemId.startsWith('item.fragment.')
-  const usable = !occupied && (isManual || isAwakeningStone || equipmentDef !== undefined)
+  const usable = !occupied && (isManual || isAwakeningStone || isStorageBag || equipmentDef !== undefined)
   const tradable = equipmentDef !== undefined || definition?.isTradable === true
   // 回收单价：装备按当前强化等级查表折算，普通物品直接取配表 sellPrice
   const isEquipment = equipmentDef !== undefined || item.itemId.startsWith('equipment.')
@@ -167,7 +173,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
 
   /** 使用：秘籍/残卷进批量研读弹窗（ability.learn 携带 quantity）；装备立即穿戴（loadout.replace 剔除冲突槽位后推入） */
   const use = () => {
-    if (isManual || isAwakeningStone) {
+    if (isManual || isAwakeningStone || isStorageBag) {
       setDialog('use')
       return
     }
@@ -207,7 +213,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
     <FloatingMenuGroup title={enhancementLevel > 0 ? `${item.name} +${enhancementLevel}` : item.name}>
       {usable && (
         <FloatingMenuItem
-          label={equipmentDef ? t('app.inventoryPanel.useEquip') : item.itemId === 'item.awakening-stone' ? t('app.inventoryPanel.useAwaken') : t('app.inventoryPanel.useLearn')}
+          label={equipmentDef ? t('app.inventoryPanel.useEquip') : isStorageBag ? t('app.inventoryPanel.useOpen') : item.itemId === 'item.awakening-stone' ? t('app.inventoryPanel.useAwaken') : t('app.inventoryPanel.useLearn')}
           onClick={use}
           tone="jade"
         />
