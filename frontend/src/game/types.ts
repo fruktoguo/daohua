@@ -622,6 +622,8 @@ export interface ExpeditionProgress {
   elapsedSeconds: number
   /** 阶段总秒数 */
   durationSeconds: number
+  /** 当前远征历练选定的难度等级（0: 默认, 1~5: T1~T5） */
+  difficulty?: number
   /** 玩家当前生命值 */
   playerHitpoints?: number | null
   /** 玩家当前灵力值 */

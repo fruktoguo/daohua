@@ -302,7 +302,7 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
   } else {
     // 敌方上限取快照常驻标量（血蓝条分母），不再反查怪物目录，也不以当前血量充当上限。
     for (const enemy of expedition?.enemies ?? []) {
-      enemyMax += Math.max(1, enemy.maxHitpoints ?? enemy.attributes?.maxHitpoints ?? 1)
+      enemyMax += Math.max(1, enemy.maxHitpoints ?? 1, enemy.attributes?.maxHitpoints ?? 1, enemy.hitpoints)
       enemyValue += Math.max(0, enemy.hitpoints)
     }
     enemyMax = Math.max(1, enemyMax)

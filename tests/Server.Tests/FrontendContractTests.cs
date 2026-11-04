@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
@@ -209,5 +210,53 @@ public sealed class FrontendContractTests
         Assert.Equal(expectedChance, chance, precision: 6);
         Assert.Equal(1.0, bagDrop.GetProperty("minQuantity").GetDouble());
         Assert.Equal(1.0, bagDrop.GetProperty("maxQuantity").GetDouble());
+    }
+
+    /// <summary>
+    /// 历练行动投影测试：高难度（如 T5）下的敌人 maxHitpoints 与 attributes 必须按难度缩放，
+    /// 防止前端血条分母依然为普通难度导致「打掉近 80% 血才开始扣血」且详情面板显示普通属性。
+    /// </summary>
+    [Fact]
+    public void ExpeditionMonsterStatsScaledByDifficultyInQueueProjection()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "scripts/check-frontend-contracts.mjs"))) directory = directory.Parent;
+        var root = directory?.FullName ?? throw new DirectoryNotFoundException("找不到仓库根目录。");
+        var catalog = GameDataCatalog.Parse(Directory.EnumerateFiles(Path.Combine(root, "config/game-data"), "*.json", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal).Select(path => (ReadOnlyMemory<byte>)File.ReadAllBytes(path)));
+
+        var enemyId = "enemy.wood-spirit";
+        var baseStats = catalog.CombatMonsters[enemyId].Stats;
+        var t5Stats = Domain.Combat.CombatDifficultyRules.ScaleMonsterStats(baseStats, 5);
+        Assert.True(t5Stats.MaxHitpoints > baseStats.MaxHitpoints * 3.0);
+
+        var expedition = new CombatExpeditionState(
+            "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, 123456L,
+            100, 100, 10, 1, 10, 100, CombatOutcome.Running, 1,
+            [new ExpeditionEnemyState(enemyId, new CombatantSnapshot(t5Stats.MaxHitpoints, 10, 2, 0, 10, 1))]);
+
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, Difficulty: 5),
+            DateTimeOffset.UtcNow,
+            ActionQueueStatus.Running,
+            0, -1, 0,
+            expedition);
+
+        var projected = ProtocolSnapshotMapper.ToActionQueueSection([action], catalog, new Protocol.UnitInspectDto("enemy", 0));
+        var json = JsonSerializer.Serialize(projected, ProtocolJson.Options);
+        using var doc = JsonDocument.Parse(json);
+        var actionElem = doc.RootElement[0];
+        var expElem = actionElem.GetProperty("expedition");
+        Assert.Equal(5, expElem.GetProperty("difficulty").GetInt32());
+
+        var enemiesElem = expElem.GetProperty("enemies");
+        var enemyElem = enemiesElem[0];
+        var maxHp = enemyElem.GetProperty("maxHitpoints").GetDouble();
+        Assert.Equal(t5Stats.MaxHitpoints, maxHp);
+
+        var attributesElem = enemyElem.GetProperty("attributes");
+        var attrMaxHp = attributesElem.GetProperty("maxHitpoints").GetDouble();
+        Assert.Equal(t5Stats.MaxHitpoints, attrMaxHp);
     }
 }

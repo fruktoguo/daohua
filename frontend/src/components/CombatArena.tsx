@@ -28,6 +28,7 @@ import { useUiStore } from '../uiStore'
 import { COMBAT_RESOURCE_EFFECT_LIMIT, collectScheduledCombatEvents, combatHitDelayMilliseconds } from '../game/combatFeedback'
 import { computeArenaFormationScale, resolveOccupiedRows } from '../game/combatScale'
 
+import { scaleMonsterAttributes, scaleMonsterDrops } from '../game/combatDifficulty'
 /** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名；传入 world+maps 时按当前驻留地点本地化 */
 function resolveQueueEntryDisplayName(
   entry: QueueEntry | null | undefined,
@@ -2133,6 +2134,7 @@ export const CombatArena = memo(function CombatArena({
   const isTravel = current !== null && (current.executionKind === 'travel' || current.actionId === 'world.travel')
   const isLifeAction = current !== null && !isCombat && !isTravel
   const expedition = isCombat ? current.expedition : null
+  const currentDifficulty = expedition?.difficulty ?? current?.difficulty ?? 0
   // 统计入口随战斗行动存亡：行动出队/切换为非战斗行动时自动收起已开弹窗
   useEffect(() => {
     if (!isCombat) setStatsOpen(false)
@@ -2144,7 +2146,7 @@ export const CombatArena = memo(function CombatArena({
     const loadoutCache = inspectedLoadoutCacheRef.current
     for (const enemy of expedition?.enemies ?? []) {
       if (enemy.attributes) {
-        cache.set(`enemy:${enemy.enemyId}`, enemy.attributes)
+        cache.set(`enemy:${enemy.enemyId}:${currentDifficulty}`, enemy.attributes)
         setInspectedSnapshot(prev => {
           if (prev && prev.role === 'enemy' && prev.enemyId === enemy.enemyId) {
             const staticAttr = findCombatantInCatalog(encounters, maps, enemy.enemyId)?.attributes
@@ -2264,7 +2266,7 @@ export const CombatArena = memo(function CombatArena({
         name,
         seal: name.slice(0, 1),
         hp: entry.hitpoints,
-        maxHp: Math.max(1, entry.maxHitpoints ?? entry.attributes?.maxHitpoints ?? entry.hitpoints),
+        maxHp: Math.max(1, entry.maxHitpoints ?? 1, entry.attributes?.maxHitpoints ?? 1, entry.hitpoints),
         mp: entry.manapoints,
         maxMp: Math.max(1, entry.maxManapoints ?? entry.attributes?.maxManapoints ?? entry.manapoints),
         threat: entry.threat,
@@ -2532,13 +2534,16 @@ export const CombatArena = memo(function CombatArena({
   const handleInspectEnemy = useCallback((entry: EnemyDisplayState, index: number) => {
     gameClient.sendUnitInspect({ side: 'enemy', index })
     const staticCombatant = entry.enemyId ? findCombatantInCatalog(encounters, maps, entry.enemyId) : undefined
+    const scaledStaticAttributes = staticCombatant?.attributes
+      ? scaleMonsterAttributes(staticCombatant.attributes, currentDifficulty)
+      : null
     const cachedAttr = inspectedAttributesCacheRef.current.get(
       entry.enemyId !== null
-        ? `enemy:${entry.enemyId}`
+        ? `enemy:${entry.enemyId}:${currentDifficulty}`
         : `duel:${expedition?.duel?.opponentName ?? 'opponent'}`
     )
-    const initialAttributes = entry.attributes ?? cachedAttr ?? staticCombatant?.attributes ?? null
-    const drops = staticCombatant?.drops ?? []
+    const initialAttributes = entry.attributes ?? cachedAttr ?? scaledStaticAttributes ?? null
+    const drops = staticCombatant?.drops ? scaleMonsterDrops(staticCombatant.drops, currentDifficulty) : []
     let loadout: UnitLoadoutView | null = null
     if (entry.enemyId !== null) {
       loadout = { skills: staticCombatant?.skills ?? [] }

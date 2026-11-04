@@ -544,7 +544,7 @@ public static class ProtocolSnapshotMapper
                 completedRepeats = action.CompletedRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio),
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio, action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty),
                 // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
                 participation = action.Participation is { } participationBinding ? new
                 {
@@ -592,8 +592,9 @@ public static class ProtocolSnapshotMapper
     /// 会话观察目标（UnitInspect）命中该侧下标时才携带 attributes，未点开的单位不占快照带宽。
     /// 威胁字段统一投影有效威胁值（基础实际值×(1+增幅点数/100)），与目标判定口径一致。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0)
+    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0, int difficulty = 0)
     {
+        var effectiveDifficulty = spec?.Difficulty ?? difficulty;
         // 敌怪展示面板削弱口径：会话取开打定格冻结值，单人取本机当前节点建筑投影。
         var effectiveMonsterWeaken = spec?.MonsterWeakenRatio ?? monsterWeakenRatio;
         var inspectedEnemyIndex = inspectedUnit is { Side: "enemy", Index: >= 0 } enemyTarget ? enemyTarget.Index.Value : (int?)null;
@@ -601,6 +602,7 @@ public static class ProtocolSnapshotMapper
         return new
         {
             expedition.EncounterId,
+            difficulty = effectiveDifficulty,
             phase = MapExpeditionPhase(expedition.Phase),
             expedition.PhaseElapsedSeconds, expedition.PhaseDurationSeconds,
             expedition.BattleElapsedSeconds,
@@ -627,7 +629,7 @@ public static class ProtocolSnapshotMapper
             playerBuffs = expedition.Phase == CombatExpeditionPhase.Combat
                 ? ToCombatBuffsDto(expedition.PlayerState?.Buffs)
                 : ToCombatBuffsDto(playerCarriedBuffs, expedition.BattleElapsedSeconds),
-            enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken)).ToArray(),
+            enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken, effectiveDifficulty)).ToArray(),
             duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
             recentEvents = expedition.RecentEvents is null || expedition.RecentEvents.Count == 0 ? null : expedition.RecentEvents.Select(e => new
             {
@@ -756,12 +758,13 @@ public static class ProtocolSnapshotMapper
         }
     }
 
-    private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData, bool includeAttributes, Action? onAttributesProjected = null, double monsterWeakenRatio = 0)
+    private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData, bool includeAttributes, Action? onAttributesProjected = null, double monsterWeakenRatio = 0, int difficulty = 0)
     {
         var definition = gameData is null ? null : gameData.CombatMonsters.GetValueOrDefault(enemy.EnemyId);
         var found = definition is not null;
+        var scaledStats = found ? Domain.Combat.CombatDifficultyRules.ScaleMonsterStats(definition!.Stats, difficulty) : null;
         // 封魔阵类节点削弱随展示口径同步折减：血条分母与按需属性面板与实战结算一致。
-        var stats = found ? NodeBuildingRules.WeakenMonsterStats(definition!.Stats, monsterWeakenRatio) : null;
+        var stats = scaledStats is not null ? NodeBuildingRules.WeakenMonsterStats(scaledStats, monsterWeakenRatio) : null;
         JsonElement? visual = null;
         if (gameData is not null
             && gameData.Monsters.TryGetValue(enemy.EnemyId, out var raw)

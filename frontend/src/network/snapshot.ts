@@ -701,6 +701,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     enemyManapoints: primary?.manapoints ?? 0,
     enemyId: primary?.enemyId ?? null,
     enemies,
+    difficulty: numberValue(row.difficulty, 0),
     playerRespawnAtSeconds,
     playerRespawnDurationSeconds,
     playerRespawnWaitingUntilSeconds,
