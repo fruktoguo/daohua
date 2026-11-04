@@ -224,6 +224,11 @@ function estimateAsideCardMetrics(card: FloatingAsideCard): { height: number; pr
     return { height: 160, preferLeft: true }
   }
 
+  // 2b. 物品获取途径来源副气泡：高度适中（约 140-180px），结构紧凑
+  if (card.id?.startsWith('aside-item-sources-')) {
+    return { height: 160, preferLeft: false }
+  }
+
   // 3. 功法战技参悟 / 雷达图等重型技能面板：高度通常在 300-360px，强烈偏好右列
   if (card.id?.startsWith('aside-manual-') || card.content) {
     return { height: 340, preferLeft: false }

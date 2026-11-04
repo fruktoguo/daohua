@@ -15,12 +15,16 @@ await build({
   outfile: tempOut,
   logLevel: 'error',
   jsx: 'automatic',
+  define: {
+    'import.meta.env': '{}',
+  },
   plugins: [
     {
       name: 'mock-i18n-and-stores',
       setup(b) {
         b.onResolve({ filter: /^\.\.\/i18n$/ }, args => ({ path: args.path, namespace: 'mock-i18n' }))
-        b.onResolve({ filter: /^\.\.\/game\/gameStore$/ }, args => ({ path: args.path, namespace: 'mock-store' }))
+        b.onResolve({ filter: /gameStore$/ }, args => ({ path: args.path, namespace: 'mock-store' }))
+        b.onResolve({ filter: /itemSources$/ }, args => ({ path: args.path, namespace: 'mock-sources' }))
         b.onResolve({ filter: /^\.\.\/network\/apiClient$/ }, args => ({ path: args.path, namespace: 'mock-api' }))
         b.onResolve({ filter: /itemIcons/ }, args => ({ path: args.path, namespace: 'mock-icons' }))
         b.onResolve({ filter: /^\.\/FloatingPopover$/ }, args => ({ path: args.path, namespace: 'mock-popover' }))
@@ -109,6 +113,14 @@ await build({
           contents: `
             export const StatGlyph = (props) => ({ type: 'StatGlyph', props });
             export const resolveStatGlyph = () => undefined;
+          `,
+          loader: 'js',
+        }))
+
+        b.onLoad({ filter: /.*/, namespace: 'mock-sources' }, () => ({
+          contents: `
+            export const resolveItemSources = () => ({ itemId: '', monsters: [], crafting: [], gatherings: [], packs: [], generals: [], totalMonstersCount: 0 });
+            export const resolveItemSourcesAsideCard = () => null;
           `,
           loader: 'js',
         }))

@@ -240,6 +240,12 @@
   max-width: 100%;
 }
 
+.daohua-floating-aside-card--in-main[data-aside-id*="aside-item-sources-"] {
+  min-width: unset;
+  width: 100% !important;
+  max-width: 100%;
+}
+
 .daohua-floating-aside-head {
   display: flex;
   align-items: center;
@@ -600,6 +606,224 @@
 .daohua-market-aside-empty--muted {
   color: var(--text-dim, rgba(233, 227, 210, 0.5));
   font-size: var(--text-2xs);
+}
+
+/* 物品获取途径来源副气泡 (Item Sources Aside Card) */
+.daohua-floating-aside-card[data-aside-id*="aside-item-sources-"] {
+  min-width: 260px;
+  max-width: min(340px, calc(100vw - 24px));
+}
+
+.daohua-source-aside-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.daohua-source-aside-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.daohua-source-aside-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.daohua-source-aside-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border: 1px solid transparent;
+}
+
+.daohua-source-aside-badge--crimson {
+  color: #f7a89b;
+  background: rgba(200, 82, 63, 0.16);
+  border-color: rgba(200, 82, 63, 0.38);
+  box-shadow: 0 0 6px rgba(200, 82, 63, 0.15);
+}
+
+.daohua-source-aside-badge--qi {
+  color: #8ebfc3;
+  background: rgba(117, 169, 173, 0.16);
+  border-color: rgba(117, 169, 173, 0.38);
+  box-shadow: 0 0 6px rgba(117, 169, 173, 0.15);
+}
+
+.daohua-source-aside-badge--emerald {
+  color: #9fe2bf;
+  background: rgba(114, 169, 140, 0.16);
+  border-color: rgba(114, 169, 140, 0.38);
+  box-shadow: 0 0 6px rgba(114, 169, 140, 0.15);
+}
+
+.daohua-source-aside-badge--amber {
+  color: #f6cf8a;
+  background: rgba(224, 165, 87, 0.16);
+  border-color: rgba(224, 165, 87, 0.38);
+  box-shadow: 0 0 6px rgba(224, 165, 87, 0.15);
+}
+
+.daohua-source-aside-badge--gold {
+  color: #ffe6a3;
+  background: rgba(232, 214, 154, 0.16);
+  border-color: rgba(232, 214, 154, 0.38);
+  box-shadow: 0 0 6px rgba(232, 214, 154, 0.15);
+}
+
+.daohua-source-aside-sub-count {
+  font-size: var(--text-2xs);
+  color: var(--text-dim, rgba(233, 227, 210, 0.5));
+}
+
+.daohua-source-aside-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.daohua-source-aside-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(18, 22, 20, 0.45);
+  border: 1px solid rgba(114, 169, 140, 0.12);
+  font-size: var(--text-xs);
+  box-sizing: border-box;
+}
+
+.daohua-source-aside-row-left {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.daohua-source-aside-name {
+  color: var(--text-primary, #e9e3d2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.daohua-source-aside-name.is-boss {
+  color: #ff9d94;
+  font-weight: 600;
+}
+
+.daohua-source-aside-name.is-elite {
+  color: #d1b3ff;
+  font-weight: 600;
+}
+
+.daohua-source-aside-name.is-normal {
+  color: #e9e3d2;
+}
+
+.daohua-source-aside-level {
+  font-size: var(--text-2xs);
+  color: var(--text-dim, rgba(233, 227, 210, 0.55));
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  flex-shrink: 0;
+}
+
+.daohua-source-aside-meta {
+  font-size: var(--text-2xs);
+  color: #8ebfc3;
+  background: rgba(117, 169, 173, 0.12);
+  padding: 0 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.daohua-source-aside-row-right {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.daohua-source-aside-rate {
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #ffe6a3;
+  letter-spacing: 0.3px;
+}
+
+.daohua-source-aside-amount {
+  font-family: var(--font-numeric, "JetBrains Mono", Consolas, monospace);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--jade, #72a98c);
+}
+
+.daohua-source-aside-more {
+  font-size: var(--text-2xs);
+  color: var(--text-dim, rgba(233, 227, 210, 0.5));
+  text-align: center;
+  padding: 2px 0 0 0;
+}
+
+/* 特殊通用资源概括卡 */
+.daohua-source-aside-general-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.daohua-source-aside-general-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(18, 22, 20, 0.45);
+  border: 1px solid rgba(232, 214, 154, 0.12);
+}
+
+.daohua-source-aside-general-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.daohua-source-aside-tag {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: #ffe6a3;
+  background: rgba(232, 214, 154, 0.15);
+  padding: 0 4px;
+  border-radius: 2px;
+  border: 1px solid rgba(232, 214, 154, 0.28);
+  flex-shrink: 0;
+}
+
+.daohua-source-aside-title-text {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #f4edd9;
+}
+
+.daohua-source-aside-desc-text {
+  font-size: var(--text-2xs);
+  color: var(--text-dim, rgba(233, 227, 210, 0.65));
+  line-height: 1.45;
 }
 
 /* 右侧数量/说明副文本 */

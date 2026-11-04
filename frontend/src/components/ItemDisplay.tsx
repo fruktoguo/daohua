@@ -15,6 +15,7 @@ import { ValueText } from './ValueText'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
 import { createAbilityBuffAsideCards, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
+import { resolveItemSourcesAsideCard } from '../game/itemSources'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -331,6 +332,11 @@ export function resolveItemTooltipAsideCards(
     list.push(marketAside)
   }
 
+  // 5. 物品获取途径来源独立副卡
+  const sourcesAside = resolveItemSourcesAsideCard(itemId, itemDef, eqDef)
+  if (sourcesAside) {
+    list.push(sourcesAside)
+  }
   if (extraAsideCards && extraAsideCards.length > 0) {
     list.push(...extraAsideCards)
   }
