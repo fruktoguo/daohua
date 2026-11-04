@@ -76,7 +76,7 @@ if (-not $dbPortReady) {
     Write-Host "  -> 5432 端口未监听，尝试唤起本地 PostgreSQL..." -ForegroundColor Gray
     $pgCtl = "C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe"
     $pgData = "C:\Program Files\PostgreSQL\16\data"
-    if (Test-Path $pgCtl -and (Test-Path $pgData)) {
+    if ((Test-Path $pgCtl) -and (Test-Path $pgData)) {
         & $pgCtl start -D $pgData -l "$env:TEMP\daohua-pg.log" | Out-Null
         Start-Sleep -Seconds 2
     } elseif (Get-Command docker -ErrorAction SilentlyContinue) {
