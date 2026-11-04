@@ -29,7 +29,7 @@ description: >-
 阶段 5：双端指纹/接入验证 + 提取 Ops 后台路径 + 输出 GitHub Releases 下载直链 → 收尾登记
 ```
 
-> **官方一键总控入口**：仓库根目录下的 `scripts/release-prod.sh` 已将上述流水线（四路并发打包推送/备份/交叉编译/安卓构建 → 自动解析 sha256 digest → 自动主服部署与双层烟测 → odin 热重启 → 结果验证）全自动化闭环，日常发布可直接执行 `bash scripts/release-prod.sh`（支持 `--skip-odin`、`--skip-backup`、`--skip-smoke`、`--skip-apk` 等选项）。
+> **官方一键总控入口**：仓库根目录下的 `scripts/release-prod.sh` 已将上述流水线（四路并发打包推送/备份/交叉编译/安卓构建 → 自动解析 sha256 digest → 自动主服部署与双层烟测 → odin 热重启 → 结果验证）全自动化闭环，日常发布可直接执行 `bash scripts/release-prod.sh`（支持 `--bump patch|minor|major` 语义化自增、`--version <X.Y.Z>`、`--skip-odin`、`--skip-backup`、`--skip-smoke`、`--skip-apk` 等选项）。
 ---
 
 ## 阶段 0：单回合并发预检与最小门禁
@@ -84,13 +84,14 @@ ssh -o BatchMode=yes odin 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https:
 ### 流 A（阶段 1）：构建并推送成对不可变镜像
 
 ```bash
-scripts/docker-build-prod.sh --push --release-tag sha-<短hash>
+# 默认自动读取根目录 version.json 的标准版本（如 v0.2.0），无需手工指定 sha 标签
+scripts/docker-build-prod.sh --push
+# 亦可显式覆盖：scripts/docker-build-prod.sh --push --release-tag v0.2.0
 ```
 
-- 一次构建并推送 `daohua:<tag>`（Server）与 `daohua-compute:<tag>`（ComputeNode）及 `prod` 标签。
-- 直接从 `docker push` 输出末尾读取两个 `sha-<短hash>: digest: sha256:<64位hex>`，拼成完整 `@sha256:` 引用供 `deploy-prod.sh` 使用。
-- 若本机已构建好镜像仅需补推，用 `--push-existing --release-tag sha-<短hash>` 跳过重编。
-
+- 一次构建并推送 `daohua:v<版本>`（Server）与 `daohua-compute:v<版本>`（ComputeNode）及 `prod` 标签。
+- 直接从 `docker push` 输出末尾读取两个 `v<版本>: digest: sha256:<64位hex>`，拼成完整 `@sha256:` 引用供 `deploy-prod.sh` 使用。
+- 若本机已构建好镜像仅需补推，用 `--push-existing` 跳过重编。
 ### 流 B（阶段 2）：远端发布前备份与校验（生产数据红线）
 
 ```bash
@@ -179,7 +180,7 @@ ssh -o BatchMode=yes odin '
 主服与 odin 双端切换完毕后，**独占执行** Android 完全版离线安装包构建与 Releases 发布：
 
 ```bash
-bash scripts/build-apk.sh --soft-fail --require-full --release --tag "v<版本号>-sha-<短hash>"
+bash scripts/build-apk.sh --soft-fail --require-full --release --tag "v<版本号>"
 ```
 
 - **完全版本硬红线**：正式服发布的 APK 必须包含反多开子系统与专有设备指纹防御逻辑（`DaoHua-Private`）。脚本内置 `--require-full` 检查，缺少私有挂载即刻阻断，严禁开源 Stub 版客户端外溢连正式服被 4010 拒绝。

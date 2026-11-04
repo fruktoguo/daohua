@@ -56,3 +56,13 @@
 - **2026-11-01 19:50:00**：完成本地物料扫描与 `--dry-run` 试跑验证，成功识别 `artifacts/daohua.apk`。
 - **2026-11-01 19:52:00**：同步更新 `AGENTS.md` 常用脚本清单。
 - **2026-11-01 19:55:00**：完成本地全部子命令验证与工程清单同步，准备提交 Git。
+- **2026-11-01 20:05:00**：根据用户授权结果打通 WSL 凭据跨平台委托，开发者主体绑定为 `446202`（尐妖的工作室）。
+- **2026-11-01 20:15:00**：通过 CLI 成功创建《道化太初》游戏草稿，生成专属应用 ID `1017706`（角色扮演 RPG，Android APK）。
+- **2026-11-01 20:25:00**：将 Android 安装包实际包名 `applicationId` 规范对齐为 `com.yuohira.daohua`，重新打包出 2.2M 高清离线包。
+- **2026-11-01 20:30:00**：执行 `scripts/taptap-publish.sh upload --yes` 成功上传包体（`apkId: 1074247`），并通过 `app select-package` 成功绑定为主包体槽位（消除 MISSING_PACKAGE 阻断项）。
+- **2026-11-01 20:45:00**：通过 `app save-changes` 将游戏简介（description）、首页推荐语（promotion_text）、首页素材偏好（promotion_material_type: BANNER_4）、开发者的话（developer_message）与开发商名称（author_name）全量写入草稿库，所有建议项清空，必填项仅剩截图与宣传图素材。
+- **2026-11-01 21:05:00**：启动 moss-art 技能管线，按用户指导完成「极简矢量多边形（Planar Polygonal Vector）· 仙山绝顶一剑开天」官方游戏图标设计与高精度 MOSS-Image（全量 35 步 + SLG Layer 22）生成。
+- **2026-11-01 21:15:00**：完成玄青深邃夜空、上古周天星轨道盘、孤峰断崖绝壁与碎金开天裂隙的背景重构渲染，导出 512×512 标准 PNG 归档于 `art/icons/icon_daohua_cleave_bg_512.png`。
+- **2026-11-01 21:20:00**：通过 `taptap-cli upload` 上传图标至素材库并绑定为 App Icon（消除 DEFAULT_ICON 告警，警告项与建议项全部清空为 0）。
+- **2026-11-01 21:35:00**：按用户指令将剑修角色全面重构为「女性剑仙」，并完成顶部居中（Top-Centered）玄金书法「道化太初」Logo 字标的黄金比例复合排版，导出 `art/icons/icon_daohua_female_cleave_top_512.png`。
+- **2026-11-01 21:40:00**：执行 `taptap-cli upload` 上传新图标（Asset ID: `745322`）并同步更新至草稿资料库，零告警提审健康度继续保持。
