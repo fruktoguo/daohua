@@ -156,12 +156,12 @@ fi
 
 # 准备版本指纹并注入 Android 构建工程
 GIT_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")"
-PKG_VERSION="$(node -p "try { require('./frontend/package.json').version } catch(e) { '0.1.0' }" 2>/dev/null || echo "0.1.0")"
+PKG_VERSION="$(node -p "try { require('./version.json').version } catch(e) { try { require('./frontend/package.json').version } catch(e) { '0.2.0' } }" 2>/dev/null || echo "0.2.0")"
 if [[ -z "$RELEASE_TAG" ]]; then
-  RELEASE_TAG="v${PKG_VERSION}-sha-${GIT_SHA}"
+  RELEASE_TAG="v${PKG_VERSION}"
 fi
 COMMIT_COUNT="$(git rev-list --count HEAD 2>/dev/null || echo "100")"
-APP_VERSION_CODE="$(( 10000 + COMMIT_COUNT ))"
+APP_VERSION_CODE="$(( 20000 + COMMIT_COUNT ))"
 BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 VERSION_JSON="{\"versionName\":\"${PKG_VERSION}\",\"versionCode\":${APP_VERSION_CODE},\"gitSha\":\"${GIT_SHA}\",\"releaseTag\":\"${RELEASE_TAG}\",\"buildTime\":\"${BUILD_TIME}\"}"

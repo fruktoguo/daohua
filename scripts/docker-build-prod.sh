@@ -24,7 +24,7 @@ usage() {
     '选项：' \
     '  --push                 构建后推送两个不可变镜像和 prod 标签' \
     '  --push-existing        推送本机已验收的两个镜像，不重新构建' \
-    '  --release-tag TAG      指定不可变版本标签' \
+    '  --release-tag TAG      指定不可变版本标签（默认从 version.json 读取 v<MAJOR>.<MINOR>.<PATCH>）' \
     '  --image-prefix PREFIX  覆盖镜像仓库前缀' \
     '  --moving-tag TAG       覆盖移动标签，默认 prod' \
     '  --allow-dirty          允许未提交工作区（仅排障）' \
@@ -57,8 +57,9 @@ docker info >/dev/null 2>&1 || { printf 'Docker 当前不可用。\n' >&2; exit 
 
 cd "$ROOT_DIR"
 VCS_REF="$(git rev-parse HEAD 2>/dev/null || printf 'uncommitted')"
-if [[ -z "$RELEASE_TAG" && "$VCS_REF" != "uncommitted" ]]; then
-  RELEASE_TAG="sha-${VCS_REF:0:12}"
+if [[ -z "$RELEASE_TAG" ]]; then
+  PKG_VERSION="$(node -p "try{require('./version.json').version}catch(e){require('./frontend/package.json').version}catch(e){'0.2.0'}" 2>/dev/null || printf '0.2.0')"
+  RELEASE_TAG="v${PKG_VERSION}"
 fi
 if [[ -n "$(git status --porcelain --untracked-files=normal)" && "$ALLOW_DIRTY" != "1" ]]; then
   printf '工作区存在未提交改动，拒绝正式镜像构建。\n' >&2

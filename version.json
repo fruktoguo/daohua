@@ -1,0 +1,5 @@
+{
+  "version": "0.2.0",
+  "stage": "alpha",
+  "releaseNotes": "实装标准语义化版本号体系与自动化流水线"
+}

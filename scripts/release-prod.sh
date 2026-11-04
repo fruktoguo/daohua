@@ -37,6 +37,9 @@ ALLOW_DIRTY=0
 SKIP_APK=0
 SKIP_APK_UPLOAD=0
 SKIP_CADDY=0
+BUMP_TYPE=""
+EXPLICIT_VERSION=""
+EXPLICIT_TAG=""
 usage() {
   printf '%s\n' \
     '用法：scripts/release-prod.sh [选项]' \
@@ -52,6 +55,9 @@ usage() {
     '  --allow-dirty    允许未提交工作区构建（仅排障）' \
     '  --host HOST      主服 SSH 别名（默认 yuohira）' \
     '  --odin-host HOST odin SSH 别名（默认 odin）' \
+    '  --bump TYPE      自动升级版本号（patch / minor / major）' \
+    '  --version VER    显式指定版本号（如 0.2.1）' \
+    '  --tag TAG        显式覆盖发布标签（默认: v<version>）' \
     '  -h, --help       显示帮助信息'
 }
 
@@ -67,6 +73,9 @@ while (($# > 0)); do
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --host) REMOTE_HOST="${2:?--host 缺少值}"; shift 2 ;;
     --odin-host) ODIN_HOST="${2:?--odin-host 缺少值}"; shift 2 ;;
+    --bump) BUMP_TYPE="${2:?--bump 缺少类型 (patch|minor|major)}"; shift 2 ;;
+    --version) EXPLICIT_VERSION="${2:?--version 缺少值}"; shift 2 ;;
+    --tag) EXPLICIT_TAG="${2:?--tag 缺少值}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) printf '未知参数: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -128,6 +137,52 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
   fi
 fi
 
+# 5. 版本号与发布标签解析（SemVer 单源权威）
+if [[ -n "$BUMP_TYPE" ]]; then
+  PKG_VERSION="$(node -e "
+    const fs = require('fs');
+    const vPath = './version.json';
+    const pkgPath = './frontend/package.json';
+    const vData = JSON.parse(fs.readFileSync(vPath, 'utf8'));
+    let [maj, min, pat] = vData.version.split('.').map(Number);
+    if ('$BUMP_TYPE' === 'major') { maj++; min = 0; pat = 0; }
+    else if ('$BUMP_TYPE' === 'minor') { min++; pat = 0; }
+    else if ('$BUMP_TYPE' === 'patch') { pat++; }
+    else { console.error('无效 bump 类型: $BUMP_TYPE'); process.exit(1); }
+    const nextVer = \`\${maj}.\${min}.\${pat}\`;
+    vData.version = nextVer;
+    fs.writeFileSync(vPath, JSON.stringify(vData, null, 2) + '\n');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      pkg.version = nextVer;
+      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+    }
+    console.log(nextVer);
+  ")"
+  printf '  - 版本号已自动升级 (%s): %s\n' "$BUMP_TYPE" "$PKG_VERSION"
+elif [[ -n "$EXPLICIT_VERSION" ]]; then
+  PKG_VERSION="$(node -e "
+    const fs = require('fs');
+    const vPath = './version.json';
+    const pkgPath = './frontend/package.json';
+    const vData = JSON.parse(fs.readFileSync(vPath, 'utf8'));
+    vData.version = '$EXPLICIT_VERSION';
+    fs.writeFileSync(vPath, JSON.stringify(vData, null, 2) + '\n');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      pkg.version = '$EXPLICIT_VERSION';
+      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+    }
+    console.log('$EXPLICIT_VERSION');
+  ")"
+  printf '  - 版本号已指定为: %s\n' "$PKG_VERSION"
+else
+  PKG_VERSION="$(node -p "try{require('./version.json').version}catch(e){require('./frontend/package.json').version}catch(e){'0.2.0'}" 2>/dev/null || printf '0.2.0')"
+fi
+
+RELEASE_TAG="${EXPLICIT_TAG:-v${PKG_VERSION}}"
+printf '  - 发布版本: %s (Tag: %s)\n' "$PKG_VERSION" "$RELEASE_TAG"
+
 # ------------------------------------------------------------------------------
 # 阶段 1: 并发构建、备份与准备
 # ------------------------------------------------------------------------------
@@ -140,10 +195,10 @@ touch "$STATUS_FILE"
 STREAM_A_LOG="$RELEASE_TMP/stream_a_docker.log"
 (
   set -Eeuo pipefail
-  printf '[流 A] 开始构建与推送 CCR 镜像 (tag: sha-%s)...\n' "$GIT_REV"
-  BUILD_ARGS=("--push" "--release-tag" "sha-$GIT_REV")
+  printf '[流 A] 开始构建与推送 CCR 镜像 (tag: %s)...\n' "$RELEASE_TAG"
+  BUILD_ARGS=("--push" "--release-tag" "$RELEASE_TAG")
   if [[ "$PUSH_EXISTING" == "1" ]]; then
-    BUILD_ARGS=("--push-existing" "--release-tag" "sha-$GIT_REV")
+    BUILD_ARGS=("--push-existing" "--release-tag" "$RELEASE_TAG")
   fi
   if [[ "$ALLOW_DIRTY" == "1" ]]; then
     BUILD_ARGS+=("--allow-dirty")
@@ -225,11 +280,11 @@ fi
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 2/4] 解析不可变 sha256 镜像引用...\n'
 
-APP_DIGEST="$(awk '/推送镜像:.*\/daohua:sha-/ { found=1; next } found && /digest: sha256:[a-f0-9]{64}/ { for(i=1;i<=NF;i++) if($i ~ /^sha256:[a-f0-9]{64}$/) { print $i; exit } }' "$STREAM_A_LOG")"
-COMPUTE_DIGEST="$(awk '/推送镜像:.*\/daohua-compute:sha-/ { found=1; next } found && /digest: sha256:[a-f0-9]{64}/ { for(i=1;i<=NF;i++) if($i ~ /^sha256:[a-f0-9]{64}$/) { print $i; exit } }' "$STREAM_A_LOG")"
+APP_DIGEST="$(awk -v pat="/daohua:${RELEASE_TAG}" '$0 ~ pat { found=1; next } found && /digest: sha256:[a-f0-9]{64}/ { for(i=1;i<=NF;i++) if($i ~ /^sha256:[a-f0-9]{64}$/) { print $i; exit } }' "$STREAM_A_LOG")"
+COMPUTE_DIGEST="$(awk -v pat="/daohua-compute:${RELEASE_TAG}" '$0 ~ pat { found=1; next } found && /digest: sha256:[a-f0-9]{64}/ { for(i=1;i<=NF;i++) if($i ~ /^sha256:[a-f0-9]{64}$/) { print $i; exit } }' "$STREAM_A_LOG")"
 
 if [[ -z "$APP_DIGEST" || -z "$COMPUTE_DIGEST" ]]; then
-  DIGESTS=($(grep -oE 'sha-[^[:space:]]+: digest: sha256:[a-f0-9]{64}' "$STREAM_A_LOG" | awk '{print $NF}'))
+  DIGESTS=($(grep -oE '(v[0-9]+|sha-)[^[:space:]]+: digest: sha256:[a-f0-9]{64}' "$STREAM_A_LOG" | awk '{print $NF}'))
   if [[ "${#DIGESTS[@]}" -ge 2 ]]; then
     APP_DIGEST="${DIGESTS[0]}"
     COMPUTE_DIGEST="${DIGESTS[1]}"
@@ -294,11 +349,9 @@ fi
 RELEASE_DOWNLOAD_URL=""
 if [[ "$SKIP_APK" != "1" ]]; then
   printf '\n==> [阶段 3.5] 独占构建 Android 完全版安装包并发布到 GitHub Releases...\n'
-  PKG_VERSION="$(node -p "try{require('./frontend/package.json').version}catch(e){'0.1.0'}" 2>/dev/null || printf '0.1.0')"
-  RELEASE_TAG="v${PKG_VERSION}-sha-${GIT_REV}"
-  APK_ARGS=("--soft-fail" "--require-full")
+  APK_ARGS=("--soft-fail" "--require-full" "--tag" "$RELEASE_TAG")
   if [[ "$SKIP_APK_UPLOAD" != "1" ]]; then
-    APK_ARGS+=("--release" "--tag" "$RELEASE_TAG")
+    APK_ARGS+=("--release")
   fi
   bash "$ROOT_DIR/scripts/build-apk.sh" "${APK_ARGS[@]}"
   if [[ -f "$ROOT_DIR/artifacts/daohua.apk" && "$SKIP_APK_UPLOAD" != "1" ]]; then
@@ -330,7 +383,7 @@ OPS_PATH="$(ssh -o BatchMode=yes "$REMOTE_HOST" 'sudo docker logs daohua-app --s
 printf '\n======================================================\n'
 printf '        正式服全量发布完成 (Commit: %s)\n' "$GIT_REV"
 printf '======================================================\n'
-printf '  • 主服版本标签 : sha-%s\n' "$GIT_REV"
+printf '  • 主服版本标签 : %s\n' "$RELEASE_TAG"
 printf '  • Server 镜像  : %s\n' "$APP_IMAGE_REF"
 printf '  • Compute 镜像 : %s\n' "$COMPUTE_IMAGE_REF"
 if [[ -n "$OPS_PATH" ]]; then

@@ -61,9 +61,8 @@ fi
 
 # 自动推导 Tag 与 Title
 if [[ -z "$TAG" ]]; then
-  PKG_VERSION="$(node -p "try{require('./frontend/package.json').version}catch(e){'0.1.0'}" 2>/dev/null || printf '0.1.0')"
-  GIT_REV="$(git rev-parse --short HEAD 2>/dev/null || printf 'latest')"
-  TAG="v${PKG_VERSION}-sha-${GIT_REV}"
+  PKG_VERSION="$(node -p "try{require('./version.json').version}catch(e){try{require('./frontend/package.json').version}catch(e){'0.2.0'}}" 2>/dev/null || printf '0.2.0')"
+  TAG="v${PKG_VERSION}"
 fi
 
 if [[ -z "$TITLE" ]]; then
