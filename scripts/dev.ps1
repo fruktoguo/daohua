@@ -77,8 +77,9 @@ if (-not $dbPortReady) {
     $pgCtl = "C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe"
     $pgData = "C:\Program Files\PostgreSQL\16\data"
     if ((Test-Path $pgCtl) -and (Test-Path $pgData)) {
-        & $pgCtl start -D $pgData -l "$env:TEMP\daohua-pg.log" | Out-Null
-        Start-Sleep -Seconds 2
+        $logFile = "$env:TEMP\daohua-pg.log"
+        cmd.exe /c "`"$pgCtl`" start -D `"$pgData`" -l `"$logFile`" >nul 2>&1"
+        Start-Sleep -Seconds 1
     } elseif (Get-Command docker -ErrorAction SilentlyContinue) {
         Write-Host "  -> 尝试使用 Docker Compose 启动数据库..." -ForegroundColor Gray
         docker compose up -d db | Out-Null
@@ -86,15 +87,22 @@ if (-not $dbPortReady) {
     }
 }
 
-# 再次验证端口
-try {
-    $tcp = New-Object System.Net.Sockets.TcpClient
-    $iar = $tcp.BeginConnect("127.0.0.1", 5432, $null, $null)
-    $dbPortReady = $iar.AsyncWaitHandle.WaitOne(2000)
-    if ($dbPortReady) { $tcp.EndConnect($iar) }
-    $tcp.Close()
-} catch {
-    $dbPortReady = $false
+# 再次验证端口（轮询探测最多 5s）
+for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    try {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $iar = $tcp.BeginConnect("127.0.0.1", 5432, $null, $null)
+        $dbPortReady = $iar.AsyncWaitHandle.WaitOne(1000)
+        if ($dbPortReady) {
+            $tcp.EndConnect($iar)
+            $tcp.Close()
+            break
+        }
+        $tcp.Close()
+    } catch {
+        $dbPortReady = $false
+    }
+    Start-Sleep -Milliseconds 500
 }
 
 if ($dbPortReady) {
