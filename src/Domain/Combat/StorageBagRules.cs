@@ -32,7 +32,37 @@ public static class StorageBagDropRules
         };
         return BaseDropChance * levelFactor * rankMultiplier;
     }
+    /// <summary>
+    /// 计算指定等级与层次名称怪物的通用稀有掉落基础概率。
+    /// </summary>
+    public static double CalculateDropChance(int level, string? rankName)
+    {
+        return CalculateDropChance(level, ParseRank(rankName));
+    }
 
+    /// <summary>
+    /// 计算指定等级（double）与层次名称怪物的通用稀有掉落基础概率。
+    /// </summary>
+    public static double CalculateDropChance(double level, string? rankName)
+    {
+        var intLevel = Math.Max(1, (int)Math.Round(level));
+        return CalculateDropChance(intLevel, ParseRank(rankName));
+    }
+
+    private static CombatMonsterRank ParseRank(string? rankName)
+    {
+        if (string.Equals(rankName, "boss", StringComparison.OrdinalIgnoreCase)) return CombatMonsterRank.Boss;
+        if (string.Equals(rankName, "elite", StringComparison.OrdinalIgnoreCase)) return CombatMonsterRank.Elite;
+        return CombatMonsterRank.Minion;
+    }
+
+    /// <summary>
+    /// 随怪物等级决定掉落什么品级的储物袋（支持 double 等级）。
+    /// </summary>
+    public static ItemId ResolveStorageBagItemId(double level)
+    {
+        return ResolveStorageBagItemId(Math.Max(1, (int)Math.Round(level)));
+    }
     /// <summary>
     /// 随怪物等级决定掉落什么品级的储物袋。
     /// 现阶段恒定掉落「破损的储物袋」，为后续更高品级储物袋预留扩展点。

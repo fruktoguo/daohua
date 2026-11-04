@@ -381,13 +381,7 @@ public static class StaticGameCatalogMapper
             // 怪物属性与玩家/斗法镜像走同一份协议形状，字段语义完全一致。
             attributes = ProtocolSnapshotMapper.ToAttributesDto(stats),
             experience = definition.Experience,
-            drops = definition.DropTable.Select(drop => new
-            {
-                itemId = drop.ItemId.Value,
-                dropChance = drop.DropChance,
-                minQuantity = drop.MinQuantity,
-                maxQuantity = drop.MaxQuantity
-            }).ToArray(),
+            drops = ResolveMonsterDrops(definition),
             // 功法槽按 CombatAbilitySlot 形状投影（abilityId+level，等级取配表施放等级），
             // 详情弹窗「装配」Tab 与生态面板共用此来源。
             // triggers 一并下发领域层已解析的槽位触发条件（槽位 triggers → triggerHpRatio 折叠 → defaultTriggers）：
@@ -401,6 +395,31 @@ public static class StaticGameCatalogMapper
                 triggers = skill.Triggers.Select(trigger => trigger.Clone()).ToArray(),
             }).Where(skill => skill.abilityId.Length > 0).ToArray()
         };
+    }
+
+    private static object[] ResolveMonsterDrops(CombatMonsterDefinition definition)
+    {
+        var drops = definition.DropTable.Select(drop => (object)new
+        {
+            itemId = drop.ItemId.Value,
+            dropChance = drop.DropChance,
+            minQuantity = drop.MinQuantity,
+            maxQuantity = drop.MaxQuantity
+        }).ToList();
+
+        var rareChance = StorageBagDropRules.CalculateDropChance(definition.Level, definition.Rank);
+        if (rareChance > 0)
+        {
+            drops.Add(new
+            {
+                itemId = StorageBagDropRules.ResolveStorageBagItemId(definition.Level).Value,
+                dropChance = rareChance,
+                minQuantity = 1.0,
+                maxQuantity = 1.0
+            });
+        }
+
+        return drops.ToArray();
     }
 
     private static object EmptyMonster(string id, string name) => new

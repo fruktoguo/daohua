@@ -81,3 +81,24 @@ test('斗法三区间队伍过滤联动：各难度正确定位对应区间的�
   assert.equal(nodeDuelCombatTeamsByBracket[getDifficultyBracket(4)], 7)
   assert.equal(nodeDuelCombatTeamsByBracket[getDifficultyBracket(5)], 7)
 })
+
+test('怪物掉落条目：通用稀有储物袋微小掉率自适应格式化与难度缩放', () => {
+  function formatDropChance(chance) {
+    const pct = chance * 100
+    return `${+(pct >= 0.1 ? pct.toFixed(2) : pct.toFixed(4))}%`
+  }
+
+  // 1. 基线微小掉率格式化精度验证
+  assert.equal(formatDropChance(0.0003), '0.03%') // 1 级普通怪基线 0.03%
+  assert.equal(formatDropChance(0.000315), '0.0315%') // 2 级普通怪 0.03% * 1.05
+  assert.equal(formatDropChance(0.0015), '0.15%') // 1 级精英怪 0.03% * 5
+  assert.equal(formatDropChance(0.006), '0.6%') // 1 级首领怪 0.03% * 20
+  assert.equal(formatDropChance(1.0), '100%') // 100% 保底
+
+  // 2. 难度缩放联动
+  const drops = [{ itemId: 'item.storage-bag.broken', dropChance: 0.0003, minQuantity: 1, maxQuantity: 1 }]
+  const t1Drops = scaleMonsterDrops(drops, 1)
+  // T1 难度 dropRateMultiplier = 1.25 -> 0.0003 * 1.25 = 0.000375 -> 0.0375%
+  assert.ok(Math.abs(t1Drops[0].dropChance - 0.000375) < 1e-9)
+  assert.equal(formatDropChance(t1Drops[0].dropChance), '0.0375%')
+})

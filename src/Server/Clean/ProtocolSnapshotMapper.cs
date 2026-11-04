@@ -1134,27 +1134,42 @@ public static class ProtocolSnapshotMapper
             return null;
         gameData.CombatMonsters.TryGetValue(id, out var def);
         var visual = monster.TryGetProperty("visual", out var v) && v.ValueKind == JsonValueKind.Object ? v : default;
+        var monsterLevel = def?.Level ?? ReadDouble(monster, "level", 1);
+        var monsterRank = ReadString(monster, "rank", "normal");
+        var drops = ReadArray(monster, "dropTable")
+            .Select(d => new
+            {
+                itemId = ReadString(d, "itemId"),
+                dropChance = ReadDouble(d, "dropChance", 0),
+                minQuantity = ReadDouble(d, "minQuantity", 0),
+                maxQuantity = ReadDouble(d, "maxQuantity", 0)
+            })
+            .Where(d => d.itemId.Length > 0)
+            .Cast<object>()
+            .ToList();
+        var rareChance = StorageBagDropRules.CalculateDropChance(monsterLevel, monsterRank);
+        if (rareChance > 0)
+        {
+            drops.Add(new
+            {
+                itemId = StorageBagDropRules.ResolveStorageBagItemId(monsterLevel).Value,
+                dropChance = rareChance,
+                minQuantity = 1.0,
+                maxQuantity = 1.0
+            });
+        }
         return new
         {
             monsterId = id,
             name = ReadString(monster, "name", id),
-            level = def?.Level ?? ReadDouble(monster, "level", 1),
-            tier = gameData.BaseAttributes?.TierAt(def?.Level ?? ReadDouble(monster, "level", 1)) ?? 1,
-            rank = ReadString(monster, "rank", "normal"),
+            level = monsterLevel,
+            tier = gameData.BaseAttributes?.TierAt(monsterLevel) ?? 1,
+            rank = monsterRank,
             budgetCost = ReadDouble(monster, "budgetCost", 1),
             maxHitpoints = def?.Stats.MaxHitpoints ?? 0,
             physicalAttack = def?.Stats.AttackPower ?? 0,
             armor = def?.Stats.Defense ?? 0,
-            drops = ReadArray(monster, "dropTable")
-                .Select(d => new
-                {
-                    itemId = ReadString(d, "itemId"),
-                    dropChance = ReadDouble(d, "dropChance", 0),
-                    minQuantity = ReadDouble(d, "minQuantity", 0),
-                    maxQuantity = ReadDouble(d, "maxQuantity", 0)
-                })
-                .Where(d => d.itemId.Length > 0)
-                .ToArray(),
+            drops = drops.ToArray(),
             visualSource = visual.ValueKind == JsonValueKind.Object ? ReadString(visual, "source") : null,
             visualRenderer = visual.ValueKind == JsonValueKind.Object ? ReadString(visual, "renderer") : null
         };

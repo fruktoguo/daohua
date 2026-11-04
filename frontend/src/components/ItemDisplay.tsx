@@ -330,6 +330,7 @@ export function resolveItemTooltipAsideCards(
   if (marketAside) {
     list.push(marketAside)
   }
+
   if (extraAsideCards && extraAsideCards.length > 0) {
     list.push(...extraAsideCards)
   }
@@ -1948,8 +1949,9 @@ export function ItemDropReference({
   const quantityText = drop.minQuantity === drop.maxQuantity
     ? formatInteger(drop.minQuantity)
     : `${formatInteger(drop.minQuantity)}-${formatInteger(drop.maxQuantity)}`
-  // 概率小数比率转百分数并去尾零：1 -> 100%、0.02 -> 2%、0.001 -> 0.1%
-  const chanceLabel = `${+(drop.dropChance * 100).toFixed(2)}%`
+  // 概率小数比率转百分数并去尾零：1 -> 100%、0.02 -> 2%、0.001 -> 0.1%、0.0003 -> 0.03%
+  const pct = drop.dropChance * 100
+  const chanceLabel = `${+(pct >= 0.1 ? pct.toFixed(2) : pct.toFixed(4))}%`
   return (
     <ItemReference
       className={className}

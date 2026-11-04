@@ -138,4 +138,76 @@ public sealed class FrontendContractTests
         var xueshaBuff = Assert.Single(xuesha.GetProperty("buffEffects").EnumerateArray());
         Assert.False(xueshaBuff.GetProperty("teamWide").GetBoolean());
     }
+
+    /// <summary>
+    /// 验证遭遇战敌怪与地图节点怪物静态投影中的 drops 均包含程序级通用稀有掉落「破损的储物袋」，
+    /// 且掉率与品阶严格与 StorageBagDropRules 领域计算保持一致。
+    /// </summary>
+    [Fact]
+    public void EncountersAndMapsMonstersIncludeUniversalStorageBagDrop()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var encounters = StaticGameCatalogMapper.Encounters(catalog);
+        Assert.NotEmpty(encounters);
+
+        foreach (var enc in encounters)
+        {
+            var json = JsonSerializer.Serialize(enc, ProtocolJson.Options);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // 主怪检验
+            if (root.TryGetProperty("enemy", out var enemy) && enemy.ValueKind == JsonValueKind.Object)
+            {
+                AssertStorageBagDropInMonster(enemy);
+            }
+
+            // 刷怪池检验
+            if (root.TryGetProperty("randomSpawns", out var spawns) && spawns.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var spawn in spawns.EnumerateArray())
+                {
+                    if (spawn.TryGetProperty("enemy", out var spawnEnemy) && spawnEnemy.ValueKind == JsonValueKind.Object)
+                    {
+                        AssertStorageBagDropInMonster(spawnEnemy);
+                    }
+                }
+            }
+
+            // 精英与领主检验
+            if (root.TryGetProperty("eliteEnemies", out var elites) && elites.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var elite in elites.EnumerateArray())
+                {
+                    AssertStorageBagDropInMonster(elite);
+                }
+            }
+            if (root.TryGetProperty("bossEnemies", out var bosses) && bosses.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var boss in bosses.EnumerateArray())
+                {
+                    AssertStorageBagDropInMonster(boss);
+                }
+            }
+        }
+    }
+
+    private static void AssertStorageBagDropInMonster(JsonElement enemy)
+    {
+        if (!enemy.TryGetProperty("enemyId", out var idProp) || string.IsNullOrEmpty(idProp.GetString())) return;
+        var level = enemy.TryGetProperty("level", out var lvlProp) ? lvlProp.GetDouble() : 1.0;
+        var rank = enemy.TryGetProperty("rank", out var rankProp) ? rankProp.GetString() ?? "normal" : "normal";
+        var expectedChance = Domain.Combat.StorageBagDropRules.CalculateDropChance(level, rank);
+        var expectedItemId = Domain.Combat.StorageBagDropRules.ResolveStorageBagItemId(level).Value;
+
+        Assert.True(enemy.TryGetProperty("drops", out var dropsProp) && dropsProp.ValueKind == JsonValueKind.Array, "drops must be an array");
+        var drops = dropsProp.EnumerateArray().ToArray();
+        var bagDrop = drops.FirstOrDefault(d => d.TryGetProperty("itemId", out var item) && item.GetString() == expectedItemId);
+        Assert.True(bagDrop.ValueKind == JsonValueKind.Object, $"Monster {idProp.GetString()} must contain {expectedItemId} in drops");
+
+        var chance = bagDrop.GetProperty("dropChance").GetDouble();
+        Assert.Equal(expectedChance, chance, precision: 6);
+        Assert.Equal(1.0, bagDrop.GetProperty("minQuantity").GetDouble());
+        Assert.Equal(1.0, bagDrop.GetProperty("maxQuantity").GetDouble());
+    }
 }
