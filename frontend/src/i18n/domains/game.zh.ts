@@ -619,5 +619,15 @@ export const gameZh = {
       gongdeBoundTitle: '邀友同道携手修仙',
       gongdeBoundDesc: '邀请新道友共闯仙路，同道队伍相助与宗门同修所获之专属羁绊功德。',
     },
+    storageBag: {
+      asideMark: '开启',
+      asideTitle: '开启可能获得',
+      asideSubtitle: '多重独立判定',
+      lootSpiritStoneBase: '灵石',
+      lootSpiritStoneCrit: '额外灵石',
+      lootGongdeBase: '功德',
+      lootGongdeCrit: '额外功德',
+      lootAwakeningStone: '觉醒石',
+    },
   },
 }
