@@ -18,6 +18,10 @@ ALTER TABLE economy.transaction_lines
     REFERENCES economy.transactions(transaction_id)
     ON DELETE CASCADE;
 
+-- 为 party_session_inbox 外键加速，避免级联触发全表顺序扫描导致 DELETE 挂起
+CREATE INDEX IF NOT EXISTS ix_party_session_inbox_consumed_tx
+    ON social.party_session_inbox(consumed_transaction_id) WHERE (consumed_transaction_id IS NOT NULL);
+
 -- 1. 一次性清扫 2 小时前所有的短期易失性流水（此时 transaction_lines 会通过外键级联同步删除）
 DELETE FROM economy.transactions
 WHERE created_at < now() - interval '2 hours'
