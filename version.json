@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "stage": "alpha",
-  "releaseNotes": "实装标准语义化版本号体系与自动化流水线"
+  "releaseNotes": "修复计时行动非整秒耗时在离线推进时陷入微步死循环的问题"
 }
