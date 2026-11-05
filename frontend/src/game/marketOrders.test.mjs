@@ -165,3 +165,16 @@ test('marketBrowse: 坊市在售与求购总量聚合与角标显示模式自洽
   const bidAria = dict.itemBid.replace('{name}', '铁矿石').replace('{count}', '200')
   assert.equal(bidAria, '铁矿石，求购 200')
 })
+test('marketBrowse: 标的卡片 ItemTile 必须显式携带 itemId 属性，确保图标资源正常解析', async () => {
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const filePath = path.resolve('frontend/src/components/market/MarketBrowseGrid.tsx')
+  const content = await fs.readFile(filePath, 'utf8')
+
+  // 必须在 ItemTile 调用点传 itemId={item.itemId}
+  assert.match(
+    content,
+    /<ItemTile[\s\S]*?itemId=\{item\.itemId\}[\s\S]*?\/>/,
+    'MarketBrowseCardItem 中的 ItemTile 必须传 itemId={item.itemId}，否则瓦片将无法命中图标回退为纯文字'
+  )
+})

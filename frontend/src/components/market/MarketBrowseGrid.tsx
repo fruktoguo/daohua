@@ -127,6 +127,7 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
           category={resolveItemCategoryLabel(
             resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)}
           className={`inventory-cell${mode === 'onSale' ? ' is-onsale-mode' : mode === 'bid' ? ' is-bid-mode' : ''}`}
+          itemId={item.itemId}
           level={metadata.level}
           name={item.name}
           rarity={metadata.rarity}
