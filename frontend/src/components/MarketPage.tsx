@@ -11,6 +11,7 @@ import { MarketBookPanel } from './market/MarketBookPanel'
 import { MarketBrowseGrid } from './market/MarketBrowseGrid'
 import { MarketEnhancementPicker } from './market/MarketEnhancementPicker'
 import { isEquipmentInstrument, resolveMarketInstrumentMetadata, type MarketInstrument } from './market/MarketOrderForm'
+import { compareMarketInstruments } from '../game/marketSort'
 import { MarketOrderModal } from './market/MarketOrderModal'
 import { MarketOwnOrders } from './market/MarketOwnOrders'
 
@@ -30,81 +31,6 @@ const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
 
 
 
-/** 坊市标的一级品类排序权重：材料 -> 装备 -> 消耗品 -> 功法 */
-const PRIMARY_CATEGORY_ORDER: Record<string, number> = {
-  material: 1,
-  equipment: 2,
-  consumable: 3,
-  manual: 4,
-}
-
-function resolvePrimaryCategoryKey(item: MarketInstrument): string {
-  if (isEquipmentInstrument(item)) return 'equipment'
-  if (item.category === 'material' || item.definition?.kind === 'material') return 'material'
-  if (item.category === 'consumable' || item.definition?.category === 'consumable') return 'consumable'
-  if (item.category === 'manual' || item.itemId.startsWith('item.tome.') || item.itemId.startsWith('item.fragment.')) return 'manual'
-  return item.category || 'other'
-}
-
-function getSubCategoryOrder(primaryKey: string, subKey: string): number {
-  switch (primaryKey) {
-    case 'equipment': {
-      if (subKey === 'weapon' || subKey === 'two-hand' || subKey === 'mainHandImplement' || subKey === 'twoHandImplement') return 1
-      if (subKey === 'off-hand') return 2
-      if (subKey === 'head') return 3
-      if (subKey === 'armor') return 4
-      if (subKey === 'legs') return 5
-      if (subKey === 'trinket' || subKey === 'ring' || subKey === 'neck' || subKey === 'talisman') return 6
-      if (subKey.startsWith('tool-') || subKey === 'tool') return 7
-      return 8
-    }
-    case 'material': {
-      if (subKey === 'spiritMaterial' || subKey === 'herb') return 1
-      if (subKey === 'mineral') return 2
-      if (subKey === 'exoticMaterial') return 3
-      if (subKey === 'refinedMaterial') return 4
-      return 5
-    }
-    case 'consumable':
-      return subKey === 'pill' ? 1 : 2
-    case 'manual': {
-      if (subKey === 'manualTome' || subKey === 'tome') return 1
-      if (subKey === 'manualFragment' || subKey === 'fragment') return 2
-      return 3
-    }
-    default:
-      return 99
-  }
-}
-
-function compareMarketInstruments(left: MarketInstrument, right: MarketInstrument): number {
-  // 1. 一级品类优先级：材料 -> 装备 -> 消耗品 -> 功法
-  const leftPrimary = resolvePrimaryCategoryKey(left)
-  const rightPrimary = resolvePrimaryCategoryKey(right)
-  const leftPrimaryOrder = PRIMARY_CATEGORY_ORDER[leftPrimary] ?? 99
-  const rightPrimaryOrder = PRIMARY_CATEGORY_ORDER[rightPrimary] ?? 99
-  if (leftPrimaryOrder !== rightPrimaryOrder) {
-    return leftPrimaryOrder - rightPrimaryOrder
-  }
-
-  // 2. 二级子分类权重（处于同一一级分类时）
-  const leftSubKey = resolveItemSubCategory(left.itemId, left.definition, left.equipmentDefinition, left.subCategory || left.category) ?? ''
-  const rightSubKey = resolveItemSubCategory(right.itemId, right.definition, right.equipmentDefinition, right.subCategory || right.category) ?? ''
-  const leftSubOrder = getSubCategoryOrder(leftPrimary, leftSubKey)
-  const rightSubOrder = getSubCategoryOrder(rightPrimary, rightSubKey)
-  if (leftSubOrder !== rightSubOrder) {
-    return leftSubOrder - rightSubOrder
-  }
-
-  // 3. 品阶梯队（Tier 升序）：由浅入深，保证 T1 在前、T2 在后
-  const tierDiff = (left.tier ?? 1) - (right.tier ?? 1)
-  if (tierDiff !== 0) {
-    return tierDiff
-  }
-
-  // 4. 名称与 ID 稳定兜底
-  return left.name.localeCompare(right.name, 'zh-CN') || left.itemId.localeCompare(right.itemId)
-}
 /** 标的详情/等级选择视图共用的顶部导航条 Props */
 interface MarketDetailNavbarProps {
   /** 物品卡数量角标与悬浮数量副气泡 */
