@@ -226,7 +226,7 @@ internal static partial class ActionExecutionRules
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.advance");
         var wholeSeconds = QuantizeElapsedSeconds(player, stepSeconds);
-        action.ProgressSeconds += wholeSeconds;
+        action.ProgressSeconds += stepSeconds;
         if (definition.Kind == ActionKind.Cultivation && wholeSeconds > 0)
             player.Progression.CultivationSeconds += wholeSeconds;
         ApplyContinuousReward(player, definition, wholeSeconds, multiplier, gameData,

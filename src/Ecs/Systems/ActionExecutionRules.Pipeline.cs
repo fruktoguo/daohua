@@ -25,7 +25,11 @@ internal static partial class ActionExecutionRules
         {
             if (!CanBulkAdvance(e)) return false;
             if (++e.BulkStepCount > MaxTransitionsPerAdvance)
-                throw new DomainException(DomainErrorCode.InvariantViolation, "ECS 自然边界推进超过最大转换数。");
+            {
+                var diag = DiagnosticState(e);
+                throw new DomainException(DomainErrorCode.InvariantViolation,
+                    $"ECS 自然边界推进超过最大转换数。bulkSteps={e.BulkStepCount}, cursor={e.Cursor:o}, target={e.Target:o}, windowStart={e.WindowStart:o}, windowEnd={e.WindowEnd:o}, remaining={e.RemainingSeconds}, actions={e.Player.Actions.Count}, [diag: {diag}]");
+            }
             cancellationToken.ThrowIfCancellationRequested();
             if (NeedsPreparation(e))
             {
