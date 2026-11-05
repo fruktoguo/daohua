@@ -177,7 +177,7 @@ elif [[ -n "$EXPLICIT_VERSION" ]]; then
   ")"
   printf '  - 版本号已指定为: %s\n' "$PKG_VERSION"
 else
-  PKG_VERSION="$(node -p "try{require('./version.json').version}catch(e){require('./frontend/package.json').version}catch(e){'0.2.0'}" 2>/dev/null || printf '0.2.0')"
+  PKG_VERSION="$(node -p "try{require('./version.json').version}catch{try{require('./frontend/package.json').version}catch{'0.2.0'}}" 2>/dev/null || printf '0.2.0')"
 fi
 
 RELEASE_TAG="${EXPLICIT_TAG:-v${PKG_VERSION}}"
