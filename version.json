@@ -1,5 +1,5 @@
 {
-  "version": "0.2.2",
+  "version": "0.2.3",
   "stage": "alpha",
-  "releaseNotes": "坊市标的四级严格排序流水线重构，新增求购数量显示模式与全服活动买单总量聚合"
+  "releaseNotes": "修复坊市标的网格瓦片缺失 itemId 导致图片图标未渲染的问题"
 }
