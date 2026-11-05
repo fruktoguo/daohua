@@ -11,6 +11,7 @@ import { Modal } from './Modal'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { useUiStore } from '../uiStore'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
+import { resolveAnchorBounds, resolveVisibleMapIds } from './worldMapVisibility'
 
 
 /** 计算地图两节点之间的欧氏几何连线距离 */
@@ -505,29 +506,29 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const nx = useCallback((x: number) => `${(x / worldBounds.width) * 100}%`, [worldBounds])
   const ny = useCallback((y: number) => `${(y / worldBounds.height) * 100}%`, [worldBounds])
 
-  // 区域可见集合：驻留节点 → 所在区域 + 跨域边直达的邻接区域（关口双显）；
-  // 行进在边上 → 两端点所属区域（跨界路途中双显、图内边单显）；兜底 world.mapId。
-  const visibleMapIds = useMemo(() => {
-    const ids = new Set<string>()
-    const addNodeRegion = (nodeId: string | null | undefined) => {
-      if (!nodeId) return
-      const owner = worldIndex.nodeOwner.get(nodeId)
-      if (owner) ids.add(owner)
-    }
-    if (world.nodeId) {
-      addNodeRegion(world.nodeId)
-      for (const edge of worldIndex.edges) {
-        if (edge.fromNodeId === world.nodeId) addNodeRegion(edge.toNodeId)
-        else if (edge.toNodeId === world.nodeId) addNodeRegion(edge.fromNodeId)
+  // 关口节点：持有通往其他区域跨域边的节点，给界门描边提示
+  const gatewayNodeIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const edge of worldIndex.edges) {
+      const from = worldIndex.nodeOwner.get(edge.fromNodeId)
+      const to = worldIndex.nodeOwner.get(edge.toNodeId)
+      if (from && to && from !== to) {
+        set.add(edge.fromNodeId)
+        set.add(edge.toNodeId)
       }
-    } else if (world.edgeId) {
-      const edge = worldIndex.edges.find(e => e.edgeId === world.edgeId)
-      addNodeRegion(edge?.fromNodeId)
-      addNodeRegion(edge?.toNodeId)
     }
-    if (ids.size === 0 && world.mapId) ids.add(world.mapId)
-    return ids
-  }, [worldIndex, world.nodeId, world.edgeId, world.mapId])
+    return set
+  }, [worldIndex])
+
+  // 区域可见集合：
+  // 1. 驻留节点 → 所在区域 + 跨域边直达的邻接区域（关口双显）；
+  // 2. 行进在边上 → 两端点所属区域（跨界路途中双显、图内边单显）；兜底 world.mapId；
+  // 3. 点击选中交界节点 → 表现效果与移动到关口节点一致，直接展开直达的对侧邻接区域；
+  //    若选中的是对侧展开区域内的节点，保持该区域可见，方便玩家查看详情与规划路线。
+  const visibleMapIds = useMemo(
+    () => resolveVisibleMapIds({ world, selectedNodeId, worldIndex, gatewayNodeIds }),
+    [world, selectedNodeId, worldIndex, gatewayNodeIds],
+  )
   const visibleKey = useMemo(
     () => [...visibleMapIds].sort().join('|'),
     [visibleMapIds],
@@ -551,20 +552,6 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     })
     .filter(r => Number.isFinite(r.bounds.minX)),
   [maps, visibleMapIds])
-
-  // 关口节点：持有通往其他区域跨域边的节点，给界门描边提示
-  const gatewayNodeIds = useMemo(() => {
-    const set = new Set<string>()
-    for (const edge of worldIndex.edges) {
-      const from = worldIndex.nodeOwner.get(edge.fromNodeId)
-      const to = worldIndex.nodeOwner.get(edge.toNodeId)
-      if (from && to && from !== to) {
-        set.add(edge.fromNodeId)
-        set.add(edge.toNodeId)
-      }
-    }
-    return set
-  }, [worldIndex])
 
   const visibleNodes = useMemo(
     () => worldIndex.nodes.filter(n =>
@@ -718,51 +705,21 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     const stageH = stage.clientHeight
     if (!stageW || !stageH) return
 
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    const include = (nodeId: string | null | undefined) => {
-      const node = worldIndex.nodes.find(n => n.nodeId === nodeId)
-      if (!node) return
-      if (node.x < minX) minX = node.x
-      if (node.x > maxX) maxX = node.x
-      if (node.y < minY) minY = node.y
-      if (node.y > maxY) maxY = node.y
-    }
-    const includeNeighbors = (nodeId: string | null | undefined) => {
-      if (!nodeId) return
-      include(nodeId)
-      for (const edge of worldIndex.edges) {
-        if (edge.fromNodeId === nodeId) include(edge.toNodeId)
-        else if (edge.toNodeId === nodeId) include(edge.fromNodeId)
-      }
-    }
-    const includeRegion = (mapId: string | undefined) => {
-      const region = maps.find(m => m.mapId === mapId)
-      if (!region) return
-      for (const node of region.nodes) include(node.nodeId)
-    }
-
-    if (world.nodeId) {
-      includeRegion(worldIndex.nodeOwner.get(world.nodeId))
-      includeNeighbors(world.nodeId)
-    } else if (world.edgeId) {
-      const edge = worldIndex.edges.find(e => e.edgeId === world.edgeId)
-      if (edge) {
-        includeRegion(worldIndex.nodeOwner.get(edgeNearFromSide ? edge.fromNodeId : edge.toNodeId))
-        includeNeighbors(edge.fromNodeId)
-        includeNeighbors(edge.toNodeId)
-      }
-    }
-    if (!Number.isFinite(minX)) includeRegion(world.mapId)
-    if (!Number.isFinite(minX)) return
+    const bounds = resolveAnchorBounds({
+      world,
+      selectedNodeId,
+      maps,
+      worldIndex,
+      gatewayNodeIds,
+      edgeNearFromSide,
+    })
+    if (!bounds) return
 
     const pad = 10
-    minX -= pad
-    minY -= pad
-    maxX += pad
-    maxY += pad
+    const minX = bounds.minX - pad
+    const minY = bounds.minY - pad
+    const maxX = bounds.maxX + pad
+    const maxY = bounds.maxY + pad
     const unionW = Math.max(1, maxX - minX)
     const unionH = Math.max(1, maxY - minY)
     // 1 世界单位 = 1% 视口：unionW 单位在 zoom z 下占 unionW/100*stage*z px，
@@ -775,7 +732,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       x: Math.round(stageW / 2 - (cx / 100) * stageW * nextZoom),
       y: Math.round(stageH / 2 - (cy / 100) * stageH * nextZoom),
     })
-  }, [worldIndex, maps, world.nodeId, world.edgeId, world.mapId, edgeNearFromSide])
+  }, [world, selectedNodeId, maps, worldIndex, gatewayNodeIds, edgeNearFromSide, cancelPanAnim])
 
   // 区域可见集合变化（含首次布局就绪）时自动适配视口；集合不变期间不打断玩家手动漫游
   const fittedKeyRef = useRef<string | null>(null)
