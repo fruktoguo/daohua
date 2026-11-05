@@ -74,6 +74,7 @@ interface MarketBrowseCardItemProps {
   item: MarketInstrument
   ownedAmount: number
   onSaleAmount: number
+  bidAmount: number
   mode: MarketAmountDisplayMode
   selected: boolean
   onSelect: (itemId: string) => void
@@ -85,6 +86,7 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
   item,
   ownedAmount,
   onSaleAmount,
+  bidAmount,
   mode,
   selected,
   onSelect,
@@ -97,8 +99,7 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
     onSelect(item.itemId)
   }, [item.itemId, onSelect])
 
-  const displayAmount = mode === 'onSale' ? onSaleAmount : ownedAmount
-
+  const displayAmount = mode === 'onSale' ? onSaleAmount : mode === 'bid' ? bidAmount : ownedAmount
   return (
     <ItemTooltipTarget
       amount={ownedAmount}
@@ -113,8 +114,9 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
       <button
         aria-label={mode === 'onSale'
           ? t('market.browse.itemOnSale', { name: item.name, count: formatNumber(displayAmount) })
-          : t('market.browse.itemOwned', { name: item.name, count: formatNumber(displayAmount) })}
-        aria-selected={selected}
+          : mode === 'bid'
+            ? t('market.browse.itemBid', { name: item.name, count: formatNumber(displayAmount) })
+            : t('market.browse.itemOwned', { name: item.name, count: formatNumber(displayAmount) })}
         className={`market-browse-card${selected ? ' is-selected' : ''}`}
         onClick={handleClick}
         role="option"
@@ -124,8 +126,7 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
           amount={displayAmount}
           category={resolveItemCategoryLabel(
             resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)}
-          className={`inventory-cell${mode === 'onSale' ? ' is-onsale-mode' : ''}`}
-          itemId={item.itemId}
+          className={`inventory-cell${mode === 'onSale' ? ' is-onsale-mode' : mode === 'bid' ? ' is-bid-mode' : ''}`}
           level={metadata.level}
           name={item.name}
           rarity={metadata.rarity}
@@ -160,8 +161,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const inventory = useGameStore(state => state.inventory)
   const marketStats = useGameStore(state => state.marketStats)
   const amountDisplayMode = useMarketStore(state => state.amountDisplayMode)
-  const toggleAmountDisplayMode = useMarketStore(state => state.toggleAmountDisplayMode)
-
+  const setAmountDisplayMode = useMarketStore(state => state.setAmountDisplayMode)
   // 1. 接入跨界面常驻的坊市状态中心（仅订阅必要属性，高频 scrollTop 不订阅以实现滚动零重绘）
   const primaryTab = useMarketStore(state => state.primaryTab)
   const setPrimaryTab = useMarketStore(state => state.setPrimaryTab)
@@ -249,6 +249,17 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
     for (const stats of Object.values(marketStats)) {
       if (stats.askQuantity > 0) {
         map.set(stats.itemId, (map.get(stats.itemId) ?? 0) + stats.askQuantity)
+      }
+    }
+    return map
+  }, [marketStats])
+
+  // 3.2 坊市求购字典 O(1) 映射：从 marketStats 聚合该 itemId 下全部变体（如装备的各强化等级）活动买单剩余总量
+  const marketBidMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const stats of Object.values(marketStats)) {
+      if (stats.bidQuantity > 0) {
+        map.set(stats.itemId, (map.get(stats.itemId) ?? 0) + stats.bidQuantity)
       }
     }
     return map
@@ -402,22 +413,40 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               </button>
             ))}
           </div>
-          <button
-            aria-checked={amountDisplayMode === 'onSale'}
+          <div
             aria-label={t('market.browse.amountMode.aria')}
-            className={`market-amount-toggle${amountDisplayMode === 'onSale' ? ' is-onsale' : ''}`}
-            onClick={toggleAmountDisplayMode}
-            role="switch"
+            className={`market-amount-toggle is-${amountDisplayMode.toLowerCase()}`}
+            role="radiogroup"
             title={t('market.browse.amountMode.tooltip')}
-            type="button"
           >
-            <span className={`market-amount-toggle-option${amountDisplayMode === 'owned' ? ' is-active' : ''}`}>
+            <button
+              aria-checked={amountDisplayMode === 'owned'}
+              className={`market-amount-toggle-option${amountDisplayMode === 'owned' ? ' is-active' : ''}`}
+              onClick={() => setAmountDisplayMode('owned')}
+              role="radio"
+              type="button"
+            >
               {t('market.browse.amountMode.owned')}
-            </span>
-            <span className={`market-amount-toggle-option${amountDisplayMode === 'onSale' ? ' is-active' : ''}`}>
+            </button>
+            <button
+              aria-checked={amountDisplayMode === 'onSale'}
+              className={`market-amount-toggle-option${amountDisplayMode === 'onSale' ? ' is-active' : ''}`}
+              onClick={() => setAmountDisplayMode('onSale')}
+              role="radio"
+              type="button"
+            >
               {t('market.browse.amountMode.onSale')}
-            </span>
-          </button>
+            </button>
+            <button
+              aria-checked={amountDisplayMode === 'bid'}
+              className={`market-amount-toggle-option is-bid${amountDisplayMode === 'bid' ? ' is-active' : ''}`}
+              onClick={() => setAmountDisplayMode('bid')}
+              role="radio"
+              type="button"
+            >
+              {t('market.browse.amountMode.bid')}
+            </button>
+          </div>
         </div>
         <input
           aria-label={t('market.browse.searchItems')}
@@ -565,6 +594,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
           <MarketBrowseCardItem
             item={item}
             key={item.itemId}
+            bidAmount={marketBidMap.get(item.itemId) ?? 0}
             mode={amountDisplayMode}
             onSaleAmount={marketOnSaleMap.get(item.itemId) ?? 0}
             onSelect={onSelect}

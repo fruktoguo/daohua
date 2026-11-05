@@ -4829,10 +4829,18 @@ input[type="checkbox"] {
   justify-content: center;
   padding: 2px 7px;
   font-size: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
   border-radius: 999px;
   color: var(--text-dim);
   white-space: nowrap;
   transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.market-amount-toggle-option:hover:not(.is-active) {
+  color: var(--text-main);
+  background: rgba(201, 180, 109, 0.08);
 }
 
 .market-amount-toggle-option.is-active {
@@ -4842,9 +4850,20 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
+.market-amount-toggle-option.is-active.is-bid {
+  color: #8fc3a6;
+  background: rgba(143, 195, 166, 0.2);
+  box-shadow: 0 0 6px rgba(143, 195, 166, 0.25);
+}
+
 .item-tile.is-onsale-mode .item-corner--bottom-right {
   color: var(--gold-bright);
   border-color: rgba(201, 180, 109, 0.4);
+}
+
+.item-tile.is-bid-mode .item-corner--bottom-right {
+  color: #8fc3a6;
+  border-color: rgba(143, 195, 166, 0.45);
 }
 
 

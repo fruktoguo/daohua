@@ -1003,6 +1003,16 @@
   color: #277850;
   text-shadow: none;
 }
+:root[data-theme="light"] .market-amount-toggle-option.is-active.is-bid {
+  border-color: #277850;
+  color: #277850;
+  background: rgba(39, 120, 80, 0.12);
+  box-shadow: none;
+}
+:root[data-theme="light"] .item-tile.is-bid-mode .item-corner--bottom-right {
+  color: #277850;
+  border-color: rgba(39, 120, 80, 0.4);
+}
 :root[data-theme="light"] .daohua-market-aside-badge--recycle {
   color: #8c6b12;
   background: rgba(140, 107, 18, 0.12);

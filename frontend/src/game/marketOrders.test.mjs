@@ -90,33 +90,38 @@ test('marketBook: 盘口自身订单按标的、等级、方向与价格精确�
   assert.equal(aria, '撤销自身挂单（单价 120）')
 })
 
-test('marketBrowse: 坊市在售总量聚合与角标显示模式自洽', () => {
-  // 1. 模拟全服行情统计 marketStats：含基础物品与同一装备多强化等级
+test('marketBrowse: 坊市在售与求购总量聚合与角标显示模式自洽', () => {
+  // 1. 模拟全服行情统计 marketStats：含基础物品与同一装备多强化等级（在售 askQuantity 与求购 bidQuantity）
   const marketStats = {
     'item.iron-ore|0': {
       itemId: 'item.iron-ore',
       enhancementLevel: 0,
       askQuantity: 50,
+      bidQuantity: 200,
     },
     'equipment.bronze-sword|0': {
       itemId: 'equipment.bronze-sword',
       enhancementLevel: 0,
       askQuantity: 3,
+      bidQuantity: 5,
     },
     'equipment.bronze-sword|3': {
       itemId: 'equipment.bronze-sword',
       enhancementLevel: 3,
       askQuantity: 2,
+      bidQuantity: 0,
     },
     'equipment.bronze-sword|5': {
       itemId: 'equipment.bronze-sword',
       enhancementLevel: 5,
       askQuantity: 1,
+      bidQuantity: 2,
     },
     'item.rare-herb|0': {
       itemId: 'item.rare-herb',
       enhancementLevel: 0,
       askQuantity: 0,
+      bidQuantity: 0,
     },
   }
 
@@ -127,22 +132,36 @@ test('marketBrowse: 坊市在售总量聚合与角标显示模式自洽', () => 
       marketOnSaleMap.set(stats.itemId, (marketOnSaleMap.get(stats.itemId) ?? 0) + stats.askQuantity)
     }
   }
+  // 2.1 聚合求购总量字典
+  const marketBidMap = new Map()
+  for (const stats of Object.values(marketStats)) {
+    if (stats.bidQuantity > 0) {
+      marketBidMap.set(stats.itemId, (marketBidMap.get(stats.itemId) ?? 0) + stats.bidQuantity)
+    }
+  }
 
-  // 验证：普通物品单盘口在售数量
+  // 验证：普通物品单盘口在售与求购数量
   assert.equal(marketOnSaleMap.get('item.iron-ore'), 50)
-  // 验证：装备标的汇总全部变体强化等级（0级3件 + 3级2件 + 5级1件 = 6件）
+  assert.equal(marketBidMap.get('item.iron-ore'), 200)
+  // 验证：装备标的汇总全部变体强化等级（在售：0级3件 + 3级2件 + 5级1件 = 6件；求购：0级5件 + 5级2件 = 7件）
   assert.equal(marketOnSaleMap.get('equipment.bronze-sword'), 6)
-  // 验证：无在售活动单标的返回 0
+  assert.equal(marketBidMap.get('equipment.bronze-sword'), 7)
+  // 验证：无在售或求购活动单标的返回 0
   assert.equal(marketOnSaleMap.get('item.rare-herb') ?? 0, 0)
+  assert.equal(marketBidMap.get('item.rare-herb') ?? 0, 0)
 
   // 3. 验证模式文案插值与自洽
   const dict = marketZh.market.browse
   assert.equal(dict.amountMode.owned, '持有')
   assert.equal(dict.amountMode.onSale, '在售')
+  assert.equal(dict.amountMode.bid, '求购')
 
   const ownedAria = dict.itemOwned.replace('{name}', '铁矿石').replace('{count}', '10')
   assert.equal(ownedAria, '铁矿石，拥有 10')
 
   const onSaleAria = dict.itemOnSale.replace('{name}', '铁矿石').replace('{count}', '50')
   assert.equal(onSaleAria, '铁矿石，在售 50')
+
+  const bidAria = dict.itemBid.replace('{name}', '铁矿石').replace('{count}', '200')
+  assert.equal(bidAria, '铁矿石，求购 200')
 })
