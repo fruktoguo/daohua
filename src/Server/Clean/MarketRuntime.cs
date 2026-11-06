@@ -401,14 +401,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             // 就地撮合：变更全程登记撤销日志；事务失败时逆序回放恢复干净盘口，
             // 不再为正演/回写各克隆一次整簿。撮合语义与克隆预演逐位等价。
             var journal = new OrderBookJournal();
-            var prohibitedPartners = await _store.GetProhibitedTradePartnersAsync(request.OwnerId.Value, cancellationToken);
-            Func<PlayerId, PlayerId, bool>? isProhibitedCrossTrade = prohibitedPartners.Count > 0
-                ? (_, makerId) => prohibitedPartners.Contains(makerId.Value)
-                : null;
             try
             {
                 PlacementResult result;
-                lock (_booksGate) result = book.Place(request, journal, isProhibitedCrossTrade);
+                lock (_booksGate) result = book.Place(request, journal);
                 // 撮合后才知道全部 maker/taker；不持盘口读锁等待会话，失败由同一撤销日志恢复。
                 using var participationScope = _participationAssets is null ? null
                     : await _participationAssets.AcquireAsync(CollectPlacementAssetKeys(request, result), cancellationToken);

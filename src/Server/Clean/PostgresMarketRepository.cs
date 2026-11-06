@@ -220,48 +220,6 @@ public sealed class PostgresMarketRepository(
             : null;
     }
 
-    /// 读取与指定玩家存在风控禁止成交关联的玩家标识集合（结义邀请上下级、同设备主体）。
-    /// </summary>
-    public async ValueTask<HashSet<Guid>> GetProhibitedTradePartnersAsync(Guid playerId, CancellationToken cancellationToken = default)
-    {
-        if (playerId == Guid.Empty) return [];
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var partners = new HashSet<Guid>();
-
-        // 1. 邀请关联（我的邀请者，以及我邀请的小号）
-        await using (var inviteCmd = new NpgsqlCommand("""
-            SELECT inviter_id FROM social.player_invitations WHERE invitee_id = $1
-            UNION ALL
-            SELECT invitee_id FROM social.player_invitations WHERE inviter_id = $1
-            """, connection))
-        {
-            inviteCmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            await using var reader = await inviteCmd.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-                partners.Add(reader.GetGuid(0));
-        }
-
-        // 2. 同设备 / 同主体关联
-        await using (var deviceCmd = new NpgsqlCommand("""
-            SELECT p2.player_id
-            FROM identity.players p1
-            JOIN identity.account_risk_signals s1 ON s1.account_id = p1.account_id
-            JOIN identity.account_risk_signals s2 ON s2.signal_kind = s1.signal_kind AND s2.signal_hash = s1.signal_hash
-            JOIN identity.players p2 ON p2.account_id = s2.account_id
-            WHERE p1.player_id = $1
-              AND s1.signal_kind IN ('person', 'device', 'fingerprint')
-              AND p2.player_id <> $1
-            """, connection))
-        {
-            deviceCmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
-            await using var reader = await deviceCmd.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-                partners.Add(reader.GetGuid(0));
-        }
-
-        return partners;
-    }
-
     /// <summary>
     /// 抢占本分片写者租约。仅在租约不存在、已过期或本就属于本实例时成功；
     /// 每次成功接管 fence_token 递增，使旧写者未提交的事务因 fence 校验失败而无法再写。
@@ -1301,21 +1259,8 @@ public sealed class PostgresMarketRepository(
         if (buyerId == sellerId)
             throw new MarketProhibitedTradeException("不可购买自身订单。");
 
-        // 1. 邀请上下级即时熔断
-        await using (var inviteCheck = new NpgsqlCommand("""
-            SELECT 1 FROM social.player_invitations
-            WHERE (invitee_id = $1 AND inviter_id = $2)
-               OR (invitee_id = $2 AND inviter_id = $1)
-            LIMIT 1
-            """, connection, transaction))
-        {
-            inviteCheck.Parameters.Add(new NpgsqlParameter { Value = buyerId });
-            inviteCheck.Parameters.Add(new NpgsqlParameter { Value = sellerId });
-            if (await inviteCheck.ExecuteScalarAsync(cancellationToken) is not null)
-                throw new MarketProhibitedTradeException("结义邀请关联同道之间不可定向成交。");
-        }
-
-        // 2. 同设备 / 同主体即时熔断 (基于 identity.account_risk_signals)
+        // 关联交易审计记录：反多开/小号机制仅在注册登录层面硬性阻止；
+        // 游戏内部交易（同设备、邀请关联等）允许正常撮合成交，仅记录特征与审计流水，不干扰正常游戏流程。
         await using (var riskCheck = new NpgsqlCommand("""
             SELECT 1
             FROM identity.players pb
@@ -1332,14 +1277,46 @@ public sealed class PostgresMarketRepository(
             riskCheck.Parameters.Add(new NpgsqlParameter { Value = buyerId });
             riskCheck.Parameters.Add(new NpgsqlParameter { Value = sellerId });
             if (await riskCheck.ExecuteScalarAsync(cancellationToken) is not null)
-                throw new MarketProhibitedTradeException("同设备或关联主体账号之间不可定向成交。");
+            {
+                await using var auditCmd = new NpgsqlCommand("""
+                    INSERT INTO identity.audit_events (event_id, actor_id, event_type, target_id, payload, occurred_at)
+                    VALUES ($1, $2, 'market.trade.associated', $3, '{"reason":"same_device_association"}'::jsonb, now())
+                    ON CONFLICT (event_id) DO NOTHING
+                    """, connection, transaction);
+                auditCmd.Parameters.Add(new NpgsqlParameter { Value = Guid.NewGuid() });
+                auditCmd.Parameters.Add(new NpgsqlParameter { Value = buyerId });
+                auditCmd.Parameters.Add(new NpgsqlParameter { Value = sellerId });
+                await auditCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
+        await using (var inviteCheck = new NpgsqlCommand("""
+            SELECT 1 FROM social.player_invitations
+            WHERE (invitee_id = $1 AND inviter_id = $2)
+               OR (invitee_id = $2 AND inviter_id = $1)
+            LIMIT 1
+            """, connection, transaction))
+        {
+            inviteCheck.Parameters.Add(new NpgsqlParameter { Value = buyerId });
+            inviteCheck.Parameters.Add(new NpgsqlParameter { Value = sellerId });
+            if (await inviteCheck.ExecuteScalarAsync(cancellationToken) is not null)
+            {
+                await using var auditCmd = new NpgsqlCommand("""
+                    INSERT INTO identity.audit_events (event_id, actor_id, event_type, target_id, payload, occurred_at)
+                    VALUES ($1, $2, 'market.trade.invitation', $3, '{"reason":"invitation_association"}'::jsonb, now())
+                    ON CONFLICT (event_id) DO NOTHING
+                    """, connection, transaction);
+                auditCmd.Parameters.Add(new NpgsqlParameter { Value = Guid.NewGuid() });
+                auditCmd.Parameters.Add(new NpgsqlParameter { Value = buyerId });
+                auditCmd.Parameters.Add(new NpgsqlParameter { Value = sellerId });
+                await auditCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
     }
 }
 
 /// <summary>
-/// 坊市交易风控即时熔断异常（自买自卖、结义邀请小号向大号接盘、同设备主体互刷倒金）。
-/// </summary>
+/// 坊市交易违规异常（自买自卖违背订单簿物理不变量）。
 public sealed class MarketProhibitedTradeException(string message) : ArgumentException(message);
 
 /// <summary>到期合批关单的目标订单（由内存盘口到期索引收集）。</summary>
