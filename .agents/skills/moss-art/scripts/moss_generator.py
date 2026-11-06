@@ -1057,40 +1057,51 @@ def _sanitize_workflow(wf):
 def get_latest_workflow():
     with urllib.request.urlopen(f"{COMFY_HOST}/history") as resp:
         history = json.loads(resp.read().decode())
+    template_path = os.path.join(CURRENT_DIR, "workflow_template.json")
     if not history:
-        template_path = os.path.join(CURRENT_DIR, "workflow_template.json")
         if os.path.exists(template_path):
             with open(template_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         raise RuntimeError("No history found in ComfyUI.")
 
-    # 优先从历史中获取包含 Node 27 (easy imageRemBg) 的工作流
+    # 优先从历史中获取包含 MOSS-Image 核心节点 (16 & 4) 且含 Node 27 (easy imageRemBg) 的工作流
     for pid in reversed(list(history.keys())):
         p = history[pid].get("prompt", [None, None, {}])[2]
-        if "27" in p and p["27"].get("class_type") == "easy imageRemBg":
+        if "16" in p and "4" in p and "27" in p and p["27"].get("class_type") == "easy imageRemBg":
             wf = _sanitize_workflow(json.loads(json.dumps(p)))
-            wf["18"]["inputs"]["images"] = ["27", 0]
+            if "18" in wf:
+                wf["18"]["inputs"]["images"] = ["27", 0]
             return wf
 
-    # 若历史中未找到，则取最新并显式注入 Node 27 抠图节点
-    latest_id = list(history.keys())[-1]
-    wf = _sanitize_workflow(json.loads(json.dumps(history[latest_id]["prompt"][2])))
-    wf["27"] = {
-        "inputs": {
-            "rem_mode": "RMBG-1.4",
-            "image_output": "Preview",
-            "save_prefix": "ComfyUI",
-            "torchscript_jit": False,
-            "add_background": "none",
-            "refine_foreground": False,
-            "images": ["26", 0] if "26" in wf else ["17", 0]
-        },
-        "class_type": "easy imageRemBg",
-        "_meta": {"title": "图像背景移除"}
-    }
-    if "18" in wf:
-        wf["18"]["inputs"]["images"] = ["27", 0]
-    return wf
+    # 若历史中存在包含 16 & 4 的任务但未挂 Node 27，则注入抠图节点
+    for pid in reversed(list(history.keys())):
+        p = history[pid].get("prompt", [None, None, {}])[2]
+        if "16" in p and "4" in p:
+            wf = _sanitize_workflow(json.loads(json.dumps(p)))
+            wf["27"] = {
+                "inputs": {
+                    "rem_mode": "RMBG-1.4",
+                    "image_output": "Preview",
+                    "save_prefix": "ComfyUI",
+                    "torchscript_jit": False,
+                    "add_background": "none",
+                    "refine_foreground": False,
+                    "images": ["26", 0] if "26" in wf else ["17", 0]
+                },
+                "class_type": "easy imageRemBg",
+                "_meta": {"title": "图像背景移除"}
+            }
+            if "18" in wf:
+                wf["18"]["inputs"]["images"] = ["27", 0]
+            return wf
+
+    # 若历史记录中全为其他非 MOSS-Image 任务（如 Flux/SD3），则优雅 fallback 至本地权威 workflow_template.json
+    if os.path.exists(template_path):
+        print("  [提示] ComfyUI 历史记录中无 MOSS-Image 任务，使用本地权威 workflow_template.json")
+        with open(template_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    raise RuntimeError("未在 ComfyUI 历史中找到 MOSS-Image 工作流，且本地 workflow_template.json 不存在。")
 
 def build_layout_prompt(items_spec, summary_caption=None):
     if not summary_caption:
@@ -1113,7 +1124,7 @@ def build_layout_prompt(items_spec, summary_caption=None):
     }
     return json.dumps(layout, ensure_ascii=False, indent=2)
 
-def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daohua", aspect_ratio="1:1 (Square)", negative_prompt=None, turbo=False):
+def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daohua", aspect_ratio="1:1 (Square)", negative_prompt=None, turbo=False, width=None, height=None):
     prompt = json.loads(json.dumps(workflow)) # deepcopy
     
     # Node 4: 正向提示词
@@ -1123,11 +1134,14 @@ def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daoh
     if not negative_prompt:
         negative_prompt = "text, letters, words, chinese characters, hanzi, font, label, signature, watermark, overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, glowing particles, neon glow, lightning bolts, fire, smoke, crowded, clutter, blurry, bad anatomy, worst quality"
     
-    # Node 19: 分辨率与长宽比
-    if "19" in prompt:
+    # Node 19 / Node 6: 分辨率与长宽比 (支持直接覆盖 1280x720 等自定义尺寸)
+    if width and height:
+        if "6" in prompt:
+            prompt["6"]["inputs"]["width"] = width
+            prompt["6"]["inputs"]["height"] = height
+    elif "19" in prompt:
         prompt["19"]["inputs"]["aspect_ratio"] = aspect_ratio
         prompt["19"]["inputs"]["megapixels"] = 1.0
-        
     # Node 16: KSampler 参数调优 (按官方推荐: 35步, CFG 3.5)
     if "16" in prompt:
         prompt["16"]["inputs"]["steps"] = steps
@@ -1360,6 +1374,8 @@ def main():
     parser.add_argument("--aspect-ratio", default="1:1 (Square)", help="长宽比: '1:1 (Square)', '16:9 (Landscape)', '4:3'")
     parser.add_argument("--negative", type=str, default=None, help="自定义负向提示词")
     parser.add_argument("--dry-run", action="store_true", help="仅组装提示词，不实际提交")
+    parser.add_argument("--width", type=int, default=None, help="自定义生成宽度 (如 1280)")
+    parser.add_argument("--height", type=int, default=None, help="自定义生成高度 (如 720)")
     args = parser.parse_args()
 
     # 默认 turbo 加速路线（steps=8 / CFG=1.0）；--full 走标准 35 步 / CFG 3.5。显式 --steps/--cfg 可覆盖。
@@ -1447,7 +1463,7 @@ def main():
     print("\n正在获取 ComfyUI 最新工作流...")
     wf = get_latest_workflow()
     print("正在向 ComfyUI (127.0.0.1:8188) 提交生图任务...")
-    pid = submit_task(wf, prompt_str, seed=args.seed, steps=args.steps, cfg=args.cfg, prefix=f"daohua-{batch_tag}", aspect_ratio=args.aspect_ratio, negative_prompt=neg_prompt, turbo=args.turbo)
+    pid = submit_task(wf, prompt_str, seed=args.seed, steps=args.steps, cfg=args.cfg, prefix=f"daohua-{batch_tag}", aspect_ratio=args.aspect_ratio, negative_prompt=neg_prompt, turbo=args.turbo, width=args.width, height=args.height)
     print(f"任务已排队，Prompt ID: {pid}")
     
     print("正在等待 GPU 推理完成...")

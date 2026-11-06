@@ -513,6 +513,9 @@ export const appZh = {
       katanaJkName: '断水',
       mechaPetiteName: '玄工',
       hoodieJkName: '听雷',
+      sisterLotusName: '青莲',
+      sisterPalaceName: '玲珑',
+      sisterLanternName: '青荧',
     },
     // 设置页面
     settings: {

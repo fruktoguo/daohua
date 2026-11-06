@@ -46,6 +46,12 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   'katana-jk': { src: '/avatars/avatar-katana-jk.webp', format: 'webp' },
   'mecha-petite': { src: '/avatars/avatar-mecha-petite.webp', format: 'webp' },
   'hoodie-jk': { src: '/avatars/avatar-hoodie-jk.webp', format: 'webp' },
+  'avatar-sister-lotus': { src: '/avatars/avatar-sister-lotus.webp', format: 'webp' },
+  'avatar-sister-palace': { src: '/avatars/avatar-sister-palace.webp', format: 'webp' },
+  'avatar-sister-lantern': { src: '/avatars/avatar-sister-lantern.webp', format: 'webp' },
+  'sister-lotus': { src: '/avatars/avatar-sister-lotus.webp', format: 'webp' },
+  'sister-palace': { src: '/avatars/avatar-sister-palace.webp', format: 'webp' },
+  'sister-lantern': { src: '/avatars/avatar-sister-lantern.webp', format: 'webp' },
   default: { src: '/avatars/player.webp', format: 'webp' },
   female: { src: '/avatars/player.webp', format: 'webp' },
   male: { src: '/avatars/player-male.webp', format: 'webp' },
@@ -133,6 +139,9 @@ export type PlayerAvatarId =
   | 'wood-female'
   | 'star-male'
   | 'star-female'
+  | 'sister-lotus'
+  | 'sister-palace'
+  | 'sister-lantern'
 
 /**
  * 规整化玩家形象标识（统一映射到已注册选项）
@@ -155,6 +164,9 @@ export function normalizePlayerAvatarId(id?: string | null): PlayerAvatarId {
   if (clean === 'wood-female' || clean === 'avatar-wood-female') return 'wood-female'
   if (clean === 'star-male' || clean === 'avatar-star-male') return 'star-male'
   if (clean === 'star-female' || clean === 'avatar-star-female') return 'star-female'
+  if (clean === 'sister-lotus' || clean === 'avatar-sister-lotus') return 'sister-lotus'
+  if (clean === 'sister-palace' || clean === 'avatar-sister-palace') return 'sister-palace'
+  if (clean === 'sister-lantern' || clean === 'avatar-sister-lantern') return 'sister-lantern'
   return 'default'
 }
 
@@ -180,6 +192,9 @@ export interface AvatarOption {
     | 'app.avatar.woodFemaleName'
     | 'app.avatar.starMaleName'
     | 'app.avatar.starFemaleName'
+    | 'app.avatar.sisterLotusName'
+    | 'app.avatar.sisterPalaceName'
+    | 'app.avatar.sisterLanternName'
   /** 立绘资源地址 */
   src: string
 }
@@ -265,6 +280,21 @@ export const AVATAR_OPTIONS: readonly AvatarOption[] = [
     id: 'hoodie-jk',
     nameKey: 'app.avatar.hoodieJkName',
     src: '/avatars/avatar-hoodie-jk.webp',
+  },
+  {
+    id: 'sister-lotus',
+    nameKey: 'app.avatar.sisterLotusName',
+    src: '/avatars/avatar-sister-lotus.webp',
+  },
+  {
+    id: 'sister-palace',
+    nameKey: 'app.avatar.sisterPalaceName',
+    src: '/avatars/avatar-sister-palace.webp',
+  },
+  {
+    id: 'sister-lantern',
+    nameKey: 'app.avatar.sisterLanternName',
+    src: '/avatars/avatar-sister-lantern.webp',
   },
 ]
 
