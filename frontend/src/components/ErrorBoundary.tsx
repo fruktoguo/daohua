@@ -102,6 +102,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <button
                 type="button"
                 className="status-btn primary"
+                onClick={() => window.location.reload()}
+              >
+                {t('app.errorBoundary.reloadBtn')}
+              </button>
+              <button
+                type="button"
+                className="status-btn secondary"
                 onClick={this.handleReset}
               >
                 {t('app.errorBoundary.reRenderBtn')}

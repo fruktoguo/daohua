@@ -44,12 +44,15 @@ export default defineConfig({
   // 向上解析到本仓库 node_modules，而不是 rollup realpath 后的私有仓库物理路径。
   // 字符串 find 为全仓唯一说明符（src/private/index.ts 的 re-export './impl'），
   // replacement 用正斜杠绝对路径以兼容 rollup 在 Windows 下的 id 规范化。
-  resolve: privateModulesAvailable
-    ? {
-        preserveSymlinks: true,
-        alias: [{ find: './impl', replacement: privateImplEntry.replace(/\\/g, '/') }],
-      }
-    : undefined,
+  resolve: {
+    dedupe: ['react', 'react-dom', 'zustand'],
+    ...(privateModulesAvailable
+      ? {
+          preserveSymlinks: true,
+          alias: [{ find: './impl', replacement: privateImplEntry.replace(/\\/g, '/') }],
+        }
+      : {}),
+  },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'zustand'],
     ignoreOutdatedRequests: true,

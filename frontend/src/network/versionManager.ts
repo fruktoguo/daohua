@@ -224,10 +224,13 @@ export function installChunkLoadErrorWatcher(): void {
       typeof message === 'string' &&
       (message.includes('Failed to fetch dynamically imported module') ||
         message.includes('error loading dynamically imported module') ||
-        message.includes('Importing a module script failed'))
+        message.includes('Importing a module script failed') ||
+        message.includes("Cannot read properties of null (reading 'useCallback')") ||
+        message.includes("Cannot read properties of null (reading 'useState')") ||
+        message.includes('Invalid hook call'))
     ) {
-      console.warn('[VersionManager] 捕获到动态模块加载异常，执行自愈刷新:', message)
-      triggerVersionReload('dynamic-import-failed', '动态模块引入失败')
+      console.warn('[VersionManager] 捕获到动态模块或React多实例调度器失效异常，执行自愈刷新:', message)
+      triggerVersionReload('dynamic-import-failed', '模块版本失效')
     }
   })
 }

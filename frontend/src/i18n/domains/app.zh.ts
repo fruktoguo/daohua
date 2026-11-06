@@ -669,6 +669,7 @@ export const appZh = {
       subtitle: '界面遇到未处理的异常，已被拦截并停止渲染，您的角色数据不受影响。',
       detailsLabel: '查看错误详情（错误堆栈）',
       collapseDetails: '收起错误详情',
+      reloadBtn: '刷新页面',
       reRenderBtn: '尝试重新渲染',
       resetCacheBtn: '清除缓存并重启',
       copyErrorBtn: '复制错误信息',
