@@ -12,6 +12,8 @@ interface SimulatorConfigPanelProps {
   onClearSelectedNodes: () => void
   durationSeconds: number
   onChangeDuration: (seconds: number) => void
+  difficulty: number
+  onChangeDifficulty: (difficulty: number) => void
   onRunSimulation: () => void
   isSimulating: boolean
 }
@@ -24,6 +26,24 @@ const DURATION_PRESETS = [
   { label: '8小时', seconds: 28800 },
   { label: '24小时', seconds: 86400 },
 ]
+const DIFFICULTY_OPTIONS = [
+  { tier: 0, label: '默认' },
+  { tier: 1, label: 'T1' },
+  { tier: 2, label: 'T2' },
+  { tier: 3, label: 'T3' },
+  { tier: 4, label: 'T4' },
+  { tier: 5, label: 'T5' },
+] as const
+
+function getDifficultySummary(tier: number): string {
+  if (tier <= 0) {
+    return '妖兽属性 1.0x 基准 · 标准修为与掉落'
+  }
+  const attrMult = Math.pow(1.25, tier).toFixed(2)
+  const expBonus = Math.round(tier * 60)
+  const dropBonus = Math.round(tier * 25)
+  return `妖兽全属性 ${attrMult}x (向上取整) · 击杀经验 +${expBonus}% · 掉落率与保底量 +${dropBonus}%`
+}
 
 export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
   selectedMapId,
@@ -34,6 +54,8 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
   onClearSelectedNodes,
   durationSeconds,
   onChangeDuration,
+  difficulty,
+  onChangeDifficulty,
   onRunSimulation,
   isSimulating,
 }: SimulatorConfigPanelProps): React.JSX.Element {
@@ -154,6 +176,31 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
               })}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 2. 讨伐历练难度选择 */}
+      <div className="sim-config-section">
+        <div className="sim-config-title-row">
+          <div className="sim-config-title">{t('app.action.difficulty')}</div>
+          <span className="sim-selection-count-badge">
+            {difficulty === 0 ? t('app.action.difficultyDefault') : `T${difficulty}`}
+          </span>
+        </div>
+        <div className="sim-difficulty-presets">
+          {DIFFICULTY_OPTIONS.map(opt => (
+            <button
+              key={opt.tier}
+              type="button"
+              className={`sim-preset-btn ${difficulty === opt.tier ? 'is-active' : ''}`}
+              onClick={() => onChangeDifficulty(opt.tier)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div className="sim-difficulty-hint">
+          {getDifficultySummary(difficulty)}
         </div>
       </div>
 

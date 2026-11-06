@@ -28,6 +28,12 @@ function resolveItemUnitPrice(
   }
   return 0
 }
+import {
+  clampDifficultyTier,
+  getDifficultyExperienceMultiplier,
+  scaleMonsterAttributes,
+  scaleMonsterDrops,
+} from '../combatDifficulty.ts'
 import { nextSeed, rollDropTable, rollMillionth } from './deterministicRng.ts'
 import { ManaDeficitTracker } from './manaDeficitTracker.ts'
 import {
@@ -112,6 +118,7 @@ export class ExpeditionSimulator {
       marketStats?: Record<string, MarketItemStats>
     }
   ): SimulatorReport {
+    const effectiveDifficulty = clampDifficultyTier(config.difficulty ?? 0)
     const totalTargetSeconds = Math.max(1, config.durationSeconds)
     let currentElapsedSeconds = 0
 
@@ -277,7 +284,7 @@ export class ExpeditionSimulator {
       }
 
       // 2. 生成本波怪物阵容（组队人数驱动威胁度倍率与波次怪量扩容，与 EncounterWaveSelector.cs 对齐）
-      const waveResult = this.generateWave(encounter, seed, waveNumber, abilityMap, config.allies.length)
+      const waveResult = this.generateWave(encounter, seed, waveNumber, abilityMap, config.allies.length, effectiveDifficulty)
       seed = waveResult.nextSeed
       const enemies = waveResult.enemies
 
@@ -670,6 +677,7 @@ export class ExpeditionSimulator {
       nodeId: config.nodeId,
       nodeName: config.nodeName,
       mapName: config.mapName || '',
+      difficulty: effectiveDifficulty,
       totalSimulatedSeconds: currentElapsedSeconds,
       combatActiveSeconds,
       searchSeconds,
@@ -779,7 +787,8 @@ export class ExpeditionSimulator {
     seed: bigint,
     waveNumber: number,
     abilityMap: Map<string, CombatAbilityDefinition>,
-    partySize = 1
+    partySize = 1,
+    difficulty = 0
   ): {
     enemies: SimCombatant[]
     rawEnemies: RawEnemySpec[]
@@ -820,14 +829,14 @@ export class ExpeditionSimulator {
         tier: boss.tier || 2,
         budgetCost: cost,
         strength: 30,
-        attributes: ensureCombatAttributes(boss.attributes),
-        experience: boss.experience || 150,
-        drops: (boss.drops || []).map(d => ({
+        attributes: scaleMonsterAttributes(ensureCombatAttributes(boss.attributes), difficulty),
+        experience: Math.round((boss.experience || 150) * getDifficultyExperienceMultiplier(difficulty)),
+        drops: scaleMonsterDrops((boss.drops || []).map(d => ({
           itemId: d.itemId,
           dropChance: d.dropChance,
-          minQuantity: d.minQuantity,
-          maxQuantity: d.maxQuantity,
-        })),
+          minQuantity: d.minQuantity ?? 1,
+          maxQuantity: d.maxQuantity ?? 1,
+        })), difficulty),
         skills: boss.skills,
       })
       remain = maxBudget - cost
@@ -845,14 +854,14 @@ export class ExpeditionSimulator {
         tier: elite.tier || 1,
         budgetCost: cost,
         strength: 20,
-        attributes: ensureCombatAttributes(elite.attributes),
-        experience: elite.experience || 50,
-        drops: (elite.drops || []).map(d => ({
+        attributes: scaleMonsterAttributes(ensureCombatAttributes(elite.attributes), difficulty),
+        experience: Math.round((elite.experience || 50) * getDifficultyExperienceMultiplier(difficulty)),
+        drops: scaleMonsterDrops((elite.drops || []).map(d => ({
           itemId: d.itemId,
           dropChance: d.dropChance,
-          minQuantity: d.minQuantity,
-          maxQuantity: d.maxQuantity,
-        })),
+          minQuantity: d.minQuantity ?? 1,
+          maxQuantity: d.maxQuantity ?? 1,
+        })), difficulty),
         skills: elite.skills,
       })
       remain = maxBudget - cost
@@ -894,14 +903,14 @@ export class ExpeditionSimulator {
         tier: enemy?.tier || 1,
         budgetCost: cost,
         strength: chosen.strength || 15,
-        attributes: ensureCombatAttributes(enemy?.attributes),
-        experience: enemy?.experience || 15,
-        drops: (enemy?.drops || []).map(d => ({
+        attributes: scaleMonsterAttributes(ensureCombatAttributes(enemy?.attributes), difficulty),
+        experience: Math.round((enemy?.experience || 15) * getDifficultyExperienceMultiplier(difficulty)),
+        drops: scaleMonsterDrops((enemy?.drops || []).map(d => ({
           itemId: d.itemId,
           dropChance: d.dropChance,
-          minQuantity: d.minQuantity,
-          maxQuantity: d.maxQuantity,
-        })),
+          minQuantity: d.minQuantity ?? 1,
+          maxQuantity: d.maxQuantity ?? 1,
+        })), difficulty),
         skills: enemy?.skills,
       })
 
@@ -920,14 +929,14 @@ export class ExpeditionSimulator {
         tier: fallbackEnemy?.tier || 1,
         budgetCost: 15,
         strength: 15,
-        attributes: ensureCombatAttributes(fallbackEnemy?.attributes),
-        experience: fallbackEnemy?.experience || 15,
-        drops: (fallbackEnemy?.drops || []).map(d => ({
+        attributes: scaleMonsterAttributes(ensureCombatAttributes(fallbackEnemy?.attributes), difficulty),
+        experience: Math.round((fallbackEnemy?.experience || 15) * getDifficultyExperienceMultiplier(difficulty)),
+        drops: scaleMonsterDrops((fallbackEnemy?.drops || []).map(d => ({
           itemId: d.itemId,
           dropChance: d.dropChance,
-          minQuantity: d.minQuantity,
-          maxQuantity: d.maxQuantity,
-        })),
+          minQuantity: d.minQuantity ?? 1,
+          maxQuantity: d.maxQuantity ?? 1,
+        })), difficulty),
         skills: fallbackEnemy?.skills,
       })
     }

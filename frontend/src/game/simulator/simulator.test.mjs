@@ -901,3 +901,159 @@ test('expeditionSimulator: 技能与消耗品触发器导入与求值自洽', ()
   const healManaStat = report.manaConsumptionStats.find(s => s.abilityId === 'spell-heal')
   assert.equal(healManaStat?.castCount ?? 0, 0, '血量未降至40%以下时，受条件限制的治疗技能不应施放')
 })
+test('expeditionSimulator: T级难度选择与属性/经验/掉落同构缩放生效', () => {
+  const baseAttrs = {
+    maxHitpoints: 5000,
+    maxManapoints: 1000,
+    physicalAttack: 200,
+    spellAttack: 200,
+    armor: 100,
+    magicResistance: 100,
+    hit: 100,
+    evasion: 10,
+    critical: 20,
+    criticalResistance: 10,
+    criticalDamagePoints: 50,
+    breakPower: 10,
+    parryResolve: 10,
+    hpRegenPerFiveSeconds: 50,
+    mpRegenPerFiveSeconds: 30,
+    attackIntervalMilliseconds: 1000,
+    physicalDamageBonusPoints: 0,
+    spellDamageBonusPoints: 0,
+    metalDamageBonusPoints: 0,
+    woodDamageBonusPoints: 0,
+    waterDamageBonusPoints: 0,
+    fireDamageBonusPoints: 0,
+    earthDamageBonusPoints: 0,
+    actionSpeedPoints: 0,
+    cooldownReductionPoints: 0,
+    threatBonusPoints: 0,
+    hpDrainPoints: 0,
+    mpDrainPoints: 0,
+    damageReflectPoints: 0,
+    healingBonusPoints: 0,
+  }
+
+  const ally = {
+    id: 'hero',
+    name: '修真者',
+    isSelf: true,
+    formationIndex: 1,
+    attributes: { ...baseAttrs },
+    abilitySlots: [{
+      slotIndex: 1,
+      abilityId: 'skill-smash',
+      level: 1,
+      triggers: [],
+    }],
+  }
+
+  const catalog = {
+    encounters: [{
+      encounterId: 'enc-beast',
+      name: '妖狼巢穴',
+      minThreat: 10,
+      maxThreat: 20,
+      enemy: {
+        enemyId: 'wolf',
+        name: '青风狼',
+        rank: 'normal',
+        experience: 100,
+        attributes: {
+          maxHitpoints: 400,
+          maxManapoints: 0,
+          physicalAttack: 30,
+          spellAttack: 0,
+          armor: 20,
+          magicResistance: 10,
+          hit: 80,
+          evasion: 10,
+          critical: 10,
+          criticalResistance: 10,
+          attackIntervalMilliseconds: 1500,
+        },
+        drops: [{
+          itemId: 'item.wolf-pelt',
+          dropChance: 0.2,
+          minQuantity: 1,
+          maxQuantity: 1,
+        }],
+      },
+    }],
+    abilities: [{
+      abilityId: 'skill-smash',
+      name: '碎岩斩',
+      damageRatio: 2.0,
+      castMilliseconds: 0,
+      cooldownMilliseconds: 1000,
+      manaCost: 0,
+    }],
+    items: [{
+      itemId: 'item.wolf-pelt',
+      name: '狼皮',
+      sellPrice: 10,
+    }],
+  }
+
+  // 1. 验证难度字段透传与默认值
+  const repT0 = ExpeditionSimulator.runSimulation({
+    nodeId: 'node-wolf',
+    nodeName: '青峰谷',
+    durationSeconds: 300,
+    seed: 12345n,
+    allies: [ally],
+  }, catalog)
+  assert.equal(repT0.difficulty, 0, '未传 difficulty 时缺省为默认难度 0')
+
+  const repT1 = ExpeditionSimulator.runSimulation({
+    nodeId: 'node-wolf',
+    nodeName: '青峰谷',
+    durationSeconds: 300,
+    difficulty: 1,
+    seed: 12345n,
+    allies: [ally],
+  }, catalog)
+  assert.equal(repT1.difficulty, 1, '所传 difficulty: 1 应正确透传至战报')
+
+  const repT5 = ExpeditionSimulator.runSimulation({
+    nodeId: 'node-wolf',
+    nodeName: '青峰谷',
+    durationSeconds: 300,
+    difficulty: 5,
+    seed: 12345n,
+    allies: [ally],
+  }, catalog)
+  assert.equal(repT5.difficulty, 5, '所传 difficulty: 5 应正确透传至战报')
+
+  // 2. 验证确定性：同种子同难度两次推演完全一致
+  const repT1Again = ExpeditionSimulator.runSimulation({
+    nodeId: 'node-wolf',
+    nodeName: '青峰谷',
+    durationSeconds: 300,
+    difficulty: 1,
+    seed: 12345n,
+    allies: [ally],
+  }, catalog)
+  assert.equal(repT1.totalEncounters, repT1Again.totalEncounters, '确定性随机：总遭遇场次必须一致')
+  assert.equal(repT1.totalKills, repT1Again.totalKills, '确定性随机：总击杀数必须一致')
+  assert.equal(repT1.totalExperience, repT1Again.totalExperience, '确定性随机：总获得经验必须一致')
+  assert.equal(repT1.dailyDropsRevenue, repT1Again.dailyDropsRevenue, '确定性随机：收益必须一致')
+
+  // 3. 验证经验收益随着难度增加显著增长（T0: 100, T1: 160, T5: 400）
+  // 计算击杀单只怪的平均经验：totalCombatExperience / totalKills
+  const avgExpT0 = repT0.totalCombatExperience / repT0.totalKills
+  const avgExpT1 = repT1.totalCombatExperience / repT1.totalKills
+  const avgExpT5 = repT5.totalCombatExperience / repT5.totalKills
+
+  assert.equal(Math.round(avgExpT0), 100, 'T0 难度下单怪基础击杀经验为 100')
+  assert.equal(Math.round(avgExpT1), 160, 'T1 难度下单怪经验提升 60% 至 160')
+  assert.equal(Math.round(avgExpT5), 400, 'T5 难度下单怪经验提升 300% 至 400')
+
+  // 4. 验证怪物属性强化导致战斗耗时上升
+  // T5 难度怪物血量 400 * 1.25^5 ≈ 1221 (大于 3 倍血量)，单场平均耗时必然高于 T0
+  assert.ok(
+    repT5.durationBreakdown.overallAverageSeconds > repT0.durationBreakdown.overallAverageSeconds,
+    `T5 单场耗时 (${repT5.durationBreakdown.overallAverageSeconds}s) 应大于 T0 (${repT0.durationBreakdown.overallAverageSeconds}s)`
+  )
+})

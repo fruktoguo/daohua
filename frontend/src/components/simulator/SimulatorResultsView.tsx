@@ -48,6 +48,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
         nodeId: singleReport.nodeId,
         nodeName: singleReport.nodeName,
         mapName: singleReport.mapName,
+        difficulty: singleReport.difficulty,
         encountersPerHour: singleReport.encountersPerHour,
         winRate: singleReport.winRate,
         dailyRevenue: singleReport.dailyDropsRevenue,
@@ -175,6 +176,11 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                 <span className="sim-card-title">挂机刷图收益与效率对比总览</span>
                 <span className="sim-card-sub">掉落物统一按坊市市场参考价（未成交按系统回收价）折算每日灵石估值期望</span>
               </div>
+              {comparisonList[0]?.difficulty !== undefined && (
+                <span className="sim-difficulty-tag">
+                  {comparisonList[0].difficulty === 0 ? '默认难度' : `T${comparisonList[0].difficulty} 难度`}
+                </span>
+              )}
             </div>
 
             <div className="sim-data-table-wrap">
@@ -182,6 +188,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                 <thead>
                   <tr>
                     <th>地点节点</th>
+                    <th>难度</th>
                     <th>所属区域</th>
                     <th>每小时遇敌</th>
                     <th>胜率</th>
@@ -207,6 +214,11 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                           <span className="sim-node-table-name">{item.nodeName}</span>
                           {isTopRevenue && <span className="sim-tag-champ champ-tag-rev">高收益</span>}
                           {isTopExp && <span className="sim-tag-champ champ-tag-exp">升级宝地</span>}
+                        </td>
+                        <td>
+                          <span className="sim-difficulty-tag">
+                            {item.difficulty ? `T${item.difficulty}` : '默认'}
+                          </span>
                         </td>
                         <td className="text-muted">[{item.mapName}]</td>
                         <td>{item.encountersPerHour} 次/hr</td>
@@ -270,6 +282,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                     onClick={() => setActiveNode(item.nodeId)}
                   >
                     <span>{item.nodeName}</span>
+                    {item.difficulty ? <span className="sim-pill-difficulty">T{item.difficulty}</span> : null}
                     <span className="sim-pill-revenue">+{item.dailyRevenue.toLocaleString()} 灵石/天</span>
                   </button>
                 ))}
@@ -321,7 +334,14 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
             <div className="sim-tab-content">
               <section className="sim-card sim-card--overview">
                 <div className="sim-card-header">
-                  <span className="sim-card-title">{currentReport?.nodeName} · 战况指标</span>
+                  <div className="sim-card-title-wrap">
+                    <span className="sim-card-title">{currentReport?.nodeName} · 战况指标</span>
+                    {currentReport && (
+                      <span className="sim-difficulty-tag">
+                        {currentReport.difficulty ? `T${currentReport.difficulty} 难度` : '默认难度'}
+                      </span>
+                    )}
+                  </div>
                   <span className="sim-card-sub">{t('combat.simulator.simulatedSeconds', { s: currentReport?.totalSimulatedSeconds || 0 })}</span>
                 </div>
 

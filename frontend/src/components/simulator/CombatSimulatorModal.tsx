@@ -45,6 +45,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
   const [selectedMapId, setSelectedMapId] = useState<string>('all')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [durationSeconds, setDurationSeconds] = useState<number>(3600) // 默认 1 小时
+  const [difficulty, setDifficulty] = useState<number>(0)
 
   // 运行与结果状态
   const [isSimulating, setIsSimulating] = useState<boolean>(false)
@@ -184,6 +185,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
             nodeName,
             mapName,
             durationSeconds,
+            difficulty,
             seed,
             allies,
           }
@@ -202,6 +204,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
             nodeId,
             nodeName,
             mapName,
+            difficulty: rep.difficulty,
             encountersPerHour: rep.encountersPerHour,
             winRate: rep.winRate,
             dailyRevenue: rep.dailyDropsRevenue,
@@ -232,7 +235,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
         setIsSimulating(false)
       }
     }, 50)
-  }, [abilities, allies, durationSeconds, encounters, equipment, items, maps, marketStats, selectedNodeIds])
+  }, [abilities, allies, difficulty, durationSeconds, encounters, equipment, items, maps, marketStats, selectedNodeIds])
 
   if (!open) return null
 
@@ -292,6 +295,8 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
                 onClearSelectedNodes={handleClearSelectedNodes}
                 durationSeconds={durationSeconds}
                 onChangeDuration={setDurationSeconds}
+                difficulty={difficulty}
+                onChangeDifficulty={setDifficulty}
                 onRunSimulation={handleRunSimulation}
                 isSimulating={isSimulating}
               />

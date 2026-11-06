@@ -56,6 +56,8 @@ export interface SimulatorConfig {
   seed: bigint
   /** 参战阵容（1~5人） */
   allies: SimulatorCombatantConfig[]
+  /** 讨伐历练难度等级 (0: 默认, 1~5: T1~T5) */
+  difficulty?: number
 }
 
 /**
@@ -292,6 +294,8 @@ export interface SimulatorReport {
   nodeName: string
   /** 所属大地图区域名称 */
   mapName: string
+  /** 模拟所选定的讨伐历练难度等级 (0: 默认, 1~5: T1~T5) */
+  difficulty: number
   /** 模拟总耗时（秒） */
   totalSimulatedSeconds: number
   /** 战斗有效进行总时长（秒） */
@@ -385,6 +389,8 @@ export interface SimulatorNodeComparisonItem {
   nodeId: string
   nodeName: string
   mapName: string
+  /** 模拟所选定的讨伐历练难度等级 (0: 默认, 1~5: T1~T5) */
+  difficulty: number
   /** 每小时遇敌频次 */
   encountersPerHour: number
   /** 胜率 (0~1) */
