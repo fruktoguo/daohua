@@ -66,7 +66,8 @@ public static class PostgresSchema
     /// v44：settings 分段载荷新增组队复活时机策略字段（respawnPolicy/respawnTargetPlayerId，可缺省解码为直接复活）；
     /// 存档标签推进至 v39，表结构未变。
     /// v46：social.parties 增 difficulty 队伍讨伐难度列（0~5，默认 0）；无存档载荷变更。
-    public const int Version = 46;
+    /// v47：identity.accounts 增 taptap_openid 列与唯一索引（支持 TapTap 授权登录与一人一号强防御）；无存档载荷变更。
+    public const int Version = 47;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -85,8 +86,10 @@ public static class PostgresSchema
         password_iterations integer NOT NULL CHECK (password_iterations >= 100000),
         status smallint NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2)),
         created_at timestamptz NOT NULL,
-        updated_at timestamptz NOT NULL
+        updated_at timestamptz NOT NULL,
+        taptap_openid varchar(128) NULL
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_taptap_openid ON identity.accounts(taptap_openid) WHERE taptap_openid IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS identity.players (
         player_id uuid PRIMARY KEY,

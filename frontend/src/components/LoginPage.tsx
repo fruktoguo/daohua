@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { useAccountStore } from '../network/account'
 import { useT } from '../i18n'
 
@@ -61,6 +61,35 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('login_success') === 'taptap') {
+      window.history.replaceState({}, document.title, window.location.pathname)
+      onLoggedIn?.()
+    } else if (params.get('login_error')) {
+      const errCode = params.get('login_error')
+      window.history.replaceState({}, document.title, window.location.pathname)
+      setError(errCode === 'taptap_canceled' ? t('app.login.tapTapCanceled') : t('app.login.tapTapAuthFailed'))
+    }
+  }, [onLoggedIn, t])
+
+  const handleTapTapLogin = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/v1/auth/taptap/url')
+      if (!res.ok) throw new Error('Failed to get TapTap auth url')
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      }
+    } catch {
+      setError(t('app.login.tapTapLaunchFailed'))
+      setLoading(false)
+    }
+  }
 
   const handleSelectSaved = (account: string) => {
     setLoginAccount(account)
@@ -201,6 +230,39 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
         {mode === 'login' && (
           <div className="auth-content">
+            <div className="taptap-login-banner" style={{ marginBottom: 16 }}>
+              <button
+                type="button"
+                className="taptap-auth-btn"
+                onClick={handleTapTapLogin}
+                disabled={loading}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  backgroundColor: '#00c7b3',
+                  color: '#070604',
+                  fontWeight: 600,
+                  fontSize: '15px',
+                  borderRadius: '6px',
+                  padding: '11px 16px',
+                  border: '1px solid rgba(0, 199, 179, 0.4)',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 2px 10px rgba(0, 199, 179, 0.3)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l7 4.5-7 4.5z"/>
+                </svg>
+                <span>{t('app.login.tapTapLoginBtn')}</span>
+              </button>
+              <div className="auth-divider" style={{ margin: '14px 0 10px' }}>
+                <span>{t('app.login.orAccountPasswordDivider')}</span>
+              </div>
+            </div>
             {savedAccounts.length > 0 && (
               <div className="saved-accounts-section">
                 <div className="saved-accounts-label">{t('app.login.savedAccountsLabel')}</div>

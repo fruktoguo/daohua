@@ -79,6 +79,10 @@ public interface IAccountRepository
         string newPassword,
         byte[]? keepSessionTokenHash,
         CancellationToken cancellationToken = default);
+    /// <summary>通过 TapTap OpenID 登录或自动创建账号（一人一号强绑定），签发会话。</summary>
+    ValueTask<AccountLoginResult> LoginOrRegisterTapTapAsync(string openId, string? tapName, CancellationToken cancellationToken = default);
+    /// <summary>为当前已登录账号绑定 TapTap OpenID；冲突或已被绑定返回 false。</summary>
+    ValueTask<bool> BindTapTapOpenIdAsync(Guid accountId, string openId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>一次有效会话解析出的身份。</summary>
@@ -594,4 +598,167 @@ public sealed class PostgresAccountRepository(
     public static string NormalizeNameForLookup(string value) => value.Trim().ToUpperInvariant();
     private static AccountRegistrationResult FailureRegistration(string code, string message) => new(false, null, null, null, null, code, message);
     private static AccountLoginResult FailureLogin(string code, string message) => new(false, null, null, null, null, code, message);
+
+    public async ValueTask<AccountLoginResult> LoginOrRegisterTapTapAsync(
+        string openId,
+        string? tapName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(openId))
+            return FailureLogin("INVALID_OPENID", "TapTap OpenID 不能为空。");
+
+        var cleanOpenId = openId.Trim();
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        // 1. 优先根据 taptap_openid 查询已有账号
+        await using (var query = new NpgsqlCommand("""
+            SELECT a.account_id, a.login_normalized, p.player_id, p.display_name, p.player_seq, a.status, p.status
+            FROM identity.accounts a
+            JOIN identity.players p ON a.account_id = p.account_id
+            WHERE a.taptap_openid = $1
+            LIMIT 1
+            """, connection))
+        {
+            query.Parameters.Add(new NpgsqlParameter { Value = cleanOpenId });
+            await using var reader = await query.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var accountId = reader.GetGuid(0);
+                var loginNorm = reader.GetString(1);
+                var playerId = reader.GetGuid(2);
+                var displayName = reader.GetString(3);
+                var playerSeq = reader.GetInt64(4);
+                var accStatus = reader.GetInt16(5);
+                var playerStatus = reader.GetInt16(6);
+
+                if (accStatus != 1 || playerStatus != 1)
+                    return FailureLogin("ACCOUNT_DISABLED", "该账号已被禁用。");
+
+                await reader.DisposeAsync();
+
+                // 签发新会话
+                await using var tx = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
+                await using (var update = new NpgsqlCommand("UPDATE identity.players SET last_seen_at = now() WHERE player_id = $1", connection, tx))
+                {
+                    update.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                    await update.ExecuteNonQueryAsync(cancellationToken);
+                }
+
+                var token = CreateSessionToken();
+                var tokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+                await InsertSessionAsync(connection, tx, accountId, tokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
+                await outbox.AppendAsync(connection, tx, accountId, "account", "auth.account.login_taptap", JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId, openId = cleanOpenId }), now, cancellationToken);
+                await tx.CommitAsync(cancellationToken);
+
+                return new AccountLoginResult(true, accountId, playerId, loginNorm, displayName, null, null, token, playerSeq);
+            }
+        }
+
+        // 2. 未找到账号 -> 自动创建新账号并强绑定该 openId (一人一号)
+        var newAccountId = Guid.NewGuid();
+        var newPlayerId = Guid.NewGuid();
+        var safePrefix = cleanOpenId.Length >= 8 ? cleanOpenId[..8] : cleanOpenId;
+        var autoAccount = $"tap_{safePrefix}_{Guid.NewGuid():N}"[..Math.Min(24, 8 + safePrefix.Length + 10)];
+        var autoPassword = Guid.NewGuid().ToString("N");
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(autoPassword, salt, Pbkdf2Iterations, HashAlgorithmName.SHA512, 64);
+
+        // 名字清洗：TapTap 昵称若合法且在 2~16 字内，尝试使用；否则回退道号
+        var targetName = !string.IsNullOrWhiteSpace(tapName) && tapName.Trim().Length is >= 2 and <= 16
+            ? tapName.Trim()
+            : $"道友_{Random.Shared.Next(1000, 9999)}";
+
+        await using var createTx = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            await using (var insertAccount = new NpgsqlCommand("""
+                INSERT INTO identity.accounts
+                    (account_id, login_normalized, password_hash, password_salt,
+                     password_iterations, status, created_at, updated_at, taptap_openid)
+                VALUES ($1, $2, $3, $4, $5, 1, $6, $6, $7)
+                """, connection, createTx))
+            {
+                insertAccount.Parameters.Add(new NpgsqlParameter { Value = newAccountId });
+                insertAccount.Parameters.Add(new NpgsqlParameter { Value = autoAccount.ToLowerInvariant() });
+                insertAccount.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = hash });
+                insertAccount.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = salt });
+                insertAccount.Parameters.Add(new NpgsqlParameter { Value = Pbkdf2Iterations });
+                insertAccount.Parameters.Add(new NpgsqlParameter { Value = now });
+                insertAccount.Parameters.Add(new NpgsqlParameter { Value = cleanOpenId });
+                await insertAccount.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // 检查名字冲突，冲突则自动追加后缀
+            var finalName = targetName;
+            var lookupName = NormalizeNameForLookup(finalName);
+            await using (var checkName = new NpgsqlCommand("SELECT 1 FROM identity.players WHERE display_name_normalized = $1", connection, createTx))
+            {
+                checkName.Parameters.Add(new NpgsqlParameter { Value = lookupName });
+                if (await checkName.ExecuteScalarAsync(cancellationToken) is not null)
+                {
+                    finalName = $"{targetName}_{Random.Shared.Next(100, 999)}";
+                    lookupName = NormalizeNameForLookup(finalName);
+                }
+            }
+
+            long playerSeq;
+            var inviteCode = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+            await using (var insertPlayer = new NpgsqlCommand("""
+                INSERT INTO identity.players
+                    (player_id, account_id, display_name, display_name_normalized,
+                     invite_code, created_at, last_seen_at, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $6, 1)
+                RETURNING player_seq
+                """, connection, createTx))
+            {
+                insertPlayer.Parameters.Add(new NpgsqlParameter { Value = newPlayerId });
+                insertPlayer.Parameters.Add(new NpgsqlParameter { Value = newAccountId });
+                insertPlayer.Parameters.Add(new NpgsqlParameter { Value = finalName });
+                insertPlayer.Parameters.Add(new NpgsqlParameter { Value = lookupName });
+                insertPlayer.Parameters.Add(new NpgsqlParameter { Value = inviteCode });
+                insertPlayer.Parameters.Add(new NpgsqlParameter { Value = now });
+                playerSeq = (long)(await insertPlayer.ExecuteScalarAsync(cancellationToken))!;
+            }
+
+            var sessionToken = CreateSessionToken();
+            var sessionTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(sessionToken));
+            await InsertSessionAsync(connection, createTx, newAccountId, sessionTokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
+
+            await outbox.AppendAsync(connection, createTx, newAccountId, "account", "auth.account.register_taptap", JsonSerializer.SerializeToUtf8Bytes(new { accountId = newAccountId, playerId = newPlayerId, openId = cleanOpenId }), now, cancellationToken);
+            await createTx.CommitAsync(cancellationToken);
+
+            logger.LogInformation("TapTap 新玩家快速创号成功 accountId={AccountId}, playerId={PlayerId}, openId={OpenId}", newAccountId, newPlayerId, cleanOpenId);
+            return new AccountLoginResult(true, newAccountId, newPlayerId, autoAccount.ToLowerInvariant(), finalName, null, null, sessionToken, playerSeq);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            await createTx.RollbackAsync(cancellationToken);
+            logger.LogWarning(ex, "TapTap 创号遇到唯一性冲突 openId={OpenId}", cleanOpenId);
+            return FailureLogin("TAPTAP_DUPLICATE", "该 TapTap 账号已被使用。");
+        }
+    }
+
+    public async ValueTask<bool> BindTapTapOpenIdAsync(Guid accountId, string openId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(openId)) return false;
+        var cleanOpenId = openId.Trim();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            await using var command = new NpgsqlCommand("""
+                UPDATE identity.accounts
+                SET taptap_openid = $1, updated_at = now()
+                WHERE account_id = $2 AND taptap_openid IS NULL
+                """, connection);
+            command.Parameters.Add(new NpgsqlParameter { Value = cleanOpenId });
+            command.Parameters.Add(new NpgsqlParameter { Value = accountId });
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
+            return rows > 0;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            return false;
+        }
+    }
 }

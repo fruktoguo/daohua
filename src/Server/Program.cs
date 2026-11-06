@@ -173,6 +173,9 @@ builder.Services.AddSingleton<NodeBuildingRegistry>();
 builder.Services.AddSingleton<IOutboxRepository, PostgresOutboxRepository>();
 builder.Services.AddSingleton<ICommandReceiptStore, PostgresCommandReceiptRepository>();
 builder.Services.AddSingleton<PostgresRetentionRepository>();
+builder.Services.Configure<DaoHua.Server.Clean.TapTap.TapTapOptions>(
+    builder.Configuration.GetSection(DaoHua.Server.Clean.TapTap.TapTapOptions.SectionName));
+builder.Services.AddHttpClient<DaoHua.Server.Clean.TapTap.TapTapAuthService>();
 builder.Services.AddSingleton<IIntegrationEventDispatcher, AuditIntegrationEventDispatcher>();
 // 冷挂机派发链仅 Api 角色装配：/internal/compute-link 只在 Api map，PersistenceWorker
 // 装配注册表只会空转，ColdCatchUpWorker 还会与 Api 重复生产任务。
@@ -525,6 +528,87 @@ if (processRole == ServerProcessRole.Api)
         });
     }).RequireAuthorization();
 
+    // TapTap 授权与一人一号登录
+    auth.MapGet("/taptap/url", (DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth, string? redirectUri) =>
+    {
+        var state = Guid.NewGuid().ToString("N")[..16];
+        var url = tapAuth.BuildAuthorizeUrl(state, redirectUri);
+        return Results.Ok(new { url, state });
+    });
+    auth.MapGet("/taptap/authorize", (DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth, string? state, string? redirectUri) =>
+    {
+        var safeState = !string.IsNullOrWhiteSpace(state) ? state : Guid.NewGuid().ToString("N")[..16];
+        var url = tapAuth.BuildAuthorizeUrl(safeState, redirectUri);
+        return Results.Redirect(url);
+    });
+    auth.MapGet("/taptap/callback", async (
+        string? code,
+        string? state,
+        string? error,
+        DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth,
+        IAccountRepository accounts,
+        IPlayerRuntime runtime,
+        ServerOptions serverOptions,
+        HttpContext context,
+        CancellationToken ct) =>
+    {
+        if (!string.IsNullOrWhiteSpace(error) || string.IsNullOrWhiteSpace(code))
+        {
+            return Results.Redirect("/?login_error=taptap_canceled");
+        }
+
+        var token = await tapAuth.ExchangeCodeForTokenAsync(code, null, ct);
+        if (token is null)
+        {
+            return Results.Redirect("/?login_error=token_exchange_failed");
+        }
+
+        var profile = await tapAuth.GetUserProfileAsync(token, ct);
+        if (profile is null || string.IsNullOrWhiteSpace(profile.OpenId))
+        {
+            return Results.Redirect("/?login_error=profile_fetch_failed");
+        }
+
+        var result = await accounts.LoginOrRegisterTapTapAsync(profile.OpenId, profile.Name, ct);
+        if (!result.Success)
+        {
+            return Results.Redirect($"/?login_error={Uri.EscapeDataString(result.ErrorCode ?? "LOGIN_FAILED")}");
+        }
+
+        await runtime.LoadAsync(result.PlayerId!.Value, ct);
+        await runtime.FlushAsync(result.PlayerId.Value, true, ct);
+
+        StampSessionCookie(context, result.SessionToken!, serverOptions.SessionLifetime);
+        return Results.Redirect("/?login_success=taptap");
+    });
+    auth.MapPost("/taptap/bind", async (
+        BindTapTapRequest request,
+        ClaimsPrincipal user,
+        DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth,
+        IAccountRepository accounts,
+        CancellationToken ct) =>
+    {
+        if (!Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var accountId))
+            return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
+
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return Results.BadRequest(Problem(400, "MISSING_CODE", "缺少 TapTap 授权码。"));
+
+        var token = await tapAuth.ExchangeCodeForTokenAsync(request.Code, request.RedirectUri, ct);
+        if (token is null)
+            return Results.BadRequest(Problem(400, "TOKEN_EXCHANGE_FAILED", "TapTap 授权码换取凭据失败。"));
+
+        var profile = await tapAuth.GetUserProfileAsync(token, ct);
+        if (profile is null || string.IsNullOrWhiteSpace(profile.OpenId))
+            return Results.BadRequest(Problem(400, "PROFILE_FETCH_FAILED", "获取 TapTap 用户信息失败。"));
+
+        var ok = await accounts.BindTapTapOpenIdAsync(accountId, profile.OpenId, ct);
+        if (!ok)
+            return Results.BadRequest(Problem(400, "TAPTAP_ALREADY_BOUND", "该 TapTap 账号已被其他修仙角色绑定，或当前账号已有绑定。"));
+
+        return Results.Ok(new { success = true, openId = profile.OpenId, name = profile.Name });
+    }).RequireAuthorization().RequireRateLimiting("auth");
+
     // 邀请总览：本人邀请码 + 被邀请人进度列表；低频拉取，不走 WebSocket 帧。
     app.MapGet("/api/v1/invitation", async (ClaimsPrincipal user, Server.Clean.Social.IInvitationRepository invitations, CancellationToken ct) =>
     {
@@ -855,5 +939,9 @@ public sealed record LoginRequest(string Account, string Password, AccountRiskCl
 /// <param name="CurrentPassword">当前密码明文。</param>
 /// <param name="NewPassword">新密码明文。</param>
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+/// <summary>TapTap 账号绑定请求体。</summary>
+/// <param name="Code">TapTap OAuth 授权码。</param>
+/// <param name="RedirectUri">用于换取凭据的回调重定向地址。</param>
+public sealed record BindTapTapRequest(string Code, string? RedirectUri = null);
 /// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

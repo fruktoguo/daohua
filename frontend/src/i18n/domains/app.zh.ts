@@ -565,6 +565,10 @@ export const appZh = {
       checkUpdateBtn: '检查更新',
       tapAutoUpdateNotice: '当前为 TapTap 官方版本，已由 TapTap 客户端全自动静默更新，无需手动操作。',
       tapManagedBadge: 'TapTap官方托管',
+      tapTapBindTitle: 'TapTap 账号绑定',
+      tapTapBindDesc: '绑定 TapTap 账号可享受一键免密登录与一人一号数据安全保护。',
+      tapTapBindBtn: '立即绑定 TapTap',
+      tapTapBoundBadge: '已绑定 TapTap',
       qqGroupLabel: '官方QQ交流群',
       qqActionBtn: '唤起QQ加群',
       qqCopyBtn: '复制群号',
@@ -639,6 +643,11 @@ export const appZh = {
       errorLoginFailed: '登录失败，请检查账号和密码',
       errorRegisterFailed: '注册失败，请更换账号或道号',
       errorNetworkFailed: '连接服务器失败，请检查网络连接',
+      tapTapLoginBtn: 'TapTap 快捷登录',
+      orAccountPasswordDivider: '或使用账号密码',
+      tapTapLaunchFailed: '唤起 TapTap 授权失败，请稍后重试',
+      tapTapCanceled: '您取消了 TapTap 授权登录',
+      tapTapAuthFailed: 'TapTap 授权核验未通过，请重试',
     },
     // 连接状态屏幕
     connect: {
