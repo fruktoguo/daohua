@@ -140,6 +140,15 @@ cmd_status() {
     local apk_size
     apk_size="$(ls -lh "$APK_PATH" | awk '{print $5}')"
     printf '\n• 本地安装包产物: 已就绪 (%s, %s)\n' "$APK_PATH" "$apk_size"
+    if unzip -l "$APK_PATH" assets/app-version.json >/dev/null 2>&1; then
+      local apk_channel
+      apk_channel="$(unzip -p "$APK_PATH" assets/app-version.json 2>/dev/null | grep -o '"channel":"[^"]*"' | cut -d'"' -f4 || echo "")"
+      if [[ "$apk_channel" == "taptap" ]]; then
+        printf '  • 渠道合规状态: channel=taptap (已关闭应用内更新，符合 TapTap 规范)\n'
+      else
+        printf '  • 渠道合规提示: 当前 APK channel=%s (若上传 TapTap 建议使用 scripts/build-apk.sh --channel taptap 打包)\n' "${apk_channel:-official}"
+      fi
+    fi
   else
     printf '\n• 本地安装包产物: 未就绪 (%s 不存在，发版前请先运行 scripts/build-apk.sh)\n' "$APK_PATH"
   fi

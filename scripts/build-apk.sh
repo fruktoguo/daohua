@@ -26,6 +26,7 @@ HD_MODE=1
 REQUIRE_FULL=0
 UPLOAD_RELEASE=0
 RELEASE_TAG=""
+CHANNEL="official"
 
 while (($# > 0)); do
   case "$1" in
@@ -35,6 +36,7 @@ while (($# > 0)); do
     --require-full|--complete) REQUIRE_FULL=1; shift ;;
     --release) UPLOAD_RELEASE=1; shift ;;
     --tag) RELEASE_TAG="${2:?--tag 缺少值}"; shift 2 ;;
+    --channel) CHANNEL="${2:?--channel 缺少值}"; shift 2 ;;
     -h|--help)
       printf '用法: scripts/build-apk.sh [--no-hd] [--skip-web-build] [--soft-fail] [--require-full] [--release] [--tag TAG]\n'
       exit 0
@@ -164,7 +166,7 @@ COMMIT_COUNT="$(git rev-list --count HEAD 2>/dev/null || echo "100")"
 APP_VERSION_CODE="$(( 20000 + COMMIT_COUNT ))"
 BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-VERSION_JSON="{\"versionName\":\"${PKG_VERSION}\",\"versionCode\":${APP_VERSION_CODE},\"gitSha\":\"${GIT_SHA}\",\"releaseTag\":\"${RELEASE_TAG}\",\"buildTime\":\"${BUILD_TIME}\"}"
+VERSION_JSON="{\"versionName\":\"${PKG_VERSION}\",\"versionCode\":${APP_VERSION_CODE},\"gitSha\":\"${GIT_SHA}\",\"releaseTag\":\"${RELEASE_TAG}\",\"channel\":\"${CHANNEL}\",\"buildTime\":\"${BUILD_TIME}\"}"
 mkdir -p "$SHELL_DIR/app/src/main/assets" "$SHELL_DIR/app/src/main/assets/www"
 printf '%s\n' "$VERSION_JSON" > "$SHELL_DIR/app/src/main/assets/app-version.json"
 printf '%s\n' "$VERSION_JSON" > "$SHELL_DIR/app/src/main/assets/www/app-version.json"
@@ -213,7 +215,11 @@ if [[ -f "$RELEASE_APK" ]]; then
     printf '  • 视觉规格: 立绘 1024px | 建筑 128px | 道具 128px 超清覆盖\n'
   fi
   printf '  • 版本指纹: %s (versionCode: %s)\n' "$RELEASE_TAG" "$APP_VERSION_CODE"
-  printf '  • 自动更新: 已内嵌 (每小时自动检测 GitHub Releases: fruktoguo/daohua)\n'
+  if [[ "$CHANNEL" == "taptap" ]]; then
+    printf '  • 渠道模式: TapTap 官方专供 (已彻底关闭应用内 GitHub 自动更新，由 TapPlay 全自动静默托管)\n'
+  else
+    printf '  • 渠道模式: %s (已内嵌 GitHub Releases 自动更新)\n' "$CHANNEL"
+  fi
   printf '======================================================\n\n'
   if [[ "$UPLOAD_RELEASE" == "1" ]]; then
     UPLOAD_ARGS=("--file" "$ROOT_DIR/artifacts/daohua.apk")

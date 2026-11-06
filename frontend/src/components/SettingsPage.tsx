@@ -22,6 +22,7 @@ interface DaoHuaNativeBridge {
   getAppVersion(): string
   getGitSha(): string
   checkUpdate(): void
+  getChannel?(): string
 }
 
 declare global {
@@ -197,10 +198,16 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const isNative = typeof window !== 'undefined' && Boolean(window.DaoHuaNative)
   const nativeVersion = typeof window !== 'undefined' ? (window.DaoHuaNative?.getAppVersion() || '1.0.0') : '1.0.0'
 
+  const isTapTap = typeof window !== 'undefined' && window.DaoHuaNative?.getChannel?.() === 'taptap'
+
   const handleCheckNativeUpdate = useCallback(() => {
     if (typeof window !== 'undefined' && window.DaoHuaNative?.checkUpdate) {
       window.DaoHuaNative.checkUpdate()
-      useGameStore.getState().setNotice(t('app.settings.nativeUpdateChecking'))
+      if (window.DaoHuaNative.getChannel?.() === 'taptap') {
+        useGameStore.getState().setNotice(t('app.settings.tapAutoUpdateNotice'))
+      } else {
+        useGameStore.getState().setNotice(t('app.settings.nativeUpdateChecking'))
+      }
     }
   }, [t])
 
@@ -426,12 +433,13 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                       <span className="setting-label">{t('app.settings.nativeVersionLabel')}</span>
                       <p className="setting-desc font-mono">
                         {window.DaoHuaNative.getAppVersion()}
+                        {isTapTap && <span style={{ marginLeft: 6, fontSize: '0.85em', opacity: 0.8 }}>({t('app.settings.tapManagedBadge')})</span>}
                       </p>
                     </div>
                     <button
                       type="button"
                       className="inline-modify-btn"
-                      onClick={() => window.DaoHuaNative?.checkUpdate()}
+                      onClick={handleCheckNativeUpdate}
                     >
                       {t('app.settings.checkUpdateBtn')}
                     </button>

@@ -563,6 +563,8 @@ export const appZh = {
       versionLabel: '客户端版本',
       nativeVersionLabel: 'Android 客户端',
       checkUpdateBtn: '检查更新',
+      tapAutoUpdateNotice: '当前为 TapTap 官方版本，已由 TapTap 客户端全自动静默更新，无需手动操作。',
+      tapManagedBadge: 'TapTap官方托管',
       qqGroupLabel: '官方QQ交流群',
       qqActionBtn: '唤起QQ加群',
       qqCopyBtn: '复制群号',
