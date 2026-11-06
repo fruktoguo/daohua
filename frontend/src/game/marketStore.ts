@@ -32,8 +32,8 @@ export type ConsumableKindFilter = 'any' | 'combatPotion' | 'combatGeneral' | 't
 export type MaterialRarityFilter = 'any' | 'common' | 'rare'
 
 
-/** 坊市标的网格卡片右下角数量显示模式：'owned' (自身拥有，默认) | 'onSale' (坊市在售) | 'bid' (坊市求购) */
-export type MarketAmountDisplayMode = 'owned' | 'onSale' | 'bid'
+/** 坊市标的网格卡片右下角显示模式：'owned' (自身拥有，默认) | 'onSale' (坊市在售) | 'bid' (坊市求购) | 'price' (参考价格) */
+export type MarketAmountDisplayMode = 'owned' | 'onSale' | 'bid' | 'price'
 /**
  * 坊市交易标的元数据定义
  */
@@ -135,7 +135,7 @@ export interface MarketUiState {
   materialRarity: MaterialRarityFilter
   /** 品阶过滤（0 表示任意，1~8 对应品质档） */
   gradeFilter: number
-  /** 标的卡片右下角数量显示模式：自身拥有 (owned) | 坊市在售 (onSale) | 坊市求购 (bid) */
+  /** 标的卡片右下角显示模式：自身拥有 (owned) | 坊市在售 (onSale) | 坊市求购 (bid) | 参考价格 (price) */
   amountDisplayMode: MarketAmountDisplayMode
 
 
@@ -169,7 +169,7 @@ export interface MarketUiState {
   setGradeFilter: (grade: number) => void
   /** 设置标的卡片右下角数量显示模式 */
   setAmountDisplayMode: (mode: MarketAmountDisplayMode) => void
-  /** 顺次切换标的卡片右下角数量显示模式（owned -> onSale -> bid -> owned） */
+  /** 顺次切换标的卡片右下角显示模式（owned -> onSale -> bid -> price -> owned） */
   toggleAmountDisplayMode: () => void
   /** 重置全部过滤项至默认状态 */
   resetFilters: () => void
@@ -221,7 +221,9 @@ export const useMarketStore = create<MarketUiState>((set) => ({
         ? 'onSale'
         : state.amountDisplayMode === 'onSale'
           ? 'bid'
-          : 'owned',
+          : state.amountDisplayMode === 'bid'
+            ? 'price'
+            : 'owned',
   })),
   resetFilters: () => set({
     primaryTab: 'all',

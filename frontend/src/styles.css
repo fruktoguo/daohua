@@ -4856,6 +4856,12 @@ input[type="checkbox"] {
   box-shadow: 0 0 6px rgba(143, 195, 166, 0.25);
 }
 
+.market-amount-toggle-option.is-active.is-price {
+  color: #ffd875;
+  background: rgba(255, 216, 117, 0.2);
+  box-shadow: 0 0 6px rgba(255, 216, 117, 0.25);
+}
+
 .item-tile.is-onsale-mode .item-corner--bottom-right {
   color: var(--gold-bright);
   border-color: rgba(201, 180, 109, 0.4);
@@ -4864,6 +4870,22 @@ input[type="checkbox"] {
 .item-tile.is-bid-mode .item-corner--bottom-right {
   color: #8fc3a6;
   border-color: rgba(143, 195, 166, 0.45);
+}
+
+.item-tile.is-price-mode .item-corner--bottom-right {
+  color: #ffd875;
+  border-color: rgba(255, 216, 117, 0.45);
+}
+
+:root[data-theme="light"] .market-amount-toggle-option.is-active.is-price {
+  color: #8c6b12;
+  background: rgba(140, 107, 18, 0.15);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .item-tile.is-price-mode .item-corner--bottom-right {
+  color: #8c6b12;
+  border-color: rgba(140, 107, 18, 0.4);
 }
 
 

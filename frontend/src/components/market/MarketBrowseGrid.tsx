@@ -75,6 +75,7 @@ interface MarketBrowseCardItemProps {
   ownedAmount: number
   onSaleAmount: number
   bidAmount: number
+  referencePrice: number | null
   mode: MarketAmountDisplayMode
   selected: boolean
   onSelect: (itemId: string) => void
@@ -87,6 +88,7 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
   ownedAmount,
   onSaleAmount,
   bidAmount,
+  referencePrice,
   mode,
   selected,
   onSelect,
@@ -100,6 +102,8 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
   }, [item.itemId, onSelect])
 
   const displayAmount = mode === 'onSale' ? onSaleAmount : mode === 'bid' ? bidAmount : ownedAmount
+  const hasPrice = referencePrice !== null && referencePrice > 0
+  const formattedPrice = hasPrice ? formatNumber(referencePrice) : '-'
   return (
     <ItemTooltipTarget
       amount={ownedAmount}
@@ -112,21 +116,28 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
       tabIndex={-1}
     >
       <button
-        aria-label={mode === 'onSale'
-          ? t('market.browse.itemOnSale', { name: item.name, count: formatNumber(displayAmount) })
-          : mode === 'bid'
-            ? t('market.browse.itemBid', { name: item.name, count: formatNumber(displayAmount) })
-            : t('market.browse.itemOwned', { name: item.name, count: formatNumber(displayAmount) })}
+        aria-label={
+          mode === 'onSale'
+            ? t('market.browse.itemOnSale', { name: item.name, count: formatNumber(displayAmount) })
+            : mode === 'bid'
+              ? t('market.browse.itemBid', { name: item.name, count: formatNumber(displayAmount) })
+              : mode === 'price'
+                ? (hasPrice
+                    ? t('market.browse.itemPrice', { name: item.name, price: formattedPrice })
+                    : t('market.browse.itemNoPrice', { name: item.name }))
+                : t('market.browse.itemOwned', { name: item.name, count: formatNumber(displayAmount) })
+        }
         className={`market-browse-card${selected ? ' is-selected' : ''}`}
         onClick={handleClick}
         role="option"
         type="button"
       >
         <ItemTile
-          amount={displayAmount}
+          amount={mode === 'price' ? undefined : displayAmount}
+          bottomRightLabel={mode === 'price' ? formattedPrice : undefined}
           category={resolveItemCategoryLabel(
             resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)}
-          className={`inventory-cell${mode === 'onSale' ? ' is-onsale-mode' : mode === 'bid' ? ' is-bid-mode' : ''}`}
+          className={`inventory-cell${mode === 'onSale' ? ' is-onsale-mode' : mode === 'bid' ? ' is-bid-mode' : mode === 'price' ? ' is-price-mode' : ''}`}
           itemId={item.itemId}
           level={metadata.level}
           name={item.name}
@@ -261,6 +272,19 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
     for (const stats of Object.values(marketStats)) {
       if (stats.bidQuantity > 0) {
         map.set(stats.itemId, (map.get(stats.itemId) ?? 0) + stats.bidQuantity)
+      }
+    }
+    return map
+  }, [marketStats])
+
+  // 3.3 坊市参考价格字典 O(1) 映射：从 marketStats 索引该 itemId 基础 0 级的滑动平均成交价（若无 0 级成交可回退其他等级最低成交价）
+  const marketPriceMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const stats of Object.values(marketStats)) {
+      if (stats.referencePrice && stats.referencePrice > 0) {
+        if (stats.enhancementLevel === 0 || !map.has(stats.itemId)) {
+          map.set(stats.itemId, stats.referencePrice)
+        }
       }
     }
     return map
@@ -447,6 +471,15 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
             >
               {t('market.browse.amountMode.bid')}
             </button>
+            <button
+              aria-checked={amountDisplayMode === 'price'}
+              className={`market-amount-toggle-option is-price${amountDisplayMode === 'price' ? ' is-active' : ''}`}
+              onClick={() => setAmountDisplayMode('price')}
+              role="radio"
+              type="button"
+            >
+              {t('market.browse.amountMode.price')}
+            </button>
           </div>
         </div>
         <input
@@ -598,6 +631,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
             bidAmount={marketBidMap.get(item.itemId) ?? 0}
             mode={amountDisplayMode}
             onSaleAmount={marketOnSaleMap.get(item.itemId) ?? 0}
+            referencePrice={marketPriceMap.get(item.itemId) ?? null}
             onSelect={onSelect}
             openDelay={150}
             ownedAmount={inventoryMap.get(item.itemId) ?? 0}
