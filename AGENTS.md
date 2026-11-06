@@ -201,6 +201,7 @@ docker compose -f deploy/compose.prod.yaml down
 
 ## 8. 前端规则
 
+- 前端开发专属专项规约真源见 `frontend/AGENTS.md`，前端目录内所有 Agent 与开发者必须严格遵循。
 - 正式功能只修改 `frontend`。
 - HTTP 和 WebSocket 默认使用 `window.location.origin` / 同源 `ws(s)`。
 - 高频状态更新不得整体重建面板，必须保持输入焦点、选区和滚动位置。
@@ -211,6 +212,8 @@ docker compose -f deploy/compose.prod.yaml down
 - **i18n 词条闭环**：UI 代码中每引入一个新的 `t('...')` 国际化键名，必须同步在 `frontend/public/locales/template.csv` 及主语言词典中定义；禁止残留未录入模板的裸露键名。
 - **UI 文本简练红线**：界面文案只承载玩家可操作的信息（名称、状态、错误、必要后果与玩法指引），一律简短直白；禁止出现设计/实现层面的说明性文本——包括但不限于内部术语（预算、消耗点数、占位、待扩展、后续版本开放）、实现细节（服务端、缓存、哈希、持久化、CSV/文件路径、协议字段）、功能用途的赘述解释（如「退出登录用于切换账号」）与宣传式脚注。玩法机制、物品风味描述、数值公式 tooltip 属于游戏内容，不受此限，但同样应保持简练。
 - **物品/装备/材料/消耗品/功法技能一律图标化展示**：凡展示物品、装备、材料、消耗品或功法技能条目，必须使用图标组件——整块瓦片用 `ItemTile`（含品质边框与悬浮详情），行内小图标用 `ItemIcon`，文本行/复合胶囊引用用 `ItemReference`；禁止仅用纯文本名称罗列。瓦片锚点类须按约定登记进 `frontend/src/styles/selection-grid.css` 的共享 `:is()` 组。
+- **实体视觉呈现强标识契约与防静默退化红线（硬规则）**：调用 `ItemTile`、`ItemIcon`、`ItemReference` 等视觉组件时，**只要上下文持有唯一标识（如 `item.itemId`、`instrument.itemId`、`offer.itemId`、`ability.abilityId`），必须强制显式透传该标识属性**；严禁因重构漏传导致图标解析失效并静默退化为纯文本瓦片（杜绝大面积图标消失事故）。即使组件 Props 字段可选，业务调用端也必须视为必填属性传入。
+- **角标数据语义物理隔离**：标的瓦片右下角角标严格区分数量维度（`amount`，前置乘号 `×`）与单价/价格维度（`bottomRightLabel`，严禁带 `×`）；展示参考价或自定义指标时必须置空 `amount` 并通过 `bottomRightLabel` 传递纯文本，配合对应模式样式（如 `.is-price-mode` 琥珀金、`.is-bid-mode` 碧青、`.is-onsale-mode` 道金），严禁将单价传给 `amount` 导致显示为 `×价格`。
 - **公共组件与统一模板强制收拢**：
   - 前端开发前，**必须先阅读前端公共组件文档 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**，检索是否存在可复用的公共组件或统一模板（如 Hover 提示、复合 Label、境界徽章、模态弹窗、网格选择器等），禁止随意重新自制相似样式或重复实现。
   - 凡是将任何前端部分收拢走统一模板（如 hoverinfo、label、badge、picker 等），**必须同步登记写入 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**。
@@ -222,6 +225,7 @@ docker compose -f deploy/compose.prod.yaml down
 - 服务端装配变更：至少运行 Release build、领域测试、`/healthz`、`/readyz` 和 WebSocket 烟测。
 - 容量相关变更必须运行 `capacity-target` 门禁，覆盖 `5000` 账号存储估算、`500` 峰值命令包体和 `2000` 冷挂机一小时补算。
 - 前端变更：至少运行 `npm --prefix frontend run build` 与 `node --test "frontend/src/**/*.test.mjs"`；交互变化还需浏览器验证。
+- **关键渲染路径静态代码契约测试**：凡核心交易（坊市）、背包、仓储、制造等大面积标的网格，其渲染卡片必须在对应单测（`*.test.mjs`）中建立源码级 AST / 匹配断言（如强制断言 `<ItemTile>` 必须声明 `itemId={item.itemId}`），任何漏传核心属性在单测阶段直接硬阻断。
 - Docker 变更：必须实际构建镜像，并以只读根文件系统、持久卷和非 root 用户启动验证。
 - 部署变更：必须分别验证 Git 状态、CCR 镜像摘要、远端运行镜像 ID、容器健康和公网入口。
 - 优先运行最小必要验证，不默认执行长时间全量压测。
