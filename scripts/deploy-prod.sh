@@ -185,6 +185,7 @@ scp -q \
   "$ROOT_DIR/deploy/daohua-wal-archive.timer" \
   "$ROOT_DIR/deploy/install-caddy.sh" \
   "$ROOT_DIR/deploy/daohua.yuohira.com.caddy" \
+  "$ROOT_DIR/frontend/public/privacy.html" \
   "$ROOT_DIR/deploy/migrate-prod-db.sh" \
   "$ROOT_DIR/scripts/smoke-production.mjs" \
   "${REMOTE_HOST}:${REMOTE_TMP}/"
@@ -225,6 +226,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -d -m 0755 /opt/daohua
   sudo install -d -m 0700 -o 70 -g 70 /opt/daohua/wal-archive
   sudo install -m 0644 '$REMOTE_TMP/compose.prod.yaml' /opt/daohua/compose.prod.yaml
+  sudo install -d -m 0755 /opt/daohua/static
+  sudo install -m 0644 '$REMOTE_TMP/privacy.html' /opt/daohua/static/privacy.html
   sudo install -m 0755 '$REMOTE_TMP/ccr-auto-update.sh' /opt/daohua/ccr-auto-update.sh
   sudo install -m 0755 '$REMOTE_TMP/backup.sh' /opt/daohua/backup.sh
   sudo install -m 0755 '$REMOTE_TMP/base-backup.sh' /opt/daohua/base-backup.sh

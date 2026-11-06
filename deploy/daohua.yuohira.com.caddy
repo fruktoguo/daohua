@@ -23,6 +23,14 @@ daohua.yuohira.com {
 	@private path /api/metrics /api/v1/metrics /api/v1/market/metrics /api/debug/* /readyz /ops /ops/*
 	respond @private 404
 
+	# 隐私政策静态页（TapTap 提审合规要求）：由 Caddy 独立直出，不受应用容器重启影响
+	@privacy path /privacy /privacy.html
+	handle @privacy {
+		root * /opt/daohua/static
+		try_files /privacy.html
+		file_server
+	}
+
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
