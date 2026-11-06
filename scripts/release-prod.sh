@@ -317,9 +317,9 @@ printf '  - Compute Image: %s\n' "$COMPUTE_IMAGE_REF"
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 3/4] 部署主服并热切换 odin 计算节点...\n'
 
-# 1. 自动生成合规随机烟测账号密码
-SMOKE_ACC="smoke_$(date +%m%d)_$(openssl rand -hex 3 | tr -d '\r\n')"
-SMOKE_PW="$(openssl rand -hex 8 | tr -d '\r\n')"
+# 1. 固定专用烟测账号与口令（优先读取外部环境变量，默认使用固定专用验证账号，避免每次发布残留垃圾账号）
+SMOKE_ACC="${SMOKE_ACCOUNT:-smoke_ci_verifier}"
+SMOKE_PW="${SMOKE_PASSWORD:-DaohuaSmoke#2026}"
 
 DEPLOY_FLAGS=(
   "--host" "$REMOTE_HOST"
