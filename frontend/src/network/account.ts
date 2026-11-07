@@ -171,6 +171,14 @@ interface AccountStore {
   loginWithAuth: (account: string, password: string) => Promise<AuthResponseDto>
   /** 注册并登录；成功后立即触发 gameClient 连接 */
   registerWithAuth: (account: string, password: string, displayName?: string, invitationCode?: string) => Promise<AuthResponseDto>
+  /** TapTap 原生 SDK 授权登录：同步会话状态并建立游戏连接 */
+  loginWithNativeTapTap: (data: {
+    openId: string
+    name?: string
+    unionId?: string
+    kid?: string
+    macKey?: string
+  }) => Promise<AuthResponseDto>
   /** 启动时用 Cookie 恢复会话；返回是否恢复成功 */
   restoreSession: () => Promise<boolean>
   /** 登出：通知服务端注销、清空本地账号态、断开游戏连接并重置游戏 Store */
@@ -224,6 +232,23 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
     gameClient.connect()
     return response
+  },
+  loginWithNativeTapTap: async data => {
+    try {
+      const response = await requestJson<AuthResponseDto>('/api/v1/auth/taptap/native-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!response.success) return response
+      const info = accountFromResponse(response)
+      setSessionAccount(info)
+      set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
+      gameClient.connect()
+      return response
+    } catch {
+      return { success: false, message: 'TapTap 原生登录请求失败。' }
+    }
   },
 
   restoreSession: async () => {

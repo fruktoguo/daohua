@@ -92,25 +92,19 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
           return
         }
         try {
-          const res = await fetch('/api/v1/auth/taptap/native-login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              openId: result.openId,
-              name: result.name,
-              unionId: result.unionId,
-              kid: result.kid,
-              macKey: result.macKey
-            })
+          const res = await useAccountStore.getState().loginWithNativeTapTap({
+            openId: result.openId,
+            name: result.name,
+            unionId: result.unionId,
+            kid: result.kid,
+            macKey: result.macKey,
           })
-          if (!res.ok) {
-            const err: unknown = await res.json().catch(() => null)
-            let errMsg = 'Login failed'
-            if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
-              errMsg = err.message
-            }
-            throw new Error(errMsg)
+          if (!res.success) {
+            setError(res.message || t('app.login.tapTapLaunchFailed'))
+            setLoading(false)
+            return
           }
+          setLoading(false)
           onLoggedIn?.()
         } catch {
           setError(t('app.login.tapTapLaunchFailed'))
