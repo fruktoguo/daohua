@@ -1,0 +1,14 @@
+.zongmen-page { display: flex; flex-direction: column; gap: 14px; }
+.zongmen-heading, .zongmen-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.zongmen-heading { justify-content: space-between; }
+.zongmen-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(80px, 1fr); gap: 12px; }
+.zongmen-form label { display: flex; flex-direction: column; gap: 6px; }
+.zongmen-form input, .zongmen-actions input { min-width: 0; max-width: 100%; }
+.zongmen-members { display: flex; flex-direction: column; }
+.zongmen-member { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+.zongmen-member > span:first-child { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+.zongmen-member i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); margin-right: 6px; }
+.zongmen-member i.is-online { background: var(--color-jade, #6ba58a); }
+.zongmen-error { color: var(--color-danger, #d97676); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+@media (min-width: 961px) { .social-page-header .social-mobile-tabs { display: none; } }
+@media (max-width: 600px) { .zongmen-form { grid-template-columns: minmax(0, 1fr); } }

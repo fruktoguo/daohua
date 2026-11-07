@@ -1,3 +1,4 @@
+import { ZongmenPage } from './ZongmenPage'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
@@ -887,6 +888,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
 /** 同道页子选项卡表：队伍 + 邀请。 */
 const SOCIAL_SUB_TABS: ReadonlyArray<{ id: SocialSubTab; labelKey: string }> = [
   { id: 'party', labelKey: 'social.sub.party' },
+  { id: 'zongmen', labelKey: 'social.sub.zongmen' },
   { id: 'invite', labelKey: 'social.sub.invite' },
 ]
 
@@ -1043,7 +1045,7 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
     <section className="panel social-page">
       <header className="panel-header social-page-header">
         <h2>{t('social.title')}</h2>
-        <nav aria-label={t('social.subAria')} className="market-tabs" role="tablist">
+        <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
           {SOCIAL_SUB_TABS.map(tab => (
             <button
               aria-selected={socialSubTab === tab.id}
@@ -1058,6 +1060,7 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
       </header>
       <div className="social-page-body">
         {socialSubTab === 'party' && (party ? <PartyView nodeNames={nodeNames} /> : <PartylessView nodeNames={nodeNames} />)}
+        {socialSubTab === 'zongmen' && <ZongmenPage />}
         {socialSubTab === 'invite' && <InviteView />}
       </div>
     </section>

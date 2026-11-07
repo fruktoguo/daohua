@@ -1,0 +1,22 @@
+[
+  {
+    "id": "forge.zongmen-lingpai",
+    "name": "炼制宗门令牌",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 60,
+    "inputs": {
+      "currency.spirit-stone": 100000,
+      "item.refined-iron": 10000
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.zongmen-lingpai",
+        "amount": 1
+      }
+    ]
+  }
+]

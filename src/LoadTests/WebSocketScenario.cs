@@ -246,6 +246,7 @@ public static class WebSocketScenario
         // 账号代表不同浏览器，禁止共享服务端签发的设备 Cookie 或会话 Cookie。
         using var handler = new SocketsHttpHandler { MaxConnectionsPerServer = RegisterConcurrency, UseCookies = false };
         using var client = new HttpClient(handler) { BaseAddress = httpBaseUri, Timeout = RegisterTimeout };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("DaoHua-LoadTests/1.0");
         // runToken 使多次运行的账号名互不冲突（login_normalized 有唯一约束）。
         var runToken = Guid.NewGuid().ToString("N")[..8];
         var password = $"LoadTest#{runToken}";
@@ -382,6 +383,7 @@ public static class WebSocketScenario
     {
         Interlocked.Increment(ref stats.Attempted);
         using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("User-Agent", "DaoHua-LoadTests/1.0");
         // 15 秒 keepalive：存续窗口内即使长时间无下行增量，也维持连接不被空闲回收。
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
         if (cookie is not null)
@@ -459,7 +461,8 @@ public static class WebSocketScenario
             WireMessageType.Hello,
             Guid.NewGuid(),
             1,
-            new HelloRequest("loadtest", null, Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)), DeviceId: Guid.NewGuid().ToString("D")));
+            new HelloRequest("loadtest", null, Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)), DeviceId: Guid.NewGuid().ToString("D"),
+                ModuleDeclaration: Environment.GetEnvironmentVariable("DAOHUA_LOADTEST_MODULE_DECLARATION")));
         var helloStart = Stopwatch.GetTimestamp();
         await socket.SendAsync(helloFrame, WebSocketMessageType.Binary, true, cancellationToken);
         Interlocked.Increment(ref stats.SentFrames);

@@ -140,6 +140,11 @@ public sealed class ColdCatchUpWorker(
             // 存档与余额必须来自同一 RepeatableRead 快照；不完整状态直接跳过。
             if (frozen is null || frozen.Bundle.Head.StateVersion <= 0) return false;
             var bundle = frozen.Bundle;
+            // 驻地资格可被其他成员撤销；无数据库访问权的计算节点不能裁决该边界。
+            // 驻地离线收益留给主服装载通道，先按离宗时刻截断再按相同引擎补算。
+            if (bundle.Sections.TryGetValue(PlayerSectionKinds.World, out var worldSection)
+                && ZongmenRules.TryResidenceId(SectionCodec.Decode<PlayerWorldStateDocument>(worldSection).NodeId, out _))
+                return false;
 
             var now = DateTimeOffset.UtcNow;
             var from = bundle.Head.LastSimulatedAt;

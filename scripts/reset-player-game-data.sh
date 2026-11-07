@@ -384,6 +384,17 @@ DELETE FROM market.settlement_cursors WHERE player_id IN (SELECT player_id FROM 
 DELETE FROM market.orders WHERE owner_player_id IN (SELECT player_id FROM _reset_targets);
 
 -- 7. 社交域重置（组队、好友申请、好友关系与聊天）
+-- 清除角色宗门关系；宗主被重置时解散其宗门，保留退出锚点供其他成员恢复。
+INSERT INTO social.zongmen_departures(zongmen_id,player_id,left_at,anchor_node_id)
+SELECT m.zongmen_id,m.player_id,now(),z.anchor_node_id
+FROM social.zongmen_members m JOIN social.zongmen z USING(zongmen_id)
+WHERE m.player_id IN (SELECT player_id FROM _reset_targets)
+   OR z.leader_id IN (SELECT player_id FROM _reset_targets);
+DELETE FROM social.zongmen_requests WHERE player_id IN (SELECT player_id FROM _reset_targets)
+   OR zongmen_id IN (SELECT zongmen_id FROM social.zongmen WHERE leader_id IN (SELECT player_id FROM _reset_targets));
+DELETE FROM social.zongmen_members WHERE player_id IN (SELECT player_id FROM _reset_targets)
+   OR zongmen_id IN (SELECT zongmen_id FROM social.zongmen WHERE leader_id IN (SELECT player_id FROM _reset_targets));
+UPDATE social.zongmen SET disbanded_at=now() WHERE leader_id IN (SELECT player_id FROM _reset_targets);
 DELETE FROM social.party_invitations WHERE invitee_id IN (SELECT player_id FROM _reset_targets)
    OR inviter_id IN (SELECT player_id FROM _reset_targets)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _reset_targets));

@@ -67,7 +67,8 @@ public static class PostgresSchema
     /// 存档标签推进至 v39，表结构未变。
     /// v46：social.parties 增 difficulty 队伍讨伐难度列（0~5，默认 0）；无存档载荷变更。
     /// v47：identity.accounts 增 taptap_openid 列与唯一索引（支持 TapTap 授权登录与一人一号强防御）；无存档载荷变更。
-    public const int Version = 47;
+    /// v49：新增宗门、成员、申请邀请与离宗时刻表，启用宗门传音；个人分段载荷不变。
+    public const int Version = 49;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -481,6 +482,40 @@ public static class PostgresSchema
     CREATE UNIQUE INDEX IF NOT EXISTS ux_compute_jobs_open
         ON platform.compute_jobs(player_id) WHERE status IN ('pending', 'leased');
 
+    -- 宗门名称全局唯一，成员主键保证一人一宗；解散行保留离线退出锚点。
+    CREATE TABLE IF NOT EXISTS social.zongmen (
+        zongmen_id uuid PRIMARY KEY,
+        name varchar(64) NOT NULL,
+        name_normalized varchar(128) NOT NULL UNIQUE,
+        prefix varchar(4) NOT NULL,
+        leader_id uuid NOT NULL REFERENCES identity.players(player_id),
+        anchor_node_id varchar(128) NOT NULL,
+        created_at timestamptz NOT NULL,
+        disbanded_at timestamptz
+    );
+    CREATE TABLE IF NOT EXISTS social.zongmen_members (
+        player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        zongmen_id uuid NOT NULL REFERENCES social.zongmen(zongmen_id),
+        role integer NOT NULL CHECK (role BETWEEN 0 AND 6),
+        joined_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_zongmen_members_group ON social.zongmen_members(zongmen_id);
+    CREATE TABLE IF NOT EXISTS social.zongmen_requests (
+        zongmen_id uuid NOT NULL REFERENCES social.zongmen(zongmen_id),
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        kind varchar(16) NOT NULL CHECK (kind IN ('application','invitation')),
+        created_at timestamptz NOT NULL,
+        PRIMARY KEY(zongmen_id,player_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_zongmen_requests_player ON social.zongmen_requests(player_id);
+    CREATE TABLE IF NOT EXISTS social.zongmen_departures (
+        zongmen_id uuid NOT NULL REFERENCES social.zongmen(zongmen_id),
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        left_at timestamptz NOT NULL,
+        anchor_node_id varchar(128) NOT NULL,
+        PRIMARY KEY(zongmen_id,player_id,left_at)
+    );
+
     CREATE TABLE IF NOT EXISTS social.friend_requests (
         request_id uuid PRIMARY KEY,
         requester_id uuid NOT NULL REFERENCES identity.players(player_id),
@@ -613,7 +648,7 @@ public static class PostgresSchema
     -- party_ref 为队伍卡片外键：队伍解散后置空，消息正文仍保留为普通文本。
     CREATE TABLE IF NOT EXISTS social.chat_messages (
         message_id uuid PRIMARY KEY,
-        channel varchar(16) NOT NULL CHECK (channel IN ('world', 'nearby', 'friend', 'party')),
+        channel varchar(16) NOT NULL CHECK (channel IN ('world', 'nearby', 'friend', 'party', 'sect')),
         scope_key varchar(160) NOT NULL,
         sender_id uuid NOT NULL REFERENCES identity.players(player_id),
         sender_name varchar(64) NOT NULL,
@@ -631,7 +666,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (49, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

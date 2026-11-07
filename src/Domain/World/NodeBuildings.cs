@@ -230,7 +230,7 @@ public static class NodeBuildingRules
     /// <summary>目标等级所需材料清单：基础数量 × 1.1^(N-1)，向下取整且保底为 1。</summary>
     public static IReadOnlyDictionary<string, double> RequiredMaterials(BuildingDefinition definition, int targetLevel)
     {
-        var scale = Math.Pow(1 + MaterialGrowthPerLevel, Math.Max(0, targetLevel - 1));
+        var scale = Math.Pow(1 + MaterialGrowthPerLevel, Math.Max(0, targetLevel - definition.MaterialGrowthStartLevel));
         var result = new Dictionary<string, double>(StringComparer.Ordinal);
         if (definition.Materials is null) return result;
         foreach (var material in definition.Materials)
@@ -347,10 +347,10 @@ public static class NodeBuildingRules
         {
             var name = template.GetString() ?? string.Empty;
             if (string.Equals(name, TemplateAll, StringComparison.Ordinal))
-                return new HashSet<string>(definitions.Keys, StringComparer.Ordinal);
+                return new HashSet<string>(definitions.Keys.Where(id => id != ZongmenRules.HallBuildingId), StringComparer.Ordinal);
             var ids = new HashSet<string>(StringComparer.Ordinal);
             foreach (var (id, definition) in definitions)
-                if (string.Equals(definition.Group, name, StringComparison.Ordinal)) ids.Add(id);
+                if (id != ZongmenRules.HallBuildingId && string.Equals(definition.Group, name, StringComparison.Ordinal)) ids.Add(id);
             return ids;
         }
         return null;

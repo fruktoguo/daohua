@@ -42,7 +42,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     Server.Clean.Social.ISocialRepository? socialRepository = null,
     IActionParticipationRuntime? participationRuntime = null,
     IParticipationSessionStore? participationSessions = null,
-    Server.Clean.Social.OnlinePresenceRegistry? presence = null) : IPlayerRuntime
+    Server.Clean.Social.OnlinePresenceRegistry? presence = null,
+    Server.Clean.Social.PostgresZongmenRepository? zongmen = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, PlayerRuntimeSnapshot> _loaded = new();
     // 钱包以存储余额为权威：ECS 库存组件由它同步重建，市场等外部入账经失效标记触发重读。
@@ -387,6 +388,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             // StateVersion——那属于本命令管线之后的合法推进与在途推送；只有期望版本落在
             // 滑窗外的（声称未发布版本或落后整个窗口）才判定客户端真正过期。
             var entryStateVersion = before.StateVersion;
+            if (ZongmenRules.TryResidenceId(before.State.World.NodeId, out _))
+                await ReconcileZongmenResidenceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
             await ReconcileParticipationOwnedAsync(playerId, _simulationClock.UtcNow, notifications, cancellationToken).ConfigureAwait(false);
             before = ToSnapshot(ecs.ExportSnapshot(playerId));
             if (payload.ValueKind == JsonValueKind.Object
@@ -958,12 +961,41 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         break;
                     }
+                    case var zongmenCommand when zongmenCommand.StartsWith("zongmen.", StringComparison.Ordinal):
+                    {
+                        if (zongmen is null) return new PlayerCommandResult(false, "ZONGMEN_UNAVAILABLE", "宗门暂不可用。", before);
+                        var zongmenReceipt = CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion);
+                        async ValueTask<EconomyTransactionResult> ApplyZongmen(CancellationToken ct) => await zongmen.ExecuteAsync(
+                            playerId, requestId, command, payload, before.State.World.NodeId,
+                            before.State.World.EdgeId is not null, zongmenReceipt, ct);
+                        EconomyTransactionResult committed;
+                        try { committed = await ApplyZongmen(cancellationToken); }
+                        catch (EconomyCommitOutcomeUnknownException unknown)
+                        {
+                            _fenceResolvers[playerId] = async ct => { await ApplyZongmen(ct); return true; };
+                            _fencedCommits[playerId] = unknown;
+                            throw;
+                        }
+                        receiptAlreadyCommitted = true;
+                        await SyncWalletAfterCommitAsync(playerId, committed, cancellationToken);
+                        if (command == "zongmen.create" && nodeBuildings is not null && await zongmen.FindForPlayerAsync(playerId, cancellationToken) is { } created)
+                            await nodeBuildings.RefreshBuildingAsync(created.NodeId, ZongmenRules.HallBuildingId, cancellationToken);
+                        await ReconcileZongmenResidenceAsync(playerId, _simulationClock.UtcNow, cancellationToken);
+                        customNotice = "宗门操作成功。";
+                        break;
+                    }
                     case "world.travel":
                     {
                         var targetNodeId = payload.TryGetProperty("targetNodeId", out var targetNode) ? targetNode.GetString() : null;
                         if (string.IsNullOrWhiteSpace(targetNodeId))
                             return new PlayerCommandResult(false, "INVALID_TARGET", "目标世界节点无效。", before);
                         targetNodeId = targetNodeId.Trim();
+                        if (ZongmenRules.TryResidenceId(targetNodeId, out _))
+                        {
+                            forfeit = await EnterZongmenResidenceAsync(playerId, targetNodeId, cancellationToken);
+                            await RefreshNodeBuildingsAsync(playerId, ToSnapshot(ecs.ExportSnapshot(playerId)).State.World, _simulationClock.UtcNow, cancellationToken);
+                            break;
+                        }
                         var worldGraph = gameData.WorldGraph;
                         if (!worldGraph.ContainsNode(targetNodeId))
                             return new PlayerCommandResult(false, "NODE_NOT_FOUND", $"目标世界节点不存在：{targetNodeId}。", before);
@@ -976,6 +1008,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     $"神识不足，无法感应并前往该地点（需神识大于 {targetNodeObj.RequiredConsciousness:0} 点）。", before);
                             }
                         }
+                        await ExitZongmenResidenceAsync(playerId, cancellationToken);
+                        before = ToSnapshot(ecs.ExportSnapshot(playerId));
                         var travelNow = _simulationClock.UtcNow;
                         if ((!string.Equals(before.State.World.NodeId, targetNodeId, StringComparison.Ordinal)
                                 || before.State.World.EdgeId is not null)
@@ -1036,10 +1070,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "BUILDING_NOT_FOUND", "建筑定义不存在。", before);
                         if (before.State.World.EdgeId is not null)
                             return new PlayerCommandResult(false, "WRONG_LOCATION", "旅途中无法建造建筑。", before);
-                        if (buildingDefinition.AvailableNodeIds is { Count: > 0 } && !buildingDefinition.AvailableNodeIds.Contains(before.State.World.NodeId))
+                        if (!ZongmenRules.TryResidenceId(before.State.World.NodeId, out _)
+                            && buildingDefinition.AvailableNodeIds is { Count: > 0 } && !buildingDefinition.AvailableNodeIds.Contains(before.State.World.NodeId))
                             return new PlayerCommandResult(false, "WRONG_LOCATION", "此地无法建造该建筑。", before);
                         if (before.State.Progression.RealmLevel < buildingDefinition.RequiredRealmLevel)
                             return new PlayerCommandResult(false, "BUILDING_LOCKED", "境界不足，尚未解锁该建筑。", before);
+                        if (buildingId == ZongmenRules.HallBuildingId && !ZongmenRules.TryResidenceId(before.State.World.NodeId, out _))
+                            return new PlayerCommandResult(false, "WRONG_LOCATION", "宗门大殿只能建于宗门驻地。", before);
                         var buildNow = DateTimeOffset.UtcNow;
                         var buildResult = await nodeBuildings.StartConstructionAsync(before.State.World.NodeId, buildingDefinition, buildNow, cancellationToken).ConfigureAwait(false);
                         if (!buildResult.Success)
@@ -2302,6 +2339,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private async ValueTask<bool> RefreshNodeBuildingsAsync(Guid playerId, PlayerWorldStateDocument world,
         DateTimeOffset now, CancellationToken cancellationToken)
     {
+        if (ZongmenRules.TryResidenceId(world.NodeId, out _))
+        {
+            await ReconcileZongmenResidenceAsync(playerId, now, cancellationToken);
+            world = ToSnapshot(ecs.ExportSnapshot(playerId)).State.World;
+        }
         if (nodeBuildings is null) return false;
         if (!string.IsNullOrWhiteSpace(world.EdgeId) || string.IsNullOrWhiteSpace(world.NodeId))
             return ecs.ApplyNodeBuildingProjection(playerId, new(0, [], BuildingEffectSet.Empty, null, []), now);
@@ -2632,7 +2674,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     }
 
     /// <summary>命令回执持久化清单（口径沿袭历史 OOP 运行时基线）；market.place/cancel 走订单幂等键不入回执。</summary>
-    private static bool ShouldPersistReceipt(string command) => command is
+    private static bool ShouldPersistReceipt(string command) => command.StartsWith("zongmen.", StringComparison.Ordinal) || command is
         "action.enqueue" or "action.remove" or
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
         "loadout.replace" or "ability.learn" or "progression.breakthrough" or "progression.heaven_gate" or "world.travel" or

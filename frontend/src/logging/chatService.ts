@@ -121,6 +121,13 @@ class ChatService {
     this.publish(messages.length)
   }
 
+  /** 宗门资格变化时清除旧作用域，避免无资格时继续展示旧宗门历史。 */
+  clearChannel(channel: ChatChannel): void {
+    for (const key of this.conversations.keys()) if (key.startsWith(`${channel}:`)) this.conversations.delete(key)
+    this.channelScopes.delete(channel)
+    this.publish(0)
+  }
+
   private clear(playerId: string | null): void {
     this.conversations = new Map()
     this.channelScopes = new Map()

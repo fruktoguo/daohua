@@ -303,6 +303,7 @@ public static class StaticGameCatalogMapper
                 formationSpeedRatio = definition.Modifiers.FormationSpeedRatio,
                 enhancementSpeedRatio = definition.Modifiers.EnhancementSpeedRatio,
             },
+            materialGrowthStartLevel = definition.MaterialGrowthStartLevel,
             materials = (definition.Materials ?? [])
                 .OrderBy(material => material.ItemId, StringComparer.Ordinal)
                 .Select(material => (object)new { itemId = material.ItemId, quantity = material.Quantity })

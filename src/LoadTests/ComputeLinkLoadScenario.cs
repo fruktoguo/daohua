@@ -434,6 +434,7 @@ internal static class ComputeLinkLoadScenario
         // 每次创建干净模板，避免把其他玩家的行动、战斗时钟或奖励游标复制为容量种子。
         var account = $"{runTag}_tpl";
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("DaoHua-LoadTests/1.0");
         using var response = await http.PostAsJsonAsync(
             $"http://127.0.0.1:{apiPort}/api/v1/auth/register",
             new

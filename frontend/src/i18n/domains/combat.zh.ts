@@ -231,6 +231,7 @@ export const combatZh = {
       buildingSectionLoad: '负载',
       buildingCurrentBonus: '当前生效加成',
       buildingBonusNone: '尚未建成，加成暂未生效',
+      buildingNoAttributeBonus: '无属性加成',
       buildingCapacityDesc: '当前使用 / 最大负载',
       buildingEfficiencyLabel: '运行效能',
       buildingEfficiencyFull: '100% 效能',

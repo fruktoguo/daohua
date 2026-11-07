@@ -246,6 +246,9 @@ public sealed record BuildingDefinition(
     string Group = World.NodeBuildingRules.GroupOther,
     IReadOnlyList<Domain.World.BuildingMaterial>? Materials = null)
 {
+    /// <summary>材料基准对应的目标等级；预建大殿从首次升级起按通用倍率增长。</summary>
+    public int MaterialGrowthStartLevel { get; init; } = 1;
+
     /// <summary>1 级初始基准效果。</summary>
     public Domain.World.BuildingEffectSet BaseModifiers { get; init; } = Domain.World.BuildingEffectSet.Empty;
 
@@ -858,6 +861,7 @@ public sealed class GameDataCatalog
         var materials = ParseBuildingMaterials(entry);
         return new BuildingDefinition(id, name, description, effect, requiredRealmLevel, nodes, group, materials)
         {
+            MaterialGrowthStartLevel = entry.TryGetProperty("materialGrowthStartLevel", out var start) ? start.GetInt32() : 1,
             BaseModifiers = baseModifiers,
             GrowthModifiers = growthModifiers
         };
@@ -911,7 +915,7 @@ public sealed class GameDataCatalog
         {
             if (string.IsNullOrWhiteSpace(definition.Id) || definition.Id.Length > 128 || definition.Id != id
                 || string.IsNullOrWhiteSpace(definition.Name) || definition.Name.Length > 128
-                || definition.RequiredRealmLevel < 1
+                || definition.RequiredRealmLevel < 1 || definition.MaterialGrowthStartLevel < 1
                 || definition.Group is not (World.NodeBuildingRules.GroupProduction or World.NodeBuildingRules.GroupCombat or World.NodeBuildingRules.GroupOther)
                 || (definition.Description?.Length ?? 0) > 1024 || (definition.Effect?.Length ?? 0) > 512
                 || (definition.Materials ?? []).Any(material => material is null

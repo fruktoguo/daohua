@@ -580,7 +580,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       ))}
                     </div>
                   ) : (
-                    <small className="building-bonus-empty">{t('combat.nearby.buildingBonusNone')}</small>
+                    <small className="building-bonus-empty">{t(detailBuilding.level > 0 ? 'combat.nearby.buildingNoAttributeBonus' : 'combat.nearby.buildingBonusNone')}</small>
                   )}
                 </div>
               </section>

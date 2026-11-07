@@ -1,0 +1,13 @@
+[
+  {
+    "id": "item.zongmen-lingpai",
+    "name": "宗门令牌",
+    "description": "开宗立派或迁移宗门驻地时消耗。",
+    "category": "material",
+    "kind": "material",
+    "subCategory": "special",
+    "tier": 1,
+    "level": 1,
+    "sellPrice": 0
+  }
+]

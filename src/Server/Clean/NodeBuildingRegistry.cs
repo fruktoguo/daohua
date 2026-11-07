@@ -730,6 +730,17 @@ public sealed class NodeBuildingRegistry(
     /// 把数据库活行/写后行采纳进缓存：未收录条目（外部实例创建）追加，已有条目按内容
     /// 差异替换；有实质变化时重发该节点快照，缓存由此对跨实例写入自愈。
     /// </summary>
+    public async ValueTask RefreshBuildingAsync(string nodeId, string buildingId, CancellationToken ct)
+    {
+        await EnsureLoadedAsync(ct);
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (await repository.TryLoadAsync(nodeId, buildingId, ct) is { } state) AdoptState(nodeId, state);
+        }
+        finally { _gate.Release(); }
+    }
+
     private void AdoptState(string nodeId, NodeBuildingState state)
     {
         if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];

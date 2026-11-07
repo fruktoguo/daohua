@@ -140,6 +140,7 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<SessionRegistry>();
     // 传音与社交：不属于玩家聚合，独立单例运行时；聊天记录落 PostgreSQL（每作用域保留 100 条）。
     builder.Services.AddSingleton<Server.Clean.Social.OnlinePresenceRegistry>();
+    builder.Services.AddSingleton<Server.Clean.Social.PostgresZongmenRepository>();
     // 在线断线宽限（总纲18 §14.3）：断线后在线位与实体常驻宽限期，到期按断线时刻收尾。
     builder.Services.AddSingleton<Server.Clean.DisconnectGraceRegistry>();
     builder.Services.AddSingleton<Server.Clean.Social.ISocialRepository, Server.Clean.Social.PostgresSocialRepository>();
@@ -408,14 +409,16 @@ if (processRole == ServerProcessRole.Api)
 
     // 全图节点公共建筑索引：地图地点详情合并展示玩家建筑；
     // 数据来自注册表读路径（含惰性完工结算），不落任何玩家分段。
-    app.MapGet("/api/v1/world/node-buildings", async (NodeBuildingRegistry nodeBuildings, GameDataCatalog gameData, CancellationToken ct) =>
+    app.MapGet("/api/v1/world/node-buildings", async (ClaimsPrincipal user, NodeBuildingRegistry nodeBuildings, GameDataCatalog gameData, Server.Clean.Social.PostgresZongmenRepository zongmen, CancellationToken ct) =>
     {
         var now = DateTimeOffset.UtcNow;
+        var own = await zongmen.FindForPlayerAsync(Guid.Parse(user.FindFirstValue("player_id")!), ct);
         var index = await nodeBuildings.AllBuildingsAsync(now, ct);
         var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
         var result = new Dictionary<string, object[]>(StringComparer.Ordinal);
         foreach (var (nodeId, snapshot) in index)
         {
+            if (ZongmenRules.TryResidenceId(nodeId, out _) && nodeId != own?.NodeId) continue;
             var entries = snapshot.Buildings
                 .Select(state => gameData.Buildings.TryGetValue(state.BuildingId, out var definition)
                     ? new
@@ -641,6 +644,14 @@ if (processRole == ServerProcessRole.Api)
 
         return Results.Ok(new { success = true, openId = profile.OpenId, name = profile.Name });
     }).RequireAuthorization().RequireRateLimiting("auth");
+
+    app.MapGet("/api/v1/zongmen", async (ClaimsPrincipal user, string? search,
+        Server.Clean.Social.PostgresZongmenRepository zongmen,
+        Server.Clean.Social.OnlinePresenceRegistry presence, CancellationToken ct) =>
+    {
+        if (!Guid.TryParse(user.FindFirstValue("player_id"), out var playerId)) return Results.Unauthorized();
+        return Results.Ok(await zongmen.StateAsync(playerId, presence, search ?? "", ct));
+    }).RequireAuthorization();
 
     // 邀请总览：本人邀请码 + 被邀请人进度列表；低频拉取，不走 WebSocket 帧。
     app.MapGet("/api/v1/invitation", async (ClaimsPrincipal user, Server.Clean.Social.IInvitationRepository invitations, CancellationToken ct) =>

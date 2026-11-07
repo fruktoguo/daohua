@@ -84,7 +84,7 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
       {group === 'system' && <LogGroupPanel channel="system" />}
       {group === 'combat' && <LogGroupPanel channel="combat" />}
       {group === 'friend' && <FriendChannelPanel />}
-      {group === 'sect' && <div className="chat-placeholder">{t('combat.chat.sectUnavailable')}</div>}
+      {group === 'sect' && <ChatChannelPanel channel="sect" />}
       {group === 'party' && <PartyChannelPanel />}
     </section>
   )

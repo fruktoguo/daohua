@@ -26,7 +26,7 @@ export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' |
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
 
 /** 同道页子选项卡：队伍 / 邀请（后续同道玩法沿用同一结构扩展） */
-export type SocialSubTab = 'party' | 'invite'
+export type SocialSubTab = 'party' | 'zongmen' | 'invite'
 
 /**
  * 队伍页内部页签：
@@ -57,6 +57,9 @@ interface UiStore {
   craftingMode: CraftingMode
   /** 切换技艺模式 */
   setCraftingMode: (mode: CraftingMode) => void
+  /** 侧边栏同道二级导航折叠/展开状态 */
+  socialNavExpanded: boolean
+  setSocialNavExpanded: (expanded: boolean | ((prev: boolean) => boolean)) => void
   /** 侧边栏技艺二级导航折叠/展开状态 */
   craftingNavExpanded: boolean
   /** 切换/设置技艺二级导航折叠状态 */
@@ -148,6 +151,10 @@ export const useUiStore = create<UiStore>(set => ({
         ? { forgingSubTab: 'refining' as ForgingSubTab }
         : {}),
   }),
+  socialNavExpanded: false,
+  setSocialNavExpanded: expanded => set(state => ({
+    socialNavExpanded: typeof expanded === 'function' ? expanded(state.socialNavExpanded) : expanded,
+  })),
   craftingNavExpanded: false,
   setCraftingNavExpanded: expanded => set(state => ({
     craftingNavExpanded: typeof expanded === 'function' ? expanded(state.craftingNavExpanded) : expanded,

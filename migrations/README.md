@@ -76,5 +76,6 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0041_v40_to_v41.sql` | progression 分段新增 heavenGate 五行灵根状态，存档标签推进至 38，schema_version 写入 41 |
 | `0042_v41_to_v42.sql` | 放宽 `party_session_inbox.consumed_transaction_id` 约束（允许 NULL，外键改 ON DELETE SET NULL），解绑历史推演流水；`ix_section_flush_ready` 优化为单列 (next_attempt_at) 恢复 HOT；schema_version 写入 42，存档标签未变 |
 | `0043_v42_to_v43.sql` | `transaction_lines` 外键补充 ON DELETE CASCADE；落地两级流水留存体系（长期流水 market/shop.buy/player.unlock_avatar 留 14 天，短期易失性流水留 2 小时并级联删除）；schema_version 写入 43，存档标签未变 |
+| `0049_v48_to_v49.sql` | 宗门、成员、申请邀请与离宗时间，启用宗门传音；不改变个人分段载荷 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

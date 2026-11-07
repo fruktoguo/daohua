@@ -125,6 +125,7 @@ export const gameZh = {
       'craft.extract-banling-essence': { name: '伴灵精华', description: '萃取伴灵花幽蓝灵机与清晨甘露融炼的纯净灵液。' },
 
       // 锻造装备 (等阶1)
+      'forge.zongmen-lingpai': { name: '宗门令牌', description: '炼制开宗立派与迁宗所用的令牌。' },
       'forge.qingfeng-sword': { name: '青锋剑', description: '以百炼铁与兽骨精铸的三尺长剑，剑身青光澄澈。' },
       'forge.pishan-blade': { name: '劈山刀', description: '以百炼铁与兽骨打造的厚重朴刀，势大力沉。' },
       'forge.shufa-scarf': { name: '束发巾', description: '以百炼铁与兽皮编织的武行束发头巾，简朴干练。' },
@@ -239,6 +240,7 @@ export const gameZh = {
       'item.sha-bone': { label: '煞骨', description: '魔煞侵苍骨，触手生冰寒。\n历经魔煞侵蚀的苍黑异骨，触之刺骨冰寒。' },
       'item.demon-core': { label: '妖核', description: '心脉结晶蕴狂澜。\n异种古兽心脉凝成的晶核，内里流转着狂暴深邃的星陨灵息。' },
       'item.meteor-fragment': { label: '陨星破片', description: '星坠九霄，火痕犹烈。\n自九天星穹坠落的大地陨铁碎片，表面布满星火熔铸的焦痕。' },
+      'item.zongmen-lingpai': { label: '宗门令牌', description: '开宗立派或迁移宗门驻地时消耗。' },
       'item.refined-iron': { label: '百炼铁', description: '凡火千锤炼，精铁去浊尘。\n经凡火千锤百炼去除凡浊的原铁精料，铁质匀密坚固。' },
       'item.peach-wood-crystal': { label: '桃木晶', description: '桃木凝晶琥珀光。\n自百年老桃木中淬炼凝结的琥珀状灵晶，木香淡雅，通体晶莹。' },
       'item.herb-essence': { label: '草木精华', description: '百草凝露，生机内蕴。\n萃取百草朝露精粹而成的碧绿药露，香气清纯，生机内蕴。' },

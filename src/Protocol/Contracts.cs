@@ -772,14 +772,14 @@ public static class ChatChannels
     public const string Friend = "friend";
     /// <summary>队伍频道（队伍全体成员）</summary>
     public const string Party = "party";
-    /// <summary>宗门频道（占位，尚未开放）</summary>
+    /// <summary>宗门频道（当前宗门成员）</summary>
     public const string Sect = "sect";
 
     /// <summary>判定是否为当前可收发的频道标识。</summary>
     /// <param name="channel">频道标识。</param>
-    /// <returns>可收发返回 true；`sect` 与未知值返回 false。</returns>
+    /// <returns>可收发返回 true；未知值返回 false。</returns>
     public static bool IsSupported(string? channel) =>
-        channel is World or Nearby or Friend or Party;
+        channel is World or Nearby or Friend or Party or Sect;
 }
 
 /// <summary>客户端传音发言请求。</summary>

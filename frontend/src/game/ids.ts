@@ -1096,6 +1096,7 @@ interface ItemMetaCore {
  * 基础物品静态元数据字典
  */
 const ITEM_META_CORES: Record<string, ItemMetaCore> = {
+  'item.zongmen-lingpai': { glyph: '令', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
   // 材料品阶口径（TASK-20261025-08 & 09）：凡品/稀有度按掉落概率决定（普通凡品 tier1，稀有黄/玄品 tier>=2）；
   // 等级（level）按产出源（怪物等级、采集地生态、加工梯队）细化，打破全员 Lv.1 机械感。
   'item.ningxue-grass': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },

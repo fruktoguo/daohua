@@ -1,3 +1,4 @@
+import { useZongmenStore } from './game/zongmenStore'
 import { hasActionParticipation } from './game/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { PlayerCardModal } from './components/PlayerCardModal'
@@ -635,6 +636,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
 const TopBar = memo(function TopBar(): React.JSX.Element {
   const t = useT()
   const name = useGameStore(state => state.name)
+  const zongmenPrefix = useZongmenStore(state => state.zongmen?.prefix)
   const experience = useGameStore(state => state.stats.experience)
   const lifetimeExperience = useGameStore(state => state.stats.lifetimeExperience)
   const realmLevel = useGameStore(state => state.stats.realmLevel)
@@ -710,7 +712,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
       >
         <div className="player-info">
           <div className="player-line">
-            <strong className="player-name">{name}</strong>
+            <strong className="player-name">{zongmenPrefix ? `[${zongmenPrefix}] ${name}` : name}</strong>
             <RealmBadge realmInfo={realmInfo} />
             <FloatingTooltip placement="bottom" title={connectionTooltip} tone={connection === 'online' ? 'jade' : 'danger'}>
               <span
@@ -772,6 +774,10 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const setActiveTab = useUiStore(state => state.setActiveTab)
+  const socialSubTab = useUiStore(state => state.socialSubTab)
+  const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
+  const socialNavExpanded = useUiStore(state => state.socialNavExpanded)
+  const setSocialNavExpanded = useUiStore(state => state.setSocialNavExpanded)
   const craftingMode = useUiStore(state => state.craftingMode)
   const setCraftingMode = useUiStore(state => state.setCraftingMode)
   const craftingNavExpanded = useUiStore(state => state.craftingNavExpanded)
@@ -959,16 +965,25 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
             <span className="nav-label">{t('app.nav.combat')}</span>
           </span>
         </button>
-        <button
-          className={`nav-item${activeTab === 'social' ? ' active' : ''}`}
-          onClick={() => setActiveTab('social')}
-          type="button"
-        >
-          <span className="nav-glyph" aria-hidden="true"><Icon name="social" /></span>
-          <span className="nav-text">
-            <span className="nav-label">{t('app.nav.social')}</span>
-          </span>
-        </button>
+        <div className="nav-group">
+          <button className={`nav-item nav-item--collapsible${activeTab === 'social' ? ' active' : ''}`}
+            aria-expanded={socialNavExpanded}
+            onClick={() => {
+              if (activeTab !== 'social') { setActiveTab('social'); setSocialNavExpanded(true) }
+              else setSocialNavExpanded(expanded => !expanded)
+            }} type="button">
+            <span className="nav-glyph" aria-hidden="true"><Icon name="social" /></span>
+            <span className="nav-text"><span className="nav-label">{t('app.nav.social')}</span></span>
+            <span className={`nav-chevron${socialNavExpanded ? ' is-expanded' : ''}`} aria-hidden="true">›</span>
+          </button>
+          {socialNavExpanded && <div className="nav-sub-menu">
+            {(['party', 'zongmen', 'invite'] as const).map(tab =>
+              <button className={`nav-sub-item${activeTab === 'social' && socialSubTab === tab ? ' active' : ''}`}
+                key={tab} onClick={() => { setActiveTab('social'); setSocialSubTab(tab) }} type="button">
+                <span className="nav-label">{t(`social.sub.${tab}`)}</span>
+              </button>)}
+          </div>}
+        </div>
         <button
           className={`nav-item${activeTab === 'codex' ? ' active' : ''}`}
           onClick={() => setActiveTab('codex')}
@@ -1148,6 +1163,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       if (forgingSubTab === 'refining') {
         // 精炼：百炼铁、桃木晶、赤铜精、灵松晶等锻造灵材精炼
         list = pool.filter(a =>
+          a.id === 'forge.zongmen-lingpai' ||
           a.id === 'craft.refine-iron' ||
           a.id === 'craft.refine-peach-wood-crystal' ||
           a.id === 'craft.refine-copper' ||
@@ -2536,6 +2552,17 @@ export default function App(): React.JSX.Element {
   const connection = useGameStore(state => state.connection)
   const hasReceivedSnapshot = useGameStore(state => state.hasReceivedSnapshot)
   const disconnectReason = useGameStore(state => state.disconnectReason)
+  const zongmenPlayerId = useGameStore(state => state.playerId)
+  useEffect(() => {
+    if (connection !== 'online' || !hasReceivedSnapshot) { useZongmenStore.getState().reset(); return }
+    const refresh = (): void => { void useZongmenStore.getState().refresh() }
+    const result = (): void => { useZongmenStore.setState({ pending: false }); refresh() }
+    refresh()
+    const timer = window.setInterval(refresh, 15_000)
+    window.addEventListener('daohua:zongmen-result', result)
+    return () => { window.clearInterval(timer); window.removeEventListener('daohua:zongmen-result', result) }
+  }, [connection, hasReceivedSnapshot, zongmenPlayerId])
+
   const tabBlocked = useAntiMultiOpenStore(state => state.tabBlocked)
   const currentAccount = useAccountStore(state => state.currentAccount)
   const sessionChecked = useAccountStore(state => state.sessionChecked)

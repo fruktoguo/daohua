@@ -177,6 +177,7 @@ async function smokeWebSocket(gameDataFingerprint, authHeaders) {
       deviceConfigHash: smokeDeviceConfig,
       deviceId: smokeDeviceId,
       gameDataFingerprint,
+      moduleDeclaration: process.env.SMOKE_MODULE_DECLARATION || null,
     })))
 
     let helloAck = null

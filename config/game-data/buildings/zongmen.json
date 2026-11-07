@@ -1,0 +1,22 @@
+[
+  {
+    "id": "building.zongmen-dadian",
+    "name": "宗门大殿",
+    "description": "宗门议事之所。",
+    "effect": "每升一级，宗门人数上限增加5人。",
+    "requiredRealmLevel": 1,
+    "group": "other",
+    "materialGrowthStartLevel": 2,
+    "materials": [
+      {
+        "itemId": "item.refined-iron",
+        "quantity": 10000
+      },
+      {
+        "itemId": "item.refined-copper",
+        "quantity": 10000
+      }
+    ],
+    "kind": "building"
+  }
+]

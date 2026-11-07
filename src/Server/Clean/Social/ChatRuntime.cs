@@ -44,17 +44,19 @@ public sealed class ChatRuntime
     private readonly IChatRepository _repository;
     private readonly ISocialRepository _social;
     private readonly OnlinePresenceRegistry _presence;
+    private readonly PostgresZongmenRepository? _zongmen;
     private readonly ConcurrentDictionary<(Guid PlayerId, string Channel), (long WindowStart, int Count)> _rateWindows = new();
 
     /// <summary>构造传音运行时。</summary>
     /// <param name="repository">传音消息持久化边界。</param>
     /// <param name="social">好友/队伍持久化边界（好友私聊与队伍频道作用域解析）。</param>
     /// <param name="presence">在线存在感注册表（广播收件人解析）。</param>
-    public ChatRuntime(IChatRepository repository, ISocialRepository social, OnlinePresenceRegistry presence)
+    public ChatRuntime(IChatRepository repository, ISocialRepository social, OnlinePresenceRegistry presence, PostgresZongmenRepository? zongmen = null)
     {
         _repository = repository;
         _social = social;
         _presence = presence;
+        _zongmen = zongmen;
     }
 
     /// <summary>处理一次传音发言：校验 → 节流 → 落库 → 解析收件人。</summary>
@@ -75,6 +77,7 @@ public sealed class ChatRuntime
         var scopeKey = await ResolveScopeAsync(request.Channel, senderId, targetId, cancellationToken);
         if (scopeKey is null) return new ChatSendOutcome(ChatSendStatus.ChannelUnavailable);
 
+        senderName = ZongmenRules.DisplayName(senderName, _zongmen is null ? null : await _zongmen.PrefixAsync(senderId, cancellationToken));
         var record = new ChatMessageRecord(Guid.NewGuid(), request.Channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow);
         await _repository.AppendAsync(record, RetentionPerScope, cancellationToken);
         var recipients = await ResolveRecipientsAsync(request.Channel, scopeKey, senderId, targetId, cancellationToken);
@@ -149,6 +152,8 @@ public sealed class ChatRuntime
                     ? BuildFriendScopeKey(playerId, targetId.Value)
                     : null;
             }
+            case ChatChannels.Sect:
+                return _zongmen is null ? null : (await _zongmen.FindForPlayerAsync(playerId, cancellationToken))?.Id.ToString("D");
             case ChatChannels.Party:
             {
                 var partyId = await _social.GetPartyIdAsync(playerId, cancellationToken);
@@ -170,6 +175,8 @@ public sealed class ChatRuntime
                 return [.. _presence.SnapshotAtNode(scopeKey).Select(player => Guid.Parse(player.PlayerId))];
             case ChatChannels.Friend:
                 return targetId is null ? [senderId] : [senderId, targetId.Value];
+            case ChatChannels.Sect:
+                return _zongmen is null ? [] : await _zongmen.MemberIdsAsync(Guid.Parse(scopeKey), cancellationToken);
             case ChatChannels.Party:
             {
                 var party = await _social.GetPartyAsync(Guid.Parse(scopeKey), cancellationToken);

@@ -1017,6 +1017,12 @@ public static class ProtocolSnapshotMapper
             : s_worldProjections.GetValue(gameData, static catalog => WorldStaticProjectionIndex.Build(catalog))
                 .ByNodeId.GetValueOrDefault(world.NodeId ?? string.Empty);
 
+        var residence = Domain.World.ZongmenRules.TryResidenceId(world.NodeId, out _);
+        var residenceMapId = residence && gameData is not null
+            ? s_worldProjections.GetValue(gameData, static catalog => WorldStaticProjectionIndex.Build(catalog))
+                .ByNodeId.Values.FirstOrDefault(node =>
+                    node.X is { } anchorX && node.Y is { } anchorY
+                    && Domain.World.ZongmenRules.ResidenceCoordinates(anchorX, anchorY) == (world.X, world.Y))?.MapId : null;
         var edgeId = world.EdgeId;
         var edgeProgress = world.EdgeProgress;
         var onEdge = !string.IsNullOrWhiteSpace(edgeId);
@@ -1028,13 +1034,13 @@ public static class ProtocolSnapshotMapper
             usage => usage.BuildingId, StringComparer.Ordinal);
         return new
         {
-            mapId = projection?.MapId ?? "map.qingyun-mountains",
+            mapId = residenceMapId ?? projection?.MapId ?? "map.qingyun-mountains",
             nodeId = onEdge ? null : world.NodeId,
             edgeId,
             edgeProgress,
             x,
             y,
-            locationName = onEdge ? "旅途中" : projection?.Name ?? world.NodeId,
+            locationName = onEdge ? "旅途中" : projection?.Name ?? (residence ? "宗门驻地" : world.NodeId),
             cultivationMultiplier = projection?.CultivationMultiplier ?? 1d,
             // 当前节点公共建筑生效效果汇总（聚合侧同一口径）：前端行动产出预览按此计入
             // 产出/耗时加成；跨节点投影泄漏由 EffectiveNodeBuildingEffects 统一拦截。
@@ -1056,12 +1062,14 @@ public static class ProtocolSnapshotMapper
                 combatDamageReductionRatio = world.EffectiveNodeBuildingEffects.CombatDamageReductionRatio,
                 monsterWeakenRatio = world.EffectiveNodeBuildingEffects.MonsterWeakenRatio,
             },
-            availableActionIds = onEdge || projection is null ? Array.Empty<string>() : projection.AvailableActionIds,
+            availableActionIds = residence && gameData is not null
+                ? gameData.Actions.All.Where(action => action.Kind is ActionKind.Cultivation or ActionKind.Alchemy or ActionKind.Enhancement).Select(action => action.Id.Value).ToArray()
+                : onEdge || projection is null ? Array.Empty<string>() : projection.AvailableActionIds,
             encounterIds = onEdge || projection is null ? Array.Empty<string>() : projection.EncounterIds,
             npcs = onEdge || projection is null ? Array.Empty<object>() : projection.Npcs,
             buildings = onEdge || projection is null ? Array.Empty<object>() : projection.Buildings,
             // 节点可建列表：buildableList/buildableTemplate 二选一解析；null 表示该节点不可建（前端隐藏加号卡）。
-            buildableBuildingIds = onEdge ? null : projection?.BuildableBuildingIds,
+            buildableBuildingIds = residence && gameData is not null ? gameData.Buildings.Keys.ToArray() : onEdge ? null : projection?.BuildableBuildingIds,
             // 节点公共建筑：共享注册表投影随 world 分段持久化，快照映射按当前时刻推算双进度。
             nodeBuildings = onEdge
                 ? Array.Empty<object>()

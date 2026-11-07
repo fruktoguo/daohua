@@ -32,6 +32,7 @@ public sealed class SocialRuntime
     /// <summary>队伍名称长度上限（字符）。</summary>
     private const int MaxPartyNameLength = 32;
 
+    private readonly PostgresZongmenRepository? _zongmen;
     private readonly ISocialRepository _repository;
     private readonly OnlinePresenceRegistry _presence;
     private readonly PartyValuationService _valuation;
@@ -93,8 +94,10 @@ public sealed class SocialRuntime
         IActionParticipationRuntime? participation = null,
         IPlayerStateRepository? sections = null,
         IAssetBalanceRepository? assetBalances = null,
-        NodeBuildingRegistry? nodeBuildings = null)
+        NodeBuildingRegistry? nodeBuildings = null,
+        PostgresZongmenRepository? zongmen = null)
     {
+        _zongmen = zongmen;
         _repository = repository;
         _presence = presence;
         _valuation = valuation;
@@ -194,7 +197,7 @@ public sealed class SocialRuntime
         }
         var leaderName = party?.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName;
 
-        return new SocialStateDto(
+        var result = new SocialStateDto(
             requestId,
             [.. snapshot.Friends.Select(friend => new FriendDto(friend.FriendId.ToString("D"), friend.DisplayName, _presence.IsOnline(friend.FriendId)))],
             [.. snapshot.IncomingRequests.Select(ToRequestDto)],
@@ -235,6 +238,20 @@ public sealed class SocialRuntime
                 : new PartySeekerDto(
                     snapshot.Seeker.ActivityKind, snapshot.Seeker.NodeId, snapshot.Seeker.MinValuation,
                     snapshot.Seeker.CreatedAt.ToUnixTimeMilliseconds()));
+        if (_zongmen is null) return result;
+        var prefixes = await _zongmen.PrefixesAsync(result.Friends.Select(friend => Guid.Parse(friend.PlayerId))
+            .Concat(result.NearbyPlayers.Select(member => Guid.Parse(member.PlayerId)))
+            .Concat(result.Party?.Members.Select(member => Guid.Parse(member.PlayerId)) ?? []), cancellationToken);
+        string Name(string id, string name) => ZongmenRules.DisplayName(name, prefixes.GetValueOrDefault(Guid.Parse(id)));
+        return result with
+        {
+            Friends = result.Friends.Select(friend => friend with { DisplayName = Name(friend.PlayerId, friend.DisplayName) }).ToArray(),
+            NearbyPlayers = result.NearbyPlayers.Select(member => member with { DisplayName = Name(member.PlayerId, member.DisplayName) }).ToArray(),
+            Party = result.Party is null ? null : result.Party with
+            {
+                Members = result.Party.Members.Select(member => member with { DisplayName = Name(member.PlayerId, member.DisplayName) }).ToArray()
+            }
+        };
     }
     private async ValueTask<IReadOnlyList<NearbyPlayerDto>> BuildNearbyPlayersAsync(Guid playerId, CancellationToken cancellationToken)
     {

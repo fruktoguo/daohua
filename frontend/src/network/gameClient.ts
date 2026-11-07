@@ -330,6 +330,8 @@ export class GameClient {
    *   常规业务操作单写者隔离与内部不变量由服务端保证，不与后台持续模拟推进的 StateVersion 竞争，
    *   避免频繁误报「玩家状态版本已变化」。
    */
+  private readonly zongmenRequests = new Set<string>()
+
   sendCommand<T extends object>(command: string, payload: T, expectedStateVersion = 0): boolean {
     if (!command || command.length > 96) {
       useGameStore.getState().setNotice(getT()('common.net.invalidCommand'))
@@ -350,9 +352,11 @@ export class GameClient {
         expectedStateVersion,
       }))
       this.awaitingReconnectRequests.delete(requestId)
+      if (command.startsWith('zongmen.')) this.zongmenRequests.add(requestId)
       this.pendingRequests.set(requestId, window.setTimeout(() => {
         if (!this.pendingRequests.delete(requestId)) return
         this.awaitingReconnectRequests.add(requestId)
+        if (this.zongmenRequests.delete(requestId)) window.dispatchEvent(new Event('daohua:zongmen-result'))
         useGameStore.getState().setNotice(getT()('common.net.requestTimeout'))
       }, GameClient.REQUEST_TIMEOUT_MS))
       return true
@@ -713,6 +717,7 @@ export class GameClient {
             this.pendingRequests.delete(result.requestId)
           }
           this.awaitingReconnectRequests.delete(result.requestId)
+          if (this.zongmenRequests.delete(result.requestId)) window.dispatchEvent(new Event('daohua:zongmen-result'))
           // 超 15s 晚到的回执仍要合入快照：pending 计时器只负责超时提示，资产差额仅由回执
           // 携带（推送基线已前移后不再重发），整帧丢弃会造成永久缺失；过旧/重复内容
           // 由 applyPatch/applySnapshot 的版本门禁幂等丢弃，requestId 必须与信封一致。

@@ -985,3 +985,14 @@ export function decodeJsonPayload<T>(envelope: WireEnvelope): T {
 export function createRequestId(): string {
   return crypto.randomUUID()
 }
+
+/** 宗门独立读投影；字段与 Protocol/ZongmenContracts.cs 一致。 */
+export interface ZongmenMemberDto { playerId: string; displayName: string; role: number; online: boolean }
+export interface ZongmenRequestDto { zongmenId: string; zongmenName: string; playerId: string; displayName: string; kind: string }
+export interface ZongmenSummaryDto { zongmenId: string; name: string; prefix: string; memberCount: number; capacity: number }
+export interface ZongmenDto {
+  zongmenId: string; name: string; prefix: string; leaderId: string; myRole: number
+  anchorNodeId: string; nodeId: string; hallLevel: number; capacity: number
+  members: ZongmenMemberDto[]; requests: ZongmenRequestDto[]
+}
+export interface ZongmenStateDto { zongmen: ZongmenDto | null; directory: ZongmenSummaryDto[]; invitations: ZongmenRequestDto[] }

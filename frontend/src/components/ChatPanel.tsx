@@ -1,3 +1,4 @@
+import { useZongmenStore } from '../game/zongmenStore'
 import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
@@ -73,6 +74,7 @@ export function ChatChannelPanel({ channel }: { channel: ChatChannel }): React.J
   const t = useT()
   const nodeId = useGameStore(state => state.world.nodeId)
   const partyId = useSocialStore(state => state.party?.partyId ?? null)
+  const zongmenId = useZongmenStore(state => state.zongmen?.zongmenId ?? null)
   const chatState = useSyncExternalStore(chatService.subscribe, chatService.getSnapshot)
   const messages = useMemo(() => selectChannelMessages(chatState, channel), [chatState, channel])
   const items = useMemo(() => toChatFeedItems(messages), [messages])
@@ -80,7 +82,7 @@ export function ChatChannelPanel({ channel }: { channel: ChatChannel }): React.J
 
   // 历史回放按频道作用域拉取：世界频道仅挂载时一次，附近随节点、队伍随队伍变化；
   // 三频道共用 [nodeId, partyId] 依赖会让赶路换节点连带重拉世界/队伍整段历史。
-  const historyScope = channel === 'nearby' ? nodeId : channel === 'party' ? partyId : null
+  const historyScope = channel === 'nearby' ? nodeId : channel === 'party' ? partyId : channel === 'sect' ? zongmenId : null
   useEffect(() => {
     gameClient.requestChatHistory(channel)
   }, [channel, historyScope])
@@ -89,7 +91,7 @@ export function ChatChannelPanel({ channel }: { channel: ChatChannel }): React.J
     ? t('combat.chat.nearbyUnavailable')
     : channel === 'party' && !partyId
       ? t('combat.chat.partyUnavailable')
-      : undefined
+      : channel === 'sect' && !zongmenId ? t('social.zongmen.noZongmen') : undefined
 
   return (
     <>

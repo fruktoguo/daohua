@@ -598,3 +598,5 @@
   - **响应式视口规则**：在横版（宽屏/桌面端）常驻呈现；竖屏移动端（$\le 960\text{px}$）自动隐藏外链按钮，保留纯粹顶栏道号展示空间。
 - **组件源码**：[`frontend/src/components/TopbarCommunityLinks.tsx`](../../frontend/src/components/TopbarCommunityLinks.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.topbar-actions`, `.topbar-link-btn`)，浅色主题见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+- **侧栏可折叠二级导航**：技艺与同道使用同一 `nav-group` / `nav-sub-menu` 模板；入口与状态见 `frontend/src/App.tsx`、`frontend/src/uiStore.ts`，样式见 `frontend/src/styles.css`。

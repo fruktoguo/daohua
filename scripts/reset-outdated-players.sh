@@ -182,6 +182,17 @@ DELETE FROM market.trades t WHERE t.buyer_id IN (SELECT player_id FROM _stale_pl
    OR t.sell_order_id IN (SELECT order_id FROM market.orders o WHERE o.owner_player_id IN (SELECT player_id FROM _stale_players));
 DELETE FROM market.settlement_claims WHERE player_id IN (SELECT player_id FROM _stale_players);
 DELETE FROM market.orders WHERE owner_player_id IN (SELECT player_id FROM _stale_players);
+-- 清除角色宗门关系；宗主被重置时解散其宗门，保留退出锚点供其他成员恢复。
+INSERT INTO social.zongmen_departures(zongmen_id,player_id,left_at,anchor_node_id)
+SELECT m.zongmen_id,m.player_id,now(),z.anchor_node_id
+FROM social.zongmen_members m JOIN social.zongmen z USING(zongmen_id)
+WHERE m.player_id IN (SELECT player_id FROM _stale_players)
+   OR z.leader_id IN (SELECT player_id FROM _stale_players);
+DELETE FROM social.zongmen_requests WHERE player_id IN (SELECT player_id FROM _stale_players)
+   OR zongmen_id IN (SELECT zongmen_id FROM social.zongmen WHERE leader_id IN (SELECT player_id FROM _stale_players));
+DELETE FROM social.zongmen_members WHERE player_id IN (SELECT player_id FROM _stale_players)
+   OR zongmen_id IN (SELECT zongmen_id FROM social.zongmen WHERE leader_id IN (SELECT player_id FROM _stale_players));
+UPDATE social.zongmen SET disbanded_at=now() WHERE leader_id IN (SELECT player_id FROM _stale_players);
 DELETE FROM social.party_invitations WHERE invitee_id IN (SELECT player_id FROM _stale_players)
    OR inviter_id IN (SELECT player_id FROM _stale_players)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players));
