@@ -1,5 +1,5 @@
 {
-  "version": "0.2.4",
+  "version": "0.2.5",
   "stage": "alpha",
-  "releaseNotes": "接入 TapTap 官方授权登录与一人一号防多开体系，优化 Android 渠道更新隔离"
+  "releaseNotes": "集成 TapTap 原生沉浸式登录与静默秒登，消除开辟神识卡顿，优化野兔掉落物配置"
 }
