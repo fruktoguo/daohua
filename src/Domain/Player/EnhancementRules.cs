@@ -416,8 +416,13 @@ public static class EnhancementRules
         const int MaxRecipeDepth = 4;
         if (depth > MaxRecipeDepth)
             throw new DomainException(DomainErrorCode.InvariantViolation, $"装备配方递归超过深度上限（疑似配表成环）：{equipmentId}。");
-        if (cache is not null && cache.TryGetValue(equipmentId, out var cached))
-            return cached;
+        if (cache is not null)
+        {
+            lock (cache)
+            {
+                if (cache.TryGetValue(equipmentId, out var cached)) return cached;
+            }
+        }
         var recipe = gameData.Actions.All.FirstOrDefault(action =>
             action.Yields.Any(yield => yield.Item is { } product && string.Equals(product.Value, equipmentId, StringComparison.Ordinal)));
         if (recipe is null) return null;
@@ -438,7 +443,13 @@ public static class EnhancementRules
                 return null;
             }
         }
-        if (cache is not null) cache[equipmentId] = cost;
+        if (cache is not null)
+        {
+            lock (cache)
+            {
+                cache[equipmentId] = cost;
+            }
+        }
         return cost;
     }
 
