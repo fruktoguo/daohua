@@ -411,7 +411,7 @@ public static class EnhancementRules
     /// equipment.* 投入递归展开（T2 配方含 T1 装备投入）；配表成环安全保护上限为 4 层。
     /// </summary>
     public static double? ComputeEquipmentMaterialCost(GameDataCatalog gameData, string equipmentId,
-        Dictionary<string, double>? cache = null, int depth = 0)
+        IDictionary<string, double>? cache = null, int depth = 0)
     {
         const int MaxRecipeDepth = 4;
         if (depth > MaxRecipeDepth)
@@ -447,7 +447,7 @@ public static class EnhancementRules
     /// 若配方不存在或材料无回收价，返回 null。
     /// </summary>
     public static double? ComputeEquipmentBaseSellPrice(GameDataCatalog gameData, string equipmentId,
-        Dictionary<string, double>? costCache = null)
+        IDictionary<string, double>? costCache = null)
     {
         if (ComputeEquipmentMaterialCost(gameData, equipmentId, costCache, 0) is { } cost)
             return cost * 2.0;

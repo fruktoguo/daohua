@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.Json;
 using Domain.GameData;
@@ -34,8 +35,8 @@ public sealed class PartyValuationService
     private readonly PostgresSectionRepository _sections;
     private readonly MarketRuntime? _market;
     private readonly GameDataCatalog _catalog;
-    /// <summary>装备原料成本与基础回收价缓存，避免重复遍历递归锻造配方。</summary>
-    private readonly Dictionary<string, double> _costCache = new(StringComparer.Ordinal);
+    /// <summary>装备白板商店基础回收售价预热缓存（原料成本×2.0工匠增值），构造期一次性构建不可变映射，彻底杜绝并发写竞争。</summary>
+    private readonly FrozenDictionary<string, double> _baseSellPrices;
     /// <summary>展示估值缓存：playerId → (估值细分结果, TickCount64 过期点)。</summary>
     private readonly ConcurrentDictionary<Guid, (ValuationResult Value, long ExpiresAt)> _displayCache = new();
 
@@ -50,6 +51,17 @@ public sealed class PartyValuationService
         _sections = sections;
         _market = market;
         _catalog = catalog;
+
+        var costCache = new Dictionary<string, double>(StringComparer.Ordinal);
+        var basePrices = new Dictionary<string, double>(catalog.RawEquipments.Count, StringComparer.Ordinal);
+        foreach (var equipmentId in catalog.RawEquipments.Keys)
+        {
+            if (EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, equipmentId, costCache) is { } price && price > 0)
+            {
+                basePrices[equipmentId] = price;
+            }
+        }
+        _baseSellPrices = basePrices.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     /// <summary>实时身家细分：入队裁决、名片构建与匹配自动并入使用，不走缓存。</summary>
@@ -199,7 +211,7 @@ public sealed class PartyValuationService
         if (refPrice is > 0) return refPrice.Value;
 
         // 无市场参考价时，回退到系统商店回收价（原料成本×2.0工匠增值 + 强化造价折旧，总纲 §4.6）
-        if (EnhancementRules.ComputeEquipmentBaseSellPrice(_catalog, itemIdText, _costCache) is { } basePrice && basePrice > 0)
+        if (_baseSellPrices.TryGetValue(itemIdText, out var basePrice) && basePrice > 0)
         {
             return EnhancementRules.CalculateEquipmentSellPrice(basePrice, levelInt);
         }

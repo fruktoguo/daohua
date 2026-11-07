@@ -75,4 +75,28 @@ public sealed class PartyValuationServiceTests
         Assert.Equal(0, result.Abilities);
         Assert.Equal(9010, result.Total);
     }
+
+    [Fact]
+    public void Compute_IsThreadSafeUnderHighConcurrency()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var valuation = new PartyValuationService(null!, null!, null, catalog);
+        var computeMethod = typeof(PartyValuationService)
+            .GetMethod("Compute", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var loadout = new PlayerLoadoutDocument(
+            new PlayerCoreAttributes(),
+            [],
+            [
+                new PlayerEquipmentSlot("equipment.tool-flame-ding", 0),
+                new PlayerEquipmentSlot("equipment.suma-robe", 16)
+            ],
+            new Dictionary<string, double>());
+
+        System.Threading.Tasks.Parallel.For(0, 100, _ =>
+        {
+            var result = (ValuationResult)computeMethod.Invoke(valuation, [loadout])!;
+            Assert.Equal(9010, result.Total);
+        });
+    }
 }
