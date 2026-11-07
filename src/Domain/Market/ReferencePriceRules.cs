@@ -217,4 +217,40 @@ public static class ReferencePriceRules
         var weight = CalculateTradeWeight(assetId, variant, quantity, gameData, settings);
         return CalculateNextReferencePrice(currentReferencePrice, fillPrice, weight);
     }
+
+    /// <summary>
+    /// 计算指定标的在坊市中的挂单最低单价（灵石）。
+    /// 遵循底线规则：
+    /// 1. 物理绝对下限为 2 灵石（2% 向上取整卖方印花税保底，单价为 1 灵石时成交扣税 1 灵石净收益为 0）；
+    /// 2. 装备标的不得低于当前强化等级折算后的系统商店回收价；
+    /// 3. 普通物品不得低于配表定义的系统回收价（sellPrice）。
+    /// </summary>
+    public static double CalculateMinimumOrderPrice(
+        string assetId,
+        string? variant,
+        GameDataCatalog? gameData)
+    {
+        const double AbsoluteFloor = 2.0;
+        if (gameData is null || string.IsNullOrWhiteSpace(assetId))
+            return AbsoluteFloor;
+
+        if (gameData.RawEquipments.ContainsKey(assetId))
+        {
+            var level = EnhancementRules.ParseLevel(variant ?? string.Empty) ?? 0;
+            var baseSellPrice = EnhancementRules.ComputeEquipmentBaseSellPrice(gameData, assetId);
+            if (baseSellPrice is { } bp && bp > 0)
+            {
+                var equipSellPrice = EnhancementRules.CalculateEquipmentSellPrice(bp, level);
+                return Math.Max(AbsoluteFloor, equipSellPrice);
+            }
+            return AbsoluteFloor;
+        }
+
+        if (gameData.Items.TryGetValue(new Domain.Common.ItemId(assetId), out var itemDef) && itemDef.SellPrice > 0)
+        {
+            return Math.Max(AbsoluteFloor, itemDef.SellPrice);
+        }
+
+        return AbsoluteFloor;
+    }
 }

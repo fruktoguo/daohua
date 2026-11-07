@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { parseEnhancementVariant } from '../../game/ids'
+import { calculateEquipmentSellPrice, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../../game/ids'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook, MarketOrder } from '../../game/types'
@@ -126,7 +126,17 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     [existingOrders, instrument, level],
   )
 
-  const vendorPrice = Math.max(2, instrument?.sellPrice ?? 2)
+  const vendorPrice = useMemo(() => {
+    if (!instrument) return 2
+    if (isEquipment) {
+      const basePrice = instrument.sellPrice > 0
+        ? instrument.sellPrice
+        : resolveEquipmentBaseSellPrice(instrument.itemId, instrument.equipmentDefinition)
+      const recyclePrice = calculateEquipmentSellPrice(basePrice, level)
+      return Math.max(2, recyclePrice)
+    }
+    return Math.max(2, instrument.sellPrice ?? 2)
+  }, [instrument, isEquipment, level])
   const minimumPrice = useMemo(() => normalizeMarketPrice(vendorPrice, vendorPrice, true), [vendorPrice])
   // 单价为步进按钮维护的整数，任何路径写入前都先落到 tick 网格并夹在 [minimumPrice, MARKET_ORDER_MAX_PRICE]。
   // 初值按打开瞬间的盘口最优价惰性初始化一次；之后行情轮询刷新不得重置用户输入（保持焦点与草稿稳定）。
@@ -168,6 +178,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       setQuantity(prev => Math.max(1, availableAmount > 0 ? Math.min(prev, availableAmount) : 1))
     }
   }, [level, availableAmount, side])
+  // 强化等级切换导致回收底价变动时，确保当前挂单价格不低于新底价
+  useEffect(() => {
+    setPrice(prev => Math.max(minimumPrice, prev))
+  }, [minimumPrice])
+
 
   const bestAsk = activeBook?.asks[0]?.price
   const bestBid = activeBook?.bids[0]?.price

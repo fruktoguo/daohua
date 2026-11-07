@@ -798,6 +798,9 @@ if (processRole == ServerProcessRole.Api)
             return Results.BadRequest(Problem(400, "INVALID_VARIANT", "订单变体无效。"));
         var instrument = new MarketInstrument(new ItemId(request.AssetId),
             EnhancementRules.KeyFor(new ItemId(request.AssetId), variantLevel).Variant);
+        var minPrice = ReferencePriceRules.CalculateMinimumOrderPrice(request.AssetId, instrument.Variant, gameData);
+        if (request.Price < minPrice)
+            return Results.BadRequest(Problem(400, "PRICE_BELOW_VENDOR_FLOOR", $"挂单单价不得低于系统回收底价（最低 {minPrice} 灵石）。"));
         try
         {
             var result = await marketRuntime.PlaceAsync(new PlaceOrderRequest(

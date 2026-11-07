@@ -137,15 +137,21 @@ public sealed class MarketVariantTests
         Assert.True(catalog.RawItems.TryGetValue("item.awakening-stone", out var rawStone));
         Assert.Equal(5, rawStone.GetProperty("tier").GetInt32());
 
-        // 挂卖单：持有 2 颗卖 1 颗，通过命令层检验进入 PlaceAsync
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await runtime.ExecuteAsync(playerId, "market.place",
-                PlacePayload("item.awakening-stone", "sell", null), 0, Guid.NewGuid()));
+        // 挂单价格低于系统回收价（100 灵石）：被 PRICE_BELOW_VENDOR_FLOOR 拦截
+        var cheap = await runtime.ExecuteAsync(playerId, "market.place",
+            PlacePayload("item.awakening-stone", "sell", null, price: 10d), 0, Guid.NewGuid());
+        Assert.False(cheap.Success);
+        Assert.Equal("PRICE_BELOW_VENDOR_FLOOR", cheap.Code);
 
-        // 挂买单：通过命令层检验进入 PlaceAsync
+        // 挂卖单：持有 2 颗卖 1 颗，价格合规（100 >= 100），通过命令层检验进入 PlaceAsync
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await runtime.ExecuteAsync(playerId, "market.place",
-                PlacePayload("item.awakening-stone", "buy", null), 0, Guid.NewGuid()));
+                PlacePayload("item.awakening-stone", "sell", null, price: 100d), 0, Guid.NewGuid()));
+
+        // 挂买单：价格合规，通过命令层检验进入 PlaceAsync
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await runtime.ExecuteAsync(playerId, "market.place",
+                PlacePayload("item.awakening-stone", "buy", null, price: 100d), 0, Guid.NewGuid()));
     }
 
     /// <summary>装配带未启动市场运行时的适配器：未就绪状态由 PlaceAsync 的 EnsureReady 暴露，不触库。</summary>
@@ -162,14 +168,14 @@ public sealed class MarketVariantTests
             marketRuntime: market);
     }
 
-    private static JsonElement PlacePayload(string itemId, string side, string? variant) =>
+    private static JsonElement PlacePayload(string itemId, string side, string? variant, double price = 100d) =>
         JsonSerializer.SerializeToElement(new
         {
             orderId = Guid.NewGuid().ToString("D"),
             itemId,
             side,
             variant,
-            price = 10d,
+            price,
             quantity = 1d
         }, ProtocolJson.Options);
 

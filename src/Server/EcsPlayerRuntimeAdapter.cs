@@ -1151,6 +1151,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (!gameData.Items.ContainsKey(new ItemId(assetId)) && !gameData.RawEquipments.ContainsKey(assetId))
                             return new PlayerCommandResult(false, "INVALID_ORDER", "订单品种不存在。", before);
                         variant = EnhancementRules.KeyFor(new ItemId(assetId), variantLevel).Variant;
+                        var minPrice = ReferencePriceRules.CalculateMinimumOrderPrice(assetId, variant, gameData);
+                        if (price < minPrice)
+                            return new PlayerCommandResult(false, "PRICE_BELOW_VENDOR_FLOOR", $"挂单单价不得低于系统回收底价（最低 {minPrice} 灵石）。", before);
                         // 与 item.discard/item.sell 同一防线但收窄到同级匹配：钱包按变体行冻结，
                         // 扣除同 itemId 且同强化等级的已装备件后为可用余额，仅在可支配量不足时拦截，多余备件放行。
                         if (side == MarketSide.Sell)

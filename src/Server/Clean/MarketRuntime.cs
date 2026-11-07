@@ -357,14 +357,22 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 
     private async ValueTask<PlacementResult> PlaceCoreAsync(PlaceOrderRequest request, CancellationToken cancellationToken)
     {
-        if (_gameData is not null && _gameData.Items.TryGetValue(request.Instrument.ItemId, out var itemConfig))
+        if (_gameData is not null)
         {
-            if (string.Equals(itemConfig.Category, "material", StringComparison.OrdinalIgnoreCase))
+            var minPrice = ReferencePriceRules.CalculateMinimumOrderPrice(
+                request.Instrument.ItemId.Value, request.Instrument.Variant, _gameData);
+            if (request.Price < minPrice)
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"挂单单价不得低于系统回收底价（最低 {minPrice} 灵石）。");
+
+            if (_gameData.Items.TryGetValue(request.Instrument.ItemId, out var itemConfig))
             {
-                var basePrice = itemConfig.SellPrice > 0 ? itemConfig.SellPrice : 1.0;
-                var maxPrice = basePrice * 50.0;
-                if (request.Price > maxPrice)
-                    throw new DomainException(DomainErrorCode.InvalidArgument, $"材料挂单单价超出基准价值上限（最高 {maxPrice} 灵石）。");
+                if (string.Equals(itemConfig.Category, "material", StringComparison.OrdinalIgnoreCase))
+                {
+                    var basePrice = itemConfig.SellPrice > 0 ? itemConfig.SellPrice : 1.0;
+                    var maxPrice = basePrice * 50.0;
+                    if (request.Price > maxPrice)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"材料挂单单价超出基准价值上限（最高 {maxPrice} 灵石）。");
+                }
             }
         }
         EnsureReady(request.Instrument);

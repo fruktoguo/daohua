@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory, type ItemMetadata } from '../game/ids'
+import { parseEnhancementVariant, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemSubCategory, type ItemMetadata } from '../game/ids'
 import { getT, useT } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketOrder, MarketVariantSummary } from '../game/types'
@@ -150,7 +150,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
       category: 'equipment',
       subCategory: eq.slot,
       tier: eq.tier,
-      sellPrice: 0,
+      sellPrice: resolveEquipmentBaseSellPrice(eq.equipmentId, eq),
       equipmentDefinition: eq,
     }))
 

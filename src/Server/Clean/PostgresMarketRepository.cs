@@ -277,14 +277,21 @@ public sealed class PostgresMarketRepository(
         CancellationToken cancellationToken = default)
     {
         ValidateOrder(order);
-        if (gameData is not null && gameData.Items.TryGetValue(new Domain.Common.ItemId(order.AssetId), out var itemConfig))
+        if (gameData is not null)
         {
-            if (string.Equals(itemConfig.Category, "material", StringComparison.OrdinalIgnoreCase))
+            var minPrice = ReferencePriceRules.CalculateMinimumOrderPrice(order.AssetId, order.Variant, gameData);
+            if (order.Price < minPrice)
+                throw new ArgumentException($"挂单单价不得低于系统回收底价（最低 {minPrice} 灵石）。", nameof(order));
+
+            if (gameData.Items.TryGetValue(new Domain.Common.ItemId(order.AssetId), out var itemConfig))
             {
-                var basePrice = itemConfig.SellPrice > 0 ? itemConfig.SellPrice : 1.0;
-                var maxPrice = basePrice * 50.0;
-                if (order.Price > maxPrice)
-                    throw new ArgumentException($"材料挂单单价超出基准价值上限（最高 {maxPrice} 灵石）。", nameof(order));
+                if (string.Equals(itemConfig.Category, "material", StringComparison.OrdinalIgnoreCase))
+                {
+                    var basePrice = itemConfig.SellPrice > 0 ? itemConfig.SellPrice : 1.0;
+                    var maxPrice = basePrice * 50.0;
+                    if (order.Price > maxPrice)
+                        throw new ArgumentException($"材料挂单单价超出基准价值上限（最高 {maxPrice} 灵石）。", nameof(order));
+                }
             }
         }
         if (order.PartitionId != options.MarketPartitionId)
