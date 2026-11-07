@@ -37,13 +37,15 @@ public sealed class AccountRiskRequestContext(IDataProtectionProvider protection
             Path = "/", MaxAge = TimeSpan.FromDays(365), IsEssential = true
         });
         var isHeadless = IsHeadless(context, client);
-        // 稳定主体键推导：优先基于物理设备/硬件指纹，消除隐身/无痕窗口因缺少 Cookie 而生成全新主体绕过账号上限的漏洞；
-        // 缺少指纹时基于配置摘要，无指纹/配置时回退到受保护 Cookie 设备锚点。
-        var personKey = !string.IsNullOrWhiteSpace(client?.BrowserFingerprint)
+        var isAndroid = IsAndroid(context);
+        // 稳定主体键推导：
+        // 1. Android 移动端硬件配置高度雷同，严禁将粗粒度硬件规格 DeviceConfigHash 降级充当主体键，避免同款手机玩家被误杀；
+        //    同时 Android 环境下音频/Canvas 特征在同芯片机型上高度趋同，因此仅信赖设备唯一安装标识或安全 Cookie；
+        // 2. PC/桌面端优先信赖具有足够熵值的 BrowserFingerprint，其次信赖受保护 Cookie/安装标识；
+        // 3. 任何端均不得把 DeviceConfigHash 作为单项自然人硬杀指标（配置已在 80 分软风险中按 45 分权重参与综合评估）。
+        var personKey = !string.IsNullOrWhiteSpace(client?.BrowserFingerprint) && !isAndroid
             ? $"fp:{client.BrowserFingerprint}"
-            : (!string.IsNullOrWhiteSpace(client?.DeviceConfigHash)
-                ? $"config:{client.DeviceConfigHash}"
-                : (deviceId.HasValue ? $"device:{deviceId:D}" : null));
+            : (deviceId.HasValue ? $"device:{deviceId:D}" : null);
         var ip = context.Connection.RemoteIpAddress;
         if (ip?.IsIPv4MappedToIPv6 == true) ip = ip.MapToIPv4();
         // 网段是弱关联信号，公共网络和家庭 NAT 不因 IP 相同直接封禁。
@@ -100,5 +102,12 @@ public sealed class AccountRiskRequestContext(IDataProtectionProvider protection
             return true;
         }
         return false;
+    }
+
+    /// <summary>检测当前请求是否来自 Android 移动端环境。</summary>
+    public static bool IsAndroid(HttpContext context)
+    {
+        var userAgent = context.Request.Headers.UserAgent.ToString();
+        return userAgent.Contains("Android", StringComparison.OrdinalIgnoreCase);
     }
 }

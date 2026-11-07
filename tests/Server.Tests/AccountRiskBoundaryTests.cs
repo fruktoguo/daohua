@@ -188,6 +188,38 @@ public sealed class AccountRiskBoundaryTests
         }
     }
 
+    /// <summary>多台配置完全相同的 Android 手机（常见主流机型）在握手登录时，绝不因相同硬件配置被判定为同一人而触发 PERSON_ACCOUNT_LIMIT 拦截。</summary>
+    [Fact]
+    public async Task AndroidClientsWithSameHardwareConfigDoNotHitPersonLimitOnHandshake()
+    {
+        await using var fixture = await OpenFixtureAsync();
+        await fixture.Risk.ReplacePolicyAsync(AccountRiskPolicy.Default);
+        var collector = new AccountRiskRequestContext(new EphemeralDataProtectionProvider());
+        var sharedConfigHash = Convert.ToHexString(SHA256.HashData("adreno-730|393x852x24|cpu:8|android"u8)).ToLowerInvariant();
+
+        var accounts = new List<Guid>();
+        for (var index = 0; index < 4; index++)
+        {
+            var registered = await fixture.Accounts.RegisterAsync(UniqueAccount(), "boundary-pass-1", null, null,
+                new AccountRiskSignals(DeviceId: Guid.NewGuid().ToString("N")));
+            Assert.True(registered.Success);
+            accounts.Add(registered.AccountId!.Value);
+        }
+
+        for (var index = 0; index < accounts.Count; index++)
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Headers.UserAgent = "Mozilla/5.0 (Linux; Android 14; 23117RK66C Build/UKQ1.230804.001; wv) AppleWebKit/537.36 TapTap/2.48.0";
+            context.Connection.RemoteIpAddress = IPAddress.Parse($"198.51.100.{index + 10}");
+            var deviceId = Guid.NewGuid().ToString("D");
+            var signals = collector.Collect(context, new(sharedConfigHash, deviceId, null, null), persistCookie: false);
+
+            Assert.DoesNotContain(sharedConfigHash, signals.PersonKey ?? string.Empty, StringComparison.Ordinal);
+            var decision = await fixture.Risk.ObserveLoginAsync(accounts[index], signals, eventKind: "handshake");
+            Assert.True(decision.Allowed, $"第 {index + 1} 个安卓账号登录被意外拦截：{decision.ErrorCode} - {string.Join(',', decision.Reasons ?? [])}");
+        }
+    }
+
     /// <summary>高频风险事件按独立保留期清理，长期业务审计配置不会使其积累十年。</summary>
     [Fact]
     public async Task RiskRetentionIsIndependentAndKeepsStableKey()

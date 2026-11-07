@@ -659,7 +659,9 @@ public static class WebSocketEndpoint
                             return;
                         }
                         // 设备标识优先，避免相同配置的独立设备被合并为同一在线额度主体。
-                        var quotaKey = riskSignals.DeviceId ?? riskSignals.DeviceConfigHash ?? hello.DeviceFingerprint;
+                        // Android 移动端硬件配置高度集中，严禁回退到 DeviceConfigHash，避免把全国同款手机塞入同一个在线配额桶。
+                        var isAndroid = AccountAbuse.AccountRiskRequestContext.IsAndroid(context);
+                        var quotaKey = riskSignals.DeviceId ?? (isAndroid ? null : riskSignals.DeviceConfigHash) ?? hello.DeviceFingerprint;
                         var admit = admission.Admit(session, quotaKey, hello.ModuleDeclaration, riskPolicy);
                         if (!admit.Accepted)
                         {
