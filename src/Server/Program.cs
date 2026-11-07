@@ -581,6 +581,39 @@ if (processRole == ServerProcessRole.Api)
         StampSessionCookie(context, result.SessionToken!, serverOptions.SessionLifetime);
         return Results.Redirect("/?login_success=taptap");
     });
+    auth.MapPost("/taptap/native-login", async (
+        NativeTapTapLoginRequest request,
+        IAccountRepository accounts,
+        IPlayerRuntime runtime,
+        ServerOptions serverOptions,
+        HttpContext context,
+        CancellationToken ct) =>
+    {
+        if (string.IsNullOrWhiteSpace(request.OpenId))
+        {
+            return Results.BadRequest(Problem(400, "MISSING_OPENID", "缺少 TapTap OpenID 凭据。"));
+        }
+
+        var result = await accounts.LoginOrRegisterTapTapAsync(request.OpenId, request.Name, ct);
+        if (!result.Success)
+        {
+            return Results.BadRequest(Problem(400, result.ErrorCode ?? "LOGIN_FAILED", "TapTap 登录失败。"));
+        }
+
+        await runtime.LoadAsync(result.PlayerId!.Value, ct);
+        await runtime.FlushAsync(result.PlayerId.Value, true, ct);
+
+        StampSessionCookie(context, result.SessionToken!, serverOptions.SessionLifetime);
+        return Results.Ok(new
+        {
+            success = true,
+            accountId = result.AccountId,
+            playerId = result.PlayerId,
+            account = result.Account,
+            displayName = result.DisplayName,
+            sequenceId = result.SequenceId
+        });
+    }).RequireRateLimiting("auth");
     auth.MapPost("/taptap/bind", async (
         BindTapTapRequest request,
         ClaimsPrincipal user,
@@ -943,5 +976,12 @@ public sealed record ChangePasswordRequest(string CurrentPassword, string NewPas
 /// <param name="Code">TapTap OAuth 授权码。</param>
 /// <param name="RedirectUri">用于换取凭据的回调重定向地址。</param>
 public sealed record BindTapTapRequest(string Code, string? RedirectUri = null);
+/// <summary>TapTap 原生 SDK 授权登录请求体。</summary>
+public sealed record NativeTapTapLoginRequest(
+    string OpenId,
+    string? Name = null,
+    string? UnionId = null,
+    string? Kid = null,
+    string? MacKey = null);
 /// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

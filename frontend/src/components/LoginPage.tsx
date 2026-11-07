@@ -24,6 +24,7 @@ const RANDOM_DAO_NAMES = [
   '云水行者', '纯阳剑修', '妙法散人', '寒霄道人', '乾元真仙',
 ]
 
+
 /**
  * 账号登录与注册认证主页面组件 (LoginPage)
  *
@@ -78,6 +79,49 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
   const handleTapTapLogin = async () => {
     setLoading(true)
     setError(null)
+
+    // 原生 Android 客户端壳子：直接调起 TapSDK 原生半屏授权卡片（零跳转，类似 Bilibili 原生体验）
+    const nativeBridge = window.DaoHuaNative
+    if (nativeBridge && typeof nativeBridge.hasNativeTapTapLogin === 'function' && nativeBridge.hasNativeTapTapLogin()) {
+      window.onTapTapNativeLogin = async (result: TapTapNativeLoginResult) => {
+        if (!result || !result.success || !result.openId) {
+          setLoading(false)
+          if (result?.error !== 'canceled') {
+            setError(t('app.login.tapTapLaunchFailed'))
+          }
+          return
+        }
+        try {
+          const res = await fetch('/api/v1/auth/taptap/native-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              openId: result.openId,
+              name: result.name,
+              unionId: result.unionId,
+              kid: result.kid,
+              macKey: result.macKey
+            })
+          })
+          if (!res.ok) {
+            const err: unknown = await res.json().catch(() => null)
+            let errMsg = 'Login failed'
+            if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+              errMsg = err.message
+            }
+            throw new Error(errMsg)
+          }
+          onLoggedIn?.()
+        } catch {
+          setError(t('app.login.tapTapLaunchFailed'))
+          setLoading(false)
+        }
+      }
+      nativeBridge.startNativeTapTapLogin?.()
+      return
+    }
+
+    // 网页版回退流程
     try {
       const res = await fetch('/api/v1/auth/taptap/url')
       if (!res.ok) throw new Error('Failed to get TapTap auth url')

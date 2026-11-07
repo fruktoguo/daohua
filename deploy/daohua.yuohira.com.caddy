@@ -23,11 +23,11 @@ daohua.yuohira.com {
 	@private path /api/metrics /api/v1/metrics /api/v1/market/metrics /api/debug/* /readyz /ops /ops/*
 	respond @private 404
 
-	# 隐私政策静态页（TapTap 提审合规要求）：由 Caddy 独立直出，不受应用容器重启影响
-	@privacy path /privacy /privacy.html
-	handle @privacy {
+	# 静态文件直出（隐私政策与最新客户端安装包）
+	@static path /privacy /privacy.html /daohua.apk
+	handle @static {
 		root * /opt/daohua/static
-		try_files /privacy.html
+		try_files {path} /privacy.html
 		file_server
 	}
 

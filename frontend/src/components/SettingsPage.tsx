@@ -18,18 +18,6 @@ import {
   openProtocolUrl,
 } from './TopbarCommunityLinks'
 
-interface DaoHuaNativeBridge {
-  getAppVersion(): string
-  getGitSha(): string
-  checkUpdate(): void
-  getChannel?(): string
-}
-
-declare global {
-  interface Window {
-    DaoHuaNative?: DaoHuaNativeBridge
-  }
-}
 
 /** 设置页面分类（账号、显示偏好、形象、引导、关于） */
 type SettingsTab = 'account' | 'display' | 'avatar' | 'tutorial' | 'about'

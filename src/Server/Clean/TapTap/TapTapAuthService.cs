@@ -19,6 +19,9 @@ public sealed class TapTapOptions
     /// <summary>开发者控制台申请的 Client Secret (私钥)。</summary>
     public string ClientSecret { get; set; } = "REDACTED_TAPTAP_CLIENT_SECRET";
 
+    /// <summary>开发者控制台申请的 Client Token。</summary>
+    public string ClientToken { get; set; } = "REDACTED_TAPTAP_CLIENT_TOKEN";
+
     /// <summary>OAuth 2.0 网页授权回调默认重定向地址。</summary>
     public string RedirectUri { get; set; } = "https://daohua.yuohira.com/api/v1/auth/taptap/callback";
 }
