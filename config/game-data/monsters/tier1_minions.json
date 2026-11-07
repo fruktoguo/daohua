@@ -17,7 +17,13 @@
     "dropTable": [
       {
         "itemId": "item.beast-hide",
-        "dropChance": 1.0,
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.beast-bone",
+        "dropChance": 0.5,
         "minQuantity": 1,
         "maxQuantity": 1
       },
