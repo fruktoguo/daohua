@@ -177,21 +177,21 @@ GRADLE_PROPS="-PappVersionName=${PKG_VERSION} -PappVersionCode=${APP_VERSION_COD
 printf '\n==> 执行 Android assembleRelease 打包...\n'
 
 BUILD_SUCCESS=0
+rm -f "$SHELL_DIR/app/build/outputs/apk/release/app-release.apk"
+GRADLE_BAT="/c/Users/YuoHira/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle.bat"
 WIN_GRADLE="C:\\Users\\YuoHira\\.gradle\\wrapper\\dists\\gradle-8.13-bin\\5xuhj0ry160q40clulazy9h7d\\gradle-8.13\\bin\\gradle.bat"
 
-if command -v cmd.exe >/dev/null 2>&1; then
-  # WSL / Windows 互操作模式
+if [[ -f "$GRADLE_BAT" ]]; then
+  "$GRADLE_BAT" -p "$SHELL_DIR" assembleRelease ${GRADLE_PROPS} && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
+elif command -v gradle >/dev/null 2>&1; then
+  gradle -p "$SHELL_DIR" assembleRelease ${GRADLE_PROPS} && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
+elif command -v cmd.exe >/dev/null 2>&1; then
   WIN_SHELL_PATH="tools\\android-shell"
   if [[ "$SHELL_DIR" =~ artifacts/android-shell ]]; then
     WIN_SHELL_PATH="artifacts\\android-shell"
   fi
-  cmd.exe /c "${WIN_GRADLE} -p ${WIN_SHELL_PATH} assembleRelease ${GRADLE_PROPS}" && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
-elif command -v gradle >/dev/null 2>&1; then
-  gradle -p "$SHELL_DIR" assembleRelease ${GRADLE_PROPS} && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
-elif [[ -f "/c/Users/YuoHira/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle.bat" ]]; then
-  "/c/Users/YuoHira/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle.bat" -p "$SHELL_DIR" assembleRelease ${GRADLE_PROPS} && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
+  cmd.exe /c "call ${WIN_GRADLE} -p ${WIN_SHELL_PATH} assembleRelease ${GRADLE_PROPS}" && BUILD_SUCCESS=1 || BUILD_SUCCESS=0
 fi
-
 if [[ "$BUILD_SUCCESS" != "1" ]]; then
   if [[ "$SOFT_FAIL" == "1" ]]; then
     printf '警告: Android APK 构建未成功 (可能是环境缺失)，跳过本阶段。\n'
