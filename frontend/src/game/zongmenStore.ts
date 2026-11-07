@@ -14,7 +14,7 @@ export const useZongmenStore = create<ZongmenStateDto & {
   act: (action: string, payload?: Record<string, unknown>) => void
   reset: () => void
 }>((set, get) => ({
-  zongmen: null, directory: [], invitations: [], loading: false, pending: false, error: '',
+  zongmen: null, directory: [], invitations: [], applications: [], loading: false, pending: false, error: '',
   refresh: async (search = '') => {
     if (get().loading) return
     const playerId = useGameStore.getState().playerId
@@ -35,7 +35,7 @@ export const useZongmenStore = create<ZongmenStateDto & {
     if (gameClient.sendCommand(`zongmen.${action}`, payload)) set({ pending: true })
   },
   reset: () => {
-    set({ zongmen: null, directory: [], invitations: [], loading: false, pending: false, error: '' })
+    set({ zongmen: null, directory: [], invitations: [], applications: [], loading: false, pending: false, error: '' })
     const game = useGameStore.getState()
     game.setMaps(withZongmenResidence(game.maps, null))
   },

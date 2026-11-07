@@ -85,7 +85,8 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
         await using (var command = Command(connection, null, """
             SELECT z.zongmen_id,z.name,z.prefix,
                 (SELECT count(*) FROM social.zongmen_members m WHERE m.zongmen_id=z.zongmen_id),
-                b.level,b.target_level,b.started_at_unix_seconds,b.contributed_materials
+                b.level,b.target_level,b.started_at_unix_seconds,b.contributed_materials,
+                z.anchor_node_id
             FROM social.zongmen z JOIN game.node_buildings b
                 ON b.node_id='node.zongmen.' || replace(z.zongmen_id::text,'-','') AND b.building_id=$2
             WHERE z.disbanded_at IS NULL AND strpos(lower(z.name),lower($1)) > 0 ORDER BY z.name LIMIT 50
@@ -96,11 +97,12 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
                 var building = new NodeBuildingState(ZongmenRules.HallBuildingId, reader.GetInt32(4), reader.GetInt32(5), reader.GetDouble(6),
                     JsonSerializer.Deserialize<Dictionary<string, double>>(reader.GetString(7))!);
                 var level = NodeBuildingRules.EffectiveLevel(building, catalog.Buildings[ZongmenRules.HallBuildingId], DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d);
-                directory.Add(new(reader.GetGuid(0).ToString("D"), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), ZongmenRules.MemberCapacity(level)));
+                directory.Add(new(reader.GetGuid(0).ToString("D"), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), ZongmenRules.MemberCapacity(level), reader.GetString(8)));
             }
         var invitations = await RequestsAsync(connection, "r.player_id=$1 AND r.kind='invitation'", playerId, ct);
+        var applications = await RequestsAsync(connection, "r.player_id=$1 AND r.kind='application'", playerId, ct);
         await readTransaction.CommitAsync(ct);
-        return new(own, directory, invitations);
+        return new(own, directory, invitations, applications);
     }
 
     public async ValueTask<IReadOnlyList<Guid>> MemberIdsAsync(Guid id, CancellationToken ct = default)

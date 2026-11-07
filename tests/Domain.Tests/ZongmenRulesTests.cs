@@ -40,11 +40,14 @@ public sealed class ZongmenRulesTests
     public void StateContractRoundTripsWithCamelCaseAndRoles()
     {
         var state = new ZongmenStateDto(new("id", "青云宗", "青", "leader", 0, "node.anchor", "node.private", 1, 20,
-            [new("leader", "道友", 0, true)], []), [], []);
+            [new("leader", "道友", 0, true)], []), [new("z1", "玄剑宗", "玄", 5, 20, "node.anchor")], [], [new("z1", "玄剑宗", "me", "道友", "application")]);
         var json = JsonSerializer.Serialize(state, ProtocolJson.Options);
         Assert.Contains("\"anchorNodeId\":\"node.anchor\"", json);
+        Assert.Contains("\"applications\"", json);
         var restored = JsonSerializer.Deserialize<ZongmenStateDto>(json, ProtocolJson.Options)!;
         Assert.Equal(0, Assert.Single(restored.Zongmen!.Members).Role);
         Assert.Equal(state.Zongmen!.NodeId, restored.Zongmen.NodeId);
+        Assert.Equal("node.anchor", Assert.Single(restored.Directory).AnchorNodeId);
+        Assert.Equal("application", Assert.Single(restored.Applications).Kind);
     }
 }

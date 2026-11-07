@@ -10,5 +10,26 @@
 .zongmen-member i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); margin-right: 6px; }
 .zongmen-member i.is-online { background: var(--color-jade, #6ba58a); }
 .zongmen-error { color: var(--color-danger, #d97676); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+/* 散修立宗顶部横幅 */
+.zongmen-create-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.zongmen-create-info { display: flex; flex-direction: column; gap: 4px; }
+.zongmen-create-btn { padding: 8px 18px; white-space: nowrap; }
+
+/* 宗门名录条目 */
+.zongmen-member-identity { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 4px; }
+.zongmen-member-title { font-weight: 600; color: var(--text-color, #e0e0e0); }
+.zongmen-member-loc { display: flex; align-items: center; gap: 6px; font-size: 0.85em; color: var(--text-muted, #8c8c8c); }
+.zongmen-loc-name { overflow-wrap: anywhere; }
+.zongmen-tag-here { display: inline-block; padding: 1px 6px; font-size: 0.8em; font-weight: 500; border-radius: 3px; background: rgba(107, 165, 138, 0.2); color: var(--color-jade, #6ba58a); border: 1px solid rgba(107, 165, 138, 0.4); }
+.zongmen-member-cap { font-size: 0.9em; color: var(--text-muted, #8c8c8c); margin-right: 8px; }
+.zongmen-applied-btn { background: transparent !important; border: 1px solid var(--border-color, #444) !important; color: var(--color-jade, #6ba58a) !important; opacity: 0.85; }
+
+/* 独立立宗弹窗 */
+.zongmen-modal-body { display: flex; flex-direction: column; gap: 16px; }
+.zongmen-modal-costs { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--bg-surface-sunken, rgba(0, 0, 0, 0.2)); border: 1px solid var(--border-color, #333); border-radius: 4px; }
+.zongmen-cost-label { color: var(--text-muted, #8c8c8c); margin-right: 6px; }
+.zongmen-modal-body .is-warning { color: var(--color-danger, #d97676); }
+.zongmen-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+
 @media (min-width: 961px) { .social-page-header .social-mobile-tabs { display: none; } }
 @media (max-width: 600px) { .zongmen-form { grid-template-columns: minmax(0, 1fr); } }
