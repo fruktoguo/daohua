@@ -156,11 +156,17 @@ ORDER BY a.created_at ASC;
 "
 
 AUDIT_RAW="$(ssh "$REMOTE_HOST" "sudo docker exec -i daohua-db psql -U daohua -d daohua -t -A -F':::' -c \"$AUDIT_QUERY\"")"
+AVATAR_SQL_FILE="$(mktemp /tmp/daohua_avatar_sql.XXXXXX 2>/dev/null || mktemp -t daohua_avatar_sql.XXXXXX)"
+cleanup_avatar_sql() {
+  rm -f "$AVATAR_SQL_FILE" >/dev/null 2>&1 || true
+}
+trap cleanup_avatar_sql EXIT INT TERM
 
-# 调用 Node 解析 Brotli 与生成格式化对账表
-node -e '
+# 调用 Node 解析 Brotli 与生成格式化对账表（使用 stdin 避免超长参数列表错误，并导出形象保留SQL）
+AVATAR_SQL_OUT="$AVATAR_SQL_FILE" printf '%s' "$AUDIT_RAW" | node -e '
+const fs = require("fs");
 const zlib = require("zlib");
-const raw = process.argv[1] || "";
+const raw = fs.readFileSync(0, "utf8");
 const lines = raw.trim().split("\n");
 
 if (!lines || lines.length === 0 || !lines[0]) {
@@ -204,6 +210,7 @@ for (const line of lines) {
   totalRefundBound += spentBound;
 
   rows.push({
+    playerId,
     account,
     displayName,
     createdAt,
@@ -215,9 +222,18 @@ for (const line of lines) {
     finalBound,
     finalTotal,
     avatar,
+    unlocked,
     unlockedStr: unlocked.join(", "),
     isExtraAvatar: unlocked.some(a => a !== "player" && a !== "player-male")
   });
+}
+
+const sqlOut = process.env.AVATAR_SQL_OUT;
+if (sqlOut) {
+  const stmts = rows.map(r => 
+    `INSERT INTO identity.player_preserved_avatars (player_id, avatar, unlocked_avatars, updated_at) VALUES (\x27${r.playerId}\x27, \x27${r.avatar}\x27, ARRAY[${r.unlocked.map(a => `\x27${a}\x27`).join(",")}], now()) ON CONFLICT (player_id) DO UPDATE SET avatar = EXCLUDED.avatar, unlocked_avatars = EXCLUDED.unlocked_avatars, updated_at = now();`
+  );
+  fs.writeFileSync(sqlOut, stmts.join("\n") + "\n");
 }
 
 console.log(`\n目标重置角色共计: ${rows.length} 人\n`);
@@ -239,7 +255,7 @@ console.log(`- 当前持有绑定功德 : ${totalCurBound}`);
 console.log(`- 商店消费返还自由 : +${totalRefundNorm}`);
 console.log(`- 商店消费返还绑定 : +${totalRefundBound}`);
 console.log(`- 最终全服保留总额 : ${grandTotalFinal} (当前持有 ${grandTotalCur} + 累计返还 ${grandTotalRefund})\n`);
-' "$AUDIT_RAW"
+'
 
 TARGET_COUNT="$(echo "$AUDIT_RAW" | grep -c ':::' || true)"
 if [[ "$TARGET_COUNT" == "0" ]]; then
@@ -296,13 +312,15 @@ printf '\n==> [4/4] 正在提交原子重置事务...\n'
 RESET_TX_SQL="
 BEGIN;
 
--- 1. 建立永久形象保留表（若不存在）
+-- 1. 建立永久形象保留表（若不存在）并同步记录
 CREATE TABLE IF NOT EXISTS identity.player_preserved_avatars (
     player_id uuid PRIMARY KEY REFERENCES identity.players(player_id) ON DELETE CASCADE,
     avatar varchar(64) NOT NULL,
     unlocked_avatars varchar(64)[] NOT NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+$(cat "$AVATAR_SQL_FILE" 2>/dev/null || true)
 
 -- 2. 锁定目标玩家集合
 CREATE TEMP TABLE _reset_targets ON COMMIT DROP AS
@@ -362,6 +380,7 @@ DELETE FROM market.trades t WHERE t.buyer_id IN (SELECT player_id FROM _reset_ta
    OR t.buy_order_id IN (SELECT order_id FROM market.orders o WHERE o.owner_player_id IN (SELECT player_id FROM _reset_targets))
    OR t.sell_order_id IN (SELECT order_id FROM market.orders o WHERE o.owner_player_id IN (SELECT player_id FROM _reset_targets));
 DELETE FROM market.settlement_claims WHERE player_id IN (SELECT player_id FROM _reset_targets);
+DELETE FROM market.settlement_cursors WHERE player_id IN (SELECT player_id FROM _reset_targets);
 DELETE FROM market.orders WHERE owner_player_id IN (SELECT player_id FROM _reset_targets);
 
 -- 7. 社交域重置（组队、好友申请、好友关系与聊天）
@@ -369,6 +388,7 @@ DELETE FROM social.party_invitations WHERE invitee_id IN (SELECT player_id FROM 
    OR inviter_id IN (SELECT player_id FROM _reset_targets)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _reset_targets));
 DELETE FROM social.party_seekers WHERE player_id IN (SELECT player_id FROM _reset_targets);
+DELETE FROM social.party_session_inbox WHERE player_id IN (SELECT player_id FROM _reset_targets);
 DELETE FROM social.party_sessions WHERE party_id IN (SELECT party_id FROM social.party_members WHERE player_id IN (SELECT player_id FROM _reset_targets));
 DELETE FROM social.party_members WHERE player_id IN (SELECT player_id FROM _reset_targets)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _reset_targets));
