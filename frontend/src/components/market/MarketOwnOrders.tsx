@@ -1,7 +1,10 @@
 import { memo, useCallback } from 'react'
 import { formatNumber } from '../../game/format'
 import { findEquipmentInCatalog } from '../../game/ids'
+import { buildOrderChatMarkup } from '../../game/chatMarkup'
+import { shareToChat } from '../../game/chatShare'
 import { ItemIcon } from '../ItemDisplay'
+import { StatGlyph } from '../StatGlyph'
 import { UnitNumber } from '../UnitNumber'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
@@ -39,6 +42,18 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
     // 延迟 120ms 再拉取：给服务端一个结算窗口消化撤单指令，避免立刻刷新读到旧快照。
     window.setTimeout(onChanged, 120)
   }, [onChanged, setNotice])
+
+  const shareOrder = useCallback((order: MarketOrder) => {
+    const markup = buildOrderChatMarkup({
+      orderId: order.orderId,
+      side: order.side,
+      itemId: order.itemId,
+      enhancementLevel: order.enhancementLevel,
+      price: order.price,
+      quantity: order.remainingQuantity,
+    })
+    shareToChat(markup)
+  }, [])
 
   return (
     <div className="market-own-panel">
@@ -92,7 +107,26 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
                 <time dateTime={order.expiresAt ?? order.createdAt} title={t('market.createdAt', { time: new Date(order.createdAt).toLocaleString('zh-CN') })}>
                   {order.expiresAt ? t('market.expiresOn', { date: new Date(order.expiresAt).toLocaleDateString('zh-CN') }) : t('market.noExpiry')}
                 </time>
-                <button aria-label={t('market.cancelOrder')} onClick={() => cancelOrder(order.orderId)} title={t('market.cancelOrder')} type="button">×</button>
+                <span className="market-own-actions">
+                  <button
+                    aria-label={t('market.shareOrder')}
+                    className="market-share-btn"
+                    onClick={() => shareOrder(order)}
+                    title={t('market.shareOrder')}
+                    type="button"
+                  >
+                    <StatGlyph glyph="qi" size={12} />
+                  </button>
+                  <button
+                    aria-label={t('market.cancelOrder')}
+                    className="market-cancel-btn"
+                    onClick={() => cancelOrder(order.orderId)}
+                    title={t('market.cancelOrder')}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </span>
               </div>
               )
             })}

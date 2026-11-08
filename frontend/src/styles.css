@@ -2131,6 +2131,106 @@ input[type="checkbox"] {
   color: var(--text);
 }
 
+.chat-order-link-anchor {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.chat-order-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 3px;
+  margin: 0 2px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  background: rgba(var(--surface-rgb, 20, 24, 30), 0.6);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  vertical-align: middle;
+  text-decoration: none;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+
+.chat-order-link:hover,
+.chat-order-link:focus-visible {
+  border-color: var(--gold);
+  background: rgba(var(--surface-rgb, 20, 24, 30), 0.85);
+  box-shadow: 0 0 6px rgba(var(--gold-rgb, 212, 175, 55), 0.25);
+}
+
+.chat-order-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.5px;
+}
+
+.chat-order-badge--buy {
+  background: rgba(143, 195, 166, 0.18);
+  border: 1px solid rgba(143, 195, 166, 0.45);
+  color: #8fc3a6;
+}
+
+.chat-order-badge--sell {
+  background: rgba(221, 161, 132, 0.18);
+  border: 1px solid rgba(221, 161, 132, 0.45);
+  color: #dda184;
+}
+
+.chat-order-name {
+  font-weight: 500;
+  color: var(--text-bright, #f0e6d2);
+}
+
+.chat-order-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+}
+
+.chat-order-price {
+  color: var(--gold-bright, #ffd57e);
+}
+
+.chat-order-qty {
+  color: var(--text-dim);
+}
+
+.equipment-slot-share-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--gold-faint);
+  border-radius: 3px;
+  background: rgba(10, 14, 18, 0.75);
+  color: var(--gold-dim);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.equipment-slot-share-btn:hover {
+  opacity: 1;
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
 .chat-row--party .chat-sender {
   color: var(--gold-bright);
 }
@@ -5418,7 +5518,7 @@ input[type="checkbox"] {
 .market-own-order {
   display: grid;
   min-height: 34px;
-  grid-template-columns: 44px minmax(90px, 1fr) minmax(84px, auto) minmax(76px, auto) minmax(94px, auto) 28px;
+  grid-template-columns: 44px minmax(90px, 1fr) minmax(84px, auto) minmax(76px, auto) minmax(94px, auto) minmax(56px, auto);
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
@@ -5483,13 +5583,38 @@ input[type="checkbox"] {
   text-align: right;
 }
 
-.market-own-order button {
-  width: 28px;
+.market-own-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.market-own-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
   height: 26px;
   padding: 0;
+  border: 1px solid var(--gold-faint);
+  border-radius: 3px;
+  background: rgba(12, 10, 8, 0.5);
   color: var(--text-dim);
+  cursor: pointer;
   font-family: Arial, sans-serif;
-  font-size: 16px;
+  font-size: 15px;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.market-share-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.market-cancel-btn:hover {
+  border-color: var(--danger, #ff6b6b);
+  color: var(--danger, #ff6b6b);
 }
 
 .market-own-side {
@@ -7362,7 +7487,7 @@ input[type="checkbox"] {
   }
 
   .market-own-order {
-    grid-template-columns: 40px minmax(74px, 1fr) minmax(78px, auto) 28px;
+    grid-template-columns: 40px minmax(74px, 1fr) minmax(78px, auto) minmax(56px, auto);
   }
 
   .market-own-order > span:nth-child(4) {
@@ -11161,3 +11286,10 @@ input[type="checkbox"] {
   gap: 8px;
   padding: 4px;
 }
+
+/* 灵阶特质沿用品质色调，兼顾明暗主题可读性。 */
+.trait-quality--q6 { border-color: var(--danger); }
+.trait-quality--q6 .trait-bar-quality-tag,
+.trait-quality--q6 .trait-bar-name { color: var(--danger); }
+
+.combat-stats-seg--true { background: var(--gold); }

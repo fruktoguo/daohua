@@ -180,6 +180,7 @@ export const combatZh = {
       maxStrength: '强度上限',
       statInterval: '间隔',
       damageCategory: {
+        true: '真实',
         physical: '物理',
         spell: '术法',
       },
@@ -357,6 +358,8 @@ export const combatZh = {
       placeholder: '输入传音内容…',
       inputAria: '传音内容',
       send: '发送',
+      shareItem: '分享到传音',
+      linkInsertedNotice: '已插入传音输入框',
       sectUnavailable: '宗门尚未开放，宗门频道暂不可用。',
       nearbyUnavailable: '赶路途中无法收发附近传音。',
       partyUnavailable: '尚未加入队伍，无法使用队伍频道。',

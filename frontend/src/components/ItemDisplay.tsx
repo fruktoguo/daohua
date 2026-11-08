@@ -2059,6 +2059,7 @@ export function ItemIcon({
 export function ItemReference({
   itemId,
   amount,
+  enhancementLevel,
   label,
   valueContent,
   className = '',
@@ -2067,6 +2068,8 @@ export function ItemReference({
   itemId: string
   /** 涉及数量（提供时显示复合胶囊） */
   amount?: number
+  /** 强化等级（提供且 > 0 时追加 +N 并在悬浮卡片中应用数值强化） */
+  enhancementLevel?: number
   /** 覆写显示文本（默认取物品名称） */
   label?: string
   /** 覆写胶囊值区内容（默认 `×数量` 下划线值；提供时即便无 amount 也渲染复合胶囊） */
@@ -2078,7 +2081,10 @@ export function ItemReference({
   useT()
   const metadata = resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const definition = useGameStore((state) => findItemInCatalog(state.items, itemId))
-  const displayLabel = label ?? definition?.name ?? metadata.label
+  const equipmentDef = useGameStore((state) => findEquipmentInCatalog(state.equipment, itemId))
+  const baseLabel = label ?? definition?.name ?? equipmentDef?.name ?? metadata.label
+  const lvl = Math.max(0, Math.floor(enhancementLevel ?? 0))
+  const displayLabel = !label && lvl > 0 ? `${baseLabel} +${lvl}` : baseLabel
   const tone = rarityToTone(metadata.rarity)
 
   if (amount !== undefined || valueContent !== undefined) {
@@ -2087,6 +2093,8 @@ export function ItemReference({
         amount={amount}
         className={`item-reference-compound pill-tone--${tone} ${className}`.trim()}
         definition={definition}
+        enhancementLevel={lvl}
+        equipmentDefinition={equipmentDef}
         itemId={itemId}
       >
         <ItemIcon itemId={itemId} />
@@ -2105,6 +2113,8 @@ export function ItemReference({
       amount={amount}
       className={`item-reference pill-tone--${tone} ${className}`.trim()}
       definition={definition}
+      enhancementLevel={lvl}
+      equipmentDefinition={equipmentDef}
       itemId={itemId}
     >
       <ItemIcon itemId={itemId} />

@@ -1,5 +1,5 @@
 import { useZongmenStore } from '../game/zongmenStore'
-import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
@@ -35,7 +35,25 @@ const ChatComposer = memo(function ChatComposer({
 }): React.JSX.Element {
   const t = useT()
   const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const disabled = hint !== undefined
+
+  useEffect(() => {
+    return chatService.subscribeDraftInsert((text: string) => {
+      setDraft(prev => {
+        const trimmed = prev.trim()
+        return trimmed ? `${trimmed} ${text}` : text
+      })
+      window.setTimeout(() => {
+        const input = inputRef.current
+        if (input) {
+          input.focus()
+          const len = input.value.length
+          input.setSelectionRange(len, len)
+        }
+      }, 50)
+    })
+  }, [])
 
   const submit = (): void => {
     const body = draft.trim()
@@ -58,6 +76,7 @@ const ChatComposer = memo(function ChatComposer({
         maxLength={MAX_CHAT_BODY_LENGTH}
         onChange={event => setDraft(event.target.value)}
         placeholder={t('combat.chat.placeholder')}
+        ref={inputRef}
         value={draft}
       />
       <button disabled={draft.trim().length === 0} type="submit">{t('combat.chat.send')}</button>

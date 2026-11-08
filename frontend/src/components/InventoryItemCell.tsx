@@ -5,6 +5,8 @@ import { calculateEquipmentSellPrice, convertTierToLevel, findEquipmentInCatalog
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { useMarketStore } from '../game/marketStore'
 import { useT } from '../i18n'
+import { buildItemChatMarkup } from '../game/chatMarkup'
+import { shareToChat } from '../game/chatShare'
 import { gameClient } from '../network/gameClient'
 import { useUiStore } from '../uiStore'
 import type { InventoryItem } from '../game/types'
@@ -204,6 +206,10 @@ export const InventoryItemCell = memo(function InventoryItemCell({
     market.setSelectedItemId(item.itemId)
   }
 
+  const share = () => {
+    const markup = buildItemChatMarkup(item.itemId, enhancementLevel)
+    shareToChat(markup)
+  }
   const handleContextMenu = (event: React.MouseEvent) => {
     event.preventDefault()
     if (usable) use()
@@ -228,7 +234,12 @@ export const InventoryItemCell = memo(function InventoryItemCell({
           onClick={() => setDialog('recycle')}
         />
       )}
-      {(usable || tradable || recyclable) && <FloatingMenuDivider />}
+      <FloatingMenuItem
+        label={t('combat.chat.shareItem')}
+        onClick={share}
+        tone="qi"
+      />
+      <FloatingMenuDivider />
       <FloatingMenuItem
         disabled={occupied}
         hint={occupied ? t('app.inventoryPanel.equippedHint') : undefined}

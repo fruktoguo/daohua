@@ -78,6 +78,22 @@ class ChatService {
   private channelScopes = new Map<string, string>()
   private friendScopes = new Map<string, string>()
   private seen = new Set<string>()
+  private readonly draftListeners = new Set<(text: string) => void>()
+
+  /** 订阅传音输入框草稿插入事件 */
+  readonly subscribeDraftInsert = (listener: (text: string) => void): (() => void) => {
+    this.draftListeners.add(listener)
+    return () => {
+      this.draftListeners.delete(listener)
+    }
+  }
+
+  /** 向传音输入框插入超链接或富文本文本 */
+  insertDraft(text: string): void {
+    for (const listener of this.draftListeners) {
+      listener(text)
+    }
+  }
 
   /** 订阅快照变更；返回取消订阅函数 */
   readonly subscribe = (listener: () => void): (() => void) => {

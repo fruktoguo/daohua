@@ -750,8 +750,9 @@ export class ExpeditionSimulator {
       }
     }
 
-    if (config.nodeName) {
-      const found = encounters.find(e => e.name === config.nodeName || e.name.includes(config.nodeName))
+    if (typeof config.nodeName === 'string' && config.nodeName.length > 0) {
+      const targetName = config.nodeName
+      const found = encounters.find(e => typeof e?.name === 'string' && (e.name === targetName || e.name.includes(targetName)))
       if (found) return found
     }
 

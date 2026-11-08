@@ -9,6 +9,7 @@ import type { PartyLinkDto } from '../network/protocol'
 import type { GameLogEntry, LogSegment } from '../logging/gameLogService'
 import { splitLogSegmentsByLines } from '../logging/gameLogService'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
+import { ChatMessageBody } from './ChatMessageContent'
 import { ItemReference } from './ItemDisplay'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { ValueText } from './ValueText'
@@ -275,7 +276,7 @@ const ChatRow = memo(function ChatRow({ message }: { message: ChatMessage }): Re
       <time dateTime={new Date(message.sentAtMs).toISOString()}>{formatLogTime(message.sentAtMs)}</time>
       <span className="log-message">
         <span className="chat-sender">{message.senderName}</span>
-        <span className="chat-body">{message.body}</span>
+        <span className="chat-body"><ChatMessageBody body={message.body} /></span>
         {message.partyLink && <PartyLinkCard link={message.partyLink} />}
       </span>
     </li>

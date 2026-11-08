@@ -4,12 +4,15 @@ import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
 import { useT } from '../i18n'
+import { buildItemChatMarkup } from '../game/chatMarkup'
+import { shareToChat } from '../game/chatShare'
 import type { CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../game/types'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ItemGridPicker, itemPickerEntryKey, type ItemPickerEntry } from './ItemGridPicker'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { RealmBadge } from './RealmBadge'
 import { calculateRealmInfo, serverExpToNextCap } from '../game/combatConstants'
+import { StatGlyph } from './StatGlyph'
 
 /** 槽位标签词条键（app.equipmentPanel 段下）：六部位 + 七技艺工具空槽文案 */
 type EquipmentSlotLabelKey =
@@ -117,6 +120,16 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
       ? `${equipmentDef.name} +${equippedItem.enhancementLevel}`
       : equipmentDef.name
 
+    const handleContextMenu = (e: React.MouseEvent) => {
+      e.preventDefault()
+      shareToChat(buildItemChatMarkup(equippedItem.itemId, equippedItem.enhancementLevel))
+    }
+
+    const handleShareClick = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      shareToChat(buildItemChatMarkup(equippedItem.itemId, equippedItem.enhancementLevel))
+    }
+
     return (
       <ItemTooltipTarget
         className="equipment-slot-anchor"
@@ -129,6 +142,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
         <button
           className={`equipment-slot-btn is-equipped${picking ? ' is-picking' : ''}`}
           onClick={onClick}
+          onContextMenu={handleContextMenu}
           type="button"
           aria-label={`${slotName}: ${displayName}`}
         >
@@ -141,6 +155,15 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
             name={displayName}
             rarity={metadata.rarity}
           />
+        </button>
+        <button
+          aria-label={t('combat.chat.shareItem')}
+          className="equipment-slot-share-btn"
+          onClick={handleShareClick}
+          title={t('combat.chat.shareItem')}
+          type="button"
+        >
+          <StatGlyph glyph="qi" size={12} />
         </button>
       </ItemTooltipTarget>
     )
