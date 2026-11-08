@@ -345,7 +345,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// <summary>
     /// 派生授予层数：<c>missingHitpointsPerStack</c> &gt; 0 时层数由目标已损气血与
     /// <paramref name="growth"/> 折算（每 N 点已损 1 层，满血 0 层）；否则
-    /// <c>spellAttackStackPercent</c> 按「基础 1 层 + 施法者术法攻击百分比向下取整」；
+    /// <c>spellAttackStackPercent</c> 按「(基础 1 层 + 施法者术法攻击百分比) × 施法者治疗增幅向下取整（保底 1 层）」；
     /// 否则 <c>resistancePerStack</c> 按「基础 1 层 + 施法者双抗总和比例向下取整」；
     /// 均未配置时为基础 1 层。
     /// </summary>
@@ -362,10 +362,13 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var spellAttackPercent = AbilityNumber(buff, "spellAttackStackPercent");
         if (spellAttackPercent > 0)
         {
-            // 基础 1 层 + 百分比额外层数；等级与技能增幅只提升百分比，不改变每层回血量。
+            // 基础 1 层 + 百分比额外层数；等级与技能增幅只提升百分比，不改变每层回血量；
+            // 施法者实时治疗增幅（Linear）作为独立乘区放大总基础层数，严格向下取整并保底 1 层。
             // epsilon 吸收二进制浮点在整数边界上的下偏。
             var extraStacks = Math.Max(0, caster.Stats.SpellAttack) * spellAttackPercent * growth;
-            return 1 + Math.Floor(extraStacks + 1e-9);
+            var healingMult = PercentValue.Multiplier(caster.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
+            var totalStacks = (1 + extraStacks) * healingMult;
+            return Math.Max(1, Math.Floor(totalStacks + 1e-9));
         }
         var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
         if (resistancePerStack > 0)
