@@ -550,6 +550,7 @@ export const insightZh = {
       qualityQ3: '玄品',
       qualityQ4: '地品',
       qualityQ5: '天品',
+      qualityQ6: '灵阶',
     },
   },
 }

@@ -11,7 +11,7 @@ import type { BattleReportCombatant } from '../game/types'
  * 展示当前行动账本的单位级战斗表现（duel.currentReport.combatants）。
  * 交互结构：「我方/敌方」阵营页签 × 「输出/承伤/减免/治疗」指标页签；
  * 条形图按所选阵营+指标把全部单位降序排列做横向对比——
- *   输出/承伤/减免 按物理（红）·术法（蓝）分段，治疗按自动回复（翠）·其他治疗（紫）分段；
+ *   输出/承伤按物理（红）·术法（蓝）·真实（金）分段，减免仅含物理/术法，治疗分自动回复（翠）·其他治疗（紫）；
  * 条宽按该组合全场最大值归一化；同类怪物已由服务端折叠为单个 monster 单位。
  * 进行中行动才有统计，行动归档后数据即弃（空列表 → 空态）。
  */
@@ -50,18 +50,19 @@ export const CombatStatsPanel = memo(function CombatStatsPanel(): React.JSX.Elem
   // 只渲染确有结算的单位行（全零注册行不占位）；敌我分侧，不混排。
   const combatants = (current?.combatants ?? []).filter(unit =>
     unit.damageDealtPhysical > 0 || unit.damageDealtSpell > 0
+    || unit.damageDealtTrue > 0 || unit.damageTakenTrue > 0
     || unit.damageTakenPhysical > 0 || unit.damageTakenSpell > 0
     || unit.damageMitigatedPhysical > 0 || unit.damageMitigatedSpell > 0
     || unit.healingRegen > 0 || unit.healingOther > 0)
 
   const sideUnits = combatants.filter(unit => side === 'enemy' ? unit.kind === 'monster' : unit.kind !== 'monster')
   const rows = sideUnits
-    .map(unit => ({ unit, first: metricPair(unit, metric)[0], second: metricPair(unit, metric)[1] }))
-    .filter(row => row.first + row.second > 0)
-    .sort((left, right) => (right.first + right.second) - (left.first + left.second))
-  const maxTotal = rows.reduce((acc, row) => Math.max(acc, row.first + row.second), 0)
+    .map(unit => ({ unit, first: metricPair(unit, metric)[0], second: metricPair(unit, metric)[1], third: metric === 'dealt' ? unit.damageDealtTrue : metric === 'taken' ? unit.damageTakenTrue : 0 }))
+    .filter(row => row.first + row.second + row.third > 0)
+    .sort((left, right) => (right.first + right.second + right.third) - (left.first + left.second + left.third))
+  const maxTotal = rows.reduce((acc, row) => Math.max(acc, row.first + row.second + row.third), 0)
 
-  // 图例与分段语义随指标切换：伤害系三指标为物理/术法，治疗为自动回复/其他。
+  // 伤害指标先抽取物理/术法，输出与承伤另加真实伤害；治疗改为自动回复/其他。
   const isHealing = metric === 'healing'
   const firstLabel = isHealing ? t('combat.report.combatantRegenTag') : t('combat.encounter.damageCategory.physical')
   const secondLabel = isHealing ? t('combat.report.combatantOtherTag') : t('combat.encounter.damageCategory.spell')
@@ -113,17 +114,20 @@ export const CombatStatsPanel = memo(function CombatStatsPanel(): React.JSX.Elem
               <span className="combat-stats-bar">
                 {row.first > 0 && <i className={`combat-stats-seg ${firstSeg}`} style={{ width: `${(row.first / maxTotal) * 100}%` }} />}
                 {row.second > 0 && <i className={`combat-stats-seg ${secondSeg}`} style={{ width: `${(row.second / maxTotal) * 100}%` }} />}
+                {row.third > 0 && <i className="combat-stats-seg combat-stats-seg--true" style={{ width: `${(row.third / maxTotal) * 100}%` }} />}
               </span>
-              <span className="combat-stats-value"><UnitNumber disableTooltip value={row.first + row.second} /></span>
+              <span className="combat-stats-value"><UnitNumber disableTooltip value={row.first + row.second + row.third} /></span>
               <span className="combat-stats-split">
                 <em>{firstLabel} <UnitNumber disableTooltip value={row.first} /></em>
                 <em>{secondLabel} <UnitNumber disableTooltip value={row.second} /></em>
+                {row.third > 0 && <em>{t('combat.encounter.damageCategory.true')} <UnitNumber disableTooltip value={row.third} /></em>}
               </span>
             </div>
           ))}
           <div className="combat-stats-legend" aria-hidden="true">
             <span><i className={`combat-stats-seg ${firstSeg}`} />{firstLabel}</span>
             <span><i className={`combat-stats-seg ${secondSeg}`} />{secondLabel}</span>
+            {(metric === 'dealt' || metric === 'taken') && <span><i className="combat-stats-seg combat-stats-seg--true" />{t('combat.encounter.damageCategory.true')}</span>}
           </div>
         </div>
       )}

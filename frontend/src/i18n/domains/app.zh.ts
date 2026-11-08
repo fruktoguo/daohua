@@ -92,6 +92,7 @@ export const appZh = {
       traitQ3: '玄品',
       traitQ4: '地品',
       traitQ5: '天品',
+      traitQ6: '灵阶',
       unlocked: '已领悟',
       locked: '未解锁',
       collected: '已收录',

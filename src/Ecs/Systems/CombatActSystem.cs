@@ -30,6 +30,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// 已恢复吟唱中的单位（PendingSkillIndex ≥ 0）跳过决策，保留跨战延续的施放。</summary>
     internal static void DecideInitialActions(CombatEncounterState encounter)
     {
+        CombatTraitRules.RefreshConditionalBuffs(encounter);
         // 复活起身重蓄势也走本入口：已阵亡单位不再排动作，尸体不得携带吟唱标记或预扣灵力。
         // 敌方起手目标同样在玩家方友军威胁轮盘上抽取（决策通道 19）：单盟友提前返回零掷点。
         for (var i = 0; i < encounter.Enemies.Count; i++)
@@ -89,7 +90,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 // 吟唱时长 = 配表 ÷ 行动速度除数（NonLinear 点数，境界成长已注入本通道）。
                 var castSeconds = Math.Max(1e-9,
                     AbilityNumber(slot.Ability, "castMilliseconds") / 1000d
-                    * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear));
+                    * PercentValue.Multiplier(unit.EffectiveStats.ActionSpeedPoints, PercentCurveMode.NonLinear));
                 unit.PendingSkillIndex = i;
                 unit.NextAttackAtSeconds = encounter.ElapsedSeconds + castSeconds;
                 // 冷却自吟唱完成起算：配表 ÷ 冷却缩减除数（NonLinear 点数，境界成长已注入本通道）。
@@ -104,7 +105,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         unit.NextAttackAtSeconds = encounter.ElapsedSeconds
             + unit.Stats.AttackIntervalSeconds
             * PercentValue.Multiplier(unit.Stats.AttackSpeedPoints + unit.BuffTotal(BuffEffectChannel.AttackSpeedPoints), PercentCurveMode.NonLinear)
-            * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+            * PercentValue.Multiplier(unit.EffectiveStats.ActionSpeedPoints, PercentCurveMode.NonLinear);
     }
 
     /// <summary>
@@ -135,7 +136,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             // 治疗目标范围按 targetType 解析；治疗增益（healingBonusRatio）对一切施放单位通用。
             // 免分配展开：self 单目标 / allAllies 顺序遍历存活友方 / 缺省取血量比例最低的存活友方
             // （原 OrderBy+Take(1) 的稳定首元素语义，平局保留列表先见者）。
-            var output = healOutput * PercentValue.Multiplier(caster.Stats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
+            var output = healOutput * PercentValue.Multiplier(caster.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
             // 局部函数不能捕获外层 ref 参数：events 以 ref 形参传递，语义与原先一致。
             void ApplyHeal(CombatantState ally, ref List<CombatEvent>? ev)
             {
@@ -266,12 +267,12 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             AtSeconds = at
         };
         ResolveHit(context);
+        var settled = CombatDamageSettlement.Apply(encounter, attacker, target, context.Damage);
+        context.Damage = settled.Damage;
+        context.ActualDamage = settled.Actual;
         // 行动级战斗统计：攻方按伤害类别计输出、守方计实收与减免（减免 = 原始威力 − 实收，未命中不落账）。
         encounter.StatsBook?.RecordHit(attacker, target, context.AttackStats.DamageKind,
             context.Damage, context.Hit ? Math.Max(0, context.RawDamage - context.Damage) : 0);
-        target.Hitpoints = Math.Max(0, target.Hitpoints - context.Damage);
-        // 气血变动后重算「每损失 N 点生命获得 1 层」类 Buff 的层数。
-        target.SyncDerivedStacks();
         attacker.AttackCount += 1;
         attacker.Threat += context.Damage;
         events ??= new List<CombatEvent>();
@@ -327,7 +328,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             ResetOnWave: buff.TryGetProperty("resetOnWave", out var resetFlag) && resetFlag.ValueKind == JsonValueKind.True,
             // 已损气血通道存储「折入成长后的等效每层阈值」，动态重算才能沿用同一成长口径。
             MissingHitpointsPerStack: missingPerStack > 0 ? missingPerStack / growth : 0,
-            Effects: BuffEffectParser.Parse(buff, effectGrowth));
+            Effects: BuffEffectParser.Parse(buff, effectGrowth), SourceUnitId: caster.Id);
         // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限（受控入口自动失效聚合缓存）。
         var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
         var existing = target.Buffs.FirstOrDefault(current => current.BuffId == buffId);

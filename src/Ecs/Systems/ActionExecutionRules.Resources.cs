@@ -393,10 +393,11 @@ internal static partial class ActionExecutionRules
                     DamageKind = CombatDamageKind.Spell,
                     Element = strike.Element
                 };
+                strikeStats = strikeStats with { TotalDamageBonusPoints = evalCaster.Stats.TotalDamageBonusPoints + evalCaster.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
                 var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, evalTarget);
                 player.Resources.Manapoints = Math.Max(0, player.Resources.Manapoints - manaCost);
                 SyncConsumableResourcesToBattle(player, player.Actions[0], live);
-                ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, live);
+                damage = ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, live, evalCaster, evalTarget, strike.Element);
                 // 雷击符打击计入行动统计簿：本机术法输出；目标怪按类型桶计术法承伤与减免（原始威力 − 实收）。
                 if (evalTarget!.DefinitionId is { } strikeMonsterId
                     && player.Duel.ReportFor(player.Actions[0].Id) is { } strikeReport)
@@ -522,6 +523,7 @@ internal static partial class ActionExecutionRules
         };
         var activeBuffs = player.Buffs.Active;
         caster.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+        if (player.Actions[0].Expedition?.PlayerState?.Buffs is { } battleBuffs) caster.ReplaceBuffs(battleBuffs);
         allies = [caster];
         enemies = [];
         // 求值单位与战内口径一致：封魔阵类建筑削弱按当前节点投影同步折减怪物面板。
@@ -600,26 +602,30 @@ internal static partial class ActionExecutionRules
     /// 雷击符伤害落地：优先写回复用的内存战斗会话，否则改写行动文档中的
     /// 波次快照；全灭时同步 PlayerWon 结局，保证恢复校验（玩家赢且满血）一致。
     /// </summary>
-    internal static void ApplyStrikeDamage(IPlayerResourceContext player, IPlayerActionState action,
-        int targetIndex, double damage, LiveCombatBattle? live)
+    internal static double ApplyStrikeDamage(IPlayerResourceContext player, IPlayerActionState action,
+        int targetIndex, double damage, LiveCombatBattle? live, CombatantState attacker, CombatantState target, CombatElement element)
     {
         if (live is not null && action is QueuedAction queued && action.Expedition is { } expedition
             && live.TryReuse(queued, expedition, out var session)
             && session is { } liveSession && targetIndex < liveSession.Battle.Enemies.Count)
         {
             var unit = liveSession.Battle.Enemies[targetIndex];
-            unit.Hitpoints = Math.Max(0, unit.Hitpoints - damage);
+            var settled = CombatDamageSettlement.Apply(liveSession.Battle, liveSession.Battle.Player, unit, damage);
+            CombatTraitReactions.ApplyRanhun(liveSession.Battle.Player, unit, element, settled.Actual, liveSession.Battle.ElapsedSeconds);
             if (!liveSession.Battle.Enemies.Any(static e => e.IsAlive))
                 liveSession.Battle.Outcome = CombatOutcome.PlayerWon;
-            return;
+            return settled.Damage;
         }
         if (action.Expedition is not { Phase: CombatExpeditionPhase.Combat } snap
-            || snap.Enemies is not { } waveEnemies || targetIndex >= waveEnemies.Count) return;
+            || snap.Enemies is not { } waveEnemies || targetIndex >= waveEnemies.Count) return 0;
         var updated = waveEnemies.ToArray();
         var enemy = updated[targetIndex];
+        var result = CombatDamageSettlement.Apply(null, attacker, target, damage);
+        CombatTraitReactions.ApplyRanhun(attacker, target, element, result.Actual, snap.BattleElapsedSeconds);
+        damage = result.Damage;
         updated[targetIndex] = enemy with
         {
-            State = enemy.State with { Hitpoints = Math.Max(0, enemy.State.Hitpoints - damage) }
+            State = enemy.State with { Hitpoints = target.Hitpoints, Buffs = target.Buffs.ToArray() }
         };
         var allDead = true;
         for (var i = 0; i < updated.Length; i++)
@@ -629,6 +635,7 @@ internal static partial class ActionExecutionRules
             Enemies = updated,
             Outcome = allDead ? CombatOutcome.PlayerWon : snap.Outcome
         };
+        return damage;
     }
 
     /// <summary>

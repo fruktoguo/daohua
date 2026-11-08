@@ -34,6 +34,10 @@ public sealed class CombatUnitStatEntry
     public double DamageDealtPhysical { get; internal set; }
     /// <summary>造成术法伤害。</summary>
     public double DamageDealtSpell { get; internal set; }
+    /// <summary>造成真实伤害。</summary>
+    public double DamageDealtTrue { get; internal set; }
+    /// <summary>实收真实伤害。</summary>
+    public double DamageTakenTrue { get; internal set; }
     /// <summary>实收物理伤害。</summary>
     public double DamageTakenPhysical { get; internal set; }
     /// <summary>实收术法伤害。</summary>
@@ -60,7 +64,9 @@ public sealed record CombatUnitStatDocument(
     double DamageMitigatedPhysical,
     double DamageMitigatedSpell,
     double HealingRegen,
-    double HealingOther);
+    double HealingOther,
+    double DamageDealtTrue = 0,
+    double DamageTakenTrue = 0);
 
 /// <summary>
 /// 行动级战斗单位统计簿：挂在行动实例账本（PlayerBattleReport.CombatStats）上随 duel 分段持久化，
@@ -124,7 +130,12 @@ public sealed class CombatUnitStatsBook
         if (damage <= 0 && mitigated <= 0) return;
         var attacker = Entry(attackerKey);
         var target = Entry(targetKey);
-        if (kind == CombatDamageKind.Spell)
+        if (kind == CombatDamageKind.True)
+        {
+            attacker.DamageDealtTrue += damage;
+            target.DamageTakenTrue += damage;
+        }
+        else if (kind == CombatDamageKind.Spell)
         {
             attacker.DamageDealtSpell += damage;
             target.DamageTakenSpell += damage;
@@ -159,6 +170,8 @@ public sealed class CombatUnitStatsBook
         var entry = Register("player", displayName);
         entry.DamageDealtPhysical += stats.DamageDealtPhysical;
         entry.DamageDealtSpell += stats.DamageDealtSpell;
+        entry.DamageDealtTrue += stats.DamageDealtTrue;
+        entry.DamageTakenTrue += stats.DamageTakenTrue;
         entry.DamageTakenPhysical += stats.DamageTakenPhysical;
         entry.DamageTakenSpell += stats.DamageTakenSpell;
         entry.DamageMitigatedPhysical += stats.DamageMitigatedPhysical;
@@ -182,6 +195,8 @@ public sealed class CombatUnitStatsBook
         var entry = Register(document.UnitKey, document.DisplayName);
         entry.DamageDealtPhysical = document.DamageDealtPhysical;
         entry.DamageDealtSpell = document.DamageDealtSpell;
+        entry.DamageDealtTrue = document.DamageDealtTrue;
+        entry.DamageTakenTrue = document.DamageTakenTrue;
         entry.DamageTakenPhysical = document.DamageTakenPhysical;
         entry.DamageTakenSpell = document.DamageTakenSpell;
         entry.DamageMitigatedPhysical = document.DamageMitigatedPhysical;

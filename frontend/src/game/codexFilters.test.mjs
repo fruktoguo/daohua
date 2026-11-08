@@ -108,6 +108,7 @@ test('codexFilters: 特质品阶过滤只放行 Q1~Q5，未知品阶仅在「全
   assert.equal(matchesCodexTraitGrade(0, 'q1'), false)
   assert.equal(matchesCodexTraitGrade(6, 'all'), true)
   assert.equal(matchesCodexTraitGrade(6, 'q5'), false)
+  assert.equal(matchesCodexTraitGrade(6, 'q6'), true)
   assert.equal(matchesCodexTraitGrade(4, 'q4'), true)
   assert.equal(matchesCodexTraitGrade(4, 'q3'), false)
 })

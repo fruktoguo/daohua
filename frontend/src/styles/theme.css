@@ -1617,3 +1617,8 @@
 :root[data-theme="light"] .battle-report-kpi-value--emerald {
   color: var(--jade);
 }
+
+/* 灵阶特质沿用品质色调，兼顾明暗主题可读性。 */
+:root[data-theme="light"] .trait-quality--q6 { border-color: var(--danger); }
+:root[data-theme="light"] .trait-quality--q6 .trait-bar-quality-tag,
+:root[data-theme="light"] .trait-quality--q6 .trait-bar-name { color: var(--danger); }

@@ -27,6 +27,20 @@ public static class CombatTraitRules
     public const string UnseenTraitId = "trait.bukandaowo";
     /// <summary>力微饭否：不动如山撼未动。受到伤害时以自身坚韧招引敌意，将所受之威等额化为敌方瞩目。</summary>
     public const string ThreatOnTakenTraitId = "trait.liweifanfou";
+    /// <summary>初见特质标识。</summary>
+    public const string FirstSightTraitId = "trait.chujian";
+    /// <summary>欲速则不达特质标识。</summary>
+    public const string HasteTraitId = "trait.yusuzebuda";
+    /// <summary>我要打十个特质标识。</summary>
+    public const string OutnumberedTraitId = "trait.woyaodashige";
+    /// <summary>单挑王特质标识。</summary>
+    public const string DuelKingTraitId = "trait.dantiaowang";
+    /// <summary>蓄意特质与状态标识。</summary>
+    public const string XuyiTraitId = "trait.xuyi", XuyiBuffId = "buff.xuyi";
+    /// <summary>燃魂特质与状态标识。</summary>
+    public const string RanhunTraitId = "trait.ranhun", RanhunBuffId = "buff.ranhun";
+    /// <summary>常驻战内状态使用有限最大到期值，每波清理。</summary>
+    public const double BattleLifetimeSeconds = double.MaxValue;
     /// <summary>隐身 buff：看不到我特质的开战授予效果（威胁增幅点数 -100）。</summary>
     public const string UnseenBuffId = "buff.yinshen";
     /// <summary>隐身 buff 持续时长（战斗时钟秒）。</summary>
@@ -185,6 +199,14 @@ public static class CombatTraitRules
     /// <summary>特质 → 开战 Buff 授予：遭遇创建时对每个单位按其面板 Traits 生效（隐身时长支持等级成长）。</summary>
     public static void ApplyBattleStartTraits(CombatantState unit, IReadOnlyDictionary<string, int>? traitLevels = null)
     {
+        traitLevels ??= unit.Stats.TraitLevels;
+        if (ContainsTrait(unit.Stats.Traits, FirstSightTraitId))
+            unit.AddBuff(new CombatBuffState("buff.chujian", 2, Name: "初见", ResetOnWave: true,
+                Effects: [new(BuffEffectChannel.EvasionPostRatio, 3 * LevelScale(unit, FirstSightTraitId))]));
+        if (ContainsTrait(unit.Stats.Traits, HasteTraitId))
+            unit.AddBuff(new CombatBuffState("buff.yusuzebuda", BattleLifetimeSeconds, Name: "欲速则不达", ResetOnWave: true,
+                Effects: [new(BuffEffectChannel.ActionSpeedPoints, 100 * LevelScale(unit, HasteTraitId)),
+                    new(BuffEffectChannel.DamageBonusPoints, -100), new(BuffEffectChannel.HealingBonusPoints, -100)]));
         if (ContainsTrait(unit.Stats.Traits, UnseenTraitId))
         {
             var level = traitLevels is not null && traitLevels.TryGetValue(UnseenTraitId, out var lv) ? Math.Max(1, lv) : 1;
@@ -195,6 +217,36 @@ public static class CombatTraitRules
         }
     }
 
+
+    /// <summary>特质正向数值的统一等级成长。</summary>
+    public static double LevelScale(CombatantState unit, string traitId)
+        => 1 + 0.05 * (Math.Max(1, unit.Stats.TraitLevels?.GetValueOrDefault(traitId) ?? 1) - 1);
+
+    /// <summary>在开战及存活人数改变时刷新条件属性，不重排已经起手的动作。</summary>
+    public static void RefreshConditionalBuffs(CombatEncounterState encounter)
+    {
+        var allies = encounter.PlayerAllies.Count(unit => unit.IsAlive);
+        var enemies = encounter.Enemies.Count(unit => unit.IsAlive);
+        foreach (var unit in encounter.PlayerAllies) Refresh(unit, allies, enemies);
+        foreach (var unit in encounter.Enemies) Refresh(unit, enemies, allies);
+
+        static void Refresh(CombatantState unit, int own, int opponents)
+        {
+            Update(OutnumberedTraitId, "buff.woyaodashige", "我要打十个", Math.Max(0, opponents - 1), 10, false);
+            Update(DuelKingTraitId, "buff.dantiaowang", "单挑王", own == 1 && opponents == 1 ? 1 : 0, 20, true);
+            void Update(string trait, string buffId, string name, double stacks, double points, bool duel)
+            {
+                if (!unit.IsAlive || !ContainsTrait(unit.Stats.Traits, trait)) stacks = 0;
+                var existing = unit.Buffs.FirstOrDefault(buff => buff.BuffId == buffId);
+                if (stacks == 0) { if (existing is not null) unit.RemoveBuffsWhere(buff => buff.BuffId == buffId); return; }
+                var value = points * LevelScale(unit, trait);
+                if (existing?.Stacks == stacks && existing.EffectValue(BuffEffectChannel.DamageBonusPoints) == value) return;
+                List<BuffEffect> effects = [new(BuffEffectChannel.DamageBonusPoints, value), new(BuffEffectChannel.DamageAbsorptionPoints, value)];
+                if (duel) { effects.Add(new(BuffEffectChannel.CriticalDamagePoints, value)); effects.Add(new(BuffEffectChannel.ActionSpeedPoints, value)); }
+                unit.SetBuff(new CombatBuffState(buffId, BattleLifetimeSeconds, stacks, name, ResetOnWave: true, Effects: effects));
+            }
+        }
+    }
 
     public static bool ContainsTrait(IReadOnlyList<string>? traits, string traitId)
     {
@@ -308,12 +360,18 @@ public static class CombatTraitRules
             StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.50, ["spellAttack"] = 0.50, ["criticalChance"] = 0.40, ["hitpointRegen"] = -0.60, ["criticalAvoidance"] = -0.35 },
             Description: "天煞孤星命入骨。双攻各提升 50%、暴击提升 40%、生命自动回复降低 60%、免爆降低 35%。"));
 
-        // ==================== 机制特质 · 消耗 5 点 ====================
-        Add(new(UnseenTraitId, "看不到我", 2, 5,
+        // ==================== 机制特质 · 单项消耗 ====================
+        Add(new(UnseenTraitId, "看不到我", 3, 8,
             Description: "身遁虚无匿形迹。开战后获得隐身状态，气机消弭避开敌方视线，持续 10 秒。"));
-        Add(new(ThreatOnTakenTraitId, "力微饭否", 2, 5,
+        Add(new(ThreatOnTakenTraitId, "力微饭否", 3, 8,
             Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["threatOnTakenPoints"] = ThreatOnTakenTraitPoints },
             Description: "不动如山撼未动。受到伤害时以自身坚韧招引敌意，将所受之威等额化为敌方瞩目。"));
+        Add(new(FirstSightTraitId, "初见", 3, 8, Description: "开战后闪避提升 300%，持续 2 秒。"));
+        Add(new(HasteTraitId, "欲速则不达", 4, 10, Description: "行动速度提升 100%，伤害与治疗增幅各降低 100 点；无法击杀生命值大于 1 的目标，先降至 1，再次攻击可击杀。"));
+        Add(new(OutnumberedTraitId, "我要打十个", 4, 12, Description: "敌方每多一名存活单位，增伤与免伤各提升 10 点。"));
+        Add(new(DuelKingTraitId, "单挑王", 5, 16, Description: "双方各剩一名存活单位时，增伤、免伤、暴击伤害与行动速度各提升 20 点。"));
+        Add(new(XuyiTraitId, "蓄意", 6, 25, Description: "受到的实际伤害积为蓄意层数；命中攻击时，若层数超过最大生命值，消耗全部层数对所有敌人造成等量威力伤害，主目标为真实伤害，其余为物理伤害。"));
+        Add(new(RanhunTraitId, "燃魂", 5, 16, Description: "直接火伤按实际伤害的 2% 施加燃魂，向下取整且至少 1 层；每层每秒造成 1 点火属性术法威力伤害，持续 5 秒，叠层并刷新持续时间。"));
         return dict;
     }
 }

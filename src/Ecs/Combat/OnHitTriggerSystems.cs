@@ -69,3 +69,16 @@ public sealed class FormationReactiveStrikeSystem : YuoSystem<CombatantComponent
         CombatTriggerMath.FormationReactiveStrike(trigger.Context);
     }
 }
+
+/// <summary>特质命中反应的实体入口，与内联路径共用唯一规则。</summary>
+[SystemOrder(50)]
+public sealed class TraitReactionSystem : YuoSystem<CombatantComponent, TraitReactionComponent>, IOnHitTrigger
+{
+    /// <summary>只在攻击方结算特质反应。</summary>
+    public override void Run(CombatantComponent unit, TraitReactionComponent marker)
+    {
+        var trigger = unit.Entity.GetComponent<CombatTriggerInboxComponent>()?.Trigger;
+        if (trigger is null || !ReferenceEquals(trigger.Context.Attacker, unit.State)) return;
+        CombatTraitReactions.OnHit(trigger.Context);
+    }
+}

@@ -10,7 +10,9 @@ public enum CombatDamageKind : byte
     /// <summary>肉身物理打击</summary>
     Physical = 0,
     /// <summary>玄门道法神通打击</summary>
-    Spell = 1
+    Spell = 1,
+    /// <summary>跳过常规增减伤链的真实伤害。</summary>
+    True = 2
 }
 
 /// <summary>
@@ -160,6 +162,8 @@ public sealed record CombatantStats(
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
     /// <summary>特质 ID 集合（trait.*，总纲 §7.12）：条件触发型特质的判定载体；面板字段，快照恢复时随模板重建。</summary>
     public IReadOnlyList<string>? Traits { get; init; }
+    /// <summary>随面板携带的特质等级，缺省等级为 1。</summary>
+    public IReadOnlyDictionary<string, int>? TraitLevels { get; init; }
 
     /// <summary>
     /// 战斗经验对抗池取值（总纲 §7.7.6）：玩家侧由 Progression.CombatExperience 注入，
@@ -191,6 +195,7 @@ public sealed record CombatantStats(
             || !double.IsFinite(ResistanceScale) || ResistanceScale <= 0
             || !double.IsFinite(CriticalDamagePoints) || CriticalDamagePoints < 0
             || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind)
+            || (TraitLevels is not null && TraitLevels.Any(entry => string.IsNullOrWhiteSpace(entry.Key) || entry.Key.Length > 128 || entry.Value < 1))
             || (Traits is not null && Traits.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
         if (Effects is null) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗反应效果参数无效。");
@@ -238,12 +243,14 @@ public sealed record CombatantStats(
 /// 授予时已折入成长（阈值 / Growth），后续重算沿用同一成长口径。</param>
 /// <param name="Effects">数值效果通道载荷（每层基础值已折入授予期成长）；无效果键时为 null。</param>
 /// <param name="StatRatios">属性百分比修饰（开放键空间）：战外面板折算消费；战内结算本期不消费。</param>
+/// <param name="SourceUnitId">周期伤害来源的战斗单位标识，随快照保存。</param>
 public sealed record CombatBuffState(
     string BuffId, double ExpiresAtSeconds, double Stacks = 1,
     string Name = "", bool ResetOnWave = false,
     double MissingHitpointsPerStack = 0,
     IReadOnlyList<BuffEffect>? Effects = null,
-    IReadOnlyDictionary<string, double>? StatRatios = null)
+    IReadOnlyDictionary<string, double>? StatRatios = null,
+    string? SourceUnitId = null)
 {
     /// <summary>
     /// 校验 Buff 字段满足持久化不变量。层数允许为 0：层数由已损气血派生的 Buff 在满血时为 0 层（惰性存在）。
@@ -251,6 +258,7 @@ public sealed record CombatBuffState(
     /// </summary>
     internal bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
         && double.IsFinite(ExpiresAtSeconds) && ExpiresAtSeconds >= 0
+        && (SourceUnitId is null || !string.IsNullOrWhiteSpace(SourceUnitId) && SourceUnitId.Length <= 128)
         && double.IsFinite(Stacks) && Stacks >= 0
         && double.IsFinite(MissingHitpointsPerStack)
         && (Effects is null || Effects.All(effect => effect is not null
@@ -532,6 +540,9 @@ public sealed class CombatantState
                 AttackPower = Math.Max(0, Stats.AttackPower + totals[(int)BuffEffectChannel.AttackPower]),
                 Accuracy = Math.Max(0, Stats.Accuracy + totals[(int)BuffEffectChannel.Accuracy]),
                 Critical = Math.Max(0, Stats.Critical + totals[(int)BuffEffectChannel.Critical]),
+                ActionSpeedPoints = Stats.ActionSpeedPoints + totals[(int)BuffEffectChannel.ActionSpeedPoints],
+                CriticalDamagePoints = Stats.CriticalDamagePoints + totals[(int)BuffEffectChannel.CriticalDamagePoints],
+                Effects = Stats.Effects with { HealingBonusPoints = Stats.Effects.HealingBonusPoints + totals[(int)BuffEffectChannel.HealingBonusPoints] },
                 Defense = Math.Max(0, Stats.Defense * resistance),
                 MagicResistance = Math.Max(0, Stats.MagicResistance * resistance),
                 Evasion = Math.Max(0, (Stats.Evasion + totals[(int)BuffEffectChannel.Evasion]) * (1 + totals[(int)BuffEffectChannel.EvasionPostRatio]))
@@ -854,7 +865,9 @@ public sealed class CombatEncounterState
             CombatTraitRules.ApplyBattleStartTraits(allyStates[i]);
         for (var i = 0; i < enemyStates.Length; i++)
             CombatTraitRules.ApplyBattleStartTraits(enemyStates[i]);
-        return new CombatEncounterState(encounterId, seed, allyStates, selfIndex, enemyStates, playerRespawnSeconds);
+        var encounter = new CombatEncounterState(encounterId, seed, allyStates, selfIndex, enemyStates, playerRespawnSeconds);
+        CombatTraitRules.RefreshConditionalBuffs(encounter);
+        return encounter;
     }
 
     /// <summary>从持久化快照恢复一场多敌遭遇战。</summary>
@@ -922,6 +935,7 @@ public sealed class CombatEncounterState
                 && (encounter.PlayerAllies[i].IsAlive || respawnAt < elapsedSeconds || playerRespawnSeconds <= 0))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点与生命状态不一致。");
         }
+        CombatTraitRules.RefreshConditionalBuffs(encounter);
         var alliesAlive = !encounter.IsAllAlliesDowned;
         var respawnPending = false;
         for (var i = 0; i < allies.Count; i++)

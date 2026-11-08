@@ -165,7 +165,7 @@ public sealed record DuelPlaybackState(
             && new[] { unit.DamageDealtPhysical, unit.DamageDealtSpell,
                 unit.DamageTakenPhysical, unit.DamageTakenSpell,
                 unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
-                unit.HealingRegen, unit.HealingOther }
+                unit.HealingRegen, unit.HealingOther, unit.DamageDealtTrue, unit.DamageTakenTrue }
                 .All(value => double.IsFinite(value) && value >= 0))))
         && (OpponentSkills is null || (OpponentSkills.Count <= 16 && OpponentSkills.All(slot => slot is not null
             && (slot.AbilityId?.Length ?? 0) <= 128

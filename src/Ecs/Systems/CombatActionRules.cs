@@ -1480,12 +1480,14 @@ internal static class CombatActionRules
     private static string AbilityName(GameDataCatalog gameData, string abilityId)
         => gameData.Abilities.TryGetValue(abilityId, out var ability)
             ? DeterministicCombatEngine.AbilityText(ability, "name") ?? abilityId
-            : abilityId;
+            : CombatTraitRules.AllTraits.TryGetValue(abilityId, out var trait) ? trait.Name : abilityId;
 
     /// <summary>施放行起手段：「{出手方}施放 {{ability:id|名称}}」，功法名走引用标记供前端悬浮卡解析。</summary>
     private static StringBuilder BeginCastMessage(string attackerLabel, string abilityId, GameDataCatalog gameData)
-        => new StringBuilder(attackerLabel).Append("施放 {{ability:").Append(abilityId).Append('|')
-            .Append(AbilityName(gameData, abilityId)).Append("}}");
+        => CombatTraitRules.AllTraits.ContainsKey(abilityId)
+            ? new StringBuilder(attackerLabel).Append("触发 ").Append(AbilityName(gameData, abilityId))
+            : new StringBuilder(attackerLabel).Append("施放 {{ability:").Append(abilityId).Append('|')
+                .Append(AbilityName(gameData, abilityId)).Append("}}");
 
     /// <summary>施放合并行的单帧子句收集：未命中 / 伤害 / 治疗按帧序入列；零效果帧（纯增益起手）不产生子句。</summary>
     private static void AppendCastClause(List<string> clauses, string targetLabel, bool hit, double damage, double healing,

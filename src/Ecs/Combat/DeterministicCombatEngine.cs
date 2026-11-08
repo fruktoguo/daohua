@@ -277,7 +277,7 @@ public static class DeterministicCombatEngine
                 _ => 0
             }, PercentCurveMode.NonLinear);
         // 暴击倍率 = 1 + 暴击伤害点数/100（Linear：基础 50 点即 150%）。
-        if (critical) damage *= PercentValue.Multiplier(attack.CriticalDamagePoints, PercentCurveMode.Linear);
+        if (critical) damage *= PercentValue.Multiplier(attack.CriticalDamagePoints + context.Attacker.BuffTotal(BuffEffectChannel.CriticalDamagePoints), PercentCurveMode.Linear);
         // 末位收口：总减伤（免伤点数）NonLinear——面板、临时与战内 Buff 免伤同乘区合并。
         damage *= PercentValue.Multiplier(
             defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffTotal(BuffEffectChannel.DamageAbsorptionPoints),

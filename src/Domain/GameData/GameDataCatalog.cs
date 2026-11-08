@@ -679,6 +679,12 @@ public sealed class GameDataCatalog
                 if (yield.Buff is { } grant) Add(grant.BuffId, grant.Name);
         // 特质注入的机制 Buff（如隐身）。
         Add(Combat.CombatTraitRules.UnseenBuffId, "隐身");
+        Add("buff.chujian", "初见");
+        Add("buff.yusuzebuda", "欲速则不达");
+        Add("buff.woyaodashige", "我要打十个");
+        Add("buff.dantiaowang", "单挑王");
+        Add(Combat.CombatTraitRules.XuyiBuffId, "蓄意");
+        Add(Combat.CombatTraitRules.RanhunBuffId, "燃魂");
         return buffs;
     }
 

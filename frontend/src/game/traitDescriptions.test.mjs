@@ -108,3 +108,16 @@ test('特质描述：双刃剑特质升级时正向增益提升，负面惩罚�
   const kr2 = formatTraitDescription('trait.kurongchangqingjue', 2)
   assert.equal(kr2, '一枯一荣皆生机。生命与灵力自动回复各提升 63%、最大生命提升 26.3%、全伤害降低 20%')
 })
+
+
+test('机制特质：等级成长只提升收益，固定惩罚与持续时间不变', () => {
+  assert.equal(Object.keys(TRAIT_DEFINITIONS).length, 36)
+  assert.match(formatTraitDescription('trait.chujian', 3), /330%，持续 2 秒/)
+  assert.match(formatTraitDescription('trait.yusuzebuda', 3), /110%，伤害与治疗增幅各降低 100 点/)
+  assert.match(formatTraitDescription('trait.woyaodashige', 3), /11 点/)
+  assert.match(formatTraitDescription('trait.dantiaowang', 3), /22 点/)
+  assert.match(formatTraitDescription('trait.xuyi', 3), /实际伤害的 110%/)
+  assert.match(formatTraitDescription('trait.ranhun', 3), /2.2%.*1 点.*5 秒/)
+  assert.equal(TRAIT_DEFINITIONS['trait.xuyi'].quality, 6)
+  assert.equal(TRAIT_DEFINITIONS['trait.ranhun'].cost, 16)
+})

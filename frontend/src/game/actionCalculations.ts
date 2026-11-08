@@ -7,6 +7,7 @@ import { calculateRealmProgress, calculateTechniqueProgress, serverExpToNextCap,
 import { autoUseBarFor, findEquipmentInCatalog } from './ids'
 import { getT } from '../i18n'
 import { linggenTechniqueSpeedRatio } from './linggenCalculations'
+import { hasActiveSustainedEffect } from './sustainedConsumables'
 
 /** 非物品、非增益的资源类收益类别（修为/灵力/气血） */
 export type ResourceYieldKind = 'mana' | 'hitpoints' | 'experience'
@@ -218,8 +219,7 @@ export function calculateActionYieldPreview({
     if (!slot || !slot.enabled || !slot.itemId) continue
     const itemDef = items.find(item => item.itemId === slot.itemId)
     if (!itemDef) continue
-    const isContinuous = itemDef.isContinuous === true && (itemDef.durationSeconds ?? 0) > 0
-    const isApplicable = isContinuous && actionBar !== null && (itemDef.usableBars?.includes(actionBar) ?? false)
+    const isApplicable = actionBar !== null && hasActiveSustainedEffect(itemDef, action, actionBar)
     if (!isApplicable) continue
 
     // 检查是否有持续时间或背包有货可自动补充
@@ -346,8 +346,7 @@ export function calculateActionYieldPreview({
       if (!slot || !slot.enabled || !slot.itemId) continue
       const itemDef = items.find(item => item.itemId === slot.itemId)
       if (!itemDef) continue
-      const isContinuous = itemDef.isContinuous === true && (itemDef.durationSeconds ?? 0) > 0
-      const isApplicable = isContinuous && actionBar !== null && (itemDef.usableBars?.includes(actionBar) ?? false)
+      const isApplicable = actionBar !== null && hasActiveSustainedEffect(itemDef, action, actionBar)
       if (!isApplicable) continue
       const hasRemaining = (slot.remainingDurationSeconds ?? 0) > 0
       const hasStock = getItemAmount(inventory, slot.itemId) >= 1

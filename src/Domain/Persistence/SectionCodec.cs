@@ -72,9 +72,10 @@ public static class SectionCodec
     /// v39：Buff 效果载荷收敛为通道模型（总纲 §7.9.5.3）：buffs/combat/action_queue 分段内的
     /// CombatBuffState/CombatBuffCarry/ActionSustainedBuff/ActiveBuff 平铺效果字段替换为 Effects 通道数组
     /// （不可缺省解码——旧平铺载荷无法无损重写，经 reset-outdated-players.sh 链交互确认清零玩家游戏域数据）。
+    /// v41：随战面板新增 TraitLevels、Buff 新增 SourceUnitId、战报新增真实伤害输出/承伤，均可缺省解码。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 40;
+    public const int CurrentSchemaVersion = 41;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>

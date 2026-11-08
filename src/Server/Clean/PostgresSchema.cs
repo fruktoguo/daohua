@@ -67,6 +67,7 @@ public static class PostgresSchema
     /// 存档标签推进至 v39，表结构未变。
     /// v46：social.parties 增 difficulty 队伍讨伐难度列（0~5，默认 0）；无存档载荷变更。
     /// v47：identity.accounts 增 taptap_openid 列与唯一索引（支持 TapTap 授权登录与一人一号强防御）；无存档载荷变更。
+    /// v48：战斗特质载荷标签 v41，新增字段均可缺省解码，无 DDL 变更。
     /// v49：新增宗门、成员、申请邀请与离宗时刻表，启用宗门传音；个人分段载荷不变。
     public const int Version = 49;
 
@@ -666,7 +667,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (49, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

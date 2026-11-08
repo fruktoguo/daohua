@@ -16,7 +16,7 @@ public static class CombatTriggerMath
         if (!context.Hit || context.Damage <= 0 || !context.Attacker.IsAlive) return;
         if (points <= 0) return;
         var healing = Math.Min(context.Attacker.Stats.MaxHitpoints - context.Attacker.Hitpoints,
-            context.Damage * points / 100);
+            context.Damage * points / 100 * PercentValue.Multiplier(context.Attacker.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear));
         if (healing <= 0) return;
         context.Attacker.Hitpoints += healing;
         // 气血汲取按攻击方归属计入「其他治疗」输出。
@@ -45,7 +45,7 @@ public static class CombatTriggerMath
         if (points <= 0) return;
         var reflected = context.Damage * points / 100;
         if (reflected <= 0) return;
-        context.Attacker.Hitpoints = Math.Max(0, context.Attacker.Hitpoints - reflected);
+        reflected = CombatDamageSettlement.Apply(context.Encounter, context.Target, context.Attacker, reflected).Damage;
         context.Target.Threat += reflected;
         // 反伤按受击方输出、攻击方实收入账；反弹伤害不再走减免链，减免记 0。
         context.Encounter.StatsBook?.RecordHit(context.Target, context.Attacker,
@@ -100,11 +100,12 @@ public static class CombatTriggerMath
                         DamageKind = CombatDamageKind.Spell,
                         Element = CombatElement.Wood
                     };
+                    strikeStats = strikeStats with { TotalDamageBonusPoints = ally.Stats.TotalDamageBonusPoints + ally.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
                     if (damage > 0)
                     {
                         var targetHpBefore = context.Target.Hitpoints;
-                        context.Target.Hitpoints = Math.Max(0, context.Target.Hitpoints - damage);
+                        damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
                         var actualDamage = targetHpBefore - context.Target.Hitpoints;
                         ally.Threat += actualDamage;
                         encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Spell, actualDamage, 0);
@@ -135,14 +136,15 @@ public static class CombatTriggerMath
                         DamageKind = CombatDamageKind.Physical,
                         Element = CombatElement.None
                     };
+                    strikeStats = strikeStats with { TotalDamageBonusPoints = ally.Stats.TotalDamageBonusPoints + ally.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
                     if (damage > 0)
                     {
                         var targetHpBefore = context.Target.Hitpoints;
-                        context.Target.Hitpoints = Math.Max(0, context.Target.Hitpoints - damage);
+                        damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
                         var actualDamage = targetHpBefore - context.Target.Hitpoints;
 
-                        var heal = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, actualDamage);
+                        var heal = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, actualDamage * PercentValue.Multiplier(ally.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear));
                         if (heal > 0)
                         {
                             ally.Hitpoints += heal;

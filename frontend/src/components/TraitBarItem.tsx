@@ -8,6 +8,7 @@ import {
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
 import { createBonusAsideCard, type BonusAsideItem } from './ItemDisplay'
 import { getT, useT } from '../i18n'
+import { BUFF_CHANNELS, formatBuffChannelValue, isBuffEffectChannel } from '../game/buffChannels'
 export interface TraitBarItemProps {
   /** 特质定义 */
   def: TraitMeta
@@ -43,12 +44,13 @@ const QUALITY_TONE_MAP: Record<number, FloatingTone> = {
   3: 'qi',
   4: 'purple',
   5: 'gold',
+  6: 'crimson',
 }
 /**
  * 构造特质关联的独立 Buff / 状态附属悬浮卡片 (Aside Card)
  * 只要特质带有 Buff（如看不到我关联隐身 Buff），Hover 时统一通过独立副窗口呈现，杜绝仅在自身描述中单薄交代的割裂表现。
  */
-export function resolveTraitAsideCards(def: TraitMeta, _level = 1): FloatingAsideCard[] {
+export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAsideCard[] {
   const t = getT()
   const cards: FloatingAsideCard[] = []
   if (def.id === 'trait.bukandaowo') {
@@ -71,13 +73,12 @@ export function resolveTraitAsideCards(def: TraitMeta, _level = 1): FloatingAsid
   } else if (def.buff) {
     const buff = def.buff
     const items: BonusAsideItem[] = []
-    if (typeof buff.threatPoints === 'number' && buff.threatPoints !== 0) {
-      items.push({
-        glyph: 'threat-bonus',
-        label: t('game.abilityStat.threatBonusPoints'),
-        tone: buff.threatPoints > 0 ? 'crimson' : 'teal',
-        value: `${buff.threatPoints > 0 ? '+' : ''}${buff.threatPoints}%`,
-      })
+    for (const [key, value] of Object.entries(buff)) {
+      if (!isBuffEffectChannel(key) || typeof value !== 'number') continue
+      const info = BUFF_CHANNELS[key]
+      // 特质只成长正向授予值，燃魂的每层威力不随等级再次放大。
+      const scaled = value > 0 && key !== 'fireSpellDamagePerSecond' ? value * getTraitLevelScale(level) : value
+      items.push({ glyph: info.glyph, label: t(info.labelKey), tone: value > 0 ? 'jade' : 'crimson', value: formatBuffChannelValue(info, scaled, 1) })
     }
     if (items.length > 0) {
       cards.push(

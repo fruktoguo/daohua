@@ -32,6 +32,9 @@ public sealed class ThreatOnTakenComponent : YuoComponent;
 /// <summary>敌方单位受击后触发己方阵盘反击标记组件。</summary>
 public sealed class FormationReactiveStrikeComponent : YuoComponent;
 
+/// <summary>蓄意与燃魂的命中反应能力标记。</summary>
+public sealed class TraitReactionComponent : YuoComponent;
+
 /// <summary>
 /// 内联触发器派发器：无实体宿主（纯领域推进、斗法剧本）使用的等价路径。
 /// 与实体派发共用 CombatTriggerMath，参数直读 Stats.Effects——
@@ -99,6 +102,9 @@ public static class CombatTriggerSurface
         SyncMarker<ThornsComponent>(entity, unit.Stats.Effects.DamageReflectPoints > 0);
         SyncMarker<ThreatOnTakenComponent>(entity, unit.Stats.Effects.ThreatOnTakenPoints > 0);
         SyncMarker<FormationReactiveStrikeComponent>(entity, !unit.IsPlayer);
+        SyncMarker<TraitReactionComponent>(entity,
+            CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.XuyiTraitId)
+            || CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.RanhunTraitId));
     }
 
     private static void SyncMarker<T>(YuoEntity entity, bool enabled) where T : YuoComponent, new()

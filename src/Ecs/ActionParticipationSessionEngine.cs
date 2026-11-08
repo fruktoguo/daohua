@@ -634,11 +634,12 @@ public sealed class ActionParticipationSessionEngine
                 DamageKind = CombatDamageKind.Spell,
                 Element = s.Element
             };
+            strikeStats = strikeStats with { TotalDamageBonusPoints = caster.Stats.TotalDamageBonusPoints + caster.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
             var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, target);
             caster.Manapoints = Math.Max(0, caster.Manapoints - manaCost);
-            target.Hitpoints = Math.Max(0, target.Hitpoints - damage);
-            // 气血变动后重算「每损失 N 点生命获得 1 层」类 Buff 的层数。
-            target.SyncDerivedStacks();
+            var settled = CombatDamageSettlement.Apply(_battle, caster, target, damage);
+            damage = settled.Damage;
+            CombatTraitReactions.ApplyRanhun(caster, target, s.Element, settled.Actual, _battle!.ElapsedSeconds);
             if (_battle is { } liveBattle && !liveBattle.Enemies.Any(static e => e.IsAlive))
                 liveBattle.Outcome = CombatOutcome.PlayerWon;
             if (target.DefinitionId is { } monsterId
@@ -1122,7 +1123,7 @@ public sealed class ActionParticipationSessionEngine
     private static CombatUnitStatDocument[] StatsDocuments(CombatUnitStatsBook book)
         => book.Entries.Select(row => new CombatUnitStatDocument(row.UnitKey, row.Kind, row.DisplayName,
             row.DamageDealtPhysical, row.DamageDealtSpell, row.DamageTakenPhysical, row.DamageTakenSpell,
-            row.DamageMitigatedPhysical, row.DamageMitigatedSpell, row.HealingRegen, row.HealingOther)).ToArray();
+            row.DamageMitigatedPhysical, row.DamageMitigatedSpell, row.HealingRegen, row.HealingOther, row.DamageDealtTrue, row.DamageTakenTrue)).ToArray();
 
     private static DateTimeOffset FromUnix(double seconds)
         => DateTimeOffset.FromUnixTimeMilliseconds(checked((long)Math.Round(seconds * 1000d)));

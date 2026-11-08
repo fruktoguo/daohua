@@ -785,7 +785,7 @@ public sealed partial class PlayerAggregate
                     && new[] { unit.DamageDealtPhysical, unit.DamageDealtSpell,
                         unit.DamageTakenPhysical, unit.DamageTakenSpell,
                         unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
-                        unit.HealingRegen, unit.HealingOther }
+                        unit.HealingRegen, unit.HealingOther, unit.DamageDealtTrue, unit.DamageTakenTrue }
                         .All(value => double.IsFinite(value) && value >= 0)))
             && (report.DuelItemsGained is null || (report.DuelItemsGained.Count <= 512
                 && report.DuelItemsGained.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)

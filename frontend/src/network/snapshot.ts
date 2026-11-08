@@ -56,7 +56,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-export const SNAPSHOT_SCHEMA_VERSION = 40
+export const SNAPSHOT_SCHEMA_VERSION = 41
 
 type JsonObject = Record<string, unknown>
 
@@ -1390,6 +1390,8 @@ function mapBattleReport(value: unknown, name: string): BattleReport {
         kind,
         displayName: stringValue(entry.displayName),
         damageDealtPhysical: numberValue(entry.damageDealtPhysical),
+        damageDealtTrue: numberValue(entry.damageDealtTrue),
+        damageTakenTrue: numberValue(entry.damageTakenTrue),
         damageDealtSpell: numberValue(entry.damageDealtSpell),
         damageTakenPhysical: numberValue(entry.damageTakenPhysical),
         damageTakenSpell: numberValue(entry.damageTakenSpell),

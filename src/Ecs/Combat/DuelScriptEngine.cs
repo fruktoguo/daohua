@@ -75,5 +75,5 @@ public static class DuelScriptEngine
         unit.DamageDealtPhysical, unit.DamageDealtSpell,
         unit.DamageTakenPhysical, unit.DamageTakenSpell,
         unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
-        unit.HealingRegen, unit.HealingOther);
+        unit.HealingRegen, unit.HealingOther, unit.DamageDealtTrue, unit.DamageTakenTrue);
 }

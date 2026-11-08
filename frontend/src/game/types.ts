@@ -748,6 +748,10 @@ export interface BattleReportCombatant {
   displayName: string
   /** 造成物理伤害 */
   damageDealtPhysical: number
+  /** 造成真实伤害。 */
+  damageDealtTrue: number
+  /** 承受真实伤害。 */
+  damageTakenTrue: number
   /** 造成术法伤害 */
   damageDealtSpell: number
   /** 实收物理伤害 */

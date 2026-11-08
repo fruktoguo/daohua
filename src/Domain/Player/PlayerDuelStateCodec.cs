@@ -62,7 +62,7 @@ public static class PlayerDuelStateCodec
                 unit.DamageDealtPhysical, unit.DamageDealtSpell,
                 unit.DamageTakenPhysical, unit.DamageTakenSpell,
                 unit.DamageMitigatedPhysical, unit.DamageMitigatedSpell,
-                unit.HealingRegen, unit.HealingOther)).ToArray(),
+                unit.HealingRegen, unit.HealingOther, unit.DamageDealtTrue, unit.DamageTakenTrue)).ToArray(),
         report.DuelItemsGained.Count == 0 ? null : report.DuelItemsGained.ToArray(),
         report.DuelItemsLost.Count == 0 ? null : report.DuelItemsLost.ToArray());
 

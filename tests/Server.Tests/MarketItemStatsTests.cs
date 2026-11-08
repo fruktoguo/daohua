@@ -155,13 +155,13 @@ public sealed class MarketItemStatsTests
             Assert.Equal(5d, currentStats.WeekVolume);
 
             // 模拟跨日：将 day_key 改为昨天，week_key 保留当周
-            await Sql(source, "UPDATE market.item_stats SET day_key = CURRENT_DATE - 1 WHERE asset_id = $1", testAsset);
+            await Sql(source, "UPDATE market.item_stats SET day_key = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - 1 WHERE asset_id = $1", testAsset);
             var maskedDayStats = Assert.Single(await repository.LoadItemStatsAsync(testAsset));
             Assert.Equal(0d, maskedDayStats.DayVolume);   // 读侧按 key 掩零
             Assert.Equal(5d, maskedDayStats.WeekVolume);  // 当周依然有效
 
             // 模拟跨周：将 week_key 改为上周
-            await Sql(source, "UPDATE market.item_stats SET week_key = CURRENT_DATE - 8 WHERE asset_id = $1", testAsset);
+            await Sql(source, "UPDATE market.item_stats SET week_key = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - 8 WHERE asset_id = $1", testAsset);
             var maskedWeekStats = Assert.Single(await repository.LoadItemStatsAsync(testAsset));
             Assert.Equal(0d, maskedWeekStats.DayVolume);
             Assert.Equal(0d, maskedWeekStats.WeekVolume); // 读侧按 key 掩零

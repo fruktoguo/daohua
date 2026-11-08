@@ -137,13 +137,14 @@ const MONSTER_RANK_LABELS: Record<Exclude<CodexMonsterRank, 'all'>, string> = {
 }
 
 /** 特质品阶（Q1 凡品 ~ Q5 天品） */
-const TRAIT_GRADES: ReadonlyArray<Exclude<CodexTraitGrade, 'all'>> = ['q1', 'q2', 'q3', 'q4', 'q5']
+const TRAIT_GRADES: ReadonlyArray<Exclude<CodexTraitGrade, 'all'>> = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6']
 const TRAIT_GRADE_LABELS: Record<Exclude<CodexTraitGrade, 'all'>, string> = {
   q1: 'traitQ1',
   q2: 'traitQ2',
   q3: 'traitQ3',
   q4: 'traitQ4',
   q5: 'traitQ5',
+  q6: 'traitQ6',
 }
 const TRAIT_GRADE_QUALITY: Record<Exclude<CodexTraitGrade, 'all'>, number> = {
   q1: 1,
@@ -151,6 +152,7 @@ const TRAIT_GRADE_QUALITY: Record<Exclude<CodexTraitGrade, 'all'>, number> = {
   q3: 3,
   q4: 4,
   q5: 5,
+  q6: 6,
 }
 
 /** 等阶下拉档位：与品质档 `ITEM_GRADE_ORDER`（1~8 阶）同域 */

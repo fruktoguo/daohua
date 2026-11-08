@@ -997,7 +997,7 @@ export function calculateBaseAttributes(experience = 0, explicitRealmLevel?: num
 export interface TraitMeta {
   id: string
   name: string
-  quality: number // 1~5 (凡黄玄地天)
+  quality: number // 1~6（凡黄玄地天灵）
   cost: number
   description: string
   /** 特质附带或激活的战内 Buff 效果定义（若有） */
@@ -1053,11 +1053,17 @@ export const TRAIT_DEFINITIONS: Readonly<Record<string, TraitMeta>> = Object.fre
   'trait.tianshekuanggu': { id: 'trait.tianshekuanggu', name: '天煞狂骨', quality: 5, cost: 20, description: '天煞孤星命入骨。双攻各提升 50%、暴击提升 40%、生命自动回复降低 60%、免爆降低 35%' },
 
   // 机制特质
+  'trait.chujian': { id: 'trait.chujian', name: '初见', quality: 3, cost: 8, description: '开战后闪避提升 300%，持续 2 秒', buff: { buffId: 'buff.chujian', name: '初见', durationSeconds: 2, evasionPostRatio: 3 } },
+  'trait.yusuzebuda': { id: 'trait.yusuzebuda', name: '欲速则不达', quality: 4, cost: 10, description: '行动速度提升 100%，伤害与治疗增幅各降低 100 点；无法击杀生命值大于 1 的目标，先降至 1，再次攻击可击杀', buff: { buffId: 'buff.yusuzebuda', name: '欲速则不达', actionSpeedPoints: 100, damageBonusPoints: -100, healingBonusPoints: -100 } },
+  'trait.woyaodashige': { id: 'trait.woyaodashige', name: '我要打十个', quality: 4, cost: 12, description: '敌方每多一名存活单位，增伤与免伤各提升 10 点', buff: { buffId: 'buff.woyaodashige', name: '我要打十个', damageBonusPoints: 10, damageAbsorptionPoints: 10 } },
+  'trait.dantiaowang': { id: 'trait.dantiaowang', name: '单挑王', quality: 5, cost: 16, description: '双方各剩一名存活单位时，增伤、免伤、暴击伤害与行动速度各提升 20 点', buff: { buffId: 'buff.dantiaowang', name: '单挑王', damageBonusPoints: 20, damageAbsorptionPoints: 20, criticalDamagePoints: 20, actionSpeedPoints: 20 } },
+  'trait.xuyi': { id: 'trait.xuyi', name: '蓄意', quality: 6, cost: 25, description: '受到的实际伤害积为蓄意层数；命中攻击时，若层数超过最大生命值，消耗全部层数对所有敌人造成等量威力伤害，主目标为真实伤害，其余为物理伤害', buff: { buffId: 'buff.xuyi', name: '蓄意' } },
+  'trait.ranhun': { id: 'trait.ranhun', name: '燃魂', quality: 5, cost: 16, description: '直接火伤按实际伤害的 2% 施加燃魂，向下取整且至少 1 层；每层每秒造成 1 点火属性术法威力伤害，持续 5 秒，叠层并刷新持续时间', buff: { buffId: 'buff.ranhun', name: '燃魂', durationSeconds: 5, fireSpellDamagePerSecond: 1 } },
   'trait.bukandaowo': {
     id: 'trait.bukandaowo',
     name: '看不到我',
-    quality: 2,
-    cost: 5,
+    quality: 3,
+    cost: 8,
     description: '身遁虚无匿形迹。开战后获得隐身状态，气机消弭避开敌方视线，持续 10 秒',
     buff: {
       buffId: 'buff.yinshen',
@@ -1069,8 +1075,8 @@ export const TRAIT_DEFINITIONS: Readonly<Record<string, TraitMeta>> = Object.fre
   'trait.liweifanfou': {
     id: 'trait.liweifanfou',
     name: '力微饭否',
-    quality: 2,
-    cost: 5,
+    quality: 3,
+    cost: 8,
     description: '不动如山撼未动。受到伤害时以坚韧气魄招引敌意，将所受之威等额化为敌方瞩目',
   },
 })
@@ -1134,6 +1140,13 @@ export function formatTraitDescription(id: string, level = 1): string {
   if (!meta) return ''
   if (level <= 1) return meta.description
   const scale = getTraitLevelScale(level)
+  const number = (value: number) => Number(value.toFixed(2))
+  if (id === 'trait.chujian') return `开战后闪避提升 ${number(300 * scale)}%，持续 2 秒`
+  if (id === 'trait.yusuzebuda') return meta.description.replace('100%', `${number(100 * scale)}%`)
+  if (id === 'trait.woyaodashige') return meta.description.replace('10 点', `${number(10 * scale)} 点`)
+  if (id === 'trait.dantiaowang') return meta.description.replace('20 点', `${number(20 * scale)} 点`)
+  if (id === 'trait.xuyi') return meta.description.replace('实际伤害积为', `实际伤害的 ${number(100 * scale)}% 积为`)
+  if (id === 'trait.ranhun') return meta.description.replace('2%', `${number(2 * scale)}%`)
   // 对数值进行 5% 缩放替换（如 10% -> 10.5%，10 秒 -> 10.5 秒）
   if (id === 'trait.bukandaowo') {
     const dur = (10 * scale).toFixed(1).replace(/\.0$/, '')

@@ -21,6 +21,10 @@ export type BuffEffectChannel =
   | 'threatPoints'
   | 'evasion'
   | 'evasionPostRatio'
+  | 'actionSpeedPoints'
+  | 'criticalDamagePoints'
+  | 'healingBonusPoints'
+  | 'fireSpellDamagePerSecond'
 
 /** 单条效果载荷：通道 + 每层基础值（resistancePoints 实例型通道为总值）。 */
 export interface BuffEffectEntry {
@@ -67,12 +71,16 @@ export const BUFF_CHANNELS: Record<BuffEffectChannel, BuffChannelDisplay> = {
   attackPower: { labelKey: 'market.effect.badgeAttackPower', glyph: 'phys-atk', positiveTone: 'gold', negativeTone: 'crimson', format: 'flat', perStack: true },
   accuracy: { labelKey: 'market.effect.badgeAccuracy', glyph: 'accuracy', positiveTone: 'jade', negativeTone: 'crimson', format: 'flat', perStack: true },
   critical: { labelKey: 'market.effect.badgeCritical', glyph: 'crit', positiveTone: 'gold', negativeTone: 'crimson', format: 'flat', perStack: true },
-  damageBonusPoints: { labelKey: 'market.effect.badgeDamageBonus', glyph: 'phys-damage', positiveTone: 'gold', negativeTone: 'crimson', format: 'percentPoint', perStack: false },
-  damageAbsorptionPoints: { labelKey: 'market.effect.badgeDamageAbsorption', glyph: 'total-damage', positiveTone: 'jade', negativeTone: 'crimson', format: 'absorption', perStack: false },
+  damageBonusPoints: { labelKey: 'market.effect.badgeDamageBonus', glyph: 'phys-damage', positiveTone: 'gold', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
+  damageAbsorptionPoints: { labelKey: 'market.effect.badgeDamageAbsorption', glyph: 'total-damage', positiveTone: 'jade', negativeTone: 'crimson', format: 'absorption', perStack: true },
   resistancePoints: { labelKey: 'market.effect.badgeResistance', glyph: 'foundation', positiveTone: 'jade', negativeTone: 'crimson', format: 'resistance', perStack: false },
   threatPoints: { labelKey: 'market.effect.badgeThreat', glyph: 'threat-bonus', positiveTone: 'amber', negativeTone: 'crimson', format: 'percentPoint', perStack: false },
   evasion: { labelKey: 'market.effect.badgeEvasion', glyph: 'evasion', positiveTone: 'cyan', negativeTone: 'crimson', format: 'flat', perStack: true },
   evasionPostRatio: { labelKey: 'market.effect.badgeEvasionPostRatio', glyph: 'evasion', positiveTone: 'cyan', negativeTone: 'crimson', format: 'percentRaw', perStack: false },
+  actionSpeedPoints: { labelKey: 'market.effect.badgeActionSpeed', glyph: 'action-speed', positiveTone: 'purple', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
+  criticalDamagePoints: { labelKey: 'market.effect.badgeCriticalDamage', glyph: 'crit', positiveTone: 'gold', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
+  healingBonusPoints: { labelKey: 'market.effect.badgeHealingBonus', glyph: 'hp-regen', positiveTone: 'emerald', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
+  fireSpellDamagePerSecond: { labelKey: 'market.effect.badgeFireDamagePerSecond', glyph: 'fire', positiveTone: 'crimson', negativeTone: 'crimson', format: 'flat', perStack: true },
 }
 
 /** wire 通道名 → 是否已登记（未登记通道不参与展示渲染）。 */
@@ -104,8 +112,8 @@ export function formatBuffChannelValue(
     case 'percentRaw':
       return signedPercent(scaled)
     case 'absorption': {
-      const percent = Math.abs(+(value / (100 + Math.abs(value)) * 100).toFixed(1))
-      return `${value > 0 ? '+' : '-'}${percent}%`
+      const percent = Math.abs(+(scaled / (100 + Math.abs(scaled)) * 100).toFixed(1))
+      return `${scaled > 0 ? '+' : '-'}${percent}%`
     }
     case 'resistance': {
       const ratio = value >= 0 ? value / 100 : -Math.abs(value) / (100 + Math.abs(value))

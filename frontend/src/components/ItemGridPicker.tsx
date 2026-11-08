@@ -3,7 +3,8 @@ import { formatNumber } from '../game/format'
 import { resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
 import { useT, type TFunction } from '../i18n'
-import type { CombatEquipmentDefinition, ItemDefinition, QueueEntry } from '../game/types'
+import type { ActionDefinition, AutoUseBarType, CombatEquipmentDefinition, ItemDefinition, QueueEntry } from '../game/types'
+import { resolveSustainedDurationClock } from '../game/sustainedConsumables'
 import { CandidatePicker, type CandidateOption } from './CandidatePicker'
 import type { FloatingPlacement } from './FloatingPopover'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
@@ -182,15 +183,22 @@ export function ItemGridPicker({
 }
 
 /**
- * 持续消耗品动作时间倒计时遮罩。
- * 服务端只在整轮完成时扣减权威剩余时间；当前轮通过行动进度平滑推导显示值，暂停时不会继续流逝。
+ * 持续消耗品倒计时：非战斗按行动进度推导，战斗按遭遇战时钟推导。
  */
 function SustainedDurationOverlay({
+  action,
   activeEntry,
+  bar,
+  itemDefinition,
+  queuePaused,
   remainingDurationSeconds,
   totalDurationSeconds,
 }: {
+  action: ActionDefinition | null
   activeEntry?: QueueEntry | null
+  bar: AutoUseBarType
+  itemDefinition?: ItemDefinition
+  queuePaused: boolean
   remainingDurationSeconds: number
   totalDurationSeconds: number
 }): React.JSX.Element {
@@ -202,15 +210,20 @@ function SustainedDurationOverlay({
     const overlay = overlayRef.current
     if (!overlay) return
     const total = Math.max(1, totalDurationSeconds)
-    const actionDuration = Math.max(0, activeEntry?.durationSeconds ?? 0)
-    const baseProgress = Math.max(0, activeEntry?.progressSeconds ?? 0)
-    const isRunning = activeEntry?.status === 'running' && actionDuration > 0
     const now = performance.now()
-    const elapsed = isRunning ? Math.max(0, (now - lastQueueSyncPerformanceTime) / 1000) : 0
-    const progressAtStart = Math.min(actionDuration, baseProgress + elapsed)
+    const elapsedSinceSync = Math.max(0, (now - lastQueueSyncPerformanceTime) / 1000)
+    const clock = resolveSustainedDurationClock(
+      bar, itemDefinition, action, activeEntry ?? null, queuePaused, elapsedSinceSync,
+    )
+    const actionDuration = clock.mode === 'action' ? clock.durationSeconds : 0
+    const progressAtStart = clock.mode === 'action'
+      ? Math.min(actionDuration, clock.progressAtSyncSeconds + clock.elapsedSinceSyncSeconds)
+      : clock.mode === 'combat' ? clock.elapsedSinceSyncSeconds : 0
+    const remainingAtStart = Math.max(0, remainingDurationSeconds - progressAtStart)
+    const isRunning = clock.mode !== 'frozen'
 
-    const renderText = (progressSec: number) => {
-      const remaining = Math.max(0, remainingDurationSeconds - progressSec)
+    const renderText = (elapsedOrProgress: number) => {
+      const remaining = Math.max(0, remainingDurationSeconds - elapsedOrProgress)
       // 只写数字子元素的 textContent：遮罩自身还要承载外圈虚线弧的嵌套层，
       // 直接写遮罩的 textContent 会连子元素一并清空。
       const text = `${Math.ceil(remaining)}s`
@@ -220,22 +233,28 @@ function SustainedDurationOverlay({
     }
 
     // 扇形遮罩经 @property 注册的 --cooldown-ratio 走 WAAPI 动画时间轴：
-    // 当前轮内剩余时长随行动进度线性流逝，一次动画直达轮末，不再逐帧 setProperty。
-    const ratioFrom = Math.min(1, Math.max(0, remainingDurationSeconds - progressAtStart) / total)
+    // 当前时钟窗口内剩余时长线性流逝，一次动画直达窗口边界，不逐帧写样式。
+    const ratioFrom = Math.min(1, remainingAtStart / total)
     overlay.style.setProperty('--cooldown-ratio', String(ratioFrom))
     let anim: Animation | undefined
     let interval: number | undefined
-    if (isRunning && progressAtStart < actionDuration) {
-      const ratioEnd = Math.min(1, Math.max(0, remainingDurationSeconds - actionDuration) / total)
+    const animationDurationSeconds = clock.mode === 'combat'
+      ? remainingAtStart
+      : clock.mode === 'action' ? Math.max(0, actionDuration - progressAtStart) : 0
+    if (isRunning && animationDurationSeconds > 0) {
+      const ratioEnd = clock.mode === 'combat'
+        ? 0
+        : Math.min(1, Math.max(0, remainingDurationSeconds - actionDuration) / total)
       anim = overlay.animate(
         [{ '--cooldown-ratio': String(ratioFrom) }, { '--cooldown-ratio': String(ratioEnd) }],
-        { duration: (actionDuration - progressAtStart) * 1000, easing: 'linear', fill: 'forwards' },
+        { duration: animationDurationSeconds * 1000, easing: 'linear', fill: 'forwards' },
       )
       renderText(progressAtStart)
       interval = window.setInterval(() => {
-        const progress = Math.min(actionDuration, progressAtStart + (performance.now() - now) / 1000)
+        const elapsed = progressAtStart + (performance.now() - now) / 1000
+        const progress = clock.mode === 'action' ? Math.min(actionDuration, elapsed) : elapsed
         renderText(progress)
-        if (progress >= actionDuration && interval !== undefined) window.clearInterval(interval)
+        if (clock.mode === 'action' && progress >= actionDuration && interval !== undefined) window.clearInterval(interval)
       }, 250)
     } else {
       renderText(progressAtStart)
@@ -251,7 +270,11 @@ function SustainedDurationOverlay({
     activeEntry?.progressSeconds,
     activeEntry?.remainingRepeats,
     activeEntry?.status,
+    action,
+    bar,
     lastQueueSyncPerformanceTime,
+    itemDefinition,
+    queuePaused,
     remainingDurationSeconds,
     totalDurationSeconds,
   ])
@@ -278,10 +301,13 @@ function SustainedDurationOverlay({
  * 3. 支持触发条件编辑按钮入口 (onCondition)，展示当前配置的条件数量。
  */
 export function ItemUseSlot({
+  action = null,
   activeEntry,
+  bar = 'enhancement',
   cooldownOverlay,
   conditionCount = 0,
   item,
+  queuePaused = false,
   remainingDurationSeconds = 0,
   totalDurationSeconds = 0,
   onClick,
@@ -289,6 +315,12 @@ export function ItemUseSlot({
 }: {
   /** 当前实际执行同类行动；用于平滑推导本轮动作时间消耗 */
   activeEntry?: QueueEntry | null
+  /** 当前队首行动定义，用于判断非战斗消耗品是否对本轮生效 */
+  action?: ActionDefinition | null
+  /** 自动使用槽所属物品栏域 */
+  bar?: AutoUseBarType
+  /** 队列暂停时持续消耗品时钟冻结 */
+  queuePaused?: boolean
   /** 冷却动画或倒计时蒙层节点 */
   cooldownOverlay?: ReactNode
   /** 已配置的战斗触发条件数量 */
@@ -362,7 +394,11 @@ export function ItemUseSlot({
         </button>
         {isContinuousActive && !cooldownOverlay && (
           <SustainedDurationOverlay
+            action={action}
             activeEntry={activeEntry}
+            bar={bar}
+            itemDefinition={item.definition}
+            queuePaused={queuePaused}
             remainingDurationSeconds={remainingDurationSeconds}
             totalDurationSeconds={effectiveTotal}
           />

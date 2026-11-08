@@ -89,6 +89,8 @@ public sealed record PlayerAttributes(
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
     /// <summary>已解锁特质 ID 集合（trait.*，总纲 §7.12）：条件触发型特质的判定载体，随面板下发。</summary>
     public IReadOnlyList<string>? Traits { get; init; }
+    /// <summary>随战携带的特质等级。</summary>
+    public IReadOnlyDictionary<string, int>? TraitLevels { get; init; }
     /// <summary>折叠为战斗单位属性规格：普攻全流派统一走物理攻击力与物理伤害；术法攻击仅供技能结算。</summary>
     /// <param name="combatExperience">战斗经验对抗池取值（总纲 §7.7.6）：由调用方从 Progression.CombatExperience 注入；
     /// 属性面板不承载该字段——它不随装备/Buff/境界等属性输入修订号变化，缓存命中时也必须取调用方现值。</param>
@@ -135,6 +137,7 @@ public sealed record PlayerAttributes(
             CooldownReductionPoints = CooldownReductionPoints,
             Effects = Effects,
             Traits = Traits,
+            TraitLevels = TraitLevels,
             CombatExperience = combatExperience
         };
 }
@@ -205,6 +208,7 @@ public static class PlayerAttributeResolver
             return new(combat.MaxHitpoints, combat.MaxManapoints, combat.AttackPower, 0, combat.Defense, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1)
             {
                 Traits = traits,
+                TraitLevels = traitLevels,
                 Effects = new CombatEffectProfile(ThreatOnTakenPoints: threatOnTaken)
             };
         var a = catalog.BaseAttributes.At(level);
@@ -466,6 +470,7 @@ public static class PlayerAttributeResolver
             CombatExpBonusPoints = P("combatExpBonusPoints"),
             ResistanceScale = tier,
             Traits = traits,
+            TraitLevels = traitLevels,
             Effects = new CombatEffectProfile(P("hpDrainPoints"), P("mpDrainPoints"), P("damageReflectPoints"), P("healingBonusPoints"), P("threatOnTakenPoints"))
         };
     }

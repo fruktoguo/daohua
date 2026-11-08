@@ -51,8 +51,13 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         {
             var statsBook = encounter.StatsBook;
             // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
-            for (var i = 0; i < encounter.PlayerAllies.Count; i++) Tick(encounter.PlayerAllies[i], statsBook, regenTick, secondTick);
-            for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i], statsBook, regenTick, secondTick);
+            foreach (var unit in encounter.PlayerAllies.Concat(encounter.Enemies))
+            {
+                var alive = unit.IsAlive;
+                Tick(unit, statsBook, regenTick, secondTick);
+                if (alive != unit.IsAlive) CombatTraitRules.RefreshConditionalBuffs(encounter);
+                if (secondTick) CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+            }
         }
         // 结算完毕后统一剔除到期 Buff：到期时刻所在边界已按完整效果结算，之后不再参与任何相位。
         for (var i = 0; i < encounter.PlayerAllies.Count; i++)
@@ -147,6 +152,7 @@ public sealed class CombatAllyRespawnSystem : YuoSystem<CombatEncounterComponent
         ally.Hitpoints = ally.Stats.MaxHitpoints;
         ally.RespawnAtSeconds = double.PositiveInfinity;
         ally.RespawnDeadlineSeconds = double.PositiveInfinity;
+        CombatTraitRules.RefreshConditionalBuffs(encounter);
         CombatActSystem.DecideInitialActions(encounter);
         // 复活标记分流：本机成员走 PlayerRespawns（沿用单人写回口径），其余成员进盟友标记列表。
         if (context.AllyIndex == encounter.SelfIndex)

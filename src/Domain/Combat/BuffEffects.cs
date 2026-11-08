@@ -71,7 +71,15 @@ public enum BuffEffectChannel : byte
     /// <summary>每层闪避点数加成。</summary>
     Evasion = 14,
     /// <summary>闪避后段乘区比率。</summary>
-    EvasionPostRatio = 15
+    EvasionPostRatio = 15,
+    /// <summary>行动速度点数：同时影响普攻与技能吟唱。</summary>
+    ActionSpeedPoints = 16,
+    /// <summary>暴击伤害点数。</summary>
+    CriticalDamagePoints = 17,
+    /// <summary>主动治疗与生命汲取的治疗增幅点数。</summary>
+    HealingBonusPoints = 18,
+    /// <summary>每层每秒火属性术法威力。</summary>
+    FireSpellDamagePerSecond = 19
 }
 
 /// <summary>Buff 效果载荷条目：通道 + 每层基础值（Instance 型通道为总值）。</summary>
@@ -136,6 +144,14 @@ public static class BuffEffectRegistry
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.EvasionPostRatio, "evasionPostRatio",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.ActionSpeedPoints, "actionSpeedPoints",
+            BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.CriticalDamagePoints, "criticalDamagePoints",
+            BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.HealingBonusPoints, "healingBonusPoints",
+            BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.FireSpellDamagePerSecond, "fireSpellDamagePerSecond",
+            BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.Tick1s, BuffOutOfCombatPanel.None),
     ];
 
     private static readonly BuffEffectChannelInfo[] ChannelIndex = BuildChannelIndex();

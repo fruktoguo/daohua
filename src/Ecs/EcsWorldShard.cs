@@ -542,6 +542,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             player.RemoveComponent<ManaLeechComponent>();
             player.RemoveComponent<ThornsComponent>();
             player.RemoveComponent<ThreatOnTakenComponent>();
+            player.RemoveComponent<TraitReactionComponent>();
             player.RemoveComponent<CombatTriggerInboxComponent>();
             player.RemoveComponent<SkillStateComponent>();
             player.RemoveComponent<BuffComponent>();

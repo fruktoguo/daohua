@@ -28,7 +28,7 @@ export type CodexAbilityDamage = 'all' | 'physical' | 'spell'
 export type CodexMonsterRank = 'all' | 'normal' | 'elite' | 'boss'
 
 /** 特质品阶：全部 / 凡品 ~ 天品（对齐 `TRAIT_DEFINITIONS.quality` 1~5） */
-export type CodexTraitGrade = 'all' | 'q1' | 'q2' | 'q3' | 'q4' | 'q5'
+export type CodexTraitGrade = 'all' | 'q1' | 'q2' | 'q3' | 'q4' | 'q5' | 'q6'
 
 /** 收录状态：全部 / 已收录 / 未收录 */
 export type CodexCollectFilter = 'all' | 'collected' | 'missing'
@@ -113,10 +113,10 @@ export function matchesCodexGrade(tier: number | null | undefined, grade: number
   return Math.max(1, Math.floor(tier ?? 1)) === grade
 }
 
-/** 特质品阶过滤：'all' 表示不过滤；Q1~Q5 之外的品阶只在「全部」下可见 */
+/** 特质品阶过滤：'all' 表示不过滤；Q1~Q6 之外的品阶只在「全部」下可见 */
 export function matchesCodexTraitGrade(quality: number, tab: CodexTraitGrade): boolean {
   if (tab === 'all') return true
-  return quality >= 1 && quality <= 5 && tab === `q${Math.floor(quality)}`
+  return quality >= 1 && quality <= 6 && tab === `q${Math.floor(quality)}`
 }
 
 /** 收录状态过滤：'all' 表示不过滤 */

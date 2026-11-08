@@ -1304,6 +1304,8 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
     const definition = resolveActionDefinition(current.actionId)
     return autoUseBarFor({ type: current.type, technique: definition?.technique ?? null }) === bar ? current : null
   })
+  const activeAction = activeEntry ? resolveActionDefinition(activeEntry.actionId) ?? null : null
+  const queuePaused = useGameStore(state => state.queue.paused)
   // 消耗品冷却仅 combat 栏域槽位由服务端按双组下标定长下发（药品栏 0-2、通用栏 3-5）。
   const consumableCooldowns = useGameStore(
     state => bar === 'combat' ? state.combatResources?.consumableCooldownMilliseconds : undefined,
@@ -1378,7 +1380,9 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
           return (
             <div className={`auto-use-slot${picker?.index === index ? ' is-picking' : ''}`} key={index}>
               <ItemUseSlot
+                action={activeAction}
                 activeEntry={activeEntry}
+                bar={bar}
                 conditionCount={isCombat ? conditionCount : undefined}
                 cooldownOverlay={cooldownMs > 0 && selectedItem?.definition ? (
                   <AbilityCooldownOverlay
@@ -1387,6 +1391,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
                   />
                 ) : null}
                 item={selectedItem}
+                queuePaused={queuePaused}
                 onCondition={isCombat && selectedItem ? () => setEditingTriggerItemId(selectedItem.itemId) : undefined}
                 remainingDurationSeconds={slot.remainingDurationSeconds}
                 totalDurationSeconds={selectedDefinition?.durationSeconds}

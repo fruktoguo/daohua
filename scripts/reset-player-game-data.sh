@@ -383,6 +383,40 @@ DELETE FROM market.settlement_claims WHERE player_id IN (SELECT player_id FROM _
 DELETE FROM market.settlement_cursors WHERE player_id IN (SELECT player_id FROM _reset_targets);
 DELETE FROM market.orders WHERE owner_player_id IN (SELECT player_id FROM _reset_targets);
 
+-- 6.1 联动校准行情统计（清除已删挂单的在售/求购量，并将无成交记录品种的参考价置空）
+WITH live_stats AS (
+    SELECT 
+        asset_id, 
+        variant, 
+        MIN(price) FILTER (WHERE side = 'sell') AS best_ask_price,
+        COALESCE(SUM(quantity - filled_quantity) FILTER (WHERE side = 'sell'), 0) AS ask_quantity,
+        MAX(price) FILTER (WHERE side = 'buy') AS best_bid_price,
+        COALESCE(SUM(quantity - filled_quantity) FILTER (WHERE side = 'buy'), 0) AS bid_quantity
+    FROM market.orders
+    WHERE status IN ('active', 'partially_filled')
+    GROUP BY asset_id, variant
+)
+UPDATE market.item_stats s
+SET 
+    best_ask_price = ls.best_ask_price,
+    ask_quantity = COALESCE(ls.ask_quantity, 0),
+    best_bid_price = ls.best_bid_price,
+    bid_quantity = COALESCE(ls.bid_quantity, 0),
+    reference_price = CASE WHEN EXISTS (SELECT 1 FROM market.trades t WHERE t.asset_id = s.asset_id AND t.variant = s.variant) THEN s.reference_price ELSE NULL END,
+    updated_at = now()
+FROM (
+    SELECT 
+        s2.asset_id,
+        s2.variant,
+        ls2.best_ask_price,
+        ls2.ask_quantity,
+        ls2.best_bid_price,
+        ls2.bid_quantity
+    FROM market.item_stats s2
+    LEFT JOIN live_stats ls2 ON s2.asset_id = ls2.asset_id AND s2.variant = ls2.variant
+) ls
+WHERE s.asset_id = ls.asset_id AND s.variant = ls.variant;
+
 -- 7. 社交域重置（组队、好友申请、好友关系与聊天）
 -- 清除角色宗门关系；宗主被重置时解散其宗门，保留退出锚点供其他成员恢复。
 INSERT INTO social.zongmen_departures(zongmen_id,player_id,left_at,anchor_node_id)
