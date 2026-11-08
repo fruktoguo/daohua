@@ -79,11 +79,16 @@
 
 #### B. 移动端 (Touch 模式)
 - 自动检测 `(pointer: coarse)` 与 `(hover: none)`；
-- 点击触发元素展开提示，**绝不调用 `e.preventDefault()` / `e.stopPropagation()`**，确保业务自身 `onClick` 100% 正常执行；
-- **长按（浏览器原生派发 `contextmenu`）统一展示本触发器的 hover 详情气泡**：`preventDefault()` 屏蔽系统右键/长按菜单，`stopPropagation()` 阻断冒泡——外层触发器挂载的业务右键回调（如背包格「右键快捷使用」）在触屏端不会被执行，桌面端语义不变；
-- 滑动屏幕（`scroll` / `touchmove`）时平滑收起当前气泡；
-- 点击外部空白处静默关闭，且不拦截目标元素的点击事件。
-
+- **触屏长按手势状态机（Long Press Gesture）**：
+  - 监听 Pointer/Touch 触摸事件，触屏按下 350ms 触发 hover 悬浮气泡，并触发轻量微振动（`navigator.vibrate(15)`）给予灵觉感应反馈；
+  - 手指在屏幕滑动超过 10px 时自动取消长按检测，绝不影响长列表的上下滚动或页面滑动翻页；
+- **原生捕获阶段防误触拦截（Capture Phase Click Suppression）**：
+  - 长按触发后，在触发器 DOM 节点捕获阶段（Capture Phase）彻底掐灭随后的模拟 `click` 事件（`e.stopImmediatePropagation()` / `e.preventDefault()`）；
+  - 确保长按松开手指后，**绝对不会**误触发底层挂载的业务按钮（如穿脱装备、使用物品、购买或挑选弹窗）；
+- **非按钮纯展示标的轻触支持**：
+  - 对于没有包裹交互按钮的纯展示型标签（如属性胶囊 PillLabel、Buff 图标），轻点依然支持轻量打开或关闭；
+- **关闭机制**：
+  - 滑动屏幕（`scroll` / `touchmove`）或点击外部空白处时静默收起当前气泡，不拦截用户对其他元素的点击。
 ---
 
 ## 4. 标准固定宽度规范

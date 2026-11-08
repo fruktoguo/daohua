@@ -487,6 +487,11 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
     const openTimerRef = useRef<number | null>(null)
     const closeTimerRef = useRef<number | null>(null)
     const repositionRafRef = useRef<number | null>(null)
+    const longPressTimerRef = useRef<number | null>(null)
+    const touchStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+    const isLongPressActiveRef = useRef(false)
+    const suppressClickUntilRef = useRef(0)
+
     const lastPlacementRef = useRef<FloatingPlacement | null>(null)
     const onPlacementChangeRef = useRef(onPlacementChange)
     onPlacementChangeRef.current = onPlacementChange
@@ -738,6 +743,26 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       return () => {
         if (openTimerRef.current) window.clearTimeout(openTimerRef.current)
         if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current)
+        if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current)
+      }
+    }, [])
+
+    // 原生捕获阶段点击拦截：长按手势触发后，彻底在捕获阶段掐灭随后的模拟 click 事件，
+    // 绝不让点击事件穿透到子元素（如装备槽更换、背包使用、购买按钮等）
+    useEffect(() => {
+      const el = anchorRef.current
+      if (!el) return
+      const handleCaptureClick = (e: MouseEvent) => {
+        if (isLongPressActiveRef.current || Date.now() < suppressClickUntilRef.current) {
+          e.preventDefault()
+          e.stopPropagation()
+          e.stopImmediatePropagation()
+          isLongPressActiveRef.current = false
+        }
+      }
+      el.addEventListener('click', handleCaptureClick, true)
+      return () => {
+        el.removeEventListener('click', handleCaptureClick, true)
       }
     }, [])
 
@@ -754,8 +779,71 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       }
     }
 
+    const clearLongPress = useCallback(() => {
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+    }, [])
+
+    const handleTriggerPointerDown = (e: React.PointerEvent) => {
+      if (disabled) return
+      // 仅对触屏输入启动长按检测，鼠标输入保留桌面原生 hover 语义
+      if (e.pointerType !== 'touch') return
+      if (trigger !== 'hover') return
+
+      touchStartPosRef.current = { x: e.clientX, y: e.clientY }
+      isLongPressActiveRef.current = false
+      clearLongPress()
+
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null
+        isLongPressActiveRef.current = true
+        suppressClickUntilRef.current = Date.now() + 600
+        handleOpen()
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          try {
+            navigator.vibrate(15)
+          } catch {
+            // 静默忽略宿主不支持或禁用的振动
+          }
+        }
+      }, 350)
+    }
+
+    const handleTriggerPointerMove = (e: React.PointerEvent) => {
+      if (e.pointerType !== 'touch') return
+      if (!longPressTimerRef.current) return
+      const dx = e.clientX - touchStartPosRef.current.x
+      const dy = e.clientY - touchStartPosRef.current.y
+      // 容差滑动 > 10px 判定为玩家在滚动列表或滑动屏幕，立即取消长按检测
+      if (dx * dx + dy * dy > 100) {
+        clearLongPress()
+      }
+    }
+
+    const handleTriggerPointerUp = (e: React.PointerEvent) => {
+      if (e.pointerType !== 'touch') return
+      clearLongPress()
+      if (isLongPressActiveRef.current) {
+        // 抑制可能伴随的默认行为
+        e.preventDefault()
+      }
+    }
+
+    const handleTriggerPointerCancel = (e: React.PointerEvent) => {
+      if (e.pointerType !== 'touch') return
+      clearLongPress()
+    }
+
     const handleTriggerClick = (e: React.MouseEvent) => {
       if (disabled) return
+      if (isLongPressActiveRef.current || Date.now() < suppressClickUntilRef.current) {
+        e.preventDefault()
+        e.stopPropagation()
+        isLongPressActiveRef.current = false
+        return
+      }
       if (stopClickPropagation) {
         e.stopPropagation()
       }
@@ -830,6 +918,10 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         onContextMenu={handleTriggerContextMenu}
         onMouseEnter={handleTriggerMouseEnter}
         onMouseLeave={handleTriggerMouseLeave}
+        onPointerCancel={handleTriggerPointerCancel}
+        onPointerDown={handleTriggerPointerDown}
+        onPointerMove={handleTriggerPointerMove}
+        onPointerUp={handleTriggerPointerUp}
         ref={anchorRef as RefObject<HTMLSpanElement>}
         tabIndex={tabIndex}
       >

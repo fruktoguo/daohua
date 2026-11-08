@@ -14,7 +14,7 @@ import type { ZongmenDto } from '../network/protocol'
 const ZongmenCreateModal = memo(function ZongmenCreateModal({
   open,
   onClose,
-  currentNodeId,
+  currentNodeId: _currentNodeId,
   currentNodeName,
   publicLocation,
   onRequestCreate,
