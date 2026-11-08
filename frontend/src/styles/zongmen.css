@@ -31,5 +31,36 @@
 .zongmen-modal-body .is-warning { color: var(--color-danger, #d97676); }
 .zongmen-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 
+/* 在宗视图二级 Tab 与各子页面 */
+.zongmen-sub-tabs { margin-bottom: 2px; }
+.zongmen-overview-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.zongmen-badge-role { display: inline-block; padding: 2px 8px; font-size: 0.85em; font-weight: 500; border-radius: 4px; background: rgba(220, 180, 80, 0.15); color: var(--color-gold, #e5c158); border: 1px solid rgba(220, 180, 80, 0.35); }
+.zongmen-intro { font-size: 0.9em; color: var(--text-muted, #8c8c8c); margin: 6px 0 12px; line-height: 1.6; }
+
+.zongmen-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 12px 0; }
+.zongmen-stat-box { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; background: var(--bg-surface-sunken, rgba(0, 0, 0, 0.15)); border: 1px solid var(--border-color, #333); border-radius: 4px; }
+.zongmen-stat-label { font-size: 0.8em; color: var(--text-muted, #8c8c8c); }
+.zongmen-stat-value { font-size: 1.05em; font-weight: 600; color: var(--text-color, #e0e0e0); }
+
+.zongmen-quick-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 14px 0 8px; }
+.zongmen-manage-box { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border-color, #333); display: flex; flex-direction: column; gap: 8px; }
+.zongmen-manage-box-title { font-size: 0.85em; font-weight: 600; color: var(--text-muted, #8c8c8c); }
+
+/* 建筑面板 */
+.zongmen-building-hero { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 14px; }
+.zongmen-building-icon-wrap { width: 52px; height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--bg-surface-sunken, rgba(0, 0, 0, 0.2)); border: 1px solid var(--border-color, #333); border-radius: 6px; }
+.zongmen-building-icon { width: 44px; height: 44px; object-fit: contain; }
+.zongmen-building-main { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+.zongmen-building-header { display: flex; align-items: center; gap: 10px; }
+.zongmen-building-header h4 { margin: 0; font-size: 1.1em; }
+.zongmen-building-level { font-size: 0.9em; font-weight: 600; color: var(--color-jade, #6ba58a); }
+.zongmen-building-effect { font-size: 0.9em; color: var(--text-color, #e0e0e0); }
+.zongmen-building-capacity-detail { font-size: 0.85em; color: var(--text-muted, #8c8c8c); }
+
+.zongmen-upgrade-section { padding: 10px 14px; background: var(--bg-surface-sunken, rgba(0, 0, 0, 0.15)); border: 1px solid var(--border-color, #333); border-radius: 4px; margin-top: 10px; }
+.zongmen-upgrade-section h5 { margin: 0 0 6px; font-size: 0.9em; color: var(--text-muted, #8c8c8c); }
+.zongmen-facility-box { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-color, #333); }
+.zongmen-facility-box h4 { margin: 0 0 6px; font-size: 0.95em; }
+
 @media (min-width: 961px) { .social-page-header .social-mobile-tabs { display: none; } }
 @media (max-width: 600px) { .zongmen-form { grid-template-columns: minmax(0, 1fr); } }

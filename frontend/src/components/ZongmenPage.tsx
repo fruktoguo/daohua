@@ -5,6 +5,7 @@ import { useZongmenStore } from '../game/zongmenStore'
 import { useT } from '../i18n'
 import { useUiStore } from '../uiStore'
 import { gameClient } from '../network/gameClient'
+import { resolveBuildingIconUrl } from '../game/buildingIcons'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ItemReference } from './ItemDisplay'
 import { Modal } from './Modal'
@@ -14,14 +15,12 @@ import type { ZongmenDto } from '../network/protocol'
 const ZongmenCreateModal = memo(function ZongmenCreateModal({
   open,
   onClose,
-  currentNodeId: _currentNodeId,
   currentNodeName,
   publicLocation,
   onRequestCreate,
 }: {
   open: boolean
   onClose: () => void
-  currentNodeId: string
   currentNodeName: string
   publicLocation: boolean
   onRequestCreate: (name: string, prefix: string) => void
@@ -98,8 +97,11 @@ const ZongmenCreateModal = memo(function ZongmenCreateModal({
   )
 })
 
-/** 在宗视图：展示本宗驻地、大殿等级、成员管理、职位任免与弟子招募审批。 */
-const ZongmenView = memo(function ZongmenView({
+/** 在宗视图子页面类型 */
+type ZongmenSubTab = 'overview' | 'members' | 'applications' | 'buildings'
+
+/** 子页面 1：宗门全貌概览 */
+const ZongmenOverviewSection = memo(function ZongmenOverviewSection({
   own,
   currentNodeId,
   currentNodeName,
@@ -116,40 +118,60 @@ const ZongmenView = memo(function ZongmenView({
 }): React.JSX.Element {
   const t = useT()
   const { pending, act } = useZongmenStore()
-  const [inviteName, setInviteName] = useState('')
-  const roleName = (role: number): string => t(`social.zongmen.role${role}`)
 
-  const go = (): void => {
+  const handleTravel = (): void => {
     gameClient.sendCommand('world.travel', {
       targetNodeId: currentNodeId === own.anchorNodeId || currentNodeId === own.nodeId ? own.nodeId : own.anchorNodeId,
     })
     useUiStore.getState().setActiveTab('map')
   }
 
+  const handleOpenChat = (): void => {
+    useLogUnreadStore.getState().setActiveGroup('sect')
+    useUiStore.getState().setActiveTab('log')
+  }
+
   return (
-    <>
-      <div className="party-card">
+    <div className="party-card">
+      <div className="zongmen-overview-header">
         <div className="zongmen-heading">
           <h3>[{own.prefix}] {own.name}</h3>
-          <span>{roleName(own.myRole)}</span>
+          <span className="zongmen-badge-role">{t(`social.zongmen.role${own.myRole}`)}</span>
         </div>
-        <p>
-          {t('social.zongmen.memberCount', { count: own.members.length, max: own.capacity })} · {t('social.zongmen.hallLevel', { level: own.hallLevel })}
-        </p>
-        <p>{t('social.zongmen.location', { name: locationName(own.anchorNodeId) })}</p>
+      </div>
+      <p className="zongmen-intro">{t('social.zongmen.sectIntro')}</p>
+
+      <div className="zongmen-stats-grid">
+        <div className="zongmen-stat-box">
+          <span className="zongmen-stat-label">{t('social.zongmen.prefix')}</span>
+          <span className="zongmen-stat-value">[{own.prefix}]</span>
+        </div>
+        <div className="zongmen-stat-box">
+          <span className="zongmen-stat-label">{t('social.zongmen.hallBuildingName')}</span>
+          <span className="zongmen-stat-value">{t('social.zongmen.hallLevel', { level: own.hallLevel })}</span>
+        </div>
+        <div className="zongmen-stat-box">
+          <span className="zongmen-stat-label">{t('social.zongmen.scale')}</span>
+          <span className="zongmen-stat-value">{own.members.length} / {own.capacity} 人</span>
+        </div>
+        <div className="zongmen-stat-box">
+          <span className="zongmen-stat-label">{t('social.zongmen.createLocationLabel')}</span>
+          <span className="zongmen-stat-value">{locationName(own.anchorNodeId)}</span>
+        </div>
+      </div>
+
+      <div className="zongmen-quick-actions">
+        <button className="confirm-primary" onClick={handleTravel} type="button">
+          {t(currentNodeId === own.anchorNodeId || currentNodeId === own.nodeId ? 'social.zongmen.enter' : 'social.zongmen.goAnchor')}
+        </button>
+        <button onClick={handleOpenChat} type="button">
+          {t('social.zongmen.chat')}
+        </button>
+      </div>
+
+      <div className="zongmen-manage-box">
+        <span className="zongmen-manage-box-title">{t('social.zongmen.overviewHeading')}</span>
         <div className="zongmen-actions">
-          <button onClick={go} type="button">
-            {t(currentNodeId === own.anchorNodeId || currentNodeId === own.nodeId ? 'social.zongmen.enter' : 'social.zongmen.goAnchor')}
-          </button>
-          <button
-            onClick={() => {
-              useLogUnreadStore.getState().setActiveGroup('sect')
-              useUiStore.getState().setActiveTab('log')
-            }}
-            type="button"
-          >
-            {t('social.zongmen.chat')}
-          </button>
           {own.myRole === 0 ? (
             <>
               <button
@@ -195,94 +217,137 @@ const ZongmenView = memo(function ZongmenView({
           </p>
         )}
       </div>
+    </div>
+  )
+})
 
-      <div className="party-card">
+/** 子页面 2：同门弟子花名册与成员管理 */
+const ZongmenMembersSection = memo(function ZongmenMembersSection({
+  own,
+  ask,
+}: {
+  own: ZongmenDto
+  ask: (title: string, description: string, action: () => void) => void
+}): React.JSX.Element {
+  const t = useT()
+  const { pending, act } = useZongmenStore()
+  const onlineCount = useMemo(() => own.members.filter(m => m.online).length, [own.members])
+
+  return (
+    <div className="party-card">
+      <div className="zongmen-heading">
         <h3>{t('social.zongmen.members')}</h3>
-        <div className="zongmen-members">
-          {own.members.map(member => (
-            <div className="zongmen-member" key={member.playerId}>
-              <span>
-                <i className={member.online ? 'is-online' : ''} />
-                {member.displayName}
-              </span>
-              <span>{roleName(member.role)}</span>
-              {own.myRole <= 3 && member.role > own.myRole && (
-                <div className="zongmen-actions">
-                  <select
-                    aria-label={t('social.zongmen.changeRole')}
-                    disabled={pending}
-                    onChange={event =>
-                      act('role', { targetPlayerId: member.playerId, role: Number(event.target.value) })
-                    }
-                    value={member.role}
-                  >
-                    {[1, 2, 3, 4, 5, 6]
-                      .filter(role => role > own.myRole && (role >= 4 || own.myRole === 0))
-                      .map(role => (
-                        <option key={role} value={role}>{roleName(role)}</option>
-                      ))}
-                  </select>
-                  {own.myRole === 0 && (
-                    <button
-                      disabled={pending}
-                      onClick={() =>
-                        ask(
-                          t('social.zongmen.transfer'),
-                          t('social.zongmen.transferConfirm', { name: member.displayName }),
-                          () => act('transfer', { targetPlayerId: member.playerId }),
-                        )
-                      }
-                      type="button"
-                    >
-                      {t('social.zongmen.transfer')}
-                    </button>
-                  )}
+        <p className="party-card-desc">
+          {t('social.zongmen.memberStats', { count: own.members.length, online: onlineCount, max: own.capacity })}
+        </p>
+      </div>
+
+      <div className="zongmen-members">
+        {own.members.map(member => (
+          <div className="zongmen-member" key={member.playerId}>
+            <span>
+              <i className={member.online ? 'is-online' : ''} />
+              {member.displayName}
+            </span>
+            <span>{t(`social.zongmen.role${member.role}`)}</span>
+            {own.myRole <= 3 && member.role > own.myRole && (
+              <div className="zongmen-actions">
+                <select
+                  aria-label={t('social.zongmen.changeRole')}
+                  disabled={pending}
+                  onChange={event =>
+                    act('role', { targetPlayerId: member.playerId, role: Number(event.target.value) })
+                  }
+                  value={member.role}
+                >
+                  {[1, 2, 3, 4, 5, 6]
+                    .filter(role => role > own.myRole && (role >= 4 || own.myRole === 0))
+                    .map(role => (
+                      <option key={role} value={role}>{t(`social.zongmen.role${role}`)}</option>
+                    ))}
+                </select>
+                {own.myRole === 0 && (
                   <button
                     disabled={pending}
                     onClick={() =>
                       ask(
-                        t('social.zongmen.kick'),
-                        t('social.zongmen.kickConfirm', { name: member.displayName }),
-                        () => act('kick', { targetPlayerId: member.playerId }),
+                        t('social.zongmen.transfer'),
+                        t('social.zongmen.transferConfirm', { name: member.displayName }),
+                        () => act('transfer', { targetPlayerId: member.playerId }),
                       )
                     }
                     type="button"
                   >
-                    {t('social.zongmen.kick')}
+                    {t('social.zongmen.transfer')}
                   </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+                )}
+                <button
+                  disabled={pending}
+                  onClick={() =>
+                    ask(
+                      t('social.zongmen.kick'),
+                      t('social.zongmen.kickConfirm', { name: member.displayName }),
+                      () => act('kick', { targetPlayerId: member.playerId }),
+                    )
+                  }
+                  type="button"
+                >
+                  {t('social.zongmen.kick')}
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+})
+
+/** 子页面 3：拜帖与招募管理（仅管理权限长老及以上可见） */
+const ZongmenApplicationsSection = memo(function ZongmenApplicationsSection({
+  own,
+}: {
+  own: ZongmenDto
+}): React.JSX.Element {
+  const t = useT()
+  const { pending, act } = useZongmenStore()
+  const [inviteName, setInviteName] = useState('')
+  const applications = useMemo(() => own.requests.filter(r => r.kind === 'application'), [own.requests])
+
+  return (
+    <>
+      <div className="party-card">
+        <h3>{t('social.zongmen.recruit')}</h3>
+        <form
+          className="zongmen-actions"
+          onSubmit={event => {
+            event.preventDefault()
+            act('invite', { targetName: inviteName })
+          }}
+        >
+          <input
+            aria-label={t('social.zongmen.playerName')}
+            maxLength={32}
+            onChange={event => setInviteName(event.target.value)}
+            placeholder={t('social.zongmen.playerName')}
+            value={inviteName}
+          />
+          <button disabled={pending || !inviteName.trim()} type="submit">{t('social.zongmen.invite')}</button>
+        </form>
       </div>
 
-      {own.myRole <= 3 && (
-        <div className="party-card">
-          <h3>{t('social.zongmen.recruit')}</h3>
-          <form
-            className="zongmen-actions"
-            onSubmit={event => {
-              event.preventDefault()
-              act('invite', { targetName: inviteName })
-            }}
-          >
-            <input
-              aria-label={t('social.zongmen.playerName')}
-              maxLength={32}
-              onChange={event => setInviteName(event.target.value)}
-              placeholder={t('social.zongmen.playerName')}
-              value={inviteName}
-            />
-            <button disabled={pending || !inviteName.trim()} type="submit">{t('social.zongmen.invite')}</button>
-          </form>
-          {own.requests
-            .filter(request => request.kind === 'application')
-            .map(request => (
+      <div className="party-card">
+        <h3>{t('social.zongmen.tabApplications')}</h3>
+        {applications.length === 0 ? (
+          <p className="party-card-desc">{t('social.zongmen.noPendingApplications')}</p>
+        ) : (
+          <div className="zongmen-members">
+            {applications.map(request => (
               <div className="zongmen-member" key={request.playerId}>
                 <span>{request.displayName}</span>
                 <div className="zongmen-actions">
                   <button
+                    className="confirm-primary"
                     disabled={pending}
                     onClick={() => act('approve', { targetPlayerId: request.playerId })}
                     type="button"
@@ -299,7 +364,161 @@ const ZongmenView = memo(function ZongmenView({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+    </>
+  )
+})
+
+/** 子页面 4：宗门大殿与驻地设施建设 */
+const ZongmenBuildingsSection = memo(function ZongmenBuildingsSection({
+  own,
+  currentNodeId,
+}: {
+  own: ZongmenDto
+  currentNodeId: string
+}): React.JSX.Element {
+  const t = useT()
+  const iconUrl = resolveBuildingIconUrl('building.zongmen-dadian')
+  const atResidence = currentNodeId === own.nodeId
+
+  const handleTravelToResidence = (): void => {
+    gameClient.sendCommand('world.travel', { targetNodeId: own.nodeId })
+    useUiStore.getState().setActiveTab('map')
+  }
+
+  return (
+    <div className="party-card">
+      <div className="zongmen-building-hero">
+        <div className="zongmen-building-icon-wrap">
+          {iconUrl ? (
+            <img alt={t('social.zongmen.hallBuildingName')} className="zongmen-building-icon" src={iconUrl} />
+          ) : (
+            <span style={{ fontSize: '24px' }}>🏛️</span>
+          )}
         </div>
+        <div className="zongmen-building-main">
+          <div className="zongmen-building-header">
+            <h4>{t('social.zongmen.hallBuildingName')}</h4>
+            <span className="zongmen-building-level">{t('social.zongmen.hallLevel', { level: own.hallLevel })}</span>
+          </div>
+          <p className="zongmen-building-effect">{t('social.zongmen.hallBonusDesc')}</p>
+          <span className="zongmen-building-capacity-detail">
+            {t('social.zongmen.hallCapacityDetail', {
+              capacity: own.capacity,
+              bonus: (own.hallLevel - 1) * 5,
+            })}
+          </span>
+        </div>
+      </div>
+
+      <div className="zongmen-upgrade-section">
+        <h5>{t('social.zongmen.hallUpgradeReq')}</h5>
+        <p className="party-card-desc">{t('social.zongmen.hallUpgradeCost')}</p>
+        <p className="party-card-desc">
+          <ItemReference amount={10000} itemId="item.refined-iron" />{' '}
+          <ItemReference amount={10000} itemId="item.refined-copper" />
+        </p>
+      </div>
+
+      <div className="zongmen-facility-box">
+        <h4>{t('social.zongmen.residenceFacilityTitle')}</h4>
+        <p className="party-card-desc">{t('social.zongmen.residenceFacilityDesc')}</p>
+        <div className="zongmen-actions" style={{ marginTop: '10px' }}>
+          {atResidence ? (
+            <span className="zongmen-tag-here">{t('social.zongmen.currentAtResidence')}</span>
+          ) : (
+            <button className="confirm-primary" onClick={handleTravelToResidence} type="button">
+              {t('social.zongmen.goResidence')}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+/** 在宗视图主控制器：根据角色权限动态呈现 3~4 个二级 Tab 导航。 */
+const ZongmenView = memo(function ZongmenView({
+  own,
+  currentNodeId,
+  currentNodeName,
+  publicLocation,
+  locationName,
+  ask,
+}: {
+  own: ZongmenDto
+  currentNodeId: string
+  currentNodeName: string
+  publicLocation: boolean
+  locationName: (id: string) => string
+  ask: (title: string, description: string, action: () => void) => void
+}): React.JSX.Element {
+  const t = useT()
+  const canManage = own.myRole <= 3
+  const [activeTab, setActiveTab] = useState<ZongmenSubTab>('overview')
+
+  // 根据角色权限动态计算可见 Tab 列表（仅长老及以上 myRole <= 3 展示「拜帖」）
+  const visibleTabs = useMemo(() => {
+    const tabs: Array<{ id: ZongmenSubTab; labelKey: string }> = [
+      { id: 'overview', labelKey: 'social.zongmen.tabOverview' },
+      { id: 'members', labelKey: 'social.zongmen.tabMembers' },
+    ]
+    if (canManage) {
+      tabs.push({ id: 'applications', labelKey: 'social.zongmen.tabApplications' })
+    }
+    tabs.push({ id: 'buildings', labelKey: 'social.zongmen.tabBuildings' })
+    return tabs
+  }, [canManage])
+
+  // 兜底回退：若当前 Tab 因权限变化不可见，自动回退到概览
+  const currentTab = visibleTabs.some(tab => tab.id === activeTab) ? activeTab : 'overview'
+
+  return (
+    <>
+      <nav aria-label={t('social.zongmen.tabAria')} className="market-tabs zongmen-sub-tabs" role="tablist">
+        {visibleTabs.map(tab => (
+          <button
+            aria-selected={currentTab === tab.id}
+            className={currentTab === tab.id ? 'active' : ''}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            role="tab"
+            type="button"
+          >
+            {t(tab.labelKey)}
+          </button>
+        ))}
+      </nav>
+
+      {currentTab === 'overview' && (
+        <ZongmenOverviewSection
+          ask={ask}
+          currentNodeId={currentNodeId}
+          currentNodeName={currentNodeName}
+          locationName={locationName}
+          own={own}
+          publicLocation={publicLocation}
+        />
+      )}
+
+      {currentTab === 'members' && (
+        <ZongmenMembersSection
+          ask={ask}
+          own={own}
+        />
+      )}
+
+      {currentTab === 'applications' && canManage && (
+        <ZongmenApplicationsSection own={own} />
+      )}
+
+      {currentTab === 'buildings' && (
+        <ZongmenBuildingsSection
+          currentNodeId={currentNodeId}
+          own={own}
+        />
       )}
     </>
   )
@@ -458,7 +677,6 @@ const ZongmenlessView = memo(function ZongmenlessView({
       </div>
 
       <ZongmenCreateModal
-        currentNodeId={currentNodeId}
         currentNodeName={currentNodeName}
         onClose={() => setCreateModalOpen(false)}
         onRequestCreate={handleRequestCreate}
