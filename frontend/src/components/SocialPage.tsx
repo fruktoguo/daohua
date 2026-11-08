@@ -1042,22 +1042,24 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
   }, [maps])
 
   return (
-    <section className="panel social-page">
-      <header className="panel-header social-page-header">
-        <h2>{t('social.title')}</h2>
-        <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
-          {SOCIAL_SUB_TABS.map(tab => (
-            <button
-              aria-selected={socialSubTab === tab.id}
-              className={socialSubTab === tab.id ? 'active' : ''}
-              key={tab.id}
-              onClick={() => setSocialSubTab(tab.id)}
-              role="tab"
-              type="button"
-            >{t(tab.labelKey)}</button>
-          ))}
-        </nav>
-      </header>
+    <section className={`panel social-page${socialSubTab === 'zongmen' ? ' is-zongmen' : ''}`}>
+      {socialSubTab !== 'zongmen' && (
+        <header className="panel-header social-page-header">
+          <h2>{t('social.title')}</h2>
+          <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
+            {SOCIAL_SUB_TABS.map(tab => (
+              <button
+                aria-selected={socialSubTab === tab.id}
+                className={socialSubTab === tab.id ? 'active' : ''}
+                key={tab.id}
+                onClick={() => setSocialSubTab(tab.id)}
+                role="tab"
+                type="button"
+              >{t(tab.labelKey)}</button>
+            ))}
+          </nav>
+        </header>
+      )}
       <div className="social-page-body">
         {socialSubTab === 'party' && (party ? <PartyView nodeNames={nodeNames} /> : <PartylessView nodeNames={nodeNames} />)}
         {socialSubTab === 'zongmen' && <ZongmenPage />}

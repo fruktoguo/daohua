@@ -371,7 +371,7 @@ const ZongmenApplicationsSection = memo(function ZongmenApplicationsSection({
   )
 })
 
-/** 子页面 4：宗门大殿与驻地设施建设 */
+/** 子页面 4：宗门驻地建筑与大殿建设（完全对齐地图 NearbyPanel 建筑卡片、效果与详情标准） */
 const ZongmenBuildingsSection = memo(function ZongmenBuildingsSection({
   own,
   currentNodeId,
@@ -380,66 +380,206 @@ const ZongmenBuildingsSection = memo(function ZongmenBuildingsSection({
   currentNodeId: string
 }): React.JSX.Element {
   const t = useT()
-  const iconUrl = resolveBuildingIconUrl('building.zongmen-dadian')
+  const world = useGameStore(state => state.world)
+  const buildingCatalog = useGameStore(state => state.buildings)
+  const [detailOpen, setDetailOpen] = useState(false)
   const atResidence = currentNodeId === own.nodeId
+
+  const hallDef = buildingCatalog.find(d => d.buildingId === 'building.zongmen-dadian')
+  const hallBuilding = (world.nodeBuildings ?? []).find(b => b.entityId === 'building.zongmen-dadian')
+  const effectiveLevel = hallBuilding?.level ?? own.hallLevel
+  const isUpgrading = (hallBuilding?.targetLevel ?? 0) > effectiveLevel
+  const targetLevel = isUpgrading ? (hallBuilding?.targetLevel ?? effectiveLevel + 1) : effectiveLevel + 1
+  const iconUrl = resolveBuildingIconUrl('building.zongmen-dadian')
+  const buildingName = hallDef?.name ?? t('social.zongmen.hallBuildingName')
+  const buildingEffect = hallDef?.effect ?? t('social.zongmen.hallBonusDesc')
 
   const handleTravelToResidence = (): void => {
     gameClient.sendCommand('world.travel', { targetNodeId: own.nodeId })
     useUiStore.getState().setActiveTab('map')
   }
 
+  const handleUpgrade = (): void => {
+    gameClient.sendCommand('building.upgrade', { buildingId: 'building.zongmen-dadian' })
+    setDetailOpen(false)
+  }
+
   return (
-    <div className="party-card">
-      <div className="zongmen-building-hero">
-        <div className="zongmen-building-icon-wrap">
-          {iconUrl ? (
-            <img alt={t('social.zongmen.hallBuildingName')} className="zongmen-building-icon" src={iconUrl} />
-          ) : (
-            <span style={{ fontSize: '24px' }}>🏛️</span>
-          )}
-        </div>
-        <div className="zongmen-building-main">
-          <div className="zongmen-building-header">
-            <h4>{t('social.zongmen.hallBuildingName')}</h4>
-            <span className="zongmen-building-level">{t('social.zongmen.hallLevel', { level: own.hallLevel })}</span>
-          </div>
-          <p className="zongmen-building-effect">{t('social.zongmen.hallBonusDesc')}</p>
-          <span className="zongmen-building-capacity-detail">
-            {t('social.zongmen.hallCapacityDetail', {
-              capacity: own.capacity,
-              bonus: (own.hallLevel - 1) * 5,
-            })}
-          </span>
-        </div>
-      </div>
-
-      <div className="zongmen-upgrade-section">
-        <h5>{t('social.zongmen.hallUpgradeReq')}</h5>
-        <p className="party-card-desc">{t('social.zongmen.hallUpgradeCost')}</p>
-        <p className="party-card-desc">
-          <ItemReference amount={10000} itemId="item.refined-iron" />{' '}
-          <ItemReference amount={10000} itemId="item.refined-copper" />
-        </p>
-      </div>
-
-      <div className="zongmen-facility-box">
-        <h4>{t('social.zongmen.residenceFacilityTitle')}</h4>
-        <p className="party-card-desc">{t('social.zongmen.residenceFacilityDesc')}</p>
-        <div className="zongmen-actions" style={{ marginTop: '10px' }}>
-          {atResidence ? (
-            <span className="zongmen-tag-here">{t('social.zongmen.currentAtResidence')}</span>
-          ) : (
+    <>
+      <div className="party-card">
+        <div className="zongmen-heading">
+          <h3>{t('social.zongmen.tabBuildings')}</h3>
+          {!atResidence && (
             <button className="confirm-primary" onClick={handleTravelToResidence} type="button">
               {t('social.zongmen.goResidence')}
             </button>
           )}
         </div>
+
+        <div className="nearby-grid" style={{ marginTop: '12px' }}>
+          <button
+            className="nearby-card is-building is-player-building"
+            onClick={() => setDetailOpen(true)}
+            type="button"
+          >
+            {isUpgrading && (
+              <span className="building-corner-badge is-upgrading">
+                {t('combat.nearby.buildingUpgradingShort')}
+              </span>
+            )}
+            <span className="nearby-mark">
+              {iconUrl ? (
+                <img
+                  alt={buildingName}
+                  className="nearby-building-thumb"
+                  loading="lazy"
+                  src={iconUrl}
+                />
+              ) : (
+                '🏛️'
+              )}
+            </span>
+            <div>
+              <div className="nearby-monster-title">
+                <strong>{buildingName}</strong>
+                <span className="nearby-level-badge">
+                  {isUpgrading
+                    ? `${t('combat.nearby.buildingLevelValue', { level: effectiveLevel })} → Lv.${targetLevel}`
+                    : t('combat.nearby.buildingLevelValue', { level: effectiveLevel })}
+                </span>
+              </div>
+              <small>{buildingEffect}</small>
+              <small className="building-usage">
+                <span>{t('social.zongmen.memberCount', { count: own.members.length, max: own.capacity })}</span>
+                <span className="building-usage-idle">
+                  {t('combat.nearby.buildingEfficiencyFull')}
+                </span>
+              </small>
+            </div>
+          </button>
+        </div>
+
+        <div className="zongmen-facility-box">
+          <h4>{t('social.zongmen.residenceFacilityTitle')}</h4>
+          <p className="party-card-desc">{t('social.zongmen.residenceFacilityDesc')}</p>
+          <div className="zongmen-actions" style={{ marginTop: '8px' }}>
+            {atResidence ? (
+              <span className="zongmen-tag-here">{t('social.zongmen.currentAtResidence')}</span>
+            ) : (
+              <button onClick={handleTravelToResidence} type="button">
+                {t('social.zongmen.goResidence')}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+
+      {detailOpen && (
+        <Modal
+          className="building-detail-modal"
+          labelledBy="building-detail-title"
+          onClose={() => setDetailOpen(false)}
+          open
+          size="medium"
+        >
+          <header className="build-picker-header">
+            <h2 id="building-detail-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {iconUrl ? (
+                <img
+                  alt={buildingName}
+                  className="nearby-building-thumb"
+                  src={iconUrl}
+                  style={{ width: 28, height: 28, objectFit: 'contain' }}
+                />
+              ) : (
+                <span>🏛️</span>
+              )}
+              <span>{buildingName}</span>
+              <span className="nearby-level-badge">
+                {t('combat.nearby.buildingLevelValue', { level: effectiveLevel })}
+              </span>
+            </h2>
+          </header>
+
+          <div className="building-detail-body">
+            <section className="building-section-card">
+              <h4 className="building-section-title">{t('combat.nearby.buildingSectionInfo')}</h4>
+              <p className="building-desc">{hallDef?.description ?? ''}</p>
+              <div className="building-bonuses-current">
+                <span className="building-bonus-title">{t('combat.nearby.buildingCurrentBonus')}：</span>
+                <span className="building-bonus-pill pill-tone--jade">
+                  <span className="capsule-label">{t('social.zongmen.scale')}</span>
+                  <span className="underlined-value">{own.capacity} 人</span>
+                </span>
+              </div>
+            </section>
+
+            <section className="building-section-card">
+              <div className="building-section-header-row">
+                <h4 className="building-section-title">{t('combat.nearby.buildingSectionUpgrade')}</h4>
+                {isUpgrading && (
+                  <span className="building-tag-upgrading">
+                    {t('combat.nearby.buildingUpgrading', { level: targetLevel })}
+                  </span>
+                )}
+              </div>
+
+              <div className="building-upgrade-box">
+                <div className="breakthrough-modal-realm building-upgrade-level-jump">
+                  <span>Lv.{effectiveLevel}</span>
+                  <span aria-hidden="true" className="breakthrough-modal-realm-arrow">→</span>
+                  <strong>Lv.{targetLevel}</strong>
+                </div>
+
+                <ul className="breakthrough-modal-attrs building-upgrade-attrs">
+                  <li className="breakthrough-modal-row pill-tone--jade">
+                    <span className="breakthrough-modal-row-label">{t('social.zongmen.scale')}</span>
+                    <span className="breakthrough-modal-row-values">
+                      <span>{own.capacity} 人</span>
+                      <span className="breakthrough-modal-arrow">→</span>
+                      <strong>{own.capacity + 5} 人</strong>
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="zongmen-upgrade-section">
+                <h5>{t('social.zongmen.hallUpgradeReq')}</h5>
+                <p className="party-card-desc">{t('social.zongmen.hallUpgradeCost')}</p>
+                <p className="party-card-desc">
+                  <ItemReference amount={10000} itemId="item.refined-iron" />{' '}
+                  <ItemReference amount={10000} itemId="item.refined-copper" />
+                </p>
+              </div>
+
+              <div className="building-upgrade-action-row" style={{ marginTop: '14px' }}>
+                {atResidence ? (
+                  <button
+                    className="building-action-btn"
+                    onClick={handleUpgrade}
+                    type="button"
+                  >
+                    {t('combat.nearby.buildingUpgrade')}
+                  </button>
+                ) : (
+                  <button
+                    className="building-action-btn"
+                    onClick={handleTravelToResidence}
+                    type="button"
+                  >
+                    {t('social.zongmen.goResidence')}
+                  </button>
+                )}
+              </div>
+            </section>
+          </div>
+        </Modal>
+      )}
+    </>
   )
 })
 
-/** 在宗视图主控制器：根据角色权限动态呈现 3~4 个二级 Tab 导航。 */
+/** 在宗视图主控制器：根据角色权限动态呈现 3~4 个二级 Tab 导航（靠左通用排布，消除居中与冗余顶栏）。 */
 const ZongmenView = memo(function ZongmenView({
   own,
   currentNodeId,
@@ -477,20 +617,22 @@ const ZongmenView = memo(function ZongmenView({
 
   return (
     <>
-      <nav aria-label={t('social.zongmen.tabAria')} className="market-tabs zongmen-sub-tabs" role="tablist">
-        {visibleTabs.map(tab => (
-          <button
-            aria-selected={currentTab === tab.id}
-            className={currentTab === tab.id ? 'active' : ''}
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            role="tab"
-            type="button"
-          >
-            {t(tab.labelKey)}
-          </button>
-        ))}
-      </nav>
+      <header className="zongmen-header">
+        <nav aria-label={t('social.zongmen.tabAria')} className="zongmen-sub-tabs" role="tablist">
+          {visibleTabs.map(tab => (
+            <button
+              aria-selected={currentTab === tab.id}
+              className={currentTab === tab.id ? 'active' : ''}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              role="tab"
+              type="button"
+            >
+              {t(tab.labelKey)}
+            </button>
+          ))}
+        </nav>
+      </header>
 
       {currentTab === 'overview' && (
         <ZongmenOverviewSection
