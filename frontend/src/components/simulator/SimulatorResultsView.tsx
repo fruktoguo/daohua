@@ -11,6 +11,12 @@ interface SimulatorResultsViewProps {
   onChangeResultGroup?: (group: 'comparison' | 'details') => void
   activeNodeId?: string
   onChangeActiveNodeId?: (nodeId: string) => void
+  activeItemKey?: string
+  onChangeActiveItemKey?: (itemKey: string) => void
+}
+
+function getItemKey(item: { nodeId: string; difficulty?: number; itemKey?: string }): string {
+  return item.itemKey || `${item.nodeId}#${item.difficulty ?? 0}`
 }
 
 export const SimulatorResultsView = memo(function SimulatorResultsView({
@@ -20,6 +26,8 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
   onChangeResultGroup: setControlledGroup,
   activeNodeId: controlledNodeId,
   onChangeActiveNodeId: setControlledNodeId,
+  activeItemKey: controlledItemKey,
+  onChangeActiveItemKey: setControlledItemKey,
 }: SimulatorResultsViewProps): React.JSX.Element {
   const t = useT()
 
@@ -32,6 +40,23 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
   const [internalNodeId, setInternalNodeId] = useState<string>('')
   const activeNode = controlledNodeId || internalNodeId || multiReport?.selectedNodeId || multiReport?.comparison[0]?.nodeId || singleReport?.nodeId || ''
   const setActiveNode = setControlledNodeId ?? setInternalNodeId
+  // 内部或外部受控的复合唯一条目标识（格式：nodeId#difficulty）
+  const [internalItemKey, setInternalItemKey] = useState<string>('')
+  const activeKey =
+    controlledItemKey ||
+    internalItemKey ||
+    multiReport?.selectedItemKey ||
+    (multiReport?.comparison[0] ? getItemKey(multiReport.comparison[0]) : '') ||
+    (singleReport ? getItemKey(singleReport) : '')
+
+  const setActiveKey = (key: string, nodeId?: string) => {
+    if (setControlledItemKey) setControlledItemKey(key)
+    else setInternalItemKey(key)
+
+    if (nodeId) {
+      setActiveNode(nodeId)
+    }
+  }
 
   // 详细分析中的二级 Tab (战况 / 伤害 / 灵力 / 战利品 / 日志)
   const [detailSubTab, setDetailSubTab] = useState<'overview' | 'combat' | 'mana' | 'yields' | 'logs'>('overview')
@@ -65,16 +90,21 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
   }, [multiReport, singleReport])
 
   const currentReport: SimulatorReport | null = useMemo(() => {
+    if (multiReport?.reports && activeKey && multiReport.reports[activeKey]) {
+      return multiReport.reports[activeKey]
+    }
+    if (comparisonList.length > 0) {
+      const found = comparisonList.find(c => getItemKey(c) === activeKey)
+      if (found) return found.report
+      const foundByNode = comparisonList.find(c => c.nodeId === activeNode)
+      if (foundByNode) return foundByNode.report
+      return comparisonList[0].report
+    }
     if (multiReport?.reports && activeNode && multiReport.reports[activeNode]) {
       return multiReport.reports[activeNode]
     }
-    if (comparisonList.length > 0) {
-      const found = comparisonList.find(c => c.nodeId === activeNode)
-      if (found) return found.report
-      return comparisonList[0].report
-    }
     return singleReport ?? null
-  }, [activeNode, comparisonList, multiReport, singleReport])
+  }, [activeKey, activeNode, comparisonList, multiReport, singleReport])
 
   // 计算多节点对比中的各项第一名
   const champions = useMemo(() => {
@@ -176,11 +206,22 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                 <span className="sim-card-title">挂机刷图收益与效率对比总览</span>
                 <span className="sim-card-sub">掉落物统一按坊市市场参考价（未成交按系统回收价）折算每日灵石估值期望</span>
               </div>
-              {comparisonList[0]?.difficulty !== undefined && (
-                <span className="sim-difficulty-tag">
-                  {comparisonList[0].difficulty === 0 ? '默认难度' : `T${comparisonList[0].difficulty} 难度`}
-                </span>
-              )}
+              {comparisonList.length > 0 && (() => {
+                const uniqueDiffs = Array.from(new Set(comparisonList.map(c => c.difficulty ?? 0)))
+                if (uniqueDiffs.length > 1) {
+                  return (
+                    <span className="sim-difficulty-tag">
+                      多难度横向对比 ({uniqueDiffs.length} 档)
+                    </span>
+                  )
+                }
+                const singleDiff = uniqueDiffs[0]
+                return (
+                  <span className="sim-difficulty-tag">
+                    {singleDiff === 0 ? '默认难度' : `T${singleDiff} 难度`}
+                  </span>
+                )
+              })()}
             </div>
 
             <div className="sim-data-table-wrap">
@@ -204,12 +245,13 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                 </thead>
                 <tbody>
                   {comparisonList.map(item => {
-                    const isCurrent = item.nodeId === activeNode
-                    const isTopRevenue = champions?.revenue.nodeId === item.nodeId
-                    const isTopExp = champions?.exp.nodeId === item.nodeId
+                    const rowKey = getItemKey(item)
+                    const isCurrent = rowKey === activeKey
+                    const isTopRevenue = champions?.revenue && getItemKey(champions.revenue) === rowKey
+                    const isTopExp = champions?.exp && getItemKey(champions.exp) === rowKey
 
                     return (
-                      <tr key={item.nodeId} className={isCurrent ? 'row-selected-node' : ''}>
+                      <tr key={rowKey} className={isCurrent ? 'row-selected-node' : ''}>
                         <td className="font-semibold text-main">
                           <span className="sim-node-table-name">{item.nodeName}</span>
                           {isTopRevenue && <span className="sim-tag-champ champ-tag-rev">高收益</span>}
@@ -249,7 +291,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                             type="button"
                             className="sim-table-action-btn"
                             onClick={() => {
-                              setActiveNode(item.nodeId)
+                              setActiveKey(rowKey, item.nodeId)
                               setActiveGroup('details')
                             }}
                           >
@@ -274,18 +316,22 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
             <div className="sim-node-detail-picker">
               <span className="sim-picker-label">查看地点:</span>
               <div className="sim-picker-pills">
-                {comparisonList.map(item => (
-                  <button
-                    key={item.nodeId}
-                    type="button"
-                    className={`sim-picker-pill ${item.nodeId === activeNode ? 'is-active' : ''}`}
-                    onClick={() => setActiveNode(item.nodeId)}
-                  >
-                    <span>{item.nodeName}</span>
-                    {item.difficulty ? <span className="sim-pill-difficulty">T{item.difficulty}</span> : null}
-                    <span className="sim-pill-revenue">+{item.dailyRevenue.toLocaleString()} 灵石/天</span>
-                  </button>
-                ))}
+                {comparisonList.map(item => {
+                  const pillKey = getItemKey(item)
+                  const isPillActive = pillKey === activeKey
+                  return (
+                    <button
+                      key={pillKey}
+                      type="button"
+                      className={`sim-picker-pill ${isPillActive ? 'is-active' : ''}`}
+                      onClick={() => setActiveKey(pillKey, item.nodeId)}
+                    >
+                      <span>{item.nodeName}</span>
+                      <span className="sim-pill-difficulty">{item.difficulty ? `T${item.difficulty}` : '默认'}</span>
+                      <span className="sim-pill-revenue">+{item.dailyRevenue.toLocaleString()} 灵石/天</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}

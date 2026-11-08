@@ -12,8 +12,10 @@ interface SimulatorConfigPanelProps {
   onClearSelectedNodes: () => void
   durationSeconds: number
   onChangeDuration: (seconds: number) => void
-  difficulty: number
-  onChangeDifficulty: (difficulty: number) => void
+  difficulties: number[]
+  onToggleDifficulty: (tier: number) => void
+  onSelectAllDifficulties: () => void
+  onResetDifficulties: () => void
   onRunSimulation: () => void
   isSimulating: boolean
 }
@@ -45,6 +47,21 @@ function getDifficultySummary(tier: number): string {
   return `妖兽全属性 ${attrMult}x (向上取整) · 击杀经验 +${expBonus}% · 掉落率与保底量 +${dropBonus}%`
 }
 
+function getDifficultiesSummary(diffs: number[]): string {
+  if (diffs.length === 0) {
+    return '未选定难度，将默认推演基准难度'
+  }
+  if (diffs.length === 1) {
+    return getDifficultySummary(diffs[0])
+  }
+  if (diffs.length === DIFFICULTY_OPTIONS.length) {
+    return '已选定全部 6 档历练难度（默认至 T5），推演时将生成全景梯度横向跑分对比'
+  }
+  const sorted = [...diffs].sort((a, b) => a - b)
+  const labels = sorted.map(d => (d === 0 ? '默认' : `T${d}`)).join(' / ')
+  return `已选定 ${diffs.length} 个难度（${labels}），将对所有选定地点同时进行全套难度挂机对比`
+}
+
 export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
   selectedMapId,
   onChangeMapId,
@@ -54,8 +71,10 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
   onClearSelectedNodes,
   durationSeconds,
   onChangeDuration,
-  difficulty,
-  onChangeDifficulty,
+  difficulties,
+  onToggleDifficulty,
+  onSelectAllDifficulties,
+  onResetDifficulties,
   onRunSimulation,
   isSimulating,
 }: SimulatorConfigPanelProps): React.JSX.Element {
@@ -83,6 +102,8 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
   }, [maps, selectedMapId])
 
   const selectedNodeSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds])
+  const difficultySet = useMemo(() => new Set(difficulties), [difficulties])
+
 
   return (
     <div className="sim-config-panel">
@@ -179,28 +200,57 @@ export const SimulatorConfigPanel = memo(function SimulatorConfigPanel({
         </div>
       </div>
 
-      {/* 2. 讨伐历练难度选择 */}
+      {/* 2. 讨伐历练难度复选 */}
       <div className="sim-config-section">
         <div className="sim-config-title-row">
           <div className="sim-config-title">{t('app.action.difficulty')}</div>
           <span className="sim-selection-count-badge">
-            {difficulty === 0 ? t('app.action.difficultyDefault') : `T${difficulty}`}
+            已选 <strong>{difficulties.length}</strong> 个难度
           </span>
         </div>
-        <div className="sim-difficulty-presets">
-          {DIFFICULTY_OPTIONS.map(opt => (
-            <button
-              key={opt.tier}
-              type="button"
-              className={`sim-preset-btn ${difficulty === opt.tier ? 'is-active' : ''}`}
-              onClick={() => onChangeDifficulty(opt.tier)}
-            >
-              {opt.label}
-            </button>
-          ))}
+
+        {/* 难度快捷批量操作按钮 */}
+        <div className="sim-node-batch-actions">
+          <button
+            type="button"
+            className="sim-batch-btn"
+            onClick={onSelectAllDifficulties}
+          >
+            全选难度 ({DIFFICULTY_OPTIONS.length})
+          </button>
+          <button
+            type="button"
+            className="sim-batch-btn sim-batch-btn--clear"
+            onClick={onResetDifficulties}
+          >
+            仅默认
+          </button>
+        </div>
+
+        <div className="sim-difficulty-checkbox-grid">
+          {DIFFICULTY_OPTIONS.map(opt => {
+            const isChecked = difficultySet.has(opt.tier)
+            return (
+              <label
+                key={opt.tier}
+                className={`sim-difficulty-checkbox-card ${isChecked ? 'is-checked' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  className="sim-difficulty-checkbox"
+                  checked={isChecked}
+                  onChange={() => onToggleDifficulty(opt.tier)}
+                />
+                <span className="sim-difficulty-card-label">{opt.label}</span>
+                <span className="sim-difficulty-card-sub">
+                  {opt.tier === 0 ? '基准' : `+${opt.tier * 60}%经验`}
+                </span>
+              </label>
+            )
+          })}
         </div>
         <div className="sim-difficulty-hint">
-          {getDifficultySummary(difficulty)}
+          {getDifficultiesSummary(difficulties)}
         </div>
       </div>
 

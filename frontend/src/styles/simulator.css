@@ -494,6 +494,76 @@
   gap: 6px;
 }
 
+.sim-difficulty-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sim-difficulty-checkbox-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+:root[data-theme="light"] .sim-difficulty-checkbox-card {
+  background: var(--bg-raised);
+}
+
+.sim-difficulty-checkbox-card:hover {
+  border-color: var(--gold);
+}
+
+.sim-difficulty-checkbox-card.is-checked {
+  background: var(--gold-faint);
+  border-color: var(--gold);
+}
+
+:root[data-theme="light"] .sim-difficulty-checkbox-card.is-checked {
+  background: var(--panel);
+  border-color: var(--gold);
+  box-shadow: 0 1px 3px rgba(71, 49, 18, 0.12);
+}
+
+.sim-difficulty-checkbox {
+  accent-color: var(--gold);
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.sim-difficulty-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.sim-difficulty-checkbox-card.is-checked .sim-difficulty-card-label {
+  color: var(--gold-bright);
+}
+
+.sim-difficulty-card-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.8;
+  margin-left: auto;
+}
+
+.sim-difficulty-checkbox-card.is-checked .sim-difficulty-card-sub {
+  color: var(--gold);
+  opacity: 1;
+}
+
 .sim-difficulty-hint {
   margin-top: 6px;
   font-size: 11px;

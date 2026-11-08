@@ -45,7 +45,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
   const [selectedMapId, setSelectedMapId] = useState<string>('all')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [durationSeconds, setDurationSeconds] = useState<number>(3600) // 默认 1 小时
-  const [difficulty, setDifficulty] = useState<number>(0)
+  const [difficulties, setDifficulties] = useState<number[]>([0])
 
   // 运行与结果状态
   const [isSimulating, setIsSimulating] = useState<boolean>(false)
@@ -53,6 +53,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
   const [activeTab, setActiveTab] = useState<'config' | 'results'>('config')
   const [activeResultGroup, setActiveResultGroup] = useState<'comparison' | 'details'>('comparison')
   const [activeNodeId, setActiveNodeId] = useState<string>('')
+  const [activeItemKey, setActiveItemKey] = useState<string>('')
 
   // 首次打开或初始化时自动导入玩家自身与当前地点
   useEffect(() => {
@@ -154,6 +155,25 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
   const handleClearSelectedNodes = useCallback(() => {
     setSelectedNodeIds([])
   }, [])
+  // 难度勾选管理（至少保持选中 1 个有效难度）
+  const handleToggleDifficulty = useCallback((tier: number) => {
+    setDifficulties(prev => {
+      if (prev.includes(tier)) {
+        if (prev.length <= 1) return prev
+        return prev.filter(t => t !== tier)
+      }
+      return [...prev, tier].sort((a, b) => a - b)
+    })
+  }, [])
+
+  const handleSelectAllDifficulties = useCallback(() => {
+    setDifficulties([0, 1, 2, 3, 4, 5])
+  }, [])
+
+  const handleResetDifficulties = useCallback(() => {
+    setDifficulties([0])
+  }, [])
+
 
   // 执行多地点模拟推演
   const handleRunSimulation = useCallback(() => {
@@ -166,7 +186,10 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
         const reports: Record<string, SimulatorReport> = {}
         const comparison: SimulatorNodeComparisonItem[] = []
 
-        // 为多节点分别推演
+        const effectiveDifficulties = difficulties.length > 0 ? difficulties : [0]
+        const sortedDifficulties = [...effectiveDifficulties].sort((a, b) => a - b)
+
+        // 为多节点与多选难度分别推演（节点 × 难度 笛卡尔积）
         for (const nodeId of selectedNodeIds) {
           let nodeName = nodeId
           let mapName = ''
@@ -179,63 +202,73 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
             }
           }
 
-          const seed = BigInt(Math.floor(Math.random() * 1_000_000_000) + 1)
-          const simConfig: SimulatorConfig = {
-            nodeId,
-            nodeName,
-            mapName,
-            durationSeconds,
-            difficulty,
-            seed,
-            allies,
+          for (const diff of sortedDifficulties) {
+            const seed = BigInt(Math.floor(Math.random() * 1_000_000_000) + 1)
+            const simConfig: SimulatorConfig = {
+              nodeId,
+              nodeName,
+              mapName,
+              durationSeconds,
+              difficulty: diff,
+              seed,
+              allies,
+            }
+
+            const rep = ExpeditionSimulator.runSimulation(simConfig, {
+              encounters,
+              abilities,
+              items,
+              maps,
+              equipment,
+              marketStats,
+            })
+
+            const itemKey = `${nodeId}#${diff}`
+            reports[itemKey] = rep
+            if (!reports[nodeId]) {
+              reports[nodeId] = rep
+            }
+
+            comparison.push({
+              itemKey,
+              nodeId,
+              nodeName,
+              mapName,
+              difficulty: rep.difficulty,
+              encountersPerHour: rep.encountersPerHour,
+              winRate: rep.winRate,
+              dailyRevenue: rep.dailyDropsRevenue,
+              dailyCultivationExp: rep.dailyCultivationExp,
+              dailySixDimensionExp: rep.dailySixDimensionExp,
+              killsPerHour: Number((rep.totalKills / (rep.totalSimulatedSeconds / 3600)).toFixed(1)),
+              deathsPerHour: rep.playerDeathsPerHour,
+              maxWave: rep.maxWave,
+              report: rep,
+              avgDurationSeconds: rep.durationBreakdown.overallAverageSeconds,
+            })
           }
-
-          const rep = ExpeditionSimulator.runSimulation(simConfig, {
-            encounters,
-            abilities,
-            items,
-            maps,
-            equipment,
-            marketStats,
-          })
-
-          reports[nodeId] = rep
-          comparison.push({
-            nodeId,
-            nodeName,
-            mapName,
-            difficulty: rep.difficulty,
-            encountersPerHour: rep.encountersPerHour,
-            winRate: rep.winRate,
-            dailyRevenue: rep.dailyDropsRevenue,
-            dailyCultivationExp: rep.dailyCultivationExp,
-            dailySixDimensionExp: rep.dailySixDimensionExp,
-            killsPerHour: Number((rep.totalKills / (rep.totalSimulatedSeconds / 3600)).toFixed(1)),
-            deathsPerHour: rep.playerDeathsPerHour,
-            maxWave: rep.maxWave,
-            report: rep,
-            avgDurationSeconds: rep.durationBreakdown.overallAverageSeconds,
-          })
         }
 
         // 默认按每日灵石收益降序排列
         comparison.sort((a, b) => b.dailyRevenue - a.dailyRevenue || b.dailyCultivationExp - a.dailyCultivationExp)
 
+        const topItem = comparison[0]
         const multi: MultiNodeSimulatorReport = {
           comparison,
           reports,
-          selectedNodeId: comparison[0]?.nodeId || selectedNodeIds[0],
+          selectedNodeId: topItem?.nodeId || selectedNodeIds[0],
+          selectedItemKey: topItem?.itemKey || `${selectedNodeIds[0]}#${sortedDifficulties[0]}`,
         }
 
         setMultiReport(multi)
         setActiveNodeId(multi.selectedNodeId)
-        setActiveResultGroup(comparison.length > 1 ? 'comparison' : 'details')
+        setActiveItemKey(multi.selectedItemKey || '')
         setActiveTab('results')
       } finally {
         setIsSimulating(false)
       }
     }, 50)
-  }, [abilities, allies, difficulty, durationSeconds, encounters, equipment, items, maps, marketStats, selectedNodeIds])
+  }, [abilities, allies, difficulties, durationSeconds, encounters, equipment, items, maps, marketStats, selectedNodeIds])
 
   if (!open) return null
 
@@ -295,8 +328,10 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
                 onClearSelectedNodes={handleClearSelectedNodes}
                 durationSeconds={durationSeconds}
                 onChangeDuration={setDurationSeconds}
-                difficulty={difficulty}
-                onChangeDifficulty={setDifficulty}
+                difficulties={difficulties}
+                onToggleDifficulty={handleToggleDifficulty}
+                onSelectAllDifficulties={handleSelectAllDifficulties}
+                onResetDifficulties={handleResetDifficulties}
                 onRunSimulation={handleRunSimulation}
                 isSimulating={isSimulating}
               />
@@ -310,6 +345,8 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
               onChangeResultGroup={setActiveResultGroup}
               activeNodeId={activeNodeId}
               onChangeActiveNodeId={setActiveNodeId}
+              activeItemKey={activeItemKey}
+              onChangeActiveItemKey={setActiveItemKey}
             />
           </div>
         )}

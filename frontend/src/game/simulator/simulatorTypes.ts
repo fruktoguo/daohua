@@ -386,6 +386,8 @@ export interface SimulatorReport {
  * 多地图节点横向刷图对比摘要
  */
 export interface SimulatorNodeComparisonItem {
+  /** 复合唯一标识（格式：nodeId#difficulty，用于同地点多难度精准区分） */
+  itemKey?: string
   nodeId: string
   nodeName: string
   mapName: string
@@ -422,4 +424,6 @@ export interface MultiNodeSimulatorReport {
   comparison: SimulatorNodeComparisonItem[]
   reports: Record<string, SimulatorReport>
   selectedNodeId: string
+  /** 当前选中的复合唯一条目标识（格式：nodeId#difficulty） */
+  selectedItemKey?: string
 }

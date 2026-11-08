@@ -1057,3 +1057,128 @@ test('expeditionSimulator: T级难度选择与属性/经验/掉落同构缩放�
     `T5 单场耗时 (${repT5.durationBreakdown.overallAverageSeconds}s) 应大于 T0 (${repT0.durationBreakdown.overallAverageSeconds}s)`
   )
 })
+
+test('expeditionSimulator: 支持多节点与多选难度笛卡尔积批量推演与 itemKey 唯一索引', () => {
+  const catalog = {
+    encounters: [
+      {
+        encounterId: 'enc-wolf',
+        name: '妖狼遭遇',
+        minThreat: 10,
+        maxThreat: 20,
+        enemy: {
+          enemyId: 'wolf',
+          name: '青风狼',
+          rank: 'normal',
+          experience: 100,
+          attributes: {
+            maxHitpoints: 300,
+            maxManapoints: 0,
+            physicalAttack: 20,
+            spellAttack: 0,
+            armor: 15,
+            magicResistance: 10,
+            accuracy: 80,
+            evasion: 10,
+            critical: 10,
+            criticalResistance: 10,
+            attackIntervalMilliseconds: 1500,
+          },
+          drops: [],
+        },
+      },
+    ],
+    items: [],
+    abilities: [],
+    maps: [
+      {
+        mapId: 'map-valley',
+        name: '青云山谷',
+        nodes: [
+          { nodeId: 'node-wolf-1', name: '青峰谷外' },
+          { nodeId: 'node-wolf-2', name: '青峰谷内' },
+        ],
+      },
+    ],
+    equipment: [],
+    marketStats: {},
+  }
+
+  const ally = {
+    id: 'hero',
+    name: '李逍遥',
+    isSelf: true,
+    formationIndex: 1,
+    attributes: {
+      maxHitpoints: 500,
+      maxManapoints: 200,
+      physicalAttack: 80,
+      spellAttack: 20,
+      armor: 50,
+      magicResistance: 30,
+      accuracy: 50,
+      evasion: 10,
+      critical: 20,
+      criticalResistance: 10,
+      criticalDamagePoints: 50,
+      breakPower: 10,
+      parryResolve: 10,
+      hpRegenPerFiveSeconds: 10,
+      mpRegenPerFiveSeconds: 5,
+      attackIntervalMilliseconds: 1000,
+    },
+    skills: [],
+    equippedItems: [],
+    consumables: [],
+  }
+
+  const selectedNodeIds = ['node-wolf-1', 'node-wolf-2']
+  const selectedDifficulties = [0, 1, 3]
+
+  // 模拟 CombatSimulatorModal 中的笛卡尔积批量推演
+  const reports = {}
+  const comparison = []
+
+  for (const nodeId of selectedNodeIds) {
+    for (const diff of selectedDifficulties) {
+      const rep = ExpeditionSimulator.runSimulation({
+        nodeId,
+        nodeName: nodeId,
+        durationSeconds: 180,
+        difficulty: diff,
+        seed: 88888n,
+        allies: [ally],
+      }, catalog)
+
+      const itemKey = `${nodeId}#${diff}`
+      reports[itemKey] = rep
+      comparison.push({
+        itemKey,
+        nodeId,
+        difficulty: rep.difficulty,
+        report: rep,
+        dailyRevenue: rep.dailyDropsRevenue,
+      })
+    }
+  }
+
+  // 1. 验证推演总条目数为 节点数 × 难度数
+  assert.equal(comparison.length, 6, '2个节点 × 3个难度 应生成 6 条对比条目')
+  assert.equal(Object.keys(reports).length, 6, '报表字典应包含 6 个唯一 itemKey')
+
+  // 2. 验证各个条目的 itemKey 唯一且对应正确的难度
+  const keys = comparison.map(c => c.itemKey)
+  assert.deepEqual(keys, [
+    'node-wolf-1#0',
+    'node-wolf-1#1',
+    'node-wolf-1#3',
+    'node-wolf-2#0',
+    'node-wolf-2#1',
+    'node-wolf-2#3',
+  ])
+
+  // 3. 验证同地点不同难度的战报相互独立且透传对应难度
+  assert.equal(reports['node-wolf-1#0'].difficulty, 0)
+  assert.equal(reports['node-wolf-1#1'].difficulty, 1)
+  assert.equal(reports['node-wolf-1#3'].difficulty, 3)
+})
