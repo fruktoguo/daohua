@@ -69,7 +69,8 @@ public static class PostgresSchema
     /// v47：identity.accounts 增 taptap_openid 列与唯一索引（支持 TapTap 授权登录与一人一号强防御）；无存档载荷变更。
     /// v48：战斗特质载荷标签 v41，新增字段均可缺省解码，无 DDL 变更。
     /// v49：新增宗门、成员、申请邀请与离宗时刻表，启用宗门传音；个人分段载荷不变。
-    public const int Version = 49;
+    /// v50：social.chat_messages 增 sender_realm 发送者境界列；social.parties 默认 open_slots 设为 3，个人分段载荷不变。
+    public const int Version = 50;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -551,8 +552,8 @@ public static class PostgresSchema
         -- 队伍斗法开关（总纲 §7.10.4）：仅 activity_kind='combat' 可为 true、仅队长可改、
         -- 会话创建时冻结进参与规格；改离讨伐目标由社交层归位 false。
         pvp_enabled boolean NOT NULL DEFAULT false,
-        -- 开启槽位（总纲 §21.13）：2~5，默认 5；收窄后不得低于当前队员数（由社交层裁决保证）。
-        open_slots smallint NOT NULL DEFAULT 5 CHECK (open_slots BETWEEN 2 AND 5),
+        -- 开启槽位（总纲 §21.13）：2~5，默认 3；收窄后不得低于当前队员数（由社交层裁决保证）。
+        open_slots smallint NOT NULL DEFAULT 3 CHECK (open_slots BETWEEN 2 AND 5),
         -- 队伍讨伐难度（总纲 §7.3）：0~5，默认 0。
         difficulty smallint NOT NULL DEFAULT 0 CHECK (difficulty BETWEEN 0 AND 5),
         created_at timestamptz NOT NULL,
@@ -655,7 +656,8 @@ public static class PostgresSchema
         sender_name varchar(64) NOT NULL,
         body varchar(200) NOT NULL CHECK (char_length(body) > 0),
         party_ref uuid REFERENCES social.parties(party_id) ON DELETE SET NULL,
-        sent_at timestamptz NOT NULL
+        sent_at timestamptz NOT NULL,
+        sender_realm integer NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS ix_chat_messages_scope
         ON social.chat_messages(channel, scope_key, sent_at DESC, message_id DESC);
@@ -667,7 +669,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

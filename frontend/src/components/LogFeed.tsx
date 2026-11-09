@@ -1,4 +1,5 @@
 import { memo, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
+import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog } from '../game/ids'
@@ -23,6 +24,13 @@ export function formatLogTime(timestampMs: number): string {
   const date = new Date(timestampMs)
   const part = (value: number) => String(value).padStart(2, '0')
   return `${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`
+}
+
+
+/** 解析大境界名称与对应境界主题色 */
+export function resolveMajorRealm(level?: number): { name: string; color: string } {
+  const info = calculateRealmInfo(0, level ?? 1)
+  return { name: info.stageName, color: info.stageColor }
 }
 
 /**
@@ -305,12 +313,60 @@ const ChatRow = memo(function ChatRow({
     }
   }
 
+  const { sectPrefix, displayName } = useMemo(() => {
+    const trimmed = message.senderName.trim()
+    const match = /^\[([^\[\]\s]{1,6})\]\s*(.*)$/.exec(trimmed)
+    return {
+      sectPrefix: match ? match[1] : null,
+      displayName: match ? (match[2] || trimmed) : trimmed,
+    }
+  }, [message.senderName])
+
+  const majorRealm = useMemo(() => resolveMajorRealm(message.senderRealmLevel), [message.senderRealmLevel])
+
+  const { shortTime, fullTime } = useMemo(() => {
+    const date = new Date(message.sentAtMs)
+    const pad = (v: number) => String(v).padStart(2, '0')
+    return {
+      shortTime: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+      fullTime: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+    }
+  }, [message.sentAtMs])
   return (
     <li className={`chat-row chat-row--${message.channel}`}>
-      <time dateTime={new Date(message.sentAtMs).toISOString()}>{formatLogTime(message.sentAtMs)}</time>
-      <span className="log-message">
-        <span className="chat-sender">{message.senderName}</span>
-        <span className="chat-body"><ChatMessageBody body={message.body} /></span>
+      <div className="chat-row-header">
+        <time
+          className="chat-time-capsule"
+          dateTime={new Date(message.sentAtMs).toISOString()}
+          title={fullTime}
+        >
+          {shortTime}
+        </time>
+
+        <span
+          className="chat-realm-capsule"
+          style={{ color: majorRealm.color, borderColor: majorRealm.color }}
+          title={majorRealm.name}
+        >
+          {majorRealm.name}
+        </span>
+
+        {sectPrefix && (
+          <span
+            className="chat-sect-capsule"
+            title={sectPrefix}
+          >
+            {sectPrefix}
+          </span>
+        )}
+
+        <span className="chat-sender-name">
+          {displayName}
+        </span>
+      </div>
+
+      <div className="chat-row-body">
+        <ChatMessageBody body={message.body} />
         {message.partyLink && <PartyLinkCard link={message.partyLink} />}
         {repeatCount && repeatCount >= 2 && (
           <div className="chat-repeat-row">
@@ -325,7 +381,7 @@ const ChatRow = memo(function ChatRow({
             </button>
           </div>
         )}
-      </span>
+      </div>
     </li>
   )
 })

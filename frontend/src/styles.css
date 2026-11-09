@@ -2117,20 +2117,117 @@ input[type="checkbox"] {
   display: none;
 }
 
-.chat-sender {
-  margin-right: 6px;
-  color: var(--jade);
+/* 传音消息行与胶囊设计 */
+.event-log li.chat-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px 6px;
+  padding: 3px 6px;
+  min-height: 24px;
+  contain: none;
 }
 
-.chat-sender::after {
+.chat-row-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  line-height: 22px;
+}
+
+.chat-time-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(117, 169, 173, 0.08);
+  border: 1px solid rgba(117, 169, 173, 0.25);
+  color: rgba(117, 169, 173, 0.85);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+  cursor: help;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.chat-time-capsule:hover {
+  background: rgba(117, 169, 173, 0.18);
+  border-color: rgba(117, 169, 173, 0.6);
+  color: #a5f3fc;
+}
+
+.chat-realm-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid currentColor;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.4);
+}
+
+.chat-sect-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(46, 139, 87, 0.15);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: #86efac;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.chat-sender-name {
+  color: var(--jade);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-sender-name::after {
   content: '：';
   color: var(--text-dim);
+  font-weight: normal;
 }
 
-.chat-body {
+.chat-row-body {
+  display: inline;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 22px;
   color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
+/* 当包含图片或换行时，消息正文换行独占一行，头部在上边 */
+.chat-row:has(.chat-sticker-anchor) {
+  flex-direction: column;
+}
+
+.chat-row:has(.chat-sticker-anchor) .chat-row-body {
+  width: 100%;
+  margin-top: 2px;
+}
 .chat-order-link-anchor {
   display: inline-flex;
   vertical-align: middle;
@@ -2231,11 +2328,11 @@ input[type="checkbox"] {
   color: var(--gold-bright);
 }
 
-.chat-row--party .chat-sender {
+.chat-row--party .chat-sender-name {
   color: var(--gold-bright);
 }
 
-.chat-row--friend .chat-sender {
+.chat-row--friend .chat-sender-name {
   color: var(--qi, var(--gold-bright));
 }
 
@@ -2250,11 +2347,13 @@ input[type="checkbox"] {
   line-height: 1;
 }
 
-.qq-emoji-svg {
+.qq-emoji-img {
   display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
+  user-select: none;
+  image-rendering: auto;
 }
 
 .qq-emoji-fallback {
@@ -5236,6 +5335,30 @@ input[type="checkbox"] {
   border-color: rgba(230, 80, 80, 0.75);
   color: #fff;
   background: rgba(200, 45, 45, 0.5);
+}
+
+.action-modal-button-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.action-modal-button-group .action-modal-submit {
+  flex: 1;
+  min-width: 0;
+}
+
+.action-modal-submit--secondary {
+  border-color: rgba(200, 180, 120, 0.45);
+  color: var(--gold-bright, #eedaa2);
+  background: rgba(35, 30, 22, 0.85);
+}
+
+.action-modal-submit--secondary:hover:not(:disabled) {
+  border-color: var(--gold-bright, #eedaa2);
+  color: #fff;
+  background: rgba(55, 48, 35, 0.95);
 }
 
 .presence-options {

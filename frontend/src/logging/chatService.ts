@@ -18,6 +18,8 @@ export interface ChatMessage {
   sentAtMs: number
   /** 分享时的队伍快照（队伍链接卡） */
   partyLink?: PartyLinkDto | null
+  /** 发送者境界等级（默认 1：凡俗） */
+  senderRealmLevel?: number
 }
 
 /** 传音服务对外只读快照（配合 subscribe 的 revision 变化驱动 UI 刷新） */
@@ -56,6 +58,7 @@ function toMessage(dto: ChatMessageDto): ChatMessage {
     body: dto.body,
     sentAtMs: dto.sentAtUnixMilliseconds,
     partyLink: dto.partyLink ?? null,
+    senderRealmLevel: dto.senderRealmLevel ?? 1,
   }
 }
 

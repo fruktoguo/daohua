@@ -65,7 +65,7 @@ public sealed class ChatRuntime
     /// <param name="request">发言请求载荷。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>处理结局。</returns>
-    public async ValueTask<ChatSendOutcome> SendAsync(Guid senderId, string senderName, ChatSendDto request, CancellationToken cancellationToken = default)
+    public async ValueTask<ChatSendOutcome> SendAsync(Guid senderId, string senderName, ChatSendDto request, int senderRealmLevel = 1, CancellationToken cancellationToken = default)
     {
         var body = request.Body?.Trim() ?? string.Empty;
         if (body.Length == 0 || body.Length > MaxBodyLength) return new ChatSendOutcome(ChatSendStatus.InvalidBody);
@@ -78,7 +78,7 @@ public sealed class ChatRuntime
         if (scopeKey is null) return new ChatSendOutcome(ChatSendStatus.ChannelUnavailable);
 
         senderName = ZongmenRules.DisplayName(senderName, _zongmen is null ? null : await _zongmen.PrefixAsync(senderId, cancellationToken));
-        var record = new ChatMessageRecord(Guid.NewGuid(), request.Channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow);
+        var record = new ChatMessageRecord(Guid.NewGuid(), request.Channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, null, senderRealmLevel);
         await _repository.AppendAsync(record, RetentionPerScope, cancellationToken);
         var recipients = await ResolveRecipientsAsync(request.Channel, scopeKey, senderId, targetId, cancellationToken);
         return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record), recipients);
@@ -97,7 +97,7 @@ public sealed class ChatRuntime
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>处理结局（Status 为 Ok 时 Message/Recipients 非空，由 WebSocket 端广播）。</returns>
     public async ValueTask<ChatSendOutcome> SendPartyShareAsync(
-        Guid senderId, string senderName, string? channel, Guid? targetId, PartyRecord party, CancellationToken cancellationToken = default)
+        Guid senderId, string senderName, string? channel, Guid? targetId, PartyRecord party, int senderRealmLevel = 1, CancellationToken cancellationToken = default)
     {
         if (channel is not (ChatChannels.World or ChatChannels.Nearby or ChatChannels.Friend))
             return new ChatSendOutcome(ChatSendStatus.ChannelUnavailable);
@@ -112,7 +112,7 @@ public sealed class ChatRuntime
             party.Profile.NodeId, party.Profile.MinValuation, party.Members.Count);
         var body = $"「{party.Profile.Name}」正在招募同道，点击卡片加入。";
         var record = new ChatMessageRecord(
-            Guid.NewGuid(), channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, link);
+            Guid.NewGuid(), channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, link, senderRealmLevel);
         await _repository.AppendAsync(record, RetentionPerScope, cancellationToken);
         var recipients = await ResolveRecipientsAsync(channel, scopeKey, senderId, targetId, cancellationToken);
         return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record), recipients);
@@ -242,5 +242,6 @@ public sealed class ChatRuntime
                 record.PartyLink.ActivityKind,
                 record.PartyLink.NodeId,
                 record.PartyLink.MinValuation,
-                record.PartyLink.MemberCount));
+                record.PartyLink.MemberCount),
+        record.SenderRealmLevel);
 }

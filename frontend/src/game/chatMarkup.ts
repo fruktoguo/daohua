@@ -50,9 +50,8 @@ const QQ_EMOJI_PATTERN = /\[([^\[\]\s]{1,10})\]/g
 /** 匹配常见图片扩展名的 HTTP/HTTPS 直链 */
 const IMAGE_EXT_PATTERN = /\.(?:png|jpe?g|gif|webp|svg|avif)(?:[?#]|$)/i
 
-/** 匹配正文中的 HTTP/HTTPS 链接正则 */
-const URL_EXTRACT_PATTERN = /(https?:\/\/[^\s<>"'{}|\\^`]+)/gi
-
+/** 匹配正文中的有效图片直链（支持中文紧随混排，不吞并后续汉字或中文标点） */
+const IMAGE_URL_PATTERN = /(https?:\/\/[a-zA-Z0-9\-._~:/?#[\]@!$&'*+,;=%]+?\.(?:png|jpe?g|gif|webp|svg|avif)(?:[?#][a-zA-Z0-9\-._~:/?#[\]@!$&'*+,;=%]*)?)/gi
 /** 判断某字符串是否为图片链接（具备图片后缀，或整段就是有效 http 链接且长度在合理范围） */
 export function isImageUrl(url: string): boolean {
   const trimmed = url.trim()
@@ -245,31 +244,28 @@ export function parseChatMarkup(body: string): readonly ChatMarkupSegment[] {
       continue
     }
 
-    // 文本内嵌图片链接拆解
+    // 文本内嵌图片链接拆解（支持中文文字紧随混排）
     let textLast = 0
-    URL_EXTRACT_PATTERN.lastIndex = 0
+    IMAGE_URL_PATTERN.lastIndex = 0
     let urlMatch: RegExpExecArray | null
     let hasExtracted = false
 
-    while ((urlMatch = URL_EXTRACT_PATTERN.exec(text)) !== null) {
+    while ((urlMatch = IMAGE_URL_PATTERN.exec(text)) !== null) {
       const matchedUrl = urlMatch[0]
-      if (isImageUrl(matchedUrl)) {
-        hasExtracted = true
-        if (urlMatch.index > textLast) {
-          expanded.push({
-            type: 'text',
-            text: text.slice(textLast, urlMatch.index),
-          })
-        }
+      hasExtracted = true
+      if (urlMatch.index > textLast) {
         expanded.push({
-          type: 'sticker',
-          url: matchedUrl,
-          raw: matchedUrl,
+          type: 'text',
+          text: text.slice(textLast, urlMatch.index),
         })
-        textLast = URL_EXTRACT_PATTERN.lastIndex
       }
+      expanded.push({
+        type: 'sticker',
+        url: matchedUrl,
+        raw: matchedUrl,
+      })
+      textLast = IMAGE_URL_PATTERN.lastIndex
     }
-
     if (hasExtracted) {
       if (textLast < text.length) {
         expanded.push({

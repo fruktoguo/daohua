@@ -5,6 +5,7 @@ import {
   buildOrderChatMarkup,
   parseChatMarkup,
 } from './chatMarkup.ts'
+import { getQqEmojiUrls, QQ_EMOJI_LIST } from './qqEmojis.ts'
 
 test('chatMarkup: 纯文本不含标记时解析为单个 text 段', () => {
   const result = parseChatMarkup('道友请留步，一起下副本吗？')
@@ -124,6 +125,16 @@ test('chatMarkup: 自动解析独立图片链接与混排表情包', () => {
   assert.equal(r2[1].url, 'https://example.com/stickers/talisman.webp')
   assert.equal(r2[2].type, 'text')
   assert.equal(r2[2].text, ' 太赞了！')
+  // 中文紧随混排无空格图片链接
+  const tightMixed = '看这个图https://img.yuohira.com/43be52f97ed30891.png好搞笑'
+  const rTight = parseChatMarkup(tightMixed)
+  assert.equal(rTight.length, 3)
+  assert.equal(rTight[0].type, 'text')
+  assert.equal(rTight[0].text, '看这个图')
+  assert.equal(rTight[1].type, 'sticker')
+  assert.equal(rTight[1].url, 'https://img.yuohira.com/43be52f97ed30891.png')
+  assert.equal(rTight[2].type, 'text')
+  assert.equal(rTight[2].text, '好搞笑')
 
   // 显式 img/sticker 标记
   const tag = '{{img:https://example.com/stickers/sword.gif}}'
@@ -154,4 +165,20 @@ test('chatMarkup: 自动解析 QQ 风格经典小黄脸表情 [微笑] [呲牙]'
   assert.equal(r2.length, 1)
   assert.equal(r2[0].type, 'text')
   assert.equal(r2[0].text, '测试[未知标记]保持文本')
+})
+
+test('chatMarkup: 73 个经典内置动态表情名称与 QSid 唯一且支持双源分发解析', () => {
+  assert.equal(QQ_EMOJI_LIST.length, 73)
+  assert.equal(new Set(QQ_EMOJI_LIST.map((emoji) => emoji.name)).size, 73)
+  assert.equal(new Set(QQ_EMOJI_LIST.map((emoji) => emoji.qsid)).size, 73)
+  assert.equal(new Set(QQ_EMOJI_LIST.map((emoji) => emoji.id)).size, 73)
+
+  for (const emoji of QQ_EMOJI_LIST) {
+    const [segment] = parseChatMarkup(`[${emoji.name}]`)
+    assert.equal(segment?.type, 'qqEmoji', `[${emoji.name}] 应识别为内置表情`)
+    assert.equal(segment?.name, emoji.name)
+    const urls = getQqEmojiUrls(emoji.qsid)
+    assert.ok(urls.cfUrl.startsWith('https://img.yuohira.com/emotes/s'))
+    assert.ok(urls.localUrl.startsWith('/emotes/s'))
+  }
 })

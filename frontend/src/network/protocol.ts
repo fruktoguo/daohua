@@ -445,6 +445,8 @@ export interface ChatMessageDto {
   sentAtUnixMilliseconds: number
   /** 内嵌队伍卡片；无链接或队伍已解散时为 null */
   partyLink?: PartyLinkDto | null
+  /** 发送者境界等级（1~127，默认为 1：凡俗） */
+  senderRealmLevel?: number
 }
 
 /** ChatHistory 频道历史回放载荷 */
@@ -631,7 +633,7 @@ export interface PartyDto {
   isPublic: boolean
   /** 队伍斗法开关（§7.10.4）：仅讨伐目标可为 true、仅队长可改、队员只读 */
   pvpEnabled: boolean
-  /** 开启槽位数（2~5，默认 5）；开打条件要求成员数等于该值 */
+  /** 开启槽位数（2~5，默认 3）；开打条件要求成员数等于该值 */
   openSlots: number
   /** 进行中的组队讨伐会话；无会话为 null */
   activeSession?: PartySessionDto | null
@@ -717,7 +719,7 @@ export interface PartyLobbyEntryDto {
   leaderId: string
   leaderName: string
   minValuation: number
-  /** 开启槽位数（2~5，§21.13）；快照缺省时按默认满编 5 展示 */
+  /** 开启槽位数（2~5，§21.13）；快照缺省时按默认 3 展示 */
   openSlots?: number | null
   createdAtUnixMilliseconds: number
   members: PartyLobbyMemberDto[]

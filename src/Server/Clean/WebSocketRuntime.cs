@@ -856,7 +856,8 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_CHAT", "传音载荷无效。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
-                        var chatOutcome = await chat.SendAsync(session.PlayerId, displayName, chatSend, cancellationToken);
+                        var senderRealmLevel = runtime.TryGetLoaded(session.PlayerId)?.State.Progression.RealmLevel ?? 1;
+                        var chatOutcome = await chat.SendAsync(session.PlayerId, displayName, chatSend, senderRealmLevel, cancellationToken);
                         if (chatOutcome.Status != Social.ChatSendStatus.Ok)
                         {
                             var (chatErrorCode, chatErrorMessage) = chatOutcome.Status switch

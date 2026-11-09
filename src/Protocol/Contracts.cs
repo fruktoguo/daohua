@@ -747,7 +747,8 @@ public static class LogChannels
     /// 按领域事件码解析所属日志分组：
     /// 1. `combat.` 前缀归战斗（<see cref="Combat"/>）；
     /// 2. `auto-use.` 前缀为高频消耗品自动化推进与耗尽事件，不输出至战报日志，返回 null；
-    /// 3. 其余低频关键领域事件（行动完成、抵达、强化、斗法等）归系统（<see cref="System"/>）。
+    /// 3. `duel.staged.settled` 为斗法暂存物品到期批量入账，静默划入背包，不输出战报日志防刷屏，返回 null；
+    /// 4. 其余低频关键领域事件（行动完成、抵达、强化、斗法等）归系统（<see cref="System"/>）。
     /// </summary>
     /// <param name="eventCode">领域模拟事件码。</param>
     /// <returns>日志分组频道标识；不输出日志时返回 null。</returns>
@@ -756,6 +757,8 @@ public static class LogChannels
         if (eventCode.StartsWith("combat.", StringComparison.Ordinal))
             return Combat;
         if (eventCode.StartsWith("auto-use.", StringComparison.Ordinal))
+            return null;
+        if (eventCode == "duel.staged.settled")
             return null;
         return System;
     }
@@ -813,6 +816,7 @@ public sealed record PartyLinkDto(
 /// <param name="Body">消息正文</param>
 /// <param name="SentAtUnixMilliseconds">发送时刻（Unix 毫秒）</param>
 /// <param name="PartyLink">内嵌队伍卡片；无链接时为 null</param>
+/// <param name="SenderRealmLevel">发送者境界等级（默认 1：凡俗）</param>
 public sealed record ChatMessageDto(
     string MessageId,
     string Channel,
@@ -821,7 +825,8 @@ public sealed record ChatMessageDto(
     string SenderName,
     string Body,
     long SentAtUnixMilliseconds,
-    PartyLinkDto? PartyLink = null);
+    PartyLinkDto? PartyLink = null,
+    int SenderRealmLevel = 1);
 
 /// <summary>频道历史回放载荷：某作用域最近 100 条传音，按时间正序。</summary>
 /// <param name="Channel">频道标识</param>

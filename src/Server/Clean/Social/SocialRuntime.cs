@@ -24,6 +24,8 @@ public sealed class SocialRuntime
     public const int MaxPartyMembers = 5;
     /// <summary>组队讨伐开启槽位下限（总纲 §21.13，与领域规格 2~5 一致）。</summary>
     public const int MinOpenSlots = 2;
+    /// <summary>组队讨伐默认开启槽位（总纲 §21.13）。</summary>
+    public const int DefaultOpenSlots = 3;
     /// <summary>组队大厅各类列表的最大返回条数。</summary>
     public const int LobbyListLimit = 50;
 
@@ -722,7 +724,7 @@ public sealed class SocialRuntime
                 if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
                 var senderName = party.Members.FirstOrDefault(member => member.PlayerId == playerId)?.DisplayName ?? string.Empty;
                 var share = await _chat.SendPartyShareAsync(
-                    playerId, senderName, action.Channel, ResolveTargetId(action), party, cancellationToken);
+                    playerId, senderName, action.Channel, ResolveTargetId(action), party, senderRealmLevel: 1, cancellationToken: cancellationToken);
                 if (share.Status != ChatSendStatus.Ok)
                 {
                     return new SocialOutcome(share.Status == ChatSendStatus.RateLimited

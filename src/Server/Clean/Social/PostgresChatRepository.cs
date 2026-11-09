@@ -24,8 +24,8 @@ public sealed class PostgresChatRepository(NpgsqlDataSource dataSource) : IChatR
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var insert = new NpgsqlCommand("""
-            INSERT INTO social.chat_messages(message_id, channel, scope_key, sender_id, sender_name, body, party_ref, sent_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO social.chat_messages(message_id, channel, scope_key, sender_id, sender_name, body, party_ref, sent_at, sender_realm)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             """, connection, transaction))
         {
             insert.Parameters.Add(new NpgsqlParameter { Value = message.MessageId });
@@ -36,6 +36,7 @@ public sealed class PostgresChatRepository(NpgsqlDataSource dataSource) : IChatR
             insert.Parameters.Add(new NpgsqlParameter { Value = message.Body });
             insert.Parameters.Add(new NpgsqlParameter { Value = (object?)message.PartyLink?.PartyId ?? DBNull.Value });
             insert.Parameters.Add(new NpgsqlParameter { Value = message.SentAt });
+            insert.Parameters.Add(new NpgsqlParameter { Value = message.SenderRealmLevel });
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
         if (trimDue)
@@ -72,11 +73,11 @@ public sealed class PostgresChatRepository(NpgsqlDataSource dataSource) : IChatR
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         // party_ref 随队伍解散 ON DELETE SET NULL 自动变回普通文本；存活队伍联出档案与人数供卡片渲染。
         await using var command = new NpgsqlCommand("""
-            SELECT message_id, channel, scope_key, sender_id, sender_name, body, sent_at,
+            SELECT message_id, channel, scope_key, sender_id, sender_name, body, sent_at, sender_realm,
                    pt.party_id, pt.name, pt.activity_kind, pt.node_id, pt.min_valuation,
                    (SELECT count(*) FROM social.party_members pm WHERE pm.party_id = pt.party_id) AS member_count
             FROM (
-                SELECT message_id, channel, scope_key, sender_id, sender_name, body, party_ref, sent_at
+                SELECT message_id, channel, scope_key, sender_id, sender_name, body, party_ref, sent_at, sender_realm
                 FROM social.chat_messages
                 WHERE channel = $1 AND scope_key = $2
                 ORDER BY sent_at DESC, message_id DESC
@@ -92,14 +93,15 @@ public sealed class PostgresChatRepository(NpgsqlDataSource dataSource) : IChatR
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var link = reader.IsDBNull(7)
+            var link = reader.IsDBNull(8)
                 ? null
                 : new PartyLinkRecord(
-                    reader.GetGuid(7), reader.GetString(8), reader.GetString(9), reader.GetString(10),
-                    reader.GetDouble(11), Convert.ToInt32(reader.GetInt64(12)));
+                    reader.GetGuid(8), reader.GetString(9), reader.GetString(10), reader.GetString(11),
+                    reader.GetDouble(12), Convert.ToInt32(reader.GetInt64(13)));
+            var realmLevel = reader.IsDBNull(7) ? 1 : reader.GetInt32(7);
             result.Add(new ChatMessageRecord(
                 reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3),
-                reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6), link));
+                reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6), link, realmLevel));
         }
         return result;
     }

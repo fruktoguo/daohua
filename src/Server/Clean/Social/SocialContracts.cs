@@ -49,7 +49,7 @@ public sealed record PartyProfileRecord(string Name, string ActivityKind, string
 /// <param name="Members">成员列表（含队长，按加入时间排序）。</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；满员判定与讨伐开战条件均以此为上限。</param>
 public sealed record PartyRecord(Guid PartyId, Guid LeaderId, PartyProfileRecord Profile, DateTimeOffset CreatedAt,
-    IReadOnlyList<PartyMemberRecord> Members, int OpenSlots = 5);
+    IReadOnlyList<PartyMemberRecord> Members, int OpenSlots = 3);
 
 /// <summary>组队讨伐会话持久化行（总纲 §21.13）。</summary>
 /// <param name="SessionId">会话唯一标识（party:{partyId}:{unixSec}:{rand} 文本）。</param>
@@ -142,7 +142,8 @@ public sealed record PartyLinkRecord(Guid PartyId, string Name, string ActivityK
 /// <param name="Body">消息正文。</param>
 /// <param name="SentAt">发送时刻。</param>
 /// <param name="PartyLink">内嵌队伍卡片；无链接或队伍已解散时为 null。</param>
-public sealed record ChatMessageRecord(Guid MessageId, string Channel, string ScopeKey, Guid SenderId, string SenderName, string Body, DateTimeOffset SentAt, PartyLinkRecord? PartyLink = null);
+/// <param name="SenderRealmLevel">发送者境界等级（默认 1：凡俗）。</param>
+public sealed record ChatMessageRecord(Guid MessageId, string Channel, string ScopeKey, Guid SenderId, string SenderName, string Body, DateTimeOffset SentAt, PartyLinkRecord? PartyLink = null, int SenderRealmLevel = 1);
 
 /// <summary>社交指令失败原因码；成功时为 <see cref="None"/>。</summary>
 public enum SocialFailure : byte
