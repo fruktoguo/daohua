@@ -105,3 +105,30 @@ test('chatMarkup: 构建函数与往返解析一致性', () => {
   assert.equal(orderParsed[0].price, 888)
   assert.equal(orderParsed[0].quantity, 1)
 })
+
+test('chatMarkup: 自动解析独立图片链接与混排表情包', () => {
+  // 单独图片链接
+  const singleUrl = 'https://example.com/stickers/cat.png'
+  const r1 = parseChatMarkup(singleUrl)
+  assert.equal(r1.length, 1)
+  assert.equal(r1[0].type, 'sticker')
+  assert.equal(r1[0].url, singleUrl)
+
+  // 文本混排图片链接
+  const mixed = '大家看这个仙符表情：https://example.com/stickers/talisman.webp 太赞了！'
+  const r2 = parseChatMarkup(mixed)
+  assert.equal(r2.length, 3)
+  assert.equal(r2[0].type, 'text')
+  assert.equal(r2[0].text, '大家看这个仙符表情：')
+  assert.equal(r2[1].type, 'sticker')
+  assert.equal(r2[1].url, 'https://example.com/stickers/talisman.webp')
+  assert.equal(r2[2].type, 'text')
+  assert.equal(r2[2].text, ' 太赞了！')
+
+  // 显式 img/sticker 标记
+  const tag = '{{img:https://example.com/stickers/sword.gif}}'
+  const r3 = parseChatMarkup(tag)
+  assert.equal(r3.length, 1)
+  assert.equal(r3[0].type, 'sticker')
+  assert.equal(r3[0].url, 'https://example.com/stickers/sword.gif')
+})

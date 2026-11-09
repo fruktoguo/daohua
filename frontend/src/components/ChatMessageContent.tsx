@@ -6,6 +6,7 @@ import { useMarketStore } from '../game/marketStore'
 import { useUiStore } from '../uiStore'
 import { useT } from '../i18n'
 import { ItemIcon, ItemReference, ItemTooltipTarget } from './ItemDisplay'
+import { ChatSticker } from './ChatSticker'
 import { UnitNumber } from './UnitNumber'
 
 /** 单条订单超链接胶囊 (ChatOrderReference) */
@@ -111,6 +112,9 @@ export const ChatMessageBody = memo(function ChatMessageBody({
         }
         if (seg.type === 'order') {
           return <ChatOrderReference key={idx} order={seg} />
+        }
+        if (seg.type === 'sticker') {
+          return <ChatSticker key={idx} url={seg.url} />
         }
         return null
       })}

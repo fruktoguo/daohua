@@ -32,9 +32,33 @@ export type ChatMarkupSegment =
       quantity: number
       raw: string
     }
+  | {
+      type: 'sticker'
+      url: string
+      raw: string
+    }
 
-/** 行内超链接标记匹配正则：{{item:...}} 或 {{order:...}} */
-const CHAT_MARKUP_PATTERN = /\{\{(item|order):([^}]+)\}\}/g
+/** 行内标记匹配正则：{{item:...}} 或 {{order:...}} 或 {{img:...}} 或 {{sticker:...}} */
+const CHAT_MARKUP_PATTERN = /\{\{(item|order|img|sticker):([^}]+)\}\}/g
+
+/** 匹配常见图片扩展名的 HTTP/HTTPS 直链 */
+const IMAGE_EXT_PATTERN = /\.(?:png|jpe?g|gif|webp|svg|avif)(?:[?#]|$)/i
+
+/** 匹配正文中的 HTTP/HTTPS 链接正则 */
+const URL_EXTRACT_PATTERN = /(https?:\/\/[^\s<>"'{}|\\^`]+)/gi
+
+/** 判断某字符串是否为图片链接（具备图片后缀，或整段就是有效 http 链接且长度在合理范围） */
+export function isImageUrl(url: string): boolean {
+  const trimmed = url.trim()
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return false
+  if (trimmed.length > 200) return false
+  return IMAGE_EXT_PATTERN.test(trimmed)
+}
+
+/** 构建表情包标记或返回纯链接 */
+export function buildStickerChatMarkup(url: string): string {
+  return url.trim()
+}
 
 /**
  * 构建物品传音标记
@@ -167,6 +191,17 @@ export function parseChatMarkup(body: string): readonly ChatMarkupSegment[] {
         quantity,
         raw,
       })
+    } else if (kind === 'img' || kind === 'sticker') {
+      const url = payload.trim()
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        segments.push({
+          type: 'sticker',
+          url,
+          raw,
+        })
+      } else {
+        segments.push({ type: 'text', text: raw })
+      }
     } else {
       segments.push({ type: 'text', text: raw })
     }
@@ -180,9 +215,70 @@ export function parseChatMarkup(body: string): readonly ChatMarkupSegment[] {
     })
   }
 
+  // 对纯文本段进行二次解析：如果包含图片 URL 或纯链接，拆解为 sticker 分段
+  const expanded: ChatMarkupSegment[] = []
+  for (const seg of segments) {
+    if (seg.type !== 'text') {
+      expanded.push(seg)
+      continue
+    }
+    const text = seg.text
+    // 若整个文本段就是一个合法的 URL（单发表情包或常见图片链接），直接转为 sticker
+    const trimmed = text.trim()
+    if (
+      (trimmed.startsWith('http://') || trimmed.startsWith('https://')) &&
+      !/\s/.test(trimmed) &&
+      trimmed.length <= 200 &&
+      (IMAGE_EXT_PATTERN.test(trimmed) || trimmed.length > 10)
+    ) {
+      expanded.push({
+        type: 'sticker',
+        url: trimmed,
+        raw: text,
+      })
+      continue
+    }
+
+    // 文本内嵌图片链接拆解
+    let textLast = 0
+    URL_EXTRACT_PATTERN.lastIndex = 0
+    let urlMatch: RegExpExecArray | null
+    let hasExtracted = false
+
+    while ((urlMatch = URL_EXTRACT_PATTERN.exec(text)) !== null) {
+      const matchedUrl = urlMatch[0]
+      if (isImageUrl(matchedUrl)) {
+        hasExtracted = true
+        if (urlMatch.index > textLast) {
+          expanded.push({
+            type: 'text',
+            text: text.slice(textLast, urlMatch.index),
+          })
+        }
+        expanded.push({
+          type: 'sticker',
+          url: matchedUrl,
+          raw: matchedUrl,
+        })
+        textLast = URL_EXTRACT_PATTERN.lastIndex
+      }
+    }
+
+    if (hasExtracted) {
+      if (textLast < text.length) {
+        expanded.push({
+          type: 'text',
+          text: text.slice(textLast),
+        })
+      }
+    } else {
+      expanded.push(seg)
+    }
+  }
+
   // 合并相邻的纯文本分段
   const merged: ChatMarkupSegment[] = []
-  for (const seg of segments) {
+  for (const seg of expanded) {
     if (seg.type === 'text') {
       const prev = merged[merged.length - 1]
       if (prev && prev.type === 'text') {

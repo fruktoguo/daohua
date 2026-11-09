@@ -13,7 +13,8 @@ import { filterLogEntries, gameLogService } from '../logging/gameLogService'
 import type { ChatChannel } from '../network/protocol'
 import { gameClient } from '../network/gameClient'
 import { FeedList, mergeFeedItems, toChatFeedItems, toLogFeedItems, useStickyScroll } from './LogFeed'
-
+import { FloatingPopover } from './FloatingPopover'
+import { ChatEmojiPicker } from './ChatEmojiPicker'
 /** 单条消息正文长度上限（与服务端 ChatRuntime.MaxBodyLength 一致） */
 const MAX_CHAT_BODY_LENGTH = 200
 
@@ -35,9 +36,9 @@ const ChatComposer = memo(function ChatComposer({
 }): React.JSX.Element {
   const t = useT()
   const [draft, setDraft] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const disabled = hint !== undefined
-
   useEffect(() => {
     return chatService.subscribeDraftInsert((text: string) => {
       setDraft(prev => {
@@ -54,13 +55,37 @@ const ChatComposer = memo(function ChatComposer({
       }, 50)
     })
   }, [])
+  const handleInsertText = (text: string): void => {
+    const input = inputRef.current
+    if (!input) {
+      setDraft(prev => (prev ? `${prev} ${text}` : text))
+      return
+    }
+    const start = input.selectionStart ?? input.value.length
+    const end = input.selectionEnd ?? input.value.length
+    const before = draft.slice(0, start)
+    const after = draft.slice(end)
+    const next = before + text + after
+    if (next.length > MAX_CHAT_BODY_LENGTH) {
+      useGameStore.getState().setNotice(t('combat.chat.tooLong'))
+      return
+    }
+    setDraft(next)
+    window.setTimeout(() => {
+      input.focus()
+      const newPos = start + text.length
+      input.setSelectionRange(newPos, newPos)
+    }, 20)
+  }
 
   const submit = (): void => {
     const body = draft.trim()
     if (body.length === 0) return
-    if (gameClient.sendChat(channel, body, targetPlayerId ?? undefined)) setDraft('')
+    if (gameClient.sendChat(channel, body, targetPlayerId ?? undefined)) {
+      setDraft('')
+      setPickerOpen(false)
+    }
   }
-
   if (disabled) return <p className="chat-composer-hint">{hint}</p>
 
   return (
@@ -71,6 +96,34 @@ const ChatComposer = memo(function ChatComposer({
         submit()
       }}
     >
+      <FloatingPopover
+        className="chat-emoji-popover"
+        content={
+          <ChatEmojiPicker
+            onClose={() => setPickerOpen(false)}
+            onSelectEmoji={handleInsertText}
+            onSelectSticker={handleInsertText}
+          />
+        }
+        interactive
+        onOpenChange={setPickerOpen}
+        open={pickerOpen}
+        placement="top"
+        size="medium"
+        trigger="manual"
+        triggerAs="div"
+        triggerClassName="chat-emoji-trigger"
+      >
+        <button
+          aria-label={t('combat.chat.emojiPickerAria')}
+          className={`chat-emoji-btn ${pickerOpen ? 'is-active' : ''}`}
+          onClick={() => setPickerOpen(prev => !prev)}
+          title={t('combat.chat.emojiPickerAria')}
+          type="button"
+        >
+          😊
+        </button>
+      </FloatingPopover>
       <input
         aria-label={t('combat.chat.inputAria')}
         maxLength={MAX_CHAT_BODY_LENGTH}

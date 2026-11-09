@@ -1,7 +1,9 @@
-import { memo, useLayoutEffect, useRef, type RefObject } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog } from '../game/ids'
+import { useSocialStore } from '../game/socialStore'
+import { chatStickerService } from '../game/chatStickerService'
 import { useT } from '../i18n'
 import type { ChatMessage } from '../logging/chatService'
 import { gameClient } from '../network/gameClient'
@@ -270,7 +272,36 @@ const PartyLinkCard = memo(function PartyLinkCard({ link }: { link: PartyLinkDto
  * 复用战报日志的「时间 + 内容」网格排版，正文前展示发送者道号胶囊。
  * 正文按玩家原文渲染（不做数值高亮），避免聊天内容被拆成数值胶囊。
  */
-const ChatRow = memo(function ChatRow({ message }: { message: ChatMessage }): React.JSX.Element {
+const ChatRow = memo(function ChatRow({
+  message,
+  repeatCount,
+}: {
+  message: ChatMessage
+  repeatCount?: number
+}): React.JSX.Element {
+  const t = useT()
+
+  const handleRepeat = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    let targetPlayerId: string | undefined = undefined
+    if (message.channel === 'friend') {
+      const myId = useGameStore.getState().playerId
+      targetPlayerId = message.senderId !== myId
+        ? message.senderId
+        : (useSocialStore.getState().activeFriendId ?? undefined)
+    }
+
+    if (gameClient.sendChat(message.channel, message.body, targetPlayerId)) {
+      const trimmed = message.body.trim()
+      if (chatStickerService.isStickerSaved(trimmed) || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        chatStickerService.recordStickerUsage(trimmed)
+      } else {
+        chatStickerService.recordEmojiUsage(trimmed)
+      }
+      useGameStore.getState().setNotice(t('combat.chat.repeatSuccessNotice'))
+    }
+  }
+
   return (
     <li className={`chat-row chat-row--${message.channel}`}>
       <time dateTime={new Date(message.sentAtMs).toISOString()}>{formatLogTime(message.sentAtMs)}</time>
@@ -278,11 +309,23 @@ const ChatRow = memo(function ChatRow({ message }: { message: ChatMessage }): Re
         <span className="chat-sender">{message.senderName}</span>
         <span className="chat-body"><ChatMessageBody body={message.body} /></span>
         {message.partyLink && <PartyLinkCard link={message.partyLink} />}
+        {repeatCount && repeatCount >= 2 && (
+          <div className="chat-repeat-row">
+            <button
+              aria-label={t('combat.chat.repeatPlusOne')}
+              className="chat-repeat-btn"
+              onClick={handleRepeat}
+              title={t('combat.chat.repeatTooltip', { count: repeatCount })}
+              type="button"
+            >
+              <span className="chat-repeat-badge">+1</span>
+            </button>
+          </div>
+        )}
       </span>
     </li>
   )
 })
-
 /** 日志流与传音流合并后的统一渲染项 */
 export type FeedItem =
   | { kind: 'log'; id: string; timestampMs: number; entry: GameLogEntry }
@@ -313,13 +356,61 @@ export function mergeFeedItems(left: FeedItem[], right: FeedItem[]): FeedItem[] 
   return [...left, ...right].sort((a, b) => a.timestampMs - b.timestampMs || a.id.localeCompare(b.id))
 }
 
-/** 渲染项列表组件 */
 export function FeedList({ items }: { items: readonly FeedItem[] }): React.JSX.Element {
+  // 计算连续 >= 2 句完全相同聊天消息中的最后一条，附带其重复数量
+  const chatRepeatInfo = useMemo(() => {
+    const lastIndexToCountMap = new Map<string, number>()
+    let runStart = -1
+    let runBody = ''
+    let runChannel = ''
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.kind !== 'chat') {
+        if (runStart !== -1 && i - runStart >= 2) {
+          lastIndexToCountMap.set(items[i - 1].id, i - runStart)
+        }
+        runStart = -1
+        runBody = ''
+        runChannel = ''
+        continue
+      }
+
+      const currentBody = item.message.body.trim()
+      const currentChannel = item.message.channel
+
+      if (runStart === -1) {
+        runStart = i
+        runBody = currentBody
+        runChannel = currentChannel
+      } else if (currentBody === runBody && currentChannel === runChannel) {
+        // 连续相同，继续推进
+      } else {
+        if (i - runStart >= 2) {
+          lastIndexToCountMap.set(items[i - 1].id, i - runStart)
+        }
+        runStart = i
+        runBody = currentBody
+        runChannel = currentChannel
+      }
+    }
+
+    if (runStart !== -1 && items.length - runStart >= 2) {
+      lastIndexToCountMap.set(items[items.length - 1].id, items.length - runStart)
+    }
+
+    return lastIndexToCountMap
+  }, [items])
+
   return (
     <>
       {items.map(item => item.kind === 'log'
         ? <LogRow entry={item.entry} key={item.id} />
-        : <ChatRow key={item.id} message={item.message} />)}
+        : <ChatRow
+            key={item.id}
+            message={item.message}
+            repeatCount={chatRepeatInfo.get(item.id)}
+          />)}
     </>
   )
 }
