@@ -50,9 +50,9 @@ public sealed class ChatImageUploadRegistry
         _secretBytes = Encoding.UTF8.GetBytes(secret);
 
         _uploadEndpoint = configuration["Chat:ImageUploadEndpoint"]
-            ?? "https://daohua-emotes.fruktoyao.workers.dev/upload";
+            ?? "https://img.yuohira.com/upload";
         _publicBaseUrl = configuration["Chat:ImageBaseUrl"]
-            ?? "https://daohua-emotes.fruktoyao.workers.dev";
+            ?? "https://img.yuohira.com";
     }
 
     /// <summary>

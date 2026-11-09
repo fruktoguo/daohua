@@ -17,8 +17,8 @@ public sealed class ChatImageUploadRegistryTests
         var inMemoryConfig = new Dictionary<string, string?>
         {
             ["Chat:ImageSecret"] = _secret,
-            ["Chat:ImageUploadEndpoint"] = "https://daohua-emotes.test.workers.dev/upload",
-            ["Chat:ImageBaseUrl"] = "https://daohua-emotes.test.workers.dev"
+            ["Chat:ImageUploadEndpoint"] = "https://img.yuohira.com/upload",
+            ["Chat:ImageBaseUrl"] = "https://img.yuohira.com"
         };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
         _registry = new ChatImageUploadRegistry(configuration);

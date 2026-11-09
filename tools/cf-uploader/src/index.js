@@ -340,8 +340,8 @@ export default {
     }
 
     // 2. 首页渲染说明与受控上传面板
-    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-      return new Response(HTML_PAGE, {
+    if ((request.method === "GET" || request.method === "HEAD") && (url.pathname === "/" || url.pathname === "/index.html")) {
+      return new Response(request.method === "HEAD" ? null : HTML_PAGE, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
@@ -442,14 +442,17 @@ export default {
       }
     }
 
-    // 4. 图片直链读取 (GET /:filename)
-    if (request.method === "GET") {
+    // 4. 图片直链读取 (GET /:filename 或 HEAD /:filename)
+    if (request.method === "GET" || request.method === "HEAD") {
       const key = decodeURIComponent(url.pathname.slice(1));
       if (!key) {
         return new Response("Not Found", { status: 404, headers: corsHeaders });
       }
 
-      const object = await env.MY_BUCKET.get(key);
+      const object = request.method === "HEAD"
+        ? await env.MY_BUCKET.head(key)
+        : await env.MY_BUCKET.get(key);
+
       if (!object) {
         return new Response("Image Not Found", { status: 404, headers: corsHeaders });
       }
@@ -459,7 +462,7 @@ export default {
       headers.set("ETag", object.httpEtag);
       headers.set("Cache-Control", "public, max-age=31536000, immutable");
 
-      return new Response(object.body, { headers });
+      return new Response(request.method === "HEAD" ? null : object.body, { headers });
     }
 
     return new Response("Not Found", { status: 404, headers: corsHeaders });
