@@ -23,13 +23,6 @@ daohua.yuohira.com {
 	@private path /api/metrics /api/v1/metrics /api/v1/market/metrics /api/debug/* /readyz /ops /ops/*
 	respond @private 404
 
-	# 图床直链与上传反向代理（经由腾讯云节点中继加速国内网络访问 Cloudflare R2 图床）
-	handle_path /img/* {
-		reverse_proxy https://daohua-emotes.fruktoyao.workers.dev {
-			header_up Host daohua-emotes.fruktoyao.workers.dev
-		}
-	}
-
 	# 静态文件直出（隐私政策与最新客户端安装包）
 	@static path /privacy /privacy.html /daohua.apk
 	handle @static {
