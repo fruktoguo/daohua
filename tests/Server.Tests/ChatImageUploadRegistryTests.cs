@@ -52,6 +52,7 @@ public sealed class ChatImageUploadRegistryTests
         Assert.True(successA);
         Assert.False(resultA.Cached);
         Assert.Equal(19, resultA.RemainingToday);
+        _registry.RegisterUploadedUrl(sha256, resultA.Url);
 
         // 账号 B 上传相同哈希的图片（全服去重复用）
         var successB = _registry.TryAcquireUploadTicket(accountB, sha256, "gif", out var resultB, out var errB);

@@ -356,6 +356,7 @@ export const combatZh = {
       tabParty: '队伍',
       empty: '暂无消息',
       placeholder: '输入传音内容…',
+      uploadingImage: '正在上传图片…',
       inputAria: '传音内容',
       send: '发送',
       shareItem: '发送到聊天',
