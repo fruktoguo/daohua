@@ -248,13 +248,11 @@ export const SecretArtOperations = memo(function SecretArtOperations({
 
   const submitAction = (startImmediately: boolean) => {
     if (!selected) return
-    if (startImmediately && queueLength > 0) {
-      gameClient.sendCommand('queue.clear', {})
-    }
     gameClient.sendCommand('action.enqueue', {
       actionId: currentActionId,
       repeatCount: repeats,
       targetItemId: selected.itemId,
+      priority: startImmediately,
     })
   }
 

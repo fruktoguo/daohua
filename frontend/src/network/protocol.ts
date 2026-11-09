@@ -280,6 +280,8 @@ export interface ActionIntentRequest {
   targetItemId?: string | null
   /** 辅助物品标识，可选；强化行动用于指定护符等辅助消耗品 */
   auxItemId?: string | null
+  /** 优先插队开关：为 true 时直接插入队首（Index 0），原队首行动挂起，后续队列完整保留 */
+  priority?: boolean
 }
 
 /** ActionResult 行动入队回执载荷 */

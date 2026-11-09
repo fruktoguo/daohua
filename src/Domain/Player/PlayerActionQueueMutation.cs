@@ -171,6 +171,8 @@ public static class PlayerActionQueueRules
             case PlayerActionQueueMutationKind.EnqueuePriority:
             {
                 var priority = mutation.Kind == PlayerActionQueueMutationKind.EnqueuePriority;
+                var isTravel = mutation.Travel is not null;
+                var isReplacingExpedition = false;
                 var intent = ValidateIntent(mutation.Intent, mutation.Catalog, priority, mutation.Participation);
                 if (mutation.Catalog is not null && mutation.Catalog.TryGet(intent.ActionId, out var actionDef)
                     && actionDef.Kind == ActionKind.Cultivation)
@@ -204,17 +206,25 @@ public static class PlayerActionQueueRules
                     if (priority && hasParticipation)
                         throw new DomainException(DomainErrorCode.Conflict, "行动参与期间不能优先插队。");
                     if (priority)
+                    {
+                        for (var i = 0; i < actions.Count; i++)
+                            if (actions[i].Intent.ActionId == intent.ActionId && actions[i].Expedition is not null)
+                            {
+                                isReplacingExpedition = true;
+                                break;
+                            }
+                    }
+                    if (priority && (isTravel || isReplacingExpedition))
                         for (var i = actions.Count - 1; i >= 0; i--)
                             if (actions[i].Intent.ActionId == intent.ActionId) work.ArchiveIds.Add(actions[i].Id);
-                    // 参与引用占独立槽位；个人优先插队只沿用同类去重，不删除其他行动腾槽。
                     if (personalActionCount - work.ArchiveIds.Count >= PlayerAggregate.MaxActionQueueLength)
                         throw new DomainException(DomainErrorCode.Conflict, $"个人行动队列最多只能包含 {PlayerAggregate.MaxActionQueueLength} 项。");
                 }
                 var instanceId = mutation.InstanceId == Guid.Empty ? Guid.NewGuid() : mutation.InstanceId;
-                // 插队行动默认只跑一轮（RepeatCount=1）；行动参与例外——无限驻留队首
+                // 赶路插队默认只跑一轮（RepeatCount=1）；通用行动优先插队保留指定轮次；行动参与例外——无限驻留队首
                 // 直至散场时刻收尾（共享参与剧本），否则波次清空即走离队裁决导致 WaveNumber 恒 1。
                 var normalized = new ActionIntent(intent.ActionId,
-                    priority && mutation.Participation is null ? 1 : intent.RepeatCount,
+                    isTravel ? 1 : intent.RepeatCount,
                     intent.TargetNodeId,
                     intent.Parameters is null ? null : new ReadOnlyDictionary<string, double>(
                         intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
@@ -228,13 +238,8 @@ public static class PlayerActionQueueRules
                     { Travel = mutation.Travel, Participation = mutation.Participation };
                 // 插队顶替会移除同类远征行动：被顶替者携带远征且玩家气血归零时按脱战复苏 1 HP，
                 // 否则 hp=0 驻留会让新行动在入场判定卡进永久停泊（阵亡不回血口径下无自愈路径）。
-                if (work.Player.Resources.Hitpoints <= 0)
-                    for (var i = 0; i < actions.Count; i++)
-                        if (actions[i].Intent.ActionId == intent.ActionId && actions[i].Expedition is not null)
-                        {
-                            work.RecoverHitpoints = true;
-                            break;
-                        }
+                if (work.Player.Resources.Hitpoints <= 0 && (isTravel || isReplacingExpedition))
+                    work.RecoverHitpoints = true;
                 work.ActivateHead = priority;
                 work.Changed = true;
                 return;
@@ -344,7 +349,7 @@ public static class PlayerActionQueueRules
                 actions.Add(work.Action!);
                 break;
             case PlayerActionQueueMutationKind.EnqueuePriority:
-                if (work.Mutation.Participation is null)
+                if (work.Mutation.Travel is not null || actions.Any(a => a.Intent.ActionId == work.Action!.Intent.ActionId && a.Expedition is not null))
                     for (var i = actions.Count - 1; i >= 0; i--)
                         if (actions[i].Intent.ActionId == work.Action!.Intent.ActionId)
                         {

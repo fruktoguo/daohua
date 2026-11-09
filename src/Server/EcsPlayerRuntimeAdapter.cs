@@ -498,7 +498,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var now = _simulationClock.UtcNow;
                         if (before.State.Actions.Count > 0 && now > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, now, cancellationToken).ConfigureAwait(false);
-                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Enqueue(intent, now, gameData.Actions));
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            if (request.Priority)
+                                aggregate.EnqueuePriority(intent, now, gameData.Actions);
+                            else
+                                aggregate.Enqueue(intent, now, gameData.Actions);
+                        });
                         break;
                     }
                     case "action.remove":

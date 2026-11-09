@@ -116,6 +116,52 @@ public sealed class EnhancementContractTests
         Assert.Equal(repeatCount, queued.RemainingRepeats);
     }
 
+    /// <summary>
+    /// 验证立即开始（Priority = true）：
+    /// 直接将行动插入队首（Index 0），原队首行动挂起为 Pending，原有队列与指定轮次完整保留，绝不清空队列。
+    /// </summary>
+    [Fact]
+    public async Task ActionEnqueue_Priority_InsertsAtHeadAndSuspendsPriorRunningAction()
+    {
+        var playerId = Guid.NewGuid();
+        var assets = new CustomQuantityAssets(playerId, ("item.dark-iron", string.Empty, 100), ("item.morning-dew", string.Empty, 100));
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), assets, new NoopEconomy(),
+            LoadCatalogFiles("actions/enhancement.json", "actions/crafting.json", "items/materials.json"));
+        await runtime.LoadAsync(playerId);
+
+        // 先入队普通制造行动，3 轮
+        var req1 = Guid.NewGuid();
+        var res1 = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                req1.ToString("D"), "craft.refine-iron", 3), ProtocolJson.Options),
+            0, req1);
+        Assert.True(res1.Success, $"{res1.Code}: {res1.Message}");
+        Assert.Single(res1.Snapshot.State.Actions);
+        Assert.Equal("craft.refine-iron", res1.Snapshot.State.Actions[0].Intent.ActionId.Value);
+        Assert.Equal(ActionQueueStatus.Pending, res1.Snapshot.State.Actions[0].Status);
+
+        // 再以 Priority = true 优先插队秘法化灵，5 轮
+        var req2 = Guid.NewGuid();
+        var res2 = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                req2.ToString("D"), "secret_art.liquefy", 5,
+                TargetItemId: "item.morning-dew", Priority: true), ProtocolJson.Options),
+            0, req2);
+        Assert.True(res2.Success, $"{res2.Code}: {res2.Message}");
+
+        // 验证队列不被清空，新行动在 Index 0 且为 Running，原有行动顺延至 Index 1 且挂起为 Pending
+        var actions = res2.Snapshot.State.Actions;
+        Assert.Equal(2, actions.Count);
+        Assert.Equal("secret_art.liquefy", actions[0].Intent.ActionId.Value);
+        Assert.Equal(ActionQueueStatus.Running, actions[0].Status);
+        Assert.Equal(5, actions[0].RemainingRepeats);
+
+        Assert.Equal("craft.refine-iron", actions[1].Intent.ActionId.Value);
+        Assert.Equal(ActionQueueStatus.Pending, actions[1].Status);
+        Assert.Equal(3, actions[1].RemainingRepeats);
+    }
+
     [Fact]
     public async Task ActionEnqueue_RequiredRealmLevel_RejectsUnderleveledActions()
     {

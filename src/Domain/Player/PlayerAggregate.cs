@@ -1002,9 +1002,9 @@ public sealed partial class PlayerAggregate
             Intent: intent, At: now, Catalog: catalog)).Action!;
 
     /// <summary>
-    /// 高优先级插入行动到队列首位（Index 0），专用于 world.travel 移动行动。
-    /// 原队首正在执行的行动保留已有进度挂起（状态置为 Pending），待移动完成后自动继续。
-    /// 若队列中已有旧的同类行动（如 world.travel），则先行移出替换。
+    /// 高优先级插入行动到队列首位（Index 0），用于 world.travel 移动行动或通用行动「立即开始」。
+    /// 原队首正在执行的行动保留已有进度挂起（状态置为 Pending），待新行动完成后自动继续。
+    /// 若传入 travel 状态，则判定为移动插队并移出旧移动行动；普通插队保留全部已有队列与指定重复轮次。
     /// 模拟推进内部调用时传 incrementVersion: false 并自行 MarkDirty，保持「一次推进一次版本提交」口径。
     /// </summary>
     public QueuedAction EnqueuePriority(

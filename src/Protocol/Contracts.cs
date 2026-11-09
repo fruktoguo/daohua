@@ -463,6 +463,7 @@ public sealed record PlayerSnapshotDeltaDto(
 /// <param name="TargetItemId">目标物品标识，可选；强化行动必填目标装备</param>
 /// <param name="AuxItemId">辅助物品标识，可选；强化行动用于指定护符等辅助消耗品</param>
 /// <param name="Difficulty">讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5</param>
+/// <param name="Priority">优先插队开关：为 true 时将行动直接插到队首（Index 0），原队首行动挂起，后续队列完整保留</param>
 public sealed record ActionIntentRequest(
     string RequestId,
     string ActionId,
@@ -472,7 +473,8 @@ public sealed record ActionIntentRequest(
     bool PvpEnabled = false,
     string? TargetItemId = null,
     string? AuxItemId = null,
-    int Difficulty = 0);
+    int Difficulty = 0,
+    bool Priority = false);
 
 /// <summary>行动排队意图应答 DTO</summary>
 /// <param name="RequestId">请求唯一标识</param>

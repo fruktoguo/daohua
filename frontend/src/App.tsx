@@ -2006,13 +2006,13 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           <button
             className="action-modal-submit action-modal-submit--secondary"
             onClick={() => {
-              gameClient.sendCommand('queue.clear', {})
               if (gameClient.sendCommand('action.enqueue', {
                 actionId: action.id,
                 repeatCount: repeats,
                 pvpEnabled,
                 difficulty,
                 parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
+                priority: true,
               })) {
                 onClose()
                 if (action.type === 'combat' || startsImmediately) {

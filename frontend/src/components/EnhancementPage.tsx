@@ -314,11 +314,8 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
 
   const submit = (startImmediately: boolean) => {
     if (!selected || maxedOut) return
-    if (startImmediately && (queueEntries?.length ?? 0) > 0) {
-      gameClient.sendCommand('queue.clear', {})
-    }
     // 强化行动入队：targetItemId 携带装备基础 ID，parameters 附带目标等级与起始等级；
-    // 勾选保护材料有效时经 auxItemId 下发。
+    // 勾选保护材料有效时经 auxItemId 下发；优先插队经 priority 下发（直接插入队首挂起原行动，不丢弃后续队列）。
     gameClient.sendCommand('action.enqueue', {
       actionId: ENHANCE_ACTION_ID,
       repeatCount: repeats,
@@ -329,6 +326,7 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
         initialLevel: currentLevel,
         protectLevel: useProtection ? protectLevel : 0,
       },
+      priority: startImmediately,
     })
   }
   const stopEnhancement = useCallback(() => {
