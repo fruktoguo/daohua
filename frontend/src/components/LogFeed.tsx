@@ -18,19 +18,13 @@ import { MonsterTooltipTarget } from './MonsterDisplay'
 import { ValueText } from './ValueText'
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
+import { RealmBadge } from './RealmBadge'
 
 /** 格式化日志时间戳为月-日 时:分:秒 */
 export function formatLogTime(timestampMs: number): string {
   const date = new Date(timestampMs)
   const part = (value: number) => String(value).padStart(2, '0')
   return `${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`
-}
-
-
-/** 解析大境界名称与对应境界主题色 */
-export function resolveMajorRealm(level?: number): { name: string; color: string } {
-  const info = calculateRealmInfo(0, level ?? 1)
-  return { name: info.stageName, color: info.stageColor }
 }
 
 /**
@@ -322,7 +316,7 @@ const ChatRow = memo(function ChatRow({
     }
   }, [message.senderName])
 
-  const majorRealm = useMemo(() => resolveMajorRealm(message.senderRealmLevel), [message.senderRealmLevel])
+  const realmInfo = useMemo(() => calculateRealmInfo(0, message.senderRealmLevel), [message.senderRealmLevel])
 
   const { shortTime, fullTime } = useMemo(() => {
     const date = new Date(message.sentAtMs)
@@ -344,12 +338,16 @@ const ChatRow = memo(function ChatRow({
           </time>
         </FloatingTooltip>
 
-        <FloatingTooltip placement="top" title={`大境界：${majorRealm.name}`} tone="gold">
+        <FloatingTooltip
+          placement="top"
+          title={<RealmBadge disablePopover realmInfo={realmInfo} />}
+          tone="gold"
+        >
           <span
             className="chat-realm-capsule"
-            style={{ color: majorRealm.color, borderColor: majorRealm.color }}
+            style={{ color: realmInfo.stageColor, borderColor: realmInfo.stageColor }}
           >
-            {majorRealm.name}
+            {realmInfo.stageName}
           </span>
         </FloatingTooltip>
 
