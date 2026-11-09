@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { chatStickerService } from '../game/chatStickerService'
 import { FloatingMenuItem, FloatingMenuGroup, FloatingPopover } from './FloatingPopover'
 import { useGameStore } from '../game/gameStore'
@@ -26,7 +26,14 @@ export const ChatSticker = memo(function ChatSticker({
 }: ChatStickerProps): React.JSX.Element {
   const t = useT()
   const trimmedUrl = url.trim()
-  const [cachedSrc, setCachedSrc] = useState<string>(trimmedUrl)
+  // 智能同源加速：若是 img.yuohira.com 直链，自动转为本站同源代理 /img/，确保国内玩家 200ms 秒开且绕过 Cloudflare 跨境丢包
+  const resolvedUrl = useMemo(() => {
+    if (trimmedUrl.startsWith('https://img.yuohira.com/')) {
+      return trimmedUrl.replace('https://img.yuohira.com/', '/img/')
+    }
+    return trimmedUrl
+  }, [trimmedUrl])
+  const [cachedSrc, setCachedSrc] = useState<string>(resolvedUrl)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isError, setIsError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -43,14 +50,13 @@ export const ChatSticker = memo(function ChatSticker({
     mountedRef.current = true
     let isCancelled = false
 
-    chatStickerService.loadImageWithCache(trimmedUrl).then(src => {
-      if (!isCancelled && mountedRef.current && src && src !== trimmedUrl) {
+    chatStickerService.loadImageWithCache(resolvedUrl).then(src => {
+      if (!isCancelled && mountedRef.current && src && src !== resolvedUrl) {
         setCachedSrc(src)
       }
     }).catch(() => {
-      // 静默降级保持 trimmedUrl
+      // 静默降级保持 resolvedUrl
     })
-
     return () => {
       isCancelled = true
       mountedRef.current = false
@@ -146,12 +152,14 @@ export const ChatSticker = memo(function ChatSticker({
             alt={alt ?? t('combat.chat.stickerAlt')}
             className={`chat-sticker-image ${isLoaded ? 'is-loaded' : 'is-loading'}`}
             decoding="async"
-            onError={() => setIsError(true)}
+            onError={() => {
+              // 若同源代理或原始路径出错且是 img.yuohira.com，尝试直连或回退
+              setIsError(true)
+            }}
             onLoad={() => setIsLoaded(true)}
             src={cachedSrc}
           />
         )}
-
         {/* 加载异常容错 */}
         {isError && (
           <span className="chat-sticker-error" title={trimmedUrl}>

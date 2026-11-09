@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { getQqEmojiUrls, QQ_EMOJI_MAP } from '../game/qqEmojis.ts'
 import { chatStickerService } from '../game/chatStickerService.ts'
 
@@ -35,12 +35,19 @@ export const QqEmoji = memo(function QqEmoji({
   const [currentSource, setCurrentSource] = useState<'cached' | 'cf' | 'local' | 'failed'>('cf')
   const [displaySrc, setDisplaySrc] = useState<string>(cfUrl)
 
+  const effectiveCfUrl = useMemo(() => {
+    if (cfUrl.startsWith('https://img.yuohira.com/')) {
+      return cfUrl.replace('https://img.yuohira.com/', '/img/')
+    }
+    return cfUrl
+  }, [cfUrl])
+
   useEffect(() => {
-    if (!cfUrl || !localUrl) return
+    if (!effectiveCfUrl || !localUrl) return
     let active = true
 
     // 1. 尝试从内存缓存同步获取
-    const cached = chatStickerService.getCachedUrl(cfUrl) || chatStickerService.getCachedUrl(localUrl)
+    const cached = chatStickerService.getCachedUrl(effectiveCfUrl) || chatStickerService.getCachedUrl(localUrl)
     if (cached) {
       setDisplaySrc(cached)
       setCurrentSource('cached')
@@ -48,14 +55,14 @@ export const QqEmoji = memo(function QqEmoji({
     }
 
     // 2. 异步查询 IndexedDB，优先尝试 CF 资源，命中后换成 ObjectURL
-    chatStickerService.loadImageWithCache(cfUrl).then((resolved: string) => {
+    chatStickerService.loadImageWithCache(effectiveCfUrl).then((resolved: string) => {
       if (!active) return
-      if (resolved && resolved !== cfUrl) {
+      if (resolved && resolved !== effectiveCfUrl) {
         // 成功提取或下载到了 Blob URL
         setDisplaySrc(resolved)
         setCurrentSource('cached')
       } else {
-        setDisplaySrc(cfUrl)
+        setDisplaySrc(effectiveCfUrl)
         setCurrentSource('cf')
       }
     })
@@ -63,7 +70,7 @@ export const QqEmoji = memo(function QqEmoji({
     return () => {
       active = false
     }
-  }, [cfUrl, localUrl])
+  }, [effectiveCfUrl, localUrl])
 
   // 处理图片加载失败（双源切换）
   const handleError = useCallback(() => {
