@@ -2307,11 +2307,18 @@ input[type="checkbox"] {
 }
 
 .chat-sticker-image.is-loading {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
 }
 
 .chat-sticker-image.is-loaded {
   display: inline-block;
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .chat-sticker-image:hover {

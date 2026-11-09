@@ -26,7 +26,7 @@ export const ChatSticker = memo(function ChatSticker({
 }: ChatStickerProps): React.JSX.Element {
   const t = useT()
   const trimmedUrl = url.trim()
-  const [cachedSrc, setCachedSrc] = useState<string>('')
+  const [cachedSrc, setCachedSrc] = useState<string>(trimmedUrl)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isError, setIsError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -44,13 +44,11 @@ export const ChatSticker = memo(function ChatSticker({
     let isCancelled = false
 
     chatStickerService.loadImageWithCache(trimmedUrl).then(src => {
-      if (!isCancelled && mountedRef.current) {
+      if (!isCancelled && mountedRef.current && src && src !== trimmedUrl) {
         setCachedSrc(src)
       }
     }).catch(() => {
-      if (!isCancelled && mountedRef.current) {
-        setCachedSrc(trimmedUrl)
-      }
+      // 静默降级保持 trimmedUrl
     })
 
     return () => {
@@ -147,8 +145,7 @@ export const ChatSticker = memo(function ChatSticker({
           <img
             alt={alt ?? t('combat.chat.stickerAlt')}
             className={`chat-sticker-image ${isLoaded ? 'is-loaded' : 'is-loading'}`}
-            crossOrigin="anonymous"
-            loading="lazy"
+            decoding="async"
             onError={() => setIsError(true)}
             onLoad={() => setIsLoaded(true)}
             src={cachedSrc}

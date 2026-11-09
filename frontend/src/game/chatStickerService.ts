@@ -278,8 +278,14 @@ class ChatStickerService {
 
     // 3. 发起网络请求获取 Blob
     if (typeof fetch !== 'undefined') {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const timer = controller ? setTimeout(() => controller.abort(), 6000) : undefined
       try {
-        const resp = await fetch(trimmed, { mode: 'cors' })
+        const resp = await fetch(trimmed, {
+          mode: 'cors',
+          signal: controller?.signal,
+        })
+        clearTimeout(timer)
         if (resp.ok) {
           const blob = await resp.blob()
           if (blob && blob.size > 0) {
@@ -295,10 +301,10 @@ class ChatStickerService {
           }
         }
       } catch {
-        // CORS 拦截或外链跨域失败，正常降级返回原 url，交由 <img> 标签直接展示
+        clearTimeout(timer)
+        // CORS 拦截、超时或跨域失败，正常降级返回原 url，交由 <img> 标签直接展示
       }
     }
-
     return trimmed
   }
 
