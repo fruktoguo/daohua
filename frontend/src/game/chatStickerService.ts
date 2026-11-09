@@ -1,4 +1,4 @@
-import { QQ_EMOJI_LIST } from './qqEmojis.ts'
+import { getQqEmojiUrls, QQ_EMOJI_LIST } from './qqEmojis.ts'
 
 /**
  * 传音聊天内置小黄脸表情与表情包（Sticker）本地存储与排序管理服务
@@ -369,6 +369,71 @@ class ChatStickerService {
       }
     }
     this.memoryBlobUrlMap.clear()
+  }
+  private isPreloading = false
+  private hasPreloaded = false
+
+  /**
+   * 页面初始化空闲时全量预加载所有内置动态表情到 IndexedDB。
+   * 采用滑动窗口受控并发，优先 CF 图床，失败自愈回退本地静态源。
+   */
+  async preloadAllEmotes(concurrency = 8): Promise<void> {
+    if (this.isPreloading || this.hasPreloaded) return
+    if (typeof window === 'undefined' || typeof fetch === 'undefined') return
+
+    this.isPreloading = true
+
+    try {
+      const items = [...QQ_EMOJI_LIST]
+      let currentIndex = 0
+
+      const worker = async (): Promise<void> => {
+        while (currentIndex < items.length) {
+          const item = items[currentIndex++]
+          if (!item) break
+          const { cfUrl, localUrl } = getQqEmojiUrls(item.qsid)
+
+          // 若已在内存缓存中，无需重复拉取
+          if (this.getCachedUrl(cfUrl) || this.getCachedUrl(localUrl)) {
+            continue
+          }
+
+          try {
+            const resolved = await this.loadImageWithCache(cfUrl)
+            if (resolved === cfUrl) {
+              await this.loadImageWithCache(localUrl)
+            }
+          } catch {
+            await this.loadImageWithCache(localUrl).catch(() => {})
+          }
+        }
+      }
+
+      const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+      await Promise.all(workers)
+      this.hasPreloaded = true
+    } finally {
+      this.isPreloading = false
+    }
+  }
+
+  /**
+   * 利用 requestIdleCallback 在浏览器空闲时自动调度预加载
+   */
+  scheduleIdlePreload(): void {
+    if (typeof window === 'undefined') return
+    if (this.isPreloading || this.hasPreloaded) return
+
+    const run = () => {
+      this.preloadAllEmotes().catch(() => {})
+    }
+
+    const idleCallback = Reflect.get(window, 'requestIdleCallback')
+    if (typeof idleCallback === 'function') {
+      idleCallback(run, { timeout: 3000 })
+    } else {
+      setTimeout(run, 1500)
+    }
   }
 }
 

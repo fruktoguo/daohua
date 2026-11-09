@@ -41,6 +41,7 @@ import { useGameStore } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
+import { chatStickerService } from './game/chatStickerService'
 import { calculateActionYieldPreview, isActionAvailableAtNode, ROOT_ASPECT_LABEL_KEYS } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, AutoUseBarType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
@@ -2422,7 +2423,8 @@ const MAP_TABS: ReadonlyArray<{ id: MapSubTab; labelKey: 'tabMap' | 'tabMonsters
  */
 const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
-  const [activeSubTab, setActiveSubTab] = useState<MapSubTab>('map')
+  const activeSubTab = useUiStore(state => state.mapSubTab)
+  const setActiveSubTab = useUiStore(state => state.setMapSubTab)
   // 地图本体首次可见才挂载：避免应用启动即构建全图索引、挂视口观测并在后台补丁中重渲染。
   // 首次挂载后常驻不卸载，漫游视口、选中地点与运镜状态与改造前完全一致。
   const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
@@ -2662,6 +2664,7 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     installAntiMultiOpen()
     void restoreSession()
+    chatStickerService.scheduleIdlePreload()
     const onUnblocked = () => gameClient.connect()
     window.addEventListener('daohua:tab-unblocked', onUnblocked)
     return () => {

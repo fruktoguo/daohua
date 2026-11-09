@@ -53,3 +53,10 @@ test('chatStickerService: 自定义表情包添加、频次自排序与右键删
   // 删除不存在的表情包
   assert.equal(chatStickerService.removeCustomSticker('https://not-exist.com/1.png'), false)
 })
+
+test('chatStickerService: preloadAllEmotes 与 scheduleIdlePreload 在无 DOM / 单测环境下安全运行', async () => {
+  // 在 Node 测试环境下，没有 window，应安全防崩
+  await chatStickerService.preloadAllEmotes()
+  chatStickerService.scheduleIdlePreload()
+  assert.ok(true)
+})

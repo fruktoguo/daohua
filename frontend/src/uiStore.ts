@@ -28,6 +28,9 @@ export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | '
 /** 同道页子选项卡：队伍 / 邀请（后续同道玩法沿用同一结构扩展） */
 export type SocialSubTab = 'party' | 'zongmen' | 'invite'
 
+/** 地图页子选项卡：地图本体 vs 附近同域（妖兽、同道修士、灵地建筑） */
+export type MapSubTab = 'map' | 'monsters' | 'people' | 'buildings'
+
 /**
  * 队伍页内部页签：
  * - 无队伍态为三入口自选：lobby 组队大厅 / match 队伍匹配 / create 创建队伍；
@@ -89,6 +92,10 @@ interface UiStore {
   /** 队伍页内部当前页签 */
   partySubTab: PartySubTab
   /** 切换队伍页内部页签 */
+  /** 地图页当前子选项卡 */
+  mapSubTab: MapSubTab
+  /** 切换地图页子选项卡 */
+  setMapSubTab: (tab: MapSubTab) => void
   setPartySubTab: (tab: PartySubTab) => void
   /** 图鉴顶级当前分类 */
   codexCategory: CodexCategory
@@ -108,6 +115,12 @@ interface UiStore {
   tutorialMapFocusNodeId: string | null
   /** 设置新手引导地图聚焦的目标节点 ID */
   setTutorialMapFocusNodeId: (nodeId: string | null) => void
+  /** 外部（如聊天地点超链接）请求大地图聚焦的目标节点 ID */
+  mapFocusNodeId: string | null
+  /** 设置大地图聚焦的目标节点 ID */
+  setMapFocusNodeId: (nodeId: string | null) => void
+  /** 快捷直达大地图并聚焦指定地点节点 */
+  navigateToMapNode: (nodeId: string) => void
   /** 各分组记忆的落点页签：切回分组时直达上次所见的子项 */
   mobileNavMemory: Record<MobileNavGroupId, TabId>
   /** 按分组激活其记忆页签（首次为组内首项）并展开子行 */
@@ -179,6 +192,8 @@ export const useUiStore = create<UiStore>(set => ({
   setSocialSubTab: socialSubTab => set({ socialSubTab }),
   partySubTab: 'lobby',
   setPartySubTab: partySubTab => set({ partySubTab }),
+  mapSubTab: 'map',
+  setMapSubTab: mapSubTab => set({ mapSubTab }),
   codexCategory: 'material',
   setCodexCategory: codexCategory => set({ codexCategory }),
   codexFilters: {
@@ -198,6 +213,17 @@ export const useUiStore = create<UiStore>(set => ({
   closeAwakenResult: () => set({ awakenResults: null }),
   tutorialMapFocusNodeId: null,
   setTutorialMapFocusNodeId: tutorialMapFocusNodeId => set({ tutorialMapFocusNodeId }),
+  mapFocusNodeId: null,
+  setMapFocusNodeId: mapFocusNodeId => set({ mapFocusNodeId }),
+  navigateToMapNode: (nodeId: string) => {
+    const targetTab: TabId = 'map'
+    set(state => ({
+      activeTab: targetTab,
+      mapSubTab: 'map',
+      mapFocusNodeId: nodeId,
+      mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(targetTab)]: targetTab },
+    }))
+  },
   mobileNavMemory: INITIAL_NAV_MEMORY,
   activateMobileNavGroup: group => set(state => {
     // 已在该分组：子行本就展开，重复点击不再改签，避免误触把玩家从子页签踢回首项
