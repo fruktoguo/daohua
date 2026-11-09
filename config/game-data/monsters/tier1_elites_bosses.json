@@ -136,13 +136,35 @@
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.chain-strike",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.chain-strike",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [
       {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 0.9
+      },
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.7
+      },
+      {
         "abilityId": "ability.taunt",
         "level": 1,
-        "triggerHpRatio": 0.8
+        "triggerHpRatio": 0.5
       }
     ]
   },

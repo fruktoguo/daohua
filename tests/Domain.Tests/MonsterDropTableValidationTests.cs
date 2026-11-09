@@ -24,4 +24,29 @@ public sealed class MonsterDropTableValidationTests
             }
         }
     }
+
+    [Fact]
+    public void DemonizedRabbitAndArmoredBear_HaveHeavySlashSkillsAndDrops()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        // 1. 魔化野兔
+        Assert.True(catalog.CombatMonsters.TryGetValue("enemy.demonized-rabbit", out var rabbit));
+        Assert.Contains(rabbit.Skills, s => JsonRead.Text(s.Ability, "id", "") == "ability.heavy-slash");
+        Assert.Contains(rabbit.Skills, s => JsonRead.Text(s.Ability, "id", "") == "ability.chain-strike");
+        Assert.Contains(rabbit.DropTable, d => d.ItemId.Value == "item.tome.heavy-slash" && Math.Abs(d.DropChance - 0.001) < 1e-9);
+        Assert.Contains(rabbit.DropTable, d => d.ItemId.Value == "item.fragment.heavy-slash" && Math.Abs(d.DropChance - 0.02) < 1e-9);
+        Assert.Contains(rabbit.DropTable, d => d.ItemId.Value == "item.tome.chain-strike" && Math.Abs(d.DropChance - 0.001) < 1e-9);
+        Assert.Contains(rabbit.DropTable, d => d.ItemId.Value == "item.fragment.chain-strike" && Math.Abs(d.DropChance - 0.02) < 1e-9);
+
+        // 2. 铁甲熊
+        Assert.True(catalog.CombatMonsters.TryGetValue("enemy.armored-bear", out var bear));
+        Assert.Contains(bear.Skills, s => JsonRead.Text(s.Ability, "id", "") == "ability.heavy-slash");
+        Assert.Contains(bear.Skills, s => JsonRead.Text(s.Ability, "id", "") == "ability.chain-strike");
+        Assert.Contains(bear.Skills, s => JsonRead.Text(s.Ability, "id", "") == "ability.taunt");
+        Assert.Contains(bear.DropTable, d => d.ItemId.Value == "item.tome.heavy-slash" && Math.Abs(d.DropChance - 0.005) < 1e-9);
+        Assert.Contains(bear.DropTable, d => d.ItemId.Value == "item.fragment.heavy-slash" && Math.Abs(d.DropChance - 0.02) < 1e-9);
+        Assert.Contains(bear.DropTable, d => d.ItemId.Value == "item.tome.chain-strike" && Math.Abs(d.DropChance - 0.005) < 1e-9);
+        Assert.Contains(bear.DropTable, d => d.ItemId.Value == "item.fragment.chain-strike" && Math.Abs(d.DropChance - 0.02) < 1e-9);
+    }
 }

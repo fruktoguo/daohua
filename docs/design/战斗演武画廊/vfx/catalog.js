@@ -85,7 +85,7 @@
 
   /** 敌方单位的真实配表技能（镜像 config/game-data/monsters/*.json skills） */
   const ENEMY_SKILLS = {
-    enemy1: [],                                  // 魔化野兔：仅普攻（tier1 minion 无 skills）
+    enemy1: ['ability.heavy-slash', 'ability.chain-strike'], // 魔化野兔：重斩、连环
     enemy2: ['ability.heavy-slash'],             // 魔猿：重斩
     enemy3: ['ability.palm-lightning'],          // 星屑火鸦：掌心雷
   };
