@@ -3,6 +3,7 @@ using Domain.Common;
 using Domain.GameData;
 using Domain.Simulation;
 using Server.Clean;
+using Protocol;
 using Xunit;
 
 namespace Server.Tests;
@@ -31,6 +32,27 @@ public sealed class SimulationLogMapperTests
 
         var template = Assert.Single(logs).Template;
         Assert.Contains("{{item:equipment.kuteng-staff|枯藤法杖|1}}", template, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DuelStagedSettled_DoesNotEmitLogEvent()
+    {
+        Assert.Null(LogChannels.FromEventCode("duel.staged.settled"));
+
+        var catalog = LoadCatalogFiles("equipment/weapons.json");
+        var at = DateTimeOffset.UnixEpoch;
+        var simulationEvent = new SimulationEvent(
+            at,
+            "duel.staged.settled",
+            "暂存物品入账：枯藤法杖 ×1。",
+            null,
+            new Dictionary<ItemId, double> { [new ItemId("equipment.kuteng-staff")] = 1 });
+
+        var buffer = new PlayerLogBuffer(16);
+        var logs = SimulationLogMapper.ToLogEvents([simulationEvent], catalog, buffer);
+
+        Assert.Empty(logs);
+        Assert.Empty(buffer.SnapshotRecent());
     }
 
     /// <summary>

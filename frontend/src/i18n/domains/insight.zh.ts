@@ -509,7 +509,7 @@ export const insightZh = {
       forgingTooltip: '精金淬火，百炼成兵。',
       talisman: '符箓',
       talismanTooltip: '朱砂走笔，雷纹藏锋。',
-      enhancement: '强化',
+      enhancement: '秘法',
       enhancementTooltip: '铭纹砥砺，淬器生辉。',
       formation: '阵法',
       formationTooltip: '灵枢布眼，阵聚玄机。',

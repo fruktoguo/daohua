@@ -58,7 +58,7 @@ docker info >/dev/null 2>&1 || { printf 'Docker 当前不可用。\n' >&2; exit 
 cd "$ROOT_DIR"
 VCS_REF="$(git rev-parse HEAD 2>/dev/null || printf 'uncommitted')"
 if [[ -z "$RELEASE_TAG" ]]; then
-  PKG_VERSION="$(node -p "try{require('./version.json').version}catch(e){require('./frontend/package.json').version}catch(e){'0.2.0'}" 2>/dev/null || printf '0.2.0')"
+  PKG_VERSION="$(node -p "try{require('./version.json').version}catch(e){try{require('./frontend/package.json').version}catch(e){'0.2.0'}}" 2>/dev/null || printf '0.2.0')"
   RELEASE_TAG="v${PKG_VERSION}"
 fi
 if [[ -n "$(git status --porcelain --untracked-files=normal)" && "$ALLOW_DIRTY" != "1" ]]; then

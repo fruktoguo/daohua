@@ -42,6 +42,7 @@ Thumbs.db
 *.tmp
 *.pid
 temp/
+output/
 **/.wrangler/
 
 # 本地 Agent 记忆与工作区（含内部运维笔记，不入库）
