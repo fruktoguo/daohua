@@ -449,9 +449,32 @@ export default {
         return new Response("Not Found", { status: 404, headers: corsHeaders });
       }
 
-      const object = request.method === "HEAD"
+      let object = request.method === "HEAD"
         ? await env.MY_BUCKET.head(key)
         : await env.MY_BUCKET.get(key);
+
+      // 表情自愈缓存：若 R2 暂未缓存 emotes/*，自动从源站拉取并写入 R2 永久持久化
+      if (!object && key.startsWith("emotes/")) {
+        const filename = key.replace(/^emotes\//, "");
+        const upstreamUrl = `https://koishi.js.org/QFace/gif/${filename}`;
+        try {
+          const upstreamRes = await fetch(upstreamUrl);
+          if (upstreamRes.ok) {
+            const fileData = await upstreamRes.arrayBuffer();
+            await env.MY_BUCKET.put(key, fileData, {
+              httpMetadata: {
+                contentType: "image/gif",
+                cacheControl: "public, max-age=31536000, immutable",
+              },
+            });
+            object = request.method === "HEAD"
+              ? await env.MY_BUCKET.head(key)
+              : await env.MY_BUCKET.get(key);
+          }
+        } catch {
+          // 容错放行走 404
+        }
+      }
 
       if (!object) {
         return new Response("Image Not Found", { status: 404, headers: corsHeaders });

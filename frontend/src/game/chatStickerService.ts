@@ -248,6 +248,12 @@ class ChatStickerService {
   // IndexedDB 图像离线缓存
   // ==========================================
 
+  /** 获取当前内存已转换的离线 Object URL（命中即同步直出） */
+  getCachedUrl(url: string): string | null {
+    const trimmed = url.trim()
+    return this.memoryBlobUrlMap.get(trimmed) ?? null
+  }
+
   /**
    * 加载图片并利用 IndexedDB 离线缓存。
    * 优先命中内存 ObjectURL -> 命中 IndexedDB Blob -> 发起网络 Fetch 并持久化。
@@ -258,7 +264,7 @@ class ChatStickerService {
     if (!trimmed) return ''
 
     // 1. 命中内存中的 Object URL
-    const memHit = this.memoryBlobUrlMap.get(trimmed)
+    const memHit = this.getCachedUrl(trimmed)
     if (memHit) return memHit
 
     // 2. 尝试从 IndexedDB 检索
