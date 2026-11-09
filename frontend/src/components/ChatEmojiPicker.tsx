@@ -67,6 +67,20 @@ const StickerPickerItem = memo(function StickerPickerItem({
         type="button"
       >
         <ChatSticker url={item.url} />
+        <span
+          aria-label={t('combat.chat.deleteSticker')}
+          className="chat-picker-sticker-del-icon"
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            handleDelete()
+          }}
+          role="button"
+          tabIndex={0}
+          title={t('combat.chat.deleteSticker')}
+        >
+          ✕
+        </span>
       </button>
     </FloatingPopover>
   )
@@ -105,12 +119,15 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
     onSelectEmoji(`[${emojiName}]`)
   }
 
-  const handleStickerClick = (url: string): void => {
+  const handleStickerClick = async (url: string): Promise<void> => {
     chatStickerService.recordStickerUsage(url)
-    onSelectSticker(url)
+    // 若检测到该表情链接已过期，自动从本地 IndexedDB 重新上传自愈并获取新直链
+    const validUrl = await chatStickerService.ensureValidStickerUrl(url, async (blob) => {
+      return uploadChatImage(blob)
+    })
+    onSelectSticker(validUrl)
     onClose?.()
   }
-
   const handleAddStickerSubmit = (e: React.FormEvent): void => {
     e.preventDefault()
     const trimmed = newStickerUrl.trim()

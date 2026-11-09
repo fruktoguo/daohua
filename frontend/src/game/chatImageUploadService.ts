@@ -10,6 +10,7 @@
  *    - 若为新图，签发具有 5 分钟有效期的 HMAC-SHA256 签名 Ticket；
  * 4. 携带 Ticket 直传 Cloudflare Worker，返回短直链并写入本地缓存。
  */
+import { chatStickerService } from './chatStickerService.ts'
 
 const STORAGE_KEY_HASH_MAP = 'daohua_chat_hash_urls'
 
@@ -153,8 +154,8 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sha256, url: directUrl }),
   }).catch(() => {})
-
-  // 写入客户端本地哈希缓存，后续完全复用
+  // 写入客户端本地哈希缓存与 IndexedDB 离线 Blob 缓存，秒级回显且支持未来过期自愈
   saveLocalHashUrl(sha256, directUrl)
+  await chatStickerService.saveImageBlob(directUrl, blob).catch(() => {})
   return { url: directUrl, cached: false }
 }

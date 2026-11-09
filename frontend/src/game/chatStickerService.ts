@@ -244,6 +244,103 @@ class ChatStickerService {
     return this.loadStickers().some(item => item.url === trimmed)
   }
 
+  /** 更新已收藏表情的 URL（用于过期自动重传后原子更新） */
+  updateStickerUrl(oldUrl: string, newUrl: string): boolean {
+    const oldTrimmed = oldUrl.trim()
+    const newTrimmed = newUrl.trim()
+    if (!oldTrimmed || !newTrimmed || oldTrimmed === newTrimmed) return false
+    const list = this.loadStickers()
+    let found = false
+    const next = list.map(item => {
+      if (item.url === oldTrimmed) {
+        found = true
+        return { ...item, url: newTrimmed }
+      }
+      return item
+    })
+    if (!found) return false
+    this.saveStickers(next)
+
+    // 内存与 IndexedDB 映射同步迁移
+    const mem = this.memoryBlobUrlMap.get(oldTrimmed)
+    if (mem) {
+      this.memoryBlobUrlMap.set(newTrimmed, mem)
+    }
+    this.initDatabase().then(async db => {
+      if (db) {
+        const blob = await this.getFromIndexedDB(db, oldTrimmed)
+        if (blob) {
+          await this.saveToIndexedDB(db, newTrimmed, blob)
+        }
+      }
+    }).catch(() => {})
+
+    this.notify()
+    return true
+  }
+
+  /** 获取某个 URL 在本地 IndexedDB 存储的原始 Blob 数据 */
+  async getStoredBlob(url: string): Promise<Blob | null> {
+    const trimmed = url.trim()
+    if (!trimmed) return null
+    const db = await this.initDatabase()
+    if (!db) return null
+    return this.getFromIndexedDB(db, trimmed)
+  }
+
+  /**
+   * 确保表情包 URL 仍有效。
+   * 若远端检测到 404/失效，且本地持久化库中存有原始二进制 Blob，
+   * 则自动静默重新上传生成全新 CDN 直链，并透明更新收藏夹，实现自愈。
+   */
+  async ensureValidStickerUrl(
+    url: string,
+    uploader?: (blob: Blob) => Promise<{ url: string }>
+  ): Promise<string> {
+    const trimmed = url.trim()
+    if (!trimmed || !uploader) return trimmed
+
+    // 若不是外部网络图片（如相对路径或 data/blob），无需探活
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      return trimmed
+    }
+
+    let isAlive = true
+    try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const timer = controller ? setTimeout(() => controller.abort(), 4000) : undefined
+      const headRes = await fetch(trimmed, { method: 'HEAD', signal: controller?.signal })
+      clearTimeout(timer)
+      if (headRes.status === 404 || headRes.status === 410) {
+        isAlive = false
+      }
+    } catch {
+      // 网络故障暂不假定失效
+      isAlive = true
+    }
+
+    if (isAlive) {
+      return trimmed
+    }
+
+    // 远端确已失效，尝试从本地 IndexedDB 检索原始 Blob
+    const blob = await this.getStoredBlob(trimmed)
+    if (!blob) {
+      return trimmed
+    }
+
+    try {
+      const res = await uploader(blob)
+      if (res?.url && res.url !== trimmed) {
+        this.updateStickerUrl(trimmed, res.url)
+        return res.url
+      }
+    } catch (err) {
+      console.warn('[ChatStickerService] 过期表情包自愈重传失败', err)
+    }
+
+    return trimmed
+  }
   // ==========================================
   // IndexedDB 图像离线缓存
   // ==========================================
@@ -254,6 +351,20 @@ class ChatStickerService {
     return this.memoryBlobUrlMap.get(trimmed) ?? null
   }
 
+  /** 直接将已持有的 Blob 写入内存与 IndexedDB 离线持久化库（如上传或自愈成功时） */
+  async saveImageBlob(url: string, blob: Blob): Promise<string> {
+    const trimmed = url.trim()
+    if (!trimmed) return ''
+    if (typeof URL !== 'undefined' && URL.createObjectURL) {
+      const blobUrl = URL.createObjectURL(blob)
+      this.memoryBlobUrlMap.set(trimmed, blobUrl)
+    }
+    const db = await this.initDatabase()
+    if (db) {
+      await this.saveToIndexedDB(db, trimmed, blob)
+    }
+    return trimmed
+  }
   /**
    * 加载图片并利用 IndexedDB 离线缓存。
    * 优先命中内存 ObjectURL -> 命中 IndexedDB Blob -> 发起网络 Fetch 并持久化。
@@ -285,7 +396,7 @@ class ChatStickerService {
     // 3. 发起网络请求获取 Blob
     if (typeof fetch !== 'undefined') {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
-      const timer = controller ? setTimeout(() => controller.abort(), 6000) : undefined
+      const timer = controller ? setTimeout(() => controller.abort(), 12000) : undefined
       try {
         const resp = await fetch(trimmed, {
           mode: 'cors',

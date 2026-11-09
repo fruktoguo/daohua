@@ -416,18 +416,54 @@ export default {
         const filename = `${actualHash.slice(0, 16)}.${ext}`;
 
         // 检查 R2 是否已有该文件
-        const existing = await env.MY_BUCKET.head(filename);
-        if (!existing) {
-          await env.MY_BUCKET.put(filename, fileData, {
-            httpMetadata: {
-              contentType: mimeType,
-              cacheControl: "public, max-age=31536000, immutable",
+        await env.MY_BUCKET.put(filename, fileData, {
+          httpMetadata: {
+            contentType: mimeType,
+            cacheControl: "public, max-age=31536000, immutable",
+          },
+        });
+
+        let fastUrl = `${url.origin}/${filename}`;
+        try {
+          // 尝试同步上传至国内高速图床（路过图床 ax1x.com CDN，国内秒开，14天免登录外链）
+          const pageRes = await fetch("https://imgchr.com/", {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             },
           });
+          if (pageRes.ok) {
+            const pageHtml = await pageRes.text();
+            const setCookie = pageRes.headers.get("set-cookie") || "";
+            const cookieStr = setCookie.split(";")[0];
+            const tokenMatch = pageHtml.match(/PF\.obj\.config\.auth_token\s*=\s*"([^"]+)"/);
+            const authToken = tokenMatch ? tokenMatch[1] : null;
+
+            const uploadForm = new FormData();
+            uploadForm.append("source", new Blob([fileData], { type: mimeType }), filename);
+            uploadForm.append("type", "file");
+            uploadForm.append("action", "upload");
+            if (authToken) uploadForm.append("auth_token", authToken);
+
+            const uploadRes = await fetch("https://imgchr.com/json", {
+              method: "POST",
+              headers: {
+                "Cookie": cookieStr,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              },
+              body: uploadForm,
+            });
+            if (uploadRes.ok) {
+              const uploadJson = await uploadRes.json();
+              if (uploadJson.status_code === 200 && uploadJson.image?.url) {
+                fastUrl = uploadJson.image.url;
+              }
+            }
+          }
+        } catch (e) {
+          // 降级使用 R2 直链
         }
 
-        const directUrl = `${url.origin}/${filename}`;
-        return new Response(directUrl, {
+        return new Response(fastUrl, {
           status: 200,
           headers: {
             ...corsHeaders,

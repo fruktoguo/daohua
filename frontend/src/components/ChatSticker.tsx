@@ -4,7 +4,7 @@ import { FloatingMenuItem, FloatingMenuGroup, FloatingPopover } from './Floating
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { StatGlyph } from './StatGlyph'
-
+import { uploadChatImage } from '../game/chatImageUploadService'
 export interface ChatStickerProps {
   url: string
   className?: string
@@ -30,8 +30,8 @@ export const ChatSticker = memo(function ChatSticker({
   const [isLoaded, setIsLoaded] = useState(false)
   const [isError, setIsError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [isHealing, setIsHealing] = useState(false)
   const mountedRef = useRef(true)
-
   // 响应表情包收藏状态
   const isSaved = useSyncExternalStore(
     chatStickerService.subscribe.bind(chatStickerService),
@@ -73,6 +73,12 @@ export const ChatSticker = memo(function ChatSticker({
     }
   }
 
+  const handleRemoveFromStickers = (): void => {
+    chatStickerService.removeCustomSticker(trimmedUrl)
+    setMenuOpen(false)
+    useGameStore.getState().setNotice(t('combat.chat.stickerDeleted'))
+  }
+
   const handleCopyLink = (): void => {
     setMenuOpen(false)
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -93,16 +99,17 @@ export const ChatSticker = memo(function ChatSticker({
     <FloatingMenuGroup>
       {!isSaved ? (
         <FloatingMenuItem
-        icon={<StatGlyph glyph="qi" size={14} />}
-        label={t('combat.chat.addToStickers')}
-        onClick={handleAddToStickers}
-        tone="jade"
-      />
-    ) : (
-      <FloatingMenuItem
-        disabled
-        label={t('combat.chat.alreadyInStickers')}
-      />
+          icon={<StatGlyph glyph="qi" size={14} />}
+          label={t('combat.chat.addToStickers')}
+          onClick={handleAddToStickers}
+          tone="jade"
+        />
+      ) : (
+        <FloatingMenuItem
+          label={t('combat.chat.removeFromStickers')}
+          onClick={handleRemoveFromStickers}
+          tone="crimson"
+        />
       )}
       <FloatingMenuItem
         label={t('combat.chat.copyLink')}
@@ -152,10 +159,40 @@ export const ChatSticker = memo(function ChatSticker({
           />
         )}
 
-        {/* 加载异常容错 */}
+        {/* 加载异常容错：支持点击触发自愈重传或重试 */}
         {isError && (
-          <span className="chat-sticker-error" title={trimmedUrl}>
-            {t('combat.chat.stickerLoadError')}
+          <span
+            className="chat-sticker-error"
+            onClick={async (e) => {
+              e.stopPropagation()
+              if (isHealing) return
+              setIsHealing(true)
+              try {
+                const validUrl = await chatStickerService.ensureValidStickerUrl(trimmedUrl, async (blob) => {
+                  return uploadChatImage(blob)
+                })
+                if (validUrl && validUrl !== trimmedUrl) {
+                  setCachedSrc(validUrl)
+                  setIsError(false)
+                  setIsLoaded(false)
+                  useGameStore.getState().setNotice(t('combat.chat.stickerHealSuccess'))
+                } else {
+                  setIsError(false)
+                  setIsLoaded(false)
+                }
+              } catch {
+                setIsError(false)
+                setIsLoaded(false)
+              } finally {
+                setIsHealing(false)
+              }
+            }}
+            role="button"
+            style={{ cursor: 'pointer' }}
+            tabIndex={0}
+            title={t('combat.chat.stickerHealRetry')}
+          >
+            {isHealing ? t('combat.chat.stickerHealing') : t('combat.chat.stickerLoadError')}
           </span>
         )}
       </span>

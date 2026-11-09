@@ -2799,6 +2799,7 @@ input[type="checkbox"] {
 }
 
 .chat-picker-sticker-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2810,6 +2811,34 @@ input[type="checkbox"] {
   cursor: pointer;
   overflow: hidden;
   transition: border-color 0.15s, transform 0.12s;
+}
+
+.chat-picker-sticker-del-icon {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 14px;
+  height: 14px;
+  line-height: 12px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(220, 20, 60, 0.75);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s, transform 0.12s;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.chat-picker-sticker-btn:hover .chat-picker-sticker-del-icon {
+  opacity: 1;
+}
+
+.chat-picker-sticker-del-icon:hover {
+  background: rgba(255, 30, 80, 0.95);
+  transform: scale(1.15);
 }
 
 .chat-picker-sticker-btn:hover {
