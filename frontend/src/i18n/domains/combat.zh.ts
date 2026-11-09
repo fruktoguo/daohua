@@ -412,6 +412,12 @@ export const combatZh = {
       stickerAlt: '[表情包]',
       stickerPlaceholder: '[图片]',
       stickerLoadError: '[图片加载失败]',
+      uploadingImage: '正在上传图片…',
+      uploadSuccess: '图片上传成功',
+      uploadReused: '已复用相同图片直链',
+      uploadFailed: '图片上传失败',
+      uploadQuotaExceeded: '今日图片上传配额已用完（每日上限 20 张）',
+      uploadImageTooltip: '上传本地图片为表情包',
     },
     // 触发条件编辑器（依赖/条件/比较器枚举展示复用 game.trigger.*，不在此重复）
     trait: {

@@ -1,5 +1,6 @@
 import { memo, useState, useSyncExternalStore } from 'react'
 import { chatStickerService, type CustomStickerItem } from '../game/chatStickerService'
+import { uploadChatImage } from '../game/chatImageUploadService'
 import { ChatSticker } from './ChatSticker'
 import { QqEmoji } from './QqEmoji'
 import { FloatingMenuGroup, FloatingMenuItem, FloatingPopover } from './FloatingPopover'
@@ -135,6 +136,25 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
       useGameStore.getState().setNotice(t('combat.chat.stickerAlreadyAdded'))
     }
   }
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    useGameStore.getState().setNotice(t('combat.chat.uploadingImage'))
+    try {
+      const { url, cached } = await uploadChatImage(file)
+      chatStickerService.addCustomSticker(url)
+      onSelectSticker(url)
+      useGameStore.getState().setNotice(
+        cached ? t('combat.chat.uploadReused') : t('combat.chat.uploadSuccess')
+      )
+      onClose?.()
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : t('combat.chat.uploadFailed')
+      useGameStore.getState().setNotice(errMsg)
+    }
+  }
+
 
   return (
     <div className="chat-emoji-picker">
@@ -204,6 +224,10 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
             <button disabled={!newStickerUrl.trim()} type="submit">
               {t('combat.chat.addSticker')}
             </button>
+            <label className="chat-picker-upload-label" title={t('combat.chat.uploadImageTooltip')}>
+              <input accept="image/*" onChange={handleFileSelect} style={{ display: 'none' }} type="file" />
+              🖼️
+            </label>
           </form>
         </div>
       )}

@@ -1,0 +1,7 @@
+name = "daohua-emotes"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[[r2_buckets]]
+binding = "MY_BUCKET"
+bucket_name = "chat-emotes"

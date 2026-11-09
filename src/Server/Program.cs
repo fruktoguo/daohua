@@ -150,6 +150,7 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.ChatRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.IPlayerPresenceStatsService, Server.Clean.Social.PlayerPresenceStatsService>();
+    builder.Services.AddSingleton<Server.Clean.Social.ChatImageUploadRegistry>();
     // 会话准入默认开放语义；构建期注入的私有准入模块（IHostModuleStartup 实现）随后发现并覆盖注册。
     builder.Services.AddSingleton<Server.Clean.Admission.OpenHelloAdmissionHook>();
     builder.Services.AddSingleton<Server.Clean.Admission.IHelloAdmissionHook>(sp => sp.GetRequiredService<Server.Clean.Admission.OpenHelloAdmissionHook>());
@@ -675,6 +676,23 @@ if (processRole == ServerProcessRole.Api)
             overview.InvitedByName,
         });
     }).RequireAuthorization();
+    // 传音图片上传凭据与哈希去重预检：单账号每日限 20 张新图，哈希命中复用已有直链且不扣额度
+    app.MapPost("/api/v1/chat/upload-ticket", (
+        ChatUploadTicketRequest request,
+        ClaimsPrincipal user,
+        Server.Clean.Social.ChatImageUploadRegistry uploadRegistry) =>
+    {
+        if (user.Identity?.IsAuthenticated != true || !Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var accountId))
+            return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
+
+        if (!uploadRegistry.TryAcquireUploadTicket(accountId, request.Sha256, request.Ext, out var result, out var errorMessage))
+        {
+            return Results.Json(Problem(429, "UPLOAD_QUOTA_EXCEEDED", errorMessage ?? "图片上传申请被拒绝。"), statusCode: 429);
+        }
+
+        return Results.Ok(result);
+    }).RequireAuthorization();
+
 
     var players = app.MapGroup("/api/v1/players").RequireAuthorization();
     players.MapGet("/{playerId:guid}", async (Guid playerId, ClaimsPrincipal user, IPlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
@@ -997,5 +1015,9 @@ public sealed record NativeTapTapLoginRequest(
     string? UnionId = null,
     string? Kid = null,
     string? MacKey = null);
+/// <summary>传音图片上传 Ticket 申请体。</summary>
+/// <param name="Sha256">客户端计算的图片文件 SHA-256 小写十六进制摘要。</param>
+/// <param name="Ext">图片扩展名（png/gif/webp/jpg）。</param>
+public sealed record ChatUploadTicketRequest(string Sha256, string Ext);
 /// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

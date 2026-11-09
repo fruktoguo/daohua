@@ -15,6 +15,8 @@ import { gameClient } from '../network/gameClient'
 import { FeedList, mergeFeedItems, toChatFeedItems, toLogFeedItems, useStickyScroll } from './LogFeed'
 import { FloatingPopover } from './FloatingPopover'
 import { ChatEmojiPicker } from './ChatEmojiPicker'
+import { uploadChatImage } from '../game/chatImageUploadService'
+import { chatStickerService } from '../game/chatStickerService'
 /** 单条消息正文长度上限（与服务端 ChatRuntime.MaxBodyLength 一致） */
 const MAX_CHAT_BODY_LENGTH = 200
 
@@ -38,6 +40,7 @@ const ChatComposer = memo(function ChatComposer({
   const [draft, setDraft] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
   const disabled = hint !== undefined
   useEffect(() => {
     return chatService.subscribeDraftInsert((text: string) => {
@@ -77,6 +80,38 @@ const ChatComposer = memo(function ChatComposer({
       input.setSelectionRange(newPos, newPos)
     }, 20)
   }
+  const handlePaste = async (event: React.ClipboardEvent<HTMLInputElement>): Promise<void> => {
+    const items = event.clipboardData?.items
+    if (!items) return
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        event.preventDefault()
+        const blob = item.getAsFile()
+        if (!blob) return
+
+        if (uploading) return
+        setUploading(true)
+        useGameStore.getState().setNotice(t('combat.chat.uploadingImage'))
+        try {
+          const { url, cached } = await uploadChatImage(blob)
+          handleInsertText(url)
+          chatStickerService.addCustomSticker(url)
+          useGameStore.getState().setNotice(
+            cached ? t('combat.chat.uploadReused') : t('combat.chat.uploadSuccess')
+          )
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : t('combat.chat.uploadFailed')
+          useGameStore.getState().setNotice(errMsg)
+        } finally {
+          setUploading(false)
+        }
+        return
+      }
+    }
+  }
+
 
   const submit = (): void => {
     const body = draft.trim()
@@ -126,9 +161,11 @@ const ChatComposer = memo(function ChatComposer({
       </FloatingPopover>
       <input
         aria-label={t('combat.chat.inputAria')}
+        disabled={uploading}
         maxLength={MAX_CHAT_BODY_LENGTH}
         onChange={event => setDraft(event.target.value)}
-        placeholder={t('combat.chat.placeholder')}
+        onPaste={handlePaste}
+        placeholder={uploading ? t('combat.chat.uploadingImage') : t('combat.chat.placeholder')}
         ref={inputRef}
         value={draft}
       />
