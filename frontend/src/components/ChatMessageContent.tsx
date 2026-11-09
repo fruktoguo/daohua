@@ -300,7 +300,7 @@ export const ChatMessageBody = memo(function ChatMessageBody({
           return <ChatLocationReference key={idx} location={seg} />
         }
         if (seg.type === 'sticker') {
-          return <ChatSticker key={idx} url={seg.url} />
+          return <ChatSticker key={idx} url={seg.url} zoomable />
         }
         if (seg.type === 'qqEmoji') {
           return <QqEmoji key={idx} name={seg.name} />

@@ -184,6 +184,14 @@
 
 ---
 
+## 9.1 聊天图片灯箱 (ChatImageLightbox)
+
+- **适用场景**：聊天消息内图片/表情包点击放大查看细节的全屏灯箱（Portal 顶层挂载）。PC 左键单击打开、滚轮以光标为锚缩放（1x~8x 钳位）、拖拽平移（边界钳位）、双击 1x/2x 切换、Esc/无位移单击/关闭按钮退出；移动端点按打开、双指捏合缩放、单指平移、双击切换、无位移单击关闭。Pointer Events 手势状态机统一实现双端；缩放平移经 `clampTranslation` 钳位保证图片不飞出视口。由 `ChatSticker` 的 `zoomable` 开关控制（消息正文启用，表情选择器内关闭以保留「选表情」点击语义）。
+- **组件源码**：[`frontend/src/components/ChatImageLightbox.tsx`](../../frontend/src/components/ChatImageLightbox.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.chat-image-lightbox-backdrop`, `.chat-image-lightbox-stage`)
+
+---
+
 ## 10. 状态动效与平滑进度 Hooks (Smooth Progress Hook)
 
 - **适用场景**：

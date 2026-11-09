@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { chatStickerService } from '../game/chatStickerService'
 import { FloatingMenuItem, FloatingMenuGroup, FloatingPopover } from './FloatingPopover'
+import { ChatImageLightbox } from './ChatImageLightbox'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { StatGlyph } from './StatGlyph'
@@ -9,6 +10,8 @@ export interface ChatStickerProps {
   url: string
   className?: string
   alt?: string
+  /** 是否允许左键单击/触屏点按放大查看（消息正文 true；表情选择器内保持 false，点击语义为选表情） */
+  zoomable?: boolean
 }
 
 /**
@@ -23,6 +26,7 @@ export const ChatSticker = memo(function ChatSticker({
   url,
   className = '',
   alt,
+  zoomable = false,
 }: ChatStickerProps): React.JSX.Element {
   const t = useT()
   const trimmedUrl = url.trim()
@@ -31,6 +35,7 @@ export const ChatSticker = memo(function ChatSticker({
   const [isError, setIsError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [isHealing, setIsHealing] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const mountedRef = useRef(true)
   // 响应表情包收藏状态
   const isSaved = useSyncExternalStore(
@@ -95,6 +100,12 @@ export const ChatSticker = memo(function ChatSticker({
     }
   }
 
+  /** 左键单击/触屏点按：放大查看图片细节（仅消息正文启用） */
+  const handleOpenLightbox = (): void => {
+    if (!zoomable || !cachedSrc || isError || !isLoaded) return
+    setLightboxOpen(true)
+  }
+
   const menuContent = (
     <FloatingMenuGroup>
       {!isSaved ? (
@@ -135,7 +146,8 @@ export const ChatSticker = memo(function ChatSticker({
       triggerClassName={`chat-sticker-anchor ${className}`.trim()}
     >
       <span
-        className="chat-sticker-wrapper"
+        className={`chat-sticker-wrapper${zoomable && isLoaded && !isError ? ' is-zoomable' : ''}`}
+        onClick={handleOpenLightbox}
         onContextMenu={handleContextMenu}
         title={t('combat.chat.stickerRightClickHint')}
       >
@@ -196,6 +208,14 @@ export const ChatSticker = memo(function ChatSticker({
           </span>
         )}
       </span>
+      {lightboxOpen && (
+        <ChatImageLightbox
+          alt={alt ?? t('combat.chat.stickerAlt')}
+          onClose={() => setLightboxOpen(false)}
+          open={lightboxOpen}
+          src={cachedSrc}
+        />
+      )}
     </FloatingPopover>
   )
 })
