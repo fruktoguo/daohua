@@ -1,8 +1,7 @@
+import { QQ_EMOJI_MAP } from './qqEmojis.ts'
+
 /**
  * 传音聊天行内富文本标记解析与构建器 (chatMarkup)
- *
- * 核心设计：
- * 1. 采用自包含紧凑文本标记，不破坏聊天历史存储与 WebSocket 通信信封，天然支持正文混排；
  * 2. 物品标记：{{item:itemId}} 或 {{item:itemId:enhancementLevel}}
  *    示例：{{item:equipment.weapon-sword-t1-iron:3}} -> 行内物品胶囊，带强化等级与悬浮卡片；
  * 3. 订单标记：{{order:orderId:side:itemId:enhancementLevel:price:quantity}}
@@ -37,10 +36,17 @@ export type ChatMarkupSegment =
       url: string
       raw: string
     }
+  | {
+      type: 'qqEmoji'
+      name: string
+      raw: string
+    }
 
 /** 行内标记匹配正则：{{item:...}} 或 {{order:...}} 或 {{img:...}} 或 {{sticker:...}} */
 const CHAT_MARKUP_PATTERN = /\{\{(item|order|img|sticker):([^}]+)\}\}/g
 
+/** 匹配经典 QQ 表情中括号标记，如 [微笑]、[呲牙] */
+const QQ_EMOJI_PATTERN = /\[([^\[\]\s]{1,10})\]/g
 /** 匹配常见图片扩展名的 HTTP/HTTPS 直链 */
 const IMAGE_EXT_PATTERN = /\.(?:png|jpe?g|gif|webp|svg|avif)(?:[?#]|$)/i
 
@@ -276,9 +282,54 @@ export function parseChatMarkup(body: string): readonly ChatMarkupSegment[] {
     }
   }
 
+  // 对文本分段进行 QQ 表情二次拆解
+  const withEmojis: ChatMarkupSegment[] = []
+  for (const seg of expanded) {
+    if (seg.type !== 'text') {
+      withEmojis.push(seg)
+      continue
+    }
+
+    const text = seg.text
+    QQ_EMOJI_PATTERN.lastIndex = 0
+    let emojiMatch: RegExpExecArray | null
+    let lastPos = 0
+    let matchedAny = false
+
+    while ((emojiMatch = QQ_EMOJI_PATTERN.exec(text)) !== null) {
+      const emojiName = emojiMatch[1]
+      if (QQ_EMOJI_MAP.has(emojiName)) {
+        matchedAny = true
+        if (emojiMatch.index > lastPos) {
+          withEmojis.push({
+            type: 'text',
+            text: text.slice(lastPos, emojiMatch.index),
+          })
+        }
+        withEmojis.push({
+          type: 'qqEmoji',
+          name: emojiName,
+          raw: emojiMatch[0],
+        })
+        lastPos = QQ_EMOJI_PATTERN.lastIndex
+      }
+    }
+
+    if (matchedAny) {
+      if (lastPos < text.length) {
+        withEmojis.push({
+          type: 'text',
+          text: text.slice(lastPos),
+        })
+      }
+    } else {
+      withEmojis.push(seg)
+    }
+  }
+
   // 合并相邻的纯文本分段
   const merged: ChatMarkupSegment[] = []
-  for (const seg of expanded) {
+  for (const seg of withEmojis) {
     if (seg.type === 'text') {
       const prev = merged[merged.length - 1]
       if (prev && prev.type === 'text') {

@@ -1,5 +1,7 @@
+import { QQ_EMOJI_LIST } from './qqEmojis.ts'
+
 /**
- * 传音聊天表情（Emoji）与表情包（Sticker）本地存储与排序管理服务
+ * 传音聊天内置小黄脸表情与表情包（Sticker）本地存储与排序管理服务
  *
  * 核心职责：
  * 1. 原生 Emoji 频次统计与自排序（高频在先）；
@@ -16,13 +18,8 @@ const STORE_IMAGES = 'images'
 const STORAGE_KEY_EMOJI_FREQ = 'daohua_chat_emoji_freq'
 const STORAGE_KEY_CUSTOM_STICKERS = 'daohua_chat_custom_stickers'
 
-/** 默认精选修仙与日常常用 Emoji */
-export const DEFAULT_EMOJIS: readonly string[] = [
-  '😊', '🤣', '😭', '👍', '🙏', '😎', '😅', '🤔', '🥰', '🔥',
-  '⚡', '⚔️', '🗡️', '🛡️', '🧘', '🍵', '💊', '📜', '📿', '🏮',
-  '🌙', '⭐', '☀️', '🌸', '🌿', '💧', '🌪️', '🪙', '💎', '💯',
-  '🐉', '🐯', '🐢', '🕊️', '🦄', '❤️', '💔', '🎉', '🤡', '💀',
-]
+/** 默认精选内置 QQ 风格小黄脸表情名称列表 */
+export const DEFAULT_EMOJIS: readonly string[] = QQ_EMOJI_LIST.map(e => e.name)
 
 /** 自定义表情包条目定义 */
 export interface CustomStickerItem {

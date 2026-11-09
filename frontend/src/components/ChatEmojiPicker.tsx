@@ -1,6 +1,7 @@
 import { memo, useState, useSyncExternalStore } from 'react'
 import { chatStickerService, type CustomStickerItem } from '../game/chatStickerService'
 import { ChatSticker } from './ChatSticker'
+import { QqEmoji } from './QqEmoji'
 import { FloatingMenuGroup, FloatingMenuItem, FloatingPopover } from './FloatingPopover'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
@@ -98,9 +99,9 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
   const emojis = chatStickerService.getSortedEmojis()
   const stickers = chatStickerService.getSortedStickers()
 
-  const handleEmojiClick = (emoji: string): void => {
-    chatStickerService.recordEmojiUsage(emoji)
-    onSelectEmoji(emoji)
+  const handleEmojiClick = (emojiName: string): void => {
+    chatStickerService.recordEmojiUsage(emojiName)
+    onSelectEmoji(`[${emojiName}]`)
   }
 
   const handleStickerClick = (url: string): void => {
@@ -155,17 +156,18 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
         </button>
       </div>
 
-      {/* 表情 Tab */}
+      {/* 表情 Tab（经典 QQ 小黄脸） */}
       {activeTab === 'emoji' && (
         <div className="chat-picker-emoji-grid">
-          {emojis.map((emoji, index) => (
+          {emojis.map((emojiName, index) => (
             <button
               className="chat-picker-emoji-btn"
-              key={`${emoji}-${index}`}
-              onClick={() => handleEmojiClick(emoji)}
+              key={`${emojiName}-${index}`}
+              onClick={() => handleEmojiClick(emojiName)}
+              title={`[${emojiName}]`}
               type="button"
             >
-              {emoji}
+              <QqEmoji name={emojiName} size={24} />
             </button>
           ))}
         </div>

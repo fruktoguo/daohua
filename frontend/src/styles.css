@@ -2239,6 +2239,29 @@ input[type="checkbox"] {
   color: var(--qi, var(--gold-bright));
 }
 
+/* 经典 QQ 风格小黄脸行内混排与图标 */
+.qq-emoji-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: -3px;
+  margin: 0 1.5px;
+  user-select: none;
+  line-height: 1;
+}
+
+.qq-emoji-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.qq-emoji-fallback {
+  color: var(--gold-bright);
+  font-size: 12px;
+}
+
 /* 传音表情包与离线加载占位符 */
 .chat-sticker-anchor {
   display: inline-flex;

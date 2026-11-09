@@ -293,7 +293,10 @@ const ChatRow = memo(function ChatRow({
 
     if (gameClient.sendChat(message.channel, message.body, targetPlayerId)) {
       const trimmed = message.body.trim()
-      if (chatStickerService.isStickerSaved(trimmed) || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      const emojiMatch = /^\[([^\[\]\s]+)\]$/.exec(trimmed)
+      if (emojiMatch) {
+        chatStickerService.recordEmojiUsage(emojiMatch[1])
+      } else if (chatStickerService.isStickerSaved(trimmed) || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
         chatStickerService.recordStickerUsage(trimmed)
       } else {
         chatStickerService.recordEmojiUsage(trimmed)

@@ -2,23 +2,25 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chatStickerService, DEFAULT_EMOJIS } from './chatStickerService.ts'
 
-test('chatStickerService: Emoji 频次累加与自排序', () => {
+test('chatStickerService: QQ 小黄脸表情频次累加与自排序', () => {
   const initial = chatStickerService.getSortedEmojis()
   assert.ok(initial.length >= DEFAULT_EMOJIS.length)
+  assert.ok(initial.includes('微笑'))
+  assert.ok(initial.includes('呲牙'))
 
-  // 记录特定修仙表情高频使用
-  chatStickerService.recordEmojiUsage('🧘')
-  chatStickerService.recordEmojiUsage('🧘')
-  chatStickerService.recordEmojiUsage('🧘')
+  // 记录特定经典黄脸高频使用
+  chatStickerService.recordEmojiUsage('滑稽')
+  chatStickerService.recordEmojiUsage('滑稽')
+  chatStickerService.recordEmojiUsage('滑稽')
 
-  chatStickerService.recordEmojiUsage('🗡️')
-  chatStickerService.recordEmojiUsage('🗡️')
+  chatStickerService.recordEmojiUsage('偷笑')
+  chatStickerService.recordEmojiUsage('偷笑')
 
   const sorted = chatStickerService.getSortedEmojis()
-  // '🧘' 次数最多，应位列第一
-  assert.equal(sorted[0], '🧘')
-  // '🗡️' 次数第二多，应位列第二
-  assert.equal(sorted[1], '🗡️')
+  // '滑稽' 次数最多，应位列第一
+  assert.equal(sorted[0], '滑稽')
+  // '偷笑' 次数第二多，应位列第二
+  assert.equal(sorted[1], '偷笑')
 })
 
 test('chatStickerService: 自定义表情包添加、频次自排序与右键删除', () => {

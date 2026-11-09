@@ -132,3 +132,26 @@ test('chatMarkup: 自动解析独立图片链接与混排表情包', () => {
   assert.equal(r3[0].type, 'sticker')
   assert.equal(r3[0].url, 'https://example.com/stickers/sword.gif')
 })
+
+test('chatMarkup: 自动解析 QQ 风格经典小黄脸表情 [微笑] [呲牙]', () => {
+  const text = '道友你好[微笑]，一起下本[偷笑]！'
+  const result = parseChatMarkup(text)
+  assert.equal(result.length, 5)
+  assert.equal(result[0].type, 'text')
+  assert.equal(result[0].text, '道友你好')
+  assert.equal(result[1].type, 'qqEmoji')
+  assert.equal(result[1].name, '微笑')
+  assert.equal(result[2].type, 'text')
+  assert.equal(result[2].text, '，一起下本')
+  assert.equal(result[3].type, 'qqEmoji')
+  assert.equal(result[3].name, '偷笑')
+  assert.equal(result[4].type, 'text')
+  assert.equal(result[4].text, '！')
+
+  // 未收录的伪中括号标记保持纯文本
+  const unk = '测试[未知标记]保持文本'
+  const r2 = parseChatMarkup(unk)
+  assert.equal(r2.length, 1)
+  assert.equal(r2[0].type, 'text')
+  assert.equal(r2[0].text, '测试[未知标记]保持文本')
+})
