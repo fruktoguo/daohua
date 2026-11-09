@@ -2346,6 +2346,180 @@ input[type="checkbox"] {
   color: var(--text-dim);
 }
 
+
+/* ==========================================================================
+   聊天队伍与地点超链接胶囊 (ChatPartyReference & ChatLocationReference)
+   ========================================================================== */
+
+.chat-party-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 4px;
+  margin: 0 2px;
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 4px;
+  background: rgba(30, 26, 18, 0.7);
+  color: var(--text-bright, #f0e6d2);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  vertical-align: middle;
+  text-decoration: none;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+
+.chat-party-link:hover,
+.chat-party-link:focus-visible {
+  border-color: var(--gold, #d4af37);
+  background: rgba(45, 38, 24, 0.9);
+  box-shadow: 0 0 6px rgba(212, 175, 55, 0.35);
+}
+
+.chat-party-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(212, 175, 55, 0.18);
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  color: var(--gold-bright, #ffd57e);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.chat-party-name {
+  font-weight: 600;
+  color: #fff;
+}
+
+.chat-party-activity {
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(143, 195, 166, 0.15);
+  color: #8fc3a6;
+}
+
+.chat-party-slots {
+  font-size: 10.5px;
+  color: var(--text-dim, #999);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-party-action-hint {
+  font-size: 10px;
+  color: var(--gold-bright, #ffd57e);
+  margin-left: 2px;
+  opacity: 0.85;
+}
+
+.chat-location-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 4px;
+  margin: 0 2px;
+  border: 1px solid rgba(143, 195, 166, 0.4);
+  border-radius: 4px;
+  background: rgba(18, 28, 24, 0.7);
+  color: #c8e6d2;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  vertical-align: middle;
+  text-decoration: none;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+
+.chat-location-link:hover,
+.chat-location-link:focus-visible {
+  border-color: #8fc3a6;
+  background: rgba(24, 40, 32, 0.9);
+  box-shadow: 0 0 6px rgba(143, 195, 166, 0.35);
+  color: #ffffff;
+}
+
+.chat-location-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(143, 195, 166, 0.18);
+  border: 1px solid rgba(143, 195, 166, 0.45);
+  color: #8fc3a6;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.chat-location-name {
+  font-weight: 600;
+}
+
+/* 聊天链接卡片悬浮浮层内部排版 */
+.chat-link-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  max-width: 240px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.chat-link-popover-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+}
+
+.chat-link-popover-body p {
+  margin: 2px 0;
+}
+
+.chat-link-popover-desc {
+  color: var(--text-dim, #aaa);
+  font-size: 11px;
+  margin-top: 4px !important;
+}
+
+.chat-link-popover-hint {
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  padding-top: 4px;
+  font-size: 11px;
+}
+
+/* 地图与队伍面板中的分享按钮 */
+.world-location-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.world-share-location-btn,
+.party-share-btn,
+.party-lobby-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--gold-faint, rgba(212, 175, 55, 0.3));
+  border-radius: 4px;
+  background: rgba(20, 24, 30, 0.6);
+  color: var(--gold-bright, #ffd57e);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.world-share-location-btn:hover,
+.party-share-btn:hover,
+.party-lobby-share-btn:hover {
+  border-color: var(--gold, #d4af37);
+  background: rgba(30, 36, 45, 0.85);
+}
 .equipment-slot-share-btn {
   position: absolute;
   top: 2px;

@@ -32,6 +32,23 @@ export type ChatMarkupSegment =
       raw: string
     }
   | {
+      type: 'party'
+      partyId: string
+      name: string
+      activityKind?: string
+      nodeId?: string
+      minValuation?: number
+      memberCount?: number
+      maxSlots?: number
+      raw: string
+    }
+  | {
+      type: 'location'
+      nodeId: string
+      name?: string
+      raw: string
+    }
+  | {
       type: 'sticker'
       url: string
       raw: string
@@ -42,9 +59,8 @@ export type ChatMarkupSegment =
       raw: string
     }
 
-/** 行内标记匹配正则：{{item:...}} 或 {{order:...}} 或 {{img:...}} 或 {{sticker:...}} */
-const CHAT_MARKUP_PATTERN = /\{\{(item|order|img|sticker):([^}]+)\}\}/g
-
+/** 行内标记匹配正则：{{item:...}} 或 {{order:...}} 或 {{party:...}} 或 {{location:...}} 或 {{map:...}} 或 {{img:...}} 或 {{sticker:...}} */
+const CHAT_MARKUP_PATTERN = /\{\{(item|order|party|location|map|img|sticker):([^}]+)\}\}/g
 /** 匹配经典 QQ 表情中括号标记，如 [微笑]、[呲牙] */
 const QQ_EMOJI_PATTERN = /\[([^\[\]\s]{1,10})\]/g
 /** 匹配常见图片扩展名的 HTTP/HTTPS 直链 */
@@ -107,6 +123,53 @@ export function buildOrderChatMarkup({
   return `{{order:${trimmedOrderId}:${side}:${trimmedItemId}:${lvl}:${price}:${quantity}}}`
 }
 
+/** 队伍传音构建入参 */
+export interface PartyMarkupParams {
+  partyId: string
+  name?: string
+  activityKind?: string
+  nodeId?: string
+  minValuation?: number
+  memberCount?: number
+  maxSlots?: number
+}
+
+/**
+ * 构建队伍传音标记
+ */
+export function buildPartyChatMarkup({
+  partyId,
+  name = '',
+  activityKind = '',
+  nodeId = '',
+  minValuation = 0,
+  memberCount = 1,
+  maxSlots = 3,
+}: PartyMarkupParams): string {
+  const pId = partyId.trim()
+  const pName = (name ?? '').trim().replace(/[:}]/g, '')
+  const pActivity = (activityKind ?? '').trim().replace(/[:}]/g, '')
+  const pNode = (nodeId ?? '').trim().replace(/[:}]/g, '')
+  const pVal = Math.max(0, Math.floor(minValuation ?? 0))
+  const pMembers = Math.max(1, Math.floor(memberCount ?? 1))
+  const pSlots = Math.max(pMembers, Math.floor(maxSlots ?? 3))
+  return `{{party:${pId}:${pName}:${pActivity}:${pNode}:${pVal}:${pMembers}:${pSlots}}}`
+}
+
+/**
+ * 构建地点传音标记
+ *
+ * @param nodeId 地点节点唯一 ID（如 node.cloud-peak）
+ * @param name 可选地点名称（如 碧云峰）
+ */
+export function buildLocationChatMarkup(nodeId: string, name?: string): string {
+  const trimmedId = nodeId.trim()
+  const trimmedName = (name ?? '').trim().replace(/[:}]/g, '')
+  if (trimmedName) {
+    return `{{location:${trimmedId}:${trimmedName}}}`
+  }
+  return `{{location:${trimmedId}}}`
+}
 /**
  * 解析传音正文字符串为富文本分段列表
  *
@@ -194,6 +257,50 @@ export function parseChatMarkup(body: string): readonly ChatMarkupSegment[] {
         enhancementLevel: Math.floor(enhancementLevel),
         price,
         quantity,
+        raw,
+      })
+    } else if (kind === 'party') {
+      const parts = payload.split(':')
+      const partyId = parts[0]?.trim()
+      if (!partyId) {
+        segments.push({ type: 'text', text: raw })
+        continue
+      }
+      const name = parts[1]?.trim() ?? ''
+      const activityKind = parts[2]?.trim() || undefined
+      const nodeId = parts[3]?.trim() || undefined
+      const minValuation = parts[4] !== undefined && Number.isFinite(Number(parts[4]))
+        ? Math.max(0, Math.floor(Number(parts[4])))
+        : 0
+      const memberCount = parts[5] !== undefined && Number.isFinite(Number(parts[5]))
+        ? Math.max(1, Math.floor(Number(parts[5])))
+        : 1
+      const maxSlots = parts[6] !== undefined && Number.isFinite(Number(parts[6]))
+        ? Math.max(memberCount, Math.floor(Number(parts[6])))
+        : 3
+      segments.push({
+        type: 'party',
+        partyId,
+        name,
+        activityKind,
+        nodeId,
+        minValuation,
+        memberCount,
+        maxSlots,
+        raw,
+      })
+    } else if (kind === 'location' || kind === 'map') {
+      const parts = payload.split(':')
+      const nodeId = parts[0]?.trim()
+      if (!nodeId) {
+        segments.push({ type: 'text', text: raw })
+        continue
+      }
+      const name = parts[1]?.trim() || undefined
+      segments.push({
+        type: 'location',
+        nodeId,
+        name,
         raw,
       })
     } else if (kind === 'img' || kind === 'sticker') {

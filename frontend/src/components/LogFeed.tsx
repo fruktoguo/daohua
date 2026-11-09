@@ -359,7 +359,7 @@ const ChatRow = memo(function ChatRow({
         </FloatingTooltip>
 
         {sectPrefix && (
-          <FloatingTooltip placement="top" title={`宗门前缀：${sectPrefix}`} tone="jade">
+          <FloatingTooltip placement="top" title={t('social.zongmen.sectPrefixTooltip', { prefix: sectPrefix })} tone="jade">
             <span className="chat-sect-capsule">
               {sectPrefix}
             </span>

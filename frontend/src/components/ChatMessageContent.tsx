@@ -4,12 +4,14 @@ import { findEquipmentInCatalog, findItemInCatalog, resolveItemMetadata } from '
 import { useGameStore } from '../game/gameStore'
 import { useMarketStore } from '../game/marketStore'
 import { useUiStore } from '../uiStore'
+import { useSocialStore } from '../game/socialStore'
+import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
+import { FloatingTooltip } from './FloatingPopover'
 import { ItemIcon, ItemReference, ItemTooltipTarget } from './ItemDisplay'
 import { ChatSticker } from './ChatSticker'
 import { QqEmoji } from './QqEmoji'
 import { UnitNumber } from './UnitNumber'
-
 /** 单条订单超链接胶囊 (ChatOrderReference) */
 const ChatOrderReference = memo(function ChatOrderReference({
   order,
@@ -79,6 +81,183 @@ const ChatOrderReference = memo(function ChatOrderReference({
   )
 })
 
+/** 单条队伍超链接胶囊 (ChatPartyReference) */
+const ChatPartyReference = memo(function ChatPartyReference({
+  party,
+}: {
+  party: Extract<ChatMarkupSegment, { type: 'party' }>
+}): React.JSX.Element {
+  const t = useT()
+  const maps = useGameStore((state) => state.maps)
+  const nodeName = useMemo(() => {
+    if (!party.nodeId) return null
+    for (const m of maps) {
+      const found = m.nodes.find((n) => n.nodeId === party.nodeId)
+      if (found) return found.name
+    }
+    return party.nodeId
+  }, [maps, party.nodeId])
+
+  const displayName = party.name || t('social.invitation.unnamed')
+  const activityLabel = party.activityKind ? t(`social.activity.${party.activityKind}`) : null
+  const memberCount = party.memberCount ?? 1
+  const maxSlots = party.maxSlots ?? 3
+
+  const handleClick = (e: React.MouseEvent | React.KeyboardEvent): void => {
+    e.stopPropagation()
+    const myParty = useSocialStore.getState().party
+    if (myParty) {
+      if (myParty.partyId === party.partyId) {
+        useGameStore.getState().setNotice(t('combat.chat.partyAlreadyIn'))
+      } else {
+        useGameStore.getState().setNotice(t('combat.chat.partyLeaveFirst'))
+      }
+      useUiStore.getState().setActiveTab('social')
+      useUiStore.getState().setSocialSubTab('party')
+      return
+    }
+    gameClient.sendSocialAction('party.join', undefined, undefined, { partyId: party.partyId })
+    useUiStore.getState().setActiveTab('social')
+    useUiStore.getState().setSocialSubTab('party')
+    useGameStore.getState().setNotice(t('combat.chat.partyJoinRequested'))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent): void => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleClick(e)
+    }
+  }
+
+  const tooltipContent = (
+    <div className="chat-link-popover">
+      <div className="chat-link-popover-header">
+        <strong className="text-gold">👥 {displayName}</strong>
+      </div>
+      <div className="chat-link-popover-body">
+        {activityLabel && (
+          <p>
+            <span className="text-muted">{t('social.field.activity')}: </span>
+            <span>{activityLabel}</span>
+          </p>
+        )}
+        {nodeName && (
+          <p>
+            <span className="text-muted">{t('social.field.node')}: </span>
+            <span>{nodeName}</span>
+          </p>
+        )}
+        {Boolean(party.minValuation && party.minValuation > 0) && (
+          <p>
+            <span className="text-muted">{t('social.field.minValuation')}: </span>
+            <span>{party.minValuation}</span>
+          </p>
+        )}
+        <p>
+          <span className="text-muted">{t('social.field.openSlots')}: </span>
+          <span>{memberCount} / {maxSlots}</span>
+        </p>
+      </div>
+      <div className="chat-link-popover-hint">
+        <small className="text-jade">{t('combat.chat.partyClickActionHint')}</small>
+      </div>
+    </div>
+  )
+
+  return (
+    <FloatingTooltip placement="top" title={tooltipContent} tone="gold">
+      <span
+        aria-label={t('combat.chat.partyAria', {
+          name: displayName,
+          members: memberCount,
+          slots: maxSlots,
+        })}
+        className="chat-party-link"
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+      >
+        <span className="chat-party-badge">👥 {t('social.sub.party')}</span>
+        <span className="chat-party-name">{displayName}</span>
+        {activityLabel && <span className="chat-party-activity">{activityLabel}</span>}
+        <span className="chat-party-slots">({memberCount}/{maxSlots})</span>
+        <span className="chat-party-action-hint">{t('combat.chat.partyJoin')}</span>
+      </span>
+    </FloatingTooltip>
+  )
+})
+
+/** 单条地点超链接胶囊 (ChatLocationReference) */
+const ChatLocationReference = memo(function ChatLocationReference({
+  location,
+}: {
+  location: Extract<ChatMarkupSegment, { type: 'location' }>
+}): React.JSX.Element {
+  const t = useT()
+  const maps = useGameStore((state) => state.maps)
+  const nodeInfo = useMemo(() => {
+    for (const m of maps) {
+      const found = m.nodes.find((n) => n.nodeId === location.nodeId)
+      if (found) return { node: found, mapName: m.name }
+    }
+    return null
+  }, [maps, location.nodeId])
+
+  const displayName = location.name || nodeInfo?.node.name || location.nodeId
+
+  const handleClick = (e: React.MouseEvent | React.KeyboardEvent): void => {
+    e.stopPropagation()
+    useUiStore.getState().navigateToMapNode(location.nodeId)
+    useGameStore.getState().setNotice(t('combat.chat.locationLocated', { name: displayName }))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent): void => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleClick(e)
+    }
+  }
+
+  const tooltipContent = (
+    <div className="chat-link-popover">
+      <div className="chat-link-popover-header">
+        <strong className="text-jade">📍 {displayName}</strong>
+      </div>
+      <div className="chat-link-popover-body">
+        {nodeInfo?.mapName && (
+          <p>
+            <span className="text-muted">{t('social.field.region')}: </span>
+            <span>{nodeInfo.mapName}</span>
+          </p>
+        )}
+        {nodeInfo?.node.description && (
+          <p className="chat-link-popover-desc">{nodeInfo.node.description}</p>
+        )}
+      </div>
+      <div className="chat-link-popover-hint">
+        <small className="text-jade">{t('combat.chat.locationClickActionHint')}</small>
+      </div>
+    </div>
+  )
+
+  return (
+    <FloatingTooltip placement="top" title={tooltipContent} tone="jade">
+      <span
+        aria-label={t('combat.chat.locationAria', { name: displayName })}
+        className="chat-location-link"
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+      >
+        <span className="chat-location-badge">📍 {t('combat.chat.locationBadge')}</span>
+        <span className="chat-location-name">{displayName}</span>
+      </span>
+    </FloatingTooltip>
+  )
+})
+
 /**
  * 传音正文富文本渲染组件 (ChatMessageBody)
  *
@@ -113,6 +292,12 @@ export const ChatMessageBody = memo(function ChatMessageBody({
         }
         if (seg.type === 'order') {
           return <ChatOrderReference key={idx} order={seg} />
+        }
+        if (seg.type === 'party') {
+          return <ChatPartyReference key={idx} party={seg} />
+        }
+        if (seg.type === 'location') {
+          return <ChatLocationReference key={idx} location={seg} />
         }
         if (seg.type === 'sticker') {
           return <ChatSticker key={idx} url={seg.url} />

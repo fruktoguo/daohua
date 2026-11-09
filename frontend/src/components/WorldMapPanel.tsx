@@ -12,7 +12,8 @@ import { MonsterTooltipTarget } from './MonsterDisplay'
 import { useUiStore } from '../uiStore'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
 import { resolveAnchorBounds, resolveVisibleMapIds } from './worldMapVisibility'
-
+import { buildLocationChatMarkup } from '../game/chatMarkup'
+import { shareToChat } from '../game/chatShare'
 
 /** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
@@ -450,6 +451,13 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
   // 中断赶路的二次确认目标（行进中条目 entryId）；目标离场（抵达/被移除）时自动失效收起弹窗
   const [pendingStopTravelId, setPendingStopTravelId] = useState<string | null>(null)
+  const mapFocusNodeId = useUiStore(state => state.mapFocusNodeId)
+  useEffect(() => {
+    if (!hidden && mapFocusNodeId) {
+      setSelectedNodeId(mapFocusNodeId)
+      useUiStore.getState().setMapFocusNodeId(null)
+    }
+  }, [hidden, mapFocusNodeId])
 
   // 全局世界索引：nodeId→所属区域、全节点与全边合并视图。
   // 大世界共用单一坐标系，区域（maps 条目）仅作显示分组；寻路与插值一律对合并图求值。
@@ -1267,7 +1275,20 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
         {selectedNode ? (
           <>
             <header className="world-location-header">
-              <h3>{selectedNode.name}</h3>
+              <div className="world-location-title-row">
+                <h3>{selectedNode.name}</h3>
+                <button
+                  className="world-share-location-btn"
+                  onClick={() => {
+                    const markup = buildLocationChatMarkup(selectedNode.nodeId, selectedNode.name)
+                    shareToChat(markup)
+                  }}
+                  title={t('combat.chat.shareToChat')}
+                  type="button"
+                >
+                  💬 {t('combat.chat.shareToChat')}
+                </button>
+              </div>
               <p>{selectedNode.description}</p>
             </header>
 

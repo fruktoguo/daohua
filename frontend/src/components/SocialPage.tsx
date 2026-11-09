@@ -18,7 +18,8 @@ import { Modal } from './Modal'
 import { OptionToggle, type OptionToggleOption } from './OptionToggle'
 import { ValuationHoverTarget } from './ValuationDisplay'
 import type { RespawnPolicy } from '../game/types'
-
+import { buildPartyChatMarkup } from '../game/chatMarkup'
+import { shareToChat } from '../game/chatShare'
 /** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
   PartyActivityKind.Any,
@@ -379,12 +380,31 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
                 )}
               </div>
               <div className="party-lobby-entry-actions">
-                {isMine
-                  ? <span className="badge">{t('social.lobby.myParty')}</span>
-                  : myPartyId === null && (
-                    <button disabled={!meets} onClick={() => gameClient.sendSocialAction('party.join', undefined, undefined, { partyId: entry.partyId })} type="button">
-                      {meets ? t('social.action.join') : t('social.action.joinLocked')}
-                    </button>)}
+                {isMine && <span className="badge">{t('social.lobby.myParty')}</span>}
+                <button
+                  className="party-lobby-share-btn"
+                  onClick={() => {
+                    const markup = buildPartyChatMarkup({
+                      partyId: entry.partyId,
+                      name: entry.name,
+                      activityKind: entry.activityKind,
+                      nodeId: entry.nodeId,
+                      minValuation: entry.minValuation,
+                      memberCount: entry.members.length,
+                      maxSlots: entry.openSlots ?? 3,
+                    })
+                    shareToChat(markup)
+                  }}
+                  title={t('combat.chat.shareToChat')}
+                  type="button"
+                >
+                  💬 {t('combat.chat.shareToChat')}
+                </button>
+                {!isMine && myPartyId === null && (
+                  <button disabled={!meets} onClick={() => gameClient.sendSocialAction('party.join', undefined, undefined, { partyId: entry.partyId })} type="button">
+                    {meets ? t('social.action.join') : t('social.action.joinLocked')}
+                  </button>
+                )}
               </div>
             </li>
           )
@@ -734,6 +754,25 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
             )}
           </span>
           <span className="party-actions-group">
+            <button
+              className="party-share-btn"
+              onClick={() => {
+                const markup = buildPartyChatMarkup({
+                  partyId: party.partyId,
+                  name: party.name,
+                  activityKind: party.activityKind,
+                  nodeId: party.nodeId,
+                  minValuation: party.minValuation,
+                  memberCount: party.members.length,
+                  maxSlots: openSlots,
+                })
+                shareToChat(markup)
+              }}
+              title={t('combat.chat.shareToChat')}
+              type="button"
+            >
+              💬 {t('combat.chat.shareToChat')}
+            </button>
             <button onClick={() => setConfirmLeave(true)} type="button">{t('social.action.leave')}</button>
             {isLeader && (
               <button className="danger" onClick={() => setConfirmDisband(true)} type="button">{t('social.action.disband')}</button>

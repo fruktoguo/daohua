@@ -41,6 +41,7 @@ export const socialZh = {
       "recipe": "炼器所需：",
       "name": "宗门名称",
       "prefix": "单字前缀",
+      "sectPrefixTooltip": "宗门前缀：{prefix}",
       "needLocation": "请先驻留普通公共地点",
       "createConfirm": "确认创建「{name}」，前缀「{prefix}」，驻地挂靠「{location}」？消耗1枚宗门令牌，迁移驻地须再消耗令牌。",
       "invitations": "入宗邀请",
