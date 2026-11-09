@@ -112,14 +112,12 @@ public sealed class ChatImageUploadRegistry
         var filename = $"{shortId}.{normalizedExt}";
         var targetUrl = $"{_publicBaseUrl.TrimEnd('/')}/{filename}";
 
-        // 4. 预先注册哈希映射并原子自增配额
+        // 4. 原子自增当日配额（注意：全服去重映射 _hashToUrl 仅在实际落盘 R2 成功后经 RegisterUploadedUrl 写入，防止网络或客户端中断产生 404 幽灵直链）
         _dailyCounts.AddOrUpdate(
             accountId,
             _ => (today, 1),
             (_, old) => old.DateKey == today ? (today, old.Count + 1) : (today, 1)
         );
-        _hashToUrl[normalizedHash] = targetUrl;
-
         var newRemaining = Math.Max(0, DailyLimitPerAccount - (count + 1));
 
         // 5. 构造并签名 Ticket
@@ -146,6 +144,16 @@ public sealed class ChatImageUploadRegistry
             RemainingToday: newRemaining
         );
         return true;
+    }
+
+    /// <summary>
+    /// 客户端上传成功后显式登记全服哈希映射。
+    /// </summary>
+    public void RegisterUploadedUrl(string sha256Hex, string url)
+    {
+        if (string.IsNullOrWhiteSpace(sha256Hex) || sha256Hex.Length != 64 || string.IsNullOrWhiteSpace(url))
+            return;
+        _hashToUrl[sha256Hex.ToLowerInvariant()] = url.Trim();
     }
 
     private static string NormalizeExtension(string? ext)

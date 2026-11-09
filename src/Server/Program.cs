@@ -692,6 +692,19 @@ if (processRole == ServerProcessRole.Api)
 
         return Results.Ok(result);
     }).RequireAuthorization();
+    // 传音图片上传成功回调登记（确认文件已落盘 R2 后才写入全服去重索引，防止未实际落盘时提前缓存导致幽灵 404 直链）
+    app.MapPost("/api/v1/chat/upload-confirm", (
+        ChatUploadConfirmRequest request,
+        ClaimsPrincipal user,
+        Server.Clean.Social.ChatImageUploadRegistry uploadRegistry) =>
+    {
+        if (user.Identity?.IsAuthenticated != true)
+            return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
+
+        uploadRegistry.RegisterUploadedUrl(request.Sha256, request.Url);
+        return Results.Ok();
+    }).RequireAuthorization();
+
 
 
     var players = app.MapGroup("/api/v1/players").RequireAuthorization();
@@ -1019,5 +1032,7 @@ public sealed record NativeTapTapLoginRequest(
 /// <param name="Sha256">客户端计算的图片文件 SHA-256 小写十六进制摘要。</param>
 /// <param name="Ext">图片扩展名（png/gif/webp/jpg）。</param>
 public sealed record ChatUploadTicketRequest(string Sha256, string Ext);
+/// <summary>图片上传成功后落盘确认请求。</summary>
+public sealed record ChatUploadConfirmRequest(string Sha256, string Url);
 /// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

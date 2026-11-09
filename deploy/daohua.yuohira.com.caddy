@@ -37,7 +37,7 @@ daohua.yuohira.com {
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-		Content-Security-Policy "default-src 'self'; connect-src 'self' wss://daohua.yuohira.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; connect-src 'self' wss://daohua.yuohira.com https://img.yuohira.com https://daohua-emotes.fruktoyao.workers.dev; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		-Server
 	}
 

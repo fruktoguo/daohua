@@ -147,6 +147,13 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
     throw new Error(`图床返回异常地址: ${directUrl}`)
   }
 
+  // 成功上传至 R2 后，异步通知主服登记全服哈希映射
+  fetch('/api/v1/chat/upload-confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sha256, url: directUrl }),
+  }).catch(() => {})
+
   // 写入客户端本地哈希缓存，后续完全复用
   saveLocalHashUrl(sha256, directUrl)
   return { url: directUrl, cached: false }
