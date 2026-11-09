@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
@@ -318,6 +318,13 @@ const ChatRow = memo(function ChatRow({
 
   const realmInfo = useMemo(() => calculateRealmInfo(0, message.senderRealmLevel), [message.senderRealmLevel])
 
+  const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
+  const handleSenderClick = useCallback(() => {
+    if (message.senderId) {
+      requestPlayerCard(message.senderId)
+    }
+  }, [message.senderId, requestPlayerCard])
+
   const { shortTime, fullTime } = useMemo(() => {
     const date = new Date(message.sentAtMs)
     const pad = (v: number) => String(v).padStart(2, '0')
@@ -359,9 +366,15 @@ const ChatRow = memo(function ChatRow({
           </FloatingTooltip>
         )}
 
-        <span className="chat-sender-name">
-          {displayName}
-        </span>
+        <FloatingTooltip placement="top" title={t('social.card.viewDetail')} tone="gold">
+          <button
+            className="chat-sender-btn"
+            onClick={handleSenderClick}
+            type="button"
+          >
+            {displayName}
+          </button>
+        </FloatingTooltip>
       </div>
 
       <div className="chat-row-body">

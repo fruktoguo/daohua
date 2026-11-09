@@ -747,6 +747,27 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Null(fixture.Adapter.TryGetLoaded(rejoiner)!.State.Settings.RespawnTargetPlayerId);
     }
 
+    [Fact]
+    public async Task BuildPlayerCardAsync_AllowsViewingPublicCardOfAnyExistingPlayer()
+    {
+        await using var fixture = await Fixture.CreateAsync(startSession: false);
+        var social = await fixture.CreateSocialRuntimeAsync();
+        var viewer = fixture.Players[0];
+        var target = fixture.Players[1];
+
+        // 离队使目标与 viewer 不在同队
+        Assert.True((await social.ApplyAsync(target,
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyLeave))).Success);
+
+        // 验证即使跨队且不在同地，也能成功获取角色卡且无 forbidden 错误
+        var req = new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D"));
+        var card = await social.BuildPlayerCardAsync(viewer, req);
+
+        Assert.Null(card.Error);
+        Assert.Equal(target.ToString("D"), card.PlayerId);
+        Assert.NotNull(card.DisplayName);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(NpgsqlDataSource source, DateTimeOffset startedAt, Guid[] players, bool owned)

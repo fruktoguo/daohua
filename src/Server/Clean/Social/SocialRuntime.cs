@@ -356,24 +356,6 @@ public sealed class SocialRuntime
     {
         var targetId = Guid.Parse(request.PlayerId!);
 
-        // 授权判定：本人、同队成员或同地点附近修士（同节点在线）
-        if (targetId != playerId)
-        {
-            var isSameParty = false;
-            var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
-            if (partyId is { } id)
-            {
-                var party = await _repository.GetPartyAsync(id, cancellationToken);
-                isSameParty = party is not null && party.Members.Any(member => member.PlayerId == targetId);
-            }
-
-            var viewerNode = _presence.GetNodeId(playerId);
-            var targetNode = _presence.GetNodeId(targetId);
-            var isNearby = viewerNode is not null && targetNode is not null && viewerNode == targetNode;
-
-            if (!isSameParty && !isNearby)
-                return new PlayerCardDto(request.RequestId, targetId.ToString("D"), Error: "forbidden");
-        }
         var identity = await _repository.GetPlayerIdentityAsync(targetId, cancellationToken);
         if (identity is null)
             return new PlayerCardDto(request.RequestId, targetId.ToString("D"), Error: "not-found");

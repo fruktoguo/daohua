@@ -2211,17 +2211,46 @@ input[type="checkbox"] {
   border-color: rgba(74, 222, 128, 0.8);
 }
 
-.chat-sender-name {
+.chat-sender-name,
+.chat-sender-btn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  margin: 0;
   color: var(--jade);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.15s ease;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
 }
 
-.chat-sender-name::after {
+.chat-sender-name::after,
+.chat-sender-btn::after {
   content: '：';
   color: var(--text-dim);
   font-weight: normal;
+}
+
+.chat-sender-btn:hover {
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.12);
+  transform: translateY(-1px);
+}
+
+.chat-sender-btn:active {
+  transform: translateY(0);
+  background: rgba(201, 180, 109, 0.22);
+}
+
+.chat-sender-btn:focus-visible {
+  outline: 1px solid var(--gold-bright);
 }
 
 .chat-row-body {
@@ -2343,11 +2372,13 @@ input[type="checkbox"] {
   color: var(--gold-bright);
 }
 
-.chat-row--party .chat-sender-name {
+.chat-row--party .chat-sender-name,
+.chat-row--party .chat-sender-btn {
   color: var(--gold-bright);
 }
 
-.chat-row--friend .chat-sender-name {
+.chat-row--friend .chat-sender-name,
+.chat-row--friend .chat-sender-btn {
   color: var(--qi, var(--gold-bright));
 }
 
