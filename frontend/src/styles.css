@@ -1651,6 +1651,9 @@ input[type="checkbox"] {
 }
 
 .center-column {
+  /* 桌面日志停靠高度：既是底部预留空间，也是面板常态高度 */
+  --log-dock-height: clamp(160px, 27vh, 280px);
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -1671,9 +1674,29 @@ input[type="checkbox"] {
   min-height: 100%;
 }
 
+/* 桌面日志停靠区：本体只负责在流中预留停靠高度，不参与面板绘制 */
 .desktop-log {
+  height: var(--log-dock-height);
   min-height: 0;
   flex-shrink: 0;
+}
+
+/* 日志面板脱离流、锚定中列底边：
+   常态高度 = 停靠高度（正好占据预留空间）；
+   展开高度 = 中列整高（向上长开覆盖主内容）；
+   两个端点都是确定长度，height 插值保证展开/收起全程连续，且主内容区不重排。 */
+.desktop-log > .log-panel {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--log-dock-height);
+  transition: height 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.center-column:has(.log-panel.is-expanded) .desktop-log > .log-panel {
+  height: 100%;
 }
 
 .log-panel {
@@ -2115,6 +2138,49 @@ input[type="checkbox"] {
 
 .log-tabs::-webkit-scrollbar {
   display: none;
+}
+
+/* 面板扩展/收起按钮：悬停于右下角输入区上沿，避免与「发送」键重叠 */
+.log-expand-btn {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 46px;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  color: var(--gold-dim);
+  background: rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.log-expand-btn svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.log-expand-btn.is-expanded svg {
+  transform: rotate(180deg);
+}
+
+.log-expand-btn:hover,
+.log-expand-btn:focus-visible {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.14);
+  box-shadow: 0 0 8px rgba(201, 180, 109, 0.22);
+  outline: none;
 }
 
 /* 传音消息行与胶囊设计 */
@@ -7962,6 +8028,11 @@ input[type="checkbox"] {
   .mobile-tab.log-panel {
     height: 100%;
     min-height: 300px;
+  }
+
+  /* 竖屏日志面板已是全屏 Tab，扩展按钮无意义 */
+  .log-expand-btn {
+    display: none;
   }
 
   /* 窄屏下好友/队伍面板的侧栏改为横向铺满，避免 168px 侧栏挤压会话区 */

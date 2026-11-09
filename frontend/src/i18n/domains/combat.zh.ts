@@ -400,6 +400,8 @@ export const combatZh = {
       tabEmoji: '表情',
       tabSticker: '表情包',
       emojiPickerAria: '表情与表情包',
+      expandPanel: '展开面板',
+      collapsePanel: '收起面板',
       stickerAdded: '已添加到表情包',
       stickerAlreadyAdded: '表情包已存在',
       stickerDeleted: '已删除表情包',

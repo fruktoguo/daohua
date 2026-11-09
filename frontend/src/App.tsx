@@ -2772,7 +2772,7 @@ export default function App(): React.JSX.Element {
               </Suspense>
               {activeTab === 'records' && <RecordsPanel />}
               {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
-              {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" />}
+              {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" expandable={false} />}
             </main>
             <div className="desktop-log">{!mobileLayout && <GameLogPanel />}</div>
           </div>

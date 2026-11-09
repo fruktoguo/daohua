@@ -1,4 +1,4 @@
-import { memo, useMemo, useSyncExternalStore } from 'react'
+import { memo, useMemo, useState, useSyncExternalStore } from 'react'
 import { useT } from '../i18n'
 import { filterLogEntries, gameLogService, type LogChannel } from '../logging/gameLogService'
 import { useLogUnreadStore, type LogGroupId } from '../logging/logUnreadStore'
@@ -45,16 +45,20 @@ const LogGroupPanel = memo(function LogGroupPanel({ channel }: { channel: LogCha
  * 核心机制与交互：
  * 1. 8 个分组 Tab：综合 / 世界 / 附近 / 系统 / 战斗 / 好友 / 宗门 / 队伍；
  * 2. 每个分组独立订阅各自数据源（服务端日志事件或传音消息），各自保持贴底滚动；
- * 3. 仅展示当前会话内存缓冲，不提供历史网络查询或本地持久化。
+ * 3. 仅展示当前会话内存缓冲，不提供历史网络查询或本地持久化；
+ * 4. 桌面端右下角提供扩展/收起按钮，展开时面板向上长开占满中列并覆盖主内容区
+ *    （过渡由 .center-column 的 flex 插值承担，见 styles.css）；
+ *    竖屏日志本身就是全屏 Tab，expandable=false 时不渲染该按钮。
  */
-export function GameLogPanel({ className = '' }: { className?: string }): React.JSX.Element {
+export function GameLogPanel({ className = '', expandable = true }: { className?: string; expandable?: boolean }): React.JSX.Element {
   const t = useT()
   const group = useLogUnreadStore(state => state.activeGroup)
   const setActiveGroup = useLogUnreadStore(state => state.setActiveGroup)
   const unreadCounts = useLogUnreadStore(state => state.unreadCounts)
+  const [expanded, setExpanded] = useState(false)
 
   return (
-    <section className={`panel log-panel ${className}`.trim()}>
+    <section className={`panel log-panel ${expanded ? 'is-expanded' : ''} ${className}`.trim()}>
       <div className="log-tabs" role="tablist" aria-label={t('combat.log.messagesAria')}>
         {LOG_GROUPS.map(entry => {
           const isActive = group === entry.id
@@ -86,6 +90,26 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
       {group === 'friend' && <FriendChannelPanel />}
       {group === 'sect' && <ChatChannelPanel channel="sect" />}
       {group === 'party' && <PartyChannelPanel />}
+      {expandable && (
+        <button
+          aria-expanded={expanded}
+          aria-label={t(expanded ? 'combat.chat.collapsePanel' : 'combat.chat.expandPanel')}
+          className={`log-expand-btn ${expanded ? 'is-expanded' : ''}`}
+          onClick={() => setExpanded(prev => !prev)}
+          title={t(expanded ? 'combat.chat.collapsePanel' : 'combat.chat.expandPanel')}
+          type="button"
+        >
+          <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M4 10l4-4 4 4"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.6"
+            />
+          </svg>
+        </button>
+      )}
     </section>
   )
 }
