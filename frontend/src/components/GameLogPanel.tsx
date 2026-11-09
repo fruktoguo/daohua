@@ -59,28 +59,64 @@ export function GameLogPanel({ className = '', expandable = true }: { className?
 
   return (
     <section className={`panel log-panel ${expanded ? 'is-expanded' : ''} ${className}`.trim()}>
-      <div className="log-tabs" role="tablist" aria-label={t('combat.log.messagesAria')}>
-        {LOG_GROUPS.map(entry => {
-          const isActive = group === entry.id
-          const unread = entry.id === 'combat' ? 0 : (unreadCounts[entry.id] ?? 0)
-          return (
-            <button
-              aria-selected={isActive}
-              className={`log-tab-btn ${isActive ? 'active' : ''}`}
-              key={entry.id}
-              onClick={() => setActiveGroup(entry.id)}
-              role="tab"
-              type="button"
-            >
-              <span className="log-tab-label">{t(entry.labelKey)}</span>
-              {!isActive && unread > 0 && (
-                <span className="log-tab-badge" title={`${unread}`}>
-                  {unread > 99 ? '99+' : unread}
-                </span>
-              )}
-            </button>
-          )
-        })}
+      <div className="log-head">
+        <div className="log-tabs" role="tablist" aria-label={t('combat.log.messagesAria')}>
+          {LOG_GROUPS.map(entry => {
+            const isActive = group === entry.id
+            const unread = entry.id === 'combat' ? 0 : (unreadCounts[entry.id] ?? 0)
+            return (
+              <button
+                aria-selected={isActive}
+                className={`log-tab-btn ${isActive ? 'active' : ''}`}
+                key={entry.id}
+                onClick={() => setActiveGroup(entry.id)}
+                role="tab"
+                type="button"
+              >
+                <span className="log-tab-label">{t(entry.labelKey)}</span>
+                {!isActive && unread > 0 && (
+                  <span className="log-tab-badge" title={`${unread}`}>
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        {expandable && (
+          <button
+            aria-expanded={expanded}
+            aria-label={t(expanded ? 'combat.chat.collapsePanel' : 'combat.chat.expandPanel')}
+            className={`log-expand-btn ${expanded ? 'is-expanded' : ''}`}
+            onClick={() => setExpanded(prev => !prev)}
+            title={t(expanded ? 'combat.chat.collapsePanel' : 'combat.chat.expandPanel')}
+            type="button"
+          >
+            {expanded ? (
+              /* 收起符号：双箭头向内收拢 */
+              <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
+                <path
+                  d="M2.7 9.3h4v4M13.3 6.7h-4v-4M9.3 6.7l4.7-4.7M2 14l4.7-4.7"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.5"
+                />
+              </svg>
+            ) : (
+              /* 展开符号：双箭头向外扩张 */
+              <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
+                <path
+                  d="M10 2h4v4M6 14H2v-4M14 2L9.3 6.7M2 14l4.7-4.7"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.5"
+                />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
       {group === 'all' && <AggregatePanel />}
       {group === 'world' && <ChatChannelPanel channel="world" />}
@@ -90,26 +126,6 @@ export function GameLogPanel({ className = '', expandable = true }: { className?
       {group === 'friend' && <FriendChannelPanel />}
       {group === 'sect' && <ChatChannelPanel channel="sect" />}
       {group === 'party' && <PartyChannelPanel />}
-      {expandable && (
-        <button
-          aria-expanded={expanded}
-          aria-label={t(expanded ? 'combat.chat.collapsePanel' : 'combat.chat.expandPanel')}
-          className={`log-expand-btn ${expanded ? 'is-expanded' : ''}`}
-          onClick={() => setExpanded(prev => !prev)}
-          title={t(expanded ? 'combat.chat.collapsePanel' : 'combat.chat.expandPanel')}
-          type="button"
-        >
-          <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M4 10l4-4 4 4"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.6"
-            />
-          </svg>
-        </button>
-      )}
     </section>
   )
 }

@@ -1707,14 +1707,23 @@ input[type="checkbox"] {
   padding: 8px 12px;
 }
 
-.log-tabs {
+/* 标题栏：Tab 行 + 最右侧扩展/收起按钮 */
+.log-head {
   display: flex;
   flex-shrink: 0;
+  align-items: center;
   gap: 6px;
   margin-bottom: 6px;
   padding-top: 4px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--gold-faint);
+}
+
+.log-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -2130,32 +2139,24 @@ input[type="checkbox"] {
 
 /* ===== 传音频道与社交（好友 / 队伍） ===== */
 
-/* 8 个分组 Tab 超出一行时横向滚动，不换行挤压列表高度 */
-.log-tabs {
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
+/* 8 个分组 Tab 超出一行时在标题栏内横向滚动，不换行挤压列表高度，也不挤走右侧扩展按钮 */
 .log-tabs::-webkit-scrollbar {
   display: none;
 }
 
-/* 面板扩展/收起按钮：悬停于右下角输入区上沿，避免与「发送」键重叠 */
+/* 面板扩展/收起按钮：位于标题栏最右侧，符号随状态在「向外扩展 / 向内收拢」间切换 */
 .log-expand-btn {
-  position: absolute;
-  z-index: 2;
-  right: 10px;
-  bottom: 46px;
   display: inline-flex;
   width: 22px;
   height: 22px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: 1px solid var(--gold-faint);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--gold-dim);
-  background: rgba(0, 0, 0, 0.42);
+  background: rgba(201, 180, 109, 0.04);
   cursor: pointer;
   transition:
     color 160ms ease,
@@ -2167,11 +2168,6 @@ input[type="checkbox"] {
 .log-expand-btn svg {
   width: 14px;
   height: 14px;
-  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.log-expand-btn.is-expanded svg {
-  transform: rotate(180deg);
 }
 
 .log-expand-btn:hover,
@@ -2181,6 +2177,12 @@ input[type="checkbox"] {
   background: rgba(201, 180, 109, 0.14);
   box-shadow: 0 0 8px rgba(201, 180, 109, 0.22);
   outline: none;
+}
+
+.log-expand-btn.is-expanded {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.1);
 }
 
 /* 传音消息行与胶囊设计 */
