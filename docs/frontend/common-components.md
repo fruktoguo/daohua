@@ -250,12 +250,13 @@
   - **复合物品胶囊**（将物品名称与数量如 `灵石 × 41` 组合为一整个不可分割的紧凑修仙药丸胶囊，包含物品品质色调、微光背景与下划线数量，支持悬浮弹出物品属性卡片） -> `ItemReference`, `.item-reference-compound`。
   - **完全相同日志连续折叠与乘数胶囊**（挂机采集、连续战斗等产生的完全相同模板日志在尾部自动合并显示微光乘数胶囊形如 `× 3`，更新为最新触发时刻并保留历史缓冲容量） -> `.log-repeat-capsule`, `collapseLogEntries`。
   - **底部传音与日志未读数字角标**（世界、附近、系统、好友、队伍、宗门与综合频道新消息未读提醒红点角标，上限 99+，点击切换后自动清零；战斗频道高频推进严格排除；**角标脱离常规文档流绝对定位**于 Tab 右上角 `position: absolute; top: -3px; right: -2px`，配合 `.log-tabs .log-tab-btn` 基准宽度 `min-width: 54px` 与文字居中，角标进出零撑宽、零推挤、零抖动） -> `useLogUnreadStore`, `.log-tab-badge`, `.log-tab-btn`。
+  - **桌面日志面板扩展/收起（覆盖主内容）**：标题栏（Tab 行）最右侧的方形按钮，常态为「向外扩展」双箭头符号、展开态切换为「向内收拢」双箭头（`aria-expanded` 与 `aria-label` 同步）。按钮独立于 `.log-tabs` 的 `role="tablist"` 之外——Tab 超宽时仅 Tab 行内部横向滚动，按钮恒定贴住标题栏右端不被滚走。点击后面板自底边向上长开占满中列整高、覆盖 `main-content`，再点收回停靠高度。实现要点：`.log-panel` 绝对定位锚定 `.center-column` 底边，高度在 `--log-dock-height`（`clamp(160px, 27vh, 280px)`）与 `100%` 之间插值，**两个端点都是确定长度，故展开/收起双向连续且主内容区零重排**；`.desktop-log` 只保留流内停靠高度。8 个分组 Tab 共用同一开关（`GameLogPanel` 层），竖屏日志本身是全屏 Tab，`expandable={false}` 且媒体查询隐藏按钮 -> `.log-expand-btn`, `.log-head`, `.desktop-log`, `GameLogPanel`
 - **组件源码**：
   - [`frontend/src/components/ItemDisplay.tsx`](../../frontend/src/components/ItemDisplay.tsx)
   - [`frontend/src/components/GameLogPanel.tsx`](../../frontend/src/components/GameLogPanel.tsx)
   - [`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)
   - [`frontend/src/logging/logUnreadStore.ts`](../../frontend/src/logging/logUnreadStore.ts)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-reference`, `.item-reference-compound`, `.log-repeat-capsule`, `.log-tab-badge`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-reference`, `.item-reference-compound`, `.log-repeat-capsule`, `.log-tab-badge`, `.log-expand-btn`)
 ---
 
 ## 15. 改名/改密弹窗、登录界面与独立连接状态屏幕 (Modal Form, Login & Connection Screens)
