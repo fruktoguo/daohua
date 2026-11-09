@@ -20,12 +20,25 @@ test('秘法操作窗口契约：采用目标槽位+浮动选择器+次数选择
     '必须使用 ItemGridPicker 弹出浮动物品选择器',
   )
 
-  // 3. 必须集成通用数量与次数选择器 QuantitySelector
+  // 3. 必须集成通用数量与次数选择器 QuantitySelector（重复次数 repeats）
   assert.match(
     source,
-    /<QuantitySelector[\s\S]*?value=\{effectiveQuantity\}[\s\S]*?\/>/,
-    '必须提供 QuantitySelector 供玩家选择执行次数/数量',
+    /<QuantitySelector[\s\S]*?value=\{repeats\}[\s\S]*?\/>/,
+    '必须提供 QuantitySelector 供玩家配置重复次数',
   )
+
+  // 4. 必须通过 action.enqueue 投递队列行动
+  assert.match(
+    source,
+    /sendCommand\('action\.enqueue'/,
+    '必须通过 action.enqueue 投递挂机队列行动',
+  )
+
+  // 5. 必须格式化为「消耗 / 产出 / 感悟 / 单次耗时」四大固定区块
+  assert.match(source, /previewSectionCost/, '必须包含消耗区块')
+  assert.match(source, /previewSectionYield/, '必须包含产出区块')
+  assert.match(source, /insights/, '必须包含感悟区块')
+  assert.match(source, /previewSectionDuration/, '必须包含单次耗时区块')
 
   // 4. 产出条目必须使用 ItemReference 且显式透传 itemId
   assert.match(

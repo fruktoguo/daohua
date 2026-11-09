@@ -7,5 +7,32 @@
     "technique": "enhancement",
     "executionKind": "timed",
     "durationSeconds": 0
+  },
+  {
+    "id": "secret_art.liquefy",
+    "name": "物品化灵",
+    "description": "以秘法真火萃取物品灵蕴，化为本源灵石。",
+    "type": "enhancement",
+    "technique": "enhancement",
+    "executionKind": "timed",
+    "durationSeconds": 5
+  },
+  {
+    "id": "secret_art.disassemble",
+    "name": "装备分解",
+    "description": "以秘法逆转铸器铭纹，按配方返还原生材料。",
+    "type": "enhancement",
+    "technique": "enhancement",
+    "executionKind": "timed",
+    "durationSeconds": 6
+  },
+  {
+    "id": "secret_art.convert",
+    "name": "残卷转化",
+    "description": "以神识推演残缺功法残卷，寻绎其中大道真意。",
+    "type": "enhancement",
+    "technique": "enhancement",
+    "executionKind": "timed",
+    "durationSeconds": 8
   }
 ]

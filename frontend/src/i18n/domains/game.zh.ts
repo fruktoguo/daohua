@@ -209,6 +209,9 @@ export const gameZh = {
       'formation.craft-mizong': { name: '迷踪阵盘', description: '以桃木晶与粗韧狼皮为基，篆刻迷踪乱神符印，云雾蒸腾惑敌视线。' },
       'formation.craft-xuesha': { name: '血煞阵盘', description: '以百炼铁融炼兽血残骨，布设血煞炼魔阵纹，以敌煞血反哺己身。' },
       'enhance.equipment': { name: '装备强化', description: '以灵石为媒淬炼装备本体逐级铭纹，成败之间砥砺器物威能。' },
+      'secret_art.liquefy': { name: '物品化灵', description: '以秘法真火萃取物品灵蕴，化为本源灵石。' },
+      'secret_art.disassemble': { name: '装备分解', description: '以秘法逆转铸器铭纹，按配方返还原生材料。' },
+      'secret_art.convert': { name: '残卷转化', description: '以神识推演残缺功法残卷，寻绎其中大道真意。' },
 
       // 讨伐战斗
       'combat.hunt-qi-beast': { name: '讨伐 青云仙山', description: '在青云仙山各处搜寻妖兽踪迹，迎战山野灵物与守山妖兽。' },

@@ -81,6 +81,41 @@ public sealed class EnhancementContractTests
         Assert.Equal(3d, queued.Intent.Parameters?["targetLevel"]);
     }
 
+    /// <summary>
+    /// 秘法全功能行动化：化灵、分解、转化属于 enhancement 体系，缺 targetItemId 拒绝入队，携带后正常入队并保留重复次数与无限循环。
+    /// </summary>
+    [Theory]
+    [InlineData("secret_art.liquefy", "item.morning-dew", 10)]
+    [InlineData("secret_art.disassemble", "equipment.qingfeng-sword", -1)]
+    [InlineData("secret_art.convert", "item.fragment.taunt", 5)]
+    public async Task SecretArtActions_EnqueueWithTargetItemId_Succeeds(string actionId, string targetItemId, int repeatCount)
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), new EmptyAssets(), new NoopEconomy(),
+            LoadCatalogFiles("actions/enhancement.json"));
+        await runtime.LoadAsync(playerId);
+
+        var rejectedRequestId = Guid.NewGuid();
+        var rejected = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                rejectedRequestId.ToString("D"), actionId, repeatCount), ProtocolJson.Options),
+            0, rejectedRequestId);
+        Assert.False(rejected.Success);
+        Assert.Equal("INVALID_PAYLOAD", rejected.Code);
+
+        var acceptedRequestId = Guid.NewGuid();
+        var accepted = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                acceptedRequestId.ToString("D"), actionId, repeatCount,
+                TargetItemId: targetItemId), ProtocolJson.Options),
+            0, acceptedRequestId);
+        Assert.True(accepted.Success, $"{accepted.Code}: {accepted.Message}");
+        var queued = Assert.Single(accepted.Snapshot.State.Actions);
+        Assert.Equal(targetItemId, queued.Intent.TargetItemId);
+        Assert.Equal(repeatCount, queued.RemainingRepeats);
+    }
+
     [Fact]
     public async Task ActionEnqueue_RequiredRealmLevel_RejectsUnderleveledActions()
     {

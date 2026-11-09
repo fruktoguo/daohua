@@ -664,6 +664,25 @@ export function calculateBaseExperienceForLevel(level: number): number {
 
 /** 装备强化行动 ID */
 export const ENHANCE_ACTION_ID = 'enhance.equipment'
+/** 物品化灵行动 ID */
+export const LIQUEFY_ACTION_ID = 'secret_art.liquefy'
+/** 装备分解行动 ID */
+export const DISASSEMBLE_ACTION_ID = 'secret_art.disassemble'
+/** 残卷转化行动 ID */
+export const CONVERT_ACTION_ID = 'secret_art.convert'
+/** 物品化灵基础单次耗时 (秒) */
+export const LIQUEFY_BASE_DURATION = 5
+/** 装备分解基础单次耗时 (秒) */
+export const DISASSEMBLE_BASE_DURATION = 6
+/** 残卷转化基础单次耗时 (秒) */
+export const CONVERT_BASE_DURATION = 8
+/** 判断是否为秘法体系行动 */
+export function isSecretArtAction(actionId: string): boolean {
+  return actionId === ENHANCE_ACTION_ID
+    || actionId === LIQUEFY_ACTION_ID
+    || actionId === DISASSEMBLE_ACTION_ID
+    || actionId === CONVERT_ACTION_ID
+}
 /** 灵石货币物品 ID（按目标等级线性消耗） */
 export const SPIRIT_STONE_ITEM_ID = 'currency.spirit-stone'
 /** 强化等级上限 +N */
@@ -718,6 +737,20 @@ export function calculateEnhancementYields(itemLevel: number, targetLevel: numbe
   const techniqueExp = Math.max(1, Math.round(baseExp * (duration / 10.0)))
   const consciousnessExp = Math.round(baseExp * (duration / 10.0))
   return { baseExp, duration, techniqueExp, consciousnessExp }
+}
+
+/**
+ * 秘法生活行动（化灵、分解、转化）单轮感悟结算（与服务端 SecretArtRules.ComputeYieldExperience 镜像）
+ */
+export function calculateSecretArtYields(itemLevel: number, durationSeconds: number): {
+  baseExp: number
+  techniqueExp: number
+  consciousnessExp: number
+} {
+  const baseExp = calculateBaseExperienceForLevel(itemLevel)
+  const techniqueExp = Math.max(1, Math.round(baseExp * (durationSeconds / 10.0)))
+  const consciousnessExp = Math.max(1, Math.round(techniqueExp * 2.0))
+  return { baseExp, techniqueExp, consciousnessExp }
 }
 
 

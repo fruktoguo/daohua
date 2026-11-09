@@ -456,20 +456,9 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
           <p className="setting-desc">{t('app.enhancement.previewEmpty')}</p>
         ) : (
           <dl className="action-detail-list">
+            {/* 1. 消耗 */}
             <div>
-              <dt>{t('app.enhancement.levelFlow')}</dt>
-              <dd className="enhancement-level-flow">
-                <strong>{`+${currentLevel}`}</strong>
-                <span aria-hidden="true" className="enhancement-level-arrow">→</span>
-                <strong className="enhancement-level-next">{`+${nextLevel}`}</strong>
-              </dd>
-            </div>
-            <div>
-              <dt>{t('app.enhancement.successRateLabel')}</dt>
-              <dd><strong className="enhancement-rate">{`${formatNumber(preview.successRate * 100, { maxDecimals: 1 })}%`}</strong></dd>
-            </div>
-            <div>
-              <dt>{t('app.enhancement.costLabel')}</dt>
+              <dt>{t('app.secretArt.previewSectionCost')}</dt>
               <dd>
                 <ActionDetailItem amount={preview.spiritCost} current={spiritOwned} itemId={SPIRIT_STONE_ITEM_ID} />
                 {isProtectedThisRound && protectionItemId !== null && (
@@ -477,15 +466,25 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
                 )}
               </dd>
             </div>
+            {/* 2. 产出 */}
             <div>
-              <dt>{t('app.enhancement.outcomeLabel')}</dt>
+              <dt>{t('app.secretArt.previewSectionYield')}</dt>
               <dd className="enhancement-outcome">
+                <div className="enhancement-level-flow">
+                  <strong>{`+${currentLevel}`}</strong>
+                  <span aria-hidden="true" className="enhancement-level-arrow">→</span>
+                  <strong className="enhancement-level-next">{`+${nextLevel}`}</strong>
+                  <strong className="enhancement-rate" style={{ marginLeft: 8 }}>
+                    {`(${formatNumber(preview.successRate * 100, { maxDecimals: 1 })}%)`}
+                  </strong>
+                </div>
                 <span>{t('app.enhancement.outcomeSuccess', { level: nextLevel })}</span>
                 <span>{isProtectedThisRound
                   ? t('app.enhancement.outcomeFailProtected', { level: Math.max(0, currentLevel - 1) })
                   : t('app.enhancement.outcomeFailReset')}</span>
               </dd>
             </div>
+            {/* 3. 感悟 */}
             <div>
               <dt>{t('app.action.insights')}</dt>
               <dd>
@@ -503,14 +502,15 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
                 </span>
               </dd>
             </div>
+            {/* 4. 单次耗时 */}
             <div>
-              <dt>{t('app.enhancement.durationLabel')}</dt>
+              <dt>{t('app.secretArt.previewSectionDuration')}</dt>
               <dd className="enhancement-duration">
                 <strong>{t('app.enhancement.durationSeconds', { seconds: formatNumber(preview.actualDuration, { maxDecimals: 1 }) })}</strong>
                 {techniqueLevel > 0 && (
-                  <span className="enhancement-duration-note">{t('app.enhancement.techniqueInline', {
+                  <span className="enhancement-duration-note">{t('app.secretArt.speedNote', {
                     level: techniqueLevel,
-                    value: formatNumber(techniqueLevel * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100, { maxDecimals: 0 }),
+                    percent: formatNumber(techniqueLevel * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100, { maxDecimals: 0 }),
                   })}</span>
                 )}
               </dd>

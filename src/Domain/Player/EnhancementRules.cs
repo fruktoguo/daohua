@@ -11,6 +11,8 @@ namespace Domain.Player;
 /// </summary>
 public static class EnhancementRules
 {
+    /// <summary>装备强化行动 ID。</summary>
+    public const string ActionId = "enhance.equipment";
     /// <summary>强化等级上限；目标等级 t 超出后行动阻塞。</summary>
     public const int MaxLevel = 20;
     /// <summary>单次强化基础耗时基数：实际耗时 = BaseDurationSeconds + 目标等级。</summary>

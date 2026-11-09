@@ -4978,6 +4978,29 @@ input[type="checkbox"] {
   gap: 8px 12px;
 }
 
+.secret-art-convert-yields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.convert-yield-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.yield-chance-tag {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.yield-chance-tag--rare {
+  color: #ffaa00;
+  font-weight: 600;
+}
+
 .enhancement-active-badge {
   display: inline-flex;
   align-items: center;

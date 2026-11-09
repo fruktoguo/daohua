@@ -92,32 +92,44 @@ internal static partial class ActionExecutionRules
                 : "当前位置不允许执行该行动。";
         if (availableHere && hasInputs && definition.Kind == ActionKind.Enhancement)
         {
-            // 强化准入：目标装备/等级上限/意图目标/材料/护符一次结算；已达标则整行动提前完成出队。
-            var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
-            var techniqueLevel = TechniqueCatalog.LevelFor(
-                player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
-                gameData?.RealmProgression);
-            var enhancementBonus = EnhancementRules.EffectiveEnhancementSuccessBonus(player.Settings.AutoUseSlots, gameData);
-            var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
-                    out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus);
-            if (prep is null)
+            if (definition.Id.Value == EnhancementRules.ActionId)
             {
-                if (check == EnhancementRules.Check.TargetReached)
+                // 强化准入：目标装备/等级上限/意图目标/材料/护符一次结算；已达标则整行动提前完成出队。
+                var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
+                var techniqueLevel = TechniqueCatalog.LevelFor(
+                    player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
+                    gameData?.RealmProgression);
+                var enhancementBonus = EnhancementRules.EffectiveEnhancementSuccessBonus(player.Settings.AutoUseSlots, gameData);
+                var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
+                        out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus);
+                if (prep is null)
                 {
-                    player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
-                    events ??= new();
-                    events.Add(new SimulationEvent(at, "action.completed", definition.Name, definition.Id));
-                    player.RemoveAction(action.Id, incrementVersion: false,
-                        endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
-                    return false;
+                    if (check == EnhancementRules.Check.TargetReached)
+                    {
+                        player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
+                        events ??= new();
+                        events.Add(new SimulationEvent(at, "action.completed", definition.Name, definition.Id));
+                        player.RemoveAction(action.Id, incrementVersion: false,
+                            endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
+                        return false;
+                    }
+                    availableHere = true;
+                    hasInputs = false;
+                    blockedReason = reason;
                 }
-                availableHere = true;
-                hasInputs = false;
-                blockedReason = reason;
+                else
+                {
+                    action.EnhancementCurrentLevel = prep.CurrentLevel;
+                }
             }
-            else
+            else if (SecretArtRules.IsSecretArtAction(definition.Id.Value))
             {
-                action.EnhancementCurrentLevel = prep.CurrentLevel;
+                if (!CheckSecretArtInputs(player, action, definition, gameData, assets, deltas, out var reason))
+                {
+                    availableHere = true;
+                    hasInputs = false;
+                    blockedReason = reason;
+                }
             }
         }
         if (!availableHere || !hasInputs || !hasFoundation || !levelUnlocked)
@@ -372,9 +384,18 @@ internal static partial class ActionExecutionRules
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.yield");
         if (definition.Kind == ActionKind.Enhancement)
         {
-            CompleteEnhancementRepeat(player, action, definition, gameData, assets, target,
-                ref deltas, ref events, ref completedActions, ref completedRepeats);
-            return;
+            if (definition.Id.Value == EnhancementRules.ActionId)
+            {
+                CompleteEnhancementRepeat(player, action, definition, gameData, assets, target,
+                    ref deltas, ref events, ref completedActions, ref completedRepeats);
+                return;
+            }
+            if (SecretArtRules.IsSecretArtAction(definition.Id.Value))
+            {
+                CompleteSecretArtRepeat(player, action, definition, gameData, assets, target,
+                    ref deltas, ref events, ref completedActions, ref completedRepeats);
+                return;
+            }
         }
         // 引气入体灵石注灵加速（总纲 §6.4.3）：仅放大修为与灵力基础值并支持后续乘区重算；
         // 余额充足扣减灵石并享受倍率，余额不足平滑降级为 1.0 倍标准结算且不中断队列。
@@ -907,6 +928,172 @@ internal static partial class ActionExecutionRules
             player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: atUnix);
             return;
         }
+        player.FinishActionRound(action.Id, definition.ExecutionKind != ActionExecutionKind.Travel, atUnix);
+    }
+
+    private static bool CheckSecretArtInputs(
+        IPlayerResourceContext player,
+        IPlayerActionState action,
+        ActionDefinition definition,
+        GameDataCatalog? gameData,
+        AssetWallet? assets,
+        IReadOnlyDictionary<AssetKey, double>? deltas,
+        out string reason)
+    {
+        reason = string.Empty;
+        if (action.Intent.TargetItemId is not { } targetItemId || string.IsNullOrWhiteSpace(targetItemId))
+        {
+            reason = "秘法行动目标物品无效。";
+            return false;
+        }
+
+        var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
+        if (definition.Id.Value == SecretArtRules.LiquefyActionId)
+        {
+            if (gameData is null) return true;
+            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, 0);
+            if (unitPrice <= 0)
+            {
+                reason = "该物品无法化灵。";
+                return false;
+            }
+            var held = holdings.GetValueOrDefault(new AssetKey(new ItemId(targetItemId)));
+            var equippedCount = player.Loadout.EquippedItemIds.Count(e => e.Value == targetItemId);
+            if (held - equippedCount < 1)
+            {
+                reason = "化灵材料不足，行动受阻。";
+                return false;
+            }
+            return true;
+        }
+
+        if (definition.Id.Value == SecretArtRules.DisassembleActionId)
+        {
+            if (gameData is null) return true;
+            if (!gameData.RawEquipments.ContainsKey(targetItemId))
+            {
+                reason = "分解目标必须是装备。";
+                return false;
+            }
+            var returns = SecretArtRules.ComputeDisassemblyReturns(gameData, targetItemId);
+            if (returns is null || returns.Count == 0)
+            {
+                reason = "该装备无可分解原料。";
+                return false;
+            }
+            var held = holdings.GetValueOrDefault(new AssetKey(new ItemId(targetItemId)));
+            var equippedCount = player.Loadout.EquippedItemIds.Count(e => e.Value == targetItemId);
+            if (held - equippedCount < 1)
+            {
+                reason = "可分解装备不足，行动受阻。";
+                return false;
+            }
+            return true;
+        }
+
+        if (definition.Id.Value == SecretArtRules.ConvertActionId)
+        {
+            var held = holdings.GetValueOrDefault(new AssetKey(new ItemId(targetItemId)));
+            if (held < 1)
+            {
+                reason = "功法残卷不足，行动受阻。";
+                return false;
+            }
+            return true;
+        }
+
+        return true;
+    }
+
+    private static void CompleteSecretArtRepeat(
+        IPlayerResourceContext player,
+        IPlayerActionState action,
+        ActionDefinition definition,
+        GameDataCatalog? gameData,
+        AssetWallet? assets,
+        DateTimeOffset target,
+        ref Dictionary<AssetKey, double>? deltas,
+        ref SimulationEventTail? events,
+        ref double completedActions,
+        ref double completedRepeats)
+    {
+        if (!CheckSecretArtInputs(player, action, definition, gameData, assets, deltas, out var reason))
+        {
+            action.Status = ActionQueueStatus.Blocked;
+            events ??= new SimulationEventTail();
+            events.Add(new SimulationEvent(target, "action.blocked", reason, definition.Id));
+            return;
+        }
+
+        var targetItemId = action.Intent.TargetItemId!;
+        var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
+        action.ProgressSeconds = 0;
+        PlayerActionQueueRules.RecordCompletedRound(action);
+        completedActions += 1;
+        completedRepeats += 1;
+        deltas ??= new Dictionary<AssetKey, double>();
+
+        var itemLosses = new Dictionary<ItemId, double>();
+        var targetItemObjId = new ItemId(targetItemId);
+
+        AddDelta(deltas, new AssetKey(targetItemObjId), -1d);
+        itemLosses[targetItemObjId] = 1d;
+
+        var eventDesc = string.Empty;
+        if (definition.Id.Value == SecretArtRules.LiquefyActionId && gameData is not null)
+        {
+            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, 0);
+            var spiritGain = unitPrice * SecretArtRules.LiquefactionMultiplier;
+            AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), spiritGain);
+            eventDesc = $"化灵成功：消耗 1 个 {targetItemId}，获得 {spiritGain:0} 灵石。";
+        }
+        else if (definition.Id.Value == SecretArtRules.DisassembleActionId && gameData is not null)
+        {
+            var returns = SecretArtRules.ComputeDisassemblyReturns(gameData, targetItemId);
+            if (returns is not null)
+            {
+                foreach (var (matId, matCount) in returns)
+                    AddDelta(deltas, new AssetKey(matId), matCount);
+            }
+            eventDesc = $"分解成功：分解 1 件 {targetItemId}，返还原生材料。";
+        }
+        else if (definition.Id.Value == SecretArtRules.ConvertActionId)
+        {
+            var seedBytes = System.Text.Encoding.UTF8.GetBytes($"{action.Id:D}:{action.CompletedRepeats}:{atUnix}");
+            var hash = System.Security.Cryptography.SHA256.HashData(seedBytes);
+            var roll = (BitConverter.ToUInt32(hash, 0) % 10000) / 10000.0;
+            var producesTome = SecretArtRules.FragmentProducesTome(roll);
+            var tomeId = targetItemId.Replace("item.fragment.", "item.tome.", StringComparison.Ordinal);
+            if (producesTome && gameData is not null && gameData.Items.ContainsKey(new ItemId(tomeId)))
+            {
+                AddDelta(deltas, new AssetKey(new ItemId(tomeId)), 1d);
+                eventDesc = $"残卷推演机缘顿悟！获得完整功法秘籍：{tomeId}。";
+            }
+            else
+            {
+                AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), SecretArtRules.FragmentSpiritStoneReward);
+                eventDesc = $"残卷推演未能参透，化为 {SecretArtRules.FragmentSpiritStoneReward} 灵石感悟。";
+            }
+        }
+
+        var (techExp, consciousnessExp) = SecretArtRules.ComputeYieldExperience(gameData, targetItemId, definition.DurationSeconds);
+        GrantTechniqueExperience(player, action.Id, TechniqueCatalog.Enhancement, techExp, gameData, atUnix);
+        if (gameData?.RealmProgression is not null)
+            GrantRootExperience(player, CoreAspectKind.Consciousness, consciousnessExp, gameData, action.Id, atUnix);
+
+        player.RecordStats(action.Id, atUnix, new PlayerStatsDelta
+        {
+            Cycles = 1,
+            ItemLosses = itemLosses
+        });
+        player.Progression.CompletedActions += 1;
+        player.MarkDirty(PlayerSectionKind.Progression);
+        player.MarkDirty(PlayerSectionKind.ActionQueue);
+        CompleteSustainedAutoUse(player, definition, definition.DurationSeconds, gameData, target, ref events);
+
+        events ??= new SimulationEventTail();
+        events.Add(new SimulationEvent(target, "secret_art.completed", eventDesc, definition.Id));
+
         player.FinishActionRound(action.Id, definition.ExecutionKind != ActionExecutionKind.Travel, atUnix);
     }
 }

@@ -6,6 +6,13 @@ namespace Domain.Player;
 /// <summary>秘法页即时物品操作的确定性规则。</summary>
 public static class SecretArtRules
 {
+    public const string LiquefyActionId = "secret_art.liquefy";
+    public const string DisassembleActionId = "secret_art.disassemble";
+    public const string ConvertActionId = "secret_art.convert";
+
+    public static bool IsSecretArtAction(string actionId) =>
+        actionId is LiquefyActionId or DisassembleActionId or ConvertActionId;
+
     public const double LiquefactionMultiplier = 3;
     public const double DisassemblyReturnRatio = 0.70;
     public const double FragmentTomeChance = 0.05;
@@ -89,5 +96,15 @@ public static class SecretArtRules
         }
 
         return materials;
+    }
+
+    /// <summary>计算秘法单轮行动产出的技艺经验与神识经验。</summary>
+    public static (double TechExp, double ConsciousnessExp) ComputeYieldExperience(GameDataCatalog? gameData, string itemId, double durationSeconds)
+    {
+        var itemLevel = gameData is null ? 1 : CraftingRecipeRules.ResolveItemLevel(itemId, gameData);
+        var baseExp = itemLevel <= 1 ? 10.0 : (gameData?.RealmProgression?.BaseExperienceForLevel(itemLevel) ?? 10.0);
+        var techExp = Math.Max(1.0, Math.Round(baseExp * (durationSeconds / 10.0)));
+        var consciousnessExp = Math.Max(1.0, Math.Round(techExp * 2.0));
+        return (techExp, consciousnessExp);
     }
 }
