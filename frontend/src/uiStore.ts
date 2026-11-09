@@ -35,13 +35,15 @@ export type SocialSubTab = 'party' | 'zongmen' | 'invite'
  */
 export type PartySubTab = 'lobby' | 'match' | 'create' | 'overview'
 
-/** 技艺当前模式：炼丹 | 炼器 | 符箓 | 阵法 | 强化 */
+/** 技艺当前模式：炼丹 | 炼器 | 符箓 | 阵法 | 秘法 */
 export type CraftingMode = 'alchemy' | 'forging' | 'talisman' | 'formation' | 'enhancement'
 
 /** 炼丹顶部子选项卡：提炼 vs 修炼丹药 vs 斗法药剂 */
 export type AlchemySubTab = 'extraction' | 'cultivation' | 'combat'
 /** 炼器顶部子选项卡：精炼 vs 六大装备部位 vs 技艺工具分组 */
 export type ForgingSubTab = 'refining' | 'weapon' | 'off-hand' | 'head' | 'armor' | 'legs' | 'trinket' | 'technique'
+/** 秘法顶部子选项卡：强化 vs 化灵 vs 分解 vs 转化 */
+export type EnhancementSubTab = 'enhance' | 'liquefy' | 'disassemble' | 'convert'
 
 /** 右侧主栏顶层子选项卡：储物袋 vs 装备 vs 功法 */
 export type RightColumnTab = 'inventory' | 'equipment' | 'abilities'
@@ -72,6 +74,10 @@ interface UiStore {
   forgingSubTab: ForgingSubTab
   /** 切换炼器子分类 */
   setForgingSubTab: (tab: ForgingSubTab) => void
+  /** 秘法顶部当前子分类（强化、化灵、分解、转化） */
+  enhancementSubTab: EnhancementSubTab
+  /** 切换秘法子分类 */
+  setEnhancementSubTab: (tab: EnhancementSubTab) => void
   /** 右侧主栏当前激活的子选项卡 */
   rightColumnTab: RightColumnTab
   /** 切换右侧主栏子选项卡 */
@@ -142,14 +148,16 @@ export const useUiStore = create<UiStore>(set => ({
   },
   craftingMode: 'alchemy',
   // 切换技艺模式时同时复位对应子选项卡，避免残留上一个模式的深层选中态
-  // （符箓/阵法/强化无二级子选项卡，仅切模式即可）
+  // （符箓/阵法无二级子选项卡，仅切模式即可）
   setCraftingMode: craftingMode => set({
     craftingMode,
     ...(craftingMode === 'alchemy'
       ? { alchemySubTab: 'extraction' as AlchemySubTab }
       : craftingMode === 'forging'
         ? { forgingSubTab: 'refining' as ForgingSubTab }
-        : {}),
+        : craftingMode === 'enhancement'
+          ? { enhancementSubTab: 'enhance' as EnhancementSubTab }
+          : {}),
   }),
   socialNavExpanded: false,
   setSocialNavExpanded: expanded => set(state => ({
@@ -163,6 +171,8 @@ export const useUiStore = create<UiStore>(set => ({
   setAlchemySubTab: alchemySubTab => set({ alchemySubTab }),
   forgingSubTab: 'refining',
   setForgingSubTab: forgingSubTab => set({ forgingSubTab }),
+  enhancementSubTab: 'enhance',
+  setEnhancementSubTab: enhancementSubTab => set({ enhancementSubTab }),
   rightColumnTab: 'inventory',
   setRightColumnTab: rightColumnTab => set({ rightColumnTab }),
   socialSubTab: 'party',

@@ -150,6 +150,7 @@
   - **通用待选列表**（贴靠目标槽位的浮层候选网格，取代全屏模态挑选：入参 = 设置目标锚点 `anchor` + 所有列表 `options`，`auto-fill` 自动判列，首格可带「空选/移除」，候选数超 `searchThreshold`（默认 12）才出现搜索框，选中/点外/ESC 即关闭，正在设置的槽位以 `is-picking` 高亮描边） -> `CandidatePicker`
   - **物品待选列表**（`ItemPickerEntry[]` 适配为候选：品质光晕瓦片 + 悬浮详情 + 持存 0 禁用 + 名称/品类/描述搜索文本） -> `ItemGridPicker`
   - **资产变体复合键纪律**：`ItemPickerEntry` 携带 `variant`（形如 `"+3"`）与 `enhancementLevel`；同 itemId 的多个强化等级资产行必须经 `itemPickerEntryKey(itemId, variant)` 复合键区分（与钱包 AssetKey 合入键同构），禁止仅以 itemId 去重或作选中态判定。`onSelect(itemId, entry)` 第二参回传完整条目，装备槽穿戴等需要保留强化等级的场景一律读取 `entry.enhancementLevel`，不得默认归 0。
+  - **秘法即时转化收拢**：化灵、分解、转化三个工作台全面淘汰整屏平铺背包可用物品的旧网格，与装备强化同构收拢为目标槽位 `ItemUseSlot` + 点击浮动唤起 `ItemGridPicker`，配合 `QuantitySelector` 进行批量次数选择与多变体精准匹配。
   - **功法/战技待选列表**（功法装配槽位选择；按 `slotIndex` 过滤功法 `discipline`——0 号内功位只列内功心法，术法位只列术法；`levelFor` 提供参悟等级供瓦片角标与悬浮详情） -> `AbilityGridPicker`
   - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板，仍为全屏 Modal；附带子导出 `PickerTrigger` 选择器触发按钮与 `ChoiceMenu` 下拉选项菜单，供触发条件编辑器等内嵌场景复用） -> `CatalogPicker`
 - **组件源码**：
@@ -399,14 +400,19 @@
   - **日志与传音的通用「时间 + 内容」渲染行**：服务端日志事件（含 `{{kind:id|label}}` 富文本引用胶囊与 `× N` 重复折叠胶囊）与传音消息共用同一网格排版 -> `LogFeed.tsx`（`FeedList` / `toLogFeedItems` / `toChatFeedItems` / `mergeFeedItems` / `useStickyScroll`）。
   - **8 个分组 Tab 的日志面板**（综合/世界/附近/系统/战斗/好友/宗门/队伍）-> `GameLogPanel`：综合 = 系统日志 + 好友私聊 + 队伍群聊按时间合并（只读）；系统/战斗 = 服务端日志事件按 `channel` 分流；世界/附近/好友/队伍 = 传音频道；宗门为占位。
   - **传音频道面板**（世界/附近/队伍共用单会话模板）-> `ChatChannelPanel`；**好友私聊面板**（好友列表 + 申请处理 + 道号检索 + 私聊会话）-> `FriendChannelPanel`；**队伍面板**（成员列表 + 邀请 + 队伍群聊）-> `PartyChannelPanel`；**综合只读合并面板** -> `AggregatePanel`。
-  - **传音输入框**：独立持有草稿状态，聊天列表高频刷新不重建输入框，输入焦点与选区保持稳定 -> `ChatComposer`（`frontend/src/components/ChatPanel.tsx`）。
+  - **传音输入框**：独立持有草稿状态，聊天列表高频刷新不重建输入框，输入焦点与选区保持稳定；左侧增设表情入口按钮呼出表情与表情包浮层 -> `ChatComposer`（`frontend/src/components/ChatPanel.tsx`）。
+  - **表情与表情包选择器浮层面板 (`ChatEmojiPicker`)**：包含「表情」与「表情包」双 Tab；原生 Emoji 与自定义表情包图片均按使用频次自适应实时排序（高频在先）；表情包支持右键快捷删除与底部添加链接。
+  - **表情包与离线缓存图像组件 (`ChatSticker`)**：智能识别消息内图片链接；未加载前渲染精致玄墨微光 `[图片]` 占位符；加载后通过浏览器 **IndexedDB**（`daohua_chat_stickers`）离线持久化二进制 Blob，相同链接 0 网络请求瞬时秒开；鼠标右键（或触屏长按）支持一键「添加到表情包」。
+  - **连续消息复读机 (+1 机制)**：在 `LogFeed.tsx` 的 `FeedList` / `ChatRow` 中线性扫描连续相同消息；当同一会话中连续出现 $\ge 2$ 句完全相同内容时，在最后一句消息底部渲染 `+1` 复读图标胶囊，点击自动替当前玩家在当前频道跟发相同消息。
   - **贴底滚动 Hook**：`useStickyScroll(revision)`，玩家未向上翻查时新内容自动滚到最新行；贴底标记只由用户滚动行为决定。
 - **组件源码**：
   - [`frontend/src/components/GameLogPanel.tsx`](../../frontend/src/components/GameLogPanel.tsx)
   - [`frontend/src/components/LogFeed.tsx`](../../frontend/src/components/LogFeed.tsx)
   - [`frontend/src/components/ChatPanel.tsx`](../../frontend/src/components/ChatPanel.tsx)
-- **状态服务**：[`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)（日志事件，按 `channel` 过滤）、[`frontend/src/logging/chatService.ts`](../../frontend/src/logging/chatService.ts)（传音消息，按会话键分组）、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)（好友/申请/队伍/附近修士）
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-tabs`, `.chat-composer`, `.chat-entry-list`, `.chat-presence`, `.nearby-player-actions`)
+  - [`frontend/src/components/ChatSticker.tsx`](../../frontend/src/components/ChatSticker.tsx)
+  - [`frontend/src/components/ChatEmojiPicker.tsx`](../../frontend/src/components/ChatEmojiPicker.tsx)
+- **状态服务**：[`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)（日志事件，按 `channel` 过滤）、[`frontend/src/logging/chatService.ts`](../../frontend/src/logging/chatService.ts)（传音消息，按会话键分组）、[`frontend/src/game/chatStickerService.ts`](../../frontend/src/game/chatStickerService.ts)（表情与表情包 IndexedDB 离线缓存、频次自排序与收藏管理）、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)（好友/申请/队伍/附近修士）
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-tabs`, `.chat-composer`, `.chat-sticker-*`, `.chat-repeat-*`, `.chat-picker-*`, `.chat-entry-list`, `.chat-presence`)
 - **设计真源**：[`docs/design/传音频道与日志分组.md`](../design/总纲/14-传音频道与日志分组.md)
 
 

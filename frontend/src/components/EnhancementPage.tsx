@@ -15,6 +15,7 @@ import {
 import { formatNumber } from '../game/format'
 import { useEnhancementStats } from '../game/enhancementRecordStore'
 import { useGameStore } from '../game/gameStore'
+import { useUiStore } from '../uiStore'
 import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
 import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, QueueEntry } from '../game/types'
 import { useT, type TFunction } from '../i18n'
@@ -26,6 +27,7 @@ import { ActionDetailItem, ItemReference } from './ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, itemPickerEntryKey, type ItemPickerEntry } from './ItemGridPicker'
 import { QuantitySelector } from './QuantitySelector'
 import { UnitNumber } from './UnitNumber'
+import { SecretArtOperations } from './SecretArtOperations'
 
 /**
  * 装备强化候选条目：仅取背包内未穿戴的装备——按 (itemId, 强化等级) 扣除已穿戴件数，
@@ -117,7 +119,7 @@ function TermHint({ hint, term }: { hint: string; term: string }): React.JSX.Ele
  * 循环轮次，右侧实时镜像服务端公式预览：费用、成功率、成败产物、技艺经验与
  * 单轮耗时。成功率/耗时仅为前端预览镜像，权威结算以服务端为准。
  */
-export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Element {
+const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): React.JSX.Element {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const items = useGameStore(state => state.items)
@@ -563,4 +565,13 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
       />
     </div>
   )
+})
+
+/** 秘法工作台：根据当前子分类分流渲染装备强化（enhance）与三类即时物品操作（化灵/分解/转化）。 */
+export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Element {
+  const subTab = useUiStore(state => state.enhancementSubTab)
+  if (subTab === 'enhance') {
+    return <EquipmentEnhancementPanel />
+  }
+  return <SecretArtOperations operation={subTab} />
 })

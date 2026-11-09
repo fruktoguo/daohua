@@ -48,7 +48,7 @@ import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
 import { installAntiMultiOpen, disposeAntiMultiOpen, useAntiMultiOpenStore, MultiTabBlockedPage } from './private'
 import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
-import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab } from './uiStore'
+import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab, type EnhancementSubTab } from './uiStore'
 import { MOBILE_NAV_GROUPS, TAB_ICON, mobileNavGroupById, mobileNavGroupIdOf } from './mobileNav'
 import { useLogUnreadStore } from './logging/logUnreadStore'
 import { useT, getT } from './i18n'
@@ -1050,6 +1050,14 @@ const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefin
   { id: 'technique', labelKey: 'forgeTechnique' },
 ]
 
+/** 秘法页顶部功能子选项卡配置（强化 + 化灵 + 分解 + 转化） */
+const ENHANCEMENT_SUB_TABS: ReadonlyArray<{ id: EnhancementSubTab; labelKey: 'enhance' | 'liquefy' | 'disassemble' | 'convert' }> = [
+  { id: 'enhance', labelKey: 'enhance' },
+  { id: 'liquefy', labelKey: 'liquefy' },
+  { id: 'disassemble', labelKey: 'disassemble' },
+  { id: 'convert', labelKey: 'convert' },
+]
+
 /**
  * 竖屏技艺模式切换栏（炼丹/炼器/符箓/阵法/强化）
  * 桌面端由侧边栏可折叠二级菜单承载；竖屏侧边栏整体隐藏，本栏作为底部导航「技艺」组的
@@ -1101,6 +1109,8 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   const setAlchemySubTab = useUiStore(state => state.setAlchemySubTab)
   const forgingSubTab = useUiStore(state => state.forgingSubTab)
   const setForgingSubTab = useUiStore(state => state.setForgingSubTab)
+  const enhancementSubTab = useUiStore(state => state.enhancementSubTab)
+  const setEnhancementSubTab = useUiStore(state => state.setEnhancementSubTab)
 
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const closeModal = useCallback(() => setSelectedAction(null), [])
@@ -1222,9 +1232,26 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   return (
     <section className="panel skill-page crafting-page" hidden={hidden}>
       <header className="panel-header crafting-page-header">
-        <h2>{t(`app.crafting.${craftingMode}`)}</h2>
+        {craftingMode === 'enhancement' ? (
+          <div className="crafting-sub-tabs" role="tablist">
+            {ENHANCEMENT_SUB_TABS.map(tab => (
+              <button
+                aria-selected={enhancementSubTab === tab.id}
+                key={tab.id}
+                className={`crafting-sub-tab-btn${enhancementSubTab === tab.id ? ' active' : ''}`}
+                onClick={() => setEnhancementSubTab(tab.id)}
+                role="tab"
+                type="button"
+              >
+                {t(`app.secretArt.${tab.labelKey}`)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <h2>{t(`app.crafting.${craftingMode}`)}</h2>
+        )}
 
-        {/* 顶部子选项卡（符箓/阵法/强化模式无二级分类） */}
+        {/* 顶部子选项卡（符箓/阵法模式无二级分类） */}
         {craftingMode === 'alchemy' && (
           <div className="crafting-sub-tabs" role="tablist">
             {ALCHEMY_SUB_TABS.map(tab => (

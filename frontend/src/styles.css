@@ -4948,6 +4948,13 @@ input[type="checkbox"] {
   margin-top: 0;
 }
 
+.secret-art-returns-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
 .enhancement-active-badge {
   display: inline-flex;
   align-items: center;

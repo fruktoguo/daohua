@@ -22,6 +22,24 @@ public sealed class TechniqueAndEnhancementTests
 
     private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
 
+    /// <summary>秘法物品规则：化灵按回收价三倍结算，装备分解按每种原料 70% 向下取整，残卷概率边界固定。</summary>
+    [Fact]
+    public void SecretArtRules_UsesConfiguredPricesAndFlooredMaterialReturns()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        Assert.Equal(6, SecretArtRules.ResolveRecycleUnitPrice(catalog, "item.beast-hide", 0));
+
+        var returns = SecretArtRules.ComputeDisassemblyReturns(catalog, "equipment.qingfeng-sword");
+        Assert.NotNull(returns);
+        Assert.Equal(4, returns![new ItemId("item.refined-iron")]);
+        Assert.False(returns.ContainsKey(new ItemId("item.beast-bone")));
+
+        Assert.True(SecretArtRules.FragmentProducesTome(0));
+        Assert.False(SecretArtRules.FragmentProducesTome(SecretArtRules.FragmentTomeChance));
+        Assert.Equal(100, SecretArtRules.FragmentSpiritStoneReward);
+    }
+
     /// <summary>技艺经验逐段推进：不足一段停在当前级，曲线封顶后不再升。</summary>
     [Fact]
     public void TechniqueLevelAdvancesSegmentBySegment()

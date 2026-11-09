@@ -345,6 +345,130 @@ public sealed class EnhancementContractTests
         Assert.Equal(2002.0, spiritDelta.Delta);
     }
 
+    /// <summary>秘法化灵按普通物品当前系统回收价的三倍发放灵石。</summary>
+    [Fact]
+    public async Task ItemLiquefy_UsesTripleSystemRecyclePrice()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        var assets = new CustomQuantityAssets(playerId,
+            ("item.beast-hide", string.Empty, 2),
+            ("equipment.qingfeng-sword", "+5", 1));
+        await using var runtime = EcsRuntimeFactory.Create(new FakeRepository(playerId), assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        var result = await runtime.ExecuteAsync(playerId, "item.liquefy", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.beast-hide", quantity = 2
+        }), 0, Guid.NewGuid());
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+        Assert.Equal(-2, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "item.beast-hide").Delta);
+        Assert.Equal(36, Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "currency.spirit-stone").Delta);
+
+        var enhancedResult = await runtime.ExecuteAsync(playerId, "item.liquefy", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.qingfeng-sword", variant = "+5", quantity = 1
+        }), 0, Guid.NewGuid());
+        Assert.True(enhancedResult.Success, $"{enhancedResult.Code}: {enhancedResult.Message}");
+        Assert.Equal("+5", Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "equipment.qingfeng-sword").Variant);
+        Assert.Equal(6006, Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "currency.spirit-stone").Delta);
+    }
+
+    /// <summary>秘法分解只返还锻造配方基础材料，并对每种材料单独向下取整。</summary>
+    [Fact]
+    public async Task ItemDisassemble_ReturnsFlooredForgingMaterials()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        var assets = new CustomQuantityAssets(playerId, ("equipment.qingfeng-sword", string.Empty, 1));
+        await using var runtime = EcsRuntimeFactory.Create(new FakeRepository(playerId), assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        var result = await runtime.ExecuteAsync(playerId, "item.disassemble", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.qingfeng-sword", quantity = 1
+        }), 0, Guid.NewGuid());
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+        Assert.Equal(-1, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "equipment.qingfeng-sword").Delta);
+        Assert.Equal(4, Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "item.refined-iron").Delta);
+        Assert.DoesNotContain(economy.LastRequest.Deltas, d => d.AssetId == "item.beast-bone");
+    }
+
+    [Fact]
+    public async Task ItemDisassemble_MultipleQuantity_ReturnsScaledMaterials()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        var assets = new CustomQuantityAssets(playerId, ("equipment.qingfeng-sword", string.Empty, 3));
+        var repo = new FakeRepository(playerId);
+        await using var runtime = EcsRuntimeFactory.Create(repo, assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        // 穿戴 1 件青锋剑，剩余 2 件可用
+        await runtime.MutateOwnedAsync(playerId, aggregate =>
+        {
+            aggregate.Loadout.Equipment.Add(new PlayerEquipmentSlot("equipment.qingfeng-sword", 0));
+        });
+
+        // 分解 2 件
+        var result = await runtime.ExecuteAsync(playerId, "item.disassemble", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.qingfeng-sword", quantity = 2
+        }), 0, Guid.NewGuid());
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+        Assert.Equal(-2, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "equipment.qingfeng-sword").Delta);
+        Assert.Equal(8, Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "item.refined-iron").Delta);
+    }
+
+    [Fact]
+    public async Task ItemConvert_MultipleQuantity_ProcessesIndependentRolls()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "items/manuals.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        var assets = new CustomQuantityAssets(playerId, ("item.fragment.heavy-slash", string.Empty, 10));
+        await using var runtime = EcsRuntimeFactory.Create(new FakeRepository(playerId), assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        var result = await runtime.ExecuteAsync(playerId, "item.convert", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.fragment.heavy-slash", quantity = 10
+        }), 0, Guid.NewGuid());
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+        Assert.Equal(-10, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "item.fragment.heavy-slash").Delta);
+        var tomeReward = economy.LastRequest.Deltas.SingleOrDefault(d => d.AssetId == "item.tome.heavy-slash");
+        var stoneReward = economy.LastRequest.Deltas.SingleOrDefault(d => d.AssetId == "currency.spirit-stone");
+        var tomes = (int)(tomeReward?.Delta ?? 0);
+        var stones = (int)(stoneReward?.Delta ?? 0);
+        Assert.Equal(10, tomes + (stones / 100));
+    }
+
+    /// <summary>残卷转化只消耗一张，并且只发放对应整本秘籍或固定 100 灵石之一。</summary>
+    [Fact]
+    public async Task ItemConvert_Fragment_ProducesOneConfiguredOutcome()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadCatalogFiles("items/materials.json", "items/manuals.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        var economy = new RecordingEconomy();
+        var assets = new CustomQuantityAssets(playerId, ("item.fragment.heavy-slash", string.Empty, 1));
+        await using var runtime = EcsRuntimeFactory.Create(new FakeRepository(playerId), assets, economy, catalog);
+        await runtime.LoadAsync(playerId);
+
+        var result = await runtime.ExecuteAsync(playerId, "item.convert", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.fragment.heavy-slash", quantity = 1
+        }), 0, Guid.NewGuid());
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+        Assert.Equal(-1, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "item.fragment.heavy-slash").Delta);
+        var tomeReward = economy.LastRequest.Deltas.SingleOrDefault(d => d.AssetId == "item.tome.heavy-slash");
+        var stoneReward = economy.LastRequest.Deltas.SingleOrDefault(d => d.AssetId == "currency.spirit-stone");
+        Assert.True(tomeReward is not null ^ stoneReward is not null);
+        Assert.Equal(tomeReward is null ? 100 : 1, tomeReward?.Delta ?? stoneReward!.Delta);
+    }
+
     /// <summary>装备 item.sell 穿戴拦截收窄至同级占用：无多余备件拒绝，有多余备件放行。</summary>
     [Fact]
     public async Task ItemSell_EquippedEquipment_BlocksWhenNoSpare()
