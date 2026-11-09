@@ -244,8 +244,13 @@ export const SecretArtOperations = memo(function SecretArtOperations({
     [itemLevel, baseDuration],
   )
 
-  const enqueue = () => {
+  const queueLength = queueEntries?.length ?? 0
+
+  const submitAction = (startImmediately: boolean) => {
     if (!selected) return
+    if (startImmediately && queueLength > 0) {
+      gameClient.sendCommand('queue.clear', {})
+    }
     gameClient.sendCommand('action.enqueue', {
       actionId: currentActionId,
       repeatCount: repeats,
@@ -306,14 +311,33 @@ export const SecretArtOperations = memo(function SecretArtOperations({
             >
               {t(`app.secretArt.stop${opCap}`)}
             </button>
+          ) : queueLength > 0 ? (
+            <div className="action-modal-button-group">
+              <button
+                className="action-modal-submit action-modal-submit--secondary"
+                disabled={!selected}
+                onClick={() => submitAction(true)}
+                type="button"
+              >
+                {t(`app.secretArt.start${opCap}`)}
+              </button>
+              <button
+                className="action-modal-submit"
+                disabled={!selected}
+                onClick={() => submitAction(false)}
+                type="button"
+              >
+                {t(`app.secretArt.enqueue${opCap}`)}
+              </button>
+            </div>
           ) : (
             <button
               className="action-modal-submit"
               disabled={!selected}
-              onClick={enqueue}
+              onClick={() => submitAction(true)}
               type="button"
             >
-              {t(`app.secretArt.enqueue${opCap}`)}
+              {t(`app.secretArt.start${opCap}`)}
             </button>
           )}
         </div>

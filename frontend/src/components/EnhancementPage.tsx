@@ -132,7 +132,7 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
 
   // 正在执行或排队中的强化行动（从权威队列获取）
   const activeEnhanceEntry = useMemo(
-    () => queueEntries?.find(e => e.actionId === ENHANCE_ACTION_ID || e.type === 'enhancement') ?? null,
+    () => queueEntries?.find(e => e.actionId === ENHANCE_ACTION_ID) ?? null,
     [queueEntries]
   )
   const isEnhancing = activeEnhanceEntry !== null
@@ -312,8 +312,11 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
     return rows
   }, [enhancementStats, selected?.itemId])
 
-  const submit = () => {
+  const submit = (startImmediately: boolean) => {
     if (!selected || maxedOut) return
+    if (startImmediately && (queueEntries?.length ?? 0) > 0) {
+      gameClient.sendCommand('queue.clear', {})
+    }
     // 强化行动入队：targetItemId 携带装备基础 ID，parameters 附带目标等级与起始等级；
     // 勾选保护材料有效时经 auxItemId 下发。
     gameClient.sendCommand('action.enqueue', {
@@ -438,14 +441,41 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
           >
             {t('app.enhancement.stop')}
           </button>
+        ) : maxedOut ? (
+          <button
+            className="action-modal-submit"
+            disabled
+            type="button"
+          >
+            {t('app.enhancement.successRateMaxed', { max: ENHANCE_MAX_LEVEL })}
+          </button>
+        ) : (queueEntries?.length ?? 0) > 0 ? (
+          <div className="action-modal-button-group">
+            <button
+              className="action-modal-submit action-modal-submit--secondary"
+              disabled={!selected}
+              onClick={() => submit(true)}
+              type="button"
+            >
+              {t('app.enhancement.startNow')}
+            </button>
+            <button
+              className="action-modal-submit"
+              disabled={!selected}
+              onClick={() => submit(false)}
+              type="button"
+            >
+              {t('app.enhancement.enqueue')}
+            </button>
+          </div>
         ) : (
           <button
             className="action-modal-submit"
-            disabled={!selected || maxedOut}
-            onClick={submit}
+            disabled={!selected}
+            onClick={() => submit(true)}
             type="button"
           >
-            {maxedOut ? t('app.enhancement.successRateMaxed', { max: ENHANCE_MAX_LEVEL }) : t('app.enhancement.submit')}
+            {t('app.enhancement.startNow')}
           </button>
         )}
       </div>

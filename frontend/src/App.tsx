@@ -1986,35 +1986,88 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
         </div>
       )}
 
-      <button
-        className={`action-modal-submit${isLocked ? ' is-locked' : ''}`}
-        data-tour="action-submit"
-        disabled={isLocked}
-        onClick={() => {
-          if (gameClient.sendCommand('action.enqueue', {
-            actionId: action.id,
-            repeatCount: repeats,
-            pvpEnabled,
-            difficulty,
-            parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
-          })) {
-            onClose()
-            if (action.type === 'combat' || startsImmediately) {
-              useUiStore.getState().setActiveTab('combat')
-            }
-          }
-        }}
-        type="button"
-      >{isLocked
-        ? (action.technique
+      {isLocked ? (
+        <button
+          className="action-modal-submit is-locked"
+          data-tour="action-submit"
+          disabled
+          type="button"
+        >
+          {action.technique
             ? t('app.action.levelOrTechniqueRequired', {
                 level: actionLevel,
                 technique: t(`insight.technique.${action.technique}`),
               })
-            : t('app.action.levelRequired', { level: actionLevel }))
-        : startsImmediately
-        ? t('app.action.startCombatNow')
-        : t('app.action.enqueueAction', { n: queueLength + 1 })}</button>
+            : t('app.action.levelRequired', { level: actionLevel })}
+        </button>
+      ) : queueLength > 0 ? (
+        <div className="action-modal-button-group">
+          <button
+            className="action-modal-submit action-modal-submit--secondary"
+            onClick={() => {
+              gameClient.sendCommand('queue.clear', {})
+              if (gameClient.sendCommand('action.enqueue', {
+                actionId: action.id,
+                repeatCount: repeats,
+                pvpEnabled,
+                difficulty,
+                parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
+              })) {
+                onClose()
+                if (action.type === 'combat' || startsImmediately) {
+                  useUiStore.getState().setActiveTab('combat')
+                }
+              }
+            }}
+            type="button"
+          >
+            {t('app.action.startNow')}
+          </button>
+          <button
+            className="action-modal-submit"
+            data-tour="action-submit"
+            onClick={() => {
+              if (gameClient.sendCommand('action.enqueue', {
+                actionId: action.id,
+                repeatCount: repeats,
+                pvpEnabled,
+                difficulty,
+                parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
+              })) {
+                onClose()
+                if (action.type === 'combat' || startsImmediately) {
+                  useUiStore.getState().setActiveTab('combat')
+                }
+              }
+            }}
+            type="button"
+          >
+            {t('app.action.enqueueAction', { n: queueLength + 1 })}
+          </button>
+        </div>
+      ) : (
+        <button
+          className="action-modal-submit"
+          data-tour="action-submit"
+          onClick={() => {
+            if (gameClient.sendCommand('action.enqueue', {
+              actionId: action.id,
+              repeatCount: repeats,
+              pvpEnabled,
+              difficulty,
+              parameters: spiritStoneTier > 0 ? { spiritStone: spiritStoneTier } : undefined,
+            })) {
+              onClose()
+              if (action.type === 'combat' || startsImmediately) {
+                useUiStore.getState().setActiveTab('combat')
+              }
+            }
+          }}
+          type="button"
+        >
+          {t('app.action.startNow')}
+        </button>
+      )}
     </Modal>
   )
 })
