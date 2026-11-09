@@ -141,7 +141,7 @@ public sealed class QueuePauseClearCommandTests
         await runtime.LoadAsync(playerId);
 
         var res = await runtime.ExecuteAsync(playerId, "shop.buy",
-            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.daily", quantity = 1 }), 0, Guid.NewGuid());
+            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.daily-100", quantity = 1 }), 0, Guid.NewGuid());
         Assert.True(res.Success);
         Assert.Equal("OK", res.Code);
 
@@ -150,12 +150,46 @@ public sealed class QueuePauseClearCommandTests
         Assert.Equal(40, assets.GetBalance("item.gongde"));
         Assert.Equal(1, assets.GetBalance("item.awakening-stone"));
 
+        // 尝试买 500 功德档（限购 2 个）：功德不足（仅剩 40），应拒绝
+        var failRes500 = await runtime.ExecuteAsync(playerId, "shop.buy",
+            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.daily-500", quantity = 1 }), 0, Guid.NewGuid());
+        Assert.False(failRes500.Success);
+        Assert.Equal("INSUFFICIENT_RESOURCE", failRes500.Code);
+        Assert.Equal("功德不足。", failRes500.Message);
+
         // 尝试再买 1000 功德的不限购觉醒石：功德不足（仅剩 40），应拒绝
         var failRes = await runtime.ExecuteAsync(playerId, "shop.buy",
             JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.open", quantity = 1 }), 0, Guid.NewGuid());
         Assert.False(failRes.Success);
         Assert.Equal("INSUFFICIENT_RESOURCE", failRes.Code);
         Assert.Equal("功德不足。", failRes.Message);
+    }
+
+    [Fact]
+    public async Task ShopBuy_DailyLimitTwo_AllowsPurchasingTwoAndRejectsSingleOrderExceedingLimit()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var assets = new MeritTestAssetStore(playerId, boundMerit: 500, normalMerit: 1500);
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), assets, assets, catalog);
+        await runtime.LoadAsync(playerId);
+
+        // 单次购买 3 件直接超出限购 2 件上限，提前拒绝
+        var exceedRes = await runtime.ExecuteAsync(playerId, "shop.buy",
+            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.daily-500", quantity = 3 }), 0, Guid.NewGuid());
+        Assert.False(exceedRes.Success);
+        Assert.Equal("SHOP_LIMIT_REACHED", exceedRes.Code);
+        Assert.Equal("该商品今日限购已达上限。", exceedRes.Message);
+
+        // 单次购买 2 件成功：总价 1000 功德（扣 500 绑定 + 500 流通），获得 2 颗觉醒石
+        var res = await runtime.ExecuteAsync(playerId, "shop.buy",
+            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.daily-500", quantity = 2 }), 0, Guid.NewGuid());
+        Assert.True(res.Success);
+        Assert.Equal("OK", res.Code);
+        Assert.Equal(0, assets.GetBalance("item.gongde-bound"));
+        Assert.Equal(1000, assets.GetBalance("item.gongde"));
+        Assert.Equal(2, assets.GetBalance("item.awakening-stone"));
     }
 
     /// <summary>

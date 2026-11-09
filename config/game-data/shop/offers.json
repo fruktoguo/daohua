@@ -1,15 +1,29 @@
 [
   {
-    "id": "shop.awakening-stone.daily",
+    "id": "shop.awakening-stone.daily-100",
     "itemId": "item.awakening-stone",
     "unitPrice": 100,
     "dailyLimit": 1,
     "sortOrder": 10
   },
   {
+    "id": "shop.awakening-stone.daily-300",
+    "itemId": "item.awakening-stone",
+    "unitPrice": 300,
+    "dailyLimit": 1,
+    "sortOrder": 20
+  },
+  {
+    "id": "shop.awakening-stone.daily-500",
+    "itemId": "item.awakening-stone",
+    "unitPrice": 500,
+    "dailyLimit": 2,
+    "sortOrder": 30
+  },
+  {
     "id": "shop.awakening-stone.open",
     "itemId": "item.awakening-stone",
     "unitPrice": 1000,
-    "sortOrder": 20
+    "sortOrder": 40
   }
 ]

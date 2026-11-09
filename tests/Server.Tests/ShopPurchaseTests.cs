@@ -14,7 +14,7 @@ namespace Server.Tests;
 [Trait("Category", "PostgresIntegration")]
 public sealed class ShopPurchaseTests
 {
-    private const string DailyOffer = "shop.awakening-stone.daily";
+    private const string DailyOffer = "shop.awakening-stone.daily-100";
 
     /// <summary>首次购买在同事务写入余额、流水与限购认领行；二次购买被守卫拒绝且资产不变。</summary>
     [Fact]
@@ -112,6 +112,50 @@ public sealed class ShopPurchaseTests
         Assert.Equal(2d, await BalanceAsync(source, player, "item.awakening-stone"));
         Assert.Equal(0L, Convert.ToInt64(await ScalarAsync(source,
             "SELECT count(*) FROM economy.shop_daily_purchases WHERE player_id=$1", player)));
+    }
+
+    /// <summary>限购 2 件的商品：分两次各购买 1 件均成功；第三次购买超出配额整体回滚。</summary>
+    [Fact]
+    public async Task PurchaseClaimsQuotaUpToLimitTwoAndRejectsThirdPurchaseSameDay()
+    {
+        const string offer500 = "shop.awakening-stone.daily-500";
+        var (source, repository, player) = await ArrangeAsync();
+        await using var ownedSource = source;
+        await CreditSpiritStonesAsync(repository, player, 10_000);
+        var dayIndex = ShopDailyWindow.CurrentDayIndex();
+
+        var req1 = BuildRequest(player, dayIndex, 1) with
+        {
+            ShopPurchase = new ShopPurchaseClaim(player, offer500, dayIndex, 1, 2)
+        };
+        var first = await repository.CommitAsync(req1);
+        Assert.True(first.Applied);
+        Assert.Equal(1, Convert.ToInt32(await ScalarAsync(source,
+            "SELECT quantity FROM economy.shop_daily_purchases WHERE player_id=$1 AND offer_id=$2 AND day_index=$3",
+            player, offer500, dayIndex)));
+
+        var tx2 = Guid.NewGuid();
+        var req2 = req1 with
+        {
+            TransactionId = tx2,
+            IdempotencyKey = $"shop:{tx2:D}"
+        };
+        var second = await repository.CommitAsync(req2);
+        Assert.True(second.Applied);
+        Assert.Equal(2, Convert.ToInt32(await ScalarAsync(source,
+            "SELECT quantity FROM economy.shop_daily_purchases WHERE player_id=$1 AND offer_id=$2 AND day_index=$3",
+            player, offer500, dayIndex)));
+
+        var tx3 = Guid.NewGuid();
+        var req3 = req1 with
+        {
+            TransactionId = tx3,
+            IdempotencyKey = $"shop:{tx3:D}"
+        };
+        await Assert.ThrowsAsync<ShopDailyLimitExceededException>(async () => await repository.CommitAsync(req3));
+        Assert.Equal(2, Convert.ToInt32(await ScalarAsync(source,
+            "SELECT quantity FROM economy.shop_daily_purchases WHERE player_id=$1 AND offer_id=$2 AND day_index=$3",
+            player, offer500, dayIndex)));
     }
 
     private static EconomyTransactionRequest BuildRequest(Guid player, long dayIndex, int quantity)

@@ -153,9 +153,10 @@ const ShopBuyModal = memo(function ShopBuyModal({
   const remaining = limited ? Math.max(0, (offer.dailyLimit ?? 0) - offer.purchasedToday) : Number.POSITIVE_INFINITY
   const soldOut = limited && remaining <= 0
 
+  const maxQuota = limited ? remaining : MAX_PURCHASE_QUANTITY
   const maxAffordable = Math.floor(totalMerit / Math.max(1, offer.unitPrice))
-  const buyableQuantity = limited ? 1 : Math.max(1, Math.min(MAX_PURCHASE_QUANTITY, maxAffordable))
-  const effectiveQuantity = limited ? 1 : Math.max(1, Math.min(quantity, buyableQuantity))
+  const buyableQuantity = Math.max(1, Math.min(maxQuota, maxAffordable))
+  const effectiveQuantity = Math.max(1, Math.min(quantity, buyableQuantity))
   const totalPrice = offer.unitPrice * effectiveQuantity
   const insufficient = totalPrice > totalMerit
   const disabled = pending || soldOut || insufficient || maxAffordable < 1
@@ -204,7 +205,7 @@ const ShopBuyModal = memo(function ShopBuyModal({
             <span className="shop-modal-row-val">{formatNumber(offer.unitPrice)} {t('shop.meritUnit')}</span>
           </div>
 
-          {limited ? null : (
+          {maxQuota <= 1 ? null : (
             <div className="shop-modal-row">
               <span className="shop-modal-row-label">{t('shop.quantity')}</span>
               <QuantitySelector
@@ -214,7 +215,7 @@ const ShopBuyModal = memo(function ShopBuyModal({
                 max={buyableQuantity}
                 maxShortcut
                 onChange={setQuantity}
-                presets={[1, 5, 10]}
+                presets={(limited ? [1, 2] : [1, 5, 10]).filter(p => p <= buyableQuantity)}
                 value={effectiveQuantity}
               />
             </div>
