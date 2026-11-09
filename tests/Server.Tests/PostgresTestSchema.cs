@@ -28,16 +28,19 @@ internal static class PostgresTestSchema
 {
     /// <summary>专用 advisory lock 键，仅用于测试建库串行化。</summary>
     private const long AdvisoryLockKey = 772301;
+    private static int _initialized;
 
     /// <summary>在专用测试库上建立/校验当前 schema；可安全地被多个测试类并发调用。</summary>
     /// <param name="source">目标数据源。</param>
     public static async Task EnsureAsync(NpgsqlDataSource source)
     {
+        if (Volatile.Read(ref _initialized) == 1) return;
         await using var connection = await source.OpenConnectionAsync();
         await using (var acquire = new NpgsqlCommand($"SELECT pg_advisory_lock({AdvisoryLockKey})", connection))
             await acquire.ExecuteNonQueryAsync();
         try
         {
+            if (Volatile.Read(ref _initialized) == 1) return;
             for (var attempt = 1; ; attempt++)
             {
                 try
@@ -46,6 +49,8 @@ internal static class PostgresTestSchema
                     await ddl.ExecuteNonQueryAsync();
                     await using var patch = new NpgsqlCommand("""
                         ALTER TABLE IF EXISTS market.item_stats ADD COLUMN IF NOT EXISTS reference_price double precision;
+                        ALTER TABLE IF EXISTS social.chat_messages ADD COLUMN IF NOT EXISTS sender_realm integer NOT NULL DEFAULT 1;
+                        ALTER TABLE IF EXISTS social.parties ALTER COLUMN open_slots SET DEFAULT 3;
                         """, connection) { CommandTimeout = 60 };
                     await patch.ExecuteNonQueryAsync();
                     await using var updateVersions = new NpgsqlCommand($"""
@@ -70,6 +75,7 @@ internal static class PostgresTestSchema
                             social.parties, social.party_members, social.party_sessions, social.party_session_inbox,
                             social.party_seekers, social.party_invitations, social.friendships, social.friend_requests,
                             social.chat_messages, social.player_invitations,
+                            social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures,
                             economy.transactions, economy.transaction_lines, economy.player_asset_balances,
                             economy.player_asset_instances, economy.reservations, economy.shop_daily_purchases,
                             market.orders, market.trades, market.item_stats, market.partition_leases,
@@ -77,6 +83,7 @@ internal static class PostgresTestSchema
                         RESTART IDENTITY CASCADE;
                         """, connection) { CommandTimeout = 60 };
                     await truncate.ExecuteNonQueryAsync();
+                    Volatile.Write(ref _initialized, 1);
                     return;
                 }
                 catch (PostgresException exception) when (attempt < 5 && exception.SqlState is "23505" or "40P01" or "40001")

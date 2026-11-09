@@ -18,6 +18,8 @@ import { useGameStore } from './gameStore'
 
 /** 队伍开启槽位数下限（§21.13：2~5） */
 export const PARTY_OPEN_SLOTS_MIN = 2
+/** 队伍开启槽位数默认值（总纲 §21.13：3 人） */
+export const PARTY_OPEN_SLOTS_DEFAULT = 3
 /** 队伍开启槽位数上限 */
 export const PARTY_OPEN_SLOTS_MAX = 5
 

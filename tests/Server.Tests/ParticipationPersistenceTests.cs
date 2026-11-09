@@ -595,6 +595,30 @@ public sealed class ParticipationPersistenceTests
         }
     }
 
+    /// <summary>新建队伍默认开启槽位为 3（三人组队规模，总纲 §21.13）。</summary>
+    [Fact]
+    public async Task CreatePartyDefaultsOpenSlotsToThree()
+    {
+        await using var fixture = await Fixture.CreateAsync(1);
+        var social = new PostgresSocialRepository(fixture.Source);
+        var leaderId = Guid.NewGuid();
+        await fixture.ExecuteSqlAsync("INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", leaderId, leaderId.ToString());
+        await fixture.ExecuteSqlAsync("INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,now(),now(),1)", leaderId, leaderId.ToString());
+        var now = DateTimeOffset.UtcNow;
+        var partyId = await social.CreatePartyAsync(leaderId, PartyProfileRecord.Default, now);
+        try
+        {
+            var party = await social.GetPartyAsync(partyId);
+            Assert.NotNull(party);
+            Assert.Equal(SocialRuntime.DefaultOpenSlots, party.OpenSlots);
+            Assert.Equal(3, party.OpenSlots);
+        }
+        finally
+        {
+            await social.DisbandPartyAsync(partyId);
+        }
+    }
+
     private static string ReadMigrationSql()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -660,6 +684,8 @@ public sealed class ParticipationPersistenceTests
             foreach (var value in values) command.Parameters.AddWithValue(value);
             return await command.ExecuteScalarAsync();
         }
+        public Task ExecuteSqlAsync(string sql, params object[] values) => SqlAsync(Source, sql, values);
+
 
         private static async Task SqlAsync(NpgsqlDataSource source, string sql, params object[] values)
         {

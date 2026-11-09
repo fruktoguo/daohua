@@ -383,8 +383,8 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var party = new NpgsqlCommand("""
-            INSERT INTO social.parties(party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, difficulty, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+            INSERT INTO social.parties(party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, difficulty, open_slots, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
             """, connection, transaction))
         {
             party.Parameters.Add(new NpgsqlParameter { Value = partyId });
@@ -396,6 +396,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             party.Parameters.Add(new NpgsqlParameter { Value = profile.IsPublic });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.PvpEnabled });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.Difficulty });
+            party.Parameters.Add(new NpgsqlParameter { Value = (short)SocialRuntime.DefaultOpenSlots });
             party.Parameters.Add(new NpgsqlParameter { Value = now });
             await party.ExecuteNonQueryAsync(cancellationToken);
         }

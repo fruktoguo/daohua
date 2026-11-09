@@ -1,7 +1,7 @@
 import { ZongmenPage } from './ZongmenPage'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
-import { PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
+import { PARTY_OPEN_SLOTS_DEFAULT, PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
 import { formatNumber } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { getDifficultyBracket } from '../game/combatDifficulty'
@@ -537,7 +537,7 @@ const LeaderProfileModal = memo(function LeaderProfileModal({ onClose }: {
     onClose()
   }
 
-  const openSlots = party.openSlots ?? PARTY_OPEN_SLOTS_MAX
+  const openSlots = party.openSlots ?? PARTY_OPEN_SLOTS_DEFAULT
   const selectSlots = (id: string): void => {
     const next = Number(id)
     // 低于当前队员数的档位在选项上即禁用；会话中调整先经确认弹窗提示散场。
@@ -672,7 +672,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const memberIds = new Set(party.members.map(member => member.playerId))
   const invitableFriends = friends.filter(friend => !memberIds.has(friend.playerId))
   // 同图共战（§21.13）：开启槽位即队伍容量；会话进行中阵容冻结，本人参战开关转为「退出斗法」散场确认。
-  const openSlots = party.openSlots ?? PARTY_OPEN_SLOTS_MAX
+  const openSlots = party.openSlots ?? PARTY_OPEN_SLOTS_DEFAULT
   const sessionActive = party.activeSession !== null && party.activeSession !== undefined
   const readyCount = party.members.filter(member => member.ready).length
   // 会话期间成员变动（离队/移出/收窄槽位）即散场：确认弹窗统一追加散场提示。
