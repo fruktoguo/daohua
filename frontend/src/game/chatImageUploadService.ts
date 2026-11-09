@@ -129,12 +129,7 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
   const formData = new FormData()
   formData.append('file', blob, `image.${ext}`)
 
-  // 国内同源代理：若 endpoint 为 img.yuohira.com，优先使用同源 /img/upload 避免国内直连 Cloudflare 超时
-  const uploadEndpoint = ticketData.uploadEndpoint
-    ? ticketData.uploadEndpoint.replace('https://img.yuohira.com/upload', '/img/upload')
-    : '/img/upload'
-
-  const uploadRes = await fetch(uploadEndpoint, {
+  const uploadRes = await fetch(ticketData.uploadEndpoint, {
     method: 'POST',
     headers: {
       'X-Upload-Ticket': ticketData.ticket,
