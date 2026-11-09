@@ -335,29 +335,30 @@ const ChatRow = memo(function ChatRow({
   return (
     <li className={`chat-row chat-row--${message.channel}`}>
       <div className="chat-row-header">
-        <time
-          className="chat-time-capsule"
-          dateTime={new Date(message.sentAtMs).toISOString()}
-          title={fullTime}
-        >
-          {shortTime}
-        </time>
+        <FloatingTooltip placement="top" title={fullTime} tone="cyan">
+          <time
+            className="chat-time-capsule"
+            dateTime={new Date(message.sentAtMs).toISOString()}
+          >
+            {shortTime}
+          </time>
+        </FloatingTooltip>
 
-        <span
-          className="chat-realm-capsule"
-          style={{ color: majorRealm.color, borderColor: majorRealm.color }}
-          title={majorRealm.name}
-        >
-          {majorRealm.name}
-        </span>
+        <FloatingTooltip placement="top" title={`大境界：${majorRealm.name}`} tone="gold">
+          <span
+            className="chat-realm-capsule"
+            style={{ color: majorRealm.color, borderColor: majorRealm.color }}
+          >
+            {majorRealm.name}
+          </span>
+        </FloatingTooltip>
 
         {sectPrefix && (
-          <span
-            className="chat-sect-capsule"
-            title={sectPrefix}
-          >
-            {sectPrefix}
-          </span>
+          <FloatingTooltip placement="top" title={`宗门前缀：${sectPrefix}`} tone="jade">
+            <span className="chat-sect-capsule">
+              {sectPrefix}
+            </span>
+          </FloatingTooltip>
         )}
 
         <span className="chat-sender-name">
