@@ -1125,6 +1125,8 @@ export interface ItemDefinition {
   techniqueSpeedRatio?: number
   /** 强化成功率加成（如 0.03 即 +3% 成功率） */
   enhancementSuccessBonus?: number
+  /** 同一消耗品允许占用的自动使用槽位数；0 表示最多一个 */
+  stackableSlotCount?: number
   /** 耐久型持续消耗品（true 时槽位持有即生效，不消耗不耗竭；如聚灵阵盘） */
   durable?: boolean
   /** 即时打击规格（符箓类消耗品：祭出即耗灵力造成元素术法伤害，无吟唱/命中/暴击掷点） */
