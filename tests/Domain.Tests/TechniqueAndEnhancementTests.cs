@@ -967,8 +967,7 @@ public sealed class TechniqueAndEnhancementTests
         player.Settings.AutoUseSlots.Add(new AutoUseSlotState(AutoUseBar.Exploration, 0, dingshen.Id.Value, 1, true, RemainingDurationSeconds: 0));
         player.Enqueue(new ActionIntent(miningAction.Id, -1), Baseline, catalog.Actions);
 
-        // 推进一轮：单轮耗时折减为 10 / 1.3 ≈ 7.6923s
-        // 推进 8 秒足以完成单轮
+        // 推进至第一轮完成：实际耗时为 10 / 1.3 秒，按这段真实耗时扣减定神香。
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(8), catalog, wallet);
         foreach (var d in result.AssetDeltas) wallet.Apply(d);
         Assert.True(result.CompletedRepeats > 0, $"实际完成轮次: {result.CompletedRepeats}, 事件: {string.Join(", ", result.Events.Select(e => e.Code))}");
@@ -976,9 +975,9 @@ public sealed class TechniqueAndEnhancementTests
         // 断言：定神香自动扣除 1 个（剩余 2 个）并触发 activated 事件
         Assert.Equal(2.0, wallet.Get(new AssetKey(dingshen.Id)));
         Assert.Contains(result.Events, e => e.Code == "auto-use.activated");
-        // 槽位已充能且扣减了一轮的实际耗时（300 - 10/1.3）
+        // 槽位扣减的是加速后的本轮真实耗时，而非原始 10 秒。
         var slot = player.Settings.AutoUseSlots[0];
-        Assert.InRange(slot.RemainingDurationSeconds, 290.0, 300.0 - (10.0 / 1.3));
+        Assert.Equal(300.0 - (10.0 / 1.3), slot.RemainingDurationSeconds, 12);
 
         // 2. 负向场景：吐纳修炼（无技艺）中定神香不应激活不扣件
         var playerCultivation = CreatePlayer("修炼道友");

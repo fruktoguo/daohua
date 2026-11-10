@@ -462,6 +462,7 @@ internal static partial class ActionExecutionRules
             || !double.IsFinite(player.Progression.Experience + 3 * experienceGain)
             || !double.IsFinite(player.Progression.Foundation + experienceGain))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
+        var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : definition.DurationSeconds;
         action.ProgressSeconds = 0;
         PlayerActionQueueRules.RecordCompletedRound(action);
         completedActions += 1;
@@ -506,7 +507,6 @@ internal static partial class ActionExecutionRules
             deltas ??= new Dictionary<AssetKey, double>();
             AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), -spiritStoneDeduction);
         }
-        var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : definition.DurationSeconds;
         CompleteSustainedAutoUse(player, definition, consumedSeconds, gameData, target, ref events);
         // 底蕴成本先行扣除：CreditExperience 的 1:1 兑换放大要在这个池子上结算，
         // 若先兑换再扣成本会把可用底蕴重复花两次（池子可能被扣成负数）。

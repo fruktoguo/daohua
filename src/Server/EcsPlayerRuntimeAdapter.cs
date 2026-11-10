@@ -635,7 +635,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "INVALID_CONSUMABLE", "药品栏只能装配药品类即时消耗品。", before);
                         var autoActionType = barId!;
                         touched = ecs.MutatePlayer(playerId, aggregate =>
-                            aggregate.ConfigureAutoUse(autoActionType, slotIndex, itemId, quantity, enabled, group));
+                            aggregate.ConfigureAutoUse(autoActionType, slotIndex, itemId, quantity, enabled, group,
+                                slotItem?.Consumable?.StackableSlotCount ?? 0));
                         break;
                     }
                     case "loadout.replace":

@@ -86,7 +86,7 @@ public static partial class SimulationEngine
         => DaoHua.Ecs.Systems.ActionExecutionRules.TryStartActionCore(player, action, definition, gameData, assets, at, deltas, ref events);
 
 
-    /// <summary>计时行动的建筑与技艺加速只修正本轮时长，不改变按轮扣除的持续用品时长。</summary>
+    /// <summary>计时行动的建筑与技艺加速修正本轮时长；持续用品按本轮实际经过时长扣减。</summary>
     public static double TimedActionDuration(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
         IReadOnlyDictionary<AssetKey, double>? deltas)

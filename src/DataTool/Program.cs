@@ -292,6 +292,10 @@ static void ValidateReferences(string directory)
             foreach (var key in ObjectKeys(consumable))
                 Require(ConsumableKeys().Contains(key),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 consumable.{key} 不在授权词汇表内。");
+            var stackableSlotCount = Property(consumable, "stackableSlotCount");
+            Require(stackableSlotCount.ValueKind == JsonValueKind.Undefined
+                    || stackableSlotCount.TryGetInt32(out var parsedStackableSlotCount) && parsedStackableSlotCount >= 0,
+                $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 stackableSlotCount 必须为非负整数。");
             foreach (var bar in StringArray(consumable, "usableInActionTypes"))
                 Require(AutoUseBarVocabulary().Contains(bar),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 usableInActionTypes.{bar} 不是合法物品栏域。");
@@ -464,7 +468,7 @@ static HashSet<string> ConsumableKeys() => new(StringComparer.Ordinal)
     "usableInActionTypes", "durationSeconds", "isContinuous", "durable",
     "cultivationMultiplier", "gatheringMultiplier", "alchemyMultiplier",
     "cooldownSeconds", "hitpointRestore", "manapointRestore", "buffs", "triggers", "strike",
-    "techniqueSpeedRatio", "enhancementSuccessBonus"
+    "techniqueSpeedRatio", "enhancementSuccessBonus", "stackableSlotCount"
 };
 
 /// <summary>雷击符打击规格授权键。</summary>

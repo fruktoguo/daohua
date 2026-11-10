@@ -202,6 +202,7 @@ public sealed record ConsumableStrike(
 /// 持续/自动消耗品对各行动类型提供的权威效果定义。
 /// </summary>
 /// <param name="UsableInBars">物品可装配的物品栏域集合（<see cref="AutoUseBar"/> 词表）；物品栏准入唯一权威键。</param>
+/// <param name="StackableSlotCount">同一物品允许同时占用的自动使用槽总数上限；0 表示最多占一个槽。</param>
 public sealed record ConsumableDefinition(
     IReadOnlySet<string> UsableInBars,
     double DurationSeconds = 0,
@@ -214,7 +215,8 @@ public sealed record ConsumableDefinition(
     ConsumableStrike? Strike = null,
     double CooldownSeconds = 0,
     double TechniqueSpeedRatio = 0,
-    double EnhancementSuccessBonus = 0)
+    double EnhancementSuccessBonus = 0,
+    int StackableSlotCount = 0)
 {
     /// <summary>药品类消耗品分类键：战斗域药品栏仅接受本分类的即时消耗品。</summary>
     public const string CategoryPill = "pill";
@@ -1130,6 +1132,10 @@ public sealed class GameDataCatalog
                     JsonRead.Number(strikeProperty, "spellAttackRatio"),
                     element);
             }
+            var stackableSlotCount = 0;
+            if (consumableProperty.TryGetProperty("stackableSlotCount", out var stackableSlotCountProperty)
+                && (!stackableSlotCountProperty.TryGetInt32(out stackableSlotCount) || stackableSlotCount < 0))
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品 {id} 的 stackableSlotCount 必须为非负整数。");
             consumable = new ConsumableDefinition(
                 new ReadOnlySet<string>(usableBars),
                 JsonRead.Number(consumableProperty, "durationSeconds"),
@@ -1142,7 +1148,8 @@ public sealed class GameDataCatalog
                 strike,
                 JsonRead.Number(consumableProperty, "cooldownSeconds"),
                 JsonRead.Number(consumableProperty, "techniqueSpeedRatio"),
-                JsonRead.Number(consumableProperty, "enhancementSuccessBonus"));
+                JsonRead.Number(consumableProperty, "enhancementSuccessBonus"),
+                stackableSlotCount);
         }
         var category = entry.TryGetProperty("category", out var categoryProperty)
             ? categoryProperty.GetString() ?? "general" : "general";
@@ -1388,6 +1395,7 @@ public sealed class GameDataCatalog
                     || consumable.UsableInBars.Any(bar => !AutoUseBar.IsKnown(bar)) ||
                     !double.IsFinite(consumable.DurationSeconds) || consumable.DurationSeconds < 0 ||
                     !double.IsFinite(consumable.CooldownSeconds) || consumable.CooldownSeconds < 0 ||
+                    consumable.StackableSlotCount < 0 ||
                     // durable 持续消耗品持有即生效、无时长耗竭，不要求 durationSeconds；非 durable 持续品仍需正时长。
                     consumable.IsContinuous && !consumable.Durable && consumable.DurationSeconds <= 0 ||
                     consumable.Durable && !consumable.IsContinuous ||

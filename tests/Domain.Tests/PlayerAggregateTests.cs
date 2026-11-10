@@ -39,7 +39,7 @@ public sealed class PlayerAggregateTests
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "栏域", Baseline, "catalog-a");
 
         player.ConfigureAutoUse("exploration", 5, "item.qi-gathering-pill", 1, true);
-        player.ConfigureAutoUse("forging", 2, "item.qi-gathering-pill", 1, true);
+        player.ConfigureAutoUse("forging", 2, "item.tongmai-pill", 1, true);
         player.ConfigureAutoUse("combat", 2, "item.zhixue-powder", 1, true, AutoUseSlotState.SlotGroupPotion);
         Assert.Equal(3, player.Settings.AutoUseSlots.Count);
 
@@ -49,6 +49,41 @@ public sealed class PlayerAggregateTests
         Assert.Throws<DomainException>(() => player.ConfigureAutoUse("forging", 3, null, 1, false));
         Assert.Throws<DomainException>(() => player.ConfigureAutoUse("combat", 3, null, 1, false));
         Assert.Equal(3, player.Settings.AutoUseSlots.Count);
+    }
+
+    /// <summary>消耗品重复占槽按配置上限归一化，并保留本次新配置的位置。</summary>
+    [Fact]
+    public void AutoUseDuplicateItemSlotsRespectConfiguredLimit()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "重复槽位", Baseline, "catalog-a");
+        const string incenseId = "item.dingshen-incense";
+
+        player.ConfigureAutoUse("exploration", 0, incenseId, 1, true, stackableSlotCount: 0);
+        player.ConfigureAutoUse("exploration", 1, incenseId, 1, true, stackableSlotCount: 0);
+        Assert.Null(player.Settings.AutoUseSlots.Single(slot => slot.SlotIndex == 0).ItemId);
+        Assert.Equal(incenseId, player.Settings.AutoUseSlots.Single(slot => slot.SlotIndex == 1).ItemId);
+
+        player.ConfigureAutoUse("exploration", 0, incenseId, 1, true, stackableSlotCount: 3);
+        player.ConfigureAutoUse("exploration", 2, incenseId, 1, true, stackableSlotCount: 3);
+        player.ConfigureAutoUse("alchemy", 0, incenseId, 1, true, stackableSlotCount: 3);
+        Assert.Equal(3, player.Settings.AutoUseSlots.Count(slot => slot.ItemId == incenseId));
+
+        player.ConfigureAutoUse("forging", 0, incenseId, 1, true, stackableSlotCount: 3);
+        Assert.Equal(3, player.Settings.AutoUseSlots.Count(slot => slot.ItemId == incenseId));
+        Assert.Equal(incenseId, player.Settings.AutoUseSlots.Single(slot => slot.ActionType == "forging").ItemId);
+        Assert.Null(player.Settings.AutoUseSlots.Single(slot => slot.ActionType == "alchemy").ItemId);
+    }
+
+    /// <summary>内嵌消耗品目录默认不允许重复占槽，仅定神香与青灵香开放三槽。</summary>
+    [Fact]
+    public void EmbeddedConsumableCatalogUsesConfiguredDuplicateSlotLimits()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        Assert.Equal(3, catalog.Items[new ItemId("item.dingshen-incense")].Consumable!.StackableSlotCount);
+        Assert.Equal(3, catalog.Items[new ItemId("item.qingling-incense")].Consumable!.StackableSlotCount);
+        Assert.All(catalog.Items.Values.Where(item => item.Consumable is not null
+                && item.Id.Value is not ("item.dingshen-incense" or "item.qingling-incense")),
+            item => Assert.Equal(0, item.Consumable!.StackableSlotCount));
     }
 
     /// <summary>

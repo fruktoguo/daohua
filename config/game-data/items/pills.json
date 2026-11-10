@@ -254,6 +254,7 @@
       ],
       "durationSeconds": 300,
       "isContinuous": true,
+      "stackableSlotCount": 3,
       "techniqueSpeedRatio": 0.3
     },
     "subCategory": "explorationSupply"
@@ -276,6 +277,7 @@
       ],
       "durationSeconds": 300,
       "isContinuous": true,
+      "stackableSlotCount": 3,
       "techniqueSpeedRatio": 0.5
     },
     "subCategory": "explorationSupply"

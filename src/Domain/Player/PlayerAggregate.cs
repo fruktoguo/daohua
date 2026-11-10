@@ -1316,7 +1316,7 @@ public sealed partial class PlayerAggregate
     /// 配置特定行动类型（如炼丹、战斗、采集）绑定的消耗品自动使用快捷槽位。
     /// </summary>
     public void ConfigureAutoUse(string actionType, int slotIndex, string? itemId, double quantity, bool enabled,
-        string? group = null)
+        string? group = null, int stackableSlotCount = 0)
     {
         actionType = actionType?.Trim().ToLowerInvariant() ?? string.Empty;
         itemId = itemId?.Trim();
@@ -1326,6 +1326,7 @@ public sealed partial class PlayerAggregate
             || group is not (AutoUseSlotState.SlotGroupGeneral or AutoUseSlotState.SlotGroupPotion)
             || (group == AutoUseSlotState.SlotGroupPotion && actionType != Domain.GameData.AutoUseBar.Combat)
             || (itemId is not null && (itemId.Length == 0 || itemId.Length > 128))
+            || stackableSlotCount < 0
             || !double.IsFinite(quantity) || quantity <= 0 || quantity > 1_000_000)
             throw new DomainException(DomainErrorCode.InvalidArgument, "自动使用配置无效。");
         var index = Settings.AutoUseSlots.FindIndex(slot => slot.ActionType == actionType
@@ -1339,9 +1340,37 @@ public sealed partial class PlayerAggregate
         var cooldown = index >= 0 ? Settings.AutoUseSlots[index].CooldownUntilUnixSeconds : 0;
         var value = new AutoUseSlotState(actionType, slotIndex, itemId, quantity, normalizedEnabled,
             remainingDurationSeconds, cooldown, group);
-        if (index >= 0 && Settings.AutoUseSlots[index] == value) return;
+        var unchanged = index >= 0 && Settings.AutoUseSlots[index] == value;
         if (index >= 0) Settings.AutoUseSlots[index] = value;
-        else Settings.AutoUseSlots.Add(value);
+        else
+        {
+            Settings.AutoUseSlots.Add(value);
+            index = Settings.AutoUseSlots.Count - 1;
+        }
+        var clearedDuplicate = false;
+        if (itemId is not null)
+        {
+            var duplicates = Settings.AutoUseSlots
+                .Select((slot, slotIndex) => (slot, slotIndex))
+                .Where(entry => entry.slotIndex != index && entry.slot.ItemId == itemId)
+                .Select(entry => entry.slotIndex)
+                .ToArray();
+            var excess = duplicates.Length + 1 - Math.Max(1, stackableSlotCount);
+            for (var duplicateIndex = 0; duplicateIndex < duplicates.Length && excess > 0; duplicateIndex++, excess--)
+            {
+                var duplicateSlotIndex = duplicates[duplicateIndex];
+                var duplicate = Settings.AutoUseSlots[duplicateSlotIndex];
+                Settings.AutoUseSlots[duplicateSlotIndex] = duplicate with
+                {
+                    ItemId = null,
+                    Enabled = false,
+                    RemainingDurationSeconds = 0,
+                    CooldownUntilUnixSeconds = 0
+                };
+                clearedDuplicate = true;
+            }
+        }
+        if (unchanged && !clearedDuplicate) return;
         Settings.AutoUseSlots.Sort((left, right) =>
         {
             var actionOrder = string.CompareOrdinal(left.ActionType, right.ActionType);
