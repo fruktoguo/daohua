@@ -35,6 +35,15 @@ if [[ -z "$CAPACITY_REAL_DATABASE_URL" ]]; then
   export CAPACITY_POSTGRES_CONTAINER="$isolated_container"
 fi
 export CAPACITY_REAL_NETWORK_DURATION_SECONDS="${CAPACITY_REAL_NETWORK_DURATION_SECONDS:-60}"
+private_constants="$ROOT_DIR/../DaoHua-Private/server/AntiMultiOpen/AntiMultiOpenConstants.cs"
+if [[ -z "${DAOHUA_LOADTEST_MODULE_DECLARATION:-}" && -f "$private_constants" ]]; then
+  DAOHUA_LOADTEST_MODULE_DECLARATION="$(sed -nE 's/.*ModuleDeclarationId = "([^"]+)".*/\1/p' "$private_constants" | head -1)"
+  [[ -n "$DAOHUA_LOADTEST_MODULE_DECLARATION" ]] || {
+    printf '无法从私有模块真源读取 LoadTest Hello 声明。\n' >&2
+    exit 1
+  }
+  export DAOHUA_LOADTEST_MODULE_DECLARATION
+fi
 printf '容量门禁：真实 PostgreSQL、隔离主服 100/500 认证业务收发与 2000 一小时冷挂机；未完成目标或资源证据缺失均失败。\n' >&2
 DAOHUA_DATABASE_URL="$CAPACITY_REAL_DATABASE_URL" \
 CAPACITY_REAL_DATABASE_URL="$CAPACITY_REAL_DATABASE_URL" \
