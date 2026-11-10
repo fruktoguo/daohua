@@ -190,12 +190,8 @@ export const SecretArtOperations = memo(function SecretArtOperations({
       const found = candidates.find(item => itemPickerEntryKey(item.itemId, item.variant) === selectedKey)
       if (found) return found
     }
-    if (activeEntry?.targetItemId) {
-      const found = candidates.find(item => item.itemId === activeEntry.targetItemId)
-      if (found) return found
-    }
     return null
-  }, [activeEntry?.targetItemId, candidates, selectedKey])
+  }, [candidates, selectedKey])
 
   // 秘法技艺等级与加速（统称秘法速度）
   const techniqueLevel = Math.max(0, Math.floor((techniqueExperiences?.['enhancement'] ?? 0) / 100))
@@ -281,16 +277,14 @@ export const SecretArtOperations = memo(function SecretArtOperations({
         <div className="enhancement-target">
           <ItemUseSlot
             item={selected}
-            onClick={event => {
-              if (!isActive) setPickerAnchor(prev => (prev ? null : event.currentTarget))
-            }}
+            onClick={event => setPickerAnchor(prev => (prev ? null : event.currentTarget))}
           />
           <div className="enhancement-target-config">
             <span className="setting-label">{t('app.enhancement.repeats')}</span>
             <QuantitySelector
               allowInfinity
               ariaLabel={t('app.enhancement.repeatsAria')}
-              disabled={isActive || !selected}
+              disabled={!selected}
               max={MAX_ACTION_REPEATS}
               min={1}
               onChange={setRepeats}
@@ -302,13 +296,23 @@ export const SecretArtOperations = memo(function SecretArtOperations({
 
         <div className="enhancement-action-row">
           {isActive ? (
-            <button
-              className="action-modal-submit action-modal-submit--danger"
-              onClick={stop}
-              type="button"
-            >
-              {t(`app.secretArt.stop${opCap}`)}
-            </button>
+            <div className="action-modal-button-group">
+              <button
+                className="action-modal-submit"
+                disabled={!selected}
+                onClick={() => submitAction(false)}
+                type="button"
+              >
+                {t(`app.secretArt.enqueue${opCap}`)}
+              </button>
+              <button
+                className="action-modal-submit action-modal-submit--danger"
+                onClick={stop}
+                type="button"
+              >
+                {t(`app.secretArt.stop${opCap}`)}
+              </button>
+            </div>
           ) : queueLength > 0 ? (
             <div className="action-modal-button-group">
               <button

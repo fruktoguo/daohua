@@ -54,3 +54,23 @@ test('秘法操作窗口契约：采用目标槽位+浮动选择器+次数选择
     '严禁在页面直接平铺所有候选物品，必须收拢进浮动选择器',
   )
 })
+
+test('秘法操作已有同类行动时仍可配置并追加新目标', async () => {
+  const source = await readFile(resolve('frontend/src/components/SecretArtOperations.tsx'), 'utf8')
+
+  assert.match(
+    source,
+    /<ItemUseSlot\s+item=\{selected\}\s+onClick=\{event => setPickerAnchor\(prev => \(prev \? null : event\.currentTarget\)\)\}/,
+    '当前行动存在时，目标槽仍须打开新行动的物品选择器',
+  )
+  assert.doesNotMatch(source, /activeEntry\?\.targetItemId[\s\S]*?return found/,
+    '新行动目标不得被当前队列目标覆盖')
+  const activeBranchStart = source.indexOf('{isActive ? (')
+  const activeBranchEnd = source.indexOf(') : queueLength > 0 ?', activeBranchStart)
+  assert.notEqual(activeBranchStart, -1, '必须保留已有行动分支')
+  assert.notEqual(activeBranchEnd, -1, '已有行动分支必须与普通队列状态分开')
+  const activeBranch = source.slice(activeBranchStart, activeBranchEnd)
+  assert.match(activeBranch, /enqueue\$\{opCap\}/, '已有行动时必须提供新行动入队按钮')
+  assert.match(activeBranch, /submitAction\(false\)/, '新行动必须追加到队尾')
+  assert.match(activeBranch, /stop\$\{opCap\}/, '已有行动仍须提供独立停止操作')
+})

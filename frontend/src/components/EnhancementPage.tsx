@@ -137,34 +137,6 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
   )
   const isEnhancing = activeEnhanceEntry !== null
 
-  // 若当前正在强化，将正在强化中的装备构造成选中条目（即使已从背包扣除）
-  const activeTargetItem = useMemo<ItemPickerEntry | null>(() => {
-    if (!activeEnhanceEntry?.targetItemId) return null
-    const targetId = activeEnhanceEntry.targetItemId
-    const targetEq = findEquipmentInCatalog(equipmentCatalog, targetId)
-    const targetItem = findItemInCatalog(items, targetId)
-    const level = Math.floor(
-      activeEnhanceEntry.enhancementCurrentLevel
-        ?? (typeof activeEnhanceEntry.parameters?.initialLevel === 'number'
-            ? activeEnhanceEntry.parameters.initialLevel
-            : 0)
-    )
-    const variant = level > 0 ? `+${level}` : null
-    const baseName = targetEq?.name ?? targetItem?.name ?? targetId
-    return {
-      itemId: targetId,
-      name: level > 0 ? `${baseName} +${level}` : baseName,
-      amount: 1,
-      tier: targetEq?.tier ?? targetItem?.tier ?? 1,
-      category: resolveItemCategoryLabel(resolveItemSubCategory(targetId, targetItem, targetEq), t),
-      description: targetItem?.description ?? targetEq?.description ?? '',
-      definition: targetItem,
-      equipmentDefinition: targetEq,
-      variant,
-      enhancementLevel: level,
-    }
-  }, [activeEnhanceEntry, equipmentCatalog, items, t])
-
   const [userSelectedKey, setUserSelectedKey] = useState<string | null>(null)
   const [userTargetLevel, setUserTargetLevel] = useState(1)
   const [userProtectLevel, setUserProtectLevel] = useState(ENHANCE_MIN_PROTECT_LEVEL)
@@ -178,25 +150,22 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
     [combat?.equipment, equipmentCatalog, inventory, items, queueEntries, t],
   )
   const userSelected = candidates.find(c => itemPickerEntryKey(c.itemId, c.variant) === userSelectedKey) ?? null
-  const selected = isEnhancing ? activeTargetItem : userSelected
+  const selected = userSelected
 
   const currentLevel = Math.floor(selected?.enhancementLevel ?? 0)
   const nextLevel = Math.min(ENHANCE_MAX_LEVEL, currentLevel + 1)
   const maxedOut = selected !== null && currentLevel >= ENHANCE_MAX_LEVEL
 
-  // 强化进行中时所有设定直读权威任务信息，切换回该界面时完整重现；未强化时读取玩家本地选择状态
-  const targetLevel = isEnhancing ? Math.floor(activeEnhanceEntry?.targetLevel ?? nextLevel) : userTargetLevel
-  const useProtection = isEnhancing ? Boolean(activeEnhanceEntry?.auxItemId) : userUseProtection
-  const protectionItemId = isEnhancing ? (activeEnhanceEntry?.auxItemId ?? null) : userProtectionItemId
-  const protectLevel = isEnhancing
-    ? Math.floor(activeEnhanceEntry?.parameters?.protectLevel ?? ENHANCE_MIN_PROTECT_LEVEL)
-    : userProtectLevel
-  const repeats = isEnhancing ? (activeEnhanceEntry?.remainingRepeats ?? -1) : userRepeats
+  // 页面设置只用于新建行动；已有强化行动仍由队列条目独立持有其参数。
+  const targetLevel = userTargetLevel
+  const useProtection = userUseProtection
+  const protectionItemId = userProtectionItemId
+  const protectLevel = userProtectLevel
+  const repeats = userRepeats
 
   // 追踪上一次选中的目标，支持强化升降级导致变体 key 变化时平滑迁移到新变体
   const lastSelectedRef = useRef<{ itemId: string; level: number } | null>(null)
   useEffect(() => {
-    if (isEnhancing) return
     if (userSelected) {
       lastSelectedRef.current = { itemId: userSelected.itemId, level: currentLevel }
     } else if (userSelectedKey) {
@@ -211,17 +180,15 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
       }
       setUserSelectedKey(null)
     }
-  }, [candidates, currentLevel, isEnhancing, userSelected, userSelectedKey])
+  }, [candidates, currentLevel, userSelected, userSelectedKey])
 
   useEffect(() => {
-    if (isEnhancing) return
     setUserTargetLevel(prev => Math.min(ENHANCE_MAX_LEVEL, Math.max(nextLevel, prev)))
-  }, [isEnhancing, nextLevel, userSelectedKey])
+  }, [nextLevel, userSelectedKey])
 
   useEffect(() => {
-    if (isEnhancing) return
     setUserProtectLevel(prev => Math.min(Math.max(ENHANCE_MIN_PROTECT_LEVEL, prev), Math.max(ENHANCE_MIN_PROTECT_LEVEL, userTargetLevel)))
-  }, [isEnhancing, userTargetLevel])
+  }, [userTargetLevel])
   const techniqueProgress = calculateTechniqueProgress(combat?.techniqueExperiences?.enhancement ?? 0)
   const techniqueLevel = techniqueProgress.level
 
@@ -234,9 +201,8 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
     return configured && configured.length > 0 ? configured : (selected ? [selected.itemId] : [])
   }, [selected])
   useEffect(() => {
-    if (isEnhancing) return
     setUserProtectionItemId(protectionOptions[0] ?? null)
-  }, [isEnhancing, protectionOptions])
+  }, [protectionOptions])
   // 保护材料仅限背包内未装备件（若为装备则扣除已装备在身上的 0 级件）
   const getAvailableProtectionAmount = useCallback((id: string) => {
     const rawAmount = getItemAmount(inventory, id)
@@ -349,15 +315,13 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
         <div className="enhancement-target">
           <ItemUseSlot
             item={selected}
-            onClick={event => {
-              if (!isEnhancing) setPickerAnchor(prev => (prev ? null : event.currentTarget))
-            }}
+            onClick={event => setPickerAnchor(prev => (prev ? null : event.currentTarget))}
           />
           <div className="enhancement-target-config">
             <span className="setting-label">{t('app.enhancement.targetLevel')}</span>
             <QuantitySelector
               ariaLabel={t('app.enhancement.targetLevelAria')}
-              disabled={isEnhancing || !selected || maxedOut}
+              disabled={!selected || maxedOut}
               max={ENHANCE_MAX_LEVEL}
               maxShortcut
               min={nextLevel}
@@ -374,7 +338,7 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
           <label className="enhancement-charm-toggle">
             <input
               checked={useProtection}
-              disabled={isEnhancing || !selected || protectionOptions.length === 0 || protectionOwned < 1}
+              disabled={!selected || protectionOptions.length === 0 || protectionOwned < 1}
               onChange={event => setUserUseProtection(event.target.checked)}
               type="checkbox"
             />
@@ -393,7 +357,7 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
             />
             <QuantitySelector
               ariaLabel={t('app.enhancement.protectLevelAria')}
-              disabled={isEnhancing || !useProtection || targetLevel <= ENHANCE_MIN_PROTECT_LEVEL}
+              disabled={!useProtection || targetLevel <= ENHANCE_MIN_PROTECT_LEVEL}
               max={Math.max(ENHANCE_MIN_PROTECT_LEVEL, targetLevel)}
               min={ENHANCE_MIN_PROTECT_LEVEL}
               onChange={setUserProtectLevel}
@@ -406,11 +370,9 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
             <span className="setting-label">{t('app.enhancement.protectionMaterial')}</span>
             <ChoiceMenu
               label={t('app.enhancement.protectionMaterialAria')}
-              onSelect={id => {
-                if (!isEnhancing) setUserProtectionItemId(id)
-              }}
+              onSelect={setUserProtectionItemId}
               options={protectionOptions.map(id => ({
-                disabled: isEnhancing || getAvailableProtectionAmount(id) < 1,
+                disabled: getAvailableProtectionAmount(id) < 1,
                 id,
                 label: protectionName(id),
                 subtitle: t('app.enhancement.protectionOwned', { n: getAvailableProtectionAmount(id) }),
@@ -424,7 +386,7 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
           <QuantitySelector
             allowInfinity
             ariaLabel={t('app.enhancement.repeatsAria')}
-            disabled={isEnhancing || !selected || maxedOut}
+            disabled={!selected || maxedOut}
             max={MAX_ACTION_REPEATS}
             onChange={setUserRepeats}
             presets={[1, 10, 100]}
@@ -432,13 +394,23 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
           />
         </div>
         {isEnhancing ? (
-          <button
-            className="action-modal-submit action-modal-submit--danger"
-            onClick={stopEnhancement}
-            type="button"
-          >
-            {t('app.enhancement.stop')}
-          </button>
+          <div className="action-modal-button-group">
+            <button
+              className="action-modal-submit"
+              disabled={!selected || maxedOut}
+              onClick={() => submit(false)}
+              type="button"
+            >
+              {t('app.enhancement.enqueue')}
+            </button>
+            <button
+              className="action-modal-submit action-modal-submit--danger"
+              onClick={stopEnhancement}
+              type="button"
+            >
+              {t('app.enhancement.stop')}
+            </button>
+          </div>
         ) : maxedOut ? (
           <button
             className="action-modal-submit"
