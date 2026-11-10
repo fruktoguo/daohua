@@ -7,8 +7,8 @@
  * 3. 请求道化主服 /api/v1/chat/upload-ticket：
  *    - 主服执行账号鉴权与每日 20 张配额检查；
  *    - 主服执行全服哈希去重预检（若全服已有，秒回直链且不扣配额）；
- *    - 若为新图，签发具有 5 分钟有效期的 HMAC-SHA256 签名 Ticket；
- * 4. 携带 Ticket 直传 Cloudflare Worker，返回短直链并写入本地缓存。
+ * 4. 浏览器直传蜜蜂图床游客通道（www.beeimg.cn，CORS 全开放、免登录、国内 CDN 秒开），
+ *    成功后原始 Blob 同步写入 IndexedDB 离线库，配合表情包过期自愈重传机制外链永不失效。
  */
 import { chatStickerService } from './chatStickerService.ts'
 
@@ -84,8 +84,25 @@ interface UploadTicketResponse {
   remainingToday: number
 }
 
+/** 蜜蜂图床游客直传端点（CORS 全开放、免登录、国内 CDN 分发；storage_id=2 为游客 Temp 策略） */
+const BEEIMG_UPLOAD_ENDPOINT = 'https://www.beeimg.cn/api/v2/upload'
+
+interface BeeimgUploadResponse {
+  status: 'success' | 'error'
+  message?: string
+  data?: {
+    public_url?: string
+  }
+}
+
 /**
  * 上传图片文件并获取图片直链
+ *
+ * 上传链路（0 消耗主服流量）：
+ * 1. 计算图片 SHA-256 并做客户端本地哈希去重；
+ * 2. 请求主服 upload-ticket：账号鉴权、每日配额与全服哈希去重（命中直接复用秒开）；
+ * 3. 浏览器直传蜜蜂图床游客接口（免登录、CORS 开放、国内 CDN 秒开），
+ *    上传成功瞬间原始 Blob 已写入本地 IndexedDB，配合表情包过期自愈重传机制外链永不失效。
  * @param blob 待上传的图片文件对象（截图 Blob 或 File）
  * @returns 图片直链 URL
  */
@@ -100,7 +117,7 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
     return { url: localCache[sha256], cached: true }
   }
 
-  // 3. 向道化主服申请上传 Ticket（带会话 Cookie，执行账号鉴权、每日20张上限与全服去重）
+  // 3. 向道化主服申请上传凭证（带会话 Cookie，执行账号鉴权、每日20张上限与全服去重）
   const ticketRes = await fetch('/api/v1/chat/upload-ticket', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -120,21 +137,19 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
 
   const ticketData: UploadTicketResponse = await ticketRes.json()
 
-  // 4. 若主服全服去重命中（其他玩家已上传过同图），直接复用，不调用 Cloudflare 也无需上传
-  if (ticketData.cached || !ticketData.ticket || !ticketData.uploadEndpoint) {
+  // 4. 若主服全服去重命中（其他玩家已上传过同图），直接复用，无需任何上传
+  if (ticketData.cached || !ticketData.ticket) {
     saveLocalHashUrl(sha256, ticketData.url)
     return { url: ticketData.url, cached: true }
   }
 
-  // 5. 携带 Ticket 直传 Cloudflare Worker
+  // 5. 浏览器直传蜜蜂图床游客通道（免登录、CORS 开放、国内 CDN 分发）
   const formData = new FormData()
   formData.append('file', blob, `image.${ext}`)
+  formData.append('storage_id', '2')
 
-  const uploadRes = await fetch(ticketData.uploadEndpoint, {
+  const uploadRes = await fetch(BEEIMG_UPLOAD_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'X-Upload-Ticket': ticketData.ticket,
-    },
     body: formData,
   })
 
@@ -143,12 +158,17 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
     throw new Error(`图床存储失败 [${uploadRes.status}]: ${errText}`)
   }
 
-  const directUrl = (await uploadRes.text()).trim()
+  const uploadJson = (await uploadRes.json()) as BeeimgUploadResponse
+  if (uploadJson.status !== 'success' || !uploadJson.data?.public_url) {
+    throw new Error(`图床返回异常: ${uploadJson.message ?? '未知错误'}`)
+  }
+
+  const directUrl = uploadJson.data.public_url
   if (!directUrl.startsWith('https://')) {
     throw new Error(`图床返回异常地址: ${directUrl}`)
   }
 
-  // 成功上传至 R2 后，异步通知主服登记全服哈希映射
+  // 成功上传后，异步通知主服登记全服哈希映射（其他玩家同图秒级复用）
   fetch('/api/v1/chat/upload-confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
