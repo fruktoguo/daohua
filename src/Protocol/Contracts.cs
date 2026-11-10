@@ -913,6 +913,26 @@ public static class SocialActions
     public const string PartyUnready = "party.unready";
     /// <summary>调整开启槽位（队长；Party 载荷内 openSlots 必填，2~5 且不得低于当前人数）</summary>
     public const string PartySlots = "party.slots";
+    /// <summary>队长设置斗地主底注。</summary>
+    public const string DouDiZhuStake = "doudizhu.stake";
+    /// <summary>成员本人切换斗地主准备状态。</summary>
+    public const string DouDiZhuReady = "doudizhu.ready";
+    /// <summary>成员本人取消斗地主准备状态。</summary>
+    public const string DouDiZhuUnready = "doudizhu.unready";
+    /// <summary>队长开始斗地主。</summary>
+    public const string DouDiZhuStart = "doudizhu.start";
+    /// <summary>叫地主或抢地主。</summary>
+    public const string DouDiZhuBid = "doudizhu.bid";
+    /// <summary>出牌。</summary>
+    public const string DouDiZhuPlay = "doudizhu.play";
+    /// <summary>不出。</summary>
+    public const string DouDiZhuPass = "doudizhu.pass";
+    /// <summary>成员本人主动开启斗地主托管。</summary>
+    public const string DouDiZhuHost = "doudizhu.host";
+    /// <summary>成员本人关闭斗地主托管。</summary>
+    public const string DouDiZhuUnhost = "doudizhu.unhost";
+    /// <summary>向同桌发送固定道具或快捷话语。</summary>
+    public const string DouDiZhuInteract = "doudizhu.interact";
 
     /// <summary>判定是否为受支持的社交动作。</summary>
     /// <param name="action">动作标识。</param>
@@ -922,7 +942,8 @@ public static class SocialActions
         PartyInvite or PartyAccept or PartyDecline or PartyLeave or
         PartyCreate or PartyUpdate or PartyDisband or PartyKick or PartyJoin or
         PartyMatchSet or PartyMatchClear or PartyShare or
-        PartyReady or PartyUnready or PartySlots;
+        PartyReady or PartyUnready or PartySlots or DouDiZhuStake or DouDiZhuReady or DouDiZhuUnready
+        or DouDiZhuStart or DouDiZhuBid or DouDiZhuPlay or DouDiZhuPass or DouDiZhuHost or DouDiZhuUnhost or DouDiZhuInteract;
 }
 
 /// <summary>队伍档案补丁载荷：party.create 时 name/activityKind/nodeId/minValuation/isPublic 语义齐全，party.update 仅应用非空字段。</summary>
@@ -943,7 +964,8 @@ public sealed record PartyProfileDto(
     bool? IsPublic = null,
     bool? PvpEnabled = null,
     int? OpenSlots = null,
-    int? Difficulty = null);
+    int? Difficulty = null,
+    double? DouDiZhuStake = null);
 
 /// <summary>客户端社交指令请求。</summary>
 /// <param name="RequestId">请求唯一标识，服务端回执配对键</param>
@@ -960,7 +982,12 @@ public sealed record SocialActionDto(
     string? TargetName = null,
     string? PartyId = null,
     string? Channel = null,
-    PartyProfileDto? Party = null);
+    PartyProfileDto? Party = null,
+    string? GameId = null,
+    long? GameVersion = null,
+    string? BidAction = null,
+    IReadOnlyList<int>? Cards = null,
+    string? Interaction = null);
 
 /// <summary>好友条目。</summary>
 /// <param name="PlayerId">好友玩家 ID</param>
@@ -992,7 +1019,49 @@ public sealed record ValuationBreakdownDto(
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
 /// <param name="RealmLevel">成员境界等级</param>
 /// <param name="LevelMalus">成员受到的队伍等级惩罚比率（0~0.9）</param>
-public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0, string Avatar = "player", ValuationBreakdownDto? ValuationBreakdown = null);
+public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0, string Avatar = "player", ValuationBreakdownDto? ValuationBreakdown = null, bool DouDiZhuReady = false, double SpiritStones = 0);
+
+/// <summary>斗地主牌桌中一手公开出牌/过牌记录。</summary>
+public sealed record DouDiZhuPlayDto(int Seat, IReadOnlyList<int> Cards, bool IsPass, long Version);
+
+/// <summary>斗地主的公开叫抢记录。</summary>
+public sealed record DouDiZhuBidDto(int Seat, string Action, long Version);
+
+/// <summary>短暂同桌互动，不修改权威牌局版本或资产。</summary>
+public sealed record DouDiZhuInteractionDto(string Id, string GameId, string SenderId, string TargetId,
+    string Kind, long CreatedAtUnixMilliseconds);
+
+/// <summary>面向单名队伍成员投影的斗地主牌局状态；Hand 与 BottomCards 按观者权限裁剪。</summary>
+public sealed record DouDiZhuGameDto(
+    string GameId,
+    IReadOnlyList<string> PlayerIds,
+    double BaseStake,
+    string Phase,
+    int CurrentSeat,
+    IReadOnlyList<int> Hand,
+    IReadOnlyList<int> HandsRemaining,
+    IReadOnlyList<int> BottomCards,
+    int? LandlordSeat,
+    int RobCount,
+    int BombCount,
+    IReadOnlyList<int> CurrentTrickCards,
+    int? LastPlayedSeat,
+    int ConsecutivePasses,
+    IReadOnlyList<DouDiZhuPlayDto> History,
+    long Version,
+    int? WinnerSeat,
+    bool? LandlordWon,
+    bool Spring,
+    int FinalMultiplier,
+    IReadOnlyList<double> SettlementDeltas,
+    long TurnDeadlineAtUnixMilliseconds,
+    IReadOnlyList<bool> HostedSeats,
+    int DealNumber = 0,
+    long DealStartedAtUnixMilliseconds = 0,
+    long ActionAvailableAtUnixMilliseconds = 0,
+    long? LandlordConfirmedAtUnixMilliseconds = null,
+    IReadOnlyList<int>? DealHand = null,
+    IReadOnlyList<DouDiZhuBidDto>? Bids = null);
 
 /// <summary>组队讨伐活跃会话（总纲 §21.13：会话持有唯一权威战斗状态，成员读取个人结算投影）。</summary>
 /// <param name="SessionId">会话唯一标识</param>
@@ -1032,7 +1101,9 @@ public sealed record PartyDto(
     IReadOnlyList<PartyMemberDto> Members,
     int OpenSlots,
     PartySessionDto? ActiveSession = null,
-    int Difficulty = 0);
+    int Difficulty = 0,
+    double DouDiZhuStake = 10,
+    DouDiZhuGameDto? DouDiZhuGame = null);
 
 /// <summary>同节点在线修士条目。</summary>
 /// <param name="PlayerId">修士玩家 ID</param>
@@ -1072,7 +1143,8 @@ public sealed record SocialStateDto(
     PartyDto? Party,
     PartyInvitationDto? PartyInvitation,
     IReadOnlyList<NearbyPlayerDto> NearbyPlayers,
-    PartySeekerDto? Seeking = null);
+    PartySeekerDto? Seeking = null,
+    IReadOnlyList<DouDiZhuInteractionDto>? DouDiZhuInteractions = null);
 
 /// <summary>组队大厅筛选请求。</summary>
 /// <param name="RequestId">请求唯一标识，回执配对键</param>

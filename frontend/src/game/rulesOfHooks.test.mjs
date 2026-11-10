@@ -78,7 +78,6 @@ test('React Rules of Hooks：静态代码门禁，严禁在条件返回之后调
 
             function findReturn(n) {
               if (
-                n !== stmt &&
                 (ts.isFunctionDeclaration(n) ||
                   ts.isFunctionExpression(n) ||
                   ts.isArrowFunction(n))

@@ -25,7 +25,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
     market.orders, market.trades, market.settlement_claims, platform.section_flush_queue,
     platform.integration_outbox, platform.command_receipts, platform.compute_jobs,
     social.friend_requests, social.friendships, social.parties, social.party_members,
-    social.party_sessions, social.party_invitations, social.party_seekers,
+    social.party_sessions, social.party_invitations, social.party_seekers, social.doudizhu_games,
     social.player_invitations, social.chat_messages TO daohua_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_state_sections, game.player_action_queue,
     game.player_projection, platform.section_flush_queue, platform.integration_outbox,

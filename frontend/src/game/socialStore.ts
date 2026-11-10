@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type {
   FriendDto,
   FriendRequestDto,
+  DouDiZhuGameDto,
+  DouDiZhuInteractionDto,
   NearbyPlayerDto,
   PartyDto,
   PartyInvitationDto,
@@ -34,11 +36,21 @@ export interface TeammateReportEntry {
 /** 存储在途的队友行动收益请求（requestId → playerId） */
 const teammatePendingReqs = new Map<string, string>()
 /**
+ * 存储在途的模拟器队友导入名片请求（requestId → playerId）。
+ * 与 teammateReports 同构：命中即消费并投递给等待方，绝不打开角色信息卡弹窗。
+ */
+const simulatorPendingReqs = new Map<string, string>()
+/** 模拟器队友导名片的应答投递回调（由模拟器组件注册，应答到达即消费一次） */
+type SimulatorCardListener = (card: PlayerCardDto) => void
+let simulatorCardListener: SimulatorCardListener | null = null
+/**
  * 社交状态接口（好友、申请、队伍、匹配登记、附近修士）。
  * 数据完全来自服务端下发的 SocialState / PartyLobby 帧：客户端不做任何本地推演，
  * 只维护「好友频道当前选中的私聊对象」这类纯视图状态。
  */
 interface SocialStore {
+  /** 服务端校验后广播的同桌短暂互动。 */
+  douDiZhuInteractions: readonly DouDiZhuInteractionDto[]
   /** 好友列表 */
   friends: readonly FriendDto[]
   /** 收到的好友申请 */
@@ -69,6 +81,11 @@ interface SocialStore {
   teammateReports: Readonly<Record<string, TeammateReportEntry>>
   /** 请求指定队伍成员的当前行动收益（复用 PlayerCardRequest） */
   requestTeammateReport: (playerId: string) => void
+  /**
+   * 请求指定队伍成员的完整角色信息卡，供战斗模拟器导入其功法/装备/消耗品/属性面板（复用 PlayerCardRequest）。
+   * 应答经 <paramref name="onCard"/> 一次性投递，不打开角色信息卡弹窗；断线发送失败返回 false。
+   */
+  requestSimulatorCard: (playerId: string, onCard: SimulatorCardListener) => boolean
   /** 应用服务端下发的社交状态 */
   applyState: (state: SocialStateDto) => void
   /** 应用服务端下发的大厅视图（整体替换） */
@@ -104,6 +121,22 @@ interface SocialStore {
    * 会话存续期间修改由服务端裁决散场重建。非队长/非讨伐/同值不派发，返回 false。
    */
   setPartyPvp: (pvpEnabled: boolean) => boolean
+  /** 设置队伍斗地主底注；非队长、负数及非有限数不派发。 */
+  setDouDiZhuStake: (stake: number) => boolean
+  /** 切换本人独立的斗地主准备状态。 */
+  setDouDiZhuReady: (ready: boolean) => boolean
+  /** 队长在三人全员准备后开局。 */
+  startDouDiZhu: () => boolean
+  /** 提交当前牌局版本的叫地主/抢地主/放弃。 */
+  bidDouDiZhu: (game: DouDiZhuGameDto, bidAction: 'pass' | 'call' | 'rob') => boolean
+  /** 提交当前牌局版本与所选牌。 */
+  playDouDiZhu: (game: DouDiZhuGameDto, cards: readonly number[]) => boolean
+  /** 提交当前牌局版本的不出操作。 */
+  passDouDiZhu: (game: DouDiZhuGameDto) => boolean
+  /** 本人切换斗地主托管；开启当前回合托管后由服务端立即出牌。 */
+  setDouDiZhuHosted: (game: DouDiZhuGameDto, hosted: boolean) => boolean
+  /** 道具与快捷话语不携带牌局版本，避免干扰并发出牌。 */
+  interactDouDiZhu: (game: DouDiZhuGameDto, targetId: string, interaction: string) => boolean
   /**
    * 本人设定组队讨伐的复活时机策略（respawn.policy 命令，写本人 settings，不影响队友）。
    * 校验：策略为三值之一；`target-ally-alive` 必须指定当前队伍中的其他成员（不能是自己）。
@@ -112,7 +145,8 @@ interface SocialStore {
   setRespawnPolicy: (policy: RespawnPolicy, targetPlayerId?: string | null) => boolean
 }
 
-const EMPTY: Pick<SocialStore, 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId' | 'teammateReports'> = {
+const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId' | 'teammateReports'> = {
+  douDiZhuInteractions: [],
   friends: [],
   incomingRequests: [],
   outgoingRequests: [],
@@ -143,6 +177,7 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
       incomingRequests: Array.isArray(state.incomingRequests) ? state.incomingRequests : [],
       outgoingRequests: Array.isArray(state.outgoingRequests) ? state.outgoingRequests : [],
       party: state.party ?? null,
+      douDiZhuInteractions: state.douDiZhuInteractions ?? [],
       partyInvitation: state.partyInvitation ?? null,
       seeking: state.seeking ?? null,
       nearbyPlayers: Array.isArray(state.nearbyPlayers) ? state.nearbyPlayers : [],
@@ -185,10 +220,25 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
       },
     }))
   },
+  requestSimulatorCard: (playerId, onCard) => {
+    const requestId = gameClient.requestPlayerCard(playerId)
+    if (requestId === null) return false
+    simulatorPendingReqs.set(requestId, playerId)
+    simulatorCardListener = onCard
+    return true
+  },
   applyPlayerCard: card => {
     const isTeammateReq = teammatePendingReqs.has(card.requestId)
     if (isTeammateReq) {
       teammatePendingReqs.delete(card.requestId)
+    }
+    // 模拟器导入请求：命中即消费并投递整卡（含属性/功法/装备/消耗品），不弹窗、不写行动收益缓存。
+    if (simulatorPendingReqs.has(card.requestId)) {
+      simulatorPendingReqs.delete(card.requestId)
+      const listener = simulatorCardListener
+      simulatorCardListener = null
+      listener?.(card)
+      return
     }
     if (card.playerId) {
       set(curr => ({
@@ -212,6 +262,8 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
   setActiveFriend: activeFriendId => set({ activeFriendId }),
   reset: () => {
     teammatePendingReqs.clear()
+    simulatorPendingReqs.clear()
+    simulatorCardListener = null
     set({ ...EMPTY })
   },
   readyParty: () => {
@@ -243,6 +295,43 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
     if (party.pvpEnabled === pvpEnabled) return false
     return gameClient.sendSocialAction('party.update', undefined, undefined, { party: { pvpEnabled } })
   },
+  setDouDiZhuStake: stake => {
+    const party = get().party
+    if (!party || party.leaderId !== gameClient.playerId || !Number.isFinite(stake) || stake < 0
+      || party.douDiZhuStake === stake) return false
+    return gameClient.sendSocialAction('doudizhu.stake', undefined, undefined, { party: { douDiZhuStake: stake } })
+  },
+  setDouDiZhuReady: ready => {
+    const party = get().party
+    if (!party || party.members.length !== 3 || party.douDiZhuGame?.phase === 'bidding'
+      || party.douDiZhuGame?.phase === 'playing') return false
+    const self = party.members.find(member => member.playerId === gameClient.playerId)
+    if (!self || self.douDiZhuReady === ready) return false
+    return gameClient.sendSocialAction(ready ? 'doudizhu.ready' : 'doudizhu.unready')
+  },
+  startDouDiZhu: () => {
+    const party = get().party
+    if (!party || party.leaderId !== gameClient.playerId || party.members.length !== 3
+      || party.members.some(member => !member.douDiZhuReady)
+      || party.douDiZhuGame?.phase === 'bidding' || party.douDiZhuGame?.phase === 'playing') return false
+    return gameClient.sendSocialAction('doudizhu.start')
+  },
+  bidDouDiZhu: (game, bidAction) => gameClient.sendSocialAction('doudizhu.bid', undefined, undefined, {
+    gameId: game.gameId, gameVersion: game.version, bidAction,
+  }),
+  playDouDiZhu: (game, cards) => cards.length > 0 && gameClient.sendSocialAction('doudizhu.play', undefined, undefined, {
+    gameId: game.gameId, gameVersion: game.version, cards: [...cards],
+  }),
+  passDouDiZhu: game => gameClient.sendSocialAction('doudizhu.pass', undefined, undefined, {
+    gameId: game.gameId, gameVersion: game.version,
+  }),
+  setDouDiZhuHosted: (game, hosted) => gameClient.sendSocialAction(
+    hosted ? 'doudizhu.host' : 'doudizhu.unhost', undefined, undefined, {
+      gameId: game.gameId, gameVersion: game.version,
+    }),
+  interactDouDiZhu: (game, targetId, interaction) => gameClient.sendSocialAction('doudizhu.interact', targetId, undefined, {
+    gameId: game.gameId, interaction,
+  }),
   setRespawnPolicy: (policy, targetPlayerId) => {
     // 复活策略是玩家自己的设置：不校验队伍、不校验队长，本人存什么就是什么。
     // 「指定队友存活」的观察对象允许先于组队设定（离线设置、换队后沿用），

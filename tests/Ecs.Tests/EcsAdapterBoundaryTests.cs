@@ -7,6 +7,7 @@ using Domain.GameData;
 using Domain.Persistence;
 using Domain.Player;
 using Domain.Simulation;
+using Domain.Social;
 using Domain.World;
 using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
@@ -1229,6 +1230,20 @@ public sealed class EcsAdapterBoundaryTests
             DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<bool> TryUpdatePartyProfileAsync(Guid partyId, PartyProfileRecord profile,
             DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryUpdateDouDiZhuStakeAsync(Guid partyId, Guid leaderId, double stake,
+            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TrySetDouDiZhuReadyAsync(Guid playerId, bool ready,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, Guid startedBy,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<DouDiZhuGameState?> GetDouDiZhuGameAsync(Guid partyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<DouDiZhuGameState>> ListActiveDouDiZhuGamesAsync(
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<DouDiZhuGameState>>([]);
+        public ValueTask<bool> TrySaveDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryCommitDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<PartyJoinResult> TryJoinPartyAsync(Guid partyId, Guid playerId,
             DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<IReadOnlyList<PartyMemberRecord>?> DisbandPartyAsync(Guid partyId,

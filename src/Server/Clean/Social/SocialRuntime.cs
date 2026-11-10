@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.GameData;
+using Domain.Social;
 using Protocol;
 
 namespace Server.Clean.Social;
@@ -63,6 +64,9 @@ public sealed class SocialRuntime
     private readonly ConcurrentDictionary<Guid, byte> _residentMembers = new();
     /// <summary>常驻对账串行门：与装载/卸载、成员消费及断线回调互斥，防并发竞态。</summary>
     private readonly SemaphoreSlim _residentGate = new(1, 1);
+    private readonly LogThrottle _douDiZhuAdvanceErrorLog = new(TimeSpan.FromMinutes(1));
+    /// <summary>每名发送者最多一条短暂互动，五秒后清理，不进入牌局检查点。</summary>
+    private readonly ConcurrentDictionary<Guid, DouDiZhuInteractionDto> _douDiZhuInteractions = new();
     private readonly object _pendingNotifyLock = new();
     private readonly Dictionary<Guid, PendingNotification> _pendingNotifications = [];
 
@@ -120,6 +124,9 @@ public sealed class SocialRuntime
 
     /// <summary>某玩家社交状态发生变化；订阅者按玩家过滤后下发。</summary>
     public event Func<Guid, ValueTask>? StateChanged;
+
+    /// <summary>斗地主终局原子结算后通知在线玩家运行时失效钱包缓存。</summary>
+    public event Action<Guid>? WalletChanged;
 
     /// <summary>读取玩家当前队伍 ID（供聊天频道作用域解析）。</summary>
     /// <param name="playerId">玩家 ID。</param>
@@ -223,14 +230,17 @@ public sealed class SocialRuntime
                         levelMap.GetValueOrDefault(member.PlayerId, 1),
                         malusMap.GetValueOrDefault(member.PlayerId, 0),
                         _presence.GetAvatar(member.PlayerId),
-                        valuations.TryGetValue(member.PlayerId, out var v) ? v.ToDto() : null))],
+                        valuations.TryGetValue(member.PlayerId, out var v) ? v.ToDto() : null,
+                        member.DouDiZhuReady, member.SpiritStones))],
                     party.OpenSlots,
                     snapshot.PartySession is { } session
                         ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,
                             [.. session.MemberIds.Select(id => id.ToString("D"))],
                             session.StartedAt.ToUnixTimeMilliseconds())
                         : null,
-                    party.Profile.Difficulty),
+                    party.Profile.Difficulty,
+                    party.DouDiZhuStake,
+                    snapshot.DouDiZhuGame is { } game ? ToDouDiZhuDto(game, playerId) : null),
             invitation is null
                 ? null
                 : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName, invitation.PartyName),
@@ -239,7 +249,12 @@ public sealed class SocialRuntime
                 ? null
                 : new PartySeekerDto(
                     snapshot.Seeker.ActivityKind, snapshot.Seeker.NodeId, snapshot.Seeker.MinValuation,
-                    snapshot.Seeker.CreatedAt.ToUnixTimeMilliseconds()));
+                    snapshot.Seeker.CreatedAt.ToUnixTimeMilliseconds()),
+            party is null || snapshot.DouDiZhuGame is null ? [] : [.. party.Members
+                .Select(member => _douDiZhuInteractions.GetValueOrDefault(member.PlayerId))
+                .OfType<DouDiZhuInteractionDto>()
+                .Where(item => item.GameId == snapshot.DouDiZhuGame.GameId.ToString("D")
+                    && _clock.UtcNow.ToUnixTimeMilliseconds() - item.CreatedAtUnixMilliseconds < 5000)]);
         if (_zongmen is null) return result;
         var prefixes = await _zongmen.PrefixesAsync(result.Friends.Select(friend => Guid.Parse(friend.PlayerId))
             .Concat(result.NearbyPlayers.Select(member => Guid.Parse(member.PlayerId)))
@@ -539,6 +554,7 @@ public sealed class SocialRuntime
                     {
                         PartyJoinResult.NotFound => SocialFailure.PartyNotFound,
                         PartyJoinResult.Full => SocialFailure.PartyFull,
+                        PartyJoinResult.GameActive => SocialFailure.DouDiZhuUnavailable,
                         _ => SocialFailure.AlreadyInParty
                     });
                 }
@@ -573,6 +589,7 @@ public sealed class SocialRuntime
                     {
                         PartyJoinResult.NotFound => SocialFailure.PartyNotFound,
                         PartyJoinResult.Full => SocialFailure.PartyFull,
+                        PartyJoinResult.GameActive => SocialFailure.DouDiZhuUnavailable,
                         _ => SocialFailure.AlreadyInParty
                     });
                 }
@@ -609,6 +626,8 @@ public sealed class SocialRuntime
                 var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
                 if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+                if (await _repository.GetDouDiZhuGameAsync(partyId.Value, cancellationToken) is { Phase: DouDiZhuGamePhase.Bidding or DouDiZhuGamePhase.Playing })
+                    return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
                 if (!await _repository.TryKickPartyMemberAsync(partyId.Value, targetId.Value, cancellationToken))
                     return new SocialOutcome(SocialFailure.TargetNotFound);
                 // 归属变化重置复活策略：被踢者本人回到缺省，其余曾指名他的成员同样重置。
@@ -626,6 +645,8 @@ public sealed class SocialRuntime
                 var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
                 if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+                if (await _repository.GetDouDiZhuGameAsync(partyId.Value, cancellationToken) is { Phase: DouDiZhuGamePhase.Bidding or DouDiZhuGamePhase.Playing })
+                    return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
                 // 先对活跃讨伐会话做权威散场（spec 名册含当前成员），再删 parties 行——
                 // 顺序不可颠倒：行删除后 spec 名册不可考，成员队首绑定只能等装载对账兜底。
                 await ArbitratePartySessionAsync(partyId.Value, "party-disbanded", cancellationToken, forceDissolve: true);
@@ -721,6 +742,8 @@ public sealed class SocialRuntime
                 var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
                 if (partyId is null) return new SocialOutcome(SocialFailure.NotInParty);
                 var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
+                if (await _repository.GetDouDiZhuGameAsync(partyId.Value, cancellationToken) is { Phase: DouDiZhuGamePhase.Bidding or DouDiZhuGamePhase.Playing })
+                    return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
                 if (!await _repository.TryRemovePartyMemberAsync(playerId, cancellationToken))
                     return new SocialOutcome(SocialFailure.NotInParty);
                 var affected = new List<Guid> { playerId };
@@ -777,9 +800,231 @@ public sealed class SocialRuntime
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
                 return SocialOutcome.Ok;
             }
+            case SocialActions.DouDiZhuStake:
+            case SocialActions.DouDiZhuReady:
+            case SocialActions.DouDiZhuUnready:
+            case SocialActions.DouDiZhuStart:
+            case SocialActions.DouDiZhuBid:
+            case SocialActions.DouDiZhuPlay:
+            case SocialActions.DouDiZhuPass:
+            case SocialActions.DouDiZhuHost:
+            case SocialActions.DouDiZhuUnhost:
+            case SocialActions.DouDiZhuInteract:
+                return await ApplyDouDiZhuActionAsync(playerId, action, now, cancellationToken);
             default:
                 return new SocialOutcome(SocialFailure.InvalidAction);
         }
+    }
+
+    private async ValueTask<SocialOutcome> ApplyDouDiZhuActionAsync(Guid playerId, SocialActionDto action,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
+        if (partyId is null) return new SocialOutcome(SocialFailure.NotInParty);
+        var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
+        if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
+
+        if (action.Action == SocialActions.DouDiZhuStake)
+        {
+            if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+            if (action.Party?.DouDiZhuStake is not { } stake || !double.IsFinite(stake) || stake < 0)
+                return new SocialOutcome(SocialFailure.DouDiZhuInvalid);
+            if (!await _repository.TryUpdateDouDiZhuStakeAsync(party.PartyId, playerId, stake, now, cancellationToken))
+                return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+            await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
+            return SocialOutcome.Ok;
+        }
+
+        if (action.Action is SocialActions.DouDiZhuReady or SocialActions.DouDiZhuUnready)
+        {
+            var ready = action.Action == SocialActions.DouDiZhuReady;
+            if (ready && party.Members.Count != 3) return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+            if (!await _repository.TrySetDouDiZhuReadyAsync(playerId, ready, cancellationToken))
+                return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+            await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
+            return SocialOutcome.Ok;
+        }
+
+        if (action.Action == SocialActions.DouDiZhuStart)
+        {
+            if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+            if (party.Members.Count != 3 || party.Members.Any(member => !member.DouDiZhuReady))
+                return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+            if (await _repository.GetDouDiZhuGameAsync(party.PartyId, cancellationToken) is { Phase: DouDiZhuGamePhase.Bidding or DouDiZhuGamePhase.Playing })
+                return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+            if (party.DouDiZhuStake > 0)
+            {
+                if (_assetBalances is null) throw new InvalidOperationException("斗地主开局未装配权威资产余额仓储。");
+                foreach (var member in party.Members)
+                {
+                    var balances = await _assetBalances.LoadBalancesAsync(member.PlayerId, cancellationToken);
+                    var available = balances.FirstOrDefault(balance => balance.AssetId == "currency.spirit-stone" && balance.Variant.Length == 0)?.Quantity ?? 0;
+                    if (available < party.DouDiZhuStake) return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+                }
+            }
+            var game = DouDiZhuGame.Create(Guid.NewGuid(), party.PartyId,
+                party.Members.Select(member => member.PlayerId).ToArray(), party.DouDiZhuStake, now);
+            if (!await _repository.TryCreateDouDiZhuGameAsync(game, playerId, cancellationToken))
+                return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+            await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
+            return SocialOutcome.Ok;
+        }
+
+        var current = await _repository.GetDouDiZhuGameAsync(party.PartyId, cancellationToken);
+        if (action.Action == SocialActions.DouDiZhuInteract)
+        {
+            if (current is null || current.Phase == DouDiZhuGamePhase.Cancelled
+                || action.GameId != current.GameId.ToString("D") || !current.PlayerIds.Contains(playerId)
+                || !Guid.TryParse(action.TargetPlayerId, out var targetId) || targetId == playerId
+                || !current.PlayerIds.Contains(targetId) || !party.Members.Any(member => member.PlayerId == targetId)
+                || action.Interaction is not ("tomato" or "flower" or "tea" or "applause"
+                    or "praise" or "hurry" or "stay" or "partner"))
+                return new SocialOutcome(SocialFailure.DouDiZhuInvalid);
+            var interaction = new DouDiZhuInteractionDto(Guid.NewGuid().ToString("D"), action.GameId,
+                playerId.ToString("D"), targetId.ToString("D"), action.Interaction, now.ToUnixTimeMilliseconds());
+            if (_douDiZhuInteractions.TryGetValue(playerId, out var previous))
+            {
+                if (interaction.CreatedAtUnixMilliseconds - previous.CreatedAtUnixMilliseconds < 1000
+                    || !_douDiZhuInteractions.TryUpdate(playerId, interaction, previous))
+                    return new SocialOutcome(SocialFailure.RateLimited);
+            }
+            else if (!_douDiZhuInteractions.TryAdd(playerId, interaction)) return new SocialOutcome(SocialFailure.RateLimited);
+            await NotifyAsync(current.PlayerIds, playerId);
+            return SocialOutcome.Ok;
+        }
+        if (current is null || current.Phase is not (DouDiZhuGamePhase.Bidding or DouDiZhuGamePhase.Playing))
+            return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+        if (!Guid.TryParse(action.GameId, out var gameId) || gameId != current.GameId
+            || action.GameVersion is not { } expectedVersion || expectedVersion != current.Version)
+            return new SocialOutcome(SocialFailure.DouDiZhuInvalid);
+        if (now < current.TurnDeadlineAt && current.HostedSeats[current.CurrentSeat]
+            && action.Action is SocialActions.DouDiZhuBid or SocialActions.DouDiZhuPlay or SocialActions.DouDiZhuPass)
+            return new SocialOutcome(SocialFailure.DouDiZhuInvalid);
+
+        DouDiZhuGameState updated;
+        try
+        {
+            if (now >= current.TurnDeadlineAt)
+            {
+                updated = DouDiZhuGame.ApplyTimeout(current, expectedVersion, now);
+                if ((action.Action is SocialActions.DouDiZhuHost or SocialActions.DouDiZhuUnhost)
+                    && (updated.Phase is DouDiZhuGamePhase.Bidding or DouDiZhuGamePhase.Playing))
+                {
+                    var targetSeat = Array.IndexOf(updated.PlayerIds, playerId);
+                    var shouldHost = action.Action == SocialActions.DouDiZhuHost;
+                    if (targetSeat < 0) throw new DomainException(DomainErrorCode.InvalidArgument, "玩家不在本局座位中。");
+                    if (updated.HostedSeats[targetSeat] != shouldHost)
+                        updated = DouDiZhuGame.SetHosted(updated, playerId, updated.Version, shouldHost, now);
+                }
+            }
+            else if (action.Action is SocialActions.DouDiZhuHost or SocialActions.DouDiZhuUnhost)
+            {
+                var hosted = action.Action == SocialActions.DouDiZhuHost;
+                updated = DouDiZhuGame.SetHosted(current, playerId, expectedVersion, hosted, now);
+            }
+            else
+            {
+                updated = action.Action switch
+                {
+                    SocialActions.DouDiZhuBid => Enum.TryParse<DouDiZhuBidAction>(action.BidAction, ignoreCase: true, out var bid)
+                        ? DouDiZhuGame.ApplyBid(current, playerId, expectedVersion, bid, now)
+                        : throw new DomainException(DomainErrorCode.InvalidArgument, "叫地主操作无效。"),
+                    SocialActions.DouDiZhuPlay when action.Cards is { Count: > 0 } cards =>
+                        DouDiZhuGame.ApplyPlay(current, playerId, expectedVersion, cards, now),
+                    SocialActions.DouDiZhuPass => DouDiZhuGame.ApplyPass(current, playerId, expectedVersion, now),
+                    _ => throw new DomainException(DomainErrorCode.InvalidArgument, "斗地主操作载荷无效。")
+                };
+            }
+        }
+        catch (DomainException)
+        {
+            return new SocialOutcome(SocialFailure.DouDiZhuInvalid);
+        }
+
+        if (!await PersistDouDiZhuUpdateAsync(updated, current.Version, cancellationToken))
+            return new SocialOutcome(SocialFailure.DouDiZhuInvalid);
+        await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
+        return SocialOutcome.Ok;
+    }
+
+    /// <summary>每次只推进一个到期座位，托管留出思考时间；CAS 防止重复结算。</summary>
+    public async ValueTask AdvanceDouDiZhuTurnsAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var item in _douDiZhuInteractions)
+            if (_clock.UtcNow.ToUnixTimeMilliseconds() - item.Value.CreatedAtUnixMilliseconds >= 5000)
+                ((ICollection<KeyValuePair<Guid, DouDiZhuInteractionDto>>)_douDiZhuInteractions).Remove(item);
+        var games = await _repository.ListActiveDouDiZhuGamesAsync(cancellationToken);
+        foreach (var current in games)
+        {
+            try
+            {
+                var now = _clock.UtcNow;
+                DouDiZhuGameState updated;
+                if (current.HostedSeats[current.CurrentSeat] && now >= current.ActionAvailableAt + DouDiZhuGame.HostedDelay)
+                    updated = DouDiZhuGame.ApplyHostedTurn(current, current.Version, now);
+                else if (now >= current.TurnDeadlineAt)
+                    updated = DouDiZhuGame.ApplyTimeout(current, current.Version, now);
+                else
+                    continue;
+
+                if (!await PersistDouDiZhuUpdateAsync(updated, current.Version, cancellationToken)) continue;
+                await NotifyAsync(current.PlayerIds);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                if (_douDiZhuAdvanceErrorLog.TryAcquire())
+                    _logger.LogError(exception, "斗地主回合自动推进失败，牌局 {PartyId} 保留当前检查点。", current.PartyId);
+            }
+        }
+    }
+
+    private async ValueTask<bool> PersistDouDiZhuUpdateAsync(DouDiZhuGameState updated, long expectedVersion,
+        CancellationToken cancellationToken)
+    {
+        var saved = updated.Phase == DouDiZhuGamePhase.Finished
+            ? await _repository.TryCommitDouDiZhuGameAsync(updated, expectedVersion, cancellationToken)
+            : await _repository.TrySaveDouDiZhuGameAsync(updated, expectedVersion, cancellationToken);
+        if (saved && updated.Phase == DouDiZhuGamePhase.Finished)
+            foreach (var member in updated.PlayerIds) WalletChanged?.Invoke(member);
+        return saved;
+    }
+
+    private static DouDiZhuGameDto ToDouDiZhuDto(DouDiZhuGameState state, Guid viewerId)
+    {
+        var viewerSeat = Array.IndexOf(state.PlayerIds, viewerId);
+        var hand = viewerSeat >= 0 ? state.Hands[viewerSeat] : [];
+        var revealedBottom = state.Phase is DouDiZhuGamePhase.Playing or DouDiZhuGamePhase.Finished
+            ? state.BottomCards : [];
+        return new DouDiZhuGameDto(
+            state.GameId.ToString("D"),
+            [.. state.PlayerIds.Select(id => id.ToString("D"))],
+            state.BaseStake,
+            state.Phase.ToString().ToLowerInvariant(),
+            state.CurrentSeat,
+            hand,
+            [.. state.Hands.Select(cards => cards.Length)],
+            revealedBottom,
+            state.LandlordSeat,
+            state.RobCount,
+            state.BombCount,
+            state.CurrentTrickCards,
+            state.LastPlayedSeat,
+            state.ConsecutivePasses,
+            [.. state.History.Select(entry => new DouDiZhuPlayDto(entry.Seat, entry.Cards, entry.IsPass, entry.Version))],
+            state.Version,
+            state.WinnerSeat,
+            state.LandlordWon,
+            state.Spring,
+            state.FinalMultiplier,
+            state.SettlementDeltas,
+            state.TurnDeadlineAt.ToUnixTimeMilliseconds(),
+            state.HostedSeats,
+            state.DealNumber,
+            state.DealStartedAt.ToUnixTimeMilliseconds(),
+            state.ActionAvailableAt.ToUnixTimeMilliseconds(),
+            state.LandlordConfirmedAt?.ToUnixTimeMilliseconds(),
+            viewerSeat < 0 ? [] : [.. state.Deck.Take(51).Where((_, index) => index % 3 == viewerSeat)],
+            [.. state.BidHistory.Select(entry => new DouDiZhuBidDto(entry.Seat, entry.Action, entry.Version))]);
     }
 
     /// <summary>主动向单个玩家推送最新社交状态（握手完成、节点变化等场景）。</summary>

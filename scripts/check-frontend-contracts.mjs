@@ -450,7 +450,6 @@ try {
 
             function findReturn(n) {
               if (
-                n !== stmt &&
                 (ts.isFunctionDeclaration(n) ||
                   ts.isFunctionExpression(n) ||
                   ts.isArrowFunction(n))

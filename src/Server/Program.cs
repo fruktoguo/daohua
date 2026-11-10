@@ -218,6 +218,7 @@ if (processRole == ServerProcessRole.Api)
         builder.Services.AddHostedService<PlayerSimulationHostedService>();
         // 组队讨伐看门狗（总纲 §21.13）：周期逐出 48h 离线成员并对账参与绑定；重启保留检查点。
         builder.Services.AddHostedService<Server.Clean.Social.PartySessionWatchdog>();
+        builder.Services.AddHostedService<Server.Clean.Social.DouDiZhuTurnWatchdog>();
     }
     // 同一宽限注册表单例兼任 hosted service：停机时立即收尾全部在途宽限条目。
     builder.Services.AddHostedService(sp => sp.GetRequiredService<Server.Clean.DisconnectGraceRegistry>());
@@ -246,9 +247,12 @@ if (processRole == ServerProcessRole.Api)
     // 市场入账事件 → 在线玩家钱包失效：成交对手方/退款属主的余额差量
     // 由下一次玩家门内推进经推送带给客户端（DisposeAsync 中解绑）。
     var marketRuntime = app.Services.GetRequiredService<MarketRuntime>();
-    marketRuntime.WalletCredited += app.Services.GetRequiredService<EcsPlayerRuntimeAdapter>().NotifyMarketWalletCredited;
+    var playerRuntimeAdapter = app.Services.GetRequiredService<EcsPlayerRuntimeAdapter>();
+    marketRuntime.WalletCredited += playerRuntimeAdapter.NotifyMarketWalletCredited;
     app.Services.GetRequiredService<Server.Clean.Social.IActionParticipationRuntime>().WalletChanged +=
-        app.Services.GetRequiredService<EcsPlayerRuntimeAdapter>().NotifyMarketWalletCredited;
+        playerRuntimeAdapter.NotifyMarketWalletCredited;
+    app.Services.GetRequiredService<Server.Clean.Social.SocialRuntime>().WalletChanged +=
+        playerRuntimeAdapter.NotifyMarketWalletCredited;
     // 断线宽限到期卸载的玩家若仍在有人在线的会话名册中，重新常驻（总纲18 §14.6）；
     // 在装配处订阅避免 SocialRuntime 构造依赖环。
     var disconnectGrace = app.Services.GetRequiredService<Server.Clean.DisconnectGraceRegistry>();

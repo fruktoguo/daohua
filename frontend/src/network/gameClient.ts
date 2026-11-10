@@ -405,13 +405,22 @@ export class GameClient {
   /**
    * 发送社交指令（SocialAction 信封）；服务端以带 requestId 的 SocialState 应答，失败走 Error 帧。
    * 队伍类指令通过 extras 携带扩展载荷：party.join 用 partyId，party.share 用 channel，
-   * party.create/party.update/party.match.set 用 party 档案补丁。
+   * party.create/party.update/party.match.set 用 party 档案补丁；斗地主动作携带牌局版本与操作数据。
    */
   sendSocialAction(
     action: SocialAction,
     targetPlayerId?: string | null,
     targetName?: string | null,
-    extras?: { partyId?: string | null; channel?: ChatChannel | null; party?: PartyProfileDto | null },
+    extras?: {
+      partyId?: string | null
+      channel?: ChatChannel | null
+      party?: PartyProfileDto | null
+      gameId?: string | null
+      gameVersion?: number | null
+      bidAction?: 'pass' | 'call' | 'rob' | null
+      cards?: number[] | null
+      interaction?: string | null
+    },
   ): boolean {
     const socket = this.ensureOpenSocket()
     if (!socket) return false
@@ -424,6 +433,11 @@ export class GameClient {
       ...(extras?.partyId ? { partyId: extras.partyId } : {}),
       ...(extras?.channel ? { channel: extras.channel } : {}),
       ...(extras?.party ? { party: extras.party } : {}),
+      ...(extras?.gameId ? { gameId: extras.gameId } : {}),
+      ...(extras?.gameVersion !== undefined ? { gameVersion: extras.gameVersion } : {}),
+      ...(extras?.bidAction ? { bidAction: extras.bidAction } : {}),
+      ...(extras?.cards ? { cards: extras.cards } : {}),
+      ...(extras?.interaction ? { interaction: extras.interaction } : {}),
     }
     if (!this.trySend(socket, WireMessageType.SocialAction, requestId, payload)) return false
     // 社交成功应答是带 requestId 的 SocialState（必达）、失败是 Error 帧：登记超时计时器做兜底，

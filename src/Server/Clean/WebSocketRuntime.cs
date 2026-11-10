@@ -1122,6 +1122,8 @@ public static class WebSocketEndpoint
         Social.SocialFailure.SeekingNotFound => "SOCIAL_SEEKING_NOT_FOUND",
         Social.SocialFailure.RateLimited => "SOCIAL_RATE_LIMITED",
         Social.SocialFailure.ChannelUnavailable => "SOCIAL_CHANNEL_UNAVAILABLE",
+        Social.SocialFailure.DouDiZhuUnavailable => "SOCIAL_DOUDIZHU_UNAVAILABLE",
+        Social.SocialFailure.DouDiZhuInvalid => "SOCIAL_DOUDIZHU_INVALID",
         _ => "SOCIAL_FAILED"
     };
 
@@ -1147,6 +1149,8 @@ public static class WebSocketEndpoint
         Social.SocialFailure.SeekingNotFound => "你没有进行中的队伍匹配。",
         Social.SocialFailure.RateLimited => "操作过于频繁，请稍后再试。",
         Social.SocialFailure.ChannelUnavailable => "该传音频道当前不可用。",
+        Social.SocialFailure.DouDiZhuUnavailable => "斗地主暂不可操作，请确认队伍恰好 3 人、全员准备且灵石足够。",
+        Social.SocialFailure.DouDiZhuInvalid => "斗地主操作无效或牌局已更新，请重试。",
         _ => "社交操作失败。"
     };
 

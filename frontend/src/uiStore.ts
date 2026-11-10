@@ -14,7 +14,7 @@ import { MOBILE_NAV_GROUP_DEFS, MOBILE_NAV_GROUP_ORDER, mobileNavGroupIdOf, type
  * - 'combat': 详情（战斗对决现场与战备装配详情）
  * - 'market': 坊市交易行
  * - 'shop': 系统商店（官价直售与每日限购）
- * - 'social': 同道（队伍组队、匹配与组队大厅）
+ * - 'social': 同道（队伍、宗门与邀请）
  * - 'inventory': 储物袋（背包）
  * - 'log': 传音道历（日志）
  * - 'records': 记录（离线挂机 / 今日统计 / 近期战报历史）
@@ -25,8 +25,11 @@ export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' |
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
 
-/** 同道页子选项卡：队伍 / 邀请（后续同道玩法沿用同一结构扩展） */
+/** 同道页子选项卡：队伍、宗门与邀请。 */
 export type SocialSubTab = 'party' | 'zongmen' | 'invite'
+
+/** 队伍面板顶部页签：队伍管理与斗地主对弈。 */
+export type PartyGameSubTab = 'party' | 'doudizhu'
 
 /** 地图页子选项卡：地图本体 vs 附近同域（妖兽、同道修士、灵地建筑） */
 export type MapSubTab = 'map' | 'monsters' | 'people' | 'buildings'
@@ -89,6 +92,10 @@ interface UiStore {
   socialSubTab: SocialSubTab
   /** 切换同道页子选项卡 */
   setSocialSubTab: (tab: SocialSubTab) => void
+  /** 队伍面板顶部页签 */
+  partyGameSubTab: PartyGameSubTab
+  /** 切换队伍面板顶部页签 */
+  setPartyGameSubTab: (tab: PartyGameSubTab) => void
   /** 队伍页内部当前页签 */
   partySubTab: PartySubTab
   /** 切换队伍页内部页签 */
@@ -190,6 +197,8 @@ export const useUiStore = create<UiStore>(set => ({
   setRightColumnTab: rightColumnTab => set({ rightColumnTab }),
   socialSubTab: 'party',
   setSocialSubTab: socialSubTab => set({ socialSubTab }),
+  partyGameSubTab: 'party',
+  setPartyGameSubTab: partyGameSubTab => set({ partyGameSubTab }),
   partySubTab: 'lobby',
   setPartySubTab: partySubTab => set({ partySubTab }),
   mapSubTab: 'map',

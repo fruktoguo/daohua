@@ -55,6 +55,9 @@ internal static class PostgresTestSchema
                         ALTER TABLE IF EXISTS market.item_stats ADD COLUMN IF NOT EXISTS reference_price double precision;
                         ALTER TABLE IF EXISTS social.chat_messages ADD COLUMN IF NOT EXISTS sender_realm integer NOT NULL DEFAULT 1;
                         ALTER TABLE IF EXISTS social.parties ALTER COLUMN open_slots SET DEFAULT 3;
+                        ALTER TABLE IF EXISTS social.parties ADD COLUMN IF NOT EXISTS doudizhu_stake double precision NOT NULL DEFAULT 10
+                            CHECK (doudizhu_stake >= 0 AND doudizhu_stake < 'Infinity'::double precision);
+                        ALTER TABLE IF EXISTS social.party_members ADD COLUMN IF NOT EXISTS doudizhu_ready boolean NOT NULL DEFAULT false;
                         """, connection) { CommandTimeout = 60 };
                     await patch.ExecuteNonQueryAsync();
                     await using var updateVersions = new NpgsqlCommand($"""
@@ -76,7 +79,7 @@ internal static class PostgresTestSchema
                             game.player_projection, game.player_runtime_leases, game.node_buildings,
                             platform.compute_jobs, platform.section_flush_queue, platform.command_receipts,
                             platform.integration_outbox, platform.account_risk_policy, platform.account_risk_key,
-                            social.parties, social.party_members, social.party_sessions, social.party_session_inbox,
+                            social.doudizhu_games, social.parties, social.party_members, social.party_sessions, social.party_session_inbox,
                             social.party_seekers, social.party_invitations, social.friendships, social.friend_requests,
                             social.chat_messages, social.player_invitations,
                             social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures,

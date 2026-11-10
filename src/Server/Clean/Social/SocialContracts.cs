@@ -1,3 +1,5 @@
+using Domain.Social;
+
 namespace Server.Clean.Social;
 
 /// <summary>好友申请持久化行。</summary>
@@ -24,7 +26,7 @@ public sealed record FriendRecord(Guid FriendId, string DisplayName);
 /// <param name="PlayerId">成员玩家 ID。</param>
 /// <param name="DisplayName">成员道号。</param>
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）。</param>
-public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool Ready = false);
+public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool Ready = false, bool DouDiZhuReady = false, double SpiritStones = 0);
 
 /// <summary>队伍档案（招募标签口径，不参与行动/战斗结算）。</summary>
 /// <param name="Name">队伍名称；空串表示尚未命名（展示层回落「{队长道号}的小队」）。</param>
@@ -49,7 +51,7 @@ public sealed record PartyProfileRecord(string Name, string ActivityKind, string
 /// <param name="Members">成员列表（含队长，按加入时间排序）。</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；满员判定与讨伐开战条件均以此为上限。</param>
 public sealed record PartyRecord(Guid PartyId, Guid LeaderId, PartyProfileRecord Profile, DateTimeOffset CreatedAt,
-    IReadOnlyList<PartyMemberRecord> Members, int OpenSlots = 3);
+    IReadOnlyList<PartyMemberRecord> Members, int OpenSlots = 3, double DouDiZhuStake = 10);
 
 /// <summary>组队讨伐会话持久化行（总纲 §21.13）。</summary>
 /// <param name="SessionId">会话唯一标识（party:{partyId}:{unixSec}:{rand} 文本）。</param>
@@ -122,7 +124,8 @@ public sealed record SocialStateSnapshot(
     PartyRecord? Party,
     PartyInvitationRecord? Invitation,
     PartySeekerRecord? Seeker,
-    PartySessionRecord? PartySession = null);
+    PartySessionRecord? PartySession = null,
+    DouDiZhuGameState? DouDiZhuGame = null);
 
 /// <summary>传音消息内嵌的队伍卡片持久化视图。</summary>
 /// <param name="PartyId">队伍唯一标识。</param>
@@ -187,7 +190,11 @@ public enum SocialFailure : byte
     /// <summary>发言触发频道节流。</summary>
     RateLimited,
     /// <summary>频道当前不可用（好友/附近作用域解析失败等）。</summary>
-    ChannelUnavailable
+    ChannelUnavailable,
+    /// <summary>斗地主牌桌状态不满足该操作条件。</summary>
+    DouDiZhuUnavailable,
+    /// <summary>斗地主操作载荷无效或牌局版本已过期。</summary>
+    DouDiZhuInvalid
 }
 
 /// <summary>社交指令执行结局。</summary>
@@ -210,7 +217,9 @@ public enum PartyJoinResult : byte
     /// <summary>队伍已满员。</summary>
     Full,
     /// <summary>玩家已在其他队伍中。</summary>
-    AlreadyInParty
+    AlreadyInParty,
+    /// <summary>斗地主牌局进行中，队伍名册已冻结。</summary>
+    GameActive
 }
 
 /// <summary>玩家身份视图（角色信息卡身份区数据源）。</summary>
@@ -268,6 +277,27 @@ public interface ISocialRepository
 
     /// <summary>整体覆盖队伍档案（调用方已合并补丁语义）；队伍不存在返回 false。</summary>
     ValueTask<bool> TryUpdatePartyProfileAsync(Guid partyId, PartyProfileRecord profile, DateTimeOffset now, CancellationToken cancellationToken = default);
+
+    /// <summary>队长更新斗地主底注（队伍行锁内复核权限和底注区间）。</summary>
+    ValueTask<bool> TryUpdateDouDiZhuStakeAsync(Guid partyId, Guid leaderId, double stake, DateTimeOffset now, CancellationToken cancellationToken = default);
+
+    /// <summary>切换本人独立于共战的斗地主准备状态；牌局进行中拒绝修改。</summary>
+    ValueTask<bool> TrySetDouDiZhuReadyAsync(Guid playerId, bool ready, CancellationToken cancellationToken = default);
+
+    /// <summary>创建或重开牌局，锁定队伍并原子复核三名成员、全员准备、房主和底注。</summary>
+    ValueTask<bool> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, Guid startedBy, CancellationToken cancellationToken = default);
+
+    /// <summary>读取队伍最近一局斗地主检查点。</summary>
+    ValueTask<DouDiZhuGameState?> GetDouDiZhuGameAsync(Guid partyId, CancellationToken cancellationToken = default);
+
+    /// <summary>列出仍在叫地主或出牌阶段的牌局，供服务端回合截止与托管推进。</summary>
+    ValueTask<IReadOnlyList<DouDiZhuGameState>> ListActiveDouDiZhuGamesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>保存非终局牌局操作；牌局行锁与预期版本不匹配时返回 false。</summary>
+    ValueTask<bool> TrySaveDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion, CancellationToken cancellationToken = default);
+
+    /// <summary>在单个 Serializable 事务内原子提交终局牌局检查点、灵石余额和幂等经济流水。</summary>
+    ValueTask<bool> TryCommitDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 原子加队：party 行 FOR UPDATE 串行化并发加入，事务内以 open_slots 复核满员与互斥；

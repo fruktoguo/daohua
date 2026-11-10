@@ -1,0 +1,307 @@
+/* 牌面与动画沿用已认可原型，所有类名限定于斗地主。 */
+.ddz-mini-back{display:block;width:22px;height:30px;border-radius:3px;border:1px solid #d6c798a6;background:repeating-linear-gradient(135deg,#704238 0 3px,#542e28 3px 6px);box-shadow:inset 0 0 0 2px #704238,0 2px 4px #0004}
+.ddz-bottom-cards{position:absolute;z-index:2;top:15px;left:50%;transform:translateX(-50%);display:flex;gap:5px;align-items:center}
+.ddz-bottom-cards .ddz-card{--w:34px;--h:48px}
+.ddz-bottom-cards .ddz-card-back{width:34px;height:48px}
+.ddz-card-back{position:relative;border:1px solid #d6c798ad;border-radius:4px;background:repeating-linear-gradient(45deg,#693c33 0 4px,#543028 4px 8px);box-shadow:inset 0 0 0 3px #744b3b,0 3px 7px #0004}
+.ddz-card-back::after{content:"";position:absolute;inset:6px;border:1px solid #d6bd834d;border-radius:2px;background:linear-gradient(45deg,transparent 47%,#d6bd8325 48% 52%,transparent 53%),linear-gradient(-45deg,transparent 47%,#d6bd8325 48% 52%,transparent 53%)}
+.ddz-played-cards{position:relative;height:72px;margin:auto;max-width:100%}
+.ddz-played-cards .ddz-card{position:absolute;left:calc(var(--i) * var(--step));z-index:var(--i);--w:48px;--h:68px;animation:ddz-playCard .32s cubic-bezier(.16,.7,.22,1) both;animation-delay:calc(var(--i) * 13ms)}
+.ddz-card{--w:76px;--h:108px;position:relative;display:block;width:var(--w);height:var(--h);padding:0;flex:none;overflow:hidden;border:1px solid #e1d6be;border-radius:6px;color:#24332d;background:linear-gradient(135deg,#fffefa 0,#f6f1e4 75%,#eae1cf 100%);box-shadow:inset 0 0 0 2px #fff8,0 3px 8px #0004;font-family:Georgia,"Times New Roman",serif;line-height:1;user-select:none;text-shadow:none}
+.ddz-card.ddz-red{color:#b43d40}
+.ddz-card::after{content:"";position:absolute;inset:3px;border:1px solid #b7a98b26;border-radius:3px;pointer-events:none}
+.ddz-bottom-cards .ddz-card{animation:ddz-cardFlip .45s both;animation-delay:calc(var(--i) * .1s)}
+.ddz-hand-card{position:absolute;left:calc(var(--i) * var(--step));top:24px;width:var(--w);height:var(--h);z-index:var(--i);border-radius:7px;pointer-events:none;transform:translateY(0);transition:transform .14s ease,box-shadow .14s,border-color .14s;animation:none}
+.ddz-hand-card.ddz-hovered{transform:translateY(-10px);border-color:#e1b85d;box-shadow:0 0 0 1px #ddba6666,0 7px 15px #0005}
+.ddz-hand-card.ddz-selected{transform:translateY(-22px);border-color:#dcae50;box-shadow:0 0 0 2px #e9c66b,0 8px 16px #0004}
+.ddz-hand-card.ddz-selected::before{content:"";position:absolute;z-index:5;inset:0;background:#d5b15c12;border-top:3px solid #ddba68}
+.ddz-hand-card:focus-visible{outline:2px solid #c08f30;outline-offset:-4px;transform:translateY(-15px)}
+.ddz-deck-scene{position:absolute;z-index:14;left:50%;top:36%;transform:translate(-50%,-50%);width:160px;height:130px;pointer-events:none}
+.ddz-deck-stack{position:absolute;left:50%;top:0;transform:translateX(-50%);width:62px;height:88px}
+.ddz-deck-stack .ddz-card-back{position:absolute;inset:0}
+.ddz-deck-stack .ddz-card-back:nth-child(1){transform:translate(-7px,3px) rotate(-12deg)}
+.ddz-deck-stack .ddz-card-back:nth-child(2){transform:translate(7px,3px) rotate(12deg)}
+.ddz-deck-stack .ddz-card-back:nth-child(3){transform:translateY(-2px)}
+.ddz-deck-caption{position:absolute;bottom:0;left:-40px;right:-40px;text-align:center;color:#ead59e;font-size:13px;letter-spacing:3px;white-space:nowrap}
+.ddz-deck-caption small{display:block;font-size:10px;color:#a8c0a6;letter-spacing:1px;margin-top:3px}
+@keyframes ddz-turnGlow{50%{opacity:.55}}
+@keyframes ddz-dotPulse{50%{opacity:.2;transform:translateY(-2px)}}
+@keyframes ddz-bubbleIn{from{opacity:0;transform:translateY(7px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes ddz-fadeUp{from{opacity:0;translate:0 5px}to{opacity:1;translate:0 0}}
+@keyframes ddz-panelIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes ddz-playCard{from{opacity:0;transform:translate(var(--from-x,0),var(--from-y,-15px)) scale(.75) rotate(-5deg)}to{opacity:1;transform:none}}
+@keyframes ddz-cardFlip{from{transform:rotateY(90deg);opacity:0}to{transform:rotateY(0);opacity:1}}
+@keyframes ddz-announce{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}20%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}70%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-58%) scale(.98)}}
+@keyframes ddz-tableShake{20%,60%{translate:3px 0}40%,80%{translate:-3px 0}100%{translate:0 0}}
+@keyframes ddz-handShake{25%,75%{translate:3px 0}50%{translate:-3px 0}}
+@container ddz(max-width:850px){.ddz-mini-back{width:18px;height:26px}
+.ddz-played-cards{height:62px}
+.ddz-played-cards .ddz-card{--w:42px;--h:60px}}
+@container ddz(max-width:520px){.ddz-mini-back{width:15px;height:21px}
+.ddz-bottom-cards{top:13px;gap:3px}
+.ddz-bottom-cards .ddz-card,.ddz-bottom-cards .ddz-card-back{--w:26px;--h:37px;width:26px;height:37px}
+.ddz-played-cards{height:50px}
+.ddz-played-cards .ddz-card{--w:33px;--h:47px;border-radius:3px}
+.ddz-hand-card{border-radius:4px;top:25px}
+.ddz-deck-scene{top:40%;transform:translate(-50%,-50%) scale(.85)}}
+.ddz-card{color:#24343d;border:1px solid #d1c8b8;border-radius:7px;background:radial-gradient(ellipse at 16% 5%,#fff 0,transparent 65%),repeating-linear-gradient(0deg,#fff0 0 2px,#d3c6a009 2px 3px),linear-gradient(125deg,#fffdf8,#f8f5ed 68%,#eee7d8);box-shadow:inset 0 0 0 1px #ffffffe6,0 2px 2px #07170f26,0 5px 9px #07170f26}
+.ddz-card.ddz-red{color:#b33643}
+.ddz-card::after{inset:3px;border-color:#b4a38424;border-radius:4px}
+.ddz-hand-card{animation:none;transition:transform .16s ease,box-shadow .16s,border-color .16s;will-change:translate}
+.ddz-hand-card:disabled{opacity:1}
+.ddz-hand-card.ddz-selected{box-shadow:0 0 0 2px #e7c877,0 8px 14px #0005}
+.ddz-hand-card.ddz-selected::before{border-top-width:2px;background:#e3b64b07}
+.ddz-played-cards .ddz-card{border-radius:5px}
+.ddz-bottom-cards .ddz-card{animation:none}
+.ddz-card-back,.ddz-mini-back{background:radial-gradient(ellipse at 50% 0,#36564b,transparent 80%),repeating-linear-gradient(45deg,#d8bf7540 0 .6px,transparent .7px 5px),repeating-linear-gradient(-45deg,#d8bf751b 0 .6px,transparent .7px 5px),#1b3b32;border:1px solid #e3d4a8;box-shadow:inset 0 0 0 2px #183a30,inset 0 0 0 3px #c7ac694a,0 3px 7px #0004}
+.ddz-card-back::after{inset:7px;border:1px solid #d5bb756e;border-radius:2px;background:radial-gradient(ellipse at center,#d9c58d22,transparent 70%),linear-gradient(45deg,transparent 48%,#d6bd8345 49% 51%,transparent 52%),linear-gradient(-45deg,transparent 48%,#d6bd8345 49% 51%,transparent 52%)}
+.ddz-card-back::before{content:"✦";position:absolute;z-index:1;inset:0;display:grid;place-items:center;font-size:19px;color:#ddc995b3;text-shadow:0 1px 2px #0008}
+.ddz-mini-back::before{content:"◇";display:grid;place-items:center;height:100%;color:#d3be89;font-size:10px}
+.ddz-bottom-cards .ddz-is-waiting{opacity:.16}
+.ddz-bottom-cards .ddz-card-back{transition:opacity .18s}
+.ddz-deck-scene{width:190px;height:160px;top:35%;transform:translate(-50%,-50%)}
+.ddz-deck-stack{top:24px;width:64px;height:92px;perspective:700px;transform:translateX(-50%);filter:drop-shadow(0 15px 14px #00120966)}
+.ddz-deck-stack .ddz-card-back{border-radius:5px;animation:none!important;transform:translate(0,0)}
+.ddz-deck-caption{bottom:0;font-size:12px;letter-spacing:4px}
+.ddz-deck-caption small{font-size:9px}
+.ddz-deck-shadow{position:absolute;top:100px;left:20px;right:20px;height:20px;background:radial-gradient(ellipse,#03190ccc,transparent 70%);filter:blur(4px);z-index:-1}
+.ddz-card-flight{position:absolute;z-index:3;top:0;left:0;transform-style:preserve-3d;pointer-events:none;will-change:transform}
+.ddz-card-flight>.ddz-flight-front,.ddz-card-flight>.ddz-flight-back{position:absolute;inset:0;width:100%;height:100%;margin:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:6px;animation:none!important}
+.ddz-card-flight>.ddz-flight-front{--w:100%;--h:100%;transform:rotateY(0deg);z-index:2}
+.ddz-card-flight>.ddz-flight-back{transform:rotateY(180deg)}
+.ddz-card-flight .ddz-flight-back::before{font-size:24px}
+.ddz-card-flight .ddz-card::after{border-radius:3px}
+.ddz-reception-glow{position:absolute;z-index:2;pointer-events:none;width:35px;height:35px;border:1px solid #e8d6a198;border-radius:50%;background:radial-gradient(circle,#f1dc8f24,transparent 70%)}
+.ddz-interaction-header{display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid #c6ad6526;padding-bottom:8px;margin-bottom:9px;font-size:11px;color:#a9bda5}
+.ddz-interaction-header strong{color:#ead9a6;font:17px var(--serif);letter-spacing:1px}
+.ddz-interaction-close{border:0;padding:0 3px;background:none;color:#a9bda5;font-size:20px;line-height:1}
+.ddz-prop-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.ddz-prop-button{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;padding:6px 2px;border:1px solid transparent;border-radius:5px;background:#d6bd7406;color:#b3c6ac;font-size:10px;transition:background .15s,border-color .15s}
+.ddz-prop-button:hover{background:#d6bd7412;border-color:#cdb47755}
+.ddz-prop-art{display:block;width:34px;height:34px;fill:none;stroke:none;filter:drop-shadow(0 2px 2px #0003)}
+.ddz-quick-phrases{display:flex;flex-direction:column;gap:3px;margin-top:10px;padding-top:8px;border-top:1px solid #c6ad6526}
+.ddz-phrase-button{background:none;border:0;border-radius:3px;text-align:left;padding:7px 8px;font-size:11px;color:#d1d1b6;transition:background .15s}
+.ddz-phrase-button:hover{background:#d6bd7412;color:#ecd8a4}
+.ddz-phrase-button::before{content:"“";margin-right:5px;color:#c9b475}
+.ddz-social-effects{position:absolute;z-index:38;inset:0;pointer-events:none;overflow:hidden}
+.ddz-social-projectile{position:absolute;left:0;top:0;width:46px;height:46px;will-change:transform}
+.ddz-social-projectile .ddz-prop-art{width:100%;height:100%}
+.ddz-social-shadow{position:absolute;left:0;top:0;width:32px;height:11px;border-radius:50%;background:#03170a66;filter:blur(3px)}
+.ddz-social-impact{position:absolute;left:0;top:0;width:80px;height:80px;display:grid;place-items:center}
+.ddz-impact-svg{width:100%;height:100%;stroke:none;fill:none}
+.ddz-social-particle{position:absolute;left:0;top:0;width:9px;height:12px;border-radius:55% 45% 60% 40%;background:var(--particle-color,#c14c38);box-shadow:inset 1px 1px #ffffff26}
+.ddz-social-bubble{position:absolute;z-index:5;max-width:240px;min-width:80px;padding:9px 13px;border:1px solid #d8c58a6b;border-radius:9px;background:linear-gradient(145deg,#eee8d2,#d5d9bd);color:#2f4537;box-shadow:0 7px 20px #05170d44;font:13px/1.6 var(--sans);text-align:center;transform-origin:bottom center}
+.ddz-social-bubble small{display:block;font-size:9px;letter-spacing:1px;color:#688067;margin-bottom:1px}
+.ddz-social-bubble::after{content:"";position:absolute;bottom:-5px;left:calc(50% - 5px);width:9px;height:9px;background:#d5d9bd;transform:rotate(45deg);border-right:1px solid #d8c58a6b;border-bottom:1px solid #d8c58a6b}
+.ddz-social-caption{position:absolute;left:0;top:0;color:#eddbab;font-size:11px;letter-spacing:1px;text-shadow:0 2px 4px #102719;white-space:nowrap}
+.ddz-social-spark{position:absolute;left:0;top:0;color:#ebdba2;font:22px Georgia}
+@container ddz(max-width:850px){.ddz-deck-scene{top:35%}
+.ddz-deck-stack{width:58px;height:83px}
+.ddz-deck-scene{height:147px}
+.ddz-deck-caption{font-size:11px}}
+@container ddz(max-width:520px){.ddz-deck-scene{top:38%;transform:translate(-50%,-50%);height:145px;width:170px}
+.ddz-deck-stack{width:52px;height:75px}
+.ddz-deck-shadow{top:89px}
+.ddz-social-bubble{font-size:11px;max-width:200px;padding:7px 11px}
+.ddz-social-projectile{width:39px;height:39px}
+.ddz-social-impact{width:65px;height:65px}}
+.ddz-deck-stack>.ddz-card-back{width:100%;height:100%}
+.ddz-card-flight .ddz-flight-front{}
+.ddz-social-impact>.ddz-prop-art{width:74%;height:74%}
+.ddz-social-impact .ddz-impact-svg{filter:drop-shadow(0 3px 3px #071b0f44)}
+.ddz-social-projectile .ddz-prop-art{filter:drop-shadow(0 6px 5px #081b0f66)}
+/* 正式牌桌占据中间内容列，不改变聊天停靠区。 */
+.ddz-shell{--sans:var(--font-ui,system-ui,sans-serif);--serif:var(--font-display,"Noto Serif SC",serif);container:ddz / size;display:flex;flex:1;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0;gap:6px;color:#eee6d0;background:#12221a;font-family:var(--sans)}
+.ddz-shell *{box-sizing:border-box}.ddz-symbols{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}.ddz-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;flex:none;gap:5px 12px;min-height:44px;padding:6px 12px;border:1px solid #bca36455;background:#1b241b}.ddz-brand{display:flex;align-items:center;gap:9px}.ddz-brand>strong{font:700 20px var(--serif);color:#e5cd90;white-space:nowrap}.ddz-brand>span{padding:3px 6px;border:1px solid #bca36466;color:#bfba97;font-size:10px}.ddz-stats{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:#b9c6ae}.ddz-stats>b{color:#ebd18e;font:700 18px Georgia}.ddz-shell button{cursor:pointer;border:1px solid #c6ae7066;background:linear-gradient(145deg,#354635,#1b3024);color:#d9d5b5;font:12px var(--sans);padding:6px 12px;border-radius:3px;transition:filter .15s,box-shadow .15s}.ddz-shell button:hover{filter:brightness(1.15)}.ddz-shell button:focus-visible{outline:2px solid #e8d69a;outline-offset:3px}.ddz-shell button:disabled{cursor:default;opacity:.4;filter:none}.ddz-shell button.ddz-primary{color:#2b3220;border-color:#eedc9a;background:linear-gradient(145deg,#e7d293,#b6a263);font-weight:700}.ddz-stats button{padding:4px 7px;font-size:10px}.ddz-stats .is-on{border-color:#e8d398;color:#e8d398}
+.ddz-table{--portrait:clamp(68px,12cqw,124px);--w:clamp(33px,4cqw,48px);position:relative;flex:1;min-height:300px;min-width:0;overflow:hidden;isolation:isolate;border:1px solid #bca36477;border-radius:4px 4px 9px 9px;background:radial-gradient(ellipse at 50% 45%,#2a5c48,#214c3d 42%,#183b30 78%,#153328);box-shadow:inset 0 0 0 5px #102d2477,inset 0 0 80px #03160b77}.ddz-table-watermark{position:absolute;left:50%;top:43%;translate:-50% -50%;font:24px var(--serif);letter-spacing:12px;white-space:nowrap;color:#acc4a60c;pointer-events:none}.ddz-seat{position:absolute;z-index:4;width:45%;top:30px;display:flex;align-items:flex-start;gap:12px;pointer-events:none}.ddz-seat-left{left:22px}.ddz-seat-right{right:22px;flex-direction:row-reverse}.ddz-seat-self{top:auto;bottom:20px;right:22px;width:var(--portrait)}.ddz-profile{width:var(--portrait);flex:none;display:flex;align-items:center;flex-direction:column;gap:3px;min-width:0}.ddz-player-name{font:700 16px var(--serif);line-height:1.4;color:#f2edd9;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:center}.ddz-role{min-height:14px;font-size:10px;color:#829f8a;letter-spacing:2px}.ddz-role.is-landlord{color:#e3c47e}.ddz-avatar-row{position:relative;width:100%;height:calc(var(--portrait) * 1.12);display:flex;align-items:center;justify-content:center}.ddz-avatar{display:block!important;width:100%!important;height:100%!important;object-fit:contain;object-position:bottom;filter:drop-shadow(0 8px 7px #08191077);background:none!important;border:0!important}.ddz-avatar.is-flipped{transform:scaleX(-1)}.ddz-avatar-trigger{border:0!important;padding:0!important;background:none!important;width:100%;height:100%;pointer-events:auto;border-radius:0!important;position:relative;display:block;box-shadow:none!important}.ddz-avatar-trigger:hover .ddz-avatar{filter:drop-shadow(0 0 10px #dac18577) drop-shadow(0 8px 7px #08191077)}.ddz-interact-label{position:absolute;bottom:5px;left:50%;translate:-50% 0;white-space:nowrap;font-size:9px;letter-spacing:2px;color:#e0cc98;background:#173526cc;border:1px solid #bca36455;border-radius:12px;padding:2px 7px;opacity:0;transition:opacity .15s}.ddz-avatar-trigger:hover .ddz-interact-label,.ddz-avatar-trigger:focus-visible .ddz-interact-label{opacity:1}.ddz-hand-counter{position:absolute;right:-4px;top:20px;display:flex;align-items:center;flex-direction:column;gap:3px;color:#e8e3cd;font:600 14px Georgia;text-shadow:0 2px 3px #0006}.ddz-seat-right .ddz-hand-counter{right:auto;left:-4px}.ddz-mini-back{display:block;width:22px;height:30px;position:relative;border-radius:3px}.ddz-wallet{display:flex;gap:5px;align-items:center;justify-content:center;max-width:100%;white-space:nowrap;font:700 15px Georgia;color:#dfc67d;font-variant-numeric:tabular-nums}.ddz-wallet img{width:16px;height:16px;object-fit:contain;flex:none}.ddz-seat-status{min-height:14px;color:#92b5a0;font-size:9px;letter-spacing:1px}.ddz-seat.is-turn .ddz-player-name{color:#f0dca0;text-shadow:0 0 15px #e6cc7777}.ddz-seat.is-turn .ddz-role{color:#d0bb82}.ddz-seat.is-turn .ddz-avatar{filter:drop-shadow(0 0 8px #dec98366) drop-shadow(0 8px 7px #08191077)}
+.ddz-opponent-play{min-width:0;flex:1;padding-top:65px;display:flex;justify-content:flex-start}.ddz-seat-right .ddz-opponent-play{justify-content:flex-end}.ddz-play{--w:clamp(31px,4cqw,48px);--h:calc(var(--w) * 108 / 76);display:flex;flex-direction:column;align-items:center;gap:8px;max-width:100%}.ddz-played-cards{--step:clamp(7px,calc((100cqw * .42 - var(--portrait) - var(--w)) / max(1,var(--count) - 1)),25px);height:var(--h);position:relative;max-width:100%}.ddz-played-cards .ddz-card{--w:clamp(31px,4cqw,48px);--h:calc(var(--w) * 108 / 76)}.ddz-play-label{font-size:11px;letter-spacing:2px;color:#d5d6b6;text-shadow:0 1px 3px #0006}.ddz-play-label.is-bomb{color:#f2c070}.ddz-pass{font:700 20px var(--serif);color:#c0cdb4;letter-spacing:4px;text-shadow:0 2px 6px #061b11}.ddz-self-play{position:absolute;bottom:calc(clamp(50px,8cqw,82px) * 108 / 76 + 160px);left:43%;translate:-50% 0;z-index:3}.ddz-bid-bubble{position:absolute;left:calc(var(--portrait) + 12px);top:55px;min-width:75px;padding:10px 13px;background:linear-gradient(145deg,#eeead5,#d7d9bf);border:1px solid #caba7e;border-radius:9px;color:#314434;font:700 17px var(--serif);white-space:nowrap;box-shadow:0 5px 15px #091e1244;animation:ddz-bubbleIn .2s ease-out}.ddz-bid-bubble small{display:block;text-align:center;font:700 13px Georgia;color:#ac7743;margin-top:4px}.ddz-seat-right .ddz-bid-bubble{left:auto;right:calc(var(--portrait) + 12px)}.ddz-seat-self .ddz-bid-bubble{left:auto;right:calc(var(--portrait) + 12px);top:20px}
+.ddz-bottom-cards{top:12px;left:50%;translate:-50% 0;transform:none;gap:5px;z-index:3;align-items:center;display:flex}.ddz-bottom-slot{display:block;width:34px;height:48px;transition:opacity .16s}.ddz-bottom-slot.is-waiting{opacity:.12}.ddz-bottom-slot>.ddz-card,.ddz-bottom-slot>.ddz-card-back{width:100%;height:100%;--w:34px;--h:48px}.ddz-bottom-slot .ddz-flip-bottom{animation:ddz-cardFlip .32s both}.ddz-deck-scene{position:absolute;z-index:12;left:50%;top:35%;pointer-events:none}.ddz-deck-scene[hidden]{display:none}.ddz-deck-stack{width:64px;height:92px}.ddz-deck-stack>.ddz-card-back{width:100%;height:100%}.ddz-deck-caption{bottom:-3px;letter-spacing:2px}.ddz-deck-caption small{display:block;font-size:10px;letter-spacing:2px;color:#aabd9e;margin-top:5px}
+.ddz-hand-area{position:absolute;z-index:8;left:25px;right:calc(var(--portrait) + 48px);bottom:12px;touch-action:none;user-select:none}.ddz-hand{position:relative;max-width:100%;margin:auto;touch-action:none;cursor:pointer}.ddz-hand-card{outline:none}.ddz-shell .ddz-hand-card{padding:0;pointer-events:none;border-color:#d1c8b8;background:radial-gradient(ellipse at 16% 5%,#fff,transparent 65%),linear-gradient(125deg,#fffdf8,#f8f5ed 68%,#eee7d8);color:#24343d;font-family:Georgia,"Times New Roman",serif;line-height:1}.ddz-shell .ddz-hand-card.ddz-red{color:#b33643}.ddz-shell .ddz-hand-card:disabled{opacity:1;filter:none}.ddz-controls{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;min-height:32px;pointer-events:auto}.ddz-controls>button{min-width:64px;padding:8px 15px;box-shadow:0 3px 7px #061a1144}.ddz-selection-note{position:absolute;top:0;left:0;right:0;text-align:center;color:#b6c7ab;font-size:10px;height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ddz-selection-note.is-error{color:#dda99b}.ddz-turn-status{position:absolute;left:24%;right:24%;top:48%;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;color:#b6c6a8;font-size:11px;pointer-events:none}.ddz-turn-status strong{font-weight:400}.ddz-turn-status>span{color:#e3c985;white-space:nowrap;font-variant-numeric:tabular-nums}.ddz-turn-status .is-urgent{color:#e7a085}.ddz-effects{position:absolute;inset:0;z-index:38;pointer-events:none;overflow:hidden}.ddz-effects .ddz-card-flight{z-index:2}.ddz-effects .ddz-social-projectile,.ddz-effects .ddz-social-impact{z-index:4}.ddz-effects .ddz-social-bubble{z-index:5}.ddz-social-menu{--sans:system-ui,sans-serif;width:260px;max-width:calc(100vw - 24px)}.ddz-social-menu .ddz-prop-button{cursor:pointer}.ddz-social-menu .ddz-phrase-button{cursor:pointer}.ddz-announcement{position:absolute;z-index:42;left:50%;top:38%;translate:-50% -50%;display:flex;align-items:center;flex-direction:column;gap:8px;text-align:center;pointer-events:none;animation:ddz-bubbleIn .25s ease-out}.ddz-announcement strong{font:700 clamp(20px,3.5cqw,38px) var(--serif);letter-spacing:5px;color:#edd495;text-shadow:0 3px 15px #0a2415,0 0 25px #dfc17e33;white-space:nowrap}.ddz-announcement span{color:#b9d0ac;font-size:15px}.ddz-result-layer{position:absolute;inset:0;z-index:50;display:grid;place-items:center;background:#081c12a6;backdrop-filter:blur(4px)}.ddz-result{width:min(330px,90%);max-height:95%;overflow:auto;padding:22px 28px;text-align:center;border:1px solid #c0a66b80;border-radius:7px;background:linear-gradient(145deg,#263c2e,#15271d);box-shadow:0 20px 70px #00120788,inset 0 0 0 4px #bca36408}.ddz-result>span{color:#b7c6a3;letter-spacing:3px;font-size:12px}.ddz-result h2{margin:10px 0;color:#e3cc90;font:30px var(--serif);letter-spacing:5px}.ddz-result>strong{display:block;color:#efd69b;font:18px var(--serif);margin:5px}.ddz-result-summary{font-size:10px;color:#a7b89a;margin-bottom:12px}.ddz-result-row{display:flex;align-items:center;text-align:left;gap:10px;border-top:1px solid #b5a06822;padding:7px 0}.ddz-result-row>.character-avatar{width:37px!important;height:46px!important;object-fit:contain;flex:none}.ddz-result-row>span{flex:1;font-size:12px;color:#d3d4b8}.ddz-result-row small{display:block;color:#8ea88e;font-size:9px;margin-top:3px}.ddz-result-row b{font:700 17px Georgia;color:#dec17c}.ddz-result-row b.is-negative{color:#cf9f91}.ddz-result-buttons{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px}.ddz-result>small{display:block;color:#90a589;font-size:10px;margin-top:10px}
+@container ddz (max-width:700px){.ddz-seat-left{left:13px}.ddz-seat-right,.ddz-seat-self{right:13px}.ddz-seat{gap:7px}.ddz-player-name{font-size:13px}.ddz-header{padding:5px 8px}.ddz-brand>strong{font-size:17px}.ddz-stats{gap:5px;font-size:10px}.ddz-wallet{font-size:13px}.ddz-avatar-row{height:calc(var(--portrait) * 1.15)}.ddz-hand-area{left:15px;right:calc(var(--portrait) + 32px)}.ddz-opponent-play{padding-top:58px}.ddz-bid-bubble{font-size:14px;padding:8px 10px;min-width:55px}.ddz-turn-status{font-size:10px;flex-direction:column;gap:3px}.ddz-controls{gap:6px}.ddz-controls>button{min-width:48px;padding:6px 10px;font-size:11px}.ddz-brand>span{font-size:9px}.ddz-table-watermark{font-size:19px;letter-spacing:8px}}
+@container ddz (max-width:450px){.ddz-table{--portrait:62px;min-height:360px}.ddz-seat{top:40px}.ddz-seat-self{top:auto;bottom:16px}.ddz-seat-left{left:9px}.ddz-seat-right,.ddz-seat-self{right:9px}.ddz-avatar-row{height:76px}.ddz-wallet{font-size:12px;gap:3px}.ddz-wallet img{width:13px;height:13px}.ddz-hand-counter{font-size:11px;top:18px}.ddz-mini-back{width:16px;height:23px}.ddz-bottom-slot{width:27px;height:38px}.ddz-bottom-slot>.ddz-card{--w:27px;--h:38px}.ddz-header{gap:4px}.ddz-stats{margin-left:auto}.ddz-brand>span{display:none}.ddz-controls>button{min-width:42px;padding:6px 8px;font-size:10px}.ddz-hand-area{left:10px;right:85px;bottom:10px}.ddz-hand-card{top:24px}.ddz-turn-status{left:23%;right:23%;top:48%}.ddz-play-label{font-size:9px;letter-spacing:1px}.ddz-pass{font-size:15px}.ddz-bid-bubble{top:38px}.ddz-self-play{bottom:240px}.ddz-deck-scene{top:38%}.ddz-result{padding:15px 20px}.ddz-result h2{font-size:25px}}
+@container ddz (max-height:450px){.ddz-table{min-height:280px}.ddz-seat{top:19px}.ddz-seat-self{top:auto;bottom:10px}.ddz-avatar-row{height:72px}.ddz-player-name{font-size:12px}.ddz-role{font-size:9px;min-height:10px}.ddz-seat-status{font-size:8px;min-height:10px}.ddz-opponent-play{padding-top:45px}.ddz-turn-status{top:46%;font-size:10px}.ddz-deck-scene{top:33%}.ddz-deck-stack{width:50px;height:72px}.ddz-deck-scene{height:136px}.ddz-result-row{padding:4px 0}.ddz-result-row>.character-avatar{height:32px!important}.ddz-result h2{font-size:23px;margin:6px 0}.ddz-result{padding:10px 20px}.ddz-result-summary{margin-bottom:6px}.ddz-result-buttons{margin-top:7px}}
+
+.ddz-shell .ddz-hand-card{top:24px}.ddz-deck-scene{transition:opacity .2s}.ddz-prop-button:hover,.ddz-phrase-button:hover{filter:brightness(1.15)}
+
+/* 牌面只绘制一次固定构图，各种牌槽只负责整牌尺寸与位置。 */
+.ddz-card-face {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ddz-hand-card {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ddz-shell.is-portrait {
+  gap: 3px;
+}
+
+.ddz-shell.is-portrait .ddz-header {
+  min-height: 38px;
+  padding: 3px 6px;
+  gap: 3px 6px;
+}
+
+.ddz-shell.is-portrait .ddz-brand {
+  gap: 5px;
+}
+
+.ddz-shell.is-portrait .ddz-brand > strong {
+  font-size: 16px;
+}
+
+.ddz-shell.is-portrait .ddz-brand > span {
+  display: none;
+}
+
+.ddz-shell.is-portrait .ddz-stats {
+  gap: 4px;
+  font-size: 10px;
+}
+
+.ddz-shell.is-portrait .ddz-stats > b {
+  font-size: 15px;
+}
+
+.ddz-shell.is-portrait .ddz-stats > button {
+  min-height: 32px;
+  padding: 4px 7px;
+}
+
+.ddz-shell.is-portrait .ddz-table {
+  --portrait: clamp(40px, 10cqw, 56px);
+  min-height: 0;
+  border-radius: 4px;
+}
+
+.ddz-shell.is-portrait .ddz-seat {
+  top: 42px;
+  width: 47%;
+  gap: 8px;
+}
+
+.ddz-shell.is-portrait .ddz-seat-left { left: 8px; }
+.ddz-shell.is-portrait .ddz-seat-right { right: 8px; }
+.ddz-shell.is-portrait .ddz-profile { gap: 2px; }
+.ddz-shell.is-portrait .ddz-player-name { font-size: 12px; }
+.ddz-shell.is-portrait .ddz-role { min-height: 11px; font-size: 9px; letter-spacing: 1px; }
+.ddz-shell.is-portrait .ddz-avatar-row { height: calc(var(--portrait) * 1.18); }
+.ddz-shell.is-portrait .ddz-wallet { font-size: 11px; gap: 3px; }
+.ddz-shell.is-portrait .ddz-wallet img { width: 12px; height: 12px; }
+.ddz-shell.is-portrait .ddz-seat-status { min-height: 10px; font-size: 8px; letter-spacing: 0; }
+.ddz-shell.is-portrait .ddz-hand-counter { top: 8px; right: -6px; font-size: 11px; gap: 2px; }
+.ddz-shell.is-portrait .ddz-seat-right .ddz-hand-counter { left: -6px; right: auto; }
+.ddz-shell.is-portrait .ddz-mini-back { width: 14px; height: 20px; }
+.ddz-shell.is-portrait .ddz-opponent-play { padding-top: 30px; }
+.ddz-shell.is-portrait .ddz-bottom-cards { top: 6px; gap: 4px; }
+.ddz-shell.is-portrait .ddz-bottom-slot { width: 25px; height: calc(25px * 108 / 76); }
+
+.ddz-shell.is-portrait .ddz-play,
+.ddz-shell.is-portrait .ddz-played-cards > .ddz-card {
+  --w: clamp(28px, 7.4cqw, 40px);
+  --h: calc(var(--w) * 108 / 76);
+}
+
+.ddz-shell.is-portrait .ddz-play { gap: 5px; }
+.ddz-shell.is-portrait .ddz-played-cards {
+  --step: clamp(3px, calc((44cqw - var(--portrait) - 8px - var(--w)) / max(1, var(--count) - 1)), 20px);
+}
+.ddz-shell.is-portrait .ddz-play-label { font-size: 10px; letter-spacing: 1px; }
+.ddz-shell.is-portrait .ddz-bid-bubble { top: 29px; padding: 7px 9px; font-size: 13px; }
+
+/* 本人缩为紧凑侧栏，将底部横向空间全部交给三排手牌与操作。 */
+.ddz-shell.is-portrait .ddz-seat-self {
+  top: auto;
+  right: 10px;
+  bottom: calc(var(--hand-zone) + 90px);
+  width: 108px;
+}
+
+.ddz-shell.is-portrait .ddz-seat-self .ddz-profile {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  width: 108px;
+  align-items: center;
+  gap: 1px 5px;
+}
+
+.ddz-shell.is-portrait .ddz-seat-self .ddz-avatar-row {
+  grid-column: 1;
+  grid-row: 1 / 5;
+  width: 36px;
+  height: 46px;
+}
+
+.ddz-shell.is-portrait .ddz-seat-self .ddz-player-name,
+.ddz-shell.is-portrait .ddz-seat-self .ddz-role,
+.ddz-shell.is-portrait .ddz-seat-self .ddz-wallet,
+.ddz-shell.is-portrait .ddz-seat-self .ddz-seat-status {
+  grid-column: 2;
+  justify-self: end;
+  max-width: 100%;
+  text-align: right;
+}
+
+.ddz-shell.is-portrait .ddz-seat-self .ddz-player-name { font-size: 11px; }
+.ddz-shell.is-portrait .ddz-seat-self .ddz-wallet { font-size: 10px; }
+.ddz-shell.is-portrait .ddz-seat-self .ddz-bid-bubble { top: 0; right: 114px; }
+.ddz-shell.is-portrait .ddz-self-play {
+  left: calc((100% - 118px) / 2);
+  bottom: calc(var(--hand-zone) + 92px);
+  max-width: calc(100% - 140px);
+}
+.ddz-shell.is-portrait .ddz-self-play .ddz-played-cards {
+  --step: clamp(3px, calc((100cqw - 158px - var(--w)) / max(1, var(--count) - 1)), 18px);
+}
+
+.ddz-shell.is-portrait .ddz-hand-area {
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+}
+
+.ddz-shell.is-portrait .ddz-hand-card.ddz-hovered { transform: translateY(-4px); }
+.ddz-shell.is-portrait .ddz-hand-card.ddz-selected { transform: translateY(-10px); }
+.ddz-shell.is-portrait .ddz-hand-card:focus-visible { transform: translateY(-10px); }
+.ddz-shell.is-portrait .ddz-selection-note { height: 18px; line-height: 18px; font-size: 11px; }
+.ddz-shell.is-portrait .ddz-controls { gap: 7px; flex-wrap: nowrap; }
+.ddz-shell.is-portrait .ddz-controls > button {
+  min-width: 0;
+  min-height: 44px;
+  flex: 0 1 86px;
+  padding: 9px 8px;
+  font-size: 13px;
+  touch-action: manipulation;
+}
+
+.ddz-shell.is-portrait .ddz-turn-status {
+  top: auto;
+  bottom: calc(var(--hand-zone) + 70px);
+  left: 8px;
+  right: 8px;
+  height: 18px;
+  flex-direction: row;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.ddz-shell.is-portrait .ddz-turn-status strong {
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ddz-shell.is-portrait .ddz-deck-scene { top: 29%; }
+.ddz-shell.is-portrait .ddz-announcement { top: 30%; }
+.ddz-shell.is-portrait .ddz-table-watermark { top: 27%; font-size: 17px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ddz-hand-card { transition: none; }
+}

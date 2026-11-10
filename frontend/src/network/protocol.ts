@@ -522,6 +522,16 @@ export const SocialAction = {
   PartyUnready: 'party.unready',
   /** 队长设置开启槽位数（party 载荷携带 openSlots，2~5，不得低于当前队员数） */
   PartySlots: 'party.slots',
+  DouDiZhuStake: 'doudizhu.stake',
+  DouDiZhuReady: 'doudizhu.ready',
+  DouDiZhuUnready: 'doudizhu.unready',
+  DouDiZhuStart: 'doudizhu.start',
+  DouDiZhuBid: 'doudizhu.bid',
+  DouDiZhuPlay: 'doudizhu.play',
+  DouDiZhuPass: 'doudizhu.pass',
+  DouDiZhuHost: 'doudizhu.host',
+  DouDiZhuUnhost: 'doudizhu.unhost',
+  DouDiZhuInteract: 'doudizhu.interact',
 } as const
 /** SocialAction 常量表对应的值联合类型（社交指令标识） */
 export type SocialAction = (typeof SocialAction)[keyof typeof SocialAction]
@@ -545,6 +555,8 @@ export interface PartyProfileDto {
   difficulty?: number | null
   /** 开启槽位数（2~5）；仅 party.slots 使用 */
   openSlots?: number | null
+  /** 斗地主底注；仅队长通过 doudizhu.stake 设置 */
+  douDiZhuStake?: number | null
 }
 
 /** SocialAction 社交指令请求载荷 */
@@ -561,6 +573,11 @@ export interface SocialActionDto {
   channel?: ChatChannel | null
   /** 队伍档案补丁；party.create/party.update/party.match.set 使用 */
   party?: PartyProfileDto | null
+  gameId?: string | null
+  gameVersion?: number | null
+  bidAction?: 'pass' | 'call' | 'rob' | null
+  cards?: number[] | null
+  interaction?: string | null
 }
 
 /** 好友条目 */
@@ -603,6 +620,54 @@ export interface PartyMemberDto {
   /** 成员受到的队伍等级惩罚比率（0~0.9） */
   levelMalus?: number
   valuationBreakdown?: ValuationBreakdownDto | null
+  /** 斗地主独立准备状态 */
+  douDiZhuReady?: boolean
+  /** 队伍内展示的当前可用灵石余额。 */
+  spiritStones: number
+}
+
+/** 斗地主公共牌局状态与本人私有手牌。 */
+export interface DouDiZhuGameDto {
+  gameId: string
+  playerIds: string[]
+  baseStake: number
+  phase: 'bidding' | 'playing' | 'finished' | 'cancelled'
+  currentSeat: number
+  hand: number[]
+  handsRemaining: number[]
+  bottomCards: number[]
+  landlordSeat: number | null
+  robCount: number
+  bombCount: number
+  currentTrickCards: number[]
+  lastPlayedSeat: number | null
+  consecutivePasses: number
+  history: { seat: number; cards: number[]; isPass: boolean; version: number }[]
+  version: number
+  winnerSeat: number | null
+  landlordWon: boolean | null
+  spring: boolean
+  finalMultiplier: number
+  settlementDeltas: number[]
+  turnDeadlineAtUnixMilliseconds: number
+  hostedSeats: boolean[]
+  dealNumber: number
+  dealStartedAtUnixMilliseconds: number
+  actionAvailableAtUnixMilliseconds: number
+  landlordConfirmedAtUnixMilliseconds: number | null
+  /** 仅本人的初始 17 张发牌顺序，不包含他人手牌。 */
+  dealHand: number[]
+  bids: { seat: number; action: 'call' | 'rob' | 'pass'; version: number }[]
+}
+
+/** 经过同桌与限频校验的短暂互动。 */
+export interface DouDiZhuInteractionDto {
+  id: string
+  gameId: string
+  senderId: string
+  targetId: string
+  kind: string
+  createdAtUnixMilliseconds: number
 }
 
 /** 行动参与所属组织的活跃会话视图：开战裁决产生，成员变动即散场。 */
@@ -642,6 +707,10 @@ export interface PartyDto {
   members: PartyMemberDto[]
   /** 队伍设定的讨伐难度等级（0~5） */
   difficulty: number
+  /** 队长设置的斗地主底注，默认 10 灵石 */
+  douDiZhuStake?: number
+  /** 当前或最近一局斗地主；本人手牌按观者私有投影下发 */
+  douDiZhuGame?: DouDiZhuGameDto | null
 }
 
 /** 同节点在线修士条目 */
@@ -688,6 +757,7 @@ export interface SocialStateDto {
   nearbyPlayers: NearbyPlayerDto[]
   /** 本人匹配中登记；未登记为 null */
   seeking?: PartySeekerDto | null
+  douDiZhuInteractions?: DouDiZhuInteractionDto[] | null
 }
 
 /** PartyLobbyRequest 组队大厅筛选请求载荷 */

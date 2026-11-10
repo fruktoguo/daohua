@@ -716,10 +716,15 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
             <strong className="player-name">{zongmenPrefix ? `[${zongmenPrefix}] ${name}` : name}</strong>
             <RealmBadge realmInfo={realmInfo} />
             <FloatingTooltip placement="bottom" title={connectionTooltip} tone={connection === 'online' ? 'jade' : 'danger'}>
-              <span
-                className={`connection-dot connection-dot--${connection}`}
-                onMouseEnter={() => gameClient.pingNow()}
-              />
+              <span className="connection-dot-wrap">
+                <span
+                  className={`connection-dot connection-dot--${connection}`}
+                  onMouseEnter={() => gameClient.pingNow()}
+                />
+                {connection === 'online' && onlineCount !== null && offlineIdleCount !== null && (
+                  <span className="presence-total">{onlineCount + offlineIdleCount}</span>
+                )}
+              </span>
             </FloatingTooltip>
           </div>
           <FloatingTooltip

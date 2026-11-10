@@ -5,6 +5,8 @@
 > 2. 凡是将某类 UI/交互收拢为统一模板，**必须同步登记至本手册**。
 > 3. 本手册**不记录具体 CSS 样式实现代码**，仅作为**快速索引与场景查找表**；具体用法、参数和样式直接查阅所列路径。
 
+斗地主牌桌：真实队伍对弈使用 `frontend/src/components/doudizhu/DouDiZhuTable.tsx`；固定坐标扑克牌图案与编号边界为 `doudizhuArt.ts`，手牌槽位布局为 `doudizhuLayout.ts`，表现动画为 `doudizhuMotion.ts`，样式为同目录 `doudizhu.css`。角色复用 `CharacterAvatar`，灵石复用携带 `itemId` 的 `ItemIcon`，角色互动菜单复用 `FloatingPopover`，玩法窗口复用 `Modal`。
+
 ---
 
 ## 1. 悬浮提示、信息卡片与浮层菜单 (Hover / Click Floating Popovers)

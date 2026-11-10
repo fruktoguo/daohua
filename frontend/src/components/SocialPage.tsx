@@ -1,4 +1,5 @@
 import { ZongmenPage } from './ZongmenPage'
+import { DouDiZhuTable } from './doudizhu/DouDiZhuTable'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { PARTY_OPEN_SLOTS_DEFAULT, PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
@@ -8,7 +9,7 @@ import { getDifficultyBracket } from '../game/combatDifficulty'
 import { useT } from '../i18n'
 import { requestJson } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
-import { PartyActivityKind, type PartyActivityKind as PartyActivityKindType, type PartyMemberDto, type PartyProfileDto } from '../network/protocol'
+import { PartyActivityKind, type PartyActivityKind as PartyActivityKindType, type PartyDto, type PartyMemberDto, type PartyProfileDto } from '../network/protocol'
 import { useUiStore, type SocialSubTab } from '../uiStore'
 import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -17,6 +18,7 @@ import { FloatingPopover, FloatingTooltip, type FloatingPlacement } from './Floa
 import { Modal } from './Modal'
 import { OptionToggle, type OptionToggleOption } from './OptionToggle'
 import { ValuationHoverTarget } from './ValuationDisplay'
+import { ItemReference } from './ItemDisplay'
 import type { RespawnPolicy } from '../game/types'
 import { buildPartyChatMarkup } from '../game/chatMarkup'
 import { shareToChat } from '../game/chatShare'
@@ -924,9 +926,101 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   )
 })
 
-/** 同道页子选项卡表：队伍 + 邀请。 */
+const PartyGameTabs = memo(function PartyGameTabs({ active }: { active: 'party' | 'doudizhu' }): React.JSX.Element {
+  const t = useT()
+  const setPartyGameSubTab = useUiStore(state => state.setPartyGameSubTab)
+  return <nav aria-label={t('social.partyGame.navAria')} className="market-tabs party-game-tabs" role="tablist">
+    <button aria-selected={active === 'party'} className={active === 'party' ? 'active' : ''} onClick={() => setPartyGameSubTab('party')} role="tab" type="button">{t('social.partyView.team')}</button>
+    <button aria-selected={active === 'doudizhu'} className={active === 'doudizhu' ? 'active' : ''} onClick={() => setPartyGameSubTab('doudizhu')} role="tab" type="button">{t('social.partyView.doudizhu')}</button>
+  </nav>
+})
+
+/** 有人取消准备或名册改变后不再呈现已结束的牌桌。 */
+function hasDouDiZhuTable(party: PartyDto | null): boolean {
+  const game = party?.douDiZhuGame
+  return game != null && (game.phase === 'bidding' || game.phase === 'playing'
+    || game.phase === 'finished' && party?.members.length === 3
+      && party.members.every(member => member.douDiZhuReady && game.playerIds.includes(member.playerId)))
+}
+
+/** 真实对弈准备页，进行中的牌局交由独立牌桌组件展示。 */
+export const DouDiZhuPage = memo(function DouDiZhuPage(): React.JSX.Element {
+  const t = useT()
+  const party = useSocialStore(state => state.party)
+  const playerId = useGameStore(state => state.playerId)
+  const setStake = useSocialStore(state => state.setDouDiZhuStake)
+  const setReady = useSocialStore(state => state.setDouDiZhuReady)
+  const start = useSocialStore(state => state.startDouDiZhu)
+  const bid = useSocialStore(state => state.bidDouDiZhu)
+  const play = useSocialStore(state => state.playDouDiZhu)
+  const pass = useSocialStore(state => state.passDouDiZhu)
+  const setHosted = useSocialStore(state => state.setDouDiZhuHosted)
+  const setPartyGameSubTab = useUiStore(state => state.setPartyGameSubTab)
+  const [gameType, setGameType] = useState('doudizhu')
+  const [stakeInput, setStakeInput] = useState(String(party?.douDiZhuStake ?? 10))
+  const game = party?.douDiZhuGame ?? null
+  const active = game?.phase === 'bidding' || game?.phase === 'playing'
+  const tableActive = hasDouDiZhuTable(party)
+  const isLeader = party?.leaderId === playerId
+  const self = party?.members.find(member => member.playerId === playerId)
+  const readyCount = party?.members.filter(member => member.douDiZhuReady).length ?? 0
+  const exactSeats = party?.members.length === 3
+  const mySeat = game?.playerIds.indexOf(playerId ?? '') ?? -1
+
+  useEffect(() => {
+    setStakeInput(String(party?.douDiZhuStake ?? 10))
+  }, [party?.partyId, party?.douDiZhuStake])
+
+  if (!party) return <div className="doudizhu-no-party">
+    <span>{t('social.doudizhu.waiting')}</span>
+    <button onClick={() => setPartyGameSubTab('party')} type="button">{t('social.doudizhu.goParty')}</button>
+  </div>
+
+  const submitStake = (): void => {
+    const stake = Number(stakeInput)
+    if (Number.isFinite(stake) && stake >= 0) setStake(stake)
+  }
+  const canStart = isLeader && exactSeats && readyCount === 3 && !active
+  if (tableActive && game) return <DouDiZhuTable
+    canStart={canStart} game={game} isLeader={isLeader} mySeat={mySeat}
+    onBid={action => bid(game, action)} onPass={() => pass(game)} onPlay={cards => play(game, cards)}
+    onSetHosted={hosted => setHosted(game, hosted)} onEnd={() => setReady(false)} onStart={start} party={party}
+  />
+
+  return <section className="doudizhu-setup-page">
+    <div className="party-doudizhu-heading">
+      <label className="doudizhu-game-choice"><span>{t('social.doudizhu.gameType')}</span>
+        <DropdownSelect label={t('social.doudizhu.gameType')} value={gameType}
+          options={[{ id: 'doudizhu', label: t('social.doudizhu.title') }]} onSelect={setGameType} />
+      </label>
+      <span className="party-card-desc">{t('social.doudizhu.readyCount', { ready: readyCount, count: party.members.length })}</span>
+    </div>
+    <div className="doudizhu-setting-row">
+      <label className="doudizhu-stake-field"><span>{t('social.doudizhu.stake')}</span>
+        <input aria-label={t('social.doudizhu.stake')} disabled={!isLeader} min={0} onChange={event => setStakeInput(event.target.value)}
+          onBlur={submitStake} onKeyDown={event => { if (event.key === 'Enter') submitStake() }} step="any" type="number" value={stakeInput} />
+        <span>{t('social.doudizhu.spiritStone')}</span>
+      </label>
+      <span className="doudizhu-stake-hint">{t('social.doudizhu.stakeHint')}</span>
+      <div className="doudizhu-setup-actions">
+        <label className="doudizhu-ready-toggle"><input checked={self?.douDiZhuReady ?? false} disabled={!exactSeats && !self?.douDiZhuReady} onChange={event => setReady(event.target.checked)} type="checkbox" /><span>{t('social.doudizhu.ready')}</span></label>
+        {isLeader && <button disabled={!canStart} onClick={start} type="button">{t('social.doudizhu.start')}</button>}
+      </div>
+    </div>
+    {!exactSeats && <p className="doudizhu-seat-warning">{t('social.doudizhu.exactSeats')}</p>}
+    <div className="doudizhu-prep-grid">
+      {party.members.map(member => <article className={`doudizhu-prep-player${member.playerId === playerId ? ' is-self' : ''}`} key={member.playerId}>
+        <strong>{member.displayName}</strong>
+        <CharacterAvatar actorId={resolvePlayerActorId(member.avatar)} className="doudizhu-prep-avatar" name={member.displayName} role="player" />
+        <ItemReference amount={member.spiritStones} itemId="currency.spirit-stone" />
+        <span className={`doudizhu-prep-ready${member.douDiZhuReady ? ' is-ready' : ''}`}>{t(member.douDiZhuReady ? 'social.doudizhu.ready' : 'social.doudizhu.notReady')}</span>
+      </article>)}
+    </div>
+  </section>
+})
+
+/** 同道页子选项卡表：宗门与邀请；队伍页含自身的队伍/对弈页签。 */
 const SOCIAL_SUB_TABS: ReadonlyArray<{ id: SocialSubTab; labelKey: string }> = [
-  { id: 'party', labelKey: 'social.sub.party' },
   { id: 'zongmen', labelKey: 'social.sub.zongmen' },
   { id: 'invite', labelKey: 'social.sub.invite' },
 ]
@@ -1060,18 +1154,12 @@ const InviteView = memo(function InviteView(): React.JSX.Element | null {
   )
 })
 
-/**
- * 同道页 (SocialPage)
- *
- * 顶级「同道」页签内容：子选项卡 + 队伍面板。无队伍时提供匹配登记/组队大厅/创建队伍三入口，
- * 有队伍时展示档案、成员与队长管理；所有数据以服务端 SocialState/PartyLobby 帧为唯一来源。
- */
-export const SocialPage = memo(function SocialPage(): React.JSX.Element {
-  const t = useT()
+/** 同道的队伍面板：队伍/对弈页签固定置于面板顶部。 */
+export const PartyPage = memo(function PartyPage(): React.JSX.Element {
   const party = useSocialStore(state => state.party)
   const maps = useGameStore(state => state.maps)
-  const socialSubTab = useUiStore(state => state.socialSubTab)
-  const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
+  const partyGameSubTab = useUiStore(state => state.partyGameSubTab)
+  const isDoudizhuTable = partyGameSubTab === 'doudizhu' && hasDouDiZhuTable(party)
 
   // 节点标签表：nodeId →「区域 · 地点」，选项与展示徽标共用同一解析口径。
   const nodeNames = useMemo(() => {
@@ -1081,29 +1169,42 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
   }, [maps])
 
   return (
-    <section className={`panel social-page${socialSubTab === 'zongmen' ? ' is-zongmen' : ''}`}>
-      {socialSubTab !== 'zongmen' && (
-        <header className="panel-header social-page-header">
-          <h2>{t('social.title')}</h2>
-          <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
-            {SOCIAL_SUB_TABS.map(tab => (
-              <button
-                aria-selected={socialSubTab === tab.id}
-                className={socialSubTab === tab.id ? 'active' : ''}
-                key={tab.id}
-                onClick={() => setSocialSubTab(tab.id)}
-                role="tab"
-                type="button"
-              >{t(tab.labelKey)}</button>
-            ))}
-          </nav>
-        </header>
-      )}
-      <div className="social-page-body">
-        {socialSubTab === 'party' && (party ? <PartyView nodeNames={nodeNames} /> : <PartylessView nodeNames={nodeNames} />)}
-        {socialSubTab === 'zongmen' && <ZongmenPage />}
-        {socialSubTab === 'invite' && <InviteView />}
+    <section className={`panel social-page${isDoudizhuTable ? ' is-doudizhu-table' : ''}`}>
+      <header className="panel-header party-game-page-header">
+        <PartyGameTabs active={partyGameSubTab} />
+      </header>
+      <div className={`social-page-body party-page-body${partyGameSubTab === 'doudizhu' ? ' is-doudizhu-game' : ''}`}>
+        {partyGameSubTab === 'party'
+          ? party ? <PartyView nodeNames={nodeNames} /> : <PartylessView nodeNames={nodeNames} />
+          : <DouDiZhuPage />}
       </div>
     </section>
   )
+})
+
+/** 同道页承载队伍、宗门与邀请；对弈属于队伍面板内部页签。 */
+export const SocialPage = memo(function SocialPage(): React.JSX.Element {
+  const t = useT()
+  const socialSubTab = useUiStore(state => state.socialSubTab)
+  const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
+  if (socialSubTab === 'party') return <PartyPage />
+
+  return <section className={`panel social-page${socialSubTab === 'zongmen' ? ' is-zongmen' : ''}`}>
+    {socialSubTab !== 'zongmen' && <header className="panel-header social-page-header">
+      <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
+        {SOCIAL_SUB_TABS.map(tab => <button
+          aria-selected={socialSubTab === tab.id}
+          className={socialSubTab === tab.id ? 'active' : ''}
+          key={tab.id}
+          onClick={() => setSocialSubTab(tab.id)}
+          role="tab"
+          type="button"
+        >{t(tab.labelKey)}</button>)}
+      </nav>
+    </header>}
+    <div className="social-page-body">
+      {socialSubTab === 'zongmen' && <ZongmenPage />}
+      {socialSubTab === 'invite' && <InviteView />}
+    </div>
+  </section>
 })

@@ -70,7 +70,9 @@ public static class PostgresSchema
     /// v48：战斗特质载荷标签 v41，新增字段均可缺省解码，无 DDL 变更。
     /// v49：新增宗门、成员、申请邀请与离宗时刻表，启用宗门传音；个人分段载荷不变。
     /// v50：social.chat_messages 增 sender_realm 发送者境界列；social.parties 默认 open_slots 设为 3，个人分段载荷不变。
-    public const int Version = 50;
+    /// v51：队伍斗地主（总纲 §21.15）——social.parties 增 doudizhu_stake、party_members 增独立准备标记，
+    /// 新增 social.doudizhu_games 权威牌局检查点；个人分段载荷不变。
+    public const int Version = 51;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -556,6 +558,7 @@ public static class PostgresSchema
         open_slots smallint NOT NULL DEFAULT 3 CHECK (open_slots BETWEEN 2 AND 5),
         -- 队伍讨伐难度（总纲 §7.3）：0~5，默认 0。
         difficulty smallint NOT NULL DEFAULT 0 CHECK (difficulty BETWEEN 0 AND 5),
+        doudizhu_stake double precision NOT NULL DEFAULT 10 CHECK (doudizhu_stake >= 0 AND doudizhu_stake < 'Infinity'::double precision),
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -569,9 +572,19 @@ public static class PostgresSchema
         party_id uuid NOT NULL REFERENCES social.parties(party_id) ON DELETE CASCADE,
         joined_at timestamptz NOT NULL,
         -- 组队讨伐就绪标记（总纲 §21.13）：成员自开关，离队/被踢即随成员行删除。
-        ready boolean NOT NULL DEFAULT false
+        ready boolean NOT NULL DEFAULT false,
+        doudizhu_ready boolean NOT NULL DEFAULT false
     );
     CREATE INDEX IF NOT EXISTS ix_party_members_party ON social.party_members(party_id);
+
+    CREATE TABLE IF NOT EXISTS social.doudizhu_games (
+        party_id uuid PRIMARY KEY,
+        game_id uuid NOT NULL UNIQUE,
+        state jsonb NOT NULL,
+        state_version bigint NOT NULL DEFAULT 0 CHECK (state_version >= 0),
+        status smallint NOT NULL CHECK (status BETWEEN 0 AND 2),
+        updated_at timestamptz NOT NULL
+    );
 
     -- 组队讨伐会话（总纲 §21.13）：spec 为冻结输入，runtime_state 为唯一权威运行态。
     -- party_id 仅保留历史引用，队伍解散不能级联删除尚待成员消费的结算证据。
@@ -669,7 +682,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

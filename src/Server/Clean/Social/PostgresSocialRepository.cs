@@ -1,3 +1,6 @@
+using System.Text.Json;
+using Domain.Social;
+
 namespace Server.Clean.Social;
 
 /// <summary>
@@ -138,14 +141,16 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         batch.BatchCommands.Add(Command(
             "SELECT party_id FROM social.party_members WHERE player_id = $1", playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake
             FROM social.parties
             WHERE party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
             """, playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT m.player_id, p.display_name, m.ready
+            SELECT m.player_id, p.display_name, m.ready, m.doudizhu_ready, COALESCE(b.quantity, 0)
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
+            LEFT JOIN economy.player_asset_balances b ON b.player_id = m.player_id
+                AND b.asset_id = 'currency.spirit-stone' AND b.variant = ''
             WHERE m.party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
             ORDER BY m.joined_at, m.player_id
             """, playerId));
@@ -166,6 +171,11 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             FROM social.party_sessions s
             WHERE s.party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
               AND s.ended_at IS NULL
+            """, playerId));
+        batch.BatchCommands.Add(Command("""
+            SELECT g.state::text
+            FROM social.doudizhu_games g
+            WHERE g.party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
             """, playerId));
 
         await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
@@ -195,6 +205,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         Guid? leaderId = null;
         DateTimeOffset partyCreatedAt = default;
         var openSlots = 0;
+        var doudizhuStake = 10d;
         await reader.NextResultAsync(cancellationToken);
         if (await reader.ReadAsync(cancellationToken))
         {
@@ -204,12 +215,13 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                 reader.GetDouble(4), reader.GetBoolean(5), reader.GetBoolean(6), reader.GetInt16(9));
             partyCreatedAt = reader.GetFieldValue<DateTimeOffset>(7);
             openSlots = reader.GetInt16(8);
+            doudizhuStake = reader.GetDouble(10);
         }
 
         var members = new List<PartyMemberRecord>();
         await reader.NextResultAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2)));
+            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3), reader.GetDouble(4)));
 
         await reader.NextResultAsync(cancellationToken);
         var invitation = await reader.ReadAsync(cancellationToken)
@@ -231,11 +243,16 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         if (await reader.ReadAsync(cancellationToken))
             partySession = ReadPartySession(reader);
 
+        DouDiZhuGameState? doudizhuGame = null;
+        await reader.NextResultAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+            doudizhuGame = JsonSerializer.Deserialize<DouDiZhuGameState>(reader.GetString(0), PersistenceJson.Options);
+
         // 成员行存在但 parties 行缺失时视为未组队，与 GetPartyAsync 的判定一致。
         var party = partyId is { } id && leaderId is { } leader && profile is { } found
-            ? new PartyRecord(id, leader, found, partyCreatedAt, members, openSlots)
+            ? new PartyRecord(id, leader, found, partyCreatedAt, members, openSlots, doudizhuStake)
             : null;
-        return new SocialStateSnapshot(friends, incoming, outgoing, party, invitation, seeker, partySession);
+        return new SocialStateSnapshot(friends, incoming, outgoing, party, invitation, seeker, partySession, doudizhuGame);
     }
 
     /// <summary>判断双方是否已是好友。</summary>
@@ -346,8 +363,9 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         PartyProfileRecord? profile = null;
         DateTimeOffset createdAt = default;
         var openSlots = 0;
+        var doudizhuStake = 10d;
         await using (var partyCommand = new NpgsqlCommand("""
-            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake
             FROM social.parties WHERE party_id = $1
             """, connection))
         {
@@ -360,9 +378,10 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                 partyReader.GetDouble(4), partyReader.GetBoolean(5), partyReader.GetBoolean(6), partyReader.GetInt16(9));
             createdAt = partyReader.GetFieldValue<DateTimeOffset>(7);
             openSlots = partyReader.GetInt16(8);
+            doudizhuStake = partyReader.GetDouble(10);
         }
         await using var membersCommand = new NpgsqlCommand("""
-            SELECT m.player_id, p.display_name, m.ready
+            SELECT m.player_id, p.display_name, m.ready, m.doudizhu_ready
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = $1
@@ -372,8 +391,8 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         var members = new List<PartyMemberRecord>();
         await using var reader = await membersCommand.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2)));
-        return new PartyRecord(partyId, leaderId, profile, createdAt, members, openSlots);
+            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3)));
+        return new PartyRecord(partyId, leaderId, profile, createdAt, members, openSlots, doudizhuStake);
     }
 
     /// <summary>创建队伍并写入队长成员行（同一事务）；档案为招募标签。</summary>
@@ -434,6 +453,269 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
+    /// <summary>在队伍行锁内更新底注并复核房主权限；活跃牌局期间不可更改。</summary>
+    public async ValueTask<bool> TryUpdateDouDiZhuStakeAsync(Guid partyId, Guid leaderId, double stake,
+        DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        if (!double.IsFinite(stake) || stake < 0) return false;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var gate = new NpgsqlCommand("SELECT leader_id FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+        {
+            gate.Parameters.AddWithValue(partyId);
+            if (await gate.ExecuteScalarAsync(cancellationToken) is not Guid actualLeader || actualLeader != leaderId)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await using (var active = new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM social.doudizhu_games WHERE party_id = $1 AND status = 0)", connection, transaction))
+        {
+            active.Parameters.AddWithValue(partyId);
+            if (await active.ExecuteScalarAsync(cancellationToken) is true)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await using (var update = new NpgsqlCommand("UPDATE social.parties SET doudizhu_stake = $2, updated_at = $3 WHERE party_id = $1", connection, transaction))
+        {
+            update.Parameters.AddWithValue(partyId);
+            update.Parameters.AddWithValue(stake);
+            update.Parameters.AddWithValue(now);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>切换本人斗地主准备状态；牌局存续时保持三人名册固定。</summary>
+    public async ValueTask<bool> TrySetDouDiZhuReadyAsync(Guid playerId, bool ready, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        Guid partyId;
+        await using (var member = new NpgsqlCommand("SELECT party_id FROM social.party_members WHERE player_id = $1", connection, transaction))
+        {
+            member.Parameters.AddWithValue(playerId);
+            if (await member.ExecuteScalarAsync(cancellationToken) is not Guid id)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+            partyId = id;
+        }
+        await using (var gate = new NpgsqlCommand("SELECT party_id FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+        {
+            gate.Parameters.AddWithValue(partyId);
+            if (await gate.ExecuteScalarAsync(cancellationToken) is null
+                || await HasActiveDouDiZhuAsync(connection, transaction, partyId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await using var update = new NpgsqlCommand(
+            "UPDATE social.party_members SET doudizhu_ready = $2 WHERE player_id = $1 AND party_id = $3", connection, transaction);
+        update.Parameters.AddWithValue(playerId);
+        update.Parameters.AddWithValue(ready);
+        update.Parameters.AddWithValue(partyId);
+        var changed = await update.ExecuteNonQueryAsync(cancellationToken) == 1;
+        if (changed && !ready)
+        {
+            // 取消准备与关闭赛后牌桌在同一队伍事务内生效，避免再次准备后重新打开旧结果。
+            await using var close = new NpgsqlCommand("DELETE FROM social.doudizhu_games WHERE party_id = $1 AND status = 1", connection, transaction);
+            close.Parameters.AddWithValue(partyId);
+            await close.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return changed;
+    }
+
+    /// <summary>按队伍加入顺序锁定恰好三名已准备成员并创建权威牌局。</summary>
+    public async ValueTask<bool> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, Guid startedBy, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        Guid leaderId;
+        double stake;
+        await using (var party = new NpgsqlCommand("SELECT leader_id, doudizhu_stake FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+        {
+            party.Parameters.AddWithValue(state.PartyId);
+            await using var reader = await party.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+            leaderId = reader.GetGuid(0);
+            stake = reader.GetDouble(1);
+        }
+        var members = new List<(Guid PlayerId, bool Ready)>();
+        await using (var command = new NpgsqlCommand("SELECT player_id, doudizhu_ready FROM social.party_members WHERE party_id = $1 ORDER BY joined_at, player_id FOR UPDATE", connection, transaction))
+        {
+            command.Parameters.AddWithValue(state.PartyId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) members.Add((reader.GetGuid(0), reader.GetBoolean(1)));
+        }
+        if (leaderId != startedBy || stake != state.BaseStake || members.Count != 3
+            || members.Any(member => !member.Ready)
+            || !members.Select(member => member.PlayerId).SequenceEqual(state.PlayerIds))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+        if (stake > 0)
+        {
+            var balances = new Dictionary<Guid, double>();
+            await using var balance = new NpgsqlCommand("""
+                SELECT player_id, quantity FROM economy.player_asset_balances
+                WHERE player_id = ANY($1) AND asset_id = 'currency.spirit-stone' AND variant = ''
+                ORDER BY player_id FOR UPDATE
+                """, connection, transaction);
+            balance.Parameters.AddWithValue(state.PlayerIds.Order().ToArray());
+            await using var reader = await balance.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) balances.Add(reader.GetGuid(0), reader.GetDouble(1));
+            await reader.CloseAsync();
+            if (state.PlayerIds.Any(playerId => !balances.TryGetValue(playerId, out var quantity) || quantity < stake))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        var json = JsonSerializer.Serialize(state, PersistenceJson.Options);
+        await using (var command = new NpgsqlCommand("""
+            INSERT INTO social.doudizhu_games(party_id, game_id, state, state_version, status, updated_at)
+            VALUES ($1, $2, $3::jsonb, $4, 0, $5)
+            ON CONFLICT (party_id) DO UPDATE
+                SET game_id = EXCLUDED.game_id, state = EXCLUDED.state,
+                    state_version = EXCLUDED.state_version, status = 0, updated_at = EXCLUDED.updated_at
+            WHERE social.doudizhu_games.status <> 0
+            RETURNING 1
+            """, connection, transaction))
+        {
+            command.Parameters.AddWithValue(state.PartyId);
+            command.Parameters.AddWithValue(state.GameId);
+            command.Parameters.AddWithValue(json);
+            command.Parameters.AddWithValue(state.Version);
+            command.Parameters.AddWithValue(state.UpdatedAt);
+            if (await command.ExecuteScalarAsync(cancellationToken) is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>读取队伍最近一局斗地主状态，用于握手恢复与公共牌桌投影。</summary>
+    public async ValueTask<DouDiZhuGameState?> GetDouDiZhuGameAsync(Guid partyId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("SELECT state::text FROM social.doudizhu_games WHERE party_id = $1", connection);
+        command.Parameters.AddWithValue(partyId);
+        return await command.ExecuteScalarAsync(cancellationToken) is string json
+            ? JsonSerializer.Deserialize<DouDiZhuGameState>(json, PersistenceJson.Options)
+            : null;
+    }
+
+    /// <summary>列出活跃斗地主牌局，供回合截止看门狗恢复推进。</summary>
+    public async ValueTask<IReadOnlyList<DouDiZhuGameState>> ListActiveDouDiZhuGamesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("SELECT state::text FROM social.doudizhu_games WHERE status = 0", connection);
+        var games = new List<DouDiZhuGameState>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            games.Add(JsonSerializer.Deserialize<DouDiZhuGameState>(reader.GetString(0), PersistenceJson.Options)!);
+        return games;
+    }
+
+    /// <summary>CAS 保存非终局检查点，操作序号冲突时不覆盖新状态。</summary>
+    public async ValueTask<bool> TrySaveDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion, CancellationToken cancellationToken = default)
+    {
+        var json = JsonSerializer.Serialize(state, PersistenceJson.Options);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            UPDATE social.doudizhu_games SET state = $3::jsonb, state_version = $4, updated_at = $5
+            WHERE party_id = $1 AND game_id = $2 AND state_version = $6 AND status = 0
+            """, connection);
+        command.Parameters.AddWithValue(state.PartyId);
+        command.Parameters.AddWithValue(state.GameId);
+        command.Parameters.AddWithValue(json);
+        command.Parameters.AddWithValue(state.Version);
+        command.Parameters.AddWithValue(state.UpdatedAt);
+        command.Parameters.AddWithValue(expectedVersion);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    /// <summary>在同一 Serializable 事务内确认牌局版本、计算 all-in 余额、写经济流水与终局检查点。</summary>
+    public async ValueTask<bool> TryCommitDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using (var gate = new NpgsqlCommand("SELECT state_version FROM social.doudizhu_games WHERE party_id = $1 AND game_id = $2 AND status = 0 FOR UPDATE", connection, transaction))
+        {
+            gate.Parameters.AddWithValue(state.PartyId);
+            gate.Parameters.AddWithValue(state.GameId);
+            if (await gate.ExecuteScalarAsync(cancellationToken) is not long version || version != expectedVersion)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+
+        var balances = state.PlayerIds.ToDictionary(playerId => playerId, _ => 0d);
+        await using (var balance = new NpgsqlCommand("""
+            SELECT player_id, quantity FROM economy.player_asset_balances
+            WHERE player_id = ANY($1) AND asset_id = 'currency.spirit-stone' AND variant = ''
+            ORDER BY player_id FOR UPDATE
+            """, connection, transaction))
+        {
+            balance.Parameters.AddWithValue(state.PlayerIds.Order().ToArray());
+            await using var reader = await balance.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) balances[reader.GetGuid(0)] = reader.GetDouble(1);
+        }
+        var deltas = DouDiZhuGame.CalculateSettlementDeltas(state,
+            state.PlayerIds.Select(playerId => balances[playerId]).ToArray());
+        var settled = state with { SettlementDeltas = deltas };
+        var assetDeltas = state.PlayerIds.Select((playerId, seat) => new AssetDelta(
+                playerId, "currency.spirit-stone", string.Empty, deltas[seat]))
+            .Where(delta => delta.Delta != 0).ToArray();
+        if (assetDeltas.Length > 0)
+        {
+            var actor = state.PlayerIds[state.WinnerSeat!.Value];
+            await PostgresEconomyRepository.CommitCoreAsync(connection, transaction,
+                new EconomyTransactionRequest(state.GameId, $"doudizhu:{state.GameId:D}", "doudizhu.settlement", actor,
+                    assetDeltas, state.UpdatedAt, JsonSerializer.SerializeToUtf8Bytes(settled, PersistenceJson.Options)), cancellationToken);
+        }
+        var json = JsonSerializer.Serialize(settled, PersistenceJson.Options);
+        await using (var update = new NpgsqlCommand("""
+            UPDATE social.doudizhu_games SET state = $3::jsonb, state_version = $4, status = 1, updated_at = $5
+            WHERE party_id = $1 AND game_id = $2 AND state_version = $6 AND status = 0
+            """, connection, transaction))
+        {
+            update.Parameters.AddWithValue(state.PartyId);
+            update.Parameters.AddWithValue(state.GameId);
+            update.Parameters.AddWithValue(json);
+            update.Parameters.AddWithValue(settled.Version);
+            update.Parameters.AddWithValue(settled.UpdatedAt);
+            update.Parameters.AddWithValue(expectedVersion);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
     /// <summary>
     /// 原子加队：parties 行 FOR UPDATE 串行化并发加入，事务内以 open_slots 复核满员与互斥；
     /// 成功时同事务清除该玩家的匹配登记与待处理邀请。
@@ -453,6 +735,16 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                 return PartyJoinResult.NotFound;
             }
             openSlots = slots;
+        }
+        await using (var activeGame = new NpgsqlCommand(
+            "SELECT EXISTS(SELECT 1 FROM social.doudizhu_games WHERE party_id = $1 AND status = 0)", connection, transaction))
+        {
+            activeGame.Parameters.AddWithValue(partyId);
+            if (await activeGame.ExecuteScalarAsync(cancellationToken) is true)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PartyJoinResult.GameActive;
+            }
         }
         int memberCount;
         await using (var count = new NpgsqlCommand(
@@ -505,6 +797,16 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var gate = new NpgsqlCommand("SELECT party_id FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+        {
+            gate.Parameters.AddWithValue(partyId);
+            if (await gate.ExecuteScalarAsync(cancellationToken) is null
+                || await HasActiveDouDiZhuAsync(connection, transaction, partyId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+        }
         var members = new List<PartyMemberRecord>();
         await using (var collect = new NpgsqlCommand("""
             SELECT m.player_id, p.display_name, m.ready
@@ -537,23 +839,61 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     public async ValueTask<bool> TryKickPartyMemberAsync(Guid partyId, Guid playerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var gate = new NpgsqlCommand("SELECT party_id FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+        {
+            gate.Parameters.AddWithValue(partyId);
+            if (await gate.ExecuteScalarAsync(cancellationToken) is null
+                || await HasActiveDouDiZhuAsync(connection, transaction, partyId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
         await using var command = new NpgsqlCommand("""
             DELETE FROM social.party_members
             WHERE player_id = $1 AND party_id = $2
-            """, connection);
+            """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = partyId });
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        await transaction.CommitAsync(cancellationToken);
+        return deleted;
     }
 
     /// <summary>移除玩家队伍成员行。</summary>
     public async ValueTask<bool> TryRemovePartyMemberAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        Guid partyId;
+        await using (var member = new NpgsqlCommand("SELECT party_id FROM social.party_members WHERE player_id = $1", connection, transaction))
+        {
+            member.Parameters.AddWithValue(playerId);
+            if (await member.ExecuteScalarAsync(cancellationToken) is not Guid id)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+            partyId = id;
+        }
+        await using (var gate = new NpgsqlCommand("SELECT party_id FROM social.parties WHERE party_id = $1 FOR UPDATE", connection, transaction))
+        {
+            gate.Parameters.AddWithValue(partyId);
+            if (await gate.ExecuteScalarAsync(cancellationToken) is null
+                || await HasActiveDouDiZhuAsync(connection, transaction, partyId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
         await using var command = new NpgsqlCommand(
-            "DELETE FROM social.party_members WHERE player_id = $1", connection);
-        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+            "DELETE FROM social.party_members WHERE player_id = $1 AND party_id = $2", connection, transaction);
+        command.Parameters.AddWithValue(playerId);
+        command.Parameters.AddWithValue(partyId);
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        await transaction.CommitAsync(cancellationToken);
+        return deleted;
     }
 
     /// <summary>列出公开队伍（含成员与道号）；目标类型/地图为空串表示不限；按创建时间倒序。</summary>
@@ -562,7 +902,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var parties = new List<(PartyRecord Seed, List<PartyMemberRecord> Members)>();
         await using (var command = new NpgsqlCommand("""
-            SELECT party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty
+            SELECT party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake
             FROM social.parties
             WHERE is_public
               AND ($1 = '' OR $1 = 'any' OR activity_kind = 'any' OR activity_kind = $1)
@@ -582,14 +922,14 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
                     reader.GetDouble(5), reader.GetBoolean(6), reader.GetBoolean(7), reader.GetInt16(10));
                 parties.Add((new PartyRecord(
                     reader.GetGuid(0), reader.GetGuid(1), profile,
-                    reader.GetFieldValue<DateTimeOffset>(8), [], reader.GetInt16(9)), []));
+                    reader.GetFieldValue<DateTimeOffset>(8), [], reader.GetInt16(9), reader.GetDouble(11)), []));
             }
         }
         if (parties.Count == 0) return [];
         var ids = parties.Select(p => p.Seed.PartyId).ToArray();
         var membersByParty = parties.ToDictionary(p => p.Seed.PartyId, p => p.Members);
         await using (var command = new NpgsqlCommand("""
-            SELECT m.party_id, m.player_id, p.display_name, m.ready
+            SELECT m.party_id, m.player_id, p.display_name, m.ready, m.doudizhu_ready
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = ANY($1)
@@ -599,7 +939,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             command.Parameters.Add(new NpgsqlParameter { Value = ids });
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
-                membersByParty[reader.GetGuid(0)].Add(new PartyMemberRecord(reader.GetGuid(1), reader.GetString(2), reader.GetBoolean(3)));
+                membersByParty[reader.GetGuid(0)].Add(new PartyMemberRecord(reader.GetGuid(1), reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4)));
         }
         return parties
             .Select(p => p.Seed with { Members = p.Members })
@@ -991,5 +1331,17 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         command.Parameters.Add(new NpgsqlParameter { Value = status });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    private static async ValueTask<bool> HasActiveDouDiZhuAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid partyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT EXISTS(SELECT 1 FROM social.doudizhu_games WHERE party_id = $1 AND status = 0)", connection, transaction);
+        command.Parameters.AddWithValue(partyId);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 }
