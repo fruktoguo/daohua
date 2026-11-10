@@ -172,10 +172,17 @@ public static partial class SimulationEngine
             var doc = current.Action.Expedition;
             if (!Matches(current, current.Action, doc)) return;
             var exported = CaptureCombatState(current.Battle, doc!);
+            // 恢复优先读取 PlayerState；资源窗口可能已在战斗外更新镜像，嵌套快照也须同步。
+            var playerState = exported.PlayerState! with
+            {
+                Hitpoints = doc!.PlayerHitpoints,
+                Manapoints = doc.PlayerManapoints
+            };
             current.Action.Expedition = exported with
             {
                 PlayerHitpoints = doc!.PlayerHitpoints,
-                PlayerManapoints = doc.PlayerManapoints
+                PlayerManapoints = doc.PlayerManapoints,
+                PlayerState = playerState
             };
         }
     }

@@ -380,4 +380,34 @@ public sealed class CombatConsumableTests
         Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "buff.test-regen");
         Assert.Equal(baseline.HpRegen, PlayerAttributeResolver.Resolve(player, catalog).HpRegen, 9);
     }
+
+    /// <summary>搜寻结束与五秒回复重合时，快照恢复不能用旧玩家快照覆盖新血蓝。</summary>
+    [Fact]
+    public void RegenAtSearchCompletionSurvivesCombatSnapshotRestore()
+    {
+        var catalog = CreateCatalog(enemyHitpoints: 100_000, enemyAttackPower: 0, searchSeconds: 5,
+            baseAttributes: new BaseAttributeCatalog(
+                [new BaseAttributeAnchor(1, 1000, 100, 10, 0, 0, 0, 100, 0, 0, 0, 0, 0, 2, 1)]));
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var wallet = CreateWallet(player);
+        player.Resources.Hitpoints = 40;
+        player.Resources.Manapoints = 0;
+        player.Buffs.Active.Add(new ActiveBuff("buff.test-recovery", Baseline.AddSeconds(30).ToUnixTimeSeconds(), 1,
+            "回春", Effects: [new BuffEffect(BuffEffectChannel.HpRegen, 12), new BuffEffect(BuffEffectChannel.MpRegen, 9)]));
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet);
+
+        Assert.Equal(54, player.Resources.Hitpoints);
+        Assert.Equal(10, player.Resources.Manapoints);
+        var expedition = player.Actions[0].Expedition!;
+        Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
+        Assert.Equal(54, expedition.PlayerState!.Hitpoints);
+        Assert.Equal(10, expedition.PlayerState.Manapoints);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6), catalog, wallet);
+
+        Assert.Equal(54, player.Resources.Hitpoints);
+        Assert.Equal(10, player.Resources.Manapoints);
+    }
 }
