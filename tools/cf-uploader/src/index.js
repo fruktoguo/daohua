@@ -433,8 +433,11 @@ export default {
           });
           if (pageRes.ok) {
             const pageHtml = await pageRes.text();
-            const setCookie = pageRes.headers.get("set-cookie") || "";
-            const cookieStr = setCookie.split(";")[0];
+            const cookies = [];
+            pageRes.headers.forEach((value, key) => {
+              if (key.toLowerCase() === "set-cookie") cookies.push(value);
+            });
+            const cookieStr = cookies.length ? cookies.map(c => c.split(";")[0]).join("; ") : "";
             const tokenMatch = pageHtml.match(/PF\.obj\.config\.auth_token\s*=\s*"([^"]+)"/);
             const authToken = tokenMatch ? tokenMatch[1] : null;
 
