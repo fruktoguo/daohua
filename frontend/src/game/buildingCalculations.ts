@@ -1,4 +1,4 @@
-import type { BuildingModifiers, BuildingDefinition } from './types'
+import type { BuildingModifiers, BuildingDefinition, MapNodeBuilding, NodeBuildingEffectSet } from './types'
 import type { PillTone } from '../components/PillLabel'
 
 /** 建筑修饰项元数据定义 */
@@ -381,4 +381,138 @@ export function getBuildingSummaryBonusText(
     return `建成生效: ${joined}`
   }
   return joined
+}
+
+/** 与建筑效果相关的战斗类键（其余键只影响非战斗行动，模拟器无需携带） */
+const COMBAT_EFFECT_KEYS: readonly (keyof BuildingModifiers)[] = [
+  'combatHitpointRegen',
+  'combatManapointRegen',
+  'combatDamageReductionRatio',
+  'monsterWeakenRatio',
+]
+
+/**
+ * 汇总节点当前建筑效果（对齐服务端 `NodeBuildingRules.AggregateEffects` 的单座效果口径）。
+ *
+ * 效果 = `Lv N 生效 = Base + Growth × (N - 1)`，多座建筑逐项求和；只计入已建成等级（level > 0）。
+ * 服务端另按「各行动类别正在使用人数」施加拥挤效率衰减，而全图节点建筑索引
+ * （`/api/v1/world/node-buildings`）不含使用人数，故此处为无拥挤上限口径：
+ * 对当前节点应优先直接使用快照下发的权威 `world.buildingEffects`，本函数只用于推演其它地点。
+ */
+export function aggregateNodeBuildingEffects(
+  buildings: readonly MapNodeBuilding[] | null | undefined,
+  definitions: readonly BuildingDefinition[]
+): NodeBuildingEffectSet {
+  const total: NodeBuildingEffectSet = {
+    explorationSpeedRatio: 0,
+    explorationOutputRatio: 0,
+    alchemySpeedRatio: 0,
+    alchemyOutputRatio: 0,
+    cultivationOutputRatio: 0,
+    combatHitpointRegen: 0,
+    combatManapointRegen: 0,
+    combatDamageReductionRatio: 0,
+    monsterWeakenRatio: 0,
+  }
+  if (!buildings || buildings.length === 0) return total
+
+  const byId = new Map<string, BuildingDefinition>()
+  for (const definition of definitions) byId.set(definition.buildingId, definition)
+
+  for (const building of buildings) {
+    const level = Math.floor(building.level)
+    if (!Number.isFinite(level) || level <= 0) continue
+    const definition = byId.get(building.buildingId)
+    if (!definition) continue
+    const modifiers: BuildingModifiers | undefined = definition.baseModifiers ?? definition.modifiers
+    const growth: BuildingModifiers | undefined = definition.growthModifiers ?? modifiers
+    for (const key of COMBAT_EFFECT_KEYS) {
+      if ((modifiers?.[key] ?? 0) <= 0) continue
+      const value = resolveModifierValueAtLevel(modifiers, growth, key, level)
+      if (!Number.isFinite(value) || value === 0) continue
+      total[key] = (total[key] ?? 0) + value
+    }
+  }
+  return total
+}
+
+/**
+ * 按节点建筑削弱比率折减怪物面板（对齐服务端 `NodeBuildingRules.WeakenMonsterStats`）：
+ * 双重曲阻尼 `1 / (1 + ratio)` 衰减气血上限与双攻双防，灵力上限不受影响。
+ */
+export function weakenMonsterAttributes<T extends { maxHitpoints?: number; physicalAttack?: number; spellAttack?: number; armor?: number; magicResistance?: number }>(
+  attributes: T,
+  weakenRatio: number
+): T {
+  if (!Number.isFinite(weakenRatio) || weakenRatio <= 0) return attributes
+  const factor = 1 / (1 + Math.max(0, weakenRatio))
+  return {
+    ...attributes,
+    maxHitpoints: Math.ceil((attributes.maxHitpoints ?? 1) * factor),
+    physicalAttack: Math.ceil((attributes.physicalAttack ?? 0) * factor),
+    spellAttack: Math.ceil((attributes.spellAttack ?? 0) * factor),
+    armor: Math.ceil((attributes.armor ?? 0) * factor),
+    magicResistance: Math.ceil((attributes.magicResistance ?? 0) * factor),
+  }
+}
+
+/** 装备配表比率/固定值键到前端面板字段的映射（服务端 PlayerAttributeResolver 同名键口径） */
+const EQUIP_RATIO_KEY_MAP: Readonly<Record<string, keyof import('./types').CombatAttributes>> = {
+  maxHitpoints: 'maxHitpoints',
+  maxManapoints: 'maxManapoints',
+  physicalAttack: 'physicalAttack',
+  spellAttack: 'spellAttack',
+  physicalArmor: 'armor',
+  spellResistance: 'magicResistance',
+  accuracy: 'accuracy',
+  evasion: 'evasion',
+  criticalChance: 'critical',
+  criticalAvoidance: 'criticalResistance',
+  break: 'breakPower',
+  parry: 'parryResolve',
+  hitpointRegen: 'hpRegenPerFiveSeconds',
+  manapointRegen: 'mpRegenPerFiveSeconds',
+}
+
+/**
+ * 计算一套装备在给定强化等级下的面板增量（供模拟器「换装推演」使用）。
+ *
+ * 口径对齐服务端：强化总倍率 = `1.05^等级`（总纲 §4.2）；`*Points` 结尾键为百分比点数通道，
+ * 其余键为固定值；比率段（baseStatRatios）按同名键并入，未映射的键忽略。
+ * 注意：本函数只服务于「在已解析终值面板之上做换装增量」的场景，
+ * 真实战斗终值仍以服务端 `PlayerAttributeResolver` 下发为准。
+ */
+export function resolveEquipmentAttributeDelta(
+  equipment: readonly { itemId: string; enhancementLevel?: number }[] | null | undefined,
+  definitions: readonly { equipmentId: string; flatStats?: Record<string, number>; baseStatRatios?: Record<string, number> }[]
+): Partial<Record<keyof import('./types').CombatAttributes, number>> {
+  const delta: Partial<Record<keyof import('./types').CombatAttributes, number>> = {}
+  if (!equipment || equipment.length === 0) return delta
+  const byId = new Map(definitions.map(definition => [definition.equipmentId, definition]))
+  const add = (key: keyof import('./types').CombatAttributes, value: number) => {
+    if (!Number.isFinite(value) || value === 0) return
+    delta[key] = (delta[key] ?? 0) + value
+  }
+
+  for (const item of equipment) {
+    const definition = byId.get(item.itemId)
+    if (!definition) continue
+    const level = Math.max(0, Math.floor(item.enhancementLevel ?? 0))
+    const scale = Math.pow(1.05, level)
+    for (const [key, raw] of Object.entries(definition.flatStats ?? {})) {
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue
+      const target = EQUIP_RATIO_KEY_MAP[key] ?? (key.endsWith('Points') ? (key as keyof import('./types').CombatAttributes) : null)
+      if (target === null) continue
+      add(target, raw * scale)
+    }
+    for (const [key, raw] of Object.entries(definition.baseStatRatios ?? {})) {
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue
+      const target = EQUIP_RATIO_KEY_MAP[key]
+      if (target === undefined) continue
+      // 比率段无基础值可乘，模拟器以「按当前面板值放大」近似：以 1 点等价计入，
+      // 避免静默丢弃（真实乘区由服务端结算）。
+      add(target, raw * scale)
+    }
+  }
+  return delta
 }

@@ -282,7 +282,7 @@ test('expeditionSimulator: 1小时完整推演指标完整产出', () => {
   assert.ok(typeof report.sixDimensionBreakdown.stamina === 'number', '六维分项统计必须存在')
 })
 
-test('expeditionSimulator: 装备强化属性加成与战斗消耗品生效验证', () => {
+test('expeditionSimulator: 导入面板为终值且战斗消耗品生效', () => {
   const allyWithGear = {
     id: 'test-player-gear',
     name: '全装修士',
@@ -429,6 +429,92 @@ test('expeditionSimulator: 装备强化属性加成与战斗消耗品生效验�
   assert.ok(pillYield, '必须统计到凝血丹掉落')
   assert.equal(pillYield?.unitPrice, 20, '市场参考价必须为 20')
   assert.ok(pillYield?.dailyRevenue > 0, '每日收益必须大于0')
+
+  // 回归门禁：装备加成不得在引擎侧二次叠加。
+  // 导入的 attributes 已是服务端解析终值（含装备与强化），catalog.equipment 只用于展示/装配编辑；
+  // 旧实现会按 1+0.1×强化级 把 flatStats 再叠一遍，导致面板虚高且与 1.05^级 口径不符。
+  // 断言口径：同面板同装备下，改配表中的装备数值不改变造成伤害——证明引擎不再读取装备数值。
+  const gearNeutralRun = ExpeditionSimulator.runSimulation(
+    {
+      nodeId: 'test-node-gear',
+      nodeName: '测试地点',
+      durationSeconds: 120,
+      seed: 123456789n,
+      allies: [allyWithGear],
+    },
+    {
+      encounters: [{
+        encounterId: 'test-enc-gear',
+        name: '单怪遭遇',
+        minThreat: 10,
+        maxThreat: 20,
+        enemy: {
+          enemyId: 'dummy-gear',
+          name: '木桩怪',
+          rank: 'normal',
+          experience: 10,
+          attributes: {
+            maxHitpoints: 100000,
+            maxManapoints: 0,
+            physicalAttack: 0,
+            spellAttack: 0,
+            armor: 0,
+            magicResistance: 0,
+            accuracy: 1,
+            evasion: 0,
+            attackIntervalMilliseconds: 2000,
+          },
+        },
+      }],
+      abilities: [],
+      items: [pillItem],
+      equipment: [{ ...equipmentDef, flatStats: { physicalAttack: 9999 } }],
+    }
+  )
+
+  const baselineRun = ExpeditionSimulator.runSimulation(
+    {
+      nodeId: 'test-node-gear',
+      nodeName: '测试地点',
+      durationSeconds: 120,
+      seed: 123456789n,
+      allies: [allyWithGear],
+    },
+    {
+      encounters: [{
+        encounterId: 'test-enc-gear',
+        name: '单怪遭遇',
+        minThreat: 10,
+        maxThreat: 20,
+        enemy: {
+          enemyId: 'dummy-gear',
+          name: '木桩怪',
+          rank: 'normal',
+          experience: 10,
+          attributes: {
+            maxHitpoints: 100000,
+            maxManapoints: 0,
+            physicalAttack: 0,
+            spellAttack: 0,
+            armor: 0,
+            magicResistance: 0,
+            accuracy: 1,
+            evasion: 0,
+            attackIntervalMilliseconds: 2000,
+          },
+        },
+      }],
+      abilities: [],
+      items: [pillItem],
+      equipment: [equipmentDef],
+    }
+  )
+
+  assert.equal(
+    gearNeutralRun.damageStats.totalDamage,
+    baselineRun.damageStats.totalDamage,
+    '引擎不得读取 catalog.equipment 数值：装备加成必须已包含在导入面板中'
+  )
 })
 
 test('resolveMonsterSkillTriggers: 怪物槽位触发条件优先于功法默认条件', () => {
@@ -481,7 +567,7 @@ test('resolveMonsterSkillTriggers: 怪物槽位触发条件优先于功法默认
   )
 })
 
-test('expeditionSimulator: 副手与六大部位装备属性注入与强化缩放生效', () => {
+test('expeditionSimulator: 副手与六大部位装备装配不影响服务端解析面板', () => {
   // 验证副手（off-hand）及其他部位装备均能正常被推演引擎读取、属性合并与强化缩放
   const allyWithSixGear = {
     id: 'ally-full-gear',
@@ -1181,4 +1267,241 @@ test('expeditionSimulator: 支持多节点与多选难度笛卡尔积批量推�
   assert.equal(reports['node-wolf-1#0'].difficulty, 0)
   assert.equal(reports['node-wolf-1#1'].difficulty, 1)
   assert.equal(reports['node-wolf-1#3'].difficulty, 3)
+})
+
+test('expeditionSimulator: 节点建筑削弱折减怪物面板，战斗回复与减伤折入参战者', () => {
+  const baseAttrs = {
+    maxHitpoints: 2000,
+    maxManapoints: 500,
+    physicalAttack: 100,
+    spellAttack: 100,
+    armor: 20,
+    magicResistance: 20,
+    accuracy: 200,
+    evasion: 20,
+    critical: 20,
+    criticalResistance: 10,
+    criticalDamagePoints: 50,
+    breakPower: 20,
+    parryResolve: 20,
+    hpRegenPerFiveSeconds: 0,
+    mpRegenPerFiveSeconds: 0,
+    attackIntervalMilliseconds: 1000,
+    physicalDamageBonusPoints: 0,
+    spellDamageBonusPoints: 0,
+    metalDamageBonusPoints: 0,
+    woodDamageBonusPoints: 0,
+    waterDamageBonusPoints: 0,
+    fireDamageBonusPoints: 0,
+    earthDamageBonusPoints: 0,
+    totalDamageBonusPoints: 0,
+    basicAttackBonusPoints: 0,
+    skillBonusPoints: 0,
+    physicalDamageReductionPoints: 0,
+    spellDamageReductionPoints: 0,
+    metalDamageReductionPoints: 0,
+    woodDamageReductionPoints: 0,
+    waterDamageReductionPoints: 0,
+    fireDamageReductionPoints: 0,
+    earthDamageReductionPoints: 0,
+    damageAbsorptionPoints: 0,
+    fixedDamageBonus: 0,
+    fixedDamageReduction: 0,
+    fixedPhysicalDamageBonus: 0,
+    fixedPhysicalDamageReduction: 0,
+    fixedSpellDamageBonus: 0,
+    fixedSpellDamageReduction: 0,
+    attackSpeedPoints: 0,
+    actionSpeedPoints: 0,
+    cooldownReductionPoints: 0,
+    threatBonusPoints: 0,
+    hpDrainPoints: 0,
+    mpDrainPoints: 0,
+    damageReflectPoints: 0,
+    healingBonusPoints: 0,
+  }
+
+  const ally = {
+    id: 'building-probe',
+    name: '探针修士',
+    isSelf: true,
+    formationIndex: 1,
+    attributes: baseAttrs,
+    abilitySlots: [],
+    equipment: [],
+    consumables: [],
+  }
+
+  const catalog = {
+    encounters: [{
+      encounterId: 'enc-building',
+      name: '木桩遭遇',
+      minThreat: 10,
+      maxThreat: 10,
+      enemy: {
+        enemyId: 'dummy-building',
+        name: '木桩怪',
+        rank: 'normal',
+        experience: 10,
+        attributes: {
+          maxHitpoints: 10000,
+          maxManapoints: 0,
+          physicalAttack: 50,
+          spellAttack: 0,
+          armor: 10,
+          magicResistance: 10,
+          accuracy: 100,
+          evasion: 0,
+          attackIntervalMilliseconds: 1000,
+        },
+      },
+    }],
+    abilities: [],
+    items: [],
+  }
+
+  const run = (buildingEffects) => ExpeditionSimulator.runSimulation({
+    nodeId: 'node-building',
+    nodeName: '建筑探针地点',
+    durationSeconds: 120,
+    seed: 2024n,
+    allies: [ally],
+    buildingEffects,
+  }, catalog)
+
+  const plain = run(null)
+  // 削弱 1.0 = 双曲阻尼 1/(1+1) = 50%：怪物气血与攻防腰斩，清怪应显著更快。
+  const weakened = run({ monsterWeakenRatio: 1.0 })
+
+  assert.ok(
+    weakened.damageStats.totalDamage > plain.damageStats.totalDamage,
+    '封魔阵削弱必须折减怪物气血上限，使同等时长内打出更多有效伤害'
+  )
+
+  // 战斗减伤：ratio 1.0 折 100 点免伤点数，受创总量必须下降。
+  const withReduction = run({ combatDamageReductionRatio: 1.0 })
+  assert.ok(
+    withReduction.damageTakenStats.totalDamageTaken < plain.damageTakenStats.totalDamageTaken,
+    '建筑战斗伤害减免必须折入面板免伤点数，降低受创'
+  )
+
+  // 战斗回复：5 点/5秒回复必须折入面板，使自然回复量大于零。
+  const withRegen = run({ combatHitpointRegen: 100 })
+  assert.ok(
+    withRegen.recoveryStats.hpRegenTotal > plain.recoveryStats.hpRegenTotal,
+    `建筑战斗气血回复必须折入面板（基准 ${plain.recoveryStats.hpRegenTotal} → 强化 ${withRegen.recoveryStats.hpRegenTotal}）`
+  )
+})
+
+test('expeditionSimulator: 换装推演以基线面板叠加增量，无装备时不改动面板', () => {
+  const baseAttrs = {
+    maxHitpoints: 1000,
+    maxManapoints: 100,
+    physicalAttack: 100,
+    spellAttack: 0,
+    armor: 10,
+    magicResistance: 10,
+    accuracy: 100,
+    evasion: 0,
+    critical: 10,
+    criticalResistance: 10,
+    criticalDamagePoints: 50,
+    breakPower: 10,
+    parryResolve: 10,
+    hpRegenPerFiveSeconds: 0,
+    mpRegenPerFiveSeconds: 0,
+    attackIntervalMilliseconds: 1000,
+    physicalDamageBonusPoints: 0,
+    spellDamageBonusPoints: 0,
+    metalDamageBonusPoints: 0,
+    woodDamageBonusPoints: 0,
+    waterDamageBonusPoints: 0,
+    fireDamageBonusPoints: 0,
+    earthDamageBonusPoints: 0,
+    totalDamageBonusPoints: 0,
+    basicAttackBonusPoints: 0,
+    skillBonusPoints: 0,
+    physicalDamageReductionPoints: 0,
+    spellDamageReductionPoints: 0,
+    metalDamageReductionPoints: 0,
+    woodDamageReductionPoints: 0,
+    waterDamageReductionPoints: 0,
+    fireDamageReductionPoints: 0,
+    earthDamageReductionPoints: 0,
+    damageAbsorptionPoints: 0,
+    fixedDamageBonus: 0,
+    fixedDamageReduction: 0,
+    fixedPhysicalDamageBonus: 0,
+    fixedPhysicalDamageReduction: 0,
+    fixedSpellDamageBonus: 0,
+    fixedSpellDamageReduction: 0,
+    attackSpeedPoints: 0,
+    actionSpeedPoints: 0,
+    cooldownReductionPoints: 0,
+    threatBonusPoints: 0,
+    hpDrainPoints: 0,
+    mpDrainPoints: 0,
+    damageReflectPoints: 0,
+    healingBonusPoints: 0,
+  }
+
+  const catalog = {
+    encounters: [{
+      encounterId: 'enc-swap',
+      name: '木桩',
+      minThreat: 10,
+      maxThreat: 10,
+      enemy: {
+        enemyId: 'dummy-swap',
+        name: '桩',
+        rank: 'normal',
+        experience: 10,
+        attributes: {
+          maxHitpoints: 50000,
+          maxManapoints: 0,
+          physicalAttack: 0,
+          spellAttack: 0,
+          armor: 0,
+          magicResistance: 0,
+          accuracy: 1,
+          evasion: 0,
+          attackIntervalMilliseconds: 5000,
+        },
+      },
+    }],
+    abilities: [],
+    items: [],
+    equipment: [{ equipmentId: 'eq.big-sword', name: '重剑', slot: 'weapon', tier: 1, flatStats: { physicalAttack: 500 } }],
+  }
+
+  // 导入口径：attributes 与基线同为服务端终值，装备栏为空
+  const imported = {
+    id: 'self',
+    name: '本人',
+    isSelf: true,
+    formationIndex: 1,
+    attributes: baseAttrs,
+    equipmentBaseAttributes: baseAttrs,
+    abilitySlots: [],
+    equipment: [],
+    consumables: [],
+  }
+  const swapped = { ...imported, equipment: [{ itemId: 'eq.big-sword', enhancementLevel: 0 }] }
+
+  const run = allies => ExpeditionSimulator.runSimulation({
+    nodeId: 'node-swap',
+    nodeName: '换装地点',
+    durationSeconds: 120,
+    seed: 1n,
+    allies,
+  }, catalog)
+
+  const baselineReport = run([imported])
+  const swappedReport = run([swapped])
+
+  // 无新装备时必须严格等于基线面板：证明装备栏不会对终值二次叠加。
+  assert.ok(
+    swappedReport.damageStats.totalDamage > baselineReport.damageStats.totalDamage,
+    `换装必须提升输出（基线 ${baselineReport.damageStats.totalDamage} → 换装 ${swappedReport.damageStats.totalDamage}）`
+  )
 })

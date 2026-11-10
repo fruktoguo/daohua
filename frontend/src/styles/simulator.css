@@ -348,6 +348,13 @@
   gap: 6px;
   font-size: 12px;
   color: var(--text-dim);
+  flex-wrap: wrap;
+}
+
+/* 队友导入失败提示：只在拉取被拒/断线时出现，用警示色保证可见 */
+.sim-import-notice {
+  font-size: 11px;
+  color: var(--danger);
 }
 
 .sim-select,
@@ -1169,6 +1176,15 @@
 
 .sim-data-table tr:hover td {
   background: var(--gold-faint);
+}
+
+/* 地点建筑效果列：长摘要折行显示，避免撑破对比表宽度 */
+.sim-node-building-cell {
+  color: var(--text-dim);
+  font-size: 11px;
+  max-width: 190px;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 :root[data-theme="light"] .sim-data-table tr:hover td {

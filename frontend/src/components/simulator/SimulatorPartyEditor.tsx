@@ -3,6 +3,7 @@ import { useGameStore } from '../../game/gameStore'
 import { useSocialStore } from '../../game/socialStore'
 import { useT } from '../../i18n'
 import type { AutoUseSlot, CombatAbilityDefinition, CombatAbilitySlot, CombatAttributes, CombatEquipmentDefinition, CombatTrigger, EquipmentSlot, EquippedItem, ExpeditionAlly, ItemDefinition } from '../../game/types'
+import type { PlayerCardDto } from '../../network/protocol'
 import { roundStat, sanitizeAttributes, type SimulatorCombatantConfig } from '../../game/simulator/simulatorTypes'
 import { StatGlyph } from '../StatGlyph'
 import { ItemGridPicker, type ItemPickerEntry } from '../ItemGridPicker'
@@ -102,6 +103,7 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
   const currentAlly = allies[selectedIdx] || allies[0]
 
   const party = useSocialStore(state => state.party)
+  const requestSimulatorCard = useSocialStore(state => state.requestSimulatorCard)
   const myName = useGameStore(state => state.name)
   const myAttributes = useGameStore(state => state.combatAttributes)
   const myCombat = useGameStore(state => state.combat)
@@ -109,6 +111,10 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
   const equipmentCatalog = useGameStore(state => state.equipment)
   const itemsCatalog = useGameStore(state => state.items)
   const expedition = useGameStore(state => state.queue?.entries?.[0]?.expedition)
+
+  // 队友导入反馈：在途成员 ID 与失败提示（名片查询由服务端白名单裁决，失败必须可见）
+  const [importingTeammateId, setImportingTeammateId] = useState<string | null>(null)
+  const [importNotice, setImportNotice] = useState<string | null>(null)
 
   // 当前正在编辑触发器的技能或消耗品
   const [editingTrigger, setEditingTrigger] = useState<{
@@ -179,6 +185,8 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
       name: myName || t('combat.simulator.selfName'),
       isSelf: true,
       attributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
+      // 基线 = 服务端解析终值（已含本人当前装备），换装推演叠加在基线之上，避免双计
+      equipmentBaseAttributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
       abilitySlots: myCombat?.abilitySlots ? myCombat.abilitySlots.map(s => ({ ...s })) : [],
       abilityTriggers,
       consumableTriggers: myCombat?.consumableTriggers ? { ...myCombat.consumableTriggers } : {},
@@ -190,65 +198,107 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
     onChangeAllies(nextList)
   }, [allies, currentAlly, myAttributes, myCombat, myConsumables, myName, onChangeAllies, selectedIdx, t])
 
-  // 2. 导入队友 (若已在探险阵列中则导入其实时属性、技能槽与触发条件)
+  // 2. 导入队友：优先取战斗会话内冻结面板，否则经 PlayerCard 拉取该队友的权威装配与面板。
+  //    任何缺项都不允许以「本人」数据冒充队友——旧实现的回退路径会把本人的装备/功法/消耗品
+  //    静默复制给队友，使推演结果完全失真。
   const handleImportTeammate = useCallback((memberId: string, memberName: string) => {
     if (!currentAlly) return
-    const expeditionAlly = expedition?.allies?.find((a: ExpeditionAlly) => a.playerId === memberId)
-    let newAlly: SimulatorCombatantConfig
 
-    if (expeditionAlly) {
-      const abilityTriggers: Record<string, CombatTrigger[]> = {}
-      if (expeditionAlly.skills) {
-        for (const s of expeditionAlly.skills) {
-          if (s.abilityId && s.triggers) {
-            abilityTriggers[s.abilityId] = s.triggers.map((t: CombatTrigger) => ({ ...t }))
-          }
+    /** 把 PlayerCard 应答装配为模拟器参战配置（属性为服务端解析终值，装备/功法/消耗品同源） */
+    const applyCard = (card: PlayerCardDto) => {
+      if (card.error) {
+        setImportNotice(t('combat.simulator.importTeammateFailed', { name: memberName }))
+        return
+      }
+      const slots: CombatAbilitySlot[] = (card.abilitySlots ?? []).map(slot => ({
+        abilityId: slot.abilityId ?? null,
+        level: slot.level || 1,
+      }))
+      const boughtEquipment: EquippedItem[] = (card.equipment ?? []).map(eq => ({
+        itemId: eq.itemId,
+        enhancementLevel: eq.enhancementLevel,
+      }))
+      // 战斗栏域六槽定长投影：前 3 位丹药栏、后 3 位通用栏（与队列 autoUseSlots.combat 同序）。
+      const boughtConsumables: AutoUseSlot[] = Array.from({ length: 6 }, (_, i) => ({
+        itemId: null,
+        quantity: 1,
+        enabled: false,
+        group: (i < 3 ? 'potion' : 'general') as 'potion' | 'general',
+      }))
+      for (const slot of card.autoUseSlots ?? []) {
+        const index = slot.slotIndex
+        if (index < 0 || index >= boughtConsumables.length) continue
+        boughtConsumables[index] = {
+          itemId: slot.itemId ?? null,
+          quantity: slot.quantity > 0 ? slot.quantity : 1,
+          enabled: slot.enabled,
+          group: slot.group === 'potion' ? 'potion' : 'general',
         }
       }
-      const rawAlly = expeditionAlly as unknown as Record<string, unknown>
-      if ('abilityTriggers' in rawAlly && rawAlly.abilityTriggers && typeof rawAlly.abilityTriggers === 'object') {
-        Object.assign(abilityTriggers, rawAlly.abilityTriggers as Record<string, CombatTrigger[]>)
+
+      const imported: SimulatorCombatantConfig = {
+        ...currentAlly,
+        id: memberId,
+        name: card.displayName || memberName,
+        isSelf: false,
+        attributes: card.attributes ? sanitizeAttributes(card.attributes) : { ...DEFAULT_ATTRIBUTES },
+        // 名片面板是服务端解析终值（含该队友当前装备），作为换装基线
+        equipmentBaseAttributes: card.attributes ? sanitizeAttributes(card.attributes) : { ...DEFAULT_ATTRIBUTES },
+        abilitySlots: slots,
+        abilityTriggers: {},
+        consumableTriggers: {},
+        equipment: boughtEquipment,
+        consumables: boughtConsumables,
       }
+      const nextList = [...allies]
+      nextList[selectedIdx] = imported
+      onChangeAllies(nextList)
+      setImportNotice(null)
+      setImportingTeammateId(null)
+    }
 
-      const consumableTriggers: Record<string, CombatTrigger[]> = {}
-      if ('consumableTriggers' in rawAlly && rawAlly.consumableTriggers && typeof rawAlly.consumableTriggers === 'object') {
-        Object.assign(consumableTriggers, rawAlly.consumableTriggers as Record<string, CombatTrigger[]>)
+    // 优先使用当前战斗会话的冻结面板（同一场战斗内的最精确口径，含触发器与真实装备）
+    const expeditionAlly = expedition?.allies?.find((a: ExpeditionAlly) => a.playerId === memberId)
+    if (expeditionAlly?.attributes) {
+      const abilityTriggers: Record<string, CombatTrigger[]> = {}
+      for (const s of expeditionAlly.skills ?? []) {
+        if (s.abilityId && s.triggers) {
+          abilityTriggers[s.abilityId] = s.triggers.map((tr: CombatTrigger) => ({ ...tr }))
+        }
       }
-
-      const allyConsumables = 'consumables' in rawAlly && Array.isArray(rawAlly.consumables)
-        ? (rawAlly.consumables as AutoUseSlot[]).map((c: AutoUseSlot) => ({ ...c }))
-        : (myConsumables ? myConsumables.map((c: AutoUseSlot) => ({ ...c })) : [])
-
-      newAlly = {
+      const newAlly: SimulatorCombatantConfig = {
         ...currentAlly,
         id: memberId,
         name: expeditionAlly.displayName || memberName,
         isSelf: false,
-        attributes: expeditionAlly.attributes ? sanitizeAttributes(expeditionAlly.attributes) : (myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES }),
-        abilitySlots: expeditionAlly.skills ? expeditionAlly.skills.map((s: CombatAbilitySlot) => ({ ...s })) : (myCombat?.abilitySlots ? myCombat.abilitySlots.map((s: CombatAbilitySlot) => ({ ...s })) : []),
+        attributes: sanitizeAttributes(expeditionAlly.attributes),
+        // 冻结面板为开打定格终值（含装备与战外 Buff），作为换装基线
+        equipmentBaseAttributes: sanitizeAttributes(expeditionAlly.attributes),
+        abilitySlots: (expeditionAlly.skills ?? []).map((s: CombatAbilitySlot) => ({ ...s })),
         abilityTriggers,
-        consumableTriggers,
-        equipment: expeditionAlly.equipment ? expeditionAlly.equipment.map((e: EquippedItem) => ({ ...e })) : [],
-        consumables: allyConsumables,
+        consumableTriggers: {},
+        equipment: (expeditionAlly.equipment ?? []).map((e: EquippedItem) => ({ ...e })),
+        // 会话投影不携带队友消耗品配置，留空由玩家自行装配，绝不复制本人配置。
+        consumables: [],
       }
-    } else {
-      newAlly = {
-        ...currentAlly,
-        id: memberId,
-        name: memberName,
-        isSelf: false,
-        attributes: myAttributes ? sanitizeAttributes(myAttributes) : { ...DEFAULT_ATTRIBUTES },
-        abilitySlots: myCombat?.abilitySlots ? myCombat.abilitySlots.map(s => ({ ...s })) : [],
-        abilityTriggers: myCombat?.abilityTriggers ? { ...myCombat.abilityTriggers } : {},
-        consumableTriggers: myCombat?.consumableTriggers ? { ...myCombat.consumableTriggers } : {},
-        equipment: myCombat?.equipment ? myCombat.equipment.map(e => ({ ...e })) : [],
-        consumables: myConsumables ? myConsumables.map(c => ({ ...c })) : [],
-      }
+      const nextList = [...allies]
+      nextList[selectedIdx] = newAlly
+      onChangeAllies(nextList)
+      setImportNotice(null)
+      setImportingTeammateId(null)
+      return
     }
-    const nextList = [...allies]
-    nextList[selectedIdx] = newAlly
-    onChangeAllies(nextList)
-  }, [allies, currentAlly, expedition?.allies, myAttributes, myCombat, myConsumables, onChangeAllies, selectedIdx])
+
+    // 会话外/未观察：向服务端请求该队友的角色信息卡（仅同队成员可查，服务端白名单裁决）。
+    setImportingTeammateId(memberId)
+    setImportNotice(null)
+    const sent = requestSimulatorCard(memberId, applyCard)
+    if (!sent) {
+      setImportingTeammateId(null)
+      setImportNotice(t('combat.simulator.importTeammateOffline'))
+    }
+  }, [allies, currentAlly, expedition?.allies, onChangeAllies, requestSimulatorCard, selectedIdx, t])
+
   // 3. 修改属性值
   const handleUpdateStat = useCallback((key: keyof CombatAttributes, val: number) => {
     if (!currentAlly) return
@@ -444,19 +494,23 @@ export const SimulatorPartyEditor = memo(function SimulatorPartyEditor({
             <span className="sim-label">{t('combat.simulator.importTeammate')}:</span>
             <select
               className="sim-select"
+              disabled={importingTeammateId !== null}
               onChange={e => {
                 const member = party.members.find(m => m.playerId === e.target.value)
                 if (member) handleImportTeammate(member.playerId, member.displayName)
               }}
               defaultValue=""
             >
-              <option value="" disabled>{t('combat.simulator.selectTeammate')}</option>
+              <option value="" disabled>
+                {importingTeammateId !== null ? t('combat.simulator.importTeammateLoading') : t('combat.simulator.selectTeammate')}
+              </option>
               {party.members.map(m => (
                 <option key={m.playerId} value={m.playerId}>
                   {m.displayName}
                 </option>
               ))}
             </select>
+            {importNotice !== null && <span className="sim-import-notice">{importNotice}</span>}
           </div>
         )}
       </div>

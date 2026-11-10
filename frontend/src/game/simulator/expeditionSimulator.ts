@@ -35,6 +35,7 @@ import {
   scaleMonsterDrops,
 } from '../combatDifficulty.ts'
 import { nextSeed, rollDropTable, rollMillionth } from './deterministicRng.ts'
+import { weakenMonsterAttributes, resolveEquipmentAttributeDelta } from '../buildingCalculations.ts'
 import { ManaDeficitTracker } from './manaDeficitTracker.ts'
 import {
   SimCombatEncounter,
@@ -186,28 +187,25 @@ export class ExpeditionSimulator {
     // 构建盟友战斗单位模板列表
     const buildAllies = (): SimCombatant[] => {
       return config.allies.map((ally, index) => {
-        const baseAttrs: CombatAttributes = { ...ally.attributes }
-        if (ally.equipment && ally.equipment.length > 0 && catalog.equipment) {
-          for (const eq of ally.equipment) {
-            const eqDef = catalog.equipment.find(e => e.equipmentId === eq.itemId)
-            if (!eqDef) continue
-            const level = Math.max(0, Math.floor(eq.enhancementLevel || 0))
-            const scale = 1 + level * 0.1
-            if (eqDef.flatStats) {
-              for (const [k, v] of Object.entries(eqDef.flatStats)) {
-                if (typeof v === 'number' && Number.isFinite(v)) {
-                  baseAttrs[k as keyof CombatAttributes] = (baseAttrs[k as keyof CombatAttributes] || 0) + v * scale
-                }
-              }
-            }
-            if (eqDef.baseStatRatios) {
-              for (const [k, v] of Object.entries(eqDef.baseStatRatios)) {
-                if (typeof v === 'number' && Number.isFinite(v)) {
-                  baseAttrs[k as keyof CombatAttributes] = (baseAttrs[k as keyof CombatAttributes] || 0) + v * scale
-                }
-              }
-            }
+        // 面板口径：`attributes` 是当前装配的推演面板；`equipmentBaseAttributes` 为不含本次装备的基线。
+        // 两者同时存在时以「基线 + 当前装备增量」重算，保证换装推演真实生效且不双计；
+        // 只提供 attributes 时直接用作终值（服务端解析面板口径）。
+        const baseAttrs: CombatAttributes = { ...(ally.equipmentBaseAttributes ?? ally.attributes) }
+        if (ally.equipmentBaseAttributes) {
+          const delta = resolveEquipmentAttributeDelta(ally.equipment, catalog.equipment ?? [])
+          for (const [key, value] of Object.entries(delta)) {
+            const field = key as keyof CombatAttributes
+            const current = Number(baseAttrs[field] ?? 0)
+            baseAttrs[field] = (Number.isFinite(current) ? current : 0) + (value ?? 0)
           }
+        }
+        // 节点公共建筑的战斗类折入项与属性解析器同通道：气血/灵力回复走固定值，战斗减伤走免伤点数。
+        const buildingEffects = config.buildingEffects
+        if (buildingEffects) {
+          baseAttrs.hpRegenPerFiveSeconds = (baseAttrs.hpRegenPerFiveSeconds || 0) + (buildingEffects.combatHitpointRegen ?? 0)
+          baseAttrs.mpRegenPerFiveSeconds = (baseAttrs.mpRegenPerFiveSeconds || 0) + (buildingEffects.combatManapointRegen ?? 0)
+          baseAttrs.damageAbsorptionPoints = (baseAttrs.damageAbsorptionPoints || 0)
+            + (buildingEffects.combatDamageReductionRatio ?? 0) * 100
         }
 
         const skills: SimSkill[] = (ally.abilitySlots || [])
@@ -284,7 +282,8 @@ export class ExpeditionSimulator {
       }
 
       // 2. 生成本波怪物阵容（组队人数驱动威胁度倍率与波次怪量扩容，与 EncounterWaveSelector.cs 对齐）
-      const waveResult = this.generateWave(encounter, seed, waveNumber, abilityMap, config.allies.length, effectiveDifficulty)
+      const waveResult = this.generateWave(encounter, seed, waveNumber, abilityMap, config.allies.length, effectiveDifficulty,
+        config.buildingEffects?.monsterWeakenRatio ?? 0)
       seed = waveResult.nextSeed
       const enemies = waveResult.enemies
 
@@ -789,7 +788,8 @@ export class ExpeditionSimulator {
     waveNumber: number,
     abilityMap: Map<string, CombatAbilityDefinition>,
     partySize = 1,
-    difficulty = 0
+    difficulty = 0,
+    monsterWeakenRatio = 0
   ): {
     enemies: SimCombatant[]
     rawEnemies: RawEnemySpec[]
@@ -944,6 +944,10 @@ export class ExpeditionSimulator {
 
     // 转换为 SimCombatant 实体
     const enemies = rawEnemies.map((e, index) => {
+      // 节点封魔阵类削弱与难度缩放同为怪物模板生成点收口（对齐服务端：先难度缩放后建筑折减）。
+      if (monsterWeakenRatio > 0) {
+        e.attributes = weakenMonsterAttributes(e.attributes, monsterWeakenRatio)
+      }
       const skills: SimSkill[] = (e.skills || [])
         .filter(sk => typeof sk.abilityId === 'string' && sk.abilityId.length > 0)
         .map((sk, skIdx) => {

@@ -1,4 +1,4 @@
-import type { AutoUseSlot, CombatAbilitySlot, CombatAttributes, CombatTrigger, EquippedItem } from '../types'
+import type { AutoUseSlot, CombatAbilitySlot, CombatAttributes, CombatTrigger, EquippedItem, NodeBuildingEffectSet } from '../types'
 
 /** 截断并保留最多 1 位小数，杜绝多余小数点 */
 export function roundStat(val: number): number {
@@ -25,6 +25,12 @@ export interface SimulatorCombatantConfig {
   name: string
   isSelf: boolean
   attributes: CombatAttributes
+  /**
+   * 装备增量基线面板：换装推演时以「本基线 + 当前装备增量」得到推演面板。
+   * 导入路径把它设为服务端解析终值（已含装备），从而既不会双计、也能让换装真实生效。
+   * 缺省等于 attributes（视为裸面板 + 纯装备增量）。
+   */
+  equipmentBaseAttributes?: CombatAttributes
   abilitySlots: CombatAbilitySlot[]
   /** 技能独立触发器映射表 (abilityId -> triggers) */
   abilityTriggers?: Record<string, CombatTrigger[]>
@@ -58,6 +64,12 @@ export interface SimulatorConfig {
   allies: SimulatorCombatantConfig[]
   /** 讨伐历练难度等级 (0: 默认, 1~5: T1~T5) */
   difficulty?: number
+  /**
+   * 目标地点的公共建筑战斗类效果（`monsterWeakenRatio` 折减怪物面板；
+   * `combatHitpointRegen`/`combatManapointRegen`/`combatDamageReductionRatio` 折入参战者面板）。
+   * 缺省为无建筑加成。
+   */
+  buildingEffects?: NodeBuildingEffectSet | null
 }
 
 /**
@@ -414,6 +426,8 @@ export interface SimulatorNodeComparisonItem {
   /** 对应的完整单点报表 */
   /** 单场平均耗时（秒） */
   avgDurationSeconds: number
+  /** 该地点参与本次推演的公共建筑战斗类效果（封魔阵削弱/战斗回复/减伤） */
+  buildingEffects?: NodeBuildingEffectSet | null
   report: SimulatorReport
 }
 

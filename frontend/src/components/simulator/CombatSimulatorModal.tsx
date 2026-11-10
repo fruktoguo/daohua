@@ -11,6 +11,9 @@ import {
   type SimulatorReport,
 } from '../../game/simulator/simulatorTypes'
 import { ExpeditionSimulator } from '../../game/simulator/expeditionSimulator'
+import { fetchNodeBuildingIndex } from '../../network/apiClient'
+import { aggregateNodeBuildingEffects } from '../../game/buildingCalculations'
+import type { MapNodeBuilding, NodeBuildingEffectSet } from '../../game/types'
 import { StatGlyph } from '../StatGlyph'
 import { SimulatorPartyEditor } from './SimulatorPartyEditor'
 import { SimulatorConfigPanel } from './SimulatorConfigPanel'
@@ -33,6 +36,9 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
   const myCombat = useGameStore(state => state.combat)
   const myConsumables = useGameStore(state => state.queue?.autoUseSlots?.combat)
   const currentNodeId = useGameStore(state => state.world?.nodeId)
+  // 当前节点的权威建筑效果投影（服务端 EffectiveNodeBuildingEffects，含拥挤衰减）
+  const currentBuildingEffects = useGameStore(state => state.world?.buildingEffects)
+  const buildingDefinitions = useGameStore(state => state.buildings)
   const maps = useGameStore(state => state.maps)
   const encounters = useGameStore(state => state.encounters)
   const abilities = useGameStore(state => state.abilities)
@@ -54,6 +60,18 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
   const [activeResultGroup, setActiveResultGroup] = useState<'comparison' | 'details'>('comparison')
   const [activeNodeId, setActiveNodeId] = useState<string>('')
   const [activeItemKey, setActiveItemKey] = useState<string>('')
+
+  // 全图节点建筑索引（推演非当前地点时必须带上该地点的建筑加成，否则多地点对比失真）。
+  // 当前节点优先用服务端权威投影 world.buildingEffects（含拥挤衰减），其余节点按索引 + 建筑目录聚合。
+  const [nodeBuildingIndex, setNodeBuildingIndex] = useState<Record<string, MapNodeBuilding[]>>({})
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void fetchNodeBuildingIndex()
+      .then(index => { if (!cancelled) setNodeBuildingIndex(index) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [open])
 
   // 首次打开或初始化时自动导入玩家自身与当前地点
   useEffect(() => {
@@ -204,6 +222,11 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
 
           for (const diff of sortedDifficulties) {
             const seed = BigInt(Math.floor(Math.random() * 1_000_000_000) + 1)
+            // 目标地点的建筑战斗类效果：当前节点用服务端权威投影（含拥挤衰减），
+            // 其余节点按全图建筑索引 + 建筑目录按等级聚合（无拥挤上限口径）。
+            const nodeEffects: NodeBuildingEffectSet = nodeId === currentNodeId && currentBuildingEffects
+              ? currentBuildingEffects
+              : aggregateNodeBuildingEffects(nodeBuildingIndex[nodeId], buildingDefinitions)
             const simConfig: SimulatorConfig = {
               nodeId,
               nodeName,
@@ -212,6 +235,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
               difficulty: diff,
               seed,
               allies,
+              buildingEffects: nodeEffects,
             }
 
             const rep = ExpeditionSimulator.runSimulation(simConfig, {
@@ -243,6 +267,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
               killsPerHour: Number((rep.totalKills / (rep.totalSimulatedSeconds / 3600)).toFixed(1)),
               deathsPerHour: rep.playerDeathsPerHour,
               maxWave: rep.maxWave,
+              buildingEffects: nodeEffects,
               report: rep,
               avgDurationSeconds: rep.durationBreakdown.overallAverageSeconds,
             })
@@ -268,7 +293,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({
         setIsSimulating(false)
       }
     }, 50)
-  }, [abilities, allies, difficulties, durationSeconds, encounters, equipment, items, maps, marketStats, selectedNodeIds])
+  }, [abilities, allies, buildingDefinitions, currentBuildingEffects, currentNodeId, difficulties, durationSeconds, encounters, equipment, items, maps, marketStats, nodeBuildingIndex, selectedNodeIds])
 
   if (!open) return null
 

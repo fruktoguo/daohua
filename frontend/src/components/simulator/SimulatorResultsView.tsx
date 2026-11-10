@@ -4,6 +4,8 @@ import type { MultiNodeSimulatorReport, SimulatorNodeComparisonItem, SimulatorRe
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import { resolveItemMetadata } from '../../game/ids'
 import { StatGlyph } from '../StatGlyph'
+import { BUILDING_BONUS_DESCRIPTORS, formatBuildingModifierValue } from '../../game/buildingCalculations'
+import type { NodeBuildingEffectSet } from '../../game/types'
 interface SimulatorResultsViewProps {
   multiReport?: MultiNodeSimulatorReport | null
   report?: SimulatorReport | null
@@ -17,6 +19,30 @@ interface SimulatorResultsViewProps {
 
 function getItemKey(item: { nodeId: string; difficulty?: number; itemKey?: string }): string {
   return item.itemKey || `${item.nodeId}#${item.difficulty ?? 0}`
+}
+
+/** 战斗类建筑效果键（其余为产出/速度类，与战斗推演无关） */
+const COMBAT_BUILDING_KEYS = new Set([
+  'combatHitpointRegen',
+  'combatManapointRegen',
+  'combatDamageReductionRatio',
+  'monsterWeakenRatio',
+])
+
+/**
+ * 把地点建筑战斗类效果压缩成一行摘要文本；无生效建筑时给出明确「无加成」，
+ * 避免玩家误以为模拟器漏算了该地点建筑。
+ */
+function summarizeBuildingEffects(effects?: NodeBuildingEffectSet | null): string {
+  if (!effects) return '无加成'
+  const parts: string[] = []
+  for (const descriptor of BUILDING_BONUS_DESCRIPTORS) {
+    if (!COMBAT_BUILDING_KEYS.has(descriptor.key)) continue
+    const value = effects[descriptor.key as keyof NodeBuildingEffectSet]
+    if (typeof value !== 'number' || Math.abs(value) < 1e-9) continue
+    parts.push(`${descriptor.defaultLabel} ${formatBuildingModifierValue(descriptor, value)}`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : '无加成'
 }
 
 export const SimulatorResultsView = memo(function SimulatorResultsView({
@@ -231,6 +257,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                     <th>地点节点</th>
                     <th>难度</th>
                     <th>所属区域</th>
+                    <th>地点建筑</th>
                     <th>每小时遇敌</th>
                     <th>胜率</th>
                     <th className="th-highlight-gold">平均每日收益 (灵石/天)</th>
@@ -263,6 +290,7 @@ export const SimulatorResultsView = memo(function SimulatorResultsView({
                           </span>
                         </td>
                         <td className="text-muted">[{item.mapName}]</td>
+                        <td className="sim-node-building-cell">{summarizeBuildingEffects(item.buildingEffects)}</td>
                         <td>{item.encountersPerHour} 次/hr</td>
                         <td>
                           <span className={item.winRate >= 0.8 ? 'text-emerald' : item.winRate >= 0.5 ? 'text-amber' : 'text-crimson'}>
