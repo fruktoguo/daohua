@@ -101,7 +101,11 @@
         "encounterIds": [
           "encounter.rock-beach"
         ],
-        "buildableTemplate": "all"
+        "buildableTemplate": "all",
+        "prebuiltBuildings": [
+          { "buildingId": "building.rejuvenation-array", "level": 1 },
+          { "buildingId": "building.mana-regen-array", "level": 5 }
+        ]
       },
       {
         "id": "node.tea-house",
