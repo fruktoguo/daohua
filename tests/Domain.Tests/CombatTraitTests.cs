@@ -91,4 +91,27 @@ public sealed class CombatTraitTests
         Assert.Equal(100.0, CombatTraitRules.ThreatOnTakenPoints(["trait.liweifanfou"], new Dictionary<string, int> { ["trait.liweifanfou"] = 1 }));
         Assert.Equal(105.0, CombatTraitRules.ThreatOnTakenPoints(["trait.liweifanfou"], new Dictionary<string, int> { ["trait.liweifanfou"] = 2 }));
     }
+
+    [Fact]
+    public void CombatAttributeRefresh_UsesEntryTraitsForNumericAndReactiveEffects()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "入战特质",
+            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), catalog.Fingerprint);
+        player.Progression.TraitIds.Add("trait.tianshengmanli");
+        player.Progression.TraitIds.Add(CombatTraitRules.ThreatOnTakenTraitId);
+        player.Progression.UnlockedTraits[CombatTraitRules.ThreatOnTakenTraitId] = new(CombatTraitRules.ThreatOnTakenTraitId, 3, 0);
+        var entry = PlayerAttributeResolver.Resolve(player, catalog);
+        var frozen = CombatTraitState.Capture(entry.ToCombatant(0));
+
+        player.Progression.TraitIds.Clear();
+        player.Progression.UnlockedTraits[CombatTraitRules.ThreatOnTakenTraitId] = new(CombatTraitRules.ThreatOnTakenTraitId, 10, 0);
+        var current = PlayerAttributeResolver.Resolve(player, catalog);
+        var inBattle = PlayerAttributeResolver.ResolveForCombat(player, catalog, frozen);
+
+        Assert.True(entry.PhysicalAttack > current.PhysicalAttack);
+        Assert.Equal(entry.PhysicalAttack, inBattle.PhysicalAttack);
+        Assert.Equal(110, inBattle.Effects.ThreatOnTakenPoints, 8);
+        Assert.Equal(0, current.Effects.ThreatOnTakenPoints);
+    }
 }

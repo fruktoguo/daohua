@@ -127,6 +127,7 @@ ResolveAttack 落账
 
 - **双路径同数学**：`CombatTriggerMath` 是唯一实现；`InlineCombatTriggerSink`（斗法/纯领域测试）与 `EcsCombatTriggerSink`（实体派发）参数同源——实体路径读 `Stats.Effects` 与 reactive 标记组件挂摘一致，内联直读 `Stats.Effects`。
 - **Reactive buff 组件是能力标记**：`OnHitLeech`/`ManaLeech`/`Thorns` 不带参数，挂摘由 `CombatTriggerSurface.Attach/Sync` 按 `Stats.Effects` 管理（遭遇挂接 + `RefreshStats` 后同步）；参数永无双写。
+- **条件特质按需监听**：进入战斗时定格特质 ID/等级并挂接 `CombatTraitListeners`；战中修改不改变本场特质与监听，下一场入战才生效。存活人数变化只触发已挂检查器，无监听者直接旁路。单人战斗普通面板刷新与快照恢复必须使用本场 `CombatTraitState` 参与属性解析，不能重新消费玩家当前特质；恢复从持久化定格重建绑定。新增条件特质按入战激活 ID 注册，不往死亡/复活入口追加全员 ID 检查。
 - **新增触发器 checklist**：`CombatTriggerKind` 枚举 → `PendingCombatTrigger` 生产点（引擎结算点）→ `IOnXxxTrigger` tag + tag 映射（`TagTypeOf`）→ reactive 组件 + `YuoSystem<CombatantComponent, Marker>, IOnXxxTrigger` + `SystemOrder`（对齐内联手工序）→ `CombatTriggerMath` 数学 + `InlineCombatTriggerSink.Dispatch` 同序分支 → `CombatTriggerSurface.Sync` 挂摘条件 → parity/金色测试双路径验证。
 - **RNG 与顺序**：触发器随机数走 `context.NextRoll()`（通道 64+，与核心结算 0~15 隔离）；消费顺序 = 入队顺序 + `SystemOrder`，无字典序。
 - **负载传递**：`CombatTriggerInboxComponent.Trigger` 是派发期间唯一通道，派发后清 null；触发器不得改变边界时刻表（只可改数值与队列内容）。

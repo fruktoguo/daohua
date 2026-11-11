@@ -111,6 +111,7 @@ fi
 
 # 3. 逐级链式应用：每轮找到 from 版本等于当前版本的脚本，应用后推进当前版本。
 applied=0
+roles_ensured=0
 while :; do
   next_file=""
   next_version=""
@@ -140,6 +141,24 @@ while :; do
   if [[ "$DRY_RUN" == "1" ]]; then
     printf '    （--dry-run：未执行）\n'
   else
+    # 迁移脚本可能引用生产权限组（如 OWNER TO daohua_bootstrap、GRANT TO daohua_api，
+    # 真源 deploy/postgres-local-roles.sql）；本地库默认仅超级用户 daohua，首次实际
+    # 执行迁移前幂等补齐五个 NOLOGIN 权限组，使迁移文件与生产执行口径保持一致。
+    if [[ "$roles_ensured" == "0" ]]; then
+      psql_exec <<'EOSQL'
+DO $roles$
+DECLARE role_name text;
+BEGIN
+    FOREACH role_name IN ARRAY ARRAY['daohua_bootstrap','daohua_api','daohua_worker','daohua_archive','daohua_metrics'] LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+            EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', role_name);
+        END IF;
+    END LOOP;
+END
+$roles$;
+EOSQL
+      roles_ensured=1
+    fi
     psql_exec < "$next_file"
   fi
   current="$next_version"

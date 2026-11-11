@@ -29,7 +29,7 @@ internal static class CombatDamageSettlement
                 (existing?.Stacks ?? 0) + actual * CombatTraitRules.LevelScale(target, CombatTraitRules.XuyiTraitId),
                 "蓄意", ResetOnWave: true));
         }
-        if (!target.IsAlive && encounter is not null) CombatTraitRules.RefreshConditionalBuffs(encounter);
+        if (!target.IsAlive) encounter?.NotifyAliveCountsChanged();
         return (damage, actual);
     }
 

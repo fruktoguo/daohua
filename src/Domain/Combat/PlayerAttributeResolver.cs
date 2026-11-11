@@ -189,6 +189,14 @@ public static class PlayerAttributeResolver
             progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal),
             progression.HeavenGate.EffectiveValues);
 
+    /// <summary>战斗跨步刷新或恢复时沿用本场定格特质，其余属性输入仍读取当前分段。</summary>
+    public static PlayerAttributes ResolveForCombat(Domain.Simulation.IPlayerResourceContext player,
+        GameDataCatalog catalog, CombatTraitState traits)
+        => Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
+            new(player.Resources.Hitpoints, player.Resources.MaxHitpoints, player.Resources.Manapoints,
+                player.Resources.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
+            player.World.EffectiveNodeBuildingEffects, traits.Ids, traits.Levels, player.Progression.HeavenGate.EffectiveValues);
+
     /// <summary>同一组直接分段的属性输入修订号，允许状态所有者复用已解析面板。</summary>
     public static long InputRevision(PlayerProgression progression, PlayerWorldState world,
         PlayerBuffState buffs, PlayerLoadoutState loadout)

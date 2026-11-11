@@ -72,7 +72,8 @@ public static class PostgresSchema
     /// v50：social.chat_messages 增 sender_realm 发送者境界列；social.parties 默认 open_slots 设为 3，个人分段载荷不变。
     /// v51：队伍斗地主（总纲 §21.15）——social.parties 增 doudizhu_stake、party_members 增独立准备标记，
     /// 新增 social.doudizhu_games 权威牌局检查点；个人分段载荷不变。
-    public const int Version = 51;
+    /// v52：战斗快照定格特质装配与等级，玩家载荷标签 v42；表结构未变。
+    public const int Version = 52;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -682,7 +683,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

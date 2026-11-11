@@ -104,6 +104,109 @@ public sealed class CombatMechanicTraitTests
     }
 
     [Fact]
+    public void AliveCountListeners_OnlyBindEquippedTraitsAndDoNotPollIds()
+    {
+        var active = new CountingTraits(CombatTraitRules.DuelKingTraitId);
+        var passive = new CountingTraits("trait.tianshengmanli");
+        var battle = CombatEncounterState.CreateAllied("listeners", 1,
+            [new(Stats() with { Traits = active }), new(Stats() with { Traits = passive })], 0,
+            [new(Stats() with { Traits = passive }), new(Stats())]);
+        // 入战会复制装配集合；计数探针必须接在实际定格输入上，才能发现事件路径重新枚举。
+        battle.Player.RestoreTraits(new CombatTraitState(active));
+        battle.PlayerAllies[1].RestoreTraits(new CombatTraitState(passive));
+        battle.Enemies[0].RestoreTraits(new CombatTraitState(passive));
+        battle.InitializeTraitListeners();
+        Assert.Equal(1, battle.TraitListeners.AliveCountListenerCount);
+        var activeReads = active.Reads;
+        var passiveReads = passive.Reads;
+
+        battle.Enemies[0].Hitpoints = 0;
+        battle.NotifyAliveCountsChanged();
+        battle.PlayerAllies[1].Hitpoints = 0;
+        battle.NotifyAliveCountsChanged();
+
+        Assert.Equal(1, battle.Player.BuffStacks("buff.dantiaowang"));
+        Assert.Equal(activeReads, active.Reads);
+        Assert.Equal(passiveReads, passive.Reads);
+        Assert.Empty(battle.Enemies[1].Buffs);
+    }
+
+    [Fact]
+    public void ConditionalListeners_KeepEntryEquipmentAndLevelUntilNextBattle()
+    {
+        var stats = Stats();
+        var equipped = stats with
+        {
+            Traits = [CombatTraitRules.DuelKingTraitId, CombatTraitRules.OutnumberedTraitId],
+            TraitLevels = new Dictionary<string, int> { [CombatTraitRules.DuelKingTraitId] = 3 }
+        };
+        var battle = CombatEventAdvanceSystem.Start("equipment-listeners", 1, equipped, stats);
+        var nextAction = battle.Player.NextAttackAtSeconds;
+        Assert.Equal(2, battle.TraitListeners.AliveCountListenerCount);
+        Assert.Equal(22, battle.Player.EffectiveStats.ActionSpeedPoints, 8);
+        battle.Player.RefreshStats(equipped with
+        {
+            TraitLevels = new Dictionary<string, int> { [CombatTraitRules.DuelKingTraitId] = 5 }
+        });
+        battle.NotifyAliveCountsChanged();
+        Assert.Equal(22, battle.Player.EffectiveStats.ActionSpeedPoints, 8);
+        battle.Player.RefreshStats(stats);
+        battle.NotifyAliveCountsChanged();
+        Assert.Equal(2, battle.TraitListeners.AliveCountListenerCount);
+        Assert.Equal(22, battle.Player.EffectiveStats.ActionSpeedPoints, 8);
+        Assert.Equal(nextAction, battle.Player.NextAttackAtSeconds);
+
+        var nextBattle = CombatEventAdvanceSystem.Start("next-equipment-listeners", 2, stats, stats);
+        nextBattle.Player.RefreshStats(equipped);
+        nextBattle.NotifyAliveCountsChanged();
+        Assert.Equal(0, nextBattle.TraitListeners.AliveCountListenerCount);
+        Assert.Empty(nextBattle.Player.TraitState.Ids);
+        Assert.Equal(0, nextBattle.Player.EffectiveStats.ActionSpeedPoints);
+        var equippedNextBattle = CombatEventAdvanceSystem.Start("equipped-next-battle", 3, equipped, stats);
+        Assert.Equal(22, equippedNextBattle.Player.EffectiveStats.ActionSpeedPoints, 8);
+    }
+
+    [Fact]
+    public void ConditionalListeners_RestoreEntryBindingsDespiteEquipmentChanges()
+    {
+        var stats = Stats(interval: 1);
+        var player = new CombatantTemplate(stats with
+        {
+            Traits = [CombatTraitRules.DuelKingTraitId, CombatTraitRules.OutnumberedTraitId]
+        });
+        CombatantTemplate[] enemies = [new(stats), new(stats)];
+        var original = CombatEventAdvanceSystem.Start("restore-listeners", 7, player, enemies);
+        CombatEventAdvanceSystem.AdvanceTo(original, 0.5);
+        var playerSnapshot = JsonSerializer.Deserialize<CombatantSnapshot>(
+            JsonSerializer.Serialize(CombatEncounterState.Snapshot(original.Player)))!;
+        var enemySnapshots = original.Enemies.Select(CombatEncounterState.Snapshot).ToArray();
+        var restored = CombatEncounterState.Restore("restore-listeners", 7, new(stats), playerSnapshot,
+            enemies, enemySnapshots, 0.5, CombatOutcome.Running);
+        Assert.Equal(2, restored.TraitListeners.AliveCountListenerCount);
+        Assert.Equal(1, restored.Player.BuffStacks("buff.woyaodashige"));
+
+        var expected = CombatEventAdvanceSystem.AdvanceTo(original, 3);
+        var actual = CombatEventAdvanceSystem.AdvanceTo(restored, 3);
+        Assert.Equal(expected.Events, actual.Events);
+        Assert.Equal(JsonSerializer.Serialize(CombatEncounterState.Snapshot(original.Player)),
+            JsonSerializer.Serialize(CombatEncounterState.Snapshot(restored.Player)));
+
+    }
+
+    /// <summary>记录特质集合读取次数，防止人数事件重新轮询已装配或无关特质的资格。</summary>
+    private sealed class CountingTraits(params string[] ids) : IReadOnlyList<string>
+    {
+        public int Reads { get; private set; }
+        public int Count => ids.Length;
+        public string this[int index] { get { Reads++; return ids[index]; } }
+        public IEnumerator<string> GetEnumerator()
+        {
+            for (var i = 0; i < ids.Length; i++) yield return this[i];
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [Fact]
     public void Xuyi_AccumulatesActualLossWithLevelGrowth()
     {
         var battle = CombatEncounterState.Create("accumulate", 1, new(Stats(hp: 100) with

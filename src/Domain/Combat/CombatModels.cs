@@ -299,6 +299,8 @@ public sealed class CombatantState
         Id = id;
         Stats = stats ?? throw new ArgumentNullException(nameof(stats));
         stats.Validate();
+        TraitState = CombatTraitState.Capture(stats);
+        Stats = stats with { Traits = TraitState.Ids, TraitLevels = TraitState.Levels };
         Hitpoints = stats.MaxHitpoints;
         Manapoints = stats.MaxManapoints;
         // 普攻引导：各单位首次出手需先完成一个完整攻击周期的蓄势，而非开战瞬发。
@@ -327,6 +329,8 @@ public sealed class CombatantState
     public bool IsPlayer => !string.IsNullOrEmpty(Id) && Id.StartsWith("player", StringComparison.Ordinal);
     /// <summary>战斗静态属性面板；进行中战斗跨步复用时由 <see cref="RefreshStats"/> 换入最新结算结果。</summary>
     public CombatantStats Stats { get; private set; }
+    /// <summary>本场入战定格的特质；普通面板刷新与快照恢复必须沿用该输入。</summary>
+    public CombatTraitState TraitState { get; private set; }
     /// <summary>随战技能槽（玩家/怪物/斗法镜像共用同构槽位模型）。</summary>
     public IReadOnlyList<SkillSlot> Skills { get; }
     private readonly List<CombatBuffState> _buffs = [];
@@ -554,6 +558,7 @@ public sealed class CombatantState
     /// 换入重新结算的战斗属性面板：供进行中战斗在外层推进步间跨步复用时同步最新属性输入
     /// （战外 Buff 增减/到期、六维经验等），沿用恢复快照口径的越界校验——
     /// 当前气血/灵力超出新上限即拒绝，与 <see cref="CombatEncounterState.Restore"/> 逐位等价。
+    /// 调用方须用 <see cref="PlayerAttributeResolver.ResolveForCombat"/> 计算定格特质的数值贡献；特质 ID/等级始终沿用入战状态。
     /// </summary>
     public void RefreshStats(CombatantStats stats)
     {
@@ -563,8 +568,16 @@ public sealed class CombatantState
         if (!double.IsFinite(Hitpoints) || Hitpoints < 0 || Hitpoints > stats.MaxHitpoints
             || !double.IsFinite(Manapoints) || Manapoints < 0 || Manapoints > stats.MaxManapoints)
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
-        Stats = stats;
+        Stats = stats with { Traits = TraitState.Ids, TraitLevels = TraitState.Levels };
         // 面板是折叠缓存的一部分：换面板后聚合面板必须重建。
+        InvalidateBuffAggregates();
+    }
+
+    /// <summary>快照恢复本场入战特质，并同步供公式与命中能力标记读取的面板标识。</summary>
+    internal void RestoreTraits(CombatTraitState traits)
+    {
+        TraitState = traits;
+        Stats = Stats with { Traits = traits.Ids, TraitLevels = traits.Levels };
         InvalidateBuffAggregates();
     }
 
@@ -627,8 +640,10 @@ public sealed record CombatantSnapshot(
     double? RespawnDeadlineSeconds = null,
     double? RespawnWaitingUntilSeconds = null)
 {
+    /// <summary>本场入战定格特质；恢复不读取玩家战中改动后的装配。</summary>
+    public CombatTraitState Traits { get; init; } = CombatTraitState.Empty;
     /// <summary>快照字段的有限性/取值域校验（不含上限比对——上限依赖施法时面板）。</summary>
-    internal bool IsValid => double.IsFinite(Hitpoints) && Hitpoints >= 0
+    internal bool IsValid => Traits is not null && Traits.IsValid && double.IsFinite(Hitpoints) && Hitpoints >= 0
         && double.IsFinite(Manapoints) && Manapoints >= 0
         && double.IsFinite(NextAttackAtSeconds) && NextAttackAtSeconds >= 0
         && double.IsFinite(AttackCount) && AttackCount >= 0
@@ -663,6 +678,7 @@ public sealed class CombatEncounterState
         SelfIndex = selfIndex;
         Enemies = enemies;
         PlayerRespawnSeconds = playerRespawnSeconds;
+        TraitListeners = new CombatTraitListeners(this);
     }
 
     /// <summary>遭遇战唯一标识</summary>
@@ -677,6 +693,14 @@ public sealed class CombatEncounterState
     public int SelfIndex { get; }
     /// <summary>本机成员战斗单位（PlayerAllies[SelfIndex] 的便捷别名）。</summary>
     public CombatantState Player => PlayerAllies[SelfIndex];
+    /// <summary>战斗内条件特质监听绑定，不进入快照；由真实入场及恢复状态重建。</summary>
+    internal CombatTraitListeners TraitListeners { get; }
+
+    /// <summary>真实入场或快照应用后重建条件特质监听并初始化效果。</summary>
+    internal void InitializeTraitListeners() => TraitListeners.Rebuild();
+
+    /// <summary>存活状态变化后的同步事件入口，只通知当前挂接的条件特质检查器。</summary>
+    internal void NotifyAliveCountsChanged() => TraitListeners.AliveCountsChanged();
     /// <summary>同波全体敌方单位（含已阵亡者，按下标稳定排序）。</summary>
     public IReadOnlyList<CombatantState> Enemies { get; }
     /// <summary>当前对决胜负裁决</summary>
@@ -866,7 +890,7 @@ public sealed class CombatEncounterState
         for (var i = 0; i < enemyStates.Length; i++)
             CombatTraitRules.ApplyBattleStartTraits(enemyStates[i]);
         var encounter = new CombatEncounterState(encounterId, seed, allyStates, selfIndex, enemyStates, playerRespawnSeconds);
-        CombatTraitRules.RefreshConditionalBuffs(encounter);
+        encounter.InitializeTraitListeners();
         return encounter;
     }
 
@@ -935,7 +959,7 @@ public sealed class CombatEncounterState
                 && (encounter.PlayerAllies[i].IsAlive || respawnAt < elapsedSeconds || playerRespawnSeconds <= 0))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点与生命状态不一致。");
         }
-        CombatTraitRules.RefreshConditionalBuffs(encounter);
+        encounter.InitializeTraitListeners();
         var alliesAlive = !encounter.IsAllAlliesDowned;
         var respawnPending = false;
         for (var i = 0; i < allies.Count; i++)
@@ -964,11 +988,13 @@ public sealed class CombatEncounterState
             state.RespawnPolicy,
             state.RespawnTargetIndex,
             double.IsFinite(state.RespawnDeadlineSeconds) ? state.RespawnDeadlineSeconds : null,
-            double.IsFinite(state.RespawnWaitingUntilSeconds) ? state.RespawnWaitingUntilSeconds : null);
+            double.IsFinite(state.RespawnWaitingUntilSeconds) ? state.RespawnWaitingUntilSeconds : null)
+        { Traits = state.TraitState };
 
     private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
     {
-        if (!double.IsFinite(snapshot.Hitpoints) || snapshot.Hitpoints < 0
+        if (snapshot.Traits is null || !snapshot.Traits.IsValid
+            || !double.IsFinite(snapshot.Hitpoints) || snapshot.Hitpoints < 0
             || !double.IsFinite(snapshot.Manapoints) || snapshot.Manapoints < 0
             || !double.IsFinite(snapshot.NextAttackAtSeconds) || snapshot.NextAttackAtSeconds < 0
             || !double.IsFinite(snapshot.AttackCount) || snapshot.AttackCount < 0
@@ -1023,6 +1049,7 @@ public sealed class CombatEncounterState
         state.RespawnWaitingUntilSeconds = snapshot.RespawnWaitingUntilSeconds ?? double.PositiveInfinity;
         // 战内 Buff 随快照恢复：过期时刻是战斗时钟值，恢复后按原时刻到期，事件序列不漂移。
         state.ReplaceBuffs(snapshot.Buffs);
+        state.RestoreTraits(snapshot.Traits);
     }
 }
 

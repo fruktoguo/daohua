@@ -133,6 +133,7 @@ AdvanceTo(state, windowTarget):
 - 新增既有事件下的效果只需新增处理器类；新增事件种类仍需定义事件接口、参数记录和 `CombatTriggerKind` 派发槽位。当前仓库没有 AOT/裁剪发布约束；未来启用时必须为扫描类型保留元数据，或将注册表替换为源生成实现。
 - 双路径同效果落地固定为四件套：内联 `CombatTriggerHandler`（`CombatTriggerOrder`）+ 薄 `YuoSystem`（`SystemOrder` 同一先后关系）+ 能力标记组件（`CombatTriggerSurface.Sync` 按 `Stats.Effects`/`Stats.Traits` 挂摘）+ `CombatTriggerMath` 共享本体。
 - 特质载体：`CombatantStats.Traits`（`trait.*` ID 集合，面板字段，快照重建不带快照负担）。条件触发型特质按 ID 判定（如 `trait.bukandaowo` → `CombatEncounterState.Create` 开战授予 `buff.yinshen`）；数值型特质经 `CombatTraitRules` 折算进 `Stats.Effects` 点数通道（如 `trait.liweifanfou` → `ThreatOnTakenPoints = 100`）。
+- 人数条件特质走战斗内按需监听：检查器注册表以特质 ID 直查，实例共享且无状态；`CombatTraitListeners` 仅保存入战定格激活特质的单位绑定。存活人数事件无监听者直接旁路，有监听者只统计一次人数并同步调用已挂检查器，不广播到全特质或扫描未装备单位的 Buff。创建/真实入场统一绑定；战中装配与等级变化不挂摘监听，普通面板刷新使用定格特质重新计算。快照保存定格 ID 与等级，恢复据此重建本场绑定。此路径为实体与内联战斗共用的纯领域规则，不新增全局事件总线、ECS System 副本或可持久化运行时引用；新增其他条件事件时按需增加固定签名的监听槽位，不能退化为每 tick 遍历全部检查器。
 - 随机通道分配（目标抽取族）：0~15 核心结算保留、3 玩家目标、16 单体兜底、17 AoE 多目标、**18 敌方盟友目标（出手）、19 敌方盟友目标（决策）**、**20+chainIndex 连锁打击目标**（`chainOnKillCount` 击杀连锁的逐次追加抽选，命中未死即终止）、64+ 触发器专属。敌方出手与决策在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取——单存活成员 `SelectTarget` 提前返回不掷点，单盟友行为与固定目标逐位等价。
 
 桥接（Domain 不碰实体的解法）：战斗调度器整体迁入 `src/Ecs/Combat/`，操作的就是组件化状态，`RunSystem` 直接调用无分层冲突；`CombatantState` 增加运行时字段 `EntityId`（`AttachCombat` 时设置，不序列化）。

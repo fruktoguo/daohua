@@ -4,6 +4,8 @@
 
 ## 硬约束（可整体删除）
 
+当前源码目标为库 v52 / 玩家载荷 v42。`0052_v51_to_v52.sql` 推进库版本并将存档标签统一推进至 v42：战斗快照新增的入战定格特质 Traits 可缺省解码为 Empty，迁移瞬间处于战斗中的玩家本场按无定格特质继续，下一场入战自动按新装配定格。对不可缺省解码的旧载荷，启动链检测后仍须交互确认，拒绝或无 TTY 中止；恢复备份须配套匹配版本的应用，不可用新程序直接改写旧标签。
+
 - 本目录**随时可整体删除**，不产生任何影响：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 - 空库启动永远由权威 `src/Server/Clean/PostgresSchema.cs` 的 `PostgresSchema.Sql` 直建当前版本，不经过本目录。
 - 代码中禁止实现 migration runner，禁止对 本目录的运行时依赖；本地开发启动链（`reset-outdated-players.sh` 经 `dev.sh`）可对本地回环库自动执行，其余场景由人工或运维流程显式执行（如 `psql -f` 或 `docker exec ... psql -f`）。
@@ -14,7 +16,7 @@
 ## 本地库升级入口
 
 本地开发库升级请用 `scripts/migrate-local-db.sh`（本地启动链自动调用，也可人工显式执行；运行时与门禁都不引用它）：
-它读取 `platform.schema_version`，按序号链式执行本目录中可自动应用的脚本，最后与 `PostgresSchema.Version` 对账。`0037_v36_to_v37.sql` 涉及真实资产退款与会话散场，脚本会明确中止自动链；必须停止 API、worker、计算节点，备份全库并等待有效租约过期后，再以 `psql -v ON_ERROR_STOP=1 -f migrations/0037_v36_to_v37.sql` 显式执行。迁移失败中止启动，不自动清零。
+它读取 `platform.schema_version`，按序号链式执行本目录中可自动应用的脚本，最后与 `PostgresSchema.Version` 对账。首次实际执行迁移前会幂等补齐 `deploy/postgres-local-roles.sql` 定义的五个 NOLOGIN 权限组（`daohua_bootstrap`/`daohua_api`/`daohua_worker`/`daohua_archive`/`daohua_metrics`），保证迁移文件中面向生产的 OWNER/GRANT 语句在本地同样可执行；`--dry-run` 不产生任何库写入。`0037_v36_to_v37.sql` 涉及真实资产退款与会话散场，脚本会明确中止自动链；必须停止 API、worker、计算节点，备份全库并等待有效租约过期后，再以 `psql -v ON_ERROR_STOP=1 -f migrations/0037_v36_to_v37.sql` 显式执行。迁移失败中止启动，不自动清零。
 
 ```bash
 scripts/migrate-local-db.sh            # 就地升级本地库

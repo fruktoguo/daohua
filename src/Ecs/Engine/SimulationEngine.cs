@@ -723,7 +723,8 @@ public static partial class SimulationEngine
             {
                 if (gameData.BaseAttributes is null || session.AttributeRevision != player.AttributeInputRevision)
                 {
-                    battleState.Player.RefreshStats(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(player.Progression.CombatExperience));
+                    battleState.Player.RefreshStats(PlayerAttributeResolver.ResolveForCombat(player, gameData,
+                        battleState.Player.TraitState).ToCombatant(player.Progression.CombatExperience));
                     session.AttributeRevision = player.AttributeInputRevision;
                 }
                 battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);

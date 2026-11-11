@@ -181,7 +181,8 @@ internal static partial class ActionExecutionRules
                         var revision = PlayerAttributeResolver.InputRevision(e.Player.Progression, e.Player.World, e.Player.Buffs, e.Player.Loadout);
                         if (e.Catalog.BaseAttributes is null || revision != e.Battle.AttributeRevision)
                         {
-                            e.Battle.State.Player.RefreshStats(e.Player.ResolveAttributes(e.Catalog).ToCombatant(e.Player.Progression.CombatExperience));
+                            e.Battle.State.Player.RefreshStats(PlayerAttributeResolver.ResolveForCombat(e.Player, e.Catalog,
+                                e.Battle.State.Player.TraitState).ToCombatant(e.Player.Progression.CombatExperience));
                             CombatTriggerSurface.Sync(e.Entity, e.Battle.State.Player);
                             e.Battle.AttributeRevision = revision;
                         }

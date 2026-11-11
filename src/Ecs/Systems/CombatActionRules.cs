@@ -655,7 +655,7 @@ internal static class CombatActionRules
         {
             // 玩家方技能槽与怪物同构：装配功法折叠为通用技能槽进入同一条动作时间线。
             var playerTemplate = new CombatantTemplate(
-                player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
+                PlayerAttributeResolver.ResolveForCombat(player, gameData, selfSnapshot.Traits).ToCombatant(player.Progression.CombatExperience),
                 SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities, player.Loadout.AbilityTriggers));
             battleState = CombatEncounterState.Restore(
                 encounter.Id,
@@ -980,6 +980,7 @@ internal static class CombatActionRules
                 ref deltas, ref events);
             InjectSustainedCombatBuffs(player, gameData, battle);
         }
+        battle.InitializeTraitListeners();
         CombatActSystem.DecideInitialActions(battle);
         var combatState = CaptureCombatState(battle, completedSearch with
         {

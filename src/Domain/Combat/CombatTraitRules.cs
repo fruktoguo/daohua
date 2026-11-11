@@ -222,32 +222,6 @@ public static class CombatTraitRules
     public static double LevelScale(CombatantState unit, string traitId)
         => 1 + 0.05 * (Math.Max(1, unit.Stats.TraitLevels?.GetValueOrDefault(traitId) ?? 1) - 1);
 
-    /// <summary>在开战及存活人数改变时刷新条件属性，不重排已经起手的动作。</summary>
-    public static void RefreshConditionalBuffs(CombatEncounterState encounter)
-    {
-        var allies = encounter.PlayerAllies.Count(unit => unit.IsAlive);
-        var enemies = encounter.Enemies.Count(unit => unit.IsAlive);
-        foreach (var unit in encounter.PlayerAllies) Refresh(unit, allies, enemies);
-        foreach (var unit in encounter.Enemies) Refresh(unit, enemies, allies);
-
-        static void Refresh(CombatantState unit, int own, int opponents)
-        {
-            Update(OutnumberedTraitId, "buff.woyaodashige", "我要打十个", Math.Max(0, opponents - 1), 10, false);
-            Update(DuelKingTraitId, "buff.dantiaowang", "单挑王", own == 1 && opponents == 1 ? 1 : 0, 20, true);
-            void Update(string trait, string buffId, string name, double stacks, double points, bool duel)
-            {
-                if (!unit.IsAlive || !ContainsTrait(unit.Stats.Traits, trait)) stacks = 0;
-                var existing = unit.Buffs.FirstOrDefault(buff => buff.BuffId == buffId);
-                if (stacks == 0) { if (existing is not null) unit.RemoveBuffsWhere(buff => buff.BuffId == buffId); return; }
-                var value = points * LevelScale(unit, trait);
-                if (existing?.Stacks == stacks && existing.EffectValue(BuffEffectChannel.DamageBonusPoints) == value) return;
-                List<BuffEffect> effects = [new(BuffEffectChannel.DamageBonusPoints, value), new(BuffEffectChannel.DamageAbsorptionPoints, value)];
-                if (duel) { effects.Add(new(BuffEffectChannel.CriticalDamagePoints, value)); effects.Add(new(BuffEffectChannel.ActionSpeedPoints, value)); }
-                unit.SetBuff(new CombatBuffState(buffId, BattleLifetimeSeconds, stacks, name, ResetOnWave: true, Effects: effects));
-            }
-        }
-    }
-
     public static bool ContainsTrait(IReadOnlyList<string>? traits, string traitId)
     {
         if (traits is null) return false;

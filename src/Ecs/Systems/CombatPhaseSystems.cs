@@ -55,7 +55,7 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
             {
                 var alive = unit.IsAlive;
                 Tick(unit, statsBook, regenTick, secondTick);
-                if (alive != unit.IsAlive) CombatTraitRules.RefreshConditionalBuffs(encounter);
+                if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
                 if (secondTick) CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
             }
         }
@@ -152,7 +152,7 @@ public sealed class CombatAllyRespawnSystem : YuoSystem<CombatEncounterComponent
         ally.Hitpoints = ally.Stats.MaxHitpoints;
         ally.RespawnAtSeconds = double.PositiveInfinity;
         ally.RespawnDeadlineSeconds = double.PositiveInfinity;
-        CombatTraitRules.RefreshConditionalBuffs(encounter);
+        encounter.NotifyAliveCountsChanged();
         CombatActSystem.DecideInitialActions(encounter);
         // 复活标记分流：本机成员走 PlayerRespawns（沿用单人写回口径），其余成员进盟友标记列表。
         if (context.AllyIndex == encounter.SelfIndex)

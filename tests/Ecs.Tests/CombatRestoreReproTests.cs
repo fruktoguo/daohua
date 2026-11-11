@@ -24,6 +24,36 @@ public sealed class CombatRestoreReproTests
             "战斗恢复", SeedTime, catalog.Fingerprint).ExportState();
 
     [Fact]
+    public async Task TraitEquipmentChange_DoesNotAffectRunningOrRestoredBattle()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        using var runtime = new EcsGameRuntime(catalog, SeedTime);
+        runtime.CreatePlayer(CreateState(catalog));
+        runtime.MutatePlayer(PlayerIdValue, player => player.Progression.TraitIds.Add(CombatTraitRules.DuelKingTraitId));
+        runtime.EnqueueAction(PlayerIdValue, new ActionId(ActionId), -1);
+
+        EcsPlayerSnapshot entry = runtime.ExportSnapshot(PlayerIdValue);
+        for (var seconds = 1; seconds <= 60; seconds++)
+        {
+            await runtime.RunPlayerOnceAsync(PlayerIdValue, SeedTime.AddSeconds(seconds));
+            entry = runtime.ExportSnapshot(PlayerIdValue);
+            if (entry.State.Actions[0].Expedition?.Phase == CombatExpeditionPhase.Combat) break;
+        }
+        Assert.Equal(CombatExpeditionPhase.Combat, entry.State.Actions[0].Expedition?.Phase);
+        runtime.MutatePlayer(PlayerIdValue, player => player.Progression.SetTraits([]));
+        await runtime.RunPlayerOnceAsync(PlayerIdValue, entry.State.LastSimulatedAt.AddMilliseconds(10));
+        var changed = runtime.ExportSnapshot(PlayerIdValue);
+        Assert.Empty(changed.State.Progression.TraitIds ?? []);
+        Assert.Contains(CombatTraitRules.DuelKingTraitId, changed.State.Actions[0].Expedition!.PlayerState!.Traits.Ids);
+
+        using var restored = new EcsGameRuntime(catalog, changed.State.LastSimulatedAt);
+        restored.CreatePlayer(PlayerAggregate.Restore(changed.State).ExportState());
+        await restored.RunPlayerOnceAsync(PlayerIdValue, changed.State.LastSimulatedAt.AddMilliseconds(10));
+        var resumed = restored.ExportSnapshot(PlayerIdValue);
+        Assert.Contains(CombatTraitRules.DuelKingTraitId, resumed.State.Actions[0].Expedition!.PlayerState!.Traits.Ids);
+    }
+
+    [Fact]
     public async Task MidCombatSnapshotRestoreThenAdvanceDoesNotDeadlock()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
