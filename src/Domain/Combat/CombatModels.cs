@@ -1292,9 +1292,12 @@ public sealed record CombatExpeditionState(
         && SelfIndex >= 0 && SelfIndex <= 4
         && (Allies is null || Allies.All(ally => ally.MemberIndex != SelfIndex))
         && (OriginNodeId is null || (OriginNodeId.Length is > 0 and <= 128))
-        // 复活截止点只存在于倒地窗口：必须落在当前战斗时钟之后；非 Combat 相位不得携带。
+        // 倒地复活读条：Combat 相位为战斗时钟绝对截止点；组队会话波间搜寻相位携带剩余秒数
+        // 跨波续计（AdvancePreparationResources 逐段递减、入场时再折算回战斗时钟），
+        // InitialSearch/Search 相位同样允许非空；Respawning/Duel 相位仍不得携带。
         && (PlayerRespawnAtSeconds is null || (double.IsFinite(PlayerRespawnAtSeconds.Value)
-            && PlayerRespawnAtSeconds.Value > BattleElapsedSeconds - 1e-9 && Phase == CombatExpeditionPhase.Combat))
+            && PlayerRespawnAtSeconds.Value > BattleElapsedSeconds - 1e-9
+            && Phase is CombatExpeditionPhase.Combat or CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search))
         && Phase switch
         {
             CombatExpeditionPhase.DuelPending => Outcome == CombatOutcome.Running

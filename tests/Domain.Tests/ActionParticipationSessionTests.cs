@@ -921,6 +921,48 @@ public sealed class ActionParticipationSessionTests
     }
 
     [Fact]
+    public void DownedSelfCarriesRemainingRespawnAcrossWavesAndKeepsExpeditionValid()
+    {
+        var (catalog, _, original) = CreateParty();
+        // 队长（成员0，本机位）以倒地状态随队迎战：队员1/2 高战力迅速清波，
+        // 波次清空时本机复活读条必须跨波携带，且任何相位的远征状态都必须保持有效——
+        // 生产回归：Search 相位携带 PlayerRespawnAtSeconds 曾被 IsValid 误判为非法，
+        // 导致组队会话每个推进拍都抛「战斗远征状态无效」并永久卡死。
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) =>
+            {
+                if (index == 0)
+                {
+                    var fragileStats = CombatantStats.Create(10, 0, 0, 1) with { MaxManapoints = 50 };
+                    return member with
+                    {
+                        Stats = fragileStats,
+                        InitialHitpoints = 0 // 直接以倒地状态随队迎战
+                    };
+                }
+                return member;
+            }).ToArray()
+        };
+
+        var session = ActionParticipationSessionEngine.Create(spec, catalog);
+        var initial = session.Export();
+        var searchSec = initial.Expedition!.PhaseDurationSeconds;
+
+        // 跨波采样推进：每个检查点远征必须有效，且本机队长应在复活周期内至少一次满血起身
+        var sawSelfAlive = false;
+        for (var offset = 2d; offset <= 220; offset += 2)
+        {
+            session.AdvanceTo(Baseline.AddSeconds(searchSec + offset));
+            var expedition = session.Export().Expedition!;
+            Assert.True(expedition.IsValid,
+                $"跨波携带后远征状态无效：phase={expedition.Phase} respawnAt={expedition.PlayerRespawnAtSeconds} wave={expedition.WaveNumber}");
+            if (expedition.PlayerHitpoints > 0) sawSelfAlive = true;
+        }
+        Assert.True(sawSelfAlive, "累计时间超过复活时长后，本机队长应成功满血复活！");
+    }
+
+    [Fact]
     public void RestoreCombatBattleGracefullyHealsExpiredOrDriftedRespawnAtSeconds()
     {
         var (catalog, _, original) = CreateParty();
