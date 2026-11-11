@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 脚本名称: build-apk.sh
-# 主要职责: 本地全自动编译并输出道化太初 Android 高清混合离线安装包 (daohua.apk)
+# 主要职责: 本地全自动编译并输出道化太初 Android Web 优先安装包 (daohua.apk)
 #
-# 核心流程:
+# 核心流程（Web 优先 + 资源包补强架构）:
 #   1. 环境探测 (自动适配 Windows / WSL 宿主互操作与原生环境)；
-#   2. 高清资产安全注入 (立绘 1024px, 建筑 128px, 道具 128px)；
-#   3. 前端编译，并在编译后 100% 还原源码工作区 (0 污染 Git)；
-#   4. 资源同步到 Android assets/www 并执行 assembleRelease；
+#   2. 前端按纯 Web 口径编译（HD 已独立为 /hd/* 画质包，不再注入 Vite 构建）；
+#   3. 仅同步「可变静态资源」到 Android assets/www（排除 /assets/* hash 产物与入口文件）；
+#   4. 生成 HD 画质包内嵌 assets/hd/ + hd-manifest.json，www 基线清单 www-manifest.json；
 #   5. 输出产物至 artifacts/daohua.apk (严格隔离，不入 Git)。
 #
 # 选项:
@@ -49,6 +49,9 @@ while (($# > 0)); do
 done
 
 cd "$ROOT_DIR"
+
+# HD 画质包为一次性产物：构建开始即清空，避免前序步骤失败时残留旧包被误上传
+rm -rf "$ROOT_DIR/artifacts/hd-pack"
 
 cleanup() {
   # 确保退出时前端源码必须恢复如初
@@ -98,63 +101,55 @@ else
   exit 1
 fi
 
-# 1. 前端编译与资源同步
-GIT_REV="$(git rev-parse HEAD 2>/dev/null || echo "dev")"
-HD_CACHE_DIR="$ROOT_DIR/artifacts/.hd-dist-cache"
-
-NEED_WEB_BUILD=0
+# 1. 前端编译（纯 Web 口径：HD 画质已独立为 /hd/* 资源包 + 原生别名热更，不再注入 Vite 构建）
 if [[ "$SKIP_WEB_BUILD" == "1" && -d "$ROOT_DIR/frontend/dist" ]]; then
-  NEED_WEB_BUILD=0
-elif [[ "$HD_MODE" != "1" ]]; then
-  if [[ ! -d "$ROOT_DIR/frontend/dist" ]]; then
-    NEED_WEB_BUILD=1
-  else
-    printf '==> [复用] 检测到已有前端 Web 产物，跳过重复编译。\n'
-  fi
+  printf '==> [复用] 检测到已有前端 Web 产物，跳过重复编译。\n'
 else
-  # HD_MODE=1
-  if [[ -d "$HD_CACHE_DIR" && -f "$HD_CACHE_DIR/.git_rev" && "$(cat "$HD_CACHE_DIR/.git_rev" 2>/dev/null)" == "$GIT_REV" ]]; then
-    printf '==> [缓存命中] 检测到当前提交的高清前端产物缓存，直接复用。\n'
-    mkdir -p "$ROOT_DIR/frontend/dist"
-    cp -r "$HD_CACHE_DIR"/dist/* "$ROOT_DIR/frontend/dist/"
-  else
-    NEED_WEB_BUILD=1
-  fi
-fi
-
-if [[ "$NEED_WEB_BUILD" == "1" ]]; then
-  if [[ "$HD_MODE" == "1" ]]; then
-    printf '==> [1/4] 注入高清建筑与道具母模...\n'
-    node "$ROOT_DIR/scripts/inject-hd-assets.mjs" apply
-  fi
-
-  printf '==> [2/4] 编译前端 Web 产物...\n'
+  printf '==> [1/4] 编译前端 Web 产物（含 asset-manifest.json 清单）...\n'
   if command -v cmd.exe >/dev/null 2>&1; then
     cmd.exe /c "npm --prefix frontend run build"
   else
     npm --prefix "$ROOT_DIR/frontend" run build
   fi
-
-  if [[ "$HD_MODE" == "1" ]]; then
-    printf '==> [3/4] 恢复前端工作区 (确保 Git 零改动)...\n'
-    node "$ROOT_DIR/scripts/inject-hd-assets.mjs" restore
-    # 写入缓存
-    rm -rf "$HD_CACHE_DIR"
-    mkdir -p "$HD_CACHE_DIR/dist"
-    cp -r "$ROOT_DIR/frontend/dist"/* "$HD_CACHE_DIR/dist/"
-    printf '%s\n' "$GIT_REV" > "$HD_CACHE_DIR/.git_rev"
-  fi
 fi
 
-printf '==> [4/4] 同步前端离线资源到 Android assets/www...\n'
-mkdir -p "$SHELL_DIR/app/src/main/assets/www"
-rm -rf "$SHELL_DIR/app/src/main/assets/www"/*
-cp -r "$ROOT_DIR/frontend/dist"/* "$SHELL_DIR/app/src/main/assets/www/"
+# 2. 同步「可变静态资源」到 assets/www：
+#    index.html 与 /assets/*-HASH.* 一律走网络（Web 优先），包内只保留清单管理的可变资源。
+WWW_DIR="$SHELL_DIR/app/src/main/assets/www"
+printf '==> [2/4] 同步可变静态资源到 Android assets/www...\n'
+mkdir -p "$WWW_DIR"
+rm -rf "$WWW_DIR"/* "$WWW_DIR"/.[!.]* 2>/dev/null || true
+cp -r "$ROOT_DIR/frontend/dist"/* "$WWW_DIR/"
+rm -rf "$WWW_DIR/assets" "$WWW_DIR/.vite" "$WWW_DIR/index.html" "$WWW_DIR/asset-manifest.json"
 
+# 3. HD 画质包：art/ HD 母模优先 + src 低清兜底，独立内嵌 assets/hd/ 供原生别名热更
 if [[ "$HD_MODE" == "1" ]]; then
-  # 覆盖 1024px 超清立绘母模
-  node "$ROOT_DIR/scripts/inject-hd-assets.mjs" overlay-dist "$SHELL_DIR/app/src/main/assets/www"
+  printf '==> [3/4] 生成并内嵌 HD 画质资源包 (art 母模优先)...\n'
+  node "$ROOT_DIR/scripts/gen-hd-pack.mjs" "$ROOT_DIR/artifacts/hd-pack"
+  HD_ASSETS_DIR="$SHELL_DIR/app/src/main/assets"
+  rm -rf "$HD_ASSETS_DIR/hd" "$HD_ASSETS_DIR/hd-manifest.json"
+  mkdir -p "$HD_ASSETS_DIR/hd"
+  for sub in items buildings avatars; do
+    if [[ -d "$ROOT_DIR/artifacts/hd-pack/$sub" ]]; then
+      cp -r "$ROOT_DIR/artifacts/hd-pack/$sub" "$HD_ASSETS_DIR/hd/"
+    fi
+  done
+  cp "$ROOT_DIR/artifacts/hd-pack/asset-manifest.json" "$HD_ASSETS_DIR/hd-manifest.json"
+else
+  printf '==> [3/4] --no-hd 模式，清理历史 HD 包内嵌...\n'
+  rm -rf "$SHELL_DIR/app/src/main/assets/hd" "$SHELL_DIR/app/src/main/assets/hd-manifest.json"
 fi
+
+# 4. 生成包内基线清单（www 可变资源 sha256 + dist 的 HD 别名），
+#    供原生判定 APK 内置版本是否为服务端当前版；别名内嵌后服务端未发布清单时 HD 图标仍可离线生效
+printf '==> [4/4] 生成包内基线资源清单...\n'
+VITE_MANIFEST="$ROOT_DIR/frontend/dist/.vite/manifest.json"
+MANIFEST_ARGS=()
+if [[ -f "$VITE_MANIFEST" ]]; then
+  MANIFEST_ARGS+=("--vite-manifest" "$VITE_MANIFEST")
+fi
+node "$ROOT_DIR/scripts/gen-asset-manifest.mjs" "$WWW_DIR" \
+  --out "$SHELL_DIR/app/src/main/assets/www-manifest.json" "${MANIFEST_ARGS[@]}"
 
 # 准备版本指纹并注入 Android 构建工程
 GIT_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")"
@@ -167,9 +162,8 @@ APP_VERSION_CODE="$(( 20000 + COMMIT_COUNT ))"
 BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 VERSION_JSON="{\"versionName\":\"${PKG_VERSION}\",\"versionCode\":${APP_VERSION_CODE},\"gitSha\":\"${GIT_SHA}\",\"releaseTag\":\"${RELEASE_TAG}\",\"channel\":\"${CHANNEL}\",\"buildTime\":\"${BUILD_TIME}\"}"
-mkdir -p "$SHELL_DIR/app/src/main/assets" "$SHELL_DIR/app/src/main/assets/www"
+mkdir -p "$SHELL_DIR/app/src/main/assets"
 printf '%s\n' "$VERSION_JSON" > "$SHELL_DIR/app/src/main/assets/app-version.json"
-printf '%s\n' "$VERSION_JSON" > "$SHELL_DIR/app/src/main/assets/www/app-version.json"
 
 GRADLE_PROPS="-PappVersionName=${PKG_VERSION} -PappVersionCode=${APP_VERSION_CODE}"
 
@@ -208,11 +202,13 @@ if [[ -f "$RELEASE_APK" ]]; then
   cp "$RELEASE_APK" "$ROOT_DIR/artifacts/daohua.apk"
   APK_SIZE="$(ls -lh "$ROOT_DIR/artifacts/daohua.apk" | awk '{print $5}')"
   printf '\n======================================================\n'
-  printf '  ✔ [Android APK] 超清离线安装包构建成功！\n'
+  printf '  ✔ [Android APK] Web 优先 + HD 资源包安装包构建成功！\n'
   printf '  • 产物路径: %s\n' "$ROOT_DIR/artifacts/daohua.apk"
   printf '  • 安装包大小: %s\n' "$APK_SIZE"
   if [[ "$HD_MODE" == "1" ]]; then
-    printf '  • 视觉规格: 立绘 1024px | 建筑 128px | 道具 128px 超清覆盖\n'
+    printf '  • 资源规格: 前端走线上热更 | 立绘/图标 HD 画质包内嵌 + /hd/* 云端补齐\n'
+  else
+    printf '  • 资源规格: 前端走线上热更 | 可变资源包内基线 + 云端热更\n'
   fi
   printf '  • 版本指纹: %s (versionCode: %s)\n' "$RELEASE_TAG" "$APP_VERSION_CODE"
   if [[ "$CHANNEL" == "taptap" ]]; then

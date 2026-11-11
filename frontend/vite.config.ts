@@ -79,6 +79,9 @@ export default defineConfig({
   },
   build: {
     sourcemap: false,
+    // 产出 .vite/manifest.json：供 gen-asset-manifest.mjs 生成 /assets/*-HASH → /hd/* HD 别名，
+    // Android 壳据此把 hash 图标请求透明改写到 HD 画质包（Web 端不受影响）。
+    manifest: true,
     // 图标注册表（game/itemIcons.ts）在构建期 eager 引用 assets/items 下的每一张图。
     // 默认 4KB 以下内联成 base64，会让入口 JS 随图标数量线性膨胀
     // （实测 64 张 64px WebP 约 240KB base64，几乎全部塞进 index.js）。

@@ -34,9 +34,13 @@ SKIP_BACKUP=0
 SKIP_SMOKE=0
 PUSH_EXISTING=0
 ALLOW_DIRTY=0
-SKIP_APK=0
+# Web 化后 APK 仅承载原生壳与静态资源基线：默认不再每次发布重打，
+# 仅在原生壳/SDK/权限变更或用户明确要求时通过 --with-apk 构建并发布。
+WITH_APK=0
 SKIP_APK_UPLOAD=0
+SKIP_HD_PACK=0
 SKIP_CADDY=0
+APK_BUILT=0
 BUMP_TYPE=""
 EXPLICIT_VERSION=""
 EXPLICIT_TAG=""
@@ -49,8 +53,10 @@ usage() {
     '  --skip-backup    跳过发布前远端数据库备份（生产默认保留）' \
     '  --skip-smoke     跳过部署后的内网与公网烟测' \
     '  --skip-caddy     跳过远端 Caddy 站点配置安装与 reload' \
-    '  --skip-apk       跳过本地 Android 安装包打包' \
-    '  --skip-apk-upload 跳过向 GitHub Releases 上传安装包' \
+    '  --with-apk       构建 Android 安装包并发布 GitHub Releases（默认跳过：Web 化后仅原生壳变更时需要）' \
+    '  --skip-apk       显式跳过 APK 构建（与默认行为一致，兼容旧用法）' \
+    '  --skip-apk-upload 跳过向 GitHub Releases 上传安装包（配合 --with-apk）' \
+    '  --skip-hd-pack   跳过 HD 画质资源包上传至主服 /hd/*' \
     '  --push-existing  跳过镜像重新构建，仅推送本机已有镜像' \
     '  --allow-dirty    允许未提交工作区构建（仅排障）' \
     '  --host HOST      主服 SSH 别名（默认 yuohira）' \
@@ -67,8 +73,10 @@ while (($# > 0)); do
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --skip-smoke) SKIP_SMOKE=1; shift ;;
     --skip-caddy) SKIP_CADDY=1; shift ;;
-    --skip-apk) SKIP_APK=1; shift ;;
+    --with-apk) WITH_APK=1; shift ;;
+    --skip-apk) WITH_APK=0; shift ;;
     --skip-apk-upload) SKIP_APK_UPLOAD=1; shift ;;
+    --skip-hd-pack) SKIP_HD_PACK=1; shift ;;
     --push-existing) PUSH_EXISTING=1; shift ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --host) REMOTE_HOST="${2:?--host 缺少值}"; shift 2 ;;
@@ -354,19 +362,44 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 阶段 3.5: Android 完全版客户端编译与 GitHub Releases 自动发布
+# 阶段 3.5: Android 完全版客户端编译与 GitHub Releases 自动发布（显式 --with-apk 才执行）
 # ------------------------------------------------------------------------------
 RELEASE_DOWNLOAD_URL=""
-if [[ "$SKIP_APK" != "1" ]]; then
+if [[ "$WITH_APK" == "1" ]]; then
   printf '\n==> [阶段 3.5] 独占构建 Android 完全版安装包并发布到 GitHub Releases...\n'
   APK_ARGS=("--soft-fail" "--require-full" "--tag" "$RELEASE_TAG")
   if [[ "$SKIP_APK_UPLOAD" != "1" ]]; then
     APK_ARGS+=("--release")
   fi
   bash "$ROOT_DIR/scripts/build-apk.sh" "${APK_ARGS[@]}"
-  if [[ -f "$ROOT_DIR/artifacts/daohua.apk" && "$SKIP_APK_UPLOAD" != "1" ]]; then
-    RELEASE_DOWNLOAD_URL="https://github.com/fruktoguo/daohua/releases/download/${RELEASE_TAG}/daohua.apk"
+  if [[ -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
+    APK_BUILT=1
+    if [[ "$SKIP_APK_UPLOAD" != "1" ]]; then
+      RELEASE_DOWNLOAD_URL="https://github.com/fruktoguo/daohua/releases/download/${RELEASE_TAG}/daohua.apk"
+    fi
   fi
+else
+  printf '\n==> [阶段 3.5] 跳过 APK 构建（Web 化后默认行为；原生壳变更时使用 --with-apk）。\n'
+fi
+
+# ------------------------------------------------------------------------------
+# 阶段 3.6: HD 画质资源包上传主服（/hd/* 静态路由，Android 原生热更数据源）
+# ------------------------------------------------------------------------------
+if [[ "$SKIP_HD_PACK" != "1" ]]; then
+  # APK 未构建时独立重新生成画质包，避免复用 artifacts/ 残留的旧包造成降级
+  if [[ "$WITH_APK" != "1" ]]; then
+    if ! node "$ROOT_DIR/scripts/gen-hd-pack.mjs" "$ROOT_DIR/artifacts/hd-pack" >/dev/null; then
+      printf '警告: HD 画质包生成失败，跳过上传（不影响主流程）。\n' >&2
+    fi
+  fi
+  if [[ -f "$ROOT_DIR/artifacts/hd-pack/asset-manifest.json" ]]; then
+    printf '\n==> [阶段 3.6] 上传 HD 画质资源包至主服 (/hd/*)...\n'
+    if ! bash "$ROOT_DIR/scripts/upload-hd-pack.sh"; then
+      printf '警告: HD 画质资源包上传失败，不影响主流程；可稍后手动执行 scripts/upload-hd-pack.sh 重试。\n' >&2
+    fi
+  fi
+else
+  printf '\n==> [阶段 3.6] 用户指定跳过 HD 画质资源包上传。\n'
 fi
 
 # ------------------------------------------------------------------------------
@@ -399,7 +432,7 @@ printf '  • Compute 镜像 : %s\n' "$COMPUTE_IMAGE_REF"
 if [[ -n "$OPS_PATH" ]]; then
   printf '  • 运维后台地址 : https://daohua.yuohira.com%s\n' "$OPS_PATH"
 fi
-if [[ -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
+if [[ "$APK_BUILT" == "1" && -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
   APK_SIZE="$(ls -lh "$ROOT_DIR/artifacts/daohua.apk" | awk '{print $5}')"
   printf '  • 安卓安装包   : artifacts/daohua.apk (%s, 完全版)\n' "$APK_SIZE"
   if [[ -n "$RELEASE_DOWNLOAD_URL" ]]; then

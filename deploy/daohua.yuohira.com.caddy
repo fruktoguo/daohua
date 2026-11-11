@@ -31,6 +31,15 @@ daohua.yuohira.com {
 		file_server
 	}
 
+	# Android HD 画质资源包（/hd/* → /opt/daohua/static/hd 符号链接，发布时原子切换）
+	@hd path /hd/*
+	handle @hd {
+		uri strip_prefix /hd
+		root * /opt/daohua/static/hd
+		file_server
+		header Cache-Control "no-cache"
+	}
+
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"

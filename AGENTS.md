@@ -153,7 +153,7 @@ docker compose -f deploy/compose.prod.yaml down
 | `optimize-svg.mjs` | SVG 美术资源优化 |
 | `docker-build-prod.sh` | 生产镜像多阶段构建与 CCR 推送（`--push`/`--push-existing`） |
 | `deploy-prod.sh` | 生产服务器受控更新（`--image <不可变镜像>`） |
-| `release-prod.sh` | 正式服一键全自动打包与发布：前置门禁自检、三路并发（CCR 镜像构建推送 + 远端数据备份 + odin 掌机 arm64 交叉编译预传）、自动提取不可变 sha256 镜像并触发部署与双层烟测 |
+| `release-prod.sh` | 正式服一键全自动打包与发布：前置门禁自检、三路并发（CCR 镜像构建推送 + 远端数据备份 + odin 掌机 arm64 交叉编译预传）、自动提取不可变 sha256 镜像并触发部署与双层烟测、HD 画质包自动生成上传（`/hd/*`）；**Android APK 默认不构建**，仅 `--with-apk` 显式要求时编译并发布 GitHub Releases |
 | `install-ccr-auth.sh` | 服务器 CCR 登录态安装（`docker login --password-stdin`） |
 | `init-local-db-roles.sh` | 本地 PostgreSQL 角色初始化（对齐 `deploy/postgres-local-roles.sql`） |
 | `migrate-local-db.sh` | 本地库兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 落后脚本；`--dry-run` 空跑）。由 `reset-outdated-players.sh`/`dev.sh` 启动链自动调用，也可人工执行；运行时与门禁均不引用 |
@@ -161,6 +161,7 @@ docker compose -f deploy/compose.prod.yaml down
 | `backup-pull-sync.sh` | 计算节点端定时拉取云端主服 PostgreSQL 备份、本地长期归档与 SHA-256 完整性对账脚本（位于 `deploy/`） |
 | `install-backup-sync.sh` | 计算节点端一键安装并启用 systemd 备份拉取定时器脚本（位于 `deploy/`） |
 |`taptap-publish.sh`|TapTap 开发者中心包体管理与发布：检查 CLI 环境与认证上下文（`status`）、发起设备码授权（`login`）、物料盘点（`inspect`）、Android APK 安全上传（`upload`，支持 `--dry-run`/`--yes`）、应用提审前资料缺口与合规预检（`review-check`）|
+| `upload-hd-pack.sh` | Android HD 画质资源包上传主服：`artifacts/hd-pack`（由 `build-apk.sh` HD 模式生成，`release-prod.sh` 阶段 3.6 自动调用）tar 流传至 `/opt/daohua/static/hd.releases/<ts>/` 并原子切换 `/hd/*` 符号链接，保留最近 3 版 |
 
 ## 6. 实现规则
 
@@ -269,6 +270,7 @@ scripts/docker-build-prod.sh --push
 - 生产目录固定为 `/opt/daohua`，Compose 项目名固定为 `daohua`。
 - 应用端口只绑定 `127.0.0.1:15128`，禁止直接暴露到公网。
 - 首次部署和受控更新使用 `scripts/deploy-prod.sh --image <不可变镜像>`。
+- **Android APK 构建策略（Web 化后硬规则）**：APK 仅承载原生壳与静态资源基线，前端代码与资源更新均走服务端热更，**严禁每次发布默认重打 APK**。仅在以下情况构建：原生壳/SDK/权限/更新器代码变更，或用户明确要求——通过 `release-prod.sh --with-apk`（可叠加 `--skip-apk-upload` 只构建不上传）。HD 画质包不受 APK 开关影响，每次发布自动重新生成并上传 `/hd/*`；`--skip-hd-pack` 可显式跳过。
 - `daohua-ccr-auto-update.timer` 每分钟检查 `prod`；镜像 ID 未变化时不得重建容器。
 - 新镜像未通过健康检查时必须自动回滚，并记录失败镜像 ID；同一失败版本不得循环重试。
 - 更新不得删除、重建或改名 `daohua_daohua-postgres` 卷。

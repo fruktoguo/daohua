@@ -1,7 +1,7 @@
 ---
 name: prod-release
 description: >-
-  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），并并发构建 Android 离线混合安装包（daohua.apk），采用四路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检 ∥ 安卓安装包构建），覆盖门禁、库版本与配表删项前置对账、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
+  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），每次发布自动同步 HD 画质包至 `/hd/*`，Android APK 仅在 `--with-apk` 显式要求时构建并发布 GitHub Releases；采用三路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检），覆盖门禁、库版本与配表删项前置对账、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
 ---
 
 # 正式服快速发布（yuohira 主服 + odin 计算节点）
@@ -10,7 +10,7 @@ description: >-
 
 ## 极速流水线总览（最大化并行）
 
-`.dockerignore` 已排除 `**/bin`、`**/obj`、`**/node_modules`。门禁通过后**流 A（镜像构建推送）、流 B（远端备份）、流 C（odin 交叉编译与预上传）三路并发启动**；主服与 odin 双端切换完成后，**阶段 3.5 独占编译 Android 完全版安装包并自动发布到 GitHub Releases**：
+`.dockerignore` 已排除 `**/bin`、`**/obj`、`**/node_modules`。门禁通过后**流 A（镜像构建推送）、流 B（远端备份）、流 C（odin 交叉编译与预上传）三路并发启动**；主服与 odin 双端切换完成后，**阶段 3.6 自动重新生成并上传 HD 画质包至 `/hd/*`**；**阶段 3.5 APK 构建默认跳过**，仅 `--with-apk` 显式要求时独占编译 Android 完全版安装包并发布到 GitHub Releases：
 
 ```text
 阶段 0：本机与远端单回合并发预检 → verify.sh --full 全量门禁
@@ -24,12 +24,16 @@ description: >-
   ├─ 阶段 3：deploy-prod.sh 成对 @sha256 更新主服 + 回环/公网双层烟测
   └─ 阶段 4b：odin 原子换目录 + 重启进程
   ↓
+阶段 3.6：HD 画质包重新生成并上传主服 /hd/*（与 APK 构建解耦，每次发布自动执行）
+  ↓（阶段 3.5 仅 --with-apk 时执行）
 阶段 3.5：独占编译 Android 完全版安装包（带防多开硬守卫）并自动发布到 GitHub Releases
   ↓
 阶段 5：双端指纹/接入验证 + 提取 Ops 后台路径 + 输出 GitHub Releases 下载直链 → 收尾登记
 ```
 
-> **官方一键总控入口**：仓库根目录下的 `scripts/release-prod.sh` 已将上述流水线（四路并发打包推送/备份/交叉编译/安卓构建 → 自动解析 sha256 digest → 自动主服部署与双层烟测 → odin 热重启 → 结果验证）全自动化闭环，日常发布可直接执行 `bash scripts/release-prod.sh`（支持 `--bump patch|minor|major` 语义化自增、`--version <X.Y.Z>`、`--skip-odin`、`--skip-backup`、`--skip-smoke`、`--skip-apk` 等选项）。
+> **官方一键总控入口**：仓库根目录下的 `scripts/release-prod.sh` 已将上述流水线（三路并发打包推送/备份/交叉编译 → 自动解析 sha256 digest → 自动主服部署与双层烟测 → odin 热重启 → HD 画质包上传 → 结果验证）全自动化闭环，日常发布可直接执行 `bash scripts/release-prod.sh`（支持 `--bump patch|minor|major` 语义化自增、`--version <X.Y.Z>`、`--skip-odin`、`--skip-backup`、`--skip-smoke`、`--skip-hd-pack` 等选项）。
+>
+> **Android APK 构建策略（Web 化后）**：APK 仅承载原生壳与静态资源基线，前端代码/玩法/图像更新全部走服务端热更，**默认不再每次发布重打 APK**。仅在原生壳、TapTap SDK、权限、更新器代码变更或用户明确要求时追加 `--with-apk`（可叠加 `--skip-apk-upload` 只构建不上传）；HD 画质包与 APK 解耦，每次发布自动重新生成并上传 `/hd/*`，无需 `--with-apk`。
 ---
 
 ## 阶段 0：单回合并发预检与最小门禁
@@ -175,18 +179,23 @@ ssh -o BatchMode=yes odin '
 
 ---
 
-## 阶段 3.5：Android 完全版离线安装包构建与 GitHub Releases 自动发布
+## 阶段 3.5：Android 完全版离线安装包构建与 GitHub Releases 自动发布（仅 `--with-apk`）
 
-主服与 odin 双端切换完毕后，**独占执行** Android 完全版离线安装包构建与 Releases 发布：
+主服与 odin 双端切换完毕后，**仅当 `release-prod.sh` 显式传入 `--with-apk` 时独占执行** Android 完全版安装包构建与 Releases 发布（Web 化后 APK 仅承载原生壳与资源基线，日常发布默认跳过）：
 
 ```bash
 bash scripts/build-apk.sh --soft-fail --require-full --release --tag "v<版本号>"
 ```
 
+- **构建时机红线**：仅原生壳/SDK/权限/更新器变更或用户明确要求时才允许 `--with-apk`；前端代码、配表、图像资源更新一律走服务端热更，禁止以「保险」为由默认重打 APK。
 - **完全版本硬红线**：正式服发布的 APK 必须包含反多开子系统与专有设备指纹防御逻辑（`DaoHua-Private`）。脚本内置 `--require-full` 检查，缺少私有挂载即刻阻断，严禁开源 Stub 版客户端外溢连正式服被 4010 拒绝。
 - **GitHub Releases 自动发布**：通过 `scripts/upload-release-apk.sh` 调用 `gh` CLI 自动上传（自适应 7890 Clash 代理，支持 clobber 覆盖），输出公开 Releases 页面与直接下载直链。
 - **Git 隔离红线**：APK 安装包及构建缓存严格受 `.gitignore` 忽略，**严禁将 APK 安装包加入 Git 追踪或提交**。
 - 脚本内置 `--soft-fail`，在无 Android SDK 的 Linux 环境下会自动安全跳过，不阻塞云端镜像发布。
+
+## 阶段 3.6：HD 画质资源包上传主服（每次发布自动执行）
+
+APK 构建与否均自动执行：`WITH_APK` 未构建时先独立运行 `scripts/gen-hd-pack.mjs` 重新生成 `artifacts/hd-pack`（避免复用残留旧包降级），再经 `scripts/upload-hd-pack.sh` tar 流上传至 `/opt/daohua/static/hd.releases/<ts>/` 并原子切换 `/hd/*` 符号链接（保留最近 3 版）。上传失败仅警告不阻塞；`--skip-hd-pack` 可显式跳过。
 
 ## 阶段 5：发布后双端验证
 
@@ -210,7 +219,7 @@ ssh -o BatchMode=yes yuohira '
 1. `odin` 的 `gameDataFingerprint` 与主服烟测输出完全一致，且 `ComputeLinkEndpoint` 日志出现 `计算节点接入 ... name=odin`（注意：`deploy-prod.sh` 重载 Caddy 时会使 `odin` 短暂断线一次，30s 内会自动重连拨入）。
 2. 主服日志无 `fail:` / `DomainException`。
 3. 若主服启用了随机后台路径（`/ops-<16hex>`），从启动日志提取并在总结中告知用户。
-4. 核验并汇报 `artifacts/daohua.apk` 文件大小、完整版口径确认及 GitHub Releases 直接下载直链。
+4. 仅 `--with-apk` 构建时核验并汇报 `artifacts/daohua.apk` 文件大小、完整版口径确认及 GitHub Releases 直接下载直链；默认发布无需 APK 产物。
 
 ---
 
@@ -234,5 +243,5 @@ ssh -o BatchMode=yes yuohira '
 ## 收尾
 
 1. 更新 `docs/tasks.md` 对应任务状态（双端版本 tag、digest、配表指纹、烟测与迁移记录）。
-2. 汇报 `artifacts/daohua.apk` 安装包路径与 GitHub Releases 下载直链供用户分发或移动端测试。
+2. 仅 `--with-apk` 构建时汇报 `artifacts/daohua.apk` 安装包路径与 GitHub Releases 下载直链供用户分发或移动端测试；默认发布 APK 不重打，无需汇报。
 3. Git 提交按用户指示执行（发布本身不自动提交）。

@@ -267,11 +267,22 @@ if (processRole == ServerProcessRole.Api)
     {
         OnPrepareResponse = ctx =>
         {
+            // index.html 为应用入口：禁止一切缓存，保证每次启动加载的都是最新前端。
             if (ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
             {
                 ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
                 ctx.Context.Response.Headers.Pragma = "no-cache";
+                return;
             }
+            // /assets/* 为 Vite 内容 hash 产物：文件名即内容指纹，允许永久缓存。
+            if (ctx.Context.Request.Path.StartsWithSegments("/assets"))
+            {
+                ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+                return;
+            }
+            // 可变静态资源（avatars/emotes/locales/theme.js）与 asset-manifest.json：
+            // 必须每次重新校验（ETag/Last-Modified 支撑 304），保证服务端发布即时生效。
+            ctx.Context.Response.Headers.CacheControl = "no-cache";
         }
     };
     if (hasWebRoot) app.UseStaticFiles(staticFileOptions);

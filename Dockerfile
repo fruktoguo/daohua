@@ -12,6 +12,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --registry="${NPM_CONFIG_REGISTRY}" --ignore-scripts --no-audit --no-fund
 COPY frontend/ ./
 COPY scripts/export-i18n-csv.mjs /src/scripts/export-i18n-csv.mjs
+COPY scripts/gen-asset-manifest.mjs /src/scripts/gen-asset-manifest.mjs
 RUN npm run build
 
 FROM ${DOTNET_SDK_IMAGE} AS dotnet-build
