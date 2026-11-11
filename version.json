@@ -1,5 +1,5 @@
 {
-  "version": "0.2.11",
+  "version": "0.3.0",
   "stage": "alpha",
-  "releaseNotes": "热修复：组队会话倒地复活读条跨波携带远征误判修复、快照 schema 读者地板门禁（additive 升级不再锁定客户端）"
+  "releaseNotes": "Android 客户端 Web 化：Web 优先加载 + 资源清单热更 + HD 画质包独立分发；同道页队伍页签调整"
 }
