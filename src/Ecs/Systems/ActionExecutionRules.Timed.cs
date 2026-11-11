@@ -683,7 +683,9 @@ internal static partial class ActionExecutionRules
     {
         if (consumable.GetMultiplier(definition.Kind) > 1d) return true;
         if (consumable.TechniqueSpeedRatio > 0 && definition.Technique is not null && TechniqueCatalog.IsKnown(definition.Technique)) return true;
-        if (consumable.EnhancementSuccessBonus > 0 && definition.Kind == ActionKind.Enhancement) return true;
+        // 强化成功率加成仅被装备强化结算消费（秘法三行动同属 enhancement 大类但无成功率判定，
+        // 对其充能只会白扣物品与持续时长）。
+        if (consumable.EnhancementSuccessBonus > 0 && definition.Id.Value == EnhancementRules.ActionId) return true;
         return false;
     }
 

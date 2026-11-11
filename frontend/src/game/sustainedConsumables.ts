@@ -1,4 +1,4 @@
-import { TECHNIQUE_IDS } from './combatConstants'
+import { ENHANCE_ACTION_ID, TECHNIQUE_IDS } from './combatConstants'
 import type { ActionDefinition, AutoUseBarType, ItemDefinition, QueueEntry } from './types'
 
 export type SustainedDurationClock =
@@ -24,8 +24,9 @@ export function hasActiveSustainedEffect(
   if (multiplier !== undefined && multiplier > 1) return true
   if (item.techniqueSpeedRatio && item.techniqueSpeedRatio > 0
     && action.technique != null && (TECHNIQUE_IDS as readonly string[]).includes(action.technique)) return true
+  // 强化成功率加成仅装备强化结算消费；秘法行动同属 enhancement 大类但无成功率判定。
   return item.enhancementSuccessBonus !== undefined && item.enhancementSuccessBonus > 0
-    && action.type === 'enhancement'
+    && action.id === ENHANCE_ACTION_ID
 }
 
 /** 将非战斗行动进度、战斗存活时钟和队列暂停统一为槽位显示时钟。 */

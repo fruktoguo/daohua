@@ -85,6 +85,17 @@ test('暂停队列时不推进持续时间，恢复后按当前行动进度继�
   })
 })
 
+test('强化成功率消耗品仅对装备强化行动生效，秘法行动不充能', () => {
+  const powder = pill({ usableBars: ['enhancement'], enhancementSuccessBonus: 0.03 })
+  const enhanceAction = action({ id: 'enhance.equipment', type: 'enhancement', technique: 'enhancement' })
+  const liquefyAction = action({ id: 'secret_art.liquefy', type: 'enhancement', technique: 'enhancement' })
+  const disassembleAction = action({ id: 'secret_art.disassemble', type: 'enhancement', technique: 'enhancement' })
+
+  assert.equal(hasActiveSustainedEffect(powder, enhanceAction, 'enhancement'), true)
+  assert.equal(hasActiveSustainedEffect(powder, liquefyAction, 'enhancement'), false)
+  assert.equal(hasActiveSustainedEffect(powder, disassembleAction, 'enhancement'), false)
+})
+
 test('战斗槽只在 combat 阶段使用同步后的遭遇战时间', () => {
   const battlePill = pill({ usableBars: ['combat'], buffEffects: [{ durationSeconds: 60 }] })
   assert.deepEqual(resolveSustainedDurationClock(
