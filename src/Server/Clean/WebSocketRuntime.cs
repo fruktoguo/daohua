@@ -906,7 +906,7 @@ public static class WebSocketEndpoint
                         if (!socialOutcome.Success)
                         {
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId,
-                                new ErrorDto(SocialErrorCode(socialOutcome.Failure), SocialErrorMessage(socialOutcome.Failure), envelope.RequestId.ToString("D")), cancellationToken);
+                                new ErrorDto(SocialErrorCode(socialOutcome.Failure), SocialErrorMessage(socialOutcome.Failure, socialOutcome.Message), envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
                         // 社交操作的成功应答必达：它是发起方唯一的操作确认（StateChanged 广播排除发起方，
@@ -1128,7 +1128,7 @@ public static class WebSocketEndpoint
     };
 
     /// <summary>社交失败原因到用户可读文案的映射。</summary>
-    private static string SocialErrorMessage(Social.SocialFailure failure) => failure switch
+    private static string SocialErrorMessage(Social.SocialFailure failure, string? detail = null) => failure switch
     {
         Social.SocialFailure.InvalidAction => "不支持的社交指令。",
         Social.SocialFailure.TargetNotFound => "目标修士不存在。",
@@ -1150,7 +1150,7 @@ public static class WebSocketEndpoint
         Social.SocialFailure.RateLimited => "操作过于频繁，请稍后再试。",
         Social.SocialFailure.ChannelUnavailable => "该传音频道当前不可用。",
         Social.SocialFailure.DouDiZhuUnavailable => "斗地主暂不可操作，请确认队伍恰好 3 人、全员准备且灵石足够。",
-        Social.SocialFailure.DouDiZhuInvalid => "斗地主操作无效或牌局已更新，请重试。",
+        Social.SocialFailure.DouDiZhuInvalid => detail ?? "斗地主操作无效或牌局已更新，请重试。",
         _ => "社交操作失败。"
     };
 

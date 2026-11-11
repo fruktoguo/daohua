@@ -17,7 +17,8 @@ public sealed class DouDiZhuPresentationContractTests
         var game = new DouDiZhuGameDto("game", ["me", "left", "right"], 10, "bidding", 0,
             [1, 4], [17, 17, 17], [], null, 0, 0, [], null, 0, [], 2, null, null, false, 0,
             [0, 0, 0], 39000, [false, false, false], DealNumber: 1, DealStartedAtUnixMilliseconds: 0,
-            ActionAvailableAtUnixMilliseconds: 9000, DealHand: [4, 1], Bids: [new(1, "pass", 1)]);
+            ActionAvailableAtUnixMilliseconds: 9000, DealHand: [4, 1], Bids: [new(1, "pass", 1)],
+            ServerNowUnixMilliseconds: 9100);
         var party = new PartyDto("party", "me", "牌桌", "any", "", 0, true, false, [], 3, DouDiZhuGame: game);
         var state = new SocialStateDto(null, [], [], [], party, null, [],
             DouDiZhuInteractions: [new("event", "game", "me", "left", "tomato", 1000)]);
@@ -26,6 +27,7 @@ public sealed class DouDiZhuPresentationContractTests
         Assert.True(WireEnvelopeCodec.TryDeserializeJson<SocialStateDto>(decoded, out var parsed));
         Assert.Equal([4, 1], parsed!.Party!.DouDiZhuGame!.DealHand!);
         Assert.Equal(9000, parsed.Party.DouDiZhuGame.ActionAvailableAtUnixMilliseconds);
+        Assert.Equal(9100, parsed.Party.DouDiZhuGame.ServerNowUnixMilliseconds);
         Assert.Empty(parsed.Party.DouDiZhuGame.BottomCards);
         Assert.Equal("pass", Assert.Single(parsed.Party.DouDiZhuGame.Bids!).Action);
         Assert.Equal("target", parsedAction.TargetPlayerId);

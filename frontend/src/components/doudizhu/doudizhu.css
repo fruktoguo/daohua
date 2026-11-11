@@ -302,6 +302,43 @@
 .ddz-shell.is-portrait .ddz-announcement { top: 30%; }
 .ddz-shell.is-portrait .ddz-table-watermark { top: 27%; font-size: 17px; }
 
+.ddz-stats .ddz-fullscreen-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 4px;
+}
+
+.ddz-fullscreen-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ddz-shell:fullscreen {
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: #12221a;
+}
+
+.ddz-shell.is-fullscreen {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: #12221a;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ddz-hand-card { transition: none; }
 }

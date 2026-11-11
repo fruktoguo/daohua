@@ -205,6 +205,7 @@ public sealed class SocialRuntime
             }
         }
         var leaderName = party?.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName;
+        var serverNow = _clock.UtcNow;
 
         var result = new SocialStateDto(
             requestId,
@@ -240,7 +241,7 @@ public sealed class SocialRuntime
                         : null,
                     party.Profile.Difficulty,
                     party.DouDiZhuStake,
-                    snapshot.DouDiZhuGame is { } game ? ToDouDiZhuDto(game, playerId) : null),
+                    snapshot.DouDiZhuGame is { } game ? ToDouDiZhuDto(game, playerId, serverNow) : null),
             invitation is null
                 ? null
                 : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName, invitation.PartyName),
@@ -936,9 +937,9 @@ public sealed class SocialRuntime
                 };
             }
         }
-        catch (DomainException)
+        catch (DomainException exception)
         {
-            return new SocialOutcome(SocialFailure.DouDiZhuInvalid);
+            return new SocialOutcome(SocialFailure.DouDiZhuInvalid, exception.Message);
         }
 
         if (!await PersistDouDiZhuUpdateAsync(updated, current.Version, cancellationToken))
@@ -989,7 +990,7 @@ public sealed class SocialRuntime
         return saved;
     }
 
-    private static DouDiZhuGameDto ToDouDiZhuDto(DouDiZhuGameState state, Guid viewerId)
+    private static DouDiZhuGameDto ToDouDiZhuDto(DouDiZhuGameState state, Guid viewerId, DateTimeOffset serverNow)
     {
         var viewerSeat = Array.IndexOf(state.PlayerIds, viewerId);
         var hand = viewerSeat >= 0 ? state.Hands[viewerSeat] : [];
@@ -1024,7 +1025,8 @@ public sealed class SocialRuntime
             state.ActionAvailableAt.ToUnixTimeMilliseconds(),
             state.LandlordConfirmedAt?.ToUnixTimeMilliseconds(),
             viewerSeat < 0 ? [] : [.. state.Deck.Take(51).Where((_, index) => index % 3 == viewerSeat)],
-            [.. state.BidHistory.Select(entry => new DouDiZhuBidDto(entry.Seat, entry.Action, entry.Version))]);
+            [.. state.BidHistory.Select(entry => new DouDiZhuBidDto(entry.Seat, entry.Action, entry.Version))],
+            serverNow.ToUnixTimeMilliseconds());
     }
 
     /// <summary>主动向单个玩家推送最新社交状态（握手完成、节点变化等场景）。</summary>

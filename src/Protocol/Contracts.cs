@@ -1061,7 +1061,8 @@ public sealed record DouDiZhuGameDto(
     long ActionAvailableAtUnixMilliseconds = 0,
     long? LandlordConfirmedAtUnixMilliseconds = null,
     IReadOnlyList<int>? DealHand = null,
-    IReadOnlyList<DouDiZhuBidDto>? Bids = null);
+    IReadOnlyList<DouDiZhuBidDto>? Bids = null,
+    long ServerNowUnixMilliseconds = 0);
 
 /// <summary>组队讨伐活跃会话（总纲 §21.13：会话持有唯一权威战斗状态，成员读取个人结算投影）。</summary>
 /// <param name="SessionId">会话唯一标识</param>

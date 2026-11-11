@@ -199,7 +199,7 @@ public enum SocialFailure : byte
 
 /// <summary>社交指令执行结局。</summary>
 /// <param name="Failure">失败原因；成功时为 <see cref="SocialFailure.None"/>。</param>
-public sealed record SocialOutcome(SocialFailure Failure)
+public sealed record SocialOutcome(SocialFailure Failure, string? Message = null)
 {
     /// <summary>成功结局单例。</summary>
     public static readonly SocialOutcome Ok = new(SocialFailure.None);

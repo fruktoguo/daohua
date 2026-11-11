@@ -50,9 +50,16 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   const [notice, setNotice] = useState('')
   const [rulesOpen, setRulesOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [fallbackFullscreen, setFallbackFullscreen] = useState(false)
+  const [clockSync, setClockSync] = useState(() => ({
+    gameId: game.gameId, version: game.version,
+    serverAt: game.serverNowUnixMilliseconds, clientAt: Date.now(),
+  }))
   const [portrait, setPortrait] = useState(() => window.matchMedia('(orientation: portrait)').matches)
   const [layout, setLayout] = useState(() => measureHand(550, 480, portrait))
   const arenaRef = useRef<HTMLDivElement>(null), effectRef = useRef<HTMLDivElement>(null), stackRef = useRef<HTMLDivElement>(null)
+  const shellRef = useRef<HTMLElement>(null)
   const handAreaRef = useRef<HTMLDivElement>(null), handRef = useRef<HTMLDivElement>(null)
   const motion = useRef<DouDiZhuMotion | null>(null), hintCursor = useRef(0)
   const drag = useRef<{ start: number; end: number; value: boolean; before: number[] } | null>(null)
@@ -61,15 +68,20 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   const reflowAnimations = useRef(new Map<number, Animation>())
   const previousGeometry = useRef('')
   const seenInteractions = useRef(new Set<string>())
+  const lastInteractionAt = useRef(0)
   const audio = useRef<AudioContext | null>(null)
   const soundEnabled = useRef(soundOn); soundEnabled.current = soundOn
   const interactionEvents = useSocialStore(state => state.douDiZhuInteractions)
   const interact = useSocialStore(state => state.interactDouDiZhu)
   const selfHosted = game.hostedSeats[mySeat]
   const active = game.phase === 'bidding' || game.phase === 'playing'
-  const dealAge = now - game.dealStartedAtUnixMilliseconds
+  const clockMatchesGame = clockSync.gameId === game.gameId && clockSync.version === game.version
+  const clockOffset = clockMatchesGame ? clockSync.serverAt - clockSync.clientAt : game.serverNowUnixMilliseconds - now
+  const serverNow = now + clockOffset
+  const serverNowRef = useRef(serverNow); serverNowRef.current = serverNow
+  const dealAge = serverNow - game.dealStartedAtUnixMilliseconds
   const intro = dealAge >= 0 && dealAge < 8250
-  const revealAge = game.landlordConfirmedAtUnixMilliseconds === null ? Infinity : now - game.landlordConfirmedAtUnixMilliseconds
+  const revealAge = game.landlordConfirmedAtUnixMilliseconds === null ? Infinity : serverNow - game.landlordConfirmedAtUnixMilliseconds
   const revealing = revealAge >= 0 && revealAge < 2400
   const ownBase = sortCards(game.hand.filter(card => !game.bottomCards.includes(card)))
   const landedCount = (seat: number): number => clampCount(Math.floor((dealAge - 2790 - seat * 68 - (seat === mySeat ? 570 : 480)) / 204) + 1)
@@ -81,7 +93,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   const authoritativeHandKey = game.hand.join(',')
   const reserved = intro ? 17 : revealing && game.landlordSeat === mySeat ? 20 : hand.length
   const currentSlots = useRef({ layout, reserved }); currentSlots.current = { layout, reserved }
-  const canOperate = active && now >= game.actionAvailableAtUnixMilliseconds && !intro && !revealing && pending !== game.version
+  const canOperate = active && serverNow >= game.actionAvailableAtUnixMilliseconds && !intro && !revealing && pending !== game.version
   const isMyTurn = canOperate && game.currentSeat === mySeat && !selfHosted
   const canSelect = !intro && !revealing && active && !selfHosted
   const lastPattern = useMemo(() => evaluate(game.currentTrickCards), [game.currentTrickCards])
@@ -93,7 +105,8 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     return (['bomb', 'rocket'].includes(a.pattern.kind) ? 1 : 0) - (['bomb', 'rocket'].includes(b.pattern.kind) ? 1 : 0)
       || (lastPattern ? a.pattern.primary - b.pattern.primary : b.cards.length - a.cards.length || a.pattern.primary - b.pattern.primary)
   }), [game.hand, lastPattern])
-  const seconds = Math.max(0, Math.ceil((game.turnDeadlineAtUnixMilliseconds - now) / 1000))
+  const seconds = Math.max(0, Math.ceil((game.turnDeadlineAtUnixMilliseconds - serverNow) / 1000))
+  const isFullscreen = fullscreen || fallbackFullscreen
   const multiplier = game.phase === 'finished' ? game.finalMultiplier : 2 ** (game.robCount + game.bombCount)
   const name = (seat: number): string => party.members.find(member => member.playerId === game.playerIds[seat])!.displayName
   const allPlays = game.history
@@ -122,6 +135,15 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 50)
     return () => window.clearInterval(timer)
+  }, [])
+  useLayoutEffect(() => {
+    setClockSync({ gameId: game.gameId, version: game.version,
+      serverAt: game.serverNowUnixMilliseconds, clientAt: Date.now() })
+  }, [game.gameId, game.version, game.serverNowUnixMilliseconds])
+  useEffect(() => {
+    const onFullscreenChange = (): void => setFullscreen(document.fullscreenElement === shellRef.current)
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
   }, [])
   useEffect(() => () => { void audio.current?.close() }, [])
   useEffect(() => {
@@ -184,7 +206,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   useEffect(() => {
     const animator = new DouDiZhuMotion(arenaRef.current!, effectRef.current!, () => { setNow(Date.now()); sound('deal') }, jokerLabels)
     motion.current = animator
-    const started = game.dealStartedAtUnixMilliseconds
+    const started = game.dealStartedAtUnixMilliseconds - clockOffset
     if (Date.now() - started < 8250) {
       animator.shuffle(stackRef.current!, started)
       if (Date.now() - started >= 2600) stackRef.current!.innerHTML = '<i class="ddz-card-back"></i>'.repeat(4)
@@ -205,8 +227,10 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     // 一副牌只预约一次；普通社交推送和回合版本变化不能重播洗牌。
   }, [game.gameId, game.dealNumber, mySeat, jokerLabels])
   useEffect(() => {
-    const at = game.landlordConfirmedAtUnixMilliseconds, animator = motion.current
-    if (at === null || Date.now() - at >= 2400 || !animator) return
+    const serverAt = game.landlordConfirmedAtUnixMilliseconds, animator = motion.current
+    if (serverAt === null || !animator) return
+    const at = serverAt - clockOffset
+    if (Date.now() - at >= 2400) return
     for (let i = 0; i < 3; i++) animator.schedule(at + 600 + i * 190, elapsed => {
       const source = arenaRef.current!.querySelectorAll<HTMLElement>('.ddz-bottom-slot')[i].getBoundingClientRect()
       const seat = game.landlordSeat!
@@ -220,7 +244,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     for (const event of interactionEvents) {
       if (event.gameId !== game.gameId || seenInteractions.current.has(event.id)) continue
       seenInteractions.current.add(event.id)
-      const elapsed = Date.now() - event.createdAtUnixMilliseconds
+      const elapsed = serverNowRef.current - event.createdAtUnixMilliseconds
       if (elapsed >= 4000) continue
       const sender = game.playerIds.indexOf(event.senderId), target = game.playerIds.indexOf(event.targetId)
       if (sender < 0 || target < 0) continue
@@ -251,7 +275,36 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     if (!moves.length) { setSelected([]); setNotice(t('social.doudizhu.noHint')); return }
     setSelected(moves[hintCursor.current++ % moves.length].cards)
   }
-  function submit(send: () => boolean): void { if (send()) { setPending(game.version); sound('play') } }
+  function submit(send: () => boolean): void {
+    if (send()) { setPending(game.version); sound('play') }
+    else setNotice(t('social.doudizhu.sendFailed'))
+  }
+  function sendInteraction(targetId: string, interaction: string, close: () => void): void {
+    const localNow = Date.now()
+    if (localNow - lastInteractionAt.current < 1100) {
+      setNotice(t('social.doudizhu.interactionRateLimited'))
+      return
+    }
+    if (!interact(game, targetId, interaction)) {
+      setNotice(t('social.doudizhu.interactionUnavailable'))
+      return
+    }
+    lastInteractionAt.current = localNow
+    close()
+  }
+  async function toggleFullscreen(): Promise<void> {
+    const shell = shellRef.current
+    if (!shell) return
+    if (fallbackFullscreen) { setFallbackFullscreen(false); return }
+    if (document.fullscreenElement === shell) {
+      try { await document.exitFullscreen() }
+      catch { setNotice(t('social.doudizhu.fullscreenUnavailable')) }
+      return
+    }
+    if (!shell.requestFullscreen) { setFallbackFullscreen(true); return }
+    try { await shell.requestFullscreen() }
+    catch { setFallbackFullscreen(true) }
+  }
   function hit(x: number, y: number): number {
     // 以实际可见卡片命中，同时覆盖多排、选中抬起和理牌过程中的位置。
     for (let i = hand.length - 1; i >= 0; i--) {
@@ -318,8 +371,8 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
         <div className="ddz-avatar-row">
           {own ? portrait : <FloatingPopover trigger="click" triggerAs="button" triggerClassName="ddz-avatar-trigger" placement={position === 'left' ? 'right-start' : 'left-start'} size="auto" className="ddz-social-menu" content={({ close }) => <>
             <div className="ddz-interaction-header">{t('social.doudizhu.interactWith', { name: member.displayName })}</div>
-            <div className="ddz-prop-grid">{PROPS.map(prop => <button className="ddz-prop-button" key={prop} type="button" onClick={() => { interact(game, member.playerId, prop); close() }}><svg className="ddz-prop-art" viewBox="0 0 64 64"><use href={`#ddz-prop-${prop}`} /></svg><span>{t(`social.doudizhu.prop.${prop}`)}</span></button>)}</div>
-            <div className="ddz-quick-phrases">{PHRASES.map(phrase => <button className="ddz-phrase-button" key={phrase} type="button" onClick={() => { interact(game, member.playerId, phrase); close() }}>{t(`social.doudizhu.phrase.${phrase}`)}</button>)}</div>
+            <div className="ddz-prop-grid">{PROPS.map(prop => <button className="ddz-prop-button" key={prop} type="button" onClick={() => sendInteraction(member.playerId, prop, close)}><svg className="ddz-prop-art" viewBox="0 0 64 64"><use href={`#ddz-prop-${prop}`} /></svg><span>{t(`social.doudizhu.prop.${prop}`)}</span></button>)}</div>
+            <div className="ddz-quick-phrases">{PHRASES.map(phrase => <button className="ddz-phrase-button" key={phrase} type="button" onClick={() => sendInteraction(member.playerId, phrase, close)}>{t(`social.doudizhu.phrase.${phrase}`)}</button>)}</div>
           </>}>{portrait}<span className="ddz-interact-label">{t('social.doudizhu.interact')}</span></FloatingPopover>}
           {!own && <span className="ddz-hand-counter" aria-label={t('social.doudizhu.cardsLeft', { count: game.handsRemaining[seat] })}><i className="ddz-mini-back" /><b>{intro ? landedCount(seat) : revealing && game.landlordSeat === seat ? 17 + game.bottomCards.filter((_, i) => revealAge >= 1080 + i * 190).length : game.handsRemaining[seat]}</b></span>}
         </div>
@@ -331,13 +384,16 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     </article>
   }
 
-  return <section className={`ddz-shell${portrait ? ' is-portrait' : ''}`}>
+  return <section ref={node => { shellRef.current = node }} className={`ddz-shell${portrait ? ' is-portrait' : ''}${fallbackFullscreen ? ' is-fullscreen' : ''}`}>
     <svg className="ddz-symbols" aria-hidden="true"><defs dangerouslySetInnerHTML={{ __html: visualSymbols }} /></svg>
     <header className="ddz-header"><div className="ddz-brand"><strong>{t('social.doudizhu.title')}</strong><span>{phaseText}</span></div>
       <div className="ddz-stats"><span>{t('social.doudizhu.baseStakeValue', { stake: formatNumber(game.baseStake) })}</span><b>×{multiplier}</b>
         <button type="button" onClick={() => setRulesOpen(true)}>{t('social.doudizhu.rules')}</button>
         <button type="button" aria-pressed={soundOn} onClick={() => setSoundOn(value => !value)}>{t(soundOn ? 'social.doudizhu.soundOn' : 'social.doudizhu.soundOff')}</button>
         {active && <button type="button" className={selfHosted ? 'is-on' : ''} onClick={() => onSetHosted(!selfHosted)}>{t(selfHosted ? 'social.doudizhu.cancelHost' : 'social.doudizhu.host')}</button>}
+        <button type="button" className="ddz-fullscreen-button" aria-label={t(isFullscreen ? 'social.doudizhu.exitFullscreen' : 'social.doudizhu.fullscreen')} title={t(isFullscreen ? 'social.doudizhu.exitFullscreen' : 'social.doudizhu.fullscreen')} onClick={() => { void toggleFullscreen() }}>
+          {isFullscreen ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v5H3M16 3v5h5M8 21v-5H3m13 5v-5h5" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5m13-5v5h-5" /></svg>}
+        </button>
       </div>
     </header>
     <div className="ddz-table" style={{ '--hand-zone': `${layout.extent}px` } as CSSProperties} ref={arenaRef}>

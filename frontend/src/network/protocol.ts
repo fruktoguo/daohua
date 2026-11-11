@@ -655,6 +655,7 @@ export interface DouDiZhuGameDto {
   dealStartedAtUnixMilliseconds: number
   actionAvailableAtUnixMilliseconds: number
   landlordConfirmedAtUnixMilliseconds: number | null
+  serverNowUnixMilliseconds: number
   /** 仅本人的初始 17 张发牌顺序，不包含他人手牌。 */
   dealHand: number[]
   bids: { seat: number; action: 'call' | 'rob' | 'pass'; version: number }[]
