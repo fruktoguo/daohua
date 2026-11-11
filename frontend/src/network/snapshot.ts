@@ -54,9 +54,9 @@ import type {
   WorldState,
 } from '../game/types'
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
+import { SNAPSHOT_SCHEMA_VERSION, snapshotSchemaReadable } from './snapshotSchemaGate'
 
-/** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-export const SNAPSHOT_SCHEMA_VERSION = 42
+export { SNAPSHOT_SCHEMA_VERSION }
 
 type JsonObject = Record<string, unknown>
 
@@ -289,7 +289,9 @@ async function decodeSections(
       throw new Error('玩家 section 标识重复或为空。')
     }
     names.add(section.section)
-    if (section.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
+    if (!snapshotSchemaReadable(section.schemaVersion, section.minReaderSchemaVersion)) {
+      throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}，请更新客户端。`)
+    }
   }
   const spans = sectionDataSpans(payloadBytes, memberPath)
   if (spans.length !== sections.length) throw new Error('玩家 section 数据区间与列表不一致。')
@@ -1532,7 +1534,9 @@ export async function decodePlayerSnapshotDto(
 ): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
-  if (!dto.head || dto.head.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) throw new Error('玩家快照 schema 版本不受支持。')
+  if (!snapshotSchemaReadable(dto.head?.schemaVersion, dto.head?.minReaderSchemaVersion)) {
+    throw new Error('玩家快照 schema 版本不受支持，请更新客户端。')
+  }
   if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')

@@ -45,7 +45,10 @@ public static class ProtocolSnapshotMapper
             encoded.SchemaVersion,
             document.RootElement.Clone(),
             encoded.Checksum,
-            encoded.UpdatedAt);
+            encoded.UpdatedAt)
+        {
+            MinReaderSchemaVersion = Domain.Persistence.SectionCodec.MinReadableSchemaVersion
+        };
     }
 
     /// <summary>
@@ -80,7 +83,10 @@ public static class ProtocolSnapshotMapper
             runtime.LastSimulatedAt,
             gameDataFingerprint,
             checksum,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow)
+        {
+            MinReaderSchemaVersion = Domain.Persistence.SectionCodec.MinReadableSchemaVersion
+        };
 
         return new PlayerSnapshotDto(
             runtime.PlayerId.ToString("D"),

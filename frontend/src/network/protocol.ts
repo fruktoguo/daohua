@@ -186,6 +186,8 @@ export interface PlayerHeadDto {
   stateVersion: number
   /** 快照结构版本 */
   schemaVersion: number
+  /** 可解码本快照的最老客户端 schema 版本（additive 升级不抬读者地板）；缺省等同 schemaVersion */
+  minReaderSchemaVersion?: number
   /** 服务端最近模拟推进时刻（ISO 时间） */
   lastSimulatedAt: string
   /** 快照生成时配表指纹 */
@@ -203,6 +205,8 @@ export interface PlayerSectionDto {
   sectionVersion: number
   /** 分段载荷结构版本 */
   schemaVersion: number
+  /** 可解码本分段的最老客户端 schema 版本；缺省等同 schemaVersion */
+  minReaderSchemaVersion?: number
   /**
    * 分段业务载荷：规范化 JSON 直接内嵌（替代旧 Base64 二次编码）。
    * 信封 JSON 中该成员的原始字节区间即 checksum 哈希输入，解码器对线上字节逐位复算。

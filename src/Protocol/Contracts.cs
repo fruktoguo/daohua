@@ -399,7 +399,11 @@ public sealed record PlayerHeadDto(
     DateTimeOffset LastSimulatedAt,
     string GameDataFingerprint,
     string Checksum,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    /// <summary>可解码本快照的最老客户端 schema 版本（additive 升级不下抬读者地板）；缺省等同 <see cref="SchemaVersion"/>。</summary>
+    public int? MinReaderSchemaVersion { get; init; }
+}
 
 /// <summary>玩家分段快照载荷 DTO</summary>
 /// <param name="Section">分段标识名</param>
@@ -415,7 +419,11 @@ public sealed record PlayerSectionDto(
     int SchemaVersion,
     JsonElement Data,
     string Checksum,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    /// <summary>可解码本分段的最老客户端 schema 版本；缺省等同 <see cref="SchemaVersion"/>。增量快照无头元数据，读者地板必须随分段自带。</summary>
+    public int? MinReaderSchemaVersion { get; init; }
+}
 
 /// <summary>玩家全量快照 DTO（包含全部分段及资产钱包列表）</summary>
 /// <param name="PlayerId">玩家唯一标识</param>

@@ -27,6 +27,7 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 
 - 文件名：`NNNN_vX_to_vY.sql`，`NNNN` 为递增序号，`X`/`Y` 为 `platform.schema_version` 版本号（本地库内容版本，涵盖表结构与存档载荷标签）。
 - 存档版本联动：`SectionCodec.CurrentSchemaVersion` 升级时 `PostgresSchema.Version` 同步 +1，并在对应版本迁移文件里内嵌 `UPDATE game.player_state_heads / player_state_sections / platform.section_flush_queue SET schema_version` 标签推进。
+- 客户端读者地板：快照协议按 `minReaderSchemaVersion`（服务端声明的最老可读客户端版本）判定兼容性。可缺省解码的 additive 升级必须保持 `SectionCodec.MinReadableSchemaVersion` 不抬——旧客户端透明续用，不再整批锁定；仅字段语义/默认值发生破坏性变更的版本才推进 `MinReadableSchemaVersion` 至新版本号，且该次发布必须同步强制客户端更新。
 - 仅数据库对象或独立会话 JSON 变化时，数据库内容版本可以单独前进；v37 数据库配套的玩家八分段 `SectionCodec` 与存档标签仍为 v36，禁止用数据库版本给玩家分段重贴标签。
 - 存档标签迁移成立的前提：`schema_version` 不参与任何校验和计算，且 PersistenceJson 反序列化对新增字段的缺失属性按类型默认值处理；若新版本变更了既有字段语义或默认值不再是正确初值，该版本不写迁移，旧存档走 `reset-outdated-players.sh` 的交互确认清零。
 - 脚本必须自带事务边界（`BEGIN;`/`COMMIT;`），末尾将 `platform.schema_version` 写入目标版本。

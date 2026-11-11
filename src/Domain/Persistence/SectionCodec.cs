@@ -78,6 +78,13 @@ public static class SectionCodec
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
     public const int CurrentSchemaVersion = 42;
+    /// <summary>
+    /// 仍可解码当前快照载荷的最老客户端 schema 版本——快照协议随 DTO 下发的「读者地板」。
+    /// 客户端按 <c>minReaderSchemaVersion &lt;= 自身版本</c> 判定可读性，替代旧的全等门禁：
+    /// 可缺省字段（additive）升级维持本值不变，旧客户端透明续用；
+    /// 破坏性变更必须把本值推进到 <see cref="CurrentSchemaVersion"/> 并同步强制客户端更新。
+    /// </summary>
+    public const int MinReadableSchemaVersion = 41;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
