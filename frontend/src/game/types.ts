@@ -1049,6 +1049,10 @@ export interface CombatAttributes {
   damageReflectPoints: number
   /** 治疗增幅点数（Linear） */
   healingBonusPoints: number
+  /** 已装配特质 ID 列表（trait.*，装配顺序；怪物等无特质单位缺省为 null） */
+  traits?: string[] | null
+  /** 特质等级表（traitId → 等级；仅已解锁特质，按 traits 过滤取装配等级） */
+  traitLevels?: Record<string, number> | null
 }
 
 /**

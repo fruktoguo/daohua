@@ -389,7 +389,9 @@ public static class ProtocolSnapshotMapper
         combatExpBonusPoints = a.CombatExpBonusPoints,
         threatBonusPoints = a.ThreatBonusPoints + extraThreatBonusPoints,
         hpDrainPoints = a.Effects.HpDrainPoints, mpDrainPoints = a.Effects.MpDrainPoints,
-        damageReflectPoints = a.Effects.DamageReflectPoints, healingBonusPoints = a.Effects.HealingBonusPoints
+        damageReflectPoints = a.Effects.DamageReflectPoints, healingBonusPoints = a.Effects.HealingBonusPoints,
+        // 已装配特质与等级随面板下发：详情弹窗/信息卡「装配」Tab 的只读展示数据源（总纲 §7.12）。
+        traits = a.Traits, traitLevels = a.TraitLevels
     };
 
     /// <summary>战斗单位静态属性（怪物/斗法镜像）到统一属性投影的重载；
@@ -423,7 +425,9 @@ public static class ProtocolSnapshotMapper
         combatExpBonusPoints = 0d,
         threatBonusPoints = s.ThreatBonusPoints + extraThreatBonusPoints,
         hpDrainPoints = s.Effects.HpDrainPoints, mpDrainPoints = s.Effects.MpDrainPoints,
-        damageReflectPoints = s.Effects.DamageReflectPoints, healingBonusPoints = s.Effects.HealingBonusPoints
+        damageReflectPoints = s.Effects.DamageReflectPoints, healingBonusPoints = s.Effects.HealingBonusPoints,
+        // 已装配特质与等级随面板下发：盟友/斗法镜像/敌怪装配展示与玩家面板同一口径。
+        traits = s.Traits, traitLevels = s.TraitLevels
     };
 
     private static object ToCombatSection(PlayerAggregateState state, GameDataCatalog catalog)

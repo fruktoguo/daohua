@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react'
-import { calculateRealmInfo, getRootCumulativeExpForLevel } from '../game/combatConstants'
+import { calculateRealmInfo, getRootCumulativeExpForLevel, resolveEquippedTraitViews } from '../game/combatConstants'
+import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
 import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { ConditionedTile } from './ConditionedTile'
@@ -16,6 +17,7 @@ import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
 import { CombatAttributePanel } from './CombatAttributePanel'
+import { TraitBarItem } from './TraitBarItem'
 import { ValuationHoverTarget } from './ValuationDisplay'
 
 /** 战斗消耗品每组栏位数（与服务端 AutoUseBar.DefaultSlotCount 一致：药品 3 + 通用 3） */
@@ -226,7 +228,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
     [card.experience, card.realmLevel, card.experienceToNext],
   )
 
-  const { combatEquipment, toolEquipment } = useMemo(() => {
+  const { combatEquipment, toolEquipment, traits } = useMemo(() => {
     const combat: NonNullable<PlayerCardDto['equipment']> = []
     const tools: NonNullable<PlayerCardDto['equipment']> = []
     for (const entry of card.equipment ?? []) {
@@ -234,8 +236,14 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
       if (def?.slot.startsWith('tool-')) tools.push(entry)
       else combat.push(entry)
     }
-    return { combatEquipment: combat, toolEquipment: tools }
-  }, [card.equipment, equipmentCatalog])
+    // 装备按固定槽位序展示（武器→副手→头→衣→裤→饰品；技艺工具按技艺序），不再随穿戴先后漂移
+    return {
+      combatEquipment: sortEquippedItemsBySlot(combat, equipmentCatalog),
+      toolEquipment: sortEquippedItemsBySlot(tools, equipmentCatalog),
+      // 已装配特质随 attributes 面板同帧下发（总纲 §7.12），只读展示
+      traits: resolveEquippedTraitViews(card.attributes?.traits, card.attributes?.traitLevels),
+    }
+  }, [card.equipment, card.attributes, equipmentCatalog])
 
   const potionSlots = (card.autoUseSlots ?? []).filter(slot => slot.group === 'potion')
   const generalSlots = (card.autoUseSlots ?? []).filter(slot => slot.group !== 'potion')
@@ -387,6 +395,24 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
               <div className="abilities-learned-grid">
                 {toolEquipment.map(entry => (
                   <PlayerCardEquipmentTile enhancementLevel={entry.enhancementLevel} itemId={entry.itemId} key={`${entry.itemId}:${entry.enhancementLevel}`} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* 已装配特质：与属性面板同源投影，只读展示 */}
+          {traits.length > 0 && (
+            <section className="player-card-section">
+              <h4 className="player-card-section-title">{t('insight.combat.loadoutTraits')}</h4>
+              <div className="insight-traits-bar-list">
+                {traits.map(trait => (
+                  <TraitBarItem
+                    def={trait.def}
+                    isEquipped
+                    key={trait.id}
+                    level={trait.level}
+                    mode="codex"
+                  />
                 ))}
               </div>
             </section>

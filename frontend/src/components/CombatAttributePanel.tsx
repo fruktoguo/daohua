@@ -1,5 +1,7 @@
 import { memo, useState } from 'react'
 import { PillStatLabel, type PillTone } from './PillLabel'
+import { resolveEquippedTraitViews } from '../game/combatConstants'
+import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
 import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { PercentValue } from '../game/percentValue'
 import { useGameStore } from '../game/gameStore'
@@ -26,6 +28,7 @@ import { resolveAbilityAsideCards } from './EffectTooltip'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { BonusAsideList, ItemDropReference, ItemTile, ItemTooltipTarget, extractBuffBonusItems } from './ItemDisplay'
 import { StatGlyph } from './StatGlyph'
+import { TraitBarItem } from './TraitBarItem'
 
 /** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊与增减伤属性 | 功法与装备装配 | 掉落明细（仅敌怪详情） */
 type CombatAttributeGroupTab = 'base' | 'special' | 'loadout' | 'drops'
@@ -301,7 +304,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
       )}
 
       {activeGroup === 'loadout' && loadout != null && (
-        <UnitLoadoutSection loadout={loadout} />
+        <UnitLoadoutSection attributes={attributes} loadout={loadout} />
       )}
 
       {activeGroup === 'drops' && drops !== undefined && (
@@ -362,8 +365,11 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
  * 两组均为空时回退空态文案；equipment 未提供的单位（怪物）整组不渲染。
  */
 const UnitLoadoutSection = memo(function UnitLoadoutSection({
+  attributes,
   loadout,
 }: {
+  /** 单位权威属性面板：已装配特质（traits × traitLevels）随面板同帧下发 */
+  attributes: CombatAttributes
   loadout: UnitLoadoutView
 }): React.JSX.Element {
   const t = useT()
@@ -374,9 +380,12 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
   const skills = (loadout.skills ?? []).filter(
     (slot): slot is CombatAbilitySlot & { abilityId: string } => slot.abilityId !== null && slot.abilityId.length > 0,
   )
-  const equipment = loadout.equipment ?? []
+  // 装备按固定槽位序展示（武器→副手→头→衣→裤→饰品→技艺工具），不再随穿戴先后漂移
+  const equipment = sortEquippedItemsBySlot(loadout.equipment ?? [], equipmentCatalog)
+  // 已装配特质只读视图：与面板数值同源（盟友/镜像为开打/撮合冻结值）
+  const traits = resolveEquippedTraitViews(attributes.traits, attributes.traitLevels)
 
-  if (skills.length === 0 && equipment.length === 0) {
+  if (skills.length === 0 && equipment.length === 0 && traits.length === 0) {
     return <p className="nearby-empty">{t('insight.combat.loadoutEmpty')}</p>
   }
 
@@ -471,6 +480,22 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
                 </ItemTooltipTarget>
               )
             })}
+          </div>
+        </div>
+      )}
+      {traits.length > 0 && (
+        <div className="insight-pill-group">
+          <h4 className="insight-pill-group-title">{t('insight.combat.loadoutTraits')}</h4>
+          <div className="insight-traits-bar-list">
+            {traits.map(trait => (
+              <TraitBarItem
+                def={trait.def}
+                isEquipped
+                key={trait.id}
+                level={trait.level}
+                mode="codex"
+              />
+            ))}
           </div>
         </div>
       )}

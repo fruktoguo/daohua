@@ -6,12 +6,14 @@ export function roundStat(val: number): number {
   return Math.round(val * 10) / 10
 }
 
-/** 规范化战斗属性，所有数值项最多保留 1 位小数 */
+/** 规范化战斗属性，所有数值项最多保留 1 位小数；traits/trailLevels 等非数值投影字段不进入模拟面板。 */
 export function sanitizeAttributes(attrs: CombatAttributes): CombatAttributes {
   const result: Partial<CombatAttributes> = {}
+  // CombatAttributes 含非数值字段（traits/trailLevels），经数值视图写入避免键联合类型交叉约束。
+  const numericView = result as unknown as Record<string, number>
   for (const [key, val] of Object.entries(attrs)) {
     if (typeof val === 'number') {
-      result[key as keyof CombatAttributes] = roundStat(val)
+      numericView[key] = roundStat(val)
     }
   }
   return result as CombatAttributes

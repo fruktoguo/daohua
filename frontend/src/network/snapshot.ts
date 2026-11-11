@@ -56,7 +56,7 @@ import type {
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-export const SNAPSHOT_SCHEMA_VERSION = 41
+export const SNAPSHOT_SCHEMA_VERSION = 42
 
 type JsonObject = Record<string, unknown>
 
@@ -349,7 +349,21 @@ function mapCombatAttributes(value: unknown, name: string): CombatAttributes {
     'hpDrainPoints', 'mpDrainPoints', 'damageReflectPoints', 'healingBonusPoints',
   ] as const
   const numbers = Object.fromEntries(numericKeys.map(key => [key, finiteValue(source[key], `${name}.${key}`)]))
-  return numbers as unknown as CombatAttributes
+  // 已装配特质投影（可选字段：怪物等无特质单位不下发；缺省容忍为 null）
+  const traits = source.traits === null || source.traits === undefined
+    ? null
+    : arrayValue(source.traits).map((entry, index) => {
+        const traitId = stringValue(entry)
+        if (!traitId) throw new Error(`${name}.traits[${index}] 必须是非空字符串。`)
+        return traitId
+      })
+  const traitLevels = source.traitLevels === null || source.traitLevels === undefined
+    ? null
+    : Object.fromEntries(Object.entries(object(source.traitLevels)).map(([traitId, level]) => [
+        traitId,
+        Math.max(1, Math.floor(finiteValue(level, `${name}.traitLevels.${traitId}`))),
+      ]))
+  return { ...numbers, traits, traitLevels } as unknown as CombatAttributes
 }
 
 /** 立绘渲染配置解码（远征敌方条目随快照下发的 catalog visual 透传对象）。 */

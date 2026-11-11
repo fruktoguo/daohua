@@ -1221,3 +1221,28 @@ export function formatTraitDescription(id: string, level = 1): string {
     return `${prefix ?? ''}${scaled}%`
   })
 }
+
+/**
+ * 已装配特质展示视图：attributes.traits（装配 ID 序）× traitLevels（已解锁等级表）
+ * 解析为只读展示条目；未知 ID 防御性过滤，等级缺省按 1 级。
+ */
+export interface EquippedTraitView {
+  id: string
+  level: number
+  def: TraitMeta
+}
+
+export function resolveEquippedTraitViews(
+  traits: readonly string[] | null | undefined,
+  traitLevels: Readonly<Record<string, number>> | null | undefined,
+): EquippedTraitView[] {
+  if (!traits || traits.length === 0) return []
+  const views: EquippedTraitView[] = []
+  for (const id of traits) {
+    const def = TRAIT_DEFINITIONS[id]
+    if (!def) continue
+    const rawLevel = traitLevels?.[id]
+    views.push({ id, level: rawLevel !== undefined ? Math.max(1, Math.floor(rawLevel)) : 1, def })
+  }
+  return views
+}

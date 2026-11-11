@@ -193,10 +193,12 @@ export class ExpeditionSimulator {
         const baseAttrs: CombatAttributes = { ...(ally.equipmentBaseAttributes ?? ally.attributes) }
         if (ally.equipmentBaseAttributes) {
           const delta = resolveEquipmentAttributeDelta(ally.equipment, catalog.equipment ?? [])
+          // 装备增量键恒为数值面板字段；CombatAttributes 含 traits/trailLevels 非数值投影，
+          // 经数值视图写入避免 keyof 联合类型交叉约束。
+          const numericBase = baseAttrs as unknown as Record<string, number>
           for (const [key, value] of Object.entries(delta)) {
-            const field = key as keyof CombatAttributes
-            const current = Number(baseAttrs[field] ?? 0)
-            baseAttrs[field] = (Number.isFinite(current) ? current : 0) + (value ?? 0)
+            const current = Number(numericBase[key] ?? 0)
+            numericBase[key] = (Number.isFinite(current) ? current : 0) + (value ?? 0)
           }
         }
         // 节点公共建筑的战斗类折入项与属性解析器同通道：气血/灵力回复走固定值，战斗减伤走免伤点数。
