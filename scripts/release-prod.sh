@@ -188,6 +188,17 @@ else
   PKG_VERSION="$(node -p "try{require('./version.json').version}catch{try{require('./frontend/package.json').version}catch{'0.2.0'}}" 2>/dev/null || printf '0.2.0')"
 fi
 
+# 镜像构建基于 git archive HEAD：--bump/--version 写入的版本文件必须先提交，
+# 否则镜像内版本与标签不一致且 docker-build-prod 会拒绝 dirty worktree。
+# 在此提前拦截，避免三路并发流空跑后才失败。
+if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+  printf '错误: 版本号解析后工作区存在未提交改动。\n' >&2
+  printf '      生产镜像由 git archive HEAD 构建，--bump/--version 产生的版本变更\n' >&2
+  printf '      必须先提交（建议 chore(release): 升级版本至 vX.Y.Z）再执行发布。\n' >&2
+  git status --short >&2
+  exit 1
+fi
+
 RELEASE_TAG="${EXPLICIT_TAG:-v${PKG_VERSION}}"
 printf '  - 发布版本: %s (Tag: %s)\n' "$PKG_VERSION" "$RELEASE_TAG"
 
