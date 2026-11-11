@@ -16,7 +16,7 @@ import { formatNumber } from '../game/format'
 import { useEnhancementStats } from '../game/enhancementRecordStore'
 import { useGameStore } from '../game/gameStore'
 import { useUiStore } from '../uiStore'
-import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
+import { collectOccupiedEquipmentCounts, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemLevel, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
 import type { CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, QueueEntry } from '../game/types'
 import { useT, type TFunction } from '../i18n'
 import { gameClient } from '../network/gameClient'
@@ -244,7 +244,8 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
   }, [stats?.heavenGateEntered, stats?.heavenGateConfirmed])
 
   const itemTier = selected?.equipmentDefinition?.tier ?? 1
-  const itemLevel = convertTierToLevel(itemTier)
+  // 强化感悟经验按装备代表等级结算（与服务端 ResolveItemLevel 同口径：显式 level 优先于等阶换算）
+  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition, itemTier)
   const yields = useMemo(
     () => calculateEnhancementYields(itemLevel, nextLevel),
     [itemLevel, nextLevel],

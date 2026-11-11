@@ -55,6 +55,16 @@ test('秘法操作窗口契约：采用目标槽位+浮动选择器+次数选择
   )
 })
 
+test('秘法感悟预览按目标物品显式等级结算（与服务端 ResolveItemLevel 同口径）', async () => {
+  const source = await readFile(resolve('frontend/src/components/SecretArtOperations.tsx'), 'utf8')
+
+  assert.match(
+    source,
+    /resolveCatalogItemLevel\(selected\?\.equipmentDefinition, selected\?\.definition/,
+    '秘法感悟必须按目标物品显式 level 解析代表等级，严禁只按等阶换算',
+  )
+})
+
 test('秘法操作已有同类行动时仍可配置并追加新目标', async () => {
   const source = await readFile(resolve('frontend/src/components/SecretArtOperations.tsx'), 'utf8')
 

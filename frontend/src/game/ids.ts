@@ -234,6 +234,21 @@ export function convertLevelToTier(level = 1): number {
   return Math.max(1, Math.min(8, Math.floor((level - 18) / 12) + 2))
 }
 
+/**
+ * 解析目录物品/装备的代表等级（与服务端 CraftingRecipeRules.ResolveItemLevel 同口径）：
+ * 显式 level 优先（装备目录 level 已含等阶回退，物品目录仅在配表显式声明时下发），
+ * 缺省回退等阶换算；装备先于物品与服务端查表顺序一致。
+ */
+export function resolveCatalogItemLevel(
+  equipmentDefinition?: Pick<CombatEquipmentDefinition, 'level'> | null,
+  itemDefinition?: Pick<ItemDefinition, 'level'> | null,
+  fallbackTier = 1,
+): number {
+  return equipmentDefinition?.level
+    ?? itemDefinition?.level
+    ?? convertTierToLevel(fallbackTier)
+}
+
 let cachedItemsRef: ReadonlyArray<{ itemId: string }> | null = null
 let cachedItemMap: Map<string, { itemId: string }> = new Map()
 

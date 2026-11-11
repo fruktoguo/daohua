@@ -40,6 +40,27 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(100, SecretArtRules.FragmentSpiritStoneReward);
     }
 
+    /// <summary>
+    /// 秘法感悟经验按目标物品代表等级结算（ResolveItemLevel：显式 level 优先于等阶换算）。
+    /// beast-hide/beast-bone 同为 T1 但显式等级 1/3：若只按等阶换算，两者经验完全相同，
+    /// 高等级物品失去升级价值（玩家反馈「1级和3级经验一样」的回归门禁）。
+    /// </summary>
+    [Fact]
+    public void SecretArtYieldExperienceScalesWithItemLevel()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        var (techLv1, senseLv1) = SecretArtRules.ComputeYieldExperience(catalog, "item.beast-hide", 5);
+        var (techLv3, senseLv3) = SecretArtRules.ComputeYieldExperience(catalog, "item.beast-bone", 5);
+
+        // 1 级基准经验 10：技艺 = round(10 × 5/10) = 5，神识 = round(5 × 2) = 10。
+        Assert.Equal(5d, techLv1);
+        Assert.Equal(10d, senseLv1);
+        // 3 级基准经验 12.15：技艺 = round(12.15 × 0.5) = 6，神识 = 12——必须严格高于 1 级。
+        Assert.Equal(6d, techLv3);
+        Assert.Equal(12d, senseLv3);
+    }
+
     /// <summary>技艺经验逐段推进：不足一段停在当前级，曲线封顶后不再升。</summary>
     [Fact]
     public void TechniqueLevelAdvancesSegmentBySegment()

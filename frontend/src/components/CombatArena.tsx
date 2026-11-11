@@ -7,7 +7,7 @@ import { UnitNumber } from './UnitNumber'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
-import { ACTION_TAB_META, convertTierToLevel, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveCatalogItemLevel, resolveItemMetadata } from '../game/ids'
 import { calculateEnhancementYields, ENHANCE_ACTION_ID, SPIRIT_STONE_ITEM_ID } from '../game/combatConstants'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
@@ -1359,7 +1359,7 @@ function ArenaLifeGoalCard({
     })
 
     const eqTier = targetEq?.tier ?? 1
-    const itemLvl = convertTierToLevel(eqTier)
+    const itemLvl = resolveCatalogItemLevel(targetEq, targetItem, eqTier)
     const yields = calculateEnhancementYields(itemLvl, targetLevel)
     outputs.push({
       key: 'rootexp:consciousness',

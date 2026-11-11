@@ -14,10 +14,10 @@ import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
   collectOccupiedEquipmentCounts,
-  convertTierToLevel,
   findEquipmentInCatalog,
   findItemInCatalog,
   parseEnhancementVariant,
+  resolveCatalogItemLevel,
   resolveInventoryItemUnitPrice,
   resolveItemCategoryLabel,
   resolveItemSubCategory,
@@ -234,7 +234,8 @@ export const SecretArtOperations = memo(function SecretArtOperations({
   }, [operation, selected])
 
   const itemTier = selected?.tier ?? 1
-  const itemLevel = convertTierToLevel(itemTier)
+  // 感悟经验按目标物品代表等级结算（与服务端 ResolveItemLevel 同口径：显式 level 优先于等阶换算）
+  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition, itemTier)
   const yields = useMemo(
     () => calculateSecretArtYields(itemLevel, baseDuration),
     [itemLevel, baseDuration],
