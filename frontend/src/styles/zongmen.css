@@ -57,5 +57,5 @@
 .zongmen-facility-box { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-color, #333); }
 .zongmen-facility-box h4 { margin: 0 0 6px; font-size: 0.95em; }
 
-@media (min-width: 961px) { .social-page-header .social-mobile-tabs { display: none; } }
+@media (min-width: 961px) { .social-page-header { display: none; } }
 @media (max-width: 600px) { .zongmen-form { grid-template-columns: minmax(0, 1fr); } }

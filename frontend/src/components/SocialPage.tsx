@@ -1019,8 +1019,9 @@ export const DouDiZhuPage = memo(function DouDiZhuPage(): React.JSX.Element {
   </section>
 })
 
-/** 同道页子选项卡表：宗门与邀请；队伍页含自身的队伍/对弈页签。 */
+/** 同道页子选项卡表：队伍、宗门与邀请；对弈属于队伍面板内部页签。 */
 const SOCIAL_SUB_TABS: ReadonlyArray<{ id: SocialSubTab; labelKey: string }> = [
+  { id: 'party', labelKey: 'social.sub.party' },
   { id: 'zongmen', labelKey: 'social.sub.zongmen' },
   { id: 'invite', labelKey: 'social.sub.invite' },
 ]
@@ -1154,12 +1155,11 @@ const InviteView = memo(function InviteView(): React.JSX.Element | null {
   )
 })
 
-/** 同道的队伍面板：队伍/对弈页签固定置于面板顶部。 */
+/** 同道的队伍面板内容：队伍/对弈页签与对应面板；外壳由 SocialPage 统一承载。 */
 export const PartyPage = memo(function PartyPage(): React.JSX.Element {
   const party = useSocialStore(state => state.party)
   const maps = useGameStore(state => state.maps)
   const partyGameSubTab = useUiStore(state => state.partyGameSubTab)
-  const isDoudizhuTable = partyGameSubTab === 'doudizhu' && hasDouDiZhuTable(party)
 
   // 节点标签表：nodeId →「区域 · 地点」，选项与展示徽标共用同一解析口径。
   const nodeNames = useMemo(() => {
@@ -1169,7 +1169,7 @@ export const PartyPage = memo(function PartyPage(): React.JSX.Element {
   }, [maps])
 
   return (
-    <section className={`panel social-page${isDoudizhuTable ? ' is-doudizhu-table' : ''}`}>
+    <>
       <header className="panel-header party-game-page-header">
         <PartyGameTabs active={partyGameSubTab} />
       </header>
@@ -1178,7 +1178,7 @@ export const PartyPage = memo(function PartyPage(): React.JSX.Element {
           ? party ? <PartyView nodeNames={nodeNames} /> : <PartylessView nodeNames={nodeNames} />
           : <DouDiZhuPage />}
       </div>
-    </section>
+    </>
   )
 })
 
@@ -1187,24 +1187,28 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
   const t = useT()
   const socialSubTab = useUiStore(state => state.socialSubTab)
   const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
-  if (socialSubTab === 'party') return <PartyPage />
+  const party = useSocialStore(state => state.party)
+  const partyGameSubTab = useUiStore(state => state.partyGameSubTab)
+  const isZongmen = socialSubTab === 'zongmen'
+  const isDoudizhuTable = socialSubTab === 'party' && partyGameSubTab === 'doudizhu' && hasDouDiZhuTable(party)
 
-  return <section className={`panel social-page${socialSubTab === 'zongmen' ? ' is-zongmen' : ''}`}>
-    {socialSubTab !== 'zongmen' && <header className="panel-header social-page-header">
-      <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
-        {SOCIAL_SUB_TABS.map(tab => <button
-          aria-selected={socialSubTab === tab.id}
-          className={socialSubTab === tab.id ? 'active' : ''}
-          key={tab.id}
-          onClick={() => setSocialSubTab(tab.id)}
-          role="tab"
-          type="button"
-        >{t(tab.labelKey)}</button>)}
-      </nav>
-    </header>}
-    <div className="social-page-body">
-      {socialSubTab === 'zongmen' && <ZongmenPage />}
-      {socialSubTab === 'invite' && <InviteView />}
-    </div>
-  </section>
+  return (
+    <section className={`panel social-page${isZongmen ? ' is-zongmen' : ''}${isDoudizhuTable ? ' is-doudizhu-table' : ''}`}>
+      {!isZongmen && !isDoudizhuTable && <header className="panel-header social-page-header">
+        <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
+          {SOCIAL_SUB_TABS.map(tab => <button
+            aria-selected={socialSubTab === tab.id}
+            className={socialSubTab === tab.id ? 'active' : ''}
+            key={tab.id}
+            onClick={() => setSocialSubTab(tab.id)}
+            role="tab"
+            type="button"
+          >{t(tab.labelKey)}</button>)}
+        </nav>
+      </header>}
+      {socialSubTab === 'party' && <PartyPage />}
+      {isZongmen && <div className="social-page-body"><ZongmenPage /></div>}
+      {socialSubTab === 'invite' && <div className="social-page-body"><InviteView /></div>}
+    </section>
+  )
 })
