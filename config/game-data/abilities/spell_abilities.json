@@ -9,7 +9,7 @@
     "element": "wood",
     "castMilliseconds": 2000,
     "damageRatio": 0.7,
-    "flatDamage": 10,
+    "flatDamage": 40,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
@@ -35,7 +35,7 @@
     "castMilliseconds": 3000,
     "targetType": "allEnemies",
     "damageRatio": 1.0,
-    "flatDamage": 20,
+    "flatDamage": 40,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
@@ -88,7 +88,7 @@
     "cooldownMilliseconds": 28000,
     "castMilliseconds": 500,
     "damageRatio": 1.5,
-    "flatDamage": 30,
+    "flatDamage": 60,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
@@ -178,7 +178,7 @@
     "castMilliseconds": 3000,
     "targetType": "allEnemies",
     "damageRatio": 0.5,
-    "flatDamage": 10,
+    "flatDamage": 30,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
