@@ -112,6 +112,54 @@ public sealed class SectionCodecTests
             ended.SchemaVersion, ended.Codec, ended.Payload.ToArray(), ended.RawBytes, ended.Checksum, now);
         Assert.Equal(1234.5, CleanSectionCodec.Decode<ActionParticipationBinding>(storedEnded).EndsAtUnixSeconds);
     }
+    /// <summary>
+    /// 校验元数据漂移自愈：checksum 或 rawBytes 与载荷脱节时 TryRepairSection 产出修正行，
+    /// 修正行经 Decode 校验通过；载荷本体损坏返回 false 不可自愈。
+    /// </summary>
+    [Fact]
+    public void DriftedChecksum_TryRepairSectionProducesCorrectedRow()
+    {
+        var playerId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var encoded = CleanSectionCodec.Encode(playerId, PlayerSectionKinds.Progression, 7,
+            new { realmLevel = 3d, normalKills = 42d }, now);
+        // 复现生产事故形态：载荷完好、checksum 字段漂移成别的值。
+        var drifted = new StoredSection(playerId, encoded.SectionKind, encoded.StateVersion,
+            encoded.SchemaVersion, encoded.Codec, encoded.Payload.ToArray(), encoded.RawBytes,
+            new string('0', 64), now);
+        Assert.Throws<InvalidDataException>(() => CleanSectionCodec.Decode<JsonElement>(drifted));
+
+        Assert.True(CleanSectionCodec.TryRepairSection(drifted, out var corrected));
+        Assert.NotNull(corrected);
+        Assert.Equal(encoded.Checksum, corrected!.Checksum);
+        Assert.Equal(encoded.RawBytes, corrected.RawBytes);
+        Assert.Equal(3d, CleanSectionCodec.Decode<JsonElement>(corrected).GetProperty("realmLevel").GetDouble());
+
+        // 一致行不产生修正；载荷本体损坏（Brotli 无法解码）返回 false。
+        Assert.True(CleanSectionCodec.TryRepairSection(corrected, out var healthy));
+        Assert.Null(healthy);
+        var corrupt = drifted with { Payload = new byte[] { 0xFF, 0x00, 0x13 }, Codec = CleanSectionCodec.BrotliJson };
+        Assert.False(CleanSectionCodec.TryRepairSection(corrupt, out _));
+    }
+
+    /// <summary>落库深度校验：载荷与 checksum/rawBytes 脱节的写项被拒绝，一致写项放行。</summary>
+    [Fact]
+    public void SectionWrite_VerifyIntegrity_RejectsPayloadChecksumDrift()
+    {
+        var playerId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var write = CleanSectionCodec.Encode(playerId, PlayerSectionKinds.Progression, 1,
+            new { realmLevel = 1d }, now);
+        write.VerifyIntegrity();
+
+        Assert.Throws<InvalidDataException>(() =>
+            (write with { Checksum = new string('f', 64) }).VerifyIntegrity());
+        var other = CleanSectionCodec.Encode(playerId, PlayerSectionKinds.Progression, 1,
+            new { realmLevel = 999d }, now);
+        Assert.Throws<InvalidDataException>(() =>
+            (write with { Payload = other.Payload }).VerifyIntegrity());
+    }
+
     /// <summary>SectionWrite 校验拒绝未知 codec 与超过 4MB 的载荷。</summary>
 
     [Fact]

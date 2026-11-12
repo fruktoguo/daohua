@@ -83,6 +83,16 @@ public sealed record SectionWrite(
         if (GameDataFingerprint is null || GameDataFingerprint.Length > 128)
             throw new ArgumentException("游戏数据指纹超过长度上限。", nameof(GameDataFingerprint));
     }
+
+    /// <summary>
+    /// 落库前深度校验：在 <see cref="Validate"/> 边界检查之上重算载荷 SHA-256，
+    /// 保证 checksum/rawBytes 与真实字节一致；不一致抛 <see cref="InvalidDataException"/> 拒绝写入。
+    /// </summary>
+    public void VerifyIntegrity()
+    {
+        Validate();
+        SectionCodec.VerifyIntegrity(Codec, Payload, RawBytes, Checksum, SectionKind);
+    }
 }
 
 /// <summary>持久化头元数据，用于跨实例与版本 CAS</summary>

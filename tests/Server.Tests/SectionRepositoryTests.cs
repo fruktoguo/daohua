@@ -57,6 +57,50 @@ public sealed class SectionRepositoryTests
     }
 
     /// <summary>
+    /// 校验元数据漂移自愈：持久化分段的 checksum 与载荷脱节时 LoadAsync 就地修正并回写，
+    /// 提交头 checksum 同步重建，整包可完整解码；载荷本体不可解码仍拒绝加载。
+    /// </summary>
+    [Fact]
+    public async Task LoadAsyncRepairsChecksumDriftAndPersistsFix()
+    {
+        var (source, repository) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        var now = DateTimeOffset.UtcNow;
+        var catalog = GameDataCatalog.LoadEmbedded();
+        // 真实领域文档编码整包：自愈修复后必须能完整 DecodeAggregate。
+        var aggregate = PlayerAggregate.Create(new PlayerId(player), new AccountId(player),
+            player.ToString(), now.AddMinutes(-5), catalog.Fingerprint);
+        var writes = CleanSectionCodec.EncodeAggregateFull(aggregate.ExportState(), now);
+        await repository.EnqueueSectionsAsync(writes);
+        await FlushUntilDrainedAsync(repository, source, player);
+
+        // 复现生产事故形态：progression 载荷完好，checksum 字段漂移为无关值，提交头仍绑定旧值。
+        var brokenChecksum = new string('0', 64);
+        await SqlAsync(source,
+            "UPDATE game.player_state_sections SET checksum=$2 WHERE player_id=$1 AND section_kind='progression'",
+            player, brokenChecksum);
+
+        var bundle = await repository.LoadAsync(player);
+        Assert.NotNull(bundle);
+        var expected = writes.Single(write => write.SectionKind == PlayerSectionKinds.Progression).Checksum;
+        Assert.Equal(expected, bundle!.Sections[PlayerSectionKinds.Progression].Checksum);
+        // 自愈已回写持久化行与提交头；整包可完整解码。
+        Assert.Equal(expected, (string)(await Scalar(source,
+            "SELECT checksum FROM game.player_state_sections WHERE player_id=$1 AND section_kind='progression'", player))!);
+        var storedHead = (string)(await Scalar(source,
+            "SELECT checksum FROM game.player_state_heads WHERE player_id=$1", player))!;
+        Assert.Equal(CleanSectionCodec.ComputeHeadChecksum(bundle.Sections.Values), storedHead);
+        var decoded = CleanSectionCodec.DecodeAggregate(bundle);
+        Assert.Equal(writes.First().StateVersion, decoded.StateVersion);
+
+        // 载荷本体不可解码（Brotli 伪字节）属真损坏：必须拒绝加载而不是带病放行。
+        await SqlAsync(source,
+            "UPDATE game.player_state_sections SET codec='br-json', payload='\\xDEAD', checksum=$2 WHERE player_id=$1 AND section_kind='buffs'",
+            player, brokenChecksum);
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.LoadAsync(player).AsTask());
+    }
+
+    /// <summary>
     /// 冷挂机结果合批落库：提交头版本 CAS 通过时整批 upsert + 头更新同事务生效；
     /// 携带未推进版本的 action_queue 段被 upsert 谓词跳过（RETURNING 不含），不得拿旧载荷重建队列。
     /// </summary>

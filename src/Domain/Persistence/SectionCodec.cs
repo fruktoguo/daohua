@@ -171,6 +171,41 @@ public static class SectionCodec
             ?? throw new InvalidDataException($"section {section.SectionKind} 载荷为空。");
     }
 
+    /// <summary>
+    /// 检测持久化分段的校验元数据是否与载荷一致并尝试自愈。
+    /// 载荷可解码但 checksum/rawBytes 漂移时产出修正行（<paramref name="corrected"/> 非空）并返回 true；
+    /// 完全一致返回 true 且 <paramref name="corrected"/> 为 null；载荷本体不可解码返回 false（不可自愈）。
+    /// </summary>
+    /// <param name="section">数据库读出的持久化分段行。</param>
+    /// <param name="corrected">修正后的分段行：checksum 与 rawBytes 按实际载荷字节重算，其余字段原样保留。</param>
+    public static bool TryRepairSection(StoredSection section, out StoredSection? corrected)
+    {
+        ArgumentNullException.ThrowIfNull(section);
+        corrected = null;
+        byte[] raw;
+        try { raw = DecodeRaw(section.Codec, section.Payload); }
+        catch { return false; }
+        if (raw.Length == 0 || raw.Length > MaxRawBytes) return false;
+        var checksum = Convert.ToHexStringLower(SHA256.HashData(raw));
+        if (string.Equals(checksum, section.Checksum, StringComparison.Ordinal) && raw.Length == section.RawBytes)
+            return true;
+        corrected = new StoredSection(section.PlayerId, section.SectionKind, section.StateVersion,
+            section.SchemaVersion, section.Codec, section.Payload, raw.Length, checksum, section.UpdatedAt);
+        return true;
+    }
+
+    /// <summary>
+    /// 落库前深度校验：把存储载荷还原为原始字节后重算 SHA-256，校验 checksum 与 rawBytes
+    /// 与真实载荷完全一致，防止「载荷更新而校验字段沿用旧值」的错配行进入数据库。
+    /// </summary>
+    public static void VerifyIntegrity(string codec, ReadOnlyMemory<byte> payload, int rawBytes, string checksum, string sectionKind)
+    {
+        var raw = DecodeRaw(codec, payload);
+        if (raw.Length != rawBytes
+            || !string.Equals(Convert.ToHexStringLower(SHA256.HashData(raw)), checksum, StringComparison.Ordinal))
+            throw new InvalidDataException($"section {sectionKind} 载荷与校验元数据不一致，拒绝落库。");
+    }
+
     /// <summary>按 codec 标识把存储载荷还原为原始 JSON 字节；不认识的 codec 直接拒绝。</summary>
     public static byte[] DecodeRaw(string codec, ReadOnlyMemory<byte> payload)
     {

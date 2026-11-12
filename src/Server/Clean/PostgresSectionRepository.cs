@@ -19,17 +19,19 @@ public sealed class PostgresSectionRepository(
         // 头、section、action queue 和刷盘收件箱必须来自同一快照；
         // 否则 worker 恰好在读取中间提交会把旧 section 与新 head 拼成假状态。
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
-        var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken);
+        var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken, logger: logger);
         await transaction.CommitAsync(cancellationToken);
         return bundle;
     }
 
     /// <summary>在调用方的一致事务快照中加载有效头、全集分段与耐久队列；可按调用方需要跳过派生的行动队列读取。</summary>
     /// <param name="includeActionQueue">是否读取关系型行动队列并填充 Actions；冷提交只需持久化分段时可跳过。</param>
+    /// <param name="logger">可选日志器：分段校验元数据自愈回写时记录 Warn。</param>
     internal static async ValueTask<PlayerStateBundle?> LoadInTransactionAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, Guid playerId, CancellationToken cancellationToken,
         bool includeActionQueue = true,
-        List<AssetBalanceRecord>? balances = null)
+        List<AssetBalanceRecord>? balances = null,
+        ILogger? logger = null)
     {
         // 必需数据与可选行动队列仍读取同一 RepeatableRead 快照；所需查询合并为一次批次往返。
         await using var batch = new NpgsqlBatch(connection) { Transaction = transaction };
@@ -151,6 +153,7 @@ public sealed class PostgresSectionRepository(
 
         // section 进入 durable 刷盘收件箱后，worker 可能尚未完成落库。
         // 加载必须把队列中的更新叠加到 game 表，否则进程在这段窗口崩溃会回退到旧快照。
+        var pendingSources = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var pending in pendingSections)
         {
             if (!sections.TryGetValue(pending.SectionKind, out var persisted)
@@ -166,6 +169,7 @@ public sealed class PostgresSectionRepository(
                     pending.RawBytes,
                     pending.Checksum,
                     pending.UpdatedAt);
+                pendingSources[pending.SectionKind] = pending.QueueId;
             }
             else if (pending.StateVersion == persisted.StateVersion
                      && !string.Equals(pending.Checksum, persisted.Checksum, StringComparison.Ordinal))
@@ -184,6 +188,29 @@ public sealed class PostgresSectionRepository(
                 || PlayerSectionKinds.All.Any(kind => !sections.ContainsKey(kind))
                 || sections.Values.Any(section => section.PlayerId != playerId || section.StateVersion > head.StateVersion))
                 throw new InvalidDataException("玩家持久化 section 不完整或版本越界。");
+
+            // 校验元数据漂移自愈：checksum/rawBytes 与载荷脱节但载荷本体完好的存档就地修正并回写，
+            // 避免历史写入缺陷把玩家锁在登录外；载荷本体不可解码视为真损坏，仍拒绝加载。
+            var corrections = new List<(StoredSection Section, long QueueId)>();
+            foreach (var (kind, section) in sections)
+            {
+                if (!SectionCodec.TryRepairSection(section, out var corrected))
+                    throw new InvalidDataException($"玩家 section {kind} 载荷损坏且无法自愈。");
+                if (corrected is null) continue;
+                sections[kind] = corrected;
+                corrections.Add((corrected, pendingSources.TryGetValue(kind, out var queueId) ? queueId : 0L));
+            }
+            if (corrections.Count > 0)
+            {
+                head = head with { Checksum = SectionCodec.ComputeHeadChecksum(sections.Values) };
+                await ApplyChecksumRepairsAsync(connection, transaction, playerId, corrections,
+                    head.Checksum, cancellationToken);
+                logger?.LogWarning("玩家 {PlayerId} 的 {Count} 个存档分段校验元数据漂移，已自愈回写：{Kinds}",
+                    playerId, corrections.Count,
+                    string.Join(',', corrections.Select(item => item.Section.SectionKind)));
+                RuntimeInstrumentation.Count("persistence.section_checksum_repaired");
+            }
+
             var checksum = SectionCodec.ComputeHeadChecksum(sections.Values);
             if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(checksum), Encoding.ASCII.GetBytes(head.Checksum)))
                 throw new InvalidDataException("玩家持久化头校验和不匹配。");
@@ -210,7 +237,7 @@ public sealed class PostgresSectionRepository(
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         var balances = new List<AssetBalanceRecord>();
         var bundle = await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken,
-            includeActionQueue: false, balances: balances);
+            includeActionQueue: false, balances: balances, logger: logger);
         if (bundle is null)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -274,6 +301,11 @@ public sealed class PostgresSectionRepository(
                 }
             }
         }
+        // 校验元数据漂移就地修正（仅内存返回）：持久化回写由整包加载路径负责。
+        if (persisted is not null
+            && SectionCodec.TryRepairSection(persisted, out var corrected)
+            && corrected is not null)
+            return corrected;
         return persisted;
     }
 
@@ -333,6 +365,10 @@ public sealed class PostgresSectionRepository(
                 }
             }
         }
+        // 校验元数据漂移就地修正（仅内存返回）：持久化回写由整包加载路径负责。
+        foreach (var (id, section) in result)
+            if (SectionCodec.TryRepairSection(section, out var corrected) && corrected is not null)
+                result[id] = corrected;
         return result;
     }
 
@@ -391,6 +427,44 @@ public sealed class PostgresSectionRepository(
             metadata.Select(item => item.UpdatedAt).DefaultIfEmpty(fallback.UpdatedAt).Max());
     }
 
+    /// <summary>
+    /// 校验元数据自愈回写：把修正后的 checksum/rawBytes 落到来源表（持久化 section 行或 flush 队列行），
+    /// 并重算提交头 checksum。WHERE 只接受旧值漂移行，已被并发修正的行不重复写。
+    /// </summary>
+    private static async Task ApplyChecksumRepairsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction,
+        Guid playerId, IReadOnlyList<(StoredSection Section, long QueueId)> corrections,
+        string headChecksum, CancellationToken cancellationToken)
+    {
+        foreach (var (section, queueId) in corrections)
+        {
+            await using var command = new NpgsqlCommand(queueId > 0
+                ? """
+                  UPDATE platform.section_flush_queue
+                  SET checksum = $2, raw_bytes = $3
+                  WHERE queue_id = $1 AND checksum <> $2
+                  """
+                : """
+                  UPDATE game.player_state_sections
+                  SET checksum = $3, raw_bytes = $4
+                  WHERE player_id = $1 AND section_kind = $2 AND checksum <> $3
+                  """, connection, transaction);
+            command.Parameters.Add(new NpgsqlParameter { Value = queueId > 0 ? queueId : playerId });
+            if (queueId == 0) command.Parameters.Add(new NpgsqlParameter { Value = section.SectionKind });
+            command.Parameters.Add(new NpgsqlParameter { Value = section.Checksum });
+            command.Parameters.Add(new NpgsqlParameter { Value = section.RawBytes });
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using var headUpdate = new NpgsqlCommand("""
+            UPDATE game.player_state_heads
+            SET checksum = $2
+            WHERE player_id = $1 AND checksum <> $2
+            """, connection, transaction);
+        headUpdate.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        headUpdate.Parameters.Add(new NpgsqlParameter { Value = headChecksum });
+        await headUpdate.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static IReadOnlyList<StoredAction> DecodeQueuedActions(StoredSection section)
     {
         var values = SectionCodec.Decode<List<QueuedActionState>>(section);
@@ -418,7 +492,7 @@ public sealed class PostgresSectionRepository(
         CancellationToken cancellationToken = default)
     {
         if (sections.Count == 0 && receipts.Count == 0) return;
-        foreach (var section in sections) section.Validate();
+        foreach (var section in sections) section.VerifyIntegrity();
         foreach (var receipt in receipts) ValidateReceipt(receipt);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -434,7 +508,7 @@ public sealed class PostgresSectionRepository(
     internal static async ValueTask EnqueueInTransactionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken)
     {
-        foreach (var section in sections) section.Validate();
+        foreach (var section in sections) section.VerifyIntegrity();
         foreach (var receipt in receipts) ValidateReceipt(receipt);
         if (sections.Count > 0)
         {
@@ -888,6 +962,7 @@ public sealed class PostgresSectionRepository(
         for (var i = 0; i < count; i++)
         {
             var write = writes[i];
+            write.VerifyIntegrity();
             playerIds[i] = write.PlayerId;
             sectionKinds[i] = write.SectionKind;
             stateVersions[i] = write.StateVersion;
@@ -925,6 +1000,7 @@ public sealed class PostgresSectionRepository(
         for (var i = 0; i < count; i++)
         {
             var item = items[i];
+            item.VerifyIntegrity();
             playerIds[i] = item.PlayerId;
             sectionKinds[i] = item.SectionKind;
             stateVersions[i] = item.StateVersion;

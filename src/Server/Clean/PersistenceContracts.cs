@@ -33,6 +33,13 @@ public sealed record FlushQueueItem(
         if (requireLease && LeaseToken == Guid.Empty)
             throw new ArgumentException("section 队列租约标识无效。", nameof(FlushQueueItem));
     }
+
+    /// <summary>落库前深度校验：边界检查之外保证载荷真实字节与 checksum/rawBytes 一致。</summary>
+    public void VerifyIntegrity()
+    {
+        Validate();
+        SectionCodec.VerifyIntegrity(Codec, Payload, RawBytes, Checksum, SectionKind);
+    }
 }
 
 /// <summary>异步刷盘批处理统计结果</summary>
