@@ -63,6 +63,14 @@ function computeInputFingerprint() {
 
 const fingerprint = computeInputFingerprint()
 const hasOutputs = existsSync(resolve(target, '_framework/dotnet.js')) && existsSync(resolve(target, 'main.js'))
+if (process.env.SKIP_SIMULATOR_BUILD === '1') {
+  if (!hasOutputs) {
+    console.error(`SKIP_SIMULATOR_BUILD=1 但缺少预构建 WASM 负载：${target}`)
+    process.exit(1)
+  }
+  console.log(`跳过 WASM 重新构建（复用预置产物）：${target}`)
+  process.exit(0)
+}
 if (process.env.FORCE_SIMULATOR_BUILD !== '1' && hasOutputs && existsSync(stampFile)) {
   try {
     const stamp = JSON.parse(readFileSync(stampFile, 'utf8'))

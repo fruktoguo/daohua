@@ -98,10 +98,13 @@ if [[ "$BUILD" == "1" ]]; then
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/daohua-prod-build-XXXXXX")"
   trap 'rm -rf "$STAGING_DIR"' EXIT
   git archive HEAD | tar -x -C "$STAGING_DIR"
-  mkdir -p "$STAGING_DIR/src/Private" "$STAGING_DIR/frontend/src/private-impl" "$STAGING_DIR/vendor/YuoCore"
+  mkdir -p "$STAGING_DIR/src/Private" "$STAGING_DIR/frontend/src/private-impl" "$STAGING_DIR/frontend/public/simulator" "$STAGING_DIR/vendor/YuoCore"
   cp -R "$ROOT_DIR/vendor/YuoCore/." "$STAGING_DIR/vendor/YuoCore/"
   cp -R "$PRIVATE_ROOT/server/." "$STAGING_DIR/src/Private/"
   cp -R "$PRIVATE_ROOT/frontend/antiMulti/." "$STAGING_DIR/frontend/src/private-impl/"
+  # WASM 预演负载属于 gitignored 构建产物：构建上下文先在本机核验指纹并刷新至最新 HEAD 产物再注入 staging。
+  node "$ROOT_DIR/scripts/build-simulator.mjs"
+  cp -R "$ROOT_DIR/frontend/public/simulator/." "$STAGING_DIR/frontend/public/simulator/"
   NODE_IMAGE_REF="${NODE_IMAGE:-ccr.ccs.tencentyun.com/yuohira/node:22-alpine}"
   common_args=(
     --platform "$PLATFORM"
