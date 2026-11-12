@@ -75,7 +75,7 @@
     "budgetCost": 15,
     "weights": {
       "hp": 0.5,
-      "mp": 0.2,
+      "mp": 0.06,
       "ad": 0.4,
       "ap": 0.2,
       "armor": 0.87,
@@ -139,7 +139,7 @@
     "budgetCost": 15,
     "weights": {
       "hp": 0.5,
-      "mp": 0.3,
+      "mp": 0.12,
       "ad": 0.4,
       "ap": 0.2,
       "armor": 0.65,

@@ -49,4 +49,27 @@ public sealed class MonsterDropTableValidationTests
         Assert.DoesNotContain(bear.DropTable, d => d.ItemId.Value == "item.tome.chain-strike");
         Assert.DoesNotContain(bear.DropTable, d => d.ItemId.Value == "item.fragment.chain-strike");
     }
+
+    /// <summary>
+    /// TASK-20261112-08：木灵/火灵在默认难度（难度倍率 1.0）满蓝仅可施放一次技能。
+    /// 怪物无灵力回复且开战满蓝，manaCost ≤ MaxManapoints &lt; 2×manaCost 即恰好一次；
+    /// MaxManapoints 断言锁定怪我同构派生底座，防止期望面板或权重漂移改变施法次数。
+    /// </summary>
+    [Fact]
+    public void WoodAndFireSpirits_CastSkillOnlyOnceAtFullMana()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        Assert.True(catalog.CombatMonsters.TryGetValue("enemy.wood-spirit", out var wood));
+        var palmCost = JsonRead.Number(wood.Skills[0].Ability, "manaCost", 0);
+        Assert.True(wood.Stats.MaxManapoints >= palmCost && wood.Stats.MaxManapoints < palmCost * 2,
+            $"木灵 MP={wood.Stats.MaxManapoints} 应落在 [{palmCost}, {palmCost * 2}) 以恰好施放一次掌心雷。");
+        Assert.Equal(7, wood.Stats.MaxManapoints, 0);
+
+        Assert.True(catalog.CombatMonsters.TryGetValue("enemy.fire-spirit", out var fire));
+        var blastCost = JsonRead.Number(fire.Skills[0].Ability, "manaCost", 0);
+        Assert.True(fire.Stats.MaxManapoints >= blastCost && fire.Stats.MaxManapoints < blastCost * 2,
+            $"火灵 MP={fire.Stats.MaxManapoints} 应落在 [{blastCost}, {blastCost * 2}) 以恰好施放一次轰炎。");
+        Assert.Equal(17, fire.Stats.MaxManapoints, 0);
+    }
 }
