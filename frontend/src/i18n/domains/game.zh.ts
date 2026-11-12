@@ -87,6 +87,7 @@ export const gameZh = {
     action: {
       // 修炼
       'cultivation.draw-qi': { name: '引气入体', description: '吐纳周天，凝聚一缕灵气，增长修为与灵力。' },
+      'cultivation.ningqi-guiyuan': { name: '凝气归元', description: '引气既入，凝于丹田元宫，周天自运，气血渐纯。' },
       'cultivation.lianjing-huaqi': { name: '炼精化气', description: '引天地之清气，炼肉身之精微，气沉丹田，化为精纯真元。' },
       // 采集
       'explore.gather-ningxue-grass': { name: '采摘 凝气草', description: '在幽深背阴的百草谷采摘暗红的凡品凝气草。' },

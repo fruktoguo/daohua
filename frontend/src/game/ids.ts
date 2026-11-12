@@ -28,6 +28,14 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
     ],
   },
   {
+    id: 'cultivation.ningqi-guiyuan', type: 'cultivation', level: 9, durationSeconds: 10, yields: [
+      { kind: 'experience', per: 'repeat', amount: 30, percentage: 100 },
+      { kind: 'mana', per: 'repeat', amount: 40 },
+      { kind: 'rootexp', per: 'repeat', amount: 15, percentage: 50, aspect: 'meridians' },
+      { kind: 'rootexp', per: 'repeat', amount: 15, percentage: 50, aspect: 'bone' },
+    ],
+  },
+  {
     id: 'cultivation.lianjing-huaqi', type: 'cultivation', level: 18, durationSeconds: 10, yields: [
       { kind: 'experience', per: 'repeat', amount: 133, percentage: 100 },
       { kind: 'mana', per: 'repeat', amount: 100 },

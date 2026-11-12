@@ -340,6 +340,7 @@ test('resolveActionRarity: 技艺、历练行动与品阶等级严格对齐，18
     'explore.chop-peach-wood',
     'explore.mine-dark-iron',
     'cultivation.draw-qi',
+    'cultivation.ningqi-guiyuan',
     'combat.hunt-qi-beast',
     'combat.hunt-trail-beast',
     'forge.qingfeng-sword',

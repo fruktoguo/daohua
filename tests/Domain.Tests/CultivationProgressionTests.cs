@@ -29,6 +29,24 @@ public sealed class CultivationProgressionTests
     }
 
     [Fact]
+    public void NingqiGuiyuanDefinitionExistsInCatalog()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        Assert.True(catalog.Actions.Contains(new ActionId("cultivation.ningqi-guiyuan")));
+
+        var action = catalog.Actions.Get(new ActionId("cultivation.ningqi-guiyuan"));
+        Assert.Equal(ActionKind.Cultivation, action.Kind);
+        Assert.Equal(9, action.Level);
+        Assert.Equal("凝气归元", action.Name);
+        Assert.Equal(10, action.DurationSeconds);
+
+        // 验证 9 级基准产出由 percentage 自动派生为 9 级对应数值（30.13 → 修为 30、经脉/根骨各 15）
+        Assert.Contains(action.Yields, y => y.Kind == ActionYieldKind.Experience && y.Amount == 30);
+        Assert.Contains(action.Yields, y => y.Kind == ActionYieldKind.Mana && y.Amount == 40);
+        Assert.Contains(action.Yields, y => y.Kind == ActionYieldKind.RootExp && y.Amount == 15);
+    }
+
+    [Fact]
     public void ResolveHighestAvailableCultivationReturnsCorrectTier()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
@@ -37,9 +55,17 @@ public sealed class CultivationProgressionTests
         Assert.NotNull(lv1);
         Assert.Equal("cultivation.draw-qi", lv1.Id.Value);
 
+        var lv8 = PlayerAggregate.ResolveHighestAvailableCultivation(catalog.Actions, 8);
+        Assert.NotNull(lv8);
+        Assert.Equal("cultivation.draw-qi", lv8.Id.Value);
+
+        var lv9 = PlayerAggregate.ResolveHighestAvailableCultivation(catalog.Actions, 9);
+        Assert.NotNull(lv9);
+        Assert.Equal("cultivation.ningqi-guiyuan", lv9.Id.Value);
+
         var lv17 = PlayerAggregate.ResolveHighestAvailableCultivation(catalog.Actions, 17);
         Assert.NotNull(lv17);
-        Assert.Equal("cultivation.draw-qi", lv17.Id.Value);
+        Assert.Equal("cultivation.ningqi-guiyuan", lv17.Id.Value);
 
         var lv18 = PlayerAggregate.ResolveHighestAvailableCultivation(catalog.Actions, 18);
         Assert.NotNull(lv18);
@@ -83,9 +109,9 @@ public sealed class CultivationProgressionTests
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "破境修士", Baseline, catalog.Fingerprint);
         player.Progression.RealmLevel = 17;
 
-        // 17 级挂机引气入体
+        // 17 级挂机引气入体 -> 入队时自动升档为凝气归元
         var queued = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
-        Assert.Equal("cultivation.draw-qi", queued.Intent.ActionId.Value);
+        Assert.Equal("cultivation.ningqi-guiyuan", queued.Intent.ActionId.Value);
 
         // 满经验突破到 18 级（叩天门）
         var expCap = catalog.RealmProgression!.ExpCapFor(17);
@@ -103,9 +129,11 @@ public sealed class CultivationProgressionTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var drawQi = catalog.Actions.Get(new ActionId("cultivation.draw-qi"));
+        var ningqi = catalog.Actions.Get(new ActionId("cultivation.ningqi-guiyuan"));
         var lianjing = catalog.Actions.Get(new ActionId("cultivation.lianjing-huaqi"));
 
         Assert.Equal(1, PlayerAggregate.ResolveCultivationSpiritStoneScale(drawQi));
+        Assert.Equal(1, PlayerAggregate.ResolveCultivationSpiritStoneScale(ningqi));
         Assert.Equal(2, PlayerAggregate.ResolveCultivationSpiritStoneScale(lianjing));
     }
 
