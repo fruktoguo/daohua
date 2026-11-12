@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Collections.ObjectModel;
+using DaoHua.Ecs.Combat;
 using Domain.Common;
 using Domain.Combat;
 using Domain.Economy;
@@ -212,12 +213,13 @@ public static partial class SimulationEngine
         DateTimeOffset target,
         GameDataCatalog gameData,
         AssetWallet? assetBalances = null,
-        DuelAdvanceOptions? duel = null)
+        DuelAdvanceOptions? duel = null,
+        ConsumableScheduleMode consumableSchedule = ConsumableScheduleMode.EventDriven)
     {
         ArgumentNullException.ThrowIfNull(gameData);
         if (assetBalances is not null && assetBalances.PlayerId != player.PlayerId)
             throw new DomainException(DomainErrorCode.InvalidArgument, "资产余额与模拟玩家不一致。");
-        return AdvanceWithResources(player, target, gameData, assetBalances, duel);
+        return AdvanceWithResources(player, target, gameData, assetBalances, duel, consumableSchedule);
     }
 
     /// <summary>
@@ -354,7 +356,8 @@ public static partial class SimulationEngine
     }
 
     private static SimulationResult AdvanceWithResources(PlayerAggregate player, DateTimeOffset target,
-        GameDataCatalog gameData, AssetWallet? assets, DuelAdvanceOptions? duel)
+        GameDataCatalog gameData, AssetWallet? assets, DuelAdvanceOptions? duel,
+        ConsumableScheduleMode consumableSchedule = ConsumableScheduleMode.EventDriven)
     {
         var from = player.LastSimulatedAt;
         if (target < from) throw new DomainException(DomainErrorCode.InvalidArgument, "目标时间不能倒退。");
@@ -381,7 +384,7 @@ public static partial class SimulationEngine
             using var windowMeasurement = RuntimeInstrumentation.MeasureCurrent("domain.logic.resource_window");
             var now = player.LastSimulatedAt;
             var resourceBoundary = PrepareResourceBoundaryCore(player, gameData, wallet,
-                computeTarget, events, live, out var instantDeltas);
+                computeTarget, events, live, out var instantDeltas, consumableSchedule);
             changed |= resourceBoundary.Changed;
             foreach (var delta in instantDeltas)
             {
@@ -389,7 +392,8 @@ public static partial class SimulationEngine
                 deltas[delta.Asset] = deltas.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
             }
             var step = resourceBoundary.StepSeconds;
-            var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet, duel, live);
+            var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet, duel, live,
+                consumableSchedule);
             // 无暂存物品时整段跳过：SettleStagedItems 空表恒返回空，标脏只在真实结算时发生。
             if (player.Duel.StagedItems.Count > 0)
             {
@@ -463,7 +467,8 @@ public static partial class SimulationEngine
         GameDataCatalog? gameData,
         AssetWallet? assetBalances,
         DuelAdvanceOptions? duel = null,
-        LiveCombatBattle? live = null)
+        LiveCombatBattle? live = null,
+        ConsumableScheduleMode consumableSchedule = ConsumableScheduleMode.EventDriven)
     {
         using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("domain.logic.action_dispatch");
         ArgumentNullException.ThrowIfNull(player);
@@ -548,7 +553,8 @@ public static partial class SimulationEngine
                 if (gameData is null)
                     throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
                 AdvanceCombatAction(player, action, definition, gameData, assetBalances, duel, from, target,
-                    ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats, live);
+                    ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats, live,
+                    consumableSchedule);
                 continue;
             }
             if (definition.ExecutionKind == ActionExecutionKind.Travel)
@@ -682,7 +688,8 @@ public static partial class SimulationEngine
         ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats,
-        LiveCombatBattle? live = null)
+        LiveCombatBattle? live = null,
+        ConsumableScheduleMode consumableSchedule = ConsumableScheduleMode.EventDriven)
     {
         using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("domain.logic.combat_dispatch");
         if (action.Expedition?.Phase != CombatExpeditionPhase.Combat)
@@ -736,7 +743,43 @@ public static partial class SimulationEngine
             live?.Adopt(action, battleState, expedition, player.AttributeInputRevision);
         }
         var battleFrom = battleState.ElapsedSeconds;
-        var combatResult = Systems.CombatEventAdvanceSystem.AdvanceTo(battleState, battleFrom + remainingSeconds);
+        // 事件驱动：入场/窗口起点同刻复查一次，此后每个自然边界结算落地后携存活战态复查，
+        // 级联扫描直到整轮无激活；无钱包时无用品可扣，直接走基线推进。
+        // （ref 参数先入本地副本供回调捕获；liveState 直传存活遭遇，判定读实时战态。）
+        CombatAdvanceResult combatResult;
+        if (consumableSchedule == ConsumableScheduleMode.EventDriven && assetBalances is not null)
+        {
+            var callWall = target.AddSeconds(-remainingSeconds);
+            var hookEvents = events ??= new SimulationEventTail();
+            var hookDeltas = deltas ??= new Dictionary<AssetKey, double>();
+            void EvaluateConsumablesAt(DateTimeOffset wallAt, CombatEncounterState liveState,
+                CombatFactDelta? wakeDelta = null)
+            {
+                for (var pass = 0; pass < 256; pass++)
+                {
+                    // 与 AdvanceToCore 约定一致：本层只记差量不入账，钱包由外层窗口统一应用；
+                    // 已挂账支出经 hookDeltas 传入余额口径，级联跨趟复查不会透支重复扣件。
+                    // 订阅索引：首趟按边界事实增量唤醒，后续趟（自身激活翻转的事实不在增量内）全量复查。
+                    var spent = Systems.ActionExecutionRules.ActivateInstantConsumables(
+                        player, gameData, assetBalances, wallAt, hookEvents, live, liveState, hookDeltas,
+                        pass == 0 ? wakeDelta : null);
+                    if (spent.Count == 0) break;
+                    foreach (var delta in spent)
+                        hookDeltas[delta.Asset] = hookDeltas.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
+                }
+            }
+            // 入场与窗口起点同刻复查：「敌方出现即打符」「血线已越界」等条件在首个出手边界前即成立。
+            EvaluateConsumablesAt(callWall, battleState);
+            var hook = new CombatBoundaryHookDispatcher((context, delta) =>
+                EvaluateConsumablesAt(callWall.AddSeconds(context.Encounter.ElapsedSeconds - battleFrom),
+                    context.Encounter, delta), battleState);
+            combatResult = Systems.CombatEventAdvanceSystem.AdvanceTo(battleState,
+                battleFrom + remainingSeconds, hook);
+        }
+        else
+        {
+            combatResult = Systems.CombatEventAdvanceSystem.AdvanceTo(battleState, battleFrom + remainingSeconds);
+        }
         if (combatResult.Outcome != CombatOutcome.Running) live?.Release(action);
         CompleteCombatAdvanceCore(player, action, definition, encounter, gameData, battleState, combatResult,
             from, target, ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats,

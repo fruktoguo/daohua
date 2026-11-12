@@ -132,7 +132,16 @@ public sealed class CombatConsumableTests
         Assert.Equal(2d, wallet.Get(new AssetKey(PillId)));
 
         // 气血压到 40%（≤50%）：下一个激活边界自动使用并消耗 1 件。
-        player.Resources.Hitpoints = player.Resources.MaxHitpoints * 0.4;
+        // 事件驱动下战斗中存活单位才是权威：掉血必须写远征文档快照（持久化通道），
+        // 资源池镜像在判定前会被实时战态压回。
+        var hpDrop = player.Resources.MaxHitpoints * 0.4;
+        var exp0 = player.Actions[0].Expedition!;
+        player.Actions[0].Expedition = exp0 with
+        {
+            PlayerHitpoints = hpDrop,
+            PlayerState = exp0.PlayerState is { } ps0 ? ps0 with { Hitpoints = hpDrop } : null
+        };
+        player.Resources.Hitpoints = hpDrop;
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(30), catalog, wallet);
         result.AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(1d, wallet.Get(new AssetKey(PillId)));
@@ -161,6 +170,13 @@ public sealed class CombatConsumableTests
         Assert.Equal(1d, wallet.Get(new AssetKey(RegenPillId)));
 
         // 战斗内压到 4% 气血：下一个资源边界自动使用，Buff 必须同时落到战内单位。
+        // 事件驱动下掉血写远征文档快照（资源池镜像会被存活战态压回）。
+        var exp1 = player.Actions[0].Expedition!;
+        player.Actions[0].Expedition = exp1 with
+        {
+            PlayerHitpoints = 40,
+            PlayerState = exp1.PlayerState is { } ps1 ? ps1 with { Hitpoints = 40 } : null
+        };
         player.Resources.Hitpoints = 40;
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(11), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
@@ -359,7 +375,9 @@ public sealed class CombatConsumableTests
         var baseline = PlayerAttributeResolver.Resolve(player, catalog);
 
         // T+3：药品已激活——无即时回血（无 hitpointRestore 字段），回复只进 Buff。
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3), catalog, wallet)
+        // 本场景依赖战外（搜寻期）激活：事件驱动模式下战外不判定，显式钉 5 秒周期语义。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3), catalog, wallet,
+            consumableSchedule: ConsumableScheduleMode.PeriodicTick)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(0d, wallet.Get(new AssetKey(RegenPillId)));
         var buff = Assert.Single(player.Buffs.Active, entry => entry.BuffId == "buff.test-regen");
@@ -370,12 +388,14 @@ public sealed class CombatConsumableTests
         // 回复收口公式：(锚点经乘区 + Buff 12) 每 5 秒结算点一次——T+5 边界后入账一次。
         var perTick = PlayerAttributeResolver.Resolve(player, catalog).HpRegen;
         Assert.Equal(12, perTick - baseline.HpRegen, 9);
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(8), catalog, wallet)
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(8), catalog, wallet,
+            consumableSchedule: ConsumableScheduleMode.PeriodicTick)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(40 + perTick, player.Resources.Hitpoints, 6);
 
         // Buff 到期（激活后 30s）后回复回落到基础值。
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(40), catalog, wallet)
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(40), catalog, wallet,
+            consumableSchedule: ConsumableScheduleMode.PeriodicTick)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "buff.test-regen");
         Assert.Equal(baseline.HpRegen, PlayerAttributeResolver.Resolve(player, catalog).HpRegen, 9);

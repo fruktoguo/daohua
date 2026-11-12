@@ -25,8 +25,9 @@ public static partial class SimulationEngine
 
     private static ResourceBoundaryPlan PrepareResourceBoundaryCore(IPlayerResourceContext player,
         GameDataCatalog gameData, AssetWallet wallet, DateTimeOffset computeTarget,
-        SimulationEventTail events, LiveCombatBattle? live, out List<AssetDelta> instantDeltas)
-        => DaoHua.Ecs.Systems.ActionExecutionRules.PrepareResourceBoundaryCore(player, gameData, wallet, computeTarget, events, live, out instantDeltas);
+        SimulationEventTail events, LiveCombatBattle? live, out List<AssetDelta> instantDeltas,
+        ConsumableScheduleMode consumableSchedule = ConsumableScheduleMode.EventDriven)
+        => DaoHua.Ecs.Systems.ActionExecutionRules.PrepareResourceBoundaryCore(player, gameData, wallet, computeTarget, events, live, out instantDeltas, consumableSchedule);
 
     /// <summary>资源窗口收尾按暂存入账、技能时钟、行动资产、事件、回复的既有顺序执行。</summary>
     public static bool CompleteResourceBoundary(IPlayerResourceContext player, GameDataCatalog gameData,

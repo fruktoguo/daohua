@@ -360,6 +360,18 @@ public sealed class CombatantState
     public int PendingSkillIndex { get; internal set; } = -1;
     /// <summary>逐槽技能冷却就绪时刻（所有带技能单位共用）；冷却自吟唱完成时刻起算。</summary>
     public double[]? SkillCooldownUntil { get; internal set; }
+    /// <summary>逐槽触发条件订阅掩码（惰性构建；技能槽位/条件为开战定格输入，生命周期内不变）。</summary>
+    internal SlotWakeMask[]? SkillWakeMasks;
+    /// <summary>
+    /// 逐槽待判定事实增量（TASK-20261112-15）：边界钩子把遭遇增量折叠进每槽订阅位；
+    /// 初始全量保证首次必评，槽位重评后清零。逐槽独立累积——冷却拦下的槽位
+    /// 不因其他槽消费增量而丢失唤醒。
+    /// </summary>
+    internal SlotWakeMask[]? SkillWakePending;
+    /// <summary>逐槽上次触发条件判定结果：仅当该槽订阅事实未翻转时复用；null 表示尚未首评（强制求值）。</summary>
+    internal bool?[]? SkillTriggerVerdicts;
+    /// <summary>逐槽判定时的目标引用：目标按出手计数每轮重掷，引用不一致时判定缓存不可复用。</summary>
+    internal CombatantState?[]? SkillVerdictTargets;
     /// <summary>累计完成施放的技能次数，作为技能出手的确定性抽样独立计数器。</summary>
     public double SkillCastCount { get; internal set; }
     /// <summary>天雷阵上次触发时刻（秒），保证单人每秒最多触发一次。</summary>
@@ -683,6 +695,11 @@ public sealed class CombatEncounterState
 
     /// <summary>遭遇战唯一标识</summary>
     public string EncounterId { get; }
+    /// <summary>
+    /// 边界事实追踪已接入（TASK-20261112-15）：由 CombatFactTracker 置位；为 false 时
+    /// 技能判定缓存不得复用（无增量折叠，复用会永久滞留过期判定）。
+    /// </summary>
+    internal bool WakeTracking { get; set; }
     /// <summary>战斗伪随机数种子（用于命中/暴击等确定性复现）</summary>
     public long Seed { get; }
     /// <summary>当前战斗已推进的总时间（秒）</summary>

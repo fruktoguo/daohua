@@ -257,7 +257,12 @@ public sealed partial class PlayerAggregate
             Avatar: Settings.Avatar,
             InternalArt: CaptureInternalArt(Loadout, gameData),
             RespawnPolicy: Settings.RespawnPolicy,
-            RespawnTargetPlayerId: Settings.RespawnTargetPlayerId?.ToString("D"));
+            RespawnTargetPlayerId: Settings.RespawnTargetPlayerId?.ToString("D"),
+            ConsumableTriggers: Loadout.ConsumableTriggers.Count == 0 ? null
+                : Loadout.ConsumableTriggers.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.Select(trigger => trigger.Clone()).ToArray(),
+                    StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -389,6 +394,7 @@ public sealed partial record ActionParticipantSnapshot
             Avatar: state.Settings.Avatar,
             InternalArt: PlayerAggregate.CaptureInternalArt(loadout, catalog),
             RespawnPolicy: state.Settings.RespawnPolicy,
-            RespawnTargetPlayerId: state.Settings.RespawnTargetPlayerId?.ToString("D"));
+            RespawnTargetPlayerId: state.Settings.RespawnTargetPlayerId?.ToString("D"),
+            ConsumableTriggers: loadout.ConsumableTriggers);
     }
 }

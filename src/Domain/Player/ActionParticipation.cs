@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Combat;
 
@@ -29,6 +30,9 @@ namespace Domain.Player;
 /// <param name="RespawnPolicy">成员的复活时机策略冻结值（总纲 §7.9.4.1）：倒地后是否立即起身由本人设定裁决。</param>
 /// <param name="RespawnTargetPlayerId">指定队友存活策略的观察对象玩家 ID（成员序内的 PlayerId 文本）；
 /// 仅当策略为该分支且目标在册时有效，未指定/目标离册时退化为直接复活。</param>
+/// <param name="ConsumableTriggers">开打冻结的消耗品自定义触发条件（物品 ID → 触发器 JSON 数组）：
+/// 与功法触发条件同构——键存在即覆盖配表 consumable.triggers 出厂默认，空数组 = 显式无条件恒可用；
+/// 不随快照携带时，会话判定只能回退配表默认（生产缺陷：组队条件整体失效）。</param>
 public sealed partial record ActionParticipantSnapshot(
     string PlayerId,
     string DisplayName,
@@ -49,7 +53,8 @@ public sealed partial record ActionParticipantSnapshot(
     string Avatar = "player",
     InternalArtSnapshot? InternalArt = null,
     CombatRespawnPolicy RespawnPolicy = CombatRespawnPolicy.Immediate,
-    string? RespawnTargetPlayerId = null)
+    string? RespawnTargetPlayerId = null,
+    IReadOnlyDictionary<string, JsonElement[]>? ConsumableTriggers = null)
 {
     /// <summary>成员快照持久化不变量校验。</summary>
     public bool IsValid => Guid.TryParse(PlayerId, out var id) && id != Guid.Empty
@@ -76,7 +81,11 @@ public sealed partial record ActionParticipantSnapshot(
         && (InternalArt is null || InternalArt.IsValid)
         && Enum.IsDefined(RespawnPolicy)
         && (RespawnTargetPlayerId is null
-            || (Guid.TryParse(RespawnTargetPlayerId, out var targetId) && targetId != Guid.Empty));
+            || (Guid.TryParse(RespawnTargetPlayerId, out var targetId) && targetId != Guid.Empty))
+        && (ConsumableTriggers is null || (ConsumableTriggers.Count <= 32
+            && ConsumableTriggers.All(pair => !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 128
+                && pair.Value is not null && pair.Value.Length <= SkillTriggerEvaluator.MaxTriggersPerList
+                && pair.Value.All(trigger => trigger.ValueKind == JsonValueKind.Object))));
 }
 
 /// <summary>

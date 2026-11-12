@@ -75,14 +75,41 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         if (skills.Count > 0)
         {
             var cooldowns = unit.SkillCooldownUntil ??= new double[skills.Count];
+            // 订阅底座（TASK-20261112-15）：技能与消耗品共用「条件→依赖→唤醒」实现——
+            // 每槽条件折算订阅掩码，边界事实增量由钩子折叠进逐槽待判定位；未翻转的槽位
+            // 直接复用上次判定（求值纯读无随机副作用，复用结果与重评逐位一致）。
+            var selfInEnemies = ReferenceEquals(allies, encounter.Enemies);
+            var masks = unit.SkillWakeMasks ??= BuildSkillWakeMasks(skills, selfInEnemies);
+            var pending = unit.SkillWakePending ??= BuildFullPending(skills.Count);
+            var verdicts = unit.SkillTriggerVerdicts ??= new bool?[skills.Count];
+            var verdictTargets = unit.SkillVerdictTargets ??= new CombatantState?[skills.Count];
+            // 判定缓存仅在事实追踪接入时有效；未追踪路径（周期模式/无钩子推进）恒走全量重评。
+            var tracking = encounter.WakeTracking;
             for (var i = 0; i < skills.Count; i++)
             {
                 var slot = skills[i];
                 if (cooldowns[i] > encounter.ElapsedSeconds + 1e-12) continue;
                 // 触发条件为唯一可用性门槛：空表恒可用；求值失败（依赖缺失/词表外输入）跳过本槽。
-                if (slot.Triggers is { Count: > 0 } triggers
-                    && !SkillTriggerEvaluator.MatchesAll(triggers, unit, target, allies, opponents, encounter.ElapsedSeconds))
-                    continue;
+                if (slot.Triggers is { Count: > 0 } triggers)
+                {
+                    if (verdicts[i] is bool cached && tracking
+                        && ReferenceEquals(verdictTargets[i], target)
+                        && !masks[i].Intersects(pending[i]))
+                    {
+                        // 订阅事实未翻转且目标引用不变：判定结果与上次逐位一致，直接复用。
+                        if (!cached) continue;
+                    }
+                    else
+                    {
+                        RuntimeInstrumentation.Count("skill.trigger_evals");
+                        var matched = SkillTriggerEvaluator.MatchesAll(triggers, unit, target, allies,
+                            opponents, encounter.ElapsedSeconds);
+                        verdicts[i] = matched;
+                        verdictTargets[i] = target;
+                        pending[i] = SlotWakeMask.None;
+                        if (!matched) continue;
+                    }
+                }
                 var manaCost = AbilityNumber(slot.Ability, "manaCost");
                 if (unit.Manapoints < manaCost) continue;
                 unit.Manapoints -= manaCost;
@@ -105,6 +132,25 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             + unit.Stats.AttackIntervalSeconds
             * PercentValue.Multiplier(unit.Stats.AttackSpeedPoints + unit.BuffTotal(BuffEffectChannel.AttackSpeedPoints), PercentCurveMode.NonLinear)
             * PercentValue.Multiplier(unit.EffectiveStats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+    }
+
+    /// <summary>按施放方阵营编译逐槽订阅掩码；无条件槽置空掩码（永不唤醒，本就不参与条件门控）。</summary>
+    private static SlotWakeMask[] BuildSkillWakeMasks(IReadOnlyList<SkillSlot> skills, bool selfInEnemies)
+    {
+        var masks = new SlotWakeMask[skills.Count];
+        for (var i = 0; i < skills.Count; i++)
+            masks[i] = skills[i].Triggers is { Count: > 0 } triggers
+                ? TriggerWakePlanner.ResolveMask(triggers, selfInEnemies)
+                : SlotWakeMask.None;
+        return masks;
+    }
+
+    /// <summary>逐槽待判定位初始全量：保证首评必然执行（判定缓存的冷启动语义）。</summary>
+    private static SlotWakeMask[] BuildFullPending(int count)
+    {
+        var pending = new SlotWakeMask[count];
+        Array.Fill(pending, SlotWakeMask.Full);
+        return pending;
     }
 
     /// <summary>

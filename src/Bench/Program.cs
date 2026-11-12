@@ -35,6 +35,7 @@ public static class Program
                 "report" => await RunReportAsync(options),
                 "compare" => await RunPersistenceCompareAsync(options),
                 "provenance" => RunProvenance(options),
+                "sim" => BenchSim.Run(args.Skip(1).ToArray()),
                 "help" or "--help" or "-h" => PrintHelp(),
                 _ => throw new ArgumentException($"未知命令：{command}")
             };
@@ -173,6 +174,8 @@ public static class Program
         Console.WriteLine("  report --report 'artifacts/bench/*-gathering.json'（重新生成单报告 stage/counter CSV）");
         Console.WriteLine("  compare --database-b 连接串 --database-c 连接串 [--database-a 连接串] --player-id UUID [--report 文件.json]");
         Console.WriteLine("  provenance --variant ecs --output artifacts/runtime/<variant>");
+        Console.WriteLine("  sim [--solo 500] [--teams 100] [--minutes 60] [--seed N] [--modes tick,event] [--report 文件.json] [--warmup true|false]");
+        Console.WriteLine("       纯内存同源对照：全真战斗/消耗品/触发器 × 5秒tick 与逐边界即时两种调度；不连数据库。");
         return 0;
     }
 }

@@ -334,7 +334,9 @@ public sealed class ActionParticipationSessionTests
     {
         var (catalog, _, original) = CreateConsumableParty();
         var spec = WithSlots(original, 0, [new(SupplyId, "combat", group, 0)]);
-        var engine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, SupplyId, 1));
+        // 补货/空库记账语义按 5 秒周期网格构造：事件驱动下战外不判定，显式钉周期模式。
+        var engine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, SupplyId, 1),
+            ConsumableScheduleMode.PeriodicTick);
         var opening = engine.AdvanceTo(Baseline);
         Assert.Single(opening[0].Events, entry => entry.Code == "auto-use.activated");
         Assert.Equal(-1, Assert.Single(engine.TakeAssetDeltas()).QuantityDelta);
@@ -364,8 +366,10 @@ public sealed class ActionParticipationSessionTests
         var spec = WithSlots(original, 0,
             [new(SupplyId, "combat", "general", 0), new(SupplyId, "combat", "potion", 0)]);
         var playerId = new PlayerId(Guid.Parse(spec.Members[0].PlayerId));
+        // 变体余额共享记账按 5 秒周期网格构造：事件驱动下战外不判定，显式钉周期模式。
         var engine = ActionParticipationSessionEngine.Create(spec, catalog,
-            [new(playerId, new(new(SupplyId), "a"), 0.5, 0), new(playerId, new(new(SupplyId), "b"), 2, 0)]);
+            [new(playerId, new(new(SupplyId), "a"), 0.5, 0), new(playerId, new(new(SupplyId), "b"), 2, 0)],
+            ConsumableScheduleMode.PeriodicTick);
         var opening = engine.AdvanceTo(Baseline);
         Assert.Equal(2, opening[0].Events.Count(entry => entry.Code == "auto-use.activated"));
         var spent = engine.TakeAssetDeltas();
@@ -448,7 +452,9 @@ public sealed class ActionParticipationSessionTests
     {
         var (catalog, _, original) = CreateConsumableParty();
         var spec = WithSlots(original, 0, [new(SupplyId, "combat", "potion", 0)]);
-        var engine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, SupplyId, 5));
+        // 模式切换/离线储备记账按 5 秒周期网格构造：事件驱动下战外不判定，显式钉周期模式。
+        var engine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, SupplyId, 5),
+            ConsumableScheduleMode.PeriodicTick);
         engine.AdvanceTo(Baseline);
         var net = engine.TakeAssetDeltas().Sum(delta => delta.QuantityDelta);
         var initial = engine.Export();
@@ -483,7 +489,9 @@ public sealed class ActionParticipationSessionTests
     {
         var (catalog, _, original) = CreateConsumableParty();
         var spec = WithSlots(original, 0, [new(SupplyId, "combat", "potion", 0)]);
-        var engine = ActionParticipationSessionEngine.Create(spec, catalog);
+        // 离线储备批次转账语义按 5 秒周期网格构造：事件驱动下战外不判定，显式钉周期模式。
+        var engine = ActionParticipationSessionEngine.Create(spec, catalog,
+            scheduleMode: ConsumableScheduleMode.PeriodicTick);
         engine.AdvanceTo(Baseline);
         engine.SwitchToOffline();
         engine.SetWorkingWallet(Wallet(spec, 0, SupplyId, 3));
@@ -492,7 +500,8 @@ public sealed class ActionParticipationSessionTests
         Assert.Empty(engine.TakeAssetDeltas());
         engine.ReplenishOfflineReserve();
         Assert.Equal(-3, Assert.Single(engine.TakeAssetDeltas()).QuantityDelta);
-        var restored = ActionParticipationSessionEngine.Restore(engine.Export(), catalog);
+        var restored = ActionParticipationSessionEngine.Restore(engine.Export(), catalog,
+            ConsumableScheduleMode.PeriodicTick);
         Assert.Equal(ActionParticipationInventoryMode.Offline, restored.Export().InventoryMode);
         restored.AdvanceTo(Baseline.AddSeconds(20));
         Assert.Equal(3, Assert.Single(restored.Export().OfflineReserves!).Quantity);
@@ -555,8 +564,10 @@ public sealed class ActionParticipationSessionTests
             [new(SupplyId, "combat", "potion", 0), new(DurationId, "combat", "general", 0)]);
         members[0].Settings.AutoUseSlots.Add(new("combat", 0, SupplyId, 1, true, Group: "potion"));
         members[0].Settings.AutoUseSlots.Add(new("combat", 0, DurationId, 1, true, Group: "general"));
+        // 终局退款/槽位时钟记账按 5 秒周期网格构造：事件驱动下战外不判定，显式钉周期模式。
         var engine = ActionParticipationSessionEngine.Create(spec, catalog,
-            Wallet(spec, 0, SupplyId, 5).Concat(Wallet(spec, 0, DurationId, 2)).ToArray());
+            Wallet(spec, 0, SupplyId, 5).Concat(Wallet(spec, 0, DurationId, 2)).ToArray(),
+            ConsumableScheduleMode.PeriodicTick);
         var first = engine.AdvanceTo(Baseline.AddSeconds(2));
         members[0].ApplyActionParticipationSettlement(first[0], catalog);
         engine.TakeAssetDeltas();
@@ -580,7 +591,9 @@ public sealed class ActionParticipationSessionTests
     {
         var (catalog, _, original) = CreateConsumableParty();
         var spec = WithSlots(original, 0, [new(SupplyId, "combat", "potion", 0)]);
-        var engine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, SupplyId, 5));
+        // 检查点不兼容退款记账按 5 秒周期网格构造：事件驱动下战外不判定，显式钉周期模式。
+        var engine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, SupplyId, 5),
+            ConsumableScheduleMode.PeriodicTick);
         engine.AdvanceTo(Baseline);
         engine.TakeAssetDeltas();
         engine.SwitchToOffline();
@@ -757,6 +770,78 @@ public sealed class ActionParticipationSessionTests
         Assert.Equal(mark, members[0].DirtySectionMarks[PlayerSectionKind.Settings]);
     }
 
+    [Fact]
+    public void PartyConsumableTriggerFreezeGatesSessionAutoUse()
+    {
+        // 回归根因：组队冻结快照曾不携带 ConsumableTriggers——成员0按物品设置的
+        // 「气血低于50%才补给」在会话里丢失，回退配表空条件变成有药就吃。
+        var (catalog, _, original) = CreateConsumableParty();
+        var trigger = JsonDocument.Parse(
+            """{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than","value":50}""")
+            .RootElement.Clone();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => member with
+            {
+                ConsumableSlots = [new(SupplyId, "combat", "potion", 0)],
+                ConsumableTriggers = index == 0
+                    ? new Dictionary<string, JsonElement[]> { [SupplyId] = [trigger] }
+                    : member.ConsumableTriggers
+            }).ToArray()
+        };
+        var engine = ActionParticipationSessionEngine.Create(spec, catalog,
+            [.. spec.Members.Select((_, index) => new AssetBalance(
+                new PlayerId(Guid.Parse(spec.Members[index].PlayerId)), new AssetKey(new ItemId(SupplyId)), 100, 0))]);
+        var settlements = engine.AdvanceTo(Baseline.AddSeconds(30));
+        // 成员0满血冻结入场且妖兽攻击力 2：气血永不低于 50%，条件不满足一瓶不吃。
+        Assert.DoesNotContain(settlements[0].Events, e => e.Code == "auto-use.activated");
+        // 成员1未配置条件：回退配表空触发器恒可用，按 5 秒冷却正常补给——证明不是整体失效。
+        Assert.Contains(settlements[1].Events, e => e.Code == "auto-use.activated");
+    }
+
+    [Fact]
+    public void EventDrivenConsumableFiresAtDamageBoundaryBeforeTick()
+    {
+        // 验证「掉血越线当拍吃药」：成员0 冻结入场 55% 血（触发条件 <50% 不满足），
+        // 怪一击打至 35%（越线）——事件驱动在该攻击边界同刻激活；5 秒 tick 必须等到下个周期。
+        var (catalog, _, original) = CreateConsumableParty(damaging: true);
+        var trigger = JsonDocument.Parse(
+            """{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than","value":50}""")
+            .RootElement.Clone();
+        var spec = original with
+        {
+            Members = original.Members.Select((member, index) => index != 0 ? member : member with
+            {
+                ConsumableSlots = [new(SupplyId, "combat", "potion", 0)],
+                ConsumableTriggers = new Dictionary<string, JsonElement[]> { [SupplyId] = [trigger] },
+                Stats = CombatantStats.Create(100, 0, 0, 10) with { MaxManapoints = 1000 },
+                InitialHitpoints = 55
+            }).ToArray()
+        };
+        var startedAt = spec.StartedAtUnixSeconds;
+        AssetBalance[] Wallet() => [new(new PlayerId(Guid.Parse(spec.Members[0].PlayerId)),
+            new AssetKey(new ItemId(SupplyId)), 100, 0)];
+
+        var eventEngine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(),
+            ConsumableScheduleMode.EventDriven);
+        var eventSettlements = eventEngine.AdvanceTo(Baseline.AddSeconds(60));
+        var eventAt = eventSettlements.SelectMany(s => s.Events)
+            .Where(e => e.Code == "auto-use.activated").Select(e => e.At).Min();
+
+        var tickEngine = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(),
+            ConsumableScheduleMode.PeriodicTick);
+        var tickSettlements = tickEngine.AdvanceTo(Baseline.AddSeconds(60));
+        var tickAt = tickSettlements.SelectMany(s => s.Events)
+            .Where(e => e.Code == "auto-use.activated").Select(e => e.At).Min();
+
+        var eventUnix = eventAt.ToUnixTimeMilliseconds() / 1000d;
+        var tickUnix = tickAt.ToUnixTimeMilliseconds() / 1000d;
+        // 事件驱动早于 tick：激活发生在攻击边界而非 5 秒网格上（实测 event=+1.0s / tick=+5.0s）。
+        Assert.True(eventUnix < tickUnix, $"事件驱动应早于 tick 激活（event={eventUnix:0.###} tick={tickUnix:0.###}）");
+        Assert.True(Math.Abs(tickUnix - startedAt) % 5 < 1e-6,
+            $"tick 激活应落在 +5s 网格（实际偏移 {(tickUnix - startedAt) % 5:0.###}s）");
+    }
+
     private const string SupplyId = "item.session-supply";
     private const string DurationId = "item.session-duration";
 
@@ -769,7 +854,7 @@ public sealed class ActionParticipationSessionTests
             ? member with { ConsumableSlots = slots } : member).ToArray() };
 
     private static (GameDataCatalog Catalog, PlayerAggregate[] Members, ActionParticipationSpec Spec) CreateConsumableParty(
-        bool drops = false)
+        bool drops = false, bool damaging = false)
     {
         var supply = new ItemId(SupplyId);
         var duration = new ItemId(DurationId);
@@ -791,7 +876,7 @@ public sealed class ActionParticipationSessionTests
             new Dictionary<ItemId, double>(), [], ExecutionKind: ActionExecutionKind.CombatEncounter,
             CombatEncounterId: "encounter.session-test")]);
         var monster = new CombatMonsterDefinition("enemy.session-test", "测试妖兽", 1, 1, CombatMonsterRank.Minion,
-            CombatantStats.Create(drops ? 1 : 1_000_000, 0, 0, 2),
+            CombatantStats.Create(drops ? 1 : 1_000_000, damaging ? 20 : 0, 0, damaging ? 1 : 2),
             drops ? [new CombatDropDefinition(supply, 1, 2, 2)] : [], []);
         var encounter = new CombatEncounterDefinition("encounter.session-test", "会话遭遇", 1, 1, 1, 1, 1, 180,
             [new CombatSpawnDefinition(monster.Id, 1, 1)], [], [], 0);

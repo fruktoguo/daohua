@@ -318,15 +318,14 @@ public sealed class MarketPersistenceTests
             PersistenceJson.Options)!;
         Assert.Equal(CombatExpeditionPhase.Combat, document.Expedition!.Phase);
         Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
-        var nextEvaluation = DateTimeOffset.FromUnixTimeMilliseconds(
-            checked((long)Math.Round(document.NextConsumableEvaluationAtUnixSeconds * 1000d)));
-        Assert.True(nextEvaluation > fixture.Clock.UtcNow);
-        Assert.True(nextEvaluation <= fixture.Clock.UtcNow.AddSeconds(5));
-        fixture.Clock.AdvanceTo(nextEvaluation.AddMilliseconds(-1));
-        await fixture.Participation.AdvanceOnlineAsync(fixture.Clock.UtcNow);
-        Assert.Equal(1, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
-        fixture.Clock.AdvanceTo(nextEvaluation);
-        await fixture.Participation.AdvanceOnlineAsync(fixture.Clock.UtcNow);
+        // 事件驱动调度：消耗品恢复判定不等待五秒游标网格，下一战斗自然边界复查即激活。
+        // 逐秒推进直至首次消耗；战斗中边界密度远高于五秒网格，十秒内必有一次可用边界。
+        for (var step = 0; step < 10; step++)
+        {
+            if (await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId) == 0) break;
+            fixture.Clock.AdvanceTo(fixture.Clock.UtcNow.AddSeconds(1));
+            await fixture.Participation.AdvanceOnlineAsync(fixture.Clock.UtcNow);
+        }
         Assert.Equal(0, await Balance(fixture.Source, fixture.Player.Value, ConsumableMarketFixture.ItemId));
     }
 

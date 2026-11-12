@@ -32,7 +32,8 @@ internal static partial class ActionExecutionRules
 
     internal static ResourceBoundaryPlan PrepareResourceBoundaryCore(IPlayerResourceContext player,
         GameDataCatalog gameData, AssetWallet wallet, DateTimeOffset computeTarget,
-        SimulationEventTail events, LiveCombatBattle? live, out List<AssetDelta> instantDeltas)
+        SimulationEventTail events, LiveCombatBattle? live, out List<AssetDelta> instantDeltas,
+        ConsumableScheduleMode consumableSchedule = ConsumableScheduleMode.EventDriven)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.resource.prepare");
         var now = player.LastSimulatedAt;
@@ -56,7 +57,13 @@ internal static partial class ActionExecutionRules
         // 必须在属性解析前同步，保证回复后段乘区进入本步面板与战内单位。
         changed |= SyncDurableConsumableBuffs(player, gameData, wallet);
         ApplyResourceAttributes(player, gameData);
-        instantDeltas = ActivateInstantConsumables(player, gameData, wallet, now, events, live);
+        // 事件驱动：战外相位（搜寻/赶路/等待）不判定即时消耗品——战斗边界的收尾回调承担全部
+        // 战内判定，资源窗口只保留冷却/持续到期的唤醒语义；PeriodicTick 维持现状战外判定。
+        // 事件驱动：即时消耗品全部由战斗入口与自然边界收尾回调判定（带存活战态实时读写），
+        // 资源窗口只保留冷却/持续到期唤醒语义；PeriodicTick 维持现状战外判定。
+        instantDeltas = consumableSchedule == ConsumableScheduleMode.EventDriven
+            ? []
+            : ActivateInstantConsumables(player, gameData, wallet, now, events, live);
         // 即时消耗品扣件/注入 Buff/冷却回写是真实可见变更：不计 changed 会让资产已落库
         // 但 SimulationResult.Changed=false，推进推送跳过该玩家直到下一条命令。
         changed |= instantDeltas.Count > 0;
@@ -309,10 +316,15 @@ internal static partial class ActionExecutionRules
         return true;
     }
 
+    /// <param name="wakeDelta">边界事实增量（TASK-20261112-15 订阅索引）：非 null 时仅唤醒
+    /// 订阅事实已翻转的槽位；null 为全量判定（入场复查/冷却到期唤醒/未追踪路径）。</param>
     internal static List<AssetDelta> ActivateInstantConsumables(IPlayerResourceContext player,
         GameDataCatalog catalog, AssetWallet wallet, DateTimeOffset at, SimulationEventTail events,
-        LiveCombatBattle? live = null)
+        LiveCombatBattle? live = null, CombatEncounterState? liveState = null,
+        IReadOnlyDictionary<AssetKey, double>? pendingSpends = null,
+        CombatFactDelta? wakeDelta = null)
     {
+        RuntimeInstrumentation.Count("consumable.eval_calls");
         if (player.Actions.Count == 0 || player.Resources.Hitpoints <= 0) return [];
         // 参与会话期间不激活即时消耗品：共享剧本的全部输入必须来自开打定格 spec
         // （含检查点恢复与计算节点重放验算）；成员钱包/槽位不在定格公共输入内，
@@ -324,6 +336,14 @@ internal static partial class ActionExecutionRules
         for (var i = 0; i < slots.Count; i++)
             if (slots[i].Enabled) { anyEnabled = true; break; }
         if (!anyEnabled) return [];
+        // 存活战斗态直取：战斗边界收尾回调经 liveState 传入正在推进的遭遇，绕开 TryReuse
+        // 的文档时钟守卫——窗口中段行动文档快照天然滞后于内存态，守卫失配只是「尚未回写」
+        // 而非真错位；守卫仍保留给跨步复用场景，live 未持会话时退回文档快照路径。
+        CombatEncounterState? liveBattle = liveState;
+        if (liveBattle is null && live is not null && player.Actions[0] is QueuedAction liveAction
+            && liveAction.Expedition is { } liveExpedition
+            && live.TryReuse(liveAction, liveExpedition, out var liveEntry))
+            liveBattle = liveEntry!.Battle;
         var actionBarId = Domain.GameData.AutoUseBar.For(catalog.Actions.Get(player.Actions[0].Intent.ActionId));
         List<AssetDelta>? deltas = null;
         var now = at.ToUnixTimeMilliseconds() / 1000d;
@@ -346,23 +366,41 @@ internal static partial class ActionExecutionRules
             // 消耗品使用条件与技能共用同一套触发判定模型；玩家自定义条件按物品 ID 覆盖配表默认。
             var triggers = Domain.Combat.ConsumableTriggerResolver.Resolve(id.Value, definition,
                 player.Loadout.ConsumableTriggers);
+            // 订阅索引门控：边界增量未翻转本槽订阅事实时跳过——含「外部视图」兜底位与
+            // 雷击符灵力门槛通道，保证钱包脏/面板刷新/蓝量跨越仍能唤醒。
+            if (wakeDelta is { } wd)
+            {
+                var mask = Domain.Combat.TriggerWakePlanner.ResolveMask(triggers, selfInEnemies: false)
+                    .Union(new Domain.Combat.SlotWakeMask
+                    {
+                        Facts = Domain.Combat.BattleFact.External,
+                        Self = definition.Strike is null ? 0 : Domain.Combat.UnitChannel.Mana,
+                    });
+                if (!mask.WakesOn(wd, liveBattle?.SelfIndex ?? 0)) continue;
+            }
             if (triggers.Count > 0)
             {
                 if (evalCaster is null)
                 {
-                    // 触发器求值读取行动文档中的敌人快照：复用会话需先把内存态全量回写。
-                    live?.Flush();
+                    // 触发器求值读取行动文档中的敌人快照：存活战态权威时先压回文档与
+                    // 资源池镜像（边界回调中段文档是旧值）；否则复用会话先回写内存态。
+                    if (liveBattle is { } evalBattle) SyncLiveBattleToEvalDocs(player, evalBattle);
+                    else live?.Flush();
                     evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
                 }
                 var elapsedSec = player.Actions[0].Expedition?.BattleElapsedSeconds ?? 0;
+                RuntimeInstrumentation.Count("consumable.trigger_evals");
                 if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, evalCaster, evalTarget,
                         evalAllies!, evalEnemies!, elapsedSec)) continue;
             }
-            // 已记账扣件汇总按原列表顺序逐条累加（与 LINQ Where+Sum 同序，位级一致）。
+            // 已记账扣件汇总按原列表顺序逐条累加（与 LINQ Where+Sum 同序，位级一致）；
+            // 事件驱动边界回调只记差量不即时扣钱包，本请求已挂账支出经 pendingSpends 计入余额口径。
             var consumed = 0d;
             if (deltas is not null)
                 for (var j = 0; j < deltas.Count; j++)
                     if (deltas[j].Asset.ItemId == id) consumed += deltas[j].QuantityDelta;
+            if (pendingSpends is not null && pendingSpends.TryGetValue(new AssetKey(id), out var pending))
+                consumed += pending;
             if (wallet.Get(new AssetKey(id)) + consumed < 1) continue;
             double Read(JsonElement obj, string key) => obj.TryGetProperty(key, out var value) ? value.GetDouble() : 0;
             var hp = Read(raw, "hitpointRestore");
@@ -376,7 +414,8 @@ internal static partial class ActionExecutionRules
                 // 无命中/暴击掷点的伤害；灵力不足或无存活目标则本次不激活。
                 if (evalCaster is null)
                 {
-                    live?.Flush();
+                    if (liveBattle is { } evalBattle) SyncLiveBattleToEvalDocs(player, evalBattle);
+                    else live?.Flush();
                     evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
                 }
                 var manaCost = strike.ManaCostRatio * evalCaster.Stats.MaxManapoints;
@@ -396,8 +435,8 @@ internal static partial class ActionExecutionRules
                 strikeStats = strikeStats with { TotalDamageBonusPoints = evalCaster.Stats.TotalDamageBonusPoints + evalCaster.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
                 var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, evalTarget);
                 player.Resources.Manapoints = Math.Max(0, player.Resources.Manapoints - manaCost);
-                SyncConsumableResourcesToBattle(player, player.Actions[0], live);
-                damage = ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, live, evalCaster, evalTarget, strike.Element);
+                SyncConsumableResourcesToBattle(player, player.Actions[0], liveBattle);
+                damage = ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, liveBattle, evalCaster, evalTarget, strike.Element);
                 // 雷击符打击计入行动统计簿：本机术法输出；目标怪按类型桶计术法承伤与减免（原始威力 − 实收）。
                 if (evalTarget!.DefinitionId is { } strikeMonsterId
                     && player.Duel.ReportFor(player.Actions[0].Id) is { } strikeReport)
@@ -441,7 +480,7 @@ internal static partial class ActionExecutionRules
                 }
             }
             // 战斗中即时药品同样要把恢复量压回战内单位/文档镜像，否则下一战斗步以战内值覆盖战外资源池。
-            SyncConsumableResourcesToBattle(player, player.Actions[0], live);
+            SyncConsumableResourcesToBattle(player, player.Actions[0], liveBattle);
             if (buffs.ValueKind == JsonValueKind.Array)
             {
                 foreach (var buff in buffs.EnumerateArray())
@@ -471,12 +510,11 @@ internal static partial class ActionExecutionRules
                     }
                     if (battleBuffs.Count > 0)
                     {
-                        if (live is not null && live.TryReuse(headQueued, battleExpedition, out var liveEntry)
-                            && liveEntry is { } liveSession)
+                        if (liveBattle is { } buffBattle)
                         {
-                            var liveUnit = liveSession.Battle.Player;
+                            var liveUnit = buffBattle.Player;
                             foreach (var battleBuff in battleBuffs)
-                                liveUnit.SetBuff(battleBuff with { ExpiresAtSeconds = liveSession.Battle.ElapsedSeconds
+                                liveUnit.SetBuff(battleBuff with { ExpiresAtSeconds = buffBattle.ElapsedSeconds
                                     + (battleBuff.ExpiresAtSeconds - battleExpedition.BattleElapsedSeconds) });
                         }
                         if (battleExpedition.PlayerState is { } playerState)
@@ -506,6 +544,7 @@ internal static partial class ActionExecutionRules
             player.RecordStats(player.Actions[0].Id, now, new PlayerStatsDelta { LostItem = id, LostQuantity = 1 });
             events.Add(new SimulationEvent(at, "auto-use.activated", $"自动使用 {item.Name}。", ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
         }
+        if (deltas is { Count: > 0 }) RuntimeInstrumentation.Count("consumable.activations", deltas.Count);
         return deltas ?? [];
     }
 
@@ -564,17 +603,29 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>
+    /// 触发求值前把存活战斗态压回行动文档与资源池镜像：判定一律读行动文档快照与战外
+    /// 资源池，窗口中段两者都是上一个结算边界的旧值——不压回会让自身血蓝百分比、敌方
+    /// 存活与开战秒数条件全部按窗口起点判定，即时消耗品效果也无法写回存活单位。
+    /// </summary>
+    private static void SyncLiveBattleToEvalDocs(IPlayerResourceContext player, CombatEncounterState battle)
+    {
+        player.Resources.Hitpoints = battle.Player.Hitpoints;
+        player.Resources.Manapoints = battle.Player.Manapoints;
+        if (player.Actions[0].Expedition is { Phase: CombatExpeditionPhase.Combat } expedition)
+            player.Actions[0].Expedition = CombatActionRules.CaptureCombatState(battle, expedition);
+    }
+
+    /// <summary>
     /// 消耗品改写战外资源池（雷击符扣蓝、药品回血回蓝）后，把数值压回战斗内单位与
     /// 行动文档镜像：战斗步以战内单位为权威回写战外资源池，不同步会把消耗品效果覆盖丢失。
-    /// 复用会话命中时改内存战斗态；否则改写文档标量镜像与玩家完整快照。
+    /// 有存活战斗态时直接改内存单位；否则改写文档标量镜像与玩家完整快照。
     /// </summary>
     internal static void SyncConsumableResourcesToBattle(IPlayerResourceContext player,
-        IPlayerActionState action, LiveCombatBattle? live)
+        IPlayerActionState action, CombatEncounterState? liveBattle)
     {
-        if (live is not null && action is QueuedAction queued && action.Expedition is { } expedition
-            && live.TryReuse(queued, expedition, out var session) && session is { } liveSession)
+        if (liveBattle is { } live)
         {
-            var caster = liveSession.Battle.Player;
+            var caster = live.Player;
             caster.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, caster.Stats.MaxHitpoints);
             caster.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, caster.Stats.MaxManapoints);
             return;
@@ -603,17 +654,15 @@ internal static partial class ActionExecutionRules
     /// 波次快照；全灭时同步 PlayerWon 结局，保证恢复校验（玩家赢且满血）一致。
     /// </summary>
     internal static double ApplyStrikeDamage(IPlayerResourceContext player, IPlayerActionState action,
-        int targetIndex, double damage, LiveCombatBattle? live, CombatantState attacker, CombatantState target, CombatElement element)
+        int targetIndex, double damage, CombatEncounterState? liveBattle, CombatantState attacker, CombatantState target, CombatElement element)
     {
-        if (live is not null && action is QueuedAction queued && action.Expedition is { } expedition
-            && live.TryReuse(queued, expedition, out var session)
-            && session is { } liveSession && targetIndex < liveSession.Battle.Enemies.Count)
+        if (liveBattle is { } live && targetIndex < live.Enemies.Count)
         {
-            var unit = liveSession.Battle.Enemies[targetIndex];
-            var settled = CombatDamageSettlement.Apply(liveSession.Battle, liveSession.Battle.Player, unit, damage);
-            CombatTraitReactions.ApplyRanhun(liveSession.Battle.Player, unit, element, settled.Actual, liveSession.Battle.ElapsedSeconds);
-            if (!liveSession.Battle.Enemies.Any(static e => e.IsAlive))
-                liveSession.Battle.Outcome = CombatOutcome.PlayerWon;
+            var unit = live.Enemies[targetIndex];
+            var settled = CombatDamageSettlement.Apply(live, live.Player, unit, damage);
+            CombatTraitReactions.ApplyRanhun(live.Player, unit, element, settled.Actual, live.ElapsedSeconds);
+            if (!live.Enemies.Any(static e => e.IsAlive))
+                live.Outcome = CombatOutcome.PlayerWon;
             return settled.Damage;
         }
         if (action.Expedition is not { Phase: CombatExpeditionPhase.Combat } snap

@@ -1,4 +1,5 @@
 using DaoHua.Ecs.Components;
+using DaoHua.Ecs.Combat;
 using DaoHua.Ecs.Systems;
 using Domain.Common;
 using Domain.Combat;
@@ -271,6 +272,8 @@ public static class EcsActionSession
     /// <summary>
     /// 由真实战斗实体系统推进本窗口战斗段：与 OOP 一致一次性 AdvanceTo 到窗口战斗预算，
     /// 内部逐自然边界消化随机原子事件；事件顺序、随机流与逐边界调用完全等价。
+    /// 事件驱动消耗品：入场/窗口起点同刻复查一次，此后每个自然边界收尾相位落地后
+    /// 携存活战态复查至整轮无激活——「掉血越线当拍吃药」「敌方出现即打符」零延迟。
     /// </summary>
     public static void AdvanceCombatEncounter(EcsActionExecutionComponent e, CombatEncounterComponent encounter)
     {
@@ -283,8 +286,34 @@ public static class EcsActionSession
         var state = encounter.State;
         if (state.Outcome == CombatOutcome.Running && state.ElapsedSeconds < e.BattleTarget - 1e-12)
         {
-            var result = CombatEventAdvanceSystem.AdvanceTo(state, e.BattleTarget,
-                DaoHua.Ecs.Combat.EcsCombatPhaseDispatcher.Instance, encounter);
+            // 即时消耗品判定委托：同刻级联复查直到无激活。扣件口径与 PrepareResourceBoundary
+            // 一致——即时扣工作钱包（级联余额可见）并直接记 Request 请求批；不能写 e.Core：
+            // 窗口批差量在 CompleteResourceBoundary 会再次应用到工作钱包，造成双重扣件。
+            void EvaluateConsumablesAt(DateTimeOffset wallAt, CombatEncounterState liveState,
+                CombatFactDelta? wakeDelta = null)
+            {
+                for (var pass = 0; pass < 256; pass++)
+                {
+                    // 订阅索引：首趟按边界事实增量唤醒，后续趟全量复查（自身激活翻转不在增量内）。
+                    var spent = ActionExecutionRules.ActivateInstantConsumables(e.Player, e.Catalog,
+                        e.WorkingWallet, wallAt, e.Core.EventTail ??= new(), liveState: liveState,
+                        wakeDelta: pass == 0 ? wakeDelta : null);
+                    if (spent.Count == 0) break;
+                    foreach (var delta in spent)
+                    {
+                        e.WorkingWallet.Apply(delta);
+                        e.Request.AddAsset(delta);
+                    }
+                    e.Changed = true;
+                    e.Versions.MarkRequestChanged(true);
+                }
+            }
+            // 入场与窗口起点同刻复查：「敌方出现即打符」「血线已越界」等条件在首个出手边界前即成立。
+            EvaluateConsumablesAt(CombatBoundaryAt(e, e.BattleFrom), state);
+            var hook = new CombatBoundaryHookDispatcher((context, delta) =>
+                EvaluateConsumablesAt(CombatBoundaryAt(e, context.Encounter.ElapsedSeconds), context.Encounter, delta),
+                state, DaoHua.Ecs.Combat.EcsCombatPhaseDispatcher.Instance);
+            var result = CombatEventAdvanceSystem.AdvanceTo(state, e.BattleTarget, hook, encounter);
             encounter.LastEvents.AddRange(result.Events);
             e.BattleEvents.AddRange(result.Events);
             if (result.PlayerDeathTimestamps is { } deaths) e.BattleDeaths.AddRange(deaths);
