@@ -337,7 +337,6 @@ internal static class ComputeLinkLoadScenario
         psi.Environment["OfflineIdle__ScanIntervalSeconds"] = "10";
         psi.Environment["OfflineIdle__ScanBatchSize"] = "2000";
         psi.Environment["OfflineIdle__BatchIntervalMinutes"] = "60";
-        psi.Environment["ComputeNode__OverflowAfterSeconds"] = "0";
         psi.Environment["Ops__Enabled"] = "true";
         psi.Environment["Logging__LogLevel__Default"] = "Information";
         psi.Environment["Logging__LogLevel__Microsoft.AspNetCore"] = "Warning";

@@ -1,23 +1,32 @@
+using System.Diagnostics;
+
 namespace Server.Clean;
 
 /// <summary>
-/// 主服本地执行器（总纲18 §14.4）：常驻消费 compute_jobs 队列，与节点派发器共用同一队列
-/// 但走不同领取口径——本地执行器以 minPendingAge=0 立即领取到期任务，节点派发只取 pending
-/// 超过 ComputeNode:OverflowAfterSeconds 的溢出积压。
+/// 主服本地执行器（总纲18 §14.4）：compute_jobs 的本地兜底消费者，与节点派发器共用同一队列。
+/// 领取口径遵循「分布式节点优先、本地低负载兜底」：
+/// 有计算节点接入（compute-link 注册表非空）时本地执行器恒不领取，到期任务全归节点派发；
+/// 仅当无节点接入且主服进程 CPU 低于 ComputeNode:LocalFallbackMaxCpuPercent（默认 50）时
+/// 才以 minPendingAge=0 领取兜底——高负载时本地让位在线服务，离线欠债顺延由登录即时补算兜底。
 /// 单路串行逐任务执行：载荷反序列化/校验失败或独立重演拒绝 → 判 dead 保留诊断窗口；
 /// 可信产物经 <see cref="ComputeResultCommitter"/> 与节点路径同一事务边界写回；
 /// 持久化异常按任务 attempts 指数退避重试，超上限进 dead 终态。
-/// 执行器不受计算节点配置门控：无节点接入时主服自行承接全部离线批算。
 /// </summary>
 public sealed class LocalComputeExecutorWorker(
     PostgresComputeJobRepository jobs,
     ComputeResultCommitter committer,
     ComputeLinkMetrics metrics,
+    ComputeLinkRegistry registry,
     ServerOptions options,
     IComputeResultVerifier verifier,
     ILogger<LocalComputeExecutorWorker> logger) : BackgroundService
 {
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
+    private readonly LogThrottle _blockedLog = new(TimeSpan.FromMinutes(5));
+    /// <summary>进程 CPU 采样基线：相邻两次采样的 cpu 时间差 / 墙钟差 / 核数 = 进程利用率。</summary>
+    private readonly Process _process = Process.GetCurrentProcess();
+    private (TimeSpan Cpu, DateTimeOffset Wall)? _cpuSample;
+    private double _cpuFraction;
 
     /// <summary>
     /// 执行主循环：无到期任务时等待轮询周期；有任务则连续串行消费直到队列排空。
@@ -49,11 +58,39 @@ public sealed class LocalComputeExecutorWorker(
     }
 
     /// <summary>
-    /// 单步执行入口：领取一个到期任务并完整走完「校验 → 本地重演 → 事务写回」；
-    /// 返回是否处理了一个任务（false 表示队列空，主循环转入轮询等待）。供测试驱动。
+    /// 本地兜底门槛：有计算节点接入时恒返回 false（节点优先，本地不抢单）；
+    /// 无节点时仅当进程 CPU 处于中低负载（采样窗口利用率 ≤ 阈值）才允许领取。
+    /// </summary>
+    private bool IsLocalFallbackAllowed()
+    {
+        if (registry.NodeCount > 0) return false;
+        _process.Refresh();
+        var cpu = _process.TotalProcessorTime;
+        var wall = DateTimeOffset.UtcNow;
+        if (_cpuSample is { } prev)
+        {
+            var dWall = (wall - prev.Wall).TotalSeconds;
+            if (dWall > 0.5)
+                _cpuFraction = (cpu - prev.Cpu).TotalSeconds / (dWall * Environment.ProcessorCount);
+        }
+        _cpuSample = (cpu, wall);
+        return _cpuFraction * 100d <= options.ComputeLocalFallbackMaxCpuPercent;
+    }
+
+    /// <summary>
+    /// 单步执行入口：兜底门槛放行后领取一个到期任务并完整走完「校验 → 本地重演 → 事务写回」；
+    /// 返回是否处理了一个任务（false 表示队列空或被门槛拦下，主循环转入轮询等待）。供测试驱动。
     /// </summary>
     internal async ValueTask<bool> RunOnceAsync(CancellationToken cancellationToken)
     {
+        if (!IsLocalFallbackAllowed())
+        {
+            if (_blockedLog.TryAcquire())
+                logger.LogInformation(
+                    "本地执行器本轮不领取离线批算：nodes={NodeCount} cpu={CpuPercent:F1}% 阈值={MaxCpuPercent}%。",
+                    registry.NodeCount, _cpuFraction * 100d, options.ComputeLocalFallbackMaxCpuPercent);
+            return false;
+        }
         var claims = await jobs.ClaimDueAsync(1, options.ComputeLease, TimeSpan.Zero, cancellationToken);
         if (claims.Count == 0) return false;
         var claim = claims[0];

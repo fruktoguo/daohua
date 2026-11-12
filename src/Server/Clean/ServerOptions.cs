@@ -90,8 +90,8 @@ public sealed record ServerOptions(
     public int ColdCatchUpBatchSize { get; init; } = 128;
     /// <summary>离线挂机批算间隔：距上次结算不足该时长的玩家不入队；到达封顶边界的终末批不受限</summary>
     public TimeSpan OfflineBatchInterval { get; init; } = TimeSpan.FromHours(1);
-    /// <summary>节点溢出阈值：pending 积压超过该时长的任务才派发给计算节点；0 表示立即可派</summary>
-    public TimeSpan ComputeOverflowAfter { get; init; } = TimeSpan.FromSeconds(300);
+    /// <summary>本地兜底执行 CPU 上限（ComputeNode:LocalFallbackMaxCpuPercent）：无节点接入时仅当进程 CPU 低于该百分比才允许本地领取离线批算任务；节点在场时本地执行器恒不领取（节点优先）</summary>
+    public int ComputeLocalFallbackMaxCpuPercent { get; init; } = 50;
     /// <summary>在线断线宽限（OfflineIdle:GraceSeconds）：断线后在线位与实体保留该时长，0 表示断开即卸载</summary>
     public TimeSpan OfflineGrace { get; init; } = TimeSpan.FromSeconds(300);
 
@@ -144,7 +144,7 @@ public sealed record ServerOptions(
         var coldScanSeconds = configuration.GetValue("OfflineIdle:ScanIntervalSeconds", 60);
         var coldBatchSize = configuration.GetValue("OfflineIdle:ScanBatchSize", 128);
         var offlineBatchMinutes = configuration.GetValue("OfflineIdle:BatchIntervalMinutes", 60);
-        var computeOverflowAfterSeconds = configuration.GetValue("ComputeNode:OverflowAfterSeconds", 300);
+        var localFallbackMaxCpuPercent = configuration.GetValue("ComputeNode:LocalFallbackMaxCpuPercent", 50);
         var offlineGraceSeconds = configuration.GetValue("OfflineIdle:GraceSeconds", 300);
 
         if (batchSize is < 1 or > 10_000) throw new InvalidOperationException("Storage:SectionFlushBatchSize 必须在 1..10000。");
@@ -179,7 +179,7 @@ public sealed record ServerOptions(
         if (coldScanSeconds is < 10 or > 86_400) throw new InvalidOperationException("OfflineIdle:ScanIntervalSeconds 必须在 10..86400。");
         if (coldBatchSize is < 1 or > 2_000) throw new InvalidOperationException("OfflineIdle:ScanBatchSize 必须在 1..2000。");
         if (offlineBatchMinutes is < 1 or > 1440) throw new InvalidOperationException("OfflineIdle:BatchIntervalMinutes 必须在 1..1440。");
-        if (computeOverflowAfterSeconds is < 0 or > 86_400) throw new InvalidOperationException("ComputeNode:OverflowAfterSeconds 必须在 0..86400。");
+        if (localFallbackMaxCpuPercent is < 1 or > 99) throw new InvalidOperationException("ComputeNode:LocalFallbackMaxCpuPercent 必须在 1..99。");
         if (offlineGraceSeconds is < 0 or > 3_600) throw new InvalidOperationException("OfflineIdle:GraceSeconds 必须在 0..3600。");
         if (computeToken is { Length: > 512 }) throw new InvalidOperationException("ComputeNode:Token 长度不能超过 512。");
         // 每节点独立凭证映射：ComputeNode:Tokens:<节点名> = 令牌（环境变量 ComputeNode__Tokens__<名> 同口径）。
@@ -233,7 +233,7 @@ public sealed record ServerOptions(
             ColdCatchUpInterval = TimeSpan.FromSeconds(coldScanSeconds),
             ColdCatchUpBatchSize = coldBatchSize,
             OfflineBatchInterval = TimeSpan.FromMinutes(offlineBatchMinutes),
-            ComputeOverflowAfter = TimeSpan.FromSeconds(computeOverflowAfterSeconds),
+            ComputeLocalFallbackMaxCpuPercent = localFallbackMaxCpuPercent,
             OfflineGrace = TimeSpan.FromSeconds(offlineGraceSeconds),
             EcsShardCount = ecsShardCount
         };

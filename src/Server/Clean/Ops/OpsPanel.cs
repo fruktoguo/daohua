@@ -464,7 +464,7 @@ public static class OpsPanel
                 pollIntervalMs = serverOptions.ComputePollInterval.TotalMilliseconds,
                 leaseSeconds = serverOptions.ComputeLease.TotalSeconds,
                 maxAttempts = serverOptions.ComputeMaxAttempts,
-                overflowAfterSeconds = serverOptions.ComputeOverflowAfter.TotalSeconds,
+                localFallbackMaxCpuPercent = serverOptions.ComputeLocalFallbackMaxCpuPercent,
                 coldCatchUpIntervalSeconds = serverOptions.ColdCatchUpInterval.TotalSeconds,
                 coldCatchUpBatchSize = serverOptions.ColdCatchUpBatchSize,
                 offlineBatchIntervalMinutes = serverOptions.OfflineBatchInterval.TotalMinutes,

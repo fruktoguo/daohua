@@ -75,9 +75,10 @@ public sealed class ComputeDispatcherWorker(
                         var maxJobs = node.MaxJobsPerBatch > 0
                             ? Math.Min(options.ComputeBatchSize, node.MaxJobsPerBatch)
                             : options.ComputeBatchSize;
-                        // 节点派发只承接 pending 超过溢出阈值的积压：本地执行器实时消费新任务。
+                        // 节点优先：有节点容量即即时领取全部到期任务，不设 pending 滞留门槛；
+                        // 无节点时 Acquire 已返回 null，任务留 pending 等本地兜底或节点回归。
                         claims = await jobs.ClaimDueAsync(maxJobs, options.ComputeLease,
-                            options.ComputeOverflowAfter, stoppingToken);
+                            TimeSpan.Zero, stoppingToken);
                         metrics.RecordJobsClaimed(claims.Count);
                     }
                     catch
