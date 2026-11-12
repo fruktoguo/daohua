@@ -226,13 +226,13 @@ public static class EcsActionSession
             var expedition = e.PreparedAction!.Expedition!;
             var phaseRemaining = expedition.Phase is CombatExpeditionPhase.Duel or CombatExpeditionPhase.DuelPending
                 ? e.RemainingSeconds : Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
-            return e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds + Math.Min(e.RemainingSeconds, phaseRemaining));
+            return e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds + Math.Min(e.RemainingSeconds, phaseRemaining));
         }
         var needed = e.Definition.ExecutionKind == ActionExecutionKind.Travel
             ? Math.Max(0, e.PreparedAction!.Travel!.TotalDurationSeconds - e.PreparedAction.Travel.ProgressSeconds)
             : Math.Max(0, e.Duration - e.PreparedAction!.ProgressSeconds);
         var step = Math.Min(e.RemainingSeconds, needed);
-        return e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds + step);
+        return e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds + step);
     }
 
     /// <summary>Clock 阶段只开启资源自然窗口并记住本 tick 允许到达的时刻。</summary>
@@ -263,7 +263,7 @@ public static class EcsActionSession
         var step = CombatActionRules.AdvanceCombatPreparation(e.Player, action, definition, e.Catalog,
             e.WorkingWallet, e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core, e.DuelAdvance);
         e.RemainingSeconds = step.RemainingSeconds;
-        e.Cursor = e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds);
+        e.Cursor = e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds);
         if (step.Battle is { } battle) AttachCombat(e, battle, e.Cursor);
         e.PreparedAction = null;
         e.Definition = null;
@@ -310,7 +310,7 @@ public static class EcsActionSession
             }
             // 入场与窗口起点同刻复查：「敌方出现即打符」「血线已越界」等条件在首个出手边界前即成立。
             EvaluateConsumablesAt(CombatBoundaryAt(e, e.BattleFrom), state);
-            var hook = new CombatBoundaryHookDispatcher((context, delta) =>
+            var hook = new CombatBoundaryHookDispatcher((context, delta, _) =>
                 EvaluateConsumablesAt(CombatBoundaryAt(e, context.Encounter.ElapsedSeconds), context.Encounter, delta),
                 state, DaoHua.Ecs.Combat.EcsCombatPhaseDispatcher.Instance);
             var result = CombatEventAdvanceSystem.AdvanceTo(state, e.BattleTarget, hook, encounter);
@@ -336,7 +336,7 @@ public static class EcsActionSession
         e.RemainingSeconds = CombatActionRules.CompleteCombatAdvance(e.Player, action, definition,
             e.Catalog.CombatEncounters[state.EncounterId], e.Catalog, state, result,
             e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core, e.WorkingWallet);
-        e.Cursor = e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds);
+        e.Cursor = e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds);
         var combat = e.Entity.GetComponent<PlayerCombatComponent>()!;
         combat.LastOutcome = state.Outcome;
         combat.LastEventCount = e.BattleEvents.Count;
@@ -376,7 +376,7 @@ public static class EcsActionSession
     }
 
     private static DateTimeOffset CombatBoundaryAt(EcsActionExecutionComponent e, double battleSeconds)
-        => e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds + Math.Max(0, battleSeconds - e.BattleFrom));
+        => e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds + Math.Max(0, battleSeconds - e.BattleFrom));
 
     internal static CombatEncounterComponent AttachCombat(EcsActionExecutionComponent e, CombatEncounterState state, DateTimeOffset startedAt)
     {

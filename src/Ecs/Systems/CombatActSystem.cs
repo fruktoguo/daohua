@@ -120,9 +120,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 unit.PendingSkillIndex = i;
                 unit.NextAttackAtSeconds = encounter.ElapsedSeconds + castSeconds;
                 // 冷却自吟唱完成起算：配表 ÷ 冷却缩减除数（NonLinear 点数，境界成长已注入本通道）。
-                cooldowns[i] = unit.NextAttackAtSeconds
-                    + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d
-                    * PercentValue.Multiplier(unit.Stats.CooldownReductionPoints, PercentCurveMode.NonLinear);
+                var cdMs = AbilityNumber(slot.Ability, "cooldownMilliseconds");
+                var cdMult = PercentValue.Multiplier(unit.Stats.CooldownReductionPoints, PercentCurveMode.NonLinear);
+                cooldowns[i] = unit.NextAttackAtSeconds + cdMs / 1000d * cdMult;
                 return;
             }
         }

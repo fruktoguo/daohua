@@ -115,11 +115,11 @@ internal static partial class ActionExecutionRules
         AssetWallet wallet, DateTimeOffset windowStart, double stepSeconds,
         ActionMutationBatch core, ActionMutationBatch request)
     {
-        var at = windowStart.AddSeconds(stepSeconds);
+        var at = windowStart.AddSecondsExact(stepSeconds);
         var stagedItems = SettleResourceItems(player, at.ToUnixTimeMilliseconds() / 1000d,
             gameData.Duel.StagedSettleSeconds);
         // 暂存物品入账写入 Duel 账本与资产差量：不计 changed 会让入账已落库但无推送下发。
-        var changed = stagedItems.Length > 0;
+        var changed = stagedItems.Length > 0 || core.IdleSkillChanged;
         foreach (var item in stagedItems)
         {
             var itemId = new ItemId(item.ItemId);
@@ -130,7 +130,6 @@ internal static partial class ActionExecutionRules
                 $"暂存物品入账：{gameData.Items.GetValueOrDefault(itemId)?.Name ?? item.ItemId} ×{item.Quantity:0.##}。", null,
                 new Dictionary<ItemId, double> { [itemId] = item.Quantity }));
         }
-        changed |= AdvanceIdleSkillResources(player, stepSeconds);
         var coreDeltas = core.ToAssetDeltas(player.PlayerId);
         changed |= coreDeltas.Count > 0;
         foreach (var delta in coreDeltas)
@@ -182,9 +181,9 @@ internal static partial class ActionExecutionRules
 
     internal static bool AdvanceIdleSkillResources(IPlayerResourceContext player, double stepSeconds)
     {
+        var expedition = player.Actions.Count > 0 ? player.Actions[0].Expedition : null;
         if (player.Actions.Count > 0 && player.Actions[0].Participation is not null
             && player is not PlayerAggregate { IsParticipationSessionContainer: true }) return false;
-        var expedition = player.Actions.Count > 0 ? player.Actions[0].Expedition : null;
         if (expedition?.Phase == CombatExpeditionPhase.Combat) return false;
         var changed = false;
         // 参与会话：盟友镜像的跨战技能冷却与本机同口径折算（各成员模拟消费同一冻结起值 → 位级一致）。

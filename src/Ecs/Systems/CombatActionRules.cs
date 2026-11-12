@@ -112,15 +112,17 @@ internal static class CombatActionRules
         DateTimeOffset from, DateTimeOffset target, double remainingSeconds, ActionMutationBatch mutations,
         DuelAdvanceOptions? duel = null)
     {
+        var idleSkillChanged = false;
         var battle = AdvanceCombatPreparationCore(player, action, definition, gameData, wallet, duel,
-            from, target, ref remainingSeconds, ref mutations.Deltas, ref mutations.EventTail);
+            from, target, ref remainingSeconds, ref mutations.Deltas, ref mutations.EventTail, ref idleSkillChanged);
+        if (idleSkillChanged) mutations.IdleSkillChanged = true;
         return new(battle, remainingSeconds);
     }
 
     internal static CombatEncounterState? AdvanceCombatPreparationCore(IPlayerResourceContext player,
         IPlayerActionState action, ActionDefinition definition, GameDataCatalog gameData, AssetWallet? assetBalances,
         DuelAdvanceOptions? duel, DateTimeOffset from, DateTimeOffset target, ref double remainingSeconds,
-        ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
+        ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events, ref bool idleSkillChanged)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.prepare");
         CombatEncounterDefinition encounter;
@@ -129,7 +131,7 @@ internal static class CombatActionRules
         {
             var initialization = new ActionMutationBatch();
             InitializeCombatAction(player, action, definition, gameData,
-                from.AddSeconds((target - from).TotalSeconds - remainingSeconds), initialization);
+                from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds), initialization);
             foreach (var entry in initialization.Events) (events ??= new()).Add(entry);
             expedition = action.Expedition!;
             encounter = gameData.CombatEncounters[expedition.EncounterId];
@@ -144,8 +146,12 @@ internal static class CombatActionRules
 
         if (expedition.Phase == CombatExpeditionPhase.Duel)
         {
+            var beforeDuel = remainingSeconds;
             AdvanceDuelPlayback(player, action, definition, encounter, gameData, from, target,
                 ref remainingSeconds, ref deltas, ref events);
+            var duelStep = beforeDuel - remainingSeconds;
+            if (duelStep > 0 && ActionExecutionRules.AdvanceIdleSkillResources(player, duelStep))
+                idleSkillChanged = true;
             return null;
         }
 
@@ -154,9 +160,12 @@ internal static class CombatActionRules
             if (duel?.MatchingEnabled == true)
             {
                 // 匹配等待不消耗战斗时间：整段剩余时间记为等待，由撮合运行时在下一拍完成挂载。
-                action.Expedition = expedition with { PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + remainingSeconds };
+                var waitStep = remainingSeconds;
+                action.Expedition = expedition with { PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + waitStep };
                 action.ProgressSeconds = action.Expedition.PhaseElapsedSeconds;
                 remainingSeconds = 0;
+                if (waitStep > 0 && ActionExecutionRules.AdvanceIdleSkillResources(player, waitStep))
+                    idleSkillChanged = true;
                 return null;
             }
             // 离线补算等无撮合路径：保留遭遇计数，回退为正常波次入口。
@@ -177,7 +186,12 @@ internal static class CombatActionRules
             remainingSeconds -= step;
             action.Expedition = expedition with { PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + step };
             action.ProgressSeconds = action.Expedition.PhaseElapsedSeconds;
-            if (action.ProgressSeconds + 1e-9 < expedition.PhaseDurationSeconds) return null;
+            if (action.ProgressSeconds + 1e-9 < expedition.PhaseDurationSeconds)
+            {
+                if (step > 0 && ActionExecutionRules.AdvanceIdleSkillResources(player, step))
+                    idleSkillChanged = true;
+                return null;
+            }
             var respawnSpec = action.Participation?.Spec;
             // 参与会话复活上限取冻结面板：资源池展示值可越过实时属性上限，但入场钳制始终以冻结上限为准。
             var respawnMember = respawnSpec is not null && expedition.SelfIndex < respawnSpec.Members.Count
@@ -200,6 +214,8 @@ internal static class CombatActionRules
         {
             var step = AdvanceCombatSearchPhase(action, remainingSeconds);
             remainingSeconds -= step;
+            if (step > 0 && ActionExecutionRules.AdvanceIdleSkillResources(player, step))
+                idleSkillChanged = true;
             var updated = action.Expedition!;
             if (updated.PhaseElapsedSeconds + 1e-9 < updated.PhaseDurationSeconds) return null;
 
@@ -208,7 +224,7 @@ internal static class CombatActionRules
             var duelSettings = gameData.Duel;
             if (action.Intent.PvpEnabled)
             {
-                var entryAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+                var entryAtUnix = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
                 if (player.Duel.CooldownUntilUnixSeconds <= entryAtUnix)
                 {
                     var chargesBefore = player.Duel.EncounterCharges;
@@ -239,7 +255,7 @@ internal static class CombatActionRules
                 }
             }
 
-            var entryAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
+            var entryAt = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds);
             var preparation = PrepareCombatEntry(player, action, definition, encounter, updated,
                 gameData, assetBalances, entryAt);
             foreach (var (asset, quantity) in preparation.AssetDeltas)
@@ -296,7 +312,7 @@ internal static class CombatActionRules
         // 参与会话消费开打定格画面，槽位不扣减。
         if (spec is null)
         {
-            var sustainedAt = from.AddSeconds(actionElapsedBeforeCombat + consumed);
+            var sustainedAt = from.AddSecondsExact(actionElapsedBeforeCombat + consumed);
             DrainCombatSustainedSlots(player, gameData, consumed, sustainedAt, definition.Id, ref events);
             // 战内续补：冷却到点即重新补能并注入 Buff，覆盖原地复活续打等不再经过入场的路径。
             // 补能判定与入场共用同一套槽位规则（剩余为 0、冷却走完、触发条件、库存扣件）。
@@ -374,7 +390,7 @@ internal static class CombatActionRules
             while (downedCursor < downedEvents.Count && downedEvents[downedCursor].At <= uptoBattleSeconds + 1e-9)
             {
                 var mark = downedEvents[downedCursor++];
-                var at = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, mark.At - battleFrom));
+                var at = from.AddSecondsExact(actionElapsedBeforeCombat + Math.Max(0, mark.At - battleFrom));
                 var isSelf = mark.MemberIndex == selfIndex;
                 var name = spec is not null ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
                 if (mark.Respawn)
@@ -399,7 +415,7 @@ internal static class CombatActionRules
         {
             if (combatEvent.AttackerId == "player" && combatEvent.AbilityId is { } usedAbility)
                 GrantAbilityUseExperience(player, action.Id, usedAbility,
-                    from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom)).ToUnixTimeMilliseconds() / 1000d);
+                    from.AddSecondsExact(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom)).ToUnixTimeMilliseconds() / 1000d);
         }
         // 尾窗门控按「可产出日志的帧」计容量：普攻与无技能衍生帧不产行不占额；
         // 技能帧按成员帧计数（合并后实际行数只少不多，不超尾窗），超额帧按时间序直接跳过，
@@ -442,7 +458,7 @@ internal static class CombatActionRules
                 && combatResult.Events[castEnd].AttackerId == combatEvent.AttackerId
                 && combatResult.Events[castEnd].AtSeconds == combatEvent.AtSeconds)
                 castEnd++;
-            var eventAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom));
+            var eventAt = from.AddSecondsExact(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom));
             var clauses = new List<string>(castEnd - eventIndex);
             for (var i = eventIndex; i < castEnd; i++)
             {
@@ -467,7 +483,7 @@ internal static class CombatActionRules
             player.Progression.TotalDefeats += 1;
             player.MarkDirty(PlayerSectionKind.Progression);
             player.RecordStats(action.Id,
-                from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
+                from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
                 new PlayerStatsDelta { Deaths = 1 });
             // 组队散场保留全员倒地镜像供复活读条展示；读条完成时统一重置满状态。
             // 致死一击事件随复活相位保留：倒地跳字/受击反馈与终局结算同属一次补算步进，
@@ -496,7 +512,7 @@ internal static class CombatActionRules
 
         // 波次清空才结算掉落与完成一次重复；逐只发放击杀奖励并计入生平斩妖。
         var pvpEnabled = action.Intent.PvpEnabled;
-        var killAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+        var killAtUnix = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         var killSeed = updatedBattle.Seed;
         var difficulty = spec?.Difficulty ?? action.Intent.Difficulty;
         foreach (var enemy in waveEnemies)
@@ -539,7 +555,7 @@ internal static class CombatActionRules
         // 行动参与会话不推进个人引导；参与会话结束由组织适配器裁决。
         var tutorialAdvanced = action.Participation is null
             && TutorialRules.OnActionRoundCompleted(player, definition.Id,
-                from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events);
+                from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events);
 
         completedActions += 1;
         completedRepeats += 1;
@@ -1037,7 +1053,7 @@ internal static class CombatActionRules
             // 斗法本方施放同样计每次 1 点功法经验；镜像方施放不重复入账。
             if (frameAttackerIsViewer && frame.AbilityId is { } frameAbility)
                 GrantAbilityUseExperience(player, action.Id, frameAbility,
-                    from.AddSeconds(elapsedBefore + Math.Max(0, frame.AtSeconds - expedition.BattleElapsedSeconds)).ToUnixTimeMilliseconds() / 1000d);
+                    from.AddSecondsExact(elapsedBefore + Math.Max(0, frame.AtSeconds - expedition.BattleElapsedSeconds)).ToUnixTimeMilliseconds() / 1000d);
             if (frameTargetIsViewer) { viewerHp = frame.TargetHitpointsAfter; viewerMp = frame.TargetManapointsAfter; }
             else { opponentHp = frame.TargetHitpointsAfter; opponentMp = frame.TargetManapointsAfter; }
             if (frameAttackerIsViewer) viewerMp = frame.AttackerManapointsAfter;
@@ -1071,7 +1087,7 @@ internal static class CombatActionRules
             }
             var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData);
             AppendCastClauses(builder, clauses);
-            AddCombatEventAt(ref events, from.AddSeconds(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)),
+            AddCombatEventAt(ref events, from.AddSecondsExact(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)),
                 "combat.skill", builder.Append('。').ToString(), definition.Id);
             i = castEnd - 1;
         }
@@ -1090,7 +1106,7 @@ internal static class CombatActionRules
         if (!playback.Resolved && playbackTo + 1e-9 < playback.DurationSeconds) return;
 
         // 回放结束（或已裁决标记）：结算斗法归属。
-        var now = from.AddSeconds(elapsedBefore + Math.Max(0, playbackTo - expedition.BattleElapsedSeconds));
+        var now = from.AddSecondsExact(elapsedBefore + Math.Max(0, playbackTo - expedition.BattleElapsedSeconds));
         var nowUnix = now.ToUnixTimeMilliseconds() / 1000d;
         var duelSettings = gameData.Duel;
         player.Duel.ActiveDuelId = null;
@@ -1535,7 +1551,7 @@ internal static class CombatActionRules
     {
         events ??= new SimulationEventTail();
         var elapsed = Math.Max(0, (target - from).TotalSeconds - remainingSeconds);
-        AddCombatEventAt(ref events, from.AddSeconds(elapsed), code, message, actionId);
+        AddCombatEventAt(ref events, from.AddSecondsExact(elapsed), code, message, actionId);
     }
 
     private static void AddCombatEventAt(ref SimulationEventTail? events, DateTimeOffset at, string code, string message, ActionId actionId)

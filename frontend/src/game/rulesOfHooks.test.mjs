@@ -12,8 +12,14 @@ const ts = require(tsPath)
 function findTsxFiles(dir) {
   const results = []
   for (const file of readdirSync(dir)) {
+    if (file === 'node_modules' || file === 'dist' || file === 'private-impl') continue
     const full = path.join(dir, file)
-    const stat = statSync(full)
+    let stat
+    try {
+      stat = statSync(full)
+    } catch {
+      continue
+    }
     if (stat.isDirectory()) {
       results.push(...findTsxFiles(full))
     } else if (file.endsWith('.tsx') || file.endsWith('.ts')) {

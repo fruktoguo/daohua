@@ -392,16 +392,16 @@ public static partial class SimulationEngine
                 deltas[delta.Asset] = deltas.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
             }
             var step = resourceBoundary.StepSeconds;
-            var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet, duel, live,
+            var result = AdvanceToCore(player, now.AddSecondsExact(step), gameData.Actions, gameData, wallet, duel, live,
                 consumableSchedule);
             // 无暂存物品时整段跳过：SettleStagedItems 空表恒返回空，标脏只在真实结算时发生。
             if (player.Duel.StagedItems.Count > 0)
             {
                 // 孤儿预约自愈：标记残留而对局缺失会永久冻结暂存入账，清理后玩家事件可见、不静默。
                 if (PruneOrphanDuelReservation(player))
-                    events.Add(new SimulationEvent(now.AddSeconds(step), "duel.orphan.cleared",
+                    events.Add(new SimulationEvent(now.AddSecondsExact(step), "duel.orphan.cleared",
                         "斗法对局记录异常，已自动修复。"));
-                var stagedSettled = SettleResourceItems(player, now.AddSeconds(step).ToUnixTimeMilliseconds() / 1000d,
+                var stagedSettled = SettleResourceItems(player, now.AddSecondsExact(step).ToUnixTimeMilliseconds() / 1000d,
                     gameData.Duel.StagedSettleSeconds);
                 // 暂存物品入账写入 Duel 账本与资产差量：不计 changed 会让入账已落库但无推送下发。
                 changed |= stagedSettled.Length > 0;
@@ -411,12 +411,11 @@ public static partial class SimulationEngine
                     wallet.Apply(settledDelta);
                     deltas[settledDelta.Asset] = deltas.GetValueOrDefault(settledDelta.Asset) + settledDelta.QuantityDelta;
                     var settledItemId = new ItemId(settledItem.ItemId);
-                    events.Add(new SimulationEvent(now.AddSeconds(step), "duel.staged.settled",
+                    events.Add(new SimulationEvent(now.AddSecondsExact(step), "duel.staged.settled",
                         $"暂存物品入账：{gameData.Items.GetValueOrDefault(settledItemId)?.Name ?? settledItem.ItemId} ×{settledItem.Quantity:0.##}。", null,
                         new Dictionary<ItemId, double> { [settledItemId] = settledItem.Quantity }));
                 }
             }
-            changed |= AdvanceIdleSkillResources(player, step);
             foreach (var delta in result.AssetDeltas)
             {
                 wallet.Apply(delta);
@@ -481,6 +480,7 @@ public static partial class SimulationEngine
         var completedActions = 0d;
         var completedRepeats = 0d;
         var transitions = 0;
+        var idleSkillChanged = false;
         Dictionary<AssetKey, double>? deltas = null;
         SimulationEventTail? events = null;
 
@@ -494,14 +494,14 @@ public static partial class SimulationEngine
         while (remainingSeconds > 1e-9 && player.Actions.Count > 0)
         {
             var action = player.Actions[0];
-            var nowUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+            var nowUnix = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
             // 参与会话结束是权威队列边界，必须先于暂停和阻塞判断处理，避免暂停永久阻挡散场清理。
             if (action.Participation is { } participation && double.IsFinite(participation.EndsAtUnixSeconds)
                 && nowUnix + 1e-6 >= participation.EndsAtUnixSeconds)
             {
                 player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: participation.EndsAtUnixSeconds);
                 events ??= new SimulationEventTail();
-                events.Add(new SimulationEvent(from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                events.Add(new SimulationEvent(from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds),
                     "action.participation.ended", "行动参与会话已结束。", action.Intent.ActionId));
                 continue;
             }
@@ -524,7 +524,7 @@ public static partial class SimulationEngine
                 }
                 if (Systems.ActionExecutionRules.AdvanceBlockedAction(player, action, lastDefinition,
                         gameData, assetBalances,
-                        from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                        from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds),
                         deltas, ref events))
                 {
                     if (++transitions > MaxTransitionsPerAdvance)
@@ -543,7 +543,7 @@ public static partial class SimulationEngine
                 lastActionId = actionId;
             }
             var definition = lastDefinition;
-            var currentAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
+            var currentAt = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds);
             if (!TryStartActionCore(player, action, definition, gameData, assetBalances, currentAt, deltas, ref events))
                 continue;
             blockedActions.Clear();
@@ -553,17 +553,17 @@ public static partial class SimulationEngine
                 if (gameData is null)
                     throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
                 AdvanceCombatAction(player, action, definition, gameData, assetBalances, duel, from, target,
-                    ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats, live,
-                    consumableSchedule);
+                    ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats,
+                    ref idleSkillChanged, live, consumableSchedule);
                 continue;
             }
             if (definition.ExecutionKind == ActionExecutionKind.Travel)
             {
                 AdvanceTravelAction(player, action, definition, gameData, from, target, ref remainingSeconds,
-                    ref events, ref completedActions, ref completedRepeats);
+                    ref events, ref completedActions, ref completedRepeats, ref idleSkillChanged);
                 continue;
             }
-            var actionAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
+            var actionAt = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds);
             var autoUseMultiplier = PrepareTimedActionCore(player, action, definition,
                 isActionStart, gameData, assetBalances, actionAt, ref deltas, ref events);
             var duration = TimedActionDuration(player, action, definition, gameData, assetBalances, deltas);
@@ -584,15 +584,19 @@ public static partial class SimulationEngine
             var needed = Math.Max(0, duration - action.ProgressSeconds);
             var step = Math.Min(remainingSeconds, needed);
             remainingSeconds -= step;
+            if (step > 0 && AdvanceIdleSkillResources(player, step)) idleSkillChanged = true;
             AdvanceTimedAction(player, action, definition, autoUseMultiplier, gameData, step,
-                from.AddSeconds((target - from).TotalSeconds - remainingSeconds));
+                from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds));
             if (action.ProgressSeconds + 1e-9 >= duration)
             {
                 CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, assetBalances,
-                    from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                    from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds),
                     ref deltas, ref events, ref completedActions, ref completedRepeats);
             }
         }
+
+        if (remainingSeconds > 1e-9 && AdvanceIdleSkillResources(player, remainingSeconds))
+            idleSkillChanged = true;
 
         // 道龄随模拟时间自然流逝；Progression 仅在发生实际状态转移时标脏，避免空队列每秒刷盘。
         player.Progression.AgeSeconds += (target - from).TotalSeconds;
@@ -666,7 +670,7 @@ public static partial class SimulationEngine
             assetDeltas,
             events?.View ?? [],
             player.StateVersion,
-            transitions > 0 || headActivated,
+            transitions > 0 || headActivated || idleSkillChanged,
             events?.Dropped ?? 0);
     }
 
@@ -688,6 +692,7 @@ public static partial class SimulationEngine
         ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats,
+        ref bool idleSkillChanged,
         LiveCombatBattle? live = null,
         ConsumableScheduleMode consumableSchedule = ConsumableScheduleMode.EventDriven)
     {
@@ -695,7 +700,7 @@ public static partial class SimulationEngine
         if (action.Expedition?.Phase != CombatExpeditionPhase.Combat)
         {
             var prepared = AdvanceCombatPreparationCore(player, action, definition, gameData, assetBalances,
-                duel, from, target, ref remainingSeconds, ref deltas, ref events);
+                duel, from, target, ref remainingSeconds, ref deltas, ref events, ref idleSkillChanged);
             if (prepared is not null) live?.Adopt(action, prepared, action.Expedition!, player.AttributeInputRevision);
             return;
         }
@@ -749,9 +754,12 @@ public static partial class SimulationEngine
         CombatAdvanceResult combatResult;
         if (consumableSchedule == ConsumableScheduleMode.EventDriven && assetBalances is not null)
         {
-            var callWall = target.AddSeconds(-remainingSeconds);
+            var callWall = target.AddSecondsExact(-remainingSeconds);
             var hookEvents = events ??= new SimulationEventTail();
             var hookDeltas = deltas ??= new Dictionary<AssetKey, double>();
+            // 参与会话面板开打即冻结（与上方复用分支同口径）：战斗边界消耗品写入 Buff
+            // 不得触发面板刷新，否则共享战斗各成员推演不逐位一致。
+            var panelFrozen = action.Participation?.Spec is not null;
             void EvaluateConsumablesAt(DateTimeOffset wallAt, CombatEncounterState liveState,
                 CombatFactDelta? wakeDelta = null)
             {
@@ -770,9 +778,21 @@ public static partial class SimulationEngine
             }
             // 入场与窗口起点同刻复查：「敌方出现即打符」「血线已越界」等条件在首个出手边界前即成立。
             EvaluateConsumablesAt(callWall, battleState);
-            var hook = new CombatBoundaryHookDispatcher((context, delta) =>
-                EvaluateConsumablesAt(callWall.AddSeconds(context.Encounter.ElapsedSeconds - battleFrom),
-                    context.Encounter, delta), battleState);
+            var hook = new CombatBoundaryHookDispatcher((context, delta, acted) =>
+            {
+                var wallAt = callWall.AddSecondsExact(context.Encounter.ElapsedSeconds - battleFrom);
+                EvaluateConsumablesAt(wallAt, context.Encounter, delta);
+                // 出手/复活边界与管线逐可见步的重检同粒度：仅该边界按属性修订号换入最新
+                // 结算面板并同刻复查（对应管线步起点「刷新→复查」序列）；Buff/回复 tick 等
+                // 不可见边界不提前应用修订，与 oracle 管线步内冻结口径逐位一致。
+                if (!acted || panelFrozen || live?.Current is not { } entry
+                    || (gameData.BaseAttributes is not null && entry.AttributeRevision == player.AttributeInputRevision))
+                    return;
+                context.Encounter.Player.RefreshStats(PlayerAttributeResolver.ResolveForCombat(player, gameData,
+                    context.Encounter.Player.TraitState).ToCombatant(player.Progression.CombatExperience));
+                entry.AttributeRevision = player.AttributeInputRevision;
+                EvaluateConsumablesAt(wallAt, context.Encounter);
+            }, battleState);
             combatResult = Systems.CombatEventAdvanceSystem.AdvanceTo(battleState,
                 battleFrom + remainingSeconds, hook);
         }
@@ -803,8 +823,9 @@ public static partial class SimulationEngine
         ref double remainingSeconds,
         ref SimulationEventTail? events,
         ref double completedActions,
-        ref double completedRepeats)
-        => DaoHua.Ecs.Systems.ActionExecutionRules.AdvanceTravelAction(player, action, definition, gameData, from, target, ref remainingSeconds, ref events, ref completedActions, ref completedRepeats);
+        ref double completedRepeats,
+        ref bool idleSkillChanged)
+        => DaoHua.Ecs.Systems.ActionExecutionRules.AdvanceTravelAction(player, action, definition, gameData, from, target, ref remainingSeconds, ref events, ref completedActions, ref completedRepeats, ref idleSkillChanged);
 
 
     internal static long CreateSeed(string encounterId, double completedRepeats)

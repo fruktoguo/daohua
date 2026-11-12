@@ -23,9 +23,9 @@ public static partial class SimulationEngine
     private static CombatEncounterState? AdvanceCombatPreparationCore(IPlayerResourceContext player,
         IPlayerActionState action, ActionDefinition definition, GameDataCatalog gameData, AssetWallet? assetBalances,
         DuelAdvanceOptions? duel, DateTimeOffset from, DateTimeOffset target, ref double remainingSeconds,
-        ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
+        ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events, ref bool idleSkillChanged)
         => Systems.CombatActionRules.AdvanceCombatPreparationCore(player, action, definition, gameData,
-            assetBalances, duel, from, target, ref remainingSeconds, ref deltas, ref events);
+            assetBalances, duel, from, target, ref remainingSeconds, ref deltas, ref events, ref idleSkillChanged);
 
     /// <summary>无世界调用复用 ECS 战斗收益结算规则。</summary>
     public static double CompleteCombatAdvance(IPlayerResourceContext player, IPlayerActionState action,

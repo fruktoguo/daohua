@@ -81,7 +81,9 @@ public static class SimulatorRunner
         var encounter = ResolveEncounter(request.NodeId, seed, gameData);
         var startAtUnixSeconds = request.Environment.CapturedAtUnixSeconds;
         var startAt = DateTimeOffset.FromUnixTimeMilliseconds((long)Math.Round(startAtUnixSeconds * 1000d));
-        var targetAt = startAt.AddSeconds(request.DurationSeconds);
+        // 目标时刻按 tick 精确换算：DateTime.AddSeconds 的 AddUnits 会先取整部/分部再截断分部，
+        // 大秒数（如 20.8264462）会因分部浮点误差少计 1 tick，与 ECS 逐窗口边界口径产生尾差。
+        var targetAt = startAt.AddTicks((long)(request.DurationSeconds * TimeSpan.TicksPerSecond + 0.5));
         var members = request.Members.Count == 1
             ? [RunSolo(request.Members[0], request, environmentNode, action, encounter, seed, gameData, startAt, targetAt)]
             : RunParty(request, environmentNode, action, encounter, seed, gameData, startAt, targetAt);

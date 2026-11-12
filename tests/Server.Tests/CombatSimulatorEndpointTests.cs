@@ -167,14 +167,15 @@ public sealed class CombatSimulatorEndpointAuthTests
             "队友", DateTimeOffset.UnixEpoch, catalog.Fingerprint).ExportState();
         var now = DateTimeOffset.UtcNow;
         var writes = SectionCodec.EncodeAggregateFull(allyState, now);
+        var sections = writes.ToDictionary(write => write.SectionKind,
+            write => new StoredSection(Ally, write.SectionKind, write.StateVersion,
+                write.SchemaVersion, write.Codec, write.Payload.ToArray(),
+                write.RawBytes, write.Checksum, write.UpdatedAt));
         host.Sections.Bundles[Ally] = new PlayerStateBundle(
             new PlayerIdentity(Ally, Ally, "队友", now),
             new PlayerStateHead(Ally, 1, PlayerStateHead.CurrentSchemaVersion, now,
-                catalog.Fingerprint, "test", now),
-            writes.ToDictionary(write => write.SectionKind,
-                write => new StoredSection(Ally, write.SectionKind, write.StateVersion,
-                    write.SchemaVersion, write.Codec, write.Payload.ToArray(),
-                    write.RawBytes, write.Checksum, write.UpdatedAt)),
+                catalog.Fingerprint, SectionCodec.ComputeHeadChecksum(sections.Values), now),
+            sections,
             []);
         host.Assets.Balances[Ally] = [new AssetBalanceRecord(Ally, "item.zhixue-powder", "", 2, 1)];
         As(host.Client, Self);

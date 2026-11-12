@@ -55,6 +55,12 @@ public sealed class CombatSimulatorEndpointEnvironmentTests
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("test", _ => { });
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton(catalog);
+        builder.Services.AddSingleton<IPlayerRuntime>(
+            _ => System.Reflection.DispatchProxy.Create<IPlayerRuntime, NotSupportedRuntimeProxy>());
+        builder.Services.AddSingleton<IPlayerStateRepository>(
+            new PostgresSectionRepository(source, NullLogger<PostgresSectionRepository>.Instance));
+        builder.Services.AddSingleton<IAssetBalanceRepository>(new PostgresAssetRepository(source));
+        builder.Services.AddSingleton<ISocialRepository>(new PostgresSocialRepository(source));
         builder.Services.AddSingleton(new PostgresZongmenRepository(source, catalog));
         builder.Services.AddSingleton(new NodeBuildingRegistry(
             new PostgresNodeBuildingRepository(source), catalog,
@@ -91,7 +97,7 @@ public sealed class CombatSimulatorEndpointEnvironmentTests
         await ExecuteSqlAsync(source, """
             INSERT INTO identity.players(player_id, account_id, display_name, display_name_normalized, created_at, last_seen_at)
             VALUES ($1, $1, $2, $2, now(), now()), ($3, $3, $4, $4, now(), now())
-            """, Self, "本人", Self.ToString("N"), Other, "路人", Other.ToString("N"));
+            """, Self, "本人", Other, "路人");
         await ExecuteSqlAsync(source, """
             INSERT INTO social.zongmen(zongmen_id, name, name_normalized, prefix, leader_id, anchor_node_id, created_at)
             VALUES ($1, $2, $2, 'AB', $3, $4, now()), ($5, $6, $6, 'CD', $7, $8, now())
@@ -114,9 +120,10 @@ public sealed class CombatSimulatorEndpointEnvironmentTests
             var environment = await response.Content.ReadFromJsonAsync<JsonElement>();
             var nodes = environment.GetProperty("nodes").EnumerateArray().ToArray();
 
-            // 静态节点全量（含空建筑条目），建筑拥挤投影真实可见。
+            // 静态节点全量（含空建筑条目），建筑拥挤投影真实可见；跳过地图自带预设建筑，精确断言插入项。
             var target = nodes.Single(node => node.GetProperty("nodeId").GetString() == nodeId);
-            var building = Assert.Single(target.GetProperty("buildings").EnumerateArray());
+            var building = Assert.Single(target.GetProperty("buildings").EnumerateArray(),
+                item => item.GetProperty("buildingId").GetString() == buildingId);
             Assert.Equal(buildingId, building.GetProperty("buildingId").GetString());
             Assert.Equal(3, building.GetProperty("level").GetInt32());
             Assert.Contains(target.GetProperty("usages").EnumerateArray(),
@@ -168,5 +175,11 @@ public sealed class CombatSimulatorEndpointEnvironmentTests
             }
             return Task.FromResult(AuthenticateResult.NoResult());
         }
+    }
+
+    public class NotSupportedRuntimeProxy : System.Reflection.DispatchProxy
+    {
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+            => throw new NotSupportedException();
     }
 }

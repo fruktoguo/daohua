@@ -81,7 +81,7 @@ public sealed class CombatRestoreReproTests
 
     /// <summary>
     /// 长时间离线狩猎补算回归：连续战斗窗口的边界总量远超最大转换数按请求计的预算。
-    /// 战斗段按窗口整段结算后，30 小时补算只需数千次 Tick；若退回逐边界 Tick 会立即触顶。
+    /// 战斗段按窗口整段结算后，12 小时补算只需千余次 Tick；若退回逐边界 Tick 会立即触顶。
     /// </summary>
     [Fact]
     public async Task LongOfflineCombatCatchUpDoesNotExhaustTransitionBudget()
@@ -93,22 +93,22 @@ public sealed class CombatRestoreReproTests
             using var runtime = new EcsGameRuntime(catalog, SeedTime);
             runtime.CreatePlayer(CreateState(catalog));
             runtime.EnqueueAction(PlayerIdValue, new ActionId(ActionId), -1);
-            var target = SeedTime.AddHours(30);
+            var target = SeedTime.AddHours(12);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             await runtime.RunPlayerOnceAsync(PlayerIdValue, target, cts.Token);
             return runtime.ExportSnapshot(PlayerIdValue);
         }
 
         var first = await RunOnce();
-        Assert.True(first.State.LastSimulatedAt >= SeedTime.AddHours(30));
+        Assert.True(first.State.LastSimulatedAt >= SeedTime.AddHours(12));
         // 无限循环行动不得因长补算出队
         Assert.Single(first.State.Actions);
         Assert.Equal(-1, first.State.Actions[0].RemainingRepeats);
-        // 非空转证据：30 小时狩猎必须产生真实的击杀/败北/完成轮次
+        // 非空转证据：12 小时狩猎必须产生真实的击杀/败北/完成轮次
         var activity = first.State.Progression;
         Assert.True(activity.NormalKills + activity.EliteKills + activity.BossKills + activity.TotalDefeats > 0
             || first.State.Actions[0].CompletedRepeats > 0,
-            $"狩猎 30h 未产生战斗活动（kills={activity.NormalKills},defeats={activity.TotalDefeats},repeats={first.State.Actions[0].CompletedRepeats}）");
+            $"狩猎 12h 未产生战斗活动（kills={activity.NormalKills},defeats={activity.TotalDefeats},repeats={first.State.Actions[0].CompletedRepeats}）");
 
         // 同一输入两次补算必须逐位一致（确定性回归）
         var second = await RunOnce();

@@ -161,6 +161,6 @@ public static class SimulationSchedule
             if (slot.Enabled)
                 ConsiderUnix(slot.CooldownUntilUnixSeconds);
 
-        return double.IsFinite(best) ? from.AddSeconds(Math.Max(0, best)) : null;
+        return double.IsFinite(best) ? from.AddSecondsExact(Math.Max(0, best)) : null;
     }
 }

@@ -10,12 +10,15 @@ namespace DaoHua.Ecs.Combat;
 /// 消耗品判定等「边界落地后同刻复查」逻辑的统一挂载点；战斗推进次序与随机流不变。
 /// 传入 tracked 遭遇时内嵌 <see cref="CombatFactTracker"/>，回调携带边界事实增量并
 /// 把增量折叠进各单位的 PendingWake 供技能槽判定缓存消费（TASK-20261112-15）。
+/// 回调第三参标记本边界是否含出手/复活派发：宿主可用它把「面板修订换入」钳到可见
+/// 步边界（出手/复活），避免在 Buff/回复 tick 等不可见边界提前应用修订。
 /// </summary>
-public sealed class CombatBoundaryHookDispatcher(Action<CombatPhaseContext, CombatFactDelta> afterBoundary,
+public sealed class CombatBoundaryHookDispatcher(Action<CombatPhaseContext, CombatFactDelta, bool> afterBoundary,
     CombatEncounterState? tracked = null, ICombatPhaseDispatcher? inner = null) : ICombatPhaseDispatcher
 {
     private readonly ICombatPhaseDispatcher _inner = inner ?? InlineCombatPhaseDispatcher.Instance;
     private readonly CombatFactTracker? _tracker = tracked is null ? null : new CombatFactTracker(tracked);
+    private bool _acted;
 
     /// <summary>宿主注入外部事实（共享钱包脏标记/战外面板刷新等追踪器不可 diff 的输入），并入下一边界增量。</summary>
     public void MarkExternal() => _tracker?.MarkExternal();
@@ -24,10 +27,15 @@ public sealed class CombatBoundaryHookDispatcher(Action<CombatPhaseContext, Comb
     public void Dispatch<TTag>(CombatEncounterComponent? host, CombatPhaseContext context) where TTag : ISystemTag
     {
         _inner.Dispatch<TTag>(host, context);
+        if (typeof(TTag) == typeof(ICombatAllyActPhase) || typeof(TTag) == typeof(ICombatEnemyActPhase)
+            || typeof(TTag) == typeof(ICombatAllyRespawnPhase))
+            _acted = true;
         if (typeof(TTag) != typeof(ICombatOutcomePhase)) return;
+        var acted = _acted;
+        _acted = false;
         var delta = _tracker?.Advance(context.Encounter) ?? CombatFactDelta.Full;
         FoldPendingWake(context.Encounter, in delta);
-        afterBoundary(context, delta);
+        afterBoundary(context, delta, acted);
     }
 
     /// <summary>把边界增量按遭遇绝对侧折叠进每槽待判定位（技能判定缓存的唤醒输入；仅数组已建槽位累积）。</summary>

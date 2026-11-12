@@ -74,7 +74,7 @@ internal static partial class ActionExecutionRules
             FlushCombatState(e);
             var plan = PrepareResourceBoundary(e.Player, e.Catalog, e.WorkingWallet, e.ComputeTarget, e.Request);
             e.WindowStepSeconds = plan.StepSeconds;
-            e.WindowEnd = e.WindowStart.AddSeconds(plan.StepSeconds);
+            e.WindowEnd = e.WindowStart.AddSecondsExact(plan.StepSeconds);
             e.WindowElapsedSeconds = (e.WindowEnd - e.WindowStart).TotalSeconds;
             e.RemainingSeconds = e.WindowElapsedSeconds;
             e.Core = new();
@@ -167,7 +167,7 @@ internal static partial class ActionExecutionRules
                     {
                         var encounter = e.Catalog.CombatEncounters[action.Expedition.EncounterId];
                         var restored = CombatActionRules.RestoreCombatBattle(e.Player, action, encounter, e.Catalog);
-                        e.Battle = AttachCombat(e, restored, e.Cursor.AddSeconds(-restored.ElapsedSeconds));
+                        e.Battle = AttachCombat(e, restored, e.Cursor.AddSecondsExact(-restored.ElapsedSeconds));
                     }
                     if (action.Participation?.Spec is { } sessionSpec)
                     {
@@ -232,7 +232,8 @@ internal static partial class ActionExecutionRules
         // 不能再按 tick 量化差值推导可用量：亚 tick（~1e-7s）残差会让边界落回同一时刻形成不动点。
         var step = Math.Min(e.RemainingSeconds, needed);
         e.RemainingSeconds -= step;
-        e.Cursor = e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds);
+        if (step > 0 && AdvanceIdleSkillResources(e.Player, step)) e.Core.IdleSkillChanged = true;
+        e.Cursor = e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds);
         AdvanceTimedAction(e.Player, action, definition, e.Multiplier, e.Catalog, step, e.Cursor);
         e.RoundDue = action.ProgressSeconds + 1e-9 >= e.Duration;
     }
@@ -254,7 +255,7 @@ internal static partial class ActionExecutionRules
             || e.FrameTarget < NextBoundaryAt(e)) return;
         e.RemainingSeconds = AdvanceTravelBoundary(e.Player, action, definition, e.Catalog,
             e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core);
-        e.Cursor = e.WindowStart.AddSeconds(e.WindowElapsedSeconds - e.RemainingSeconds);
+        e.Cursor = e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds);
         e.PreparedAction = null;
         e.Definition = null;
     }
@@ -263,10 +264,12 @@ internal static partial class ActionExecutionRules
     public static void CompleteClock(EcsActionExecutionComponent e, bool preparationOnly)
     {
         if (IsComplete(e) || !e.WindowOpen || preparationOnly) return;
-        // DateTimeOffset 以 tick（1e-7s）量化：窗口末残留的亚 tick 预算无法再用下一帧消费，
-        // 到达窗口末时直接归零，否则 boundary==cursor 会构成死循环不动点。
-        if (e.FrameTarget >= e.WindowEnd && (e.Waiting || e.RemainingSeconds <= 1e-6))
+        // 与 PrepareQueue（> 1e-9）与 CompleteClock（<= 1e-9）保持同一剩余预算下限；
+        // 亚 1e-9 残差或显式 Waiting 在到达窗口末时直接归零，避免构成死循环不动点。
+        if (e.FrameTarget >= e.WindowEnd && (e.Waiting || e.RemainingSeconds <= 1e-9))
         {
+            if (e.RemainingSeconds > 1e-9 && AdvanceIdleSkillResources(e.Player, e.RemainingSeconds))
+                e.Core.IdleSkillChanged = true;
             e.RemainingSeconds = 0;
             e.Cursor = e.WindowEnd;
         }

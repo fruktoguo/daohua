@@ -24,8 +24,10 @@ internal static partial class ActionExecutionRules
         ActionDefinition definition, GameDataCatalog gameData, DateTimeOffset from, DateTimeOffset target,
         double remainingSeconds, ActionMutationBatch mutations)
     {
+        var idleSkillChanged = false;
         AdvanceTravelAction(player, action, definition, gameData, from, target, ref remainingSeconds,
-            ref mutations.EventTail, ref mutations.ActionCount, ref mutations.RepeatCount);
+            ref mutations.EventTail, ref mutations.ActionCount, ref mutations.RepeatCount, ref idleSkillChanged);
+        if (idleSkillChanged) mutations.IdleSkillChanged = true;
         return remainingSeconds;
     }
 
@@ -98,11 +100,12 @@ internal static partial class ActionExecutionRules
         ref double remainingSeconds,
         ref SimulationEventTail? events,
         ref double completedActions,
-        ref double completedRepeats)
+        ref double completedRepeats,
+        ref bool idleSkillChanged)
     {
         var worldGraph = gameData?.WorldGraph;
         var travel = PrepareTravelActionCore(player, action, definition, gameData,
-            from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref events);
+            from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds), ref events);
         if (travel is null) return;
 
         if (travel.TotalDurationSeconds <= 0 || travel.Segments.Count == 0)
@@ -122,6 +125,7 @@ internal static partial class ActionExecutionRules
         }
 
         remainingSeconds -= step;
+        if (AdvanceIdleSkillResources(player, step)) idleSkillChanged = true;
 
         var segIndex = travel.CurrentSegmentIndex;
         var segElapsed = travel.SegmentElapsedSeconds;
@@ -209,7 +213,7 @@ internal static partial class ActionExecutionRules
         }
 
         player.MarkDirty(PlayerSectionKind.World);
-        var arrivalUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+        var arrivalUnix = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         // 抵达终点计一次完成轮次，随后实例出队归档账本。
         player.RecordStats(action.Id, arrivalUnix, new PlayerStatsDelta { Cycles = 1 });
         // 赶路六维经验按实际行进总秒数一次性取整入账（总纲 §20.1.4）：定额不吃收益倍率。
@@ -229,7 +233,7 @@ internal static partial class ActionExecutionRules
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
 
-        var arrivalTime = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
+        var arrivalTime = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds);
         events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(
             arrivalTime,

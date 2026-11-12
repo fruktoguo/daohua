@@ -27,7 +27,10 @@ public static class SimulatorEndpoints
             {
                 var partyId = await social.GetPartyIdAsync(playerId, ct);
                 var party = partyId is { } id ? await social.GetPartyAsync(id, ct) : null;
-                if (party is null || !party.Members.Any(member => member.PlayerId == targetId))
+                // 读取方与目标必须同时在队伍名单：挡住「读取方刚退队但 partyId 仍返回」的窗口。
+                if (party is null
+                    || !party.Members.Any(member => member.PlayerId == playerId)
+                    || !party.Members.Any(member => member.PlayerId == targetId))
                     return Results.Forbid();
             }
             var loaded = runtime.TryGetLoaded(targetId);

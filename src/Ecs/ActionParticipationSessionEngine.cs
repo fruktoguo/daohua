@@ -58,14 +58,14 @@ public sealed class ActionParticipationSessionEngine
             if (_battle is not null)
             {
                 var next = CombatEventAdvanceSystem.NextBoundarySeconds(_battle, double.MaxValue);
-                return _advancedAt.AddSeconds(Math.Max(0, Math.Min(next - _battle.ElapsedSeconds, wake)));
+                return _advancedAt.AddSecondsExact(Math.Max(0, Math.Min(next - _battle.ElapsedSeconds, wake)));
             }
             var expedition = Action.Expedition!;
             var phaseRemaining = Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
             var untilRegen = 5d;
             foreach (var member in _members) untilRegen = Math.Min(untilRegen, 5 - member.Resources.RegenCarrySeconds);
             var seconds = phaseRemaining > 1e-9 ? Math.Min(phaseRemaining, untilRegen) : untilRegen;
-            return _advancedAt.AddSeconds(Math.Max(0, Math.Min(seconds, wake)));
+            return _advancedAt.AddSecondsExact(Math.Max(0, Math.Min(seconds, wake)));
         }
     }
 
@@ -555,11 +555,10 @@ public sealed class ActionParticipationSessionEngine
     private double AdvancePreparation(DateTimeOffset from, DateTimeOffset target, double remaining)
     {
         var mutation = new ActionMutationBatch();
-        // 搜寻/复活时间必须在入场前折算技能与资源；不能按窗口终态把整段误算为战斗或脱战。
+        // 搜寻/复活时间必须在入场前折算资源；技能冷却由 AdvanceCombatPreparation 在实际非战步长上同步推进。
         var expedition = Action.Expedition!;
         var preparationSeconds = Math.Min(remaining,
             Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds));
-        ActionExecutionRules.AdvanceIdleSkillResources(Canonical, preparationSeconds);
         AdvancePreparationResources(preparationSeconds);
         var step = CombatActionRules.AdvanceCombatPreparation(Canonical, Action,
             _catalog.Actions.Get(_spec.ActionId), _catalog, null, from, target, remaining, mutation);
@@ -574,13 +573,13 @@ public sealed class ActionParticipationSessionEngine
                 if (step.Battle is { } entered && !entered.PlayerAllies[i].IsAlive)
                 {
                     var names = string.Join("、", entered.Enemies.Select(enemy => _catalog.CombatMonsters[enemy.DefinitionId!].Name));
-                    _collectors[i].Events.Add(new(from.AddSeconds((target - from).TotalSeconds - step.RemainingSeconds),
+                    _collectors[i].Events.Add(new(from.AddSecondsExact((target - from).TotalSeconds - step.RemainingSeconds),
                         "combat.downed", $"你以倒地状态随队迎战：{names}。", _spec.ActionId));
                 }
             }
             if (i > 0 && step.Battle is not null)
                 _members[i].RecordStats(_members[i].Actions[0].Id,
-                    ToUnix(from.AddSeconds((target - from).TotalSeconds - step.RemainingSeconds)),
+                    ToUnix(from.AddSecondsExact((target - from).TotalSeconds - step.RemainingSeconds)),
                     new PlayerStatsDelta { Encounters = 1 });
         }
         _battle = step.Battle;
@@ -591,7 +590,7 @@ public sealed class ActionParticipationSessionEngine
             Canonical.Combat.Skills = PlayerCombatSkillState.FromCombatant(enteredBattle.Player, enteredBattle.ElapsedSeconds);
             Canonical.Combat.Buffs = PlayerCombatBuffState.FromCombatant(enteredBattle.Player, enteredBattle.ElapsedSeconds);
             // 入场是既有合法充能边界；恰逢周期边界时只判定一次。
-            var entryAt = from.AddSeconds((target - from).TotalSeconds - step.RemainingSeconds);
+            var entryAt = from.AddSecondsExact((target - from).TotalSeconds - step.RemainingSeconds);
             if (_scheduleMode == ConsumableScheduleMode.PeriodicTick
                 && ToUnix(entryAt) >= _nextConsumableEvaluation - 1e-9) _nextConsumableEvaluation += 5;
             EvaluateConsumables(entryAt);
@@ -1065,8 +1064,8 @@ public sealed class ActionParticipationSessionEngine
             var battleFrom = _battle.ElapsedSeconds;
             // 订阅索引：每个自然边界产出事实增量后仅唤醒订阅位命中的槽位（首趟），
             // 级联后续趟全量复查；共享钱包变更经外部事实标记并入下一边界增量。
-            var hook = new CombatBoundaryHookDispatcher((context, delta) =>
-                EvaluateConsumableCascade(from.AddSeconds(context.Encounter.ElapsedSeconds - battleFrom), delta),
+            var hook = new CombatBoundaryHookDispatcher((context, delta, _) =>
+                EvaluateConsumableCascade(from.AddSecondsExact(context.Encounter.ElapsedSeconds - battleFrom), delta),
                 _battle);
             if (_walletDirty) { hook.MarkExternal(); _walletDirty = false; }
             result = CombatEventAdvanceSystem.AdvanceTo(_battle, battleFrom + remaining, hook);
