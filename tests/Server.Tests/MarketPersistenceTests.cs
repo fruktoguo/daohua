@@ -375,7 +375,7 @@ public sealed class MarketPersistenceTests
             CombatantStats? combatStats = null)
         {
             var connectionString = PostgresTestSchema.RequireConnectionString("消耗品市场边界测试");
-            var source = NpgsqlDataSource.Create(connectionString);
+            var source = PostgresTestSchema.GetSharedDataSource(connectionString);
             await PostgresTestSchema.EnsureAsync(source);
             var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             { ["Storage:ConnectionString"] = connectionString }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
@@ -434,7 +434,6 @@ public sealed class MarketPersistenceTests
             await Sql(Source, "DELETE FROM social.party_session_inbox WHERE session_id=$1", Spec.SessionId);
             await Sql(Source, "DELETE FROM social.party_sessions WHERE session_id=$1", Spec.SessionId);
             await Sql(Source, "DELETE FROM social.parties WHERE party_id=$1", PartyId);
-            await Source.DisposeAsync();
         }
     }
 

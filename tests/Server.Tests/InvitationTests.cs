@@ -44,7 +44,6 @@ public sealed class InvitationTests
 
         var inviteeOverview = await invitations.GetOverviewAsync(inviteeResult.PlayerId.Value);
         Assert.Equal(inviter.Result.DisplayName, inviteeOverview!.InvitedByName);
-        await source.DisposeAsync();
     }
 
     /// <summary>不存在的邀请码使注册整体失败（INVALID_INVITATION_CODE），账号不可登录。</summary>
@@ -59,7 +58,6 @@ public sealed class InvitationTests
         Assert.False(result.Success);
         Assert.Equal("INVALID_INVITATION_CODE", result.ErrorCode);
         Assert.False((await accounts.LoginAsync(account, "invite-pass-1", new AccountRiskSignals(DeviceId: account))).Success);
-        await source.DisposeAsync();
     }
 
     /// <summary>空白邀请码等价于未填写：注册照常，无邀请关系与奖励。</summary>
@@ -76,7 +74,6 @@ public sealed class InvitationTests
         Assert.Empty(await LoadBalancesAsync(assets, result.PlayerId!.Value));
         var overview = await invitations.GetOverviewAsync(result.PlayerId.Value);
         Assert.Null(overview!.InvitedByName);
-        await source.DisposeAsync();
     }
 
     /// <summary>
@@ -120,7 +117,6 @@ public sealed class InvitationTests
         Assert.True(row.QiRewarded);
         Assert.True(row.FoundationRewarded);
         Assert.Equal(InvitationRewards.FoundationRealmLevel + 5, row.HighestRealmLevel);
-        await source.DisposeAsync();
     }
 
     /// <summary>跳级突破（直达筑基）：单次结算一次补齐练气+筑基两档奖励。</summary>
@@ -139,7 +135,6 @@ public sealed class InvitationTests
         const double milestoneTotal = InvitationRewards.QiMilestoneMerit + InvitationRewards.FoundationMilestoneMerit;
         Assert.Equal(InvitationRewards.SignupInviterMerit + milestoneTotal,
             (await LoadBalancesAsync(assets, inviter.Result.PlayerId!.Value))[InvitationRewards.BoundMeritItemId]);
-        await source.DisposeAsync();
     }
 
     /// <summary>未受邀玩家调用里程碑结算为空操作。</summary>
@@ -149,7 +144,6 @@ public sealed class InvitationTests
         var (source, accounts, invitations, _) = await OpenRepositoriesAsync();
         var solo = await RegisterAsync(source, accounts);
         Assert.Empty(await invitations.GrantMilestonesAsync(solo.Result.PlayerId!.Value, InvitationRewards.FoundationRealmLevel));
-        await source.DisposeAsync();
     }
 
     private static string UniqueAccount() => $"inv_{Guid.NewGuid():N}"[..16];
@@ -187,7 +181,7 @@ public sealed class InvitationTests
         PostgresInvitationRepository Invitations, PostgresAssetRepository Assets)> OpenRepositoriesAsync()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("邀请仓储集成测试");
-        var source = NpgsqlDataSource.Create(connectionString);
+        var source = PostgresTestSchema.GetSharedDataSource(connectionString);
         await PostgresTestSchema.EnsureAsync(source);
         var options = new ServerOptions(
             "test", connectionString, 128,
@@ -196,7 +190,8 @@ public sealed class InvitationTests
             64 * 1024, 128, 1, 0, EnableSchemaBootstrap: false);
         return (source, new PostgresAccountRepository(
             source, options, NullLogger<PostgresAccountRepository>.Instance, new PostgresOutboxRepository(source),
-            new AccountRiskPolicyRegistry(), new AccountRiskHasher("invitation-tests")),
+            new AccountRiskPolicyRegistry(), new AccountRiskHasher("invitation-tests"),
+            PostgresTestSchema.TestPbkdf2Iterations),
             new PostgresInvitationRepository(source), new PostgresAssetRepository(source));
     }
 }

@@ -18,13 +18,13 @@ public sealed class DisconnectGraceRegistryTests
     {
         var presence = new OnlinePresenceRegistry();
         var runtime = new RecordingPlayerRuntime();
-        var registry = CreateRegistry(presence, runtime, graceSeconds: 1);
+        var registry = CreateRegistry(presence, runtime, TimeSpan.FromMilliseconds(120));
         var player = Guid.NewGuid();
         await presence.RegisterAsync(player, "测试", "node.yunxi-village");
         var expired = new List<Guid>();
         registry.Expired += playerId => { expired.Add(playerId); return ValueTask.CompletedTask; };
 
-        var disconnectedAt = DateTimeOffset.UtcNow.AddMilliseconds(-200);
+        var disconnectedAt = DateTimeOffset.UtcNow.AddMilliseconds(-20);
         await registry.ScheduleAsync(player, disconnectedAt);
         Assert.True(presence.IsOnline(player));
         Assert.Empty(runtime.Removed);
@@ -43,13 +43,13 @@ public sealed class DisconnectGraceRegistryTests
     {
         var presence = new OnlinePresenceRegistry();
         var runtime = new RecordingPlayerRuntime();
-        var registry = CreateRegistry(presence, runtime, graceSeconds: 1);
+        var registry = CreateRegistry(presence, runtime, TimeSpan.FromMilliseconds(80));
         var player = Guid.NewGuid();
         await presence.RegisterAsync(player, "测试", null);
 
         await registry.ScheduleAsync(player, DateTimeOffset.UtcNow);
         await registry.CancelAsync(player, CancellationToken.None);
-        await Task.Delay(TimeSpan.FromSeconds(2));
+        await Task.Delay(TimeSpan.FromMilliseconds(160));
 
         Assert.True(presence.IsOnline(player));
         Assert.Empty(runtime.Removed);
@@ -60,7 +60,7 @@ public sealed class DisconnectGraceRegistryTests
     {
         var presence = new OnlinePresenceRegistry();
         var runtime = new RecordingPlayerRuntime { BlockRemove = true };
-        var registry = CreateRegistry(presence, runtime, graceSeconds: 1);
+        var registry = CreateRegistry(presence, runtime, TimeSpan.FromMilliseconds(30));
         var player = Guid.NewGuid();
         await presence.RegisterAsync(player, "测试", null);
         var disconnectedAt = DateTimeOffset.UtcNow;
@@ -82,7 +82,7 @@ public sealed class DisconnectGraceRegistryTests
     {
         var presence = new OnlinePresenceRegistry();
         var runtime = new RecordingPlayerRuntime();
-        var registry = CreateRegistry(presence, runtime, graceSeconds: 3600);
+        var registry = CreateRegistry(presence, runtime, TimeSpan.FromSeconds(3600));
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
         await presence.RegisterAsync(first, "甲", null);
@@ -107,7 +107,7 @@ public sealed class DisconnectGraceRegistryTests
     {
         var presence = new OnlinePresenceRegistry();
         var runtime = new RecordingPlayerRuntime();
-        var registry = CreateRegistry(presence, runtime, graceSeconds: 0);
+        var registry = CreateRegistry(presence, runtime, TimeSpan.Zero);
         var player = Guid.NewGuid();
         await presence.RegisterAsync(player, "测试", null);
         var disconnectedAt = DateTimeOffset.UtcNow;
@@ -120,14 +120,13 @@ public sealed class DisconnectGraceRegistryTests
     }
 
     private static DisconnectGraceRegistry CreateRegistry(OnlinePresenceRegistry presence,
-        RecordingPlayerRuntime runtime, int graceSeconds)
+        RecordingPlayerRuntime runtime, TimeSpan grace)
     {
         var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?>
             {
-                ["Storage:ConnectionString"] = "Host=unused;Database=unused",
-                ["OfflineIdle:GraceSeconds"] = graceSeconds.ToString()
-            }).Build());
+                ["Storage:ConnectionString"] = "Host=unused;Database=unused"
+            }).Build()) with { OfflineGrace = grace };
         return new DisconnectGraceRegistry(presence, runtime, new FixedClock(), options,
             NullLogger<DisconnectGraceRegistry>.Instance);
     }

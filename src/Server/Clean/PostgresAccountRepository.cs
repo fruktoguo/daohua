@@ -106,7 +106,26 @@ public sealed class PostgresAccountRepository(
     public const int MinPasswordLength = 6;
     /// <summary>密码长度上限。</summary>
     public const int MaxPasswordLength = 24;
-    private const int Pbkdf2Iterations = 600_000;
+    /// <summary>生产默认 PBKDF2-SHA512 迭代次数（OWASP 推荐基线）。</summary>
+    public const int DefaultPbkdf2Iterations = 600_000;
+    private readonly int _pbkdf2Iterations = DefaultPbkdf2Iterations;
+
+    /// <summary>仅限测试集传入轻量迭代数避免大量集成用例空耗 CPU；生产 DI 固定走公开 6 参构造函数。</summary>
+    internal PostgresAccountRepository(
+        NpgsqlDataSource dataSource,
+        ServerOptions options,
+        ILogger<PostgresAccountRepository> logger,
+        IOutboxRepository outbox,
+        AccountRiskPolicyRegistry riskPolicyRegistry,
+        AccountRiskHasher riskHasher,
+        int pbkdf2Iterations)
+        : this(dataSource, options, logger, outbox, riskPolicyRegistry, riskHasher)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pbkdf2Iterations, 1);
+        _pbkdf2Iterations = pbkdf2Iterations;
+    }
+
+    internal int Pbkdf2Iterations => _pbkdf2Iterations;
     /// <summary>
     /// 会话校验内存缓存 TTL：握手与连续 API 的重复认证不再每次打三表 JOIN。
     /// 吊销即时性不依赖 TTL——<see cref="RevokeSessionAsync"/> 提交后主动失效缓存项；

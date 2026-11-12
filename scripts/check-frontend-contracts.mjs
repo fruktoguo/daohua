@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { createServer } from '../frontend/node_modules/vite/dist/node/index.js'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-// 使用 Vite 的真实模块转换路径，覆盖 import.meta.glob 和浏览器快照解码。
+const frontendDir = fileURLToPath(new URL('../frontend', import.meta.url))
+const require = createRequire(import.meta.url)
+const esbuild = require(path.join(frontendDir, 'node_modules/esbuild/lib/main.js'))
+
+// 使用 esbuild 按真实依赖图打包被测前端 TS 模块，避免每次拉起整站 Vite dev server；
+// 同步保留 private-impl alias 与 i18n locale glob 语义。
 const mockSessionStorage = new Map()
 let reloadCount = 0
 globalThis.window = {
@@ -26,13 +31,92 @@ globalThis.window = {
 }
 globalThis.sessionStorage = globalThis.window.sessionStorage
 globalThis.document = { documentElement: { lang: '' }, addEventListener: () => {}, removeEventListener: () => {} }
-const server = await createServer({ root: fileURLToPath(new URL('../frontend', import.meta.url)), server: { middlewareMode: true } })
+
+const privateImplEntry = path.join(frontendDir, 'src/private-impl/index.ts')
+const hasPrivateImpl = existsSync(privateImplEntry)
+const localesDir = path.join(frontendDir, 'public/locales')
+const localeEntries = existsSync(localesDir)
+  ? readdirSync(localesDir)
+      .filter((name) => name.endsWith('.csv') && name !== 'template.csv')
+      .sort()
+      .map((name) => [`/public/locales/${name}`, `/locales/${name}`])
+  : []
+const localeGlobLiteral = JSON.stringify(Object.fromEntries(localeEntries))
+
+const contractPlugin = {
+  name: 'daohua-contract-loader',
+  setup(build) {
+    if (hasPrivateImpl) {
+      build.onResolve({ filter: /^\.\/impl$/ }, (args) => {
+        if (args.importer.replace(/\\/g, '/').endsWith('/src/private/index.ts')) {
+          return { path: privateImplEntry }
+        }
+        return undefined
+      })
+    }
+    build.onLoad({ filter: /[\\/]src[\\/]i18n[\\/]index\.ts$/ }, async (args) => {
+      let contents = readFileSync(args.path, 'utf8')
+      contents = contents.replace(
+        /typeof \(import\.meta as any\)\.glob === 'function'\s*\?\s*\(import\.meta as any\)\.glob\([^)]*\)\s*:\s*\{\}/m,
+        localeGlobLiteral,
+      )
+      return { contents, loader: 'ts' }
+    })
+  },
+}
+
+const bundleFile = path.join(tmpdir(), `daohua-frontend-contract-bundle-${process.pid}-${Date.now()}.mjs`)
 try {
-  const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto, SNAPSHOT_SCHEMA_VERSION } = await server.ssrLoadModule('/src/network/snapshot.ts')
-  const { encodeJsonEnvelope, decodeEnvelope, decodeJsonPayload, WireMessageType, createRequestId } = await server.ssrLoadModule('/src/network/protocol.ts')
-  const { GameClient } = await server.ssrLoadModule('/src/network/gameClient.ts')
-  const { COMBAT_TRIGGER_COMPARATORS, COMBAT_TRIGGER_CONDITIONS, COMBAT_TRIGGER_DEPENDENCIES } = await server.ssrLoadModule('/src/game/types.ts')
-  const { setSessionAccount } = await server.ssrLoadModule('/src/network/sessionState.ts')
+  await esbuild.build({
+    stdin: {
+      contents: `
+        export { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto, SNAPSHOT_SCHEMA_VERSION } from './src/network/snapshot.ts'
+        export { encodeJsonEnvelope, decodeEnvelope, decodeJsonPayload, WireMessageType, createRequestId } from './src/network/protocol.ts'
+        export { GameClient } from './src/network/gameClient.ts'
+        export { COMBAT_TRIGGER_COMPARATORS, COMBAT_TRIGGER_CONDITIONS, COMBAT_TRIGGER_DEPENDENCIES } from './src/game/types.ts'
+        export { setSessionAccount } from './src/network/sessionState.ts'
+        export { parseCsvToMap, LOCALES } from './src/i18n/index.ts'
+        export {
+          registerBaseAttributeAnchors,
+          calculateBaseAttributes,
+          TECHNIQUE_EXP_TO_NEXT,
+          calculateTechniqueProgress,
+          techniqueEarlyDiscountRatio,
+        } from './src/game/combatConstants.ts'
+        export { resolveMarketInstrumentMetadata } from './src/game/marketStore.ts'
+        export { resolveItemMetadata, withItemGrade } from './src/game/ids.ts'
+        export { notifyServerVersion, triggerVersionReload, isReloadCircuitBroken, _resetVersionStateForTest } from './src/network/versionManager.ts'
+        export { describeCombatTrigger, resolveTriggerBuffName } from './src/game/format.ts'
+      `,
+      resolveDir: frontendDir,
+      loader: 'ts',
+    },
+    absWorkingDir: frontendDir,
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node22',
+    preserveSymlinks: true,
+    nodePaths: [path.join(frontendDir, 'node_modules')],
+    outfile: bundleFile,
+    logLevel: 'silent',
+    banner: {
+      js: "import { createRequire as __daohuaCreateRequire } from 'node:module'; const require = __daohuaCreateRequire(import.meta.url);",
+    },
+    define: {
+      'import.meta.env.DEV': 'true',
+      'import.meta.env.VITE_APP_VERSION': '"dev"',
+      'import.meta.env.VITE_API_URL': 'undefined',
+      'import.meta.env.VITE_WS_URL': 'undefined',
+    },
+    plugins: [contractPlugin],
+  })
+  const mod = await import(pathToFileURL(bundleFile).href)
+  const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto, SNAPSHOT_SCHEMA_VERSION } = mod
+  const { encodeJsonEnvelope, decodeEnvelope, decodeJsonPayload, WireMessageType, createRequestId } = mod
+  const { GameClient } = mod
+  const { COMBAT_TRIGGER_COMPARATORS, COMBAT_TRIGGER_CONDITIONS, COMBAT_TRIGGER_DEPENDENCIES } = mod
+  const { setSessionAccount } = mod
   if (process.argv[2]) {
     // fixture 文件字节即信封 JSON 原始字节：section data 区间校验按线上字节逐位复算。
     const fixtureBytes = await readFile(process.argv[2])
@@ -53,8 +137,8 @@ try {
   // 整包 deepEqual 已覆盖「数量 3 / 离线储备 7」两个标量：普通钱包数量与不可售的离线储备
   // 被求和或互相覆盖都会让结构不等，无需再单独断言两个字段。
   assert.deepEqual(decodedCard, playerCard)
-  const { parseCsvToMap, LOCALES } = await server.ssrLoadModule('/src/i18n/index.ts')
-  const { registerBaseAttributeAnchors, calculateBaseAttributes } = await server.ssrLoadModule('/src/game/combatConstants.ts')
+  const { parseCsvToMap, LOCALES } = mod
+  const { registerBaseAttributeAnchors, calculateBaseAttributes } = mod
   const payload = {
     mapId: 'map.test', nodeId: 'node.test', x: 1, y: 2, edgeProgress: 0,
     locationName: '契约测试节点', cultivationMultiplier: 1.25,
@@ -188,8 +272,8 @@ try {
   const pool = calculateBaseAttributes(0, 2)
   assert.equal(pool.baseHpRegen, 7.75)
   assert.equal(pool.baseMpRegen, 0.125)
-  const { resolveMarketInstrumentMetadata } = await server.ssrLoadModule('/src/game/marketStore.ts')
-  const { resolveItemMetadata: resolveItemMeta, withItemGrade: withGrade } = await server.ssrLoadModule('/src/game/ids.ts')
+  const { resolveMarketInstrumentMetadata } = mod
+  const { resolveItemMetadata: resolveItemMeta, withItemGrade: withGrade } = mod
   const t2Weapon = {
     itemId: 'equipment.pishan-blade',
     name: '披山刀',
@@ -209,7 +293,7 @@ try {
   assert.equal(level18Meta.level, 18, 'withItemGrade 传入 level 18 时必须能反推等阶并保留 Lv.18')
   assert.equal(level18Meta.rarity, 'yellow', 'withItemGrade 传入 level 18 时稀有度必须为 yellow')
   // 版本更新感知与防死循环熔断断言
-  const { notifyServerVersion, triggerVersionReload, isReloadCircuitBroken, _resetVersionStateForTest } = await server.ssrLoadModule('/src/network/versionManager.ts')
+  const { notifyServerVersion, triggerVersionReload, isReloadCircuitBroken, _resetVersionStateForTest } = mod
   _resetVersionStateForTest()
   notifyServerVersion('v1.0.0')
   assert.equal(reloadCount, 0, '首次通知建立基线不应触发刷新')
@@ -228,7 +312,7 @@ try {
   _resetVersionStateForTest()
 
   // 触发条件格式化断言：状态层数必须正确注入具体状态名称，且句式为自然语言“当...时”
-  const { describeCombatTrigger, resolveTriggerBuffName } = await server.ssrLoadModule('/src/game/format.ts')
+  const { describeCombatTrigger, resolveTriggerBuffName } = mod
   assert.equal(resolveTriggerBuffName('buff.spirit-tea'), '凝神茶', 'Buff ID 必须解析为凝神茶')
   assert.equal(resolveTriggerBuffName('buff.qi-gathering'), '引气', 'Buff ID 必须解析为引气')
   assert.equal(resolveTriggerBuffName('buff.zhixue'), '止血散', 'Buff ID 必须解析为止血散')
@@ -373,115 +457,11 @@ try {
   const expeditionQueuePatch = await decodePlayerSnapshotDeltaDto(expeditionQueueDelta, current, Buffer.from(JSON.stringify(expeditionQueueDelta)))
   assert.equal(expeditionQueuePatch.queue.entries[0].expedition.playerBuffs[0].buffId, 'buff.sui-gang')
   assert.equal(expeditionQueuePatch.queue.entries[0].expedition.playerBuffs[0].effects[0].value, -400, '战内 playerBuffs 负值效果载荷必须完整保留')
-  // 静态代码门禁：扫描 frontend/src 下全部 TSX/TS 组件与自定义 Hook，
-  // 严禁在条件返回（early return）之后调用 Hook，严格遵循 React Rules of Hooks。
-  const require = createRequire(import.meta.url)
-  const tsPath = fileURLToPath(new URL('../frontend/node_modules/typescript/lib/typescript.js', import.meta.url))
-  const ts = require(tsPath)
-
-  function findTsxFiles(dir) {
-    const results = []
-    for (const file of readdirSync(dir)) {
-      if (file === 'node_modules' || file === 'dist' || file === 'private-impl') continue
-      const full = path.join(dir, file)
-      try {
-        const stat = statSync(full)
-        if (stat.isDirectory()) {
-          results.push(...findTsxFiles(full))
-        } else if (file.endsWith('.tsx') || file.endsWith('.ts')) {
-          results.push(full)
-        }
-      } catch {
-        // 跨平台挂载点/无权限路径安全跳过
-      }
-    }
-    return results
-  }
-
-  const frontendSrcDir = fileURLToPath(new URL('../frontend/src', import.meta.url))
-  const hookViolations = []
-  for (const file of findTsxFiles(frontendSrcDir)) {
-    const content = readFileSync(file, 'utf8')
-    const sf = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
-
-    function inspectNode(node) {
-      if (
-        ts.isFunctionDeclaration(node) ||
-        ts.isFunctionExpression(node) ||
-        ts.isArrowFunction(node)
-      ) {
-        if (node.body && ts.isBlock(node.body)) {
-          let returnSeen = false
-          let returnLine = 0
-          for (const stmt of node.body.statements) {
-            let hasHook = false
-            let hookName = ''
-            let hookLine = 0
-
-            function findHook(n) {
-              if (
-                n !== stmt &&
-                (ts.isFunctionDeclaration(n) ||
-                  ts.isFunctionExpression(n) ||
-                  ts.isArrowFunction(n))
-              ) {
-                return
-              }
-              if (ts.isCallExpression(n)) {
-                let name = ''
-                if (ts.isIdentifier(n.expression)) {
-                  name = n.expression.text
-                } else if (ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.name)) {
-                  name = n.expression.name.text
-                }
-                if (/^use[A-Z]/.test(name)) {
-                  hasHook = true
-                  hookName = name
-                  hookLine = sf.getLineAndCharacterOfPosition(n.getStart()).line + 1
-                }
-              }
-              ts.forEachChild(n, findHook)
-            }
-            findHook(stmt)
-
-            if (returnSeen && hasHook) {
-              hookViolations.push(`${path.relative(frontendSrcDir, file)}:${hookLine} 调用 Hook '${hookName}' 发生在第 ${returnLine} 行条件返回之后，违反 React Rules of Hooks`)
-            }
-
-            function findReturn(n) {
-              if (
-                (ts.isFunctionDeclaration(n) ||
-                  ts.isFunctionExpression(n) ||
-                  ts.isArrowFunction(n))
-              ) {
-                return
-              }
-              if (ts.isReturnStatement(n)) {
-                returnSeen = true
-                returnLine = sf.getLineAndCharacterOfPosition(n.getStart()).line + 1
-              }
-              ts.forEachChild(n, findReturn)
-            }
-            findReturn(stmt)
-          }
-        }
-      }
-      ts.forEachChild(node, inspectNode)
-    }
-
-    inspectNode(sf)
-  }
-
-  assert.equal(
-    hookViolations.length,
-    0,
-    `发现 React Rules of Hooks 违规（条件返回后调用 Hook）：\n${hookViolations.join('\n')}`
-  )
-
   // 技艺经验曲线门禁：前 30 级按「升入 1 级 -90% → 升入 30 级 -0%」线性削减，30 级以上与修为曲线一致；
   // 锚点取自总纲 §20.1.2.1 权威表，任一侧单独改动系数（服务端 TechniqueCatalog.EarlyDiscountRatio /
   // 前端 techniqueEarlyDiscountRatio）都会在此暴露。
-  const { TECHNIQUE_EXP_TO_NEXT, calculateTechniqueProgress, techniqueEarlyDiscountRatio } = await server.ssrLoadModule('/src/game/combatConstants.ts')
+  // （React Rules of Hooks 静态门禁已收拢至 frontend/src/game/rulesOfHooks.test.mjs 单一真源，不在此重复扫描。）
+  const { TECHNIQUE_EXP_TO_NEXT, calculateTechniqueProgress, techniqueEarlyDiscountRatio } = mod
   assert.equal(TECHNIQUE_EXP_TO_NEXT[0], 1000, '技艺 0→1 级需求应为修为条 10000 削减 90% 后的 1000')
   assert.equal(TECHNIQUE_EXP_TO_NEXT[1], 1572, '技艺 1→2 级需求应为 1572')
   assert.equal(TECHNIQUE_EXP_TO_NEXT[17], 502069, '技艺 17→18 级需求应为 502069')
@@ -495,7 +475,7 @@ try {
   assert.equal(calculateTechniqueProgress(1604846).level, 18, '累计 1,604,846 经验应正好达到 18 级（总纲 §20.1.2.1）')
   assert.equal(calculateTechniqueProgress(1604845).level, 17, '差 1 点不得提前升到 18 级')
 
-  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、技艺经验曲线、版本感知防环、触发条件自然语言格式化与 React Hooks 规则门禁通过。')
+  console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、技艺经验曲线、版本感知防环与触发条件自然语言格式化门禁通过。')
 } finally {
-  await server.close()
+  await rm(bundleFile, { force: true })
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Domain.Persistence;
 using Npgsql;
 using Server.Clean;
@@ -105,6 +106,14 @@ internal static class PostgresTestSchema
             await release.ExecuteNonQueryAsync();
         }
     }
+
+    /// <summary>测试专用轻量 PBKDF2 迭代数（贴合库约束 password_iterations >= 100,000 下限）；生产默认仍为 600,000。</summary>
+    internal const int TestPbkdf2Iterations = 100_000;
+    private static readonly ConcurrentDictionary<string, NpgsqlDataSource> SharedSources = new(StringComparer.Ordinal);
+
+    /// <summary>复用测试进程级共享数据源，避免每个集成用例反复创建与销毁 Npgsql 连接池。</summary>
+    public static NpgsqlDataSource GetSharedDataSource(string connectionString)
+        => SharedSources.GetOrAdd(connectionString, static cs => NpgsqlDataSource.Create(cs));
 
     /// <summary>读取集成测试专用库连接串；未配置时抛出带说明的异常。</summary>
     /// <param name="purpose">调用方用途描述，用于异常文案。</param>

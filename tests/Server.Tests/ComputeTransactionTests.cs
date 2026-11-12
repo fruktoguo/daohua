@@ -247,7 +247,7 @@ public sealed class ComputeTransactionTests
 
         public static async Task<Fixture> CreateAsync()
         {
-            var source = NpgsqlDataSource.Create(PostgresTestSchema.RequireConnectionString("Compute 事务测试"));
+            var source = PostgresTestSchema.GetSharedDataSource(PostgresTestSchema.RequireConnectionString("Compute 事务测试"));
             await PostgresTestSchema.EnsureAsync(source);
             var playerId = Guid.NewGuid();
             var now = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -301,10 +301,10 @@ public sealed class ComputeTransactionTests
             foreach (var value in values) command.Parameters.Add(new NpgsqlParameter { Value = value });
             return await command.ExecuteScalarAsync();
         }
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
             verifier.Dispose();
-            await Source.DisposeAsync();
+            return ValueTask.CompletedTask;
         }
     }
 }

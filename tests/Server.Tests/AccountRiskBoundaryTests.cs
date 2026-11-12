@@ -259,7 +259,7 @@ public sealed class AccountRiskBoundaryTests
     private static async Task<RiskFixture> OpenFixtureAsync()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("账号检测跨边界集成测试");
-        var source = NpgsqlDataSource.Create(connectionString);
+        var source = PostgresTestSchema.GetSharedDataSource(connectionString);
         await PostgresTestSchema.EnsureAsync(source);
         var registry = new AccountRiskPolicyRegistry();
         var hasher = await AccountRiskHasher.CreateAsync(source, CancellationToken.None);
@@ -268,7 +268,7 @@ public sealed class AccountRiskBoundaryTests
             64 * 1024, 128, 1, 0, EnableSchemaBootstrap: false);
         return new RiskFixture(source, hasher,
             new PostgresAccountRepository(source, options, NullLogger<PostgresAccountRepository>.Instance,
-                new PostgresOutboxRepository(source), registry, hasher),
+                new PostgresOutboxRepository(source), registry, hasher, PostgresTestSchema.TestPbkdf2Iterations),
             new PostgresAccountRiskRepository(source, registry, hasher), options);
     }
 
@@ -279,6 +279,6 @@ public sealed class AccountRiskBoundaryTests
         PostgresAccountRiskRepository Risk,
         ServerOptions Options) : IAsyncDisposable
     {
-        public ValueTask DisposeAsync() => Source.DisposeAsync();
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

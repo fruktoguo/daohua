@@ -640,7 +640,7 @@ public sealed class ParticipationPersistenceTests
 
         public static async Task<Fixture> CreateAsync(int memberCount)
         {
-            var source = NpgsqlDataSource.Create(PostgresTestSchema.RequireConnectionString("组队会话持久化集成测试"));
+            var source = PostgresTestSchema.GetSharedDataSource(PostgresTestSchema.RequireConnectionString("组队会话持久化集成测试"));
             await PostgresTestSchema.EnsureAsync(source);
             var players = Enumerable.Range(0, memberCount).Select(_ => Guid.NewGuid()).ToArray();
             foreach (var player in players)
@@ -700,7 +700,6 @@ public sealed class ParticipationPersistenceTests
             await SqlAsync(Source, "DELETE FROM social.party_session_inbox WHERE session_id = $1", SessionId);
             await SqlAsync(Source, "DELETE FROM social.party_sessions WHERE session_id = $1", SessionId);
             await SqlAsync(Source, "DELETE FROM social.parties WHERE party_id = $1", PartyId);
-            await Source.DisposeAsync();
         }
     }
 }

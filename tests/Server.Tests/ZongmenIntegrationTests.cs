@@ -140,15 +140,25 @@ public sealed class ZongmenIntegrationTests
         public Guid[] Players { get; private set; } = [];
         public static async Task<Fixture> CreateAsync(int count)
         {
-            var fixture = new Fixture(NpgsqlDataSource.Create(PostgresTestSchema.RequireConnectionString("宗门集成测试")));
+            var fixture = new Fixture(PostgresTestSchema.GetSharedDataSource(PostgresTestSchema.RequireConnectionString("宗门集成测试")));
             await PostgresTestSchema.EnsureAsync(fixture.Source);
             fixture.Players = Enumerable.Range(0, count).Select(_ => Guid.NewGuid()).ToArray();
-            foreach (var player in fixture.Players)
-            {
-                await fixture.Sql("INSERT INTO identity.accounts(account_id,login_normalized,password_hash,password_salt,password_iterations,created_at,updated_at) VALUES($1,$2,'\\x00','\\x00',100000,now(),now())", player, player.ToString("N"));
-                await fixture.Sql("INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at) VALUES($1,$1,$2,$2,now(),now())", player, player.ToString("N"));
-                await fixture.Sql("INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES($1,$2,'',3,1,now())", player, ZongmenRules.TokenItemId);
-            }
+            var names = fixture.Players.Select(player => player.ToString("N")).ToArray();
+            await fixture.Sql("""
+                INSERT INTO identity.accounts(account_id,login_normalized,password_hash,password_salt,password_iterations,created_at,updated_at)
+                SELECT id, name, '\x00'::bytea, '\x00'::bytea, 100000, now(), now()
+                FROM unnest($1::uuid[], $2::text[]) AS t(id, name)
+                """, fixture.Players, names);
+            await fixture.Sql("""
+                INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at)
+                SELECT id, id, name, name, now(), now()
+                FROM unnest($1::uuid[], $2::text[]) AS t(id, name)
+                """, fixture.Players, names);
+            await fixture.Sql("""
+                INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at)
+                SELECT id, $2, '', 3, 1, now()
+                FROM unnest($1::uuid[]) AS t(id)
+                """, fixture.Players, ZongmenRules.TokenItemId);
             return fixture;
         }
         public async Task Apply(Guid player, string action, object payload, Guid? requestId = null, string node = "node.yunxi-village")
@@ -170,6 +180,6 @@ public sealed class ZongmenIntegrationTests
             foreach (var value in values) command.Parameters.AddWithValue(value);
             await command.ExecuteNonQueryAsync();
         }
-        public ValueTask DisposeAsync() => Source.DisposeAsync();
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

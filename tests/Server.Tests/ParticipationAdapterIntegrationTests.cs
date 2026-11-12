@@ -806,7 +806,7 @@ public sealed class ParticipationAdapterIntegrationTests
 
         public static async Task<Fixture> CreateAsync(bool owned = false, bool startSession = true, TimeSpan? age = null)
         {
-            var source = NpgsqlDataSource.Create(PostgresTestSchema.RequireConnectionString("三成员会话装配集成测试"));
+            var source = PostgresTestSchema.GetSharedDataSource(PostgresTestSchema.RequireConnectionString("三成员会话装配集成测试"));
             await PostgresTestSchema.EnsureAsync(source);
             // age 让整场夹具时钟锚定到过去：会话/成员时钟自该时刻起算，模拟「会话已停更 age」的合法形态。
             var startedAt = DateTimeOffset.FromUnixTimeMilliseconds(
@@ -818,7 +818,7 @@ public sealed class ParticipationAdapterIntegrationTests
                 return new Guid(bytes);
             }).ToArray();
             var fixture = new Fixture(source, startedAt, players, owned);
-            foreach (var player in players) await fixture.SeedPersonalPlayerAsync(player);
+            await fixture.SeedPersonalPlayersAsync(players);
             fixture.PartyId = await fixture.Social.CreatePartyAsync(players[0], PartyProfileRecord.Default, startedAt);
             foreach (var player in players.Skip(1))
                 Assert.Equal(PartyJoinResult.Joined, await fixture.Social.TryJoinPartyAsync(fixture.PartyId, player, startedAt));
@@ -841,24 +841,43 @@ public sealed class ParticipationAdapterIntegrationTests
             return fixture;
         }
 
-        public async Task SeedPersonalPlayerAsync(Guid player)
+        public Task SeedPersonalPlayerAsync(Guid player) => SeedPersonalPlayersAsync([player]);
+
+        public async Task SeedPersonalPlayersAsync(IReadOnlyList<Guid> players)
         {
-            await SqlAsync("INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,$3,$3)", player, player.ToString(), StartedAt);
-            await SqlAsync("INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,$3,$3,1)", player, player.ToString(), StartedAt);
-            var aggregate = PlayerAggregate.Create(new(player), new(player), player.ToString(), StartedAt, Catalog.Fingerprint);
-            aggregate.World.NodeId = "node.yunxi-village";
-            // 高境界挑战低阶遭遇，保证实际产生掉落与经验。
-            aggregate.Progression.RealmLevel = 50;
-            PlayerAttributeResolver.Apply(aggregate, Catalog);
-            aggregate.Resources.Hitpoints = aggregate.Resources.MaxHitpoints;
-            aggregate.Resources.Manapoints = aggregate.Resources.MaxManapoints;
-            var personal = aggregate.Enqueue(new ActionIntent(new("cultivation.draw-qi"), -1), StartedAt, Catalog.Actions);
-            PersonalActions[player] = personal.Id;
-            await Sections.EnqueueSectionsAsync(SectionCodec.EncodeAggregateFull(aggregate.ExportState(), DateTimeOffset.UtcNow));
+            var names = players.Select(player => player.ToString()).ToArray();
+            await SqlAsync("""
+                INSERT INTO identity.accounts
+                SELECT id, name, '\x00'::bytea, '\x00'::bytea, 100000, 1, $3, $3
+                FROM unnest($1::uuid[], $2::text[]) AS t(id, name)
+                """, players.ToArray(), names, StartedAt);
+            await SqlAsync("""
+                INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status)
+                SELECT id, id, name, name, $3, $3, 1
+                FROM unnest($1::uuid[], $2::text[]) AS t(id, name)
+                """, players.ToArray(), names, StartedAt);
+            var flushItems = new List<SectionWrite>();
+            foreach (var player in players)
+            {
+                var aggregate = PlayerAggregate.Create(new(player), new(player), player.ToString(), StartedAt, Catalog.Fingerprint);
+                aggregate.World.NodeId = "node.yunxi-village";
+                // 高境界挑战低阶遭遇，保证实际产生掉落与经验。
+                aggregate.Progression.RealmLevel = 50;
+                PlayerAttributeResolver.Apply(aggregate, Catalog);
+                aggregate.Resources.Hitpoints = aggregate.Resources.MaxHitpoints;
+                aggregate.Resources.Manapoints = aggregate.Resources.MaxManapoints;
+                var personal = aggregate.Enqueue(new ActionIntent(new("cultivation.draw-qi"), -1), StartedAt, Catalog.Actions);
+                PersonalActions[player] = personal.Id;
+                flushItems.AddRange(SectionCodec.EncodeAggregateFull(aggregate.ExportState(), DateTimeOffset.UtcNow));
+            }
+            await Sections.EnqueueSectionsAsync(flushItems);
             await Sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
-            await using var connection = await Runtime.PrepareConnectionAsync(player, Clock.UtcNow);
-            await Adapter.AttachConnectionAsync(player);
-            await Presence.RegisterAsync(player, aggregate.DisplayName, aggregate.World.NodeId);
+            foreach (var player in players)
+            {
+                await using var connection = await Runtime.PrepareConnectionAsync(player, Clock.UtcNow);
+                await Adapter.AttachConnectionAsync(player);
+                await Presence.RegisterAsync(player, player.ToString(), "node.yunxi-village");
+            }
         }
 
         /// <summary>装配真实社交运行时：完整仲裁链路（开打/散场/成员就绪位常驻）与生产同构。</summary>
@@ -909,7 +928,6 @@ public sealed class ParticipationAdapterIntegrationTests
             await SqlAsync("DELETE FROM social.party_session_inbox WHERE session_id = $1", SessionId);
             await SqlAsync("DELETE FROM social.party_sessions WHERE session_id = $1", SessionId);
             await SqlAsync("DELETE FROM social.parties WHERE party_id = $1", PartyId);
-            await Source.DisposeAsync();
         }
     }
 

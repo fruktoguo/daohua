@@ -186,7 +186,7 @@ public sealed class AccountRiskRegistrationTests
     private static async Task<RiskFixture> OpenRepositoryAsync()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("注册风控集成测试");
-        var source = NpgsqlDataSource.Create(connectionString);
+        var source = PostgresTestSchema.GetSharedDataSource(connectionString);
         await PostgresTestSchema.EnsureAsync(source);
         var options = new ServerOptions(
             "test", connectionString, 128,
@@ -196,7 +196,8 @@ public sealed class AccountRiskRegistrationTests
         var registry = new AccountRiskPolicyRegistry();
         var hasher = new AccountRiskHasher("account-risk-registration-tests");
         var repository = new PostgresAccountRepository(
-            source, options, NullLogger<PostgresAccountRepository>.Instance, new PostgresOutboxRepository(source), registry, hasher);
+            source, options, NullLogger<PostgresAccountRepository>.Instance, new PostgresOutboxRepository(source), registry, hasher,
+            PostgresTestSchema.TestPbkdf2Iterations);
         return new RiskFixture(source, repository, registry, hasher);
     }
 
@@ -206,6 +207,6 @@ public sealed class AccountRiskRegistrationTests
         AccountRiskPolicyRegistry Registry,
         AccountRiskHasher Hasher) : IAsyncDisposable
     {
-        public ValueTask DisposeAsync() => Source.DisposeAsync();
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

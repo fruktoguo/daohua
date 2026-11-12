@@ -16,7 +16,7 @@ public sealed class AccountRiskLoginTests
     public async Task DeniedLoginDoesNotIssueSessionOrSuccessOutbox()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("登录风控集成测试");
-        await using var source = NpgsqlDataSource.Create(connectionString);
+        var source = PostgresTestSchema.GetSharedDataSource(connectionString);
         await PostgresTestSchema.EnsureAsync(source);
         var options = new ServerOptions(
             "test", connectionString, 128,
@@ -25,7 +25,8 @@ public sealed class AccountRiskLoginTests
             64 * 1024, 128, 1, 0, EnableSchemaBootstrap: false);
         var repository = new PostgresAccountRepository(
             source, options, NullLogger<PostgresAccountRepository>.Instance, new PostgresOutboxRepository(source),
-            new AccountRiskPolicyRegistry(), new AccountRiskHasher("account-risk-login-tests"));
+            new AccountRiskPolicyRegistry(), new AccountRiskHasher("account-risk-login-tests"),
+            PostgresTestSchema.TestPbkdf2Iterations);
         var accounts = Enumerable.Range(0, 3).Select(_ => $"risklogin_{Guid.NewGuid():N}"[..24]).ToArray();
         var registrations = new List<AccountRegistrationResult>();
         foreach (var account in accounts)
