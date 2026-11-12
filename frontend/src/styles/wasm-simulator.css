@@ -1,0 +1,102 @@
+.wasm-sim { display: flex; flex-direction: column; gap: 12px; padding: 8px; }
+.wasm-sim-title { margin: 0; font-size: 18px; }
+.wasm-sim-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.wasm-sim-toolbar button, .wasm-sim-import {
+  padding: 6px 12px; border: 1px solid var(--gold-faint); border-radius: 6px;
+  background: var(--bg-raised); color: inherit; cursor: pointer; font-size: 13px;
+}
+.wasm-sim-toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+.wasm-sim-error { color: var(--danger-bright); font-size: 13px; }
+.wasm-sim-note { color: var(--text-dim); font-size: 12px; }
+.wasm-sim-stale { color: var(--gold-bright); font-size: 12px; margin-bottom: 6px; }
+.wasm-sim-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .wasm-sim-columns { grid-template-columns: 1fr; } }
+.wasm-sim h3 { margin: 8px 0 4px; font-size: 14px; }
+.wasm-sim h4 { margin: 10px 0 4px; font-size: 13px; }
+.wasm-sim-member { border: 1px solid var(--gold-faint); border-radius: 8px; margin-bottom: 8px; }
+.wasm-sim-member-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; }
+.wasm-sim-member-toggle { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; }
+.wasm-sim-member-body { padding: 8px 10px; border-top: 1px solid var(--gold-faint); }
+.wasm-sim-ally { display: flex; gap: 6px; margin-bottom: 8px; }
+.wasm-sim-ally select { flex: 1; }
+.wasm-sim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.wasm-sim-grid label { display: flex; flex-direction: column; font-size: 12px; gap: 2px; }
+.wasm-sim-readonly { font-size: 12px; color: var(--text-dim); align-self: end; padding-bottom: 5px; }
+.wasm-sim input, .wasm-sim select {
+  background: var(--panel); border: 1px solid var(--gold-faint);
+  border-radius: 4px; color: inherit; padding: 4px 6px; font-size: 13px;
+}
+.wasm-sim-advanced { margin-top: 6px; font-size: 12px; }
+.wasm-sim-advanced summary { cursor: pointer; color: var(--text-dim); }
+.wasm-sim-traits-detail summary { cursor: pointer; color: var(--text-dim); font-size: 12px; margin: 4px 0; }
+.wasm-sim-traits { display: flex; flex-wrap: wrap; gap: 6px; max-height: 260px; overflow-y: auto; }
+.wasm-sim-trait { display: flex; align-items: center; gap: 4px; }
+.wasm-sim-trait input { width: 48px; }
+.wasm-sim-equipment, .wasm-sim-abilities, .wasm-sim-slots, .wasm-sim-assets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.wasm-sim-equip-slot { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.wasm-sim-equip-label { min-width: 40px; color: var(--text-dim); }
+.wasm-sim-equip-items { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.wasm-sim-equip-entry { display: inline-flex; align-items: center; gap: 4px; }
+.wasm-sim-equip-tile-btn { background: none; border: none; padding: 0; cursor: pointer; }
+.wasm-sim-equip-tile-btn:disabled { cursor: not-allowed; }
+.wasm-sim-equip-empty {
+  min-width: 44px; min-height: 44px; border: 1px dashed var(--gold-faint); border-radius: 6px;
+  background: none; color: var(--text-dim); cursor: pointer; font-size: 11px;
+}
+.wasm-sim-equip-entry input { width: 48px; }
+.wasm-sim-ability, .wasm-sim-slot, .wasm-sim-asset {
+  display: flex; align-items: center; gap: 4px; font-size: 12px;
+}
+.wasm-sim-ability input { width: 48px; }
+.wasm-sim-ability-btn {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;
+  border: 1px solid var(--gold-faint); border-radius: 6px; background: var(--bg-raised);
+  color: inherit; cursor: pointer; font-size: 12px;
+}
+.wasm-sim-ability-icon { width: 20px; height: 20px; border-radius: 4px; }
+.wasm-sim-slot { border: 1px solid var(--gold-faint); border-radius: 6px; padding: 4px 8px; flex-wrap: wrap; }
+.wasm-sim-slot-badge { color: var(--gold); font-size: 11px; }
+.wasm-sim-slot input[type="number"] { width: 52px; }
+.wasm-sim-asset { border: 1px solid var(--gold-faint); border-radius: 6px; padding: 3px 8px; }
+.wasm-sim-asset-name { font-size: 12px; }
+.wasm-sim-asset input[type="number"] { width: 64px; }
+.wasm-sim-variant { width: 40px; }
+.wasm-sim-state { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.wasm-sim-tag {
+  padding: 2px 8px; border-radius: 10px; font-size: 11px;
+  background: var(--bg-raised); border: 1px solid var(--gold-faint);
+}
+.wasm-sim-trigger-modes { display: inline-flex; gap: 2px; }
+.wasm-sim-trigger-modes button {
+  padding: 1px 6px; border: 1px solid var(--gold-faint); border-radius: 8px;
+  background: none; color: var(--text-dim); cursor: pointer; font-size: 10px;
+}
+.wasm-sim-trigger-modes button.is-active { color: var(--gold-bright); border-color: var(--gold-dim); }
+.wasm-sim-nodes { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.wasm-sim-node { display: flex; align-items: center; gap: 6px; font-size: 13px; flex-wrap: wrap; }
+.wasm-sim-node em { font-style: normal; font-size: 11px; color: var(--gold); }
+.wasm-sim-empty { color: var(--text-dim); font-size: 12px; }
+.wasm-sim-difficulties, .wasm-sim-duration { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wasm-sim-duration input { width: 80px; }
+.wasm-sim-duration .is-active { border-color: var(--gold); }
+.wasm-sim-seed { display: flex; gap: 6px; }
+.wasm-sim-seed input { flex: 1; font-family: monospace; }
+.wasm-sim-preview { border: 1px solid var(--gold-faint); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+.wasm-sim-preview-member summary { cursor: pointer; font-size: 13px; }
+.wasm-sim-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.wasm-sim-actions .primary { padding: 8px 20px; }
+.wasm-sim-progress { font-size: 12px; color: var(--text-dim); }
+.wasm-sim-results { border-top: 1px solid var(--gold-faint); padding-top: 8px; }
+.wasm-sim-result { border: 1px solid var(--gold-faint); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.wasm-sim-result-member summary { cursor: pointer; font-size: 13px; }
+.wasm-sim-result-stats { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; margin: 6px 0; }
+.wasm-sim-result-items { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; margin: 4px 0; }
+.wasm-sim-asset-inline { display: inline-flex; align-items: center; gap: 3px; }
+.wasm-sim-table { border-collapse: collapse; font-size: 12px; margin: 6px 0; width: 100%; }
+.wasm-sim-table th, .wasm-sim-table td { border: 1px solid var(--gold-faint); padding: 3px 8px; text-align: right; }
+.wasm-sim-table th:first-child, .wasm-sim-table td:first-child { text-align: left; }
+.wasm-sim-compare tbody tr { cursor: pointer; }
+.wasm-sim-compare tbody tr.is-active { background: var(--gold-faint); }
+.wasm-sim-result-events ul { max-height: 160px; overflow-y: auto; font-size: 11px; font-family: monospace; margin: 4px 0; padding-left: 18px; }
+.wasm-sim-valuation { font-size: 12px; margin: 4px 0; }
+.wasm-sim-valuation-note { font-style: normal; color: var(--text-dim); font-size: 11px; }

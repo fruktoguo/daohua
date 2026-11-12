@@ -1,14 +1,15 @@
 {
   "name": "daohua-frontend",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "engines": {
     "node": ">=22"
   },
   "type": "module",
   "scripts": {
-    "dev": "node ../scripts/export-i18n-csv.mjs && vite",
-    "build": "node ../scripts/export-i18n-csv.mjs && tsc -b && vite build && node ../scripts/gen-asset-manifest.mjs dist",
+    "dev": "node ../scripts/build-simulator.mjs && node ../scripts/export-i18n-csv.mjs && vite",
+    "build": "node ../scripts/build-simulator.mjs && node ../scripts/export-i18n-csv.mjs && tsc -b && vite build && node ../scripts/gen-asset-manifest.mjs dist",
+    "simulator:build": "node ../scripts/build-simulator.mjs",
     "preview": "vite preview",
     "i18n:export": "node ../scripts/export-i18n-csv.mjs"
   },
@@ -29,7 +30,7 @@
     "typescript": "~5.9.2",
     "vite": "^7.3.7"
   },
-  "packageManager": "pnpm@12.8.1+sha512.f64ba907507f5ceafe06c8d38e6052d0179444580ec1279ddd5bfc11cb48aa8a2644b66598e07e761da84872a9fc57d5f902b87fa49d024198d558612aabbe45",
+  "packageManager": "npm@11.6.2",
   "optionalDependencies": {
     "@esbuild/win32-x64": "^0.28.2",
     "@rollup/rollup-linux-x64-gnu": "^4.64.9"

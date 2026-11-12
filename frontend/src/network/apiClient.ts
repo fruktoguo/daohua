@@ -1,5 +1,6 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
 import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from '../game/types'
+import type { SimulatorEnvironmentDto, SimulatorProfileDto } from '../game/simulator/wasmSimulatorTypes'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -318,4 +319,13 @@ export async function fetchMarketOrders(playerId: string, signal?: AbortSignal):
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
   }))
+}
+
+export function fetchSimulatorProfile(playerId: string, targetPlayerId?: string, signal?: AbortSignal): Promise<SimulatorProfileDto> {
+  const query = targetPlayerId && targetPlayerId !== playerId ? `?targetPlayerId=${encodeURIComponent(targetPlayerId)}` : ''
+  return requestJson<SimulatorProfileDto>(`/api/v1/players/${encodeURIComponent(playerId)}/simulator-profile${query}`, { signal })
+}
+
+export function fetchSimulatorEnvironment(playerId: string, signal?: AbortSignal): Promise<SimulatorEnvironmentDto> {
+  return requestJson<SimulatorEnvironmentDto>(`/api/v1/players/${encodeURIComponent(playerId)}/simulator-environment`, { signal })
 }

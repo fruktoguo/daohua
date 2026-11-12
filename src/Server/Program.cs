@@ -729,6 +729,7 @@ if (processRole == ServerProcessRole.Api)
         var snapshot = await runtime.LoadAsync(playerId, ct);
         return Results.Ok(ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData));
     });
+    SimulatorEndpoints.Map(players);
     players.MapPost("/{playerId:guid}/commands", async (Guid playerId, CommandEnvelopeDto request, ClaimsPrincipal user, IPlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
     {
         if (!IsPlayer(user, playerId)) return Results.Forbid();

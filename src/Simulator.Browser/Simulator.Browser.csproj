@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>DaoHua.Simulator.Browser</AssemblyName>
+    <RootNamespace>DaoHua.Simulator.Browser</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <!-- 战斗预演为计算密集型推演：禁止裁剪以保留配表/触发器启动反射所需元数据，不启用 AOT/多线程。 -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <WasmMainJSPath>wwwroot/main.js</WasmMainJSPath>
+    <WasmEmitSymbolMap>false</WasmEmitSymbolMap>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Simulator/Simulator.csproj" />
+  </ItemGroup>
+</Project>

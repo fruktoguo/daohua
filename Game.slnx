@@ -7,6 +7,7 @@
     <Project Path="src/Server/Server.csproj" />
     <Project Path="src/Server.Clean/Server.Clean.csproj" />
     <Project Path="src/Ecs/Ecs.csproj" />
+    <Project Path="src/Simulator/Simulator.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Domain.Tests/Domain.Tests.csproj" />

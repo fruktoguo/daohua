@@ -16,6 +16,7 @@ import './styles/tutorial.css'
 import './styles/codex.css'
 import './styles/shop.css'
 import './styles/simulator.css'
+import './styles/wasm-simulator.css'
 import { installChunkLoadErrorWatcher, startVersionWatcher } from './network/versionManager'
 import { installInteractionGuard } from './network/interactionGuard'
 

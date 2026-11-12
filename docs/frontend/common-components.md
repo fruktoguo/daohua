@@ -530,20 +530,21 @@
 ## 34. 本地离线确定性战斗模拟器 (Combat Simulator Modal)
 
 - **适用场景**：
-  - **战斗推演与数值验证**：在战场顶部操作区（「战斗统计」按钮旁）提供「模拟器」常驻入口，唤起全屏沉浸视口战斗模拟器（`100vw × 100dvh` 双列流式自适应排版）；
-  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人战斗属性（数值自动保留 1 位小数）、技能与穿戴装备，或一键导入当前队伍队友；支持微调属性与技能；
-  - **装备部位与格子规范**：严格对齐游戏内 6 大部位（武器/副手/头部/衣服/下装/饰品），完全复用游戏内标准 64px 装备格子（`ItemTile` + `ItemTooltipTarget`，空槽虚线、穿戴显图标丝带强化角标并 Hover 展示中文属性与强化缩放卡片），点击格子直接呼出 `ItemGridPicker` 待选列表挑选全量装备，支持强化等级（+0~+20）与快捷卸下；
-  - **环境与时长设置**：支持大地图节点生态、快捷时长（10m~24h）与多节点多选横向对比；
-  - **综合报表展示**：
-    - **战斗波次与胜率**：总场次、胜场、胜率、最高到达波次、妖怪击杀统计；
-    - **收益转化**：战利品掉落明细（`ItemTile` + `ItemTooltipTarget`，展示总数与 `/hr` 速率）、每小时修为速率、市场参考价每日折算总收益；
-    - **灵力状态评估**：缺蓝时间占比（%）、充足/轻度/中度/严重状态、技能卡蓝次数与等蓝耗时、调优建议。
-  - 主弹窗容器：[`frontend/src/components/simulator/CombatSimulatorModal.tsx`](../../frontend/src/components/simulator/CombatSimulatorModal.tsx)
-  - 阵容编辑：[`frontend/src/components/simulator/SimulatorPartyEditor.tsx`](../../frontend/src/components/simulator/SimulatorPartyEditor.tsx)
-  - 环境配置：[`frontend/src/components/simulator/SimulatorConfigPanel.tsx`](../../frontend/src/components/simulator/SimulatorConfigPanel.tsx)
-  - 报表展现：[`frontend/src/components/simulator/SimulatorResultsView.tsx`](../../frontend/src/components/simulator/SimulatorResultsView.tsx)
-- **仿真计算核心**：[`frontend/src/game/simulator/`](../../frontend/src/game/simulator/)
-- **样式文件**：[`frontend/src/styles/simulator.css`](../../frontend/src/styles/simulator.css)
+  - **战斗推演与数值验证**：在战场顶部操作区（「战斗统计」按钮旁）提供「模拟器」常驻入口，唤起战斗预演模态（`Modal` large，成员与目标双列、≤640px 单列自适应）；
+  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人或同队队友的战斗预演档案（境界/特质等级/装备强化/技能与触发条件三态/消耗品槽与共享库存/Buff 与冷却时钟，全部 double 原精度，仅展示层格式化）；
+  - **装备部位与格子规范**：严格对齐游戏内 6 大部位（武器/副手/头部/衣服/下装/饰品），复用 `ItemTile` + `ItemTooltipTarget`（显式 `itemId` 与强化角标），点击空格呼出 `ItemGridPicker` 按槽位过滤待选装备，支持强化等级（+0~+20）与快捷卸下；
+  - **环境与时长设置**：目标节点仅列可讨伐且环境快照可达节点，支持多节点×难度 0~5 组合、时长预设/自定秒、字符串种子（crypto 随机 + 可复制）；节点建筑战斗回复/减伤/怪物削弱与拥挤效率直接读环境快照展示；
+  - **解析预览**：档案或目标变更后经 `resolveProfiles` 调真实内核解析，只读展示 C# 投影属性，不把展示舍入写回输入；
+  - **综合报表展示**（全部来自 `SimulatorRunResultDto` 真实字段，无观测字段不展示）：
+    - 遭遇/轮次/击杀（普通+精英+Boss）/死亡/修为/战斗经验/底蕴/六维经验/结束血蓝/技能冷却与 Buff 残留/剩余库存/事件日志与 `DroppedEventCount`；
+    - 战利品明细（`ItemReference`/`ItemIcon` 强 ID + 强化等级）与按冻结行情的「已入袋净变动估值」（未知价条目标注未报价，不记 0）；速率仅在实际推演时长 >0 时按 `simulatedSeconds/3600` 折算；
+  - 主弹窗容器：[`frontend/src/components/simulator/WasmCombatSimulatorModal.tsx`](../../frontend/src/components/simulator/WasmCombatSimulatorModal.tsx)
+  - 阵容编辑：[`frontend/src/components/simulator/WasmSimulatorProfileEditor.tsx`](../../frontend/src/components/simulator/WasmSimulatorProfileEditor.tsx)
+  - 报表展现：[`frontend/src/components/simulator/WasmSimulatorResults.tsx`](../../frontend/src/components/simulator/WasmSimulatorResults.tsx)
+  - 历史参考（不再被生产入口引用）：`frontend/src/components/simulator/CombatSimulatorModal.tsx`、`SimulatorPartyEditor.tsx`、`SimulatorConfigPanel.tsx`、`SimulatorResultsView.tsx`
+- **推演真源**：浏览器本地 WebAssembly 实战内核（`src/Simulator` + `src/Simulator.Browser`，经 `frontend/src/game/simulator/wasmSimulatorBridge.ts` 专用 module Worker 调用，JSON 进出、取消即 terminate）；`frontend/src/game/simulator/` 旧 TS 引擎仅作历史参考，不再是生产推演真源
+- **WASM 负载**：`frontend/public/simulator/`（`scripts/build-simulator.mjs` 生成，gitignored）
+- **样式文件**：[`frontend/src/styles/wasm-simulator.css`](../../frontend/src/styles/wasm-simulator.css)
 
 ---
 

@@ -10,7 +10,7 @@ import type { ChatMessage } from '../logging/chatService'
 import { gameClient } from '../network/gameClient'
 import type { PartyLinkDto } from '../network/protocol'
 import type { GameLogEntry, LogSegment } from '../logging/gameLogService'
-import { splitLogSegmentsByLines } from '../logging/gameLogService'
+import { parseLogTemplate, splitLogSegmentsByLines } from '../logging/gameLogService'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
 import { ChatMessageBody } from './ChatMessageContent'
 import { ItemReference } from './ItemDisplay'
@@ -173,6 +173,11 @@ const LogContent = memo(function LogContent({ segment }: { segment: LogSegment }
     </span>
   )
 })
+
+export function LogTemplateText({ template }: { template: string }): React.JSX.Element {
+  const segments = useMemo(() => parseLogTemplate(template), [template])
+  return <>{segments.map((segment, index) => <LogContent key={index} segment={segment} />)}</>
+}
 
 /**
  * 单行游戏日志展示组件 (LogRow)
