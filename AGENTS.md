@@ -136,7 +136,7 @@ docker compose -f deploy/compose.prod.yaml down
 
 | 脚本 | 用途 |
 | --- | --- |
-| `verify.sh` | 合并必跑最小门禁：工具链、显式 restore + `--no-restore` Release 构建、Domain/Ecs/Server 三套测试（自动供给 `daohua_market_test` 集成测试库，并按 trx `executed` 实际数硬校验非空，防「零匹配静默全绿」）、DataTool 校验、前端 i18n/日志标记/`node --test` 单测/生产构建、Compose 配置；默认无参数即日常快速口径（跳过 Compose 与 PostgresIntegration）；`--full` 才是合并/交付全量，`--backend` / `--frontend` 可叠加 `--full`；容量门禁不在其中，见 `capacity-target.sh`；双口径：存在 `../DaoHua-Private` 时自动升级完整口径（追加私有测试套与私有前端类型检查），开源环境保持纯开源口径 |
+| `verify.sh` | 合并必跑最小门禁：工具链、显式 restore + `--no-restore` Release 构建、Domain/Ecs/Server 三套测试（自动供给 `daohua_market_test` 集成测试库，并按 trx `executed` 实际数硬校验非空，防「零匹配静默全绿」）、DataTool 校验、前端 i18n/日志标记/`node --test` 单测/生产构建、Compose 配置；默认无参数即日常快速口径（跳过 Compose 与 PostgresIntegration）；`--full` 才是合并/交付全量，`--backend` / `--frontend` 可叠加 `--full`，`--serial` 强制前后端串行；容量门禁不在其中，见 `capacity-target.sh`；双口径：存在 `../DaoHua-Private` 时自动升级完整口径（追加私有测试套与私有前端类型检查），开源环境保持纯开源口径 |
 | `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite、Docker 化 Caddy 域名入口 `http://daohua.localhost`）；交互终端由 TUI 前台接管（启动流程在后台子 shell 完成），`q`/`Ctrl+C` 停止，`:` 进入指令模式（help 查看），非 TTY 使用普通日志流 |
 | `dev-tui.mjs` | `dev.sh` 的无依赖 TUI 运维控制台（前台直读终端输入、事件驱动 + 行级 diff 渲染）：日志滚动回看/来源与级别过滤/长行折行，`:` 指令模式直连 `/ops/api` 查询与写操作 |
 | `dev-hot.mjs` | C# 源码监听与后端平滑热重启（由 `dev.sh` 调用）：只监听 Server 真实编译闭包（`src/Domain`/`src/Ecs`/`src/Protocol`/`src/Server`/`src/Server.Clean` + `config/game-data` + `vendor/YuoCore` + 存在时的 `../DaoHua-Private/server`），默认静默 3s 防抖后重建重启，构建窗口内的变更会补跑 |

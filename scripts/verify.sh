@@ -15,6 +15,7 @@
 #   --full       全量交付门禁：追加 PostgresIntegration 集成测试与 Compose 配置校验。
 #   --backend    只跑后端面（在该模式下叠加 --full 即含 PG 集成）。
 #   --frontend   只跑前端面：依赖安装、i18n 词条、日志标记、前端单测、契约、类型检查与构建。
+#   --serial     禁用前后端并发，强制纯串行执行。
 #   -h, --help   打印本用法。
 #
 # 环境变量：
