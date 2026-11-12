@@ -1,3 +1,4 @@
+using Domain.Player;
 using Npgsql;
 using Server.Clean;
 using Xunit;
@@ -280,6 +281,77 @@ public sealed class ComputeJobRepositoryTests
         Assert.Equal(now.AddHours(-3), Assert.Single(candidates, c => c.PlayerId == eligible).OfflineSince, TimeSpan.FromSeconds(5));
         Assert.Equal(now.AddHours(-2), Assert.Single(candidates, c => c.PlayerId == eligible).LastSimulatedAt, TimeSpan.FromSeconds(5));
         Assert.DoesNotContain(picked, id => seeded.Contains(id) && id != eligible && id != terminal);
+    }
+
+    /// <summary>
+    /// 回归：提交头 last_simulated_at 只到毫秒（节点回传口径），与微秒精度收益边界差 &lt;1ms
+    /// 时必须判为已结清——生产上该幻影欠债曾让 139 名终末批玩家永久占住扫描窗口，
+    /// 把全部真实候选饿死在 LIMIT 之外。
+    /// </summary>
+    [Fact]
+    public async Task ScanColdPlayersExcludesMillisecondTruncatedTerminalDebt()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var batchInterval = TimeSpan.FromHours(1);
+        var now = DateTimeOffset.UtcNow;
+        var truncatedSettled = await SeedPlayerAsync(source);
+        var residualDebt = await SeedPlayerAsync(source);
+
+        // 锚点带微秒尾数 → 边界 anchor+48h 微秒精度。
+        var anchor = now.AddHours(-50).AddTicks(2_480);
+        var boundary = anchor.Add(PlayerLifecycleRules.OfflineIdleLimit);
+        var truncated = DateTimeOffset.FromUnixTimeMilliseconds(boundary.ToUnixTimeMilliseconds());
+        Assert.True(truncated < boundary); // 复现生产：提交头只到毫秒
+
+        // truncatedSettled：last_sim = floor_ms(boundary) < boundary —— 已结清，不选。
+        await UpsertProjectionAsync(source, truncatedSettled, "offline", anchor, now.AddMinutes(-30));
+        await InsertHeadAsync(source, truncatedSettled, truncated);
+        // residualDebt：last_sim = floor_ms(boundary) - 1ms —— 真实欠债，仍选。
+        await UpsertProjectionAsync(source, residualDebt, "offline", anchor, now.AddMinutes(-30));
+        await InsertHeadAsync(source, residualDebt, truncated.AddMilliseconds(-1));
+
+        var picked = (await jobs.ScanColdPlayersAsync(batchInterval, 2048))
+            .Select(candidate => candidate.PlayerId).ToHashSet();
+        Assert.Contains(residualDebt, picked);
+        Assert.DoesNotContain(truncatedSettled, picked);
+    }
+
+    /// <summary>
+    /// dead 终态行不挡真实欠债：同名 job_id 原地复活为 pending（attempts 清零、载荷刷新、
+    /// 重试闸门推进）；succeeded 行仍视为等价登记跳过。
+    /// </summary>
+    [Fact]
+    public async Task EnqueueResurrectsDeadJobForSameTarget()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        var target = DateTimeOffset.UtcNow.AddHours(1);
+
+        Assert.Equal(ComputeEnqueueResult.Inserted,
+            await jobs.EnqueueAsync(player, target, new byte[] { 1 }));
+        var jobId = PostgresComputeJobRepository.DeriveJobId(player, target.ToUnixTimeMilliseconds());
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET status='dead', attempts=5, last_error='boom' WHERE job_id = $1",
+            jobId);
+
+        var result = await jobs.EnqueueAsync(player, target, new byte[] { 9 }, TimeSpan.FromHours(1));
+        Assert.Equal(ComputeEnqueueResult.Resurrected, result);
+        Assert.Equal(1, await CountRowsAsync(source, player));
+        Assert.Equal("pending", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE job_id = $1", jobId));
+        Assert.Equal(0, (int)(await ScalarAsync(source,
+            "SELECT attempts FROM platform.compute_jobs WHERE job_id = $1", jobId))!);
+        Assert.Equal(new byte[] { 9 }, (byte[])(await ScalarAsync(source,
+            "SELECT input_payload FROM platform.compute_jobs WHERE job_id = $1", jobId))!);
+        Assert.True((DateTime)(await ScalarAsync(source,
+            "SELECT next_attempt_at FROM platform.compute_jobs WHERE job_id = $1", jobId))!
+            > DateTime.UtcNow);
+
+        // succeeded 终态行仍跳过。
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET status='succeeded' WHERE job_id = $1", jobId);
+        Assert.Equal(ComputeEnqueueResult.SkippedExisting,
+            await jobs.EnqueueAsync(player, target, new byte[] { 7 }));
     }
 
     /// <summary>领取的 pending 门槛：不满 minPendingAge 的新 pending 不领，老 pending 领，

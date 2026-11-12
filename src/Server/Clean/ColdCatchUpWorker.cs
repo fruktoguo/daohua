@@ -7,7 +7,8 @@ namespace Server.Clean;
 /// 余额快照，编码为 compute.v2 任务请求入队；批目标 = min(now, offline_since + 48h)。
 /// 任务携带完整身份与提交头快照：节点凭此重建 PlayerStateBundle 并逐字节还原聚合。
 /// 玩家上线或所有权租约生效期间自动跳过；同一玩家最多一个未完结任务由数据库唯一约束保证。
-/// 扫描与入队不依赖计算节点配置：本地执行器常驻消费同一队列，节点只承接溢出积压。
+/// 扫描与入队不依赖计算节点配置：到期任务由节点派发器优先领取（节点优先），
+/// 本地执行器仅在无节点接入且进程低负载时兜底消费同一队列（总纲18 §14.4）。
 /// 多副本部署时由会话级咨询锁选出唯一生产者：未持锁实例每轮空转跳过，
 /// 锁随连接断开/进程退出自动释放，无残留状态（见 docs/distributed-readiness.md §H）。
 /// </summary>
@@ -32,7 +33,7 @@ public sealed class ColdCatchUpWorker(
     private bool _isProducer;
 
     /// <summary>
-    /// 扫描主循环：不受计算节点配置门控（本地执行器始终消费该队列）；启动延迟 30 秒避开建库
+    /// 扫描主循环：生产侧不受计算节点配置门控（执行路由见 §14.4）；启动延迟 30 秒避开建库
     /// 热路径后，每 ColdCatchUpInterval 一轮——仅持有生产咨询锁的实例扫描离线欠债玩家并逐个入队，
     /// 循环异常经节流记录后 5 秒退避重试，停机时释放持锁连接（会话结束即让出生产权）。
     /// </summary>
@@ -185,8 +186,10 @@ public sealed class ColdCatchUpWorker(
                 balances,
                 IdempotencyKey: $"cold:{candidate.PlayerId:D}:{target.ToUnixTimeMilliseconds()}");
             var payload = JsonSerializer.SerializeToUtf8Bytes(request, ServerJson.Options);
-            var result = await jobs.EnqueueAsync(candidate.PlayerId, target, payload, cancellationToken);
-            return result is ComputeEnqueueResult.Inserted or ComputeEnqueueResult.Refreshed;
+            var result = await jobs.EnqueueAsync(candidate.PlayerId, target, payload,
+                options.OfflineBatchInterval, cancellationToken);
+            return result is ComputeEnqueueResult.Inserted or ComputeEnqueueResult.Refreshed
+                or ComputeEnqueueResult.Resurrected;
         }
         catch (InvalidDataException exception)
         {
@@ -201,14 +204,23 @@ public sealed class ColdCatchUpWorker(
     /// 批算目标判定：from 为提交头已结算时刻，anchor 为离线锚点，边界 = anchor + OfflineIdleLimit。
     /// from 已到/越过边界 → null（无收益欠债可补）；目标 = min(now, boundary)，距上次结算不足
     /// 批算间隔且未触边界 → null（未到批算点）；触边界的终末批不受间隔限制，直接补到边界。
+    /// 全部比较输入先压到毫秒：模拟时钟与 compute 契约均为毫秒精度（请求 TargetUnixMilliseconds、
+    /// 节点回传 LastSimulatedAtUnixMilliseconds、提交头写回同口径），微秒精度边界会让已结清的
+    /// 终末批玩家残留 &lt;1ms 幻影欠债——永远再入队同一 job_id 被 SkippedExisting 挡回，
+    /// 长期占住 ORDER BY last_simulated_at 扫描窗口饿死真实候选。
     /// </summary>
     internal static DateTimeOffset? ComputeBatchTarget(
         DateTimeOffset from, DateTimeOffset anchor, DateTimeOffset now, TimeSpan batchInterval)
     {
-        var boundary = anchor.Add(PlayerLifecycleRules.OfflineIdleLimit);
-        if (from >= boundary) return null;
-        var target = now < boundary ? now : boundary;
-        if (target < boundary && target - from < batchInterval) return null;
+        var boundary = FloorToMilliseconds(anchor.Add(PlayerLifecycleRules.OfflineIdleLimit));
+        var fromMs = FloorToMilliseconds(from);
+        if (fromMs >= boundary) return null;
+        var target = FloorToMilliseconds(now) < boundary ? FloorToMilliseconds(now) : boundary;
+        if (target < boundary && target - fromMs < batchInterval) return null;
         return target;
     }
+
+    /// <summary>模拟时钟统一毫秒粒度：与 compute 请求/回传/提交头写回的截断口径一致。</summary>
+    private static DateTimeOffset FloorToMilliseconds(DateTimeOffset value)
+        => DateTimeOffset.FromUnixTimeMilliseconds(value.ToUnixTimeMilliseconds());
 }

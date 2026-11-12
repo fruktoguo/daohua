@@ -10,7 +10,10 @@ public enum ComputeEnqueueResult : byte
     /// <summary>已存在 leased/终态同键行，本次入队被跳过。</summary>
     SkippedExisting,
     /// <summary>玩家由会话推进或仍有待消费份额，不允许个人冷算。</summary>
-    SkippedParticipation
+    SkippedParticipation,
+    /// <summary>同名 dead 终态行已原地复活：job_id 由（玩家,目标时刻）派生无法换号，
+    /// 死行不复活会让真实欠债玩家永久卡死。</summary>
+    Resurrected
 }
 
 /// <summary>派发器领取到的一条冷挂机任务。</summary>
@@ -99,12 +102,15 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
     /// <summary>
     /// 入队一个冷挂机任务。同一玩家已有 pending 行时就地刷新目标时间与载荷；
     /// 已有 leased（在飞或失联租约）行时不打扰，等待派发器重租或完成；
-    /// job_id 撞上终态历史行时视为重复入队直接跳过。
+    /// job_id 撞上终态历史行时：succeeded 视为等价任务已登记直接跳过，
+    /// dead 行原地复活为 pending（attempts 清零、按 deadRetryDelay 设重试闸门）——
+    /// job_id 由（玩家,目标时刻）确定性派生无法换号，死行不复活会让真实欠债玩家永久卡死。
     /// </summary>
     public async ValueTask<ComputeEnqueueResult> EnqueueAsync(
         Guid playerId,
         DateTimeOffset targetTime,
         ReadOnlyMemory<byte> inputPayload,
+        TimeSpan deadRetryDelay = default,
         CancellationToken cancellationToken = default)
     {
         if (playerId == Guid.Empty || inputPayload.IsEmpty || inputPayload.Length > 4 * 1024 * 1024)
@@ -135,17 +141,26 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
                 return ComputeEnqueueResult.SkippedParticipation;
         }
 
-        // 同一确定性 job_id 若已存在（终态历史行或他人并发插入），视为等价任务已登记，直接跳过；
+        // 同一确定性 job_id 若已存在（终态历史行或他人并发插入）：succeeded/进行中行直接跳过；
+        // dead 终态行原地复活——载荷随本次冻结输入刷新，重试闸门防毒任务每轮空转。
         // 必须先于 pending 刷新检查，否则刷新 job_id 时会与终态行撞主键。
         await using (var exists = new NpgsqlCommand("""
-            SELECT 1 FROM platform.compute_jobs WHERE job_id = $1
+            SELECT status FROM platform.compute_jobs WHERE job_id = $1
             """, connection, transaction))
         {
             exists.Parameters.Add(new NpgsqlParameter { Value = jobId });
-            if (await exists.ExecuteScalarAsync(cancellationToken) is not null)
+            if (await exists.ExecuteScalarAsync(cancellationToken) is string existingStatus)
             {
+                if (!string.Equals(existingStatus, "dead", StringComparison.Ordinal)
+                    || !await TryResurrectDeadJobAsync(connection, transaction, jobId, playerId,
+                        targetTime, inputPayload, now.Add(deadRetryDelay), now, cancellationToken))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return ComputeEnqueueResult.SkippedExisting;
+                }
                 await transaction.CommitAsync(cancellationToken);
-                return ComputeEnqueueResult.SkippedExisting;
+                NotifyJobAvailable();
+                return ComputeEnqueueResult.Resurrected;
             }
         }
 
@@ -200,6 +215,34 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             }
             return ComputeEnqueueResult.SkippedExisting;
         }
+    }
+
+    /// <summary>
+    /// dead 终态行原地复活：保留 job_id 与 last_error 诊断，载荷刷新为本次冻结输入，
+    /// attempts 清零、租约字段清空、next_attempt_at 设为 nextAttemptAt 重试闸门。
+    /// 仅当行仍是 dead 时生效（并发下其他写者已接管则不打扰）。
+    /// </summary>
+    private static async ValueTask<bool> TryResurrectDeadJobAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction,
+        Guid jobId, Guid playerId, DateTimeOffset targetTime,
+        ReadOnlyMemory<byte> inputPayload, DateTimeOffset nextAttemptAt, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            UPDATE platform.compute_jobs
+            SET status = 'pending', attempts = 0,
+                lease_until = NULL, lease_token = NULL,
+                next_attempt_at = $3, input_payload = $4, output_payload = NULL,
+                target_time = $5, updated_at = $6
+            WHERE job_id = $1 AND player_id = $2 AND status = 'dead'
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = jobId });
+        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        command.Parameters.Add(new NpgsqlParameter { Value = nextAttemptAt });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = inputPayload });
+        command.Parameters.Add(new NpgsqlParameter { Value = targetTime });
+        command.Parameters.Add(new NpgsqlParameter { Value = now });
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
     /// <summary>
     /// 原子领取到期任务：pending 行须到点且 pending 时长超过 minPendingAge（节点溢出阈值；
@@ -405,6 +448,8 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
     /// 收益边界（offline_since + OfflineIdleLimit）、距上次结算已满批算间隔或已到边界
     /// 仍有欠债（终末批）、未被运行时实例持有、无未完结任务、无活跃会话与待消费结算。
     /// 批目标 = min(now, offline_since + 48h)：欠债推进只补到边界，不再越过。
+    /// 欠债判定两侧统一压到毫秒：提交头 last_simulated_at 由节点毫秒时钟写回，
+    /// 与微秒精度边界差 &lt;1ms 属已结清，否则终末批玩家会被幻影欠债永久占住扫描窗口。
     /// </summary>
     public async ValueTask<IReadOnlyList<ColdPlayerCandidate>> ScanColdPlayersAsync(
         TimeSpan batchInterval,
@@ -421,8 +466,11 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             JOIN game.player_state_heads h ON h.player_id = p.player_id
             WHERE p.presence = 'offline'
               AND p.offline_since IS NOT NULL
-              AND h.last_simulated_at < LEAST($1, p.offline_since + $2)
-              AND (h.last_simulated_at <= $1 - $3 OR p.offline_since + $2 <= $1)
+              AND date_trunc('milliseconds', h.last_simulated_at) < LEAST(
+                    date_trunc('milliseconds', $1),
+                    date_trunc('milliseconds', p.offline_since + $2))
+              AND (h.last_simulated_at <= $1 - $3
+                    OR date_trunc('milliseconds', p.offline_since + $2) <= $1)
               AND NOT EXISTS (
                   SELECT 1 FROM game.player_runtime_leases l
                   WHERE l.player_id = p.player_id AND l.lease_until > $1)
