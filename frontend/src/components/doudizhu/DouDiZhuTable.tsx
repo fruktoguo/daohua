@@ -10,6 +10,7 @@ import { FloatingPopover } from '../FloatingPopover'
 import { Modal } from '../Modal'
 import { cardFace, cardName, isRed, visualSymbols, type JokerLabels } from './doudizhuArt'
 import { beats, evaluate, legalMoves, sortCards, type PatternKind } from './doudizhuRules'
+import { resolveDouDiZhuBidChoice } from './doudizhuState'
 import { DouDiZhuMotion } from './doudizhuMotion'
 import { handPosition, measureHand } from './doudizhuLayout'
 import './doudizhu.css'
@@ -81,8 +82,10 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   const serverNowRef = useRef(serverNow); serverNowRef.current = serverNow
   const dealAge = serverNow - game.dealStartedAtUnixMilliseconds
   const intro = dealAge >= 0 && dealAge < 8250
-  const revealAge = game.landlordConfirmedAtUnixMilliseconds === null ? Infinity : serverNow - game.landlordConfirmedAtUnixMilliseconds
+  const revealAge = game.landlordConfirmedAtUnixMilliseconds == null ? Infinity : serverNow - game.landlordConfirmedAtUnixMilliseconds
   const revealing = revealAge >= 0 && revealAge < 2400
+  const bidChoice = resolveDouDiZhuBidChoice(game)
+  const hasLandlord = bidChoice === 'rob'
   const ownBase = sortCards(game.hand.filter(card => !game.bottomCards.includes(card)))
   const landedCount = (seat: number): number => clampCount(Math.floor((dealAge - 2790 - seat * 68 - (seat === mySeat ? 570 : 480)) / 204) + 1)
   const introHand = game.dealHand.slice(0, landedCount(mySeat))
@@ -228,7 +231,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   }, [game.gameId, game.dealNumber, mySeat, jokerLabels])
   useEffect(() => {
     const serverAt = game.landlordConfirmedAtUnixMilliseconds, animator = motion.current
-    if (serverAt === null || !animator) return
+    if (serverAt == null || !animator) return
     const at = serverAt - clockOffset
     if (Date.now() - at >= 2400) return
     for (let i = 0; i < 3; i++) animator.schedule(at + 600 + i * 190, elapsed => {
@@ -367,7 +370,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     return <article className={`ddz-seat ddz-seat-${position}${canOperate && game.currentSeat === seat ? ' is-turn' : ''}`} data-seat={seat} key={member.playerId}>
       <div className="ddz-profile">
         <strong className="ddz-player-name">{member.displayName}</strong>
-        <span className={`ddz-role${game.landlordSeat === seat ? ' is-landlord' : ''}`}>{game.landlordSeat === null ? '　' : t(game.landlordSeat === seat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</span>
+        <span className={`ddz-role${game.landlordSeat === seat ? ' is-landlord' : ''}`}>{!hasLandlord ? '　' : t(game.landlordSeat === seat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</span>
         <div className="ddz-avatar-row">
           {own ? portrait : <FloatingPopover trigger="click" triggerAs="button" triggerClassName="ddz-avatar-trigger" placement={position === 'left' ? 'right-start' : 'left-start'} size="auto" className="ddz-social-menu" content={({ close }) => <>
             <div className="ddz-interaction-header">{t('social.doudizhu.interactWith', { name: member.displayName })}</div>
@@ -415,7 +418,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
       </>}</div>
       <div className="ddz-hand-area" style={{ height: layout.extent }} ref={handAreaRef}>
         <div className="ddz-controls" style={{ bottom: layout.extent + 8 }}>
-          {isMyTurn && game.phase === 'bidding' && <><button className="ddz-primary" type="button" onClick={() => submit(() => onBid(game.landlordSeat === null ? 'call' : 'rob'))}>{t(game.landlordSeat === null ? 'social.doudizhu.call' : 'social.doudizhu.rob')}</button><button type="button" onClick={() => submit(() => onBid('pass'))}>{t(game.landlordSeat === null ? 'social.doudizhu.callPass' : 'social.doudizhu.robPass')}</button></>}
+          {isMyTurn && game.phase === 'bidding' && <><button className="ddz-primary" type="button" onClick={() => submit(() => onBid(bidChoice))}>{t(hasLandlord ? 'social.doudizhu.rob' : 'social.doudizhu.call')}</button><button type="button" onClick={() => submit(() => onBid('pass'))}>{t(hasLandlord ? 'social.doudizhu.robPass' : 'social.doudizhu.callPass')}</button></>}
           {isMyTurn && game.phase === 'playing' && <><button className="ddz-primary" type="button" disabled={!validSelection} onClick={() => submit(() => onPlay(selected))}>{t('social.doudizhu.play')}</button><button type="button" onClick={hint}>{t('social.doudizhu.hint')}</button>{lastPattern && <button type="button" onClick={() => submit(onPass)}>{t('social.doudizhu.pass')}</button>}<button type="button" disabled={!selected.length} onClick={() => setSelected([])}>{t('social.doudizhu.clear')}</button></>}
           {selfHosted && active && <button type="button" onClick={() => onSetHosted(false)}>{t('social.doudizhu.cancelHost')}</button>}
         </div>

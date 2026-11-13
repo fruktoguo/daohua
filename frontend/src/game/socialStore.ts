@@ -17,6 +17,7 @@ import type {
 import type { BattleReport, RespawnPolicy } from './types'
 import { gameClient } from '../network/gameClient'
 import { useGameStore } from './gameStore'
+import { normalizeDouDiZhuGame } from '../components/doudizhu/doudizhuState'
 
 /** 队伍开启槽位数下限（§21.13：2~5） */
 export const PARTY_OPEN_SLOTS_MIN = 2
@@ -176,7 +177,10 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
       friends,
       incomingRequests: Array.isArray(state.incomingRequests) ? state.incomingRequests : [],
       outgoingRequests: Array.isArray(state.outgoingRequests) ? state.outgoingRequests : [],
-      party: state.party ?? null,
+      party: state.party ? {
+        ...state.party,
+        douDiZhuGame: normalizeDouDiZhuGame(state.party.douDiZhuGame),
+      } : null,
       douDiZhuInteractions: state.douDiZhuInteractions ?? [],
       partyInvitation: state.partyInvitation ?? null,
       seeking: state.seeking ?? null,
