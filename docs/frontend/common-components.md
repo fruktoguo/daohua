@@ -540,7 +540,9 @@
     5. `消耗品`：复用战斗详情 `AutoUseSlotGroup` 双组 6 槽布局（药品 0~2 + 通用 3~5）+ `ItemUseSlot`（`ignoreQuantity`）+ `ItemGridPicker`（`ignoreQuantity`）+ `CombatTriggerEditor`，与背包数量彻底解耦（隐藏库存角标与缺货置灰、无数量框），仅配置物品、启停与触发条件；
   - **高信息密度目标与参数区**：右栏「目标地点」将标题/已选数/区域筛选/全选清空压缩至顶部工具条并采用多列紧凑网格（卡片仅保留地名与 `加成×N` 徽记，完整环境加成与所属区域改为悬停复用 `FloatingPopover` + `FloatingInfoCard` 惰性展示），「难度」（默认/T1~T5 + 全选/仅默认）与「模拟时长」「随机种子」分别单行紧凑排列（移动端自动折行）；通过 Worker `listCombatNodeIds` 复用引擎 `resolveCombatAction` 的行动匹配规则，严格筛选具备讨伐行动的战斗节点与所属地图（自动排除无讨伐行动节点如 `node.tea-house` 与纯非战斗地图）；
   - **综合报表展示（真实修为口径）**：
-    - 修为总计与速率统一取纯净产出的真实修为 `lifetimeExperience`（剥离居底蕴 3 倍燃烧增幅且不受境界修为上限截断），并列出战斗经验、六维经验、遭遇/轮次/击杀（普/精/首领）/死亡、战利品与冻结行情净估值、Buff/冷却残留及事件日志与 `DroppedEventCount`。
+    - 修为总计与速率统一取纯净产出的真实修为 `lifetimeExperience`（剥离居底蕴 3 倍燃烧增幅且不受境界修为上限截断），完整呈现战斗经验、六维经验、遭遇/轮次/击杀（普/精/首领）/死亡、战利品与冻结行情净估值、Buff/冷却残留及事件日志与 `DroppedEventCount`；全表大型数值统一复用 `UnitNumber`（中文单位 + 悬停 4 位中文分段明细）。
+    - **高信息密度对比页**：顶部「最高地点」卡片压缩为单行条带，移除地点表中的「建筑加成」列（悬停地点单元格复用 `FloatingPopover` + `FloatingInfoCard` 惰性展示所属区域与建筑/阵法/拥挤加成）及冗余「时长」显示，支持「斩妖/时」「修为/时」「六维/时」「净估值/时」「死亡」五项指标点击排序及正倒序切换。
+    - **可搜索详细页与五行占比**：顶部全部地点改用复用 `FloatingPopover` 的可搜索下拉框（按地点/区域/难度筛选）；「伤害与承伤」页签切换为每秒均值（`/s`），区分物理/术法/真伤三段占比条与治疗速率，悬停伤害或承伤单元可通过 `FloatingPopover` 展示五行占比（金/木/水/火/土/无属性）。
   - 主弹窗容器：[`frontend/src/components/simulator/CombatSimulatorModal.tsx`](../../frontend/src/components/simulator/CombatSimulatorModal.tsx)
   - 会话状态缓存：[`frontend/src/game/simulator/simulatorStore.ts`](../../frontend/src/game/simulator/simulatorStore.ts)
   - 阵容编辑：[`frontend/src/components/simulator/SimulatorProfileEditor.tsx`](../../frontend/src/components/simulator/SimulatorProfileEditor.tsx)
