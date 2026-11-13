@@ -54,4 +54,41 @@ public sealed class ComputeJobIdentityTests
             ColdCatchUpWorker.ComputeBatchTarget(now.AddHours(-2), anchorRecent, now, TimeSpan.FromHours(1)));
         Assert.Null(ColdCatchUpWorker.ComputeBatchTarget(now.AddMinutes(-30), anchorRecent, now, TimeSpan.FromHours(1)));
     }
+
+    /// <summary>
+    /// 回归：装批同时遵守「字节硬预算 + 模拟时长软预算」，
+    /// 超出模拟时长软预算的重任务不得与同批小任务挤占导致 30s 超时，而首条 48h 单任务必须放行不饿死。
+    /// </summary>
+    [Fact]
+    public void PackHonorsByteHardCapAndSimulatedSpanSoftCapWithoutStarving48HourJob()
+    {
+        var maxBytes = 10_000L;
+        var maxWork = (long)TimeSpan.FromHours(16).TotalMilliseconds;
+        var h48 = (long)TimeSpan.FromHours(48).TotalMilliseconds;
+        var h40 = (long)TimeSpan.FromHours(40).TotalMilliseconds;
+        var h10 = (long)TimeSpan.FromHours(10).TotalMilliseconds;
+        var h4 = (long)TimeSpan.FromHours(4).TotalMilliseconds;
+        var h1 = (long)TimeSpan.FromHours(1).TotalMilliseconds;
+
+        // 1. 首条 48h 单任务即使大于 16h 软预算也必须放行，后续 1h 进 overflow。
+        var (fitsSingle, overflowSingle) = ComputeBatchBudget.Pack(
+            [(Id: 1, Bytes: 100L, Work: h48), (Id: 2, Bytes: 100L, Work: h1)],
+            item => item.Bytes, maxBytes, item => item.Work, maxWork);
+        Assert.Equal([1], fitsSingle.Select(item => item.Id).ToArray());
+        Assert.Equal([2], overflowSingle.Select(item => item.Id).ToArray());
+
+        // 2. [10h, 40h, 4h] 在 16h 软预算下跳过 40h 放入 [10h, 4h]。
+        var (fitsGreedy, overflowGreedy) = ComputeBatchBudget.Pack(
+            [(Id: 1, Bytes: 100L, Work: h10), (Id: 2, Bytes: 100L, Work: h40), (Id: 3, Bytes: 100L, Work: h4)],
+            item => item.Bytes, maxBytes, item => item.Work, maxWork);
+        Assert.Equal([1, 3], fitsGreedy.Select(item => item.Id).ToArray());
+        Assert.Equal([2], overflowGreedy.Select(item => item.Id).ToArray());
+
+        // 3. 字节硬上限仍然严格生效：即使 Fits 为空，超过 maxBytes 也不得放行。
+        var (fitsOversized, overflowOversized) = ComputeBatchBudget.Pack(
+            [(Id: 1, Bytes: maxBytes + 1, Work: h1)],
+            item => item.Bytes, maxBytes, item => item.Work, maxWork);
+        Assert.Empty(fitsOversized);
+        Assert.Equal([1], overflowOversized.Select(item => item.Id).ToArray());
+    }
 }

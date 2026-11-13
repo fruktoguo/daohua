@@ -280,20 +280,35 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             var before = ToSnapshot(ecs.ExportSnapshot(playerId));
             IReadOnlyList<LogEventDto>? logs = null;
             var target = _simulationClock.UtcNow;
-            await RefreshNodeBuildingsAsync(playerId, before.State.World, target, cancellationToken).ConfigureAwait(false);
-            before = ToSnapshot(ecs.ExportSnapshot(playerId));
             // 先消费会话权威结算，再推进个人行动；成员从不恢复同场战斗。
             await ReconcileParticipationOwnedAsync(playerId, target, notifications, cancellationToken, initialLoad: true).ConfigureAwait(false);
             before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            // 若离线前驻留在宗门驻地，先按资格撤销时刻结算并退驻回锚点，防止离线继续享用旧驻地建筑。
+            if (ZongmenRules.TryResidenceId(before.State.World.NodeId, out _))
+            {
+                await ReconcileZongmenResidenceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+                before = ToSnapshot(ecs.ExportSnapshot(playerId));
+                if (!ZongmenRules.TryResidenceId(before.State.World.NodeId, out _))
+                {
+                    await RefreshNodeBuildingsAsync(playerId, before.State.World, before.State.LastSimulatedAt, cancellationToken).ConfigureAwait(false);
+                    before = ToSnapshot(ecs.ExportSnapshot(playerId));
+                }
+            }
             TrackDirty(playerId);
-            // 守卫必须用对账后的实体时刻：收件箱消费已把 LastSimulatedAt 推进到最新结算时刻，
-            // 可能已超过 target——若仍按装载前的持久化时刻判断，补推会因目标倒退而抛异常。
+            // 守卫必须用对账后的实体时刻：收件箱消费或宗门退驻结算可能已推进 LastSimulatedAt。
+            // 离线补算沿用持久化快照中的 World.NodeBuildings 最近已知投影（与冷挂机补算同口径），
+            // 补算完成后再按当前所在节点（含离线旅行抵达的新节点）刷新 target 时刻最新建筑投影并随本次提交一并落盘。
             if (target > before.State.LastSimulatedAt)
             {
                 var loadDirtyBefore = ecs.GetDirtySections(playerId);
                 await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+                await RefreshNodeBuildingsAsync(playerId, ToSnapshot(ecs.ExportSnapshot(playerId)).State.World, target, cancellationToken).ConfigureAwait(false);
                 var advanced = ToSnapshot(ecs.ExportSnapshot(playerId));
                 logs = (await CommitSimulationAsync(playerId, before, advanced, null, loadDirtyBefore, cancellationToken).ConfigureAwait(false)).Logs;
+            }
+            else
+            {
+                await RefreshNodeBuildingsAsync(playerId, before.State.World, target, cancellationToken).ConfigureAwait(false);
             }
             // 离线收益先完成事务；装载本身不改变在线状态，上线由 AttachConnectionAsync 驱动。
             TrackDirty(playerId);
@@ -2063,11 +2078,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         // 候选池先行快照：门禁内 MutatePlayer 的原子判据仍是最终裁决，池只承担初选与随机。
         // 严格同节点约束：排除移动中（EdgeId 非空）或节点未知的候选人。
         var candidates = new List<(Guid PlayerId, double Power, string NodeId, int Bracket)>();
+        var seekers = new List<Guid>();
         foreach (var id in ids)
         {
             (Guid PlayerId, double Power, string NodeId, int Bracket)? info = null;
+            var isPending = false;
             ecs.MutatePlayer(id, aggregate =>
             {
+                isPending = aggregate.IsDuelPending;
                 if (aggregate.CanJoinDuel(nowUnix)
                     && aggregate.World.EdgeId is null
                     && !string.IsNullOrEmpty(aggregate.World.NodeId))
@@ -2076,10 +2094,17 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     info = (id, aggregate.DuelPower(gameData), aggregate.World.NodeId, CombatDifficultyRules.GetBracket(difficulty));
                 }
             });
+            if (isPending) seekers.Add(id);
             if (info is { } entry) candidates.Add(entry);
         }
-        if (candidates.Count == 0) return;
-        foreach (var seekerId in ids)
+        if (seekers.Count == 0) return;
+        if (candidates.Count == 0)
+        {
+            // 没有任何可撮合对手时，同样必须中止寻求者的 DuelPending 并回退为普通怪物波次，避免永久停滞。
+            foreach (var seekerId in seekers) AbortDuelSeekOwned(seekerId);
+            return;
+        }
+        foreach (var seekerId in seekers)
         {
             double seekerPower = 0;
             string? seekerNodeId = null;
@@ -2507,8 +2532,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
         var view = await nodeBuildings.BuildingsForAsync(world.NodeId, now, cancellationToken).ConfigureAwait(false);
         var counts = await nodeBuildings.UsageForAsync(world.NodeId, now, cancellationToken).ConfigureAwait(false);
-        var effects = NodeBuildingRules.AggregateEffects(view.Buildings, gameData.Buildings, nowUnixSeconds, counts);
-        var usages = nodeBuildings.UsagesFor(view.Buildings, counts, nowUnixSeconds);
+        var effects = NodeBuildingRules.AggregateEffects(view.Buildings, gameData.Buildings, nowUnixSeconds, counts, world.NodeId);
+        var usages = nodeBuildings.UsagesFor(world.NodeId, view.Buildings, counts, nowUnixSeconds);
         return ecs.ApplyNodeBuildingProjection(playerId, new(view.Version, view.Buildings, effects, world.NodeId, usages), now);
     }
 

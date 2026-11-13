@@ -50,9 +50,18 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         if (regenTick || secondTick)
         {
             var statsBook = encounter.StatsBook;
-            // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人。
-            foreach (var unit in encounter.PlayerAllies.Concat(encounter.Enemies))
+            // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人；显式循环避免 Concat 迭代器分配。
+            for (var i = 0; i < encounter.PlayerAllies.Count; i++)
             {
+                var unit = encounter.PlayerAllies[i];
+                var alive = unit.IsAlive;
+                Tick(unit, statsBook, regenTick, secondTick);
+                if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
+                if (secondTick) CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+            }
+            for (var i = 0; i < encounter.Enemies.Count; i++)
+            {
+                var unit = encounter.Enemies[i];
                 var alive = unit.IsAlive;
                 Tick(unit, statsBook, regenTick, secondTick);
                 if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
@@ -61,9 +70,15 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         }
         // 结算完毕后统一剔除到期 Buff：到期时刻所在边界已按完整效果结算，之后不再参与任何相位。
         for (var i = 0; i < encounter.PlayerAllies.Count; i++)
-            encounter.PlayerAllies[i].RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        {
+            var ally = encounter.PlayerAllies[i];
+            if (ally.Buffs.Count > 0) ally.RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        }
         for (var i = 0; i < encounter.Enemies.Count; i++)
-            encounter.Enemies[i].RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        {
+            var enemy = encounter.Enemies[i];
+            if (enemy.Buffs.Count > 0) enemy.RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        }
 
         static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, bool regenTick, bool secondTick)
         {

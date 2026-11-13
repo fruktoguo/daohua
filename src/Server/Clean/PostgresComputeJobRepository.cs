@@ -183,6 +183,74 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
                 return ComputeEnqueueResult.Refreshed;
             }
         }
+
+        // 目标时刻推进使 job_id 变化时，按玩家维度原地复用/复活已有 dead 终态行：
+        // 避免毒丸或批量失败玩家在每次新目标时刻到来时无限堆积 dead 行；
+        // 若仍在冷却期内保留剩余闸门，熬过完整冷却窗口后立即可领。
+        Guid? existingDeadJobId = null;
+        DateTimeOffset deadUpdatedAt = default;
+        await using (var findDead = new NpgsqlCommand("""
+            SELECT job_id, updated_at
+            FROM platform.compute_jobs
+            WHERE player_id = $1 AND status = 'dead'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+            """, connection, transaction))
+        {
+            findDead.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            await using var reader = await findDead.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                existingDeadJobId = reader.GetGuid(0);
+                deadUpdatedAt = reader.GetFieldValue<DateTimeOffset>(1);
+            }
+        }
+        if (existingDeadJobId is { } deadJobId)
+        {
+            var retryAt = deadRetryDelay > TimeSpan.Zero ? deadUpdatedAt.Add(deadRetryDelay) : DateTimeOffset.MinValue;
+            DateTimeOffset? nextAttemptAt = retryAt > now ? retryAt : null;
+            await using var reuseDead = new NpgsqlCommand("""
+                UPDATE platform.compute_jobs
+                SET job_id = $2,
+                    status = 'pending',
+                    attempts = 0,
+                    lease_until = NULL,
+                    lease_token = NULL,
+                    next_attempt_at = $3,
+                    input_payload = $4,
+                    output_payload = NULL,
+                    target_time = $5,
+                    updated_at = $6
+                WHERE job_id = $1 AND status = 'dead'
+                """, connection, transaction);
+            reuseDead.Parameters.Add(new NpgsqlParameter { Value = deadJobId });
+            reuseDead.Parameters.Add(new NpgsqlParameter { Value = jobId });
+            reuseDead.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlDbType.TimestampTz,
+                Value = (object?)nextAttemptAt ?? DBNull.Value
+            });
+            reuseDead.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = inputPayload });
+            reuseDead.Parameters.Add(new NpgsqlParameter { Value = targetTime });
+            reuseDead.Parameters.Add(new NpgsqlParameter { Value = now });
+            int reused;
+            try
+            {
+                reused = await reuseDead.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return ComputeEnqueueResult.SkippedExisting;
+            }
+            if (reused > 0)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                if (nextAttemptAt is null) NotifyJobAvailable();
+                return ComputeEnqueueResult.Resurrected;
+            }
+        }
         await using (var insert = new NpgsqlCommand("""
             INSERT INTO platform.compute_jobs
                 (job_id, player_id, target_time, status, input_payload, output_payload,
@@ -414,6 +482,34 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
+    /// 将本地装批预算截断未实际下发的 leased 任务无损退回 pending：
+    /// 回退本次领取递增的 attempts、不写错误诊断、不设退避闸门，并唤醒下一轮领取，
+    /// 防止大跨度积压批次因预算切分而在未上链前耗尽 attempts 误判 dead。
+    /// </summary>
+    public async ValueTask<int> ReturnOverflowAsync(
+        Guid leaseToken,
+        IReadOnlyCollection<Guid> jobIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (jobIds.Count == 0) return 0;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            UPDATE platform.compute_jobs
+            SET status = 'pending',
+                attempts = GREATEST(0, attempts - 1),
+                lease_until = NULL,
+                lease_token = NULL,
+                updated_at = now()
+            WHERE lease_token = $1 AND status = 'leased' AND job_id = ANY($2)
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = leaseToken });
+        command.Parameters.Add(new NpgsqlParameter { Value = jobIds.ToArray() });
+        var returned = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (returned > 0) NotifyJobAvailable();
+        return returned;
+    }
+
+    /// <summary>
     /// 采集 compute_jobs 队列积压快照：按状态聚合计数 + 立即可领取的到期积压 +
     /// 最老 pending 行积压年龄。单次往返，供运维面板/诊断端点使用。
     /// </summary>
@@ -477,6 +573,11 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
               AND NOT EXISTS (
                   SELECT 1 FROM platform.compute_jobs j
                   WHERE j.player_id = p.player_id AND j.status IN ('pending', 'leased'))
+              AND NOT EXISTS (
+                  SELECT 1 FROM platform.compute_jobs d
+                  WHERE d.player_id = p.player_id
+                    AND d.status = 'dead'
+                    AND d.updated_at > $1 - $3)
               AND NOT EXISTS (
                   SELECT 1 FROM social.party_sessions s
                   WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(

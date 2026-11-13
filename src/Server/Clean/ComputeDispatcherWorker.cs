@@ -49,8 +49,8 @@ public sealed class ComputeDispatcherWorker(
         }
 
         logger.LogInformation(
-            "ComputeDispatcherWorker started batch={Batch} batchBytes={BatchBytes} interval={Interval}（compute-link 按节点容量并行派发）。",
-            options.ComputeBatchSize, options.ComputeBatchMaxBytes, options.ComputePollInterval);
+            "ComputeDispatcherWorker started batch={Batch} batchBytes={BatchBytes} batchSimHours={BatchSimHours} interval={Interval}（compute-link 按节点容量并行派发）。",
+            options.ComputeBatchSize, options.ComputeBatchMaxBytes, options.ComputeBatchMaxSimulatedSpan.TotalHours, options.ComputePollInterval);
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -219,7 +219,11 @@ public sealed class ComputeDispatcherWorker(
                     TimeSpan.Zero, cancellationToken);
                 continue;
             }
-            ready.Add(new ReadyJob(claim, request, ComputeBatchBudget.EstimateDecodedBytes(request)));
+            ready.Add(new ReadyJob(
+                claim,
+                request,
+                ComputeBatchBudget.EstimateDecodedBytes(request),
+                ComputeBatchBudget.EstimateSimulatedMilliseconds(request)));
         }
         if (ready.Count == 0) return;
 
@@ -243,13 +247,22 @@ public sealed class ComputeDispatcherWorker(
         }
         if (dispatchable.Count == 0) return;
 
-        // 本节点有效预算内贪心装批：装不下的立即零退避退回 pending，下轮派给其他批次/节点。
-        var (fits, overflow) = ComputeBatchBudget.Pack(dispatchable, entry => entry.DecodedBytes, batchBudget);
+        // 本节点有效字节硬预算 + 累计模拟跨度软预算双约束贪心装批：
+        // 装不下的任务经 ReturnOverflowAsync 无损退回 pending（回退 attempts），留待下批再派。
+        var maxSimulatedMs = Math.Max(1L, (long)options.ComputeBatchMaxSimulatedSpan.TotalMilliseconds);
+        var (fits, overflow) = ComputeBatchBudget.Pack(
+            dispatchable,
+            entry => entry.DecodedBytes,
+            batchBudget,
+            entry => entry.SimulatedMilliseconds,
+            maxSimulatedMs);
         if (overflow.Count > 0)
         {
-            await ReleaseClaimsAsync(
-                overflow.Select(entry => entry.Claim).ToArray(),
-                "批次字节预算截断，退回下轮再派", cancellationToken, retryAfter: TimeSpan.Zero);
+            var returned = await jobs.ReturnOverflowAsync(
+                overflow[0].Claim.LeaseToken,
+                overflow.Select(entry => entry.Claim.JobId).ToArray(),
+                cancellationToken);
+            metrics.RecordJobsReleased(returned);
         }
         if (fits.Count == 0) return;
 
@@ -519,8 +532,12 @@ public sealed class ComputeDispatcherWorker(
     private static IReadOnlyList<ComputeJobClaim> ClaimsOf(IReadOnlyList<ReadyJob> entries) =>
         entries.Select(entry => entry.Claim).ToArray();
 
-    /// <summary>一个通过载荷校验、可参与装批的任务及其解码后字节估算。</summary>
-    private sealed record ReadyJob(ComputeJobClaim Claim, ComputeAdvanceJobRequest Request, long DecodedBytes);
+    /// <summary>一个通过载荷校验、可参与装批的任务及其解码后字节、模拟时长估算。</summary>
+    private sealed record ReadyJob(
+        ComputeJobClaim Claim,
+        ComputeAdvanceJobRequest Request,
+        long DecodedBytes,
+        long SimulatedMilliseconds);
 
 }
 

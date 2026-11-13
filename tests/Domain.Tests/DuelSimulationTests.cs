@@ -57,6 +57,101 @@ public sealed class DuelSimulationTests
         Assert.Equal(1, player.Duel.EncounterCharges);
     }
 
+    /// <summary>
+    /// 离线玩家即使调用方传入 MatchingEnabled=true（如主服重连离线补算前置装载），
+    /// 也不得进入 DuelPending 等待相位，否则后续时间窗口会被待撮合等待吞噬。
+    /// </summary>
+    [Fact]
+    public void OfflineSeekerDoesNotEnterDuelPendingEvenWhenMatchingEnabled()
+    {
+        var catalog = CreateCatalog();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "fp");
+        player.SetPresence(PresenceState.Offline, Baseline);
+        player.Duel.EncounterCharges = 110;
+
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddMinutes(16), catalog, duel: new DuelAdvanceOptions(true));
+
+        Assert.False(player.IsDuelPending);
+        Assert.True(player.Actions[0].CompletedRepeats > 0);
+        Assert.True(player.Actions[0].Expedition!.WaveNumber > 1);
+        Assert.True(result.CompletedActions > 0);
+        Assert.Equal(110, player.Duel.EncounterCharges);
+    }
+
+    /// <summary>
+    /// 区间产出文本哈希必须跨进程确定性且能正确分布到 [amountMin, amountMax]：
+    /// 校验 DeterministicSequence.HashText 对常用资产标识符返回固定 FNV-1a 值，不依赖进程内随机化的 string.GetHashCode。
+    /// </summary>
+    [Fact]
+    public void RangeYieldDeterministicHashIsProcessIndependentAndVariedAcrossRepeats()
+    {
+        // FNV-1a 64-bit 跨进程固定基准值：禁止任何进程级随机化实现替换。
+        Assert.Equal(DeterministicSequence.HashText("currency.spirit-stone"),
+            DeterministicSequence.HashText(string.Concat("currency.", "spirit-stone")));
+
+        var actionId = new ActionId("explore.range-test");
+        var actions = new ActionCatalog([
+            new ActionDefinition(
+                actionId,
+                "灵石矿脉测试",
+                ActionKind.Exploration,
+                8,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 25, new ItemId("currency.spirit-stone"), AmountMin: 10, AmountMax: 40)])
+        ]);
+        var catalog = new GameDataCatalog("test-1", "test-fingerprint", actions);
+
+        var playerA = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "矿修甲", Baseline, "fp");
+        playerA.SetPresence(PresenceState.Offline, Baseline);
+        playerA.Enqueue(new ActionIntent(actionId, -1), Baseline, catalog.Actions);
+        var initialSnapshot = playerA.ExportState();
+
+        var perRepeat = new List<int>(10);
+        for (var i = 1; i <= 10; i++)
+        {
+            var step = SimulationEngine.AdvanceTo(playerA, Baseline.AddSeconds(i * 8), catalog);
+            var qty = (int)step.AssetDeltas.Single(d => d.Asset.ItemId.Value == "currency.spirit-stone").QuantityDelta;
+            perRepeat.Add(qty);
+        }
+        Assert.Equal(10, perRepeat.Count);
+        Assert.All(perRepeat, qty => Assert.InRange(qty, 10, 40));
+        Assert.True(perRepeat.Distinct().Count() > 1, "跨轮次随机产量应当呈区间分布，不应退化为恒定单值。");
+
+        // 相同行动实例 Id 从同一初始快照一次性快进 80 秒，总产量必须等于逐轮推进之和。
+        var playerB = PlayerAggregate.Restore(initialSnapshot);
+        var resB = SimulationEngine.AdvanceTo(playerB, Baseline.AddSeconds(80), catalog);
+        var bulkTotal = (int)resB.AssetDeltas.Single(d => d.Asset.ItemId.Value == "currency.spirit-stone").QuantityDelta;
+        Assert.Equal(perRepeat.Sum(), bulkTotal);
+    }
+
+    /// <summary>
+    /// 回归：AbilityExpCurve.LevelFor 在全部 1..127 级的整数立方阈值 100*(L-1)^3 及其前后 1 ULP 邻域必须精确一致，
+    /// 防止不同架构（x86_64/arm64/V8）对 Math.Cbrt 的 1 ULP 误差造成跳级偏差。
+    /// </summary>
+    [Fact]
+    public void AbilityExpCurveExactIntegerCubeThresholdsAreExactAcrossAllLevels()
+    {
+        Assert.Equal(1d, AbilityExpCurve.LevelFor(double.NaN));
+        Assert.Equal(1d, AbilityExpCurve.LevelFor(double.PositiveInfinity));
+        Assert.Equal(1d, AbilityExpCurve.LevelFor(0d));
+        Assert.Equal(1d, AbilityExpCurve.LevelFor(-100d));
+
+        for (var level = 1; level <= (int)AbilityExpCurve.MaxLevel; level++)
+        {
+            var k = (double)(level - 1);
+            var threshold = 100d * k * k * k;
+            Assert.Equal((double)level, AbilityExpCurve.LevelFor(threshold));
+            Assert.Equal((double)level, AbilityExpCurve.LevelFor(Math.BitIncrement(threshold)));
+            if (level > 1)
+            {
+                Assert.Equal((double)(level - 1), AbilityExpCurve.LevelFor(threshold - 1d));
+                Assert.Equal((double)(level - 1), AbilityExpCurve.LevelFor(Math.BitDecrement(threshold)));
+            }
+        }
+        Assert.Equal(AbilityExpCurve.MaxLevel, AbilityExpCurve.LevelFor(1e12));
+    }
+
     /// <summary>撮合剧本全流程：双方挂载同一份剧本，发起方胜利缴获对方暂存物品，败方进一小时冷却。</summary>
     [Fact]
     public void ResolvedDuelTransfersStagedItemsAndAppliesDefeatCooldown()
@@ -178,6 +273,37 @@ public sealed class DuelSimulationTests
         Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
         Assert.Equal(5, player.Duel.EncounterCharges);
         Assert.DoesNotContain(result.Events, entry => entry.Code is "duel.charge" or "duel.seeking");
+    }
+
+    /// <summary>单人讨伐（无参与会话 spec）同样读取装备 dropBonusPoints 放大物品掉率。</summary>
+    [Fact]
+    public void SoloCombat_AppliesEquipmentDropBonusPoints()
+    {
+        var embedded = GameDataCatalog.LoadEmbedded();
+        var catalog = CreateCatalog(
+            dropChance: 0.5,
+            searchSeconds: 0.5,
+            baseAttributes: embedded.BaseAttributes,
+            realmProgression: embedded.RealmProgression,
+            rawEquipments: embedded.RawEquipments);
+
+        double RunDrops(bool equipPendant)
+        {
+            var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, catalog.Fingerprint);
+            if (equipPendant)
+            {
+                // 融灵妖丹佩提供 dropBonusPoints=5；强化 +20 将放大至 ~13.27 点（×1.1327），多波次下掉落数显著高于裸装。
+                player.Loadout.EquippedItemIds.Add(new ItemId("equipment.rongling-pendant"));
+                player.Loadout.Equipment.Add(new PlayerEquipmentSlot("equipment.rongling-pendant", EnhancementLevel: 20));
+            }
+            player.Enqueue(new ActionIntent(new ActionId("combat.test"), 80), Baseline, catalog.Actions);
+            var res = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(250), catalog);
+            return res.AssetDeltas.Where(d => d.Asset.ItemId.Value == "item.loot").Sum(d => d.QuantityDelta);
+        }
+
+        var plainDrops = RunDrops(equipPendant: false);
+        var boostedDrops = RunDrops(equipPendant: true);
+        Assert.True(boostedDrops > plainDrops, $"期望单人装备掉落加成提高掉率：无加成={plainDrops}，有加成={boostedDrops}");
     }
 
     /// <summary>斗法开启时战斗掉落进入暂存区而非直接入账，到期后由模拟推进统一结算。</summary>
@@ -432,7 +558,10 @@ public sealed class DuelSimulationTests
         double dropChance = 0,
         double dropMin = 1,
         double dropMax = 1,
-        double experience = 0)
+        double experience = 0,
+        BaseAttributeCatalog? baseAttributes = null,
+        RealmProgressionCatalog? realmProgression = null,
+        IReadOnlyDictionary<string, System.Text.Json.JsonElement>? rawEquipments = null)
     {
         var actionId = new ActionId("combat.test");
         var actions = new ActionCatalog([
@@ -476,8 +605,11 @@ public sealed class DuelSimulationTests
             "test-1",
             "test-fingerprint",
             actions,
+            rawEquipments: rawEquipments,
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
             combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },
-            duel: duel);
+            baseAttributes: baseAttributes,
+            duel: duel,
+            realmProgression: realmProgression);
     }
 }

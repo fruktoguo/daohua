@@ -814,7 +814,8 @@ internal static partial class ActionExecutionRules
         var min = (int)Math.Floor(amountMin);
         var max = (int)Math.Floor(amountMax);
         if (max <= min) return min;
-        var seed = BitConverter.ToInt64(action.Id.ToByteArray(), 0) ^ StringComparer.Ordinal.GetHashCode(itemId.Value);
+        // 必须使用跨进程确定性哈希；StringComparer.Ordinal.GetHashCode 在 .NET 进程间会随机加盐导致计算节点校验失配。
+        var seed = BitConverter.ToInt64(action.Id.ToByteArray(), 0) ^ (long)DeterministicSequence.HashText(itemId.Value);
         var roll = DeterministicRoll.Next(seed, 0, action.CompletedRepeats, YieldAmountRollChannel);
         var span = (max - min) + 1;
         return min + (int)Math.Min(span - 1, Math.Floor(roll * span));

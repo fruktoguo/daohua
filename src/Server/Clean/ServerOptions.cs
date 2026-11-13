@@ -74,6 +74,12 @@ public sealed record ServerOptions(
     /// 上限取 12 MiB：Base64 编码放大 4/3 后约 16 MiB 帧体，仍低于 compute-link 单帧 20 MiB 上限并保留结果帧冗余。
     /// </summary>
     public long ComputeBatchMaxBytes { get; init; } = 8L * 1024 * 1024;
+    /// <summary>
+    /// 单批次累计模拟时长软预算（ComputeNode:BatchMaxSimulatedHours）：
+    /// 限制单批累计模拟跨度以匹配 ComputeRequestTimeout（默认 30s）；
+    /// 批内首条任务无条件放行（确保 48h 单任务永不饿死），超出预算的后续任务无损退回 pending 下批再派。
+    /// </summary>
+    public TimeSpan ComputeBatchMaxSimulatedSpan { get; init; } = TimeSpan.FromHours(16);
     /// <summary>节点出站帧队列写入超时：bounded 64 满时防止派发任务被挂死，超时按批次失败退回租约</summary>
     public TimeSpan ComputeOutboundWriteTimeout { get; init; } = TimeSpan.FromSeconds(10);
     /// <summary>派发轮询间隔</summary>
@@ -136,6 +142,7 @@ public sealed record ServerOptions(
         var computeToken = configuration["ComputeNode:Token"];
         var computeBatchSize = configuration.GetValue("ComputeNode:BatchSize", 64);
         var computeBatchMaxBytes = configuration.GetValue("ComputeNode:BatchMaxBytes", 8L * 1024 * 1024);
+        var computeBatchMaxSimulatedHours = configuration.GetValue("ComputeNode:BatchMaxSimulatedHours", 16);
         var computeWriteTimeoutSeconds = configuration.GetValue("ComputeNode:OutboundWriteTimeoutSeconds", 10);
         var computePollMs = configuration.GetValue("ComputeNode:PollIntervalMilliseconds", 5_000);
         var computeLeaseSeconds = configuration.GetValue("ComputeNode:LeaseSeconds", 120);
@@ -170,6 +177,8 @@ public sealed record ServerOptions(
         if (computeBatchSize is < 1 or > 256) throw new InvalidOperationException("ComputeNode:BatchSize 必须在 1..256。");
         if (computeBatchMaxBytes is < 64 * 1024 or > 12L * 1024 * 1024)
             throw new InvalidOperationException("ComputeNode:BatchMaxBytes 必须在 64KiB..12MiB（帧体须低于链路 20MiB 上限）。");
+        if (computeBatchMaxSimulatedHours is < 1 or > 168)
+            throw new InvalidOperationException("ComputeNode:BatchMaxSimulatedHours 必须在 1..168。");
         if (computeWriteTimeoutSeconds is < 1 or > 120)
             throw new InvalidOperationException("ComputeNode:OutboundWriteTimeoutSeconds 必须在 1..120。");
         if (computePollMs is < 500 or > 300_000) throw new InvalidOperationException("ComputeNode:PollIntervalMilliseconds 必须在 500..300000。");
@@ -225,6 +234,7 @@ public sealed record ServerOptions(
             ComputeNodeTokens = computeNodeTokens,
             ComputeBatchSize = computeBatchSize,
             ComputeBatchMaxBytes = computeBatchMaxBytes,
+            ComputeBatchMaxSimulatedSpan = TimeSpan.FromHours(computeBatchMaxSimulatedHours),
             ComputeOutboundWriteTimeout = TimeSpan.FromSeconds(computeWriteTimeoutSeconds),
             ComputePollInterval = TimeSpan.FromMilliseconds(computePollMs),
             ComputeLease = TimeSpan.FromSeconds(computeLeaseSeconds),

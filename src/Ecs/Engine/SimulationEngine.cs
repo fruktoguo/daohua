@@ -392,7 +392,9 @@ public static partial class SimulationEngine
                 deltas[delta.Asset] = deltas.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
             }
             var step = resourceBoundary.StepSeconds;
-            var result = AdvanceToCore(player, now.AddSecondsExact(step), gameData.Actions, gameData, wallet, duel, live,
+            // 非在线模拟（离线补算/冷节点/重连前预演）不具备运行期多人撮合环境，禁止进入 DuelPending 等待相位。
+            var onlineDuel = player.Presence == PresenceState.Online ? duel : null;
+            var result = AdvanceToCore(player, now.AddSecondsExact(step), gameData.Actions, gameData, wallet, onlineDuel, live,
                 consumableSchedule);
             // 无暂存物品时整段跳过：SettleStagedItems 空表恒返回空，标脏只在真实结算时发生。
             if (player.Duel.StagedItems.Count > 0)
@@ -484,7 +486,7 @@ public static partial class SimulationEngine
         Dictionary<AssetKey, double>? deltas = null;
         SimulationEventTail? events = null;
 
-        var blockedActions = new HashSet<Guid>();
+        HashSet<Guid>? blockedActions = null;
         // 同一行动 ID 在转换循环中反复出现：按 actionId 缓存最近一次查表结果，跳过重复字典查找。
         ActionId lastActionId = default;
         ActionDefinition? lastDefinition = null;
@@ -514,8 +516,8 @@ public static partial class SimulationEngine
             // 恢复成功即转 Running 由正常分派接管；仍受阻才出队/轮转/停泊。
             if (action.Status == ActionQueueStatus.Blocked)
             {
-                if (blockedActions.Contains(action.Id)) break;
-                blockedActions.Add(action.Id);
+                if (blockedActions is not null && blockedActions.Contains(action.Id)) break;
+                (blockedActions ??= new HashSet<Guid>()).Add(action.Id);
                 var blockedActionId = action.Intent.ActionId;
                 if (lastDefinition is null || lastActionId != blockedActionId)
                 {
@@ -546,7 +548,7 @@ public static partial class SimulationEngine
             var currentAt = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds);
             if (!TryStartActionCore(player, action, definition, gameData, assetBalances, currentAt, deltas, ref events))
                 continue;
-            blockedActions.Clear();
+            blockedActions?.Clear();
             var isActionStart = action.ProgressSeconds <= SecondQuantizationEpsilon;
             if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
             {
@@ -832,8 +834,7 @@ public static partial class SimulationEngine
     {
         unchecked
         {
-            ulong hash = 14695981039346656037UL;
-            foreach (var character in encounterId) { hash ^= character; hash *= 1099511628211UL; }
+            var hash = DeterministicSequence.HashText(encounterId);
             hash ^= (ulong)BitConverter.DoubleToInt64Bits(completedRepeats);
             return (long)hash;
         }

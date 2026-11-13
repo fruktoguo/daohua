@@ -105,7 +105,8 @@ public sealed class EcsActionExecutionComponent : YuoComponent
         component.Request = new();
         component.Versions = new();
         component.Core = new();
-        component.DuelAdvance = duelAdvance;
+        // 仅在线玩家可参与周期斗法撮合；离线补算路径（Presence != Online）必须禁用，防止吞噬后续补算时间窗口。
+        component.DuelAdvance = player.Presence == PresenceState.Online ? duelAdvance : null;
         component.From = component.Cursor = from;
         // 离线收益封顶（§14.2）：边界 = min(请求起点 + 48h 保险丝, 离线锚点 + 48h)。
         // 保险丝既限收益也防单请求事件量与转换预算失控（MaxTransitionsPerAdvance）；

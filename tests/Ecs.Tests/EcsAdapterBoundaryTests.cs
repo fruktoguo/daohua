@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using DaoHua.Ecs;
+using Domain.Combat;
 using Domain.Common;
 using Domain.Economy;
 using Domain.GameData;
@@ -850,6 +851,87 @@ public sealed class EcsAdapterBoundaryTests
         Assert.DoesNotContain(PlayerSectionKind.Settings, fixture.Ecs.GetDirtySections(anchoredId));
     }
 
+    /// <summary>
+    /// 回归：主服在启用斗法撮合（MatchingEnabled=true）时调用 LoadAsync 装载离线玩家并补算 16 分钟，
+    /// 离线玩家不得在补算阶段进入 DuelPending 卡死，必须正常推进怪物波次并随后允许重连上线。
+    /// </summary>
+    [Fact]
+    public async Task OfflineLoadWithDuelMatchingEnabledDoesNotStallInDuelPending()
+    {
+        var fixture = CreateOwnedFixture(
+            Epoch.AddMinutes(16),
+            initialAction: null,
+            skipTutorial: true,
+            ownership: null,
+            duelAdvance: new DuelAdvanceOptions(MatchingEnabled: true));
+        await using var adapter = fixture.Adapter;
+
+        var seekerId = Guid.Parse("10000000-0000-4000-8000-0000000000b1");
+        var seeker = PlayerAggregate.Create(new PlayerId(seekerId), fixture.InitialState.AccountId,
+            "短离线PvP玩家", Epoch, fixture.Catalog.Fingerprint);
+        seeker.SkipTutorial();
+        seeker.Duel.EncounterCharges = 110;
+        seeker.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, PvpEnabled: true), Epoch, fixture.Catalog.Actions);
+        seeker.SetPresence(PresenceState.Offline, Epoch);
+        fixture.Sections.Register(ToBundle(seeker.ExportState()));
+
+        var loaded = await adapter.LoadAsync(seekerId);
+        Assert.NotEqual(CombatExpeditionPhase.DuelPending, loaded.State.Actions[0].Expedition?.Phase);
+        Assert.Equal(PresenceState.Offline, loaded.State.Presence);
+        Assert.Equal(Epoch.AddMinutes(16), loaded.LastSimulatedAt);
+        Assert.NotNull(loaded.State.Actions[0].Expedition);
+        Assert.True(loaded.State.Actions[0].CompletedRepeats > 1,
+            $"期望多波次连续推进，实际仅完成 {loaded.State.Actions[0].CompletedRepeats} 轮。");
+
+        var attached = await adapter.AttachConnectionAsync(seekerId);
+        Assert.Equal(PresenceState.Online, attached.State.Presence);
+        Assert.NotEqual(CombatExpeditionPhase.DuelPending, attached.State.Actions[0].Expedition?.Phase);
+    }
+
+    /// <summary>
+    /// 回归：在线玩家持有遭遇计数并进入 DuelPending 后，若全服没有任何可撮合候选人（candidates.Count == 0），
+    /// MatchDuelsOwned 必须主动 AbortDuelSeekOwned 回退普通怪物波次，不得永久停留 DuelPending。
+    /// </summary>
+    [Fact]
+    public async Task OnlineSingleSeekerInDuelPendingAbortsSeekWhenNoCandidatesExist()
+    {
+        var fixture = CreateOwnedFixture(
+            Epoch,
+            initialAction: null,
+            skipTutorial: true,
+            ownership: null,
+            duelAdvance: new DuelAdvanceOptions(MatchingEnabled: true));
+        await using var adapter = fixture.Adapter;
+
+        var seekerId = Guid.Parse("10000000-0000-4000-8000-0000000000b2");
+        var seeker = PlayerAggregate.Create(new PlayerId(seekerId), fixture.InitialState.AccountId,
+            "单人PvP玩家", Epoch, fixture.Catalog.Fingerprint);
+        seeker.SkipTutorial();
+        seeker.Duel.EncounterCharges = 1;
+        seeker.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, PvpEnabled: true), Epoch, fixture.Catalog.Actions);
+        seeker.SetPresence(PresenceState.Offline, Epoch);
+        fixture.Sections.Register(ToBundle(seeker.ExportState()));
+
+        await adapter.AttachConnectionAsync(seekerId);
+        // 连续推进多步：第 1 步搜寻结束进入 DuelPending，MatchDuelsOwned 在零候选池时必须当场回退。
+        var stalledPending = false;
+        var enteredCombat = false;
+        for (var sec = 5; sec <= 600; sec += 5)
+        {
+            await adapter.AdvanceAllAsync(Epoch.AddSeconds(sec));
+            var snap = fixture.Ecs.ExportSnapshot(seekerId);
+            var phase = snap.State.Actions[0].Expedition?.Phase;
+            if (phase == CombatExpeditionPhase.DuelPending) stalledPending = true;
+            if (phase == CombatExpeditionPhase.Combat) enteredCombat = true;
+        }
+
+        var finalSnapshot = fixture.Ecs.ExportSnapshot(seekerId);
+        Assert.False(stalledPending, "单人在线开启 PvP 时 MatchDuelsOwned 未能在 tick 结束前中止 DuelPending 回退怪物波次。");
+        Assert.True(enteredCombat, "中止 DuelPending 后应正常进入怪物战斗相位。");
+        Assert.NotEqual(CombatExpeditionPhase.DuelPending, finalSnapshot.State.Actions[0].Expedition?.Phase);
+        Assert.True(finalSnapshot.State.Actions[0].CompletedRepeats > 0);
+    }
+
     private static async Task<PlayerRuntimeSnapshot> EnqueueGatheringAsync(Fixture fixture)
     {
         var requestId = Guid.Parse("10000000-0000-4000-8000-000000000025");
@@ -886,6 +968,10 @@ public sealed class EcsAdapterBoundaryTests
 
     private static Fixture CreateOwnedFixture(DateTimeOffset clockAt, string? initialAction, bool skipTutorial,
         IPlayerOwnershipStore? ownership, params AssetBalanceRecord[] balances)
+        => CreateOwnedFixture(clockAt, initialAction, skipTutorial, ownership, duelAdvance: null, balances);
+
+    private static Fixture CreateOwnedFixture(DateTimeOffset clockAt, string? initialAction, bool skipTutorial,
+        IPlayerOwnershipStore? ownership, DuelAdvanceOptions? duelAdvance, params AssetBalanceRecord[] balances)
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var playerId = Guid.Parse("10000000-0000-4000-8000-000000000023");
@@ -903,7 +989,7 @@ public sealed class EcsAdapterBoundaryTests
             : balances.Select(balance => balance with { PlayerId = playerId }).ToArray());
         var economy = new MemoryEconomy(sections, assets);
         var clock = new FixedClock(clockAt);
-        var ecs = new EcsGameRuntime(catalog, Epoch);
+        var ecs = new EcsGameRuntime(catalog, Epoch, duelAdvance: duelAdvance);
         var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, assets, economy, catalog,
             NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity(), ownership: ownership);
         return new Fixture(playerId, adapter, sections, economy, catalog, initialState, ecs, assets);

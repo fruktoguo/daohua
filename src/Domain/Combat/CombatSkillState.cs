@@ -236,12 +236,12 @@ public sealed record PlayerCombatSkillState(
     /// <param name="elapsedSeconds">当前战斗时钟秒数（冷却折算基准）。</param>
     public static PlayerCombatSkillState FromCombatant(CombatantState unit, double elapsedSeconds)
     {
-        var cooldowns = new List<CombatSkillCooldown>();
+        List<CombatSkillCooldown>? cooldowns = null;
         if (unit.SkillCooldownUntil is { } untils)
             for (var i = 0; i < untils.Length && i < unit.Skills.Count; i++)
                 if (untils[i] > elapsedSeconds + 1e-9
                     && JsonRead.Text(unit.Skills[i].Ability, "id") is { } abilityId)
-                    cooldowns.Add(new(abilityId, untils[i] - elapsedSeconds));
+                    (cooldowns ??= []).Add(new(abilityId, untils[i] - elapsedSeconds));
         string? castingId = null;
         var castRemaining = 0d;
         if (unit.PendingSkillIndex >= 0 && unit.PendingSkillIndex < unit.Skills.Count)
@@ -249,7 +249,8 @@ public sealed record PlayerCombatSkillState(
             castingId = JsonRead.Text(unit.Skills[unit.PendingSkillIndex].Ability, "id");
             castRemaining = castingId is null ? 0 : Math.Max(0, unit.NextAttackAtSeconds - elapsedSeconds);
         }
-        return new(cooldowns, castingId, castRemaining, unit.SkillCastCount);
+        if (cooldowns is null && castingId is null && unit.SkillCastCount == 0) return Empty;
+        return new(cooldowns ?? (IReadOnlyList<CombatSkillCooldown>)[], castingId, castRemaining, unit.SkillCastCount);
     }
 }
 

@@ -304,8 +304,9 @@ public static class PlayerAttributeResolver
                 {
                     var number = stat.Value.GetDouble();
                     if (!double.IsFinite(number)) throw new DomainException(DomainErrorCode.InvalidArgument, "装备属性必须为有限数值。");
-                    var target = stat.Name.EndsWith("Points", StringComparison.Ordinal) ? points : flat;
-                    target[stat.Name] = target.GetValueOrDefault(stat.Name) + number * enhancementScale;
+                    var statName = NormalizeEquipmentStatKey(stat.Name);
+                    var target = statName.EndsWith("Points", StringComparison.Ordinal) ? points : flat;
+                    target[statName] = target.GetValueOrDefault(statName) + number * enhancementScale;
                 }
             Add(item, "baseStatRatios", ratios, enhancementScale);
         }
@@ -497,6 +498,14 @@ public static class PlayerAttributeResolver
     private static double SoftRatio(double ratio)
         => ratio >= 0 ? 1 + ratio : 1 / (1 - ratio);
 
+    /// <summary>归一化装备属性别名键：配表与前端允许使用 breakPower/parryResolve，内部统一并入 break/parry 通道。</summary>
+    private static string NormalizeEquipmentStatKey(string key) => key switch
+    {
+        "breakPower" => "break",
+        "parryResolve" => "parry",
+        _ => key
+    };
+
     private static void Add(JsonElement item, string key, Dictionary<string, double> target, double scale)
     {
         if (!item.TryGetProperty(key, out var values)) return;
@@ -504,7 +513,8 @@ public static class PlayerAttributeResolver
         {
             var number = value.Value.GetDouble();
             if (!double.IsFinite(number)) throw new DomainException(DomainErrorCode.InvalidArgument, "装备属性必须为有限数值。");
-            target[value.Name] = target.GetValueOrDefault(value.Name) + number * scale;
+            var statName = NormalizeEquipmentStatKey(value.Name);
+            target[statName] = target.GetValueOrDefault(statName) + number * scale;
         }
     }
 

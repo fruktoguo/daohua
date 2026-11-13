@@ -171,6 +171,14 @@ public static class ComputeBatchBudget
         return bytes;
     }
 
+    /// <summary>估算单个任务的模拟时间跨度（毫秒，钳制在 [0, OfflineIdleLimit]）。</summary>
+    public static long EstimateSimulatedMilliseconds(ComputeAdvanceJobRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var maxMs = (long)Domain.Player.PlayerLifecycleRules.OfflineIdleLimit.TotalMilliseconds;
+        return Math.Clamp(request.TargetUnixMilliseconds - request.FromUnixMilliseconds, 0L, maxMs);
+    }
+
     /// <summary>
     /// 按预算贪心装批：保持输入顺序，装得下的进返回元组的 Fits，放不下的进 Overflow。
     /// 单个元素超过预算时也进 Overflow，由调用方决定退回或判死。
@@ -191,6 +199,44 @@ public static class ComputeBatchBudget
             {
                 fits.Add(item);
                 used += size;
+            }
+        }
+        return (fits, overflow);
+    }
+
+    /// <summary>
+    /// 按「字节硬预算 + 模拟跨度软预算」贪心装批：
+    /// 1. 字节预算为帧体硬上限，任一元素使累计字节超限均进入 Overflow；
+    /// 2. 工作量预算为防超时软上限，当 Fits 为空时只要字节未超限必定放行首条任务（防止单条 48h 任务饿死），
+    ///    Fits 非空后若累加工作量超过 maxWork 则进入 Overflow 留待下一批。
+    /// </summary>
+    public static (List<T> Fits, List<T> Overflow) Pack<T>(
+        IReadOnlyList<T> items,
+        Func<T, long> measureBytes,
+        long maxBytes,
+        Func<T, long> measureWork,
+        long maxWork)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(measureBytes);
+        ArgumentNullException.ThrowIfNull(measureWork);
+        var fits = new List<T>(items.Count);
+        var overflow = new List<T>();
+        long usedBytes = 0;
+        long usedWork = 0;
+        foreach (var item in items)
+        {
+            var bytes = measureBytes(item);
+            var work = Math.Max(0L, measureWork(item));
+            if (usedBytes + bytes > maxBytes || (fits.Count > 0 && usedWork + work > maxWork))
+            {
+                overflow.Add(item);
+            }
+            else
+            {
+                fits.Add(item);
+                usedBytes += bytes;
+                usedWork += work;
             }
         }
         return (fits, overflow);

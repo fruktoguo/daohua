@@ -352,64 +352,31 @@ internal static class CombatActionRules
         action.ProgressSeconds = updatedBattle.PhaseElapsedSeconds;
         // 战斗日志名称惰性化：只有确实产生日志帧时才解析怪物名，空事件帧战斗零字典/字符串成本。
         string? waveNames = null;
-        string WaveNames() => waveNames ??= string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name));
-        string LabelOf(string combatantId) => combatantId == "player" ? "你"
-            : combatantId.StartsWith("ally:", StringComparison.Ordinal)
-                && int.TryParse(combatantId[5..], out var allyIndex) && spec is not null
-                && allyIndex >= 0 && allyIndex < spec.Members.Count
-                ? spec.Members[allyIndex].DisplayName
-            : combatantId.StartsWith("enemy:", StringComparison.Ordinal)
-                && int.TryParse(combatantId[6..], out var enemyIndex) && enemyIndex >= 0 && enemyIndex < waveEnemies.Count
-                ? $"{{{{enemy:{waveEnemies[enemyIndex].EnemyId}|{gameData.CombatMonsters[waveEnemies[enemyIndex].EnemyId].Name}}}}}"
-                : combatantId;
         // 阵亡/起身与战斗事件共用同一战斗时钟：按时刻交错落日志，每次阵亡逐帧计败走与死亡。
         var deaths = combatResult.PlayerDeathTimestamps ?? [];
         var respawns = combatResult.PlayerRespawnTimestamps ?? [];
         var allyDeaths = combatResult.AllyDeathMarks ?? [];
         var allyRespawns = combatResult.AllyRespawnMarks ?? [];
-        // 局部函数无法捕获外层 ref 参数：提前初始化后用普通引用落事件。
-        events ??= new SimulationEventTail();
-        var eventSink = events;
-        var downedEvents = new List<(double At, int MemberIndex, bool Respawn)>(
-            deaths.Count + respawns.Count + allyDeaths.Count + allyRespawns.Count);
+        var hasDowned = deaths.Count + respawns.Count + allyDeaths.Count + allyRespawns.Count > 0;
+        List<(double At, int MemberIndex, bool Respawn)>? downedEvents = null;
         var selfIndex = expedition.SelfIndex;
-        foreach (var at in deaths) downedEvents.Add((at, selfIndex, false));
-        foreach (var at in respawns) downedEvents.Add((at, selfIndex, true));
-        foreach (var mark in allyDeaths) downedEvents.Add((mark.AtSeconds, mark.MemberIndex, false));
-        foreach (var mark in allyRespawns) downedEvents.Add((mark.AtSeconds, mark.MemberIndex, true));
-        downedEvents.Sort(static (left, right) =>
+        if (hasDowned)
         {
-            var order = left.At.CompareTo(right.At);
-            if (order != 0) return order;
-            order = left.Respawn.CompareTo(right.Respawn);
-            return order != 0 ? order : left.MemberIndex.CompareTo(right.MemberIndex);
-        });
-        var downedCursor = 0;
-        void FlushDownedEvents(double uptoBattleSeconds)
-        {
-            while (downedCursor < downedEvents.Count && downedEvents[downedCursor].At <= uptoBattleSeconds + 1e-9)
+            downedEvents = new List<(double At, int MemberIndex, bool Respawn)>(
+                deaths.Count + respawns.Count + allyDeaths.Count + allyRespawns.Count);
+            foreach (var at in deaths) downedEvents.Add((at, selfIndex, false));
+            foreach (var at in respawns) downedEvents.Add((at, selfIndex, true));
+            foreach (var mark in allyDeaths) downedEvents.Add((mark.AtSeconds, mark.MemberIndex, false));
+            foreach (var mark in allyRespawns) downedEvents.Add((mark.AtSeconds, mark.MemberIndex, true));
+            downedEvents.Sort(static (left, right) =>
             {
-                var mark = downedEvents[downedCursor++];
-                var at = from.AddSecondsExact(actionElapsedBeforeCombat + Math.Max(0, mark.At - battleFrom));
-                var isSelf = mark.MemberIndex == selfIndex;
-                var name = spec is not null ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
-                if (mark.Respawn)
-                    eventSink.Add(new SimulationEvent(at, "combat.respawned", isSelf
-                        ? "原地起身：气血回满，战斗继续。" : $"队友 {name} 原地起身，气血回满。", definition.Id));
-                else
-                {
-                    if (isSelf)
-                    {
-                        player.Progression.TotalDefeats += 1;
-                        player.MarkDirty(PlayerSectionKind.Progression);
-                        player.RecordStats(action.Id, at.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta { Deaths = 1 });
-                    }
-                    eventSink.Add(new SimulationEvent(at, "combat.lost", isSelf
-                        ? $"阵亡：被 {WaveNames()} 击倒，原地调息等待复活。"
-                        : $"队友 {name} 阵亡，原地调息等待复活。", definition.Id));
-                }
-            }
+                var order = left.At.CompareTo(right.At);
+                if (order != 0) return order;
+                order = left.Respawn.CompareTo(right.Respawn);
+                return order != 0 ? order : left.MemberIndex.CompareTo(right.MemberIndex);
+            });
         }
+        var downedCursor = 0;
         // 功法经验按帧入账：日志尾窗裁剪与施放合并都只影响展示，每帧结算不丢账。
         foreach (var combatEvent in combatResult.Events)
         {
@@ -436,18 +403,22 @@ internal static class CombatActionRules
             if (combatEvent.AtSeconds < keepFrom)
             {
                 // 该帧不可保留：折叠已滞留域事件并推进阵亡/起身游标，跳过名称与消息构造。
-                eventSink.Fold(emittedIndex);
-                emittedIndex = eventSink.Count;
-                FlushDownedEvents(combatEvent.AtSeconds);
-                emittedIndex = eventSink.Count;
+                events?.Fold(emittedIndex);
+                emittedIndex = events?.Count ?? 0;
+                FlushDownedEvents(player, action.Id, definition.Id, from, actionElapsedBeforeCombat, battleFrom,
+                    selfIndex, spec, waveEnemies, gameData, downedEvents, ref downedCursor, combatEvent.AtSeconds,
+                    ref waveNames, ref events);
+                emittedIndex = events?.Count ?? 0;
                 eventIndex++;
                 continue;
             }
             // 普通攻击与无技能衍生帧不进战报：只推进阵亡/起身游标，不构造名称与文本。
             if (combatEvent.AbilityId is not { } abilityId)
             {
-                FlushDownedEvents(combatEvent.AtSeconds);
-                emittedIndex = eventSink.Count;
+                FlushDownedEvents(player, action.Id, definition.Id, from, actionElapsedBeforeCombat, battleFrom,
+                    selfIndex, spec, waveEnemies, gameData, downedEvents, ref downedCursor, combatEvent.AtSeconds,
+                    ref waveNames, ref events);
+                emittedIndex = events?.Count ?? 0;
                 eventIndex++;
                 continue;
             }
@@ -463,17 +434,21 @@ internal static class CombatActionRules
             for (var i = eventIndex; i < castEnd; i++)
             {
                 var frame = combatResult.Events[i];
-                AppendCastClause(clauses, LabelOf(frame.TargetId), frame.Hit, frame.Damage, frame.Healing, frame.Critical, frame.Break, frame.Parried);
+                AppendCastClause(clauses, FormatCombatantLabel(frame.TargetId, waveEnemies, spec, gameData), frame.Hit, frame.Damage, frame.Healing, frame.Critical, frame.Break, frame.Parried);
             }
-            var builder = BeginCastMessage(LabelOf(combatEvent.AttackerId), abilityId, gameData);
+            var builder = BeginCastMessage(FormatCombatantLabel(combatEvent.AttackerId, waveEnemies, spec, gameData), abilityId, gameData);
             AppendCastClauses(builder, clauses);
             AddCombatEventAt(ref events, eventAt, "combat.skill", builder.Append('。').ToString(), definition.Id);
-            emittedIndex = eventSink.Count;
-            FlushDownedEvents(combatEvent.AtSeconds);
-            emittedIndex = eventSink.Count;
+            emittedIndex = events?.Count ?? 0;
+            FlushDownedEvents(player, action.Id, definition.Id, from, actionElapsedBeforeCombat, battleFrom,
+                selfIndex, spec, waveEnemies, gameData, downedEvents, ref downedCursor, combatEvent.AtSeconds,
+                ref waveNames, ref events);
+            emittedIndex = events?.Count ?? 0;
             eventIndex = castEnd;
         }
-        FlushDownedEvents(double.MaxValue);
+        FlushDownedEvents(player, action.Id, definition.Id, from, actionElapsedBeforeCombat, battleFrom,
+            selfIndex, spec, waveEnemies, gameData, downedEvents, ref downedCursor, double.MaxValue,
+            ref waveNames, ref events);
         if (combatResult.Outcome == CombatOutcome.Running) return;
         // 战斗终局：会话随终局文档替换自然失效，提前释放避免下一波误命中守卫。
         if (combatResult.Outcome != CombatOutcome.PlayerWon)
@@ -496,7 +471,8 @@ internal static class CombatActionRules
                 RecentEvents = updatedBattle.RecentEvents
             };
             action.ProgressSeconds = 0;
-            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{WaveNames()}。", definition.Id);
+            waveNames ??= FormatWaveMonsterNames(waveEnemies, gameData);
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{waveNames}。", definition.Id);
             return;
         }
         // 躺尸期间敌方全灭（单人口径，总纲 §7.9.4 第 4 条）：玩家满血起身进入下一波搜寻。
@@ -549,8 +525,9 @@ internal static class CombatActionRules
         });
         player.MarkDirty(PlayerSectionKind.Loadout);
         player.MarkDirty(PlayerSectionKind.Progression);
+        waveNames ??= FormatWaveMonsterNames(waveEnemies, gameData);
         AddCombatEvent(ref events, from, target, remainingSeconds, "combat.won",
-            $"讨伐成功：{string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name))}。", definition.Id);
+            $"讨伐成功：{waveNames}。", definition.Id);
         // 新手引导战斗里程碑口径 = 讨伐行动完成一轮（波次清空），与战报同一时序入账。
         // 行动参与会话不推进个人引导；参与会话结束由组织适配器裁决。
         var tutorialAdvanced = action.Participation is null
@@ -590,6 +567,73 @@ internal static class CombatActionRules
             gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1,
             allies: spec is not null ? CarryAlliesToSearch(battleState) : null) with
         { RecentEvents = updatedBattle.RecentEvents, PlayerRespawnAtSeconds = remainingSelfOnWave };
+    }
+
+    private static string FormatWaveMonsterNames(IReadOnlyList<ExpeditionEnemyState> waveEnemies, GameDataCatalog gameData)
+    {
+        if (waveEnemies.Count == 1) return gameData.CombatMonsters[waveEnemies[0].EnemyId].Name;
+        var names = new string[waveEnemies.Count];
+        for (var i = 0; i < waveEnemies.Count; i++)
+            names[i] = gameData.CombatMonsters[waveEnemies[i].EnemyId].Name;
+        return string.Join("、", names);
+    }
+
+    private static string FormatCombatantLabel(string combatantId,
+        IReadOnlyList<ExpeditionEnemyState> waveEnemies, ActionParticipationSpec? spec, GameDataCatalog gameData)
+    {
+        if (combatantId == "player") return "你";
+        if (combatantId.StartsWith("ally:", StringComparison.Ordinal)
+            && int.TryParse(combatantId.AsSpan(5), out var allyIndex) && spec is not null
+            && allyIndex >= 0 && allyIndex < spec.Members.Count)
+            return spec.Members[allyIndex].DisplayName;
+        if (combatantId.StartsWith("enemy:", StringComparison.Ordinal)
+            && int.TryParse(combatantId.AsSpan(6), out var enemyIndex) && enemyIndex >= 0 && enemyIndex < waveEnemies.Count)
+            return $"{{{{enemy:{waveEnemies[enemyIndex].EnemyId}|{gameData.CombatMonsters[waveEnemies[enemyIndex].EnemyId].Name}}}}}";
+        return combatantId;
+    }
+
+    private static void FlushDownedEvents(
+        IPlayerResourceContext player,
+        Guid actionInstanceId,
+        ActionId actionId,
+        DateTimeOffset from,
+        double actionElapsedBeforeCombat,
+        double battleFrom,
+        int selfIndex,
+        ActionParticipationSpec? spec,
+        IReadOnlyList<ExpeditionEnemyState> waveEnemies,
+        GameDataCatalog gameData,
+        List<(double At, int MemberIndex, bool Respawn)>? downedEvents,
+        ref int downedCursor,
+        double uptoBattleSeconds,
+        ref string? waveNames,
+        ref SimulationEventTail? events)
+    {
+        if (downedEvents is null) return;
+        while (downedCursor < downedEvents.Count && downedEvents[downedCursor].At <= uptoBattleSeconds + 1e-9)
+        {
+            events ??= new SimulationEventTail();
+            var mark = downedEvents[downedCursor++];
+            var at = from.AddSecondsExact(actionElapsedBeforeCombat + Math.Max(0, mark.At - battleFrom));
+            var isSelf = mark.MemberIndex == selfIndex;
+            var name = spec is not null ? spec.Members[mark.MemberIndex].DisplayName : $"队友{mark.MemberIndex + 1}";
+            if (mark.Respawn)
+                events.Add(new SimulationEvent(at, "combat.respawned", isSelf
+                    ? "原地起身：气血回满，战斗继续。" : $"队友 {name} 原地起身，气血回满。", actionId));
+            else
+            {
+                if (isSelf)
+                {
+                    player.Progression.TotalDefeats += 1;
+                    player.MarkDirty(PlayerSectionKind.Progression);
+                    player.RecordStats(actionInstanceId, at.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta { Deaths = 1 });
+                }
+                if (isSelf) waveNames ??= FormatWaveMonsterNames(waveEnemies, gameData);
+                events.Add(new SimulationEvent(at, "combat.lost", isSelf
+                    ? $"阵亡：被 {waveNames} 击倒，原地调息等待复活。"
+                    : $"队友 {name} 阵亡，原地调息等待复活。", actionId));
+            }
+        }
     }
 
     /// <summary>
@@ -1266,6 +1310,7 @@ internal static class CombatActionRules
         int difficulty = 0)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.reward");
+        var attributes = monster.Experience > 0 || spec is null ? player.ResolveAttributes(gameData) : null;
         if (monster.Experience > 0)
         {
             // 击杀奖励单参数（总纲 §7.11.1）：experience 一笔同时结算——修为入账（瓶颈截断 + 底蕴
@@ -1277,8 +1322,7 @@ internal static class CombatActionRules
                 ? monster.Experience
                 : monster.Experience / spec.Members.Count * (1 - spec.LevelMalusFor(selfIndex))) * diffExpMult;
             var rawExp = experience;
-            var attributes = player.ResolveAttributes(gameData);
-            var cultivationBonus = attributes.CultivationExpBonusPoints + attributes.CombatExpBonusPoints;
+            var cultivationBonus = attributes!.CultivationExpBonusPoints + attributes.CombatExpBonusPoints;
             var cultivationExp = cultivationBonus != 0
                 ? Math.Max(0, experience * (1 + cultivationBonus / 100d))
                 : experience;
@@ -1301,7 +1345,9 @@ internal static class CombatActionRules
             });
             DistributeRootExp(player, rawExp, gameData, actionInstanceId, killAtUnixSeconds);
         }
-        var baseDropBonus = spec is not null ? 1 + spec.TotalDropBonusPoints / 100d : 1;
+        var baseDropBonus = spec is not null
+            ? 1 + spec.TotalDropBonusPoints / 100d
+            : Math.Max(0, 1 + attributes!.DropBonusPoints / 100d);
         var dropBonus = pvpEnabled
             ? baseDropBonus * PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear)
             : baseDropBonus;

@@ -436,9 +436,99 @@ public sealed class ComputeJobRepositoryTests
         var (source, _) = await OpenRepositoryAsync();
         var names = (string?)(await ScalarAsync(source,
             "SELECT string_agg(indexname, ',' ORDER BY indexname) FROM pg_indexes WHERE schemaname = 'platform' AND tablename = 'compute_jobs'"))!;
+        // 领取索引口径：pending 到期与 leased 孤儿回收各自由部分索引服务，旧组合索引不再存在。
         Assert.Contains("ix_compute_jobs_pending_due", names);
         Assert.Contains("ix_compute_jobs_lease_orphan", names);
         Assert.DoesNotContain("ix_compute_jobs_ready", names);
+    }
+
+    /// <summary>
+    /// 回归：冷却窗口内进入 dead 的毒丸玩家不得再入扫描候选（防占满 LIMIT 饿死正常玩家）；
+    /// 且目标时刻推进使 job_id 变化时，EnqueueAsync 原地复用玩家现有 dead 行而非无限堆积死行。
+    /// </summary>
+    [Fact]
+    public async Task ScanColdPlayersExcludesRecentDeadAndEnqueueReusesDeadRowAcrossTargets()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var batchInterval = TimeSpan.FromHours(1);
+        var now = DateTimeOffset.UtcNow;
+
+        var poisoned = await SeedPlayerAsync(source);
+        var healthy = await SeedPlayerAsync(source);
+
+        // poisoned 设更早的 last_simulated_at（排序靠前），若未排除则会先占满小窗口 LIMIT 饿死 healthy。
+        await UpsertProjectionAsync(source, poisoned, "offline", now.AddHours(-47), now.AddMinutes(-30));
+        await UpsertProjectionAsync(source, healthy, "offline", now.AddHours(-3), now.AddMinutes(-30));
+        await InsertHeadAsync(source, poisoned, now.AddHours(-47));
+        await InsertHeadAsync(source, healthy, now.AddHours(-2));
+
+        var target1 = DateTimeOffset.FromUnixTimeMilliseconds(now.AddMinutes(-2).ToUnixTimeMilliseconds());
+        Assert.Equal(ComputeEnqueueResult.Inserted,
+            await jobs.EnqueueAsync(poisoned, target1, new byte[] { 1 }, batchInterval));
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
+            entry => entry.PlayerId == poisoned);
+        Assert.True(await jobs.FailAsync(claim.JobId, claim.LeaseToken, "INVALID_OUTPUT:replay-mismatch",
+            retryable: false, TimeSpan.Zero, MaxAttempts));
+
+        // 冷却期内扫描排除 poisoned，healthy 仍正常入围；maxRows=1 若不排除会先拿到 poisoned。
+        var smallScan = await jobs.ScanColdPlayersAsync(batchInterval, 1);
+        Assert.DoesNotContain(smallScan, entry => entry.PlayerId == poisoned);
+        var fullScan = await jobs.ScanColdPlayersAsync(batchInterval, 2048);
+        Assert.DoesNotContain(fullScan, entry => entry.PlayerId == poisoned);
+        Assert.Contains(fullScan, entry => entry.PlayerId == healthy);
+
+        // 推进目标时刻导致 job_id 变更：原地复用同一 dead 行，不新增第二行，且保留冷却期内重试闸门。
+        var target2 = DateTimeOffset.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds());
+        Assert.Equal(ComputeEnqueueResult.Resurrected,
+            await jobs.EnqueueAsync(poisoned, target2, new byte[] { 2 }, batchInterval));
+        Assert.Equal(1, await CountRowsAsync(source, poisoned));
+        var jobId2 = PostgresComputeJobRepository.DeriveJobId(poisoned, target2.ToUnixTimeMilliseconds());
+        Assert.Equal("pending", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE job_id = $1", jobId2));
+        Assert.True((DateTime)(await ScalarAsync(source,
+            "SELECT next_attempt_at FROM platform.compute_jobs WHERE job_id = $1", jobId2))!
+            > DateTime.UtcNow);
+
+        // 熬过完整冷却窗口后：扫描重新选中；新 target 入队原地复活且立即可领（next_attempt_at IS NULL）。
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET status='dead', updated_at = now() - interval '61 minutes' WHERE player_id = $1",
+            poisoned);
+        var recoveredScan = await jobs.ScanColdPlayersAsync(batchInterval, 2048);
+        Assert.Contains(recoveredScan, entry => entry.PlayerId == poisoned);
+
+        var target3 = target2.AddSeconds(1);
+        Assert.Equal(ComputeEnqueueResult.Resurrected,
+            await jobs.EnqueueAsync(poisoned, target3, new byte[] { 3 }, batchInterval));
+        Assert.Equal(1, await CountRowsAsync(source, poisoned));
+        var jobId3 = PostgresComputeJobRepository.DeriveJobId(poisoned, target3.ToUnixTimeMilliseconds());
+        Assert.Equal(DBNull.Value, await ScalarAsync(source,
+            "SELECT next_attempt_at FROM platform.compute_jobs WHERE job_id = $1", jobId3));
+    }
+
+    /// <summary>
+    /// 回归：装批预算截断未下发的任务经 ReturnOverflowAsync 退回后不得消耗 attempts 重试配额。
+    /// </summary>
+    [Fact]
+    public async Task ReturnOverflowRefundsAttemptsWithoutBurningRetryBudget()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+
+        for (var i = 0; i < MaxAttempts + 2; i++)
+        {
+            var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
+                entry => entry.PlayerId == player);
+            Assert.Equal(1, claim.Attempts);
+            Assert.Equal(1, await jobs.ReturnOverflowAsync(claim.LeaseToken, [claim.JobId]));
+        }
+
+        Assert.Equal("pending", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE player_id = $1", player));
+        Assert.Equal(0, (int)(await ScalarAsync(source,
+            "SELECT attempts FROM platform.compute_jobs WHERE player_id = $1", player))!);
+        Assert.Equal(DBNull.Value, await ScalarAsync(source,
+            "SELECT last_error FROM platform.compute_jobs WHERE player_id = $1", player));
     }
 
     private static async Task<(NpgsqlDataSource Source, PostgresComputeJobRepository Repository)> OpenRepositoryAsync()

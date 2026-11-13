@@ -6,6 +6,24 @@ namespace Domain.Common;
 /// </summary>
 internal static class DeterministicSequence
 {
+    /// <summary>
+    /// 64 位 FNV-1a 确定性文本哈希：替代进程级随机化的 string.GetHashCode / StringComparer.Ordinal，
+    /// 保证主服与冷挂机计算节点等跨进程确定性模拟得到位级一致的伪随机种子。
+    /// </summary>
+    public static ulong HashText(string value)
+    {
+        unchecked
+        {
+            ulong hash = 14695981039346656037UL;
+            foreach (var character in value)
+            {
+                hash ^= character;
+                hash *= 1099511628211UL;
+            }
+            return hash;
+        }
+    }
+
     /// <summary>递推到序列的下一个种子状态。</summary>
     public static long NextSeed(long seed)
     {

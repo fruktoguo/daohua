@@ -249,25 +249,32 @@ public sealed partial class CombatEventAdvanceSystem
         var regenPending = false;
         var threatTickPending = false;
         // 扫描顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人；min 求值无平局歧义。
-        for (var i = 0; i < encounter.PlayerAllies.Count; i++) Scan(encounter.PlayerAllies[i]);
-        for (var i = 0; i < encounter.Enemies.Count; i++) Scan(encounter.Enemies[i]);
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+            ScanBuffUnit(encounter.PlayerAllies[i], ref next, ref regenPending, ref threatTickPending);
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+            ScanBuffUnit(encounter.Enemies[i], ref next, ref regenPending, ref threatTickPending);
         if (regenPending)
             next = Math.Min(next, (Math.Floor(encounter.ElapsedSeconds / Systems.CombatBuffTickSystem.TickSeconds) + 1) * Systems.CombatBuffTickSystem.TickSeconds);
         if (threatTickPending)
             next = Math.Min(next, (Math.Floor(encounter.ElapsedSeconds / Systems.CombatBuffTickSystem.ThreatTickSeconds) + 1) * Systems.CombatBuffTickSystem.ThreatTickSeconds);
         return next;
+    }
 
-        void Scan(CombatantState unit)
+    private static void ScanBuffUnit(CombatantState unit, ref double next, ref bool regenPending, ref bool threatTickPending)
+    {
+        if (unit.Stats.HpRegen != 0 || unit.Stats.MpRegen != 0) regenPending = true;
+        var buffs = unit.Buffs;
+        if (buffs.Count > 0)
         {
-            if (unit.Stats.HpRegen != 0 || unit.Stats.MpRegen != 0) regenPending = true;
             // Buff 通道的网格存在性读聚合标志（值非零判定，与原逐字段口径一致）。
             if (unit.BuffRegenTickPending) regenPending = true;
-            if (unit.BuffStacks("formation.tianlei") > 0 || unit.BuffStacks("formation.xuesha") > 0) regenPending = true;
             if (unit.BuffSecondTickPending) threatTickPending = true;
-            var buffs = unit.Buffs;
             for (var i = 0; i < buffs.Count; i++)
                 if (buffs[i].ExpiresAtSeconds < next) next = buffs[i].ExpiresAtSeconds;
         }
+        if (!regenPending && (buffs.Count > 0 || unit.ExternalBuffStacks is not null)
+            && (unit.BuffStacks("formation.tianlei") > 0 || unit.BuffStacks("formation.xuesha") > 0))
+            regenPending = true;
     }
 
 }

@@ -596,13 +596,15 @@ public sealed class CombatantState
     /// <summary>Buff 层数求值：战内 Buff 层数 + 宿主注入的战外视图；buffId 为 null 时合计全部层数（支持 perCaster 前缀匹配）。</summary>
     internal double BuffStacks(string? buffId)
     {
-        // 按列表原序累加，与原 LINQ Where+Sum 的累加序位级一致。
+        // 按列表原序累加，与原 LINQ Where+Sum 的累加序位级一致；零字符串拼接避免高频调用分配。
         var total = 0d;
-        for (var i = 0; i < Buffs.Count; i++)
+        for (var i = 0; i < _buffs.Count; i++)
         {
-            var curId = Buffs[i].BuffId;
-            if (buffId is null || curId == buffId || curId.StartsWith($"{buffId}:", StringComparison.Ordinal))
-                total += Buffs[i].Stacks;
+            var curId = _buffs[i].BuffId;
+            if (buffId is null || curId == buffId
+                || (curId.Length > buffId.Length && curId[buffId.Length] == ':'
+                    && curId.StartsWith(buffId, StringComparison.Ordinal)))
+                total += _buffs[i].Stacks;
         }
         return total + (ExternalBuffStacks?.Invoke(buffId) ?? 0);
     }

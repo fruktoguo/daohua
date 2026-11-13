@@ -683,16 +683,23 @@ public sealed class ActionParticipationSessionTests
         // 2. 刚好差 12 级以内的边界免罚
         Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(8, 20));
 
-        // 3. 超出 12 级且超出 20% 时触发平滑惩罚
-        // 最高 25 级，小号 5 级：gap = 20, exemptGap = max(5 * 0.2, 12) = 12. excess = 8, malus = 3 * (8 / 5) = 4.8 -> 封顶 0.9
-        Assert.Equal(0.9d, ActionParticipationSpec.CalculateLevelMalus(5, 25));
+        // 3. 超出免罚门槛后按超出级数线性计罚（每超 1 级 3%）
+        // 刚越线 1 级只罚 3%：低级成员不再出现「越线即封顶 90%」的悬崖
+        Assert.Equal(0.03d, ActionParticipationSpec.CalculateLevelMalus(1, 14), 5);
+
+        // 最高 25 级，小号 5 级：gap = 20, exemptGap = max(5 * 0.2, 12) = 12. 超出 8 级 -> 0.24
+        Assert.Equal(0.24d, ActionParticipationSpec.CalculateLevelMalus(5, 25), 5);
 
         // 最高 100 级，75 级（未受 12 级保底主导，受 20% 主导）：
-        // gap = 25, exemptGap = max(75 * 0.2, 12) = 15. excess = 10, malus = 3 * (10 / 75) = 0.4
-        Assert.Equal(0.4d, ActionParticipationSpec.CalculateLevelMalus(75, 100), 5);
+        // gap = 25, exemptGap = max(75 * 0.2, 12) = 15. 超出 10 级 -> 0.30
+        Assert.Equal(0.3d, ActionParticipationSpec.CalculateLevelMalus(75, 100), 5);
 
         // 最高 100 级，85 级（差 15 级 <= 17 级）：免罚为 0
         Assert.Equal(0d, ActionParticipationSpec.CalculateLevelMalus(85, 100));
+
+        // 4. 超出门槛 30 级及以上触及 90% 封顶
+        Assert.Equal(0.9d, ActionParticipationSpec.CalculateLevelMalus(1, 44));
+        Assert.Equal(0.9d, ActionParticipationSpec.CalculateLevelMalus(10, 55));
     }
 
     /// <summary>

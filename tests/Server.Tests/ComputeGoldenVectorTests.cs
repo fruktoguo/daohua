@@ -209,6 +209,36 @@ public sealed class ComputeGoldenVectorTests
         AssertDeltasEqual(onlineResult.AssetDeltas, nodeResult.AssetDeltas);
     }
 
+    /// <summary>
+    /// 区间物品产量（explore.mine-spirit-stone，10~40 灵石/轮）：
+    /// 计算节点路径、在线重演参考路径与 EcsComputeResultVerifier 独立重演校验必须完全一致。
+    /// </summary>
+    [Fact]
+    public async Task RangeYieldGatheringActionIsByteIdenticalAcrossPaths()
+    {
+        var bundle = NewBundle(PlayerId.New(), AccountId.New(), "豆仙人回归", Catalog.Fingerprint, player =>
+        {
+            player.SkipTutorial();
+            player.World.NodeId = "node.xuanyuan-ruins";
+            player.SetPresence(PresenceState.Offline, Baseline);
+            player.Enqueue(new ActionIntent(new ActionId("explore.mine-spirit-stone"), -1), Baseline, Catalog.Actions);
+        });
+        var target = Baseline.AddMinutes(5);
+        var request = NewJobRequest(bundle, target, []);
+
+        var nodeResult = RunNodeJobOverWire(request);
+        Assert.True(nodeResult.Success, $"节点推进失败：{nodeResult.ErrorCode} {nodeResult.ErrorMessage}");
+
+        var (onlineWrites, onlineResult, onlineVersion) = RunOnlineReference(bundle, target, []);
+        Assert.Equal(onlineVersion, nodeResult.TargetStateVersion);
+        AssertSectionsEqual(onlineWrites, nodeResult);
+        AssertDeltasEqual(onlineResult.AssetDeltas, nodeResult.AssetDeltas);
+
+        using var verifier = new EcsComputeResultVerifier(Catalog);
+        var verification = await verifier.VerifyAsync(request, nodeResult);
+        Assert.True(verification.Accepted, verification.Error);
+    }
+
     /// <summary>拒绝路径：篡改 checksum、缺段、未知 section、非法 Base64 一律产出不可重试失败。</summary>
     [Fact]
     public void CorruptedInputsAreRejectedWithoutRetry()

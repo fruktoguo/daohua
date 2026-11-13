@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Domain.Combat;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -797,23 +798,29 @@ public sealed class GameDataCatalog
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
         return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, expectedAttributes: expectedAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings, shopOffers: new ShopCatalog(shopOffers), marketReferencePrice: marketReferencePrice);
     }
-    /// 从当前程序集嵌入的 .json 资源中反射加载完整游戏数据。
+    private static readonly ConcurrentDictionary<Assembly, GameDataCatalog> EmbeddedCache = new();
+
+    /// <summary>
+    /// 从当前程序集嵌入的 .json 资源中反射加载完整游戏数据（按程序集只读缓存复用，避免高频调用重复解析与计算指纹）。
     /// </summary>
     public static GameDataCatalog LoadEmbedded(Assembly? assembly = null)
     {
         assembly ??= typeof(GameDataCatalog).Assembly;
-        var resources = assembly.GetManifestResourceNames()
-            .Where(name => name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .Select(name =>
-            {
-                using var stream = assembly.GetManifestResourceStream(name)
-                    ?? throw new InvalidOperationException($"无法读取内嵌游戏数据：{name}。");
-                using var memory = new MemoryStream();
-                stream.CopyTo(memory);
-                return (ReadOnlyMemory<byte>)memory.ToArray();
-            });
-        return Parse(resources);
+        return EmbeddedCache.GetOrAdd(assembly, static targetAssembly =>
+        {
+            var resources = targetAssembly.GetManifestResourceNames()
+                .Where(name => name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .Select(name =>
+                {
+                    using var stream = targetAssembly.GetManifestResourceStream(name)
+                        ?? throw new InvalidOperationException($"无法读取内嵌游戏数据：{name}。");
+                    using var memory = new MemoryStream();
+                    stream.CopyTo(memory);
+                    return (ReadOnlyMemory<byte>)memory.ToArray();
+                });
+            return Parse(resources);
+        });
     }
 
     /// <summary>解析系统商店商品条目（shop.offers.json 单条）。</summary>
