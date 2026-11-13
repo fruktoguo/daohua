@@ -82,6 +82,10 @@ try {
           TECHNIQUE_EXP_TO_NEXT,
           calculateTechniqueProgress,
           techniqueEarlyDiscountRatio,
+          REALM_LEVEL_UPGRADE_EXP_TO_NEXT,
+          earlyUpgradeDiscountRatio,
+          calculateRealmProgress,
+          getRootCumulativeExpForLevel,
         } from './src/game/combatConstants.ts'
         export { resolveMarketInstrumentMetadata } from './src/game/marketStore.ts'
         export { resolveItemMetadata, withItemGrade } from './src/game/ids.ts'
@@ -457,23 +461,45 @@ try {
   const expeditionQueuePatch = await decodePlayerSnapshotDeltaDto(expeditionQueueDelta, current, Buffer.from(JSON.stringify(expeditionQueueDelta)))
   assert.equal(expeditionQueuePatch.queue.entries[0].expedition.playerBuffs[0].buffId, 'buff.sui-gang')
   assert.equal(expeditionQueuePatch.queue.entries[0].expedition.playerBuffs[0].effects[0].value, -400, '战内 playerBuffs 负值效果载荷必须完整保留')
-  // 技艺经验曲线门禁：前 30 级按「升入 1 级 -90% → 升入 30 级 -0%」线性削减，30 级以上与修为曲线一致；
-  // 锚点取自总纲 §20.1.2.1 权威表，任一侧单独改动系数（服务端 TechniqueCatalog.EarlyDiscountRatio /
-  // 前端 techniqueEarlyDiscountRatio）都会在此暴露。
+  // 升级经验削减门禁（总纲 §3.2.2 / §20.1.2.1）：前 30 段按「段目标 1 级 -95% → 段目标 30 级 -0%」
+  // 线性削减，30 级以上与修为曲线一致；境界/六维/技艺三线共用同一削减段表，产出端配表原值不变。
+  // 锚点取自总纲 §20.1.2.1 权威表，任一侧单独改动系数（服务端 RealmProgressionCatalog.EarlyUpgradeDiscountRatio /
+  // 前端 earlyUpgradeDiscountRatio）都会在此暴露。
   // （React Rules of Hooks 静态门禁已收拢至 frontend/src/game/rulesOfHooks.test.mjs 单一真源，不在此重复扫描。）
-  const { TECHNIQUE_EXP_TO_NEXT, calculateTechniqueProgress, techniqueEarlyDiscountRatio } = mod
-  assert.equal(TECHNIQUE_EXP_TO_NEXT[0], 1000, '技艺 0→1 级需求应为修为条 10000 削减 90% 后的 1000')
-  assert.equal(TECHNIQUE_EXP_TO_NEXT[1], 1572, '技艺 1→2 级需求应为 1572')
-  assert.equal(TECHNIQUE_EXP_TO_NEXT[17], 502069, '技艺 17→18 级需求应为 502069')
-  assert.equal(TECHNIQUE_EXP_TO_NEXT[28], 9179979, '技艺 28→29 级需求应为 9179979')
+  const {
+    TECHNIQUE_EXP_TO_NEXT,
+    calculateTechniqueProgress,
+    techniqueEarlyDiscountRatio,
+    REALM_LEVEL_UPGRADE_EXP_TO_NEXT,
+    earlyUpgradeDiscountRatio,
+    calculateRealmProgress,
+    getRootCumulativeExpForLevel,
+  } = mod
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[0], 500, '技艺 0→1 级需求应为修为条 10000 削减 95% 后的 500')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[1], 993, '技艺 1→2 级需求应为 993')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[17], 485517, '技艺 17→18 级需求应为 485517')
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[28], 9163645, '技艺 28→29 级需求应为 9163645')
   assert.equal(TECHNIQUE_EXP_TO_NEXT[29], 12631000, '技艺 29→30 级削减归零，需求须等于修为条')
   assert.equal(TECHNIQUE_EXP_TO_NEXT[30], 15158000, '技艺 30 级以上不得削减，须与修为曲线一致')
-  assert.equal(techniqueEarlyDiscountRatio(1), 0.9, '升入 1 级削减比例应为 90%')
+  assert.equal(techniqueEarlyDiscountRatio(1), 0.95, '升入 1 级削减比例应为 95%')
   assert.equal(techniqueEarlyDiscountRatio(30), 0, '升入 30 级削减比例应为 0%')
   assert.equal(techniqueEarlyDiscountRatio(31), 0, '30 级以上不应削减')
-  assert.deepEqual(calculateTechniqueProgress(1000), { level: 1, currentLayerExp: 0, expToNext: 1572, progressPercentage: 0 })
-  assert.equal(calculateTechniqueProgress(1604846).level, 18, '累计 1,604,846 经验应正好达到 18 级（总纲 §20.1.2.1）')
-  assert.equal(calculateTechniqueProgress(1604845).level, 17, '差 1 点不得提前升到 18 级')
+  assert.equal(earlyUpgradeDiscountRatio(1), 0.95, '共享削减段目标 1 级削减比例应为 95%')
+  assert.equal(earlyUpgradeDiscountRatio(15), 0.95 * 15 / 29, '段目标 15 级削减比例应为线性插值')
+  // 境界需求侧同表：境界 L→L+1 消费第 L−1 段削减值，与技艺升入 L 级同价
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[0], 500, '境界 1→2 需求应为削减段 500')
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[17], 485517, '境界 18→19 需求应为削减段 485517')
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[28], 9163645, '境界 29→30 需求应为削减段 9163645')
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[29], 12631000, '境界 30→31 起恢复原价')
+  assert.equal(calculateRealmProgress(499, 1).progressPercentage < 100, true, '境界 1 级 499/500 不得显示满修')
+  assert.equal(calculateRealmProgress(500, 1).expToNext, 500, '境界 1 级本层需求应为削减后 500')
+  // 六维点成本表同段插值：每维前 3 点各 500，第 4 点起向下一段过渡
+  assert.equal(getRootCumulativeExpForLevel(1), 500, '六维第 1 点累计需求应为 500')
+  assert.equal(getRootCumulativeExpForLevel(3), 1500, '六维前 3 点累计需求应为 1500')
+  assert.equal(getRootCumulativeExpForLevel(4), 2000, '六维第 4 点成本应与第 1~3 点同段 500')
+  assert.deepEqual(calculateTechniqueProgress(500), { level: 1, currentLayerExp: 0, expToNext: 993, progressPercentage: 0 })
+  assert.equal(calculateTechniqueProgress(1525564).level, 18, '累计 1,525,564 经验应正好达到 18 级（总纲 §20.1.2.1）')
+  assert.equal(calculateTechniqueProgress(1525563).level, 17, '差 1 点不得提前升到 18 级')
 
   console.log('前端契约通过：世界实体、增量时刻、CSV 空翻译、配置回复点数、坊市标的等级与背包对齐、技艺经验曲线、版本感知防环与触发条件自然语言格式化门禁通过。')
 } finally {

@@ -95,6 +95,8 @@ const styles = new Set()
 const targets = new Set()
 const slots = new Set()
 const buffs = new Set()
+const equipmentRatioKeys = new Set()
+const equipmentFlatKeys = new Set()
 /** 配表中真实定义的物品/装备实体 ID（rows[].id 前缀即实体类型） */
 const definedAssets = new Set()
 /** 配表任意位置引用到的物品/装备实体 ID（制造输入/产出、掉落表、商店报价等） */
@@ -118,6 +120,8 @@ for (const row of rows) {
     } else if (id.startsWith('equipment.')) {
       equipments.add(id)
       definedAssets.add(id)
+      for (const key of Object.keys(row.baseStatRatios ?? {})) equipmentRatioKeys.add(key)
+      for (const key of Object.keys(row.flatStats ?? {})) equipmentFlatKeys.add(key)
     }
     // 行动表以 durationSeconds + type 为判别特征（地图节点、敌怪、建筑无此组合）。
     if (typeof row.durationSeconds === 'number' && typeof row.type === 'string') actions.add(id)
@@ -151,14 +155,14 @@ for (const row of rows) {
 }
 
 // 3) 源码字面量扫描：形如 domain.path 的字符串必须是词条键或其父路径。
-//    网络层协议字段路径（snapshot.ts 的错误上下文）、WebSocket 指令名与行动 ID 不是词条，予以排除。
+//    网络层协议字段路径（snapshot.ts 的错误上下文）、WebSocket 指令名、行动 ID 与纯模拟引擎内部事件码不是 UI 词条，予以排除。
 const protocolCommand = /sendCommand\(/
 const literalRe = /['"`]([\w-]+(?:\.[\w-]+)+)['"`]/g
 const sourceFiles = walk(join(FE, 'src'), ['.ts', '.tsx'])
 const badLiterals = new Map()
 for (const file of sourceFiles) {
   const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/')
-  if (rel.includes('/network/')) continue
+  if (rel.includes('/network/') || rel.includes('/game/simulator/engine/')) continue
   readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
     const trimmed = line.trim()
     if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
@@ -224,6 +228,35 @@ for (const technique of techniques) {
 for (const slot of slots) requireKey(`game.category.${slot.startsWith('tool-') ? 'tool' : slot}`)
 for (const buffId of buffs) {
   requireKey(`combat.trigger.buff.${buffId.startsWith('buff.') ? buffId.slice(5) : buffId}`)
+}
+// 装备 baseStatRatios / flatStats 属性键覆盖：缺失会把原始属性 ID（如 maxHitpoints）直接显示给玩家。
+{
+  const itemDisplaySource = readFileSync(join(FE, 'src/components/ItemDisplay.tsx'), 'utf8')
+  const parseConstKeys = constName => {
+    const match = itemDisplaySource.match(new RegExp(`const ${constName}:[^=]*=\\s*\\{([\\s\\S]*?)\\n\\}`))
+    if (!match) return new Set()
+    const keys = new Set()
+    for (const m of match[1].matchAll(/^\s*([a-zA-Z_]\w*)\s*:\s*(?:'([^']+)'|\{\s*label:\s*'([^']+)')/gm)) {
+      keys.add(m[1])
+      const labelKey = m[2] ?? m[3]
+      if (labelKey) requireKey(labelKey)
+    }
+    return keys
+  }
+  const commonKeys = parseConstKeys('EQUIPMENT_COMMON_STAT_LABEL_KEYS')
+  const ratioKeys = new Set([...commonKeys, ...parseConstKeys('EQUIPMENT_RATIO_LABEL_KEYS')])
+  const flatKeys = new Set([...commonKeys, ...parseConstKeys('EQUIPMENT_FLAT_LABEL_KEYS')])
+  const pointKeys = parseConstKeys('POINT_STAT_LABELS')
+  for (const key of equipmentRatioKeys) {
+    if (!ratioKeys.has(key)) {
+      failures.push(`装备比率属性 ${key} 未登记在 ItemDisplay.tsx 的 EQUIPMENT_RATIO_LABEL_KEYS（界面会裸显原始键名）`)
+    }
+  }
+  for (const key of equipmentFlatKeys) {
+    if (!flatKeys.has(key) && !pointKeys.has(key)) {
+      failures.push(`装备固定/点数属性 ${key} 未登记在 ItemDisplay.tsx 的 EQUIPMENT_FLAT_LABEL_KEYS / POINT_STAT_LABELS（界面会裸显原始键名）`)
+    }
+  }
 }
 
 // 5) 模板字面量键前缀校验：t(`prefix.${expr}`) 的静态前缀必须是词典中真实存在的键或键前缀，

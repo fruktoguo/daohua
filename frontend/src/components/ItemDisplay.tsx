@@ -1687,11 +1687,10 @@ const TOOL_SPEED_LABEL_KEYS: Record<string, string> = {
   enhancement: 'combat.nearby.attrEnhancementSpeed',
 }
 
-/** 装备属性比率 key -> i18n 词条键映射 */
-const EQUIPMENT_RATIO_LABEL_KEYS: Record<string, string> = {
+/** 装备固定值与百分比比率共用的基础属性 key -> i18n 词条键映射 */
+const EQUIPMENT_COMMON_STAT_LABEL_KEYS: Record<string, string> = {
   physicalAttack: 'market.stat.physicalAttack',
   spellAttack: 'market.stat.spellAttack',
-  damage: 'market.stat.attackPower',
   physicalArmor: 'market.stat.physicalArmor',
   armor: 'market.stat.physicalArmor',
   spellResistance: 'market.stat.spellResistance',
@@ -1700,30 +1699,10 @@ const EQUIPMENT_RATIO_LABEL_KEYS: Record<string, string> = {
   hit: 'market.stat.accuracy',
   evasion: 'market.stat.evasion',
   eva: 'market.stat.evasion',
-  criticalChance: 'market.stat.critChance',
-  criticalAvoidance: 'market.stat.critAvoidance',
-  criticalResistance: 'market.stat.critAvoidance',
-  breakPower: 'market.stat.breakPower',
-  parryResolve: 'market.stat.parryResolve',
-  damageAbsorption: 'market.stat.damageReduction',
-  actionSpeed: 'market.stat.actionSpeed',
-  cooldownReduction: 'market.stat.cooldownReduction',
-}
-
-/** 装备固定数值属性 key -> i18n 词条键映射 */
-const EQUIPMENT_FLAT_LABEL_KEYS: Record<string, string> = {
-  physicalAttack: 'market.stat.physicalAttack',
-  spellAttack: 'market.stat.spellAttack',
-  accuracy: 'market.stat.accuracy',
-  evasion: 'market.stat.evasion',
   maxHitpoints: 'market.stat.maxHitpoints',
   hp: 'market.stat.maxHitpoints',
   maxManapoints: 'market.stat.maxManapoints',
   mp: 'market.stat.maxManapoints',
-  physicalArmor: 'market.stat.physicalArmor',
-  armor: 'market.stat.physicalArmor',
-  spellResistance: 'market.stat.spellResistance',
-  mr: 'market.stat.spellResistance',
   hitpointRegen: 'market.stat.hitpointRegen',
   hpRegen: 'market.stat.hitpointRegen',
   manapointRegen: 'market.stat.manapointRegen',
@@ -1736,6 +1715,20 @@ const EQUIPMENT_FLAT_LABEL_KEYS: Record<string, string> = {
   parryResolve: 'market.stat.parryResolve',
   parry: 'market.stat.parryResolve',
   tenacity: 'market.stat.resilience',
+}
+
+/** 装备属性比率 key -> i18n 词条键映射 */
+const EQUIPMENT_RATIO_LABEL_KEYS: Record<string, string> = {
+  ...EQUIPMENT_COMMON_STAT_LABEL_KEYS,
+  damage: 'market.stat.attackPower',
+  damageAbsorption: 'market.stat.damageReduction',
+  actionSpeed: 'market.stat.actionSpeed',
+  cooldownReduction: 'market.stat.cooldownReduction',
+}
+
+/** 装备固定数值属性 key -> i18n 词条键映射 */
+const EQUIPMENT_FLAT_LABEL_KEYS: Record<string, string> = {
+  ...EQUIPMENT_COMMON_STAT_LABEL_KEYS,
   fixedDamageBonus: 'market.stat.fixedDamageBonus',
   fixedDamageReduction: 'market.stat.fixedDamageReduction',
   fixedPhysicalDamageBonus: 'market.stat.fixedPhysicalDamageBonus',

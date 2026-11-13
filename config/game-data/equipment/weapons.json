@@ -137,11 +137,11 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.28
+      "physicalAttack": 0.32
     },
     "flatStats": {
-      "physicalAttack": 14,
-      "accuracy": 14
+      "physicalAttack": 16,
+      "accuracy": 16
     },
     "level": 18
   },
@@ -153,12 +153,12 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.14,
-      "physicalArmor": 0.2
+      "physicalAttack": 0.16,
+      "physicalArmor": 0.22
     },
     "flatStats": {
-      "physicalAttack": 11,
-      "physicalArmor": 11,
+      "physicalAttack": 13,
+      "physicalArmor": 13,
       "threatBonusPoints": 300
     },
     "level": 18
@@ -171,11 +171,11 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.28
+      "spellAttack": 0.32
     },
     "flatStats": {
-      "spellAttack": 14,
-      "accuracy": 14,
+      "spellAttack": 16,
+      "accuracy": 16,
       "spellDamageBonusPoints": 15,
       "skillBonusPoints": 15
     },
@@ -189,12 +189,12 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.18
+      "spellAttack": 0.22
     },
     "flatStats": {
-      "spellAttack": 12,
+      "spellAttack": 14,
       "manapointRegen": 3,
-      "healingBonusPoints": 50,
+      "healingBonusPoints": 75,
       "spellDamageBonusPoints": 15,
       "skillBonusPoints": 15
     },
@@ -208,11 +208,11 @@
     "tier": 3,
     "quality": 3,
     "baseStatRatios": {
-      "physicalAttack": 0.28
+      "physicalAttack": 0.38
     },
     "flatStats": {
-      "physicalAttack": 14,
-      "breakPower": 14,
+      "physicalAttack": 19,
+      "breakPower": 19,
       "attackSpeedPoints": 15
     },
     "enhanceProtectionItems": [
@@ -228,11 +228,13 @@
     "tier": 3,
     "quality": 3,
     "baseStatRatios": {
-      "spellAttack": 0.32
+      "spellAttack": 0.38
     },
     "flatStats": {
-      "spellAttack": 16,
-      "accuracy": 16,
+      "spellAttack": 19,
+      "accuracy": 19,
+      "spellDamageBonusPoints": 20,
+      "skillBonusPoints": 20,
       "cooldownReductionPoints": 15
     },
     "enhanceProtectionItems": [

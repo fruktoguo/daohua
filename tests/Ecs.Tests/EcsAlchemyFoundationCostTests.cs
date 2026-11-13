@@ -40,7 +40,8 @@ public sealed class EcsAlchemyFoundationCostTests
     public async Task InsufficientFoundationBlocksTheRecipeWithoutSideEffects()
     {
         var catalog = CreateCatalog(HeavenGateRules.ReverseFatePillFoundationRatio);
-        const double cost = 250; // expToNext 1000 × 25%
+        // 削减后首段升级需求 50（配表 1000 × 5%），25% 底蕴成本 = round(50 × 0.25) = 13。
+        const double cost = 13;
         var player = CreatePlayer(catalog);
         player.Progression.Foundation = cost - 1;
         player.Enqueue(new(new ActionId(ActionIdValue), 1), From, catalog.Actions);
@@ -103,7 +104,8 @@ public sealed class EcsAlchemyFoundationCostTests
     public async Task SufficientFoundationDeductsTwentyFivePercentExactly()
     {
         var catalog = CreateCatalog(HeavenGateRules.ReverseFatePillFoundationRatio);
-        const double cost = 250;
+        // 削减后首段升级需求 50（配表 1000 × 5%），25% 底蕴成本 = round(50 × 0.25) = 13。
+        const double cost = 13;
         var player = CreatePlayer(catalog);
         player.Progression.Foundation = cost * 4;
         player.Enqueue(new(new ActionId(ActionIdValue), 1), From, catalog.Actions);
@@ -220,7 +222,8 @@ public sealed class EcsAlchemyFoundationCostTests
     }
 
     /// <summary>
-    /// 单配方测试目录：expToNext[1] = 1000，故 25% 底蕴成本的绝对值恒为 250；
+    /// 单配方测试目录：expToNext[1] = 1000，前 30 段线性削减后首段需求 50，
+    /// 故 25% 底蕴成本的绝对值恒为 13；
     /// 炼丹配方无材料输入、只产 1 颗逆命丹，隔离出底蕴通道本身的行为。
     /// </summary>
     private static GameDataCatalog CreateCatalog(double foundationCostRatio)

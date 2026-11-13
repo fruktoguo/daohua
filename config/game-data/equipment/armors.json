@@ -346,13 +346,13 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.12,
+      "physicalArmor": 0.14,
       "spellResistance": 0.04
     },
     "flatStats": {
-      "maxHitpoints": 8,
+      "maxHitpoints": 9,
       "physicalArmor": 6,
-      "spellResistance": 2,
+      "spellResistance": 4,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 150
     },
@@ -366,13 +366,13 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.22,
+      "physicalArmor": 0.26,
       "spellResistance": 0.06
     },
     "flatStats": {
-      "maxHitpoints": 14,
-      "physicalArmor": 11,
-      "spellResistance": 3,
+      "maxHitpoints": 16,
+      "physicalArmor": 12,
+      "spellResistance": 4,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 200
     },
@@ -386,13 +386,13 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.12,
+      "physicalArmor": 0.14,
       "spellResistance": 0.04
     },
     "flatStats": {
-      "physicalArmor": 6,
-      "spellResistance": 2,
-      "maxHitpoints": 8,
+      "physicalArmor": 7,
+      "spellResistance": 3,
+      "maxHitpoints": 9,
       "physicalDamageReductionPoints": 2,
       "threatBonusPoints": 150
     },
@@ -406,14 +406,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.12
+      "physicalAttack": 0.14
     },
     "flatStats": {
-      "physicalAttack": 6,
-      "accuracy": 4,
-      "criticalChance": 2,
-      "maxHitpoints": 4,
-      "physicalArmor": 4,
+      "physicalAttack": 8,
+      "accuracy": 5,
+      "criticalChance": 4,
+      "maxHitpoints": 3,
+      "physicalArmor": 3,
       "physicalDamageBonusPoints": 2
     },
     "level": 18
@@ -426,14 +426,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.2
+      "physicalAttack": 0.26
     },
     "flatStats": {
-      "physicalAttack": 12,
-      "accuracy": 6,
-      "criticalChance": 4,
-      "maxHitpoints": 6,
-      "physicalArmor": 8,
+      "physicalAttack": 14,
+      "accuracy": 8,
+      "criticalChance": 5,
+      "maxHitpoints": 5,
+      "physicalArmor": 6,
       "physicalDamageBonusPoints": 2
     },
     "level": 18
@@ -446,14 +446,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.12
+      "physicalAttack": 0.14
     },
     "flatStats": {
-      "physicalAttack": 6,
-      "accuracy": 4,
-      "criticalChance": 2,
-      "maxHitpoints": 4,
-      "physicalArmor": 4,
+      "physicalAttack": 8,
+      "accuracy": 5,
+      "criticalChance": 4,
+      "maxHitpoints": 3,
+      "physicalArmor": 3,
       "physicalDamageBonusPoints": 2
     },
     "level": 18
@@ -466,14 +466,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.12
+      "spellAttack": 0.14
     },
     "flatStats": {
-      "spellAttack": 6,
-      "accuracy": 4,
-      "criticalChance": 2,
-      "maxHitpoints": 4,
-      "spellResistance": 4,
+      "spellAttack": 8,
+      "accuracy": 5,
+      "criticalChance": 4,
+      "maxHitpoints": 3,
+      "spellResistance": 3,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -487,14 +487,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.2
+      "spellAttack": 0.26
     },
     "flatStats": {
-      "spellAttack": 12,
-      "accuracy": 6,
-      "criticalChance": 4,
-      "maxHitpoints": 6,
-      "spellResistance": 8,
+      "spellAttack": 14,
+      "accuracy": 8,
+      "criticalChance": 5,
+      "maxHitpoints": 5,
+      "spellResistance": 6,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -508,14 +508,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.12
+      "spellAttack": 0.14
     },
     "flatStats": {
-      "spellAttack": 6,
-      "accuracy": 4,
-      "criticalChance": 2,
-      "maxHitpoints": 4,
-      "spellResistance": 4,
+      "spellAttack": 8,
+      "accuracy": 5,
+      "criticalChance": 4,
+      "maxHitpoints": 3,
+      "spellResistance": 3,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -529,12 +529,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.20,
-      "maxHitpoints": 0.10
+      "physicalArmor": 0.24,
+      "maxHitpoints": 0.12
     },
     "flatStats": {
-      "physicalArmor": 12,
-      "maxHitpoints": 10,
+      "physicalArmor": 13,
+      "maxHitpoints": 11,
+      "physicalDamageReductionPoints": 2,
+      "threatBonusPoints": 180,
       "damageReflectPoints": 15
     },
     "enhanceProtectionItems": [
@@ -550,12 +552,13 @@
     "tier": 3,
     "quality": 3,
     "baseStatRatios": {
-      "spellResistance": 0.12,
-      "physicalArmor": 0.06
+      "spellResistance": 0.16,
+      "physicalArmor": 0.08
     },
     "flatStats": {
-      "spellResistance": 6,
-      "maxHitpoints": 8,
+      "spellResistance": 8,
+      "maxHitpoints": 11,
+      "physicalDamageReductionPoints": 2,
       "damageAbsorptionPoints": 8
     },
     "enhanceProtectionItems": [
@@ -571,12 +574,13 @@
     "tier": 3,
     "quality": 3,
     "baseStatRatios": {
-      "evasion": 0.14,
-      "physicalArmor": 0.08
+      "evasion": 0.16,
+      "physicalArmor": 0.10
     },
     "flatStats": {
-      "evasion": 8,
-      "criticalAvoidance": 6,
+      "evasion": 10,
+      "criticalAvoidance": 7,
+      "physicalDamageReductionPoints": 2,
       "actionSpeedPoints": 10
     },
     "enhanceProtectionItems": [

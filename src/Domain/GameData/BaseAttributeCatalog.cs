@@ -242,9 +242,53 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
     /// <summary>最大境界等级（expToNext 长度）。</summary>
     public int MaxLevel => ExpToNext.Count;
 
-    /// <summary>当前层升至下一级所需修为；已满级返回 0。</summary>
+    /// <summary>当前层升至下一级所需修为（配表原值）；已满级返回 0。产出端口径，升级需求侧请用 <see cref="UpgradeExpCapFor"/>。</summary>
     public double ExpCapFor(int realmLevel)
         => realmLevel >= 1 && realmLevel <= ExpToNext.Count ? ExpToNext[realmLevel - 1] : 0;
+
+    /// <summary>升级需求线性削减覆盖的段目标等级数：段 1~30 按线性比例下调，30 级以上不削减（总纲 §3.2.2）。</summary>
+    public const int EarlyUpgradeDiscountLevels = 30;
+
+    /// <summary>段目标等级 1 的削减比例（95%），其后逐级线性递减至 0%。</summary>
+    private const double EarlyUpgradeDiscountMaxRatio = 0.95d;
+
+    /// <summary>
+    /// 升入指定段目标等级所需经验的削减比例：目标等级 1 → 95%，目标等级 30 → 0%，中间按
+    /// <c>0.95 × (30 − L) / 29</c> 线性插值；目标等级 &gt; 30 或非法值返回 0（不削减）。
+    /// 境界/六维/技艺三条升级曲线共用同一削减段表（总纲 §3.2.2），产出端配表原值不变。
+    /// </summary>
+    public static double EarlyUpgradeDiscountRatio(double targetLevel)
+    {
+        if (!(targetLevel >= 1) || targetLevel > EarlyUpgradeDiscountLevels) return 0;
+        return EarlyUpgradeDiscountMaxRatio * (EarlyUpgradeDiscountLevels - targetLevel) / (EarlyUpgradeDiscountLevels - 1);
+    }
+
+    /// <summary>削减后升级段表（懒构建缓存）：DiscountedExpToNext[i] = round(ExpToNext[i] × (1 − r(i+1)))，末段 0 封顶原样保留。</summary>
+    private double[]? _discountedExpToNext;
+
+    /// <summary>削减后升级段表：前 30 段按 <see cref="EarlyUpgradeDiscountRatio"/> 下调并四舍五入取整，30 级以上与配表原值一致。</summary>
+    public IReadOnlyList<double> DiscountedExpToNext => _discountedExpToNext ??= BuildDiscountedExpToNext();
+
+    private double[] BuildDiscountedExpToNext()
+    {
+        var table = new double[ExpToNext.Count];
+        for (var i = 0; i < ExpToNext.Count; i++)
+        {
+            var baseExp = ExpToNext[i];
+            if (baseExp <= 0) { table[i] = baseExp; continue; }
+            var ratio = EarlyUpgradeDiscountRatio(i + 1);
+            table[i] = ratio <= 0 ? baseExp : Math.Round(baseExp * (1 - ratio), MidpointRounding.AwayFromZero);
+        }
+        return table;
+    }
+
+    /// <summary>
+    /// 本层突破所需修为（削减后需求，不含灵根乘区）：境界 L→L+1 消费第 L−1 段削减值，
+    /// 与技艺「升入 L 级」同价；已满级返回 0。行动修为封顶、底蕴基数与协议透传统一经
+    /// <see cref="Player.HeavenGateRules.ResolveExpCapWithLinggen"/> 叠加灵根乘区后使用。
+    /// </summary>
+    public double UpgradeExpCapFor(int realmLevel)
+        => realmLevel >= 1 && realmLevel <= DiscountedExpToNext.Count ? DiscountedExpToNext[realmLevel - 1] : 0;
 
     /// <summary>
     /// 到达指定等级所需的累计修为 Σ expToNext[1..level-1]（怪物战斗经验派生源，总纲 §7.7.6）。
@@ -267,13 +311,14 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
     private (double[] PointCost, double[] Cumulative) RootPointTable => _rootPointTable ??= BuildRootPointTable();
 
     /// <summary>
-    /// 由境界修为表展开六维点成本表（总纲 §3.2.2）：记 B[i] = expToNext[max(0, i−1)]
-    /// （跨入第 i+1 级消耗的那格修为条，B[0] 取第一条），升至第 p 点成本 =
+    /// 由境界修为表展开六维点成本表（总纲 §3.2.2）：记 B[i] = d[max(0, i−1)]
+    /// （跨入第 i+1 级消耗的那格削减后修为条 d，B[0] 取第一条），升至第 p 点成本 =
     /// B 在 t=(p−1)/3 处的线性插值——一级境界摊三点，相邻档间平滑过渡；
-    /// 单维累计至 3Lv 点 ≈ 3×ΣexpToNext[1..Lv−1]（约 3.05~3.25 倍境界累计修为）。
+    /// 单维累计至 3Lv 点 ≈ 3×Σd[1..Lv−1]（前 30 段显著低于境界累计原值，Lv127 收敛 ~3.05 倍）。
     /// </summary>
     private (double[] PointCost, double[] Cumulative) BuildRootPointTable()
     {
+        var segments = DiscountedExpToNext;
         var cap = RootPointCap;
         var cost = new double[cap + 1];
         var cumulative = new double[cap + 1];
@@ -281,9 +326,9 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
         {
             var t = (p - 1) / 3d;
             var i0 = (int)Math.Floor(t);
-            var i1 = Math.Min(i0 + 1, ExpToNext.Count - 1);
-            var b0 = ExpToNext[i0 <= 0 ? 0 : i0 - 1];
-            var b1 = ExpToNext[i1 - 1];
+            var i1 = Math.Min(i0 + 1, segments.Count - 1);
+            var b0 = segments[i0 <= 0 ? 0 : i0 - 1];
+            var b1 = segments[i1 - 1];
             cost[p] = b0 + (b1 - b0) * (t - i0);
             cumulative[p] = cumulative[p - 1] + cost[p];
         }
@@ -320,12 +365,12 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
 
     /// <summary>
     /// 怪物击杀修为奖励派生（总纲 §7.10.3）：复用等级基准经验 × 层次倍率
-    /// （小怪 1×/精英 3×/妖王 10×）。份额以 Lv1 = 1/1000 为基准每级指数衰减 10% 渐近 0；
+    /// （小怪 1×/精英 10×/妖王 40×）。份额以 Lv1 = 1/1000 为基准每级指数衰减 10% 渐近 0；
     /// 等级超出配表上界时按末档非零修为条派生。配表 experience 显式声明时覆盖本值。
     /// </summary>
     public double MonsterKillExperience(int level, CombatMonsterRank rank)
     {
-        var multiplier = rank switch { CombatMonsterRank.Elite => 3d, CombatMonsterRank.Boss => 10d, _ => 1d };
+        var multiplier = rank switch { CombatMonsterRank.Elite => 10d, CombatMonsterRank.Boss => 40d, _ => 1d };
         return BaseExperienceForLevel(level) * multiplier;
     }
 

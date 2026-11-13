@@ -100,10 +100,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.14
+      "physicalAttack": 0.16
     },
     "flatStats": {
-      "physicalAttack": 8,
+      "physicalAttack": 11,
       "accuracy": 10,
       "physicalDamageBonusPoints": 6
     },
@@ -117,10 +117,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.14
+      "spellAttack": 0.16
     },
     "flatStats": {
-      "spellAttack": 8,
+      "spellAttack": 11,
       "accuracy": 10,
       "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
@@ -135,11 +135,11 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalArmor": 0.08,
-      "spellResistance": 0.08
+      "physicalArmor": 0.1,
+      "spellResistance": 0.1
     },
     "flatStats": {
-      "maxHitpoints": 16,
+      "maxHitpoints": 17,
       "physicalDamageReductionPoints": 6
     },
     "level": 18
@@ -152,9 +152,9 @@
     "tier": 2,
     "quality": 2,
     "flatStats": {
-      "hitpointRegen": 3,
-      "manapointRegen": 1,
-      "maxManapoints": 16,
+      "hitpointRegen": 3.5,
+      "manapointRegen": 1.5,
+      "maxManapoints": 17,
       "cooldownReductionPoints": 5,
       "healingBonusPoints": 6
     },
@@ -168,11 +168,12 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.10
+      "physicalAttack": 0.12
     },
     "flatStats": {
-      "physicalAttack": 8,
-      "accuracy": 9,
+      "physicalAttack": 9,
+      "accuracy": 10,
+      "physicalDamageBonusPoints": 5,
       "criticalDamageBonusPoints": 30
     },
     "enhanceProtectionItems": [

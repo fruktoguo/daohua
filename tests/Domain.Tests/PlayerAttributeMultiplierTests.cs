@@ -117,4 +117,43 @@ public sealed class PlayerAttributeMultiplierTests
         Assert.Equal(0.0, resolvedFenxue.CultivationExpBonusPoints, precision: 6);
         Assert.Equal(-10.0, resolvedFenxue.CombatExpBonusPoints, precision: 6);
     }
+
+    [Fact]
+    public void SpecialEquipments_And_BreakPowerAlias_ResolveIntoPlayerAttributes()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var baseline = CreatePlayer(catalog);
+        var baseAttrs = PlayerAttributeResolver.Resolve(baseline, catalog);
+
+        var equipped = CreatePlayer(catalog);
+        string[] specialIds =
+        [
+            "equipment.baihu-dagger",
+            "equipment.rongling-pendant",
+            "equipment.handi-armor",
+            "equipment.duanchen-blade",
+            "equipment.mingsha-crown",
+            "equipment.fentian-greaves",
+            "equipment.demon-core-staff"
+        ];
+        foreach (var id in specialIds)
+        {
+            equipped.Loadout.EquippedItemIds.Add(new ItemId(id));
+            equipped.Loadout.Equipment.Add(new PlayerEquipmentSlot(id, EnhancementLevel: 0));
+        }
+
+        var resolved = PlayerAttributeResolver.Resolve(equipped, catalog);
+
+        // 断尘残刃剑 flatStats.breakPower=19 必须正确并入 BreakPower，不再被 "break" 键名错位静默吞掉。
+        Assert.Equal(baseAttrs.BreakPower + 19.0, resolved.BreakPower, precision: 6);
+        Assert.Equal(baseAttrs.AttackSpeedPoints + 15.0, resolved.AttackSpeedPoints, precision: 6);
+        // 其余 6 件稀有特殊装备专属通道同步验证
+        Assert.Equal(baseAttrs.CriticalDamagePoints + 30.0, resolved.CriticalDamagePoints, precision: 6);
+        Assert.Equal(baseAttrs.DropBonusPoints + 5.0, resolved.DropBonusPoints, precision: 6);
+        Assert.Equal(baseAttrs.Effects.DamageReflectPoints + 15.0, resolved.Effects.DamageReflectPoints, precision: 6);
+        Assert.Equal(baseAttrs.DamageAbsorptionPoints + 8.0, resolved.DamageAbsorptionPoints, precision: 6);
+        Assert.Equal(baseAttrs.ActionSpeedPoints + 10.0, resolved.ActionSpeedPoints, precision: 6);
+        Assert.Equal(baseAttrs.SearchSpeedPoints + 10.0, resolved.SearchSpeedPoints, precision: 6);
+        Assert.Equal(baseAttrs.CooldownReductionPoints + 15.0, resolved.CooldownReductionPoints, precision: 6);
+    }
 }

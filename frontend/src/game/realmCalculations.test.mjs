@@ -114,24 +114,24 @@ test('境界判定：修真九大境界与终极飞升命名与阶段自洽', ()
   assert.equal(lv127.fullDisplayName, '飞升 [极] 飞升')
 })
 
-test('入天门乘区瓶颈：进度与满修判定必须用服务端权威 expToNextLinggen，而非本地裸曲线', () => {
-  // 复现证据：Lv.18 配表裸瓶颈 800000，五系齐全灵根乘区 3.0 → 权威瓶颈 2400000。
-  // 修前前端只读本地静态表，800000/800000 就已显示圆满并允许点突破，服务端却回「修为未满」。
-  const bare = calculateRealmProgress(800000, 18)
-  assert.equal(bare.expToNext, 800000)
+test('入天门乘区瓶颈：进度与满修判定必须用服务端权威 expToNextLinggen，而非本地曲线', () => {
+  // 复现证据：Lv.18 削减后本地瓶颈 485517，五系齐全灵根乘区 3.0 → 权威瓶颈 1456551。
+  // 修前前端只读本地静态表，485517/485517 就已显示圆满并允许点突破，服务端却回「修为未满」。
+  const bare = calculateRealmProgress(485517, 18)
+  assert.equal(bare.expToNext, 485517)
   assert.equal(bare.progressPercentage, 100)
 
-  const cap = serverExpToNextCap(2400000, 18)
-  assert.equal(cap, 2400000)
-  const authoritative = calculateRealmProgress(800000, 18, cap)
-  assert.equal(authoritative.expToNext, 2400000)
-  assert.equal(authoritative.currentLayerExp, 800000)
+  const cap = serverExpToNextCap(1456551, 18)
+  assert.equal(cap, 1456551)
+  const authoritative = calculateRealmProgress(485517, 18, cap)
+  assert.equal(authoritative.expToNext, 1456551)
+  assert.equal(authoritative.currentLayerExp, 485517)
   assert.ok(Math.abs(authoritative.progressPercentage - 100 / 3) < 1e-9)
   assert.ok(authoritative.progressPercentage < 99.99, '满修误判会让按钮在未满时可用')
 
   // 达到权威瓶颈后才算圆满
-  const full = calculateRealmProgress(2400000, 18, cap)
-  assert.equal(full.currentLayerExp, 2400000)
+  const full = calculateRealmProgress(1456551, 18, cap)
+  assert.equal(full.currentLayerExp, 1456551)
   assert.equal(full.progressPercentage, 100)
   assert.equal(full.totalLevel, 19)
 
@@ -139,6 +139,6 @@ test('入天门乘区瓶颈：进度与满修判定必须用服务端权威 expT
   assert.equal(serverExpToNextCap(undefined, 18), undefined)
   assert.equal(serverExpToNextCap(0, 18), undefined)
   assert.equal(serverExpToNextCap(Number.NaN, 18), undefined)
-  assert.equal(serverExpToNextCap(2400000, 127), undefined)
-  assert.equal(calculateRealmProgress(800000, 18, undefined).progressPercentage, 100)
+  assert.equal(serverExpToNextCap(1456551, 127), undefined)
+  assert.equal(calculateRealmProgress(485517, 18, undefined).progressPercentage, 100)
 })

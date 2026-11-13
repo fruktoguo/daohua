@@ -351,7 +351,8 @@ public static class HeavenGateRules
     }
 
     /// <summary>
-    /// 本层修为瓶颈（含灵根乘区，总纲 §7.7.5.1）：配表 ExpCapFor × <see cref="ResolveCultivationMultiplier"/>。
+    /// 本层修为瓶颈（削减后升级需求 × 灵根乘区，总纲 §3.2.2/§7.7.5.1）：
+    /// <see cref="GameData.RealmProgressionCatalog.UpgradeExpCapFor"/> × <see cref="ResolveCultivationMultiplier"/>。
     /// 突破校验、行动修为封顶与底蕴成本折算基数统一走本口径，保证全链路一致；瓶颈非正时原样返回。
     /// </summary>
     /// <param name="realmLevel">当前境界等级。</param>
@@ -361,7 +362,7 @@ public static class HeavenGateRules
     public static double ResolveExpCapWithLinggen(int realmLevel, LinggenValues confirmedValues, bool entered,
         GameData.RealmProgressionCatalog? realm)
     {
-        var rawCap = realm?.ExpCapFor(realmLevel) ?? 0;
+        var rawCap = realm?.UpgradeExpCapFor(realmLevel) ?? 0;
         if (rawCap <= 0) return rawCap;
         return rawCap * ResolveCultivationMultiplier(confirmedValues, entered);
     }

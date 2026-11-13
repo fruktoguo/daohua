@@ -26,7 +26,7 @@ public sealed class HeavenGateCombatExpCapTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var realm = catalog.RealmProgression ?? throw new InvalidOperationException("配表缺少境界进度定义。");
-        var bareCap = realm.ExpCapFor(HeavenGateRules.HeavenGateRealmLevel);
+        var bareCap = realm.UpgradeExpCapFor(HeavenGateRules.HeavenGateRealmLevel);
 
         var created = PlayerAggregate.Create(new PlayerId(PlayerIdValue), new AccountId(AccountIdValue),
             "天门瓶颈", SeedTime, catalog.Fingerprint).ExportState();
@@ -68,7 +68,7 @@ public sealed class HeavenGateCombatExpCapTests
         var catalog = GameDataCatalog.LoadEmbedded();
         var realm = catalog.RealmProgression ?? throw new InvalidOperationException("配表缺少境界进度定义。");
         var linggen = new LinggenValues(60, 60, 60, 60, 60);
-        var capWithLinggen = realm.ExpCapFor(HeavenGateRules.HeavenGateRealmLevel)
+        var capWithLinggen = realm.UpgradeExpCapFor(HeavenGateRules.HeavenGateRealmLevel)
             * HeavenGateRules.ResolveCultivationMultiplier(linggen, true);
 
         var created = PlayerAggregate.Create(new PlayerId(PlayerIdValue), new AccountId(AccountIdValue),

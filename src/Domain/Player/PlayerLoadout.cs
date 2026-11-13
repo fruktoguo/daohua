@@ -101,9 +101,16 @@ public static class AbilityExpCurve
     /// </summary>
     public const double MaxBulkExperience = 1e18;
 
-    /// <summary>经验换算技能等级（1~127 级）。</summary>
+    /// <summary>经验换算技能等级（1~127 级）；对立方根初值做精确整数立方校准，消除跨架构 libm 1 ULP 边界漂移。</summary>
     public static double LevelFor(double exp)
-        => !double.IsFinite(exp) || exp <= 0 ? 1 : Math.Min(MaxLevel, Math.Floor(Math.Cbrt(exp / 100d)) + 1);
+    {
+        if (!double.IsFinite(exp) || exp <= 0) return 1;
+        const int maxK = (int)MaxLevel - 1;
+        var k = Math.Clamp((int)Math.Floor(Math.Cbrt(exp / 100d)), 0, maxK);
+        while (k < maxK && 100d * (k + 1) * (k + 1) * (k + 1) <= exp) k++;
+        while (k > 0 && 100d * k * k * k > exp) k--;
+        return k + 1;
+    }
 }
 
 /// <summary>功法/神通装配槽位：技能 ID（可空）与参悟等级；自定义触发条件按功法 ID 挂在 AbilityTriggers，不随槽位走。</summary>

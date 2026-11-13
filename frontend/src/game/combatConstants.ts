@@ -262,7 +262,14 @@ export function calculateAbilityLevelAndProgress(totalCumulativeExp: number): {
   levelRequirement: number
 } {
   const exp = Math.max(0.0, totalCumulativeExp)
-  const level = !Number.isFinite(exp) || exp <= 0.0 ? 1 : Math.min(127, Math.floor(Math.cbrt(exp / 100.0)) + 1)
+  let level = 1
+  if (Number.isFinite(exp) && exp > 0.0) {
+    const maxK = 126
+    let k = Math.max(0, Math.min(maxK, Math.floor(Math.cbrt(exp / 100.0))))
+    while (k < maxK && 100.0 * (k + 1) * (k + 1) * (k + 1) <= exp) k += 1
+    while (k > 0 && 100.0 * k * k * k > exp) k -= 1
+    level = k + 1
+  }
 
   const currentLevelBaseExp = getAbilityCumulativeExpForLevel(level)
   const nextLevelBaseExp = getAbilityCumulativeExpForLevel(level + 1)
@@ -441,15 +448,39 @@ export const REALM_LEVEL_EXP_TO_NEXT: readonly number[] = [
   0, // Lv.127 飞升
 ]
 
+/** 升级需求线性削减覆盖的段目标等级数：段 1~30 按线性比例下调，30 级以上不削减（总纲 §3.2.2） */
+export const REALM_EARLY_DISCOUNT_LEVELS = 30
+
 /**
- * 境界等级累计所需修为查表缓存数组（索引即境界等级）
+ * 升入指定段目标等级所需经验的削减比例（与服务端 RealmProgressionCatalog.EarlyUpgradeDiscountRatio 同式）：
+ * 目标等级 1 → 95%，30 → 0%，中间 0.95 × (30 − L) / 29；超出 30 级或非法值返回 0。
+ * 境界/六维/技艺三条升级曲线共用同一削减段表，产出端配表原值不变。
+ */
+export function earlyUpgradeDiscountRatio(targetLevel: number): number {
+  if (!(targetLevel >= 1) || targetLevel > REALM_EARLY_DISCOUNT_LEVELS) return 0
+  return (0.95 * (REALM_EARLY_DISCOUNT_LEVELS - targetLevel)) / (REALM_EARLY_DISCOUNT_LEVELS - 1)
+}
+
+/**
+ * 削减后升级段表（索引 = 段序，与服务端 RealmProgressionCatalog.DiscountedExpToNext 同源）：
+ * d[i] = round(REALM_LEVEL_EXP_TO_NEXT[i] × (1 − r(i+1)))，前 30 段线性削减、30 级以上与配表原值一致。
+ * 仅用于升级需求侧（境界瓶颈/六维点成本/技艺段值）；产出端基准经验仍读 REALM_LEVEL_EXP_TO_NEXT 原表。
+ */
+export const REALM_LEVEL_UPGRADE_EXP_TO_NEXT: readonly number[] = REALM_LEVEL_EXP_TO_NEXT.map((value, index) => {
+  const ratio = earlyUpgradeDiscountRatio(index + 1)
+  if (value <= 0 || ratio <= 0) return value
+  return Math.round(value * (1 - ratio))
+})
+
+/**
+ * 境界等级累计所需修为查表缓存数组（索引即境界等级，按削减后升级需求累计）
  */
 export const REALM_LEVEL_CUMULATIVE_EXP: readonly number[] = (() => {
   const cum = new Array<number>(MAX_REALM_LEVEL + 1)
   cum[0] = 0
   cum[1] = 0
   for (let i = 1; i < MAX_REALM_LEVEL; i++) {
-    cum[i + 1] = cum[i] + REALM_LEVEL_EXP_TO_NEXT[i - 1]
+    cum[i + 1] = cum[i] + REALM_LEVEL_UPGRADE_EXP_TO_NEXT[i - 1]
   }
   return cum
 })()
@@ -458,10 +489,10 @@ export const REALM_LEVEL_CUMULATIVE_EXP: readonly number[] = (() => {
 export const ROOT_LEVEL_CAP = MAX_REALM_LEVEL * 3
 
 /**
- * 六维累计经验查表（索引即六维点数），由境界修为表展开、与服务端
- * RealmProgressionCatalog 派生点成本表同源：记 B[i] = REALM_LEVEL_EXP_TO_NEXT[max(0, i−1)]
- * （跨入第 i+1 级的那格修为条），升至第 p 点成本 = B 在 t=(p−1)/3 处的线性插值；
- * 一级境界摊三点、相邻档间平滑过渡，单维累计至 3Lv 点 ≈ 3× 境界累计修为。
+ * 六维累计经验查表（索引即六维点数），由削减后升级段表展开、与服务端
+ * RealmProgressionCatalog 派生点成本表同源：记 B[i] = REALM_LEVEL_UPGRADE_EXP_TO_NEXT[max(0, i−1)]
+ * （跨入第 i+1 级的那格削减后修为条），升至第 p 点成本 = B 在 t=(p−1)/3 处的线性插值；
+ * 一级境界摊三点、相邻档间平滑过渡，前约 30 段（≈每维前 90 点）显著变便宜。
  */
 export const ROOT_CUMULATIVE_EXP: readonly number[] = (() => {
   const cum = new Array<number>(ROOT_LEVEL_CAP + 1)
@@ -470,9 +501,10 @@ export const ROOT_CUMULATIVE_EXP: readonly number[] = (() => {
     const t = (p - 1) / 3.0
     const i0 = Math.floor(t)
     const i1 = Math.min(i0 + 1, MAX_REALM_LEVEL - 1)
-    const b0 = REALM_LEVEL_EXP_TO_NEXT[Math.max(0, i0 - 1)]
-    const b1 = REALM_LEVEL_EXP_TO_NEXT[i1 - 1]
-    cum[p] = cum[p - 1] + b0 + (b1 - b0) * (t - i0)
+    const b0 = REALM_LEVEL_UPGRADE_EXP_TO_NEXT[Math.max(0, i0 - 1)]
+    const b1 = REALM_LEVEL_UPGRADE_EXP_TO_NEXT[i1 - 1]
+    const stepCost = b0 + (b1 - b0) * (t - i0)
+    cum[p] = cum[p - 1] + stepCost
   }
   return cum
 })()
@@ -483,6 +515,24 @@ export const ROOT_CUMULATIVE_EXP: readonly number[] = (() => {
  */
 export function getRootCumulativeExpForLevel(level: number): number {
   return ROOT_CUMULATIVE_EXP[Math.max(0, Math.min(ROOT_LEVEL_CAP, Math.floor(level)))]
+}
+
+/**
+ * 六维根基：根据累计经验反算当前点数（与引擎 RealmProgressionCatalog.rootLevelFor 同源二分查找）
+ * @param exp 累计经验
+ */
+export function getRootPointsForExp(exp: number): number {
+  if (!Number.isFinite(exp) || exp <= 0) return 0
+  let lo = 0
+  let hi = ROOT_CUMULATIVE_EXP.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1
+    const v = ROOT_CUMULATIVE_EXP[mid]
+    if (v === exp) return Math.min(Math.max(mid, 0), ROOT_LEVEL_CAP)
+    if (v < exp) lo = mid + 1
+    else hi = mid - 1
+  }
+  return Math.min(Math.max(lo - 1, 0), ROOT_LEVEL_CAP)
 }
 
 /**
@@ -524,7 +574,7 @@ export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?:
 
   if (typeof explicitRealmLevel === 'number' && Number.isFinite(explicitRealmLevel) && explicitRealmLevel >= 1) {
     level = Math.min(MAX_REALM_LEVEL, Math.floor(explicitRealmLevel))
-    const expToNext = capOverride > 0 ? capOverride : level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
+    const expToNext = capOverride > 0 ? capOverride : level < MAX_REALM_LEVEL ? REALM_LEVEL_UPGRADE_EXP_TO_NEXT[level - 1] : 0
     const currentLayerExp = expToNext > 0 ? Math.min(expToNext, experience) : 0
 
     if (expToNext <= 0 || level >= MAX_REALM_LEVEL) {
@@ -554,7 +604,7 @@ export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?:
   }
 
   const baseExp = REALM_LEVEL_CUMULATIVE_EXP[level]
-  const expToNext = capOverride > 0 ? capOverride : level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
+  const expToNext = capOverride > 0 ? capOverride : level < MAX_REALM_LEVEL ? REALM_LEVEL_UPGRADE_EXP_TO_NEXT[level - 1] : 0
   const currentLayerExp = expToNext > 0 ? Math.min(expToNext, experience - baseExp) : 0
 
   if (expToNext <= 0 || level >= MAX_REALM_LEVEL) {
@@ -580,9 +630,9 @@ export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?:
 }
 
 /**
- * 生活技艺体系（七技）：技艺前 30 级所需经验在修为曲线基础上线性下调
- * （升入 1 级削减 90% → 升入 30 级削减 0%，30 级以上与 RealmProgressionCatalog.ExpToNext 完全一致），
- * 技艺默认 0 级起步，且削减只作用于技艺，修为曲线本身不变。
+ * 生活技艺体系（七技）：技艺升级消费与境界/六维共享的削减段表
+ * （REALM_LEVEL_UPGRADE_EXP_TO_NEXT，段目标 1 级削减 95% → 段目标 30 级削减 0%，30 级以上与修为曲线完全一致），
+ * 技艺默认 0 级起步；削减只作用于升级需求侧，产出端配表原值不变。
  */
 
 /** 技艺标识固定展示顺序：炼丹、炼器、符箓、强化、阵法、采集、挖掘 */
@@ -591,24 +641,19 @@ export const TECHNIQUE_IDS = ['alchemy', 'forging', 'talisman', 'enhancement', '
 /** 每级技艺提供的行动速度加成比率：actual = base / (1 + 0.05×level) */
 export const TECHNIQUE_SPEED_RATIO_PER_LEVEL = 0.05
 
-/** 技艺前期经验削减覆盖的目标等级数：1~30 级线性下调，30 级以上不削减 */
-export const TECHNIQUE_EARLY_DISCOUNT_LEVELS = 30
+/** 技艺前期经验削减覆盖的目标等级数：1~30 级线性下调，30 级以上不削减（与共享削减段表同值） */
+export const TECHNIQUE_EARLY_DISCOUNT_LEVELS = REALM_EARLY_DISCOUNT_LEVELS
 
 /**
- * 升入指定等级所需经验的削减比例（与服务端 TechniqueCatalog.EarlyDiscountRatio 同式）：
- * 目标等级 1 → 90%，30 → 0%，中间 0.9 × (30 − L) / 29；超出 30 级或非法值返回 0。
+ * 升入指定等级所需经验的削减比例（与服务端 TechniqueCatalog.EarlyDiscountRatio / RealmProgressionCatalog.EarlyUpgradeDiscountRatio 同式）：
+ * 目标等级 1 → 95%，30 → 0%，中间 0.95 × (30 − L) / 29；超出 30 级或非法值返回 0。
  */
 export function techniqueEarlyDiscountRatio(targetLevel: number): number {
-  if (!(targetLevel >= 1) || targetLevel > TECHNIQUE_EARLY_DISCOUNT_LEVELS) return 0
-  return (0.9 * (TECHNIQUE_EARLY_DISCOUNT_LEVELS - targetLevel)) / (TECHNIQUE_EARLY_DISCOUNT_LEVELS - 1)
+  return earlyUpgradeDiscountRatio(targetLevel)
 }
 
-/** 技艺升级所需经验查表（索引 = 当前等级；已按前期削减四舍五入取整，末位 0 表示封顶） */
-export const TECHNIQUE_EXP_TO_NEXT: readonly number[] = REALM_LEVEL_EXP_TO_NEXT.map((value, index) => {
-  const ratio = techniqueEarlyDiscountRatio(index + 1)
-  if (value <= 0 || ratio <= 0) return value
-  return Math.round(value * (1 - ratio))
-})
+/** 技艺升级所需经验查表（索引 = 当前等级；共享削减段表，末位 0 表示封顶） */
+export const TECHNIQUE_EXP_TO_NEXT: readonly number[] = REALM_LEVEL_UPGRADE_EXP_TO_NEXT
 
 /** 技艺等级上限（查表长度，末段为 0 即封顶） */
 export const MAX_TECHNIQUE_LEVEL = TECHNIQUE_EXP_TO_NEXT.length

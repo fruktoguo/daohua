@@ -68,8 +68,8 @@
       "physicalAttack": 0.16
     },
     "flatStats": {
-      "criticalChance": 4,
-      "hitpointRegen": 3
+      "criticalChance": 7,
+      "hitpointRegen": 3.5
     },
     "level": 18
   },
@@ -84,8 +84,8 @@
       "spellAttack": 0.16
     },
     "flatStats": {
-      "criticalChance": 4,
-      "manapointRegen": 3
+      "criticalChance": 7,
+      "manapointRegen": 3.5
     },
     "level": 18
   },
@@ -98,8 +98,8 @@
     "quality": 2,
     "baseStatRatios": {},
     "flatStats": {
-      "maxHitpoints": 15,
-      "hitpointRegen": 2,
+      "maxHitpoints": 17,
+      "hitpointRegen": 2.5,
       "manapointRegen": 1,
       "dropBonusPoints": 5
     },

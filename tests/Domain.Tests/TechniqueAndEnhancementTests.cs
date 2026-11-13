@@ -66,13 +66,13 @@ public sealed class TechniqueAndEnhancementTests
     public void TechniqueLevelAdvancesSegmentBySegment()
     {
         var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
-        // 削减后三段为 10 / 26 / 49：累计 10 升 1 级、36 升 2 级、85 升 3 级（封顶）。
+        // 削减后三段为 5 / 17 / 35：累计 5 升 1 级、22 升 2 级、57 升 3 级（封顶）。
         Assert.Equal(0, TechniqueCatalog.LevelFor(0, curve));
-        Assert.Equal(0, TechniqueCatalog.LevelFor(9.999, curve));
-        Assert.Equal(1, TechniqueCatalog.LevelFor(10, curve));
-        Assert.Equal(1, TechniqueCatalog.LevelFor(35.999, curve));
-        Assert.Equal(2, TechniqueCatalog.LevelFor(36, curve));
-        Assert.Equal(3, TechniqueCatalog.LevelFor(85, curve));
+        Assert.Equal(0, TechniqueCatalog.LevelFor(4.999, curve));
+        Assert.Equal(1, TechniqueCatalog.LevelFor(5, curve));
+        Assert.Equal(1, TechniqueCatalog.LevelFor(21.999, curve));
+        Assert.Equal(2, TechniqueCatalog.LevelFor(22, curve));
+        Assert.Equal(3, TechniqueCatalog.LevelFor(57, curve));
         // 曲线封顶后经验继续累计但等级不再推进；无效输入按 0 级计。
         Assert.Equal(3, TechniqueCatalog.LevelFor(9999, curve));
         Assert.Equal(0, TechniqueCatalog.LevelFor(-5, curve));
@@ -85,23 +85,23 @@ public sealed class TechniqueAndEnhancementTests
     }
 
     /// <summary>
-    /// 技艺前期削减：升入 1 级 -90%，逐级线性收敛至升入 30 级 -0%，
+    /// 技艺前期削减：升入 1 级 -95%，逐级线性收敛至升入 30 级 -0%，
     /// 30 级以后的段值与修为曲线完全一致（修为曲线本身不被削减）。
     /// </summary>
     [Fact]
     public void TechniqueSegmentExpLinearlyDiscountsFirstThirtyLevels()
     {
         var curve = new RealmProgressionCatalog([100, 200, 300], [80]);
-        // 0→1 级 -90%（100→10）、1→2 级 -86.9%（200→26）、2→3 级 -83.8%（300→49）。
-        Assert.Equal(10, TechniqueCatalog.ExpToNextFor(0, curve));
-        Assert.Equal(26, TechniqueCatalog.ExpToNextFor(1, curve));
-        Assert.Equal(49, TechniqueCatalog.ExpToNextFor(2, curve));
+        // 0→1 级 -95%（100→5）、1→2 级 -91.7%（200→17）、2→3 级 -88.4%（300→35）。
+        Assert.Equal(5, TechniqueCatalog.ExpToNextFor(0, curve));
+        Assert.Equal(17, TechniqueCatalog.ExpToNextFor(1, curve));
+        Assert.Equal(35, TechniqueCatalog.ExpToNextFor(2, curve));
         Assert.Equal(0, TechniqueCatalog.ExpToNextFor(3, curve));
         Assert.Equal(0, TechniqueCatalog.ExpToNextFor(-1, curve));
         Assert.Equal(0, TechniqueCatalog.ExpToNextFor(0, null));
 
-        Assert.Equal(0.90, TechniqueCatalog.EarlyDiscountRatio(1), 12);
-        Assert.Equal(0.45, TechniqueCatalog.EarlyDiscountRatio(15.5), 12);
+        Assert.Equal(0.95, TechniqueCatalog.EarlyDiscountRatio(1), 12);
+        Assert.Equal(0.475, TechniqueCatalog.EarlyDiscountRatio(15.5), 12);
         Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(30), 12);
         Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(31), 12);
         Assert.Equal(0, TechniqueCatalog.EarlyDiscountRatio(0), 12);
@@ -110,7 +110,7 @@ public sealed class TechniqueAndEnhancementTests
 
         // 31 段等值曲线：前 29 段被削减、第 30/31 段与修为曲线一致（30 级起削减归零）。
         var longCurve = new RealmProgressionCatalog(Enumerable.Repeat(1000d, 31).ToArray(), [80]);
-        Assert.Equal(100, TechniqueCatalog.ExpToNextFor(0, longCurve));
+        Assert.Equal(50, TechniqueCatalog.ExpToNextFor(0, longCurve));
         Assert.Equal(1000, TechniqueCatalog.ExpToNextFor(29, longCurve));
         Assert.Equal(1000, TechniqueCatalog.ExpToNextFor(30, longCurve));
         Assert.Equal(1000, longCurve.ExpCapFor(31));
@@ -163,8 +163,8 @@ public sealed class TechniqueAndEnhancementTests
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(10, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
-        // 技艺经验累计 10 恰好够 0→1 级（首段削减后 100→10）；不足时停在 0 级。
-        Assert.Equal(0, TechniqueCatalog.LevelFor(9.999, curve));
+        // 技艺经验累计 10：新曲线下 0→1 级仅需 5，10 经验已到 1 级；不足 5 时停在 0 级。
+        Assert.Equal(0, TechniqueCatalog.LevelFor(4.999, curve));
         player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering] = 10;
         Assert.Equal(1, TechniqueCatalog.LevelFor(
             player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering], curve));

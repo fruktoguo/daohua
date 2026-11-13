@@ -20,8 +20,10 @@ namespace Server.Tests;
 public sealed class HeavenGateCommandTests
 {
     private static readonly DateTimeOffset Epoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    /// <summary>测试用境界曲线：Lv18 的本层修为上限 1000，逆天改命默认成本即 250、逆命丹档 50。</summary>
+    /// <summary>测试用境界曲线配表原值：Lv18 的 expToNext 原值 1000；经前 30 级线性削减后实际突破门槛为 EffectiveGateExpCap (607)。</summary>
     private const double GateExpCap = 1000d;
+    private static double EffectiveGateExpCap =>
+        TestCatalog.RealmProgression!.UpgradeExpCapFor(HeavenGateRules.HeavenGateRealmLevel);
 
     /// <summary>叩天门满修开局：开天门抽取成功后抽取值落在配表区间且尚未生效。</summary>
     [Fact]
@@ -70,7 +72,7 @@ public sealed class HeavenGateCommandTests
         await using var partialRuntime = CreateRuntime(partialPlayer, aggregate =>
         {
             aggregate.Progression.RealmLevel = HeavenGateRules.HeavenGateRealmLevel;
-            aggregate.Progression.Experience = GateExpCap - 1;
+            aggregate.Progression.Experience = EffectiveGateExpCap - 1;
         });
         await partialRuntime.LoadAsync(partialPlayer);
         var notFull = await Execute(partialRuntime, partialPlayer, new { action = "roll" });
@@ -172,7 +174,7 @@ public sealed class HeavenGateCommandTests
     public async Task RerollBeforeEnteringIsAllowedAndKeepsNotEntered()
     {
         var playerId = Guid.NewGuid();
-        var cost = HeavenGateRules.ResolveRerollFoundationCost(GateExpCap, useReverseFatePill: false);
+        var cost = HeavenGateRules.ResolveRerollFoundationCost(EffectiveGateExpCap, useReverseFatePill: false);
         await using var runtime = CreateRuntime(playerId, aggregate =>
         {
             GateAtFullExperience(aggregate);
@@ -235,7 +237,7 @@ public sealed class HeavenGateCommandTests
     public async Task RerollDeductsQuarterOfExperienceCapAndAccumulatesCount()
     {
         var playerId = Guid.NewGuid();
-        var expectedCost = HeavenGateRules.ResolveRerollFoundationCost(GateExpCap, useReverseFatePill: false);
+        var expectedCost = HeavenGateRules.ResolveRerollFoundationCost(EffectiveGateExpCap, useReverseFatePill: false);
         await using var runtime = CreateRuntime(playerId, aggregate =>
         {
             GateEnteredAtFullExperience(aggregate);
@@ -247,7 +249,7 @@ public sealed class HeavenGateCommandTests
         var rerolled = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
         Assert.True(rerolled.Success, $"{rerolled.Code}: {rerolled.Message}");
         var gate = rerolled.Snapshot.State.Progression;
-        Assert.Equal(250d, expectedCost);
+        Assert.Equal(Math.Round(EffectiveGateExpCap * 0.25d, MidpointRounding.AwayFromZero), expectedCost);
         Assert.Equal(foundationBefore - expectedCost, gate.Foundation, 6);
         Assert.Equal(1, gate.HeavenGateRerollCount);
         Assert.True(gate.HeavenGateEntered);
@@ -288,8 +290,10 @@ public sealed class HeavenGateCommandTests
         var rerolled = await Execute(runtime, playerId, new { action = "reroll", usePill = true });
         Assert.True(rerolled.Success, $"{rerolled.Code}: {rerolled.Message}");
         var gate = rerolled.Snapshot.State.Progression;
-        // 5% 档：1000 的上限折算即 50 点，与改命默认 25% 档形成 5 倍差。
-        Assert.Equal(1000d - 50d, gate.Foundation, 6);
+        // 5% 档：削减后上限（607）的 5% 折算即 30 点，与改命默认 25% 档形成 5 倍差。
+        var pillCost = HeavenGateRules.ResolveRerollFoundationCost(EffectiveGateExpCap, useReverseFatePill: true);
+        Assert.Equal(Math.Round(EffectiveGateExpCap * 0.05d, MidpointRounding.AwayFromZero), pillCost);
+        Assert.Equal(1000d - pillCost, gate.Foundation, 6);
         Assert.Equal(1, gate.HeavenGateRerollCount);
         var delta = Assert.Single(economy.LastRequest!.Deltas);
         Assert.Equal(HeavenGateRules.ReverseFatePillItemId, delta.AssetId);
@@ -429,7 +433,7 @@ public sealed class HeavenGateCommandTests
     private static void GateAtFullExperience(PlayerAggregate aggregate)
     {
         aggregate.Progression.RealmLevel = HeavenGateRules.HeavenGateRealmLevel;
-        aggregate.Progression.Experience = GateExpCap;
+        aggregate.Progression.Experience = EffectiveGateExpCap;
     }
 
     /// <summary>已入天门并持有等量抽取/确认灵根的开局配置（为改命用例准备生效状态）。

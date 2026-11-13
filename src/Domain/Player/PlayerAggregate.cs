@@ -1177,10 +1177,11 @@ public sealed partial class PlayerAggregate
         if (realm is not null)
         {
             // 灵根破镜乘区（总纲 §7.7.5.1）：入天门后每多一条有效灵根，本层修为瓶颈 +50%，
-            // 未入天门恒 1.0——突破前置本来就要求先开天门，此处对叩天门层与后续层统一按同一口径放大。
+            // 未入天门恒 1.0——突破前置本来就要求先开天门，此处对叩天门层与后续层统一按同一口径放大；
+            // 瓶颈取削减后升级需求（前 30 段线性削减，总纲 §3.2.2）。
             var linggenMultiplier = HeavenGateRules.ResolveCultivationMultiplier(
                 Progression.HeavenGate.EffectiveValues, Progression.HeavenGate.Entered);
-            var cap = realm.ExpCapFor(Progression.RealmLevel) * linggenMultiplier;
+            var cap = realm.UpgradeExpCapFor(Progression.RealmLevel) * linggenMultiplier;
             if (cap <= 0)
                 throw new DomainException(DomainErrorCode.Conflict, "已至最高境界，无可突破。");
             if (Progression.Experience < cap - 1e-9)
