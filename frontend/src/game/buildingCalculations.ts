@@ -469,7 +469,9 @@ const EQUIP_RATIO_KEY_MAP: Readonly<Record<string, keyof import('./types').Comba
   criticalChance: 'critical',
   criticalAvoidance: 'criticalResistance',
   break: 'breakPower',
+  breakPower: 'breakPower',
   parry: 'parryResolve',
+  parryResolve: 'parryResolve',
   hitpointRegen: 'hpRegenPerFiveSeconds',
   manapointRegen: 'mpRegenPerFiveSeconds',
 }

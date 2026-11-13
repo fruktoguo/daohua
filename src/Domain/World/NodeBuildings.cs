@@ -160,14 +160,28 @@ public static class NodeBuildingRules
     /// <summary>拥挤衰减幅度封顶 50%（超载 +500 人后效果恒为 50%，永不归零）。</summary>
     public const double CrowdMaxReduction = 0.5;
 
-    /// <summary>建筑有效等级的拥挤承载上限（人）；未建成（L≤0）按一级口径给出展示基数。</summary>
-    public static int CrowdCapacity(int level)
-        => CrowdBaseCapacity + (int)Math.Round(CrowdBaseCapacity * CrowdCapacityGrowthPerLevel * Math.Max(0, level - 1));
+    /// <summary>宗门驻地节点（node.zongmen.*）建筑的材料需求倍率：首建与升级统一半价。</summary>
+    public const double ResidenceMaterialRatio = 0.5;
+    /// <summary>宗门驻地节点建筑的拥挤承载除数：无损使用人数为公共节点公式的 1/20。</summary>
+    public const double ResidenceCapacityDivisor = 20.0;
+
+    /// <summary>节点是否享受驻地材料半价：宗门驻地节点且非宗门大殿（大殿扩容节奏不提速）。</summary>
+    private static bool IsResidenceMaterialDiscounted(string? nodeId, string buildingId)
+        => ZongmenRules.TryResidenceId(nodeId, out _) && buildingId != ZongmenRules.HallBuildingId;
+
+    /// <summary>建筑有效等级的拥挤承载上限（人）；未建成（L≤0）按一级口径给出展示基数。宗门驻地节点整体 ÷20（保底 1）。</summary>
+    public static int CrowdCapacity(int level, string? nodeId = null)
+    {
+        var capacity = CrowdBaseCapacity + (int)Math.Round(CrowdBaseCapacity * CrowdCapacityGrowthPerLevel * Math.Max(0, level - 1));
+        return ZongmenRules.TryResidenceId(nodeId, out _)
+            ? Math.Max(1, (int)Math.Round(capacity / ResidenceCapacityDivisor))
+            : capacity;
+    }
 
     /// <summary>拥挤效率系数：人数不超承载为 1；超载线性衰减（每超 1 人 -0.1%），减幅封顶 50%。</summary>
-    public static double CrowdEfficiency(int level, double activeUsers)
+    public static double CrowdEfficiency(int level, double activeUsers, string? nodeId = null)
     {
-        var capacity = CrowdCapacity(level);
+        var capacity = CrowdCapacity(level, nodeId);
         if (activeUsers <= capacity) return 1;
         return 1 - Math.Min(CrowdMaxReduction, (activeUsers - capacity) * CrowdReductionPerExtraUser);
     }
@@ -227,10 +241,11 @@ public static class NodeBuildingRules
     public static double RequiredBuildSeconds(int targetLevel)
         => BaseBuildSeconds * (1 + TimeGrowthPerLevel * Math.Max(0, targetLevel - 1));
 
-    /// <summary>目标等级所需材料清单：基础数量 × 1.1^(N-1)，向下取整且保底为 1。</summary>
-    public static IReadOnlyDictionary<string, double> RequiredMaterials(BuildingDefinition definition, int targetLevel)
+    /// <summary>目标等级所需材料清单：基础数量 × 1.1^(N-1)，向下取整且保底为 1；宗门驻地节点建筑（大殿除外）在此基础上减半。</summary>
+    public static IReadOnlyDictionary<string, double> RequiredMaterials(BuildingDefinition definition, int targetLevel, string? nodeId = null)
     {
-        var scale = Math.Pow(1 + MaterialGrowthPerLevel, Math.Max(0, targetLevel - definition.MaterialGrowthStartLevel));
+        var scale = Math.Pow(1 + MaterialGrowthPerLevel, Math.Max(0, targetLevel - definition.MaterialGrowthStartLevel))
+            * (IsResidenceMaterialDiscounted(nodeId, definition.Id) ? ResidenceMaterialRatio : 1.0);
         var result = new Dictionary<string, double>(StringComparer.Ordinal);
         if (definition.Materials is null) return result;
         foreach (var material in definition.Materials)
@@ -239,10 +254,10 @@ public static class NodeBuildingRules
     }
 
     /// <summary>材料填充比例：逐项按需求封顶后求和 / 需求总量；无材料需求视为已满。</summary>
-    public static double MaterialFraction(NodeBuildingState state, BuildingDefinition definition)
+    public static double MaterialFraction(NodeBuildingState state, BuildingDefinition definition, string? nodeId = null)
     {
         if (state.TargetLevel <= 0) return 1;
-        var required = RequiredMaterials(definition, state.TargetLevel);
+        var required = RequiredMaterials(definition, state.TargetLevel, nodeId);
         if (required.Count == 0) return 1;
         double got = 0, need = 0;
         foreach (var (itemId, quantity) in required)
@@ -257,11 +272,11 @@ public static class NodeBuildingRules
     /// 当前工程在材料封顶约束下的有效已耗工时（秒）。
     /// 材料不足时工期不积蓄，已流逝时间封顶于当前材料比例对应的总秒数。
     /// </summary>
-    public static double EffectiveElapsedSeconds(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds)
+    public static double EffectiveElapsedSeconds(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds, string? nodeId = null)
     {
         if (state.TargetLevel <= 0) return 0;
         var requiredSeconds = RequiredBuildSeconds(state.TargetLevel);
-        var materialFraction = MaterialFraction(state, definition);
+        var materialFraction = MaterialFraction(state, definition, nodeId);
         var rawElapsed = Math.Max(0.0, nowUnixSeconds - state.StartedAtUnixSeconds);
         return Math.Min(rawElapsed, materialFraction * requiredSeconds);
     }
@@ -274,25 +289,25 @@ public static class NodeBuildingRules
     }
 
     /// <summary>建造总进度 = min(材料%, 时间%)；材料不足时进度停滞，补足后继续。</summary>
-    public static double BuildProgress(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds)
+    public static double BuildProgress(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds, string? nodeId = null)
     {
         if (state.TargetLevel <= 0) return 1;
-        return Math.Min(MaterialFraction(state, definition), TimeFraction(state, nowUnixSeconds));
+        return Math.Min(MaterialFraction(state, definition, nodeId), TimeFraction(state, nowUnixSeconds));
     }
 
     /// <summary>当前工程是否达到完工条件（材料与时间双进度均满）。</summary>
-    public static bool IsComplete(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds)
-        => state.TargetLevel > 0 && BuildProgress(state, definition, nowUnixSeconds) >= 1;
+    public static bool IsComplete(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds, string? nodeId = null)
+        => state.TargetLevel > 0 && BuildProgress(state, definition, nowUnixSeconds, nodeId) >= 1;
 
     /// <summary>惰性完工结算：满足完成条件则落成目标等级并清空材料投入，否则原样返回。</summary>
-    public static NodeBuildingState FinalizeIfComplete(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds)
-        => IsComplete(state, definition, nowUnixSeconds)
+    public static NodeBuildingState FinalizeIfComplete(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds, string? nodeId = null)
+        => IsComplete(state, definition, nowUnixSeconds, nodeId)
             ? state with { Level = state.TargetLevel, TargetLevel = 0, ContributedMaterials = new Dictionary<string, double>(StringComparer.Ordinal) }
             : state;
 
     /// <summary>完工判定后的有效等级（未完工维持旧等级）。</summary>
-    public static int EffectiveLevel(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds)
-        => FinalizeIfComplete(state, definition, nowUnixSeconds).Level;
+    public static int EffectiveLevel(NodeBuildingState state, BuildingDefinition definition, double nowUnixSeconds, string? nodeId = null)
+        => FinalizeIfComplete(state, definition, nowUnixSeconds, nodeId).Level;
 
     /// <summary>汇总一组节点建筑的当前效果：只计入已建成等级，效果 = 每级基准 × 等级。</summary>
     public static BuildingEffectSet AggregateEffects(
@@ -305,21 +320,23 @@ public static class NodeBuildingRules
     /// 汇总一组节点建筑的当前效果：只计入已建成等级，效果 = 每级基准 × 等级 × 拥挤效率。
     /// <paramref name="countsByKind"/> 为该节点各行动类别的正在使用人数（null 视为零拥挤，
     /// 等价旧口径）；单座建筑使用人数按其服务类别计数求和后统一缩放全部修饰项。
+    /// <paramref name="nodeId"/> 为建筑所在节点标识，宗门驻地节点按差异化口径结算。
     /// </summary>
     public static BuildingEffectSet AggregateEffects(
         IEnumerable<NodeBuildingState> buildings,
         IReadOnlyDictionary<string, BuildingDefinition> definitions,
         double nowUnixSeconds,
-        IReadOnlyDictionary<ActionKind, double>? countsByKind)
+        IReadOnlyDictionary<ActionKind, double>? countsByKind,
+        string? nodeId = null)
     {
         var total = BuildingEffectSet.Empty;
         foreach (var state in buildings)
         {
             if (!definitions.TryGetValue(state.BuildingId, out var definition)) continue;
-            var level = EffectiveLevel(state, definition, nowUnixSeconds);
+            var level = EffectiveLevel(state, definition, nowUnixSeconds, nodeId);
             if (level <= 0) continue;
             var efficiency = countsByKind is null ? 1
-                : CrowdEfficiency(level, ActiveUsers(definition.BaseModifiers, countsByKind));
+                : CrowdEfficiency(level, ActiveUsers(definition.BaseModifiers, countsByKind), nodeId);
             var levelEffect = definition.EffectAtLevel(level);
             total = total.Add(levelEffect.Scale(efficiency));
         }

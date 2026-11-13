@@ -177,7 +177,7 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
         var row = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
         if (row is null) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NotFound);
         if (row.TargetLevel <= 0) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Idle, row);
-        var required = NodeBuildingRules.RequiredMaterials(definition, row.TargetLevel);
+        var required = NodeBuildingRules.RequiredMaterials(definition, row.TargetLevel, nodeId);
         var appliedMaterials = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var (itemId, rawQuantity) in requested.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
@@ -197,7 +197,7 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
 
         var nowUnixSeconds = context.OccurredAt.ToUnixTimeMilliseconds() / 1000.0;
         // 提交新材料前按旧材料封顶结算有效已耗工时；材料停滞等待期间的无效墙钟时间不积蓄，重锚定基准起始时刻。
-        var effectiveElapsed = NodeBuildingRules.EffectiveElapsedSeconds(row, definition, nowUnixSeconds);
+        var effectiveElapsed = NodeBuildingRules.EffectiveElapsedSeconds(row, definition, nowUnixSeconds, nodeId);
         var merged = new Dictionary<string, double>(row.ContributedMaterials, StringComparer.Ordinal);
         foreach (var (itemId, quantity) in appliedMaterials)
             merged[itemId] = merged.GetValueOrDefault(itemId) + quantity;
@@ -253,7 +253,7 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
         if (row is null)
             return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NotFound);
         // 退化行（Level == TargetLevel）完工不改写等级，按原行继续评估（与 FinalizeCompletionsAsync 跳过口径一致）。
-        var finalized = NodeBuildingRules.FinalizeIfComplete(row, definition, nowUnixSeconds);
+        var finalized = NodeBuildingRules.FinalizeIfComplete(row, definition, nowUnixSeconds, nodeId);
         var live = finalized.Level == row.Level ? row : finalized;
         if (live.Level <= 0)
             return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Incomplete, row);
@@ -285,7 +285,7 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var row = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
         if (row is null) return null;
-        var finalized = NodeBuildingRules.FinalizeIfComplete(row, definition, nowUnixSeconds);
+        var finalized = NodeBuildingRules.FinalizeIfComplete(row, definition, nowUnixSeconds, nodeId);
         if (finalized.Level == row.Level) return row;
         await UpdateLockedRowAsync(connection, transaction, nodeId, finalized, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -524,7 +524,7 @@ public sealed class NodeBuildingRegistry(
     {
         await EnsureLoadedAsync(cancellationToken);
         var published = Volatile.Read(ref _snapshot);
-        if (!published.TryGetValue(nodeId, out var entry) || !HasDueCompletion(entry.Buildings, now))
+        if (!published.TryGetValue(nodeId, out var entry) || !HasDueCompletion(nodeId, entry.Buildings, now))
             return entry ?? EmptySnapshot;
         // 读路径快进快出：只有快照内确有到期完工工程时才进写锁做惰性结算并重发。
         await _gate.WaitAsync(cancellationToken);
@@ -562,7 +562,7 @@ public sealed class NodeBuildingRegistry(
         if (snapshot.Buildings.Count == 0) return BuildingEffectSet.Empty;
         var counts = await UsageForAsync(nodeId, now, cancellationToken);
         return NodeBuildingRules.AggregateEffects(snapshot.Buildings, gameData.Buildings,
-            now.ToUnixTimeMilliseconds() / 1000d, counts);
+            now.ToUnixTimeMilliseconds() / 1000d, counts, nodeId);
     }
 
     /// <summary>
@@ -583,6 +583,7 @@ public sealed class NodeBuildingRegistry(
     /// 与效果投影同一口径——同一份计数既驱动衰减也驱动展示。
     /// </summary>
     public IReadOnlyList<NodeBuildingUsage> UsagesFor(
+        string nodeId,
         IReadOnlyList<NodeBuildingState> buildings,
         IReadOnlyDictionary<ActionKind, double> countsByKind,
         double nowUnixSeconds)
@@ -591,10 +592,10 @@ public sealed class NodeBuildingRegistry(
         foreach (var state in buildings)
         {
             if (!gameData.Buildings.TryGetValue(state.BuildingId, out var definition)) continue;
-            var level = NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds);
+            var level = NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds, nodeId);
             var users = NodeBuildingRules.ActiveUsers(definition.Modifiers, countsByKind);
             usages.Add(new(state.BuildingId, users,
-                NodeBuildingRules.CrowdCapacity(level), NodeBuildingRules.CrowdEfficiency(level, users)));
+                NodeBuildingRules.CrowdCapacity(level, nodeId), NodeBuildingRules.CrowdEfficiency(level, users, nodeId)));
         }
         return usages;
     }
@@ -712,7 +713,7 @@ public sealed class NodeBuildingRegistry(
     }
 
     /// <summary>快照内是否存在已到期完工的工程（材料与时间双进度满格）；纯只读推算，不进锁。</summary>
-    private bool HasDueCompletion(IReadOnlyList<NodeBuildingState> buildings, DateTimeOffset now)
+    private bool HasDueCompletion(string nodeId, IReadOnlyList<NodeBuildingState> buildings, DateTimeOffset now)
     {
         var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
         foreach (var state in buildings)
@@ -720,7 +721,7 @@ public sealed class NodeBuildingRegistry(
             // TargetLevel == Level 的退化行永远不会改写等级，不算到期（与 FinalizeCompletionsAsync 跳过条件对齐）。
             if (state.TargetLevel <= 0 || state.TargetLevel == state.Level) continue;
             if (gameData.Buildings.TryGetValue(state.BuildingId, out var definition)
-                && NodeBuildingRules.IsComplete(state, definition, nowUnixSeconds))
+                && NodeBuildingRules.IsComplete(state, definition, nowUnixSeconds, nodeId))
                 return true;
         }
         return false;
@@ -801,7 +802,7 @@ public sealed class NodeBuildingRegistry(
         {
             var state = list[index];
             if (state.TargetLevel <= 0 || !gameData.Buildings.TryGetValue(state.BuildingId, out var definition)) continue;
-            if (!NodeBuildingRules.IsComplete(state, definition, nowUnixSeconds)) continue;
+            if (!NodeBuildingRules.IsComplete(state, definition, nowUnixSeconds, nodeId)) continue;
             var live = await repository.FinalizeIfDueAsync(nodeId, state.BuildingId, definition, nowUnixSeconds, cancellationToken);
             if (live is null || StatesEqual(live, state)) continue;
             if (live.Level != state.Level)

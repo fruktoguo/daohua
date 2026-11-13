@@ -23,6 +23,30 @@ public sealed class ZongmenRulesTests
             JsonSerializer.SerializeToElement(new { buildableTemplate = "all" }), catalog.Buildings)!);
     }
 
+    /// <summary>驻地差异化：普通建筑在宗门驻地节点材料减半、承载 ÷20；大殿不享受半价。</summary>
+    [Fact]
+    public void ResidenceBuildingsDiscountMaterialsAndCrowdCapacity()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var residenceNodeId = ZongmenRules.ResidenceNodeId(Guid.NewGuid());
+        var meditation = catalog.Buildings["building.meditation-circle"];
+
+        // 材料：驻地 ×0.5（15→7、10→5），公共节点保持原价，大殿豁免半价。
+        Assert.Equal(7, NodeBuildingRules.RequiredMaterials(meditation, 1, residenceNodeId)["item.ningxue-grass"]);
+        Assert.Equal(5, NodeBuildingRules.RequiredMaterials(meditation, 1, residenceNodeId)["item.morning-dew"]);
+        Assert.Equal(15, NodeBuildingRules.RequiredMaterials(meditation, 1)["item.ningxue-grass"]);
+        Assert.Equal(15, NodeBuildingRules.RequiredMaterials(meditation, 1, "node.yunxi-village")["item.ningxue-grass"]);
+        var hall = catalog.Buildings[ZongmenRules.HallBuildingId];
+        Assert.Equal(10000, NodeBuildingRules.RequiredMaterials(hall, 2, residenceNodeId)["item.refined-iron"]);
+
+        // 承载：驻地整体 ÷20 取整（L1: 100→5、L11: 200→10），超载衰减公式不变。
+        Assert.Equal(5, NodeBuildingRules.CrowdCapacity(1, residenceNodeId));
+        Assert.Equal(10, NodeBuildingRules.CrowdCapacity(11, residenceNodeId));
+        Assert.Equal(100, NodeBuildingRules.CrowdCapacity(1));
+        Assert.Equal(0.9, NodeBuildingRules.CrowdEfficiency(1, 105, residenceNodeId), 6);
+        Assert.Equal(1, NodeBuildingRules.CrowdEfficiency(1, 5, residenceNodeId));
+    }
+
     /// <summary>唯一性规范化与前缀输入必须同时覆盖宽窄字符及非法长度。</summary>
     [Theory]
     [InlineData(" 青云宗 ", "青云宗")]

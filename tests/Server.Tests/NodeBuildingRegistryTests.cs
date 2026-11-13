@@ -513,7 +513,7 @@ public sealed class NodeBuildingRegistryTests
 
         // 展示与衰减共用同一份计数：建筑服务修炼类别 → 使用中 2/100，满效。
         var view = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
-        var usages = registry.UsagesFor(view.Buildings, counts, now.ToUnixTimeMilliseconds() / 1000d);
+        var usages = registry.UsagesFor(nodeId, view.Buildings, counts, now.ToUnixTimeMilliseconds() / 1000d);
         var usage = Assert.Single(usages);
         Assert.Equal("building.test-hut", usage.BuildingId);
         Assert.Equal(2, usage.ActiveUsers);

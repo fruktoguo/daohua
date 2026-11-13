@@ -130,6 +130,74 @@ public sealed class ZongmenIntegrationTests
         Assert.Null(await chat.LoadHistoryAsync(member, new("id", "sect")));
     }
 
+    /// <summary>
+    /// 回归：LoadOwnedAsync 离线补算期间必须沿用持久化快照中已冻结的 World.NodeBuildings 投影
+    /// （不得把离线尾段刚建成的节点建筑倒灌回整段离线区间，否则会与冷挂机补算口径分叉）；
+    /// 补算结束后再按当前节点刷新 target 时刻最新建筑投影，供后续在线阶段立即生效。
+    /// </summary>
+    [Fact]
+    public async Task OfflineLoadKeepsFrozenBuildingProjectionDuringCatchUpAndRefreshesAtTarget()
+    {
+        await using var fixture = await Fixture.CreateAsync(2);
+        var withNewBuildingLeader = fixture.Players[0];
+        var baselineLeader = fixture.Players[1];
+        await fixture.Apply(withNewBuildingLeader, "create",
+            new { name = "新建" + Guid.NewGuid().ToString("N")[..10], prefix = "甲", anchorNodeId = "node.yunxi-village" });
+        await fixture.Apply(baselineLeader, "create",
+            new { name = "对照" + Guid.NewGuid().ToString("N")[..10], prefix = "乙", anchorNodeId = "node.yunxi-village" });
+        var builtSect = (await fixture.Repository.FindForPlayerAsync(withNewBuildingLeader))!;
+        var baseSect = (await fixture.Repository.FindForPlayerAsync(baselineLeader))!;
+
+        var t0 = DateTimeOffset.UtcNow.AddMinutes(-60);
+        var anchorPos = ZongmenRules.ResidenceCoordinates(20, 65);
+        var sections = new PostgresSectionRepository(fixture.Source, NullLogger<PostgresSectionRepository>.Instance);
+        foreach (var (playerId, sectNodeId) in new[] { (withNewBuildingLeader, builtSect.NodeId), (baselineLeader, baseSect.NodeId) })
+        {
+            var aggregate = PlayerAggregate.Create(new(playerId), new(playerId), playerId.ToString("N"), t0, fixture.Catalog.Fingerprint);
+            aggregate.SkipTutorial();
+            aggregate.TravelTo(sectNodeId, anchorPos.X, anchorPos.Y);
+            aggregate.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), t0, fixture.Catalog.Actions);
+            aggregate.SetPresence(PresenceState.Offline, t0);
+            await sections.EnqueueSectionsAsync(SectionCodec.EncodeAggregateFull(aggregate.ExportState(), t0));
+        }
+
+        // 甲宗门驻地在 target = t0 + 60m 前建成「蒲团」（cultivationOutputRatio +12%），而两名玩家离线前快照均无此建筑。
+        await fixture.Sql("""
+            INSERT INTO game.node_buildings(node_id, building_id, level, target_level, started_at_unix_seconds, contributed_materials, updated_at)
+            VALUES ($1, 'building.meditation-circle', 1, 0, $2, '{}'::jsonb, now())
+            """, builtSect.NodeId, t0.ToUnixTimeSeconds());
+
+        var target = t0.AddMinutes(60);
+        var clock = new Clock(target);
+        using var ecs = new EcsGameRuntime(fixture.Catalog, target);
+        var buildings = new NodeBuildingRegistry(new PostgresNodeBuildingRepository(fixture.Source), fixture.Catalog,
+            NullLogger<NodeBuildingRegistry>.Instance);
+        await using var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, new PostgresAssetRepository(fixture.Source),
+            new PostgresEconomyRepository(fixture.Source, NullLogger<PostgresEconomyRepository>.Instance), fixture.Catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, nodeBuildings: buildings, zongmen: fixture.Repository);
+
+        var loadedBuilt = await adapter.LoadAsync(withNewBuildingLeader);
+        var loadedBase = await adapter.LoadAsync(baselineLeader);
+
+        // 离线补算沿用冻结投影：两者 60 分钟离线修为完全相等，不得被新建建筑倒灌。
+        Assert.Equal(loadedBase.State.Progression.Experience, loadedBuilt.State.Progression.Experience);
+        // 装载完成后已刷新 target 时刻最新建筑投影：甲宗门玩家快照包含蒲团，乙宗门不含。
+        Assert.Contains(loadedBuilt.State.World.NodeBuildings!, b => b.BuildingId == "building.meditation-circle" && b.Level >= 1);
+        Assert.DoesNotContain(loadedBase.State.World.NodeBuildings!, b => b.BuildingId == "building.meditation-circle");
+
+        // 重连上线后再推进 5 分钟：已刷新的蒲团立即对甲玩家产生 +12% 修炼增量。
+        await adapter.AttachConnectionAsync(withNewBuildingLeader);
+        await adapter.AttachConnectionAsync(baselineLeader);
+        var expBeforeOnlineBuilt = loadedBuilt.State.Progression.Experience;
+        var expBeforeOnlineBase = loadedBase.State.Progression.Experience;
+        clock.UtcNow = target.AddMinutes(5);
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        var deltaBuilt = adapter.TryGetLoaded(withNewBuildingLeader)!.State.Progression.Experience - expBeforeOnlineBuilt;
+        var deltaBase = adapter.TryGetLoaded(baselineLeader)!.State.Progression.Experience - expBeforeOnlineBase;
+        Assert.True(deltaBuilt > deltaBase,
+            $"上线后已刷新建筑应当立即生效：deltaBuilt={deltaBuilt}, deltaBase={deltaBase}");
+    }
+
     private sealed class Clock(DateTimeOffset at) : IPlayerSimulationClock { public DateTimeOffset UtcNow { get; set; } = at; public bool IsDeterministic => true; public void AdvanceTo(DateTimeOffset target) => UtcNow = target; }
 
     private sealed class Fixture(NpgsqlDataSource source) : IAsyncDisposable

@@ -65,12 +65,14 @@ test('weakenMonsterAttributes：比率 ≤ 0 时原样透传', () => {
 test('resolveEquipmentAttributeDelta：强化按 1.05^等级 缩放，比率键映射到面板字段', () => {
   const delta = resolveEquipmentAttributeDelta(
     [{ itemId: 'eq.sword', enhancementLevel: 20 }],
-    [{ equipmentId: 'eq.sword', flatStats: { physicalAttack: 100, physicalDamageReductionPoints: 10 }, baseStatRatios: { physicalArmor: 0.1 } }]
+    [{ equipmentId: 'eq.sword', flatStats: { physicalAttack: 100, breakPower: 14, parryResolve: 8, physicalDamageReductionPoints: 10 }, baseStatRatios: { physicalArmor: 0.1 } }]
   )
 
   // 1.05^20 ≈ 2.6533
   const scale = Math.pow(1.05, 20)
   assert.ok(Math.abs((delta.physicalAttack ?? 0) - 100 * scale) < 1e-6)
+  assert.ok(Math.abs((delta.breakPower ?? 0) - 14 * scale) < 1e-6)
+  assert.ok(Math.abs((delta.parryResolve ?? 0) - 8 * scale) < 1e-6)
   assert.ok(Math.abs((delta.physicalDamageReductionPoints ?? 0) - 10 * scale) < 1e-6)
   // baseStatRatios 的 physicalArmor 映射到面板 armor 字段（旧实现在此处静默丢弃）
   assert.ok(Math.abs((delta.armor ?? 0) - 0.1 * scale) < 1e-6)

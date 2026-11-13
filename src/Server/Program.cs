@@ -440,7 +440,7 @@ if (processRole == ServerProcessRole.Api)
                     ? new
                     {
                         buildingId = state.BuildingId,
-                        level = Domain.World.NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds),
+                        level = Domain.World.NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds, nodeId),
                         targetLevel = state.TargetLevel
                     }
                     : null)

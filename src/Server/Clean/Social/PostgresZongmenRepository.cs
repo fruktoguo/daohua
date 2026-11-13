@@ -96,7 +96,8 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
             {
                 var building = new NodeBuildingState(ZongmenRules.HallBuildingId, reader.GetInt32(4), reader.GetInt32(5), reader.GetDouble(6),
                     JsonSerializer.Deserialize<Dictionary<string, double>>(reader.GetString(7))!);
-                var level = NodeBuildingRules.EffectiveLevel(building, catalog.Buildings[ZongmenRules.HallBuildingId], DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d);
+                var level = NodeBuildingRules.EffectiveLevel(building, catalog.Buildings[ZongmenRules.HallBuildingId],
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d, ZongmenRules.ResidenceNodeId(reader.GetGuid(0)));
                 directory.Add(new(reader.GetGuid(0).ToString("D"), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), ZongmenRules.MemberCapacity(level), reader.GetString(8)));
             }
         var invitations = await RequestsAsync(connection, "r.player_id=$1 AND r.kind='invitation'", playerId, ct);
@@ -356,7 +357,8 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
             {
                 var materials = JsonSerializer.Deserialize<Dictionary<string, double>>(reader.GetString(3))!;
                 var state = new NodeBuildingState(ZongmenRules.HallBuildingId, reader.GetInt32(0), reader.GetInt32(1), reader.GetDouble(2), materials);
-                level = NodeBuildingRules.EffectiveLevel(state, catalog.Buildings[ZongmenRules.HallBuildingId], DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d);
+                level = NodeBuildingRules.EffectiveLevel(state, catalog.Buildings[ZongmenRules.HallBuildingId],
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d, result.NodeId);
             }
         var count = await ScalarAsync(connection, transaction, "SELECT count(*) FROM social.zongmen_members WHERE zongmen_id=$1", ct, id);
         return result with { HallLevel = level, MemberCount = Convert.ToDouble(count) };
