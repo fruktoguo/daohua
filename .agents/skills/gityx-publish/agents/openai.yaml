@@ -1,0 +1,6 @@
+interface:
+  display_name: "Git游戏发帖"
+  short_description: "基于 Cookie 鉴权向 gityx.com 发布文章、更新日志与攻略，支持图片上传与 Markdown 转换"
+  default_prompt: "使用 $gityx-publish 检查登录态、按预设准备内容并先执行 --dry-run 预览，经确认后发布到 gityx.com。"
+policy:
+  allow_implicit_invocation: true

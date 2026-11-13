@@ -150,14 +150,14 @@
 
 - **适用场景**：
   - **通用待选列表**（贴靠目标槽位的浮层候选网格，取代全屏模态挑选：入参 = 设置目标锚点 `anchor` + 所有列表 `options`，`auto-fill` 自动判列，首格可带「空选/移除」，候选数超 `searchThreshold`（默认 12）才出现搜索框，选中/点外/ESC 即关闭，正在设置的槽位以 `is-picking` 高亮描边） -> `CandidatePicker`
-  - **物品待选列表**（`ItemPickerEntry[]` 适配为候选：品质光晕瓦片 + 悬浮详情 + 持存 0 禁用 + 名称/品类/描述搜索文本） -> `ItemGridPicker`
+  - **物品待选列表**（`ItemPickerEntry[]` 适配为候选：品质光晕瓦片 + 悬浮详情 + 持存 0 禁用 + 名称/品类/描述搜索文本；传入 `ignoreQuantity` 时进入无限沙盒模式，隐藏库存数字与不足置灰） -> `ItemGridPicker`
   - **资产变体复合键纪律**：`ItemPickerEntry` 携带 `variant`（形如 `"+3"`）与 `enhancementLevel`；同 itemId 的多个强化等级资产行必须经 `itemPickerEntryKey(itemId, variant)` 复合键区分（与钱包 AssetKey 合入键同构），禁止仅以 itemId 去重或作选中态判定。`onSelect(itemId, entry)` 第二参回传完整条目，装备槽穿戴等需要保留强化等级的场景一律读取 `entry.enhancementLevel`，不得默认归 0。
   - **秘法即时转化收拢**：化灵、分解、转化三个工作台全面淘汰整屏平铺背包可用物品的旧网格，与装备强化同构收拢为目标槽位 `ItemUseSlot` + 点击浮动唤起 `ItemGridPicker`，配合 `QuantitySelector` 进行批量次数选择与多变体精准匹配。
   - **功法/战技待选列表**（功法装配槽位选择；按 `slotIndex` 过滤功法 `discipline`——0 号内功位只列内功心法，术法位只列术法；`levelFor` 提供参悟等级供瓦片角标与悬浮详情） -> `AbilityGridPicker`
   - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板，仍为全屏 Modal；附带子导出 `PickerTrigger` 选择器触发按钮与 `ChoiceMenu` 下拉选项菜单，供触发条件编辑器等内嵌场景复用） -> `CatalogPicker`
 - **组件源码**：
   - [`frontend/src/components/CandidatePicker.tsx`](../../frontend/src/components/CandidatePicker.tsx)（经 `FloatingPopover` manual 受控 + `anchorEl` 外部锚点贴槽定位，顶部方向优先、自动翻转）
-  - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx) (含 `ItemUseSlot` 消耗品槽位组件，支持与技能/物品冷却完全一致的持续消耗品旋转填充倒计时遮罩 `item-slot-duration-overlay`；`onClick` 回传事件供调用方取锚点)
+  - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx) (含 `ItemUseSlot` 消耗品槽位组件，支持持续消耗品旋转填充倒计时遮罩 `item-slot-duration-overlay`、`ignoreQuantity` 无数量/缺货限制沙盒模式；`onClick` 回传事件供调用方取锚点)
   - [`frontend/src/components/AbilityGridPicker.tsx`](../../frontend/src/components/AbilityGridPicker.tsx)
   - [`frontend/src/components/CatalogPicker.tsx`](../../frontend/src/components/CatalogPicker.tsx) (导出 `CatalogPicker` 主组件 + `PickerTrigger` / `ChoiceMenu` 子组件)
 - **样式文件**：[`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)（`.candidate-picker-*` 面板与网格、`.is-picking` 目标槽位高亮；单元格复用 `.item-grid-picker-card*` 视觉体系）
@@ -530,20 +530,23 @@
 ## 34. 本地离线确定性战斗模拟器 (Combat Simulator Modal)
 
 - **适用场景**：
-  - **战斗推演与数值验证**：在战场顶部操作区（「战斗统计」按钮旁）提供「模拟器」常驻入口，唤起战斗预演模态（`Modal` large，成员与目标双列、≤640px 单列自适应）；
-  - **参战阵容装配**：支持 1~5 人阵容，支持一键导入本人或同队队友的战斗预演档案（境界/特质等级/装备强化/技能与触发条件三态/消耗品槽与共享库存/Buff 与冷却时钟，全部 double 原精度，仅展示层格式化）；
-  - **装备部位与格子规范**：严格对齐游戏内 6 大部位（武器/副手/头部/衣服/下装/饰品），复用 `ItemTile` + `ItemTooltipTarget`（显式 `itemId` 与强化角标），点击空格呼出 `ItemGridPicker` 按槽位过滤待选装备，支持强化等级（+0~+20）与快捷卸下；
-  - **环境与时长设置**：目标节点仅列可讨伐且环境快照可达节点，支持多节点×难度 0~5 组合、时长预设/自定秒、字符串种子（crypto 随机 + 可复制）；节点建筑战斗回复/减伤/怪物削弱与拥挤效率直接读环境快照展示；
-  - **解析预览**：档案或目标变更后经 `resolveProfiles` 调真实内核解析，只读展示 C# 投影属性，不把展示舍入写回输入；
-  - **综合报表展示**（全部来自 `SimulatorRunResultDto` 真实字段，无观测字段不展示）：
-    - 遭遇/轮次/击杀（普通+精英+Boss）/死亡/修为/战斗经验/底蕴/六维经验/结束血蓝/技能冷却与 Buff 残留/剩余库存/事件日志与 `DroppedEventCount`；
-    - 战利品明细（`ItemReference`/`ItemIcon` 强 ID + 强化等级）与按冻结行情的「已入袋净变动估值」（未知价条目标注未报价，不记 0）；速率仅在实际推演时长 >0 时按 `simulatedSeconds/3600` 折算；
-  - 主弹窗容器：[`frontend/src/components/simulator/WasmCombatSimulatorModal.tsx`](../../frontend/src/components/simulator/WasmCombatSimulatorModal.tsx)
-  - 阵容编辑：[`frontend/src/components/simulator/WasmSimulatorProfileEditor.tsx`](../../frontend/src/components/simulator/WasmSimulatorProfileEditor.tsx)
-  - 报表展现：[`frontend/src/components/simulator/WasmSimulatorResults.tsx`](../../frontend/src/components/simulator/WasmSimulatorResults.tsx)
-  - 历史参考（不再被生产入口引用）：`frontend/src/components/simulator/CombatSimulatorModal.tsx`、`SimulatorPartyEditor.tsx`、`SimulatorConfigPanel.tsx`、`SimulatorResultsView.tsx`
-- **推演真源**：浏览器本地 WebAssembly 实战内核（`src/Simulator` + `src/Simulator.Browser`，经 `frontend/src/game/simulator/wasmSimulatorBridge.ts` 专用 module Worker 调用，JSON 进出、取消即 terminate）；`frontend/src/game/simulator/` 旧 TS 引擎仅作历史参考，不再是生产推演真源
-- **WASM 负载**：`frontend/public/simulator/`（`scripts/build-simulator.mjs` 生成，gitignored）
+  - **战斗推演与数值验证**：在战场顶部操作区（「战斗统计」按钮旁）提供「模拟器」常驻入口，唤起战斗预演模态（`Modal` large，顶层拆分为「配置」与「结果」，配置区双列、≤960px 单列自适应）；
+  - **会话级内存缓存**：经 [`simulatorStore.ts`](../../frontend/src/game/simulator/simulatorStore.ts) (`useSimulatorStore`) 在页面生命周期内持续缓存参演成员、环境快照、目标节点与难度/时长/种子、页签位置、属性预览及已完成结果；关闭弹窗仅调用 `cancelRun()` 取消在途批次，不会丢失配置与上一次完成结果（工具栏提供「重置为当前角色」显式清零）；
+  - **参战阵容装配与五子页签**：支持 1~5 人阵容与一键导入本人/同队队友，配置区细分为 5 个子页签：
+    1. `基础与特质`：展示/编辑名号、境界下拉选择（`1..127` 级全境界直接可选）、整数战斗经验（`combatExperience`）、复活策略、灵根、六维点数（`0..381` 整数编辑并经 `getRootPointsForExp` / `getRootCumulativeExpForLevel` 与累计经验无损互转）与特质（无道韵容量与解锁限制）；移除手写气血/灵力与下次回复秒数输入框，推演时按当前配置与境界解析出的上限满血满蓝入场并在「详细属性」页签预览；
+    2. `详细属性`：独立子页签复用 `CombatAttributePanel` 展示经本地同构 TS 内核 `resolveProfiles` 解析的完整战斗属性（含目标节点建筑/阵法环境增益）；
+    3. `装备`：复用右侧 `EquipmentPanel` 六部位三栏 `.equipment-stage`（左：武器/头部/下装；中：`CharacterAvatar` + `RealmBadge`；右：副手/衣服/饰品；不放生活工具），点击呼出 `ItemGridPicker` (`ignoreQuantity`) 选择配表全部装备（无背包与境界限制），舞台下方提供全装备 `+0~+20` 强化步进条及多饰品增补管理；
+    4. `功法`：复用战斗详情 `CombatLoadoutPanel` 的 `.combat-slot-grid--abilities` 五槽布局（0 号内功 + 1~4 号神通）+ `ConditionedTile` + `AbilityGridPicker`（可选配表全部功法、同招式互换去重）+ `CombatTriggerEditor`，下方配置条支持自由调节 `1~127` 级（同步更新 `abilityExperiences`）及直击施法条件；
+    5. `消耗品`：复用战斗详情 `AutoUseSlotGroup` 双组 6 槽布局（药品 0~2 + 通用 3~5）+ `ItemUseSlot`（`ignoreQuantity`）+ `ItemGridPicker`（`ignoreQuantity`）+ `CombatTriggerEditor`，与背包数量彻底解耦（隐藏库存角标与缺货置灰、无数量框），仅配置物品、启停与触发条件；
+  - **高信息密度目标与参数区**：右栏「目标地点」将标题/已选数/区域筛选/全选清空压缩至顶部工具条并采用多列紧凑网格（卡片仅保留地名与 `加成×N` 徽记，完整环境加成与所属区域改为悬停复用 `FloatingPopover` + `FloatingInfoCard` 惰性展示），「难度」（默认/T1~T5 + 全选/仅默认）与「模拟时长」「随机种子」分别单行紧凑排列（移动端自动折行）；通过 Worker `listCombatNodeIds` 复用引擎 `resolveCombatAction` 的行动匹配规则，严格筛选具备讨伐行动的战斗节点与所属地图（自动排除无讨伐行动节点如 `node.tea-house` 与纯非战斗地图）；
+  - **综合报表展示（真实修为口径）**：
+    - 修为总计与速率统一取纯净产出的真实修为 `lifetimeExperience`（剥离居底蕴 3 倍燃烧增幅且不受境界修为上限截断），并列出战斗经验、六维经验、遭遇/轮次/击杀（普/精/首领）/死亡、战利品与冻结行情净估值、Buff/冷却残留及事件日志与 `DroppedEventCount`。
+  - 主弹窗容器：[`frontend/src/components/simulator/CombatSimulatorModal.tsx`](../../frontend/src/components/simulator/CombatSimulatorModal.tsx)
+  - 会话状态缓存：[`frontend/src/game/simulator/simulatorStore.ts`](../../frontend/src/game/simulator/simulatorStore.ts)
+  - 阵容编辑：[`frontend/src/components/simulator/SimulatorProfileEditor.tsx`](../../frontend/src/components/simulator/SimulatorProfileEditor.tsx)
+  - 报表展现：[`frontend/src/components/simulator/SimulatorResults.tsx`](../../frontend/src/components/simulator/SimulatorResults.tsx)
+- **推演真源**：浏览器本地纯 TypeScript 同构实战引擎（`frontend/src/game/simulator/engine/`，经 `frontend/src/game/simulator/simulatorBridge.ts` 调度专用 module Worker `simulatorWorker.ts` 执行，配表通过 `import('./data/simulatorCatalog.json')` 懒加载，移动端限制单 Worker 并发、取消即 terminate）
+- **配表产物**：`frontend/src/game/simulator/data/simulatorCatalog.json`（`scripts/gen-simulator-catalog.mjs` 从 `config/game-data/` 确定性派生，gitignored）
 - **样式文件**：[`frontend/src/styles/wasm-simulator.css`](../../frontend/src/styles/wasm-simulator.css)
 
 ---
