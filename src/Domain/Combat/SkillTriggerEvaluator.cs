@@ -362,6 +362,7 @@ public static class SkillTriggerEvaluator
 
     private static double TotalHpPercentage(IReadOnlyList<CombatantState> units)
     {
+        if (units.Count == 0) return double.NaN;
         double sumHp = 0;
         double sumMaxHp = 0;
         for (var i = 0; i < units.Count; i++)
@@ -375,6 +376,7 @@ public static class SkillTriggerEvaluator
 
     private static double TotalManaPercentage(IReadOnlyList<CombatantState> units)
     {
+        if (units.Count == 0) return double.NaN;
         double sumMp = 0;
         double sumMaxMp = 0;
         for (var i = 0; i < units.Count; i++)

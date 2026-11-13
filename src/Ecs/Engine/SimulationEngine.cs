@@ -741,7 +741,9 @@ public static partial class SimulationEngine
                         battleState.Player.TraitState).ToCombatant(player.Progression.CombatExperience));
                     session.AttributeRevision = player.AttributeInputRevision;
                 }
-                battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+                var wallAnchorUnix = target.AddSecondsExact(-remainingSeconds).ToUnixTimeMilliseconds() / 1000d - battleState.ElapsedSeconds;
+                battleState.Player.ExternalBuffStacks = buffId => Systems.ActionExecutionRules.SumUnmergedActiveBuffStacks(
+                    battleState.Player, activeBuffs, buffId, wallAnchorUnix + battleState.ElapsedSeconds);
             }
         }
         else

@@ -730,7 +730,8 @@ internal static class CombatActionRules
                 InBattleRespawnSeconds(encounter),
                 expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
             // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
-            battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
+            battleState.Player.ExternalBuffStacks = buffId
+                => ActionExecutionRules.SumUnmergedActiveBuffStacks(battleState.Player, player.Buffs.Active, buffId);
         }
         for (var i = 0; i < waveEnemies.Count; i++)
             battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
@@ -985,7 +986,10 @@ internal static class CombatActionRules
                 respawnSeconds);
             battle.Player.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, player.Resources.MaxHitpoints);
             battle.Player.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, player.Resources.MaxManapoints);
-            battle.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
+            var entryUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
+            battle.Player.ExternalBuffStacks = buffId
+                => ActionExecutionRules.SumUnmergedActiveBuffStacks(battle.Player, player.Buffs.Active, buffId,
+                    entryUnix + battle.ElapsedSeconds);
             player.Combat.Skills.ApplyTo(battle.Player);
             player.Combat.Buffs.ApplyTo(battle.Player, battle.ElapsedSeconds);
         }

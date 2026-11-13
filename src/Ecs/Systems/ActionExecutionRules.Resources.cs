@@ -385,7 +385,7 @@ internal static partial class ActionExecutionRules
                     // 资源池镜像（边界回调中段文档是旧值）；否则复用会话先回写内存态。
                     if (liveBattle is { } evalBattle) SyncLiveBattleToEvalDocs(player, evalBattle);
                     else live?.Flush();
-                    evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
+                    evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies, now);
                 }
                 var elapsedSec = player.Actions[0].Expedition?.BattleElapsedSeconds ?? 0;
                 RuntimeInstrumentation.Count("consumable.trigger_evals");
@@ -415,7 +415,7 @@ internal static partial class ActionExecutionRules
                 {
                     if (liveBattle is { } evalBattle) SyncLiveBattleToEvalDocs(player, evalBattle);
                     else live?.Flush();
-                    evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
+                    evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies, now);
                 }
                 var manaCost = strike.ManaCostRatio * evalCaster.Stats.MaxManapoints;
                 if (evalTarget is null || player.Resources.Manapoints < manaCost - 1e-9) continue;
@@ -454,6 +454,8 @@ internal static partial class ActionExecutionRules
                 player.MarkDirty(PlayerSectionKind.Combat);
                 player.MarkDirty(PlayerSectionKind.ActionQueue);
                 (deltas ??= []).Add(new AssetDelta(player.PlayerId, new AssetKey(id), -1, "auto-use"));
+                // 激活后当前单位血蓝、Buff 或敌方状态可能发生变化，作废缓存避免同趟后续槽位读到过期视图。
+                evalCaster = null;
                 // 即时消耗品扣件计入队首行动账本「失去」物品。
                 player.RecordStats(player.Actions[0].Id, now, new PlayerStatsDelta { LostItem = id, LostQuantity = 1 });
                 events.Add(new SimulationEvent(at, "auto-use.activated", $"自动使用 {item.Name}，造成 {damage:0.##} 点伤害。",
@@ -539,6 +541,8 @@ internal static partial class ActionExecutionRules
             player.MarkDirty(PlayerSectionKind.Buffs);
             player.MarkDirty(PlayerSectionKind.Combat);
             (deltas ??= []).Add(new AssetDelta(player.PlayerId, new AssetKey(id), -1, "auto-use"));
+            // 激活后当前单位血蓝、Buff 或敌方状态可能发生变化，作废缓存避免同趟后续槽位读到过期视图。
+            evalCaster = null;
             // 即时消耗品扣件计入队首行动账本「失去」物品。
             player.RecordStats(player.Actions[0].Id, now, new PlayerStatsDelta { LostItem = id, LostQuantity = 1 });
             events.Add(new SimulationEvent(at, "auto-use.activated", $"自动使用 {item.Name}。", ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
@@ -550,9 +554,11 @@ internal static partial class ActionExecutionRules
     /// <summary>
     /// 为消耗品触发判定装配求值单位视图：施放方为当前玩家快照；战斗进行中敌方取
     /// 当前波存活单位，「目标」对象按当前有效威胁最高者确定性解析（非随机抽取）。
+    /// 敌方单位必须同步应用行动难度缩放、建筑削弱与怪物阶层（Rank），保证妖王/精英与百分比条件精确求值。
     /// </summary>
     internal static CombatantState BuildConsumableEvalUnits(IPlayerResourceContext player, GameDataCatalog catalog,
-        out CombatantState? target, out List<CombatantState> allies, out List<CombatantState> enemies)
+        out CombatantState? target, out List<CombatantState> allies, out List<CombatantState> enemies,
+        double? nowUnix = null)
     {
         var caster = new CombatantState("player", player.ResolveAttributes(catalog).ToCombatant(player.Progression.CombatExperience))
         {
@@ -560,25 +566,28 @@ internal static partial class ActionExecutionRules
             Manapoints = player.Resources.Manapoints
         };
         var activeBuffs = player.Buffs.Active;
-        caster.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+        caster.ExternalBuffStacks = buffId => SumUnmergedActiveBuffStacks(caster, activeBuffs, buffId, nowUnix);
         if (player.Actions[0].Expedition?.PlayerState?.Buffs is { } battleBuffs) caster.ReplaceBuffs(battleBuffs);
         allies = [caster];
         enemies = [];
-        // 求值单位与战内口径一致：封魔阵类建筑削弱按当前节点投影同步折减怪物面板。
+        // 求值单位与战内口径一致：先按行动难度缩放，再按当前节点封魔阵类建筑投影折减，并保留怪物 Rank。
         var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
+        var difficulty = player.Actions[0].Participation?.Spec?.Difficulty ?? player.Actions[0].Intent.Difficulty;
         if (player.Actions[0].Expedition is { Phase: CombatExpeditionPhase.Combat, Enemies: { Count: > 0 } waveEnemies })
             for (var i = 0; i < waveEnemies.Count; i++)
             {
                 var enemy = waveEnemies[i];
                 if (!catalog.CombatMonsters.TryGetValue(enemy.EnemyId, out var monster)) continue;
-                var unit = new CombatantState($"enemy:{i}", NodeBuildingRules.WeakenMonsterStats(monster.Stats, weaken))
+                var scaledStats = CombatDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty);
+                var unit = new CombatantState($"enemy:{i}", NodeBuildingRules.WeakenMonsterStats(scaledStats, weaken))
                 {
                     Hitpoints = enemy.State.Hitpoints,
                     Manapoints = enemy.State.Manapoints,
                     Threat = enemy.State.Threat,
                     ThreatBonusPoints = enemy.State.ThreatBonusPoints,
-                    // 求值单位同样携带怪物定义 ID：打击记账按 monster:{defId} 类型桶归并。
-                    DefinitionId = enemy.EnemyId
+                    // 求值单位同样携带怪物定义 ID 与阶层：打击记账按 monster:{defId} 归并，is-boss/is-elite/has-boss/has-elite 依赖 Rank。
+                    DefinitionId = enemy.EnemyId,
+                    Rank = monster.Rank
                 };
                 if (enemy.State.Buffs is { Count: > 0 } buffs) unit.ReplaceBuffs(buffs);
                 enemies.Add(unit);
@@ -598,6 +607,38 @@ internal static partial class ActionExecutionRules
         var total = 0d;
         for (var i = 0; i < actives.Count; i++)
             if (buffId is null || actives[i].BuffId == buffId) total += actives[i].Stacks;
+        return total;
+    }
+
+    /// <summary>
+    /// 战外 Buff 层数求值（去重并可选过期过滤）：跳过已存在于战内单位 Buff 列表中的同名即时药水副本，
+    /// 并在提供当前墙钟时忽略已到期的战外条目，防止 buff-stacks 在战内被双倍计入或到期后残留。
+    /// </summary>
+    internal static double SumUnmergedActiveBuffStacks(CombatantState unit, VersionedList<ActiveBuff> actives,
+        string? buffId, double? nowUnix = null)
+    {
+        var total = 0d;
+        var inBattle = unit.Buffs;
+        for (var i = 0; i < actives.Count; i++)
+        {
+            var entry = actives[i];
+            var entryId = entry.BuffId;
+            if (buffId is not null && entryId != buffId) continue;
+            if (nowUnix is { } now && entry.ExpiresAtUnixSeconds <= now) continue;
+            var duplicated = false;
+            for (var j = 0; j < inBattle.Count; j++)
+            {
+                var curId = inBattle[j].BuffId;
+                if (curId == entryId
+                    || (curId.Length > entryId.Length && curId[entryId.Length] == ':'
+                        && curId.StartsWith(entryId, StringComparison.Ordinal)))
+                {
+                    duplicated = true;
+                    break;
+                }
+            }
+            if (!duplicated) total += entry.Stacks;
+        }
         return total;
     }
 

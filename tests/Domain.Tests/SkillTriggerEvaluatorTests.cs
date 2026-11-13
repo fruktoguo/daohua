@@ -127,4 +127,14 @@ public sealed class SkillTriggerEvaluatorTests
         Assert.Equal(0.0, buffTriggers[0].GetProperty("value").GetDouble());
         Assert.Equal("buff.test", buffTriggers[0].GetProperty("buffId").GetString());
     }
+
+    [Fact]
+    public void EmptyUnitSetTotalPercentages_EvaluateToFalse()
+    {
+        var caster = new CombatantState("player", CreateStats());
+        var totalHpLe = Json("""{"dependency":"enemies","condition":"total-hp-percentage","comparator":"less-than-equal","value":50.0}""");
+        var totalMpLe = Json("""{"dependency":"enemies","condition":"total-mana-percentage","comparator":"less-than-equal","value":50.0}""");
+        Assert.False(SkillTriggerEvaluator.MatchesAll([totalHpLe], caster, null, [caster], []));
+        Assert.False(SkillTriggerEvaluator.MatchesAll([totalMpLe], caster, null, [caster], []));
+    }
 }
