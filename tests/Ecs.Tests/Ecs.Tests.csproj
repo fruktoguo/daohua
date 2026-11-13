@@ -18,6 +18,5 @@
     <ProjectReference Include="../../src/Server.Clean/Server.Clean.csproj" />
     <ProjectReference Include="../../src/Domain/Domain.csproj" />
     <ProjectReference Include="../../src/Protocol/Protocol.csproj" />
-    <ProjectReference Include="../../src/Simulator/Simulator.csproj" />
   </ItemGroup>
 </Project>

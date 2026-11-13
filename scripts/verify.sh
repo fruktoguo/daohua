@@ -225,6 +225,9 @@ run_frontend_pipeline() {
   printf '%s\n' '==> 同步私有客户端模块挂载'
   node scripts/sync-private-modules.mjs
 
+  printf '%s\n' '==> 生成战斗模拟器前端配表'
+  node scripts/gen-simulator-catalog.mjs
+
   printf '%s\n' '==> 前端 i18n 词条覆盖校验'
   node scripts/check-i18n-keys.mjs
 

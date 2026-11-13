@@ -66,6 +66,8 @@ interface ItemGridPickerProps {
   onEditCondition?: () => void
   /** 当前槽位物品已配置触发条件数量 */
   triggerCount?: number
+  /** 沙盒/模拟器模式：忽略库存数量限制与角标展示 */
+  ignoreQuantity?: boolean
 }
 
 // 未注册物品的兜底元数据：名称/品类/描述保留服务端数据。
@@ -112,6 +114,7 @@ export function ItemGridPicker({
   allowEmpty = true,
   onEditCondition,
   triggerCount,
+  ignoreQuantity = false,
 }: ItemGridPickerProps): React.JSX.Element {
   const t = useT()
 
@@ -134,7 +137,7 @@ export function ItemGridPicker({
       key: itemPickerEntryKey(item.itemId, item.variant),
       tile: (
         <ItemTile
-          amount={item.amount}
+          amount={ignoreQuantity ? undefined : item.amount}
           category={categoryLabel}
           className="item-grid-picker-cell"
           enhancementLevel={item.enhancementLevel}
@@ -144,12 +147,14 @@ export function ItemGridPicker({
           rarity={metadata.rarity}
         />
       ),
-      disabled: item.amount <= 0,
-      ariaLabel: t('market.browse.itemOwned', { name: item.name, count: formatNumber(item.amount) }),
+      disabled: ignoreQuantity ? false : item.amount <= 0,
+      ariaLabel: ignoreQuantity
+        ? item.name
+        : t('market.browse.itemOwned', { name: item.name, count: formatNumber(item.amount) }),
       searchText: `${item.name} ${item.category} ${categoryLabel} ${item.description}`,
       wrapCell: cell => (
         <ItemTooltipTarget
-          amount={item.amount}
+          amount={ignoreQuantity ? undefined : item.amount}
           className="item-grid-picker-tooltip"
           definition={item.definition}
           enhancementLevel={item.enhancementLevel}
@@ -162,7 +167,7 @@ export function ItemGridPicker({
         </ItemTooltipTarget>
       ),
     }
-  }), [items, t])
+  }), [ignoreQuantity, items, t])
 
   return (
     <CandidatePicker
@@ -306,6 +311,7 @@ export function ItemUseSlot({
   bar = 'enhancement',
   cooldownOverlay,
   conditionCount = 0,
+  ignoreQuantity = false,
   item,
   queuePaused = false,
   remainingDurationSeconds = 0,
@@ -325,6 +331,8 @@ export function ItemUseSlot({
   cooldownOverlay?: ReactNode
   /** 已配置的战斗触发条件数量 */
   conditionCount?: number
+  /** 沙盒/模拟器模式：忽略库存数量限制与角标展示 */
+  ignoreQuantity?: boolean
   /** 当前装配的物品信息 (null 为空槽) */
   item: ItemPickerEntry | null
   /** 已开启的持续消耗品剩余有效秒数（银河奶牛式） */
@@ -352,7 +360,7 @@ export function ItemUseSlot({
   }
 
   const metadata = getMetadata(item, t)
-  const depleted = item.amount <= 0
+  const depleted = !ignoreQuantity && item.amount <= 0
   const effectiveTotal = totalDurationSeconds > 0
     ? totalDurationSeconds
     : (item.definition?.durationSeconds ?? 0)
@@ -360,7 +368,7 @@ export function ItemUseSlot({
 
   return (
     <ItemTooltipTarget
-      amount={item.amount}
+      amount={ignoreQuantity ? undefined : item.amount}
       className="item-use-slot-tooltip"
       definition={item.definition}
       enhancementLevel={item.enhancementLevel}
@@ -381,7 +389,7 @@ export function ItemUseSlot({
           type="button"
         >
           <ItemTile
-            amount={item.amount}
+            amount={ignoreQuantity ? undefined : item.amount}
             category={resolveItemCategoryLabel(
               resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.category), t)}
             className="item-use-slot-cell"

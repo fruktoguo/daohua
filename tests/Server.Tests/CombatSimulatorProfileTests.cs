@@ -1,11 +1,11 @@
 using System.Text.Json;
-using DaoHua.Simulator;
 using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
 using Domain.Simulation;
 using Protocol.Simulator;
+using Server;
 using Xunit;
 
 namespace Server.Tests;
@@ -105,7 +105,7 @@ public sealed class CombatSimulatorProfileTests
             new SimulatorAssetDto("item.zhixue-powder", "", 3.5),
             new SimulatorAssetDto("item.qingdan", "frost", 1)
         };
-        var profile = SimulatorProfileMapper.Capture(state, assets, catalog);
+        var profile = SimulatorProfileCapture.Capture(state, assets, catalog);
         var json = JsonSerializer.Serialize(profile, SimulatorJson.Options);
         var roundTripped = JsonSerializer.Deserialize<SimulatorProfileDto>(json, SimulatorJson.Options);
         Assert.NotNull(roundTripped);
@@ -139,7 +139,7 @@ public sealed class CombatSimulatorProfileTests
     public void Capture_WhitelistJson_ExcludesAccountAndRuntimeSurfaces()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
-        var profile = SimulatorProfileMapper.Capture(BuildState(catalog),
+        var profile = SimulatorProfileCapture.Capture(BuildState(catalog),
             [new SimulatorAssetDto("item.zhixue-powder", "", 1)], catalog);
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(profile, SimulatorJson.Options));
         var propertyNames = document.RootElement.EnumerateObject().Select(property => property.Name).ToArray();
@@ -153,7 +153,7 @@ public sealed class CombatSimulatorProfileTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var state = BuildState(catalog);
-        var profile = SimulatorProfileMapper.Capture(state,
+        var profile = SimulatorProfileCapture.Capture(state,
             [new SimulatorAssetDto("item.zhixue-powder", "", 1)], catalog);
         Assert.False(ReferenceEquals(profile.AbilityTriggers, state.Loadout.AbilityTriggers));
         Assert.False(ReferenceEquals(profile.ConsumableTriggers, state.Loadout.ConsumableTriggers));

@@ -1,445 +1,73 @@
-import type { AutoUseSlot, CombatAbilitySlot, CombatAttributes, CombatTrigger, EquippedItem, NodeBuildingEffectSet } from '../types'
-
-/** 截断并保留最多 1 位小数，杜绝多余小数点 */
-export function roundStat(val: number): number {
-  if (!Number.isFinite(val)) return 0
-  return Math.round(val * 10) / 10
+export interface SimulatorTraitProgressDto { id: string; level: number; exp: number }
+export interface SimulatorLinggenDto { metal: number; wood: number; water: number; fire: number; earth: number }
+export interface SimulatorCoreAttributesDto { staminaExp: number; meridiansExp: number; attackExp: number; boneExp: number; agilityExp: number; consciousnessExp: number }
+export interface SimulatorAbilitySlotDto { abilityId: string | null; level: number }
+export interface SimulatorEquipmentSlotDto { itemId: string; enhancementLevel: number }
+export interface SimulatorBuffEffectDto { channel: number; value: number }
+export interface SimulatorCombatSkillCooldownDto { abilityId: string; remainingSeconds: number }
+export interface SimulatorCombatSkillsDto { cooldowns: SimulatorCombatSkillCooldownDto[]; castingAbilityId: string | null; castRemainingSeconds: number; castCount: number }
+export interface SimulatorCombatBuffCarryDto { buffId: string; remainingSeconds: number; stacks: number; name: string; missingHitpointsPerStack: number; effects?: SimulatorBuffEffectDto[]; statRatios?: Record<string, number> }
+export interface SimulatorActiveBuffDto { buffId: string; expiresAtUnixSeconds: number; stacks: number; name: string; sourceItemId: string | null; effects?: SimulatorBuffEffectDto[]; statRatios?: Record<string, number> }
+export interface SimulatorAutoUseSlotDto { actionType: string; slotIndex: number; itemId: string | null; quantity: number; enabled: boolean; remainingDurationSeconds: number; cooldownUntilUnixSeconds: number; group: string }
+export interface SimulatorAssetDto { itemId: string; variant: string; quantity: number }
+export interface SimulatorProfileDto {
+  formatVersion: number; gameDataFingerprint: string
+  sourcePlayerId: string | null; displayName: string; avatar: string
+  capturedAtUnixSeconds: number
+  realmLevel: number; experience: number; foundation: number; combatExperience: number
+  lifetimeExperience: number; ageSeconds: number; completedActions: number
+  traitIds?: string[]; unlockedTraits?: SimulatorTraitProgressDto[]
+  confirmedLinggen: SimulatorLinggenDto | null; heavenGateEntered: boolean
+  coreAttributes: SimulatorCoreAttributesDto
+  abilitySlots: SimulatorAbilitySlotDto[]
+  abilityExperiences?: Record<string, number>
+  equipment: SimulatorEquipmentSlotDto[]
+  techniqueExperiences?: Record<string, number>
+  abilityTriggers?: Record<string, unknown[]>
+  consumableTriggers?: Record<string, unknown[]>
+  hitpoints: number; maxHitpoints: number; manapoints: number; maxManapoints: number; regenCarrySeconds: number
+  combatSkills: SimulatorCombatSkillsDto
+  combatBuffCarry: SimulatorCombatBuffCarryDto[]
+  buffs: SimulatorActiveBuffDto[]
+  combatAutoUseSlots: SimulatorAutoUseSlotDto[]
+  assets: SimulatorAssetDto[]
+  respawnPolicy: number; respawnTargetPlayerId: string | null
 }
-
-/** 规范化战斗属性，所有数值项最多保留 1 位小数；traits/trailLevels 等非数值投影字段不进入模拟面板。 */
-export function sanitizeAttributes(attrs: CombatAttributes): CombatAttributes {
-  const result: Partial<CombatAttributes> = {}
-  // CombatAttributes 含非数值字段（traits/trailLevels），经数值视图写入避免键联合类型交叉约束。
-  const numericView = result as unknown as Record<string, number>
-  for (const [key, val] of Object.entries(attrs)) {
-    if (typeof val === 'number') {
-      numericView[key] = roundStat(val)
-    }
-  }
-  return result as CombatAttributes
+export interface SimulatorNodeBuildingDto { buildingId: string; level: number; targetLevel: number; startedAtUnixSeconds: number; contributedMaterials?: Record<string, number> }
+export interface SimulatorNodeBuildingUsageDto { buildingId: string; activeUsers: number; capacity: number; efficiency: number }
+export interface SimulatorBuildingEffectsDto {
+  explorationSpeedRatio?: number; explorationOutputRatio?: number
+  alchemySpeedRatio?: number; alchemyOutputRatio?: number; cultivationOutputRatio?: number
+  combatHitpointRegen?: number; combatDamageReductionRatio?: number; monsterWeakenRatio?: number
+  gatheringSpeedRatio?: number; miningSpeedRatio?: number; forgingSpeedRatio?: number
+  talismanSpeedRatio?: number; formationSpeedRatio?: number; enhancementSpeedRatio?: number
+  combatManapointRegen?: number
 }
-
-/**
- * 参战角色配置（模拟器单体模型）
- */
-export interface SimulatorCombatantConfig {
-  id: string
-  name: string
-  isSelf: boolean
-  attributes: CombatAttributes
-  /**
-   * 装备增量基线面板：换装推演时以「本基线 + 当前装备增量」得到推演面板。
-   * 导入路径把它设为服务端解析终值（已含装备），从而既不会双计、也能让换装真实生效。
-   * 缺省等于 attributes（视为裸面板 + 纯装备增量）。
-   */
-  equipmentBaseAttributes?: CombatAttributes
-  abilitySlots: CombatAbilitySlot[]
-  /** 技能独立触发器映射表 (abilityId -> triggers) */
-  abilityTriggers?: Record<string, CombatTrigger[]>
-  /** 阵型站位 (0~8) */
-  formationIndex: number
-  /** 已穿戴装备配置 (6部位装备实例) */
-  equipment?: EquippedItem[]
-  /** 战斗自动消耗品配置 (3药品 + 3通用) */
-  consumables?: AutoUseSlot[]
-  /** 消耗品独立触发器映射表 (itemId -> triggers) */
-  consumableTriggers?: Record<string, CombatTrigger[]>
+export interface SimulatorEnvironmentNodeDto { nodeId: string; buildings: SimulatorNodeBuildingDto[]; effects: SimulatorBuildingEffectsDto; usages: SimulatorNodeBuildingUsageDto[] }
+export interface SimulatorEnvironmentDto { formatVersion: number; gameDataFingerprint: string; capturedAtUnixSeconds: number; nodes: SimulatorEnvironmentNodeDto[] }
+export interface SimulatorRunRequestDto { formatVersion: number; nodeId: string; difficulty: number; durationSeconds: number; seed: string; members: SimulatorProfileDto[]; environment: SimulatorEnvironmentDto }
+export interface SimulatorRootExpDto { stamina: number; meridians: number; attack: number; bone: number; agility: number; consciousness: number }
+export interface SimulatorReportItemDto { itemId: string; variant: string; quantity: number }
+export interface SimulatorCombatUnitStatDto { unitKey: string; kind: number; displayName: string; damageDealtPhysical: number; damageDealtSpell: number; damageTakenPhysical: number; damageTakenSpell: number; damageMitigatedPhysical: number; damageMitigatedSpell: number; healingRegen: number; healingOther: number; damageDealtTrue: number; damageTakenTrue: number }
+export interface SimulatorExpeditionEnemyDto { enemyId: string; hitpoints: number; manapoints: number }
+export interface SimulatorEventDto { atUnixSeconds: number; code: string; message: string; actionId?: string; itemDeltas?: Record<string, number> }
+export interface SimulatorMemberResultDto {
+  memberIndex: number; playerId: string; displayName: string
+  hitpoints: number; maxHitpoints: number; manapoints: number; maxManapoints: number; regenCarrySeconds: number
+  combatSkills: SimulatorCombatSkillsDto; combatBuffCarry: SimulatorCombatBuffCarryDto[]
+  completedRepeats: number; waveNumber: number; phase: string
+  experience: number; foundation: number; combatExperience: number; lifetimeExperience: number
+  rootExp: SimulatorRootExpDto
+  cycles: number; encounters: number; normalKills: number; eliteKills: number; bossKills: number; deaths: number
+  items: SimulatorReportItemDto[]; itemsLost: SimulatorReportItemDto[]
+  assetDeltas: SimulatorAssetDto[]; remainingConsumableBalances: SimulatorAssetDto[]
+  combatAutoUseSlots: SimulatorAutoUseSlotDto[]
+  combatStats: SimulatorCombatUnitStatDto[]
+  enemies: SimulatorExpeditionEnemyDto[]
+  events: SimulatorEventDto[]; droppedEventCount: number
 }
-
-/**
- * 模拟推演环境配置
- */
-export interface SimulatorConfig {
-  /** 选定的大地图地点 ID */
-  nodeId: string
-  /** 选定的大地图地点名称 */
-  nodeName: string
-  /** 所属大地图区域名称 */
-  mapName?: string
-  /** 锁定的战斗遭遇 ID（可选，若为空则按节点遭遇池与预算轮盘动态刷怪） */
-  encounterId?: string | null
-  /** 模拟推进总时长（秒） */
-  durationSeconds: number
-  /** 确定性随机数种子 */
-  seed: bigint
-  /** 参战阵容（1~5人） */
-  allies: SimulatorCombatantConfig[]
-  /** 讨伐历练难度等级 (0: 默认, 1~5: T1~T5) */
-  difficulty?: number
-  /**
-   * 目标地点的公共建筑战斗类效果（`monsterWeakenRatio` 折减怪物面板；
-   * `combatHitpointRegen`/`combatManapointRegen`/`combatDamageReductionRatio` 折入参战者面板）。
-   * 缺省为无建筑加成。
-   */
-  buildingEffects?: NodeBuildingEffectSet | null
-}
-
-/**
- * 单个技能槽位的灵力缺口追踪指标
- */
-export interface SkillManaDeficitStat {
-  slotIndex: number
-  abilityId: string
-  abilityName: string
-  /** 施放成功总次数 */
-  castCount: number
-  /** 累计消耗的灵力总量 */
-  totalManaSpent: number
-  /** 因灵力不足被阻断/跳过的次数 */
-  deficitCount: number
-  /** 处于“就绪但缺蓝”状态的累计持续时长（秒） */
-  totalDeficitSeconds: number
-  /** 卡蓝时间占战斗总有效时长的百分比 (0~1) */
-  deficitRatio: number
-  /** 单次卡蓝平均等待秒数 */
-  averageWaitSeconds: number
-}
-
-/**
- * 灵力池综合状态与缺口评估
- */
-export interface ManaDeficitReport {
-  /** 全场灵力缺口并集总时长（秒，处于任一技能因缺蓝等待的状态） */
-  overallDeficitSeconds: number
-  /** 全场灵力缺口时间占比 (0~1，即 0% ~ 100%) */
-  overallDeficitRatio: number
-  /** 灵力循环健康度诊断级别 */
-  diagnosis: 'sufficient' | 'mild' | 'moderate' | 'severe'
-  /** 诊断评语 */
-  diagnosisText: string
-  /** 针对性的调优建议列表 */
-  suggestions: string[]
-  /** 各技能槽位卡蓝明细 */
-  skillStats: SkillManaDeficitStat[]
-  /** 灵力池极值与平均值统计 */
-  poolStats: {
-    averageMana: number
-    minMana: number
-    maxMana: number
-    /** 灵力归零（完全枯竭）的总时长（秒） */
-    emptyDurationSeconds: number
-  }
-}
-
-/**
- * 掉落物品明细条目
- */
-export interface SimulatorItemYield {
-  itemId: string
-  name: string
-  quantity: number
-  perHour: number
-  /** 平均每日掉落数量 (24小时) */
-  perDay: number
-  /** 市场单价 (参考价优先，回收价兜底) */
-  unitPrice: number
-  /** 平均每日收益总额 (灵石) */
-  dailyRevenue: number
-}
-/**
- * 妖兽击杀明细
- */
-export interface MonsterKillStat {
-  enemyId: string
-  name: string
-  rank: 'normal' | 'elite' | 'boss'
-  count: number
-  perHour: number
-}
-
-/**
- * 造成伤害来源明细条目
- */
-export interface DamageSourceStat {
-  sourceKey: string
-  sourceName: string
-  totalHits: number
-  successfulHits: number
-  hitRate: number
-  criticalHits: number
-  criticalRate: number
-  totalDamage: number
-  dps: number
-  percentage: number
-}
-
-/**
- * 对指定怪物的造成伤害细分
- */
-export interface TargetDamageBreakdown {
-  targetId: string
-  targetName: string
-  totalDamage: number
-  percentage: number
-  dps: number
-  sources: DamageSourceStat[]
-}
-
-/**
- * 承受伤害来源明细条目
- */
-export interface DamageTakenSourceStat {
-  sourceKey: string
-  sourceName: string
-  attackerName: string
-  totalHits: number
-  evadedHits: number
-  parriedHits: number
-  totalDamage: number
-  dps: number
-  percentage: number
-}
-
-/**
- * 承受指定怪物的伤害细分
- */
-export interface AttackerDamageTakenBreakdown {
-  attackerId: string
-  attackerName: string
-  totalDamage: number
-  percentage: number
-  dps: number
-  sources: DamageTakenSourceStat[]
-}
-
-/**
- * 回复来源条目（气血/灵力）
- */
-export interface RegenSourceStat {
-  sourceKey: string
-  sourceName: string
-  totalAmount: number
-  ratePerSecond: number
-  percentage: number
-}
-
-/**
- * 气血与灵力恢复总体指标
- */
-export interface RecoveryStats {
-  hpRegenTotal: number
-  hpRegenPerSecond: number
-  hpSources: RegenSourceStat[]
-  mpRegenTotal: number
-  mpRegenPerSecond: number
-  mpSources: RegenSourceStat[]
-  isManaExhausted: boolean
-}
-
-/**
- * 技能每小时法力消耗明细
- */
-export interface SkillManaConsumptionStat {
-  abilityId: string
-  abilityName: string
-  totalManaSpent: number
-  manaPerHour: number
-  averagePerCast: number
-  castCount: number
-}
-
-/**
- * 单条战斗详细事件日志
- */
-export interface SimCombatLogEvent {
-  timestamp: number
-  actorName: string
-  isAlly: boolean
-  targetName?: string
-  actionType: 'attack' | 'skill' | 'heal' | 'buff' | 'natural_regen' | 'defeat' | 'victory' | 'respawn'
-  abilityName?: string
-  damage?: number
-  healing?: number
-  isCritical?: boolean
-  isBreak?: boolean
-  isParry?: boolean
-  isMiss?: boolean
-  message: string
-}
-
-/**
- * 单场战斗完整回放记录（采样留存）
- */
-export interface SimBattleLogRecord {
-  battleIndex: number
-  waveNumber: number
-  encounterName: string
-  outcome: 'victory' | 'defeat'
-  durationSeconds: number
-  events: SimCombatLogEvent[]
-}
-
-
-/**
- * 波次战斗时长统计
- */
-export interface WaveDurationStat {
-  /** 场次数 */
-  count: number
-  /** 平均单场战斗时长（秒） */
-  averageSeconds: number
-  /** 最短耗时（秒） */
-  minSeconds: number
-  /** 最长耗时（秒） */
-  maxSeconds: number
-}
-
-/**
- * 遭遇时长深度细分（普通回/精英回/BOSS回）
- */
-export interface WaveDurationBreakdown {
-  /** 全场平均单场战斗时长（秒） */
-  overallAverageSeconds: number
-  /** 普通回耗时统计 */
-  normal: WaveDurationStat
-  /** 精英回耗时统计（若未刷出精英则为 null） */
-  elite?: WaveDurationStat | null
-  /** BOSS回耗时统计（若未刷出妖王则为 null） */
-  boss?: WaveDurationStat | null
-}
-
-/**
- * 模拟器最终输出的综合分析报表
- */
-export interface SimulatorReport {
-  /** 选定的大地图地点 ID */
-  nodeId: string
-  /** 选定的大地图地点名称 */
-  nodeName: string
-  /** 所属大地图区域名称 */
-  mapName: string
-  /** 模拟所选定的讨伐历练难度等级 (0: 默认, 1~5: T1~T5) */
-  difficulty: number
-  /** 模拟总耗时（秒） */
-  totalSimulatedSeconds: number
-  /** 战斗有效进行总时长（秒） */
-  combatActiveSeconds: number
-  /** 搜寻怪物读条总时长（秒） */
-  searchSeconds: number
-  /** 团灭倒地复活读条总时长（秒） */
-  respawnSeconds: number
-  /** 总遭遇/战斗场次 */
-  totalEncounters: number
-  /** 胜利场次 */
-  victories: number
-  /** 团灭/失败场次 */
-  defeats: number
-  /** 胜率 (0~1) */
-  winRate: number
-  /** 模拟期间达到的最高波次 */
-  maxWave: number
-  /** 普通妖兽击杀数 */
-  normalKills: number
-  /** 精英妖兽击杀数 */
-  eliteKills: number
-  /** 妖王/首领击杀数 */
-  bossKills: number
-  /** 总击杀数 */
-  totalKills: number
-  /** 掉落物品清单汇总 */
-  itemYields: SimulatorItemYield[]
-  /** 平均每天掉落灵石总收益（按市场参考价格计算） */
-  dailyDropsRevenue: number
-  /** 每小时战斗场次速率 */
-  encountersPerHour: number
-  /** 玩家死亡总次数 */
-  playerDeaths: number
-  /** 玩家每小时死亡率 */
-  playerDeathsPerHour: number
-  /** 各妖兽击杀明细清单 */
-  monsterKills: MonsterKillStat[]
-  /** 造成伤害深度剖析 */
-  damageStats: {
-    totalDamage: number
-    dps: number
-    overallHitRate: number
-    overallCriticalRate: number
-    sources: DamageSourceStat[]
-    targetBreakdown: TargetDamageBreakdown[]
-  }
-  /** 承受伤害深度剖析 */
-  damageTakenStats: {
-    totalDamageTaken: number
-    dps: number
-    overallEvasionRate: number
-    overallParryRate: number
-    sources: DamageTakenSourceStat[]
-    attackerBreakdown: AttackerDamageTakenBreakdown[]
-  }
-  /** 气血与灵力恢复指标（奶牛放置每秒恢复） */
-  recoveryStats: RecoveryStats
-  /** 技能每小时法力消耗统计 */
-  manaConsumptionStats: SkillManaConsumptionStat[]
-  /** 累计获得修为总值 */
-  totalExperience: number
-  /** 每小时修为产出速率 */
-  experiencePerHour: number
-  /** 平均每天获得的修为经验（24小时） */
-  dailyCultivationExp: number
-  /** 累计获得战斗经验总值 */
-  totalCombatExperience: number
-  /** 每小时战斗经验产出速率 */
-  combatExperiencePerHour: number
-  /** 累计获得六维根基经验总值 */
-  totalSixDimensionExperience: number
-  /** 每小时六维经验产出速率 */
-  sixDimensionExperiencePerHour: number
-  /** 平均每天获得的六维经验（24小时） */
-  dailySixDimensionExp: number
-  /** 六维经验分项累计明细 */
-  sixDimensionBreakdown: Record<string, number>
-  /** 灵力缺口深度分析报告 */
-  manaDeficit: ManaDeficitReport
-  /** 最近战斗详细事件日志（供玩家回溯复盘死因与战局走势） */
-  recentBattleLogs: SimBattleLogRecord[]
-  /** 单场战斗时长分析 (普通回/精英回/BOSS回) */
-  durationBreakdown: WaveDurationBreakdown
-}
-
-/**
- * 多地图节点横向刷图对比摘要
- */
-export interface SimulatorNodeComparisonItem {
-  /** 复合唯一标识（格式：nodeId#difficulty，用于同地点多难度精准区分） */
-  itemKey?: string
-  nodeId: string
-  nodeName: string
-  mapName: string
-  /** 模拟所选定的讨伐历练难度等级 (0: 默认, 1~5: T1~T5) */
-  difficulty: number
-  /** 每小时遇敌频次 */
-  encountersPerHour: number
-  /** 胜率 (0~1) */
-  winRate: number
-  /** 平均每天收益（全部掉落按市场参考价折算灵石总值） */
-  dailyRevenue: number
-  /** 平均每天修为经验 */
-  dailyCultivationExp: number
-  /** 平均每天六维经验 */
-  dailySixDimensionExp: number
-  /** 每小时击杀妖兽数 */
-  killsPerHour: number
-  /** 玩家每小时死亡数 */
-  deathsPerHour: number
-  /** 最高通关波次 */
-  maxWave: number
-  /** 推荐标签（最高收益/极速升级/稳健挂机等） */
-  recommendTag?: string
-  /** 对应的完整单点报表 */
-  /** 单场平均耗时（秒） */
-  avgDurationSeconds: number
-  /** 该地点参与本次推演的公共建筑战斗类效果（封魔阵削弱/战斗回复/减伤） */
-  buildingEffects?: NodeBuildingEffectSet | null
-  report: SimulatorReport
-}
-
-/**
- * 多节点模拟复合报表
- */
-export interface MultiNodeSimulatorReport {
-  comparison: SimulatorNodeComparisonItem[]
-  reports: Record<string, SimulatorReport>
-  selectedNodeId: string
-  /** 当前选中的复合唯一条目标识（格式：nodeId#difficulty） */
-  selectedItemKey?: string
-}
+export interface SimulatorRunResultDto { formatVersion: number; nodeId: string; difficulty: number; seed: string; requestedDurationSeconds: number; simulatedSeconds: number; members: SimulatorMemberResultDto[] }
+export interface SimulatorResolvedProfileDto { memberIndex: number; playerId: string; displayName: string; attributes: Record<string, unknown>; combatantStats: Record<string, unknown> }
+export interface SimulatorResolveRequestDto { formatVersion: number; nodeId: string; members: SimulatorProfileDto[]; environment: SimulatorEnvironmentDto }
+export interface SimulatorResolveResultDto { formatVersion: number; nodeId: string; members: SimulatorResolvedProfileDto[] }
+export const SIMULATOR_FORMAT_VERSION = 1

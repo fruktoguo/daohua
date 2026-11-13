@@ -63,7 +63,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage').then(module 
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
-const CombatSimulatorModal = lazy(() => import('./components/simulator/WasmCombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
+const CombatSimulatorModal = lazy(() => import('./components/simulator/CombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
 
 /** 延迟模块的可见加载态；复用已有进度样式和页面名称，不吞掉模块加载异常。 */
 function PanelLoading({ label }: { label: string }): React.JSX.Element {

@@ -1,102 +1,984 @@
-.wasm-sim { display: flex; flex-direction: column; gap: 12px; padding: 8px; }
-.wasm-sim-title { margin: 0; font-size: 18px; }
-.wasm-sim-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
-.wasm-sim-toolbar button, .wasm-sim-import {
-  padding: 6px 12px; border: 1px solid var(--gold-faint); border-radius: 6px;
-  background: var(--bg-raised); color: inherit; cursor: pointer; font-size: 13px;
+/* --------------------------------------------------------------------------
+ * 战斗模拟器 (WASM) 增量样式 — 严格保留 simulator.css 原版视觉，只补足增量细节
+ * -------------------------------------------------------------------------- */
+
+.sim-modal.modal-shell {
+  padding: 0;
+  overflow: hidden;
+  max-width: 100vw;
+  max-height: 100dvh;
+  border-radius: 0;
 }
-.wasm-sim-toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
-.wasm-sim-error { color: var(--danger-bright); font-size: 13px; }
-.wasm-sim-note { color: var(--text-dim); font-size: 12px; }
-.wasm-sim-stale { color: var(--gold-bright); font-size: 12px; margin-bottom: 6px; }
-.wasm-sim-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 640px) { .wasm-sim-columns { grid-template-columns: 1fr; } }
-.wasm-sim h3 { margin: 8px 0 4px; font-size: 14px; }
-.wasm-sim h4 { margin: 10px 0 4px; font-size: 13px; }
-.wasm-sim-member { border: 1px solid var(--gold-faint); border-radius: 8px; margin-bottom: 8px; }
-.wasm-sim-member-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; }
-.wasm-sim-member-toggle { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; }
-.wasm-sim-member-body { padding: 8px 10px; border-top: 1px solid var(--gold-faint); }
-.wasm-sim-ally { display: flex; gap: 6px; margin-bottom: 8px; }
-.wasm-sim-ally select { flex: 1; }
-.wasm-sim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
-.wasm-sim-grid label { display: flex; flex-direction: column; font-size: 12px; gap: 2px; }
-.wasm-sim-readonly { font-size: 12px; color: var(--text-dim); align-self: end; padding-bottom: 5px; }
-.wasm-sim input, .wasm-sim select {
-  background: var(--panel); border: 1px solid var(--gold-faint);
-  border-radius: 4px; color: inherit; padding: 4px 6px; font-size: 13px;
+
+.sim-modal .sim-editor-toolbar {
+  flex-wrap: wrap;
 }
-.wasm-sim-advanced { margin-top: 6px; font-size: 12px; }
-.wasm-sim-advanced summary { cursor: pointer; color: var(--text-dim); }
-.wasm-sim-traits-detail summary { cursor: pointer; color: var(--text-dim); font-size: 12px; margin: 4px 0; }
-.wasm-sim-traits { display: flex; flex-wrap: wrap; gap: 6px; max-height: 260px; overflow-y: auto; }
-.wasm-sim-trait { display: flex; align-items: center; gap: 4px; }
-.wasm-sim-trait input { width: 48px; }
-.wasm-sim-equipment, .wasm-sim-abilities, .wasm-sim-slots, .wasm-sim-assets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.wasm-sim-equip-slot { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.wasm-sim-equip-label { min-width: 40px; color: var(--text-dim); }
-.wasm-sim-equip-items { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.wasm-sim-equip-entry { display: inline-flex; align-items: center; gap: 4px; }
-.wasm-sim-equip-tile-btn { background: none; border: none; padding: 0; cursor: pointer; }
-.wasm-sim-equip-tile-btn:disabled { cursor: not-allowed; }
-.wasm-sim-equip-empty {
-  min-width: 44px; min-height: 44px; border: 1px dashed var(--gold-faint); border-radius: 6px;
-  background: none; color: var(--text-dim); cursor: pointer; font-size: 11px;
+
+.sim-modal .sim-stats-grid {
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
 }
-.wasm-sim-equip-entry input { width: 48px; }
-.wasm-sim-ability, .wasm-sim-slot, .wasm-sim-asset {
-  display: flex; align-items: center; gap: 4px; font-size: 12px;
+
+.sim-modal .sim-stat-field {
+  min-width: 0;
 }
-.wasm-sim-ability input { width: 48px; }
-.wasm-sim-ability-btn {
-  display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;
-  border: 1px solid var(--gold-faint); border-radius: 6px; background: var(--bg-raised);
-  color: inherit; cursor: pointer; font-size: 12px;
+
+.sim-modal .sim-stat-field .sim-input,
+.sim-modal .sim-stat-field .sim-select {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
 }
-.wasm-sim-ability-icon { width: 20px; height: 20px; border-radius: 4px; }
-.wasm-sim-slot { border: 1px solid var(--gold-faint); border-radius: 6px; padding: 4px 8px; flex-wrap: wrap; }
-.wasm-sim-slot-badge { color: var(--gold); font-size: 11px; }
-.wasm-sim-slot input[type="number"] { width: 52px; }
-.wasm-sim-asset { border: 1px solid var(--gold-faint); border-radius: 6px; padding: 3px 8px; }
-.wasm-sim-asset-name { font-size: 12px; }
-.wasm-sim-asset input[type="number"] { width: 64px; }
-.wasm-sim-variant { width: 40px; }
-.wasm-sim-state { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+.sim-modal .sim-stats-category-title {
+  margin: 0;
+}
+
+.wasm-sim-ally-select {
+  min-width: 115px;
+  max-width: 170px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.wasm-sim-toolbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.wasm-sim-import-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wasm-sim-error {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(224, 96, 96, 0.4);
+  background: rgba(224, 96, 96, 0.1);
+  color: var(--danger-bright, #ff7a7a);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wasm-sim-note {
+  font-size: 12px;
+  color: var(--text-dim, #9f9583);
+  line-height: 1.4;
+}
+
+.wasm-sim-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wasm-sim-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.wasm-sim-add-trait-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wasm-sim-empty {
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim, #9f9583);
+}
+
+/* 高级状态折叠栏 */
+.wasm-sim-advanced {
+  margin-top: 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.wasm-sim-advanced summary {
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim, #9f9583);
+  user-select: none;
+}
+
+.wasm-sim-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--gold-faint);
+}
+
+.wasm-sim-state,
+.wasm-sim-root-values,
+.wasm-sim-item-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .wasm-sim-tag {
-  padding: 2px 8px; border-radius: 10px; font-size: 11px;
-  background: var(--bg-raised); border: 1px solid var(--gold-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  border: 1px solid var(--gold-faint);
+  background: var(--bg-raised);
+  color: var(--text);
 }
-.wasm-sim-trigger-modes { display: inline-flex; gap: 2px; }
-.wasm-sim-trigger-modes button {
-  padding: 1px 6px; border: 1px solid var(--gold-faint); border-radius: 8px;
-  background: none; color: var(--text-dim); cursor: pointer; font-size: 10px;
+
+/* 已装配特质列表与轻量悬浮选择层 */
+.wasm-sim-equipped-traits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.wasm-sim-trigger-modes button.is-active { color: var(--gold-bright); border-color: var(--gold-dim); }
-.wasm-sim-nodes { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
-.wasm-sim-node { display: flex; align-items: center; gap: 6px; font-size: 13px; flex-wrap: wrap; }
-.wasm-sim-node em { font-style: normal; font-size: 11px; color: var(--gold); }
-.wasm-sim-empty { color: var(--text-dim); font-size: 12px; }
-.wasm-sim-difficulties, .wasm-sim-duration { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.wasm-sim-duration input { width: 80px; }
-.wasm-sim-duration .is-active { border-color: var(--gold); }
-.wasm-sim-seed { display: flex; gap: 6px; }
-.wasm-sim-seed input { flex: 1; font-family: monospace; }
-.wasm-sim-preview { border: 1px solid var(--gold-faint); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
-.wasm-sim-preview-member summary { cursor: pointer; font-size: 13px; }
-.wasm-sim-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.wasm-sim-actions .primary { padding: 8px 20px; }
-.wasm-sim-progress { font-size: 12px; color: var(--text-dim); }
-.wasm-sim-results { border-top: 1px solid var(--gold-faint); padding-top: 8px; }
-.wasm-sim-result { border: 1px solid var(--gold-faint); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
-.wasm-sim-result-member summary { cursor: pointer; font-size: 13px; }
-.wasm-sim-result-stats { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; margin: 6px 0; }
-.wasm-sim-result-items { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; margin: 4px 0; }
-.wasm-sim-asset-inline { display: inline-flex; align-items: center; gap: 3px; }
-.wasm-sim-table { border-collapse: collapse; font-size: 12px; margin: 6px 0; width: 100%; }
-.wasm-sim-table th, .wasm-sim-table td { border: 1px solid var(--gold-faint); padding: 3px 8px; text-align: right; }
-.wasm-sim-table th:first-child, .wasm-sim-table td:first-child { text-align: left; }
-.wasm-sim-compare tbody tr { cursor: pointer; }
-.wasm-sim-compare tbody tr.is-active { background: var(--gold-faint); }
-.wasm-sim-result-events ul { max-height: 160px; overflow-y: auto; font-size: 11px; font-family: monospace; margin: 4px 0; padding-left: 18px; }
-.wasm-sim-valuation { font-size: 12px; margin: 4px 0; }
-.wasm-sim-valuation-note { font-style: normal; color: var(--text-dim); font-size: 11px; }
+
+.wasm-sim-trait-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+
+.wasm-sim-trait-row .trait-bar-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.wasm-sim-inline-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.wasm-sim-level-input {
+  width: 54px !important;
+  text-align: center;
+  padding: 3px 6px !important;
+  font-size: 12px !important;
+}
+
+.wasm-sim-trait-popover {
+  width: min(360px, 88vw);
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.wasm-sim-trait-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gold-faint);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.wasm-sim-trait-cap {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.wasm-sim-trait-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  overflow-y: auto;
+  max-height: 300px;
+}
+
+/* 装备与饰品扩展细节 */
+.wasm-sim-hint-btn {
+  background: transparent;
+  border: none;
+  text-align: left;
+  width: 100%;
+}
+
+.wasm-sim-trinket-card {
+  flex-direction: column;
+  align-items: stretch;
+  grid-column: 1 / -1;
+}
+
+.wasm-sim-trinket-add {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.wasm-sim-trinket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wasm-sim-trinket-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+
+.wasm-sim-equip-tile-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wasm-sim-trinket-tile {
+  width: 44px !important;
+  height: 44px !important;
+}
+
+.wasm-sim-trinket-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wasm-sim-trinket-name {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 功法与消耗品选择器按钮 */
+.wasm-sim-consumable-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wasm-sim-slot-picker-btn {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--gold-faint);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.wasm-sim-slot-picker-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: var(--gold-faint);
+}
+
+.wasm-sim-slot-picker-btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wasm-sim-trigger-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.wasm-sim-tiny-btn {
+  padding: 2px 7px !important;
+  font-size: 11px !important;
+}
+
+/* 右栏地点、时长与种子细节 */
+.wasm-sim-node-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wasm-sim-effect-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--gold-faint);
+  color: var(--gold-bright);
+}
+
+.wasm-sim-duration-seed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.wasm-sim-seed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wasm-sim-seed-input {
+  width: 110px;
+}
+
+.wasm-sim-running-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-dim);
+  background: var(--gold-faint);
+}
+
+.wasm-sim-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(212, 175, 100, 0.28);
+  border-top-color: var(--gold-bright);
+  animation: wasm-sim-spin 0.8s linear infinite;
+}
+
+@keyframes wasm-sim-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.wasm-sim-progress {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--gold-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wasm-sim-elapsed {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.wasm-sim-disabled-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.wasm-sim-error--inline {
+  margin-bottom: 6px;
+}
+
+.wasm-sim-stale-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(224, 152, 60, 0.45);
+  background: rgba(224, 152, 60, 0.12);
+  color: var(--gold-bright);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+/* 结果补充行 */
+.wasm-sim-result-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+}
+
+.wasm-sim-strip-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.wasm-sim-asset-inline {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.wasm-sim-valuation {
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-faint);
+  background: var(--panel);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.wasm-sim-valuation-note {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* --------------------------------------------------------------------------
+ * 布局复用增量样式：基础境界名、独立属性页、六部位装备舞台与五功法/六消耗品条
+ * -------------------------------------------------------------------------- */
+.wasm-sim-realm-inline {
+  margin-left: 6px;
+  font-size: var(--text-sm);
+  color: var(--gold-bright);
+  font-weight: 500;
+}
+
+.sim-attributes-panel {
+  padding: 4px 0;
+}
+
+.sim-equipment-editor-panel,
+.sim-skills-editor-panel,
+.sim-consumables-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sim-equipment-stage-wrap {
+  max-width: 540px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.sim-stage-slot-holder {
+  position: relative;
+  display: inline-flex;
+}
+
+.sim-trinket-extra-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  font-family: var(--font-number);
+  font-weight: 700;
+  background: rgba(14, 12, 10, 0.85);
+  border: 1px solid var(--gold-faint);
+  color: var(--gold-bright);
+  pointer-events: none;
+}
+
+.sim-equipment-enhance-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.sim-equipment-enhance-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sim-section-sublabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.sim-equipment-enhance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.sim-equipment-enhance-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-raised, rgba(28, 25, 23, 0.72));
+}
+
+.sim-equipment-enhance-item-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sim-equipment-enhance-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sim-equipment-enhance-meta strong {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sim-equipment-enhance-meta small {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+
+.sim-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sim-stepper-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: var(--text-base);
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sim-stepper-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.sim-stepper-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sim-enhance-prefix {
+  font-size: var(--text-sm);
+  color: var(--gold-bright);
+  font-family: var(--font-number);
+}
+
+.sim-combat-slot-tray {
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  justify-content: center;
+}
+
+.sim-combat-slot-tray .slot-group.combat-slot-section {
+  min-width: 0;
+}
+
+.sim-combat-slot-tray .combat-slot-row--consumables {
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.sim-ability-levels-bar,
+.sim-consumables-control-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-ability-level-row,
+.sim-consumable-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-raised, rgba(28, 25, 23, 0.72));
+}
+
+.sim-ability-level-row.is-internal {
+  border-color: rgba(212, 168, 84, 0.25);
+}
+
+.sim-consumable-strip-row.is-potion {
+  border-color: rgba(114, 180, 140, 0.22);
+}
+
+.sim-slot-inline-pick {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.sim-condition-pill-btn {
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.sim-condition-pill-btn.has-triggers {
+  border-color: rgba(212, 168, 84, 0.45);
+  color: var(--gold-bright);
+  background: rgba(212, 168, 84, 0.1);
+}
+
+.sim-condition-pill-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--text);
+}
+
+.auto-use-slot.is-sim-disabled .item-use-slot {
+  opacity: 0.42;
+  filter: grayscale(0.55);
+}
+
+/* 浅色主题增量适配 */
+:root[data-theme="light"] .wasm-sim-advanced,
+:root[data-theme="light"] .sim-equipment-enhance-panel {
+  background: var(--bg-raised);
+  border-color: rgba(125, 82, 26, 0.18);
+}
+
+:root[data-theme="light"] .sim-equipment-enhance-card,
+:root[data-theme="light"] .sim-ability-level-row,
+:root[data-theme="light"] .sim-consumable-strip-row {
+  background: #ffffff;
+  border-color: rgba(125, 82, 26, 0.2);
+}
+
+:root[data-theme="light"] .sim-stepper-btn,
+:root[data-theme="light"] .sim-condition-pill-btn {
+  background: rgba(125, 82, 26, 0.06);
+  border-color: rgba(125, 82, 26, 0.24);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .sim-condition-pill-btn.has-triggers {
+  background: rgba(212, 146, 54, 0.14);
+  border-color: rgba(180, 112, 24, 0.45);
+  color: #7a4b10;
+}
+
+:root[data-theme="light"] .wasm-sim-slot-picker-btn {
+  background: #ffffff;
+  border-color: rgba(125, 82, 26, 0.25);
+}
+
+:root[data-theme="light"] .wasm-sim-stale-bar {
+  background: rgba(212, 146, 54, 0.12);
+  color: #7a4b10;
+}
+
+/* 窄屏单列响应式 */
+@media (max-width: 960px) {
+  .sim-modal .sim-modal-body {
+    overflow-y: auto;
+  }
+
+  .sim-modal .sim-config-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .sim-modal .sim-left-column,
+  .sim-modal .sim-right-column {
+    height: auto;
+    overflow-y: visible;
+  }
+}
+
+@media (max-width: 640px) {
+  .sim-modal .sim-modal-header {
+    padding: 10px 44px 10px 12px;
+    flex-wrap: wrap;
+  }
+
+  .sim-modal .sim-modal-body {
+    padding: 12px;
+  }
+
+  .sim-equipment-stage-wrap {
+    padding: 12px 8px;
+    gap: 8px;
+  }
+
+  .sim-equipment-enhance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sim-ability-level-row,
+  .sim-consumable-strip-row,
+  .wasm-sim-trait-row {
+    flex-wrap: wrap;
+  }
+
+  .sim-condition-pill-btn {
+    max-width: 100%;
+  }
+
+  .wasm-sim-running-bar {
+    flex-wrap: wrap;
+  }
+
+  .wasm-sim-running-bar .wasm-sim-progress {
+    flex-basis: calc(100% - 26px);
+  }
+}
+
+/* 右侧面板高信息密度与单行操控排版 */
+.sim-modal .sim-config-panel {
+  gap: 8px;
+}
+
+.sim-modal .sim-config-section--targets,
+.sim-modal .sim-config-section--inline {
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+.sim-inline-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.sim-inline-title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sim-inline-toolbar-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sim-select--compact {
+  min-width: 132px;
+  padding: 3px 8px;
+  font-size: var(--text-xs);
+  min-height: 26px;
+}
+
+.sim-node-multiselect-container--dense {
+  max-height: 360px;
+  padding: 2px;
+}
+
+.sim-node-cards-grid--dense {
+  grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+  gap: 5px;
+}
+
+.sim-node-card--dense {
+  padding: 5px 7px;
+  gap: 3px;
+}
+
+.sim-node-card--dense .sim-node-card-header {
+  gap: 5px;
+}
+
+.sim-node-card--dense .sim-node-name {
+  font-size: var(--text-xs);
+  line-height: 1.25;
+}
+
+.sim-node-dense-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 4px;
+}
+
+.sim-node-map-tag {
+  font-size: var(--text-xs);
+  line-height: 1.15;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.sim-node-bonus-pill {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  color: var(--gold);
+  background: rgba(212, 166, 74, 0.14);
+  border: 1px solid rgba(212, 166, 74, 0.35);
+}
+
+:root[data-theme="light"] .sim-node-bonus-pill {
+  color: #7a4b10;
+  background: rgba(212, 146, 54, 0.14);
+  border-color: rgba(180, 112, 24, 0.4);
+}
+
+.sim-inline-section-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-height: 28px;
+}
+
+.sim-inline-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--gold);
+  white-space: nowrap;
+  min-width: 56px;
+  flex-shrink: 0;
+}
+
+.sim-difficulty-inline-pills {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 auto;
+}
+
+.sim-difficulty-pill {
+  padding: 3px 7px;
+  gap: 4px;
+  min-height: 24px;
+}
+
+.sim-difficulty-pill .sim-difficulty-card-label {
+  font-size: var(--text-xs);
+}
+
+.sim-inline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sim-duration-inline-presets {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sim-preset-btn--compact {
+  padding: 3px 7px;
+  font-size: var(--text-xs);
+  min-height: 24px;
+}
+
+.sim-inline-duration-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.sim-input--compact {
+  padding: 3px 7px;
+  font-size: var(--text-xs);
+  min-height: 24px;
+}
+
+.sim-inline-duration-custom .sim-input--compact {
+  width: 72px;
+}
+
+.sim-inline-seed-group {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sim-inline-seed-group .wasm-sim-seed-input {
+  flex: 1 1 140px;
+  min-width: 110px;
+}
+
+@media (max-width: 640px) {
+  .sim-node-cards-grid--dense {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  }
+
+  .sim-inline-duration-custom {
+    margin-left: 0;
+  }
+}

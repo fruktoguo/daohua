@@ -11,10 +11,11 @@ ENV VITE_APP_VERSION=${BUILD_VERSION}
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --registry="${NPM_CONFIG_REGISTRY}" --ignore-scripts --no-audit --no-fund
 COPY frontend/ ./
-COPY scripts/build-simulator.mjs /src/scripts/build-simulator.mjs
+COPY config/game-data/ /src/config/game-data/
+COPY scripts/gen-simulator-catalog.mjs /src/scripts/gen-simulator-catalog.mjs
 COPY scripts/export-i18n-csv.mjs /src/scripts/export-i18n-csv.mjs
 COPY scripts/gen-asset-manifest.mjs /src/scripts/gen-asset-manifest.mjs
-RUN SKIP_SIMULATOR_BUILD=1 npm run build
+RUN npm run build
 
 FROM ${DOTNET_SDK_IMAGE} AS dotnet-build
 WORKDIR /src

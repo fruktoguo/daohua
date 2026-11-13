@@ -45,8 +45,10 @@ public static class SimulatorEndpoints
                         bundle.Identity.DisplayName, bundle.Identity.CreatedAt, gameData.Fingerprint).ExportState();
             }
             var balances = loaded?.Assets ?? await assetBalances.LoadBalancesAsync(targetId, ct);
-            return Results.Ok(DaoHua.Simulator.SimulatorProfileMapper.Capture(state,
-                balances.Select(balance => new SimulatorAssetDto(balance.AssetId, balance.Variant, balance.Quantity)),
+            return Results.Ok(SimulatorProfileCapture.Capture(state,
+                balances
+                    .Where(balance => gameData.Items.ContainsKey(new Domain.Common.ItemId(balance.AssetId)))
+                    .Select(balance => new SimulatorAssetDto(balance.AssetId, balance.Variant, balance.Quantity)),
                 gameData));
         });
         players.MapGet("/{playerId:guid}/simulator-environment", async (Guid playerId,
@@ -75,13 +77,13 @@ public static class SimulatorEndpoints
                 var counts = await nodeBuildings.UsageForAsync(nodeId, now, ct);
                 var effects = snapshot.Buildings.Count == 0
                     ? BuildingEffectSet.Empty
-                    : NodeBuildingRules.AggregateEffects(snapshot.Buildings, gameData.Buildings, nowUnixSeconds, counts);
+                    : NodeBuildingRules.AggregateEffects(snapshot.Buildings, gameData.Buildings, nowUnixSeconds, counts, nodeId);
                 nodes.Add(new SimulatorEnvironmentNodeDto(
                     nodeId,
-                    snapshot.Buildings.Select(DaoHua.Simulator.SimulatorProfileMapper.ToDto).ToArray(),
-                    DaoHua.Simulator.SimulatorProfileMapper.ToDto(effects),
-                    nodeBuildings.UsagesFor(snapshot.Buildings, counts, nowUnixSeconds)
-                        .Select(DaoHua.Simulator.SimulatorProfileMapper.ToDto).ToArray()));
+                    snapshot.Buildings.Select(SimulatorProfileCapture.ToDto).ToArray(),
+                    SimulatorProfileCapture.ToDto(effects),
+                    nodeBuildings.UsagesFor(nodeId, snapshot.Buildings, counts, nowUnixSeconds)
+                        .Select(SimulatorProfileCapture.ToDto).ToArray()));
             }
             return Results.Ok(new SimulatorEnvironmentDto(
                 SimulatorContractVersions.Environment, gameData.Fingerprint, nowUnixSeconds, nodes));

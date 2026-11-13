@@ -10627,6 +10627,14 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
+/* 桌面宽屏（≥961px）侧栏「同道」子菜单已承载队伍/宗门/邀请切换，页内页签仅移动布局显示；
+   本规则必须位于 .panel-header{display:flex} 之后，同特异度靠后声明才能压住它。 */
+@media (min-width: 961px) {
+  .social-page-header {
+    display: none;
+  }
+}
+
 .social-page-body {
   display: flex;
   min-height: 0;

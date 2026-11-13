@@ -1,6 +1,6 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
 import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from '../game/types'
-import type { SimulatorEnvironmentDto, SimulatorProfileDto } from '../game/simulator/wasmSimulatorTypes'
+import type { SimulatorEnvironmentDto, SimulatorProfileDto } from '../game/simulator/simulatorTypes'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */

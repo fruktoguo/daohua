@@ -25,7 +25,6 @@
     <ProjectReference Include="../Ecs/Ecs.csproj" />
     <ProjectReference Include="../Server.Clean/Server.Clean.csproj" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />
-    <ProjectReference Include="../Simulator/Simulator.csproj" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 

@@ -77,6 +77,9 @@ export default defineConfig({
       },
     },
   },
+  worker: {
+    format: 'es',
+  },
   build: {
     sourcemap: false,
     // 产出 .vite/manifest.json：供 gen-asset-manifest.mjs 生成 /assets/*-HASH → /hd/* HD 别名，
