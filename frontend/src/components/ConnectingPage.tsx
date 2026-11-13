@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
+import { Icon } from './Icon'
 
 /** 连接中页面 Props */
 interface ConnectingPageProps {
@@ -79,7 +80,7 @@ export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, 
       </div>
       <div className="status-card panel">
         <div className="status-error-icon" aria-hidden="true">
-          <span>⚡</span>
+          <Icon name="bolt" size={26} />
         </div>
         <h2 className="status-title">{t('app.connect.errorTitle')}</h2>
         <p className="status-subtitle">

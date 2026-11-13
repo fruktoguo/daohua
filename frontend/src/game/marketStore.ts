@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from './ids'
+import { resolveCatalogItemMetadata, type ItemMetadata } from './ids'
 import { getT, type TFunction } from '../i18n'
 import type { CombatEquipmentDefinition, ItemDefinition } from './types'
 
@@ -59,50 +59,24 @@ export interface MarketInstrument {
 /**
  * 解析坊市交易标的对应的物品元数据 (ItemMetadata)
  *
- * 统一收拢品类细分、等阶归一化 (withItemGrade) 与等级换算 (convertTierToLevel)，
- * 避免各处分散兜底导致等阶/等级口径不一致（如误把 tier 当成 level 显示）。
+ * 统一委托 resolveCatalogItemMetadata 收拢品类细分、等阶归一化与代表等级解析
+ * （装备/物品显式 level 优先，缺省回退等阶换算）。
  */
 export function resolveMarketInstrumentMetadata(item: MarketInstrument, t?: TFunction): ItemMetadata {
   const translator = t ?? getT()
-  const subCategoryLabel = resolveItemCategoryLabel(
-    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category),
-    translator,
-  )
-  const tier = Math.max(1, item.tier)
-
-  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
-    return withItemGrade({
-      label: item.name,
-      glyph: '⚔️',
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: 'mundane',
-      rarityLabel: '',
-      description: item.equipmentDefinition?.description || (item.equipmentDefinition ? '' : translator('market.itemFallback.description')),
-      source: '',
-      usage: '',
-    }, tier)
-  }
-
-  const registered = resolveItemMetadata(item.itemId)
-  if (!registered) {
-    return withItemGrade({
-      label: item.name,
-      glyph: item.name.slice(0, 1),
-      tone: 'gold',
-      category: subCategoryLabel,
-      rarity: 'mundane',
-      rarityLabel: '',
-      description: item.definition?.description || translator('market.itemFallback.description'),
-      source: '',
-      usage: '',
-    }, tier)
-  }
-
-  return withItemGrade({
-    ...registered,
-    category: subCategoryLabel,
-  }, item.tier > 0 ? item.tier : registered.tier ?? 1)
+  return resolveCatalogItemMetadata(item.itemId, {
+    itemDefinition: item.definition,
+    equipmentDefinition: item.equipmentDefinition,
+    tier: item.tier > 0 ? item.tier : undefined,
+    name: item.name,
+    category: item.subCategory || item.category,
+    description: item.equipmentDefinition?.description ?? item.definition?.description ?? translator('market.itemFallback.description'),
+    glyph: item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')
+      ? '武'
+      : item.name.slice(0, 1),
+    tone: 'gold',
+    t: translator,
+  })
 }
 
 /** 坊市 UI 状态接口 */

@@ -2,7 +2,7 @@ import { memo, type ReactNode, useCallback } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatExactNumber, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { calculateEquipmentSellPrice, convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { calculateEquipmentSellPrice, convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import { BUFF_CHANNELS, formatBuffChannelValue, isBuffEffectChannel, specToBuffEffects, type BuffEffectEntry } from '../game/buffChannels'
@@ -80,7 +80,7 @@ function fallbackMetadata(itemId: string): ItemMetadata {
   const grade = resolveItemGrade(tier)
   return {
     label: def?.name || itemId,
-    glyph: isTome ? '📘' : isFragment ? '📜' : '·',
+    glyph: isTome ? '谱' : isFragment ? '卷' : '·',
     tone: rarityToTone(grade.rarity),
     category: resolveItemCategoryLabel(def?.subCategory ?? (isTome ? 'manualTome' : isFragment ? 'manualFragment' : undefined), t),
     rarity: grade.rarity,
@@ -1948,19 +1948,19 @@ export function ItemTile({
  * 结合了 ItemTooltipTarget 与 ItemTile，用于背包格子的标准渲染。
  */
 export function ItemCard({ item, definition, equipmentDefinition }: { item: InventoryItem; definition?: ItemDefinition; equipmentDefinition?: CombatEquipmentDefinition }): React.JSX.Element {
-  // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
+  // 订阅语言状态：resolveCatalogItemMetadata 返回的文案随语言切换刷新。
   const t = useT()
-  const meta = resolveItemMetadata(item.itemId)
-  const rawMeta = meta ?? fallbackMetadata(item.itemId)
-  const baseMeta = definition?.level != null ? { ...rawMeta, level: definition.level } : rawMeta
-  const metadata = withItemGrade(
-    baseMeta,
-    item.tier ?? meta?.tier ?? 1,
-  )
+  const metadata = resolveCatalogItemMetadata(item.itemId, {
+    itemDefinition: definition,
+    equipmentDefinition,
+    tier: item.tier,
+    name: item.name,
+    category: item.subCategory,
+    t,
+  })
   // 强化变体行（AssetKey "+N"）：名称附强化等级、悬浮卡片按该等级缩放属性预览。
   const enhancementLevel = parseEnhancementVariant(item.variant)
-  const rawName = (meta?.label ?? definition?.name) || item.name
-  const displayName = enhancementLevel > 0 ? `${rawName} +${enhancementLevel}` : rawName
+  const displayName = enhancementLevel > 0 ? `${metadata.label} +${enhancementLevel}` : metadata.label
   return (
     <ItemTooltipTarget
       amount={item.amount}
@@ -1973,7 +1973,7 @@ export function ItemCard({ item, definition, equipmentDefinition }: { item: Inve
     >
       <ItemTile
         amount={item.amount}
-        category={resolveItemCategoryLabel(resolveItemSubCategory(item.itemId, definition, equipmentDefinition, item.subCategory), t)}
+        category={metadata.category}
         className="inventory-cell"
         enhancementLevel={enhancementLevel}
         itemId={item.itemId}

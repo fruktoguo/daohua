@@ -55,7 +55,7 @@
 .ddz-bottom-cards .ddz-card{animation:none}
 .ddz-card-back,.ddz-mini-back{background:radial-gradient(ellipse at 50% 0,#36564b,transparent 80%),repeating-linear-gradient(45deg,#d8bf7540 0 .6px,transparent .7px 5px),repeating-linear-gradient(-45deg,#d8bf751b 0 .6px,transparent .7px 5px),#1b3b32;border:1px solid #e3d4a8;box-shadow:inset 0 0 0 2px #183a30,inset 0 0 0 3px #c7ac694a,0 3px 7px #0004}
 .ddz-card-back::after{inset:7px;border:1px solid #d5bb756e;border-radius:2px;background:radial-gradient(ellipse at center,#d9c58d22,transparent 70%),linear-gradient(45deg,transparent 48%,#d6bd8345 49% 51%,transparent 52%),linear-gradient(-45deg,transparent 48%,#d6bd8345 49% 51%,transparent 52%)}
-.ddz-card-back::before{content:"✦";position:absolute;z-index:1;inset:0;display:grid;place-items:center;font-size:19px;color:#ddc995b3;text-shadow:0 1px 2px #0008}
+.ddz-card-back::before{content:"";position:absolute;z-index:1;left:50%;top:50%;width:17px;height:17px;margin:-8.5px 0 0 -8.5px;background:#ddc995b3;clip-path:polygon(50% 0,63% 37%,100% 50%,63% 63%,50% 100%,37% 63%,0 50%,37% 37%);filter:drop-shadow(0 1px 2px #0008)}
 .ddz-mini-back::before{content:"◇";display:grid;place-items:center;height:100%;color:#d3be89;font-size:10px}
 .ddz-bottom-cards .ddz-is-waiting{opacity:.16}
 .ddz-bottom-cards .ddz-card-back{transition:opacity .18s}
@@ -94,7 +94,7 @@
 .ddz-social-bubble small{display:block;font-size:9px;letter-spacing:1px;color:#688067;margin-bottom:1px}
 .ddz-social-bubble::after{content:"";position:absolute;bottom:-5px;left:calc(50% - 5px);width:9px;height:9px;background:#d5d9bd;transform:rotate(45deg);border-right:1px solid #d8c58a6b;border-bottom:1px solid #d8c58a6b}
 .ddz-social-caption{position:absolute;left:0;top:0;color:#eddbab;font-size:11px;letter-spacing:1px;text-shadow:0 2px 4px #102719;white-space:nowrap}
-.ddz-social-spark{position:absolute;left:0;top:0;color:#ebdba2;font:22px Georgia}
+.ddz-social-spark{position:absolute;left:0;top:0;width:14px;height:14px;margin:-7px 0 0 -7px;background:#ebdba2;clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%);filter:drop-shadow(0 0 3px #ebdba288)}
 @container ddz(max-width:850px){.ddz-deck-scene{top:35%}
 .ddz-deck-stack{width:58px;height:83px}
 .ddz-deck-scene{height:147px}

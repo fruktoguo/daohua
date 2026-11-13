@@ -7,6 +7,7 @@ import { FloatingMenuGroup, FloatingMenuItem, FloatingPopover } from './Floating
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { StatGlyph } from './StatGlyph'
+import { Icon } from './Icon'
 
 export interface ChatEmojiPickerProps {
   onSelectEmoji: (emoji: string) => void
@@ -79,7 +80,7 @@ const StickerPickerItem = memo(function StickerPickerItem({
           tabIndex={0}
           title={t('combat.chat.deleteSticker')}
         >
-          ✕
+          <Icon name="close" size={11} />
         </span>
       </button>
     </FloatingPopover>
@@ -243,7 +244,7 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
             </button>
             <label className="chat-picker-upload-label" title={t('combat.chat.uploadImageTooltip')}>
               <input accept="image/*" onChange={handleFileSelect} style={{ display: 'none' }} type="file" />
-              🖼️
+              <Icon name="image" size={15} />
             </label>
           </form>
         </div>

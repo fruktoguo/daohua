@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useId } from 'react'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
+import { resolveCatalogItemMetadata } from '../game/ids'
 import type { ItemDefinition, ShopOffer, ShopState } from '../game/types'
 import { useT } from '../i18n'
 import { fetchShopState } from '../network/apiClient'
@@ -39,8 +39,11 @@ const ShopItemSlot = memo(function ShopItemSlot({
   onSelect,
 }: ShopItemSlotProps): React.JSX.Element {
   const t = useT()
-  const metadata = resolveItemMetadata(offer.itemId)
-  const name = metadata?.label ?? definition?.name ?? offer.itemId
+  const metadata = resolveCatalogItemMetadata(offer.itemId, {
+    itemDefinition: definition,
+    t,
+  })
+  const name = metadata.label
   const limited = offer.dailyLimit !== null
   const remaining = limited ? Math.max(0, (offer.dailyLimit ?? 0) - offer.purchasedToday) : Number.POSITIVE_INFINITY
   const soldOut = limited && remaining <= 0
@@ -68,13 +71,12 @@ const ShopItemSlot = memo(function ShopItemSlot({
         >
           <div className="shop-item-tile-wrap">
             <ItemTile
-              category={resolveItemCategoryLabel(
-                resolveItemSubCategory(offer.itemId, definition, undefined, metadata?.category), t)}
+              category={metadata.category}
               className="inventory-cell"
               itemId={offer.itemId}
-              level={metadata?.level ?? definition?.tier}
+              level={metadata.level}
               name={name}
-              rarity={metadata?.rarity ?? 'yellow'}
+              rarity={metadata.rarity}
             />
             {limited && (
               <span className={`shop-slot-badge${soldOut ? ' is-sold-out' : ''}`}>
@@ -147,8 +149,11 @@ const ShopBuyModal = memo(function ShopBuyModal({
 
   if (!open || !offer) return null
 
-  const metadata = resolveItemMetadata(offer.itemId)
-  const name = metadata?.label ?? definition?.name ?? offer.itemId
+  const metadata = resolveCatalogItemMetadata(offer.itemId, {
+    itemDefinition: definition,
+    t,
+  })
+  const name = metadata.label
   const limited = offer.dailyLimit !== null
   const remaining = limited ? Math.max(0, (offer.dailyLimit ?? 0) - offer.purchasedToday) : Number.POSITIVE_INFINITY
   const soldOut = limited && remaining <= 0
@@ -177,13 +182,12 @@ const ShopBuyModal = memo(function ShopBuyModal({
           >
             <div className="shop-item-tile-wrap">
               <ItemTile
-                category={resolveItemCategoryLabel(
-                  resolveItemSubCategory(offer.itemId, definition, undefined, metadata?.category), t)}
+                category={metadata.category}
                 className="inventory-cell"
                 itemId={offer.itemId}
-                level={metadata?.level ?? definition?.tier}
+                level={metadata.level}
                 name={name}
-                rarity={metadata?.rarity ?? 'yellow'}
+                rarity={metadata.rarity}
               />
             </div>
           </ItemTooltipTarget>

@@ -14,6 +14,7 @@ import { useUiStore, type SocialSubTab } from '../uiStore'
 import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Icon } from './Icon'
 import { FloatingPopover, FloatingTooltip, type FloatingPlacement } from './FloatingPopover'
 import { Modal } from './Modal'
 import { OptionToggle, type OptionToggleOption } from './OptionToggle'
@@ -400,7 +401,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
                   title={t('combat.chat.shareToChat')}
                   type="button"
                 >
-                  💬 {t('combat.chat.shareToChat')}
+                  <Icon name="chat" size={13} /> {t('combat.chat.shareToChat')}
                 </button>
                 {!isMine && myPartyId === null && (
                   <button disabled={!meets} onClick={() => gameClient.sendSocialAction('party.join', undefined, undefined, { partyId: entry.partyId })} type="button">
@@ -773,7 +774,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
               title={t('combat.chat.shareToChat')}
               type="button"
             >
-              💬 {t('combat.chat.shareToChat')}
+              <Icon name="chat" size={13} /> {t('combat.chat.shareToChat')}
             </button>
             <button onClick={() => setConfirmLeave(true)} type="button">{t('social.action.leave')}</button>
             {isLeader && (

@@ -15,7 +15,7 @@ import { createProgressAsideCard, FloatingInfoCard, FloatingPopover, FloatingToo
 import { resolveAbilityAsideCards } from './components/EffectTooltip'
 import { ValueText } from './components/ValueText'
 import { GameLogPanel } from './components/GameLogPanel'
-import { ActionDetailItem, ItemTooltipTarget } from './components/ItemDisplay'
+import { ActionDetailItem, ItemIcon, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { Modal } from './components/Modal'
 import type { PillTone } from './components/PillLabel'
@@ -371,6 +371,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
           {entry.pvpEnabled && <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>}
           {Boolean(entry.parameters?.spiritStone && entry.parameters.spiritStone > 0) && (
             <span className="badge badge-spirit-stone">
+              <ItemIcon className="badge-item-icon" itemId="currency.spirit-stone" />
               {t('app.action.spiritStoneBadge', { count: entry.parameters!.spiritStone })}
             </span>
           )}
@@ -543,6 +544,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 )}
                 {Boolean(entry.parameters?.spiritStone && entry.parameters.spiritStone > 0) && (
                   <span className="badge badge-spirit-stone">
+                    <ItemIcon className="badge-item-icon" itemId="currency.spirit-stone" />
                     {t('app.action.spiritStoneBadge', { count: entry.parameters!.spiritStone })}
                   </span>
                 )}
@@ -1544,7 +1546,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       type="button"
     >
       <span className="item-corner item-corner--top-right">
-        {isLocked && <span className="action-card-lock-icon" aria-hidden="true">🔒</span>}
+        {isLocked && <span className="action-card-lock-icon" aria-hidden="true"><Icon name="lock" size={9} /></span>}
         Lv. <UnitNumber disableTooltip value={level} />
       </span>
       {isCrafting && (

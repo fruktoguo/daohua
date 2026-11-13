@@ -5,7 +5,7 @@ import { describeAbility, formatAbilityCategory, formatNumber } from '../game/fo
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { ConditionedTile } from './ConditionedTile'
 import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../game/ids'
+import { findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, resolveCatalogItemMetadata } from '../game/ids'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
 import type { PlayerCardAutoUseSlotDto, PlayerCardDto } from '../network/protocol'
@@ -63,24 +63,16 @@ const PlayerCardEquipmentTile = memo(function PlayerCardEquipmentTile({ itemId, 
   const equipmentCatalog = useGameStore(state => state.equipment)
   const equipmentDef = findEquipmentInCatalog(equipmentCatalog, itemId)
   const definition = findItemInCatalog(itemCatalog, itemId)
-  const meta = resolveItemMetadata(itemId)
-  const metadata = withItemGrade(
-    meta ?? {
-      label: equipmentDef?.name ?? itemId,
-      glyph: '·',
-      tone: 'gold',
-      category: resolveItemCategoryLabel(equipmentDef?.slot, t),
-      rarity: 'mundane',
-      rarityLabel: '',
-      description: equipmentDef?.description ?? definition?.description ?? '',
-      source: '',
-      usage: '',
-    },
-    equipmentDef?.tier ?? meta?.tier ?? 1,
-  )
+  const metadata = resolveCatalogItemMetadata(itemId, {
+    itemDefinition: definition,
+    equipmentDefinition: equipmentDef,
+    category: equipmentDef?.slot,
+    tone: 'gold',
+    t,
+  })
   const displayName = enhancementLevel > 0
-    ? `${equipmentDef?.name ?? definition?.name ?? metadata.label} +${Math.floor(enhancementLevel)}`
-    : (equipmentDef?.name ?? definition?.name ?? metadata.label)
+    ? `${metadata.label} +${Math.floor(enhancementLevel)}`
+    : metadata.label
   return (
     <ItemTooltipTarget
       className="equipment-slot-anchor"
@@ -91,7 +83,7 @@ const PlayerCardEquipmentTile = memo(function PlayerCardEquipmentTile({ itemId, 
       metadata={metadata}
     >
       <ItemTile
-        category={resolveItemCategoryLabel(equipmentDef?.slot, t)}
+        category={metadata.category}
         className="inventory-cell"
         enhancementLevel={enhancementLevel}
         itemId={itemId}
@@ -162,21 +154,13 @@ const PlayerCardConsumableTile = memo(function PlayerCardConsumableTile({ slot }
     )
   }
   const itemDef = findItemInCatalog(itemCatalog, slot.itemId)
-  const meta = resolveItemMetadata(slot.itemId)
-  const metadata = withItemGrade(
-    meta ?? {
-      label: itemDef?.name ?? slot.itemId,
-      glyph: '🧪',
-      tone: 'emerald',
-      category: resolveItemCategoryLabel(itemDef?.category ?? 'consumable', t),
-      rarity: 'mundane',
-      rarityLabel: '',
-      description: itemDef?.description ?? '',
-      source: '',
-      usage: '',
-    },
-    itemDef?.tier ?? meta?.tier ?? 1,
-  )
+  const metadata = resolveCatalogItemMetadata(slot.itemId, {
+    itemDefinition: itemDef,
+    category: itemDef?.category ?? 'consumable',
+    glyph: '丹',
+    tone: 'emerald',
+    t,
+  })
 
   return (
     <span className="player-card-consumable-group">

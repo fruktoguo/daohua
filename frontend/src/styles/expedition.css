@@ -4865,6 +4865,20 @@
   line-height: 1;
 }
 
+/* 生活目标卡主产物位图图标（48px 道具图等比缩至 30px） */
+.arena-life-icon-img {
+  width: 30px;
+  height: 30px;
+  image-rendering: pixelated;
+}
+
+/* Buff 产出等无图标资源时的文字字印兜底 */
+.arena-life-glyph-text {
+  font-size: 19px;
+  line-height: 1;
+  color: var(--gold-bright);
+}
+
 .arena-life-count-badge {
   position: absolute;
   bottom: -6px;

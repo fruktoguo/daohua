@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { getT } from '../i18n'
 import { resetAllLocalData } from '../network/account'
+import { Icon } from './Icon'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -91,7 +92,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </div>
           <div className="status-card panel error-boundary-card">
             <div className="status-error-icon" aria-hidden="true">
-              <span>⚠️</span>
+              <Icon name="alert" size={26} />
             </div>
             <h2 className="status-title">{t('app.errorBoundary.title')}</h2>
             <p className="status-subtitle">

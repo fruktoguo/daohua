@@ -10,6 +10,7 @@ import { useT } from '../i18n'
 import { FloatingTooltip } from './FloatingPopover'
 import { ItemIcon, ItemReference, ItemTooltipTarget } from './ItemDisplay'
 import { ChatSticker } from './ChatSticker'
+import { Icon } from './Icon'
 import { QqEmoji } from './QqEmoji'
 import { UnitNumber } from './UnitNumber'
 /** 单条订单超链接胶囊 (ChatOrderReference) */
@@ -132,7 +133,7 @@ const ChatPartyReference = memo(function ChatPartyReference({
   const tooltipContent = (
     <div className="chat-link-popover">
       <div className="chat-link-popover-header">
-        <strong className="text-gold">👥 {displayName}</strong>
+        <strong className="text-gold"><Icon name="social" size={12} /> {displayName}</strong>
       </div>
       <div className="chat-link-popover-body">
         {activityLabel && (
@@ -178,7 +179,7 @@ const ChatPartyReference = memo(function ChatPartyReference({
         role="button"
         tabIndex={0}
       >
-        <span className="chat-party-badge">👥 {t('social.sub.party')}</span>
+        <span className="chat-party-badge"><Icon name="social" size={10} /> {t('social.sub.party')}</span>
         <span className="chat-party-name">{displayName}</span>
         {activityLabel && <span className="chat-party-activity">{activityLabel}</span>}
         <span className="chat-party-slots">({memberCount}/{maxSlots})</span>
@@ -222,7 +223,7 @@ const ChatLocationReference = memo(function ChatLocationReference({
   const tooltipContent = (
     <div className="chat-link-popover">
       <div className="chat-link-popover-header">
-        <strong className="text-jade">📍 {displayName}</strong>
+        <strong className="text-jade"><Icon name="pin" size={12} /> {displayName}</strong>
       </div>
       <div className="chat-link-popover-body">
         {nodeInfo?.mapName && (
@@ -251,7 +252,7 @@ const ChatLocationReference = memo(function ChatLocationReference({
         role="button"
         tabIndex={0}
       >
-        <span className="chat-location-badge">📍 {t('combat.chat.locationBadge')}</span>
+        <span className="chat-location-badge"><Icon name="pin" size={10} /> {t('combat.chat.locationBadge')}</span>
         <span className="chat-location-name">{displayName}</span>
       </span>
     </FloatingTooltip>

@@ -1,13 +1,13 @@
 import type { BuffEffectChannel } from '../game/buffChannels'
 import { hasActionParticipation } from '../game/types'
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
-import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveCatalogItemLevel, resolveItemMetadata } from '../game/ids'
+import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveCatalogItemLevel, resolveItemMetadata } from '../game/ids'
 import { calculateEnhancementYields, ENHANCE_ACTION_ID, SPIRIT_STONE_ITEM_ID } from '../game/combatConstants'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
@@ -21,7 +21,9 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
 import { CombatStatsPanel } from './CombatStatsPanel'
 import { ConfirmDialog } from './ConfirmDialog'
-import { BonusAsideList, extractBuffBonusItems } from './ItemDisplay'
+import { BonusAsideList, extractBuffBonusItems, ItemIcon } from './ItemDisplay'
+import { Icon } from './Icon'
+import { resolveItemIconUrl } from '../game/itemIcons'
 import { useCombatVfx } from '../vfx/useCombatVfx'
 import { StatGlyph } from './StatGlyph'
 import { useUiStore } from '../uiStore'
@@ -1257,7 +1259,8 @@ function ArenaActor({
 interface LifeYieldRow {
   key: string
   name: string
-  glyph: string
+  /** 主产物图标节点：物品走 ItemIcon 位图，资源/技艺走 StatGlyph 剪影，增益回退文字字印 */
+  icon: ReactNode
   tone: string
   /** 单轮产出（buff 行为层数） */
   perRound: number
@@ -1268,11 +1271,11 @@ interface LifeYieldRow {
   buffDurationSeconds?: number
 }
 
-/** 资源类产出（修为/灵力/气血）的图标字印与色调 */
+/** 资源类产出（修为/灵力/气血）对应的属性剪影图标与色调 */
 const RESOURCE_YIELD_META: Record<ResourceYieldKind, { glyph: string; tone: string }> = {
-  experience: { glyph: '修', tone: 'gold' },
-  mana: { glyph: '灵', tone: 'cyan' },
-  hitpoints: { glyph: '血', tone: 'red' },
+  experience: { glyph: 'experience', tone: 'gold' },
+  mana: { glyph: 'mp', tone: 'cyan' },
+  hitpoints: { glyph: 'hp', tone: 'red' },
 }
 
 /**
@@ -1336,6 +1339,15 @@ function ArenaLifeGoalCard({
 
   // 产出展示行：首项为主产物（驱动大图标/目标产物/计划总量），其余进「其余产出」清单
   const outputs: LifeYieldRow[] = []
+  // 物品产出图标：优先真实物品位图；缺图标资源时按行动类型回退对应属性剪影
+  const yieldFallbackGlyph = isForging ? 'forging'
+    : queueEntry?.type === 'alchemy' ? 'alchemy'
+    : queueEntry?.type === 'exploration' ? 'gathering'
+    : queueEntry?.type === 'cultivation' ? 'bio-cultivation'
+    : 'gathering'
+  const itemYieldIcon = (itemId: string) => resolveItemIconUrl(itemId)
+    ? <ItemIcon className="arena-life-icon-img" itemId={itemId} />
+    : <StatGlyph glyph={yieldFallbackGlyph} size={30} />
   if (isEnhancement) {
     const targetItemId = queueEntry?.targetItemId
     const targetLevel = queueEntry?.targetLevel ?? 1
@@ -1351,7 +1363,7 @@ function ArenaLifeGoalCard({
     outputs.push({
       key: 'enhancement:target',
       name: displayName,
-      glyph: meta?.glyph ?? '⚔️',
+      icon: targetItemId ? itemYieldIcon(targetItemId) : <StatGlyph glyph="enhancement" size={30} />,
       tone: meta?.tone ?? 'gold',
       perRound: 1,
       total: isInfinite ? null : 1,
@@ -1364,7 +1376,7 @@ function ArenaLifeGoalCard({
     outputs.push({
       key: 'rootexp:consciousness',
       name: t('combat.attr.divineSense'),
-      glyph: '☯',
+      icon: <StatGlyph glyph="consciousness" size={30} />,
       tone: 'crimson',
       perRound: yields.consciousnessExp,
       total: isInfinite ? null : yields.consciousnessExp * repeats,
@@ -1373,7 +1385,7 @@ function ArenaLifeGoalCard({
     outputs.push({
       key: 'technique:enhancement',
       name: t('insight.technique.enhancement'),
-      glyph: '🔨',
+      icon: <StatGlyph glyph="enhancement" size={30} />,
       tone: 'gold',
       perRound: yields.techniqueExp,
       total: isInfinite ? null : yields.techniqueExp * repeats,
@@ -1386,7 +1398,7 @@ function ArenaLifeGoalCard({
       outputs.push({
         key: `item:${output.itemId}`,
         name: definition?.name || meta?.label || output.itemId,
-        glyph: meta?.glyph ?? '🌿',
+        icon: itemYieldIcon(output.itemId),
         tone: meta?.tone ?? 'gold',
         perRound: output.finalAmount,
         total: isInfinite ? null : output.finalAmount * repeats,
@@ -1398,7 +1410,7 @@ function ArenaLifeGoalCard({
       outputs.push({
         key: `resource:${entry.kind}`,
         name: t(`app.action.yieldKind.${entry.kind}`),
-        glyph: meta.glyph,
+        icon: <StatGlyph glyph={meta.glyph} size={30} />,
         tone: meta.tone,
         perRound: entry.finalAmount,
         total: isInfinite ? null : entry.finalAmount * repeats,
@@ -1409,7 +1421,7 @@ function ArenaLifeGoalCard({
       outputs.push({
         key: `buff:${buff.buffId}`,
         name: buff.name,
-        glyph: t('combat.arena.glyphGeneric'),
+        icon: <span className="arena-life-glyph-text">{buff.name.slice(0, 1) || t('combat.arena.glyphGeneric')}</span>,
         tone: 'gold',
         perRound: buff.stacks,
         total: null,
@@ -1450,7 +1462,9 @@ function ArenaLifeGoalCard({
 
       <div className="arena-life-body">
         <div className={`arena-life-icon-box arena-life-icon-box--${primary?.tone ?? 'gold'}`}>
-          <span className="arena-life-glyph">{primary?.glyph ?? (queueEntry ? ACTION_TAB_META[queueEntry.type].glyph : '☯')}</span>
+          {primary?.icon ?? (queueEntry
+            ? <Icon name={queueEntry.type} size={30} />
+            : <StatGlyph glyph="bio-cultivation" size={30} />)}
           <span className="arena-life-count-badge">
             {isInfinite
               ? '∞'
@@ -1613,7 +1627,7 @@ function ArenaTravelCard({
 
       <div className="arena-life-body">
         <div className="arena-life-icon-box arena-life-icon-box--travel">
-          <span className="arena-life-glyph">🧭</span>
+          <Icon name="compass" size={30} />
           <span className="arena-life-count-badge">{t('combat.travel.badgeMoving')}</span>
         </div>
 

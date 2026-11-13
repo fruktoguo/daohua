@@ -2,7 +2,7 @@
  * 建筑图标资源注册表。
  *
  * 约定：只要在 `frontend/src/assets/buildings/` 下放入以「建筑 ID」命名的图片，
- * 前端就会自动用该图片替代 Emoji 🏛️ 或纯文本名称渲染；没有对应图片的条目自动回退为原有占位。
+ * 前端就会自动用该图片替代矢量占位图标或纯文本名称渲染；没有对应图片的条目自动回退为原有占位。
  *
  * 建筑 ID 即配置表里的 `id`（如 `building.meditation-circle`、`building.demon-seal-array` 等）。
  */

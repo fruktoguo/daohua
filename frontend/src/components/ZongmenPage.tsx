@@ -8,6 +8,7 @@ import { gameClient } from '../network/gameClient'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ItemReference } from './ItemDisplay'
+import { Icon } from './Icon'
 import { Modal } from './Modal'
 import type { ZongmenDto } from '../network/protocol'
 
@@ -436,7 +437,7 @@ const ZongmenBuildingsSection = memo(function ZongmenBuildingsSection({
                   src={iconUrl}
                 />
               ) : (
-                '🏛️'
+                <Icon name="building" size={16} />
               )}
             </span>
             <div>
@@ -492,7 +493,7 @@ const ZongmenBuildingsSection = memo(function ZongmenBuildingsSection({
                   style={{ width: 28, height: 28, objectFit: 'contain' }}
                 />
               ) : (
-                <span>🏛️</span>
+                <Icon name="building" size={18} />
               )}
               <span>{buildingName}</span>
               <span className="nearby-level-badge">

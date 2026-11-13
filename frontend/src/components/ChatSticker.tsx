@@ -6,6 +6,7 @@ import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { StatGlyph } from './StatGlyph'
 import { uploadChatImage } from '../game/chatImageUploadService'
+import { Icon } from './Icon'
 export interface ChatStickerProps {
   url: string
   className?: string
@@ -154,7 +155,7 @@ export const ChatSticker = memo(function ChatSticker({
         {/* 未加载或加载中呈现优雅修仙风格的 [图片] 占位符 */}
         {(!isLoaded && !isError) && (
           <span className="chat-sticker-placeholder">
-            <span className="chat-sticker-placeholder-icon">📷</span>
+            <span className="chat-sticker-placeholder-icon"><Icon name="image" size={22} /></span>
             <span className="chat-sticker-placeholder-text">{t('combat.chat.stickerPlaceholder')}</span>
           </span>
         )}

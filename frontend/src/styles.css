@@ -1329,10 +1329,22 @@ input[type="checkbox"] {
 
 /* 引气入体灵石注灵徽标 */
 .badge-spirit-stone {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   border-color: rgba(212, 163, 89, 0.55);
   color: #dfb36e;
   background: rgba(212, 163, 89, 0.14);
   white-space: nowrap;
+}
+
+/* 徽标内嵌实体图标（灵石等，道具位图走 image-rendering 像素化） */
+.badge-item-icon {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+  vertical-align: -1px;
 }
 
 /* 引气入体灵石注灵选项胶囊组 */
@@ -11476,7 +11488,7 @@ input[type="checkbox"] {
   gap: 6px;
 }
 
-/* 本人卡底部就绪勾选（参考「☑ 准备就绪」）；他人卡显示只读就绪标签。 */
+/* 本人卡底部就绪勾选；他人卡显示只读就绪标签。 */
 .party-slot-ready {
   display: flex;
   align-items: center;

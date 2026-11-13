@@ -1,6 +1,6 @@
 import { useCallback, useState, type MouseEvent, type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../game/format'
-import { resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveCatalogItemMetadata, resolveItemCategoryLabel, resolveItemSubCategory, type ItemMetadata } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
 import { useT, type TFunction } from '../i18n'
 import type { ActionDefinition, AutoUseBarType, CombatEquipmentDefinition, ItemDefinition, QueueEntry } from '../game/types'
@@ -70,30 +70,18 @@ interface ItemGridPickerProps {
   ignoreQuantity?: boolean
 }
 
-// 未注册物品的兜底元数据：名称/品类/描述保留服务端数据。
-function fallbackMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
-  const tier = Math.max(1, item.tier)
-  return withItemGrade({
-    label: item.name,
+function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
+  return resolveCatalogItemMetadata(item.itemId, {
+    itemDefinition: item.definition,
+    equipmentDefinition: item.equipmentDefinition,
+    tier: item.tier > 0 ? item.tier : undefined,
+    name: item.name,
+    category: item.category,
+    description: item.description,
     glyph: item.name.slice(0, 1),
     tone: 'gold',
-    category: resolveItemCategoryLabel(item.category, t),
-    rarity: 'mundane',
-    rarityLabel: '',
-    description: item.description,
-  }, tier)
-}
-
-function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
-  const registered = resolveItemMetadata(item.itemId)
-  if (!registered) return fallbackMetadata(item, t)
-  const tier = item.tier > 0 ? item.tier : registered.tier ?? 1
-  return withItemGrade({
-    ...registered,
-    label: item.name || registered.label,
-    category: resolveItemCategoryLabel(item.category || registered.category, t),
-    description: item.description || registered.description,
-  }, tier)
+    t,
+  })
 }
 
 /**

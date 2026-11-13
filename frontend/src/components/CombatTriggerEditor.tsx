@@ -478,7 +478,11 @@ export function CombatTriggerEditor({
             type="button"
           >{t('combat.trigger.addCondition')}</button>
           <button
-            onClick={() => onSave(null)}
+            onClick={() => {
+              setTriggers([])
+              onSave(null)
+              onClose()
+            }}
             type="button"
           >{t('combat.trigger.clearAll')}</button>
           <button

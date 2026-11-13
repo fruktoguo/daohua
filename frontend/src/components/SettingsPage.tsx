@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useState } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Icon } from './Icon'
 import { RenameModal } from './RenameModal'
 import { ChangePasswordModal } from './ChangePasswordModal'
 import { useGameStore } from '../game/gameStore'
@@ -394,7 +395,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                       <span className="avatar-tile-name">{t(opt.nameKey)}</span>
                       {!unlocked && (
                         <span className="avatar-tile-lock-badge" title={t('app.settings.unlockAvatarCostBadge', { cost: 5000 })}>
-                          <span className="avatar-tile-lock-icon">🔒</span>
+                          <Icon name="lock" size={10} />
                           <span className="avatar-tile-lock-cost">5000</span>
                         </span>
                       )}

@@ -115,7 +115,6 @@ export class DouDiZhuMotion {
       const particle = document.createElement('i'), angle = i / 12 * Math.PI * 2, distance = 25 + Math.random() * 40
       particle.className = kind === 'applause' ? 'ddz-social-spark' : 'ddz-social-particle'
       particle.style.setProperty('--particle-color', kind === 'tomato' ? '#d56546' : kind === 'flower' ? '#e49ab1' : '#dfd6a0')
-      if (kind === 'applause') particle.textContent = '✦'
       this.layer.append(particle)
       const x = p.x + Math.cos(angle) * distance, y = p.y + Math.sin(angle) * distance
       this.animate(particle, [{ transform: `translate(${p.x}px,${p.y}px) scale(.3)`, opacity: 1 }, { offset: .32, transform: `translate(${x}px,${y}px) rotate(${i * 28}deg)`, opacity: .9 }, { transform: `translate(${x}px,${y + (kind === 'tea' ? -45 : 50)}px) rotate(${i * 53}deg) scale(.3)`, opacity: 0 }], 850 + i * 35)

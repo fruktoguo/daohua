@@ -27,7 +27,13 @@ await build({
     },
   ],
 })
-const { resolveCatalogItemLevel, convertTierToLevel } = await import(pathToFileURL(tempOut).href)
+const {
+  resolveCatalogItemLevel,
+  resolveCatalogItemMetadata,
+  resolveItemMetadata,
+  resolveActionLevel,
+  convertTierToLevel,
+} = await import(pathToFileURL(tempOut).href)
 
 test('代表等级解析与服务端 ResolveItemLevel 同口径：显式 level 优先于等阶换算', () => {
   // 装备目录 level 已由服务端 ResolveEquipmentRequiredLevel 预解析（含等阶回退）
@@ -39,6 +45,99 @@ test('代表等级解析与服务端 ResolveItemLevel 同口径：显式 level �
   assert.equal(resolveCatalogItemLevel(undefined, { level: null }, 1), convertTierToLevel(1))
   assert.equal(resolveCatalogItemLevel(undefined, undefined, 2), convertTierToLevel(2))
   assert.equal(resolveCatalogItemLevel(null, null), 1)
+})
+
+test('目录元数据解析优先装备与物品真实等级，避免被等阶折算覆盖为 1/18/30', () => {
+  const xuantie = resolveCatalogItemMetadata('equipment.xuantie-sword', {
+    equipmentDefinition: {
+      equipmentId: 'equipment.xuantie-sword',
+      name: '玄铁长剑',
+      slot: 'weapon',
+      tier: 1,
+      level: 9,
+    },
+    tier: 1,
+  })
+  assert.equal(xuantie.level, 9)
+  assert.equal(xuantie.tier, 1)
+  assert.equal(xuantie.rarity, 'mundane')
+
+  const duanchen = resolveCatalogItemMetadata('equipment.duanchen-blade', {
+    equipmentDefinition: {
+      equipmentId: 'equipment.duanchen-blade',
+      name: '断尘刀',
+      slot: 'weapon',
+      tier: 3,
+      level: 20,
+    },
+    tier: 3,
+  })
+  assert.equal(duanchen.level, 20)
+  assert.equal(duanchen.tier, 3)
+  assert.equal(duanchen.rarity, 'mystic')
+
+  // 未在静态注册表登记的新装备：仍须从服务端 equipmentDefinition 读取真实 tier 与 level
+  const customEq = resolveCatalogItemMetadata('equipment.future-blade', {
+    equipmentDefinition: {
+      equipmentId: 'equipment.future-blade',
+      name: '太虚神锋',
+      slot: 'weapon',
+      tier: 3,
+      level: 24,
+    },
+    tier: 1,
+  })
+  assert.equal(customEq.level, 24)
+  assert.equal(customEq.tier, 3)
+  assert.equal(customEq.rarity, 'mystic')
+
+  // 显式等级的消耗品/材料也保留真实 level
+  const mat = resolveCatalogItemMetadata('item.demon-dan', {
+    itemDefinition: {
+      itemId: 'item.demon-dan',
+      name: '妖丹',
+      description: '',
+      kind: 'material',
+      category: 'material',
+      tier: 2,
+      level: 12,
+      sellPrice: 10,
+      isTradable: true,
+      usableBars: [],
+      cooldownSeconds: 0,
+      hitpointRestore: 0,
+      manapointRestore: 0,
+      buffEffects: null,
+      durationSeconds: 0,
+      isContinuous: false,
+      cultivationMultiplier: 1,
+      gatheringMultiplier: 1,
+      alchemyMultiplier: 1,
+    },
+  })
+  assert.equal(mat.level, 12)
+  assert.equal(mat.tier, 2)
+  assert.equal(mat.rarity, 'yellow')
+
+  // 离线静态元数据：9 级装备不应回退为 1 级
+  assert.equal(resolveItemMetadata('equipment.xuantie-sword')?.level, 9)
+  assert.equal(resolveItemMetadata('equipment.bibo-pendant')?.level, 9)
+
+  // 行动等级兜底：缺省 action.level 时优先读取产出装备的真实等级
+  const forgeLevel = resolveActionLevel(
+    {
+      id: 'forge.xuantie-sword',
+      name: '锻造玄铁长剑',
+      description: '',
+      type: 'alchemy',
+      durationSeconds: 10,
+      yields: [{ kind: 'item', id: 'equipment.xuantie-sword', amount: 1 }],
+    },
+    [],
+    [{ equipmentId: 'equipment.xuantie-sword', tier: 1, level: 9 }],
+    [],
+  )
+  assert.equal(forgeLevel, 9)
 })
 
 await rm(tempOut, { force: true })

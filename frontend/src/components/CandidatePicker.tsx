@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useT } from '../i18n'
 import { FloatingPopover, type FloatingPlacement } from './FloatingPopover'
+import { Icon } from './Icon'
 
 /**
  * 通用待选列表候选项描述。
@@ -149,7 +150,7 @@ export function CandidatePicker({
                 title={conditionAction.title}
                 type="button"
               >
-                <span aria-hidden="true" className="candidate-picker-condition-icon">⚙</span>
+                <span aria-hidden="true" className="candidate-picker-condition-icon"><Icon name="settings" size={13} /></span>
                 <span className="candidate-picker-condition-label">{conditionAction.label}</span>
               </button>
             )}

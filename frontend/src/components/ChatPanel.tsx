@@ -15,6 +15,7 @@ import { gameClient } from '../network/gameClient'
 import { FeedList, mergeFeedItems, toChatFeedItems, toLogFeedItems, useStickyScroll } from './LogFeed'
 import { FloatingPopover } from './FloatingPopover'
 import { ChatEmojiPicker } from './ChatEmojiPicker'
+import { Icon } from './Icon'
 import { uploadChatImage } from '../game/chatImageUploadService'
 import { chatStickerService } from '../game/chatStickerService'
 /** 单条消息正文长度上限（与服务端 ChatRuntime.MaxBodyLength 一致） */
@@ -156,7 +157,7 @@ const ChatComposer = memo(function ChatComposer({
           title={t('combat.chat.emojiPickerAria')}
           type="button"
         >
-          😊
+          <Icon name="smile" size={16} />
         </button>
       </FloatingPopover>
       <input

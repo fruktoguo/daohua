@@ -8,7 +8,7 @@ export const insightZh = {
     currentExp: '当前修为',
     nextExp: '突破所需',
     totalSpirit: '总修为',
-    breakthroughBtn: '⚡ 破境突破',
+    breakthroughBtn: '破境突破',
     breakthroughModal: {
       title: '破境突破',
       confirmBtn: '确认破境',
@@ -29,7 +29,7 @@ export const insightZh = {
       linggen: '灵根',
     },
     heavenGate: {
-      openBtn: '⛩ 开天门',
+      openBtn: '开天门',
       title: '开天门',
       subtitle: '叩开天门别凡骨 · 五气朝元定道根',
       rollBtn: '抽取灵根',

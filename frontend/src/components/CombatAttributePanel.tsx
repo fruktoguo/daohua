@@ -9,10 +9,9 @@ import {
   findAbilityInCatalog,
   findEquipmentInCatalog,
   findItemInCatalog,
+  resolveCatalogItemMetadata,
   resolveItemCategoryLabel,
-  resolveItemMetadata,
   resolveItemSubCategory,
-  withItemGrade,
 } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import type {
@@ -439,22 +438,14 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
             {equipment.map(item => {
               const equipmentDef = findEquipmentInCatalog(equipmentCatalog, item.itemId)
               const itemDef = findItemInCatalog(itemCatalog, item.itemId)
-              const meta = resolveItemMetadata(item.itemId)
-              // 元数据/等阶解析与装备槽位卡同口径：品质档按等阶覆盖，缺配表时回退物品兜底。
-              const metadata = withItemGrade(
-                meta ?? {
-                  label: equipmentDef?.name ?? item.itemId,
-                  glyph: '⚔️',
-                  tone: 'gray',
-                  category: resolveItemCategoryLabel(equipmentDef?.slot ?? 'equipment', t),
-                  rarity: 'mundane',
-                  rarityLabel: '',
-                  description: equipmentDef?.description ?? itemDef?.description ?? '',
-                  source: '',
-                  usage: '',
-                },
-                equipmentDef?.tier ?? meta?.tier ?? 1,
-              )
+              // 元数据/等阶/等级解析与装备槽位卡同口径：显式 level 优先，品质档按等阶覆盖。
+              const metadata = resolveCatalogItemMetadata(item.itemId, {
+                itemDefinition: itemDef,
+                equipmentDefinition: equipmentDef,
+                glyph: '武',
+                tone: 'gray',
+                t,
+              })
               const enhancementLevel = Math.max(0, Math.floor(item.enhancementLevel))
               const baseName = equipmentDef?.name ?? itemDef?.name ?? item.itemId
               const displayName = enhancementLevel > 0 ? `${baseName} +${enhancementLevel}` : baseName

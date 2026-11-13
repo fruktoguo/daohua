@@ -33,11 +33,8 @@ import {
   findItemInCatalog,
   resolveActionLevel,
   resolveAssetLabel,
-  resolveItemCategoryLabel,
+  resolveCatalogItemMetadata,
   resolveItemGrade,
-  resolveItemMetadata,
-  resolveItemSubCategory,
-  type ItemMetadata,
 } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import type {
@@ -61,6 +58,7 @@ import { TraitBarItem } from './TraitBarItem'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
+import { Icon } from './Icon'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { createAbilityBuffAsideCards, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
 import {
@@ -815,35 +813,13 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
 }): React.JSX.Element {
   const t = useT()
   const tier = item.tier ?? 1
-  const grade = resolveItemGrade(tier)
-  const levelNumber = convertTierToLevel(tier)
-
-  const baseMetadata = resolveItemMetadata(item.itemId) ?? {
-    label: item.name,
-    glyph: '·',
-    tone: 'gold',
-    category: resolveItemCategoryLabel('material', t),
-    rarity: 'mundane',
-    rarityLabel: t('game.grade.mundane'),
-    description: '',
-    source: '',
-    usage: '',
-  }
-
-  const subCategoryLabel = resolveItemCategoryLabel(
-    resolveItemSubCategory(item.itemId, item, undefined, baseMetadata.category),
-    t
-  )
-
-  const metadata: ItemMetadata = {
-    ...baseMetadata,
-    label: item.name || baseMetadata.label,
-    category: subCategoryLabel,
-    rarity: grade.rarity,
-    rarityLabel: grade.label,
-    level: levelNumber,
-    description: item.description || baseMetadata.description,
-  }
+  const unlockLevel = convertTierToLevel(tier)
+  const metadata = resolveCatalogItemMetadata(item.itemId, {
+    itemDefinition: item,
+    category: 'material',
+    t,
+  })
+  const levelNumber = metadata.level ?? unlockLevel
 
   const tone = rarityToTone(metadata.rarity)
 
@@ -878,7 +854,7 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
                   : (() => {
                       const tech = resolveMaterialTechnique(item)
                       const techName = tech ? t(`insight.technique.${tech}`) : null
-                      return formatDualUnlockCondition(levelNumber, techName)
+                      return formatDualUnlockCondition(unlockLevel, techName)
                     })()}
               </span>
             </div>
@@ -919,7 +895,7 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
         />
         {!isUnlocked && (
           <span className="codex-lock-badge" title={t('app.codex.locked')}>
-            🔒
+            <Icon name="lock" size={11} />
           </span>
         )}
       </div>
@@ -960,51 +936,12 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
   const outputItemDef = findItemInCatalog(items, outputItemId)
   const outputEqDef = equipment.find(e => e.equipmentId === outputItemId)
 
-  const baseMetadata = resolveItemMetadata(outputItemId) ?? {
-    label: outputItemDef?.name ?? outputEqDef?.name ?? action.name,
-    glyph: '·',
-    tone: 'gold',
-    category: resolveItemCategoryLabel(undefined, t),
-    rarity: 'mundane',
-    rarityLabel: t('game.grade.mundane'),
-    description: '',
-    source: '',
-    usage: '',
-  }
-
-  const subCategoryLabel = resolveItemCategoryLabel(
-    resolveItemSubCategory(outputItemId, outputItemDef, outputEqDef, baseMetadata.category),
-    t
-  )
-
-  const rawMetadata = outputItemDef
-    ? {
-        ...baseMetadata,
-        label: outputItemDef.name || baseMetadata.label,
-        category: subCategoryLabel,
-        level: outputItemDef.tier ?? baseMetadata.level,
-        description: outputItemDef.description || baseMetadata.description,
-      }
-    : outputEqDef
-    ? {
-        ...baseMetadata,
-        label: outputEqDef.name || baseMetadata.label,
-        category: subCategoryLabel,
-        level: outputEqDef.tier ?? baseMetadata.level,
-        description: outputEqDef.description || baseMetadata.description,
-      }
-    : baseMetadata
-
-  const tier = rawMetadata.level ?? (outputEqDef?.tier || outputItemDef?.tier || 1)
-  const grade = resolveItemGrade(tier)
-  const levelNumber = convertTierToLevel(tier)
-
-  const metadata: ItemMetadata = {
-    ...rawMetadata,
-    rarity: grade.rarity,
-    rarityLabel: grade.label,
-    level: levelNumber,
-  }
+  const metadata = resolveCatalogItemMetadata(outputItemId, {
+    itemDefinition: outputItemDef,
+    equipmentDefinition: outputEqDef,
+    name: action.name,
+    t,
+  })
 
   // 产出物品的直接效果行（装备属性数值解耦至 Aside 独立属性悬浮副卡并排展示）
   const effectLines = [
@@ -1100,7 +1037,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
         />
         {!isUnlocked && (
           <span className="codex-lock-badge" title={t('app.codex.locked')}>
-            🔒
+            <Icon name="lock" size={11} />
           </span>
         )}
       </div>
@@ -1226,11 +1163,11 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
               src={resolveBuildingIconUrl(building.buildingId)}
             />
           ) : (
-            <span style={{ fontSize: 20 }}>🏛️</span>
+            <Icon name="building" size={20} />
           )}
           {!isUnlocked && (
             <span className="codex-lock-badge" title={t('app.codex.locked')}>
-              🔒
+              <Icon name="lock" size={11} />
             </span>
           )}
         </div>
@@ -1350,7 +1287,7 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
         />
         {!isLearned && (
           <span className="codex-lock-badge" title={t('app.codex.unlearned')}>
-            🔒
+            <Icon name="lock" size={11} />
           </span>
         )}
       </div>
@@ -1414,7 +1351,7 @@ const CodexMonsterEntry = memo(function CodexMonsterEntry({
           />
           {!isDefeated && (
             <span className="codex-lock-badge" title={t('app.codex.undefeated')}>
-              🔒
+              <Icon name="lock" size={11} />
             </span>
           )}
         </div>

@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from 'react'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
-import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
+import { collectOccupiedEquipmentCounts, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
 import { useT } from '../i18n'
 import { buildItemChatMarkup } from '../game/chatMarkup'
 import { shareToChat } from '../game/chatShare'
@@ -100,21 +100,13 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
   const slotName = t(`app.equipmentPanel.${config.labelKey}`)
 
   if (equippedItem && equipmentDef) {
-    const meta = resolveItemMetadata(equippedItem.itemId)
-    const metadata = withItemGrade(
-      meta ?? {
-        label: equipmentDef.name,
-        glyph: '·',
-        tone: 'gold',
-        category: resolveItemCategoryLabel(equipmentDef.slot, t),
-        rarity: 'mundane',
-        rarityLabel: '',
-        description: equipmentDef.description ?? definition?.description ?? '',
-        source: '',
-        usage: '',
-      },
-      equipmentDef.tier ?? meta?.tier ?? 1,
-    )
+    const metadata = resolveCatalogItemMetadata(equippedItem.itemId, {
+      itemDefinition: definition,
+      equipmentDefinition: equipmentDef,
+      category: equipmentDef.slot,
+      tone: 'gold',
+      t,
+    })
 
     const displayName = equippedItem.enhancementLevel > 0
       ? `${equipmentDef.name} +${equippedItem.enhancementLevel}`

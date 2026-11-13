@@ -6,6 +6,7 @@ import { useT } from '../i18n'
 import { fetchNodeBuildingIndex } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
 import { FloatingTooltip } from './FloatingPopover'
+import { Icon } from './Icon'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Modal } from './Modal'
 import { MonsterTooltipTarget } from './MonsterDisplay'
@@ -1286,7 +1287,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                   title={t('combat.chat.shareToChat')}
                   type="button"
                 >
-                  💬 {t('combat.chat.shareToChat')}
+                  <Icon name="chat" size={13} /> {t('combat.chat.shareToChat')}
                 </button>
               </div>
               <p>{selectedNode.description}</p>
@@ -1430,8 +1431,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                   type="button"
                 >
                   {travellingToSelected
-                    ? `⏳ ${t('combat.map.travelling')}`
-                    : `🚶 ${t('combat.map.planTravel')}`}
+                    ? <><Icon name="hourglass" size={13} /> {t('combat.map.travelling')}</>
+                    : <><Icon name="walk" size={13} /> {t('combat.map.planTravel')}</>}
                 </button>
                 {activeTravel && (
                   <button

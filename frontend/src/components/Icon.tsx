@@ -3,11 +3,13 @@ import type { ActionType } from '../game/types'
 
 /** 全站矢量图标名称：页签、行动类型与若干功能入口共用一套描边风格 */
 export type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'shop' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel' | 'codex' | 'more' | 'records'
+  | 'lock' | 'building' | 'chat' | 'pin' | 'smile' | 'image' | 'alert' | 'bolt' | 'dice' | 'gate' | 'compass' | 'hourglass' | 'walk' | 'target' | 'close'
 
 /**
  * 矢量图标组件（按名称渲染内联 SVG）
+ * @param size 显式像素尺寸；缺省时由父级 CSS 控制（如 .nav-glyph svg 的 64%）
  */
-export const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element {
+export const Icon = memo(function Icon({ name, size }: { name: IconName; size?: number }): React.JSX.Element {
   const common = {
     fill: 'none',
     stroke: 'currentColor',
@@ -15,6 +17,7 @@ export const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.
     strokeLinejoin: 'round' as const,
     strokeWidth: 1.7,
     viewBox: '0 0 24 24',
+    style: size ? { width: size, height: size, flexShrink: 0 } : undefined,
   }
 
   switch (name) {
@@ -64,5 +67,35 @@ export const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.
       return <svg {...common}><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" /><path d="M6 6h10" /><path d="M6 10h10" /><path d="M6 14h6" /></svg>
     case 'more':
       return <svg {...common}><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></svg>
+    case 'lock':
+      return <svg {...common}><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" /><circle cx="12" cy="15" r="1.3" fill="currentColor" stroke="none" /></svg>
+    case 'building':
+      return <svg {...common}><path d="M4 21h16" /><path d="M6 21v-8.5L12 6l6 6.5V21" /><path d="M10 21v-4.5h4V21" /><path d="M3.5 9.5 12 3.5l8.5 6" /></svg>
+    case 'chat':
+      return <svg {...common}><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9.5L5 20V6.5Z" /></svg>
+    case 'pin':
+      return <svg {...common}><path d="M12 21s-6.8-5.9-6.8-10.8a6.8 6.8 0 0 1 13.6 0C18.8 15.1 12 21 12 21Z" /><circle cx="12" cy="10.2" r="2.3" /></svg>
+    case 'smile':
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M8.3 14.2a4.6 4.6 0 0 0 7.4 0" /><circle cx="9" cy="9.6" r="0.9" fill="currentColor" stroke="none" /><circle cx="15" cy="9.6" r="0.9" fill="currentColor" stroke="none" /></svg>
+    case 'image':
+      return <svg {...common}><rect x="4" y="4.5" width="16" height="15" rx="1.5" /><circle cx="9" cy="9.8" r="1.5" /><path d="m5.5 17.5 4.2-4.2 2.8 2.8 3-3 3.5 3.5" /></svg>
+    case 'alert':
+      return <svg {...common}><path d="M12 3.8 2.8 19.7h18.4L12 3.8Z" /><path d="M12 9.8v4.4" /><path d="M12 16.9v.2" /></svg>
+    case 'bolt':
+      return <svg {...common}><path d="M13.2 3.2 6.2 13.4h4.9L9.9 20.8l7-10.2h-4.9l1.2-7.4Z" /></svg>
+    case 'dice':
+      return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="3.2" /><circle cx="9" cy="9" r="1.05" fill="currentColor" stroke="none" /><circle cx="15" cy="9" r="1.05" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.05" fill="currentColor" stroke="none" /><circle cx="9" cy="15" r="1.05" fill="currentColor" stroke="none" /><circle cx="15" cy="15" r="1.05" fill="currentColor" stroke="none" /></svg>
+    case 'gate':
+      return <svg {...common}><path d="M3.5 4.8h17" /><path d="M6.8 4.8v3.4M17.2 4.8v3.4" /><path d="M8.6 8.2h6.8" /><path d="M10.2 8.2v10.3M13.8 8.2v10.3" /><path d="M8 18.5h8" /></svg>
+    case 'compass':
+      return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="m15.6 8.4-2.1 5-5 2.1 2.1-5 5-2.1Z" /><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none" /></svg>
+    case 'hourglass':
+      return <svg {...common}><path d="M7 4h10M7 20h10" /><path d="M8.6 4c0 3.6 3.4 4.6 3.4 8s-3.4 4.4-3.4 8" /><path d="M15.4 4c0 3.6-3.4 4.6-3.4 8s3.4 4.4 3.4 8" /></svg>
+    case 'walk':
+      return <svg {...common}><circle cx="14" cy="4.6" r="1.8" /><path d="M13.3 8.4 10 13l2.4 2.6-1.9 4.5" /><path d="m14.7 9.7 3.4 2-.7 5.3" /><path d="M9.9 11.3 7.1 13.5" /></svg>
+    case 'target':
+      return <svg {...common}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.6" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></svg>
+    case 'close':
+      return <svg {...common}><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></svg>
   }
 })

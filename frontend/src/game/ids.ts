@@ -248,8 +248,8 @@ export function convertLevelToTier(level = 1): number {
  * 缺省回退等阶换算；装备先于物品与服务端查表顺序一致。
  */
 export function resolveCatalogItemLevel(
-  equipmentDefinition?: Pick<CombatEquipmentDefinition, 'level'> | null,
-  itemDefinition?: Pick<ItemDefinition, 'level'> | null,
+  equipmentDefinition?: { level?: number | null } | null,
+  itemDefinition?: { level?: number | null } | null,
   fallbackTier = 1,
 ): number {
   return equipmentDefinition?.level
@@ -538,9 +538,9 @@ export function resolveActionLevel(
       if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
       const outId = yieldEntry.id
       const eq = eqMap?.get(outId)
-      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return convertTierToLevel(eq.tier)
+      if (eq) return resolveCatalogItemLevel(eq, undefined, eq.tier ?? 1)
       const it = itMap?.get(outId)
-      if (it && typeof it.tier === 'number' && it.tier > 0) return convertTierToLevel(it.tier)
+      if (it) return resolveCatalogItemLevel(undefined, it, it.tier ?? 1)
       const meta = ITEM_META_CORES[outId]
       if (meta?.level && meta.level > 0) {
         return meta.level > 2 ? meta.level : convertTierToLevel(meta.level)
@@ -668,11 +668,11 @@ export function resolveActionRarity(
  * 各行动类型对应的 UI 图标符号与主题色
  */
 export const ACTION_TAB_META: Record<ActionType, { glyph: string; accent: string }> = {
-  cultivation: { glyph: '☯', accent: 'cyan' },
-  exploration: { glyph: '⌕', accent: 'green' },
-  alchemy: { glyph: '⚗', accent: 'violet' },
-  combat: { glyph: '⚔', accent: 'orange' },
-  enhancement: { glyph: '⬡', accent: 'gold' },
+  cultivation: { glyph: '道', accent: 'cyan' },
+  exploration: { glyph: '踪', accent: 'green' },
+  alchemy: { glyph: '丹', accent: 'violet' },
+  combat: { glyph: '武', accent: 'orange' },
+  enhancement: { glyph: '炼', accent: 'gold' },
 }
 
 /**
@@ -744,6 +744,86 @@ export function withItemGrade(metadata: ItemMetadata, tier?: number): ItemMetada
     rarityLabel: grade.label,
     tier: normalizedTier,
     level: effectiveLevel,
+  }
+}
+
+/** 统一解析目录物品/装备展示元数据的选项 */
+export interface ResolveCatalogItemMetadataOptions {
+  /** 服务端物品目录定义 */
+  itemDefinition?: ItemDefinition | null
+  /** 服务端装备目录定义 */
+  equipmentDefinition?: CombatEquipmentDefinition | null
+  /** 显式覆盖等阶（如背包快照自带的 tier） */
+  tier?: number | null
+  /** 兜底展示名 */
+  name?: string | null
+  /** 兜底品类键 */
+  category?: string | null
+  /** 兜底描述文案 */
+  description?: string | null
+  /** 兜底字符图标 */
+  glyph?: string
+  /** 兜底色调 */
+  tone?: string
+  /** 翻译函数（缺省时使用全局 getT()） */
+  t?: TFunction
+}
+
+/**
+ * 解析目录物品/装备用于瓦片与悬浮卡展示的完整元数据（ItemMetadata）。
+ *
+ * 统一收拢：
+ * 1. 等阶与品质：equipmentDefinition.tier -> 显式 tier -> itemDefinition.tier -> 静态注册表 tier（1~8 归一化）
+ * 2. 展示等级：与服务端 ResolveItemLevel 同口径（equipmentDefinition.level -> itemDefinition.level -> 静态注册表 level -> convertTierToLevel(tier)）
+ * 3. 品类与文案：优先服务端目录，缺省回退静态注册表与中性兜底
+ */
+export function resolveCatalogItemMetadata(
+  itemId: string,
+  options: ResolveCatalogItemMetadataOptions = {},
+): ItemMetadata {
+  const t = options.t ?? getT()
+  const { itemDefinition, equipmentDefinition } = options
+  const registered = resolveItemMetadata(itemId)
+
+  const explicitTier = options.tier != null && options.tier > 0 ? options.tier : undefined
+  const rawTier = equipmentDefinition?.tier
+    ?? explicitTier
+    ?? itemDefinition?.tier
+    ?? registered?.tier
+    ?? (registered?.level && registered.level <= 8 ? registered.level : 1)
+  const normalizedTier = rawTier > 8 ? convertLevelToTier(rawTier) : Math.max(1, Math.floor(rawTier))
+  const grade = resolveItemGrade(normalizedTier)
+
+  const resolvedSubCategory = resolveItemSubCategory(
+    itemId,
+    itemDefinition ?? undefined,
+    equipmentDefinition ?? undefined,
+    options.category ?? registered?.category,
+  )
+  const categoryLabel = resolveItemCategoryLabel(resolvedSubCategory, t)
+
+  const explicitLevel = equipmentDefinition?.level ?? itemDefinition?.level
+  // 外部指定了与静态注册表不同的等阶且目录未下发显式等级时，按新等阶推算等级；否则保留静态注册表等级。
+  const registeredLevelValid = registered?.level != null
+    && (registered.tier === undefined || registered.tier === normalizedTier)
+  const effectiveLevel = (typeof explicitLevel === 'number' && explicitLevel > 0)
+    ? explicitLevel
+    : (registeredLevelValid ? registered!.level! : convertTierToLevel(normalizedTier))
+
+  return {
+    label: equipmentDefinition?.name || itemDefinition?.name || registered?.label || options.name || itemId,
+    glyph: options.glyph ?? registered?.glyph ?? (equipmentDefinition || itemId.startsWith('equipment.') ? '武' : '·'),
+    tone: options.tone ?? registered?.tone ?? 'gold',
+    category: categoryLabel,
+    rarity: grade.rarity,
+    rarityLabel: registered?.rarityLabel && registered.tier === normalizedTier
+      ? registered.rarityLabel
+      : grade.label,
+    tier: normalizedTier,
+    level: effectiveLevel,
+    description: options.description ?? equipmentDefinition?.description ?? itemDefinition?.description ?? registered?.description ?? '',
+    source: registered?.source ?? '',
+    usage: registered?.usage ?? '',
   }
 }
 
@@ -1122,181 +1202,181 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.zongmen-lingpai': { glyph: '令', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
   // 材料品阶口径（TASK-20261025-08 & 09）：凡品/稀有度按掉落概率决定（普通凡品 tier1，稀有黄/玄品 tier>=2）；
   // 等级（level）按产出源（怪物等级、采集地生态、加工梯队）细化，打破全员 Lv.1 机械感。
-  'item.ningxue-grass': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
-  'item.peach-wood': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
-  'item.dark-iron': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'mineral' },
-  'item.beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
-  'item.beast-bone': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'exoticMaterial' },
-  'item.morning-dew': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 2, subCategory: 'spiritMaterial' },
-  'item.broken-spirit-core': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 4, subCategory: 'exoticMaterial' },
-  'item.demon-dan': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'exoticMaterial' },
-  'item.sha-fang': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'exoticMaterial' },
-  'item.banling-flower': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 12, subCategory: 'spiritMaterial' },
-  'item.yinlingsong-wood': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'spiritMaterial' },
-  'item.crimson-copper': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 15, subCategory: 'mineral' },
-  'item.beast-fang': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
-  'item.fire-feather': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'exoticMaterial' },
-  'item.soul-talisman': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 18, subCategory: 'exoticMaterial' },
-  'item.leiji-talisman': { glyph: '⚡', tone: 'cyan', rarity: 'mundane', level: 1, subCategory: 'talisman' },
-  'item.juling-formation-disk': { glyph: '⬡', tone: 'violet', rarity: 'mundane', level: 1, subCategory: 'formation' },
-  'item.tianlei-formation-disk': { glyph: '⬡', tone: 'cyan', rarity: 'mundane', level: 9, subCategory: 'formation' },
-  'item.mizong-formation-disk': { glyph: '⬡', tone: 'emerald', rarity: 'mundane', level: 9, subCategory: 'formation' },
-  'item.xuesha-formation-disk': { glyph: '⬡', tone: 'crimson', rarity: 'mundane', level: 9, subCategory: 'formation' },
-  'item.broken-blade': { glyph: '🪵', tone: 'cyan', rarity: 'mystic', level: 20, subCategory: 'exoticMaterial' },
-  'item.sha-bone': { glyph: '🪵', tone: 'cyan', rarity: 'mystic', level: 22, subCategory: 'exoticMaterial' },
-  'item.demon-core': { glyph: '🪵', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'exoticMaterial' },
-  'item.meteor-fragment': { glyph: '🪵', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'exoticMaterial' },
-  'item.refined-iron': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
-  'item.peach-wood-crystal': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
-  'item.herb-essence': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
-  'item.refined-copper': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'refinedMaterial' },
-  'item.spirit-pine-crystal': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 15, subCategory: 'refinedMaterial' },
-  'item.banling-essence': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'refinedMaterial' },
-  'item.qi-gathering-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
-  'item.zhixue-powder': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
-  'item.shunqi-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
-  'item.tongmai-pill': { glyph: '💊', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'pill' },
-  'item.shengji-balm': { glyph: '💊', tone: 'emerald', rarity: 'mundane', level: 9, subCategory: 'pill' },
-  'item.ningqi-powder': { glyph: '💊', tone: 'cyan', rarity: 'mundane', level: 9, subCategory: 'pill' },
-  'item.huangya-pill': { glyph: '💊', tone: 'gold', rarity: 'yellow', level: 18, subCategory: 'pill' },
-  'item.heqi-pill': { glyph: '💊', tone: 'purple', rarity: 'yellow', level: 18, subCategory: 'pill' },
+  'item.ningxue-grass': { glyph: '草', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
+  'item.peach-wood': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
+  'item.dark-iron': { glyph: '矿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'mineral' },
+  'item.beast-hide': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'exoticMaterial' },
+  'item.beast-bone': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'exoticMaterial' },
+  'item.morning-dew': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 2, subCategory: 'spiritMaterial' },
+  'item.broken-spirit-core': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 4, subCategory: 'exoticMaterial' },
+  'item.demon-dan': { glyph: '材', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'exoticMaterial' },
+  'item.sha-fang': { glyph: '材', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'exoticMaterial' },
+  'item.banling-flower': { glyph: '草', tone: 'gray', rarity: 'mundane', level: 12, subCategory: 'spiritMaterial' },
+  'item.yinlingsong-wood': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'spiritMaterial' },
+  'item.crimson-copper': { glyph: '矿', tone: 'gray', rarity: 'mundane', level: 15, subCategory: 'mineral' },
+  'item.beast-fang': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
+  'item.fire-feather': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'exoticMaterial' },
+  'item.soul-talisman': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 18, subCategory: 'exoticMaterial' },
+  'item.leiji-talisman': { glyph: '雷', tone: 'cyan', rarity: 'mundane', level: 1, subCategory: 'talisman' },
+  'item.juling-formation-disk': { glyph: '阵', tone: 'violet', rarity: 'mundane', level: 1, subCategory: 'formation' },
+  'item.tianlei-formation-disk': { glyph: '阵', tone: 'cyan', rarity: 'mundane', level: 9, subCategory: 'formation' },
+  'item.mizong-formation-disk': { glyph: '阵', tone: 'emerald', rarity: 'mundane', level: 9, subCategory: 'formation' },
+  'item.xuesha-formation-disk': { glyph: '阵', tone: 'crimson', rarity: 'mundane', level: 9, subCategory: 'formation' },
+  'item.broken-blade': { glyph: '材', tone: 'cyan', rarity: 'mystic', level: 20, subCategory: 'exoticMaterial' },
+  'item.sha-bone': { glyph: '材', tone: 'cyan', rarity: 'mystic', level: 22, subCategory: 'exoticMaterial' },
+  'item.demon-core': { glyph: '材', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'exoticMaterial' },
+  'item.meteor-fragment': { glyph: '材', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'exoticMaterial' },
+  'item.refined-iron': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
+  'item.peach-wood-crystal': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
+  'item.herb-essence': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 3, subCategory: 'refinedMaterial' },
+  'item.refined-copper': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'refinedMaterial' },
+  'item.spirit-pine-crystal': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 15, subCategory: 'refinedMaterial' },
+  'item.banling-essence': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'refinedMaterial' },
+  'item.qi-gathering-pill': { glyph: '丹', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
+  'item.zhixue-powder': { glyph: '丹', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
+  'item.shunqi-pill': { glyph: '丹', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
+  'item.tongmai-pill': { glyph: '丹', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'pill' },
+  'item.shengji-balm': { glyph: '丹', tone: 'emerald', rarity: 'mundane', level: 9, subCategory: 'pill' },
+  'item.ningqi-powder': { glyph: '丹', tone: 'cyan', rarity: 'mundane', level: 9, subCategory: 'pill' },
+  'item.huangya-pill': { glyph: '丹', tone: 'gold', rarity: 'yellow', level: 18, subCategory: 'pill' },
+  'item.heqi-pill': { glyph: '丹', tone: 'purple', rarity: 'yellow', level: 18, subCategory: 'pill' },
   'currency.spirit-stone': { glyph: '◈', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.gongde': { glyph: '功', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.gongde-bound': { glyph: '德', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
-  'item.awakening-stone': { glyph: '✦', tone: 'gold', rarity: 'heaven', level: 54, subCategory: 'special' },
+  'item.awakening-stone': { glyph: '醒', tone: 'gold', rarity: 'heaven', level: 54, subCategory: 'special' },
   'item.storage-bag.broken': { glyph: '囊', tone: 'gold', rarity: 'mundane', level: 1, subCategory: 'special' },
-  'item.tome.heavy-slash': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.heavy-slash': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.chain-strike': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.chain-strike': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.palm-lightning': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.palm-lightning': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.ganlu': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.ganlu': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.blazing-blast': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.blazing-blast': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.taunt': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.taunt': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.heavy-clouds': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.heavy-clouds': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.qingping-melody': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.qingping-melody': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.lightning-attraction': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.lightning-attraction': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.pozhen-melody': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.pozhen-melody': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.star-piercer': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.star-piercer': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.tuna-gong': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.tuna-gong': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.manniu-jin': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.manniu-jin': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.tiebu-shan': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.tiebu-shan': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.feiyan-gong': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.feiyan-gong': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.qingxin-jue': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.qingxin-jue': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.fenxue-gong': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.fenxue-gong': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.xiaozhoutian-gong': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.xiaozhoutian-gong': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.cunshen-jue': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.cunshen-jue': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.lianjing-huaqi-jue': { glyph: '📘', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.lianjing-huaqi-jue': { glyph: '📜', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.xuanyuan-yiqi-gong': { glyph: '📘', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualTome' },
-  'item.fragment.xuanyuan-yiqi-gong': { glyph: '📜', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualFragment' },
-  'item.gathering-incense': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
-  'item.alchemy-flame': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
-  'item.reverse-fate-pill': { glyph: '⚫', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'pill' },
-  'item.dingshen-incense': { glyph: '🕯️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'explorationSupply' },
-  'item.qingling-incense': { glyph: '🕯️', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'explorationSupply' },
-  'item.cuiling-powder': { glyph: '✨', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'enhancementSupply' },
-  'item.guling-sand': { glyph: '⭐', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'enhancementSupply' },
-  'equipment.qingfeng-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.pishan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.shufa-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
-  'equipment.baina-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
-  'equipment.zhakou-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
-  'equipment.fan-tie-dart': { glyph: '🗡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
-  'equipment.tiepi-guard': { glyph: '🛡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
-  'equipment.qingmu-bead': { glyph: '📿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
-  'equipment.ganlu-flask': { glyph: '🏺', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
-  'equipment.shouya-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
-  'equipment.jiujie-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.suxin-zither': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.hunyuan-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
-  'equipment.suma-robe': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
-  'equipment.xingqi-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
-  'equipment.taomu-talisman': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
-  'equipment.pogang-sword': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.zhansha-blade': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.chijin-helmet': { glyph: '👑', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
-  'equipment.yulin-armor': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
-  'equipment.tazhen-greaves': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
-  'equipment.jinfeng-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
-  'equipment.qingpi-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
-  'equipment.jixing-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
-  'equipment.zhanfeng-scarf': { glyph: '👑', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
-  'equipment.liegang-armor': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
-  'equipment.tafeng-pants': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
-  'equipment.xuantie-dart': { glyph: '🗡️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.xuanjia-guard': { glyph: '🛡️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.yaoling-bead': { glyph: '📿', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.huichun-bell': { glyph: '🔔', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.chiwen-ring': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
-  'equipment.chaoyuan-staff': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.songfeng-zither': { glyph: '⚔️', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.ziwu-crown': { glyph: '👑', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
-  'equipment.pichen-shirt': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
-  'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
-  'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  'item.tome.heavy-slash': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.heavy-slash': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.chain-strike': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.chain-strike': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.palm-lightning': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.palm-lightning': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.ganlu': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.ganlu': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.blazing-blast': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.blazing-blast': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.taunt': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.taunt': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.heavy-clouds': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.heavy-clouds': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.qingping-melody': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.qingping-melody': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.lightning-attraction': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.lightning-attraction': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.pozhen-melody': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.pozhen-melody': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.star-piercer': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.star-piercer': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.tuna-gong': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.tuna-gong': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.manniu-jin': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.manniu-jin': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.tiebu-shan': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.tiebu-shan': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.feiyan-gong': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.feiyan-gong': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.qingxin-jue': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.qingxin-jue': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.fenxue-gong': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.fenxue-gong': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.xiaozhoutian-gong': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.xiaozhoutian-gong': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.cunshen-jue': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.cunshen-jue': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.lianjing-huaqi-jue': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
+  'item.fragment.lianjing-huaqi-jue': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.xuanyuan-yiqi-gong': { glyph: '谱', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualTome' },
+  'item.fragment.xuanyuan-yiqi-gong': { glyph: '卷', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualFragment' },
+  'item.gathering-incense': { glyph: '草', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
+  'item.alchemy-flame': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
+  'item.reverse-fate-pill': { glyph: '丹', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'pill' },
+  'item.dingshen-incense': { glyph: '香', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'explorationSupply' },
+  'item.qingling-incense': { glyph: '香', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'explorationSupply' },
+  'item.cuiling-powder': { glyph: '粉', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'enhancementSupply' },
+  'item.guling-sand': { glyph: '砂', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'enhancementSupply' },
+  'equipment.qingfeng-sword': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.pishan-blade': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.shufa-scarf': { glyph: '冠', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.baina-armor': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.zhakou-pants': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.fan-tie-dart': { glyph: '匕', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.tiepi-guard': { glyph: '盾', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.qingmu-bead': { glyph: '珠', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.ganlu-flask': { glyph: '壶', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
+  'equipment.shouya-pendant': { glyph: '佩', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  'equipment.jiujie-staff': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.suxin-zither': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
+  'equipment.hunyuan-scarf': { glyph: '冠', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.suma-robe': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.xingqi-pants': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.taomu-talisman': { glyph: '佩', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  'equipment.pogang-sword': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.zhansha-blade': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.chijin-helmet': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
+  'equipment.yulin-armor': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
+  'equipment.tazhen-greaves': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
+  'equipment.jinfeng-scarf': { glyph: '冠', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
+  'equipment.qingpi-armor': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
+  'equipment.jixing-pants': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
+  'equipment.zhanfeng-scarf': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
+  'equipment.liegang-armor': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
+  'equipment.tafeng-pants': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
+  'equipment.xuantie-dart': { glyph: '匕', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.xuanjia-guard': { glyph: '盾', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.yaoling-bead': { glyph: '珠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.huichun-bell': { glyph: '铃', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
+  'equipment.chiwen-ring': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  'equipment.chaoyuan-staff': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.songfeng-zither': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
+  'equipment.ziwu-crown': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
+  'equipment.pichen-shirt': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
+  'equipment.liuyun-skirt': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
+  'equipment.juling-pendant': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
   // 稀有材料专属特殊装备
-  'equipment.baihu-dagger': { glyph: '🗡️', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'off-hand' },
-  'equipment.rongling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'trinket' },
-  'equipment.handi-armor': { glyph: '🥋', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'armor' },
-  'equipment.duanchen-blade': { glyph: '⚔️', tone: 'cyan', rarity: 'mystic', level: 20, subCategory: 'weapon' },
-  'equipment.mingsha-crown': { glyph: '👑', tone: 'cyan', rarity: 'mystic', level: 22, subCategory: 'head' },
-  'equipment.fentian-greaves': { glyph: '👖', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'legs' },
-  'equipment.demon-core-staff': { glyph: '⚔️', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'weapon' },
+  'equipment.baihu-dagger': { glyph: '匕', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'off-hand' },
+  'equipment.rongling-pendant': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'trinket' },
+  'equipment.handi-armor': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'armor' },
+  'equipment.duanchen-blade': { glyph: '武', tone: 'cyan', rarity: 'mystic', level: 20, subCategory: 'weapon' },
+  'equipment.mingsha-crown': { glyph: '冠', tone: 'cyan', rarity: 'mystic', level: 22, subCategory: 'head' },
+  'equipment.fentian-greaves': { glyph: '裤', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'legs' },
+  'equipment.demon-core-staff': { glyph: '武', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'weapon' },
   // 一阶野外材料与秘籍（配表 items/manuals 全量对齐，防止未登记条目丢失图标与品类）
-  'item.rock-fang': { glyph: '🦷', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
-  'item.water-spirit-core': { glyph: '💧', tone: 'gray', rarity: 'mundane', level: 11, subCategory: 'exoticMaterial' },
-  'item.thick-beast-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
-  'item.rough-wolf-hide': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 10, subCategory: 'exoticMaterial' },
-  'item.golden-ape-bone': { glyph: '🦴', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'exoticMaterial' },
-  'item.ape-heart': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'exoticMaterial' },
-  'item.tome.tide': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.tide': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.sui-gang': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
-  'item.fragment.sui-gang': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  // 一阶武器 / 护具 / 法宝（配表 equipment 全量对齐）
-  'equipment.xuantie-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.piyan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.kuteng-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.mingquan-zither': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'weapon' },
-  'equipment.xuantie-headband': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
-  'equipment.suozi-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
-  'equipment.diejia-leggings': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
-  'equipment.canglang-cap': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
-  'equipment.canglang-vest': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
-  'equipment.canglang-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
-  'equipment.liuyun-ribbon': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
-  'equipment.bishui-robe': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
-  'equipment.zhishui-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
-  'equipment.tiemu-shield': { glyph: '🛡️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
-  'equipment.ningshui-charm': { glyph: '🔖', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'off-hand' },
-  'equipment.canglang-ring': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
-  'equipment.bibo-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
+  'item.rock-fang': { glyph: '牙', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
+  'item.water-spirit-core': { glyph: '水', tone: 'gray', rarity: 'mundane', level: 11, subCategory: 'exoticMaterial' },
+  'item.thick-beast-hide': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
+  'item.rough-wolf-hide': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 10, subCategory: 'exoticMaterial' },
+  'item.golden-ape-bone': { glyph: '骨', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'exoticMaterial' },
+  'item.ape-heart': { glyph: '材', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'exoticMaterial' },
+  'item.tome.tide': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.tide': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.sui-gang': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.sui-gang': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  // 一阶武器 / 护具 / 法宝（配表 equipment 全量对齐，9 级一阶装备）
+  'equipment.xuantie-sword': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },
+  'equipment.piyan-blade': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },
+  'equipment.kuteng-staff': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },
+  'equipment.mingquan-zither': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },
+  'equipment.xuantie-headband': { glyph: '冠', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'head' },
+  'equipment.suozi-armor': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'armor' },
+  'equipment.diejia-leggings': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'legs' },
+  'equipment.canglang-cap': { glyph: '冠', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'head' },
+  'equipment.canglang-vest': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'armor' },
+  'equipment.canglang-pants': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'legs' },
+  'equipment.liuyun-ribbon': { glyph: '冠', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'head' },
+  'equipment.bishui-robe': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'armor' },
+  'equipment.zhishui-pants': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'legs' },
+  'equipment.tiemu-shield': { glyph: '盾', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'off-hand' },
+  'equipment.ningshui-charm': { glyph: '符', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'off-hand' },
+  'equipment.canglang-ring': { glyph: '佩', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'trinket' },
+  'equipment.bibo-pendant': { glyph: '佩', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'trinket' },
   // 七技艺工具（tool-<techniqueId> 专属槽位；品类经 tool- 归一双字显示「工具」）
-  'equipment.tool-herb-hoe': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-prospect-compass': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-flame-ding': { glyph: '🔥', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-forge-hammer': { glyph: '🗜️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-talisman-brush': { glyph: '🖌️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-formation-flag': { glyph: '🚩', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
-  'equipment.tool-quench-anvil': { glyph: '🔨', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-herb-hoe': { glyph: '草', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-prospect-compass': { glyph: '矿', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-flame-ding': { glyph: '鼎', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-forge-hammer': { glyph: '锤', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-talisman-brush': { glyph: '笔', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-formation-flag': { glyph: '旗', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-quench-anvil': { glyph: '砧', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
 }
 
 /**
@@ -1345,13 +1425,13 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
     const grade = resolveItemGrade(tier)
     return {
       label: label ?? fallback?.name ?? itemId,
-      glyph: '⚔️',
+      glyph: '武',
       tone: 'gray',
       category: resolveItemCategoryLabel(fallback?.slot ?? 'equipment', t),
       rarity: grade.rarity,
       rarityLabel: grade.label,
       tier,
-      level: convertTierToLevel(tier),
+      level: fallback?.level ?? convertTierToLevel(tier),
       description: description ?? fallback?.description ?? '',
     }
   }
@@ -1361,7 +1441,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
     const slug = itemId.slice(isTome ? 'item.tome.'.length : 'item.fragment.'.length)
     return {
       label: label ?? (isTome ? `《${slug}秘籍》` : `《${slug}·残卷》`),
-      glyph: isTome ? '📘' : '📜',
+      glyph: isTome ? '谱' : '卷',
       tone: 'gray',
       category: resolveItemCategoryLabel(isTome ? 'manualTome' : 'manualFragment', t),
       rarity: 'mundane',
@@ -1897,6 +1977,7 @@ export function resolveDefaultItemDefinition(itemId: string): ItemDefinition | u
     category: def.category ?? 'consumable',
     subCategory: def.subCategory ?? null,
     tier: def.tier ?? 1,
+    level: def.level ?? null,
     sellPrice: def.sellPrice ?? 0,
     isTradable: def.isTradable ?? true,
     usableBars: def.usableBars ?? [],
@@ -1924,6 +2005,7 @@ export function resolveDefaultEquipmentDefinition(equipmentId: string): CombatEq
     name: def.name ?? equipmentId,
     slot: def.slot ?? 'weapon',
     tier: def.tier ?? 1,
+    level: def.level,
     sellPrice: def.sellPrice ?? EQUIPMENT_BASE_SELL_PRICES[equipmentId] ?? 0,
     enhancementBonus: def.enhancementBonus,
     baseStatRatios: def.baseStatRatios,
