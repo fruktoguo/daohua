@@ -1033,6 +1033,7 @@ export class ActionParticipationSessionEngine {
           CombatDamageKind.Spell,
           damage,
           Math.max(0, strikeStats.attackPower - damage),
+          strike.element as CombatElement,
         )
       }
       this.spendBalance(memberIndex, row.itemId)
@@ -1692,6 +1693,8 @@ function projectStats(
       ...row,
       unitKey: key,
       kind: key === 'player' ? 0 : key.startsWith('ally:') ? 1 : 2,
+      damageDealtByElement: { ...row.damageDealtByElement },
+      damageTakenByElement: { ...row.damageTakenByElement },
     }
   })
 }

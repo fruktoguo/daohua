@@ -628,6 +628,8 @@ export class SimBattleReport {
       healingOther: unit.healingOther,
       damageDealtTrue: unit.damageDealtTrue,
       damageTakenTrue: unit.damageTakenTrue,
+      damageDealtByElement: { ...unit.damageDealtByElement },
+      damageTakenByElement: { ...unit.damageTakenByElement },
     }))
   }
 }
@@ -994,6 +996,40 @@ export function sumActiveBuffStacks(
     if (buffId === null || actives[i].buffId === buffId) {
       total += actives[i].stacks
     }
+  }
+  return total
+}
+
+/**
+ * 战外 Buff 层数求值（去重并可选过期过滤）：跳过已存在于战内单位 Buff 列表中的同名即时药水副本，
+ * 并在提供当前墙钟时忽略已到期的战外条目，防止 buff-stacks 在战内被双倍计入或到期后残留。
+ */
+export function sumUnmergedActiveBuffStacks(
+  inBattle: readonly { buffId: string }[],
+  actives: readonly ActiveBuffState[],
+  buffId: string | null,
+  nowUnix?: number,
+): number {
+  let total = 0
+  for (let i = 0; i < actives.length; i++) {
+    const entry = actives[i]
+    const entryId = entry.buffId
+    if (buffId !== null && entryId !== buffId) continue
+    if (nowUnix !== undefined && entry.expiresAtUnixSeconds <= nowUnix) continue
+    let duplicated = false
+    for (let j = 0; j < inBattle.length; j++) {
+      const curId = inBattle[j].buffId
+      if (
+        curId === entryId ||
+        (curId.length > entryId.length &&
+          curId.charCodeAt(entryId.length) === 58 /* ':' */ &&
+          curId.startsWith(entryId))
+      ) {
+        duplicated = true
+        break
+      }
+    }
+    if (!duplicated) total += entry.stacks
   }
   return total
 }

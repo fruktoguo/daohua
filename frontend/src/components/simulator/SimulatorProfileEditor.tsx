@@ -14,7 +14,7 @@ import {
   getRootPointsForExp,
 } from '../../game/combatConstants'
 import { describeAbility, describeCombatTrigger } from '../../game/format'
-import { resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../../game/ids'
+import { resolveCatalogItemMetadata, resolveItemCategoryLabel } from '../../game/ids'
 import { resolveItemIconUrl } from '../../game/itemIcons'
 import type {
   SimulatorAbilitySlotDto, SimulatorAutoUseSlotDto, SimulatorLinggenDto, SimulatorProfileDto,
@@ -685,16 +685,13 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
                     if (primary) {
                       const eqDef = equipmentDefOf(primary.itemId)
                       const itemDef = items.find(i => i.itemId === primary.itemId)
-                      const meta = resolveItemMetadata(primary.itemId)
-                      const displayMeta = withItemGrade(meta ?? {
-                        label: eqDef?.name ?? itemName(primary.itemId),
-                        glyph: '·',
-                        tone: 'gold',
-                        category: resolveItemCategoryLabel(eqDef?.slot ?? slotKey, t),
-                        rarity: 'mundane',
-                        rarityLabel: '',
-                        description: eqDef?.description ?? itemDef?.description ?? '',
-                      }, eqDef?.tier ?? meta?.tier ?? 1)
+                      const displayMeta = resolveCatalogItemMetadata(primary.itemId, {
+                        itemDefinition: itemDef,
+                        equipmentDefinition: eqDef,
+                        name: itemName(primary.itemId),
+                        category: eqDef?.slot ?? slotKey,
+                        t,
+                      })
                       const displayName = primary.enhancementLevel > 0
                         ? `${itemName(primary.itemId)} +${primary.enhancementLevel}`
                         : itemName(primary.itemId)

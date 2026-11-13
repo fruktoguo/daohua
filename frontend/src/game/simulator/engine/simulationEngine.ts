@@ -9,7 +9,7 @@ import {
 } from './combatActionRules.ts'
 import { CombatBoundaryHookDispatcher, advanceCombatTo } from './combatEngine.ts'
 import { CombatOutcome } from './combatModels.ts'
-import { addSecondsExactTicks, compareOrdinal, ticksDiffSeconds } from './math.ts'
+import { addSecondsExactTicks, compareOrdinal, ticksDiffSeconds, ticksToUnixSeconds } from './math.ts'
 import {
   LiveCombatBattle,
   activateInstantConsumables,
@@ -30,6 +30,7 @@ import {
   addAssetDeltaMap,
   buildSortedAssetDeltasDto,
   splitAssetKey,
+  sumUnmergedActiveBuffStacks,
   type SimActionState,
   type SimEvent,
 } from './simulationState.ts'
@@ -315,13 +316,16 @@ function advanceCombatAction(
       )
       session.attributeRevision = player.attributeInputRevision
     }
-    battleState.player.externalBuffStacks = (buffId) => {
-      let total = 0
-      for (let i = 0; i < activeBuffs.length; i++) {
-        if (buffId === null || activeBuffs[i].buffId === buffId) total += activeBuffs[i].stacks
-      }
-      return total
-    }
+    const wallAnchorUnix =
+      ticksToUnixSeconds(addSecondsExactTicks(targetTicks, -stateRef.remainingSeconds)) -
+      battleState.elapsedSeconds
+    battleState.player.externalBuffStacks = (buffId) =>
+      sumUnmergedActiveBuffStacks(
+        battleState.player.buffs,
+        activeBuffs,
+        buffId,
+        wallAnchorUnix + battleState.elapsedSeconds,
+      )
   } else {
     battleState = restoreCombatBattle(player, action, encounter, catalog)
     live?.adopt(action, battleState, expedition, player.attributeInputRevision)

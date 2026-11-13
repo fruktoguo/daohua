@@ -129,7 +129,7 @@ function resolveSingleTriggerMask(trigger: TriggerConditionJson, selfInEnemies: 
     let ch = 0
     if (condition === 'alive-count' || condition === 'dead-count') ch = UnitChannel.Alive
     else if (condition === 'total-count') ch = 0
-    else if (condition === 'total-hp-percentage') ch = UnitChannel.Hp | UnitChannel.Stats
+    else if (condition === 'total-hp-percentage') ch = UnitChannel.Alive | UnitChannel.Hp | UnitChannel.Stats
     else if (condition === 'total-mana-percentage') ch = UnitChannel.Mana | UnitChannel.Stats
     else if (condition === 'lowest-hp-percentage' || condition === 'highest-hp-percentage') {
       ch = UnitChannel.Alive | UnitChannel.Hp | UnitChannel.Stats

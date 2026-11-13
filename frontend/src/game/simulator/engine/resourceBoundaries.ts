@@ -12,6 +12,7 @@ import {
   CombatEncounterState,
   CombatOutcome,
   CombatantState,
+  scaleMonsterStats,
   type CombatBuffState,
 } from './combatModels.ts'
 import { TICKS_PER_SECOND, ticksToUnixSeconds } from './math.ts'
@@ -38,6 +39,7 @@ import {
   combatBuffsFromCombatant,
   combatSkillsFromCombatant,
   formatTrimmedFixed,
+  sumUnmergedActiveBuffStacks,
   type CombatSkillStateModel,
   type ExpeditionAllyState,
   type ExpeditionEnemyState,
@@ -564,6 +566,7 @@ export function syncConsumableResourcesToBattle(
 function buildConsumableEvalUnits(
   player: SimPlayerRuntime,
   catalog: GameDataCatalog,
+  nowUnix?: number,
 ): {
   caster: CombatantState
   target: CombatantState | null
@@ -577,21 +580,15 @@ function buildConsumableEvalUnits(
   caster.hitpoints = player.state.hitpoints
   caster.manapoints = player.state.manapoints
   const activeBuffs = player.state.buffs
-  caster.externalBuffStacks = (buffId) => {
-    let total = 0
-    for (let i = 0; i < activeBuffs.length; i++) {
-      if (buffId === null || activeBuffs[i].buffId === buffId) {
-        total += activeBuffs[i].stacks
-      }
-    }
-    return total
-  }
+  caster.externalBuffStacks = (buffId) =>
+    sumUnmergedActiveBuffStacks(caster.buffs, activeBuffs, buffId, nowUnix)
   const head = player.actions[0]
   const battleBuffs = head?.expedition?.playerState?.buffs
   if (battleBuffs) caster.replaceBuffs(battleBuffs)
   const allies = [caster]
   const enemies: CombatantState[] = []
   const weaken = player.state.nodeBuildingEffects.monsterWeakenRatio
+  const difficulty = head?.participation?.spec?.difficulty ?? head?.difficulty ?? 0
   if (
     head?.expedition?.phase === CombatExpeditionPhase.Combat &&
     head.expedition.enemies &&
@@ -602,15 +599,17 @@ function buildConsumableEvalUnits(
       const enemy = waveEnemies[i]
       const monster = catalog.monsters.get(enemy.enemyId)
       if (!monster) continue
+      const scaledStats = scaleMonsterStats(monster.stats, difficulty)
       const unit = new CombatantState(
         `enemy:${i}`,
-        weakenMonsterStats(monster.stats, weaken),
+        weakenMonsterStats(scaledStats, weaken),
       )
       unit.hitpoints = enemy.state.hitpoints
       unit.manapoints = enemy.state.manapoints
       unit.threat = enemy.state.threat
       unit.threatBonusPoints = enemy.state.threatBonusPoints
       unit.definitionId = enemy.enemyId
+      unit.rank = monster.rank
       if (enemy.state.buffs && enemy.state.buffs.length > 0) {
         unit.replaceBuffs(enemy.state.buffs)
       }
@@ -725,7 +724,7 @@ export function activateInstantConsumables(
     if (evalCaster !== null) return
     if (liveBattle) syncLiveBattleToEvalDocs(player, liveBattle)
     else live?.flush()
-    const ctx = buildConsumableEvalUnits(player, catalog)
+    const ctx = buildConsumableEvalUnits(player, catalog, now)
     evalCaster = ctx.caster
     evalTarget = ctx.target
     evalAllies = ctx.allies
@@ -842,6 +841,7 @@ export function activateInstantConsumables(
           CombatDamageKind.Spell,
           damage,
           Math.max(0, strikeStats.attackPower - damage),
+          strike.element as CombatElement,
         )
       }
       slots[i] = { ...slot, cooldownUntilUnixSeconds: now + cooldown }
@@ -849,6 +849,7 @@ export function activateInstantConsumables(
       player.markDirty(PlayerSectionKind.Combat)
       player.markDirty(PlayerSectionKind.ActionQueue)
       deltas.push({ itemId: item.id, variant: '', quantityDelta: -1 })
+      evalCaster = null
       player.recordStats(now, { lostItem: item.id, lostQuantity: 1 })
       events.add({
         atTicks,
@@ -948,6 +949,7 @@ export function activateInstantConsumables(
     player.markDirty(PlayerSectionKind.Buffs)
     player.markDirty(PlayerSectionKind.Combat)
     deltas.push({ itemId: item.id, variant: '', quantityDelta: -1 })
+    evalCaster = null
     player.recordStats(now, { lostItem: item.id, lostQuantity: 1 })
     events.add({
       atTicks,

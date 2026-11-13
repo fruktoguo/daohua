@@ -66,6 +66,7 @@ import {
   resolveExpCapWithLinggen,
   sumActiveBuffStacks,
   sumFrozenBuffStacks,
+  sumUnmergedActiveBuffStacks,
   type ExpeditionAllyState,
   type ExpeditionEnemyState,
   type SimActionParticipationSpec,
@@ -716,7 +717,9 @@ export function prepareCombatEntry(
     )
     battle.player.hitpoints = clamp(player.state.hitpoints, 0, player.state.maxHitpoints)
     battle.player.manapoints = clamp(player.state.manapoints, 0, player.state.maxManapoints)
-    battle.player.externalBuffStacks = (buffId) => sumActiveBuffStacks(activeBuffs, buffId)
+    const entryUnix = ticksToUnixSeconds(entryAtTicks)
+    battle.player.externalBuffStacks = (buffId) =>
+      sumUnmergedActiveBuffStacks(battle.player.buffs, activeBuffs, buffId, entryUnix + battle.elapsedSeconds)
     applyCombatSkillsToCombatant(player.state.combatSkills, battle.player)
     applyCombatBuffsToCombatant(player.state.combatBuffCarry, battle.player, battle.elapsedSeconds)
   }
@@ -915,7 +918,8 @@ export function restoreCombatBattle(
       expedition.playerRespawnAtSeconds ?? Number.POSITIVE_INFINITY,
     )
     const activeBuffs = player.state.buffs
-    battleState.player.externalBuffStacks = (buffId) => sumActiveBuffStacks(activeBuffs, buffId)
+    battleState.player.externalBuffStacks = (buffId) =>
+      sumUnmergedActiveBuffStacks(battleState.player.buffs, activeBuffs, buffId)
   }
 
   for (let i = 0; i < waveEnemies.length; i++) {

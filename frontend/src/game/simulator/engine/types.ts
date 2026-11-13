@@ -205,6 +205,15 @@ export interface SimulatorReportItemDto {
   quantity: number;
 }
 
+export interface SimulatorCombatElementDamageDto {
+  none: number;
+  metal: number;
+  wood: number;
+  water: number;
+  fire: number;
+  earth: number;
+}
+
 export interface SimulatorCombatUnitStatDto {
   unitKey: string;
   kind: number;
@@ -219,6 +228,8 @@ export interface SimulatorCombatUnitStatDto {
   healingOther: number;
   damageDealtTrue: number;
   damageTakenTrue: number;
+  damageDealtByElement: SimulatorCombatElementDamageDto;
+  damageTakenByElement: SimulatorCombatElementDamageDto;
 }
 
 export interface SimulatorExpeditionEnemyDto {

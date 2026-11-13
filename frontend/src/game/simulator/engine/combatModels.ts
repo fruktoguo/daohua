@@ -10,6 +10,7 @@ import {
   BuffEffectTickGroup,
   BuffIds,
   CombatDamageKind,
+  CombatElement,
   CombatMonsterRank,
   CombatRespawnPolicy,
   PercentCurveMode,
@@ -597,6 +598,49 @@ export class CombatTraitListeners {
   }
 }
 
+export interface CombatElementDamageBreakdown {
+  none: number
+  metal: number
+  wood: number
+  water: number
+  fire: number
+  earth: number
+}
+
+function createEmptyElementDamage(): CombatElementDamageBreakdown {
+  return { none: 0, metal: 0, wood: 0, water: 0, fire: 0, earth: 0 }
+}
+
+function elementKeyOf(element: CombatElement): keyof CombatElementDamageBreakdown {
+  switch (element) {
+    case CombatElement.Metal:
+      return 'metal'
+    case CombatElement.Wood:
+      return 'wood'
+    case CombatElement.Water:
+      return 'water'
+    case CombatElement.Fire:
+      return 'fire'
+    case CombatElement.Earth:
+      return 'earth'
+    default:
+      return 'none'
+  }
+}
+
+function mergeElementDamage(
+  target: CombatElementDamageBreakdown,
+  source: CombatElementDamageBreakdown | undefined,
+): void {
+  if (!source) return
+  target.none += source.none
+  target.metal += source.metal
+  target.wood += source.wood
+  target.water += source.water
+  target.fire += source.fire
+  target.earth += source.earth
+}
+
 export interface CombatUnitStatEntry {
   unitKey: string
   kind: CombatStatUnitKind
@@ -611,6 +655,8 @@ export interface CombatUnitStatEntry {
   damageMitigatedSpell: number
   healingRegen: number
   healingOther: number
+  damageDealtByElement: CombatElementDamageBreakdown
+  damageTakenByElement: CombatElementDamageBreakdown
 }
 
 function statKindOf(unitKey: string): CombatStatUnitKind {
@@ -652,6 +698,8 @@ export class CombatUnitStatsBook {
     e.damageMitigatedSpell += doc.damageMitigatedSpell
     e.healingRegen += doc.healingRegen
     e.healingOther += doc.healingOther
+    mergeElementDamage(e.damageDealtByElement, doc.damageDealtByElement)
+    mergeElementDamage(e.damageTakenByElement, doc.damageTakenByElement)
     this.dirty = true
   }
 
@@ -678,6 +726,8 @@ export class CombatUnitStatsBook {
       damageMitigatedSpell: 0,
       healingRegen: 0,
       healingOther: 0,
+      damageDealtByElement: createEmptyElementDamage(),
+      damageTakenByElement: createEmptyElementDamage(),
     }
     this._byKey.set(unitKey, e)
     this._entries.push(e)
@@ -700,6 +750,7 @@ export class CombatUnitStatsBook {
     kind: CombatDamageKind,
     damage: number,
     mitigated: number,
+    element: CombatElement = CombatElement.None,
   ): void {
     this.recordHitKey(
       CombatUnitStatsBook.keyOf(attacker),
@@ -707,6 +758,7 @@ export class CombatUnitStatsBook {
       kind,
       damage,
       mitigated,
+      element,
     )
   }
 
@@ -716,6 +768,7 @@ export class CombatUnitStatsBook {
     kind: CombatDamageKind,
     damage: number,
     mitigated: number,
+    element: CombatElement = CombatElement.None,
   ): void {
     if (damage <= 0 && mitigated <= 0) return
     const attacker = this.entry(attackerKey)
@@ -731,6 +784,11 @@ export class CombatUnitStatsBook {
       attacker.damageDealtPhysical += damage
       target.damageTakenPhysical += damage
       target.damageMitigatedPhysical += mitigated
+    }
+    if (damage > 0) {
+      const elKey = elementKeyOf(element)
+      attacker.damageDealtByElement[elKey] += damage
+      target.damageTakenByElement[elKey] += damage
     }
     this.dirty = true
   }

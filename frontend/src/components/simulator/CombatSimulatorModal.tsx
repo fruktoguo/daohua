@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from '../Modal'
+import { Icon } from '../Icon'
 import { FloatingInfoCard, FloatingPopover } from '../FloatingPopover'
 import { useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
@@ -665,7 +666,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
     <Modal open={open} onClose={() => { cancelRun(); onClose() }} labelledBy="wasm-sim-title" size="large" className="sim-modal">
       <div className="sim-modal-header">
         <div className="sim-modal-title-wrap">
-          <span className="sim-title-icon">⚔</span>
+          <span className="sim-title-icon"><Icon name="combat" size={20} /></span>
           <h2 id="wasm-sim-title" className="sim-title-text">{t('combat.simulator.modalTitle')}</h2>
         </div>
 

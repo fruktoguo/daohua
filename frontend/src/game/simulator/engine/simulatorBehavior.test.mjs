@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { buildGameDataCatalog } from './catalog.ts'
+import { CombatantState } from './combatModels.ts'
+import { evaluateTriggers } from './triggerEvaluator.ts'
+import { UnitChannel, resolveTriggerListWakeMask } from './triggerWake.ts'
 import { listCombatNodeIds, runSimulation } from './simulatorRunner.ts'
 import { abilityLevelForExp } from './rules.ts'
 import { useSimulatorStore } from '../simulatorStore.ts'
@@ -170,4 +173,211 @@ test('calculateAbilityLevelAndProgress 与 abilityLevelForExp 在 1..127 全等�
   }
   assert.equal(calculateAbilityLevelAndProgress(1e12).level, 127)
   assert.equal(abilityLevelForExp(1e12), 127)
+})
+
+test('combatStats 按五行维度完整守恒累计造成与承受伤害', () => {
+  const spellCase = parityCases.runCases.find(c => c.name === 'solo_spell_dot_shield_2h')
+  assert.ok(spellCase, '应存在 solo_spell_dot_shield_2h 黄金样本')
+  const res = runSimulation(spellCase.request, catalog)
+  const stats = res.members[0].combatStats
+  assert.ok(stats.length > 0)
+
+  let playerElementalSum = 0
+  for (const row of stats) {
+    const dealtTotal = row.damageDealtPhysical + row.damageDealtSpell + row.damageDealtTrue
+    const dealtElem = row.damageDealtByElement
+    const dealtElemSum = dealtElem.none + dealtElem.metal + dealtElem.wood + dealtElem.water + dealtElem.fire + dealtElem.earth
+    assert.ok(
+      Math.abs(dealtTotal - dealtElemSum) <= 1e-6,
+      `${row.unitKey} 造成伤害五行合计(${dealtElemSum})应等于分类合计(${dealtTotal})`,
+    )
+
+    const takenTotal = row.damageTakenPhysical + row.damageTakenSpell + row.damageTakenTrue
+    const takenElem = row.damageTakenByElement
+    const takenElemSum = takenElem.none + takenElem.metal + takenElem.wood + takenElem.water + takenElem.fire + takenElem.earth
+    assert.ok(
+      Math.abs(takenTotal - takenElemSum) <= 1e-6,
+      `${row.unitKey} 承受伤害五行合计(${takenElemSum})应等于分类合计(${takenTotal})`,
+    )
+
+    if (row.unitKey === 'player') {
+      playerElementalSum = dealtElem.metal + dealtElem.wood + dealtElem.water + dealtElem.fire + dealtElem.earth
+    }
+  }
+  assert.ok(playerElementalSum > 0, '火法燃魂样本应记录到非零的五行属性伤害')
+})
+
+test('消耗品条件求值（妖王/精英阶层、难度缩放百分比、战内 buff-stacks 不双计）与空集合唤醒严格对齐', () => {
+  const emptyCaster = new CombatantState('player', {
+    maxHitpoints: 100,
+    maxManapoints: 100,
+    attackPower: 10,
+    spellAttack: 10,
+    damageKind: 0,
+    element: 0,
+    physicalArmor: 0,
+    spellResistance: 0,
+    fixedDamageReduction: 0,
+    accuracy: 1,
+    evasion: 0,
+    criticalChance: 0,
+    criticalDamageBonusPoints: 50,
+    criticalAvoidance: 0,
+    breakValue: 0,
+    parryValue: 0,
+    attackIntervalSeconds: 2,
+    hitpointRegen: 0,
+    manapointRegen: 0,
+    skillBonusPoints: 0,
+    healingBonusPoints: 0,
+    takenHealingBonusPoints: 0,
+    attackSpeedPoints: 0,
+    cooldownReductionPoints: 0,
+    damageAbsorptionPoints: 0,
+    actionSpeedPoints: 0,
+    totalDamageBonusPoints: 0,
+    physicalDamageBonusPoints: 0,
+    spellDamageBonusPoints: 0,
+    metalDamageBonusPoints: 0,
+    woodDamageBonusPoints: 0,
+    waterDamageBonusPoints: 0,
+    fireDamageBonusPoints: 0,
+    earthDamageBonusPoints: 0,
+    metalDamageReductionPoints: 0,
+    woodDamageReductionPoints: 0,
+    waterDamageReductionPoints: 0,
+    fireDamageReductionPoints: 0,
+    earthDamageReductionPoints: 0,
+    lifestealPoints: 0,
+    reflectPoints: 0,
+    threatOnAttackPoints: 0,
+    threatOnTakenPoints: 0,
+    traits: null,
+    traitLevels: null,
+  })
+  assert.equal(
+    evaluateTriggers(
+      [{ dependency: 'enemies', condition: 'total-hp-percentage', comparator: 'less-than-equal', value: 50 }],
+      emptyCaster,
+      null,
+      [emptyCaster],
+      [],
+      0,
+    ),
+    false,
+    '空敌方集合时 total-hp-percentage 不得误判为 0 <= 50',
+  )
+  const wakeMask = resolveTriggerListWakeMask(
+    [{ dependency: 'enemies', condition: 'total-hp-percentage', comparator: 'less-than-equal', value: 50 }],
+    false,
+  )
+  assert.equal(
+    (wakeMask.enemySide & UnitChannel.Alive) !== 0,
+    true,
+    'total-hp-percentage 唤醒掩码必须包含 UnitChannel.Alive',
+  )
+
+  const baseReq = parityCases.runCases.find(c => c.name === 'solo_spell_dot_shield_2h')?.request
+  assert.ok(baseReq, '应存在基准模拟请求模板')
+
+  const makeBossCatalog = (rank) => {
+    const cloned = structuredClone(catalogJson)
+    const templateKey = Object.keys(cloned.monsters)[0]
+    assert.ok(templateKey)
+    cloned.monsters['enemy.test-rank'] = {
+      ...structuredClone(cloned.monsters[templateKey]),
+      id: 'enemy.test-rank',
+      name: '测试阶层妖兽',
+      rank,
+      budgetCost: 1,
+      weights: { hp: 200, mp: 1, ad: 0.01, ap: 0.01, armor: 0, mr: 0 },
+      attackIntervalMilliseconds: 5000,
+      skills: [],
+      dropTable: [],
+    }
+    const combatAction = cloned.combatActions.find(
+      a => Array.isArray(a.availableNodeIds) && a.availableNodeIds.includes(baseReq.nodeId),
+    )
+    assert.ok(combatAction)
+    const enc = cloned.encounters.find(e => e.id === combatAction.combatEncounterId)
+    assert.ok(enc)
+    enc.minBudget = 1
+    enc.maxBudget = 1
+    enc.maxTotalStrength = 1
+    enc.searchMilliseconds = 1000
+    enc.randomSpawns = [{ enemyId: 'enemy.test-rank', weight: 1, strength: 1 }]
+    enc.eliteEnemyIds = []
+    enc.bossEnemyIds = []
+    enc.battlesPerBoss = 0
+    return buildGameDataCatalog(cloned)
+  }
+
+  const runWithTriggers = (simCatalog, consumableTriggers, difficulty = 0) => {
+    const baseMember = structuredClone(baseReq.members[0])
+    baseMember.buffs = []
+    baseMember.combatBuffCarry = []
+    baseMember.hitpoints = 99999
+    baseMember.manapoints = 99999
+    baseMember.combatAutoUseSlots = [
+      {
+        actionType: 'combat',
+        slotIndex: 0,
+        itemId: 'item.zhixue-powder',
+        quantity: 1,
+        enabled: true,
+        remainingDurationSeconds: 0,
+        cooldownUntilUnixSeconds: 0,
+        group: 'potion',
+      },
+      {
+        actionType: 'combat',
+        slotIndex: 0,
+        itemId: 'item.leiji-talisman',
+        quantity: 1,
+        enabled: true,
+        remainingDurationSeconds: 0,
+        cooldownUntilUnixSeconds: 0,
+        group: 'general',
+      },
+    ]
+    baseMember.consumableTriggers = consumableTriggers
+    baseMember.assets = [
+      { itemId: 'item.zhixue-powder', variant: '', quantity: 5 },
+      { itemId: 'item.leiji-talisman', variant: '', quantity: 5 },
+    ]
+    const req = {
+      ...structuredClone(baseReq),
+      difficulty,
+      durationSeconds: 3,
+      members: [baseMember],
+    }
+    const res = runSimulation(req, simCatalog)
+    const leijiDelta = res.members[0].assetDeltas.find(d => d.itemId === 'item.leiji-talisman')?.quantity ?? 0
+    return Math.abs(leijiDelta)
+  }
+
+  const bossCatalog = makeBossCatalog('boss')
+  const minionCatalog = makeBossCatalog('minion')
+
+  assert.equal(
+    runWithTriggers(bossCatalog, {
+      'item.zhixue-powder': [{ dependency: 'self', condition: 'buff-stacks', buffId: 'buff.zhixue', comparator: 'equal', value: 0 }],
+      'item.leiji-talisman': [
+        { dependency: 'target-enemy', condition: 'is-boss', comparator: 'is-active', value: 1 },
+        { dependency: 'enemies', condition: 'has-boss', comparator: 'is-active', value: 1 },
+        { dependency: 'target-enemy', condition: 'current-hp-percentage', comparator: 'less-than-equal', value: 100 },
+        { dependency: 'self', condition: 'buff-stacks', buffId: 'buff.zhixue', comparator: 'equal', value: 1 },
+      ],
+    }, 2),
+    1,
+    'Boss + 难度2 + 止血散1层buff 组合条件应全部精确命中并激发雷击符',
+  )
+
+  assert.equal(
+    runWithTriggers(minionCatalog, {
+      'item.leiji-talisman': [{ dependency: 'target-enemy', condition: 'is-boss', comparator: 'is-active', value: 1 }],
+    }, 0),
+    0,
+    '普通怪遭遇下 target-enemy is-boss 不得触发雷击符',
+  )
 })

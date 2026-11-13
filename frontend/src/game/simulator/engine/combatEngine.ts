@@ -547,6 +547,7 @@ function emitTraitOnHit(
       primary ? CombatDamageKind.True : CombatDamageKind.Physical,
       settled.damage,
       primary ? 0 : Math.max(0, buff.stacks - settled.damage),
+      CombatElement.None,
     )
     derivedEvents.push({
       atSeconds: context.atSeconds,
@@ -611,6 +612,7 @@ function tickRanhun(
       CombatDamageKind.Spell,
       settled.damage,
       Math.max(0, power - settled.damage),
+      CombatElement.Fire,
     )
     events.push({
       atSeconds: at,
@@ -692,6 +694,7 @@ function triggerDamageReflect(
     context.attackStats.damageKind,
     reflected,
     0,
+    context.attackStats.element,
   )
   derivedEvents.push({
     atSeconds: context.atSeconds,
@@ -759,7 +762,14 @@ function triggerFormationReactiveStrike(
           applyCombatDamage(encounter, ally, context.target, rawDmg)
           const actualDamage = hpBefore - context.target.hitpoints
           ally.threat += actualDamage
-          encounter.statsBook?.recordHitUnit(ally, context.target, CombatDamageKind.Spell, actualDamage, 0)
+          encounter.statsBook?.recordHitUnit(
+            ally,
+            context.target,
+            CombatDamageKind.Spell,
+            actualDamage,
+            0,
+            CombatElement.Wood,
+          )
           derivedEvents.push({
             atSeconds: context.atSeconds,
             attackerId: ally.id,
@@ -821,6 +831,7 @@ function triggerFormationReactiveStrike(
             CombatDamageKind.Physical,
             actualDamage,
             0,
+            CombatElement.None,
           )
           derivedEvents.push({
             atSeconds: context.atSeconds,
@@ -1009,6 +1020,7 @@ function resolveAttack(
     context.attackStats.damageKind,
     context.damage,
     context.hit ? Math.max(0, context.rawDamage - context.damage) : 0,
+    context.attackStats.element,
   )
   attacker.attackCount += 1
   attacker.threat += context.damage

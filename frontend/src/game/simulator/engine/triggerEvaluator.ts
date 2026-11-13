@@ -48,6 +48,7 @@ function anyAlive(
 }
 
 function totalHpPercentage(units: readonly CombatantState[]): number {
+  if (units.length === 0) return Number.NaN
   let sumHp = 0
   let sumMaxHp = 0
   for (let i = 0; i < units.length; i++) {
@@ -59,6 +60,7 @@ function totalHpPercentage(units: readonly CombatantState[]): number {
 }
 
 function totalManaPercentage(units: readonly CombatantState[]): number {
+  if (units.length === 0) return Number.NaN
   let sumMp = 0
   let sumMaxMp = 0
   for (let i = 0; i < units.length; i++) {

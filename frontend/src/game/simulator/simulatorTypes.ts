@@ -48,7 +48,8 @@ export interface SimulatorEnvironmentDto { formatVersion: number; gameDataFinger
 export interface SimulatorRunRequestDto { formatVersion: number; nodeId: string; difficulty: number; durationSeconds: number; seed: string; members: SimulatorProfileDto[]; environment: SimulatorEnvironmentDto }
 export interface SimulatorRootExpDto { stamina: number; meridians: number; attack: number; bone: number; agility: number; consciousness: number }
 export interface SimulatorReportItemDto { itemId: string; variant: string; quantity: number }
-export interface SimulatorCombatUnitStatDto { unitKey: string; kind: number; displayName: string; damageDealtPhysical: number; damageDealtSpell: number; damageTakenPhysical: number; damageTakenSpell: number; damageMitigatedPhysical: number; damageMitigatedSpell: number; healingRegen: number; healingOther: number; damageDealtTrue: number; damageTakenTrue: number }
+export interface SimulatorCombatElementDamageDto { none: number; metal: number; wood: number; water: number; fire: number; earth: number }
+export interface SimulatorCombatUnitStatDto { unitKey: string; kind: number; displayName: string; damageDealtPhysical: number; damageDealtSpell: number; damageTakenPhysical: number; damageTakenSpell: number; damageMitigatedPhysical: number; damageMitigatedSpell: number; healingRegen: number; healingOther: number; damageDealtTrue: number; damageTakenTrue: number; damageDealtByElement: SimulatorCombatElementDamageDto; damageTakenByElement: SimulatorCombatElementDamageDto }
 export interface SimulatorExpeditionEnemyDto { enemyId: string; hitpoints: number; manapoints: number }
 export interface SimulatorEventDto { atUnixSeconds: number; code: string; message: string; actionId?: string; itemDeltas?: Record<string, number> }
 export interface SimulatorMemberResultDto {
