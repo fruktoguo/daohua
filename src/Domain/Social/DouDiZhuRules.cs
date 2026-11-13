@@ -131,7 +131,7 @@ public static class DouDiZhuRules
     /// <summary>依抢地主次数、炸弹/王炸數量及春天判定计算终局倍率。</summary>
     public static int CalculateMultiplier(int robCount, int bombCount, bool spring)
     {
-        if (robCount < 0 || robCount > 2) throw new ArgumentOutOfRangeException(nameof(robCount));
+        if (robCount < 0 || robCount > 3) throw new ArgumentOutOfRangeException(nameof(robCount));
         if (bombCount < 0 || bombCount > 14) throw new ArgumentOutOfRangeException(nameof(bombCount));
         var exponent = robCount + bombCount + (spring ? 1 : 0);
         return 1 << exponent;

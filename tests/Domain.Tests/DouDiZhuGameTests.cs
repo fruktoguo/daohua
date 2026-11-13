@@ -160,6 +160,35 @@ public sealed class DouDiZhuGameTests
     }
 
     [Fact]
+    public void ApplyPlay_FinishesAfterTripleRobWithoutMultiplierOverflow()
+    {
+        var game = NewGame(firstBidder: 0);
+        game = DouDiZhuGame.ApplyBid(game, Players[0], game.Version, DouDiZhuBidAction.Pass, game.ActionAvailableAt);
+        game = DouDiZhuGame.ApplyBid(game, Players[1], game.Version, DouDiZhuBidAction.Call, game.ActionAvailableAt);
+        game = DouDiZhuGame.ApplyBid(game, Players[2], game.Version, DouDiZhuBidAction.Rob, game.ActionAvailableAt);
+        game = DouDiZhuGame.ApplyBid(game, Players[0], game.Version, DouDiZhuBidAction.Rob, game.ActionAvailableAt);
+        game = DouDiZhuGame.ApplyBid(game, Players[1], game.Version, DouDiZhuBidAction.Rob, game.ActionAvailableAt);
+
+        Assert.Equal(DouDiZhuGamePhase.Playing, game.Phase);
+        Assert.Equal(1, game.LandlordSeat);
+        Assert.Equal(3, game.RobCount);
+
+        var lastCard = game.Hands[1][0];
+        game = game with
+        {
+            Hands = [game.Hands[0], [lastCard], game.Hands[2]],
+            FarmerPlayCount = 1
+        };
+        game = DouDiZhuGame.ApplyPlay(game, Players[1], game.Version, [lastCard], game.ActionAvailableAt);
+
+        Assert.Equal(DouDiZhuGamePhase.Finished, game.Phase);
+        Assert.Equal(1, game.WinnerSeat);
+        Assert.True(game.LandlordWon);
+        Assert.False(game.Spring);
+        Assert.Equal(8, game.FinalMultiplier);
+    }
+
+    [Fact]
     public void CalculateSettlementDeltas_TransfersOnlyAvailableStonesAndRemainsZeroSum()
     {
         var landlordGame = FinishedGame(landlordWon: true);
